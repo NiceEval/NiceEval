@@ -883,6 +883,16 @@ const ModelGroupsSchema = Schema.Union([
     omittedGroupCount: Schema.Literal(0),
   }),
 ]);
+export const CostGapSources = ["application", "judge", "simulated-user"] as const;
+export const CostGapReasons = ["no-pricing-profile", "provider-cost-not-reported", "token-buckets-incomplete", "usage-not-recorded"] as const;
+const CostGapSchema = Schema.Struct({
+  source: Schema.Literals(CostGapSources),
+  reason: Schema.Literals(CostGapReasons),
+  models: Schema.Array(Schema.String.check(Schema.makeFilter((model) => model.trim().length > 0 &&
+    utf8ByteLength(model) <= 8_192 && !/[\u0000-\u001f\u007f]/u.test(model)))),
+}).check(Schema.makeFilter((gap) => (gap.reason === "no-pricing-profile" ? gap.models.length > 0 : gap.models.length === 0) &&
+  gap.models.every((model, index) => index === 0 || gap.models[index - 1]! < model)));
+export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
   simulatedUser: Schema.optional(Schema.Struct({
     source: Schema.Literal("simulated-user"),
@@ -898,8 +908,13 @@ const TotalUsageCostsSchema = Schema.Struct({
   })),
   missingSources: Schema.Array(Schema.Literals(["application", "judge", "simulated-user"])).check(Schema.makeFilter((sources) =>
     sources.length <= 3 && sources.every((source, index) => index === 0 || ["application", "judge", "simulated-user"].indexOf(sources[index - 1]!) < ["application", "judge", "simulated-user"].indexOf(source)))),
+  gaps: Schema.Array(CostGapSchema),
 }).check(Schema.makeFilter((value) => value.state === (value.missingSources.length === 0
     ? "complete" : value.values.length === 0 ? "unavailable" : "partial") &&
+  value.missingSources.every((source) => value.gaps.some((gap) => gap.source === source)) &&
+  value.gaps.every((gap, index) => value.missingSources.includes(gap.source) && (index === 0 ||
+    CostGapSources.indexOf(value.gaps[index - 1]!.source) < CostGapSources.indexOf(gap.source) ||
+    value.gaps[index - 1]!.source === gap.source && CostGapReasons.indexOf(value.gaps[index - 1]!.reason) < CostGapReasons.indexOf(gap.reason))) &&
   value.values.every((entry, index) => index === 0 || value.values[index - 1]!.currency < entry.currency)));
 export type TotalUsageCosts = Schema.Schema.Type<typeof TotalUsageCostsSchema>;
 

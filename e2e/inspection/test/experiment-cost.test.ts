@@ -25,7 +25,7 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     // 35 × 0.100000001 + 35 × 0.200000002; no float or preview-derived oracle.
     expect(experiment.costSummary).toEqual({
       scope: "latest-recorded-attempts",
-      totalCosts: { state: "complete", values: [{ currency: "USD", value: "10.500000105", source: "reported" }], missingSources: [] },
+      totalCosts: { state: "complete", values: [{ currency: "USD", value: "10.500000105", source: "reported" }], missingSources: [], gaps: [] },
       coverage: { plannedAttemptCount: 70, recordedAttemptCount: 70, originAttemptCount: 70, completeAttemptCount: 70, partialAttemptCount: 0, unavailableAttemptCount: 0, missingAttemptCount: 0 },
     });
     expect(experiment.modelUsage).toMatchObject({ totalAttemptCount: 70, omittedAttemptCount: 6, unresolvedAttemptCount: 0 });
@@ -60,7 +60,7 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     // 35 × 0.300000003 + the untouched 35 × 0.200000002, excluding old paid origins.
     expect(replaced.costSummary).toEqual({
       scope: "latest-recorded-attempts",
-      totalCosts: { state: "complete", values: [{ currency: "USD", value: "17.500000175", source: "reported" }], missingSources: [] },
+      totalCosts: { state: "complete", values: [{ currency: "USD", value: "17.500000175", source: "reported" }], missingSources: [], gaps: [] },
       coverage: { plannedAttemptCount: 70, recordedAttemptCount: 70, originAttemptCount: 70, completeAttemptCount: 70, partialAttemptCount: 0, unavailableAttemptCount: 0, missingAttemptCount: 0 },
     });
     expect(replaced.modelUsage).toMatchObject({ totalAttemptCount: 70, omittedAttemptCount: 6, unresolvedAttemptCount: 0 });

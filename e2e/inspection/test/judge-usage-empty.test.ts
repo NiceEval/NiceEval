@@ -50,7 +50,7 @@ test.concurrent("完整空材料证明没有 Judge 发送，应用费用与总�
       expect(usage.totals.inputTotalTokens).toEqual({ state: "available", value: 4, observationCount: 1 });
       expect(usage.totals.outputTokens).toEqual({ state: "available", value: 1, observationCount: 1 });
       expect(usage.totals.costs).toEqual({ state: "complete", source: "reported", values: [{ currency: "USD", value: "0.25", source: "reported", coveredCalls: 1, reportedCalls: 1, estimatedCalls: 0 }], totalCalls: 1 });
-      expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: [] });
+      expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: [], gaps: [] });
 
       const experimentRead = await niceeval.run(["show", `exp:${"judge-usage-empty"}`, "--json"]);
       expect(experimentRead.exitCode, experimentRead.diagnostic()).toBe(0);
@@ -72,7 +72,7 @@ test.concurrent("完整空材料证明没有 Judge 发送，应用费用与总�
       });
       expect(origin.usage.judgeUsage).not.toHaveProperty("calls");
       expect(origin.usage.judgeUsage).not.toHaveProperty("priceReceipts");
-      expect(origin.usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: [] });
+      expect(origin.usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: [], gaps: [] });
       const attemptShown = await niceeval.run(["show", event.locator], { env });
       expect(attemptShown.exitCode, attemptShown.diagnostic()).toBe(0);
       expect(attemptShown.stdout).toContain("Total costs");

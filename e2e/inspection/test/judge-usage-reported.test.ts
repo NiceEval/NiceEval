@@ -74,7 +74,7 @@ test.concurrent("OpenRouter 已报告费用与明确零覆盖两次传输，整�
       expect(usage.totals.inputTotalTokens).toEqual({ state: "available", value: 4, observationCount: 1 });
       expect(usage.totals.outputTokens).toEqual({ state: "available", value: 1, observationCount: 1 });
       expect(usage.totals.costs).toEqual({ state: "complete", source: "reported", values: [{ currency: "USD", value: "0.25", source: "reported", coveredCalls: 1, reportedCalls: 1, estimatedCalls: 0 }], totalCalls: 1 });
-      expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.252", source: "reported" }], missingSources: [] });
+      expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.252", source: "reported" }], missingSources: [], gaps: [] });
 
       // The ledger's formal entryId is consumed by the public detail operation.
 
@@ -111,7 +111,7 @@ test.concurrent("OpenRouter 已报告费用与明确零覆盖两次传输，整�
       });
       expect(origin.usage.judgeUsage).not.toHaveProperty("calls");
       expect(origin.usage.judgeUsage).not.toHaveProperty("priceReceipts");
-      expect(origin.usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.252", source: "reported" }], missingSources: [] });
+      expect(origin.usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.252", source: "reported" }], missingSources: [], gaps: [] });
       const attemptShown = await niceeval.run(["show", event.locator], { env });
       expect(attemptShown.exitCode, attemptShown.diagnostic()).toBe(0);
       const shown = await niceeval.run(["show", event.locator, "usage"], { env });

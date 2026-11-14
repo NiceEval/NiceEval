@@ -13,6 +13,7 @@ import { projectAssertions, projectCommands, projectConversation, projectDiagnos
 import { attachAssertionsToSource, attemptAssertionsContent, attemptDiagnosticsContent, embedConversationInSource, evidenceSliceCallouts, executionEvidenceUnavailableCallouts, sliceData } from "./content.tsx";
 import type { AttemptSummaryData, UsageTableData } from "./compute.ts";
 import { ExecutionTrace } from "./execution-trace.tsx";
+import { CostGaps } from "../../components/primitives/cost-gaps.tsx";
 
 export type { ReportLocale } from "../../components/primitives/shared.ts";
 export type * from "./compute.ts";
@@ -85,7 +86,7 @@ function ExternalUsage({ usage }: { readonly usage: InspectionSuccessDocumentFor
   return <section aria-label={t("usage.external")}>
     <h3>{t(usage.totalCosts.state === "complete" ? "usage.totalCosts" : "usage.totalKnownSubtotal")}</h3>
     <p>{t(usage.totalCosts.state === "complete" ? "usage.costComplete" : "usage.costIncomplete")}</p>
-    {usage.totalCosts.missingSources.length === 0 ? null : <p>{t("usage.missingSources")}: {usage.totalCosts.missingSources.map((source) => t(source === "judge" ? "usage.judgeUsage" : "usage.applicationCost")).join(", ")}</p>}
+    <CostGaps costs={usage.totalCosts} />
     {usage.totalCosts.values.length === 0 ? <p>{t(usage.totalCosts.state === "complete" ? "usage.noRecordedCharges" : "cell.metricUnavailable")}</p> : usage.totalCosts.values.map((cost) => <p key={cost.currency}>{cost.value} {cost.currency} · {costSource(cost.source)}</p>)}
     <details><summary>{t("usage.external")}</summary>
     <p>{usage.state}{usage.coverage === undefined ? "" : ` · ${usage.coverage}`}</p>

@@ -16,7 +16,7 @@ test.concurrent("显式完整空应用账本交付完整零费用，默认 Show 
     const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.totals.requests).toEqual({ state: "available", value: 0, observationCount: 0 });
     expect(usage.calls).toEqual([]);
-    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "complete", values: [], missingSources: [] });
+    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "complete", values: [], missingSources: [], gaps: [] });
     const shown = await niceeval.run(["show", event.locator]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("Total costs");
@@ -40,7 +40,7 @@ test.concurrent("显式 partial 应用账本保留已知费用，默认 Show 仍
     expect(usage.state).toBe("partial");
     expect(usage.totals.requests).toEqual({ state: "partial", value: 1, observationCount: 1 });
     expect(usage.calls).toEqual([expect.objectContaining({ callId: "accepted", cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "offline.response" } } })]);
-    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.125", source: "reported" }], missingSources: ["application"] });
+    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.125", source: "reported" }], missingSources: ["application"], gaps: [{ source: "application", reason: "usage-not-recorded", models: [] }] });
     const shown = await niceeval.run(["show", event.locator]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("Known subtotal");
@@ -69,6 +69,6 @@ test.concurrent("封存后写入被 catch 仍发布 errored Attempt，保留已�
     expect(usage.state).toBe("partial");
     expect(usage.totals.requests).toEqual({ state: "partial", value: 1, observationCount: 1 });
     expect(usage.calls).toEqual([expect.objectContaining({ callId: "accepted", cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "offline.response" } } })]);
-    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.125", source: "reported" }], missingSources: ["application"] });
+    expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.125", source: "reported" }], missingSources: ["application"], gaps: [{ source: "application", reason: "usage-not-recorded", models: [] }] });
   });
 });

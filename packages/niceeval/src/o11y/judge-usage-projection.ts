@@ -2,9 +2,10 @@ import type { JudgeUsageAttachment, JudgeUsageCall } from "../record/family/judg
 import { addCanonicalDecimals, canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
 import { effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
 import type {
-  InspectionAttemptUsageResult, JudgeUsage, JudgeUsageSummary, TotalUsageCosts,
+  CostGap, InspectionAttemptUsageResult, JudgeUsage, JudgeUsageSummary, TotalUsageCosts,
 } from "../inspection/results.ts";
 import { utf8ByteLength } from "../inspection/bytes.ts";
+import { combineCostGaps } from "./cost-gaps.ts";
 
 export const JUDGE_USAGE_PREVIEW_CALL_LIMIT = 128;
 export const JUDGE_USAGE_PREVIEW_BYTE_LIMIT = 128 * 1024;
@@ -99,6 +100,7 @@ export function projectTotalUsageCosts(
   applicationEmptyComplete = false,
   applicationCollectionProven = true,
   simulatedUser?: TotalUsageCosts["simulatedUser"],
+  recordedGaps: readonly CostGap[] = [],
 ): TotalUsageCosts {
   const applicationValues = application.costs !== undefined ? application.costs.values
     : (application.providerCosts?.values ?? []).map(({ currency, value }) => ({ currency, value, source: "reported" as const }));
@@ -111,7 +113,12 @@ export function projectTotalUsageCosts(
   if (simulatedUser !== undefined && simulatedUser.state !== "complete") missingSources.push("simulated-user");
   const values = sumCostValues([...applicationValues, ...(judgeCosts?.values ?? []), ...(simulatedUser?.amountUSD == null ? [] : [{ currency: "USD", value: canonicalDecimalFromNumber(simulatedUser.amountUSD)!, source: "estimated" as const }])]);
   return Object.freeze({ state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
-    values, missingSources: Object.freeze(missingSources), ...(simulatedUser === undefined ? {} : { simulatedUser }) });
+    values, missingSources: Object.freeze(missingSources),
+    gaps: combineCostGaps(missingSources.flatMap((source) => {
+      const gaps = recordedGaps.filter((gap) => gap.source === source);
+      return gaps.length > 0 ? gaps : [{ source, reason: source === "simulated-user"
+        ? "provider-cost-not-reported" as const : "usage-not-recorded" as const, models: [] }];
+    })), ...(simulatedUser === undefined ? {} : { simulatedUser }) });
 }
 
 /** Inputs are unique origin Attempts, never preview rows or verdict-filtered members. */
@@ -128,7 +135,10 @@ export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unres
     calls: sources.reduce((sum, source) => sum + source.calls, 0),
   };
   return Object.freeze({ state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
-    values, missingSources: Object.freeze(missingSources), ...(simulatedUser === undefined ? {} : { simulatedUser }) });
+    values, missingSources: Object.freeze(missingSources),
+    gaps: combineCostGaps([...totals.flatMap((total) => total.gaps), ...(unresolved
+      ? (["application", "judge"] as const).map((source) => ({ source, reason: "usage-not-recorded" as const, models: [] })) : [])]),
+    ...(simulatedUser === undefined ? {} : { simulatedUser }) });
 }
 
 function sumCostValues(entries: TotalUsageCosts["values"]): TotalUsageCosts["values"] {

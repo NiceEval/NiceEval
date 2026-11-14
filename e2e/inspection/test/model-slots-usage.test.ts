@@ -46,7 +46,7 @@ test.concurrent("用途与实际模型分列，零费用与未知费用保留且
       },
     };
     expect(usage.judgeUsage).toEqual({ ...judgeSummary, calls: [], callsTruncated: false, omittedCallCount: 0, priceReceipts: [] });
-    expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.375", source: "reported" }], missingSources: ["application"] });
+    expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.375", source: "reported" }], missingSources: ["application"], gaps: [{ source: "application", reason: "provider-cost-not-reported", models: [] }] });
 
     const overviewRead = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
     expect(overviewRead.exitCode, overviewRead.diagnostic()).toBe(0);

@@ -74,7 +74,7 @@ test.concurrent("显式 Judge 价格只估已知输出桶，缺输入与缓存�
       expect(usage.totals.inputTotalTokens).toEqual({ state: "available", value: 4, observationCount: 1 });
       expect(usage.totals.outputTokens).toEqual({ state: "available", value: 1, observationCount: 1 });
       expect(usage.totals.costs).toEqual({ state: "complete", source: "reported", values: [{ currency: "USD", value: "0.25", source: "reported", coveredCalls: 1, reportedCalls: 1, estimatedCalls: 0 }], totalCalls: 1 });
-      expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25006", source: "mixed" }], missingSources: ["judge"] });
+      expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25006", source: "mixed" }], missingSources: ["judge"], gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["inspection-fixture-v1"] }, { source: "judge", reason: "token-buckets-incomplete", models: [] }] });
 
       // The ledger's formal entryId is consumed by the public detail operation.
 
@@ -111,7 +111,7 @@ test.concurrent("显式 Judge 价格只估已知输出桶，缺输入与缓存�
       });
       expect(origin.usage.judgeUsage).not.toHaveProperty("calls");
       expect(origin.usage.judgeUsage).not.toHaveProperty("priceReceipts");
-      expect(origin.usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25006", source: "mixed" }], missingSources: ["judge"] });
+      expect(origin.usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25006", source: "mixed" }], missingSources: ["judge"], gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["inspection-fixture-v1"] }, { source: "judge", reason: "token-buckets-incomplete", models: [] }] });
       const attemptShown = await niceeval.run(["show", event.locator], { env });
       expect(attemptShown.exitCode, attemptShown.diagnostic()).toBe(0);
       expect(attemptShown.stdout).toContain("Known subtotal");

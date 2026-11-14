@@ -63,7 +63,7 @@ test.concurrent("Vercel Judge 的 120 输入与 30 输出可查，费用未知�
       expect(usage.totals.inputTotalTokens).toEqual({ state: "available", value: 4, observationCount: 1 });
       expect(usage.totals.outputTokens).toEqual({ state: "available", value: 1, observationCount: 1 });
       expect(usage.totals.costs).toEqual({ state: "complete", source: "reported", values: [{ currency: "USD", value: "0.25", source: "reported", coveredCalls: 1, reportedCalls: 1, estimatedCalls: 0 }], totalCalls: 1 });
-      expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: ["judge"] });
+      expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: ["judge"], gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["judge-usage-request"] }] });
 
       // The ledger's formal entryId is consumed by the public detail operation.
 
@@ -100,7 +100,7 @@ test.concurrent("Vercel Judge 的 120 输入与 30 输出可查，费用未知�
       });
       expect(origin.usage.judgeUsage).not.toHaveProperty("calls");
       expect(origin.usage.judgeUsage).not.toHaveProperty("priceReceipts");
-      expect(origin.usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: ["judge"] });
+      expect(origin.usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.25", source: "reported" }], missingSources: ["judge"], gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["judge-usage-request"] }] });
       const shown = await niceeval.run(["show", event.locator, "usage"], { env });
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       const experimentShown = await niceeval.run(["show", `exp:${"judge-usage-tokens"}`], { env });

@@ -1776,17 +1776,29 @@ function usageTotalEntries(
 
 function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanelContentBlock[] {
   const complete = costs.state === "complete";
+  const reasons = {
+    "no-pricing-profile": "No configured prices for recorded model token usage",
+    "provider-cost-not-reported": "Provider cost or priceable call evidence was not reported",
+    "token-buckets-incomplete": "Sealed prices lack required token buckets",
+    "usage-not-recorded": "Usage was not recorded completely",
+  };
+  const models = [...new Set(costs.gaps.flatMap((gap) => gap.models))].sort();
   return [
     { kind: "divider", title: complete ? "Total costs" : "Known subtotal" },
     { kind: "keyValue", entries: [
       { key: "Cost coverage", value: complete ? "Complete" : "Incomplete" },
       ...(costs.simulatedUser === undefined ? [] : [{ key: "simulated-user", value: `${costs.simulatedUser.amountUSD === null ? "Unpriced" : `USD ${costs.simulatedUser.amountUSD}`} · ${costs.simulatedUser.calls} requests · ${costs.simulatedUser.state}` }]),
       ...(costs.missingSources.length === 0 ? [] : [{ key: "Missing sources", value: costs.missingSources.join(", ") }]),
+      ...costs.gaps.map((gap) => ({ key: gap.source, value: `${gap.reason}: ${reasons[gap.reason]}${gap.models.length === 0 ? "" : ` (${gap.models.join(", ")})`}` })),
       ...(costs.values.length === 0 ? [{ key: "Amount", value: complete ? "No recorded charges" : "Unavailable" }] : []),
     ] },
     ...(costs.values.length === 0 ? [] : [{ kind: "table" as const,
       columns: [{ header: "Currency" }, { header: complete ? "Total" : "Known subtotal" }, { header: "Source" }],
       rows: costs.values.map((cost) => [cost.currency, cost.value, cost.source]), overflow: "wrap" as const }]),
+    ...(models.length === 0 ? [] : [
+      { kind: "divider" as const, title: `Next: add prices for ${models.join(", ")} to defineConfig({ pricing })` },
+      { kind: "divider" as const, title: "Pricing: https://niceeval.dev/reference/define-config#pricing" },
+    ]),
   ];
 }
 

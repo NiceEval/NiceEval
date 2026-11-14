@@ -42,7 +42,7 @@ test.concurrent("调用和模型组预览均漏掉 z 时用途计数仍为 129�
       },
     };
     expect(usage.judgeUsage).toEqual({ ...judgeSummary, calls: [], callsTruncated: false, omittedCallCount: 0, priceReceipts: [] });
-    expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.5", source: "reported" }], missingSources: [] });
+    expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.5", source: "reported" }], missingSources: [], gaps: [] });
 
     const overviewRead = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
     expect(overviewRead.exitCode, overviewRead.diagnostic()).toBe(0);

@@ -38,7 +38,7 @@ test.concurrent("应用账本未读的 errored Attempt 保留费用缺口，默�
     expect(usage.totalCosts, read.diagnostic()).toEqual({
       state: "unavailable",
       values: [],
-      missingSources: ["application"],
+      missingSources: ["application"], gaps: [{ source: "application", reason: "usage-not-recorded", models: [] }],
     });
 
     const shown = await niceeval.run(["show", event.locator]);

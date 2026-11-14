@@ -13,6 +13,7 @@ import type { InsightRuntimeSnapshot } from "../shell/App.tsx";
 import type { InsightTarget } from "../shell/types.ts";
 import { Grid } from "../components/primitives/index.tsx";
 import { CurrentResults } from "./CurrentResults.tsx";
+import { CostGaps } from "../components/primitives/cost-gaps.tsx";
 
 export function ResultsPage({ model, locale, unavailableReason }: {
   readonly model: ResultsPageModel;
@@ -91,10 +92,7 @@ function ExperimentCosts({ summary }: {
       <h2 className="niceeval-section-title">{title}</h2>
       <p>{t("experimentCost.scope")}</p>
       <p>{t(complete ? "usage.costComplete" : "usage.costIncomplete")}</p>
-      {totalCosts.missingSources.length === 0 ? null : (
-        <p>{t("usage.missingSources")}: {totalCosts.missingSources.map((source) =>
-          t(source === "application" ? "usage.applicationCost" : "usage.judgeUsage")).join(", ")}</p>
-      )}
+      <CostGaps costs={totalCosts} />
       {totalCosts.values.length === 0 ? (
         <p>{t(complete ? "usage.noRecordedCharges" : "cell.metricUnavailable")}</p>
       ) : totalCosts.values.map((cost) => (

@@ -26,7 +26,7 @@ test.concurrent("comparison renders paired quality and exact decimal cost deltas
   };
   const attempt = (verdict: AttemptView["verdict"], earned: number, cost: string) => ({
     verdict, score: { state: "complete", earned, possible: 1 },
-    totalCosts: { state: "complete", values: [{ currency: "USD", value: cost, source: "reported" }], missingSources: [] },
+    totalCosts: { state: "complete", values: [{ currency: "USD", value: cost, source: "reported" }], missingSources: [], gaps: [] },
   }) satisfies ComparisonAttempt;
   const attempts = new Map([[left.locator, attempt("passed", 1, "0.10")], [right.locator, attempt("failed", 0, "0.30")]]);
   const rendered = renderComparison(comparison, attempts);

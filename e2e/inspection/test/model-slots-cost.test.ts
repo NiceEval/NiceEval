@@ -35,7 +35,8 @@ test.concurrent("375 次调用的已知小计保留 19 次费用缺口并公开�
       },
     };
     expect(usage.judgeUsage).toEqual({ ...judgeSummary, calls: [], callsTruncated: false, omittedCallCount: 0, priceReceipts: [] });
-    expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.071083152", source: "reported" }], missingSources: ["application"] });
+    expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.071083152", source: "reported" }], missingSources: ["application"],
+      gaps: [{ source: "application", reason: "no-pricing-profile", models: ["fixture/unpriced"] }] });
 
     const overviewRead = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
     expect(overviewRead.exitCode, overviewRead.diagnostic()).toBe(0);
@@ -65,5 +66,8 @@ test.concurrent("375 次调用的已知小计保留 19 次费用缺口并公开�
     expect(shown.stdout).toContain("356/375 covered calls");
     expect(shown.stdout.slice(shown.stdout.indexOf("Known subtotal"), shown.stdout.indexOf("Application usage"))).toContain("Incomplete");
     expect(shown.stdout).toContain("No Judge calls");
+    expect(shown.stdout).toContain("no-pricing-profile");
+    expect(shown.stdout).toContain("Next: add prices for fixture/unpriced to defineConfig({ pricing })");
+    expect(shown.stdout).toContain("https://niceeval.dev/reference/define-config#pricing");
   });
 });

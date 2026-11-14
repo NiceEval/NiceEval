@@ -20,17 +20,17 @@ test.concurrent("实验已知零费用保留另一 Eval 的缺费来源，Query 
     const experiment = read.inspectionSuccess("experiment.get").experiment;
     expect(experiment.costSummary).toEqual({
       scope: "latest-recorded-attempts",
-      totalCosts: { state: "partial", values: [{ currency: "USD", value: "0", source: "reported" }], missingSources: ["application"] },
+      totalCosts: { state: "partial", values: [{ currency: "USD", value: "0", source: "reported" }], missingSources: ["application"], gaps: [{ source: "application", reason: "no-pricing-profile", models: ["fixture/experiment-cost"] }] },
       coverage: { plannedAttemptCount: 2, recordedAttemptCount: 2, originAttemptCount: 2, completeAttemptCount: 1, partialAttemptCount: 0, unavailableAttemptCount: 1, missingAttemptCount: 0 },
     });
     expect(experiment.modelUsage).toMatchObject({ totalAttemptCount: 2, omittedAttemptCount: 0, unresolvedAttemptCount: 0 });
     const zeroLocator = only(run.expEvalEvents(), (event) => event.evalId === "experiment-cost-zero", run.diagnostic()).locator;
     const missingLocator = only(run.expEvalEvents(), (event) => event.evalId === "experiment-cost-missing", run.diagnostic()).locator;
     expect(only(experiment.modelUsage.attempts, (attempt) => attempt.locator === zeroLocator, read.diagnostic()).usage.totalCosts).toEqual({
-      state: "complete", values: [{ currency: "USD", value: "0", source: "reported" }], missingSources: [],
+      state: "complete", values: [{ currency: "USD", value: "0", source: "reported" }], missingSources: [], gaps: [],
     });
     expect(only(experiment.modelUsage.attempts, (attempt) => attempt.locator === missingLocator, read.diagnostic()).usage.totalCosts).toEqual({
-      state: "unavailable", values: [], missingSources: ["application"],
+      state: "unavailable", values: [], missingSources: ["application"], gaps: [{ source: "application", reason: "no-pricing-profile", models: ["fixture/experiment-cost"] }],
     });
     const shown = await niceeval.run(["show", `exp:${"experiment-cost-incomplete"}`]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
