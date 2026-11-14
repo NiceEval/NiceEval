@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 import {
   defineRecordAttachment,
-  defineRecordAttachmentPersistence,
+  defineOfficialRecordAttachmentPersistence,
   isRecordAttachmentSchema,
   isRecordAttachmentPersistence,
   recordAttachmentDefinitionHasOpaqueDeclarations,
@@ -40,7 +40,7 @@ const attemptRecordAppendCommandTypeId: unique symbol = Symbol(
 type AnySchema = Schema.Top;
 type AnyAttachmentDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
   RecordAttachmentDefinition<Owner, string, AnySchema>;
-type AnyAttachmentPersistence = RecordAttachmentPersistence<AnyAttachmentDefinition, number>;
+type AnyAttachmentPersistence = RecordAttachmentPersistence<AnyAttachmentDefinition, number | undefined>;
 
 interface RecordContributionRuntime {
   readonly attachment: AnyAttachmentDefinition;
@@ -243,9 +243,8 @@ function defineRecord<
   ) => readonly RecordAttachmentIssue[];
 }): RecordDefinition<Owner, Family, ValueSchema> {
   const attachment = defineRecordAttachment({ owner, ...input });
-  const persistence = defineRecordAttachmentPersistence({
+  const persistence = defineOfficialRecordAttachmentPersistence({
     attachment,
-    revision: 1,
   });
   const definition = Object.assign(
     (commandInput: unknown) => {
@@ -307,7 +306,7 @@ export function defineRunRecord<
   return defineRecord("run", input);
 }
 
-/** Defines one append-oriented, plain-data Attempt collection at revision 1. */
+/** Defines one append-oriented, plain-data Attempt collection. */
 export function defineAttemptRecordCollection<
   const Family extends string,
   const ItemSchema extends AnySchema,
@@ -336,9 +335,8 @@ export function defineAttemptRecordCollection<
     family: input.family,
     schema,
   });
-  const persistence = defineRecordAttachmentPersistence({
+  const persistence = defineOfficialRecordAttachmentPersistence({
     attachment,
-    revision: 1,
   });
   let definition: AttemptRecordCollectionDefinition<Family, ItemSchema>;
   definition = Object.assign(
@@ -387,7 +385,7 @@ export const Record = Object.freeze({
 /** Explicitly adapts the low-level Attachment persistence SPI to Host composition. */
 export function recordContributionFromAttachmentPersistence<
   const Definition extends AnyAttachmentDefinition,
-  const Revision extends number,
+  const Revision extends number | undefined,
 >(
   persistence: RecordAttachmentPersistence<Definition, Revision>,
 ): RecordContribution {

@@ -11,7 +11,7 @@ Assertion 的材料必须在 Attempt 发布前归一为 Assertions Attachment �
 | family Host | 请求的 Assertions family 是 `available`、`not-recorded` 或 `invalid`。只有 `available` 已保证 exact value 与完整 own content closure。 |
 | entry coverage | 当 Assertions 为 `available` 时，每条 Assertion 的 material 是 `complete`、`partial`、`unavailable` 或 `not-applicable`，并带该 entry 的 limitations／原因。 |
 
-revision 1 没有通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。未写入已贡献 family 是 `not-recorded`，envelope、payload、content 或 closure 损坏是 `invalid`。future revision 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整闭包与 source-local read 的定义见 [Record architecture](../../run/architecture/README.md#attachment-closure-惰性读取与-cache)。
+Assertions 不设通用 Attachment 完整度字段。producer 少采、sampling、redaction 与 truncation 都写进受影响 entry 的 coverage 和 limitations；reader 不会把它们消掉。未写入已贡献 family 是 `not-recorded`，envelope、payload、content 或 closure 损坏是 `invalid`。旧格式或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整闭包与 source-local read 的定义见 [Record architecture](../../run/architecture/README.md#attachment-closure-惰性读取与-cache)。
 
 ## 显式 value snapshot
 

@@ -107,29 +107,17 @@ export type RecordAttachmentSpiFailure =
       readonly code: "resource-budget-exceeded";
       readonly resource: "value" | "content" | "reference";
       readonly cause?: unknown;
-    }
-  | {
-      readonly code: "migration-chain-invalid";
-      readonly cause?: unknown;
-    }
-  | {
-      readonly code: "migration-step-failed";
-      readonly from: number;
-      readonly to: number;
-      readonly cause: unknown;
     };
 
 /** Synchronous declaration factories fail before a catalog can gain authority. */
 export class RecordAttachmentSpiDefinitionError extends Error {
   constructor(
-    readonly code: "invalid-family-definition" | "migration-chain-invalid" =
+    readonly code: "invalid-family-definition" =
       "invalid-family-definition",
     readonly cause?: unknown,
   ) {
     super(
-      code === "migration-chain-invalid"
-        ? "Invalid Record Attachment migration chain"
-        : "Invalid Record Attachment family definition",
+      "Invalid Record Attachment family definition",
       { cause },
     );
     this.name = "RecordAttachmentSpiDefinitionError";

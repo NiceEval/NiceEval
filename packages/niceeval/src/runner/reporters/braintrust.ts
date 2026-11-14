@@ -19,13 +19,7 @@ type AttemptSlotProjectedEntry<Value> =
       readonly state: "attachment-result";
       readonly attachment:
         | { readonly state: "available"; readonly value: Value }
-        | { readonly state: "unavailable" | "unsupported" | "invalid" }
-        | {
-            readonly state: "migration-required";
-            readonly from: string;
-            readonly to: string;
-            readonly command?: string;
-          };
+        | { readonly state: "unavailable" | "unsupported" | "invalid" };
     };
 import type { Verdict } from "../../shared/types.ts";
 import { reportActivity } from "../feedback/sink.ts";
@@ -272,13 +266,6 @@ function projectionMetadata<Value>(
       return { state: "available", ...available(entry.attachment.value) };
     case "unavailable":
       return { state: "unavailable" };
-    case "migration-required":
-      return {
-        state: "migration-required",
-        from: entry.attachment.from,
-        to: entry.attachment.to,
-        ...(entry.attachment.command === undefined ? {} : { command: entry.attachment.command }),
-      };
     case "unsupported":
     case "invalid":
       return { state: entry.attachment.state };

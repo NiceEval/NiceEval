@@ -1,23 +1,14 @@
 # Assertions —— 架构
 
-`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它的 envelope 当前为 `schemaVersion: 5`，保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
+`niceeval.assertions` 是一个 Attempt-owned、auditable、non-executable 的 `RecordAttachment`。它保存已经结束的检查事实；解释它不需要作者调用图、matcher 或 evaluator 内部实现。
 
-它是 [Record architecture](../../run/architecture/README.md) 定义的九个官方 durable family 之一。Record protocol 不提供全局 registry：第三方可以向自己的 Host 显式贡献独立 persistence，也可以在 Assertions entry 内提供可解释的 criterion schema，但不能扩写本 family。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与相关 sealed 事实读侧形成，不能各自变成新的持久 family。
+它是 [Record architecture](../../run/architecture/README.md) 定义的官方 durable family 之一。Record protocol 不提供全局 registry：第三方可以向自己的 Host 显式贡献独立 persistence，也可以在 Assertions entry 内提供可解释的 criterion schema，但不能扩写本 family。Verdict、earned score 和 Assertion source-site 视图都从 Core、Assertions 与相关 sealed 事实读侧形成，不能各自变成新的持久 family。
 
-## 版本边界
+## 格式边界
 
-`niceeval.assertions` 的 family identity 不带版本；当前 envelope 的 `schemaVersion` 是 `5`。当前领域类型不带版本后缀。Attachment 的 v1／v2／v3／v4／v5 只存在于 package-private wire codec 与相邻 migration identity；内建 criterion 的 `/vN` 则是该 criterion 自己的 schema identity，二者不能混为一谈。
-
-普通 writer 只写 schemaVersion `5` 的 envelope。它为新的 occurrence Assertion 统一写入 `occurrence/v2`；不会因作者调用了包装糖、未调用量词的 `ToolMatch`、量词或顺序查询而选择 `occurrence/v1`。reader 在同一个 v5 envelope 内双读下表的两个已知 occurrence criterion：
-
-| 已封口 criterion | current writer | reader | 历史 bytes 的处置 |
-|---|---|---|---|
-| `occurrence/v1` | 不写 | exact decode 已封口的 v1 data、evaluation 与 decision，并按其原有语义呈现 | 不升级、不重跑、不回写为 v2。 |
-| `occurrence/v2` | 所有新的 occurrence Assertion 都写入 | exact decode v2 data、evaluation 与 decision | 保持 sealed；reader 不从显示或 API 名推断另一个 criterion。 |
-
-因此 `occurrence/v1` 是 reader 支持的闭合历史 schema，不是 current writer 的候选。读取旧 v1 绝不触发 `v1→v2` transform、payload rewrite 或 Record maintenance；新 entry 也不能借旧 entry 的 id、criterion 或 material 重写历史。
-
-Record maintenance 独占历史 codec、blob closure、文件 I/O、migration 执行协议与最终 exact-current 验证。Assertions attachment 提供纯 `1→2`、`2→3` 与 `3→4` payload transform。v3 在两条开发线中曾分别表达不相容的持久含义，v4 因此显式区分 ordinary evaluation 与无法在线重新执行的 historical matcher。迁移保留原 Content/reference closure；对后者标记 `matcher-legacy` 与 rerun recommendation，不猜测新 matcher 结果。未来升级必须继续扩展这条相邻链。
+Assertions 使用稳定 family 名与当前 exact payload，不携带独立 schemaVersion 或 persistence revision。
+内建 criterion 按含义命名，不带版本后缀。所有持久格式变化由整个 Record 的格式标记拒绝旧数据。
+第三方 criterion 仍使用自己的 name、schemaId 与 exact data；第三方 persistence 保留独立契约。
 
 ```text
 author calls / evaluator internals / producer control flow
@@ -133,7 +124,7 @@ type CriterionEnvelope = BuiltInCriterionEnvelope | ThirdPartyCriterion;
 type BuiltInCriterion =
   | {
       readonly kind: "builtin";
-      readonly id: "value-match/v1";
+      readonly id: "value-match";
       readonly data: {
         readonly subject: "explicit-value";
         readonly matcher:
@@ -143,7 +134,7 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "scope-status/v1";
+      readonly id: "scope-status";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly assertion: "succeeded" | "no-failed-actions";
@@ -151,7 +142,7 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "occurrence/v1";
+      readonly id: "occurrence";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
@@ -160,7 +151,7 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "judge-measurement/v1";
+      readonly id: "judge-measurement";
       readonly data: {
         readonly recipe: "closed-qa" | "factuality" | "summarizes";
         readonly scale: "unit-interval";
@@ -168,22 +159,22 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: BoundedJsonObject;
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-change-scope/v1";
+      readonly id: "sandbox-change-scope";
       readonly data: { readonly paths: readonly string[] };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-unchanged-within/v1";
+      readonly id: "sandbox-unchanged-within";
       readonly data: { readonly paths: readonly string[] };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-in-diff/v1";
+      readonly id: "sandbox-in-diff";
       readonly data: {
         readonly pattern: string;
         readonly flags: string;
@@ -192,7 +183,7 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-diff-paths/v1";
+      readonly id: "sandbox-diff-paths";
       readonly data: {
         readonly operation: "not-in-diff" | "in-diff";
         readonly pattern: string;
@@ -201,24 +192,24 @@ type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "direct-score/v1";
+      readonly id: "direct-score";
       readonly data: { readonly source: "author" };
     };
 ```
 
-`sandbox-change-scope/v1` 是 `t.sandbox.changedOnlyWithin(paths)` 的 criterion，`paths` 是归一化后的允许范围，至少一项。
-它使用独立的 criterion identity，不是 `sandbox-result/v1` 的新 operation。
-`sandbox-result/v1` 的 operation 集合已封口；往里加值会让旧 reader 把这条 entry 读成 `invalid`。
-独立 identity 让旧 reader 按未知 builtin 显示 `unsupported`，envelope 的 `schemaVersion` 与已有 criterion 的 bytes 都不变。
+`sandbox-change-scope` 是 `t.sandbox.changedOnlyWithin(paths)` 的 criterion，`paths` 是归一化后的允许范围，至少一项。
+它使用独立的 criterion identity，不是 `sandbox-result` 的新 operation。
+`sandbox-result` 的 operation 集合已封口；往里加值会让旧 reader 把这条 entry 读成 `invalid`。
+每个 criterion 保持自己的 exact data；旧 Record 在存储格式准入时拒绝。
 
-`sandbox-unchanged-within/v1` 是 `t.sandbox.unchangedWithin(paths)` 的 criterion，`paths` 是至少一项的归一化保护范围。
-它不向 `sandbox-change-scope/v1` 追加 `mode` 字段；旧 reader 对新 identity 显示 `unsupported`，已有允许范围 criterion 仍可 exact decode。两种 criterion 的无变化、越界、unavailable 与持久读回分别验收。
+`sandbox-unchanged-within` 是 `t.sandbox.unchangedWithin(paths)` 的 criterion，`paths` 是至少一项的归一化保护范围。
+它不向 `sandbox-change-scope` 追加 `mode` 字段；当前 reader 分别 exact decode 这两个语义不同的 criterion。两种 criterion 的无变化、越界、unavailable 与持久读回分别验收。
 
-`sandbox-in-diff/v1` 是 `t.sandbox.inDiff(pattern, options?)` 的 criterion，`pattern` 与 `flags` 是正则的 source 与 flags，写法与 `not-in-diff` operation 的同名字段一致。
+`sandbox-in-diff` 是 `t.sandbox.inDiff(pattern, options?)` 的 criterion，`pattern` 与 `flags` 是正则的 source 与 flags，写法与 `not-in-diff` operation 的同名字段一致。
 它同样使用独立 identity；命中、未命中、elision 导致的 unavailable 与持久读回分别验收。
 
-`sandbox-diff-paths/v1` 是 `notInDiff` / `inDiff` 传 `content: "none"` 时的 criterion，只拿 pattern 与 agent 变化路径比较。
-它不向已封口的 `sandbox-result/v1` 或 `sandbox-in-diff/v1` 追加 `content` 取值，旧 reader 对新 identity 显示 `unsupported`。两种 operation 的命中、未命中、内容 elision 下仍可确定、采集失败时 unavailable 与持久读回分别验收。
+`sandbox-diff-paths` 是 `notInDiff` / `inDiff` 传 `content: "none"` 时的 criterion，只拿 pattern 与 agent 变化路径比较。
+它不向已封口的 `sandbox-result` 或 `sandbox-in-diff` 追加 `content` 取值。两种 operation 的命中、未命中、内容 elision 下仍可确定、采集失败时 unavailable 与持久读回分别验收。
 
 这些 data 是可离线解释的闭合类别，不保存 `Match` object、predicate、regex、Judge client、collector 或作者 API 对象。第三方闭包不可序列化时，writer 使用诚实的 declared/unavailable 状态，不伪造 AST。criterion 以外的 materials、evaluation、decision、policy、contribution 与 explanation retention 提供本次检查的唯一审计事实。
 
@@ -382,7 +373,7 @@ stop 不能被 optional 豁免；它的 unavailable／errored 会让 Attempt err
 它是运行时发生的事实，writer 在 `.orStop()` 结算时写入，reader 不从 policy、decision 或 source site 反推。
 `stopped` 不改变 Verdict：只停不 gate 的检查失败后，Verdict 仍按 gate 与 score 折叠。Score 的 gate condition 不改变 contribution，因而允许同一 entry 同时保存 `failed` gate disposition 与 continuous earned contribution。
 
-旧 sealed Assertions 只按已经保存的 `policy.requirement`、`policy.condition`、decision 与 contribution 折叠。reader 不按新的作者面默认值重猜旧事实，不重写旧 Record，也不增加 migration 或 schemaVersion。
+旧 sealed Assertions 只按已经保存的 `policy.requirement`、`policy.condition`、decision 与 contribution 折叠。reader 不按新的作者面默认值重猜旧事实，不重写旧 Record，不改写格式标记。
 
 ## 内嵌 source sites 与 Sources join
 
@@ -421,35 +412,9 @@ type AssertionSourceSite = {
 
 source mapping 不能重新计算 criterion、points、gate、unavailable 或 Verdict。一个 entry 有多个 row 时，位置可以全部显示，但 Assertion summary 与 score contribution 仍按 `entryId` 只计算一次。没有 matching row、Sources 不是 `available`，或 join／坐标不成立时，source-navigation DomainView 仅把对应位置标为 `unmapped`。
 
-## revision 1 → 2 → 3 → 4 → 5 相邻迁移
-
-revision 4 → 5 不迁移：reader 只接受 v5，读到 v4 及更早的 envelope 返回 `unsupported-format`，消息说明该 Record 由旧版 NiceEval 写入、需要重跑。
-
-
-package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
-display、result/gate/score 与 sourceSites。
-
-v1 的 subject、evidence 与 diagnostic 无法区分 source、检查条件、observed、expected 与 explanation。
-迁移时按以下方式明确丢弃：
-
-- `materials.source` 写为 `unavailable/not-recorded`；
-- evidence 与 limitations 写为空；
-- coverage 写为 `unavailable/not-collected`；
-- explanation 写为 `unavailable/not-recorded`。
-
-这些旧字段不得以 snapshot、summary、legacy marker 或递归 object 冒充 current 事实。
-
-若被丢弃的 revision 1 material 引用了 own content，Record Core 在写 current closure 时不再保留它；Git 负责迁移前后的 diff、restore 与 rollback。
-
-v1 没有持久化 criterion expression、measurement/threshold、Judge rationale/citations 时，对应 current field 一律写 `unavailable { reason: "not-recorded" }`。transform 不得从 diagnostic、score ratio 或零值反推。
-
-v1 `gate` 为 `satisfied`、`failed`、`unavailable` 或 `not-applicable` 已证明该 entry 是 required gate，因此迁移为 requirement available/required。condition 仍 unavailable/not-recorded。只有 `gate: "not-gate"` 时 requirement 也是 unavailable/not-recorded。这样 required-unavailable 的旧 Verdict 保持 errored。
-
-物理 payload、content 与 envelope 的重建及最终验证由 Record maintenance 执行。transform 本身绝不读写磁盘；Git 不属于 migration engine，只负责历史恢复。
-
 ## 读取与读侧形成
 
-已贡献 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable value 与 scoped content reader；其余状态不会被消费端补成空 entries、零分或 passed。未贡献 definition 返回 `family-definition-required`，future revision 或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../../run/architecture/README.md#attachment-closure-惰性读取与-cache)。
+已贡献 family 的 Host 只可能形成 `available`、`not-recorded` 或 `invalid`。`available` 才会提供 immutable value 与 scoped content reader；其余状态不会被消费端补成空 entries、零分或 passed。未贡献 definition 返回 `family-definition-required`，旧格式或不相容 durable bytes 在 reader session 形成前返回 `unsupported-format`。完整 Host 契约见 [Record architecture](../../run/architecture/README.md#attachment-closure-惰性读取与-cache)。
 
 Verdict 使用 Core outcome、sealed Assertions 与 skip 做确定性 fold；Score 从 Assertions contribution 与 rubric 形成。source navigation 则由固定的 [`attempt.sources`](../../inspection/architecture.md#共享的固定-query-definition) operation 形成闭合结果。
 这些读侧值不打开 Record path、不猜当前 worktree、不重跑 evaluator，也不回写 durable bytes。

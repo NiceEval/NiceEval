@@ -13,7 +13,7 @@ export const SimulatedUserGenerationSchema = Schema.Struct({
 });
 export type SimulatedUserGeneration = Schema.Schema.Type<typeof SimulatedUserGenerationSchema>;
 export const SimulatedUserActivitySchema = Schema.Struct({
-  protocol: Schema.Literal("niceeval.simulated-user/v1"),
+
   id: Schema.String,
   sessionId: Schema.String,
   sourceTurnId: Schema.String,

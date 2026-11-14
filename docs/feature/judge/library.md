@@ -349,7 +349,7 @@ type SubmitEvaluationInput = (
 - 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
 - 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
 - 压缩验收：本地 mock 在某轮返回 OpenAI 形式的上下文溢出错误，评审发出 pi 的摘要请求后重发，重发请求含摘要且不含被压缩的早期工具输出，评审照常提交；Judge 用量含摘要请求，`--full` 轨迹显示压缩。压缩后仍溢出时，当前与之后的题为 `unavailable`（`agent-judge-context-overflow`），之前已提交的题保留分数。
-- 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。历史审计保持原协议读取。
+- 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。旧格式审计由 Record 准入拒绝，提示重跑或清理。
 
 ## Runtime 配置
 
@@ -543,7 +543,7 @@ PNG、JPEG 每张最多 4 MiB，像素数最多 16,777,216；每个 Assertion �
 `TypesafeProvider` 与未启用图片的聊天 Provider 在读取凭据、构造 wire body 或发送前
 返回 `judge-capability-unavailable`；不能静默丢图或改成文本评分。
 
-含图片的 Assertion 使用 v3 审计，纯 JSON 保持已有 v1/v2。公开
+审计按 chat、typed 或 images 区分请求含义，不携带格式版本。公开
 `attempt.assertion.detail` 返回图片摘要与请求模板，不内嵌大图。
 `attempt.assertion.image` 通过 `locator + entryId + imageId` 选择本 Assertion
 的封存图片，接受字节 `offset/limit`，返回原图 metadata、区间 base64 与 `nextOffset`。

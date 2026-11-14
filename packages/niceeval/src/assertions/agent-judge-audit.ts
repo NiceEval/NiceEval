@@ -97,8 +97,8 @@ export const AgentJudgeTraceSchema = Schema.Struct({
 /** One conversation trajectory shared by all questions in an Agent Judge session. */
 export type AgentJudgeTrace = typeof AgentJudgeTraceSchema.Type;
 export const AgentJudgeAuditSchema = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
-  protocol: Schema.Literal("niceeval.agent-judge-audit/v1"),
+
+
   trace: Schema.Struct({ state: Schema.Literal("reference"), entryIndex: bytes, digest }),
   criterion: text,
   prompt: text,
@@ -109,8 +109,8 @@ export const AgentJudgeAuditSchema = Schema.Struct({
 export type AgentJudgeAudit = typeof AgentJudgeAuditSchema.Type;
 const envelope = Schema.Struct({
   manifest: Schema.Struct({
-    schemaVersion: Schema.Literal(1),
-    protocol: Schema.Literal("niceeval.agent-judge-audit/v1"),
+
+
     byteLength: bytes,
     digest,
     chunkByteLengths: Schema.Array(bytes),
@@ -154,16 +154,6 @@ export function readAgentJudgeAudit(
   imageContents: readonly { readonly mediaType: string; readonly bytes: Uint8Array }[] = [],
 ): AgentJudgeAuditReadResult {
   try {
-    if (typeof raw === "object" && raw !== null && "manifest" in raw) {
-      const manifest = raw.manifest;
-      if (
-        typeof manifest === "object" &&
-        manifest !== null &&
-        "protocol" in manifest &&
-        manifest.protocol !== "niceeval.agent-judge-audit/v1"
-      )
-        return { state: "unsupported" };
-    }
     const audit = decodeAgentJudgeEnvelope(raw);
     const trace = decodeAgentJudgeTrace(resolve(audit.trace.entryIndex));
     if (audit.trace.state === "reference" && audit.trace.digest !== agentJudgeDigest(canonical(trace)))

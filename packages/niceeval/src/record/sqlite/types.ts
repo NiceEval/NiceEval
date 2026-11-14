@@ -1,5 +1,4 @@
-export const RECORD_SQLITE_FORMAT = "niceeval.project-database/0.19";
-export const RECORD_SQLITE_STORAGE_REVISION = 1;
+export const RECORD_SQLITE_FORMAT = "niceeval.record.current";
 export const RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 export const RECORD_SQLITE_MAX_PUBLISH_ROWS = 4_096;
 export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;
@@ -95,7 +94,7 @@ export interface PersistedAttachment {
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;
   readonly canonicalBytes: Uint8Array;
   readonly canonicalDigest: string;
@@ -256,7 +255,7 @@ export interface AdmitAttachmentInput {
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly deadlineEpochMs: number;
 }
 
@@ -284,7 +283,7 @@ export interface FinalizedAttachmentClosure extends FinalizedAttachmentMetadata 
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
 }
 
 export interface RunFinalization {
@@ -371,7 +370,7 @@ export interface SealedAttachmentDocument {
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;
   readonly canonicalBytes: Uint8Array;
   readonly canonicalDigest: string;

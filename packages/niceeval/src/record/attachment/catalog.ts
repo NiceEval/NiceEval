@@ -22,7 +22,7 @@ type AnyDefinition = RecordAttachmentDefinition<
 
 export type AnyRecordAttachmentPersistence = RecordAttachmentPersistence<
   AnyDefinition,
-  number
+  number | undefined
 >;
 
 const catalogs = new WeakSet<object>();

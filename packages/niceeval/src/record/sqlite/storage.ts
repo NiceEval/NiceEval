@@ -464,7 +464,7 @@ function visitRunSealEntries(
     const inventoryDigest = verified(row, "inventory_digest", "logical_inventory");
     visit(attachmentSealEntry({ attachmentId: text(row, "attachment_id"), ownerKind: ownerKind(row, "owner_kind"),
       ownerRunId: text(row, "owner_run_id"), ownerAttemptId: optionalText(row, "owner_attempt_id"), family: text(row, "family"),
-      familyRevision: integer(row, "family_revision"), logicalIdentity: text(row, "logical_identity"), canonicalDigest, inventoryDigest }));
+      familyRevision: (row.family_revision === null ? undefined : integer(row, "family_revision")), logicalIdentity: text(row, "logical_identity"), canonicalDigest, inventoryDigest }));
   }
   for (const row of recordStatement(connection, `SELECT r.attachment_id,r.ordinal,r.target_owner_kind,r.target_family,r.canonical_payload,r.reference_digest
     FROM ne19_attachment_references r JOIN ne19_attachments a ON a.attachment_id=r.attachment_id WHERE a.owner_run_id=?`).iterate(runId) as unknown as Iterable<Row>) {
@@ -625,13 +625,13 @@ export function admitAttachment(connection: RecordDatabase, input: AdmitAttachme
     const inserted = recordStatement(connection, `INSERT OR IGNORE INTO ne19_attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,
       family,family_revision,logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest)
       VALUES (?,?,?,?,?,?,NULL,NULL,NULL,NULL,NULL)`).run(
-      input.attachmentId, input.ownerKind, input.ownerRunId, input.ownerAttemptId ?? null, input.family, input.familyRevision,
+      input.attachmentId, input.ownerKind, input.ownerRunId, input.ownerAttemptId ?? null, input.family, input.familyRevision ?? null,
     );
     const stored = recordStatement(connection, `SELECT owner_kind,owner_run_id,owner_attempt_id,family,family_revision FROM ne19_attachments
       WHERE attachment_id=?`).get(input.attachmentId) as unknown as Row | undefined;
     if (stored === undefined || text(stored, "owner_kind") !== input.ownerKind || text(stored, "owner_run_id") !== input.ownerRunId ||
       optionalText(stored, "owner_attempt_id") !== input.ownerAttemptId || text(stored, "family") !== input.family ||
-      integer(stored, "family_revision") !== input.familyRevision) {
+      (stored.family_revision === null ? undefined : integer(stored, "family_revision")) !== input.familyRevision) {
       throw sqliteError("record-command-conflict", "admit-attachment", `Attachment ${input.attachmentId} conflicts with its durable admission`);
     }
     if (Number(inserted.changes) > 0) bumpMutationSequence(connection, input.runId);
@@ -677,7 +677,7 @@ export function stageAttachmentMetadata(connection: RecordDatabase, input: Stage
     recordStatement(connection, `INSERT OR IGNORE INTO ne19_attachments(attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
       attachment.attachmentId, attachment.ownerKind, attachment.ownerRunId, attachment.ownerAttemptId ?? null,
-      attachment.family, attachment.familyRevision, attachment.logicalIdentity, attachment.canonicalBytes,
+      attachment.family, attachment.familyRevision ?? null, attachment.logicalIdentity, attachment.canonicalBytes,
       attachment.canonicalDigest, attachment.logicalInventoryBytes, attachment.inventoryDigest,
     );
     for (const content of attachment.contents) recordStatement(connection, `INSERT OR IGNORE INTO ne19_contents(content_id,attachment_id,logical_handle,byte_length,overall_digest,chunk_count)
@@ -688,7 +688,7 @@ export function stageAttachmentMetadata(connection: RecordDatabase, input: Stage
     if (
       stored === undefined || text(stored, "owner_kind") !== attachment.ownerKind || text(stored, "owner_run_id") !== attachment.ownerRunId ||
       optionalText(stored, "owner_attempt_id") !== attachment.ownerAttemptId || text(stored, "family") !== attachment.family ||
-      integer(stored, "family_revision") !== attachment.familyRevision || text(stored, "logical_identity") !== attachment.logicalIdentity ||
+      (stored.family_revision === null ? undefined : integer(stored, "family_revision")) !== attachment.familyRevision || text(stored, "logical_identity") !== attachment.logicalIdentity ||
       text(stored, "canonical_digest") !== attachment.canonicalDigest || !bytesEqual(bytes(stored, "canonical_payload"), attachment.canonicalBytes) ||
       text(stored, "inventory_digest") !== attachment.inventoryDigest || !bytesEqual(bytes(stored, "logical_inventory"), attachment.logicalInventoryBytes)
     ) throw sqliteError("record-command-conflict", "stage-attachment", `attachment ${attachment.attachmentId} conflicts with its durable retry`);
@@ -807,7 +807,7 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
       FROM ne19_attachments WHERE attachment_id=? AND owner_run_id=?`).get(attachment.attachmentId, input.runId) as unknown as Row | undefined;
     if (stored === undefined || text(stored, "owner_kind") !== attachment.ownerKind || text(stored, "owner_run_id") !== attachment.ownerRunId ||
       optionalText(stored, "owner_attempt_id") !== attachment.ownerAttemptId || text(stored, "family") !== attachment.family ||
-      integer(stored, "family_revision") !== attachment.familyRevision ||
+      (stored.family_revision === null ? undefined : integer(stored, "family_revision")) !== attachment.familyRevision ||
       text(stored, "logical_identity") !== attachment.logicalIdentity || text(stored, "canonical_digest") !== attachment.canonicalDigest ||
       !bytesEqual(bytes(stored, "canonical_payload"), attachment.canonicalBytes) || text(stored, "inventory_digest") !== attachment.inventoryDigest ||
       !bytesEqual(bytes(stored, "logical_inventory"), attachment.logicalInventoryBytes)) {
@@ -1510,7 +1510,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
       text(attachment, "canonical_digest"),
       text(attachment, "inventory_digest"),
     );
-    if (attachmentId !== expectedAttachmentId || text(attachment, "logical_identity") !== expectedLogicalIdentity || integer(attachment, "family_revision") < 1) {
+    if (attachmentId !== expectedAttachmentId || text(attachment, "logical_identity") !== expectedLogicalIdentity || (attachment.family_revision !== null && integer(attachment, "family_revision") < 1)) {
       throw sqliteError("record-seal-incomplete", "verify-seal", `attachment ${attachmentId} logical identity is invalid`);
     }
     for (const [label, counts] of [
@@ -1829,7 +1829,7 @@ export function findAttemptLocatorCandidates(
       ((r.status='sealed' AND NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id)) OR
        EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id AND p.attempt_id=?))`).get(originRunId, attemptId);
     if (published === undefined) continue;
-    identities.add(hashCanonicalTuple("niceeval.record.attempt-candidate/v1", [originRunId, attemptId]));
+    identities.add(hashCanonicalTuple("niceeval.record.attempt-candidate", [originRunId, attemptId]));
     add({ locator, originRunId, attemptId, relation: "origin", runId: originRunId });
     if (!includeTargets) continue;
     const targets = rows(connection, `SELECT DISTINCT m.target_run_id FROM ne19_members m
@@ -2075,7 +2075,7 @@ export function readPublishedSealedRun(connection: RecordDatabase, runId: string
     }, defer);
     return Object.freeze({ attachmentId, ownerKind: ownerKind(row, "owner_kind"), ownerRunId: text(row, "owner_run_id"),
       ...(optionalText(row, "owner_attempt_id") === undefined ? {} : { ownerAttemptId: optionalText(row, "owner_attempt_id") }),
-      family: text(row, "family"), familyRevision: integer(row, "family_revision"), logicalIdentity: text(row, "logical_identity"),
+      family: text(row, "family"), familyRevision: (row.family_revision === null ? undefined : integer(row, "family_revision")), logicalIdentity: text(row, "logical_identity"),
       get canonicalBytes() { return payload().canonicalBytes; }, canonicalDigest: text(row, "canonical_digest"),
       get logicalInventoryBytes() { return payload().logicalInventoryBytes; }, inventoryDigest: text(row, "inventory_digest"),
       get references() { return references(); }, get contents() { return contents(); },
@@ -2152,7 +2152,7 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
       ownerRunId: text(row, "owner_run_id"),
       ...(optionalText(row, "owner_attempt_id") === undefined ? {} : { ownerAttemptId: optionalText(row, "owner_attempt_id") }),
       family: text(row, "family"),
-      familyRevision: integer(row, "family_revision"),
+      familyRevision: (row.family_revision === null ? undefined : integer(row, "family_revision")),
       logicalIdentity: text(row, "logical_identity"),
       canonicalBytes: transferableBytes(bytes(row, "canonical_payload")),
       canonicalDigest: text(row, "canonical_digest"),

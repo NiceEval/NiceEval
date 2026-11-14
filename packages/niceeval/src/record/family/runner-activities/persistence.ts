@@ -1,17 +1,15 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import {
   attemptRunnerActivitiesRecordAttachment,
   runRunnerActivitiesRecordAttachment,
 } from "./definition.ts";
 
 export const attemptRunnerActivitiesRecordAttachmentPersistence =
-  defineRecordAttachmentPersistence({
+  defineOfficialRecordAttachmentPersistence({
     attachment: attemptRunnerActivitiesRecordAttachment,
-    revision: 2,
   });
 
 export const runRunnerActivitiesRecordAttachmentPersistence =
-  defineRecordAttachmentPersistence({
+  defineOfficialRecordAttachmentPersistence({
     attachment: runRunnerActivitiesRecordAttachment,
-    revision: 2,
   });

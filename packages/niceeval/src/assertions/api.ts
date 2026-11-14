@@ -88,7 +88,7 @@ export type AssertionCriterion =
       readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
     }
   | {
-      /** Package-private runtime variant encoded as numeric-comparison/v1. */
+      /** Package-private runtime variant encoded as numeric-comparison. */
       readonly kind: "value-match";
       readonly numeric: {
         readonly comparator: NumericComparator;
@@ -243,7 +243,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -254,7 +253,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -267,7 +265,6 @@ export type MatcherSourceSnapshot =
       }[];
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     };

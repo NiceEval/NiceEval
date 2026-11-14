@@ -90,13 +90,7 @@ export interface ExecutionDurationLimit {
  * folds Core outcome with Assertions, and reads duration from Runner Activity
  * receipts. None of these facts is a separate eligibility/verdict family.
  */
-export const EXECUTION_COMPARISON_PROJECTION_STATE = Object.freeze({
-  migrationRequired: "migration-required" as const,
-});
-export const EXECUTION_COMPARISON_SOURCE_STATES = [
-  ...COMPARISON_SOURCE_STATES,
-  EXECUTION_COMPARISON_PROJECTION_STATE.migrationRequired,
-] as const;
+export const EXECUTION_COMPARISON_SOURCE_STATES = COMPARISON_SOURCE_STATES;
 export type ExecutionComparisonAttachment = ComparisonAttachment;
 export type ExecutionComparisonSourceState = (typeof EXECUTION_COMPARISON_SOURCE_STATES)[number];
 export type ExecutionComparisonResult = ComparisonResult;
@@ -120,7 +114,6 @@ export type ExecutionGapReason =
   | "source-core-invalid"
   | "source-publication-unavailable"
   | "source-attachment-unavailable"
-  | "source-attachment-migration-required"
   | "source-attachment-unsupported"
   | "source-attachment-invalid"
   | "reuse-contract-domain-mismatch"
@@ -920,15 +913,13 @@ function issuesOf(read: RecordCoreRead<unknown>): readonly RecordIssue[] {
 }
 
 function attachmentProblem(input: {
-  readonly state: "not-recorded" | "migration-required" | "unsupported" | "invalid";
+  readonly state: "not-recorded" | "unsupported" | "invalid";
   readonly family?: string;
-  readonly schemaVersion?: number;
   readonly issues?: readonly RecordIssue[];
 }): {
   readonly reason: Extract<
     ExecutionGapReason,
     | "source-attachment-unavailable"
-    | "source-attachment-migration-required"
     | "source-attachment-unsupported"
     | "source-attachment-invalid"
   >;
@@ -940,12 +931,6 @@ function attachmentProblem(input: {
       return Object.freeze({
         reason: "source-attachment-unavailable" as const,
         state: "unavailable" as const,
-        issues: Object.freeze([]),
-      });
-    case "migration-required":
-      return Object.freeze({
-        reason: "source-attachment-migration-required" as const,
-        state: EXECUTION_COMPARISON_PROJECTION_STATE.migrationRequired,
         issues: Object.freeze([]),
       });
     case "unsupported":

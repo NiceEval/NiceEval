@@ -77,7 +77,7 @@ export type CriterionOuterEnvelope = CriterionEnvelope;
 export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
-      readonly id: "value-match/v1";
+      readonly id: "value-match";
       readonly data: {
         readonly subject: "explicit-value";
         readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
@@ -85,7 +85,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "numeric-comparison/v1";
+      readonly id: "numeric-comparison";
       readonly data: {
         readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least" | "between";
         readonly threshold: number;
@@ -114,7 +114,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "scope-status/v1";
+      readonly id: "scope-status";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly assertion: "succeeded" | "no-failed-actions";
@@ -122,21 +122,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "occurrence/v1";
-      readonly data: {
-        readonly scope: "turn" | "session" | "attempt";
-        readonly occurrence: "tool" | "skill" | "event";
-        readonly assertion: "present" | "absent" | "count" | "order";
-        /** Tool assertions retain the single managed matcher identity. */
-        readonly matcher?: string;
-        readonly quantifier?:
-          | { readonly kind: "absent" }
-          | { readonly kind: "at-least" | "exact"; readonly count: number };
-      };
-    }
-  | {
-      readonly kind: "builtin";
-      readonly id: "occurrence/v2";
+      readonly id: "occurrence";
       readonly data: {
         readonly scope: "turn" | "session" | "attempt";
         readonly occurrence: "tool" | "skill" | "event";
@@ -153,15 +139,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "judge-measurement/v1";
-      readonly data: {
-        readonly recipe: string;
-        readonly scale: "unit-interval";
-      };
-    }
-  | {
-      readonly kind: "builtin";
-      readonly id: "judge-measurement/v2";
+      readonly id: "judge-measurement";
       readonly data: {
         readonly name: string;
         readonly scale: "unit-interval";
@@ -169,7 +147,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "llm-measurement/v1" | "agent-judge-measurement/v1";
+      readonly id: "llm-measurement" | "agent-judge-measurement";
       readonly data: {
         readonly name: string;
         readonly scale: "unit-interval";
@@ -177,26 +155,26 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-change-scope/v1";
+      readonly id: "sandbox-change-scope";
       readonly data: { readonly paths: readonly string[] };
     }  | {
       readonly kind: "builtin";
-      readonly id: "sandbox-unchanged-within/v1";
+      readonly id: "sandbox-unchanged-within";
       readonly data: { readonly paths: readonly string[] };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-diff-paths/v1";
+      readonly id: "sandbox-diff-paths";
       readonly data: { readonly operation: "not-in-diff" | "in-diff"; readonly pattern: string; readonly flags: string };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-in-diff/v1";
+      readonly id: "sandbox-in-diff";
       readonly data: { readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: {
         readonly operation: "changed-paths";
         readonly paths: readonly string[];
@@ -204,12 +182,12 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: { readonly operation: "no-changes" };
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: {
         readonly operation: "file-changed";
         readonly path: string;
@@ -221,7 +199,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: {
         readonly operation: "file-deleted";
         readonly path: string;
@@ -229,7 +207,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "sandbox-result/v1";
+      readonly id: "sandbox-result";
       readonly data: {
         readonly operation: "not-in-diff";
         readonly pattern: string;
@@ -239,7 +217,7 @@ export type BuiltInCriterion =
     }
   | {
       readonly kind: "builtin";
-      readonly id: "direct-score/v1";
+      readonly id: "direct-score";
       readonly data: { readonly source: "author" };
     };
 
@@ -358,7 +336,7 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
+
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -369,7 +347,7 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
+
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -382,7 +360,7 @@ export type MatcherSourceSnapshot =
       }[];
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
+
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     };
@@ -521,13 +499,6 @@ export type AssertionEvaluation =
       readonly observed: AssertionFactValue;
       readonly artifact: MatcherQueryArtifact;
       /** Current matcher receipts live only inside `artifact`. */
-      readonly receipt?: never;
-    }
-  | {
-      readonly kind: "matcher-legacy";
-      readonly observed: AssertionFactValue;
-      readonly reason: "historical-not-recorded";
-      readonly legacyDiagnostic?: AssertionFactValue;
       readonly receipt?: never;
     };
 

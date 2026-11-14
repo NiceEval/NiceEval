@@ -8,7 +8,6 @@ import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,
   ExperimentIdSchema,
-  RecordFormatSchema,
   RecordIdSchema,
   RunIdSchema,
   SlotIdSchema,
@@ -99,7 +98,6 @@ export const RecordSlotIdentityDefinition = defineRecordCore({
 export const RecordSlotIdentitySchema = RecordSlotIdentityDefinition.schema;
 
 const RecordDocumentCurrentSchema = Schema.Struct({
-  format: RecordFormatSchema,
   recordId: RecordIdSchema,
 });
 

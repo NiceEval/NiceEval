@@ -13,7 +13,6 @@ export const RECORD_ATTACHMENT_NAME_BRAND =
   "@niceeval/record/RecordAttachmentName" as const;
 export const RECORD_ATTACHMENT_SCHEMA_ID_BRAND =
   "@niceeval/record/RecordAttachmentSchemaId" as const;
-export const RECORD_FORMAT_ID_BRAND = "@niceeval/record/RecordFormatId" as const;
 export const EXPERIMENT_ID_BRAND = "@niceeval/record/ExperimentId" as const;
 export const EVAL_ID_BRAND = "@niceeval/record/EvalId" as const;
 export const EXECUTION_IDENTITY_DIGEST_BRAND =
@@ -40,7 +39,6 @@ export type RecordAttachmentName =
   string & Brand.Brand<typeof RECORD_ATTACHMENT_NAME_BRAND>;
 export type RecordAttachmentSchemaId =
   string & Brand.Brand<typeof RECORD_ATTACHMENT_SCHEMA_ID_BRAND>;
-export type RecordFormatId = string & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;
 /** A durable Experiment identity. It is not a host path or a display label. */
 export type ExperimentId = string & Brand.Brand<typeof EXPERIMENT_ID_BRAND>;
 /** A durable Eval identity. It is not reconstructed from the current worktree. */
@@ -70,15 +68,6 @@ export type CanonicalProjectRelativePath = string & Brand.Brand<
   typeof CANONICAL_PROJECT_RELATIVE_PATH_BRAND
 >;
 
-/** Current generic Attachment root identity. */
-export const RECORD_FORMAT = "niceeval.record.attachments" as const;
-
-/** Explicit-migration-only predecessor; ordinary readers never open it. */
-export const LEGACY_RECORD_FORMAT = "niceeval.record.source-receipts" as const;
-
-export type RecordFormat =
-  typeof RECORD_FORMAT & Brand.Brand<typeof RECORD_FORMAT_ID_BRAND>;
-
 const PORTABLE_SEGMENT_PATTERN =
   /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,253}[A-Za-z0-9])?$/;
 const WINDOWS_RESERVED_SEGMENT_PATTERN =
@@ -88,7 +77,6 @@ const RECORD_ATTACHMENT_LABEL =
 const RECORD_ATTACHMENT_NAME_PATTERN = new RegExp(
   `^(?:${RECORD_ATTACHMENT_LABEL}\\.)+${RECORD_ATTACHMENT_LABEL}$`,
 );
-const RECORD_FORMAT_ID_PATTERN = /^niceeval\.record\.attachments$/;
 const SHA256_DIGEST_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
@@ -205,13 +193,8 @@ export function recordAttachmentNameTextOfSchemaId(
   return parseRecordAttachmentSchemaId(schemaId)?.name;
 }
 
-export function isRecordFormatId(value: string): boolean {
-  return RECORD_FORMAT_ID_PATTERN.test(value);
-}
 
-export function isRecordFormat(value: string): value is typeof RECORD_FORMAT {
-  return value === RECORD_FORMAT;
-}
+
 
 export function isNiceEvalRecordAttachmentName(
   name: RecordAttachmentName,

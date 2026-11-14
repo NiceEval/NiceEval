@@ -8,7 +8,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { InvocationSummary, Reporter } from "../../types.ts";
-import { attemptTerminalOf, factRecordOf, materializeFactRecord, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
+import { attemptTerminalOf, scoreOutcomeOf, verdictForTerminal } from "../../record/fact-record.ts";
 
 /**
  * 同目录 temp → write → rename 的原子替换:内容先整体写进同目录下的临时文件,写完才
@@ -38,12 +38,10 @@ async function atomicWriteFile(path: string, content: string): Promise<void> {
 export function Json(path: string): Reporter {
   return {
     async onInvocationComplete(summary: InvocationSummary) {
-      // Fresh runner traces are non-enumerable until the Record bridge sees
-      // them. JSON is also a public observation surface, so materialize every
-      // result instead of letting JSON.stringify silently erase Fact/use data.
+      // Include the current evaluation fields even when the Runner keeps them non-enumerable.
       await atomicWriteFile(
         path,
-        JSON.stringify({ ...summary, results: summary.results.map((result) => materializeFactRecord(result)) }, null, 2),
+        JSON.stringify({ ...summary, results: summary.results.map((result) => ({ ...result, factResults: result.factResults, factUses: result.factUses, scoreResult: result.scoreResult })) }, null, 2),
       );
     },
   };
@@ -97,8 +95,7 @@ function failureMessage(result: InvocationSummary["results"][number], terminal: 
   if (terminal === "invalid" && outcome?.status === "invalid") {
     return `invalid · earned ${outcome.earnedScore} · credited ${outcome.creditedScore}`;
   }
-  const fact = factRecordOf(result);
-  const failures = fact?.factUses.flatMap((use) =>
+  const failures = result.factUses.flatMap((use) =>
     use.useKind === "verdict" && use.outcome === "failed" ? [use.label ?? use.key ?? use.method] : [],
   ) ?? [];
   if (failures.length > 0) return failures.join("; ");

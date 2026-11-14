@@ -104,7 +104,7 @@ export class RecordPermissionError extends Schema.TaggedError<RecordPermissionEr
   cause: Schema.Unknown,
 }) {}
 
-/** A migrate lease conflicts with a reader, writer, or clean operation. */
+/** An exclusive maintenance lease conflicts with a reader, writer, or clean operation. */
 export class RecordMaintenanceBusy extends Schema.TaggedError<RecordMaintenanceBusy>()("RecordMaintenanceBusy", {
   code: Schema.Literal("record-maintenance-busy"),
   requested: Schema.Literals(["shared", "exclusive"]),

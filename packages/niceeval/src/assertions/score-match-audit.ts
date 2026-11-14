@@ -33,10 +33,10 @@ export type ScoreMatchAuditCall =
         | ScoreMatchAuditFailure
         | { readonly state: "interrupted" };
     };
-/** Stores the v1 managed scoring definition, input, calls and terminal result; historical audit data is evidence rather than an instruction to rerun the model. */
+/** Stores the managed scoring definition, input, calls and terminal result; historical audit data is evidence rather than an instruction to rerun the model. */
 export interface ScoreMatchAudit {
-  readonly schemaVersion: 1;
-  readonly protocol: "niceeval.score-match-audit/v1";
+  readonly kind: "chat";
+
   readonly definition: {
     readonly version: string;
     readonly config: string;
@@ -57,8 +57,7 @@ export interface ScoreMatchAudit {
 /** Carries chunked audit text with byte lengths and digest for verification; content chunks must be interpreted with their manifest. */
 export interface ScoreMatchAuditEnvelope {
   readonly manifest: {
-    readonly schemaVersion: 1;
-    readonly protocol: "niceeval.score-match-audit/v1";
+
     readonly byteLength: number;
     readonly digest: string;
     readonly chunkByteLengths: readonly number[];
@@ -76,9 +75,9 @@ export type TypeSafeAuditCall =
       readonly operation: TypeSafeMapping["operation"];
       readonly mapping: TypeSafeMapping;
     });
-export interface ScoreMatchAuditV2 extends Omit<ScoreMatchAudit, "schemaVersion" | "protocol" | "calls"> {
-  readonly schemaVersion: 2;
-  readonly protocol: "niceeval.score-match-audit/v2";
+export interface TypedScoreMatchAudit extends Omit<ScoreMatchAudit, "kind" | "calls"> {
+  readonly kind: "typed";
+
   readonly calls: readonly TypeSafeAuditCall[];
 }
 export interface ScoreMatchAuditImage {
@@ -89,7 +88,7 @@ export interface ScoreMatchAuditImage {
   readonly sha256: string;
   readonly paths: readonly string[];
 }
-export type ScoreMatchAuditCallV3 =
+export type ImageScoreMatchAuditCall =
   | Extract<ScoreMatchAuditCall, { readonly state: "rejected" }>
   | {
       readonly ordinal: number;
@@ -101,11 +100,11 @@ export type ScoreMatchAuditCallV3 =
       readonly result: Extract<ScoreMatchAuditCall, { readonly state: "admitted" }>["result"];
     };
 /** Stores an image-aware scoring audit with image references and call templates; image bytes are read separately through the owning assertion. */
-export interface ScoreMatchAuditV3 extends Omit<ScoreMatchAudit, "schemaVersion" | "protocol" | "calls"> {
-  readonly schemaVersion: 3;
-  readonly protocol: "niceeval.score-match-audit/v3";
+export interface ImageScoreMatchAudit extends Omit<ScoreMatchAudit, "kind" | "calls"> {
+  readonly kind: "images";
+
   readonly images: readonly ScoreMatchAuditImage[];
-  readonly calls: readonly ScoreMatchAuditCallV3[];
+  readonly calls: readonly ImageScoreMatchAuditCall[];
 }
 /** Carries sealed PNG or JPEG bytes for one indexed audit image; bytes are image content rather than a filesystem path. */
 export interface ScoreMatchAuditImageContent {
@@ -113,22 +112,15 @@ export interface ScoreMatchAuditImageContent {
   readonly mediaType: "image/png" | "image/jpeg";
   readonly bytes: Uint8Array;
 }
-export interface ScoreMatchAuditEnvelopeV2 extends Omit<ScoreMatchAuditEnvelope, "manifest"> {
-  readonly manifest: Omit<ScoreMatchAuditEnvelope["manifest"], "schemaVersion" | "protocol"> & {
-    readonly schemaVersion: 2;
-    readonly protocol: "niceeval.score-match-audit/v2";
-  };
-}
-export type ScoreMatchAuditAny = ScoreMatchAudit | ScoreMatchAuditV2 | ScoreMatchAuditV3;
-/** Distinguishes a verified audit from invalid or unsupported historical data; unsupported versions must not be silently reinterpreted. */
+/** Current scoring audit variants distinguished by provider and material kind. */
+export type ScoreMatchAuditAny = ScoreMatchAudit | TypedScoreMatchAudit | ImageScoreMatchAudit;
+
+/** Result of validating current managed scoring audit evidence. */
 export type ScoreMatchAuditReadResult =
   | { readonly state: "available"; readonly audit: ScoreMatchAuditAny }
   | { readonly state: "invalid" }
-  | { readonly state: "unsupported"; readonly schemaVersion: number };
+;
 
-const protocol = "niceeval.score-match-audit/v1" as const;
-const protocolV2 = "niceeval.score-match-audit/v2" as const;
-const protocolV3 = "niceeval.score-match-audit/v3" as const;
 const encoder = new TextEncoder();
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -180,7 +172,6 @@ export function scoreMatchDefinitionDigest(input: {
 }): string {
   return sha256(
     canonicalScoreMatchAuditJson({
-      protocol,
       version: input.version,
       config: input.config,
       limits: input.limits,
@@ -256,7 +247,6 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
   const systemInput = exact(system, [
     ...systemKeys,
-    "protocol",
     "instruction",
     ...(evidenceIds === undefined ? [] : ["evidenceIds"]),
   ]);
@@ -264,7 +254,6 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   if (
     systemInput === undefined ||
     userInput === undefined ||
-    systemInput.protocol !== protocol ||
     !text(systemInput.instruction) ||
     systemInput.operation !== operation ||
     !text(systemInput.rubric)
@@ -836,7 +825,7 @@ function validImages(
   return result;
 }
 
-function validV3Call(
+function validImageCall(
   value: unknown,
   ordinal: number,
   images: Map<string, { readonly descriptor: ScoreMatchAuditImage; readonly bytes: Uint8Array }>,
@@ -917,27 +906,11 @@ export function readScoreMatchAudit(
   imageContent?: readonly ScoreMatchAuditImageContent[],
 ): ScoreMatchAuditReadResult {
   try {
-    const outerRecord = record(value);
-    const manifestRecord = record(outerRecord?.manifest);
-    const version = manifestRecord?.schemaVersion;
-    if (typeof version === "number" && Number.isInteger(version) && version !== 1 && version !== 2 && version !== 3) {
-      return Object.freeze({ state: "unsupported", schemaVersion: version });
-    }
-    const expectedProtocol = version === 3 ? protocolV3 : version === 2 ? protocolV2 : protocol;
-    if (
-      (version === 1 || version === 2 || version === 3) &&
-      typeof manifestRecord?.protocol === "string" &&
-      manifestRecord.protocol !== expectedProtocol
-    ) {
-      return Object.freeze({ state: "unsupported", schemaVersion: version });
-    }
     const outer = exact(value, ["manifest", "content"]);
-    const manifest = exact(outer?.manifest, ["schemaVersion", "protocol", "byteLength", "digest", "chunkByteLengths"]);
+    const manifest = exact(outer?.manifest, ["byteLength", "digest", "chunkByteLengths"]);
     if (
       outer === undefined ||
       manifest === undefined ||
-      (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) ||
-      manifest.protocol !== expectedProtocol ||
       !Array.isArray(outer.content) ||
       outer.content.length === 0 ||
       !Array.isArray(manifest.chunkByteLengths) ||
@@ -969,9 +942,9 @@ export function readScoreMatchAudit(
     if (canonicalScoreMatchAuditJson(parsed) !== content) return Object.freeze({ state: "invalid" });
     const audit = exact(
       parsed,
-      manifest.schemaVersion === 3
-        ? ["schemaVersion", "protocol", "definition", "input", "images", "calls", "result"]
-        : ["schemaVersion", "protocol", "definition", "input", "calls", "result"],
+      record(parsed)?.kind === "images"
+        ? ["kind", "definition", "input", "images", "calls", "result"]
+        : ["kind", "definition", "input", "calls", "result"],
     );
     const definition = exact(audit?.definition, ["version", "config", "digest", "limits"]);
     const rawLimits = record(definition?.limits);
@@ -985,8 +958,7 @@ export function readScoreMatchAudit(
           ]);
     if (
       audit === undefined ||
-      audit.schemaVersion !== manifest.schemaVersion ||
-      audit.protocol !== expectedProtocol ||
+      !["chat", "typed", "images"].includes(String(audit.kind)) ||
       definition === undefined ||
       !text(definition.version) ||
       typeof definition.config !== "string" ||
@@ -1009,7 +981,7 @@ export function readScoreMatchAudit(
     )
       return Object.freeze({ state: "invalid" });
     const images =
-      manifest.schemaVersion === 3 ? validImages(audit.images, audit.input as string, imageContent) : undefined;
+      record(parsed)?.kind === "images" ? validImages(audit.images, audit.input as string, imageContent) : undefined;
     const initialMaterialRejected =
       record(audit.result)?.state === "unavailable" &&
       record(audit.result)?.code === "score-match-material-budget" &&
@@ -1021,16 +993,15 @@ export function readScoreMatchAudit(
         utf8ByteLength(audit.input) > limits.maxMaterialBytes &&
         !initialMaterialRejected) ||
       canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input ||
-      (manifest.schemaVersion === 3 && images === undefined) ||
       !Array.isArray(audit.calls) ||
       audit.calls.length > limits.maxCalls + 1 ||
       (audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected") ||
       audit.calls.some((call, index) =>
-        manifest.schemaVersion === 1
+        audit.kind === "chat"
           ? !validCall(call, index + 1)
-          : manifest.schemaVersion === 2
+          : audit.kind === "typed"
             ? !validTypeSafeCall(call, index + 1)
-            : !validV3Call(call, index + 1, images!),
+            : !validImageCall(call, index + 1, images!),
       )
     )
       return Object.freeze({ state: "invalid" });

@@ -15,15 +15,12 @@ import {
   isRecordAttachmentName,
   isRecordAttachmentSchemaId,
   isRecordBlobKey,
-  isRecordFormatId,
   isSha256Digest,
   isSourceSegmentId,
   isUtcMillis,
   RECORD_ATTACHMENT_NAME_BRAND,
   RECORD_ATTACHMENT_SCHEMA_ID_BRAND,
   RECORD_BLOB_KEY_BRAND,
-  RECORD_FORMAT,
-  RECORD_FORMAT_ID_BRAND,
   RECORD_ID_BRAND,
   RUN_ID_BRAND,
   SHA256_DIGEST_BRAND,
@@ -42,8 +39,6 @@ import {
   type RecordAttachmentName,
   type RecordAttachmentSchemaId,
   type RecordBlobKey,
-  type RecordFormat,
-  type RecordFormatId,
   type RecordId,
   type RunId,
   type Sha256Digest,
@@ -154,12 +149,3 @@ export const RecordAttachmentSchemaIdSchema: Schema.Codec<
     identifier: "RecordAttachmentSchemaId",
     description: "a RecordAttachment name followed by /vN",
   })).pipe(Schema.brand(RECORD_ATTACHMENT_SCHEMA_ID_BRAND));
-
-export const RecordFormatIdSchema: Schema.Codec<RecordFormatId, string> =
-  Schema.String.check(Schema.makeFilter(isRecordFormatId, {
-      identifier: "RecordFormatId",
-      description: "the current generic Attachment Record format identity",
-    })).pipe(Schema.brand(RECORD_FORMAT_ID_BRAND));
-
-export const RecordFormatSchema: Schema.Codec<RecordFormat, typeof RECORD_FORMAT> =
-  Schema.Literals([RECORD_FORMAT]).pipe(Schema.brand(RECORD_FORMAT_ID_BRAND));

@@ -267,7 +267,7 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
       if ("numeric" in criterion) {
         return Object.freeze({
           kind: "builtin" as const,
-          id: "numeric-comparison/v1" as const,
+          id: "numeric-comparison" as const,
           data: Object.freeze({
             comparator: criterion.numeric.comparator,
             threshold: criterion.numeric.threshold,
@@ -279,19 +279,19 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
       }
       return Object.freeze({
         kind: "builtin" as const,
-        id: "value-match/v1" as const,
+        id: "value-match" as const,
         data: Object.freeze({ subject: criterion.subject, matcher: criterion.matcher }),
       });
     case "scope-status":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "scope-status/v1" as const,
+        id: "scope-status" as const,
         data: Object.freeze({ scope: criterion.scope, assertion: criterion.assertion }),
       });
     case "occurrence":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "occurrence/v2" as const,
+        id: "occurrence" as const,
         data: Object.freeze({
           scope: criterion.scope,
           occurrence: criterion.occurrence,
@@ -309,40 +309,40 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
     case "judge-measurement":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "judge-measurement/v2" as const,
+        id: "judge-measurement" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
     case "managed-score-measurement":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "llm-measurement/v1" as const,
+        id: "llm-measurement" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
       });
     case "agent-judge-measurement":
-      return Object.freeze({ kind: "builtin" as const, id: "agent-judge-measurement/v1" as const,
+      return Object.freeze({ kind: "builtin" as const, id: "agent-judge-measurement" as const,
         data: Object.freeze({ name: criterion.name, scale: criterion.scale }) });
     case "sandbox-change-scope":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "sandbox-change-scope/v1" as const,
+        id: "sandbox-change-scope" as const,
         data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
       });
     case "sandbox-unchanged-within":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "sandbox-unchanged-within/v1" as const,
+        id: "sandbox-unchanged-within" as const,
         data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
       });
     case "sandbox-diff-paths":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "sandbox-diff-paths/v1" as const,
+        id: "sandbox-diff-paths" as const,
         data: Object.freeze({ operation: criterion.operation, pattern: criterion.pattern, flags: criterion.flags }),
       });
     case "sandbox-in-diff":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "sandbox-in-diff/v1" as const,
+        id: "sandbox-in-diff" as const,
         data: Object.freeze({ pattern: criterion.pattern, flags: criterion.flags, content: criterion.content }),
       });
     case "sandbox-result": {
@@ -350,19 +350,19 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         case "changed-paths":
           return Object.freeze({
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
+            id: "sandbox-result" as const,
             data: Object.freeze({ operation: "changed-paths" as const, paths: Object.freeze([...criterion.paths]) }),
           });
         case "no-changes":
           return Object.freeze({
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
+            id: "sandbox-result" as const,
             data: Object.freeze({ operation: "no-changes" as const }),
           });
         case "file-changed":
           return Object.freeze({
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
+            id: "sandbox-result" as const,
             data: Object.freeze({
               operation: "file-changed" as const,
               path: criterion.path,
@@ -374,13 +374,13 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         case "file-deleted":
           return Object.freeze({
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
+            id: "sandbox-result" as const,
             data: Object.freeze({ operation: "file-deleted" as const, path: criterion.path }),
           });
         case "not-in-diff":
           return Object.freeze({
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
+            id: "sandbox-result" as const,
             data: Object.freeze({
               operation: "not-in-diff" as const,
               pattern: criterion.pattern,
@@ -393,7 +393,7 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
     case "direct-score":
       return Object.freeze({
         kind: "builtin" as const,
-        id: "direct-score/v1" as const,
+        id: "direct-score" as const,
         data: Object.freeze({ source: criterion.source }),
       });
     case "third-party":

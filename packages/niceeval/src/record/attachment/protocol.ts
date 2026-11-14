@@ -77,7 +77,7 @@ export interface RecordAttachmentDefinition<
 /** Durable interpretation revision, deliberately separate from the logical fact definition. */
 export interface RecordAttachmentPersistence<
   Definition extends AnyDefinition,
-  out Revision extends number,
+  out Revision extends number | undefined,
 > {
   readonly attachment: Definition;
   readonly revision: Revision;
@@ -158,6 +158,17 @@ export function defineRecordAttachmentPersistence<
   return persistence;
 }
 
+/** Official families share the enclosing Record format admission. */
+export function defineOfficialRecordAttachmentPersistence<const Definition extends AnyDefinition>(
+  input: { readonly attachment: Definition },
+): RecordAttachmentPersistence<Definition, undefined> {
+  if (!isRecordAttachmentDefinition(input.attachment)) invalid();
+  const persistence = Object.freeze({ attachment: input.attachment, revision: undefined,
+    [persistenceTypeId]: () => ({ attachment: input.attachment, revision: undefined }) });
+  persistences.add(persistence);
+  return persistence;
+}
+
 export const RecordAttachmentReference = Object.freeze({
   /** Builds a package-owned Schema declaration. Session later mints values matching this exact declaration. */
   to<Definition extends RecordAttachmentReferenceTarget, Value = unknown, Encoded = Value>(definition: Definition, valueSchema?: Schema.Codec<Value, Encoded, never>): Schema.Codec<RecordAttachmentReference<ResolvedReferenceDefinition<Definition>, Value>, RecordAttachmentReference<ResolvedReferenceDefinition<Definition>, Value>, never> {
@@ -198,7 +209,7 @@ export function resolveRecordAttachmentDefinition(value: unknown): AnyDefinition
     ? definitionAliases.get(value)
     : undefined;
 }
-export function isRecordAttachmentPersistence(value: unknown): value is RecordAttachmentPersistence<AnyDefinition, number> { return typeof value === "object" && value !== null && persistences.has(value); }
+export function isRecordAttachmentPersistence(value: unknown): value is RecordAttachmentPersistence<AnyDefinition, number | undefined> { return typeof value === "object" && value !== null && persistences.has(value); }
 export function isRecordAttachmentReference(value: unknown): value is RecordAttachmentReference<AnyDefinition, unknown> { return typeof value === "object" && value !== null && references.has(value); }
 /** @internal Schema compiler validates and labels only declarations minted by `to`. */
 export function recordAttachmentReferenceDeclarationMetadata(value: object): { readonly metadata: { readonly category: "reference"; readonly definition: AnyDefinition; readonly valueSchema: Schema.Codec<unknown, unknown, never, never> | undefined }; readonly accepts: (value: object) => boolean } | undefined {

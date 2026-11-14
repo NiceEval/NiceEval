@@ -84,7 +84,7 @@ export function attachmentId(input: {
   readonly attemptId?: string;
   readonly family: string;
 }): string {
-  return hashCanonicalTuple("niceeval.record.attachment-id/v1", [
+  return hashCanonicalTuple("niceeval.record.attachment-id", [
     input.runId,
     input.owner,
     input.owner === "attempt" ? input.attemptId ?? null : null,
@@ -93,22 +93,22 @@ export function attachmentId(input: {
 }
 
 export function contentId(attachment: string, logicalHandle: string): string {
-  return hashCanonicalTuple("niceeval.record.content-id/v1", [attachment, logicalHandle]);
+  return hashCanonicalTuple("niceeval.record.content-id", [attachment, logicalHandle]);
 }
 
 export function attachmentLogicalIdentity(attachment: string, canonicalDigest: string, inventoryDigest: string): string {
-  return hashCanonicalTuple("niceeval.record.attachment-logical-identity/v1", [attachment, canonicalDigest, inventoryDigest]);
+  return hashCanonicalTuple("niceeval.record.attachment-logical-identity", [attachment, canonicalDigest, inventoryDigest]);
 }
 
 export function collectionItemLogicalIdentity(ordinal: number, canonicalDigest: string): string {
-  return hashCanonicalTuple("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]);
+  return hashCanonicalTuple("niceeval.record.collection-item-logical-identity", [ordinal, canonicalDigest]);
 }
 
 function entry(kind: SealEntry["kind"], identity: readonly TuplePart[], closure: readonly TuplePart[]): SealEntry {
   return Object.freeze({
     kind,
-    logicalIdentity: hashCanonicalTuple(`niceeval.record.seal.${kind}.identity/v1`, identity),
-    digest: hashCanonicalTuple(`niceeval.record.seal.${kind}.closure/v1`, closure),
+    logicalIdentity: hashCanonicalTuple(`niceeval.record.seal.${kind}.identity`, identity),
+    digest: hashCanonicalTuple(`niceeval.record.seal.${kind}.closure`, closure),
   });
 }
 
@@ -137,7 +137,7 @@ export const attachmentSealEntry = (input: {
   readonly ownerRunId: string;
   readonly ownerAttemptId?: string;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;
   readonly canonicalDigest: string;
   readonly inventoryDigest: string;
@@ -146,7 +146,7 @@ export const attachmentSealEntry = (input: {
   input.ownerRunId,
   input.ownerAttemptId ?? null,
   input.family,
-  input.familyRevision,
+  input.familyRevision ?? null,
   input.logicalIdentity,
   input.canonicalDigest,
   input.inventoryDigest,
@@ -196,7 +196,7 @@ export function exactLogicalSealIdentity(entries: readonly SealEntry[]): string 
 export function exactLogicalSealIdentityFromOrdered(entries: Iterable<SealEntry>, count: number): string {
   if (!Number.isSafeInteger(count) || count < 0) throw new TypeError("logical Seal entry count is invalid");
   const hash = createHash("sha256");
-  updatePart(hash, "niceeval.record.logical-seal/v1");
+  updatePart(hash, "niceeval.record.logical-seal");
   updatePart(hash, count);
   let observed = 0;
   for (const value of entries) {

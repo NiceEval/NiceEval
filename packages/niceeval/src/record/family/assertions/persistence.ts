@@ -1,8 +1,7 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { assertionsRecordAttachment } from "./definition.ts";
 
 /** Current durable interpretation for Assertions. */
-export const assertionsRecordAttachmentPersistence = defineRecordAttachmentPersistence({
+export const assertionsRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
   attachment: assertionsRecordAttachment,
-  revision: 5,
 });

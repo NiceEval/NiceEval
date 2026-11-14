@@ -496,38 +496,6 @@ export interface EvalResult {
   artifacts?: string[];
 }
 
-/** `run.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
-export const RECORD_FORMAT = "niceeval.results";
-/**
- * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/feature/record/architecture.md。
- * `5`(见 memory 的 attempt-locator-and-source-dedup 条目)= result.json 新增 `locator` 字段;
- * `sources.json` 从逐 attempt 内联全量内容改为「attempt 级引用 + 快照级 `sources/<sha256>.json`
- * 去重仓库」,`AttemptHandle.sources()` 的公开返回形状不变(仍是 `SourceArtifact[] | null`)。
- * `6` = `error` 从自由字符串改为结构化 `AttemptError`,并新增有界 `diagnostics`。
- * `8` = 断言记录改 outcome 判别联合(groupPath/optional/expected/received/unavailable+reason);
- * 生命周期词表统一为 LifecyclePhase,`error.operation`/`diagnostics[].operation` 更名 `phase`;
- * 新增 `phases`(阶段计时)、`coverage`(证据覆盖聚合)、`sandbox`(执行环境标识)字段;
- * `ExperimentRunInfo` 改为解析后运行配置的穷尽投影(sandbox 从字符串改结构化投影对象);
- * `diff.json` 落逐窗口 delta 序列(DiffWindow[]);events/trace 的字符串值统一 256 KiB 截断
- * (结构化 `truncated` 标记);run.json 新增发布拷贝的 `publish` 标记。
- * `9` = `hasEvents`/`hasTrace`/`hasSources` 三个布尔删除,统一为 `artifacts`(writer 实际写出的
- * 按需 artifact 词干列表,单源在证据 registry);`ObservabilitySummary` 删除 `usage`/`estimatedCostUSD`/
- * `durationMs`,正名为纯行为计数缓存；EvalResult 是 Runner outcome，SQLite Record 拥有持久成本事实
- * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
- * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`。
- * `13` = 两层时间模型:`TimingNode` 封闭 kind 改为开放 key 的 `TimingActivity`;
- * `AttemptError.phase` / `DiagnosticRecord.phase` 改为 `origin: TimingOrigin`;
- * `RunMeta` 新增 `timings` 与 `sandboxBuilds`(见 memory 的 results-schema-version-history)。
- * `14` = result.json 的证据聚合字段从 `coverage` 破坏性重命名为 `evidenceCoverage`；
- * 六通道全部必填，不兼容旧 schema，也不做 normalize。
- * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
- * `15` = commands.json 的命令退出事实新增 `checked`，区分公开 checked/unchecked 调用；
- * 旧版 commands.json 不做兼容读取。
- * `18` = Fact/use 原子记录、`evaluationAlgorithm: "fact-use/v3"`；旧格式完全不支持读取。
- * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
- * 两者都不是破坏性格式变化，因此不递增版本。
- */
-
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `adapter`/`model`——一次 Invocation 可能横跨多个 `(adapter, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.adapter`/`.model` 去重派生。 */
 export interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
@@ -655,8 +623,8 @@ export type { EvaluationKind } from "../shared/evaluation.ts";
 
 /** The live Runner derives Pass and Score from one sealed Assert-first entry sequence. */
 export const EVALUATION_ALGORITHM = "assert-first/v2" as const;
-/** `fact-use/v3` remains only as the historical Record reader/writer bridge. */
-export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM | "assert-first/v1" | "fact-use/v3";
+/** The current evaluation behavior used by the Runner. */
+export type EvaluationAlgorithm = typeof EVALUATION_ALGORITHM;
 
 /**
  * 作者输入里的派生字段用模块私有诊断类型，而不是 `never`：错误会说明字段属于哪个阶段。

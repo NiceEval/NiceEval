@@ -8,7 +8,6 @@ import {
   EVENT_ID__BRAND,
   INTERVAL_ID__BRAND,
   ITEM_ID__BRAND,
-  LEGACY_SOURCE_LOCAL_CALL_ID__BRAND,
   NON_NEGATIVE_SAFE_INTEGER__BRAND,
   POSITIVE_SAFE_INTEGER__BRAND,
   SAFE_IDENTIFIER__BRAND,
@@ -30,7 +29,6 @@ import {
   isEventId,
   isIntervalId,
   isItemId,
-  isLegacySourceLocalCallId,
   isNonNegativeSafeInteger,
   isPositiveSafeInteger,
   isSafeIdentifier,
@@ -57,7 +55,6 @@ import {
   type EventId,
   type IntervalId,
   type ItemId,
-  type LegacySourceLocalCallId,
   type NonNegativeSafeInteger,
   type PositiveSafeInteger,
   type RunDiagnosticsReferences,
@@ -191,17 +188,6 @@ export const CallIdSchema: Schema.Codec<CallId, string> = Schema.String.pipe(
     description: "a call_ identifier with 26 lowercase Crockford base-32 characters",
   })),
   Schema.brand(CALL_ID__BRAND),
-);
-
-export const LegacySourceLocalCallIdSchema: Schema.Codec<
-  LegacySourceLocalCallId,
-  string
-> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isLegacySourceLocalCallId, {
-    identifier: "ObservabilityLegacySourceLocalCallId",
-    description: "a v1 source-local call identifier",
-  })),
-  Schema.brand(LEGACY_SOURCE_LOCAL_CALL_ID__BRAND),
 );
 
 export const EventIdSchema: Schema.Codec<EventId, string> = Schema.String.pipe(

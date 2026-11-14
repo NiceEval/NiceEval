@@ -4,7 +4,6 @@ import { backup } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { closeRecordDatabase, openRecordReader, validateExactSchema, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
-import { capturedRecordSchemaKind, migrateHostOwnedProjectDatabase } from "./migration.ts";
 import {
   captureSingleFileRecord,
   projectRecordReadMode,
@@ -89,14 +88,6 @@ async function importOperationalProjectRecord(input: ExternalRecordImportInput):
 async function importCapturedRecord(input: ExternalRecordImportInput, rejectAnySidecar: boolean): Promise<number> {
   await captureSingleFileRecord(input.sourcePath, input.generationPath, input.deadlineEpochMs, rejectAnySidecar);
   deadline(input, "capture");
-  const kind = capturedRecordSchemaKind(input.generationPath);
-  if (kind === "legacy") {
-    await migrateHostOwnedProjectDatabase(input.generationPath, 0, "private-portable", input.deadlineEpochMs);
-  }
-  deadline(input, "migration");
-  // A current project capture preserves operational read semantics. Only
-  // external input promises portable state; historical migration already
-  // proves it before and after converting the private copy.
   return validateGeneration(input, input.sourceKind === "external-record");
 }
 

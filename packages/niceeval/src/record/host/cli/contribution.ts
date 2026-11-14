@@ -21,10 +21,8 @@ import { recordHost } from "../runtime.ts";
 import type {
   RecordCleanOperationPlan,
   RecordMaintenanceOperationFailure,
-  RecordMigrateOperationPlan,
 } from "../types.ts";
 import {
-  renderMigrationPlan,
   renderRecordMaintenanceFailure,
 } from "./presentation.ts";
 
@@ -64,17 +62,6 @@ Options:
   -h, --help       print this help
 `;
 
-const MIGRATE_HELP = `niceeval migrate — migrate a Record through fixed adjacent steps
-
-Usage:
-  niceeval migrate [--record <root>] [--yes]
-
-Options:
-  --record <root>  use a specific NiceEval Record root
-  --yes            confirm application of the displayed migration plan
-  -h, --help       print this help
-`;
-
 type RecordCliBaseRequirement =
   | CliArguments
   | CliInvocationFacts
@@ -88,7 +75,7 @@ function assertNever(value: never): never {
 }
 
 function recordCliFailure(
-  command: "clean" | "migrate",
+  command: "clean",
   operation: string,
   cause: unknown,
 ): RecordCliError {
@@ -101,7 +88,7 @@ function recordCliFailure(
 }
 
 function write(
-  command: "clean" | "migrate",
+  command: "clean",
   channel: "stdout" | "stderr",
   text: string,
 ): Effect.Effect<void, RecordCliError, CliOutput> {
@@ -127,7 +114,7 @@ interface ParsedRecordCommand {
 }
 
 function parseRecordCommand(
-  command: "clean" | "migrate",
+  command: "clean",
   argv: readonly string[],
 ): Effect.Effect<ParsedRecordCommand | number, RecordCliError, CliArguments | CliInvocationFacts | CliOutput | CliPath> {
   return Effect.gen(function* () {
@@ -137,7 +124,7 @@ function parseRecordCommand(
       catch: (cause) => recordCliFailure(command, "parse command", cause),
     });
     if (parsed.values.help === true) {
-      yield* write(command, "stdout", command === "clean" ? CLEAN_HELP : MIGRATE_HELP);
+      yield* write(command, "stdout", CLEAN_HELP);
       return 0;
     }
     if (parsed.positionals.length > 0) {
@@ -163,7 +150,7 @@ function parseRecordCommand(
 }
 
 function emitMaintenanceFailure(
-  command: "clean" | "migrate",
+  command: "clean",
   failure: RecordMaintenanceOperationFailure,
   recordPath: string,
 ): Effect.Effect<number, RecordCliError, CliOutput> {
@@ -210,64 +197,8 @@ function runClean(
   });
 }
 
-function runMigrate(
-  input: ParsedRecordCommand,
-): Effect.Effect<number, RecordCliError, CliOutput | RecordCoordination | RecordFileSystem> {
-  return Effect.gen(function* () {
-    const planned = yield* Effect.result(recordHost.maintenance.planMigrate({ root: input.root }));
-    if (Result.isFailure(planned)) return yield* emitMaintenanceFailure("migrate", planned.failure, input.rootPath);
-    const plan: RecordMigrateOperationPlan = planned.success;
-    const planText = renderMigrationPlan(plan);
-    switch (plan._tag) {
-      case "RecordMigrationAlreadyCurrent":
-        yield* write("migrate", "stdout", `${planText}Record migration already-current.\n`);
-        return 0;
-      case "RecordMigrationUnsupported":
-        yield* write("migrate", "stdout", planText);
-        yield* write(
-          "migrate",
-          "stderr",
-          "record-format-unsupported\nInstall a NiceEval version that supports this Record format.\n",
-        );
-        return 1;
-      case "RecordMigrationReady": {
-        yield* write("migrate", "stdout", planText);
-        if (!input.yes) {
-          yield* write(
-            "migrate",
-            "stderr",
-            "record-migration-confirmation-required\nReview the migration plan and rerun with --yes.\n",
-          );
-          return 1;
-        }
-        const applied = yield* Effect.result(recordHost.maintenance.applyMigrate({
-          root: input.root,
-          plan,
-        }));
-        if (Result.isFailure(applied)) return yield* emitMaintenanceFailure("migrate", applied.failure, input.rootPath);
-        switch (applied.success._tag) {
-          case "RecordMigrationAlreadyCurrent":
-            yield* write("migrate", "stdout", "Record migration already-current.\n");
-            return 0;
-          case "RecordMigrationApplied":
-            yield* write(
-              "migrate",
-              "stdout",
-              `Record migration migrated: committed ${applied.success.committed}, skipped ${applied.success.skipped}, failed ${applied.success.failed}.\n`,
-            );
-            return 0;
-          default:
-            return assertNever(applied.success);
-        }
-      }
-      default:
-        return assertNever(plan);
-    }
-  });
-}
-
 function makeRecordCliCommand<R>(
-  command: "clean" | "migrate",
+  command: "clean",
   summary: string,
   execute: (input: ParsedRecordCommand) => Effect.Effect<number, RecordCliError, CliOutput | R>,
 ): CliCommandContribution<RecordCliBaseRequirement | R, RecordCliError> {
@@ -287,10 +218,4 @@ export const cleanCliCommand = makeRecordCliCommand(
   "clean",
   "delete incomplete Record Runs",
   runClean,
-);
-
-export const migrateCliCommand = makeRecordCliCommand(
-  "migrate",
-  "migrate a Record through fixed adjacent steps",
-  runMigrate,
 );

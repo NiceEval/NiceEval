@@ -64,8 +64,7 @@ describe("ProjectDatabase bootstrap baseline", () => {
   it("fails closed on databases outside the exact schema baseline", async () => {
     for (const [label, corrupt] of [
       ["unknown object", (db: DatabaseSync) => db.exec("CREATE TABLE injected(value TEXT)")],
-      ["old revision", (db: DatabaseSync) => db.exec("UPDATE ne19_record_metadata SET storage_revision=99")],
-      ["forged fingerprint", (db: DatabaseSync) => db.exec(`UPDATE ne19_record_metadata SET schema_fingerprint='${"0".repeat(64)}'`)],
+      ["old revision", (db: DatabaseSync) => db.exec("UPDATE ne19_record_metadata SET format='old'")],
     ] as const) {
       const path = await databasePath();
       closeRecordDatabase(openRecordWriter(path));

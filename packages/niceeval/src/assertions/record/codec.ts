@@ -383,7 +383,7 @@ export const CriterionOuterEnvelopeSchema: Schema.Schema<CriterionOuterEnvelope>
 
 const ValueMatchCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("value-match/v1"),
+  id: Schema.Literal("value-match"),
   data: Schema.Struct({
     subject: Schema.Literal("explicit-value"),
     matcher: Schema.Union([
@@ -395,7 +395,7 @@ const ValueMatchCriterionSchema = Schema.Struct({
 
 const NumericComparisonCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("numeric-comparison/v1"),
+  id: Schema.Literal("numeric-comparison"),
   data: Schema.Struct({
     comparator: Schema.Literals(NUMERIC_COMPARATORS),
     threshold: Schema.Finite,
@@ -428,34 +428,16 @@ const NumericComparisonCriterionSchema = Schema.Struct({
 
 const ScopeStatusCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("scope-status/v1"),
+  id: Schema.Literal("scope-status"),
   data: Schema.Struct({
     scope: Schema.Literals(["turn", "session", "attempt"]),
     assertion: Schema.Literals(["succeeded", "no-failed-actions"]),
   }),
 });
 
-const OccurrenceCriterionV1Schema = Schema.Struct({
+const OccurrenceCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("occurrence/v1"),
-  data: Schema.Struct({
-    scope: Schema.Literals(["turn", "session", "attempt"]),
-    occurrence: Schema.Literals(["tool", "skill", "event"]),
-    assertion: Schema.Literals(["present", "absent", "count", "order"]),
-    matcher: Schema.optional(BoundedJsonStringSchema),
-    quantifier: Schema.optional(Schema.Union([
-      Schema.Struct({ kind: Schema.Literal("absent") }),
-      Schema.Struct({
-        kind: Schema.Literals(["at-least", "exact"]),
-        count: PositiveIntegerSchema,
-      }),
-    ])),
-  }),
-});
-
-const OccurrenceCriterionV2Schema = Schema.Struct({
-  kind: Schema.Literal("builtin"),
-  id: Schema.Literal("occurrence/v2"),
+  id: Schema.Literal("occurrence"),
   data: Schema.Struct({
     scope: Schema.Literals(["turn", "session", "attempt"]),
     occurrence: Schema.Literals(["tool", "skill", "event"]),
@@ -477,16 +459,7 @@ const OccurrenceCriterionV2Schema = Schema.Struct({
 
 const JudgeMeasurementCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("judge-measurement/v1"),
-  data: Schema.Struct({
-    recipe: Schema.String,
-    scale: Schema.Literal("unit-interval"),
-  }),
-});
-
-const JudgeMeasurementCriterionV2Schema = Schema.Struct({
-  kind: Schema.Literal("builtin"),
-  id: Schema.Literal("judge-measurement/v2"),
+  id: Schema.Literal("judge-measurement"),
   data: Schema.Struct({
     name: Schema.String,
     scale: Schema.Literal("unit-interval"),
@@ -495,7 +468,7 @@ const JudgeMeasurementCriterionV2Schema = Schema.Struct({
 
 const LlmMeasurementCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literals(["llm-measurement/v1", "agent-judge-measurement/v1"]),
+  id: Schema.Literals(["llm-measurement", "agent-judge-measurement"]),
   data: Schema.Struct({
     name: Schema.String,
     scale: Schema.Literal("unit-interval"),
@@ -504,7 +477,7 @@ const LlmMeasurementCriterionSchema = Schema.Struct({
 
 const SandboxChangeScopeCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("sandbox-change-scope/v1"),
+  id: Schema.Literal("sandbox-change-scope"),
   data: Schema.Struct({
     paths: Schema.Array(BoundedJsonStringSchema).check(Schema.makeFilter(
       paths => paths.length > 0 && paths.every(path => isCanonicalWorkspaceRelativePath(path) && !/[*?]/u.test(path)),
@@ -515,7 +488,7 @@ const SandboxChangeScopeCriterionSchema = Schema.Struct({
 
 const SandboxUnchangedWithinCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("sandbox-unchanged-within/v1"),
+  id: Schema.Literal("sandbox-unchanged-within"),
   data: Schema.Struct({
     paths: Schema.Array(BoundedJsonStringSchema).check(Schema.makeFilter(
       paths => paths.length > 0 && paths.every(path => isCanonicalWorkspaceRelativePath(path) && !/[*?]/u.test(path)),
@@ -526,7 +499,7 @@ const SandboxUnchangedWithinCriterionSchema = Schema.Struct({
 
 const SandboxDiffPathsCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("sandbox-diff-paths/v1"),
+  id: Schema.Literal("sandbox-diff-paths"),
   data: Schema.Struct({
     operation: Schema.Literals(["not-in-diff", "in-diff"]),
     pattern: BoundedJsonStringSchema,
@@ -536,7 +509,7 @@ const SandboxDiffPathsCriterionSchema = Schema.Struct({
 
 const SandboxInDiffCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("sandbox-in-diff/v1"),
+  id: Schema.Literal("sandbox-in-diff"),
   data: Schema.Struct({
     pattern: BoundedJsonStringSchema,
     flags: BoundedJsonStringSchema,
@@ -547,7 +520,7 @@ const SandboxInDiffCriterionSchema = Schema.Struct({
 const SandboxResultCriterionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("builtin"),
-    id: Schema.Literal("sandbox-result/v1"),
+    id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
       operation: Schema.Literal("changed-paths"),
       paths: Schema.Array(BoundedJsonStringSchema),
@@ -555,12 +528,12 @@ const SandboxResultCriterionSchema = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("builtin"),
-    id: Schema.Literal("sandbox-result/v1"),
+    id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({ operation: Schema.Literal("no-changes") }),
   }),
   Schema.Struct({
     kind: Schema.Literal("builtin"),
-    id: Schema.Literal("sandbox-result/v1"),
+    id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
       operation: Schema.Literal("file-changed"),
       path: BoundedJsonStringSchema,
@@ -571,7 +544,7 @@ const SandboxResultCriterionSchema = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("builtin"),
-    id: Schema.Literal("sandbox-result/v1"),
+    id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
       operation: Schema.Literal("file-deleted"),
       path: BoundedJsonStringSchema,
@@ -579,7 +552,7 @@ const SandboxResultCriterionSchema = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("builtin"),
-    id: Schema.Literal("sandbox-result/v1"),
+    id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
       operation: Schema.Literal("not-in-diff"),
       pattern: BoundedJsonStringSchema,
@@ -591,7 +564,7 @@ const SandboxResultCriterionSchema = Schema.Union([
 
 const DirectScoreCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
-  id: Schema.Literal("direct-score/v1"),
+  id: Schema.Literal("direct-score"),
   data: Schema.Struct({ source: Schema.Literal("author") }),
 });
 
@@ -600,10 +573,8 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     ValueMatchCriterionSchema,
     NumericComparisonCriterionSchema,
     ScopeStatusCriterionSchema,
-    OccurrenceCriterionV1Schema,
-    OccurrenceCriterionV2Schema,
+    OccurrenceCriterionSchema,
     JudgeMeasurementCriterionSchema,
-    JudgeMeasurementCriterionV2Schema,
     LlmMeasurementCriterionSchema,
     SandboxResultCriterionSchema,
     SandboxChangeScopeCriterionSchema,
@@ -781,7 +752,7 @@ export const MatcherQueryStepSchema = Schema.Struct({
 
 export const MatcherSourceReferenceSchema = Schema.Struct({
   family: Schema.Literal("niceeval.agent-turns"),
-  schemaVersion: PositiveIntegerSchema,
+
 });
 
 export const MatcherSourceCollectionStateSchema = Schema.Literals([
@@ -1123,10 +1094,6 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     identifier: "AssertionCoverageLimitations",
     description: "coverage and limitations with a consistent sealed relationship",
   }));
-  const historicalV2Evaluation = Schema.Struct({
-    observed: Schema.toType(AssertionFactValueSchema),
-    receipt: Schema.optional(Schema.toType(AssertionCollectionReceiptSchema)),
-  });
   const evaluation = Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("ordinary"),
@@ -1137,13 +1104,6 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
       kind: Schema.Literal("matcher-current"),
       observed: Schema.toType(AssertionFactValueSchema),
       artifact: Schema.toType(MatcherQueryArtifactSchema),
-      receipt: Schema.optional(Schema.Never),
-    }),
-    Schema.Struct({
-      kind: Schema.Literal("matcher-legacy"),
-      observed: Schema.toType(AssertionFactValueSchema),
-      reason: Schema.Literal("historical-not-recorded"),
-      legacyDiagnostic: Schema.optional(Schema.toType(AssertionFactValueSchema)),
       receipt: Schema.optional(Schema.Never),
     }),
   ]);
@@ -1159,21 +1119,6 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     Schema.Struct({ state: Schema.Literal("retained"), value: Schema.toType(AssertionFactValueSchema) }),
     Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
   ]);
-
-  const historicalV2OuterEntry = Schema.Struct({
-    entryId: Schema.toType(AssertionEntryIdSchema),
-    display: Schema.toType(AssertionDisplaySchema),
-    criterion: Schema.Union([
-      Schema.Struct({ state: Schema.Literal("available"), value: Schema.toType(BoundedJsonObjectSchema) }),
-      Schema.Struct({ state: Schema.Literal("unavailable"), reason: Schema.Literal("not-recorded") }),
-    ]),
-    materials,
-    evaluation: historicalV2Evaluation,
-    decision,
-    policy: Schema.toType(AssertionDecisionPolicySchema),
-    contribution: Schema.Union([Schema.toType(NoScoreContributionSchema), Schema.toType(EarnedScoreContributionSchema), Schema.toType(UnavailableScoreContributionSchema)]),
-    explanationRetention,
-  });
 
   const outerEntry = Schema.Struct({
     entryId: Schema.toType(AssertionEntryIdSchema),
@@ -1197,16 +1142,10 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
       entry.evaluation.kind === "ordinary" ||
       entry.explanationRetention.state === "unavailable", {
         identifier: "MatcherExplanationOwnership",
-        description: "matcher artifacts and legacy diagnostics are not duplicated in explanation retention",
+        description: "matcher artifacts are not duplicated in explanation retention",
       }),
   );
 
-  const historicalV2Entries = Schema.Array(historicalV2OuterEntry).check(
-    Schema.makeFilter((values) => values.length <= assertionRuntimeLimits.entries, {
-      identifier: "AssertionsEntryCount",
-      description: "at most 4,096 assertion entries",
-    }),
-  );
   const entries = Schema.Array(outerEntry).check(
     Schema.makeFilter((values) => values.length <= assertionRuntimeLimits.entries, {
       identifier: "AssertionsEntryCount",
@@ -1266,7 +1205,6 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     material,
     entry,
     entries,
-    historicalV2Entries,
     outerDocument,
     document,
   });
@@ -1367,20 +1305,18 @@ export function makeThirdPartyCriterionRegistry(
 }
 
 const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
-  "value-match/v1",
-  "numeric-comparison/v1",
-  "scope-status/v1",
-  "occurrence/v1",
-  "occurrence/v2",
-  "judge-measurement/v1",
-  "judge-measurement/v2",
-  "llm-measurement/v1",
-  "sandbox-result/v1",
-  "sandbox-change-scope/v1",
-  "sandbox-unchanged-within/v1",
-  "sandbox-in-diff/v1",
-  "sandbox-diff-paths/v1",
-  "direct-score/v1",
+  "value-match",
+  "numeric-comparison",
+  "scope-status",
+  "occurrence",
+  "judge-measurement",
+  "llm-measurement",
+  "sandbox-result",
+  "sandbox-change-scope",
+  "sandbox-unchanged-within",
+  "sandbox-in-diff",
+  "sandbox-diff-paths",
+  "direct-score",
 ]);
 
 function availableEntry<Content>(

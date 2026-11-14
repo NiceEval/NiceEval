@@ -3,12 +3,11 @@ import { lstatSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import {
-  RECORD_SQLITE_BASELINE_FINGERPRINT,
   RECORD_SQLITE_BASELINE_SQL,
   RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL,
 } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
-import { RECORD_SQLITE_FORMAT, RECORD_SQLITE_STORAGE_REVISION } from "./types.ts";
+import { RECORD_SQLITE_FORMAT } from "./types.ts";
 import { currentProcessOwnerIdentity, exactProcessState } from "../../coordination/platform/node-process-identity.ts";
 
 const MINIMUM_NODE = [24, 15, 0] as const;
@@ -195,7 +194,7 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
     const metadataTable = hasCurrent ? "ne19_record_metadata" : hasLegacy018 ? "ne18_record_metadata" : hasLegacy017 ? "ne_record_metadata" : "record_metadata";
     let row: Record<string, SQLOutputValue> | undefined;
     try {
-      row = connection.db.prepare(`SELECT format,storage_revision
+      row = connection.db.prepare(`SELECT format
         FROM ${metadataTable} WHERE singleton=1`).get() as
           | Record<string, SQLOutputValue>
           | undefined;
@@ -206,18 +205,8 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
     if (row.format !== RECORD_SQLITE_FORMAT) {
       return Object.freeze({ state: "unsupported", format: row.format });
     }
-    let revision: number;
-    try {
-      revision = decodeInteger(row.storage_revision, "record_metadata.storage_revision");
-    } catch {
-      return Object.freeze({ state: "foreign" });
-    }
-    if (revision !== RECORD_SQLITE_STORAGE_REVISION) {
-      return Object.freeze({ state: "unsupported", format: row.format });
-    }
     try {
       validateExactSchema(connection);
-      requireMigrationReady(connection);
       return Object.freeze({ state: "current", exists: true });
     } catch {
       return Object.freeze({ state: "unsupported", format: row.format });
@@ -310,26 +299,8 @@ function validateSchemaObjects(connection: RecordDatabase, sql?: string): void {
   }
 }
 
-function storageRevision(connection: RecordDatabase): number {
-  const row = currentStatement(connection.db, "SELECT storage_revision FROM ne19_record_metadata WHERE singleton=1").get() as
-    | Record<string, SQLOutputValue>
-    | undefined;
-  if (row === undefined) throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase identity is missing");
-  return decodeInteger(row.storage_revision, "record_metadata.storage_revision");
-}
-
 function validateExistingOperationalSchemaForWriter(connection: RecordDatabase): void {
-  const revision = storageRevision(connection);
-  if (revision === RECORD_SQLITE_STORAGE_REVISION) {
-    validateExactSchema(connection);
-    requireMigrationReady(connection);
-    return;
-  }
-  throw sqliteError(
-    "record-schema-unsupported",
-    "validate-schema",
-    `record storage revision ${revision} cannot be opened by revision ${RECORD_SQLITE_STORAGE_REVISION}`,
-  );
+  validateExactSchema(connection);
 }
 
 function decodeText(value: SQLOutputValue | undefined, field: string): string {
@@ -348,29 +319,18 @@ function decodeInteger(value: SQLOutputValue | undefined, field: string): number
 function validateCurrentRecordDomain(connection: RecordDatabase): void {
   let metadata: Record<string, SQLOutputValue> | undefined;
   try {
-    metadata = currentStatement(connection.db, `SELECT format,storage_revision,storage_generation,schema_fingerprint,barrier_state
+    metadata = currentStatement(connection.db, `SELECT format,storage_generation,barrier_state
       FROM ne19_record_metadata WHERE singleton=1`).get() as
       | Record<string, SQLOutputValue>
       | undefined;
   } catch (cause) {
-    throw sqliteError("record-schema-unsupported", "validate-schema", "database does not expose the ProjectDatabase identity", cause);
+    throw sqliteError("record-schema-unsupported", "validate-schema", "This Record was written by an older version of NiceEval. Rerun the experiment or remove this Record storage.", cause);
   }
   if (metadata === undefined) {
     throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase identity is missing");
   }
   if (decodeText(metadata.format, "record_metadata.format") !== RECORD_SQLITE_FORMAT) {
-    throw sqliteError("record-schema-unsupported", "validate-schema", "record format is unsupported");
-  }
-  const revision = decodeInteger(metadata.storage_revision, "record_metadata.storage_revision");
-  if (revision !== RECORD_SQLITE_STORAGE_REVISION) {
-    throw sqliteError(
-      "record-schema-unsupported",
-      "validate-schema",
-      `record storage revision ${revision} is not ${RECORD_SQLITE_STORAGE_REVISION}`,
-    );
-  }
-  if (decodeText(metadata.schema_fingerprint, "record_metadata.schema_fingerprint") !== RECORD_SQLITE_BASELINE_FINGERPRINT) {
-    throw sqliteError("record-schema-unsupported", "validate-schema", "ProjectDatabase baseline fingerprint is unsupported");
+    throw sqliteError("record-schema-unsupported", "validate-schema", "This Record was written by an older version of NiceEval. Rerun the experiment or remove this Record storage.");
   }
   const barrierState = decodeText(metadata.barrier_state, "record_metadata.barrier_state");
   if (barrierState !== "open" && barrierState !== "draining" && barrierState !== "portable") {
@@ -395,25 +355,6 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
       "validate-schema",
       "operational coordination generation does not match ProjectDatabase",
     );
-  }
-  const migration = currentStatement(connection.db, "SELECT state FROM ne19_migration_state WHERE singleton=1").get() as
-    | Record<string, SQLOutputValue>
-    | undefined;
-  if (migration === undefined) {
-    throw sqliteError("record-database-invalid", "validate-schema", "ProjectDatabase migration state is missing");
-  }
-  const migrationState = decodeText(migration.state, "migration_state.state");
-  if (migrationState !== "committed" && migrationState !== "ready") {
-    throw sqliteError("record-database-invalid", "validate-schema", "ProjectDatabase migration state is invalid");
-  }
-}
-
-function requireMigrationReady(connection: RecordDatabase): void {
-  const row = currentStatement(connection.db, "SELECT state FROM ne19_migration_state WHERE singleton=1").get() as
-    | Record<string, SQLOutputValue>
-    | undefined;
-  if (row === undefined || decodeText(row.state, "migration_state.state") !== "ready") {
-    throw sqliteError("record-schema-migration-required", "open", "ProjectDatabase migration committed but requires Host verification");
   }
 }
 
@@ -469,19 +410,15 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
         db.exec("BEGIN IMMEDIATE");
         try {
           db.exec(RECORD_SQLITE_BASELINE_SQL);
-          currentStatement(db, `INSERT INTO ne19_record_metadata(singleton,format,storage_revision,storage_generation,schema_fingerprint,
+          currentStatement(db, `INSERT INTO ne19_record_metadata(singleton,format,storage_generation,
             created_at,barrier_state,portable_generation,portable_revision,portable_gate_id,record_payload,record_digest)
-            VALUES (1,?,?,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`).run(
+            VALUES (1,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`).run(
             RECORD_SQLITE_FORMAT,
-            RECORD_SQLITE_STORAGE_REVISION,
             generation,
-            RECORD_SQLITE_BASELINE_FINGERPRINT,
             appliedAt,
           );
           currentStatement(db, `INSERT INTO ne19_coordination_state(singleton,revision,operational_generation,next_writer_sequence)
             VALUES (1,0,?,1)`).run(generation);
-          currentStatement(db, `INSERT INTO ne19_migration_state(singleton,state,source_format,source_digest)
-            VALUES (1,'ready',NULL,NULL)`).run();
           db.exec("COMMIT");
           created = true;
         } catch (cause) {
@@ -497,7 +434,6 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
     // Both the creator and every concurrent loser validate the exact committed
     // bootstrap identity before the connection becomes a writer.
     validateExactSchema(connection);
-    requireMigrationReady(connection);
     if (created) db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     db.setAuthorizer(writableAuthorizer());
     return connection;
@@ -512,8 +448,6 @@ export async function openHostOwnedRecordWriter(path: string, busyTimeoutMs = 5_
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
   assertLegacyCoordinationEntriesAbsent(path);
-  const { migrateHostOwnedProjectDatabase } = await import("./migration.ts");
-  await migrateHostOwnedProjectDatabase(path, busyTimeoutMs);
   return openRecordWriter(path, busyTimeoutMs);
 }
 
@@ -541,27 +475,11 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
   try {
     configureCommon(db);
     requireSecureDelete(db);
-    const legacyTable = db.prepare(`SELECT count(*) AS count FROM sqlite_schema
-      WHERE type='table' AND name='record_metadata'`).get() as Record<string, SQLOutputValue>;
-    if (decodeInteger(legacyTable.count, "sqlite_schema.record_metadata") === 1) {
-      const legacy = db.prepare("SELECT format FROM record_metadata WHERE singleton=1").get() as
-        | Record<string, SQLOutputValue>
-        | undefined;
-      const format = legacy?.format;
-      if (format === "niceeval.project-database/0.15" || format === "niceeval.project-database/0.16") {
-        throw sqliteError(
-          "record-schema-unsupported",
-          "open",
-          `${format} cannot be opened through the current-format operational reader. Finish the old writer and provide a portable Record for read-time migration, or upgrade through the Host-owned project writer`,
-        );
-      }
-    }
     // The main database is opened read-only. These two private TEMP tables are
     // the only writable reader state and are required for bounded Seal sort.
     db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
     db.setAuthorizer(readerAuthorizer);
     validateExactSchema(connection);
-    requireMigrationReady(connection);
     // Full structure and closure validation belongs to import, publication and
     // maintenance. Opening a Host-owned reader must not scan historical payload.
     return connection;

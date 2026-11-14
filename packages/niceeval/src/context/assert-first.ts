@@ -1844,7 +1844,7 @@ export function createAssertFirstEvalContext(
   let attemptToolScopeCache: ToolScopeProjectionCache | undefined;
   const matcherSource = Object.freeze({
     family: "niceeval.agent-turns" as const,
-    schemaVersion: 2,
+
   });
   const attemptScopeId = deps.attempt === undefined
     ? JSON.stringify(["niceeval.attempt-scope/1", manager.primary.sessionScopeId])

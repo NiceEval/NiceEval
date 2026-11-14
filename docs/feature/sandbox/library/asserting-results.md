@@ -46,7 +46,7 @@ t.sandbox.inDiff(/it\("rejects an expired token"/, { content: "added" });
 
 `unchangedWithin` 用于保护区检查：列出的文件和目录不许动，其余随意（[T-25](../../../taste.md#t-25)）。它与 `changedOnlyWithin` 在没有变化时都满足，两者不是逻辑取反。
 路径写法、组件比较、空数组与 glob 的拒绝规则都和 `changedOnlyWithin` 相同；不满足时，诊断列出落在保护区内的变化路径。
-`changedOnlyWithin` 保持 criterion `sandbox-change-scope/v1`；`unchangedWithin` 使用独立的 `sandbox-unchanged-within/v1`，不扩展已封口的 v1 data。形状见 [Assertions 架构](../../assertions/architecture/README.md#criterion-envelope-与内建-criterion)。
+`changedOnlyWithin` 保持 criterion `sandbox-change-scope`；`unchangedWithin` 使用独立的 `sandbox-unchanged-within`，分别保存两种检查的语义。形状见 [Assertions 架构](../../assertions/architecture/README.md#criterion-envelope-与内建-criterion)。
 
 变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容被 binary 或 oversized elision 取代时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
 
@@ -59,9 +59,9 @@ t.sandbox.inDiff(/it\("rejects an expired token"/, { content: "added" });
 `inDiff()` 回答“改动里有没有出现这段内容”，不要求事先知道它落在哪个文件；已知路径时用 `fileChanged(path, { after })`（[T-25](../../../taste.md#t-25)）。
 它读取的范围、`content` 选项与参数校验都和 `notInDiff()` 相同。路径命中或已知 hunk 命中即为 match；没有命中且所选内容侧存在 elision 时为 unavailable，其余为 mismatch。
 两者在 unavailable 时结果相同，所以不是逻辑取反。pattern 同样会与变化路径比较：只想匹配内容时，写一个不会出现在路径里的 pattern。
-match 的 Evidence 给出首个命中的路径与有界预览。`inDiff` 使用独立的 criterion `sandbox-in-diff/v1`，不向已封口的 `sandbox-result/v1` 追加 operation。
+match 的 Evidence 给出首个命中的路径与有界预览。`inDiff` 使用独立的 criterion `sandbox-in-diff`，其 payload 单独表达该检查。
 
-`content: "none"` 的两种检查都写入独立的 criterion `sandbox-diff-paths/v1`，`content` 为其它值时仍分别写 `sandbox-result/v1` 的 `not-in-diff` 与 `sandbox-in-diff/v1`，已有 Eval 的 criterion bytes 与身份不变。
+`content: "none"` 的两种检查都写入独立的 criterion `sandbox-diff-paths`，`content` 为其它值时仍分别写 `sandbox-result` 的 `not-in-diff` 与 `sandbox-in-diff`。
 
 Runner 在作者 settle 后只导出并冻结一次 workspace diff 语义值。它是 Assertion evaluator 与 FileChanges collector
 共享的内存输入。封口时 collector 以归因策略、采集状态和按顺序排列的 send 区间端点轨迹形成 origin Attempt 的

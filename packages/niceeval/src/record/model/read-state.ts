@@ -15,16 +15,9 @@ export type RecordAttachmentRead<Value> =
   | { readonly state: "available"; readonly value: Value }
   | { readonly state: "not-recorded" }
   | {
-      readonly state: "migration-required";
-      readonly family: string;
-      readonly fromRevision: number;
-      readonly toRevision: number;
-      readonly command: "niceeval migrate";
-    }
-  | {
       readonly state: "unsupported";
       readonly family: string;
-      readonly revision: number;
+      readonly revision: number | undefined;
     }
   | { readonly state: "invalid"; readonly issues: NonEmptyRecordIssues };
 

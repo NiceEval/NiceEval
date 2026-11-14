@@ -200,8 +200,6 @@ export const CALL_ID__BRAND = "@niceeval/o11y/CallId" as const;
 export const EVENT_ID__BRAND = "@niceeval/o11y/EventId" as const;
 export const TOOL_OCCURRENCE_ID__BRAND = "@niceeval/o11y/ToolOccurrenceId" as const;
 export const SESSION_SCOPE_ID__BRAND = "@niceeval/o11y/SessionScopeId" as const;
-export const LEGACY_SOURCE_LOCAL_CALL_ID__BRAND =
-  "@niceeval/o11y/LegacySourceLocalCallId" as const;
 export const COMMAND_ID__BRAND = "@niceeval/o11y/CommandId" as const;
 export const USAGE_OBSERVATION_ID__BRAND =
   "@niceeval/o11y/UsageObservationId" as const;
@@ -214,10 +212,6 @@ export type CallId = string & Brand.Brand<typeof CALL_ID__BRAND>;
 export type EventId = string & Brand.Brand<typeof EVENT_ID__BRAND>;
 export type ToolOccurrenceId = string & Brand.Brand<typeof TOOL_OCCURRENCE_ID__BRAND>;
 export type SessionScopeId = string & Brand.Brand<typeof SESSION_SCOPE_ID__BRAND>;
-/** A v1-only relation that cannot be assigned to current occurrence identity. */
-export type LegacySourceLocalCallId = string & Brand.Brand<
-  typeof LEGACY_SOURCE_LOCAL_CALL_ID__BRAND
->;
 export type CommandId = string & Brand.Brand<typeof COMMAND_ID__BRAND>;
 export type UsageObservationId = string & Brand.Brand<
   typeof USAGE_OBSERVATION_ID__BRAND
@@ -325,12 +319,6 @@ export function isSessionScopeId(value: string): value is SessionScopeId {
   return SESSION_SCOPE_ID_PATTERN.test(value);
 }
 
-export function isLegacySourceLocalCallId(
-  value: string,
-): value is LegacySourceLocalCallId {
-  return CALL_ID_PATTERN.test(value);
-}
-
 export function isCommandId(value: string): value is CommandId {
   return COMMAND_ID_PATTERN.test(value);
 }
@@ -384,14 +372,6 @@ export function makeToolOccurrenceId(value: string): ToolOccurrenceId | undefine
 
 export function makeSessionScopeId(value: string): SessionScopeId | undefined {
   return isSessionScopeId(value) ? (value as SessionScopeId) : undefined;
-}
-
-export function makeLegacySourceLocalCallId(
-  value: string,
-): LegacySourceLocalCallId | undefined {
-  return isLegacySourceLocalCallId(value)
-    ? (value as LegacySourceLocalCallId)
-    : undefined;
 }
 
 export function makeCommandId(value: string): CommandId | undefined {

@@ -10,7 +10,6 @@ import { InspectionAttemptUsageResultSchema } from "../../../inspection/results.
 import { projectAttemptUsage } from "../../../inspection/trace.ts";
 import { RecordExactParseOptions } from "../../codec/core.ts";
 import {
-  AdapterUsageAttachmentRevision1Schema, AdapterUsageAttachmentRevision2Schema,
   AdapterUsageAttachmentSchema, AdapterUsageCallSchema,
   type AdapterUsageCall, type ReadableAdapterUsageAttachment,
 } from "./schema.ts";
@@ -43,16 +42,6 @@ describe("Model usage algorithm and codec boundaries", () => {
       .toEqual({ state: "unavailable", value: null, observationCount: 0 });
     expect(adapterInspectionTokenTotal(ledger([call({ outputTokens: Number.MAX_SAFE_INTEGER }), call({ callId: "overflow", outputTokens: 1 })]), "outputTokens"))
       .toEqual({ state: "unavailable", value: null, observationCount: 2 });
-  });
-
-  it("rejects revision-crossed fields rather than silently discarding purpose evidence", () => {
-    const current = call();
-    const { modelSlot: _slot, ...v2Call } = current;
-    const envelope = { collection: { state: "complete", limitations: [] }, calls: [v2Call], priceReceipts: [] };
-    expect(Result.isFailure(Schema.decodeUnknownResult(AdapterUsageAttachmentRevision1Schema, RecordExactParseOptions)(envelope))).toBe(true);
-    expect(Result.isFailure(Schema.decodeUnknownResult(AdapterUsageAttachmentRevision2Schema, RecordExactParseOptions)({ ...envelope, calls: [current] }))).toBe(true);
-    expect(Result.isFailure(Schema.decodeUnknownResult(AdapterUsageAttachmentSchema, RecordExactParseOptions)(envelope))).toBe(true);
-    expect(Result.isFailure(Schema.decodeUnknownResult(AdapterUsageCallSchema, RecordExactParseOptions)({ ...current, modelSlot: "a\n" }))).toBe(true);
   });
 
   it("strictly decodes closed usage results and rejects inconsistent previews or invented total completeness", () => {

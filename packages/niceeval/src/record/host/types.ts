@@ -104,8 +104,7 @@ export interface SelectedOwnerRef<out Owner extends "run" | "attempt" = "run" | 
 
 /**
  * The Host exposes current Attachment states without importing maintenance.
- * A reachable older revision is migration-required. Any other well-formed,
- * non-current revision remains unsupported data; malformed envelopes and
+ * A third-party persistence revision mismatch remains unsupported data; malformed envelopes and
  * closures are invalid, never a reader-wide failure.
  */
 export interface RecordAttachmentContentReader {
@@ -454,55 +453,6 @@ export interface ReferenceRunWriteSession {
   readonly seal: RunWriteSession["seal"];
 }
 
-export type RecordFormatInspection =
-  | { readonly state: "already-current"; readonly format: "niceeval.record.attachments" }
-  | { readonly state: "migration-required"; readonly format: "niceeval.record.attachments" }
-  | { readonly state: "unsupported-format"; readonly format: string };
-
-export interface RecordAttachmentMigrationTarget {
-  readonly family: string;
-  readonly owner: "attempt" | "run";
-  readonly runId: RunId;
-  readonly attemptId?: AttemptId;
-  readonly fromRevision: number;
-  readonly toRevision: number;
-  readonly retention: {
-    readonly retainedFacts: readonly string[];
-    readonly droppedFacts: readonly string[];
-    readonly rerunRecommendation: string | null;
-  };
-}
-
-export type RecordMigrationPlan =
-  | {
-      readonly state: "already-current";
-      readonly format: "niceeval.record.attachments";
-    }
-  | {
-      readonly state: "migration-required";
-      readonly format: "niceeval.record.attachments";
-      readonly sourceFormat: "niceeval.record.attachments" | "niceeval.record.source-receipts";
-      readonly attachments: readonly RecordAttachmentMigrationTarget[];
-      readonly pendingSeals: readonly RunId[];
-      readonly resumedSteps: number;
-    }
-  | {
-      readonly state: "unsupported-format";
-      readonly format: string;
-    };
-
-export type RecordMigrationReceipt =
-  | { readonly state: "already-current"; readonly format: "niceeval.record.attachments" }
-  | {
-      readonly state: "migrated";
-      readonly format: "niceeval.record.attachments";
-      readonly attachments: readonly RecordAttachmentMigrationTarget[];
-      readonly committed: number;
-      readonly skipped: number;
-      readonly failed: number;
-      readonly rebuiltSeals: readonly RunId[];
-    };
-
 /** Closed, presentation-neutral plan for explicit incomplete-Run cleanup. */
 export type RecordCleanOperationPlan =
   | {
@@ -519,46 +469,6 @@ export interface RecordCleanOperationReceipt {
   readonly skipped: readonly RunId[];
 }
 
-/**
- * A migration plan is safe to carry outside the maintenance Scope. The ready
- * branch remains nominally backed by the exact source-byte plan held by this
- * Host process; callers cannot manufacture an applicable plan from JSON.
- */
-export type RecordMigrateOperationPlan =
-  | {
-      readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record.attachments";
-    }
-  | {
-      readonly _tag: "RecordMigrationUnsupported";
-      readonly format: string;
-    }
-  | RecordMigrateReadyPlan;
-
-export interface RecordMigrateReadyPlan {
-  readonly _tag: "RecordMigrationReady";
-  readonly format: "niceeval.record.attachments";
-  readonly sourceFormat: "niceeval.record.attachments" | "niceeval.record.source-receipts";
-  readonly attachments: readonly RecordAttachmentMigrationTarget[];
-  readonly pendingSeals: readonly RunId[];
-  readonly resumedSteps: number;
-}
-
-export type RecordMigrateOperationReceipt =
-  | {
-      readonly _tag: "RecordMigrationAlreadyCurrent";
-      readonly format: "niceeval.record.attachments";
-    }
-  | {
-      readonly _tag: "RecordMigrationApplied";
-      readonly format: "niceeval.record.attachments";
-      readonly attachments: readonly RecordAttachmentMigrationTarget[];
-      readonly committed: number;
-      readonly skipped: number;
-      readonly failed: number;
-      readonly rebuiltSeals: readonly RunId[];
-    };
-
 /** Exhaustive failure vocabulary consumed by Record-owned CLI presentation. */
 export type RecordMaintenanceOperationFailure =
   | {
@@ -566,34 +476,13 @@ export type RecordMaintenanceOperationFailure =
       readonly code: "record-maintenance-busy";
     }
   | {
-      readonly _tag: "RecordMigrationPlanStale";
-      readonly code: "record-migration-plan-stale";
-    }
-  | {
-      readonly _tag: "RecordMigrationInvalid";
-      readonly code: "record-migration-invalid";
-      readonly family: string;
-    }
-  | {
       readonly _tag: "RecordFormatUnsupported";
       readonly code: "record-format-unsupported";
-    }
-  | {
-      readonly _tag: "RecordMigrationRequired";
-      readonly code: "record-migration-required";
     }
   | {
       readonly _tag: "RecordMaintenanceOperationFailed";
       readonly code: string;
     };
-
-export interface RecordMaintenanceSession {
-  readonly inspect: () => Effect.Effect<RecordFormatInspection, RecordMaintenanceError>;
-  readonly planMigrate: () => Effect.Effect<RecordMigrationPlan, RecordMaintenanceError>;
-  readonly applyMigrate: (
-    plan: RecordMigrationPlan,
-  ) => Effect.Effect<RecordMigrationReceipt, RecordMaintenanceError>;
-}
 
 export interface RecordHostSDK {
   readonly openRead: RecordHostSDK["current"]["openRead"];
@@ -630,23 +519,5 @@ export interface RecordHostSDK {
       RecordMaintenanceOperationFailure,
       import("../../coordination/record-leases.ts").RecordCoordination
     >;
-    readonly planMigrate: (input: {
-      readonly root: RecordRoot;
-    }) => Effect.Effect<
-      RecordMigrateOperationPlan,
-      RecordMaintenanceOperationFailure,
-      import("../../coordination/record-leases.ts").RecordCoordination
-    >;
-    readonly applyMigrate: (input: {
-      readonly root: RecordRoot;
-      readonly plan: RecordMigrateReadyPlan;
-    }) => Effect.Effect<
-      RecordMigrateOperationReceipt,
-      RecordMaintenanceOperationFailure,
-      import("../../coordination/record-leases.ts").RecordCoordination
-    >;
-    readonly open: (input: {
-      readonly root: RecordRoot;
-    }) => Effect.Effect<RecordMaintenanceSession, RecordMaintenanceOpenError, import("effect").Scope.Scope | import("../../coordination/record-leases.ts").RecordCoordination>;
   };
 }

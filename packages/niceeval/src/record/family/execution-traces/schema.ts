@@ -153,8 +153,7 @@ export const ExecutionTraceHeaderRecordSchema = Schema.Struct({
   kind: Schema.Literal("trace-header"),
   traceId: BoundedIdentifierSchema,
   sourceTraceId: BoundedIdentifierSchema,
-  // Legacy producer metadata is read unchanged, never synthesized for new traces.
-  schema: Schema.Struct({ id: BoundedIdentifierSchema, revision: Schema.optional(NonNegativeSafeIntegerSchema) }),
+  schema: Schema.Struct({ id: BoundedIdentifierSchema }),
   collection: CollectionSchema,
   scopes: Schema.Array(ScopeSchema),
 });

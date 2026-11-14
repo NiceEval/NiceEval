@@ -7,9 +7,7 @@ export const RECORD_SQLITE_BASELINE_SQL = `
 CREATE TABLE ne19_record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
-  storage_revision INTEGER NOT NULL CHECK (storage_revision > 0),
   storage_generation TEXT NOT NULL,
-  schema_fingerprint TEXT NOT NULL CHECK (length(schema_fingerprint) = 64),
   created_at TEXT NOT NULL,
   barrier_state TEXT NOT NULL CHECK (barrier_state IN ('open','draining','portable')),
   portable_generation TEXT,
@@ -146,7 +144,7 @@ CREATE TABLE ne19_attachments (
   owner_run_id TEXT NOT NULL REFERENCES ne19_runs(run_id) ON DELETE CASCADE,
   owner_attempt_id TEXT,
   family TEXT NOT NULL,
-  family_revision INTEGER NOT NULL CHECK (family_revision > 0),
+  family_revision INTEGER CHECK (family_revision IS NULL OR family_revision > 0),
   logical_identity TEXT,
   canonical_payload BLOB,
   canonical_digest TEXT CHECK (canonical_digest IS NULL OR length(canonical_digest) = 64),
@@ -433,11 +431,4 @@ CREATE INDEX ne19_shared_state_generations_head ON ne19_shared_state_generations
 CREATE INDEX ne19_kept_sandboxes_kept_at ON ne19_kept_sandboxes(kept_at, entry_id);
 
 
-CREATE TABLE ne19_migration_state (
-  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  state TEXT NOT NULL CHECK (state IN ('committed','ready')),
-  source_format TEXT,
-  source_digest TEXT CHECK (source_digest IS NULL OR length(source_digest) = 64),
-  CHECK ((source_format IS NULL) = (source_digest IS NULL)),
-  CHECK (state != 'committed' OR source_format IS NOT NULL)
-) STRICT;`;
+`;

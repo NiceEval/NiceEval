@@ -76,6 +76,8 @@ execution 持有自己的 storage-generation lease，physical-only migration 后
 
 `niceeval.execution-traces` 使用原生 collection items 保存快照头与事件，不把整局事件数组放入 Attachment header。
 快照头拥有 `traceId`、schema、collection 和 scopes，事件拥有框架稳定身份与该 trace 内展示 ordinal。
+NiceEval 归一化的 OTLP trace 使用稳定名称 `niceeval.otlp`，持久格式由 Record 的唯一格式标记保护。
+外部 emitter 提供的 schema identity 与真实版本属于原始事实，照常保存；标准 OTLP 接收协议保持不变。
 导入时分配的身份在幂等重交、分页与 Record 搬迁后不变。字段全集由 [Adapter Library](../../adapters/library/README.md#保存通用执行轨迹) 拥有。
 
 collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可变值。publication 将 trace items 与附件内容一起关闭；
@@ -110,7 +112,7 @@ collector 先验证整份输入和同 Attempt 的附件证据，再接纳不可�
 
 ## 外部调用用量
 
-`niceeval.adapter-usage` 的持久 revision 为 `2`，owner 为 origin Attempt。它保存最终快照，不保存可变的请求状态机。
+`niceeval.adapter-usage` 使用当前 exact payload，owner 为 origin Attempt。它保存最终快照，不保存可变的请求状态机。
 同一 Attempt 的 `callId` 唯一；完全相同的规范化快照重报是幂等的，冲突拒绝并形成采集失败。
 `retryOf` 只能引用此前登记的同 Attempt 调用，因此实际重试计作新请求。
 
@@ -199,7 +201,7 @@ cache rate 缺失时不回退 input rate。token 或 rate 缺失形成 partial p
 内置 catalog 没有独立 flat applicability 证据时不用于该估算链。
 
 collection 只证明已接纳快照的保存完整度，不证明所有外部请求都已被登记。
-revision 1 由 reader 先按旧 schema 验证，再只读投影 `route` 与 `cost` 为 null、`priceReceipts` 为缺席。
+旧 Record 由存储格式标记拒绝，不为缺失字段补造 null 或估价事实。
 它不改写旧附件，也不按当前配置补价格。旧 Record 缺少此 family 时保持 `not-recorded`，不合成空集合或改写旧 Agent Turn 事实。
 
 `attempt.usage` 为每个调用投影 `effectiveCost`。reported 包括零并优先；缺席时才采用同 call 的 estimate receipt。

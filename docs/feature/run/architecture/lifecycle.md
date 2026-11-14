@@ -99,6 +99,6 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。
 事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。
 
-只读 Record open 只接受精确 current schema。Host-owned 可写打开可按 [自动迁移](README.md#自动迁移) 升级明确支持的历史格式；先证明资源静止、验证历史数据并备份，再在同一数据库事务中升级。
+Record open 只接受当前格式标记与精确 schema。旧格式明确拒绝，保留原件并提示重跑或删除存储。
 未知格式、损坏数据或无法证明安全的旧 locks / sessions 拒绝迁移并保留原件。迁移后的 checkpoint 与只读重开验证属于正常收尾；失败不得用旧备份替换已经提交的新数据。
 checkpoint、空间回收、generation lease 与 staging GC 都由内部 adapter 管理，不形成 maintenance 命令。

@@ -3,7 +3,6 @@ import type {
   EvalId,
   ExecutionIdentityDigest,
   ExperimentId,
-  RecordFormat,
   RecordBlobKey,
   RecordId,
   RunId,
@@ -14,9 +13,8 @@ import type {
 import type { RunContext } from "./run-context.ts";
 import type { RunAbsenceReason } from "../../run/protocol.ts";
 
-/** The versionless root header; a future incompatible root uses a new format identity. */
+/** The root identity; format admission belongs to the enclosing storage. */
 export interface RecordDocument {
-  readonly format: RecordFormat;
   readonly recordId: RecordId;
 }
 
@@ -80,7 +78,6 @@ export interface AttemptDocument {
   readonly outcome: AttemptOutcome;
 }
 
-export const RECORD_ATTACHMENT_ENVELOPE_FORMAT = "niceeval.record-attachment" as const;
 
 export interface RecordAttachmentBytePointer {
   readonly sha256: Sha256Digest;
@@ -89,23 +86,6 @@ export interface RecordAttachmentBytePointer {
 
 export interface RecordAttachmentContentPointer extends RecordAttachmentBytePointer {
   readonly key: RecordBlobKey;
-}
-
-/**
- * The sole Attachment commit record. Payload and content objects are immutable
- * digest-addressed bytes written before this envelope is atomically replaced.
- */
-export interface RecordAttachmentEnvelope<Family extends string = string> {
-  readonly format: typeof RECORD_ATTACHMENT_ENVELOPE_FORMAT;
-  readonly ownerKind: RecordAttachmentOwner;
-  readonly family: Family;
-  readonly schemaVersion: number;
-  readonly payload: RecordAttachmentBytePointer;
-  readonly contents: readonly RecordAttachmentContentPointer[];
-  readonly references: readonly {
-    readonly owner: RecordAttachmentOwner;
-    readonly family: string;
-  }[];
 }
 
 export const RECORD_ATTACHMENT_OWNERS = ["run", "attempt"] as const;

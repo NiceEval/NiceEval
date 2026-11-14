@@ -127,7 +127,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         controller.abort();
         try {
           await deps.capture({
-            protocol: "niceeval.simulated-user/v1",
+
             id: `su_${randomUUID()}`,
             sessionId: source.sessionId,
             sourceTurnId: source.turnId,

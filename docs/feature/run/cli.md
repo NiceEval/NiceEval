@@ -126,7 +126,7 @@ canonical Record 固定为项目内 `.niceeval/record.sqlite`。受控退出会�
 只读验证通过后才成功。portable gate 仅由正在收尾的 Invocation 发起，且任何 active work 都会完整拒绝；该文件本身即可直接复制或归档。
 跨机器分片汇合使用 `run import`，离线审计交付选定子集使用 `run export`；无需手工运行 `clean` 或 `migrate` 命令。
 
-`show`、`compare`、`run list` 与 `view` 可以直接读取支持的历史 portable Record，无需先运行评估。
-历史格式只在私有副本中迁移；原件、历史 Run 与引用不被改写，也不创建新 Run。
+`show`、`compare`、`run list` 与 `view` 可以直接读取当前格式的 portable Record，无需先运行评估。
+旧格式拒绝打开，并提示重跑或清理存储；原件不被改写。
 `show --record <file>` 的外部输入必须是已交付、无并发修改的单文件 Record。未知格式、非空 WAL、损坏文件或无法证明的 owner 状态明确拒绝。
-项目 operational 读取保留当前格式的实时事实；输入选择、原件保护与失败边界统一见 [自动迁移](architecture/README.md#自动迁移)。
+项目 operational 读取保留当前格式的实时事实；输入选择、原件保护与失败边界统一见 [格式准入](architecture/README.md#格式准入)。

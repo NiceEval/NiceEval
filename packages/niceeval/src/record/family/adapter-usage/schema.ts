@@ -13,18 +13,6 @@ const Identity = Schema.String.pipe(Schema.check(Schema.makeFilter(
   (value) => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 256 && !/[\u0000-\u001f\u007f]/u.test(value),
 )));
 const Tokens = Schema.NullOr(NonNegativeSafeIntegerSchema);
-const AdapterUsageCallRevision1Schema = Schema.Struct({
-  callId: Identity,
-  retryOf: Schema.NullOr(Identity),
-  provider: Schema.NullOr(Identity),
-  model: Schema.NullOr(Identity),
-  status: Schema.Literals(["succeeded", "failed", "cancelled", "unknown"]),
-  inputTokens: Tokens,
-  inputTotalTokens: Tokens,
-  outputTokens: Tokens,
-  cacheReadTokens: Tokens,
-  cacheWriteTokens: Tokens,
-});
 const AdapterUsageRouteSchema = Schema.Struct({
   transportProvider: Schema.NullOr(Identity),
   endpointId: Schema.NullOr(Identity),
@@ -82,28 +70,24 @@ export const AdapterCallPriceReceiptSchema = Schema.Struct({
 });
 export type AdapterCallPriceReceipt = Schema.Schema.Type<typeof AdapterCallPriceReceiptSchema>;
 export const AdapterUsageModelSlotSchema = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u));
-const AdapterUsageCallRevision2Schema = Schema.Struct({
-  ...AdapterUsageCallRevision1Schema.fields,
+export const AdapterUsageCallSchema = Schema.Struct({
+
+  callId: Identity,
+  retryOf: Schema.NullOr(Identity),
+  provider: Schema.NullOr(Identity),
+  model: Schema.NullOr(Identity),
+  status: Schema.Literals(["succeeded", "failed", "cancelled", "unknown"]),
+  inputTokens: Tokens,
+  inputTotalTokens: Tokens,
+  outputTokens: Tokens,
+  cacheReadTokens: Tokens,
+  cacheWriteTokens: Tokens,
   route: AdapterUsageRouteSchema,
   cost: Schema.NullOr(AdapterUsageReportedCostSchema),
-});
-export const AdapterUsageCallSchema = Schema.Struct({
-  ...AdapterUsageCallRevision2Schema.fields,
   modelSlot: Schema.NullOr(AdapterUsageModelSlotSchema),
 });
 export type AdapterUsageCall = Schema.Schema.Type<typeof AdapterUsageCallSchema>;
 export const AdapterUsageLimits = Object.freeze({ maximumCalls: 4_000 });
-export const AdapterUsageAttachmentRevision1Schema = Schema.Struct({
-  collection: CollectionStateSchema,
-  calls: Schema.Array(AdapterUsageCallRevision1Schema),
-});
-export type AdapterUsageAttachmentRevision1 = Schema.Schema.Type<typeof AdapterUsageAttachmentRevision1Schema>;
-export const AdapterUsageAttachmentRevision2Schema = Schema.Struct({
-  collection: CollectionStateSchema,
-  calls: Schema.Array(AdapterUsageCallRevision2Schema),
-  priceReceipts: Schema.Array(AdapterCallPriceReceiptSchema),
-});
-export type AdapterUsageAttachmentRevision2 = Schema.Schema.Type<typeof AdapterUsageAttachmentRevision2Schema>;
 export const AdapterUsageAttachmentSchema = Schema.Struct({
   collection: CollectionStateSchema,
   calls: Schema.Array(AdapterUsageCallSchema),
@@ -111,38 +95,7 @@ export const AdapterUsageAttachmentSchema = Schema.Struct({
   priceReceipts: Schema.Array(AdapterCallPriceReceiptSchema),
 });
 export type AdapterUsageAttachment = Schema.Schema.Type<typeof AdapterUsageAttachmentSchema>;
-export interface ReadableAdapterUsageAttachment {
-  readonly collection: AdapterUsageAttachment["collection"];
-  readonly calls: AdapterUsageAttachment["calls"];
-  /** null means revision 1 contained no call-bound estimate proofs. */
-  readonly priceReceipts: AdapterUsageAttachment["priceReceipts"] | null;
-}
-
-/** Valid revision 1 facts remain readable without rewriting bytes or repricing historical calls. */
-export function projectAdapterUsageRevision1(
-  value: AdapterUsageAttachmentRevision1,
-): ReadableAdapterUsageAttachment {
-  return Object.freeze({
-    collection: value.collection,
-    calls: Object.freeze(value.calls.map((call) => Object.freeze({
-      ...call,
-      modelSlot: null,
-      route: Object.freeze({ transportProvider: null, endpointId: null }),
-      cost: null,
-    }))),
-    priceReceipts: null,
-  });
-}
-
-/** Revision 2 preserves reported costs and sealed estimates while leaving purpose unknown. */
-export function projectAdapterUsageRevision2(
-  value: AdapterUsageAttachmentRevision2,
-): ReadableAdapterUsageAttachment {
-  return Object.freeze({
-    ...value,
-    calls: Object.freeze(value.calls.map((call) => Object.freeze({ ...call, modelSlot: null }))),
-  });
-}
+export type ReadableAdapterUsageAttachment = AdapterUsageAttachment;
 
 function pricingDigestInput(pricing: AdapterCallPriceReceipt["pricing"]): object {
   const source = { kind: pricing.source.kind, id: pricing.source.id, asOf: pricing.source.asOf };

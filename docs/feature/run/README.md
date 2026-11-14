@@ -30,10 +30,9 @@ Run create、未发布 aggregate、已发布 Attempt、case lock、Invocation Se
 Host 关闭 writer、checkpoint、truncate WAL，再以内建只读路径重开 canonical Record，验证新 baseline 与领域不变量。
 新 baseline 强制 `secure_delete=ON`。只有物理删除与 hostile reopen 都通过，命令才交付同一个可移动文件。
 
-Host-owned 可写打开会自动迁移明确支持的历史 ProjectDatabase，先备份并验证，再事务性升级。
-读取历史 portable Record 时在私有副本自动迁移，无需先运行评估；外部原件保持不变。
-未知格式、无法验证的数据与不安全的历史运行状态拒绝读取，不自动修复。
-版本范围与安全条件见 [自动迁移](architecture/README.md#自动迁移)。
+Record 只有存储本身的一个格式标记。打开时先核对标记，再建立 reader 或 writer。
+旧版 NiceEval 写入的 Record 明确拒绝，提示重跑或删除该存储，原件保持不变。
+格式准入与安全条件见 [格式准入](architecture/README.md#格式准入)。
 
 ## 用户路径
 

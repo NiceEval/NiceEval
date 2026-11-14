@@ -12,7 +12,7 @@ family 不拥有 table；Host 按通用字段保存未知 family 的原始 bytes
 
 Content metadata 保存逻辑 identity、byte length、整体 digest 与 chunk count。
 chunk rows 按 Content identity 与 ordinal 唯一排列，单行受内部结构上限保护。
-输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family revision。
+输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family 事实。
 作者不选择 path、table、index、pragma、transaction 或 chunk size。
 
 Host 在接纳前验证并冻结 command identity、canonical bytes 与 digest。

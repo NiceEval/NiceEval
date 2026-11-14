@@ -1,3 +1,3 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { identityManifestsRecordAttachment } from "./definition.ts";
-export const identityManifestsRecordAttachmentPersistence = defineRecordAttachmentPersistence({ attachment: identityManifestsRecordAttachment, revision: 1 });
+export const identityManifestsRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({ attachment: identityManifestsRecordAttachment, });

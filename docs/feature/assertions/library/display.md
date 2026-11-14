@@ -66,7 +66,7 @@ Filter 视图的首屏先把 Query summary 翻成人类规则，并紧接权威�
 
 每个有 exact relation 的 ledger 行提供“定位到会话日志”。动作精确滚动到对应事件或 logical tool occurrence，并短暂高亮；不能跳到相邻 Turn 后让读者自行搜索。页面上方 trace 只为当前 Assertion 显示 transient overlay，切换 Assertion 或关闭详情就清除，不能把 overlay 写回 source facts。
 
-历史 Record 未保存 current matcher query 或逐条 relation 时，Filter 主视图只显示一条提示：`此历史 Record 未记录 matcher 查询或断言与记录的逐条关联`。中立 source ledger 仍可在技术详情中折叠查看，旧 diagnostic 也只在该处按原样展示。legacy 不显示 partial 大卡、matched／mismatched 筛选、逐行 overlay、witness path、failure frontier 或任何推断命中；页面不重跑 matcher，也不把旧 diagnostic 与 ledger 合成 inferred overlay。
+Filter 只展示当前格式保存的 matcher query 与逐条 relation。旧格式在打开 Record 时拒绝，提示重跑或清理；页面不重跑 matcher，也不推断未保存的命中。
 
 Assertions display 不携带 source path、origin source snapshot 或跨 family content handle。需要源码导航时，固定 `attempt.sources` operation 组合 Assertions payload 内的 `sourceSites` 与 origin Sources snapshot。
 没有对应 row 或 Sources 无法形成可用值时，entry 位置显示 `unmapped`，不能猜测当前 worktree。`.orStop()` 已执行的位置可由 role 为 `stop` 的 source site 显示，不能由未保存的控制流推断。
