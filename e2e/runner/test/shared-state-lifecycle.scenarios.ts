@@ -95,7 +95,11 @@ test.concurrent("复用 Sandbox 的每条 Attempt after 与 Experiment teardown 
               intervalMs: 20,
               label: "first Attempt after starts",
             },
-          );
+          ).catch(async (cause) => {
+            await first.dispose();
+            const result = await first.done;
+            throw new Error(`First Attempt after did not start.\n${result.diagnostic()}`, { cause });
+          });
           second = niceeval.start(["exp", "shared-state-pool-second", "--rerun", "all", "--json"], {
             env: {
               NICEEVAL_SHARED_STATE_BARRIER: barrierRoot,
