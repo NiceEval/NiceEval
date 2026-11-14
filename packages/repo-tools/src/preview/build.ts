@@ -552,23 +552,7 @@ const collectSiteManifest = Effect.fn("preview.collectSiteManifest")(function* (
           const current = yield* io("recheck-concord-bytes", target, () => readFile(target));
           if (!bytes.equals(current)) return yield* fail("Concord changes changed during CLI verification");
         } else {
-          const parsed = yield* Effect.try({
-            try: () => JSON.parse(bytes.toString("utf8")) as unknown,
-            catch: (error) => new PreviewIoError({ operation: "parse-published-json", path, message: String(error) }),
-          });
-          const record =
-            typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-              ? (parsed as Record<string, unknown>)
-              : undefined;
-          if (
-            record === undefined ||
-            Object.keys(record).sort().join("\0") !== ["en", "format", "zh-CN"].join("\0") ||
-            record.format !== "niceeval.view-page/v1" ||
-            typeof record.en !== "string" ||
-            typeof record["zh-CN"] !== "string"
-          ) {
-            return yield* fail(`published site contains Inspection or unknown JSON: ${path}`);
-          }
+          return yield* fail(`published site contains Inspection or unknown JSON: ${path}`);
         }
       }
       files.push({ path, byteLength: bytes.byteLength, sha256: sha256(bytes) });

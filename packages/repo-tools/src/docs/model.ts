@@ -14,7 +14,6 @@ export const DocsCheckSchema = Schema.Union([
 export type DocsCheck = typeof DocsCheckSchema.Type;
 
 export const DocsWorkItemSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-work-item/v1"),
   runId: NonEmptyTrimmedString,
   id: NonEmptyTrimmedString,
   goal: NonEmptyTrimmedString,
@@ -28,7 +27,7 @@ export const DocsWorkItemSchema = Schema.Struct({
 export type DocsWorkItem = typeof DocsWorkItemSchema.Type;
 
 export const DocsWorkRunSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-work-run/v1"),
+  format: Schema.Literal("niceeval-docs-work/current"),
   runId: NonEmptyTrimmedString,
   baseCommit: NonEmptyTrimmedString,
   createdAt: NonEmptyTrimmedString,
@@ -37,7 +36,6 @@ export const DocsWorkRunSchema = Schema.Struct({
 export type DocsWorkRun = typeof DocsWorkRunSchema.Type;
 
 export const DocsWorkShowReceiptSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-work-show/v1"),
   run: DocsWorkRunSchema,
   items: Schema.Array(DocsWorkItemSchema),
 });
@@ -50,7 +48,6 @@ export const DocsCheckResultSchema = Schema.Struct({
 });
 
 export const DocsWorkReceiptSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-work-receipt/v1"),
   runId: NonEmptyTrimmedString,
   itemId: NonEmptyTrimmedString,
   baseCommit: NonEmptyTrimmedString,
@@ -65,7 +62,6 @@ export const DocsWorkReceiptSchema = Schema.Struct({
 export type DocsWorkReceipt = typeof DocsWorkReceiptSchema.Type;
 
 export const CommandReceiptSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-command-receipt/v1"),
   command: NonEmptyTrimmedString,
   status: Schema.Literal("completed"),
   changedPaths: Schema.Array(Schema.String),
@@ -74,7 +70,6 @@ export const CommandReceiptSchema = Schema.Struct({
 export type CommandReceipt = typeof CommandReceiptSchema.Type;
 
 export const DocsFinalizeReceiptSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.docs-work-finalize/v1"),
   runId: NonEmptyTrimmedString,
   status: Schema.Literal("finalized"),
   receipts: Schema.Array(Schema.String),

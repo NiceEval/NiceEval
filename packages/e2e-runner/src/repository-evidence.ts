@@ -110,7 +110,6 @@ export const projectExecutionSources = (directory: string, suiteRoot: string) =>
       if (lstatSync(directory).isSymbolicLink()) throw new Error("Reliability snapshot root must not be a symlink");
       walk(directory, "");
       return decodeWire(ProjectionSchema, {
-        algorithm: "niceeval.execution-source-projection/v1",
         files,
         digest: digestJson(files),
       });
@@ -163,7 +162,6 @@ export const resolveRepositorySourceIdentity = Effect.fn("resolveNiceEvalReliabi
   return yield* Effect.try({
     try: () =>
       decodeWire(SourceSchema, {
-        format: "niceeval.reliability-source/v1",
         projection,
         caseId,
         nativeTestFile: path,

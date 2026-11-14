@@ -101,7 +101,6 @@ export function generateReference(dryRun = false): Effect.Effect<CommandReceipt,
   }).pipe(
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
-      format: "niceeval.docs-command-receipt/v1" as const,
       command: "pnpm run repo docs reference",
       status: "completed" as const,
       changedPaths,
@@ -134,7 +133,6 @@ export function generateBundledIndex(dryRun = false): Effect.Effect<CommandRecei
   }).pipe(
     Effect.flatMap((generated) => writeChangedOutputs([generated], dryRun)),
     Effect.map((changedPaths) => ({
-      format: "niceeval.docs-command-receipt/v1" as const,
       command: "pnpm build:index",
       status: "completed" as const,
       changedPaths,
@@ -173,7 +171,6 @@ export function generateDiffCode(dryRun = false): Effect.Effect<CommandReceipt, 
     ),
     Effect.flatMap((generated) => writeChangedOutputs(generated, dryRun)),
     Effect.map((changedPaths) => ({
-      format: "niceeval.docs-command-receipt/v1" as const,
       command: "pnpm run repo docs diff-code",
       status: "completed" as const,
       changedPaths,
@@ -314,7 +311,6 @@ export function runDocsSite(
       });
     }
     return {
-      format: "niceeval.docs-command-receipt/v1",
       command: `pnpm run repo docs site ${operation}`,
       status: "completed",
       changedPaths: [],

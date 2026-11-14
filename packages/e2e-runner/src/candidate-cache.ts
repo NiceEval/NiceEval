@@ -69,7 +69,7 @@ interface Lockfile {
 
 export const candidateInputDigest = (root: string) =>
   io(() => {
-    const digest = createHash("sha256").update("niceeval-candidate-inputs/v1\0");
+    const digest = createHash("sha256").update("niceeval-candidate-inputs\0");
     const visit = (path: string): void => {
       const absolute = join(root, path);
       if (!existsSync(absolute)) {
@@ -107,6 +107,7 @@ export const candidateInputDigest = (root: string) =>
       "apps/docs-site/images",
       "packages/repo-tools/src/docs/generators.ts",
       "packages/repo-tools/src/docs/reference-compiler.ts",
+      "packages/e2e-runner/src/candidate-cache.ts",
     ])
       visit(path);
     const lock = parse(readFileSync(join(root, "pnpm-lock.yaml"), "utf8")) as Lockfile;

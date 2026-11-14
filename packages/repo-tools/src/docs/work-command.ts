@@ -7,34 +7,44 @@ import {
   jsonDocument,
   type TerminalDeliverySink,
 } from "./internal/command.js";
-import { DocsWorkError, renderDocsDomainFailure } from "./internal/errors.js";
+import { type DocsDomainError, DocsWorkError, renderDocsDomainFailure } from "./internal/errors.js";
 import type { DocsFinalizeReceipt, DocsWorkReceipt, DocsWorkRun, DocsWorkShowReceipt } from "./model.js";
 import { checkDocsWork, finalizeDocsWork, prepareDocsWork, showDocsWork } from "./work.js";
-
-type WorkReceipt = DocsWorkRun | DocsWorkShowReceipt | DocsWorkReceipt | DocsFinalizeReceipt;
 
 const jsonOption = Options.Boolean("json").pipe(
   Options.withDefault(false),
   Options.withDescription("Emit this documentation-work receipt as JSON."),
 );
 
-function renderWorkReceipt(receipt: WorkReceipt, json: boolean): string {
+function renderPreparedRun(receipt: DocsWorkRun, json: boolean): string {
   if (json) return jsonDocument(receipt);
-  switch (receipt.format) {
-    case "niceeval.docs-work-run/v1":
-      return `Prepared docs work run ${receipt.runId} with ${receipt.items.length} item(s).\n`;
-    case "niceeval.docs-work-show/v1":
-      return `Docs work run ${receipt.run.runId}:\n${receipt.items.map((item) => `  ${item.id}: ${item.goal}`).join("\n")}\n`;
-    case "niceeval.docs-work-receipt/v1":
-      return `${receipt.status} ${receipt.runId}/${receipt.itemId}; ${receipt.changedPaths.length} changed path(s); ${receipt.checks.length} check(s) passed.\n`;
-    case "niceeval.docs-work-finalize/v1":
-      return `Finalized docs work run ${receipt.runId} with ${receipt.receipts.length} verified receipt(s).\n`;
-  }
+  return `Prepared docs work run ${receipt.runId} with ${receipt.items.length} item(s).\n`;
+}
+
+function renderShownRun(receipt: DocsWorkShowReceipt, json: boolean): string {
+  if (json) return jsonDocument(receipt);
+  return `Docs work run ${receipt.run.runId}:\n${receipt.items.map((item) => `  ${item.id}: ${item.goal}`).join("\n")}\n`;
+}
+
+function renderCheckedItem(receipt: DocsWorkReceipt, json: boolean): string {
+  if (json) return jsonDocument(receipt);
+  return `${receipt.status} ${receipt.runId}/${receipt.itemId}; ${receipt.changedPaths.length} changed path(s); ${receipt.checks.length} check(s) passed.\n`;
+}
+
+function renderFinalizedRun(receipt: DocsFinalizeReceipt, json: boolean): string {
+  if (json) return jsonDocument(receipt);
+  return `Finalized docs work run ${receipt.runId} with ${receipt.receipts.length} verified receipt(s).\n`;
+}
+
+function renderWorkFailure(error: DocsDomainError, json: boolean): string {
+  if (error._tag !== "DocsWorkError") return renderDocsDomainFailure(error, json);
+  const message = error.reasons.join("; ");
+  return json
+    ? jsonDocument({ ok: false, error: error._tag, message })
+    : `DocsWorkError: ${message.replace(/\s*\n\s*/gu, " ")}\n`;
 }
 
 function makeWorkCommand(deliver: TerminalDeliverySink) {
-  const present = { success: renderWorkReceipt, failure: renderDocsDomainFailure };
-
   const prepare = Command.make(
     "prepare",
     {
@@ -46,7 +56,12 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
       json: jsonOption,
     },
     ({ base, json, scope }) =>
-      deliverDomainResult(prepareDocsWork(scope, Option.getOrUndefined(base)), json, present, deliver),
+      deliverDomainResult(
+        prepareDocsWork(scope, Option.getOrUndefined(base)),
+        json,
+        { success: renderPreparedRun, failure: renderWorkFailure },
+        deliver,
+      ),
   ).pipe(Command.withDescription("Validate all scopes, then atomically prepare one local run."));
 
   const show = Command.make(
@@ -55,7 +70,8 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
       runId: Args.String("run-id"),
       json: jsonOption,
     },
-    ({ json, runId }) => deliverDomainResult(showDocsWork(runId), json, present, deliver),
+    ({ json, runId }) =>
+      deliverDomainResult(showDocsWork(runId), json, { success: renderShownRun, failure: renderWorkFailure }, deliver),
   ).pipe(Command.withDescription("Decode and show a prepared local run."));
 
   const check = Command.make(
@@ -88,7 +104,7 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
         : receipt === undefined
           ? invalidSelection()
           : checkDocsWork(runId, itemId, { _tag: "verify", receipt });
-      return deliverDomainResult(program, json, present, deliver);
+      return deliverDomainResult(program, json, { success: renderCheckedItem, failure: renderWorkFailure }, deliver);
     },
   ).pipe(Command.withDescription("Re-run scoped lint and write a reported or verified receipt."));
 
@@ -98,7 +114,13 @@ function makeWorkCommand(deliver: TerminalDeliverySink) {
       runId: Args.String("run-id"),
       json: jsonOption,
     },
-    ({ json, runId }) => deliverDomainResult(finalizeDocsWork(runId), json, present, deliver),
+    ({ json, runId }) =>
+      deliverDomainResult(
+        finalizeDocsWork(runId),
+        json,
+        { success: renderFinalizedRun, failure: renderWorkFailure },
+        deliver,
+      ),
   ).pipe(Command.withDescription("Require fresh verified receipts, then run the complete lint gate."));
 
   return Command.make("work").pipe(

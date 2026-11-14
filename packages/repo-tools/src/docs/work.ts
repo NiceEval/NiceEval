@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 
 import type { ChildProcessSpawner } from "effect/process";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   DocsConflictError,
@@ -153,7 +153,6 @@ export function planDocsWorkItems(
   const ids = new Set<string>();
   return Effect.succeed(
     scopes.map((path) => ({
-      format: "niceeval.docs-work-item/v1" as const,
       runId,
       id: itemId(path, ids),
       goal: `Update ${path}`,
@@ -242,7 +241,7 @@ export function prepareDocsWork(
       return yield* new DocsWorkError({ operation: "prepare", reasons });
     }
     const run: DocsWorkRun = {
-      format: "niceeval.docs-work-run/v1",
+      format: "niceeval-docs-work/current",
       runId,
       baseCommit,
       createdAt: new Date().toISOString(),
@@ -257,19 +256,46 @@ function runPath(runId: string, suffix: string): string {
   return `${RUNS_ROOT}/${runId}/${suffix}`;
 }
 
-function loadRun(runId: string): Effect.Effect<DocsWorkRun, DocsDomainError> {
-  return validateWorkId("run", runId).pipe(
-    Effect.flatMap((safeRunId) => readJson(runPath(safeRunId, "run.json"), DocsWorkRunSchema)),
+function readWorkState<A>(path: string, schema: Schema.ConstraintDecoder<A, never>) {
+  return readJson(path, Schema.Unknown).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(schema, { errors: "all", onExcessProperty: "error" })),
+    Effect.mapError(
+      (error) =>
+        new DocsWorkError({
+          operation: "read state",
+          reasons: [`${path}: invalid current docs work state; run prepare again. ${errorMessage(error)}`],
+        }),
+    ),
   );
 }
 
-function loadItem(runId: string, itemId: string): Effect.Effect<DocsWorkItem, DocsDomainError> {
+function loadRun(runId: string): Effect.Effect<DocsWorkRun, DocsDomainError> {
+  return validateWorkId("run", runId).pipe(
+    Effect.flatMap((safeRunId) =>
+      readWorkState(runPath(safeRunId, "run.json"), DocsWorkRunSchema).pipe(
+        Effect.flatMap((run) =>
+          run.runId === safeRunId
+            ? Effect.succeed(run)
+            : Effect.fail(
+                new DocsWorkError({
+                  operation: "read state",
+                  runId: safeRunId,
+                  reasons: ["run.json ID does not match its owning directory; run prepare again"],
+                }),
+              ),
+        ),
+      ),
+    ),
+  );
+}
+
+function loadItem(run: DocsWorkRun, itemId: string): Effect.Effect<DocsWorkItem, DocsDomainError> {
   return Effect.all({
-    runId: validateWorkId("run", runId),
+    runId: validateWorkId("run", run.runId),
     itemId: validateWorkId("item", itemId),
   }).pipe(
     Effect.flatMap(({ itemId: safeItemId, runId: safeRunId }) =>
-      readJson(runPath(safeRunId, `items/${safeItemId}.json`), DocsWorkItemSchema),
+      readWorkState(runPath(safeRunId, `items/${safeItemId}.json`), DocsWorkItemSchema),
     ),
   );
 }
@@ -277,8 +303,8 @@ function loadItem(runId: string, itemId: string): Effect.Effect<DocsWorkItem, Do
 export function showDocsWork(runId: string): Effect.Effect<DocsWorkShowReceipt, DocsDomainError> {
   return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const items = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
-    return { format: "niceeval.docs-work-show/v1", run, items };
+    const items = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
+    return { run, items };
   });
 }
 
@@ -394,7 +420,7 @@ function receiptPath(runId: string, itemId: string): string {
 }
 
 function readVerifiedDependency(runId: string, itemId: string): Effect.Effect<DocsWorkReceipt, DocsDomainError> {
-  return readJson(receiptPath(runId, itemId), DocsWorkReceiptSchema).pipe(
+  return readWorkState(receiptPath(runId, itemId), DocsWorkReceiptSchema).pipe(
     Effect.flatMap((receipt) =>
       receipt.status === "verified"
         ? Effect.succeed(receipt)
@@ -417,7 +443,7 @@ export function checkDocsWork(
 ): Effect.Effect<DocsWorkReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const item = yield* loadItem(runId, itemId);
+    const item = yield* loadItem(run, itemId);
     if (item.runId !== run.runId || item.baseCommit !== run.baseCommit) {
       return yield* new DocsWorkError({
         operation: "check",
@@ -427,7 +453,7 @@ export function checkDocsWork(
       });
     }
     yield* Effect.forEach(item.blockedBy, (dependency) => readVerifiedDependency(runId, dependency));
-    const allItems = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
+    const allItems = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
     const changed = yield* changedSince(run.baseCommit);
     const allowedRunPaths = allItems.flatMap(({ write, finalizerOnly }) => [...write, ...finalizerOnly]);
     const outOfRun = changed.filter(
@@ -450,7 +476,7 @@ export function checkDocsWork(
     let reportedReceipt: string | undefined;
     if (mode._tag === "verify") {
       const normalizedReceipt = yield* normalizeOwnedPath(mode.receipt);
-      const prior = yield* readJson(normalizedReceipt, DocsWorkReceiptSchema);
+      const prior = yield* readWorkState(normalizedReceipt, DocsWorkReceiptSchema);
       const mismatches = [
         ...(prior.status !== "reported" ? ["receipt is not reported"] : []),
         ...(prior.runId !== runId ? ["receipt run ID differs"] : []),
@@ -467,7 +493,6 @@ export function checkDocsWork(
 
     const checks = yield* Effect.forEach(item.checks, runOneCheck, { concurrency: 1 });
     const receipt: DocsWorkReceipt = {
-      format: "niceeval.docs-work-receipt/v1",
       runId,
       itemId,
       baseCommit: run.baseCommit,
@@ -499,16 +524,16 @@ export function finalizeDocsWork(
 ): Effect.Effect<DocsFinalizeReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
   return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const items = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
+    const items = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
     const receipts = yield* Effect.forEach(items, (item) =>
-      readJson(receiptPath(runId, item.id), DocsWorkReceiptSchema).pipe(
+      readWorkState(receiptPath(runId, item.id), DocsWorkReceiptSchema).pipe(
         Effect.mapError(
           () =>
             new DocsWorkError({
               operation: "finalize",
               runId,
               itemId: item.id,
-              reasons: ["verified receipt is missing or invalid"],
+              reasons: ["verified receipt is missing or invalid; run prepare again for invalid current state"],
             }),
         ),
       ),
@@ -544,7 +569,6 @@ export function finalizeDocsWork(
       ),
     );
     return {
-      format: "niceeval.docs-work-finalize/v1",
       runId,
       status: "finalized",
       receipts: receipts.map((receipt) => receiptPath(runId, receipt.itemId)),

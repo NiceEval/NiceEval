@@ -7,12 +7,10 @@ const strings = Schema.Array(Schema.String);
 const Digest = Schema.TemplateLiteral(["sha256:", Schema.String]).check(Schema.isPattern(/^sha256:[a-f0-9]{64}$/u));
 const nullableText = Schema.NullOr(Schema.String);
 export const ProjectionSchema = Schema.Struct({
-  algorithm: Schema.Literal("niceeval.execution-source-projection/v1"),
   digest: Schema.String,
   files: Schema.Array(Schema.Struct({ path: Schema.String, bytes: Schema.Int, rawSha256: Schema.String })),
 });
 export const SourceSchema = Schema.Struct({
-  format: Schema.Literal("niceeval.reliability-source/v1"),
   projection: ProjectionSchema,
   caseId: Schema.String,
   nativeTestFile: Schema.String,
