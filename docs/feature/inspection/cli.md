@@ -277,7 +277,7 @@ CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCuto
 它不启动 HTTP、sqlite-wasm、浏览器或 View session。对象、方面与 ID 只在固定 operation 的参数边界内选择 `overview.get`、Run、
 Attempt、精确 trace identity 或比较集合。命令不接受 SQL、`where`、JSON path、formula、数据库 cursor、rowid 或文件位置。
 
-分页只用 operation 自己声明的有界参数，例如 opaque continuation 或 `attempt.assertion.image` 的 `offset/limit`；上限由 operation 固定，调用方不能放宽。
+分页只有一种写法：任何一页放不下的 `show` 输出都带 `next-page` link，同一条命令加 opaque `--continuation <token>` 读下一页，包括 Run 列表、execution outline、产物目录与单个对象的正文。页大小由 operation 固定，调用方不能放宽；断言图片写入文件，不分页。
 
 Run 详情只有一个 operation：`run.get`。`show run:<run-id>`、`show run:<run-id> --json` 与 Insight 的 Run debugger 都消费它，
 不存在按粒度拆开的近义 Run operation。
@@ -581,11 +581,11 @@ Events 的全部人读字符串按码点去掉控制字符与双向格式控制�
 | `--eval <prefix>` | `exp:` 的 `assertions` |
 | `--full` | 单条断言 `ae_<id>` |
 | `--output <file>` | 断言图片 `image <image-id>` |
-| `--continuation <token>` | `execution` 与 `runs`，原样交给 operation |
+| `--continuation <token>` | 任何带 `next-page` link 的输出，原样交给 operation |
 | `--reference` | 省略对象的当前结果 |
 | `--all` | 省略对象的当前结果，且不与 `--json` 同用 |
 
-`execution` 的下一页必须保留同一筛选；trace 稳定 ID 直接定位一项详情，不接受列表筛选或 continuation。
+`execution` 的下一页必须保留同一筛选；trace 稳定 ID 定位一项详情，不接受列表筛选，详情正文超出一页时同样用 `--continuation` 续读。
 
 轨迹输出分别标明捕获状态、每条 trace 的 producer collection 状态及限制、当前页是否还有后续。
 `partial` 的空索引显示其限制，页尾不能被描述为生产者证据完整。
