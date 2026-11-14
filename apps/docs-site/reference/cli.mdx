@@ -22,13 +22,13 @@ Pass `--experiment` repeatedly to run several Experiments at once, for example `
 | `gap` | The current slot has no reusable result; check the reason after the colon | Run `niceeval exp <experiment> <eval-prefix> --dry --json` for comparison details |
 | `locked` | An execution lock was detected for this Experiment and Eval; this does not mean completion or eligibility for reuse | Wait for the lock holder to finish, inspect with `niceeval show run:<run-id>`, then run `--dry` again |
 | `prior` | A `source` row is a historical candidate that this plan did not adopt; no need to delete previous results | Inspect the candidate with `niceeval show @<locator>` and follow the `gap` reason |
-| `via` | A named change to the identity calculation version proves the inputs equivalent; no manual acceptance needed | Check the change name with `niceeval exp <experiment> --dry --json` |
+| `via` | Lists the rules proving that the inputs meet limited equivalence conditions | Check the basis with `niceeval exp <experiment> --dry --json`; it does not mean an old format was migrated |
 | `no slots` | The row has no current planned slots; do not treat it as successful execution | Check the selection with `niceeval exp <experiment> --dry --json` |
 
 The `verdict` after `source` is the historical Verdict: `passed` means passed, `failed` means an assertion failed, `errored` means execution errored, and `skipped` means skipped.
 For `errored` and `skipped`, use the gap reason to decide whether to rerun; inspect details with `niceeval show @<locator>`.
-`not-recorded`, `migration-required`, `unsupported`, and `invalid` mean the Verdict attachment was not recorded, needs migration, is unsupported, or has invalid contents; none means passed.
-First collect evidence with `niceeval show @<locator> assertions`. Run `niceeval migrate` only when migration is explicitly required; preserve and report unsupported or invalid records.
+`not-recorded`, `unsupported`, and `invalid` mean the Verdict attachment was not recorded, is unsupported, or has invalid contents; none means passed.
+First collect evidence with `niceeval show @<locator> assertions`. An old-format Record is explicitly rejected when opened and is not upgraded automatically; preserve or archive the original file, then execute again.
 
 ### `--dry` gap codes
 
@@ -43,19 +43,17 @@ When `locked` also appears, wait for the lock holder to finish before assessing 
 | `source-core-invalid` | The source's core records or relations are invalid | Preserve evidence, inspect with `niceeval show run:<run-id>`, and report it; do not rewrite the Record |
 | `source-publication-unavailable` | The source Attempt's publication evidence is unavailable | Collect evidence with `niceeval show @<locator>`; confirm the run has ended before rerunning the gap |
 | `source-attachment-unavailable` | An attachment required for reuse was not recorded or is missing | Collect evidence with `niceeval show @<locator> assertions` and `timing`, then rerun |
-| `source-attachment-migration-required` | A required attachment needs format migration | Run `niceeval migrate` as diagnosed, then run `--dry` again |
 | `source-attachment-unsupported` | The installed version does not support a source attachment | Check the installed version, save diagnostics with `niceeval show @<locator>`, and report it |
 | `source-attachment-invalid` | A required attachment has invalid contents | Preserve the records, collect evidence with `niceeval show @<locator>`, and report it |
-| `reuse-contract-domain-mismatch` | The results use different reuse-contract version domains | Check `--dry --json`; rerun when equivalence cannot be proved |
 | `reuse-contract-mismatch` | The reuse contracts differ | Check the comparison items in `--dry --json`, then rerun |
 | `identity-mismatch` | The current execution identity differs from the source | Read the specific differences; if needed, check adoption eligibility with `niceeval accept @<locator> --dry`, otherwise rerun |
-| `identity-domain-mismatch` | The identity calculation version domains differ | Check the diagnostics in `--dry --json`; report unregistered changes, and rerun for behavior changes |
 | `duration-domain-mismatch` | Historical duration and current timeout rules use different measurement domains | Inspect duration with `niceeval show @<locator> timing`, then rerun |
 | `timeout-exceeded` | Historical execution exceeded the current timeout | Check the current `timeout`; inspect duration with `timing`, confirm the limit, then rerun |
 | `attempt-outcome-ineligible` | The historical execution outcome is ineligible for reuse | Diagnose execution issues with `niceeval show @<locator>`, then rerun |
 | `adoption-unproven` | The referenced previous result cannot be proved applicable to the current target | Inspect the rejection reason with `niceeval accept @<locator> --dry`; do not force adoption, and rerun if needed |
 | `verdict-ineligible` | The historical Verdict is neither reusable `passed` nor `failed` | Diagnose `errored` or `skipped` with `niceeval show @<locator>`, then rerun |
 | `score-incomplete` | A score-only Eval has no complete score | Diagnose scoring with `niceeval show @<locator> assertions`, then rerun |
+| `dynamic-module-unresolved` | Source dependencies cannot be determined statically, so the previous result cannot be proved still applicable | Switch to a literal import or a managed loader at the file, line, and column in the diagnostic, then run `--dry` again; with dynamic loading kept, it executes every time |
 | `adapter-behavior-revision-required` | The Adapter has not declared a behavior revision for reuse | The author must declare `behaviorRevision`, then run `--dry` again; do not treat a missing revision as equivalent |
 | `rerun-requested` | This invocation explicitly requests execution with `--rerun` | Execute if intended; to reuse results, remove `--rerun` and preview again |
 | `sandbox-retention-requested` | This invocation's `--keep-sandbox` requires actual execution | Execute if intended; to reuse results, remove the option and preview again |
@@ -64,7 +62,7 @@ When `locked` also appears, wait for the lock holder to finish before assessing 
 ### `--dry` difference summaries
 
 `changed`, `added`, and `removed` mean changed, added, and removed inputs respectively; review the input before deciding to execute. `unknown` means comparison is unavailable; inspect the diagnostics in `--dry --json`.
-`config:` identifies configuration, `plan:physical` the execution plan, `plugins:` lifecycle Plugins, and `source:` and `data:` source code and managed data respectively.
+`niceeval:` identifies the framework capabilities depended on, `config:` configuration, `plan:physical` the execution plan, `plugins:` lifecycle Plugins, and `source:` and `data:` source code and managed data respectively.
 
 Complete structured summaries show specific values. When a summary is incomplete, `summary sha256:<short-hash>` distinguishes the saved summaries on the two sides; it is not the digest of the full execution identity and cannot recover omitted fields.
 If two incomplete summaries happen to be identical, `comparison unavailable` appears once with the reason comparison is unavailable; it does not mean the inputs are identical.
