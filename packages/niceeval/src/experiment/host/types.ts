@@ -8,6 +8,7 @@ import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
 import type { BeforeCachePreparationSummary } from "../../runner/before-cache-preparation.ts";
+import type { ExecutionPolicyIdentity } from "../../runner/reuse-plan.ts";
 
 /** Restricts Host protocol data to JSON values; functions, undefined and live service instances cannot cross this boundary. */
 export type ExperimentHostJsonValue =
@@ -203,7 +204,7 @@ export type ExperimentHostDrySlot =
 
 /** Describes current target reuse and gaps with pinned readbacks; it is a preview of applicability rather than a new Run result. */
 export interface ExperimentHostDryPlan {
-  readonly policy: { readonly name: "project-target"; readonly version: 1 };
+  readonly policy: ExecutionPolicyIdentity;
   readonly slots: readonly ExperimentHostDrySlot[];
   readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
   readonly lockedPairs: readonly string[];

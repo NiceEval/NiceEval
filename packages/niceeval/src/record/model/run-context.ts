@@ -60,7 +60,6 @@ export interface RunExecutionContext {
   readonly flags: RunContextJsonObject;
   /** Declared execution inputs; omission in historical data means unknown. */
   readonly experimentHooks?: {
-    readonly version: 1;
     readonly setup: "absent" | "opaque";
     readonly teardown: "absent" | "opaque";
   };
@@ -119,7 +118,6 @@ const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Stru
   flags: RunContextJsonObjectSchema,
   experimentHooks: Schema.optionalKey(
     Schema.Struct({
-      version: Schema.Literal(1),
       setup: Schema.Literals(["absent", "opaque"]),
       teardown: Schema.Literals(["absent", "opaque"]),
     }),

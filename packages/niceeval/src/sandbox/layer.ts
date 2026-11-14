@@ -52,7 +52,7 @@ import type {
 } from "./runtime.ts";
 import { dockerProfileError } from "./docker-profile/errors.ts";
 import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
-import { dindSupervisorRevision } from "./dind-supervisor.ts";
+import { dindRuntimeDigest } from "./dind-supervisor.ts";
 import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { e2bSnapshotDriver } from "./e2b-snapshot-driver.ts";
 
@@ -941,7 +941,6 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
           buildKeys: freezeSortedNonEmptyBuildKeys(input.build.buildKeys, "sandbox provider plan.build.buildKeys"),
         });
   const identity = freezeJson({
-    version: 3,
     provider,
     plannerRevision,
     caseKind,
@@ -1493,7 +1492,7 @@ function dockerRuntimeIdentity(
               : {
                   mode: "dind",
                   isolation: access.isolation,
-                  supervisorRevision: dindSupervisorRevision(),
+                  supervisorDigest: dindRuntimeDigest(),
                 },
         }),
     ...(Object.keys(resources).length === 0 ? {} : { resources: resources as JsonValue }),
@@ -1746,7 +1745,6 @@ export function defineSandboxTemplate(definition: SandboxTemplateDefinition): Sa
     provider,
     kind,
     identity: freezeJson({
-      version: 2,
       provider,
       kind,
       publishable: freezeJson(definition.publishableIdentity),

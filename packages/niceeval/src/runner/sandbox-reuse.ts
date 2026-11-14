@@ -23,7 +23,6 @@ export interface SandboxReusePoolDescriptor {
 }
 
 export interface SandboxReusePoolIdentity {
-  readonly version: 2;
   readonly providerPlan: JsonValue;
   readonly agentInstalls: JsonValue[];
   readonly physicalLifecycle: JsonValue;
@@ -59,7 +58,6 @@ export function sandboxReusePoolDescriptor(
     scope = input.plan.pair.hasEvalPhysicalLifecycle ? { kind: "eval", evalId: input.evalId } : { kind: "shared" };
   }
   const identity = Object.freeze({
-    version: 2 as const,
     providerPlan: input.plan.providerPlan.identity,
     agentInstalls: [...agentInstallPlansForRun(input.run)],
     physicalLifecycle: sandboxPhysicalLifecycleIdentity(input.plan.pair),
@@ -67,7 +65,7 @@ export function sandboxReusePoolDescriptor(
   });
   const digest = digestOf(identity);
   return Object.freeze({
-    key: `sandbox-reuse-pool:v2:${digest}`,
+    key: `sandbox-reuse-pool:${digest}`,
     scope: identity.scope,
     identity,
   });

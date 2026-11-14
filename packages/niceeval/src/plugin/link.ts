@@ -276,7 +276,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
           }
           if (pluginFailure !== undefined) throw pluginFailure;
         };
-  const pluginBehavior = Object.freeze({ version: 1, lifecycles: pluginAttachmentProjection(lifecycles) }) as JsonValue;
+  const pluginBehavior = Object.freeze({ lifecycles: pluginAttachmentProjection(lifecycles) }) as JsonValue;
   const effective = Object.freeze({
     ...run,
     adapter,
@@ -369,7 +369,6 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
       // into their actual owner layer above.
       sandboxLifecycles: noSandboxLifecycles,
       pairProjection: Object.freeze({
-        version: 1,
         occurrences: all.map((entry) => entry.projection),
       }) as JsonValue,
     });

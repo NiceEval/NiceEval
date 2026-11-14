@@ -4,7 +4,7 @@ import type { RunContext } from "../record/model/run-context.ts";
 /** Absence must be captured by the producer, never inferred from missing activities. */
 export function hasProvenNoExperimentHooks(context: RunContext): boolean {
   const hooks = context.execution.experimentHooks;
-  return hooks?.version === 1 && hooks.setup === "absent" && hooks.teardown === "absent";
+  return hooks?.setup === "absent" && hooks.teardown === "absent";
 }
 
 /** Frozen current inputs; reconstruction never consults historical configuration. */

@@ -905,7 +905,6 @@ export function discoverEvals(
           // may reorder its closed `evals` set without changing behavior. Other
           // Group source stays in the hash, so opaque command/hook behavior and
           // helper code still invalidate fingerprints when it changes.
-          version: 5,
           id,
           evalIds,
           layer: sandboxLayerDefinitionIdentity(module.default.sandbox),

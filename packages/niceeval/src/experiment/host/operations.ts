@@ -15,7 +15,7 @@ import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import { prepareRunnerRecordReuse, withRunnerCurrentReusePreview } from "../../runner/record.ts";
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
-import type { ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
+import { projectTargetPolicyIdentity, type ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
 import { readCaseLockEffect } from "../../runner/lock.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
@@ -583,7 +583,7 @@ function dryPlan(
     });
   });
   return Object.freeze({
-    policy: Object.freeze({ name: "project-target" as const, version: 1 as const }),
+    policy: projectTargetPolicyIdentity,
     slots: freezeArray(projected),
     readbacks: freezeArray(readbacks),
     lockedPairs: freezeArray(lockedPairs),

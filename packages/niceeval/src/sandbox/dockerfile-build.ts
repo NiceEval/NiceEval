@@ -268,7 +268,6 @@ function buildManifestDigest(work: SandboxBuildWork): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        schemaVersion: 1,
         scopeId: work.scopeId,
         buildKey: work.buildKey,
         provider: work.provider,
