@@ -149,6 +149,14 @@ sandboxCache?: SandboxCacheConfig;
 
 The Host's execution cache policy; unlike the Sandbox declaration layer, this field does not take part in identity computation.
 
+#### `sandboxLabels`
+
+```ts
+sandboxLabels?: "run-only";
+```
+
+Emit only Run-level Provider labels, omitting the Attempt and Eval creation labels. Does not affect execution identity.
+
 #### `plugins`
 
 ```ts

@@ -1,3 +1,4 @@
+import { sandboxCreationLabels } from "./creation-labels.ts";
 // ProviderModule 的唯一运行入口：core 只调用 plan 私绑的闭包，不解释 adapter 名或 JSON runtime input。
 
 import { randomUUID } from "node:crypto";
@@ -102,6 +103,9 @@ export type SandboxRuntimeRelease =
     };
 
 export interface SandboxRuntimeMaterializeInput {
+  readonly attemptId?: string;
+  readonly creationEvalId?: string;
+  readonly sandboxLabels?: "run-only";
   readonly runId?: string;
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
   readonly evalId: string;
@@ -494,6 +498,7 @@ export function materializeDockerComposeProviderPlan(
     feedback: context.feedback,
     provisionSlot: boundProvisionSlot(context),
     runId: context.runId,
+    creationLabels: sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
     lifetimeMs: configuredLifetime(plan.lifetime),
   }).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context)))));
 }
@@ -542,7 +547,7 @@ export function materializeDockerfileProviderPlan(
                   pathPrepend: plan.pathPrepend,
                   feedback: context.feedback,
                   provisionToken,
-                  runIdentity: currentRunIdentity(context.runId),
+                  runIdentity: currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId })),
                   ...(plan.profileBinding === undefined ? {} : {
                     dockerSocketPath: plan.profileBinding.dockerSocketPath,
                     ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
@@ -757,7 +762,7 @@ export function materializeDockerImageProviderPlan(
         pathPrepend: plan.pathPrepend,
         feedback: context.feedback,
         provisionToken,
-        runIdentity: currentRunIdentity(context.runId),
+        runIdentity: currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId })),
         ...(plan.profileBinding === undefined ? {} : {
           dockerSocketPath: plan.profileBinding.dockerSocketPath,
           ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
@@ -812,7 +817,7 @@ export function materializeE2BProviderPlan(
       () => import("./e2b.ts"),
     );
     const provisionToken = randomUUID();
-    const runIdentity = currentRunIdentity(context.runId);
+    const runIdentity = currentRunIdentity(context.runId, sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }));
     const backend = yield* withProvisionRetry(
       providerBoundaryEffect(() => E2BSandbox.create({
         ...deadlineOptions(context.deadline),
@@ -1350,6 +1355,9 @@ export function acquireSandboxRunPlan(
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const context: SandboxRuntimeMaterializeContext = {
     runId: input.runId,
+    attemptId: input.attemptId,
+    creationEvalId: input.creationEvalId,
+    sandboxLabels: input.sandboxLabels,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1404,6 +1412,9 @@ export function prepareMaterializedSandboxRunPlan(
 ): Effect.Effect<void, SandboxRuntimeMaterializationError> {
   const context: SandboxRuntimeMaterializeContext = {
     runId: input.runId,
+    attemptId: input.attemptId,
+    creationEvalId: input.creationEvalId,
+    sandboxLabels: input.sandboxLabels,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,

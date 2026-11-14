@@ -14,11 +14,21 @@ export interface TraceReceiver {
   endpoint(host: string): string;
   /** 目前为止收到并解析出的全部 span(副本)。 */
   collect(): TraceSpan[];
+  /** Known wire bytes already accepted by a dedicated host receiver. */
+  readonly receivedBytes?: () => number;
   /** 给在途的最后一批导出留点落地时间(无新 span 持续 quietMs 即返回,至多 maxMs)。 */
   settle(quietMs: number, maxMs: number): Effect.Effect<void>;
+  /** Sandbox transport drains bounded chunks, publishing decoded prefixes before the next read. */
+  readonly drain?: (activity: TraceCollectionActivity) => Effect.Effect<void, unknown>;
   /** receiver owner 的 release action；Effect.acquireRelease 负责正常、失败与中断时调用它。 */
   readonly close: Effect.Effect<void>;
 }
+
+export type TraceCollectionActivity = <A>(
+  key: "telemetry.read" | "telemetry.decode",
+  operation: Effect.Effect<A, unknown>,
+  count: (value: A) => number,
+) => Effect.Effect<A, unknown>;
 
 interface InboxClosed {
   readonly code: "otlp-receiver-inbox-closed";
@@ -89,6 +99,7 @@ interface ReceiverResources {
   readonly sockets: Set<Socket>;
   readonly requests: Inbox<HttpRequest>;
   readonly spans: TraceSpan[];
+  receivedBytes: number;
   lastAt: number;
   arrivalGeneration: number;
   closed: boolean;
@@ -124,6 +135,7 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
     return Object.freeze({
       endpoint: (host: string) => `http://${host}:${boundPort}/v1/traces`,
       collect: () => resources.spans.slice(),
+      receivedBytes: () => resources.receivedBytes,
       settle,
       close,
     });
@@ -147,6 +159,7 @@ function makeResources(): ReceiverResources {
     sockets,
     requests,
     spans: [],
+    receivedBytes: 0,
     lastAt: 0,
     arrivalGeneration: 0,
     closed: false,
@@ -210,6 +223,7 @@ function handleTraceRequest(resources: ReceiverResources, request: HttpRequest):
     Effect.matchEffect({
       onFailure: () => Effect.sync(() => respond(request.response, 400)),
       onSuccess: (raw) => Effect.sync(() => {
+        resources.receivedBytes += raw.byteLength;
         const contentType = request.request.headers["content-type"] ?? "";
         try {
           let body = raw;

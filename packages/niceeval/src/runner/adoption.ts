@@ -397,6 +397,7 @@ function runForExperiment(
     ),
     ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
     sandboxReuse: experiment.sandboxReuse,
+    ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
     ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
     ...resolveRunTimeout(undefined, experiment.timeoutMs),

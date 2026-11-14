@@ -1,3 +1,4 @@
+import type { SandboxCreationProvenance } from "../sandbox/creation-labels.ts";
 import { applyCommandDeadline } from "../sandbox/deadline.ts";
 import { sandboxReuseCapability, type SandboxProviderBackend } from "../sandbox/backend.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
@@ -163,6 +164,7 @@ export class ReusableSandboxPool {
     attemptDeadlineMs: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
     admission?: SandboxRuntimeAdmission,
+    provenance?: SandboxCreationProvenance,
   ): Effect.Effect<
     ReusableSandboxLease,
     Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError,
@@ -198,7 +200,7 @@ export class ReusableSandboxPool {
         if (this.entries.length + this.creating < this.capacity) {
           this.creating += 1;
           return yield* Effect.gen({ self: this }, function* () {
-            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators, admission);
+            const created = yield* this.create(minRemainingMs, leaseDeadlineAt?.(), buildLocators, admission, provenance);
             this.entries.push(created);
             // stop 可能在物化期间开始。把刚创建的 entry 先纳入池，再由唯一 retire 路径关闭
             // 它自己的 Scope；绝不能把它借给已停止的池，也不能让 stop 在 creating=0 时漏掉它。
@@ -303,6 +305,7 @@ export class ReusableSandboxPool {
     deadlineAt: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
     admission?: SandboxRuntimeAdmission,
+    provenance?: SandboxCreationProvenance,
   ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
     return Effect.gen({ self: this }, function* () {
       if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError as Error);
@@ -341,8 +344,10 @@ export class ReusableSandboxPool {
       };
       const materialized = yield* Scope.provide(materializeSandboxRunPlan({
         runId: this.runId,
-        plan: this.plan,
+        ...provenance,
         evalId: this.materializationOwnerId,
+        creationEvalId: provenance?.evalId,
+        plan: this.plan,
         deadline,
         // Runtime intentionally reports SandboxLayer/provider finalizer errors
         // as diagnostics so it can continue the remaining finalizers. The pool

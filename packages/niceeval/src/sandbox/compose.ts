@@ -1136,6 +1136,7 @@ export function buildComposeIdentityOverlay(opts: {
 /** Supplies prepared case context and resource-lifetime controls for Compose materialization; lifetimeMs caps the physical resource group, not just one command. */
 export interface MaterializeComposeOpts {
   readonly runId?: string;
+  readonly creationLabels?: Readonly<Record<string, string>>;
   readonly ctx: SandboxMaterializeContext;
   readonly timeout?: number;
   readonly feedback?: ScopedFeedback;
@@ -1211,7 +1212,7 @@ export function materializeDockerComposeProviderCase(
     });
 
     const identityYaml = buildComposeIdentityOverlay({
-      identity: currentRunIdentity(opts.runId),
+      identity: currentRunIdentity(opts.runId, opts.creationLabels),
       serviceNames: collection.inspection.services.map((s) => s.name),
       networkNames: collection.inspection.networkNames,
     });

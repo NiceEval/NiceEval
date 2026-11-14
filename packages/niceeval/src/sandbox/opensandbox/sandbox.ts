@@ -41,18 +41,18 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   get nativeInstanceId(): string { return this.remote.id; }
   get sandboxId(): string { return this.remote.id; }
 
-  static async create(options: OpenSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, snapshotId?: string, runId?: string): Promise<OpenSandboxBackend> {
+  static async create(options: OpenSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, snapshotId?: string, runId?: string, creationLabels?: Readonly<Record<string, string>>): Promise<OpenSandboxBackend> {
     const domain = process.env.OPEN_SANDBOX_DOMAIN;
     if (!domain) throw new Error("OPEN_SANDBOX_DOMAIN is required for OpenSandbox");
     const url = new URL(domain);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("OPEN_SANDBOX_DOMAIN must be an HTTP(S) URL without credentials, query or fragment");
     const connectionConfig = { domain, apiKey: process.env.OPEN_SANDBOX_API_KEY, useServerProxy: true, disableMetrics: true };
-    const remote = await OpenSandboxBackend.provision(options, connectionConfig, snapshotId, runId);
+    const remote = await OpenSandboxBackend.provision(options, connectionConfig, snapshotId, runId, creationLabels);
     return new OpenSandboxBackend(remote, options, connectionConfig, deadlineAt);
   }
 
-  private static async provision(options: OpenSandboxOptions & { readonly lifetimeMs: number }, connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean }, snapshotId?: string, runId?: string): Promise<RemoteSandbox> {
-    const metadata = { ...sandboxCreationMetadata(runId), "niceeval-provision-token": randomUUID() };
+  private static async provision(options: OpenSandboxOptions & { readonly lifetimeMs: number }, connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean }, snapshotId?: string, runId?: string, creationLabels?: Readonly<Record<string, string>>): Promise<RemoteSandbox> {
+    const metadata = { ...sandboxCreationMetadata(runId), ...creationLabels, "niceeval-provision-token": randomUUID() };
     let remote: RemoteSandbox;
     try { remote = await RemoteSandbox.create({
       ...(snapshotId === undefined ? { image: options.image } : { snapshotId }),

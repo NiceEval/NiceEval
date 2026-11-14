@@ -377,6 +377,7 @@ function agentRunFromExperiment(
     ),
     sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
+    ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
     judge: experiment.judge,
     ...resolveRunTimeout(overrides.timeoutMs, experiment.timeoutMs),

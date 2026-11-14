@@ -1,3 +1,4 @@
+import { sandboxCreationLabels } from "../creation-labels.ts";
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
 import { Effect, Option, Result, Scope } from "effect";
@@ -278,7 +279,7 @@ async function createReadySandbox(
   });
   const cpus = plan.resources.cpus;
   const memoryBytes = plan.resources.memoryBytes;
-  const creationMetadata = Object.fromEntries(Object.entries(sandboxCreationMetadata(context.runId)).map(([key, value]) => [`user.${key}`, value]));
+  const creationMetadata = Object.fromEntries(Object.entries({ ...sandboxCreationMetadata(context.runId), ...sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }) }).map(([key, value]) => [`user.${key}`, value]));
   let createStage: "volume-create" | "instance-create" | "known" = "volume-create";
   try {
     if (artifact === undefined) {

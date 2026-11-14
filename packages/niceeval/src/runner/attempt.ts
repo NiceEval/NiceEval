@@ -1,3 +1,4 @@
+import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
 import { randomUUID } from "node:crypto";
 import { pauseOnFailure } from "./pause-on-failure.ts";
 import { retainAttemptNotes } from "./attempt-notes.ts";
@@ -63,7 +64,6 @@ import { agentBeforeEffect, agentAfterEffect, authorCallbackEffect } from "../ag
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
-import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import {
   createAssertFirstCoreContext,
@@ -1043,6 +1043,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
                   const runtimeInput: SandboxRuntimeMaterializeInput = {
                     runId,
+                    attemptId: a.attemptId,
+                    sandboxLabels: run.sandboxLabels,
                     plan: sandboxPlan,
                     evalId: evalDef.id,
                     deadline: runtimeDeadline,
@@ -1447,6 +1449,22 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const bodyFiber = yield* Effect.forkChild(
         tryPromiseAsDefect((interruptSignal) =>
           runAttemptBody(a, config, t0, base, {
+            recordTelemetryTrace: async (spans, partial) => {
+              if (adapterExecutionTraces === undefined || (spans.length === 0 && !partial)) return;
+              await adapterExecutionTraces.recordTrace({
+                traceId: "niceeval.telemetry", schema: { id: "niceeval.otlp/v1" },
+                collection: { state: partial ? "partial" : "complete", limitations: partial
+                  ? [{ code: "telemetry-budget-exceeded", message: "Telemetry collection exceeded its 30000 ms budget." }] : [] },
+                scopes: [],
+                events: spans.map((span, index) => ({
+                  key: `span-${index}`, type: "otlp.span", source: { id: span.traceId, eventId: span.spanId },
+                  time: { clockId: "unix", value: span.startMs, unit: "ms" },
+                  summary: Buffer.from(span.name).subarray(0, 480).toString("utf8"),
+                  payload: { traceId: span.traceId, spanId: span.spanId, name: span.name,
+                    startMs: span.startMs, endMs: span.endMs, status: span.status ?? "unset", kind: span.kind ?? "other" },
+                })),
+              });
+            },
             captureSimulatedUser: async activity => {
               simulatedUserActivities.push(activity);
               await captureSimulatedUserActivity(activity, adapterAttachments!, adapterExecutionTraces!);
@@ -2308,6 +2326,7 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
+  readonly recordTelemetryTrace?: (spans: TraceSpan[], partial: boolean) => Promise<void>;
   readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
@@ -3673,61 +3692,30 @@ async function runAttemptBody(
     // 先经【每-agent mapper】把原生 span 归一到 canonical GenAI semconv(定 SpanKind),
     // 再 selectTraceSpans 按 kind 挑出回合/模型/工具,丢掉 "other" 噪声(干净小 trace 整段保留)。
     let trace: TraceSpan[] | undefined;
-    if (receiver) {
+    if (receiver || otel) {
       enterPhase("telemetry.collect");
       try {
-        await assertFirst.requestEffect(Effect.raceFirst(
-          receiver.settle(250, 1500),
-          interruptOnAbort(signal),
-        ));
-        const spans = receiver.collect();
-        if (spans.length) {
-          // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
-          // 对接口分发,不按名字分支:mapper 由 Agent 自己声明,缺省走通用 heuristic。
-          const canonical = (agent.spanMapper ?? mapGenericSpans)(spans);
-          trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-          const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
-          log(`trace:${spans.length} span${note}`);
-        }
-      } catch (collectError) {
-        if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
-        feedback.diagnostic({
-          code: "telemetry-collect-failed",
-          level: "warning",
-          message: `telemetry collect failed; retaining the existing verdict: ${firstLine(formatThrown(collectError))}`,
-          data: evidenceDiagnosticData(
-            "collect",
-            collectError,
-            a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : undefined,
-          ),
-        });
-      }
-    } else if (otel) {
-      // 共享通道:receiver 不归本 attempt 关,trace 只取归属到本 attempt 的 span
-      //(逐轮攒的 + 按本 attempt traceId sweep 回的迟到批)。
-      enterPhase("telemetry.collect");
-      try {
-        const late = await assertFirst.requestEffect(Effect.raceFirst(
-          otel.sweepEffect(state.manager.otelTraceIds, state.manager.otelTurnWindows),
-          interruptOnAbort(signal),
-        ));
-        const traceIdsBeforeDeferred = new Set(state.manager.otelTraceIds);
-        const deferred = state.manager.attributeDeferredOtel(late);
-        const knownLate = late.filter((span) => traceIdsBeforeDeferred.has(span.traceId));
-        const spans = [...state.manager.otelSpans, ...knownLate, ...deferred].filter(
-          (span, index, all) => all.findIndex((candidate) => candidate.spanId === span.spanId) === index,
+        const shared = otel === undefined ? undefined : otel.sweepEffect(state.manager.otelTraceIds, state.manager.otelTurnWindows).pipe(
+          Effect.map((late) => {
+            const traceIds = new Set(state.manager.otelTraceIds);
+            const deferred = state.manager.attributeDeferredOtel(late);
+            const known = late.filter((span) => traceIds.has(span.traceId));
+            return [...state.manager.otelSpans, ...known, ...deferred].filter(
+              (span, index, all) => all.findIndex((candidate) => candidate.spanId === span.spanId) === index,
+            );
+          }),
         );
-        if (spans.length) {
-          const canonical = (agent.spanMapper ?? mapGenericSpans)(spans);
-          trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-          const note = spans.length > trace.length ? ` -> kept ${trace.length} semantic spans` : "";
-          log(`trace:${spans.length} span${note}`);
-        }
+        const collected = await assertFirst.requestEffect(Effect.raceFirst(
+          collectAttemptTelemetry({ receiver, shared, initialSpans: state.manager.otelSpans, map: agent.spanMapper ?? mapGenericSpans,
+            toolCalls: facts.toolCalls, recorder, diagnostic: feedback.diagnostic }),
+          interruptOnAbort(signal),
+        ));
+        trace = collected.trace;
+        await res.recordTelemetryTrace?.(collected.trace, collected.partial);
       } catch (collectError) {
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
-          code: "telemetry-collect-failed",
-          level: "warning",
+          code: "telemetry-collect-failed", level: "warning",
           message: `telemetry collect failed; retaining the existing verdict: ${firstLine(formatThrown(collectError))}`,
           data: evidenceDiagnosticData("collect", collectError),
         });

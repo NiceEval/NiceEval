@@ -109,6 +109,11 @@ function timingActivityProjection(
       return "sandbox.command" as const;
     case "sandbox.prepare":
       return "sandbox.prepare" as const;
+    case "telemetry.settle":
+    case "telemetry.read":
+    case "telemetry.decode":
+    case "telemetry.map":
+      return "attempt.teardown" as const;
     case "workspace.diff.export":
       return "attempt.teardown" as const;
     default:

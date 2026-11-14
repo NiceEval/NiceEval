@@ -7,8 +7,8 @@
 //      服务占用端口时不会冲突
 //   3. agent 往 http://127.0.0.1:<port>/v1/traces 发 span(sandbox 内 localhost)
 //   4. settle() 轮询 spans 文件大小直到静默(而不是固定 sleep:等太久拖慢每个 eval,
-//      等不够漏掉在途 batch),再下载解析,缓存到内存
-//   5. collect() 返回缓存(同步,与本地 receiver 接口一致)
+//      等不够漏掉在途 batch)
+//   5. drain() 分块取回文件，在宿主解码完整 envelope；collect() 返回已完成缓存
 //   6. close() 尝试 kill PID(沙箱本身也会停,所以 best-effort)
 //
 // 文件路径带随机后缀:同一沙箱跨 eval 复用时,每个 receiver 实例的脚本 / spans /
@@ -18,8 +18,8 @@
 import { randomUUID } from "node:crypto";
 import { Effect } from "effect";
 import type { Sandbox, TraceSpan } from "../../types.ts";
-import { parseOtlpTraces } from "./parse.ts";
-import type { TraceReceiver } from "./receiver.ts";
+import { decodeSpanEnvelopes } from "./decode.ts";
+import type { TraceReceiver, TraceCollectionActivity } from "./receiver.ts";
 
 // collector 脚本:纯 Node.js CJS,无外部依赖。
 // 每收一个 OTLP/HTTP 请求就把 { ct, body(base64) } 追加写一行到 spans 文件,
@@ -82,8 +82,8 @@ interface StartedCollector {
   spansPath: string;
 }
 
-/** Provider SDK Promise boundary. Sandbox APIs do not currently accept AbortSignal. */
-function sandboxPromise<Value>(operation: () => Promise<Value>): Effect.Effect<Value, unknown> {
+/** Provider SDK Promise boundary; commands can consume the interruption signal. */
+function sandboxPromise<Value>(operation: (signal: AbortSignal) => Promise<Value>): Effect.Effect<Value, unknown> {
   return Effect.tryPromise({ try: operation, catch: (cause) => cause });
 }
 
@@ -204,27 +204,48 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
       const maxTicks = Math.max(quietTicks, Math.round(maxMs / 100));
       // agent 结束后调:等 spans 文件大小连续 quietMs 无增长(exporter flush 完)再下载。
       // 等待循环整个跑在沙箱内(一次 shell 往返),不从 host 逐次轮询。
-      return sandboxPromise(() => sandbox.runShell(
+      return sandboxPromise((signal) => sandbox.runShell(
         `prev=$(wc -c < ${spansPath} 2>/dev/null || echo 0); stable=0; i=0; ` +
           `while [ $i -lt ${maxTicks} ]; do ` +
           `s=$(wc -c < ${spansPath} 2>/dev/null || echo 0); ` +
           `if [ "$s" = "$prev" ]; then stable=$((stable+1)); [ $stable -ge ${quietTicks} ] && break; ` +
           `else stable=0; prev=$s; fi; ` +
           `sleep 0.1; i=$((i+1)); done`,
-      )).pipe(
-        Effect.ignore,
-        Effect.andThen(
-          sandboxPromise(() => sandbox.readBytes(spansPath)).pipe(
-            Effect.map(parseSpansFile),
-            Effect.tap((spans) => Effect.sync(() => {
-              cached = spans;
-            })),
-            // 没有 spans 文件(agent 没发任何 trace)→ 保留当前缓存。
-            Effect.catch(() => Effect.void),
-          ),
-        ),
-      );
+        { signal },
+      )).pipe(Effect.ignore);
     };
+    const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> => Effect.gen(function* () {
+      const chunkBytes = 256 * 1024;
+      let offset = 0;
+      let pending = Buffer.alloc(0);
+      for (;;) {
+        const bytes = yield* activity("telemetry.read", Effect.tryPromise({ try: async (signal) => {
+          const result = await sandbox.runShell(
+            `if [ -f ${spansPath} ]; then dd if=${spansPath} bs=${chunkBytes} skip=${offset / chunkBytes} count=1 2>/dev/null | base64; fi`,
+            { signal },
+          );
+          if (result.exitCode !== 0) throw new Error(`Telemetry read failed: exit ${result.exitCode}`);
+          return Buffer.from(result.stdout.replace(/\s/g, ""), "base64");
+        }, catch: (cause) => cause }), (bytes: Buffer) => bytes.length);
+        offset += bytes.length;
+        pending = Buffer.concat([pending, bytes]);
+        const end = pending.lastIndexOf(10);
+        const consumed = end < 0 ? (bytes.length < chunkBytes ? pending.length : 0) : end + 1;
+        if (consumed > 0) {
+          yield* activity("telemetry.decode", decodeSpanEnvelopes(pending.subarray(0, consumed)).pipe(
+            Effect.tap((decoded) => Effect.sync(() => { for (const span of decoded) cached.push(span); })),
+          ), (decoded) => decoded.length);
+          pending = pending.subarray(consumed);
+        }
+        if (bytes.length < chunkBytes) {
+          if (pending.length > 0) yield* activity("telemetry.decode", decodeSpanEnvelopes(pending).pipe(
+            Effect.tap((decoded) => Effect.sync(() => { for (const span of decoded) cached.push(span); })),
+          ), (decoded) => decoded.length);
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+    });
     const close = Number.isFinite(pid) && pid > 0
       ? sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore)
       : Effect.void;
@@ -232,34 +253,8 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
       endpoint: (_host: string) => `http://127.0.0.1:${port}/v1/traces`,
       collect: () => cached.slice(),
       settle,
+      drain,
       close,
     });
   }));
-}
-
-// spans 文件每行一个 { ct: string; b: string(base64) }
-function collectorEnvelope(value: unknown): { readonly ct: string; readonly b: string } | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const record = value as globalThis.Record<string, unknown>;
-  return typeof record.ct === "string" && typeof record.b === "string"
-    ? { ct: record.ct, b: record.b }
-    : undefined;
-}
-
-function parseSpansFile(raw: Uint8Array): TraceSpan[] {
-  const spans: TraceSpan[] = [];
-  const text = Buffer.from(raw).toString("utf8");
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const envelope = collectorEnvelope(JSON.parse(trimmed));
-      if (!envelope) continue;
-      const body = Buffer.from(envelope.b, "base64");
-      spans.push(...parseOtlpTraces(body, envelope.ct));
-    } catch {
-      // 跳过损坏行
-    }
-  }
-  return spans;
 }

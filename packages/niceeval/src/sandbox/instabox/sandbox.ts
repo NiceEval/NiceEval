@@ -47,7 +47,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   get sandboxId(): string { return this.operation.machineId; }
   private get path(): string { return `/machines/${encodeURIComponent(this.sandboxId)}`; }
 
-  static async create(options: InstaboxSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, runId?: string, diagnostic?: (input: DiagnosticInput) => void): Promise<InstaboxBackend> {
+  static async create(options: InstaboxSandboxOptions & { readonly lifetimeMs: number }, deadlineAt?: number, runId?: string, diagnostic?: (input: DiagnosticInput) => void, creationLabels?: Readonly<Record<string, string>>): Promise<InstaboxBackend> {
     if (options.lifetimeMs < 60_000 || options.lifetimeMs > 86_400_000) throw new Error("Instabox lifetimeMs must be between 60 seconds and 24 hours");
     const key = process.env.INSTABOX_API_KEY;
     if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
@@ -64,7 +64,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
       deleteAfterSeconds: Math.ceil(options.lifetimeMs / 1000),
       autoSuspendAfterSeconds: 0, maxRunMinutes: -1,
       vault: false, secrets: [],
-      metadata: { ...sandboxCreationMetadata(runId), "niceeval.provision": idempotencyKey },
+      metadata: { ...sandboxCreationMetadata(runId), ...creationLabels, "niceeval.provision": idempotencyKey },
     });
     const request = () => api.json(Operation, "/machines", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body });
     let operation: Operation;

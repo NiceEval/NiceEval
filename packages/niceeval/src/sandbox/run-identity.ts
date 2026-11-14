@@ -9,14 +9,15 @@ import { execFileSync } from "node:child_process";
 
 export interface RunIdentity {
   runId?: string;
+  creationLabels?: Readonly<Record<string, string>>;
   host: string;
   pid: number;
   startedAt: string;
 }
 
 /** 创建沙箱时快照一次当前 runner 进程的运行标识。 */
-export function currentRunIdentity(runId?: string): RunIdentity {
-  return { runId, host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
+export function currentRunIdentity(runId?: string, creationLabels?: Readonly<Record<string, string>>): RunIdentity {
+  return { runId, creationLabels, host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
 }
 
 export const DOCKER_HOST_LABEL = "niceeval.host";
@@ -35,6 +36,7 @@ export const E2B_STARTED_AT_METADATA = "niceeval-started-at";
 export function dockerRunIdentityLabels(identity: RunIdentity): globalThis.Record<string, string> {
   return {
     ...sandboxCreationMetadata(identity.runId, identity.startedAt),
+    ...identity.creationLabels,
     [DOCKER_HOST_LABEL]: identity.host,
     [DOCKER_PID_LABEL]: String(identity.pid),
     [DOCKER_STARTED_AT_LABEL]: identity.startedAt,

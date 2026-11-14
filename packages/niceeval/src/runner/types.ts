@@ -1016,6 +1016,8 @@ export interface ExperimentAuthorFields {
   sandbox?: SandboxLayer;
   /** Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身份计算。 */
   sandboxCache?: SandboxCacheConfig;
+  /** 只向 Provider 写 Run 级标签，省略创建实例的 Attempt 与评估用例标签；不影响运行身份。 */
+  sandboxLabels?: "run-only";
   /** 本实验显式声明的 Plugin 实例列表，由 `defineExperiment()` 规范化。 */
   plugins?: readonly PluginInstance<"experiment">[];
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
@@ -1103,6 +1105,7 @@ export interface ExperimentDefinition<A extends Adapter = Adapter> {
   /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
   readonly sandbox?: SandboxLayer;
   readonly sandboxCache?: SandboxCacheConfig;
+  readonly sandboxLabels?: "run-only";
   readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
   readonly sharedState?: SharedStateConfig;
@@ -1287,6 +1290,7 @@ export interface AdapterRun {
   /** Canonical, credential-free Experiment Plugin behavior projection. */
   readonly pluginBehavior?: JsonValue;
   readonly sandboxReuse?: boolean;
+  readonly sandboxLabels?: "run-only";
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState?: SharedStateConfig;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
@@ -1411,6 +1415,8 @@ export interface RunOptions<RecordError = never, RecordRequirements = never> {
 
 /** 调度器内部的一次尝试:eval × run × 第几轮。 */
 export interface Attempt {
+  /** Durable Record reservation UUID, allocated before physical materialization. */
+  attemptId?: string;
   readonly evalDef: DiscoveredEval;
   readonly run: AgentRun;
   readonly attempt: number;

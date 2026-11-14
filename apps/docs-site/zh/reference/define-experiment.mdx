@@ -149,6 +149,14 @@ sandboxCache?: SandboxCacheConfig;
 
 Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身份计算。
 
+#### `sandboxLabels`
+
+```ts
+sandboxLabels?: "run-only";
+```
+
+只向 Provider 写 Run 级标签，省略创建实例的 Attempt 与评估用例标签；不影响运行身份。
+
 #### `plugins`
 
 ```ts

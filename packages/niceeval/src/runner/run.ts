@@ -2683,6 +2683,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               } else {
                 reservedRecordAttempt = reservation.success;
                 a.locator = reservation.success.locator;
+                a.attemptId = reservation.success.attemptId;
               }
             }
 
@@ -2746,6 +2747,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs,
                   buildLocators,
                   providerAdmission,
+                  { attemptId: a.attemptId, evalId: a.evalDef.id, sandboxLabels: a.run.sandboxLabels },
                 )), {
                   onFailure: (error) => ({ _tag: "Failed" as const, error }),
                   onSuccess: (lease) => {

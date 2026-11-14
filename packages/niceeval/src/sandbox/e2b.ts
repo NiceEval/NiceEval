@@ -519,6 +519,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // 运行标识供 `sandbox list --orphans` 按 metadata 过滤事后核对。
     const metadata: globalThis.Record<string, string> = {
       ...sandboxCreationMetadata(opts.runId, opts.runIdentity?.startedAt),
+      ...opts.runIdentity?.creationLabels,
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
