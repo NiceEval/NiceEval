@@ -63,6 +63,7 @@ describe("ScoreMatch audit decoder", () => {
   it("separates corrupt and unsupported evidence", () => {
     const value = retained() as { manifest: Record<string, unknown>; content: string[] };
     expect(readScoreMatchAudit({ ...value, manifest: { ...value.manifest, digest: "0".repeat(64) } })).toEqual({ state: "invalid" });
+    // Historical envelopes are invalid inputs; no versioned audit reader remains.
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 2, protocol: "niceeval.score-match-audit/v2" }, content: [] })).toEqual({ state: "invalid" });
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 3, protocol: "niceeval.score-match-audit/v3" }, content: [] })).toEqual({ state: "invalid" });
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 4, protocol: "niceeval.score-match-audit/v4" }, content: [] })).toEqual({ state: "invalid" });

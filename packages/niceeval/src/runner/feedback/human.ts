@@ -884,8 +884,8 @@ function buildReceiptLines(
   const published = new Set(event.receipt.createdRunIds);
   const emitted = new Set<string>();
   const appendCommands = (runId: string): void => {
-    rows.push(...labelledWrappedRows("show", `niceeval show --run ${runId}`, contentWidth));
-    rows.push(...labelledWrappedRows("view", `niceeval view --run ${runId}`, contentWidth));
+    rows.push(...labelledWrappedRows("show", `niceeval show run:${runId}`, contentWidth));
+    rows.push(...labelledWrappedRows("view", `niceeval view run:${runId}`, contentWidth));
   };
   for (const [experimentId, runId] of state.runIdsByExperiment) {
     if (!published.has(runId)) continue;
@@ -1954,25 +1954,6 @@ function renderPreviousResultDeltaGroups(input: HumanDryPlanInput): string[] {
     }
   }
   return out;
-}
-
-/**
- * `baseline01`…`baseline06` → `baseline 01/02/03/05/06`:同一批受影响的 eval 通常只差编号,
- * 把公共前缀提出来一次,人一眼看得出「缺的是哪几号」。没有公共前缀就逐个列。
- */
-function foldIds(ids: string[]): string {
-  const sorted = [...ids].sort();
-  if (sorted.length < 2) return sorted.join(", ");
-  let prefix = sorted[0]!;
-  for (const id of sorted) {
-    while (prefix !== "" && !id.startsWith(prefix)) prefix = prefix.slice(0, -1);
-    if (prefix === "") break;
-  }
-  // 公共前缀不许切进一段数字中间:`baseline01`…`baseline06` 的字面公共前缀是 `baseline0`,
-  // 折出来的 `1/3/6` 读起来不是编号。退到数字段边界,给出 `baseline 01/03/06`。
-  while (prefix !== "" && /\d$/.test(prefix)) prefix = prefix.slice(0, -1);
-  if (prefix === "") return sorted.join(", ");
-  return `${prefix} ${sorted.map((id) => id.slice(prefix.length)).join("/")}`;
 }
 
 /**

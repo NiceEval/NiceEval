@@ -10,8 +10,8 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter niceeval run typecheck",
-    "lint": "concord check && node .github/scripts/promote-init.mjs --check && pnpm run lint:docs-site",
+    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter @niceeval/testkit run typecheck && pnpm --filter niceeval run typecheck",
+    "lint": "pnpm lint:format && concord check && node .github/scripts/promote-init.mjs --check && pnpm run lint:docs-site",
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names validate,links \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
@@ -27,9 +27,12 @@
     "build:index": "tsx packages/repo-tools/src/cli.ts package docs-index",
     "prepare": "pnpm repo:setup apply",
     "site:dev": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run dev",
-    "site:build": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run build:deploy"
+    "site:build": "pnpm --filter niceeval run build:package && pnpm --filter @niceeval/site run build:deploy",
+    "format": "biome format --write .",
+    "lint:format": "biome format ."
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.7",
     "@playwright/test": "1.65.0",
     "@types/node": "^24.19.2",
     "concurrently": "^10.0.7",

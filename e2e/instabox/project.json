@@ -22,7 +22,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "batch": "host-2",
           "areas": [
             "sandbox"

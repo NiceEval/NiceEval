@@ -1,5 +1,5 @@
 import { defineEval } from "niceeval";
-import { toolMatch } from "niceeval/expect";
+import { jsonMatch, toolMatch } from "niceeval/expect";
 
 // normal 实验的正例之一:一次确定性工具调用往返(get_weather),验证公开 tool call/result
 // 事件而不只是文本。与 greet/hello 分处不同 id 前缀,供 test/cli.test.ts 断言 eval id 前缀确实收窄了
@@ -13,17 +13,7 @@ export default defineEval({
     );
     await turn.succeeded().orStop();
     turn.calledTool(toolMatch("get_weather", {
-      input: (input) => {
-        const record = input as { city?: unknown } | null | undefined;
-        return (
-          typeof record === "object" &&
-          record !== null &&
-          !Array.isArray(record) &&
-          (typeof record["city"] === "string"
-            ? /Brooklyn/i.test(record["city"])
-            : /Brooklyn/i.test(JSON.stringify(record) ?? ""))
-        );
-      },
+      input: jsonMatch({ city: "Brooklyn" }),
     }));
   },
 });

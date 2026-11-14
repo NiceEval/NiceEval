@@ -111,7 +111,7 @@ function numberValue(value: ClosedAssertionFactValue | undefined): number | unde
 
 function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const data = field(check, "data");
-  if (criterionId(check) === "numeric-comparison/v1") {
+  if (criterionId(check) === "numeric-comparison") {
     const comparator = stringValue(field(data, "comparator"));
     const threshold = numberValue(field(data, "threshold"));
     if (comparator !== undefined && threshold !== undefined) {
@@ -136,7 +136,7 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const valueMatcher = stringValue(field(field(data, "matcher"), "name"));
   if (valueMatcher !== undefined) return valueMatcher;
   if (
-    (criterionId(check) !== "occurrence/v1" && criterionId(check) !== "occurrence/v2") ||
+    criterionId(check) !== "occurrence" ||
     stringValue(field(data, "occurrence")) !== "tool"
   ) {
     return undefined;
@@ -201,7 +201,7 @@ function criterionId(check: ClosedAssertionFactValue): string | undefined {
 }
 
 function isToolCriterion(check: ClosedAssertionFactValue): boolean {
-  return (criterionId(check) === "occurrence/v1" || criterionId(check) === "occurrence/v2") &&
+  return criterionId(check) === "occurrence" &&
     stringValue(field(field(check, "data"), "occurrence")) === "tool";
 }
 
@@ -257,7 +257,7 @@ function numericComparisonView(
   check: ClosedAssertionFactValue,
   source: ClosedAssertionFactValue,
 ): NumericComparisonView | undefined {
-  if (criterionId(check) !== "numeric-comparison/v1") return undefined;
+  if (criterionId(check) !== "numeric-comparison") return undefined;
   const data = field(check, "data");
   const comparator = numericComparator(stringValue(field(data, "comparator")));
   const threshold = numberValue(field(data, "threshold"));

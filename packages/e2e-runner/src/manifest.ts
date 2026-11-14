@@ -1,7 +1,6 @@
 // E2E target metadata validation.
 //
-// `schemaVersion: 3` belongs to the scenario-registration contract. Runner
-// plans have no version field; their one current format lives in contracts.ts.
+// Registration metadata and runner plans use the current strict contracts.ts shapes.
 
 import { Result, Schema, SchemaIssue } from "effect";
 
@@ -13,7 +12,6 @@ import {
   HARNESS_ASSETS,
   HOST_CAPABILITIES,
   LANES,
-  MANIFEST_SCHEMA_VERSION,
   PLATFORMS,
   RepoIdSchema,
   decodeManifestMetadata,
@@ -21,7 +19,6 @@ import {
   type ManifestMetadata,
 } from "./contracts.ts";
 
-export const SCHEMA_VERSION = MANIFEST_SCHEMA_VERSION;
 export { AREAS, BROWSERS, HARNESS_ASSETS, HOST_CAPABILITIES, LANES, PLATFORMS };
 
 export type { Area, BatchId, Browser, HarnessAsset, HostCapability, Lane, Platform } from "./contracts.ts";

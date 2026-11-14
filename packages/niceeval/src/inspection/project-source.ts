@@ -101,7 +101,7 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
       const loaded = runs.find((loaded) => loaded.run.runId === run.document.runId);
       const definition = NiceEvalRecordAttachments.identityManifests;
       const attachment = loaded === undefined ? undefined : runAttachment(loaded, definition.family);
-      const decoded = attachment?.physical.familyRevision !== NiceEvalCurrentRecordAttachments.identityManifests.revision
+      const decoded = attachment === undefined || attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.identityManifests.revision
         ? undefined : hydrateRecordAttachmentCurrent(definition, attachment.value, { content: () => Result.succeed(undefined), reference: () => Result.succeed(undefined) });
       const historical = decoded !== undefined && Result.isSuccess(decoded) ? decoded.success.entries.find((entry) => entry.evalId === current.evalId) : undefined;
       const sources = historical !== undefined || loaded === undefined ? undefined : runAttachment(loaded, NiceEvalRecordAttachments.sources.family);

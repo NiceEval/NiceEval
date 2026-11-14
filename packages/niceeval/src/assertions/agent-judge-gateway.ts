@@ -1,10 +1,9 @@
 // @concord-file
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
+import { agentJudgeIdentity } from "../runner/judge-identity.ts";
 import {
   AGENT_JUDGE_ALGORITHM_REVISION,
-  AGENT_JUDGE_PROMPT_REVISION,
-  AGENT_JUDGE_TOOL_REVISION,
 } from "./agent-judge-revisions.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
 import { agentJudgeSystemPrompt, AGENT_JUDGE_TOOL_DESCRIPTION } from "./agent-judge.prompt.ts";
@@ -33,16 +32,10 @@ import {
 } from "./agent-judge-audit.ts";
 import { canonicalScoreMatchAuditJson as canonical } from "./score-match-audit.ts";
 import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
-import {
-  chunkUtf8,
-  snapshotJudgeMaterial,
-  projectJudgeMaterial,
-  interruptibleByCaller,
-  isTransportFailure,
-} from "./judge.ts";
+import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial } from "./judge-material-capture.ts";
+import { interruptibleByCaller, isTransportFailure } from "./judge-transport.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import { createManagedPiSession } from "../judge/pi-runtime.ts";
-import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
 import { managedPiCredential, piDefect, piUsageFailure, type PiFailure } from "../judge/pi-failure.ts";
 import { fitJudgeContext } from "./judge-context-budget.ts";
 
@@ -110,10 +103,8 @@ export class AgentJudgeSession {
         ...judge,
         contextWindow:
           profile?.contextWindow ?? (profile === undefined ? undefined : builtinContextWindow(profile.model)) ?? null,
-        ...(containsConversationMaterial(this.snapshot.material) ? { conversationMaterialRevision } : {}),
         algorithmRevision: AGENT_JUDGE_ALGORITHM_REVISION,
-        promptRevision: AGENT_JUDGE_PROMPT_REVISION,
-        toolRevision: AGENT_JUDGE_TOOL_REVISION,
+        content: agentJudgeIdentity().content,
         gradeParameters,
         binaryParameters,
       }),
@@ -243,8 +234,8 @@ export class AgentJudgeSession {
   private envelope(key: string) {
     const trace = this.sealedTrace ?? this.trace();
     const payload: AgentJudgeAudit = {
-      schemaVersion: 1,
-      protocol: "niceeval.agent-judge-audit/v1",
+
+
       trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key,
       prompt: this.steps.find((step) => step.key === key)!.message,
@@ -255,8 +246,8 @@ export class AgentJudgeSession {
     const content = chunkUtf8(body);
     return {
       manifest: {
-        schemaVersion: 1,
-        protocol: "niceeval.agent-judge-audit/v1",
+
+
         byteLength: size(body),
         digest: agentJudgeDigest(body),
         chunkByteLengths: content.map(size),

@@ -26,7 +26,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "candidate": "built",
           "batch": "docker-4",
           "areas": [

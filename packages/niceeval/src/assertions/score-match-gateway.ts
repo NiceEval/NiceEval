@@ -1,3 +1,4 @@
+import { ordinaryJudgeIdentity } from "../runner/judge-identity.ts";
 import {
   SCORE_MATCH_INSTRUCTION,
   SCORE_MATCH_TOOL_DESCRIPTION,
@@ -5,8 +6,7 @@ import {
   typesafeMaterialInstructions,
 } from "./score-match.prompt.ts";
 import { fitJudgeContext, isJudgeContextOverflow } from "./judge-context-budget.ts";
-import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
-import { Cause, Clock, Effect, Fiber, Random, Schema } from "effect";
+import { Cause, Clock, Effect, Fiber, Predicate, Random, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
 import { captureFullAssertionSnapshot } from "./full-content.ts";
@@ -18,12 +18,17 @@ import type {
   ScoreMatchResult,
 } from "./match.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
-import type { JsonValue } from "../shared/types.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { resolveJudgeCredential } from "../judge/provider.ts";
 import { readJudgeImage, type JudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import {
   chunkUtf8,
+  snapshotScoreMatchMaterial,
+  snapshotJudgeMaterial,
+  projectJudgeMaterial,
+  type CapturedImageReference,
+} from "./judge-material-capture.ts";
+import {
   errorSummary,
   interruptibleByCaller,
   isTransientJudgeFailure,
@@ -31,11 +36,7 @@ import {
   requestScoreMatchProvider,
   responseByteCap,
   retryAfterMs,
-  snapshotScoreMatchMaterial,
-  snapshotJudgeMaterial,
-  projectJudgeMaterial,
-  type CapturedImageReference,
-} from "./judge.ts";
+} from "./judge-transport.ts";
 import {
   canonicalScoreMatchAuditJson as canonical,
   scoreMatchDefinitionDigest,
@@ -44,7 +45,7 @@ import {
   type ScoreMatchAuditAttempt,
   type ScoreMatchAuditCall,
   type ScoreMatchAuditFailure,
-  type ScoreMatchAuditV2,
+  type TypedScoreMatchAudit,
   type TypeSafeAuditCall,
   type TypeSafeMapping,
 } from "./score-match-audit.ts";
@@ -52,19 +53,18 @@ import {
 type Operation = keyof ScoreMatchContext["llm"];
 type PrimitiveInput<K extends Operation> = Parameters<ScoreMatchContext["llm"][K]>[0];
 type PrimitiveResult<K extends Operation> = Effect.Success<ReturnType<ScoreMatchContext["llm"][K]>>;
-const text = Schema.String.check(Schema.isPattern(/\S/u));
-const scoreSchema = Schema.Struct({
-  measurement: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  rationale: text,
-});
-const classifySchema = Schema.Struct({ choice: text, rationale: text });
-const extractSchema = Schema.Struct({ items: Schema.Array(text), rationale: text, complete: Schema.Boolean });
-const batchSchema = Schema.Struct({ items: Schema.Array(Schema.Struct({ id: text, choice: text, rationale: text })) });
+import { scoreSchema, classifySchema, extractSchema, batchSchema, citedClassifySchema } from "./score-match-schemas.ts";
+import {
+  exactProtocolObject as exactRecord,
+  finiteUnit,
+  probabilityTolerance,
+  typeSafeProbabilities as probabilities,
+  typeSafeScoreProjection,
+  typeSafeChoiceProjection,
+  typeSafeUsageSchema,
+} from "./score-match-protocol.ts";
 const utf8 = new TextEncoder();
 const bytes = (value: string): number => utf8.encode(value).byteLength;
-const chatProtocol = "niceeval.score-match-audit/v1" as const;
-const typesafeProtocol = "niceeval.score-match-audit/v2" as const;
-const imageProtocol = "niceeval.score-match-audit/v3" as const;
 const toolName = "record_score_match";
 
 function failure(state: "unavailable" | "errored", code: string, message: string): ScoreMatchAuditFailure {
@@ -78,8 +78,8 @@ function typedFailure(value: ScoreMatchAuditFailure): ScoreMatchLlmFailure {
   };
 }
 function record(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError("Expected an object");
-  return value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) throw new TypeError("Expected an object");
+  return value;
 }
 function requiredText(value: unknown, label: string, maximum = 8192): string {
   if (typeof value !== "string" || !value.trim() || bytes(value) > maximum)
@@ -95,14 +95,6 @@ function choicesOf(value: unknown): string[] {
 }
 function schemaObject(properties: Record<string, unknown>): Record<string, unknown> {
   return { type: "object", additionalProperties: false, properties, required: Object.keys(properties) };
-}
-function exactRecord(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
-  const output = record(value);
-  const actual = Object.keys(output).sort();
-  const expected = [...keys].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index]))
-    throw new TypeError(`${label} has an invalid shape`);
-  return output;
 }
 function primitiveOptions(
   operation: Operation,
@@ -173,7 +165,7 @@ function validatePrimitiveOptions(operation: Operation, options: Record<string, 
     )
       throw new TypeError("maxItems must be between 1 and 32");
   } else {
-    const choices = choicesOf(options.choices);
+    choicesOf(options.choices);
     if (operation === "batchClassify") {
       if (!Array.isArray(options.items) || options.items.length < 1 || options.items.length > 32)
         throw new TypeError("batch items must contain 1 to 32 entries");
@@ -212,7 +204,7 @@ function chatRequestFor(
   const system: Record<string, unknown> = {
     operation,
     rubric,
-    protocol: chatProtocol,
+
     instruction: SCORE_MATCH_INSTRUCTION,
   };
   const projected = projectJudgeMaterial(options.material as JudgeMaterial, images);
@@ -391,7 +383,7 @@ function decodeChatOutput<K extends Operation>(
       options.evidenceIds === undefined
         ? Schema.decodeUnknownSync(classifySchema, parse)(raw)
         : Schema.decodeUnknownSync(
-            Schema.Struct({ choice: Schema.String, rationale: Schema.String, citations: Schema.Array(Schema.String) }),
+            citedClassifySchema,
             parse,
           )(raw);
     if (options.evidenceIds !== undefined) {
@@ -422,29 +414,12 @@ function decodeChatOutput<K extends Operation>(
   return snapshotScoreMatchMaterial(output) as PrimitiveResult<K>;
 }
 
-const probabilityTolerance = 1e-6;
-const typesafeRationalePrefix = "TypeSafe result summary (generated by NiceEval):";
-function finiteUnit(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)
-    throw new TypeError(`${label} must be finite in [0, 1]`);
-  return value;
-}
-function probabilities(value: unknown, labels: readonly string[]): Readonly<Record<string, number>> {
-  const input = exactRecord(value, labels, "TypeSafe probabilities");
-  const entries = labels.map((label) => [label, finiteUnit(input[label], `Probability ${label}`)] as const);
-  const total = entries.reduce((sum, [, probability]) => sum + probability, 0);
-  if (Math.abs(total - 1) > probabilityTolerance || total === 0)
-    throw new TypeError("TypeSafe probabilities must sum to 1");
-  return Object.freeze(Object.fromEntries(entries.map(([label, probability]) => [label, probability / total])));
-}
 function typesafeEnvelope(response: string, questionIds: readonly string[]): Record<string, unknown> {
   const envelope = exactRecord(JSON.parse(response), ["model", "answers", "usage"], "TypeSafe response");
   requiredText(envelope.model, "TypeSafe response model");
   const usage = exactRecord(envelope.usage, ["input_tokens", "output_tokens"], "TypeSafe usage");
-  for (const key of ["input_tokens", "output_tokens"] as const) {
-    if (typeof usage[key] !== "number" || !Number.isSafeInteger(usage[key]) || usage[key] < 0)
-      throw new TypeError("TypeSafe usage must contain non-negative safe integers");
-  }
+  if (!Schema.is(typeSafeUsageSchema)(usage))
+    throw new TypeError("TypeSafe usage must contain non-negative safe integers");
   exactRecord(envelope.answers, questionIds, "TypeSafe answers");
   return envelope;
 }
@@ -478,14 +453,7 @@ function decodeTypesafeOutput<K extends Exclude<Operation, "extract">>(
       Math.abs(answer.score - expectedIndex) > probabilityTolerance
     )
       throw new TypeError("TypeSafe Score value does not match probabilities");
-    const measurement = labels.reduce(
-      (sum, label, index) => sum + anchors[index]!.measurement * distribution[label]!,
-      0,
-    );
-    return snapshotScoreMatchMaterial({
-      measurement,
-      rationale: `${typesafeRationalePrefix} probability-weighted ${labels.length}-level measurement ${measurement}.`,
-    }) as PrimitiveResult<K>;
+    return snapshotScoreMatchMaterial(typeSafeScoreProjection(anchors, labels, distribution)) as PrimitiveResult<K>;
   }
   const choices = choicesOf(options.choices);
   const decodeChoice = (id: string): { readonly choice: string; readonly rationale: string } => {
@@ -501,10 +469,7 @@ function decodeTypesafeOutput<K extends Exclude<Operation, "extract">>(
     const maximum = Math.max(...choices.map((choice) => distribution[choice]!));
     if (distribution[answer.choice] !== maximum)
       throw new TypeError("TypeSafe Choice must select a highest-probability option");
-    return Object.freeze({
-      choice: answer.choice,
-      rationale: `${typesafeRationalePrefix} selected ${JSON.stringify(answer.choice)} from the returned probability distribution.`,
-    });
+    return typeSafeChoiceProjection(answer.choice);
   };
   if (operation === "classify") return snapshotScoreMatchMaterial(decodeChoice("q0")) as PrimitiveResult<K>;
   const items = options.items as readonly { id: string }[];
@@ -542,16 +507,12 @@ export function prepareManagedScoreMatch(input: {
     input.judge === undefined ? undefined : (input.judge.contextWindow ?? builtinContextWindow(input.judge.model));
   const definitionBase = {
     version: options.version,
-    config: containsConversationMaterial(material)
-      ? canonical({ definition: JSON.parse(options.canonicalConfig), conversationMaterialRevision })
-      : options.canonicalConfig,
+    config: canonical({ definition: JSON.parse(options.canonicalConfig), ordinaryJudge: ordinaryJudgeIdentity() }),
     limits: { ...options.llm, ...(contextWindow === undefined ? {} : { contextWindow }) },
   };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
-  const auditProtocol = images.length > 0 ? imageProtocol : typesafe ? typesafeProtocol : chatProtocol;
-  const auditVersion = images.length > 0 ? (3 as const) : typesafe ? (2 as const) : (1 as const);
-  const calls: Array<ScoreMatchAuditCall | TypeSafeAuditCall | import("./score-match-audit.ts").ScoreMatchAuditCallV3> =
+  const calls: Array<ScoreMatchAuditCall | TypeSafeAuditCall | import("./score-match-audit.ts").ImageScoreMatchAuditCall> =
     [];
   let result: ScoreMatchAudit["result"] = { state: "interrupted" };
   let latched: ScoreMatchAuditFailure | undefined;
@@ -563,8 +524,8 @@ export function prepareManagedScoreMatch(input: {
   const audit = (): ScoreMatchAuditAny =>
     images.length > 0
       ? {
-          schemaVersion: 3,
-          protocol: imageProtocol,
+          kind: "images",
+
           definition,
           input: captured,
           images: images.map(({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths }) => ({
@@ -575,21 +536,21 @@ export function prepareManagedScoreMatch(input: {
             sha256,
             paths,
           })),
-          calls: calls as import("./score-match-audit.ts").ScoreMatchAuditV3["calls"],
+          calls: calls as import("./score-match-audit.ts").ImageScoreMatchAudit["calls"],
           result,
         }
       : typesafe
         ? ({
-            schemaVersion: 2,
-            protocol: typesafeProtocol,
+            kind: "typed",
+
             definition,
             input: captured,
             calls: calls as TypeSafeAuditCall[],
             result,
-          } as ScoreMatchAuditV2)
+          } as TypedScoreMatchAudit)
         : {
-            schemaVersion: 1,
-            protocol: chatProtocol,
+            kind: "chat",
+
             definition,
             input: captured,
             calls: calls as ScoreMatchAuditCall[],
@@ -600,8 +561,7 @@ export function prepareManagedScoreMatch(input: {
     const chunks = chunkUtf8(encoded);
     return {
       manifest: {
-        schemaVersion: auditVersion,
-        protocol: auditProtocol,
+
         byteLength: bytes(encoded),
         digest: createHash("sha256").update(encoded).digest("hex"),
         chunkByteLengths: chunks.map(bytes),
@@ -919,7 +879,6 @@ export function prepareManagedScoreMatch(input: {
           );
         else {
           result = { state: "measured", value: measurement };
-          const rationale = typeof output === "number" ? undefined : output.rationale;
           return { state: "measured", value: measurement, detail: explanation };
         }
       } else if (output?.state === "unavailable")

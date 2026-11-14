@@ -479,27 +479,19 @@ removed
 Delete this entire section when neither the public Record format nor a private
 persisted implementation changes. Otherwise show only the applicable cases:
 
-- Name every public persisted surface whose shape or meaning changes, including
-  run/attempt metadata, events, artifacts, attachments, and envelopes. List
-  private persisted implementation changes separately; they do not by
-  themselves justify a public schema version bump.
-- The new-write case includes the stable `format` / `schemaVersion` / `producer`
-  header and changed files, attachments, references, or meanings.
-- The existing-read case shows the public command or reader and its result.
-- Use `N -> N` or `N -> M` in the upgrade case. Show both reader directions when
-  the version stays unchanged.
-- If the version changes, identify the exact incompatible field/meaning and
-  link the version-history entry that records why invalidating old Records is
-  necessary.
-- State what happens to every existing Record: direct read, explicit migration,
-  automatic migration, or rejection with the exact recovery/view command.
-- The current Record contract has no cross-version migration. Under that
-  contract, a real version bump must select rejection plus the producer-version
-  recovery command. Explicit or automatic migration is valid only when the same
-  PR first changes the canonical Record contract and implements that public
-  migration boundary; the receipt cannot invent migration by itself.
-- For a real migration, the upgrade case names the public trigger, preservation
-  rules, atomicity, idempotence, interruption recovery, and data-loss boundary.
+- Name every persisted surface whose shape or meaning changes, including
+  run/attempt metadata, events, artifacts, attachments, and envelopes.
+- Record has one storage-level format marker. Official attachment families and
+  current CLI documents do not add protocol or numeric schema-version fields.
+- The new-write case identifies the changed fields, references, or meanings.
+- The existing-read case shows the public command and its observed result.
+- N -> M names the actual NiceEval package releases being compared, not a
+  per-family format counter. Identify the incompatible field or meaning.
+- An unsupported Record is rejected before opening a reader or writer. Preserve
+  or explicitly archive the old storage, then rerun with the current candidate.
+  There is no automatic clearing, historical reader, or migration chain.
+- Show the exact rejection and the user's preservation/rerun steps. Do not
+  invent a recovery command, reinterpret old data, or claim migration ran.
 -->
 
 ### Case: write a new Record
@@ -513,7 +505,7 @@ persisted implementation changes. Otherwise show only the applicable cases:
 #### Result
 
 ```text
-<literal recognition header plus changed files, attachments, fields, references, or meanings>
+<storage format check plus changed files, attachments, fields, references, or meanings>
 ```
 
 ### Case: read an existing Record
@@ -527,7 +519,7 @@ persisted implementation changes. Otherwise show only the applicable cases:
 #### Result
 
 ```text
-<direct read, migration, or exact rejection/recovery diagnostic>
+<direct current-format read, or exact unsupported-format diagnostic>
 ```
 
 ### Case: upgrade or recover stored data
@@ -558,7 +550,7 @@ persisted implementation changes. Otherwise show only the applicable cases:
 
 #### Safety
 
-<preservation, atomicity, idempotence, interruption recovery, and known data loss; or why no migration runs>
+<how old data is preserved, when opening is rejected, and how the new run owns separate storage>
 
 #### User impact
 

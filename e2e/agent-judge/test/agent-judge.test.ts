@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
-import { createE2EContext, defined, only, pollUntil, command, withInspectionRequest } from "@niceeval/testkit";
+import { createE2EContext, defined, only, pollUntil, command } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 const scenario = createE2EContext({ repoId: "agent-judge", project: {
@@ -88,18 +88,18 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const evaluation = only(run.expEvalEvents(), (entry) => entry.evalId === "agent-judge", run.diagnostic());
       const locator = defined(evaluation.locator);
-      const attempt = await withInspectionRequest({ kind: "attempt.get", locator }, async (path) => {
-        const result = await niceeval.run(["query", "run", "--request", path]);
+      const attempt = await (async () => {
+        const result = await niceeval.run(["show", locator, "--json"]);
         expect(result.exitCode, result.diagnostic()).toBe(0);
-        return result.querySuccess("attempt.get");
-      });
+        return result.inspectionSuccess("attempt.get");
+      })();
       expect(attempt.attempt.assertions.entries, run.diagnostic()).toHaveLength(mode === "barrier" ? 5 : 4);
       const entries = attempt.attempt.assertions.entries.filter((entry) => ["First review", "Second review", "Following session"].includes(entry.display.label ?? ""));
       let reportedCalls = 0;
       const traces = new Map<string, AgentJudgeTrace>();
       for (const [index, entry] of entries.slice(0, 3).entries()) {
-        await withInspectionRequest({ kind: "attempt.assertion.detail", locator, entryId: entry.entryId }, async (path) => {
-          const result = await niceeval.run(["query", "run", "--request", path]);
+        await (async () => {
+          const result = await niceeval.run(["show", locator, entry.entryId, "--full", "--json"]);
           const detail = result.attemptAssertionDetail();
           if (!("entry" in detail.assertion)) throw new Error(result.diagnostic());
           const audit = detail.assertion.entry.agentJudgeAudit;
@@ -113,12 +113,11 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
             const chunks: Buffer[] = [];
             let offset = 0;
             while (true) {
-              const page = await withInspectionRequest({ kind: "attempt.trace.detail", locator,
-                selector: { kind: "execution-evidence", evidenceId: reference.id, offset, limit: 256 * 1024 } }, async (request) => {
-                  const read = await niceeval.run(["query", "run", "--request", request]);
+              const page = await (async () => {
+                  const read = await niceeval.run(["show", locator, reference.id, "--json"]);
                   expect(read.exitCode, read.diagnostic()).toBe(0);
-                  return read.querySuccess("attempt.trace.detail").detail;
-                });
+                  return read.inspectionSuccess("attempt.trace.detail").detail;
+                })();
               if (page.kind !== "execution-evidence") throw new Error("Missing Assertion Content page");
               expect(page.offset).toBe(offset);
               expect(page.targetSha256).toBe(reference.sha256);
@@ -170,11 +169,11 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
             expect(trace.tools.filter((tool) => tool.name === "write" && tool.state === "completed")).toHaveLength(1);
             expect(trace.tools.some((tool) => tool.state === "not-started")).toBe(true);
           }
-        });
+        })();
       }
-      await withInspectionRequest({ kind: "attempt.usage", locator }, async (path) => {
-        const result = await niceeval.run(["query", "run", "--request", path]);
-        const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
+      await (async () => {
+        const result = await niceeval.run(["show", locator, "usage", "--json"]);
+        const usage = result.inspectionSuccess("attempt.usage").usage.judgeUsage;
         expect(usage.state, result.diagnostic()).toBe("complete");
         if (usage.state !== "complete") throw new Error("Missing pi Judge usage");
         // pi may finish an aborted assistant after the deadline closes usage collection.
@@ -183,20 +182,20 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
         expect(usage.totals.requests.value).toBe(usage.calls.length);
         expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
         if (["http400", "transport"].includes(mode)) expect(usage.calls.every((call) => call.status === "failed")).toBe(true);
-      });
+      })();
       if (mode.startsWith("compact-")) {
-        const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[1]!.entryId, "--full"]);
+        const shown = await niceeval.run(["show", locator, "--full", entries[1]!.entryId]);
         expect(shown.stdout).toContain("Compaction");
         expect(shown.stdout).toMatch(/First\s+question was submitted/u);
         expect(bodies.filter((body) => JSON.parse(body).messages[0]?.content?.includes("context summarization assistant"))).toHaveLength(1);
       }
       if (mode === "success") {
         expect(bodies.some(body => JSON.parse(body).tools?.some((tool: { function?: { name?: string } }) => tool.function?.name === "submit_evaluation"))).toBe(true);
-        const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[0]!.entryId, "--full"]);
+        const shown = await niceeval.run(["show", locator, "--full", entries[0]!.entryId]);
         expect(shown.stdout).toContain("Measurement"); expect(shown.stdout).toContain("Observed real Sandbox evidence"); expect(shown.stdout).toContain("application evidence");
-        const diff = await niceeval.run(["show", locator, "--diff"]);
+        const diff = await niceeval.run(["show", locator, "diff"]);
         expect(diff.stdout).not.toContain("review evidence"); expect(diff.stdout).not.toContain("MUST_NOT_WRITE");
-        const usage = await niceeval.run(["show", locator, "--usage"]);
+        const usage = await niceeval.run(["show", locator, "usage"]);
         expect(usage.stdout).toContain("agent");
       }
       expect(JSON.stringify(bodies)).not.toContain("MUTATED_MATERIAL");
@@ -219,10 +218,10 @@ test.concurrent.each(["direct", "shared", "stop"])("Agent Judge rejects incompat
     expect(run.exitCode, run.diagnostic()).not.toBe(0);
     if (mode === "stop") {
       const locator = defined(only(run.expEvalEvents(), () => true).locator);
-      await withInspectionRequest({ kind: "attempt.trace", locator }, async (path) => {
-        const trace = await niceeval.run(["query", "run", "--request", path]);
-        expect(JSON.stringify(trace.querySuccess("attempt.trace"))).toContain("judge.agent-stop-unsupported");
-      });
+      await (async () => {
+        const trace = await niceeval.run(["show", locator, "execution", "--json"]);
+        expect(JSON.stringify(trace.inspectionSuccess("attempt.trace"))).toContain("judge.agent-stop-unsupported");
+      })();
       return;
     }
     expect(run.stdout + run.stderr).toContain(mode === "direct" ? "judge.agent-requires-sandbox" : mode === "shared" ? "judge.agent-shared-sandbox" : "judge.agent-stop-unsupported");
@@ -257,14 +256,14 @@ test.concurrent.each(["cancel", "cancel-http"])("Cancelling Agent Judge releases
         expect(stopped.stdout.trim()).toBe("");
         if (mode === "cancel-http") {
           const locator = defined(only(interrupted.expEvalEvents(), () => true, interrupted.diagnostic()).locator);
-          await withInspectionRequest({ kind: "attempt.usage", locator }, async (path) => {
-            const result = await niceeval.run(["query", "run", "--request", path]);
-            const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
+          await (async () => {
+            const result = await niceeval.run(["show", locator, "usage", "--json"]);
+            const usage = result.inspectionSuccess("attempt.usage").usage.judgeUsage;
             expect(usage.state, result.diagnostic()).toBe("complete");
             if (usage.state !== "complete") throw new Error("Missing interrupted Judge usage");
             // No assistant receipt exists for an aborted first request. pi owns HTTP attempts.
             expect(usage.calls).toHaveLength(0);
-          });
+          })();
         }
         expect(bodies).toHaveLength(count);
       } finally { await controlled.dispose(); }

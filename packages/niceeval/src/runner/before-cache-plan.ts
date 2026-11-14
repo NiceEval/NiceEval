@@ -10,9 +10,6 @@ import { digestOf } from "../sandbox/identity.ts";
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 
-export const BEFORE_CACHE_INTERPRETER_REVISION = "niceeval.sandbox-step-interpreter/v1";
-export const BEFORE_CACHE_QUIESCE_REVISION = "niceeval.before-cache-quiesce/v1";
-
 /** Consumer attribution is never part of an artifact's content identity. */
 export function beforeCacheAttribution(entry: ScheduledSandboxBefore) {
   const owner = Object.freeze({ kind: entry.owner.kind, id: entry.owner.id });
@@ -89,13 +86,10 @@ export function plannedBeforeCacheActions(
     platform: { ...provider.target.platform },
   };
   const revisions = Object.freeze({
-    storage: keyScope.storageSchemaRevision,
-    interpreter: BEFORE_CACHE_INTERPRETER_REVISION,
-    quiesce: BEFORE_CACHE_QUIESCE_REVISION,
-    capture: keyScope.artifactFormatRevision,
+    format: keyScope.cacheFormat,
   });
   let parentKey = `base:${digestOf({
-    protocol: "niceeval.before-cache-key/v1",
+    domain: "niceeval.before-cache-key",
     baseIdentity,
     provider: {
       id: provider.provider,
@@ -116,7 +110,6 @@ export function plannedBeforeCacheActions(
     attributions.push(beforeCacheAttribution(entry));
     positions.push(entry.data.plan.id);
     const declarationMetadata: JsonValue = Object.freeze({
-      protocol: "niceeval.before-cache-declaration/v1",
       parentKey,
       baseIdentity,
       provider: {
@@ -124,19 +117,6 @@ export function plannedBeforeCacheActions(
         plannerRevision: provider.plannerRevision,
       },
       actionDeclarations: [...actionDeclarations],
-      // Preserve the v1 content-key bytes. Actual replacement lineage is
-      // computed separately from the operation context, never from this field.
-      replacementScope: Object.freeze({
-        protocol: "niceeval.before-cache-replacement/v1",
-        baseIdentity,
-        provider: {
-          id: provider.provider,
-          plannerRevision: provider.plannerRevision,
-        },
-        target: targetIdentity,
-        preparationIdentity: keyScopeIdentity,
-        actionDeclarations: [...actionDeclarations],
-      }),
       requiredState: cumulativeState,
       target: targetIdentity,
       revisions,
@@ -148,8 +128,7 @@ export function plannedBeforeCacheActions(
       beforeCacheKey: key,
       declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
       requiredState: cumulativeState,
-      storageSchemaRevision: keyScope.storageSchemaRevision,
-      artifactFormatRevision: keyScope.artifactFormatRevision,
+      cacheFormat: keyScope.cacheFormat,
       changeFrequency: entry.metadata.changeFrequency.value,
       declarationMetadata,
     });

@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { createRequire } from "node:module";
 import { Effect, Scope } from "effect";
 import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
 import { recordSqlitePath } from "./database.ts";
@@ -119,7 +120,7 @@ export async function makeStorageWorkerClient(
   initializationSignal?.throwIfAborted();
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const worker = new Worker(new URL(`./storage-worker.${extension}`, import.meta.url), {
-    execArgv: (extension === "ts" ? ["--import", "tsx"] : process.execArgv.filter((argument) =>
+    execArgv: (extension === "ts" ? ["--import", createRequire(import.meta.url).resolve("tsx")] : process.execArgv.filter((argument) =>
       !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
       !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
       !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size"))),

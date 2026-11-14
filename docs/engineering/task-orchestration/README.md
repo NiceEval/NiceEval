@@ -91,7 +91,6 @@ Project name 是图上的稳定 identity，不因物理目录移动而重命名�
       "inputs": ["default"],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "batch": "inspection-1",
           "areas": ["inspection"],
           "lanes": ["pr", "main", "nightly", "release"],

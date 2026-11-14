@@ -20,6 +20,8 @@ test.concurrent("精确选择离散实验并在同一次 Invocation 共享全局
     expect(only(result.expEvents(), (event) => event.event === "start")).toMatchObject({ configs: 2, concurrency: 1 });
     expect([...new Set(result.expEvalEvents().map((event) => event.experimentId))].sort()).toEqual(["deliberate-fail", "normal"]);
     expect(result.expEvalEvents()).toHaveLength(3);
+    expect(result.expEvalEvents().filter((event) => event.experimentId === "normal").map((event) => event.verdict))
+      .toEqual(["passed", "passed"]);
 
     const unknown = await niceeval.run(["exp", "--experiment", "normal", "--experiment", "norm", "--dry", "--json"]);
     expect(unknown.exitCode, unknown.diagnostic()).not.toBe(0);

@@ -10,7 +10,7 @@ export type { ManagedScoreMatchOptions, ScoreMatch, ScoreMatchAnchor, ScoreMatch
 export type { AssertionEntryId } from "./assertions/identity.ts";
 export {
   type ScoreMatchAudit,
-  type ScoreMatchAuditV3,
+  type ImageScoreMatchAudit,
   type ScoreMatchAuditImageContent,
   type ScoreMatchAuditEnvelope,
   type ScoreMatchAuditReadResult,

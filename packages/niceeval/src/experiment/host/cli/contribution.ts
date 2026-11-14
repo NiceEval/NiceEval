@@ -26,9 +26,7 @@ import { formatIdentityExplanation } from "../../../runner/feedback/identity-exp
 import type { ExperimentHostDryComparison, ExperimentHostError, ExperimentHostJsonValue } from "../types.ts";
 import { browsableExperimentPaths } from "../../../shared/aggregate.ts";
 import {
-  type ExperimentHostDebugPlan,
   type ExperimentHostRenamePlan,
-  type ExperimentHostRenameReason,
   type ExperimentHostRenameResult,
   type ExperimentHostSharedStateEvidence,
   type ExperimentHostAfterEvent,
@@ -321,7 +319,7 @@ function acceptText(results: readonly { readonly runId: string; readonly sourceL
 `
   ).join("");
   const commands = [...new Set(results.map((result) => result.runId))]
-    .map((runId) => `show: niceeval show --run ${runId}\n`).join("");
+    .map((runId) => `show: niceeval show run:${runId}\n`).join("");
   return `${accepted}${commands}`;
 }
 
@@ -402,9 +400,6 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly beforeCaches: { readonly total: number; readonly hit: number; readonly prepared: number; readonly degraded: number; readonly failed: number } } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nBefore caches: ${result.summary.beforeCaches.hit} hit · ${result.summary.beforeCaches.prepared} prepared · ${result.summary.beforeCaches.degraded} degraded · ${result.summary.beforeCaches.failed} failed (${result.summary.beforeCaches.total} total)\n`;
-}
 
 function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly ExperimentHostDryComparison[]; readonly reason?: string; readonly scope?: string; readonly issues?: readonly ExperimentHostJsonValue[] }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
   type ProjectedSlot = {

@@ -60,7 +60,7 @@ import {
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import { AgentInstallError, SandboxTargetVerificationError, runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
-import { agentBeforeEffect, agentAfterEffect, authorCallbackEffect } from "../agents/agent-effects.ts";
+import { agentBeforeEffect, agentAfterEffect } from "../agents/agent-effects.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
@@ -138,7 +138,6 @@ import {
 import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import {
   sandboxLayerIdentityFor,
-  type LinkedSandboxAfter,
   type ScheduledSandboxBefore,
 } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
@@ -1148,7 +1147,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       }
       if (agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
 
-      const commandTarget = createSandboxCommandTarget(sandbox);
       // A fresh author facade forks requests into this Attempt Scope. Once Scope.close starts,
       // forkIn() interrupts new children immediately even before the executor's own finalizer flips
       // its closed flag. Cleanup therefore uses the provider-owned resource facade; before/Agent/test
@@ -1452,7 +1450,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
             recordTelemetryTrace: async (spans, partial) => {
               if (adapterExecutionTraces === undefined || (spans.length === 0 && !partial)) return;
               await adapterExecutionTraces.recordTrace({
-                traceId: "niceeval.telemetry", schema: { id: "niceeval.otlp/v1" },
+                traceId: "niceeval.telemetry", schema: { id: "niceeval.otlp" },
                 collection: { state: partial ? "partial" : "complete", limitations: partial
                   ? [{ code: "telemetry-budget-exceeded", message: "Telemetry collection exceeded its 30000 ms budget." }] : [] },
                 scopes: [],
@@ -3976,7 +3974,6 @@ const EVAL_RESULT_REDACTION_EXEMPT_KEYS = [
   "sandbox",
   "artifactBase",
   "carriedAccepting",
-  "migratedFrom",
   "acceptedFrom",
   "renamedFrom",
   "artifacts",

@@ -77,13 +77,13 @@ fixture、Eval、Experiment、测试文件、项目副本与结果根，默认�
 
 ## Repo project
 
-每个场景叶子由一个 Nx `project.json` 同时表达项目身份、affected 图边和编排条件：
+每个场景叶子由一个 Nx `project.json` 同时表达项目身份、affected 图边和编排条件。
+注册信息不带数字版本；runner 严格校验当前字段，额外或缺失字段明确失败，旧 checkout 的注册信息须同步到当前契约：
 
 ```ts
 type Executor = { kind: "host" };
 
 interface E2EMetadata {
-  schemaVersion: 3;
   batch: string;
   areas: readonly (
     | "eval"

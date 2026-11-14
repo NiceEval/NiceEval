@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createE2EContext, defined, only, pollUntil, withInspectionRequest } from "@niceeval/testkit";
+import { createE2EContext, defined, only, pollUntil } from "@niceeval/testkit";
 import { decodeSimulatedUserActivity } from "niceeval/inspection";
 import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { expect, test } from "vitest";
@@ -130,7 +130,7 @@ export default defineEval({ async test(t) {
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const evaluation = only(run.expEvalEvents(), event => event.evalId === "simulated", run.diagnostic());
       const locator = defined(evaluation.locator);
-      const attempt = await withInspectionRequest({ kind: "attempt.get", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).querySuccess("attempt.get"));
+      const attempt = await (async () => (await niceeval.run(["show", locator, "--json"])).inspectionSuccess("attempt.get"))();
       expect(attempt.attempt.assertions.entries).toHaveLength(0);
       const failed = [...invalidModes, "no-answer", "typesafe", "timeout", "cancel", "compact-failed"].includes(mode);
       expect(attempt.attempt.verdict, run.diagnostic()).toBe(failed ? "errored" : "passed");
@@ -144,7 +144,7 @@ export default defineEval({ async test(t) {
         expect(bodies[1]).toContain("Agent question START");
       }
       if (!guardModes.includes(mode)) {
-        const trace = await withInspectionRequest({ kind: "attempt.trace", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).attemptTrace());
+        const trace = await (async () => (await niceeval.run(["show", locator, "execution", "--json"])).attemptTrace())();
         if (failed) {
           const diagnostic = defined(trace.trace.diagnostics.items.find(item => item.code === (mode === "typesafe" ? "simulated-user-unsupported-provider" : "simulated-user-failed")));
           expect(diagnostic.phase).toBe("eval.run");
@@ -152,10 +152,10 @@ export default defineEval({ async test(t) {
         }
         const activity = defined(trace.trace.execution.events.find(event => event.source.id === "niceeval.simulated-user"));
         expect(activity.actor?.id).toBe("simulated-user");
-        const shown = await niceeval.run(["show", locator, "--execution"]);
+        const shown = await niceeval.run(["show", locator, "execution"]);
         expect(shown.stdout, shown.diagnostic()).toContain("Simulated user");
         const evidence = defined(activity.evidence[0]);
-        const expanded = await niceeval.run(["show", locator, "--execution", "--expand", evidence.evidenceId]);
+        const expanded = await niceeval.run(["show", locator, evidence.evidenceId]);
         expect(expanded.stdout, expanded.diagnostic()).toContain("Simulated user requests, responses and answer");
         const audits = [];
         for (const event of trace.trace.execution.events.filter(event => event.source.id === "niceeval.simulated-user")) {
@@ -163,8 +163,7 @@ export default defineEval({ async test(t) {
           const chunks: Buffer[] = [];
           let offset: number | null = 0;
           while (offset !== null) {
-            const part = await withInspectionRequest({ kind: "attempt.trace.detail", locator, selector: { kind: "execution-evidence", evidenceId: evidence.evidenceId, offset, limit: 256 * 1024 } },
-              async path => (await niceeval.run(["query", "run", "--request", path])).attemptTraceDetail());
+            const part = await (async () => (await niceeval.run(["show", locator, evidence.evidenceId, "--json"])).attemptTraceDetail())();
             if (part.detail.kind !== "execution-evidence") throw new Error("Expected sealed evidence");
             chunks.push(Buffer.from(part.detail.base64, "base64"));
             offset = part.detail.nextOffset;
@@ -192,7 +191,7 @@ export default defineEval({ async test(t) {
           expect(ordinary).toBe(2);
         }
         if (mode === "compact-failed") expect(audits.at(-1)?.failure?.reason).toBe("context-overflow");
-        const usage = await withInspectionRequest({ kind: "attempt.usage", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).attemptUsage());
+        const usage = await (async () => (await niceeval.run(["show", locator, "usage", "--json"])).attemptUsage())();
         expect(usage.usage.totalCosts.simulatedUser?.source).toBe("simulated-user");
         if (["waiting", "message", "correct", "compact"].includes(mode)) expect(usage.usage.totalCosts.simulatedUser?.amountUSD).toBeGreaterThan(0);
       }

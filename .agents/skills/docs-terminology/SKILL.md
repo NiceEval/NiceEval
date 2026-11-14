@@ -8,7 +8,7 @@ metadata:
 
 # Documentation terminology
 
-Read the [writing rules](../../../docs/README.md#写给人读), then run `concord --skill document` and read the installed package's `docs/feature/documentation-quality/policy.md`.
+Read the [writing rules](../../../docs/README.md#写给人读), then run `concord --skill document` and follow the documentation-quality references returned by the installed command.
 
 Use `concord writing --help` and `concord concepts --help` for command syntax. Concord owns the concept catalog and policy; other Markdown links to catalog definitions instead of keeping a second term table.
 

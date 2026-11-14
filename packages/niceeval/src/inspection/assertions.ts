@@ -22,9 +22,9 @@ import type { PersistedContentMetadata } from "../record/sqlite/index.ts";
 import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength, encodeBase64Bytes } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
-import { INSPECTION_RESULT_BYTE_LIMIT, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
+import { INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-projection.ts";
-import { readJudgeMaterialV2 } from "../assertions/judge-material.ts";
+import { readJudgeMaterial } from "../assertions/judge-material.ts";
 import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import type { ScoreMatchAuditImageContent } from "../assertions/score-match-audit.ts";
 import type { InspectionFactSource } from "./source.ts";
@@ -168,7 +168,7 @@ export function projectAttemptAssertionImage(
         bytes: readSealedBytes(source, metadata) } as ScoreMatchAuditImageContent;
     });
     const decoded = readScoreMatchAudit(rawAudit, observedMeasurement(entry.evaluation.observed), imageContent);
-    if (decoded.state !== "available" || decoded.audit.schemaVersion !== 3) return closeJson({ state: "invalid" });
+    if (decoded.state !== "available" || decoded.audit.kind !== "images") return closeJson({ state: "invalid" });
     const image = decoded.audit.images.find((candidate) => candidate.imageId === imageId);
     if (image === undefined) return undefined;
     const bytes = imageContent[image.evidenceIndex]!.bytes;
@@ -231,7 +231,7 @@ function projectEntry(
   entries: readonly AssertionEntry[] = [],
 ): InspectionJson {
   if (deferContent) return projectSealedValue(source, entry, contentMetadata, true);
-  const currentAgentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "agent-judge-measurement/v1";
+  const currentAgentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "agent-judge-measurement";
   if (currentAgentJudge) {
     const projected = projectSealedValue(source, entry, contentMetadata, true) as Readonly<Record<string, InspectionJson>>;
     try {
@@ -245,9 +245,6 @@ function projectEntry(
         return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
       };
       const raw = readEnvelope(entry);
-      if (isRecord(raw) && isRecord(raw.manifest) && "protocol" in raw.manifest && raw.manifest.protocol !== "niceeval.agent-judge-audit/v1") {
-        return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, undefined, () => undefined) });
-      }
       const decoded = decodeAgentJudgeEnvelope(raw);
       const root = entries[decoded.trace.entryIndex];
       if (root === undefined) throw new Error("Missing Agent Judge root");
@@ -272,8 +269,8 @@ function projectEntry(
         : read });
     } catch { return closeJson({ ...projected, agentJudgeAudit: { state: "invalid" } }); }
   }
-  const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement/v2";
-  const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement/v1";
+  const currentJudge = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "judge-measurement";
+  const currentScoreMatch = entry.criterion.state === "available" && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "llm-measurement";
   if (currentScoreMatch) {
     const hasImages = entry.materials.evidence.some((material) => material.kind === "content" && material.encoding === "binary");
     const pageContent = assertionContentByteLength(entry, contentMetadata) > 12 * 1024 * 1024;
@@ -329,7 +326,7 @@ function projectEntry(
       : undefined;
     return closeJson(Object.freeze({ ...projected, judgeMaterial: name === undefined
       ? Object.freeze({ state: "invalid" as const })
-      : readJudgeMaterialV2(decoded, name) }));
+      : readJudgeMaterial(decoded, name) }));
   } catch {
     return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
   }
@@ -401,8 +398,7 @@ function projectCheck(entry: AssertionEntry): InspectionJson {
 
 function diagnosticChildren(entry: AssertionEntry): readonly InspectionJson[] {
   const retained = entry.explanationRetention as { readonly state?: string; readonly value?: unknown };
-  const legacy = entry.evaluation.kind === "matcher-legacy" ? entry.evaluation.legacyDiagnostic : undefined;
-  const value = retained?.state === "retained" ? retained.value : legacy;
+  const value = retained?.state === "retained" ? retained.value : undefined;
   return value === undefined ? Object.freeze([]) : Object.freeze([diagnosticValueNode(value, "diagnostic")]);
 }
 
@@ -460,12 +456,6 @@ function projectMatcher(
   if (evaluation.kind === "ordinary") return closeJson(Object.freeze({
     state: "ordinary" as const, sourceState: null, comparator: null, sourceLedger: evaluation.receipt ?? null,
     receipt: evaluation.receipt ?? null, result: null, targets: Object.freeze([]), debugger: null,
-    sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
-  }));
-  if (evaluation.kind === "matcher-legacy") return closeJson(Object.freeze({
-    state: "legacy" as const, sourceState: "unavailable", comparator: null, sourceLedger: null,
-    receipt: null, result: null, targets: Object.freeze([]), reason: evaluation.reason,
-    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
     sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
   }));
   const artifact = evaluation.artifact;
@@ -584,7 +574,7 @@ function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "sourc
     const criterion = entry.criterion.value;
     if (
       criterion.kind === "builtin" &&
-      (criterion.id === "occurrence/v1" || criterion.id === "occurrence/v2") &&
+      criterion.id === "occurrence" &&
       isRecord(criterion.data)
     ) {
       const occurrence = criterion.data.occurrence;
@@ -606,11 +596,6 @@ function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "sourc
   return "source-row";
 }
 
-function unavailableMatcherTarget(
-  reason: "historical-not-recorded" | "source-unavailable" | "ambiguous",
-): MatcherConversationTarget {
-  return Object.freeze({ state: "unavailable" as const, reason });
-}
 
 function exactMatcherTarget(
   row: ObservedEventLedgerRow,
@@ -943,105 +928,12 @@ function orderSteps(
   }));
 }
 
-function closeLegacySourceRows(
-  subject: "tool" | "event" | "source-row",
-  source: InspectionAgentTurnsRead,
-): InspectionJson {
-  if (source.state !== "available") return sourceUnavailableCollection("source-unavailable");
-  const items = source.value.segments.flatMap((segment) =>
-    segment.items.map((item) => ({ segment, item }))
-  );
-  const selected = items.filter(({ item }) =>
-    subject !== "tool" || item.kind === "tool-call" || item.kind === "tool-start"
-  );
-  const rows = selected.map(({ segment, item }, index): MatcherFilterRow => {
-    const summary = "tool" in item
-      ? item.tool
-      : "summary" in item
-      ? item.summary
-      : "text" in item
-      ? item.text
-      : item.kind;
-    return Object.freeze({
-      kind: "legacy-source-row" as const,
-      rowId: `legacy:${item.itemId}`,
-      number: String(index + 1),
-      phase: "historical" as const,
-      summary,
-      detail: factFields([
-        { label: "type", value: factValue(item.kind) },
-        { label: "turn", value: factValue(segment.turnId) },
-        ...(item.kind === "tool-call"
-          ? [
-              { label: "name", value: factValue(item.tool) },
-              { label: "input", value: factValue(item.inputSummary) },
-              { label: "sourceLocalCallId", value: factValue(item.callId) },
-            ]
-          : item.kind === "tool-result"
-          ? [
-              { label: "status", value: factValue(item.outcome) },
-              { label: "output", value: factValue(item.outputSummary) },
-              { label: "sourceLocalCallId", value: factValue(item.callId) },
-            ]
-          : item.kind === "tool-start"
-          ? [
-              { label: "name", value: factValue(item.tool) },
-              { label: "input", value: factValue(item.inputSummary) },
-            ]
-          : item.kind === "tool-finish"
-          ? [
-              { label: "status", value: factValue(item.outcome) },
-              { label: "output", value: factValue(item.outputSummary) },
-            ]
-          : "summary" in item
-          ? [{ label: "summary", value: factValue(item.summary) }]
-          : "text" in item
-          ? [{ label: "text", value: factValue(item.text) }]
-          : []),
-      ]),
-      evaluation: Object.freeze({ result: "legacy" as const }),
-      conversationTarget: unavailableMatcherTarget("historical-not-recorded"),
-    });
-  });
-  return currentSourceCollection(
-    source.value.collection.state,
-    rows,
-    source.value.collection.limitations,
-  );
-}
-
 function projectMatcherDebugger(
   entry: MatcherAssertionEntry,
   agentTurns: InspectionAgentTurnsRead,
   projection: "full" | "compact",
 ): InspectionJson {
   const subject = matcherSubject(entry);
-  if (entry.evaluation.kind === "matcher-legacy") {
-    return closeJson(Object.freeze({
-      state: "legacy" as const,
-      subject,
-      query: Object.freeze({
-        state: "unavailable" as const,
-        reason: "historical-not-recorded" as const,
-      }),
-      source: Object.freeze({
-        final: projection === "compact"
-          ? { ...closeLegacySourceRows(subject, agentTurns) as object, rows: [] }
-          : closeLegacySourceRows(subject, agentTurns),
-        atEvaluation: sourceUnavailableCollection("historical-not-recorded"),
-      }),
-      identityRelation: Object.freeze({
-        state: "unavailable" as const,
-        reason: "historical-not-recorded" as const,
-      }),
-      overlayRetention: "unavailable" as const,
-      steps: Object.freeze([]),
-      ...(entry.evaluation.legacyDiagnostic === undefined
-        ? {}
-        : { legacyDiagnostic: closeRecordedAssertionFact(entry.evaluation.legacyDiagnostic) }),
-    }));
-  }
-
   const artifact = entry.evaluation.artifact;
   const query = artifact.kind === "collection-filter"
     ? Object.freeze({
@@ -1073,7 +965,7 @@ function projectMatcherDebugger(
     subject === "source-row" ||
     agentTurns.state !== "available" ||
     agentTurns.value.state !== "current" ||
-    artifact.sourceSnapshot.source.schemaVersion !== 2
+    artifact.sourceSnapshot.source.family !== "niceeval.agent-turns"
   ) return unavailableCurrent("source-unavailable");
 
   const projected = projectObservedSourceEvents(agentTurns.value.segments);

@@ -114,7 +114,7 @@ export interface SessionStartInput {
 export interface SessionCloseInput {
   status?: CompletionStatus | SessionStatus;
   completion?: InvocationCompletion;
-  /** Only IDs in this receipt are safe targets for `niceeval show --run`. */
+  /** Only IDs in this receipt are safe targets for `niceeval show run:<id>`. */
   receipt?: InvocationReceipt;
   completedAt?: string;
 }
@@ -863,7 +863,7 @@ function ageLabel(iso: string, nowMs: number): string {
 
 function renderExperimentLine(experiment: SessionExperimentRecord, published: boolean): string {
   if (published) {
-    return `  ${experiment.experimentId}  niceeval show --run ${experiment.runId}`;
+    return `  ${experiment.experimentId}  niceeval show run:${experiment.runId}`;
   }
   const counters = [
     experiment.running ? `${experiment.running} running` : "",

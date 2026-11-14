@@ -2,7 +2,7 @@
 import { only } from "@niceeval/testkit";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { copyFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { screenshotBytes } from "../fixtures/judge-image.ts";
@@ -63,42 +63,25 @@ test.concurrent("截图以真实视觉材料参与判分，冻结原图与发送
       const portable = join(projectRoot, "judge-image-portable.sqlite");
       await copyFile(join(projectRoot, ".niceeval", "record.sqlite"), portable);
       await rm(join(projectRoot, ".niceeval"), { recursive: true });
-      const requestPath = join(projectRoot, "image-inspection.json");
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: {
-        kind: "attempt.assertion.detail", locator: evaluation.locator, entryId: entry.entryId,
-      } }));
-      const detail = await niceeval.run(["query", "run", "--record", portable, "--request", requestPath]);
+
+      const detail = await niceeval.run(["show", evaluation.locator, entry.entryId, "--full", "--record", portable, "--json"]);
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
       const audit = assertionEntry(detail.attemptAssertionDetail(), detail.diagnostic()).scoreMatchAudit;
-      expect(audit).toMatchObject({ state: "available", audit: { schemaVersion: 3, result: { state: "measured", value: 0.75 } } });
+      expect(audit).toMatchObject({ state: "available", audit: { kind: "images", result: { state: "measured", value: 0.75 } } });
       expect(JSON.stringify(audit)).toContain(createHash("sha256").update(original).digest("hex"));
       expect(JSON.stringify(audit)).not.toContain("image-fixture-key");
       expect(Buffer.byteLength(detail.stdout)).toBeLessThan(512 * 1024);
-      if (audit?.state !== "available" || audit.audit.schemaVersion !== 3) throw new Error(detail.diagnostic());
+      if (audit?.state !== "available" || audit.audit.kind !== "images") throw new Error(detail.diagnostic());
       const call = only(audit.audit.calls, () => true, detail.diagnostic());
       expect(call).toMatchObject({ state: "admitted", wireBody: {
         byteLength: Buffer.byteLength(requests[0]!),
         sha256: createHash("sha256").update(requests[0]!).digest("hex"),
       } });
       const image = only(audit.audit.images, () => true, detail.diagnostic());
-      const chunks: Buffer[] = [];
-      let offset: number | null = 0;
-      while (offset !== null) {
-        await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: {
-          kind: "attempt.assertion.image", locator: evaluation.locator, entryId: entry.entryId,
-          imageId: image.imageId, offset, limit: 256 * 1024,
-        } }));
-        const page = await niceeval.run(["query", "run", "--record", portable, "--request", requestPath]);
-        expect(page.exitCode, page.diagnostic()).toBe(0);
-        const value = page.querySuccess("attempt.assertion.image").image;
-        expect(value).toMatchObject({ state: "available", imageId: image.imageId, mediaType: "image/png", offset,
-          byteLength: original.byteLength, sha256: createHash("sha256").update(original).digest("hex") });
-        if (value.state !== "available") throw new Error(page.diagnostic());
-        chunks.push(Buffer.from(value.base64, "base64"));
-        if (value.nextOffset !== null) expect(value.nextOffset).toBeGreaterThan(offset);
-        offset = value.nextOffset;
-      }
-      expect(Buffer.concat(chunks)).toEqual(Buffer.from(original));
+      const output = join(projectRoot, "recovered-image.png");
+      const saved = await niceeval.run(["show", evaluation.locator, entry.entryId, "image", image.imageId, "--output", output, "--record", portable]);
+      expect(saved.exitCode, saved.diagnostic()).toBe(0);
+      expect(await readFile(output)).toEqual(Buffer.from(original));
       expect(requests).toHaveLength(1);
     });
   } finally {
@@ -131,7 +114,7 @@ test.concurrent("不支持图片的 Judge 在凭据检查前明确拒绝，封�
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         expect(assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit).toMatchObject({
           state: "available", audit: {
-            schemaVersion: 3,
+            kind: "images",
             calls: [{ state: "rejected", transport: "not-sent", failure: { code: "judge-capability-unavailable" } }],
             result: { state: "unavailable", code: "judge-capability-unavailable" },
           },

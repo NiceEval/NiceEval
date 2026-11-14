@@ -61,8 +61,6 @@ export const PLATFORMS = ["linux", "darwin"] as const;
 export const BROWSERS = ["chromium", "firefox", "webkit"] as const;
 export const HOST_CAPABILITIES = ["linux-loop-project-quota"] as const;
 export const HARNESS_ASSETS = ["docker-profile-host-scripts"] as const;
-export const MANIFEST_SCHEMA_VERSION = 3 as const;
-export const MANIFEST_SCHEMA_VERSIONS = [MANIFEST_SCHEMA_VERSION] as const;
 
 export const LaneSchema = Schema.Literals(LANES);
 export const AreaSchema = Schema.Literals(AREAS);
@@ -138,7 +136,6 @@ export const RepoHarnessSchema = Schema.Struct({
 
 /** The target metadata itself: repo identity is deliberately derived by discovery. */
 export const ManifestMetadataSchema = Schema.Struct({
-  schemaVersion: Schema.Literals(MANIFEST_SCHEMA_VERSIONS),
   batch: BatchIdSchema,
   areas: UniqueAreaListSchema,
   lanes: UniqueLaneListSchema,
@@ -152,7 +149,7 @@ export const ManifestMetadataSchema = Schema.Struct({
   artifacts: Schema.Array(ArtifactPatternSchema),
 });
 export const ManifestSchema = Schema.Struct({
-  schemaVersion: Schema.Literals(MANIFEST_SCHEMA_VERSIONS), batch: BatchIdSchema, areas: UniqueAreaListSchema,
+  batch: BatchIdSchema, areas: UniqueAreaListSchema,
   lanes: UniqueLaneListSchema, executor: ExecutorSchema, command: Schema.NonEmptyArray(NonEmptyStringSchema),
   timeoutMinutes: PositiveFiniteNumberSchema, secrets: UniqueStringListSchema,
   requires: Schema.optional(RepoRequiresSchema), harness: Schema.optional(RepoHarnessSchema),

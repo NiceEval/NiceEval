@@ -218,13 +218,12 @@ export default defineExperiment({ evals: ["paged-audit"], adapter: deterministic
       const reference = audit.content;
       expect(reference.byteLength).toBeGreaterThan(32 * 1024 * 1024);
       const chunks: Buffer[] = [];
-      const requestPath = join(projectRoot, ".paged-audit-query.json");
+
       let offset = 0;
       while (true) {
-        await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace.detail", locator: event.locator,
-          selector: { kind: "execution-evidence", evidenceId: reference.id, offset, limit: 256 * 1024 } } }));
-        const read = await niceeval.run(["query", "run", "--request", requestPath]);
-        const page = read.querySuccess("attempt.trace.detail").detail;
+
+        const read = await niceeval.run(["show", event.locator, reference.id, "--json"]);
+        const page = read.inspectionSuccess("attempt.trace.detail").detail;
         if (page.kind !== "execution-evidence") throw new Error("Missing Assertion Content page");
         expect(page.offset).toBe(offset);
         expect(page.targetByteLength).toBe(reference.byteLength);

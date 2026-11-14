@@ -24,7 +24,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "batch": "host-1",
           "areas": [
             "record"

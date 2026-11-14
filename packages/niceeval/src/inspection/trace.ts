@@ -5,14 +5,13 @@ import { projectLifecyclePhase } from "./lifecycle.ts";
 import { repriceRecordedUsage, type InspectionRepricingInput, type InspectionRepricingResult } from "./repricing.ts";
 import { effectiveCostTotals, effectiveUsageCalls, adapterTokenMaterial, projectAdapterModelUsage } from "../o11y/adapter-usage-projection.ts";
 import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-projection.ts";
+import { recordedCostGaps } from "../o11y/cost-gaps.ts";
 import type { ResolvedModelRoles } from "../model-roles.ts";
-import { createHash } from "node:crypto";
 
 import { Result, Schema } from "effect";
 
 import {
   mintRecordContentHandle,
-  type RecordContentHandle,
 } from "../record/attachment/content.ts";
 import {
   enumerateRecordAttachmentClosure,
@@ -22,14 +21,7 @@ import {
   recordAttachmentReferenceWire,
   type RecordAttachmentDefinition,
 } from "../record/attachment/protocol.ts";
-import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
-  AdapterUsageAttachmentRevision1Schema,
-  AdapterUsageAttachmentRevision2Schema,
-  AdapterUsageAttachmentSchema,
-  projectAdapterUsageRevision1,
-  projectAdapterUsageRevision2,
-  validateAdapterUsageAttachment,
   type ReadableAdapterUsageAttachment,
 } from "../record/family/adapter-usage/schema.ts";
 import { NiceEvalCurrentRecordAttachments } from "../record/family/current.ts";
@@ -42,7 +34,7 @@ import type {
   PersistedContentMetadata,
   SealedAttachmentMetadata,
 } from "../record/sqlite/index.ts";
-import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
+import type { InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
 import {
@@ -68,12 +60,8 @@ const MAX_USAGE_OBSERVATIONS = 64;
 const MAX_ACTIVITIES = 64;
 const MAX_DIAGNOSTICS = 16;
 const MAX_DIAGNOSTIC_CAUSES = 4;
-const MAX_COMMAND_ARGUMENTS = 8;
 const MAX_CONVERSATION_TEXT_BYTES = 1_024;
 const MAX_COVERAGE_REASON_BYTES = 256;
-const MAX_COMMAND_TEXT_BYTES = 1_024;
-const MAX_COMMAND_ARGUMENT_BYTES = 128;
-const MAX_COMMAND_STREAM_TEXT_BYTES = 1_024;
 const MAX_DIAGNOSTIC_SUMMARY_BYTES = 256;
 const MAX_DIAGNOSTIC_CAUSE_BYTES = 128;
 
@@ -562,41 +550,6 @@ export function projectAttemptTraceDetail(
   return detail;
 }
 
-function projectTraceIdentityIndex(
-  agentTurns: ReturnType<typeof readAgentTurns>,
-  commands: ReturnType<typeof readSandboxCommands>,
-): InspectionJson {
-  const itemIds: string[] = [];
-  const toolOccurrenceIds = new Set<string>();
-  if (agentTurns.state === "available") {
-    for (const turn of agentTurns.value.segments) {
-      for (const item of turn.items) {
-        itemIds.push(item.itemId);
-        if (item.kind === "tool-start") toolOccurrenceIds.add(item.toolOccurrenceId);
-        if (item.kind === "tool-finish" && item.occurrence.state === "exact") {
-          toolOccurrenceIds.add(item.occurrence.toolOccurrenceId);
-        }
-      }
-    }
-  }
-  const commandIds = commands.state === "available"
-    ? commands.value.segments.map((command) => command.commandId)
-    : [];
-  return closeJson(Object.freeze({
-    itemIds: Object.freeze(itemIds),
-    toolOccurrenceIds: agentTurns.state === "available" && agentTurns.value.state === "legacy"
-      ? Object.freeze({
-          state: "unavailable" as const,
-          reason: "exact-tool-occurrence-identity-not-recorded" as const,
-          ids: Object.freeze([]),
-        })
-      : Object.freeze({
-          state: agentTurns.state === "available" ? "available" as const : agentTurns.state,
-          ids: Object.freeze([...toolOccurrenceIds]),
-        }),
-    commandIds: Object.freeze(commandIds),
-  }));
-}
 
 function projectTypedTraceIdentityIndex(
   agentTurns: ReturnType<typeof readAgentTurns>,
@@ -640,7 +593,7 @@ function projectTypedConversationItem(
     : never,
   turnId: string,
 ): InspectionTraceResult["conversation"]["items"][number] {
-  const sequence = "sessionSequence" in item ? item.sessionSequence : item.sequence;
+  const sequence = item.sessionSequence;
   const base = { itemId: item.itemId, turnId, sequence };
   switch (item.kind) {
     case "message": {
@@ -654,14 +607,6 @@ function projectTypedConversationItem(
     case "tool-finish": {
       const output = boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES);
       return Object.freeze({ ...base, kind: "tool-result", outcome: item.outcome, output: output.value, outputTruncated: output.truncated, ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}) });
-    }
-    case "tool-call": {
-      const input = boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({ ...base, kind: item.kind, tool: item.tool, input: input.value, inputTruncated: input.truncated });
-    }
-    case "tool-result": {
-      const output = boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({ ...base, kind: item.kind, outcome: item.outcome, output: output.value, outputTruncated: output.truncated });
     }
     case "thinking-summary":
     case "compaction":
@@ -688,6 +633,14 @@ function projectTypedConversationItem(
   }
 }
 
+export function projectTraceTurnDetail(attachment: TraceAttachmentInput | undefined, turnId: string): Extract<InspectionTraceDetailResult, { readonly kind: "turn" }> | undefined {
+  const turns = readAgentTurns(attachment);
+  if (turns.state !== "available") return undefined;
+  const turn = turns.value.segments.find(value => value.turnId === turnId);
+  if (turn === undefined) return undefined;
+  return { kind: "turn", turnId, turn: traceTurnIdentity(turn), items: turn.items.map(item => projectFullConversationItem(item, turn)) };
+}
+
 function projectTraceItemDetail(
   agentTurns: ReturnType<typeof readAgentTurns>,
   itemId: string,
@@ -709,7 +662,7 @@ function projectToolOccurrenceDetail(
   agentTurns: ReturnType<typeof readAgentTurns>,
   toolOccurrenceId: string,
 ): Extract<InspectionTraceDetailResult, { readonly kind: "tool-occurrence" }> | undefined {
-  if (agentTurns.state !== "available" || agentTurns.value.state === "legacy") return undefined;
+  if (agentTurns.state !== "available") return undefined;
   let call: InspectionTraceDetailItem | undefined;
   let result: InspectionTraceDetailItem | undefined;
   let callTurn: { readonly turnId: string; readonly sequence: number; readonly outcome: AgentTurnOutcome } | undefined;
@@ -824,12 +777,6 @@ function projectFullConversationItem(
       ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}),
       outcome: item.outcome, output: item.outputSummary,
     });
-    case "tool-call": return Object.freeze({
-      ...base, kind: item.kind, sequence: item.sequence, tool: item.tool, input: item.inputSummary,
-    });
-    case "tool-result": return Object.freeze({
-      ...base, kind: item.kind, sequence: item.sequence, outcome: item.outcome, output: item.outputSummary,
-    });
     case "message": return Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text });
     case "thinking-summary":
     case "compaction":
@@ -845,7 +792,7 @@ export function readCurrentAttachment<
   Owner extends RecordAttachmentOwner,
   Family extends string,
   ValueSchema extends Schema.Top,
-  Revision extends number,
+  Revision extends number | undefined,
 >(
   persistence: Readonly<{
     readonly attachment: RecordAttachmentDefinition<Owner, Family, ValueSchema>;
@@ -858,7 +805,6 @@ export function readCurrentAttachment<
     attachment.physical.ownerKind !== persistence.attachment.owner ||
     attachment.physical.family !== persistence.attachment.family
   ) return invalidRead("source-attachment-identity-invalid");
-  if (attachment.physical.familyRevision < persistence.revision) return invalidRead("source-migration-required");
   if (attachment.physical.familyRevision !== persistence.revision) return invalidRead("source-revision-unsupported");
 
   const byLogicalHandle = new Map(
@@ -949,80 +895,20 @@ function invalidRead<Value>(issue: string): AttachmentRead<Value> {
   return Object.freeze({ state: "invalid" as const, issues: Object.freeze([issue]) });
 }
 
-/** Historical revisions are decoded independently, then projected without rewriting sealed bytes. */
+/** Decode only the current official usage payload. */
 function readAdapterUsageAttachment(
   attachment: TraceAttachmentInput | undefined,
   models: ResolvedModelRoles | undefined,
 ): AttachmentRead<ReadableAdapterUsageAttachment> {
-  if (attachment?.physical.familyRevision !== 1 && attachment?.physical.familyRevision !== 2 &&
-    attachment?.physical.familyRevision !== 3) {
-    const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.adapterUsage, attachment);
-    if (read.state === "available" && read.value.calls.some((call) => call.modelSlot !== null &&
-      (models === undefined || !Object.hasOwn(models, call.modelSlot)))) {
-      return invalidRead("source-model-slot-invalid");
-    }
-    return read;
+  const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.adapterUsage, attachment);
+  if (read.state === "available" && read.value.calls.some((call) => call.modelSlot !== null &&
+    (models === undefined || !Object.hasOwn(models, call.modelSlot)))) {
+    return invalidRead("source-model-slot-invalid");
   }
-  if (
-    attachment.physical.ownerKind !== NiceEvalCurrentRecordAttachments.adapterUsage.attachment.owner ||
-    attachment.physical.family !== NiceEvalCurrentRecordAttachments.adapterUsage.attachment.family
-  ) return invalidRead("source-attachment-identity-invalid");
-  if (attachment.physical.contents.length !== 0 || attachment.physical.references.length !== 0) {
-    return invalidRead("source-closure-invalid");
-  }
-  let projected: ReadableAdapterUsageAttachment;
-  if (attachment.physical.familyRevision === 1) {
-    const decoded = Schema.decodeUnknownResult(AdapterUsageAttachmentRevision1Schema, RecordExactParseOptions)(attachment.value);
-    if (Result.isFailure(decoded)) return invalidRead("source-attachment-invalid");
-    projected = projectAdapterUsageRevision1(decoded.success);
-  } else if (attachment.physical.familyRevision === 2) {
-    const decoded = Schema.decodeUnknownResult(AdapterUsageAttachmentRevision2Schema, RecordExactParseOptions)(attachment.value);
-    if (Result.isFailure(decoded)) return invalidRead("source-attachment-invalid");
-    projected = projectAdapterUsageRevision2(decoded.success);
-  } else {
-    const decoded = Schema.decodeUnknownResult(AdapterUsageAttachmentSchema, RecordExactParseOptions)(attachment.value);
-    if (Result.isFailure(decoded)) return invalidRead("source-attachment-invalid");
-    projected = decoded.success;
-    if (projected.calls.some((call) => call.modelSlot !== null &&
-      (models === undefined || !Object.hasOwn(models, call.modelSlot)))) {
-      return invalidRead("source-model-slot-invalid");
-    }
-  }
-  if (validateAdapterUsageAttachment(projected).length > 0) {
-    return invalidRead("source-attachment-invalid");
-  }
-  return Object.freeze({
-    state: "available" as const,
-    value: projected,
-    contentMetadata: new WeakMap<object, PersistedContentMetadata>(),
-  });
+  return read;
 }
 
-function sourceDescriptor(read: AttachmentRead<CollectionValue>): InspectionJson {
-  switch (read.state) {
-    case "not-recorded": return closeJson(Object.freeze({ state: read.state }));
-    case "invalid": return closeJson(Object.freeze({ state: read.state, issues: read.issues }));
-    case "available": {
-      const limitations = boundedLimitations(read.value.collection.limitations);
-      return closeJson(Object.freeze({
-        state: read.value.collection.state,
-        limitations: limitations.items,
-        limitationsTruncated: limitations.hasMore,
-        omittedLimitationCount: limitations.omittedCount,
-      }));
-    }
-  }
-}
 
-function boundedLimitations(limitations: readonly SourceReceiptLimitation[]) {
-  const items = limitations.slice(0, MAX_SOURCE_LIMITATIONS).map((limitation) =>
-    closeJson(limitation));
-  return Object.freeze({
-    items: Object.freeze(items),
-    hasMore: items.length < limitations.length,
-    omittedCount: limitations.length - items.length,
-  });
-}
 
 function availability<Value extends CollectionValue>(
   read: AttachmentRead<Value>,
@@ -1074,95 +960,6 @@ const DIAGNOSTIC_TARGETS = new Set<SourceReceiptLimitation["target"]>([
   "value-byte",
 ]);
 
-function projectConversation(
-  agentTurns: ReturnType<typeof readAgentTurns>,
-  turnContexts: ReturnType<typeof readTurnContexts>,
-): { readonly view: InspectionJson } {
-  const primary = availability(agentTurns, CONVERSATION_TARGETS);
-  if (agentTurns.state !== "available") {
-    return Object.freeze({ view: closeJson(Object.freeze({
-      ...primary,
-      turns: Object.freeze([]),
-      turnsTruncated: false,
-      omittedTurnCount: 0,
-      items: Object.freeze([]),
-      itemsTruncated: false,
-      omittedItemCount: 0,
-    })) });
-  }
-
-  const contextState = availability(turnContexts, CONTEXT_TARGETS);
-  const contexts = turnContexts.state === "available"
-    ? new Map(turnContexts.value.segments.map((segment) => [segment.turnId, segment] as const))
-    : new Map();
-  const limitations: InspectionJson[] = [...primary.limitations];
-  if (contextState.state !== "complete") {
-    limitations.push(closeJson(Object.freeze({
-      source: "turn-contexts",
-      state: contextState.state,
-      limitations: contextState.limitations,
-    })));
-  }
-  if (agentTurns.value.state === "legacy") {
-    limitations.push(closeJson(Object.freeze({
-      source: "agent-turns",
-      state: "partial",
-      reason: "exact-tool-occurrence-identity-not-recorded",
-    })));
-  }
-
-  const turns = agentTurns.value.segments.slice(0, MAX_CONVERSATION_TURNS).map((turn) => {
-    const coverage = conversationCoverage(turn.terminal);
-    limitations.push(...coverage.limitations.map((limitation) => closeJson(Object.freeze({
-      source: "agent-turns",
-      turnId: turn.turnId,
-      ...limitation,
-    }))));
-    const context = contexts.get(turn.turnId);
-    return closeJson(Object.freeze({
-      turnId: turn.turnId,
-      sequence: turn.sequence,
-      ...("sessionId" in turn ? { sessionId: turn.sessionId } : {}),
-      outcome: turn.outcome,
-      terminal: Object.freeze({
-        state: turn.terminal.state,
-        ...(turn.terminal.state === "recorded" ? { status: turn.terminal.status } : { reason: turn.terminal.reason }),
-        coverage: coverage.coverage,
-      }),
-      context: context === undefined
-        ? Object.freeze({ state: "not-recorded" as const })
-        : projectTurnContext(context),
-    }));
-  });
-
-  const items: InspectionJson[] = [];
-  let totalItemCount = 0;
-  for (const turn of agentTurns.value.segments) {
-    for (const item of turn.items) {
-      totalItemCount += 1;
-      if (items.length >= MAX_CONVERSATION_ITEMS) continue;
-      items.push(projectConversationItem(
-        item,
-        turn.turnId,
-        "sessionId" in turn ? turn.sessionId : undefined,
-      ));
-    }
-  }
-  return Object.freeze({
-    view: closeJson(Object.freeze({
-      state: primary.state === "complete" && limitations.length === 0 ? "complete" : "partial",
-      limitations: Object.freeze(limitations.slice(0, MAX_SOURCE_LIMITATIONS)),
-      limitationsTruncated: limitations.length > MAX_SOURCE_LIMITATIONS,
-      omittedLimitationCount: Math.max(0, limitations.length - MAX_SOURCE_LIMITATIONS),
-      turns: Object.freeze(turns),
-      turnsTruncated: turns.length < agentTurns.value.segments.length,
-      omittedTurnCount: agentTurns.value.segments.length - turns.length,
-      items: Object.freeze(items),
-      itemsTruncated: items.length < totalItemCount,
-      omittedItemCount: totalItemCount - items.length,
-    })),
-  });
-}
 
 export function readInspectionAgentTurns(
   attachment?: TraceAttachmentInput,
@@ -1215,142 +1012,7 @@ function conversationCoverage(terminal: ReturnType<typeof readAgentTurns> extend
   return Object.freeze({ coverage: Object.freeze(entries), limitations: Object.freeze(limitations) });
 }
 
-function projectTurnContext(
-  context: ReturnType<typeof readTurnContexts> extends AttachmentRead<infer Value>
-    ? Value extends { readonly segments: readonly (infer Segment)[] } ? Segment : never
-    : never,
-): InspectionJson {
-  if ("state" in context.source) {
-    return closeJson(Object.freeze({
-      state: context.source.state,
-      reason: context.source.reason,
-      sessionIndex: context.sessionIndex,
-      turnIndex: context.turnIndex,
-      sourceOrder: context.sourceOrder,
-    }));
-  }
-  return closeJson(Object.freeze({
-    sessionIndex: context.sessionIndex,
-    turnIndex: context.turnIndex,
-    sourceOrder: context.sourceOrder,
-    ...context.source.value,
-  }));
-}
 
-function projectConversationItem(
-  item: ReturnType<typeof readAgentTurns> extends AttachmentRead<infer Value>
-    ? Value extends { readonly segments: readonly (infer Segment)[] }
-      ? Segment extends { readonly items: readonly (infer Item)[] } ? Item : never
-      : never
-    : never,
-  turnId: string,
-  sessionId: string | undefined,
-): InspectionJson {
-  const base = Object.freeze({
-    itemId: item.itemId,
-    turnId,
-    ...(sessionId === undefined ? {} : { sessionId }),
-    ...(item.kind === "tool-call" || item.kind === "tool-result"
-      ? { sequence: item.sequence }
-      : "eventId" in item
-        ? { eventId: item.eventId, sequence: item.sessionSequence }
-        : { sequence: item.sequence }),
-  });
-  switch (item.kind) {
-    case "message": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      role: item.role,
-      text: boundedText(item.text, MAX_CONVERSATION_TEXT_BYTES).value,
-      textTruncated: boundedText(item.text, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "tool-start": return closeJson(Object.freeze({
-      ...base,
-      kind: "tool-call" as const,
-      occurrence: Object.freeze({
-        state: "exact" as const,
-        toolOccurrenceId: item.toolOccurrenceId,
-      }),
-      tool: item.tool,
-      input: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).value,
-      inputTruncated: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "tool-finish": return closeJson(Object.freeze({
-      ...base,
-      kind: "tool-result" as const,
-      occurrence: item.occurrence.state === "exact"
-        ? Object.freeze({
-            state: "exact" as const,
-            toolOccurrenceId: item.occurrence.toolOccurrenceId,
-          })
-        : item.occurrence,
-      outcome: item.outcome,
-      output: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).value,
-      outputTruncated: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "tool-call": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      occurrence: Object.freeze({
-        state: "unavailable" as const,
-        reason: "exact-tool-occurrence-identity-not-recorded" as const,
-      }),
-      tool: item.tool,
-      input: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).value,
-      inputTruncated: boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "tool-result": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      occurrence: Object.freeze({
-        state: "unavailable" as const,
-        reason: "exact-tool-occurrence-identity-not-recorded" as const,
-      }),
-      outcome: item.outcome,
-      output: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).value,
-      outputTruncated: boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "thinking-summary":
-    case "compaction":
-    case "context-injection": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value,
-      summaryTruncated: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "subagent": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      state: item.state,
-      label: item.label,
-      summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value,
-      summaryTruncated: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-    case "input-request": {
-      const prompt = boundedText(item.promptSummary, MAX_CONVERSATION_TEXT_BYTES);
-      const response = item.responseSummary === null
-        ? null
-        : boundedText(item.responseSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return closeJson(Object.freeze({
-        ...base,
-        kind: item.kind,
-        state: item.state,
-        prompt: prompt.value,
-        promptTruncated: prompt.truncated,
-        response: response?.value ?? null,
-        responseTruncated: response?.truncated ?? false,
-      }));
-    }
-    case "skill-load":
-    case "conversation-error": return closeJson(Object.freeze({
-      ...base,
-      kind: item.kind,
-      code: item.code,
-      summary: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).value,
-      summaryTruncated: boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES).truncated,
-    }));
-  }
-}
 
 export function projectAttemptRepricing(
   attachments: AttemptTraceAttachments,
@@ -1361,7 +1023,7 @@ export function projectAttemptRepricing(
   return repriceRecordedUsage({
     application: application.state === "available" ? application.value : undefined,
     applicationCollection: application.state === "available"
-      ? attachments.adapterUsage?.physical.familyRevision === 4 ? application.value.collection.state : "partial"
+      ? application.value.collection.state
       : application.state === "invalid" ? "invalid" : "unavailable",
     judge: judge.state === "available" ? judge.value : undefined,
     judgeCollection: judge.state === "available" ? judge.value.collection.state
@@ -1375,6 +1037,7 @@ export function projectAttemptUsage(
   models: ResolvedModelRoles | undefined = attachments.models,
 ): InspectionAttemptUsageResult {
   const usage = projectApplicationUsage(attachments, models);
+  const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
   const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.judgeUsage, attachments.judgeUsage);
   const judgeUsage = read.state === "available" ? projectJudgeUsage(read.value)
     : read.state === "invalid" ? Object.freeze({ state: "invalid" as const, reason: "judge-usage-source-invalid" as const })
@@ -1385,7 +1048,9 @@ export function projectAttemptUsage(
   const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
   return Object.freeze({ ...usage, judgeUsage,
     totalCosts: projectTotalUsageCosts(usage.totals, judgeUsage, applicationEmptyComplete,
-      attachments.adapterUsage === undefined || attachments.adapterUsage.physical.familyRevision === 4, simulatedUser) });
+      application.state === "available" && application.value.collection.state === "complete", simulatedUser,
+      [...recordedCostGaps("application", application.state === "available" ? application.value : undefined),
+        ...recordedCostGaps("judge", read.state === "available" ? read.value : undefined)]) });
 }
 
 function projectApplicationUsage(
@@ -1396,7 +1061,7 @@ function projectApplicationUsage(
     const read = readAdapterUsageAttachment(attachments.adapterUsage, models);
     const modelUsage = projectAdapterModelUsage(read.state === "available" ? read.value : null, models, {
       basis: "recorded-calls", reason: read.state === "invalid" ? "source-invalid" : "usage-not-recorded",
-    }, attachments.adapterUsage.physical.familyRevision === 4);
+    });
     const empty = {
       source: "adapter" as const,
       coverage: "recorded-calls" as const,
@@ -1745,114 +1410,12 @@ function addCanonicalDecimal(left: string, right: string): string {
   return fraction.length === 0 ? integer : `${integer}.${fraction}`;
 }
 
-function projectCommands(
-  source: InspectionFactSource,
-  commands: ReturnType<typeof readSandboxCommands>,
-): { readonly source: InspectionJson; readonly view: InspectionJson } {
-  const sourceState = availability(commands, COMMAND_TARGETS);
-  if (commands.state !== "available") {
-    return Object.freeze({ source: sourceDescriptor(commands), view: emptyView(sourceState) });
-  }
-  try {
-    const items = commands.value.segments.slice(0, MAX_COMMANDS).map((command) =>
-      closeJson(Object.freeze({
-        commandId: command.commandId,
-        sequence: command.sequence,
-        turnId: command.turnId,
-        phase: projectLifecyclePhase(command.phase),
-        invocation: projectInvocation(command.invocation),
-        workingDirectory: command.workingDirectory,
-        outcome: command.outcome,
-        stdout: projectCommandStream(source, commands.contentMetadata, command.stdout),
-        stderr: projectCommandStream(source, commands.contentMetadata, command.stderr),
-      })));
-    return Object.freeze({
-      source: sourceDescriptor(commands),
-      view: closeJson(Object.freeze({
-        ...sourceState,
-        items: Object.freeze(items),
-        hasMore: items.length < commands.value.segments.length,
-        omittedCommandCount: commands.value.segments.length - items.length,
-      })),
-    });
-  } catch {
-    const invalid = closeJson(Object.freeze({
-      state: "invalid" as const,
-      issues: Object.freeze(["source-content-invalid"]),
-    }));
-    return Object.freeze({
-      source: invalid,
-      view: closeJson(Object.freeze({
-        state: "invalid" as const,
-        issues: Object.freeze(["source-content-invalid"]),
-        items: Object.freeze([]),
-        hasMore: false,
-      })),
-    });
-  }
-}
 
 function readSandboxCommands(attachment?: TraceAttachmentInput) {
   return readCurrentAttachment(NiceEvalCurrentRecordAttachments.sandboxCommands, attachment);
 }
 
-function projectInvocation(
-  invocation: ReturnType<typeof readSandboxCommands> extends AttachmentRead<infer Value>
-    ? Value extends { readonly segments: readonly (infer Segment)[] }
-      ? Segment extends { readonly invocation: infer Invocation } ? Invocation : never
-      : never
-    : never,
-): InspectionJson {
-  if (invocation.kind === "shell") {
-    const command = boundedText(invocation.command, MAX_COMMAND_TEXT_BYTES);
-    return closeJson(Object.freeze({
-      kind: invocation.kind,
-      command: command.value,
-      commandTruncated: command.truncated,
-    }));
-  }
-  const executable = boundedText(invocation.executable, MAX_COMMAND_TEXT_BYTES);
-  const args = invocation.arguments.slice(0, MAX_COMMAND_ARGUMENTS).map((argument) =>
-    boundedText(argument, MAX_COMMAND_ARGUMENT_BYTES).value);
-  return closeJson(Object.freeze({
-    kind: invocation.kind,
-    executable: executable.value,
-    executableTruncated: executable.truncated,
-    arguments: Object.freeze(args),
-    argumentsTruncated: args.length < invocation.arguments.length ||
-      invocation.arguments.slice(0, MAX_COMMAND_ARGUMENTS).some((argument) =>
-        boundedText(argument, MAX_COMMAND_ARGUMENT_BYTES).truncated),
-    omittedArgumentCount: invocation.arguments.length - args.length,
-  }));
-}
 
-function projectCommandStream(
-  source: InspectionFactSource,
-  contentMetadata: WeakMap<object, PersistedContentMetadata>,
-  stream: {
-    readonly content: RecordContentHandle;
-    readonly retainedBytes: number;
-    readonly totalSafeUtf8Bytes: number;
-    readonly sha256: string;
-  },
-): InspectionJson {
-  const metadata = contentMetadata.get(stream.content);
-  if (
-    metadata === undefined ||
-    metadata.byteLength !== stream.retainedBytes ||
-    metadata.digest !== stream.sha256
-  ) throw new Error("Command stream metadata is invalid");
-  const text = readVerifiedText(source, metadata);
-  const bounded = boundedText(text, MAX_COMMAND_STREAM_TEXT_BYTES);
-  return closeJson(Object.freeze({
-    state: "available" as const,
-    text: bounded.value,
-    textTruncated: bounded.truncated,
-    retainedBytes: stream.retainedBytes,
-    totalSafeUtf8Bytes: stream.totalSafeUtf8Bytes,
-    sha256: stream.sha256,
-  }));
-}
 
 export function projectAttemptTiming(
   attachments: AttemptTraceAttachments,
@@ -1964,9 +1527,6 @@ function readRunnerDiagnostics(attachment?: TraceAttachmentInput) {
   return readCurrentAttachment(NiceEvalCurrentRecordAttachments.runnerDiagnostics.attempt, attachment);
 }
 
-function emptyView(state: ProjectionState): InspectionJson {
-  return closeJson(Object.freeze({ ...state, items: Object.freeze([]), hasMore: false }));
-}
 
 function readVerifiedText(
   source: InspectionFactSource,
@@ -2040,12 +1600,6 @@ function exactMarker(value: unknown, key: string): unknown | undefined {
 function hasOwnMarker(value: unknown, key: string): boolean {
   return typeof value === "object" && value !== null && !Array.isArray(value) &&
     Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function closeJson(value: unknown): InspectionJson {
-  const closed = closeInspectionJson(value);
-  if (isInspectionCodecError(closed)) throw closed;
-  return closed as InspectionJson;
 }
 
 function jsonByteLength(value: unknown): number {

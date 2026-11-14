@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createE2EContext, defined, only, pollUntil, withInspectionRequest } from "@niceeval/testkit";
+import { createE2EContext, defined, only, pollUntil } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 
 const scenario = createE2EContext({
@@ -109,7 +109,7 @@ export default defineEval({ async test(t) {
     const evaluation = only(run.expEvalEvents(), event => event.evalId === "failure", run.diagnostic());
     const locator = defined(evaluation.locator);
     if (simulated) {
-      const trace = await withInspectionRequest({ kind: "attempt.trace", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).attemptTrace());
+      const trace = await (async () => (await niceeval.run(["show", locator, "execution", "--json"])).attemptTrace())();
       const diagnostic = defined(trace.trace.diagnostics.items.find(item => item.code === "simulated-user-failed"), JSON.stringify(trace));
       expect(diagnostic.causes[0]?.code, JSON.stringify(diagnostic)).toBe(code);
       const caught = JSON.parse(await readFile(join(projectRoot, "caught.json"), "utf8"));
@@ -126,9 +126,9 @@ export default defineEval({ async test(t) {
         expect(persisted).toContain("fixture failure");
       }
     } else {
-      const attempt = await withInspectionRequest({ kind: "attempt.get", locator }, async path => (await niceeval.run(["query", "run", "--request", path])).querySuccess("attempt.get"));
+      const attempt = await (async () => (await niceeval.run(["show", locator, "--json"])).inspectionSuccess("attempt.get"))();
       const entry = only(attempt.attempt.assertions.entries, () => true);
-      const detail = await withInspectionRequest({ kind: "attempt.assertion.detail", locator, entryId: entry.entryId }, async path => (await niceeval.run(["query", "run", "--request", path])).attemptAssertionDetail());
+      const detail = await (async () => (await niceeval.run(["show", locator, entry.entryId, "--full", "--json"])).attemptAssertionDetail())();
       if (!("entry" in detail.assertion)) throw new Error("Missing assertion detail");
       const audit = detail.assertion.entry.agentJudgeAudit;
       expect(audit?.state, JSON.stringify(detail)).toBe("available");

@@ -1,3 +1,4 @@
+import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import { sandboxCreationLabels } from "../creation-labels.ts";
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
@@ -71,11 +72,10 @@ import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
-const INCUS_ARTIFACT_STORAGE_REVISION = "niceeval.incus-artifact-ledger/v1";
-const INCUS_ARTIFACT_FORMAT_REVISION = "niceeval.incus-vm-tuple/v1";
+const INCUS_CACHE_FORMAT = "niceeval-incus-cache/current";
 
 function runtimeFailure(
-  context: SandboxRuntimeMaterializeContext,
+  _context: SandboxRuntimeMaterializeContext,
   cause: unknown,
 ): SandboxRuntimeMaterializationError {
   const error = cause instanceof Error ? cause : new Error(String(cause));
@@ -150,7 +150,7 @@ function requirementDigestOf(context: SandboxRuntimeMaterializeContext): string 
 
 function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
   return Object.freeze({
-    protocol: "niceeval.incus-before-cache/v1",
+    domain: "niceeval.incus-before-cache",
     executionDomainId: plan.executionDomainId,
     runtimeProject: plan.project,
     artifactProject: plan.artifactProject,
@@ -173,7 +173,7 @@ function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
     revisions: {
       provider: INCUS_PLANNER_REVISION,
       guestInit: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
-      capture: INCUS_ARTIFACT_FORMAT_REVISION,
+      capture: INCUS_CACHE_FORMAT,
     },
   });
 }
@@ -495,9 +495,7 @@ export function incusProviderModule(
         coverage: sandboxState.all,
         baseIdentity: plan.imageFingerprint,
         keyScope: decodeBeforeCacheKeyScope({
-          protocol: "niceeval.incus-before-cache/v1",
-          storageSchemaRevision: INCUS_ARTIFACT_STORAGE_REVISION,
-          artifactFormatRevision: INCUS_ARTIFACT_FORMAT_REVISION,
+          cacheFormat: INCUS_CACHE_FORMAT,
           semanticIdentity: preparationSemanticIdentity(plan),
         }),
       })),
@@ -551,10 +549,10 @@ export function incusProviderModule(
               manifestDigest: operation.declaration.declarationDigest,
               providerRevision: INCUS_PLANNER_REVISION,
               guestInitRevision: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
-              captureRevision: INCUS_ARTIFACT_FORMAT_REVISION,
+              cacheFormat: INCUS_CACHE_FORMAT,
               coverage: sandboxState.all,
               resourcesDigest: digestOf(preparationSemanticIdentity(plan)),
-              replacementScopeDigest: digestOf((operation.declaration.declarationMetadata as { readonly replacementScope: JsonValue }).replacementScope),
+              replacementScopeDigest: beforeCacheReplacementScope({ provider: "incus", executionDomainId: plan.executionDomainId, baseReference: plan.imageFingerprint }, operation),
             });
             const control = await IncusControl.connectMutation();
             const committed = await publishOrReuseIncusArtifact(repository, control, {

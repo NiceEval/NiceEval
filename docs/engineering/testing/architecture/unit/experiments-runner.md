@@ -363,7 +363,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。
 - 真实 CJS 宿主的进程级验收归 [E2E · CLI](../e2e/cli.md)，init 的 ESM 建议提示行同归该处，单元层不起 CLI 进程。
 - **形态求值与 `--json` 流不变量**：`resolveOutputForm` 只有两个结果——`--json` 即机器面，否则人读文本；**不读任何 CI 进程变量**（fixture 要在设置了 `CI=true` 的运行条件下证明结果只由 flag 与 TTY 决定），TTY 只决定人读文本的版式。
-- `--json` 的事件流不变量：单一 stdout 有序流（stderr 只留启动期错误）、每行一个合法 JSON 对象且首行 `start` 事件携带 `format`/`schemaVersion`、字段名复用 Results 词表。
+- `--json` 的事件流不变量：单一 stdout 有序流（stderr 只留启动期错误）、每行一个合法 JSON 对象且首行是 `start` 事件，不携带格式名或数字版本、字段名复用 Results 词表。
 - 失败不做 suppression 逐事件给出（人读文本才有展开上限 10）；空闲 30 秒 `progress` 心跳且永久事件重置计时。
 - `result` 事件的 `junit` 字段只在传了 `--junit` 时出现；`--dry --json` 是单 JSON 文档不是流。
 - 字节级渲染归 [E2E · CLI](../e2e/cli.md)，这里以 reducer/renderer 的事件序列与状态为断言面。

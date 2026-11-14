@@ -13,11 +13,9 @@ import {
   ExperimentCliTerminal,
   NodeExperimentCliTerminalLive,
 } from "../experiment/host/cli/terminal.ts";
-import { inspectionQueryCliCommand } from "../inspection/cli/contribution.ts";
-import { showCliCommand } from "../show/contribution.ts";
+import { showCliCommand, compareCliCommand } from "../show/contribution.ts";
 import { viewCliCommand } from "../view/cli/contribution.ts";
 import { runCliCommand } from "../run/cli/contribution.ts";
-import { stateCliCommand } from "../state/cli/contribution.ts";
 import { projectInitCliCommand } from "../project/cli/contribution.ts";
 import {
   CliArguments,
@@ -152,13 +150,12 @@ const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureErr
   [
     ...experimentCliContributions,
     evalCatalogCliCommand,
-    inspectionQueryCliCommand,
+    compareCliCommand,
     showCliCommand,
     runCliCommand,
     viewCliCommand,
     sandboxCliCommand,
     dockerCliCommand,
-    stateCliCommand,
     projectInitCliCommand,
   ],
 );

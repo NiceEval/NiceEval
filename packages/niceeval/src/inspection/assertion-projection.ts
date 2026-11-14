@@ -16,7 +16,7 @@ import {
   OrderEvaluationReceiptSchema,
 } from "../assertions/record/codec.ts";
 import { RecordAttachmentIssueCodeSchema } from "../record/attachment/errors.ts";
-import type { ScoreMatchAudit, ScoreMatchAuditReadResult, ScoreMatchAuditV2, ScoreMatchAuditV3 } from "../assertions/score-match-audit.ts";
+import type { ScoreMatchAudit, ScoreMatchAuditReadResult, TypedScoreMatchAudit, ImageScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import { isJsonValue } from "../shared/json-value.ts";
 import type { JsonValue } from "../shared/types.ts";
 
@@ -37,7 +37,6 @@ const JudgeMaterialReadResultSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("paged"), content: AssertionContentReferenceSchema }),
   Schema.Struct({ state: Schema.Literal("available"), request: Schema.String }),
   Schema.Struct({ state: Schema.Literal("invalid") }),
-  Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
 ]);
 const AuditFailureSchema = Schema.Struct({ state: Schema.Literals(["unavailable", "errored"]), code: Schema.String, message: Schema.String });
 const AuditAttemptSchema = Schema.Struct({
@@ -66,7 +65,7 @@ const AuditCallSchema = Schema.Union([
   }),
 ]);
 const ScoreMatchAuditSchema: Schema.Schema<ScoreMatchAudit> = Schema.Struct({
-  schemaVersion: Schema.Literal(1), protocol: Schema.Literal("niceeval.score-match-audit/v1"),
+  kind: Schema.Literal("chat"),
   definition: Schema.Struct({
     version: Schema.String, config: Schema.String, digest: Schema.String,
     limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }),
@@ -111,8 +110,8 @@ const TypeSafeAuditCallSchema = Schema.Union([
     ]),
   }),
 ]);
-const ScoreMatchAuditV2Schema: Schema.Schema<ScoreMatchAuditV2> = Schema.Struct({
-  schemaVersion: Schema.Literal(2), protocol: Schema.Literal("niceeval.score-match-audit/v2"),
+const TypedScoreMatchAuditSchema: Schema.Schema<TypedScoreMatchAudit> = Schema.Struct({
+  kind: Schema.Literal("typed"),
   definition: Schema.Struct({
     version: Schema.String, config: Schema.String, digest: Schema.String,
     limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }),
@@ -124,8 +123,8 @@ const ScoreMatchAuditV2Schema: Schema.Schema<ScoreMatchAuditV2> = Schema.Struct(
     Schema.Struct({ state: Schema.Literal("interrupted") }),
   ]),
 });
-const ScoreMatchAuditV3Schema: Schema.Schema<ScoreMatchAuditV3> = Schema.Struct({
-  schemaVersion: Schema.Literal(3), protocol: Schema.Literal("niceeval.score-match-audit/v3"),
+const ImageScoreMatchAuditSchema: Schema.Schema<ImageScoreMatchAudit> = Schema.Struct({
+  kind: Schema.Literal("images"),
   definition: Schema.Struct({ version: Schema.String, config: Schema.String, digest: Schema.String,
     limits: Schema.Struct({ maxCalls: Schema.Number, maxMaterialBytes: Schema.optionalKey(Schema.Number), contextWindow: Schema.optionalKey(Schema.Number) }) }),
   input: Schema.String,
@@ -144,9 +143,8 @@ const ScoreMatchAuditV3Schema: Schema.Schema<ScoreMatchAuditV3> = Schema.Struct(
     Schema.Struct({ state: Schema.Literal("interrupted") })]),
 });
 const ScoreMatchAuditReadResultSchema: Schema.Schema<ScoreMatchAuditReadResult> = Schema.Union([
-  Schema.Struct({ state: Schema.Literal("available"), audit: Schema.Union([ScoreMatchAuditSchema, ScoreMatchAuditV2Schema, ScoreMatchAuditV3Schema]) }),
+  Schema.Struct({ state: Schema.Literal("available"), audit: Schema.Union([ScoreMatchAuditSchema, TypedScoreMatchAuditSchema, ImageScoreMatchAuditSchema]) }),
   Schema.Struct({ state: Schema.Literal("invalid") }),
-  Schema.Struct({ state: Schema.Literal("unsupported"), schemaVersion: Schema.Number }),
 ]);
 const BaseProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
 const ProjectedAssertionEntrySchema = Schema.Struct({

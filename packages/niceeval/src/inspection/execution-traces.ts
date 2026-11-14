@@ -30,9 +30,7 @@ import {
   utf8ByteLength,
 } from "./bytes.ts";
 import type { InspectionFactSource } from "./source.ts";
-import { INSPECTION_BEHAVIOR_VERSION } from "./protocol-values.ts";
 
-export const EXECUTION_TRACE_FAMILY_REVISION = 1 as const;
 
 const PAGE_ROWS = 64;
 const IDENTITY_INDEX_LIMIT = 256;
@@ -253,7 +251,7 @@ function updateTuplePart(hash: InspectionSha256, part: string | number): void {
 }
 
 function executionCollectionItemLogicalIdentity(ordinal: number, canonicalDigest: string): string {
-  return inspectionTupleDigest("niceeval.record.collection-item-logical-identity/v1", [ordinal, canonicalDigest]);
+  return inspectionTupleDigest("niceeval.record.collection-item-logical-identity", [ordinal, canonicalDigest]);
 }
 
 function inspectionTupleDigest(domain: string, parts: readonly (string | number)[]): string {
@@ -335,9 +333,9 @@ function validateAttachment(
   const physical = attachment.physical;
   if (physical.ownerKind !== "attempt" || physical.ownerAttemptId !== resolved.attempt.attemptId ||
     physical.ownerRunId !== resolved.attempt.originRunId || physical.family !== executionTracesRecordCollection.family ||
-    physical.familyRevision !== EXECUTION_TRACE_FAMILY_REVISION || physical.references.length !== 0 || physical.contents.length !== 0 ||
+    physical.familyRevision !== undefined || physical.references.length !== 0 || physical.contents.length !== 0 ||
     digest(physical.canonicalBytes) !== physical.canonicalDigest || digest(physical.logicalInventoryBytes) !== physical.inventoryDigest ||
-    physical.logicalIdentity !== inspectionTupleDigest("niceeval.record.attachment-logical-identity/v1", [
+    physical.logicalIdentity !== inspectionTupleDigest("niceeval.record.attachment-logical-identity", [
       physical.attachmentId,
       physical.canonicalDigest,
       physical.inventoryDigest,
@@ -665,8 +663,7 @@ interface ContinuationBinding {
   readonly cutoff: string;
   readonly originAttempt: string;
   readonly sourceFamily: string;
-  readonly familyRevision: number;
-  readonly behaviorVersion: typeof INSPECTION_BEHAVIOR_VERSION;
+  readonly familyRevision: number | undefined;
   readonly filters: { readonly traceId: string | null; readonly sourceId: string | null; readonly actorId: string | null; readonly eventType: string | null };
   readonly lastOrdinal: number;
 }
@@ -675,7 +672,7 @@ export interface ExecutionTraceContinuationContext {
   readonly source: InspectionFactSource;
   readonly originAttempt: string;
   readonly sourceFamily: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly filters: ExecutionTraceFilters;
 }
 
@@ -690,7 +687,7 @@ function continuationBinding(
     originAttempt: context.originAttempt,
     sourceFamily: context.sourceFamily,
     familyRevision: context.familyRevision,
-    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
+
     filters: Object.freeze({
       traceId: context.filters.traceId ?? null,
       sourceId: context.filters.sourceId ?? null,
@@ -710,7 +707,7 @@ function nativeContinuationContext(
     source,
     originAttempt: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
     sourceFamily: EXECUTION_TRACE_CONTINUATION_FAMILIES.executionTraces,
-    familyRevision: EXECUTION_TRACE_FAMILY_REVISION,
+    familyRevision: undefined,
     filters,
   });
 }

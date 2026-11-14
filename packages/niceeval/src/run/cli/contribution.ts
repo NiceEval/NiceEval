@@ -115,7 +115,7 @@ function runCommand(argv: readonly string[]): Effect.Effect<number, Error, Requi
       try: () => parser.parse(argv, RUN_CLI_OPTIONS),
       catch: (cause) => failure("parse arguments", cause),
     });
-    if (parsed.positionals[0] === "show") return yield* usage("run show is no longer supported. Use niceeval show --run <run-id>.");
+    if (parsed.positionals[0] === "show") return yield* usage("run show is no longer supported. Use niceeval show run:<run-id>.");
     if (parsed.values.help === true) {
       yield* write("stdout", `niceeval run — inspect and manage Run lifecycle
 

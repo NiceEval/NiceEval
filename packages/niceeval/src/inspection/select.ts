@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { inspectionLinks } from "./links.ts";
 import { stoppedAssertion } from "./stop.ts";
 import { projectAssertionMatrix, type MatrixInput } from "./assertion-matrix.ts";
 import { projectPlannedAttempt, projectAttemptCore, projectRunCore, projectMember } from "./planned-attempt.ts";
@@ -30,8 +31,8 @@ import type { RunResourcePage } from "../run/storage/types.ts";
 import type { RunSummary } from "../run/index.ts";
 import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
 import {
-  INSPECTION_BEHAVIOR_VERSION,
-  QUERY_PROTOCOL,
+
+
   closeInspectionJson,
   isInspectionCodecError,
   type InspectionDocument,
@@ -69,6 +70,7 @@ import {
   projectAttemptTiming,
   projectAttemptDiagnostics,
   projectDiagnosticDetail,
+  projectTraceTurnDetail,
   readInspectionAgentTurns,
   readCurrentAttachment,
   projectAttemptTrace,
@@ -80,7 +82,6 @@ import {
 import {
   InspectionAttemptDiffResultSchema,
   InspectionAttemptResultSchema,
-  InspectionAttemptSourcesDocument,
   InspectionAttemptTimingResultSchema,
   InspectionTraceDetailResultSchema,
   InspectionTraceResultSchema,
@@ -90,17 +91,8 @@ import {
   InspectionRunResultSchema,
   InspectionRunValueSchema,
   InspectionSourcesResultSchema,
-  type InspectionAttemptDiffDocument,
-  type InspectionAttemptDocument,
   type InspectionAttemptResult,
-  type InspectionAttemptTimingDocument,
-  type InspectionAttemptTraceDetailDocument,
-  type InspectionAttemptTraceDocument,
-  type InspectionAttemptUsageDocument,
-  type InspectionExperimentDocument,
-  type InspectionOverviewDocument,
   type InspectionResultMetadata,
-  type InspectionRunDocument,
   type InspectionRunResult,
   type InspectionRunValue,
 } from "./results.ts";
@@ -139,7 +131,6 @@ export class InspectionOperationError extends Data.TaggedError("InspectionOperat
 }> {}
 
 const RUN_LIST_PAGE_SIZE = 100;
-const ATTACHMENT_COLLECTION_PAGE_SIZE = 64;
 const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
 const RUN_SELECTION_LIMIT = 64;
 
@@ -160,7 +151,10 @@ export function selectInspectionOperation(
 ): InspectionSuccessDocument {
   return evaluateInspectionSuccess(
     operation.kind,
-    () => selectOperation(facts, operation),
+    () => {
+      const document = selectOperation(facts, operation);
+      return Object.assign({}, document, { links: inspectionLinks(operation, document) });
+    },
   );
 }
 
@@ -414,6 +408,7 @@ function selectOperation(
             traceAttachments(resolved),
             operation.selector,
           ));
+      if (detail === undefined && operation.selector.kind === "execution-event" && operation.selector.eventId.startsWith("turn_")) detail = projectTraceTurnDetail(traceAttachments(resolved).agentTurns, operation.selector.eventId);
       if (detail === undefined && operation.selector.kind === "execution-event") {
         type ItemSelector = Extract<
           Parameters<typeof projectAttemptTraceDetail>[2],
@@ -647,8 +642,7 @@ function runsListBase(
   truncated: boolean,
 ) {
   return Object.freeze({
-    protocol: QUERY_PROTOCOL,
-    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
+
     outcome: "success" as const,
     operation: "run.list" as const,
     source: sourceProvenance(source, cutoff),
@@ -871,9 +865,6 @@ function loadSummaryFacts(
   return loadReferencedOrigins(source, [target]);
 }
 
-function parseJson(bytes: Uint8Array): unknown {
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
-}
 
 function selectRuns(
   all: readonly LoadedInspectionRun[],
@@ -947,71 +938,8 @@ function traceAttachments(
   });
 }
 
-function attachmentValue(
-  resolved: ResolvedInspectionAttempt,
-  family: string,
-): InspectionJson {
-  const attachment = attemptAttachment(resolved, family);
-  return attachment === undefined
-    ? Object.freeze({ state: "not-recorded" })
-    : Object.freeze({
-        state: "available",
-        value: attachment.value,
-        collection: attachmentCollectionPage(resolved.origin.source, attachment),
-      });
-}
 
-function runAttachmentValue(
-  run: LoadedInspectionRun,
-  family: string,
-): InspectionJson {
-  const attachment = runAttachment(run, family);
-  return attachment === undefined
-    ? Object.freeze({ state: "not-recorded" })
-    : Object.freeze({
-        state: "available",
-        value: attachment.value,
-        collection: attachmentCollectionPage(run.source, attachment),
-      });
-}
 
-function attachmentCollectionPage(
-  source: InspectionFactSource,
-  attachment: DecodedInspectionAttachment,
-): InspectionJson {
-  const page = source.readCollectionPage(
-    attachment.physical.attachmentId,
-    -1,
-    ATTACHMENT_COLLECTION_PAGE_SIZE,
-  );
-  return closeJson(Object.freeze({
-    state: page.nextOrdinal === null ? "complete-page" : "bounded-page",
-    items: Object.freeze(page.items.map((item) => closeJson(parseJson(item.canonicalBytes)))),
-    hasMore: page.nextOrdinal !== null,
-  }));
-}
-
-/**
- * Query keeps one leading and one decisive matcher representative. The full
- * durable artifact remains available in the Record, while attempt.get stays a
- * bounded AI-facing overview instead of duplicating attempt.trace-sized data.
- */
-function compactAssertionInspection(value: InspectionJson): InspectionJson {
-  if (Array.isArray(value)) return Object.freeze(value.map(compactAssertionInspection));
-  if (typeof value !== "object" || value === null) return value;
-  const output: Record<string, InspectionJson> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if ((key === "retainedRows" || key === "representatives") && Array.isArray(entry) && entry.length > 2) {
-      output[key] = Object.freeze([
-        compactAssertionInspection(entry[0]!),
-        compactAssertionInspection(entry[entry.length - 1]!),
-      ]);
-    } else {
-      output[key] = compactAssertionInspection(entry);
-    }
-  }
-  return Object.freeze(output);
-}
 
 function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptResult {
   const assertions = readInspectionAssertions(resolved);
@@ -1130,7 +1058,7 @@ function attemptSections(
 
 function attachmentSectionState(
   attachment: DecodedInspectionAttachment | undefined,
-  currentRevision: number,
+  currentRevision: number | undefined,
 ): AttemptSectionState {
   if (attachment === undefined) return "not-recorded";
   if (attachment.physical.familyRevision !== currentRevision) return "unavailable";
@@ -1517,24 +1445,6 @@ function isAttemptCoverageChannel(
   return value === "events" || value === "actions" || value === "messages" ||
     value === "usage" || value === "status" || value === "data";
 }
-function attemptUsage(resolved: ResolvedInspectionAttempt) {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  const visit = (value: InspectionJson): void => {
-    if (Array.isArray(value)) { value.forEach(visit); return; }
-    if (typeof value !== "object" || value === null) return;
-    const record = value as Readonly<Record<string, InspectionJson>>;
-    if (record.kind === "token-bucket" && typeof record.tokens === "number") {
-      if (record.bucket === "input") inputTokens += record.tokens;
-      if (record.bucket === "output") outputTokens += record.tokens;
-    }
-    Object.values(record).forEach(visit);
-  };
-  for (const attachment of resolved.origin.attachments) {
-    if (attachment.physical.ownerKind === "attempt" && attachment.physical.ownerAttemptId === resolved.attempt.attemptId) visit(attachment.value);
-  }
-  return Object.freeze({ inputTokens, outputTokens });
-}
 
 function comparisonDocument(
   source: InspectionFactSource,
@@ -1601,8 +1511,7 @@ function baseDocument(
   const selected = uniqueRuns(selectedInput);
   const cutoff = source.cutoff();
   return Object.freeze({
-    protocol: QUERY_PROTOCOL,
-    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
+
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1631,8 +1540,7 @@ function resultMetadata<Kind extends InspectionOperationId>(
   const selected = uniqueRuns(selectedInput);
   const cutoff = source.cutoff();
   return Object.freeze({
-    protocol: QUERY_PROTOCOL,
-    behaviorVersion: INSPECTION_BEHAVIOR_VERSION,
+
     outcome: "success" as const,
     operation,
     source: sourceProvenance(source, cutoff),
@@ -1730,7 +1638,7 @@ function evaluateInspectionOperation(
       throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: decoded.reason });
     }
     const value = decoded.value;
-    if (value.outcome === "discovery" || value.outcome === "failure" || value.operation !== operation) {
+    if (value.outcome === "failure" || value.operation !== operation) {
       throw new InspectionOperationError({ code: "inspection-result-invalid", operation, reason: "expected matching operation document" });
     }
     return value;
