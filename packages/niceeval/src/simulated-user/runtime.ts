@@ -208,10 +208,29 @@ export function createSimulatedUserConversation(
       if (closing !== undefined) return closing;
       closed = true;
       closing = (async () => {
-        await session?.abort();
-        await running?.catch(() => undefined);
-        unsubscribe?.();
-        session?.dispose();
+        const failures: unknown[] = [];
+        // On successful abort, settle the generation before releasing listeners.
+        // If abort rejects, dispose immediately: waiting first could retain a
+        // generation which pi failed to stop. Every release failure is retained.
+        try {
+          await session?.abort();
+          await running?.catch(() => undefined);
+        } catch (error) {
+          failures.push(error);
+        } finally {
+          try {
+            unsubscribe?.();
+          } catch (error) {
+            failures.push(error);
+          }
+          try {
+            session?.dispose();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1) throw new AggregateError(failures, "Simulated user pi session failed during release");
       })();
       return closing;
     },

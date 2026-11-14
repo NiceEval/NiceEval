@@ -422,157 +422,166 @@ export class AgentJudgeSession {
         },
       ],
     });
-    this.agent = agent;
-    this.piSystemPrompt = agent.systemPrompt;
-    const opening = fitJudgeContext({
-      model: profile.model,
-      contextWindow: profile.contextWindow,
-      maxOutputTokens: profile.protocol.maxOutputTokens,
-      material: this.snapshot.material,
-      encodeRequest: (material) =>
-        canonical({
-          model: profile.model,
-          messages: [
-            { role: "system", content: agent.systemPrompt },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: canonical(projectJudgeMaterial(material, this.snapshot.imageByValue).json) },
-                ...this.snapshot.images.map((image) => ({
-                  type: "image_url",
-                  image_url: { url: `niceeval-image:${image.imageId}` },
-                })),
-              ],
-            },
-            ...(this.steps[0] === undefined ? [] : [{ role: "user", content: stepPrompt(this.steps[0]) }]),
-          ],
-          tools: agent.agent.state.tools.map((tool) => ({
-            type: "function",
-            function: { name: tool.name, description: tool.description, parameters: tool.parameters },
-          })),
-        }),
-    });
-    if (opening.state === "unavailable") {
-      this.fail("unavailable", opening.code, opening.message);
-      agent.dispose();
-      return;
-    }
-    this.captured = canonical(projectJudgeMaterial(opening.material, this.snapshot.imageByValue).json);
-    agent.agent.toolExecution = "sequential";
-    const beforeToolCall = agent.agent.beforeToolCall;
-    agent.agent.beforeToolCall = async (context, signal) =>
-      this.currentKey !== undefined && this.submissions.has(this.currentKey)
-        ? { block: true, reason: "Question already submitted", terminate: true }
-        : beforeToolCall?.(context, signal);
-    const afterToolCall = agent.agent.afterToolCall;
-    agent.agent.afterToolCall = async (context, signal) => {
-      const result = await afterToolCall?.(context, signal);
-      return this.currentKey !== undefined &&
-        (this.submissions.has(this.currentKey) || this.currentTurns >= this.judge.maxTurns)
-        ? { ...result, terminate: true }
-        : result;
-    };
-    sessionManager.appendMessage({
-      role: "user",
-      content: [
-        { type: "text", text: this.captured },
-        ...this.snapshot.images.map((image) => ({
-          type: "image" as const,
-          mimeType: image.mediaType,
-          data: Buffer.from(readJudgeImage(image.image).body).toString("base64"),
-        })),
-      ],
-      timestamp: Date.now(),
-    });
-    agent.refreshContext();
-    const captureSession = () => {
-      this.sessionEntries = JSON.parse(JSON.stringify(sessionManager.getEntries()));
-      this.piSystemPrompt = agent.systemPrompt;
-    };
     const onAbort = () => this.abortAgent();
-    signal.addEventListener("abort", onAbort, { once: true });
-    const unsubscribe = agent.subscribe((event) => {
-      if (this.closed) return;
-      if (event.type === "message_end") {
-        if (event.message.role === "assistant") {
-          this.ordinal += 1;
-          this.currentTurns += 1;
-          this.recordUsage(
-            event.message.usage,
-            event.message.stopReason === "error" || event.message.stopReason === "aborted" ? "failed" : "succeeded",
-          );
-        }
-        captureSession();
-      }
-      if (
-        event.type === "turn_end" &&
-        this.currentKey !== undefined &&
-        !this.submissions.has(this.currentKey) &&
-        this.currentTurns >= this.judge.maxTurns &&
-        event.message.role === "assistant" &&
-        event.message.stopReason !== "error"
-      ) {
-        this.currentFailure = {
-          state: "unavailable",
-          code: "agent-judge-turn-budget",
-          message: "Agent Judge model turn budget exhausted for this question",
-        };
-      }
-      if (event.type === "tool_execution_start")
-        this.tools.push({
-          ordinal: this.tools.length + 1,
-          step: this.currentStep,
-          generation: this.ordinal,
-          callId: event.toolCallId,
-          name: event.toolName,
-          arguments: canonical(event.args),
-          validation: "not-checked",
-          state: "not-started",
-          result: null,
-        });
-      if (event.type === "tool_execution_end") {
-        const index = this.tools.findIndex((tool) => tool.callId === event.toolCallId);
-        if (index < 0) return;
-        const current = this.tools[index]!;
-        const locked =
-          this.currentKey !== undefined &&
-          this.submissions.has(this.currentKey) &&
-          current.name !== "submit_evaluation";
-        this.tools[index] = {
-          ...current,
-          validation: current.validation === "not-checked" ? (event.isError ? "invalid" : "valid") : current.validation,
-          state: signal.aborted ? "interrupted" : locked ? "not-started" : event.isError ? "failed" : "completed",
-          result: event.result.content
-            .filter((item: { type: string }) => item.type === "text")
-            .map((item: { text: string }) => item.text)
-            .join("\n"),
-        };
-      }
-      if (event.type === "compaction_start") {
-        this.compactions.push({ trigger: Math.max(1, this.ordinal), tokensBefore: null, summary: null, failure: null });
-      }
-      if (event.type === "compaction_end") {
-        const index = this.compactions.length - 1;
-        const compact = this.compactions[index]!;
-        if (event.result !== undefined) {
-          this.compactions[index] = {
-            ...compact,
-            tokensBefore: event.result.tokensBefore,
-            summary: event.result.summary,
-          };
-          if (event.result.usage !== undefined) this.recordUsage(event.result.usage, "succeeded");
-        } else if (!event.willRetry) {
-          this.fail(
-            "unavailable",
-            "agent-judge-context-overflow",
-            event.errorMessage ?? "pi could not compact the context",
-          );
-          this.compactions[index] = { ...compact, failure: this.problem! };
-        }
-        captureSession();
-      }
-    });
+    let unsubscribe: (() => void) | undefined;
+    let captureBeforeRelease: (() => void) | undefined;
+    const failures: unknown[] = [];
     try {
+      this.agent = agent;
+      this.piSystemPrompt = agent.systemPrompt;
+      const opening = fitJudgeContext({
+        model: profile.model,
+        contextWindow: profile.contextWindow,
+        maxOutputTokens: profile.protocol.maxOutputTokens,
+        material: this.snapshot.material,
+        encodeRequest: (material) =>
+          canonical({
+            model: profile.model,
+            messages: [
+              { role: "system", content: agent.systemPrompt },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: canonical(projectJudgeMaterial(material, this.snapshot.imageByValue).json) },
+                  ...this.snapshot.images.map((image) => ({
+                    type: "image_url",
+                    image_url: { url: `niceeval-image:${image.imageId}` },
+                  })),
+                ],
+              },
+              ...(this.steps[0] === undefined ? [] : [{ role: "user", content: stepPrompt(this.steps[0]) }]),
+            ],
+            tools: agent.agent.state.tools.map((tool) => ({
+              type: "function",
+              function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+            })),
+          }),
+      });
+      if (opening.state === "unavailable") {
+        this.fail("unavailable", opening.code, opening.message);
+        return;
+      }
+      this.captured = canonical(projectJudgeMaterial(opening.material, this.snapshot.imageByValue).json);
+      agent.agent.toolExecution = "sequential";
+      const beforeToolCall = agent.agent.beforeToolCall;
+      agent.agent.beforeToolCall = async (context, signal) =>
+        this.currentKey !== undefined && this.submissions.has(this.currentKey)
+          ? { block: true, reason: "Question already submitted", terminate: true }
+          : beforeToolCall?.(context, signal);
+      const afterToolCall = agent.agent.afterToolCall;
+      agent.agent.afterToolCall = async (context, signal) => {
+        const result = await afterToolCall?.(context, signal);
+        return this.currentKey !== undefined &&
+          (this.submissions.has(this.currentKey) || this.currentTurns >= this.judge.maxTurns)
+          ? { ...result, terminate: true }
+          : result;
+      };
+      sessionManager.appendMessage({
+        role: "user",
+        content: [
+          { type: "text", text: this.captured },
+          ...this.snapshot.images.map((image) => ({
+            type: "image" as const,
+            mimeType: image.mediaType,
+            data: Buffer.from(readJudgeImage(image.image).body).toString("base64"),
+          })),
+        ],
+        timestamp: Date.now(),
+      });
+      agent.refreshContext();
+      const captureSession = () => {
+        this.sessionEntries = JSON.parse(JSON.stringify(sessionManager.getEntries()));
+        this.piSystemPrompt = agent.systemPrompt;
+      };
+      captureBeforeRelease = captureSession;
+      signal.addEventListener("abort", onAbort, { once: true });
+      unsubscribe = agent.subscribe((event) => {
+        if (this.closed) return;
+        if (event.type === "message_end") {
+          if (event.message.role === "assistant") {
+            this.ordinal += 1;
+            this.currentTurns += 1;
+            this.recordUsage(
+              event.message.usage,
+              event.message.stopReason === "error" || event.message.stopReason === "aborted" ? "failed" : "succeeded",
+            );
+          }
+          captureSession();
+        }
+        if (
+          event.type === "turn_end" &&
+          this.currentKey !== undefined &&
+          !this.submissions.has(this.currentKey) &&
+          this.currentTurns >= this.judge.maxTurns &&
+          event.message.role === "assistant" &&
+          event.message.stopReason !== "error"
+        ) {
+          this.currentFailure = {
+            state: "unavailable",
+            code: "agent-judge-turn-budget",
+            message: "Agent Judge model turn budget exhausted for this question",
+          };
+        }
+        if (event.type === "tool_execution_start")
+          this.tools.push({
+            ordinal: this.tools.length + 1,
+            step: this.currentStep,
+            generation: this.ordinal,
+            callId: event.toolCallId,
+            name: event.toolName,
+            arguments: canonical(event.args),
+            validation: "not-checked",
+            state: "not-started",
+            result: null,
+          });
+        if (event.type === "tool_execution_end") {
+          const index = this.tools.findIndex((tool) => tool.callId === event.toolCallId);
+          if (index < 0) return;
+          const current = this.tools[index]!;
+          const locked =
+            this.currentKey !== undefined &&
+            this.submissions.has(this.currentKey) &&
+            current.name !== "submit_evaluation";
+          this.tools[index] = {
+            ...current,
+            validation:
+              current.validation === "not-checked" ? (event.isError ? "invalid" : "valid") : current.validation,
+            state: signal.aborted ? "interrupted" : locked ? "not-started" : event.isError ? "failed" : "completed",
+            result: event.result.content
+              .filter((item: { type: string }) => item.type === "text")
+              .map((item: { text: string }) => item.text)
+              .join("\n"),
+          };
+        }
+        if (event.type === "compaction_start") {
+          this.compactions.push({
+            trigger: Math.max(1, this.ordinal),
+            tokensBefore: null,
+            summary: null,
+            failure: null,
+          });
+        }
+        if (event.type === "compaction_end") {
+          const index = this.compactions.length - 1;
+          const compact = this.compactions[index]!;
+          if (event.result !== undefined) {
+            this.compactions[index] = {
+              ...compact,
+              tokensBefore: event.result.tokensBefore,
+              summary: event.result.summary,
+            };
+            if (event.result.usage !== undefined) this.recordUsage(event.result.usage, "succeeded");
+          } else if (!event.willRetry) {
+            this.fail(
+              "unavailable",
+              "agent-judge-context-overflow",
+              event.errorMessage ?? "pi could not compact the context",
+            );
+            this.compactions[index] = { ...compact, failure: this.problem! };
+          }
+          captureSession();
+        }
+      });
       const lastQuestion = this.steps.findLastIndex((step) => step.kind !== "chat");
       for (const [index, step] of this.steps.entries()) {
         if (index > lastQuestion || signal.aborted || this.closed || this.problem !== undefined) break;
@@ -610,11 +619,28 @@ export class AgentJudgeSession {
               },
           );
       }
+    } catch (error) {
+      failures.push(error);
     } finally {
-      captureSession();
+      // Snapshot failures must not skip listener removal or session disposal.
+      try {
+        captureBeforeRelease?.();
+      } catch (error) {
+        failures.push(error);
+      }
       signal.removeEventListener("abort", onAbort);
-      unsubscribe();
-      agent.dispose();
+      try {
+        unsubscribe?.();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        agent.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) throw new AggregateError(failures, "Agent Judge pi session failed during release");
     }
   }
 
