@@ -178,16 +178,12 @@ test.concurrent("条件 import 进入身份但不提前执行，Group 普通注�
 });
 
 // @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
-test.concurrent("旧结果升级后显示具名身份域变更而非未登记变更", async () => {
+test.concurrent("旧格式结果明确拒绝并提示重跑", async () => {
   await runnerE2E.case("source-legacy-domains", async ({ commands: { niceeval }, paths }) => {
     const imported = await niceeval.run(["run", "import", join(paths.projectRoot, "fixtures/legacy-agent-install/record.sqlite"), "--json"]);
-    expect(imported.exitCode, imported.diagnostic()).toBe(0);
-    const dry = await niceeval.run(["exp", "agent-install-identity", "--dry", "--json"]);
-    expect(dry.exitCode, dry.diagnostic()).toBe(0);
-    expect(decodeExpPlanDocument(dry.json())).toMatchObject({ reused: 0 });
-    expect(dry.stdout).toContain("identity-domain-changed");
-    expect(dry.stdout).not.toContain("identity-domain-unregistered");
-    expect(dry.stdout).not.toContain("unversioned-identity-change");
+    expect(imported.exitCode).not.toBe(0);
+    expect(imported.stdout + imported.stderr).toContain("older NiceEval version");
+    expect(imported.stdout + imported.stderr).toContain("Rerun");
   });
 });
 
