@@ -628,7 +628,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(toolLedger.locator(".niceeval-filter-row").first()).toBeVisible();
 
         const eventAssertion = dialog.locator("details.niceeval-source-line > summary").filter({
-          hasText: 'turn.check(turn.eventOccurrences, eventMatch("message"',
+          hasText: /^\s*(?:turn\s*)?\.check\(\s*(?:turn\.eventOccurrences,|$)/u,
         });
         const eventAssertionDetails = eventAssertion.locator("xpath=..");
         if ((await eventAssertionDetails.getAttribute("open")) === null) await eventAssertion.click();
@@ -641,7 +641,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
 
         const commandAssertion = dialog
           .locator("details.niceeval-source-line > summary")
-          .filter({ hasText: "t.check({" });
+          .filter({ hasText: /^\s*t\.check\(\s*(?:\{|$)/u });
         const commandAssertionDetails = commandAssertion.locator("xpath=..");
         if ((await commandAssertionDetails.getAttribute("open")) === null) await commandAssertion.click();
         const commandDetail = commandAssertionDetails.locator(":scope > .niceeval-source-line-detail");
