@@ -396,7 +396,7 @@ export const runRepoEffect = (
                   );
                   return {
                     NODE_OPTIONS:
-                      `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --import ${createRequire(import.meta.url).resolve("tsx")}`.trim(),
+                      `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --experimental-transform-types --import ${createRequire(import.meta.url).resolve("tsx/esm")}`.trim(),
                     // Jiti's resolver does not consume Node's custom export conditions.
                     // Resolve the same public entries to source for project discovery.
                     JITI_ALIAS: JSON.stringify({ ...JSON.parse(process.env.JITI_ALIAS ?? "{}"), ...aliases }),

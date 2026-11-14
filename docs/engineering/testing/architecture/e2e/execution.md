@@ -22,7 +22,7 @@ E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用�
 
 | 形态 | 用在哪里 | 场景副本里的 NiceEval | 证明什么 |
 |---|---|---|---|
-| `source` | 本地默认：Bug 红绿、新 owner 的定向运行 | link 到 `packages/niceeval`；runner 以 `--conditions=niceeval-source` 与 tsx 运行，package exports 的 `niceeval-source` 条件指向 `src/*.ts`，CLI 同样从源码启动 | 公开入口行为；改完源码立即生效，不构建、不打包 |
+| `source` | 本地默认：Bug 红绿、新 owner 的定向运行 | link 到 `packages/niceeval`；runner 启用 `niceeval-source` 条件、Node TypeScript 转换与 `tsx/esm`，package exports 指向 `src/*.ts`，CLI 同样从源码启动 | 公开入口行为；改完源码立即生效，不构建、不打包 |
 | `built` | 场景 Repo 依赖构建输出时：`niceeval view` 的 Web 界面、随包文档（INDEX 与 docs-site）、拿 `.d.ts` 做 typecheck | link 到 `pnpm run build:package` 构建出的包目录 | 再加上构建期门禁（公开导出文档、类型声明文件）与构建输出 |
 | `tarball` | CI 全部 lane、接管门禁、push 前的打包冒烟、跨设备交接 | 安装 `pnpm e2e pack` 产出的 tarball | 再加上包边界：`files` 清单、exports 映射、bin、可选依赖从使用方项目完成路径 resolution、安装脚本 |
 
@@ -30,6 +30,9 @@ E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用�
 - `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
 - `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
 - 形态与摘要写入每次运行的收据，结果可追溯到具体候选。
+
+source 进程的 `require(esm)` 与动态 `import()` 必须加载同一份框架模块。tsx 只注册 ESM 装载支持，
+不同时注册把 require 目标改写为 CommonJS 的转换器；否则框架内部的能力登记会分成两份。
 
 ## 高阶本地入口
 

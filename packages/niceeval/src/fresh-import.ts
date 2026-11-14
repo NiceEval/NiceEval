@@ -5,16 +5,34 @@
 
 import { Effect, Semaphore, type Scope } from "effect";
 import { createJiti, type Jiti } from "jiti";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ProjectModuleGraph, transformedImportSpecifiers } from "./runner/module-graph.ts";
 import { isCodeSource } from "./runner/source-normalization.ts";
 import { withSandboxScriptRoot } from "./sandbox/script.ts";
 
 const generationGate = Semaphore.makeUnsafe(1);
+const nativeRequire = createRequire(import.meta.url);
+
+function sourceRuntimeModules(): Record<string, unknown> | undefined {
+  if (nativeRequire.resolve("niceeval") !== fileURLToPath(new URL("./index.ts", import.meta.url))) return undefined;
+  const manifest = nativeRequire("../package.json") as { exports: Record<string, unknown> };
+  const modules: Record<string, unknown> = Object.create(null);
+  for (const entry of Object.keys(manifest.exports)) {
+    const specifier = entry === "." ? "niceeval" : `niceeval${entry.slice(1)}`;
+    // Jiti does not inherit Node's custom export conditions. Keep each public entry
+    // lazy, but let Node select and cache the same runtime used by the source CLI.
+    Object.defineProperty(modules, specifier, { enumerable: true, get: () => nativeRequire(specifier) });
+  }
+  return modules;
+}
+
 const loaderOptions = Object.freeze({
   interopDefault: false,
   moduleCache: true,
   tsconfigPaths: true,
+  virtualModules: sourceRuntimeModules(),
 });
 const cachedLoader = createJiti(import.meta.url, loaderOptions);
 

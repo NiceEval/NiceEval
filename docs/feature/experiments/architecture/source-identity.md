@@ -65,6 +65,11 @@ specifier 使用 AST 解码后的字符串，并按 jiti 实际模块解析规�
 Node builtin 与 NiceEval 运行时不进入用户源码闭包。
 realpath 校验和逃出 owner 的处理遵循 [Eval 文件访问边界](../../eval/architecture.md#文件访问边界)。
 
+项目装载器与 CLI 必须共享同一份 NiceEval 运行时，包括每一代 fresh import。
+启用 `niceeval-source` 时，公开入口使用 Node 在当前条件下解析的源码模块，不能混入 dist 中的另一份实现。
+装载器从本安装的 package exports 取得精确入口，按需加载；不维护第二份入口表，也不开放未导出的子路径。
+项目模块可以重新求值，NiceEval 的定义身份与 Sandbox 能力登记则始终属于同一个运行时。
+
 依赖无法确定时，`exp --dry` 显示 `dynamic-module-unresolved`、文件与行列。
 改成字面量加载或使用 `loadText` 等受管输入后，作者可重新取得完整身份。
 `import.meta.glob` 等装载器不支持的扩展不属于保证范围。
