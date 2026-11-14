@@ -7,7 +7,7 @@ export function beforeCacheReplacementScope(
   step: Pick<BeforeCacheStep, "positions" | "declaringOwner">,
 ): string {
   return digestOf({
-    protocol: "niceeval.before-cache-replacement/v2",
+    domain: "niceeval.before-cache-replacement",
     ...target,
     positions: [...step.positions],
     declaringOwner: step.declaringOwner,

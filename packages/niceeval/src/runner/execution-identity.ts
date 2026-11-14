@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { CURRENT_IDENTITY_DOMAINS } from "./identity-domains.ts";
 
 /** Stable object-key encoding shared by the fingerprint and config recipes. */
 export function stableIdentityJson(value: unknown): string {
@@ -21,7 +20,6 @@ export function hashIdentityPayload(value: unknown): string {
  * ambient insertion cannot change the Core digest.
  */
 export function slotExecutionIdentityInput(input: {
-  readonly version?: number;
   readonly experimentId: string;
   readonly evalId: string;
   readonly attempt: number;
@@ -30,7 +28,6 @@ export function slotExecutionIdentityInput(input: {
   readonly timeout: null | { readonly domain: string; readonly milliseconds: number };
 }): string {
   return JSON.stringify({
-    version: input.version ?? CURRENT_IDENTITY_DOMAINS.slotInput,
     experimentId: input.experimentId,
     evalId: input.evalId,
     attempt: input.attempt,
@@ -42,7 +39,6 @@ export function slotExecutionIdentityInput(input: {
 
 /** SHA-256 hex of {@link slotExecutionIdentityInput}. */
 export function slotExecutionIdentityDigestHex(input: {
-  readonly version?: number;
   readonly experimentId: string;
   readonly evalId: string;
   readonly attempt: number;

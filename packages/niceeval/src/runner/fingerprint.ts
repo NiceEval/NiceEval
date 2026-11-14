@@ -1,9 +1,4 @@
-import {
-  AGENT_JUDGE_ALGORITHM_REVISION,
-  AGENT_JUDGE_PROMPT_REVISION,
-  AGENT_JUDGE_TOOL_REVISION,
-} from "../assertions/agent-judge-revisions.ts";
-import { ORDINARY_JUDGE_IDENTITY_CHANGE, selectsOrdinaryJudge } from "./identity-domains.ts";
+import { agentJudgeIdentity, ordinaryJudgeIdentity, selectsOrdinaryJudge } from "./judge-identity.ts";
 // ProjectTarget planning: current eval sources + resolved configuration become
 // immutable input identities. Reuse is decided only by Frozen Record planning.
 
@@ -23,7 +18,6 @@ import type {
 } from "./project-target.ts";
 import { EVALUATION_ALGORITHM, type AgentRun } from "./types.ts";
 import { resolveJudge } from "./judge-config.ts";
-import { JUDGE_AUTHORING_PROTOCOL, JUDGE_AUTHORING_REVISION } from "../assertions/judge-presets.ts";
 import {
   prepareRunSandboxes,
   preparedPairsByKey as indexPreparedPairs,
@@ -33,21 +27,14 @@ import {
 } from "./sandbox-selection.ts";
 import type { EvalManifest } from "./manifest.ts";
 import {
-  FINGERPRINT_ALGORITHM_VERSION,
-  FINGERPRINT_COVERAGE_VERSION,
-} from "../record/manifest.ts";
-import {
   configIdentityPaths,
   configIdentityForRun,
   type ConfigIdentity,
 } from "./config-identity.ts";
 import { adapterIdentity } from "../adapter.ts";
-import { CURRENT_IDENTITY_DOMAINS, type IdentityRebuildInput } from "./identity-domains.ts";
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
-import { EXECUTION_DURATION_DOMAIN } from "../eval/record/eligibility.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
 import { ProjectModuleGraph, evalModules } from "./module-graph.ts";
-import { resolveAttemptTimeout } from "./timeout.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
 export class FingerprintFileError extends Data.TaggedError("FingerprintFileError")<{
@@ -145,7 +132,6 @@ export function fingerprintWithManifest(
     fingerprint: string;
     manifest: EvalManifest;
     renameFingerprint: (experimentId: string) => string | undefined;
-    rebuildInput: IdentityRebuildInput;
   },
   FingerprintPlanningFailure
 > {
@@ -160,7 +146,6 @@ function fingerprintPreparedPair(
   fingerprint: string;
   manifest: EvalManifest;
   renameFingerprint: (experimentId: string) => string | undefined;
-  rebuildInput: IdentityRebuildInput;
 }, FingerprintPlanningFailure> {
   return Effect.gen(function* () {
     const { evalDef } = pair;
@@ -212,21 +197,14 @@ function fingerprintPreparedPair(
       { concurrency: "unbounded" },
     );
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
-    const payload = {
+    const niceeval = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
-      ...(selectsAgentJudge ? { agentJudge: {
-        algorithm: AGENT_JUDGE_ALGORITHM_REVISION,
-        prompt: AGENT_JUDGE_PROMPT_REVISION,
-        tools: AGENT_JUDGE_TOOL_REVISION,
-        scheduling: 1,
-        ...piRuntime,
-      } } : {}),
+      ...(selectsAgentJudge ? { agentJudge: { ...agentJudgeIdentity(), ...piRuntime } } : {}),
       ...(selectsSimulatedUser ? { simulatedUser: { behavior: 1, ...piRuntime } } : {}),
-      ...(selectsOrdinaryJudge(normalized) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
-      judgeAuthoring: {
-        protocol: JUDGE_AUTHORING_PROTOCOL,
-        revision: JUDGE_AUTHORING_REVISION,
-      },
+      ...(selectsOrdinaryJudge(normalized) ? { ordinaryJudge: ordinaryJudgeIdentity() } : {}),
+    };
+    const payload = {
+      niceeval,
       plugins,
       configHash,
       pairPlan: pair.identity,
@@ -255,8 +233,7 @@ function fingerprintPreparedPair(
   // 清单与哈希同一份原料:源码面把内容换成内容哈希,数据面直接沿用已经算好的哈希/内容。
     const manifest = yield* Effect.try({
       try: (): EvalManifest => Object.freeze({
-        algorithmVersion: FINGERPRINT_ALGORITHM_VERSION,
-        coverageVersion: FINGERPRINT_COVERAGE_VERSION,
+        niceeval,
         config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
         plan: pair.identity,
         plugins,
@@ -290,21 +267,7 @@ function fingerprintPreparedPair(
           const pairPlan = pairPlanForExperiment(experimentId);
           return pairPlan === undefined ? undefined : hash({ ...frozenPayload, pairPlan });
         });
-        const timeout = resolveAttemptTimeout(pair.run, evalDef, {});
-        const rebuildInput: IdentityRebuildInput = Object.freeze({
-          domains: CURRENT_IDENTITY_DOMAINS,
-          config: manifest.config,
-          experimentId: originalExperimentId,
-          evalId: evalDef.id,
-          attempt: 0,
-          timeout: timeout === undefined ? null : Object.freeze({
-            domain: EXECUTION_DURATION_DOMAIN,
-            milliseconds: timeout.timeoutMs,
-          }),
-          fingerprintPayload: frozenPayload,
-          configIdentity: identity,
-        });
-        return { fingerprint, manifest, renameFingerprint, rebuildInput };
+        return { fingerprint, manifest, renameFingerprint };
       },
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
@@ -399,8 +362,6 @@ export interface ProjectTargetPlan {
     (experimentId: string) => string | undefined
   >;
   readonly manifestsByKey: ReadonlyMap<string, EvalManifest>;
-  /** Pair-keyed frozen seeds; copy with the actual attempt ordinal before rebuilding. */
-  readonly rebuildInputsByKey: ReadonlyMap<string, IdentityRebuildInput>;
   /** 仅供本地 watcher；不会序列化进 Target/report。 */
   readonly watchInputs: readonly string[];
 }
@@ -452,7 +413,6 @@ export function planPreparedProjectTarget(
       (experimentId: string) => string | undefined
     >();
     const manifestsByKey = new Map<string, EvalManifest>();
-    const rebuildInputsByKey = new Map<string, IdentityRebuildInput>();
     const plannedConfigHashes = new Map<string, string>();
     const resolvedJudgesByKey = new Map<string, ResolvedJudgeConfig | undefined>();
     const runConfigHashes = new Map<string, string>();
@@ -485,7 +445,7 @@ export function planPreparedProjectTarget(
           ));
         }
         runConfigHashes.set(pair.run.experimentId, runConfigHash);
-        const { fingerprint, manifest, renameFingerprint, rebuildInput } = yield* fingerprintWithManifest(
+        const { fingerprint, manifest, renameFingerprint } = yield* fingerprintWithManifest(
           pair,
           sourceCache,
           currentFingerprintProjection(pair, identity),
@@ -494,14 +454,6 @@ export function planPreparedProjectTarget(
         plannedFingerprints.set(pair.key, fingerprint);
         renameFingerprintsByKey.set(pair.key, renameFingerprint);
         manifestsByKey.set(pair.key, manifest);
-        const timeout = resolveAttemptTimeout(pair.run, pair.evalDef, { timeoutMs: options.configTimeoutMs });
-        rebuildInputsByKey.set(pair.key, Object.freeze({
-          ...rebuildInput,
-          timeout: timeout === undefined ? null : Object.freeze({
-            domain: EXECUTION_DURATION_DOMAIN,
-            milliseconds: timeout.timeoutMs,
-          }),
-        }));
         const bucket = targetEvals.get(pair.run.experimentId) ?? [];
         bucket.push(Object.freeze({
           id: pair.evalDef.id,
@@ -554,7 +506,6 @@ export function planPreparedProjectTarget(
       plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
       renameFingerprintsByKey: readonlyMapSnapshot(renameFingerprintsByKey),
       manifestsByKey: readonlyMapSnapshot(manifestsByKey),
-      rebuildInputsByKey: readonlyMapSnapshot(rebuildInputsByKey),
       watchInputs: Object.freeze([...watchInputs].sort()),
     });
   });

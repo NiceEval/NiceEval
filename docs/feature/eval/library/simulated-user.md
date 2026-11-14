@@ -115,7 +115,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 被测 agent 没有提问时，`reply` 发送一条消息；同一个 `SimulatedUser` 的第二次 `reply`，请求里含第一次的问答历史。
 - mock 不调用工具或参数一直非法时，Attempt 为 errored，原因 `simulated-user-failed`；TypeSafe 零发送并抛出 `simulated-user-unsupported-provider`。
 - `show @<locator> execution` 显示模拟用户活动与回答；执行活动含用量，Attempt 费用汇总含 `simulated-user` 类别。
-- 未使用模拟用户的 Eval 身份不变（identity-domains release 测试保持通过）；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
+- 模拟用户的行为计数与实际依赖只进入使用它的 Eval 身份；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
 - mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API 与真实 pi coding agent 会话。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
 - 重复、缺失、未知 requestId、错误 option id 与同时出现 text/optionId 均零 Adapter 发送；修正后只发送一次。旧 Turn、跨 Session Turn、并发驱动与关闭后调用均按错误契约拒绝，互不污染历史。
 - 验证首个合法提交后，同批重复工具和迟到响应不会再次驱动；超时、取消和压缩失败不发送回答，取消后没有继续发出的模型请求。

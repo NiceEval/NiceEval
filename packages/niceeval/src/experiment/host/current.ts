@@ -41,7 +41,6 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
     const reuse = yield* prepareRunnerRecordReuse({
       manifestsByKey: planned.manifestsByKey,
       preparedPairsByKey: planned.preparedPairsByKey,
-      rebuildInputsByKey: planned.rebuildInputsByKey,
       evals: prepared.selected.evals,
       runs: prepared.runs,
       config: input.config,
@@ -60,7 +59,6 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
           }));
           slots.push(Object.freeze({
             ...slotInput,
-            ...(slotInput.rebuildInput === undefined ? {} : { rebuildInput: { ...slotInput.rebuildInput, attempt, timeout: slotInput.timeout ?? null } }),
             experimentId: run.experimentId,
             evalId: definition.id,
             attempt,

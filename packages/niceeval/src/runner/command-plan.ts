@@ -523,7 +523,6 @@ function linkedBeforeCacheBaseIdentity(pair: PreparedRunPair): string {
   if (pair.plan._tag !== "Sandbox") return "linked-base:unsupported";
   const provider = pair.plan.providerPlan;
   const identity = {
-    protocol: "niceeval.before-cache-linked-plan/v1",
     provider: {
       id: provider.provider,
       plannerRevision: provider.plannerRevision,
@@ -546,7 +545,6 @@ function linkedBeforeCacheActionIdentity(
   cumulativeState: SandboxActionState,
 ): string {
   const identity = {
-    protocol: "niceeval.before-cache-linked-plan/v1",
     parentIdentity,
     ...beforeCacheActionDeclaration(entry, cumulativeState),
   } as unknown as JsonValue;

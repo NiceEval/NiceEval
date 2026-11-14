@@ -289,7 +289,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   const reuse = yield* prepareRunnerRecordReuse({
     manifestsByKey: targetPlan.manifestsByKey,
     preparedPairsByKey: targetPlan.preparedPairsByKey,
-    rebuildInputsByKey: targetPlan.rebuildInputsByKey,
     evals: opts.evals,
     runs: opts.agentRuns,
     config: opts.config,

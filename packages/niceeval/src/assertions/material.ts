@@ -1,7 +1,8 @@
+import { defineBuiltinScoreMatch } from "./builtin-score-match.ts";
 import { Effect, Predicate } from "effect";
 import type { AssertionCollectionReceipt, AssertionCriterion, AssertionSnapshotObject, BooleanAssertionRegistration, CapturedAssertionSnapshot, MatcherSourceSnapshot, MeasurementAssertionRegistration } from "./api.ts";
 import type { ContextMatchDefinition, MaterialItem, ResolvedMaterialCaptureBudget } from "./context-match.ts";
-import { exactLlmOptions, evaluateBooleanMatch, evaluateScoreMatch, defineScoreMatch, managedScoreMatchOf, isManagedToolMatch, isManagedEventMatch, type BooleanMatch, type ScoreMatch, type ToolMatch, type EventMatch, type BooleanMatchEvaluation, type MatchDiagnostic } from "./match.ts";
+import { exactLlmOptions, evaluateBooleanMatch, evaluateScoreMatch, managedScoreMatchOf, isManagedToolMatch, isManagedEventMatch, type BooleanMatch, type ScoreMatch, type ToolMatch, type EventMatch, type BooleanMatchEvaluation, type MatchDiagnostic } from "./match.ts";
 import { managedToolCallsSidecarOf, managedEventOccurrencesSidecarOf, toolMatcherQuery, eventMatcherQuery } from "./collection.ts";
 import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
@@ -384,7 +385,7 @@ export function materialQARegistration(prepared: PreparedMaterial, question: str
   }
   let selectedMaterial: { readonly question: string; readonly items: readonly MaterialItem<unknown>[]; readonly receipt: AssertionCollectionReceipt };
   let gateway: ReturnType<typeof prepareManagedScoreMatch> | undefined;
-  const definition = defineScoreMatch<unknown, unknown>({ ...optionsFor("close-qa", options ?? {}), version: "2", config: { rubric, source: prepared.source, predicate: prepared.predicate, question }, score: (_, ctx) => Effect.gen(function* () {
+  const definition = defineBuiltinScoreMatch<unknown, unknown>({ ...optionsFor("close-qa", options ?? {}), config: { rubric, source: prepared.source, predicate: prepared.predicate, question }, score: (_, ctx) => Effect.gen(function* () {
     const resultClassified = yield* ctx.llm.classify({ rubric, choices: ["satisfied", "not-satisfied", "insufficient-evidence"], evidenceIds: selectedMaterial.items.map((item) => item.id), material: selectedMaterial as never });
     return resultClassified.choice === "insufficient-evidence" ? { state: "unavailable" as const, reason: "insufficient-evidence", rationale: resultClassified.rationale, citations: resultClassified.citations } : { state: "measured" as const, measurement: resultClassified.choice === "satisfied" ? 1 : 0, rationale: resultClassified.rationale, citations: resultClassified.citations };
   }) });

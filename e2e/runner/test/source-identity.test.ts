@@ -177,12 +177,12 @@ test.concurrent("条件 import 进入身份但不提前执行，Group 普通注�
   });
 });
 
-// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
+// @use-case docs/feature/experiments/use-case/cache-niceeval-upgrade.md
 test.concurrent("旧格式结果明确拒绝并提示重跑", async () => {
   await runnerE2E.case("source-legacy-domains", async ({ commands: { niceeval }, paths }) => {
     const imported = await niceeval.run(["run", "import", join(paths.projectRoot, "fixtures/legacy-agent-install/record.sqlite"), "--json"]);
     expect(imported.exitCode).not.toBe(0);
-    expect(imported.stdout + imported.stderr).toContain("older NiceEval version");
+    expect(imported.stdout + imported.stderr).toContain("older version of NiceEval");
     expect(imported.stdout + imported.stderr).toContain("Rerun");
   });
 });

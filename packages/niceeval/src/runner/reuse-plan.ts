@@ -4,8 +4,7 @@
 // @concord-implements docs/feature/experiments/use-case/rerun-all.md
 
 import type { IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
-import type { IdentityRebuildInput } from "./identity-domains.ts";
-import { executionDigestForManifestOrigin, classifyIdentityDomains, explainIdentityMismatch, type IdentityExplanation } from "./manifest.ts";
+import { executionDigestForManifestOrigin, explainIdentityMismatch, type IdentityExplanation } from "./manifest.ts";
 import { readIdentityExplanation, type HistoricalIdentityComparison } from "./identity-explanation-read.ts";
 import { Effect, Result, Schema } from "effect";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
@@ -178,8 +177,6 @@ export interface TargetRun {
  */
 export interface TargetSlot {
   readonly identityManifest?: IdentityManifestEntry;
-  readonly rebuildInput?: IdentityRebuildInput;
-  readonly renameRebuildInput?: (experimentId: string) => IdentityRebuildInput | undefined;
   readonly renameFingerprint?: (experimentId: string) => string | undefined;
   readonly runId: RunId;
   readonly slotId: SlotId;
@@ -663,33 +660,22 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
           ...(run.document.context === undefined ? {} : { context: run.document.context }),
         }) })
       : input.readIdentityComparison(run, input.target);
-    const classify = (identity: HistoricalIdentityComparison, digest: string) => classifyIdentityDomains({
-      historical: identity.historical, current: input.target.identityManifest, historicalDigest: digest,
-      ...(input.target.rebuildInput === undefined ? {} : { rebuildInput: input.target.rebuildInput }),
-      explanation: identity.explanation,
-    });
-    let sourceIdentity: HistoricalIdentityComparison | undefined;
     if (input.target.executionIdentityDigest !== expected.executionIdentityDigest) {
-      sourceIdentity = yield* compareRun(sourceRun);
-      const explanation = classify(sourceIdentity, expected.executionIdentityDigest);
-      if (explanation.kind !== "match") return gapSlot(input.target, {
+      const sourceIdentity = yield* compareRun(sourceRun);
+      const explanation = sourceIdentity.explanation;
+      return gapSlot(input.target, {
         reason: "identity-mismatch", scope: "slot", issues: [], sourceBarrier, candidate,
         comparisons: [identityMismatchComparison(explanation)],
       });
-      identityComparison = Object.freeze({ ...identityComparison, explanation });
     }
     if (originExpected.executionIdentityDigest !== input.target.executionIdentityDigest) {
-      const originIdentity = originRun!.document.runId === sourceRun.document.runId && sourceIdentity !== undefined
-        ? sourceIdentity : yield* compareRun(originRun!);
-      const explanation = classify(originIdentity, originExpected.executionIdentityDigest);
-      if (explanation.kind === "match") {
-        identityComparison = Object.freeze({ ...identityComparison, explanation });
-      } else {
+      const originIdentity = yield* compareRun(originRun!);
+      const explanation = originIdentity.explanation;
         const mismatch = identityMismatchComparison(explanation);
         const pureRename = originExpected.evalId === input.target.evalId &&
           originExpected.attemptOrdinal === input.target.attempt &&
           executionDigestForManifestOrigin(input.target, originRun!.document.experimentId, originIdentity.historical) === originExpected.executionIdentityDigest;
-        const domainBlocked = explanation.kind === "unexplained" && explanation.diagnostic.code.startsWith("identity-domain-");
+        const domainBlocked = explanation.kind === "unexplained" && explanation.diagnostic.code === "niceeval-identity-changed";
         if (!pureRename) return gapSlot(input.target, {
           reason: domainBlocked ? "identity-mismatch" : "adoption-unproven",
           scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [mismatch],
@@ -708,18 +694,14 @@ export function assessCurrentTargetSlot<Ref, Attempt extends CurrentAssessmentAt
             entry.document.attempt?.originRunId === candidate.origin.runId &&
             entry.document.attempt.attemptId === candidate.attemptId && entry.bindingRevision !== undefined &&
             entry.bindingRevision <= member.bindingRevision!)) continue;
-          if (witnessSlot.executionIdentityDigest === input.target.executionIdentityDigest ||
-              witnessSlot.executionIdentityDigest === expected.executionIdentityDigest && sourceIdentity !== undefined) {
+          if (witnessSlot.executionIdentityDigest === input.target.executionIdentityDigest) {
             witnessed = true; break;
           }
-          const witnessIdentity = yield* compareRun(run);
-          if (classify(witnessIdentity, witnessSlot.executionIdentityDigest).kind === "match") { witnessed = true; break; }
         }
         if (!witnessed) return gapSlot(input.target, {
           reason: "adoption-unproven", scope: "slot", issues: [], sourceBarrier, candidate, comparisons: [mismatch],
         });
         identityComparison = mismatch;
-      }
     }
     const explainedIdentity = identityComparison.explanation === undefined ? [] : [identityComparison];
     const assertions = yield* input.readAssertions(readAttempt.value);

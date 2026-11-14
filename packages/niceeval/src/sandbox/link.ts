@@ -1,3 +1,4 @@
+import { digestOf } from "./identity.ts";
 // discovery + selector 之后的纯 SandboxLayer linker。
 // 本模块只读 factory 产物，不读文件、不访问网络、不调用 Provider，也不创建 Sandbox。
 
@@ -299,7 +300,6 @@ export type ScheduledSandboxBefore = LinkedSandboxBefore & {
 };
 
 export interface SandboxLayerFingerprintProjection {
-  readonly version: 1;
   readonly templateOwner: SandboxLayerOwnerRef;
   readonly template: JsonValue;
   readonly commands: readonly SandboxCommandFingerprint[];
@@ -519,7 +519,7 @@ function actionFingerprint(
     owner,
     index,
     id: data.metadata.id,
-    revision: "sandbox-action/v1",
+    revision: digestOf(JSON.parse(JSON.stringify(data.plan)) as JsonValue),
     inputs: {
       family: data.plan.family,
       state: data.plan.state,
@@ -1018,7 +1018,6 @@ function linkSandboxPair(
       const fingerprints = Object.freeze(before.map((entry) => entry.fingerprint));
       const afterFingerprints = Object.freeze(after.map((entry) => entry.fingerprint));
       const fingerprint = Object.freeze({
-        version: 1 as const,
         templateOwner: templateOwner.owner,
         template: sandboxTemplateIdentity(template),
         commands: fingerprints,

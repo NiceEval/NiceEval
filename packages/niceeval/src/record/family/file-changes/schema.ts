@@ -88,7 +88,7 @@ const FileChangesPolicyEntriesSchema = Schema.Array(FileChangesPolicyEntrySchema
 export const FileChangesAttributionSchema = Schema.Struct({
   kind: Schema.Literal("agent-send-window-endpoints"),
   policy: Schema.Struct({
-    defaultPolicy: Schema.Literal("niceeval.sandbox-ledger/default-excludes/v1"),
+    defaultPolicy: Sha256DigestSchema,
     include: FileChangesPolicyEntriesSchema,
     ignore: FileChangesPolicyEntriesSchema,
   }),

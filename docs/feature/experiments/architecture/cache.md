@@ -200,7 +200,7 @@ active 空位置显示 pending，终态空位置保留 absence reason。其它 o
 
 | 条件 | 判断对象 | 不通过时的 gap reason |
 |---|---|---|
-| Core identity | source expected Planned attempt 与当前目标的逻辑位置及 `executionIdentityDigest` 相同，或经 `encoding-only` [身份域变更](#niceeval-身份域变更) 重建后逐字相等；origin 与 source 不同 identity 时按下文重验采用见证 | `identity-mismatch` |
+| Core identity | source expected Planned attempt 与当前目标的逻辑位置及 `executionIdentityDigest` 相同；origin 与 source 不同 identity 时按下文重验采用见证 | `identity-mismatch` |
 | Attempt outcome | Core Attempt outcome 是 `completed` | `attempt-outcome-ineligible` |
 | 质量结果 | Pass Eval 折叠为 `passed` 或 `failed`；Score Eval 有 complete 的 scored 结果，合法零分同样合格 | `verdict-ineligible` |
 | timeout | `niceeval.runner-activities` 是 complete，且 timing projection 可证明连续 root window 与真实 duration 不超过当前 timeout | `source-attachment-*`、`duration-domain-mismatch` 或 `timeout-exceeded` |
@@ -225,7 +225,7 @@ Judge 的运行时 version/config 摘要只解释已完成的评价，不能证�
 ## 外部 Eval 的身份与携带
 
 [挂载](../../eval/library/sharing.md) 不增加专用 cache。ProjectTarget 按每条 Eval 的运行输入形成 identity，再交给既有组合 execution identity 与 source barrier 比较。
-输入包括已求值配置、项目内 Eval id、源码闭包、可达 bare dependency、NiceEval runtime revision、loader 数据、Sandbox 身份、可重验 transfer 输入与 Eval 的运行字段。
+输入包括已求值配置、项目内 Eval id、源码闭包、可达 bare dependency、NiceEval 内容与行为组件、loader 数据、Sandbox 身份、可重验 transfer 输入与 Eval 的运行字段。
 
 package 的 name、version、repository、安装 commit 与 lockDigest 是审计事实，不是整套题的失效键。
 root 用于定位输入，挂载前缀则通过最终 Eval id 影响逻辑身份；改变前缀形成新的项目内结果身份。
@@ -237,7 +237,7 @@ root 用于定位输入，挂载前缀则通过最终 Eval id 影响逻辑身份
 | 项目内共享模块或其登记数据 | 影响模块 DAG 中可达它的 Eval |
 | bare dependency | 影响实际可达该 locator/content identity 的 Eval |
 | workspace/file/link 内容但 lockfile 未改 | 按实际内容摘要影响可达 Eval |
-| NiceEval runtime contract revision | 进入 Eval 身份，不能只保存消费 package 的展示版本 |
+| NiceEval 内容与行为组件 | 进入 Eval 身份，不能只保存消费 package 的展示版本 |
 | 无关说明、上游配置、Experiment 或未引用文件 | 不改变 Eval 指纹 |
 
 模块 DAG 与数据投影由 [Eval 装载](../../eval/architecture.md#模块与数据投影) 拥有。
@@ -274,42 +274,34 @@ provenance 可去重保存，但去重不改变 owner 与不可变性，也不�
 ## 差异说明
 
 digest 回答“是否相同”，identity manifest 回答“哪里不同”。
-同一次指纹计算为每个 `Eval × Experiment` 产出一份 identity manifest：身份各部分的 domain 版本，
+同一次指纹计算为每个 `Eval × Experiment` 产出一份 identity manifest：NiceEval 内容与行为组件，
 以及已求值配置、physical plan、Plugin、源码闭包与受管数据的条目。源码与数据只记内容哈希，凭据不进入 manifest。
 
 Run 创建时把本 Run 全部 Eval 的 identity manifest 写入 Run 级固定 attachment `niceeval.identity-manifests`，
 写入后不可变。accept 与 rename 建立的 reference Run 同样写入当前目标的 manifest。
-它只解释差异与识别 domain，不参与 digest 相等判断，也不成为第二份资格事实。
+它只解释差异，不参与 digest 相等判断，也不成为第二份资格事实。
 
 ```ts
-// family niceeval.identity-manifests，owner Run，revision 1
+// family niceeval.identity-manifests，owner Run
 interface IdentityManifestsAttachment {
   readonly entries: readonly IdentityManifestEntry[]; // 按 evalId 排序且唯一
 }
 
 interface IdentityManifestEntry {
   readonly evalId: string;
-  readonly domains: IdentityDomains;
+  readonly niceeval: Readonly<Record<string, JsonValue>>; // 依赖能力的内容摘要与行为计数
   readonly config: Readonly<Record<string, JsonValue>>; // config identity 的展开路径与值
   readonly plan?: JsonValue;                            // pair link 与 Provider physical plan
   readonly plugins?: Readonly<Record<string, JsonValue>>;
   readonly source: Readonly<Record<string, string>>;    // owner 相对逻辑路径 → sha256，不含宿主绝对路径
   readonly data: Readonly<Record<string, string>>;      // 受管数据路径 → sha256
 }
-
-interface IdentityDomains {
-  readonly fingerprintAlgorithm: number;
-  readonly fingerprintCoverage: number;
-  readonly inputIdentity: number;  // niceeval.input/fingerprint-v<n>
-  readonly configIdentity: number; // niceeval.config/identity-v<n>
-  readonly slotInput: number;      // 组合 slot 输入的 version
-}
 ```
 
 没有该 attachment 的历史 Run 只能部分解释。比较只使用已持久化的事实：Run context 的 adapter、model、reasoningEffort、
 flags 与 Plugin identity，以及 Sources 中与当前源码闭包同路径文件的 sha256。结果为 `unexplained`，code `identity-manifest-missing`，
-`observedDeltas` 列出这些可比较差异，`limitations` 写明 plan、受管数据、其余配置与 domain 无法比较。
-这类结果不能经身份域变更沿用，因为 origin 的 domain 不可知。
+`observedDeltas` 列出这些可比较差异，`limitations` 写明 plan、受管数据、其余配置与 NiceEval 组件无法比较。
+缺少 manifest 时不能证明有限等价，digest 不同就重新执行。
 
 `recordedClaim` 为 `execution-identity` 且 `result` 为 `mismatch` 的 `ExecutionComparison` 必须带 `explanation`。
 `identity-mismatch` 与 `adoption-unproven` 因此总能说明差在哪里，不只给出 reason code。
@@ -318,7 +310,7 @@ flags 与 Plugin identity，以及 Sources 中与当前源码闭包同路径文�
 
 ```ts
 type IdentityExplanation =
-  | { readonly kind: "match"; readonly via: readonly [string, ...string[]] } // 经身份域变更重建相等，via 为变更名
+  | { readonly kind: "match"; readonly via: readonly [string, ...string[]] } // 有限等价证明，via 为规则名
   | { readonly kind: "changed"; readonly deltas: readonly [IdentityDelta, ...IdentityDelta[]] }
   | { readonly kind: "unexplained"; readonly diagnostic: IdentityDiagnostic };
 
@@ -340,11 +332,11 @@ interface IdentityDiagnostic {
 }
 ```
 
-- `match` 只用于经[身份域变更](#niceeval-身份域变更)重建后相等的沿用；digest 直接相等时不带 explanation。
-- `changed` 只在两端 manifest 版本相同且至少有一条具名差异时成立。
-- 历史缺少 manifest、两端版本不同，或无法比较时为 `unexplained`；空差异不能读成“已证明等价”。
-- 两端版本相同、digest 不同而可比字段没有差异时，code 为 `unversioned-identity-change`。
-  这表示 NiceEval 改变了身份计算却没有更换版本，属于 NiceEval 缺陷，不归因于用户输入。
+- digest 直接相等时不带 explanation；有限等价证明可以使用 `match` 与规则名。
+- 两端 manifest 的 NiceEval 组件相同且存在具名输入差异时为 `changed`。
+- NiceEval 组件不同或计算摘要变化却没有可比输入差异时为 `unexplained`，code 为 `niceeval-identity-changed`。
+  dry 说明这是 NiceEval 身份变化，要求重跑受影响位置，不归因于用户配置。
+- 缺少 manifest 时为 `unexplained`，保留诊断能够证明的字段与缺口；空差异不证明等价。
 
 Human `--dry` 在原因后列出 selector 与有界值，例如 `will run — configuration changed: config:judge.model (gpt-5.6 → gpt-5.6-sol)`；
 `unexplained` 显示诊断摘要与 facts。`--dry --json`、`project.get` 与 `accept --dry` 输出同一结构，不各自相减或降级成没有语义的文案。
@@ -355,84 +347,20 @@ Human `--dry` 在原因后列出 selector 与有界值，例如 `will run — co
 
 ## NiceEval 身份域变更
 
-身份由 NiceEval 计算的部分和 owner 声明的部分组成，两者各有自己的 domain。origin 的 domain 一律从它的 identity manifest 读取：
+相同输入与计算规则产生相同摘要。NiceEval 改变计算方式时，受影响结果重新执行。
+身份 manifest 用 `niceeval` 保存当前组件，区分库行为与用户输入。
 
-| 部分 | domain 的载体 |
-|---|---|
-| Eval input 的指纹算法、纳入的输入集合与外层编码 | `domains.fingerprintAlgorithm`、`fingerprintCoverage` 与 `inputIdentity` |
-| config identity 的配方与组合 slot 输入 | `domains.configIdentity` 与 `slotInput` |
-| Provider、Agent installer 等 owner 声明的 identity | owner 写入已求值配置的 domain 值，即 manifest 的某条 `config:` 条目，见 [Agent install](../../adapters/architecture/agent-install.md) |
+Agent Judge 的系统提示、工具说明与提交 Schema 按实际内容求摘要；普通 Judge 的安全指令、渲染模板、判据和类别映射同样按内容计算。
+内置 preset 与 binary 判据使用实际配置派生身份。自定义 callback 的行为由作者声明的版本负责。
+不能由内容表达的代码行为每项能力只保留一个计数：Agent Judge、普通 Judge、模拟用户、评估算法与执行时长策略。
+这些组件只进入依赖该能力的 Eval。源码闭包选择可以保守多选，不能漏掉通过别名或包装使用的能力。
 
-NiceEval 对身份稳定性作以下承诺：
+当 NiceEval 组件改变时，dry 给出 `niceeval-identity-changed`，并列出 `niceeval:` 差异。
+当前用户输入变化继续使用 `config:`、`source:`、`data:`、`plan:` 与 `plugins:`。
+身份不匹配的结果必须重跑；有限采用规则只能证明当前计算方式下的改名或引用等价。
 
-1. 同一 domain 内，相同用户输入总得到相同 digest。改变任一部分的计算方式、纳入哪些输入或规范化，都必须更换该部分的 domain。
-2. 新增身份字段取默认值且行为与旧版本相同时不写键，保持既有 digest；`sharedState` 是这条规则的实例。
-   只有用户显式选择了新行为，才产生具名 `config:` 差异。
-3. 每次更换 domain，都在随包发布的第一方 registry 中登记一条具名变更：
-
-```ts
-type IdentityDomainChange =
-  | {
-      readonly kind: "core";
-      readonly name: string; // 例如 "fingerprint-algorithm/3-to-4"
-      readonly revision: keyof IdentityDomains;
-      readonly from: number;
-      readonly to: number;
-      readonly effect: IdentityChangeEffect;
-      readonly summary: string;
-    }
-  | {
-      readonly kind: "owner";
-      readonly name: string; // 例如 "opensandbox-prepare/1-to-2"
-      readonly configPath: string; // owner domain 值在 manifest 中的 config 路径
-      readonly from: string;
-      readonly to: string;
-      readonly effect: IdentityChangeEffect;
-      readonly summary: string;
-    };
-
-type IdentityChangeEffect = "encoding-only" | "behavior-changing";
-```
-
-`encoding-only` 表示新旧 domain 描述同一次执行，只是身份的编码方式不同。新包保留 `from` 域的计算作为纯函数。
-变更同时声明一个对当前冻结输入的纯谓词：只有新增输入都取旧行为等价值时，当前输入才能在旧域中表示。
-`behavior-changing` 表示新旧 domain 描述的执行不同，例如 Provider 改变了准备内容；它不提供重建。
-
-### 规划语义
-
-`identity-domain-change/v1` 用当前冻结输入按 origin 所在的旧域纯计算受影响部分，再重算组合 digest。
-重建可以沿 registry 跨多条 `encoding-only` 变更，结果必须逐字等于 origin 的 `executionIdentityDigest`。
-重建不再次 import、执行定义函数、调用 Provider planner、读取进程变量或访问网络。
-
-| origin 的 domain | explanation | 当前适用性 |
-|---|---|---|
-| 与当前相同 | 普通比较 | 按其余资格 |
-| 有登记，链上全部 `encoding-only`，谓词成立且重建相等 | `match`，`via` 列出所用变更名 | `reuse/carried` |
-| 有登记，链上有 `behavior-changing` | `unexplained`，code `identity-domain-changed` | `gap: identity-mismatch` |
-| 谓词不成立，或重建不相等 | `unexplained`，code `identity-domain-changed`，并列出可比的 `observedDeltas` | `gap: identity-mismatch` |
-| 未登记 | `unexplained`，code `identity-domain-unregistered` | `gap: identity-mismatch` |
-| 旧域已退役 | `unexplained`，code `identity-domain-retired` | `gap: identity-mismatch` |
-
-`identity-domain-changed` 的 facts 列出变更名、`kind`、`from`、`to` 与 effect。
-dry 不为这类缺口生成采用建议，因为 `accept` 同样拒绝它们。
-
-`encoding-only` 重建证明的是“用户输入未变，只有 NiceEval 的编码方式变了”，与 digest 相等同等强度，因此直接形成 carried，不要求操作者采用。
-它不写入任何新的资格事实；后续每次沿用都重新重建，不以 carried action 自证等价。
-有限采用规则（`experiment-rename/v1`、`sandbox-image-reference/v1`）重建 origin digest 时，同样可以经过 `encoding-only` 链到达 origin 的旧域。
-
-旧域的计算可以退役。退役在 registry 中显式登记，并在发布说明中列出；之后受影响结果显示 `identity-domain-retired`。
-
-### 发布校验
-
-当前 domain 集、registry 与固定样例 digest 一起签入仓库，作为上一个发布版本的快照。
-仓库校验按当前实现重算并对比快照，以下任一情况都失败：
-
-- 当前 domain 与快照不同，且 registry 中没有对应登记；
-- 同一 domain 下，固定样例输入的 digest 发生漂移；
-- `encoding-only` 登记缺少旧域计算，或旧域计算不能从样例重建出快照 digest。
-
-固定样例包括 Eval input、config identity 与组合 slot 输入；Provider 与 installer owner 为各自 domain 提供样例。
-登记一次变更时同时更新快照；发布从已通过校验的提交构建，因此快照总等于上一个已发布版本。
+Record 的格式不符时在 reader / writer 建立前明确拒绝，说明需要重跑或清理该存储；原文件保留。
+格式一致而内容非法时报告损坏。未知格式只报告不支持，不能没有证据地称为旧版本。
 
 ## 错误与缺口作用域
 
@@ -525,7 +453,7 @@ accepted 的唯一含义是“操作者当时明确采用这个 immutable Attemp
 不同 identity 只有通过第一方有限规则才能采用，操作者确认不能替代规则所需证据。
 实验改名使用 [`experiment-rename/v1`](../cli/rename.md#纯改名的有限等价)，从冻结计算原料重建 exact origin identity；镜像引用差异使用下面的 `sandbox-image-reference/v1`。
 
-NiceEval 自身的 `encoding-only` [身份域变更](#niceeval-身份域变更) 在规划中直接沿用，不经过采用；behavior-changing、未登记或已退役的域不能采用。
+NiceEval 自身的[身份计算变化](#niceeval-身份域变更)要求重跑，显式采用不能越过该限制。
 
 `sandbox-image-reference/v1` 只允许官方 Docker 单容器镜像引用发生以下变化：
 
@@ -534,7 +462,7 @@ NiceEval 自身的 `encoding-only` [身份域变更](#niceeval-身份域变更) 
 2. 该引用只用于这个 Experiment 的 Sandbox 配置。相关配置源码不能同时进入任务上传树、Eval 闭包或其它可观察输入。
    Eval、任务、判据、loader、transfer、Agent、Hook 与配置依赖的闭包必须由同一第一方 discovery 与捕获规则证明完整。
 3. origin Run 的 Sources 与当前捕获除该字面量外完全一致；只列出相同文件名不证明闭包完整。
-   必须能识别 origin 的 identity 算法域，并证明它与当前纯计算规则相同。
+   必须证明 origin 的 NiceEval 身份组件与当前纯计算规则相同。
 4. 在一次求值后冻结的输入图中还原旧 image 值与对应源码字节，纯计算所有受影响的派生 identity。
    完整重建值必须逐字等于 origin Core 的 execution digest。不得再次 import、执行定义函数、调用 Provider planner、读取进程变量或访问网络。
 

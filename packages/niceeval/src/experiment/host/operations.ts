@@ -635,7 +635,6 @@ export function planInvocation(
     const reuse = yield* prepareRunnerRecordReuse({
       manifestsByKey: target.manifestsByKey,
       preparedPairsByKey: target.preparedPairsByKey,
-      rebuildInputsByKey: target.rebuildInputsByKey,
       evals: prepared.selected.evals,
       runs: prepared.runs,
       config: { timeoutMs: config.timeoutMs },

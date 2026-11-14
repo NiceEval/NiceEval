@@ -334,14 +334,6 @@ export interface AcceptedDifference {
   to?: string;
 }
 
-/** 旧 opaque carryEpoch 指纹迁移到当前确定性指纹的已知来源。 */
-export interface FingerprintMigration {
-  kind: "opaque-carry-epoch";
-  fingerprint: string;
-  algorithmVersion: number;
-  coverageVersion: number;
-}
-
 /** `niceeval accept @<locator>` 写入新结果的来源与重锚审计记录。 */
 export interface AcceptedResult {
   /** 被复制的历史 attempt locator。 */
@@ -487,7 +479,6 @@ export interface EvalResult {
   */
   carriedAccepting?: CarriedAcceptance[];
   /** 当前确定性指纹替换已知旧 opaque carryEpoch 指纹时保留的来源。 */
-  migratedFrom?: FingerprintMigration;
   /**
    * 人工 `niceeval accept @<locator>` 产生的新结果：来源 locator、旧/新 fingerprint
    * 与 manifest 差异摘要。与 `carriedAccepting`（旧版 --accept 携入痕迹）并列保留，
@@ -536,7 +527,6 @@ export const RECORD_FORMAT = "niceeval.results";
  * `renamedFrom` 是可选审计字段，删除运行期选题投影也不改变当前 reader 对旧结果的读取；
  * 两者都不是破坏性格式变化，因此不递增版本。
  */
-export const RECORD_SCHEMA_VERSION = 18;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `adapter`/`model`——一次 Invocation 可能横跨多个 `(adapter, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.adapter`/`.model` 去重派生。 */
 export interface InvocationSummary {

@@ -1,3 +1,4 @@
+import { defineBuiltinScoreMatch } from "./builtin-score-match.ts";
 import {
   FACTUALITY_RUBRIC,
   FAITHFULNESS_EXTRACT,
@@ -6,12 +7,7 @@ import {
   PREFERENCE_RUBRIC,
 } from "./judge-presets.prompt.ts";
 import { Effect, Predicate, Schema } from "effect";
-import { defineScoreMatch, type ManagedScoreMatchOptions, type ScoreMatch } from "./match.ts";
-
-/** @internal Fingerprint identity for the built-in Judge authoring contract. */
-export const JUDGE_AUTHORING_PROTOCOL = "niceeval.judge-authoring/v1" as const;
-/** @internal Increment when a built-in Judge rule or score mapping changes. */
-export const JUDGE_AUTHORING_REVISION = 2 as const;
+import { type ManagedScoreMatchOptions, type ScoreMatch } from "./match.ts";
 
 /** Shared resource limits for the fixed Judge presets. */
 export interface JudgePresetOptions {
@@ -87,9 +83,8 @@ export function optionsFor(
 
 /** Classifies consistency with a supplied reference: consistent=1, incomplete=0.5, contradictory=0. */
 export function factuality(options: JudgePresetOptions = {}): ScoreMatch<FactualityMaterial> {
-  return defineScoreMatch<FactualityMaterial>({
+  return defineBuiltinScoreMatch<FactualityMaterial>({
     ...optionsFor("factuality", options),
-    version: "1",
     config: { rubric: FACTUALITY_RUBRIC, scores: { consistent: 1, incomplete: 0.5, contradictory: 0 } },
     score: (value, ctx) =>
       Effect.gen(function* () {
@@ -110,9 +105,8 @@ export function factuality(options: JudgePresetOptions = {}): ScoreMatch<Factual
 
 /** Extracts claims and computes the fraction supported by context; an empty extraction is unavailable. */
 export function faithfulness(options: JudgePresetOptions = {}): ScoreMatch<FaithfulnessMaterial> {
-  return defineScoreMatch<FaithfulnessMaterial>({
+  return defineBuiltinScoreMatch<FaithfulnessMaterial>({
     ...optionsFor("faithfulness", options),
-    version: "1",
     config: {
       extract: FAITHFULNESS_EXTRACT,
       classify: FAITHFULNESS_CLASSIFY,
@@ -153,9 +147,8 @@ export function faithfulness(options: JudgePresetOptions = {}): ScoreMatch<Faith
 
 /** Computes the fraction of the author's explicit instructions fulfilled by the output. */
 export function instructionFollowing(options: JudgePresetOptions = {}): ScoreMatch<InstructionFollowingMaterial> {
-  return defineScoreMatch<InstructionFollowingMaterial>({
+  return defineBuiltinScoreMatch<InstructionFollowingMaterial>({
     ...optionsFor("instruction-following", options),
-    version: "1",
     config: {
       rubric: INSTRUCTION_RUBRIC,
       scores: { followed: 1, "not-followed": 0 },
@@ -184,9 +177,8 @@ export function instructionFollowing(options: JudgePresetOptions = {}): ScoreMat
 
 /** Compares candidate output with reference: candidate wins=1, tie=0.5, reference wins=0. */
 export function pairwisePreference(options: JudgePresetOptions = {}): ScoreMatch<PairwisePreferenceMaterial> {
-  return defineScoreMatch<PairwisePreferenceMaterial>({
+  return defineBuiltinScoreMatch<PairwisePreferenceMaterial>({
     ...optionsFor("pairwise-preference", options),
-    version: "1",
     config: { rubric: PREFERENCE_RUBRIC, scores: { candidate: 1, tie: 0.5, reference: 0 } },
     score: (value, ctx) =>
       Effect.gen(function* () {

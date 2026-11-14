@@ -6,7 +6,7 @@ import {
 
 /** Records default exclusions and explicit include and ignore patterns for a workspace diff; excluded paths are outside the captured evidence. */
 export interface AgentWorkspaceDiffPolicy {
-  readonly defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1";
+  readonly defaultPolicy: string;
   readonly include: readonly string[];
   readonly ignore: readonly string[];
 }

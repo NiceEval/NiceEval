@@ -4,6 +4,7 @@
 // @concord-implements docs/feature/judge/use-case/verify-judge.md
 // @concord-implements docs/feature/judge/use-case/binary-criteria.md
 // @concord-implements docs/feature/eval/use-case/judge-quality.md
+import { defineBuiltinScoreMatch } from "./builtin-score-match.ts";
 import { binaryJudgeRubric } from "./judge-presets.prompt.ts";
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
@@ -14,7 +15,7 @@ import {
   trimConversationMaterial,
 } from "./conversation-material.ts";
 import { Effect, Predicate } from "effect";
-import { defineScoreMatch, type ScoreMatch } from "./match.ts";
+import { type ScoreMatch } from "./match.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { isJudgeImage, readJudgeImage, type JudgeImage, type JudgeMaterial } from "../judge/image.ts";
 
@@ -140,9 +141,8 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1)
     throw new TypeError("Judge anchors must include 0 and 1");
-  const definition = defineScoreMatch<unknown>({
+  const definition = defineBuiltinScoreMatch<unknown>({
     name: "rubric-judge",
-    version: "1",
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
       ...(input.maxMaterialBytes === undefined
@@ -163,12 +163,10 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
   const input = exactDataObject(options, "binaryJudge() options", ["rubric", "maxMaterialBytes", "maxCalls"]);
   const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
   const choices = ["satisfied", "not-satisfied"] as const;
-  return defineScoreMatch<unknown>({
+  return defineBuiltinScoreMatch<unknown>({
     name: "binary-judge",
-    version: "1",
     config: {
       algorithm: "binary-classification",
-      revision: 2,
       rubric,
       choices: [...choices],
       scores: { satisfied: 1, "not-satisfied": 0 },

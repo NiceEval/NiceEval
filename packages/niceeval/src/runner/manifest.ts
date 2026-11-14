@@ -1,5 +1,4 @@
 import { executionDigestForExperiment, type RenameIdentityTarget } from "./rename-identity.ts";
-import { resolveIdentityDomains, rebuildOriginExecutionDigest, type IdentityRebuildInput, type IdentityDomainChange } from "./identity-domains.ts";
 // Identity explanations are detached, credential-free planning values.
 // Contract: docs/feature/experiments/architecture/cache.md, “差异说明”.
 import * as Schema from "effect/Schema";
@@ -74,6 +73,7 @@ export function identityDeltas(historical: IdentityManifestEntry, current: Ident
     historical.plan === undefined ? {} : { physical: historical.plan },
     current.plan === undefined ? {} : { physical: current.plan });
   return Object.freeze([
+    ...faceDeltas("niceeval", historical.niceeval, current.niceeval),
     ...faceDeltas("config", historical.config, current.config),
     ...plan,
     ...faceDeltas("plugins", historical.plugins ?? {}, current.plugins ?? {}),
@@ -157,68 +157,24 @@ export function explainIdentityMismatch(input: {
     return unexplainedIdentity("identity-manifest-missing",
       "The historical identity manifest is missing; only persisted context and matching source paths can be compared.",
       input.current === undefined ? undefined : legacyIdentityDeltas({ current: input.current, ...(input.context === undefined ? {} : { context: input.context }), ...(input.source === undefined ? {} : { source: input.source }) }),
-      ["Physical plan, managed data, remaining configuration, and identity domains cannot be compared without the identity manifest."]);
+      ["Physical plan, managed data, remaining configuration, and NiceEval identity cannot be compared without the identity manifest."]);
   }
   const deltas = identityDeltas(input.historical, input.current);
-  if (canonical(input.historical.domains) !== canonical(input.current.domains)) {
-    return unexplainedIdentity("identity-domain-changed", "The identity domains changed; execution equivalence must be rebuilt.", deltas);
-  }
+  const niceevalChanged = deltas.some(delta => delta.selector.startsWith("niceeval:"));
+  if (niceevalChanged) return unexplainedIdentity("niceeval-identity-changed",
+    "NiceEval identity changed. Rerun the affected experiments.", deltas);
   if (deltas.length > 0) return Object.freeze({ kind: "changed", deltas: [deltas[0]!, ...deltas.slice(1)] as const });
-  return unexplainedIdentity("unversioned-identity-change",
-    "Execution identity changed without a domain version change or a comparable input difference.", deltas,
-    ["NiceEval changed execution identity without a corresponding versioned input change."]);
+  return unexplainedIdentity("niceeval-identity-changed",
+    "NiceEval identity calculation changed. Rerun the affected experiments.", deltas);
 }
 
-/** Domain compatibility is decided from immutable origin facts and frozen current inputs. */
-export function classifyIdentityDomains(input: {
-  readonly historical: IdentityManifestEntry | undefined;
-  readonly current: IdentityManifestEntry | undefined;
-  readonly historicalDigest: string;
-  readonly rebuildInput?: IdentityRebuildInput;
-  readonly explanation: IdentityExplanation;
-}): IdentityExplanation {
-  if (input.historical === undefined || input.current === undefined) return input.explanation;
-  const resolved = resolveIdentityDomains(input.historical, input.current);
-  if (resolved.kind === "same") return input.explanation;
-  const deltas = identityDeltas(input.historical, input.current);
-  const changeFacts = (change: IdentityDomainChange): readonly IdentityDiagnosticFact[] => [
-    { label: "name", value: change.name },
-    { label: "kind", value: change.kind },
-    { label: "from", value: change.from },
-    { label: "to", value: change.to },
-    { label: "effect", value: change.effect },
-  ];
-  if (resolved.kind === "encoding-only") {
-    if (input.rebuildInput !== undefined && rebuildOriginExecutionDigest(resolved, input.rebuildInput) === input.historicalDigest) {
-      return Object.freeze({ kind: "match", via: [resolved.chain[0].name, ...resolved.chain.slice(1).map((change) => change.name)] as const });
-    }
-    return unexplainedIdentity("identity-domain-changed", "The registered identity change cannot reconstruct the historical execution from the current frozen inputs.", deltas,
-      ["The current inputs cannot be proven equivalent in the historical identity domain."], resolved.chain.flatMap(changeFacts));
-  }
-  if (resolved.kind === "unregistered") {
-    return unexplainedIdentity("identity-domain-unregistered", "The historical identity domain has no registered transition to the current domain.", deltas,
-      ["No historical identity recipe is available."], resolved.differing.map((key) => ({ label: "domain", value: key })));
-  }
-  return unexplainedIdentity(resolved.kind === "retired" ? "identity-domain-retired" : "identity-domain-changed",
-    resolved.kind === "retired" ? "The historical identity recipe has been retired." : "The registered identity change changes execution behavior.",
-    deltas, undefined, changeFacts(resolved.change));
-}
-
-/** The finite rename rule may compose with a registered pure domain conversion. */
+/** Finite rename proof uses only the current frozen fingerprint recipe. */
 export function executionDigestForManifestOrigin(
-  target: RenameIdentityTarget & { readonly identityManifest?: IdentityManifestEntry; readonly renameRebuildInput?: (experimentId: string) => IdentityRebuildInput | undefined },
+  target: RenameIdentityTarget & { readonly identityManifest?: IdentityManifestEntry },
   experimentId: string,
   historical: IdentityManifestEntry | undefined,
 ): string | undefined {
-  // Without a historical manifest the domain is unknown, but callers compare the
-  // result byte-for-byte with the origin digest: equality under the current
-  // recipe already proves the origin used it. Only a domain rebuild needs both.
-  if (historical === undefined || target.identityManifest === undefined) return executionDigestForExperiment(target, experimentId);
-  const resolution = resolveIdentityDomains(historical, target.identityManifest);
-  if (resolution.kind === "same") return executionDigestForExperiment(target, experimentId);
-  if (resolution.kind !== "encoding-only") return undefined;
-  const input = target.renameRebuildInput?.(experimentId);
-  return input === undefined ? undefined : rebuildOriginExecutionDigest(resolution, {
-    ...input, attempt: target.attempt, timeout: target.timeout ?? null,
-  });
+  if (historical !== undefined && target.identityManifest !== undefined &&
+      canonical(historical.niceeval) !== canonical(target.identityManifest.niceeval)) return undefined;
+  return executionDigestForExperiment(target, experimentId);
 }

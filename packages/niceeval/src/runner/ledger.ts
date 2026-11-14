@@ -354,7 +354,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   return {
     rootExecutionIdentity: ordinaryUid === "0",
     attribution: Object.freeze({
-      defaultPolicy: "niceeval.sandbox-ledger/default-excludes/v1" as const,
+      defaultPolicy: createHash("sha256").update(JSON.stringify([...DEFAULT_EXCLUDES].sort())).digest("hex"),
       include: includes,
       ignore: ignored,
     }),

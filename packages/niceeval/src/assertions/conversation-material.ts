@@ -4,7 +4,6 @@ import type { JsonValue } from "../shared/types.ts";
 /** Private capabilities prevent ordinary objects from impersonating conversation handles. */
 const readers = new WeakMap<object, () => JsonValue>();
 const projections = new WeakSet<object>();
-export const conversationMaterialRevision = 1;
 export function bindConversationMaterial<T extends object>(handle: T, read: () => JsonValue): T {
   readers.set(handle, read);
   return handle;
@@ -64,8 +63,7 @@ export function projectConversation(
     if (finalIndex < 0 && turn.reply !== "") records.push({ kind: "final-reply", text: turn.reply });
   }
   const value = {
-    protocol: "niceeval.conversation-material",
-    revision: conversationMaterialRevision,
+    kind: "conversation-material",
     records,
     omissions: [],
   };

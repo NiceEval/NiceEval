@@ -24,7 +24,7 @@ import type { AdapterIdentity } from "../record/model/run-context.ts";
  * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
-  readonly models?: { readonly version: 1; readonly slots: ResolvedModelRoles };
+  readonly models?: { readonly slots: ResolvedModelRoles };
   readonly adapter: AdapterIdentity;
   readonly model: DeclaredConfigValue<string>;
   readonly reasoningEffort: DeclaredConfigValue<string>;
@@ -108,7 +108,6 @@ function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
     ...withoutSharedState,
     adapter: identity.adapter === null ? null : Object.freeze({ ...identity.adapter }),
     ...(identity.models === undefined ? {} : { models: Object.freeze({
-      version: 1 as const,
       slots: Object.freeze(Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]))),
     }) }),
     model: Object.freeze(identity.model),
@@ -201,7 +200,7 @@ export function configIdentityForRun(
 ): ConfigIdentity {
   return freezeConfigIdentity({
     adapter: adapterIdentity(run.adapter),
-    ...(run.adapter?.kind === "custom" ? { models: { version: 1 as const, slots: run.models ?? Object.freeze({}) } } : {}),
+    ...(run.adapter?.kind === "custom" ? { models: { slots: run.models ?? Object.freeze({}) } } : {}),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -223,7 +222,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
   if (exp === undefined) return undefined;
   return freezeConfigIdentity({
     adapter: result.adapter,
-    ...(exp.models === undefined ? {} : { models: { version: 1 as const, slots: exp.models } }),
+    ...(exp.models === undefined ? {} : { models: { slots: exp.models } }),
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
@@ -254,7 +253,6 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
     if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
   }
   if (identity.models !== undefined) {
-    put("models.version", identity.models.version);
     for (const [slot, selection] of Object.entries(identity.models.slots)) {
       put(`models.${slot}.model`, selection.model);
       put(`models.${slot}.reasoningEffort`, selection.reasoningEffort);

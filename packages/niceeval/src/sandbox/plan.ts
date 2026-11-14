@@ -376,7 +376,6 @@ function requirementIdentity(
 function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
   if (plan._tag === "Direct") {
     return {
-      version: 1,
       mode: "direct",
       pair: {
         evalId: plan.pair.evalId,
@@ -386,7 +385,6 @@ function linkedRunPublishableIdentity(plan: LinkedRunPlan): JsonValue {
     };
   }
   return {
-    version: 1,
     mode: "sandbox",
     pair: {
       evalId: plan.pair.evalId,
@@ -546,7 +544,6 @@ function renamedLinkedRunIdentity(
 ): JsonValue | undefined {
   if (captured._tag === "Direct") {
     return freezeJsonSnapshot({
-      version: 1,
       mode: "direct",
       pair: {
         evalId: captured.evalId,
@@ -557,7 +554,6 @@ function renamedLinkedRunIdentity(
   }
   if (!captured.rebuildable) return undefined;
   return freezeJsonSnapshot({
-    version: 1,
     mode: "sandbox",
     pair: {
       evalId: captured.evalId,
