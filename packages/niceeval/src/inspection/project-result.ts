@@ -1,4 +1,4 @@
-import { IdentityExplanationSchema } from "../runner/manifest.ts";
+import { IdentityExplanationSchema } from "../runner/identity-explanation-schema.ts";
 import * as Schema from "effect/Schema";
 import { ExperimentIdSchema, EvalIdSchema, RunIdSchema } from "../record/codec/identifiers.ts";
 import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
