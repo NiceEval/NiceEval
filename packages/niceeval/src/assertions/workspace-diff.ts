@@ -68,7 +68,8 @@ export type PostRunWorkspaceDiffState =
     };
 
 export interface WorkspaceDiffNotInOptions {
-  readonly content?: "added" | "removed" | "both";
+  /** Select changed content sides, or none to compare only paths regardless of content elision. */
+  readonly content?: "added" | "removed" | "both" | "none";
 }
 
 export type WorkspaceDiffNotInOutcome =
@@ -353,7 +354,7 @@ function selectedSides(
   options: WorkspaceDiffNotInOptions | undefined,
 ): readonly ("added" | "removed")[] {
   const content = options?.content ?? "both";
-  return content === "both" ? ["added", "removed"] : [content];
+  return content === "none" ? [] : content === "both" ? ["added", "removed"] : [content];
 }
 
 type DiffSearchOutcome =

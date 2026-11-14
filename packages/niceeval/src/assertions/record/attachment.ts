@@ -332,6 +332,12 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
         id: "sandbox-unchanged-within/v1" as const,
         data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
       });
+    case "sandbox-diff-paths":
+      return Object.freeze({
+        kind: "builtin" as const,
+        id: "sandbox-diff-paths/v1" as const,
+        data: Object.freeze({ operation: criterion.operation, pattern: criterion.pattern, flags: criterion.flags }),
+      });
     case "sandbox-in-diff":
       return Object.freeze({
         kind: "builtin" as const,

@@ -151,6 +151,8 @@ export type AssertionCriterion =
     }
   | { readonly kind: "sandbox-change-scope"; readonly paths: readonly string[] }
   | { readonly kind: "sandbox-unchanged-within"; readonly paths: readonly string[] }
+  /** Matches only agent-attributed changed paths; content elision does not affect the result. */
+  | { readonly kind: "sandbox-diff-paths"; readonly operation: "not-in-diff" | "in-diff"; readonly pattern: string; readonly flags: string }
   | { readonly kind: "sandbox-in-diff"; readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" }
   | { readonly kind: "sandbox-result"; readonly operation: "no-changes" }
   | {

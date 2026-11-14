@@ -2263,6 +2263,10 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
         const criterion = entry.criterion.value;
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: criterion.id }, { key: "Pattern", value: `/${criterion.data.pattern}/${criterion.data.flags}` }, { key: "Content", value: criterion.data.content }] });
       }
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-diff-paths/v1") {
+        const criterion = entry.criterion.value;
+        blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: criterion.id }, { key: "Operation", value: criterion.data.operation }, { key: "Pattern", value: `/${criterion.data.pattern}/${criterion.data.flags}` }, { key: "Content", value: "none" }] });
+      }
       if (entry.explanationRetention.state === "retained") {
         const value = entry.explanationRetention.value;
         if (value.kind === "fields") {

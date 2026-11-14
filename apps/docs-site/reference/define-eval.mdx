@@ -752,13 +752,15 @@ These methods check workspace changes the agent produces between the endpoints o
 | `t.sandbox.unchangedWithin(paths)` | Protects the listed files and directories; any changed path within those scopes makes the condition unmet. No changes also satisfies it. |
 | `t.sandbox.fileChanged(path, options?)` | Within the same send window, the path changed and satisfies `status`, `before`, and `after` together; content conditions use string Matches. |
 | `t.sandbox.fileDeleted(path)` | Finds a deletion of the path; the path does not have to remain absent at the end of the entire Attempt. |
-| `t.sandbox.notInDiff(pattern, options?)` | The regular expression matches neither changed paths nor changed lines; `content` selects `added`, `removed`, or the default `both`. Unchanged context is not scanned. |
+| `t.sandbox.notInDiff(pattern, options?)` | The regular expression matches neither changed paths nor changed lines; `content` selects `added`, `removed`, the default `both`, or `none` to compare only paths. Unchanged context is not scanned. |
 | `t.sandbox.inDiff(pattern, options?)` | The condition is satisfied when the regular expression matches a changed path or selected changed line; `content` accepts the same values and default as `notInDiff`. |
 
 `changedPaths(["src/a.ts"])` requires exactly that file to change; `changedOnlyWithin(["src"])` allows no changes or changes to only some files under `src`. The latter matches path components, so `agents` does not cover `agents-old`. Provide at least one scope; use `noChanges()` instead of an empty array.
 Paths containing `*` or `?` throw `TypeError`: globs are not supported, so write the directory name directly for a directory prefix.
 
 `unchangedWithin(["agents", "niceeval.config.ts"])` protects the run configuration while allowing changes to other files; it is not the logical inverse of `changedOnlyWithin`. The same path-component matching and rejection rules for globs and empty arrays apply as for allowed-scope checks.
+
+For checks concerned only with file paths, use `{ content: "none" }` with either method. It compares the regular expression only with agent-attributed changed paths and does not read changed lines. Binary or oversized content elision does not affect the result; failed or incomplete attribution collection still yields unavailable. The default `both` also scans changed lines, so elided selected content can leave the result undecidable.
 
 `inDiff` does not scan unchanged context. When there is no match and the selected content is elided, the result is unavailable; a match in a path or known changed line still establishes that the condition is satisfied. Match evidence keeps the first matching path and a bounded preview. To match only content, choose a pattern that avoids matching paths.
 

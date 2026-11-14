@@ -10,6 +10,7 @@ export const inDiffAgent = defineSandboxAgent({
       await ctx.sandbox.writeText("fixture/path-token.txt", "ordinary\n");
     } else if (input.text === "binary") {
       await ctx.sandbox.writeBytes("fixture/binary.bin", new Uint8Array([0, 1, 2, 3]));
+      await ctx.sandbox.writeText("fixture/oversized.txt", "x".repeat(2_000_000));
     }
     return { status: "completed" as const, events: [{ type: "message" as const, role: "assistant" as const, text: "done" }] };
   },

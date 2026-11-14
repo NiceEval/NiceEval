@@ -353,11 +353,12 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind>
     options?: FileChangedOptions,
   ): PostRunBooleanAssertionHandle<Kind, void>;
   fileDeleted(path: string): PostRunBooleanAssertionHandle<Kind, void>;
-  /** 正则命中变化路径或所选变化行时满足；所选内容省略且未命中时为 unavailable。 */
+  /** Match changed paths or selected changed lines. With content: "none", only paths are searched. */
   inDiff(
     pattern: RegExp,
     options?: WorkspaceDiffNotInOptions,
   ): PostRunBooleanAssertionHandle<Kind, void>;
+  /** Exclude patterns from changed paths and selected lines. content: "none" searches only paths. */
   notInDiff(
     pattern: RegExp,
     options?: WorkspaceDiffNotInOptions,
@@ -1192,6 +1193,10 @@ function notInDiffCriterion(
   pattern: RegExp,
   options: Readonly<WorkspaceDiffNotInOptions>,
 ): AssertionCriterion {
+  if (options.content === "none") return Object.freeze({
+    kind: "sandbox-diff-paths" as const, operation: "not-in-diff" as const,
+    pattern: pattern.source, flags: pattern.flags,
+  });
   return Object.freeze({
     kind: "sandbox-result" as const,
     operation: "not-in-diff" as const,
@@ -1246,8 +1251,8 @@ function normalizeNotInDiffOptions(
   for (const key of Object.keys(value)) {
     if (key !== "content") throw new TypeError(`${operation} options has unknown key ${JSON.stringify(key)}`);
   }
-  if (value.content !== undefined && value.content !== "added" && value.content !== "removed" && value.content !== "both") {
-    throw new TypeError(`${operation} options.content must be added, removed, or both`);
+  if (value.content !== undefined && value.content !== "added" && value.content !== "removed" && value.content !== "both" && value.content !== "none") {
+    throw new TypeError(`${operation} options.content must be added, removed, both, or none`);
   }
   return Object.freeze({ ...value });
 }
@@ -1429,10 +1434,10 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     const options = normalizeNotInDiffOptions(rawOptions, "inDiff()");
     const frozenPattern = new RegExp(pattern.source, pattern.flags);
     let evidence: readonly AssertionMaterial[] = Object.freeze([]);
-    return register(Object.freeze({
-      kind: "sandbox-in-diff", pattern: frozenPattern.source,
-      flags: frozenPattern.flags, content: options.content ?? "both",
-    }), () => Effect.sync(() => {
+    const criterion: AssertionCriterion = options.content === "none"
+      ? Object.freeze({ kind: "sandbox-diff-paths", operation: "in-diff", pattern: frozenPattern.source, flags: frozenPattern.flags })
+      : Object.freeze({ kind: "sandbox-in-diff", pattern: frozenPattern.source, flags: frozenPattern.flags, content: options.content ?? "both" });
+    return register(criterion, () => Effect.sync(() => {
       const diff = input.late.diff;
       if (diff.state !== "available") return unavailableDiffResult();
       const result = evaluateWorkspaceDiffIn(diff.document, frozenPattern, options);

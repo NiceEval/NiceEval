@@ -101,6 +101,8 @@ function criterionTitle(criterion: AssertionCriterion): string {
       return "changes stayed within allowed paths";
     case "sandbox-unchanged-within":
       return "protected paths stayed unchanged";
+    case "sandbox-diff-paths":
+      return criterion.operation === "in-diff" ? "pattern appeared in changed paths" : "pattern absent from changed paths";
     case "sandbox-in-diff":
       return "pattern appeared in agent changes";
     case "sandbox-result":

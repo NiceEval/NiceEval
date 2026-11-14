@@ -524,6 +524,16 @@ const SandboxUnchangedWithinCriterionSchema = Schema.Struct({
   }),
 });
 
+const SandboxDiffPathsCriterionSchema = Schema.Struct({
+  kind: Schema.Literal("builtin"),
+  id: Schema.Literal("sandbox-diff-paths/v1"),
+  data: Schema.Struct({
+    operation: Schema.Literals(["not-in-diff", "in-diff"]),
+    pattern: BoundedJsonStringSchema,
+    flags: BoundedJsonStringSchema,
+  }),
+});
+
 const SandboxInDiffCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("sandbox-in-diff/v1"),
@@ -599,6 +609,7 @@ export const BuiltInCriterionSchema: Schema.Schema<BuiltInCriterion> =
     SandboxChangeScopeCriterionSchema,
     SandboxUnchangedWithinCriterionSchema,
     SandboxInDiffCriterionSchema,
+    SandboxDiffPathsCriterionSchema,
     DirectScoreCriterionSchema,
   ]);
 
@@ -1360,6 +1371,7 @@ const KNOWN_BUILTIN_CRITERION_IDS: ReadonlySet<string> = new Set([
   "sandbox-change-scope/v1",
   "sandbox-unchanged-within/v1",
   "sandbox-in-diff/v1",
+  "sandbox-diff-paths/v1",
   "direct-score/v1",
 ]);
 
