@@ -24,6 +24,7 @@ import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import { createManagedPiSession, promptPiSession } from "../judge/pi-runtime.ts";
 import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
 import { resolveJudgeCredential } from "../judge/provider.ts";
+import { fitJudgeContext } from "./judge-context-budget.ts";
 
 const utf8 = new TextEncoder();
 const size = (value: string) => utf8.encode(value).byteLength;
@@ -43,12 +44,14 @@ export function resolveAgentJudgePi(): { readonly coding: string; readonly codin
 }
 
 type Submitted = NonNullable<AgentJudgeAudit["submission"]>;
+type ReviewStep = { kind: "chat" | "judge" | "grade"; message: string; key: string | null; anchors: readonly JudgeAnchor[] | null };
+const stepPrompt = (step: ReviewStep) => canonical({ kind: step.kind, message: step.message, ...(step.anchors === null ? {} : { anchors: step.anchors }) });
 /** Attempt-local owner of a single real pi conversation and its shared evidence. */
 export class AgentJudgeSession {
   private readonly snapshot: ReturnType<typeof snapshotJudgeMaterial>;
-  private readonly captured: string;
+  private captured: string;
   private readonly keys: string[] = [];
-  private readonly steps: Array<{ kind: "chat" | "judge" | "grade"; message: string; key: string | null; anchors: readonly JudgeAnchor[] | null }> = [];
+  private readonly steps: ReviewStep[] = [];
   private currentKey?: string;
   private currentTurns = 0;
   private currentFailure?: AgentJudgeFailure;
@@ -82,10 +85,10 @@ export class AgentJudgeSession {
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
     this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }).material;
-    const base = { version: "1", config: canonical({ ...judge, contextWindow: profile?.contextWindow ?? (profile === undefined ? undefined : builtinContextWindow(profile.model)) ?? null, ...(containsConversationMaterial(this.snapshot.material) ? { conversationMaterialRevision } : {}), algorithmRevision: 5, promptRevision: 2, toolRevision: 3, gradeParameters, binaryParameters }),
-      limits: { maxTurns: judge.maxTurns, timeoutMs: judge.timeoutMs, maxMaterialBytes: judge.maxMaterialBytes } };
+    const base = { version: "1", config: canonical({ ...judge, contextWindow: profile?.contextWindow ?? (profile === undefined ? undefined : builtinContextWindow(profile.model)) ?? null, ...(containsConversationMaterial(this.snapshot.material) ? { conversationMaterialRevision } : {}), algorithmRevision: 6, promptRevision: 2, toolRevision: 3, gradeParameters, binaryParameters }),
+      limits: { maxTurns: judge.maxTurns, timeoutMs: judge.timeoutMs, ...(judge.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: judge.maxMaterialBytes }) } };
     this.definition = { ...base, digest: agentJudgeDigest(canonical(base)) };
-    if (size(this.captured) > judge.maxMaterialBytes) this.fail("unavailable", "agent-judge-material-budget", "Agent Judge material exceeds its byte budget");
+    if (judge.maxMaterialBytes !== undefined && size(this.captured) > judge.maxMaterialBytes) this.fail("unavailable", "agent-judge-material-budget", "Agent Judge material exceeds its byte budget");
   }
 
   private images() { return this.snapshot.images.map(({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths }) => ({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths })); }
@@ -214,6 +217,20 @@ export class AgentJudgeSession {
       ],
     });
     this.agent = agent;
+    this.piSystemPrompt = agent.systemPrompt;
+    const opening = fitJudgeContext({ model: profile.model, contextWindow: profile.contextWindow, maxOutputTokens: profile.protocol.maxOutputTokens,
+      material: this.snapshot.material, encodeRequest: material => canonical({ model: profile.model,
+        messages: [{ role: "system", content: agent.systemPrompt },
+          { role: "user", content: [{ type: "text", text: canonical(projectJudgeMaterial(material, this.snapshot.imageByValue).json) },
+            ...this.snapshot.images.map(image => ({ type: "image_url", image_url: { url: `niceeval-image:${image.imageId}` } }))] },
+          ...(this.steps[0] === undefined ? [] : [{ role: "user", content: stepPrompt(this.steps[0]) }])],
+        tools: agent.agent.state.tools.map(tool => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
+      }),
+    });
+    if (opening.state === "unavailable") {
+      this.fail("unavailable", opening.code, opening.message); agent.dispose(); return;
+    }
+    this.captured = canonical(projectJudgeMaterial(opening.material, this.snapshot.imageByValue).json);
     agent.agent.toolExecution = "sequential";
     const beforeToolCall = agent.agent.beforeToolCall;
     agent.agent.beforeToolCall = async (context, signal) => this.currentKey !== undefined && this.submissions.has(this.currentKey)
@@ -279,7 +296,7 @@ export class AgentJudgeSession {
         const submitTool = agent.agent.state.tools.find(tool => tool.name === "submit_evaluation");
         // pi retains this tool object in its registry and restores it before each prompt.
         if (submitTool !== undefined) submitTool.parameters = (step.kind === "judge" ? binaryParameters : gradeParameters) as import("@earendil-works/pi-coding-agent").ToolDefinition["parameters"];
-        await promptPiSession(agent, canonical({ kind: step.kind, message: step.message, ...(step.anchors === null ? {} : { anchors: step.anchors }) }));
+        await promptPiSession(agent, stepPrompt(step));
         captureSession();
         const response = agent.messages.findLast(message => message.role === "assistant");
         if (response?.role === "assistant" && response.stopReason === "error" && this.problem === undefined) {

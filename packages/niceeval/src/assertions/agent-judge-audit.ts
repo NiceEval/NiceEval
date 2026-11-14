@@ -29,7 +29,7 @@ export const AgentJudgeToolTraceSchema = Schema.Struct({
 export type AgentJudgeToolTrace = typeof AgentJudgeToolTraceSchema.Type;
 export const AgentJudgeTraceSchema = Schema.Struct({
   definition: Schema.Struct({ version: text, config: Schema.String, digest,
-    limits: Schema.Struct({ maxTurns: ordinal, timeoutMs: ordinal, maxMaterialBytes: ordinal }) }),
+    limits: Schema.Struct({ maxTurns: ordinal, timeoutMs: ordinal, maxMaterialBytes: Schema.optionalKey(ordinal) }) }),
   cleanup: Schema.Struct({ state: Schema.Literals(["released", "unconfirmed"]), diagnostic: Schema.NullOr(text) }),
   input: Schema.String, systemPrompt: Schema.String,
   criteria: Schema.NonEmptyArray(text),

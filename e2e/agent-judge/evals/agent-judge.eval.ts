@@ -11,7 +11,8 @@ export default defineScoreEval({
   async test(t) {
     if (mode === "direct") { t.agentJudge(reviewer, {}).judge("Requires a Sandbox"); return; }
     const turn = await t.send("Write application evidence.");
-    const material = { marker: "ORIGINAL_MATERIAL", mode };
+    const material = { marker: "ORIGINAL_MATERIAL", mode,
+      ...(["large-material", "context-material"].includes(mode) ? { evidence: "Large opening evidence. ".repeat(6000) } : {}) };
     const empty = t.newSession().agentJudge(reviewer, material);
     empty.chat("CHAT_ONLY_MUST_NOT_SEND");
     const first = t.agentJudge(reviewer, material);

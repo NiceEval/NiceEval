@@ -74,7 +74,7 @@ function modelServer(mode: string) {
 }
 
 // @feature docs/feature/judge/README.md
-test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "large-audit", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
+test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "http400", "malformed", "transport", "large-audit", "large-material", "context-material", "material", "typesafe", "response-limit", "truncation", "compact-continue", "compact-overflow"])("Agent Judge keeps real Sandbox evidence and terminal classification: %s", async (mode) => {
   const { server, bodies } = modelServer(mode);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -105,8 +105,10 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           if (index !== 1) reportedCalls += audit.trace.session.filter(raw => typeof raw === "object" && raw !== null && "message" in raw &&
             typeof raw.message === "object" && raw.message !== null && "role" in raw.message && raw.message.role === "assistant").length +
             audit.trace.compactions.filter(compact => compact.summary !== null).length;
-          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit"].includes(mode) || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
+          const expected = ["success", "barrier", "truncation", "compact-continue", "large-audit", "large-material"].includes(mode) || mode === "context-material" && index === 2 || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : mode === "malformed" ? "errored" : "unavailable";
           expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify({ result: audit.audit.result, tools: audit.trace.tools, compactions: audit.trace.compactions })}`).toBe(expected);
+          if (mode === "context-material" && index < 2) expect(audit.audit.result).toMatchObject({ code: "judge-material-exceeds-context" });
+          if (mode === "large-material" && index === 0) expect(audit.trace.input.length).toBeGreaterThan(32 * 1024);
           if (mode === "large-audit" && index === 0) expect(JSON.stringify(audit.trace.session).length).toBeGreaterThan(4 * 1024 * 1024);
           expect(audit.trace.steps.filter((step) => step.kind !== "chat")).toHaveLength(index === 2 ? 1 : 2);
           if (mode.startsWith("compact-") && index === 1) {
@@ -163,6 +165,10 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
       expect(JSON.stringify(bodies)).not.toContain("MUTATED_MATERIAL");
       expect(JSON.stringify(bodies)).not.toContain("CHAT_ONLY_MUST_NOT_SEND");
       expect(JSON.stringify(bodies)).not.toContain("TRAILING_CHAT_MUST_NOT_SEND");
+      if (mode === "context-material") {
+        expect(JSON.stringify(bodies)).not.toContain("First question");
+        expect(JSON.stringify(bodies)).not.toContain("Second question");
+      }
       if (["material", "typesafe"].includes(mode)) expect(bodies).toHaveLength(0);
     });
   } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); }

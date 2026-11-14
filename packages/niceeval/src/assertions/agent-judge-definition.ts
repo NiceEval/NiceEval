@@ -26,7 +26,7 @@ export interface NormalizedAgentJudge {
   readonly instructions: string;
   readonly maxTurns: number;
   readonly timeoutMs: number;
-  readonly maxMaterialBytes: number;
+  readonly maxMaterialBytes?: number;
 }
 const definitions = new WeakMap<object, NormalizedAgentJudge>();
 /** @internal Validates the opaque reviewer without reading consumer properties. */
@@ -68,7 +68,7 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
     instructions: input.instructions as string | undefined ?? "",
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),
-    maxMaterialBytes: positive(input.maxMaterialBytes, 32 * 1024, "Agent Judge maxMaterialBytes"),
+    ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positive(input.maxMaterialBytes, 1, "Agent Judge maxMaterialBytes") }),
   });
   const reviewer = Object.freeze({}) as AgentJudge;
   definitions.set(reviewer, normalized);
