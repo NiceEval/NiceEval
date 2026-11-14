@@ -40,10 +40,9 @@
           },
           "command": [
             "pnpm",
-            "--silent",
-            "run",
-            "e2e",
-            "--"
+            "exec",
+            "vitest",
+            "run"
           ],
           "timeoutMinutes": 30,
           "harness": {
