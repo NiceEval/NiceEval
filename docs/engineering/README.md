@@ -14,6 +14,7 @@
 
 - [随包 Agent 文档](agent-docs/README.md)：打包、发现与索引守护。
 - [Benchmark](benchmark/README.md)：阶段耗时与安装 benchmark。
+- [源码格式与静态检查](code-style/README.md)：Biome 格式、未使用项检查与首次接入方式。
 - [文档追溯](docs-traceability/README.md)：文档节点、测试 owner、Memory 与结构写入的追溯入口。
 - [并行文档工作](docs-work/README.md)：文档切片、收据与 finalizer。
 - [示例 tier 同步](example-tier-sync/README.md)：相邻示例层的同步与冲突处理。
