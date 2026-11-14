@@ -252,6 +252,12 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 一次会话的轨迹（definition、input、chat 消息、generations、tools）只写一份，归属于会话的首个评分题 entry；其余评分题 entry 的审计引用这份轨迹的摘要，只各自保存题型、判据或 prompt 与 anchors、submission 与 result。
 读取任一评分题的 detail 都能取到完整轨迹；轨迹缺失或摘要不符时，该题的审计为 invalid。所有序号从 1 连续递增，工具引用使用模型实际 call id。
 
+轨迹不设大小上限，读取不能依赖一次查询装下它：
+
+- `attempt.assertion.detail` 的 full 模式只返回轨迹的 Content 引用（稳定 ID、字节数、摘要）以及题目自己的 submission 与 result，同一份轨迹在一次响应里只出现一次，不内联展开。
+- 完整轨迹经 `attempt.trace.detail` 按页读取，分页与读取上限与模拟用户会话相同；Query 的固定结果上限不因轨迹变大而提高。
+- `show --assertions --entry <id> --full` 按页取回并渲染完整轨迹。
+
 | 事实 | 内容与验证 |
 |---|---|
 | definition | 算法 version、canonical config、digest，以及有效 turns、期限和字节限制 |
