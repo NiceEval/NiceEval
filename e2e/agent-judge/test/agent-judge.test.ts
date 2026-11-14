@@ -57,7 +57,7 @@ function modelServer(mode: string) {
       const submit = call("submit_evaluation", { measurement: 1, rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
       let calls: unknown[] = [];
       let text: string | null = null;
-      if (step.kind === "chat") text = mode.startsWith("compact-") ? "Earlier evidence. ".repeat(7000) : "Ready to inspect.";
+      if (step.kind === "chat") text = "Ready to inspect.";
       else if (mode === "cancel") calls = [call("bash", { command: "touch judge-running; sleep 30; touch late-write" })];
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];

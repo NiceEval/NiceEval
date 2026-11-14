@@ -17,7 +17,7 @@ export default defineScoreEval({
     empty.chat("CHAT_ONLY_MUST_NOT_SEND");
     const first = t.agentJudge(reviewer, material);
     material.marker = "MUTATED_MATERIAL";
-    first.chat("Inspect the application before grading.");
+    first.chat(mode.startsWith("compact-") ? "Earlier evidence. ".repeat(7000) : "Inspect the application before grading.");
     const firstQuestion = first.judge("First question").score(2).label("First review");
     if (mode === "stop") { await firstQuestion.gate(0.5).orStop(); return; }
     if (mode === "barrier") await t.check(true, (await import("niceeval/expect")).equals(true)).orStop();
