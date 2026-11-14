@@ -3253,6 +3253,13 @@ async function runAttemptBody(
         });
         const installed = await assertFirst.requestEffect(Effect.result(installEffect));
         if (Result.isFailure(installed)) throw installed.failure;
+        if (preparedBeforeCache?.agentDerived === true && materializedCase?.beforeCacheStart?._tag !== "FellBackToBase") {
+          for (const result of installed.success) {
+            if (result.outcome === "hit") feedback.progress({
+              message: `agent.install hit; agent=${result.identity.agent}; source=agent-derived-snapshot`,
+            });
+          }
+        }
       }
 
       // 作者准备与 Agent install 都不属于 Agent diff；Runner 在这些

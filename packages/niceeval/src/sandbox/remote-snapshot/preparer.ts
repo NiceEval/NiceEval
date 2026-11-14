@@ -437,6 +437,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
 
   return {
     continuesStaging: driver.sourceUsableAfterSnapshot,
+    supportsAgentDerived: true,
     eligibility: (plan, context) => driver.resolveBase(plan).pipe(
       Effect.map((target) => target._tag === "Ineligible"
       ? { _tag: "Unsupported" as const, code: target.code, reason: target.reason }

@@ -502,6 +502,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     }));
   }
 
+  const runTiming = createRunTimingRecorder();
+  const artifactPrepare = opts.artifactPrepare ?? new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
+
   // Provider-native before-cache artifacts are a Run-level pre-dispatch gate.
   // At capacity one every unique prefix is completed serially and the live
   // prepare VM is released before any ordinary Attempt can acquire a VM.
@@ -509,6 +512,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     attempts,
     {
       runIds,
+      artifactPrepare,
       signal: opts.signal,
       maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
       onActivity: (event) => {
@@ -528,7 +532,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
   // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
   // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
   // 显式 buildPreparation 优先(测试注入);否则从 pair-owned ProviderPlan 自动收集。
-  const runTiming = createRunTimingRecorder();
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
   const buildFailureByPair = new Map<string, AttemptError>();
 
@@ -640,12 +643,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
     },
     catch: () => undefined,
   }).pipe(Effect.ignore);
-
-  // Run 级 Agent artifact prepare:由 attempt 内探测到目标 Sandbox 平台后触发 single-flight。
-  // 绝不能在这里按宿主平台 eager prepare：macOS 宿主跑 Linux Sandbox 会拿到错误制品。
-  const artifactPrepare =
-    opts.artifactPrepare ??
-    new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
 
   // The shared receiver belongs to this invocation Scope. Closing through its
   // finalizer covers ordinary completion, Record write failure, and interrupt

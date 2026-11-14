@@ -159,7 +159,7 @@ export function plannedBeforeCacheActions(
 }
 
 export function beforeCacheStep(
-  planned: PlannedBeforeCacheAction,
+  planned: Pick<PlannedBeforeCacheAction, "declaration" | "positions">,
   knownSensitiveValues?: readonly string[],
 ): BeforeCacheStep {
   return Object.freeze({

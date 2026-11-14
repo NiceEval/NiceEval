@@ -22,6 +22,8 @@ import {
 } from "../sandbox/runtime.ts";
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
+import { plannedAgentDerivedNode, type PlannedAgentDerivedNode } from "../sandbox/remote-snapshot/agent-derived.ts";
+import { ArtifactPrepareCoordinator, runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import type { Attempt } from "./types.ts";
 import { cacheKey } from "./fingerprint.ts";
 import { executeSandboxAction } from "./attempt.ts";
@@ -35,6 +37,7 @@ export interface PreparedBeforeCacheUse {
   readonly context: BeforeCachePreparationContext;
   readonly artifact?: BeforeCacheArtifact;
   readonly satisfiedActionCount: number;
+  readonly agentDerived?: true;
   readonly degraded?: { readonly reason: string; readonly operationId: string };
 }
 
@@ -92,6 +95,7 @@ export interface PrepareBeforeCachesOptions {
   readonly signal?: AbortSignal;
   readonly onActivity?: (event: BeforeCachePreparationActivityEvent) => void;
   readonly maxConcurrency?: number;
+  readonly artifactPrepare?: ArtifactPrepareCoordinator;
 }
 
 interface PreparationNode {
@@ -101,7 +105,7 @@ interface PreparationNode {
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
   readonly preparer: BeforeCachePreparer<void>;
   readonly context: BeforeCachePreparationContext;
-  readonly planned: PlannedBeforeCacheAction;
+  readonly planned: PlannedBeforeCacheAction | PlannedAgentDerivedNode;
   readonly actionIndex: number;
   readonly laneKey: string;
   readonly laneLimit: number;
@@ -205,6 +209,7 @@ function materializePreparationNode(
   ) => void,
   inherited?: MaterializedSandboxCase,
   onPrepared?: (result: PreparationWorkResult, staging: MaterializedSandboxCase) => Effect.Effect<void>,
+  artifactPrepare?: ArtifactPrepareCoordinator,
 ): Effect.Effect<PreparationWorkResult, Error, Scope.Scope> {
   return Effect.gen(function* () {
     const preparation = node.preparer;
@@ -217,7 +222,7 @@ function materializePreparationNode(
     {
       const candidate = node.planned;
       const actionIndex = node.actionIndex;
-      const actionId = candidate.entry.data.plan.id;
+      const actionId = "entry" in candidate ? candidate.entry.data.plan.id : "niceeval.agent-install";
       const feedback = preparationFeedback((message) =>
         onProgress("provider", actionIndex, actionId, message)
       );
@@ -261,16 +266,27 @@ function materializePreparationNode(
         const managed = sandboxCapabilities(owned.sandbox).managedProcess;
         const managedProcess = managed._tag === "Supported" ? managed.value : undefined;
         onProgress("action", actionIndex, actionId);
-        yield* Effect.tryPromise({
-          try: () => executeSandboxAction(
-            candidate.entry.data,
-            commandTarget,
-            managedProcess,
-            signal,
-            feedback.progress,
-          ),
-          catch: asError,
-        });
+        if ("entry" in candidate) {
+          yield* Effect.tryPromise({
+            try: () => executeSandboxAction(
+              candidate.entry.data, commandTarget, managedProcess, signal, feedback.progress,
+            ),
+            catch: asError,
+          });
+        } else {
+          const installed = yield* Effect.result(Effect.gen(function* () {
+            yield* verifySandboxTargetPlatform(owned.sandbox, node.plan.providerPlan.target.platform);
+            yield* runAgentInstall(candidate.installs, candidate.installers, owned.sandbox, {
+              coordinator: Option.fromNullishOr(artifactPrepare),
+              targetPlatform: node.plan.providerPlan.target.platform,
+              signal,
+              progress: feedback.progress,
+            });
+          }));
+          if (Result.isFailure(installed)) return {
+            outcome: "degraded" as const, reason: "agent-install-failed", operationId: `before-cache-${randomUUID()}`,
+          };
+        }
         onProgress("capture", actionIndex, actionId);
         const step = beforeCacheStep(candidate);
         const capture = yield* preparation.capture(undefined, node.context, owned, step).pipe(
@@ -306,6 +322,7 @@ export function prepareBeforeCaches(
   options: PrepareBeforeCachesOptions,
 ): Effect.Effect<BeforeCachePreparationResult, Error, Scope.Scope> {
   const program = Effect.gen(function* () {
+    const artifactPrepare = options.artifactPrepare ?? new ArtifactPrepareCoordinator();
     const nodes = new Map<string, PreparationNode>();
     const targets = new Map<string, PreparationTarget>();
     const contextsByPair = new Map<string, BeforeCachePreparationContext>();
@@ -342,19 +359,24 @@ export function prepareBeforeCaches(
       }
       if (eligibility._tag !== "Eligible") continue;
       const entries = continuousEligibleActions(attempt.plan, eligibility.coverage);
-      if (entries.length === 0) continue;
       const planned = plannedBeforeCacheActions(attempt.plan, entries, eligibility);
-      for (let index = 0; index < planned.length; index++) {
-        const candidate = planned[index]!;
+      const agent = attempt.run.agent;
+      const derived = preparation.supportsAgentDerived === true && agent?.kind === "sandbox"
+        ? plannedAgentDerivedNode(attempt.plan, eligibility, agent.install, agent.installers, planned.at(-1))
+        : undefined;
+      const candidates = derived === undefined ? planned : [...planned, derived];
+      if (candidates.length === 0) continue;
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index]!;
         const incoming: PreparationNode = {
           key: candidate.key,
-          ...(index === 0 ? {} : { parentKey: planned[index - 1]!.key }),
+          ...(index === 0 ? {} : { parentKey: candidates[index - 1]!.key }),
           representative: attempt,
           plan: attempt.plan,
           preparer: preparation,
           context,
           planned: candidate,
-          actionIndex: index + 1,
+          actionIndex: Math.min(index + 1, planned.length),
           laneKey: attempt.plan.providerPlan.scheduling.lane.key,
           laneLimit: attempt.plan.providerPlan.scheduling.lane.limit,
         };
@@ -373,7 +395,7 @@ export function prepareBeforeCaches(
           ));
         }
       }
-      const finalKey = planned.at(-1)!.key;
+      const finalKey = candidates.at(-1)!.key;
       const existingTarget = targets.get(finalKey);
       if (existingTarget === undefined) {
         targets.set(finalKey, { finalKey, pairKeys: [pairKey] });
@@ -405,7 +427,11 @@ export function prepareBeforeCaches(
     }
     type NodeResult = Result.Result<PreparationWorkResult, Error>;
     const completions = new Map<string, Deferred.Deferred<NodeResult>>();
-    for (const node of nodes.values()) completions.set(node.key, yield* Deferred.make<NodeResult>());
+    const retirements = new Map<string, Deferred.Deferred<void>>();
+    for (const node of nodes.values()) {
+      completions.set(node.key, yield* Deferred.make<NodeResult>());
+      retirements.set(node.key, yield* Deferred.make<void>());
+    }
     const claimed = new Set<string>();
     const stagingOffers = new Map<string, MaterializedSandboxCase>();
     const outcomes = new Map<string, "hit" | "prepared" | "degraded" | "failed">();
@@ -464,11 +490,13 @@ export function prepareBeforeCaches(
             // Publish the parent before waking the child, while its staging Scope
             // and both concurrency permits remain owned by this chain.
             yield* finish(Result.succeed(prepared));
-            yield* Deferred.await(completions.get(child.key)!);
-          })),
+            // Publication wakes descendants, but does not retire their borrowed
+            // staging. Keep the ancestor Scope open through the entire continuation.
+            yield* Deferred.await(retirements.get(child.key)!);
+          }), artifactPrepare),
         ));
         return yield* finish(result);
-      });
+      }).pipe(Effect.ensuring(Deferred.succeed(retirements.get(node.key)!, undefined)));
     });
 
     const terminal = new Map<string, NodeResult>(yield* Effect.all(
@@ -487,7 +515,8 @@ export function prepareBeforeCaches(
       while (cursor !== undefined) {
         const ancestor = terminal.get(cursor.key)!;
         if (Result.isSuccess(ancestor) && ancestor.success.outcome !== "degraded") {
-          use = { artifact: ancestor.success.artifact, satisfiedActionCount: cursor.actionIndex };
+          use = { artifact: ancestor.success.artifact, satisfiedActionCount: cursor.actionIndex,
+            ...("installs" in cursor.planned ? { agentDerived: true as const } : {}) };
           break;
         }
         cursor = cursor.parentKey === undefined ? undefined : nodes.get(cursor.parentKey);

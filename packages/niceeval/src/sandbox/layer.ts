@@ -539,6 +539,8 @@ export interface BeforeCachePreparationContext {
 
 export interface BeforeCachePreparer<Plan> {
   readonly continuesStaging: boolean;
+  /** Internal runtime capability; never serialized into a physical plan identity. */
+  readonly supportsAgentDerived?: true;
   readonly eligibility: (plan: Plan, context: BeforeCachePreparationContext) => Effect.Effect<BeforeCacheEligibility, BeforeCacheError>;
   readonly lookup: (
     plan: Plan, context: BeforeCachePreparationContext, stepsDeepestFirst: readonly BeforeCacheStep[],
@@ -1016,6 +1018,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
           _tag: "RunPrepared", coverage: support.coverage,
           preparer: {
             continuesStaging: support.preparer.continuesStaging,
+            ...(support.preparer.supportsAgentDerived === true ? { supportsAgentDerived: true as const } : {}),
             eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
             lookup: (_, context, steps) => support.preparer.lookup(input.runtimePlan, context, steps),
             materializeFrom: (_, context, purpose, source, materialize) => support.preparer.materializeFrom(input.runtimePlan, context, purpose, source, materialize),

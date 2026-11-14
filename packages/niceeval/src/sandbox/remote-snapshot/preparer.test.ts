@@ -1,14 +1,26 @@
 // cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Clock, Deferred, Effect, Fiber } from "effect";
+import { Clock, Deferred, Effect, Fiber, Option } from "effect";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { noSandboxBackendCapabilities, type BeforeCacheStep, type SandboxProviderBackend } from "../backend.ts";
 import type { MaterializedSandboxCase } from "../case-types.ts";
 import { computeCaseKey, digestOf } from "../identity.ts";
-import type { BeforeCachePreparationContext } from "../layer.ts";
+import { defineSandboxTemplate, sandboxProviderPlan, sandboxProviderBindingOf, type BeforeCachePreparationContext } from "../layer.ts";
+import { command, shell } from "../commands.ts";
+import { registerSandboxContent } from "../content.ts";
+import { linkSandboxLayers } from "../link.ts";
+import { planLinkedRuns } from "../plan.ts";
+import { prepareBeforeCaches } from "../../runner/before-cache-preparation.ts";
+import type { Attempt } from "../../runner/types.ts";
+import { ArtifactPrepareCoordinator, runAgentInstall } from "../../agents/provisioner.ts";
+import type { AgentInstall, AgentInstaller } from "../../agents/types.ts";
+import { AGENT_DOCKERFILE_CACHE_SAFE } from "../../agents/cache-marker.ts";
+import { defineSandboxAgent } from "../../define.ts";
+import { completeEvidenceCoverage } from "../../assertions/coverage.ts";
 import { normalizeSandboxPaths } from "../paths.ts";
 import type { SandboxRuntimeMaterializeContext } from "../runtime.ts";
 import { userDatabaseHost } from "../../user-database/index.ts";
@@ -22,6 +34,7 @@ const initialExecArgv = [...process.execArgv];
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "niceeval-snapshot-protocol-"));
   vi.stubEnv("NICEEVAL_HOME", home);
+  await writeFile(join(home, "payload"), "deterministic staged Agent payload");
   process.execArgv.push("--import", "tsx");
 });
 afterAll(async () => {
@@ -44,9 +57,15 @@ class RecordingBackend implements SandboxProviderBackend {
     if (command === "cat") return { exitCode: this.files.has(args[0]!) ? 0 : 1, stdout: this.files.get(args[0]!) ?? "", stderr: "" };
     if (command === "sh" && args[1]?.startsWith("install -d")) { this.files.set(args[4]!, args[3]!); return { exitCode: 0, stdout: "", stderr: "" }; }
     if (command === "sync") return { exitCode: 0, stdout: "", stderr: "" };
+    if (command === "/bin/sh") return this.runShell(args.at(-1)!);
+    if (command === "test") return { exitCode: this.files.has(args[1]!) ? 0 : 1, stdout: "", stderr: "" };
     throw new Error(`Unsupported recording Provider command: ${command}`);
   }
-  async runShell(): Promise<never> { throw new Error("Unused Provider operation"); }
+  async runShell(script: string) {
+    if (script.includes("uname -s")) return { exitCode: 0, stdout: "Linux\nx86_64\nglibc\n", stderr: "" };
+    this.files.set("last-action", script);
+    return { exitCode: 0, stdout: "", stderr: "" };
+  }
   async readText(path: string) { return this.files.get(path) ?? ""; }
   async writeText(path: string, content: string) { this.files.set(path, content); }
   async readBytes(path: string) { return Buffer.from(await this.readText(path)); }
@@ -122,6 +141,145 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
   return { domain, driver, step, context, instances, snapshots, deletions, lookups,
     snapshotCalls: () => snapshotCalls, makeUnavailable: () => { unavailable = true; } };
 }
+
+const targetPlatform = { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" } as const;
+function agentFixture(mode: "success" | "install-failed" | "recheck-missed" = "success") {
+  const identity = { agent: "recording-agent", version: "1.2.3", revision: "1" };
+  let prepares = 0, installs = 0;
+  const install: AgentInstall = { identity, probe: command("test", ["-f", "/opt/agent/ready"]) };
+  const installer: AgentInstaller = {
+    identity, installMode: "staged", [AGENT_DOCKERFILE_CACHE_SAFE]: true,
+    prepareArtifact: () => {
+      prepares++;
+      return { platform: targetPlatform, content: registerSandboxContent(pathToFileURL(join(home, "payload"))),
+        targetPath: "/opt/agent/payload", install: { kind: "self-contained", binPath: "bin/agent" } };
+    },
+    install: async (sandbox) => {
+      installs++;
+      if (mode === "install-failed") throw new Error("Provider rejected upload");
+      if (mode !== "recheck-missed") await sandbox.writeText("/opt/agent/ready", "1.2.3");
+    },
+  };
+  return { install, installer, prepares: () => prepares, installs: () => installs };
+}
+
+async function agentAttempts(
+  f: ReturnType<typeof fixture>, agent: ReturnType<typeof agentFixture>,
+  options: { continues?: boolean; actions?: number; second?: string; opaque?: string; safe?: boolean } = {},
+): Promise<Attempt[]> {
+  const preparer = remoteSnapshotPreparer({ ...f.driver, sourceUsableAfterSnapshot: options.continues ?? true });
+  const providerPlan = sandboxProviderPlan({ provider: "recording", plannerRevision: "1", caseKind: "prebuilt",
+    target: { platform: targetPlatform, source: "provider-defined" },
+    scheduling: { recommendedConcurrency: 2, lane: { key: f.domain, limit: 2 }, admission: { _tag: "Shared" } },
+    module: { id: f.context.providerId, capabilities: { retention: { _tag: "DestroyOnly" }, reuse: { _tag: "Unsupported", reason: "test" },
+      sessionLimit: { _tag: "Unlimited" } }, beforeCache: { _tag: "RunPrepared", coverage: "all", preparer },
+      materialize: (_plan, context) => f.context.materializeBase(context), collectBuildPreparation: () => Effect.succeed(Option.none()) },
+    runtimePlan: undefined,
+    build: { _tag: "None", caseKey: computeCaseKey({ caseKind: "prebuilt", materializerRevision: "recording", buildKeys: [], caseParams: {} }), buildKeys: [] },
+    publishableIdentity: {}, privateFingerprintIdentity: {},
+  });
+  let layer = defineSandboxTemplate({ provider: "recording", kind: "test", publishableIdentity: {}, privateFingerprintIdentity: {},
+    commandPlanLocator: { _tag: "Opaque", reason: { code: "test", summary: "Recording snapshot driver" } },
+    leakGate: { _tag: "None" }, plan: () => Effect.succeed(providerPlan) });
+  if ((options.actions ?? 2) > 0) layer = layer.before(shell({ id: "one", command: "one" }));
+  if ((options.actions ?? 2) > 1) layer = layer.before(shell({ id: "two", command: options.second ?? "two" }));
+  layer = layer.before(async (sandbox) => { await sandbox.writeText("opaque", options.opaque ?? "opaque"); })
+    .before(shell({ id: "after-opaque", command: "must-not-be-cached" }));
+  const pairs = await Effect.runPromise(linkSandboxLayers([{ eval: { id: "one" }, experiment: { id: "cloud", layer }, agent: { kind: "sandbox", name: "probe" } }]));
+  const planned = await Effect.runPromise(planLinkedRuns(pairs.map((pair) => ({ pair, authorBaseDirs: { eval: "/tmp", experiment: "/tmp" }, requirements: [] }))));
+  const installer = options.safe === false ? { ...agent.installer, [AGENT_DOCKERFILE_CACHE_SAFE]: undefined } : agent.installer;
+  const adapter = defineSandboxAgent({ name: "recording-agent", evidenceCoverage: completeEvidenceCoverage,
+    install: [agent.install], installers: [installer], send: async () => { throw new Error("Unused Agent send"); } });
+  return planned.map(({ plan }) => ({ plan, evalDef: { id: "one" }, run: { experimentId: "cloud", sandboxBeforeCache: "use",
+    agent: adapter } }) as Attempt);
+}
+
+// @feature docs/feature/sandbox/architecture/remote-snapshot-cache.md
+test.concurrent.each([true, false])("Agent snapshots warm all consumers before an opaque barrier and invalidate only changed descendants (continuous staging: %s)", { timeout: 30_000 }, async (continues) => {
+  const f = fixture("success"), agent = agentFixture();
+  const input = await agentAttempts(f, agent, { continues });
+  const coordinator = new ArtifactPrepareCoordinator();
+  const prepare = (attempts: Attempt[]) => prepareBeforeCaches(attempts, {
+    runIds: new Map([["cloud", randomUUID()]]), artifactPrepare: coordinator,
+  });
+  let initialKey: string | undefined;
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const result = yield* prepare([...input, ...input]);
+    expect([...result.failuresByPair.values()].map(String)).toEqual([]);
+    expect(result.summary).toMatchObject({ prepared: 3, failed: 0, degraded: 0 });
+    const use = [...result.preparedByPair.values()][0]!;
+    expect(use).toMatchObject({ satisfiedActionCount: 2, agentDerived: true });
+    initialKey = use.artifact!.beforeCacheKey;
+    expect(f.instances).toHaveLength(continues ? 1 : 3);
+    for (let index = 0; index < 2; index++) {
+      yield* Effect.scoped(Effect.gen(function* () {
+        // Consumers use the publishing preparer and its Run hold.
+        const row = [...f.snapshots.values()].find((snapshot) => snapshot.files.has("/opt/agent/ready"))!;
+        expect(row.files.get("last-action")).toContain("two");
+        expect(row.files.has("opaque")).toBe(false);
+        if (input[0]!.plan._tag !== "Sandbox") throw new Error("Expected Sandbox plan");
+        const binding = Option.getOrThrow(sandboxProviderBindingOf(input[0]!.plan.providerPlan));
+        if (binding.beforeCache._tag !== "RunPrepared") throw new Error("Expected prepared binding");
+        const consumer = yield* binding.beforeCache.preparer.materializeFrom(undefined, use.context, "consumer", { _tag: "Artifact", artifact: use.artifact! }, materialize);
+        if (consumer._tag !== "Materialized") throw new Error("Expected consumer");
+        expect(consumer.start._tag).toBe("Restored");
+        const installed = yield* runAgentInstall([agent.install], [agent.installer], consumer.sandbox.sandbox, {
+          coordinator: Option.some(coordinator), targetPlatform, signal: yield* Effect.abortSignal, progress: () => undefined,
+        });
+        expect(installed).toMatchObject([{ outcome: "hit" }]);
+      }));
+    }
+  })));
+  expect(agent.prepares()).toBe(1);
+  expect(agent.installs()).toBe(1);
+  expect(f.instances.every((instance) => instance.stopped)).toBe(true);
+  const opaqueChanged = await agentAttempts(f, agent, { continues, opaque: "changed" });
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const warm = yield* prepare(opaqueChanged);
+    expect(warm.summary).toMatchObject({ hit: 3, prepared: 0 });
+    expect([...warm.preparedByPair.values()][0]!.artifact!.beforeCacheKey).toBe(initialKey);
+  })));
+  const changed = await agentAttempts(f, agent, { continues, second: "two-updated" });
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const rebuilt = yield* prepare(changed);
+    expect(rebuilt.summary).toMatchObject({ hit: 1, prepared: 2, failed: 0 });
+    expect([...rebuilt.preparedByPair.values()][0]!.artifact!.beforeCacheKey).not.toBe(initialKey);
+  })));
+  expect(agent.prepares()).toBe(1); // Same Run-level payload cache also serves the rebuilt branch.
+  expect(agent.installs()).toBe(2);
+  expect(f.instances.every((instance) => instance.stopped)).toBe(true);
+});
+
+// @feature docs/feature/sandbox/architecture/remote-snapshot-cache.md
+test.concurrent.each(["install-failed", "recheck-missed"] as const)("Agent preparation %s degrades to its published parent without failing the pair", { timeout: 30_000 }, async (mode) => {
+  const f = fixture("success"), agent = agentFixture(mode);
+  const input = await agentAttempts(f, agent);
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const result = yield* prepareBeforeCaches(input, { runIds: new Map([["cloud", randomUUID()]]) });
+    expect(result.failuresByPair.size).toBe(0);
+    expect(result.summary).toMatchObject({ prepared: 2, degraded: 1, failed: 0 });
+    const use = [...result.preparedByPair.values()][0]!;
+    expect(use).toMatchObject({ satisfiedActionCount: 2, degraded: { reason: "agent-install-failed" } });
+    expect(use.agentDerived).toBeUndefined();
+    expect(use.artifact!.beforeCacheKey).toMatch(/^prefix:/);
+    expect(f.snapshotCalls()).toBe(2);
+  })));
+  expect(f.instances.every((instance) => instance.stopped)).toBe(true);
+});
+
+// @feature docs/feature/sandbox/architecture/remote-snapshot-cache.md
+test.concurrent.each([true, false])("an empty eligible chain derives directly from Base only for cache-safe installers (safe: %s)", { timeout: 30_000 }, async (safe) => {
+  const f = fixture("success"), agent = agentFixture();
+  const input = await agentAttempts(f, agent, { actions: 0, safe });
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const result = yield* prepareBeforeCaches(input, { runIds: new Map([["cloud", randomUUID()]]) });
+    expect(result.summary).toMatchObject({ total: safe ? 1 : 0, prepared: safe ? 1 : 0, failed: 0 });
+    if (safe) expect([...result.preparedByPair.values()][0]).toMatchObject({ satisfiedActionCount: 0, agentDerived: true });
+    else expect(result.preparedByPair.size).toBe(0);
+  })));
+  expect(agent.installs()).toBe(safe ? 1 : 0);
+  expect(f.instances.every((instance) => instance.stopped)).toBe(true);
+});
 
 // @feature docs/feature/sandbox/architecture/remote-snapshot-cache.md
 test.concurrent.each(["ready", "pending", "absent-before-settle", "absent-after-settle"] as const)("uncertain snapshot requests remain accounted for and settle by exact name when remote status is %s", { timeout: 30_000 }, async (status) => {
