@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { assembleCommandPlan, beforeCachePlanOf, type CommandPlan, type BeforeCachePlan } from "../../runner/command-plan.ts";
-import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
+import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
 import { resolveRunTimeout } from "../../runner/timeout.ts";
@@ -59,8 +59,9 @@ function discoverSelection(input: {
     const evals = input.tag === undefined
       ? discoveredEvals
       : discoveredEvals.filter((evalDefinition) => evalDefinition.tags?.includes(input.tag!));
-    const experiments = yield* discoverExperiments(input.cwd);
-    const experimentIds = Object.freeze(experiments.map((experiment) => experiment.id));
+    const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
+      select: input.selector === undefined ? undefined : (ids) => matchExperimentSelector(ids, input.selector!),
+    });
     const selectedIds = input.selector === undefined
       ? undefined
       : new Set(matchExperimentSelector(experimentIds, input.selector));

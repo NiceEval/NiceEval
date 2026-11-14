@@ -852,6 +852,14 @@ export function discoverEvals(
   );
 }
 
+function experimentIdOfFile(file: string, experimentsDir: string): string {
+  return relative(experimentsDir, file)
+    .replace(/\.ts$/, "")
+    .replace(/\.experiment$/, "")
+    .split(sep)
+    .join("/");
+}
+
 // @concord-code
 // @concord-implements docs/feature/experiments/library/README.md
 function discoverExperimentFile(
@@ -865,38 +873,63 @@ function discoverExperimentFile(
     const imported = yield* importModule(file, root, "experiment", load);
     const module = yield* decodeExperimentModule(imported, fileLabel);
     if (module.default === undefined) return Object.freeze([]);
-    const id = relative(experimentsDir, file)
-      .replace(/\.ts$/, "")
-      .replace(/\.experiment$/, "")
-      .split(sep)
-      .join("/");
     return Object.freeze([discoverExperiment(module.default, {
-      id,
+      id: experimentIdOfFile(file, experimentsDir),
       baseDir: dirname(file),
       sourcePath: file,
     })]);
   });
 }
 
+export interface ExperimentDiscoveryOptions {
+  readonly freshImport?: boolean;
+  readonly generation?: FreshImportGeneration;
+  /**
+   * Chooses the Experiments to load from every candidate id, which comes from
+   * the file path alone. Unselected files are never imported, so a broken or
+   * slow Experiment file cannot fail a command that targets another one.
+   * Omit it to load every Experiment.
+   */
+  readonly select?: (ids: readonly string[]) => readonly string[];
+}
+
+export interface ExperimentDiscovery {
+  readonly experiments: readonly DiscoveredExperiment[];
+  /** Every Experiment id, including files that were not imported because they were not selected. */
+  readonly experimentIds: readonly string[];
+}
+
 /** Discovery remains in Effect through selection/planning; an adapter host closes it. */
 // @concord-code
 // @concord-implements docs/feature/experiments/README.md
 // @concord-implements docs/feature/experiments/library/README.md
-export function discoverExperiments(
+export function discoverExperimentSelection(
   root: string,
-  options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},
-): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
+  options: ExperimentDiscoveryOptions = {},
+): Effect.Effect<ExperimentDiscovery, DiscoveryError> {
   const dir = join(root, "experiments");
-  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> =>
+  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<ExperimentDiscovery, DiscoveryError> =>
     walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
-    Effect.flatMap((files) => Effect.partition(
-      files,
-      (file) => discoverExperimentFile(file, root, dir, load),
-      { concurrency: 1 },
-    )),
-    Effect.flatMap(([groups, errors]) => errors.length > 0
-      ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
-      : Effect.succeed(Object.freeze(groups.flat()))),
+    Effect.flatMap((files) => {
+      const ids = files.map((file) => experimentIdOfFile(file, dir));
+      const chosen = options.select === undefined ? undefined : new Set(options.select(ids));
+      const selectedFiles = chosen === undefined ? files : files.filter((_, index) => chosen.has(ids[index]!));
+      return Effect.partition(
+        selectedFiles,
+        (file) => discoverExperimentFile(file, root, dir, load).pipe(
+          Effect.map((experiments) => ({ file, experiments })),
+        ),
+        { concurrency: 1 },
+      ).pipe(Effect.flatMap(([loaded, errors]) => {
+        if (errors.length > 0) return Effect.fail(discoveryError(errors.flatMap((error) => error.issues)));
+        // A loaded file without a default export is not an Experiment; unloaded files keep their path id.
+        const notExperiments = new Set(loaded.filter(({ experiments }) => experiments.length === 0).map(({ file }) => file));
+        return Effect.succeed(Object.freeze({
+          experiments: Object.freeze(loaded.flatMap(({ experiments }) => experiments)),
+          experimentIds: Object.freeze(files.flatMap((file, index) => notExperiments.has(file) ? [] : [ids[index]!])),
+        }));
+      }));
+    }),
   );
   if (options.generation !== undefined) return discoverWith(options.generation.import);
   if (!options.freshImport) return discoverWith(cachedModuleLoader);
@@ -905,6 +938,14 @@ export function discoverExperiments(
       Effect.flatMap((fresh) => discoverWith(fresh.import)),
     ),
   );
+}
+
+/** Loads every Experiment; use discoverExperimentSelection when a command targets only some. */
+export function discoverExperiments(
+  root: string,
+  options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},
+): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
+  return discoverExperimentSelection(root, options).pipe(Effect.map(({ experiments }) => experiments));
 }
 
 /** eval id 的裸字面前缀过滤；exp 与固定读取面共用 shared helper。 */

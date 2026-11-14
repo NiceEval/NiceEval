@@ -10,7 +10,7 @@ import { ProjectStateDatabase } from "../../record/sqlite/project-state-database
 import { acceptLocators, acceptRun, planAcceptRun, planAcceptLocators } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
 import { computeExitCode } from "../../runner/feedback/json.ts";
-import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
+import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { acquireFreshImportGeneration, type FreshImportGeneration } from "../../fresh-import.ts";
 import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval-selection.ts";
 import { planProjectTarget } from "../../runner/fingerprint.ts";
@@ -278,8 +278,14 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
     const evals = input.tag === undefined
       ? discovered
       : discovered.filter((definition) => definition.tags?.includes(input.tag!));
-    const experiments = yield* discoverExperiments(input.cwd, { generation });
-    const experimentIds = freezeArray(experiments.map((experiment) => experiment.id));
+    const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
+      generation,
+      select: input.experimentIds !== undefined
+        ? () => input.experimentIds!
+        : input.experimentSelector === undefined
+          ? undefined
+          : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
+    });
     const selectedIds = input.experimentIds !== undefined
       ? new Set(input.experimentIds)
       : input.experimentSelector === undefined

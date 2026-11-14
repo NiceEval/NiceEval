@@ -4,7 +4,7 @@ import { Clock, Effect, Result } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 import { cleanupCallback } from "../../runner/cleanup-timeout.ts";
-import { discoverEvals, discoverExperiments } from "../../runner/discover.ts";
+import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
 import {
   beginExplicitSharedStateRecoveryEffect,
@@ -87,8 +87,11 @@ function selectTeardowns(input: {
 }): Effect.Effect<TeardownSelection, unknown> {
   return Effect.gen(function* () {
     const evals = yield* discoverEvals(input.cwd);
-    const experiments = yield* discoverExperiments(input.cwd);
-    const experimentIds = freezeArray(experiments.map((experiment) => experiment.id));
+    const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
+      select: input.experimentSelector === undefined
+        ? undefined
+        : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
+    });
     const matched = input.experimentSelector === undefined
       ? experiments
       : experiments.filter((experiment) =>
