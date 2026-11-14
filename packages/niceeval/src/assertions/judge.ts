@@ -7,6 +7,7 @@
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
 
+import { conversationMaterialOf, copyConversationProjection, trimConversationMaterial } from "./conversation-material.ts";
 import { Effect, Predicate } from "effect";
 import { defineScoreMatch, type ScoreMatch } from "./match.ts";
 import type { JsonValue } from "../shared/types.ts";
@@ -137,6 +138,8 @@ export interface CapturedImageReference {
 }
 interface SnapshotState { nodes: number; readonly ancestors: WeakSet<object>; readonly images?: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>; imageBytes?: number; imageReferences?: number; }
 function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path = ""): unknown {
+  const conversation = conversationMaterialOf(value);
+  if (conversation !== undefined) return snapshotMaterial(conversation, state, depth, path);
   state.nodes += 1;
   if (state.nodes > 2_097_152) throw new TypeError("Judge material exceeds 2,097,152 traversal nodes");
   if (depth > 72) throw new TypeError("Judge material exceeds depth 72");
@@ -191,7 +194,9 @@ function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path 
       if (typeof key !== "string" || !("value" in descriptor)) throw new TypeError("Judge material enumerable properties must be string data properties");
       if (descriptor.value !== undefined) entries.push([key, snapshotMaterial(descriptor.value, state, depth + 1, `${path}/${key.replace(/~/gu, "~0").replace(/\//gu, "~1")}`)]);
     }
-    return Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))));
+    const captured = Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))));
+    copyConversationProjection(value, captured);
+    return captured;
   } finally { state.ancestors.delete(value); }
 }
 /** @internal Shared strict call-time capture for all managed Match material. */
@@ -199,11 +204,13 @@ export function snapshotScoreMatchMaterial(value: unknown): JsonValue {
   return snapshotMaterial(value, { nodes: 0, ancestors: new WeakSet() }) as JsonValue;
 }
 
-export function snapshotJudgeMaterial(value: JudgeMaterial): { readonly material: JudgeMaterial; readonly images: readonly CapturedImageReference[]; readonly imageByValue: ReadonlyMap<JudgeImage, CapturedImageReference> } {
+export function snapshotJudgeMaterial(value: JudgeMaterial, maximumBytes = Infinity): { readonly material: JudgeMaterial; readonly images: readonly CapturedImageReference[]; readonly imageByValue: ReadonlyMap<JudgeImage, CapturedImageReference> } {
   const state: SnapshotState = { nodes: 0, ancestors: new WeakSet(), images: new Map(), imageBytes: 0, imageReferences: 0 };
-  const material = snapshotMaterial(value, state) as JudgeMaterial;
+  const untrimmed = snapshotMaterial(value, state) as JudgeMaterial;
   const images = [...state.images!.entries()].map(([image, identity]): CapturedImageReference => Object.freeze({ image, ...identity, ...((({ mediaType, byteLength, sha256 }) => ({ mediaType, byteLength, sha256 }))(readJudgeImage(image))), paths: Object.freeze([...identity.paths]) }));
-  return Object.freeze({ material, images: Object.freeze(images), imageByValue: new Map(images.map((item) => [item.image, item])) });
+  const imageByValue = new Map(images.map((item) => [item.image, item]));
+  const material = trimConversationMaterial(untrimmed, maximumBytes, (item) => JSON.stringify(projectJudgeMaterial(item, imageByValue).json));
+  return Object.freeze({ material, images: Object.freeze(images), imageByValue });
 }
 
 export function projectJudgeMaterial(value: JudgeMaterial, images: ReadonlyMap<JudgeImage, CapturedImageReference>): { readonly json: JsonValue; readonly parts: readonly CapturedImageReference[] } {

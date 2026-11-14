@@ -1,10 +1,11 @@
+import type { TurnHandle, SessionHandle } from "../context/types.ts";
 import { createHash } from "node:crypto";
 
 declare const judgeImageBrand: unique symbol;
 /** An immutable image snapshot created by judgeImage, not an ordinary JSON object. */
 export interface JudgeImage { readonly [judgeImageBrand]: true }
-/** Supplies JSON-like values and explicitly constructed Judge images; arbitrary class instances or filesystem paths do not become image evidence. */
-export type JudgeMaterial = null | boolean | number | string | JudgeImage | readonly JudgeMaterial[] | { readonly [key: string]: JudgeMaterial };
+/** Supplies JSON-like values, managed Turn/Session handles and explicitly constructed Judge images; arbitrary class instances or filesystem paths do not become image evidence. */
+export type JudgeMaterial = null | boolean | number | string | JudgeImage | TurnHandle<"pass"> | TurnHandle<"score"> | SessionHandle<"pass"> | SessionHandle<"score"> | readonly JudgeMaterial[] | { readonly [key: string]: JudgeMaterial };
 /** Supplies original PNG or JPEG bytes for synchronous copying, at most 4 MiB per image; paths, URLs and mismatched MIME types are rejected. */
 export interface JudgeImageInput {
   /** Original encoded image bytes; copied synchronously, at most 4 MiB. */

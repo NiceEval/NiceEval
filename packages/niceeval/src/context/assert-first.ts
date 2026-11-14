@@ -1,3 +1,4 @@
+import { bindConversationMaterial, projectConversation } from "../assertions/conversation-material.ts";
 import { AttemptNotesCollector } from "./notes.ts";
 import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
 import { canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
@@ -2091,6 +2092,15 @@ export function createAssertFirstEvalContext(
 
   // @concord-code
   // @concord-implements docs/feature/eval/README.md
+  const conversationTurn = (turn: MatcherScopeTurn) => ({
+    events: turn.events,
+    reply: lastAssistantText(turn.events) ?? "",
+    partial: ["events", "messages", "actions"].flatMap(channel => {
+      const coverage = manager.observedTurnState(turn.observed)?.coverage[channel as "events" | "messages" | "actions"];
+      return coverage?.status === "complete" ? [] : [coverage?.reason ?? `${channel}-unavailable`];
+    }),
+  });
+
   const makeTurn = <Kind extends RuntimeKind>(
     scope: SessionScopeState,
     turn: Turn,
@@ -2216,7 +2226,7 @@ export function createAssertFirstEvalContext(
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, eventOccurrences, inOrder(matches));
     };
     const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readTurnUsage);
-    return Object.freeze({
+    return bindConversationMaterial(Object.freeze({
       input: snapshot.input,
       events: snapshot.events,
       inputRequests: Object.freeze(snapshot.events.flatMap(event => event.type === "input.requested" ? [freezeInputRequest(event.request)] : [])),
@@ -2249,7 +2259,7 @@ export function createAssertFirstEvalContext(
       eventOrder,
       maxTokens,
       maxCost,
-    });
+    }), () => projectConversation([conversationTurn(matcherTurn)]));
   };
 
   const sendEffect = <Kind extends RuntimeKind>(
@@ -2355,7 +2365,7 @@ export function createAssertFirstEvalContext(
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, sessionEventOccurrences(), inOrder(matches));
     };
     const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readSessionUsage);
-    return Object.freeze({
+    return bindConversationMaterial(Object.freeze({
       send: (input: string | { readonly text: string; readonly files?: readonly InputFile[] }) => {
         const text = typeof input === "string" ? input : input.text;
         const files = typeof input === "string" ? undefined : input.files;
@@ -2445,7 +2455,7 @@ export function createAssertFirstEvalContext(
       eventOrder,
       maxTokens,
       maxCost,
-    });
+    }), () => projectConversation(scope.turns.map(conversationTurn)));
   };
 
   const primaryScope: SessionScopeState = {

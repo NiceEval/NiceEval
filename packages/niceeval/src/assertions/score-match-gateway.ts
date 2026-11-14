@@ -1,3 +1,4 @@
+import { containsConversationMaterial, conversationMaterialRevision } from "./conversation-material.ts";
 import { Cause, Clock, Effect, Fiber, Random, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
@@ -296,13 +297,13 @@ export function prepareManagedScoreMatch(input: {
 }): MeasurementAssertionRegistration & { readonly terminalEvidence: () => readonly AssertionMaterial[]; readonly actualRetainedBytes: () => number } {
   const { options } = input;
   let deadlineAt = Infinity;
-  const snapshot = snapshotJudgeMaterial(input.material as JudgeMaterial);
+  const snapshot = snapshotJudgeMaterial(input.material as JudgeMaterial, options.llm.maxMaterialBytes - 13);
   const material = snapshot.material;
   const imageByValue = snapshot.imageByValue;
   const images = snapshot.images;
   const captured = canonical(projectJudgeMaterial(material, imageByValue).json);
   const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }).material;
-  const definitionBase = { name: options.name, version: options.version, config: options.canonicalConfig, limits: options.llm };
+  const definitionBase = { name: options.name, version: options.version, config: containsConversationMaterial(material) ? canonical({ definition: JSON.parse(options.canonicalConfig), conversationMaterialRevision }) : options.canonicalConfig, limits: options.llm };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
   const auditProtocol = images.length > 0 ? imageProtocol : typesafe ? typesafeProtocol : chatProtocol;
