@@ -449,10 +449,13 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDefinition.setup`](../../experiments/library/README.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDefinition.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
 | **这次实验**才知道的沙箱内内容(工具检查与安装、小配置、预检) | Experiment layer 的 [`before()`](layers.md);每次 occurrence 可以 restore 或 replay | 成功取得的外部资源用 `context.onCleanup()` 登记释放;沙箱内文件随销毁自动没了 |
 | **这条 eval** 的题目准备(checkout、依赖)与任务 Fixture | Eval layer 的 [`before()`](layers.md),或 `test(t)` 里的普通代码(`t.sandbox.writeText` / `writeBytes` / `runCommand`) | 随沙箱销毁或题间 reset;无条件收尾用 `after()`,条件释放用 `context.onCleanup()` |
+| 外部凭据与密钥(目标应用的 API key、每 Attempt 一份的 token) | callback before(`defineSandboxCommand()`)写入 Sandbox；它始终真实执行，截断后续共享捕获，凭据不进入任何缓存前缀或 identity | 随 Sandbox 销毁 |
 | Agent CLI 的精确版本(每 Attempt 探测) | Adapter 必填 `install` + identity 匹配的 [`AgentInstaller`](../../adapters/architecture/agent-install.md)；Runner 负责 探测、缺失时安装、复检 | 安装失败归 `agent.install`；安装的文件随 Sandbox 销毁或题间复用策略处理 |
 | 连 agent、写鉴权、主配置与扩展(每 Attempt 一次) | [`SandboxAgent.before`](../../adapters/architecture/agent-contract.md#生命周期不变量)；要读写 Agent 安装文件的后续脚本走 factory 的 [`postSetup`](../../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup) | 随 Sandbox 销毁；要收尾的动作挂成对的 `preTeardown`，逆序且先于 Agent teardown |
 | 跨 Attempt 的沙箱内状态(记忆库、累积笔记) | Experiment callback before 恢复状态并用 `context.onCleanup()` 登记回存；planning 验证 owner 对 cohort 稳定 | cleanup 在最后一个 Attempt 后、provider finalizer 前逆序运行；`maxConcurrency: 1` 只保证本 Invocation 串行，多个 Invocation 共用 checkpoint 时还要声明 Experiment `sharedState.key` |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
+
+每一行内部也按步拆开：Ready 之后的准备一步写一个 `.before()`，不把多步合进一个 shell 脚本（[T-36](../../../taste.md#t-36)）。
 
 分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内)。
 宿主机侧、每实验一份的服务进 `ExperimentDefinition.setup`;沙箱内、按实验变的安装内容(装什么、开不开预热)进 Experiment layer。

@@ -244,3 +244,17 @@ core 偏向某个 provider 或 adapter，其它接入就只能绕路。边界以
 
 - 好的样子：目录按用户要做的事划分；一个功能的契约目录、源码目录和验收仓库用同一个词；功能自己拥有它的命令、宿主入口和错误文案，公共层只做组合与路由。
 - 坏的样子：按技术层堆出 `utils`、`helpers`、`services`；一个功能的命令散落在全局命令文件里；为了复用把两个功能的内部结构互相引用。
+
+## T-35 定义直接展开写，不包工厂函数 {#t-35}
+
+一个文件就是一份 Experiment、Eval 或 Sandbox 声明。外面套一个“传版本号、返回整份定义”的函数，读者打开文件只看到一次调用，要跳进函数才知道被测的是什么；两个候选想有一处不同，函数就长出参数和分支。这是 [T-26](#t-26) 在 Experiment 上的延伸，也是 [T-18](#t-18) 的同一种克制。
+
+- 好的样子：每个 Experiment 文件写出完整的 `defineExperiment({ ... })`，几个文件之间重复几行可以接受；确实共用的是值（一个模型名、一个 layer 值），就导出值，读起来仍是数据。
+- 坏的样子：`experiments/<族>/<版本>.ts` 只有一行 `export default familyExperiment("v0.20.0", "稳定版")`；为了少写三个字段把 adapter、sandbox 和选题都藏进一个构造函数，再用参数开关表达候选之间的差异。
+
+## T-36 每类准备交给它的机制，不藏进脚本 {#t-36}
+
+NiceEval 为每类准备都给了位置：起点进 Provider 模板或快照，Ready 之后的确定性步骤进 layer 的 `.before()` 链，凭据进每次真实执行的 callback，Agent CLI 由 Adapter 的 install 负责，题目材料进 Eval layer 或 `test(t)`；对应表见[沙箱预置放哪](feature/sandbox/library/README.md#沙箱预置放哪)。把多步合进一个 shell 脚本，产品就只看见一个不透明的节点：进度、失败归因、缓存前缀和 [T-31](#t-31) 的慢路径原因都随之丢失，第七步失败要把前六步重做一遍。
+
+- 好的样子：一步一个 `.before()`，用 `command`、`uploadDirectory`、`writeText` 等声明式 action 按书写顺序排（[T-29](#t-29)），内容变了只重做这一步及其后续（[T-30](#t-30)）；`shell` 只用于本身就是一步的 shell 逻辑；产品已经负责的事（Agent CLI 安装、公共镜像里的工具链）不在准备里重做一遍。
+- 坏的样子：一个 80 行的 `prepare.sh` 依次装 Node、pnpm、Agent CLI 再拉镜像，作为一个 action 执行；为了排顺序给 `changeFrequency` 加一、加二、加三；为了绕开 Agent 安装慢而预装 CLI，却没有让产品知道安装应该可缓存（[T-33](#t-33)）。某类准备找不到合适的机制，就是产品缺口，补进上表，而不是在下游写脚本。
