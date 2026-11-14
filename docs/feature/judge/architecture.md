@@ -220,11 +220,11 @@ telemetry.collect 可以继续收口被测应用的迟到数据，但必须按�
 
 Agent Judge 就是一个 pi agent：NiceEval 只提供 system prompt、工具与开场材料，对话循环、模型请求、上下文与压缩都交给 pi，不另写传输或消息副本。
 
-- 宿主创建 pi-agent-core 的 `AgentHarness`，`models` 只含一个由受管 Provider 生效配置构造的 pi-ai 模型：Chat Completions API、生效的 endpoint、headers、模型 ID 与凭据。不使用 pi 默认的 provider 注册表或环境变量选择模型、端点或凭据。
+- 宿主创建 pi-agent-core 的 `AgentHarness`，`models` 只含一个由受管 Provider 生效配置构造的 pi-ai 模型：Chat Completions API、生效的 endpoint、headers、模型 ID 与凭据。不使用 pi 默认的 provider 注册表或宿主进程变量选择模型、端点或凭据。
 - 工具是 pi 的 `AgentHarnessTool`：bash、read、write、edit 绑定当前 Attempt 主 Sandbox，submit_evaluation 交评分。参数校验与有限结果由 NiceEval 的工具实现负责。
 - 每道 `chat` 或 `judge` 作为一次 harness prompt 发出，同一会话复用同一个 harness 与 session，因此后面的题能看到前面的历史。
-- 审计、发送前预算与取消落在 pi 的 Provider 扩展点：NiceEval 交给 harness 的 `Models` 里只有一个 provider，它委托 pi-ai 的 openai-completions 实现发请求，并在委托前后记录请求与响应、做发送前预算、绑定会话的取消信号与期限。普通轮次与 `compact()` 的摘要请求都经 `Models` 发出，因此走同一条路径，不依赖 harness 只在普通轮次触发的 provider hooks。
-- NiceEval 在 prompt 前订阅 harness 事件、结束时取消订阅，用工具事件形成工具记录、用 `session_compact` 记录压缩。用量取 pi 返回的 usage，按受管 Provider 的显式估价计价。
+- 审计、发送前预算与取消落在 pi 的 Provider 扩展点：NiceEval 交给 harness 的 `Models` 里只有一个 provider，它委托 pi-ai 的 openai-completions 实现发请求，并在委托前后保存请求与响应、做发送前预算、绑定会话的取消信号与期限。普通轮次与 `compact()` 的摘要请求都经 `Models` 发出，因此走同一条路径，不依赖 harness 只在普通轮次触发的 provider hooks。
+- NiceEval 在 prompt 前订阅 harness 事件、结束时取消订阅，用工具事件形成工具调用事实、用 `session_compact` 得到压缩事实。用量取 pi 返回的 usage，按受管 Provider 的显式估价计价。
 - 适配遵守 [pi-agent-core](../adapters/library/sdk/pi-agent-core/README.md) 的真实 subscribe 边界。
 - 工具结果只作为不可信 tool 内容返回，文件、命令输出和模型文字都不能升级成 system 规则。
 - 所选模型的工具能力由实际请求验证，不额外发探测请求。TypeSafe 在准入前拒绝，保留 not-sent 审计与完整空用量账本，不创建 harness。
@@ -237,7 +237,7 @@ Agent Judge 就是一个 pi agent：NiceEval 只提供 system prompt、工具与
 - 压缩不消耗当前评分题的 `maxTurns`。已提交的评分题保存在会话之外，不受压缩影响。
 - 每次溢出最多压缩一次再重发。压缩失败、无可压缩内容，或压缩后仍然溢出时，当前与之后的评分题为 `unavailable`（`agent-judge-context-overflow`），已提交的题保留各自的 measurement。
 - 只处理模型明确报告的溢出；静默截断输入的 Provider 无法检测。
-- 会话轨迹按发生位置记录每次压缩：触发它的轮次、压缩前 token、摘要请求与摘要文本。`show --assertions --entry <id> --full` 显示它。
+- 会话轨迹在发生位置写入每次压缩：触发它的轮次、压缩前 token、摘要请求与摘要文本。`show --assertions --entry <id> --full` 显示它。
 
 ### 预算与关闭
 

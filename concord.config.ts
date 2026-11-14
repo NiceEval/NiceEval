@@ -1,11 +1,6 @@
 export default {
   "testRoots": ["e2e"],
   "sourceRoots": ["packages/niceeval/src"],
-  "runner": {
-    "kind": "node-test",
-    "sourceFiles": [],
-    "timeoutMs": 60000
-  },
   "testAdapters": [{
     "id": "niceeval-e2e",
     "include": [
@@ -24,7 +19,6 @@ export default {
     "frameworkVersion": "niceeval-e2e/1",
     "envNames": ["PATH", "HOME", "TMPDIR", "CI"],
     "collectTimeoutMs": 600000,
-    "runTimeoutMs": 7200000,
     "wallTimeoutMs": 7200000
   }],
   "feedbackConnections": [

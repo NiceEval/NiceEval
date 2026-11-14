@@ -207,7 +207,7 @@ instructions 属于可信作者输入，不把被测 Agent 的回复提升为系
 
 pi 上下文、Models、压缩与 HTTP 关闭沿用 [Agent Judge 的受管路径](../judge/architecture.md#pi-与受管-provider)。
 每次 reply 最多 4 轮普通生成，每次溢出最多压缩一次再重发；摘要调用不占普通轮数，但计入同一期限、审计与物理用量。
-单次 reply 的墙钟期限为定义上限与 Attempt 剩余期限的较小值，覆盖生成、压缩、资源收拢与下一轮发送；Provider 的单请求上限继续有效。
+单次 reply 的墙钟期限为定义上限与 Attempt 剩余期限的较小值，包含生成、压缩、资源收拢与下一轮发送；Provider 的单请求上限继续有效。
 模拟用户请求审计每次 reply 最多 4 MiB，累积历史按每次实际请求的完整 bytes 计量；容量不足时在新请求前拒绝，不截断已准入正文或合法提交。
 
 Attempt 终止先关闭提交和新请求准入，再取消 harness 与 HTTP 并解除订阅，按已有有界关闭规则等待释放。
@@ -216,7 +216,7 @@ Attempt 终止先关闭提交和新请求准入，再取消 harness 与 HTTP 并
 
 模拟用户审计与执行活动绑定源 Session、源 Turn 和新 Turn，内部模型历史与被测 Agent history 分别归各自 owner。
 被测 Agent 只收到最终普通消息或结构化 responses；它的 history 不包含模拟用户的 instructions、内部工具调用或压缩摘要。
-模拟用户的用量随执行活动记录保存，不进入 Judge collector；费用汇总按活动记录聚合出 `simulated-user` 来源，不把模拟用户活动冒充评分 entry。
+模拟用户的用量随执行活动事实持久化，不进入 Judge collector；费用汇总按这些活动事实聚合出 `simulated-user` 费用类别，不把模拟用户活动冒充评分 entry。
 
 ## 观测、评分与发布
 

@@ -61,7 +61,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 
 模拟用户由 NiceEval 在宿主进程里用 pi-agent-core 的 `AgentHarness` 运行，复用 [Agent Judge](../../judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 的 pi 运行时与受管 Provider 路径（可选依赖、`Models` provider 内的审计、预算与取消、溢出时压缩）。
 
-- 模型取这条 Eval × Experiment 生效的 Judge Provider 与模型，包含模型覆盖、endpoint、凭据声明和协议配置，不新增独立模型配置。模拟用户是执行输入生成者，共用 Provider 不使它成为评分者。
+- 模型取这条 Eval × Experiment 生效的 Judge Provider 与模型，包含 Experiment 替换后的模型、endpoint、凭据声明和协议配置，不新增独立模型配置。模拟用户是执行输入生成者，共用 Provider 不使它成为评分者。
 - `TypesafeProvider` 不支持，`reply` 抛出 `simulated-user-unsupported-provider`；拒绝发生在创建 harness、读取凭据与发送之前。未配置 Provider 或缺少可选 pi 依赖同样零发送，报告 `simulated-user-failed` 与具名 reason。
 - 没有 Sandbox 工具：模拟用户只读被测 agent 的提问，不查看现场。唯一的工具是 `reply_to_agent`，参数 schema 随当前 turn 变化：等待输入时是 `{ answers: { requestId, text | optionId }[] }`，要求每个请求恰好一条；否则是 `{ message }`。
 - 系统提示写明扮演用户、只依据 instructions 回答、不替被测 agent 做实现决定、不编造 instructions 里没有的事实。被测 agent 的回复与请求作为不可信 user 内容进入消息。
@@ -82,16 +82,16 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 | `simulated-user-unsupported-provider` | `typesafe`；零发送，执行错误 |
 | `simulated-user-failed` | `provider-unconfigured`、`pi-unavailable`、`invalid-answer`、`no-answer`、`timeout`、`transport`、`context-overflow` 或 `capacity`；不发送下一轮输入，执行错误 |
 
-模拟用户生成不进入 Agent send 的重试执行体，框架不额外重放 pi 模型请求。
+模拟用户生成不进入 Agent send 的重试执行体，框架不额外重新发送 pi 模型请求。
 终局失败默认 `retryable: false`、`scope: "attempt"`；仅凭 Provider 类型或错误文字不触发 Eval 或 Experiment 级止损。
 
-## 记录、用量与身份
+## 执行活动、用量与身份
 
-- 每次已准入的 `reply` 在执行记录里留一条模拟用户活动：所回答的 Turn、模型实际收到的提问、提交的回答、请求与响应、耗时与失败原因。失败且未发送下一轮时也保留该活动。
+- 每次已准入的 `reply` 持久化一条模拟用户执行活动：所回答的 Turn、模型实际收到的提问、提交的回答、请求与响应、耗时与失败原因。失败且未发送下一轮时也保留该活动。
 - `show --execution` 在源 Turn 之后、回答驱动的新 Turn 之前显示它。活动使用独立 producer / actor，不把 pi 工具、内部历史、压缩或模型用量归入被测 Agent 的事件、工具断言或 `t.trace`。
 - `--expand <stable-id>` 经 `attempt.trace.detail` 读取封存证据，展开实际请求与响应；分页与容量限制沿用 Inspection，不从宿主现场重建。请求审计不包含凭据或 Authorization headers。
-- 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的活动记录自带用量：普通生成与压缩请求逐次的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
-- Attempt 的费用汇总把模拟用户作为独立来源 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个来源。
+- 模型用量不进入 Judge 用量账本，也不进入 `t.usage`：模拟用户的调用不是 Assertion，不能伪造 entry 去满足账本关联。每次 `reply` 的执行活动自带用量：普通生成与压缩请求逐次的 input / output tokens，以及按 Judge Provider 显式估价得到的金额（没有估价时为 unpriced）；失败请求的用量同样保留。
+- Attempt 的费用汇总把模拟用户作为独立费用类别 `simulated-user` 计入，和 application、judge 并列显示；未使用模拟用户的 Attempt 没有这个类别。
 - 不给每个 Eval 单独增加身份输入。instructions 写在 Eval 源码里，随源码闭包进入 Eval 指纹；生效的 Judge runtime 已经属于既有配置身份，换模型照常让旧结果失效。未使用模拟用户的 Eval 身份不变。
 - 模拟用户的系统提示模板、`reply_to_agent` schema 与回答语义属于 NiceEval 运行时行为。改变它们按 [身份域规则](../../experiments/architecture/cache.md#niceeval-身份域变更) 处理：更换对应 domain 并登记为 `behavior-changing` 的具名变更，不声明为 `encoding-only`。首次引入本功能不改变任何既有输入的编码，不需要升域。
 
@@ -100,12 +100,12 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 - 本地 OpenAI 兼容 mock 脚本化 `reply_to_agent`：被测 agent 发出两个 `input.requested`（一个带选项、一个文本），`reply` 为两者各提交一条回答并以同一 session 的下一轮发送；带选项的请求收到 option id；返回的 Turn 是新一轮。
 - 被测 agent 没有提问时，`reply` 发送一条消息；同一个 `SimulatedUser` 的第二次 `reply`，请求里含第一次的问答历史。
 - mock 不调用工具或参数一直非法时，Attempt 为 errored，原因 `simulated-user-failed`；TypeSafe 零发送并抛出 `simulated-user-unsupported-provider`。
-- `show --execution` 显示模拟用户活动与回答；活动记录含用量，Attempt 费用汇总含 `simulated-user` 来源。
+- `show --execution` 显示模拟用户活动与回答；执行活动含用量，Attempt 费用汇总含 `simulated-user` 类别。
 - 未使用模拟用户的 Eval 身份不变（identity-domains release 测试保持通过）；改 instructions 或换 Judge 模型让使用它的 Eval 重新规划。
 - mock 只替代外部 HTTP 模型边界，执行安装后候选的公开 API、真实 pi harness 与受管 Models。兼容 Chat Completions 的流式工具调用与 usage，捕获请求体；不 mock 核心 Session、工具校验、缓存规划或账本。
 - 重复、缺失、未知 requestId、错误 option id 与同时出现 text/optionId 均零 Adapter 发送；修正后只发送一次。旧 Turn、跨 Session Turn、并发驱动与关闭后调用均按错误契约拒绝，互不污染历史。
 - 验证首个合法提交后，同批重复工具和迟到响应不会再次驱动；超时、取消和压缩失败不发送回答，取消后没有继续发出的模型请求。
-- 通过脚本化溢出响应触发真实 `compact()`，核对摘要请求、重发与用量记录；四轮上限与同一 reply 的 deadline 不因压缩重置。
+- 通过脚本化溢出响应触发真实 `compact()`，核对摘要请求、重发与用量；四轮上限与同一 reply 的 deadline 不因压缩重置。
 - 未使用模拟用户的 Eval 不新增任何身份字段；失败请求的用量与审计可离线读回。
 
 HTTP mock 证明协议、状态与归属的确定性结果，不证明真实模型会忠实遵守 instructions；事实遵循的质量评估属于独立的模型实验。
