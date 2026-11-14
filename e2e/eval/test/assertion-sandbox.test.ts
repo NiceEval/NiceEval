@@ -37,7 +37,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       const diff = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.diff");
       expect(diff.receipt.exitCode, diff.receipt.diagnostic()).toBe(0);
       expect(diff.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.diff",
         issues: [],
         diff: { state: "partial" },
@@ -72,7 +71,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       );
       expect(assertionDetail.receipt.exitCode, assertionDetail.receipt.diagnostic()).toBe(0);
       expect(assertionDetail.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.assertion.detail",
         issues: [],
         assertion: { entryId: lastWitness.entryId, check: { state: "matched" } },
@@ -84,7 +82,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
       const timingDocument = timing.receipt.attemptTiming();
       expect(timingDocument).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.timing",
         issues: [],
         timing: { state: "complete" },

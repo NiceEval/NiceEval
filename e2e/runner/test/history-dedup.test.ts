@@ -5,7 +5,7 @@ import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E, writeInspectionRequest } from "./context.ts";
+import { runnerE2E } from "./context.ts";
 // @use-case docs/feature/experiments/use-case/concurrency-parallel-invocations.md
 
 test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt", async () => {
@@ -60,8 +60,8 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(carriedReceipt).toMatchObject({ completion: "completed" });
     expect(carriedReceipt.createdRunIds).toHaveLength(1);
 
-    const listRequest = await writeInspectionRequest(root, "history-runs", { kind: "run.list" });
-    const listed = await niceeval.run(["query", "run", "--request", listRequest]);
+
+    const listed = await niceeval.run(["show", "runs", "--json"]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
     const listDocument = listed.runsList();
     expect(listDocument.operation).toBe("run.list");
@@ -70,20 +70,16 @@ test("强制重跑追加 identity，carry run 不在 history 复制旧 attempt",
     expect(listedRuns).toContain(forced.expReceipt().createdRunIds[0]!);
     expect(listedRuns).toContain(carriedReceipt.createdRunIds[0]!);
 
-    const traceRequest = await writeInspectionRequest(root, "forced-attempt-trace", {
-      kind: "attempt.trace", locator: forcedLocator,
-    });
-    const trace = await niceeval.run(["query", "run", "--request", traceRequest]);
+
+    const trace = await niceeval.run(["show", forcedLocator, "execution", "--json"]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
     const traceDocument = trace.attemptTrace();
     expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
     const traceFacts = JSON.stringify(traceDocument.trace);
     expect(traceFacts).toContain("runner-fixture-ok");
 
-    const timingRequest = await writeInspectionRequest(root, "forced-attempt-timing", {
-      kind: "attempt.timing", locator: forcedLocator,
-    });
-    const timing = await niceeval.run(["query", "run", "--request", timingRequest]);
+
+    const timing = await niceeval.run(["show", forcedLocator, "timing", "--json"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
     const timingDocument = timing.attemptTiming();
     expect(timingDocument).toMatchObject({ operation: "attempt.timing", issues: [], timing: { state: "complete" } });
@@ -145,10 +141,8 @@ test("两次同时运行同一实验时，后开始的那次不重复跑已经�
         const firstLocator = only(firstResult.expEvalEvents(), () => true, firstResult.diagnostic()).locator;
 
         await expect(access(join(barrierRoot, "second-run-started-alpha"))).rejects.toThrow();
-        const request = await writeInspectionRequest(paths.projectRoot, "concurrent-second-run", {
-          kind: "run.get", runId: secondRunId,
-        });
-        const secondRun = await niceeval.run(["query", "run", "--request", request]);
+
+        const secondRun = await niceeval.run(["show", `run:${secondRunId}`, "--json"]);
         expect(secondRun.exitCode, secondRun.diagnostic()).toBe(0);
         const document = secondRun.run();
         expect(document).toMatchObject({ operation: "run.get", issues: [] });

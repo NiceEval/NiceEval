@@ -210,7 +210,7 @@ shell({
 
 NiceEval reads the script once during planning and freezes its original contents; execution does not read it again. The script contents and `env` values enter the fingerprint; the file path, file name, and `label` do not. Changing one byte reruns this step and every step after it.
 
-Run progress shows only `label`, or `id` when the label is omitted. A `label` must be non-empty, contain no control characters, and be at most 256 Unicode code points. Built-in actions and custom families follow the same rule. Use `niceeval debug <experiment> <eval>` to see the full script, relative path, and digest; use `niceeval show @<locator> --execution` to see the commands actually executed.
+Run progress shows only `label`, or `id` when the label is omitted. A `label` must be non-empty, contain no control characters, and be at most 256 Unicode code points. Built-in actions and custom families follow the same rule. Use `niceeval debug <experiment> <eval>` to see the full script, relative path, and digest; use `niceeval show @<locator> execution` to see the commands actually executed.
 
 Very short progress updates may be merged in the display. To observe progress step by step, split a long script into several named actions. NiceEval does not track steps inside shell scripts. Dynamic callbacks report their own progress with `context.progress()`.
 

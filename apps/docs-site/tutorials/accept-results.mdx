@@ -36,8 +36,8 @@ pnpm exec niceeval show @1K1P0VJAPVJ12
 Check the verdict, assertions, usage, duration, and evidence, and confirm this is the result you want to keep. When you need to see the whole Run it belonged to, open that Run:
 
 ```sh
-pnpm exec niceeval show --run <source-run-id>
-pnpm exec niceeval view --run <source-run-id>
+pnpm exec niceeval show run:<source-run-id>
+pnpm exec niceeval view run:<source-run-id>
 ```
 
 ## Accept the results you need
@@ -63,7 +63,7 @@ On success, NiceEval creates a new Run that references the original Attempts in 
 The success output shows the new Run ID. Open it to confirm the results:
 
 ```sh
-pnpm exec niceeval show --run <accepted-run-id>
+pnpm exec niceeval show run:<accepted-run-id>
 ```
 
 The denominator of this Run is still every Attempt the current Experiment plans to run. Positions you accepted show as `accepted`, and positions you did not accept show as `not-dispatched`. If you accepted only some of them, the report shows honestly that the results are incomplete.

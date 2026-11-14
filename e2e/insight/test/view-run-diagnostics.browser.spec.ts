@@ -24,7 +24,7 @@ export default defineExperiment({
     const runId = only(failed.expReceipt().createdRunIds, () => true, failed.diagnostic());
     // Review persisted history without loading the failing project's current configuration.
     await rm(join(projectRoot, "niceeval.config.ts"));
-    const view = niceeval.start(["view", "--run", runId, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
+    const view = niceeval.start(["view", `run:${runId}`, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
     try {
       const ready = await waitForViewReady(view);
       await page.goto(expectLoopbackReadyUrl(ready.url).href);

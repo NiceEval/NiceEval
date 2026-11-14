@@ -5,13 +5,12 @@ import {
   decodeInspectionDocument,
   narrowInspectionExplanation,
   narrowInspectionSuccess,
-  type QueryDiscoveryDocument,
-  type QueryDocument,
-  type QueryExplanationDocumentFor,
-  type QueryFailureDocument,
-  type QueryOperationId,
-  type QuerySuccessDocumentFor,
-} from "./query-protocol.js";
+  type InspectionDocument,
+  type InspectionExplanationDocumentFor,
+  type InspectionFailureDocument,
+  type InspectionOperationId,
+  type InspectionSuccessDocumentFor,
+} from "./inspection-protocol.js";
 import {
   decodeRunDocument,
   type RunDocument,
@@ -316,52 +315,45 @@ export class ProcessReceipt {
     return decoded;
   }
 
-  /** Strictly decode `niceeval query discover`. */
-  queryDiscovery(): QueryDiscoveryDocument {
-    const document = this.queryDocument("queryDiscovery");
-    if (document.outcome !== "discovery") this.queryMismatch("queryDiscovery", "discovery", document);
+  /** Strictly decode a `niceeval show --json` failure envelope. */
+  inspectionFailure(): InspectionFailureDocument {
+    const document = this.inspectionDocument("inspectionFailure");
+    if (document.outcome !== "failure") this.inspectionMismatch("inspectionFailure", "failure", document);
     return document;
   }
 
-  /** Strictly decode a `niceeval query` failure envelope. */
-  queryFailure(): QueryFailureDocument {
-    const document = this.queryDocument("queryFailure");
-    if (document.outcome !== "failure") this.queryMismatch("queryFailure", "failure", document);
-    return document;
-  }
-
-  querySuccess<Kind extends QueryOperationId>(operation: Kind): QuerySuccessDocumentFor<Kind> {
-    const narrowed = narrowInspectionSuccess(this.queryDocument("querySuccess"), operation);
-    if (!narrowed.success) throw new Error(`querySuccess(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+  inspectionSuccess<Kind extends InspectionOperationId>(operation: Kind): InspectionSuccessDocumentFor<Kind> {
+    const narrowed = narrowInspectionSuccess(this.inspectionDocument("inspectionSuccess", operation), operation);
+    if (!narrowed.success) throw new Error(`inspectionSuccess(): ${narrowed.reason}\n\n${this.diagnostic()}`);
     return narrowed.value;
   }
 
-  queryExplanation<Kind extends QueryOperationId>(operation: Kind): QueryExplanationDocumentFor<Kind> {
-    const narrowed = narrowInspectionExplanation(this.queryDocument("queryExplanation"), operation);
-    if (!narrowed.success) throw new Error(`queryExplanation(): ${narrowed.reason}\n\n${this.diagnostic()}`);
+  inspectionExplanation<Kind extends InspectionOperationId>(operation: Kind): InspectionExplanationDocumentFor<Kind> {
+    const narrowed = narrowInspectionExplanation(this.inspectionDocument("inspectionExplanation", operation), operation);
+    if (!narrowed.success) throw new Error(`inspectionExplanation(): ${narrowed.reason}\n\n${this.diagnostic()}`);
     return narrowed.value;
   }
 
-  overview(): QuerySuccessDocumentFor<"overview.get"> { return this.querySuccess("overview.get"); }
-  experiment(): QuerySuccessDocumentFor<"experiment.get"> { return this.querySuccess("experiment.get"); }
-  runsList(): QuerySuccessDocumentFor<"run.list"> { return this.querySuccess("run.list"); }
-  run(): QuerySuccessDocumentFor<"run.get"> { return this.querySuccess("run.get"); }
-  attempt(): QuerySuccessDocumentFor<"attempt.get"> { return this.querySuccess("attempt.get"); }
-  attemptAssertionDetail(): QuerySuccessDocumentFor<"attempt.assertion.detail"> { return this.querySuccess("attempt.assertion.detail"); }
-  attemptSources(): QuerySuccessDocumentFor<"attempt.sources"> { return this.querySuccess("attempt.sources"); }
+  overview(): InspectionSuccessDocumentFor<"overview.get"> { return this.inspectionSuccess("overview.get"); }
+  experiment(): InspectionSuccessDocumentFor<"experiment.get"> { return this.inspectionSuccess("experiment.get"); }
+  runsList(): InspectionSuccessDocumentFor<"run.list"> { return this.inspectionSuccess("run.list"); }
+  run(): InspectionSuccessDocumentFor<"run.get"> { return this.inspectionSuccess("run.get"); }
+  attempt(): InspectionSuccessDocumentFor<"attempt.get"> { return this.inspectionSuccess("attempt.get"); }
+  attemptAssertionDetail(): InspectionSuccessDocumentFor<"attempt.assertion.detail"> { return this.inspectionSuccess("attempt.assertion.detail"); }
+  attemptSources(): InspectionSuccessDocumentFor<"attempt.sources"> { return this.inspectionSuccess("attempt.sources"); }
 
-  /** Strictly decode a successful `niceeval query` attempt.trace document. */
-  attemptTrace(): QuerySuccessDocumentFor<"attempt.trace"> { return this.querySuccess("attempt.trace"); }
+  /** Strictly decode a successful `niceeval show --json` attempt.trace document. */
+  attemptTrace(): InspectionSuccessDocumentFor<"attempt.trace"> { return this.inspectionSuccess("attempt.trace"); }
 
-  attemptTraceDetail(): QuerySuccessDocumentFor<"attempt.trace.detail"> { return this.querySuccess("attempt.trace.detail"); }
+  attemptTraceDetail(): InspectionSuccessDocumentFor<"attempt.trace.detail"> { return this.inspectionSuccess("attempt.trace.detail"); }
 
-  /** Strictly decode a successful `niceeval query` attempt.timing document. */
-  attemptTiming(): QuerySuccessDocumentFor<"attempt.timing"> { return this.querySuccess("attempt.timing"); }
+  /** Strictly decode a successful `niceeval show --json` attempt.timing document. */
+  attemptTiming(): InspectionSuccessDocumentFor<"attempt.timing"> { return this.inspectionSuccess("attempt.timing"); }
 
-  attemptUsage(): QuerySuccessDocumentFor<"attempt.usage"> { return this.querySuccess("attempt.usage"); }
-  attemptDiff(): QuerySuccessDocumentFor<"attempt.diff"> { return this.querySuccess("attempt.diff"); }
-  attemptArtifacts(): QuerySuccessDocumentFor<"attempt.artifacts"> { return this.querySuccess("attempt.artifacts"); }
-  runsCompare(): QuerySuccessDocumentFor<"runs.compare"> { return this.querySuccess("runs.compare"); }
+  attemptUsage(): InspectionSuccessDocumentFor<"attempt.usage"> { return this.inspectionSuccess("attempt.usage"); }
+  attemptDiff(): InspectionSuccessDocumentFor<"attempt.diff"> { return this.inspectionSuccess("attempt.diff"); }
+  attemptArtifacts(): InspectionSuccessDocumentFor<"attempt.artifacts"> { return this.inspectionSuccess("attempt.artifacts"); }
+  runsCompare(): InspectionSuccessDocumentFor<"runs.compare"> { return this.inspectionSuccess("runs.compare"); }
 
   /** Strictly decode `niceeval run list --json`; distinct from Inspection `runsList()`. */
   runListDocument(): RunListDocument {
@@ -373,17 +365,22 @@ export class ProcessReceipt {
   }
 
   /** Strictly decode the canonical Inspection result from `niceeval run show --json`. */
-  runGetDocument(): QuerySuccessDocumentFor<"run.get"> {
+  runGetDocument(): InspectionSuccessDocumentFor<"run.get"> {
     return this.run();
   }
 
-  private queryDocument(api: string): QueryDocument {
-    const decoded = decodeInspectionDocument(this.json<unknown>());
-    if (!decoded.success) throw new Error(`${api}(): stdout is not a valid niceeval.query/v3 document: ${decoded.reason}\n\n${this.diagnostic()}`);
-    return decoded.value;
+  private inspectionDocument(api: string, operation?: InspectionOperationId): InspectionDocument {
+    const documents = this.ndjson<unknown>().map((input) => {
+      const decoded = decodeInspectionDocument(input);
+      if (!decoded.success) throw new Error(`${api}(): stdout is not a valid Inspection document: ${decoded.reason}\n\n${this.diagnostic()}`);
+      return decoded.value;
+    });
+    const selected = operation === undefined ? documents : documents.filter(document => document.operation === operation);
+    if (selected.length !== 1) throw new Error(`${api}(): expected one matching Inspection document, received ${selected.length}\n\n${this.diagnostic()}`);
+    return selected[0]!;
   }
 
-  private queryMismatch(api: string, expected: string, document: QueryDocument): never {
+  private inspectionMismatch(api: string, expected: string, document: InspectionDocument): never {
     throw new Error(`${api}(): expected ${expected}, received ${document.outcome}\n\n${this.diagnostic()}`);
   }
 

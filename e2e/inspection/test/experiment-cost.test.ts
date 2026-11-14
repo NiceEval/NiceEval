@@ -1,6 +1,5 @@
 // rerun: pnpm e2e test --repo inspection -- --run test/experiment-cost.test.ts
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
@@ -19,11 +18,10 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     ]));
     expect(run.expEvalEvents()).toHaveLength(2);
     const originalRunId = only(run.expReceipt().createdRunIds, () => true, run.diagnostic());
-    const request = join(paths.projectRoot, "experiment-cost.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "experiment.get", experimentId: "experiment-cost" } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", `exp:${"experiment-cost"}`, "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const experiment = read.querySuccess("experiment.get").experiment;
+    const experiment = read.inspectionSuccess("experiment.get").experiment;
     // 35 × 0.100000001 + 35 × 0.200000002; no float or preview-derived oracle.
     expect(experiment.costSummary).toEqual({
       scope: "latest-recorded-attempts",
@@ -36,7 +34,7 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     const retained = only(experiment.cells, (cell) => cell.evalId === "experiment-cost-failed", read.diagnostic());
     expect(retained.members).toHaveLength(35);
 
-    const shown = await niceeval.run(["show", "--experiment", "experiment-cost"]);
+    const shown = await niceeval.run(["show", `exp:${"experiment-cost"}`]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     const summary = shown.stdout.match(/Experiment total costs[\s\S]*?(?=Summary|$)/u)?.[0];
     expect(summary, shown.diagnostic()).toBeDefined();
@@ -56,9 +54,9 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     ]);
     const replacementRunId = only(rerun.expReceipt().createdRunIds, () => true, rerun.diagnostic());
     expect(replacementRunId).not.toBe(originalRunId);
-    const reread = await niceeval.run(["query", "run", "--request", request]);
+    const reread = await niceeval.run(["show", `exp:${"experiment-cost"}`, "--json"]);
     expect(reread.exitCode, reread.diagnostic()).toBe(0);
-    const replaced = reread.querySuccess("experiment.get").experiment;
+    const replaced = reread.inspectionSuccess("experiment.get").experiment;
     // 35 × 0.300000003 + the untouched 35 × 0.200000002, excluding old paid origins.
     expect(replaced.costSummary).toEqual({
       scope: "latest-recorded-attempts",
@@ -71,7 +69,7 @@ test.concurrent("实验总费用包含预览之外的失败 Attempt，部分 Eva
     const paid = only(replaced.cells, (cell) => cell.evalId === "experiment-cost-paid", reread.diagnostic());
     expect(paid.members).toHaveLength(35);
     expect(paid.members.every((member) => member.runId === replacementRunId)).toBe(true);
-    const reshown = await niceeval.run(["show", "--experiment", "experiment-cost"]);
+    const reshown = await niceeval.run(["show", `exp:${"experiment-cost"}`]);
     expect(reshown.exitCode, reshown.diagnostic()).toBe(0);
     const replacementSummary = reshown.stdout.match(/Experiment total costs[\s\S]*?(?=Summary|$)/u)?.[0];
     expect(replacementSummary, reshown.diagnostic()).toBeDefined();

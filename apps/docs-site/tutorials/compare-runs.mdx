@@ -11,17 +11,17 @@ Before comparing, pin which run each side is. "The latest results" change with t
 ## View them side by side in the browser
 
 ```sh
-pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
+pnpm exec niceeval view run:<baseline-run-id> run:<candidate-run-id>
 ```
 
 View opens both Runs at once. You can compare pass/fail, scores, duration, and cost eval by eval, then click into a specific run to see the conversation and tool calls.
 
 ## Let scripts and CI read the comparison
 
-When an automated flow needs a structured comparison, use `show --compare --json`:
+When an automated flow needs a structured comparison, use `compare --json`:
 
 ```sh
-pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --mode paired --json
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --mode paired --json
 ```
 
 `mode` decides how the two sides line up:
@@ -37,7 +37,7 @@ The comparison honestly reports each side's denominator, plus unpaired evals, ex
 Choose the alignment with `--mode` and add `--json` to read comparison results:
 
 ```sh
-pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --json
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --json
 ```
 
 ## When a comparison can be trusted

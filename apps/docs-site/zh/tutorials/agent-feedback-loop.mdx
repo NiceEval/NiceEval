@@ -73,27 +73,27 @@ Agent 只认最后这一行。`createdRunIds` 列出这次新建的全部 Run，
 运行结束后，Agent 先在终端打开 receipt 里的 Run：
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show run:01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
 输出列出这个 Run 的分母、各评估用例的判定、分数、结果覆盖和每个 Attempt 的 locator。要细看某个 Attempt，复制它的 locator：
 
 ```sh
 pnpm exec niceeval show @<attempt-locator>
-pnpm exec niceeval show @<attempt-locator> --source
-pnpm exec niceeval show @<attempt-locator> --execution
+pnpm exec niceeval show @<attempt-locator> source
+pnpm exec niceeval show @<attempt-locator> execution
 ```
 
-`show @<attempt-locator>` 显示这个 Attempt 的判定、断言摘要、各部分是否完整和已知限制。`--source` 显示这次运行用的评估源码和每条断言的结果。`--execution` 显示精简后的执行过程，要展开其中一项，复制它旁边的 ID 运行 `--execution --expand <stable-id>`。
+`show @<attempt-locator>` 显示这个 Attempt 的判定、断言摘要、各部分是否完整和已知限制。`source` 显示这次运行用的评估源码和每条断言的结果。`execution` 显示精简后的执行过程，要展开其中一项，复制它旁边的 ID 运行 `execution <stable-id>`。
 
 需要让脚本、CI 或 Agent 稳定处理结果时，在相同的 `show` 命令后加 `--json`：
 
 ```sh
-pnpm --silent exec niceeval show --runs --json
-pnpm --silent exec niceeval show --run <run-id> --json
+pnpm --silent exec niceeval show runs --json
+pnpm --silent exec niceeval show run:<run-id> --json
 ```
 
-`show --json` 返回固定格式的 JSON。人要在浏览器里看时，用 `pnpm exec niceeval view --run <run-id>`；`view` 不接受 locator。
+`show --json` 返回固定格式的 JSON。人要在浏览器里看时，用 `pnpm exec niceeval view run:<run-id>`；`view` 也接受与 `show` 相同的 Attempt locator 和方面。
 
 ## 按看到的状态决定下一步
 

@@ -3,7 +3,7 @@ import { waitForOutput, withTempDir } from "@niceeval/testkit";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E, writeInspectionRequest } from "./context.ts";
+import { runnerE2E } from "./context.ts";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -54,10 +54,8 @@ test.concurrent("fresh custom Provider group.stop 失败保留 sharedState，普
         expect(`${failed.stdout}\n${failed.stderr}`).not.toContain(ownerToken);
 
         const failedRunId = failed.expReceipt().createdRunIds[0]!;
-        const request = await writeInspectionRequest(paths.projectRoot, "provider-stop-run-summary", {
-          kind: "run.get", runId: failedRunId,
-        });
-        const queried = await niceeval.run(["query", "run", "--request", request], {
+
+        const queried = await niceeval.run(["show", `run:${failedRunId}`, "--json"], {
           env: { NICEEVAL_SHARED_STATE_PROVIDER_STOP_BARRIER: barrierRoot },
         });
         expect(queried.exitCode, queried.diagnostic()).toBe(0);

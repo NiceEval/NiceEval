@@ -51,7 +51,7 @@ Runner 按 Experiment 选出评估用例，展开成一批 Attempt，按并发�
 
 结果留下来有两个用处。一是追查：回到某一次失败，看被测对象实际做了什么。二是沿用：再次运行时，没受改动影响的结果直接沿用，只重跑受影响的部分，见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
-读结果有三个入口：`show` 在终端逐层查看，你和 Coding Agent 都用它排查；`view` 在浏览器里翻对话和耗时；`query` 输出 JSON，给脚本和 CI 读取。三处读到的结论一致，见[运行结果的数据流](/zh/explanation/results-flow)。
+读结果有三个入口：`show` 在终端逐层查看，你和 Coding Agent 都用它排查；`view` 在浏览器里翻对话和耗时；`show --json` 输出 JSON，给脚本和 CI 读取。三处读到的结论一致，见[运行结果的数据流](/zh/explanation/results-flow)。
 
 ## 接下来
 

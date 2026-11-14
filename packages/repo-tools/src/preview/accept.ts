@@ -15,7 +15,6 @@ import { validateCapturedConcordPreview } from "./concord.js";
 import { repositoryRoot } from "../root.js";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
-import { QUERY_PROTOCOL } from "../../../niceeval/src/inspection/protocol-values.js";
 
 const CONTENT_TYPES = new Map<string, ReadonlySet<string>>([
   [".html", new Set(["text/html"])],
@@ -185,9 +184,9 @@ function verifyRemoteInspection(base: string) {
     const overview = yield* fetchJson(inspectionUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ generationId: generation.generationId, request: { protocol: QUERY_PROTOCOL, operation: { kind: "overview.get" } } }),
+      body: JSON.stringify({ generationId: generation.generationId, request: { operation: { kind: "overview.get" } } }),
     });
-    if (!Predicate.isObject(overview) || overview.protocol !== QUERY_PROTOCOL || overview.outcome !== "success" || !("overview" in overview)) {
+    if (!Predicate.isObject(overview) || overview.outcome !== "success" || !("overview" in overview)) {
       return yield* fail("remote overview", "Function returned an invalid overview Inspection document");
     }
     for (const method of ["GET", "HEAD"] as const) {
@@ -198,7 +197,7 @@ function verifyRemoteInspection(base: string) {
       });
       if (response.status !== 404) return yield* fail("public Record", `${method} /record.sqlite must return 404, received ${response.status}`);
     }
-    return { generationId: generation.generationId, overviewProtocol: overview.protocol };
+    return { generationId: generation.generationId, overviewOperation: "overview.get" };
   });
 }
 
@@ -244,7 +243,7 @@ export function acceptPreview(input: unknown): Effect.Effect<PreviewAcceptanceRe
         recordSha256: decoded.buildReceipt.function.record.sha256,
       },
       generationId: inspection.generationId,
-      overviewProtocol: inspection.overviewProtocol,
+      overviewOperation: inspection.overviewOperation,
       recordNotPublic: true,
       remoteClosureClaim: "static-manifest-and-function-runtime",
     };

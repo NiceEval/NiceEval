@@ -1,8 +1,8 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { QUERY_PROTOCOL } from "./protocol-values.ts";
+import type * as SchemaIssue from "effect/SchemaIssue";
+import { inspectionProtocolRegistry, INSPECTION_OPERATION_IDS } from "./protocol.ts";
 import { InspectionRequestSchema, type InspectionOperation, type InspectionRequest } from "./protocol.ts";
-export { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 export { INSPECTION_OPERATION_IDS, InspectionOperationIdSchema, InspectionRequestSchema } from "./protocol.ts";
 export type { InspectionFailureDocument, InspectionOperation, InspectionOperationId, InspectionRequest } from "./protocol.ts";
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;
@@ -11,25 +11,48 @@ export type InspectionDocument = import("./protocol.ts").InspectionOperationDocu
 export interface InspectionCodecError {
   readonly code: "inspection-request-invalid" | "inspection-result-invalid";
   readonly reason: string;
+  readonly issues?: readonly { readonly path: string; readonly expected: string; readonly received: string }[];
+  readonly omittedIssueCount?: number;
 }
 
 const inspectionCodecErrors = new WeakSet<object>();
 
 const strictDecodeRequest = Schema.decodeUnknownResult(InspectionRequestSchema, {
-  onExcessProperty: "error",
+  onExcessProperty: "error", errors: "all",
 });
 
 /** Strictly validates a complete Inspection request and returns a success or failure Result. Unknown fields are rejected instead of ignored. */
 export function decodeInspectionRequest(
   input: unknown,
 ): Result.Result<InspectionRequest, InspectionCodecError> {
-  const decoded = strictDecodeRequest(input);
-  return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({
-      code: "inspection-request-invalid" as const,
-      reason: String(decoded.failure),
-    }))
-    : Result.succeed(decoded.success);
+  const kind = typeof input === "object" && input !== null && "operation" in input &&
+    typeof input.operation === "object" && input.operation !== null && "kind" in input.operation
+    ? input.operation.kind : undefined;
+  const known = INSPECTION_OPERATION_IDS.find((id) => id === kind);
+  const decoded = known === undefined ? strictDecodeRequest(input) : Schema.decodeUnknownResult(
+    Schema.Struct({ operation: inspectionProtocolRegistry[known].request }),
+    { onExcessProperty: "error", errors: "all" },
+  )(input);
+  if (Result.isSuccess(decoded)) return Result.succeed(decoded.success);
+  const issues: { path: string; expected: string; received: string }[] = [];
+  const type = (value: unknown) => value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+  if (known === undefined) issues.push({ path: "/operation/kind", expected: INSPECTION_OPERATION_IDS.join(", "), received: type(kind) });
+  const visit = (issue: SchemaIssue.Issue, path: readonly PropertyKey[] = []): void => {
+    if (issue._tag === "Pointer") return visit(issue.issue, [...path, ...issue.path]);
+    if ("issues" in issue) { for (const child of issue.issues) visit(child, path); return; }
+    if ("issue" in issue) return visit(issue.issue, path);
+    const pointer = path.map((key) => "/" + String(key).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
+    if (known === undefined && pointer.startsWith("/operation")) return;
+    const expected = "ast" in issue ? String(issue.ast) : issue._tag === "Forbidden" ? "no additional property" : "required value";
+    let received: unknown = input;
+    for (const key of path) received = typeof received === "object" && received !== null ? Reflect.get(received, key) : undefined;
+    issues.push({ path: pointer, expected, received: type(received) });
+  };
+  visit(decoded.failure.issue);
+  return Result.fail(Object.freeze({ code: "inspection-request-invalid" as const,
+    reason: "The Inspection request does not match Inspection.",
+    issues: Object.freeze(issues.slice(0, 20)), omittedIssueCount: Math.max(0, issues.length - 20),
+  }));
 }
 
 /** JSON value accepted at the final machine-delivery boundary. */

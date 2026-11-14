@@ -31,7 +31,7 @@ checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-it
 结果和你预期的不一样时，先看这些具体差异。例如你只改了报告里的分组名，却看到整批要重跑，差异会指出一起变了的那项输入。
 
 看到 `locked · gap 0:source-member-missing` 时，表示检测到了执行锁，而对应槽位还没有发布成员；它不是一次新的失败判定。
-先等持锁执行结束，用 `niceeval show --run <run-id>` 查看，再运行 `--dry`。状态词、全部缺口代码和处理命令见 [CLI Reference](/zh/reference/cli)。
+先等持锁执行结束，用 `niceeval show run:<run-id>` 查看，再运行 `--dry`。状态词、全部缺口代码和处理命令见 [CLI Reference](/zh/reference/cli)。
 
 结构化值可能只保存了有界摘要。两侧的 `summary sha256:` 用来区分摘要；若显示 `comparison unavailable`，说明现有摘要无法解释具体差异。
 这不会改变沿用决定。先用 `--dry --json` 查看已保存的比较信息，确认范围和费用后再执行。
@@ -102,9 +102,9 @@ checkout  cart/remove-item  gap 0:identity-mismatch: identity-domain-changed: Sa
 运行结束时，终端的 `NEXT` 面板会列出这次新建的 Run，并给出在终端和浏览器里查看它的两条命令：
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-沿用的题和重跑的题都会出现在这个 Run 里，通过率按完整的一批题计算。不要在 `exp` 还没结束时用 `show --experiment` 看结果，那时可能还没有任何已发布的结果。
+沿用的题和重跑的题都会出现在这个 Run 里，通过率按完整的一批题计算。不要在 `exp` 还没结束时用 `show exp:<id>` 看结果，那时可能还没有任何已发布的结果。
 
 查看结果的完整方式见[查看运行结果](/zh/tutorials/viewing-results)。沿用和重跑的判定原理见 [Runner](/zh/explanation/runner)。

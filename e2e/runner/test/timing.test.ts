@@ -7,7 +7,7 @@ import {
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E, writeInspectionRequest } from "./context.ts";
+import { runnerE2E } from "./context.ts";
 
 const EXPECTED = [
   { experimentId: "timing", evalId: "timing/basic", verdict: "passed", attempts: 1, passed: 1 },
@@ -46,10 +46,8 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
       const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED, () => run.diagnostic());
       const event = exactEval(events, EXPECTED[0], () => run.diagnostic());
 
-      const request = await writeInspectionRequest(paths.projectRoot, "timing-attempt-timing", {
-        kind: "attempt.timing", locator: event.locator,
-      });
-      const queried = await niceeval.run(["query", "run", "--request", request]);
+
+      const queried = await niceeval.run(["show", event.locator, "timing", "--json"]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const document = queried.attemptTiming();
       expect(document).toMatchObject({
@@ -142,12 +140,8 @@ test("通用 Runner 公开 Agent setup、send、teardown 的完成与失败关�
         expect(primaryError.reason).not.toContain("runner lifecycle teardown secondary failure");
         expect(await receiptLines(paths.projectRoot, failure.receipt)).toEqual(failure.events);
 
-        const traceRequest = await writeInspectionRequest(
-          paths.projectRoot,
-          `${failure.experimentId}-trace`,
-          { kind: "attempt.trace", locator: evalEvent.locator },
-        );
-        const trace = await niceeval.run(["query", "run", "--request", traceRequest]);
+
+        const trace = await niceeval.run(["show", evalEvent.locator, "execution", "--json"]);
         expect(trace.exitCode, trace.diagnostic()).toBe(0);
         const traceDocument = trace.attemptTrace();
         expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [] });
@@ -176,12 +170,8 @@ test("Run 终态持久化失败时已发布 locator 仍可公开检查", async (
       const terminalOutput = `${run.stdout}\n${run.stderr}`;
       const leakedLocator = terminalOutput.match(/@1[0-9A-HJKMNP-TV-Z]{12}/)?.[0];
       expect(leakedLocator, run.diagnostic()).toBeDefined();
-      const request = await writeInspectionRequest(
-        paths.projectRoot,
-        "published-attempt-trace",
-        { kind: "attempt.trace", locator: leakedLocator! },
-      );
-      const queried = await niceeval.run(["query", "run", "--request", request]);
+
+      const queried = await niceeval.run(["show", leakedLocator!, "execution", "--json"]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       expect(queried.attemptTrace().outcome).toBe("success");
       expect(terminalOutput).toMatch(/publication|persistence/i);

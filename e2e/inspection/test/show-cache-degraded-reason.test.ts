@@ -54,7 +54,7 @@ export default defineExperiment({ adapter: deterministicAgent(),
       expect(run.expTerminal().summary.beforeCaches?.degraded, run.diagnostic()).toBe(1);
       const attempt = only(run.expEvalEvents(), (event) => event.evalId === "inspection", run.diagnostic());
       expect(attempt.verdict).toBe("errored");
-      for (const slice of [[], ["--execution"]]) {
+      for (const slice of [[], ["execution"]]) {
         const shown = await cli.run(["show", attempt.locator, ...slice], { cwd: root, env });
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
         expect(shown.stdout, shown.diagnostic()).toContain("cache-degraded");

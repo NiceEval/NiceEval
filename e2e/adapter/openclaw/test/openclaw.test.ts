@@ -14,7 +14,7 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { withInspectionRequest } from "@niceeval/testkit";
+
 
 const EXPECTED_OUTCOMES = [
   // Skill status：只读取目标 status-report Skill、不误用 decoy，并采用目标约定；期望 passed/1。
@@ -85,12 +85,9 @@ it("attempt.trace 读回 OpenClaw 的代表性工具证据", async () => {
     evalEvents,
     (candidate) => candidate.evalId === "skills/status-report",
   );
-  const queried = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: event.locator,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   expect(JSON.stringify(document.trace)).toContain("status-report.txt");
 });

@@ -411,7 +411,7 @@ export function projectTraceDetail(document: InspectionSuccessDocumentFor<"attem
   return {
     locator,
     kind: body.kind,
-    stableId: body.kind === "item"
+    stableId: body.kind === "turn" ? body.turnId : body.kind === "item"
       ? body.itemId
       : body.kind === "tool-occurrence"
       ? body.toolOccurrenceId

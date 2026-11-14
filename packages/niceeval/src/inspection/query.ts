@@ -10,7 +10,6 @@ import {
   type InspectionOperationId,
   type InspectionSuccessDocumentFor,
 } from "./protocol.ts";
-import { QUERY_PROTOCOL } from "./protocol-values.ts";
 
 /** Presentation-neutral query boundary implemented by local or remote Inspection adapters. */
 export interface InspectionQuery {
@@ -61,7 +60,7 @@ const decodeRequest = Schema.decodeUnknownResult(InspectionRequestSchema, {
 export function decodeInspectionOperation(
   input: unknown,
 ): Result.Result<InspectionOperation, InspectionOperationDecodeError> {
-  const decoded = decodeRequest({ protocol: QUERY_PROTOCOL, operation: input });
+  const decoded = decodeRequest({ operation: input });
   return Result.isFailure(decoded)
     ? Result.fail(Object.freeze({
       classification: "protocol/query" as const,

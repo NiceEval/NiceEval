@@ -229,8 +229,8 @@ const receipt = await ctx.recordTrace({
 跑完后查看这个 Attempt 的执行过程，再展开某个事件：
 
 ```sh
-pnpm exec niceeval show @<attempt> --execution
-pnpm exec niceeval show @<attempt> --execution --expand <eventId>
+pnpm exec niceeval show @<attempt> execution
+pnpm exec niceeval show @<attempt> execution <eventId>
 ```
 
 `collection.state` 描述日志是否完整，和运行有没有被取消无关。取消后仍拿到了完整日志，就写 `complete`。缺日志时写 `partial`，并在 `limitations` 里说明缺了什么，不要用空列表表示“不知道”。超出 `scopes` 采集范围的事件也保留下来，标成 `excluded`，判断不了的标成 `unknown`。提交执行日志本身不影响判分。

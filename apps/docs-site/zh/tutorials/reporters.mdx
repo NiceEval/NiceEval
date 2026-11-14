@@ -61,11 +61,11 @@ pnpm exec niceeval exp checkout --json
 `--json` 输出这次运行的 NDJSON。最后一行是 receipt，包含 `invocationId`、`createdRunIds`、`publicationCutoff`、开始时间、结束时间和 `completion`。外部自动化可以保存 receipt，再用 `createdRunIds` 打开对应的 Run：
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show run:01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view run:01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-脚本需要结构化结果时，运行 `pnpm --silent exec niceeval show --run <run-id> --json`。
+脚本需要结构化结果时，运行 `pnpm --silent exec niceeval show run:<run-id> --json`。
 
 不要把进度或诊断行当作长期保存的结果格式。它们只描述这一次运行正在发生什么。
 

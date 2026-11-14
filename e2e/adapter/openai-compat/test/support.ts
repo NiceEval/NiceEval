@@ -1,13 +1,5 @@
 import { join, resolve } from "node:path";
-import {
-  command,
-  createE2EContext,
-  type ExpEvalEvent,
-  type ProcessReceipt,
-  only,
-  type InspectionOperation,
-  withInspectionRequest,
-} from "@niceeval/testkit";
+import { command, createE2EContext, type ExpEvalEvent, type ProcessReceipt, only } from "@niceeval/testkit";
 import { expect } from "vitest";
 
 const requiredSecrets = ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const;
@@ -91,15 +83,6 @@ export async function runOpenAiLiveEvidence(options: {
   return evidence;
 }
 
-export async function queryOpenAiLiveEvidence(
-  evidence: OpenAiLiveEvidence,
-  operation: InspectionOperation,
-): Promise<ProcessReceipt> {
-  return await withInspectionRequest(
-    operation,
-    async (requestPath) => await niceevalQuery.run(
-      ["query", "run", "--request", requestPath],
-      { cwd: evidence.recordRoot },
-    ),
-  );
+export async function queryOpenAiLiveEvidence(evidence: OpenAiLiveEvidence): Promise<ProcessReceipt> {
+  return await niceevalQuery.run(["show", evidence.evalEvent.locator, "execution", "--json"], { cwd: evidence.recordRoot });
 }

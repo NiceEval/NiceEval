@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo adapter/codex-cli -- --run test/live-progress.test.ts
 
-import { command, createE2EContext, only, withInspectionRequest } from "@niceeval/testkit";
+import { command, createE2EContext, only } from "@niceeval/testkit";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 
@@ -38,13 +38,10 @@ test("Codex CLI 的 coding-task 完成并可从公开 trace 读回 command tool"
       );
       expect(codingTask).toMatchObject({ verdict: "passed", attempts: 1, passed: 1 });
 
-      const queried = await withInspectionRequest(
-        { kind: "attempt.trace", locator: codingTask.locator },
-        async (requestPath) => await niceeval.run(
-          ["query", "run", "--request", requestPath],
+      const queried = await (async () => await niceeval.run(
+          ["show", codingTask.locator, "execution", "--json"],
           { cwd: paths.projectRoot, env },
-        ),
-      );
+        ))();
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       const trace = JSON.stringify(queried.attemptTrace().trace);
       expect(trace).toContain(COMMAND_SENTINEL);

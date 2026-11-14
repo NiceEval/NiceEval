@@ -118,7 +118,6 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       const assertions = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         expect(detail.document).toMatchObject({
-          protocol: "niceeval.query/v3",
           operation: "attempt.assertion.detail",
           assertion: { entryId: detail.entry.entryId, display: detail.entry.display },
         });

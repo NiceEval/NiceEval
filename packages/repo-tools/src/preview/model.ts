@@ -138,7 +138,7 @@ export const PreviewAcceptanceReceiptSchema = Schema.Struct({
     recordSha256: Sha256Schema,
   }),
   generationId: TrimmedNonEmptyString,
-  overviewProtocol: TrimmedNonEmptyString,
+  overviewOperation: TrimmedNonEmptyString,
   recordNotPublic: Schema.Literal(true),
   remoteClosureClaim: Schema.Literal("static-manifest-and-function-runtime"),
 });

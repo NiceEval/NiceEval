@@ -4,7 +4,7 @@ import { only } from "@niceeval/testkit";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { cliE2E, writeInspectionRequest } from "./context.ts";
+import { cliE2E } from "./context.ts";
 
 // feature: 同一次公开 CLI 旅程中核对 failed / errored 的机器输出与人读详情。
 // @feature docs/feature/experiments/README.md
@@ -50,13 +50,11 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       const failedJunit = readFileSync(join(root, "junit", "failed.xml"), "utf8");
       expect(failedJunit).toContain("<failure");
       expect(failedJunit).not.toContain("<error");
-      const failedRequest = await writeInspectionRequest(root, "failed-run-summary", {
-        kind: "run.get", runId: failedReceipt.createdRunIds[0]!,
-      });
-      const failedSummary = await niceeval.run(["query", "run", "--request", failedRequest]);
+
+      const failedSummary = await niceeval.run(["show", `run:${failedReceipt.createdRunIds[0]!}`, "--json"]);
       expect(failedSummary.exitCode, failedSummary.diagnostic()).toBe(0);
       const failedDocument = failedSummary.run();
-      expect(failedDocument).toMatchObject({ protocol: "niceeval.query/v3", operation: "run.get", issues: [] });
+      expect(failedDocument).toMatchObject({ operation: "run.get", issues: [] });
       expect(failedDocument.run.denominator).toEqual({ expected: 1, published: 1, missing: 0 });
       expect(failedDocument.run.plannedAttempts).toEqual([expect.objectContaining({
         publication: expect.objectContaining({ state: "published", attemptLocator: failedEval.locator }),
@@ -78,15 +76,13 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       const failedHumanLocator = /✗ (@1[0-9A-HJKMNP-TV-Z]{12})/u.exec(failedHuman.stdout)?.[1];
       expect(failedHumanLocator, failedHuman.diagnostic()).toBeTruthy();
       expect(failedHuman.stdout).toContain(`details: niceeval show ${failedHumanLocator}`);
-      const failedHumanRunId = /show: niceeval show --run\s+([0-9a-f-]{36})/u.exec(failedHuman.stdout)?.[1];
+      const failedHumanRunId = /show: niceeval show run:([0-9a-f-]{36})/u.exec(failedHuman.stdout)?.[1];
       expect(failedHumanRunId, failedHuman.diagnostic()).toBeTruthy();
       expect(failedHuman.stdout.replace(/\s+/gu, " ")).toContain(
-        `deliberate-fail show: niceeval show --run ${failedHumanRunId} view: niceeval view --run ${failedHumanRunId}`,
+        `deliberate-fail show: niceeval show run:${failedHumanRunId} view: niceeval view run:${failedHumanRunId}`,
       );
-      const failedHumanRequest = await writeInspectionRequest(root, "failed-human-run-summary", {
-        kind: "run.get", runId: failedHumanRunId!,
-      });
-      const failedHumanSummary = await niceeval.run(["query", "run", "--request", failedHumanRequest]);
+
+      const failedHumanSummary = await niceeval.run(["show", `run:${failedHumanRunId!}`, "--json"]);
       expect(failedHumanSummary.exitCode, failedHumanSummary.diagnostic()).toBe(0);
       expect(failedHumanSummary.run().run.plannedAttempts).toEqual([expect.objectContaining({
         publication: expect.objectContaining({ state: "published", attemptLocator: failedHumanLocator }), verdict: "failed",
@@ -94,7 +90,7 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
 
       const sessions = await niceeval.run(["invocation", "list", "--all"]);
       expect(sessions.exitCode, sessions.diagnostic()).toBe(0);
-      expect(sessions.stdout).toContain(`deliberate-fail  niceeval show --run ${failedHumanRunId}`);
+      expect(sessions.stdout).toContain(`deliberate-fail  niceeval show run:${failedHumanRunId}`);
 
       const errored = await niceeval.run(
         ["exp", "deliberate-error", "--rerun", "all", "--json", "--junit", "junit/errored.xml"],
@@ -128,13 +124,11 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       expect(erroredJunit).toContain("<error");
       expect(erroredJunit).not.toContain("<failure");
 
-      const erroredSummaryRequest = await writeInspectionRequest(root, "errored-run-summary", {
-        kind: "run.get", runId: erroredReceipt.createdRunIds[0]!,
-      });
-      const erroredSummary = await niceeval.run(["query", "run", "--request", erroredSummaryRequest]);
+
+      const erroredSummary = await niceeval.run(["show", `run:${erroredReceipt.createdRunIds[0]!}`, "--json"]);
       expect(erroredSummary.exitCode, erroredSummary.diagnostic()).toBe(0);
       const erroredDocument = erroredSummary.run();
-      expect(erroredDocument).toMatchObject({ protocol: "niceeval.query/v3", operation: "run.get", issues: [] });
+      expect(erroredDocument).toMatchObject({ operation: "run.get", issues: [] });
       expect(erroredDocument.run.denominator).toEqual({ expected: 1, published: 1, missing: 0 });
       expect(erroredDocument.run.plannedAttempts).toEqual([expect.objectContaining({
         publication: expect.objectContaining({ state: "published", attemptLocator: erroredEval.locator }),
@@ -142,14 +136,11 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
         verdict: "errored",
       })]);
 
-      const erroredAttemptRequest = await writeInspectionRequest(root, "errored-attempt", {
-        kind: "attempt.get", locator: erroredEval.locator!,
-      });
-      const erroredAttempt = await niceeval.run(["query", "run", "--request", erroredAttemptRequest]);
+
+      const erroredAttempt = await niceeval.run(["show", erroredEval.locator!, "--json"]);
       expect(erroredAttempt.exitCode, erroredAttempt.diagnostic()).toBe(0);
       const attemptDocument = erroredAttempt.attempt();
       expect(attemptDocument).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.get",
         issues: [],
         attempt: {
@@ -159,14 +150,11 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
         },
       });
 
-      const erroredTraceRequest = await writeInspectionRequest(root, "errored-trace", {
-        kind: "attempt.trace", locator: erroredEval.locator!,
-      });
-      const erroredTrace = await niceeval.run(["query", "run", "--request", erroredTraceRequest]);
+
+      const erroredTrace = await niceeval.run(["show", erroredEval.locator!, "execution", "--json"]);
       expect(erroredTrace.exitCode, erroredTrace.diagnostic()).toBe(0);
       const traceDocument = erroredTrace.attemptTrace();
-      expect(traceDocument).toMatchObject({
-        protocol: "niceeval.query/v3", operation: "attempt.trace", issues: [],
+      expect(traceDocument).toMatchObject({ operation: "attempt.trace", issues: [],
       });
       const prepareCommand = only(
         traceDocument.trace.commands.items,
@@ -210,10 +198,8 @@ test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt", async
       })]);
       const receipt = result.expReceipt();
       expect(receipt).toMatchObject({ completion: "completed" });
-      const request = await writeInspectionRequest(paths.projectRoot, "judge-attempts", {
-        kind: "run.get", runId: receipt.createdRunIds[0]!,
-      });
-      const query = await niceeval.run(["query", "run", "--request", request]);
+
+      const query = await niceeval.run(["show", `run:${receipt.createdRunIds[0]!}`, "--json"]);
       expect(query.exitCode, query.diagnostic()).toBe(0);
       const members = query.run().run.plannedAttempts;
       expect(members).toHaveLength(2);
@@ -309,10 +295,8 @@ test.concurrent("计分制与通过制 Human 结束摘要显示各自主读数",
       );
       const carried = await niceeval.run(["exp", "normal", "greet", "--json"]);
       expect(carried.exitCode, carried.diagnostic()).toBe(0);
-      const carriedRequest = await writeInspectionRequest(paths.projectRoot, "carried-run-summary", {
-        kind: "run.get", runId: carried.expReceipt().createdRunIds[0]!,
-      });
-      const carriedSummary = await niceeval.run(["query", "run", "--request", carriedRequest]);
+
+      const carriedSummary = await niceeval.run(["show", `run:${carried.expReceipt().createdRunIds[0]!}`, "--json"]);
       expect(carriedSummary.exitCode, carriedSummary.diagnostic()).toBe(0);
       expect(carriedSummary.run().run.plannedAttempts).toEqual([expect.objectContaining({
         publication: expect.objectContaining({ state: "published", attemptLocator: freshForCarryEval.locator }),

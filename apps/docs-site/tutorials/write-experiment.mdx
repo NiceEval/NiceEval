@@ -117,7 +117,7 @@ To confirm before running which evals run and how many times, add `--dry`; see [
 After both configurations run, view each in the terminal:
 
 ```bash
-pnpm exec niceeval show --experiment prompts/v1 --experiment prompts/v2
+pnpm exec niceeval show exp:prompts/v1 exp:prompts/v2
 ```
 
 Each Experiment's `Summary` lists these items:
@@ -215,4 +215,4 @@ The Adapter reads this configuration from `ctx.models` and hands it to the appli
 
 `models` cannot be written together with `model` or `reasoningEffort`. Agent-style Adapters use only a single `model`.
 
-After the run, use `niceeval show @<locator> --usage` to see each model's usage and cost in one run. When Judge usage was not reported, it shows as unavailable, and the total cost gives only the known part.
+After the run, use `niceeval show @<locator> usage` to see each model's usage and cost in one run. When Judge usage was not reported, it shows as unavailable, and the total cost gives only the known part.

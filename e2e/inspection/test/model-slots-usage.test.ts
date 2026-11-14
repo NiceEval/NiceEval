@@ -1,5 +1,5 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
+
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
@@ -11,11 +11,10 @@ test.concurrent("用途与实际模型分列，零费用与未知费用保留且
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-roles", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(paths.projectRoot, "model-usage.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.configuredModels).toEqual({ state: "available", bindings: [
       { modelRole: "planner", model: "fixture/shared", reasoningEffort: "high", recordedCalls: 2 },
       { modelRole: "reviewer", model: "fixture/shared", reasoningEffort: null, recordedCalls: 1 },
@@ -48,20 +47,20 @@ test.concurrent("用途与实际模型分列，零费用与未知费用保留且
     };
     expect(usage.judgeUsage).toEqual({ ...judgeSummary, calls: [], callsTruncated: false, omittedCallCount: 0, priceReceipts: [] });
     expect(usage.totalCosts).toEqual({ state: "partial", values: [{ currency: "USD", value: "0.375", source: "reported" }], missingSources: ["application"] });
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "overview.get" } }));
-    const overviewRead = await niceeval.run(["query", "run", "--request", request]);
+
+    const overviewRead = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
     expect(overviewRead.exitCode, overviewRead.diagnostic()).toBe(0);
-    const overview = overviewRead.querySuccess("overview.get").overview;
+    const overview = overviewRead.inspectionSuccess("overview.get").overview;
     const cell = only(overview.cells, (item) => item.experimentId === "model-roles" && item.evalId === "model-roles", overviewRead.diagnostic());
     expect(cell.costUSD).toMatchObject({ state: "partial", value: 0.375, source: "reported", unit: "USD" });
     expect(cell.tokens).toMatchObject({ state: "partial", value: 40, unit: "tokens" });
     const aggregate = only(overview.experiments, (item) => item.experimentId === "model-roles", overviewRead.diagnostic());
     expect(aggregate.costUSD).toMatchObject({ state: "partial", value: 0.375, source: "reported", unit: "USD" });
     expect(aggregate.tokens).toMatchObject({ state: "partial", value: 40, unit: "tokens" });
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "experiment.get", experimentId: "model-roles" } }));
-    const experimentRead = await niceeval.run(["query", "run", "--request", request]);
+
+    const experimentRead = await niceeval.run(["show", `exp:${"model-roles"}`, "--json"]);
     expect(experimentRead.exitCode, experimentRead.diagnostic()).toBe(0);
-    const experiment = experimentRead.querySuccess("experiment.get").experiment;
+    const experiment = experimentRead.inspectionSuccess("experiment.get").experiment;
     expect(experiment.experiment.costUSD).toMatchObject({ state: "partial", value: 0.375, source: "reported", unit: "USD" });
     expect(experiment.experiment.tokens).toMatchObject({ state: "partial", value: 40, unit: "tokens" });
     expect(experiment.modelUsage).toMatchObject({ totalAttemptCount: 1, omittedAttemptCount: 0, unresolvedAttemptCount: 0 });
@@ -71,7 +70,7 @@ test.concurrent("用途与实际模型分列，零费用与未知费用保留且
       state: usage.state, configuredModels: usage.configuredModels, modelGroups: usage.modelGroups,
       judgeUsage: judgeSummary, totalCosts: usage.totalCosts, totals: usage.totals,
     });
-    const shown = await niceeval.run(["show", event.locator, "--usage"]);
+    const shown = await niceeval.run(["show", event.locator, "usage"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     for (const value of ["planner", "reviewer", "unused", "fixture/shared", "fixture/fallback", "fixture/unused", "0.375", "USD"]) expect(shown.stdout).toContain(value);
     expect(shown.stdout).toContain("Judge usage");

@@ -24,11 +24,10 @@ test.concurrent("QA 内容非法仍保留已收到的 Judge token 与费用，�
       for (const sent of fixture.requests) {
         expect(sent).toMatchObject({ method: "POST", path: "/v1/chat/completions" });
       }
-      const request = join(paths.projectRoot, "judge-usage.request.json");
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-      const read = await niceeval.run(["query", "run", "--request", request]);
+
+      const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
       expect(read.exitCode, read.diagnostic()).toBe(0);
-      const usage = read.querySuccess("attempt.usage").usage;
+      const usage = read.inspectionSuccess("attempt.usage").usage;
       const judge = usage.judgeUsage;
       // This checkpoint must kill the old candidate which reports only unavailable.
       expect(judge.state, read.diagnostic()).toBe("complete");
@@ -65,23 +64,23 @@ test.concurrent("QA 内容非法仍保留已收到的 Judge token 与费用，�
       expect(usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.27", source: "reported" }], missingSources: [] });
 
       // The ledger's formal entryId is consumed by the public detail operation.
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator: event.locator } }));
-      const attemptRead = await niceeval.run(["query", "run", "--request", request]);
+
+      const attemptRead = await niceeval.run(["show", event.locator, "--json"]);
       expect(attemptRead.exitCode, attemptRead.diagnostic()).toBe(0);
-      const entry = only(attemptRead.querySuccess("attempt.get").attempt.assertions.entries, (item) => item.display.label === "Answer QA", attemptRead.diagnostic());
+      const entry = only(attemptRead.inspectionSuccess("attempt.get").attempt.assertions.entries, (item) => item.display.label === "Answer QA", attemptRead.diagnostic());
       for (const call of judge.calls) {
         expect(call.entryId).toBe(entry.entryId);
-        await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.assertion.detail", locator: event.locator, entryId: call.entryId } }));
-        const detailRead = await niceeval.run(["query", "run", "--request", request]);
+
+        const detailRead = await niceeval.run(["show", event.locator, call.entryId, "--full", "--json"]);
         expect(detailRead.exitCode, detailRead.diagnostic()).toBe(0);
-        expect(detailRead.querySuccess("attempt.assertion.detail").assertion).toMatchObject({
+        expect(detailRead.inspectionSuccess("attempt.assertion.detail").assertion).toMatchObject({
           entryId: entry.entryId, display: { label: "Answer QA" }, check: { state: "errored" },
         });
       }
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "experiment.get", experimentId: "judge-usage-invalid-qa" } }));
-      const experimentRead = await niceeval.run(["query", "run", "--request", request]);
+
+      const experimentRead = await niceeval.run(["show", `exp:${"judge-usage-invalid-qa"}`, "--json"]);
       expect(experimentRead.exitCode, experimentRead.diagnostic()).toBe(0);
-      const experiment = experimentRead.querySuccess("experiment.get").experiment;
+      const experiment = experimentRead.inspectionSuccess("experiment.get").experiment;
       expect(experiment.experiment.costUSD).toMatchObject({ state: "available", value: 0.25, source: "reported", unit: "USD" });
       expect(experiment.experiment.tokens).toMatchObject({ state: "available", value: 5, unit: "tokens" });
       expect(experiment.modelUsage).toMatchObject({ totalAttemptCount: 1, omittedAttemptCount: 0, unresolvedAttemptCount: 0 });
@@ -100,9 +99,9 @@ test.concurrent("QA 内容非法仍保留已收到的 Judge token 与费用，�
       expect(origin.usage.judgeUsage).not.toHaveProperty("calls");
       expect(origin.usage.judgeUsage).not.toHaveProperty("priceReceipts");
       expect(origin.usage.totalCosts).toEqual({ state: "complete", values: [{ currency: "USD", value: "0.27", source: "reported" }], missingSources: [] });
-      const shown = await niceeval.run(["show", event.locator, "--usage"], { env });
+      const shown = await niceeval.run(["show", event.locator, "usage"], { env });
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const experimentShown = await niceeval.run(["show", "--experiment", "judge-usage-invalid-qa"], { env });
+      const experimentShown = await niceeval.run(["show", `exp:${"judge-usage-invalid-qa"}`], { env });
       expect(experimentShown.exitCode, experimentShown.diagnostic()).toBe(0);
       for (const text of [shown.stdout, experimentShown.stdout]) {
         expect(text).toContain("Judge usage");

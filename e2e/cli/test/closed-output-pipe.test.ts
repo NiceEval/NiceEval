@@ -14,7 +14,7 @@ async function assertClosedOutputPipe(stream: "stdout" | "stderr"): Promise<void
         child.on("error", (error) => { console.error(error); process.exitCode = 2; });
         child.on("close", (code) => { process.exitCode = code ?? 2; });
       `,
-      stream, ...cliBinary, ...(stream === "stdout" ? ["query", "discover"] : ["unknown-command"]),
+      stream, ...cliBinary, ...(stream === "stdout" ? ["show", "--help"] : ["unknown-command"]),
     ], { cwd: paths.projectRoot, processGroup: true, timeoutMs: 30_000 }, async (controlled) => {
       const result = await controlled.done;
       expect(result.exitCode, result.diagnostic()).toBe(0);

@@ -23,7 +23,7 @@ test.concurrent("Docker instances identify their first Attempt and Eval unless t
         expect.objectContaining({ evalId: "creation-labels", verdict: "passed" }),
       ]);
       const locator = result.expEvalEvents()[0]!.locator!;
-      const queried = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator } })]);
+      const queried = await niceeval.run(["show", locator, "--json"]);
       expect(queried.exitCode, queried.diagnostic()).toBe(0);
       digests.push(queried.attempt().attempt.core.executionIdentityDigest);
     }

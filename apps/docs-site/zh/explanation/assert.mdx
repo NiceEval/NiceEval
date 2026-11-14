@@ -141,7 +141,7 @@ const search = await t.check(turn.reply, includes("结论")).orStop();
 - `t.check(await t.sandbox.runCommand(...), commandSucceeded())` 保存这次命令的命令名、参数、退出状态、运行时间，以及脱敏后的 stdout 和 stderr（内容或引用）。
 - `calledTool(...)` 保存它看到的每次工具调用：调用身份、脱敏后的输入、状态、输出或错误的引用、记录是否完整，以及命中了哪些事件。没有命中时，也保存看过的范围和候选调用，而不是只存一个 `false`。
 
-所以 `query`、`view` 和源码视图都能直接用保存下来的结果组织文案和界面，不需要重新运行 Match 或再调用一次 Judge。界面上的 `expected` 和 `received` 是读取时根据这些内容生成的，不是只存了两个字符串。
+所以 `show --json`、`view` 和源码视图都能直接用保存下来的结果组织文案和界面，不需要重新运行 Match 或再调用一次 Judge。界面上的 `expected` 和 `received` 是读取时根据这些内容生成的，不是只存了两个字符串。
 
 Assertion 只规定必须保存什么，怎样落盘由 Record 决定。判断所需的数据没法安全保存时，结果必须是 `unavailable`，不能只留下 `matched` 或 `mismatched`。
 

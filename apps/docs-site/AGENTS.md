@@ -41,13 +41,13 @@
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
 - **Inspection**：固定 operation 在读取结束前关闭 source、selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。它不提供 SQL、JSON path、公式或作者 callback。
-- **query**：AI、脚本和 CI 使用的 versioned `niceeval.query/v2` JSON operation protocol。先用 `discover` 取得 catalog，再以 `explain` / `run` 处理完整 request。
+- **show --json**：AI、脚本和 CI 使用的结构化 Inspection 入口。使用对象地址选择结果，再沿 links 继续读取。
 - **View**：`niceeval view` 提供给人的固定第一方本地界面。它只消费 Inspection result，不装载项目 Report、Page、组件、主题或 renderer。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
-- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `query` 先发现可用问题，再发送完整 request」，不写内部代号。
+- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `show --json`，再沿 links 读取具体结果」，不写内部代号。
 - **不写内部演进**：读者不知道旧设计，也不需要知道。「不再」「改成」「新版」这类相对旧稿的叙述不出现；设计迭代的来龙去脉住在仓库根 `docs/` 与 `memory/`。
 - 具名英语术语使用本文术语表与仓库根目录 `docs/concepts.md` 裁决的大小写。命令、路径、flag、文件名、包名和代码标识保持原样。
 - 只在 @apps/docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译

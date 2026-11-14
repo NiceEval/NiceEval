@@ -1,6 +1,5 @@
 import { only } from "@niceeval/testkit";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
@@ -11,11 +10,10 @@ test.concurrent("显式完整空应用账本交付完整零费用，默认 Show 
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-seal-empty" && item.experimentId === "usage-seal-empty", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(projectRoot, "usage-seal-empty.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.totals.requests).toEqual({ state: "available", value: 0, observationCount: 0 });
     expect(usage.calls).toEqual([]);
     expect(usage.totalCosts, read.diagnostic()).toEqual({ state: "complete", values: [], missingSources: [] });
@@ -35,11 +33,10 @@ test.concurrent("显式 partial 应用账本保留已知费用，默认 Show 仍
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-seal-partial" && item.experimentId === "usage-seal-partial", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(projectRoot, "usage-seal-partial.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.state).toBe("partial");
     expect(usage.totals.requests).toEqual({ state: "partial", value: 1, observationCount: 1 });
     expect(usage.calls).toEqual([expect.objectContaining({ callId: "accepted", cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "offline.response" } } })]);
@@ -61,15 +58,14 @@ test.concurrent("封存后写入被 catch 仍发布 errored Attempt，保留已�
     expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-seal-caught-write" && item.experimentId === "usage-seal-caught-write", run.diagnostic());
     expect(event.verdict).toBe("errored");
-    const request = join(projectRoot, "usage-seal-caught-write.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator: event.locator } }));
-    const attempt = await niceeval.run(["query", "run", "--request", request]);
+
+    const attempt = await niceeval.run(["show", event.locator, "--json"]);
     expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
-    expect(attempt.querySuccess("attempt.get").attempt).toMatchObject({ core: { outcome: "errored" }, verdict: "errored" });
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+    expect(attempt.inspectionSuccess("attempt.get").attempt).toMatchObject({ core: { outcome: "errored" }, verdict: "errored" });
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.state).toBe("partial");
     expect(usage.totals.requests).toEqual({ state: "partial", value: 1, observationCount: 1 });
     expect(usage.calls).toEqual([expect.objectContaining({ callId: "accepted", cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "offline.response" } } })]);

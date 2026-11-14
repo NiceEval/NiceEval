@@ -164,7 +164,7 @@ Budgets and `t.maxCost()` use a separate value: the runner calculates `estimated
 
 If the model has no price in the table, the runner cannot estimate its cost and `t.maxCost()` returns `unavailable`, not zero. If an explicitly configured zero rate produces `estimatedCostUSD: 0`, that zero is a valid estimate and is compared with the limit.
 
-**This step supports** `t.maxTokens()` / `t.maxCost()` and usage in `niceeval show --usage` and `niceeval view`. If `show` has no usage, check whether the API response includes it and whether `send` returned it.
+**This step supports** `t.maxTokens()` / `t.maxCost()` and usage in `niceeval show @<locator> usage` and `niceeval view`. If `show` has no usage, check whether the API response includes it and whether `send` returned it.
 
 ## Step 4: parse tools into events
 
@@ -247,7 +247,7 @@ After normalization, the events you emit determine the assertion families Eval a
 
 A Chat Completions response **does not guarantee a complete process record**. An application can finish its tool loop server-side and return only a final answer. Therefore, `turnFromChatCompletion` returns no completeness proof. Positive assertions such as `calledTool` work, while negative assertions such as `notCalledTool` report incomplete evidence. The Responses protocol requires the `output` array to record the complete process, so `turnFromResponses` carries a completeness proof and negative assertions are trustworthy. The difference in trustworthiness comes from the interface contract.
 
-**This step supports** `turn.calledTool()`, `turn.toolOrder()`, `turn.maxToolCalls()`, and `turn.noFailedActions()`. For ordering across Turns, use `session` instead of `turn`. After the run, inspect tools with `pnpm exec niceeval show @<locator> --execution`. If a tool is missing, check the response's tool fields and your mapping.
+**This step supports** `turn.calledTool()`, `turn.toolOrder()`, `turn.maxToolCalls()`, and `turn.noFailedActions()`. For ordering across Turns, use `session` instead of `turn`. After the run, inspect tools with `pnpm exec niceeval show @<locator> execution`. If a tool is missing, check the response's tool fields and your mapping.
 
 ## Step 5: HITL
 
@@ -377,7 +377,7 @@ export default defineExperiment({
 
 Declare `flags` in two Experiment files and run the same evals with `pnpm exec niceeval exp` to compare them. This is Tier 3 integration because the application must expose the switches. See [Tier](/explanation/tier) for effort and benefits, and [Write experiments](/tutorials/write-experiment) for `flags`, `model`, `attempts`, and other fields.
 
-**This step supports** comparing the same evals across variants. After both runs finish, compare them with `pnpm exec niceeval show --experiment <id> --experiment <id>` or `pnpm exec niceeval view`. If the scores are almost identical, first confirm the application actually reads the request's `flags`.
+**This step supports** comparing the same evals across variants. After both runs finish, compare them with `pnpm exec niceeval show exp:<id> exp:<id>` or `pnpm exec niceeval view`. If the scores are almost identical, first confirm the application actually reads the request's `flags`.
 
 ## Reference: the five t APIs as send sees them
 

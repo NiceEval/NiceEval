@@ -12,7 +12,6 @@ import { InspectionArtifactLimitSchema, InspectionArtifactOffsetSchema, Inspecti
 import { InspectionRunCoreSchema } from "./planned-attempt.ts";
 import { InspectionArtifactMetadataSchema, InspectionArtifactsPageLimitSchema, InspectionArtifactsValueSchema } from "./artifact-list.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
-import { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 import { AssertionDetailResultSchema } from "./assertion-projection.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
 import { InspectionRepricingInputSchema, InspectionRepricingResultSchema } from "./repricing.ts";
@@ -49,15 +48,21 @@ const PublicationCutoffSchema = Schema.Struct({
 const SelectionSchema = Schema.Struct({
   requestedRunIds: Schema.Array(Schema.String), selectedRunIds: Schema.Array(Schema.String), missingRunIds: Schema.Array(Schema.String),
 });
+export const InspectionLinkSchema = Schema.Struct({
+  rel: Schema.Literals(["assertion", "diff", "file-change", "execution", "execution-item", "timing", "usage", "source", "artifact", "run", "attempt", "experiment", "next-page"]),
+  command: Schema.String,
+});
+export type InspectionLink = Schema.Schema.Type<typeof InspectionLinkSchema>;
+const LinksSchema = Schema.Array(InspectionLinkSchema);
 const SuccessMetadataSchema = Schema.Struct({
-  protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("success"),
-  behaviorVersion: Schema.Literal(INSPECTION_BEHAVIOR_VERSION),
+  outcome: Schema.Literal("success"),
+
   source: SourceSchema, publicationCutoff: PublicationCutoffSchema, selection: SelectionSchema,
   issues: Schema.Tuple([]), evidence: Schema.Struct({ refs: Schema.Array(Schema.String) }),
 });
 const RunsListSuccessMetadataSchema = Schema.Struct({
-  protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("success"),
-  behaviorVersion: Schema.Literal(INSPECTION_BEHAVIOR_VERSION),
+  outcome: Schema.Literal("success"),
+
   source: SourceSchema,
   publicationCutoff: PublicationCutoffSchema,
   selection: Schema.Struct({
@@ -150,10 +155,10 @@ export const INSPECTION_OPERATION_IDS = Object.freeze(Object.keys(inspectionProt
 export const InspectionOperationIdSchema = Schema.Literals(INSPECTION_OPERATION_IDS);
 const specs = Object.entries(inspectionProtocolRegistry);
 export const InspectionRequestSchema = Schema.Struct({
-  protocol: Schema.Literal(QUERY_PROTOCOL),
+
   operation: Schema.Union(specs.map(([, entry]) => entry.request)),
 });
-/** A versioned request for a fixed Inspection operation; use discovery for the operation's complete supported shape. */
+/** A request for one fixed Inspection operation. */
 export type InspectionRequest = Schema.Schema.Type<typeof InspectionRequestSchema>;
 /** Selects one fixed Inspection operation and its declared inputs; arbitrary SQL, JSON paths and callbacks are not accepted. */
 export type InspectionOperation = InspectionRequest["operation"];
@@ -167,7 +172,7 @@ const successSchema = (
   id: InspectionOperationId,
   entry: (typeof inspectionProtocolRegistry)[InspectionOperationId],
 ): Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded> => {
-  const fields = Schema.fieldsAssign({ operation: Schema.Literal(id), ...entry.result });
+  const fields = Schema.fieldsAssign({ operation: Schema.Literal(id), links: LinksSchema, ...entry.result });
   const schema = id === "run.list" ? RunsListSuccessMetadataSchema.pipe(fields)
     : id === "runs.compare" ? CompareSuccessMetadataSchema.pipe(fields)
     : SuccessMetadataSchema.pipe(fields);
@@ -189,25 +194,24 @@ export const InspectionExplanationDocumentSchema = Schema.Union(specs.map(([id, 
   explanationSchema(id as InspectionOperationId, entry)
 ));
 
-const DescriptorSchema = Schema.Union(specs.map(([id]) => Schema.Struct({ id: Schema.Literal(id as InspectionOperationId) })));
-export const InspectionDiscoveryDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("discovery"), operations: Schema.Array(DescriptorSchema),
-});
 export const InspectionFailureDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(QUERY_PROTOCOL), outcome: Schema.Literal("failure"),
+  outcome: Schema.Literal("failure"),
   operation: Schema.NullOr(InspectionOperationIdSchema),
   failure: Schema.Struct({
     code: Schema.Literals(["unsupported-format", "inspection-request-invalid", "inspection-selection-missing", "inspection-source-invalid", "inspection-record-integrity-failure", "inspection-operation-failed", "inspection-result-invalid", "evidence-budget-exceeded", "restart-required", "current-target-unavailable"]),
     reason: Schema.String,
+    issues: Schema.optional(Schema.Array(Schema.Struct({ path: Schema.String, expected: Schema.String, received: Schema.String }))),
+    omittedIssueCount: Schema.optional(Schema.Number),
+    availableOperations: Schema.optional(Schema.Array(InspectionOperationIdSchema)),
     identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
     correction: Schema.Literals(["fix-request", "choose-existing-selection", "fix-record-source", "retry", "upgrade-or-report", "restart"]),
   }),
 });
 export const InspectionDocumentSchema: Schema.Union<readonly [
-  typeof InspectionDiscoveryDocumentSchema, typeof InspectionSuccessDocumentSchema,
+  typeof InspectionSuccessDocumentSchema,
   typeof InspectionExplanationDocumentSchema, typeof InspectionFailureDocumentSchema,
 ]> = Schema.Union([
-  InspectionDiscoveryDocumentSchema, InspectionSuccessDocumentSchema,
+  InspectionSuccessDocumentSchema,
   InspectionExplanationDocumentSchema, InspectionFailureDocumentSchema,
 ]);
 
@@ -224,7 +228,7 @@ type ResultFields<Kind extends InspectionOperationId> = {
 };
 /** Types one successful operation's metadata and result fields; operation identity must match before consuming these fields. */
 export type InspectionSuccessDocumentFor<Kind extends InspectionOperationId> = Kind extends InspectionOperationId
-  ? MetadataFor<Kind> & { readonly operation: Kind } & ResultFields<Kind>
+  ? MetadataFor<Kind> & { readonly operation: Kind; readonly links: readonly InspectionLink[] } & ResultFields<Kind>
   : never;
 /** Contains a successful fixed-operation result with its metadata; missing and partial evidence remain explicit inside the result. */
 export type InspectionSuccessDocument = InspectionSuccessDocumentFor<InspectionOperationId>;
@@ -232,7 +236,7 @@ type SuccessEncodedFor<Kind extends InspectionOperationId> = Kind extends Inspec
   ? (Kind extends "run.list" ? Schema.Codec.Encoded<typeof RunsListSuccessMetadataSchema>
       : Kind extends "runs.compare" ? Schema.Codec.Encoded<typeof CompareSuccessMetadataSchema>
       : Schema.Codec.Encoded<typeof SuccessMetadataSchema>)
-    & { readonly operation: Kind }
+    & { readonly operation: Kind; readonly links: readonly InspectionLink[] }
     & { readonly [Field in keyof Registry[Kind]["result"]]: Registry[Kind]["result"][Field] extends Schema.Constraint
         ? Schema.Codec.Encoded<Registry[Kind]["result"][Field]> : never }
   : never;
@@ -245,12 +249,10 @@ export type InspectionExplanationDocumentFor<Kind extends InspectionOperationId>
 export type InspectionExplanationDocument = InspectionExplanationDocumentFor<InspectionOperationId>;
 /** Contains either an explanation or successful operation result; inspect outcome before treating it as queried facts. */
 export type InspectionOperationDocument = InspectionSuccessDocument | InspectionExplanationDocument;
-/** Lists the fixed Inspection operations and their request contracts; discovery does not execute a query. */
-export type InspectionDiscoveryDocument = Schema.Schema.Type<typeof InspectionDiscoveryDocumentSchema>;
 /** Reports an Inspection protocol or execution failure; failure to read evidence must not be interpreted as a failed Attempt. */
 export type InspectionFailureDocument = Schema.Schema.Type<typeof InspectionFailureDocumentSchema>;
-/** A decoded discovery, operation result or failure envelope; check its outcome before accessing operation-specific facts. */
-export type InspectionDocument = InspectionDiscoveryDocument | InspectionOperationDocument | InspectionFailureDocument;
+/** A decoded success, explanation or failure document; check its outcome before accessing operation-specific facts. */
+export type InspectionDocument = InspectionOperationDocument | InspectionFailureDocument;
 /** Returns a decoded protocol value or a reason for rejection; check success before reading value. */
 export type InspectionProtocolDecodeResult<A> = { readonly success: true; readonly value: A } | { readonly success: false; readonly reason: string };
 

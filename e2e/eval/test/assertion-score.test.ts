@@ -1,7 +1,7 @@
 // rerun: pnpm e2e test --repo eval -- --run test/assertion-score.test.ts
 
 import { only } from "@niceeval/testkit";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
@@ -48,7 +48,6 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
       const summary = await inspectRunSummary(niceeval, projectRoot, runId);
       expect(summary.receipt.exitCode, summary.receipt.diagnostic()).toBe(0);
       expect(summary.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "run.get",
         issues: [],
         run: { denominator: { expected: 12, published: 12, missing: 0 } },
@@ -165,14 +164,13 @@ test.concurrent("计分 Eval 公开区分质量门失败、连续得分与停止
       expect(human.stdout, human.diagnostic()).toContain("FAILED");
       expect(human.stdout).not.toContain("SCORED");
       expect(human.stdout).toContain("30 score · failed · unranked");
-      const shown = await niceeval.run(["show", "--experiment", "assertion-score"]);
+      const shown = await niceeval.run(["show", `exp:${"assertion-score"}`]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toMatch(/Verdicts\s+6 passed; 2 failed; 2 errored; 2 skipped/u);
-      const overviewRequest = join(projectRoot, "score-overview.json");
-      await writeFile(overviewRequest, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "overview.get" } }));
-      const overview = await niceeval.run(["query", "run", "--request", overviewRequest]);
+
+      const overview = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
       expect(overview.exitCode, overview.diagnostic()).toBe(0);
-      const cells = overview.querySuccess("overview.get").overview.cells;
+      const cells = overview.inspectionSuccess("overview.get").overview.cells;
       expect(only(cells, (cell) => cell.evalId === "assertion-score/gated", overview.diagnostic()).score)
         .toMatchObject({
           state: "available", value: 30, samples: 2, total: 2,

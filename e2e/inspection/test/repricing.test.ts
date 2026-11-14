@@ -20,20 +20,17 @@ test.concurrent("按两个价格版本重计历史成本，保留用量缺口和
       const request = join(paths.projectRoot, "reprice.request.json");
       const before = await niceeval.run(["show", event.locator, "--json"]);
       expect(before.exitCode, before.diagnostic()).toBe(0);
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3",
-        operation: { kind: "attempt.usage", locator: event.locator } }));
-      const original = await niceeval.run(["query", "run", "--request", request]);
+
+      const original = await niceeval.run(["show", event.locator, "usage", "--json"]);
       expect(original.exitCode, original.diagnostic()).toBe(0);
       for (const multiplier of [1, 2]) {
-        await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: {
-          kind: "attempt.reprice", locator: event.locator,
-          pricing: Object.fromEntries(["application-model", "inspection-fixture-v1"].map((model) => [model, {
+        await writeFile(request, JSON.stringify( Object.fromEntries(["application-model", "inspection-fixture-v1"].map((model) => [model, {
             inputPerMTok: 2 * multiplier, outputPerMTok: 8 * multiplier,
             cacheReadPerMTok: multiplier, cacheWritePerMTok: 2 * multiplier,
             source: { id: `comparison-${multiplier}` },
           }])),
-        } }));
-        const read = await niceeval.run(["query", "run", "--request", request]);
+        ));
+        const read = await niceeval.run(["show", event.locator, "usage", "--reprice", request, "--json"]);
         expect(read.exitCode, read.diagnostic()).toBe(0);
         const pricingPath = join(paths.projectRoot, "pricing.json");
         const pricing = Object.fromEntries(["application-model", "inspection-fixture-v1"].map((model) => [model, {
@@ -41,10 +38,10 @@ test.concurrent("按两个价格版本重计历史成本，保留用量缺口和
           cacheReadPerMTok: multiplier, cacheWritePerMTok: 2 * multiplier, source: { id: `comparison-${multiplier}` },
         }]));
         await writeFile(pricingPath, JSON.stringify(pricing));
-        const shown = await niceeval.run(["show", event.locator, "--usage", "--reprice", pricingPath, "--json"]);
+        const shown = await niceeval.run(["show", event.locator, "--reprice", pricingPath, "--json", "usage"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
         expect(shown.stdout).toBe(read.stdout);
-        const repricing = read.querySuccess("attempt.reprice").repricing;
+        const repricing = read.inspectionSuccess("attempt.reprice").repricing;
         expect(repricing.application).toMatchObject({
           state: "complete", collection: "complete", callCount: 1,
           amount: multiplier === 1 ? "0.000016" : "0.000032", missingCallIds: [],
@@ -60,21 +57,18 @@ test.concurrent("按两个价格版本重计历史成本，保留用量缺口和
           { bucket: "cache-write", reason: "tokens-unknown" },
         ]);
       }
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: {
-        kind: "attempt.reprice", locator: event.locator,
-        pricing: { "unmatched-model": { inputPerMTok: 1, outputPerMTok: 1, source: { id: "unmatched" } } },
-      } }));
-      const missing = await niceeval.run(["query", "run", "--request", request]);
+      await writeFile(request, JSON.stringify( { "unmatched-model": { inputPerMTok: 1, outputPerMTok: 1, source: { id: "unmatched" } } },
+      ));
+      const missing = await niceeval.run(["show", event.locator, "usage", "--reprice", request, "--json"]);
       expect(missing.exitCode, missing.diagnostic()).toBe(0);
-      expect(missing.querySuccess("attempt.reprice").repricing.total).toEqual({
+      expect(missing.inspectionSuccess("attempt.reprice").repricing.total).toEqual({
         state: "unavailable", currency: "USD", amount: null,
       });
-      expect(missing.querySuccess("attempt.reprice").repricing.application.missingCallIds).toEqual(["application-1"]);
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3",
-        operation: { kind: "attempt.usage", locator: event.locator } }));
-      const unchanged = await niceeval.run(["query", "run", "--request", request]);
+      expect(missing.inspectionSuccess("attempt.reprice").repricing.application.missingCallIds).toEqual(["application-1"]);
+
+      const unchanged = await niceeval.run(["show", event.locator, "usage", "--json"]);
       expect(unchanged.exitCode, unchanged.diagnostic()).toBe(0);
-      expect(unchanged.querySuccess("attempt.usage")).toEqual(original.querySuccess("attempt.usage"));
+      expect(unchanged.inspectionSuccess("attempt.usage")).toEqual(original.inspectionSuccess("attempt.usage"));
       const after = await niceeval.run(["show", event.locator, "--json"]);
       expect(after.exitCode, after.diagnostic()).toBe(0);
       expect(after.stdout).toBe(before.stdout);

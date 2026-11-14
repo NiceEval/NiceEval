@@ -72,9 +72,9 @@ For how to get candidate locators and what to check before accepting, see [Revie
 When the run ends, the terminal's `NEXT` panel lists the Runs created this time, with two commands to view each in the terminal and in the browser:
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-Both reused and rerun evals appear in this Run, and the pass rate is computed over the complete batch. Do not use `show --experiment` to view results before `exp` has finished; at that point there may be no published results yet.
+Both reused and rerun evals appear in this Run, and the pass rate is computed over the complete batch. Do not use `show exp:<id>` to view results before `exp` has finished; at that point there may be no published results yet.
 
 For the full ways to view results, see [View Run Results](/tutorials/viewing-results). For how reuse and rerun decisions work, see [Runner](/explanation/runner).

@@ -25,7 +25,7 @@ test.concurrent("允许范围检查遵循组件边界并将独立 criterion 读�
           expect(entry.criterion).toMatchObject({ state: "available", value: { kind: "builtin", id: "sandbox-change-scope/v1" } });
         }
         if (entry.display.label === "component boundary") {
-          const shown = await niceeval.run(["show", event.locator!, "--assertions", "--entry", entry.entryId, "--full"]);
+          const shown = await niceeval.run(["show", event.locator!, "--full", entry.entryId]);
           expect(shown.exitCode, shown.diagnostic()).toBe(0);
           expect(shown.stdout).toContain("agents-old/outside.ts");
           expect(shown.stdout).toContain("sandbox-change-scope/v1");

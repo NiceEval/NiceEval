@@ -18,11 +18,11 @@ test.concurrent("install 声明完成安装循环，公开时间线使用 agent.
     const run = await niceeval.run(["exp", "agent-install-identity", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const locator = only(run.expEvalEvents(), () => true).locator;
-    const timing = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.timing", locator } })]);
+    const timing = await niceeval.run(["show", locator, "timing", "--json"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    expect(timing.querySuccess("attempt.timing").timing.activities).toEqual(expect.arrayContaining([expect.objectContaining({ phase: "agent.install" })]));
+    expect(timing.inspectionSuccess("attempt.timing").timing.activities).toEqual(expect.arrayContaining([expect.objectContaining({ phase: "agent.install" })]));
     expect(timing.stdout).not.toContain("agent.ensure");
-    const shown = await niceeval.run(["show", locator, "--timing"]);
+    const shown = await niceeval.run(["show", locator, "timing"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("agent.install");
     expect(shown.stdout).not.toContain("agent.ensure");
@@ -57,11 +57,11 @@ test.concurrent("历史 Agent 安装相位通过公开 Record 读回时统一展
   await runnerE2E.case("agent-install-legacy-record", async ({ commands: { niceeval }, paths }) => {
     const record = join(paths.projectRoot, "fixtures/legacy-agent-install/record.sqlite");
     const locator = "@151915Q5R3N0J";
-    const timing = await niceeval.run(["query", "run", "--record", record, "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.timing", locator } })]);
+    const timing = await niceeval.run(["show", locator, "timing", "--record", record, "--json"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
-    expect(timing.querySuccess("attempt.timing").timing.activities).toEqual(expect.arrayContaining([expect.objectContaining({ phase: "agent.install", label: "agent.install" })]));
+    expect(timing.inspectionSuccess("attempt.timing").timing.activities).toEqual(expect.arrayContaining([expect.objectContaining({ phase: "agent.install", label: "agent.install" })]));
     expect(timing.stdout).not.toContain("agent.ensure");
-    const shown = await niceeval.run(["show", locator, "--record", record, "--timing"]);
+    const shown = await niceeval.run(["show", locator, "--record", record, "timing"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("agent.install");
     expect(shown.stdout).not.toContain("agent.ensure");

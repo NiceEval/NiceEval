@@ -1,6 +1,5 @@
 import { only } from "@niceeval/testkit";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
@@ -12,18 +11,17 @@ test.concurrent("非法封存原因在调用处解释格式，捕获后仍保留
     expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-seal-invalid-reason", run.diagnostic());
     expect(event.verdict).toBe("errored");
-    const request = join(projectRoot, "reason.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator: event.locator } }));
-    const attempt = await niceeval.run(["query", "run", "--request", request]);
+
+    const attempt = await niceeval.run(["show", event.locator, "--json"]);
     expect(attempt.exitCode, attempt.diagnostic()).toBe(0);
-    const entry = only(attempt.querySuccess("attempt.get").attempt.assertions.entries, () => true, attempt.diagnostic());
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.assertion.detail", locator: event.locator, entryId: entry.entryId } }));
-    const detail = await niceeval.run(["query", "run", "--request", request]);
+    const entry = only(attempt.inspectionSuccess("attempt.get").attempt.assertions.entries, () => true, attempt.diagnostic());
+
+    const detail = await niceeval.run(["show", event.locator, entry.entryId, "--full", "--json"]);
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
-    expect(detail.querySuccess("attempt.assertion.detail").assertion.check).toMatchObject({ state: "matched" });
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+    expect(detail.inspectionSuccess("attempt.assertion.detail").assertion.check).toMatchObject({ state: "matched" });
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    expect(read.querySuccess("attempt.usage").usage).toMatchObject({ state: "partial", calls: [{ callId: "accepted" }] });
+    expect(read.inspectionSuccess("attempt.usage").usage).toMatchObject({ state: "partial", calls: [{ callId: "accepted" }] });
   });
 });

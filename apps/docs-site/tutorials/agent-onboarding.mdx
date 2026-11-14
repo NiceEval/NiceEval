@@ -71,7 +71,7 @@ export default defineConfig({
 Points to raise with the user:
 
 - **A misconfiguration never pretends to pass.** When the model or key cannot be read, or the request times out, the Judge assertion is recorded as `unavailable` with the reason. When the gateway rejects the request or returns the wrong shape, it is recorded as `errored`. Results never show a score that could not be obtained as a failure or a zero.
-- **Verify once after configuring.** Declare a rubric and anchors with `defineJudge`, then call `t.judge(material, definition).gate(0.8)`. After the run, check the score with `pnpm exec niceeval show --run <run-id>`. See [Configure and Verify the Judge](/tutorials/verify-judge) for the steps.
+- **Verify once after configuring.** Declare a rubric and anchors with `defineJudge`, then call `t.judge(material, definition).gate(0.8)`. After the run, check the score with `pnpm exec niceeval show run:<run-id>`. See [Configure and Verify the Judge](/tutorials/verify-judge) for the steps.
 - **Without a user present (autonomous onboarding), do not just skip the Judge.** First check whether the environment already has a key for the chosen Provider. If it does, verify it. If not, write exact Matches first and state at the end that the Judge is not configured.
 - The Judge model must be **separate from the Agent under test**, so a model does not grade its own output. Execution configuration is evaluated from the Experiment and the project config's `judgeProvider`; for definitions and materials, see [Judge](/explanation/judge).
 
@@ -105,7 +105,7 @@ pnpm exec niceeval show               # View results in the terminal
 
 When a person wants to compare results in the browser, run `pnpm exec niceeval view`.
 
-Follow the [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to run, view, change, and rerun. When a machine needs to read the results, use `pnpm --silent exec niceeval show --run <run-id> --json`. For ways to view results, see [View Run Results](/tutorials/viewing-results).
+Follow the [Coding Agent Feedback Loop](/tutorials/agent-feedback-loop) to run, view, change, and rerun. When a machine needs to read the results, use `pnpm --silent exec niceeval show run:<run-id> --json`. For ways to view results, see [View Run Results](/tutorials/viewing-results).
 
 Sort by final status first, then decide whether to change anything:
 
@@ -120,8 +120,8 @@ To look at an Attempt's details in the terminal, first copy its locator from the
 ```sh
 pnpm exec niceeval show
 pnpm exec niceeval show @<locator>
-pnpm exec niceeval show @<locator> --execution
-pnpm exec niceeval show @<locator> --source
+pnpm exec niceeval show @<locator> execution
+pnpm exec niceeval show @<locator> source
 ```
 
 Do not guess a locator from old output, and do not combine another run's source with this run's execution as evidence. Results can only prove what was recorded. `partial`, `unavailable`, and `not-recorded` mean the information is incomplete; they do not mean zero or failure.

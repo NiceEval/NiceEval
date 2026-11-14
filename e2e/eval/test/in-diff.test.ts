@@ -31,14 +31,14 @@ test.concurrent("变化内容正向匹配保留 witness，未知内容保持 una
               pattern: entry.display.label === "paths oversized" ? "oversized" : entry.display.label === "paths unavailable witness" ? "content" : ["paths forbidden", "paths witness"].includes(entry.display.label) ? "binary" : "absent-content-token",
               flags: entry.display.label === "paths witness" ? "g" : "",
             } } });
-            const shown = await niceeval.run(["show", event.locator!, "--assertions", "--entry", entry.entryId, "--full"]);
+            const shown = await niceeval.run(["show", event.locator!, "--full", entry.entryId]);
             expect(shown.exitCode, shown.diagnostic()).toBe(0);
             expect(shown.stdout).toContain("sandbox-diff-paths/v1");
             expect(shown.stdout).toContain("none");
           }
           if (entry.display.label === "added witness") {
             expect(entry.materials.evidence.length).toBeGreaterThan(0);
-            const shown = await niceeval.run(["show", event.locator!, "--assertions", "--entry", entry.entryId, "--full"]);
+            const shown = await niceeval.run(["show", event.locator!, "--full", entry.entryId]);
             expect(shown.exitCode, shown.diagnostic()).toBe(0);
             expect(shown.stdout).toContain("sandbox-in-diff/v1");
             expect(shown.stdout).toContain("fixture/content.txt");

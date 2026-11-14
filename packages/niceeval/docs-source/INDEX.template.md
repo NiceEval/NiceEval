@@ -24,3 +24,5 @@
 - 安装后只从本索引进入包内文档。官网适合安装前了解产品，不是安装版本的 API 事实源。
 - 升级 `niceeval` 后重新运行 `niceeval init`，刷新项目里的托管指引。
 - 如果某个路径不存在，先重新读取本文件。不要自行推测替代文件名或旧 API。
+
+先运行 `niceeval show --json`，再按 document 的 `links` 执行完整 `command`。续读结构化结果时添加 `--json`；用 `niceeval show <address> --explain` 查看读取范围。

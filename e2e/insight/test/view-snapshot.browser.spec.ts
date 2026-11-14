@@ -57,14 +57,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         scoreLocators.set(evalId, withAt(event.locator));
       }
 
-      const scoreRequestPath = join(projectRoot, "verdict-scores.request.json");
-      await writeFile(scoreRequestPath, JSON.stringify({
-        protocol: "niceeval.query/v3",
-        operation: { kind: "run.get", runId: scoreRunId },
-      }));
-      const scoreSummary = await niceeval.run(["query", "run", "--request", scoreRequestPath]);
+      const scoreSummary = await niceeval.run(["show", `run:${scoreRunId}`, "--json"]);
       expect(scoreSummary.exitCode, scoreSummary.diagnostic()).toBe(0);
-      const scoreMembers = scoreSummary.querySuccess("run.get").run.plannedAttempts;
+      const scoreMembers = scoreSummary.inspectionSuccess("run.get").run.plannedAttempts;
       // These same public facts must survive the Overview aggregation and View.
       for (const [evalId, earned, possible] of [
         ["verdict-scores/failed", 61, 100],
@@ -74,13 +69,9 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           .toMatchObject({ verdict: "failed", score: { state: "available", value: earned, bounds: { min: 0, max: possible } } });
       }
 
-      await writeFile(scoreRequestPath, JSON.stringify({
-        protocol: "niceeval.query/v3",
-        operation: { kind: "overview.get", runIds: [scoreRunId] },
-      }));
-      const scoreOverview = await niceeval.run(["query", "run", "--request", scoreRequestPath]);
+      const scoreOverview = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
       expect(scoreOverview.exitCode, scoreOverview.diagnostic()).toBe(0);
-      const scoreOverviewDocument = scoreOverview.querySuccess("overview.get");
+      const scoreOverviewDocument = scoreOverview.inspectionSuccess("overview.get");
       for (const [evalId, earned, possible] of [
         ["verdict-scores/failed", 61, 100],
         ["verdict-scores/zero", 0, 200],
@@ -175,14 +166,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
       const configSource = await readFile(configPath, "utf8");
       await rm(configPath);
 
-      const selectedView = niceeval.start([
-        "view",
-        "--run",
-        selectedRunId,
-        "--no-open",
-        "--port",
-        "0",
-      ], { timeoutMs: 90_000 });
+      const selectedView = niceeval.start(["view", `run:${selectedRunId}`, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
       try {
         const ready = await waitForViewReady(selectedView);
         await page.goto(expectLoopbackReadyUrl(ready.url).href);

@@ -12,14 +12,14 @@ import {
 } from "./support.ts";
 // @use-case docs/feature/insight/use-case/insight-create-accessible-page.md
 
-test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positionals 被拒绝而 plain view 正常启动", async () => {
+test.concurrent("view 接受对象地址，帮助显示统一选择语法且 plain view 正常启动", async () => {
   await insightE2E.case(
     "view-options-only-navigation",
     { artifacts: insightCaseArtifacts() },
     async ({ commands: { niceeval } }) => {
       const help = await niceeval.run(["view", "--help"]);
       expect(help.exitCode, help.diagnostic()).toBe(0);
-      expect(help.stdout).toContain("niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]");
+      expect(help.stdout).toContain("niceeval view [@<locator> | exp:<id>... | run:<id>...]");
       expect(help.stdout).not.toContain("@<attempt-locator>");
 
       const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
@@ -31,13 +31,9 @@ test.concurrent("view 只接受选项：帮助不宣传 Attempt locator，positi
       );
       const locator = attempt.locator.startsWith("@") ? attempt.locator : `@${attempt.locator}`;
 
-      const positional = await niceeval.run(["view", locator, "--no-open", "--json"]);
-      expect(positional.exitCode, positional.diagnostic()).toBe(1);
-      expect(positional.stdout).toBe("");
-      expect(positional.stderr).toContain("niceeval view does not accept positional arguments.");
-
       const view = niceeval.start([
         "view",
+        locator,
         "--no-open",
         "--port",
         "0",
@@ -68,15 +64,7 @@ test.concurrent("view 启动失败只在 stderr 诊断，不留下 server 或半
       const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
       const occupied = await occupyLoopbackPort();
       try {
-        const failed = await niceeval.run([
-          "view",
-          "--run",
-          runId,
-          "--no-open",
-          "--port",
-          String(occupied.port),
-          "--json",
-        ]);
+        const failed = await niceeval.run(["view", `run:${runId}`, "--no-open", "--port", String(occupied.port), "--json"]);
         expect(failed.exitCode, failed.diagnostic()).not.toBe(0);
         expect(failed.stderr.trim()).not.toBe("");
         expect(decodeViewLifecycle(failed.stdout).some((event) => event.event === "ready")).toBe(false);
@@ -106,15 +94,7 @@ async function verifyControlledStop(signal: "SIGINT" | "SIGTERM"): Promise<void>
         const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
         expect(produced.exitCode, produced.diagnostic()).toBe(0);
         const runId = only(produced.expReceipt().createdRunIds, () => true, produced.diagnostic());
-        const view = niceeval.start([
-          "view",
-          "--run",
-          runId,
-          "--no-open",
-          "--port",
-          "0",
-          "--json",
-        ], { timeoutMs: 90_000 });
+        const view = niceeval.start(["view", `run:${runId}`, "--no-open", "--port", "0", "--json"], { timeoutMs: 90_000 });
 
         const ready = await waitForViewReady(view);
         const readyUrl = expectLoopbackReadyUrl(ready.url);

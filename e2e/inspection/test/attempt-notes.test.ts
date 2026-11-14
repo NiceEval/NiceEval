@@ -29,11 +29,10 @@ test.concurrent("实验按标签和单位聚合数值 Note，忽略空值与非�
     const run = await niceeval.run(["exp", "notes", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expEvalEvents()).toHaveLength(5);
-    const request = join(projectRoot, "notes.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "experiment.get", experimentId: "notes" } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", `exp:${"notes"}`, "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const notes = read.querySuccess("experiment.get").experiment.notes;
+    const notes = read.inspectionSuccess("experiment.get").experiment.notes;
     expect(notes).toHaveLength(4);
     expect(notes).toEqual(expect.arrayContaining([
       { label: "latency", unit: "ms", count: 2, min: 100, median: 200, p90: 280, max: 300 },
@@ -41,7 +40,7 @@ test.concurrent("实验按标签和单位聚合数值 Note，忽略空值与非�
       { label: "latency", count: 1, min: 50, median: 50, p90: 50, max: 50 },
       { label: "load", count: 2, min: 2, median: 3, p90: 3.8, max: 4 },
     ]));
-    const show = await niceeval.run(["show", "--exp", "notes"]);
+    const show = await niceeval.run(["show", `exp:${"notes"}`]);
     expect(show.exitCode, show.diagnostic()).toBe(0);
     expect(show.stdout).toContain("Notes");
     expect(show.stdout).toContain("Median");

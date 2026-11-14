@@ -1,6 +1,5 @@
 // rerun: pnpm e2e test --repo inspection -- --run test/experiment-cost-incomplete.test.ts
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
@@ -15,11 +14,10 @@ test.concurrent("实验已知零费用保留另一 Eval 的缺费来源，Query 
       expect.objectContaining({ evalId: "experiment-cost-missing", attempts: 1, verdict: "passed" }),
     ]));
     expect(run.expEvalEvents()).toHaveLength(2);
-    const request = join(paths.projectRoot, "experiment-cost-incomplete.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "experiment.get", experimentId: "experiment-cost-incomplete" } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", `exp:${"experiment-cost-incomplete"}`, "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const experiment = read.querySuccess("experiment.get").experiment;
+    const experiment = read.inspectionSuccess("experiment.get").experiment;
     expect(experiment.costSummary).toEqual({
       scope: "latest-recorded-attempts",
       totalCosts: { state: "partial", values: [{ currency: "USD", value: "0", source: "reported" }], missingSources: ["application"] },
@@ -34,7 +32,7 @@ test.concurrent("实验已知零费用保留另一 Eval 的缺费来源，Query 
     expect(only(experiment.modelUsage.attempts, (attempt) => attempt.locator === missingLocator, read.diagnostic()).usage.totalCosts).toEqual({
       state: "unavailable", values: [], missingSources: ["application"],
     });
-    const shown = await niceeval.run(["show", "--experiment", "experiment-cost-incomplete"]);
+    const shown = await niceeval.run(["show", `exp:${"experiment-cost-incomplete"}`]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     const summary = shown.stdout.match(/Experiment known subtotal[\s\S]*?(?=Summary|$)/u)?.[0];
     expect(summary, shown.diagnostic()).toBeDefined();

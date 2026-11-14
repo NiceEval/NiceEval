@@ -25,18 +25,15 @@ test.concurrent("directory upload records one expansion and preserves bytes and 
     expect(transferLog.match(/^archive-get$/gm)).toHaveLength(1);
     const locator = result.expEvalEvents()[0]?.locator;
     expect(locator, result.diagnostic()).toBeDefined();
-    const request = join(paths.projectRoot, "trace.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
-    const commands = await niceeval.run(["query", "run", "--request", request]);
+
+    const commands = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(commands.exitCode, commands.diagnostic()).toBe(0);
     const items = [];
-    for (const commandId of commands.querySuccess("attempt.trace").trace.identityIndex.commandIds) {
-      await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: {
-        kind: "attempt.trace.detail", locator, selector: { kind: "command", commandId },
-      } }));
-      const detail = await niceeval.run(["query", "run", "--request", request]);
+    for (const commandId of commands.inspectionSuccess("attempt.trace").trace.identityIndex.commandIds) {
+
+      const detail = await niceeval.run(["show", locator, commandId, "--json"]);
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
-      items.push(detail.querySuccess("attempt.trace.detail").detail);
+      items.push(detail.inspectionSuccess("attempt.trace.detail").detail);
     }
     const start = items.findIndex(item => JSON.stringify(item).includes("directory-upload-start"));
     const end = items.findIndex(item => JSON.stringify(item).includes("directory-upload-end"));

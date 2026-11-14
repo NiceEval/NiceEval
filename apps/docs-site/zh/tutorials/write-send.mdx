@@ -164,7 +164,7 @@ export default defineAgent({
 
 价格表里找不到这个模型的价格时，运行器算不出估算，`t.maxCost()` 的结果是 `unavailable`，不会把缺失当成 `0`。你显式配置了零费率、算出 `estimatedCostUSD: 0` 时，`0` 是有效的估算，照常和上限比较。
 
-**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言，以及 `niceeval show --usage` 和 `niceeval view` 里的用量。`show` 里用量为空时，先查接口响应里有没有用量字段、`send` 有没有把它放进返回值。
+**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言，以及 `niceeval show @<locator> usage` 和 `niceeval view` 里的用量。`show` 里用量为空时，先查接口响应里有没有用量字段、`send` 有没有把它放进返回值。
 
 ## 第四步：把工具解析成事件
 
@@ -247,7 +247,7 @@ type StreamEvent =
 
 Chat Completions 响应**不保证列出全过程**。应用可能在服务端跑完工具循环，只返回最终答案。所以 `turnFromChatCompletion` 不声明事件完整：`calledTool` 这类“调用过”的断言可用，`notCalledTool` 这类“没调用过”的断言会提示证据不完整。Responses 协议要求 `output` 数组列出全过程，`turnFromResponses` 声明事件完整，“没调用过”的断言可信。这个差别来自两种接口本身的约定。
 
-**这一步支持**：`turn.calledTool()`、`turn.toolOrder()`、`turn.maxToolCalls()`、`turn.noFailedActions()` 等工具断言。需要跨 Turn 排序时，把调用对象从 `turn` 换成 `session`。跑完用 `pnpm exec niceeval show @<locator> --execution` 看这个 Attempt 的工具调用。工具没出现时，先查接口返回里有没有工具字段、映射有没有漏掉它。
+**这一步支持**：`turn.calledTool()`、`turn.toolOrder()`、`turn.maxToolCalls()`、`turn.noFailedActions()` 等工具断言。需要跨 Turn 排序时，把调用对象从 `turn` 换成 `session`。跑完用 `pnpm exec niceeval show @<locator> execution` 看这个 Attempt 的工具调用。工具没出现时，先查接口返回里有没有工具字段、映射有没有漏掉它。
 
 ## 第五步：HITL
 
@@ -377,7 +377,7 @@ export default defineExperiment({
 
 两个 Experiment 文件各声明一份 `flags`，用 `pnpm exec niceeval exp` 分别跑同一批评估用例，就是一组 A/B 对比。这属于 Tier 3 接入，需要应用配合暴露开关，投入与回报见 [Tier](/zh/explanation/tier)。`flags` 和 `model`、`attempts` 等其余字段见[编写实验](/zh/tutorials/write-experiment)。
 
-**这一步支持**：同一批评估用例在不同变体下的成绩对比。两边都跑完后，用 `pnpm exec niceeval show --experiment <id> --experiment <id>` 在终端对比，或用 `pnpm exec niceeval view` 在浏览器里看。两边成绩几乎一样时，先确认应用真的读了请求里的 `flags`。
+**这一步支持**：同一批评估用例在不同变体下的成绩对比。两边都跑完后，用 `pnpm exec niceeval show exp:<id> exp:<id>` 在终端对比，或用 `pnpm exec niceeval view` 在浏览器里看。两边成绩几乎一样时，先确认应用真的读了请求里的 `flags`。
 
 ## 对照：五个 t API 到 send 的形态
 

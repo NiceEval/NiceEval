@@ -61,7 +61,7 @@ export default defineEval({
 
 路径相对评估用例文件。上传的文件放在 Sandbox 的工作目录下，Agent 一开始就能看到。只缺一两个文件时，用 `t.sandbox.writeText()` 直接写入，适合小任务或安全检查脚本。
 
-`fileChanged` 不通过时，先用 `pnpm exec niceeval show @<locator> --diff` 看 Agent 实际改了哪些文件。
+`fileChanged` 不通过时，先用 `pnpm exec niceeval show @<locator> diff` 看 Agent 实际改了哪些文件。
 
 ## 写任务 prompt
 
@@ -151,7 +151,7 @@ pnpm exec niceeval exp compare api-validation
 - `experiments/with-skill.ts`：同一个 Agent，用生命周期 Hook 或 [Plugin](/zh/tutorials/plugins) 写入 `CLAUDE.md`。
 - 两组用同一批评估用例、同一模型、同样的 `attempts` 和预算。
 
-两组都跑完后，用 `pnpm exec niceeval show --experiment baseline --experiment with-skill` 在终端对比，或用 `pnpm exec niceeval view` 在浏览器里看。两组成绩几乎一样时，先确认 `with-skill` 的 Sandbox 里真的有 `CLAUDE.md`。
+两组都跑完后，用 `pnpm exec niceeval show exp:baseline exp:with-skill` 在终端对比，或用 `pnpm exec niceeval view` 在浏览器里看。两组成绩几乎一样时，先确认 `with-skill` 的 Sandbox 里真的有 `CLAUDE.md`。
 
 ## 什么时候用 Fixture
 

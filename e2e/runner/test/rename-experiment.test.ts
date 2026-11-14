@@ -3,7 +3,7 @@ import { decodeExpPlanDocument } from "niceeval/experiment/host";
 import { appendFile, rename, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runnerE2E, writeInspectionRequest } from "./context.ts";
+import { runnerE2E } from "./context.ts";
 
 // @use-case docs/feature/experiments/use-case/cache-adopt-migrated-config.md
 
@@ -20,8 +20,8 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
 
     const targetPath = join(paths.projectRoot, "experiments", "renamed.ts");
     await rename(join(paths.projectRoot, "experiments", "history.ts"), targetPath);
-    const sourceQuery = await writeInspectionRequest(paths.projectRoot, "source", { kind: "run.get", runId: sourceRunId });
-    const sourceBefore = await niceeval.run(["query", "run", "--request", sourceQuery]);
+
+    const sourceBefore = await niceeval.run(["show", `run:${sourceRunId}`, "--json"]);
     expect(sourceBefore.exitCode, sourceBefore.diagnostic()).toBe(0);
     const sourceFacts = sourceBefore.run().run;
 
@@ -58,18 +58,18 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
     const carriedAgain = await niceeval.run(["exp", "renamed", "--json"]);
     expect(carriedAgain.exitCode, carriedAgain.diagnostic()).toBe(0);
     expect(only(carriedAgain.expEvents(), (event) => event.event === "start", carriedAgain.diagnostic())).toMatchObject({ reused: 1 });
-    const existingQuery = await writeInspectionRequest(paths.projectRoot, "existing-target", { kind: "run.get", runId: existingRunId });
-    const existingHistory = await niceeval.run(["query", "run", "--request", existingQuery]);
+
+    const existingHistory = await niceeval.run(["show", `run:${existingRunId}`, "--json"]);
     expect(existingHistory.exitCode, existingHistory.diagnostic()).toBe(0);
     expect(JSON.stringify(existingHistory.run())).toContain(existingRunId);
 
-    const sourceAfter = await niceeval.run(["query", "run", "--request", sourceQuery]);
+    const sourceAfter = await niceeval.run(["show", `run:${sourceRunId}`, "--json"]);
     expect(sourceAfter.exitCode, sourceAfter.diagnostic()).toBe(0);
     expect(sourceAfter.run().run).toEqual(sourceFacts);
 
     const definition = await readFile(targetPath, "utf8");
-    const listQuery = await writeInspectionRequest(paths.projectRoot, "runs", { kind: "run.list" });
-    const beforeRejected = await niceeval.run(["query", "run", "--request", listQuery]);
+
+    const beforeRejected = await niceeval.run(["show", "runs", "--json"]);
     expect(beforeRejected.exitCode, beforeRejected.diagnostic()).toBe(0);
     await writeFile(targetPath, definition.replace("defineExperiment({", "defineExperiment({ attempts: 2,"));
     const wider = await niceeval.run(["exp", "rename", "renamed", "--run", sourceRunId]);
@@ -82,7 +82,7 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
     const changedPlan = await niceeval.run(["exp", "renamed", "--dry", "--json"]);
     expect(changedPlan.exitCode, changedPlan.diagnostic()).toBe(0);
     expect(decodeExpPlanDocument(changedPlan.json())).toMatchObject({ total: 1, reused: 0 });
-    const afterRejected = await niceeval.run(["query", "run", "--request", listQuery]);
+    const afterRejected = await niceeval.run(["show", "runs", "--json"]);
     expect(afterRejected.exitCode, afterRejected.diagnostic()).toBe(0);
     expect(afterRejected.runsList().runs).toEqual(beforeRejected.runsList().runs);
 
@@ -115,10 +115,10 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
     expect(humanUnproven.exitCode, humanUnproven.diagnostic()).toBe(0);
     expect(humanUnproven.stdout).toContain("gap 0:adoption-unproven: plan:physical");
     expect(humanUnproven.stdout).not.toMatch(/"comparisons"|"explanation"|\n\s*[{[]/u);
-    const currentQuery = await writeInspectionRequest(paths.projectRoot, "unproven-project", { kind: "project.get" });
-    const current = await niceeval.run(["query", "run", "--request", currentQuery]);
+
+    const current = await niceeval.run(["show", "--json"]);
     expect(current.exitCode, current.diagnostic()).toBe(0);
-    const unprovenCurrent = current.querySuccess("project.get").project.plannedAttempts.find((slot) => slot.evalId === "suite/stable");
+    const unprovenCurrent = current.inspectionSuccess("project.get").project.plannedAttempts.find((slot) => slot.evalId === "suite/stable");
     expect(unprovenCurrent).toMatchObject({ state: "gap", reason: "adoption-unproven", explanation: unprovenComparison!.explanation });
     expect(unprovenCurrent).not.toHaveProperty("comparisons");
     if (unprovenCurrent!.state === "gap") expect(JSON.stringify(unprovenCurrent!.issues)).not.toContain("comparisons");

@@ -203,7 +203,6 @@ test("SIGINT 中断复用 Docker Sandbox、执行 teardown、释放 owned 资源
         );
         expect(completedAttempt.receipt.exitCode, completedAttempt.receipt.diagnostic()).toBe(0);
         expect(completedAttempt.document).toMatchObject({
-          protocol: "niceeval.query/v3",
           operation: "attempt.get",
           attempt: { locator: completedBeforeInterrupt.locator, core: { outcome: "completed" } },
         });

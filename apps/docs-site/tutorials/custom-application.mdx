@@ -229,8 +229,8 @@ const receipt = await ctx.recordTrace({
 After the run, view this Attempt's execution, then expand an event:
 
 ```sh
-pnpm exec niceeval show @<attempt> --execution
-pnpm exec niceeval show @<attempt> --execution --expand <eventId>
+pnpm exec niceeval show @<attempt> execution
+pnpm exec niceeval show @<attempt> execution <eventId>
 ```
 
 `collection.state` describes whether the log is complete, regardless of whether the run was canceled. If you still got the complete log after cancellation, write `complete`. When the log is missing parts, write `partial` and explain what is missing in `limitations`; do not use an empty list to mean "unknown". Events outside the `scopes` collection range are kept too, marked `excluded`, and those that cannot be determined are marked `unknown`. Submitting an execution log does not affect scoring by itself.

@@ -4,7 +4,7 @@ import {
   decodeInspectionDocument,
   decodeInspectionOperation,
   narrowInspectionSuccess,
-  QUERY_PROTOCOL,
+
   type InspectionOperationFor,
   type InspectionOperationId,
   type InspectionQuery,
@@ -67,7 +67,7 @@ export class HttpInspectionRepository implements InspectionQuery {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         generationId: this.descriptor.generationId,
-        request: { protocol: QUERY_PROTOCOL, operation: decodedOperation.success },
+        request: { operation: decodedOperation.success },
       }),
     });
     const body = await responseBody(response);

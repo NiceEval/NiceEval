@@ -29,7 +29,6 @@ test("多轮和 newSession 的 Context Eval 以 passed 终态完成", async () =
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       const traceDocument = inspected.receipt.attemptTrace();
       expect(traceDocument).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.trace",
         issues: [],
         trace: {

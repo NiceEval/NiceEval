@@ -3,7 +3,7 @@
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import { Effect, Result } from "effect";
 
-import { decodeInspectionRequest, QUERY_PROTOCOL } from "../inspection/codec.ts";
+import { decodeInspectionRequest } from "../inspection/codec.ts";
 import { openHostOwnedInspectionSource } from "../inspection/source.ts";
 import { selectInspectionOperation } from "../inspection/select.ts";
 import { bindProjectInput } from "../inspection/project-input.ts";
@@ -41,7 +41,7 @@ export function inspectViewGeneration(generation: ViewGeneration, input: unknown
       }
       return selectInspectionOperation(facts, decoded.success.operation);
     })).pipe(Effect.catch(() => Effect.succeed(Object.freeze({
-      protocol: QUERY_PROTOCOL,
+
       outcome: "failure" as const,
       operation: decoded.success.operation.kind,
       failure: Object.freeze({

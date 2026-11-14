@@ -227,7 +227,7 @@ export default defineEval({
 <Lifecycle
   title="一次 Attempt 从排队到收尾"
   hint="悬停暂停"
-  note={<>收尾阶段不计入这次 Attempt 的耗时。用 <code>niceeval show @&lt;attempt-locator&gt; --timing</code> 查看每一步实际花了多久。</>}
+  note={<>收尾阶段不计入这次 Attempt 的耗时。用 <code>niceeval show @&lt;attempt-locator&gt; timing</code> 查看每一步实际花了多久。</>}
   phases={[
     { name: "experiment.setup", what: "启动实验共享服务", times: "整个实验一次" },
     { name: "sandbox.queue", what: "等一个并发名额", times: "每次 Attempt" },

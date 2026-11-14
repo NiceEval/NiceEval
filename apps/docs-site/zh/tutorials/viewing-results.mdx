@@ -44,7 +44,7 @@ Attempts · my-agent
   Previous result @1K1P0VJAPVJ12
 
   8 passed Attempts hidden
-  See more  niceeval show --experiment my-agent
+  See more  niceeval show exp:my-agent
 
 Next: niceeval exp my-agent --dry
 ```
@@ -58,16 +58,16 @@ Next: niceeval exp my-agent --dry
 要补齐缺口，运行最后一行建议的 `niceeval exp <id> --dry` 看看会跑哪些，再去掉 `--dry` 正式运行。
 
 看到 `Attempts hidden` 时，用它建议的命令缩小范围。`--all` 只用于不带 selector 的 Results 查看：`niceeval show --all`。
-不要把它与 `--experiment`、`--run` 或 Attempt locator 组合；这些入口直接使用各自的选择参数。
+不要把它与 `exp:<id>`、`run:<id>` 或 Attempt locator 组合；这些入口直接使用各自的选择参数。
 
 ## 缩小到一个 Experiment 或一次运行
 
 ```sh
-pnpm exec niceeval show --experiment my-agent
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show exp:my-agent
+pnpm exec niceeval show run:<run-id>
 ```
 
-`--experiment` 显示一个 Experiment 下每条评估用例的结果。`--run` 显示某一次运行，Run ID 在 `exp` 结束时的 `NEXT` 面板里。两者都可以重复传入多个。
+`exp:<id>` 显示一个 Experiment 下每条评估用例的结果。`run:<id>` 显示某一次运行，Run ID 在 `exp` 结束时的 `NEXT` 面板里。两者都可以重复传入多个。
 
 运行还没结束时也可以看：已经完成的 Attempt 会出现，还没完成的显示为 `pending`。
 
@@ -102,34 +102,34 @@ Sections
   Diff        not-recorded
 
 Next
-  niceeval show @1K1P0VJAPVJ12 --source
-  niceeval show @1K1P0VJAPVJ12 --execution
-  niceeval show @1K1P0VJAPVJ12 --timing
-  niceeval show @1K1P0VJAPVJ12 --usage
-  niceeval show @1K1P0VJAPVJ12 --diff
+  niceeval show @1K1P0VJAPVJ12 source
+  niceeval show @1K1P0VJAPVJ12 execution
+  niceeval show @1K1P0VJAPVJ12 timing
+  niceeval show @1K1P0VJAPVJ12 usage
+  niceeval show @1K1P0VJAPVJ12 diff
 ```
 
 `Next` 列出了能继续看的方面，按你要回答的问题选：
 
 | 想知道 | 命令 |
 |---|---|
-| Agent 说了什么、调用了哪些工具 | `--execution` |
-| 哪条断言没过，写在源码哪一行 | `--source` |
-| 时间花在了哪一步 | `--timing` |
-| 用了多少 token、花了多少钱 | `--usage` |
-| Agent 改了哪些文件 | `--diff` |
+| Agent 说了什么、调用了哪些工具 | `execution` |
+| 哪条断言没过，写在源码哪一行 | `source` |
+| 时间花在了哪一步 | `timing` |
+| 用了多少 token、花了多少钱 | `usage` |
+| Agent 改了哪些文件 | `diff` |
 
-`--execution` 给出对话和工具调用的提纲。要展开其中一项，复制提纲里显示的 ID：
+`execution` 给出对话和工具调用的提纲。要展开其中一项，复制提纲里显示的 ID：
 
 ```sh
-pnpm exec niceeval show @1K1P0VJAPVJ12 --execution --expand <id>
+pnpm exec niceeval show @1K1P0VJAPVJ12 execution <id>
 ```
 
 某一项显示 `not-recorded`、`partial` 或 `unavailable`，表示这部分信息没有采集到或不完整，不代表它是零或者失败。例如直连应用不会有文件改动，`diff` 就是 `not-recorded`。
 
 ## 判断该改应用还是改断言
 
-`failed` 只说明至少一条断言没满足，不一定说明 Agent 做错了。看完 `--execution` 后分三种情况：
+`failed` 只说明至少一条断言没满足，不一定说明 Agent 做错了。看完 `execution` 后分三种情况：
 
 - Agent 的输出确实不符合任务要求：改应用或 prompt。
 - Agent 的输出符合任务要求，断言却拒绝了它，例如正则写得太死：改评估用例。
@@ -141,16 +141,16 @@ pnpm exec niceeval show @1K1P0VJAPVJ12 --execution --expand <id>
 
 ```sh
 pnpm exec niceeval view
-pnpm exec niceeval view --run <run-id>
+pnpm exec niceeval view run:<run-id>
 ```
 
-不带参数时打开总览，`--run` 打开指定的一次或几次运行。浏览器里能看到完整对话、工具调用的输入输出和耗时瀑布图。
+不带参数时打开总览，`run:<id>` 打开指定的一次或几次运行。浏览器里能看到完整对话、工具调用的输入输出和耗时瀑布图。
 
 有新结果发布时，页面会提示刷新，你确认后才会切换，正在看的内容不会突然变掉。`--no-open` 不自动打开浏览器，`--port` 指定端口。
 
 ## 看一条断言具体为什么得这个分
 
-`show` 告诉你哪条断言没过。要看 Judge 给出的理由、计分项具体得了几分，用 `show --assertions --entry <entry-id> --json` 读这条断言的详情。先取得这次运行的断言清单：
+`show` 告诉你哪条断言没过。要看 Judge 给出的理由、计分项具体得了几分，用 `show assertions <entry-id> --json` 读这条断言的详情。先取得这次运行的断言清单：
 
 ```sh
 pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
@@ -159,7 +159,7 @@ pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
 从返回的 `assertions.entries` 里选一个 `entryId`，再读它的详情：
 
 ```sh
-pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --assertions --entry <entry-id> --json
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 assertions <entry-id> --json
 ```
 
 详情里的 contribution 是这一项得了多少分，evaluation 是实际测出的结果，Judge 的理由在 explanation 里。某个字段缺失或标为 `unavailable` 时，按返回的 reason 理解，不要从别的字段推测。
@@ -169,10 +169,10 @@ pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --assertions --entry <entry-id> 
 `show --json` 只输出 JSON，不做终端排版。不要解析 `show` 的文字输出，也不要直接读 `.niceeval/` 下的文件，格式可能随版本变化。
 
 ```sh
-pnpm --silent exec niceeval show --runs --json
+pnpm --silent exec niceeval show runs --json
 ```
 
-`show --runs --json` 列出 Run；`show --run <run-id> --json` 读取一条 Run。其它参数见 [CLI 参考](/zh/reference/cli)。
+`show runs --json` 列出 Run；`show run:<run-id> --json` 读取一条 Run。其它参数见 [CLI 参考](/zh/reference/cli)。
 
 ### 本次运行的结果
 
@@ -183,7 +183,7 @@ pnpm --silent exec niceeval exp my-agent --json > exp.ndjson
 
 tail -n 1 exp.ndjson | jq -r '.receipt.createdRunIds[]' |
 while IFS= read -r run_id; do
-  pnpm --silent exec niceeval show --run "$run_id" --json
+  pnpm --silent exec niceeval show run:"$run_id" --json
 done
 ```
 
@@ -194,11 +194,11 @@ done
 需要包含局部重跑后采用的结果时，用实验 ID 读取当前结果：
 
 ```sh
-pnpm --silent exec niceeval show --experiment my-agent --json
+pnpm --silent exec niceeval show exp:my-agent --json
 ```
 
 响应的 `experiment.cells[]` 按评估用例列出结果；各次 Attempt 的判定在 `members[].verdict`，定位符在 `members[].publication.attemptLocator`。例如只重跑一条评估用例时，这里会把它的新结果与其它评估用例已采用的结果放在一起。
 
-请求参数和字段位置见 [CLI 的常用 operation 表](/zh/reference/cli#常用-operation-的请求与结果字段)。在 pnpm 项目里加 `--silent`，避免 pnpm 自己的输出混进 JSON。
+请求参数和字段位置见 [CLI 的 show 用法](/zh/reference/cli#niceeval-show)。在 pnpm 项目里加 `--silent`，避免 pnpm 自己的输出混进 JSON。
 
 比较两次运行见[比较两次运行](/zh/tutorials/compare-runs)。

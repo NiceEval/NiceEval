@@ -106,13 +106,13 @@ Once loss-cutting takes effect, Attempts in that scope that have not started are
 First look at this run's results and confirm that the stopped scope matches what you expected. The Run ID is in the terminal's `NEXT` panel:
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-You can also view it in the browser with `pnpm exec niceeval view --run <run-id>`. To see an Attempt's raw error and retry summary, copy its locator:
+You can also view it in the browser with `pnpm exec niceeval view run:<run-id>`. To see an Attempt's raw error and retry summary, copy its locator:
 
 ```sh
-pnpm exec niceeval show @<attempt-locator> --execution
+pnpm exec niceeval show @<attempt-locator> execution
 ```
 
 After fixing the service, credentials, or Fixture, run the original command again:

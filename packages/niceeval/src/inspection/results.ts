@@ -55,7 +55,6 @@ import {
   isItemId,
   isToolOccurrenceId,
 } from "../record/family/source-receipt/model.ts";
-import { INSPECTION_BEHAVIOR_VERSION, QUERY_PROTOCOL } from "./protocol-values.ts";
 import {
   RunStateSchema,
   RunSummarySchema,
@@ -706,6 +705,7 @@ const CommandStreamSchema = Schema.Struct({
   truncation: Schema.Struct({ state: Schema.Literals(["not-truncated", "truncated"]), omittedSafeUtf8Bytes: Schema.Number }),
 });
 export const InspectionTraceDetailResultSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("turn"), turnId: Schema.String, turn: TraceTurnIdentitySchema, items: Schema.Array(InspectionTraceDetailItemSchema) }),
   Schema.Struct({ kind: Schema.Literal("diagnostic"), evidenceId: Schema.String, phase: Schema.String, code: Schema.String, summary: Schema.String }),
   Schema.Struct({
     kind: Schema.Literal("execution-event"),
@@ -1170,8 +1170,6 @@ export interface InspectionSelectionAudit {
   readonly missingRunIds: readonly string[];
 }
 export interface InspectionResultMetadata<Kind extends InspectionOperationId> {
-  readonly protocol: typeof QUERY_PROTOCOL;
-  readonly behaviorVersion: typeof INSPECTION_BEHAVIOR_VERSION;
   readonly outcome: "success";
   readonly operation: Kind;
   readonly source: {

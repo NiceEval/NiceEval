@@ -81,7 +81,7 @@ export default defineConfig({
 三个要提醒用户的点：
 
 - **配错不会假装通过。** 读不到模型或 key、请求超时时，Judge 断言记为 `unavailable` 并带上原因；网关拒绝请求、返回格式不对时记为 `errored`。结果里不会把拿不到的分数显示成不通过或零分。
-- **配完先验一次。** 用 `defineJudge` 声明 rubric 和 anchors，再调用 `t.judge(material, definition).gate(0.8)`。跑完后用 `pnpm exec niceeval show --run <run-id>` 查看分数，步骤见[配置并验证 Judge](/zh/tutorials/verify-judge)。
+- **配完先验一次。** 用 `defineJudge` 声明 rubric 和 anchors，再调用 `t.judge(material, definition).gate(0.8)`。跑完后用 `pnpm exec niceeval show run:<run-id>` 查看分数，步骤见[配置并验证 Judge](/zh/tutorials/verify-judge)。
 - **没有用户在场（自治接入）时不要直接跳过 Judge**：先看环境里是否已有与所选 Provider 对应的 key。有就验证；没有时先写精确 Match，并在收尾说明 Judge 没有配置。
 - Judge 模型要**与被测 Agent 分离**，避免同一个模型给自己的输出打分。执行配置从 Experiment 和项目配置的 `judgeProvider` 求值；定义与材料见 [Judge](/zh/explanation/judge)。
 
@@ -115,7 +115,7 @@ pnpm exec niceeval show               # 在终端查看结果
 
 人想在浏览器里对比结果时，运行 `pnpm exec niceeval view`。
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、查看、修改和重跑。需要机器读取时，使用 `pnpm --silent exec niceeval show --run <run-id> --json`。查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
+按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)完成运行、查看、修改和重跑。需要机器读取时，使用 `pnpm --silent exec niceeval show run:<run-id> --json`。查看方式见[查看运行结果](/zh/tutorials/viewing-results)。
 
 先按终态分流，再决定是否修改：
 
@@ -130,8 +130,8 @@ pnpm exec niceeval show               # 在终端查看结果
 ```sh
 pnpm exec niceeval show
 pnpm exec niceeval show @<locator>
-pnpm exec niceeval show @<locator> --execution
-pnpm exec niceeval show @<locator> --source
+pnpm exec niceeval show @<locator> execution
+pnpm exec niceeval show @<locator> source
 ```
 
 不要从旧输出猜 locator，也不要把另一次运行的源码和这次的执行过程拼在一起当证据。结果只能证明记录下来的内容；`partial`、`unavailable` 和 `not-recorded` 表示信息不全，不等于零分或失败。
@@ -152,7 +152,7 @@ pnpm exec niceeval show @<locator> --source
 - [ ] 至少有一个跑完且不是 `errored` 的 Attempt；业务失败如实保留，并用同一个 locator 核对分数、断言和证据是否完整
 - [ ] 后面的检查依赖某个前提时（本轮成功、服务可达、文件存在），前提失败就用 `orStop()` 停下，不让依赖它的检查继续判分
 
-跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>`、`niceeval show` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。结果要能被用户直接打开：给出每个当前结果的 locator（`niceeval show @<locator>`），或带具体 Run ID 的 `niceeval show --run <run-id>`；只写 Run ID、只说“见 README”都不够。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
+跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、Adapter、Experiment 与评估用例各在哪、`niceeval exp <实验路径>`、`niceeval show` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。结果要能被用户直接打开：给出每个当前结果的 locator（`niceeval show @<locator>`），或带具体 Run ID 的 `niceeval show run:<run-id>`；只写 Run ID、只说“见 README”都不够。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
 
 ## 第 6 步：问用户要不要往深了接
 

@@ -8,24 +8,24 @@ test.concurrent("按 change ID 查看封存正文与 unified diff，截断和二
     const run = await niceeval.run(["exp", "diff-body", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), item => item.evalId === "diff-body");
-    const listed = await niceeval.run(["show", event.locator, "--diff", "--json"]);
-    const diff = listed.querySuccess("attempt.diff").diff;
+    const listed = await niceeval.run(["show", event.locator, "--json", "diff"]);
+    const diff = listed.inspectionSuccess("attempt.diff").diff;
     expect(diff.state).toBe("complete");
     const changes = diff.windows.flatMap(window => window.changes);
     expect(changes.map(change => change.path).sort()).toEqual(["binary.txt", "large.txt", "small.txt"]);
-    const humanList = await niceeval.run(["show", event.locator, "--diff"]);
+    const humanList = await niceeval.run(["show", event.locator, "diff"]);
     for (const path of ["small.txt", "large.txt", "binary.txt"]) {
       const change = only(changes, item => item.path === path);
-      if (path !== "binary.txt") expect(humanList.stdout.replace(/\s+/gu, " ")).toContain(`--diff --change ${change.changeId}`);
-      const shown = await niceeval.run(["show", event.locator, "--diff", "--change", change.changeId, "--json"]);
+      if (path !== "binary.txt") expect(humanList.stdout.replace(/\s+/gu, " ")).toContain(`niceeval show ${event.locator} ${change.changeId}`);
+      const shown = await niceeval.run(["show", event.locator, "--json", change.changeId]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      const direct = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.diff", locator: event.locator, changeId: change.changeId } })]);
+      const direct = await niceeval.run(["show", event.locator, "diff", change.changeId, "--json"]);
       expect(shown.stdout).toBe(direct.stdout);
-      const result = shown.querySuccess("attempt.diff").diff;
+      const result = shown.inspectionSuccess("attempt.diff").diff;
       if (!("detail" in result) || result.detail === undefined) throw new Error(shown.diagnostic());
       if (path === "small.txt") {
         expect(result.detail).toMatchObject({ before: { state: "available", text: "before\n", truncated: false }, after: { state: "available", text: "after\n", truncated: false }, hunks: { state: "available", text: "--- a/small.txt\n+++ b/small.txt\n@@ -1,1 +1,1 @@\n-before\n+after\n", truncated: false } });
-        const human = await niceeval.run(["show", event.locator, "--diff", "--change", change.changeId]);
+        const human = await niceeval.run(["show", event.locator, change.changeId]);
         expect(human.stdout).toContain("-before\n+after\n");
       } else if (path === "large.txt") {
         expect(result.detail).toMatchObject({ before: { state: "available", truncated: true, byteLength: 30001 }, after: { state: "available", truncated: true }, hunks: { truncated: true } });

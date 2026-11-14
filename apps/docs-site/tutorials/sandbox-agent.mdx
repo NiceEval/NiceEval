@@ -131,7 +131,7 @@ File assertions such as `t.sandbox.fileChanged()` only look at **files the Agent
 
 ## Make file changes recordable
 
-When a file assertion fails unexpectedly, or `niceeval show @<locator> --diff` shows no changes, go through the points below first. NiceEval creates a separate private Git repository in the Sandbox and records the workspace state before and after each `t.send()`. This requires:
+When a file assertion fails unexpectedly, or `niceeval show @<locator> diff` shows no changes, go through the points below first. NiceEval creates a separate private Git repository in the Sandbox and records the workspace state before and after each `t.send()`. This requires:
 
 - **`git` and a POSIX shell in the Sandbox.** The default images of the built-in Providers have them; confirm it yourself for custom images. Whether the project under test is itself a Git repository does not matter: the private repository lives outside the working directory, does not touch your `.git`, and the Agent cannot see it.
 - **Files written in the working directory.** Only files under `sandbox.workdir` are recorded. Omit `targetDir` / `cwd` when writing files; when you need an absolute path, read `sandbox.workdir` instead of hard-coding `/workspace`. Files written outside the working directory are invisible to the Agent and cannot be recorded.
@@ -223,12 +223,12 @@ When a Sandbox or Adapter error occurs during the run, the terminal gives this A
 
 ```sh
 pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
-pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 --timing
+pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 timing
 ```
 
-The first shows the full error, diagnostics, and completed phases. The second shows each phase's duration, so you can see which step errored or timed out. When a script or CI needs the same information, run `pnpm --silent exec niceeval show @<locator> --execution --json`.
+The first shows the full error, diagnostics, and completed phases. The second shows each phase's duration, so you can see which step errored or timed out. When a script or CI needs the same information, run `pnpm --silent exec niceeval show @<locator> execution --json`.
 
-When there are many steps, once the phase tree exceeds 80 detail nodes, only failed, slow, and the first and last few items are kept, with a note on how many were omitted. To check every item, page through the trace with `show @<locator> --execution --json`. A Sandbox creation failure can happen before trace collection starts, so the error does not depend on the trace and `show @<locator>` can always show it.
+When there are many steps, once the phase tree exceeds 80 detail nodes, only failed, slow, and the first and last few items are kept, with a note on how many were omitted. To check every item, page through the trace with `show @<locator> execution --json`. A Sandbox creation failure can happen before trace collection starts, so the error does not depend on the trace and `show @<locator>` can always show it.
 
 ## Pass the model and flags to the CLI
 

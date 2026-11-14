@@ -1,6 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { E2ECommand, ProcessReceipt, QuerySuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
+
+
+import type { E2ECommand, ProcessReceipt, InspectionSuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
 
 export type AttemptInspectionOperation =
   | "attempt.get"
@@ -8,7 +8,7 @@ export type AttemptInspectionOperation =
   | "attempt.timing"
   | "attempt.diff";
 
-export type AssertionIndexEntry = QuerySuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
+export type AssertionIndexEntry = InspectionSuccessDocumentFor<"attempt.get">["attempt"]["assertions"]["entries"][number];
 
 /** Optional mechanical checkpoints; callers retain ownership of logs and deadlines. */
 export type AssertionInspectionCheckpoint = (
@@ -17,7 +17,7 @@ export type AssertionInspectionCheckpoint = (
 ) => void | Promise<void>;
 
 export function assertionEntry(
-  document: QuerySuccessDocumentFor<"attempt.assertion.detail">,
+  document: InspectionSuccessDocumentFor<"attempt.assertion.detail">,
   diagnostic: string,
 ) {
   if (!("entry" in document.assertion)) {
@@ -33,19 +33,11 @@ export async function inspectAssertion(
   entryId: string,
   options: RunProcessOptions = {},
   checkpoint?: AssertionInspectionCheckpoint,
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }> {
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }> {
   if (checkpoint !== undefined) await checkpoint("prepare", entryId);
-  const requestPath = join(projectRoot, `.inspection-attempt-assertion-detail-${locator.slice(1)}-${entryId}.json`);
-  await writeFile(
-    requestPath,
-    `${JSON.stringify({
-      protocol: "niceeval.query/v3",
-      operation: { kind: "attempt.assertion.detail", locator, entryId },
-    })}\n`,
-    "utf8",
-  );
+
   if (checkpoint !== undefined) await checkpoint("invoke", entryId);
-  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
+  const receipt = await niceeval.run(["show", locator, entryId, "--full", "--json"], options);
   if (checkpoint !== undefined) await checkpoint("observe", entryId);
   const document = receipt.attemptAssertionDetail();
   if (checkpoint !== undefined) await checkpoint("outcome", entryId);
@@ -65,8 +57,8 @@ export async function inspectAssertionEntries(
   entries: readonly AssertionIndexEntry[],
   options: RunProcessOptions = {},
   checkpoint?: AssertionInspectionCheckpoint,
-): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[]> {
-  const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: QuerySuccessDocumentFor<"attempt.assertion.detail"> }[] = [];
+): Promise<readonly { readonly entry: AssertionIndexEntry; readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }[]> {
+  const details: { entry: AssertionIndexEntry; receipt: ProcessReceipt; document: InspectionSuccessDocumentFor<"attempt.assertion.detail"> }[] = [];
   for (let offset = 0; offset < entries.length; offset += ASSERTION_DETAIL_QUERY_CONCURRENCY) {
     const batch = entries.slice(offset, offset + ASSERTION_DETAIL_QUERY_CONCURRENCY);
     const batchDetails = await Promise.all(batch.map(async (entry) => {
@@ -85,18 +77,10 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
   locator: string,
   operation: Kind,
   options: RunProcessOptions = {},
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<Kind> }> {
-  const requestPath = join(projectRoot, `.inspection-${operation.replace(".", "-")}-${locator.slice(1)}.json`);
-  await writeFile(
-    requestPath,
-    `${JSON.stringify({
-      protocol: "niceeval.query/v3",
-      operation: { kind: operation, locator },
-    })}\n`,
-    "utf8",
-  );
-  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
-  return { receipt, document: receipt.querySuccess(operation) };
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<Kind> }> {
+
+  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
+  return { receipt, document: receipt.inspectionSuccess(operation) };
 }
 
 export async function inspectRunSummary(
@@ -104,16 +88,8 @@ export async function inspectRunSummary(
   projectRoot: string,
   runId: string,
   options: RunProcessOptions = {},
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"run.get"> }> {
-  const requestPath = join(projectRoot, `.inspection-run-summary-${runId}.json`);
-  await writeFile(
-    requestPath,
-    `${JSON.stringify({
-      protocol: "niceeval.query/v3",
-      operation: { kind: "run.get", runId },
-    })}\n`,
-    "utf8",
-  );
-  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"run.get"> }> {
+
+  const receipt = await niceeval.run(["show", `run:${runId}`, "--json"], options);
   return { receipt, document: receipt.run() };
 }

@@ -150,7 +150,7 @@ async send(input, ctx) {
 
 - `fetch` 直接抛错，例如连接被拒：应用没起来，或者 URL 不对。先用 `curl` 对同一个接口发一次请求确认。
 - `t.succeeded()` 没过：请求发出去了，但 Adapter 返回了 `failed`。检查应用的错误响应是怎么映射到 `status` 的。
-- 只有内容断言没过：接入已经通了。用 `niceeval show @<locator> --execution` 看应用实际回了什么，再决定改断言还是改应用。
+- 只有内容断言没过：接入已经通了。用 `niceeval show @<locator> execution` 看应用实际回了什么，再决定改断言还是改应用。
 
 ## 按需加上更多能力
 

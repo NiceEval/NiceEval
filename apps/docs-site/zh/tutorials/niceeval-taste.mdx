@@ -125,9 +125,9 @@ export default defineScoreEval({
 
 评质量时不要先筛掉失败的调用、拒绝或澄清，它们本身就是表现的一部分。
 
-完整历史有采集上限，所有 Adapter 都受此限制：单项消息、工具输入或工具输出的文本最多保留 16,384 字节。超限时，`show --execution` 的 Conversation 显示 `partial`，限制原因包含 `text-truncated`。Adapter 声明事件、消息或工具调用不完整时，完整历史也会是 `partial`。
+完整历史有采集上限，所有 Adapter 都受此限制：单项消息、工具输入或工具输出的文本最多保留 16,384 字节。超限时，`show execution` 的 Conversation 显示 `partial`，限制原因包含 `text-truncated`。Adapter 声明事件、消息或工具调用不完整时，完整历史也会是 `partial`。
 
-这时 `closeQA(问题)` 的材料会显示 `partial / provider-limited`，检查为 `unavailable / source-unavailable`；这里的 `provider-limited` 不一定来自 Adapter。该检查若参与计分，计分制 Attempt 会是 `errored`。用 `query` 读取断言详情可查看原因，步骤见[查看结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
+这时 `closeQA(问题)` 的材料会显示 `partial / provider-limited`，检查为 `unavailable / source-unavailable`；这里的 `provider-limited` 不一定来自 Adapter。该检查若参与计分，计分制 Attempt 会是 `errored`。用 `show --json` 读取断言详情可查看原因，步骤见[查看结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
 问题只需要任务、命令输入与回复时，可以把这些事实显式交给 `t.judge`。下面的例子需要项目已配置 Judge；它检查命令调用与完成说明是否符合任务，不评价文件正文是否正确：
 

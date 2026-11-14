@@ -6,7 +6,7 @@
 
 ## 先列一个 TODO：装包只是第一步
 
-用户说「安装 niceeval」，完成标准**不是**「加了依赖」，而是**在这个仓库里对它的被测系统跑通至少一条真实评估，再从固定公开面检查结果：Agent / 脚本用 `niceeval show --runs --json` 或 `niceeval show --run <id> --json` 确认本次 Run 可见；给人用 `niceeval view`**。开始前先把下面这份清单落成一个可勾选的 TODO 逐项跟踪，别装完包就收工：
+用户说「安装 niceeval」，完成标准**不是**「加了依赖」，而是**在这个仓库里对它的被测系统跑通至少一条真实评估，再从固定公开面检查结果：Agent / 脚本用 `niceeval show runs --json` 或 `niceeval show run:<id> --json` 确认本次 Run 可见；给人用 `niceeval view`**。开始前先把下面这份清单落成一个可勾选的 TODO 逐项跟踪，别装完包就收工：
 
 - [ ] 装包并 `init`（第 1–2 步）
 - [ ] 读 `node_modules/niceeval/INDEX.md` 并挑「从零接入」教程页；从这一步起每一步都照随包文档做（第 3 步）
@@ -14,7 +14,7 @@
 - [ ] 写代码前记录探到的接入计划：被测 endpoint / 协议 / request-response 形状；启动、readiness、清理与凭证边界；已有 tracing / OTel；配置变体和接入等级。任务已经给出明确计划或授权时要尊重它；只有会影响正确性、范围或费用的决定仍缺失时才问，否则按已记录的计划继续。
 - [ ] 写代码前，把确认结果落成四条可检查的链：**协议链**（Experiment → Adapter → 精确目标请求 → 响应/事件）、**核心能力链**（真实用户输入 → 产品专用模式/数据/工具 → 业务断言）、**配置链**（每个 model/flag/静态选项 → 明确消费方 → 目标 runtime）和**生命周期链**（启动 → 凭证仅注入目标进程 → readiness → 清理）。硬编码值、假设服务已经运行或普通聊天示例都不能代替对应链路
 - [ ] 按这四条链写出 adapter / experiment / eval 三件套；手写 Adapter 前先读随包「编写 Send」页，不要等失败后再补
-- [ ] 对真实目标运行一次，至少取得一个已完成且非 `errored` 的 Attempt，再读取最后 receipt 的 `createdRunIds`、opaque `publicationCutoff` 和 `completion`。用 `niceeval show --runs --json` 或 `niceeval show --run <id> --json` 确认其中一个 created Run 可见；人需要阅读时用 `niceeval view`。receipt 只交接本次调用，不能单独证明接入任务已经完成。计分制评估还要查看实际分数和逐项 Assertion，不能把完成状态当成满分。合法的业务 mismatch 可以是 `failed`，应如实报告，不要为了全绿而改写判据。被测系统不能启动时，在已有授权内修复或启动 runtime，再继续受影响范围的验证；只有缺少凭证、数据库或模型服务等真实外部条件时才询问。临时 stub 只能证明接线，交接必须说明没有对真实目标运行。
+- [ ] 对真实目标运行一次，至少取得一个已完成且非 `errored` 的 Attempt，再读取最后 receipt 的 `createdRunIds`、opaque `publicationCutoff` 和 `completion`。用 `niceeval show runs --json` 或 `niceeval show run:<id> --json` 确认其中一个 created Run 可见；人需要阅读时用 `niceeval view`。receipt 只交接本次调用，不能单独证明接入任务已经完成。计分制评估还要查看实际分数和逐项 Assertion，不能把完成状态当成满分。合法的业务 mismatch 可以是 `failed`，应如实报告，不要为了全绿而改写判据。被测系统不能启动时，在已有授权内修复或启动 runtime，再继续受影响范围的验证；只有缺少凭证、数据库或模型服务等真实外部条件时才询问。临时 stub 只能证明接线，交接必须说明没有对真实目标运行。
 - [ ] 按教程页的清单收尾自检，再问用户要不要往更深的接入等级走
 
 清单没逐项勾完，这个任务就还没完成。

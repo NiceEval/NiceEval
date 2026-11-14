@@ -1,7 +1,7 @@
 ---
 title: "NiceEval's post-run data flow"
 sidebarTitle: "How run results flow"
-description: "Understand where run results are stored, and what each of the three read entry points, query, show, and view, is responsible for."
+description: "Understand where run results are stored, and what each of the three read entry points, show and view, is responsible for."
 ---
 
 After a run ends, you might read results in the terminal, browse conversations in a browser, or have a CI script read JSON. All three see the same results with different layouts. This page explains where results are stored, how they are read out, and what each of the three read entry points is responsible for.
@@ -11,14 +11,14 @@ After a run ends, you might read results in the terminal, browse conversations i
         ↓
 NiceEval's fixed built-in queries
         ↓
-query (JSON) | show (terminal) | view (browser)
+show --json (JSON) | show (terminal) | view (browser)
 ```
 
 ## Results are stored in one file
 
 Each project's run results are stored in `.niceeval/record.sqlite`. This is Record. When `niceeval exp` starts, it creates a Run and records every Attempt planned for this run. Each Attempt publishes on its own as soon as it finishes and can be read right away, without waiting for the whole Run to end. Published Attempts and ended Runs are never modified again.
 
-After a run has fully ended, the file itself can be copied or archived. To read a copy someone gave you, add `--record <file>` to `query` or `show`. NiceEval fully validates the file first, then opens it read-only.
+After a run has fully ended, the file itself can be copied or archived. To read a copy someone gave you, add `--record <file>` to `show`. NiceEval fully validates the file first, then opens it read-only.
 
 ## NiceEval fixes the read rules
 
@@ -29,7 +29,7 @@ The built-in queries cover Runs, Attempts, traces, diffs, sources, artifacts, an
 ## Three read entry points
 
 - `niceeval show` starts with an overview in the terminal, then drills into one Attempt's conversation, timing, and changes. Both you and Coding Agents use it to investigate problems.
-- `niceeval query` outputs structured JSON for scripts and CI. Agents also use it when they need exact fields.
+- `niceeval show --json` outputs structured JSON for scripts and CI. Agents also use it when they need exact fields.
 - `niceeval view` is for people in a browser. It opens an access-protected Insight interface that listens only on a local address.
 
 All three entry points read the same query result. Each one only handles its own layout: JSON, terminal text, or browser page. None of them selects results on its own or recomputes pass rates or scores, so the same Run reaches the same conclusions in all three places.

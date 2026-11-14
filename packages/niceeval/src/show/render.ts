@@ -241,7 +241,7 @@ const compactContinuation = (
         kind: "keyValue",
         entries: [{
           key: "See more",
-          value: `niceeval show --experiment ${experimentId}`,
+          value: `niceeval show exp:${experimentId}`,
         }],
       },
     ];
@@ -751,11 +751,11 @@ export function renderAttempt(value: AttemptView): string {
             entries: [
               { key: "Phase", value: diagnostic.phase },
               { key: "Code", value: diagnostic.code },
-              { key: "Evidence", value: `niceeval show ${value.locator} --execution --expand ${diagnostic.evidenceId}` },
+              { key: "Evidence", value: `niceeval show ${value.locator} ${diagnostic.evidenceId}` },
               { key: "Error", value: diagnostic.summary },
               ...(diagnostic.summaryTruncated ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }] : []),
               // Command errors carry only a bounded output tail; the command record keeps the full stdout/stderr.
-              ...(COMMAND_PHASES.has(diagnostic.phase) ? [{ key: "Command output", value: `niceeval show ${value.locator} --execution` }] : []),
+              ...(COMMAND_PHASES.has(diagnostic.phase) ? [{ key: "Command output", value: `niceeval show ${value.locator} execution` }] : []),
             ],
           })) : [{
             kind: "keyValue" as const,
@@ -824,16 +824,6 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Diff", value: value.sections.diff },
           ],
         },
-        { kind: "divider", title: "Next" },
-        { kind: "command", command: `niceeval show ${value.locator} --assertions` },
-        { kind: "command", command: `niceeval show ${value.locator} --source` },
-        {
-          kind: "command",
-          command: `niceeval show ${value.locator} --execution`,
-        },
-        { kind: "command", command: `niceeval show ${value.locator} --timing` },
-        { kind: "command", command: `niceeval show ${value.locator} --usage` },
-        { kind: "command", command: `niceeval show ${value.locator} --diff` },
       ],
     },
   ]);
@@ -940,7 +930,7 @@ function safeEventJson(value: unknown, space?: number): string {
 }
 
 function displayPreview(text: { readonly preview: string; readonly omittedBytes: number }, eventId: string): string {
-  return safeEventText(text.preview) + (text.omittedBytes === 0 ? "" : `\n… (${text.omittedBytes} more bytes, --expand ${eventId})`);
+  return safeEventText(text.preview) + (text.omittedBytes === 0 ? "" : `\n… (${text.omittedBytes} more bytes, ${eventId})`);
 }
 
 function truncateCodeLine(line: string, width: number): string {
@@ -981,7 +971,7 @@ function displayLines(block: ExecutionDisplayPreviewBlock | ExecutionDisplayDeta
       if (typeof block.text === "string") return safeEventText(block.text).split("\n");
       return [
         ...safeEventText(block.text.preview).split("\n").map((line) => truncateCodeLine(line, width)),
-        ...(block.text.omittedBytes === 0 ? [] : [`… (${block.text.omittedBytes} more bytes, --expand ${eventId})`]),
+        ...(block.text.omittedBytes === 0 ? [] : [`… (${block.text.omittedBytes} more bytes, ${eventId})`]),
       ];
     }
     case "image": return [
@@ -995,8 +985,7 @@ function displayDetailBlocks(block: ExecutionDisplayDetailBlock, locator: string
   const lines = displayLines(block, eventId, TERMINAL_OPTIONS.width);
   const blocks: TerminalBlock[] = [{ kind: "code", text: lines.join("\n") }];
   if (block.kind === "image") {
-    const request = JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator, artifactId: block.artifactId } });
-    blocks.push({ kind: "code", text: `niceeval query run --request - <<'NICEEVAL_REQUEST'\n${request}\nNICEEVAL_REQUEST` });
+    blocks.push({ kind: "code", text: `niceeval show ${locator} ${block.artifactId}` });
   }
   return blocks;
 }
@@ -1127,7 +1116,7 @@ export function renderTrace(value: TraceView): string {
     for (const event of value.execution.events.filter(event => event.source.id === "niceeval.simulated-user" && event.scopeMemberships.some(scope => scope.scopeId === turn.turnId && scope.state === "included"))) {
       blocks.push({ kind: "panel", title: "Simulated user", blocks: [
         { kind: "keyValue", entries: [{ key: "Event ID", value: event.eventId }, { key: "Summary", value: safeEventText(event.summary) },
-          ...event.evidence.map(evidence => ({ key: "Audit", value: `--expand ${evidence.evidenceId}` }))] },
+          ...event.evidence.map(evidence => ({ key: "Audit", value: `niceeval show ${value.locator} ${evidence.evidenceId}` }))] },
         ...(event.display.state === "absent" ? [] : event.display.blocks.map((block): TerminalPanelContentBlock => ({ kind: "command", command: displayLines(block, event.eventId, panelContentWidth(TERMINAL_OPTIONS.width, TERMINAL_OPTIONS.mode)).join("\n") }))),
       ] });
     }
@@ -1437,10 +1426,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
           }],
         },
         { kind: "code", text: safeEventText(executionEvidenceText(evidence.base64)) },
-        ...(evidence.nextOffset === null ? [] : [{
-          kind: "command" as const,
-          command: `Query attempt.trace.detail for ${evidence.evidenceId} with offset ${evidence.nextOffset}`,
-        }]),
+
       ])),
     ]);
   }
@@ -1463,12 +1449,10 @@ export function renderTraceDetail(value: TraceDetailView): string {
         }],
       },
       { kind: "code", text: safeEventText(executionEvidenceText(body.base64)) },
-      ...(body.nextOffset === null ? [] : [{
-        kind: "command" as const,
-        command: `Query attempt.trace.detail for ${body.evidenceId} with offset ${body.nextOffset}`,
-      }]),
+
     ]);
   }
+  if (body.kind === "turn") return terminal([heading, ...body.items.flatMap(item => traceDetailItemBlocks(item))]);
   if (body.kind === "item") {
     return terminal([heading, ...traceDetailItemBlocks(body.item)]);
   }
@@ -1677,7 +1661,7 @@ function expandFailedCommands(
     { kind: "divider", title: "Next" },
     ...failed.map(({ commandId }): TerminalPanelContentBlock => ({
       kind: "command",
-      command: `niceeval show ${locator} --execution --expand ${commandId}`,
+      command: `niceeval show ${locator} ${commandId}`,
     })),
   ];
 }
@@ -2067,7 +2051,7 @@ export function renderDiff(value: DiffView): string {
               { key: "Before", value: fileEndpoint(change.before) },
               { key: "After", value: fileEndpoint(change.after) },
               ...([change.before, change.after].some((endpoint) => endpoint.state === "present" && endpoint.revision.kind === "text" && endpoint.revision.content === "available")
-                ? [{ key: "Next", value: `niceeval show ${value.locator} --diff --change ${change.changeId}` }] : []),
+                ? [{ key: "Next", value: `niceeval show ${value.locator} ${change.changeId}` }] : []),
             ],
           },
         ],
@@ -2262,17 +2246,17 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       }
     } else if (agentAudit !== undefined) blocks.push({ kind: "keyValue", entries: [{ key: "Agent Judge audit", value: agentAudit.state }] });
     if (options.full) {
-      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-change-scope/v1") {
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-change-scope") {
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Allowed paths", value: entry.criterion.value.data.paths.join(", ") }] });
       }
-      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-unchanged-within/v1") {
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-unchanged-within") {
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: entry.criterion.value.id }, { key: "Protected paths", value: entry.criterion.value.data.paths.join(", ") }] });
       }
-      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-in-diff/v1") {
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-in-diff") {
         const criterion = entry.criterion.value;
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: criterion.id }, { key: "Pattern", value: `/${criterion.data.pattern}/${criterion.data.flags}` }, { key: "Content", value: criterion.data.content }] });
       }
-      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-diff-paths/v1") {
+      if (entry.criterion.state === "available" && "kind" in entry.criterion.value && entry.criterion.value.kind === "builtin" && entry.criterion.value.id === "sandbox-diff-paths") {
         const criterion = entry.criterion.value;
         blocks.push({ kind: "keyValue", entries: [{ key: "Criterion", value: criterion.id }, { key: "Operation", value: criterion.data.operation }, { key: "Pattern", value: `/${criterion.data.pattern}/${criterion.data.flags}` }, { key: "Content", value: "none" }] });
       }
@@ -2295,7 +2279,7 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
     }
     if (!options.full || options.entryId !== entry.entryId) {
       blocks.push({ kind: "divider", title: "Next" });
-      blocks.push({ kind: "command", command: `niceeval show ${locator} --assertions --entry ${JSON.stringify(entry.entryId)} --full` });
+      blocks.push({ kind: "command", command: `niceeval show ${locator} ${JSON.stringify(entry.entryId)} --full` });
     }
   }
   if (assertions.length === 0) blocks.push({ kind: "divider", title: "No Assertion entries recorded" });

@@ -21,11 +21,11 @@ test.concurrent("Show 把 Experiment 标题和自己的内容排在同一段", a
         "Attempts · harness",
         "  Experiment harness/alternate",
         "  1 scored Attempts hidden",
-        "  See more  niceeval show --experiment harness/alternate",
+        "  See more  niceeval show exp:harness/alternate",
         "  ",
         "  Experiment harness/canary",
         "  1 scored Attempts hidden",
-        "  See more  niceeval show --experiment harness/canary",
+        "  See more  niceeval show exp:harness/canary",
       ].join("\n"));
     },
   );

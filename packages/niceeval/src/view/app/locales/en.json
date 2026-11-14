@@ -13,7 +13,7 @@
     "executionTrace.byteRange": "UTF-8 preview from byte {{offset}} of {{total}}",
     "executionTrace.moreBytes": "… ({{count}} more bytes; open event for full text)",
     "executionTrace.imageDecodeFailed": "Image could not be decoded",
-    "executionTrace.imageTooLarge": "Images above 16 MiB are not displayed inline. Read this artifact with niceeval query run --request -.",
+    "executionTrace.imageTooLarge": "Images above 16 MiB are not displayed inline. Read this artifact with niceeval show @<locator> <artifact-id>.",
     "nav.experiments": "Experiments",
     "nav.language": "Language",
     "nav.pages": "Report pages",

@@ -180,7 +180,6 @@ test.concurrent("值与连续 Match 登记可审阅的检查结果", async () =>
         expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
         expect(inspected.receipt.stdout).toBe(`${JSON.stringify(inspected.document)}\n`);
         expect(inspected.document).toMatchObject({
-          protocol: "niceeval.query/v3",
           operation: "attempt.get",
           attempt: { locator: outcomes.locator, core: { outcome: "completed" }, verdict: "failed" },
         });

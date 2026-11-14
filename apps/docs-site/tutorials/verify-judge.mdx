@@ -88,7 +88,7 @@ export default defineEval({
 
 Images must be PNG or JPEG, at most 4 MiB each. When an image is too large or has an invalid file header, NiceEval rejects it before sending. Do not pass a path, URL, or plain base64 string in place of an image.
 
-After the run, use `query`'s `attempt.assertion.detail` to view this assertion; the result includes the image's `imageId` and digest. To get the original image back, use `attempt.assertion.image` with the same Attempt's `entryId` and `imageId`, reading in segments: `offset` is the byte offset, and `limit` is at most 256 KiB. It reads the saved image and never rereads the file or calls the model.
+After the run, read the assertion with `niceeval show @<locator> <ae_id> --full --json`. Its result includes the saved image ID and digest. Run `niceeval show @<locator> <ae_id> image <image-id> --output screenshot.png` to save the complete image without rereading the source file or calling the model.
 
 ## Run once and confirm you get a score
 
@@ -103,7 +103,7 @@ NiceEval does not contact the Judge endpoint when loading configuration; it only
 After the run, copy the Run ID from the terminal's `NEXT` panel and open this run:
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
 Copy the locator of the `judge-smoke` Attempt and view the assertion result:
@@ -112,7 +112,7 @@ Copy the locator of the `judge-smoke` Attempt and view the assertion result:
 pnpm exec niceeval show @<attempt-locator>
 ```
 
-When the configuration is correct, this assertion shows a score and whether it reached the threshold. You can also view it in the browser with `pnpm exec niceeval view --run <run-id>`. When you need the reasons the Judge gave and the material actually sent to it, use `query`'s `attempt.assertion.detail`; see the example in [View Run Results](/tutorials/viewing-results#see-why-an-assertion-got-its-score).
+When the configuration is correct, this assertion shows a score and whether it reached the threshold. You can also view it in the browser with `pnpm exec niceeval view run:<run-id>`. When you need the reasons the Judge gave and the material actually sent to it, use `show --json`'s `attempt.assertion.detail`; see the example in [View Run Results](/tutorials/viewing-results#see-why-an-assertion-got-its-score).
 
 When you get no score, decide what to check from the result:
 

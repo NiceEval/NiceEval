@@ -1,5 +1,5 @@
 import { formatNumericUnit } from "../../../../../../assertions/quantity.ts";
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
@@ -146,10 +146,10 @@ function ExternalUsage({ usage }: { readonly usage: InspectionSuccessDocumentFor
   </section>;
 }
 
-export function AttemptDetails({ model, locale, className }: { readonly model: AttemptPageModel; readonly locale: ReportLocale; readonly className?: string }): ReactElement {
+export function AttemptDetails({ model, locale, className, aspect, selectedId }: { readonly model: AttemptPageModel; readonly locale: ReportLocale; readonly className?: string; readonly aspect?: string; readonly selectedId?: string }): ReactElement {
   const { t } = useTranslation();
   const generation = useCurrentGeneration();
-  const assertionOperations = model.assertionEntryIds.map((entryId) => operation("attempt.assertion.detail", { kind: "attempt.assertion.detail", locator: model.locator, entryId }));
+  const assertionOperations = model.assertionEntryIds.filter(id => aspect !== "assertions" || selectedId === undefined || id === selectedId).map((entryId) => operation("attempt.assertion.detail", { kind: "attempt.assertion.detail", locator: model.locator, entryId }));
   const traceOperations: readonly InspectionOperationFor<"attempt.trace.detail">[] = [
     ...model.traceItemIds.map((itemId) => operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: { kind: "item", itemId } })),
     ...model.toolOccurrenceIds.map((toolOccurrenceId) => operation("attempt.trace.detail", { kind: "attempt.trace.detail", locator: model.locator, selector: { kind: "tool-occurrence", toolOccurrenceId } })),
@@ -161,7 +161,7 @@ export function AttemptDetails({ model, locale, className }: { readonly model: A
   const timingQuery = useInspectionQuery(operation("attempt.timing", { kind: "attempt.timing", locator: model.locator }), { select: (value) => projectTiming(value, model.locator) });
   const usageQuery = useInspectionQuery(operation("attempt.usage", { kind: "attempt.usage", locator: model.locator }));
   const sourcesQuery = useInspectionQuery(operation("attempt.sources", { kind: "attempt.sources", locator: model.locator }));
-  const diffQuery = useInspectionQuery(operation("attempt.diff", { kind: "attempt.diff", locator: model.locator }), { select: projectDiff });
+  const diffQuery = useInspectionQuery(operation("attempt.diff", { kind: "attempt.diff", locator: model.locator, ...(aspect === "diff" && selectedId !== undefined ? { changeId: selectedId } : {}) }), { select: projectDiff });
   const notesQuery = useInspectionQuery(attemptOperations(model.locator)[0]);
   const allQueries = [notesQuery, ...assertionQueries, ...traceDetailQueries, traceQuery, timingQuery, usageQuery, sourcesQuery, diffQuery];
   if (allQueries.some((query) => query.isPending)) return <p role="status">{t("report.loadingDetails")}</p>;
@@ -191,25 +191,42 @@ export function AttemptDetails({ model, locale, className }: { readonly model: A
   ];
   return <Col className={cx("niceeval-report", className)}>
     <AttemptSummary locator={model.locator} data={model.summary} locale={locale} />
-    <ExternalUsage usage={usageQuery.data!.usage} />
+    {aspect === undefined || aspect === "usage" ? <ExternalUsage usage={usageQuery.data!.usage} /> : null}
     <Callouts items={notices} locale={locale} />
-    {embedded.source !== null
+    {aspect === undefined || aspect === "source" || aspect === "assertions" ? embedded.source !== null
       ? <SourceView data={embedded.source} locale={locale} />
-      : <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} />}
-    <section aria-label={t("attempt.notes")}><h3>{t("attempt.notes")}</h3>
+      : <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} /> : null}
+    {aspect === undefined ? <section aria-label={t("attempt.notes")}><h3>{t("attempt.notes")}</h3>
       <dl>{notesQuery.data!.attempt.notes.map((note) => <div key={note.sequence}>
         <dt>{note.label}</dt><dd style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{note.value === null ? t("cell.metricUnavailable") : typeof note.value === "number" ? formatNumericUnit(note.value, note.unit) : JSON.stringify(note.value)}</dd>
       </div>)}</dl>
-    </section>
-    <Waterfall nodes={sliceData(timingQuery.data!)} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} locale={locale} />
-    <AttemptUsage data={sliceData(projectUsage(usageQuery.data!, trace))} />
-    <ExecutionTrace key={model.locator} locator={model.locator} initial={trace.trace.execution} />
-    {embedded.conversation !== null
+    </section> : null}
+    {aspect === undefined || aspect === "timing" ? <Waterfall nodes={sliceData(timingQuery.data!)} title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }} locale={locale} /> : null}
+    {aspect === undefined || aspect === "usage" ? <AttemptUsage data={sliceData(projectUsage(usageQuery.data!, trace))} /> : null}
+    {aspect === undefined || aspect === "execution" ? <ExecutionTrace key={model.locator} locator={model.locator} initial={trace.trace.execution} selectedId={selectedId} /> : null}
+    {aspect === undefined || aspect === "execution" ? embedded.conversation !== null
       ? <TurnTrace data={embedded.conversation} locale={locale} />
       : sliceData(conversation) === null && trace.trace.execution.state === "not-recorded"
         ? <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} />
-        : null}
-    <CommandEvidence data={sliceData(commands)} locale={locale} />
-    <DiffView files={sliceData(diffQuery.data!)} locale={locale} />
+        : null : null}
+    {aspect === undefined || aspect === "execution" ? <CommandEvidence data={sliceData(commands)} locale={locale} /> : null}
+    {aspect === undefined || aspect === "diff" ? <DiffView files={sliceData(diffQuery.data!)} locale={locale} /> : null}
+    {aspect === "artifacts" ? <Artifacts locator={model.locator} selectedId={selectedId} /> : null}
   </Col>;
+}
+
+function Artifacts({ locator, selectedId }: { readonly locator: string; readonly selectedId?: string }): ReactElement {
+  const { t } = useTranslation();
+  const [offset, setOffset] = useState(0);
+  const query = useInspectionQuery(selectedId === undefined ? { kind: "attempt.artifacts", locator, offset } : { kind: "attempt.artifact", locator, artifactId: selectedId as never, offset });
+  if (query.isPending) return <p role="status">{t("report.loadingDetails")}</p>;
+  if (query.isError) return <p role="alert">{query.error.message}</p>;
+  if (query.data.operation === "attempt.artifact") {
+    const value = query.data.artifact;
+    if (value.state !== "available") return <p>{value.state}</p>;
+    const bytes = Uint8Array.from(atob(value.base64), c => c.charCodeAt(0));
+    return <section><h3>{value.name}</h3><p>{value.mediaType} · {value.byteLength} bytes</p><pre>{new TextDecoder().decode(bytes)}</pre>{value.nextOffset === null ? null : <button onClick={() => setOffset(value.nextOffset!)}>{t("executionTrace.nextBytes")}</button>}</section>;
+  }
+  const value = query.data.artifacts;
+  return <section><h3>Artifacts</h3>{value.state !== "available" ? <p>{value.state}</p> : <><ul>{value.value.artifacts.map(item => <li key={item.artifactId}><a href={`#/attempt/${encodeURIComponent(locator.startsWith("@") ? locator.slice(1) : locator)}?aspect=artifacts&id=${encodeURIComponent(item.artifactId)}`}>{item.label} · {item.mediaType} · {item.byteLength} bytes</a></li>)}</ul>{value.collection.nextOffset === null ? null : <button onClick={() => setOffset(value.collection.nextOffset!)}>{t("executionTrace.nextPage")}</button>}</>}</section>;
 }

@@ -98,7 +98,7 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
       { argv: ["sandbox", "provider", "doctor", "incus", "--help"], expected: "niceeval sandbox provider doctor —" },
       { argv: ["docker", "--help"], expected: "niceeval docker —" },
       { argv: ["exp", "--help"], expected: "niceeval exp" },
-      { argv: ["query", "--help"], expected: "niceeval query" },
+      { argv: ["show", "--help"], expected: "niceeval show" },
       { argv: ["run", "--help"], expected: "niceeval run" },
       { argv: ["init", "--help"], expected: "niceeval init —" },
     ] as const;

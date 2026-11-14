@@ -44,7 +44,7 @@ pnpm e2e run --candidate /tmp/niceeval-candidate.tgz --repo inspection \
 pnpm e2e diagnose test --from /tmp/e2e-artifacts/summary.json --repo inspection \
   --timeout-seconds 15 -- --run test/inspection-query.test.ts -t "打开"
 pnpm e2e diagnose exec --from /tmp/e2e-artifacts/summary.json --repo inspection \
-  --timeout-seconds 15 -- pnpm exec niceeval query discover
+  --timeout-seconds 15 -- pnpm exec niceeval show --help
 pnpm e2e takeover --candidate /tmp/niceeval-candidate.tgz --repo insight \
   -- --run test/view-snapshot.browser.spec.ts -t "读者"
 pnpm e2e verify-release --plan /tmp/release-plan.json --candidate /tmp/niceeval-candidate.tgz \

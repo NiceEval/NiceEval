@@ -10,7 +10,7 @@ test.concurrent.each(["verify-only", "install-failed", "recheck-missed"])("Agent
     const result = await niceeval.run(["exp", "diagnostic-fidelity", "--json"], { env: { NICEEVAL_DIAGNOSTIC_SCENARIO: reason } });
     expect(result.exitCode, result.diagnostic()).toBe(1);
     const locator = only(result.expEvalEvents(), () => true).locator;
-    const trace = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } })]);
+    const trace = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
     const diagnostic = only(trace.attemptTrace().trace.diagnostics.items, item => item.kind === "execution-error");
     expect(diagnostic).toMatchObject({ code: `agent.install.${reason}`, phase: "agent.install" });
@@ -34,7 +34,7 @@ test.concurrent("Sandbox 实际平台不符保留具名类别与计划及实际�
     const result = await niceeval.run(["exp", "diagnostic-fidelity", "--json"], { env: { NICEEVAL_DIAGNOSTIC_SCENARIO: "target" } });
     expect(result.exitCode, result.diagnostic()).toBe(1);
     const locator = only(result.expEvalEvents(), () => true).locator;
-    const trace = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } })]);
+    const trace = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
     expect(trace.attemptTrace().trace.diagnostics.items).toEqual(expect.arrayContaining([expect.objectContaining({
       code: "sandbox-target-platform-mismatch", summary: expect.stringMatching(/Sandbox platform .* does not match planned target/),

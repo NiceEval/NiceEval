@@ -18,7 +18,7 @@ export function agentRuleContent(indexPath: string, command: string): string {
     "",
     `Read \`${indexPath}\` before writing any NiceEval config, eval, experiment or adapter.`,
     "That index and its bundled Chinese pages are authoritative for this installed version; do not fetch another version from the website or GitHub.",
-    `Read results only with \`${command} show\` (add \`--json\` for scripts and agents) and \`${command} view\`; do not read files under \`.niceeval/\`.`,
+    `Read results only with \`${command} show\` (add \`--json\` for scripts and agents, then follow the returned \`links\`) and \`${command} view\`; do not read files under \`.niceeval/\`.`,
     "If those public commands cannot expose the evidence you need, report the product gap; do not read implementation source to bypass it.",
   ].join("\n");
 }

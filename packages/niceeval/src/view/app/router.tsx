@@ -39,7 +39,10 @@ export class GenerationPrepareError extends Error {
 }
 
 export async function createViewRouter(unmountRoot: () => void) {
-  const selectedRunIds = new URL(document.baseURI).searchParams.getAll("run");
+  const entry = new URL(document.baseURI);
+  const address = entry.searchParams.get("address");
+  if (address?.startsWith("/") && !window.location.hash.startsWith("#/")) window.history.replaceState(window.history.state, "", entry.pathname + entry.search + "#" + address);
+  const selectedRunIds = entry.searchParams.getAll("run");
   const generations = new ViewRuntime<InsightRuntimeSnapshot>();
   const pageLifetime = new AbortController();
   let disposeRouter: (() => void) | undefined;

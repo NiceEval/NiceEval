@@ -3,13 +3,7 @@
 // 再从公开 CLI 读回 Eval、attempt 与 execution。
 // 只从 @niceeval/testkit 根导入；不读 .niceeval 私有布局、不 import 候选源码/类型。
 
-import {
-  assertExpEvalOutcomes,
-  command,
-  type ExpEvalOutcomeExpectation,
-  type ProcessReceipt,
-  withInspectionRequest,
-} from "@niceeval/testkit";
+import { assertExpEvalOutcomes, command, type ExpEvalOutcomeExpectation, type ProcessReceipt } from "@niceeval/testkit";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -183,13 +177,10 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
   // outcome：trace 是适配器收到的公开投影，保留原始未归一化名
   //（opencode 的 write / bash），canonical 名 file_write / shell 也可能出现；
   // 工具身份与入参必须穿过归一化、持久化与 CLI 展示。
-  const queried = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: locators["coding-task/write-and-verify"]!,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", locators["coding-task/write-and-verify"]!, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(
     trace.includes("notes.txt") || trace.includes("file_write") || trace.includes("write"),
@@ -200,13 +191,10 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   // usage Eval 的两个 t.send() 都形成独立 request observation，且输入、输出 token 均为正数。
   // Conversation 会按 adapter session 聚合，不能把一次 send 等同于一个展示层 Turn 卡片。
-  const usageReceipt = await withInspectionRequest({
-    kind: "attempt.usage",
-    locator: locators["usage/tokens"]!,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const usageReceipt = await niceeval.run(["show", locators["usage/tokens"]!, "usage", "--json"]);
   expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
   const usageDocument = usageReceipt.attemptUsage();
-  expect(usageDocument).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.usage" });
+  expect(usageDocument).toMatchObject({ operation: "attempt.usage" });
   const usageObservations = usageDocument.usage.observations.filter((record) =>
     record.kind === "request" || record.kind === "token-bucket"
   );
@@ -284,26 +272,18 @@ it("真实 OpenCode CLI adapter 在 Docker sandbox 中的运行结果经过公�
 
   const goEvent = goEvents.find((event) => event.evalId === GO_EVAL);
   const goLocator = goEvent!.locator;
-  const goQuery = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: goLocator,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const goQuery = await niceeval.run(["show", goLocator, "execution", "--json"]);
   expect(goQuery.exitCode, goQuery.diagnostic()).toBe(0);
   const goDocument = goQuery.attemptTrace();
-  expect(goDocument).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(goDocument).toMatchObject({ operation: "attempt.trace" });
   // Go Eval 自己判定 export 中的 provider/model 与回复 marker。公开 trace 只承诺
   // bounded command projection，因此这里验收稳定 shape，不要求后段 export 命令
   // 穿过 MAX_COMMANDS 截止线。
   const command = expectCommandSummary(goDocument);
-  const goDetailQuery = await withInspectionRequest({
-    kind: "attempt.trace.detail",
-    locator: goLocator,
-    selector: { kind: "command", commandId: command.commandId },
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const goDetailQuery = await niceeval.run(["show", goLocator, command.commandId, "--json"]);
   expect(goDetailQuery.exitCode, goDetailQuery.diagnostic()).toBe(0);
   const goDetailDocument = goDetailQuery.attemptTraceDetail();
   expect(goDetailDocument).toMatchObject({
-    protocol: "niceeval.query/v3",
     operation: "attempt.trace.detail",
   });
   expectCommandDetail(goDetailDocument, command);

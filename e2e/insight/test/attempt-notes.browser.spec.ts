@@ -16,7 +16,7 @@ test("读者在 Attempt 详情查看独立 Notes，刷新后保留数值单位�
     const locator = event.locator.startsWith("@") ? event.locator : `@${event.locator}`;
     const runId = only(run.expReceipt().createdRunIds, () => true, run.diagnostic());
     await rm(join(projectRoot, "niceeval.config.ts"));
-    const view = niceeval.start(["view", "--run", runId, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
+    const view = niceeval.start(["view", `run:${runId}`, "--no-open", "--port", "0"], { timeoutMs: 90_000 });
     try {
       const ready = await waitForViewReady(view);
       await page.goto(expectLoopbackReadyUrl(ready.url).href);

@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo eval -- --run test/custom-application.test.ts
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -44,14 +44,10 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
         });
 
         const runId = only(receipt.createdRunIds, () => true, run.diagnostic());
-        const runRequest = join(projectRoot, `custom-run-${implementation}.request.json`);
-        await writeFile(runRequest, `${JSON.stringify({
-          protocol: "niceeval.query/v3",
-          operation: { kind: "run.get", runId },
-        })}\n`, "utf8");
-        const inspectedRun = await niceeval.run(["query", "run", "--request", runRequest]);
+
+        const inspectedRun = await niceeval.run(["show", `run:${runId}`, "--json"]);
         expect(inspectedRun.exitCode, inspectedRun.diagnostic()).toBe(0);
-        const runDocument = inspectedRun.querySuccess("run.get");
+        const runDocument = inspectedRun.inspectionSuccess("run.get");
         const execution = runDocument.run.value.context?.execution;
         expect(execution).toMatchObject({
           adapter: {
@@ -163,12 +159,7 @@ test.concurrent("同一 Adapter 契约的不同实现执行原生动作并公开
             items: [],
           });
 
-          const usageRequest = join(projectRoot, `custom-usage-${locator.slice(1)}.request.json`);
-          await writeFile(usageRequest, `${JSON.stringify({
-            protocol: "niceeval.query/v3",
-            operation: { kind: "attempt.usage", locator },
-          })}\n`, "utf8");
-          const usageReceipt = await niceeval.run(["query", "run", "--request", usageRequest]);
+          const usageReceipt = await niceeval.run(["show", locator, "usage", "--json"]);
           expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
           const usage = usageReceipt.attemptUsage().usage;
           expect(usage.source).toBe("adapter");

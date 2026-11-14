@@ -38,8 +38,8 @@ pnpm exec niceeval show @1K1P0VJAPVJ12
 核对判定、断言、用量、耗时和证据，确认这就是你想沿用的结果。需要看它当时所在的整个 Run 时，再打开那个 Run：
 
 ```sh
-pnpm exec niceeval show --run <source-run-id>
-pnpm exec niceeval view --run <source-run-id>
+pnpm exec niceeval show run:<source-run-id>
+pnpm exec niceeval view run:<source-run-id>
 ```
 
 ## 接受需要的结果
@@ -65,7 +65,7 @@ NiceEval 会先检查全部输入。任何一个 locator 无效、不符合条�
 成功反馈会显示新 Run 的 ID。打开它确认结果：
 
 ```sh
-pnpm exec niceeval show --run <accepted-run-id>
+pnpm exec niceeval show run:<accepted-run-id>
 ```
 
 这个 Run 的分母仍是当前 Experiment 计划要跑的全部 Attempt。你接受的位置显示为 `accepted`，没有接受的位置显示为 `not-dispatched`。只接受了一部分时，报告会如实显示结果不全。

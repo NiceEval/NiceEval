@@ -61,11 +61,11 @@ pnpm exec niceeval exp checkout --json
 `--json` outputs this run's NDJSON. The last line is the receipt, containing `invocationId`, `createdRunIds`, `publicationCutoff`, the start time, the end time, and `completion`. External automation can save the receipt, then open the matching Runs with `createdRunIds`:
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
-pnpm exec niceeval view --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show run:01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval view run:01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
-When a script needs structured results, run `pnpm --silent exec niceeval show --run <run-id> --json`.
+When a script needs structured results, run `pnpm --silent exec niceeval show run:<run-id> --json`.
 
 Do not treat progress or diagnostic lines as a long-term result format. They only describe what is happening in this run.
 

@@ -1,4 +1,4 @@
-import { command, createE2EContext, only, withInspectionRequest } from "@niceeval/testkit";
+import { command, createE2EContext, only } from "@niceeval/testkit";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
@@ -40,11 +40,9 @@ test.concurrent("Bub 固定版本样本保留文本和用量并汇总未知事�
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const outcome = only(run.expEvalEvents(), (event) => event.evalId === "protocol");
     expect(outcome).toMatchObject({ verdict: "passed", attempts: 2, passed: 2 });
-    const queried = await withInspectionRequest({ kind: "attempt.trace", locator: outcome.locator },
-      (request) => niceeval.run(["query", "run", "--request", request]));
+    const queried = await (async () => niceeval.run(["show", outcome.locator, "execution", "--json"]))();
     expect(queried.exitCode, queried.diagnostic()).toBe(0);
-    const usageReceipt = await withInspectionRequest({ kind: "attempt.usage", locator: outcome.locator },
-      (request) => niceeval.run(["query", "run", "--request", request]));
+    const usageReceipt = await (async () => niceeval.run(["show", outcome.locator, "usage", "--json"]))();
     expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
     expect(usageReceipt.attemptUsage().usage.totals.requests).toMatchObject({ state: "available", value: 2 });
     const trace = queried.attemptTrace().trace;
@@ -56,7 +54,7 @@ test.concurrent("Bub 固定版本样本保留文本和用量并汇总未知事�
       expect(warnings[0]?.summary).toContain("future-event (2)");
       expect(warnings[0]?.summary).toContain("type:message (1)");
       const locator = outcome.locator.startsWith("@") ? outcome.locator : `@${outcome.locator}`;
-      const shown = await niceeval.run(["show", locator, "--execution"]);
+      const shown = await niceeval.run(["show", locator, "execution"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       expect(shown.stdout).toContain("Diagnostic outline");
       expect(shown.stdout).toContain("advisory");

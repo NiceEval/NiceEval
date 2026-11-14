@@ -141,7 +141,7 @@ Two examples:
 - `t.check(await t.sandbox.runCommand(...), commandSucceeded())` saves the command name, arguments, exit status, and duration of that command, plus redacted stdout and stderr (content or references).
 - `calledTool(...)` saves every tool call it saw: the call identity, redacted input, status, references to output or errors, whether the record is complete, and which events matched. When nothing matched, it still saves the scope it looked at and the candidate calls, not just `false`.
 
-So `query`, `view`, and the source view can all build text and interfaces directly from the saved result, without rerunning the Match or calling the Judge again. The `expected` and `received` shown in interfaces are generated at read time from this content; they are not just two stored strings.
+So `show --json`, `view`, and the source view can all build text and interfaces directly from the saved result, without rerunning the Match or calling the Judge again. The `expected` and `received` shown in interfaces are generated at read time from this content; they are not just two stored strings.
 
 Assertion only defines what must be saved. Record decides how it is written to disk. When the data needed for a decision cannot be saved safely, the result must be `unavailable`; it cannot keep only `matched` or `mismatched`.
 

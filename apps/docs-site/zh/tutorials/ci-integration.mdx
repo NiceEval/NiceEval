@@ -69,17 +69,17 @@ JUnit 只是交给 CI 平台的展示格式。判定、用量、断言和诊断�
 运行开始后，NDJSON 的最后一行是 receipt。它的 `receipt.createdRunIds` 列出这次新建的 Run，后续步骤用它打开结果：
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show run:01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
 要让脚本处理结果，在相同的 `show` 命令后加 `--json`：
 
 ```sh
-pnpm --silent exec niceeval show --runs --json
+pnpm --silent exec niceeval show runs --json
 ```
 
 如果命令在运行开始前就因为参数、配置或选择条件出错退出，不会有 receipt，终端会输出 `error:`。这时直接修复命令、Experiment 或选择条件，不要猜测 Run ID。
 
 ## 让 CI 日志保持可读
 
-CI 日志适合看运行进度和诊断。要细查结果，人在本地用 receipt 里的 Run ID 运行 `niceeval show --run <run-id>` 或 `niceeval view --run <run-id>`；脚本和 AI 先运行 `show --runs --json`。不要把进度和诊断行当作长期保存的结果格式。
+CI 日志适合看运行进度和诊断。要细查结果，人在本地用 receipt 里的 Run ID 运行 `niceeval show run:<run-id>` 或 `niceeval view run:<run-id>`；脚本和 AI 先运行 `show runs --json`。不要把进度和诊断行当作长期保存的结果格式。

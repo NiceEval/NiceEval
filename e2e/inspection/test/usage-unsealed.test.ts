@@ -1,6 +1,5 @@
 import { only } from "@niceeval/testkit";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
@@ -16,11 +15,9 @@ test.concurrent("应用账本未读的 errored Attempt 保留费用缺口，默�
     const event = only(run.expEvalEvents(), (item) => item.evalId === "usage-unsealed" && item.experimentId === "usage-unsealed", run.diagnostic());
     expect(event).toMatchObject({ verdict: "errored", attempts: 1 });
 
-    const request = join(projectRoot, "usage-unsealed.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.calls).toEqual([]);
     expect(usage.judgeUsage, read.diagnostic()).toEqual({
       state: "complete",

@@ -106,13 +106,13 @@ export default defineEval({
 先看这次运行的结果，确认停下来的范围和你预期的一致。Run ID 在终端的 `NEXT` 面板里：
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-也可以用 `pnpm exec niceeval view --run <run-id>` 在浏览器里看。需要查看某个 Attempt 的原始错误和重试摘要时，复制它的 locator：
+也可以用 `pnpm exec niceeval view run:<run-id>` 在浏览器里看。需要查看某个 Attempt 的原始错误和重试摘要时，复制它的 locator：
 
 ```sh
-pnpm exec niceeval show @<attempt-locator> --execution
+pnpm exec niceeval show @<attempt-locator> execution
 ```
 
 修好服务、凭据或 Fixture 后，重新运行原命令：

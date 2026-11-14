@@ -5,7 +5,7 @@
     "executionTrace.title": "执行事件",
     "executionTrace.moreBytes": "…（还有 {{count}} 字节；打开事件查看全文）",
     "executionTrace.imageDecodeFailed": "图片无法解码",
-    "executionTrace.imageTooLarge": "超过 16 MiB 的图片不内联显示。使用 niceeval query run --request - 读取此附件。",
+    "executionTrace.imageTooLarge": "超过 16 MiB 的图片不内联显示。使用 niceeval show @<locator> <artifact-id> 读取此附件。",
     "executionTrace.stableId": "稳定事件或证据 ID",
     "executionTrace.openEvent": "打开事件",
     "executionTrace.openEvidence": "打开证据",

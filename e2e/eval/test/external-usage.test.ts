@@ -1,5 +1,5 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
+
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt, inspectAssertionEntries, assertionEntry } from "./inspection.ts";
@@ -32,15 +32,14 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
     for (const [label, result] of [["Mixed currency unknown", "unavailable"], ["Mixed currency exceeded", "mismatched"]]) {
       expect(only(mixedEntries, (entry) => entry.display.label === label, run.diagnostic()).decision.result).toBe(result);
     }
-    const request = join(paths.projectRoot, "usage.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.totals).not.toHaveProperty("providerCosts");
     expect(usage).toMatchObject({ source: "adapter", coverage: "recorded-calls", state: "partial", turns: [], observations: [], callsTruncated: true, omittedCallCount: 287 });
     expect(usage.calls).toHaveLength(128);
-    const shown = await niceeval.run(["show", event.locator, "--usage"]);
+    const shown = await niceeval.run(["show", event.locator, "usage"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("Recorded calls only");
     expect(shown.stdout).toContain("Input including cache");
@@ -130,15 +129,10 @@ test.concurrent("外部调用用量保留失败重试未知值且重复上报不
       missing: [],
     });
 
-    const overviewRequest = join(paths.projectRoot, "overview.request.json");
-    await writeFile(overviewRequest, JSON.stringify({
-      protocol: "niceeval.query/v3",
-      operation: { kind: "overview.get" },
-    }));
-    const overview = await niceeval.run(["query", "run", "--request", overviewRequest]);
+    const overview = await niceeval.run(["show", "--record", ".niceeval/record.sqlite", "--json"]);
     expect(overview.exitCode, overview.diagnostic()).toBe(0);
     const cell = only(
-      overview.querySuccess("overview.get").overview.cells,
+      overview.inspectionSuccess("overview.get").overview.cells,
       (candidate) => candidate.experimentId === "external-usage" && candidate.evalId === "external-usage",
       overview.diagnostic(),
     );
@@ -170,11 +164,10 @@ test.concurrent("调用身份冲突即使被捕获仍公开为执行错误并保
     expect(run.exitCode, run.diagnostic()).toBe(1);
     const event = only(run.expEvalEvents(), (item) => item.evalId === "conflicting-usage", run.diagnostic());
     expect(event.verdict).toBe("errored");
-    const request = join(paths.projectRoot, "usage.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage.state).toBe("partial");
     expect(usage.calls).toEqual([expect.objectContaining({
       callId: "request-1",

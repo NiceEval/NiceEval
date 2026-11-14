@@ -77,13 +77,11 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
   const require = createRequire(import.meta.url);
   const commonjsInspection = require("niceeval/inspection") as typeof inspection;
 
-  expect(inspection.QUERY_PROTOCOL).toBe("niceeval.query/v3");
-  expect(commonjsInspection.QUERY_PROTOCOL).toBe("niceeval.query/v3");
-  expect(inspection.decodeInspectionRequest({ protocol: inspection.QUERY_PROTOCOL, operation: { kind: "run.list" } })._tag).toBe("Success");
-  const oldRequest = { protocol: "niceeval.query/v2", operation: { kind: "run.list" } };
-  expect(inspection.decodeInspectionRequest(oldRequest)._tag).toBe("Failure");
-  expect(commonjsInspection.decodeInspectionRequest(oldRequest)._tag).toBe("Failure");
-  const oldDocument = { protocol: "niceeval.query/v2", outcome: "discovery", operations: [] };
+  expect(inspection).not.toHaveProperty("QUERY_PROTOCOL");
+  const request = { operation: { kind: "run.list" } };
+  expect(inspection.decodeInspectionRequest(request)._tag).toBe("Success");
+  expect(commonjsInspection.decodeInspectionRequest(request)._tag).toBe("Success");
+  const oldDocument = { outcome: "discovery", operations: [] };
   expect(inspection.decodeInspectionDocument(oldDocument).success).toBe(false);
   expect(commonjsInspection.decodeInspectionDocument(oldDocument).success).toBe(false);
 

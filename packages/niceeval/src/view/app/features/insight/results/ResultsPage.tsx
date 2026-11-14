@@ -1,10 +1,13 @@
+import { useLocation } from "react-router-dom";
+import { Result } from "effect";
+import { decodeInspectionOperation } from "@niceeval/inspection/public.ts";
 import type { ReactElement } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ExperimentResults } from "./experiment-table/index.tsx";
 import type { Locale } from "../shell/types.ts";
 import { overviewData, type ResultsPageModel } from "./model.ts";
-import { useCurrentGeneration } from "../data/index.ts";
+import { useInspectionQuery, useCurrentGeneration } from "../data/index.ts";
 import { experimentQueryOptions, resultsQueryOptions } from "./load.ts";
 import type { InsightRuntimeSnapshot } from "../shell/App.tsx";
 import type { InsightTarget } from "../shell/types.ts";
@@ -111,6 +114,9 @@ function ExperimentCosts({ summary }: {
 export function ResultsRoute({ target }: {
   readonly target: Extract<InsightTarget, { readonly kind: "group" | "experiment" }>;
 }): ReactElement {
+  const selection = new URLSearchParams(useLocation().search);
+  const ids = selection.getAll("experiment");
+  if (selection.get("aspect") === "assertions") return <AssertionMatrix experimentIds={ids.length > 0 ? ids : target.kind === "experiment" ? [target.experimentId] : []} />;
   return target.kind === "group"
     ? <GroupResultsRoute groupKind={target.groupKind} groupKey={target.key} />
     : <ExperimentResultsRoute experimentId={target.experimentId} />;
@@ -135,4 +141,13 @@ function LocalizedResultsPage({ model }: { readonly model: ResultsPageModel }) {
   const generation = useCurrentGeneration();
   const locale = (i18n.resolvedLanguage ?? "en") as Locale;
   return <ResultsPage model={model} locale={locale} unavailableReason={(generation.snapshot as InsightRuntimeSnapshot).targetFailureReason} />;
+}
+
+function AssertionMatrix({ experimentIds }: { readonly experimentIds: readonly string[] }): ReactElement {
+  const { t } = useTranslation();
+  const decoded = decodeInspectionOperation({ kind: "experiments.assertions", experimentIds });
+  const query = useInspectionQuery<"experiments.assertions">(Result.isSuccess(decoded) && decoded.success.kind === "experiments.assertions" ? decoded.success : null);
+  if (query.isError || Result.isFailure(decoded)) return <p role="alert">{t("report.unableToLoadDetails")}</p>;
+  if (query.isPending) return <p role="status">{t("report.loadingDetails")}</p>;
+  return <div className="niceeval-report">{query.data.matrix.evals.map(evaluation => <section key={evaluation.evalId}><h2>{evaluation.evalId}</h2><table><thead><tr><th>{t("attempt.assertions")}</th>{evaluation.columns.map((column, index) => <th key={index}>{column.experimentId} · {column.attemptOrdinal + 1}</th>)}</tr></thead><tbody>{evaluation.rows.map((row, index) => <tr key={index}><th>{[...row.groupPath, row.label].join(" / ")}</th>{row.cells.map((cell, index) => <td key={index}>{cell.state === "available" ? cell.entries.map(entry => <a key={entry.entryId} href={`#/attempt/${encodeURIComponent(evaluation.columns[index]!.locator!.replace(/^@/, ""))}?aspect=assertions&id=${entry.entryId}`}>{entry.result} </a>) : cell.state}</td>)}</tr>)}</tbody></table></section>)}</div>;
 }

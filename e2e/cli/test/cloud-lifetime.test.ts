@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
-import { cliE2E, writeInspectionRequest } from "./context.ts";
+import { cliE2E } from "./context.ts";
 
 // @feature docs/feature/sandbox/README.md
 test.concurrent.each([
@@ -42,8 +42,8 @@ export default defineExperiment({
     expect(new Date(createdAt).toISOString()).toBe(createdAt);
     expect(Date.parse(createdAt)).toBeGreaterThanOrEqual(startedAt);
     expect(Date.parse(createdAt)).toBeLessThanOrEqual(Date.now());
-    const request = await writeInspectionRequest(paths.projectRoot, "cloud-runs", { kind: "run.list" });
-    const listed = await niceeval.run(["query", "run", "--request", request]);
+
+    const listed = await niceeval.run(["show", "runs", "--json"]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
     expect(listed.runsList().selection.selectedRunIds).toEqual([bodies[0].metadata["niceeval.run_id"]]);
   });

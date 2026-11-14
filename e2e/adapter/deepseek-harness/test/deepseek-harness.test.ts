@@ -9,7 +9,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { DEEPSEEK_HARNESS_MARKER } from "../evals/message.eval.ts";
-import { withInspectionRequest } from "@niceeval/testkit";
+
 
 const EXPECTED_OUTCOMES = [
   { experimentId: "ci", evalId: "message", verdict: "passed", attempts: 1, passed: 1 },
@@ -29,13 +29,10 @@ it("DeepSeek Harness adapter 从公开工厂完成 Eval 并公开读回结果", 
   const events = assertExpEvalOutcomes(run.expEvalEvents(), EXPECTED_OUTCOMES, () => run.diagnostic());
   const event = only(events, (candidate) => candidate.evalId === "message");
 
-  const queried = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: event.locator,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   expect(JSON.stringify(document.trace)).toContain(DEEPSEEK_HARNESS_MARKER);
 
 }, 8 * 60_000);

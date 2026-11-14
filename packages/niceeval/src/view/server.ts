@@ -83,6 +83,7 @@ export function openViewServer(input: {
   readonly refreshEnabled?: boolean;
   readonly refreshSource?: RefreshSource;
   readonly initialRunIds: readonly string[];
+  readonly initialPath?: string;
 }): Effect.Effect<ViewServer, ViewServerError, Scope.Scope> {
   return Effect.gen(function* () {
     const resources = yield* Effect.acquireRelease(
@@ -94,14 +95,15 @@ export function openViewServer(input: {
     resources.origin = `http://${resources.authority}`;
     return Object.freeze({
       origin: resources.origin,
-      readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds),
+      readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds, input.initialPath),
       close: closeResources(resources),
     });
   });
 }
 
-function viewEntryUrl(origin: string, credential: string, runIds: readonly string[]): string {
+function viewEntryUrl(origin: string, credential: string, runIds: readonly string[], path = "/"): string {
   const url = new URL("/", origin);
+  if (path !== "/") url.searchParams.set("address", path);
   for (const runId of runIds) url.searchParams.append("run", runId);
   url.hash = credential;
   return url.href;

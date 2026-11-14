@@ -73,27 +73,27 @@ The Agent trusts only this last line. `createdRunIds` lists every Run created th
 After the run ends, the Agent first opens the Run from the receipt in the terminal:
 
 ```sh
-pnpm exec niceeval show --run 01J9ZK3M6P4T7V9X2C5N8QW0RY
+pnpm exec niceeval show run:01J9ZK3M6P4T7V9X2C5N8QW0RY
 ```
 
 The output lists the Run's denominator, each eval's verdict, scores, result coverage, and the locator of each Attempt. To look at an Attempt in detail, copy its locator:
 
 ```sh
 pnpm exec niceeval show @<attempt-locator>
-pnpm exec niceeval show @<attempt-locator> --source
-pnpm exec niceeval show @<attempt-locator> --execution
+pnpm exec niceeval show @<attempt-locator> source
+pnpm exec niceeval show @<attempt-locator> execution
 ```
 
-`show @<attempt-locator>` shows the Attempt's verdict, assertion summary, whether each part is complete, and known limitations. `--source` shows the eval source used in this run and the result of each assertion. `--execution` shows a condensed execution trace; to expand one item, copy the ID next to it and run `--execution --expand <stable-id>`.
+`show @<attempt-locator>` shows the Attempt's verdict, assertion summary, whether each part is complete, and known limitations. `source` shows the eval source used in this run and the result of each assertion. `execution` shows a condensed execution trace; to expand one item, copy the ID next to it and run `execution <stable-id>`.
 
 When a script, CI, or Agent needs to process results reliably, add `--json` to the same `show` command:
 
 ```sh
-pnpm --silent exec niceeval show --runs --json
-pnpm --silent exec niceeval show --run <run-id> --json
+pnpm --silent exec niceeval show runs --json
+pnpm --silent exec niceeval show run:<run-id> --json
 ```
 
-`show --json` returns JSON in a fixed format. When a person wants to look in the browser, use `pnpm exec niceeval view --run <run-id>`; `view` does not accept locators.
+`show --json` returns JSON in a fixed format. When a person wants to look in the browser, use `pnpm exec niceeval view run:<run-id>`; `view` also accepts the same Attempt locator and aspect as `show`.
 
 ## Decide the next step from the status
 
@@ -105,7 +105,7 @@ pnpm --silent exec niceeval show --run <run-id> --json
 | `core-invalid` | Read the issue stated in the output. Do not treat it as missing collection. |
 | `partial` | The result is incomplete. Read the denominator and the issue notes to see which Attempts were not counted. |
 | `record-schema-unsupported` or old project state blocks the run | Keep the original project and its history, and follow the [old project recovery guide](/troubleshooting/debugging#old-project-state-blocks-a-run) to rerun in a copy of the project. |
-| Query result is `unsupported` or `failed` | This only affects views that depend on that input. Read the stated issue. |
+| Inspection result is `unsupported` or `failed` | This only affects views that depend on that input. Read the stated issue. |
 
 When handling `failed`, do not change an artifact that already meets the task just to pass an overly narrow Match. If the artifact meets the task but the assertion rejects an outcome the task allows, the eval misjudged it and the eval should change. For the full attribution process, see the [debugging guide](/troubleshooting/debugging).
 

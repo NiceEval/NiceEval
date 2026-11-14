@@ -210,7 +210,7 @@ shell({
 
 NiceEval 在规划时读一次脚本，冻结原始内容，执行时不重读。脚本内容和 `env` 的值进入指纹；文件路径、文件名和 `label` 不进入。改一个字节会使这一步及后缀重新执行。
 
-运行进度只显示 `label`，省略时显示 `id`。`label` 必须非空、不含控制字符，最多 256 Unicode code points。内置 action 和自定义 family 都遵守这条规则。用 `niceeval debug <experiment> <eval>` 查看完整脚本、相对路径与摘要；用 `niceeval show @<locator> --execution` 查看实际执行命令。
+运行进度只显示 `label`，省略时显示 `id`。`label` 必须非空、不含控制字符，最多 256 Unicode code points。内置 action 和自定义 family 都遵守这条规则。用 `niceeval debug <experiment> <eval>` 查看完整脚本、相对路径与摘要；用 `niceeval show @<locator> execution` 查看实际执行命令。
 
 很短的进度更新可能被合并显示。需要分步观察时，把长脚本拆成几个有名字的 action。NiceEval 不追踪 shell 脚本内部的步骤。动态回调的进度由 `context.progress()` 自己报告。
 

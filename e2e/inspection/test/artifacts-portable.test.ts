@@ -29,29 +29,28 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     await copyFile(join(projectRoot, ".niceeval", "record.sqlite"), recordPath);
     await rm(join(projectRoot, ".niceeval"), { recursive: true });
     await rm(join(projectRoot, "attachment-input.bin"));
-    const runList = await niceeval.run(["show", "--runs", "--json", "--record", recordPath]);
-    const directRuns = await niceeval.run(["query", "run", "--record", recordPath, "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.list" } })]);
+    const runList = await niceeval.run(["show", "runs", "--json", "--record", recordPath]);
+    const directRuns = await niceeval.run(["show", "runs", "--record", recordPath, "--json"]);
     expect(runList.exitCode, runList.diagnostic()).toBe(0);
     expect(runList.stdout).toBe(directRuns.stdout);
-    expect(runList.querySuccess("run.list").runs.some(run => run.runId === originRunId)).toBe(true);
-    const requestPath = join(projectRoot, "artifact.request.json");
-    await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId: originRunId } }));
-    const originRead = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+    expect(runList.inspectionSuccess("run.list").runs.some(run => run.runId === originRunId)).toBe(true);
+
+    const originRead = await niceeval.run(["show", `run:${originRunId}`, "--record", recordPath, "--json"]);
     expect(originRead.exitCode, originRead.diagnostic()).toBe(0);
-    const originAttempt = only(originRead.querySuccess("run.get").run.attempts, (item) => item.evalId === "artifacts-portable", originRead.diagnostic());
+    const originAttempt = only(originRead.inspectionSuccess("run.get").run.attempts, (item) => item.evalId === "artifacts-portable", originRead.diagnostic());
     expect(originAttempt.originRunId).toBe(originRunId);
-    await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId: carryRunId } }));
-    const carried = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+
+    const carried = await niceeval.run(["show", `run:${carryRunId}`, "--record", recordPath, "--json"]);
     expect(carried.exitCode, carried.diagnostic()).toBe(0);
-    const carriedMember = only(carried.querySuccess("run.get").run.members, (item) => item.action === "carried", carried.diagnostic());
+    const carriedMember = only(carried.inspectionSuccess("run.get").run.members, (item) => item.action === "carried", carried.diagnostic());
     expect(carriedMember.attempt).toEqual({ attemptId: originAttempt.attemptId, originRunId: originAttempt.originRunId });
-    await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator: canonicalLocator } }));
-    const listed = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+
+    const listed = await niceeval.run(["show", canonicalLocator, "artifacts", "--record", recordPath, "--json"]);
     expect(listed.exitCode, listed.diagnostic()).toBe(0);
-    const shownList = await niceeval.run(["show", canonicalLocator, "--artifacts", "--json", "--record", recordPath]);
+    const shownList = await niceeval.run(["show", canonicalLocator, "--json", "--record", recordPath, "artifacts"]);
     expect(shownList.exitCode, shownList.diagnostic()).toBe(0);
     expect(shownList.stdout).toBe(listed.stdout);
-    const directory = listed.querySuccess("attempt.artifacts").artifacts;
+    const directory = listed.inspectionSuccess("attempt.artifacts").artifacts;
     expect(directory.state).toBe("available");
     if (directory.state !== "available") throw new Error("Expected portable artifact directory");
     const descriptors = [...directory.value.artifacts];
@@ -60,23 +59,15 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     expect(directory.collection.items).toEqual(directory.value.artifacts);
     expect(Buffer.byteLength(JSON.stringify(directory.value.artifacts))).toBeLessThanOrEqual(128 * 1024);
     expect(Buffer.byteLength(JSON.stringify(directory))).toBeLessThanOrEqual(512 * 1024);
-    let next = directory.collection.nextOffset;
-    while (next !== null) {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator: canonicalLocator, offset: next, limit: 3 } }));
-      const readPage = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+    let nextLink = listed.inspectionSuccess("attempt.artifacts").links.find(link => link.rel === "next-page");
+    while (nextLink !== undefined) {
+      const token = nextLink.command.match(/--continuation ([^ ]+)/)![1]!;
+      const readPage = await niceeval.run(["show", canonicalLocator, "artifacts", "--record", recordPath, "--continuation", token, "--json"]);
       expect(readPage.exitCode, readPage.diagnostic()).toBe(0);
-      const page = readPage.querySuccess("attempt.artifacts").artifacts;
-      if (page.state !== "available") throw new Error("Expected artifact directory page");
-      expect(page.value.artifacts.length).toBeGreaterThan(0);
-      expect(page.value.artifacts.length).toBeLessThanOrEqual(3);
-      expect(page.collection.items).toEqual(page.value.artifacts);
-      expect(Buffer.byteLength(JSON.stringify(page.value.artifacts))).toBeLessThanOrEqual(128 * 1024);
-      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(512 * 1024);
-      descriptors.push(...page.value.artifacts);
-      expect(page.collection).toMatchObject({
-        total: 16, hasMore: descriptors.length < 16, nextOffset: descriptors.length < 16 ? descriptors.length : null,
-      });
-      next = page.collection.nextOffset;
+      const document = readPage.inspectionSuccess("attempt.artifacts");
+      if (document.artifacts.state !== "available") throw new Error(readPage.diagnostic());
+      descriptors.push(...document.artifacts.value.artifacts);
+      nextLink = document.links.find(link => link.rel === "next-page");
     }
     expect(descriptors.filter((item) => item.label === "L".repeat(16 * 1024))).toHaveLength(12);
     expect(descriptors.map((item) => item.artifactId).toSorted()).toEqual(receiptIds.toSorted());
@@ -85,34 +76,24 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
     const text = only(descriptors, (item) => item.label === "same-label" && item.mediaType === "text/plain", listed.diagnostic());
     const empty = only(descriptors, (item) => item.label === "empty", listed.diagnostic());
     const cleanup = only(descriptors, (item) => item.label === "cleanup.txt", listed.diagnostic());
-    await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator: canonicalLocator, offset: 16 } }));
-    const eofList = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
-    expect(eofList.exitCode, eofList.diagnostic()).toBe(0);
-    expect(eofList.querySuccess("attempt.artifacts").artifacts).toMatchObject({
-      state: "available", value: { artifacts: [] },
-      collection: { state: "complete-page", items: [], total: 16, hasMore: false, nextOffset: null },
-    });
-    for (const bounds of [{ offset: 17 }, { offset: -1 }, { offset: 0.5 }, { limit: 0 }, { limit: 129 }]) {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator: canonicalLocator, ...bounds } }));
-      const rejected = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
-      expect(rejected.exitCode, rejected.diagnostic()).not.toBe(0);
-      expect(rejected.queryFailure()).toMatchObject({ failure: { code: "inspection-request-invalid" } });
-    }
     const binaryId = binary.artifactId;
     const digest = createHash("sha256").update(expected).digest("hex");
     expect(binary).toMatchObject({ byteLength: expected.length, sha256: digest });
     const chunks: Buffer[] = [];
     let offset = 0;
+    let continuation: string | undefined;
     do {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator: canonicalLocator, artifactId: binaryId, offset } }));
-      const read = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+
+      const read = await niceeval.run(["show", canonicalLocator, binaryId, "--record", recordPath, ...(continuation === undefined ? [] : ["--continuation", continuation]), "--json"]);
       if (offset === 0) {
-        const shown = await niceeval.run(["show", canonicalLocator, "--artifacts", "--artifact", binaryId, "--json", "--record", recordPath]);
+        const shown = await niceeval.run(["show", canonicalLocator, "--json", "--record", recordPath, binaryId]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
         expect(shown.stdout).toBe(read.stdout);
       }
       expect(read.exitCode, read.diagnostic()).toBe(0);
-      const artifact = read.querySuccess("attempt.artifact").artifact;
+      const document = read.inspectionSuccess("attempt.artifact");
+      const artifact = document.artifact;
+      continuation = document.links.find(link => link.rel === "next-page")?.command.match(/--continuation ([^ ]+)/)?.[1];
       expect(artifact.state).toBe("available");
       if (artifact.state !== "available") throw new Error("Expected readable artifact");
       expect(artifact).toMatchObject({ name: "same-label", offset, byteLength: expected.length, sha256: digest });
@@ -123,34 +104,13 @@ test.concurrent("附件随 Record 搬走后仍能按历史与 carry locator 分�
       expect(artifact.nextOffset).toBe(offset === expected.length ? null : offset);
     } while (offset < expected.length);
     expect(Buffer.concat(chunks)).toEqual(expected);
-    await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator: canonicalLocator, artifactId: binaryId, limit: 256 * 1024 } }));
-    const maximumPage = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
-    expect(maximumPage.exitCode, maximumPage.diagnostic()).toBe(0);
-    expect(maximumPage.querySuccess("attempt.artifact").artifact).toMatchObject({
-      state: "available", offset: 0, base64: expected.subarray(0, 256 * 1024).toString("base64"), nextOffset: 256 * 1024,
-    });
     for (const [artifactId, name, content] of [[text.artifactId, "same-label", "附件 snapshot\n"], [empty.artifactId, "empty", ""], [cleanup.artifactId, "cleanup.txt", "cleanup attachment"]] as const) {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator: canonicalLocator, artifactId } }));
-      const read = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
+
+      const read = await niceeval.run(["show", canonicalLocator, "artifacts", artifactId, "--record", recordPath, "--json"]);
       expect(read.exitCode, read.diagnostic()).toBe(0);
-      expect(read.querySuccess("attempt.artifact").artifact).toMatchObject({ state: "available", name, base64: Buffer.from(content).toString("base64"), nextOffset: null });
+      expect(read.inspectionSuccess("attempt.artifact").artifact).toMatchObject({ state: "available", name, base64: Buffer.from(content).toString("base64"), nextOffset: null });
     }
-    for (const operation of [
-      { kind: "attempt.artifact", locator: canonicalLocator, artifactId: binaryId, offset: expected.length },
-      { kind: "attempt.artifact", locator: canonicalLocator, artifactId: "art_00000000000000000000" },
-    ]) {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation }));
-      const read = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
-      expect(read.exitCode, read.diagnostic()).toBe(0);
-      expect(read.querySuccess("attempt.artifact").artifact).toMatchObject(operation.artifactId === binaryId
-        ? { state: "available", base64: "", nextOffset: null }
-        : { state: "not-found", artifactId: operation.artifactId });
-    }
-    for (const bounds of [{ offset: expected.length + 1 }, { offset: -1 }, { offset: 0.5 }, { limit: 0 }, { limit: 256 * 1024 + 1 }]) {
-      await writeFile(requestPath, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator: canonicalLocator, artifactId: binaryId, ...bounds } }));
-      const read = await niceeval.run(["query", "run", "--record", recordPath, "--request", requestPath]);
-      expect(read.exitCode, read.diagnostic()).not.toBe(0);
-      expect(read.queryFailure()).toMatchObject({ failure: { code: "inspection-request-invalid" } });
-    }
+    const rejected = await niceeval.run(["show", canonicalLocator, binaryId, "--record", recordPath, "--continuation", "invalid", "--json"]);
+    expect(rejected.exitCode, rejected.diagnostic()).not.toBe(0);
   });
 });

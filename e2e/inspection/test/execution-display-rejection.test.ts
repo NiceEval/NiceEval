@@ -1,6 +1,6 @@
 // rerun: pnpm e2e test --repo inspection -- --run test/execution-display-rejection.test.ts
 import { only } from "@niceeval/testkit";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
@@ -23,11 +23,10 @@ test.concurrent("非法展示块拒绝整份快照并保留已接纳事件与采
       expect(failure).toContain(field!);
     }
     const locator = result.locator.startsWith("@") ? result.locator : `@${result.locator}`;
-    const request = join(projectRoot, "display-rejection.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
-    const query = await niceeval.run(["query", "run", "--request", request]);
+
+    const query = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(query.exitCode, query.diagnostic()).toBe(0);
-    const execution = query.querySuccess("attempt.trace").trace.execution;
+    const execution = query.inspectionSuccess("attempt.trace").trace.execution;
     expect(execution.state).toBe("partial");
     expect(execution.events).toHaveLength(1);
     expect(execution.events[0]).toMatchObject({ summary: "Retained valid display", display: { state: "present", blocks: [{ kind: "text", text: { preview: "Still readable after rejection", omittedBytes: 0 } }] } });

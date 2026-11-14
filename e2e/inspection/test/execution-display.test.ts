@@ -1,8 +1,7 @@
 // rerun: pnpm e2e test --repo inspection -- --run test/execution-display.test.ts
 import { only } from "@niceeval/testkit";
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
 import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
@@ -14,11 +13,10 @@ test.concurrent("读者从事件展示块读懂应用结果并展开外部轨迹
     const result = only(run.expEvalEvents(), (entry) => entry.evalId === "execution-display", run.diagnostic());
     expect(result.verdict).toBe("passed");
     const locator = result.locator.startsWith("@") ? result.locator : `@${result.locator}`;
-    const request = join(projectRoot, "display.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
-    const query = await niceeval.run(["query", "run", "--request", request]);
+
+    const query = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(query.exitCode, query.diagnostic()).toBe(0);
-    const execution = query.querySuccess("attempt.trace").trace.execution;
+    const execution = query.inspectionSuccess("attempt.trace").trace.execution;
     expect(execution.events).toHaveLength(5);
     expect(only(execution.traces, () => true, query.diagnostic()).collection).toEqual({
       state: "partial", limitations: [{ code: "external-trace", message: "Full trace is stored by the RPG server." }],
@@ -49,48 +47,46 @@ test.concurrent("读者从事件展示块读懂应用结果并展开外部轨迹
     const expectedImage = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aI1sAAAAASUVORK5CYII=", "base64");
     expect(image).toMatchObject({ alt: "Guard blocks the gate at dusk", mediaType: "image/png", byteLength: expectedImage.byteLength, sha256: createHash("sha256").update(expectedImage).digest("hex") });
 
-    const show = await niceeval.run(["show", locator, "--execution"]);
+    const show = await niceeval.run(["show", locator, "execution"]);
     expect(show.exitCode, show.diagnostic()).toBe(0);
     const visible = show.stdout.replace(/\s+/gu, " ");
     for (const text of ["Generic execution traces", "Conversation · not-recorded", "Commands · not-recorded", "Diagnostics · complete", "partial", "external-trace", "Full trace is stored by the RPG server.", "Guard: Halt! Who goes there?", "[image] Guard blocks the gate at dusk", "image/png", `${expectedImage.byteLength} bytes`, image.artifactId]) {
       expect(visible).toContain(text);
     }
     for (const [label, value] of [["method", "POST"], ["path", "/v1/orders"], ["status", "201"], ["latency", "83.125"], ["cached", "false"], ["error", "null"]]) expect(visible).toContain(`${label} ${value}`);
-    expect(visible).toContain(`… (177 more bytes, --expand ${long.eventId})`);
-    expect(visible).toContain(`… (176 more bytes, --expand ${long.eventId})`);
+    expect(visible).toContain(`… (177 more bytes, ${long.eventId})`);
+    expect(visible).toContain(`… (176 more bytes, ${long.eventId})`);
     expect(show.stdout).not.toContain("\u001b");
     expect(show.stdout).not.toContain("\u202e");
     expect(show.stdout).toMatch(/printf 'x+…\n/u);
     expect(show.stdout).not.toContain("x".repeat(100));
 
     const external = only(execution.events, (event) => event.type === "rpg.run", query.diagnostic());
-    const expanded = await niceeval.run(["show", locator, "--execution", "--expand", external.eventId]);
+    const expanded = await niceeval.run(["show", locator, external.eventId]);
     expect(expanded.exitCode, expanded.diagnostic()).toBe(0);
     expect(expanded.stdout.split("\n")).toContain("rpg-cli trace show run_8f2c");
     expect(expanded.stdout.indexOf("rpg-cli trace show run_8f2c")).toBeLessThan(expanded.stdout.indexOf('"payload"'));
 
-    const full = await niceeval.run(["show", locator, "--execution", "--expand", long.eventId]);
+    const full = await niceeval.run(["show", locator, long.eventId]);
     expect(full.exitCode, full.diagnostic()).toBe(0);
     expect(full.stdout.replace(/\s+/gu, "")).toContain("界".repeat(400));
     expect(full.stdout.split("\n")).toContain(`printf '${"x".repeat(100)}'`);
     expect(full.stdout.split("\n")).toContain("\tprintf 'tail-sentinel'  ");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace.detail", locator, selector: { kind: "execution-event", eventId: long.eventId } } }));
-    const detail = await niceeval.run(["query", "run", "--request", request]);
+
+    const detail = await niceeval.run(["show", locator, long.eventId, "--json"]);
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
-    expect(detail.querySuccess("attempt.trace.detail").detail).toMatchObject({ kind: "execution-event", event: { display: [
+    expect(detail.inspectionSuccess("attempt.trace.detail").detail).toMatchObject({ kind: "execution-event", event: { display: [
       { kind: "text", text: "界".repeat(400) },
       { kind: "code", language: "shell", text: `printf '${"x".repeat(100)}'\n\tprintf 'tail-sentinel'  ` },
       { kind: "fields", fields: [{ label: "body", value: "😀".repeat(300) }] },
     ] } });
 
-    const imageDetail = await niceeval.run(["show", locator, "--execution", "--expand", imageEvent.eventId]);
+    const imageDetail = await niceeval.run(["show", locator, imageEvent.eventId]);
     expect(imageDetail.exitCode, imageDetail.diagnostic()).toBe(0);
-    expect(imageDetail.stdout).toContain("niceeval query run --request -");
-    const requestLine = only(imageDetail.stdout.split("\n"), (line) => line.startsWith('{"protocol":"niceeval.query/v3","operation":{"kind":"attempt.artifact"'), imageDetail.diagnostic());
-    await writeFile(request, requestLine);
-    const bytes = await niceeval.run(["query", "run", "--request", request]);
+    expect(imageDetail.stdout).toContain("niceeval show");
+    const bytes = await niceeval.run(["show", locator, image.artifactId, "--json"]);
     expect(bytes.exitCode, bytes.diagnostic()).toBe(0);
-    const artifact = bytes.querySuccess("attempt.artifact").artifact;
+    const artifact = bytes.inspectionSuccess("attempt.artifact").artifact;
     expect(artifact).toMatchObject({ state: "available", artifactId: image.artifactId, mediaType: "image/png", byteLength: expectedImage.byteLength, sha256: image.sha256, offset: 0, nextOffset: null });
     if (artifact.state !== "available") throw new Error("Expected image artifact bytes");
     expect(Buffer.from(artifact.base64, "base64")).toEqual(expectedImage);

@@ -1,6 +1,6 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { ProcessReceipt, QuerySuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
+
+
+import type { ProcessReceipt, InspectionSuccessDocumentFor, RunProcessOptions } from "@niceeval/testkit";
 
 type NiceEvalCommand = {
   run(args: readonly string[], options?: RunProcessOptions): Promise<ProcessReceipt>;
@@ -14,30 +14,18 @@ export async function inspectAttempt<Kind extends AttemptInspectionOperation>(
   locator: string,
   operation: Kind,
   options: RunProcessOptions = {},
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<Kind> }> {
-  const requestPath = join(projectRoot, `.inspection-${operation.replace(".", "-")}-${locator.slice(1)}.json`);
-  await writeFile(
-    requestPath,
-    `${JSON.stringify({
-      protocol: "niceeval.query/v3",
-      operation: { kind: operation, locator },
-    })}\n`,
-    "utf8",
-  );
-  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
-  return { receipt, document: receipt.querySuccess(operation) };
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<Kind> }> {
+
+  const receipt = await niceeval.run(["show", locator, ...({ "attempt.get": [], "attempt.trace": ["execution"], "attempt.timing": ["timing"], "attempt.diff": ["diff"] }[operation]), "--json"], options);
+  return { receipt, document: receipt.inspectionSuccess(operation) };
 }
 
 export async function inspectRuns(
   niceeval: NiceEvalCommand,
   projectRoot: string,
   options: RunProcessOptions = {},
-): Promise<{ readonly receipt: ProcessReceipt; readonly document: QuerySuccessDocumentFor<"run.list"> }> {
-  const requestPath = join(projectRoot, ".inspection-runs-list.json");
-  await writeFile(requestPath, `${JSON.stringify({
-    protocol: "niceeval.query/v3",
-    operation: { kind: "run.list" },
-  })}\n`, "utf8");
-  const receipt = await niceeval.run(["query", "run", "--request", requestPath], options);
+): Promise<{ readonly receipt: ProcessReceipt; readonly document: InspectionSuccessDocumentFor<"run.list"> }> {
+
+  const receipt = await niceeval.run(["show", "runs", "--json"], options);
   return { receipt, document: receipt.runsList() };
 }

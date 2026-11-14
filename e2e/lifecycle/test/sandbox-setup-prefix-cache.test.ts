@@ -1,10 +1,10 @@
 // rerun: pnpm e2e test --repo lifecycle -- --run test/sandbox-setup-prefix-cache.test.ts
 
 import { randomUUID } from "node:crypto";
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ProcessReceipt, QuerySuccessDocumentFor } from "@niceeval/testkit";
+import type { ProcessReceipt, InspectionSuccessDocumentFor } from "@niceeval/testkit";
 import { command, only, pollUntil, waitForPathOrProcessExit, withProcess, withProjectCopy, withTempDir } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
@@ -57,7 +57,7 @@ const projectCopy = {
   links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
 } as const;
 
-function decodeEvidence(trace: QuerySuccessDocumentFor<"attempt.trace">["trace"]): BeforeCacheEvidence {
+function decodeEvidence(trace: InspectionSuccessDocumentFor<"attempt.trace">["trace"]): BeforeCacheEvidence {
   const messages = trace.conversation.items.flatMap((item) => item.kind === "message" ? [item] : []);
   const evidenceMessages = messages.filter((item) => item.text.includes("before-cache-evidence:"));
   expect(evidenceMessages, "public Inspection trace must expose exactly one Agent evidence message").toHaveLength(1);
@@ -190,7 +190,6 @@ async function readIncusJournal(path: string): Promise<readonly IncusJournalReco
 function incusExecCount(records: readonly IncusJournalRecord[], marker: string): number {
   return records.filter((record) => record.event === "exec" && record.detail.argv?.join(" ").includes(marker)).length;
 }
-
 
 interface InvokeOptions {
   readonly experimentId?: string;
@@ -355,7 +354,6 @@ async function inspectCompletedInvocation(
   expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
   const traceDocument = inspected.receipt.attemptTrace();
   expect(traceDocument).toMatchObject({
-    protocol: "niceeval.query/v3",
     operation: "attempt.trace",
   });
   const evidence = decodeEvidence(traceDocument.trace);

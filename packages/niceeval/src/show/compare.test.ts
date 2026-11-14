@@ -1,59 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { Effect } from "effect";
 import { expect, test } from "vitest";
-import { CliInvocationFacts, CliOutput } from "../cli/application.ts";
-import { NodeCliArgumentsLive } from "../cli/node-application.ts";
-import { ProjectConfiguration } from "../cli/project-configuration.ts";
-import { comparisonGateExitCode, showCliCommand } from "./contribution.ts";
+import { comparisonGateExitCode } from "./contribution.ts";
 import { comparisonTransition, renderComparison, type ComparisonAttempt } from "./render.ts";
 import type { AttemptView } from "./model.ts";
 import type { InspectionSuccessDocumentFor } from "../inspection/index.ts";
-
-async function invoke(argv: string[]) {
-  const cwd = await mkdtemp(join(tmpdir(), "niceeval-show-compare-"));
-  let stdout = "";
-  let stderr = "";
-  try {
-    const code = await Effect.runPromise(showCliCommand.run(argv).pipe(
-      Effect.provide(NodeCliArgumentsLive),
-      Effect.provideService(CliInvocationFacts, { facts: Effect.succeed({
-        cwd, argv, hostname: "test", pid: process.pid, platform: process.platform,
-        stdout: { isTTY: false }, stderr: { isTTY: false },
-      }) }),
-      Effect.provideService(CliOutput, {
-        writeStdout: (text) => Effect.sync(() => { stdout += text; }),
-        writeStderr: (text) => Effect.sync(() => { stderr += text; }),
-        writeStdoutSync: (text) => { stdout += text; },
-        writeStderrSync: (text) => { stderr += text; },
-      }),
-      Effect.provideService(ProjectConfiguration, { prepare: () => Effect.void, load: () => Effect.die("Comparison must not evaluate the current project"), rebuild: () => Effect.die("Unexpected rebuild") }),
-    ));
-    return { code, stdout, stderr };
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-}
-
-// @feature docs/feature/inspection/README.md
-test.concurrent("comparison validates selectors before reading fixed history", async () => {
-  for (const [argv, diagnostic] of [
-    [["--compare"], "requires at least one"],
-    [["--left", "baseline"], "require --compare"],
-    [["--compare", "--mode", "other"], "--mode must be"],
-    [["--compare", "--max-regressions", "NaN"], "non-negative safe integer"],
-    [["--compare", "--left", "baseline", "--right", "candidate", "--mode", "side-by-side", "--max-regressions", "0"], "requires paired or exact"],
-  ] as const) {
-    const result = await invoke([...argv]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain(diagnostic);
-    expect(result.stdout).toBe("");
-  }
-  const missing = await invoke(["--compare", "--left", "baseline", "--left", "other", "--right", "candidate"]);
-  expect(missing.code).toBe(1);
-  expect(missing.stderr).toContain("selection-run-missing");
-});
 
 // @use-case docs/feature/experiments/use-case/machine-output-ci-gate.md
 test.concurrent("comparison distinguishes regressions and applies an inclusive allowance", () => {

@@ -44,7 +44,7 @@ Attempts · my-agent
   Previous result @1K1P0VJAPVJ12
 
   8 passed Attempts hidden
-  See more  niceeval show --experiment my-agent
+  See more  niceeval show exp:my-agent
 
 Next: niceeval exp my-agent --dry
 ```
@@ -62,11 +62,11 @@ When you see `Attempts hidden`, narrow the scope with the suggested command; to 
 ## Narrow to one Experiment or one run
 
 ```sh
-pnpm exec niceeval show --experiment my-agent
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show exp:my-agent
+pnpm exec niceeval show run:<run-id>
 ```
 
-`--experiment` shows the result of each eval under one Experiment. `--run` shows one run; the Run ID is in the `NEXT` panel when `exp` finishes. Both can be passed several times.
+`exp:<id>` shows the result of each eval under one Experiment. `run:<id>` shows one run; the Run ID is in the `NEXT` panel when `exp` finishes. Both can be passed several times.
 
 You can also look while a run is still going: finished Attempts appear, and unfinished ones show as `pending`.
 
@@ -101,34 +101,34 @@ Sections
   Diff        not-recorded
 
 Next
-  niceeval show @1K1P0VJAPVJ12 --source
-  niceeval show @1K1P0VJAPVJ12 --execution
-  niceeval show @1K1P0VJAPVJ12 --timing
-  niceeval show @1K1P0VJAPVJ12 --usage
-  niceeval show @1K1P0VJAPVJ12 --diff
+  niceeval show @1K1P0VJAPVJ12 source
+  niceeval show @1K1P0VJAPVJ12 execution
+  niceeval show @1K1P0VJAPVJ12 timing
+  niceeval show @1K1P0VJAPVJ12 usage
+  niceeval show @1K1P0VJAPVJ12 diff
 ```
 
 `Next` lists the aspects you can keep looking at. Choose by the question you want to answer:
 
 | To find out | Command |
 |---|---|
-| What the Agent said and which tools it called | `--execution` |
-| Which assertion failed, and which source line it is on | `--source` |
-| Which step the time went to | `--timing` |
-| How many tokens were used and how much it cost | `--usage` |
-| Which files the Agent changed | `--diff` |
+| What the Agent said and which tools it called | `execution` |
+| Which assertion failed, and which source line it is on | `source` |
+| Which step the time went to | `timing` |
+| How many tokens were used and how much it cost | `usage` |
+| Which files the Agent changed | `diff` |
 
-`--execution` gives an outline of the conversation and tool calls. To expand one item, copy the ID shown in the outline:
+`execution` gives an outline of the conversation and tool calls. To expand one item, copy the ID shown in the outline:
 
 ```sh
-pnpm exec niceeval show @1K1P0VJAPVJ12 --execution --expand <id>
+pnpm exec niceeval show @1K1P0VJAPVJ12 execution <id>
 ```
 
 When an item shows `not-recorded`, `partial`, or `unavailable`, that information was not collected or is incomplete; it does not mean zero or failure. For example, a directly connected application has no file changes, so `diff` is `not-recorded`.
 
 ## Decide whether to change the application or the assertion
 
-`failed` only means at least one assertion was not met; it does not necessarily mean the Agent got it wrong. After reading `--execution`, there are three cases:
+`failed` only means at least one assertion was not met; it does not necessarily mean the Agent got it wrong. After reading `execution`, there are three cases:
 
 - The Agent's output really does not meet the task requirements: change the application or the prompt.
 - The Agent's output meets the task requirements, but the assertion rejected it, for example a regex that is too rigid: change the eval.
@@ -140,16 +140,16 @@ Do not loosen assertions arbitrarily just to turn results green.
 
 ```sh
 pnpm exec niceeval view
-pnpm exec niceeval view --run <run-id>
+pnpm exec niceeval view run:<run-id>
 ```
 
-Without arguments it opens the overview, and `--run` opens one or more specific runs. In the browser you see full conversations, the inputs and outputs of tool calls, and duration waterfalls.
+Without arguments it opens the overview, and `run:<id>` opens one or more specific runs. In the browser you see full conversations, the inputs and outputs of tool calls, and duration waterfalls.
 
 When new results are published, the page prompts you to refresh and only switches after you confirm, so what you are looking at does not change suddenly. `--no-open` does not open the browser automatically, and `--port` sets the port.
 
 ## See why an assertion got its score
 
-`show` tells you which assertion failed. To see the reasons the Judge gave and exactly how many points a scoring item got, read that assertion's detail with `show --assertions --entry <entry-id> --json`. First get this run's list of assertions:
+`show` tells you which assertion failed. To see the reasons the Judge gave and exactly how many points a scoring item got, read that assertion's detail with `show assertions <entry-id> --json`. First get this run's list of assertions:
 
 ```sh
 pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
@@ -158,7 +158,7 @@ pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --json
 Pick an `entryId` from the returned `assertions.entries`, then read its detail:
 
 ```sh
-pnpm --silent exec niceeval show @1K1P0VJAPVJ12 --assertions --entry <entry-id> --json
+pnpm --silent exec niceeval show @1K1P0VJAPVJ12 assertions <entry-id> --json
 ```
 
 In the detail, contribution is how many points this item earned, evaluation is the actual measured result, and the Judge's reasons are in explanation. When a field is missing or marked `unavailable`, interpret it by the returned reason; do not infer it from other fields.
@@ -168,10 +168,10 @@ In the detail, contribution is how many points this item earned, evaluation is t
 `show --json` outputs only JSON and does no terminal formatting. Do not parse the text output of `show`, and do not read files under `.niceeval/` directly; the format may change between versions.
 
 ```sh
-pnpm --silent exec niceeval show --runs --json
+pnpm --silent exec niceeval show runs --json
 ```
 
-`show --runs --json` lists Runs; `show --run <run-id> --json` reads one Run. See the [CLI reference](/reference/cli) for other selectors.
+`show runs --json` lists Runs; `show run:<run-id> --json` reads one Run. See the [CLI reference](/reference/cli) for other selectors.
 
 In pnpm projects, add `--silent`; otherwise pnpm's own output gets mixed into the JSON.
 

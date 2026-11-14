@@ -1,5 +1,5 @@
 // rerun: pnpm e2e test --repo eval -- --run test/adapter-flags-cache.test.ts
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
@@ -12,11 +12,10 @@ test.concurrent("Adapter flags 规范化等价时复用且 parseFlags 行为版�
     expect(initial.exitCode, initial.diagnostic()).toBe(0);
     expect(initial.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
     const runId = only(initial.expReceipt().createdRunIds, () => true, initial.diagnostic());
-    const request = join(projectRoot, "flags-run.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId } }));
-    const inspected = await niceeval.run(["query", "run", "--request", request]);
+
+    const inspected = await niceeval.run(["show", `run:${runId}`, "--json"]);
     expect(inspected.exitCode, inspected.diagnostic()).toBe(0);
-    expect(inspected.querySuccess("run.get").run.value.context?.execution?.flags).toEqual({ strategy: "safe", limit: 2, enabled: true });
+    expect(inspected.inspectionSuccess("run.get").run.value.context?.execution?.flags).toEqual({ strategy: "safe", limit: 2, enabled: true });
 
     const equivalent = await niceeval.run(["exp", "parsed-flags", "--json"], {
       env: { NICEEVAL_E2E_FLAGS_INPUT: '{"strategy":"safe","limit":"2"}' },

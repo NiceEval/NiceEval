@@ -131,7 +131,7 @@ export default defineExperiment({
 
 ## 让文件改动能被记下来
 
-文件断言意外失败，或 `niceeval show @<locator> --diff` 里看不到改动时，先对照下面几条。NiceEval 在 Sandbox 里另建一个私有 Git 仓库，每次 `t.send()` 前后各记一次工作区状态。这需要：
+文件断言意外失败，或 `niceeval show @<locator> diff` 里看不到改动时，先对照下面几条。NiceEval 在 Sandbox 里另建一个私有 Git 仓库，每次 `t.send()` 前后各记一次工作区状态。这需要：
 
 - **Sandbox 里有 `git` 和 POSIX shell。** 内置 Provider 的默认镜像都有，自定义镜像要自己确认。被测项目本身是不是 Git 仓库不影响：私有仓库放在工作目录之外，不碰你的 `.git`，Agent 也看不到它。
 - **文件写在工作目录里。** 只记录 `sandbox.workdir` 下的文件。写文件时省略 `targetDir` / `cwd`；需要绝对路径时读 `sandbox.workdir`，不要写死 `/workspace`。写到工作目录外的文件 Agent 看不到，也记不下来。
@@ -223,12 +223,12 @@ export default defineSandboxAgent({
 
 ```sh
 pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2
-pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 --timing
+pnpm exec niceeval show @5TB8167MXJ30SYZCNAVRHPQ4D2 timing
 ```
 
-第一条显示完整错误、diagnostic 和已经完成的阶段。第二条显示每个阶段的耗时，能看出错误或超时发生在哪一步。脚本或 CI 要读取同样的信息时，运行 `pnpm --silent exec niceeval show @<locator> --execution --json`。
+第一条显示完整错误、diagnostic 和已经完成的阶段。第二条显示每个阶段的耗时，能看出错误或超时发生在哪一步。脚本或 CI 要读取同样的信息时，运行 `pnpm --silent exec niceeval show @<locator> execution --json`。
 
-步骤很多时，阶段树超过 80 个细节节点后只保留失败的、慢的和首尾几项，并提示省略了多少。要逐项核对，用 `show @<locator> --execution --json` 分页读取 trace。Sandbox 创建失败可能发生在 trace 开始采集之前，所以错误信息不依赖 trace，`show @<locator>` 总能看到。
+步骤很多时，阶段树超过 80 个细节节点后只保留失败的、慢的和首尾几项，并提示省略了多少。要逐项核对，用 `show @<locator> execution --json` 分页读取 trace。Sandbox 创建失败可能发生在 trace 开始采集之前，所以错误信息不依赖 trace，`show @<locator>` 总能看到。
 
 ## 把模型和 flags 传给 CLI
 

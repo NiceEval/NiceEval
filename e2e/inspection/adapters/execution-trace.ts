@@ -12,7 +12,7 @@ export const executionTraceAdapter = defineAdapter({
           origin: index % 2 === 0 ? "server" : "client",
           type: index === 0 ? "model.request" : index === 10_002 ? "operation.completed" : "position.observed",
           data: index === 0
-            ? { context: "request-evidence-sentinel", input: "large input ".repeat(3_000) }
+            ? { context: "request-evidence-sentinel", input: "large input ".repeat(14_000) }
             : { x: index, result: index === 10_002 ? "actual-movement-sentinel" : "observed" },
         }));
         const artifact = await ctx.attach({

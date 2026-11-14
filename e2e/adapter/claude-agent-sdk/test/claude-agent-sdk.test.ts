@@ -5,17 +5,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  assertExpEvalOutcomes,
-  command,
-  only,
-  retryFailedExpEvalsOnce,
-  type ExpEvalEvent,
-  type ProcessReceipt,
-  withInspectionRequest,
-  withProcess,
-  withTempDir,
-} from "@niceeval/testkit";
+import { assertExpEvalOutcomes, command, only, retryFailedExpEvalsOnce, type ExpEvalEvent, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
 import { beforeAll, expect, it } from "vitest";
 
 const EVAL_ID = "bash-session";
@@ -129,13 +119,10 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
 // @feature docs/feature/adapters/README.md
 
 it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据", async () => {
-  const queried = await withInspectionRequest(
-    { kind: "attempt.trace", locator },
-    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),
-  );
+  const queried = await niceeval.run(["show", locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   // Trace keeps the source-native tool, its unmodified input marker,
   // completed result, and resumed assistant response in the public machine view.
   const trace = JSON.stringify(document.trace);

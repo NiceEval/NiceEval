@@ -9,7 +9,7 @@ test.concurrent("large Sandbox telemetry exposes settle, read, decode and map wi
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
     const locator = result.expEvalEvents()[0]!.locator!;
-    const timing = await niceeval.run(["show", locator, "--timing"]);
+    const timing = await niceeval.run(["show", locator, "timing"]);
     expect(timing.exitCode, timing.diagnostic()).toBe(0);
     for (const activity of ["telemetry.settle", "telemetry.read", "telemetry.decode", "telemetry.map"]) {
       expect(timing.stdout, timing.diagnostic()).toContain(activity);
@@ -26,7 +26,7 @@ test.concurrent("a slow telemetry read retains the decoded prefix as partial, pr
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
     const locator = result.expEvalEvents()[0]!.locator!;
-    const queried = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } })]);
+    const queried = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(queried.exitCode, queried.diagnostic()).toBe(0);
     const trace = queried.attemptTrace().trace;
     expect(trace.execution.traces).toEqual(expect.arrayContaining([expect.objectContaining({
@@ -34,7 +34,7 @@ test.concurrent("a slow telemetry read retains the decoded prefix as partial, pr
       eventCount: 1,
     })]));
     expect(trace.diagnostics.items).toEqual(expect.arrayContaining([expect.objectContaining({ code: "telemetry-budget-exceeded" })]));
-    const shown = await niceeval.run(["show", locator, "--timing"]);
+    const shown = await niceeval.run(["show", locator, "timing"]);
     expect(shown.stdout, shown.diagnostic()).toContain("telemetry.map");
     const containers = await command(["docker"]).run(["ps", "-aq", "--filter", `label=niceeval.run_id=${result.expReceipt().createdRunIds[0]}`]);
     expect(containers.stdout.trim(), containers.diagnostic()).toBe("");

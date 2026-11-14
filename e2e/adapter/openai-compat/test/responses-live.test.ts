@@ -41,13 +41,10 @@ test("真实 OpenAI Responses 一次请求以通过 verdict 完成", () => {
 // @feature docs/feature/adapters/README.md
 
 test("attempt.trace 读回 OpenAI Responses 的代表性证据", async () => {
-  const queried = await queryOpenAiLiveEvidence(evidence, {
-    kind: "attempt.trace",
-    locator: evidence.evalEvent.locator,
-  });
+  const queried = await queryOpenAiLiveEvidence(evidence);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   for (const marker of evidence.traceMarkers) expect(trace).toContain(marker);
 });

@@ -3,14 +3,7 @@
 // candidate as an owned process, then proves the same result through public
 // fixed machine Inspection only; it never reads the private .niceeval layout.
 
-import {
-  command,
-  only,
-  type ProcessReceipt,
-  withInspectionRequest,
-  withProcess,
-  withTempDir,
-} from "@niceeval/testkit";
+import { command, only, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -74,10 +67,7 @@ beforeAll(async () => {
     // exist. A failed Turn also has a locator and useful diagnostic evidence.
     const evalEvent = runReceipt.expEvalEvents().find((event) => event.evalId === EVAL_ID);
     if (evalEvent !== undefined) {
-      traceReceipt = await withInspectionRequest(
-        { kind: "attempt.trace", locator: evalEvent.locator },
-        async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath], { env }),
-      );
+      traceReceipt = await niceeval.run(["show", evalEvent.locator, "execution", "--json"], { env });
     }
     expect(
       runReceipt.exitCode,
@@ -109,7 +99,7 @@ it("attempt.trace 读回 Codex SDK converter 的代表性证据", () => {
   const queried = traceReceipt;
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   // Trace keeps the original command, converted tool identity,
   // completed result, and the second-turn resume probe in the public machine view.
   const trace = JSON.stringify(document.trace);

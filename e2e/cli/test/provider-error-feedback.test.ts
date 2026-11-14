@@ -3,7 +3,7 @@
 
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { cliE2E, writeInspectionRequest } from "./context.ts";
+import { cliE2E } from "./context.ts";
 
 const E2B_ERROR_HEAD = "401 Unauthorized — E2B";
 const E2B_ERROR_TAIL = "request req_e2b_feedback_123";
@@ -73,18 +73,14 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
       expect(result.stdout).not.toContain("vercel-cause-secret-must-not-reach-human");
       expect(result.stdout).not.toMatch(/shared failure:|\bBuildKey\b|\btiming node\b|\bfailureId\b|\bcause:|\bfix:/u);
 
-      const listRequest = await writeInspectionRequest(paths.projectRoot, "provider-error-runs", {
-        kind: "run.list",
-      });
-      const listed = await niceeval.run(["query", "run", "--request", listRequest]);
+
+      const listed = await niceeval.run(["show", "runs", "--json"]);
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
       const runIds = listed.runsList().selection.selectedRunIds;
       expect(runIds).toHaveLength(7);
       const summaries = await Promise.all(runIds.map(async (runId, index) => {
-        const request = await writeInspectionRequest(paths.projectRoot, `provider-error-${index}-summary`, {
-          kind: "run.get", runId,
-        });
-        const queried = await niceeval.run(["query", "run", "--request", request]);
+
+        const queried = await niceeval.run(["show", `run:${runId}`, "--json"]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         return queried.run();
       }));
@@ -114,7 +110,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           expect.soft(detail.diagnostics[0]?.affectedPlannedAttemptIds).toHaveLength(2);
           // Experiment setup still fails before dispatch. Keep the Run-level
           // human error guarantees here; cache degradation publishes Attempts.
-          const shown = await niceeval.run(["show", "--run", run.runId]);
+          const shown = await niceeval.run(["show", `run:${run.runId}`]);
           expect(shown.exitCode, shown.diagnostic()).toBe(0);
           expect.soft(shown.stdout).toContain("Run error");
           expect.soft(shown.stdout).toContain("Experiment before");
@@ -131,7 +127,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
               affectedPlannedAttemptIds: [detail.plannedAttempts[0]!.plannedAttemptId],
             })],
           });
-          const shown = await niceeval.run(["show", "--run", run.runId]);
+          const shown = await niceeval.run(["show", `run:${run.runId}`]);
           expect(shown.exitCode, shown.diagnostic()).toBe(0);
           expect(shown.stdout).toContain("Run error");
           expect(shown.stdout).toContain("Before dispatch");
@@ -141,7 +137,7 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
         }
         const output = run.experimentId === "short-error" ? shortOutput : compact;
         expect(output).toContain(
-          `${run.experimentId} show: niceeval show --run ${run.runId} view: niceeval view --run ${run.runId}`,
+          `${run.experimentId} show: niceeval show run:${run.runId} view: niceeval view run:${run.runId}`,
         );
         for (const member of detail.plannedAttempts) {
           if (member.publication.state === "published" && member.state === "executed") {
@@ -155,10 +151,8 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
         .flatMap(({ publication, state }) => publication.state === "published" && state === "executed" ? [publication.attemptLocator] : []);
       expect(errorLocators).toHaveLength(7);
       for (const [index, locator] of errorLocators.entries()) {
-        const request = await writeInspectionRequest(paths.projectRoot, `provider-error-attempt-${index}`, {
-          kind: "attempt.trace", locator,
-        });
-        const queried = await niceeval.run(["query", "run", "--request", request]);
+
+        const queried = await niceeval.run(["show", locator, "execution", "--json"]);
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const document = queried.attemptTrace();
         expect(document).toMatchObject({ operation: "attempt.trace", issues: [] });

@@ -85,13 +85,13 @@ test.concurrent("脚本准备按冻结内容执行，TTY 显示动作名并保�
     );
     // Actual command evidence is read through the public show surface, never storage files.
     expect(attemptLocator).toBeDefined();
-    const execution = await niceeval.run(["show", attemptLocator!, "--execution"]);
+    const execution = await niceeval.run(["show", attemptLocator!, "execution"]);
     expect(execution.exitCode, execution.diagnostic()).toBe(0);
     const commandIds = [...new Set(execution.stdout.match(/command_[a-z0-9]+/gu) ?? [])];
     expect(commandIds.length).toBeGreaterThan(0);
     let recordedScript = "";
     for (const commandId of commandIds) {
-      const detail = await niceeval.run(["show", attemptLocator!, "--execution", "--expand", commandId]);
+      const detail = await niceeval.run(["show", attemptLocator!, commandId]);
       expect(detail.exitCode, detail.diagnostic()).toBe(0);
       if (detail.stdout.includes("sandbox-shell-ready")) {
         recordedScript = detail.stdout;
@@ -155,15 +155,15 @@ test.concurrent("准备命令失败时，概览与执行页指向该命令完整
     const overview = await niceeval.run(["show", locator]);
     expect(overview.exitCode, overview.diagnostic()).toBe(0);
     expect(overview.stdout).not.toContain("FAILED-OUTPUT-HEAD");
-    expect(overview.stdout).toMatch(new RegExp(`Command output\\s+niceeval show ${locator} --execution`, "u"));
+    expect(overview.stdout).toMatch(new RegExp(`Command output\\s+niceeval show ${locator} execution`, "u"));
 
-    const execution = await niceeval.run(["show", locator, "--execution"]);
+    const execution = await niceeval.run(["show", locator, "execution"]);
     expect(execution.exitCode, execution.diagnostic()).toBe(0);
     expect(execution.stdout).toContain("exited; code 7");
-    const expand = new RegExp(`niceeval show ${locator} --execution --expand (command_[a-z0-9]+)`, "u").exec(execution.stdout);
+    const expand = new RegExp(`niceeval show ${locator} (command_[a-z0-9]+)`, "u").exec(execution.stdout);
     expect(expand, execution.stdout).not.toBeNull();
 
-    const detail = await niceeval.run(["show", locator, "--execution", "--expand", expand![1]!]);
+    const detail = await niceeval.run(["show", locator, expand![1]!]);
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
     expect(detail.stdout).toContain("FAILED-OUTPUT-HEAD");
     expect(detail.stdout).toContain("FAILED-OUTPUT-TAIL");

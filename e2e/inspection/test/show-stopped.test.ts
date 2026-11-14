@@ -40,7 +40,7 @@ export default defineExperiment({ evals: ["stopped"], adapter: defineAgent({ nam
     expect(old.stderr).toContain("unsupported-format");
     expect(old.stderr).toContain("older NiceEval");
     expect(old.stderr).toContain("Rerun");
-    const experiment = await niceeval.run(["show", "--experiment", "stopped"]);
+    const experiment = await niceeval.run(["show", `exp:${"stopped"}`]);
     expect(experiment.stdout).toContain("passed stopped");
   });
 });

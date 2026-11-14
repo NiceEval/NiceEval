@@ -1,3 +1,4 @@
+import { inspectionTraceSelector } from "@niceeval/inspection/addressing.ts";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Result } from "effect";
@@ -84,7 +85,7 @@ function DisplayImage({ locator, block }: { readonly locator: string; readonly b
     {bytes.isError ? <p role="alert">{bytes.error.message}</p> : null}
     {block.byteLength > MAX_INLINE_IMAGE_BYTES ? <>
       <p>{t("executionTrace.imageTooLarge")}</p>
-      <pre>{JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator, artifactId: block.artifactId } }, null, 2)}</pre>
+      <pre>{`niceeval show ${locator} ${block.artifactId}`}</pre>
     </> : null}
   </figure>;
 }
@@ -144,10 +145,10 @@ function TraceDetail({ locator, selector, select }: {
 }
 
 /** A bounded first-party renderer over the same closed facts consumed by show. */
-export function ExecutionTrace({ locator, initial }: { readonly locator: string; readonly initial: Outline }): ReactElement | null {
+export function ExecutionTrace({ locator, initial, selectedId }: { readonly locator: string; readonly initial: Outline; readonly selectedId?: string }): ReactElement | null {
   const { t } = useTranslation();
   const [continuation, setContinuation] = useState<string>();
-  const [selector, setSelector] = useState<Selector>();
+  const [selector, setSelector] = useState<Selector | undefined>(() => selectedId === undefined ? undefined : inspectionTraceSelector(selectedId) as Selector);
   const [identity, setIdentity] = useState("");
   const page = useInspectionQuery<"attempt.trace">(continuation === undefined ? null : { ...attemptOperations(locator)[1], continuation });
   const outline = continuation === undefined ? initial : page.data?.trace.execution;

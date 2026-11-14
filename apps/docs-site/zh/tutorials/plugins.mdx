@@ -69,8 +69,8 @@ Eval 模块仍遵循源文件闭包规则。条件身份不会自动进入 `ctx.
 
 ```bash
 pnpm exec niceeval debug compare/codex memory/smoke
-pnpm exec niceeval show --exp compare/codex
-pnpm exec niceeval show --exp compare/codex --json
+pnpm exec niceeval show exp:compare/codex
+pnpm exec niceeval show exp:compare/codex --json
 ```
 
 `debug` 展示展开步骤、实际 Action 顺序与 Plugin 来源。`show` 和 `view` 的 Experiment 信息列出 Plugin 的 name、key 与 identity。

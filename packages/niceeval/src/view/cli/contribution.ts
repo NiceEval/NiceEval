@@ -1,6 +1,11 @@
 // @concord-file
 // @concord-implements docs/feature/insight/README.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
+import { parseInspectionAddress } from "../../inspection/addressing.ts";
+import { showOperations, selectTraceDetailByStableId } from "../../show/contribution.ts";
+import { openHostOwnedInspectionSource } from "../../inspection/source.ts";
+import { selectInspectionOperation } from "../../inspection/select.ts";
+import { ExperimentIdSchema, ArtifactIdSchema } from "../../record/codec/identifiers.ts";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { Effect, Result, Schema, Scope } from "effect";
@@ -35,7 +40,6 @@ const help = (summary: string) => Object.freeze({ summary, visibility: "public" 
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
 
 export const VIEW_CLI_OPTIONS = Object.freeze({
-  run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
   json: option({ type: "boolean", help: help("Write View lifecycle events as NDJSON.") }),
@@ -45,7 +49,7 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
+  niceeval view [@<locator> | exp:<id>... | run:<id>...] [<aspect>] [<ID>] [--no-open] [--port <port>] [--json]
 `;
 
 type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | ViewApplicationRuntime | ProjectConfiguration | Scope.Scope;
@@ -85,8 +89,9 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       catch: (cause) => failure("parse arguments", cause),
     });
     if (parsed.values.help === true) { yield* write("stdout", VIEW_HELP); return 0; }
-    if (parsed.positionals.length !== 0) return yield* usage("niceeval view does not accept positional arguments.");
-    const runIds = parseRunIds(parsed.values.run);
+    const address = yield* Effect.try({ try: () => parseInspectionAddress(parsed.positionals), catch: (cause) => failure("parse address", cause) });
+    if (address.imageId !== undefined) return yield* usage("View accepts an Attempt, Experiment, Run, or current results address.");
+    const runIds = parseRunIds([...address.runIds]);
     if (typeof runIds === "string") return yield* usage(runIds);
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
@@ -94,15 +99,35 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     const execute = Effect.gen(function* () {
       const json = parsed.values.json === true;
       const sourcePath = resolve(facts.cwd, ".niceeval/record.sqlite");
-      const currentCapable = existsSync(resolve(facts.cwd, "niceeval.config.ts"));
+      const currentCapable = parsed.positionals.length === 0 && existsSync(resolve(facts.cwd, "niceeval.config.ts"));
       const project = yield* ProjectConfiguration;
       const built = yield* buildRecordGeneration(sourcePath, facts.cwd, project, currentCapable, false);
       const initial = built.generation;
+      yield* Effect.scoped(Effect.gen(function* () {
+        const source = yield* openHostOwnedInspectionSource(initial.recordPath);
+        const experimentIds = address.experimentIds.map(id => Schema.decodeUnknownSync(ExperimentIdSchema)(id));
+        if (address.id !== undefined && address.aspect === "execution") {
+          yield* Effect.try({ try: () => selectTraceDetailByStableId(source, address.locator!, address.id!), catch: (cause) => failure("validate address", cause) });
+        } else {
+          const operations = address.aspect === "artifacts" ? [address.id === undefined
+            ? { kind: "attempt.artifacts" as const, locator: address.locator! }
+            : { kind: "attempt.artifact" as const, locator: address.locator!, artifactId: Schema.decodeUnknownSync(ArtifactIdSchema)(address.id) }]
+            : showOperations({ current: false, runIds, experimentIds, locator: address.locator, slice: address.aspect, entryIds: address.aspect === "assertions" && address.id !== undefined ? [address.id] : [], changeId: address.aspect === "diff" ? address.id : undefined });
+          if (parsed.positionals.length > 0) for (const operation of operations) yield* Effect.try({ try: () => selectInspectionOperation(source, operation), catch: (cause) => failure("validate address", cause) });
+        }
+      })).pipe(Effect.mapError(cause => cause instanceof CliFeatureError ? cause : failure("validate selection", cause)));
+      const entryPath = address.locator !== undefined ? `/attempt/${encodeURIComponent(address.locator.slice(1))}`
+        : address.experimentIds.length === 1 ? `/experiment/${encodeURIComponent(address.experimentIds[0]!)}` : "/";
+      const selection = new URLSearchParams();
+      if (address.aspect !== undefined) selection.set("aspect", address.aspect);
+      if (address.id !== undefined) selection.set("id", address.id);
+      for (const id of address.experimentIds) selection.append("experiment", id);
+
       const scope = yield* Effect.scope;
       const runtime = yield* ViewApplicationRuntime;
       const server = yield* openViewServer({
         runtime,
-        initial, port, refreshEnabled: true, initialRunIds: runIds,
+        initial, port, refreshEnabled: true, initialRunIds: runIds, initialPath: entryPath + (selection.size === 0 ? "" : `?${selection}`),
         refreshSource: {
           cutoffIdentity: () => operationalCutoffAt(facts.cwd).pipe(Effect.map((cutoff) => cutoff.identity)),
           build: () => buildRecordGeneration(sourcePath, facts.cwd, project, currentCapable, true).pipe(
@@ -231,11 +256,11 @@ function invocationFacts() {
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
   const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
-  if (values.length > VIEW_RUN_SELECTION_LIMIT) return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} --run selections.`;
+  if (values.length > VIEW_RUN_SELECTION_LIMIT) return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} run: selections.`;
   const output: RunId[] = [];
   for (const candidate of [...new Set(values)]) {
     const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
-    if (Result.isFailure(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
+    if (Result.isFailure(decoded)) return `Invalid run: ID ${JSON.stringify(candidate)}.`;
     output.push(decoded.success);
   }
   return Object.freeze(output);

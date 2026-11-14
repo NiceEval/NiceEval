@@ -37,34 +37,32 @@ test.concurrent("SIGINT 排空共享 finish 的尾部采集并在 Run 终态前�
     expect(await readFile(join(projectRoot, "capture-finish.txt"), "utf8")).toBe("start\ndone\n");
 
     const runId = only(interrupted.expReceipt().createdRunIds, () => true, interrupted.diagnostic());
-    const request = join(projectRoot, "capture-query.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "run.get", runId } }));
-    const run = await niceeval.run(["query", "run", "--request", request]);
+
+    const run = await niceeval.run(["show", `run:${runId}`, "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
-    const overview = run.querySuccess("run.get").run;
+    const overview = run.inspectionSuccess("run.get").run;
     expect(overview.value.state).toBe("interrupted");
     expect(overview.denominator).toEqual({ expected: 2, published: 1, missing: 1 });
     const member = only(overview.plannedAttempts, (entry) => entry.publication.state === "published", run.diagnostic());
     expect(member).toMatchObject({ state: "executed", verdict: "errored", outcome: "errored", score: { value: 7 } });
     const locator = defined(member.publication.state === "published" ? member.publication.attemptLocator : null, "cancelled Attempt must be published");
 
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator } }));
-    const attempt = await niceeval.run(["query", "run", "--request", request]);
-    const inspectedAttempt = attempt.querySuccess("attempt.get").attempt;
+    const attempt = await niceeval.run(["show", locator, "--json"]);
+    const inspectedAttempt = attempt.inspectionSuccess("attempt.get").attempt;
     expect(inspectedAttempt).toMatchObject({
       core: { outcome: "errored" }, verdict: "errored", assertions: { state: "available" }, score: { earned: 7 },
     });
     expect(inspectedAttempt.assertions.entries).toHaveLength(1);
     expect(inspectedAttempt.assertions.entries[0]?.display.label).toBe("earned before cancellation");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator } }));
-    const usage = await niceeval.run(["query", "run", "--request", request]);
-    expect(usage.querySuccess("attempt.usage").usage.calls).toEqual([
+
+    const usage = await niceeval.run(["show", locator, "usage", "--json"]);
+    expect(usage.inspectionSuccess("attempt.usage").usage.calls).toEqual([
       expect.objectContaining({ callId: "cancelled-request", status: "cancelled", inputTokens: 13, outputTokens: 5 }),
     ]);
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
-    const trace = await niceeval.run(["query", "run", "--request", request]);
+
+    const trace = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    const execution = trace.querySuccess("attempt.trace").trace.execution;
+    const execution = trace.inspectionSuccess("attempt.trace").trace.execution;
     expect(execution.traces).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceTraceId: "cancelled-complete", collection: { state: "complete", limitations: [] }, scopes: [] }),
       expect.objectContaining({ sourceTraceId: "missing-checkpoint", collection: { state: "partial", limitations: [expect.objectContaining({ code: "checkpoint-missing" })] }, scopes: [] }),
@@ -73,16 +71,16 @@ test.concurrent("SIGINT 排空共享 finish 的尾部采集并在 Run 终态前�
       expect.objectContaining({ summary: "Cancellation observed; capture complete" }),
       expect.objectContaining({ summary: "Verified cancellation tail" }),
     ]));
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifacts", locator } }));
-    const artifacts = await niceeval.run(["query", "run", "--request", request]);
-    const collection = artifacts.querySuccess("attempt.artifacts").artifacts;
+
+    const artifacts = await niceeval.run(["show", locator, "artifacts", "--json"]);
+    const collection = artifacts.inspectionSuccess("attempt.artifacts").artifacts;
     expect(collection.state).toBe("available");
     if (collection.state !== "available") throw new Error(artifacts.diagnostic());
     const artifact = only(collection.value.artifacts, () => true, artifacts.diagnostic());
     expect(artifact.label).toBe("tail.txt");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.artifact", locator, artifactId: artifact.artifactId } }));
-    const bytes = await niceeval.run(["query", "run", "--request", request]);
-    expect(bytes.querySuccess("attempt.artifact").artifact).toMatchObject({
+
+    const bytes = await niceeval.run(["show", locator, "artifacts", artifact.artifactId, "--json"]);
+    expect(bytes.inspectionSuccess("attempt.artifact").artifact).toMatchObject({
       state: "available", base64: Buffer.from("cancelled-tail").toString("base64"), nextOffset: null,
     });
   });

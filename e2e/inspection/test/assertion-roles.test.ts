@@ -30,7 +30,7 @@ export default defineExperiment({ evals: ["roles"], adapter: defineAgent({ name:
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
     const event = only(run.expEvalEvents(), item => item.evalId === "roles", run.diagnostic());
     expect(event.verdict).toBe("failed");
-    const shown = await niceeval.run(["show", event.locator, "--assertions"]);
+    const shown = await niceeval.run(["show", event.locator, "assertions"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toMatch(/Verdict failed · Score 1\/4/u);
     expect(shown.stdout).toMatch(/Gates 1 pass, 1 fail · Scored 3 · Notes 1 met, 1 unmet/u);
@@ -39,14 +39,14 @@ export default defineExperiment({ evals: ["roles"], adapter: defineAgent({ name:
     expect(shown.stdout).toMatch(/GATE\s+fail\s+SCORE\s+0\/1\s+.+lockfile/u);
     expect(shown.stdout).toMatch(/NOTE\s+unmet\s+.+stop only/u);
     expect(shown.stdout).not.toMatch(/\[(?:PASS|FAIL)\]|Passed \d+, Failed \d+, Total/u);
-    const attempt = await niceeval.run(["query", "run", "--request-json", JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.get", locator: event.locator } })]);
-    const entry = only(attempt.querySuccess("attempt.get").attempt.assertions.entries, item => item.display.label === "stop only", attempt.diagnostic());
-    const machineDetail = await niceeval.run(["show", event.locator, "--assertions", "--entry", entry.entryId, "--json"]);
-    const assertion = machineDetail.querySuccess("attempt.assertion.detail").assertion;
+    const attempt = await niceeval.run(["show", event.locator, "--json"]);
+    const entry = only(attempt.inspectionSuccess("attempt.get").attempt.assertions.entries, item => item.display.label === "stop only", attempt.diagnostic());
+    const machineDetail = await niceeval.run(["show", event.locator, "--json", entry.entryId]);
+    const assertion = machineDetail.inspectionSuccess("attempt.assertion.detail").assertion;
     expect("entry" in assertion).toBe(true);
     if (!("entry" in assertion)) throw new Error("expected saved assertion");
     expect(assertion.entry.decision.gate).toBe("not-gate");
-    const detail = await niceeval.run(["show", event.locator, "--assertions", "--entry", entry.entryId]);
+    const detail = await niceeval.run(["show", event.locator, entry.entryId]);
     expect(detail.exitCode, detail.diagnostic()).toBe(0);
     expect(detail.stdout).toContain("Verdict failed · Score 1/4");
     expect(detail.stdout).toMatch(/NOTE\s+unmet\s+.+stop only/u);

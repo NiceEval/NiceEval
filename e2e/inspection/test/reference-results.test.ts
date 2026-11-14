@@ -37,7 +37,7 @@ export default defineExperiment({ evals: ${JSON.stringify(evals)}, flags: { alph
       const path = join(projectRoot, `evals/${id}.eval.ts`);
       await writeFile(path, (await readFile(path, "utf8")).replace('test(t) {', 'test(t) { const changed = 1;'));
     }
-    for (const argv of [["show"], ["show", "--reference"]]) {
+    for (const argv of [["show"]]) {
       const shown = await niceeval.run(argv);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
       if (argv.length === 1) {

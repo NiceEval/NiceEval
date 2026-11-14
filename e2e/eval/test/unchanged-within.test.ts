@@ -22,7 +22,7 @@ test.concurrent("保护范围检查识别文件与子目录，保留独立 crite
           expect(entry.decision.result, entry.display.label).toBe(expected[entry.display.label!]);
           expect(entry.criterion).toMatchObject({ state: "available", value: { kind: "builtin", id: "sandbox-unchanged-within/v1" } });
           if (entry.display.label === "protected subtree") {
-            const shown = await niceeval.run(["show", event.locator!, "--assertions", "--entry", entry.entryId, "--full"]);
+            const shown = await niceeval.run(["show", event.locator!, "--full", entry.entryId]);
             expect(shown.exitCode, shown.diagnostic()).toBe(0);
             expect(shown.stdout).toContain("agents/a.ts");
             expect(shown.stdout).toContain("sandbox-unchanged-within/v1");

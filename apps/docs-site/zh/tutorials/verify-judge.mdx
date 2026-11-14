@@ -88,7 +88,7 @@ export default defineEval({
 
 图片必须是 PNG 或 JPEG，每张最多 4 MiB。超过大小或文件头无效时，NiceEval 在发送前就拒绝。不要传路径、URL 或普通 base64 字符串来代替图片。
 
-跑完后，用 `query` 的 `attempt.assertion.detail` 查看这条断言，结果里有图片的 `imageId` 和摘要。要取回原图，用 `attempt.assertion.image`，传入同一个 Attempt 的 `entryId` 和 `imageId`，分段读取：`offset` 是字节偏移，`limit` 最多 256 KiB。它读的是保存下来的图片，不会重新读文件或调用模型。
+跑完后，用 `niceeval show @<locator> <ae_id> --full --json` 查看这条断言，结果里有图片的 `imageId` 和摘要。运行 `niceeval show @<locator> <ae_id> image <image-id> --output screenshot.png` 取回保存的完整图片。它不会重新读文件或调用模型。
 
 ## 运行一次，确认拿到分数
 
@@ -103,7 +103,7 @@ NiceEval 加载配置时不会访问 Judge 端点，只有真正执行 Judge 断
 跑完后，从终端 `NEXT` 面板复制 Run ID，打开这次运行：
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
 复制 `judge-smoke` 那个 Attempt 的 locator，查看断言结果：
@@ -112,7 +112,7 @@ pnpm exec niceeval show --run <run-id>
 pnpm exec niceeval show @<attempt-locator>
 ```
 
-配置正确时，这条断言会显示分数和是否达到阈值。也可以用 `pnpm exec niceeval view --run <run-id>` 在浏览器里看。需要 Judge 给出的理由和实际发给它的材料时，用 `query` 的 `attempt.assertion.detail`，示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
+配置正确时，这条断言会显示分数和是否达到阈值。也可以用 `pnpm exec niceeval view run:<run-id>` 在浏览器里看。需要 Judge 给出的理由和实际发给它的材料时，用 `show --json` 的 `attempt.assertion.detail`，示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
 没拿到分数时，按结果判断该查什么：
 

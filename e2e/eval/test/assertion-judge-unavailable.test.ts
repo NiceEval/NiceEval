@@ -32,7 +32,6 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
       const inspected = await inspectAttempt(niceeval, projectRoot, evaluation.locator!, "attempt.get");
       expect(inspected.receipt.exitCode, inspected.receipt.diagnostic()).toBe(0);
       expect(inspected.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.get",
         attempt: { locator: evaluation.locator, core: { outcome: "errored" } },
       });
@@ -50,7 +49,6 @@ test.concurrent("未配置 Judge 的 Eval 以 errored 终态完成", async () =>
       );
       expect(assertion.receipt.exitCode, assertion.receipt.diagnostic()).toBe(0);
       expect(assertion.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.assertion.detail",
         assertion: { entryId: judge.entryId },
       });

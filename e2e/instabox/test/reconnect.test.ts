@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
@@ -25,10 +25,9 @@ test.concurrent("commands and open stdin resume together after client disconnect
     expect(log.match(/^reconnect-reset /gm)).toHaveLength(2);
     const locator = result.expEvalEvents()[0]?.locator;
     expect(locator).toBeDefined();
-    const request = join(paths.projectRoot, "trace.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.trace", locator } }));
-    const trace = await niceeval.run(["query", "run", "--request", request]);
+
+    const trace = await niceeval.run(["show", locator, "execution", "--json"]);
     expect(trace.exitCode, trace.diagnostic()).toBe(0);
-    expect(JSON.stringify(trace.querySuccess("attempt.trace").trace)).toContain("sandbox-transport-reconnected");
+    expect(JSON.stringify(trace.inspectionSuccess("attempt.trace").trace)).toContain("sandbox-transport-reconnected");
   });
 });

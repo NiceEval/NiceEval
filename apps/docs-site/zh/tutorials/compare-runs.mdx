@@ -11,17 +11,17 @@ description: "固定两次运行的 Run ID，在浏览器里并排审阅，或�
 ## 在浏览器里并排看
 
 ```sh
-pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
+pnpm exec niceeval view run:<baseline-run-id> run:<candidate-run-id>
 ```
 
 View 会同时打开两个 Run，你可以逐题对照通过与否、分数、耗时和成本，再点进具体某一次运行看对话和工具调用。
 
 ## 让脚本和 CI 读比较结果
 
-自动化流程需要结构化的比较结果时，用 `show --compare --json`：
+自动化流程需要结构化的比较结果时，用 `compare --json`：
 
 ```sh
-pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --mode paired --json
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --mode paired --json
 ```
 
 `mode` 决定怎样对齐两边：
@@ -37,7 +37,7 @@ pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <can
 用 `--mode` 指定对齐方式，再加 `--json` 读取比较结果：
 
 ```sh
-pnpm --silent exec niceeval show --compare --left <baseline-run-id> --right <candidate-run-id> --json
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --json
 ```
 
 ## 比较结果靠得住的前提
