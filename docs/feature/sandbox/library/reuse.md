@@ -158,6 +158,13 @@ Provider 可以限制最大值，但不能静默压短。
 
 创建标签 `niceeval.run_id` 使用当前 Record Run ID，`niceeval.created_at` 使用本次物理创建请求的 UTC ISO 时间。重试同一分配请求保留同一标签，恢复快照创建新实例重新标注。标签不进入缓存身份。无 Record Run 的独立内部创建不伪造 Run ID。
 
+为 Attempt 创建的实例另带 `niceeval.created_for_attempt`：发起这次创建的 Attempt 的 UUID 与 `niceeval.created_for_eval`：它的 Eval ID。
+它们只记录最初为谁创建，不表示当前占用者：复用池里的实例会依次承接其它 Attempt，Before cache 的 staging 实例没有对应 Attempt，不写这两个标签。
+
+Eval ID 可能包含项目或业务名称，云端标签对同一账号的其它成员可见；Experiment 配置 `sandboxLabels: "run-only"` 时只写 Run 级标签；这个选项与标签本身都不进入身份。
+标签值不含 prompt、源码、宿主路径、用户名、endpoint 或凭据。Provider 对键或值的长度与字符有限制时，创建前按该 Provider 的规则校验，超限时省略这一项并写入 Run 诊断，不截断成另一个值。
+运行期间对应关系以 `niceeval invocation show` 为准，标签只服务于从 Provider 控制台反查。
+
 E2B、Instabox 与 OpenSandbox 使用原生 metadata，Docker 与 Compose 使用 labels，Incus 使用 `user.niceeval.run_id` 与 `user.niceeval.created_at`。当前 Vercel SDK 不接受自定义标签，因此只注入服务端寿命。Docker、Compose、Incus 与自定义 Provider 没有统一的服务端自动销毁参数，不宣称具备云端硬超时；本地 timer 不能替代该保证。
 
 ## 派发前确认
