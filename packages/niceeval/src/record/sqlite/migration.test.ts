@@ -78,80 +78,84 @@ function installUnknown017ClosureField(db: DatabaseSync): void {
     .run(bytes, digest, row.attempt_id);
 }
 
-it.each(["0.15", "0.16", "0.17"] as const)("fences a %s idle connection without replacing the database inode", async (version) => {
-  await withHistoricalDatabase(version, async (path) => {
-    const inode = (await stat(path)).ino;
-    const old = new DatabaseSync(path);
-    const prefix = version === "0.17" ? "ne_" : "";
-    try {
-      const statement = old.prepare(`UPDATE ${prefix}record_metadata SET created_at='stale-writer' WHERE singleton=1`);
-      await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("migrated");
-      expect((await stat(path)).ino).toBe(inode);
-      expect(() => statement.run()).toThrow();
-      expect(() => old.prepare(`UPDATE ${prefix}coordination_state SET revision=revision+1 WHERE singleton=1`).run()).toThrow();
-      expect(() => old.prepare(`INSERT INTO ${prefix}coordination_tickets(ticket_id) VALUES ('stale')`).run()).toThrow();
-      const current = openRecordReader(path);
+it("fences historical idle connections without replacing the database inode", async () => {
+  for (const version of ["0.15", "0.16", "0.17"] as const) {
+    await withHistoricalDatabase(version, async (path) => {
+      const inode = (await stat(path)).ino;
+      const old = new DatabaseSync(path);
+      const prefix = version === "0.17" ? "ne_" : "";
       try {
-        expect(current.db.prepare("SELECT created_at FROM ne19_record_metadata WHERE singleton=1").get()?.created_at)
-          .not.toBe("stale-writer");
+        const statement = old.prepare(`UPDATE ${prefix}record_metadata SET created_at='stale-writer' WHERE singleton=1`);
+        await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("migrated");
+        expect((await stat(path)).ino).toBe(inode);
+        expect(() => statement.run()).toThrow();
+        expect(() => old.prepare(`UPDATE ${prefix}coordination_state SET revision=revision+1 WHERE singleton=1`).run()).toThrow();
+        expect(() => old.prepare(`INSERT INTO ${prefix}coordination_tickets(ticket_id) VALUES ('stale')`).run()).toThrow();
+        const current = openRecordReader(path);
+        try {
+          expect(current.db.prepare("SELECT created_at FROM ne19_record_metadata WHERE singleton=1").get()?.created_at)
+            .not.toBe("stale-writer");
+        } finally {
+          closeRecordDatabase(current);
+        }
+        await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("current");
       } finally {
-        closeRecordDatabase(current);
-      }
-      await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("current");
-    } finally {
-      old.close();
-    }
-  });
-});
-
-it.each(["0.16", "0.17"] as const)("preserves a committed migration from %s under a pinned old snapshot and completes after the reader releases it", async (version) => {
-  await withHistoricalDatabase(version, async (path) => {
-    const old = new DatabaseSync(path);
-    const prefix = version === "0.17" ? "ne_" : "";
-    let closed = false;
-    try {
-      old.exec("PRAGMA journal_mode=WAL; BEGIN");
-      expect(old.prepare(`SELECT format FROM ${prefix}record_metadata WHERE singleton=1`).get()?.format)
-        .toBe(`niceeval.project-database/${version}`);
-      const staleWrite = old.prepare(`UPDATE ${prefix}record_metadata SET created_at='stale-snapshot' WHERE singleton=1`);
-      await expect(migrateHostOwnedProjectDatabase(path, 0)).rejects.toThrow();
-
-      const committed = new DatabaseSync(path, { readOnly: true });
-      try {
-        expect(committed.prepare("SELECT format FROM ne19_record_metadata WHERE singleton=1").get()?.format)
-          .toBe("niceeval.project-database/0.19");
-        expect(committed.prepare("SELECT state FROM ne19_migration_state WHERE singleton=1").get()?.state)
-          .toBe("committed");
-      } finally {
-        committed.close();
-      }
-      expect(() => openRecordReader(path)).toThrow();
-      expect(() => staleWrite.run()).toThrow();
-      old.exec("ROLLBACK");
-      old.close();
-      closed = true;
-
-      await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("current");
-      const current = openRecordReader(path);
-      try {
-        expect(current.db.prepare("SELECT state FROM ne19_migration_state WHERE singleton=1").get()?.state)
-          .toBe("ready");
-        expect(current.db.prepare("SELECT created_at FROM ne19_record_metadata WHERE singleton=1").get()?.created_at)
-          .not.toBe("stale-snapshot");
-      } finally {
-        closeRecordDatabase(current);
-      }
-      const backup = projectDatabaseMigrationBackupPath(path, `niceeval.project-database/${version}`);
-      expect((await stat(backup)).isFile()).toBe(true);
-      expect((await stat(backup)).mode & 0o777).toBe(0o600);
-      expect((await readdir(join(path, ".."))).filter((name) => name.endsWith(".backup"))).toHaveLength(1);
-    } finally {
-      if (!closed) {
-        if (old.isTransaction) old.exec("ROLLBACK");
         old.close();
       }
-    }
-  });
+    });
+  }
+});
+
+it("preserves committed historical migrations under pinned snapshots and completes after readers release them", async () => {
+  for (const version of ["0.16", "0.17"] as const) {
+    await withHistoricalDatabase(version, async (path) => {
+      const old = new DatabaseSync(path);
+      const prefix = version === "0.17" ? "ne_" : "";
+      let closed = false;
+      try {
+        old.exec("PRAGMA journal_mode=WAL; BEGIN");
+        expect(old.prepare(`SELECT format FROM ${prefix}record_metadata WHERE singleton=1`).get()?.format)
+          .toBe(`niceeval.project-database/${version}`);
+        const staleWrite = old.prepare(`UPDATE ${prefix}record_metadata SET created_at='stale-snapshot' WHERE singleton=1`);
+        await expect(migrateHostOwnedProjectDatabase(path, 0)).rejects.toThrow();
+
+        const committed = new DatabaseSync(path, { readOnly: true });
+        try {
+          expect(committed.prepare("SELECT format FROM ne19_record_metadata WHERE singleton=1").get()?.format)
+            .toBe("niceeval.project-database/0.19");
+          expect(committed.prepare("SELECT state FROM ne19_migration_state WHERE singleton=1").get()?.state)
+            .toBe("committed");
+        } finally {
+          committed.close();
+        }
+        expect(() => openRecordReader(path)).toThrow();
+        expect(() => staleWrite.run()).toThrow();
+        old.exec("ROLLBACK");
+        old.close();
+        closed = true;
+
+        await expect(migrateHostOwnedProjectDatabase(path, 0)).resolves.toBe("current");
+        const current = openRecordReader(path);
+        try {
+          expect(current.db.prepare("SELECT state FROM ne19_migration_state WHERE singleton=1").get()?.state)
+            .toBe("ready");
+          expect(current.db.prepare("SELECT created_at FROM ne19_record_metadata WHERE singleton=1").get()?.created_at)
+            .not.toBe("stale-snapshot");
+        } finally {
+          closeRecordDatabase(current);
+        }
+        const backup = projectDatabaseMigrationBackupPath(path, `niceeval.project-database/${version}`);
+        expect((await stat(backup)).isFile()).toBe(true);
+        expect((await stat(backup)).mode & 0o777).toBe(0o600);
+        expect((await readdir(join(path, ".."))).filter((name) => name.endsWith(".backup"))).toHaveLength(1);
+      } finally {
+        if (!closed) {
+          if (old.isTransaction) old.exec("ROLLBACK");
+          old.close();
+        }
+      }
+    });
+  }
 });
 
 it("rejects a corrupted but valid historical Run payload and rolls back schema conversion", async () => {

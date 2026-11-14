@@ -83,11 +83,13 @@ describe("canonical SQLite coordination", () => {
     closeRecordDatabase(db);
   });
 
-  it.each(["locks", "sessions"])("fails closed on legacy %s entries but ignores an empty directory", async (legacyName) => {
-    const { root, path } = await project();
-    await mkdir(join(root, ".niceeval", legacyName), { recursive: true });
-    expect(() => closeRecordDatabase(openRecordWriter(path))).not.toThrow();
-    await writeFile(join(root, ".niceeval", legacyName, "entry"), "legacy");
-    expect(() => openRecordWriter(path)).toThrow(new RegExp(`legacy ${legacyName}`, "u"));
+  it("fails closed on legacy coordination entries but ignores empty directories", async () => {
+    for (const legacyName of ["locks", "sessions"]) {
+      const { root, path } = await project();
+      await mkdir(join(root, ".niceeval", legacyName), { recursive: true });
+      expect(() => closeRecordDatabase(openRecordWriter(path))).not.toThrow();
+      await writeFile(join(root, ".niceeval", legacyName, "entry"), "legacy");
+      expect(() => openRecordWriter(path)).toThrow(new RegExp(`legacy ${legacyName}`, "u"));
+    }
   });
 });

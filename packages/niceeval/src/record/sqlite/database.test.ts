@@ -45,36 +45,40 @@ describe("ProjectDatabase bootstrap baseline", () => {
     expect(inspectProjectRecordDatabase(path)).toEqual({ state: "foreign" });
   });
 
-  it.each([
-    ["existing empty SQLite", (db: DatabaseSync) => undefined],
-    ["partial schema", (db: DatabaseSync) => db.exec("CREATE TABLE record_metadata(singleton INTEGER PRIMARY KEY)")],
-  ])("rejects %s without repairing it", async (_label, arrange) => {
-    const path = await databasePath();
-    const db = new DatabaseSync(path);
-    arrange(db);
-    db.close();
-    const before = readFileSync(path);
+  it("rejects incomplete databases without repairing their bytes", async () => {
+    for (const [label, arrange] of [
+      ["existing empty SQLite", (db: DatabaseSync) => undefined],
+      ["partial schema", (db: DatabaseSync) => db.exec("CREATE TABLE record_metadata(singleton INTEGER PRIMARY KEY)")],
+    ] as const) {
+      const path = await databasePath();
+      const db = new DatabaseSync(path);
+      arrange(db);
+      db.close();
+      const before = readFileSync(path);
 
-    expect(() => openRecordWriter(path)).toThrow();
-    expect(readFileSync(path).equals(before), "rejected database bytes stay unchanged").toBe(true);
+      expect(() => openRecordWriter(path)).toThrow();
+      expect(readFileSync(path).equals(before), `${label}: rejected database bytes stay unchanged`).toBe(true);
+    }
   });
 
-  it.each([
-    ["unknown object", (db: DatabaseSync) => db.exec("CREATE TABLE injected(value TEXT)")],
-    ["old revision", (db: DatabaseSync) => db.exec("UPDATE ne19_record_metadata SET storage_revision=99")],
-    ["forged fingerprint", (db: DatabaseSync) => db.exec(`UPDATE ne19_record_metadata SET schema_fingerprint='${"0".repeat(64)}'`)],
-  ])("fails closed for %s", async (_label, corrupt) => {
-    const path = await databasePath();
-    closeRecordDatabase(openRecordWriter(path));
-    const db = new DatabaseSync(path);
-    corrupt(db);
-    db.close();
-    const before = readFileSync(path);
+  it("fails closed on databases outside the exact schema baseline", async () => {
+    for (const [label, corrupt] of [
+      ["unknown object", (db: DatabaseSync) => db.exec("CREATE TABLE injected(value TEXT)")],
+      ["old revision", (db: DatabaseSync) => db.exec("UPDATE ne19_record_metadata SET storage_revision=99")],
+      ["forged fingerprint", (db: DatabaseSync) => db.exec(`UPDATE ne19_record_metadata SET schema_fingerprint='${"0".repeat(64)}'`)],
+    ] as const) {
+      const path = await databasePath();
+      closeRecordDatabase(openRecordWriter(path));
+      const db = new DatabaseSync(path);
+      corrupt(db);
+      db.close();
+      const before = readFileSync(path);
 
-    expect(() => openRecordReader(path)).toThrow();
-    // Compare bytes natively: deep equality enumerates every Buffer index and
-    // can exhaust the test deadline under default parallel suite load.
-    expect(readFileSync(path).equals(before), "rejected database bytes stay unchanged").toBe(true);
+      expect(() => openRecordReader(path)).toThrow();
+      // Compare bytes natively: deep equality enumerates every Buffer index and
+      // can exhaust the test deadline under default parallel suite load.
+      expect(readFileSync(path).equals(before), `${label}: rejected database bytes stay unchanged`).toBe(true);
+    }
   });
 });
 

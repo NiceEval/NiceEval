@@ -55,27 +55,31 @@ beforeEach(() => {
 });
 
 describe("Record storage worker protocol", () => {
-  it.each([
-    [{ id: 1, state: "success" }],
-    [{ id: 1, state: "success", result: null }],
-    [{ id: 1, state: "failure" }],
-    [{ id: 1, state: "failure", error: null }],
-    [{ id: 1, state: "failure", error: { code: "x", operation: "y" } }],
-    [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", stack: 1 } }],
-    [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", details: [1] } }],
-  ])("rejects an incomplete response %#", (response) => {
-    expect(isStorageWorkerResponse(response)).toBe(false);
+  it("rejects incomplete worker responses", () => {
+    for (const [response] of [
+      [{ id: 1, state: "success" }],
+      [{ id: 1, state: "success", result: null }],
+      [{ id: 1, state: "failure" }],
+      [{ id: 1, state: "failure", error: null }],
+      [{ id: 1, state: "failure", error: { code: "x", operation: "y" } }],
+      [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", stack: 1 } }],
+      [{ id: 1, state: "failure", error: { code: "x", operation: "y", message: "z", details: [1] } }],
+    ]) {
+      expect(isStorageWorkerResponse(response), JSON.stringify(response)).toBe(false);
+    }
   });
 
-  it.each([
-    { id: 1, state: "success", result: undefined },
-    { id: 2, state: "success", result: { value: true } },
-    { id: 3, state: "success", result: [{ value: true }] },
-    { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
-    { id: 5, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
-    { id: 6, state: "failure", error: { code: "run-delete-reference-conflict", operation: "run", message: "referenced", details: [{ attemptLocator: "@1" }] } },
-  ])("accepts a complete response %#", (response) => {
-    expect(isStorageWorkerResponse(response)).toBe(true);
+  it("accepts complete worker responses", () => {
+    for (const response of [
+      { id: 1, state: "success", result: undefined },
+      { id: 2, state: "success", result: { value: true } },
+      { id: 3, state: "success", result: [{ value: true }] },
+      { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
+      { id: 5, state: "failure", error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" } },
+      { id: 6, state: "failure", error: { code: "run-delete-reference-conflict", operation: "run", message: "referenced", details: [{ attemptLocator: "@1" }] } },
+    ]) {
+      expect(isStorageWorkerResponse(response), JSON.stringify(response)).toBe(true);
+    }
   });
 });
 

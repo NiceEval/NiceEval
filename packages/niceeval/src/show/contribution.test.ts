@@ -44,25 +44,27 @@ test.concurrent("Assertion JSON defaults to compact and selects exact entries wi
 });
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md
-test.concurrent.each([
-  ["--all", "--json"], ["--all", "-o", "json"], ["-o", "csv"], ["--json", "-o", "text"],
-  [locator, "--assertions", "--full", "--compact"], [locator, "--entry", entryId],
-  [locator, "--assertions", "--usage"], ["--assertions"], [locator, "--reference"],
-])("rejects invalid show options before opening a source: %j", async (...argv) => {
-  let stdout = "";
-  let stderr = "";
-  const unexpected = Effect.die("Invalid arguments must not open a source");
-  const status = await Effect.runPromise(showCliCommand.run(argv).pipe(
-    Effect.provide(NodeCliArgumentsLive),
-    Effect.provideService(CliInvocationFacts, { facts: unexpected }),
-    Effect.provideService(ProjectConfiguration, { prepare: () => unexpected, load: () => unexpected, rebuild: () => unexpected }),
-    Effect.provideService(CliOutput, {
-      writeStdout: (value) => Effect.sync(() => { stdout += value; }),
-      writeStderr: (value) => Effect.sync(() => { stderr += value; }),
-      writeStdoutSync: () => {}, writeStderrSync: () => {},
-    }),
-  ));
-  expect(status).toBe(1);
-  expect(stdout).toBe("");
-  expect(stderr.length).toBeGreaterThan(0);
+test.concurrent("rejects invalid show options before opening a source", async () => {
+  for (const argv of [
+    ["--all", "--json"], ["--all", "-o", "json"], ["-o", "csv"], ["--json", "-o", "text"],
+    [locator, "--assertions", "--full", "--compact"], [locator, "--entry", entryId],
+    [locator, "--assertions", "--usage"], ["--assertions"], [locator, "--reference"],
+  ]) {
+    let stdout = "";
+    let stderr = "";
+    const unexpected = Effect.die("Invalid arguments must not open a source");
+    const status = await Effect.runPromise(showCliCommand.run(argv).pipe(
+      Effect.provide(NodeCliArgumentsLive),
+      Effect.provideService(CliInvocationFacts, { facts: unexpected }),
+      Effect.provideService(ProjectConfiguration, { prepare: () => unexpected, load: () => unexpected, rebuild: () => unexpected }),
+      Effect.provideService(CliOutput, {
+        writeStdout: (value) => Effect.sync(() => { stdout += value; }),
+        writeStderr: (value) => Effect.sync(() => { stderr += value; }),
+        writeStdoutSync: () => {}, writeStderrSync: () => {},
+      }),
+    ));
+    expect(status, JSON.stringify(argv)).toBe(1);
+    expect(stdout, JSON.stringify(argv)).toBe("");
+    expect(stderr.length, JSON.stringify(argv)).toBeGreaterThan(0);
+  }
 });
