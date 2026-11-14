@@ -423,7 +423,8 @@ source mapping 不能重新计算 criterion、points、gate、unavailable 或 Ve
 
 ## revision 1 → 2 → 3 → 4 → 5 相邻迁移
 
-revision 4 → 5 只给每个 entry 补 `control: { state: "unavailable", reason: "not-recorded" }`；旧 Record 没有保存停止事实，迁移不从 policy 或 source site 推断。
+revision 4 → 5 不改写已保存的数据：Assertions 的读取边界同时接受精确的 v4 与 v5 envelope，读到 v4 时在内存中给每个 entry 补 `control: { state: "unavailable", reason: "not-recorded" }`，再交给读侧。
+旧 Record 没有保存停止事实，补齐不从 policy 或 source site 推断；Record 的整库版本与旧 bytes 都不变，writer 只写 v5。
 
 
 package-private v1 codec 只为 maintenance 存在。纯相邻 transform 只保留 v1 严格能证明的
