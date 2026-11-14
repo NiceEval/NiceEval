@@ -35,6 +35,9 @@ niceeval invocation show <invocation-id> [--json]
 
 精确 Experiment ID 优先。否则目录段精确匹配，最后一段允许前缀匹配。Experiment 零命中与 Eval 零命中都是具名错误，不降级为空 Invocation。
 
+Experiment ID 由文件路径推出，选择先于加载：给了 Experiment selector 的命令只 import 命中的文件。
+未选中的文件不求值，它在加载期抛错或访问网络都不影响本次命令；选中文件的加载失败照常报错。省略 selector 时加载全部。
+
 ### `--dry`
 
 `--dry` 在固定 cutoff 运行 `project-target/v2`，展示 policy identity、effective options、
