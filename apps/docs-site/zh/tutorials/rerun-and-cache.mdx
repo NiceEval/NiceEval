@@ -46,7 +46,8 @@ checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-it
 - 这次的 `--rerun` 没有要求重跑它。
 - 这次没有用 `--keep-sandbox` 要求真实执行。
 
-只改 Experiment 的 `description` 或 `labels` 不会让旧结果失效。评估用例文件不同：文件内容一变，这道题就会重跑。
+只改 Experiment 的 `description` 或 `labels` 不会让旧结果失效。评估用例的执行内容或实际依赖变化会让这道题重跑；
+普通注释、缩进与空行在规范化源码相同时不影响沿用。
 
 ## 控制重跑范围
 
@@ -107,6 +108,8 @@ NiceEval 只读取当前存储格式。格式不符时，命令保留原文件�
 pnpm exec niceeval show run:<run-id>
 ```
 
-沿用的题和重跑的题都会出现在这个 Run 里，通过率按完整的一批题计算。不要在 `exp` 还没结束时用 `show exp:<id>` 看结果，那时可能还没有任何已发布的结果。
+沿用的题和重跑的题都会出现在这个 Run 里，通过率按完整的一批题计算。
+运行期间也可用 `show run:<run-id>` 读取已发布的 Attempt；尚未完成的位置显示为 `pending`。
+想看每格当前阶段与 Sandbox 实例时，用 `niceeval invocation show <invocation-id>`。
 
 查看结果的完整方式见[查看运行结果](/zh/tutorials/viewing-results)。沿用和重跑的判定原理见 [Runner](/zh/explanation/runner)。
