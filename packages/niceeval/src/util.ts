@@ -130,12 +130,12 @@ export function describeError(e: unknown): {
 } {
   if (!(e instanceof Error)) return { message: String(e) };
   const out: { message: string; stack?: string; cause?: { name?: string; code?: string; message: string } } = {
-    message: e.message || e.name,
+    message: e instanceof AggregateError ? diagnosticErrorMessage(e) : e.message || e.name,
   };
   if (e.stack) out.stack = e.stack;
   const raw = (e as { cause?: unknown }).cause;
   if (raw instanceof Error) {
-    const c: { name?: string; code?: string; message: string } = { message: raw.message || raw.name };
+    const c: { name?: string; code?: string; message: string } = { message: diagnosticErrorMessage(raw) };
     if (raw.name) c.name = raw.name;
     const code = (raw as { code?: unknown }).code;
     if (typeof code === "string") c.code = code;
@@ -144,6 +144,31 @@ export function describeError(e: unknown): {
     out.cause = { message: raw };
   }
   return out;
+}
+
+/** Keep aggregate members in the existing text field; never serialize their arbitrary properties. */
+function diagnosticErrorMessage(error: Error, path = new Set<Error>(), depth = 0): string {
+  if (path.has(error)) return "[Circular error]";
+  if (depth >= CAUSE_CHAIN_DEPTH) return "[Error depth limit]";
+  path.add(error);
+  try {
+    const lines = [error.message || error.name];
+    const describeChild = (value: unknown): string => {
+      if (!(value instanceof Error)) return String(value);
+      const code = (value as { code?: unknown }).code;
+      const label = typeof code === "string" ? `${value.name} (${code})` : value.name;
+      return `${label}: ${diagnosticErrorMessage(value, path, depth + 1)}`;
+    };
+    if (error instanceof AggregateError) {
+      for (const [index, child] of error.errors.entries()) {
+        lines.push(`  [${index + 1}] ${describeChild(child)}`);
+      }
+    }
+    if (error.cause !== undefined) lines.push(`  caused by: ${describeChild(error.cause)}`);
+    return lines.join("\n");
+  } finally {
+    path.delete(error);
+  }
 }
 
 /** 零填充到 4 位(数据集扇出的 id:sql/0000)。 */

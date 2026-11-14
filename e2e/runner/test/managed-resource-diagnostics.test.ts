@@ -13,7 +13,7 @@ test.concurrent("managed resource 清理失败的各子错误可从公开诊断�
     for (const detail of ["FixtureTransportError", "E_RUNNER", "runner release transport unavailable", "E_JSONL", "jsonl release transport unavailable"]) {
       expect(diagnostic.summary).toContain(detail);
     }
-    const shown = await niceeval.run(["show", locator]);
+    const shown = await niceeval.run(["show", locator, "--execution"]);
     expect(shown.exitCode, shown.diagnostic()).toBe(0);
     expect(shown.stdout).toContain("E_RUNNER");
     expect(shown.stdout).toContain("E_JSONL");

@@ -57,7 +57,7 @@ import {
   writeKeptEntryEffect,
 } from "../sandbox/keep-registry.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
-import { runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
+import { AgentInstallError, SandboxTargetVerificationError, runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { agentBeforeEffect, agentAfterEffect, authorCallbackEffect } from "../agents/agent-effects.ts";
 import { createTraceReceiver, interruptOnAbort, type TraceReceiver } from "../o11y/otlp/receiver.ts";
@@ -2208,6 +2208,19 @@ export function errorFromThrown(
     code: e.code, message: e.message, origin: attemptOrigin("eval.run"),
     cause: { code: e.reason, message: e.reason },
   };
+  if (e instanceof AgentInstallError) return {
+    ...describeError(e),
+    code: `agent.install.${e.reason}`,
+    message: `Agent Install phase=${e.phase}; identity=${JSON.stringify(e.identity)}\n${e.message}`,
+    origin: attemptOrigin("agent.install"),
+    cause: { name: e._tag, code: e.reason, message: e.message },
+  };
+  if (e instanceof SandboxTargetVerificationError) return {
+    ...describeError(e),
+    code: e.actual._tag === "Unreadable" ? "sandbox-target-platform-detect-failed" : "sandbox-target-platform-mismatch",
+    origin: attemptOrigin(phase ?? "agent.install"),
+    cause: { name: e._tag, message: e.message },
+  };
   if (e instanceof BeforeCacheAmbiguityError) {
     return {
       code: "sandbox-environment-incomplete",
@@ -3877,13 +3890,13 @@ async function runAttemptBody(
 }
 
 /** 把一次 teardown / cleanup 失败折成一条 `DiagnosticRecord`(warning,不改判定)。message 取一层
- *  摘要(`firstLine(formatThrown)`),完整 stack 不塞进单 attempt 诊断 —— 诊断是「顺带发生的清理
+ *  摘要(含 AggregateError 子错误),完整 stack 不塞进单 attempt 诊断 —— 诊断是「顺带发生的清理
  *  问题」,不是 attempt 的主因(主因在 verdict / error)。稳定 code `teardown-failed`。 */
 function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord {
   return {
     code: "teardown-failed",
     level: "warning",
-    detail: firstLine(formatThrown(e)),
+    detail: describeError(e).message,
     origin: attemptOrigin(phase),
   };
 }

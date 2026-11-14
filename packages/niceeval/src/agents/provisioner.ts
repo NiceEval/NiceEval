@@ -229,7 +229,7 @@ export function platformKey(platform: AgentArtifactPlatform): string {
 }
 
 export function artifactCacheKey(identity: AgentIdentity, platform: AgentArtifactPlatform): string {
-  return `${identity.agent}@${identity.version}+r${identity.revision}|${platformKey(platform)}`;
+  return JSON.stringify([identity.agent, identity.version, identity.revision, platformKey(platform)]);
 }
 
 /**
@@ -379,7 +379,7 @@ export class ArtifactPrepareCoordinator {
 
 function formatInstallError(opts: {
   identity: AgentIdentity;
-  phase: "probe" | "recheck" | "verify-only" | "installer";
+  phase: "probe" | "install" | "recheck" | "verify-only" | "installer";
   result?: { detail?: string };
 }): string {
   return `Agent Install failed (agent=${opts.identity.agent}, phase=${opts.phase}): expected ${opts.identity.version}, actual ${"(none)"}. ${opts.result?.detail ?? ""}
@@ -596,7 +596,7 @@ function runInstaller(
       identity: installer.identity,
       message: formatInstallError({
         identity: installer.identity,
-        phase: "recheck",
+        phase: "install",
         result: { detail: errorMessage(cause) },
       }),
     }),
