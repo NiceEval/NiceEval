@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Exit, Option, Scope } from "effect";
 import * as Cause from "effect/Cause";
 import { discoverAllRepos, e2eRootDir, repoRootDir } from "./discovery.ts";
+import { prepareCandidate, type CandidateForm } from "./candidate-cache.ts";
 import { readCandidateTarball } from "./injection.ts";
 import { selectRepos } from "./plan.ts";
 import {
@@ -36,7 +37,8 @@ export interface RunOptions {
   readonly repoIds: readonly string[];
   readonly lane?: import("./contracts.ts").Lane;
   readonly capability?: string;
-  readonly candidatePath: string;
+  readonly candidatePath?: string;
+  readonly candidateForm?: CandidateForm;
   readonly artifactRoot?: string;
   readonly nativeArgs: readonly string[];
   readonly keepWorkdir: boolean;
@@ -168,6 +170,8 @@ const failedRepo = (
       category: "infra",
       detail: `runner operational failure: ${detail}`,
       candidate: {
+        form: candidate.form ?? "tarball",
+        ...(candidate.inputDigest === undefined ? {} : { inputDigest: candidate.inputDigest }),
         sha256: candidate.sha256,
         integrity: candidate.integrity,
         reproduce: [
@@ -274,9 +278,14 @@ export const runEffect = (
         onSuccess: Effect.succeed,
       },
     );
-    const candidate = yield* readCandidateTarball(
-      resolve(options.candidatePath),
-    ).pipe(Effect.mapError(rootError));
+    const fixed = options.candidatePath === undefined ? undefined : yield* readCandidateTarball(resolve(options.candidatePath)).pipe(Effect.mapError(rootError));
+    const candidates = new Map<CandidateForm, import("./injection.ts").CandidateTarball>();
+    const formFor = (repo: import("./discovery.ts").DiscoveredRepo): CandidateForm => fixed !== undefined ? "tarball" : options.candidateForm ?? repo.manifest.candidate ?? "source";
+    for (const repo of selected) {
+      const form = formFor(repo);
+      if (!candidates.has(form)) candidates.set(form, fixed ?? (yield* prepareCandidate(repoRootDir(), form).pipe(Effect.mapError(rootError))));
+    }
+    const candidateFor = (repo: import("./discovery.ts").DiscoveredRepo) => candidates.get(formFor(repo))!;
     const scratch = yield* fs((service) =>
       service.makeTempDirectory({ prefix: "niceeval-e2e-scratch-" }),
     );
@@ -298,14 +307,13 @@ export const runEffect = (
             Effect.catch(() => Effect.void),
           ),
     );
-    const materialized = yield* materializeCandidateArtifact(
-      durableRoot,
-      candidate,
-    );
+    for (const [form, candidate] of candidates) {
+      if (form === "tarball") candidates.set(form, { ...candidate, path: yield* materializeCandidateArtifact(durableRoot, candidate) });
+    }
     const sharedTestkit: TestkitPackage | undefined = selected.some(
       (repo) => repo.manifest.harness?.testkit === true,
     )
-      ? yield* buildTestkitPackage(repoRootDir(), scratch)
+      ? yield* buildTestkitPackage(repoRootDir(), scratch, { sourceCandidate: candidates.has("source") })
       : undefined;
     if (sharedTestkit !== undefined)
       yield* verifyTestkitSnapshot(sharedTestkit).pipe(
@@ -319,7 +327,7 @@ export const runEffect = (
       (repo) =>
         runRepoEffect(
           repo,
-          { ...candidate, path: materialized },
+          candidateFor(repo),
           scratch,
           durableRoot,
           secretNames,
@@ -347,7 +355,7 @@ export const runEffect = (
         ? Effect.succeed(exit.value)
         : failedRepo(
             selected[index]!,
-            { ...candidate, path: materialized },
+            candidateFor(selected[index]!),
             durableRoot,
             exit.cause,
             options.selection,

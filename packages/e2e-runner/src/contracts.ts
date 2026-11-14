@@ -148,6 +148,7 @@ export const ManifestMetadataSchema = Schema.Struct({
   secrets: UniqueStringListSchema,
   requires: Schema.optional(RepoRequiresSchema),
   harness: Schema.optional(RepoHarnessSchema),
+  candidate: Schema.optional(Schema.Literals(["built"])),
   artifacts: Schema.Array(ArtifactPatternSchema),
 });
 export const ManifestSchema = Schema.Struct({
@@ -155,6 +156,7 @@ export const ManifestSchema = Schema.Struct({
   lanes: UniqueLaneListSchema, executor: ExecutorSchema, command: Schema.NonEmptyArray(NonEmptyStringSchema),
   timeoutMinutes: PositiveFiniteNumberSchema, secrets: UniqueStringListSchema,
   requires: Schema.optional(RepoRequiresSchema), harness: Schema.optional(RepoHarnessSchema),
+  candidate: Schema.optional(Schema.Literals(["built"])),
   artifacts: Schema.Array(ArtifactPatternSchema), id: RepoIdSchema,
 });
 
@@ -267,6 +269,8 @@ export const SelectionReceiptSchema = Schema.Struct({
   range: Schema.optional(PlanRangeSchema),
 });
 export const CandidateIdentitySchema = Schema.Struct({
+  form: Schema.optional(Schema.Literals(["source", "built", "tarball"])),
+  inputDigest: Schema.optional(Sha256HexSchema),
   sha256: Sha256HexSchema,
   integrity: SriSchema,
   artifactPath: Schema.optional(RepoIdSchema),

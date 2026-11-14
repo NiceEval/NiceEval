@@ -79,18 +79,16 @@ const rejectDiagnosticInCi = process.env.CI !== undefined
 const planned = (config: PlanConfig) => resolveConfiguredPlan(config).pipe(Effect.catch((error) => planFailure(error, config.json)));
 const planCommand = Command.make("plan", { lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, batch, json }, (config) => planned(config).pipe(Effect.tap(printPlan))).pipe(Command.withDescription("Resolve selected scenario repositories without packing or running them."));
 const packCommand = Command.make("pack", { out: Options.String("out").pipe(Options.withDescription("Required .tgz destination for the packed NiceEval candidate.")) }, ({ out }) => Effect.scoped(packCandidate(repoRootDir(), out).pipe(Effect.flatMap((candidate) => Console.log(JSON.stringify(candidate, null, 2)))))).pipe(Command.withDescription("Pack exactly one NiceEval candidate tarball."));
-const testCommand = Command.make("test", { lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, keepWorkdir, artifactRoot, nativeArgs }, (config) => rejectKeepWorkdirInCi(config.keepWorkdir).pipe(
+const testCommand = Command.make("test", { candidate: Options.Literals("candidate", ["source", "built", "tarball"]).pipe(Options.optional, Options.map(Option.getOrUndefined)), lane, repoIds: repos, diffPaths, noDiff, base, head, capability, excludeExternalNetwork, keepWorkdir, artifactRoot, nativeArgs }, (config) => rejectKeepWorkdirInCi(config.keepWorkdir).pipe(
   Effect.andThen(planned({ ...config, batch: false, json: false })),
   Effect.tap(printPlan),
   Effect.flatMap((plan) => plan.entries.length === 0 ? Effect.void : Effect.scoped(Effect.gen(function* () {
-    const staging = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({ prefix: "niceeval-e2e-test-" });
-    const candidate = yield* packCandidate(repoRootDir(), join(staging, "candidate.tgz"));
     yield* loadRootEnv;
     const repoIds = plan.entries.flatMap((entry) => entry.repoIds);
-    const summary = yield* runEffect({ repoIds, lane: plan.cli.lane, ...(plan.cli.capability === undefined ? {} : { capability: plan.cli.capability }), candidatePath: candidate.path, ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs), keepWorkdir: config.keepWorkdir, repoConcurrency: Math.max(repoIds.length, 1) });
+    const summary = yield* runEffect({ repoIds, lane: plan.cli.lane, ...(plan.cli.capability === undefined ? {} : { capability: plan.cli.capability }), ...(config.candidate === undefined ? process.env.CI === undefined ? {} : { candidateForm: "tarball" as const } : { candidateForm: config.candidate }), ...(config.artifactRoot === undefined ? {} : { artifactRoot: config.artifactRoot }), nativeArgs: decodeNativeArgs(config.nativeArgs), keepWorkdir: config.keepWorkdir, repoConcurrency: Math.max(repoIds.length, 1) });
     yield* printSummary(summary);
   }))),
-)).pipe(Command.withDescription("Plan, pack once, and run exactly the selected scenario repositories."));
+)).pipe(Command.withDescription("Plan, prepare candidates once, and run exactly the selected scenario repositories."));
 
 const readPlanCell = (path: string, cellId: string): Effect.Effect<{ readonly repoIds: readonly string[]; readonly selection: SelectionReceipt }, E2ECliError, FileSystem.FileSystem> => Effect.gen(function* () {
   const text = yield* (yield* FileSystem.FileSystem).readFileString(path).pipe(Effect.mapError((cause) => new E2ECliError({ detail: `could not read plan ${path}: ${errorDetail(cause)}` })));

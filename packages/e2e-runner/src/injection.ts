@@ -1,16 +1,16 @@
-// Candidate tarball identity and scoped `pnpm pack` execution.
+// Candidate identity and installed tarball attestation.
 
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Data, Effect } from "effect";
 import * as FileSystem from "effect/FileSystem";
 
-import { acquireCandidatePackLock } from "./candidate-pack-lock.ts";
-import { hasConfirmedOwnedGroupCleanup, hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.ts";
+import { tarballInputDigest } from "./tarball-input.ts";
 
-const PACK_FAILURE_STDERR_LIMIT = 8_192;
 
 export interface CandidateTarball {
+  readonly form?: import("./candidate-cache.ts").CandidateForm;
+  readonly inputDigest?: string;
   readonly path: string;
   readonly integrity: string;
   readonly shortHash: string;
@@ -36,35 +36,9 @@ export function readCandidateTarball(path: string): Effect.Effect<CandidateTarba
     if (!resolved.endsWith(".tgz")) return yield* Effect.fail(new CandidatePackError({ operation: "fingerprint", detail: `candidate must be a .tgz file, got ${path}` }));
     const bytes = yield* (yield* FileSystem.FileSystem).readFile(resolved).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "fingerprint", detail: error.message })));
     if (bytes.length === 0) return yield* Effect.fail(new CandidatePackError({ operation: "fingerprint", detail: `candidate tarball is empty: ${resolved}` }));
-    return fingerprint(bytes, resolved);
-  });
-}
-
-function boundedStderr(stderr: string): string {
-  const text = stderr.trim();
-  return text.length === 0 ? "stderr was empty" : text.length <= PACK_FAILURE_STDERR_LIMIT ? text : `… ${text.length - PACK_FAILURE_STDERR_LIMIT} earlier stderr character(s) omitted …\\n${text.slice(-PACK_FAILURE_STDERR_LIMIT)}`;
-}
-
-/** Builds one candidate while the Scope owns both the pack lease and command group. */
-export function buildCandidateTarball(
-  repoRoot: string,
-  destination: string,
-  options: { readonly quiet?: boolean } = {},
-): Effect.Effect<CandidateTarball, CandidatePackError, import("effect").Scope.Scope | import("./owned-process.ts").OwnedProcess | FileSystem.FileSystem> {
-  const packageRoot = join(repoRoot, "packages", "niceeval");
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    yield* fs.makeDirectory(destination, { recursive: true }).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "prepare", detail: error.message })));
-    yield* acquireCandidatePackLock(repoRoot).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "pack", detail: error.detail })));
-    const result = yield* runOwnedProcess(["pnpm", "--config.node-linker=hoisted", "pack", "--pack-destination", destination], { cwd: packageRoot, env: process.env, output: "capture", stream: options.quiet !== true, timeoutMs: 30 * 60_000 }).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "pack", detail: error.detail })));
-    if (!hasSuccessfulOwnedProcessResult(result)) return yield* Effect.fail(new CandidatePackError({ operation: "pack", detail: `pnpm pack failed (${result.timedOut ? "timed out after TERM → grace → KILL" : !hasConfirmedOwnedGroupCleanup(result) ? result.groupCleanup.detail : result.error ?? result.signal ?? `exit ${result.exitCode}`}) while building candidate from ${repoRoot}\\n--- pnpm pack stderr (last ${PACK_FAILURE_STDERR_LIMIT} characters) ---\\n${boundedStderr(result.stderr)}` }));
-    const files = yield* fs.readDirectory(destination).pipe(Effect.map((entries) => entries.filter((entry) => entry.endsWith(".tgz"))), Effect.mapError((error) => new CandidatePackError({ operation: "fingerprint", detail: error.message })));
-    if (files.length !== 1 || files[0] === undefined) return yield* Effect.fail(new CandidatePackError({ operation: "fingerprint", detail: `expected exactly one .tgz in ${destination}, found ${files.length}: ${JSON.stringify(files)}` }));
-    const candidate = yield* readCandidateTarball(join(destination, files[0]));
-    const packageJson = yield* fs.readFileString(join(packageRoot, "package.json")).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "fingerprint", detail: error.message })));
-    const pkg = yield* Effect.try({ try: () => JSON.parse(packageJson) as unknown, catch: (cause) => new CandidatePackError({ operation: "fingerprint", detail: cause instanceof Error ? cause.message : "could not decode candidate package metadata" }) });
-    if (pkg === null || typeof pkg !== "object" || typeof (pkg as { name?: unknown }).name !== "string" || typeof (pkg as { version?: unknown }).version !== "string") return yield* Effect.fail(new CandidatePackError({ operation: "fingerprint", detail: "candidate package.json has no valid name/version" }));
-    return { ...candidate, name: (pkg as { name: string }).name, version: (pkg as { version: string }).version };
+    const candidate = fingerprint(bytes, resolved);
+    const inputDigest = yield* tarballInputDigest(bytes).pipe(Effect.mapError((error) => new CandidatePackError({ operation: "fingerprint", detail: error.message })));
+    return { ...candidate, form: "tarball" as const, ...(inputDigest === undefined ? {} : { inputDigest }) };
   });
 }
 

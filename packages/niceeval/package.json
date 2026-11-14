@@ -16,6 +16,7 @@
   },
   "exports": {
     ".": {
+      "niceeval-source": "./src/index.ts",
       "import": {
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
@@ -26,6 +27,7 @@
       }
     },
     "./judge": {
+      "niceeval-source": "./src/judge/index.ts",
       "import": {
         "types": "./dist/judge/index.d.mts",
         "default": "./dist/judge/index.mjs"
@@ -36,6 +38,7 @@
       }
     },
     "./sandbox": {
+      "niceeval-source": "./src/sandbox/index.ts",
       "import": {
         "types": "./dist/sandbox/index.d.mts",
         "default": "./dist/sandbox/index.mjs"
@@ -46,6 +49,7 @@
       }
     },
     "./sandbox/e2b-template": {
+      "niceeval-source": "./src/sandbox/e2b-agent-template.ts",
       "import": {
         "types": "./dist/sandbox/e2b-agent-template.d.mts",
         "default": "./dist/sandbox/e2b-agent-template.mjs"
@@ -56,6 +60,7 @@
       }
     },
     "./adapter": {
+      "niceeval-source": "./src/agents/index.ts",
       "import": {
         "types": "./dist/agents/index.d.mts",
         "default": "./dist/agents/index.mjs"
@@ -66,6 +71,7 @@
       }
     },
     "./adapter/otel": {
+      "niceeval-source": "./src/agents/ai-sdk-otel.ts",
       "import": {
         "types": "./dist/agents/ai-sdk-otel.d.mts",
         "default": "./dist/agents/ai-sdk-otel.mjs"
@@ -76,6 +82,7 @@
       }
     },
     "./plugin": {
+      "niceeval-source": "./src/plugin/index.ts",
       "import": {
         "types": "./dist/plugin/index.d.mts",
         "default": "./dist/plugin/index.mjs"
@@ -86,6 +93,7 @@
       }
     },
     "./expect": {
+      "niceeval-source": "./src/expect/index.ts",
       "import": {
         "types": "./dist/expect/index.d.mts",
         "default": "./dist/expect/index.mjs"
@@ -96,6 +104,7 @@
       }
     },
     "./reporters": {
+      "niceeval-source": "./src/runner/reporters/index.ts",
       "import": {
         "types": "./dist/runner/reporters/index.d.mts",
         "default": "./dist/runner/reporters/index.mjs"
@@ -106,6 +115,7 @@
       }
     },
     "./loaders": {
+      "niceeval-source": "./src/loaders/index.ts",
       "import": {
         "types": "./dist/loaders/index.d.mts",
         "default": "./dist/loaders/index.mjs"
@@ -116,6 +126,7 @@
       }
     },
     "./eval/host": {
+      "niceeval-source": "./src/eval/host/index.ts",
       "import": {
         "types": "./dist/eval/host/index.d.mts",
         "default": "./dist/eval/host/index.mjs"
@@ -126,6 +137,7 @@
       }
     },
     "./experiment/host": {
+      "niceeval-source": "./src/experiment/host/index.ts",
       "import": {
         "types": "./dist/experiment/host/index.d.mts",
         "default": "./dist/experiment/host/index.mjs"
@@ -136,6 +148,7 @@
       }
     },
     "./coordination/host": {
+      "niceeval-source": "./src/coordination/host/index.ts",
       "import": {
         "types": "./dist/coordination/host/index.d.mts",
         "default": "./dist/coordination/host/index.mjs"
@@ -146,6 +159,7 @@
       }
     },
     "./run/host": {
+      "niceeval-source": "./src/run/host/index.ts",
       "import": {
         "types": "./dist/run/host/index.d.mts",
         "default": "./dist/run/host/index.mjs"
@@ -156,6 +170,7 @@
       }
     },
     "./run": {
+      "niceeval-source": "./src/run/index.ts",
       "import": {
         "types": "./dist/run/index.d.mts",
         "default": "./dist/run/index.mjs"
@@ -166,6 +181,7 @@
       }
     },
     "./inspection": {
+      "niceeval-source": "./src/inspection/public.ts",
       "import": {
         "types": "./dist/inspection/public.d.mts",
         "default": "./dist/inspection/public.mjs"
@@ -176,6 +192,7 @@
       }
     },
     "./view": {
+      "niceeval-source": "./src/view/index.ts",
       "import": {
         "types": "./dist/view/index.d.mts",
         "default": "./dist/view/index.mjs"
@@ -186,6 +203,7 @@
       }
     },
     "./project/host": {
+      "niceeval-source": "./src/project/host/index.ts",
       "import": {
         "types": "./dist/project/host/index.d.mts",
         "default": "./dist/project/host/index.mjs"

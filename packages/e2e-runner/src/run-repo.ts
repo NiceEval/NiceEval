@@ -1,6 +1,7 @@
 // One Scope-owned isolated repository run. Operational filesystem and process
 // faults are typed failures; failed user commands remain receipt data.
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { basename, join, relative, resolve } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Result, Scope } from "effect";
@@ -248,6 +249,7 @@ export const copyRepoIsolated = (
 export const pointAtCandidateTarball = (
   copyDir: string,
   tarball: string,
+  form: "file" | "link" = "file",
 ): Effect.Effect<void, RepoRunError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const path = join(copyDir, "package.json");
@@ -267,7 +269,7 @@ export const pointAtCandidateTarball = (
         typeof deps === "object" &&
         Object.hasOwn(deps as object, "niceeval")
       ) {
-        (deps as Record<string, string>).niceeval = `file:${tarball}`;
+        (deps as Record<string, string>).niceeval = `${form}:${tarball}`;
         found = true;
       }
     }
@@ -457,7 +459,8 @@ export const runRepoEffect = (
         "repo durable artifact directory",
       ),
     );
-    const tarball = yield* durable(
+    const linked = candidate.form === "source" || candidate.form === "built";
+    const tarball = linked ? candidate.path : yield* durable(
       id,
       assertContainedRegularFile(
         durableRoot,
@@ -465,12 +468,25 @@ export const runRepoEffect = (
         "durable candidate artifact",
       ),
     );
-    const baseEnv = buildChildEnv(
+    const sourceOptions = candidate.form === "source" ? yield* fs(id, "run", service => service.readFileString(join(candidate.path, "package.json"))).pipe(Effect.flatMap(text => Effect.try({
+      try: () => {
+        const pkg = JSON.parse(text) as { exports: Record<string, { "niceeval-source": string }> };
+        const aliases = Object.fromEntries(Object.entries(pkg.exports).map(([name, entry]) => [name === "." ? "niceeval" : `niceeval/${name.slice(2)}`, resolve(candidate.path, entry["niceeval-source"])]));
+        return {
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --import ${createRequire(import.meta.url).resolve("tsx")}`.trim(),
+          // Jiti's resolver does not consume Node's custom export conditions.
+          // Resolve the same public entries to source for project discovery.
+          JITI_ALIAS: JSON.stringify({ ...JSON.parse(process.env.JITI_ALIAS ?? "{}"), ...aliases }),
+        };
+      },
+      catch: cause => problem(id, "run", cause),
+    }))) : {};
+    const baseEnv = { ...buildChildEnv(
       process.env,
       allSecretNames,
       repo.manifest.secrets,
       id,
-    );
+    ), ...sourceOptions };
     const setup = invocationIds[0]!;
     const preflight = yield* preflightHostCapabilities(
       repo.manifest,
@@ -547,7 +563,7 @@ export const runRepoEffect = (
             : `prepare failed: ${violations.join("; ")}`,
       });
       if (violations.length === 0) {
-        yield* pointAtCandidateTarball(copy, tarball);
+        yield* pointAtCandidateTarball(copy, tarball, linked ? "link" : "file");
         if (testkit !== undefined && consumesTestkit) {
           yield* verifyTestkitSnapshot(testkit).pipe(
             Effect.mapError((cause) => problem(id, "run", cause)),
@@ -596,7 +612,9 @@ export const runRepoEffect = (
               const lockText = yield* fs(id, "run", (service) =>
                 service.readFileString(join(copy, "pnpm-lock.yaml")),
               );
-              const candidateVerdict = verifyInjection(
+              const installedRoot = yield* fs(id, "run", (service) => service.realPath(join(copy, "node_modules/niceeval")));
+              if (linked && installedRoot !== candidate.path) return { ok: false as const, detail: `linked candidate resolved to ${installedRoot}, expected ${candidate.path}` };
+              const candidateVerdict = linked ? { ok: true as const } : verifyInjection(
                 lockText,
                 candidate.integrity,
               );
@@ -610,7 +628,7 @@ export const runRepoEffect = (
               ]);
               // Compare physical paths on every host, while rejecting symlinks below the copy root.
               const virtualStore = yield* assertContainedRealDirectory(copy, join(copy, "node_modules", ".pnpm"), "isolated pnpm virtual store");
-              if (!effectRealPath.startsWith(`${virtualStore}/`))
+              if (!linked && !effectRealPath.startsWith(`${virtualStore}/`))
                 return { ok: false as const, detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}` };
               if (!/"version"\s*:\s*"4\.1\.3"/.test(effectPackage))
                 return { ok: false as const, detail: `Effect resolution is not effect@4.1.3: ${effectRealPath}` };
@@ -642,7 +660,7 @@ export const runRepoEffect = (
           const injectionDetail =
             injection._tag === "Success"
               ? injection.value.ok
-                ? "candidate integrity matches lockfile"
+                ? linked ? "candidate link realpath verified" : "candidate integrity matches lockfile"
                 : `injection verification failed: ${injection.value.detail}`
               : `injection verification failed: ${formatCause(injection.cause)}`;
           stage(stages, {
@@ -837,10 +855,12 @@ export const runRepoEffect = (
       category: classified.category,
       detail: classified.detail,
       candidate: {
+        form: candidate.form ?? "tarball",
+        ...(candidate.inputDigest === undefined ? {} : { inputDigest: candidate.inputDigest }),
         sha256: candidate.sha256,
         integrity: candidate.integrity,
-        ...(retained ? { artifactPath: relative(durableRoot, tarball) } : {}),
-        reproduce: [
+        ...(!linked && retained ? { artifactPath: relative(durableRoot, tarball) } : {}),
+        reproduce: linked ? ["pnpm", "e2e", "test", "--candidate", candidate.form, "--repo", id].join(" ") : [
           "pnpm",
           "e2e",
           "run",
@@ -849,7 +869,7 @@ export const runRepoEffect = (
           "--repo",
           id,
         ].join(" "),
-        exactReplay: retained,
+        exactReplay: !linked && retained,
       },
       ...(testkitReceipt === undefined ? {} : { testkit: testkitReceipt }),
     };

@@ -26,6 +26,7 @@
       "metadata": {
         "niceeval": {
           "schemaVersion": 3,
+          "candidate": "built",
           "batch": "browser-1",
           "areas": [
             "insight"
