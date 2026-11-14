@@ -15,11 +15,16 @@ export interface AgentJudgeDefinition {
 }
 declare const agentJudgeBrand: unique symbol;
 /** Immutable reviewer created by defineAgentJudge. Open a conversation with t.agentJudge. */
-export interface AgentJudge { readonly [agentJudgeBrand]: true }
+export interface AgentJudge {
+  readonly [agentJudgeBrand]: true;
+}
 /** Queues conversational messages and independently scored questions in author order. */
 export interface AgentJudgeReview<Kind extends import("./api.ts").AssertionEvaluationKind = "pass" | "score"> {
   judge(criterion: string): import("./api.ts").MeasurementAssertionHandle<Kind>;
-  grade(prompt: string, options: { readonly anchors: readonly JudgeAnchor[] }): import("./api.ts").MeasurementAssertionHandle<Kind>;
+  grade(
+    prompt: string,
+    options: { readonly anchors: readonly JudgeAnchor[] },
+  ): import("./api.ts").MeasurementAssertionHandle<Kind>;
   chat(message: string): void;
 }
 export interface NormalizedAgentJudge {
@@ -40,9 +45,11 @@ function dataObject(value: unknown, label: string, allowed?: readonly string[]):
   if (!Predicate.isObject(value) || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
   const result: Record<string, unknown> = Object.create(null);
   for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string" || allowed !== undefined && !allowed.includes(key)) throw new TypeError(`${label} has unknown option ${String(key)}`);
+    if (typeof key !== "string" || (allowed !== undefined && !allowed.includes(key)))
+      throw new TypeError(`${label} has unknown option ${String(key)}`);
     const property = Reflect.getOwnPropertyDescriptor(value, key);
-    if (property === undefined || !("value" in property)) throw new TypeError(`${label}.${key} must be a data property`);
+    if (property === undefined || !("value" in property))
+      throw new TypeError(`${label}.${key} must be a data property`);
     result[key] = property.value;
   }
   return result;
@@ -50,36 +57,57 @@ function dataObject(value: unknown, label: string, allowed?: readonly string[]):
 
 function positive(value: unknown, fallback: number, label: string): number {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) throw new TypeError(`${label} must be a positive safe integer`);
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+    throw new TypeError(`${label} must be a positive safe integer`);
   return value;
 }
 
 /** Defines an immutable reviewer; questions and score policies are registered at the call site. */
 export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
-  const input = dataObject(definition, "defineAgentJudge() options", ["instructions", "maxTurns", "timeoutMs", "maxMaterialBytes"]);
-  managedScoreMatchOf(defineJudge({
-    rubric: "Review the requested question using Sandbox evidence.",
-    ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: input.maxMaterialBytes as number }),
-  }))!;
-  if (input.instructions !== undefined && (typeof input.instructions !== "string" || input.instructions.trim() === "" || new TextEncoder().encode(input.instructions).byteLength > 8192)) {
+  const input = dataObject(definition, "defineAgentJudge() options", [
+    "instructions",
+    "maxTurns",
+    "timeoutMs",
+    "maxMaterialBytes",
+  ]);
+  managedScoreMatchOf(
+    defineJudge({
+      rubric: "Review the requested question using Sandbox evidence.",
+      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: input.maxMaterialBytes as number }),
+    }),
+  )!;
+  if (
+    input.instructions !== undefined &&
+    (typeof input.instructions !== "string" ||
+      input.instructions.trim() === "" ||
+      new TextEncoder().encode(input.instructions).byteLength > 8192)
+  ) {
     throw new TypeError("Agent Judge instructions must be non-empty and at most 8192 UTF-8 bytes");
   }
   const normalized: NormalizedAgentJudge = Object.freeze({
-    instructions: input.instructions as string | undefined ?? "",
+    instructions: (input.instructions as string | undefined) ?? "",
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),
-    ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positive(input.maxMaterialBytes, 1, "Agent Judge maxMaterialBytes") }),
+    ...(input.maxMaterialBytes === undefined
+      ? {}
+      : { maxMaterialBytes: positive(input.maxMaterialBytes, 1, "Agent Judge maxMaterialBytes") }),
   });
   const reviewer = Object.freeze({}) as AgentJudge;
   definitions.set(reviewer, normalized);
   return reviewer;
 }
 /** @internal Validates the question and snapshots explicit grade anchors. */
-export function agentJudgeQuestion(kind: "judge" | "grade", prompt: string, options?: { readonly anchors: readonly JudgeAnchor[] }) {
+export function agentJudgeQuestion(
+  kind: "judge" | "grade",
+  prompt: string,
+  options?: { readonly anchors: readonly JudgeAnchor[] },
+) {
   const input = options === undefined ? {} : dataObject(options, "Agent Judge question options", ["anchors"]);
   if (kind === "grade" && input.anchors === undefined) throw new TypeError("Agent Judge grade requires anchors");
   if (kind === "judge" && options !== undefined) throw new TypeError("Agent Judge judge accepts only a criterion");
-  const definition = managedScoreMatchOf(defineJudge({ rubric: prompt, ...(kind === "grade" ? { anchors: input.anchors as readonly JudgeAnchor[] } : {}) }))!;
+  const definition = managedScoreMatchOf(
+    defineJudge({ rubric: prompt, ...(kind === "grade" ? { anchors: input.anchors as readonly JudgeAnchor[] } : {}) }),
+  )!;
   const config = definition.config as unknown as { readonly rubric: string; readonly anchors: readonly JudgeAnchor[] };
   return { rubric: config.rubric, anchors: kind === "grade" ? config.anchors : null };
 }

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
 import {
   defineJudge,
-  readJudgeResponseCapped,
+  requestScoreMatchProvider,
 } from "./judge.ts";
 
 import { defineScoreMatch, managedScoreMatchOf, type ScoreMatchContext } from "./match.ts";
@@ -283,6 +283,10 @@ describe("Judge Effect lifecycle", () => {
   });
 
   test("caps response bytes before JSON decoding", async () => {
-    await expect(readJudgeResponseCapped(new Response("x".repeat(33)), 32).then((response) => response.text())).rejects.toThrow("byte cap");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("x".repeat(33))));
+    await expect(requestScoreMatchProvider({
+      baseUrl: "https://judge.example/v1", endpoint: "chat/completions", apiKey: "fixture-only",
+      body: "{}", maxBytes: 32, signal: new AbortController().signal,
+    })).rejects.toThrow("byte cap");
   });
 });

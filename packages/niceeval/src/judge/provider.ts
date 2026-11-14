@@ -25,12 +25,13 @@ export interface JudgeProviderSettings {
 }
 
 /** Configures a managed Chat Completions Judge; image support requires explicit opt-in and a model that supports images and forced tool output. */
-export type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
-  readonly maxOutputTokens?: number;
-  /** Context tokens for pi coding-agent sessions; omitted values use the built-in model catalog. */
-  readonly contextWindow?: number;
-  readonly supportsImages?: boolean;
-};
+export type ChatJudgeProviderOptions = JudgeProviderSettings &
+  JudgeCredentials & {
+    readonly maxOutputTokens?: number;
+    /** Context tokens for pi coding-agent sessions; omitted values use the built-in model catalog. */
+    readonly contextWindow?: number;
+    readonly supportsImages?: boolean;
+  };
 
 /** Configures TypeSafe System One credentials and execution limits; maxOutputTokens is not supported by this protocol. */
 export type TypesafeProviderOptions = JudgeProviderSettings & JudgeCredentials;
@@ -40,9 +41,7 @@ export interface JudgeProviderIdentity {
   readonly provider: "openai" | "vercel" | "openrouter" | "typesafe";
   readonly model: string;
   readonly baseUrl: string;
-  readonly credential:
-    | { readonly kind: "inline" }
-    | { readonly kind: "environment"; readonly name: string };
+  readonly credential: { readonly kind: "inline" } | { readonly kind: "environment"; readonly name: string };
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly supportsImages?: boolean;
@@ -73,7 +72,8 @@ function exactOptions(value: unknown, label: string, allowed: readonly string[])
   if (!Predicate.isObject(value) || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
   const captured: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string" || !allowed.includes(key)) throw new TypeError(`${label} has unknown option ${String(key)}`);
+    if (typeof key !== "string" || !allowed.includes(key))
+      throw new TypeError(`${label} has unknown option ${String(key)}`);
     const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
       throw new TypeError(`${label}.${key} must be an enumerable data property`);
@@ -84,7 +84,12 @@ function exactOptions(value: unknown, label: string, allowed: readonly string[])
 }
 
 function boundedText(value: unknown, label: string, maximumBytes: number): string {
-  if (typeof value !== "string" || value.trim() === "" || utf8.encode(value).byteLength > maximumBytes || /\p{Cc}/u.test(value)) {
+  if (
+    typeof value !== "string" ||
+    value.trim() === "" ||
+    utf8.encode(value).byteLength > maximumBytes ||
+    /\p{Cc}/u.test(value)
+  ) {
     throw new TypeError(`${label} must be non-empty, control-free, and at most ${maximumBytes} UTF-8 bytes`);
   }
   return value;
@@ -106,7 +111,13 @@ function normalizedBaseUrl(value: unknown, fallback: string, label: string): str
   } catch {
     throw new TypeError(`${label} must be an absolute http(s) URL without userinfo, query, or fragment`);
   }
-  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username !== "" || parsed.password !== "" || parsed.search !== "" || parsed.hash !== "") {
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  ) {
     throw new TypeError(`${label} must be an absolute http(s) URL without userinfo, query, or fragment`);
   }
   const pathname = parsed.pathname.replace(/\/+$/u, "");
@@ -115,7 +126,8 @@ function normalizedBaseUrl(value: unknown, fallback: string, label: string): str
 
 function environmentName(value: unknown, fallback: string, label: string): string {
   const candidate = value === undefined ? fallback : boundedText(value, label, 8 * 1024);
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(candidate)) throw new TypeError(`${label} must be an environment variable name`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(candidate))
+    throw new TypeError(`${label} must be an environment variable name`);
   return candidate;
 }
 
@@ -156,16 +168,30 @@ function createProvider(
   protocolKind: "chat-completions" | "typesafe-system-one",
 ): JudgeProvider {
   const label = `${provider === "typesafe" ? "Typesafe" : provider === "openai" ? "OpenAI" : provider === "openrouter" ? "OpenRouter" : "Vercel"}Provider() options`;
-  const allowed = protocolKind === "chat-completions"
-    ? ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxOutputTokens", "contextWindow", "supportsImages", "headers"]
-    : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "headers"];
+  const allowed =
+    protocolKind === "chat-completions"
+      ? [
+          "model",
+          "baseUrl",
+          "apiKey",
+          "apiKeyEnv",
+          "timeoutMs",
+          "maxResponseBytes",
+          "maxOutputTokens",
+          "contextWindow",
+          "supportsImages",
+          "headers",
+        ]
+      : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "headers"];
   const input = exactOptions(raw, label, allowed);
   const model = boundedText(input.model, `${label}.model`, 8 * 1024);
   const baseUrl = normalizedBaseUrl(input.baseUrl, defaults[provider].baseUrl, `${label}.baseUrl`);
   const timeoutMs = positiveInteger(input.timeoutMs, 180_000, `${label}.timeoutMs`, Number.MAX_SAFE_INTEGER);
   const maxResponseBytes = positiveInteger(input.maxResponseBytes, 16_384, `${label}.maxResponseBytes`, 256 * 1024);
-  if (input.supportsImages !== undefined && typeof input.supportsImages !== "boolean") throw new TypeError(`${label}.supportsImages must be boolean`);
-  if (input.apiKey !== undefined && input.apiKeyEnv !== undefined) throw new TypeError(`${label}.apiKey and apiKeyEnv are mutually exclusive`);
+  if (input.supportsImages !== undefined && typeof input.supportsImages !== "boolean")
+    throw new TypeError(`${label}.supportsImages must be boolean`);
+  if (input.apiKey !== undefined && input.apiKeyEnv !== undefined)
+    throw new TypeError(`${label}.apiKey and apiKeyEnv are mutually exclusive`);
 
   const parsedHeaders = normalizeHeaders(input.headers, `${label}.headers`);
   const effectiveHeaders: Record<string, string> = { ...(parsedHeaders ?? {}) };
@@ -182,7 +208,8 @@ function createProvider(
   let credential: JudgeProviderIdentity["credential"];
   let resolveCredential: () => string | undefined;
   if (input.apiKey !== undefined) {
-    if (typeof input.apiKey !== "string" || input.apiKey.length === 0) throw new TypeError(`${label}.apiKey must be a non-empty string`);
+    if (typeof input.apiKey !== "string" || input.apiKey.length === 0)
+      throw new TypeError(`${label}.apiKey must be a non-empty string`);
     const apiKey = input.apiKey;
     credential = Object.freeze({ kind: "inline" as const });
     resolveCredential = () => apiKey;
@@ -192,13 +219,19 @@ function createProvider(
     resolveCredential = () => process.env[name];
   }
 
-  const protocol = protocolKind === "chat-completions"
-    ? Object.freeze({
-        kind: "chat-completions" as const,
-        revision: 1 as const,
-        maxOutputTokens: positiveInteger(input.maxOutputTokens, 1_024, `${label}.maxOutputTokens`, Number.MAX_SAFE_INTEGER),
-      })
-    : Object.freeze({ kind: "typesafe-system-one" as const, revision: 1 as const });
+  const protocol =
+    protocolKind === "chat-completions"
+      ? Object.freeze({
+          kind: "chat-completions" as const,
+          revision: 1 as const,
+          maxOutputTokens: positiveInteger(
+            input.maxOutputTokens,
+            1_024,
+            `${label}.maxOutputTokens`,
+            Number.MAX_SAFE_INTEGER,
+          ),
+        })
+      : Object.freeze({ kind: "typesafe-system-one" as const, revision: 1 as const });
   const identity = freezeIdentity({
     provider,
     model,
@@ -208,11 +241,18 @@ function createProvider(
     maxResponseBytes,
     protocol,
     ...(headers !== undefined ? { headers } : {}),
-    ...(input.contextWindow === undefined ? {} : { contextWindow: positiveInteger(input.contextWindow, 1, `${label}.contextWindow`, Number.MAX_SAFE_INTEGER) }),
+    ...(input.contextWindow === undefined
+      ? {}
+      : { contextWindow: positiveInteger(input.contextWindow, 1, `${label}.contextWindow`, Number.MAX_SAFE_INTEGER) }),
     ...(input.supportsImages === true ? { supportsImages: true } : {}),
   });
   const value = Object.create(null) as Record<PropertyKey, unknown>;
-  Object.defineProperty(value, judgeProviderBrand, { value: true, enumerable: false, writable: false, configurable: false });
+  Object.defineProperty(value, judgeProviderBrand, {
+    value: true,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
   const frozen = Object.freeze(value) as unknown as JudgeProvider;
   providerPrivate.set(frozen, Object.freeze({ identity, credential: resolveCredential }));
   return frozen;

@@ -4,10 +4,15 @@
 // @concord-implements docs/feature/judge/use-case/verify-judge.md
 // @concord-implements docs/feature/judge/use-case/binary-criteria.md
 // @concord-implements docs/feature/eval/use-case/judge-quality.md
+import { binaryJudgeRubric } from "./judge-presets.prompt.ts";
 // Native LLM-as-Judge evaluator. Definition and material capture are pure;
 // provider I/O, timeout, retry, and interruption stay in the owning Effect.
 
-import { conversationMaterialOf, copyConversationProjection, trimConversationMaterial } from "./conversation-material.ts";
+import {
+  conversationMaterialOf,
+  copyConversationProjection,
+  trimConversationMaterial,
+} from "./conversation-material.ts";
 import { Effect, Predicate } from "effect";
 import { defineScoreMatch, type ScoreMatch } from "./match.ts";
 import type { JsonValue } from "../shared/types.ts";
@@ -37,66 +42,118 @@ const DEFAULT_ANCHORS = Object.freeze([
   Object.freeze({ measurement: 1, description: "Fully satisfies the rubric." }),
 ]);
 
-function utf8Bytes(value: string): number { return UTF8.encode(value).byteLength; }
-function compareCodeUnits(left: string, right: string): number { return left < right ? -1 : left > right ? 1 : 0; }
+function utf8Bytes(value: string): number {
+  return UTF8.encode(value).byteLength;
+}
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 function exactDataObject(value: unknown, label: string, keys: readonly string[]): Readonly<Record<string, unknown>> {
   if (!Predicate.isObject(value) || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
   let ownKeys: readonly PropertyKey[];
-  try { ownKeys = Reflect.ownKeys(value); } catch { throw new TypeError(`${label} cannot be reflected`); }
+  try {
+    ownKeys = Reflect.ownKeys(value);
+  } catch {
+    throw new TypeError(`${label} cannot be reflected`);
+  }
   const captured: Array<readonly [string, unknown]> = [];
   for (const key of ownKeys) {
-    if (typeof key !== "string" || !keys.includes(key)) throw new TypeError(`${label} has unknown option ${String(key)}`);
+    if (typeof key !== "string" || !keys.includes(key))
+      throw new TypeError(`${label} has unknown option ${String(key)}`);
     let descriptor: PropertyDescriptor | undefined;
-    try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError(`${label}.${key} cannot be reflected`); }
-    if (descriptor === undefined || !("value" in descriptor)) throw new TypeError(`${label}.${key} must be a data property`);
+    try {
+      descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+    } catch {
+      throw new TypeError(`${label}.${key} cannot be reflected`);
+    }
+    if (descriptor === undefined || !("value" in descriptor))
+      throw new TypeError(`${label}.${key} must be a data property`);
     captured.push([key, descriptor.value]);
   }
   return Object.freeze(Object.fromEntries(captured));
 }
 function boundedText(value: unknown, label: string, maximumBytes: number, controlFree = false): string {
-  if (typeof value !== "string" || value.trim().length === 0 || utf8Bytes(value) > maximumBytes || controlFree && /\p{Cc}/u.test(value)) {
-    throw new TypeError(`${label} must be non-empty and at most ${maximumBytes} UTF-8 bytes${controlFree ? " without control characters" : ""}`);
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    utf8Bytes(value) > maximumBytes ||
+    (controlFree && /\p{Cc}/u.test(value))
+  ) {
+    throw new TypeError(
+      `${label} must be non-empty and at most ${maximumBytes} UTF-8 bytes${controlFree ? " without control characters" : ""}`,
+    );
   }
   return value;
 }
 function positiveInteger(value: unknown, label: string, maximum: number): number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0 || value > maximum) throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
+  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0 || value > maximum)
+    throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
   return value;
 }
 
 /** Defines one immutable scoring standard and returns the managed Match itself. */
 export function defineJudge(options: JudgeOptions): JudgeDefinition {
-  const input = exactDataObject(options, "defineJudge() options", ["rubric", "anchors", "maxMaterialBytes", "maxCalls"]);
+  const input = exactDataObject(options, "defineJudge() options", [
+    "rubric",
+    "anchors",
+    "maxMaterialBytes",
+    "maxCalls",
+  ]);
   const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
   const rawAnchors = input.anchors ?? DEFAULT_ANCHORS;
-  if (!Array.isArray(rawAnchors) || rawAnchors.length < 2 || rawAnchors.length > 32) throw new TypeError("Judge anchors must contain between 2 and 32 entries");
+  if (!Array.isArray(rawAnchors) || rawAnchors.length < 2 || rawAnchors.length > 32)
+    throw new TypeError("Judge anchors must contain between 2 and 32 entries");
   let previous = -1;
   const anchors: JudgeAnchor[] = [];
   const anchorKeys = Reflect.ownKeys(rawAnchors);
-  if (anchorKeys.some((key) => key !== "length" && !(typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < rawAnchors.length))) {
+  if (
+    anchorKeys.some(
+      (key) =>
+        key !== "length" &&
+        !(typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < rawAnchors.length),
+    )
+  ) {
     throw new TypeError("Judge anchors cannot contain custom properties");
   }
   for (let index = 0; index < rawAnchors.length; index += 1) {
     const descriptor = Reflect.getOwnPropertyDescriptor(rawAnchors, String(index));
-    if (descriptor === undefined || !("value" in descriptor)) throw new TypeError(`Judge anchors[${index}] must be a data property`);
+    if (descriptor === undefined || !("value" in descriptor))
+      throw new TypeError(`Judge anchors[${index}] must be a data property`);
     const raw = descriptor.value;
     const anchor = exactDataObject(raw, `Judge anchors[${index}]`, ["measurement", "description"]);
     const measurement = anchor.measurement;
-    if (typeof measurement !== "number" || !Number.isFinite(measurement) || measurement < 0 || measurement > 1 || measurement <= previous) throw new TypeError("Judge anchors must be strictly increasing finite measurements in [0, 1]");
+    if (
+      typeof measurement !== "number" ||
+      !Number.isFinite(measurement) ||
+      measurement < 0 ||
+      measurement > 1 ||
+      measurement <= previous
+    )
+      throw new TypeError("Judge anchors must be strictly increasing finite measurements in [0, 1]");
     previous = measurement;
-    anchors.push(Object.freeze({ measurement, description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024) }));
+    anchors.push(
+      Object.freeze({
+        measurement,
+        description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024),
+      }),
+    );
   }
-  if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1) throw new TypeError("Judge anchors must include 0 and 1");
+  if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1)
+    throw new TypeError("Judge anchors must include 0 and 1");
   const definition = defineScoreMatch<unknown>({
     name: "rubric-judge",
     version: "1",
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
-      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
+      ...(input.maxMaterialBytes === undefined
+        ? {}
+        : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
     },
-    score: (material, context) => context.llm.score({ rubric, anchors, material: material as JudgeMaterial })
-      .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
+    score: (material, context) =>
+      context.llm
+        .score({ rubric, anchors, material: material as JudgeMaterial })
+        .pipe(Effect.map((result) => ({ state: "measured" as const, ...result }))),
   });
   return definition;
 }
@@ -109,14 +166,29 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
   return defineScoreMatch<unknown>({
     name: "binary-judge",
     version: "1",
-    config: { algorithm: "binary-classification", revision: 2, rubric, choices: [...choices], scores: { satisfied: 1, "not-satisfied": 0 } },
+    config: {
+      algorithm: "binary-classification",
+      revision: 2,
+      rubric,
+      choices: [...choices],
+      scores: { satisfied: 1, "not-satisfied": 0 },
+    },
     llm: {
-      ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
+      ...(input.maxMaterialBytes === undefined
+        ? {}
+        : { maxMaterialBytes: positiveInteger(input.maxMaterialBytes, "Judge maxMaterialBytes", 4 * 1024 * 1024) }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
     },
-    score: (material, context) => context.llm.classify({ rubric: `Does the material satisfy this criterion? ${rubric} Select satisfied if it does, otherwise not-satisfied.`, choices, material: material as JudgeMaterial }).pipe(
-      Effect.map((result) => ({ state: "measured" as const, measurement: result.choice === "satisfied" ? 1 : 0, rationale: result.rationale })),
-    ),
+    score: (material, context) =>
+      context.llm
+        .classify({ rubric: binaryJudgeRubric(rubric), choices, material: material as JudgeMaterial })
+        .pipe(
+          Effect.map((result) => ({
+            state: "measured" as const,
+            measurement: result.choice === "satisfied" ? 1 : 0,
+            rationale: result.rationale,
+          })),
+        ),
   });
 }
 
@@ -129,7 +201,13 @@ export interface CapturedImageReference {
   readonly sha256: string;
   readonly paths: readonly string[];
 }
-interface SnapshotState { nodes: number; readonly ancestors: WeakSet<object>; readonly images?: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>; imageBytes?: number; imageReferences?: number; }
+interface SnapshotState {
+  nodes: number;
+  readonly ancestors: WeakSet<object>;
+  readonly images?: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>;
+  imageBytes?: number;
+  imageReferences?: number;
+}
 function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path = ""): unknown {
   const conversation = conversationMaterialOf(value);
   if (conversation !== undefined) return snapshotMaterial(conversation, state, depth, path);
@@ -141,9 +219,15 @@ function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path 
     const image = readJudgeImage(value);
     state.imageReferences = (state.imageReferences ?? 0) + 1;
     state.imageBytes = (state.imageBytes ?? 0) + image.byteLength;
-    if (state.imageReferences > 4 || state.imageBytes > 8 * 1024 * 1024) throw new TypeError("Judge material image budget exceeded");
+    if (state.imageReferences > 4 || state.imageBytes > 8 * 1024 * 1024)
+      throw new TypeError("Judge material image budget exceeded");
     const existing = state.images.get(value);
-    if (existing === undefined) state.images.set(value, { imageId: `image-${state.images.size}`, evidenceIndex: state.images.size, paths: [path] });
+    if (existing === undefined)
+      state.images.set(value, {
+        imageId: `image-${state.images.size}`,
+        evidenceIndex: state.images.size,
+        paths: [path],
+      });
     else existing.paths.push(path);
     return value;
   }
@@ -152,61 +236,133 @@ function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path 
     if (!Number.isFinite(value)) throw new TypeError("Judge material numbers must be finite");
     return Object.is(value, -0) ? 0 : value;
   }
-  if (typeof value !== "object" || value === null || value instanceof Date || value instanceof RegExp) throw new TypeError(`Judge material cannot contain ${typeof value}`);
+  if (typeof value !== "object" || value === null || value instanceof Date || value instanceof RegExp)
+    throw new TypeError(`Judge material cannot contain ${typeof value}`);
   if (state.ancestors.has(value)) throw new TypeError("Judge material cannot contain an ancestor cycle");
   state.ancestors.add(value);
   try {
     if (Array.isArray(value)) {
       let keys: readonly PropertyKey[];
-      try { keys = Reflect.ownKeys(value); } catch { throw new TypeError("Judge material array reflection failed"); }
+      try {
+        keys = Reflect.ownKeys(value);
+      } catch {
+        throw new TypeError("Judge material array reflection failed");
+      }
       for (const key of keys) {
-        if (key === "length" || typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length) continue;
+        if (
+          key === "length" ||
+          (typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length)
+        )
+          continue;
         let descriptor: PropertyDescriptor | undefined;
-        try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError("Judge material array reflection failed"); }
-        if (descriptor?.enumerable) throw new TypeError("Judge material arrays cannot contain extra enumerable properties or toJSON");
+        try {
+          descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+        } catch {
+          throw new TypeError("Judge material array reflection failed");
+        }
+        if (descriptor?.enumerable)
+          throw new TypeError("Judge material arrays cannot contain extra enumerable properties or toJSON");
       }
       const entries: unknown[] = [];
       for (let index = 0; index < value.length; index += 1) {
         let descriptor: PropertyDescriptor | undefined;
-        try { descriptor = Reflect.getOwnPropertyDescriptor(value, String(index)); } catch { throw new TypeError("Judge material array reflection failed"); }
-        if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined) throw new TypeError("Judge material arrays cannot contain holes, accessors, or undefined");
+        try {
+          descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
+        } catch {
+          throw new TypeError("Judge material array reflection failed");
+        }
+        if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined)
+          throw new TypeError("Judge material arrays cannot contain holes, accessors, or undefined");
         entries.push(snapshotMaterial(descriptor.value, state, depth + 1, `${path}/${index}`));
       }
       return Object.freeze(entries);
     }
     let prototype: object | null;
-    try { prototype = Reflect.getPrototypeOf(value); } catch { throw new TypeError("Judge material prototype reflection failed"); }
-    if (prototype !== Object.prototype && prototype !== null) throw new TypeError("Judge material objects must be plain or null-prototype objects");
+    try {
+      prototype = Reflect.getPrototypeOf(value);
+    } catch {
+      throw new TypeError("Judge material prototype reflection failed");
+    }
+    if (prototype !== Object.prototype && prototype !== null)
+      throw new TypeError("Judge material objects must be plain or null-prototype objects");
     let keys: readonly PropertyKey[];
-    try { keys = Reflect.ownKeys(value); } catch { throw new TypeError("Judge material key reflection failed"); }
+    try {
+      keys = Reflect.ownKeys(value);
+    } catch {
+      throw new TypeError("Judge material key reflection failed");
+    }
     const entries: Array<readonly [string, unknown]> = [];
     for (const key of keys) {
       let descriptor: PropertyDescriptor | undefined;
-      try { descriptor = Reflect.getOwnPropertyDescriptor(value, key); } catch { throw new TypeError("Judge material property reflection failed"); }
+      try {
+        descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+      } catch {
+        throw new TypeError("Judge material property reflection failed");
+      }
       if (descriptor === undefined || !descriptor.enumerable) continue;
-      if (typeof key !== "string" || !("value" in descriptor)) throw new TypeError("Judge material enumerable properties must be string data properties");
-      if (descriptor.value !== undefined) entries.push([key, snapshotMaterial(descriptor.value, state, depth + 1, `${path}/${key.replace(/~/gu, "~0").replace(/\//gu, "~1")}`)]);
+      if (typeof key !== "string" || !("value" in descriptor))
+        throw new TypeError("Judge material enumerable properties must be string data properties");
+      if (descriptor.value !== undefined)
+        entries.push([
+          key,
+          snapshotMaterial(
+            descriptor.value,
+            state,
+            depth + 1,
+            `${path}/${key.replace(/~/gu, "~0").replace(/\//gu, "~1")}`,
+          ),
+        ]);
     }
-    const captured = Object.freeze(Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))));
+    const captured = Object.freeze(
+      Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))),
+    );
     copyConversationProjection(value, captured);
     return captured;
-  } finally { state.ancestors.delete(value); }
+  } finally {
+    state.ancestors.delete(value);
+  }
 }
 /** @internal Shared strict call-time capture for all managed Match material. */
 export function snapshotScoreMatchMaterial(value: unknown): JsonValue {
   return snapshotMaterial(value, { nodes: 0, ancestors: new WeakSet() }) as JsonValue;
 }
 
-export function snapshotJudgeMaterial(value: JudgeMaterial, maximumBytes = Infinity): { readonly material: JudgeMaterial; readonly images: readonly CapturedImageReference[]; readonly imageByValue: ReadonlyMap<JudgeImage, CapturedImageReference> } {
-  const state: SnapshotState = { nodes: 0, ancestors: new WeakSet(), images: new Map(), imageBytes: 0, imageReferences: 0 };
+export function snapshotJudgeMaterial(
+  value: JudgeMaterial,
+  maximumBytes = Infinity,
+): {
+  readonly material: JudgeMaterial;
+  readonly images: readonly CapturedImageReference[];
+  readonly imageByValue: ReadonlyMap<JudgeImage, CapturedImageReference>;
+} {
+  const state: SnapshotState = {
+    nodes: 0,
+    ancestors: new WeakSet(),
+    images: new Map(),
+    imageBytes: 0,
+    imageReferences: 0,
+  };
   const untrimmed = snapshotMaterial(value, state) as JudgeMaterial;
-  const images = [...state.images!.entries()].map(([image, identity]): CapturedImageReference => Object.freeze({ image, ...identity, ...((({ mediaType, byteLength, sha256 }) => ({ mediaType, byteLength, sha256 }))(readJudgeImage(image))), paths: Object.freeze([...identity.paths]) }));
+  const images = [...state.images!.entries()].map(
+    ([image, identity]): CapturedImageReference =>
+      Object.freeze({
+        image,
+        ...identity,
+        ...(({ mediaType, byteLength, sha256 }) => ({ mediaType, byteLength, sha256 }))(readJudgeImage(image)),
+        paths: Object.freeze([...identity.paths]),
+      }),
+  );
   const imageByValue = new Map(images.map((item) => [item.image, item]));
-  const material = trimConversationMaterial(untrimmed, maximumBytes, (item) => JSON.stringify(projectJudgeMaterial(item, imageByValue).json));
+  const material = trimConversationMaterial(untrimmed, maximumBytes, (item) =>
+    JSON.stringify(projectJudgeMaterial(item, imageByValue).json),
+  );
   return Object.freeze({ material, images: Object.freeze(images), imageByValue });
 }
 
-export function projectJudgeMaterial(value: JudgeMaterial, images: ReadonlyMap<JudgeImage, CapturedImageReference>): { readonly json: JsonValue; readonly parts: readonly CapturedImageReference[] } {
+export function projectJudgeMaterial(
+  value: JudgeMaterial,
+  images: ReadonlyMap<JudgeImage, CapturedImageReference>,
+): { readonly json: JsonValue; readonly parts: readonly CapturedImageReference[] } {
   const parts: CapturedImageReference[] = [];
   const visit = (item: JudgeMaterial): JsonValue => {
     if (isJudgeImage(item)) {
@@ -216,21 +372,29 @@ export function projectJudgeMaterial(value: JudgeMaterial, images: ReadonlyMap<J
       return `niceeval-image:${image.imageId}`;
     }
     if (Array.isArray(item)) return item.map(visit);
-    if (item !== null && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, child]) => [key, visit(child)]));
+    if (item !== null && typeof item === "object")
+      return Object.fromEntries(Object.entries(item).map(([key, child]) => [key, visit(child)]));
     return item as JsonValue;
   };
   const json = visit(value);
-  if (parts.length > 4 || parts.reduce((sum, image) => sum + image.byteLength, 0) > 8 * 1024 * 1024) throw new TypeError("LLM step image budget exceeded");
+  if (parts.length > 4 || parts.reduce((sum, image) => sum + image.byteLength, 0) > 8 * 1024 * 1024)
+    throw new TypeError("LLM step image budget exceeded");
   return { json, parts };
 }
 
 export function chunkUtf8(value: string): readonly string[] {
   const chunks: string[] = [];
-  let current = ""; let bytes = 0;
+  let current = "";
+  let bytes = 0;
   for (const point of value) {
     const size = utf8Bytes(point);
-    if (bytes + size > 4 * 1024) { chunks.push(current); current = ""; bytes = 0; }
-    current += point; bytes += size;
+    if (bytes + size > 4 * 1024) {
+      chunks.push(current);
+      current = "";
+      bytes = 0;
+    }
+    current += point;
+    bytes += size;
   }
   if (current !== "" || value === "") chunks.push(current);
   return Object.freeze(chunks);
@@ -306,8 +470,16 @@ function isConnectionFailure(error: unknown): boolean {
     const code = objectField(current, "code");
     if (name === "APIUserAbortError") return false;
     if (name === "APIConnectionError" || name === "APIConnectionTimeoutError") return true;
-    if (typeof code === "string" && /^(?:ECONN|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ETIMEDOUT|ERR_TLS)/i.test(code)) return true;
-    if (/fetch failed|socket hang up|connection (?:reset|closed|refused)|network error|other side closed|timed? out|timeout|\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\b/i.test(errorSummary(current))) {
+    if (
+      typeof code === "string" &&
+      /^(?:ECONN|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ETIMEDOUT|ERR_TLS)/i.test(code)
+    )
+      return true;
+    if (
+      /fetch failed|socket hang up|connection (?:reset|closed|refused)|network error|other side closed|timed? out|timeout|\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\b/i.test(
+        errorSummary(current),
+      )
+    ) {
       return true;
     }
     current = objectField(current, "cause");
@@ -354,21 +526,14 @@ export function interruptibleByCaller<A, E, R>(
 ): Effect.Effect<A, E, R> {
   if (signal === undefined) return effect;
   return Effect.suspend(() =>
-    signal.aborted
-      ? Effect.interrupt
-      : Effect.raceFirst(effect, interruptWhenAborted(signal)));
+    signal.aborted ? Effect.interrupt : Effect.raceFirst(effect, interruptWhenAborted(signal)),
+  );
 }
 
 class JudgeResponseTooLarge extends Error {}
 
 export function responseByteCap(maxOutputTokens: number): number {
   return Math.max(1_024, maxOutputTokens * RESPONSE_BYTES_PER_TOKEN);
-}
-
-/** @internal transport seam: cap bytes before any JSON parser observes them. */
-export async function readJudgeResponseCapped(response: Response, maxBytes: number): Promise<Response> {
-  const body = await readJudgeResponseText(response, maxBytes);
-  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
 async function readJudgeResponseText(
@@ -381,7 +546,10 @@ async function readJudgeResponseText(
   const advertised = response.headers.get("content-length");
   if (advertised !== null && Number(advertised) > maxBytes) {
     const cancellation = response.body?.cancel();
-    if (cancellation !== undefined) { usage?.trackCleanup(cancellation, deadlineAt); void cancellation.catch(() => undefined); }
+    if (cancellation !== undefined) {
+      usage?.trackCleanup(cancellation, deadlineAt);
+      void cancellation.catch(() => undefined);
+    }
     throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
   }
   if (response.body === null) return "";
@@ -389,7 +557,9 @@ async function readJudgeResponseText(
   let bytes = 0;
   let complete = false;
   let rejectAbort: (reason: unknown) => void = () => undefined;
-  const interrupted = new Promise<never>((_, reject) => { rejectAbort = reject; });
+  const interrupted = new Promise<never>((_, reject) => {
+    rejectAbort = reject;
+  });
   const abort = () => rejectAbort(new DOMException("Judge request cancelled", "AbortError"));
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
@@ -397,14 +567,20 @@ async function readJudgeResponseText(
   try {
     for (;;) {
       const next = await Promise.race([reader.read(), interrupted]);
-      if (next.done) { complete = true; break; }
+      if (next.done) {
+        complete = true;
+        break;
+      }
       bytes += next.value.byteLength;
       if (bytes > maxBytes) throw new JudgeResponseTooLarge("judge response exceeds the byte cap");
       chunks.push(next.value);
     }
     const joined = new Uint8Array(bytes);
     let offset = 0;
-    for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.byteLength; }
+    for (const chunk of chunks) {
+      joined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
     return new TextDecoder().decode(joined);
   } finally {
     signal?.removeEventListener("abort", abort);
@@ -441,8 +617,13 @@ export async function requestScoreMatchProvider(input: {
 }): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
   const deadlineAt = input.deadlineAt ?? Infinity;
   let resolveSettled: () => void = () => undefined;
-  const settled = new Promise<void>((resolve) => { resolveSettled = resolve; });
-  const cancel = () => { input.usage?.cancel(); input.usage?.trackCleanup(settled, deadlineAt); };
+  const settled = new Promise<void>((resolve) => {
+    resolveSettled = resolve;
+  });
+  const cancel = () => {
+    input.usage?.cancel();
+    input.usage?.trackCleanup(settled, deadlineAt);
+  };
   input.signal.addEventListener("abort", cancel, { once: true });
   const interrupted = abortWait(input.signal);
   let request: Promise<Response> | undefined;
@@ -455,7 +636,8 @@ export async function requestScoreMatchProvider(input: {
         Authorization: `Bearer ${input.apiKey}`,
         ...(input.headers ?? {}),
       },
-      body: input.body, signal: input.signal,
+      body: input.body,
+      signal: input.signal,
     });
     const response = await Promise.race([request, interrupted.promise]);
     received = true;
@@ -467,7 +649,10 @@ export async function requestScoreMatchProvider(input: {
     if (input.signal.aborted) input.usage?.cancel();
     else input.usage?.fail(error instanceof JudgeResponseTooLarge ? "response-too-large" : "response-unavailable");
     if (!received && request !== undefined) {
-      const cleanup = request.then((response) => response.body?.cancel(), () => undefined);
+      const cleanup = request.then(
+        (response) => response.body?.cancel(),
+        () => undefined,
+      );
       input.usage?.trackCleanup(cleanup, deadlineAt);
       void cleanup.catch(() => undefined);
     }

@@ -4,7 +4,7 @@ import type { AdapterAttachmentCollector } from "../runner/adapter-attachments.t
 import type { AdapterExecutionTraceCollector } from "../runner/adapter-execution-trace.ts";
 import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
 
-const Count = Schema.Number.check(Schema.makeFilter(value => Number.isSafeInteger(value) && value >= 0));
+const Count = Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0));
 export const SimulatedUserGenerationSchema = Schema.Struct({
   kind: Schema.Literals(["turn", "compaction"]),
   inputTokens: Schema.NullOr(Count),
@@ -35,10 +35,15 @@ export function decodeSimulatedUserActivity(input: unknown): SimulatedUserActivi
 }
 
 const retainedActivities = new WeakMap<import("../runner/types.ts").EvalResult, readonly SimulatedUserActivity[]>();
-export function retainSimulatedUserActivities(result: import("../runner/types.ts").EvalResult, activities: readonly SimulatedUserActivity[]): void {
+export function retainSimulatedUserActivities(
+  result: import("../runner/types.ts").EvalResult,
+  activities: readonly SimulatedUserActivity[],
+): void {
   if (activities.length > 0) retainedActivities.set(result, Object.freeze([...activities]));
 }
-export function simulatedUserActivitiesForResult(result: import("../runner/types.ts").EvalResult): readonly SimulatedUserActivity[] {
+export function simulatedUserActivitiesForResult(
+  result: import("../runner/types.ts").EvalResult,
+): readonly SimulatedUserActivity[] {
   return retainedActivities.get(result) ?? [];
 }
 
@@ -49,29 +54,67 @@ export async function captureSimulatedUserActivity(
   traces: AdapterExecutionTraceCollector,
 ): Promise<void> {
   const body = JSON.stringify(activity);
-  const artifact = await attachments.attach({ name: `${activity.id}.json`, mediaType: "application/json", body: {
-    async *stream() {
-      const bytes = new TextEncoder().encode(body);
-      for (let offset = 0; offset < bytes.byteLength; offset += 1024 * 1024) yield bytes.subarray(offset, offset + 1024 * 1024);
-    },
-  } });
-  const input: ExecutionTraceInput = {
-    traceId: activity.id, schema: { id: "niceeval.simulated-user/v1" },
-    collection: { state: "complete", limitations: [] }, scopes: [{ scopeId: activity.sourceTurnId, label: "Source Turn", boundary: { sessionId: activity.sessionId, turnId: activity.sourceTurnId } }], events: [{
-      key: activity.id, type: "simulated-user.reply",
-      source: { id: "niceeval.simulated-user" }, actor: { id: "simulated-user", label: "Simulated user" },
-      summary: activity.failure === null ? "Simulated user answered the Agent" : `Simulated user failed: ${activity.failure.reason}`,
-      scopeMemberships: [{ scopeId: activity.sourceTurnId, state: "included" }],
-      ...(activity.answer === null || displayTextHasForbiddenCharacter(activity.answer) ? {} : {
-        display: [{ kind: "code" as const, language: "json", text: [...activity.answer].slice(0, 1024).join("") }],
-      }),
-      payload: {
-        sessionId: activity.sessionId, sourceTurnId: activity.sourceTurnId, targetTurnId: activity.targetTurnId,
-        durationMs: activity.durationMs,
-        usage: activity.generations.map(generation => ({ inputTokens: generation.inputTokens, outputTokens: generation.outputTokens, costUSD: generation.costUSD })),
+  const artifact = await attachments.attach({
+    name: `${activity.id}.json`,
+    mediaType: "application/json",
+    body: {
+      async *stream() {
+        const bytes = new TextEncoder().encode(body);
+        for (let offset = 0; offset < bytes.byteLength; offset += 1024 * 1024)
+          yield bytes.subarray(offset, offset + 1024 * 1024);
       },
-      evidence: [{ key: "audit", label: "Simulated user requests, responses and answer", artifactId: artifact.artifactId, pointer: "" }],
-    }],
+    },
+  });
+  const input: ExecutionTraceInput = {
+    traceId: activity.id,
+    schema: { id: "niceeval.simulated-user/v1" },
+    collection: { state: "complete", limitations: [] },
+    scopes: [
+      {
+        scopeId: activity.sourceTurnId,
+        label: "Source Turn",
+        boundary: { sessionId: activity.sessionId, turnId: activity.sourceTurnId },
+      },
+    ],
+    events: [
+      {
+        key: activity.id,
+        type: "simulated-user.reply",
+        source: { id: "niceeval.simulated-user" },
+        actor: { id: "simulated-user", label: "Simulated user" },
+        summary:
+          activity.failure === null
+            ? "Simulated user answered the Agent"
+            : `Simulated user failed: ${activity.failure.reason}`,
+        scopeMemberships: [{ scopeId: activity.sourceTurnId, state: "included" }],
+        ...(activity.answer === null || displayTextHasForbiddenCharacter(activity.answer)
+          ? {}
+          : {
+              display: [
+                { kind: "code" as const, language: "json", text: [...activity.answer].slice(0, 1024).join("") },
+              ],
+            }),
+        payload: {
+          sessionId: activity.sessionId,
+          sourceTurnId: activity.sourceTurnId,
+          targetTurnId: activity.targetTurnId,
+          durationMs: activity.durationMs,
+          usage: activity.generations.map((generation) => ({
+            inputTokens: generation.inputTokens,
+            outputTokens: generation.outputTokens,
+            costUSD: generation.costUSD,
+          })),
+        },
+        evidence: [
+          {
+            key: "audit",
+            label: "Simulated user requests, responses and answer",
+            artifactId: artifact.artifactId,
+            pointer: "",
+          },
+        ],
+      },
+    ],
   };
   await traces.recordTrace(input);
 }

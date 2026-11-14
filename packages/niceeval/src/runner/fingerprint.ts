@@ -1,3 +1,8 @@
+import {
+  AGENT_JUDGE_ALGORITHM_REVISION,
+  AGENT_JUDGE_PROMPT_REVISION,
+  AGENT_JUDGE_TOOL_REVISION,
+} from "../assertions/agent-judge-revisions.ts";
 import { ORDINARY_JUDGE_IDENTITY_CHANGE, selectsOrdinaryJudge } from "./identity-domains.ts";
 // ProjectTarget planning: current eval sources + resolved configuration become
 // immutable input identities. Reuse is decided only by Frozen Record planning.
@@ -40,7 +45,7 @@ import { adapterIdentity } from "../adapter.ts";
 import { CURRENT_IDENTITY_DOMAINS, type IdentityRebuildInput } from "./identity-domains.ts";
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
 import { EXECUTION_DURATION_DOMAIN } from "../eval/record/eligibility.ts";
-import { resolveAgentJudgePi } from "../assertions/agent-judge-gateway.ts";
+import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
 import { resolveAttemptTimeout } from "./timeout.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
@@ -170,7 +175,10 @@ function fingerprintPreparedPair(
       return yield* Effect.fail(invariant("judge.agent-shared-sandbox: Agent Judge requires an exclusive Attempt Sandbox"));
     }
     const agentJudgeRuntime = selectsAgentJudge ? yield* Effect.sync(() => {
-      try { const runtime = resolveAgentJudgePi(); return { piCodingAgent: runtime.codingVersion, piAi: runtime.aiVersion }; }
+      try {
+        const runtime = resolvePiCodingAgent();
+        return { piCodingAgent: runtime.codingVersion, piAi: runtime.aiVersion };
+      }
       catch { return { piCodingAgent: "uninstalled", piAi: "uninstalled" }; }
     }) : undefined;
     const loaderData = yield* Effect.forEach(
@@ -199,7 +207,13 @@ function fingerprintPreparedPair(
     const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
     const payload = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
-      ...(selectsAgentJudge ? { agentJudge: { algorithm: 6, prompt: 2, tools: 3, scheduling: 1, ...agentJudgeRuntime } } : {}),
+      ...(selectsAgentJudge ? { agentJudge: {
+        algorithm: AGENT_JUDGE_ALGORITHM_REVISION,
+        prompt: AGENT_JUDGE_PROMPT_REVISION,
+        tools: AGENT_JUDGE_TOOL_REVISION,
+        scheduling: 1,
+        ...agentJudgeRuntime,
+      } } : {}),
       ...(selectsOrdinaryJudge(source) ? { ordinaryJudge: { algorithm: ORDINARY_JUDGE_IDENTITY_CHANGE.algorithm } } : {}),
       judgeAuthoring: {
         protocol: JUDGE_AUTHORING_PROTOCOL,

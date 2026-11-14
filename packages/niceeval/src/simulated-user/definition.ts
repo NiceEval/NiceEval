@@ -14,16 +14,34 @@ export interface SimulatedUser<Kind extends "pass" | "score" = "pass" | "score">
 }
 
 const Definition = Schema.Struct({
-  instructions: Schema.String.check(Schema.makeFilter(value => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 8192)),
-  timeoutMs: Schema.optional(Schema.Number.check(Schema.makeFilter(value => Number.isSafeInteger(value) && value > 0))),
+  instructions: Schema.String.check(
+    Schema.makeFilter((value) => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 8192),
+  ),
+  timeoutMs: Schema.optional(
+    Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
+  ),
 });
 
 /** Defines and freezes the facts a simulated user may use when answering. */
 export function defineSimulatedUser(definition: SimulatedUserDefinition): SimulatedUserDefinition {
-  if (definition === null || typeof definition !== "object" || Array.isArray(definition) || !Object.hasOwn(definition, "instructions") || Reflect.ownKeys(definition).some(key => {
-    const descriptor = Object.getOwnPropertyDescriptor(definition, key)!;
-    return typeof key !== "string" || !["instructions", "timeoutMs"].includes(key) || !("value" in descriptor) || !descriptor.enumerable;
-  })) throw new TypeError("Invalid simulated user definition: only data properties instructions and timeoutMs are accepted.");
+  if (
+    definition === null ||
+    typeof definition !== "object" ||
+    Array.isArray(definition) ||
+    !Object.hasOwn(definition, "instructions") ||
+    Reflect.ownKeys(definition).some((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(definition, key)!;
+      return (
+        typeof key !== "string" ||
+        !["instructions", "timeoutMs"].includes(key) ||
+        !("value" in descriptor) ||
+        !descriptor.enumerable
+      );
+    })
+  )
+    throw new TypeError(
+      "Invalid simulated user definition: only data properties instructions and timeoutMs are accepted.",
+    );
   return Object.freeze(Schema.decodeUnknownSync(Definition, { onExcessProperty: "error" })(definition));
 }
 
