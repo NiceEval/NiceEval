@@ -12,22 +12,24 @@ case 与契约的关联服从 [case 关系契约](case-relations.md)。diagnose 
 根 CLI 只有七个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
 `plan`、`pack`、`run`、`takeover` 与 `verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
 
-`test` 严格执行一次 plan → 对合法非空计划准备一次 candidate（本地默认 `link`，`--candidate tarball` 或 CI 用 tarball；按打包输入摘要复用，见[候选形态](#候选形态)）→ 运行该 plan 的精确 Repo 集；合法空计划在准备候选之前成功短路。
+`test` 严格执行一次 plan → 对合法非空计划准备一次 candidate（本地默认 `source`，声明 `candidate: built` 的 Repo 用 `built`，`--candidate tarball` 或 CI 用 tarball，见[候选形态](#候选形态)）→ 运行该 plan 的精确 Repo 集；合法空计划在准备候选之前成功短路。
 CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 run 阶段重新选择。
 `diagnose` 不参与这条正式生命周期；它只消费一次带 `--keep-workdir` 的正式本地运行所留下的 retained 场景。
 
 ## 候选形态
 
-E2E 测的是安装后的 NiceEval，但"安装"有两种形态，按用途选，不在本地每次都付 tarball 的成本：
+E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用途选，本地内循环不付构建与打包的成本：
 
 | 形态 | 用在哪里 | 场景副本里的 NiceEval | 证明什么 |
 |---|---|---|---|
-| `link` | 本地默认：Bug 红绿、新 owner 的定向运行 | link 到 `pnpm run build:package` 构建出的包目录 | 公开入口行为；构建期门禁（公开导出文档、类型声明文件）照常执行 |
+| `source` | 本地默认：Bug 红绿、新 owner 的定向运行 | link 到 `packages/niceeval`；runner 以 `--conditions=niceeval-source` 与 tsx 运行，package exports 的 `niceeval-source` 条件指向 `src/*.ts`，CLI 同样从源码启动 | 公开入口行为；改完源码立即生效，不构建、不打包 |
+| `built` | 场景 Repo 依赖构建输出时：`niceeval view` 的 Web 界面、随包文档（INDEX 与 docs-site）、拿 `.d.ts` 做 typecheck | link 到 `pnpm run build:package` 构建出的包目录 | 再加上构建期门禁（公开导出文档、类型声明文件）与构建输出 |
 | `tarball` | CI 全部 lane、接管门禁、push 前的打包冒烟、跨设备交接 | 安装 `pnpm e2e pack` 产出的 tarball | 再加上包边界：`files` 清单、exports 映射、bin、可选依赖从使用方项目完成路径 resolution、安装脚本 |
 
-- `link` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。包边界问题由 CI 的 `tarball` 运行负责，本地不重复。
-- 两种形态都按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
-- 摘要与形态写入每次运行的收据，结果可追溯到具体候选。
+- 场景 Repo 在 project metadata 里声明 `candidate: built` 才会拿到构建输出；未声明的 Repo 在本地按 `source` 运行。
+- `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
+- `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
+- 形态与摘要写入每次运行的收据，结果可追溯到具体候选。
 
 ## 高阶本地入口
 
