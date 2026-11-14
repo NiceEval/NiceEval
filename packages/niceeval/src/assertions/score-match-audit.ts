@@ -38,7 +38,6 @@ export interface ScoreMatchAudit {
   readonly schemaVersion: 1;
   readonly protocol: "niceeval.score-match-audit/v1";
   readonly definition: {
-    readonly name: string;
     readonly version: string;
     readonly config: string;
     readonly digest: string;
@@ -166,14 +165,12 @@ function sha256(value: string): string {
 }
 
 export function scoreMatchDefinitionDigest(input: {
-  readonly name: string;
   readonly version: string;
   readonly config: string;
   readonly limits: ScoreMatchAudit["definition"]["limits"];
 }): string {
   return sha256(canonicalScoreMatchAuditJson({
     protocol,
-    name: input.name,
     version: input.version,
     config: input.config,
     limits: input.limits,
@@ -598,7 +595,7 @@ function base64Bytes(bytes: Uint8Array): string {
 }
 
 /** Browser- and Node-neutral strict decoder for the complete managed ScoreMatch audit. */
-export function readScoreMatchAudit(value: unknown, expectedName?: string, expectedMeasurement?: number, imageContent?: readonly ScoreMatchAuditImageContent[]): ScoreMatchAuditReadResult {
+export function readScoreMatchAudit(value: unknown, expectedMeasurement?: number, imageContent?: readonly ScoreMatchAuditImageContent[]): ScoreMatchAuditReadResult {
   try {
     const outerRecord = record(value);
     const manifestRecord = record(outerRecord?.manifest);
@@ -625,11 +622,11 @@ export function readScoreMatchAudit(value: unknown, expectedName?: string, expec
     const parsed = JSON.parse(content) as unknown;
     if (canonicalScoreMatchAuditJson(parsed) !== content) return Object.freeze({ state: "invalid" });
     const audit = exact(parsed, manifest.schemaVersion === 3 ? ["schemaVersion", "protocol", "definition", "input", "images", "calls", "result"] : ["schemaVersion", "protocol", "definition", "input", "calls", "result"]);
-    const definition = exact(audit?.definition, ["name", "version", "config", "digest", "limits"]);
+    const definition = exact(audit?.definition, ["version", "config", "digest", "limits"]);
     const limits = exact(definition?.limits, ["maxCalls", "maxMaterialBytes", "maxAuditBytes"]);
-    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.name) || !text(definition.version) || expectedName !== undefined && definition.name !== expectedName || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024) || !positiveInteger(limits.maxAuditBytes, 8 * 1024 * 1024) || manifest.byteLength > limits.maxAuditBytes || utf8ByteLength(canonicalScoreMatchAuditJson({ manifest, content: chunks })) > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
+    if (audit === undefined || audit.schemaVersion !== manifest.schemaVersion || audit.protocol !== expectedProtocol || definition === undefined || !text(definition.version) || typeof definition.config !== "string" || typeof definition.digest !== "string" || limits === undefined || !positiveInteger(limits.maxCalls, 16) || !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024) || !positiveInteger(limits.maxAuditBytes, 8 * 1024 * 1024) || manifest.byteLength > limits.maxAuditBytes || utf8ByteLength(canonicalScoreMatchAuditJson({ manifest, content: chunks })) > limits.maxAuditBytes) return Object.freeze({ state: "invalid" });
     const configValue = JSON.parse(definition.config);
-    if (canonicalScoreMatchAuditJson(configValue) !== definition.config || definition.digest !== scoreMatchDefinitionDigest({ name: definition.name, version: definition.version, config: definition.config, limits: limits as unknown as ScoreMatchAudit["definition"]["limits"] })) return Object.freeze({ state: "invalid" });
+    if (canonicalScoreMatchAuditJson(configValue) !== definition.config || definition.digest !== scoreMatchDefinitionDigest({ version: definition.version, config: definition.config, limits: limits as unknown as ScoreMatchAudit["definition"]["limits"] })) return Object.freeze({ state: "invalid" });
     const images = manifest.schemaVersion === 3 ? validImages(audit.images, audit.input as string, imageContent) : undefined;
     const initialMaterialRejected = record(audit.result)?.state === "unavailable" && record(audit.result)?.code === "score-match-material-budget" && Array.isArray(audit.calls) && audit.calls.length === 0;
     if (typeof audit.input !== "string" || utf8ByteLength(audit.input) > limits.maxMaterialBytes && !initialMaterialRejected || canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input || manifest.schemaVersion === 3 && images === undefined || !Array.isArray(audit.calls) || audit.calls.length > limits.maxCalls + 1 || audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected" || audit.calls.some((call, index) => manifest.schemaVersion === 1 ? !validCall(call, index + 1) : manifest.schemaVersion === 2 ? !validTypeSafeCall(call, index + 1) : !validV3Call(call, index + 1, images!))) return Object.freeze({ state: "invalid" });

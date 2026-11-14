@@ -22,9 +22,7 @@ Vercel AI Gateway 改用 `VercelProvider`，OpenRouter 改用 `OpenRouterProvide
 写一个声明评分标准的 Pass Eval。材料使用应用语义明确的字段，最低值由同一 Assertion handle 声明：
 
 ```ts
-const expressesSuccess = defineJudge({
-  name: "expresses-success",
-  rubric: "根据 operation 与 response 评价回复是否明确表达操作成功。",
+const expressesSuccess = defineJudge({ rubric: "根据 operation 与 response 评价回复是否明确表达操作成功。",
 });
 
 export default defineEval({

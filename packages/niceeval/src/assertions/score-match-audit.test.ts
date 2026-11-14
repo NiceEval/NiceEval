@@ -27,10 +27,9 @@ function retained(measurement = 0.5): unknown {
     schemaVersion: 1,
     protocol: "niceeval.score-match-audit/v1",
     definition: {
-      name: "quality",
       version: "1",
       config,
-      digest: scoreMatchDefinitionDigest({ name: "quality", version: "1", config, limits }),
+      digest: scoreMatchDefinitionDigest({ version: "1", config, limits }),
       limits,
     },
     input: canonicalScoreMatchAuditJson({ answer: "maybe" }),
@@ -59,7 +58,7 @@ function retained(measurement = 0.5): unknown {
 
 describe("ScoreMatch audit decoder", () => {
   it("strictly reads canonical complete audit evidence", () => {
-    const result = readScoreMatchAudit(retained(), "quality", 0.5);
+    const result = readScoreMatchAudit(retained(), 0.5);
     expect(result.state).toBe("available");
     if (result.state === "available") expect(Object.isFrozen(result.audit.calls)).toBe(true);
   });
@@ -70,6 +69,6 @@ describe("ScoreMatch audit decoder", () => {
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 2, protocol: "niceeval.score-match-audit/v2" }, content: [] })).toEqual({ state: "invalid" });
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 3, protocol: "niceeval.score-match-audit/v3" }, content: [] })).toEqual({ state: "invalid" });
     expect(readScoreMatchAudit({ manifest: { schemaVersion: 4, protocol: "niceeval.score-match-audit/v4" }, content: [] })).toEqual({ state: "unsupported", schemaVersion: 4 });
-    expect(readScoreMatchAudit(value, "quality", 1)).toEqual({ state: "invalid" });
+    expect(readScoreMatchAudit(value, 1)).toEqual({ state: "invalid" });
   });
 });

@@ -1,9 +1,7 @@
 import { defineAdapter } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const judging = defineJudge({
-  name: "niceeval.e2e.marker-quality/v1",
-  rubric: "Measure whether the reply satisfies the marker criterion.",
+const judging = defineJudge({ rubric: "Measure whether the reply satisfies the marker criterion.",
   anchors: [
     { measurement: 0, description: "does not contain the marker" },
     { measurement: 0.5, description: "contains only part of the marker" },

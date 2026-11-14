@@ -132,7 +132,7 @@ export function projectAttemptAssertionImage(
       return { evidenceIndex, mediaType: descriptors?.[evidenceIndex]?.mediaType,
         bytes: readSealedBytes(source, metadata) } as ScoreMatchAuditImageContent;
     });
-    const decoded = readScoreMatchAudit(rawAudit, undefined, observedMeasurement(entry.evaluation.observed), imageContent);
+    const decoded = readScoreMatchAudit(rawAudit, observedMeasurement(entry.evaluation.observed), imageContent);
     if (decoded.state !== "available" || decoded.audit.schemaVersion !== 3) return closeJson({ state: "invalid" });
     const image = decoded.audit.images.find((candidate) => candidate.imageId === imageId);
     if (image === undefined) return undefined;
@@ -211,7 +211,7 @@ function projectEntry(
       };
       const raw = readEnvelope(entry);
       if (isRecord(raw) && isRecord(raw.manifest) && "protocol" in raw.manifest && raw.manifest.protocol !== "niceeval.agent-judge-audit/v1") {
-        return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, "", undefined, () => undefined) });
+        return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, undefined, () => undefined) });
       }
       const decoded = decodeAgentJudgeEnvelope(raw);
       const root = decoded.trace.state === "inline" ? entry : entries[decoded.trace.entryIndex];
@@ -227,7 +227,7 @@ function projectEntry(
       });
       const data = entry.criterion.value.data;
       const name = isRecord(data) && typeof data.name === "string" ? data.name : "";
-      return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, name, observedMeasurement(entry.evaluation.observed), (index) => {
+      return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, observedMeasurement(entry.evaluation.observed), (index) => {
         const candidate = entries[index];
         if (candidate === undefined) throw new Error("Missing Agent Judge reference");
         return readEnvelope(candidate);
@@ -253,7 +253,7 @@ function projectEntry(
       const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
       return closeJson(Object.freeze({
         ...projected,
-        scoreMatchAudit: readScoreMatchAudit(decoded, name, observedMeasurement(entry.evaluation.observed), hasImages
+        scoreMatchAudit: readScoreMatchAudit(decoded, observedMeasurement(entry.evaluation.observed), hasImages
           ? entry.materials.evidence.slice(0, -1).map((image, evidenceIndex) => {
               if (image.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content)) throw new Error("Invalid Judge image material");
               const imageMetadata = contentMetadata.get(image.content);

@@ -136,9 +136,7 @@ export default defineScoreEval({
 import { defineScoreEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const judge = defineJudge({
-  name: "command-and-reply",
-  rubric: "命令输入符合任务，调用状态为 completed，回复准确说明完成了什么。",
+const judge = defineJudge({ rubric: "命令输入符合任务，调用状态为 completed，回复准确说明完成了什么。",
 });
 
 export default defineScoreEval({

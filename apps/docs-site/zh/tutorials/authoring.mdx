@@ -104,9 +104,7 @@ export default defineEval({
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const grounded = defineJudge({
-  name: "grounded-answer",
-  rubric: "根据 question 评价 answer 是否基于事实作答，而不是编造或含糊其辞。",
+const grounded = defineJudge({ rubric: "根据 question 评价 answer 是否基于事实作答，而不是编造或含糊其辞。",
 });
 
 export default defineEval({

@@ -92,13 +92,9 @@ A complete score in a scored eval can be 0. `passed + complete 0` means the eval
 The Judge can be passed straight to `t.judge` without registering it on the eval. The model defaults to the project's `judgeProvider`; to switch only the model for one eval, set `judge: "judge-model"`.
 
 ```ts
-const explainsMotive = defineJudge({
-  name: "explains-motive",
-  rubric: "Given the change, rate whether the explanation states the motive for the change.",
+const explainsMotive = defineJudge({ rubric: "Given the change, rate whether the explanation states the motive for the change.",
 });
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "Given the change, rate whether the explanation identifies specific risks.",
+const explainsRisk = defineJudge({ rubric: "Given the change, rate whether the explanation identifies specific risks.",
 });
 
 export default defineEval({

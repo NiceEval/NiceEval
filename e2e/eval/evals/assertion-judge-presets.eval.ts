@@ -4,7 +4,7 @@ import { defineJudge } from "niceeval/expect";
 import { and, defineValueMatch, defineMaterialMatch, defineContextMatch, defineScoreMatch, type ScoreMatch } from "niceeval/expect";
 
 const limits = { maxAuditBytes: 2 * 1024 * 1024 };
-const quality = defineJudge({ name: "style-quality", rubric: "Rate the clarity of the answer.", ...limits });
+const quality = defineJudge({ rubric: "Rate the clarity of the answer.", ...limits });
 // A Judge is a ScoreMatch, not a separate kind accepted by another check overload.
 const ordinaryMatch: ScoreMatch<unknown> = quality;
 

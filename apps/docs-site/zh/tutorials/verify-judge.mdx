@@ -72,9 +72,7 @@ import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 import { judgeImage } from "niceeval/judge";
 
-const actionQuality = defineJudge({
-  name: "action-quality",
-  rubric: "根据已知事实评价行为是否合理；图片仅作为补充，不推断画面外的行为。",
+const actionQuality = defineJudge({ rubric: "根据已知事实评价行为是否合理；图片仅作为补充，不推断画面外的行为。",
 });
 
 export default defineEval({

@@ -1,9 +1,7 @@
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const judging = defineJudge({
-  name: "marker-unavailable",
-  rubric: "回复是否含确定性 marker？",
+const judging = defineJudge({ rubric: "回复是否含确定性 marker？",
 });
 
 export default defineEval({

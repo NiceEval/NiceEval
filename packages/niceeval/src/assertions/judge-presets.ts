@@ -6,9 +6,8 @@ export const JUDGE_AUTHORING_PROTOCOL = "niceeval.judge-authoring/v1" as const;
 /** @internal Increment when a built-in Judge rule or score mapping changes. */
 export const JUDGE_AUTHORING_REVISION = 2 as const;
 
-/** Shared naming and resource limits for the fixed Judge presets. */
+/** Shared resource limits for the fixed Judge presets. */
 export interface JudgePresetOptions {
-  readonly name?: string;
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
   readonly maxAuditBytes?: number;
@@ -51,15 +50,13 @@ export function optionsFor(defaultName: string, options: JudgePresetOptions): {
   if (!Predicate.isObject(options) || Array.isArray(options)) throw new TypeError("Judge preset options must be an object");
   const captured: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(options)) {
-    if (typeof key !== "string" || !["name", "maxCalls", "maxMaterialBytes", "maxAuditBytes"].includes(key)) {
+    if (typeof key !== "string" || !["maxCalls", "maxMaterialBytes", "maxAuditBytes"].includes(key)) {
       throw new TypeError("Judge preset options contain an unknown property");
     }
     const descriptor = Reflect.getOwnPropertyDescriptor(options, key);
     if (descriptor === undefined || !("value" in descriptor)) throw new TypeError("Judge preset options must be data properties");
     captured[key] = descriptor.value;
   }
-  const name = captured.name ?? defaultName;
-  if (typeof name !== "string") throw new TypeError("Judge preset name must be a string");
   const limits: { maxCalls?: number; maxMaterialBytes?: number; maxAuditBytes?: number } = {};
   for (const key of ["maxCalls", "maxMaterialBytes", "maxAuditBytes"] as const) {
     const value = captured[key];
@@ -67,7 +64,7 @@ export function optionsFor(defaultName: string, options: JudgePresetOptions): {
     if (typeof value !== "number") throw new TypeError(`Judge preset ${key} must be a number`);
     limits[key] = value;
   }
-  return { name, llm: limits };
+  return { name: defaultName, llm: limits };
 }
 
 const FACTUALITY_RUBRIC = "Compare output with expected for the given input. Treat expected as the supplied reference, not independently verified truth. Select contradictory when any factual claim conflicts with the reference or is unsupported by it; incomplete when the output is consistent but omits material reference facts; consistent when it preserves the material reference facts without contradiction. Ignore stylistic differences.";

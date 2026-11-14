@@ -6,18 +6,14 @@ export const typesafeApplication = defineAdapter({
   name: "typesafe-judge",
   create: () => ({ answer: () => "Paris" }),
 });
-const quality = defineJudge({
-  name: "nonuniform-quality",
-  rubric: "Rate the answer.",
+const quality = defineJudge({ rubric: "Rate the answer.",
   anchors: [
     { measurement: 0, description: "Incorrect" },
     { measurement: 0.2, description: "Partial" },
     { measurement: 1, description: "Complete" },
   ],
 });
-const wideScale = defineJudge({
-  name: "eleven-level-quality",
-  rubric: "Rate the answer.",
+const wideScale = defineJudge({ rubric: "Rate the answer.",
   anchors: Array.from({ length: 11 }, (_, index) => ({ measurement: index / 10, description: `Level ${index}` })),
 });
 

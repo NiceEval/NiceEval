@@ -3,9 +3,7 @@
 Eval 保留 rubric、anchors、材料选择和 consumer threshold；Experiment 只选择模型或整个 Provider：
 
 ```ts
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "评价 explanation 是否覆盖 compatibility、rollback 与 dataRisk。",
+const explainsRisk = defineJudge({ rubric: "评价 explanation 是否覆盖 compatibility、rollback 与 dataRisk。",
 });
 
 export default defineEval({

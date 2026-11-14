@@ -7,9 +7,7 @@
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const professionalTone = defineJudge({
-  name: "professional-tone",
-  rubric: "评价 draft 是否以清楚、礼貌且专业的语气完成 request。",
+const professionalTone = defineJudge({ rubric: "评价 draft 是否以清楚、礼貌且专业的语气完成 request。",
 });
 
 export default defineEval({

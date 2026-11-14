@@ -30,7 +30,7 @@ test.concurrent("Turn 和 Session 材料保留 partial 与回复，确定性裁�
       await writeFile(join(projectRoot, "evals/turn-material.eval.ts"), `
 import { defineScoreEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
-const rule = defineJudge({ name: "turn-material", rubric: "Check the retained final reply", maxMaterialBytes: 1800 });
+const rule = defineJudge({ rubric: "Check the retained final reply", maxMaterialBytes: 1800 });
 export default defineScoreEval({ async test(t) {
   const session = t.newSession();
   const first = await session.send("FIRST_INPUT");

@@ -14,9 +14,7 @@ Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质�
 ```ts
 import { defineJudge } from "niceeval/expect";
 
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "根据 change 评价 explanation 是否说明兼容性、回滚方式和数据风险。",
+const explainsRisk = defineJudge({ rubric: "根据 change 评价 explanation 是否说明兼容性、回滚方式和数据风险。",
   anchors: [
     { measurement: 0, description: "没有说明具体风险或回滚方式" },
     { measurement: 0.5, description: "说明部分风险，但遗漏一项关键内容" },

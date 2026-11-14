@@ -18,9 +18,7 @@
    import { defineEval } from "niceeval";
    import { binaryJudge } from "niceeval/expect";
 
-   const namesEntry = binaryJudge({
-     name: "names-entry",
-     rubric: "满足当且仅当回复写出了实际接入的入口路径，并且与 verified.entry 一致。",
+   const namesEntry = binaryJudge({ rubric: "回复写出了实际接入的入口路径，并且与 verified.entry 一致。",
    });
 
    export default defineEval({

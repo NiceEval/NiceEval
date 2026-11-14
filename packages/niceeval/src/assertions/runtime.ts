@@ -837,10 +837,17 @@ class AssertionsRuntimeImplementation {
     this.agentJudgeReviews.push(owner);
     return Object.freeze({
       chat: (message: string) => { this.assertCanRegister(); session.chat(message); },
-      judge: (prompt: string, options?: { readonly anchors?: readonly import("./judge.ts").JudgeAnchor[] }) => {
+      judge: (prompt: string) => {
         this.assertCanRegister();
         const index = this.entries.length;
-        const handle = this.registerMeasurement(session.register(String(index), prompt, options, index));
+        const handle = this.registerMeasurement(session.register("judge", String(index), prompt, undefined, index));
+        owner.entries.push(this.entries[index]!);
+        return handle;
+      },
+      grade: (prompt: string, options: { readonly anchors: readonly import("./judge.ts").JudgeAnchor[] }) => {
+        this.assertCanRegister();
+        const index = this.entries.length;
+        const handle = this.registerMeasurement(session.register("grade", String(index), prompt, options, index));
         owner.entries.push(this.entries[index]!);
         return handle;
       },

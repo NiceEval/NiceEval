@@ -8,9 +8,7 @@ import { managedScoreMatchOf } from "./match.ts";
 
 /** Configures one reviewer for conversational scoring in the Attempt's exclusive Sandbox. */
 export interface AgentJudgeDefinition {
-  readonly name: string;
   readonly instructions?: string;
-  readonly anchors?: readonly JudgeAnchor[];
   readonly maxTurns?: number;
   readonly timeoutMs?: number;
   readonly maxMaterialBytes?: number;
@@ -21,13 +19,12 @@ declare const agentJudgeBrand: unique symbol;
 export interface AgentJudge { readonly [agentJudgeBrand]: true }
 /** Queues conversational messages and independently scored questions in author order. */
 export interface AgentJudgeReview<Kind extends import("./api.ts").AssertionEvaluationKind = "pass" | "score"> {
-  judge(prompt: string, options?: { readonly anchors?: readonly JudgeAnchor[] }): import("./api.ts").MeasurementAssertionHandle<Kind>;
+  judge(criterion: string): import("./api.ts").MeasurementAssertionHandle<Kind>;
+  grade(prompt: string, options: { readonly anchors: readonly JudgeAnchor[] }): import("./api.ts").MeasurementAssertionHandle<Kind>;
   chat(message: string): void;
 }
 export interface NormalizedAgentJudge {
-  readonly name: string;
   readonly instructions: string;
-  readonly anchors: readonly JudgeAnchor[];
   readonly maxTurns: number;
   readonly timeoutMs: number;
   readonly maxMaterialBytes: number;
@@ -61,19 +58,17 @@ function positive(value: unknown, fallback: number, label: string): number {
 
 /** Defines an immutable reviewer; questions and score policies are registered at the call site. */
 export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
-  const input = dataObject(definition, "defineAgentJudge() options", ["name", "instructions", "anchors", "maxTurns", "timeoutMs", "maxMaterialBytes", "maxAuditBytes"]);
-  const validated = managedScoreMatchOf(defineJudge({
-    name: input.name as string, rubric: "Review the requested question using Sandbox evidence.",
-    ...(input.anchors === undefined ? {} : { anchors: input.anchors as readonly JudgeAnchor[] }),
+  const input = dataObject(definition, "defineAgentJudge() options", ["instructions", "maxTurns", "timeoutMs", "maxMaterialBytes", "maxAuditBytes"]);
+  managedScoreMatchOf(defineJudge({
+    rubric: "Review the requested question using Sandbox evidence.",
     ...(input.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: input.maxMaterialBytes as number }),
     maxAuditBytes: input.maxAuditBytes === undefined ? 4 * 1024 * 1024 : input.maxAuditBytes as number,
   }))!;
   if (input.instructions !== undefined && (typeof input.instructions !== "string" || input.instructions.trim() === "" || new TextEncoder().encode(input.instructions).byteLength > 8192)) {
     throw new TypeError("Agent Judge instructions must be non-empty and at most 8192 UTF-8 bytes");
   }
-  const config = validated.config as unknown as { readonly anchors: readonly JudgeAnchor[] };
   const normalized: NormalizedAgentJudge = Object.freeze({
-    name: input.name as string, instructions: input.instructions as string | undefined ?? "", anchors: config.anchors,
+    instructions: input.instructions as string | undefined ?? "",
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),
     maxMaterialBytes: positive(input.maxMaterialBytes, 32 * 1024, "Agent Judge maxMaterialBytes"),
@@ -83,9 +78,12 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
   definitions.set(reviewer, normalized);
   return reviewer;
 }
-/** @internal Shares exact prompt/anchor admission with ordinary rubric judges. */
-export function agentJudgeQuestion(judge: NormalizedAgentJudge, prompt: string, options?: { readonly anchors?: readonly JudgeAnchor[] }) {
+/** @internal Validates the question and snapshots explicit grade anchors. */
+export function agentJudgeQuestion(kind: "judge" | "grade", prompt: string, options?: { readonly anchors: readonly JudgeAnchor[] }) {
   const input = options === undefined ? {} : dataObject(options, "Agent Judge question options", ["anchors"]);
-  const definition = managedScoreMatchOf(defineJudge({ name: judge.name, rubric: prompt, anchors: input.anchors as readonly JudgeAnchor[] | undefined ?? judge.anchors }))!;
-  return definition.config as unknown as { readonly rubric: string; readonly anchors: readonly JudgeAnchor[] };
+  if (kind === "grade" && input.anchors === undefined) throw new TypeError("Agent Judge grade requires anchors");
+  if (kind === "judge" && options !== undefined) throw new TypeError("Agent Judge judge accepts only a criterion");
+  const definition = managedScoreMatchOf(defineJudge({ rubric: prompt, ...(kind === "grade" ? { anchors: input.anchors as readonly JudgeAnchor[] } : {}) }))!;
+  const config = definition.config as unknown as { readonly rubric: string; readonly anchors: readonly JudgeAnchor[] };
+  return { rubric: config.rubric, anchors: kind === "grade" ? config.anchors : null };
 }

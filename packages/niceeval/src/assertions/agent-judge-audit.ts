@@ -8,12 +8,14 @@ const text = Schema.String.check(Schema.isPattern(/\S/u));
 const ordinal = Schema.Number.check(Schema.makeFilter(Number.isSafeInteger), Schema.isGreaterThanOrEqualTo(1));
 const bytes = Schema.Number.check(Schema.makeFilter(Number.isSafeInteger), Schema.isGreaterThanOrEqualTo(0));
 const digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
-export const AgentJudgeSubmissionSchema = Schema.Struct({
-  measurement: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  rationale: text,
-  evidence: Schema.NonEmptyArray(Schema.Struct({ kind: Schema.Literals(["file", "command", "observation"]), ref: text, note: text })),
+const submissionEvidence = Schema.NonEmptyArray(Schema.Struct({ kind: Schema.Literals(["file", "command", "observation"]), ref: text, note: text }));
+export const AgentJudgeGradeSubmissionSchema = Schema.Struct({
+  measurement: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })), rationale: text, evidence: submissionEvidence,
 });
+export const AgentJudgeBinarySubmissionSchema = Schema.Struct({ satisfied: Schema.Boolean, rationale: text, evidence: submissionEvidence });
+export const AgentJudgeSubmissionSchema = Schema.Union([AgentJudgeBinarySubmissionSchema, AgentJudgeGradeSubmissionSchema]);
 export type AgentJudgeSubmission = typeof AgentJudgeSubmissionSchema.Type;
+export const agentJudgeMeasurement = (value: AgentJudgeSubmission): number => "satisfied" in value ? value.satisfied ? 1 : 0 : value.measurement;
 export const AgentJudgeFailureSchema = Schema.Struct({ state: Schema.Literals(["unavailable", "errored"]), code: text, message: text });
 export type AgentJudgeFailure = typeof AgentJudgeFailureSchema.Type;
 const result = Schema.Union([Schema.Struct({ state: Schema.Literal("measured"), value: Schema.Finite }), AgentJudgeFailureSchema, Schema.Struct({ state: Schema.Literal("interrupted") })]);
@@ -38,12 +40,12 @@ export const AgentJudgeGenerationSchema = Schema.Struct({
 });
 export type AgentJudgeGeneration = typeof AgentJudgeGenerationSchema.Type;
 export const AgentJudgeTraceSchema = Schema.Struct({
-  definition: Schema.Struct({ name: text, version: text, config: Schema.String, digest,
+  definition: Schema.Struct({ version: text, config: Schema.String, digest,
     limits: Schema.Struct({ maxTurns: ordinal, timeoutMs: ordinal, maxMaterialBytes: ordinal, maxAuditBytes: ordinal }) }),
   cleanup: Schema.Struct({ state: Schema.Literals(["released", "unconfirmed"]), diagnostic: Schema.NullOr(text) }),
   input: Schema.String,
   criteria: Schema.NonEmptyArray(text),
-  steps: Schema.Array(Schema.Struct({ kind: Schema.Literals(["chat", "judge"]), message: text, key: Schema.NullOr(text),
+  steps: Schema.Array(Schema.Struct({ kind: Schema.Literals(["chat", "judge", "grade"]), message: text, key: Schema.NullOr(text),
     anchors: Schema.NullOr(Schema.Array(Schema.Struct({ measurement: Schema.Finite, description: text }))) })),
   images: Schema.Array(Schema.Struct({ imageId: text, evidenceIndex: bytes, mediaType: Schema.Literals(["image/png", "image/jpeg"]), byteLength: bytes, sha256: digest, paths: Schema.Array(Schema.String) })),
   generations: Schema.Array(AgentJudgeGenerationSchema), tools: Schema.Array(AgentJudgeToolTraceSchema),
@@ -83,7 +85,7 @@ export function decodeAgentJudgeEnvelope(raw: unknown): AgentJudgeAudit {
 }
 
 /** Strict historical reader; references are resolved only within this Assertion attachment. */
-export function readAgentJudgeAudit(raw: unknown, name: string, measurement: number | undefined,
+export function readAgentJudgeAudit(raw: unknown, measurement: number | undefined,
   resolve: (entryIndex: number) => unknown, imageContents: readonly { readonly mediaType: string; readonly bytes: Uint8Array }[] = []): AgentJudgeAuditReadResult {
   try {
     if (typeof raw === "object" && raw !== null && "manifest" in raw) {
@@ -95,15 +97,15 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
     if (root.trace.state !== "inline") throw new Error("Chained Agent Judge reference");
     const trace = root.trace.value;
     if (audit.trace.state === "reference" && audit.trace.digest !== agentJudgeDigest(canonical(trace))) throw new Error("Agent Judge trace digest mismatch");
-    if (trace.definition.name !== name || !trace.criteria.includes(audit.criterion) || new Set(trace.criteria).size !== trace.criteria.length ||
-      trace.definition.digest !== agentJudgeDigest(canonical({ name: trace.definition.name, version: trace.definition.version, config: trace.definition.config, limits: trace.definition.limits }))) throw new Error("Agent Judge definition mismatch");
+    if (!trace.criteria.includes(audit.criterion) || new Set(trace.criteria).size !== trace.criteria.length ||
+      trace.definition.digest !== agentJudgeDigest(canonical({ version: trace.definition.version, config: trace.definition.config, limits: trace.definition.limits }))) throw new Error("Agent Judge definition mismatch");
     for (const image of trace.images) {
       const content = imageContents[image.evidenceIndex];
       if (content === undefined || content.mediaType !== image.mediaType || content.bytes.byteLength !== image.byteLength ||
         new InspectionSha256().update(content.bytes).digestHex() !== image.sha256) throw new Error("Agent Judge image mismatch");
     }
-    if (canonical(trace.steps.filter((step) => step.kind === "judge").map((step) => step.key)) !== canonical(trace.criteria) ||
-      trace.steps.some((step) => step.kind === "chat" ? step.key !== null || step.anchors !== null : step.key === null || step.anchors === null) ||
+    if (canonical(trace.steps.filter((step) => step.kind !== "chat").map((step) => step.key)) !== canonical(trace.criteria) ||
+      trace.steps.some((step) => step.kind === "chat" ? step.key !== null || step.anchors !== null : step.key === null || (step.kind === "judge" ? step.anchors !== null : step.anchors === null)) ||
       trace.steps.find((step) => step.key === audit.criterion)?.message !== audit.prompt) throw new Error("Invalid Agent Judge conversation");
     const config = JSON.parse(trace.definition.config);
     if (canonical(config) !== trace.definition.config || canonical(config.toolDefinitions) === undefined) throw new Error("Invalid canonical Agent Judge config");
@@ -131,7 +133,7 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
       const restored = restoreImages(wire);
       const body = canonical(restored);
       if (utf8ByteLength(body) !== generation.wireBody.byteLength || agentJudgeDigest(body) !== generation.wireBody.sha256) throw new Error("Agent Judge wire digest mismatch");
-      if (canonical(request) !== generation.request || !Array.isArray(request.messages) || request.response_format !== undefined || (generation.kind === "turn" && (request.tool_choice !== "auto" || canonical(request.tools) !== canonical(config.toolDefinitions))) || trace.steps[generation.step - 1] === undefined || index > 0 && generation.step < trace.generations[index - 1]!.step) throw new Error("Invalid Agent Judge request");
+      if (canonical(request) !== generation.request || !Array.isArray(request.messages) || request.response_format !== undefined || (generation.kind === "turn" && (request.tool_choice !== "auto" || canonical(request.tools) !== canonical(trace.steps[generation.step - 1]?.kind === "judge" ? config.binaryToolDefinitions : config.toolDefinitions))) || trace.steps[generation.step - 1] === undefined || index > 0 && generation.step < trace.generations[index - 1]!.step) throw new Error("Invalid Agent Judge request");
       if (generation.kind === "turn") {
         const compact = trace.compactions.find((item) => item.summary !== null && item.generations.at(-1) === generation.ordinal - 1);
         if (compact !== undefined) {
@@ -188,7 +190,11 @@ export function readAgentJudgeAudit(raw: unknown, name: string, measurement: num
       if (tool === undefined || tool.name !== "submit_evaluation" || tool.state !== "completed" || tool.validation !== "valid" || tool.generation !== submitted.generation || trace.steps[trace.generations[tool.generation - 1]!.step - 1]?.key !== audit.criterion ||
         canonical(JSON.parse(tool.arguments)) !== canonical(submitted.value) || trace.steps.find((step) => step.key === audit.criterion)?.message !== audit.prompt) throw new Error("Invalid Agent Judge submission");
     }
-    if (audit.result.state === "measured" && (audit.submission === null || audit.result.value !== audit.submission.value.measurement || measurement !== audit.result.value) ||
+    if (audit.submission !== null) {
+      const step = trace.steps.find(step => step.key === audit.criterion)!;
+      Schema.decodeUnknownSync(step.kind === "judge" ? AgentJudgeBinarySubmissionSchema : AgentJudgeGradeSubmissionSchema, { onExcessProperty: "error" })(audit.submission.value);
+    }
+    if (audit.result.state === "measured" && (audit.submission === null || audit.result.value !== agentJudgeMeasurement(audit.submission.value) || measurement !== audit.result.value) ||
       audit.result.state !== "measured" && measurement !== undefined) throw new Error("Agent Judge result mismatch");
     return { state: "available", audit, trace };
   } catch { return { state: "invalid" }; }

@@ -402,9 +402,7 @@ closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: Judg
 First declare a rubric with `defineJudge`, then pass it directly to `t.check` or `t.judge`:
 
 ```ts
-const factualSummary = defineJudge({
-  name: "factual-summary",
-  rubric: "Judge, against source, whether summary faithfully keeps the facts without inventing any.",
+const factualSummary = defineJudge({ rubric: "Judge, against source, whether summary faithfully keeps the facts without inventing any.",
 });
 
 const turn = await t.send("Summarize the requirements.");
@@ -426,15 +424,13 @@ When you only need to decide whether a condition is satisfied, import `binaryJud
 ```ts
 import { binaryJudge } from "niceeval/expect";
 
-const namesEntry = binaryJudge({
-  name: "names-entry",
-  rubric: "Satisfied if and only if the reply explicitly names verified.entry.",
+const namesEntry = binaryJudge({ rubric: "The reply explicitly names verified.entry.",
 });
 t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
 ```
 
 `binaryJudge(options: BinaryJudgeOptions)` returns an ordinary `ScoreMatch`. `BinaryJudgeOptions` is `JudgeOptions` without `anchors`:
-`name` and `rubric` are required; `maxCalls`, `maxMaterialBytes`, and `maxAuditBytes` are optional. Validation and budgets are the same as for `defineJudge`.
+`rubric` is required; `maxCalls`, `maxMaterialBytes`, and `maxAuditBytes` are optional. Validation and budgets are the same as for `defineJudge`.
 It classifies only as `satisfied` or `not-satisfied`, yielding `1` or `0` respectively. As a result, `.score(n)` awards either full points or zero; use `.gate(1)` when the condition must be satisfied.
 Invalid output, insufficient budget, or service failures retain their errored or unavailable state and do not count as zero. The audit keeps the category, reason, and mapped result for review with `show @<locator> --assertions`.
 

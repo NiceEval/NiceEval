@@ -1119,6 +1119,13 @@ export function renderTrace(value: TraceView): string {
       ],
     });
     for (const item of turn.items) blocks.push(...traceItemBlocks(item));
+    for (const event of value.execution.events.filter(event => event.source.id === "niceeval.simulated-user" && event.scopeMemberships.some(scope => scope.scopeId === turn.turnId && scope.state === "included"))) {
+      blocks.push({ kind: "panel", title: "Simulated user", blocks: [
+        { kind: "keyValue", entries: [{ key: "Event ID", value: event.eventId }, { key: "Summary", value: safeEventText(event.summary) },
+          ...event.evidence.map(evidence => ({ key: "Audit", value: `--expand ${evidence.evidenceId}` }))] },
+        ...(event.display.state === "absent" ? [] : event.display.blocks.map((block): TerminalPanelContentBlock => ({ kind: "command", command: displayLines(block, event.eventId, panelContentWidth(TERMINAL_OPTIONS.width, TERMINAL_OPTIONS.mode)).join("\n") }))),
+      ] });
+    }
   }
   blocks.push({
     kind: "panel",
@@ -1777,6 +1784,7 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
     { kind: "divider", title: complete ? "Total costs" : "Known subtotal" },
     { kind: "keyValue", entries: [
       { key: "Cost coverage", value: complete ? "Complete" : "Incomplete" },
+      ...(costs.simulatedUser === undefined ? [] : [{ key: "simulated-user", value: `${costs.simulatedUser.amountUSD === null ? "Unpriced" : `USD ${costs.simulatedUser.amountUSD}`} · ${costs.simulatedUser.calls} requests · ${costs.simulatedUser.state}` }]),
       ...(costs.missingSources.length === 0 ? [] : [{ key: "Missing sources", value: costs.missingSources.join(", ") }]),
       ...(costs.values.length === 0 ? [{ key: "Amount", value: complete ? "No recorded charges" : "Unavailable" }] : []),
     ] },
@@ -2217,7 +2225,7 @@ export function renderAssertions(locator: string, assertions: readonly Assertion
       blocks.push({ kind: "keyValue", entries: [
         { key: "Prompt", value: agentAudit.audit.prompt },
         ...(agentAudit.audit.submission === null ? [] : [
-          { key: "Measurement", value: String(agentAudit.audit.submission.value.measurement) },
+          { key: "Measurement", value: String(("satisfied" in agentAudit.audit.submission.value ? Number(agentAudit.audit.submission.value.satisfied) : agentAudit.audit.submission.value.measurement)) },
           { key: "Rationale", value: agentAudit.audit.submission.value.rationale },
           ...agentAudit.audit.submission.value.evidence.map((item) => ({ key: `Evidence (${item.kind})`, value: `${item.ref}: ${item.note}` })),
         ]),

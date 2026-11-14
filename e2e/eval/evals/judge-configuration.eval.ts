@@ -8,7 +8,7 @@ export const configurationApplication = defineAdapter({
   behaviorRevision: "1",
   create: () => ({ answer: () => "Paris" }),
 });
-const quality = defineJudge({ name: "configuration-quality", rubric: "The answer names Paris." });
+const quality = defineJudge({ rubric: "The answer names Paris." });
 
 export default {
   inherited: configurationApplication.defineEval({

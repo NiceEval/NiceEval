@@ -14,9 +14,7 @@ Write the criterion at module scope. `rubric` describes the dimensions to evalua
 ```ts
 import { defineJudge } from "niceeval/expect";
 
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "Based on change, evaluate whether explanation covers compatibility, rollback, and data risks.",
+const explainsRisk = defineJudge({ rubric: "Based on change, evaluate whether explanation covers compatibility, rollback, and data risks.",
   anchors: [
     { measurement: 0, description: "Does not explain a concrete risk or rollback plan" },
     { measurement: 0.5, description: "Explains some risks but omits one key point" },

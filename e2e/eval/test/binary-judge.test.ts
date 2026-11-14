@@ -44,14 +44,14 @@ test.concurrent("二值裁判只给零分或满分，非法输出与服务故障
     await evalE2E.case("binary-judge", async ({ paths: { projectRoot }, commands: { niceeval, tsc } }) => {
       await writeFile(join(projectRoot, "fixtures/binary-types.mts"), `import { defineScoreEval } from "niceeval";
 import { binaryJudge, type BinaryJudgeOptions } from "niceeval/expect";
-const options: BinaryJudgeOptions = { name: "criterion", rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024, maxAuditBytes: 4096 };
+const options: BinaryJudgeOptions = { rubric: "explicitly satisfied", maxCalls: 1, maxMaterialBytes: 1024, maxAuditBytes: 4096 };
 const rule = binaryJudge(options);
 defineScoreEval({ test(t) {
   t.judge({ answer: "yes" }, rule).gate(1).score(2);
   t.judge({ answer: "yes" }, rule).score(2).gate(1);
 } });
 // @ts-expect-error binary classification has no numeric anchors
-binaryJudge({ name: "criterion", rubric: "satisfied", anchors: [] });
+binaryJudge({ rubric: "satisfied", anchors: [] });
 `);
       const types = await tsc.run([
         "--noEmit", "--strict", "--target", "ES2022", "--module", "NodeNext",
@@ -61,9 +61,9 @@ binaryJudge({ name: "criterion", rubric: "satisfied", anchors: [] });
       await writeFile(join(projectRoot, "evals/binary.eval.ts"), `
 import { defineScoreEval } from "niceeval";
 import { binaryJudge } from "niceeval/expect";
-const rule = binaryJudge({ name: "binary-rule", rubric: "Select satisfied exactly when the requirement is met." });
+const rule = binaryJudge({ rubric: "The requirement is met." });
 let anchorsRejected = false;
-try { binaryJudge({ name: "bad", rubric: "Reject anchors", anchors: [] }); } catch (error) { anchorsRejected = String(error).includes("anchors"); }
+try { binaryJudge({ rubric: "Reject anchors", anchors: [] }); } catch (error) { anchorsRejected = String(error).includes("anchors"); }
 if (!anchorsRejected) throw new Error("binaryJudge must reject anchors");
 export default defineScoreEval({ async test(t) {
   t.judge({ result: "satisfied" }, rule).gate(1).score(2).label("Satisfied");

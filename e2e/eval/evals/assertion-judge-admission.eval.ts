@@ -4,7 +4,7 @@ import { judgeImage } from "niceeval/judge";
 import { screenshotBytes } from "../fixtures/judge-image.ts";
 import { markerApplication } from "./assertion-judge-fake.eval.ts";
 
-const quality = defineJudge({ name: "admission-quality", rubric: "The text is useful.", maxMaterialBytes: 128 });
+const quality = defineJudge({ rubric: "The text is useful.", maxMaterialBytes: 128 });
 const foreign = { name: "forged-match" } as unknown as typeof quality;
 
 export default markerApplication.defineEval({
@@ -55,7 +55,7 @@ export default markerApplication.defineEval({
       try { judgeImage(value as Parameters<typeof judgeImage>[0]); return false; }
       catch (error) { return error instanceof TypeError; }
     });
-    const imageQuality = defineJudge({ name: "image-admission", rubric: "Assess only supplied evidence." });
+    const imageQuality = defineJudge({ rubric: "Assess only supplied evidence." });
     let repeatedImagesRejected = false;
     const image = judgeImage({ body: imageBytes, mediaType: "image/png" });
     try { t.judge({ images: [image, image, image, image, image] }, imageQuality); }

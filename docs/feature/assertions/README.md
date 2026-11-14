@@ -76,9 +76,7 @@ Score Eval 从同一份 sealed Assertions 中的 `points`、earned contribution 
 作者在观察结果的位置登记 Assertion：
 
 ```ts
-const answerQuality = defineJudge({
-  name: "answer-quality",
-  rubric: "根据 question 评价 answer 是否准确、完整地回答问题。",
+const answerQuality = defineJudge({ rubric: "根据 question 评价 answer 是否准确、完整地回答问题。",
 });
 const question = "搜索资料并说明结论。";
 const turn = await t.send(question);

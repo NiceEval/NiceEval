@@ -30,9 +30,7 @@ import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 import { includes } from "niceeval/expect";
 
-const groundedAnswer = defineJudge({
-  name: "grounded-weather-answer",
-  rubric: "Assess whether the answer gives specific weather information based on the question instead of refusing or answering vaguely.",
+const groundedAnswer = defineJudge({ rubric: "Assess whether the answer gives specific weather information based on the question instead of refusing or answering vaguely.",
 });
 
 export default defineEval({

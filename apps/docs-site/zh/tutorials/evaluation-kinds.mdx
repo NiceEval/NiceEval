@@ -92,13 +92,9 @@ export default defineScoreEval({
 裁判可以直接传给 `t.judge`，无需在评估上登记。模型默认使用项目的 `judgeProvider`；单题只换模型时设置 `judge: "judge-model"`。
 
 ```ts
-const explainsMotive = defineJudge({
-  name: "explains-motive",
-  rubric: "根据 change 评价 explanation 是否说明变更动机。",
+const explainsMotive = defineJudge({ rubric: "根据 change 评价 explanation 是否说明变更动机。",
 });
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "根据 change 评价 explanation 是否识别具体风险。",
+const explainsRisk = defineJudge({ rubric: "根据 change 评价 explanation 是否识别具体风险。",
 });
 
 export default defineEval({

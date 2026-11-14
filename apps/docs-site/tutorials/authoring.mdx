@@ -103,9 +103,7 @@ Questions like "is the answer grounded" or "is the tone right for elementary sch
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const grounded = defineJudge({
-  name: "grounded-answer",
-  rubric: "Given the question, rate whether the answer is based on facts rather than invented or vague.",
+const grounded = defineJudge({ rubric: "Given the question, rate whether the answer is based on facts rather than invented or vague.",
 });
 
 export default defineEval({

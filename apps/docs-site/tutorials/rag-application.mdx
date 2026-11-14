@@ -62,9 +62,7 @@ Hallucination is the primary risk in RAG applications. Use `defineJudge` to crea
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const groundednessJudge = defineJudge({
-  name: "rag-groundedness",
-  rubric: "Assess whether all factual statements in answer are directly supported by context. Fail if answer contains details not mentioned in context.",
+const groundednessJudge = defineJudge({ rubric: "Assess whether all factual statements in answer are directly supported by context. Fail if answer contains details not mentioned in context.",
 });
 
 export default defineEval({

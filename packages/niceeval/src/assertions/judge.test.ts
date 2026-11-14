@@ -16,9 +16,8 @@ import { OpenAIProvider, resolveJudgeProvider } from "../judge/provider.ts";
 
 const TEST_KEY_ENV = "NICEEVAL_JUDGE_TEST_KEY";
 
-function definition(name = "answer-quality") {
+function definition() {
   return defineJudge({
-    name,
     rubric: "Decide whether the candidate follows the requested intent.",
     anchors: [
       { measurement: 0, description: "Does not follow the intent." },
@@ -88,26 +87,26 @@ function waitForSleep(instant: number): Effect.Effect<void> {
 
 describe("Judge pure boundaries", () => {
   test("rejects definition shape and anchor boundary violations", () => {
-    expect(() => defineJudge({ name: "x", rubric: "r", extra: true } as never)).toThrow("unknown option");
-    expect(() => defineJudge({ name: " \t", rubric: "r" })).toThrow("non-empty");
-    expect(() => defineJudge(Object.defineProperty({ name: "x", rubric: "r" }, "anchors", { get: () => [] }) as never)).toThrow("data property");
+    expect(() => defineJudge({ rubric: "r", extra: true } as never)).toThrow("unknown option");
+    expect(() => defineJudge({ rubric: " \t" })).toThrow("non-empty");
+    expect(() => defineJudge(Object.defineProperty({ rubric: "r" }, "anchors", { get: () => [] }) as never)).toThrow("data property");
     let customMapCalled = false;
     const anchors = [
       { measurement: 0, description: "no" },
       { measurement: 1, description: "yes" },
     ];
     Object.defineProperty(anchors, "map", { value: () => { customMapCalled = true; return []; } });
-    expect(() => defineJudge({ name: "x", rubric: "r", anchors })).toThrow("custom properties");
+    expect(() => defineJudge({ rubric: "r", anchors })).toThrow("custom properties");
     expect(customMapCalled).toBe(false);
     const accessorAnchors = [
       { measurement: 0, description: "no" },
       { measurement: 1, description: "yes" },
     ];
     Object.defineProperty(accessorAnchors, "0", { get: () => ({ measurement: 0, description: "no" }) });
-    expect(() => defineJudge({ name: "x", rubric: "r", anchors: accessorAnchors })).toThrow("data property");
-    expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0, description: "no" }, { measurement: 0, description: "same" }] })).toThrow("strictly increasing");
-    expect(() => defineJudge({ name: "x", rubric: "r", anchors: [{ measurement: 0.1, description: "no" }, { measurement: 1, description: "yes" }] })).toThrow("include 0 and 1");
-    expect(() => defineJudge({ name: "x", rubric: "r", maxMaterialBytes: 4 * 1024 * 1024 + 1 })).toThrow("at most");
+    expect(() => defineJudge({ rubric: "r", anchors: accessorAnchors })).toThrow("data property");
+    expect(() => defineJudge({ rubric: "r", anchors: [{ measurement: 0, description: "no" }, { measurement: 0, description: "same" }] })).toThrow("strictly increasing");
+    expect(() => defineJudge({ rubric: "r", anchors: [{ measurement: 0.1, description: "no" }, { measurement: 1, description: "yes" }] })).toThrow("include 0 and 1");
+    expect(() => defineJudge({ rubric: "r", maxMaterialBytes: 4 * 1024 * 1024 + 1 })).toThrow("at most");
   });
 
 });

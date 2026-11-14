@@ -54,16 +54,17 @@ function modelServer(mode: string) {
         return;
       }
       const call = (name: string, args: unknown, suffix = "") => ({ id: `call-${ordinal}${suffix}`, type: "function", function: { name, arguments: JSON.stringify(args) } });
-      const submit = call("submit_evaluation", { measurement: 1, rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
+      const submit = call("submit_evaluation", { ...(step.kind === "judge" ? { satisfied: true } : { measurement: 1 }), rationale: "Observed real Sandbox evidence", evidence: [{ kind: "file", ref: "application.txt", note: "Read application evidence" }] });
       let calls: unknown[] = [];
       let text: string | null = null;
       if (step.kind === "chat") text = "Ready to inspect.";
       else if (mode === "cancel") calls = [call("bash", { command: "touch judge-running; sleep 30; touch late-write" })];
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];
+      else if (mode === "success" && step.message === "First question" && last.role === "tool" && last.content.includes("review.txt")) calls = [call("submit_evaluation", { measurement: 1, rationale: "Wrong question type", evidence: [{ kind: "observation", ref: "schema", note: "must be rejected" }] })];
       else if (step.message === "First question" && last.role === "user") calls = [call("read", { path: mode === "truncation" ? "large.txt" : "application.txt" })];
       else if (step.message === "First question" && last.role === "tool" && (last.content.includes('"truncated"') || last.content.includes("application evidence"))) calls = [call("write", { path: "review.txt", content: "review evidence" })];
-      else if (mode === "success" && step.message === "Second question" && last.role === "user") calls = [call("submit_evaluation", { measurement: 2, rationale: "invalid", evidence: [] })];
+      else if (mode === "success" && step.message === "Second question" && last.role === "user") calls = [call("submit_evaluation", { satisfied: true, rationale: "Wrong question type", evidence: [{ kind: "observation", ref: "schema", note: "must be rejected" }] })];
       else if (mode !== "turns" && step.message.includes("preceding") && last.role === "user") calls = [call("read", { path: "review.txt" })];
       else calls = [submit, call("write", { path: "MUST_NOT_WRITE", content: "forbidden" }, "-skipped")];
       send(text, calls);
@@ -107,7 +108,7 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           if (audit?.state !== "available") throw new Error("Missing audit");
           const expected = ["success", "barrier", "truncation", "compact-continue"].includes(mode) || mode === "compact-overflow" && index !== 1 || mode === "turns" && index > 0 ? "measured" : ["http400", "malformed"].includes(mode) ? "errored" : "unavailable";
           expect(audit.audit.result.state, `${mode} question ${index}: ${JSON.stringify(audit.audit.result)}`).toBe(expected);
-          expect(audit.trace.steps.filter((step) => step.kind === "judge")).toHaveLength(index === 2 ? 1 : 2);
+          expect(audit.trace.steps.filter((step) => step.kind !== "chat")).toHaveLength(index === 2 ? 1 : 2);
           if (mode.startsWith("compact-") && index === 1) {
             expect(audit.trace.compactions).toHaveLength(1);
             expect(audit.trace.compactions[0]?.summary).toContain("First question was submitted");
@@ -117,6 +118,12 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
             const read = audit.trace.tools.find((tool) => tool.name === "read");
             expect(read?.result).toContain('"truncated":true');
             expect(read?.result).not.toContain("�");
+          }
+          if (mode === "success") {
+            expect(audit.audit.submission?.value).toMatchObject(index === 1 ? { measurement: 1 } : { satisfied: true });
+            const question = audit.trace.steps.find(step => step.key === audit.audit.criterion);
+            expect(question?.kind).toBe(index === 1 ? "grade" : "judge");
+            if (index < 2) expect(audit.trace.tools.some(tool => tool.name === "submit_evaluation" && tool.validation === "invalid")).toBe(true);
           }
           if (index === 1) expect(audit.audit.trace.state).toBe("reference");
           if (mode === "success" && index === 0) {
