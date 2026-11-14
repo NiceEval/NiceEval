@@ -5,6 +5,12 @@ import { randomUUID } from 'node:crypto';
 const label = `niceeval.snapshot-fixture=${process.env.NICEEVAL_SNAPSHOT_FIXTURE_ID}`;
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 const snapshots = new Map();
+const existingImages = docker('images', '-q', '--filter', `label=${label}`, '--filter', 'label=niceeval.snapshot-id').split(/\s+/u).filter(Boolean);
+for (const image of new Set(existingImages)) {
+  const [inspection] = JSON.parse(docker('image', 'inspect', image));
+  const labels = inspection.Config.Labels;
+  snapshots.set(labels['niceeval.snapshot-id'], { image, name: labels['niceeval.snapshot-name'] });
+}
 export class CommandExitError extends Error {}
 export class NotFoundError extends Error {}
 export class RateLimitError extends Error {}
@@ -21,7 +27,7 @@ export class Sandbox {
   }
   static async createSnapshot(id, { name }) {
     const snapshotId = `snapshot-${randomUUID()}`;
-    const image = docker('commit', '--change', `LABEL ${label}`, id);
+    const image = docker('commit', '--change', `LABEL ${label}`, '--change', `LABEL niceeval.snapshot-id=${snapshotId}`, '--change', `LABEL niceeval.snapshot-name=${name}`, id);
     snapshots.set(snapshotId, { image, name });
     return { snapshotId };
   }
