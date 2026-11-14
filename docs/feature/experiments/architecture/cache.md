@@ -92,12 +92,11 @@ interface ExecutionComparison {
   readonly sourceState: string; // exact state returned by the relevant Core or fixed-Attachment reader
   readonly result: "match" | "mismatch" | "ineligible" | "not-comparable";
   readonly reason: string;
-  readonly explanation?: IdentityExplanation; // execution-identity 不相等或经身份域变更相等时存在，见「差异说明」
+  readonly explanation?: IdentityExplanation; // execution-identity 不相等时说明输入差异，见「差异说明」
 }
 ```
 
-`attachment` 保存稳定的 fixed family（固定附件族）名称。numeric revision 只在对应的 envelope（信封）
-`{ family, revision }` 中表达，不能拼进 family 名称。
+`attachment` 保存稳定的 fixed family 名称。官方 family 使用当前严格 Schema，不附独立的 persistence revision；格式准入由整个 Record 的唯一标记负责。
 
 当前 input/config/timeout 只在本次 target builder 内计算，最终以 Core expected Planned attempt 的组合
 `executionIdentityDigest` 表达。历史 Attempt 不把同一 digest 伪装成两份 input/config identity。source outcome
@@ -219,6 +218,7 @@ fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 
 
 自动 `carried` 只沿用同一逻辑位置最新 source barrier 中、通过全部资格条件的 Attempt。
 Eval sourceClosure、已登记的 Judge 数据或该配对的有效 Judge 配置变化，都会改变 execution identity 并形成 `identity-mismatch`。
+源码闭包与 Eval Group 共用[冻结模块图和规范化身份](source-identity.md)；普通注释和排版仅在规范化文本相同时沿用。
 Judge 的运行时 version/config 摘要只解释已完成的评价，不能证明尚未执行的定义未变。
 未捕获的宿主条件改变时，必须用 `--rerun all` 重验选中范围；不带范围的 `--rerun` 不足以替代它。
 
@@ -365,7 +365,7 @@ Record 的格式不符时在 reader / writer 建立前明确拒绝，说明需�
 ## 错误与缺口作用域
 
 `ExecutionGapReason` 是稳定的 reason code。它区分缺少 source Run、Planned attempt、Member 或 Core，以及不能读取固定事实。
-固定事实的原因包括需要迁移、没有可用迁移、unsupported 或 invalid；其余类别包括实际 outcome、Verdict、duration、rerun 与 sandbox 条件。CLI 与 SDK 保留具体 code 和原始 issue。
+固定事实的原因包括未记录、不可用、unsupported 或 invalid；其余类别包括实际 outcome、Verdict、duration、rerun 与 Sandbox 条件。CLI 与 SDK 保留具体 code 和原始 issue。
 
 作用域按可证明的最小范围确定：
 
@@ -490,8 +490,8 @@ origin identity 相同时直接按普通资格检查；不同时必须有该 ori
 未被选择的兄弟 ordinal 使用自己的 source barrier，既不被自动采用，也不被这次采用遮蔽。
 
 这些规则属于 `project-target/v2`，不改变 Core reference/action 或 Sources 的持久形状。
-已有宽松 accepted 仍可按原样读取；跨 identity 沿用须重新通过当前规则。无法证明的历史 Record保持可读，
-不自动迁移、不改写或删除，也不因 policy 升级要求重建整个 Record。
+当前格式内已有的 accepted 按原样读取；跨 identity 沿用须重新通过当前规则，无法证明时形成 gap。
+policy 改变不改写历史事实；旧 Record 格式由存储入口拒绝，不自动迁移或删除。
 
 ## policy 演进
 

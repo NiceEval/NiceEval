@@ -191,7 +191,7 @@ source adapter 只以文件只读方式捕获到私有目录，不让 SQLite 打
 `niceeval.attempt-note` family 随 Attempt publication 保存 Note 列表。
 每项含 `label`、零起始且连续的 `sequence`、JSON `value` 与可选 `unit`；顺序与调用顺序一致。
 它与 Assertions 分开保存，不参与 Verdict、score、coverage 或 Assertion 数量。
-旧 Record 缺少该 family 时读取为空列表，不补造 Note。
+当前格式的 Attempt 没有该 family 时读取为空列表，不补造 Note；旧 Record 格式在读取前拒绝。
 
 ## State 的持久事实与 portable gate
 

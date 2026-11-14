@@ -60,8 +60,9 @@ Node builtin、相对 import 与其它 bare package 继续从 importer 所属 pa
 相对 import、loader 文件、Sandbox build context、bind mount 与运行期上传的宿主文件逃出 owner 时失败。
 校验使用 realpath 后的跨平台祖先关系，不使用字符串前缀；不存在的目标先检查最近已存在祖先，再在创建或读取时复核。
 
-Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval runtime revision 进入身份。
+Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval 的内容摘要与必要行为计数进入身份。
 静态可达 bare dependency 保存实际命中的 locator 与安装内容摘要；workspace/file/link 依赖按实际内容计算，不只信 lockfile 文本。
+源码规范化、依赖收集与 Group 的共享规则见[源码身份与冻结模块图](../experiments/architecture/source-identity.md)。
 
 ### 模块与数据投影
 
@@ -113,7 +114,7 @@ interface AdapterIdentity {
 
 品牌契约 token 不进入持久结果。`contract` 只是接口名称，不授予运行时配对、Agent 能力或沿用资格。
 Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终表示没有显式声明行为版本。
-能力来自实际构造对象，沿用由独立 policy 校验。历史格式的已知转换由 [Run 迁移](../run/architecture/README.md#自动迁移) 拥有。
+能力来自实际构造对象，沿用由独立 policy 校验。Record 只接受当前存储格式，格式检查由 [Run 架构](../run/architecture/README.md) 拥有。
 不支持的 Sandbox、Eval Group、Sandbox reuse 与完整应用费用 budget 组合在预检拒绝。
 依赖 Agent 执行准备的生命周期 Plugin 同样在预检拒绝，不能宣称执行却跳过其资源 owner。
 

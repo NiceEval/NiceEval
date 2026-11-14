@@ -41,10 +41,10 @@ selection、typed fact codec、browser-neutral selector 与确定的 result mean
 ## 读取信任与成本
 
 项目内 operational reader 信任 Host-owned ProjectDatabase 已由 writer 在 publication / Seal 事务验证的闭包。
-打开只校验 exact schema、migration ready 与 legacy 边界，并以 BEGIN 固定 PublicationCutoff；不重新执行全库
+打开只校验 当前格式标记与 exact schema，并以 BEGIN 固定 PublicationCutoff；不重新执行全库
 quick_check、foreign_key_check 或全部 Run Seal 验证。实际读取的 Core、Attachment 仍严格解码并检查身份与关系。
 
-外部或捕获 Record 必须在 private generation 完整验证后才可进入同一读取路径；migration、seal/recovery 与显式完整性维护
+外部或捕获 Record 必须在 private generation 完整验证后才可进入同一读取路径；seal/recovery 与显式完整性维护
 继续拥有全量校验。此信任边界不承诺抵御同时篡改 Host-owned 本机 database 的攻击者。
 
 读取成本与所选事实和输出成正比，不与无关 Record payload 总量成正比。精确 locator 和 Run 使用已有身份索引，只加载目标
@@ -172,7 +172,7 @@ offset 等于 byteLength 时返回空 base64 与 null；超过 byteLength、limi
 实现逐块读取并校验，只保留请求区间，不把整件附件预载入内存。错误 origin、损坏内容或不一致的 metadata 形成
 `inspection-record-integrity-failure`。carry 与历史 locator 继续读取已发布 origin bytes，不读取外部路径或当前应用文件。
 
-附件继续使用既有 artifacts family、revision 与 bytes content；新 operation 不改变历史附件的持久解释。
+附件继续使用既有 artifacts family 与 bytes content；新 operation 不改变历史附件的持久解释。
 
 ## 模型用途与费用读取
 
@@ -214,7 +214,7 @@ experiment.get 的最终 JSON 响应上限为 4 MiB；完整 aggregate/cells 保
 
 Inspection 在同一 origin Attempt 和 PublicationCutoff 读取应用与 Judge 附件，引用 Run 不复制或重复计算 origin。
 缺 Judge family 为 unavailable；已被当前 reader 接受的 family 编码损坏为 invalid。
-未来 revision 在 reader session 形成前遵守 unsupported-format 边界，不强行降为局部 judgeUsage.invalid。
+旧 Record 在 reader session 形成前遵守 unsupported-format 边界，不强行降为局部 judgeUsage.invalid。
 新完整空账本证明零发送；历史没有 family 时，即使没有 QA 或存在成功 audit，也不能补造空账本。
 
 全部 calls 与价证参与 totals，预览只控制返回行。请求集合、token 与费用各自保留完整性，unknown outcome 不抹去独立已知金额。
@@ -254,9 +254,9 @@ recordedAttemptCount 与 missingAttemptCount 合计等于 plannedAttemptCount。
 聚合先于 modelUsage 的 64 项与字节裁剪；清空明细仍超出响应预算时返回 evidence-budget-exceeded，不删金额或币种。
 Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Attempt 的后续明细不参与客户端求和。
 
-应用 usage family revision 4 的 complete 表示 Adapter 显式确认调用集合完整。
-v1、v2、v3 保留独立历史解码及原金额、原应用 costUSD；总费用对其保留 application 缺口。
-revision 3 仍检查用途引用属于 origin Run 的配置。未声明的新账本也保持缺口；已知零金额不等于未知。
+应用 usage family 的 complete 表示 Adapter 显式确认调用集合完整。
+只解码当前 usage payload；旧格式由整个 Record 的格式准入拒绝。
+当前 reader 检查用途引用属于 origin Run 的配置。未声明的新账本也保持缺口；已知零金额不等于未知。
 
 ## Note 读取与聚合
 

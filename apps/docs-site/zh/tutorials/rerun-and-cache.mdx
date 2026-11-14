@@ -80,22 +80,24 @@ pnpm exec niceeval accept @1K1P0VJAPVJ12
 
 ## 升级 NiceEval 之后
 
-升级 NiceEval 本身不会让旧结果失效。升级后先看一次计划：
+升级后先确认存储能否打开，再预览哪些评估需要执行：
 
 ```sh
+pnpm exec niceeval show runs --json
 pnpm exec niceeval exp checkout --dry
 ```
 
-```text
-checkout  cart/add-item     reused 0 via fingerprint-algorithm/3-to-4
-checkout  cart/remove-item  gap 0:identity-mismatch: identity-domain-changed: Sandbox preparation behavior changed
-  limitation: opensandbox-prepare/1-to-2 (behavior-changing)
-```
+NiceEval 只读取当前存储格式。格式不符时，命令保留原文件并明确拒绝。
+停止仍在使用它的进程，归档旧存储后在新结果目录重跑；不要删改数据库字段来绕过检查。
 
-- `via` 后面是新版本对计算方式的一次具名调整。NiceEval 已经验证这道题的输入没有变化，直接沿用旧结果，不需要 `accept`。
-- `behavior-changing` 表示新版本实际执行的内容变了，例如 Sandbox 的准备步骤不同。旧结果只能在历史里查看，`accept` 也会拒绝。重跑前先估算这批题的费用。
-- 看到 `identity-manifest-missing` 时，说明旧结果来自还没有记录这些信息的版本。NiceEval 只能比较模型、flags 和评估用例文件，并列出能看到的差异；其余部分无法核对，需要你判断是否重跑。
-- 看到 `identity-domain-unregistered` 或 `unversioned-identity-change` 时，说明 NiceEval 改了计算方式却没有登记。这是 NiceEval 的缺陷，先报告问题，不要直接整批重跑。
+存储可读时，计划分别说明用户输入与 NiceEval 自身的变化。
+`niceeval-identity-changed` 表示库的内容或行为输入不同；`config:`、`source:`、`data:` 等条目说明项目输入的差异。
+输入不同的结果需要重新执行，`accept` 不用于确认库升级后的等价。
+重跑之前核对范围和费用，只运行已获授权的评估。
+
+普通注释、缩进与空行在规范化源码相同时不会使结果失效。
+字符串、编译指令、实际依赖以及影响自动分号插入的换行仍属于输入。
+出现 `dynamic-module-unresolved` 时，计划给出无法确定依赖的文件与行列；使用字面量导入或受管 loader 后可以恢复结果沿用。
 
 ## 跑完之后看结果
 

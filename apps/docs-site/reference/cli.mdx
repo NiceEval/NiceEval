@@ -20,7 +20,7 @@ Pass `--experiment` repeatedly to run several Experiments at once, for example `
 | --- | --- | --- |
 | `reused` | A previous result meets the current conditions and will be reused; no action needed | Inspect the source with `niceeval show @<locator>`, then remove `--dry` to execute the plan |
 | `gap` | The current slot has no reusable result; check the reason after the colon | Run `niceeval exp <experiment> <eval-prefix> --dry --json` for comparison details |
-| `locked` | An execution lock was detected for this Experiment and Eval; this does not mean completion or eligibility for reuse | Wait for the lock holder to finish, inspect with `niceeval show --run <run-id>`, then run `--dry` again |
+| `locked` | An execution lock was detected for this Experiment and Eval; this does not mean completion or eligibility for reuse | Wait for the lock holder to finish, inspect with `niceeval show run:<run-id>`, then run `--dry` again |
 | `prior` | A `source` row is a historical candidate that this plan did not adopt; no need to delete previous results | Inspect the candidate with `niceeval show @<locator>` and follow the `gap` reason |
 | `via` | A named change to the identity calculation version proves the inputs equivalent; no manual acceptance needed | Check the change name with `niceeval exp <experiment> --dry --json` |
 | `no slots` | The row has no current planned slots; do not treat it as successful execution | Check the selection with `niceeval exp <experiment> --dry --json` |
@@ -28,7 +28,7 @@ Pass `--experiment` repeatedly to run several Experiments at once, for example `
 The `verdict` after `source` is the historical Verdict: `passed` means passed, `failed` means an assertion failed, `errored` means execution errored, and `skipped` means skipped.
 For `errored` and `skipped`, use the gap reason to decide whether to rerun; inspect details with `niceeval show @<locator>`.
 `not-recorded`, `migration-required`, `unsupported`, and `invalid` mean the Verdict attachment was not recorded, needs migration, is unsupported, or has invalid contents; none means passed.
-First collect evidence with `niceeval show @<locator> --assertions`. Run `niceeval migrate` only when migration is explicitly required; preserve and report unsupported or invalid records.
+First collect evidence with `niceeval show @<locator> assertions`. Run `niceeval migrate` only when migration is explicitly required; preserve and report unsupported or invalid records.
 
 ### `--dry` gap codes
 
@@ -39,10 +39,10 @@ When `locked` also appears, wait for the lock holder to finish before assessing 
 | --- | --- | --- |
 | `no-source-run` | No historical Run exists for the target | First execution: check the selection, then rerun |
 | `source-slot-missing` | The latest source Run has no such Attempt slot | Often caused by increasing the Attempt count; check `--dry --json`, then rerun the gap |
-| `source-member-missing` | The source Run has a planned slot but no published Attempt member | It may still be running or have been interrupted; inspect `niceeval show --run <run-id>` first, then rerun the gap once it ends |
-| `source-core-invalid` | The source's core records or relations are invalid | Preserve evidence, inspect with `niceeval show --run <run-id>`, and report it; do not rewrite the Record |
+| `source-member-missing` | The source Run has a planned slot but no published Attempt member | It may still be running or have been interrupted; inspect `niceeval show run:<run-id>` first, then rerun the gap once it ends |
+| `source-core-invalid` | The source's core records or relations are invalid | Preserve evidence, inspect with `niceeval show run:<run-id>`, and report it; do not rewrite the Record |
 | `source-publication-unavailable` | The source Attempt's publication evidence is unavailable | Collect evidence with `niceeval show @<locator>`; confirm the run has ended before rerunning the gap |
-| `source-attachment-unavailable` | An attachment required for reuse was not recorded or is missing | Collect evidence with `niceeval show @<locator> --assertions` and `--timing`, then rerun |
+| `source-attachment-unavailable` | An attachment required for reuse was not recorded or is missing | Collect evidence with `niceeval show @<locator> assertions` and `timing`, then rerun |
 | `source-attachment-migration-required` | A required attachment needs format migration | Run `niceeval migrate` as diagnosed, then run `--dry` again |
 | `source-attachment-unsupported` | The installed version does not support a source attachment | Check the installed version, save diagnostics with `niceeval show @<locator>`, and report it |
 | `source-attachment-invalid` | A required attachment has invalid contents | Preserve the records, collect evidence with `niceeval show @<locator>`, and report it |
@@ -50,12 +50,12 @@ When `locked` also appears, wait for the lock holder to finish before assessing 
 | `reuse-contract-mismatch` | The reuse contracts differ | Check the comparison items in `--dry --json`, then rerun |
 | `identity-mismatch` | The current execution identity differs from the source | Read the specific differences; if needed, check adoption eligibility with `niceeval accept @<locator> --dry`, otherwise rerun |
 | `identity-domain-mismatch` | The identity calculation version domains differ | Check the diagnostics in `--dry --json`; report unregistered changes, and rerun for behavior changes |
-| `duration-domain-mismatch` | Historical duration and current timeout rules use different measurement domains | Inspect duration with `niceeval show @<locator> --timing`, then rerun |
-| `timeout-exceeded` | Historical execution exceeded the current timeout | Check the current `timeout`; inspect duration with `--timing`, confirm the limit, then rerun |
+| `duration-domain-mismatch` | Historical duration and current timeout rules use different measurement domains | Inspect duration with `niceeval show @<locator> timing`, then rerun |
+| `timeout-exceeded` | Historical execution exceeded the current timeout | Check the current `timeout`; inspect duration with `timing`, confirm the limit, then rerun |
 | `attempt-outcome-ineligible` | The historical execution outcome is ineligible for reuse | Diagnose execution issues with `niceeval show @<locator>`, then rerun |
 | `adoption-unproven` | The referenced previous result cannot be proved applicable to the current target | Inspect the rejection reason with `niceeval accept @<locator> --dry`; do not force adoption, and rerun if needed |
 | `verdict-ineligible` | The historical Verdict is neither reusable `passed` nor `failed` | Diagnose `errored` or `skipped` with `niceeval show @<locator>`, then rerun |
-| `score-incomplete` | A score-only Eval has no complete score | Diagnose scoring with `niceeval show @<locator> --assertions`, then rerun |
+| `score-incomplete` | A score-only Eval has no complete score | Diagnose scoring with `niceeval show @<locator> assertions`, then rerun |
 | `adapter-behavior-revision-required` | The Adapter has not declared a behavior revision for reuse | The author must declare `behaviorRevision`, then run `--dry` again; do not treat a missing revision as equivalent |
 | `rerun-requested` | This invocation explicitly requests execution with `--rerun` | Execute if intended; to reuse results, remove `--rerun` and preview again |
 | `sandbox-retention-requested` | This invocation's `--keep-sandbox` requires actual execution | Execute if intended; to reuse results, remove the option and preview again |
@@ -70,158 +70,63 @@ Complete structured summaries show specific values. When a summary is incomplete
 If two incomplete summaries happen to be identical, `comparison unavailable` appears once with the reason comparison is unavailable; it does not mean the inputs are identical.
 For more evidence, run `niceeval exp <experiment> --dry --json`. `--dry` does not modify historical manifests, and summary readability does not change reuse decisions.
 
-## `niceeval query`
-
-```sh
-niceeval query discover
-niceeval query explain [--record <file>] (--request <file|-> | --request-json <document>)
-niceeval query run [--record <file>] (--request <file|-> | --request-json <document>)
-```
-
-`query` uses the versioned JSON request protocol `niceeval.query/v3`. Each fixed read question is called an operation. A successful result and a failure defined by the protocol each write exactly one JSON document to stdout. Invalid arguments return a failure document with exit code `2`. When the process fails before it can produce a document, the error goes only to stderr.
-
-- `discover` lists the operation IDs the current version supports. It does not read the run record, so it accepts no `--record`, and it does not return the request field structure.
-- `explain` validates a complete request and explains which operation it will run and which requests you can send next.
-- `run` executes the request and returns that operation's complete result.
-
-First use `discover` to confirm which operations the current version has. Then write the request from the minimal requests on this page or in [Viewing results](/tutorials/viewing-results), and validate it with `explain`. Do not guess fields, and do not build another query language from SQL, JSON paths, or formulas.
-
-Paged results carry a continuation token. The token remembers the operation, the request content, the record file being read, and the visibility boundary of this read. If any of them changes, `query` does not continue reading. It returns a restart correction, which means the caller must start again from `discover` or by resending the request.
-
-### Compare Assertions across Experiments
-
-```sh
-niceeval show --experiment baseline --experiment candidate --assertions
-niceeval show --experiment baseline --experiment candidate --assertions --eval install/db-gpt -o json
-```
-
-Each table covers one Eval, and each column represents one Attempt in an Experiment. Column headings identify the Experiment, Attempt ordinal, and copyable locator.
-Scores show earned/possible points; unscored cells show the decision. Missing entries show `—`.
-A `*` marks rows whose scores or decisions differ between columns.
-
-The operation is `experiments.assertions`, with `experimentIds` and an optional `evalIdPrefix` path prefix.
-Requests accept 1–32 IDs, deduplicate and sort them, and fail if any Experiment is missing.
-`matrix.evals[]` contains `columns`, `rows`, and per-column `unlabeled` counts.
-Duplicate identities within an Attempt retain all cell `entries[]` without overwriting each other. Unreadable assertion facts retain `not-recorded`, `unsupported`, or `failed` in the cell; these states are not shown as missing entries.
-
-Limits are 100 Evals, 100 columns per Eval, 1000 total rows, 10000 cells, and 450000 UTF-8 bytes for the Eval JSON array.
-Each duplicate entry consumes one cell. Limited results use `matrix.state: "partial"` and report omitted Eval, row, and column counts in `matrix.omitted`.
-`--entry`, `--compact`, and `--full` select a single Attempt's details and cannot be combined with a matrix.
-
-### Request and result fields for common operations
-
-The table lists fields commonly used to read run results. The request's top level must contain `protocol: "niceeval.query/v3"` and `operation`. Put the parameters below inside `operation`, alongside `kind`. A successful response has top-level `outcome: "success"`.
-
-| `operation.kind` | Required parameters | Key result fields (from the response's top level) |
-| --- | --- | --- |
-| `run.list` | None | `runId`, `experimentId`, `state`, `startedAt`, `invocationId`, and `coverage` in `runs[]` |
-| `run.get` | `runId`: Run ID | `evalId`, `outcome`, `verdict`, `publication.action`, and `publication.attemptLocator` in `run.plannedAttempts[]` |
-| `experiment.get` | `experimentId`: Experiment ID | `evalId` in `experiment.cells[]`, plus `verdict`, `publication.attemptLocator`, and `publication.action` in `members[]` |
-| `attempt.get` | `locator`: Attempt locator including `@` | `attempt.verdict`, `attempt.core.evalId`, and `attempt.originRun.experimentId` |
-
-`run.get` reads the selected Run's plan and publication results; `experiment.get` reads the results currently adopted for each Eval. After a partial rerun, an Experiment's current results can include Attempts from different Runs. A publication's `action` is `executed`, `carried`, or `accepted`, meaning execution in this run, reuse of an existing result, or explicit adoption respectively.
-
-`run.plannedAttempts[]` and `experiment.cells[].members[]` use the same member fields. `verdict`, `score`, `costUSD`, `durationMs`, and `tokens` are siblings of `publication`; before publication, the Verdict is `null` and metrics are unavailable.
-
-`publication` describes only the publication binding. First check that `publication.state` is `published`, then read the Attempt locator from `publication.attemptLocator`.
-
-Use `--request -` to pass a complete request through standard input:
-
-```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "run.list" }
-}
-JSON
-```
-
-Callers that cannot write standard input can pass the complete request as one argv value:
-
-```sh
-niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{"kind":"run.list"}}'
-```
-
-Both transports use the same validation and accept neither operation shorthand nor partial fields. Omitting the transport option or passing both options is a usage error.
-
-The response's `runs[]` lists Run IDs. To read one Run, replace the request's `operation` with `{ "kind": "run.get", "runId": "<run-id>" }`. Pass the request using exactly one of `--request <file|->` or `--request-json <document>`.
-
-When the selected Run, Experiment, or Attempt does not exist, the response has top-level `outcome: "failure"`, `failure.code: "inspection-selection-missing"`, and exit code `2`. This means the selection is missing, not that an Eval's Verdict is `failed`. First check IDs with `run.list` and confirm that you are reading the corresponding project's run record.
-
 ## `niceeval show`
 
-For identity gaps, `niceeval show` explains the changes directly: `Changed` lists selectors for configuration, source, or data, with bounded summaries of both sides.
-Source and data hashes show only the first 8 characters; additions and removals are marked `added` or `removed`. Each gap lists at most three items, with the rest shown as `+N more`.
-When every gap in an Experiment has the same explanation, it appears once with `all N gaps`.
-An identity change that cannot be explained shows `Unexplained` and a diagnostic summary. Run the `niceeval exp <experiment> --dry` command suggested under `Next` at the end of the run to see all changes.
+Write the object first, then an aspect or stable ID. No object selects current results. With `--record <file>`, it reads recorded history from that file.
 
 ```sh
-niceeval show [--record <file>]
-niceeval show --run <run-id>... [--record <file>]
-niceeval show --experiment <experiment-id>... [--record <file>]
-niceeval show @<locator> [--record <file>]
-niceeval show @<locator> --assertions [--entry <entry-id>] [--record <file>]
-niceeval show @<locator> --source [--record <file>]
-niceeval show @<locator> --execution [--expand <stable-id>] [--record <file>]
-niceeval show @<locator> --timing [--record <file>]
-niceeval show @<locator> --usage [--record <file>]
-niceeval show @<locator> --diff [--record <file>]
+niceeval show
+niceeval show runs --json
+niceeval show run:<run-id>
+niceeval show exp:<experiment-id>
+niceeval show @<locator>
+niceeval show @<locator> assertions
+niceeval show @<locator> ae_<id> --full
+niceeval show @<locator> source
+niceeval show @<locator> execution --actor <actor-id> --type <event-type>
+niceeval show @<locator> command_<id>
+niceeval show @<locator> timing
+niceeval show @<locator> usage --reprice pricing.json
+niceeval show @<locator> diff
+niceeval show @<locator> fc_<id>
+niceeval show @<locator> artifacts
+niceeval show @<locator> art_<id>
+niceeval show @<locator> ae_<id> image <image-id> --output image.png
+niceeval show exp:baseline exp:candidate assertions --eval install/db-gpt
 ```
 
-`show` displays results in a fixed terminal format. With no selection arguments, it shows the default overview. `--run <run-id>` shows the given Run and `--experiment <experiment-id>` shows the given Experiment; both can be repeated.
+Add `--json` for JSON Lines. Each success document contains `links` with a `rel` and a complete `command`. Copy a command and append `--json` to keep reading.
+The terminal's `Next` commands match these links. External Record links retain the same `--record`. Explanation and failure documents have no links.
+Use `niceeval show <object> <aspect> --explain --json` to explain which facts the read uses. The outcome is `success`, `explanation`, or `failure`.
 
-Pass rates and scores are displayed by Eval type:
+An `ae_` ID selects an assertion, `fc_` a file change, and `art_` an artifact. Execution details use stable IDs printed in the result.
+An ID can replace its aspect word. Conflicting aspects or unknown prefixes fail and list the available aspects.
+`--full` requires one assertion ID; `--eval` requires an Experiment assertion matrix; `--actor` and `--type` require execution; `--reprice` requires usage.
 
-- Pass/fail Evals show `Verdicts` and `Pass rate`.
-- Score-only Evals show `Verdicts` and `Score`, with no pass rate.
-- When both are mixed, only the pass/fail rows show a pass rate.
+Follow `next-page` links to continue bounded reads. A continuation is bound to its object, filters, and publication cutoff. Restart from the first page if that binding changes.
+The assertion image command writes the complete image to a file and rejects `--json`.
 
-A "complete" score only means the score could be computed; it does not mean the Eval passed. An Eval whose Verdict is `failed` shows as failed even with a complete score, and keeps the score it earned. Only Evals with a `passed` Verdict and a complete score enter the success ranking.
+## `niceeval compare`
 
-With a `passed` Verdict and a complete score, terminal details show `scored` and the browser shows "Scored". A zero score can also be complete: it says scoring finished, not that the goal was met, and NiceEval has no default passing line. A gate failure still shows as failed. An incomplete (`partial`) score keeps only a lower bound of the known score and does not count as a valid score.
+```sh
+niceeval compare run:<baseline-id> -- run:<candidate-id> --mode paired --max-regressions 0
+```
 
-`@<locator>` selects an Attempt. A command takes at most one locator, and it cannot be used with `--run` or `--experiment`; `--run` and `--experiment` cannot be used together either.
-
-After selecting an Attempt, add any one of the options below to look at one aspect. The six options are mutually exclusive, and each requires an Attempt locator:
-
-- `--assertions`: Assertion roles, Verdict, Score, and reasons; use `--entry <entry-id>` for one entry.
-- `--source`: the recorded source information and where each assertion sits in the source.
-- `--execution`: an outline of the execution, with a length limit.
-- `--timing`: how long each phase took.
-- `--usage`: usage totals and every reported usage entry.
-- `--diff`: file changes during the run.
-
-`--execution` output shows three things separately: the collection state, whether the reporter declared the data complete, and the paging state. Even when the current page is empty or it is the last page, a `partial` mark from the reporter and the reason for the limit are kept.
-
-- Filter by participant and event type with `--actor <id>` and `--type <event-type>`.
-- When paging with `--continuation <token>`, pass the same filters.
-- Expand one item directly with `--expand <stable-id>`. The ID must come from an `itemId`, `toolOccurrenceId`, or `commandId` in the outline, not a positional number. `--expand` works only with `--execution`, and cannot appear together with filter or paging arguments.
-
-### Assertion roles and reference results
-
-`--assertions`, entry titles selected with `--entry`, and end-of-run Assertion feedback share these markers:
-
-- `GATE pass` / `GATE fail` / `GATE n/a`: whether the gate is satisfied.
-- `SCORE earned/possible`: the scoring contribution; an entry that also acts as a gate shows both markers.
-- `NOTE met` / `NOTE unmet`: a recorded condition, including a stop-only condition.
-
-Details show `Verdict failed · Score 1/4`, followed by `Gates 1 pass, 1 fail · Scored 3 · Notes 1 met, 1 unmet`. An entry's author-written name does not determine its role, even if it contains “gate”. Machine JSON and query retain their structured fields.
-
-When the current plan has gaps with previous results, the overview shows `Reference results (from previous recorded attempts)`. `Previous attempts N of K gaps` counts previous results attached to current gaps. It includes `Verdicts`, the pass-kind `Pass rate`, and score-kind `Score earned/possible`. Each `Previous result @…` includes its Verdict and, for score-kind results, its score. These results belong to the prior configuration; rerun to update the current target. `niceeval show --reference` expands the same summary and entries.
+Each group needs at least one Run. Separate Runs within a group with spaces. Modes are `paired`, `side-by-side`, and `exact`.
+`--max-regressions` applies to paired or exact mode and fails when regressions exceed the allowance. Add `--json` for the same comparison's machine result.
 
 ## `niceeval view`
 
 ```sh
-niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
+niceeval view
+niceeval view run:<run-id>
+niceeval view exp:<experiment-id>
+niceeval view @<locator> execution
+niceeval view @<locator> fc_<id>
 ```
 
-`view` opens NiceEval's built-in browser interface on your machine. Without `--run`, it opens the default overview; repeat `--run` to preselect several Runs. It accepts no positional arguments and does not load the project's own pages, themes, components, or renderers.
-
-`--no-open` only starts the server without opening a browser. `--port` sets the port; the server listens only on `127.0.0.1`. Once page assets, local access authorization, and the read endpoint are ready, the command writes an openable local address to stdout once.
-
-With `--json`, stdout switches to NDJSON in the `niceeval.view/v1` format: a `ready` event when ready and a `closed` event on close. Startup or runtime failures are reported through the exit code and stderr.
-
-`view` reads only the current project's `.niceeval/record.sqlite`. When new results are written while it is open, the page prompts you to refresh and switches to the new data only after you confirm. It has no `--record`, SQL, deployment, or sharing options, and cannot specify custom reports, pages, themes, routes, or operations.
+Replace `show` with `view` and retain the object, aspect, and ID to open that selection in a browser.
+The command validates the selection before opening the browser. Missing selections and conflicting IDs fail. `--no-open` prints the URL; `--port` chooses the loopback port.
 
 ## Choose a read path
 
@@ -244,7 +149,7 @@ niceeval run list --invocation <invocation-id> --json
 niceeval run list --record ./record.sqlite --state active --json
 ```
 
-`--experiment suite` matches `suite` and `suite/...`, but not `suite-other`. `--limit` must be a positive integer; omitting it leaves the list untruncated. In JSON, `omitted` counts the filtered results left out.
+`exp:suite` matches `suite` and `suite/...`, but not `suite-other`. `--limit` must be a positive integer; omitting it leaves the list untruncated. In JSON, `omitted` counts the filtered results left out.
 
 Rows in `active` or `recovering` show an owner observation of `alive`, `gone`, or `unknown`, along with the observation time. `alive` means the recorded process still existed when observed; `gone` means its termination was proved. For `unknown`, the reason distinguishes records from another machine, missing process identity, external Records, and probe failures. Observations do not change Run state; reading an external Record does not probe local processes.
 
@@ -302,10 +207,6 @@ The table below is generated from each command's own option definitions. Flags n
 | `--dry` | `niceeval accept` | boolean | Complete the whole-Run adoption preflight without publishing a new Run. |
 | `--all` | `niceeval invocation` | boolean | Include status entries for completed Invocations. |
 | `--json` | `niceeval invocation` | boolean | Write this command's machine document or event stream. |
-| `--request` | `niceeval query` | string | Read one niceeval.query/v3 request from a file or standard input. |
-| `--request-json` | `niceeval query` | string | Read one complete niceeval.query/v3 request from an argv value. |
-| `--record` | `niceeval query`, `niceeval show` | string | Read an external canonical SQLite Record. |
-| `--help` | `niceeval query` | boolean | Print help for this command. |
 | `--state` | `niceeval run list` | string[] | Filter by Run state; repeat to match any of the selected states. |
 | `--experiment` | `niceeval run list` | string[] | Filter Runs by one Experiment ID path prefix. |
 | `--limit` | `niceeval run list` | string | Limit the number of Runs and report the omitted count. |
@@ -317,47 +218,25 @@ The table below is generated from each command's own option definitions. Flags n
 | `--json` | `niceeval run list`, `niceeval run recover`, `niceeval run delete`, `niceeval run import`, `niceeval run export` | boolean | Print Run results as JSON. |
 | `--yes` | `niceeval run recover`, `niceeval run delete` | boolean | Confirm Run recovery or deletion. |
 | `--help` | `niceeval run list`, `niceeval run recover`, `niceeval run delete`, `niceeval run import`, `niceeval run export` | boolean | Print Run command help. |
-| `--compare` | `niceeval show` | boolean | Compare baseline and candidate Runs. |
-| `--left` | `niceeval show` | string[] | Baseline Run ID; repeatable. |
-| `--right` | `niceeval show` | string[] | Candidate Run ID; repeatable. |
-| `--mode` | `niceeval show` | string | Comparison mode: paired (default), side-by-side, or exact. |
-| `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
-| `--json` | `niceeval show` | boolean | Write this command's machine document or event stream. |
-| `--format` | `niceeval show` | string | Output format: text (default) or json. |
-| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
-| `--runs` | `niceeval show` | boolean | List Runs, with optional continuation. |
-| `--artifacts` | `niceeval show` | boolean | List saved artifacts for one Attempt. |
-| `--artifact` | `niceeval show` | string | Read one saved artifact; requires --artifacts. |
-| `--image` | `niceeval show` | string | Save one Assertion image; requires --entry and --output. |
-| `--reprice` | `niceeval show` | string | Reprice recorded usage using a JSON pricing file. |
-| `--change` | `niceeval show` | string | Read before/after text and unified hunks for one change. |
-| `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
-| `--assertions` | `niceeval show` | boolean | Show Assertion roles, Verdict, Score, and reasons. |
-| `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |
-| `--compact` | `niceeval show` | boolean | Omit raw Assertion materials and context rows (default). |
-| `--full` | `niceeval show` | boolean | Include complete Assertion materials and context rows. |
-| `--reference` | `niceeval show` | boolean | Show previous gap results with Verdicts, pass rate, and Score. |
-| `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
-| `--run` | `niceeval show` | string[] | Show one sealed Run; can be repeated. |
-| `--experiment` | `niceeval show` | string[] | Show one exact Experiment; can be repeated. |
+| `--json` | `niceeval show`, `niceeval compare` | boolean | Print Inspection documents as JSON Lines. |
+| `--explain` | `niceeval show` | boolean | Explain the facts read by this selection. |
+| `--record` | `niceeval show` | string | Read an external Record. |
 | `--all` | `niceeval show` | boolean | Show Attempts hidden in the compact Results view. |
-| `--source` | `niceeval show` | boolean | Show an Attempt's captured source facts. |
-| `--execution` | `niceeval show` | boolean | Show an Attempt's bounded execution outline. |
+| `--continuation` | `niceeval show` | string | Read the next page with the same selection and filters. |
 | `--actor` | `niceeval show` | string | Filter execution events by exact actor ID. |
 | `--type` | `niceeval show` | string | Filter execution events by exact event type. |
-| `--continuation` | `niceeval show` | string | Read the next execution page with the same filters. |
-| `--timing` | `niceeval show` | boolean | Show an Attempt's captured timing activities. |
-| `--usage` | `niceeval show` | boolean | Show an Attempt's captured usage totals. |
-| `--diff` | `niceeval show` | boolean | Show an Attempt's captured file changes. |
-| `--expand` | `niceeval show` | string | Expand one stable execution identity. |
+| `--eval` | `niceeval show` | string | Filter the Experiment assertions matrix by Eval ID prefix. |
+| `--reprice` | `niceeval show` | string | Reprice recorded usage using a JSON pricing file. |
+| `--full` | `niceeval show` | boolean | Include complete Assertion materials and context rows. |
+| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
 | `--help` | `niceeval show` | boolean | Print help for this command. |
-| `--run` | `niceeval view` | string[] | Select one sealed Run; can be repeated. |
+| `--mode` | `niceeval compare` | string | Comparison mode: paired (default), side-by-side, or exact. |
+| `--max-regressions` | `niceeval compare` | string | Maximum allowed regressions; paired or exact mode. |
+| `--help` | `niceeval compare` | boolean | Print compare help. |
 | `--no-open` | `niceeval view` | boolean | Do not ask the operating system to open a browser. |
 | `--port` | `niceeval view` | string | Choose the loopback listening port; 0 picks one automatically. |
 | `--json` | `niceeval view` | boolean | Output View lifecycle NDJSON, not Inspection results. |
 | `--help` | `niceeval view` | boolean | Print help for this command. |
-| `--all` | `niceeval state migrate` | boolean | Migrate all registered first-party Service state modules. |
-| `--help` | `niceeval state migrate` | boolean | Print help for this command. |
 | `--help` | `niceeval init` | boolean | Print help for this command. |
 | `--json` | `niceeval docker profile list`, `niceeval docker profile doctor`, `niceeval docker cache inventory`, `niceeval docker cache gc` | boolean | Write this command's machine document or event stream. |
 | `--domain` | `niceeval docker cache inventory`, `niceeval docker cache gc` | string | Select one Docker cache domain managed by NiceEval. |

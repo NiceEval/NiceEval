@@ -170,7 +170,8 @@ export default defineExperiment({
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 
-运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能由 Record、`show` 或 View 读取；需要成为产品事实时，先进入 NiceEval 的领域设计与 persistence revision 治理。
+运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。
+第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能由 Record、`show` 或 View 读取；需要成为产品事实时，先明确领域设计与 Record 格式约束。
 
 | 值 | 何时决定 | 入口 | 结果 |
 |---|---|---|---|
@@ -249,7 +250,8 @@ interface ScopedFeedback {
 Agent 的 `ctx.log(message)` 另行表示 timeout breadcrumb。它也更新 Human active 行，但最近若干条可能进入 timeout error。
 只应在运行中显示的 user message 与 tool input 必须使用 `progress()`，不能使用 `log()`。
 
-需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。新增不可恢复事实须由 NiceEval 定义 payload、读面与版本迁移，而不是由 Experiment callback 扩展。
+需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。
+新增不可恢复事实须由 NiceEval 定义 payload、读面与格式准入，不能由 Experiment callback 扩展。
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 

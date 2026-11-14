@@ -126,13 +126,13 @@ scrollback 倒推「运行中」状态。
 
 flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/README.md)；本仓库证明的是这些行为在真实模型、真实进程退出码下端到端成立。
 
-固定 query 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。
+固定 Inspection 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有运行侧 CLI 的选择、退出码与缓存。
 ## 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。 {#cli-sandbox-step-activity}
 
 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。
-## init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。 {#cli-init-inspection-guidance}
+## init 生成与安装版本一致的 show、show --json 与 view 指引。 {#cli-init-inspection-guidance}
 
-init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。
+init 指引通过对象地址读取结果，JSON 的 links 与人读 Next 使用同一规则；用户可从 CLI 帮助确认选择语法。
 ## 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。 {#cli-legacy-record-recovery}
 
 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。

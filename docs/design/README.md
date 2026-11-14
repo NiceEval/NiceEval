@@ -9,5 +9,3 @@ Design 只保存尚未定下来的取舍：要决定什么、几种可行做法�
 ## 当前决策主题
 
 - [Benchmark Web 消费](benchmark-web-consumption.md)
-- [Eval 源码身份忽略注释与排版](source-identity-normalization.md)
-- [去掉不需要的版本号、协议标识与迁移](remove-versions.md)

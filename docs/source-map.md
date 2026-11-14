@@ -81,7 +81,7 @@ direct read、reference closure 或完整性检查需要它时返回 `family-def
 | Adapter 接口、单一强类型 `t` 与共享契约 | `packages/niceeval/src/adapter.ts`；`define.ts` 共享评估定义，`context/assert-first.ts` 共享值断言与分组，`runner/attempt.ts` 拥有共同 Attempt 生命周期，`record/model/run-context.ts` 拥有持久身份 |
 | Agent 与 Adapter public API | `packages/niceeval/src/agents/`（`niceeval/adapter` 导出入口）与 `packages/niceeval/src/adapter.ts` |
 | Sandbox provider 与生命周期 | `packages/niceeval/src/sandbox/` |
-| 用户 State、service module、SQLite worker 与迁移 | `packages/niceeval/src/user-database/{client,path,protocol,repository,storage-worker}.ts` 与 `user-database/repositories/`；`state/cli/contribution.ts` 只挂载用户 State 迁移命令。 |
+| 用户 State、service module 与 SQLite worker | `packages/niceeval/src/user-database/{client,path,protocol,repository,storage-worker}.ts` 与 `user-database/repositories/` 拥有单一存储格式、原子初始化与具名 Repository。 |
 | 第一方 Insight SPA、loopback session 与运行时资源 | `packages/niceeval/src/view/`；读取同一 PublicationCutoff 上的固定 Inspection query，不能成为作者 renderer 管线。 |
 
 修改任一公共行为前，先回到对应 Feature 入口确认契约，再用本页定位影响面。

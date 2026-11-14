@@ -10,7 +10,7 @@ You want to hand a run's results to a colleague for review, or archive a baselin
 
 Runs, in-progress summaries, published Attempts, and their attachments and content are all stored in this file. Cache, credentials, and user-level service state are not.
 
-A Run can be found as soon as it is created. An Attempt can be read once it finishes and publishes, without waiting for its Run to end. Published Attempts are never modified again. `query`, `show`, and `view` only read published results.
+A Run can be found as soon as it is created. An Attempt can be read once it finishes and publishes, without waiting for its Run to end. Published Attempts are never modified again. `show` and `view` only read published results.
 
 ## Hand results to someone else
 
@@ -26,14 +26,14 @@ When you receive someone else's file, point `--record` at it:
 
 ```sh
 pnpm exec niceeval show --record ./baseline.record.sqlite
-pnpm --silent exec niceeval query explain --record ./baseline.record.sqlite --request request.json
+pnpm --silent exec niceeval show --record ./baseline.record.sqlite --explain --json
 ```
 
 `view` only reads the current project's `.niceeval/record.sqlite` and does not accept `--record`.
 
 ## External files are validated before reading
 
-`query` and `show` treat the file named by `--record` as untrusted input. The command reads it only when the format version matches exactly, the SQLite integrity check passes, and the internal data is consistent. When validation fails, the command reports an error. It does not migrate, patch, or read part of the file.
+`show` treat the file named by `--record` as untrusted input. The command reads it only when the format version matches exactly, the SQLite integrity check passes, and the internal data is consistent. When validation fails, the command reports an error. It does not migrate, patch, or read part of the file.
 
 When a file is rejected, first confirm it is a complete single file copied after the run ended, and that no other process was writing during the copy. For specific errors and next steps, see [Debug failed eval results](/troubleshooting/debugging#cannot-open-results).
 
@@ -41,6 +41,6 @@ Record can contain sensitive business content, such as raw conversations and fil
 
 ## What Record does not do
 
-Record only stores results. It does not compute statistics, comparisons, or pages. NiceEval's fixed built-in queries read the published results, then hand the complete query result to `query`, `show`, or `view`. External code never gets a database connection, a reader object, or SQL access.
+Record only stores results. It does not compute statistics, comparisons, or pages. NiceEval's fixed built-in queries read the published results, then hand the complete query result to `show` or `view`. External code never gets a database connection, a reader object, or SQL access.
 
 To choose a way to read results, see [CLI](/reference/cli).

@@ -32,8 +32,8 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
 
 ### 格式化与身份
 
-NiceEval 的运行时身份来自带版本号的常量（如 `EVALUATION_ALGORITHM` 与各能力的 revision），不来自源码字节。
-因此格式化 NiceEval 自身的源码不改变任何下游结果的身份。
+NiceEval 的运行时身份由实际提示、工具 Schema 与必要的能力行为计数构成，不直接使用其源码排版。
+单纯格式化 NiceEval 源码不改变这些输入；整理时须核对字符串、对象顺序及行为计数保持不变。
 Judge 与模拟用户的 prompt 字节会影响行为，格式化不改变字符串字面量的内容；改写 prompt 内容按[身份域规则](../../feature/experiments/architecture/cache.md#niceeval-身份域变更)处理。
 
 ### 首次接入
@@ -46,5 +46,5 @@ Judge 与模拟用户的 prompt 字节会影响行为，格式化不改变字符
 
 - `pnpm format` 之后 `git diff` 为空时，`pnpm lint` 的格式检查通过；手动改乱一个文件的缩进，`pnpm lint` 失败并列出该文件。
 - 在任一源码文件留下未使用的 import，`pnpm typecheck` 失败并指出位置。
-- 首次格式化提交前后，`pnpm test`、`pnpm run build:package` 结果相同；发布校验的身份固定样例 digest 不变。
+- 首次格式化提交前后，`pnpm test`、`pnpm run build:package` 结果相同；固定消费样例的身份摘要不变。
 - Judge 与模拟用户 prompt 的 UTF-8 字节在格式化前后相同。

@@ -10,7 +10,7 @@ description: "了解项目结果文件 .niceeval/record.sqlite 保存什么、�
 
 Run、运行中的汇总、已发布的 Attempt，以及它们的附件和内容，都保存在这个文件里。缓存、凭据和用户级服务状态不在里面。
 
-Run 一创建就能被查到。Attempt 跑完并发布后，就能被读取，不必等所在的 Run 结束。已发布的 Attempt 不会再被修改。`query`、`show` 和 `view` 都只读已发布的结果。
+Run 一创建就能被查到。Attempt 跑完并发布后，就能被读取，不必等所在的 Run 结束。已发布的 Attempt 不会再被修改。`show --json`、`show` 和 `view` 都只读已发布的结果。
 
 ## 把结果交给别人
 
@@ -26,14 +26,14 @@ cp .niceeval/record.sqlite ./baseline.record.sqlite
 
 ```sh
 pnpm exec niceeval show --record ./baseline.record.sqlite
-pnpm --silent exec niceeval query explain --record ./baseline.record.sqlite --request request.json
+pnpm --silent exec niceeval show --record ./baseline.record.sqlite --explain --json
 ```
 
 `view` 只读当前项目的 `.niceeval/record.sqlite`，不接受 `--record`。
 
 ## 读取外部文件前会先校验
 
-`query` 和 `show` 把 `--record` 指定的文件当作不可信输入。只有格式版本完全匹配、SQLite 完整性检查通过、内部数据一致时，命令才会读取。校验不通过时，命令直接报错，不会迁移、修补或只读一部分。
+`show` 把 `--record` 指定的文件当作不可信输入。只有格式版本完全匹配、SQLite 完整性检查通过、内部数据一致时，命令才会读取。校验不通过时，命令直接报错，不会迁移、修补或只读一部分。
 
 文件被拒绝时，先确认它是运行结束后复制的完整单文件，复制期间没有别的进程在写。具体错误和下一步见[排查失败的评估结果](/zh/troubleshooting/debugging#无法打开结果)。
 
@@ -41,6 +41,6 @@ Record 可能包含敏感的业务内容，例如对话原文和文件改动。�
 
 ## Record 不负责什么
 
-Record 只保存结果，不做统计、比较或页面。NiceEval 内置的固定查询读取已发布的结果，再把完整的查询结果交给 `query`、`show` 或 `view`。外部代码拿不到数据库连接、读取对象或 SQL 能力。
+Record 只保存结果，不做统计、比较或页面。NiceEval 内置的固定查询读取已发布的结果，再把完整的查询结果交给 `show` 或 `view`。外部代码拿不到数据库连接、读取对象或 SQL 能力。
 
 选择哪种查看方式见 [CLI](/zh/reference/cli)。

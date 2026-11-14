@@ -21,11 +21,11 @@ Runner 为每个选中的 Experiment 创建一个 Run。创建时，它记下 `r
 `niceeval exp` 结束时，终端的 `NEXT` 面板会列出这次新建的 Run，并给出两条查看命令：
 
 ```sh
-pnpm exec niceeval show --run <run-id>
-pnpm exec niceeval view --run <run-id>
+pnpm exec niceeval show run:<run-id>
+pnpm exec niceeval view run:<run-id>
 ```
 
-加 `--json` 时，最后一行是这次运行的 receipt，里面的 `createdRunIds` 列出新建的 Run，`publicationCutoff` 标记这次运行结束时已发布到哪里。`publicationCutoff` 不要解析，原样传给后续命令。脚本和 CI 先运行 `niceeval show --runs --json` 列出 Run，再用 `show --run <run-id> --json` 读取一条 Run。
+加 `--json` 时，最后一行是这次运行的 receipt，里面的 `createdRunIds` 列出新建的 Run，`publicationCutoff` 标记这次运行结束时已发布到哪里。`publicationCutoff` 不要解析，原样传给后续命令。脚本和 CI 先运行 `niceeval show runs --json` 列出 Run，再用 `show run:<run-id> --json` 读取一条 Run。
 
 ## 浏览器页面不会自己跳到新结果
 

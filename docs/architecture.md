@@ -71,7 +71,7 @@ src/
 ## 持久化与 Repository 边界
 
 NiceEval 的 live application SQLite 分为项目级 ProjectDatabase 与 OS-user 级 UserDatabase。
-项目唯一的 `<project>/.niceeval/record.sqlite` 保存 Run 与项目协调事实；其 publication、portable gate 和迁移由 [Run 架构](feature/run/architecture/README.md) 拥有。
+项目唯一的 `<project>/.niceeval/record.sqlite` 保存 Run 与项目协调事实；其 publication、portable gate 和格式检查由 [Run 架构](feature/run/architecture/README.md) 拥有。
 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是跨项目 UserDatabase 的唯一权威，不进入项目 Record 的 publication closure 或 portable artifact。
 它不保存 secret，也不提供 raw portable backup。
 
@@ -79,18 +79,20 @@ UserDatabase 静态组合有限的第一方 Repository。
 它们保存 durable user state、Provider cache registry 与 Incus allocation/artifact ledger。
 user-level lease/coordination 与 credential reference 也由具名 Repository 拥有。
 
-central owner 独占路径、连接、短事务、busy deadline、maintenance lease 与 migration orchestration。
+central owner 独占路径、连接、短事务、busy deadline、maintenance lease 与原子初始化。
 Repository 就近拥有 schema、固定 operations 与 typed row decoder；领域与 Service 不取得 raw connection、SQL 或自选 table/namespace 的能力。
 
-UserDatabase 的 application schema 使用全局连续版本与相邻 migration，所有 Repository 共用同一迁移 catalog。
-这与 [UserDatabase 迁移验收](engineering/testing/architecture/e2e/migrate.md) 使用同一版本边界。
+UserDatabase 的 application schema 只保留一个存储格式标记，所有 Repository 使用同一当前格式。
+打开旧格式时保留原文件并明确拒绝，不建立 reader / writer，也不自动迁移或清空。
+初始化与拒绝行为见 [UserDatabase 格式验收](engineering/testing/architecture/e2e/migrate.md)。
+
 不建立全局 State module/SPI、lifecycle DSL、通用 SQL executor、extension、`ATTACH` 或第三方动态注册。
 cache Repository 的 cleanup 或业务错误只使其所属操作失败，不成为其它 durable Repository 的逻辑前置。
 共享文件的 corruption、disk-full、WAL recovery 与 lock 影响范围则由同一 UserDatabase 承担。
 
 内部 SQLite adapter 使用 Node 24.15.0+ 的 `node:sqlite`、仓库内 SQL、固定 prepared statements 与 typed row decoder。
 它不引入 Drizzle 或自定义 rolling pack。SQL result 经过 Schema 或具名 decoder 后才越过 Host 边界。
-单 writer、WAL/checkpoint、二进制 Git diff 与数据库级迁移影响范围是接受的代价；不据此另设领域容量上限或性能 SLO。
+单 writer、WAL/checkpoint、二进制 Git diff 与数据库级格式不兼容的影响范围是接受的代价；不据此另设领域容量上限或性能 SLO。
 增量写入与读取的内部约束见 [SQLite 存储与资源生命周期](feature/run/architecture/storage.md)。
 
 ## 程序设计边界：纯函数、完整 ADT 与 Effect

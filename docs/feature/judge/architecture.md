@@ -10,6 +10,15 @@ Context 不按 Judge 名称或预设名称选择另一条登记路径。
 Match 不拥有 gate、points、stop、源码位置或 Assertion identity。
 这些事实仍由同一个 Assertion runtime 保存，每次 `check` 只产生一个 entry。
 
+## 内部模块职责
+
+定义层分别为普通 Judge 和 Agent Judge 创建受管值。两者共用纯参数校验：rubric、anchors 和材料预算的默认值、拒绝条件与原文字节相同；校验不通过构造另一种 Match 完成。
+材料捕获独占属性反射、深冻结和图片引用投影；保留拒绝 accessor、proxy 与非 JSON 值的规则。
+HTTP transport 独占请求、有限正文读取、取消与释放，不由定义工厂持有资源。
+
+gateway 和审计 reader 共用纯协议 Schema 与概率投影，reader 另外核验关联、摘要和重算结果。共享协议模块可用于浏览器，不导入 gateway 或 Node I/O。
+拆分模块保持规范化值、键顺序、Schema JSON、请求字节、身份摘要与资源释放顺序不变，不改变公开导出。
+
 ## 授权、身份与输入
 
 入口在材料反射前确认 Match 与调用形状；不存在 Eval 的 Match 允许列表。
@@ -89,8 +98,7 @@ type AuditCall =
         | { readonly state: "interrupted" };
     };
 interface ScoreMatchAudit {
-  readonly schemaVersion: 1;
-  readonly protocol: "niceeval.score-match-audit/v1";
+  readonly kind: "chat";
   readonly definition: {
     readonly version: string;
     readonly config: string;
@@ -111,8 +119,6 @@ interface ScoreMatchAudit {
 ```ts
 interface ScoreMatchAuditEnvelope {
   readonly manifest: {
-    readonly schemaVersion: 1;
-    readonly protocol: "niceeval.score-match-audit/v1";
     readonly byteLength: number;
     readonly digest: string;
     readonly chunkByteLengths: readonly number[];
@@ -129,7 +135,7 @@ AuditAttempt 的 response 保存完成读取的原始 HTTP 响应文本，不做
 审计中的 measured 必须与 entry 的最终 measurement 相等；不完整步骤不能同时出现正常测量终态。
 
 Query 与 View 共用严格 decoder，验证精确字段、canonical 编码、摘要、字节预算、序号、输出和终态一致性。
-未知协议为 unsupported，损坏为 invalid。历史 v1/v2 Judge 材料保持原有解释与读取路径。
+当前 exact Schema 验证审计材料，损坏为 invalid。旧数据在 Record 格式准入时拒绝。
 审计采用独立协议和 criterion，不改写既有 Record，不增加另一种持久 family。
 旧 reader 遇到未知 criterion 只把对应 entry 标为 unsupported；其余既有事实继续可读。
 
@@ -174,7 +180,7 @@ batchClassify 必须恰好包含请求的全部唯一 ID，结果顺序可不同
 complete=false 是合法提取响应，但该必要调用以 unavailable 结束，并在审计中保留原始响应。
 
 分类的合法标签和标签到分数的映射进入冻结配置。
-`binaryJudge` 使用 `classify` 的 `satisfied` / `not-satisfied`，由代码映射为 1 / 0。它与 `defineJudge` 共享 `defineScoreMatch` 的登记、材料冻结、预算、取消、Provider 和审计；算法及 revision 独立进入 recipe identity。
+`binaryJudge` 使用 `classify` 的 `satisfied` / `not-satisfied`，由代码映射为 1 / 0。它与 `defineJudge` 共享 `defineScoreMatch` 的登记、材料冻结、预算、取消、Provider 和审计；实际 rubric、choices 与分数映射进入 recipe identity。
 二值保证来自 exact choice 解码与代码映射，不来自两个 score anchor。无效 choice 沿用原语解码错误，不通过四舍五入产生合法分数。
 
 两答案比较以候选答案为计分方向：候选优于参考为 1，平局为 0.5，参考更优为 0。
@@ -252,8 +258,8 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 
 ### 审计与历史读取
 
-工具往返使用独立 criterion 与 `niceeval.agent-judge-audit/v1`，schemaVersion 为 1。
-它复用 Content 分块与摘要机制，不将工具调用写入 score-match v1/v2/v3 的封闭 operation 枚举。
+工具往返使用独立 criterion 与当前审计 Schema。审计不携带 protocol 或 schemaVersion。
+它复用 Content 分块与摘要机制，不将工具调用写入 其它审计变体的封闭 operation 枚举。
 既有审计 schema、图片捕获与读取解释不变；Agent Judge 的图片开场材料仍走受管图片 Content，不能把 bytes 写进普通 JSON。
 
 一次会话的轨迹（definition、input、chat 消息、generations、tools）只写一份，归属于会话的首个评分题 entry；其余评分题 entry 的审计引用这份轨迹的摘要，只各自保存题型、判据或 prompt 与 anchors、submission 与 result。
@@ -283,28 +289,26 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 完整终态要求提交与执行轨迹均可严格校验，不能只相信 rationale 或 evidence 的自由文本引用。
 
 Query、Show 与 View 共用严格 decoder，验证精确 schema、摘要、序号、call id 关联与终态。
-未知协议为 unsupported，协议损坏为 invalid。旧 reader 只把未知 criterion 标为 unsupported，不影响其它 entry。
+未知第三方 criterion 为 unsupported，当前审计形状损坏为 invalid。
 预算不足、零发送、非法提交修正与取消均保存可解释终态，不伪造完整分数。
 
 Judge 用量给 Agent Judge 每轮模型生成使用独立 operation `agent`。
-`niceeval.judge-usage` 仍是 revision 1，只在 operation 枚举里加入 `agent`；已有的 judge-usage 附件不含它，照常按同一 schema 读取。
-不为旧版本 reader 保留向前兼容：旧版本 NiceEval 读到含 `agent` 的附件按协议错误处理。
+`niceeval.judge-usage` 的当前 operation 枚举包含 `agent`；旧数据由整个 Record 格式标记拒绝。
 logicalOrdinal 对应生成轮次，transmissionOrdinal 对应该轮实际 HTTP 尝试；工具调用不增加模型请求计数。
 费用、失败和取消的结算独立于审计写入，审计写入失败不能抹去已发请求。
 
 ### 身份与缓存
 
-定义摘要纳入规范化 instructions 与所有预算；每道评分题的题型（是否或打分）、判据或 prompt 与 anchors 进入它自己的 entry 定义、算法 version、系统提示 revision、工具 schema 与执行语义 revision。
+定义摘要纳入规范化 instructions 与所有预算；每道评分题的题型（是否或打分）、判据或 prompt 与 anchors 进入它自己的 entry 定义、实际系统提示与工具 Schema 的内容摘要，以及一个执行行为计数。
 pi 依赖的可达版本由既有依赖闭包身份追踪；影响执行的适配算法改变还必须更新 owner revision。
 有效 Provider、模型、端点、执行限制与凭据声明位置沿用 Eval × Experiment 的求值身份，不保存凭据值及其 hash。
 评审中读到的文件与模型输出是结果事实，不追加入执行前 identity。
 
 新增 ScoreMatch 类型不能仅靠运行时登记的 digest 声称 Eval 已正确重规划；规划端须从既有源码闭包和声明配置捕获定义输入。
-普通与 Agent Judge 的调度分组 revision 属于选择该算法的身份。未使用该算法时，不写新的默认配置键，也不改变普通 Judge 协议 revision。
-这保证新增算法本身不让无关 Eval 的 digest 漂移；不承诺跨任意 NiceEval runtime revision 自动取得沿用资格。
+Agent Judge、普通 Judge 与模拟用户各保留一个不能由文本表达的行为计数，只进入依赖该能力的 Eval 身份。
+系统提示、工具说明、提交 Schema 与内置判据按实际内容求摘要；变更后的受影响 Eval 重新执行。
+NiceEval 组件变化由 [身份 manifest](../experiments/architecture/cache.md#niceeval-身份域变更)解释，不要求历史身份重建。
 
-若实现改变身份投影、输入集合或 domain，必须按 [身份域变更](../experiments/architecture/cache.md#niceeval-身份域变更) 登记 registry 与固定样例。
-新算法的首次显式选择不等于更换所有既有 owner domain；不能为方便整体 bump 而使无关结果失配。
 历史结果保持原解释，不能因新 reader 支持 Agent Judge 就重写历史 measurement 或材料。
 
 ## Provider 求值与身份
@@ -359,10 +363,10 @@ Score legend 必须与实际请求的各等级描述一致。model 与 usage 保
 TypeSafe 不生成自由文本理由；规范化 rationale 的固定前缀说明它是 NiceEval 生成的返回值摘要。
 confidence 不参与 measurement、gate 或 contribution，也不被解释为判断正确率。
 
-## TypeSafe 审计 v2
+## TypeSafe 审计
 
-聊天协议继续写 v1；TypeSafe 写 schemaVersion `2`、protocol `niceeval.score-match-audit/v2`。
-reader 同时识别两个版本，v1 的字段与解释保持不变。旧 reader 遇到 v2 返回 unsupported，不能把它误认成损坏的 v1。
+当前审计按实际调用种类区分：聊天为 `kind: "chat"`，TypeSafe 为 `kind: "typed"`，图片为 `kind: "images"`。
+manifest 只保存长度、摘要与分块事实，不重复记录调用种类或格式标记。
 
 ```ts
 type PrimitiveOptions<K extends keyof ScoreMatchContext["llm"]> =
@@ -377,40 +381,34 @@ type TypeSafeAuditCall =
       readonly operation: TypeSafeMapping["operation"];
       readonly mapping: TypeSafeMapping;
     });
-interface ScoreMatchAuditV2 extends Omit<ScoreMatchAudit, "schemaVersion" | "protocol" | "calls"> {
-  readonly schemaVersion: 2;
-  readonly protocol: "niceeval.score-match-audit/v2";
+interface TypedScoreMatchAudit extends Omit<ScoreMatchAudit, "kind" | "calls"> {
+  readonly kind: "typed";
   readonly calls: readonly TypeSafeAuditCall[];
 }
-interface ScoreMatchAuditEnvelopeV2 extends Omit<ScoreMatchAuditEnvelope, "manifest"> {
-  readonly manifest: Omit<ScoreMatchAuditEnvelope["manifest"], "schemaVersion" | "protocol"> & {
-    readonly schemaVersion: 2;
-    readonly protocol: "niceeval.score-match-audit/v2";
-  };
-}
+
 ```
 
 `mapping.input` 是本次原语调用的冻结 canonical 快照，包含实际 anchors 数值或完整 item IDs。
 它与 request、response、output 一起计入审计预算，不能假定高级 callback 的动态输入等于 definition.config。
 question IDs 按 input 顺序派生；mapping.operation 必须等于 call.operation。
 
-v2 reader 验证 mapping 与真实请求一致、响应包含全部必要结果，并从最后一次成功响应重算规范化 output。
+TypeSafe reader 验证 mapping 与真实请求一致、响应包含全部必要结果，并从最后一次成功响应重算规范化 output。
 分数、类别、rationale 或逐项映射不一致均为 invalid；失败或中断调用不能伪造 completed。
 Definition digest 表示 Match 算法定义；Provider identity 保留实际传输配置，NiceEval 实现身份约束映射解释。
-任何版本的审计都保存实际 HTTP 请求正文，不用伪造的 Chat Completions envelope 替换 TypeSafe 事实。
+所有审计变体都保存实际 HTTP 请求正文，不用伪造的 Chat Completions envelope 替换 TypeSafe 事实。
 
 ## 验收边界
 
 安装后公开入口证明自定义与内建 Match 都能通过 check 使用，judge 糖不会增加 entry 或调用。
 确定性 Provider 边界验证分类映射、完整分母、catch 后失败锁存、预算拒绝零发送和取消后禁止后续发送。
-公开 Assertion detail 验证新审计及历史材料读回；畸形与未知版本必须保持不同结果。
+公开 Assertion detail 验证当前审计与材料读回；畸形材料必须明确拒绝。
 模型判断质量属于真实模型校准，协议 fixture 的通过不能代替它。
 
 Provider 验收包含四个工厂的公开导入、凭据声明位置、模型替换与整体替换、TypeSafe 非等距 anchor 分数和能力拒绝。
-同一结果经公开 Assertion detail 读回 v1/v2；动态 anchors、批量 ID、畸形概率与超限响应具有独立的可观察失败。
+同一结果经公开 Assertion detail 读回聊天与 TypeSafe 审计；动态 anchors、批量 ID、畸形概率与超限响应具有独立的可观察失败。
 迁移错误在相关业务动作之前交付位置与英文指南；历史结果读取与旧源码配置拒绝分别验收。
 
-## 图片捕获、Content 与 v3
+## 图片捕获与 Content
 
 含图片的受管材料使用 `judgeImage` 的不可伪造值；同步复制 bytes 保存在私有 WeakMap，
 callback 只能重用不透明值，不能取得可修改数组。捕获遍历保留原有 JSON 校验，
@@ -426,10 +424,10 @@ PNG/JPEG 校验签名、header 长度与尺寸及 MIME 一致性；这不是完�
 
 图片各自作为 Assertions 自有 binary Content 写入，最后一项 evidence 始终为审计 JSON。
 不新增持久 family，也不向作者公开 blob reference。取消或未发送仍保留已登记图片。
-v3 的选择只取决于捕获材料中是否有图片，未配置 Provider、TypeSafe 或缺能力的零发送拒绝也写 v3。
-纯 JSON 的 v1/v2 结构与解释不改变。
+图片变体只取决于捕获材料中是否有图片；零发送拒绝也保存图片描述符。
+纯 JSON 按实际聊天或 TypeSafe 调用保存。
 
-v3 使用 schemaVersion `3` 与 protocol `niceeval.score-match-audit/v3`。
+图片审计使用 `kind: "images"`。
 沿用 definition、input、result 与拒绝 call；新增 images 描述符列表，每项含本 entry 内稳定
 imageId、evidenceIndex、mediaType、byteLength、sha256 与初始材料 paths。
 已准入 call 不再把模板叫 request，而使用 requestTemplate 与 wireBody（byteLength、sha256），
@@ -446,7 +444,7 @@ requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonic
 
 审计读取必须验证 imageId 唯一、evidence ordinal、Content digest/length、MIME 和封闭引用，
 按相同序列化规则还原发送正文并核对 wireBody。缺图、错位、伪引用、摘要不符均不可返回 available。
-旧 reader 对未知 v3 返回 unsupported。人读界面将 requestTemplate 明确呈现为模板，不冒充 wire 原文。
+旧数据在 Record 打开时拒绝。人读界面将 requestTemplate 明确呈现为模板，不冒充 wire 原文。
 
 ## 有界图片读回
 
@@ -465,7 +463,7 @@ fingerprint 与字段差异。字符串模型 override 继承声明，作者负�
 
 验收使用确定性 HTTP fixture 捕获真实 body，核对 image parts、冻结 bytes 与离线还原摘要；
 验证大图详情有界、Record 搬迁分页、无能力零发送、晚到图片/重复引用限制、
-重试取消封口及 v1/v2 兼容。图片只参与作者主动选择的语义判据，不自动产生断言或 gate。
+重试取消封口及 聊天与 TypeSafe 读回。图片只参与作者主动选择的语义判据，不自动产生断言或 gate。
 
 ## 匹配材料的整组问答
 
@@ -517,8 +515,8 @@ Query call 保留 entryId，客户端通过当前 Attempt locator 与 entryId �
 
 ### 持久形状
 
-Attempt family `niceeval.judge-usage` 使用 revision 1，沿用 Record family 存储，不改写历史应用 usage family。
-附件通过现有 attachment manifest/body 事务随 Attempt 发布；所有 current/persistence/reader 注册保持同一 revision。
+Attempt family `niceeval.judge-usage` 使用当前 exact payload，沿用 Record family 存储，不改写历史应用 usage family。
+附件通过现有 attachment manifest/body 事务随 Attempt 发布；官方 family 的格式准入由 Record 统一拥有。
 
 ```ts
 interface JudgeUsageCall {

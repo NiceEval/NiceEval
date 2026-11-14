@@ -20,7 +20,7 @@ description: "用 show 和 view 读取运行记录。"
 | --- | --- | --- |
 | `reused` | 旧结果符合当前条件，会沿用；无需处理 | `niceeval show @<locator>` 查看来源，去掉 `--dry` 执行计划 |
 | `gap` | 当前槽位没有可沿用的结果；先核对冒号后的原因 | `niceeval exp <experiment> <eval-prefix> --dry --json` 查看比较明细 |
-| `locked` | 检测到该实验与评估用例的执行锁；不代表已完成，也不代表可沿用 | 等持锁执行结束，用 `niceeval show --run <run-id>` 查看，再运行 `--dry` |
+| `locked` | 检测到该实验与评估用例的执行锁；不代表已完成，也不代表可沿用 | 等持锁执行结束，用 `niceeval show run:<run-id>` 查看，再运行 `--dry` |
 | `prior` | `source` 行是历史候选，并未被这次计划采用；无需删除旧结果 | `niceeval show @<locator>` 查看候选，按 `gap` 原因处理 |
 | `via` | 通过具名的身份计算版本变更证明输入等价；无需手动接受 | `niceeval exp <experiment> --dry --json` 核对变更名 |
 | `no slots` | 这一行没有当前计划槽位；不能当作成功执行 | `niceeval exp <experiment> --dry --json` 核对选择范围 |
@@ -28,7 +28,7 @@ description: "用 show 和 view 读取运行记录。"
 `source` 后面的 `verdict` 是历史判定：`passed` 为通过，`failed` 为断言失败，`errored` 为执行出错，`skipped` 为跳过。
 `errored`、`skipped` 需要按缺口原因决定重跑；用 `niceeval show @<locator>` 查看详情。
 若显示 `not-recorded`、`migration-required`、`unsupported` 或 `invalid`，表示判定附件未记录、需要迁移、版本不支持或内容无效；不能把它们读成通过。
-先运行 `niceeval show @<locator> --assertions` 取证。支持的历史格式由 NiceEval 自动升级；不支持或无效的记录应保留并报告。
+先运行 `niceeval show @<locator> assertions` 取证。支持的历史格式由 NiceEval 自动升级；不支持或无效的记录应保留并报告。
 
 ### `--dry` 缺口代码
 
@@ -39,10 +39,10 @@ description: "用 show 和 view 读取运行记录。"
 | --- | --- | --- |
 | `no-source-run` | 没有该目标的历史 Run | 首次执行，核对范围后重跑 |
 | `source-slot-missing` | 最近来源 Run 没有这个 Attempt 槽位 | 常见于增加次数；核对 `--dry --json` 后重跑缺口 |
-| `source-member-missing` | 来源 Run 有计划槽位，但没有已发布的 Attempt 成员 | 可能尚在执行或已中断；先 `niceeval show --run <run-id>`，结束后重跑缺口 |
-| `source-core-invalid` | 来源的核心记录或关联不合法 | 保留证据，用 `niceeval show --run <run-id>` 取证并报告；不要改写 Record |
+| `source-member-missing` | 来源 Run 有计划槽位，但没有已发布的 Attempt 成员 | 可能尚在执行或已中断；先 `niceeval show run:<run-id>`，结束后重跑缺口 |
+| `source-core-invalid` | 来源的核心记录或关联不合法 | 保留证据，用 `niceeval show run:<run-id>` 取证并报告；不要改写 Record |
 | `source-publication-unavailable` | 来源 Attempt 的发布证据不可用 | 用 `niceeval show @<locator>` 取证；确认运行结束后重跑缺口 |
-| `source-attachment-unavailable` | 沿用所需附件未记录或缺失 | 用 `niceeval show @<locator> --assertions` 和 `--timing` 取证，再重跑 |
+| `source-attachment-unavailable` | 沿用所需附件未记录或缺失 | 用 `niceeval show @<locator> assertions` 和 `timing` 取证，再重跑 |
 | `source-attachment-migration-required` | 所需附件需要格式迁移 | 保留原项目及 `.niceeval`，用原 NiceEval 版本读取或导出；需要重新执行时使用不含 `.niceeval` 的独立项目副本 |
 | `source-attachment-unsupported` | 当前安装版本不支持来源附件 | 核对安装版本，用 `niceeval show @<locator>` 保存诊断并报告 |
 | `source-attachment-invalid` | 所需附件内容无效 | 保留记录，用 `niceeval show @<locator>` 取证并报告 |
@@ -50,12 +50,12 @@ description: "用 show 和 view 读取运行记录。"
 | `reuse-contract-mismatch` | 沿用契约不同 | 核对 `--dry --json` 中的比较项，再重跑 |
 | `identity-mismatch` | 当前执行身份与来源不同 | 阅读具体差异；必要时用 `niceeval accept @<locator> --dry` 检查采用资格，否则重跑 |
 | `identity-domain-mismatch` | 身份计算的版本域不同 | 核对 `--dry --json` 中的诊断；未登记的变化应报告，行为变化需要重跑 |
-| `duration-domain-mismatch` | 历史耗时与当前超时规则使用不同的计量域 | 用 `niceeval show @<locator> --timing` 核对，再重跑 |
-| `timeout-exceeded` | 历史执行耗时超过当前超时限制 | 核对当前 `timeout`；用 `--timing` 查看耗时，确认限制后重跑 |
+| `duration-domain-mismatch` | 历史耗时与当前超时规则使用不同的计量域 | 用 `niceeval show @<locator> timing` 核对，再重跑 |
+| `timeout-exceeded` | 历史执行耗时超过当前超时限制 | 核对当前 `timeout`；用 `timing` 查看耗时，确认限制后重跑 |
 | `attempt-outcome-ineligible` | 历史执行状态不符合沿用条件 | 用 `niceeval show @<locator>` 排查执行问题，再重跑 |
 | `adoption-unproven` | 无法证明引用的旧结果适用于当前目标 | 用 `niceeval accept @<locator> --dry` 查看拒绝原因；不要强行采用，必要时重跑 |
 | `verdict-ineligible` | 历史判定不是可沿用的 `passed` 或 `failed` | 用 `niceeval show @<locator>` 排查 `errored` 或 `skipped`，再重跑 |
-| `score-incomplete` | 纯分数评估没有完整分数 | 用 `niceeval show @<locator> --assertions` 排查判分，再重跑 |
+| `score-incomplete` | 纯分数评估没有完整分数 | 用 `niceeval show @<locator> assertions` 排查判分，再重跑 |
 | `adapter-behavior-revision-required` | Adapter 未声明可用于沿用的行为版本 | 作者声明 `behaviorRevision` 后再运行 `--dry`；不要把缺失版本当作等价 |
 | `rerun-requested` | 本次 `--rerun` 主动要求执行 | 符合意图就执行；希望沿用时去掉 `--rerun` 再预览 |
 | `sandbox-retention-requested` | 本次 `--keep-sandbox` 要求真实执行 | 符合意图就执行；希望沿用时去掉该选项再预览 |
@@ -70,160 +70,63 @@ description: "用 show 和 view 读取运行记录。"
 如果两份不完整摘要恰好相同，会显示一次 `comparison unavailable`，并说明无法比较的原因；这不代表输入相同。
 需要更多证据时运行 `niceeval exp <experiment> --dry --json`。`--dry` 不修改历史 manifest，也不因摘要可读性改变沿用决定。
 
-## `niceeval query`
-
-
-```sh
-niceeval query discover
-niceeval query explain [--record <file>] (--request <file|-> | --request-json <document>)
-niceeval query run [--record <file>] (--request <file|-> | --request-json <document>)
-```
-
-`query` 使用带版本号的 JSON 请求协议 `niceeval.query/v3`，每一种固定的读取问题叫一个 operation。成功的结果和协议里定义的失败，都会向 stdout 写出恰好一个 JSON 文档。参数无效时返回 failure 文档，退出码为 `2`。进程出错到无法生成文档时，错误只写到 stderr。
-
-- `discover` 列出当前版本支持的 operation ID。它不读运行记录，所以不接受 `--record`，也不返回请求的字段结构。
-- `explain` 校验完整请求，说明它会运行哪个 operation，以及接下来可以发哪些请求。
-- `run` 执行请求，返回该 operation 的完整结果。
-
-先用 `discover` 确认当前版本有哪些 operation，再按本页或[查看结果](/zh/tutorials/viewing-results)里的最小请求来写，并用 `explain` 校验。不要猜字段，也不要用 SQL、JSON path 或公式拼出另一种查询语言。
-
-结果分页时会带一个续读 token。这个 token 记住了 operation、请求内容、读取的记录文件和这次读取的可见边界。任何一项变了，`query` 都不会接着读，而是返回 restart correction，表示调用方要从 `discover` 或重新发请求开始。
-
-### 跨实验比较判据
-
-```sh
-niceeval show --experiment baseline --experiment candidate --assertions
-niceeval show --experiment baseline --experiment candidate --assertions --eval install/db-gpt -o json
-```
-
-每张表对应一条评估用例，每列对应一个实验中的一次 Attempt。列标题给出实验 ID、Attempt 序号与可复制的定位符。
-计分项显示得分与满分，不计分项显示判定，缺项显示 `—`。`*` 标记在各列间得分或判定不同的行。
-
-机器读面是 `experiments.assertions`，请求包含 `experimentIds`，以及可选的 `evalIdPrefix` 路径前缀。
-实验 ID 至少一个、最多 32 个，去重后排序；任一 ID 不存在时整个请求失败。
-结果 `matrix.evals[]` 提供 `columns`、`rows` 与逐列 `unlabeled` 计数。同一 Attempt 内的重复身份保存在 cell 的 `entries[]`，不互相覆盖。
-断言事实不可读时，cell 保留 `not-recorded`、`unsupported` 或 `failed`，不把这些状态冒充缺项。
-
-矩阵最多包含 100 条评估用例，每条最多 100 列，总共最多 1000 行与 10000 格。
-重复身份的每个条目各占一格；结果正文的 JSON 数组最多 450000 UTF-8 字节。
-超限时 `matrix.state` 为 `partial`，`matrix.omitted` 分别列出省略的评估用例、行与列数。
-`--entry`、`--compact` 和 `--full` 仅供查看单个 Attempt 的详情，不与矩阵组合。
-
-### 常用 operation 的请求与结果字段
-
-下面只列读取运行结果时常用的字段。请求顶层必须包含 `protocol: "niceeval.query/v3"` 和 `operation`，表中的参数放在 `operation` 内，与 `kind` 并列。成功响应的顶层 `outcome` 为 `"success"`。
-
-| `operation.kind` | 必填参数 | 关键结果字段（从响应顶层开始） |
-| --- | --- | --- |
-| `run.list` | 无 | `runs[]` 中的 `runId`、`experimentId`、`state`、`startedAt`、`invocationId`、`coverage` |
-| `run.get` | `runId`：Run ID | `run.plannedAttempts[]` 中的 `evalId`、`outcome`、`verdict`、`publication.action`、`publication.attemptLocator` |
-| `experiment.get` | `experimentId`：实验 ID | `experiment.cells[]` 中的 `evalId`，以及 `members[]` 中的 `verdict`、`publication.attemptLocator`、`publication.action` |
-| `attempt.get` | `locator`：包含 `@` 的 Attempt 定位符 | `attempt.verdict`、`attempt.core.evalId`、`attempt.originRun.experimentId` |
-
-`run.get` 读取指定 Run 的计划与发布结果，`experiment.get` 读取每条评估用例当前采用的结果。局部重跑后，实验当前结果可以包含不同 Run 的 Attempt。发布结果的 `action` 为 `executed`、`carried` 或 `accepted`，分别表示本次执行、沿用已有结果或显式采用结果。
-
-`run.plannedAttempts[]` 与 `experiment.cells[].members[]` 使用相同成员字段。`verdict`、`score`、`costUSD`、`durationMs` 和 `tokens` 与 `publication` 同级；未发布时，判定为 `null`，指标为 unavailable。
-
-`publication` 只描述发布绑定。先检查 `publication.state` 是否为 `published`，再从 `publication.attemptLocator` 读取 Attempt 定位符。
-
-用 `--request -` 从标准输入传入完整请求：
-
-```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v3",
-  "operation": { "kind": "run.list" }
-}
-JSON
-```
-
-不能写标准输入的调用方可以把完整请求作为一个 argv 值传入：
-
-```sh
-niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{"kind":"run.list"}}'
-```
-
-两种传输使用同一套校验，不接受 operation 简写或部分字段。缺少传输选项，或同时传入两种选项，均为用法错误。
-
-响应的 `runs[]` 会列出 Run ID。读取其中一个 Run 时，把请求的 `operation` 换为 `{ "kind": "run.get", "runId": "<run-id>" }`。请求必须通过 `--request <file|->` 或 `--request-json <document>` 传入，恰好选择一种。
-
-选择的 Run、实验或 Attempt 不存在时，响应顶层为 `outcome: "failure"`，`failure.code` 为 `"inspection-selection-missing"`，退出码为 `2`。这表示选择对象缺失，不是评估判定为 `failed`；先用 `run.list` 核对 ID，并确认读取的是对应项目的运行记录。
-
 ## `niceeval show`
 
-`niceeval show` 在身份缺口下直接说明变化：`Changed` 后列出配置、源码或数据的 selector，以及两侧的有界摘要。
-源码和数据哈希只显示前 8 位；新增与移除注明 `added` 或 `removed`。每个缺口最多列三项，其余显示 `+N more`。
-同一 Experiment 的全部缺口说明相同时，只显示一次并注明 `all N gaps`。
-无法解释的身份变化显示 `Unexplained` 和诊断摘要。运行末尾 `Next` 提示的 `niceeval exp <experiment> --dry` 查看完整变化。
-
+先写对象，再写方面或稳定 ID。省略对象读取当前结果；带 `--record` 时读取该文件中的历史结果。
 
 ```sh
-niceeval show [--record <file>]
-niceeval show --run <run-id>... [--record <file>]
-niceeval show --experiment <experiment-id>... [--record <file>]
-niceeval show @<locator> [--record <file>]
-niceeval show @<locator> --assertions [--entry <entry-id>] [--record <file>]
-niceeval show @<locator> --source [--record <file>]
-niceeval show @<locator> --execution [--expand <stable-id>] [--record <file>]
-niceeval show @<locator> --timing [--record <file>]
-niceeval show @<locator> --usage [--record <file>]
-niceeval show @<locator> --diff [--record <file>]
+niceeval show
+niceeval show runs --json
+niceeval show run:<run-id>
+niceeval show exp:<experiment-id>
+niceeval show @<locator>
+niceeval show @<locator> assertions
+niceeval show @<locator> ae_<id> --full
+niceeval show @<locator> source
+niceeval show @<locator> execution --actor <actor-id> --type <event-type>
+niceeval show @<locator> command_<id>
+niceeval show @<locator> timing
+niceeval show @<locator> usage --reprice pricing.json
+niceeval show @<locator> diff
+niceeval show @<locator> fc_<id>
+niceeval show @<locator> artifacts
+niceeval show @<locator> art_<id>
+niceeval show @<locator> ae_<id> image <image-id> --output image.png
+niceeval show exp:baseline exp:candidate assertions --eval install/db-gpt
 ```
 
-`show` 在终端里按固定格式显示结果。不带选择参数时显示默认总览。`--run <run-id>` 显示指定的 Run，`--experiment <experiment-id>` 显示指定的 Experiment，两者都可以重复传入。
+追加 `--json` 得到 JSON Lines。每份成功 document 的 `links` 含 `rel` 和完整 `command`，复制命令并追加 `--json` 即可继续读取。
+`Next` 与 `links` 中的命令一致；外部 Record 的命令保留同一个 `--record`。explanation 和 failure 不带 links。
+用 `niceeval show <对象> <方面> --explain --json` 查看这次读取使用的事实，成功结果的 `outcome` 为 `success`，解释为 `explanation`，错误为 `failure`。
 
-通过率和分数按评估用例的类型显示：
+`ae_` 选择断言，`fc_` 选择文件改动，`art_` 选择产物；执行记录使用输出给出的稳定 ID。
+这些 ID 可以省略方面词。方面与前缀冲突或前缀未知时会报错并列出可用方面。
+`--full` 只用于单条断言，`--eval` 只用于 Experiment 判据矩阵，`--actor` 和 `--type` 只用于 execution，`--reprice` 只用于 usage。
 
-- 通过制的评估显示 `Verdicts` 和 `Pass rate`。
-- 纯计分制的评估显示 `Verdicts` 和 `Score`，不显示通过率。
-- 两种混在一起时，只有通过制的行显示通过率。
+有分页时沿 `next-page` link 继续读取。`--continuation` 绑定同一对象、筛选条件与可见范围；绑定变化时从第一页重新读取。
+断言图片命令把完整图片写入文件，不接受 `--json`。
 
-分数“完整”只说明这个分数算得出来，不代表评估通过。判定为 `failed` 的评估即使分数完整，也显示失败，同时保留它拿到的分数。只有判定为 `passed` 且分数完整的评估才进入成功排名。
+## `niceeval compare`
 
-判定为 `passed` 且分数完整时，终端详情显示 `scored`，浏览器显示“评分完成”。零分也可以是完整评分：它说明评分做完了，不说明目标已经达成，NiceEval 也没有默认的及格线。gate 失败照样显示失败。分数不完整（`partial`）时只保留已知分数的下限，不算有效评分。
+```sh
+niceeval compare run:<baseline-id> -- run:<candidate-id> --mode paired --max-regressions 0
+```
 
-`@<locator>` 选中一个 Attempt。一条命令最多给一个 locator，它不能和 `--run` 或 `--experiment` 同时使用；`--run` 和 `--experiment` 之间也不能同时使用。
-
-选中 Attempt 后，可以加下面任意一个选项看某一方面。这六个选项互斥，都必须配合 Attempt locator：
-
-- `--assertions`：断言的角色、判定、分数与理由；用 `--entry <entry-id>` 查看一条断言。
-- `--source`：记录下来的源码信息，以及每条断言在源码里的位置。
-- `--execution`：执行过程的概要，篇幅有上限。
-- `--timing`：各阶段的耗时。
-- `--usage`：用量合计，以及每一次上报的用量。
-- `--diff`：运行期间的文件改动。
-
-`--execution` 的输出分开显示三件事：采集状态、上报方是否声明数据完整、分页状态。即使当前页为空或已到最后一页，上报方标记的 `partial` 和限制原因也会保留。
-
-- 用 `--actor <id>` 和 `--type <event-type>` 按参与方和事件类型筛选。
-- 用 `--continuation <token>` 翻页时，要带上相同的筛选条件。
-- 用 `--expand <stable-id>` 直接展开一项详情。ID 必须取自概要里的 `itemId`、`toolOccurrenceId` 或 `commandId`，不能用位置序号。`--expand` 只能和 `--execution` 一起用，也不能和筛选、翻页参数同时出现。
-
-### 断言角色与参照结果
-
-`--assertions`、`--entry` 的条目标题和运行结束时的断言反馈使用相同标记：
-
-- `GATE pass` / `GATE fail` / `GATE n/a`：该条是否满足 gate。
-- `SCORE earned/possible`：计分贡献；同时承担 gate 的条目并列显示两种标记。
-- `NOTE met` / `NOTE unmet`：只记录条件是否满足，包括 stop-only 条件。
-
-详情先显示 `Verdict failed · Score 1/4`，再显示 `Gates 1 pass, 1 fail · Scored 3 · Notes 1 met, 1 unmet`。条目自己的名称即使含有“gate”，也不决定它的角色。机器 JSON 与 query 继续保留结构化字段。
-
-当前计划有缺口且存在旧结果时，总览显示 `Reference results (from previous recorded attempts)`。`Previous attempts N of K gaps` 只统计当前缺口能找到的上次结果；其后列出 `Verdicts`、通过制的 `Pass rate` 和计分制的 `Score earned/possible`。每条 `Previous result @…` 后显示判定，计分制同时显示分数。这些结果来自先前配置，更新当前目标需要重跑。`niceeval show --reference` 展开相同的参照摘要和条目。
+左右两组各至少一个 Run，组内用空格分开。模式为 `paired`、`side-by-side` 或 `exact`。
+`--max-regressions` 只用于 paired 或 exact；回退数量超过上限时命令失败。追加 `--json` 读取相同比较的机器结果。
 
 ## `niceeval view`
 
 ```sh
-niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
+niceeval view
+niceeval view run:<run-id>
+niceeval view exp:<experiment-id>
+niceeval view @<locator> execution
+niceeval view @<locator> fc_<id>
 ```
 
-`view` 在本机打开 NiceEval 自带的浏览器界面。不带 `--run` 时打开默认总览，重复传入 `--run` 可以预先选中多个 Run。它不接受位置参数，也不加载项目自己的页面、主题、组件或渲染器。
-
-`--no-open` 只启动服务，不自动打开浏览器。`--port` 指定端口，服务只监听 `127.0.0.1`。页面资源、本机访问授权和读取接口都准备好后，命令向 stdout 输出一次可以打开的本机地址。
-
-加 `--json` 时，stdout 改为 `niceeval.view/v1` 格式的 NDJSON：就绪时输出 `ready` 事件，关闭时输出 `closed` 事件。启动或运行失败时，通过退出码和 stderr 报告。
-
-`view` 只读取当前项目的 `.niceeval/record.sqlite`。打开期间有新结果写入时，页面会提示刷新，确认后才切换到新数据。它没有 `--record`、SQL、部署或分享选项，也不能指定自定义报告、页面、主题、路由或 operation。
+把 `show` 换成 `view`，保留对象、方面与 ID，就能在浏览器打开同一位置。
+启动时先校验选择；未命中或 ID 冲突时失败，不打开浏览器。`--no-open` 只打印 URL，`--port` 选择本机端口。
 
 ## 选择读取方式
 
@@ -246,7 +149,7 @@ niceeval run list --invocation <invocation-id> --json
 niceeval run list --record ./record.sqlite --state active --json
 ```
 
-`--experiment suite` 匹配 `suite` 和 `suite/...`，不会匹配 `suite-other`。`--limit` 必须是正整数；不传时不截断。JSON 的 `omitted` 是筛选后被省略的数量。
+`exp:suite` 匹配 `suite` 和 `suite/...`，不会匹配 `suite-other`。`--limit` 必须是正整数；不传时不截断。JSON 的 `omitted` 是筛选后被省略的数量。
 
 active、recovering 行会显示 owner 的 `alive`、`gone` 或 `unknown` 观察及观察时间。`alive` 表示观察时记录的进程仍存在，`gone` 表示已证明终止。`unknown` 的 reason 区分异机记录、缺失进程身份、外部 Record 或探测失败。观察不会修改 Run 状态；读取外部 Record 不会探测本机进程。
 
@@ -304,10 +207,6 @@ recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为�
 | `--dry` | `niceeval accept` | boolean | 完成整 Run 采用预检，但不发布新 Run。 |
 | `--all` | `niceeval invocation` | boolean | 包含已经完成的 Invocation 状态条目。 |
 | `--json` | `niceeval invocation` | boolean | 写出该命令的机器文档或事件流。 |
-| `--request` | `niceeval query` | string | 从文件或标准输入读取一个 niceeval.query/v3 request。 |
-| `--request-json` | `niceeval query` | string | 从一个 argv 值读取完整的 niceeval.query/v3 request。 |
-| `--record` | `niceeval query`、`niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
-| `--help` | `niceeval query` | boolean | 打印该命令的帮助。 |
 | `--state` | `niceeval run list` | string[] | 按 Run 状态筛选；可重复传入，任一状态匹配即可。 |
 | `--experiment` | `niceeval run list` | string[] | 按一个 Experiment ID 路径前缀筛选 Run。 |
 | `--limit` | `niceeval run list` | string | 最多返回指定数量的 Run，并报告省略数量。 |
@@ -319,47 +218,25 @@ recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为�
 | `--json` | `niceeval run list`、`niceeval run recover`、`niceeval run delete`、`niceeval run import`、`niceeval run export` | boolean | 以 JSON 输出 Run 结果。 |
 | `--yes` | `niceeval run recover`、`niceeval run delete` | boolean | 确认 Run 恢复或删除。 |
 | `--help` | `niceeval run list`、`niceeval run recover`、`niceeval run delete`、`niceeval run import`、`niceeval run export` | boolean | 打印 Run 命令的帮助。 |
-| `--compare` | `niceeval show` | boolean | Compare baseline and candidate Runs. |
-| `--left` | `niceeval show` | string[] | Baseline Run ID; repeatable. |
-| `--right` | `niceeval show` | string[] | Candidate Run ID; repeatable. |
-| `--mode` | `niceeval show` | string | Comparison mode: paired (default), side-by-side, or exact. |
-| `--max-regressions` | `niceeval show` | string | Maximum allowed regressions (non-negative integer; paired or exact). |
-| `--json` | `niceeval show` | boolean | 写出该命令的机器文档或事件流。 |
-| `--format` | `niceeval show` | string | Output format: text (default) or json. |
-| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
-| `--runs` | `niceeval show` | boolean | List Runs, with optional continuation. |
-| `--artifacts` | `niceeval show` | boolean | List saved artifacts for one Attempt. |
-| `--artifact` | `niceeval show` | string | Read one saved artifact; requires --artifacts. |
-| `--image` | `niceeval show` | string | Save one Assertion image; requires --entry and --output. |
-| `--reprice` | `niceeval show` | string | Reprice recorded usage using a JSON pricing file. |
-| `--change` | `niceeval show` | string | Read before/after text and unified hunks for one change. |
-| `--eval` | `niceeval show` | string | Filter Eval ID path prefix; requires --experiment with --assertions. |
-| `--assertions` | `niceeval show` | boolean | Show Assertion roles, Verdict, Score, and reasons. |
-| `--entry` | `niceeval show` | string | Select one exact Assertion entry ID; requires --assertions. |
-| `--compact` | `niceeval show` | boolean | Omit raw Assertion materials and context rows (default). |
-| `--full` | `niceeval show` | boolean | Include complete Assertion materials and context rows. |
-| `--reference` | `niceeval show` | boolean | Show previous gap results with Verdicts, pass rate, and Score. |
-| `--exp` | `niceeval show` | string[] | Show one Experiment; repeat to show more. |
-| `--run` | `niceeval show` | string[] | 显示一个已封口的 Run；可重复传入。 |
-| `--experiment` | `niceeval show` | string[] | 显示一个精确的 Experiment；可重复传入。 |
+| `--json` | `niceeval show`、`niceeval compare` | boolean | 写出该命令的机器文档或事件流。 |
+| `--explain` | `niceeval show` | boolean | Explain the facts read by this selection. |
+| `--record` | `niceeval show` | string | 读取一个外部 canonical SQLite Record。 |
 | `--all` | `niceeval show` | boolean | 显示紧凑 Results 视图中隐藏的 Attempt。 |
-| `--source` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 source facts。 |
-| `--execution` | `niceeval show` | boolean | 显示一个 Attempt 的有界 execution outline。 |
+| `--continuation` | `niceeval show` | string | Read the next page with the same selection and filters. |
 | `--actor` | `niceeval show` | string | Filter execution events by exact actor ID. |
 | `--type` | `niceeval show` | string | Filter execution events by exact event type. |
-| `--continuation` | `niceeval show` | string | Read the next execution page with the same filters. |
-| `--timing` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 timing activities。 |
-| `--usage` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的 usage totals。 |
-| `--diff` | `niceeval show` | boolean | 显示一个 Attempt 已捕获的文件变更。 |
-| `--expand` | `niceeval show` | string | 展开一个稳定的 execution identity。 |
+| `--eval` | `niceeval show` | string | Filter the Experiment assertions matrix by Eval prefix. |
+| `--reprice` | `niceeval show` | string | Reprice usage using a JSON pricing file. |
+| `--full` | `niceeval show` | boolean | Include complete materials for one Assertion ID. |
+| `--output` | `niceeval show` | string | Write an Assertion image to this file. |
 | `--help` | `niceeval show` | boolean | 打印该命令的帮助。 |
-| `--run` | `niceeval view` | string[] | 选择一个已封口的 Run；可重复传入。 |
+| `--mode` | `niceeval compare` | string | Comparison mode: paired (default), side-by-side, or exact. |
+| `--max-regressions` | `niceeval compare` | string | Maximum allowed regressions; paired or exact mode. |
+| `--help` | `niceeval compare` | boolean | 打印该命令的帮助。 |
 | `--no-open` | `niceeval view` | boolean | 不请求操作系统打开浏览器。 |
 | `--port` | `niceeval view` | string | 选择 loopback 监听端口；0 表示自动选择。 |
 | `--json` | `niceeval view` | boolean | 输出 View lifecycle NDJSON，不输出 Inspection 结果。 |
 | `--help` | `niceeval view` | boolean | 打印该命令的帮助。 |
-| `--all` | `niceeval state migrate` | boolean | 迁移所有已注册的第一方 Service state module。 |
-| `--help` | `niceeval state migrate` | boolean | 打印该命令的帮助。 |
 | `--help` | `niceeval init` | boolean | 打印该命令的帮助。 |
 | `--json` | `niceeval docker profile list`、`niceeval docker profile doctor`、`niceeval docker cache inventory`、`niceeval docker cache gc` | boolean | 写出该命令的机器文档或事件流。 |
 | `--domain` | `niceeval docker cache inventory`、`niceeval docker cache gc` | string | 选择一个由 NiceEval 管理的 Docker 缓存域。 |

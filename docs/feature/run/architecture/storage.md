@@ -2,7 +2,7 @@
 
 本页定义内部 SQLite adapter 的物理策略，不增加公共 Record writer 或 SQL API。
 数据库归属见[持久化与 Repository 边界](../../../architecture.md#持久化与-repository-边界)。
-Run 状态、Attempt publication、portable gate 与迁移继续由 [Run 架构](README.md) 定义。
+Run 状态、Attempt publication、portable gate 与格式准入由 [Run 架构](README.md) 定义。
 
 ## 逻辑事实与物理行
 

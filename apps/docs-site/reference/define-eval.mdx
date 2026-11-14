@@ -111,8 +111,8 @@ test(t: TestContext): EvalTestReturn;
 `t.note(label, value)` records a JSON value or Quantity for review, such as `t.note("Latency", ms(512))`.
 It registers no Assertion and does not affect Verdict, score, or coverage. `null` is displayed as unavailable.
 Labels must be unique within an Attempt. The limits are 64 notes and 64 KiB of JSON per note; violations throw `TypeError`.
-`show @<locator>` and View display Notes after Assertions; JSON and Query Attempt results include `notes`.
-`show --exp <experiment-id>` groups numeric notes by label and unit, displaying count, min, median, p90, and max.
+`show @<locator>` and View display Notes after Assertions; `show --json` Attempt results include `notes`.
+`show exp:<experiment-id>` groups numeric notes by label and unit, displaying count, min, median, p90, and max.
 
 `t` (`TestContext`) is the context an Eval author receives in `test(t)`. Each call to a check method registers one assertion.
 
@@ -438,7 +438,7 @@ t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
 `binaryJudge(options: BinaryJudgeOptions)` returns an ordinary `ScoreMatch`. `BinaryJudgeOptions` is `JudgeOptions` without `anchors`:
 `rubric` is required; `maxCalls` and `maxMaterialBytes` are optional. Validation and budgets are the same as for `defineJudge`.
 It classifies only as `satisfied` or `not-satisfied`, yielding `1` or `0` respectively. As a result, `.score(n)` awards either full points or zero; use `.gate(1)` when the condition must be satisfied.
-Invalid output, insufficient budget, or service failures retain their errored or unavailable state and do not count as zero. The audit keeps the category, reason, and mapped result for review with `show @<locator> --assertions`.
+Invalid output, insufficient budget, or service failures retain their errored or unavailable state and do not count as zero. The audit keeps the category, reason, and mapped result for review with `show @<locator> assertions`.
 
 ### Image material
 

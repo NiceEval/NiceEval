@@ -1,6 +1,6 @@
 # State —— Data Model
 
-State repository 属于 canonical ProjectDatabase；数据库的连接、迁移与事务规则由 [Run storage](../run/architecture/storage.md) 拥有。
+State repository 属于 canonical ProjectDatabase；数据库的连接、格式准入与事务规则由 [Run storage](../run/architecture/storage.md) 拥有。
 本页定义逻辑表，使用 SQLite STRICT；整数均非负且在 JavaScript safe integer 内，ID 与摘要由写入口严格解码。
 
 ## 实体与关系
@@ -41,7 +41,7 @@ roots 按 declared 排序；每个归档成员使用根序号与相对路径。�
 
 索引 `state_execution(run_id, experiment_id, eval_group_id, generation)` 支持 Run query；fact 主键支持每 execution 在 cutoff 下取最新版本。
 checkpoint 增加 `(execution_id, lineage_id)` UNIQUE，支持 commit ack 丢失后的精确重读；digest 不设唯一，避免把同内容误当同一次提交。
-所有 schema 变更纳入全库连续迁移与 hostile reader allowlist，不建立独立 schema runner。
+State 表服从整个 Record 的唯一格式标记与 hostile reader allowlist。格式不兼容时拒绝打开，不建立独立格式标记或迁移链。
 
 ## 写入与发布
 
@@ -68,4 +68,4 @@ Run hostile reader 的精确 schema allowlist 加入这些表、索引与外键�
 按有界 chunk 验证内容，不一次载入全部 archive；不解包、不执行 initialize。外部 `--record` 私有捕获仍是只读事实输入，不变成项目 authority。
 
 Run 删除须先证明关联集合 free，再只删该 Run 的 execution、binding 与 fact；checkpoint 的历史出处 ID 可以指向已删 Run，读面不得据此声称该 Run 仍可读取。
-canonical HEAD 与 ready checkpoint 保留，后续运行仍可恢复。未知或旧 Record 的缺失事实按 unavailable 解码，不推断已保存或从空状态开始。
+canonical HEAD 与 ready checkpoint 保留，后续运行仍可恢复。当前格式内的缺失事实按 unavailable 读取，不推断已保存或从空状态开始；旧格式在读取前拒绝。

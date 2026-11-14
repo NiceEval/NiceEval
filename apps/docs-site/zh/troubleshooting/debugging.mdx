@@ -13,7 +13,7 @@ description: "评估失败或出错时，从具体的 Run 或 Attempt 出发，�
 先看这次运行的整体情况。Run ID 在 `exp` 结束时的 `NEXT` 面板里：
 
 ```sh
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
 输出会列出这个 Run 的时间、各评估用例的判定、分数、结果覆盖、用量和限制。每个 Attempt 前面有一个以 `@` 开头的 locator，复制出问题的那一个：
@@ -29,33 +29,33 @@ pnpm exec niceeval show @<attempt-locator>
 单看摘要还不够时，按你怀疑的方向加一个参数：
 
 ```sh
-pnpm exec niceeval show @<attempt-locator> --source
-pnpm exec niceeval show @<attempt-locator> --execution
-pnpm exec niceeval show @<attempt-locator> --timing
-pnpm exec niceeval show @<attempt-locator> --usage
-pnpm exec niceeval show @<attempt-locator> --diff
+pnpm exec niceeval show @<attempt-locator> source
+pnpm exec niceeval show @<attempt-locator> execution
+pnpm exec niceeval show @<attempt-locator> timing
+pnpm exec niceeval show @<attempt-locator> usage
+pnpm exec niceeval show @<attempt-locator> diff
 ```
 
 | 你想知道 | 参数 |
 | --- | --- |
-| 这次运行用的评估源码和每条断言的结果 | `--source` |
-| Agent 说了什么、调用了哪些工具 | `--execution` |
-| 时间花在哪个阶段，是不是卡在 setup | `--timing` |
-| 这次用了多少 token、请求和费用 | `--usage` |
-| Agent 改了哪些文件 | `--diff` |
+| 这次运行用的评估源码和每条断言的结果 | `source` |
+| Agent 说了什么、调用了哪些工具 | `execution` |
+| 时间花在哪个阶段，是不是卡在 setup | `timing` |
+| 这次用了多少 token、请求和费用 | `usage` |
+| Agent 改了哪些文件 | `diff` |
 
-`--execution` 显示的是精简过的执行过程。要展开其中一项，复制它旁边的 ID：
+`execution` 显示的是精简过的执行过程。要展开其中一项，复制它旁边的 ID：
 
 ```sh
-pnpm exec niceeval show @<attempt-locator> --execution --expand <stable-id>
+pnpm exec niceeval show @<attempt-locator> execution <stable-id>
 ```
 
 ## 查清一条断言为什么得这个分
 
-问题落在某一条断言上时，用 `show --assertions --entry <entry-id> --json` 取结构化详情。它会返回这条断言的各项贡献、测量值和 Judge 给出的理由：
+问题落在某一条断言上时，用 `show assertions <entry-id> --json` 取结构化详情。它会返回这条断言的各项贡献、测量值和 Judge 给出的理由：
 
 ```sh
-pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --json
+pnpm --silent exec niceeval show @<locator> assertions <entry-id> --json
 ```
 
 不要从 `show` 的排版文本反推断言字段。命令示例见[查看运行结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
@@ -75,7 +75,7 @@ pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --js
 | 找不到项目的结果文件 | 确认在项目目录里运行，并检查 `.niceeval/record.sqlite` 是否存在。 |
 | `--record` 指定的文件被拒绝 | 确认它是运行结束后复制的完整单文件，复制期间没有别的进程在写。不要删除还没合并的 WAL 文件。外部文件会经过完整性和数据一致性校验。 |
 | 不支持的格式版本或数据库无效 | 保留原文件，核实写入它的 NiceEval 版本。支持的历史格式会自动升级；未知格式或损坏的数据不会被修补，也不会只读一部分。 |
-| Run 仍为 `active`，但原进程已经终止 | 先用 `pnpm exec niceeval show --run <run-id>` 核对，再运行 `pnpm exec niceeval run recover <run-id> --yes`。 |
+| Run 仍为 `active`，但原进程已经终止 | 先用 `pnpm exec niceeval show run:<run-id>` 核对，再运行 `pnpm exec niceeval run recover <run-id> --yes`。 |
 
 已发布的结果不能手动修改。需要不同的结果时，重新运行创建新的 Run。`niceeval run recover` 只会结束能证明原进程已经终止的 Run，已经发布的 Attempt 都会保留。完整步骤见[运行被强杀后恢复](/zh/troubleshooting/recover-after-kill)。
 
@@ -83,7 +83,7 @@ pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --js
 
 这里的格式版本是结果文件内部的标识，和 NiceEval 的 npm 包版本无关。不要通过修改数据库里的版本字段尝试升级。
 
-`show`、`show --json`、`run list`、`show --run` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史结果文件。读取时 NiceEval 在私有副本里自动升级，原文件、Run、Attempt 和引用都保持不变，不需要先运行评估。
+`show`、`show --json`、`run list`、`show run:<id>` 与 `view` 可以直接读取 0.15、0.16、0.17 格式的历史结果文件。读取时 NiceEval 在私有副本里自动升级，原文件、Run、Attempt 和引用都保持不变，不需要先运行评估。
 
 用 `--record` 读取时，文件必须是已经交付的完整单文件，读取期间不能被其它进程修改。文件还带着未合并的 WAL、仍有运行在写，或无法确认写入进程是否已经结束时，命令会拒绝读取。不要删除旁边的文件来绕过检查。
 
@@ -91,11 +91,11 @@ pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --js
 
 ## 结果不完整或无法比较
 
-脚本或 CI 用 `niceeval show --run <run-id> --json` 读取 Run。结果会指出缺失、问题、证据和修正方式。
+脚本或 CI 用 `niceeval show run:<run-id> --json` 读取 Run。结果会指出缺失、问题、证据和修正方式。
 
 `show --json` 只输出 JSON，不适合人直接阅读。要逐项解释分数时，用 `attempt.get` 和 `attempt.assertion.detail`，不要只看汇总分数。
 
-需要浏览器界面时运行 `pnpm exec niceeval view --run <run-id> --no-open`。不要解析 View 页面，也不要直接查询 SQLite 里的表。
+需要浏览器界面时运行 `pnpm exec niceeval view run:<run-id> --no-open`。不要解析 View 页面，也不要直接查询 SQLite 里的表。
 
 比较两个 Run 用 `runs.compare`。它的 `exact` 和 `paired` 模式遇到无法对齐的评估或配对时会直接拒绝，不会悄悄缩小分母。
 
@@ -116,7 +116,7 @@ pnpm --silent exec niceeval show @<locator> --assertions --entry <entry-id> --js
 3. 把配置、评估用例、实验和其它项目文件复制到一个新目录，不复制 `.niceeval`，并在新目录安装当前版本的 NiceEval。
 4. 在新目录运行原实验，例如 `pnpm exec niceeval exp <experiment> --rerun all`。新结果写进新目录的结果文件，原项目的历史数据保持原样。
 
-这个流程不会把旧结果带进新的结果文件。不要只删除个别锁文件或数据文件来绕过检查。`niceeval state migrate --all` 管理的是用户级服务状态，不能转换项目的结果文件。
+这个流程不会把旧结果带进新的结果文件。不要只删除个别锁文件或数据文件来绕过检查。
 
 ## View 显示旧结果
 

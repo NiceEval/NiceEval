@@ -332,7 +332,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
 - [Run](record.md)：Run create、Attempt publication 与 PublicationCutoff；
-- [OS-user Service state](migrate.md)：可替换 producer 与 candidate 的用户级状态读回边界；
+- [UserDatabase 格式与初始化](migrate.md)：安装后的公开消费拒绝旧格式，并保留原数据；
 - [Inspection](inspection.md)：固定 query、show 与终端读面。
 - [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 

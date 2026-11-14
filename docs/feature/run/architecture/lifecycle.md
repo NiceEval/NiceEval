@@ -100,5 +100,5 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。
 
 Record open 只接受当前格式标记与精确 schema。旧格式明确拒绝，保留原件并提示重跑或删除存储。
-未知格式、损坏数据或无法证明安全的旧 locks / sessions 拒绝迁移并保留原件。迁移后的 checkpoint 与只读重开验证属于正常收尾；失败不得用旧备份替换已经提交的新数据。
+未知格式、损坏数据或无法证明安全的旧 locks / sessions 均拒绝打开并保留原件，不尝试迁移或自动清空。
 checkpoint、空间回收、generation lease 与 staging GC 都由内部 adapter 管理，不形成 maintenance 命令。

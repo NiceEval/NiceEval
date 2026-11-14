@@ -121,7 +121,7 @@ Runner 在采集前读取 Assertion 对固定 family 的需求。
 
 采集完整度（`collection`）与读取状态由 Record reader 分开表达。每个 family 读取结果只能是
 `available`、`not-recorded`、`unsupported` 或 `invalid`。Runner 不把未采集、未知 schema 或损坏
-内容写成空值；已知历史格式在项目数据库打开时自动迁移。
+内容写成空值。项目数据库只接受当前存储格式，格式不符时保留原文件并提示重跑。
 
 ## 生命周期与收尾
 

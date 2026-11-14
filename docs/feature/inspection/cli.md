@@ -141,7 +141,7 @@ producer/固定事实族 无此能力是 `unsupported`；已选择事实无法�
 
 成本聚合先在每个 physical call 内选择一个 effective cost：reported 包括零并优先，缺席时才采用与 sealed call 绑定的 estimate proof。
 聚合不在整条轴上选择 reported 或 estimated，也不把同一调用重复计价。`source` 为 `reported | estimated | mixed`，与
-`state` 分开表达；partial estimate 保留已知金额，但不增加完整 coverage。USD 指标遇到非 USD、未知金额、采集 partial 或历史 revision 1 缺口时不能宣称完整。
+`state` 分开表达；partial estimate 保留已知金额，但不增加完整 coverage。USD 指标遇到非 USD、未知金额或采集 partial时不能宣称完整。
 
 `overview.cells[].members[].score.value` 是一个 selected Attempt 的 earned 真值。
 `overview.cells[].score.value` 是同一 Experiment × Eval 中 eligible Attempt score 的 mean。
@@ -265,7 +265,7 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 这不是整局附件的下载入口，也不重新调用外部系统。
 
 `attempt.trace` 的可选 `traceId`、`sourceId`、`actorId`、`eventType` 精确筛选通用轨迹；每页最多 32 个事件且事件摘要至多 64 KiB。
-`execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff 和 family revision；
+`execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff 和当前 family；
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
 Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
@@ -413,7 +413,7 @@ niceeval show @<locator> <artifact-id> [--json]
 每一行都可以加 `--explain`（断言图片除外）。上表省略了可省的方面词：`show @<locator> diff fc_<id>` 与 `show @<locator> fc_<id>` 是同一条命令。
 
 人在终端里找到想看的内容后，加 `--json` 就得到同一批数据的机器形态，把 `show` 换成 `view` 就在浏览器打开同一个位置；
-三者用同一套对象、方面与 ID，不需要改写成另一种语法。`-o text` 是默认值，`--json` 是 `-o json` 的一等缩写。
+三者用同一套对象、方面与 ID，不需要改写成另一种语法。默认输出文本，`--json` 输出结构化文档。
 
 `show` 默认是英文 human text 入口。它打开 Node facts adapter，调用具名 Inspection operation，再格式化其闭合 result；`--json` 只换编码，不换 operation。
 
@@ -505,7 +505,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
 ### 输出格式
 
-`-o text` 是默认值，输出上文的人读投影。`--json` 按下表的固定顺序，为投影调用的每个 operation 向 stdout 写一行 `InspectionDocument`（JSON Lines）。
+默认输出上文的人读投影。`--json` 按下表的固定顺序，为投影调用的每个 operation 向 stdout 写一行 `InspectionDocument`（JSON Lines）。
 每一行与库内 `selectInspectionOperation` 以同一 operation request 得到的 document 同一编码；全部行来自同一个 `PublicationCutoff`。
 
 | 命令 | 依次调用的 operation |
@@ -534,7 +534,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 某个 operation 返回 `outcome: failure` 时，该行照常写出，后续 operation 不再调用，进程以非零状态退出。
 argv 错误、source 无法打开等无法形成 document 的失败与文本模式一样只写 stderr。
 
-`attempt.assertion.image` 只把字节写入文件，不接受 `--json`。`-o` 不接受 `csv`、`table` 或其它取值。
+`attempt.assertion.image` 只把字节写入文件，不接受 `--json`。输出格式没有其它选择参数。
 
 ### 在浏览器打开同一个 selection
 

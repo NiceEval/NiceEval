@@ -6,9 +6,10 @@ Package Repo 只保留无法由其它功能 Journey 自然证明的安装边界�
 
 ## 发布形态
 
-包只发布一份 ESM 模块图，`exports` 每个入口只有一个 ESM 文件与一份类型声明，不发布 `.cjs` 构建，也没有转发到 CommonJS 的 ESM 外壳。
+包只发布一份 ESM 模块图，`exports` 每个入口指向 canonical `dist/*.js` 与一份 `*.d.ts` 声明，不发布 `.cjs` 构建，也没有转发到 CommonJS 的 ESM 外壳。
 CommonJS 项目用 `require` 加载时，由 Node 24 的 `require(esm)` 取得同一份模块；`import` 与 `require` 因此观察同一份 NiceEval 模块状态。
-`require(esm)` 不接受含顶层 `await` 的模块图，所以包内源码不使用顶层 `await`；构建对此做检查，出现时失败并指出文件。
+`require(esm)` 不接受含顶层 `await` 的模块图，所以包内源码不使用顶层 `await`；构建对此做检查，出现时失败并指出文件与位置。函数内部的 `await` 允许使用。
+模块身份在同一个原生 Node 进程中比较；测试 runner 的转换缓存不能替代发布包的实际装载行为。
 
 ## Owner 表
 
