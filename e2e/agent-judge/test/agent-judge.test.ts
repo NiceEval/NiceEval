@@ -23,7 +23,7 @@ function modelServer(mode: string) {
       if (!payload.tools) throw new Error("Expected tools protocol");
       bodies.push(body);
       ordinal += 1;
-      if (mode === "timeout") return;
+      if (mode === "timeout" || mode === "cancel-http") return;
       if (mode === "response-limit") { response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "x".repeat(4 * 1024 * 1024) }, finish_reason: "stop" }] })); return; }
       if (mode === "http400") { response.writeHead(400); response.end("invalid request"); return; }
       if (mode === "malformed") { response.end('{"choices":[]}'); return; }
@@ -103,6 +103,17 @@ test.concurrent.each(["success", "barrier", "no-submit", "turns", "timeout", "ht
           }
         });
       }
+      await withInspectionRequest({ kind: "attempt.usage", locator }, async (path) => {
+        const result = await niceeval.run(["query", "run", "--request", path]);
+        const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
+        expect(usage.state, result.diagnostic()).toBe("complete");
+        if (usage.state !== "complete") throw new Error("Missing physical Judge usage");
+        if (mode === "timeout") expect(usage.calls.length).toBeGreaterThanOrEqual(bodies.length);
+        else expect(usage.calls).toHaveLength(bodies.length);
+        expect(usage.totals.requests.value).toBe(usage.calls.length);
+        expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
+        if (["http400", "transport"].includes(mode)) expect(usage.calls.every((call) => call.status === "failed")).toBe(true);
+      });
       if (mode === "success") {
         const shown = await niceeval.run(["show", locator, "--assertions", "--entry", entries[0]!.entryId, "--full"]);
         expect(shown.stdout).toContain("Measurement"); expect(shown.stdout).toContain("Observed real Sandbox evidence"); expect(shown.stdout).toContain("application evidence");
@@ -138,30 +149,43 @@ test.concurrent.each(["direct", "shared", "stop"])("Agent Judge rejects incompat
 });
 
 // @feature docs/feature/judge/README.md
-test.concurrent("Cancelling Agent Judge stops the real Sandbox command tree and prevents further requests", async () => {
-  const { server, bodies } = modelServer("cancel");
+test.concurrent.each(["cancel", "cancel-http"])("Cancelling Agent Judge releases Sandbox and HTTP resources without further requests: %s", async (mode) => {
+  const { server, bodies } = modelServer(mode);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing model endpoint");
   try {
-    await scenario.case("agent-judge-cancel", async ({ commands: { niceeval } }) => {
+    await scenario.case(`agent-judge-${mode}`, async ({ commands: { niceeval } }) => {
       const controlled = niceeval.start(["exp", "agent-judge", "--rerun", "all", "--json"], { timeoutMs: 90_000,
-        env: { ...process.env, NICEEVAL_E2E_AGENT_JUDGE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_AGENT_JUDGE_KEY: "fixture-only-key", NICEEVAL_E2E_AGENT_JUDGE_MODE: "cancel" } });
+        env: { ...process.env, NICEEVAL_E2E_AGENT_JUDGE_URL: `http://127.0.0.1:${address.port}/v1`, NICEEVAL_E2E_AGENT_JUDGE_KEY: "fixture-only-key", NICEEVAL_E2E_AGENT_JUDGE_MODE: mode } });
       try {
         const container = await pollUntil(async () => {
           const listed = await command(["docker"]).run(["ps", "-q", "--filter", `label=niceeval.pid=${defined(controlled.pid)}`]);
           for (const id of listed.stdout.trim().split(/\s+/u).filter(Boolean)) {
+            if (mode === "cancel-http" && bodies.length > 0) return id;
             const marker = await command(["docker"]).run(["exec", id, "test", "-f", "/home/sandbox/workspace/judge-running"]);
             if (marker.exitCode === 0) return id;
           }
           return undefined;
         }, { timeoutMs: 60_000, intervalMs: 100, label: "Judge command started in owned Sandbox" });
-        expect(controlled.signal("SIGINT")).toBe(true);
+        if (mode === "cancel") expect(controlled.signal("SIGINT")).toBe(true);
         const interrupted = await controlled.done;
-        expect(interrupted.expReceipt().completion, interrupted.diagnostic()).toBe("interrupted");
+        expect(interrupted.expReceipt().completion, interrupted.diagnostic()).toBe(mode === "cancel" ? "interrupted" : "completed");
         const count = bodies.length;
         const stopped = await command(["docker"]).run(["ps", "-aq", "--filter", `id=${container}`]);
         expect(stopped.stdout.trim()).toBe("");
+        if (mode === "cancel-http") {
+          const locator = defined(only(interrupted.expEvalEvents(), () => true, interrupted.diagnostic()).locator);
+          await withInspectionRequest({ kind: "attempt.usage", locator }, async (path) => {
+            const result = await niceeval.run(["query", "run", "--request", path]);
+            const usage = result.querySuccess("attempt.usage").usage.judgeUsage;
+            expect(usage.state, result.diagnostic()).toBe("complete");
+            if (usage.state !== "complete") throw new Error("Missing interrupted Judge usage");
+            expect(usage.calls).toHaveLength(count);
+            expect(usage.calls.every((call) => call.operation === "agent")).toBe(true);
+            expect(usage.calls.at(-1)?.status).toBe("cancelled");
+          });
+        }
         expect(bodies).toHaveLength(count);
       } finally { await controlled.dispose(); }
     });

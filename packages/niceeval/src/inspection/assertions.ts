@@ -210,6 +210,9 @@ function projectEntry(
         return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
       };
       const raw = readEnvelope(entry);
+      if (isRecord(raw) && isRecord(raw.manifest) && "protocol" in raw.manifest && raw.manifest.protocol !== "niceeval.agent-judge-audit/v1") {
+        return closeJson({ ...projected, agentJudgeAudit: readAgentJudgeAudit(raw, "", undefined, () => undefined) });
+      }
       const decoded = decodeAgentJudgeEnvelope(raw);
       const root = decoded.trace.state === "inline" ? entry : entries[decoded.trace.entryIndex];
       if (root === undefined) throw new Error("Missing Agent Judge root");
