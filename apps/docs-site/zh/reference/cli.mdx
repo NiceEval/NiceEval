@@ -101,7 +101,7 @@ niceeval show --experiment baseline --experiment candidate --assertions --eval i
 
 机器读面是 `experiments.assertions`，请求包含 `experimentIds`，以及可选的 `evalIdPrefix` 路径前缀。
 实验 ID 至少一个、最多 32 个，去重后排序；任一 ID 不存在时整个请求失败。
-结果 `matrix.evals[]` 提供 `columns`、`rows` 与逐列 `unkeyed` 计数。同一 Attempt 内的重复身份保存在 cell 的 `entries[]`，不互相覆盖。
+结果 `matrix.evals[]` 提供 `columns`、`rows` 与逐列 `unlabeled` 计数。同一 Attempt 内的重复身份保存在 cell 的 `entries[]`，不互相覆盖。
 断言事实不可读时，cell 保留 `not-recorded`、`unsupported` 或 `failed`，不把这些状态冒充缺项。
 
 矩阵最多包含 100 条评估用例，每条最多 100 列，总共最多 1000 行与 10000 格。

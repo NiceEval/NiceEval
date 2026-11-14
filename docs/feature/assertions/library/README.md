@@ -1,12 +1,11 @@
 # Assertions —— Library
 
-完整持久化语义在 [Assertions](../README.md)。所有作者入口都遵守“调用即登记；handle 只配置同一 entry”。`entryId` 由 producer 分配；作者的 key、label 与 groupPath 只服务展示。
+完整持久化语义在 [Assertions](../README.md)。所有作者入口都遵守“调用即登记；handle 只配置同一 entry”。`entryId` 由 producer 分配；作者的 label 与 groupPath 只服务展示，不另设 key：跨 Run 比较判据时以 groupPath 加 label 对齐（[T-37](../../../taste.md#t-37)）。
 
 ## 显式值、`check` 与 `judge`
 
 ```ts
 const config = t.check(rawConfig, matches(ConfigSchema))
-  .key("config-valid")
   .label("配置有效");
 
 t.check(turn.reply, includes("完成"))
@@ -45,7 +44,6 @@ t.judge({ request: "总结需求", summary: turn.reply }, summaryQuality)
 
 | 方法 | 适用范围 | 效果 |
 |---|---|---|
-| `.key(value)` | 所有仍可配置的 Assertion | 设置人读的稳定展示 key。 |
 | `.label(value)` | 所有仍可配置的 Assertion | 设置人读标签。 |
 | `.gate()` | Pass／Score Eval 的 Boolean | 让 Boolean condition 参与 [Verdict](../../verdict/architecture.md) 四态 fold。 |
 | `.gate(minimum)` | Pass／Score Eval 的 measurement | 形成唯一的 `measurement >= minimum` condition，并让它参与 Verdict fold。 |
@@ -57,7 +55,7 @@ t.judge({ request: "总结需求", summary: turn.reply }, summaryQuality)
 
 measurement 的 `minimum` 必须是有限 `[0,1]` 数值。连续 Match 和 `JudgeDefinition` 都没有 `.atLeast()`；数值 Match 以及工具／事件 occurrence Match 的 `.atLeast()` 继续表达各自领域的比较或次数。
 
-同一 entry 只能形成一个 condition。已有 condition 后再传数值、重复 `gate`、重复 `score`、重复 key／label、封口后配置或 detached async 配置都是作者错误。`gate(minimum)` 后可用无参 `.orStop()` 复用 condition。首次 `.orStop(...)` 完成同步参数校验后，会原子设置 condition 与 required，并结束该 entry 的全部配置阶段，再启动等待；后续 `.score()`、`.gate()`、`.key()` 或 `.label()` 同步拒绝。重复无参等待复用原 stop Promise，不产生新的求值、condition 或 source site。
+同一 entry 只能形成一个 condition。已有 condition 后再传数值、重复 `gate`、重复 `score`、重复 label、封口后配置或 detached async 配置都是作者错误。`gate(minimum)` 后可用无参 `.orStop()` 复用 condition。首次 `.orStop(...)` 完成同步参数校验后，会原子设置 condition 与 required，并结束该 entry 的全部配置阶段，再启动等待；后续 `.score()`、`.gate()` 或 `.label()` 同步拒绝。重复无参等待复用原 stop Promise，不产生新的求值、condition 或 source site。
 
 Boolean `.orStop()` 使用自身 condition。stop requirement 不能被 optional 豁免；`unavailable` 或 `errored` 会停止并让 Attempt `errored`，低于 measurement minimum 的 stop-only entry 正常停止，但不会在读取时被提升为 gate。共享 stop latch 不会被 `catch`、换 Turn 或换 Session 清除；它不承诺终止任意 JavaScript 或已经发出的外部 I/O。
 

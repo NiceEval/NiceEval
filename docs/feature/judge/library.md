@@ -203,7 +203,7 @@ Agent Judge 是一个带工具的评审 agent。它在这条 Attempt 的主 Sand
 ### 定义与调用
 
 `defineAgentJudge` 定义一个评审者；题目里用 `t.agentJudge(reviewer, material)` 开一次评审会话，然后像对话一样逐道提问。
-每次 `review.judge(prompt)` 问一道评分题，返回普通的 measurement handle，`.gate()`、`.score()`、`.key()`、`.label()` 照常使用。
+每次 `review.judge(prompt)` 问一道评分题，返回普通的 measurement handle，`.gate()`、`.score()`、`.label()` 照常使用。
 `review.chat(message)` 发一条不计分的消息，例如先让评审列出被测 agent 新增的文件。评审在同一个会话里依次回答，后面的问题能直接用前面看过的现场，不必重读。
 评分 prompt 直接写在调用处，读题的人在一处就能看到每一项问什么、给几分（[T-26](../../taste.md#t-26)）。
 
@@ -222,9 +222,9 @@ export default defineScoreEval({
     const review = t.agentJudge(reviewer, { handoff: turn.reply });
     review.chat("先找到 niceeval.config.ts，列出 agent 写的 Adapter、Experiment 与 Eval 文件。");
     review.judge("Y 当且仅当 NiceEval 装进了适用的现有根工具项目，保留原有包管理器与锁文件归属。")
-      .score(3).key("install.layout.owner").label("安装融入宿主工具链");
+      .score(3).label("安装融入宿主工具链");
     review.judge("Y 当且仅当 Adapter 在非 2xx、解析错误或连接中断时抛出或映射为失败。")
-      .score(2).key("install.adapter.error-propagation").label("错误不被吞掉");
+      .score(2).label("错误不被吞掉");
   },
 });
 ```

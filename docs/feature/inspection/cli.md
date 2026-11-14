@@ -560,13 +560,13 @@ request 是 `{ kind: "experiments.assertions", experimentIds, evalIdPrefix? }`�
 result 按 Eval ID 排序，每个 Eval 给出：
 
 - `columns`：每列是一个 `(experimentId, attemptOrdinal)`，带该成员的 locator、Verdict 与 score；没有已发布 Attempt 的列带闭合的 absence reason。
-- `rows`：每行是一条判据，带 `key`、`label`、`groupPath`，以及与 `columns` 等长的 `cells`。
+- `rows`：每行是一条判据，带 `label`、`groupPath`，以及与 `columns` 等长的 `cells`。
 - `cells` 的每一格是该 Attempt 中这条判据的 `entryId`、判定结果与 contribution，取值与 `attempt.assertion.detail` 的同名字段相同；
   该 Attempt 没有这条判据时是 `absent`。
 - `distinct`：这一行各列的判定结果与得分不全相同时为 `true`。只有一列时恒为 `false`。
 
-行的身份是断言条目的 `key`。没有 `key` 的条目以 `groupPath` 加 `label` 为身份；两者都没有的条目不成行，
-在该 Eval 的 `unkeyed` 里按列计数。同一 Attempt 内身份重复的条目不合并，按出现顺序成为同一行里的多格，
+行的身份是断言条目的 `groupPath` 加 `label`；没有 `label` 的条目不成行，
+在该 Eval 的 `unlabeled` 里按列计数。同一 Attempt 内身份重复的条目不合并，按出现顺序成为同一行里的多格，
 不能让后一条静默替换前一条。行按在各列中首次出现的顺序排列，先出现的列优先。
 
 result 有界：行数或格数超过上限时 `state` 为 `partial`，并给出被省略的 Eval、行与列的数量；不能静默截断。

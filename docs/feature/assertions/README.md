@@ -20,7 +20,7 @@ conversation、usage 与 source navigation 都只在读侧投影。第三方既�
 | policy | 独立闭合的 requirement 与 condition；required 不从 gate/not-gate 反推。 |
 | contribution | typed not-scored / earned / unavailable score contribution。 |
 | explanationRetention | 有界 decisive/representative explanation；裁剪不改变其它字段。 |
-| display | 作者给出的 key、label 与 groupPath。 |
+| display | 作者给出的 label 与 groupPath。 |
 | score unit | sealed score contribution 中的 `points` 与 earned 值；它是分值单位，不是题型。 |
 | source navigation | 已执行 source site 的 `entryId`、role、位置与 Sources item join。 |
 
@@ -84,7 +84,6 @@ const question = "搜索资料并说明结论。";
 const turn = await t.send(question);
 
 t.check(turn.reply, includes("已完成"))
-  .key("reply-complete")
   .label("说明已完成");
 
 turn.succeeded().label("Turn 完成");

@@ -4,7 +4,7 @@
 
 ## Match 的边界
 
-一个 Match descriptor 必须可复用、不可变且无副作用。普通自定义 Match 的 evaluator 还必须确定性且无副作用；它可以返回 Boolean result，或 finite `[0,1]` measurement。它不能保存 subject identity、callsite、groupPath、`key`、`label`、score、gate 或 stop condition，也不能自行从 ctx 取值。受管 collection combinator 的求值结果是 `matched`、`mismatched` 或 `unavailable`，并按需带 typed artifact；它们不是不带状态的 boolean。
+一个 Match descriptor 必须可复用、不可变且无副作用。普通自定义 Match 的 evaluator 还必须确定性且无副作用；它可以返回 Boolean result，或 finite `[0,1]` measurement。它不能保存 subject identity、callsite、groupPath、`label`、score、gate 或 stop condition，也不能自行从 ctx 取值。受管 collection combinator 的求值结果是 `matched`、`mismatched` 或 `unavailable`，并按需带 typed artifact；它们不是不带状态的 boolean。
 
 ```ts
 const hasRequiredFields = defineValueMatch({

@@ -64,7 +64,6 @@ type BoundedJsonObject = {
 type AssertionEntryId = string;
 
 type AssertionDisplay = {
-  readonly key?: string;
   readonly label?: string;
   readonly groupPath: readonly string[];
 };
@@ -107,7 +106,7 @@ type AssertionEntryOuter = Omit<AssertionEntry, "criterion"> & {
 
 reader 先以 outer shape exact decode：除了 `criterion` 暂时只要求为有界 JSON object 外，其余 document 与 entry 字段已经完整验证。这样 reader 能先确定 entry 边界，再局部解释 criterion，而不会把未知 criterion 当成整个 payload 损坏。
 
-`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；它不从 key、label、数组位置、源码或材料推导。一个 document 最多 4,096 个 entry；key、label、groupPath 的每项都是无控制字符、最多 256 code points 的文本，group 深度最多 16。
+`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；它不从 label、数组位置、源码或材料推导。一个 document 最多 4,096 个 entry；label、groupPath 的每项都是无控制字符、最多 256 code points 的文本，group 深度最多 16。
 
 ## Criterion envelope 与内建 criterion
 
