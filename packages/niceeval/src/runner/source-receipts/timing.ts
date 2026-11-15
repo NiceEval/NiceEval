@@ -93,7 +93,16 @@ function timingActivityProjection(activity: TimingActivity):
     }
   | undefined {
   const phase = (() => {
+    if (activity.judgeOwned) return "assertion.evaluate" as const;
     switch (activity.key) {
+      case "judge.entry":
+      case "agent-judge.session":
+      case "agent-judge.prompt":
+      case "judge.request":
+      case "agent-judge.compaction":
+        return "assertion.evaluate" as const;
+      case "simulated-user.reply":
+        return "eval.run" as const;
       case "agent.turn":
         return "agent.send" as const;
       case "sandbox.command":
@@ -152,6 +161,7 @@ function timingSpanContains(input: {
 interface NormalizedAttemptTimingWithTurnIntervals {
   readonly timing: AttemptTimingAttachment;
   readonly intervalByTurnId: ReadonlyMap<TurnId, IntervalId>;
+  readonly entryIndexByIntervalId: ReadonlyMap<IntervalId, number>;
 }
 
 export function normalizeAttemptTiming(input: {
@@ -170,10 +180,12 @@ export function normalizeAttemptTiming(input: {
       return {
         timing: { collection: limitations.collection(), intervals: [] },
         intervalByTurnId: new Map(),
+        entryIndexByIntervalId: new Map(),
       };
     }
 
     const intervals: AttemptTimingInterval[] = [];
+    const entryIndexByIntervalId = new Map<IntervalId, number>();
     const appendActivities = (
       activities: readonly TimingActivity[] | undefined,
       parent:
@@ -237,6 +249,8 @@ export function normalizeAttemptTiming(input: {
             return null;
           }
           const parentIntervalId = containingParentInterval(startOffsetMs, durationMs);
+          if (activity.assertionEntryIndex !== undefined)
+            entryIndexByIntervalId.set(intervalId, activity.assertionEntryIndex);
           intervals.push({
             intervalId,
             phase: projection.phase,
@@ -244,7 +258,10 @@ export function normalizeAttemptTiming(input: {
             startOffsetMs,
             durationMs,
             parentIntervalId,
-            outcome: activity.failed ? ("failed" as const) : ("completed" as const),
+            outcome: activity.outcome ?? (activity.failed ? ("failed" as const) : ("completed" as const)),
+            ...(activity.transmissionOrdinal === undefined
+              ? {}
+              : { transmissionOrdinal: activity.transmissionOrdinal }),
             refs: [],
           });
           if (activity.key === "agent.turn" && activity.turnId !== undefined) {
@@ -328,6 +345,7 @@ export function normalizeAttemptTiming(input: {
         intervals: intervals.sort((left, right) => compareObservabilityText(left.intervalId, right.intervalId)),
       },
       intervalByTurnId,
+      entryIndexByIntervalId,
     };
   });
 }

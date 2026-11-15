@@ -48,6 +48,7 @@ import {
 } from "./assertions.ts";
 import { InspectionRepricingResultSchema } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
+import { inspectionByteContinuation, inspectionByteOffset } from "./continuation.ts";
 import {
   InspectionUnsupportedFormatError,
   attemptAttachment,
@@ -591,13 +592,46 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "attempt.timing": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const binding = {
+        source: source.kind,
+        cutoff: source.cutoff().identity,
+        locator: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+        id: `attempt.timing:${NiceEvalCurrentRecordAttachments.runnerActivities.attempt.attachment.family}:${NiceEvalCurrentRecordAttachments.runnerActivities.attempt.revision}`,
+      };
+      let offset = 0;
+      if (operation.continuation !== undefined) {
+        try {
+          offset = inspectionByteOffset(operation.continuation, binding);
+        } catch {
+          throw new InspectionOperationError({
+            code: "restart-required",
+            operation: operation.kind,
+            reason: "Timing continuation binding changed; restart from the first page.",
+          });
+        }
+      }
+      const projected = projectAttemptTiming(traceAttachments(resolved), offset);
+      const assertions = readInspectionAssertions(resolved);
+      const labels = new Map(
+        assertions.state === "available"
+          ? assertions.value.entries.map((entry) => [String(entry.entryId), entry.display.label] as const)
+          : [],
+      );
+      const timing = {
+        ...projected,
+        activities: projected.activities.map((activity) => {
+          const assertionLabel = activity.entryId === undefined ? undefined : labels.get(activity.entryId);
+          return assertionLabel === undefined ? activity : { ...activity, assertionLabel };
+        }),
+      };
       return {
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        timing: decodeRequiredResult(
-          operation.kind,
-          InspectionAttemptTimingResultSchema,
-          projectAttemptTiming(traceAttachments(resolved)),
-        ),
+        timing: decodeRequiredResult(operation.kind, InspectionAttemptTimingResultSchema, {
+          ...timing,
+          ...(timing.hasMore
+            ? { continuation: inspectionByteContinuation(binding, offset + timing.activities.length) }
+            : {}),
+        }),
       };
     }
     case "attempt.reprice": {

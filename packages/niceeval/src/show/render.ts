@@ -2195,7 +2195,19 @@ function commandOutcome(value: CommandDetail["outcome"]): string {
 export function renderTiming(value: TimingView): string {
   const piped = process.stdout.isTTY !== true;
   const headers = piped
-    ? ["Activity ID", "Parent", "Turn", "Phase", "Label", "Start", "Duration", "Outcome"]
+    ? [
+        "Activity ID",
+        "Parent",
+        "Turn",
+        "Phase",
+        "Label",
+        "Assertion ID",
+        "Assertion",
+        "Transmission",
+        "Start",
+        "Duration",
+        "Outcome",
+      ]
     : ["Phase", "Label", "Duration", "Outcome"];
   const rows = value.activities.map((activity) =>
     piped
@@ -2205,11 +2217,26 @@ export function renderTiming(value: TimingView): string {
           activity.turnId ?? "none",
           activity.phase,
           activity.label,
+          activity.entryId ?? "none",
+          activity.assertionLabel ?? "none",
+          activity.transmissionOrdinal === undefined ? "none" : String(activity.transmissionOrdinal),
           `${fmt(activity.startOffsetMs)} ms`,
           `${fmt(activity.durationMs)} ms`,
           activity.outcome,
         ]
-      : [activity.phase, activity.label, `${fmt(activity.durationMs)} ms`, activity.outcome],
+      : [
+          activity.phase,
+          [
+            activity.label,
+            activity.assertionLabel,
+            activity.entryId,
+            activity.transmissionOrdinal === undefined ? undefined : `attempt ${activity.transmissionOrdinal}`,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          `${fmt(activity.durationMs)} ms`,
+          activity.outcome,
+        ],
   );
   const widths = headers.map((header, index) =>
     Math.max(stringWidth(header), ...rows.map((row) => stringWidth(row[index]!))),
@@ -2236,6 +2263,14 @@ export function renderTiming(value: TimingView): string {
                 value: value.hasMore ? String(value.omittedActivityCount) : "0",
               },
               { key: "Limitations", value: String(value.limitations.length) },
+              ...(value.continuation === undefined
+                ? []
+                : [
+                    {
+                      key: "Next",
+                      value: `niceeval show ${value.locator} timing --continuation ${value.continuation}`,
+                    },
+                  ]),
             ],
           },
           { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },

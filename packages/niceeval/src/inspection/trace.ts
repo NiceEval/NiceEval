@@ -1577,11 +1577,15 @@ function readSandboxCommands(attachment?: TraceAttachmentInput) {
 
 export function projectAttemptTiming(
   attachments: Pick<AttemptTraceAttachments, "runnerActivities">,
+  offset = 0,
 ): InspectionAttemptTimingResult {
-  return projectTiming(readRunnerActivities(attachments.runnerActivities));
+  return projectTiming(readRunnerActivities(attachments.runnerActivities), offset);
 }
 
-function projectTiming(activities: ReturnType<typeof readRunnerActivities>): InspectionAttemptTimingResult {
+function projectTiming(
+  activities: ReturnType<typeof readRunnerActivities>,
+  offset: number,
+): InspectionAttemptTimingResult {
   const sourceState = availability(activities, TIMING_TARGETS);
   if (activities.state !== "available") {
     const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
@@ -1595,7 +1599,7 @@ function projectTiming(activities: ReturnType<typeof readRunnerActivities>): Ins
       omittedActivityCount: 0,
     };
   }
-  const items = activities.value.segments.slice(0, MAX_ACTIVITIES).map((activity) => ({
+  const items = activities.value.segments.slice(offset, offset + MAX_ACTIVITIES).map((activity) => ({
     activityId: activity.activityId,
     sequence: activity.sequence,
     parentActivityId: activity.parentActivityId,
@@ -1605,6 +1609,10 @@ function projectTiming(activities: ReturnType<typeof readRunnerActivities>): Ins
     startOffsetMs: activity.startOffsetMs,
     durationMs: activity.durationMs,
     outcome: activity.outcome,
+    ...("entryId" in activity && activity.entryId !== undefined ? { entryId: activity.entryId } : {}),
+    ...("transmissionOrdinal" in activity && activity.transmissionOrdinal !== undefined
+      ? { transmissionOrdinal: activity.transmissionOrdinal }
+      : {}),
   }));
   const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
   return {
@@ -1613,8 +1621,8 @@ function projectTiming(activities: ReturnType<typeof readRunnerActivities>): Ins
     limitationsTruncated: limitations.length < sourceState.limitations.length,
     omittedLimitationCount: sourceState.limitations.length - limitations.length,
     activities: items,
-    hasMore: items.length < activities.value.segments.length,
-    omittedActivityCount: activities.value.segments.length - items.length,
+    hasMore: offset + items.length < activities.value.segments.length,
+    omittedActivityCount: Math.max(0, activities.value.segments.length - offset - items.length),
   };
 }
 

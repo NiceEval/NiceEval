@@ -286,6 +286,19 @@ export default defineEval({ async test(t) {
       expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
       const evaluation = only(run.expEvalEvents(), (event) => event.evalId === "simulated", run.diagnostic());
       const locator = defined(evaluation.locator);
+      if (mode === "message" || mode === "waiting") {
+        const timing = (await niceeval.run(["show", locator, "timing", "--json"])).attemptTiming().timing;
+        const replies = timing.activities.filter((activity) => activity.label === "simulated-user.reply");
+        expect(replies).toHaveLength(mode === "message" ? 2 : 1);
+        for (const reply of replies) {
+          expect(reply.outcome).toBe("completed");
+          const parent = only(timing.activities, (activity) => activity.activityId === reply.parentActivityId);
+          expect(parent.label).toBe("eval.run");
+          // The fixture's first Agent continuation takes nine seconds after reply generation.
+          expect(reply.durationMs).toBeLessThan(8000);
+        }
+      }
+
       const attempt = await (async () =>
         (await niceeval.run(["show", locator, "--json"])).inspectionSuccess("attempt.get"))();
       const trace = !guardModes.includes(mode)

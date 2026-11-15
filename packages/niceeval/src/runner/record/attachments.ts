@@ -333,6 +333,7 @@ export function createRunArtifactsAttachment(): ArtifactsAttachmentBuild {
 }
 
 export function createAttemptObservabilityAttachments(input: {
+  readonly entryIds?: readonly AssertionEntryId[];
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
 }): Effect.Effect<AttemptSourceReceiptAttachments, RunnerObservabilityAttachmentInvalid> {

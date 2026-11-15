@@ -37,6 +37,7 @@ const AttemptTimingIntervalBase = {
   parentIntervalId: Schema.NullOr(IntervalIdSchema),
   outcome: TimingOutcomeSchema,
   refs: AttemptTimingReferencesSchema,
+  transmissionOrdinal: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
 } as const;
 
 const AttemptTimingIntervalStructuralSchema = Schema.Struct({

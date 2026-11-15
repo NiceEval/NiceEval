@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
+import { JudgeTimingSpan, type JudgeTimingOutcome } from "../judge/timing.ts";
 import { agentJudgeIdentity } from "../runner/judge-identity.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
 import { AGENT_JUDGE_ALGORITHM_REVISION } from "./agent-judge-revisions.ts";
@@ -82,6 +83,8 @@ export class AgentJudgeSession {
   private usageOrdinal = 0;
   private sealedTrace: AgentJudgeTrace | undefined;
   private cleanup: AgentJudgeTrace["cleanup"] = { state: "released", diagnostic: null };
+  private timingSession: JudgeTimingSpan | undefined;
+  private timingPrompt: JudgeTimingSpan | undefined;
   private readonly evidence = new Map<string, readonly AssertionMaterial[]>();
 
   constructor(
@@ -91,6 +94,7 @@ export class AgentJudgeSession {
     private readonly profile: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
     private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined,
+    private readonly timing?: import("../runner/timing.ts").TimingRecorder,
   ) {
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
@@ -275,7 +279,14 @@ export class AgentJudgeSession {
             this.abortAgent();
           };
           signal.addEventListener("abort", stop, { once: true });
-          this.running = this.run(this.controller.signal).finally(() => signal.removeEventListener("abort", stop));
+          const span = JudgeTimingSpan.start(this.timing, "agent-judge.session");
+          this.timingSession = span;
+          this.running = this.run(this.controller.signal).finally(() => {
+            span?.end(
+              this.controller?.signal.aborted ? "cancelled" : this.problem === undefined ? "completed" : "failed",
+            );
+            signal.removeEventListener("abort", stop);
+          });
           return this.running;
         },
         catch: piDefect,
@@ -314,6 +325,7 @@ export class AgentJudgeSession {
               }
               if (timer !== undefined) clearTimeout(timer);
             }
+            this.timingSession?.end(this.controller?.signal.aborted ? "cancelled" : "failed");
             this.closed = true;
           }),
         ),
@@ -420,9 +432,11 @@ export class AgentJudgeSession {
       cwd: this.sandbox.workdir,
       tools: ["bash", "read", "write", "edit", "submit_evaluation"],
       retry: { maxRetries: 2 },
+      timing: () => this.timingPrompt,
       customTools: (sdk) => [
         ...piSandboxTools(sdk, this.sandbox, {
           signal,
+          timing: () => this.timingPrompt,
           admit: () => {
             if (
               this.closed ||
@@ -528,6 +542,7 @@ export class AgentJudgeSession {
       };
       captureBeforeRelease = captureSession;
       signal.addEventListener("abort", onAbort, { once: true });
+      let compaction: JudgeTimingSpan | undefined;
       unsubscribe = agent.subscribe((event) => {
         if (this.closed) return;
         if (event.type === "message_end") {
@@ -596,6 +611,7 @@ export class AgentJudgeSession {
           };
         }
         if (event.type === "compaction_start") {
+          compaction = this.timingPrompt?.child("agent-judge.compaction");
           this.compactions.push({
             trigger: Math.max(1, this.ordinal),
             tokensBefore: null,
@@ -604,6 +620,8 @@ export class AgentJudgeSession {
           });
         }
         if (event.type === "compaction_end") {
+          compaction?.end(signal.aborted ? "cancelled" : event.result === undefined ? "failed" : "completed");
+          compaction = undefined;
           const index = this.compactions.length - 1;
           const compact = this.compactions[index]!;
           if (event.result !== undefined) {
@@ -639,10 +657,21 @@ export class AgentJudgeSession {
           submitTool.parameters = (
             step.kind === "judge" ? binaryParameters : gradeParameters
           ) as import("@earendil-works/pi-coding-agent").ToolDefinition["parameters"];
+        this.timingPrompt = this.timingSession?.child(
+          "agent-judge.prompt",
+          step.kind === "chat" ? undefined : Number(step.key),
+        );
+        let timingOutcome: JudgeTimingOutcome = "completed";
         try {
           await prompt(stepPrompt(step), signal);
         } catch (cause) {
+          timingOutcome = signal.aborted ? "cancelled" : "failed";
           this.failPi(piDefect(cause));
+        } finally {
+          compaction?.end(signal.aborted ? "cancelled" : "failed");
+          compaction = undefined;
+          this.timingPrompt?.end(timingOutcome);
+          this.timingPrompt = undefined;
         }
         captureSession();
         if (step.kind !== "chat" && !this.submissions.has(step.key))

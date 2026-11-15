@@ -761,7 +761,11 @@ export function openRunnerRecordCoordinator(input: {
             NiceEvalRecordAttachments.attemptCost,
             createAttemptCostAttachment(result),
           );
-          const sourceReceipts = yield* createAttemptObservabilityAttachments({ result, sealed: active.sealed! });
+          const sourceReceipts = yield* createAttemptObservabilityAttachments({
+            result,
+            sealed: active.sealed!,
+            entryIds: closedAssertions.success.entryIds,
+          });
           if (sourceReceipts.agentTurns !== undefined) {
             yield* active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns);
           }

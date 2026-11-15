@@ -1427,6 +1427,7 @@ export const InspectionRunResultSchema = Schema.Struct({
 export type InspectionRunResult = Schema.Schema.Type<typeof InspectionRunResultSchema>;
 
 export const InspectionAttemptTimingResultSchema = Schema.Struct({
+  continuation: Schema.optional(Schema.String),
   state: ProjectionStateSchema,
   limitations: Schema.Array(ProjectionLimitationSchema),
   limitationsTruncated: Schema.Boolean,
@@ -1434,6 +1435,9 @@ export const InspectionAttemptTimingResultSchema = Schema.Struct({
   activities: Schema.Array(
     Schema.Struct({
       activityId: Schema.String,
+      entryId: Schema.optional(Schema.String),
+      assertionLabel: Schema.optional(Schema.String),
+      transmissionOrdinal: Schema.optional(Schema.Number),
       sequence: Schema.Number,
       parentActivityId: Schema.NullOr(Schema.String),
       turnId: Schema.NullOr(Schema.String),

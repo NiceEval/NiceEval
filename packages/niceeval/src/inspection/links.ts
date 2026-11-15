@@ -56,10 +56,14 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
         ? Reflect.get(document, "continuation")
         : operation.kind === "attempt.trace"
           ? Reflect.get(Reflect.get(document, "trace")?.execution ?? {}, "continuation")
-          : undefined;
+          : operation.kind === "attempt.timing"
+            ? Reflect.get(Reflect.get(document, "timing") ?? {}, "continuation")
+            : undefined;
     if (typeof continuation === "string")
       add("next-page", [
-        ...(operation.kind === "run.list" ? ["runs"] : [locator!, "execution"]),
+        ...(operation.kind === "run.list"
+          ? ["runs"]
+          : [locator!, operation.kind === "attempt.timing" ? "timing" : "execution"]),
         ...(operation.kind === "attempt.trace" && operation.actorId !== undefined
           ? ["--actor", operation.actorId]
           : []),

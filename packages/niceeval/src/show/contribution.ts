@@ -256,8 +256,8 @@ function runShow(
       !/^[a-f0-9]{64}$/u.test(expand)
     )
       return yield* usage("--continuation requires execution evidence, artifacts, or a paged outline.");
-    if (continuation !== undefined && !execution && !runs && !artifacts)
-      return yield* usage("--continuation requires an execution outline or runs.");
+    if (continuation !== undefined && !execution && !timing && !runs && !artifacts)
+      return yield* usage("--continuation requires execution, timing, artifacts, or runs.");
     if (evalIdPrefix !== undefined && !matrix) return yield* usage("--eval requires exp:<id> assertions.");
     if (imageId !== undefined && (imageOutput === undefined || json || full || explain))
       return yield* usage("An Assertion image requires --output; --json, --explain, and --full are not accepted.");
@@ -521,7 +521,12 @@ function runShow(
               case "source":
               case "timing":
               case "usage":
-                return showOperations({ kind: "attempt", locator: selectedLocator, slice: address.aspect });
+                return showOperations({
+                  kind: "attempt",
+                  locator: selectedLocator,
+                  slice: address.aspect,
+                  continuation,
+                });
               default:
                 return showOperations({ kind: "attempt", locator: selectedLocator, slice: "summary" });
             }
@@ -666,7 +671,7 @@ function runShow(
                 continuation,
               });
             if (diff) return showOperations({ kind: "attempt", locator: selectedLocator, slice: "diff", changeId });
-            return showOperations({ kind: "attempt", locator: selectedLocator, slice: selectedSlice() });
+            return showOperations({ kind: "attempt", locator: selectedLocator, slice: selectedSlice(), continuation });
           };
           const operations = selectedOperations();
           for (const operation of operations) {
@@ -917,6 +922,7 @@ function runShow(
             selectInspectionOperation(opened, {
               kind: "attempt.timing",
               locator: selectedLocator,
+              ...(continuation === undefined ? {} : { continuation }),
             }),
           );
           yield* writeText(
@@ -1109,7 +1115,12 @@ export type ShowOperationsInput =
       readonly experimentIds: readonly InspectionOperationFor<"experiment.get">["experimentId"][];
       readonly evalIdPrefix: string | undefined;
     }
-  | { readonly kind: "attempt"; readonly locator: string; readonly slice: "summary" | "source" | "timing" | "usage" }
+  | {
+      readonly kind: "attempt";
+      readonly locator: string;
+      readonly slice: "summary" | "source" | "timing" | "usage";
+      readonly continuation?: string | undefined;
+    }
   | {
       readonly kind: "attempt";
       readonly locator: string;
@@ -1168,7 +1179,13 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
         }),
       ];
     case "timing":
-      return [{ kind: "attempt.timing", locator }];
+      return [
+        {
+          kind: "attempt.timing",
+          locator,
+          ...(input.continuation === undefined ? {} : { continuation: input.continuation }),
+        },
+      ];
     case "usage":
       return [{ kind: "attempt.usage", locator }];
     case "diff":

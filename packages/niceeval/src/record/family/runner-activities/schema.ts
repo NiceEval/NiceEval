@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { AssertionEntryIdSchema } from "../../../assertions/record/codec.ts";
 
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
@@ -36,6 +37,8 @@ export const AttemptRunnerActivityReceiptSchema = Schema.Union([
     ...ActivityBase,
     turnId: Schema.Null,
     phase: Schema.Literals(ATTEMPT_NON_AGENT_ACTIVITY_PHASES),
+    entryId: Schema.optional(Schema.toType(AssertionEntryIdSchema)),
+    transmissionOrdinal: Schema.optional(PositiveSafeIntegerSchema),
     label: SafeIdentifierSchema,
   }),
 ]);

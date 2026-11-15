@@ -165,6 +165,7 @@ export interface AssertFirstCoreContextState {
 }
 
 export interface AssertFirstCoreContextDeps {
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly readUsage?: (() => EvalUsage) | undefined;
   readonly elapsedMs?: (() => number) | undefined;
@@ -206,6 +207,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly captureSimulatedUser?: ((activity: SimulatedUserActivity) => Promise<void>) | undefined;
   readonly deadlineAt?: number | undefined;
   readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
@@ -1740,6 +1742,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judge: deps.judge,
           signal: deps.signal,
           judgeUsage: deps.judgeUsage,
+          judgeTiming: deps.judgeTiming,
         })
       : createAssertionsRuntime({
           evaluationKind: "pass",
@@ -1747,6 +1750,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judge: deps.judge,
           signal: deps.signal,
           judgeUsage: deps.judgeUsage,
+          judgeTiming: deps.judgeTiming,
         });
   // Preserve the function identity: contextual Matches resolve their bound
   // receiver through this check, independently of JavaScript's call-site `this`.
@@ -2654,7 +2658,8 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
               assertOpen: () => runtime.assertAuthoringOpen(),
               now: deps.timingNow ?? (() => performance.now()),
               deadlineAt: deps.deadlineAt,
-              createConversation: (definition) => createSimulatedUserConversation(definition, deps.judge, deps.pricing),
+              createConversation: (definition) =>
+                createSimulatedUserConversation(definition, deps.judge, deps.pricing, deps.judgeTiming),
               latchFailure: (error) => {
                 state.simulatedUserFailure ??= error;
               },

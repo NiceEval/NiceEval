@@ -4,6 +4,7 @@
 // @concord-implements docs/feature/assertions/library/scoped-assertions.md
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/verdict/README.md
+import { CurrentJudgeTiming, JudgeTimingSpan } from "../judge/timing.ts";
 import {
   validateMaterialQAInputs,
   captureContextualMatch,
@@ -809,6 +810,7 @@ class AssertionsRuntimeImplementation {
   private readingContext = false;
   readonly t: AssertionsContext<AssertionEvaluationKind>;
   private readonly entries: AssertionEntry[] = [];
+  private readonly managedJudgeEntryIndexes = new Set<number>();
   private readonly groupStack: string[] = [];
   private stopped: AssertionStopError | undefined;
   private closing = false;
@@ -828,6 +830,7 @@ class AssertionsRuntimeImplementation {
     private readonly judge: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
     private readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
+    private readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder,
   ) {
     const check = (...args: readonly unknown[]) => this.checkFor(check, args);
     const base = {
@@ -865,6 +868,7 @@ class AssertionsRuntimeImplementation {
       this.judge,
       this.signal,
       (index) => this.judgeUsage?.forEntry(index),
+      this.judgeTiming,
     );
     const owner = { session, entries: [] as AssertionEntry[] };
     this.agentJudgeReviews.push(owner);
@@ -964,6 +968,7 @@ class AssertionsRuntimeImplementation {
         );
       };
       const registration = contextualRegistration();
+      if (qa !== undefined) this.managedJudgeEntryIndexes.add(this.entries.length);
       const actual =
         "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function"
           ? registration.actualRetainedBytes
@@ -1792,6 +1797,9 @@ class AssertionsRuntimeImplementation {
 
   /** Evaluates an entry at most once even when multiple Effect fibers await it. */
   private settle(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
+    const timing = this.judgeTiming;
+    const managed =
+      entry.criterion.kind === "managed-score-measurement" || this.managedJudgeEntryIndexes.has(entry.index);
     return Effect.suspend(() => {
       if (entry.evaluation.state === "settled") return Effect.succeed(entry.evaluation.value);
       if (entry.evaluation.state === "pending") return Deferred.await(entry.evaluation.deferred);
@@ -1801,8 +1809,23 @@ class AssertionsRuntimeImplementation {
           if (entry.evaluation.state === "pending") return yield* Deferred.await(entry.evaluation.deferred);
           const deferred = yield* Deferred.make<EntrySettlement>();
           entry.evaluation = { state: "pending", deferred };
+          const span = managed ? JudgeTimingSpan.start(timing, "judge.entry", undefined, entry.index) : undefined;
           const settled = yield* restore(
             Effect.suspend(entry.evaluate).pipe(
+              Effect.provideService(CurrentJudgeTiming, span),
+              Effect.onExit((exit) =>
+                Effect.sync(() =>
+                  span?.end(
+                    exit._tag === "Success"
+                      ? exit.value.state === "unavailable" || exit.value.state === "errored"
+                        ? "failed"
+                        : "completed"
+                      : Cause.hasInterruptsOnly(exit.cause)
+                        ? "cancelled"
+                        : "failed",
+                  ),
+                ),
+              ),
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.interrupt
@@ -2250,6 +2273,7 @@ export function createAssertionsRuntime(input: {
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
@@ -2257,6 +2281,7 @@ export function createAssertionsRuntime(input: {
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
@@ -2264,6 +2289,7 @@ export function createAssertionsRuntime(input: {
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError('Assertions runtime evaluationKind must be "pass" or "score"');
@@ -2274,6 +2300,7 @@ export function createAssertionsRuntime(input: {
     input.judge,
     input.signal,
     input.judgeUsage,
+    input.judgeTiming,
   );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }

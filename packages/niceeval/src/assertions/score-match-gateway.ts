@@ -1,3 +1,4 @@
+import { CurrentJudgeTiming } from "../judge/timing.ts";
 import { ordinaryJudgeIdentity } from "../runner/judge-identity.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
 import {
@@ -739,6 +740,7 @@ export function prepareManagedScoreMatch(input: {
       update();
       busy = true;
       const execute = Effect.gen(function* () {
+        const timing = yield* CurrentJudgeTiming;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           let received: Awaited<ReturnType<typeof requestScoreMatchProvider>>;
           const sent = Effect.tryPromise({
@@ -765,6 +767,7 @@ export function prepareManagedScoreMatch(input: {
                 signal,
                 usage,
                 deadlineAt,
+                timing: timing?.child("judge.request", undefined, attempt),
               });
             },
             catch: (error) => error,

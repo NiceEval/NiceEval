@@ -1,5 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/judge/architecture.md
+import { judgeTimingFetch, type JudgeTimingSpan } from "./timing.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { pathToFileURL } from "node:url";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
@@ -19,6 +20,7 @@ export async function createManagedPiSession(input: {
   readonly cwd: string;
   readonly tools: readonly string[];
   readonly retry: { readonly maxRetries: number } | undefined;
+  readonly timing?: (() => JudgeTimingSpan | undefined) | undefined;
   readonly customTools: (sdk: CodingSdk) => ToolDefinition[];
 }) {
   let sdk: CodingSdk;
@@ -55,6 +57,11 @@ export async function createManagedPiSession(input: {
       refreshOnCreate: false,
       allowModelNetwork: false,
     });
+    if (input.timing !== undefined) {
+      const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
+      const fetch = judgeTimingFetch(input.timing);
+      modelRuntime.streamSimple = (model, context, options) => streamSimple(model, context, { ...options, fetch });
+    }
     modelRuntime.registerProvider("niceeval-managed", {
       baseUrl: profile.baseUrl,
       headers: { ...profile.headers },

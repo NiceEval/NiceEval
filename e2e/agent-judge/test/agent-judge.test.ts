@@ -374,6 +374,15 @@ test.concurrent.each([
           expect(usage.calls.every((call) => call.status === "failed")).toBe(true);
       })();
       if (mode.startsWith("compact-")) {
+        const timing = (await niceeval.run(["show", locator, "timing", "--json"])).attemptTiming().timing;
+        const compaction = only(timing.activities, (activity) => activity.label === "agent-judge.compaction");
+        expect(compaction.outcome).toBe("completed");
+        const parent = only(timing.activities, (activity) => activity.activityId === compaction.parentActivityId);
+        expect(parent.label).toBe("agent-judge.prompt");
+        expect(parent.entryId).toBe(entries[1]!.entryId);
+        expect(
+          timing.activities.some((activity) => activity.label === "judge.request" && activity.outcome === "failed"),
+        ).toBe(true);
         const shown = await niceeval.run(["show", locator, "--full", entries[1]!.entryId]);
         expect(shown.stdout).toContain("Compaction");
         expect(shown.stdout).toMatch(/First\s+question was submitted/u);
@@ -495,6 +504,11 @@ test.concurrent.each(["cancel", "cancel-http"])(
           const stopped = await command(["docker"]).run(["ps", "-aq", "--filter", `id=${container}`]);
           expect(stopped.stdout.trim()).toBe("");
           if (mode === "cancel-http") {
+            const timingLocator = defined(only(interrupted.expEvalEvents(), () => true).locator);
+            const timing = (await niceeval.run(["show", timingLocator, "timing", "--json"])).attemptTiming().timing;
+            expect(timing.activities).toEqual(
+              expect.arrayContaining([expect.objectContaining({ label: "judge.request", outcome: "cancelled" })]),
+            );
             const locator = defined(only(interrupted.expEvalEvents(), () => true, interrupted.diagnostic()).locator);
             await (async () => {
               const result = await niceeval.run(["show", locator, "usage", "--json"]);

@@ -1,3 +1,4 @@
+import { JudgeTimingSpan } from "../judge/timing.ts";
 import {
   simulatedUserSystemPrompt,
   SIMULATED_USER_TOOL_DESCRIPTION,
@@ -23,6 +24,7 @@ export function createSimulatedUserConversation(
   definition: SimulatedUserDefinition,
   profile: ResolvedJudgeConfig | undefined,
   pricing: Record<string, PriceOverride> | undefined,
+  timing?: import("../runner/timing.ts").TimingRecorder,
 ): SimulatedUserConversation {
   let session: AgentSession | undefined;
   let prompt: Awaited<ReturnType<typeof createManagedPiSession>>["prompt"] | undefined;
@@ -119,7 +121,7 @@ export function createSimulatedUserConversation(
       return { content: [{ type: "text", text: "Answer accepted." }], details: {} };
     },
   });
-  const generate = async (input: GenerationInput) => {
+  const generateAnswer = async (input: GenerationInput) => {
     current = input;
     submitted = false;
     turns = 0;
@@ -231,10 +233,16 @@ export function createSimulatedUserConversation(
   };
   return {
     generate(input) {
-      running = generate(input).catch((cause: unknown) => {
-        if (cause instanceof SimulatedUserError || input.signal.aborted) throw cause;
-        throw failPi(piDefect(cause));
-      });
+      const span = JudgeTimingSpan.start(timing, "simulated-user.reply");
+      running = generateAnswer(input)
+        .then(() => {
+          span?.end();
+        })
+        .catch((cause: unknown) => {
+          span?.end(input.signal.aborted ? "cancelled" : "failed");
+          if (cause instanceof SimulatedUserError || input.signal.aborted) throw cause;
+          throw failPi(piDefect(cause));
+        });
       return running;
     },
     async snapshot() {

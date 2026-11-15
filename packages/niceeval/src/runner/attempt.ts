@@ -2062,6 +2062,7 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
     const { context: core, state } = createAssertFirstCoreContext({
       readUsage: usage === undefined ? undefined : () => usage.snapshot(),
       judgeUsage: input.judgeUsage,
+      judgeTiming: recorder,
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
       model: a.run.model,
@@ -3672,6 +3673,7 @@ async function runAttemptBody(
       model: run.model,
       reasoningEffort: run.reasoningEffort,
       judgeUsage: res.judgeUsage,
+      judgeTiming: recorder,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
       pricing: config.pricing,
       flags: run.flags,

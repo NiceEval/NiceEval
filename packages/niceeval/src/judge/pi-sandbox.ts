@@ -9,6 +9,7 @@ export function piSandboxTools(
   sandbox: Sandbox,
   input: {
     readonly signal: AbortSignal;
+    readonly timing?: (() => import("./timing.ts").JudgeTimingSpan | undefined) | undefined;
     readonly admit: () => void;
     readonly failed: (error: unknown) => void;
   },
@@ -60,7 +61,15 @@ export function piSandboxTools(
     ...tool,
     execute: async (...args) => {
       input.admit();
-      return tool.execute(...args);
+      const span = input.timing?.()?.child("sandbox.command");
+      try {
+        const result = await tool.execute(...args);
+        span?.end(result.isError ? "failed" : "completed");
+        return result;
+      } catch (error) {
+        span?.end(input.signal.aborted ? "cancelled" : "failed");
+        throw error;
+      }
     },
   }));
 }

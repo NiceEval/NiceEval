@@ -219,6 +219,7 @@ export async function requestScoreMatchProvider(input: {
   readonly signal: AbortSignal;
   readonly usage: import("../o11y/judge-usage.ts").JudgeUsageTransmission | undefined;
   readonly deadlineAt: number | undefined;
+  readonly timing?: import("../judge/timing.ts").JudgeTimingSpan | undefined;
 }): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
   const deadlineAt = input.deadlineAt ?? Infinity;
   let resolveSettled: () => void = () => undefined;
@@ -233,6 +234,7 @@ export async function requestScoreMatchProvider(input: {
   const interrupted = abortWait(input.signal);
   let request: Promise<Response> | undefined;
   let received = false;
+  let timingOutcome: import("../judge/timing.ts").JudgeTimingOutcome = "failed";
   try {
     request = fetch(`${input.baseUrl.replace(/\/$/u, "")}/${input.endpoint}`, {
       method: "POST",
@@ -249,6 +251,7 @@ export async function requestScoreMatchProvider(input: {
     input.usage?.headers(response.status);
     const body = await readJudgeResponseText(response, input.maxBytes, input.signal, input.usage, deadlineAt);
     input.usage?.body(body);
+    timingOutcome = response.ok ? "completed" : "failed";
     return { status: response.status, headers: response.headers, body };
   } catch (error) {
     if (input.signal.aborted) input.usage?.cancel();
@@ -266,5 +269,6 @@ export async function requestScoreMatchProvider(input: {
     interrupted.dispose();
     input.signal.removeEventListener("abort", cancel);
     resolveSettled();
+    input.timing?.end(input.signal.aborted ? "cancelled" : timingOutcome);
   }
 }

@@ -132,6 +132,7 @@ function captureRunnerAttemptSourceSnapshot(
         durationMs: interval.durationMs,
         parentActivityId: interval.parentIntervalId,
         outcome: interval.outcome,
+        ...(interval.transmissionOrdinal === undefined ? {} : { transmissionOrdinal: interval.transmissionOrdinal }),
       })),
     };
     const runnerActivities = yield* decodeReceipt(
@@ -176,6 +177,7 @@ function captureRunnerAttemptSourceSnapshot(
               segments: commandSegments,
             },
       runnerActivities,
+      timingEntryIndexes: timingNormalization.entryIndexByIntervalId,
       runnerDiagnostics,
     };
   });
@@ -210,6 +212,7 @@ export function bindRunnerAttemptObservabilityCapture(
 export function createRunnerAttemptSourceReceiptsCapture(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
+  readonly entryIds?: readonly import("../../../assertions/identity.ts").AssertionEntryId[];
 }): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   const capture = Effect.gen(function* () {
     const runtime = resultRuntimeState(input.result);
@@ -219,7 +222,18 @@ export function createRunnerAttemptSourceReceiptsCapture(input: {
     if (!sealAttemptObservabilityCaptureIdentity(runtime.capture)) {
       return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
     }
-    return runtime.snapshot;
+    const snapshot = runtime.snapshot;
+    return {
+      ...snapshot,
+      runnerActivities: {
+        ...snapshot.runnerActivities,
+        segments: snapshot.runnerActivities.segments.map((activity) => {
+          const index = snapshot.timingEntryIndexes?.get(activity.activityId);
+          const entryId = index === undefined ? undefined : input.entryIds?.[index];
+          return activity.phase === "agent.send" || entryId === undefined ? activity : { ...activity, entryId };
+        }),
+      },
+    };
   });
   return capture.pipe(
     Effect.catch((error) => (isRunnerObservabilityProducerError(error) ? Effect.fail(error) : Effect.die(error))),

@@ -286,7 +286,10 @@ export const inspectionProtocolRegistry = Object.freeze({
     factKinds: ["execution-traces", "agent-turns", "sandbox-commands", "artifacts"],
   }),
   "attempt.timing": spec({
-    request: operation("attempt.timing", { locator: AttemptLocatorSchema }),
+    request: operation("attempt.timing", {
+      locator: AttemptLocatorSchema,
+      continuation: Schema.optional(Schema.String),
+    }),
     result: { timing: InspectionAttemptTimingResultSchema },
     factKinds: ["runner-activities"],
   }),

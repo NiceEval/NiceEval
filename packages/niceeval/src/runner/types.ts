@@ -125,6 +125,11 @@ export type LifecyclePhase =
  * offset 相对所在时钟域(RunMeta.timings 或单个 attempt)的单调时钟起点。
  */
 export interface TimingActivity {
+  /** Attempt-local Assertion registration coordinate, resolved to entryId at publication. */
+  assertionEntryIndex?: number;
+  judgeOwned?: true;
+  transmissionOrdinal?: number;
+  outcome?: "completed" | "failed" | "cancelled";
   /** 所在时钟域内唯一,供 origin、provenance 与展示层稳定引用;不作为跨 Run 身份。 */
   id: string;
   /** ActivityKey;官方词表见 architecture.md,第三方用自己的命名空间。 */

@@ -46,6 +46,7 @@ export interface StagedSandboxCommandsAttachment {
 
 /** Immutable source-local snapshots produced before the seal path starts. */
 export interface RunnerAttemptSourceReceiptsCapture {
+  readonly timingEntryIndexes?: ReadonlyMap<string, number>;
   readonly agentTurns: AgentTurnsAttachment | undefined;
   readonly sandboxCommands: StagedSandboxCommandsAttachment | undefined;
   readonly runnerActivities: AttemptRunnerActivitiesAttachment;
