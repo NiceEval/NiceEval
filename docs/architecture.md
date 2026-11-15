@@ -336,7 +336,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 12. **收尾与留存。**
     finally 里按 `SandboxAgent.teardown` → 各 owner 已登记的 after action(按实际登记栈逆序,见 [Cleanup](feature/sandbox/library/layers.md#cleanup))→ Provider finalizer 的顺序收尾。
-    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep与注册表))。
+    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep))。
 13. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。**
     `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin

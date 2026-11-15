@@ -513,7 +513,7 @@ Roadmap 候选：对一个 Cache Domain 的不可变回收授权预览；apply �
 
 Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，跨进程由 detached provider inspect / wake / destroy
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#收尾留存与注册表)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#收尾与留存)
 
 其它写法：`Sandbox 留存能力`。
 

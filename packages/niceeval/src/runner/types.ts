@@ -459,7 +459,7 @@ export interface EvalResult {
   /**
    * 沙箱型 attempt 的执行环境标识:provider 名与实例 id,用于关联 provider 侧日志与留存现场;
    * remote 型 agent 无此字段。`kept` 表示运行收尾时按 --keep-sandbox 留存了沙箱;之后的存活
-   * 状态归 `niceeval sandbox list` 回答,本记录一次写成、不回写。
+   * 状态由 Provider 原生工具查询，本次运行事实不回写。
    */
   sandbox?: {
     provider: string;
@@ -1742,7 +1742,9 @@ export interface KeptNotice {
   verdict: Verdict;
   provider: string;
   sandboxId: string;
-  enter: string | undefined;
+  nativeCommand: string;
+  cleanCommand: string;
+  expiresAt: string | undefined;
 }
 
 /** 一次 run 的初始计划。复用只暴露数量；失败明细仅用于静态初始化终局清单。 */
@@ -1866,7 +1868,9 @@ export type DurableFeedbackEvent =
       verdict: Verdict;
       provider: string;
       sandboxId: string;
-      enter: string | undefined;
+      nativeCommand: string;
+      cleanCommand: string;
+      expiresAt: string | undefined;
     }
   /**
    * 实验级钩子(`ExperimentDef.before` / 它返回的 after)的起止,由 runner 在钩子真正

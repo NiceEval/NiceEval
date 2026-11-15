@@ -1291,7 +1291,7 @@ export function materializeDockerComposeProviderCase(
             message:
               `Compose project ${overlay.projectName} cleanup failed after materialization error: ` +
               `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}. ` +
-              "Inspect with `niceeval sandbox list --orphans`; remove with `niceeval sandbox prune`.",
+              `Inspect with \`docker ps -a --filter label=com.docker.compose.project=${overlay.projectName}\`; remove the project resources with Docker CLI.`,
             data: {
               provider: "docker",
               projectName: overlay.projectName,
@@ -1426,17 +1426,6 @@ export function materializeDockerComposeProviderCase(
           mainService: plan.mainService,
         },
         stop: finalizer,
-        entry: {
-          provider: "docker",
-          profile: plan.profile,
-          primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
-          resources: {
-            kind: "docker-compose",
-            projectName: overlay.projectName,
-            mainService: plan.mainService,
-          },
-          state: "alive",
-        },
       };
 
       // 主 Sandbox.stop 走 detach;真正回收挂在 group.stop(= finalizer)。

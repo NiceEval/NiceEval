@@ -405,7 +405,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
             verdict: event.verdict,
             provider: event.provider,
             sandboxId: event.sandboxId,
-            enter: event.enter,
+            nativeCommand: event.nativeCommand,
+            cleanCommand: event.cleanCommand,
+            expiresAt: event.expiresAt,
           },
         ],
       };

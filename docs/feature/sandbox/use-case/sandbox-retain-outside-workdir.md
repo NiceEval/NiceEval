@@ -19,15 +19,15 @@
    ```text
    ╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
    │ @1VE05BR7061YN  onboarding/tool-first #1  passed  docker · a3f9c2d1          │
-   │            debug: docker exec -it a3f9c2d1 /bin/bash                       │
-   │            clean: docker rm -f a3f9c2d1                                    │
+   │  debug: docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash        │
+   │  clean: docker rm -f a3f9c2d1                                              │
    ╰────────────────────────────────────────────────────────────────────────────╯
    ```
 
 3. 使用底层 Provider 的原生 CLI 连入沙箱：
 
    ```bash
-   docker exec -it a3f9c2d1 /bin/bash
+   docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash
    ```
 
 4. 在沙箱现场内使用标准系统工具检查工作目录之外的状态：

@@ -37,7 +37,6 @@ import {
   type PanelRow,
 } from "../../terminal/panel.ts";
 import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../terminal/text-layout.ts";
-import { nativeEnterCommand } from "../../sandbox/keep.ts";
 import type { CommandPlan, CommandPlanCache, CommandPlanLane, CommandPlanStep } from "../command-plan.ts";
 import type { SandboxCommandPlanCommand } from "../../sandbox/commands.ts";
 import type {
@@ -735,11 +734,13 @@ function buildSummaryLines(
         kind: "line",
         text: `${k.locator}  ${k.identity.evalId} #${k.identity.attempt}  ${k.verdict}  ${k.provider} · ${k.sandboxId}`,
       });
-      const cmd =
-        nativeEnterCommand(k.provider, k.sandboxId) ?? `docker exec -it ${k.sandboxId.slice(0, 12)} /bin/bash`;
       keptRows.push({
         kind: "line",
-        text: `${" ".repeat(stringWidth(k.locator) + 2)}debug: ${cmd}`,
+        text: `${" ".repeat(stringWidth(k.locator) + 2)}debug: ${k.nativeCommand}`,
+      });
+      keptRows.push({
+        kind: "line",
+        text: `${" ".repeat(stringWidth(k.locator) + 2)}clean: ${k.cleanCommand}`,
       });
     }
     blocks.push(

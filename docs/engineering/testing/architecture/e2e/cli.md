@@ -93,11 +93,10 @@ callback 与 legacy command 是 opaque barrier，后续 action 标记 `opaque-an
 
 #### cli-sandbox-project-preflight
 
-`niceeval sandbox list` 在语法检查成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
-Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出
-`No kept sandboxes.`。这个单边界 owner 使用本机空注册表，不连接 Docker、E2B、Vercel 或其它
-Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox list --json` 在凭据准备和配置
-求值之前以 unknown option 拒绝，不继承或静默吞掉其它命令的 `--json`。
+`niceeval sandbox provider doctor incus` 不加载或求值 `niceeval.config.*`，项目 `.env` 不可读时也照常输出诊断；
+缺失的 provider descriptor 只让 Configuration 检查失败，其余检查明确标为未运行。命令路由先完成用法检查：
+维护 flag 用错位置时在凭据准备与配置求值之前以英语用法错误拒绝，`--help` 在任意位置都由全局 CLI 处理。
+这个单边界 owner 不连接 Incus、Docker 或其它 Sandbox Provider。
 
 ### 缓存
 

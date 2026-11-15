@@ -55,9 +55,7 @@ import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { applyCommandDeadline, SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
-import { computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
-import { keptEntryId, updateKeptEntryEffect, writeKeptEntryEffect } from "../sandbox/keep-registry.ts";
-import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
+import { computeExpiresAt, nativeEnterCommand, retainedSandboxCommands, suspendSandbox } from "../sandbox/keep.ts";
 import {
   AgentInstallError,
   SandboxTargetVerificationError,
@@ -407,7 +405,6 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       const { evalDef, run, attempt } = a;
       const adapter = run.adapter;
       const agent = run.agent;
-      const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
       const t0 = Date.now();
       // Source bytes are snapshotted at the author action, then held only through
       // an internal capability until the Record producer seals its own Attachments.
@@ -1044,7 +1041,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               if (agent === undefined) {
                 throw new Error(`Agent Adapter ${JSON.stringify(adapter.name)} is missing its Agent runtime`);
               }
-              const projectStateDatabase = yield* ProjectStateDatabase;
               const sandboxPlan = a.plan._tag === "Sandbox" ? a.plan : undefined;
               if (agent.kind === "sandbox" && sandboxPlan === undefined) {
                 throw new Error(`sandbox agent ${JSON.stringify(agent.name)} received a Direct plan`);
@@ -1055,6 +1051,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。是否可留存只读 physical plan
               // 的中性 retention 能力；不在 runner 里按 provider 名或旧声明结构分支。
               let disposition: "stop" | "keep" = "stop";
+              // Release runs after teardown and timeout evidence finalizers, while
+              // the scene is still accessible. Only it may grant retention.
+              let retainScene: Effect.Effect<void> | undefined;
               // The bridge owns its Queue worker inside this Attempt Scope. Promise
               // code only offers work; no internal module starts a second runtime.
               // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
@@ -1156,7 +1155,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                           run: (owned) =>
                             Effect.gen(function* () {
                               const sb = owned.sandbox;
-                              if (disposition !== "keep") {
+                              if (retainScene === undefined) {
                                 return yield* providerBoundaryEffect(() => owned.group.stop()).pipe(
                                   Effect.onExit((exit) =>
                                     Exit.isFailure(exit)
@@ -1181,38 +1180,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                                   ),
                                 );
                               }
-                              yield* Effect.sync(() => unregisterSandbox(sb));
-                              const providerName = runtimeCapabilities.provider;
-                              const suspendStart = recorder.offsetNow();
-                              return yield* tryPromiseAsDefect(() => suspendSandbox(sb)).pipe(
-                                Effect.tap(() =>
-                                  Effect.sync(() => {
-                                    recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
-                                  }),
-                                ),
-                                Effect.andThen(
-                                  updateKeptEntryEffect(coordinationRoot, keptEntryId(providerName, sb.sandboxId), {
-                                    state: "dormant",
-                                  }).pipe(
-                                    Effect.provideService(ProjectStateDatabase, projectStateDatabase),
-                                    Effect.ignore,
-                                  ),
-                                ),
-                                Effect.catchCause((cause) =>
-                                  Cause.hasInterruptsOnly(cause)
-                                    ? Effect.failCause(cause)
-                                    : Effect.sync(() => {
-                                        const error = Cause.squash(cause);
-                                        recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
-                                        recordDiagnostic({
-                                          code: "sandbox-suspend-failed",
-                                          level: "warning",
-                                          message: `sandbox ${sb.sandboxId} kept but suspend failed; the instance is still running: ${error instanceof Error ? error.message : String(error)}`,
-                                          dedupeKey: `sandbox-suspend-failed:${sb.sandboxId}`,
-                                        });
-                                      }),
-                                ),
-                              );
+                              yield* retainScene;
                             }),
                         },
                       };
@@ -1787,9 +1755,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               }
               const bodyResult = yield* Fiber.join(bodyFiber);
 
-              // 留存提交:verdict 定稿、其余收尾(teardown 链、diff 采集)已在 body 内完成后,按档位
-              // 提交——failed 档留 failed/errored,all 档全部;顺序不可调换:先原子写登记项,写入成功
-              // 才把 disposition 改成 keep;写入失败保持 stop、记 diagnostic,`sandbox.kept` 不得为 true。
+              // 请求留存，等所有 teardown 和证据 finalizer 完成后再停驻与授予。
+              // suspend 失败仍保留现场并记录诊断，不伪造休眠状态。
               const keepMode = opts.keepSandbox;
               if (
                 agent.kind === "sandbox" &&
@@ -1799,29 +1766,34 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               ) {
                 const providerName = runtimeCapabilities!.provider;
                 if (runtimeCapabilities!.retention._tag === "Suspendable") {
-                  const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
-                  const keptAt = new Date().toISOString();
-                  const expiresAt = computeExpiresAt(providerName, keptAt);
-                  const registered = yield* Effect.result(
-                    writeKeptEntryEffect(coordinationRoot, {
-                      sandboxId: sandbox.sandboxId,
-                      provider: providerName,
-                      evalId: evalDef.id,
-                      attempt,
-                      experimentId: run.experimentId,
-                      locator: String(a.locator),
-                      verdict: bodyResult.verdict,
-                      keptAt,
-                      workdir: sandbox.workdir,
-                      enter,
-                      expiresAt,
-                      state: "alive",
-                    }),
-                  );
-                  if (Result.isSuccess(registered)) {
+                  const commands = retainedSandboxCommands(providerName, sandbox.sandboxId);
+                  const locator = a.locator;
+                  retainScene = Effect.gen(function* () {
+                    const suspendStart = recorder.offsetNow();
+                    yield* cleanupCallback(() => suspendSandbox(sandbox)).pipe(
+                      Effect.tap(() =>
+                        Effect.sync(() => {
+                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart);
+                        }),
+                      ),
+                      Effect.catchCause((cause) =>
+                        Effect.sync(() => {
+                          const error = Cause.squash(cause);
+                          recorder.record("sandbox.suspend", recorder.offsetNow() - suspendStart, true);
+                          recordDiagnostic({
+                            code: "sandbox-suspend-failed",
+                            level: "warning",
+                            message: `sandbox ${sandbox.sandboxId} kept but suspend failed; the instance may still be running: ${error instanceof Error ? error.message : String(error)}`,
+                            dedupeKey: `sandbox-suspend-failed:${sandbox.sandboxId}`,
+                          });
+                        }),
+                      ),
+                    );
                     disposition = "keep";
+                    unregisterSandbox(sandbox);
+                    kept = true;
                     reportKept({
-                      locator: a.locator,
+                      locator,
                       identity,
                       who: runWho({
                         agentName: agent.name,
@@ -1831,19 +1803,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       verdict: bodyResult.verdict,
                       provider: providerName,
                       sandboxId: sandbox.sandboxId,
-                      enter,
+                      ...commands,
+                      expiresAt: computeExpiresAt(providerName, new Date().toISOString()),
                     });
-                    // 只有 `kept` 在收尾时点决定;provider / sandboxId 等归属键仍由租借时刻的
-                    // sandboxFacts 统一挂上(见下方 Effect.map)。
-                    kept = true;
-                    return bodyResult;
-                  }
-                  const error = registered.failure;
-                  recordDiagnostic({
-                    code: "sandbox-keep-failed",
-                    level: "warning",
-                    message: `failed to register kept sandbox ${sandbox.sandboxId}; it will be destroyed normally: ${error instanceof Error ? error.message : String(error)}`,
-                    dedupeKey: `sandbox-keep-failed:${sandbox.sandboxId}`,
                   });
                 }
               }

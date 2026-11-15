@@ -22,7 +22,7 @@ export function registerSandbox(sb: Sandbox): void {
   live.add(sb);
 }
 
-/** 留存提交成功后把沙箱移出本次 run 的内存强清集合(不 stop——现场归持久注册表管理)。 */
+/** 留存授予后移出本次 run 的内存强清集合；事后由 Provider 原生工具管理。 */
 export function unregisterSandbox(sb: Sandbox): void {
   live.delete(sb);
 }

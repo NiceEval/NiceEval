@@ -37,6 +37,7 @@ import type {
 import type { JsonValue, Verdict } from "../../shared/types.ts";
 import type {
   ExpTerminalSummary,
+  ExpKeptEvent,
   ExpDiagnosticEvent,
   ExpProgressEvent,
 } from "../../experiment/host/cli/output-protocol.ts";
@@ -97,16 +98,7 @@ export type EvalEvent = EvalEventBase &
     | { passed?: never; planned: number; unstarted: number; reason: "early_exit" }
   );
 
-export interface KeptEvent {
-  event: "kept";
-  locator: string;
-  evalId: string;
-  attempt: number;
-  verdict: Exclude<Verdict, "skipped">;
-  provider: string;
-  sandboxId: string;
-  enter: string;
-}
+export type KeptEvent = ExpKeptEvent;
 
 export interface WarningEvent {
   event: "warning";
@@ -412,7 +404,9 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
             verdict: event.verdict,
             provider: event.provider,
             sandboxId: event.sandboxId,
-            enter: event.enter ?? `niceeval sandbox enter ${event.sandboxId.slice(0, 12)}`,
+            nativeCommand: event.nativeCommand,
+            cleanCommand: event.cleanCommand,
+            ...(event.expiresAt === undefined ? {} : { expiresAt: event.expiresAt }),
           });
           return;
         }

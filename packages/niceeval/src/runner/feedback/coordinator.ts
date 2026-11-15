@@ -268,7 +268,9 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       verdict: input.verdict,
       provider: input.provider,
       sandboxId: input.sandboxId,
-      enter: input.enter,
+      nativeCommand: input.nativeCommand,
+      cleanCommand: input.cleanCommand,
+      expiresAt: input.expiresAt,
     });
   }
 
@@ -499,7 +501,7 @@ function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
     case "run-activity":
       // 钩子/预检/锁等待起止都不是失败证据:setup 失败与预检失败的每条 attempt 都另有
       // "failure" 事件兜底,锁等待解决与否不改变任何 verdict——
-      // renderer 崩溃丢一行起止不丢数据。kept 与 Run activity 也另有 registry / timing 事实。
+      // renderer 崩溃不改变实例标签与 Run activity timing 事实。
       return undefined;
     default: {
       const exhaustive: never = event;

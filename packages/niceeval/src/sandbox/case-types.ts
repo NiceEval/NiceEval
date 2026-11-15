@@ -25,24 +25,11 @@ export interface SandboxLocator {
   readonly provider?: string | undefined;
 }
 
-/**
- * 留存注册表条目形状:不硬编码 services[] / network / namespace。
- * `resources` 是 provider 自己的定位数据。
- */
-export interface SandboxGroupEntry {
-  readonly provider: string;
-  readonly profile: string;
-  readonly primary: SandboxLocator;
-  readonly resources: ProviderLocator;
-  readonly state: "alive" | "dormant" | "partial";
-}
-
 /** case 返回的资源组:清理与留存对着它,不是对着主 Sandbox 单独 stop。 */
 export interface SandboxResourceGroup {
   readonly primary: SandboxLocator;
   readonly resources: ProviderLocator;
   stop(): Promise<void>;
-  readonly entry?: SandboxGroupEntry | undefined;
 }
 
 /** materialize 成功后的完整产物:永远只有一个主 Sandbox。 */

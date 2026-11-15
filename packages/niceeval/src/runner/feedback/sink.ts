@@ -123,7 +123,9 @@ export interface KeptInput {
   verdict: Verdict;
   provider: string;
   sandboxId: string;
-  enter: string | undefined;
+  nativeCommand: string;
+  cleanCommand: string;
+  expiresAt: string | undefined;
 }
 
 /** `sink.ts` façade 函数实际转发到的最小接口 —— `FeedbackCoordinator`(coordinator.ts)实现它。

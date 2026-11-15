@@ -8,6 +8,30 @@ const NonNegativeNumberSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isFinite(value) && value >= 0)),
 );
 
+/** Provider-native access and cleanup for a retained Attempt scene. */
+export const ExpKeptEventSchema = Schema.Struct({
+  event: Schema.Literal("kept"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  attempt: NonNegativeIntegerSchema,
+  verdict: Schema.Literals(["passed", "failed", "errored"]),
+  provider: Schema.String,
+  sandboxId: Schema.String,
+  nativeCommand: Schema.String,
+  cleanCommand: Schema.String,
+  // JSON event keys are observable; providers without an expiry omit this key.
+  expiresAt: Schema.optionalKey(Schema.String),
+});
+
+export type ExpKeptEvent = Schema.Schema.Type<typeof ExpKeptEventSchema>;
+
+export function decodeExpKeptEvent(input: unknown): ExpKeptEvent {
+  return Schema.decodeUnknownSync(ExpKeptEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
+}
+
 /** The initial execution scale emitted by `niceeval exp --json`. */
 export const ExpStartEventSchema = Schema.Struct({
   event: Schema.Literal("start"),

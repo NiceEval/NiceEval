@@ -1291,6 +1291,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // provision token:歧义类失败的对账通道(按 label 查询本地容器);
       // keep-candidate:留存候选标记(异常硬退时核对未完成提交的候选)。
       Labels: {
+        niceeval: "true",
         "niceeval.keep-candidate": "true",
         ...(isDind
           ? {

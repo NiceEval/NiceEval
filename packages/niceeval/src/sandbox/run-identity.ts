@@ -33,11 +33,6 @@ export const DOCKER_HOST_LABEL = "niceeval.host";
 export const DOCKER_PID_LABEL = "niceeval.pid";
 export const DOCKER_STARTED_AT_LABEL = "niceeval.started-at";
 
-/** Compose 自己给组内容器与网络打的 project label——孤儿核对靠它把一组资源拼回来。 */
-export const DOCKER_COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
-/** 受管 overlay 打在 mainService 上的标记:资源组里哪一台是主实例。 */
-export const DOCKER_MAIN_SERVICE_LABEL = "niceeval.main-service";
-
 export const E2B_HOST_METADATA = "niceeval-host";
 export const E2B_PID_METADATA = "niceeval-pid";
 export const E2B_STARTED_AT_METADATA = "niceeval-started-at";
@@ -58,37 +53,6 @@ export function e2bRunIdentityMetadata(identity: RunIdentity): globalThis.Record
     [E2B_PID_METADATA]: String(identity.pid),
     [E2B_STARTED_AT_METADATA]: identity.startedAt,
   };
-}
-
-/** 从 docker label 集合解出运行标识;缺任何一个字段视为没有标识(非 niceeval 容器)。 */
-export function parseDockerRunIdentity(
-  labels: globalThis.Record<string, string> | undefined,
-): RunOwnerIdentity | undefined {
-  if (!labels) return undefined;
-  return parseRunIdentityFields(labels[DOCKER_HOST_LABEL], labels[DOCKER_PID_LABEL], labels[DOCKER_STARTED_AT_LABEL]);
-}
-
-/** 从 e2b SDK 返回的 metadata 解出运行标识;缺任何一个字段视为没有标识。 */
-export function parseE2BRunIdentity(
-  metadata: globalThis.Record<string, string> | undefined,
-): RunOwnerIdentity | undefined {
-  if (!metadata) return undefined;
-  return parseRunIdentityFields(
-    metadata[E2B_HOST_METADATA],
-    metadata[E2B_PID_METADATA],
-    metadata[E2B_STARTED_AT_METADATA],
-  );
-}
-
-function parseRunIdentityFields(
-  host: string | undefined,
-  pidRaw: string | undefined,
-  startedAt: string | undefined,
-): RunOwnerIdentity | undefined {
-  if (host === undefined || pidRaw === undefined || startedAt === undefined) return undefined;
-  const pid = Number(pidRaw);
-  if (!Number.isFinite(pid)) return undefined;
-  return { host, pid, startedAt };
 }
 
 /**

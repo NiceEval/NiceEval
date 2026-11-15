@@ -47,7 +47,7 @@ Usage:
 
 Native Debugging & Management:
   NiceEval delegates direct interaction and resource inspection to native provider CLIs:
-  - Docker:   docker exec -it <id> bash, docker ps -a, docker rm -f <id>
+  - Docker:   docker start <id> && docker exec -it <id> /bin/bash, docker ps -a, docker rm -f <id>
   - Instabox: instabox ssh <id>, instabox list, instabox rm <id>
 
 Commands:
@@ -67,7 +67,6 @@ development domain separately. Doctor is fail closed and read-only; it never
 creates, pulls, imports, or destroys allocations.
 `;
 
-const RETIRED_SANDBOX_SUBCOMMANDS: readonly string[] = ["list", "enter", "history", "diff", "stop", "prune"];
 const SANDBOX_SUBCOMMANDS = ["provider"] as const;
 type SandboxSubcommand = (typeof SANDBOX_SUBCOMMANDS)[number];
 
@@ -205,13 +204,6 @@ export const sandboxCliCommand: CliCommandContribution<CliArguments | CliOutput,
   options: SANDBOX_CLI_OPTIONS,
   run: (argv: readonly string[]) =>
     Effect.gen(function* () {
-      if (argv[0] !== undefined && RETIRED_SANDBOX_SUBCOMMANDS.includes(argv[0])) {
-        yield* write(
-          "stderr",
-          `niceeval sandbox ${argv[0]} has been retired. Use native provider CLIs instead.\n\nDocker: docker ps -a; docker exec -it <sandboxId> /bin/bash; docker rm -f <sandboxId>.\nInstabox: instabox list; instabox ssh <sandboxId>; instabox rm <sandboxId>.\nInspect workspace changes with git status, git log, and git diff inside the sandbox.\n`,
-        );
-        return 1;
-      }
       const argumentsService = yield* CliArguments;
       const parsed = yield* Effect.try({
         try: () => parseSandboxArgs(argv, argumentsService.parse),

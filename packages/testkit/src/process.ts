@@ -13,6 +13,8 @@ import {
 } from "./inspection-protocol.js";
 import { decodeRunDocument, type RunDocument, type RunListDocument } from "./run-protocol.js";
 import {
+  decodeExpKeptEvent,
+  type ExpKeptEvent,
   decodeExpStartEvent,
   type ExpStartEvent,
   decodeExpTerminalEvent,
@@ -121,16 +123,17 @@ export const ExpEvalEventSchema = Schema.Union([
 
 export type ExpEvalEvent = Schema.Schema.Type<typeof ExpEvalEventSchema>;
 
-const ExpKeptEventSchema = Schema.Struct({
-  event: Schema.Literal("kept"),
-  locator: Schema.String,
-  evalId: Schema.String,
-  attempt: NonNegativeIntegerSchema,
-  verdict: Schema.Literals(["passed", "failed", "errored"]),
-  provider: Schema.String,
-  sandboxId: Schema.String,
-  enter: Schema.String,
-});
+const ExpKeptEventSchema = Schema.declare<ExpKeptEvent>(
+  (input): input is ExpKeptEvent => {
+    try {
+      decodeExpKeptEvent(input);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { title: "exp kept event" },
+);
 const ExpNoticeEventSchema = Schema.Struct({
   event: Schema.Literal("notice"),
   code: Schema.String,

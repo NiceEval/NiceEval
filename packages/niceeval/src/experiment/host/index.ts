@@ -69,6 +69,9 @@ export {
 } from "./cli/plan-protocol.ts";
 export {
   decodeExpStartEvent,
+  decodeExpKeptEvent,
+  ExpKeptEventSchema,
+  type ExpKeptEvent,
   ExpStartEventSchema,
   type ExpStartEvent,
   decodeExpTerminalEvent,

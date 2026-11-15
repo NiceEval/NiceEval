@@ -493,7 +493,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     const apiKey = process.env.E2B_API_KEY;
     // provision token 与运行标识都经 metadata 打进实例(同一通道):歧义类失败(fetch failed ·
     // other side closed)重试前按 token 检索远端、销毁可能已创建的实例(见 reconcileProvision);
-    // 运行标识供 `sandbox list --orphans` 按 metadata 过滤事后核对。
+    // 运行标识供 Provider 原生工具按 metadata 过滤和核对。
     const metadata: globalThis.Record<string, string> = {
       ...sandboxCreationMetadata(opts.runId, opts.runIdentity?.startedAt),
       ...opts.runIdentity?.creationLabels,

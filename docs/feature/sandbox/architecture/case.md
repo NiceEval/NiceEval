@@ -152,7 +152,7 @@ target platform 是构建事实,不是一个写在代码里的默认值,并且**
 
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,登记其声明的 image ref；可取得的实际 digest 是创建期 provider observation。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
-BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 Sandbox creation 或留存注册表，不建立 Sandbox 专属的可携带事实。
+BuildKey 回答「为什么应该得到同一构建结果」,locator 回答「本次从哪里启动」。前者参与 planning 与 fingerprint；后者只服务 Sandbox creation 与留存反馈，不建立 Sandbox 专属的可携带事实。
 
 完整 Sandbox 另算 `CaseKey`:
 
@@ -340,29 +340,16 @@ defineSandboxCase({
 | Agent Install 失败 | Attempt 形成 `errored` Verdict | `agent.install` 归属(见 [Agent Install](../../adapters/architecture/agent-install.md)) |
 
 Agent 完成任务但断言未达标时，才形成 `failed` Verdict。
-每个 case 至少产出创建与 ready 的 command、activity 与 diagnostic；它们分别归 Sandbox Commands、Runner Activities 与 Runner Diagnostics。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready activity；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期或留存注册表。
+每个 case 至少产出创建与 ready 的 command、activity 与 diagnostic；它们分别归 Sandbox Commands、Runner Activities 与 Runner Diagnostics。声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready activity；大型具类型日志归 Artifacts。provider locator、容器名与可 detached 操作的句柄只留在运行期；留存后只以 Provider 原生进入与销毁命令呈现。
 证据字段是中性的,采集手段留在 provider。
 
-## 收尾、留存与注册表
+## 收尾与留存
 
 运行期以主 Sandbox 作为 Agent 的执行基准,但 cleanup callback 和留存同时作用于 provider 返回的**主实例及伴随资源**。
-注册表不硬编码 `services[]`、`network` 或 Kubernetes namespace 字段,只存:
+留存后 NiceEval 不保存组登记项：`kept` 反馈的进入命令定位 `primary`，销毁命令由 provider 给出能整组回收的原生命令（例如按 Compose project label）。
+provider 只返回 primary 时没有伴随资源,现有行为是新模型的严格子集;单实例留存与各 provider 的休眠语义见 [Architecture · 留存](README.md#留存keep)。
 
-```typescript
-interface SandboxGroupEntry {
-  provider: string;
-  profile: string;
-  primary: SandboxLocator;
-  resources: ProviderLocator;
-  state: "alive" | "dormant" | "partial";
-}
-```
-
-`resources` 是 provider 自己可序列化、可 detached stop 的定位数据。
-现场直连与调试命令仍定位 `primary`；整组资源交回对应 provider 原生销毁。
-provider 只返回 primary 时没有伴随资源,现有行为是新模型的严格子集;单实例留存与各 provider 的休眠语义见 [Architecture · 留存与注册表](README.md#留存keep与注册表)。
-
-Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后重过 ready 门、失败时保留可再次销毁的注册项。
+Group keep 是独立能力:支持者必须能整组 suspend / wake、恢复后重过 ready 门、失败时仍能给出整组的原生销毁命令。
 只暂停主 Sandbox、让 sidecar 继续运行或丢失的实现不得声明。
 
 ## 动态泄漏检查:本地上传与 Agent 可见 closure
@@ -395,7 +382,7 @@ folder eval 的测试文件与构建输入共址时，Provider builder 与普通
 
 - [README](../README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Library](../library/README.md) —— provider 选择、生命周期 Hook、自定义 provider。
-- [Architecture](README.md) —— 生命周期时序、留存注册表、孤儿核对、重试。
+- [Architecture](README.md) —— 生命周期时序、留存、孤儿核对、重试。
 - [Record Architecture](../../run/architecture/README.md) —— 五个固定 family 的 owner、closure 与 maintenance 边界。
 - [Adapters · Agent Install](../../adapters/architecture/agent-install.md) —— case 产出主 Sandbox 之后,Agent 怎样检查与安装。
 - [Experiments · 缓存与携带](../../experiments/architecture/cache.md) —— CaseKey 怎样进入指纹与携带门。

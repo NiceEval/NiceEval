@@ -181,7 +181,6 @@ export type {
   SandboxCaseKind,
   ServiceController,
   MaterializedSandboxCase,
-  SandboxGroupEntry,
   SandboxResourceGroup,
   SandboxMaterializeContext,
 } from "./case-types.ts";

@@ -496,7 +496,6 @@ function normalizeMaterialized(
     get resources() {
       return materialized.group.resources;
     },
-    entry: materialized.group.entry,
     async stop() {
       if (stopped) return;
       if (stopping !== undefined) return stopping;
@@ -1351,7 +1350,7 @@ function reportReleaseFailure(
         `Sandbox ${owned.sandbox.sandboxId} provider cleanup failed: ${cause.message}.` +
         (projectName === undefined
           ? ""
-          : ` Compose project ${projectName} remains recoverable with \`niceeval sandbox list --orphans\` / \`niceeval sandbox prune\`.`),
+          : ` Inspect the Compose project with \`docker ps -a --filter label=com.docker.compose.project=${projectName}\` and remove its resources with Docker CLI.`),
       data: {
         provider: input.plan.providerPlan.provider,
         sandboxId: owned.sandbox.sandboxId,

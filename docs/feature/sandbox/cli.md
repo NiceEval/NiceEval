@@ -53,8 +53,8 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - 留存只跳过销毁这一步：Agent teardown 与已登记 cleanup 照常执行，留下的现场是收尾完成后的状态。
   对应地，timing decoding 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。
   留存提交后现场转入 provider 的休眠形态（docker 停驻容器、e2b pause、vercel stop 后可恢复），不白烧资源。
-  suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
-  语义见 [Architecture · 各 provider 的留存语义](architecture/README.md#留存keep与注册表)。
+  suspend 失败时现场保持运行并写入诊断通道，仍按留存处理，不销毁。
+  语义见 [Architecture · 各 provider 的留存语义](architecture/README.md#留存keep)。
 - 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
 - 留存与 [project-target policy](../experiments/architecture/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
   因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
@@ -76,18 +76,18 @@ Human 面板直接展示底层 Provider 的原生接入与销毁命令模板：
 ```text
 ╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
 │ @1VE05BR7061YN  onboarding/tool-first #1  errored  docker · a3f9c2d1        │
-│            debug: docker exec -it a3f9c2d1 /bin/bash                       │
-│            clean: docker rm -f a3f9c2d1                                    │
+│  debug: docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash        │
+│  clean: docker rm -f a3f9c2d1                                              │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-`niceeval exp --json` 在事件流追加 `kept` 事件，直接包含底层 Provider 的原生直连命令字段 `nativeCommand` 与销毁命令 `cleanCommand`：
+`niceeval exp --json` 在事件流追加 `kept` 事件，直接包含底层 Provider 的原生直连命令字段 `nativeCommand` 与销毁命令 `cleanCommand`；Provider 声明保留期限时另带 `expiresAt`。同一安装候选的调用方用 `niceeval/experiment/host` 的 `decodeExpKeptEvent()` 严格解码：
 
 ```json
-{"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","nativeCommand":"docker exec -it a3f9c2d1 /bin/bash","cleanCommand":"docker rm -f a3f9c2d1"}
+{"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","nativeCommand":"docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash","cleanCommand":"docker rm -f a3f9c2d1"}
 ```
 
-面向人类终端给出开箱即用的直连命令；面向 Coding Agent 给出可直接执行的单次非交互命令。
+留存的 Docker 容器已停驻，所以进入命令先 `docker start`。面向人类终端给出开箱即用的直连命令；面向 Coding Agent 给出可直接执行的单次非交互命令。
 
 ## 原生 CLI 现场接入与资源管理
 
@@ -103,6 +103,12 @@ NiceEval 不自建中间终端代理、伪终端（PTY）隧道或 WebShell 反�
 - **Instabox Sandbox**：
   - 开发者交互调试：`instabox ssh <sandboxId>`；
   - Coding Agent 非交互排查：`instabox exec <sandboxId> -- <command>`。
+- **E2B Sandbox**（留存为 pause）：
+  - 进入：`e2b sandbox connect <sandboxId>`；
+  - 销毁：`e2b sandbox kill <sandboxId>`。
+- **Vercel Sandbox**（留存为 stop 后持久，按 sandbox name 寻址）：
+  - 进入：`sandbox connect <name>`；
+  - 永久删除：`sandbox remove <name>`；`sandbox stop` 只停驻，不是销毁。
 - **Kubernetes / 微 VM**：
   - 直接调用 `kubectl exec -it <pod> -- /bin/sh` 或对应 Provider 的原生客户端。
 
@@ -172,8 +178,7 @@ NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中�
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
 - [Nested Docker CLI](../sandbox-nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [Architecture](architecture/README.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Record · Architecture](../run/architecture/README.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Architecture](architecture/README.md) —— 留存决策在 attempt 收尾链里的位置与各 provider 的留存语义。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。
 
 ## Docker image cache inventory

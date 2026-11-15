@@ -207,7 +207,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - 真实派发的 Attempt 仍完整封入 before、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
-  租借状态是调度和留存注册表数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
+  租借状态是运行期调度数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
 
 ## 复用失败的可观察性
 

@@ -57,4 +57,4 @@
 ## 相关阅读
 
 - [Sandbox CLI](../cli.md) —— 失败挂起与断点机制。
-- [`--keep-sandbox`](sandbox-retain-run-condition-error.md) —— 事后留存与注册表管理。
+- [`--keep-sandbox`](sandbox-retain-run-condition-error.md) —— 事后留存与原生 CLI 接入。
