@@ -6,6 +6,20 @@ const LITELLM_PRICES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const PRICE_KEYS = ["gpt-5.6-luna"];
+const PROVIDER_PRIORITY = [
+  "anthropic",
+  "openai",
+  "google",
+  "google-vertex-anthropic",
+  "deepseek",
+  "xai",
+  "mistral",
+  "meta",
+  "groq",
+  "cohere",
+  "amazon-bedrock",
+  "azure",
+];
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT = resolve(ROOT, "src/o11y/prices.json");
 const check = process.argv.includes("--check");
@@ -29,15 +43,48 @@ function niceEvalPrice(model, source) {
 const response = await fetch(LITELLM_PRICES_URL);
 if (!response.ok) throw new Error(`Unable to fetch LiteLLM prices: HTTP ${response.status}`);
 const upstream = await response.json();
-const catalog = JSON.parse(await readFile(OUTPUT, "utf8"));
+const current = await readFile(OUTPUT, "utf8");
+const catalog = JSON.parse(current);
+const modelsResponse = await fetch(MODELS_DEV_URL);
+if (!modelsResponse.ok) throw new Error(`Unable to fetch models.dev metadata: HTTP ${modelsResponse.status}`);
+const modelProviders = await modelsResponse.json();
+const prices = {};
+// Preserve the original snapshot's first-party precedence and model keys.
+const providers = [
+  ...PROVIDER_PRIORITY,
+  ...Object.keys(modelProviders)
+    .filter((provider) => !PROVIDER_PRIORITY.includes(provider))
+    .sort(),
+];
+for (const provider of providers) {
+  for (const [model, entry] of Object.entries(modelProviders[provider]?.models ?? {})) {
+    const cost = entry.cost;
+    if (
+      typeof cost?.input !== "number" ||
+      typeof cost.output !== "number" ||
+      !(cost.input > 0 || cost.output > 0) ||
+      Object.hasOwn(prices, model)
+    )
+      continue;
+    prices[model] = {
+      in: cost.input,
+      out: cost.output,
+      ...(typeof cost.cache_read === "number" ? { cacheRead: cost.cache_read } : {}),
+      ...(typeof cost.cache_write === "number" ? { cacheWrite: cost.cache_write } : {}),
+    };
+  }
+}
 
 for (const model of PRICE_KEYS) {
   const source = upstream[model];
   if (source?.litellm_provider !== "openai") {
     throw new Error(`LiteLLM is missing the canonical OpenAI price entry ${model}`);
   }
-  catalog.prices[model] = niceEvalPrice(model, source);
+  prices[model] = niceEvalPrice(model, source);
 }
+catalog.prices = Object.fromEntries(
+  Object.entries(prices).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+);
 
 // Keep context metadata beside prices, with the same model key lookup rules.
 // models.dev is primary; the explicit LiteLLM price overlays also own their
@@ -49,9 +96,6 @@ for (const [model, source] of Object.entries(upstream)) {
   const limit = contextLimit(source?.max_input_tokens);
   if (limit !== undefined) contextWindows[model] = limit;
 }
-const modelsResponse = await fetch(MODELS_DEV_URL);
-if (!modelsResponse.ok) throw new Error(`Unable to fetch models.dev metadata: HTTP ${modelsResponse.status}`);
-const modelProviders = await modelsResponse.json();
 for (const [provider, source] of Object.entries(modelProviders)) {
   for (const [model, entry] of Object.entries(source.models ?? {})) {
     const limit = contextLimit(entry.limit?.context);
@@ -81,8 +125,9 @@ catalog.$priceOverlays = {
   },
 };
 
+// An unchanged snapshot retains its timestamp so refresh and --check are stable.
+if (`${JSON.stringify(catalog, null, 2)}\n` !== current) catalog.$asOf = Date.now();
 const generated = `${JSON.stringify(catalog, null, 2)}\n`;
-const current = await readFile(OUTPUT, "utf8");
 if (check && generated !== current) {
   throw new Error("Vendored prices are stale; run `pnpm --filter niceeval sync:prices`");
 }
