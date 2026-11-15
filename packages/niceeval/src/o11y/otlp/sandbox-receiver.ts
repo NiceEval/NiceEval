@@ -236,7 +236,10 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
       };
       const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> =>
         Effect.gen(function* () {
-          const chunkBytes = 256 * 1024;
+          // Each chunk pays for a remote command and a scoped decoder worker.
+          // Amortize both costs while retaining bounded reads and decoded
+          // prefixes when the collection budget interrupts the next chunk.
+          const chunkBytes = 1024 * 1024;
           let offset = 0;
           let pending = Buffer.alloc(0);
           for (;;) {

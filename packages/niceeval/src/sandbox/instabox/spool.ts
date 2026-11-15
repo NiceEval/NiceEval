@@ -98,6 +98,13 @@ const frame = async (tag, data) => {
   const header = Buffer.alloc(5); header[0] = tag; header.writeUInt32BE(bytes.length, 1);
   if (!process.stdout.write(Buffer.concat([header, bytes]))) await once(process.stdout, 'drain');
 };
+const finish = async (tag, data, code) => {
+  await frame(tag, data);
+  // write() accepting a small final frame does not mean the SSH pipe has
+  // flushed it. Forced exit here can drop the confirmed exit and reconnect.
+  await new Promise(resolve => process.stdout.end(resolve));
+  process.exit(code);
+};
 const exists = path => { try { return fs.statSync(path); } catch (e) { if (e.code === 'ENOENT') return; throw e; } };
 const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid', 'utf8')), 0); return true; } catch { return false; } };
 (async () => {
@@ -113,8 +120,8 @@ const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid'
       await delay(10);
     }
   }
-  if (!exists(c.spool + '/stdout') || (!exists(c.spool + '/exit') && !alive())) {
-    await frame(6, { reason: 'spool or supervisor is missing' }); process.exit(1); return;
+  if (!exists(c.spool + '/stdout') || (!exists(c.spool + '/exit') && !alive() && !exists(c.spool + '/exit'))) {
+    await finish(6, { reason: 'spool or supervisor is missing' }, 1); return;
   }
   if (!exists(c.spool + '/exit')) {
     const until = Date.now() + 10000;
@@ -127,7 +134,11 @@ const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid'
         // A fast target can publish its exit and unlink the socket between
         // the check above and connect(). Its exit file is authoritative.
         if (exists(c.spool + '/exit')) break;
-        if (!alive() || Date.now() >= until) throw error;
+        if (!alive()) {
+          if (exists(c.spool + '/exit')) break;
+          throw error;
+        }
+        if (Date.now() >= until) throw error;
         await delay(10);
       }
     }
@@ -179,9 +190,15 @@ const alive = () => { try { process.kill(Number(fs.readFileSync(c.spool + '/pid'
     if (exit) { exit.stdoutSize = Math.max(exit.stdoutSize, stdout); exit.stderrSize = Math.max(exit.stderrSize, stderr); }
     stdout = await read(out, stdout, exit ? exit.stdoutSize : fs.fstatSync(out).size, 1);
     stderr = await read(err, stderr, exit ? exit.stderrSize : fs.fstatSync(err).size, 2);
-    if (exit) { await frame(5, exit); socket?.destroy(); process.exit(0); return; }
-    if (!alive()) { await frame(6, { reason: 'supervisor disappeared before publishing exit' }); process.exit(1); return; }
+    if (exit) { socket?.destroy(); await finish(5, exit, 0); return; }
+    if (!alive()) {
+      // finish() publishes exit before terminating. It can finish between the
+      // first exit check and this liveness probe; read its final spool on the
+      // next iteration instead of retiring a healthy Machine.
+      if (exists(c.spool + '/exit')) continue;
+      await finish(6, { reason: 'supervisor disappeared before publishing exit' }, 1); return;
+    }
     await delay(10);
   }
-})().catch(async error => { try { await frame(6, { reason: error.message }); } finally { process.exit(1); } });
+})().catch(async error => { await finish(6, { reason: error.message }, 1); });
 `;

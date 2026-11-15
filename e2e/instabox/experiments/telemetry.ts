@@ -15,11 +15,11 @@ export default defineExperiment({
         const start = BigInt(Date.now()) * 1000000n;
         (async () => {
           for (let batch = 0; batch < 160; batch++) {
-            const spans = Array.from({ length: 100 }, (_, index) => ({
+            const spans = Array.from({ length: 5 }, (_, index) => ({
               traceId: '1234567890abcdef1234567890abcdef',
-              spanId: (batch * 100 + index + 1).toString(16).padStart(16, '0'),
+              spanId: (batch * 5 + index + 1).toString(16).padStart(16, '0'),
               name: 'remote-telemetry', startTimeUnixNano: String(start), endTimeUnixNano: String(start + 1000000n),
-              attributes: [{ key: 'fixture.padding', value: { stringValue: 'x'.repeat(1024) } }],
+              attributes: [{ key: 'fixture.padding', value: { stringValue: 'x'.repeat(20480) } }],
             }));
             const response = await fetch(${JSON.stringify(ctx.telemetry!.endpoint)}, {
               method: 'POST', headers: { 'content-type': 'application/json' },

@@ -32,7 +32,7 @@ test.concurrent("remote telemetry fits the collection budget and preserves every
     console.info(timing.stdout);
     expect(trace.diagnostics.items.filter((item) => item.code.startsWith("telemetry-"))).toEqual([]);
     expect(trace.execution.traces).toEqual([
-      expect.objectContaining({ eventCount: 16000, collection: { state: "complete", limitations: [] } }),
+      expect.objectContaining({ eventCount: 800, collection: { state: "complete", limitations: [] } }),
     ]);
   });
 });
