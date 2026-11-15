@@ -12,6 +12,9 @@ export default defineConfig({
           model: process.env.NICEEVAL_E2E_AGENT_JUDGE_MODEL ?? "agent-review-fixture",
           baseUrl: judgeBaseUrl,
           apiKeyEnv: "NICEEVAL_E2E_AGENT_JUDGE_KEY",
+          ...(process.env.NICEEVAL_E2E_JUDGE_CONCURRENCY === undefined
+            ? {}
+            : { maxConcurrency: Number(process.env.NICEEVAL_E2E_JUDGE_CONCURRENCY) }),
           ...(process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE === "context-material" ? { contextWindow: 10000 } : {}),
           ...(process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE?.startsWith("compact-") ? { maxResponseBytes: 262144 } : {}),
           timeoutMs: process.env.NICEEVAL_E2E_AGENT_JUDGE_MODE === "cancel-http" ? 60_000 : 2_000,

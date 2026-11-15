@@ -8,6 +8,7 @@ import { judgeMaterialBudget, judgeRubricAndAnchors } from "./judge-definition.t
 
 /** Configures one reviewer for conversational scoring in the Attempt's exclusive Sandbox. */
 export interface AgentJudgeDefinition {
+  readonly concurrent?: boolean | undefined;
   readonly instructions?: string | undefined;
   readonly maxTurns?: number | undefined;
   readonly timeoutMs?: number | undefined;
@@ -28,6 +29,7 @@ export interface AgentJudgeReview<Kind extends import("./api.ts").AssertionEvalu
   chat(message: string): void;
 }
 export interface NormalizedAgentJudge {
+  readonly concurrent: boolean;
   readonly instructions: string;
   readonly maxTurns: number;
   readonly timeoutMs: number;
@@ -66,11 +68,14 @@ function positive(value: unknown, fallback: number, label: string): number {
 export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
   const input = dataObject(definition, "defineAgentJudge() options", [
     "instructions",
+    "concurrent",
     "maxTurns",
     "timeoutMs",
     "maxMaterialBytes",
   ]);
   judgeMaterialBudget(input.maxMaterialBytes);
+  if (input.concurrent !== undefined && typeof input.concurrent !== "boolean")
+    throw new TypeError("Agent Judge concurrent must be a boolean");
   if (
     input.instructions !== undefined &&
     (typeof input.instructions !== "string" ||
@@ -80,6 +85,7 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
     throw new TypeError("Agent Judge instructions must be non-empty and at most 8192 UTF-8 bytes");
   }
   const normalized: NormalizedAgentJudge = {
+    concurrent: input.concurrent === true,
     instructions: (input.instructions as string | undefined) ?? "",
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),

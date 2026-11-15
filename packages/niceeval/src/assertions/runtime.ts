@@ -4,6 +4,7 @@
 // @concord-implements docs/feature/assertions/library/scoped-assertions.md
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/verdict/README.md
+import { judgeMaxConcurrency } from "../judge/provider.ts";
 import { CurrentJudgeTiming, JudgeTimingSpan } from "../judge/timing.ts";
 import {
   validateMaterialQAInputs,
@@ -801,7 +802,11 @@ class DirectScoreHandle extends HandleBase {
 class AssertionsRuntimeImplementation {
   private agentJudgeSandbox: import("../sandbox/types.ts").Sandbox | undefined;
   private agentJudgeShared = false;
-  private readonly agentJudgeReviews: Array<{ session: AgentJudgeSession; entries: AssertionEntry[] }> = [];
+  private readonly agentJudgeReviews: Array<{
+    session: AgentJudgeSession;
+    entries: AssertionEntry[];
+    concurrent: boolean;
+  }> = [];
   attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
     this.agentJudgeSandbox = sandbox;
     this.agentJudgeShared = shared;
@@ -870,7 +875,7 @@ class AssertionsRuntimeImplementation {
       (index) => this.judgeUsage?.forEntry(index),
       this.judgeTiming,
     );
-    const owner = { session, entries: [] as AssertionEntry[] };
+    const owner = { session, entries: [] as AssertionEntry[], concurrent: definition.concurrent };
     this.agentJudgeReviews.push(owner);
     return Object.freeze({
       chat: (message: string) => {
@@ -1518,14 +1523,8 @@ class AssertionsRuntimeImplementation {
       if (this.sealStarted) throw new Error("Assertions are already sealing");
       this.closeAuthoring("attempt-sealing");
       this.sealStarted = true;
-      const ordered =
-        this.agentJudgeReviews.length === 0
-          ? this.entries
-          : [
-              ...this.entries.filter((entry) => entry.criterion.kind !== "agent-judge-measurement"),
-              ...this.agentJudgeReviews.flatMap((review) => review.entries),
-            ];
-      return Effect.forEach(ordered, (entry) => this.settle(entry)).pipe(
+      return this.settleOrdinary(this.entries).pipe(
+        Effect.andThen(this.settleAgentReviews()),
         Effect.andThen(Effect.sync(() => this.finishSeal(options))),
         Effect.onInterrupt(() =>
           Effect.sync(() => {
@@ -1795,11 +1794,64 @@ class AssertionsRuntimeImplementation {
     }
   }
 
+  private isManagedJudge(entry: AssertionEntry): boolean {
+    return entry.criterion.kind === "managed-score-measurement" || this.managedJudgeEntryIndexes.has(entry.index);
+  }
+
+  /** Author callbacks form ordering boundaries; only adjacent managed entries overlap. */
+  private settleOrdinary(entries: readonly AssertionEntry[]): Effect.Effect<void> {
+    const batches: AssertionEntry[][] = [];
+    let managed: AssertionEntry[] | undefined;
+    for (const entry of entries) {
+      if (entry.criterion.kind === "agent-judge-measurement") continue;
+      if (this.isManagedJudge(entry)) {
+        if (managed === undefined) batches.push((managed = []));
+        managed.push(entry);
+      } else {
+        managed = undefined;
+        batches.push([entry]);
+      }
+    }
+    return Effect.forEach(
+      batches,
+      (batch) =>
+        Effect.forEach(batch, (entry) => this.settle(entry), {
+          concurrency: judgeMaxConcurrency(this.judge),
+          discard: true,
+        }),
+      { discard: true },
+    );
+  }
+
+  /** A session owns one slot through its final entry; never flatten its questions into concurrent work. */
+  private settleAgentReviews(): Effect.Effect<void> {
+    const batches: (typeof this.agentJudgeReviews)[] = [];
+    let concurrent: typeof this.agentJudgeReviews | undefined;
+    for (const review of this.agentJudgeReviews) {
+      if (review.concurrent) {
+        if (concurrent === undefined) batches.push((concurrent = []));
+        concurrent.push(review);
+      } else {
+        concurrent = undefined;
+        batches.push([review]);
+      }
+    }
+    return Effect.forEach(
+      batches,
+      (batch) =>
+        Effect.forEach(
+          batch,
+          (review) => Effect.forEach(review.entries, (entry) => this.settle(entry), { discard: true }),
+          { concurrency: judgeMaxConcurrency(this.judge), discard: true },
+        ),
+      { discard: true },
+    );
+  }
+
   /** Evaluates an entry at most once even when multiple Effect fibers await it. */
   private settle(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
     const timing = this.judgeTiming;
-    const managed =
-      entry.criterion.kind === "managed-score-measurement" || this.managedJudgeEntryIndexes.has(entry.index);
+    const managed = this.isManagedJudge(entry);
     return Effect.suspend(() => {
       if (entry.evaluation.state === "settled") return Effect.succeed(entry.evaluation.value);
       if (entry.evaluation.state === "pending") return Deferred.await(entry.evaluation.deferred);
@@ -1868,16 +1920,9 @@ class AssertionsRuntimeImplementation {
    * `settle()` memoizes the eligible work for the normal seal.
    */
   private settleThrough(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
-    return Effect.forEach(
+    return this.settleOrdinary(
       this.entries.slice(0, entry.index + 1).filter((candidate) => !isPostRunSandboxCriterion(candidate.criterion)),
-      (candidate) => this.settle(candidate),
-    ).pipe(
-      Effect.map((settlements) => {
-        const settlement = settlements.at(-1);
-        if (settlement === undefined) throw new Error("Assertion stop entry was not registered");
-        return settlement;
-      }),
-    );
+    ).pipe(Effect.andThen(this.settle(entry)));
   }
 
   private latchStop(entry: AssertionEntry, settlement: EntrySettlement): AssertionStopError {

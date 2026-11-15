@@ -22,6 +22,8 @@ export interface JudgeProviderSettings {
   readonly baseUrl?: string | undefined;
   readonly timeoutMs?: number | undefined;
   readonly maxResponseBytes?: number | undefined;
+  /** Per-Attempt Judge scheduling limit; excluded from Provider identity. */
+  readonly maxConcurrency?: number | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
@@ -55,6 +57,7 @@ export interface JudgeProviderIdentity {
 }
 
 interface ProviderPrivate {
+  readonly maxConcurrency: number;
   readonly identity: JudgeProviderIdentity;
   readonly credential: () => string | undefined;
 }
@@ -191,13 +194,15 @@ function createProvider(
           "apiKeyEnv",
           "timeoutMs",
           "maxResponseBytes",
+          "maxConcurrency",
           "maxOutputTokens",
           "contextWindow",
           "supportsImages",
           "headers",
         ]
-      : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "headers"];
+      : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxConcurrency", "headers"];
   const input = exactOptions(raw, label, allowed);
+  const maxConcurrency = positiveInteger(input.maxConcurrency, 4, `${label}.maxConcurrency`, 32);
   const model = boundedText(input.model, `${label}.model`, 8 * 1024);
   const baseUrl = normalizedBaseUrl(input.baseUrl, defaults[provider].baseUrl, `${label}.baseUrl`);
   const timeoutMs = positiveInteger(input.timeoutMs, 180_000, `${label}.timeoutMs`, Number.MAX_SAFE_INTEGER);
@@ -270,7 +275,7 @@ function createProvider(
     configurable: false,
   });
   const frozen = Object.freeze(value) as unknown as JudgeProvider;
-  providerPrivate.set(frozen, { identity, credential: resolveCredential });
+  providerPrivate.set(frozen, { identity, credential: resolveCredential, maxConcurrency });
   return frozen;
 }
 
@@ -314,4 +319,9 @@ export function resolveJudgeProvider(provider: JudgeProvider, model?: string): J
 /** @internal Resolves a credential only immediately before an admitted network call. */
 export function resolveJudgeCredential(identity: JudgeProviderIdentity): string | undefined {
   return resolvedPrivate.get(identity as object)?.credential();
+}
+
+/** @internal Runtime-only scheduling settings follow the resolved Provider, never its identity material. */
+export function judgeMaxConcurrency(identity: JudgeProviderIdentity | undefined): number {
+  return identity === undefined ? 4 : (resolvedPrivate.get(identity)?.maxConcurrency ?? 4);
 }
