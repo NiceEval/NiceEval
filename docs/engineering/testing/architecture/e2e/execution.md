@@ -30,6 +30,7 @@ E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用�
 - `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
 - `built` 与 `tarball` 只写入候选缓存自己的目录，任何形态都不读取、删除或写入共享 checkout 的 `packages/niceeval/dist`。下游通过 link 消费的正是这份 dist，E2E 不能悄悄替换它；需要更新它时由作者显式运行 `pnpm run build:package`。
 - `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
+- `source` 与 `built` 的候选进入 Docker driver 时，Testkit 按 runner 注入的参数把候选真实目录与工作区依赖以同一路径只读挂载进容器，并传递候选的源码装载选项；`tarball` 已安装在场景副本内，不追加本地挂载。
 - 形态与摘要写入每次运行的收据，结果可追溯到具体候选。
 
 source 进程的 `require(esm)` 与动态 `import()` 必须加载同一份框架模块。tsx 只注册 ESM 装载支持，

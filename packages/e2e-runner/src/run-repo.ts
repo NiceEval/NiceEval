@@ -407,7 +407,32 @@ export const runRepoEffect = (
             ),
           )
         : {};
-    const baseEnv = { ...buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, id), ...sourceOptions };
+    const dockerCandidateArgs: string[] = [];
+    if (linked) {
+      // Preserve absolute link targets without exposing the checkout root (and
+      // its .env). pnpm dependencies and the source loader live in these trees.
+      for (const path of [
+        candidate.path,
+        join(repoRootDir(), "packages/niceeval/node_modules"),
+        join(repoRootDir(), "node_modules"),
+      ]) {
+        dockerCandidateArgs.push("--mount", `type=bind,src=${path},dst=${path},readonly`);
+      }
+      if (candidate.form === "source") {
+        dockerCandidateArgs.push(
+          "--env",
+          `NODE_OPTIONS=--conditions=niceeval-source --experimental-transform-types --import ${createRequire(import.meta.url).resolve("tsx/esm")}`,
+        );
+        for (const [name, value] of Object.entries(sourceOptions)) {
+          if (name === "JITI_ALIAS") dockerCandidateArgs.push("--env", `${name}=${value}`);
+        }
+      }
+    }
+    const baseEnv = {
+      ...buildChildEnv(process.env, allSecretNames, repo.manifest.secrets, id),
+      ...sourceOptions,
+      NICEEVAL_E2E_DOCKER_CANDIDATE_ARGS: JSON.stringify(dockerCandidateArgs),
+    };
     const setup = invocationIds[0]!;
     const preflight = yield* preflightHostCapabilities(repo.manifest, withInvocation(baseEnv, setup, copy)).pipe(
       Effect.mapError((cause) => problem(id, "run", cause)),
