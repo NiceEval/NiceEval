@@ -3,6 +3,7 @@
 
 import { isAbsolute, resolve } from "node:path";
 import { Data, Effect, Option, type Scope } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { JsonValue } from "../shared/types.ts";
 import type { ScopedFeedback } from "../shared/types.ts";
 import type {
@@ -25,6 +26,7 @@ import {
 } from "./action.ts";
 import {
   collectComposeBuilds,
+  ComposeBuildCollectionError,
   COMPOSE_MATERIALIZER_REVISION,
   composeCollectionIdentity,
   detectDockerBuildPlatform,
@@ -41,6 +43,7 @@ import {
 } from "./identity.ts";
 import {
   DOCKERFILE_MATERIALIZER_REVISION,
+  DockerfileBuildIdentityError,
   resolveDockerfileBuildIdentity,
   type DockerfileBuildIdentity,
 } from "./dockerfile-identity.ts";
@@ -51,8 +54,16 @@ import type {
   SandboxRuntimeMaterializationError,
   SandboxRuntimeMaterializeContext,
 } from "./runtime.ts";
-import { dockerProfileError } from "./docker-profile/errors.ts";
-import type { DockerProfileRuntimeBinding } from "./docker-profile/runtime.ts";
+import { DockerProfileError, dockerProfileError } from "./docker-profile/errors.ts";
+import {
+  DockerProfileControlError,
+  DockerProfileControlAmbiguityError,
+  DockerProfileControlCancellationError,
+  DockerProfileTransportError,
+  type DockerProfileRequestError,
+  type DockerProfileRuntimeBinding,
+} from "./docker-profile/runtime.ts";
+import type { IncusProviderError } from "./incus/errors.ts";
 import { dindRuntimeDigest } from "./dind-supervisor.ts";
 import { remoteSnapshotPreparer } from "./remote-snapshot/preparer.ts";
 import { e2bSnapshotDriver } from "./e2b-snapshot-driver.ts";
@@ -643,11 +654,20 @@ export interface SandboxProviderPlanInput<Plan> {
   readonly privateFingerprintIdentity: JsonValue;
 }
 
+export type SandboxProviderPlanningCause =
+  | ComposeBuildCollectionError
+  | DockerfileBuildIdentityError
+  | DockerProfileError
+  | DockerProfileRequestError
+  | IncusProviderError
+  | ExternalCause;
+
 export class SandboxProviderPlanningError extends Data.TaggedError("SandboxProviderPlanningError")<{
   readonly code: string;
   readonly provider: string;
   readonly summary: string;
   readonly actions: readonly string[];
+  readonly cause: SandboxProviderPlanningCause | undefined;
 }> {}
 
 export interface SandboxTemplatePlanningInput {
@@ -1591,17 +1611,28 @@ function plannedTargetPlatform(target: SandboxPlannedTarget): string {
   return normalizeBuildPlatform(`${target.platform.os}/${arch}`);
 }
 
+function dockerProfilePlanningCause(cause: unknown): DockerProfileError | DockerProfileRequestError | ExternalCause {
+  if (cause instanceof DockerProfileError) return cause;
+  if (cause instanceof DockerProfileControlError) return cause;
+  if (cause instanceof DockerProfileControlAmbiguityError) return cause;
+  if (cause instanceof DockerProfileControlCancellationError) return cause;
+  if (cause instanceof DockerProfileTransportError) return cause;
+  return normalizeExternalCause(cause);
+}
+
 function providerPlanningError(
   code: string,
   provider: string,
   summary: string,
   actions: readonly string[],
+  cause: SandboxProviderPlanningCause | undefined = undefined,
 ): SandboxProviderPlanningError {
   return new SandboxProviderPlanningError({
     code,
     provider,
     summary,
     actions,
+    cause,
   });
 }
 
@@ -2186,6 +2217,7 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                 "docker",
                 cause instanceof Error ? cause.message : String(cause),
                 [`Run niceeval docker profile doctor ${profile}.`],
+                dockerProfilePlanningCause(cause),
               ),
           }),
           (profileBinding) => {
@@ -2306,6 +2338,7 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                     "docker",
                     cause instanceof Error ? cause.message : String(cause),
                     ["Make the Compose file and every filtered build context readable during physical planning."],
+                    normalizeExternalCause(cause),
                   ),
               });
               const collection = yield* collectComposeBuilds({
@@ -2315,9 +2348,13 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                 env: runtimeEnv,
               }).pipe(
                 Effect.mapError((cause) =>
-                  providerPlanningError("sandbox.case-identity-unavailable", "docker", cause.message, [
-                    "Make the Compose file and every filtered build context readable during physical planning.",
-                  ]),
+                  providerPlanningError(
+                    "sandbox.case-identity-unavailable",
+                    "docker",
+                    cause.message,
+                    ["Make the Compose file and every filtered build context readable during physical planning."],
+                    cause,
+                  ),
                 ),
               );
               const caseIdentity = composeCollectionIdentity(collection);
@@ -2483,6 +2520,7 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                     "docker",
                     cause instanceof Error ? cause.message : String(cause),
                     ["Make the Dockerfile and its filtered build context readable during physical planning."],
+                    normalizeExternalCause(cause),
                   ),
               });
               const build = yield* resolveDockerfileBuildIdentity({
@@ -2496,9 +2534,13 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                 label: "Dockerfile sandbox",
               }).pipe(
                 Effect.mapError((cause) =>
-                  providerPlanningError("sandbox.build-identity-unavailable", "docker", cause.message, [
-                    "Make the Dockerfile and its filtered build context readable during physical planning.",
-                  ]),
+                  providerPlanningError(
+                    "sandbox.build-identity-unavailable",
+                    "docker",
+                    cause.message,
+                    ["Make the Dockerfile and its filtered build context readable during physical planning."],
+                    cause,
+                  ),
                 ),
               );
               const runtimeIdentity: JsonValue = {
@@ -2908,6 +2950,7 @@ const LIVE_FACTORIES = createBuiltinSandboxFactories({
         "docker",
         cause instanceof Error ? cause.message : String(cause),
         ["Make the Docker control plane available or set DOCKER_DEFAULT_PLATFORM."],
+        normalizeExternalCause(cause),
       ),
   }),
 });

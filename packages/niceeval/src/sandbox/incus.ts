@@ -104,6 +104,7 @@ function planningError(failure: ReturnType<typeof toPlanningError>): SandboxProv
     provider: "incus",
     summary: failure.summary,
     actions: failure.actions,
+    cause: failure,
   });
 }
 

@@ -1,5 +1,25 @@
 import { Data } from "effect";
-import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
+import { isExternalCause, normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
+
+import {
+  UserDatabaseInvalid,
+  UserDatabaseBusy,
+  UserDatabaseUnsupported,
+  UserDatabaseLegacyFound,
+  type UserDatabaseFailure,
+} from "../../user-database/errors.ts";
+
+export type IncusProviderCause = UserDatabaseFailure | IncusProviderError | ExternalCause;
+
+export function incusProviderCause(cause: unknown): IncusProviderCause {
+  if (cause instanceof IncusProviderError) return cause;
+  if (cause instanceof UserDatabaseInvalid) return cause;
+  if (cause instanceof UserDatabaseBusy) return cause;
+  if (cause instanceof UserDatabaseUnsupported) return cause;
+  if (cause instanceof UserDatabaseLegacyFound) return cause;
+  if (isExternalCause(cause)) return cause;
+  return normalizeExternalCause(cause);
+}
 
 export type IncusPlanningCode =
   | "incus-unreachable"
@@ -20,7 +40,7 @@ export class IncusProviderError extends Data.TaggedError("IncusProviderError")<{
   readonly code: IncusRuntimeCode;
   readonly summary: string;
   readonly actions: readonly string[];
-  readonly cause: ExternalCause | undefined;
+  readonly cause: IncusProviderCause | undefined;
   readonly reason: "storage-bytes" | undefined;
 }> {
   get message(): string {
@@ -38,7 +58,7 @@ export function incusError(
     code,
     summary,
     actions,
-    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
+    cause: cause === undefined ? undefined : incusProviderCause(cause),
     reason: undefined,
   });
 }

@@ -11,9 +11,14 @@ import { dirname, isAbsolute, join, relative as relativePath, resolve as resolve
 import { fileURLToPath } from "node:url";
 import { Data, Effect, type Scope } from "effect";
 import { parseDocument } from "yaml";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { JsonValue } from "../shared/types.ts";
 import {
   buildContextIdentityContribution,
+  LeakGateFileError,
+  HiddenInputLeakError,
+  LeakGatePathError,
+  type LeakGateError,
   pathContentDigest,
   type BindMountSpec,
   type BuildContextSpec,
@@ -68,6 +73,7 @@ const COMPOSE_STOP_TIMEOUT_MS = 6_500;
 const COMPOSE_ABORT_KILL_GRACE_MS = 1_000;
 
 export class ComposeBuildCollectionError extends Data.TaggedError("ComposeBuildCollectionError")<{
+  readonly cause: LeakGateError | ExternalCause | undefined;
   readonly stage: "read" | "configuration" | "security" | "identity";
   readonly message: string;
 }> {}
@@ -78,6 +84,10 @@ function composeCollectionError(
 ): ComposeBuildCollectionError {
   return new ComposeBuildCollectionError({
     stage,
+    cause:
+      cause instanceof LeakGateFileError || cause instanceof HiddenInputLeakError || cause instanceof LeakGatePathError
+        ? cause
+        : normalizeExternalCause(cause),
     message: cause instanceof Error ? cause.message : String(cause),
   });
 }
@@ -695,6 +705,7 @@ export function leakGateHintsFromComposeFile(
     if (!inspection.services.some((service) => service.name === opts.mainService)) {
       return yield* Effect.fail(
         new ComposeBuildCollectionError({
+          cause: undefined,
           stage: "configuration",
           message: `Compose file ${composePath} has no service ${JSON.stringify(opts.mainService)} (mainService)`,
         }),
@@ -893,8 +904,9 @@ function collectComposeBuildsInternal(
           const dockerfilePath = resolvePath(contextDir, build.dockerfile ?? "Dockerfile");
           const dockerfile = yield* Effect.tryPromise({
             try: () => readFile(dockerfilePath, "utf-8"),
-            catch: () =>
+            catch: (cause) =>
               new ComposeBuildCollectionError({
+                cause: normalizeExternalCause(cause),
                 stage: "read",
                 message: `Compose service ${JSON.stringify(service.name)} build Dockerfile not found at ${dockerfilePath}`,
               }),
@@ -905,6 +917,7 @@ function collectComposeBuildsInternal(
           if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
             return yield* Effect.fail(
               new ComposeBuildCollectionError({
+                cause: undefined,
                 stage: "configuration",
                 message:
                   `Compose service ${JSON.stringify(service.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +

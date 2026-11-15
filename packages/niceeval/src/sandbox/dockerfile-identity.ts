@@ -5,7 +5,8 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Data, Effect } from "effect";
-import { buildContextIdentityContribution } from "../runner/leak-gate.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+import { buildContextIdentityContribution, type LeakGateError } from "../runner/leak-gate.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { computeBuildKey, unresolvedProviderFingerprintMarker, type BuildKey } from "./identity.ts";
 
@@ -32,6 +33,7 @@ export interface DockerfileBuildIdentity {
 }
 
 export class DockerfileBuildIdentityError extends Data.TaggedError("DockerfileBuildIdentityError")<{
+  readonly cause: LeakGateError | ExternalCause;
   readonly stage: "dockerfile" | "context" | "identity";
   readonly message: string;
 }> {}
@@ -39,6 +41,7 @@ export class DockerfileBuildIdentityError extends Data.TaggedError("DockerfileBu
 function identityError(stage: DockerfileBuildIdentityError["stage"], cause: unknown): DockerfileBuildIdentityError {
   return new DockerfileBuildIdentityError({
     stage,
+    cause: normalizeExternalCause(cause),
     message: cause instanceof Error ? cause.message : String(cause),
   });
 }
@@ -52,8 +55,9 @@ export function resolveDockerfileBuildIdentity(
     const dockerfilePath = resolvePath(contextDir, input.dockerfile);
     const dockerfile = yield* Effect.tryPromise({
       try: () => readFile(dockerfilePath, "utf8"),
-      catch: () =>
+      catch: (cause) =>
         new DockerfileBuildIdentityError({
+          cause: normalizeExternalCause(cause),
           stage: "dockerfile",
           message: `Dockerfile not found at ${dockerfilePath}`,
         }),
@@ -64,7 +68,9 @@ export function resolveDockerfileBuildIdentity(
 
       dockerignorePath: undefined,
       extraIgnoreRules: undefined,
-    }).pipe(Effect.mapError((cause) => identityError("context", cause)));
+    }).pipe(
+      Effect.mapError((cause) => new DockerfileBuildIdentityError({ stage: "context", message: cause.message, cause })),
+    );
     return yield* Effect.try({
       try: () => {
         const base = dockerfileBaseIdentity(dockerfile, input.target);

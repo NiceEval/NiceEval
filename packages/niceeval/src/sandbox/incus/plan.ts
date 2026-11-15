@@ -15,7 +15,7 @@ import {
   type IncusDomainName,
   type IncusProviderDescriptor,
 } from "./descriptor.ts";
-import { incusError, type IncusProviderError } from "./errors.ts";
+import { incusError, incusProviderCause, IncusProviderError } from "./errors.ts";
 import type { IncusImageLocator } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
 import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
@@ -279,16 +279,13 @@ async function planIncusSandboxWithRepository(
 }
 
 function repositoryPlanningError(cause: unknown): IncusProviderError {
-  return cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("incus-")
-    ? (cause as IncusProviderError)
-    : cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("sandbox-")
-      ? (cause as IncusProviderError)
-      : incusError(
-          "sandbox-artifact-unverified",
-          `IncusRepository planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          ["Repair the named IncusRepository in the UserDatabase before admitting another allocation."],
-          cause,
-        );
+  if (cause instanceof IncusProviderError) return cause;
+  return incusError(
+    "sandbox-artifact-unverified",
+    `IncusRepository planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    ["Repair the named IncusRepository in the UserDatabase before admitting another allocation."],
+    incusProviderCause(cause),
+  );
 }
 
 function planIncusSandboxProgram(options: NormalizedIncusSandboxOptions, env: NodeJS.ProcessEnv) {
@@ -297,13 +294,13 @@ function planIncusSandboxProgram(options: NormalizedIncusSandboxOptions, env: No
     return yield* Effect.tryPromise({
       try: () => planIncusSandboxWithRepository(repository, options, env),
       catch: (cause) =>
-        cause instanceof Error && "code" in cause
-          ? (cause as IncusProviderError)
+        cause instanceof IncusProviderError
+          ? cause
           : incusError(
               "incus-unreachable",
               `Incus planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
               ["Make the Incus control plane reachable and retry planning."],
-              cause,
+              incusProviderCause(cause),
             ),
     });
   });
@@ -341,13 +338,13 @@ export function loadDomainForDoctor(
       return { descriptor, domain };
     },
     catch: (cause) =>
-      cause instanceof Error && "code" in cause
-        ? (cause as IncusProviderError)
+      cause instanceof IncusProviderError
+        ? cause
         : incusError(
             "incus-descriptor-invalid",
             `Failed to load Incus descriptor: ${cause instanceof Error ? cause.message : String(cause)}`,
             ["Fix the Incus provider descriptor and retry doctor."],
-            cause,
+            incusProviderCause(cause),
           ),
   });
 }
