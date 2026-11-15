@@ -524,17 +524,6 @@ jobs:
           echo "candidate=${candidate}" >> "$GITHUB_OUTPUT"
           echo "[e2e] NiceEval ${candidate} sha256=${candidate_actual}"
 
-      - name: Materialize candidate types for Testkit
-        env:
-          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
-        run: |
-          set -euo pipefail
-          tar -xzf "$CANDIDATE" \
-            -C packages/niceeval \
-            --strip-components=1 \
-            package/dist
-          test -s packages/niceeval/dist/inspection/public.d.ts
-
       - name: Inject secrets for trusted lane
         if: needs.prepare.outputs.inject-secrets == 'true'
         env:
@@ -621,6 +610,11 @@ jobs:
           fi
 
       - name: Check model connectivity
+        id: model-connectivity
+        env:
+          ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
+          CELL_ID: ${{ matrix.id }}
+          MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
         if: steps.model-network.outputs.required == 'true'
         run: node .github/scripts/model-connectivity.mjs
 
@@ -802,8 +796,52 @@ jobs:
     needs: [prepare, e2e, takeover]
     if: always()
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download cell and takeover receipts
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-*
+          path: ${{ runner.temp }}/e2e-gate-artifacts
+
+      - name: Download takeover item selection
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: niceeval-e2e-takeover-plan
+          path: ${{ runner.temp }}/e2e-gate-artifacts/takeover-plan
+
+      - name: Read individual job conclusions
+        id: jobs
+        continue-on-error: true
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              run_id: context.runId, filter: "latest", per_page: 100,
+            });
+            core.setOutput("jobs", JSON.stringify(jobs.map(({ name, conclusion }) => ({ name, conclusion }))));
+
+      - name: Explain failed cells and takeover items
+        if: always()
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/e2e-gate-artifacts
+          MATRIX_JSON: ${{ needs.prepare.outputs.matrix }}
+          TAKEOVER_MATRIX_JSON: ${{ needs.prepare.outputs.takeover-matrix }}
+          MATRIX_RESULT: ${{ needs.e2e.result }}
+          TAKEOVER_RESULT: ${{ needs.takeover.result }}
+          JOBS_JSON: ${{ steps.jobs.outputs.jobs }}
+        run: node packages/e2e-runner/scripts/ci-summary.mjs
+
       - name: Require the complete selected matrix
+        if: always()
         env:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           HAS_JOBS: ${{ needs.prepare.outputs.has-jobs }}
