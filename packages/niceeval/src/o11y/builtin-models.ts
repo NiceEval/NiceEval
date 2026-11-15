@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import * as Schema from "effect/Schema";
 
 export interface BuiltinPrice {
   readonly in: number;
@@ -12,11 +13,29 @@ interface BuiltinModelCatalog {
   readonly contextWindows: Readonly<Record<string, number>>;
 }
 
+const CatalogInputSchema = Schema.Struct({
+  prices: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Record(
+        Schema.String,
+        Schema.Struct({
+          in: Schema.Number,
+          out: Schema.Number,
+          cacheRead: Schema.optionalKey(Schema.Number),
+          cacheWrite: Schema.optionalKey(Schema.Number),
+        }),
+      ),
+    ),
+  ),
+  contextWindows: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.Number))),
+});
+const decodeCatalog = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.declare<typeof CatalogInputSchema.Type>(Schema.is(CatalogInputSchema))),
+);
+
 export const builtinModelCatalog: BuiltinModelCatalog = (() => {
   try {
-    const value = JSON.parse(
-      readFileSync(new URL("./prices.json", import.meta.url), "utf8"),
-    ) as Partial<BuiltinModelCatalog>;
+    const value = decodeCatalog(readFileSync(new URL("./prices.json", import.meta.url), "utf8"));
     return { prices: value.prices ?? {}, contextWindows: value.contextWindows ?? {} };
   } catch {
     return { prices: {}, contextWindows: {} };

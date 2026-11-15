@@ -1,4 +1,11 @@
 import type { JsonValue } from "./types.ts";
+import * as Schema from "effect/Schema";
+
+/** Decode JSON bytes at transport boundaries without asserting their shape. */
+export const decodeJsonValue = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.MutableJson));
+export const decodeJsonRecord = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.MutableJson)),
+);
 
 /**
  * 动态 SDK/JSON 边界的运行时判定。这里只接受真正可序列化的 JSON 树；循环引用、
