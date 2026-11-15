@@ -109,16 +109,14 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
       continue;
     }
-    appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
-      Object.freeze({
-        usageObservationId,
-        provider,
-        kind: "token-bucket" as const,
-        bucket,
-        tokens,
-        refs: Object.freeze([]),
-      }),
-    );
+    appendUsageObservation(runtime, turnId, (usageObservationId, provider) => ({
+      usageObservationId,
+      provider,
+      kind: "token-bucket" as const,
+      bucket,
+      tokens,
+      refs: [],
+    }));
   }
   if (usage.requests !== undefined) {
     const requests = usageNonNegativeInteger(usage.requests);
@@ -126,15 +124,13 @@ export function captureRunnerTurnUsage(
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else {
       for (let request = 0; request < requests; request += 1) {
-        appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
-          Object.freeze({
-            usageObservationId,
-            provider,
-            kind: "request" as const,
-            requestKind: "model" as const,
-            refs: Object.freeze([]),
-          }),
-        );
+        appendUsageObservation(runtime, turnId, (usageObservationId, provider) => ({
+          usageObservationId,
+          provider,
+          kind: "request" as const,
+          requestKind: "model" as const,
+          refs: [],
+        }));
         const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
         if (usageCount >= MAX_USAGE_OBSERVATIONS) break;
       }
@@ -147,16 +143,14 @@ export function captureRunnerTurnUsage(
     } else {
       const currency = makeCurrencyCode("USD");
       if (currency === undefined) throw new Error("USD must be a CurrencyCode");
-      appendUsageObservation(runtime, turnId, (usageObservationId, provider) =>
-        Object.freeze({
-          usageObservationId,
-          provider,
-          kind: "provider-cost" as const,
-          amount,
-          currency,
-          refs: Object.freeze([]),
-        }),
-      );
+      appendUsageObservation(runtime, turnId, (usageObservationId, provider) => ({
+        usageObservationId,
+        provider,
+        kind: "provider-cost" as const,
+        amount,
+        currency,
+        refs: [],
+      }));
     }
   }
 }

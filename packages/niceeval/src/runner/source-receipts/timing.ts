@@ -40,7 +40,7 @@ type AttemptTimingProjection =
 
 function attemptTimingProjection(phase: string): AttemptTimingProjection {
   const label = stableLabel(phase);
-  if (label === undefined) return Object.freeze({ kind: "unsupported" as const });
+  if (label === undefined) return { kind: "unsupported" as const };
   switch (phase) {
     case "attempt.setup":
     case "sandbox.create":
@@ -48,18 +48,18 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "agent.setup":
     case "telemetry.configure":
     case "sandbox.queue":
-      return Object.freeze({ kind: "attempt" as const, phase: "attempt.setup" as const, label });
+      return { kind: "attempt" as const, phase: "attempt.setup" as const, label };
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
-      return Object.freeze({ kind: "attempt" as const, phase: "sandbox.prepare" as const, label });
+      return { kind: "attempt" as const, phase: "sandbox.prepare" as const, label };
     case "agent.install":
-      return Object.freeze({ kind: "attempt" as const, phase: "agent.install" as const, label });
+      return { kind: "attempt" as const, phase: "agent.install" as const, label };
     case "eval.run":
-      return Object.freeze({ kind: "attempt" as const, phase: "eval.run" as const, label });
+      return { kind: "attempt" as const, phase: "eval.run" as const, label };
     case "assertions.evaluate":
-      return Object.freeze({ kind: "attempt" as const, phase: "assertion.evaluate" as const, label });
+      return { kind: "attempt" as const, phase: "assertion.evaluate" as const, label };
     case "agent.teardown":
     case "attempt.teardown":
     case "sandbox.cleanup":
@@ -67,14 +67,14 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "sandbox.stop":
     case "workspace.diff":
     case "telemetry.collect":
-      return Object.freeze({ kind: "attempt" as const, phase: "attempt.teardown" as const, label });
+      return { kind: "attempt" as const, phase: "attempt.teardown" as const, label };
     case "judge.precheck":
     case "experiment.setup":
     case "experiment.teardown":
     case "agent.run":
-      return Object.freeze({ kind: "outside-attempt-domain" as const });
+      return { kind: "outside-attempt-domain" as const };
     default:
-      return Object.freeze({ kind: "unsupported" as const });
+      return { kind: "unsupported" as const };
   }
 }
 
@@ -122,7 +122,7 @@ function timingActivityProjection(activity: TimingActivity):
       ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
       : (stableLabel(activity.label) ?? stableLabel(activity.key));
   if (label === undefined) return undefined;
-  return Object.freeze({ phase, label });
+  return { phase, label };
 }
 
 function validTimingActivityStart(activity: TimingActivity): NonNegativeSafeInteger | undefined {
@@ -167,10 +167,10 @@ export function normalizeAttemptTiming(input: {
     const phases = input.result.phases;
     if (phases === undefined) {
       limitations.addCaptureFailed("timing-capture", "timing-interval");
-      return Object.freeze({
-        timing: Object.freeze({ collection: limitations.collection(), intervals: Object.freeze([]) }),
+      return {
+        timing: { collection: limitations.collection(), intervals: [] },
         intervalByTurnId: new Map(),
-      });
+      };
     }
 
     const intervals: AttemptTimingInterval[] = [];
@@ -234,18 +234,16 @@ export function normalizeAttemptTiming(input: {
                   })
                 ? parent.intervalId
                 : null;
-          intervals.push(
-            Object.freeze({
-              intervalId,
-              phase: projection.phase,
-              label: projection.label,
-              startOffsetMs,
-              durationMs,
-              parentIntervalId,
-              outcome: activity.failed ? ("failed" as const) : ("completed" as const),
-              refs: Object.freeze([]),
-            }),
-          );
+          intervals.push({
+            intervalId,
+            phase: projection.phase,
+            label: projection.label,
+            startOffsetMs,
+            durationMs,
+            parentIntervalId,
+            outcome: activity.failed ? ("failed" as const) : ("completed" as const),
+            refs: [],
+          });
           if (activity.key === "agent.turn" && activity.turnId !== undefined) {
             const turnId = turnsById.get(activity.turnId)?.turnId;
             if (turnId !== undefined) {
@@ -261,12 +259,12 @@ export function normalizeAttemptTiming(input: {
           nextAncestors.add(activity);
           yield* appendActivities(
             activity.children,
-            Object.freeze({
+            {
               intervalId,
               startOffsetMs,
               sourceStartOffsetMs,
               durationMs,
-            }),
+            },
             nextAncestors,
           );
         }
@@ -290,26 +288,24 @@ export function normalizeAttemptTiming(input: {
         limitations.addCap("timing-interval", intervals.length);
       } else if (projection.kind === "attempt") {
         const intervalId = yield* input.mint("interval");
-        intervals.push(
-          Object.freeze({
-            intervalId,
-            phase: projection.phase,
-            label: projection.label,
-            startOffsetMs: attemptOffset,
-            durationMs: duration,
-            parentIntervalId: null,
-            outcome: source.failed ? ("failed" as const) : ("completed" as const),
-            refs: Object.freeze([]),
-          }),
-        );
+        intervals.push({
+          intervalId,
+          phase: projection.phase,
+          label: projection.label,
+          startOffsetMs: attemptOffset,
+          durationMs: duration,
+          parentIntervalId: null,
+          outcome: source.failed ? ("failed" as const) : ("completed" as const),
+          refs: [],
+        });
         yield* appendActivities(
           source.children,
-          Object.freeze({
+          {
             intervalId,
             startOffsetMs: attemptOffset,
             sourceStartOffsetMs,
             durationMs: duration,
-          }),
+          },
           new Set(),
         );
       }
@@ -321,16 +317,14 @@ export function normalizeAttemptTiming(input: {
         }
       }
     }
-    return Object.freeze({
-      timing: Object.freeze({
+    return {
+      timing: {
         collection: limitations.collection(),
         // The durable timing family canonically orders by opaque entity id; the
         // offsets retain the Runner's actual lifecycle order.
-        intervals: Object.freeze(
-          [...intervals].sort((left, right) => compareObservabilityText(left.intervalId, right.intervalId)),
-        ),
-      }),
-      intervalByTurnId: new Map(intervalByTurnId),
-    });
+        intervals: intervals.sort((left, right) => compareObservabilityText(left.intervalId, right.intervalId)),
+      },
+      intervalByTurnId,
+    };
   });
 }

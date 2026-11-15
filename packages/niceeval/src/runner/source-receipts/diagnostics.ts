@@ -95,72 +95,63 @@ export function normalizeAttemptDiagnostics(input: {
         return Effect.void;
       }
       return Effect.map(input.mint("diagnostic"), (diagnosticId) => {
-        diagnostics.push(
-          Object.freeze({
-            diagnosticId: diagnosticId as DiagnosticId,
-            kind: value.kind,
-            code,
-            phase: attemptDiagnosticPhase(value.origin),
-            // The result's one-line detail is already Runner-redacted. Causes,
-            // stacks, paths, and arbitrary context remain outside this durable
-            // family. Preserve both ends of oversized text; an unsafe detail is
-            // replaced by a generic summary and partial coverage.
-            summary:
-              retainedSummary ??
-              makeBoundedSafeText(
-                value.kind === "execution-error"
-                  ? "Runner recorded an execution error."
-                  : "Runner recorded an advisory diagnostic.",
-                MAX_DIAGNOSTIC_SUMMARY_BYTES,
-              )!,
-            causes: Object.freeze(
-              value.reason === undefined
-                ? []
-                : [
-                    {
-                      code: makeSafeIdentifier(value.reason)!,
-                      summary: makeBoundedSafeText(value.reason, MAX_DIAGNOSTIC_SUMMARY_BYTES)!,
-                    },
-                  ],
-            ),
-            context: Object.freeze([]),
-            redaction: Object.freeze({ state: "none" as const }),
-            sourceFrame: null,
-            refs: Object.freeze([]),
-          }),
-        );
+        diagnostics.push({
+          diagnosticId: diagnosticId as DiagnosticId,
+          kind: value.kind,
+          code,
+          phase: attemptDiagnosticPhase(value.origin),
+          // The result's one-line detail is already Runner-redacted. Causes,
+          // stacks, paths, and arbitrary context remain outside this durable
+          // family. Preserve both ends of oversized text; an unsafe detail is
+          // replaced by a generic summary and partial coverage.
+          summary:
+            retainedSummary ??
+            makeBoundedSafeText(
+              value.kind === "execution-error"
+                ? "Runner recorded an execution error."
+                : "Runner recorded an advisory diagnostic.",
+              MAX_DIAGNOSTIC_SUMMARY_BYTES,
+            )!,
+          causes:
+            value.reason === undefined
+              ? []
+              : [
+                  {
+                    code: makeSafeIdentifier(value.reason)!,
+                    summary: makeBoundedSafeText(value.reason, MAX_DIAGNOSTIC_SUMMARY_BYTES)!,
+                  },
+                ],
+          context: [],
+          redaction: { state: "none" as const },
+          sourceFrame: null,
+          refs: [],
+        });
       });
     };
 
     if (input.result.error !== undefined) {
-      yield* append(
-        Object.freeze({
-          code: input.result.error.code,
-          detail: input.result.error.message,
-          kind: "execution-error" as const,
-          origin: input.result.error.origin,
-          ...(input.result.error.code.startsWith("simulated-user-") && input.result.error.cause?.code !== undefined
-            ? { reason: input.result.error.cause.code }
-            : {}),
-        }),
-      );
+      yield* append({
+        code: input.result.error.code,
+        detail: input.result.error.message,
+        kind: "execution-error" as const,
+        origin: input.result.error.origin,
+        ...(input.result.error.code.startsWith("simulated-user-") && input.result.error.cause?.code !== undefined
+          ? { reason: input.result.error.cause.code }
+          : {}),
+      });
     }
     for (const diagnostic of input.result.diagnostics ?? []) {
-      yield* append(
-        Object.freeze({
-          code: diagnostic.code,
-          detail: diagnostic.detail,
-          kind: diagnostic.level === "error" ? ("execution-error" as const) : ("advisory" as const),
-          ...(diagnostic.origin === undefined ? {} : { origin: diagnostic.origin }),
-        }),
-      );
+      yield* append({
+        code: diagnostic.code,
+        detail: diagnostic.detail,
+        kind: diagnostic.level === "error" ? ("execution-error" as const) : ("advisory" as const),
+        ...(diagnostic.origin === undefined ? {} : { origin: diagnostic.origin }),
+      });
     }
-    return Object.freeze({
+    return {
       collection: limitations.collection(),
-      diagnostics: Object.freeze(
-        [...diagnostics].sort((left, right) => compareObservabilityText(left.diagnosticId, right.diagnosticId)),
-      ),
-    });
+      diagnostics: diagnostics.sort((left, right) => compareObservabilityText(left.diagnosticId, right.diagnosticId)),
+    };
   });
 }
 
@@ -205,34 +196,30 @@ export function normalizeRunDiagnostics(input: {
         continue;
       }
       const diagnosticId = yield* input.mint("diagnostic");
-      diagnostics.push(
-        Object.freeze({
-          ...(source.affectedSlotIds === undefined ? {} : { affectedSlotIds: source.affectedSlotIds }),
-          diagnosticId: diagnosticId as DiagnosticId,
-          kind: source.level === "error" ? ("execution-error" as const) : ("advisory" as const),
-          code,
-          phase: runDiagnosticPhase(source.origin),
-          summary:
-            summary ??
-            makeBoundedSafeText(
-              source.level === "error"
-                ? "Runner recorded an execution error."
-                : "Runner recorded an advisory diagnostic.",
-              MAX_DIAGNOSTIC_SUMMARY_BYTES,
-            )!,
-          causes: Object.freeze([]),
-          context: Object.freeze([]),
-          redaction: Object.freeze({ state: "none" as const }),
-          sourceFrame: null,
-          refs: Object.freeze([]),
-        }),
-      );
+      diagnostics.push({
+        ...(source.affectedSlotIds === undefined ? {} : { affectedSlotIds: source.affectedSlotIds }),
+        diagnosticId: diagnosticId as DiagnosticId,
+        kind: source.level === "error" ? ("execution-error" as const) : ("advisory" as const),
+        code,
+        phase: runDiagnosticPhase(source.origin),
+        summary:
+          summary ??
+          makeBoundedSafeText(
+            source.level === "error"
+              ? "Runner recorded an execution error."
+              : "Runner recorded an advisory diagnostic.",
+            MAX_DIAGNOSTIC_SUMMARY_BYTES,
+          )!,
+        causes: [],
+        context: [],
+        redaction: { state: "none" as const },
+        sourceFrame: null,
+        refs: [],
+      });
     }
-    return Object.freeze({
+    return {
       collection: limitations.collection(),
-      diagnostics: Object.freeze(
-        [...diagnostics].sort((left, right) => compareObservabilityText(left.diagnosticId, right.diagnosticId)),
-      ),
-    });
+      diagnostics: diagnostics.sort((left, right) => compareObservabilityText(left.diagnosticId, right.diagnosticId)),
+    };
   });
 }

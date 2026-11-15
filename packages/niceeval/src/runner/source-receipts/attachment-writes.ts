@@ -36,10 +36,10 @@ export type SourceReceiptAttachmentBuildError = {
 };
 
 function invalid(family: SourceReceiptAttachmentBuildError["family"]): SourceReceiptAttachmentBuildError {
-  return Object.freeze({
+  return {
     code: "source-receipt-attachment-input-invalid" as const,
     family,
-  });
+  };
 }
 
 function decode<Value>(
@@ -106,28 +106,24 @@ function sandboxCommandsAttachment(
   if (Result.isFailure(metadata)) return Result.fail(invalid("sandbox-commands"));
 
   return Result.succeed((build) => {
-    const candidate = Object.freeze({
+    const candidate = {
       collection: metadata.success.collection,
-      segments: Object.freeze(
-        metadata.success.segments.map((segment, index) =>
-          Object.freeze({
-            ...segment,
-            stdout: Object.freeze({
-              content: build.content.text(input.segments[index]!.stdout.text),
-              retainedBytes: input.segments[index]!.stdout.retainedBytes,
-              totalSafeUtf8Bytes: input.segments[index]!.stdout.totalSafeUtf8Bytes,
-              sha256: input.segments[index]!.stdout.sha256,
-            }),
-            stderr: Object.freeze({
-              content: build.content.text(input.segments[index]!.stderr.text),
-              retainedBytes: input.segments[index]!.stderr.retainedBytes,
-              totalSafeUtf8Bytes: input.segments[index]!.stderr.totalSafeUtf8Bytes,
-              sha256: input.segments[index]!.stderr.sha256,
-            }),
-          }),
-        ),
-      ),
-    });
+      segments: metadata.success.segments.map((segment, index) => ({
+        ...segment,
+        stdout: {
+          content: build.content.text(input.segments[index]!.stdout.text),
+          retainedBytes: input.segments[index]!.stdout.retainedBytes,
+          totalSafeUtf8Bytes: input.segments[index]!.stdout.totalSafeUtf8Bytes,
+          sha256: input.segments[index]!.stdout.sha256,
+        },
+        stderr: {
+          content: build.content.text(input.segments[index]!.stderr.text),
+          retainedBytes: input.segments[index]!.stderr.retainedBytes,
+          totalSafeUtf8Bytes: input.segments[index]!.stderr.totalSafeUtf8Bytes,
+          sha256: input.segments[index]!.stderr.sha256,
+        },
+      })),
+    };
     const decoded = Schema.decodeUnknownResult(
       Schema.toType(SandboxCommandsAttachmentSchema),
       RecordExactParseOptions,
@@ -143,20 +139,14 @@ function attemptRunnerDiagnosticsAttachment(
   input: AttemptRunnerDiagnosticsAttachment,
 ): AttemptRunnerDiagnosticsAttachmentBuild {
   return (build) => {
-    const candidate = Object.freeze({
+    const candidate = {
       collection: input.collection,
-      segments: Object.freeze(
-        input.segments.map((segment) =>
-          Object.freeze({
-            ...segment,
-            sourceFrame:
-              segment.sourceFrame === null
-                ? null
-                : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
-          }),
-        ),
-      ),
-    });
+      segments: input.segments.map((segment) => ({
+        ...segment,
+        sourceFrame:
+          segment.sourceFrame === null ? null : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+      })),
+    };
     const decoded = Schema.decodeResult(
       Schema.toType(AttemptRunnerDiagnosticsAttachmentSchema),
       RecordExactParseOptions,
@@ -170,20 +160,14 @@ function attemptRunnerDiagnosticsAttachment(
 
 function runRunnerDiagnosticsAttachment(input: RunRunnerDiagnosticsAttachment): RunRunnerDiagnosticsAttachmentBuild {
   return (build) => {
-    const candidate = Object.freeze({
+    const candidate = {
       collection: input.collection,
-      segments: Object.freeze(
-        input.segments.map((segment) =>
-          Object.freeze({
-            ...segment,
-            sourceFrame:
-              segment.sourceFrame === null
-                ? null
-                : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
-          }),
-        ),
-      ),
-    });
+      segments: input.segments.map((segment) => ({
+        ...segment,
+        sourceFrame:
+          segment.sourceFrame === null ? null : build.reference.to(sourcesRecordAttachment, segment.sourceFrame.value),
+      })),
+    };
     const decoded = Schema.decodeResult(
       Schema.toType(RunRunnerDiagnosticsAttachmentSchema),
       RecordExactParseOptions,
@@ -224,14 +208,12 @@ export function createAttemptSourceReceiptAttachments(
     return Result.fail(sandboxCommands.failure);
   }
 
-  return Result.succeed(
-    Object.freeze({
-      ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.success }),
-      ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.success }),
-      runnerActivities: activities.success,
-      runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.success),
-    }),
-  );
+  return Result.succeed({
+    ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.success }),
+    ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.success }),
+    runnerActivities: activities.success,
+    runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.success),
+  });
 }
 
 export function createRunSourceReceiptAttachments(
@@ -248,14 +230,12 @@ export function createRunSourceReceiptAttachments(
       : decode(RunRunnerDiagnosticsAttachmentSchema, input.runnerDiagnostics, "runner-diagnostics");
   if (diagnostics !== undefined && Result.isFailure(diagnostics)) return Result.fail(diagnostics.failure);
 
-  return Result.succeed(
-    Object.freeze({
-      ...(activities === undefined ? {} : { runnerActivities: activities.success }),
-      ...(diagnostics === undefined
-        ? {}
-        : {
-            runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.success),
-          }),
-    }),
-  );
+  return Result.succeed({
+    ...(activities === undefined ? {} : { runnerActivities: activities.success }),
+    ...(diagnostics === undefined
+      ? {}
+      : {
+          runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.success),
+        }),
+  });
 }

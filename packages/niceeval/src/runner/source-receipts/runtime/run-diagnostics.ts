@@ -29,36 +29,27 @@ export function bindRunnerRunObservabilityDiagnostics(input: {
     if (segmentIdByDiagnosticId === undefined) {
       return yield* Effect.fail(producerEntityIdInvalid("diagnostic"));
     }
-    const candidate = Object.freeze({
+    const candidate = {
       collection: sourceCollection([{ collection: normalization.collection, stage: "runner-diagnostic-sink" }]),
-      segments: Object.freeze(
-        normalization.diagnostics.map((diagnostic, index) =>
-          Object.freeze({
-            ...(diagnostic.affectedSlotIds === undefined ? {} : { affectedSlotIds: diagnostic.affectedSlotIds }),
-            segmentId: segmentIdByDiagnosticId.get(diagnostic.diagnosticId),
-            diagnosticId: diagnostic.diagnosticId,
-            sequence: index + 1,
-            kind: diagnostic.kind,
-            code: diagnostic.code,
-            phase: diagnostic.phase === "collection" ? "run.teardown" : diagnostic.phase,
-            turnId: null,
-            summary: diagnostic.summary,
-            causes: Object.freeze(
-              diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary })),
-            ),
-            redaction: receiptDiagnosticRedaction(diagnostic.redaction),
-            sourceFrame: diagnostic.sourceFrame,
-          }),
-        ),
-      ),
-    });
+      segments: normalization.diagnostics.map((diagnostic, index) => ({
+        ...(diagnostic.affectedSlotIds === undefined ? {} : { affectedSlotIds: diagnostic.affectedSlotIds }),
+        segmentId: segmentIdByDiagnosticId.get(diagnostic.diagnosticId),
+        diagnosticId: diagnostic.diagnosticId,
+        sequence: index + 1,
+        kind: diagnostic.kind,
+        code: diagnostic.code,
+        phase: diagnostic.phase === "collection" ? "run.teardown" : diagnostic.phase,
+        turnId: null,
+        summary: diagnostic.summary,
+        causes: diagnostic.causes.map((cause) => ({ code: cause.code, summary: cause.summary })),
+        redaction: receiptDiagnosticRedaction(diagnostic.redaction),
+        sourceFrame: diagnostic.sourceFrame,
+      })),
+    };
     const runnerDiagnostics = yield* decodeReceipt(RunRunnerDiagnosticsAttachmentSchema, candidate, "run");
-    storeRunCapture(
-      input.run,
-      Object.freeze({
-        capture,
-        snapshot: Object.freeze({ runnerDiagnostics }),
-      }),
-    );
+    storeRunCapture(input.run, {
+      capture,
+      snapshot: { runnerDiagnostics },
+    });
   });
 }

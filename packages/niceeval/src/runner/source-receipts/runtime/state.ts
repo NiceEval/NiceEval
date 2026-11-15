@@ -65,65 +65,65 @@ function attemptTargetForEntity<Kind extends ObservabilityEntityKind>(
 ): AttemptReferenceTarget {
   switch (kind) {
     case "turn":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "turn" as const,
         id: id as TurnId,
-      });
+      };
     case "item":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "item" as const,
         id: id as ItemId,
-      });
+      };
     case "call":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "call" as const,
         id: id as CallId,
-      });
+      };
     case "event":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "event" as const,
         id: id as EventId,
-      });
+      };
     case "tool-occurrence":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "tool-occurrence" as const,
         id: id as ToolOccurrenceId,
-      });
+      };
     case "session-scope":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "session-scope" as const,
         id: id as SessionScopeId,
-      });
+      };
     case "command":
-      return Object.freeze({
+      return {
         family: "niceeval.sandbox-commands" as const,
         kind: "command" as const,
         id: id as CommandId,
-      });
+      };
     case "usage-observation":
-      return Object.freeze({
+      return {
         family: "niceeval.agent-turns" as const,
         kind: "usage-observation" as const,
         id: id as UsageObservationId,
-      });
+      };
     case "interval":
-      return Object.freeze({
+      return {
         family: "niceeval.runner-activities" as const,
         kind: "interval" as const,
         id: id as IntervalId,
-      });
+      };
     case "diagnostic":
-      return Object.freeze({
+      return {
         family: "niceeval.runner-diagnostics" as const,
         kind: "diagnostic" as const,
         id: id as DiagnosticId,
-      });
+      };
   }
 }
 
@@ -265,10 +265,10 @@ export function makeCommandHandle(
   runtime: RunnerAttemptObservabilityRuntimeState,
   command: CapturedCommandRuntime,
 ): RunnerCommandCaptureHandle {
-  const handle = Object.freeze({
+  const handle = {
     [runnerCommandCaptureHandleTypeId]: () => undefined,
-  }) as RunnerCommandCaptureHandle;
-  runnerCommandHandleStates.set(handle, Object.freeze({ runtime, command }));
+  } as RunnerCommandCaptureHandle;
+  runnerCommandHandleStates.set(handle, { runtime, command });
   return handle;
 }
 
@@ -363,20 +363,20 @@ export function mintRuntimeCommand(runtime: RunnerAttemptObservabilityRuntimeSta
     markRuntimeFailure(runtime, producerEntityIdInvalid("command"));
     return undefined;
   }
-  return Object.freeze({ commandId, entity });
+  return { commandId, entity };
 }
 
 export function makeAttemptEntityMinter(runtime: RunnerAttemptObservabilityRuntimeState): {
   readonly mint: AttemptEntityMinter;
 } {
-  return Object.freeze({
+  return {
     mint: <Kind extends ObservabilityEntityKind>(kind: Kind) =>
       Effect.suspend(() => {
         if (runtime.failure !== undefined) return Effect.fail(runtime.failure);
         const id = mintRuntimeEntity(runtime, kind);
         return id === undefined ? Effect.fail(runtime.failure ?? producerEntityIdInvalid(kind)) : Effect.succeed(id);
       }),
-  });
+  };
 }
 
 type RunObservabilityEntityKind = "interval" | "diagnostic";
@@ -391,17 +391,17 @@ function runTargetForEntity<Kind extends RunObservabilityEntityKind>(
 ): RunReferenceTarget {
   switch (kind) {
     case "interval":
-      return Object.freeze({
+      return {
         family: "niceeval.runner-activities" as const,
         kind: "interval" as const,
         id: id as IntervalId,
-      });
+      };
     case "diagnostic":
-      return Object.freeze({
+      return {
         family: "niceeval.runner-diagnostics" as const,
         kind: "diagnostic" as const,
         id: id as DiagnosticId,
-      });
+      };
   }
 }
 
@@ -425,13 +425,13 @@ function mintRunEntity<Kind extends RunObservabilityEntityKind>(
 export function makeRunEntityMinter(capture: RunObservabilityCaptureIdentity): {
   readonly mint: RunEntityMinter;
 } {
-  return Object.freeze({
+  return {
     mint: <Kind extends RunObservabilityEntityKind>(kind: Kind) =>
       Effect.suspend(() => {
         const id = mintRunEntity(capture, kind);
         return id === undefined ? Effect.fail(producerEntityIdInvalid(kind)) : Effect.succeed(id);
       }),
-  });
+  };
 }
 
 /** Creates one private capture for a real Runner Attempt. */
@@ -439,9 +439,9 @@ export function createRunnerAttemptObservabilityRuntime(input: {
   readonly providerName: string;
   readonly sensitiveValues: ReadonlySet<string>;
 }): RunnerAttemptObservabilityRuntime {
-  const runtime = Object.freeze({
+  const runtime = {
     [runnerAttemptObservabilityRuntimeTypeId]: () => undefined,
-  }) as RunnerAttemptObservabilityRuntime;
+  } as RunnerAttemptObservabilityRuntime;
   runnerAttemptRuntimeStates.set(runtime, {
     capture: makeAttemptObservabilityCaptureIdentity(),
     providerName: input.providerName,

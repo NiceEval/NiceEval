@@ -102,21 +102,21 @@ function commandWorkingDirectory(
 ): CommandManifest["workingDirectory"] {
   const candidate = options as Partial<Pick<CommandOptions, "cwd">> | undefined;
   const cwd = candidate?.cwd;
-  if (cwd === undefined || cwd === ".") return Object.freeze({ kind: "sandbox-default" as const });
+  if (cwd === undefined || cwd === ".") return { kind: "sandbox-default" as const };
   if (typeof cwd !== "string") {
     runtime.commandLimitations.addUnsupported("command-manifest");
-    return Object.freeze({ kind: "redacted" as const });
+    return { kind: "redacted" as const };
   }
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
   if (isProjectRelativeCommandPath(redacted)) {
     const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema)(redacted);
     if (Result.isSuccess(decoded)) {
-      return Object.freeze({ kind: "project-relative" as const, path: decoded.success });
+      return { kind: "project-relative" as const, path: decoded.success };
     }
   }
   runtime.commandLimitations.addRedacted("command-manifest");
-  return Object.freeze({ kind: "redacted" as const });
+  return { kind: "redacted" as const };
 }
 
 export function commandManifest(
@@ -140,11 +140,11 @@ export function commandManifest(
       target: "command-manifest",
       runtime,
     });
-    return Object.freeze({
+    return {
       phase,
-      invocation: Object.freeze({ kind: "shell" as const, command: script }),
+      invocation: { kind: "shell" as const, command: script },
       workingDirectory,
-    });
+    };
   }
   const sourceArguments = command.args ?? [];
   if (sourceArguments.length > MAX_COMMAND_ARGUMENTS) {
@@ -169,15 +169,15 @@ export function commandManifest(
       }),
     );
   }
-  return Object.freeze({
+  return {
     phase,
-    invocation: Object.freeze({
+    invocation: {
       kind: "argv" as const,
       executable,
-      arguments: Object.freeze([...arguments_]),
-    }),
+      arguments: arguments_,
+    },
     workingDirectory,
-  });
+  };
 }
 
 function stripUnsafeCommandControls(value: string): { readonly text: string; readonly count: number } {
@@ -191,18 +191,18 @@ function stripUnsafeCommandControls(value: string): { readonly text: string; rea
     }
     text += scalar;
   }
-  return Object.freeze({ text, count });
+  return { text, count };
 }
 
 export function emptyCommandStream(): StagedCommandStream {
   const text = makeBoundedSafeText("", MAX_COMMAND_STREAM_BYTES);
   if (text === undefined) throw new Error("An empty command stream must be SafeText");
-  return Object.freeze({
+  return {
     text,
     retainedBytes: requiredNonNegative(0),
     totalSafeUtf8Bytes: requiredNonNegative(0),
     sha256: createHash("sha256").update(new Uint8Array()).digest("hex"),
-  });
+  };
 }
 
 export function commandStream(input: {
@@ -235,10 +235,10 @@ export function commandStream(input: {
     retained.omittedBytes === undefined
       ? retained.retainedBytes
       : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
-  return Object.freeze({
+  return {
     text: retained.text,
     retainedBytes: retained.retainedBytes,
     totalSafeUtf8Bytes,
     sha256: createHash("sha256").update(new TextEncoder().encode(retained.text)).digest("hex"),
-  });
+  };
 }

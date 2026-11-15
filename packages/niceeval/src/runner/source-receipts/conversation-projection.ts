@@ -114,13 +114,11 @@ export function normalizeConversationTurn(
     if (!hasConversationCapacity({ itemCount, hasTurn: true, limitations })) return undefined;
     const itemId = runtime.mintEntity("item");
     if (itemId === undefined) return undefined;
-    const item = create(
-      Object.freeze({
-        itemId,
-        turnId: turn.turnId,
-        sequence: requiredPositive(itemCount + 1),
-      }),
-    );
+    const item = create({
+      itemId,
+      turnId: turn.turnId,
+      sequence: requiredPositive(itemCount + 1),
+    });
     turn.items.push(item);
     return item;
   };
@@ -134,15 +132,13 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "message" as const,
-            role: event.role,
-            text: text.text,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "message" as const,
+          role: event.role,
+          text: text.text,
+          refs: [],
+        }));
         appendConversationTextLimitation(item, text, limitations);
         break;
       }
@@ -155,16 +151,14 @@ export function normalizeConversationTurn(
             limitations.addUnsupported("conversation-item");
             break;
           }
-          const item = append((ids) =>
-            Object.freeze({
-              ...ids,
-              kind: "tool-call" as const,
-              callId,
-              tool,
-              inputSummary: summary.text,
-              refs: Object.freeze([]),
-            }),
-          );
+          const item = append((ids) => ({
+            ...ids,
+            kind: "tool-call" as const,
+            callId,
+            tool,
+            inputSummary: summary.text,
+            refs: [],
+          }));
           if (item !== undefined) openTools.set(event.operationId, callId);
           appendConversationTextLimitation(item, summary, limitations);
           break;
@@ -174,16 +168,14 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "subagent" as const,
-            state: "started" as const,
-            label,
-            summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "subagent" as const,
+          state: "started" as const,
+          label,
+          summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
+          refs: [],
+        }));
         if (item !== undefined) openSubagents.set(event.operationId, label);
         break;
       }
@@ -196,16 +188,14 @@ export function normalizeConversationTurn(
             limitations.addUnsupported("conversation-item");
             break;
           }
-          const item = append((ids) =>
-            Object.freeze({
-              ...ids,
-              kind: "tool-result" as const,
-              callId,
-              outcome: event.status,
-              outputSummary: summary.text,
-              refs: Object.freeze([]),
-            }),
-          );
+          const item = append((ids) => ({
+            ...ids,
+            kind: "tool-result" as const,
+            callId,
+            outcome: event.status,
+            outputSummary: summary.text,
+            refs: [],
+          }));
           if (item !== undefined) openTools.delete(event.operationId);
           appendConversationTextLimitation(item, summary, limitations);
           break;
@@ -215,19 +205,17 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "subagent" as const,
-            state: event.status,
-            label,
-            summary: makeBoundedSafeText(
-              event.status === "completed" ? "Subagent completed." : "Subagent failed.",
-              MAX_CONVERSATION_TEXT_BYTES,
-            )!,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "subagent" as const,
+          state: event.status,
+          label,
+          summary: makeBoundedSafeText(
+            event.status === "completed" ? "Subagent completed." : "Subagent failed.",
+            MAX_CONVERSATION_TEXT_BYTES,
+          )!,
+          refs: [],
+        }));
         if (item !== undefined) openSubagents.delete(event.operationId);
         break;
       }
@@ -237,15 +225,13 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "skill-load" as const,
-            skill,
-            outcome: "loaded" as const,
-            refs: Object.freeze([]),
-          }),
-        );
+        append((ids) => ({
+          ...ids,
+          kind: "skill-load" as const,
+          skill,
+          outcome: "loaded" as const,
+          refs: [],
+        }));
         break;
       }
       case "input.requested": {
@@ -260,16 +246,14 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "input-request" as const,
-            state: "requested" as const,
-            promptSummary: summary.text,
-            responseSummary: null,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "input-request" as const,
+          state: "requested" as const,
+          promptSummary: summary.text,
+          responseSummary: null,
+          refs: [],
+        }));
         appendConversationTextLimitation(item, summary, limitations);
         limitations.addCaptureFailed("adapter", "conversation-item");
         break;
@@ -284,15 +268,13 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "context-injection" as const,
-            source,
-            summary: summary.text,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "context-injection" as const,
+          source,
+          summary: summary.text,
+          refs: [],
+        }));
         appendConversationTextLimitation(item, summary, limitations);
         break;
       }
@@ -302,15 +284,13 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) =>
-          Object.freeze({
-            ...ids,
-            kind: "conversation-error" as const,
-            code: makeSafeIdentifier("stream-error")!,
-            summary: summary.text,
-            refs: Object.freeze([]),
-          }),
-        );
+        const item = append((ids) => ({
+          ...ids,
+          kind: "conversation-error" as const,
+          code: makeSafeIdentifier("stream-error")!,
+          summary: summary.text,
+          refs: [],
+        }));
         appendConversationTextLimitation(item, summary, limitations);
         break;
       }
