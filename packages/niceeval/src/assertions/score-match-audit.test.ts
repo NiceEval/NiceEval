@@ -67,7 +67,6 @@ describe("ScoreMatch audit decoder", () => {
   it("strictly reads canonical complete audit evidence", () => {
     const result = readScoreMatchAudit(retained(), 0.5);
     expect(result.state).toBe("available");
-    if (result.state === "available") expect(Object.isFrozen(result.audit.calls)).toBe(true);
   });
 
   it("separates corrupt and unsupported evidence", () => {

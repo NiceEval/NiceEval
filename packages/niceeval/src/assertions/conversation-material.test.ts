@@ -6,7 +6,7 @@ import { snapshotJudgeMaterial } from "./judge.ts";
 // @feature docs/feature/judge/README.md
 test("conversation budgets preserve protected Unicode records and account for every omitted byte deterministically", () => {
   const output = "首".repeat(2000) + "尾";
-  const handle = bindConversationMaterial(Object.freeze({}), () =>
+  const handle = bindConversationMaterial({}, () =>
     projectConversation([
       {
         partial: ["adapter-partial"],
@@ -26,7 +26,6 @@ test("conversation budgets preserve protected Unicode records and account for ev
     ]),
   );
   const first = snapshotJudgeMaterial({ nested: [handle] }, 900).material;
-  expect(Object.isFrozen(first)).toBe(true);
   expect(first).toEqual(snapshotJudgeMaterial({ nested: [handle] }, 900).material);
   expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThanOrEqual(900);
   const text = JSON.stringify(first);

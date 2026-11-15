@@ -59,7 +59,7 @@ function regularFile(
       ) {
         throw new Error(`${path} is not a non-empty regular file`);
       }
-      return Object.freeze({ size: metadata.size });
+      return { size: metadata.size };
     },
     catch: (cause) => buildError(operation, cause),
   });
@@ -90,9 +90,9 @@ function hashFile(path: string, signal: AbortSignal): Promise<string> {
 }
 
 function buildError(operation: ViewBuildError["operation"], cause: unknown): ViewBuildError {
-  return Object.freeze({
+  return {
     code: "view-build-failed" as const,
     operation,
     reason: cause instanceof Error ? cause.message : String(cause),
-  });
+  };
 }

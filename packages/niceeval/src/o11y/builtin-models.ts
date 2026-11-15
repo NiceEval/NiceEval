@@ -32,7 +32,7 @@ export function lookupBuiltinModel<T>(
   const bare = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
   const undated = bare.replace(/-\d{8}$/u, "").replace(/-\d{4}-\d{2}-\d{2}$/u, "");
   for (const selector of [model, bare, undated]) {
-    if (Object.hasOwn(table, selector)) return Object.freeze({ value: table[selector]!, selector });
+    if (Object.hasOwn(table, selector)) return { value: table[selector]!, selector };
   }
   return undefined;
 }

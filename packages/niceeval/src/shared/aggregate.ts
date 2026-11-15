@@ -45,18 +45,18 @@ export type ExperimentGroupIdentityValue =
 export function experimentGroupOf(experimentId: string): ExperimentGroupIdentityValue {
   const slash = experimentId.indexOf("/");
   if (slash === -1) {
-    return Object.freeze({
+    return {
       kind: "singleton" as const,
       experimentId,
       key: `singleton/${experimentId}` as const,
-    });
+    };
   }
   const groupId = experimentId.slice(0, slash);
-  return Object.freeze({
+  return {
     kind: "named" as const,
     groupId,
     key: `named/${groupId}` as const,
-  });
+  };
 }
 
 /**
