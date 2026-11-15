@@ -119,6 +119,7 @@ interface RunRecoverOrphanedDocument {
 与 heartbeat 同级：owner 被暂停时可以停止前进，读取方只按原样显示写入时间，不据此判断 Attempt 死活。
 已发布的 Attempt 不再出现在这里，改由 `show @<locator>` 读取；排队中尚未派发的 Planned attempt 只按 Experiment 计数。
 `--json` 输出同一组字段。凭据、env var 值与 Sandbox 内的文件内容不进入这些行。
+活跃 Invocation 的每个 Experiment 条目在 `--json` 中总是带 `attempts` 与 `activeAttempts` 数组，没有条目时为空数组；已收口的 Invocation 不带这两个键。
 
 `run import` 将外部已交付、已验证的单文件 Record 中的已发布 Run、Attempt 闭包、family 事实与 Content chunk 汇入当前项目数据库。
 它只导入完整封口的已发布 Run。目标项目已存在相同 Run ID 且散列一致时幂等跳过；Run ID 冲突但内容不一致时完整拒绝且零写入。

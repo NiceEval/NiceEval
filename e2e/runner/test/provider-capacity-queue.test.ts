@@ -342,7 +342,7 @@ test(
           expect(
             independent,
             "the same public Session snapshot must show the unrelated Provider Attempt completed",
-          ).toMatchObject({ running: 0, queued: 0, elsewhere: 0 });
+          ).toMatchObject({ running: 0, queued: 0, elsewhere: 0, attempts: [], activeAttempts: [] });
 
           const aggregate = experiments.reduce(
             (counts, experiment) => ({

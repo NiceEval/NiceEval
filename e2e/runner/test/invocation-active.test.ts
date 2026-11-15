@@ -40,6 +40,8 @@ test.concurrent("另一个终端查看运行中 Attempt 的阶段、最近活动
                 const doc = decodeSessionShowDocument(result.json<unknown>());
                 if (!("experiments" in doc.session)) throw new Error("Active Invocation is not readable");
                 const experiment = only(doc.session.experiments, () => true);
+                expect(experiment.attempts).toEqual([]);
+                expect(Array.isArray(experiment.activeAttempts)).toBe(true);
                 return experiment.activeAttempts?.find(
                   (item) => item.detail?.text === "Waiting for inspection release",
                 );
@@ -68,7 +70,10 @@ test.concurrent("另一个终端查看运行中 Attempt 的阶段、最近活动
             const terminal = await niceeval.run(["invocation", "show", invocation.sessionId, "--json"], { cwd: root });
             const session = decodeSessionShowDocument(terminal.json<unknown>()).session;
             if (!("experiments" in session)) throw new Error("Completed Invocation is not readable");
-            expect(session.experiments.flatMap((item) => item.activeAttempts ?? [])).toEqual([]);
+            for (const experiment of session.experiments) {
+              expect(experiment).not.toHaveProperty("attempts");
+              expect(experiment).not.toHaveProperty("activeAttempts");
+            }
           } finally {
             await writeFile(join(root, "invocation-active-release"), "release");
           }

@@ -20,6 +20,15 @@ test.concurrent("脚本按 Invocation identity 严格读取完成状态", async 
     const detail = decodeSessionShowDocument(shown.json<unknown>());
     expect(Object.keys(detail)).toEqual(["session"]);
     expect(detail.session).toMatchObject({ sessionId: invocationId, status: "completed" });
+    if (!("experiments" in detail.session)) throw new Error("Completed Invocation is not readable");
+    for (const experiment of detail.session.experiments) {
+      expect(experiment).not.toHaveProperty("state");
+      expect(experiment).not.toHaveProperty("running");
+      expect(experiment).not.toHaveProperty("queued");
+      expect(experiment).not.toHaveProperty("elsewhere");
+      expect(experiment).not.toHaveProperty("attempts");
+      expect(experiment).not.toHaveProperty("activeAttempts");
+    }
     expect(() => decodeSessionShowDocument({ ...detail, format: "niceeval.session" })).toThrow();
   });
 });

@@ -22,7 +22,8 @@ import {
   renderHumanCommandPlan,
   resolveOutputForm,
 } from "../../../runner/feedback/index.ts";
-import { renderSessionListText, renderSessionShowText, sessionRecordToJson } from "../../../runner/session.ts";
+import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
+import { sessionListDocumentToJson, sessionShowDocumentToJson } from "./session-protocol.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
 import { formatIdentityExplanation } from "../../../runner/feedback/identity-explanation.ts";
 import type {
@@ -1335,7 +1336,7 @@ const invocationCommand: CliCommandContribution<ExperimentCliRequirements, Exper
         yield* write(
           "stdout",
           input.values.json === true
-            ? jsonDocument({ ...result, sessions: result.sessions.map(sessionRecordToJson) })
+            ? jsonDocument(sessionListDocumentToJson(result))
             : renderSessionListText(result, Date.now(), input.values.all === true),
         );
         return 0;
@@ -1346,12 +1347,7 @@ const invocationCommand: CliCommandContribution<ExperimentCliRequirements, Exper
           .pipe(Effect.mapError((cause) => failure("show invocation status", cause)));
         yield* write(
           "stdout",
-          input.values.json === true
-            ? jsonDocument({
-                ...result,
-                session: "experiments" in result.session ? sessionRecordToJson(result.session) : result.session,
-              })
-            : renderSessionShowText(result),
+          input.values.json === true ? jsonDocument(sessionShowDocumentToJson(result)) : renderSessionShowText(result),
         );
         return 0;
       }

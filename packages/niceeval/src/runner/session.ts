@@ -5,7 +5,7 @@
 // 文件原语，Session 不参与用例锁或实验级闸的判定。
 
 import { Schema, SchemaGetter } from "effect";
-import { asRecord } from "../shared/objects.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import type { LifecyclePhase } from "./types.ts";
 import { projectLifecyclePhase } from "../inspection/lifecycle.ts";
 import { randomUUID } from "node:crypto";
@@ -34,19 +34,29 @@ export const SESSION_EXPIRY_MS = 30_000;
 export type SessionExperimentState = "setup" | "running" | "waiting" | "teardown";
 export type SessionStatus = "active" | "completed" | "incomplete" | "interrupted";
 
-export interface SessionExperimentRecord {
+interface SessionExperimentBase {
   experimentId: string;
   runId: string;
-  /** The Record v1 receipt confirmed that this draft reached a complete marker. */
-  published: boolean | undefined;
-  state: SessionExperimentState | undefined;
-  running: number | undefined;
-  queued: number | undefined;
-  elsewhere: number | undefined;
-  /** Only currently queued Attempts with an actionable, stable reason are expanded. */
-  attempts: SessionQueuedAttemptRecord[] | undefined;
-  activeAttempts: SessionActiveAttemptRecord[] | undefined;
+  /** The publication receipt confirmed that this draft reached a complete marker. */
+  published: boolean;
 }
+
+export interface ActiveSessionExperimentRecord extends SessionExperimentBase {
+  lifecycle: "active";
+  state: SessionExperimentState;
+  running: number;
+  queued: number;
+  elsewhere: number;
+  /** Only currently queued Attempts with an actionable, stable reason are expanded. */
+  attempts: SessionQueuedAttemptRecord[];
+  activeAttempts: SessionActiveAttemptRecord[];
+}
+
+export interface TerminalSessionExperimentRecord extends SessionExperimentBase {
+  lifecycle: "terminal";
+}
+
+export type SessionExperimentRecord = ActiveSessionExperimentRecord | TerminalSessionExperimentRecord;
 
 const LifecyclePhaseSchema = Schema.Literals([
   "judge.precheck",
@@ -119,14 +129,14 @@ interface SessionRecordBase {
   sessionId: string;
   pid: number;
   startedAt: string;
-  experiments: SessionExperimentRecord[];
 }
 
 export type SessionRecord = SessionRecordBase &
   (
-    | { status: "active"; heartbeatAt: string | undefined }
+    | { status: "active"; heartbeatAt: string | undefined; experiments: ActiveSessionExperimentRecord[] }
     | {
         status: "completed" | "incomplete" | "interrupted";
+        experiments: TerminalSessionExperimentRecord[];
         completedAt: string | undefined;
         completion: InvocationCompletion | undefined;
       }
@@ -205,127 +215,99 @@ export type SessionInvocationEvent =
       readonly status: "started" | "done" | "failed";
     };
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
+const NonNegativeIntegerSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const TimestampSchema = Schema.String.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value))));
+const CompletionSchema = Schema.Struct({
+  status: Schema.Literals(["complete", "incomplete", "interrupted"]),
+  unstarted: NonNegativeIntegerSchema,
+  earlyExitUnstarted: NonNegativeIntegerSchema,
+  reporterErrors: Schema.Array(
+    Schema.Struct({
+      reporter: Schema.String,
+      required: Schema.Boolean,
+      message: Schema.String,
+    }),
+  ),
+});
+const ExperimentPayloadFields = {
+  experimentId: Schema.String,
+  runId: Schema.String,
+  published: Schema.optionalKey(Schema.Boolean),
+};
+const ActiveExperimentPayloadSchema = Schema.Struct({
+  ...ExperimentPayloadFields,
+  state: Schema.Literals(["setup", "running", "waiting", "teardown"]),
+  running: NonNegativeIntegerSchema,
+  queued: NonNegativeIntegerSchema,
+  elsewhere: NonNegativeIntegerSchema,
+  attempts: Schema.mutable(
+    Schema.Array(
+      Schema.Struct({
+        evalId: Schema.String,
+        attempt: NonNegativeIntegerSchema,
+        state: Schema.Literal("queued"),
+        reason: Schema.Literal("provider-capacity"),
+      }),
+    ),
+  ),
+  activeAttempts: Schema.toEncoded(SessionActiveAttemptsSchema),
+});
+const SessionPayloadFields = {
+  sessionId: Schema.String,
+  pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  startedAt: TimestampSchema,
+};
+/** Record JSON and CLI JSON observe omitted keys; these payloads use exact optional keys. */
+export const SessionRecordPayloadSchema = Schema.Union([
+  Schema.Struct({
+    ...SessionPayloadFields,
+    status: Schema.Literal("active"),
+    experiments: Schema.mutable(Schema.Array(ActiveExperimentPayloadSchema)),
+    heartbeatAt: Schema.optionalKey(TimestampSchema),
+  }),
+  Schema.Struct({
+    ...SessionPayloadFields,
+    status: Schema.Literals(["completed", "incomplete", "interrupted"]),
+    experiments: Schema.mutable(Schema.Array(Schema.Struct(ExperimentPayloadFields))),
+    completedAt: Schema.optionalKey(TimestampSchema),
+    completion: Schema.optionalKey(CompletionSchema),
+  }),
+]);
+export type SessionRecordPayload = typeof SessionRecordPayloadSchema.Type;
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
+/** Record JSON and CLI JSON observe omission of an unavailable heartbeat. */
+export const ExpiredSessionPayloadSchema = Schema.Struct({
+  ...SessionPayloadFields,
+  heartbeatAt: Schema.optionalKey(TimestampSchema),
+});
 
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
-  const raw = asRecord(value);
-  if (raw === undefined || typeof raw.experimentId !== "string" || typeof raw.runId !== "string") return undefined;
-  if (raw.published !== undefined && typeof raw.published !== "boolean") return undefined;
-  const state = raw.state;
-  if (state !== undefined && state !== "setup" && state !== "running" && state !== "waiting" && state !== "teardown") {
-    return undefined;
-  }
-  for (const key of ["running", "queued", "elsewhere"] as const) {
-    if (raw[key] !== undefined && !isNonNegativeInteger(raw[key])) return undefined;
-  }
-  const running = raw.running;
-  const queued = raw.queued;
-  const elsewhere = raw.elsewhere;
-  const queuedAttempts = () => {
-    if (!Array.isArray(raw.attempts)) return undefined;
-    return raw.attempts.map((value): SessionQueuedAttemptRecord | undefined => {
-      const attempt = asRecord(value);
-      if (
-        attempt === undefined ||
-        typeof attempt.evalId !== "string" ||
-        !isNonNegativeInteger(attempt.attempt) ||
-        attempt.state !== "queued" ||
-        attempt.reason !== "provider-capacity"
-      )
-        return undefined;
-      return {
-        evalId: attempt.evalId,
-        attempt: attempt.attempt,
-        state: "queued",
-        reason: attempt.reason,
-      };
-    });
-  };
-  const attempts = queuedAttempts();
-  if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
-    return undefined;
-  }
-  const normalizedActive = Array.isArray(raw.activeAttempts)
-    ? raw.activeAttempts.map((value) => {
-        const active = asRecord(value);
-        if (active?.phase !== "agent.ensure") return value;
-        const detail = asRecord(active.detail);
-        return {
-          ...active,
-          phase: projectLifecyclePhase(active.phase),
-          ...(typeof detail?.text !== "string"
-            ? {}
-            : {
-                detail: { ...detail, text: detail.text.replace(/\bagent\.ensure\b/g, "agent.install") },
-              }),
-        };
-      })
-    : raw.activeAttempts;
-  const activeRead =
-    normalizedActive === undefined
-      ? undefined
-      : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(normalizedActive);
-  if (activeRead?._tag === "Failure") return undefined;
-  const activeAttempts = activeRead?.success;
-  return {
-    experimentId: raw.experimentId,
-    runId: raw.runId,
-    published: raw.published === true ? true : undefined,
-    state,
-    running: isNonNegativeInteger(running) ? running : undefined,
-    queued: isNonNegativeInteger(queued) ? queued : undefined,
-    elsewhere: isNonNegativeInteger(elsewhere) ? elsewhere : undefined,
-    attempts: attempts?.filter((item) => item !== undefined),
-    activeAttempts,
-  };
-}
-
-/** 完整读取边界：损坏/未知格式条目从查询中跳过，不拖垮整个目录。 */
+/** Reject malformed current-format projections; predecessor Records never reach this boundary. */
 export function decodeSession(value: unknown): SessionRecord | undefined {
-  const raw = asRecord(value);
-  if (
-    raw === undefined ||
-    typeof raw.sessionId !== "string" ||
-    !isPositiveInteger(raw.pid) ||
-    !isTimestamp(raw.startedAt) ||
-    (raw.status !== "active" &&
-      raw.status !== "completed" &&
-      raw.status !== "incomplete" &&
-      raw.status !== "interrupted") ||
-    !Array.isArray(raw.experiments)
-  )
-    return undefined;
-  if (raw.heartbeatAt !== undefined && !isTimestamp(raw.heartbeatAt)) return undefined;
-  if (raw.completedAt !== undefined && !isTimestamp(raw.completedAt)) return undefined;
-  const experiments = raw.experiments.map(decodeExperiment);
-  if (experiments.some((item) => item === undefined)) return undefined;
-  const base = {
-    sessionId: raw.sessionId,
-    pid: raw.pid,
-    startedAt: raw.startedAt,
-  };
-  const decodedExperiments = experiments.filter((item) => item !== undefined);
-  if (raw.status === "active")
-    return { ...base, status: raw.status, experiments: decodedExperiments, heartbeatAt: raw.heartbeatAt };
+  const decoded = Schema.decodeUnknownResult(SessionRecordPayloadSchema, { onExcessProperty: "error" })(value);
+  if (decoded._tag === "Failure") return undefined;
+  const payload = decoded.success;
+  if (payload.status === "active") {
+    return {
+      ...payload,
+      heartbeatAt: payload.heartbeatAt,
+      experiments: payload.experiments.map((experiment) => ({
+        ...experiment,
+        lifecycle: "active",
+        published: experiment.published === true,
+        activeAttempts: Schema.decodeUnknownSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+      })),
+    };
+  }
   return {
-    ...base,
-    status: raw.status,
-    experiments: decodedExperiments,
-    completedAt: raw.completedAt,
-    completion:
-      raw.completion !== undefined && asRecord(raw.completion) !== undefined
-        ? (raw.completion as InvocationCompletion)
-        : undefined,
+    ...payload,
+    completedAt: payload.completedAt,
+    completion: payload.completion,
+    experiments: payload.experiments.map((experiment) => ({
+      experimentId: experiment.experimentId,
+      runId: experiment.runId,
+      lifecycle: "terminal",
+      published: experiment.published === true,
+    })),
   };
 }
 
@@ -343,45 +325,63 @@ function sessionStatusOf(status: CompletionStatus | SessionStatus | undefined): 
 }
 
 function cloneRecord(record: SessionRecord): SessionRecord {
+  if (record.status === "active") {
+    return {
+      ...record,
+      experiments: record.experiments.map((experiment) => ({
+        ...experiment,
+        activeAttempts: experiment.activeAttempts.map((item) => ({
+          ...item,
+          sandbox: item.sandbox === undefined ? undefined : { ...item.sandbox },
+          detail: item.detail === undefined ? undefined : { ...item.detail },
+        })),
+        attempts: experiment.attempts.map((attempt) => ({ ...attempt })),
+      })),
+    };
+  }
   return {
     ...record,
-    experiments: record.experiments.map((experiment) => ({
-      ...experiment,
-      ...(experiment.activeAttempts === undefined
-        ? {}
-        : {
-            activeAttempts: experiment.activeAttempts.map((item) => ({
-              ...item,
-              sandbox: item.sandbox === undefined ? undefined : { ...item.sandbox },
-              detail: item.detail === undefined ? undefined : { ...item.detail },
-            })),
-          }),
-      ...(experiment.attempts === undefined
-        ? {}
-        : { attempts: experiment.attempts.map((attempt) => ({ ...attempt })) }),
-    })),
-    ...("completion" in record && record.completion
-      ? { completion: { ...record.completion, reporterErrors: [...record.completion.reporterErrors] } }
-      : {}),
+    experiments: record.experiments.map((experiment) => ({ ...experiment })),
+    completion: record.completion && { ...record.completion, reporterErrors: [...record.completion.reporterErrors] },
   };
 }
 
-/** Retains the Session JSON representation while runtime absence stays undefined. */
-export function sessionRecordToJson(record: SessionRecord) {
-  return {
-    ...record,
-    experiments: record.experiments.map((experiment) => ({
-      ...experiment,
-      activeAttempts: experiment.activeAttempts?.map((attempt) => ({
-        ...attempt,
-        sandbox:
-          attempt.sandbox === undefined
-            ? null
-            : { ...attempt.sandbox, nativeInstanceId: attempt.sandbox.nativeInstanceId ?? null },
-        detail: attempt.detail ?? null,
-      })),
-    })),
-  };
+/** Convert internal lifecycle values to the independently typed Record / CLI JSON payload. */
+export function sessionRecordToJson(record: SessionRecord): SessionRecordPayload {
+  const base = { sessionId: record.sessionId, pid: record.pid, startedAt: record.startedAt };
+  if (record.status === "active") {
+    return omitUndefined({
+      ...base,
+      status: record.status,
+      heartbeatAt: record.heartbeatAt,
+      experiments: record.experiments.map((experiment) =>
+        omitUndefined({
+          experimentId: experiment.experimentId,
+          runId: experiment.runId,
+          published: experiment.published ? true : undefined,
+          state: experiment.state,
+          running: experiment.running,
+          queued: experiment.queued,
+          elsewhere: experiment.elsewhere,
+          attempts: experiment.attempts,
+          activeAttempts: Schema.encodeSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+        }),
+      ),
+    });
+  }
+  return omitUndefined({
+    ...base,
+    status: record.status,
+    completedAt: record.completedAt,
+    completion: record.completion,
+    experiments: record.experiments.map((experiment) =>
+      omitUndefined({
+        experimentId: experiment.experimentId,
+        runId: experiment.runId,
+        published: experiment.published ? true : undefined,
+      }),
+    ),
+  });
 }
 
 function encodeSession(record: SessionRecord): Uint8Array {
@@ -497,7 +497,7 @@ export class SessionTracker {
 
       const startedAt = input.startedAt ?? new Date().toISOString();
       const carried = input.carriedAttemptsByKey;
-      const experiments: SessionExperimentRecord[] = [];
+      const experiments: ActiveSessionExperimentRecord[] = [];
       for (const run of input.agentRuns) {
         if (run.experimentId === undefined) continue;
         const runId = input.runIds.get(run.experimentId);
@@ -516,9 +516,10 @@ export class SessionTracker {
           queued,
           elsewhere: 0,
 
-          published: undefined,
-          attempts: undefined,
-          activeAttempts: undefined,
+          lifecycle: "active",
+          published: false,
+          attempts: [],
+          activeAttempts: [],
         });
       }
       const now = new Date().toISOString();
@@ -588,7 +589,7 @@ export class SessionTracker {
           (total, evalId) => total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0),
           0,
         ) ?? 0;
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - count);
+      experiment.queued = Math.max(0, experiment.queued - count);
       this.refreshState(experiment);
     }
     return this.flush();
@@ -611,17 +612,15 @@ export class SessionTracker {
     let changed = false;
     const removeQueuedAttempt = (): boolean => {
       if (experiment === undefined || identity?.evalId === undefined || identity.attempt === undefined) return false;
-      const attempts = experiment.attempts ?? [];
+      const attempts = experiment.attempts;
       const index = attempts.findIndex(
         (attempt) => attempt.evalId === identity.evalId && attempt.attempt === identity.attempt,
       );
       if (index < 0) return false;
       attempts.splice(index, 1);
-      if (attempts.length === 0) experiment.attempts = undefined;
-      else experiment.attempts = attempts;
       return true;
     };
-    const active = experiment?.activeAttempts?.find(
+    const active = experiment?.activeAttempts.find(
       (item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1,
     );
     if (event.type === "attempt:phase" && active) {
@@ -637,19 +636,19 @@ export class SessionTracker {
     } else if (event.type === "attempt:queued" && experiment && identity) {
       removeQueuedAttempt();
       experiment.attempts = [
-        ...(experiment.attempts ?? []),
+        ...experiment.attempts,
         { evalId: identity.evalId, attempt: identity.attempt, state: "queued", reason: event.reason },
       ];
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "attempt:start" && experiment) {
       removeQueuedAttempt();
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
-      experiment.running = (experiment.running ?? 0) + 1;
+      experiment.queued = Math.max(0, experiment.queued - 1);
+      experiment.running = experiment.running + 1;
       experiment.state = "running";
       if (identity !== undefined)
         experiment.activeAttempts = [
-          ...(experiment.activeAttempts ?? []),
+          ...experiment.activeAttempts,
           {
             evalId: identity.evalId,
             attemptOrdinal: identity.attempt + 1,
@@ -661,28 +660,28 @@ export class SessionTracker {
         ];
       changed = true;
     } else if (event.type === "attempt:complete" && experiment) {
-      experiment.activeAttempts = experiment.activeAttempts?.filter((item) => item !== active);
+      experiment.activeAttempts = experiment.activeAttempts.filter((item) => item !== active);
       const completedWhileQueued = removeQueuedAttempt();
-      if (completedWhileQueued) experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
-      else experiment.running = Math.max(0, (experiment.running ?? 0) - 1);
+      if (completedWhileQueued) experiment.queued = Math.max(0, experiment.queued - 1);
+      else experiment.running = Math.max(0, experiment.running - 1);
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "attempt:early-exit" && experiment) {
       removeQueuedAttempt();
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
+      experiment.queued = Math.max(0, experiment.queued - 1);
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "lock-wait" && experiment) {
       if (event.status === "started") {
         const attempts = event.attempts ?? 1;
-        experiment.queued = Math.max(0, (experiment.queued ?? 0) - attempts);
-        experiment.elsewhere = (experiment.elsewhere ?? 0) + attempts;
+        experiment.queued = Math.max(0, experiment.queued - attempts);
+        experiment.elsewhere = experiment.elsewhere + attempts;
         experiment.state = "waiting";
         changed = true;
       } else {
         const moved = (event.carried ?? 0) + (event.dispatched ?? 0);
-        experiment.elsewhere = Math.max(0, (experiment.elsewhere ?? 0) - moved);
-        experiment.queued = (experiment.queued ?? 0) + (event.dispatched ?? 0);
+        experiment.elsewhere = Math.max(0, experiment.elsewhere - moved);
+        experiment.queued = experiment.queued + (event.dispatched ?? 0);
         this.refreshState(experiment);
         changed = true;
       }
@@ -694,10 +693,10 @@ export class SessionTracker {
     if (changed) this.enqueuePersist();
   }
 
-  private refreshState(experiment: SessionExperimentRecord): void {
-    if ((experiment.elsewhere ?? 0) > 0 && (experiment.running ?? 0) === 0) {
+  private refreshState(experiment: ActiveSessionExperimentRecord): void {
+    if (experiment.elsewhere > 0 && experiment.running === 0) {
       experiment.state = "waiting";
-    } else if ((experiment.running ?? 0) > 0 || (experiment.queued ?? 0) > 0) {
+    } else if (experiment.running > 0 || experiment.queued > 0) {
       experiment.state = "running";
     } else {
       experiment.state = "teardown";
@@ -724,26 +723,21 @@ export class SessionTracker {
         if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
         this.closed = true;
         const now = new Date().toISOString();
+        const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
         this.record = {
           sessionId: this.record.sessionId,
           pid: this.record.pid,
           startedAt: this.record.startedAt,
           status: sessionStatusOf(input.status),
-          experiments: this.record.experiments,
+          experiments: this.record.experiments.map((experiment) => ({
+            experimentId: experiment.experimentId,
+            runId: experiment.runId,
+            lifecycle: "terminal",
+            published: publishedRunIds.has(experiment.runId),
+          })),
           completedAt: input.completedAt ?? now,
           completion: input.completion,
         };
-        const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
-        for (const experiment of this.record.experiments) {
-          if (publishedRunIds.has(experiment.runId)) experiment.published = true;
-          else experiment.published = undefined;
-          experiment.state = undefined;
-          experiment.running = undefined;
-          experiment.queued = undefined;
-          experiment.elsewhere = undefined;
-          experiment.attempts = undefined;
-          experiment.activeAttempts = undefined;
-        }
         const snapshot = cloneRecord(this.record);
         const persistence = this.persistence;
         const persist = (
@@ -1037,22 +1031,17 @@ function ageLabel(iso: string, nowMs: number): string {
   return `${Math.floor(elapsed / 3_600_000)}h ago`;
 }
 
-function renderExperimentLine(experiment: SessionExperimentRecord, published: boolean): string {
-  if (published) {
+function renderExperimentLine(experiment: SessionExperimentRecord): string {
+  if (experiment.published) {
     return `  ${experiment.experimentId}  niceeval show run:${experiment.runId}`;
   }
+  if (experiment.lifecycle === "terminal") return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}`;
   const counters = [
     experiment.running ? `${experiment.running} running` : "",
     experiment.queued ? `${experiment.queued} queued` : "",
     experiment.elsewhere ? `${experiment.elsewhere} elsewhere` : "",
   ].filter(Boolean);
-  return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state ?? "running"}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
-}
-
-function publishedForSession(experiment: SessionExperimentRecord, status: SessionStatus): boolean {
-  // Older session entries have no receipt marker. Preserve their established
-  // completed/interrupted behavior while new entries rely on the exact receipt.
-  return experiment.published ?? (status === "completed" || status === "interrupted");
+  return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
 }
 
 export function renderSessionListText(document: SessionListDocument, nowMs = Date.now(), all = false): string {
@@ -1065,7 +1054,7 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
     lines.push(
       `${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`,
     );
-    lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment, false)));
+    lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment)));
   }
   if (all) {
     const completed = document.sessions.filter((session) => session.status !== "active");
@@ -1075,11 +1064,7 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
       lines.push(
         `${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`,
       );
-      lines.push(
-        ...session.experiments.map((experiment) =>
-          renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
-        ),
-      );
+      lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment)));
     }
     if (document.expired.length > 0) {
       lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
@@ -1106,9 +1091,9 @@ export function renderSessionShowText(document: SessionShowDocument): string {
   if ("experiments" in session) {
     lines.push(
       ...session.experiments.flatMap((experiment) => [
-        renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
-        ...(session.status === "active"
-          ? (experiment.activeAttempts ?? []).map(
+        renderExperimentLine(experiment),
+        ...(experiment.lifecycle === "active"
+          ? experiment.activeAttempts.map(
               (attempt) =>
                 `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === undefined ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === undefined ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`,
             )
