@@ -628,11 +628,13 @@ function visitRunSealEntries(
     connection,
     `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM ne19_members WHERE target_run_id=?`,
   ).iterate(runId) as unknown as Iterable<Row>) {
+    const originRunId = optionalText(row, "origin_run_id");
+    const attemptId = optionalText(row, "attempt_id");
     visit(
       memberSealEntry(runId, {
         slotId: text(row, "slot_id"),
-        originRunId: optionalText(row, "origin_run_id"),
-        attemptId: optionalText(row, "attempt_id"),
+        ...(originRunId === undefined ? {} : { originRunId }),
+        ...(attemptId === undefined ? {} : { attemptId }),
         action: memberAction(row, "action"),
         coreDigest: verified(row, "core_digest", "core_payload"),
       }),
@@ -643,6 +645,7 @@ function visitRunSealEntries(
     `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,logical_identity,
     canonical_payload,canonical_digest,logical_inventory,inventory_digest FROM ne19_attachments WHERE owner_run_id=?`,
   ).iterate(runId) as unknown as Iterable<Row>) {
+    const ownerAttemptId = optionalText(row, "owner_attempt_id");
     const canonicalDigest = verified(row, "canonical_digest", "canonical_payload");
     const inventoryDigest = verified(row, "inventory_digest", "logical_inventory");
     visit(
@@ -650,7 +653,7 @@ function visitRunSealEntries(
         attachmentId: text(row, "attachment_id"),
         ownerKind: ownerKind(row, "owner_kind"),
         ownerRunId: text(row, "owner_run_id"),
-        ownerAttemptId: optionalText(row, "owner_attempt_id"),
+        ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
         family: text(row, "family"),
         familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
         logicalIdentity: text(row, "logical_identity"),
@@ -2513,10 +2516,11 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
       );
     }
     const owner = ownerKind(attachment, "owner_kind");
+    const attemptId = optionalText(attachment, "owner_attempt_id");
     const expectedAttachmentId = recordAttachmentId({
       runId: text(attachment, "owner_run_id"),
       owner,
-      ...(owner === "attempt" ? { attemptId: optionalText(attachment, "owner_attempt_id") ?? undefined } : {}),
+      ...(owner === "attempt" && attemptId !== undefined ? { attemptId } : {}),
       family: text(attachment, "family"),
     });
     const expectedLogicalIdentity = attachmentLogicalIdentity(
@@ -3281,6 +3285,7 @@ export function readPublishedSealedRun(
         runId,
       );
   const members = memberRows.map((row) => {
+    const originRunId = optionalText(row, "origin_run_id");
     const attemptId = optionalText(row, "attempt_id");
     let referenceCore: { readonly bytes: Uint8Array; readonly digest: string } | undefined;
     if (publicationManaged) {
@@ -3339,7 +3344,7 @@ export function readPublishedSealedRun(
     return Object.freeze({
       slotId: text(row, "slot_id"),
       ...(publicationManaged && attemptId !== undefined ? { bindingRevision: integer(row, "binding_revision") } : {}),
-      ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
+      ...(originRunId === undefined ? {} : { originRunId }),
       ...(attemptId === undefined ? {} : { attemptId }),
       action: memberAction(row, "action"),
       ...(publicationManaged && attemptId !== undefined
@@ -3370,6 +3375,7 @@ export function readPublishedSealedRun(
   );
   const attachments: SealedAttachmentMetadata[] = attachmentRows.map((row) => {
     const attachmentId = text(row, "attachment_id");
+    const ownerAttemptId = optionalText(row, "owner_attempt_id");
     const payload = memoRecordRead(() => {
       const stored = recordStatement(
         connection,
@@ -3432,9 +3438,7 @@ export function readPublishedSealedRun(
       attachmentId,
       ownerKind: ownerKind(row, "owner_kind"),
       ownerRunId: text(row, "owner_run_id"),
-      ...(optionalText(row, "owner_attempt_id") === undefined
-        ? {}
-        : { ownerAttemptId: optionalText(row, "owner_attempt_id") }),
+      ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
       family: text(row, "family"),
       familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
       logicalIdentity: text(row, "logical_identity"),
@@ -3541,16 +3545,18 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
     `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM ne19_members
     WHERE target_run_id=? ORDER BY slot_id`,
     runId,
-  ).map((row) =>
-    Object.freeze({
+  ).map((row) => {
+    const originRunId = optionalText(row, "origin_run_id");
+    const attemptId = optionalText(row, "attempt_id");
+    return Object.freeze({
       slotId: text(row, "slot_id"),
-      ...(optionalText(row, "origin_run_id") === undefined ? {} : { originRunId: optionalText(row, "origin_run_id") }),
-      ...(optionalText(row, "attempt_id") === undefined ? {} : { attemptId: optionalText(row, "attempt_id") }),
+      ...(originRunId === undefined ? {} : { originRunId }),
+      ...(attemptId === undefined ? {} : { attemptId }),
       action: memberAction(row, "action"),
       coreBytes: transferableBytes(bytes(row, "core_payload")),
       coreDigest: text(row, "core_digest"),
-    }),
-  );
+    });
+  });
   const attachmentRows = rows(
     connection,
     `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
@@ -3560,6 +3566,7 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
   );
   const attachments: SealedAttachmentDocument[] = attachmentRows.map((row) => {
     const attachmentId = text(row, "attachment_id");
+    const ownerAttemptId = optionalText(row, "owner_attempt_id");
     const references = rows(
       connection,
       `SELECT ordinal,target_owner_kind,target_family,
@@ -3606,9 +3613,7 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
       attachmentId,
       ownerKind: decodedOwnerKind,
       ownerRunId: text(row, "owner_run_id"),
-      ...(optionalText(row, "owner_attempt_id") === undefined
-        ? {}
-        : { ownerAttemptId: optionalText(row, "owner_attempt_id") }),
+      ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
       family: text(row, "family"),
       familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
       logicalIdentity: text(row, "logical_identity"),

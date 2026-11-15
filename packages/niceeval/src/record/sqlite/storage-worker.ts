@@ -426,7 +426,7 @@ if (!isMainThread && parentPort !== null) {
             code,
             operation,
             message: error.message,
-            stack: error.stack,
+            ...(error.stack === undefined ? {} : { stack: error.stack }),
             ...(Array.isArray(details) ? { details } : {}),
           },
         };
