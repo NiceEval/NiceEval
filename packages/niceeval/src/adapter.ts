@@ -356,7 +356,7 @@ export interface AdapterDefinition<
 
 /** Existential runtime view used by Experiment without erasing a concrete context to `any`. */
 export interface AdapterRuntimeDefinition {
-  readonly parseFlags?: Exclude<AdapterFlagsParser, undefined>;
+  readonly parseFlags?: AdapterFlagsParser;
   readonly kind: "custom";
   readonly requiredModelRoles?: readonly string[];
   readonly name: string;
@@ -465,17 +465,37 @@ function boundEvalFactories<
   return {
     defineEval(input) {
       assertAdapterEvalInput(input, "defineEval");
-      return defineEvalForContext("pass", input, {
+      return defineEvalForContext<
+        "pass",
+        EvalContext<"pass", AdapterFlagsOutput<Flags>, Context> &
+          Readonly<Context> &
+          AdapterAssertionsFor<Assertions, "pass">,
+        undefined,
+        {
+          readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
+          readonly requiredModelRoles: ReturnType<typeof normalizeModelRequirements>;
+        }
+      >("pass", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
         requiredModelRoles: normalizeModelRequirements(input.requires),
-      }) as AdapterEvalDefinition<"pass", Context, Assertions, Flags>;
+      });
     },
     defineScoreEval(input) {
       assertAdapterEvalInput(input, "defineScoreEval");
-      return defineEvalForContext("score", input, {
+      return defineEvalForContext<
+        "score",
+        EvalContext<"score", AdapterFlagsOutput<Flags>, Context> &
+          Readonly<Context> &
+          AdapterAssertionsFor<Assertions, "score">,
+        undefined,
+        {
+          readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
+          readonly requiredModelRoles: ReturnType<typeof normalizeModelRequirements>;
+        }
+      >("score", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
         requiredModelRoles: normalizeModelRequirements(input.requires),
-      }) as AdapterEvalDefinition<"score", Context, Assertions, Flags>;
+      });
     },
   };
 }
@@ -583,8 +603,8 @@ export function defineAdapter(input: {
   /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
   readonly cleanupTimeoutMs?: number;
   readonly create: AdapterFactory<object, AdapterFlagsParser>;
-  readonly parseFlags?: Exclude<AdapterFlagsParser, undefined>;
-  readonly assertions?: AdapterAssertionsFactory<object>;
+  readonly parseFlags?: AdapterFlagsParser;
+  readonly assertions?: AdapterAssertionsFactory<object> | undefined;
 }): AdapterRuntimeDefinition {
   if (input.parseFlags !== undefined) assertAdapterFlagsParser(input.parseFlags);
   const assertions = input.assertions;

@@ -27,11 +27,12 @@ function sourceRuntimeModules(): Record<string, unknown> | undefined {
   return modules;
 }
 
+const virtualModules = sourceRuntimeModules();
 const loaderOptions = Object.freeze({
   interopDefault: false,
   moduleCache: true,
   tsconfigPaths: true,
-  virtualModules: sourceRuntimeModules(),
+  ...(virtualModules === undefined ? {} : { virtualModules }),
 });
 const cachedLoader = createJiti(import.meta.url, loaderOptions);
 

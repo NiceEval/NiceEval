@@ -135,6 +135,8 @@ function assertAuthorLifecycleNames(def: object, owner: string): void {
 
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
 export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
+  const before = def.before;
+  const after = def.after;
   assertAuthorLifecycleNames(def, "Agent");
   if (!def.name) throw new Error(`defineSandboxAgent requires name.`);
   assertEvidenceCoverage(def.evidenceCoverage, "defineSandboxAgent");
@@ -171,23 +173,21 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     ...(def.sandbox === undefined ? {} : { sandbox: def.sandbox }),
     install,
     installers: def.installers ?? [],
-    before: def.before,
-    tracing: def.tracing,
-    spanMapper: def.spanMapper,
+    ...(before === undefined ? {} : { before: def.before }),
+    ...(def.tracing === undefined ? {} : { tracing: def.tracing }),
+    ...(def.spanMapper === undefined ? {} : { spanMapper: def.spanMapper }),
     send: def.send,
-    classifySendFailure: def.classifySendFailure,
-    after: def.after,
+    ...(def.classifySendFailure === undefined ? {} : { classifySendFailure: def.classifySendFailure }),
+    ...(after === undefined ? {} : { after: def.after }),
   };
   return attachAgentEffects(agent, {
     send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
-    before:
-      def.before === undefined
-        ? undefined
-        : (sandbox, context) => authorCallbackEffect(() => def.before!(sandbox, context)),
-    after:
-      def.after === undefined
-        ? undefined
-        : (sandbox, context) => authorCallbackEffect(() => def.after!(sandbox, { ...context, sandbox })),
+    ...(before === undefined
+      ? {}
+      : { before: (sandbox, context) => authorCallbackEffect(() => before(sandbox, context)) }),
+    ...(after === undefined
+      ? {}
+      : { after: (sandbox, context) => authorCallbackEffect(() => after(sandbox, { ...context, sandbox })) }),
   });
 }
 
@@ -214,13 +214,15 @@ export function makeSandboxAgent(
   });
   return attachAgentEffects(agent, {
     send,
-    before,
-    after,
+    ...(before === undefined ? {} : { before }),
+    ...(after === undefined ? {} : { after }),
   });
 }
 
 /** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
 export function defineAgent(def: DirectAgentDef): DirectAgent {
+  const before = def.before;
+  const after = def.after;
   assertAuthorLifecycleNames(def, "Agent");
   if (!def.name) throw new Error(`defineAgent requires name.`);
   assertEvidenceCoverage(def.evidenceCoverage, "defineAgent");
@@ -230,18 +232,17 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
     defineEval,
     defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
-    before: def.before,
-    tracing: def.tracing,
-    spanMapper: def.spanMapper,
+    ...(before === undefined ? {} : { before: def.before }),
+    ...(def.tracing === undefined ? {} : { tracing: def.tracing }),
+    ...(def.spanMapper === undefined ? {} : { spanMapper: def.spanMapper }),
     send: def.send,
-    classifySendFailure: def.classifySendFailure,
-    after: def.after,
+    ...(def.classifySendFailure === undefined ? {} : { classifySendFailure: def.classifySendFailure }),
+    ...(after === undefined ? {} : { after: def.after }),
   };
   return attachAgentEffects(agent, {
     send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
-    before:
-      def.before === undefined ? undefined : (_sandbox, context) => authorCallbackEffect(() => def.before!(context)),
-    after: def.after === undefined ? undefined : (_sandbox, context) => authorCallbackEffect(() => def.after!(context)),
+    ...(before === undefined ? {} : { before: (_sandbox, context) => authorCallbackEffect(() => before(context)) }),
+    ...(after === undefined ? {} : { after: (_sandbox, context) => authorCallbackEffect(() => after(context)) }),
   });
 }
 
@@ -266,8 +267,8 @@ export function makeDirectAgent(
   });
   return attachAgentEffects(agent, {
     send,
-    before: before === undefined ? undefined : (_sandbox, context) => before(context),
-    after: after === undefined ? undefined : (_sandbox, context) => after(context),
+    ...(before === undefined ? {} : { before: (_sandbox, context) => before(context) }),
+    ...(after === undefined ? {} : { after: (_sandbox, context) => after(context) }),
   });
 }
 
@@ -330,6 +331,17 @@ type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> = Omit<
 /** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
 // @concord-code
 // @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
+export function defineEvalForContext<
+  Kind extends "pass" | "score",
+  Context,
+  const Sandbox extends SandboxLayer | undefined = undefined,
+>(kind: Kind, def: EvalFactoryInput<Sandbox>): EvalDefinition<Kind, Context, Sandbox>;
+export function defineEvalForContext<
+  Kind extends "pass" | "score",
+  Context,
+  const Sandbox extends SandboxLayer | undefined,
+  Fields extends Readonly<Record<PropertyKey, unknown>>,
+>(kind: Kind, def: EvalFactoryInput<Sandbox>, internalFields: Fields): EvalDefinition<Kind, Context, Sandbox> & Fields;
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
@@ -445,10 +457,10 @@ export function defineExperiment(
       ? {}
       : {
           models,
-          model: models.default?.model ?? undefined,
-          reasoningEffort: models.default?.reasoningEffort ?? undefined,
+          ...(models.default?.model == null ? {} : { model: models.default.model }),
+          ...(models.default?.reasoningEffort == null ? {} : { reasoningEffort: models.default.reasoningEffort }),
         }),
-    adapter,
+    ...(adapter === undefined ? {} : { adapter }),
     flags:
       adapter?.kind === "custom" && adapter.parseFlags !== undefined
         ? parseAdapterFlags(adapter.parseFlags, flags)
