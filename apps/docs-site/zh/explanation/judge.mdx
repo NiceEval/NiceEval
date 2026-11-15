@@ -122,6 +122,8 @@ export default defineEval({
 ```
 
 这里继续使用全局 Provider 的端点、凭据来源和执行限制，只替换 `model`。
+
+同一个 Attempt 里，相邻的普通 Judge 检查会并发请求，最多同时 `maxConcurrency` 个（默认 4，写在 Provider 工厂上）；网关容易限流时调小，写 1 就逐个请求。它只限制一个 Attempt 内的并发，同时运行的 Attempt 越多，网关看到的请求越多。改它不会让已有结果失效。
 Eval 和 Experiment 也能提供完整 Provider；这会整体替换服务、默认模型和限制。
 没有按 hostname、模型前缀或已存在的 key 猜测服务的规则。
 

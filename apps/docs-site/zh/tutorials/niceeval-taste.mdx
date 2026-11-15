@@ -175,6 +175,13 @@ export default defineScoreEval({
 再用 `review.judge(prompt)` 逐题打分。评审会自己读文件、跑命令，同一会话里后面的题能接着用前面看过的内容。
 能直接读到的事实仍然用确定性检查；回复这类已经在手上的材料，仍然交给普通 Judge，它更便宜、更稳定。
 
+一个会话里的题逐题处理，题多时判分会很慢，会话还可能撞上 `timeoutMs`（默认 600 秒）。互不依赖的几组题，拆成几个评审者并都写 `concurrent: true`：登记顺序上相邻的 `concurrent` 会话会一起执行。它们共用同一个 Sandbox，彼此看不到对方的结论，也不保证看到对方写入的文件；只有确实不依赖彼此现场的题才这样拆。拆开后每个会话都有自己的开场和取证，花费会多一些。
+
+```ts
+const reviewDesign = defineAgentJudge({ instructions: "评审 Experiment 与 Adapter 的设计。", concurrent: true });
+const reviewEvals = defineAgentJudge({ instructions: "评审 Eval 的输入与断言。", concurrent: true });
+```
+
 ### 判据平铺写在打分的地方
 
 每一项检查按顺序写在评估正文里，问什么、给几分、叫什么名字都放在一处。
