@@ -203,13 +203,13 @@ export function ompAgent(config?: OmpConfig): Agent {
                     ? shared.diagnoseFailure(res, events, res.stdout)
                     : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
                 events,
-                usage: stream.usage,
+                ...(stream.usage === undefined ? {} : { usage: stream.usage }),
                 process: res,
               });
             }
             return {
               events,
-              usage: stream.usage,
+              ...(stream.usage === undefined ? {} : { usage: stream.usage }),
               status: stream.failed ? ("failed" as const) : ("completed" as const),
             };
           },

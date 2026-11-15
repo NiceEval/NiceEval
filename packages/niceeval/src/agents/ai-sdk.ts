@@ -152,7 +152,13 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const steps: readonly AiSdkStepLike[] =
     result.steps && result.steps.length > 0
       ? result.steps
-      : [{ text: result.text, toolCalls: result.toolCalls, toolResults: result.toolResults }];
+      : [
+          {
+            ...(result.text === undefined ? {} : { text: result.text }),
+            ...(result.toolCalls === undefined ? {} : { toolCalls: result.toolCalls }),
+            ...(result.toolResults === undefined ? {} : { toolResults: result.toolResults }),
+          },
+        ];
 
   const seen = { called: new Set<string>(), resolved: new Set<string>() };
   for (const step of steps) {
@@ -170,9 +176,10 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const events = [...minedEvents, ...stepEvents];
   const waiting = events.some((e) => e.type === "input.requested");
   const evidenceCoverage = unclassifiedToolActionsCoverage(events);
+  const usage = readUsage(result, steps.length);
   return {
     events,
-    usage: readUsage(result, steps.length),
+    ...(usage === undefined ? {} : { usage }),
     status: waiting ? "waiting" : "completed",
     ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
   };
@@ -240,10 +247,12 @@ function pushContentParts(events: StreamEvent[], parts: readonly AiSdkContentPar
           });
         }
         if (part.isAutomatic === true) break; // SDK 自动裁决,不用等人
+        const id = str(part.approvalId);
+        const action = call ? str(call.toolName) : undefined;
         const request: InputRequest = {
-          id: str(part.approvalId),
-          action: call ? str(call.toolName) : undefined,
-          input: call ? asJson(call.input ?? call.args) : undefined,
+          ...(id === undefined ? {} : { id }),
+          ...(action === undefined ? {} : { action }),
+          ...(call ? { input: asJson(call.input ?? call.args) } : {}),
           options: [{ id: "approve" }, { id: "deny" }],
         };
         events.push({ type: "input.requested", request });
@@ -324,11 +333,13 @@ function unwrapToolOutput(output: unknown): { output?: JsonValue; status: "compl
       case "text":
       case "content":
         return { output: asJson(wrapped.value), status: "completed" };
-      case "execution-denied":
+      case "execution-denied": {
+        const reason = str(wrapped.reason);
         return {
-          output: str(wrapped.reason) ? { reason: str(wrapped.reason)! } : undefined,
+          ...(reason ? { output: { reason } } : {}),
           status: "rejected",
         };
+      }
       case "error-text":
       case "error-json":
         return { output: { error: asJson(wrapped.value) }, status: "failed" };
@@ -500,7 +511,7 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
     evidenceCoverage: completeEvidenceCoverage,
     // tracing 开了才让运行器为这个 agent 起 OTLP 接收器(ctx.telemetry 才会出现);
     // AgentTracing 的其余字段(env/configure/scope)这里都用不上,空对象即可。
-    tracing: options.tracing ? {} : undefined,
+    ...(options.tracing ? { tracing: {} } : {}),
 
     send: (input, ctx) =>
       Effect.tryPromise({
@@ -537,11 +548,11 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
           try {
             result = await options.generate({
               messages: state.messages,
-              model: ctx.model,
-              reasoningEffort: ctx.reasoningEffort,
+              ...(ctx.model === undefined ? {} : { model: ctx.model }),
+              ...(ctx.reasoningEffort === undefined ? {} : { reasoningEffort: ctx.reasoningEffort }),
               signal: ctx.signal,
               flags: ctx.flags,
-              telemetry: otel?.settings,
+              ...(otel?.settings === undefined ? {} : { telemetry: otel?.settings }),
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -563,7 +574,8 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
               message: "AI SDK returned an empty result (no text, no tool calls)",
             });
           }
-          return { ...turn, data: options.data?.(result, turn) };
+          const data = options.data?.(result, turn);
+          return { ...turn, ...(data === undefined ? {} : { data }) };
         },
         catch: (cause) => cause,
       }),

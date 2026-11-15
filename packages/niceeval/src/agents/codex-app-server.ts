@@ -481,7 +481,7 @@ export async function sendCodexAppServer(
       }
       // JSON-RPC response ids are native idempotency identities. Keep pending through
       // validation and transport failure; commit only after the write receipt succeeds.
-      state.pending = undefined;
+      delete state.pending;
     } else {
       if (input.responses?.length)
         throw new Error("Codex app-server received responses while no input request was pending");

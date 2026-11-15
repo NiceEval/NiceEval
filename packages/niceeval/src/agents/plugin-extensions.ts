@@ -87,15 +87,21 @@ export function attachCodingAgentExtensions<Config extends ExtensionConfig>(
       record(addition, source);
       const append = <T>(first: readonly T[] | undefined, second: readonly T[] | undefined) =>
         second === undefined ? first : [...(first ?? []), ...second];
+      const skills = append(merged.skills, addition.skills);
+      const mcpServers = append(merged.mcpServers, addition.mcpServers);
+      const before = append(merged.before, addition.before);
+      const after = append(merged.after, addition.after);
+      const plugins = append(merged.plugins, addition.plugins);
+      const pythonPlugins = append(merged.pythonPlugins, addition.pythonPlugins);
       merged = {
         ...merged,
         ...addition,
-        skills: append(merged.skills, addition.skills),
-        mcpServers: append(merged.mcpServers, addition.mcpServers),
-        before: append(merged.before, addition.before),
-        after: append(merged.after, addition.after),
-        ...("plugins" in addition ? { plugins: append(merged.plugins, addition.plugins) } : {}),
-        ...("pythonPlugins" in addition ? { pythonPlugins: append(merged.pythonPlugins, addition.pythonPlugins) } : {}),
+        ...(skills === undefined ? {} : { skills }),
+        ...(mcpServers === undefined ? {} : { mcpServers }),
+        ...(before === undefined ? {} : { before }),
+        ...(after === undefined ? {} : { after }),
+        ...(plugins === undefined ? {} : { plugins }),
+        ...(pythonPlugins === undefined ? {} : { pythonPlugins }),
       };
     }
     return rebuild(merged as Config);

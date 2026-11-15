@@ -60,8 +60,8 @@ async function hermesShell(
   const script = `${HERMES} ${args.map(shellQuote).join(" ")}`;
   return sb.runShell(script, {
     env,
-    sensitiveValues: opts?.sensitiveValues,
-    stream: opts?.stream,
+    ...(opts?.sensitiveValues === undefined ? {} : { sensitiveValues: opts?.sensitiveValues }),
+    ...(opts?.stream === undefined ? {} : { stream: opts?.stream }),
   });
 }
 

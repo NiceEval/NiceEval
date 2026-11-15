@@ -269,7 +269,7 @@ export interface AgentTracing {
  */
 export interface AgentSession {
   /** 会话续接:服务端记历史。本线记过的会话 id;新会话线是 undefined。 */
-  readonly id?: string;
+  readonly id?: string | undefined;
   /** 记回传的会话 id;只在还没记过时落地(first-writer-wins),空值忽略。 */
   capture(id: string | undefined): void;
   /** 读 Adapter 私有 key；新会话线或未写过的 key 为空。 */

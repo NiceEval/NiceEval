@@ -62,20 +62,23 @@ function parseFrames(
     const value = resultUsage?.[name];
     return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   };
+  const inputTokens = token("input_tokens");
+  const outputTokens = token("output_tokens");
+  const cacheReadTokens = token("cache_read_input_tokens");
+  const cacheCreationTokens = token("cache_creation_input_tokens");
+  const requests =
+    typeof terminal?.num_turns === "number" && Number.isSafeInteger(terminal.num_turns) && terminal.num_turns >= 0
+      ? terminal.num_turns
+      : parsed.usage.requests;
   const usage: Usage =
     resultUsage === undefined
       ? parsed.usage
       : {
-          inputTokens: token("input_tokens"),
-          outputTokens: token("output_tokens"),
-          cacheReadTokens: token("cache_read_input_tokens"),
-          cacheCreationTokens: token("cache_creation_input_tokens"),
-          requests:
-            typeof terminal?.num_turns === "number" &&
-            Number.isSafeInteger(terminal.num_turns) &&
-            terminal.num_turns >= 0
-              ? terminal.num_turns
-              : parsed.usage.requests,
+          ...(inputTokens === undefined ? {} : { inputTokens }),
+          ...(outputTokens === undefined ? {} : { outputTokens }),
+          ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+          ...(cacheCreationTokens === undefined ? {} : { cacheCreationTokens }),
+          ...(requests === undefined ? {} : { requests }),
         };
   return {
     usage,
@@ -366,7 +369,7 @@ export async function sendClaudeCodeNative(
           response: { behavior: "allow", updatedInput: { ...pending.input, answers } },
         },
       });
-      state.pending = undefined;
+      delete state.pending;
     } else {
       if (input.responses?.length)
         throw new Error("Claude Code received responses while no native request was pending");

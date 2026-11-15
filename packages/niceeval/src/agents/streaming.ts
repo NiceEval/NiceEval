@@ -21,7 +21,7 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 /** sdk-streams.ts 里 ClaudeSdkStream / PiAgentStream / CodexThreadStream 共享的最小形状。 */
 export interface FrameReducer<Frame> {
   add(frame: Frame): StreamEvent[];
-  readonly usage?: Usage;
+  readonly usage?: Usage | undefined;
   readonly failed?: boolean;
 }
 
@@ -70,7 +70,7 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
       return {
         status: "waiting",
         events,
-        usage: reducer.usage,
+        ...(reducer.usage === undefined ? {} : { usage: reducer.usage }),
         ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
       };
     }
@@ -84,7 +84,7 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
   return {
     status: transportFailed || reducer.failed ? "failed" : "completed",
     events,
-    usage: reducer.usage,
+    ...(reducer.usage === undefined ? {} : { usage: reducer.usage }),
     ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
   };
 }
@@ -201,7 +201,7 @@ export function deltaStream<Frame>(spec: DeltaStreamSpec<Frame>): FrameReducer<F
               type: "operation.finished",
               operationId: op.operationId,
               kind: "tool",
-              output: op.output,
+              ...(op.output === undefined ? {} : { output: op.output }),
               status: op.status ?? "completed",
             });
             break;

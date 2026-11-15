@@ -311,7 +311,7 @@ function deriveTurnEvents(
         type: "operation.finished",
         operationId: callId,
         kind: "tool",
-        output: part.errorText,
+        ...(part.errorText === undefined ? {} : { output: part.errorText }),
         status: "failed",
       });
       reported.finishedCalls.add(callId);
@@ -477,7 +477,10 @@ function reduceUiMessageStreamEffect(
     if (signal.aborted) onAbort();
     try {
       let finalMessage: UIMessageLike | undefined;
-      for await (const message of readUIMessageStream({ message: resumeFrom, stream })) {
+      for await (const message of readUIMessageStream({
+        ...(resumeFrom === undefined ? {} : { message: resumeFrom }),
+        stream,
+      })) {
         finalMessage = message;
         onMessage(message);
       }
@@ -604,12 +607,13 @@ function uiMessageStreamSendEffect(
       if (request) {
         return yield* Effect.try({
           try: () => {
+            const id = request.approval?.id ?? request.toolCallId;
             const waitingEvents = [
               ...derived.events,
               {
                 type: "input.requested" as const,
                 request: {
-                  id: request.approval?.id ?? request.toolCallId,
+                  ...(id === undefined ? {} : { id }),
                   action: toolNameOf(request),
                   input: (request.input ?? null) as JsonValue,
                   options: [{ id: "approve" }, { id: "deny" }],
@@ -668,8 +672,8 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
   return makeDirectAgent({
     name: options.name ?? "ui-message-stream",
     evidenceCoverage: COVERAGE,
-    tracing: options.tracing,
-    spanMapper: options.spanMapper,
+    ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
+    ...(options.spanMapper === undefined ? {} : { spanMapper: options.spanMapper }),
 
     send: (input, ctx) => uiMessageStreamSendEffect(options, input, ctx),
   });

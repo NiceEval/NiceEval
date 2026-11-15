@@ -151,7 +151,12 @@ export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   if (message?.content) events.push({ type: "message", role: "assistant", text: message.content });
   const usage = chatCompletionUsage(res.usage);
   const evidenceCoverage = turnCoverage(events, usage);
-  return { events, status: "completed", usage, ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }) };
+  return {
+    events,
+    status: "completed",
+    ...(usage === undefined ? {} : { usage: usage }),
+    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+  };
 }
 
 // ───────────────────────── Responses ─────────────────────────
@@ -250,5 +255,10 @@ export function turnFromResponses(res: ResponseLike): Turn {
   }
   const usage = responsesUsage(res.usage);
   const evidenceCoverage = turnCoverage(events, usage);
-  return { events, status: "completed", usage, ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }) };
+  return {
+    events,
+    status: "completed",
+    ...(usage === undefined ? {} : { usage: usage }),
+    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+  };
 }

@@ -215,10 +215,14 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
             usage = {
               inputTokens: frame.usage.input_tokens,
               outputTokens: frame.usage.output_tokens,
-              cacheReadTokens: frame.usage.cache_read_input_tokens ?? undefined,
-              cacheCreationTokens: frame.usage.cache_creation_input_tokens ?? undefined,
-              requests: frame.num_turns,
-              costUSD: frame.total_cost_usd,
+              ...(frame.usage.cache_read_input_tokens == null
+                ? {}
+                : { cacheReadTokens: frame.usage.cache_read_input_tokens }),
+              ...(frame.usage.cache_creation_input_tokens == null
+                ? {}
+                : { cacheCreationTokens: frame.usage.cache_creation_input_tokens }),
+              ...(frame.num_turns === undefined ? {} : { requests: frame.num_turns }),
+              ...(frame.total_cost_usd === undefined ? {} : { costUSD: frame.total_cost_usd }),
             };
           }
           break;
