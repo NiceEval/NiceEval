@@ -1118,7 +1118,7 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
     diagnostics: projectAttemptDiagnostics(
       attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
     ),
-    verdictCauses: attemptVerdictCauses(attemptVerdict(resolved, assertions), assertions),
+    ...optionalVerdictCauses(attemptVerdictCauses(attemptVerdict(resolved, assertions), assertions)),
     stoppedAt: stoppedAssertion(assertions),
     assertions: assertionIndex(assertions),
     sections: attemptSections(resolved),
@@ -1956,4 +1956,9 @@ function integrityFailure(operation: InspectionOperationId, cause: RecordIntegri
     reason: "The selected sealed Run does not form a closed Record publication.",
     identity: Object.freeze({ runId: cause.runId }),
   });
+}
+
+// The canonical codec rejects explicit undefined; omit the field unless causes exist.
+function optionalVerdictCauses<A>(causes: A | undefined): { readonly verdictCauses?: A } {
+  return causes === undefined ? {} : { verdictCauses: causes };
 }
