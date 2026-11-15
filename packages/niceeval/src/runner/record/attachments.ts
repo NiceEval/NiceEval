@@ -78,7 +78,7 @@ function buildAssertionsCapture(
     if (Result.isFailure(appended)) return Result.fail(assertionsInvalid(appended.failure));
     entryIds.push(appended.success);
   }
-  const attachment = producer.seal({ sourceSites: input.sourceSites });
+  const attachment = producer.seal(input.sourceSites === undefined ? {} : { sourceSites: input.sourceSites });
   return Result.isFailure(attachment)
     ? Result.fail(assertionsInvalid(attachment.failure))
     : Result.succeed(
@@ -116,7 +116,9 @@ export function createRunnerAssertionsAttachment(
     readonly sourceSites?: RunnerAssertionSourceSitesBuild;
   } = {},
 ): Result.Result<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
-  const preflight = buildAssertionsCapture(sealed, { entryIds: input.entryIds });
+  const preflight = buildAssertionsCapture(sealed, {
+    ...(input.entryIds === undefined ? {} : { entryIds: input.entryIds }),
+  });
   if (Result.isFailure(preflight)) return preflight;
   const buildSourceSites = input.sourceSites;
   if (buildSourceSites === undefined) return preflight;
