@@ -50,6 +50,7 @@ export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegr
 /** Browser-neutral fixed reader capability backed by one pinned Record generation. */
 export interface InspectionFactSource {
   readonly kind: InspectionSource["kind"];
+  readonly beginOperation?: (deadlineEpochMs: number) => void;
   readonly cutoff: () => PublicationCutoff & { readonly identity: string };
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
   readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
@@ -92,7 +93,9 @@ export function openInspectionSource(
     let session: PinnedRecordReadSession;
     if (source.kind === "project-record") {
       if (!existsSync(source.databasePath)) return emptyOperationalFacts();
-      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath)).pipe(Effect.mapError(sourceError));
+      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath), { operationScoped: true }).pipe(
+        Effect.mapError(sourceError),
+      );
     } else {
       const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
       const importer = yield* Effect.acquireRelease(
@@ -110,7 +113,7 @@ export function openInspectionSource(
       });
       session = yield* Effect.acquireRelease(
         Effect.try({
-          try: () => openHostOwnedRecordReadSession(generation.path),
+          try: () => openHostOwnedRecordReadSession(generation.path, undefined, true),
           catch: (cause) => sourceError(cause),
         }),
         (opened) => Effect.sync(() => opened.close()),
@@ -127,7 +130,7 @@ export function openHostOwnedInspectionSource(
   return Effect.gen(function* () {
     const session = yield* Effect.acquireRelease(
       Effect.try({
-        try: () => openHostOwnedRecordReadSession(recordPath),
+        try: () => openHostOwnedRecordReadSession(recordPath, undefined, true),
         catch: (cause) => sourceError(cause),
       }),
       (opened) => Effect.sync(() => opened.close()),
@@ -199,6 +202,7 @@ function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["
     session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity);
   return Object.freeze({
     kind,
+    beginOperation: session.beginOperation,
     cutoff: () => cutoff,
     findExperimentRunIds: session.findExperimentRunIds,
     readRunResource: (runId: string) => session.readRunResource(runId),

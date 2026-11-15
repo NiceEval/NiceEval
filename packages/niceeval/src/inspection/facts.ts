@@ -94,6 +94,7 @@ const RUN_PAGE_SIZE = 100;
 const ATTEMPT_CANDIDATE_RUN_LIMIT = 64;
 const ATTEMPT_TARGET_MEMBER_LIMIT = 256;
 const decodedRuns = new WeakMap<InspectionFactSource, Map<string, LoadedInspectionRun>>();
+const decodedAssertions = new WeakMap<DecodedInspectionAttachment, InspectionAssertionsRead>();
 
 function readInspectionRun(source: InspectionFactSource, runId: string): LoadedInspectionRun | undefined {
   let cache = decodedRuns.get(source);
@@ -570,6 +571,8 @@ export function readInspectionAssertions(resolved: ResolvedInspectionAttempt): I
       "unsupported-format: This Record was written by an older NiceEval version. Rerun the Experiment with the current version.",
     );
   }
+  const cached = decodedAssertions.get(attachment);
+  if (cached !== undefined) return cached;
   const decoded = decodeCurrentAssertions(attachment);
   if (decoded === undefined) {
     return Object.freeze({
@@ -578,13 +581,15 @@ export function readInspectionAssertions(resolved: ResolvedInspectionAttempt): I
       issues: Object.freeze([issue("assertions-current-invalid", resolved.locator)]),
     });
   }
-  return Object.freeze({
+  const result = Object.freeze({
     state: "available" as const,
     attachment,
     value: decoded.value,
     contents: decoded.contents,
     issues: Object.freeze([]),
   });
+  decodedAssertions.set(attachment, result);
+  return result;
 }
 
 function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):

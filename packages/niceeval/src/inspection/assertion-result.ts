@@ -449,6 +449,21 @@ const MatcherProjectionSchema = Schema.Union([
 export const AssertionDetailResultSchema = Schema.toType(
   Schema.Union([
     Schema.Struct({
+      projection: Schema.Literal("compact"),
+      entryId: AssertionEntryIdSchema,
+      display: Schema.toType(AssertionDisplaySchema),
+      entry: Schema.Struct({
+        entryId: BaseProjectedAssertionEntrySchema.fields.entryId,
+        display: BaseProjectedAssertionEntrySchema.fields.display,
+        decision: BaseProjectedAssertionEntrySchema.fields.decision,
+        contribution: BaseProjectedAssertionEntrySchema.fields.contribution,
+        evaluation: Schema.Struct({ observed: AssertionFactValueSchema }),
+        explanationRetention: BaseProjectedAssertionEntrySchema.fields.explanationRetention,
+      }),
+      check: DiagnosticNodeSchema,
+      matcher: Schema.Struct({ state: Schema.Literal("compact"), debugger: Schema.optional(Schema.Never) }),
+    }),
+    Schema.Struct({
       entryId: Schema.String,
       state: Schema.Literals(["not-recorded", "invalid"]),
       issues: Schema.optional(

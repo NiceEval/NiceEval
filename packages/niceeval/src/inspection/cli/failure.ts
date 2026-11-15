@@ -32,6 +32,13 @@ function inspectionFailureDetail(error: Error): InspectionFailureDocument["failu
       correction: "fix-request",
     };
   if (cause instanceof InspectionOperationError) {
+    if (cause.code === "inspection-read-deadline-exceeded") {
+      return Object.freeze({
+        code: cause.code,
+        reason: cause.reason,
+        correction: cause.correction ?? "upgrade-or-report",
+      });
+    }
     if (cause.code === "inspection-selection-missing") {
       return Object.freeze({
         code: cause.code,

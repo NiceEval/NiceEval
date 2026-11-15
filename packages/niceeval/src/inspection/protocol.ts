@@ -405,6 +405,7 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
       "inspection-source-invalid",
       "inspection-record-integrity-failure",
       "inspection-operation-failed",
+      "inspection-read-deadline-exceeded",
       "inspection-result-invalid",
       "evidence-budget-exceeded",
       "restart-required",
@@ -417,13 +418,16 @@ export const InspectionFailureDocumentSchema = Schema.Struct({
     omittedIssueCount: Schema.optional(Schema.Number),
     availableOperations: Schema.optional(Schema.Array(InspectionOperationIdSchema)),
     identity: Schema.optional(Schema.Struct({ runId: Schema.String })),
-    correction: Schema.Literals([
-      "fix-request",
-      "choose-existing-selection",
-      "fix-record-source",
-      "retry",
-      "upgrade-or-report",
-      "restart",
+    correction: Schema.Union([
+      Schema.TemplateLiteral(["niceeval show ", Schema.String]),
+      Schema.Literals([
+        "fix-request",
+        "choose-existing-selection",
+        "fix-record-source",
+        "retry",
+        "upgrade-or-report",
+        "restart",
+      ]),
     ]),
   }),
 });

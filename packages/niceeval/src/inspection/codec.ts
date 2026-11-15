@@ -98,6 +98,7 @@ export type InspectionFailureCode =
   | "inspection-source-invalid"
   | "inspection-record-integrity-failure"
   | "inspection-operation-failed"
+  | "inspection-read-deadline-exceeded"
   | "inspection-result-invalid"
   | "evidence-budget-exceeded"
   | "restart-required";

@@ -40,15 +40,16 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
   } else {
     const session =
       input.recordPath === undefined
-        ? yield* acquireProjectRecordReadSession(root)
+        ? yield* acquireProjectRecordReadSession(root, { operationScoped: true })
         : yield* Effect.acquireRelease(
-            Effect.try(() => openHostOwnedRecordReadSession(input.recordPath!)),
+            Effect.try(() => openHostOwnedRecordReadSession(input.recordPath!, undefined, true)),
             (opened) => Effect.sync(() => opened.close()),
           );
     const publication = session.publicationCutoff();
     const cutoff = Object.freeze({ ...publication, identity: publicationCutoffIdentity(publication) });
     source = Object.freeze({
       kind: "project-record" as const,
+      beginOperation: session.beginOperation,
       cutoff: () => cutoff,
       findExperimentRunIds: session.findExperimentRunIds,
       readRunResource: session.readRunResource,

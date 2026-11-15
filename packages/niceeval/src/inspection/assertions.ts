@@ -113,11 +113,28 @@ export function projectAttemptAssertionDetail(
   }
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
   if (entry === undefined) return undefined;
+  if (projection === "compact") {
+    return decodeAssertionDetail({
+      projection: "compact",
+      entryId: entry.entryId,
+      display: entry.display,
+      entry: {
+        entryId: entry.entryId,
+        display: entry.display,
+        decision: entry.decision,
+        contribution: entry.contribution,
+        evaluation: { observed: entry.evaluation.observed },
+        explanationRetention: entry.explanationRetention,
+      },
+      check: projectCheck(entry),
+      matcher: { state: "compact" },
+    });
+  }
   const result = closeJson(
     Object.freeze({
       entryId: entry.entryId,
       display: entry.display,
-      entry: projectEntry(source, entry, assertions.contents, projection === "compact", assertions.value.entries),
+      entry: projectEntry(source, entry, assertions.contents, false, assertions.value.entries),
       sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
       check: projectCheck(entry),
       matcher: projectMatcher(entry, agentTurns, projection),

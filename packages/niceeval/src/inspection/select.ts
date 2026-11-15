@@ -121,12 +121,14 @@ export class InspectionOperationError extends Data.TaggedError("InspectionOperat
     | "inspection-selection-missing"
     | "inspection-record-integrity-failure"
     | "inspection-operation-failed"
+    | "inspection-read-deadline-exceeded"
     | "inspection-result-invalid"
     | "evidence-budget-exceeded"
     | "restart-required"
     | "current-target-unavailable";
   readonly operation: InspectionOperationId;
   readonly reason: string;
+  readonly correction?: `niceeval show ${string}` | "upgrade-or-report";
   readonly identity?: { readonly runId: string };
   readonly cause?: unknown;
 }> {}
@@ -148,9 +150,11 @@ export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
 ): InspectionSuccessDocument {
-  return evaluateInspectionSuccess(operation.kind, () => {
-    const document = selectOperation(facts, operation);
-    return Object.assign({}, document, { links: inspectionLinks(operation, document) });
+  return withinReadDeadline(facts, operation, () => {
+    return evaluateInspectionSuccess(operation.kind, () => {
+      const document = selectOperation(facts, operation);
+      return Object.assign({}, document, { links: inspectionLinks(operation, document) });
+    });
   });
 }
 
@@ -162,26 +166,60 @@ export function explainInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
 ): InspectionDocument {
-  return evaluateInspectionOperation(operation.kind, () => {
-    if (operation.kind === "run.list") {
-      return runsListExplanation(facts, operation);
-    }
-    if (operation.kind === "run.get") {
-      const run = requireRunResource(facts, operation.kind, operation.runId);
-      const supporting = supportingRunFacts(facts, run);
-      return Object.freeze({
-        ...runResourceBaseDocument(facts, operation.kind, run, supporting),
-        outcome: "explanation" as const,
-        factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
-      });
-    }
-    const loaded = loadForOperation(facts, operation);
+  return withinReadDeadline(facts, operation, () => {
+    return evaluateInspectionOperation(operation.kind, () => explainOperation(facts, operation));
+  });
+}
+
+function explainOperation(facts: InspectionFactSource, operation: InspectionOperation): unknown {
+  if (operation.kind === "run.list") {
+    return runsListExplanation(facts, operation);
+  }
+  if (operation.kind === "run.get") {
+    const run = requireRunResource(facts, operation.kind, operation.runId);
+    const supporting = supportingRunFacts(facts, run);
     return Object.freeze({
-      ...baseDocument(facts, operation.kind, loaded.selected, loaded.requestedRunIds, loaded.missingRunIds, []),
+      ...runResourceBaseDocument(facts, operation.kind, run, supporting),
       outcome: "explanation" as const,
       factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
     });
+  }
+  const loaded = loadForOperation(facts, operation);
+  return Object.freeze({
+    ...baseDocument(facts, operation.kind, loaded.selected, loaded.requestedRunIds, loaded.missingRunIds, []),
+    outcome: "explanation" as const,
+    factKinds: inspectionProtocolRegistry[operation.kind].factKinds,
   });
+}
+
+function withinReadDeadline<A>(facts: InspectionFactSource, operation: InspectionOperation, read: () => A): A {
+  const started = Date.now();
+  const deadlineMs = 30_000;
+  const check = () => {
+    const elapsedMs = Date.now() - started;
+    if (elapsedMs < deadlineMs) return;
+    const entryId = "entryId" in operation ? operation.entryId : operation.kind;
+    const correction: `niceeval show ${string}` | "upgrade-or-report" =
+      "locator" in operation
+        ? `niceeval show ${operation.locator}${"entryId" in operation ? ` ${operation.entryId}` : ""}`
+        : "upgrade-or-report";
+    throw new InspectionOperationError({
+      code: "inspection-read-deadline-exceeded",
+      operation: operation.kind,
+      reason: `Inspection read for ${entryId}: elapsed ${elapsedMs} ms exceeded deadline ${deadlineMs} ms.`,
+      correction,
+    });
+  };
+  let result: A;
+  try {
+    facts.beginOperation?.(started + deadlineMs);
+    result = read();
+  } catch (cause) {
+    check();
+    throw cause;
+  }
+  check();
+  return result;
 }
 
 function selectOperation(source: InspectionFactSource, operation: InspectionOperation): unknown {
@@ -416,7 +454,9 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       const assertion = projectAttemptAssertionDetail(
         source,
         assertions,
-        readInspectionAgentTurns(traceAttachments(resolved).agentTurns),
+        operation.projection === "compact"
+          ? { state: "not-recorded" }
+          : readInspectionAgentTurns(traceAttachments(resolved).agentTurns),
         operation.entryId,
         operation.projection,
       );

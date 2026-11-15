@@ -113,6 +113,8 @@ export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, 
 export interface PinnedRecordReadSession {
   readonly kind: "canonical" | "private-generation";
   readonly deadlineEpochMs: number;
+  /** Opt-in operation deadlines keep the same transaction and publication. */
+  readonly beginOperation?: (deadlineEpochMs: number) => void;
   readonly publicationCutoff: () => PublicationCutoff;
   readonly sealedCutoff: () => SealedRunCutoff;
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
@@ -146,6 +148,7 @@ function openPinnedRecordReadSession(
   path: string,
   kind: "canonical" | "private-generation",
   deadlineEpochMs: number,
+  operationScoped = false,
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
     throw sqliteError(
@@ -201,7 +204,24 @@ function openPinnedRecordReadSession(
     assertUsable("open-read-session");
     return Object.freeze({
       kind,
-      deadlineEpochMs,
+      get deadlineEpochMs() {
+        return deadlineEpochMs;
+      },
+      ...(operationScoped
+        ? {
+            beginOperation: (nextDeadline: number) => {
+              if (closed)
+                throw sqliteError("record-database-invalid", "begin-read-operation", "pinned read session is closed");
+              if (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now())
+                throw sqliteError(
+                  "record-resource-limit-exceeded",
+                  "begin-read-operation",
+                  "operation deadline must be a future safe integer",
+                );
+              deadlineEpochMs = nextDeadline;
+            },
+          }
+        : {}),
       publicationCutoff: () => publicationCutoff,
       sealedCutoff: readCutoff,
       findExperimentRunIds: (experimentId: string) =>
@@ -277,19 +297,29 @@ function openPinnedRecordReadSession(
 export function openOperationalRecordReadSession(
   recordStorageRoot: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
+  operationScoped = false,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(recordSqlitePath(recordStorageRoot), "canonical", deadlineEpochMs);
+  return openPinnedRecordReadSession(
+    recordSqlitePath(recordStorageRoot),
+    "canonical",
+    deadlineEpochMs,
+    operationScoped,
+  );
 }
 
 /** Read admission never binds a project writer or mutates historical input. */
 export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordReadSession")(function* (
   recordStorageRoot: string,
+  options: { readonly operationScoped?: boolean } = {},
 ) {
   const path = recordSqlitePath(recordStorageRoot);
   const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });
   if (mode === "operational") {
     return yield* Effect.acquireRelease(
-      Effect.try({ try: () => openOperationalRecordReadSession(recordStorageRoot), catch: (cause) => cause }),
+      Effect.try({
+        try: () => openOperationalRecordReadSession(recordStorageRoot, undefined, options.operationScoped),
+        catch: (cause) => cause,
+      }),
       (session) => Effect.sync(() => session.close()),
     );
   }
@@ -303,7 +333,10 @@ export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordRe
   );
   const generation = yield* Effect.tryPromise({ try: (_signal) => importer.result, catch: (cause) => cause });
   return yield* Effect.acquireRelease(
-    Effect.try({ try: () => openHostOwnedRecordReadSession(generation.path), catch: (cause) => cause }),
+    Effect.try({
+      try: () => openHostOwnedRecordReadSession(generation.path, undefined, options.operationScoped),
+      catch: (cause) => cause,
+    }),
     (session) => Effect.sync(() => session.close()),
   );
 });
@@ -312,8 +345,9 @@ export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordRe
 export function openHostOwnedRecordReadSession(
   generationPath: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
+  operationScoped = false,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs);
+  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, operationScoped);
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {

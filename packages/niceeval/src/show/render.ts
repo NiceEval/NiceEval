@@ -2665,6 +2665,11 @@ export function renderAssertions(
         ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
       ],
     });
+    if (!("criterion" in entry)) {
+      blocks.push({ kind: "divider", title: "Next" });
+      blocks.push({ kind: "command", command: `niceeval show ${locator} ${JSON.stringify(entry.entryId)} --full` });
+      continue;
+    }
     const agentAudit = entry.agentJudgeAudit;
     if (agentAudit?.state === "available") {
       blocks.push({

@@ -126,12 +126,14 @@ const failure = (operation: string, cause: unknown, exitCode = 1) => {
           : cause instanceof InspectionOperationError && cause.code === "inspection-record-integrity-failure"
             ? `Record integrity failure${cause.identity === undefined ? "" : ` for sealed Run ${cause.identity.runId}`}.`
             : cause instanceof InspectionOperationError
-              ? cause.code === "unsupported-format" ||
-                cause.code === "inspection-selection-missing" ||
-                cause.code === "inspection-request-invalid" ||
-                cause.code === "inspection-result-invalid"
-                ? cause.reason
-                : "The Inspection operation could not be completed."
+              ? cause.code === "inspection-read-deadline-exceeded"
+                ? `${cause.code}: ${cause.reason}\n${cause.correction}`
+                : cause.code === "unsupported-format" ||
+                    cause.code === "inspection-selection-missing" ||
+                    cause.code === "inspection-request-invalid" ||
+                    cause.code === "inspection-result-invalid"
+                  ? cause.reason
+                  : "The Inspection operation could not be completed."
               : undefined;
   return new CliFeatureError({
     feature: "show",
@@ -556,10 +558,14 @@ function runShow(
         }
         if (assertions) {
           const selectedLocator = decodedLocator!.locator;
-          const attempt = (yield* select("attempt.get", () =>
-            selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
-          )).attempt;
-          const entryIds = entryId === undefined ? attempt.assertions.entries.map((entry) => entry.entryId) : [entryId];
+          const outline =
+            entryId === undefined
+              ? (yield* select("attempt.get", () =>
+                  selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
+                )).attempt
+              : undefined;
+          const entryIds =
+            outline === undefined ? [entryId!] : outline.assertions.entries.map((entry) => entry.entryId);
           const details: InspectionSuccessDocumentFor<"attempt.assertion.detail">["assertion"][] = [];
           for (const id of entryIds) {
             const document = yield* select("attempt.assertion.detail", () =>
@@ -572,10 +578,16 @@ function runShow(
             );
             details.push(document.assertion);
           }
+          const attempt =
+            outline ??
+            (yield* select("attempt.get", () =>
+              selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
+            )).attempt;
           const agentJudgeTraces = new Map<string, AgentJudgeTrace>();
           if (full)
             for (const detail of details) {
-              const audit = "entry" in detail ? detail.entry.agentJudgeAudit : undefined;
+              const audit =
+                "entry" in detail && "agentJudgeAudit" in detail.entry ? detail.entry.agentJudgeAudit : undefined;
               if (audit?.state !== "available" || agentJudgeTraces.has(audit.audit.trace.id)) continue;
               const reference = audit.audit.trace;
               const bytes = new Uint8Array(reference.byteLength);

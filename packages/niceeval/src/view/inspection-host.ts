@@ -5,7 +5,7 @@ import { Effect, Result } from "effect";
 
 import { decodeInspectionRequest } from "../inspection/codec.ts";
 import { openHostOwnedInspectionSource } from "../inspection/source.ts";
-import { selectInspectionOperation } from "../inspection/select.ts";
+import { InspectionOperationError, selectInspectionOperation } from "../inspection/select.ts";
 import { bindProjectInput } from "../inspection/project-input.ts";
 import { loadSelectedInspectionRuns } from "../inspection/facts.ts";
 import type { InspectionDocument } from "../inspection/protocol.ts";
@@ -46,19 +46,29 @@ export function inspectViewGeneration(generation: ViewGeneration, input: unknown
             ),
           });
         }
-        return selectInspectionOperation(facts, decoded.success.operation);
+        return yield* Effect.try({
+          try: () => selectInspectionOperation(facts, decoded.success.operation),
+          catch: (cause) => cause,
+        });
       }),
     ).pipe(
-      Effect.catch(() =>
+      Effect.catch((cause) =>
         Effect.succeed(
           Object.freeze({
             outcome: "failure" as const,
             operation: decoded.success.operation.kind,
-            failure: Object.freeze({
-              code: "inspection-operation-failed" as const,
-              reason: "Inspection could not be completed for this generation.",
-              correction: "retry" as const,
-            }),
+            failure:
+              cause instanceof InspectionOperationError && cause.code === "inspection-read-deadline-exceeded"
+                ? Object.freeze({
+                    code: cause.code,
+                    reason: cause.reason,
+                    correction: cause.correction ?? "upgrade-or-report",
+                  })
+                : Object.freeze({
+                    code: "inspection-operation-failed" as const,
+                    reason: "Inspection could not be completed for this generation.",
+                    correction: "retry" as const,
+                  }),
           }) satisfies InspectionDocument,
         ),
       ),
