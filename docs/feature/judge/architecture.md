@@ -229,7 +229,7 @@ Agent Judge 的公开定义与工具行为单源在 [Library](library.md#agent-j
 取证工具、提交工具及其 schema 与提示模板共同由 Judge owner 管理。
 
 封口调度把待求值 entry 稳定分成普通断言与 Agent Judge 两组。
-先完成普通组，再按评审会话的登记顺序串行执行，一次会话结算它的全部评分题。
+先完成普通组（受管 Judge entry 之间并发，受 `maxConcurrency` 约束），再按评审会话的登记顺序分批执行：默认每个会话一批串行，相邻的 `concurrent` 会话合成一批并发；一次会话结算它的全部评分题。调度任务的单位是普通 entry 与整个会话，不能把各会话的题展开成扁平列表并发结算，否则同一会话的后题会在提交前被提前结算。详细语义单源在 [Library · 执行顺序](library.md#执行顺序)。
 entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
 
 已求值 entry 复用 settlement，不重复执行。无 Agent Judge 时维持既有调度语义。

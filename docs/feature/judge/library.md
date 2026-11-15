@@ -258,8 +258,9 @@ export default defineScoreEval({
 interface AgentJudgeDefinition {
   readonly instructions?: string;             // 这位评审者看什么、从哪里开始，会话内所有问题共用
   readonly maxTurns?: number;                 // 每道评分题的逻辑模型轮次上限，默认 40
-  readonly timeoutMs?: number;                // 整次会话的墙钟上限，默认 600_000
+  readonly timeoutMs?: number;                // 整次会话的墙钟上限，默认 600_000，从会话取得调度位置时起算
   readonly maxMaterialBytes?: number;
+  readonly concurrent?: boolean;              // 与相邻的 concurrent 会话并发执行，默认 false
 }
 
 interface AgentJudgeReview {
@@ -324,9 +325,17 @@ type SubmitEvaluationInput = (
 
 ### 执行顺序
 
-`assertions.evaluate` 先求值其它全部断言，再按会话的登记顺序逐个执行评审会话，同一 Attempt 内不并发。
-普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。普通断言的 `.stop()` 屏障跳过 Agent Judge，不会让它提前执行。
-后面的评审能看到前面评审写入的内容。rubric 的不写文件要求只是模型指令，不提供隔离保证。
+`assertions.evaluate` 分两组求值：先普通组，再 Agent Judge 组。普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。普通断言的 `.stop()` 屏障跳过 Agent Judge，不会让它提前执行。
+
+**普通组**：受管 Judge entry（`t.judge`、`defineJudge`、四个现成裁判等经受管 Provider 调用模型的 entry）之间并发求值；不受管的 Match 与作者 callback 保持既有的顺序执行语义。控制屏障照旧：屏障之前登记的 entry 全部结算后才判断屏障，屏障之后的 entry 在屏障放行前不启动。entry 的 identity、展示顺序、entryIndex、Verdict 折叠与分数分母都按登记顺序，与完成先后无关；一个 entry 的 unavailable 或 errored 是它自己的 settlement，不取消其它 entry。
+
+**Agent Judge 组**：按会话的登记顺序划分批次。默认会话各自成一批，逐个串行执行，后面的评审能看到前面评审写入的内容。登记顺序上相邻、都声明 `concurrent: true` 的会话合成一批并发执行；批与批之间仍串行。并发调度的单位是整个会话：会话内部的 `chat`、`judge`、`grade` 仍在同一个 pi 会话里逐题处理。
+
+- 同一批里的会话共享同一个主 Sandbox，相互之间没有先后，也不保证观察到彼此的写入；同时安装依赖、占端口、改文件都可能互相影响。只有确定不依赖彼此现场的会话才声明 `concurrent`。rubric 的不写文件要求只是模型指令，不提供隔离保证。
+- 会话的 `timeoutMs` 从它取得调度位置时起算，排队等待不消耗它；Attempt 的剩余期限始终覆盖排队与执行。把一个会话拆成多个并发会话会得到多份会话期限、多份开场与重复取证，成本相应增加。
+- 一个会话超时、失败或被取消只关闭它自己的模型请求与工具；控制与账本相互隔离，共享现场的文件状态不隔离。Attempt 取消时中断全部在途与排队的会话，迟到结果不能改写已封口的 measurement。
+
+**并发上限**：普通组的受管 entry 与 Agent Judge 的并发会话都受生效 Judge Provider 的 `maxConcurrency` 约束：一个普通 entry 从开始执行到结算占一个位置，一个 Agent Judge 会话从创建到最后一道题结算占一个位置。它是单个 Attempt 内的判分调度上限，不是网关的全局配额；同时运行的 Attempt 越多，网关看到的并发越高。`maxConcurrency: 1` 等同完全串行。
 
 评审命令与模型调用归属于该 Judge entry，不能进入被测 agent 的 history、工具计数、usage 或归因断言。
 评审发生在 telemetry 收口前，trace 必须能区分评审与被测应用；时间先后不能代替归属。
@@ -350,6 +359,7 @@ type SubmitEvaluationInput = (
 - 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
 - direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
 - 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对登记 Agent Judge：规划阶段报 `judge.agent-shared-sandbox`；Agent Judge 挂 `.stop()` 登记报错；普通断言的 stop 屏障不触发 Agent Judge。
+- 并发验收（本地 mock 模型，每次请求固定延迟）：4 个普通受管 Judge 的 `assertions.evaluate` 墙钟约等于一次延迟而非四次；屏障前后的结算顺序正确，`maxConcurrency: 1` 恢复串行墙钟；measurement、Verdict 与串行时逐项相同。两个 `concurrent` 会话墙钟约等于一个会话；与一个默认会话混排时，默认会话仍是批边界。一个并发会话超时只让它自己的题 unavailable，兄弟会话照常结算；Attempt 取消中断全部在途与排队任务，之后零请求、零工具调用。同一 Attempt 的 entryIndex、usage 绑定与展示顺序不随完成先后变化。
 - 一个会话的 chat、judge、judge 按调用顺序在同一个 pi 会话里处理，产生两个 entry、一份共享轨迹；某道题超轮次只有它为 unavailable，后续题照常评分。同一 Attempt 两个会话按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
 - 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
 - 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
@@ -429,6 +439,7 @@ interface ExperimentJudgeSettings {
 | `maxOutputTokens` | 仅聊天服务工厂接受的正安全整数，传给服务端的输出 token 上限 | `1_024` |
 | `contextWindow` | 仅聊天服务工厂接受的正安全整数，所选模型可接收的最大上下文 token 数。只供 Agent Judge 与模拟用户的 pi coding agent 会话决定何时自动压缩；普通 Judge 不使用。未写时按模型名查 NiceEval 内置模型目录（与估价同一份 models.dev + LiteLLM 快照、同一套名字归一规则）；目录也没有该模型时不按阈值主动压缩，只在模型报告溢出时由 pi 压缩后重试。只有显式写出时才进入 Provider 身份，目录取得的值写入审计 | 显式值 → 内置目录 → 仅溢出时压缩 |
 | `headers` | 随每次请求发送的额外 HTTP 头映射；键名大小写保留，值逐字发出并脱敏 | 无 |
+| `maxConcurrency` | 正安全整数，最多 32；单个 Attempt 内判分调度的并发上限（见 [执行顺序](#执行顺序)）。只影响调度，不进入 Provider 或 Eval 身份；模型字符串替换继承它，整体替换 Provider 时使用新工厂的值 | `4` |
 
 未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制。
 若宿主进程变量存在 `CF_ACCESS_CLIENT_ID` 与 `CF_ACCESS_CLIENT_SECRET`，Provider 在未显式声明同名头时自动追加对应 Cloudflare Access 服务头。
