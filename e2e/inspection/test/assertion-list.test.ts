@@ -5,8 +5,6 @@ import { expect, test } from "vitest";
 import { inspectionCaseArtifacts, inspectionE2E } from "./support.ts";
 
 // @feature docs/feature/inspection/README.md
-// @issue docs/issues/bulk-assertion-show-deadline.md
-// @issue docs/issues/assertion-detail-payload-projection.md
 test.concurrent("大材料 Attempt 的断言列表完整交付紧凑判定，单项超期给出精确下钻诊断", async () => {
   await inspectionE2E.case(
     "assertion-list",
@@ -15,12 +13,17 @@ test.concurrent("大材料 Attempt 的断言列表完整交付紧凑判定，单
       await writeFile(
         join(projectRoot, "evals/inspection.eval.ts"),
         `import { defineScoreEval } from "niceeval";
-import { includes, toolMatch } from "niceeval/expect";
+import { defineMaterialMatch, includes, toolMatch } from "niceeval/expect";
 export default defineScoreEval({ async test(t) {
   const turn = await t.send("produce assertion list evidence");
+  const material = defineMaterialMatch({
+    name: "large-list-material",
+    capture: { maxBytes: 1024 * 1024, maxItems: 16, maxNodes: 128, maxDepth: 16 },
+    read: () => ({ state: "complete", items: [{ id: "large", value: "large-material-marker" + "x".repeat(512 * 1024) }] }),
+    match: includes("large-material-marker"),
+  });
   for (let index = 0; index < 80; index++) {
-    t.check("large-material-marker" + "x".repeat(128 * 1024), includes("large-material-marker"))
-      .score(1).label("Entry " + index);
+    t.check(material).score(1).label("Entry " + index);
   }
   turn.check(turn.toolCalls, toolMatch("inspection_fixture").exactly(1)).label("Collection entry");
 } });
@@ -75,6 +78,13 @@ Date.now = () => now() + (elapsed += Number(process.env.READ_CLOCK_STEP_MS));
       expect(shown.stdout).toContain("Entry 79");
       expect(shown.stdout).toContain("Collection entry");
       const entryId = entryIds[0]!;
+      const full = await niceeval.run(["show", locator, entryId, "--full", "--json"]);
+      expect(full.exitCode, full.diagnostic()).toBe(0);
+      const fullDetail = full.inspectionSuccess("attempt.assertion.detail").assertion;
+      if (!("entry" in fullDetail) || !("materials" in fullDetail.entry)) throw new Error("Missing full materials");
+      expect(fullDetail.entry.materials.source).toMatchObject({ kind: "content", byteLength: expect.any(Number) });
+      if (fullDetail.entry.materials.source.kind !== "content") throw new Error("Missing source Content");
+      expect(fullDetail.entry.materials.source.byteLength).toBeGreaterThan(512 * 1024);
       const expired = await niceeval.run(["show", locator, entryId, "--full", "--json"], {
         env: { ...clock, READ_CLOCK_STEP_MS: "5000" },
       });
