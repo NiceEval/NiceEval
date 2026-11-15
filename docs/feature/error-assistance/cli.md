@@ -10,7 +10,6 @@
 
 ```text
 error: Judge credentials are unavailable.
-Code: judge-key-unresolved
 Source: evals/quality.eval.ts:8:10
 Set TYPESAFE_API_KEY before running this evaluation.
 ```
@@ -22,8 +21,7 @@ Set TYPESAFE_API_KEY before running this evaluation.
 
 ```text
 error: This Judge configuration requires migration.
-Code: migration-required
-Guide: judge-provider
+Migration locations: 1
 Source: niceeval.config.ts:6:17
 Subject: defineConfig.judgeProvider
 
@@ -34,6 +32,8 @@ Subject: defineConfig.judgeProvider
 
 示例中的省略号只表示文档示意；实际反馈交付整篇随包指南。不同位置共用同一 guide 时先列全部已收集位置，
 再显示一次正文。终端可以复用现有缩进与 panel 能力，但不能静默截断迁移步骤。
+
+人读标题使用普通英文说明与位置计数，内部错误 code 和 guide ID 留在机器字段中；指南正文中的迁移标识仍照实交付。
 
 ## 同类错误的首次提示与终局摘要
 
