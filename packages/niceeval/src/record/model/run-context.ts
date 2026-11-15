@@ -1,4 +1,4 @@
-import { ResolvedModelRolesSchema, type ResolvedModelRoles } from "../../model-roles.ts";
+import { ModelRolesWireSchema, type ModelRolesWire } from "../../model-roles.ts";
 import { AdapterCleanupTimeoutMsSchema } from "../../shared/adapter-cleanup.ts";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -53,7 +53,7 @@ export interface RunPluginIdentity {
 /** Record JSON boundary: historical missing identity claims remain omitted during encoding. */
 export interface RunExecutionContext {
   readonly plugins?: readonly RunPluginIdentity[];
-  readonly models?: ResolvedModelRoles;
+  readonly models?: ModelRolesWire;
   readonly adapter: AdapterIdentity;
   readonly model: string | null;
   readonly reasoningEffort: string | null;
@@ -112,7 +112,7 @@ export const RunPluginIdentitySchema: Schema.Codec<RunPluginIdentity> = Schema.S
 
 const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Struct({
   plugins: Schema.optionalKey(Schema.Array(RunPluginIdentitySchema)),
-  models: Schema.optionalKey(ResolvedModelRolesSchema),
+  models: Schema.optionalKey(ModelRolesWireSchema),
   adapter: AdapterIdentitySchema,
   model: Schema.NullOr(Schema.String),
   reasoningEffort: Schema.NullOr(Schema.String),

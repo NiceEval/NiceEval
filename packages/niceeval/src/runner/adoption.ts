@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 import { Data, Effect, Result, Schema } from "effect";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { adapterIdentity } from "../adapter.ts";
+import { modelRolesToWire } from "../model-roles.ts";
 
 import { encodeAttemptLocator, parseAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
@@ -387,7 +388,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
     experimentId: run.experimentId,
     execution: {
       adapter: adapterIdentity(run.adapter),
-      ...(run.adapter?.kind === "custom" ? { models: run.models ?? {} } : {}),
+      ...(run.adapter?.kind === "custom" ? { models: modelRolesToWire(run.models ?? {}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,

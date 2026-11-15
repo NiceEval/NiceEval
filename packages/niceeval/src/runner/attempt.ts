@@ -1,3 +1,4 @@
+import { modelRolesToWire } from "../model-roles.ts";
 import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
 import { randomUUID } from "node:crypto";
 import { pauseOnFailure } from "./pause-on-failure.ts";
@@ -4527,7 +4528,7 @@ export function experimentRunInfo(
 ): EvalResult["experiment"] {
   const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
   return {
-    ...(run.models === undefined ? {} : { models: run.models }),
+    ...(run.models === undefined ? {} : { models: modelRolesToWire(run.models) }),
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),

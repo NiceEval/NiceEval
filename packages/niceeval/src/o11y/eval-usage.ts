@@ -142,7 +142,10 @@ export function projectAdapterEvalUsage(usage: ReadableAdapterUsageAttachment, m
     scope: "attempt",
     basis: "recorded-calls",
     cut: "call-time",
-    cacheRead: authorCacheRead(projectCacheRead(usage, models, true), models),
+    cacheRead: authorCacheRead(
+      projectCacheRead(usage, models === undefined ? undefined : Object.keys(models), true),
+      models,
+    ),
     inputTokens: adapterTokenMaterial(usage, "inputTokens"),
     inputTotalTokens: adapterTokenMaterial(usage, "inputTotalTokens"),
     outputTokens: adapterTokenMaterial(usage, "outputTokens"),

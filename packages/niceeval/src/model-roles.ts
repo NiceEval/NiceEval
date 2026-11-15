@@ -6,13 +6,42 @@ export interface ModelRoleSelection {
   readonly reasoningEffort?: string | undefined;
 }
 
-/** Frozen selection; null preserves an unspecified native default. */
+/** Frozen callback selection; undefined preserves an unspecified native default. */
 export interface ResolvedModelRole {
-  readonly model: string | null;
-  readonly reasoningEffort: string | null;
+  readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
 }
 /** Provides readonly application model selections indexed by role; these are application models rather than Judge Provider settings. */
 export type ResolvedModelRoles = Readonly<Record<string, ResolvedModelRole>>;
+
+/** JSON and identity boundary: both nullable fields are always present. */
+export interface ModelRoleWire {
+  readonly model: string | null;
+  readonly reasoningEffort: string | null;
+}
+export type ModelRolesWire = Readonly<Record<string, ModelRoleWire>>;
+
+/** Preserve role insertion order and explicit nulls in historical identity material. */
+export function modelRolesToWire(models: ResolvedModelRoles): ModelRolesWire {
+  return Object.fromEntries(
+    Object.entries(models).map(([role, value]) => [
+      role,
+      { model: value.model ?? null, reasoningEffort: value.reasoningEffort ?? null },
+    ]),
+  );
+}
+
+/** Decode trusted JSON selections only when entering an internal consumer. */
+export function modelRolesFromWire(models: ModelRolesWire): ResolvedModelRoles {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(models).map(([role, value]) => [
+        role,
+        Object.freeze({ model: value.model ?? undefined, reasoningEffort: value.reasoningEffort ?? undefined }),
+      ]),
+    ),
+  );
+}
 
 const modelText = Schema.String.check(Schema.isPattern(/\S/u));
 const roleKey = Schema.String.check(Schema.isPattern(/^[A-Za-z][A-Za-z0-9_-]{0,63}$(?![\s\S])/u));
@@ -57,7 +86,7 @@ export function assertRequiredModelRoles(
   if (missing.length > 0) throw new TypeError(`${subject} requires undeclared model roles: ${missing.join(", ")}.`);
 }
 
-export const ResolvedModelRolesSchema: Schema.Codec<ResolvedModelRoles> = Schema.Record(
+export const ModelRolesWireSchema: Schema.Codec<ModelRolesWire> = Schema.Record(
   roleKey,
   Schema.Struct({
     model: Schema.NullOr(modelText),
@@ -76,21 +105,23 @@ export function normalizeModelRoles(input: {
       throw new TypeError("Experiment models cannot be combined with model or reasoningEffort.");
     }
     const decoded = Schema.decodeUnknownSync(selections, { onExcessProperty: "error" })(input.models);
-    return Object.fromEntries(
-      Object.keys(decoded)
-        .sort()
-        .map((key) => {
-          const value = decoded[key]!;
-          return [key, { model: value.model, reasoningEffort: value.reasoningEffort ?? null }];
-        }),
+    return Object.freeze(
+      Object.fromEntries(
+        Object.keys(decoded)
+          .sort()
+          .map((key) => {
+            const value = decoded[key]!;
+            return [key, Object.freeze({ model: value.model, reasoningEffort: value.reasoningEffort })];
+          }),
+      ),
     );
   }
-  if (input.model === undefined && input.reasoningEffort === undefined) return {};
-  return {
-    default: {
-      model: input.model === undefined ? null : Schema.decodeUnknownSync(modelText)(input.model),
+  if (input.model === undefined && input.reasoningEffort === undefined) return Object.freeze({});
+  return Object.freeze({
+    default: Object.freeze({
+      model: input.model === undefined ? undefined : Schema.decodeUnknownSync(modelText)(input.model),
       reasoningEffort:
-        input.reasoningEffort === undefined ? null : Schema.decodeUnknownSync(modelText)(input.reasoningEffort),
-    },
-  };
+        input.reasoningEffort === undefined ? undefined : Schema.decodeUnknownSync(modelText)(input.reasoningEffort),
+    }),
+  });
 }

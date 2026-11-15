@@ -1,4 +1,4 @@
-import type { ModelRoleSelection, ResolvedModelRoles } from "../model-roles.ts";
+import type { ModelRoleSelection, ResolvedModelRoles, ModelRolesWire } from "../model-roles.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
 import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "../adapter-flags.ts";
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
@@ -45,7 +45,7 @@ import type { PluginInstance, PluginOnUnavailable } from "../plugin/contracts.ts
  * 这里不复制(见 docs/feature/record/architecture.md「run.json」)。
  */
 export interface ExperimentRunInfo {
-  readonly models?: ResolvedModelRoles;
+  readonly models?: ModelRolesWire;
   description?: string;
   reasoningEffort?: string;
   flags?: globalThis.Record<string, JsonValue>;

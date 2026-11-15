@@ -85,3 +85,24 @@ test.concurrent("省略模型配置保留冻结空映射及空别名", async () 
     ]);
   });
 });
+
+// @feature docs/feature/adapters/README.md
+test.concurrent("仅模型配置将缺失强度交给回调并在读回保留 null", async () => {
+  const experimentId = "model-only";
+  const bindings = [{ modelRole: "default", model: "fixture/default", reasoningEffort: null, recordedCalls: 0 }];
+  await evalE2E.case(experimentId, async ({ paths, commands: { niceeval } }) => {
+    const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+    expect(run.exitCode, run.diagnostic()).toBe(0);
+    const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
+    expect(event.verdict).toBe("passed");
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
+    expect(read.exitCode, read.diagnostic()).toBe(0);
+    const usage = read.inspectionSuccess("attempt.usage").usage;
+    expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
+    expect(usage.calls).toEqual([
+      expect.objectContaining({ callId: "unattributed", modelRole: null }),
+      expect.objectContaining({ callId: "explicit-null", modelRole: null }),
+    ]);
+  });
+});

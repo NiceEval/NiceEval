@@ -8,11 +8,12 @@ export default roles.defineEval({
     const second = t.selection();
     t.check(first.sameSelection && second.sameSelection && first.models === second.models, equals(true)).gate();
     t.check(first.frozen, equals(true)).gate();
+    t.check(first.requiredKeys && first.absentValues, equals(true)).gate();
     t.check(first.keys, equals([...first.keys].sort())).gate();
-    t.check(first.model, equals(first.models.default?.model ?? null)).gate();
-    t.check(first.reasoningEffort, equals(first.models.default?.reasoningEffort ?? null)).gate();
-    t.check(t.model ?? null, equals(first.model)).gate();
-    t.check(t.reasoningEffort ?? null, equals(first.reasoningEffort)).gate();
+    t.check(first.model, equals(first.models.default?.model)).gate();
+    t.check(first.reasoningEffort, equals(first.models.default?.reasoningEffort)).gate();
+    t.check(t.model, equals(first.model)).gate();
+    t.check(t.reasoningEffort, equals(first.reasoningEffort)).gate();
     // An unattributed observation makes the ledger available without inventing a default reference.
     t.record({
       callId: "unattributed",

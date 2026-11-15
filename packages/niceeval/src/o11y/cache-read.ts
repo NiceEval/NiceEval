@@ -1,5 +1,4 @@
 import * as Schema from "effect/Schema";
-import type { ResolvedModelRoles } from "../model-roles.ts";
 import type { AdapterUsageCall, ReadableAdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
 import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 
@@ -140,13 +139,13 @@ const compare = (a: string | null, b: string | null): number => {
 /** A historical collection marked complete is not proof of an explicit producer seal. */
 export function projectCacheRead(
   usage: ReadableAdapterUsageAttachment | undefined,
-  roles: ResolvedModelRoles | undefined,
+  roles: readonly string[] | undefined,
   producerCompletenessKnown: boolean,
   absent: "usage-not-recorded" | "source-invalid" | "adapter-usage-required" = "usage-not-recorded",
 ): CacheReadReport {
   if (usage === undefined) return { total: summary([], false, absent), roles: [], models: [] };
   const complete = producerCompletenessKnown && usage.collection.state === "complete";
-  const byRole = new Map<string | null, AdapterUsageCall[]>(Object.keys(roles ?? {}).map((role) => [role, []]));
+  const byRole = new Map<string | null, AdapterUsageCall[]>((roles ?? []).map((role) => [role, []]));
   const byModel = new Map<string, AdapterUsageCall[]>();
   for (const call of usage.calls) {
     const role = byRole.get(call.modelSlot);

@@ -1,3 +1,4 @@
+import { modelRolesToWire } from "../../model-roles.ts";
 import { identityManifestEntry } from "../identity-manifests.ts";
 import type { EvalManifest } from "../../record/manifest.ts";
 import type { IdentityManifestEntry } from "../../record/family/identity-manifests/schema.ts";
@@ -145,7 +146,7 @@ function runContextFor(
     execution: {
       adapter: adapterIdentity(run.adapter),
       ...(uniquePlugins.length === 0 ? {} : { plugins: uniquePlugins }),
-      ...(run.adapter?.kind === "custom" ? { models: run.models ?? {} } : {}),
+      ...(run.adapter?.kind === "custom" ? { models: modelRolesToWire(run.models ?? {}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,

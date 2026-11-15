@@ -305,7 +305,8 @@ interface ExperimentHostRenameRequest {
 它与顶层 model、reasoningEffort 互斥，Agent Experiment 不接受 models。
 用途键匹配 `[A-Za-z][A-Za-z0-9_-]{0,63}`，非空映射最多 64 项，每项 model 非空。路由仍属于应用 flags。
 
-框架将单模型简写归一到固定 default 用途；仅 effort 时 default.model 为 null，完全省略时为空映射。
-具名 default 与相同单模型简写具有相同配置身份；新普通 Adapter 的配置身份包含 models version 1，历史未登记配置保持原身份域。
+框架将单模型简写归一到固定 default 用途；仅 effort 时 default.model 为 `undefined`，完全省略时为空映射。
+配置身份与 Run Context 把未配置的值编码为 `null`，所以这一内部表示不改变任何已有配置身份。
+具名 default 与相同单模型简写具有相同配置身份；普通 Adapter 的配置身份包含 `models: { slots }`，完全省略时为空映射。
 映射按键排序并深度冻结。Adapter 的 ctx.model、ctx.reasoningEffort 只派生自 default，缺席时为 undefined。
 Adapter 使用 ctx.models 执行选择，不支持的 effort 在应用启动前拒绝，实际模型回退仍可按真实调用上报。

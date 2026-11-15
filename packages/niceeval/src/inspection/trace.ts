@@ -11,7 +11,7 @@ import {
 } from "../o11y/adapter-usage-projection.ts";
 import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-projection.ts";
 import { recordedCostGaps } from "../o11y/cost-gaps.ts";
-import type { ResolvedModelRoles } from "../model-roles.ts";
+import type { ModelRolesWire } from "../model-roles.ts";
 
 import { Result, Schema } from "effect";
 
@@ -71,7 +71,7 @@ export interface TraceAttachmentInput {
 export interface AttemptTraceAttachments {
   readonly attemptCost: TraceAttachmentInput | undefined;
   /** Only the sealed origin Run's configuration may validate or describe these calls. */
-  readonly models: ResolvedModelRoles | undefined;
+  readonly models: ModelRolesWire | undefined;
   readonly adapterUsage: TraceAttachmentInput | undefined;
   readonly judgeUsage: TraceAttachmentInput | undefined;
   readonly agentTurns: TraceAttachmentInput | undefined;
@@ -995,7 +995,7 @@ function invalidRead<Value>(issue: string): AttachmentRead<Value> {
 /** Decode only the current official usage payload. */
 function readAdapterUsageAttachment(
   attachment: TraceAttachmentInput | undefined,
-  models: ResolvedModelRoles | undefined,
+  models: ModelRolesWire | undefined,
 ): AttachmentRead<ReadableAdapterUsageAttachment> {
   const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.adapterUsage, attachment);
   if (
@@ -1121,7 +1121,7 @@ export function projectAttemptRepricing(
 
 export function projectAttemptUsage(
   attachments: Pick<AttemptTraceAttachments, "models" | "adapterUsage" | "judgeUsage" | "attemptCost" | "agentTurns">,
-  models: ResolvedModelRoles | undefined = attachments.models,
+  models: ModelRolesWire | undefined = attachments.models,
 ): InspectionAttemptUsageResult {
   const usage = projectApplicationUsage(attachments, models);
   const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
@@ -1157,7 +1157,7 @@ export function projectAttemptUsage(
 
 export function projectApplicationUsage(
   attachments: Pick<AttemptTraceAttachments, "adapterUsage" | "agentTurns">,
-  models: ResolvedModelRoles | undefined,
+  models: ModelRolesWire | undefined,
 ): Omit<InspectionAttemptUsageResult, "judgeUsage" | "totalCosts"> {
   if (attachments.adapterUsage !== undefined) {
     const read = readAdapterUsageAttachment(attachments.adapterUsage, models);
@@ -1285,7 +1285,7 @@ export function projectApplicationUsage(
 
 export function projectAdapterUsageTokens(
   attachment: TraceAttachmentInput,
-  models?: ResolvedModelRoles,
+  models?: ModelRolesWire,
 ): { readonly value: number | null; readonly state: "available" | "partial" | "unavailable" | "failed" } {
   const read = readAdapterUsageAttachment(attachment, models);
   if (read.state !== "available") {

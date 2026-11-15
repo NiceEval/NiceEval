@@ -6,7 +6,7 @@ import type {
 } from "../record/family/adapter-usage/schema.ts";
 import { addCanonicalDecimals } from "../record/family/adapter-usage/pricing.ts";
 import type { NumericMaterial } from "../assertions/match.ts";
-import type { ResolvedModelRoles } from "../model-roles.ts";
+import type { ModelRolesWire } from "../model-roles.ts";
 import { compareAdapterModelGroups } from "./usage-contract.ts";
 export interface EffectiveCallCost {
   readonly amount: string;
@@ -174,7 +174,7 @@ export function adapterInspectionTokenTotal(
 /** Configuration counts and grouped statistics both consume the complete sealed ledger. */
 export function projectAdapterModelUsage(
   usage: ReadableAdapterUsageAttachment | undefined,
-  models: ResolvedModelRoles | undefined,
+  models: ModelRolesWire | undefined,
   unavailable: {
     readonly basis: "recorded-calls" | "reported-sends" | "unavailable";
     readonly reason: "source-invalid" | "usage-not-recorded" | "physical-call-identity-not-recorded";
@@ -183,7 +183,7 @@ export function projectAdapterModelUsage(
 ) {
   const cacheRead = projectCacheRead(
     usage,
-    models,
+    models === undefined ? undefined : Object.keys(models),
     producerCompletenessKnown,
     unavailable.reason === "physical-call-identity-not-recorded" ? "adapter-usage-required" : unavailable.reason,
   );
@@ -200,7 +200,8 @@ export function projectAdapterModelUsage(
             .sort()
             .map((modelRole) => ({
               modelRole,
-              ...models[modelRole]!,
+              model: models[modelRole]!.model,
+              reasoningEffort: models[modelRole]!.reasoningEffort,
               recordedCalls: usage === undefined ? null : (counts.get(modelRole) ?? 0),
             })),
         };
