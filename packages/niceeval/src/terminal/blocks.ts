@@ -221,7 +221,7 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
       }
     }
     if (child.kind === "divider") {
-      rows.push({ kind: "divider", title: child.title, meta: child.meta });
+      rows.push({ kind: "divider", title: child.title, ...(child.meta === undefined ? {} : { meta: child.meta }) });
       return;
     }
     rows.push(
@@ -232,13 +232,13 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
     );
   });
   return renderPanel({
-    title: block.title,
-    meta: block.meta,
-    footerCommand: block.footerCommand,
+    ...(block.title === undefined ? {} : { title: block.title }),
+    ...(block.meta === undefined ? {} : { meta: block.meta }),
+    ...(block.footerCommand === undefined ? {} : { footerCommand: block.footerCommand }),
     rows,
     width: options.width,
     mode: options.mode,
-    capWidth: block.capWidth,
+    ...(block.capWidth === undefined ? {} : { capWidth: block.capWidth }),
   });
 }
 
