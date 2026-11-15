@@ -23,7 +23,7 @@ import type {
   StreamEvent,
   TurnEvidenceCoverage,
 } from "../types.ts";
-import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { makeSendFailure, normalizeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
 // 行为轨优先 stdout JSONL,不足时 `opencode export <sessionID>`。
@@ -192,91 +192,94 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     send: (input, ctx) =>
       Effect.gen(function* () {
         const sb = ctx.sandbox;
-        const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode");
-        return yield* Effect.tryPromise({
-          try: async (signal) => {
-            const baseUrl = resolveBaseUrl(config);
-            const args = ["run", input.text, "--format", "json", "--auto"];
-            const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
-            if (model) args.push("--model", model);
-            if (ctx.session.id) args.push("--session", ctx.session.id);
+        const opencodeBin = yield* resolveAgentBinEffect(sb, "opencode").pipe(Effect.mapError(normalizeSendFailure));
+        const baseUrl = resolveBaseUrl(config);
+        const args = ["run", input.text, "--format", "json", "--auto"];
+        const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
+        if (model) args.push("--model", model);
+        if (ctx.session.id) args.push("--session", ctx.session.id);
 
-            const apiKey = resolveApiKey(config);
-            const env: globalThis.Record<string, string> = {
-              OPENCODE_API_KEY: apiKey,
-              OPENAI_API_KEY: apiKey,
-              ANTHROPIC_API_KEY: apiKey,
-              ...ctx.telemetry?.env,
-            };
-            if (baseUrl) {
-              env.OPENCODE_BASE_URL = baseUrl;
-              env.OPENAI_BASE_URL = baseUrl;
-            }
+        const apiKey = yield* Effect.try({ try: () => resolveApiKey(config), catch: normalizeSendFailure });
+        const env: globalThis.Record<string, string> = {
+          OPENCODE_API_KEY: apiKey,
+          OPENAI_API_KEY: apiKey,
+          ANTHROPIC_API_KEY: apiKey,
+          ...ctx.telemetry?.env,
+        };
+        if (baseUrl) {
+          env.OPENCODE_BASE_URL = baseUrl;
+          env.OPENAI_BASE_URL = baseUrl;
+        }
 
-            const sensitiveValues = [apiKey];
-            const res = await sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal });
-            let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
-            let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
+        const sensitiveValues = [apiKey];
+        const res = yield* Effect.tryPromise({
+          try: (signal) => sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal }),
+          catch: normalizeSendFailure,
+        });
+        let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
+        let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
+        if (sessionId) ctx.session.capture(sessionId);
+
+        let parsed = parseOpenCodeTranscript(raw);
+        let hasUnrecognizedEvents = Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
+        const unknown = unknownEvents.get(sb.sandboxId);
+        unknown?.observe(parsed.unrecognizedEvents);
+        // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
+        // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
+        const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
+        const hasMessages = parsed.events.some((e) => e.type === "message");
+        const sid = sessionId ?? ctx.session.id;
+        if (!hasActions && !hasMessages && sid) {
+          const exported = yield* Effect.tryPromise({
+            try: (signal) => sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal }),
+            catch: normalizeSendFailure,
+          });
+          if (exported.exitCode === 0 && exported.stdout.trim()) {
+            raw = exported.stdout;
+            parsed = parseOpenCodeTranscript(raw);
+            hasUnrecognizedEvents ||= Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
+            unknown?.observe(parsed.unrecognizedEvents, `export:${sid}`);
+            sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
             if (sessionId) ctx.session.capture(sessionId);
+          }
+        }
 
-            let parsed = parseOpenCodeTranscript(raw);
-            let hasUnrecognizedEvents = Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
-            const unknown = unknownEvents.get(sb.sandboxId);
-            unknown?.observe(parsed.unrecognizedEvents);
-            // 仅当 stdout 既没有工具也没有助手文本时才 export 补读——纯对话轮
-            // (session/recall) 的 text 事件已在 JSONL 里,再 export 会冲掉已解析事件。
-            const hasActions = parsed.events.some((e) => e.type === "operation.started" && e.operation.kind === "tool");
-            const hasMessages = parsed.events.some((e) => e.type === "message");
-            if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
-              const sid = sessionId ?? ctx.session.id!;
-              const exported = await sb.runCommand(opencodeBin, ["export", sid], { env, sensitiveValues, signal });
-              if (exported.exitCode === 0 && exported.stdout.trim()) {
-                raw = exported.stdout;
-                parsed = parseOpenCodeTranscript(raw);
-                hasUnrecognizedEvents ||= Object.keys(parsed.unrecognizedEvents ?? {}).length > 0;
-                unknown?.observe(parsed.unrecognizedEvents, `export:${sid}`);
-                sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionId;
-                if (sessionId) ctx.session.capture(sessionId);
-              }
-            }
-
-            const events: StreamEvent[] = [...parsed.events];
-            const hasErrorEvent = events.some((e) => e.type === "error");
-            let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-            if (!raw?.trim()) {
-              const reason = "OpenCode transcript/export was unavailable; tool trace was not observed.";
-              turnEvidenceCoverage = {
-                events: { status: "unavailable", reason },
-                actions: { status: "unavailable", reason },
-                usage: { status: "unavailable", reason },
-              };
-            } else if (!parsed.parseSuccess || hasUnrecognizedEvents) {
-              const reason = "Some OpenCode transcript lines could not be parsed.";
-              turnEvidenceCoverage = {
-                events: { status: "partial", reason },
-                actions: { status: "partial", reason },
-              };
-            } else {
-              turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-            }
-            if (res.exitCode !== 0) {
-              throw makeSendFailure({
-                acceptance: sendAcceptanceFromEvents(events),
-                message: shared.diagnoseFailure(res, parsed.events, raw),
-                events,
-                usage: parsed.usage,
-                process: res,
-              });
-            }
-            return {
+        const events: StreamEvent[] = [...parsed.events];
+        const hasErrorEvent = events.some((e) => e.type === "error");
+        let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+        if (!raw?.trim()) {
+          const reason = "OpenCode transcript/export was unavailable; tool trace was not observed.";
+          turnEvidenceCoverage = {
+            events: { status: "unavailable", reason },
+            actions: { status: "unavailable", reason },
+            usage: { status: "unavailable", reason },
+          };
+        } else if (!parsed.parseSuccess || hasUnrecognizedEvents) {
+          const reason = "Some OpenCode transcript lines could not be parsed.";
+          turnEvidenceCoverage = {
+            events: { status: "partial", reason },
+            actions: { status: "partial", reason },
+          };
+        } else {
+          turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+        }
+        if (res.exitCode !== 0) {
+          return yield* Effect.fail(
+            makeSendFailure({
+              acceptance: sendAcceptanceFromEvents(events),
+              message: shared.diagnoseFailure(res, parsed.events, raw),
               events,
               usage: parsed.usage,
-              status: hasErrorEvent ? ("failed" as const) : ("completed" as const),
-              ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
-            };
-          },
-          catch: (cause) => cause,
-        });
+              process: res,
+            }),
+          );
+        }
+        return {
+          events,
+          usage: parsed.usage,
+          status: hasErrorEvent ? ("failed" as const) : ("completed" as const),
+          ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+        };
       }),
   });
 }

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
-import { makeSendFailure } from "../context/send-failures.ts";
+import { makeSendFailure, normalizeSendFailure } from "../context/send-failures.ts";
 import { shared } from "./shared.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { shell } from "../sandbox/commands.ts";
@@ -137,41 +137,44 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
 
     send: (input, ctx) =>
       Effect.gen(function* () {
-        const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh");
-        return yield* Effect.tryPromise({
-          try: async (signal) => {
-            const apiKey = resolveApiKey(config);
-            const dshHome = homes.get(ctx.sandbox.sandboxId);
-            if (!dshHome) throw new Error("DeepSeek Harness setup state is unavailable");
-            const env: globalThis.Record<string, string> = {
-              DEEPSEEK_API_KEY: apiKey,
-              DSH_HOME: dshHome,
-              ...ctx.telemetry?.env,
-            };
-            const baseUrl = resolveBaseUrl(config);
-            if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
-            const res = await ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
+        const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh").pipe(Effect.mapError(normalizeSendFailure));
+        const apiKey = yield* Effect.try({ try: () => resolveApiKey(config), catch: normalizeSendFailure });
+        const dshHome = homes.get(ctx.sandbox.sandboxId);
+        if (!dshHome) {
+          return yield* Effect.fail(normalizeSendFailure(new Error("DeepSeek Harness setup state is unavailable")));
+        }
+        const env: globalThis.Record<string, string> = {
+          DEEPSEEK_API_KEY: apiKey,
+          DSH_HOME: dshHome,
+          ...ctx.telemetry?.env,
+        };
+        const baseUrl = resolveBaseUrl(config);
+        if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
+        const res = yield* Effect.tryPromise({
+          try: (signal) =>
+            ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
               env,
               sensitiveValues: [apiKey],
               stream: true,
               signal,
-            });
-            const text = res.stdout.trim();
-            if (res.exitCode !== 0 || !text) {
-              throw makeSendFailure({
-                acceptance: "unknown",
-                message:
-                  res.exitCode !== 0
-                    ? shared.diagnoseFailure(res, [], undefined)
-                    : "DeepSeek Harness exited successfully without a final assistant message.",
-                process: res,
-              });
-            }
-            const events: StreamEvent[] = [{ type: "message", role: "assistant", text }];
-            return { events, status: "completed" as const };
-          },
-          catch: (cause) => cause,
+            }),
+          catch: normalizeSendFailure,
         });
+        const text = res.stdout.trim();
+        if (res.exitCode !== 0 || !text) {
+          return yield* Effect.fail(
+            makeSendFailure({
+              acceptance: "unknown",
+              message:
+                res.exitCode !== 0
+                  ? shared.diagnoseFailure(res, [], undefined)
+                  : "DeepSeek Harness exited successfully without a final assistant message.",
+              process: res,
+            }),
+          );
+        }
+        const events: StreamEvent[] = [{ type: "message", role: "assistant", text }];
+        return { events, status: "completed" as const };
       }),
   });
 }

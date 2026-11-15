@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
-import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
+import { makeSendFailure, normalizeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { shared } from "./shared.ts";
 import { createPiAgentEventStream, type PiAgentEventLike } from "./sdk-streams.ts";
 import { normalizeToolName } from "../o11y/tool-names.ts";
@@ -146,75 +146,76 @@ export function ompAgent(config?: OmpConfig): Agent {
 
     send: (input, ctx) =>
       Effect.gen(function* () {
-        const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp");
-        return yield* Effect.tryPromise({
-          try: async (signal) => {
-            const apiKey = resolveApiKey(config);
-            const dir = configDirs.get(ctx.sandbox.sandboxId);
-            if (!dir) throw new Error("OMP setup state is unavailable");
-            const model = ctx.model ?? "deepseek-v4-flash";
-            const env: globalThis.Record<string, string> = {
-              [API_KEY_ENV]: apiKey,
-              PI_CODING_AGENT_DIR: dir,
-              ...ctx.telemetry?.env,
-            };
-            const args = [
-              "--print",
-              "--mode",
-              "json",
-              "--model",
-              `${COMPAT_PROVIDER}/${model}`,
-              "--approval-mode",
-              "yolo",
-              "--no-pty",
-              "--no-title",
-              input.text,
-            ];
-            const res = await ctx.sandbox.runCommand(ompBin, args, {
+        const ompBin = yield* resolveAgentBinEffect(ctx.sandbox, "omp").pipe(Effect.mapError(normalizeSendFailure));
+        const apiKey = yield* Effect.try({ try: () => resolveApiKey(config), catch: normalizeSendFailure });
+        const dir = configDirs.get(ctx.sandbox.sandboxId);
+        if (!dir) {
+          return yield* Effect.fail(normalizeSendFailure(new Error("OMP setup state is unavailable")));
+        }
+        const model = ctx.model ?? "deepseek-v4-flash";
+        const env: globalThis.Record<string, string> = {
+          [API_KEY_ENV]: apiKey,
+          PI_CODING_AGENT_DIR: dir,
+          ...ctx.telemetry?.env,
+        };
+        const args = [
+          "--print",
+          "--mode",
+          "json",
+          "--model",
+          `${COMPAT_PROVIDER}/${model}`,
+          "--approval-mode",
+          "yolo",
+          "--no-pty",
+          "--no-title",
+          input.text,
+        ];
+        const res = yield* Effect.tryPromise({
+          try: (signal) =>
+            ctx.sandbox.runCommand(ompBin, args, {
               env,
               sensitiveValues: [apiKey],
               stream: true,
               signal,
-            });
-
-            let nativeEvents: PiAgentEventLike[];
-            try {
-              nativeEvents = parseJsonl(res.stdout);
-            } catch (cause) {
-              throw makeSendFailure({
-                acceptance: "unknown",
-                message: cause instanceof Error ? cause.message : "OMP transcript could not be parsed",
-                process: res,
-              });
-            }
-            const stream = createPiAgentEventStream();
-            const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
-            const terminal = nativeEvents.filter(
-              (event) =>
-                event.type === "agent_end" &&
-                (event as { isTerminal?: unknown }).isTerminal !== false &&
-                Array.isArray((event as { messages?: unknown }).messages),
-            );
-            if (res.exitCode !== 0 || terminal.length !== 1) {
-              throw makeSendFailure({
-                acceptance: sendAcceptanceFromEvents(events),
-                message:
-                  res.exitCode !== 0
-                    ? shared.diagnoseFailure(res, events, res.stdout)
-                    : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
-                events,
-                ...(stream.usage === undefined ? {} : { usage: stream.usage }),
-                process: res,
-              });
-            }
-            return {
+            }),
+          catch: normalizeSendFailure,
+        });
+        const nativeEvents = yield* Effect.try({
+          try: () => parseJsonl(res.stdout),
+          catch: (cause) =>
+            makeSendFailure({
+              acceptance: "unknown",
+              message: cause instanceof Error ? cause.message : "OMP transcript could not be parsed",
+              process: res,
+            }),
+        });
+        const stream = createPiAgentEventStream();
+        const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
+        const terminal = nativeEvents.filter(
+          (event) =>
+            event.type === "agent_end" &&
+            (event as { isTerminal?: unknown }).isTerminal !== false &&
+            Array.isArray((event as { messages?: unknown }).messages),
+        );
+        if (res.exitCode !== 0 || terminal.length !== 1) {
+          return yield* Effect.fail(
+            makeSendFailure({
+              acceptance: sendAcceptanceFromEvents(events),
+              message:
+                res.exitCode !== 0
+                  ? shared.diagnoseFailure(res, events, res.stdout)
+                  : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
               events,
               ...(stream.usage === undefined ? {} : { usage: stream.usage }),
-              status: stream.failed ? ("failed" as const) : ("completed" as const),
-            };
-          },
-          catch: (cause) => cause,
-        });
+              process: res,
+            }),
+          );
+        }
+        return {
+          events,
+          ...(stream.usage === undefined ? {} : { usage: stream.usage }),
+          status: stream.failed ? ("failed" as const) : ("completed" as const),
+        };
       }),
   });
 }
