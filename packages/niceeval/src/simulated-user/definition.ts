@@ -5,7 +5,7 @@ import type { TurnHandle } from "../context/types.ts";
 export interface SimulatedUserDefinition {
   readonly instructions: string;
   /** Answer generation budget; the subsequent Agent Turn uses its normal deadline. */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | undefined;
 }
 
 /** One Attempt-local simulated user bound to an Agent Session. */
