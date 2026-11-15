@@ -9,15 +9,12 @@ const terminal = Semaphore.makeUnsafe(1);
 export const pauseOnFailure = Effect.fn("pauseOnFailure")(function* (
   nativeCommand: string | undefined,
   invocationSignal: AbortSignal | undefined,
-  options: { readonly nonInteractive?: boolean } = {},
+  options: { readonly nonInteractive?: boolean; readonly sandboxId?: string } = {},
 ) {
   if (process.stdin.isTTY !== true || options.nonInteractive === true) {
     try {
       reportPausePrompt(
-        [
-          "Sandbox retained for debugging. Continuing without waiting for input.",
-          ...(nativeCommand === undefined ? [] : [`  ➜ Debug natively: ${nativeCommand}`]),
-        ].join("\n"),
+        `Pause on failure needs an interactive single-attempt terminal; cleaning up ${options.sandboxId ?? "(no sandbox)"}. Use --keep-sandbox to retain it.`,
       );
     } catch {
       // A closed output stream must not prevent cleanup.

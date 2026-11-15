@@ -839,7 +839,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       ? undefined
                       : nativeEnterCommand(sandboxFacts.provider, sandboxFacts.sandboxId),
                     parentSignal ?? invocationSignal,
-                    { nonInteractive: opts.maxConcurrency > 1 || process.stdin.isTTY !== true },
+                    {
+                      nonInteractive: opts.maxConcurrency > 1 || process.stdin.isTTY !== true,
+                      sandboxId: currentSandbox?.sandboxId ?? sandboxFacts?.sandboxId,
+                    },
                   ),
                 ),
               );

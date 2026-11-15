@@ -11,7 +11,7 @@
 1. 启动评测并指定在失败时暂停现场：
 
    ```bash
-   niceeval exp local onboarding/tool-first --pause-on-failure
+   niceeval exp local onboarding/tool-first --pause-on-failure --max-concurrency 1
    ```
 
 2. 发生失败时，NiceEval 阻断自动销毁，终端与事件流直接打印底层 Provider 的原生直连命令并进入等待：
@@ -42,6 +42,8 @@
 5. 使用干净沙箱实例重新运行验证修复（干净沙箱才能证明修复不依赖调试期在现场手动修改过的临时状态）。
 
 ## 边界
+
+- 失败挂起仅在单任务交互 TTY 中生效；非 TTY 或并发上限大于 1 时照常回收，并按 [Sandbox CLI](../cli.md) 输出清理提示。自动化排查需要显式使用 `--keep-sandbox`。
 
 - 现场仅作为排查调试依据，不具备断点续跑或就地重判语义。
 - 在沙箱中手动执行的变更属于调试探测，不会自动同步回项目代码或影响已落盘的运行事实。

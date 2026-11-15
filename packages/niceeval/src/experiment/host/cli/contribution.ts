@@ -75,7 +75,11 @@ export const CHECK_CLI_OPTIONS = Object.freeze({
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
-  experiment: option("string", "Select an exact Experiment ID; repeat to select a set.", true),
+  experiment: option(
+    "string",
+    "Select an exact Experiment ID or a directory ending in /; repeat to select a set.",
+    true,
+  ),
   attempts: option("string", "Run each selected Eval this many times."),
   "max-concurrency": option("string", "Limit concurrent Attempt execution."),
   "max-build-concurrency": option("string", "Limit concurrent Sandbox build preparation."),
@@ -168,7 +172,7 @@ const EXP_HELP = `Run and maintain Experiments:
 ${SHARED_STATE_RECOVERY_USAGE}
 
 Run options:
-  --experiment <exact-id>       select an exact Experiment ID (repeatable)
+  --experiment <id-or-dir/>     select an exact ID or directory prefix (repeatable)
   --attempts <n>                 run each selected Eval this many times
   --max-concurrency <n>          limit concurrent Attempt execution
   --max-build-concurrency <n>    limit concurrent Sandbox build preparation
@@ -334,6 +338,16 @@ function checkText(result: { readonly status: string; readonly pairCount?: numbe
     : `Experiment selection: ${result.status}.\n`;
 }
 
+function experimentOptionValues(ids: readonly string[]): readonly string[] {
+  const values = new Set(ids);
+  for (const id of ids) {
+    for (let slash = id.indexOf("/"); slash !== -1; slash = id.indexOf("/", slash + 1)) {
+      values.add(id.slice(0, slash + 1));
+    }
+  }
+  return [...values].sort();
+}
+
 function selectionProblemText(result: {
   readonly status: string;
   readonly selector?: string;
@@ -341,8 +355,8 @@ function selectionProblemText(result: {
   readonly experimentIds?: readonly string[];
 }): string {
   if (result.status === "experiment-no-match") {
-    return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${browsableExperimentPaths(result.candidates ?? []).join(", ") || "(none)"}.
-Run \`niceeval exp <path> --dry\` to preview a plan.
+    return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${experimentOptionValues(result.candidates ?? []).join(", ") || "(none)"}.
+Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
 `;
   }
   if (result.status === "eval-no-match") {
@@ -956,7 +970,7 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
           yield* write(
             "stderr",
             `No experiment matched: ${rest[0]}. Available paths: ${browsableExperimentPaths(result.experimentIds).join(", ") || "(none)"}.
-Run \`niceeval exp <path> --dry\` to preview a plan.
+Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
 `,
           );
           return 1;
@@ -999,11 +1013,38 @@ Run \`niceeval exp <path> --dry\` to preview a plan.
       const config = yield* project
         .load(invocation.cwd)
         .pipe(Effect.mapError((cause) => failure("load config", cause)));
+      let experimentIds = Array.isArray(input.values.experiment) ? input.values.experiment : undefined;
+      if (experimentIds?.some((value) => value.endsWith("/"))) {
+        // Catalog preserves discovery-before-import: only supplied exact IDs can
+        // load here; directory members load after expansion in invocation.plan.
+        const catalog = yield* experimentHost
+          .catalog({ cwd: invocation.cwd, experimentIds })
+          .pipe(Effect.mapError((cause) => failure("discover experiment options", cause)));
+        const expanded = new Set<string>();
+        for (const value of experimentIds) {
+          const matches = catalog.experimentIds.filter((id) =>
+            value.endsWith("/") ? id.startsWith(value) : id === value,
+          );
+          if (matches.length === 0) {
+            yield* write(
+              "stderr",
+              selectionProblemText({
+                status: "experiment-no-match",
+                selector: value,
+                candidates: catalog.experimentIds,
+              }),
+            );
+            return 1;
+          }
+          for (const id of matches) expanded.add(id);
+        }
+        experimentIds = [...expanded];
+      }
       const plan = yield* experimentHost.invocation
         .plan({
           cwd: invocation.cwd,
           config,
-          ...selection(input.positionals, Array.isArray(input.values.experiment) ? input.values.experiment : undefined),
+          ...selection(input.positionals, experimentIds),
           ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
           overrides: overrides(input.values),
           preview: input.values.dry === true,

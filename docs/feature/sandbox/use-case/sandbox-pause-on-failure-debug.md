@@ -22,12 +22,12 @@
    或者在单次执行时通过命令行显式指定：
 
    ```bash
-   niceeval exp install/canary install/db-gpt --pause-on-failure
+   niceeval exp install/canary install/db-gpt --pause-on-failure --max-concurrency 1
    # 或显式关闭挂起行为：
    niceeval exp install/canary install/db-gpt --no-pause
    ```
 
-2. 出现异常或断点触发时，Attempt 暂停销毁并在终端输出原生调试命令：
+2. 在单任务交互 TTY 中出现异常或断点触发时，Attempt 暂停销毁并在终端输出原生调试命令：
 
    ```text
    ⏸ Attempt paused on failure. Sandbox retained for debugging.
@@ -44,11 +44,13 @@
 4. 恢复生命周期或非阻塞收尾：
 
    - 单任务交互终端下（TTY 且单并发），排查完毕后在运行终端按下回车键，框架恢复生命周期并完成沙箱销毁。
-   - 并发执行（并发上限大于 1）或非 TTY（Agent、CI 与自动化管道）运行条件下，框架自动退化为非阻塞现场保留。Attempt 输出现场直连指引后立即完成判定收录并释放并发许可，主 Runner 继续并发推进其它计划 Attempt，不阻塞标准输入。
+   - 并发执行（并发上限大于 1）或非 TTY（Agent、CI 与自动化管道）时，挂起不生效，Sandbox 照常回收。
+     每个失败 Attempt 写一行 stderr：`Pause on failure needs an interactive single-attempt terminal; cleaning up <实例名>. Use --keep-sandbox to retain it.`
+     不写 `retained`；需要事后排查时显式使用 `--keep-sandbox`。
 
 ## 边界
 
-- 挂起是 Attempt 隔离的现场状态，不卡住 Runner 主进程调度，也不阻塞并发队列中其它评测项。
+- 失败挂起仅适用于单任务交互 TTY；回车后恢复受管回收。
 - NiceEval 不自建中间层终端转发服务，保持 core 中立与稳定性。
 - 沙箱保留底层 Provider 的超时 TTL 保护与空闲休眠机制，避免长期闲置造成资损。
 
