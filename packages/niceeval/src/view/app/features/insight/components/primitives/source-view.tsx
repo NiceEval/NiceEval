@@ -107,7 +107,14 @@ function highlightTs(line: string): ReactNode[] {
 
 function renderSourceDetail(node: SourceLineDetail, locale: ReportLocale): ReactNode {
   if (node.kind === "assertion") {
-    return <AssertionEvidence content={node.content} label={node.label} state={node.state} locale={locale} />;
+    return (
+      <AssertionEvidence
+        content={node.content}
+        {...(node.label === undefined ? {} : { label: node.label })}
+        {...(node.state === undefined ? {} : { state: node.state })}
+        locale={locale}
+      />
+    );
   }
   if (node.kind === "turn-trace") return <TurnTrace data={node.data} locale={locale} />;
   return <div className={cx("niceeval-report", "niceeval-text", node.className)}>{node.text}</div>;

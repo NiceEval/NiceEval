@@ -70,7 +70,7 @@ function tableContentOf(data: TableContent): {
     key: spec.key,
     header: spec.header ?? spec.key,
     align: spec.better ? "right" : "left",
-    better: spec.better,
+    ...(spec.better === undefined ? {} : { better: spec.better }),
   }));
   return validatedTable(columns, data);
 }
@@ -327,7 +327,7 @@ function renderCellWeb(cell: Cell | undefined, ctx: TableWebContext, coverageDet
       return (
         <MetricCellView
           cell={cell.metric}
-          href={ctx.showMeasureRefs === false ? undefined : ctx.href}
+          {...(ctx.showMeasureRefs === false ? {} : { href: ctx.href })}
           locale={ctx.locale}
           showCoverage={cell.showCoverage !== false}
           coverageDetail={coverageDetail}

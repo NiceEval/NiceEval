@@ -21,11 +21,11 @@ interface ScatterSeries {
 }
 
 interface PointShapeProps {
-  readonly cx?: number;
-  readonly cy?: number;
+  readonly cx?: number | undefined;
+  readonly cy?: number | undefined;
   readonly payload?: unknown;
-  readonly fill?: string;
-  readonly stroke?: string;
+  readonly fill?: string | undefined;
+  readonly stroke?: string | undefined;
 }
 
 export interface QualityCostScatterProps {
@@ -122,8 +122,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
               type="number"
               dataKey="quality"
               domain={[0, maxQuality]}
-              ticks={kind === "pass" ? [0, 0.25, 0.5, 0.75, 1] : undefined}
-              tickCount={kind === "pass" ? undefined : 5}
+              {...(kind === "pass" ? { ticks: [0, 0.25, 0.5, 0.75, 1] } : { tickCount: 5 })}
               tickFormatter={qualityText}
               name={qualityLabel}
               label={{ value: qualityLabel, angle: -90, position: "insideLeft" }}
@@ -159,7 +158,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
                 fill="var(--series)"
                 stroke={entry.points[0]?.partial ? "var(--warn)" : "var(--panel)"}
                 strokeWidth={2}
-                strokeDasharray={entry.points[0]?.partial ? "2 2" : undefined}
+                {...(entry.points[0]?.partial ? { strokeDasharray: "2 2" } : {})}
                 shape={(shapeProps: PointShapeProps) => (
                   <ExperimentPoint
                     {...shapeProps}

@@ -91,7 +91,7 @@ export function useInspectionQuery<Kind extends InspectionOperationId, Selected 
   const query = inspectionQueryOptions(generation, operation);
   return useQuery<InspectionSuccessDocumentFor<Kind>, Error, Selected, InspectionQueryKey>({
     queryKey: query.queryKey,
-    queryFn: query.queryFn,
+    ...(query.queryFn === undefined ? {} : { queryFn: query.queryFn }),
     enabled,
     ...(options.select === undefined ? {} : { select: options.select }),
   });

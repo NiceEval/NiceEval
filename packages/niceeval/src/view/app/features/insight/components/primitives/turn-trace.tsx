@@ -141,12 +141,13 @@ function lifecycleEntriesOf(
     const finished = turn.entries[finishedIndex]!;
     const raw = [started.raw, finished.raw].filter((value): value is string => value !== undefined).join("\n");
     const details = [started.detail, finished.detail].filter((value) => value !== undefined);
+    const callId = exactToolOccurrenceId(started);
     lifecycleByStartedIndex.set(startedIndex, {
       id: started.id,
       kind: started.kind,
       preview: started.preview,
       ...(started.anchor === undefined ? {} : { anchor: started.anchor }),
-      callId: exactToolOccurrenceId(started),
+      ...(callId === undefined ? {} : { callId }),
       ...(started.toolOccurrence === undefined ? {} : { toolOccurrence: started.toolOccurrence }),
       callPhase: "finished",
       ...(finished.callOutcome === undefined ? {} : { callOutcome: finished.callOutcome }),

@@ -272,7 +272,7 @@ function prepareGeneration(resources: ServerResources): Promise<ViewGeneration> 
   resources.preparing = preparing;
   void preparing
     .finally(() => {
-      resources.preparing = undefined;
+      delete resources.preparing;
     })
     .catch(() => undefined);
   return preparing;
@@ -311,7 +311,7 @@ async function serveCommit(
   }
   const retired = resources.state.current;
   resources.state.current = candidate;
-  resources.state.candidate = undefined;
+  delete resources.state.candidate;
   resources.state.stale = false;
   resources.state.leases.set(candidate.generationId, resources.state.leases.get(candidate.generationId) ?? 0);
   retireIfDrained(resources, retired);

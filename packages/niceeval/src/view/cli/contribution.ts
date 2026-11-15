@@ -148,10 +148,10 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
                     current: false,
                     runIds,
                     experimentIds,
-                    locator: address.locator,
-                    slice: address.aspect,
+                    ...(address.locator === undefined ? {} : { locator: address.locator }),
+                    ...(address.aspect === undefined ? {} : { slice: address.aspect }),
                     entryIds: address.aspect === "assertions" && address.id !== undefined ? [address.id] : [],
-                    changeId: address.aspect === "diff" ? address.id : undefined,
+                    ...(address.aspect === "diff" && address.id !== undefined ? { changeId: address.id } : {}),
                   });
             if (parsed.positionals.length > 0)
               for (const operation of operations)

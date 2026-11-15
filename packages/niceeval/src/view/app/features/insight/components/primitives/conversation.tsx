@@ -505,7 +505,7 @@ export function Conversation({ data, className, locale, title }: ConversationPro
   if (isEmptyConversation(content)) return null;
   return (
     <div className={cx("niceeval-report", "niceeval-conversation", className)}>
-      <SessionSummary content={content!} title={title} locale={locale} />
+      <SessionSummary content={content!} {...(title === undefined ? {} : { title: title })} locale={locale} />
       {content!.turns.map((turn) => (
         <TurnCard key={turn.key} turn={turn} locale={locale} />
       ))}

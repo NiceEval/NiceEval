@@ -855,10 +855,11 @@ function closeConversation(
     const entries = outlineItems
       .filter((item) => item.turnId === turnId)
       .map((item) => closeConversationEntry(itemDetails.get(stringField(item, "itemId")) ?? item));
+    const verdict = turnVerdict(turn.outcome);
     return Object.freeze({
       key: turnId,
       label: `Turn ${integerField(turn, "sequence")}`,
-      verdict: turnVerdict(turn.outcome),
+      ...(verdict === undefined ? {} : { verdict }),
       entries: Object.freeze(entries),
     });
   });

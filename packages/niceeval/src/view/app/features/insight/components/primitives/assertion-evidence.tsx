@@ -184,12 +184,17 @@ function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagn
           ];
         })
       : [];
+  const code = stringValue(field(value, "code"));
+  const expected = field(value, "expected");
+  const received = field(value, "received");
+  const reason = stringValue(field(value, "reason"));
+  const locator = stringValue(field(field(value, "locator"), "id"));
   return {
-    code: stringValue(field(value, "code")),
-    expected: field(value, "expected"),
-    received: field(value, "received"),
-    reason: stringValue(field(value, "reason")),
-    locator: stringValue(field(field(value, "locator"), "id")),
+    ...(code === undefined ? {} : { code }),
+    ...(expected === undefined ? {} : { expected }),
+    ...(received === undefined ? {} : { received }),
+    ...(reason === undefined ? {} : { reason }),
+    ...(locator === undefined ? {} : { locator }),
     children,
   };
 }
@@ -276,11 +281,14 @@ function numericComparisonView(
   const metric = stringValue(field(subjectValue, "metric"));
   const scope = stringValue(field(subjectValue, "scope"));
   const unit = stringValue(field(subjectValue, "unit"));
+  const materialUnit = stringValue(field(input, "unit"));
+  const comparisonUnit = stringValue(field(data, "unit"));
+  const upperThreshold = numberValue(field(data, "upperThreshold"));
   return {
     comparator,
     threshold,
-    upperThreshold: numberValue(field(data, "upperThreshold")),
-    unit: stringValue(field(data, "unit")),
+    ...(upperThreshold === undefined ? {} : { upperThreshold }),
+    ...(comparisonUnit === undefined ? {} : { unit: comparisonUnit }),
     subject: {
       kind: subjectKind,
       ...(metric === "tokens" || metric === "cost" ? { metric } : {}),
@@ -289,7 +297,7 @@ function numericComparisonView(
     },
     material: {
       state: materialState,
-      unit: stringValue(field(input, "unit")),
+      ...(materialUnit === undefined ? {} : { unit: materialUnit }),
       ...(numberValue(field(input, "value")) === undefined ? {} : { value: numberValue(field(input, "value"))! }),
       ...(stringValue(field(input, "reason")) === undefined ? {} : { reason: stringValue(field(input, "reason"))! }),
       ...(field(input, "derivation") === undefined ? {} : { derivation: field(input, "derivation")! }),
@@ -626,7 +634,11 @@ function numericSubjectLabel(view: NumericComparisonView, locale: string): strin
   return label(locale, `${scope} token usage`, `${scope} token 用量`);
 }
 
-function numericValueText(view: NumericComparisonView, value: number, locale: string): string {
+function numericValueText(
+  view: Pick<NumericComparisonView, "unit" | "subject">,
+  value: number,
+  locale: string,
+): string {
   if (view.unit !== undefined) return formatNumericUnit(value, view.unit);
   if (view.subject.metric === "cost") return formatUSD(value);
   const formatted = formatNumber(value, locale);
@@ -684,7 +696,11 @@ function numericConclusion(view: NumericComparisonView, state: MatchState, local
       "观测值与阈值的单位不同，无法比较。",
     );
   }
-  const actual = numericValueText({ ...view, unit: view.material.unit }, value, locale);
+  const actual = numericValueText(
+    { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
+    value,
+    locale,
+  );
   const expected = thresholdText(view, locale);
   if (view.material.state === "lower-bound" && state === "unavailable") {
     return view.subject.kind === "collection-cardinality"
@@ -795,14 +811,26 @@ function NumericEvidence({
       ) : view.material.state === "lower-bound" && state === "unavailable" ? (
         <p className="niceeval-numeric-evidence-formula">
           <small>{label(locale, "Known minimum", "已知至少")}</small>
-          <strong>{numericValueText({ ...view, unit: view.material.unit }, value, locale)}</strong>
+          <strong>
+            {numericValueText(
+              { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
+              value,
+              locale,
+            )}
+          </strong>
           <span aria-hidden="true">·</span>
           <small>{thresholdText(view, locale)}</small>
         </p>
       ) : (
         <p className="niceeval-numeric-evidence-formula">
           {view.material.state === "lower-bound" ? <small>{label(locale, "Known minimum", "已知至少")}</small> : null}
-          <strong>{numericValueText({ ...view, unit: view.material.unit }, value, locale)}</strong>
+          <strong>
+            {numericValueText(
+              { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
+              value,
+              locale,
+            )}
+          </strong>
           <span className="niceeval-numeric-evidence-operator">{formulaRelation}</span>
           <strong>{thresholdText(view, locale)}</strong>
         </p>

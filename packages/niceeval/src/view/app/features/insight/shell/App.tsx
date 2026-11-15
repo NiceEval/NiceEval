@@ -55,7 +55,7 @@ export function InsightApp({
     <RefreshInteractionProvider locked={interactionLocked}>
       <InsightShell
         manifest={manifest}
-        presentation={presentation}
+        {...(presentation === undefined ? {} : { presentation: presentation })}
         refresh={() => refresh(acquire)}
         checkForUpdate={checkForUpdate}
         interactionLocked={interactionLocked}
@@ -254,7 +254,14 @@ function SurfaceView({
 }): ReactElement {
   const { target, presentation } = surface;
   if (target.kind === "group" || target.kind === "experiment") return <ResultsRoute target={target} />;
-  if (target.kind === "run") return <RunRoute runId={target.runId} presentation={presentation} onClose={onClose} />;
+  if (target.kind === "run")
+    return (
+      <RunRoute
+        runId={target.runId}
+        presentation={presentation}
+        {...(onClose === undefined ? {} : { onClose: onClose })}
+      />
+    );
   if (onClose === undefined) throw new Error("Attempt dialog close target is missing.");
   return <AttemptRoute locator={target.locator} onClose={onClose} />;
 }

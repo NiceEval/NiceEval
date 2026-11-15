@@ -159,7 +159,7 @@ function structuredEvidence(data: ToolEvidenceContent, locale: string): ReactEle
   return (
     <div className="niceeval-tool-evidence" data-tool-evidence-kind={parsed === undefined ? "text" : "json"}>
       <EvidenceSection label={parsed === undefined ? label(locale, "Text", "文本") : "JSON"}>
-        <EvidenceCode tone={data.outcome === "failed" || data.outcome === "rejected" ? "error" : undefined}>
+        <EvidenceCode {...(data.outcome === "failed" || data.outcome === "rejected" ? { tone: "error" } : {})}>
           {display}
         </EvidenceCode>
       </EvidenceSection>

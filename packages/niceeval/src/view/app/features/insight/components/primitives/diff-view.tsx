@@ -253,12 +253,21 @@ function TreeList({
               </span>
               <LineCounts added={dir.added} removed={dir.removed} />
             </summary>
-            <TreeList node={dir} inlined={inlined} drillCommand={drillCommand} />
+            <TreeList
+              node={dir}
+              inlined={inlined}
+              {...(drillCommand === undefined ? {} : { drillCommand: drillCommand })}
+            />
           </details>
         </li>
       ))}
       {node.files.map((file) => (
-        <FileRow key={file.path} file={file} inlined={inlined.has(file.path)} drillCommand={drillCommand} />
+        <FileRow
+          key={file.path}
+          file={file}
+          inlined={inlined.has(file.path)}
+          {...(drillCommand === undefined ? {} : { drillCommand: drillCommand })}
+        />
       ))}
     </ul>
   );
@@ -268,7 +277,7 @@ function TreeList({
 // （diffViewText 的 ctx.command 分支）。
 
 export function diffViewText(files: DiffContent, drillDown?: string): string {
-  return diffSummaryText(files, { drillDown });
+  return diffSummaryText(files, { ...(drillDown === undefined ? {} : { drillDown: drillDown }) });
 }
 
 export function DiffView({ files, className, drillCommand }: DiffViewProps): ReactElement | null {
@@ -276,7 +285,11 @@ export function DiffView({ files, className, drillCommand }: DiffViewProps): Rea
   if (list === null || list.length === 0) return null;
   return (
     <div className={cx("niceeval-report", "niceeval-diff-view", className)}>
-      <TreeList node={buildDiffTree(list)} inlined={planInlinePatches(list)} drillCommand={drillCommand} />
+      <TreeList
+        node={buildDiffTree(list)}
+        inlined={planInlinePatches(list)}
+        {...(drillCommand === undefined ? {} : { drillCommand: drillCommand })}
+      />
     </div>
   );
 }

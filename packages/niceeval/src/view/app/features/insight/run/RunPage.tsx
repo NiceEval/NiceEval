@@ -30,10 +30,7 @@ export function RunPage({ model, locale }: { readonly model: RunPageModel; reado
           : {
               kind: "text",
               text: model.adapter?.name ?? "—",
-              detail:
-                model.adapter === null
-                  ? undefined
-                  : `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
+              detail: `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
             },
       eval: { kind: "text", text: member.evalId },
       attempt: { kind: "text", text: String(member.attemptOrdinal + 1) },

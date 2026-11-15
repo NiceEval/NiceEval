@@ -283,7 +283,15 @@ export function embedConversationInSource(
             ...(line.details ?? []),
             ...(lineTurns.length === 0
               ? []
-              : [{ kind: "turn-trace" as const, data: { turns: lineTurns, locator: conversation?.locator } }]),
+              : [
+                  {
+                    kind: "turn-trace" as const,
+                    data: {
+                      turns: lineTurns,
+                      ...(conversation?.locator === undefined ? {} : { locator: conversation.locator }),
+                    },
+                  },
+                ]),
           ];
     return { ...line, ...(details === undefined ? {} : { details }) };
   };

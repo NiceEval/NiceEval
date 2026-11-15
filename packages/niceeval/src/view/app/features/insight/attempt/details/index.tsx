@@ -653,7 +653,7 @@ export function AttemptDetails({
           key={model.locator}
           locator={model.locator}
           initial={trace.trace.execution}
-          selectedId={selectedId}
+          {...(selectedId === undefined ? {} : { selectedId: selectedId })}
         />
       ) : null}
       {aspect === undefined || aspect === "execution" ? (
@@ -669,7 +669,9 @@ export function AttemptDetails({
       {aspect === undefined || aspect === "diff" ? (
         <DiffView files={sliceData(diffQuery.data!)} locale={locale} />
       ) : null}
-      {aspect === "artifacts" ? <Artifacts locator={model.locator} selectedId={selectedId} /> : null}
+      {aspect === "artifacts" ? (
+        <Artifacts locator={model.locator} {...(selectedId === undefined ? {} : { selectedId: selectedId })} />
+      ) : null}
     </Col>
   );
 }
