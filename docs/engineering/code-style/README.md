@@ -81,6 +81,13 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
 调整类型不改变身份：基于 `JSON.stringify` 的摘要本来就省略值为 `undefined` 的键；按键枚举的 canonical 材料属于第 3 层，保持精确类型。
 公开类型变化会改变生成的参考页，改完从仓库根运行 `pnpm run repo docs reference`。
 
+### 控制流与错误分类
+
+- 三元表达式只用一层。多于两个分支时写具名函数，用提前返回或 `switch`；分支名直接对应领域状态，不靠阅读者数冒号。
+- 不写 `x === undefined ? undefined : f(x)`。它说明上游产出了本不该存在的 `undefined`：先按[可选属性](#可选属性)第 2 层消掉上游的缺席；确实是第 4 种单值时，在读取它的分支里一次性处理，不把 `undefined` 再传给下一个值。
+- 错误在产生处就带类型。Effect 的错误通道写成具名 tagged error 的联合，处理处对 `_tag` 用 `switch` 穷尽，漏掉一种由编译器拦下。
+  不在使用处对 `unknown` 做 `instanceof` 链和 `code === "…"` 字符串比较来猜错误种类；外部抛出值在边界用 `normalizeExternalCause` 转成 `ExternalCause` 后再进入联合。
+
 ### 格式化与身份
 
 NiceEval 的运行时身份由实际提示、工具 Schema 与必要的能力行为计数构成，不直接使用其源码排版。
