@@ -377,8 +377,31 @@ const AssertionEvidenceSchema = Schema.Union([
     entryCount: Schema.Literal(0),
   }),
 ]);
+const VerdictCauseReasonSchema = Schema.Literals([
+  "evidence-unavailable",
+  "source-unavailable",
+  "redacted",
+  "evaluator-failed",
+  "producer-interrupted",
+  "invalid-subject",
+]);
+const VerdictCauseFields = {
+  result: Schema.Literals(["unavailable", "errored"]),
+  reason: Schema.NullOr(VerdictCauseReasonSchema),
+  failureDetail: Schema.NullOr(Schema.String),
+};
+const VerdictCausesSchema = Schema.Struct({
+  items: Schema.Array(Schema.Struct({ entryId: Schema.String, label: Schema.String, ...VerdictCauseFields })),
+  groups: Schema.Array(Schema.Struct({ ...VerdictCauseFields, count: Schema.Number })),
+  total: Schema.Number,
+  hasMore: Schema.Boolean,
+  omittedCount: Schema.Number,
+  omittedGroupCount: Schema.Number,
+});
+
 export const InspectionAttemptResultSchema = Schema.Struct({
   notes: AttemptNotesSchema,
+  verdictCauses: Schema.optional(VerdictCausesSchema),
   diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),
   stoppedAt: Schema.Union([
     Schema.Struct({

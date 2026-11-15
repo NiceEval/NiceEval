@@ -1,5 +1,10 @@
 {
   "translation": {
+    "attempt.verdictCauses": "Verdict causes",
+    "attempt.erroredBecause": "Errored because {{count}} required assertions are {{result}}: {{detail}} ×{{count}}",
+    "attempt.causesPreview": "{{shown}}/{{total}} entries; {{groups}} omitted groups",
+    "attempt.advisories": "Advisories",
+    "attempt.failureDiagnostics": "Failure diagnostics",
     "attempt.notes": "Notes",
     "app.failed": "NiceEval View failed to load",
     "executionTrace.title": "Execution events",

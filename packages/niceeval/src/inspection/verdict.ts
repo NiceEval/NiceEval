@@ -71,3 +71,61 @@ function assertionWireEntries(value: InspectionJson): readonly InspectionJson[] 
   const entries = (value as Readonly<Record<string, InspectionJson>>)["entries-data"];
   return Array.isArray(entries) ? entries : undefined;
 }
+
+/** Bounded preview; counts are folded over every recorded required failure. */
+export function attemptVerdictCauses(
+  verdict: VerdictState | null,
+  assertions: ReturnType<typeof readInspectionAssertions>,
+): import("./results.ts").InspectionAttemptResult["verdictCauses"] {
+  if (verdict !== "errored" || assertions.state !== "available") return undefined;
+  type Causes = NonNullable<import("./results.ts").InspectionAttemptResult["verdictCauses"]>;
+  const items: Causes["items"][number][] = [];
+  const groups = new Map<string, Causes["groups"][number]>();
+  const limit = 20;
+  let total = 0;
+  for (const entry of assertions.value.entries) {
+    if (
+      entry.policy.requirement.state !== "available" ||
+      entry.policy.requirement.value !== "required" ||
+      (entry.decision.result !== "unavailable" && entry.decision.result !== "errored")
+    )
+      continue;
+    const detail = entry.explanationRetention.state === "retained" ? entry.explanationRetention.value : undefined;
+    const failureDetail = detail === undefined ? null : retainedFailureCode(detail);
+    const cause = {
+      result: entry.decision.result,
+      reason: entry.decision.reason as Causes["items"][number]["reason"],
+      failureDetail,
+    };
+    total++;
+    if (items.length < limit)
+      items.push({ entryId: entry.entryId, label: entry.display.label ?? entry.entryId, ...cause });
+    const key = JSON.stringify(cause);
+    const previous = groups.get(key);
+    groups.set(key, { ...cause, count: (previous?.count ?? 0) + 1 });
+  }
+  if (total === 0) return undefined;
+  return {
+    items,
+    groups: [...groups.values()].slice(0, limit),
+    total,
+    hasMore: total > items.length,
+    omittedCount: total - items.length,
+    omittedGroupCount: Math.max(0, groups.size - limit),
+  };
+}
+
+function retainedFailureCode(value: import("../assertions/record/model.ts").AssertionFactValue): string | null {
+  if (value.kind !== "fields") return null;
+  // These are retained evaluator detail fields, never inferred from human messages.
+  for (const name of ["failureDetail", "code"]) {
+    const field = value.fields.find((field) => field.label === name)?.value;
+    if (field?.kind === "value" && typeof field.value === "string") return field.value;
+  }
+  for (const field of value.fields) {
+    if (field.label !== "detail") continue;
+    const code = retainedFailureCode(field.value);
+    if (code !== null) return code;
+  }
+  return null;
+}

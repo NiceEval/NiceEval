@@ -129,6 +129,7 @@ export interface RunView {
   }[];
 }
 export interface AttemptView {
+  readonly verdictCauses?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"];
   readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"];
   readonly stoppedAt?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"];
   readonly notes: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["notes"];
@@ -355,6 +356,7 @@ export function projectAttempt(
     locator: value.locator,
     notes: value.notes,
     diagnostics: value.diagnostics,
+    verdictCauses: value.verdictCauses,
     stoppedAt: value.stoppedAt,
     totalCosts: usage?.usage.totalCosts,
     verdict: value.verdict,

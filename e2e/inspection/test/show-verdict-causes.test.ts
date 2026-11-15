@@ -77,7 +77,9 @@ export default defineExperiment({ adapter: app, evals: ["verdict-causes"], judge
         });
         const human = await niceeval.run(["show", event.locator]);
         expect(human.exitCode, human.diagnostic()).toBe(0);
-        expect(human.stdout).toContain("Errored because 2 required assertions are unavailable: judge-call-failed ×2");
+        expect(human.stdout.replace(/\s+/gu, " ")).toContain(
+          "Errored because 2 required assertions are unavailable: judge-call-failed ×2",
+        );
         expect(human.stdout).toContain(`niceeval show ${event.locator} ${first.entryId} --full`);
         expect(human.stdout).toContain("Advisories");
         expect(human.stdout.split("Advisories")[1]).toContain("inspection-advisory");

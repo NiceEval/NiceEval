@@ -1,5 +1,10 @@
 {
   "translation": {
+    "attempt.verdictCauses": "判定原因",
+    "attempt.erroredBecause": "{{count}} 条必要断言为 {{result}}，因此出错：{{detail}} ×{{count}}",
+    "attempt.causesPreview": "显示 {{shown}}/{{total}} 条，另有 {{groups}} 组未显示",
+    "attempt.advisories": "提示诊断",
+    "attempt.failureDiagnostics": "失败诊断",
     "attempt.notes": "记录项",
     "app.failed": "NiceEval 视图载入失败",
     "executionTrace.title": "执行事件",

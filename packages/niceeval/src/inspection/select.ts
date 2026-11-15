@@ -18,7 +18,7 @@ import { projectArtifactsListing } from "./artifact-list.ts";
 import { combineTotalUsageCosts, summarizeJudgeUsage, takeJudgeUsagePreview } from "../o11y/judge-usage-projection.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
-import { attemptVerdict } from "./verdict.ts";
+import { attemptVerdict, attemptVerdictCauses } from "./verdict.ts";
 import type { AssertionCoverage, AssertionLimitation } from "../assertions/record/model.ts";
 import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
 import type { RunResourcePage } from "../run/storage/types.ts";
@@ -1118,6 +1118,7 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
     diagnostics: projectAttemptDiagnostics(
       attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
     ),
+    verdictCauses: attemptVerdictCauses(attemptVerdict(resolved, assertions), assertions),
     stoppedAt: stoppedAssertion(assertions),
     assertions: assertionIndex(assertions),
     sections: attemptSections(resolved),

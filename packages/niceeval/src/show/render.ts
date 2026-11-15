@@ -848,48 +848,33 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Planned attempt", value: value.plannedAttemptId },
             { key: "Outcome", value: value.outcome },
             { key: "Verdict", value: value.verdict ?? "not-available" },
+            ...(value.verdictCauses?.groups.map((group) => ({
+              key: "Cause",
+              value: `Errored because ${group.count} required assertions are ${group.result}: ${group.failureDetail ?? group.reason ?? "not-recorded"} ×${group.count}`,
+            })) ?? []),
+            ...(value.verdictCauses?.items[0] === undefined
+              ? []
+              : [
+                  {
+                    key: "Next",
+                    value: `niceeval show ${value.locator} ${value.verdictCauses.items[0].entryId} --full`,
+                  },
+                ]),
+            ...(value.verdictCauses?.hasMore || value.verdictCauses?.omittedGroupCount
+              ? [
+                  {
+                    key: "Causes preview",
+                    value: `${value.verdictCauses.items.length}/${value.verdictCauses.total} entries; ${value.verdictCauses.omittedGroupCount} omitted groups`,
+                  },
+                ]
+              : []),
             ...(value.stoppedAt?.state !== "available" || value.stoppedAt.value === null
               ? []
               : [{ key: "Stopped", value: `Stopped at ${value.stoppedAt.value.label}; later steps did not run` }]),
             { key: "Score", value: score(value.score, value.verdict) },
           ],
         },
-        ...(value.outcome !== "errored"
-          ? []
-          : [
-              { kind: "divider" as const, title: "Failure diagnostics" },
-              ...(value.diagnostics?.items.length
-                ? value.diagnostics.items.map((diagnostic) => ({
-                    kind: "keyValue" as const,
-                    entries: [
-                      { key: "Phase", value: diagnostic.phase },
-                      { key: "Code", value: diagnostic.code },
-                      { key: "Evidence", value: `niceeval show ${value.locator} ${diagnostic.evidenceId}` },
-                      { key: "Error", value: diagnostic.summary },
-                      ...(diagnostic.summaryTruncated
-                        ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }]
-                        : []),
-                      // Command errors carry only a bounded output tail; the command record keeps the full stdout/stderr.
-                      ...(COMMAND_PHASES.has(diagnostic.phase)
-                        ? [{ key: "Command output", value: `niceeval show ${value.locator} execution` }]
-                        : []),
-                    ],
-                  }))
-                : [
-                    {
-                      kind: "keyValue" as const,
-                      entries: [
-                        {
-                          key: "Diagnostics",
-                          value: `unavailable: no recorded diagnostic items (${value.diagnostics?.state ?? "not-read"}); see --execution and --timing for the closest recorded evidence`,
-                        },
-                      ],
-                    },
-                  ]),
-              ...(value.diagnostics?.hasMore
-                ? [{ kind: "keyValue" as const, entries: [{ key: "More diagnostics", value: "see --execution" }] }]
-                : []),
-            ]),
+        ...attemptDiagnosticBlocks(value),
         {
           kind: "divider",
           title: `assertions ${value.sections.assertions} · ${value.assertions.entries.length} entries`,
@@ -954,6 +939,53 @@ export function renderAttempt(value: AttemptView): string {
       ],
     },
   ]);
+}
+
+function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[] {
+  const items = value.diagnostics?.items ?? [];
+  const failures = items.filter((item) => item.kind !== "advisory");
+  const advisories = items.filter((item) => item.kind === "advisory");
+  const blocks: TerminalPanelContentBlock[] = [];
+  for (const [title, diagnostics] of [
+    ["Failure diagnostics", failures],
+    ["Advisories", advisories],
+  ] as const) {
+    if (diagnostics.length === 0) continue;
+    blocks.push({ kind: "divider", title });
+    for (const diagnostic of diagnostics)
+      blocks.push({
+        kind: "keyValue",
+        entries: [
+          { key: "Phase", value: diagnostic.phase },
+          { key: "Code", value: diagnostic.code },
+          { key: "Evidence", value: `niceeval show ${value.locator} ${diagnostic.evidenceId}` },
+          { key: "Error", value: diagnostic.summary },
+          ...(diagnostic.summaryTruncated
+            ? [{ key: "Summary", value: "partial; see --execution for recorded evidence" }]
+            : []),
+          ...(COMMAND_PHASES.has(diagnostic.phase)
+            ? [{ key: "Command output", value: `niceeval show ${value.locator} execution` }]
+            : []),
+        ],
+      });
+  }
+  if (value.outcome === "errored" && failures.length === 0 && value.verdictCauses === undefined) {
+    blocks.unshift(
+      { kind: "divider", title: "Failure diagnostics" },
+      {
+        kind: "keyValue",
+        entries: [
+          {
+            key: "Diagnostics",
+            value: `unavailable: no recorded failure diagnostic items (${value.diagnostics?.state ?? "not-read"}); see --execution and --timing for the closest recorded evidence`,
+          },
+        ],
+      },
+    );
+  }
+  if (value.diagnostics?.hasMore)
+    blocks.push({ kind: "keyValue", entries: [{ key: "More diagnostics", value: "see --execution" }] });
+  return blocks;
 }
 
 export function renderSources(value: SourcesView): string {

@@ -2,6 +2,8 @@ import type { InspectionSuccessDocumentFor } from "@niceeval/inspection/public.t
 import { availableValue, type AttemptSummaryData, unavailableValue } from "../details/compute.ts";
 
 export interface AttemptPageModel {
+  readonly verdictCauses?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"];
+  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"];
   readonly locator: string;
   readonly runId: string;
   readonly experimentId: string;
@@ -24,6 +26,8 @@ export function closeAttemptPage(
   const totalScore = score.state === "complete" ? score.earned : undefined;
   return Object.freeze({
     locator: attempt.attempt.locator,
+    verdictCauses: attempt.attempt.verdictCauses,
+    diagnostics: attempt.attempt.diagnostics,
     runId: attempt.attempt.originRun.runId,
     experimentId: attempt.attempt.originRun.experimentId,
     evalId: attempt.attempt.core.evalId,

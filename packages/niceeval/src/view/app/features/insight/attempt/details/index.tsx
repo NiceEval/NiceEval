@@ -564,6 +564,52 @@ export function AttemptDetails({
   return (
     <Col className={cx("niceeval-report", className)}>
       <AttemptSummary locator={model.locator} data={model.summary} locale={locale} />
+      {model.verdictCauses === undefined ? null : (
+        <section aria-label={t("attempt.verdictCauses")}>
+          <h3>{t("attempt.verdictCauses")}</h3>
+          {model.verdictCauses.groups.map((group) => (
+            <p key={JSON.stringify([group.result, group.reason, group.failureDetail])}>
+              {t("attempt.erroredBecause", {
+                count: group.count,
+                result: group.result,
+                detail: group.failureDetail ?? group.reason ?? "—",
+              })}
+            </p>
+          ))}
+          {model.verdictCauses.items[0] === undefined ? null : (
+            <p>
+              <code>{`niceeval show ${model.locator} ${model.verdictCauses.items[0].entryId} --full`}</code>
+            </p>
+          )}
+          {model.verdictCauses.hasMore || model.verdictCauses.omittedGroupCount > 0 ? (
+            <p>
+              {t("attempt.causesPreview", {
+                shown: model.verdictCauses.items.length,
+                total: model.verdictCauses.total,
+                groups: model.verdictCauses.omittedGroupCount,
+              })}
+            </p>
+          ) : null}
+        </section>
+      )}
+      {(["failure", "advisory"] as const).map((kind) => {
+        const items =
+          model.diagnostics?.items.filter((item) =>
+            kind === "advisory" ? item.kind === "advisory" : item.kind !== "advisory",
+          ) ?? [];
+        if (items.length === 0) return null;
+        const title = t(kind === "advisory" ? "attempt.advisories" : "attempt.failureDiagnostics");
+        return (
+          <section key={kind} aria-label={title}>
+            <h3>{title}</h3>
+            {items.map((item) => (
+              <p key={item.evidenceId}>
+                {item.phase} · {item.code} · {item.summary}
+              </p>
+            ))}
+          </section>
+        );
+      })}
       {aspect === undefined || aspect === "usage" ? <ExternalUsage usage={usageQuery.data!.usage} /> : null}
       <Callouts items={notices} locale={locale} />
       {aspect === undefined || aspect === "source" || aspect === "assertions" ? (
