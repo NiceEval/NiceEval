@@ -4,7 +4,7 @@
 
 ```text
 ╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
-│ position: lane eval:group/first · plannedAttempt group/first #0                        │
+│ position: Eval group/first · Attempt #1                        │
 │ owner: eval:group/first                                                      │
 │ command: shell · 5 lines                                                     │
 │   │ set -eu                                                                  │

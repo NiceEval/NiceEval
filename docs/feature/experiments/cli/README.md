@@ -33,6 +33,7 @@ niceeval invocation show <invocation-id> [--json]
 ### `exp list`
 
 `exp list` 只做发现和配置求值，不建立 Invocation、不取锁、不启动 Sandbox，也不写 Record。每行显示 Experiment、Agent、model、attempts、已选 Eval 数和 labels；不打印凭据或完整 flags。
+labels 以 `labels: cohort=baseline, size=3` 这样的摘要显示；没有标签时显示 `labels: none`，不打印 JSON 对象。
 
 精确 Experiment ID 优先。否则目录段精确匹配，最后一段允许前缀匹配。Experiment 零命中与 Eval 零命中都是具名错误，不降级为空 Invocation。
 
@@ -44,6 +45,9 @@ Experiment ID 由文件路径推出，选择先于加载：给了 Experiment sel
 `--dry` 在固定 cutoff 运行 `project-target/v2`，展示 policy identity、effective options、
 每个目标位置的当前 reuse / gap，以及本次 reuse / execute 动作。完整人读形态见
 [dry plan 输出案例](output/dry-plan.md)。
+
+人读原因使用 [Inspection 的人读短语](../../inspection/cli.md#当前-results)；不打印 `gap` 或原因码。
+同一行的相同原因聚合为 `Not run yet ×4`，不同原因分别计数；机器计划保留逐位置的完整原因与 issues。
 
 reuse planning 先精确比较当前与历史 Core expected Planned attempt 的组合 `executionIdentityDigest`，并要求历史 Core
 Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，再从 Observability 读取完整真实 timing。
@@ -89,9 +93,12 @@ Human 的 lane 顺序固定为 Group before actions → physical enter → Plann
 
 可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
 
-同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
+同一框用普通短语显示声明顺序、依赖与执行顺序；`--json` 保留 `declarationOrder`、`dependencies` 与 `executionOrder` 的完整结构。
+ordinal 只属于当前 occurrence，不是运行时全局序号；Human 说明顺序只在本生命周期内保证，以及其它 Eval 组能否并发。
 
-before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。capability 取 `run-prepared | attempt-captured | unsupported`，与 [Provider 能力](../../sandbox/architecture/before-cache.md#provider-能力)一一对应，让用户在运行前知道这批准备能加速到什么程度；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
+before action 还显示求值后的 `changeFrequency`、声明来源、排序理由与 Provider 缓存能力。
+Human 将能力写成 `prepared before attempts`、`saved after an attempt` 或 `not supported by this provider`，对应机器值 `run-prepared | attempt-captured | unsupported`。
+缓存查询写成 `cache lookup: not checked`，不因计划阶段评估库存；机器字段仍为 `not-probed`。
 
 数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
@@ -313,8 +320,9 @@ Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；exe
 “真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
 [Attempt 失败输出案例](output/attempt-failures.md)。
 
-Human 最多显示五个 run configuration block；其余项显示准确省略数。`NEXT` 仍为每个已进入 receipt 的 Run
-给出命令，被省略的 Run 不会因此失去下钻入口。
+Human 最多显示五个 run configuration block；其余项显示准确省略数。
+整条命令只有末尾一个 `NEXT`，最多三行。优先给出代表 Run 的 `show` 与 `view`；其它 Run 用一行
+`+N more — niceeval run list --invocation <invocation-id>` 指向完整清单。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
 
 Attempt 创建前的共享失败另列 `ERRORS`，包括共享任务构建与[派发前 Sandbox 准备](#派发前-sandbox-准备)。Human 显示所属 run configuration、没有启动的 Attempt 数量、
@@ -331,12 +339,11 @@ Attempt 创建前的共享失败另列 `ERRORS`，包括共享任务构建与[�
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
 timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
-正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示两行命令，不能使用尚未发布的 draft Run ID：
+正式进入 receipt 后，`NEXT` 才显示代表 Run 的两行命令，不能使用尚未发布的 draft Run ID：
 
 ```text
-<experimentId>
-  show: niceeval show run:<runId>
-  view: niceeval view run:<runId>
+show: niceeval show run:<runId>
+view: niceeval view run:<runId>
 ```
 
 没有创建任何 Run 时，`NEXT` 只显示 `No Runs were created for this invocation.`。

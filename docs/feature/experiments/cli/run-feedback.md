@@ -6,6 +6,9 @@
 
 Human 输出使用 Experiment、Eval、Attempt、结果、安全错误摘要、run ID 和下一步。它不展示持久表、lease、Member、Relation、内部 selector 或数据库细节。
 
+相同原因的非交互暂停提示在整次运行中聚合一次，并报告没有暂停而直接清理的 Attempt 数。
+`NEXT` 只在命令末尾出现，最多三行；超出的 Run 入口通过 `niceeval run list --invocation <invocation-id>` 列出。
+
 每条已创建 Run 都可由人使用 `niceeval view run:<run-id>` 审阅。已发布的单个 Attempt 保留 locator 作为数据 identity；用户从
 该 Run 的页面 Run/Attempt 导航打开详情。自动化不读取 Human 文本，而是以 receipt 中的 `createdRunIds` 执行 `niceeval show run:<run-id> --json`。
 
