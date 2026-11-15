@@ -376,6 +376,8 @@ continuation token 绑定 operation、canonical request、source identity 与 `P
 ### 下一步与 links
 
 每个输出都给出可以直接执行的下一步。文本输出末尾的 `Next` 打印完整可粘贴的命令，例如 `niceeval show @1RSAXZ5EHJH2V fc_3f90…`。
+人读输出遵守 [T-41](../../../taste.md#t-41)：结构化值写成摘要，同类重复说明合并计数，原因写成普通英文。
+整条命令只有末尾一处 `Next`，最多三行；超过时保留两条优先命令，第三行用 `+N more` 指向同一读取的 `--json` 命令。
 `--json` 的每个 success document 带 `links`：`{ rel, command }` 的数组，`command` 与文本 `Next` 中对应的命令逐字相同。
 
 `rel` 是闭合枚举，agent 按 `rel` 选择下一步，不解析命令文本：
@@ -490,7 +492,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   它显示指定 Run 的 identity、时间、denominator、Member/Attempt locators、Verdict、score、coverage、usage 与 limitations。
   重复对象的输入顺序不是业务排序 authority。
 - `@<locator>` 在同一读取 cut 调用 `attempt.get` 和 `attempt.usage`，首先显示该 Attempt 的总费用，再显示精确身份、Verdict、score、coverage、Assertion
-  摘要、section states 与 limitations。`Next` 给出可复制的 assertions、source、execution、timing、usage 和 diff 命令。
+  摘要、section states 与 limitations。末尾 `Next` 优先给出 assertions 与 execution，其余入口由同一读取的 `--json` 列出。
 
   `attempt.get` 的 result 直接带 `diagnostics.items`：每项的 phase、code、有界 summary、是否截断与可展开的 Evidence ID。
   它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
@@ -498,14 +500,14 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
   Verdict 为 `errored` 且原因包含 required Assertion `unavailable` 或 `errored` 时，`attempt.get` 的 result 带 `verdictCauses`。
   每项给出 entryId、label、result（`unavailable | errored`）、decision reason 与已留存的失败细节代码（例如 `judge-call-failed`）；同一 reason 与细节代码的条目聚合计数，列表有界。
-  文本视图在 Verdict 下写 `Errored because <N> required assertions are <result>: <细节代码> ×<count>`，并给出第一条的 `niceeval show @<locator> ae_<id> --full`。
+  文本视图在 Verdict 下写 `Errored because <N> required assertions are <result>: <原因短语> ×<count>`，末尾优先给出第一条的 `niceeval show @<locator> ae_<id> --full`。
   读者不下钻 `--full` 就能知道 errored 来自 Judge 调用失败、材料缺失还是执行错误。
 
   `attempt.get` 的 result 带 `stoppedAt`，读自 Assertions entry 的 `control`：有 entry 为 `stopped` 时是 `{ state: "available", value: { entryId, label } }`；
   全部 entry 的 control 都已记录且没有 `stopped` 时 value 为 `null`；有 entry 为 `not-recorded`（升级前的 Record）且没有 `stopped` 时为 `{ state: "unavailable", reason: "not-recorded" }`。
   它不改变 Verdict；只停不 gate 的检查失败后 Verdict 仍可能是 `passed`。
   文本视图在 Verdict 下写 `Stopped at <label>; later steps did not run`，Experiment 与 Results 表在该 Attempt 的 Verdict 后标注 `stopped`。
-  errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，诊断下方直接给出 `execution` 里对应命令输出的 `Next` 命令。
+  errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，末尾 `Next` 优先给出 `execution` 里对应命令输出的命令。
   overview 与 `execution` 的 `cache-degraded` 诊断显示具名降级 reason 与受影响的 Before 节点；若有远端调用错误，给出可展开的稳定 ID。
 - `@<locator> assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
   `@<locator> ae_<id>` 选择单项断言；默认以 compact 紧凑摘要交付，加 `--full` 包含完整原始材料与上下文行。
@@ -516,14 +518,14 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `@<locator> <trace 稳定 ID>` 按持久事件、证据、`itemId`、`toolOccurrenceId` 或 `commandId`
   直接调用 `attempt.trace.detail`。目标可以位于默认摘要之外。导入 key、原生 source eventId、
   `t<N>.c<M>`、`cmd<N>` 或数组位置不能替代持久身份；找不到时返回 selection error，不猜测相邻项。
-  命令 outline 的 Outcome 写出退出码或终止原因；每条没有以退出码 0 结束的命令，在 Next 下给出可复制的
-  `niceeval show @<locator> <commandId>`，展开后显示该命令完整保留的 stdout 与 stderr。
+  命令 outline 的 Outcome 写出退出码或终止原因；末尾 `Next` 优先给出失败命令的
+  `niceeval show @<locator> <commandId>`，其余入口合并为 `+N more`；展开后显示该命令完整保留的 stdout 与 stderr。
   错误摘要里的命令输出只是截断后的尾部，读者不必猜完整输出在哪（[T-31](../../taste.md#t-31)）。
 - `@<locator> timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
 - `@<locator> usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
-  每个正文可读的 text change 后给出 `Next: niceeval show @<locator> fc_<id>`。
+  正文可读的 text change 使用 `niceeval show @<locator> fc_<id>` 下钻，命令统一放在末尾有界的 `Next` 中。
 - `@<locator> fc_<id>` 调用带 `changeId` 的 `attempt.diff`。result 带这一项的 before / after 正文与 Inspection 按两端正文算出的 unified hunks。
   正文与 hunks 各有字节上限，超出时写明截断位置；binary、oversized 与采集失败的一端如实标注，不伪造空正文。文本视图按 unified diff 显示。
 - `@<locator> artifacts` 调用 `attempt.artifacts` 列出已保存的 artifact；`@<locator> <artifact-id>` 调用 `attempt.artifact` 读取一项。
@@ -588,7 +590,7 @@ outline 中有两种省略，标记不同：
 - 文本超过预览上限时标为 `… (N more bytes: niceeval show @<locator> <eventId>)`，N 来自 Inspection result。
 - `code` 行超过终端宽度时只标 `…`。这是显示宽度省略，源文本完整。
 
-`show @<locator> <eventId>` 先显示完整展示块，再显示 payload JSON、links、scope 与 evidence。
+`show @<locator> <eventId>` 先显示完整展示块，再显示 payload、关系、范围与证据的摘要；完整结构保留在 `--json`。
 展开后的 `code` 原样逐行输出，不折行、不截断、不加前缀，可以直接复制。
 `image` 展开后另给出读取该附件的 `niceeval show @<locator> <artifactId>` 命令；终端不内联图像。
 
@@ -844,17 +846,14 @@ Sections
   execution   partial
   timing      available
   usage       available
-  diff        not-recorded
+  diff        not recorded
+
+Open: niceeval view @01JSHOWATTEMPT
 
 Next
   niceeval show @01JSHOWATTEMPT assertions
-  niceeval show @01JSHOWATTEMPT source
   niceeval show @01JSHOWATTEMPT execution
-  niceeval show @01JSHOWATTEMPT timing
-  niceeval show @01JSHOWATTEMPT usage
-  niceeval show @01JSHOWATTEMPT diff
-
-Open: niceeval view @01JSHOWATTEMPT
+  +4 more: niceeval show @01JSHOWATTEMPT --json
 ```
 
 ### Attempt 断言详情示例
@@ -903,8 +902,10 @@ Assertions @01JSHOWATTEMPT
   NOTE  met           used_cli · ran the project CLI at least once
   NOTE  unmet         first_run_green · first run passed without a retry
 
-Next: niceeval show @01JSHOWATTEMPT ae_5c8e2a0f7d3b1e6c9a4f --full
 Open: niceeval view @01JSHOWATTEMPT assertions
+
+Next
+  niceeval show @01JSHOWATTEMPT ae_5c8e2a0f7d3b1e6c9a4f --full
 ```
 
 追加 `--json` 原样交付结构化机器数据，文本 `Next` 中的命令出现在 `links` 里：
@@ -1036,8 +1037,8 @@ missingSources 固定 application、judge、simulated-user 顺序，无重复。
 默认 `show @<locator>`、`show @<locator> usage` 与实验单局详情首先显示同一 totalCosts。
 完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 与 Missing sources，不能把应用费用称为整局价格。
 
-Missing sources 下逐项写出 gaps 的来源与原因。reason 为 `no-pricing-profile` 时，同一行给出缺价的模型，并在末尾给出
-`Next: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。
+Missing sources 下写出来源与原因短语，同类原因聚合计数。reason 为 `no-pricing-profile` 时，同一行给出缺价的模型，并给出
+`Pricing: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。
 完整空 Judge 账本显示 No Judge calls；缺账本显示 Judge usage unavailable；有调用但缺费用显示 Cost unavailable。
 明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
 
@@ -1046,6 +1047,7 @@ Missing sources 下逐项写出 gaps 的来源与原因。reason 为 `no-pricing
 只有全账本 recordedCalls 为 0 才标 no recorded calls；费用未知不显示成零，未调用配置不制造用量快照。
 
 `show exp:<id>` 的 Models and usage 区按当前已选 origin Attempt 展示同一读面，标明 locator 和 origin Run。
+每个 origin Attempt 的 locator 只在该用量小节标题中出现一次。
 重复 origin 只展示一次，不合并不同局的配置；超出 64 个 Attempt 时说明省略数，未找到的成员另列。
 此区域不从调用或模型组预览重算实验总费用。旧应用 costUSD 口径不变，Judge 未登记与带缺口合计保持显式状态。
 
@@ -1057,6 +1059,7 @@ View 消费同一 Inspection 结果，保留中英 catalog，不解码 Provider 
 ## Notes
 
 `show @<locator>` 在 Assertions 后展示 Notes，按调用顺序呈现 label 与 value；`null` 显示为 unavailable。
+结构化 Note 只显示字段或条目摘要，完整值由 `--json` 交付。
 Quantity 使用其单位格式显示，例如 `512 ms`、`61.2%` 和 `$0.031`。
 `show @<locator>` 加 `--json` 时，`attempt.get` document 在 Attempt 结果中返回 `notes`。
 
