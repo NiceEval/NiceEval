@@ -55,10 +55,10 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       const humanDry = await niceeval.run(["exp", "accept", "--dry"]);
       writeFileSync(join(root, "human-output.txt"), `exp --dry\n${humanDry.stdout}`, "utf8");
       expect(humanDry.exitCode, humanDry.diagnostic()).toBe(0);
-      expect(humanDry.stdout).toContain("gap 0:identity-mismatch");
-      expect(humanDry.stdout).toContain("source:evals/accept/accept-target.eval.ts");
+      expect(humanDry.stdout).toContain("Needs rerun: source:evals/accept/accept-target.eval.ts changed");
+      expect(humanDry.stdout).not.toMatch(/\bgap\b/u);
       expect(humanDry.stdout).not.toMatch(/[{}]|"comparisons"|"explanation"/u);
-      expect(humanDry.stdout).toContain(`source ${oldLocator} · prior · verdict passed`);
+      expect(humanDry.stdout).toContain(`earlier result ${oldLocator} · passed`);
       expect(humanDry.stdout).not.toContain(`accept: niceeval accept ${oldLocator}`);
 
       const jsonDry = await niceeval.run(["exp", "accept", "--dry", "--json"]);
@@ -125,15 +125,15 @@ test("审阅变更后 accept 以 reference Member 采用旧 Attempt，保留 ver
       appendFileSync(join(root, "human-output.txt"), `\nexp --dry (unexplained)\n${unexplained.stdout}`, "utf8");
       expect(unexplained.exitCode, unexplained.diagnostic()).toBe(0);
       expect(unexplained.stdout).toContain(
-        "niceeval-identity-changed: NiceEval identity calculation changed. Rerun the affected experiments.",
+        "Needs rerun: NiceEval identity calculation changed. Rerun the affected experiments.",
       );
-      expect(unexplained.stdout).toContain("observed inputs: no differences in comparable manifest fields");
+      expect(unexplained.stdout).not.toContain("niceeval-identity-changed");
       expect(unexplained.stdout).not.toMatch(/[{}]|"comparisons"|"explanation"/u);
       const unexplainedRejection = await niceeval.run(["accept", oldLocator]);
       appendFileSync(join(root, "human-output.txt"), `\naccept (unexplained)\n${unexplainedRejection.stderr}`, "utf8");
       expect(unexplainedRejection.exitCode, unexplainedRejection.diagnostic()).not.toBe(0);
       expect(unexplainedRejection.stderr).toContain(
-        "\n  niceeval-identity-changed: NiceEval identity calculation changed. Rerun the affected experiments.",
+        "\n  NiceEval identity calculation changed. Rerun the affected experiments.",
       );
       expect(unexplainedRejection.stderr).not.toMatch(/[{}]|"comparisons"|"explanation"/u);
       writeFileSync(configPath, configSource, "utf8");
