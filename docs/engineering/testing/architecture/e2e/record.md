@@ -41,6 +41,7 @@ SIGKILL 后的新 Invocation 自动沿用 active Run 中已发布的 Attempt，�
 ## 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。 {#public-run-host-consumer}
 
 独立 Library consumer 可组合 Run 的读取、恢复和删除，并捕获预期 RunReadError。
+存储不可读时，`runHost.list` 返回的 RunReadError 保留 SqliteRecordError 的分类、code 与 operation（`e2e/record/test/run-read-errors.test.ts`）。
 ## 升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。 {#upgrade-preserves-historical-results}
 
 升级 NiceEval 后继续读取历史结果并运行新评估；不安全或外部只读输入保留原件。

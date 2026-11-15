@@ -484,12 +484,9 @@ function teardownInspectionProblemText(inspection: ExperimentHostAfterResult): s
   }
 }
 
-function teardownFailure(operation: string, cause: unknown, recoveryKey?: string): ExperimentCliError {
-  const code =
-    typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-      ? String(Reflect.get(cause, "code"))
-      : undefined;
-  const message = cause instanceof Error ? cause.message : String(cause);
+function teardownFailure(operation: string, cause: ExperimentHostError, recoveryKey?: string): ExperimentCliError {
+  const code = cause.code;
+  const message = cause.message;
   const display =
     code === "shared-state-recovery-registration-failed" && recoveryKey !== undefined
       ? `error: sharedState recovery for ${recoveryKey} could not clear the exact interrupted teardown registration: ${message}. The recovery generation remains closed.

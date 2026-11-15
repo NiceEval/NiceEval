@@ -1,7 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/eval/README.md
 import { Data, Effect } from "effect";
-import { discoverEvals } from "../../runner/discover.ts";
+import { DiscoveryError, discoverEvals } from "../../runner/discover.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 
 /** Identifies a discovered Eval with tags and Pass or Score kind; its ID is the selection identity rather than its display description. */
@@ -20,7 +20,7 @@ export interface EvalCatalog {
 /** Reports failure to discover the Eval catalog; this is a Host operation error rather than an Attempt Verdict. */
 export class EvalCatalogError extends Data.TaggedError("EvalCatalogError")<{
   readonly operation: "catalog";
-  readonly cause: ExternalCause;
+  readonly cause: DiscoveryError | ExternalCause;
 }> {}
 
 function catalog(input: {
@@ -38,7 +38,13 @@ function catalog(input: {
           evaluationKind: definition.evaluationKind,
         })),
     })),
-    Effect.mapError((cause) => new EvalCatalogError({ operation: "catalog", cause: normalizeExternalCause(cause) })),
+    Effect.mapError(
+      (cause) =>
+        new EvalCatalogError({
+          operation: "catalog",
+          cause: cause instanceof DiscoveryError ? cause : normalizeExternalCause(cause),
+        }),
+    ),
   );
 }
 

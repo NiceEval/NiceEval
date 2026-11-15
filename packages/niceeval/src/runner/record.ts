@@ -83,7 +83,7 @@ import type { AgentRun, Attempt, DiscoveredEval, EvalResult } from "./types.ts";
 import type { AttemptCostAttachment } from "../record/family/attempt-cost/definition.ts";
 import { simulatedUserActivitiesForResult } from "../simulated-user/audit.ts";
 import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
-import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+import type { ExternalCause } from "../shared/external-cause.ts";
 import type { RunStorageCommandError } from "../run/storage/index.ts";
 import type { SessionTracker } from "./session.ts";
 
@@ -373,14 +373,7 @@ function attemptPublicationFailed(
   locator: AttemptLocator,
   cause: RunnerRecordWriteError | RunStorageCommandError,
 ): RunnerRecordAttemptPublicationFailed {
-  const detail =
-    cause instanceof Error
-      ? cause.message
-      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
-        ? String(Reflect.get(cause, "message"))
-        : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-          ? String(Reflect.get(cause, "code"))
-          : String(cause);
+  const detail = "message" in cause ? cause.message : cause.code;
   return {
     code: "runner-record-attempt-publication-failed" as const,
     locator,
@@ -492,7 +485,7 @@ export function openRunnerRecordCoordinator(input: {
           Effect.mapError(
             (cause): RunnerSessionOpenFailed => ({
               code: "runner-session-open-failed",
-              cause: normalizeExternalCause(cause),
+              cause,
             }),
           ),
         );
@@ -585,7 +578,7 @@ export function openRunnerRecordCoordinator(input: {
         Effect.mapError(
           (cause): RunnerSessionOpenFailed => ({
             code: "runner-session-open-failed",
-            cause: normalizeExternalCause(cause),
+            cause,
           }),
         ),
       );

@@ -6,7 +6,9 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect, Result, Schema } from "effect";
-import { normalizeExternalCause } from "../../shared/external-cause.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
+import { RunStorageError } from "../storage/errors.ts";
+import { isExternalCause, normalizeExternalCause } from "../../shared/external-cause.ts";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
@@ -52,7 +54,10 @@ function readFailure(operation: "list" | "get", cause: unknown): RunReadError {
     operation,
     code: "run-read-failed",
     message,
-    cause: normalizeExternalCause(cause),
+    cause:
+      cause instanceof RunStorageError || cause instanceof SqliteRecordError || isExternalCause(cause)
+        ? cause
+        : normalizeExternalCause(cause),
   });
 }
 

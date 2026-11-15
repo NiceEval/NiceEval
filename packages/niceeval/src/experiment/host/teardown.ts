@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { operationError } from "./operations.ts";
 
 import { Clock, Effect, Result } from "effect";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
@@ -34,21 +35,6 @@ import type {
   ExperimentHostAfterRequest,
   ExperimentHostAfterResult,
 } from "./types.ts";
-
-function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
-  if (cause instanceof ExperimentHostError) return cause;
-  const code =
-    typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-      ? String(Reflect.get(cause, "code"))
-      : "experiment-host-operation-failed";
-  return new ExperimentHostError({
-    operation,
-    code,
-    message: cause instanceof Error ? cause.message : String(cause),
-    cause: normalizeExperimentHostCause(cause),
-    comparisons: undefined,
-  });
-}
 
 function closeOperation<A, E, R>(
   operation: ExperimentHostOperation,

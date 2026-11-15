@@ -1,7 +1,7 @@
 import type { IdentityExplanation } from "../../runner/manifest.ts";
 import type { ResolvedModelRoles } from "../../model-roles.ts";
 import { Data, type Effect } from "effect";
-import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
+import { isExternalCause, normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { MigrationRequiredError } from "../../error-assistance/migration.ts";
 import { DiscoveryError } from "../../runner/discover.ts";
 import { FingerprintFileError, FingerprintPlanningError } from "../../runner/fingerprint.ts";
@@ -12,6 +12,9 @@ import { SandboxLayerLinkError, SandboxBeforePlanningError } from "../../sandbox
 import { SandboxRunPlanningInvariantError, SandboxRunPairDuplicateError } from "../../runner/sandbox-selection.ts";
 import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 import { ConfigModuleLoadError } from "../../cli/project-configuration.ts";
+import type { RunnerRecordOpenError, RunnerRecordWriteError } from "../../runner/record.ts";
+import { RunStorageError } from "../../run/storage/errors.ts";
+import type { RunStorageCommandError } from "../../run/storage/index.ts";
 import { SharedStateLeaseError } from "../../runner/shared-state-lease.ts";
 
 import type { Config } from "../../types.ts";
@@ -74,7 +77,65 @@ export type ExperimentHostCause =
   | SqliteRecordError
   | ConfigModuleLoadError
   | SharedStateLeaseError
+  | RunnerRecordOpenError
+  | RunnerRecordWriteError
+  | RunStorageCommandError
   | ExternalCause;
+
+/** Recognizes the closed discriminants emitted by the in-process Record boundary. */
+function isRunnerRecordCause(cause: unknown): cause is RunnerRecordOpenError | RunnerRecordWriteError {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return false;
+  switch (cause.code) {
+    case "runner-record-attempt-invalid":
+    case "runner-record-attempt-unsealed":
+    case "runner-record-membership-state-invalid":
+    case "runner-record-attempt-publication-failed":
+    case "runner-record-publish-state-invalid":
+    case "runner-record-target-identity-invalid":
+    case "runner-record-assertions-invalid":
+    case "runner-record-observability-invalid":
+    case "runner-record-sources-invalid":
+    case "runner-record-artifacts-invalid":
+    case "runner-record-target-input-missing":
+    case "runner-session-open-failed":
+    case "project-target-reuse-plan-invalid":
+    case "record-root-invalid":
+    case "record-path-invalid":
+    case "record-path-type-invalid":
+    case "record-path-already-exists":
+    case "record-resource-limit-invalid":
+    case "record-resource-limit-exceeded":
+    case "record-io-error":
+    case "record-permission-denied":
+    case "record-maintenance-busy":
+    case "record-coordination-deadline-invalid":
+    case "record-coordination-timed-out":
+    case "record-coordination-canceled":
+    case "record-coordination-state-invalid":
+    case "record-bootstrap-invalid":
+    case "record-format-unsupported":
+    case "record-reader-closed":
+    case "record-handle-invalid":
+    case "record-integrity-failure":
+    case "family-definition-required":
+    case "record-writer-closed":
+    case "record-draft-state-invalid":
+    case "record-draft-write-failed":
+    case "record-reference-invalid":
+    case "record-core-invalid":
+    case "record-attachment-encode-error":
+    case "record-attachment-callback-failed":
+    case "record-attachment-closure-invalid":
+    case "record-owner-definition-mismatch":
+    case "record-already-written":
+    case "record-collection-definition-invalid":
+    case "record-append-command-invalid":
+    case "record-collection-not-closed":
+      return true;
+    default:
+      return false;
+  }
+}
 
 /** Preserves known Host failures and their recovery information while classifying external thrown values. */
 export function normalizeExperimentHostCause(cause: unknown): ExperimentHostCause {
@@ -93,7 +154,10 @@ export function normalizeExperimentHostCause(cause: unknown): ExperimentHostCaus
     cause instanceof SandboxRunPairDuplicateError ||
     cause instanceof SqliteRecordError ||
     cause instanceof ConfigModuleLoadError ||
-    cause instanceof SharedStateLeaseError
+    cause instanceof SharedStateLeaseError ||
+    cause instanceof RunStorageError ||
+    isExternalCause(cause) ||
+    isRunnerRecordCause(cause)
   )
     return cause;
   return normalizeExternalCause(cause);

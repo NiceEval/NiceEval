@@ -39,6 +39,7 @@ import { assembleInvocationCompletion, foldInvocationEvalStats } from "./present
 import { firstLine, formatThrown } from "../../util.ts";
 
 import type {
+  ExperimentHostCause,
   ExperimentHostAcceptRequest,
   ExperimentHostAcceptRunPlan,
   ExperimentHostAcceptRunRequest,
@@ -73,96 +74,61 @@ import type {
 
 export function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
   if (cause instanceof ExperimentHostError) return cause;
-  const code =
-    typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-      ? String(Reflect.get(cause, "code"))
-      : "experiment-host-operation-failed";
+  const typedCause = normalizeExperimentHostCause(cause);
   return new ExperimentHostError({
     operation,
-    code,
-    message: closedFailureMessage(cause),
-    cause: normalizeExperimentHostCause(cause),
-    comparisons:
-      cause instanceof Error && "comparisons" in cause && Array.isArray(cause.comparisons)
-        ? cause.comparisons
-        : undefined,
+    code: closedFailureCode(typedCause),
+    message: closedFailureMessage(typedCause),
+    cause: typedCause,
+    comparisons: "comparisons" in typedCause ? typedCause.comparisons : undefined,
   });
 }
 
-/** Preserve one actionable message while closing private Runner error shapes. */
-function closedFailureMessage(cause: unknown): string {
+function closedFailureCode(cause: ExperimentHostCause): string {
+  if ("code" in cause) {
+    if (typeof cause.code === "string") return cause.code;
+    if (cause.code._tag === "Present" && typeof cause.code.value === "string") return cause.code.value;
+  }
+  return "experiment-host-operation-failed";
+}
+
+/** Preserve one actionable message from the classified Runner failure. */
+function closedFailureMessage(cause: ExperimentHostCause): string {
   const diagnostic = closedRecordDiagnostic(cause);
   if (diagnostic !== undefined) return JSON.stringify(diagnostic);
-  if (cause instanceof Error && cause.message.length > 0) return cause.message;
-  if (typeof cause === "object" && cause !== null) {
-    const direct = Reflect.get(cause, "message");
-    if (typeof direct === "string" && direct.length > 0) return direct;
-    const issue = Reflect.get(cause, "issue");
-    if (typeof issue === "object" && issue !== null) {
-      const nested = Reflect.get(issue, "message");
-      if (typeof nested === "string" && nested.length > 0) return nested;
-    }
-  }
+  if ("message" in cause && cause.message.length > 0) return cause.message;
+  if ("issue" in cause && "message" in cause.issue && cause.issue.message.length > 0) return cause.issue.message;
   return firstLine(formatThrown(cause));
 }
 
-function closedRecordDiagnostic(cause: unknown): unknown | undefined {
-  if (typeof cause !== "object" || cause === null) return undefined;
-  const code = Reflect.get(cause, "code");
-  if (code === "runner-record-target-identity-invalid") {
-    return { code, kind: Reflect.get(cause, "kind"), value: Reflect.get(cause, "value") };
+function closedRecordDiagnostic(cause: ExperimentHostCause): ExperimentHostJsonValue | undefined {
+  if (!("code" in cause)) return undefined;
+  switch (cause.code) {
+    case "runner-record-target-identity-invalid":
+      return { code: cause.code, kind: cause.kind, value: cause.value };
+    case "runner-record-attempt-publication-failed": {
+      const nested = closedRecordDiagnostic(cause.cause) ?? closedDiagnosticMessage(cause.cause);
+      return {
+        code: cause.code,
+        locator: cause.locator,
+        ...(nested === undefined ? {} : { cause: nested }),
+      };
+    }
+    case "record-attachment-encode-error":
+      return {
+        code: cause.code,
+        family: cause.family,
+        issues: cause.issues.map(({ code, path }) => ({ code, path })),
+        schemaIssues: cause.schemaIssues.map(({ path, message }) => ({ path, message })),
+      };
+    default:
+      return undefined;
   }
-  if (code === "runner-record-attempt-publication-failed") {
-    const locator = Reflect.get(cause, "locator");
-    const rawCause = Reflect.get(cause, "cause");
-    const nested = closedRecordDiagnostic(rawCause) ?? closedDiagnosticMessage(rawCause);
-    return {
-      code,
-      ...(typeof locator === "string" ? { locator } : {}),
-      ...(nested === undefined ? {} : { cause: nested }),
-    };
-  }
-  if (code !== "record-attachment-encode-error") return undefined;
-  const family = Reflect.get(cause, "family");
-  const issues = Reflect.get(cause, "issues");
-  const schemaIssues = Reflect.get(cause, "schemaIssues");
-  return {
-    code,
-    ...(typeof family === "string" ? { family } : {}),
-    issues: closedDiagnosticIssues(issues, false),
-    schemaIssues: closedDiagnosticIssues(schemaIssues, true),
-  };
 }
 
-function closedDiagnosticMessage(cause: unknown): Readonly<{ message: string }> | undefined {
-  const message =
-    cause instanceof Error
-      ? cause.message
-      : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
-        ? String(Reflect.get(cause, "message"))
-        : undefined;
-  return message === undefined || message.length === 0 ? undefined : { message };
-}
-
-function closedDiagnosticIssues(value: unknown, includeMessage: boolean): readonly unknown[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    if (typeof entry !== "object" || entry === null) return [];
-    const path = Reflect.get(entry, "path");
-    const code = Reflect.get(entry, "code");
-    const message = Reflect.get(entry, "message");
-    return [
-      {
-        ...(typeof code === "string" ? { code } : {}),
-        path: Array.isArray(path)
-          ? path.filter(
-              (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
-            )
-          : [],
-        ...(includeMessage && typeof message === "string" ? { message } : {}),
-      },
-    ];
-  });
+function closedDiagnosticMessage(cause: ExperimentHostCause): Readonly<{ message: string }> | undefined {
+  if (!("message" in cause) || cause.message.length === 0) return undefined;
+  return { message: cause.message };
 }
 
 function closeOperation<A, E, R>(

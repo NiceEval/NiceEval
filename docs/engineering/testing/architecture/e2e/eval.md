@@ -24,6 +24,7 @@ Repo 的 15 分钟期限包含默认并行运行和资源终结。逐项启动�
 | [`#eval-custom-application`](#eval-custom-application) | 同一应用接口选择不同实现，原生动作与状态由公开 Assertion 观察 | 单边界 E2E | `e2e/eval/test/custom-application.test.ts` | PR |
 | [`#eval-custom-application-lifecycle`](#eval-custom-application-lifecycle) | 创建失败与取消释放资源，作者入口及时关闭 | 单边界 E2E | `e2e/eval/test/custom-application-lifecycle.test.ts` | PR |
 | [`#application-context-types`](#application-context-types) | 安装后公开类型保留应用方法推导并拒绝冲突 | 单边界 E2E | `e2e/eval/test/application-types.test.ts` | PR |
+| [`#eval-catalog-errors`](#eval-catalog-errors) | 安装后 SDK 的 Eval catalog 失败保留可行动的发现诊断 | 单边界 E2E | `e2e/eval/test/catalog-errors.test.ts` | PR |
 
 ## eval-context
 
@@ -153,3 +154,6 @@ Adapter flags 在启动前同步校验并复制冻结规范化结果。
 ## 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。 {#judge-image-material}
 
 截图作为原生视觉材料参与所选 Judge，并在 Record 搬迁后按稳定身份复查冻结原图。
+## 安装后 SDK 的 Eval catalog 失败保留 issues、file 与 actions 等可行动的发现诊断。 {#eval-catalog-errors}
+
+独立 Node consumer 用真实非法 Eval export 调用 `evalHost.catalog`，得到 EvalCatalogError，其 cause 是原样保留的 DiscoveryError。

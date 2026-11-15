@@ -27,6 +27,15 @@ import type {
 } from "./types.ts";
 import type { AgentRun } from "./types.ts";
 import { currentProcessOwnerIdentity } from "./node-process-identity.ts";
+import { SqliteRecordError } from "../record/sqlite/errors.ts";
+import { RunStorageError } from "../run/storage/errors.ts";
+import type { RunStorageCommandError } from "../run/storage/index.ts";
+import { isExternalCause, normalizeExternalCause } from "../shared/external-cause.ts";
+
+function sessionFailure(cause: unknown): RunStorageCommandError {
+  if (cause instanceof SqliteRecordError || cause instanceof RunStorageError || isExternalCause(cause)) return cause;
+  return normalizeExternalCause(cause);
+}
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 10_000;
 export const SESSION_EXPIRY_MS = 30_000;
@@ -404,11 +413,11 @@ type SessionPersistenceRequest =
       readonly _tag: "write";
       readonly snapshot: SessionRecord;
       /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
-      readonly completion: Deferred.Deferred<void, unknown> | undefined;
+      readonly completion: Deferred.Deferred<void, RunStorageCommandError> | undefined;
     }
   | {
       readonly _tag: "barrier";
-      readonly completion: Deferred.Deferred<void, unknown>;
+      readonly completion: Deferred.Deferred<void, RunStorageCommandError>;
     };
 
 /**
@@ -459,11 +468,11 @@ export class SessionTracker {
 
   private invocationEffect<A extends import("../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
     command: import("../record/sqlite/worker-protocol.ts").InvocationCommand,
-  ): Effect.Effect<A, unknown> {
+  ): Effect.Effect<A, RunStorageCommandError> {
     return Effect.flatMap(this.database.bind(this.niceevalRoot), (facets) =>
       Effect.tryPromise({
         try: () => facets.invocation.execute<A>(command),
-        catch: (cause) => cause,
+        catch: sessionFailure,
       }),
     );
   }
@@ -476,10 +485,11 @@ export class SessionTracker {
    * Effect 主入口：先完成第一份 durable snapshot，再开始心跳。持久化 Scope 跨过
    * `runEvals()` 的内部 Scope，由 closeEffect 关闭，因而最终 receipt 不会被抢先截断。
    */
-  start(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
+  start(input: SessionStartInput): Effect.Effect<SessionRecord, RunStorageCommandError> {
     let persistence: SessionPersistence | undefined;
     return Effect.gen({ self: this }, function* () {
-      if (this.started) return yield* Effect.fail(new Error("SessionTracker.start() called more than once."));
+      if (this.started)
+        return yield* Effect.fail(normalizeExternalCause(new Error("SessionTracker.start() called more than once.")));
       const scope = yield* Scope.make();
       const requests = yield* Queue.unbounded<SessionPersistenceRequest>();
       const worker = yield* Effect.forkIn(this.persistenceWorkerEffect(requests), scope);
@@ -580,7 +590,7 @@ export class SessionTracker {
   applyCarriedAttempts(
     agentRuns: readonly AgentRun[],
     carried: ReadonlyMap<string, ReadonlySet<number>>,
-  ): Effect.Effect<void, unknown> {
+  ): Effect.Effect<void, RunStorageCommandError> {
     if (this.record === undefined || this.record.status !== "active") return Effect.void;
     for (const experiment of this.record.experiments) {
       const run = agentRuns.find((candidate) => candidate.experimentId === experiment.experimentId);
@@ -704,7 +714,7 @@ export class SessionTracker {
   }
 
   /** 一次可观察的 heartbeat；显式调用者会收到本次 flush 的真实 I/O failure。 */
-  heartbeat(): Effect.Effect<void, unknown> {
+  heartbeat(): Effect.Effect<void, RunStorageCommandError> {
     return Effect.suspend(() => {
       if (!this.started || this.closed || this.record === undefined || this.record.status !== "active")
         return Effect.void;
@@ -717,7 +727,7 @@ export class SessionTracker {
    * 完成最终 Session：先停止 heartbeat，再把完成 snapshot 排在所有既有反馈写之后。该收尾
    * 区域不可中断，避免 interruption 留下 active 条目或后台 Fiber。
    */
-  close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
+  close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, RunStorageCommandError> {
     return Effect.uninterruptible(
       Effect.suspend(() => {
         if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
@@ -749,7 +759,7 @@ export class SessionTracker {
   }
 
   /** 按入队顺序强制写出当前 snapshot；worker 已关闭后退化为同一条 *Effect 原语的直接写。 */
-  private flush(): Effect.Effect<void, unknown> {
+  private flush(): Effect.Effect<void, RunStorageCommandError> {
     return Effect.suspend(() => {
       if (this.record === undefined) return Effect.void;
       const snapshot = cloneRecord(this.record);
@@ -802,9 +812,9 @@ export class SessionTracker {
     );
   }
 
-  private persistActive(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+  private persistActive(snapshot: SessionRecord): Effect.Effect<void, RunStorageCommandError> {
     const owner = this.owner;
-    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
+    if (owner === undefined) return Effect.fail(normalizeExternalCause(new Error("Session owner is unavailable.")));
     const at =
       snapshot.status === "active" ? (snapshot.heartbeatAt ?? new Date().toISOString()) : new Date().toISOString();
     return this.invocationEffect<undefined>({
@@ -817,9 +827,9 @@ export class SessionTracker {
     });
   }
 
-  private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+  private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, RunStorageCommandError> {
     const owner = this.owner;
-    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
+    if (owner === undefined) return Effect.fail(normalizeExternalCause(new Error("Session owner is unavailable.")));
     function terminalState() {
       switch (snapshot.status) {
         case "completed":
@@ -852,26 +862,31 @@ export class SessionTracker {
     );
   }
 
-  private offerWriteEffect(persistence: SessionPersistence, snapshot: SessionRecord): Effect.Effect<void, unknown> {
+  private offerWriteEffect(
+    persistence: SessionPersistence,
+    snapshot: SessionRecord,
+  ): Effect.Effect<void, RunStorageCommandError> {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
-      const completion = yield* Deferred.make<void, unknown>();
+      const completion = yield* Deferred.make<void, RunStorageCommandError>();
       const accepted = yield* Effect.sync(() =>
         Queue.offerUnsafe(persistence.requests, { _tag: "write", snapshot, completion }),
       );
-      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before flush."));
+      if (!accepted)
+        return yield* Effect.fail(normalizeExternalCause(new Error("Session persistence queue closed before flush.")));
       yield* Deferred.await(completion);
     });
   }
 
-  private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, unknown> {
+  private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, RunStorageCommandError> {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
-      const completion = yield* Deferred.make<void, unknown>();
+      const completion = yield* Deferred.make<void, RunStorageCommandError>();
       const accepted = yield* Effect.sync(() =>
         Queue.offerUnsafe(persistence.requests, { _tag: "barrier", completion }),
       );
-      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before drain."));
+      if (!accepted)
+        return yield* Effect.fail(normalizeExternalCause(new Error("Session persistence queue closed before drain.")));
       yield* Deferred.await(completion);
     });
   }
@@ -884,7 +899,7 @@ export class SessionTracker {
     persistence: SessionPersistence,
     exit: Exit.Exit<unknown, unknown>,
     finalSnapshot?: SessionRecord,
-  ): Effect.Effect<void, unknown> {
+  ): Effect.Effect<void, RunStorageCommandError> {
     return Effect.uninterruptible(
       Effect.suspend(() => {
         if (persistence.stopped) return Effect.void;
@@ -936,12 +951,14 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
 }
 
 /** 完整读取边界跳过无法解码的 durable projections，不拖垮整个 ProjectDatabase 查询。 */
-export function readSessions(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown, ProjectStateDatabase> {
+export function readSessions(
+  niceevalRoot: string,
+): Effect.Effect<SessionRecord[], RunStorageCommandError, ProjectStateDatabase> {
   return Effect.flatMap(ProjectStateDatabase, (database) =>
     Effect.flatMap(database.bind(niceevalRoot), (facets) =>
       Effect.tryPromise({
         try: () => facets.invocation.execute<readonly InvocationSessionRecord[]>({ _tag: "invocation-list" }),
-        catch: (cause) => cause,
+        catch: sessionFailure,
       }),
     ),
   ).pipe(
@@ -987,7 +1004,7 @@ export function sessionListDocument(
 export function listSessions(
   niceevalRoot: string,
   options: SessionListOptions = {},
-): Effect.Effect<SessionListDocument, unknown, ProjectStateDatabase> {
+): Effect.Effect<SessionListDocument, RunStorageCommandError, ProjectStateDatabase> {
   return readSessions(niceevalRoot).pipe(Effect.map((records) => sessionListDocument(records, options)));
 }
 
@@ -1006,7 +1023,7 @@ export function showSession(
   niceevalRoot: string,
   prefix: string,
   nowMs = Date.now(),
-): Effect.Effect<SessionShowDocument, unknown, ProjectStateDatabase> {
+): Effect.Effect<SessionShowDocument, RunStorageCommandError, ProjectStateDatabase> {
   return readSessions(niceevalRoot).pipe(
     Effect.map((records) => {
       const record = resolveSessionPrefix(records, prefix);

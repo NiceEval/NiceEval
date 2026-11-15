@@ -82,7 +82,7 @@ test.concurrent("failed 与 errored 在 NDJSON、JUnit 和退出码上保持可�
       const failedHumanRunId = /show: niceeval show run:([0-9a-f-]{36})/u.exec(failedHuman.stdout)?.[1];
       expect(failedHumanRunId, failedHuman.diagnostic()).toBeTruthy();
       expect(failedHuman.stdout.replace(/\s+/gu, " ")).toContain(
-        `deliberate-fail show: niceeval show run:${failedHumanRunId} view: niceeval view run:${failedHumanRunId}`,
+        `NEXT show: niceeval show run:${failedHumanRunId} view: niceeval view run:${failedHumanRunId}`,
       );
 
       const failedHumanSummary = await niceeval.run(["show", `run:${failedHumanRunId!}`, "--json"]);
