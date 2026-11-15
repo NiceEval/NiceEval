@@ -34,7 +34,12 @@ import {
   stageSealEntries,
   verifyAllSealedRuns,
 } from "./storage.ts";
-import type { StorageWorkerRequest, StorageWorkerResponse, StorageWorkerResult } from "./worker-protocol.ts";
+import {
+  encodeStorageWorkerFailure,
+  type StorageWorkerRequest,
+  type StorageWorkerResponse,
+  type StorageWorkerResult,
+} from "./worker-protocol.ts";
 import { withImmediateTransaction } from "./transaction.ts";
 import {
   appendSharedStateGeneration,
@@ -377,24 +382,10 @@ if (!isMainThread && parentPort !== null) {
       try {
         response = { id: request.id, state: "success", result: await execute(request) };
       } catch (cause) {
-        const error = cause instanceof Error ? cause : new Error(String(cause));
-        const code =
-          typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error";
-        const operation =
-          typeof Reflect.get(error, "operation") === "string"
-            ? String(Reflect.get(error, "operation"))
-            : request.operation;
-        const details = Reflect.get(error, "dependencies");
         response = {
           id: request.id,
           state: "failure",
-          error: {
-            code,
-            operation,
-            message: error.message,
-            ...(error.stack === undefined ? {} : { stack: error.stack }),
-            ...(Array.isArray(details) ? { details } : {}),
-          },
+          error: encodeStorageWorkerFailure(cause, request.operation),
         };
       }
       // Successful read buffers are handed to main rather than cloned. The

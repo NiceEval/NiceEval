@@ -1,7 +1,8 @@
 import { Worker } from "node:worker_threads";
 import { createRequire } from "node:module";
 import { Effect, Scope } from "effect";
-import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
+import { SqliteRecordError } from "./errors.ts";
+import { RunStorageError } from "../../run/storage/errors.ts";
 import { recordSqlitePath } from "./database.ts";
 import type {
   AppendContentChunksInput,
@@ -29,6 +30,7 @@ import type {
 } from "./types.ts";
 import {
   isStorageWorkerResponse,
+  decodeStorageWorkerFailure,
   type CaseCoordinationCommand,
   type InvocationCommand,
   type RegistryCommand,
@@ -120,8 +122,8 @@ function requestTransferList(message: RequestWithoutId): readonly ArrayBuffer[] 
   return buffers;
 }
 
-function storageWorkerFailure(operation: string, cause: unknown): SqliteRecordError {
-  if (cause instanceof SqliteRecordError) return cause;
+function storageWorkerFailure(operation: string, cause: unknown): SqliteRecordError | RunStorageError {
+  if (cause instanceof SqliteRecordError || cause instanceof RunStorageError) return cause;
   const code: unknown = cause instanceof Error ? Reflect.get(cause, "code") : undefined;
   const detail =
     cause instanceof Error
@@ -199,18 +201,7 @@ export async function makeStorageWorkerClient(
       request.resolve(value.result);
       return;
     }
-    const remoteCause = new Error(value.error.message);
-    remoteCause.name = value.error.code;
-    if (value.error.stack !== undefined) remoteCause.stack = value.error.stack;
-    if (value.error.details !== undefined) Reflect.set(remoteCause, "details", value.error.details);
-    request.reject(
-      new SqliteRecordError(
-        isSqliteRecordErrorCode(value.error.code) ? value.error.code : "record-sqlite-error",
-        value.error.operation,
-        value.error.message,
-        { cause: remoteCause },
-      ),
-    );
+    request.reject(decodeStorageWorkerFailure(value.error));
   });
   worker.on("error", fail);
   worker.on("exit", (code) => {

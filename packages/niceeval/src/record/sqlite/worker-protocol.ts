@@ -1,4 +1,7 @@
-import { Predicate } from "effect";
+import { Option, Predicate, Schema } from "effect";
+import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
+import { RUN_STORAGE_ERROR_CODES, RunStorageError } from "../../run/storage/errors.ts";
+import { isExternalCause, normalizeExternalCause } from "../../shared/external-cause.ts";
 import type {
   AppendContentChunksInput,
   AdmitAttachmentInput,
@@ -230,18 +233,88 @@ export type StorageWorkerResult =
   | readonly object[]
   | undefined;
 
+const WorkerFailureFields = {
+  message: Schema.String,
+  stack: Schema.UndefinedOr(Schema.String),
+};
+
+/** Cross-thread failures preserve the domain discriminant and every recovery fact. */
+export const StorageWorkerFailureSchema = Schema.Union([
+  Schema.Struct({
+    ...WorkerFailureFields,
+    _tag: Schema.Literal("SqliteRecordError"),
+    code: Schema.declare(isSqliteRecordErrorCode),
+    operation: Schema.String,
+    cause: Schema.UndefinedOr(Schema.declare(isExternalCause)),
+  }),
+  Schema.Struct({
+    ...WorkerFailureFields,
+    _tag: Schema.Literal("RunStorageError"),
+    code: Schema.Literals(RUN_STORAGE_ERROR_CODES),
+    dependencies: Schema.Array(
+      Schema.Struct({
+        dependentRunId: Schema.String,
+        dependentSlotId: Schema.String,
+        attemptId: Schema.String,
+        attemptLocator: Schema.String,
+      }),
+    ),
+  }),
+]);
+
+export type StorageWorkerFailure = typeof StorageWorkerFailureSchema.Type;
+const decodeWorkerFailure = Schema.decodeUnknownOption(StorageWorkerFailureSchema, { onExcessProperty: "error" });
+
+export function isStorageWorkerFailure(value: unknown): value is StorageWorkerFailure {
+  return Option.isSome(decodeWorkerFailure(value));
+}
+
+export function encodeStorageWorkerFailure(cause: unknown, operation: string): StorageWorkerFailure {
+  if (cause instanceof RunStorageError) {
+    return {
+      _tag: cause._tag,
+      code: cause.code,
+      message: cause.message,
+      stack: cause.stack,
+      dependencies: cause.dependencies,
+    };
+  }
+  if (cause instanceof SqliteRecordError) {
+    return {
+      _tag: cause._tag,
+      code: cause.code,
+      operation: cause.operation,
+      message: cause.message,
+      stack: cause.stack,
+      cause: cause.cause === undefined ? undefined : normalizeExternalCause(cause.cause),
+    };
+  }
+  const external = normalizeExternalCause(cause);
+  return {
+    _tag: "SqliteRecordError",
+    code: "record-sqlite-error",
+    operation,
+    message: cause instanceof Error ? cause.message : String(cause),
+    stack: cause instanceof Error ? cause.stack : undefined,
+    cause: external,
+  };
+}
+
+export function decodeStorageWorkerFailure(failure: StorageWorkerFailure): SqliteRecordError | RunStorageError {
+  const error =
+    failure._tag === "RunStorageError"
+      ? new RunStorageError(failure.code, failure.message, failure.dependencies)
+      : new SqliteRecordError(failure.code, failure.operation, failure.message, { cause: failure.cause });
+  Object.defineProperty(error, "stack", { value: failure.stack, configurable: true, writable: true });
+  return error;
+}
+
 export type StorageWorkerResponse =
   | { readonly id: number; readonly state: "success"; readonly result: StorageWorkerResult }
   | {
       readonly id: number;
       readonly state: "failure";
-      readonly error: {
-        readonly code: string;
-        readonly operation: string;
-        readonly message: string;
-        readonly stack?: string;
-        readonly details?: readonly object[];
-      };
+      readonly error: StorageWorkerFailure;
     };
 
 export function isStorageWorkerResponse(value: unknown): value is StorageWorkerResponse {
@@ -261,15 +334,5 @@ export function isStorageWorkerResponse(value: unknown): value is StorageWorkerR
     );
   }
   if (state !== "failure") return false;
-  const error = Reflect.get(value, "error");
-  if (!Predicate.isObject(error)) return false;
-  const stack = Reflect.get(error, "stack");
-  const details = Reflect.get(error, "details");
-  return (
-    Predicate.isString(Reflect.get(error, "code")) &&
-    Predicate.isString(Reflect.get(error, "operation")) &&
-    Predicate.isString(Reflect.get(error, "message")) &&
-    (stack === undefined || Predicate.isString(stack)) &&
-    (details === undefined || (Array.isArray(details) && details.every(Predicate.isObject)))
-  );
+  return isStorageWorkerFailure(Reflect.get(value, "error"));
 }

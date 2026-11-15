@@ -31,6 +31,12 @@ publication 算法。
 - checkpoint 被真实读锁阻止时保留已提交事实，释放读锁后可重试完成。
   此类顺序无法由公开 CLI 稳定控制时，在真实 SQLite 上作最小 Unit 例外；格式拒绝与引用保留由安装后的公开 E2E 验收。
 
+## 跨线程错误 wire
+
+SQLite storage worker 与外部 Record 导入 worker 的失败经 structured clone 回到调用方，公开 CLI 无法按需制造每一类内部失败。
+最小纯数据 Unit 守护 SqliteRecordError 与 RunStorageError 往返后保留具体领域类、判别码、operation、恢复依赖与 ExternalCause，畸形恢复字段在边界被拒绝。
+公开删除、恢复与冲突行为仍由安装后的 E2E 验收。
+
 ## 格式标记与 schema 成对守护
 
 [格式准入](../../../../feature/run/architecture/README.md#格式准入)要求当前 schema 的任何变化都递增格式标记。

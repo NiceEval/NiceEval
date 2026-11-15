@@ -46,7 +46,9 @@ vi.mock("node:worker_threads", () => ({
 
 import { SqliteRecordError } from "./errors.ts";
 import { makeStorageWorkerClient } from "./client.ts";
-import { isStorageWorkerResponse } from "./worker-protocol.ts";
+import { RunStorageError } from "../../run/storage/errors.ts";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
+import { decodeStorageWorkerFailure, encodeStorageWorkerFailure, isStorageWorkerResponse } from "./worker-protocol.ts";
 
 beforeEach(() => {
   workerHarness.instances.length = 0;
@@ -75,25 +77,69 @@ describe("Record storage worker protocol", () => {
       { id: 1, state: "success", result: undefined },
       { id: 2, state: "success", result: { value: true } },
       { id: 3, state: "success", result: [{ value: true }] },
-      { id: 4, state: "failure", error: { code: "record-write-busy", operation: "write", message: "busy" } },
+      {
+        id: 4,
+        state: "failure",
+        error: {
+          _tag: "SqliteRecordError",
+          code: "record-write-busy",
+          operation: "write",
+          message: "busy",
+          stack: undefined,
+          cause: undefined,
+        },
+      },
       {
         id: 5,
         state: "failure",
-        error: { code: "record-sqlite-error", operation: "read", message: "bad", stack: "remote stack" },
+        error: {
+          _tag: "SqliteRecordError",
+          code: "record-sqlite-error",
+          operation: "read",
+          message: "bad",
+          stack: "remote stack",
+          cause: normalizeExternalCause(new Error("disk")),
+        },
       },
       {
         id: 6,
         state: "failure",
         error: {
           code: "run-delete-reference-conflict",
-          operation: "run",
+          _tag: "RunStorageError",
           message: "referenced",
-          details: [{ attemptLocator: "@1" }],
+          stack: undefined,
+          dependencies: [
+            { dependentRunId: "dependent", dependentSlotId: "slot", attemptId: "attempt", attemptLocator: "@1" },
+          ],
         },
       },
     ]) {
       expect(isStorageWorkerResponse(response), JSON.stringify(response)).toBe(true);
+      if (isStorageWorkerResponse(response) && response.state === "failure") {
+        const decoded = decodeStorageWorkerFailure(response.error);
+        expect(decoded).toBeInstanceOf(response.error._tag === "RunStorageError" ? RunStorageError : SqliteRecordError);
+        expect(encodeStorageWorkerFailure(decoded, "unused")).toEqual(response.error);
+      }
     }
+    const runFailure = new RunStorageError("run-id-collision", "same identity, different content", [
+      {
+        dependentRunId: "dependent",
+        dependentSlotId: "slot",
+        attemptId: "attempt",
+        attemptLocator: "@1",
+      },
+    ]);
+    const wire = structuredClone(encodeStorageWorkerFailure(runFailure, "run"));
+    expect(isStorageWorkerResponse({ id: 7, state: "failure", error: wire })).toBe(true);
+    expect(decodeStorageWorkerFailure(wire)).toMatchObject(runFailure);
+    expect(
+      isStorageWorkerResponse({
+        id: 7,
+        state: "failure",
+        error: { ...wire, dependencies: [{ attemptLocator: "@1" }] },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -103,13 +149,20 @@ describe("Record storage worker client failure lifecycle", () => {
       worker.emit("message", {
         id: message.id,
         state: "failure",
-        error: { code: "record-database-invalid", operation: "initialize", message: "invalid", stack: "remote stack" },
+        error: {
+          _tag: "SqliteRecordError",
+          code: "record-database-invalid",
+          operation: "initialize",
+          message: "invalid",
+          stack: "remote stack",
+          cause: normalizeExternalCause(new Error("original failure")),
+        },
       });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const failure = await makeStorageWorkerClient("unused").catch((cause: unknown) => cause);
       expect(failure).toBeInstanceOf(SqliteRecordError);
-      expect((failure as Error & { cause?: unknown }).cause).toMatchObject({ stack: "remote stack" });
+      expect(failure).toMatchObject({ stack: "remote stack", cause: { _tag: "Error", message: "original failure" } });
       expect(workerHarness.instances.at(-1)?.terminated).toBe(1);
     }
     expect(workerHarness.instances).toHaveLength(3);

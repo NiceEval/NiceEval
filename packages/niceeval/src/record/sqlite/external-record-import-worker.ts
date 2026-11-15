@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { backup } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { closeRecordDatabase, openRecordReader, validateExactSchema, type RecordDatabase } from "./database.ts";
+import { encodeStorageWorkerFailure } from "./worker-protocol.ts";
 import { sqliteError } from "./errors.ts";
 import { captureSingleFileRecord, projectRecordReadMode, validatePortableRecordDatabase } from "./portable-capture.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
@@ -127,19 +128,7 @@ if (!isMainThread && parentPort !== null) {
   void importRecord(decodeInput(workerData)).then(
     (sealedRunCount) => port.postMessage({ state: "success", sealedRunCount }),
     (cause: unknown) => {
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      port.postMessage({
-        state: "failure",
-        error: {
-          code:
-            typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error",
-          operation:
-            typeof Reflect.get(error, "operation") === "string"
-              ? String(Reflect.get(error, "operation"))
-              : "import-record",
-          message: error.message,
-        },
-      });
+      port.postMessage({ state: "failure", error: encodeStorageWorkerFailure(cause, "import-record") });
     },
   );
 }

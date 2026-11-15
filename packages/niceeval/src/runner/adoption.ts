@@ -12,7 +12,8 @@ import { hasProvenNoExperimentHooks } from "./rename-identity.ts";
 import { experimentHooksForRun } from "./record/context.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { Effect, Result, Schema } from "effect";
+import { Data, Effect, Result, Schema } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { adapterIdentity } from "../adapter.ts";
 
 import { encodeAttemptLocator, parseAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
@@ -236,7 +237,11 @@ export interface ExplicitAdoptionRunReceipt {
 }
 
 /** Real Host write/open failures after all domain preflight has already passed. */
-export type ExplicitAdoptionCommitError = RecordWriteError | RecordReaderOpenError | RunStorageError;
+export class ExplicitAdoptionCommitError extends Data.TaggedError("ExplicitAdoptionCommitError")<{
+  readonly code: "run-storage-invalid";
+  readonly message: string;
+  readonly cause: RecordWriteError | RecordReaderOpenError | ExternalCause;
+}> {}
 
 function adoptionError(code: ExplicitAdoptionFailureCode, message: string): ExplicitAdoptionError {
   return new ExplicitAdoptionError(code, message);
@@ -1197,7 +1202,7 @@ export function commitExplicitAdoptionRunPlans(
             executionIdentityDigest: String(slot.executionIdentityDigest),
           })),
           deadlineEpochMs: Date.now() + 30_000,
-        }).pipe(Effect.mapError(asRunStorageError));
+        });
         if (plan.target.identityManifests !== undefined)
           yield* writer.attach(NiceEvalRecordAttachments.identityManifests, plan.target.identityManifests);
         for (const member of plan.members) {
@@ -1213,7 +1218,7 @@ export function commitExplicitAdoptionRunPlans(
             action: "accepted",
             publicationIdentity: member.source.reference.publicationIdentity,
             deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError(asRunStorageError));
+          });
         }
         for (const slot of plan.target.expectedSlots) {
           if (accepted.has(String(slot.slotId))) continue;
@@ -1236,14 +1241,20 @@ export function commitExplicitAdoptionRunPlans(
               reason: "early-exit-satisfied" as const,
             })),
           deadlineEpochMs: Date.now() + 30_000,
-        }).pipe(Effect.mapError(asRunStorageError));
+        });
         return receiptForPlan(plan, sealed.runId);
       }),
     { concurrency: 1 },
   ).pipe(
     Effect.scoped,
     Effect.mapError((cause) =>
-      cause instanceof RunStorageError ? cause : new RunStorageError("run-storage-invalid", safeMessage(cause)),
+      cause instanceof RunStorageError
+        ? cause
+        : new ExplicitAdoptionCommitError({
+            code: "run-storage-invalid",
+            message: safeMessage(cause),
+            cause: cause instanceof ExplicitAdoptionError ? normalizeExternalCause(cause) : cause,
+          }),
     ),
   );
 }

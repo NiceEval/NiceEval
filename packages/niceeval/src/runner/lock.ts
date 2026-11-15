@@ -3,6 +3,15 @@ import { type FencedOwner, type ProcessOwnerIdentity } from "../coordination/pla
 import { ProjectStateDatabase, type CaseCoordinationFacet } from "../record/sqlite/project-state-database.ts";
 import { currentProcessOwnerIdentity, exactProcessState } from "./node-process-identity.ts";
 
+import { SqliteRecordError } from "../record/sqlite/errors.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+
+export type CaseLockError = SqliteRecordError | ExternalCause;
+
+function caseLockError(cause: unknown): CaseLockError {
+  return cause instanceof SqliteRecordError ? cause : normalizeExternalCause(cause);
+}
+
 export interface CaseLockRecord extends FencedOwner {
   readonly experimentId: string;
   readonly evalId: string;
@@ -19,10 +28,10 @@ function caseId(experimentId: string, evalId: string): string {
 function caseEffect<A extends import("../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
   niceevalRoot: string,
   operation: (facet: CaseCoordinationFacet) => Promise<A>,
-): Effect.Effect<A, unknown, ProjectStateDatabase> {
+): Effect.Effect<A, CaseLockError, ProjectStateDatabase> {
   return Effect.flatMap(ProjectStateDatabase, (database) =>
     Effect.flatMap(database.bind(niceevalRoot), (facets) =>
-      Effect.tryPromise({ try: () => operation(facets.caseCoordination), catch: (cause) => cause }),
+      Effect.tryPromise({ try: () => operation(facets.caseCoordination), catch: caseLockError }),
     ),
   );
 }
@@ -47,7 +56,7 @@ export function readCaseLockEffect(
   niceevalRoot: string,
   experimentId: string,
   evalId: string,
-): Effect.Effect<CaseLockRecord | undefined, unknown, ProjectStateDatabase> {
+): Effect.Effect<CaseLockRecord | undefined, CaseLockError, ProjectStateDatabase> {
   return caseEffect(niceevalRoot, (facet) =>
     facet.execute({ _tag: "case-read", caseId: caseId(experimentId, evalId) }),
   ).pipe(
@@ -67,7 +76,7 @@ export function isCaseLockExpired(_record: CaseLockRecord, _nowMs: number): bool
 }
 
 export interface CaseLockEffectClaim {
-  readonly release: Effect.Effect<void, unknown>;
+  readonly release: Effect.Effect<void, CaseLockError>;
 }
 export interface AcquireCaseLockEffectResult {
   readonly claim: CaseLockEffectClaim;
@@ -78,8 +87,8 @@ type AcquireOnce =
   | { readonly kind: "acquired"; readonly owner: FencedOwner; readonly takenOver: boolean }
   | { readonly kind: "waiting"; readonly holder: CaseLockRecord };
 
-function isConflict(cause: unknown): boolean {
-  return typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "record-command-conflict";
+function isConflict(cause: CaseLockError): boolean {
+  return cause._tag === "SqliteRecordError" && cause.code === "record-command-conflict";
 }
 
 export function tryAcquireCaseLockOnceEffect(
@@ -88,7 +97,7 @@ export function tryAcquireCaseLockOnceEffect(
   evalId: string,
   identity: ProcessOwnerIdentity,
   nowMs: number,
-): Effect.Effect<AcquireOnce, unknown, ProjectStateDatabase> {
+): Effect.Effect<AcquireOnce, CaseLockError, ProjectStateDatabase> {
   const id = caseId(experimentId, evalId);
   const at = new Date(nowMs).toISOString();
   const acquire = caseEffect(niceevalRoot, (facet) =>
@@ -156,7 +165,7 @@ function delayOrAbort(milliseconds: number, signal?: AbortSignal): Effect.Effect
   );
 }
 
-const held = new Map<string, Effect.Effect<void, unknown>>();
+const held = new Map<string, Effect.Effect<void, CaseLockError>>();
 
 export function acquireCaseLockEffect(
   niceevalRoot: string,
@@ -169,7 +178,7 @@ export function acquireCaseLockEffect(
     readonly heartbeatIntervalMs?: number | undefined;
     readonly onWaitStart?: ((holder: CaseLockRecord) => void) | undefined;
   } = {},
-): Effect.Effect<AcquireCaseLockEffectResult, unknown, ProjectStateDatabase> {
+): Effect.Effect<AcquireCaseLockEffectResult, CaseLockError | Error, ProjectStateDatabase> {
   const ownerIdentity =
     identity.ownerId !== undefined && identity.bootId !== undefined && identity.processStart !== undefined
       ? (identity as ProcessOwnerIdentity)
@@ -178,7 +187,11 @@ export function acquireCaseLockEffect(
   const pollIntervalMs = opts.pollIntervalMs ?? heartbeatIntervalMs;
   const onWaitStart = opts.onWaitStart ?? (() => {});
   let waitStarted = false;
-  const acquire = (): Effect.Effect<{ owner: FencedOwner; takenOver: boolean }, unknown, ProjectStateDatabase> =>
+  const acquire = (): Effect.Effect<
+    { owner: FencedOwner; takenOver: boolean },
+    CaseLockError | Error,
+    ProjectStateDatabase
+  > =>
     Effect.suspend(() =>
       Clock.currentTimeMillis.pipe(
         Effect.flatMap((now) => tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, ownerIdentity, now)),
@@ -212,7 +225,7 @@ export function acquireCaseLockEffect(
                 at: new Date(now).toISOString(),
                 deadlineEpochMs: Date.now() + 30_000,
               }),
-            catch: (cause) => cause,
+            catch: caseLockError,
           }),
         ),
       );
@@ -235,7 +248,7 @@ export function acquireCaseLockEffect(
                         owner,
                         deadlineEpochMs: Date.now() + 30_000,
                       }),
-                    catch: (cause) => cause,
+                    catch: caseLockError,
                   }),
                 ),
               );

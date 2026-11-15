@@ -13,7 +13,7 @@ import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
-import { RunStorageError, type RunStorageErrorCode } from "./errors.ts";
+import { RunStorageError } from "./errors.ts";
 import { observeRunWriterTermination } from "./owner-identity.ts";
 import {
   RUN_ABSENCE_REASONS,
@@ -962,36 +962,11 @@ export function readPublishedAttemptOnConnection(
   };
 }
 
-const runStorageErrorCodes = new Set<RunStorageErrorCode>([
-  "run-not-found",
-  "run-not-active",
-  "writer-generation-mismatch",
-  "slot-not-found",
-  "slot-already-bound",
-  "attempt-already-published",
-  "attempt-not-published",
-  "source-run-deleted",
-  "absence-coverage-invalid",
-  "run-state-mismatch",
-  "run-delete-reference-conflict",
-  "recovery-evidence-required",
-  "publication-cutoff-restart-required",
-  "run-storage-invalid",
-]);
-
 export type RunStorageCommandError = RunStorageError | SqliteRecordError | ExternalCause;
 
 function decodeWorkerRunError(cause: unknown): RunStorageCommandError {
-  if (cause instanceof RunStorageError) return cause;
-  if (!(cause instanceof SqliteRecordError)) return normalizeExternalCause(cause);
-  if (!(cause.cause instanceof Error) || !runStorageErrorCodes.has(cause.cause.name as RunStorageErrorCode))
-    return cause;
-  const details = Reflect.get(cause.cause, "details");
-  return new RunStorageError(
-    cause.cause.name as RunStorageErrorCode,
-    cause.cause.message,
-    Array.isArray(details) ? details : [],
-  );
+  if (cause instanceof RunStorageError || cause instanceof SqliteRecordError) return cause;
+  return normalizeExternalCause(cause);
 }
 
 function runCommand<A extends import("../../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
