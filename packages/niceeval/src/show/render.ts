@@ -141,6 +141,7 @@ const attemptBlocks = (
     if (cell.members.length > 0 && members.length === 0) return [];
     return [
       {
+        meta: undefined,
         kind: "divider" as const,
         title: `Eval ${relativeToGroup(cell.evalId, group)}`,
         attachNext: true,
@@ -149,9 +150,9 @@ const attemptBlocks = (
         kind: "table" as const,
         columns: [
           { header: "Attempt", maxWidth: 14 },
-          { header: "Verdict" },
-          { header: "Duration" },
-          ...(showScore ? [{ header: "Score" }] : []),
+          { maxWidth: 40, header: "Verdict" },
+          { maxWidth: 40, header: "Duration" },
+          ...(showScore ? [{ maxWidth: 40, header: "Score" }] : []),
         ],
         overflow: "wrap" as const,
         rows:
@@ -235,6 +236,7 @@ const compactContinuation = (
     ? []
     : [
         {
+          meta: undefined,
           kind: "divider",
           title: hidden,
           attachNext: true,
@@ -289,7 +291,12 @@ function gapExplanation(explanation: IdentityExplanation | undefined, count?: nu
           }),
           ...(explanation.deltas.length > 3 ? [`+${explanation.deltas.length - 3} more`] : []),
         ];
-  return lines.map((line, index) => ({ kind: "divider", title: line + (index === 0 ? suffix : ""), attachNext: true }));
+  return lines.map((line, index) => ({
+    meta: undefined,
+    kind: "divider",
+    title: line + (index === 0 ? suffix : ""),
+    attachNext: true,
+  }));
 }
 
 function previousResultText(locator: string, attempts: ReferenceAttempts): string {
@@ -314,7 +321,7 @@ function referenceSummary(project: InspectionProjectResult, attempts: ReferenceA
   const scored = results.flatMap((attempt) => (attempt.score.state === "not-scored" ? [] : [attempt.score]));
   const passDenominator = pass.filter((attempt) => attempt.verdict !== undefined).length;
   return [
-    { kind: "divider", title: "Earlier results for these" },
+    { meta: undefined, attachNext: false, kind: "divider", title: "Earlier results for these" },
     {
       kind: "keyValue",
       entries: [
@@ -431,7 +438,15 @@ export function renderCurrentExperimentNeedsRun(
   const blocks: TerminalBlock[] = [];
   if (project.coverage.gaps === 0) return "";
   const earlier = referenceSummary(project, references);
-  if (earlier.length > 0) blocks.push({ kind: "panel", title: "Earlier results", blocks: earlier });
+  if (earlier.length > 0)
+    blocks.push({
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
+      kind: "panel",
+      title: "Earlier results",
+      blocks: earlier,
+    });
   for (const experiment of project.experiments) {
     const gaps = projectGaps(project, experiment.experimentId);
     if (gaps.length === 0) continue;
@@ -439,21 +454,30 @@ export function renderCurrentExperimentNeedsRun(
     const key = explanationKey(first.explanation);
     const shared = key !== undefined && gaps.every((gap) => explanationKey(gap.explanation) === key);
     blocks.push({
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Need a run · ${experiment.experimentId}`,
       blocks: [
         ...(shared
           ? [
-              { kind: "divider" as const, title: experimentGapSummary(gaps, references), attachNext: true },
+              {
+                meta: undefined,
+                kind: "divider" as const,
+                title: experimentGapSummary(gaps, references),
+                attachNext: true,
+              },
               ...gapExplanation(first.explanation, gaps.length),
             ]
           : []),
         ...gaps.flatMap((gap): TerminalPanelContentBlock[] => [
-          { kind: "divider", title: `Eval ${gap.evalId}`, attachNext: true },
+          { meta: undefined, kind: "divider", title: `Eval ${gap.evalId}`, attachNext: true },
           ...(shared
             ? []
             : [
                 {
+                  meta: undefined,
                   kind: "divider" as const,
                   title: gapReasonSummary(gap, references, changedSelectorSummary([gap])),
                   attachNext: true,
@@ -462,7 +486,14 @@ export function renderCurrentExperimentNeedsRun(
               ]),
           ...(gap.previous === null
             ? []
-            : [{ kind: "divider" as const, title: previousResultText(gap.previous.locator, references) }]),
+            : [
+                {
+                  meta: undefined,
+                  attachNext: false,
+                  kind: "divider" as const,
+                  title: previousResultText(gap.previous.locator, references),
+                },
+              ]),
         ]),
       ],
     });
@@ -488,10 +519,13 @@ export function renderOverview(
   }
   const blocks: TerminalBlock[] = [
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: resultsTitle(),
       blocks: [
-        { kind: "divider", title: "Totals" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Totals" },
         current === undefined
           ? aggregateEntries(value.totals)
           : {
@@ -518,21 +552,32 @@ export function renderOverview(
   if (value.experiments.length > 0) {
     const groups = groupExperiments(value);
     blocks.push({
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: "Experiments",
       blocks: groups.flatMap((group) => {
         const showPassRate = group.experiments.some(({ aggregate }) => aggregate.evaluationKind !== "points");
         const showScore = group.experiments.some(({ aggregate }) => aggregate.evaluationKind !== "pass");
         return [
-          ...(group.name === undefined ? [] : [{ kind: "divider" as const, title: group.name }]),
+          ...(group.name === undefined
+            ? []
+            : [{ meta: undefined, attachNext: false, kind: "divider" as const, title: group.name }]),
           {
+            overflow: "truncate",
             kind: "table" as const,
             columns: [
-              { header: "Experiment" },
-              { header: current === undefined ? "Observed" : "Up to date" },
-              ...(current === undefined ? [{ header: "Adapter" }, { header: "Model" }] : [{ header: "Need a run" }]),
-              ...(showPassRate ? [{ header: "Pass rate" }] : []),
-              ...(showScore ? [{ header: "Score" }] : []),
+              { maxWidth: 40, header: "Experiment" },
+              { maxWidth: 40, header: current === undefined ? "Observed" : "Up to date" },
+              ...(current === undefined
+                ? [
+                    { maxWidth: 40, header: "Adapter" },
+                    { maxWidth: 40, header: "Model" },
+                  ]
+                : [{ maxWidth: 40, header: "Need a run" }]),
+              ...(showPassRate ? [{ maxWidth: 40, header: "Pass rate" }] : []),
+              ...(showScore ? [{ maxWidth: 40, header: "Score" }] : []),
             ],
             rows: group.experiments.map((experiment) => [
               relativeToGroup(experiment.experimentId, group.name),
@@ -556,6 +601,9 @@ export function renderOverview(
   if (current !== undefined) {
     if (current.coverage.gaps > 0)
       blocks.push({
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: "Need a run",
         blocks: current.experiments.flatMap((experiment): TerminalPanelContentBlock[] => {
@@ -563,6 +611,8 @@ export function renderOverview(
           if (gaps.length === 0) return [];
           return [
             {
+              meta: undefined,
+              attachNext: false,
               kind: "divider",
               title: `${experiment.experimentId}  ${gaps.length} need a run · ${experimentGapSummary(gaps, references)}`,
             },
@@ -572,6 +622,9 @@ export function renderOverview(
     if (all)
       for (const experiment of value.experiments)
         blocks.push({
+          meta: undefined,
+          footerCommand: undefined,
+          capWidth: true,
           kind: "panel",
           title: `Attempts · ${experiment.experimentId}`,
           blocks: attemptBlocks(
@@ -583,16 +636,20 @@ export function renderOverview(
         });
     if (current.history.length > 0)
       blocks.push({
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: "History",
         blocks: [
           {
+            overflow: "truncate",
             kind: "table",
             columns: [
-              { header: "Experiment" },
-              { header: "Eval" },
-              { header: "Attempt" },
-              { header: "Previous result" },
+              { maxWidth: 40, header: "Experiment" },
+              { maxWidth: 40, header: "Eval" },
+              { maxWidth: 40, header: "Attempt" },
+              { maxWidth: 40, header: "Previous result" },
             ],
             rows: current.history.map((slot) => [
               slot.experimentId,
@@ -610,12 +667,16 @@ export function renderOverview(
       const experimentIds = new Set(group.experiments.map(({ experimentId }) => experimentId));
       const cells = value.cells.filter(({ experimentId }) => experimentIds.has(experimentId));
       blocks.push({
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: group.name === undefined ? "Attempts" : `Attempts · ${group.name}`,
         blocks: group.experiments.flatMap((experiment) => {
           const experimentCells = cells.filter(({ experimentId }) => experimentId === experiment.experimentId);
           return [
             {
+              meta: undefined,
               kind: "divider" as const,
               title: `Experiment ${experiment.experimentId}`,
               attachNext: true,
@@ -643,6 +704,9 @@ export function renderExperiment(value: ExperimentView): string {
   const { totalCosts, coverage } = value.costSummary;
   return terminal([
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Experiment ${value.experimentId}`,
       blocks: [
@@ -658,16 +722,18 @@ export function renderExperiment(value: ExperimentView): string {
             },
           ],
         },
-        { kind: "divider", title: "Plugins" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Plugins" },
         {
+          overflow: "truncate",
           kind: "table",
-          columns: ["Name", "Key", "Identity"].map((header) => ({ header })),
+          columns: ["Name", "Key", "Identity"].map((header) => ({ maxWidth: 40, header })),
           rows: value.plugins.map((plugin) => [plugin.name, plugin.key, structuredSummary(plugin.identity)]),
         },
-        { kind: "divider", title: "Notes" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Notes" },
         {
+          overflow: "truncate",
           kind: "table",
-          columns: ["Label", "Count", "Min", "Median", "P90", "Max"].map((header) => ({ header })),
+          columns: ["Label", "Count", "Min", "Median", "P90", "Max"].map((header) => ({ maxWidth: 40, header })),
           rows: value.notes.map((note) => [
             note.label,
             String(note.count),
@@ -675,6 +741,8 @@ export function renderExperiment(value: ExperimentView): string {
           ]),
         },
         {
+          meta: undefined,
+          attachNext: false,
           kind: "divider",
           title: totalCosts.state === "complete" ? "Experiment total costs" : "Experiment known subtotal",
         },
@@ -692,11 +760,11 @@ export function renderExperiment(value: ExperimentView): string {
             { key: "Missing attempts", value: String(coverage.missingAttemptCount) },
           ],
         },
-        { kind: "divider", title: "Summary" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Summary" },
         aggregateEntries(value.aggregate),
-        { kind: "divider", title: "Attempts" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Attempts" },
         ...attemptBlocks(value.cells, undefined, true),
-        { kind: "divider", title: "Models and usage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Models and usage" },
         {
           kind: "keyValue",
           entries: [
@@ -708,14 +776,14 @@ export function renderExperiment(value: ExperimentView): string {
           ],
         },
         ...value.modelUsage.attempts.flatMap<TerminalPanelContentBlock>((attempt) => [
-          { kind: "divider", title: `Attempt ${attempt.locator}` },
+          { meta: undefined, attachNext: false, kind: "divider", title: `Attempt ${attempt.locator}` },
           {
             kind: "keyValue",
             entries: [{ key: "Origin Run", value: attempt.originRunId }],
           },
           ...totalCostBlocks(attempt.usage.totalCosts),
           ...modelUsageBlocks(attempt.usage),
-          { kind: "divider", title: "Application totals" },
+          { meta: undefined, attachNext: false, kind: "divider", title: "Application totals" },
           { kind: "keyValue", entries: usageTotalEntries(attempt.usage.totals) },
         ]),
       ],
@@ -732,6 +800,9 @@ function executionValue(value: ExecutionValue): string {
 export function renderRun(value: RunView): string {
   const blocks: TerminalBlock[] = [
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Run ${value.runId}`,
       blocks: [
@@ -762,7 +833,7 @@ export function renderRun(value: RunView): string {
             },
           ],
         },
-        { kind: "divider", title: "Coverage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Coverage" },
         {
           kind: "keyValue",
           entries: [
@@ -778,9 +849,9 @@ export function renderRun(value: RunView): string {
             },
           ],
         },
-        { kind: "divider", title: "Usage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Usage" },
         runUsageBlocks(value.usage),
-        { kind: "divider", title: "Limitations" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
         runLocatedLimitationTable(value.limitations),
       ],
     },
@@ -797,6 +868,9 @@ export function renderRun(value: RunView): string {
       "run.after": "Experiment after",
     }[diagnostic.phase];
     blocks.push({
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: "Run error",
       blocks: [
@@ -809,8 +883,12 @@ export function renderRun(value: RunView): string {
           ],
         },
         {
+          overflow: "truncate",
           kind: "table",
-          columns: [{ header: "Eval" }, { header: "Attempt ordinal" }],
+          columns: [
+            { maxWidth: 40, header: "Eval" },
+            { maxWidth: 40, header: "Attempt ordinal" },
+          ],
           rows: affected.map((member) => [member.evalId, String(member.attemptOrdinal)]),
         },
       ],
@@ -829,6 +907,8 @@ export function renderRun(value: RunView): string {
       }
     }
     blocks.push({
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Planned attempt ${member.plannedAttemptId}`,
       meta: factPhrase(member.state),
@@ -854,7 +934,7 @@ export function renderRun(value: RunView): string {
             },
           ],
         },
-        { kind: "divider", title: "Coverage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Coverage" },
         {
           kind: "keyValue",
           entries: [
@@ -866,9 +946,9 @@ export function renderRun(value: RunView): string {
             },
           ],
         },
-        { kind: "divider", title: "Usage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Usage" },
         memberUsageBlocks(member.usage),
-        { kind: "divider", title: "Limitations" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
         runMemberLimitationTable(member.limitations),
       ],
     });
@@ -921,7 +1001,7 @@ function runMemberLimitationTable(
 ): TerminalPanelContentBlock & { readonly kind: "table" } {
   return {
     kind: "table",
-    columns: [{ header: "Limitation" }],
+    columns: [{ maxWidth: 40, header: "Limitation" }],
     rows: countedSummaries(values.map(formatRunMemberLimitation)).map((value) => [value]),
     overflow: "wrap",
   };
@@ -946,7 +1026,11 @@ function runLocatedLimitationTable(
   }
   return {
     kind: "table",
-    columns: [{ header: "Planned attempt" }, { header: "Attempt" }, { header: "Limitation" }],
+    columns: [
+      { maxWidth: 40, header: "Planned attempt" },
+      { maxWidth: 40, header: "Attempt" },
+      { maxWidth: 40, header: "Limitation" },
+    ],
     rows: [...groups.values()].map((value) => [
       value.plannedAttemptId,
       value.locator,
@@ -984,6 +1068,8 @@ function formatAttemptLimitation(value: AttemptLimitation): string {
 export function renderAttempt(value: AttemptView): string {
   return terminal([
     {
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Attempt ${value.locator}`,
       meta:
@@ -1020,6 +1106,8 @@ export function renderAttempt(value: AttemptView): string {
         },
         ...attemptDiagnosticBlocks(value),
         {
+          meta: undefined,
+          attachNext: false,
           kind: "divider",
           title: `assertions ${value.sections.assertions} · ${value.assertions.entries.length} entries`,
         },
@@ -1033,15 +1121,20 @@ export function renderAttempt(value: AttemptView): string {
           ],
         },
         {
+          overflow: "truncate",
           kind: "table",
-          columns: [{ header: "Assertion" }, { header: "Entry ID" }, { header: "Group" }],
+          columns: [
+            { maxWidth: 40, header: "Assertion" },
+            { maxWidth: 40, header: "Entry ID" },
+            { maxWidth: 40, header: "Group" },
+          ],
           rows: value.assertions.entries.map((entry) => [
             entry.label ?? entry.entryId,
             entry.entryId,
             entry.groupPath.length === 0 ? "root" : entry.groupPath.join(" / "),
           ]),
         },
-        { kind: "divider", title: "Notes" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Notes" },
         {
           kind: "keyValue",
           entries: value.notes.map((note) => {
@@ -1053,7 +1146,7 @@ export function renderAttempt(value: AttemptView): string {
             return { key: note.label, value: noteValue() };
           }),
         },
-        { kind: "divider", title: "Evidence" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Evidence" },
         {
           kind: "keyValue",
           entries: [
@@ -1073,7 +1166,7 @@ export function renderAttempt(value: AttemptView): string {
             },
           ],
         },
-        { kind: "divider", title: "Sections" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Sections" },
         {
           kind: "keyValue",
           entries: [
@@ -1100,7 +1193,7 @@ function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[
     ["Advisories", advisories],
   ] as const) {
     if (diagnostics.length === 0) continue;
-    blocks.push({ kind: "divider", title });
+    blocks.push({ meta: undefined, attachNext: false, kind: "divider", title });
     for (const diagnostic of diagnostics)
       blocks.push({
         kind: "keyValue",
@@ -1120,7 +1213,7 @@ function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[
   }
   if (value.outcome === "errored" && failures.length === 0 && value.verdictCauses === undefined) {
     blocks.unshift(
-      { kind: "divider", title: "Failure diagnostics" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Failure diagnostics" },
       {
         kind: "keyValue",
         entries: [
@@ -1140,6 +1233,8 @@ function attemptDiagnosticBlocks(value: AttemptView): TerminalPanelContentBlock[
 export function renderSources(value: SourcesView): string {
   const blocks: TerminalBlock[] = [
     {
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Captured source ${value.locator}`,
       meta: factPhrase(value.state),
@@ -1160,6 +1255,9 @@ export function renderSources(value: SourcesView): string {
   ];
   for (const item of value.items) {
     blocks.push({
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `${item.path} · ${item.sourceItemId} · ${item.byteLength} bytes`,
       blocks: [
@@ -1182,11 +1280,13 @@ export function renderSources(value: SourcesView): string {
       ],
     });
     if (item.content.state === "available") {
-      blocks.push({ kind: "code", text: item.content.text });
+      blocks.push({ kind: "raw", text: item.content.text });
     }
   }
   blocks.push(
     {
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: "Assertion source facts",
       meta: factPhrase(value.assertions.state),
@@ -1308,9 +1408,9 @@ function displayLines(
 
 function displayDetailBlocks(block: ExecutionDisplayDetailBlock, locator: string, eventId: string): TerminalBlock[] {
   const lines = displayLines(block, eventId, TERMINAL_OPTIONS.width);
-  const blocks: TerminalBlock[] = [{ kind: "code", text: lines.join("\n") }];
+  const blocks: TerminalBlock[] = [{ kind: "raw", text: lines.join("\n") }];
   if (block.kind === "image") {
-    blocks.push({ kind: "code", text: `niceeval show ${locator} ${block.artifactId}` });
+    blocks.push({ kind: "raw", text: `niceeval show ${locator} ${block.artifactId}` });
   }
   return blocks;
 }
@@ -1331,11 +1431,17 @@ function captureLimitationSummary(value: TraceView["execution"]["limitations"][n
 export function renderTrace(value: TraceView): string {
   const blocks: TerminalBlock[] = [
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Execution ${value.locator}`,
       blocks: [],
     },
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: "Generic execution traces",
       blocks: [
@@ -1356,14 +1462,14 @@ export function renderTrace(value: TraceView): string {
         },
         {
           kind: "table",
-          columns: [{ header: "Capture limitation" }],
+          columns: [{ maxWidth: 40, header: "Capture limitation" }],
           rows: countedSummaries(
             value.execution.limitations.map((limitation) => safeEventText(captureLimitationSummary(limitation))),
           ).map((limitation) => [limitation]),
           overflow: "wrap",
         },
         ...value.execution.traces.flatMap<TerminalPanelContentBlock>((trace) => [
-          { kind: "divider", title: `Trace ${safeEventText(trace.sourceTraceId)}` },
+          { meta: undefined, attachNext: false, kind: "divider", title: `Trace ${safeEventText(trace.sourceTraceId)}` },
           {
             kind: "keyValue",
             entries: [
@@ -1374,14 +1480,14 @@ export function renderTrace(value: TraceView): string {
           },
           {
             kind: "table",
-            columns: [{ header: "Recording limitation" }],
+            columns: [{ maxWidth: 40, header: "Recording limitation" }],
             rows: countedSummaries(
               trace.collection.limitations.map((limitation) => safeEventText(limitation.message)),
             ).map((message) => [message]),
             overflow: "wrap",
           },
         ]),
-        { kind: "divider", title: "Event page" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Event page" },
         ...value.execution.events
           .filter(
             (event) =>
@@ -1391,7 +1497,7 @@ export function renderTrace(value: TraceView): string {
               ),
           )
           .flatMap<TerminalPanelContentBlock>((event) => [
-            { kind: "divider", title: safeEventText(event.type) },
+            { meta: undefined, attachNext: false, kind: "divider", title: safeEventText(event.type) },
             {
               kind: "keyValue",
               entries: [
@@ -1425,6 +1531,9 @@ export function renderTrace(value: TraceView): string {
       ],
     },
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Conversation · ${factPhrase(value.conversation.state)}`,
       blocks: [
@@ -1457,13 +1566,15 @@ export function renderTrace(value: TraceView): string {
             },
           ],
         },
-        { kind: "divider", title: "Limitations" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
         limitationTable(value.conversation.limitations),
       ],
     },
   ];
   for (const turn of value.conversation.turns) {
     blocks.push({
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Turn ${turn.turnId}`,
       meta: turn.outcome,
@@ -1484,6 +1595,9 @@ export function renderTrace(value: TraceView): string {
         event.scopeMemberships.some((scope) => scope.scopeId === turn.turnId && scope.state === "included"),
     )) {
       blocks.push({
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: "Simulated user",
         blocks: [
@@ -1515,6 +1629,9 @@ export function renderTrace(value: TraceView): string {
     }
   }
   blocks.push({
+    meta: undefined,
+    footerCommand: undefined,
+    capWidth: true,
     kind: "panel",
     title: `Commands · ${factPhrase(value.commands.state)}`,
     blocks: [
@@ -1539,12 +1656,17 @@ export function renderTrace(value: TraceView): string {
           },
         ],
       },
-      { kind: "divider", title: "Limitations" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
       limitationTable(value.commands.limitations),
-      { kind: "divider", title: "Command outline" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Command outline" },
       {
+        overflow: "truncate",
         kind: "table",
-        columns: [{ header: "Command ID" }, { header: "Phase" }, { header: "Outcome" }],
+        columns: [
+          { maxWidth: 40, header: "Command ID" },
+          { maxWidth: 40, header: "Phase" },
+          { maxWidth: 40, header: "Outcome" },
+        ],
         rows: value.commands.items.map((command) => [
           command.commandId,
           command.phase,
@@ -1554,6 +1676,9 @@ export function renderTrace(value: TraceView): string {
     ],
   });
   blocks.push({
+    meta: undefined,
+    footerCommand: undefined,
+    capWidth: true,
     kind: "panel",
     title: `Diagnostics · ${factPhrase(value.diagnostics.state)}`,
     blocks: [
@@ -1578,17 +1703,17 @@ export function renderTrace(value: TraceView): string {
           },
         ],
       },
-      { kind: "divider", title: "Limitations" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
       limitationTable(value.diagnostics.limitations),
-      { kind: "divider", title: "Diagnostic outline" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Diagnostic outline" },
       {
         kind: "table",
         columns: [
-          { header: "Diagnostic ID" },
-          { header: "Phase" },
-          { header: "Kind" },
-          { header: "Code" },
-          { header: "Summary" },
+          { maxWidth: 40, header: "Diagnostic ID" },
+          { maxWidth: 40, header: "Phase" },
+          { maxWidth: 40, header: "Kind" },
+          { maxWidth: 40, header: "Code" },
+          { maxWidth: 40, header: "Summary" },
         ],
         rows: value.diagnostics.items.map((diagnostic) => [
           diagnostic.diagnosticId,
@@ -1608,7 +1733,14 @@ export function renderTrace(value: TraceView): string {
     ],
   });
   blocks.push(
-    { kind: "panel", title: "Stable identities", blocks: [] },
+    {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
+      kind: "panel",
+      title: "Stable identities",
+      blocks: [],
+    },
     {
       kind: "raw",
       text: [
@@ -1639,7 +1771,7 @@ function limitationTable(
 ): TerminalPanelContentBlock & { readonly kind: "table" } {
   return {
     kind: "table",
-    columns: [{ header: "Limitation" }],
+    columns: [{ maxWidth: 40, header: "Limitation" }],
     rows: countedSummaries(limitations.map(formatProjectionLimitation)).map((limitation) => [limitation]),
     overflow: "wrap",
   };
@@ -1737,28 +1869,36 @@ function traceItemBlocks(item: TraceItem): readonly TerminalBlock[] {
   }
   return [
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Item ${item.itemId}`,
       blocks: [{ kind: "keyValue", entries }],
     },
-    ...(content === undefined ? [] : [{ kind: "code" as const, text: content }]),
+    ...(content === undefined ? [] : [{ kind: "raw" as const, text: content }]),
   ];
 }
 
 export function renderTraceDetail(value: TraceDetailView): string {
   const body = value.body;
   const heading: TerminalBlock = {
+    footerCommand: undefined,
+    capWidth: true,
     kind: "panel",
     title: `Execution detail ${value.locator}`,
     meta: `${value.kind} ${value.stableId}`,
     blocks: [],
   };
   if (body.kind === "diagnostic")
-    return terminal([heading, { kind: "code", text: `${body.phase} · ${body.code}\n${body.summary}` }]);
+    return terminal([heading, { kind: "raw", text: `${body.phase} · ${body.code}\n${body.summary}` }]);
   if (body.kind === "execution-event") {
     return terminal([
       heading,
       {
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: `${safeEventText(body.event.type)} · ${body.event.eventId}`,
         blocks: [
@@ -1787,7 +1927,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
         ],
       },
       ...(body.event.display ?? []).flatMap((block) => displayDetailBlocks(block, value.locator, body.event.eventId)),
-      { kind: "divider", title: "Event" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Event" },
       {
         kind: "keyValue",
         entries: [
@@ -1798,6 +1938,8 @@ export function renderTraceDetail(value: TraceDetailView): string {
       },
       ...body.evidence.flatMap((evidence): readonly TerminalBlock[] => [
         {
+          footerCommand: undefined,
+          capWidth: true,
           kind: "panel",
           title: `${safeEventText(evidence.label)} · ${evidence.evidenceId}`,
           meta: evidence.truncated ? "preview" : "complete",
@@ -1814,7 +1956,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
             },
           ],
         },
-        { kind: "code", text: safeEventText(recordedTextSummary(executionEvidenceText(evidence.base64))) },
+        { kind: "raw", text: safeEventText(recordedTextSummary(executionEvidenceText(evidence.base64))) },
       ]),
     ]);
   }
@@ -1822,6 +1964,9 @@ export function renderTraceDetail(value: TraceDetailView): string {
     return terminal([
       heading,
       {
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: `${safeEventText(body.label)} · ${body.evidenceId}`,
         blocks: [
@@ -1838,7 +1983,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
           },
         ],
       },
-      { kind: "code", text: safeEventText(recordedTextSummary(executionEvidenceText(body.base64))) },
+      { kind: "raw", text: safeEventText(recordedTextSummary(executionEvidenceText(body.base64))) },
     ]);
   }
   if (body.kind === "turn") return terminal([heading, ...body.items.flatMap((item) => traceDetailItemBlocks(item))]);
@@ -1849,6 +1994,9 @@ export function renderTraceDetail(value: TraceDetailView): string {
     return terminal([
       heading,
       {
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: "Occurrence turns",
         blocks: [
@@ -1876,6 +2024,8 @@ export function renderTraceDetail(value: TraceDetailView): string {
       ...(body.call === null
         ? [
             {
+              footerCommand: undefined,
+              capWidth: true,
               kind: "panel" as const,
               title: "Call",
               meta: "not recorded",
@@ -1886,6 +2036,8 @@ export function renderTraceDetail(value: TraceDetailView): string {
       ...(body.result === null
         ? [
             {
+              footerCommand: undefined,
+              capWidth: true,
               kind: "panel" as const,
               title: "Result",
               meta: "not recorded",
@@ -1898,6 +2050,9 @@ export function renderTraceDetail(value: TraceDetailView): string {
   return terminal([
     heading,
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Command ${body.commandId}`,
       blocks: [
@@ -1915,14 +2070,14 @@ export function renderTraceDetail(value: TraceDetailView): string {
             { key: "Sequence", value: String(body.sequence) },
           ],
         },
-        { kind: "divider", title: "stdout" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "stdout" },
         streamMetadata(body.stdout),
-        { kind: "divider", title: "stderr" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "stderr" },
         streamMetadata(body.stderr),
       ],
     },
-    { kind: "code", text: body.stdout.text },
-    { kind: "code", text: body.stderr.text },
+    { kind: "raw", text: body.stdout.text },
+    { kind: "raw", text: body.stderr.text },
   ]);
 }
 
@@ -1993,11 +2148,14 @@ function traceDetailItemBlocks(item: TraceDetailItem, title = `Item ${item.itemI
   }
   return [
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title,
       blocks: [{ kind: "keyValue", entries }],
     },
-    ...(content === undefined ? [] : [{ kind: "code" as const, text: content }]),
+    ...(content === undefined ? [] : [{ kind: "raw" as const, text: content }]),
   ];
 }
 
@@ -2062,6 +2220,8 @@ export function renderTiming(value: TimingView): string {
   return renderTerminal(
     [
       {
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: `Timing ${value.locator}`,
         meta: factPhrase(value.state),
@@ -2078,9 +2238,9 @@ export function renderTiming(value: TimingView): string {
               { key: "Limitations", value: String(value.limitations.length) },
             ],
           },
-          { kind: "divider", title: "Limitations" },
+          { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
           projectionLimitationTable(value.limitations),
-          { kind: "divider", title: "Activities" },
+          { meta: undefined, attachNext: false, kind: "divider", title: "Activities" },
           {
             kind: "table",
             columns: headers.map((header, index) => ({ header, maxWidth: widths[index] })),
@@ -2089,7 +2249,7 @@ export function renderTiming(value: TimingView): string {
           },
           ...(value.activities.some((activity) => activity.outcome === "failed")
             ? [
-                { kind: "divider" as const, title: "Failed activities" },
+                { meta: undefined, attachNext: false, kind: "divider" as const, title: "Failed activities" },
                 ...value.activities
                   .filter((activity) => activity.outcome === "failed")
                   .map((activity) => ({
@@ -2165,7 +2325,7 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
   };
   const models = [...new Set(costs.gaps.flatMap((gap) => gap.models))].sort();
   return [
-    { kind: "divider", title: complete ? "Total costs" : "Known subtotal" },
+    { meta: undefined, attachNext: false, kind: "divider", title: complete ? "Total costs" : "Known subtotal" },
     {
       kind: "keyValue",
       entries: [
@@ -2195,7 +2355,11 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
       : [
           {
             kind: "table" as const,
-            columns: [{ header: "Currency" }, { header: complete ? "Total" : "Known subtotal" }, { header: "Source" }],
+            columns: [
+              { maxWidth: 40, header: "Currency" },
+              { maxWidth: 40, header: complete ? "Total" : "Known subtotal" },
+              { maxWidth: 40, header: "Source" },
+            ],
             rows: costs.values.map((cost) => [cost.currency, cost.value, cost.source]),
             overflow: "wrap" as const,
           },
@@ -2204,10 +2368,17 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
       ? []
       : [
           {
+            meta: undefined,
+            attachNext: false,
             kind: "divider" as const,
             title: `Pricing: add prices for ${models.join(", ")} to defineConfig({ pricing })`,
           },
-          { kind: "divider" as const, title: "Pricing: https://niceeval.dev/reference/define-config#pricing" },
+          {
+            meta: undefined,
+            attachNext: false,
+            kind: "divider" as const,
+            title: "Pricing: https://niceeval.dev/reference/define-config#pricing",
+          },
         ]),
   ];
 }
@@ -2224,15 +2395,15 @@ function cacheReadBlocks(
     summary.reasons.map(factPhrase).join(", ") || "—",
   ];
   return [
-    { kind: "divider", title: "Cache read rate" },
+    { meta: undefined, attachNext: false, kind: "divider", title: "Cache read rate" },
     {
       kind: "table",
       columns: [
-        { header: "Scope" },
-        { header: "Rate" },
-        { header: "Covered calls" },
-        { header: "Collection" },
-        { header: "Reasons" },
+        { maxWidth: 40, header: "Scope" },
+        { maxWidth: 40, header: "Rate" },
+        { maxWidth: 40, header: "Covered calls" },
+        { maxWidth: 40, header: "Collection" },
+        { maxWidth: 40, header: "Reasons" },
       ],
       rows: [
         row("Total", report.total),
@@ -2285,10 +2456,10 @@ function modelUsageBlocks(
       {
         kind: "table",
         columns: [
-          { header: "Role" },
-          { header: "Configured model" },
-          { header: "Effort" },
-          { header: "Recorded calls" },
+          { maxWidth: 40, header: "Role" },
+          { maxWidth: 40, header: "Configured model" },
+          { maxWidth: 40, header: "Effort" },
+          { maxWidth: 40, header: "Recorded calls" },
         ],
         rows: configured.bindings.map((binding) => [
           binding.modelRole,
@@ -2302,9 +2473,9 @@ function modelUsageBlocks(
   }
   return [
     ...cacheReadBlocks(cacheRead),
-    { kind: "divider", title: "Configured model roles" },
+    { meta: undefined, attachNext: false, kind: "divider", title: "Configured model roles" },
     ...configurationBlocks(),
-    { kind: "divider", title: "Actual model usage" },
+    { meta: undefined, attachNext: false, kind: "divider", title: "Actual model usage" },
     {
       kind: "keyValue",
       entries: [
@@ -2340,7 +2511,7 @@ function modelUsageBlocks(
       ]),
       overflow: "wrap",
     },
-    { kind: "divider", title: "Judge usage" },
+    { meta: undefined, attachNext: false, kind: "divider", title: "Judge usage" },
     {
       kind: "keyValue",
       entries:
@@ -2370,12 +2541,14 @@ function modelUsageBlocks(
 export function renderUsage(value: UsageView): string {
   return terminal([
     {
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Usage ${value.locator}`,
       meta: factPhrase(value.state),
       blocks: [
         ...totalCostBlocks(value.totalCosts),
-        { kind: "divider", title: "Application usage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Application usage" },
         {
           kind: "keyValue",
           entries: [
@@ -2409,17 +2582,28 @@ export function renderUsage(value: UsageView): string {
           ],
         },
         ...modelUsageBlocks(value, value.cacheRead),
-        { kind: "divider", title: "Limitations" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
         {
           kind: "table",
-          columns: [{ header: "Limitation" }],
+          columns: [{ maxWidth: 40, header: "Limitation" }],
           rows: countedSummaries(value.limitations.map(formatUsageLimitation)).map((limitation) => [limitation]),
           overflow: "wrap",
         },
-        { kind: "divider", title: value.totals.costs === undefined ? "Provider costs" : "Application costs" },
         {
+          meta: undefined,
+          attachNext: false,
+          kind: "divider",
+          title: value.totals.costs === undefined ? "Provider costs" : "Application costs",
+        },
+        {
+          overflow: "truncate",
           kind: "table",
-          columns: [{ header: "Currency" }, { header: "Value" }, { header: "State" }, { header: "Observations" }],
+          columns: [
+            { maxWidth: 40, header: "Currency" },
+            { maxWidth: 40, header: "Value" },
+            { maxWidth: 40, header: "State" },
+            { maxWidth: 40, header: "Observations" },
+          ],
           rows:
             value.totals.costs === undefined
               ? (value.totals.providerCosts?.values ?? []).map((cost) => [
@@ -2435,25 +2619,30 @@ export function renderUsage(value: UsageView): string {
                   `${cost.coveredCalls}/${value.totals.costs!.totalCalls}`,
                 ]),
         },
-        { kind: "divider", title: "Turn coverage" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Turn coverage" },
         {
+          overflow: "truncate",
           kind: "table",
-          columns: [{ header: "Turn" }, { header: "Coverage" }, { header: "Reason" }],
+          columns: [
+            { maxWidth: 40, header: "Turn" },
+            { maxWidth: 40, header: "Coverage" },
+            { maxWidth: 40, header: "Reason" },
+          ],
           rows: value.turns.map((turn) => [
             turn.turnId,
             turn.coverage.state,
             turn.coverage.state === "complete" ? "none" : factPhrase(turn.coverage.reason),
           ]),
         },
-        { kind: "divider", title: "Observation provenance" },
+        { meta: undefined, attachNext: false, kind: "divider", title: "Observation provenance" },
         {
           kind: "table",
           columns: [
-            { header: "Turn" },
-            { header: "Observation ID" },
-            { header: "Kind" },
-            { header: "Provider" },
-            { header: "Recorded value" },
+            { maxWidth: 40, header: "Turn" },
+            { maxWidth: 40, header: "Observation ID" },
+            { maxWidth: 40, header: "Kind" },
+            { maxWidth: 40, header: "Provider" },
+            { maxWidth: 40, header: "Recorded value" },
           ],
           rows: value.observations.map((observation) => [
             observation.turnId,
@@ -2496,10 +2685,10 @@ export function renderDiff(value: DiffView): string {
   ];
   if (value.state === "invalid") {
     statusBlocks.push(
-      { kind: "divider", title: "Issues" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Issues" },
       {
         kind: "table",
-        columns: [{ header: "Issue" }],
+        columns: [{ maxWidth: 40, header: "Issue" }],
         rows: value.issues.map((issue) => [issue]),
         overflow: "wrap",
       },
@@ -2507,10 +2696,10 @@ export function renderDiff(value: DiffView): string {
   }
   if (value.state === "complete" || value.state === "partial") {
     statusBlocks.push(
-      { kind: "divider", title: "Limitations" },
+      { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
       {
         kind: "table",
-        columns: [{ header: "Limitation" }],
+        columns: [{ maxWidth: 40, header: "Limitation" }],
         rows: countedSummaries(value.limitations.map(formatDiffLimitation)).map((limitation) => [limitation]),
         overflow: "wrap",
       },
@@ -2518,6 +2707,8 @@ export function renderDiff(value: DiffView): string {
   }
   const blocks: TerminalBlock[] = [
     {
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Diff ${value.locator}`,
       meta: factPhrase(value.state),
@@ -2526,6 +2717,8 @@ export function renderDiff(value: DiffView): string {
   ];
   for (const window of value.windows) {
     blocks.push({
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: `Window ${window.windowId}`,
       meta: `sequence ${window.sequence}`,
@@ -2538,6 +2731,8 @@ export function renderDiff(value: DiffView): string {
     });
     for (const change of window.changes) {
       blocks.push({
+        footerCommand: undefined,
+        capWidth: true,
         kind: "panel",
         title: `Change ${change.changeId}`,
         meta: change.kind,
@@ -2654,7 +2849,9 @@ function comparisonCostDelta(left: ComparisonAttempt, right: ComparisonAttempt):
 }
 
 export function renderComparison(comparison: Comparison, attempts: ComparisonAttempts): string {
-  const blocks: TerminalBlock[] = [{ kind: "divider", title: `Run comparison · ${comparison.mode}` }];
+  const blocks: TerminalBlock[] = [
+    { meta: undefined, attachNext: false, kind: "divider", title: `Run comparison · ${comparison.mode}` },
+  ];
   const memberRows = (members: Comparison["left"]["members"]) =>
     members.map((member) => {
       const attempt = attempts.get(member.locator)!;
@@ -2671,10 +2868,11 @@ export function renderComparison(comparison: Comparison, attempts: ComparisonAtt
   if (comparison.mode === "side-by-side") {
     for (const side of ["left", "right"] as const) {
       blocks.push(
-        { kind: "divider", title: side === "left" ? "Baseline" : "Candidate" },
+        { meta: undefined, attachNext: false, kind: "divider", title: side === "left" ? "Baseline" : "Candidate" },
         {
           kind: "table",
           columns: ["Eval", "Ordinal", "Attempt", "Verdict", "Score", "Costs", "Cost state"].map((header) => ({
+            maxWidth: 40,
             header,
           })),
           rows: memberRows(comparison[side].members),
@@ -2691,7 +2889,7 @@ export function renderComparison(comparison: Comparison, attempts: ComparisonAtt
           ? fmt(b.score.earned - a.score.earned)
           : "unavailable";
       blocks.push(
-        { kind: "divider", title: `${left.evalId} · ${left.attemptOrdinal}` },
+        { meta: undefined, attachNext: false, kind: "divider", title: `${left.evalId} · ${left.attemptOrdinal}` },
         {
           kind: "keyValue",
           entries: [
@@ -2748,11 +2946,16 @@ export function renderReferences(project: InspectionProjectResult, attempts: Ref
   );
   return terminal([
     {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
       kind: "panel",
       title: "Historical reference results",
       blocks: [
         ...referenceSummary(project, attempts),
         ...previous.map((slot) => ({
+          meta: undefined,
+          attachNext: false,
           kind: "divider" as const,
           title: `${slot.experimentId} · ${slot.evalId} · ${slot.attemptOrdinal} · ${previousResultText(slot.previous.locator, attempts)}`,
         })),
@@ -2760,12 +2963,13 @@ export function renderReferences(project: InspectionProjectResult, attempts: Ref
           ? []
           : [
               {
+                overflow: "truncate" as const,
                 kind: "table" as const,
                 columns: [
-                  { header: "Experiment" },
-                  { header: "Eval" },
-                  { header: "Attempt" },
-                  { header: "Historical result" },
+                  { maxWidth: 40, header: "Experiment" },
+                  { maxWidth: 40, header: "Eval" },
+                  { maxWidth: 40, header: "Attempt" },
+                  { maxWidth: 40, header: "Historical result" },
                 ],
                 rows: project.history.map((slot) => [
                   slot.experimentId,
@@ -2805,17 +3009,29 @@ export function renderAssertions(
       : [],
   );
   if (options.summary.kind === "available")
-    blocks.push({ kind: "divider", title: assertionVerdictLine(options.summary.verdict, options.summary.score) });
+    blocks.push({
+      meta: undefined,
+      attachNext: false,
+      kind: "divider",
+      title: assertionVerdictLine(options.summary.verdict, options.summary.score),
+    });
   const counts = assertionRoleCounts(roles);
-  if (counts !== "") blocks.push({ kind: "divider", title: counts });
+  if (counts !== "") blocks.push({ meta: undefined, attachNext: false, kind: "divider", title: counts });
 
   for (const assertion of assertions) {
     if (!("entry" in assertion)) {
-      blocks.push({ kind: "divider", title: `${assertion.entryId}: ${assertion.state}` });
+      blocks.push({
+        meta: undefined,
+        attachNext: false,
+        kind: "divider",
+        title: `${assertion.entryId}: ${assertion.state}`,
+      });
       continue;
     }
     const entry = assertion.entry;
     blocks.push({
+      meta: undefined,
+      attachNext: false,
       kind: "divider",
       title: `${assertionRoleLabel({ gate: entry.decision.gate, result: entry.decision.result, contribution: entry.contribution })}  ${entry.entryId} · ${assertion.check.label}`,
     });
@@ -2872,11 +3088,11 @@ export function renderAssertions(
         blocks.push({
           kind: "table",
           columns: [
-            { header: "Turn" },
-            { header: "Tool" },
-            { header: "State" },
-            { header: "Arguments" },
-            { header: "Result" },
+            { maxWidth: 40, header: "Turn" },
+            { maxWidth: 40, header: "Tool" },
+            { maxWidth: 40, header: "State" },
+            { maxWidth: 40, header: "Arguments" },
+            { maxWidth: 40, header: "Result" },
           ],
           rows: trace.tools.map((tool) => [
             String(tool.generation),
@@ -2988,7 +3204,11 @@ export function renderAssertions(
     if (options.full && debuggerView?.state === "current" && debuggerView.steps.length > 0) {
       blocks.push({
         kind: "table",
-        columns: [{ header: "Step" }, { header: "State" }, { header: "Source row" }],
+        columns: [
+          { maxWidth: 40, header: "Step" },
+          { maxWidth: 40, header: "State" },
+          { maxWidth: 40, header: "Source row" },
+        ],
         rows: debuggerView.steps.map((step) => [
           String(step.step),
           factPhrase(step.state),
@@ -2998,8 +3218,18 @@ export function renderAssertions(
       });
     }
   }
-  if (assertions.length === 0) blocks.push({ kind: "divider", title: "No Assertion entries recorded" });
-  return terminal([{ kind: "panel", title: `Assertions ${locator}`, blocks }]);
+  if (assertions.length === 0)
+    blocks.push({ meta: undefined, attachNext: false, kind: "divider", title: "No Assertion entries recorded" });
+  return terminal([
+    {
+      meta: undefined,
+      footerCommand: undefined,
+      capWidth: true,
+      kind: "panel",
+      title: `Assertions ${locator}`,
+      blocks,
+    },
+  ]);
 }
 
 function assertionReasons(value: AssertionFactValue): string[] {
@@ -3029,7 +3259,7 @@ function assertionReasons(value: AssertionFactValue): string[] {
 export function renderAssertionMatrix(matrix: import("../inspection/assertion-matrix.ts").AssertionMatrix): string {
   const blocks: TerminalBlock[] = [];
   for (const value of matrix.evals) {
-    blocks.push({ kind: "divider", title: value.evalId });
+    blocks.push({ meta: undefined, attachNext: false, kind: "divider", title: value.evalId });
     blocks.push({ kind: "raw", text: "* marks different decisions or scores across columns." });
     value.columns.forEach((column, index) =>
       blocks.push({
@@ -3038,8 +3268,12 @@ export function renderAssertionMatrix(matrix: import("../inspection/assertion-ma
       }),
     );
     blocks.push({
+      overflow: "truncate",
       kind: "table",
-      columns: [{ header: "Criterion" }, ...value.columns.map((_, index) => ({ header: String(index + 1) }))],
+      columns: [
+        { maxWidth: 40, header: "Criterion" },
+        ...value.columns.map((_, index) => ({ maxWidth: 40, header: String(index + 1) })),
+      ],
       rows: [
         [
           "Verdict / score",

@@ -27,7 +27,7 @@
 仍可查看已有事实。测试用公开 Run 列表和 fixture 的外部调用计数验证读取没有发布 Run、执行 Agent 或启动 Sandbox。
 命令执行项目定义代码的边界不得被描述成隔离任意顶层副作用。
 
-overview 必须保留 operation 已选的 totals、Experiment summary 与完整 locator。层级固定为 Experiment 路径首段显示分组 → 完整 Experiment → Eval → Attempt；同组多个 Experiment 之间留空行，Experiment 标题与自己的 Eval 表头紧邻。默认 Attempt 表不以 membership action 或 relation 挤占 identity。健康 metric 隐藏 `available`，其它 state 继续可见。
+overview 必须保留 operation 已选的 totals 与 Experiment summary。默认当前结果不展开已覆盖的 Attempt；`show --all` 展开 Experiment → Eval → Attempt，Experiment 小节之间留空行，Eval 标题与自己的表头紧邻。Attempt 表保留完整 locator，不以 membership action 或 relation 挤占 identity。健康 metric 隐藏 `available`，其它 state 继续可见。
 
 纯 Score Experiment 的 totals 与 summary 呈现 Verdict 和 Score，不生成 Pass rate；Attempt 行保留 `passed`、`failed`、`errored` 或 `skipped` Verdict。`failed + complete` 必须显示失败与 earned score，不能改写成 `scored`；mixed Results 仍并排呈现两类读数。
 

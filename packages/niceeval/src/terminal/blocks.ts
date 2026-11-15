@@ -9,8 +9,8 @@ export interface TerminalRenderOptions {
 export interface TerminalDividerBlock {
   readonly kind: "divider";
   readonly title: string;
-  readonly meta?: string;
-  readonly attachNext?: boolean;
+  readonly meta: string | undefined;
+  readonly attachNext: boolean;
 }
 
 export interface TerminalKeyValueBlock {
@@ -23,19 +23,19 @@ export interface TerminalKeyValueBlock {
 
 export interface TerminalTableColumn {
   readonly header: string;
-  readonly maxWidth?: number;
+  readonly maxWidth: number;
 }
 
 export interface TerminalTableBlock {
   readonly kind: "table";
   readonly columns: readonly TerminalTableColumn[];
   readonly rows: readonly (readonly string[])[];
-  readonly overflow?: "truncate" | "wrap";
+  readonly overflow: "truncate" | "wrap";
 }
 
 export interface TerminalTreeNode {
   readonly label: string;
-  readonly children?: readonly TerminalTreeNode[];
+  readonly children: readonly TerminalTreeNode[];
 }
 
 export interface TerminalTreeBlock {
@@ -46,12 +46,6 @@ export interface TerminalTreeBlock {
 export interface TerminalRawBlock {
   readonly kind: "raw";
   readonly text: string;
-}
-
-export interface TerminalCodeBlock {
-  readonly kind: "code";
-  readonly text: string;
-  readonly language?: string;
 }
 
 export interface TerminalCommandBlock {
@@ -65,24 +59,22 @@ export type TerminalContentBlock =
   | TerminalTableBlock
   | TerminalTreeBlock
   | TerminalRawBlock
-  | TerminalCodeBlock
   | TerminalCommandBlock;
 
-export type TerminalPanelContentBlock = Exclude<TerminalContentBlock, TerminalRawBlock | TerminalCodeBlock>;
+export type TerminalPanelContentBlock = Exclude<TerminalContentBlock, TerminalRawBlock>;
 
 export interface TerminalPanelBlock {
   readonly kind: "panel";
-  readonly title?: string;
-  readonly meta?: string;
-  readonly footerCommand?: string;
+  readonly title: string | undefined;
+  readonly meta: string | undefined;
+  readonly footerCommand: string | undefined;
   readonly blocks: readonly TerminalPanelContentBlock[];
-  readonly capWidth?: boolean;
+  readonly capWidth: boolean;
 }
 
 export type TerminalBlock = TerminalPanelBlock | TerminalContentBlock;
 
 const COLUMN_GAP = 2;
-const DEFAULT_MAX_COLUMN_WIDTH = 40;
 const ELLIPSIS = "…";
 
 function takeDisplay(text: string, width: number): string {
@@ -110,7 +102,7 @@ function tableWidths(block: TerminalTableBlock, width: number): number[] {
       stringWidth(column.header),
       ...block.rows.flatMap((row) => (row[index] ?? "").split("\n").map(stringWidth)),
     );
-    return Math.max(1, Math.min(column.maxWidth ?? DEFAULT_MAX_COLUMN_WIDTH, observed));
+    return Math.max(1, Math.min(column.maxWidth, observed));
   });
   const available = Math.max(widths.length, Math.floor(width) - Math.max(0, widths.length - 1) * COLUMN_GAP);
   while (widths.reduce((sum, value) => sum + value, 0) > available) {
@@ -186,7 +178,7 @@ function renderTree(block: TerminalTreeBlock, width: number, mode: PanelMode): s
       const labelWidth = Math.max(4, width - stringWidth(prefix));
       const labels = wrapDisplay(node.label, labelWidth);
       lines.push(...labels.map((label, line) => `${line === 0 ? prefix : " ".repeat(stringWidth(prefix))}${label}`));
-      if (node.children?.length) visit(node.children, [...ancestors, last]);
+      if (node.children.length > 0) visit(node.children, [...ancestors, last]);
     });
   };
   visit(block.nodes, []);
@@ -208,7 +200,6 @@ function renderContent(block: TerminalContentBlock, options: TerminalRenderOptio
     case "tree":
       return renderTree(block, options.width, options.mode);
     case "raw":
-    case "code":
       return block.text.split("\n");
     case "command":
       return [block.command];
@@ -244,7 +235,7 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
     rows,
     width: options.width,
     mode: options.mode,
-    capWidth: block.capWidth ?? true,
+    capWidth: block.capWidth,
   });
 }
 
