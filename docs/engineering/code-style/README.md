@@ -60,9 +60,18 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
 - 内部值到边界，优先用该边界已有的 Schema 编码或构造函数；字段多于两个时用 `shared/omit-undefined.ts` 的 `omitUndefined`；一两个字段可以写条件展开 `x === undefined ? {} : { x }`。
 - 条件展开只出现在进入边界的这一处，不出现在内部值之间的传递里。
 
+`null` 与 `undefined` 只选一个：
+
+- TypeScript 里表示没有值统一写 `undefined`。
+- `null` 只出现在外部格式本身的类型里：JSON 与 Record 载荷、SQLite 行、DOM、React 与 `RegExp` 等第三方 API。JSON 与 SQL 写不出 `undefined`，这些类型照外部格式声明。
+  外部格式解码成内部值时，`null` 转成 `undefined`；内部值编码成外部格式时再转回去。
+- 同一个属性不同时接受 `null` 与 `undefined`，不写 `T | null | undefined`，也不用 `null` 与 `undefined` 各表示一种状态。
+  需要区分“未知”与“明确没有”时，用判别联合或具名字面量。
+
 其它约束：
 
 - 不用非空断言 `!` 或 `as` 绕过可选属性检查。
+- 内部类型的属性不写 `unknown`。外部抛出值在 catch 边界用 `shared/external-cause.ts` 的 `normalizeExternalCause` 转成 `ExternalCause`；NiceEval 自己的错误写成具体的 tagged error 联合。`unknown` 已包含 `undefined`，把 `x?: unknown` 改成 `x: unknown` 不构成收紧。
 - 手写类型与对应 Schema 保持一致：`Schema.optional` 对应 `?: T | undefined`，`Schema.optionalKey` 只用于第 3 层边界。
 - 公开类型只在构造方全部位于 NiceEval 内部时才按第 2 层收紧；使用方读到的仍是 `T | undefined`，外部构造方不受影响。
 
