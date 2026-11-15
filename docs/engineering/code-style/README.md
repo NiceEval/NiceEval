@@ -42,10 +42,13 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
    可选属性写 `readonly x?: T | undefined`，同时接受省略与 `undefined`。
    这些值在进入 NiceEval 的第一个函数里归一化一次，之后流转的是第 2 层的内部类型。
 2. **内部值**：只由 NiceEval 自己构造的值，包括归一化后的配置与上下文、NiceEval 传给用户回调的参数、函数返回值、可变状态与中间结果。
-   这些类型不写可选属性：
-   - 归一化后一定有值的字段是必需的且不含 `undefined`，默认值在入口补齐，下游不再用 `??` 重复补默认值。
-   - 互斥的状态用判别联合，不用几个可选字段组合表达。
-   - 只有事实本身可能不存在时（例如实验没有指定 `model`、协议没有上报某个 token 桶），才写必需键 `readonly x: T | undefined`；生产者必须显式给出每个字段，漏写由编译器拦下。
+   这些类型不写可选属性。把可选属性改写成 `x: T | undefined` 并没有减少 `undefined`，只是换了写法；按下面的顺序消掉它，前一种做得到就不用后一种：
+   1. 删掉字段：没有消费者读取，或者调用方可以自己算出来。
+   2. 入口补齐：有默认值的字段在归一化时补上，字段必需且不含 `undefined`，下游不再用 `??` 重复补默认值。
+      函数类型的属性同样如此：在构造处给出实现或默认实现，不写 `((…) => R) | undefined`。
+   3. 判别联合：几个字段同时出现或同时缺席、或者某个字段只在某种状态下有意义时，合成一个带标签的联合。
+      例如 `{ reuseEligibility: "dynamic-module-unresolved" | undefined; reuseEligibilityFacts: Facts | undefined }` 应写成 `{ kind: "eligible" } | { kind: "dynamic-module-unresolved"; facts: Facts }`。
+   4. 必需键 `readonly x: T | undefined`：只留给与其它字段无关、且事实本身可能不存在的单个值，例如实验没有指定 `model`、协议没有上报某个 token 桶；生产者必须显式给出每个字段，漏写由编译器拦下。
    - 可变状态清空时赋 `undefined`，不用 `delete`。
 3. **键存在会被观察的边界**：键是否出现会改变行为或输出的地方，类型写精确的 `x?: T`，并在声明旁用一句注释写明属于下面哪一类：
    - Record JSON：`RecordJson` 不含 `undefined`，canonicalizer 与 `Schema.optionalKey` 编码遇到 `undefined` 拒绝写入；
