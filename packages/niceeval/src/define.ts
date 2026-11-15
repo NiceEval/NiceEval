@@ -329,8 +329,6 @@ type EvalFactoryInput<Sandbox extends SandboxLayer | undefined> = Omit<
 };
 
 /** @internal Shared normalization and provenance path for root and Adapter-bound Eval factories. */
-// @concord-code
-// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
@@ -342,6 +340,8 @@ export function defineEvalForContext<
   const Sandbox extends SandboxLayer | undefined,
   Fields extends Readonly<Record<PropertyKey, unknown>>,
 >(kind: Kind, def: EvalFactoryInput<Sandbox>, internalFields: Fields): EvalDefinition<Kind, Context, Sandbox> & Fields;
+// @concord-code
+// @concord-implements docs/feature/compile-time-contracts/use-case/three-levels.md
 export function defineEvalForContext<
   Kind extends "pass" | "score",
   Context,
