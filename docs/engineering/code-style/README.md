@@ -69,13 +69,15 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
 - TypeScript 里表示没有值统一写 `undefined`。
 - `null` 只出现在外部格式本身的类型里：JSON 与 Record 载荷、SQLite 行、DOM、React 与 `RegExp` 等第三方 API。JSON 与 SQL 写不出 `undefined`，这些类型照外部格式声明。
   外部格式解码成内部值时，`null` 转成 `undefined`；内部值编码成外部格式时再转回去。
-- 同一个属性不同时接受 `null` 与 `undefined`，不写 `T | null | undefined`，也不用 `null` 与 `undefined` 各表示一种状态。
+- 内部同一个属性不同时接受 `null` 与 `undefined`，不写 `T | null | undefined`，也不用 `null` 与 `undefined` 各表示一种状态。
   需要区分“未知”与“明确没有”时，用判别联合或具名字面量。
+- 原生 SDK、JSON 与 SQL 的输入类型照实表达协议。第三方字段允许省略且允许 `null` 时可以写 `x?: T | null`；协议还允许显式 `undefined` 时照实声明。解码后再归一化，不能为统一写法改掉外部协议。
 
 其它约束：
 
 - 不用非空断言 `!` 或 `as` 绕过可选属性检查。
-- 内部类型的属性不写 `unknown`。外部抛出值在 catch 边界用 `shared/external-cause.ts` 的 `normalizeExternalCause` 转成 `ExternalCause`；NiceEval 自己的错误写成具体的 tagged error 联合。`unknown` 已包含 `undefined`，把 `x?: unknown` 改成 `x: unknown` 不构成收紧。
+- 内部领域字段使用已知类型。catch 边界先保留领域错误的具体联合与恢复信息，再将未分类的外部抛出值用 `shared/external-cause.ts` 的 `normalizeExternalCause` 转成 `ExternalCause`。不能把已知错误先转成摘要，再在下游猜回原类型。
+- `unknown` 表示尚未建立信任，不是业务上的缺席。它包含 `undefined`，把 `x?: unknown` 改成 `x: unknown` 不能证明生产者提供了值；需要保持不透明的作者载荷由泛型传递，在真正读取其结构的边界解码。
 - 手写类型与对应 Schema 保持一致：`Schema.optional` 对应 `?: T | undefined`，`Schema.optionalKey` 只用于第 3 层边界。
 - 公开类型只在构造方全部位于 NiceEval 内部时才按第 2 层收紧；使用方读到的仍是 `T | undefined`，外部构造方不受影响。
 
