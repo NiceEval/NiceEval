@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rename } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createE2EContext, only, pollUntil } from "@niceeval/testkit";
 import { decodeExpPlanDocument } from "niceeval/experiment/host";
@@ -438,12 +438,81 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
           }),
         ]);
         expect(carriedRun.attempts).toEqual([]);
-        backend.completeAttempt(1);
+
+        // A public source edit forces identity comparison against this active
+        // Run's carried Member. Its origin Attempt is published, while the
+        // current Run still has no sealed attachment owner and slot 1 is pending.
+        const evalPath = join(paths.projectRoot, "evals/run-journey.eval.ts");
+        const evalSource = await readFile(evalPath, "utf8");
+        const changedSource = evalSource.replace(
+          'description: "publish one Attempt before the next slot is interrupted"',
+          'description: "resume mixed carried and interrupted slots after a source change"',
+        );
+        expect(changedSource).not.toBe(evalSource);
+        await writeFile(evalPath, changedSource, "utf8");
+        const activeDry = await whileRunning(
+          niceeval.run(["exp", "run-journey", "--dry", "--json"], {
+            env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+          }),
+          carriedProcess,
+          "dry planning compared the active carried Member without a sealed Run owner",
+        );
+        expect(activeDry.exitCode, activeDry.diagnostic()).toBe(0);
+        expect(decodeExpPlanDocument(activeDry.json())).toMatchObject({ total: 2, reused: 0 });
+
+        expect(carriedProcess.signal("SIGINT")).toBe(true);
         const carriedTerminal = await carriedProcess.done;
-        expect(carriedTerminal.exitCode, carriedTerminal.diagnostic()).toBe(0);
+        expect(carriedTerminal.exitCode, carriedTerminal.diagnostic()).toBe(130);
+        expect(carriedTerminal.expReceipt()).toMatchObject({
+          completion: "interrupted",
+          createdRunIds: [carried.runId],
+        });
         const completedQuery = await niceeval.run(["show", `run:${carried.runId}`, "--json"]);
         expect(completedQuery.exitCode, completedQuery.diagnostic()).toBe(0);
+        expect(completedQuery.runGetDocument().run).toMatchObject({
+          value: { state: "interrupted" },
+          denominator: { expected: 2, published: 1, missing: 1 },
+          plannedAttempts: expect.arrayContaining([
+            expect.objectContaining({
+              attemptOrdinal: 0,
+              publication: expect.objectContaining({
+                state: "published",
+                action: "carried",
+                attemptLocator: published.publication.attemptLocator,
+              }),
+            }),
+            expect.objectContaining({
+              attemptOrdinal: 1,
+              publication: { state: "absent", reason: "interrupted-before-publication" },
+            }),
+          ]),
+        });
         expect(completedQuery.inspectionSuccess("run.get").run.value).toHaveProperty("context");
+
+        const interruptedDry = await niceeval.run(["exp", "run-journey", "--dry", "--json"], {
+          env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+        });
+        expect(interruptedDry.exitCode, interruptedDry.diagnostic()).toBe(0);
+        expect(decodeExpPlanDocument(interruptedDry.json())).toMatchObject({ total: 2, reused: 0 });
+
+        const resumed = niceeval.start(["exp", "run-journey", "--json"], {
+          env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+          timeoutMs: 90_000,
+        });
+        try {
+          await whileRunning(backend.waitForAttempt(0, 2), resumed, "changed slot 0 was dispatched again");
+          backend.completeAttempt(0);
+          await whileRunning(backend.waitForAttempt(1, 3), resumed, "changed slot 1 was dispatched again");
+          backend.completeAttempt(1);
+          const resumedReceipt = await resumed.done;
+          expect(resumedReceipt.exitCode, resumedReceipt.diagnostic()).toBe(0);
+          expect(resumedReceipt.expReceipt()).toMatchObject({ completion: "completed" });
+          expect(resumedReceipt.expEvalEvents()).toContainEqual(
+            expect.objectContaining({ evalId: "run-journey", verdict: "passed" }),
+          );
+        } finally {
+          await resumed.dispose();
+        }
       } finally {
         await carriedProcess.dispose();
       }

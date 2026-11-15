@@ -407,10 +407,24 @@ async function interruptAfterPublishedLayer(
       expect(pid, "NiceEval invocation must expose its provider ownership pid").toEqual(expect.any(Number));
       const containerId = await waitForResumeGate(pid!, root, afterLayer);
       const tokens = await readPublishedLayerTokens(containerId, root, afterLayer);
-      expect(controlled.signal("SIGINT")).toBe(true);
+      // Exercise the non-TTY process-group signal used by shell/CI callers.
+      process.kill(-pid!, "SIGINT");
       const receipt = await controlled.done;
+      const preview = await niceeval.run(["exp", "before-cache", "--dry", "--json"], {
+        cwd: root,
+        env: invocationEnv,
+      });
+      expect(preview.exitCode, preview.diagnostic()).toBe(0);
       expect(receipt.exitCode, receipt.diagnostic()).toBe(130);
       expect(receipt.expReceipt(), receipt.diagnostic()).toMatchObject({ completion: "interrupted" });
+      for (const runId of receipt.expReceipt().createdRunIds) {
+        const shown = await niceeval.run(["show", `run:${runId}`, "--json"], { cwd: root, env: invocationEnv });
+        expect(shown.exitCode, shown.diagnostic()).toBe(0);
+        expect(shown.run().run).toMatchObject({ value: { state: "interrupted" } });
+        for (const slot of shown.run().run.plannedAttempts) {
+          expect(slot.publication).toMatchObject({ state: "absent", reason: "interrupted-before-publication" });
+        }
+      }
       return { pid: pid!, tokens, diagnostic: receipt.diagnostic() };
     },
   );

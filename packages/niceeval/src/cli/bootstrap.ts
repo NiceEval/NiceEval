@@ -197,7 +197,14 @@ const application = Effect.scoped(
   Effect.tapCause((cause) =>
     Cause.hasInterruptsOnly(cause)
       ? Effect.void
-      : Effect.sync(() => process.stderr.write(`niceeval error:\n${summarizeUnknownError(Cause.squash(cause))}\n`)),
+      : Effect.sync(() => {
+          const command = /^[a-z][a-z0-9-]*$/u.test(process.argv[2] ?? "") ? process.argv[2] : "(startup)";
+          process.stderr.write(
+            `niceeval error: Internal defect during niceeval ${command} command execution.\n` +
+              `Cause: ${summarizeUnknownError(Cause.squash(cause))}\n` +
+              "Next: report this failure with the command, NiceEval version, and this diagnostic; preserve the project Record for investigation.\n",
+          );
+        }),
   ),
 );
 

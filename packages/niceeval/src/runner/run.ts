@@ -93,7 +93,11 @@ import {
 import { openRunnerRecordCoordinator, prepareRunnerRecordReuse, type RunnerRecordAttempt } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
-import { prepareBeforeCaches, type BeforeCachePreparationActivityEvent } from "./before-cache-preparation.ts";
+import {
+  prepareBeforeCaches,
+  type BeforeCachePreparationActivityEvent,
+  type BeforeCachePreparationResult,
+} from "./before-cache-preparation.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -561,7 +565,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
           });
         },
-      });
+      }).pipe(
+        Effect.catchCause((cause): Effect.Effect<BeforeCachePreparationResult, Error> => {
+          // Preparation happens before the dispatch interruption boundary below.
+          // Drain its scoped staging first, then let that boundary close every
+          // reserved Run and deliver the interrupted Invocation receipt.
+          if (opts.signal?.aborted === true && Cause.hasInterruptsOnly(cause)) {
+            return Effect.succeed({
+              preparedByPair: new Map(),
+              failuresByPair: new Map(),
+              summary: { total: 0, hit: 0, prepared: 0, degraded: 0, failed: 0 },
+            });
+          }
+          return Effect.failCause(cause);
+        }),
+      );
 
       // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
       // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
@@ -3505,9 +3523,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         },
         catch: () => undefined,
       }).pipe(Effect.ignore);
-      const exit = yield* Effect.exit(
-        opts.signal === undefined ? dispatchEffect : Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)),
-      );
+      function dispatchUntilInterrupted() {
+        if (opts.signal === undefined) return dispatchEffect;
+        if (opts.signal.aborted) return Effect.interrupt;
+        return Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal));
+      }
+      const exit = yield* Effect.exit(dispatchUntilInterrupted());
       // A full-carry / zero-Attempt invocation has no dispatch fiber that could
       // await startup recovery. Seal its selected-Experiment obligation here; for
       // normal runs the per-setup gate above has already awaited the same Deferred.

@@ -4,7 +4,7 @@
 // @concord-implements docs/feature/experiments/use-case/rerun-all.md
 
 import type { IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
-import { executionDigestForManifestOrigin, type IdentityExplanation } from "./manifest.ts";
+import { executionDigestForManifestOrigin, explainIdentityMismatch, type IdentityExplanation } from "./manifest.ts";
 import { readIdentityExplanation, type HistoricalIdentityComparison } from "./identity-explanation-read.ts";
 import { Effect, Result, Schema } from "effect";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
@@ -614,13 +614,28 @@ function planTargetSlot(input: {
         input.reader.read(attempt.owner, NiceEvalRecordAttachments.runnerActivities.attempt),
         "runner-activities",
       ),
-    readIdentityComparison: (run, target) =>
-      readIdentityExplanation({
+    readIdentityComparison: (run, target) => {
+      const historical = input.byRunId.get(run.document.runId);
+      // Lifecycle-only Runs can already contain bindings to published origin
+      // Attempts, but do not yet have a sealed Run Core or attachment owner.
+      // Their missing historical identity is not a readable owner capability.
+      if (historical === undefined)
+        return Effect.succeed({
+          historical: undefined,
+          explanation: explainIdentityMismatch({
+            historical: undefined,
+            current: target.identityManifest,
+            context: run.document.context,
+            source: undefined,
+          }),
+        });
+      return readIdentityExplanation({
         reader: input.reader,
-        historical: input.byRunId.get(run.document.runId)!,
+        historical,
         evalId: target.evalId,
         current: target.identityManifest,
-      }),
+      });
+    },
     sourceFor: (attempt, sourceBarrier) => {
       if (!hasPublicationIdentity(attempt)) throw new Error("Expected a published Attempt");
       return candidateFor({

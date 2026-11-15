@@ -88,8 +88,11 @@ Run \`niceeval --help\` for usage.
     }
     return `${failure.feature} ${failure.operation} failed: ${summarizeUnknownError(failure.cause)}\n`;
   }
-  return `niceeval error: ${summarizeUnknownError(failure.cause)}
-`;
+  return (
+    `niceeval error: CLI operation failed during ${failure.operation}.\n` +
+    `Cause: ${summarizeUnknownError(failure.cause)}\n` +
+    "Next: report this failure with the command, NiceEval version, and this diagnostic.\n"
+  );
 }
 
 function invocationFacts() {
