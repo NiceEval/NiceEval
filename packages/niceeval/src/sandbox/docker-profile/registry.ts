@@ -239,11 +239,14 @@ function entryFromArray(value: unknown, index: number): DockerProfileRegistryEnt
     });
   }
   const profile = hasOwn(value, "profile") ? value.profile : value.descriptor;
+  const alias = requiredAlias(value.alias, `${path}.alias`);
+  const source = value.source === undefined ? undefined : requiredSource(value.source, `${path}.source`);
+  const fileFacts = sourceFacts(value.fileFacts, `${path}.fileFacts`);
   return Object.freeze({
-    alias: requiredAlias(value.alias, `${path}.alias`),
+    alias,
     profile,
-    ...(value.source === undefined ? {} : { source: requiredSource(value.source, `${path}.source`) }),
-    ...(value.fileFacts === undefined ? {} : { fileFacts: sourceFacts(value.fileFacts, `${path}.fileFacts`) }),
+    ...(source === undefined ? {} : { source }),
+    ...(fileFacts === undefined ? {} : { fileFacts }),
   });
 }
 

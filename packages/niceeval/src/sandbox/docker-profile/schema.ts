@@ -134,7 +134,7 @@ export interface DockerExecutionProfileV1 {
         readonly attestation: "linux-project-quota/v1" | "independent-fixed-filesystem/v1";
       };
       /** Presence is the descriptor's explicit, default-off full-copy capability. */
-      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1;
+      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1 | undefined;
     };
     readonly cgroup: {
       readonly aggregatePath: string;
