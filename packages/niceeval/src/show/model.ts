@@ -279,7 +279,7 @@ const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"]
           ? {
               ...member.publication,
               verdict: member.verdict,
-              stoppedAt: member.stoppedAt,
+              ...(member.stoppedAt === undefined ? {} : { stoppedAt: member.stoppedAt }),
               score: metric(member.score),
               durationMs: metric(member.durationMs),
               tokens: metric(member.tokens),
@@ -358,7 +358,7 @@ export function projectAttempt(
     diagnostics: value.diagnostics,
     verdictCauses: value.verdictCauses,
     stoppedAt: value.stoppedAt,
-    totalCosts: usage?.usage.totalCosts,
+    ...(usage?.usage.totalCosts === undefined ? {} : { totalCosts: usage?.usage.totalCosts }),
     verdict: value.verdict,
     attemptId: value.core.attemptId,
     evalId: value.core.evalId,
@@ -378,7 +378,11 @@ export function projectAttempt(
     },
     assertions: {
       state: value.assertions.state,
-      entries: value.assertions.entries.map((entry) => ({ entryId: entry.entryId, ...entry.display })),
+      entries: value.assertions.entries.map((entry) => ({
+        entryId: entry.entryId,
+        groupPath: entry.display.groupPath,
+        ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
+      })),
     },
     evidenceCoverage: value.evidenceCoverage.map((entry) => JSON.stringify(entry)),
     limitations: value.limitations.map((entry) => JSON.stringify(entry)),

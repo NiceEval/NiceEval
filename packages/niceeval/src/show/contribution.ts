@@ -401,15 +401,15 @@ function runShow(
                         current,
                         runIds,
                         experimentIds,
-                        locator: selectedLocator,
-                        slice: address.aspect,
+                        ...(selectedLocator === undefined ? {} : { locator: selectedLocator }),
+                        ...(address.aspect === undefined ? {} : { slice: address.aspect }),
                         entryIds: entries,
                         projection: full ? "full" : "compact",
-                        evalIdPrefix,
-                        actorId,
-                        eventType,
-                        continuation,
-                        changeId,
+                        ...(evalIdPrefix === undefined ? {} : { evalIdPrefix: evalIdPrefix }),
+                        ...(actorId === undefined ? {} : { actorId: actorId }),
+                        ...(eventType === undefined ? {} : { eventType: eventType }),
+                        ...(continuation === undefined ? {} : { continuation: continuation }),
+                        ...(changeId === undefined ? {} : { changeId: changeId }),
                       });
           for (const operation of operations) {
             const document = yield* Effect.try({
@@ -519,30 +519,31 @@ function runShow(
               : entryId === undefined
                 ? []
                 : [entryId];
+          const slice = assertions
+            ? "assertions"
+            : source
+              ? "source"
+              : execution
+                ? "execution"
+                : timing
+                  ? "timing"
+                  : showUsage
+                    ? "usage"
+                    : diff
+                      ? "diff"
+                      : undefined;
           const operations = showOperations({
             current,
             runIds,
             experimentIds,
-            locator: selectedLocator,
-            slice: assertions
-              ? "assertions"
-              : source
-                ? "source"
-                : execution
-                  ? "execution"
-                  : timing
-                    ? "timing"
-                    : showUsage
-                      ? "usage"
-                      : diff
-                        ? "diff"
-                        : undefined,
-            changeId,
+            ...(selectedLocator === undefined ? {} : { locator: selectedLocator }),
+            ...(slice === undefined ? {} : { slice }),
+            ...(changeId === undefined ? {} : { changeId: changeId }),
             entryIds: entries,
             projection: full ? "full" : "compact",
-            actorId,
-            eventType,
-            continuation,
+            ...(actorId === undefined ? {} : { actorId: actorId }),
+            ...(eventType === undefined ? {} : { eventType: eventType }),
+            ...(continuation === undefined ? {} : { continuation: continuation }),
           });
           for (const operation of operations) {
             const document = yield* select(
@@ -626,7 +627,7 @@ function runShow(
             renderAssertions(selectedLocator, details, {
               full,
               agentJudgeTraces,
-              entryId,
+              ...(entryId === undefined ? {} : { entryId: entryId }),
               verdict: attempt.verdict ?? "unavailable",
               score: attempt.score,
             }),
@@ -916,7 +917,12 @@ export const compareCliCommand: CliCommandContribution<Requirements, Error> = Ob
         return yield* usage("--max-regressions must be a non-negative safe integer.");
       if (mode === "side-by-side" && maxRegressions !== undefined)
         return yield* usage("--max-regressions requires paired or exact mode.");
-      return yield* runShow(values.json === true ? ["--json"] : [], { leftRunIds, rightRunIds, mode, maxRegressions });
+      return yield* runShow(values.json === true ? ["--json"] : [], {
+        leftRunIds,
+        rightRunIds,
+        mode,
+        ...(maxRegressions === undefined ? {} : { maxRegressions: maxRegressions }),
+      });
     }),
 });
 
