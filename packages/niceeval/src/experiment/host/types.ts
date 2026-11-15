@@ -272,6 +272,7 @@ export interface ExperimentHostDryPlan {
   readonly slots: readonly ExperimentHostDrySlot[];
   readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
   readonly lockedPairs: readonly string[];
+  readonly recoverablePairs: readonly string[];
 }
 
 /** Returns a ready executable plan or an explicit selection problem; only a ready result may be passed to invocation execution. */

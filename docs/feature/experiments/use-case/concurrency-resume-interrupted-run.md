@@ -16,6 +16,11 @@ niceeval exp compare/codex
 i Waiting for another NiceEval run before continuing compare/codex.
 ```
 
+case lock 的 owner 已由精确 process identity 证明终止时，下一次真实运行以 fenced takeover 取得它，不需要额外命令。
+`--dry` 与真实运行使用同一份只读 owner 证据：已证明终止的 owner 不再显示为另一条运行中的 Invocation，
+matrix 不标 `locked`，Human 输出说明上一次运行未释放该 Eval、本次运行会接管。
+owner 仍存活或无法验证时，`--dry` 照常显示正在等待另一条运行。
+
 Experiment `maxConcurrency` 不跨 Invocation 协调，也不会形成并发名额接管。
 
 ## sharedState 显式恢复

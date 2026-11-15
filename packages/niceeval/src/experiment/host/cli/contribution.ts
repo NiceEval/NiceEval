@@ -578,7 +578,7 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
 }
 
 function dryText(
-  plan: Parameters<typeof dryRows>[0],
+  plan: Parameters<typeof dryRows>[0] & Pick<ExperimentHostDryPlan, "recoverablePairs">,
   shape: {
     readonly totalAttempts: number;
     readonly evals: number;
@@ -612,6 +612,9 @@ function dryText(
     }
     const parts = [
       ...(row.locked ? ["running in another invocation"] : []),
+      ...(plan.recoverablePairs.includes(JSON.stringify([row.experimentId, row.evalId]))
+        ? ["previous run did not release this Eval; this run will take over"]
+        : []),
       ...(reusedAttempts.length === 0 ? [] : [`using earlier results ×${reusedAttempts.length}`]),
       ...[...reasons].map(([reason, count]) => (count === 1 ? reason : `${reason} ×${count}`)),
     ];

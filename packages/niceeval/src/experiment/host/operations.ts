@@ -19,6 +19,7 @@ import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import { projectTargetPolicyIdentity, type ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
 import { runEvals } from "../../runner/run.ts";
 import { readCaseLockEffect } from "../../runner/lock.ts";
+import { exactProcessState } from "../../runner/node-process-identity.ts";
 import { JUnit } from "../../runner/reporters/json.ts";
 import { listSessions, showSession, SessionTracker } from "../../runner/session.ts";
 import { linkRunSandboxes, recommendedConcurrencyForPreparedPairs } from "../../runner/sandbox-selection.ts";
@@ -527,6 +528,7 @@ function dryPlan(
   slots: readonly ExecutionReusePlanSlot[],
   readbacks: readonly ReturnType<typeof projectCurrentReuseReadback>[],
   lockedPairs: readonly string[],
+  recoverablePairs: readonly string[],
   evalGroups: ReadonlyMap<string, { readonly id: string; readonly index: number }>,
 ): ExperimentHostDryPlan {
   const projected: ExperimentHostDrySlot[] = slots.map((slot) => {
@@ -567,6 +569,7 @@ function dryPlan(
     slots: projected,
     readbacks,
     lockedPairs,
+    recoverablePairs,
   };
 }
 
@@ -664,11 +667,14 @@ export function planInvocation(
                     const projectDatabaseRoot = recordRootPaths(root.success)?.portableRoot;
                     if (projectDatabaseRoot === undefined)
                       return yield* Effect.fail(new Error("Record root is unavailable."));
-                    const locked = yield* Effect.all(
+                    const caseOwners = yield* Effect.all(
                       [...pairs].map(([key, [experimentId, evalId]]) =>
                         readCaseLockEffect(projectDatabaseRoot, experimentId, evalId).pipe(
                           Effect.catch(() => Effect.succeed(undefined)),
-                          Effect.map((record) => (record !== undefined ? key : undefined)),
+                          Effect.map((record) => {
+                            if (record === undefined) return undefined;
+                            return { key, state: exactProcessState(record) === "dead" ? "recoverable" : "locked" };
+                          }),
                         ),
                       ),
                       { concurrency: "unbounded" },
@@ -676,7 +682,8 @@ export function planInvocation(
                     return dryPlan(
                       reusePlan.slots,
                       readbacks.map(projectCurrentReuseReadback),
-                      locked.filter((key): key is string => key !== undefined),
+                      caseOwners.flatMap((owner) => (owner?.state === "locked" ? [owner.key] : [])),
+                      caseOwners.flatMap((owner) => (owner?.state === "recoverable" ? [owner.key] : [])),
                       new Map(
                         prepared.selected.evals.flatMap((definition) =>
                           definition.evalGroup === undefined

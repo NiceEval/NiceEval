@@ -636,6 +636,10 @@ function buildSummaryLines(
     return `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (${state.reused} reused)`;
   }
 
+  const beforeCaches = summary.beforeCaches;
+  const unsettledBeforeCaches =
+    beforeCaches.total - beforeCaches.hit - beforeCaches.prepared - beforeCaches.degraded - beforeCaches.failed;
+  const unsettledBeforeCachesText = unsettledBeforeCaches > 0 ? ` · ${unsettledBeforeCaches} not settled` : "";
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
@@ -644,7 +648,7 @@ function buildSummaryLines(
     { kind: "line", text: formatSummaryCostLine(state) },
     {
       kind: "line",
-      text: `Before caches: ${summary.beforeCaches.hit} hit · ${summary.beforeCaches.prepared} prepared · ${summary.beforeCaches.degraded} degraded · ${summary.beforeCaches.failed} failed (${summary.beforeCaches.total} total)`,
+      text: `Before caches: ${beforeCaches.hit} hit · ${beforeCaches.prepared} prepared · ${beforeCaches.degraded} degraded · ${beforeCaches.failed} failed${unsettledBeforeCachesText} (${beforeCaches.total} total)`,
     },
   ];
   const blocks: string[][] = [

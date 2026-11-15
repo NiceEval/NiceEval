@@ -1,6 +1,6 @@
 import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
-import { Deferred, Effect, Result, Option, Semaphore, Scope } from "effect";
+import { Cause, Deferred, Effect, Exit, Result, Option, Semaphore, Scope } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
 import {
   mergeSandboxActionState,
@@ -361,17 +361,28 @@ function materializePreparationNode(
  * ready after its parent's publication completes. A continuing child borrows
  * the parent's live staging while the parent retains its Scope and permits.
  */
-export function prepareBeforeCaches(
+export const prepareBeforeCaches = Effect.fnUntraced(function* (
   attempts: readonly Attempt[],
   options: PrepareBeforeCachesOptions,
-): Effect.Effect<BeforeCachePreparationResult, Error, Scope.Scope> {
+): Effect.fn.Return<BeforeCachePreparationResult, Error, Scope.Scope> {
+  const nodes = new Map<string, PreparationNode>();
+  const outcomes = new Map<string, "hit" | "prepared" | "degraded" | "failed">();
+  const summary = (): BeforeCachePreparationSummary => {
+    const settled = [...outcomes.values()];
+    return {
+      total: nodes.size,
+      hit: settled.filter((outcome) => outcome === "hit").length,
+      prepared: settled.filter((outcome) => outcome === "prepared").length,
+      degraded: settled.filter((outcome) => outcome === "degraded").length,
+      failed: settled.filter((outcome) => outcome === "failed").length,
+    };
+  };
   const program = Effect.gen(function* () {
     const artifactPrepare = options.artifactPrepare;
     // The graph is shared by every Record Run in this Invocation. Its holds,
     // reservations and disabled-domain state must use that same ownership.
     const preparationId = randomUUID();
     const replacementScopes = new Map<LinkedRunPlan, JsonValue>();
-    const nodes = new Map<string, PreparationNode>();
     const targets = new Map<string, PreparationTarget>();
     const contextsByPair = new Map<string, BeforeCachePreparationContext>();
     const dependents = new Map<string, Map<string, { readonly experimentId: string; readonly evalId: string }>>();
@@ -511,7 +522,6 @@ export function prepareBeforeCaches(
     }
     const claimed = new Set<string>();
     const stagingOffers = new Map<string, MaterializedSandboxCase>();
-    const outcomes = new Map<string, "hit" | "prepared" | "degraded" | "failed">();
 
     const resolveNode = (key: string): Effect.Effect<NodeResult, never, Scope.Scope> =>
       Effect.suspend(() => {
@@ -676,18 +686,29 @@ export function prepareBeforeCaches(
       for (const pairKey of target.pairKeys)
         preparedByPair.set(pairKey, { ...use, context: contextsByPair.get(pairKey)! });
     }
-    const settled = [...outcomes.values()];
     return {
       preparedByPair,
       failuresByPair,
-      summary: {
-        total: nodes.size,
-        hit: settled.filter((outcome) => outcome === "hit").length,
-        prepared: settled.filter((outcome) => outcome === "prepared").length,
-        degraded: settled.filter((outcome) => outcome === "degraded").length,
-        failed: settled.filter((outcome) => outcome === "failed").length,
-      },
+      summary: summary(),
     };
   });
-  return options.signal === undefined ? program : Effect.raceFirst(program, interruptOnAbort(options.signal));
-}
+  // Successful preparation holds remain owned by the Run through dispatch.
+  // On cancellation, close that child Scope before reading the settled facts.
+  const preparationScope = yield* Scope.fork(yield* Effect.scope);
+  const prepared = program.pipe(Scope.provide(preparationScope));
+  const execution =
+    options.signal === undefined ? prepared : Effect.raceFirst(prepared, interruptOnAbort(options.signal));
+  return yield* execution.pipe(
+    Effect.awaitAllChildren,
+    Effect.catchCause(
+      (cause): Effect.Effect<BeforeCachePreparationResult, Error> =>
+        Effect.gen(function* () {
+          yield* Scope.close(preparationScope, Exit.failCause(cause));
+          if (options.signal?.aborted === true && Cause.hasInterruptsOnly(cause)) {
+            return { preparedByPair: new Map(), failuresByPair: new Map(), summary: summary() };
+          }
+          return yield* Effect.failCause(cause);
+        }),
+    ),
+  );
+});

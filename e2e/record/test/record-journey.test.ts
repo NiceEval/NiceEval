@@ -321,7 +321,10 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
       });
       expect(humanOverview.exitCode, humanOverview.diagnostic()).toBe(0);
       expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1/2");
-      expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("1 passed Attempts hidden");
+      expect(humanOverview.stdout, humanOverview.diagnostic()).toContain("Current results");
+      expect(humanOverview.stdout, humanOverview.diagnostic()).toMatch(
+        /Verdicts\s+1 passed; 0 failed; 0 errored; 0 skipped/u,
+      );
 
       backend.completeAttempt(1, `run-journey-attempt-published ${unpublishedCanary}`);
       await whileRunning(backend.waitForAssertion(1), process, "the second Attempt recorded its unpublished assertion");
@@ -493,7 +496,12 @@ test.concurrent("Attempt 原子发布后，active Run 与 portable Record 均完
           env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
         });
         expect(interruptedDry.exitCode, interruptedDry.diagnostic()).toBe(0);
-        expect(decodeExpPlanDocument(interruptedDry.json())).toMatchObject({ total: 2, reused: 0 });
+        const interruptedPlan = decodeExpPlanDocument(interruptedDry.json());
+        expect(interruptedPlan).toMatchObject({ total: 2, reused: 0 });
+        expect(
+          interruptedPlan.matrix.map((row) => row.locked),
+          interruptedDry.diagnostic(),
+        ).toEqual([undefined]);
 
         const resumed = niceeval.start(["exp", "run-journey", "--json"], {
           env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
@@ -821,6 +829,18 @@ test.concurrent("SIGKILL 后自动沿用已发布 Attempt，只执行缺失 slot
       expect(recoveryPlanReceipt.exitCode, recoveryPlanReceipt.diagnostic()).toBe(0);
       const recoveryPlan = decodeExpPlanDocument(recoveryPlanReceipt.json());
       expect(recoveryPlan, recoveryPlanReceipt.diagnostic()).toMatchObject({ total: 2, reused: 1 });
+      expect(
+        recoveryPlan.matrix.map((row) => row.locked),
+        recoveryPlanReceipt.diagnostic(),
+      ).toEqual([undefined]);
+      const recoveryHuman = await niceeval.run(["exp", "run-journey", "--dry"], {
+        env: { NICEEVAL_RUN_JOURNEY_ENDPOINT: backend.endpoint },
+      });
+      expect(recoveryHuman.exitCode, recoveryHuman.diagnostic()).toBe(0);
+      expect(recoveryHuman.stdout, recoveryHuman.diagnostic()).toContain(
+        "previous run did not release this Eval; this run will take over",
+      );
+      expect(recoveryHuman.stdout).not.toContain("running in another invocation");
       expect(
         only(
           recoveryPlan.matrix.flatMap((row) => row.slots),
