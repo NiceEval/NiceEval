@@ -85,7 +85,15 @@ test.concurrent.each([
           const result = await child.done;
           expect(result.timedOut, result.diagnostic()).toBe(false);
           expect(result.stderr, result.diagnostic()).not.toContain("Press [Enter]");
-          expect(result.stderr.includes("Sandbox retained for debugging."), result.diagnostic()).toBe(paused);
+          expect(result.stderr, result.diagnostic()).not.toContain("retained");
+          const cleanupLines = result.stderr.split("\n").filter((line) => line.startsWith("Pause on failure needs"));
+          expect(cleanupLines, result.diagnostic()).toEqual(
+            paused
+              ? [
+                  "Pause on failure needs an interactive single-attempt terminal; cleaning up provider-stop-e2e. Use --keep-sandbox to retain it.",
+                ]
+              : [],
+          );
           expect(result.expReceipt().createdRunIds, result.diagnostic()).toHaveLength(1);
           expect(await readFile(join(paths.projectRoot, "pause-agent-cleaned"), "utf8")).toBe("cleaned");
           expect(await readFile(join(paths.projectRoot, "provider-group-stop-complete"), "utf8")).toBe("");
