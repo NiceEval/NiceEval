@@ -28,6 +28,7 @@ E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用�
 
 - 场景 Repo 在 project metadata 里声明 `candidate: built` 才会拿到构建输出；未声明的 Repo 在本地按 `source` 运行。
 - `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
+- `built` 与 `tarball` 只写入候选缓存自己的目录，任何形态都不读取、删除或写入共享 checkout 的 `packages/niceeval/dist`。下游通过 link 消费的正是这份 dist，E2E 不能悄悄替换它；需要更新它时由作者显式运行 `pnpm run build:package`。
 - `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
 - 形态与摘要写入每次运行的收据，结果可追溯到具体候选。
 
@@ -92,6 +93,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 - 合法 affected 空计划不 pack、不 build；project / metadata 非法时以 `invalid` 红灯退出；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
 - push / PR 的 takeover job 复用计划与 candidate，对实质变化的确定性 owner 文件逐项验收；共享输入变化重验所属 Repo，排除 live Repo，无 owner 时跳过，失败阻断 gate，并上传 takeover-summary 与资源终结收据；
+- gate job 在 GitHub step summary 中逐个列出失败的 matrix cell 与 takeover 项：分类（`regression`、`infra`、`configuration`、`invalid`、`cancelled`）、首条诊断与 receipt 路径。读者不打开 job 日志就能区分代码回归与环境阻塞；分类不改变 gate 的通过条件。
 - prepare 安装并验证 Node、pnpm 与 Concord 后，将可执行文件和 Concord 生产依赖封装为同一次 workflow 的工具 artifact。
   matrix 在安装场景依赖前校验 prepare output 中的 SHA-256、平台和工具版本，并检查 Git 根与 Concord engine 入口；
   校验失败立即停止，不回退到重新下载或其它版本。工具 artifact 不属于测试证据，不能替代 candidate、receipt 或 certificate。
@@ -317,6 +319,7 @@ Repo project metadata 声明了白名单外的名称时，在注入前失败，�
 入网前为完整模型地址、origin、hostname 和密钥注册日志掩码。官方 action 入网后立即用
 `tailscale set --accept-routes=false` 关闭子网路由，再执行探针；不能在 action args 重复它自带的参数。
 不设置 exit node、不修改 DNS。非收费连通性探针只报告受控结果，不打印 URL、响应或原始异常。
+探针在约 3 分钟内退避重试，覆盖模型网关的短暂中断；仍不可达时该格记为 `infra`（原因 `model-endpoint-unreachable`），不运行场景测试，也不记为 regression。
 结束时显式检查 logout，官方 action post 终止 daemon；强制终止时依赖临时节点后续回收。
 宿主探针不能代替 Docker 沙箱中的实际 adapter 验收。
 
