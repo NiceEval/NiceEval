@@ -170,7 +170,7 @@ export function canonicalizeRunContext(input: unknown): Result.Result<RunContext
 
 export function validateRunContext(input: unknown): readonly RecordIssue[] {
   const decoded = canonicalizeRunContext(input);
-  return Result.isFailure(decoded) ? decoded.failure : Object.freeze([]);
+  return Result.isFailure(decoded) ? decoded.failure : [];
 }
 
 export function runContextCanonicalJson(context: RunContext): string {
