@@ -1,5 +1,6 @@
 import type { StreamEvent } from "../o11y/types.ts";
 import type { JsonValue } from "../shared/types.ts";
+import { decodeJsonValue } from "../shared/json-value.ts";
 
 /** Private capabilities prevent ordinary objects from impersonating conversation handles. */
 const readers = new WeakMap<object, () => JsonValue>();
@@ -58,7 +59,7 @@ export function projectConversation(
           output: JSON.stringify(event.output ?? null),
         });
       else if (event.type === "input.requested")
-        records.push({ kind: "input-request", request: JSON.parse(JSON.stringify(event.request)) as JsonValue });
+        records.push({ kind: "input-request", request: decodeJsonValue(JSON.stringify(event.request)) });
     });
     if (finalIndex < 0 && turn.reply !== "") records.push({ kind: "final-reply", text: turn.reply });
   }

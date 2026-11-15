@@ -13,6 +13,8 @@ import {
   type RunReferencesForFamily,
 } from "../../record/family/source-receipt/model.ts";
 
+import { isObject } from "../../shared/objects.ts";
+
 const attemptObservabilityCaptureIdentityTypeId: unique symbol = Symbol(
   "@niceeval/o11y/AttemptObservabilityCaptureIdentity",
 );
@@ -83,10 +85,6 @@ const captures = new WeakMap<object, CaptureRuntime>();
 const attemptEntityRefs = new WeakMap<object, EntityRefRuntime>();
 const runEntityRefs = new WeakMap<object, EntityRefRuntime>();
 const registeredCommands = new WeakMap<object, RegisteredCommandRuntime>();
-
-function isObject(value: unknown): value is object {
-  return typeof value === "object" && value !== null;
-}
 
 function makeCaptureRuntime(owner: "attempt" | "run"): CaptureRuntime {
   return {
