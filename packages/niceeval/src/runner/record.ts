@@ -730,9 +730,10 @@ export function openRunnerRecordCoordinator(input: {
               }),
             );
           }
+          const sourceSites = sourcePlan.success.sourceSitesBySlot.get(targetSlot.slotId);
           const closedAssertions = createRunnerAssertionsAttachment(active.sealed!, {
             entryIds: assertions.success.entryIds,
-            sourceSites: sourcePlan.success.sourceSitesBySlot.get(targetSlot.slotId),
+            ...(sourceSites === undefined ? {} : { sourceSites }),
           });
           if (Result.isFailure(closedAssertions)) return yield* Effect.fail(closedAssertions.failure);
           yield* active.session.records.write(
@@ -836,7 +837,9 @@ export function openRunnerRecordCoordinator(input: {
             targetSlot.slotId,
             Object.freeze({
               slotId: targetSlot.slotId,
-              result: Object.freeze({ sources: result.sources?.map((source) => ({ ...source })) }),
+              result: Object.freeze({
+                ...(result.sources === undefined ? {} : { sources: result.sources.map((source) => ({ ...source })) }),
+              }),
               assertionEntryIds: Object.freeze([]),
             }),
           );

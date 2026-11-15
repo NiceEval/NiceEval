@@ -38,8 +38,17 @@ export function beforeCacheActionDeclaration(
       fingerprint: { ...entry.data.plan.fingerprint },
       steps: entry.data.plan.steps.map((step) => {
         if (step.kind === "exec") {
-          const { args, envKeys, ...fields } = step;
-          return { ...fields, args: [...args], ...(envKeys === undefined ? {} : { envKeys: [...envKeys] }) };
+          const { args, envKeys, cwd, user, timeoutMs, stdinDigest, stdinBytes, ...fields } = step;
+          return {
+            ...fields,
+            args: [...args],
+            ...(envKeys === undefined ? {} : { envKeys: [...envKeys] }),
+            ...(cwd === undefined ? {} : { cwd }),
+            ...(user === undefined ? {} : { user }),
+            ...(timeoutMs === undefined ? {} : { timeoutMs }),
+            ...(stdinDigest === undefined ? {} : { stdinDigest }),
+            ...(stdinBytes === undefined ? {} : { stdinBytes }),
+          };
         }
         if (step.kind === "checkoutGit") {
           const { sparse, ...fields } = step;

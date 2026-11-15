@@ -173,7 +173,7 @@ export function summarize(
     counts[attempt.verdict] += 1;
   }
   return {
-    name,
+    ...(name === undefined ? {} : { name: name }),
     startedAt,
     completedAt: new Date().toISOString(),
     passed: counts.passed,
@@ -181,9 +181,12 @@ export function summarize(
     skipped: counts.skipped,
     errored: counts.errored,
     durationMs,
-    usage: { inputTokens: inTok, outputTokens: outTok },
+    usage: {
+      ...(inTok === undefined ? {} : { inputTokens: inTok }),
+      ...(outTok === undefined ? {} : { outputTokens: outTok }),
+    },
     // 0 是合法估算值:至少一条 fresh 结果带 estimatedCostUSD 就输出累计值(可为 0),全缺才省略。
-    estimatedCostUSD: hasEstimatedCost ? cost : undefined,
+    ...(hasEstimatedCost ? { estimatedCostUSD: cost } : {}),
     reusedAttempts: Object.freeze([...reusedAttempts]),
     results,
     beforeCaches,

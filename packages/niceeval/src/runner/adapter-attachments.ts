@@ -279,7 +279,12 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
             message: "Attachment exceeds the 4 active stream limit.",
           });
         }
-        return captureStream({ ...value, body: value.body });
+        return captureStream({
+          name: value.name,
+          mediaType: value.mediaType,
+          ...(value.signal === undefined ? {} : { signal: value.signal }),
+          body: value.body,
+        });
       }
       // Check the UTF-8 size before allocating an encoded copy of a large string.
       const byteLength = typeof value.body === "string" ? Buffer.byteLength(value.body, "utf8") : value.body.byteLength;

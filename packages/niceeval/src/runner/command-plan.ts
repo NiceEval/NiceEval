@@ -41,7 +41,7 @@ import type { SandboxScriptSource } from "../sandbox/script.ts";
 export interface CommandPlanOwner {
   readonly kind: "eval" | "eval-group" | "experiment" | "adapter" | "agent" | "provider";
   readonly id: string;
-  readonly index?: number;
+  readonly index?: number | undefined;
 }
 
 export interface CommandPlanReason {
@@ -58,72 +58,77 @@ export interface CommandPlanSandboxTemplate {
 
 export interface CommandPlanStep {
   readonly phase: string;
-  readonly label?: string;
-  readonly scriptSource?: SandboxScriptSource;
-  readonly owner?: CommandPlanOwner;
+  readonly label?: string | undefined;
+  readonly scriptSource?: SandboxScriptSource | undefined;
+  readonly owner?: CommandPlanOwner | undefined;
   readonly truth: "exact" | "conditional" | "opaque" | "known-no-command";
-  readonly condition?: SandboxCommandPlanCondition;
-  readonly reason?: CommandPlanReason;
+  readonly condition?: SandboxCommandPlanCondition | undefined;
+  readonly reason?: CommandPlanReason | undefined;
   /** Present only on the real Sandbox creation boundary. */
-  readonly template?: CommandPlanSandboxTemplate;
-  readonly redactions?: readonly SandboxCommandPlanRedaction[];
-  readonly command?: SandboxCommandPlanCommand;
-  readonly children?: readonly CommandPlanStep[];
+  readonly template?: CommandPlanSandboxTemplate | undefined;
+  readonly redactions?: readonly SandboxCommandPlanRedaction[] | undefined;
+  readonly command?: SandboxCommandPlanCommand | undefined;
+  readonly children?: readonly CommandPlanStep[] | undefined;
   readonly action?:
-    | Readonly<SandboxActionPlan & { readonly kind?: "action" | "command" }>
+    | Readonly<SandboxActionPlan & { readonly kind?: "action" | "command" | undefined }>
     | {
         readonly id: string;
         readonly kind: "command" | "callback";
-      };
-  readonly declarationOrder?: SandboxDeclarationOrder;
-  readonly executionOrder?: {
-    readonly topologicalOrdinal: number;
-    readonly occurrencePath: readonly string[];
-  };
-  readonly changeFrequency?: SandboxChangeFrequency;
-  readonly schedulingReason?: string;
-  readonly dependencies?: readonly SandboxBeforeDependencyProjection[];
-  readonly occurrence?: { readonly kind: "attempt" };
-  readonly cache?: {
-    readonly lookup: "not-probed";
-    readonly capability: CommandPlanCacheCapability;
-    /** Linked declaration identity; the runtime-only final cache key remains unprobed. */
-    readonly prefixIdentity?: string;
-    /** Static provider reason; present only when capability is unsupported. */
-    readonly capabilityReason?: string;
-    /** Dry planning cannot resolve runtime eligibility or a final cache key. */
-    readonly runtime: {
-      readonly status: "pending";
-      readonly finalKey: "not-probed";
-    };
-    readonly eligibility:
-      | { readonly status: "eligible" }
-      | {
-          readonly status: "ineligible";
-          readonly reason: {
-            readonly code:
-              | "opaque-action"
-              | "opaque-ancestor"
-              | "provider-unsupported"
-              | "unsupported-state"
-              | "unsupported-state-ancestor";
-          };
+      }
+    | undefined;
+  readonly declarationOrder?: SandboxDeclarationOrder | undefined;
+  readonly executionOrder?:
+    | {
+        readonly topologicalOrdinal: number;
+        readonly occurrencePath: readonly string[];
+      }
+    | undefined;
+  readonly changeFrequency?: SandboxChangeFrequency | undefined;
+  readonly schedulingReason?: string | undefined;
+  readonly dependencies?: readonly SandboxBeforeDependencyProjection[] | undefined;
+  readonly occurrence?: { readonly kind: "attempt" } | undefined;
+  readonly cache?:
+    | {
+        readonly lookup: "not-probed";
+        readonly capability: CommandPlanCacheCapability;
+        /** Linked declaration identity; the runtime-only final cache key remains unprobed. */
+        readonly prefixIdentity?: string | undefined;
+        /** Static provider reason; present only when capability is unsupported. */
+        readonly capabilityReason?: string | undefined;
+        /** Dry planning cannot resolve runtime eligibility or a final cache key. */
+        readonly runtime: {
+          readonly status: "pending";
+          readonly finalKey: "not-probed";
         };
-    readonly state: {
-      readonly declared: SandboxActionState | "opaque";
-      readonly cumulative: SandboxActionState | "opaque";
-      readonly providerCoverage: SandboxActionState | "unsupported";
-      readonly barrier:
-        | "none"
-        | "opaque-action"
-        | "opaque-ancestor"
-        | "provider-unsupported"
-        | "unsupported-state"
-        | "unsupported-state-ancestor";
-      /** First action/callback that severed this reusable lineage, when action-addressable. */
-      readonly barrierActionId?: string;
-    };
-  };
+        readonly eligibility:
+          | { readonly status: "eligible" }
+          | {
+              readonly status: "ineligible";
+              readonly reason: {
+                readonly code:
+                  | "opaque-action"
+                  | "opaque-ancestor"
+                  | "provider-unsupported"
+                  | "unsupported-state"
+                  | "unsupported-state-ancestor";
+              };
+            };
+        readonly state: {
+          readonly declared: SandboxActionState | "opaque";
+          readonly cumulative: SandboxActionState | "opaque";
+          readonly providerCoverage: SandboxActionState | "unsupported";
+          readonly barrier:
+            | "none"
+            | "opaque-action"
+            | "opaque-ancestor"
+            | "provider-unsupported"
+            | "unsupported-state"
+            | "unsupported-state-ancestor";
+          /** First action/callback that severed this reusable lineage, when action-addressable. */
+          readonly barrierActionId?: string | undefined;
+        };
+      }
+    | undefined;
 }
 
 export type CommandPlanCacheCapability = "run-prepared" | "attempt-captured" | "unsupported";
@@ -132,7 +137,7 @@ export interface CommandPlanSlot {
   readonly evalId: string;
   readonly attempt: number;
   readonly action: "carried" | "dispatch";
-  readonly activation?: SandboxCommandPlanCondition;
+  readonly activation?: SandboxCommandPlanCondition | undefined;
   readonly steps: readonly CommandPlanStep[];
 }
 
@@ -159,7 +164,7 @@ export type CommandPlanLane =
       readonly ordering: "independent";
       readonly scope: { readonly kind: "shared" } | { readonly kind: "eval"; readonly evalId: string };
       /** Applied independently to every physical instance; it creates no lane-wide before/after edge. */
-      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
+      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate | undefined;
     })
   | (CommandPlanLaneBase & {
       readonly kind: "eval-group";
@@ -168,7 +173,7 @@ export type CommandPlanLane =
       readonly beforeSlots: readonly CommandPlanStep[];
       readonly afterSlots: readonly CommandPlanStep[];
       /** Applied independently to every replacement instance used by this capacity-one lane. */
-      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate;
+      readonly physicalLifecycleTemplate?: CommandPlanPhysicalLifecycleTemplate | undefined;
     });
 
 export interface CommandPlanExperiment {
@@ -462,14 +467,13 @@ function containsOpaque(step: CommandPlanStep): boolean {
 function stepForLinkedBefore(_pair: PreparedRunPair, entry: ScheduledSandboxBefore): CommandPlanStep {
   const owner: CommandPlanOwner = { kind: entry.owner.kind, id: entry.owner.id };
   if (entry.kind === "action") {
+    const scriptSource = sandboxShellScriptSourceOf(entry.data);
     return {
       phase: "sandbox.before",
       truth: "exact",
       owner,
       label: entry.metadata.label ?? entry.id,
-      ...(sandboxShellScriptSourceOf(entry.data) === undefined
-        ? {}
-        : { scriptSource: sandboxShellScriptSourceOf(entry.data) }),
+      ...(scriptSource === undefined ? {} : { scriptSource }),
       action: Object.freeze({ ...entry.data.plan, kind: "action" as const }),
     };
   }
@@ -611,16 +615,17 @@ function scheduledBeforeSteps(
             : barrier === "unsupported-state-ancestor"
               ? unsupportedStateBarrierActionId
               : undefined;
+      const action =
+        entry.kind === "action"
+          ? projected.action
+          : Object.freeze({
+              id: entry.id,
+              kind: entry.kind === "hook" ? ("callback" as const) : ("command" as const),
+            });
       const step: CommandPlanStep = Object.freeze({
         ...projected,
         ...beforeCacheAttribution(entry),
-        action:
-          entry.kind === "action"
-            ? projected.action
-            : Object.freeze({
-                id: entry.id,
-                kind: entry.kind === "hook" ? ("callback" as const) : ("command" as const),
-              }),
+        ...(action === undefined ? {} : { action }),
         occurrence: Object.freeze({ kind: "attempt" as const }),
         cache: Object.freeze({
           lookup: "not-probed" as const,

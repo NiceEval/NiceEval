@@ -372,10 +372,10 @@ export class ReusableSandboxPool {
       };
       const materialized = yield* Scope.provide(
         materializeSandboxRunPlan({
-          runId: this.runId,
+          ...(this.runId === undefined ? {} : { runId: this.runId }),
           ...provenance,
           evalId: this.materializationOwnerId,
-          creationEvalId: provenance?.evalId,
+          ...(provenance?.evalId === undefined ? {} : { creationEvalId: provenance?.evalId }),
           plan: this.plan,
           deadline,
           // Runtime intentionally reports SandboxLayer/provider finalizer errors

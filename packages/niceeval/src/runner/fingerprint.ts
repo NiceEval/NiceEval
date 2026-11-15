@@ -394,7 +394,11 @@ export function planProjectTarget(
       ...(options.keepSandbox === undefined ? {} : { keepSandbox: options.keepSandbox }),
       ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
     }),
-    (preparedPairs) => planPreparedProjectTarget(preparedPairs, { ...options, configTimeoutMs }),
+    (preparedPairs) =>
+      planPreparedProjectTarget(preparedPairs, {
+        ...options,
+        ...(configTimeoutMs === undefined ? {} : { configTimeoutMs: configTimeoutMs }),
+      }),
   );
 }
 

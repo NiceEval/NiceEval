@@ -1238,7 +1238,7 @@ function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessm
     readonly candidate?: Source;
   },
 ): Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }> {
-  return Object.freeze({
+  const result: Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }> = {
     ...target,
     state: "gap" as const,
     reason: input.reason,
@@ -1256,7 +1256,9 @@ function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessm
     ...(input.sourceBarrier === undefined ? {} : { sourceBarrier: input.sourceBarrier }),
     ...(input.candidate === undefined ? {} : { candidate: input.candidate }),
     comparisons: Object.freeze([...input.comparisons]),
-  });
+  };
+  Object.freeze(result);
+  return result;
 }
 
 function effectiveOptions(policy: ProjectTargetPolicy): ExecutionReuseEffectiveOptions {

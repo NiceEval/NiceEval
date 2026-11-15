@@ -37,14 +37,14 @@ export interface SessionExperimentRecord {
   experimentId: string;
   runId: string;
   /** The Record v1 receipt confirmed that this draft reached a complete marker. */
-  published?: boolean;
-  state?: SessionExperimentState;
-  running?: number;
-  queued?: number;
-  elsewhere?: number;
+  published?: boolean | undefined;
+  state?: SessionExperimentState | undefined;
+  running?: number | undefined;
+  queued?: number | undefined;
+  elsewhere?: number | undefined;
   /** Only currently queued Attempts with an actionable, stable reason are expanded. */
-  attempts?: SessionQueuedAttemptRecord[];
-  activeAttempts?: SessionActiveAttemptRecord[];
+  attempts?: SessionQueuedAttemptRecord[] | undefined;
+  activeAttempts?: SessionActiveAttemptRecord[] | undefined;
 }
 
 const LifecyclePhaseSchema = Schema.Literals([
@@ -111,16 +111,16 @@ export interface SessionRecord {
   startedAt: string;
   status: SessionStatus;
   experiments: SessionExperimentRecord[];
-  heartbeatAt?: string;
-  completedAt?: string;
-  completion?: InvocationCompletion;
+  heartbeatAt?: string | undefined;
+  completedAt?: string | undefined;
+  completion?: InvocationCompletion | undefined;
 }
 
 export interface ExpiredSessionRecord {
   sessionId: string;
   pid: number;
   startedAt: string;
-  heartbeatAt?: string;
+  heartbeatAt?: string | undefined;
 }
 
 export interface SessionListDocument {
@@ -130,7 +130,7 @@ export interface SessionListDocument {
 
 export interface SessionShowDocument {
   session: SessionRecord | ExpiredSessionRecord;
-  expired?: boolean;
+  expired?: boolean | undefined;
 }
 
 export interface SessionStartInput {

@@ -236,13 +236,13 @@ export function linkRunSandboxes(
         }
         linkedAdapter =
           agent.kind === "sandbox"
-            ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
+            ? { kind: agent.kind, name: agent.name, ...(agent.sandbox === undefined ? {} : { sandbox: agent.sandbox }) }
             : { kind: agent.kind, name: agent.name };
       }
       const input: SandboxLayerPairInput = {
         eval: {
           id: evalDef.id,
-          layer: plugin.evalLayer,
+          ...(plugin.evalLayer === undefined ? {} : { layer: plugin.evalLayer }),
           declaredAt: { file: evalDef.sourcePath },
         },
         ...(evalDef.evalGroup === undefined
@@ -250,13 +250,13 @@ export function linkRunSandboxes(
           : {
               group: {
                 id: evalDef.evalGroup.id,
-                layer: plugin.groupLayer,
+                ...(plugin.groupLayer === undefined ? {} : { layer: plugin.groupLayer }),
                 declaredAt: { file: evalDef.evalGroup.sourcePath },
               },
             }),
         experiment: {
           id: experimentId,
-          layer: plugin.experimentLayer,
+          ...(plugin.experimentLayer === undefined ? {} : { layer: plugin.experimentLayer }),
           declaredAt: { file: experimentSourcePath },
         },
         agent: linkedAdapter,

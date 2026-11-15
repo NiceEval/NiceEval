@@ -348,7 +348,7 @@ function runForExperiment(
   config: Config,
 ): AgentRun {
   return Object.freeze({
-    adapter: experiment.adapter,
+    ...(experiment.adapter === undefined ? {} : { adapter: experiment.adapter }),
     ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
     ...(experiment.model === undefined ? {} : { model: experiment.model }),
@@ -484,7 +484,7 @@ export function prepareCurrentAdoptionTarget(input: {
       try: () =>
         resolveExperimentEvals({
           experimentId: experiment.id,
-          models: experiment.models,
+          ...(experiment.models === undefined ? {} : { models: experiment.models }),
           selector: experiment.evals,
           cliPatterns: [],
           evals: input.project.evals,
@@ -506,7 +506,7 @@ export function prepareCurrentAdoptionTarget(input: {
 
     const run = runForExperiment(experiment, selection.selectedEvalIds, input.project.config);
     const pairs = yield* prepareRunSandboxes(selection.selectedEvals, [run], input.project.planningServices, {
-      configTimeoutMs: input.project.config.timeoutMs,
+      ...(input.project.config.timeoutMs === undefined ? {} : { configTimeoutMs: input.project.config.timeoutMs }),
     }).pipe(
       Effect.mapError((error) =>
         adoptionError(
@@ -528,7 +528,7 @@ export function prepareCurrentAdoptionTarget(input: {
     const context = Result.isFailure(contextResult) ? yield* Effect.fail(contextResult.failure) : contextResult.success;
 
     const projectPlan = yield* planPreparedProjectTarget(pairs, {
-      configJudge: input.project.config.judgeProvider,
+      ...(input.project.config.judgeProvider === undefined ? {} : { configJudge: input.project.config.judgeProvider }),
     }).pipe(
       Effect.mapError((cause) =>
         adoptionError(
@@ -1021,7 +1021,7 @@ export function prepareExplicitAdoptionMember(input: {
     const executionDuration = yield* readAdoptionExecutionDuration(input.reader, input.source);
     const duration = durationComparison({
       source: executionDuration,
-      target: target.timeout,
+      ...(target.timeout === undefined ? {} : { target: target.timeout }),
     });
     if (duration.failure !== undefined) {
       return yield* Effect.fail(

@@ -412,13 +412,14 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         diagnostics.push(teardownDiagnostic("agent.teardown", error));
       };
 
+      const experiment = experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge);
       const base: EvalResult = {
         id: evalDef.id,
-        description: evalDef.description,
+        ...(evalDef.description === undefined ? {} : { description: evalDef.description }),
         experimentId: run.experimentId,
-        experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
+        ...(experiment === undefined ? {} : { experiment }),
         adapter: adapterIdentity(adapter),
-        model: run.model,
+        ...(run.model === undefined ? {} : { model: run.model }),
         verdict: "errored",
         fingerprint: a.fingerprint,
         evaluationAlgorithm: EVALUATION_ALGORITHM,
@@ -833,18 +834,19 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           Effect.scoped(
             Effect.gen(function* () {
               const pause = yield* Effect.cached(
-                Effect.suspend(() =>
-                  pauseOnFailure(
+                Effect.suspend(() => {
+                  const sandboxId = currentSandbox?.sandboxId ?? sandboxFacts?.sandboxId;
+                  return pauseOnFailure(
                     sandboxFacts === undefined
                       ? undefined
                       : nativeEnterCommand(sandboxFacts.provider, sandboxFacts.sandboxId),
                     parentSignal ?? invocationSignal,
                     {
                       nonInteractive: opts.maxConcurrency > 1 || process.stdin.isTTY !== true,
-                      sandboxId: currentSandbox?.sandboxId ?? sandboxFacts?.sandboxId,
+                      ...(sandboxId === undefined ? {} : { sandboxId }),
                     },
-                  ),
-                ),
+                  );
+                }),
               );
               pauseBeforeCleanup = (verdict) =>
                 (opts.pauseOnFailure ?? config.pauseOnFailure ?? false) &&
@@ -1100,9 +1102,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                           ? { _tag: "Unlimited" }
                           : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
                       const runtimeInput: SandboxRuntimeMaterializeInput = {
-                        runId,
-                        attemptId: a.attemptId,
-                        sandboxLabels: run.sandboxLabels,
+                        ...(runId === undefined ? {} : { runId: runId }),
+                        ...(a.attemptId === undefined ? {} : { attemptId: a.attemptId }),
+                        ...(run.sandboxLabels === undefined ? {} : { sandboxLabels: run.sandboxLabels }),
                         plan: sandboxPlan,
                         evalId: evalDef.id,
                         deadline: runtimeDeadline,
@@ -1123,7 +1125,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                                 ? {}
                                 : { beforeCacheArtifact: preparedBeforeCache.artifact }),
                             }),
-                        agent: agent.kind === "sandbox" ? agent : undefined,
+                        ...(agent.kind === "sandbox" ? { agent } : {}),
                         ...(runTiming !== undefined ? { runTiming } : {}),
                         provisionSlot: { _tag: "Bound", value: provisionSlot },
                         admission: { _tag: "Bound", value: runtimeAdmission },
@@ -1603,9 +1605,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       sandbox,
                       sourceRegistry,
                       sourceCapture,
-                      receiver,
-                      telemetry,
-                      otel: otelChannel,
+                      ...(receiver === undefined ? {} : { receiver: receiver }),
+                      ...(telemetry === undefined ? {} : { telemetry: telemetry }),
+                      ...(otelChannel === undefined ? {} : { otel: otelChannel }),
                       signal: AbortSignal.any([signal, interruptSignal]),
                       log,
                       enterPhase,
@@ -1637,9 +1639,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                                 ? { context: preparedBeforeCache.context, satisfiedActionCount: 0 }
                                 : preparedBeforeCache,
                           }),
-                      concurrencySlot,
+                      ...(concurrencySlot === undefined ? {} : { concurrencySlot: concurrencySlot }),
                       declareFailure,
-                      onEnvironmentIncomplete,
+                      ...(onEnvironmentIncomplete === undefined
+                        ? {}
+                        : { onEnvironmentIncomplete: onEnvironmentIncomplete }),
                       isDeadlineTimedOut: () => timedOut,
                       layerCleanups,
                       attemptResources,
@@ -1794,7 +1798,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     reportKept({
                       locator: a.locator,
                       identity,
-                      who: runWho({ agentName: agent.name, model: run.model, experimentId: run.experimentId }),
+                      who: runWho({
+                        agentName: agent.name,
+                        ...(run.model === undefined ? {} : { model: run.model }),
+                        experimentId: run.experimentId,
+                      }),
                       verdict: bodyResult.verdict,
                       provider: providerName,
                       sandboxId: sandbox.sandboxId,
@@ -2063,8 +2071,8 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
       judgeUsage: input.judgeUsage,
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
-      model: a.run.model,
-      reasoningEffort: a.run.reasoningEffort,
+      ...(a.run.model === undefined ? {} : { model: a.run.model }),
+      ...(a.run.reasoningEffort === undefined ? {} : { reasoningEffort: a.run.reasoningEffort }),
       flags: a.run.flags,
       signal,
       feedback,
@@ -2095,8 +2103,8 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
             attempt: a.attempt,
             signal,
             models: a.run.models ?? Object.freeze({}),
-            model: a.run.model,
-            reasoningEffort: a.run.reasoningEffort,
+            ...(a.run.model === undefined ? {} : { model: a.run.model }),
+            ...(a.run.reasoningEffort === undefined ? {} : { reasoningEffort: a.run.reasoningEffort }),
             flags: a.run.flags,
             progress: feedback.progress,
             diagnostic: feedback.diagnostic,
@@ -2842,8 +2850,8 @@ async function runAttemptBody(
       signal,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
-      model: run.model,
-      reasoningEffort: run.reasoningEffort,
+      ...(run.model === undefined ? {} : { model: run.model }),
+      ...(run.reasoningEffort === undefined ? {} : { reasoningEffort: run.reasoningEffort }),
       flags: run.flags,
       experimentId: run.experimentId,
       ...(evalDef.evalGroup === undefined
@@ -2855,7 +2863,7 @@ async function runAttemptBody(
             },
           }),
       session: createAgentSession(),
-      telemetry,
+      ...(telemetry === undefined ? {} : { telemetry: telemetry }),
       progress: feedback.progress,
       diagnostic: feedback.diagnostic,
       // log 是显式 timeout breadcrumb；progress 另走短命 ACTIVE 通道。
@@ -3641,11 +3649,11 @@ async function runAttemptBody(
               definitionHash: evalDef.evalGroup.definitionHash,
             },
           }),
-      model: run.model,
-      reasoningEffort: run.reasoningEffort,
+      ...(run.model === undefined ? {} : { model: run.model }),
+      ...(run.reasoningEffort === undefined ? {} : { reasoningEffort: run.reasoningEffort }),
       judgeUsage: res.judgeUsage,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
-      pricing: config.pricing,
+      ...(config.pricing === undefined ? {} : { pricing: config.pricing }),
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
@@ -3655,10 +3663,10 @@ async function runAttemptBody(
       requestEffect: assertFirst.requestEffect,
       signal,
       log,
-      telemetry,
-      otel,
+      ...(telemetry === undefined ? {} : { telemetry: telemetry }),
+      ...(otel === undefined ? {} : { otel: otel }),
       feedback,
-      concurrencySlot,
+      ...(concurrencySlot === undefined ? {} : { concurrencySlot: concurrencySlot }),
       sourceRegistry,
       resources: attemptResources,
       nextSourceOrder: sourceCapture.nextSourceOrder,
@@ -3712,7 +3720,8 @@ async function runAttemptBody(
           normalizeObservedText: (value: string) => redactSensitiveText(value, sensitiveValues),
           onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
             beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId, info.sessionScopeId);
-            sourceCapture.onTurnStart(info);
+            const { loc, ...turn } = info;
+            sourceCapture.onTurnStart({ ...turn, ...(loc === undefined ? {} : { loc }) });
           },
         },
       ),
@@ -3966,8 +3975,8 @@ async function runAttemptBody(
         const collected = await assertFirst.requestEffect(
           Effect.raceFirst(
             collectAttemptTelemetry({
-              receiver,
-              shared,
+              ...(receiver === undefined ? {} : { receiver: receiver }),
+              ...(shared === undefined ? {} : { shared: shared }),
               initialSpans: state.manager.otelSpans,
               map: agent.spanMapper ?? mapGenericSpans,
               toolCalls: facts.toolCalls,
@@ -4007,14 +4016,15 @@ async function runAttemptBody(
     const sources = await collectSources(evalDef.source, sourceRegistry);
     const legacyProjection = legacyResultProjectionFromSealedAssertions(sealedAssertions, error, skipReason);
 
+    const experiment = experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge);
     const value: EvalResult = bindPricingEstimateReceipt(
       {
         id: evalDef.id,
-        description: evalDef.description,
+        ...(evalDef.description === undefined ? {} : { description: evalDef.description }),
         experimentId: run.experimentId,
-        experiment: experimentRunInfo(run, a.plan, a.sandboxPlansByEval, config, a.judge),
+        ...(experiment === undefined ? {} : { experiment }),
         adapter: adapterIdentity(run.adapter),
-        model: run.model,
+        ...(run.model === undefined ? {} : { model: run.model }),
         verdict,
         fingerprint: a.fingerprint,
         evaluationAlgorithm: EVALUATION_ALGORITHM,
@@ -4025,15 +4035,15 @@ async function runAttemptBody(
         ...legacyProjection,
         evaluationKind: evalDef.evaluationKind ?? "pass",
         ...(state.manager.retryAttempts.length > 0 ? { retryAttempts: state.manager.retryAttempts } : {}),
-        usage,
-        estimatedCostUSD,
-        error,
-        skipReason,
-        events,
-        sources,
-        o11y,
-        trace,
-        agentInstallation,
+        ...(usage === undefined ? {} : { usage }),
+        ...(estimatedCostUSD === undefined ? {} : { estimatedCostUSD }),
+        ...(error === undefined ? {} : { error }),
+        ...(skipReason === undefined ? {} : { skipReason }),
+        ...(events === undefined ? {} : { events }),
+        ...(sources === undefined ? {} : { sources }),
+        ...(o11y === undefined ? {} : { o11y }),
+        ...(trace === undefined ? {} : { trace }),
+        ...(agentInstallation === undefined ? {} : { agentInstallation }),
         ...(diffArtifactAvailable ? { diff: diffWindows } : {}),
         evidenceCoverage: state.manager.evidenceCoverage,
         // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
@@ -4378,7 +4388,11 @@ function withCommandTiming(
     const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
     // 这一刻**的剩余量——同一台沙箱上的第二条命令拿到的不是一整份上限。
-    const limit = commandLimitAttribution(opts as { timeoutMs?: number } | undefined, { deadlineAt }, wallStartedAt);
+    const limit = commandLimitAttribution(
+      opts as { timeoutMs?: number } | undefined,
+      { ...(deadlineAt === undefined ? {} : { deadlineAt: deadlineAt }) },
+      wallStartedAt,
+    );
     try {
       const result = await fn();
       const exitCode = (result as { exitCode?: unknown })?.exitCode;

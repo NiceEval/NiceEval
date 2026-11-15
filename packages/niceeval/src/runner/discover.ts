@@ -94,7 +94,7 @@ interface EvalModule {
 }
 
 interface ExperimentModule {
-  readonly default?: ExperimentDefinition;
+  readonly default?: ExperimentDefinition | undefined;
 }
 
 interface EvalGroupModule {
@@ -378,9 +378,9 @@ function expandEvalExport(
           }
           const kind = exported.evaluationKind ?? "pass";
           const definition = defineEvalForContext(kind, {
-            description: exported.description,
-            tags: exported.tags ? [...exported.tags] : undefined,
-            timeoutMs: exported.timeoutMs,
+            ...(exported.description === undefined ? {} : { description: exported.description }),
+            ...(exported.tags === undefined ? {} : { tags: [...exported.tags] }),
+            ...(exported.timeoutMs === undefined ? {} : { timeoutMs: exported.timeoutMs }),
             test: (t) => exported.test(t as never, row),
           });
           return {
@@ -492,7 +492,7 @@ function runLeakGate(
           assertNoHiddenInputLeaks({
             hidden,
             buildContexts: hints.buildContexts,
-            bindMounts: hints.bindMounts,
+            ...(hints.bindMounts === undefined ? {} : { bindMounts: hints.bindMounts }),
             evalId: input.evalId,
           }).pipe(
             Effect.mapError((cause) =>
@@ -959,7 +959,7 @@ export function discoverEvals(
                   id,
                   evalIds: Object.freeze(evalIds),
                   definitionHash,
-                  sandbox: module.default.sandbox,
+                  ...(module.default.sandbox === undefined ? {} : { sandbox: module.default.sandbox }),
                   onUnavailable: module.default.onUnavailable,
                   plugins: Object.freeze([...(module.default.plugins ?? [])]),
                   sourcePath: file,
