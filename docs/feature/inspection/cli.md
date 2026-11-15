@@ -830,6 +830,17 @@ Open: niceeval view @01JSHOWATTEMPT
 ### Attempt 断言详情示例
 
 `show @<locator> assertions` 呈现该 Attempt 各断言条目的判定、分值与理由。
+
+列表按 Attempt 的条目顺序，为每个 `entryId` 调用一次 `projection: "compact"` 的 `attempt.assertion.detail`。
+`--json` 每个条目写一行 document，全部行共用同一个 `PublicationCutoff`。
+compact 的读取成本与材料大小无关：只读取条目的判定、分值、display、gate、target 与 rationale。
+材料正文、collection 的 retained rows、`debugger`、source content 与裁判审计都不加载，只在 `ae_<id> --full` 中交付。
+读取期限按单个 operation 计时，不在整个列表上累计。条目再多、材料再大，可读的列表也不会读到一半失败。
+
+单个 operation 超过读取期限时，该行是 failure，code 为 `inspection-read-deadline-exceeded`。
+reason 写出 entryId、已用时长与期限；correction 给出单独读取这一项的 `niceeval show @<locator> ae_<id>`，不写 `retry`。
+同一读取重试会以同样方式超时，所以 `retry` 不是有效的下一步。
+文本模式把同样的诊断写到 stderr 并非零退出，不输出半张表。
 每个条目的标记写它对结果起什么作用，读者不必读源码就知道哪一条决定了 Verdict（[T-23](../../taste.md#t-23)）：
 
 | 标记 | 条目 | 取值 |
