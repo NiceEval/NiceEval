@@ -30,12 +30,12 @@ function decodeInput(value: unknown): ExternalRecordImportInput {
   ) {
     throw sqliteError("record-database-invalid", "import-record", "Record import worker input is invalid");
   }
-  return Object.freeze({
+  return {
     sourcePath: String(Reflect.get(value, "sourcePath")),
     generationPath: String(Reflect.get(value, "generationPath")),
     deadlineEpochMs: Number(Reflect.get(value, "deadlineEpochMs")),
     sourceKind: Reflect.get(value, "sourceKind") as RecordImportSourceKind,
-  });
+  };
 }
 
 function deadline(input: ExternalRecordImportInput, phase: string): void {
@@ -125,25 +125,21 @@ async function importRecord(input: ExternalRecordImportInput): Promise<number> {
 if (!isMainThread && parentPort !== null) {
   const port = parentPort;
   void importRecord(decodeInput(workerData)).then(
-    (sealedRunCount) => port.postMessage(Object.freeze({ state: "success", sealedRunCount })),
+    (sealedRunCount) => port.postMessage({ state: "success", sealedRunCount }),
     (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      port.postMessage(
-        Object.freeze({
-          state: "failure",
-          error: Object.freeze({
-            code:
-              typeof Reflect.get(error, "code") === "string"
-                ? String(Reflect.get(error, "code"))
-                : "record-sqlite-error",
-            operation:
-              typeof Reflect.get(error, "operation") === "string"
-                ? String(Reflect.get(error, "operation"))
-                : "import-record",
-            message: error.message,
-          }),
-        }),
-      );
+      port.postMessage({
+        state: "failure",
+        error: {
+          code:
+            typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error",
+          operation:
+            typeof Reflect.get(error, "operation") === "string"
+              ? String(Reflect.get(error, "operation"))
+              : "import-record",
+          message: error.message,
+        },
+      });
     },
   );
 }

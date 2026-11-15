@@ -131,16 +131,10 @@ export function dindContainerCommand(
   logPath: string,
 ): { readonly Entrypoint: readonly string[]; readonly Cmd: readonly string[] } {
   const keeperSeconds = Math.max(1, ttlSeconds - DIND_SHUTDOWN_GRACE_SECONDS);
-  return Object.freeze({
-    Entrypoint: Object.freeze(["sh", "-c"]),
-    Cmd: Object.freeze([
-      DIND_BOOTSTRAP_SOURCE,
-      "niceeval-dind-supervisor",
-      DIND_SUPERVISOR_SOURCE,
-      String(keeperSeconds),
-      logPath,
-    ]),
-  });
+  return {
+    Entrypoint: ["sh", "-c"],
+    Cmd: [DIND_BOOTSTRAP_SOURCE, "niceeval-dind-supervisor", DIND_SUPERVISOR_SOURCE, String(keeperSeconds), logPath],
+  };
 }
 
 /** Gracefully stop inner containers/containerd/dockerd while keeping the outer container alive for ordered capture. */

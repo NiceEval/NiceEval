@@ -56,13 +56,13 @@ export function plannedAgentDerivedNode(
     })),
   };
   const key = `agent-derived:${digestOf(declarationMetadata)}`;
-  return Object.freeze({
+  return {
     key,
     declaringOwner: `agent:${plan.pair.agentName}`,
-    positions: Object.freeze([...(parent?.positions ?? []), "niceeval.agent-install"]),
+    positions: [...(parent?.positions ?? []), "niceeval.agent-install"],
     installs,
     installers,
-    declaration: Object.freeze({
+    declaration: {
       baseIdentity: eligibility.baseIdentity,
       beforeCacheKey: key,
       declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
@@ -70,6 +70,6 @@ export function plannedAgentDerivedNode(
       cacheFormat: eligibility.keyScope.cacheFormat,
       changeFrequency: 100,
       declarationMetadata,
-    }),
-  });
+    },
+  };
 }

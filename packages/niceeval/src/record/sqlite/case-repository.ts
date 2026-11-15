@@ -47,18 +47,18 @@ function read(connection: RecordDatabase, caseId: string) {
     | undefined;
   return row === undefined
     ? undefined
-    : Object.freeze({
-        owner: Object.freeze({
+    : {
+        owner: {
           ownerId: text(row, "owner_id"),
           generation: integer(row, "owner_generation"),
           host: text(row, "owner_host"),
           pid: integer(row, "owner_pid"),
           bootId: text(row, "owner_boot_id"),
           processStart: text(row, "owner_process_start"),
-        }),
+        },
         acquiredAt: text(row, "acquired_at"),
         heartbeatAt: text(row, "heartbeat_at"),
-      });
+      };
 }
 
 export function executeCaseCommand(connection: RecordDatabase, command: CaseCoordinationCommand): object | undefined {
@@ -84,7 +84,7 @@ export function executeCaseCommand(connection: RecordDatabase, command: CaseCoor
           command.at,
           command.at,
         );
-        return Object.freeze({ ...owner, generation: 1 });
+        return { ...owner, generation: 1 };
       }
       case "case-heartbeat": {
         const changed = recordStatement(
@@ -120,7 +120,7 @@ export function executeCaseCommand(connection: RecordDatabase, command: CaseCoor
           ...ownerArgs(command.deadOwner),
         );
         if (Number(changed.changes) !== 1) conflict(command._tag, "exact dead case owner did not match");
-        return Object.freeze({ ...replacement, generation: command.deadOwner.generation + 1 });
+        return { ...replacement, generation: command.deadOwner.generation + 1 };
       }
     }
   });

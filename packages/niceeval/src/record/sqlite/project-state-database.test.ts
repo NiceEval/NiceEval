@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("ProjectStateDatabase scoped composition", () => {
-  it("shares one worker-backed instance across frozen facets", async () => {
+  it("shares one worker-backed instance across facets", async () => {
     const portableRoot = await root();
     const result = await Effect.runPromise(
       Effect.scoped(
@@ -46,7 +46,6 @@ describe("ProjectStateDatabase scoped composition", () => {
           );
           return {
             sameRecordFacet: first.record === second.record,
-            frozen: Object.isFrozen(first) && Object.isFrozen(first.teardown) && Object.isFrozen(first.keep),
             row: yield* Effect.promise(() => second.teardown.get("one")),
           };
         }),
@@ -54,7 +53,6 @@ describe("ProjectStateDatabase scoped composition", () => {
     );
 
     expect(result.sameRecordFacet).toBe(true);
-    expect(result.frozen).toBe(true);
     expect(result.row?.generation).toBe(1);
   });
 

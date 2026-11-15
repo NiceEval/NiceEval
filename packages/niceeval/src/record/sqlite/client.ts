@@ -251,7 +251,7 @@ export async function makeStorageWorkerClient(
   } finally {
     initializationSignal?.removeEventListener("abort", abortInitialization);
   }
-  return Object.freeze({
+  return {
     persistSealedRun: (input: PersistSealedRunInput) =>
       request<SealedRunSummary>({ operation: "persist-sealed-run", input }),
     beginRun: async (input: BeginRunInput) => {
@@ -331,7 +331,7 @@ export async function makeStorageWorkerClient(
           await terminate();
         }
       })()),
-  });
+  };
 }
 
 export function openStorageWorker(

@@ -68,9 +68,9 @@ export interface SandboxPlanningServices {
   ) => Effect.Effect<ProviderPlan, SandboxProviderPlanningError>;
 }
 
-const LIVE_SANDBOX_PLANNING_SERVICES: SandboxPlanningServices = Object.freeze({
+const LIVE_SANDBOX_PLANNING_SERVICES: SandboxPlanningServices = {
   planTemplate: planSandboxTemplate,
-});
+};
 
 export function liveSandboxPlanningServices(): SandboxPlanningServices {
   return LIVE_SANDBOX_PLANNING_SERVICES;
@@ -102,15 +102,15 @@ export class SandboxPhysicalPlanningError extends Data.TaggedError("SandboxPhysi
 }> {}
 
 function pairView(pair: LinkedSandboxPair): SandboxPhysicalPlanningIssue["pair"] {
-  return Object.freeze({
+  return {
     evalId: pair.evalId,
     experimentId: pair.experimentId,
     agentName: pair.agentName,
-  });
+  };
 }
 
 function invalidBaseDirIssue(pair: LinkedSandboxPair, baseDir: string): SandboxPhysicalPlanningIssue {
-  return Object.freeze({
+  return {
     code: "sandbox.author-base-dir-invalid",
     providerCode: "sandbox.author-base-dir-invalid",
     pair: pairView(pair),
@@ -119,10 +119,8 @@ function invalidBaseDirIssue(pair: LinkedSandboxPair, baseDir: string): SandboxP
     summary:
       `${pair.templateOwner.kind} ${JSON.stringify(pair.templateOwner.id)} has a non-absolute author baseDir ` +
       `${JSON.stringify(baseDir)}.`,
-    actions: Object.freeze([
-      "Complete discovery before physical planning so every author definition has an absolute baseDir.",
-    ]),
-  });
+    actions: ["Complete discovery before physical planning so every author definition has an absolute baseDir."],
+  };
 }
 
 function providerIssue(
@@ -130,15 +128,15 @@ function providerIssue(
   baseDir: string,
   failure: SandboxProviderPlanningError,
 ): SandboxPhysicalPlanningIssue {
-  return Object.freeze({
+  return {
     code: "sandbox.provider-planning-failed",
     providerCode: failure.code,
     pair: pairView(pair),
     templateOwner: pair.templateOwner,
     baseDir,
     summary: failure.summary,
-    actions: Object.freeze([...failure.actions]),
-  });
+    actions: failure.actions,
+  };
 }
 
 function capabilityIssue(
@@ -148,15 +146,15 @@ function capabilityIssue(
   summary: string,
   actions: readonly string[],
 ): SandboxPhysicalPlanningIssue {
-  return Object.freeze({
+  return {
     code: "sandbox.capability-unavailable",
     providerCode,
     pair: pairView(pair),
     templateOwner: pair.templateOwner,
     baseDir,
     summary,
-    actions: Object.freeze([...actions]),
-  });
+    actions,
+  };
 }
 
 function capabilityIssues(
@@ -244,19 +242,15 @@ function capabilityIssues(
       );
     }
   }
-  return Object.freeze(issues);
+  return issues;
 }
 
 function planningError(issues: SandboxPhysicalPlanningIssues): SandboxPhysicalPlanningError {
-  const frozen = Object.freeze([issues[0], ...issues.slice(1)] as [
-    SandboxPhysicalPlanningIssue,
-    ...SandboxPhysicalPlanningIssue[],
-  ]);
   return new SandboxPhysicalPlanningError({
     code: "sandbox.physical-planning-failed",
-    issues: frozen,
+    issues,
     message:
-      `Sandbox physical planning failed for ${frozen.length} pairs. ` +
+      `Sandbox physical planning failed for ${issues.length} pairs. ` +
       "No provider build or Sandbox creation was started.",
   });
 }
@@ -290,12 +284,10 @@ export function planLinkedRuns(
     const issues: SandboxPhysicalPlanningIssue[] = [];
     for (const input of inputs) {
       if (input.pair.kind === "direct") {
-        plans.push(
-          Object.freeze({
-            pair: input.pair,
-            plan: Object.freeze({ _tag: "Direct", pair: input.pair }),
-          }),
-        );
+        plans.push({
+          pair: input.pair,
+          plan: { _tag: "Direct", pair: input.pair },
+        });
         continue;
       }
       const baseDir = input.authorBaseDirs[input.pair.templateOwner.kind];
@@ -307,9 +299,7 @@ export function planLinkedRuns(
         issues.push(invalidBaseDirIssue(input.pair, baseDir));
         continue;
       }
-      const planned = yield* Effect.result(
-        services.planTemplate(input.pair.template, Object.freeze({ authorBaseDir: baseDir })),
-      );
+      const planned = yield* Effect.result(services.planTemplate(input.pair.template, { authorBaseDir: baseDir }));
       if (planned._tag === "Failure") {
         issues.push(providerIssue(input.pair, baseDir, planned.failure));
         continue;
@@ -319,15 +309,13 @@ export function planLinkedRuns(
         issues.push(...gaps);
         continue;
       }
-      plans.push(
-        Object.freeze({
-          pair: input.pair,
-          plan: Object.freeze({ _tag: "Sandbox", pair: input.pair, providerPlan: planned.success }),
-        }),
-      );
+      plans.push({
+        pair: input.pair,
+        plan: { _tag: "Sandbox", pair: input.pair, providerPlan: planned.success },
+      });
     }
     if (issues.length > 0) return yield* planningError([issues[0], ...issues.slice(1)]);
-    return Object.freeze(plans);
+    return plans;
   });
 }
 
@@ -423,34 +411,6 @@ type CapturedLinkedRunRenameIdentity =
       readonly rebuildable: boolean;
     };
 
-function freezeJsonSnapshot(value: JsonValue): JsonValue {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map(freezeJsonSnapshot)) as JsonValue;
-  }
-  return Object.freeze(
-    Object.fromEntries(Object.entries(value).map(([key, child]) => [key, freezeJsonSnapshot(child)])),
-  );
-}
-
-function freezeOwnerSnapshot(owner: SandboxScheduleOwnerRef): SandboxScheduleOwnerRef {
-  return Object.freeze({ kind: owner.kind, id: owner.id });
-}
-
-function freezeCommandFingerprintSnapshot(command: SandboxCommandFingerprint): SandboxCommandFingerprint {
-  const owner = freezeOwnerSnapshot(command.owner);
-  return command.kind === "opaque"
-    ? Object.freeze({ kind: "opaque", owner, index: command.index })
-    : Object.freeze({
-        kind: "stable",
-        owner,
-        index: command.index,
-        id: command.id,
-        revision: command.revision,
-        inputs: freezeJsonSnapshot(command.inputs),
-      });
-}
-
 function renamedOwnerIdentity(owner: SandboxScheduleOwnerRef, experimentId: string): JsonValue {
   return {
     kind: owner.kind,
@@ -485,46 +445,36 @@ function firstPartySandboxIdentity(plan: Extract<LinkedRunPlan, { readonly _tag:
 
 function captureLinkedRunRenameIdentity(plan: LinkedRunPlan): CapturedLinkedRunRenameIdentity {
   if (plan._tag === "Direct") {
-    return Object.freeze({
+    return {
       _tag: "Direct",
       originalExperimentId: plan.pair.experimentId,
       evalId: plan.pair.evalId,
       agentName: plan.pair.agentName,
-    });
+    };
   }
-  const commands = Object.freeze(plan.pair.fingerprint.commands.map(freezeCommandFingerprintSnapshot));
-  const requirements = Object.freeze(
-    plan.pair.requirements.map((entry) =>
-      Object.freeze({
-        owner: freezeOwnerSnapshot(entry.owner),
-        requirement: Object.freeze({
-          _tag: entry.requirement._tag,
-          docker: Object.freeze({ ...entry.requirement.docker }),
-        }),
-      }),
-    ),
-  );
-  const after = Object.freeze((plan.pair.fingerprint.after ?? []).map(freezeCommandFingerprintSnapshot));
+  const commands = plan.pair.fingerprint.commands;
+  const requirements = plan.pair.requirements;
+  const after = plan.pair.fingerprint.after ?? [];
   const hasOpaqueIdentity =
     commands.some((command) => command.kind === "opaque") ||
     after.some((command) => command.kind === "opaque") ||
     (plan.pair.fingerprint.lifecycle?.length ?? 0) > 0;
-  return Object.freeze({
+  return {
     _tag: "Sandbox",
     originalExperimentId: plan.pair.experimentId,
     evalId: plan.pair.evalId,
     agentName: plan.pair.agentName,
-    templateOwner: Object.freeze({
+    templateOwner: {
       kind: plan.pair.templateOwner.kind,
       id: plan.pair.templateOwner.id,
-    }),
-    template: freezeJsonSnapshot(sandboxTemplateIdentity(plan.pair.template)),
+    },
+    template: sandboxTemplateIdentity(plan.pair.template),
     commands,
     requirements,
     after,
-    providerPlan: freezeJsonSnapshot(providerPlanRecordIdentity(plan.providerPlan)),
+    providerPlan: providerPlanRecordIdentity(plan.providerPlan),
     rebuildable: firstPartySandboxIdentity(plan) && !hasOpaqueIdentity,
-  });
+  };
 }
 
 function renamedLinkedRunIdentity(
@@ -532,17 +482,17 @@ function renamedLinkedRunIdentity(
   experimentId: string,
 ): JsonValue | undefined {
   if (captured._tag === "Direct") {
-    return freezeJsonSnapshot({
+    return {
       mode: "direct",
       pair: {
         evalId: captured.evalId,
         experimentId,
         agentName: captured.agentName,
       },
-    });
+    };
   }
   if (!captured.rebuildable) return undefined;
-  return freezeJsonSnapshot({
+  return {
     mode: "sandbox",
     pair: {
       evalId: captured.evalId,
@@ -572,22 +522,21 @@ function renamedLinkedRunIdentity(
       ? {}
       : { after: captured.after.map((command) => renamedCommandFingerprintIdentity(command, experimentId)) }),
     providerPlan: captured.providerPlan,
-  });
+  };
 }
 
 /**
  * Capture the pair-plan ingredients needed for experiment-rename/v1. The
- * returned projector is pure: it retains only recursively frozen data and
+ * returned projector is pure: it retains only readonly data and
  * rewrites owner-typed Experiment fields, never arbitrary matching strings.
  */
 export function captureLinkedRunRenameFingerprintIdentity(
   plan: LinkedRunPlan,
 ): (experimentId: string) => JsonValue | undefined {
   const captured = captureLinkedRunRenameIdentity(plan);
-  const original = freezeJsonSnapshot(linkedRunPublishableIdentity(plan));
-  return Object.freeze((experimentId: string): JsonValue | undefined =>
-    experimentId === captured.originalExperimentId ? original : renamedLinkedRunIdentity(captured, experimentId),
-  );
+  const original = linkedRunPublishableIdentity(plan);
+  return (experimentId: string): JsonValue | undefined =>
+    experimentId === captured.originalExperimentId ? original : renamedLinkedRunIdentity(captured, experimentId);
 }
 
 /** `sandboxPlansByEval` 的唯一落盘投影；整个返回值可安全 JSON 序列化。 */

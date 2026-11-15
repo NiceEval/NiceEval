@@ -26,14 +26,14 @@ const invalid: SandboxCaptureInputError = Object.freeze({
   code: "sandbox-capture-input-invalid" as const,
 });
 
-function freezeReuse(reuse: SandboxReuse): SandboxReuse {
+function copyReuse(reuse: SandboxReuse): SandboxReuse {
   return reuse.kind === "fresh"
-    ? Object.freeze({ kind: "fresh" as const })
-    : Object.freeze({
+    ? { kind: "fresh" as const }
+    : {
         kind: "pooled" as const,
         sandbox: reuse.sandbox,
         ordinal: reuse.ordinal,
-      });
+      };
 }
 
 /** Validates a transient capture value without producing a Record write. */
@@ -47,12 +47,12 @@ export function normalizeSandboxCapture(
   if (Result.isFailure(decoded)) return Result.fail(invalid);
   return Result.succeed(
     decoded.success.state === "not-used"
-      ? Object.freeze({ state: "not-used" as const })
-      : Object.freeze({
+      ? { state: "not-used" as const }
+      : {
           state: "assigned" as const,
           provider: decoded.success.provider,
           sandboxId: decoded.success.sandboxId,
-          reuse: freezeReuse(decoded.success.reuse),
-        }),
+          reuse: copyReuse(decoded.success.reuse),
+        },
   );
 }

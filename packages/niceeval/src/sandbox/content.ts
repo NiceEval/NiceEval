@@ -109,12 +109,12 @@ function digestFile(bytes: Buffer, mode: number): string {
 
 function captureFile(path: string, mode: number): RegisteredSandboxContentSnapshot {
   const bytes = readFileSync(path);
-  return Object.freeze({
+  return {
     kind: "file" as const,
     digest: digestFile(bytes, mode),
     mode,
     contentBase64: bytes.toString("base64"),
-  });
+  };
 }
 
 function captureDirectory(root: string, rootMode: number): RegisteredSandboxContentSnapshot {
@@ -132,7 +132,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
       if (info.isDirectory()) {
         const mode = permissionMode(info.mode);
         hash.update(`d\0${name}\0${mode.toString(8)}\0`);
-        captured.push(Object.freeze({ kind: "directory", path: name, mode }));
+        captured.push({ kind: "directory", path: name, mode });
         visit(child, name);
       } else if (info.isFile()) {
         const bytes = readFileSync(child);
@@ -140,7 +140,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
         hash.update(`f\0${name}\0${mode.toString(8)}\0`);
         hash.update(bytes);
         hash.update("\0");
-        captured.push(Object.freeze({ kind: "file", path: name, mode, contentBase64: bytes.toString("base64") }));
+        captured.push({ kind: "file", path: name, mode, contentBase64: bytes.toString("base64") });
       } else if (info.isSymbolicLink()) {
         const target = readlinkSync(child);
         const resolvedTarget = resolve(dirname(child), target);
@@ -156,7 +156,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
           );
         }
         hash.update(`l\0${name}\0${target}\0`);
-        captured.push(Object.freeze({ kind: "symlink", path: name, target }));
+        captured.push({ kind: "symlink", path: name, target });
       } else {
         throw new Error(`registerSandboxContent does not support special filesystem entry ${child}`);
       }
@@ -164,12 +164,12 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
   };
 
   visit(root, "");
-  return Object.freeze({
+  return {
     kind: "directory" as const,
     digest: `sha256:${hash.digest("hex")}`,
     mode: rootMode,
-    entries: Object.freeze(captured),
-  });
+    entries: captured,
+  };
 }
 
 function captureSource(path: string): RegisteredSandboxContentSnapshot {
@@ -199,7 +199,7 @@ export function registerSandboxContent(source: string | URL, definitionUrl?: str
   const content = { kind: snapshot.kind, digest: snapshot.digest } as RegisteredSandboxContent;
   Object.defineProperty(content, REGISTERED_SANDBOX_CONTENT, { value: true });
   REGISTERED_CONTENTS.add(content);
-  REGISTERED_CONTENT_LOCATORS.set(content, Object.freeze({ path }));
+  REGISTERED_CONTENT_LOCATORS.set(content, { path });
   return Object.freeze(content);
 }
 
@@ -310,7 +310,7 @@ export async function prepareRegisteredSandboxContentFile(
       throw new Error("registered staged payload changed before preparation");
     await chmod(temporary, 0o444);
     await rename(temporary, path);
-    STAGED_CONTENT_FILES.set(content, Object.freeze({ path, mode, size }));
+    STAGED_CONTENT_FILES.set(content, { path, mode, size });
   } finally {
     await rm(temporary, { force: true });
   }

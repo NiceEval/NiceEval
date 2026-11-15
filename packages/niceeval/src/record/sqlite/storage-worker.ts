@@ -358,7 +358,7 @@ if (!isMainThread && parentPort !== null) {
         appendContentChunks(requireConnection(), request.input);
         // SQLite has synchronously consumed these immutable buffers. Return
         // their ownership to the producer so a bounded pool can reuse them.
-        return Object.freeze(request.input.chunks.map((chunk) => chunk.bytes));
+        return request.input.chunks.map((chunk) => chunk.bytes);
       case "seal-run":
         return sealRun(requireConnection(), request.input);
       case "publish-run-seal":

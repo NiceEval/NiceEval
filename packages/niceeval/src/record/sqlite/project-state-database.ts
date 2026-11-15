@@ -188,18 +188,18 @@ function makeProjectStateResource(): ProjectStateResource {
       const execute = <A extends import("./worker-protocol.ts").StorageWorkerResult>(
         command: import("./worker-protocol.ts").RegistryCommand,
       ) => client.registry<A>(command, Date.now() + OPERATION_DEADLINE_MS);
-      const teardown: TeardownFacet = Object.freeze({
+      const teardown: TeardownFacet = {
         put: (input: Parameters<TeardownFacet["put"]>[0]) => execute<undefined>(input),
         get: (id: string) => execute<TeardownObligationRow | undefined>({ _tag: "teardown-get", id }),
         list: () => execute<readonly TeardownObligationRow[]>({ _tag: "teardown-list" }),
         claim: (id: string) => execute<boolean>({ _tag: "teardown-claim", id }),
-      });
-      const sharedState: SharedStateFacet = Object.freeze({
+      };
+      const sharedState: SharedStateFacet = {
         list: (key: string) => execute<readonly SharedStateGenerationRow[]>({ _tag: "shared-list", key }),
         append: (input: Parameters<SharedStateFacet["append"]>[0]) => execute<boolean>(input),
         heartbeat: (input: Parameters<SharedStateFacet["heartbeat"]>[0]) => execute<boolean>(input),
-      });
-      const keep: KeepFacet = Object.freeze({
+      };
+      const keep: KeepFacet = {
         put: (input: Parameters<KeepFacet["put"]>[0]) => execute<undefined>(input),
         get: (id: string) => execute<KeptSandboxRow | undefined>({ _tag: "keep-get", id }),
         list: () => execute<readonly KeptSandboxRow[]>({ _tag: "keep-list" }),
@@ -212,28 +212,28 @@ function makeProjectStateResource(): ProjectStateResource {
             | { readonly acquired: false; readonly lease: KeptSandboxLeaseRow }
           >(input),
         releaseLease: (input: Parameters<KeepFacet["releaseLease"]>[0]) => execute<boolean>(input),
-      });
-      const caseCoordination: CaseCoordinationFacet = Object.freeze({
+      };
+      const caseCoordination: CaseCoordinationFacet = {
         execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
           command: import("./worker-protocol.ts").CaseCoordinationCommand,
         ) => client.caseCoordination<A>(command),
-      });
-      const invocation: InvocationFacet = Object.freeze({
+      };
+      const invocation: InvocationFacet = {
         execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
           command: import("./worker-protocol.ts").InvocationCommand,
         ) => client.invocation<A>(command),
-      });
-      const run: RunFacet = Object.freeze({
+      };
+      const run: RunFacet = {
         execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
           command: import("./worker-protocol.ts").RunCommand,
         ) => client.run<A>(command),
-      });
-      const admission: AdmissionFacet = Object.freeze({
+      };
+      const admission: AdmissionFacet = {
         execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
           command: import("../../coordination/platform/node-record-admission-protocol.ts").AdmissionInput,
         ) => client.admission<A>(command),
-      });
-      return Object.freeze({
+      };
+      return {
         record: client,
         teardown,
         sharedState,
@@ -242,7 +242,7 @@ function makeProjectStateResource(): ProjectStateResource {
         invocation,
         run,
         admission,
-      });
+      };
     };
     if (state.kind === "open") return facets(state.client);
     if (state.kind === "opening") {

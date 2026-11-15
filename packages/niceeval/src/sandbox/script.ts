@@ -38,14 +38,14 @@ export function readSandboxScript(source: URL): { readonly command: string; read
     const bytes = readFileSync(physical);
     const command = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     if (command.includes("\0")) throw new Error("script must be UTF-8 text without NUL bytes");
-    return Object.freeze({
+    return {
       command,
-      source: Object.freeze({
+      source: {
         path: relative(root, path).split(sep).join("/"),
         digest: `sha256:${digestBytes(bytes)}`,
         bytes: bytes.length,
-      }),
-    });
+      },
+    };
   } catch (cause) {
     throw new Error(`shell script ${JSON.stringify(path)}: ${cause instanceof Error ? cause.message : String(cause)}`, {
       cause,

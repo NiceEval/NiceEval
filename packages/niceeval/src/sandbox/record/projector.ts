@@ -5,18 +5,18 @@ export type SandboxView = SandboxAttachmentPayload;
 
 export function projectSandboxCapture(value: SandboxAttachmentPayload): SandboxView {
   return value.state === "not-used"
-    ? Object.freeze({ state: "not-used" as const })
-    : Object.freeze({
+    ? { state: "not-used" as const }
+    : {
         state: "assigned" as const,
         provider: value.provider,
         sandboxId: value.sandboxId,
         reuse:
           value.reuse.kind === "fresh"
-            ? Object.freeze({ kind: "fresh" as const })
-            : Object.freeze({
+            ? { kind: "fresh" as const }
+            : {
                 kind: "pooled" as const,
                 sandbox: value.reuse.sandbox,
                 ordinal: value.reuse.ordinal,
-              }),
-      });
+              },
+      };
 }

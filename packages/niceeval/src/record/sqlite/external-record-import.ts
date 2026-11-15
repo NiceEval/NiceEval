@@ -146,7 +146,7 @@ export function startExternalRecordImport(
         stopAndReject(workerFailure(value));
         return;
       }
-      finish(() => resolve(Object.freeze({ path: generationPath, sealedRunCount: value.sealedRunCount })));
+      finish(() => resolve({ path: generationPath, sealedRunCount: value.sealedRunCount }));
     };
     const onError = (cause: unknown): void =>
       stopAndReject(sqliteError("record-database-invalid", "import-record", "Record import worker failed", cause));
@@ -182,7 +182,7 @@ export function startExternalRecordImport(
     );
   });
 
-  return Object.freeze({
+  return {
     result,
     close: () => {
       if (closePromise !== undefined) return closePromise;
@@ -196,5 +196,5 @@ export function startExternalRecordImport(
         .then(() => rm(temporaryRoot, { recursive: true, force: true }));
       return closePromise;
     },
-  });
+  };
 }
