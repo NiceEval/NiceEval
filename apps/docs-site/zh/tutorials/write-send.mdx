@@ -256,15 +256,24 @@ Chat Completions 响应**不保证列出全过程**。应用可能在服务端�
 - **等待的那一轮**：返回 `status: "waiting"`，并为每个待回答的问题返回一条带稳定 `id` 的 `input.requested` 事件。`t.check(turn.status, equals("waiting"))` 和 `t.requireInputRequest()` 读的就是它，回答也靠这个 `id` 对上问题。
 - **回答的那一轮**：评估用例里的 `t.respond(...)` 到 Adapter 这边是**又一次普通的 `send`**，还在同一条会话线上，拿到同一份状态。回答随 `input.responses` 到达，每条带 `requestId`，以及 `optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把回答交给应用，再接着取结果。被拒绝的工具调用，`operation.finished` 的 `status` 写 `"rejected"`，不写 `"failed"`。拒绝是人的决定，不是工具故障，`noFailedActions()` 不会把它算成失败。
 
-等待时还没读完的东西，例如一条读到一半的 SSE 流，也存在 `ctx.session` 上。Adapter 用 `createSessionKey<Pending>()` 声明一份私有状态，等待时 `ctx.session.set(...)` 存进去，回答轮开头 `ctx.session.take(...)` 取回。取出后它就被清掉，只能取一次。
+把暂停的 cursor 和 reducer 存在 `ctx.session` 上。Adapter 用 `createSessionKey<Pending>()` 声明私有状态，等待时 `ctx.session.set(...)` 存进去，回答轮开头 `ctx.session.take(...)` 取回并清空 slot。
+
+HTTP 请求由 `openSseJsonFrames` 交给 Attempt 持有，跨 callback 保持连接。评估在等待时结束，Attempt 也会关闭它。
 
 HITL 几乎总发生在流式接口上，应用停在流的中间。所以这一步的示例换成一个用 SSE 透传原生事件的应用，它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1)）：
 
 ```ts
 // agents/my-app.ts
-import { completeEvidenceCoverage, createSessionKey, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionKey, defineAgent, openSseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
+import { Schema } from "effect";
+
+const FrameSchema = Schema.StructWithRest(Schema.Struct({ type: Schema.String }), [Schema.Record(Schema.String, Schema.MutableJson)]);
+type Frame = Schema.Schema.Type<typeof FrameSchema>;
+const SessionFrameSchema = Schema.Struct({ sessionId: Schema.String });
+const ApprovalFrameSchema = Schema.Struct({ toolCallId: Schema.String, toolName: Schema.String });
+const ErrorFrameSchema = Schema.Struct({ message: Schema.String });
 
 const BASE_URL = "http://localhost:5299";               // 应用自己的端口，eval 不代管进程
 
@@ -272,45 +281,59 @@ interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId
 const pendingKey = createSessionKey<Pending>("my-app/pending");
 
 function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
-  return driveFrameStream(cursor, stream, ctx, (frame) => {
+  return driveFrameStream<Frame>(cursor, stream, ctx, (frame) => {
     if (frame.type === "session") {
-      ctx.session.capture(frame.sessionId);             // ← 第二步：回传的 id 写回，下一轮续接
+      ctx.session.capture(Schema.decodeUnknownSync(SessionFrameSchema)(frame).sessionId); // ← 第二步：回传的 id 写回，下一轮续接
       return;
     }
     if (frame.type === "approval_request") {            // ← 本步：应用停下等审批，存下现场
-      ctx.session.set(pendingKey, { cursor, stream, callId: frame.toolCallId });
-      return { pause: { id: frame.toolCallId, action: frame.toolName,
+      const approval = Schema.decodeUnknownSync(ApprovalFrameSchema)(frame);
+      ctx.session.set(pendingKey, { cursor, stream, callId: approval.toolCallId });
+      return { pause: { id: approval.toolCallId, action: approval.toolName,
                         options: [{ id: "approve" }, { id: "deny" }] } };
       // driveFrameStream 收到 pause：补一条 input.requested、status 置 "waiting"、停止读流
     }
-    if (frame.type === "server_error") return { fail: frame.message };
+    if (frame.type === "server_error") return { fail: Schema.decodeUnknownSync(ErrorFrameSchema)(frame).message };
   });
 }
 
-export default defineAgent({
-  name: "my-app",
-  evidenceCoverage: completeEvidenceCoverage,
-  async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-    const held = ctx.session.take(pendingKey);
-    if (held) {                                         // ← t.respond("approve")：普通 send，先交裁决
-      const approved = input.responses?.[0]?.optionId === "approve";  // 多请求并停时按 requestId 对位
+async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+  const held = ctx.session.take(pendingKey);
+  if (held) {                                           // ← t.respond("approve")：普通 send，先交裁决
+    const approved = input.responses?.[0]?.optionId === "approve";  // 多请求并停时按 requestId 对位
+    try {
       if (!approved) held.stream.markRejected(held.callId);
-      await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
+      const approval = await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
         body: JSON.stringify({ toolUseId: held.callId, approved }) });
-      return readStream(held.cursor, ctx, held.stream); //    再接着读同一条流，不重发请求
+      if (!approval.ok) throw new Error(`Approval failed: ${approval.status}`);
+    } catch (error) {
+      try { await held.cursor.return(); }
+      catch { ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." }); }
+      throw error;
     }
+    return readStream(held.cursor, ctx, held.stream);     // 再接着读同一条流，不重发请求
+  }
 
-    const res = await fetch(`${BASE_URL}/api/chat`, {   // ← transport：唯一真正手写的一段
+  const cursor = await openSseJsonFrames(ctx, async (signal) => {
+    const res = await fetch(`${BASE_URL}/api/chat`, {      // ← transport：唯一真正手写的一段
       method: "POST",
       body: JSON.stringify({
         message: input.text,                            // ← 第一步：发消息
         model: ctx.model,                               // ← 第一步：experiment.model 转发
         sessionId: ctx.session.id,                      // ← 第二步：第一次发自动不带，之后自动带
       }),
-      signal: ctx.signal,
+      signal,                                          // Attempt 持有请求，跨 send 保持连接
     });
-    return readStream(sseJsonFrames<Frame>(res.body!), ctx, createPiAgentEventStream());  // ← 第四步：官方转换器零映射
-  },
+    if (!res.ok || !res.body) throw new Error(`Chat failed: ${res.status}`);
+    return res.body;
+  }, FrameSchema);
+  return readStream(cursor, ctx, createPiAgentEventStream()); // ← 第四步：官方转换器零映射
+}
+
+export default defineAgent({
+  name: "my-app",
+  evidenceCoverage: completeEvidenceCoverage,
+  send,
 });
 ```
 
