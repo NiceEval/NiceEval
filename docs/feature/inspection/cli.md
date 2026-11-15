@@ -472,6 +472,12 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 
   `attempt.get` 的 result 直接带 `diagnostics.items`：每项的 phase、code、有界 summary、是否截断与可展开的 Evidence ID。
   它回答“这个 Attempt 为什么是这个结果”，读者不必再调用 `attempt.trace`；文本视图的 Failure diagnostics 只渲染这个字段，`--json` 因此给出同一批诊断。
+  `kind` 为 `advisory` 的诊断保留原 Verdict，不是结果的原因：文本视图把它们列在 `Advisories` 标题下，Failure diagnostics 只列其余诊断。
+
+  Verdict 为 `errored` 且原因包含 required Assertion `unavailable` 或 `errored` 时，`attempt.get` 的 result 带 `verdictCauses`。
+  每项给出 entryId、label、result（`unavailable | errored`）、decision reason 与已留存的失败细节代码（例如 `judge-call-failed`）；同一 reason 与细节代码的条目聚合计数，列表有界。
+  文本视图在 Verdict 下写 `Errored because <N> required assertions are <result>: <细节代码> ×<count>`，并给出第一条的 `niceeval show @<locator> ae_<id> --full`。
+  读者不下钻 `--full` 就能知道 errored 来自 Judge 调用失败、材料缺失还是执行错误。
 
   `attempt.get` 的 result 带 `stoppedAt`，读自 Assertions entry 的 `control`：有 entry 为 `stopped` 时是 `{ state: "available", value: { entryId, label } }`；
   全部 entry 的 control 都已记录且没有 `stopped` 时 value 为 `null`；有 entry 为 `not-recorded`（升级前的 Record）且没有 `stopped` 时为 `{ state: "unavailable", reason: "not-recorded" }`。
