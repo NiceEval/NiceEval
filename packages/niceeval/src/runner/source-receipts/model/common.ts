@@ -5,10 +5,6 @@ import {
   type Collection,
 } from "../../../record/family/source-receipt/model.ts";
 
-export function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
-  return Object.freeze([...values]);
-}
-
 export function payloadFits(value: object, maximumBytes: number): boolean {
   const length = jsonUtf8ByteLength(value);
   return length !== undefined && length <= maximumBytes;

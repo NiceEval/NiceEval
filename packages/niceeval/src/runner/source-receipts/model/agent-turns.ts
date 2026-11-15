@@ -25,7 +25,7 @@ import {
   MAX_USAGE_OBSERVATIONS,
 } from "../../../record/family/source-receipt/limits.ts";
 import { compareObservabilityText } from "../../../record/family/source-receipt/model.ts";
-import { freezeArray, isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
 
 const ConversationItemBaseFields = {
   itemId: ItemIdSchema,
@@ -113,24 +113,24 @@ export type ConversationItem = Schema.Schema.Type<typeof ConversationItemSchema>
 function conversationTextLengths(item: ConversationItem): readonly number[] {
   switch (item.kind) {
     case "message":
-      return freezeArray([new TextEncoder().encode(item.text).byteLength]);
+      return [new TextEncoder().encode(item.text).byteLength];
     case "tool-call":
-      return freezeArray([new TextEncoder().encode(item.inputSummary).byteLength]);
+      return [new TextEncoder().encode(item.inputSummary).byteLength];
     case "tool-result":
-      return freezeArray([new TextEncoder().encode(item.outputSummary).byteLength]);
+      return [new TextEncoder().encode(item.outputSummary).byteLength];
     case "thinking-summary":
     case "subagent":
     case "context-injection":
     case "compaction":
     case "conversation-error":
-      return freezeArray([new TextEncoder().encode(item.summary).byteLength]);
+      return [new TextEncoder().encode(item.summary).byteLength];
     case "input-request":
-      return freezeArray([
+      return [
         new TextEncoder().encode(item.promptSummary).byteLength,
         ...(item.responseSummary === null ? [] : [new TextEncoder().encode(item.responseSummary).byteLength]),
-      ]);
+      ];
     case "skill-load":
-      return freezeArray([]);
+      return [];
   }
 }
 

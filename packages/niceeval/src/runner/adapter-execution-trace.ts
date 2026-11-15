@@ -63,7 +63,7 @@ export interface AdapterExecutionTraceCollector {
   readonly snapshot: () => AdapterExecutionTraceSnapshot;
 }
 
-const INPUT_LIMITS = Object.freeze({
+const INPUT_LIMITS = {
   maximumJsonBytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
   maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
   maximumNodes: 40_000_000,
@@ -71,9 +71,9 @@ const INPUT_LIMITS = Object.freeze({
   maximumArrayItems: 40_000_000,
   maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
   maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
-});
+} as const;
 
-const TARGET_LIMITS = Object.freeze({
+const TARGET_LIMITS = {
   maximumJsonBytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
   maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
   maximumNodes: 70_000_000,
@@ -81,9 +81,9 @@ const TARGET_LIMITS = Object.freeze({
   maximumArrayItems: 70_000_000,
   maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
   maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
-});
+} as const;
 
-const PERSISTED_ITEM_LIMITS = Object.freeze({
+const PERSISTED_ITEM_LIMITS = {
   maximumJsonBytes: RECORD_SQLITE_MAX_ROW_BYTES,
   maximumDepth: 64,
   maximumNodes: 100_000,
@@ -91,7 +91,7 @@ const PERSISTED_ITEM_LIMITS = Object.freeze({
   maximumArrayItems: 100_000,
   maximumKeyUtf8Bytes: 16_384,
   maximumStringUtf8Bytes: RECORD_SQLITE_MAX_ROW_BYTES,
-});
+} as const;
 
 const exactDecode = Schema.decodeUnknownResult(ExecutionTraceInputSchema, {
   onExcessProperty: "error",
@@ -138,7 +138,7 @@ function rejectSettled<T>(error: AdapterExecutionTraceError): Promise<T> {
 }
 
 function jsonPointerSegments(pointer: string): readonly string[] | undefined {
-  if (pointer === "") return Object.freeze([]);
+  if (pointer === "") return [];
   if (!pointer.startsWith("/")) return undefined;
   const output: string[] = [];
   for (const token of pointer.slice(1).split("/")) {
@@ -157,7 +157,7 @@ function jsonPointerSegments(pointer: string): readonly string[] | undefined {
     }
     output.push(decoded);
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function resolvePointer(root: unknown, pointer: string): unknown | undefined {
@@ -362,7 +362,7 @@ function durableDisplay(
 ): readonly [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]] | undefined {
   if (display === undefined) return undefined;
   const blocks = display.map((block, blockIndex): ExecutionDisplayBlockRecord => {
-    if (block.kind !== "image") return Object.freeze(structuredClone(block)) as ExecutionDisplayBlockRecord;
+    if (block.kind !== "image") return block as ExecutionDisplayBlockRecord;
     const artifact = byArtifactId.get(block.artifactId);
     if (artifact === undefined) {
       throw displayInvalid(
@@ -380,14 +380,14 @@ function durableDisplay(
         `${block.artifactId} is ${artifact.mediaType}, not a supported image type.`,
       );
     }
-    return Object.freeze({
+    return {
       kind: "image",
       artifactId: block.artifactId,
       alt: block.alt,
       mediaType: artifact.mediaType as Extract<ExecutionDisplayBlockRecord, { kind: "image" }>["mediaType"],
       byteLength: artifact.byteLength,
       sha256: artifact.sha256,
-    });
+    };
   });
   if (
     utf8.encode(canonicalRecordJsonText(blocks as unknown as RecordJson)).byteLength >
@@ -400,7 +400,8 @@ function durableDisplay(
       `exceeds ${ExecutionTraceRecordLimits.maximumDisplayBytesPerEvent} UTF-8 bytes.`,
     );
   }
-  return Object.freeze(blocks) as unknown as readonly [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]];
+  const [first, ...rest] = blocks;
+  return first === undefined ? undefined : [first, ...rest];
 }
 
 function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>): void {
@@ -572,27 +573,21 @@ export function createAdapterExecutionTraceCollector(
       const traceId = mintStableId("et", pendingIds);
       const receiptEvents: Array<ExecutionTraceReceipt["events"][number]> = [];
       const records: ExecutionTraceRecord[] = [];
-      const header: ExecutionTraceHeaderRecord = Object.freeze({
+      const header: ExecutionTraceHeaderRecord = {
         kind: "trace-header",
         traceId,
         sourceTraceId: snapshot.traceId,
-        schema: Object.freeze({ ...snapshot.schema }),
-        collection: Object.freeze({
+        schema: snapshot.schema,
+        collection: {
           state: snapshot.collection.state,
-          limitations: Object.freeze(
-            snapshot.collection.limitations.map((limitation) => Object.freeze({ ...limitation })),
-          ),
-        }) as ExecutionTraceHeaderRecord["collection"],
-        scopes: Object.freeze(
-          snapshot.scopes.map((scope) =>
-            Object.freeze({
-              scopeId: scope.scopeId,
-              label: scope.label,
-              boundary: scope.boundary,
-            }),
-          ),
-        ),
-      });
+          limitations: snapshot.collection.limitations,
+        } as ExecutionTraceHeaderRecord["collection"],
+        scopes: snapshot.scopes.map((scope) => ({
+          scopeId: scope.scopeId,
+          label: scope.label,
+          boundary: scope.boundary,
+        })),
+      };
       records.push(header);
 
       for (const [ordinal, event] of snapshot.events.entries()) {
@@ -644,56 +639,48 @@ export function createAdapterExecutionTraceCollector(
             ) {
               throw traceError("evidence-budget-exceeded", "Execution trace evidence target budget exceeded.");
             }
-            verified = Object.freeze({
+            verified = {
               artifactSha256: artifact.sha256,
               targetSha256: digest(targetBytes),
               targetByteLength: targetBytes.byteLength,
-            });
+            };
             verifiedTargets.set(targetKey, verified);
           }
           const evidenceId = mintStableId("ev", pendingIds);
           receiptEvidence.push(Object.freeze({ key: evidence.key, evidenceId }));
-          durableEvidence.push(
-            Object.freeze({
-              key: evidence.key,
-              label: evidence.label,
-              artifactId: evidence.artifactId,
-              pointer: evidence.pointer,
-              evidenceId,
-              ...verified,
-            }),
-          );
+          durableEvidence.push({
+            key: evidence.key,
+            label: evidence.label,
+            artifactId: evidence.artifactId,
+            pointer: evidence.pointer,
+            evidenceId,
+            ...verified,
+          });
         }
-        const durable: ExecutionTraceEventRecord = Object.freeze({
+        const durable: ExecutionTraceEventRecord = {
           kind: "event",
           traceId,
           eventId,
           ordinal,
           key: event.key,
           type: event.type,
-          source: Object.freeze({ ...event.source }),
-          ...(event.actor === undefined ? {} : { actor: Object.freeze({ ...event.actor }) }),
-          ...(event.time === undefined ? {} : { time: Object.freeze({ ...event.time }) }),
+          source: event.source,
+          ...(event.actor === undefined ? {} : { actor: event.actor }),
+          ...(event.time === undefined ? {} : { time: event.time }),
           summary: event.summary,
           ...(event.payload === undefined ? {} : { payload: event.payload as TraceJson }),
-          links: Object.freeze(
-            (event.links ?? []).map((link) =>
-              Object.freeze(
-                "targetKey" in link
-                  ? { relation: link.relation, targetKey: link.targetKey }
-                  : { relation: link.relation, unresolved: Object.freeze({ ...link.unresolved }) },
-              ),
-            ),
+          links: (event.links ?? []).map((link) =>
+            "targetKey" in link
+              ? { relation: link.relation, targetKey: link.targetKey }
+              : { relation: link.relation, unresolved: link.unresolved },
           ),
-          evidence: Object.freeze(durableEvidence),
-          scopeMemberships: Object.freeze(
-            (event.scopeMemberships ?? []).map((membership) => Object.freeze({ ...membership })),
-          ),
+          evidence: durableEvidence,
+          scopeMemberships: event.scopeMemberships ?? [],
           ...(() => {
             const display = durableDisplay(event.display, ordinal, byArtifactId);
             return display === undefined ? {} : { display };
           })(),
-        });
+        };
         records.push(durable);
         receiptEvents.push(
           Object.freeze({
@@ -718,12 +705,12 @@ export function createAdapterExecutionTraceCollector(
         traceId,
         events: Object.freeze(receiptEvents),
       });
-      const retained: AcceptedExecutionTrace = Object.freeze({
+      const retained: AcceptedExecutionTrace = {
         sourceTraceId: snapshot.traceId,
         canonicalInputDigest,
         receipt,
-        records: Object.freeze(records),
-      });
+        records,
+      };
       accepted.set(snapshot.traceId, retained);
       for (const id of pendingIds) acceptedIds.add(id);
       eventCount += snapshot.events.length;
@@ -735,22 +722,22 @@ export function createAdapterExecutionTraceCollector(
     }
   };
 
-  return Object.freeze({
+  return {
     recordTrace,
     failure: () => firstFailure,
     close: () => {
       if (closed) return;
       closed = true;
-      sealed = Object.freeze({
-        traces: Object.freeze([...accepted.values()]),
+      sealed = {
+        traces: [...accepted.values()],
         failure: firstFailure,
-      });
+      };
     },
     snapshot: () => {
       if (sealed === undefined) throw new Error("Execution trace collection must close before taking its snapshot.");
       return sealed;
     },
-  });
+  };
 }
 
 /**
@@ -901,11 +888,11 @@ export function validateExecutionTracePublication(
               "Execution trace evidence target budget exceeded at publication.",
             );
           }
-          verified = Object.freeze({
+          verified = {
             artifactSha256: artifact.sha256,
             targetSha256: digest(bytes),
             targetByteLength: bytes.byteLength,
-          });
+          };
           verifiedTargets.set(key, verified);
         }
         if (
