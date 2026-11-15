@@ -67,8 +67,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       const reused = event.plan.reused;
       // plan 是一次 run 的起点:重置 active/failures/diagnostics,即便 reducer 被复用于
       // 多次 run 也不会把上一次的残留状态带进新 run(正常用法下 plan 本来就应是第一个事件)。
+      const { activePrecheck: _activePrecheck, ...resetState } = state;
       return {
-        ...state,
+        ...resetState,
         runIdsByExperiment: new Map(event.plan.shape.runIds ?? []),
         total,
         reused,
@@ -85,7 +86,6 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         skipped: 0,
         active: new Map(),
         queuedAttempts: new Map(),
-        activePrecheck: undefined,
         experimentHooks: new Map(),
         lockWaits: new Map(),
         runActivities: new Map(),
@@ -144,7 +144,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 进入新 phase 清空旧 detail —— 次要文本是绑定到具体 phase 的(如 running 阶段的
       // "tool: shell"),不该原样带进下一个 phase 显示。`startedAt` 原样带过去(spread 保留):
       // 阶段边界换的是「正在干什么」,不是「这条跑了多久」。
-      active.set(key, { ...existing, phase: event.phase, detail: undefined });
+      const { detail: _detail, ...attempt } = existing;
+      active.set(key, { ...attempt, phase: event.phase });
       return { ...state, active };
     }
 
@@ -184,8 +185,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         [event.verdict]: state[event.verdict] + 1,
         active,
         queuedAttempts,
-        newTokenCount,
-        estimatedCostUSD,
+        ...(newTokenCount === undefined ? {} : { newTokenCount: newTokenCount }),
+        ...(estimatedCostUSD === undefined ? {} : { estimatedCostUSD: estimatedCostUSD }),
       };
     }
 
@@ -350,8 +351,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           ...(event.code !== undefined ? { code: event.code } : {}),
           severity: event.severity,
           message: event.message,
-          identity: event.identity,
-          data: event.data,
+          ...(event.identity === undefined ? {} : { identity: event.identity }),
+          ...(event.data === undefined ? {} : { data: event.data }),
         }),
       };
 
@@ -448,9 +449,11 @@ function upsertDiagnostic(
   diagnostics: readonly DiagnosticNotice[],
   input: Omit<DiagnosticNotice, "count">,
 ): readonly DiagnosticNotice[] {
+  const affectedData = appendErrorAssistanceAffected(input.data, input.identity);
+  const { data: _inputData, ...inputNotice } = input;
   const normalizedInput = {
-    ...input,
-    data: appendErrorAssistanceAffected(input.data, input.identity),
+    ...inputNotice,
+    ...(affectedData === undefined ? {} : { data: affectedData }),
   };
   const idx = diagnostics.findIndex((d) => d.key === input.key);
   if (idx === -1) {
@@ -486,9 +489,11 @@ function upsertDiagnostic(
     return [...diagnostics, { ...normalizedInput, count: 1 }];
   }
   const next = diagnostics.slice();
+  const data = mergeErrorAssistanceData(next[idx].data, normalizedInput.data);
+  const { data: _data, ...notice } = normalizedInput;
   next[idx] = {
-    ...normalizedInput,
-    data: mergeErrorAssistanceData(next[idx].data, normalizedInput.data),
+    ...notice,
+    ...(data === undefined ? {} : { data }),
     count: next[idx].count + 1,
   };
   return next;

@@ -62,8 +62,16 @@ export function failureDetailFromResult(
 
   return {
     locator,
-    identity: { experimentId: result.experimentId, evalId: result.id, attempt: result.attempt },
-    who: runWho({ agentName: result.adapter?.name ?? "", model: result.model, experimentId: result.experimentId }),
+    identity: {
+      ...(result.experimentId === undefined ? {} : { experimentId: result.experimentId }),
+      evalId: result.id,
+      attempt: result.attempt,
+    },
+    who: runWho({
+      agentName: result.adapter?.name ?? "",
+      ...(result.model === undefined ? {} : { model: result.model }),
+      ...(result.experimentId === undefined ? {} : { experimentId: result.experimentId }),
+    }),
     verdict: result.verdict,
     reason,
     ...(fact !== undefined ? { fact } : {}),
@@ -123,11 +131,15 @@ function diagnosticFields(diagnostic: AssertionSnapshotObject | undefined): {
   const value = record(diagnostic);
   if (value === undefined) return {};
   const string = (key: string): string | undefined => (typeof value[key] === "string" ? value[key] : undefined);
+  const matcher = string("message");
+  const expected = string("expected");
+  const received = string("received");
+  const reason = string("reason");
   return {
-    ...(string("message") === undefined ? {} : { matcher: string("message") }),
-    ...(string("expected") === undefined ? {} : { expected: string("expected") }),
-    ...(string("received") === undefined ? {} : { received: string("received") }),
-    ...(string("reason") === undefined ? {} : { reason: string("reason") }),
+    ...(matcher === undefined ? {} : { matcher }),
+    ...(expected === undefined ? {} : { expected }),
+    ...(received === undefined ? {} : { received }),
+    ...(reason === undefined ? {} : { reason }),
   };
 }
 
@@ -135,20 +147,18 @@ function assertionCandidate(
   entry: SealedAssertionEntry,
   result: EvalResult,
 ): Omit<PrimaryFactSummary, "additionalFailures"> {
-  const diagnostic = diagnosticFields(entry.result.diagnostic);
+  const diagnostic = { ...diagnosticFields(entry.result.diagnostic) };
   const subject = entry.subject.kind === "snapshot" ? record(entry.subject.value) : undefined;
   const errorReason = [...(result.events ?? [])].reverse().find((event) => event.type === "error")?.message;
-  const scopeStatus =
-    entry.criterion.kind === "scope-status"
-      ? {
-          expected: entry.criterion.assertion === "succeeded" ? "completed" : undefined,
-          received: typeof subject?.status === "string" ? subject.status : undefined,
-        }
-      : {};
+  if (entry.criterion.kind === "scope-status") {
+    delete diagnostic.expected;
+    delete diagnostic.received;
+    if (entry.criterion.assertion === "succeeded") diagnostic.expected = "completed";
+    if (typeof subject?.status === "string") diagnostic.received = subject.status;
+  }
   return {
     title: entry.display.label ?? criterionTitle(entry.criterion),
     ...diagnostic,
-    ...scopeStatus,
     ...(errorReason === undefined ? {} : { reason: errorReason }),
   };
 }
@@ -196,7 +206,7 @@ export function failureDetailFromCurrentReusedAttempt(
     },
     who: runWho({
       agentName: run.adapter?.name ?? "",
-      model: run.model,
+      ...(run.model === undefined ? {} : { model: run.model }),
       experimentId: run.experimentId,
     }),
     verdict: "failed",

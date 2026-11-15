@@ -232,8 +232,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       ...(input.code !== undefined ? { code: input.code } : {}),
       severity: input.severity,
       message: input.message,
-      identity: input.identity,
-      data: input.data,
+      ...(input.identity === undefined ? {} : { identity: input.identity }),
+      ...(input.data === undefined ? {} : { data: input.data }),
     });
   }
 

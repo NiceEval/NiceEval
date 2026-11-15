@@ -71,7 +71,10 @@ export function evalConclusionRows(
   const order: string[] = [];
   const groups = new Map<string, EvalResult[]>();
   for (const r of results) {
-    const key = evalConclusionKey({ experimentId: r.experimentId, evalId: r.id });
+    const key = evalConclusionKey({
+      ...(r.experimentId === undefined ? {} : { experimentId: r.experimentId }),
+      evalId: r.id,
+    });
     let group = groups.get(key);
     if (!group) {
       group = [];
@@ -89,7 +92,7 @@ export function evalConclusionRows(
     if (unstarted > 0) {
       const hit = [...group].sort((a, b) => a.attempt - b.attempt).find((r) => r.verdict === "passed") ?? group[0]!;
       return {
-        experimentId: hit.experimentId,
+        ...(hit.experimentId === undefined ? {} : { experimentId: hit.experimentId }),
         evalId: hit.id,
         locator: hit.locator,
         verdict: hit.verdict,
@@ -103,7 +106,7 @@ export function evalConclusionRows(
     const last = [...group].sort((a, b) => b.attempt - a.attempt)[0]!;
     const passed = group.filter((r) => r.verdict === "passed").length;
     return {
-      experimentId: last.experimentId,
+      ...(last.experimentId === undefined ? {} : { experimentId: last.experimentId }),
       evalId: last.id,
       locator: last.locator,
       verdict: last.verdict,

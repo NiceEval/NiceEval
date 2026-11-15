@@ -104,7 +104,11 @@ type HumanFingerprintComparison =
  *  没有要求朴素输出(`NO_COLOR`)时才画框——`io.env` 而不是直接读 `process.env`,保持
  *  profile renderer 可用假 IO 确定性测试。 */
 function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: number } {
-  return panelCapability({ isTTY: io.stderr.isTTY, noColor: io.env.NO_COLOR, width: io.stderr.columns });
+  return panelCapability({
+    isTTY: io.stderr.isTTY,
+    ...(io.env.NO_COLOR === undefined ? {} : { noColor: io.env.NO_COLOR }),
+    width: io.stderr.columns,
+  });
 }
 
 /** 失败/errored 默认展开上限(见 cli.md「'立即追加'也必须有上限」表:human 前 10 条)。
@@ -796,7 +800,8 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
  * phase/code 而吞掉各自的 Provider message。 */
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.fact) {
-    const shapeText = compactAssertionSummary({ ...failure.fact, received: undefined, additionalFailures: 0 });
+    const { received: _received, ...fact } = failure.fact;
+    const shapeText = compactAssertionSummary({ ...fact, additionalFailures: 0 });
     return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
   return { key: `errored\u0000${failure.locator}`, shapeText: "error" };
@@ -1236,7 +1241,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     return renderPanel({
       title: command,
       meta: formatElapsed(state.elapsedMs),
-      footerCommand,
+      ...(footerCommand === undefined ? {} : { footerCommand: footerCommand }),
       rows,
       width: capability.width,
       mode: capability.mode,
@@ -1864,7 +1869,7 @@ function commandPlanLaneLabel(lane: CommandPlanLane): string {
 export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandPlanOptions): string {
   const capability = panelCapability({
     isTTY: options.isTTY,
-    noColor: options.noColor,
+    ...(options.noColor === undefined ? {} : { noColor: options.noColor }),
     width: options.width,
   });
   const panels: string[][] = [];
