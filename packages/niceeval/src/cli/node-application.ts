@@ -26,7 +26,7 @@ export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
       hostname: hostname(),
       pid: process.pid,
       platform: process.platform,
-      noColor: process.env.NO_COLOR,
+      ...(process.env.NO_COLOR === undefined ? {} : { noColor: process.env.NO_COLOR }),
       stdout: Object.freeze({ isTTY: process.stdout.isTTY === true, columns: process.stdout.columns }),
       stderr: Object.freeze({ isTTY: process.stderr.isTTY === true, columns: process.stderr.columns }),
     }),
@@ -217,7 +217,7 @@ export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
             ...(typeof occurrence.value === "string"
               ? {
                   value: occurrence.value,
-                  inlineValue: occurrence.inlineValue,
+                  ...(occurrence.inlineValue === undefined ? {} : { inlineValue: occurrence.inlineValue }),
                 }
               : {}),
           });
