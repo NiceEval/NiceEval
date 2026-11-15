@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/judge/architecture.md
 
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 const RESPONSE_BYTES_PER_TOKEN = 8;
 
@@ -84,7 +85,19 @@ export function isTransportFailure(error: unknown): boolean {
   return isConnectionFailure(error) || isTransientJudgeStatus(status);
 }
 
-export function isTransientJudgeFailure(error: unknown): boolean {
+const decodeErrorResponse = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+export function isTransientJudgeFailure(error: unknown, responseBody?: string): boolean {
+  if (headerValue(objectField(error, "headers"), "x-should-retry")?.trim().toLowerCase() === "false") return false;
+  if (responseBody !== undefined) {
+    try {
+      const body = decodeErrorResponse(responseBody);
+      if (objectField(body, "retryable") === false || objectField(objectField(body, "error"), "retryable") === false)
+        return false;
+    } catch {
+      // A non-JSON error page does not override its HTTP transport status.
+    }
+  }
   const status = judgeStatus(error);
   return isTransientJudgeStatus(status) || (status === undefined && isConnectionFailure(error));
 }

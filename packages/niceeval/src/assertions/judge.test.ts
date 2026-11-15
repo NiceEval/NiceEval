@@ -3,7 +3,7 @@
 
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { pollFiber, runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";
+import { pollFiber, runWithTestClock, TestClock } from "../test-support/effect-v4.ts";
 import { defineJudge, requestScoreMatchProvider } from "./judge.ts";
 
 import { defineScoreMatch, managedScoreMatchOf, type ScoreMatchContext } from "./match.ts";
@@ -234,14 +234,14 @@ describe("Judge Effect lifecycle", () => {
     );
   });
 
-  test("randomized retry starts only at its backoff boundary", async () => {
+  test("retry starts only at its exponential backoff boundary", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(transientResponse()).mockResolvedValueOnce(acceptedResponse());
     vi.stubGlobal("fetch", fetchMock);
     await runWithTestClock(
       Effect.gen(function* () {
-        const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput()).pipe(withRandomFixed([0.5])));
-        yield* waitForSleep(500);
-        yield* TestClock.adjust(499);
+        const fiber = yield* Effect.forkChild(evaluateJudgeMeasurement(judgeInput()));
+        yield* waitForSleep(2_000);
+        yield* TestClock.adjust(1_999);
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(Option.isNone(yield* pollFiber(fiber))).toBe(true);
         yield* TestClock.adjust(1);

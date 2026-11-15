@@ -6,7 +6,7 @@ import {
   typesafeMaterialInstructions,
 } from "./score-match.prompt.ts";
 import { fitJudgeContext, isJudgeContextOverflow } from "./judge-context-budget.ts";
-import { Cause, Clock, Effect, Fiber, Predicate, Random, Schema } from "effect";
+import { Cause, Clock, Effect, Fiber, Predicate, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
 import { captureFullAssertionSnapshot } from "./full-content.ts";
@@ -769,14 +769,15 @@ export function prepareManagedScoreMatch(input: {
                 : { state: "failed", code: "judge-call-failed", message: errorSummary(error) },
             };
             update();
-            if (isTransientJudgeFailure(error) && attempt < 3) {
+            if (isTransientJudgeFailure(error, outcome.ok ? outcome.value.body : undefined) && attempt < 3) {
               const headers =
                 typeof error === "object" && error !== null && "headers" in error ? error.headers : undefined;
-              const delay =
-                retryAfterMs(headers, yield* Clock.currentTimeMillis) ??
-                (yield* Random.next) * 1000 * 2 ** (attempt - 1);
-              yield* Effect.sleep(delay);
-              continue;
+              const now = yield* Clock.currentTimeMillis;
+              const delay = Math.min(60_000, retryAfterMs(headers, now) ?? 2_000 * 2 ** (attempt - 1));
+              if (now + delay < deadlineAt) {
+                yield* Effect.sleep(delay);
+                continue;
+              }
             }
             const problem = latch(
               failure(isTransportFailure(error) ? "unavailable" : "errored", "judge-call-failed", errorSummary(error)),
@@ -902,12 +903,12 @@ export function prepareManagedScoreMatch(input: {
       : { state: "errored", detail: { code: problem.code, message: problem.message } };
   };
   const evaluate = (): Effect.Effect<MeasurementAssertionEvaluation> => {
-    const callback = Effect.suspend((): Effect.Effect<ScoreMatchResult, unknown> => {
-      if (evaluationStarted || closed) return Effect.die(new Error("Managed ScoreMatch may only evaluate once"));
+    const callback = Effect.gen(function* (): Effect.fn.Return<ScoreMatchResult, unknown> {
+      if (evaluationStarted || closed) return yield* Effect.die(new Error("Managed ScoreMatch may only evaluate once"));
       evaluationStarted = true;
-      deadlineAt = Date.now() + (input.judge?.timeoutMs ?? 180_000);
-      if (latched !== undefined) return Effect.succeed({ state: "unavailable" as const, reason: latched.message });
-      return options.score(material, context);
+      deadlineAt = (yield* Clock.currentTimeMillis) + (input.judge?.timeoutMs ?? 180_000);
+      if (latched !== undefined) return { state: "unavailable" as const, reason: latched.message };
+      return yield* options.score(material, context);
     }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause)

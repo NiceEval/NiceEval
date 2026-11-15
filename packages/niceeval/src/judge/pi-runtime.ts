@@ -17,6 +17,7 @@ export async function createManagedPiSession(input: {
   readonly systemPrompt: string;
   readonly cwd?: string;
   readonly tools: readonly string[];
+  readonly retry?: { readonly maxRetries: number };
   readonly customTools: (sdk: CodingSdk) => ToolDefinition[];
 }) {
   let sdk: CodingSdk;
@@ -32,7 +33,11 @@ export async function createManagedPiSession(input: {
     if (profile.protocol.kind !== "chat-completions") throw new TypeError("pi requires a chat-completions provider");
     const cwd = input.cwd ?? "/";
     const contextWindow = profile.contextWindow ?? builtinContextWindow(profile.model) ?? Number.MAX_SAFE_INTEGER;
-    const settingsManager = sdk.SettingsManager.inMemory();
+    const settingsManager = sdk.SettingsManager.inMemory(
+      input.retry === undefined
+        ? undefined
+        : { retry: { enabled: true, maxRetries: input.retry.maxRetries, provider: { maxRetries: 0 } } },
+    );
     const sessionManager = sdk.SessionManager.inMemory(cwd);
     const modelRuntime = await sdk.ModelRuntime.create({
       credentials: {
