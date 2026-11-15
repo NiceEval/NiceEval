@@ -84,15 +84,17 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("帮我起草一封跟进邮件。");
     draft.succeeded();
-    t.check(draft.reply, includes("此致"));
+    draft.notCalledTool("send_email");
 
-    await t.send("可以，发出去吧。");
-    t.calledTool("send_email");
+    const sent = await t.send("可以，发出去吧。");
+    sent.calledTool("send_email");
   },
 });
 ```
 
-同一个 `t` 上连续 `send`，就是同一段对话。`draft.succeeded()` 只检查第一轮；`t.calledTool` 检查整个用例里有没有调用过。需要两段互不相干的对话，例如模拟两个用户，用 `t.newSession()` 开一个新会话。
+同一个 `t` 上连续 `send`，就是同一段对话。Turn 上的断言只检查这一轮：第一轮起草时还不能发出，第二轮用户确认后才发出。需要两段互不相干的对话，例如模拟两个用户，用 `t.newSession()` 开一个新会话。
+
+多轮用例检查的是每一轮做了什么、状态有没有接上，不是回复里有没有某个固定的词。Agent 每次的措辞都不一样，用户换一种说法确认也应该通过；把「此致」「已确认」这类字样当判据，正确的对话也会变红。确实要看文字时，用覆盖等价说法的 `pattern`，或者交给 Judge。
 
 多轮对话要 Adapter 把上一轮的上下文带给应用，见[编写 Send](/zh/tutorials/write-send#第二步：接上之前的消息)。
 
