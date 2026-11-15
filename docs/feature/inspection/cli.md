@@ -983,7 +983,7 @@ interface TotalCosts {
   values: readonly {
     currency: string;
     value: string;
-    source: "reported" | "estimated" | "mixed";   // estimated 含显式 profile 与内置价格表两种封存来源
+    source: "reported" | "estimated" | "mixed";
   }[];
   missingSources: readonly ("application" | "judge" | "simulated-user")[];
   gaps: readonly CostGap[];
@@ -992,7 +992,7 @@ interface TotalCosts {
 interface CostGap {
   source: "application" | "judge" | "simulated-user";
   reason:
-    | "no-pricing-profile"          // 有 token，但 defineConfig.pricing 与内置价格表都没有这些模型的价格
+    | "no-pricing-profile"          // 有 token，但 defineConfig.pricing 没有匹配这些模型的价格
     | "provider-cost-not-reported"  // adapter 没有交付逐次调用的费用或可计价的调用证据
     | "token-buckets-incomplete"    // 有价格，但缺计价所需的 token 分桶
     | "usage-not-recorded";         // 没有用量记录
@@ -1014,7 +1014,6 @@ missingSources 固定 application、judge、simulated-user 顺序，无重复。
 
 Missing sources 下逐项写出 gaps 的来源与原因。reason 为 `no-pricing-profile` 时，同一行给出缺价的模型，并在末尾给出
 `Next: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。
-按内置价格表估算的金额在费用行标 `list price (catalog <asOf 日期>)`，提示这是公开标价估算，作者可用 `defineConfig({ pricing })` 覆盖；它不算缺口。
 完整空 Judge 账本显示 No Judge calls；缺账本显示 Judge usage unavailable；有调用但缺费用显示 Cost unavailable。
 明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
 

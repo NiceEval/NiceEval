@@ -194,13 +194,11 @@ interface AdapterUsageAttachment {
 `cost` 只保存一个上游 reported amount。明确的零仍是已知事实。market、gateway、surcharge 等其它金额不进入这个通用字段。
 同一 `callId` 的完全相同快照保持幂等，任一字段冲突都使采集 sticky partial；不同调用之间不按回执 ID 猜测重复。
 
-reported cost 存在时不生成 price receipt。reported 缺席时，按以下顺序选择价格来源生成 estimate receipt：先用匹配的显式 configured fixed profile；没有匹配时用随包内置价格表中与请求模型精确同名的条目。
-内置条目的 `pricing.source` 为 `{ kind: "builtin-catalog", id: "models.dev+litellm", asOf: <价格表 $asOf>, profileDigest: <该条目费率的摘要> }`，`match` 为 `exact`，不使用 `provider/*` 通配。
-内置价格是公开标价，不证明网关或折扣下的实际售价；呈现时标为按公开标价估算，作者用显式 `pricing` 覆盖。
+reported cost 存在时不生成 price receipt。reported 缺席时，只有显式 configured fixed profile 可以为该 call 生成 estimate receipt。
 receipt 与同一附件中的 `callId` 一一关联；validator 核对 sealed token bucket、profile 对应 rate、逐桶金额、总额、state 与 profile digest。
 
 cache rate 缺失时不回退 input rate。token 或 rate 缺失形成 partial proof；没有任何可证 charge 时不保存 receipt，effective cost 为 unknown。
-内置价格在运行时封存进 receipt，读取时不按当前价格表重新定价。
+内置 catalog 没有独立 flat applicability 证据时不用于该估算链。
 
 collection 只证明已接纳快照的保存完整度，不证明所有外部请求都已被登记。
 旧 Record 由存储格式标记拒绝，不为缺失字段补造 null 或估价事实。
