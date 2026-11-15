@@ -293,3 +293,39 @@ NiceEval 为每类准备都给了位置：起点进 Provider 模板或快照，R
   - 为一次格式变化写 v4 → v5 迁移，或让 reader 同时接受两个版本。
   - 身份里手写 `promptRevision: 2`，改了 prompt 却忘了加一。
   - 输出里放 `protocol: "…/v3"` 让读者去比对，或者维护一张“哪些身份变更可以重建旧结果”的登记表。
+
+## T-41 人读输出给结论和下一步，不倒原始数据 {#t-41}
+
+人读终端输出是给人扫一眼就知道发生了什么、接下来做什么的。原始 JSON、逐项重复的同类条目和一长串下钻命令都已经在 `--json` 里完整交付；人读输出再抄一遍，读者要自己去数、去比、去挑，关键信息反而被淹没。
+
+- 好的样子：
+  - 结构化值写成读者关心的摘要，例如 `plan:physical (template.publishable.spec, commands[0].inputs)`，或 `coverage complete (6 channels)`。
+  - 同类重复项聚合计数：`assertion-material unavailable ×20 (source-unavailable)`；全部缺口原因相同就写一次 `all N gaps`。
+  - `Next` 只出现在整条命令末尾，最多三行，按读者最可能执行的顺序排列，其余写成 `+N more` 并指向能列出它们的命令。
+  - 用读者认识的词：`Needs rerun: candidateVersion changed (0.20.1-canary.123 → 0.21.0)`，而不是 `Gap identity-mismatch`。内部原因码与内部概念名只留在 `--json`。
+- 坏的样子：
+  - 把 `{"owner":"assertion-material","state":"unavailable",…}` 原样印在终端上，或截断到一半的 JSON。
+  - 每个条目后面各跟一个 `Next`，或读一条断言时把同一个 Attempt 的全部断言都列成下一步。
+  - 同一句说明在九个缺口下各重复一次。
+  - 终端上印 `identity-mismatch`、`outcome-ineligible`、`gap` 这类实现概念，读者还得去查文档才知道要做什么。
+
+## T-41 类型约束生产者，可选只留给外部作者 {#t-41}
+
+可选属性让生产者可以漏写字段，`T | undefined` 一路传下去，每个下游都要再判一次。值越晚出现「可能没有」，分支越少。规则见[可选属性](engineering/code-style/README.md#可选属性)与[程序设计边界](architecture.md#程序设计边界纯函数完整-adt-与-effect)。
+
+- 好的样子：外部作者写的输入在入口归一化一次；之后的内部值没有可选属性，默认值已经补齐，互斥状态是判别联合，确实可能不存在的事实写成必需键 `x: T | undefined`。
+- 坏的样子：为了满足编译器，在每个调用点写 `...(x === undefined ? {} : { x })`；用 `delete` 清空状态；同一个默认值在三个下游各用 `??` 补一遍；内部类型里 `null` 与 `undefined` 混用，或用两者各表示一种状态。
+
+## T-42 类型已经证明的事，运行时不再证明 {#t-42}
+
+`readonly` 与判别联合在编译期已经保证了不可变与形状；对内部值再 `Object.freeze`、再逐字段探测、再让测试断言 `Object.isFrozen`，是同一个事实写三遍，读代码的人还要分辨哪一层才是真正的约束。
+
+- 好的样子：内部值靠类型约束；`Object.freeze` 只用于交给外部代码且会被共享的对象，例如公开常量、注册表与契约写明冻结的公开对象；运行时校验只发生在真实的不可信边界。
+- 坏的样子：每个内部构造函数都把返回值和嵌套数组层层冻结；校验 NiceEval 自己刚构造的值；单元测试断言内部值被冻结。
+
+## T-43 不可信输入只在边界解码一次 {#t-43}
+
+手写的 `isRecord`、`typeof` 探测和 `as unknown as` 各写各的规则，漏掉一个字段就让错误形状流进内部。见[程序设计边界](architecture.md#程序设计边界纯函数完整-adt-与-effect)。
+
+- 好的样子：JSON、文件、SQLite 行、动态 import 与 SDK 返回在边界用 Effect Schema 解码成领域类型，失败进入具名的 tagged error；内部函数不接收 `unknown`。Promise 只在作者 callback 与 SDK 的最外层适配一次，内部调用链是 Effect。
+- 坏的样子：每个模块各写一份 `isRecord`；`JSON.parse(text) as T`；SQLite 查询结果 `as unknown as Row`；`Effect.tryPromise` 包着带 `try/catch` 的 async 函数，再用 `catch: (cause) => cause` 丢掉错误类型。

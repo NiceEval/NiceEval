@@ -90,6 +90,23 @@ reuse 分支只在 `kind: "match"` 时出现，`via` 列出所用的身份域变
 - `identity-mismatch`、`outcome-ineligible`、`score-incomplete`；
 - `evidence-unavailable`、`timeout-exceeded`、`adoption-unproven`、`stateful-input`。
 
+人读输出不印 reason 代码，也不出现 `gap` 一词，按下表写成读者能直接理解的英文短语；`--json` 仍交付原始 reason。有差异说明时，短语后直接接变化摘要，例如 `Needs rerun: candidateVersion changed (0.20.1-canary.123 → 0.21.0)`。
+
+| reason | 人读短语 |
+| --- | --- |
+| `no-result` | `Not run yet` |
+| `pending` | `Running` |
+| `not-published` | `Run did not finish` |
+| `identity-mismatch` | `Needs rerun: <变化摘要>` |
+| `outcome-ineligible` | `Needs rerun: last attempt <Verdict>` |
+| `score-incomplete` | `Needs rerun: score incomplete` |
+| `evidence-unavailable` | `Needs rerun: evidence missing` |
+| `timeout-exceeded` | `Needs rerun: timed out` |
+| `adoption-unproven` | `Needs review: earlier result not proven equivalent` |
+| `stateful-input` | `Reruns every time: uses state` |
+
+概览的计数同样用普通的话：`Covered N/M` 写成 `Up to date N/M`，`Gaps K` 写成 `Need a run K`，`Reference results` 写成 `Earlier results for these`。
+
 State 位置在 `project.get` 中是 `gap`，reason 为 `stateful-input`；没有 reader 错误时 issues 为空，previous 可以指向历史 Attempt。
 例如位置片段为 `{"experimentId":"codex-mempal","evalId":"react-hook-form/first","attemptOrdinal":1,"state":"gap","reason":"stateful-input","issues":[],"sourceRunId":null,"previous":null}`。
 这不修改固定历史 Run 的 Verdict；`exp --dry` 说明本轮执行，不能把历史 saved 当作下一次起点等价证明。
