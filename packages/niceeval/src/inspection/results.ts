@@ -1129,7 +1129,8 @@ const CostGapSchema = Schema.Struct({
 );
 export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
-  simulatedUser: Schema.optional(
+  // Inspection JSON observes key presence and cannot encode an explicit undefined value.
+  simulatedUser: Schema.optionalKey(
     Schema.Struct({
       source: Schema.Literal("simulated-user"),
       state: Schema.Literals(["complete", "partial", "unpriced"]),

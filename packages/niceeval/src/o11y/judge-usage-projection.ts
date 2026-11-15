@@ -182,7 +182,7 @@ export function projectTotalUsageCosts(
             ];
       }),
     ),
-    simulatedUser,
+    ...(simulatedUser === undefined ? {} : { simulatedUser }),
   };
 }
 
@@ -222,7 +222,7 @@ export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unres
           }))
         : []),
     ]),
-    simulatedUser,
+    ...(simulatedUser === undefined ? {} : { simulatedUser }),
   };
 }
 

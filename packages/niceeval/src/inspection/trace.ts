@@ -790,8 +790,8 @@ function projectTraceCommandDetail(
       },
     };
   };
-  const detail = {
-    kind: "command" as const,
+  return {
+    kind: "command",
     commandId,
     invocation: projectFullInvocation(command.invocation),
     workingDirectory: command.workingDirectory,
@@ -801,9 +801,7 @@ function projectTraceCommandDetail(
     sequence: command.sequence,
     stdout: stream(command.stdout),
     stderr: stream(command.stderr),
-    command: undefined,
   };
-  return detail;
 }
 
 function traceTurnIdentity(turn: {
