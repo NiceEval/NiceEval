@@ -465,6 +465,7 @@ function boundEvalFactories<
   return {
     defineEval(input) {
       assertAdapterEvalInput(input, "defineEval");
+      const requiredModelRoles = normalizeModelRequirements(input.requires);
       return defineEvalForContext<
         "pass",
         EvalContext<"pass", AdapterFlagsOutput<Flags>, Context> &
@@ -473,15 +474,16 @@ function boundEvalFactories<
         undefined,
         {
           readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
-          readonly requiredModelRoles: ReturnType<typeof normalizeModelRequirements>;
+          readonly requiredModelRoles?: readonly string[];
         }
       >("pass", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-        requiredModelRoles: normalizeModelRequirements(input.requires),
+        ...(requiredModelRoles === undefined ? {} : { requiredModelRoles }),
       });
     },
     defineScoreEval(input) {
       assertAdapterEvalInput(input, "defineScoreEval");
+      const requiredModelRoles = normalizeModelRequirements(input.requires);
       return defineEvalForContext<
         "score",
         EvalContext<"score", AdapterFlagsOutput<Flags>, Context> &
@@ -490,11 +492,11 @@ function boundEvalFactories<
         undefined,
         {
           readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
-          readonly requiredModelRoles: ReturnType<typeof normalizeModelRequirements>;
+          readonly requiredModelRoles?: readonly string[];
         }
       >("score", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-        requiredModelRoles: normalizeModelRequirements(input.requires),
+        ...(requiredModelRoles === undefined ? {} : { requiredModelRoles }),
       });
     },
   };
