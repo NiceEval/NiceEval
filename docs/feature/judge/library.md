@@ -58,6 +58,11 @@ ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custo
 
 closeQA、defineJudge 与受管 ScoreMatch 自动登记每次实际 HTTP 传输，失败、重试和中断均保留。
 未通过发送前校验的逻辑步骤不算物理请求；取消表示本地停止等待，不证明服务端停工。
+
+可重试的传输失败先重试，再判 `unavailable`。连接错误、超时、HTTP 408、429 与 5xx 都可重试，响应明确标为不可重试的除外。
+受管传输在同一 Assertion 的 `timeoutMs` 内最多重试 2 次：指数退避，起始 2 秒；服务端给出 `retry-after` 时等待该值，单次等待上限 60 秒。
+剩余期限不够再等一次时立即结束，判 `unavailable` 并留存最后一次的失败原因。HTTP 400 等协议错误不重试，沿用 `errored`。
+每次重试都是独立的物理请求，照常登记用量与失败。普通 Judge、受管 ScoreMatch 与 Agent Judge 遵守同一规则。
 现有 `defineConfig.pricing` 可对请求模型提供显式估价；真实报告费用（含零）优先，不在读取时重新定价。
 `t.usage` 仍只表示被测应用用量，Adapter 无需替裁判上报用量。
 
@@ -280,7 +285,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 ### 评审 agent
 
 评审 agent 就是 pi coding agent：NiceEval 在宿主进程里用 `@earendil-works/pi-coding-agent` 的 SDK 创建会话（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步），只追加评审的 system prompt、把内置工具接到 Sandbox，并加一个评分工具。
-自动压缩、溢出恢复、请求重试与会话管理都用 pi coding agent 自己的行为。
+自动压缩、溢出恢复、请求重试与会话管理都用 pi coding agent 自己的行为。会话的重试设置按 [Judge 用量与费用](#judge-用量与费用) 的可重试规则配置：开启重试、最多 2 次、遵守 `retry-after` 且单次等待上限 60 秒；NiceEval 只设置 pi 的重试参数，不另行包装模型请求。
 
 模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 按 Chat Completions 接入；接口兼容不保证所选模型支持工具。
 `TypesafeProvider` 在创建会话前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。

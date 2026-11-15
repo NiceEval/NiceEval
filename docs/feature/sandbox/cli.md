@@ -147,7 +147,8 @@ NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中�
 
 为支持精确定位准备或执行异常，NiceEval 提供运行期断点与失败暂停能力：
 
-- `--pause-on-failure`（等价于 `--breakpoint=failure`）：当受管动作失败或发生意外错误时，挂起当前 Attempt。沙箱不触发自动销毁并展示原生直连指引。挂起属于 Attempt 隔离状态，立即释放并发调度许可；非 TTY（Agent、CI 与自动化管道）或并发执行（`maxConcurrency > 1`）场景下自动退化为非阻塞现场保留，不阻塞标准输入。仅在单任务交互 TTY 终端下等待用户回车后继续收尾。
+- `--pause-on-failure`（等价于 `--breakpoint=failure`）：当受管动作失败或发生意外错误时，挂起当前 Attempt。沙箱不触发自动销毁并展示原生直连指引。挂起属于 Attempt 隔离状态，立即释放并发调度许可。仅在单任务交互 TTY 终端下挂起并等待用户回车后继续收尾。
+非 TTY（Agent、CI 与自动化管道）或并发执行（`maxConcurrency > 1`）时没有人能按回车，挂起不生效，Sandbox 照常回收，不留下需要事后手动删除的付费实例。此时每个失败的 Attempt 写一行 stderr：`Pause on failure needs an interactive single-attempt terminal; cleaning up <实例名>. Use --keep-sandbox to retain it.` 不写 `retained`。需要在自动化场景保留现场时显式使用 `--keep-sandbox`。
 - `--no-pause`：显式关闭失败挂起，优先级高于项目配置。
 - `--breakpoint=before-agent`：在初始化与全部 Before 动作完成、被测 Agent 正式接管前暂停，便于检查初始工作区与依赖状态。
 

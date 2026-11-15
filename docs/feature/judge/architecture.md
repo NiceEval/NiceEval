@@ -602,7 +602,7 @@ TypeSafe systemone 读取 usage.input_tokens 为 inputTotalTokens，usage.output
 ### 显式估价
 
 复用 defineConfig.pricing 的 selector、rates、digest、source、缺桶与定点算法，按 requestModel 选择并封存证明。
-选择请求模型表示作者明确接受该配置价格基准，不宣称回退模型实际售价。不得使用未封存的内置价格或读取时重新定价。
+选择请求模型表示作者明确接受该配置价格基准，不宣称回退模型实际售价。没有匹配的显式 profile 时，与应用相同，按请求模型精确同名使用内置价格表并在运行时封存（source kind `builtin-catalog`，见 [应用估价](../run/architecture/observability-attachments.md)）。不得使用未封存的内置价格或读取时重新定价。
 
 Judge validator 将 proof.pricing.requestModel 绑定 call.requestModel，不能沿用应用 validator 与 call.model 的比较。
 每 call 至多一条 proof，存在 reported cost 时禁止同 call 的 estimate；proof bucket 与已证明的互斥 token 逐项对应。

@@ -26,7 +26,8 @@ niceeval invocation show <invocation-id> [--json]
 
 `exp` 的位置参数先选择 Experiment ID 或路径前缀，再用后续 Eval ID 前缀收窄。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
 
-`--experiment` 可重复指定离散的精确 Experiment ID，不做前缀扩展。重复 ID 只执行一次；任一 ID 不存在时整次选择失败，不启动部分集合。
+`--experiment` 可重复，每个值是精确 Experiment ID，或以 `/` 结尾的目录前缀（如 `harness/`）。目录前缀选中该目录下全部 Experiment，不做其它前缀扩展。
+展开后重复的 ID 只执行一次；任一值零命中时整次选择失败，不启动部分集合。零命中报错列出可用的目录前缀与精确 ID，列出的每个值都能原样传给 `--experiment`。
 使用该选项时，全部位置参数解释为 Eval ID 前缀。选中的实验属于同一次 Invocation，共用全局 `--max-concurrency`、预算与 Record root，每个实验仍建立自己的 Run。
 
 ### `exp list`
