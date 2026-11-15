@@ -11,12 +11,12 @@ Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`sh
 | `restored` | `state mempal · codex / react-hook-form restored sha256:… (1.4 MB)` |
 | `initialized` | `state mempal · codex / react-hook-form initialized` |
 | `empty` | `state mempal · codex / react-hook-form empty` |
-| `restore-failed` | `state mempal · codex / react-hook-form restore failed: layout-mismatch` |
+| `restore-failed` | `state mempal · codex / react-hook-form restore failed: saved paths do not match` |
 | `saved` | `state mempal · codex / react-hook-form saved sha256:… (1.4 MB)` |
 | `save-skipped` | `state mempal · codex / react-hook-form save skipped: interrupted` |
-| `save-conflict` | `state mempal · codex / react-hook-form save rejected: lineage changed` |
-| `save-failed` | `state mempal · codex / react-hook-form save failed: capture-failed` |
-| `save-unknown` | `state mempal · codex / react-hook-form save unknown: storage-failed` |
+| `save-conflict` | `state mempal · codex / react-hook-form save rejected: checkpoint changed since restore` |
+| `save-failed` | `state mempal · codex / react-hook-form save failed: could not capture state` |
+| `save-unknown` | `state mempal · codex / react-hook-form save unknown: could not confirm storage write` |
 
 失败使用 `state-<event>` diagnostic；save-skipped/no-attempts 仅为 info。其余失败产生 execution error 并非零退出，不改写 Attempt Verdict。
 中断按现有中断退出规则；Assertion failed 仍可保存，但不会因此变成成功。

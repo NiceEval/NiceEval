@@ -28,9 +28,14 @@ Doctor 的 artifact 容量分成两项，任何一项不足都使整体 `FAIL`�
   `FAIL`，不把数量余量当成空间余量。
 
 `artifact-inventory` 逐项核对 committed intent 与 Provider 对象，而不是只比较数量。intent 存在但
-virtual-machine type instance 或 custom storage volume 缺失时报告 `dangling`，并给出
-`sandbox provider gc incus` 作为下一步；对象存在但无 committed intent 时报告 `orphan`。只有一一对应时才
-`PASS`，PASS 的保证范围写在输出里：`N committed intents, N verified object pairs`。
+virtual-machine type instance 或 custom storage volume 缺失时报告 `resources missing`，并给出
+`sandbox provider gc incus` 作为下一步；对象存在但无 committed intent 时报告 `unregistered resources`。只有一一对应时才
+`PASS`，PASS 的保证范围写在输出里：`N saved caches, N verified VM and volume pairs`。
+
+Human 将检查名与原因写成普通英文，例如 `Cache storage`、`resources missing` 与 `resource ownership changed`。
+对象对应关系的保证范围不变，不打印内部状态码。
+前置失败导致其余检查无法执行时，只显示一次 `N checks not run: fix the failed check first.`。
+同类资源问题聚合计数，下一步命令统一放在末尾的一个 `Next` 中，最多三行。
 
 自动回收的范围只有已被同一 replacement scope 的新 generation 取代、consumer hold 已归零且 provider 对象双向
 metadata 仍精确匹配的 artifact。内容变化产生新 lineage，不会让旧 lineage 被自动替代；其余回收全部走下面的
@@ -72,6 +77,10 @@ niceeval sandbox provider gc incus [--development] --apply <plan-id> [--json]
 只读列出该 domain 的每份 prepared artifact。每项显示短 artifact digest、execution domain revision、state、
 generation、是否当前 head 与 consumer hold 数。每项另显示创建时间、最后成功 hold 时间、估算字节与对象核对结果
 （`verified` / `dangling` / `metadata-drift`）。另列 orphan 对象与 pool 字节摘要。
+
+Human 对应写成 `verified`、`resources missing` 与 `resource ownership changed`；未登记对象写成
+`unregistered resources`。GC preview 将同类候选聚合，例如 `resources already absent ×3`；apply 将同类结果聚合，
+不重复打印逐项原因码。完整候选与结果仍由 `--json` 交付。
 
 JSON 使用
 [Docker cache inventory](../../roadmap/sandbox-cache-lifecycle/cli.md#domain-库存) 的同一

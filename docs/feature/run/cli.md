@@ -54,17 +54,20 @@ interface RunListDocument {
 
 `decodeRunDocument` 接受带这两处的 document；缺少 `omitted` 或出现表外取值时拒绝。Library 的 `runHost.list` 接受对应的过滤字段，结果带同样的两处；字段名见 [Run Library](library.md)。
 
-每个 `active` Run 另带一项 owner 观察：
+每个 `active` Run 另带一项 owner 观察，人读短语如下：
 
 | 取值 | 含义 |
 |---|---|
-| `owner alive` | 同机、同启动与隔离域内，进程启动身份与封存身份相同 |
-| `owner gone` | 按 recovery 判据证明封存的 owner 已终止；可请求 recover，执行时仍须重验 |
+| `owner running` | 同机、同启动与隔离域内，进程启动身份与封存身份相同 |
+| `owner stopped` | 按 recovery 判据证明封存的 owner 已终止；可请求 recover，执行时仍须重验 |
 | `owner unknown` | 无法证明；例如 owner 在另一台机器上 |
 
 三种观察分别映射 [recovery 判据](architecture/lifecycle.md#崩溃与-recovery) 的 `active`、`terminated` 与 `unproven`。heartbeat 只作诊断，不参与证明。
 观察附带取证时间，不属于 PublicationCutoff 上的历史事实，也不授予恢复权限。只读 portable Record 不对当前机器取证，显示 `owner unknown`。
-存在 `owner gone` 的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
+存在 owner 已终止的 Run 时，Human 输出末尾给出 `Next: niceeval run recover --orphaned`。
+
+Human 中 `owner unknown` 的原因写成普通短语：`owner on another host`、`process identity not recorded`、
+`reading a portable Record` 或 `process check failed`。JSON 的 state 仍为 `alive`、`gone`、`unknown`，reason 代码不变。
 
 `show run:<run-id>` 消费唯一 canonical Run Inspection operation `run.get`，不拼接多份近义 operation，也不使用 Run Host 自己的投影。结果包含 Run identity、state、
 expected/published/missing、Planned attempt bindings、Attempt locators、absence、Verdict、score、Evidence、usage 与 limitations。
@@ -78,7 +81,10 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 
 `run recover --orphaned` 对每个 `owner gone` 的 `active` Run 执行同一个 recover，不接受其它选择条件。
 上一次恢复中途被打断而停在 `recovering`、且恢复进程已经终止的 Run 同样纳入，由同一个 recover 从它停下的地方继续。
-它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。`owner alive` 与 `owner unknown` 的 Run 原样跳过并各写出原因。
+它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。owner 仍在运行或状态未知的 Run 原样跳过并写出原因。
+
+Human 收尾将相同 outcome 与原因聚合，例如 `skipped ×4 (owner still running)`；失败原因使用英文短语，
+不打印 `unknown:probe-failed` 或 `run-recover-failed`。逐项 Run ID、outcome 与原始原因由 `--json` 交付。
 
 候选集来自当前项目的一次固定 cutoff，确认前冻结 exact Run ID 集合；确认后不加入新 Run。每项 mutation 在事务边界重新验证 state、精确 process identity 与 writer generation，不能复用列表的旧观察授权写入。
 
