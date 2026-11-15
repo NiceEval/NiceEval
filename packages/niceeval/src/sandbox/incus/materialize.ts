@@ -525,7 +525,7 @@ export function incusProviderModule(
                   start: { _tag: "Restored" as const },
                 })),
                 Effect.catch(() =>
-                  preparationContext.materializeBase({ ...context, beforeCacheArtifact: undefined }).pipe(
+                  preparationContext.materializeBase(baseMaterializeContext(context)).pipe(
                     Effect.map((sandbox) => ({
                       _tag: "Materialized" as const,
                       sandbox,
@@ -702,4 +702,10 @@ export function toPlanningError(cause: unknown): IncusProviderError {
         ["Make the Incus control plane reachable and retry."],
         cause,
       );
+}
+
+function baseMaterializeContext(context: SandboxRuntimeMaterializeContext): SandboxRuntimeMaterializeContext {
+  const base = { ...context };
+  delete base.beforeCacheArtifact;
+  return base;
 }

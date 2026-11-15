@@ -66,7 +66,7 @@ export class IncusSandbox implements SandboxProviderBackend {
 
   private retired = false;
   private retirement: Promise<void> | undefined;
-  private deadlineAt?: number;
+  private deadlineAt: number | undefined;
 
   constructor(
     private readonly repository: IncusRepository,
@@ -105,7 +105,10 @@ export class IncusSandbox implements SandboxProviderBackend {
   }
 
   private async execArgv(argv: readonly [string, ...string[]], opts: CommandOptions = {}): Promise<CommandResult> {
-    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+    const limit = commandLimit(opts, {
+      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
+      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+    });
     const mapped = this.mapUser(opts.user);
     const marker = `__niceeval_incus_pgid_${randomUUID().replaceAll("-", "")}__`;
     const wrapped = [
@@ -504,7 +507,7 @@ export async function waitForReadiness(
       plan.project,
       instanceName,
       ["systemctl", "start", "niceeval-docker-data.service"],
-      { user: 0, group: 0, timeoutMs: 60_000, signal },
+      { user: 0, group: 0, timeoutMs: 60_000, ...(signal === undefined ? {} : { signal: signal }) },
     );
     if (guestInit.exitCode !== 0) {
       last = guestInit.stderr.trim() || guestInit.stdout.trim() || "Docker data guest-init failed";
@@ -519,7 +522,7 @@ export async function waitForReadiness(
         "-lc",
         `mkdir -p ${shellQuote(INCUS_WORKDIR)} && chown ${INCUS_UID}:${INCUS_UID} ${shellQuote(INCUS_WORKDIR)}`,
       ],
-      { user: 0, group: 0, timeoutMs: 15_000, signal },
+      { user: 0, group: 0, timeoutMs: 15_000, ...(signal === undefined ? {} : { signal: signal }) },
     );
     if (workspace.exitCode !== 0) {
       last = workspace.stderr.trim() || workspace.stdout.trim() || "workspace mkdir failed";
@@ -531,7 +534,7 @@ export async function waitForReadiness(
       user: INCUS_UID,
       group: INCUS_UID,
       timeoutMs: 10_000,
-      signal,
+      ...(signal === undefined ? {} : { signal: signal }),
     });
     if (identity.exitCode !== 0 || parseUid(identity.stdout) !== INCUS_UID) {
       last = `guest user is not uid ${INCUS_UID}`;
@@ -542,7 +545,13 @@ export async function waitForReadiness(
       plan.project,
       instanceName,
       ["bash", "-lc", "printf 'HOST=%s\\n' \"${DOCKER_HOST:-}\"; docker info; docker compose version"],
-      { cwd: INCUS_WORKDIR, user: INCUS_UID, group: INCUS_UID, timeoutMs: 30_000, signal },
+      {
+        cwd: INCUS_WORKDIR,
+        user: INCUS_UID,
+        group: INCUS_UID,
+        timeoutMs: 30_000,
+        ...(signal === undefined ? {} : { signal: signal }),
+      },
     );
     if (info.exitCode !== 0) {
       last = info.stderr.trim() || info.stdout.trim() || "docker info failed";

@@ -85,7 +85,7 @@ export type IncusQuota = "attested" | "unattested";
 export interface IncusDomainDescriptor {
   readonly name: IncusDomainName;
   readonly status: IncusDomainStatus;
-  readonly reason?: string;
+  readonly reason?: string | undefined;
   readonly executionDomainId: string;
   readonly project: string;
   readonly storagePool: string;
@@ -96,14 +96,14 @@ export interface IncusDomainDescriptor {
   readonly artifactProject: string;
   readonly artifactMaxInstances: number;
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
-  readonly dockerDataBytes?: number;
+  readonly artifactEstimatedBytes?: number | undefined;
+  readonly dockerDataBytes?: number | undefined;
   readonly workdir: typeof INCUS_WORKDIR;
   readonly user: typeof INCUS_USER;
   readonly hostGateway: string;
-  readonly targetAppProxyPort?: number;
-  readonly source?: string;
-  readonly backingDevice?: string;
+  readonly targetAppProxyPort?: number | undefined;
+  readonly source?: string | undefined;
+  readonly backingDevice?: string | undefined;
   /** Only digest-pinned base VMs may enter the artifact graph. */
   readonly trustedBaseImages: readonly string[];
 }

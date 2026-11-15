@@ -73,10 +73,10 @@ export interface AllocationIntent {
   readonly storagePool: string;
   readonly provisionToken: string;
   readonly owner: AllocationOwner;
-  readonly providerLocator?: string;
-  readonly dockerDataVolume?: string;
-  readonly quarantined?: boolean;
-  readonly acceptanceUnknown?: "volume-create" | "instance-create";
+  readonly providerLocator?: string | undefined;
+  readonly dockerDataVolume?: string | undefined;
+  readonly quarantined?: boolean | undefined;
+  readonly acceptanceUnknown?: "volume-create" | "instance-create" | undefined;
   readonly expectedTerminal: "destroyed";
   readonly state: AllocationState;
 }
@@ -103,15 +103,15 @@ export interface ArtifactIntent extends IncusArtifactLocator {
   readonly cacheFormat: string;
   readonly coverage: string;
   readonly resourcesDigest: string;
-  readonly replacementScopeDigest?: string;
+  readonly replacementScopeDigest?: string | undefined;
   readonly createdAt: string;
   readonly updatedAt: string;
-  readonly lastSuccessfulHoldAt?: string;
-  readonly lastSuccessfulHoldId?: string;
-  readonly retirementPlanId?: string;
-  readonly estimatedArtifactBytes?: number;
-  readonly capturePoolUsedBefore?: number;
-  readonly capturePoolUsedAfter?: number;
+  readonly lastSuccessfulHoldAt?: string | undefined;
+  readonly lastSuccessfulHoldId?: string | undefined;
+  readonly retirementPlanId?: string | undefined;
+  readonly estimatedArtifactBytes?: number | undefined;
+  readonly capturePoolUsedBefore?: number | undefined;
+  readonly capturePoolUsedAfter?: number | undefined;
 }
 
 export interface IncusAdmissionLease {
