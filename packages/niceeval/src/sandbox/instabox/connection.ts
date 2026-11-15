@@ -10,9 +10,9 @@ export class InstaboxReconnectExhausted extends Error {
 
 /** One lazily authenticated connection owned by the Machine, never a process. */
 export class InstaboxConnection {
-  private current?: { readonly client: Client; readonly ready: Promise<Client> };
+  private current: { readonly client: Client; readonly ready: Promise<Client> } | undefined;
   private stopped = false;
-  private recovery?: Promise<Client>;
+  private recovery: Promise<Client> | undefined;
   private attempts = 0;
   constructor(private readonly token: SSHToken) {}
 

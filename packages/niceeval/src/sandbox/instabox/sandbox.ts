@@ -33,11 +33,11 @@ export class InstaboxBackend implements SandboxProviderBackend {
     rootCommands: supportedBackendCapability(true as const),
     managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startProcess(input)),
   };
-  private token?: SSHToken;
+  private token: SSHToken | undefined;
   private stopped = false;
-  private stopping?: Promise<void>;
-  private connection?: InstaboxConnection;
-  private retirementCause?: Error;
+  private stopping: Promise<void> | undefined;
+  private connection: InstaboxConnection | undefined;
+  private retirementCause: Error | undefined;
   private readonly deleteKey = randomUUID();
 
   private constructor(
@@ -162,7 +162,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     if (options.user !== undefined && options.user !== "root")
       throw new Error("Instabox supports only the snapshot login user or an explicit root override");
     options.signal?.throwIfAborted();
-    const limit = commandLimit(options, { deadlineAt: this.deadlineAt });
+    const limit = commandLimit(options, { ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }) });
     const timeout =
       limit.timeoutMs === undefined ? undefined : AbortSignal.timeout(Math.max(1, Math.ceil(limit.timeoutMs)));
     const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), ...(timeout ? [timeout] : [])]);
@@ -184,7 +184,11 @@ export class InstaboxBackend implements SandboxProviderBackend {
     signal.addEventListener("abort", cancel, { once: true });
     const execute = async (): Promise<CommandResult> => {
       const process = await this.startProcess(
-        { argv: [command, ...args], cwd: options.cwd, env: options.env },
+        {
+          argv: [command, ...args],
+          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+          ...(options.env === undefined ? {} : { env: options.env }),
+        },
         options.user === "root",
       );
       await process.closeStdin();
