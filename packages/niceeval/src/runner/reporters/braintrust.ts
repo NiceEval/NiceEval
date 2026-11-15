@@ -114,13 +114,13 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
     async onInvocationStart(evals) {
       sdk = await loadBraintrustSdk();
       experiment = await sdk.init({
-        project: config.projectId ? undefined : (config.project ?? "niceeval"),
-        projectId: config.projectId,
-        experiment: config.experiment,
-        baseExperiment: config.baseExperiment,
-        baseExperimentId: config.baseExperimentId,
-        update: config.update,
-        apiKey: config.apiKey,
+        ...(config.projectId ? {} : { project: config.project ?? "niceeval" }),
+        ...(config.projectId === undefined ? {} : { projectId: config.projectId }),
+        ...(config.experiment === undefined ? {} : { experiment: config.experiment }),
+        ...(config.baseExperiment === undefined ? {} : { baseExperiment: config.baseExperiment }),
+        ...(config.baseExperimentId === undefined ? {} : { baseExperimentId: config.baseExperimentId }),
+        ...(config.update === undefined ? {} : { update: config.update }),
+        ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
         // 不再写顶层单一 adapter:一次 Invocation 可能横跨多个 (adapter, model, flags) 配置,
         // 启动时还没有任何结果,写一个必然只代表其中一份配置的值就是撒谎(见
         // docs/runner.md「Reporter 与运行器事件」)。每行自己的 adapter 身份仍在
@@ -229,11 +229,12 @@ export function toBraintrustEvent(
     `a${result.attempt}`,
   ].join("|");
 
+  const output = lastAssistantText(result.events);
   return {
     id,
     input: result.description ?? result.id,
-    output: lastAssistantText(result.events),
-    error: result.error,
+    ...(output === undefined ? {} : { output }),
+    ...(result.error === undefined ? {} : { error: result.error }),
     metadata,
     metrics,
     ...(Object.keys(scores).length > 0 ? { scores } : {}),
