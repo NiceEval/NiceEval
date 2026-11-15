@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 /** A model selected for one application-defined purpose. */
 export interface ModelRoleSelection {
   readonly model: string;
-  readonly reasoningEffort?: string;
+  readonly reasoningEffort?: string | undefined;
 }
 
 /** Frozen selection; null preserves an unspecified native default. */
@@ -20,7 +20,7 @@ const selections = Schema.Record(
   roleKey,
   Schema.Struct({
     model: modelText,
-    reasoningEffort: Schema.optionalKey(modelText),
+    reasoningEffort: Schema.optional(modelText),
   }),
 ).check(Schema.makeFilter((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 64));
 
@@ -45,7 +45,7 @@ export function defineModelRoles<const Keys extends string>(
 export function normalizeModelRequirements(value: unknown): readonly string[] | undefined {
   if (value === undefined) return undefined;
   const decoded = Schema.decodeUnknownSync(Schema.Struct({ models: selections }), { onExcessProperty: "error" })(value);
-  return Object.freeze(Object.keys(decoded.models).sort());
+  return Object.keys(decoded.models).sort();
 }
 
 export function assertRequiredModelRoles(
@@ -67,32 +67,30 @@ export const ResolvedModelRolesSchema: Schema.Codec<ResolvedModelRoles> = Schema
 
 /** Only the definition boundary interprets author syntax. Downstream owners pass this value through. */
 export function normalizeModelRoles(input: {
-  readonly model?: string;
-  readonly reasoningEffort?: string;
-  readonly models?: Readonly<Record<string, ModelRoleSelection>>;
+  readonly model?: string | undefined;
+  readonly reasoningEffort?: string | undefined;
+  readonly models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
 }): ResolvedModelRoles {
   if (input.models !== undefined) {
     if (input.model !== undefined || input.reasoningEffort !== undefined) {
       throw new TypeError("Experiment models cannot be combined with model or reasoningEffort.");
     }
     const decoded = Schema.decodeUnknownSync(selections, { onExcessProperty: "error" })(input.models);
-    return Object.freeze(
-      Object.fromEntries(
-        Object.keys(decoded)
-          .sort()
-          .map((key) => {
-            const value = decoded[key]!;
-            return [key, Object.freeze({ model: value.model, reasoningEffort: value.reasoningEffort ?? null })];
-          }),
-      ),
+    return Object.fromEntries(
+      Object.keys(decoded)
+        .sort()
+        .map((key) => {
+          const value = decoded[key]!;
+          return [key, { model: value.model, reasoningEffort: value.reasoningEffort ?? null }];
+        }),
     );
   }
-  if (input.model === undefined && input.reasoningEffort === undefined) return Object.freeze({});
-  return Object.freeze({
-    default: Object.freeze({
+  if (input.model === undefined && input.reasoningEffort === undefined) return {};
+  return {
+    default: {
       model: input.model === undefined ? null : Schema.decodeUnknownSync(modelText)(input.model),
       reasoningEffort:
         input.reasoningEffort === undefined ? null : Schema.decodeUnknownSync(modelText)(input.reasoningEffort),
-    }),
-  });
+    },
+  };
 }

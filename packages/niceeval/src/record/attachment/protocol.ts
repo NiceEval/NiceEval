@@ -130,7 +130,7 @@ export function defineRecordAttachment<
   readonly owner: Owner;
   readonly family: Family;
   readonly schema: ValueSchema;
-  readonly validate?: (value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[];
+  readonly validate?: ((value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[]) | undefined;
 }): RecordAttachmentDefinition<Owner, Family, ValueSchema> {
   if (
     !validOwner(input.owner) ||
@@ -148,44 +148,40 @@ export function defineRecordAttachment<
     [definitionTypeId]: () => ({ owner: input.owner, family: input.family }),
   }) as RecordAttachmentDefinition<Owner, Family, ValueSchema>;
   try {
-    definitions.set(
-      definition,
-      Object.freeze({
-        codec: compileRecordSchemaCodec({
-          schema: input.schema,
-          limits,
-          attachmentDeclarations: [
-            {
-              schema: RecordTextContentSchema,
-              isValue: isRecordTextContentHandle,
-              metadata: recordContentDeclarationMetadata(RecordTextContentSchema),
-            },
-            {
-              schema: RecordBytesContentSchema,
-              isValue: isRecordBytesContentHandle,
-              metadata: recordContentDeclarationMetadata(RecordBytesContentSchema),
-            },
-          ],
-          getAttachmentDeclaration: (ast) => {
-            const reference = recordAttachmentReferenceDeclarationMetadata(ast);
-            if (reference !== undefined) return reference;
-            const content = recordContentDeclarationMetadata(ast);
-            return content === undefined
-              ? undefined
-              : Object.freeze({
-                  metadata: content,
-                  accepts: content.kind === "text" ? isRecordTextContentHandle : isRecordBytesContentHandle,
-                });
+    definitions.set(definition, {
+      codec: compileRecordSchemaCodec({
+        schema: input.schema,
+        limits,
+        attachmentDeclarations: [
+          {
+            schema: RecordTextContentSchema,
+            isValue: isRecordTextContentHandle,
+            metadata: recordContentDeclarationMetadata(RecordTextContentSchema),
           },
-          isAttachmentOpaque: (value) =>
-            isRecordAttachmentReference(value)
-              ? { category: "reference" }
-              : isRecordContentHandle(value)
-                ? { category: "content" }
-                : undefined,
-        }) as RecordSchemaCodec<unknown, RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>,
-      }),
-    );
+          {
+            schema: RecordBytesContentSchema,
+            isValue: isRecordBytesContentHandle,
+            metadata: recordContentDeclarationMetadata(RecordBytesContentSchema),
+          },
+        ],
+        getAttachmentDeclaration: (ast) => {
+          const reference = recordAttachmentReferenceDeclarationMetadata(ast);
+          if (reference !== undefined) return reference;
+          const content = recordContentDeclarationMetadata(ast);
+          return content === undefined
+            ? undefined
+            : {
+                metadata: content,
+                accepts: content.kind === "text" ? isRecordTextContentHandle : isRecordBytesContentHandle,
+              };
+        },
+        isAttachmentOpaque: function attachmentOpaqueKind(value) {
+          if (isRecordAttachmentReference(value)) return { category: "reference" };
+          if (isRecordContentHandle(value)) return { category: "content" };
+          return undefined;
+        },
+      }) as RecordSchemaCodec<unknown, RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>,
+    });
   } catch (cause) {
     invalid(cause);
   }
@@ -248,9 +244,9 @@ export const RecordAttachmentReference = Object.freeze({
       },
       { identifier: `RecordAttachmentReference<${resolved.owner}:${resolved.family}>` },
     );
-    referenceDeclarations.set(declaration, Object.freeze({ definition: resolved, valueSchema }));
-    referenceDeclarations.set(declaration.ast, Object.freeze({ definition: resolved, valueSchema }));
-    referenceDeclarationRuns.set(declaration.ast.run, Object.freeze({ definition: resolved, valueSchema }));
+    referenceDeclarations.set(declaration, { definition: resolved, valueSchema });
+    referenceDeclarations.set(declaration.ast, { definition: resolved, valueSchema });
+    referenceDeclarationRuns.set(declaration.ast.run, { definition: resolved, valueSchema });
     return declaration;
   },
 });
@@ -298,18 +294,18 @@ export function recordAttachmentReferenceDeclarationMetadata(value: object):
   const runtime = mintedReferenceDeclarationRuntime(value);
   return runtime === undefined
     ? undefined
-    : Object.freeze({
-        metadata: Object.freeze({
+    : {
+        metadata: {
           category: "reference",
           definition: runtime.definition,
           valueSchema: runtime.valueSchema,
-        }),
+        },
         accepts: (candidate) =>
           isRecordAttachmentReference(candidate) &&
           references.get(candidate)?.definition === runtime.definition &&
           (runtime.valueSchema === undefined ||
             !Result.isFailure(Schema.decodeUnknownResult(runtime.valueSchema)(references.get(candidate)?.value))),
-      });
+      };
 }
 
 /** @internal Session-only mint; declaration identity, optional value schema, and exact definition are all checked. */
@@ -329,7 +325,7 @@ export function mintRecordAttachmentReference<Definition extends AnyDefinition, 
     Definition,
     Value
   >;
-  references.set(token, Object.freeze({ ...runtime, value }));
+  references.set(token, { ...runtime, value });
   return token;
 }
 
@@ -362,7 +358,7 @@ export function enumerateRecordAttachmentClosure(
   }
   if (new Set(contents).size !== contents.length) return Result.fail({ code: "content-closure-failed" });
   if (new Set(refs).size !== refs.length) return Result.fail({ code: "reference-closure-failed" });
-  return Result.succeed(Object.freeze({ contents: Object.freeze(contents), references: Object.freeze(refs) }));
+  return Result.succeed({ contents, references: refs });
 }
 /** @internal Host-only diagnostic/closure metadata; family code never receives Schema AST. */
 export function inspectRecordAttachmentOpaqueClosure(
@@ -387,26 +383,29 @@ export function encodeRecordAttachmentCurrent(
   value: unknown,
 ): Result.Result<
   RecordSchemaWire<RecordContentHandle | RecordAttachmentReference<AnyDefinition, unknown>>,
-  {
-    readonly code: "exact-encode-failed" | "invariant-failed" | "content-closure-failed" | "reference-closure-failed";
-    readonly schemaIssues?: readonly { readonly path: ReadonlyArray<PropertyKey>; readonly message: string }[];
-  }
+  | { readonly code: "invariant-failed" | "content-closure-failed" | "reference-closure-failed" }
+  | {
+      readonly code: "exact-encode-failed";
+      readonly schemaIssues:
+        | readonly { readonly path: ReadonlyArray<PropertyKey>; readonly message: string }[]
+        | undefined;
+    }
 > {
   const runtime = definitions.get(definition);
-  if (runtime === undefined) return Result.fail({ code: "exact-encode-failed" });
+  if (runtime === undefined) return Result.fail({ code: "exact-encode-failed", schemaIssues: undefined });
   const encoded = runtime.codec.encode(value);
   if (Result.isFailure(encoded)) {
     return Result.fail(
       encoded.failure.kind === "schema"
         ? { code: "exact-encode-failed", schemaIssues: encoded.failure.issues }
-        : { code: "exact-encode-failed" },
+        : { code: "exact-encode-failed", schemaIssues: undefined },
     );
   }
   const closure = enumerateRecordAttachmentClosure(definition, value);
   if (Result.isFailure(closure)) {
     switch (closure.failure.code) {
       case "exact-decode-failed":
-        return Result.fail({ code: "exact-encode-failed" });
+        return Result.fail({ code: "exact-encode-failed", schemaIssues: undefined });
       case "invariant-failed":
         return Result.fail({ code: "invariant-failed" });
       case "content-closure-failed":
@@ -510,7 +509,6 @@ export function recordAttachmentReferenceWire(
   reference: RecordAttachmentReference<AnyDefinition, unknown>,
 ): { readonly owner: RecordAttachmentOwner; readonly family: string; readonly value: unknown } | undefined {
   const runtime = references.get(reference);
-  return runtime === undefined
-    ? undefined
-    : Object.freeze({ owner: runtime.definition.owner, family: runtime.definition.family, value: runtime.value });
+  if (runtime === undefined) return undefined;
+  return { owner: runtime.definition.owner, family: runtime.definition.family, value: runtime.value };
 }

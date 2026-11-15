@@ -25,17 +25,17 @@ export type SendInput =
   | string
   | {
       readonly text: string;
-      readonly files?: readonly import("../agents/types.ts").InputFile[];
+      readonly files?: readonly import("../agents/types.ts").InputFile[] | undefined;
     };
 
 /** Selects pending input requests using identity, text, action, input and option filters; omitted constraints do not require those fields to be empty. */
 export interface InputRequestFilter {
-  readonly id?: string | RegExp;
-  readonly prompt?: string | RegExp;
-  readonly display?: string | RegExp;
-  readonly action?: string | RegExp;
-  readonly input?: JsonMatch;
-  readonly optionIds?: readonly string[];
+  readonly id?: string | RegExp | undefined;
+  readonly prompt?: string | RegExp | undefined;
+  readonly display?: string | RegExp | undefined;
+  readonly action?: string | RegExp | undefined;
+  readonly input?: JsonMatch | undefined;
+  readonly optionIds?: readonly string[] | undefined;
 }
 
 /** Pairs an answer with the exact input request being answered; preserve that request instead of constructing a replacement identity. */

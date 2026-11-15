@@ -1,7 +1,8 @@
 import type { ExperimentHostRequirements } from "./requirements.ts";
 import { resolve } from "node:path";
+import { decodeJsonValue } from "../../shared/json-value.ts";
 
-import { Clock, Data, Effect, Result } from "effect";
+import { Clock, Effect, Result } from "effect";
 
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { SqliteRecordError } from "../../record/sqlite/errors.ts";
@@ -32,7 +33,7 @@ import {
   type SandboxBeforeCache,
 } from "../../runner/types.ts";
 import { evalPrefixPredicate, matchExperimentSelector } from "../../shared/aggregate.ts";
-import { ExperimentHostError } from "./types.ts";
+import { ExperimentEvaluationKindAdmissionError, ExperimentHostError, normalizeExperimentHostCause } from "./types.ts";
 import { assembleInvocationCompletion, foldInvocationEvalStats } from "./presentation.ts";
 import { firstLine, formatThrown } from "../../util.ts";
 
@@ -79,10 +80,11 @@ function operationError(operation: ExperimentHostOperation, cause: unknown): Exp
     operation,
     code,
     message: closedFailureMessage(cause),
-    cause,
-    ...(cause instanceof Error && "comparisons" in cause && Array.isArray(cause.comparisons)
-      ? { comparisons: cause.comparisons }
-      : {}),
+    cause: normalizeExperimentHostCause(cause),
+    comparisons:
+      cause instanceof Error && "comparisons" in cause && Array.isArray(cause.comparisons)
+        ? cause.comparisons
+        : undefined,
   });
 }
 
@@ -110,22 +112,22 @@ function closedRecordDiagnostic(cause: unknown): unknown | undefined {
     const locator = Reflect.get(cause, "locator");
     const rawCause = Reflect.get(cause, "cause");
     const nested = closedRecordDiagnostic(rawCause) ?? closedDiagnosticMessage(rawCause);
-    return Object.freeze({
+    return {
       code,
       ...(typeof locator === "string" ? { locator } : {}),
       ...(nested === undefined ? {} : { cause: nested }),
-    });
+    };
   }
   if (code !== "record-attachment-encode-error") return undefined;
   const family = Reflect.get(cause, "family");
   const issues = Reflect.get(cause, "issues");
   const schemaIssues = Reflect.get(cause, "schemaIssues");
-  return Object.freeze({
+  return {
     code,
     ...(typeof family === "string" ? { family } : {}),
     issues: closedDiagnosticIssues(issues, false),
     schemaIssues: closedDiagnosticIssues(schemaIssues, true),
-  });
+  };
 }
 
 function closedDiagnosticMessage(cause: unknown): Readonly<{ message: string }> | undefined {
@@ -135,32 +137,28 @@ function closedDiagnosticMessage(cause: unknown): Readonly<{ message: string }> 
       : typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "message") === "string"
         ? String(Reflect.get(cause, "message"))
         : undefined;
-  return message === undefined || message.length === 0 ? undefined : Object.freeze({ message });
+  return message === undefined || message.length === 0 ? undefined : { message };
 }
 
 function closedDiagnosticIssues(value: unknown, includeMessage: boolean): readonly unknown[] {
-  if (!Array.isArray(value)) return Object.freeze([]);
-  return Object.freeze(
-    value.flatMap((entry) => {
-      if (typeof entry !== "object" || entry === null) return [];
-      const path = Reflect.get(entry, "path");
-      const code = Reflect.get(entry, "code");
-      const message = Reflect.get(entry, "message");
-      return [
-        Object.freeze({
-          ...(typeof code === "string" ? { code } : {}),
-          path: Array.isArray(path)
-            ? Object.freeze(
-                path.filter(
-                  (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
-                ),
-              )
-            : Object.freeze([]),
-          ...(includeMessage && typeof message === "string" ? { message } : {}),
-        }),
-      ];
-    }),
-  );
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const path = Reflect.get(entry, "path");
+    const code = Reflect.get(entry, "code");
+    const message = Reflect.get(entry, "message");
+    return [
+      {
+        ...(typeof code === "string" ? { code } : {}),
+        path: Array.isArray(path)
+          ? path.filter(
+              (segment): segment is string | number => typeof segment === "string" || typeof segment === "number",
+            )
+          : [],
+        ...(includeMessage && typeof message === "string" ? { message } : {}),
+      },
+    ];
+  });
 }
 
 function closeOperation<A, E, R>(
@@ -191,16 +189,6 @@ interface PreparedInvocationState {
   consumed: boolean;
 }
 
-class ExperimentEvaluationKindAdmissionError extends Data.TaggedError("ExperimentEvaluationKindAdmissionError")<{
-  readonly code: "experiment-evaluation-kind-mixed";
-  readonly message: string;
-  readonly issues: readonly {
-    readonly experimentId: string;
-    readonly passEvalIds: readonly string[];
-    readonly scoreEvalIds: readonly string[];
-  }[];
-}> {}
-
 type PreparedRuns =
   | {
       readonly status: "problem";
@@ -215,10 +203,6 @@ type PreparedRuns =
 
 const invocationPlans = new WeakMap<object, PreparedInvocationState>();
 
-function freezeArray<A>(values: Iterable<A>): readonly A[] {
-  return Object.freeze([...values]);
-}
-
 function selectionProblem(
   input: ExperimentHostSelectionInput,
   selected: ClosedSelection,
@@ -226,36 +210,36 @@ function selectionProblem(
   if (input.experimentIds !== undefined) {
     const missing = input.experimentIds.find((id) => !selected.experimentIds.includes(id));
     if (missing !== undefined) {
-      return Object.freeze({
+      return {
         status: "experiment-no-match" as const,
         selector: missing,
-        candidates: freezeArray([...selected.experimentIds].sort()),
-      });
+        candidates: [...selected.experimentIds].sort(),
+      };
     }
   }
   if (input.experimentSelector !== undefined && selected.selections.length === 0) {
-    return Object.freeze({
+    return {
       status: "experiment-no-match" as const,
       selector: input.experimentSelector,
-      candidates: freezeArray([...selected.experimentIds].sort()),
-    });
+      candidates: [...selected.experimentIds].sort(),
+    };
   }
-  const selectorEvalIds = freezeArray(new Set(selected.selections.flatMap((entry) => entry.selectorEvalIds)));
+  const selectorEvalIds = [...new Set(selected.selections.flatMap((entry) => entry.selectorEvalIds))];
   for (const selector of input.evalSelectors ?? []) {
     if (selectorEvalIds.some((id) => evalPrefixPredicate([selector])(id))) continue;
-    return Object.freeze({
+    return {
       status: "eval-no-match" as const,
       selector,
-      experimentIds: freezeArray(selected.selections.map(({ experiment }) => experiment.id)),
-      candidates: freezeArray([...selectorEvalIds].sort()),
-    });
+      experimentIds: selected.selections.map(({ experiment }) => experiment.id),
+      candidates: [...selectorEvalIds].sort(),
+    };
   }
   if (selected.selections.every((entry) => entry.selectedEvalIds.length === 0)) {
-    return Object.freeze({
+    return {
       status: "empty-selection" as const,
-      experimentIds: freezeArray(selected.selections.map(({ experiment }) => experiment.id)),
-      candidates: freezeArray([...selected.experimentIds].sort()),
-    });
+      experimentIds: selected.selections.map(({ experiment }) => experiment.id),
+      candidates: [...selected.experimentIds].sort(),
+    };
   }
   return undefined;
 }
@@ -271,49 +255,52 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
           new TypeError("experimentIds must be non-empty and cannot be combined with experimentSelector"),
         );
       }
-      const discovered = yield* discoverEvals(input.cwd, { ...(generation === undefined ? {} : { generation }) });
+      const discovered = yield* discoverEvals(input.cwd, { freshImport: undefined, generation });
       const evals =
         input.tag === undefined ? discovered : discovered.filter((definition) => definition.tags?.includes(input.tag!));
       const selectedIdsInput = input.experimentIds;
       const selectorInput = input.experimentSelector;
-      const select =
-        selectedIdsInput !== undefined
-          ? () => selectedIdsInput
-          : selectorInput === undefined
-            ? undefined
-            : (ids: readonly string[]) => matchExperimentSelector(ids, selectorInput);
+      function select(ids: readonly string[]): readonly string[] {
+        if (selectedIdsInput !== undefined) return selectedIdsInput;
+        if (selectorInput === undefined) return ids;
+        return matchExperimentSelector(ids, selectorInput);
+      }
       const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-        ...(generation === undefined ? {} : { generation }),
-        ...(select === undefined ? {} : { select }),
+        freshImport: undefined,
+        generation,
+        select,
       });
-      const selectedIds =
-        input.experimentIds !== undefined
-          ? new Set(input.experimentIds)
-          : input.experimentSelector === undefined
-            ? undefined
-            : new Set(matchExperimentSelector(experimentIds, input.experimentSelector));
+      function selectedExperimentIds() {
+        if (input.experimentIds !== undefined) return new Set(input.experimentIds);
+        if (input.experimentSelector !== undefined)
+          return new Set(matchExperimentSelector(experimentIds, input.experimentSelector));
+        return undefined;
+      }
+      const selectedIds = selectedExperimentIds();
       const selections = experiments
         .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
         .map((experiment) => {
           const selection = resolveExperimentEvals({
             experimentId: experiment.id,
-            ...(experiment.models === undefined ? {} : { models: experiment.models }),
-            ...(input.tag === undefined ? {} : { tag: input.tag }),
+            models: experiment.models,
+            tag: input.tag,
             selector: experiment.evals,
             cliPatterns: input.evalSelectors ?? [],
             evals: discovered,
+
+            validateModelRequirements: undefined,
           });
-          return Object.freeze({
+          return {
             experiment,
-            selectedEvalIds: freezeArray(selection.selectedEvalIds),
-            selectorEvalIds: freezeArray(selection.selectorEvals.map((definition) => definition.id)),
-          });
+            selectedEvalIds: selection.selectedEvalIds,
+            selectorEvalIds: selection.selectorEvals.map((definition) => definition.id),
+          };
         });
-      return Object.freeze({
-        evals: freezeArray(evals),
+      return {
+        evals,
         experimentIds,
-        selections: freezeArray(selections),
-      });
+        selections,
+      };
     });
   return Effect.scoped(acquireFreshImportGeneration(input.cwd).pipe(Effect.flatMap(selectWith)));
 }
@@ -322,19 +309,19 @@ function summaryOfExperiment(
   experiment: DiscoveredExperiment,
   evalIds: readonly string[],
 ): ExperimentHostExperimentSummary {
-  return Object.freeze({
+  return {
     id: experiment.id,
-    ...(experiment.description === undefined ? {} : { description: experiment.description }),
+    description: experiment.description,
     adapter: experiment.adapter?.name ?? null,
-    ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    ...(experiment.model === undefined ? {} : { model: experiment.model }),
+    models: experiment.models,
+    model: experiment.model,
     attempts: experiment.attempts ?? 1,
-    evalIds: freezeArray(evalIds),
-    labels: Object.freeze({ ...(experiment.labels ?? {}) }),
+    evalIds,
+    labels: { ...(experiment.labels ?? {}) },
     hasBefore: typeof experiment.before === "function",
     hasAfter: typeof experiment.after === "function",
-    ...(experiment.sharedState === undefined ? {} : { sharedStateKey: experiment.sharedState.key }),
-  });
+    sharedStateKey: experiment.sharedState?.key,
+  };
 }
 
 export function catalog(
@@ -343,27 +330,19 @@ export function catalog(
   return closeOperation(
     "catalog",
     closeSelection(input).pipe(
-      Effect.map((selected) =>
-        Object.freeze({
-          status: "listed" as const,
-          evals: freezeArray(
-            selected.evals.map((definition) =>
-              Object.freeze({
-                id: definition.id,
-                ...(definition.description === undefined ? {} : { description: definition.description }),
-                tags: freezeArray(definition.tags ?? []),
-                evaluationKind: definition.evaluationKind,
-              }),
-            ),
-          ),
-          experimentIds: selected.experimentIds,
-          experiments: freezeArray(
-            selected.selections.map(({ experiment, selectedEvalIds }) =>
-              summaryOfExperiment(experiment, selectedEvalIds),
-            ),
-          ),
-        }),
-      ),
+      Effect.map((selected) => ({
+        status: "listed" as const,
+        evals: selected.evals.map((definition) => ({
+          id: definition.id,
+          description: definition.description,
+          tags: definition.tags ?? [],
+          evaluationKind: definition.evaluationKind,
+        })),
+        experimentIds: selected.experimentIds,
+        experiments: selected.selections.map(({ experiment, selectedEvalIds }) =>
+          summaryOfExperiment(experiment, selectedEvalIds),
+        ),
+      })),
     ),
   );
 }
@@ -375,14 +354,15 @@ function agentRunFromExperiment(
   overrides: ExperimentHostRunOverrides,
   sandboxBeforeCacheOverride: SandboxBeforeCache | undefined,
 ): AgentRun {
-  return Object.freeze({
-    ...(experiment.adapter === undefined ? {} : { adapter: experiment.adapter }),
-    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
-    ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    ...(experiment.model === undefined ? {} : { model: experiment.model }),
-    ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
+  return {
+    adapter: experiment.adapter,
+    agent: experiment.adapter?.kind === "custom" ? undefined : experiment.adapter,
+    models: experiment.models,
+    model: experiment.model,
+    reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags ?? {},
     plugins: experiment.plugins,
+    pluginBehavior: undefined,
     attempts: overrides.attempts ?? experiment.attempts ?? 1,
     earlyExit: overrides.earlyExit ?? experiment.earlyExit ?? false,
     sandboxBeforeCache: resolveSandboxBeforeCache(
@@ -390,23 +370,23 @@ function agentRunFromExperiment(
       experiment.sandboxCache,
       config.sandboxCache,
     ),
-    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
-    ...(experiment.sandboxReuse === undefined ? {} : { sandboxReuse: experiment.sandboxReuse }),
-    ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
-    ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
+    sandbox: experiment.sandbox,
+    sandboxReuse: experiment.sandboxReuse,
+    sandboxLabels: experiment.sandboxLabels,
+    sharedState: experiment.sharedState,
+    judge: experiment.judge,
     ...resolveRunTimeout(overrides.timeoutMs, experiment.timeoutMs),
-    ...((overrides.budget ?? experiment.budget) === undefined ? {} : { budget: overrides.budget ?? experiment.budget }),
-    selectedEvalIds: freezeArray(selectedEvalIds),
+    budget: overrides.budget ?? experiment.budget,
+    selectedEvalIds,
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    ...(experiment.description === undefined ? {} : { description: experiment.description }),
+    description: experiment.description,
     labels: experiment.labels,
-    ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
-    ...(experiment.before === undefined ? {} : { setup: experiment.before }),
-    ...(experiment.after === undefined ? {} : { teardown: experiment.after }),
-  });
+    maxConcurrency: experiment.maxConcurrency,
+    setup: experiment.before,
+    teardown: experiment.after,
+  };
 }
 
 function sandboxBeforeCacheOverrideOf(overrides: ExperimentHostRunOverrides): SandboxBeforeCache | undefined {
@@ -418,9 +398,12 @@ function sandboxBeforeCacheOverrideOf(overrides: ExperimentHostRunOverrides): Sa
 export function prepareRuns(
   input: ExperimentHostSelectionInput & {
     readonly config: ExperimentHostInvocationPlanRequest["config"];
-    readonly overrides?: ExperimentHostRunOverrides;
+    readonly overrides?: ExperimentHostRunOverrides | undefined;
   },
-  options: { readonly allowEmptySelection?: boolean; readonly freshImport?: boolean } = {},
+  options: { readonly allowEmptySelection: boolean; readonly freshImport: boolean } = {
+    allowEmptySelection: false,
+    freshImport: false,
+  },
 ): Effect.Effect<PreparedRuns, unknown> {
   return closeSelection(input).pipe(
     Effect.flatMap((selected): Effect.Effect<PreparedRuns, ExperimentEvaluationKindAdmissionError> => {
@@ -441,8 +424,8 @@ export function prepareRuns(
           : [
               {
                 experimentId: experiment.id,
-                passEvalIds: Object.freeze([...evaluationKinds.pass]),
-                scoreEvalIds: Object.freeze([...evaluationKinds.score]),
+                passEvalIds: evaluationKinds.pass,
+                scoreEvalIds: evaluationKinds.score,
               },
             ];
       });
@@ -459,7 +442,7 @@ export function prepareRuns(
                   "Split the Experiment into one pass Experiment and one score Experiment, or narrow its Eval selection.",
               )
               .join("\n"),
-            issues: Object.freeze(issues.map((issue) => Object.freeze(issue))),
+            issues,
           }),
         );
       }
@@ -468,10 +451,8 @@ export function prepareRuns(
       return Effect.succeed({
         status: "ready",
         selected,
-        runs: freezeArray(
-          selected.selections.map(({ experiment, selectedEvalIds }) =>
-            agentRunFromExperiment(experiment, selectedEvalIds, input.config, overrides, sandboxBeforeCacheOverride),
-          ),
+        runs: selected.selections.map(({ experiment, selectedEvalIds }) =>
+          agentRunFromExperiment(experiment, selectedEvalIds, input.config, overrides, sandboxBeforeCacheOverride),
         ),
       } as const);
     }),
@@ -487,12 +468,12 @@ export function check(
       const prepared = yield* prepareRuns(input);
       if (prepared.status === "problem") return prepared.problem;
       const pairs = yield* linkRunSandboxes(prepared.selected.evals, prepared.runs);
-      return Object.freeze({
+      return {
         status: "linked" as const,
-        experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
-        evalIds: freezeArray(new Set(prepared.runs.flatMap((run) => run.selectedEvalIds))),
+        experimentIds: prepared.runs.map((run) => run.experimentId!),
+        evalIds: [...new Set(prepared.runs.flatMap((run) => run.selectedEvalIds))],
         pairCount: pairs.length,
-      });
+      };
     }),
   );
 }
@@ -504,8 +485,9 @@ export function listInvocationStatus(
   return closeOperation(
     "invocation-status-list",
     listSessions(resolve(input.cwd, ".niceeval"), {
-      ...(input.all === true ? { all: true } : {}),
-      ...(input.experimentSelector === undefined ? {} : { selector: input.experimentSelector }),
+      all: input.all ?? false,
+      selector: input.experimentSelector,
+      nowMs: undefined,
     }),
   );
 }
@@ -527,23 +509,15 @@ function recordRoot(input: ExperimentHostInvocationPlanRequest) {
 }
 
 function comparisonOf(slot: ExecutionReusePlanSlot): readonly ExperimentHostDryComparison[] {
-  return freezeArray(slot.comparisons.map((comparison) => Object.freeze({ ...comparison })));
+  return slot.comparisons;
 }
 
 function jsonSnapshot(value: unknown): ExperimentHostJsonValue | undefined {
   try {
-    return freezeJson(JSON.parse(JSON.stringify(value)) as ExperimentHostJsonValue);
+    return decodeJsonValue(JSON.stringify(value));
   } catch {
     return undefined;
   }
-}
-
-function freezeJson(value: ExperimentHostJsonValue): ExperimentHostJsonValue {
-  if (Array.isArray(value)) return Object.freeze(value.map(freezeJson));
-  if (typeof value === "object" && value !== null) {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)])));
-  }
-  return value;
 }
 
 function dryPlan(
@@ -554,43 +528,43 @@ function dryPlan(
 ): ExperimentHostDryPlan {
   const projected: ExperimentHostDrySlot[] = slots.map((slot) => {
     const evalGroup = evalGroups.get(slot.evalId);
-    const target = Object.freeze({
+    const target = {
       runId: slot.runId,
       slotId: slot.slotId,
       experimentId: slot.experimentId,
       evalId: slot.evalId,
       executionIdentityDigest: slot.executionIdentityDigest,
-      ...(evalGroup === undefined ? {} : { evalGroupId: evalGroup.id, evalGroupIndex: evalGroup.index }),
+      evalGroup,
       attempt: slot.attempt,
-    });
+    };
     if (slot.state === "reuse") {
-      return Object.freeze({
+      return {
         state: "reuse" as const,
         target,
-        source: Object.freeze({
+        source: {
           attemptId: slot.source.attemptId,
           originRunId: slot.source.origin.runId,
           originSlotId: slot.source.origin.slotId,
           sourceRunId: slot.source.sourceBarrier.runId,
-        }),
+        },
         comparisons: comparisonOf(slot),
-      });
+      };
     }
-    return Object.freeze({
+    return {
       state: "gap" as const,
       target,
       reason: slot.reason,
       scope: slot.scope,
-      issues: freezeArray(slot.issues.map((issue) => jsonSnapshot(issue) ?? Object.freeze({}))),
+      issues: slot.issues.map((issue) => jsonSnapshot(issue) ?? {}),
       comparisons: comparisonOf(slot),
-    });
+    };
   });
-  return Object.freeze({
+  return {
     policy: projectTargetPolicyIdentity,
-    slots: freezeArray(projected),
-    readbacks: freezeArray(readbacks),
-    lockedPairs: freezeArray(lockedPairs),
-  });
+    slots: projected,
+    readbacks,
+    lockedPairs,
+  };
 }
 
 export function planInvocation(
@@ -601,18 +575,18 @@ export function planInvocation(
     Effect.gen(function* () {
       const prepared = yield* prepareRuns(input);
       if (prepared.status === "problem") {
-        return Object.freeze({ ...prepared.problem });
+        return prepared.problem;
       }
       const root = recordRoot(input);
       if (Result.isFailure(root)) return yield* Effect.fail(root.failure);
-      const config = Object.freeze({
+      const config = {
         ...input.config,
         ...(input.config.reporters === undefined ? {} : { reporters: [...input.config.reporters] }),
-      });
-      const overrides = Object.freeze({ ...(input.overrides ?? {}) });
+      };
+      const overrides = { ...(input.overrides ?? {}) };
       const target = yield* planProjectTarget(prepared.selected.evals, prepared.runs, config.timeoutMs, {
-        ...(config.judgeProvider === undefined ? {} : { configJudge: config.judgeProvider }),
-        ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
+        configJudge: config.judgeProvider,
+        keepSandbox: overrides.keepSandbox,
       });
       const maxConcurrency =
         overrides.maxConcurrency ??
@@ -635,16 +609,14 @@ export function planInvocation(
       }
       const uniqueEvalIds = new Set(prepared.runs.flatMap((run) => run.selectedEvalIds));
       const totalAttempts = prepared.runs.reduce((sum, run) => sum + run.selectedEvalIds.length * run.attempts, 0);
-      const experimentConcurrency = Object.freeze(
-        Object.fromEntries(
-          prepared.runs.flatMap((run) =>
-            run.experimentId !== undefined && run.maxConcurrency !== undefined
-              ? [[run.experimentId, run.maxConcurrency] as const]
-              : [],
-          ),
+      const experimentConcurrency = Object.fromEntries(
+        prepared.runs.flatMap((run) =>
+          run.experimentId !== undefined && run.maxConcurrency !== undefined
+            ? [[run.experimentId, run.maxConcurrency] as const]
+            : [],
         ),
       );
-      const shape: ExperimentHostInvocationShape = Object.freeze({
+      const shape: ExperimentHostInvocationShape = {
         experiments: prepared.runs.length,
         evals: uniqueEvalIds.size,
         configurations: prepared.runs.length,
@@ -654,18 +626,18 @@ export function planInvocation(
         maxBuildConcurrency,
         maxBeforeCacheConcurrency,
         experimentConcurrency,
-      });
+      };
       const reuse = yield* prepareRunnerRecordReuse({
         manifestsByKey: target.manifestsByKey,
         preparedPairsByKey: target.preparedPairsByKey,
         evals: prepared.selected.evals,
         runs: prepared.runs,
-        config: { ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }) },
+        config: { timeoutMs: config.timeoutMs },
         plannedFingerprints: target.plannedFingerprints,
         renameFingerprintsByKey: target.renameFingerprintsByKey,
         plannedConfigHashes: target.plannedConfigHashes,
-        ...(overrides.rerun === undefined ? {} : { rerun: overrides.rerun }),
-        ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
+        rerun: overrides.rerun,
+        keepSandbox: overrides.keepSandbox,
       });
       const previewStartedAt = input.preview === true ? yield* Clock.currentTimeMillis : undefined;
       const preview =
@@ -741,15 +713,15 @@ export function planInvocation(
           if (audit !== undefined) occurrenceAudits.set(JSON.stringify(audit), audit);
         }
       }
-      return Object.freeze({
+      return {
         status: "ready" as const,
         plan,
         shape,
-        experimentIds: freezeArray(prepared.runs.map((run) => run.experimentId!)),
-        evalIds: freezeArray(uniqueEvalIds),
-        pluginAudit: Object.freeze({ occurrences: freezeArray(occurrenceAudits.values()) }),
-        ...(preview === undefined ? {} : { dry: preview }),
-      });
+        experimentIds: prepared.runs.map((run) => run.experimentId!),
+        evalIds: [...uniqueEvalIds],
+        pluginAudit: { occurrences: [...occurrenceAudits.values()] },
+        dry: preview,
+      };
     }),
   );
 }
@@ -804,18 +776,18 @@ function multiplexFeedbackSink(
 }
 
 function summaryOf(summary: InvocationSummary): ExperimentHostInvocationSummary {
-  return Object.freeze({
+  return {
     total: summary.passed + summary.failed + summary.skipped + summary.errored,
     passed: summary.passed,
     failed: summary.failed,
     skipped: summary.skipped,
     errored: summary.errored,
     durationMs: summary.durationMs,
-    ...(summary.usage?.inputTokens === undefined ? {} : { inputTokens: summary.usage.inputTokens }),
-    ...(summary.usage?.outputTokens === undefined ? {} : { outputTokens: summary.usage.outputTokens }),
-    ...(summary.estimatedCostUSD === undefined ? {} : { estimatedCostUSD: summary.estimatedCostUSD }),
+    inputTokens: summary.usage?.inputTokens,
+    outputTokens: summary.usage?.outputTokens,
+    estimatedCostUSD: summary.estimatedCostUSD,
     beforeCaches: summary.beforeCaches,
-  });
+  };
 }
 
 export function runInvocation(
@@ -849,10 +821,12 @@ export function runInvocation(
             reporter,
             name: `config-reporter-${index}`,
             required: false,
+            target: undefined,
           })),
           {
             name: "experiment-host-summary",
             required: false,
+            target: undefined,
             reporter: {
               onInvocationComplete(summary: InvocationSummary) {
                 completedSummary = summary;
@@ -906,30 +880,26 @@ export function runInvocation(
               maxBeforeCacheConcurrency: state.shape.maxBeforeCacheConcurrency,
               coordinationRoot: state.coordinationRoot,
               recordRoot: state.recordRoot,
-              ...(state.overrides.keepSandbox === undefined ? {} : { keepSandbox: state.overrides.keepSandbox }),
-              ...(state.overrides.pauseOnFailure === undefined
-                ? {}
-                : { pauseOnFailure: state.overrides.pauseOnFailure }),
-              ...(state.overrides.rerun === undefined ? {} : { rerun: state.overrides.rerun }),
+              keepSandbox: state.overrides.keepSandbox,
+              pauseOnFailure: state.overrides.pauseOnFailure,
+              rerun: state.overrides.rerun,
               session,
-              ...(input.signal === undefined ? {} : { signal: input.signal }),
+              signal: input.signal,
               onCurrentRecordReusePlan: (current) =>
                 Effect.sync(() => {
                   for (const runId of current.runIds.values()) invocationRuns.add(runId);
                   if (feedback === undefined) return;
                   feedback.start({
-                    shape: Object.freeze({
+                    shape: {
                       evals: state.shape.evals,
                       configs: state.shape.configurations,
                       totalAttempts: state.shape.totalAttempts,
                       maxConcurrency: state.shape.maxConcurrency,
                       runIds: current.runIds,
-                    }),
-                    ...(Object.keys(state.shape.experimentConcurrency).length === 0
-                      ? {}
-                      : { experimentConcurrency: state.shape.experimentConcurrency }),
+                    },
+                    experimentConcurrency: state.shape.experimentConcurrency,
                     reused: current.reused,
-                    ...(current.reusedFailures.length === 0 ? {} : { reusedFailures: current.reusedFailures }),
+                    reusedFailures: current.reusedFailures,
                   });
                   feedbackStarted = true;
                 }),
@@ -944,17 +914,22 @@ export function runInvocation(
           return yield* Effect.fail(new Error("Runner completed without starting Experiment feedback."));
         }
         const completion = feedback === undefined ? undefined : assembleInvocationCompletion(feedback.state);
+        function sessionCompletionStatus() {
+          if (completion !== undefined) return completion.status;
+          switch (receipt.completion) {
+            case "completed":
+              return "complete" as const;
+            case "interrupted":
+              return "interrupted" as const;
+            default:
+              return "incomplete" as const;
+          }
+        }
         yield* session.close({
-          status:
-            completion?.status ??
-            (receipt.completion === "completed"
-              ? "complete"
-              : receipt.completion === "interrupted"
-                ? "interrupted"
-                : "incomplete"),
-          ...(completion === undefined ? {} : { completion }),
+          status: sessionCompletionStatus(),
+          completion,
           receipt,
-          ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
+          completedAt: receipt.completedAt,
         });
         sessionClosed = true;
         if (feedback !== undefined && completion !== undefined) {
@@ -964,32 +939,34 @@ export function runInvocation(
           });
           feedbackFinished = true;
         }
-        const foldedStats = completion === undefined ? undefined : foldInvocationEvalStats(summary);
-        return Object.freeze({
+        const foldedStats = foldInvocationEvalStats(summary);
+        return {
           status: "finished" as const,
-          receipt: Object.freeze({
+          receipt: {
             invocationId: receipt.invocationId,
-            createdRunIds: freezeArray(receipt.createdRunIds),
+            createdRunIds: receipt.createdRunIds,
             publicationCutoff: receipt.publicationCutoff,
             startedAt: receipt.startedAt,
-            ...(receipt.completedAt === undefined ? {} : { completedAt: receipt.completedAt }),
+            completedAt: receipt.completedAt,
             completion: receipt.completion,
-          }),
+          },
           summary: summaryOf(summary),
-          ...(completion === undefined
-            ? {}
-            : {
-                completion,
-                exitCode: computeExitCode(
-                  {
-                    ...summary,
-                    failed: foldedStats!.failed,
-                    errored: foldedStats!.errored,
-                  },
+          feedback:
+            completion === undefined
+              ? { kind: "not-requested" as const }
+              : {
+                  kind: "completed" as const,
                   completion,
-                ),
-              }),
-        });
+                  exitCode: computeExitCode(
+                    {
+                      ...summary,
+                      failed: foldedStats.failed,
+                      errored: foldedStats.errored,
+                    },
+                    completion,
+                  ),
+                },
+        };
       }).pipe(
         Effect.mapError((cause) => {
           if (!(cause instanceof SqliteRecordError) || invocationRuns.size === 0) return cause;
@@ -1009,7 +986,10 @@ export function runInvocation(
 export function planRename(
   input: ExperimentHostRenameRequest,
 ): Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError, ExperimentHostRequirements> {
-  return closeOperation("rename-plan", planExperimentRename(input));
+  return closeOperation(
+    "rename-plan",
+    planExperimentRename(input).pipe(Effect.map((plan) => ({ ...plan, oldId: plan.oldId ?? null }))),
+  );
 }
 
 export function applyRename(
@@ -1022,25 +1002,25 @@ export function applyRename(
       if (Result.isFailure(outcome)) {
         if (!(outcome.failure instanceof ExperimentRenameError)) return yield* Effect.fail(outcome.failure);
         const plan = outcome.failure.plan;
-        return Object.freeze({
+        return {
           status: "rejected" as const,
           sourceRunId: plan.sourceRunId,
-          oldId: plan.oldId,
+          oldId: plan.oldId ?? null,
           newId: plan.newId,
           reason: plan.blocked!.reason,
           detail: plan.blocked!.detail,
-        });
+        };
       }
       const done = outcome.success;
-      return Object.freeze({
+      return {
         status: "done" as const,
         invocationId: done.invocationId,
         runId: done.runId,
         sourceRunId: done.sourceRunId,
         oldId: done.oldId,
         newId: done.newId,
-        migrated: freezeArray(done.migrated.map(({ renamedFrom: _, ...entry }) => Object.freeze(entry))),
-      });
+        migrated: done.migrated.map(({ renamedFrom: _, ...entry }) => entry),
+      };
     }),
   );
 }
@@ -1052,18 +1032,14 @@ export function accept(
     "accept",
     acceptLocators(input).pipe(
       Effect.map((receipts) =>
-        freezeArray(
-          receipts.map((receipt) =>
-            Object.freeze({
-              invocationId: receipt.invocationId,
-              runId: receipt.runId,
-              slotId: receipt.slotId,
-              locator: receipt.locator,
-              sourceLocator: receipt.sourceLocator,
-              fingerprint: receipt.fingerprint,
-            }),
-          ),
-        ),
+        receipts.map((receipt) => ({
+          invocationId: receipt.invocationId,
+          runId: receipt.runId,
+          slotId: receipt.slotId,
+          locator: receipt.locator,
+          sourceLocator: receipt.sourceLocator,
+          fingerprint: receipt.fingerprint,
+        })),
       ),
     ),
   );
@@ -1075,23 +1051,17 @@ export function planRunAccept(
   return closeOperation(
     "accept",
     planAcceptRun(input).pipe(
-      Effect.map((plan) =>
-        Object.freeze({
-          sourceRunId: plan.sourceRunId,
-          members: freezeArray(
-            plan.members.map((member) =>
-              Object.freeze({
-                locator: member.locator,
-                experimentId: member.experimentId,
-                evalId: member.evalId,
-                attempt: member.attempt,
-                fingerprint: member.fingerprint,
-                comparisons: member.comparisons,
-              }),
-            ),
-          ),
-        }),
-      ),
+      Effect.map((plan) => ({
+        sourceRunId: plan.sourceRunId,
+        members: plan.members.map((member) => ({
+          locator: member.locator,
+          experimentId: member.experimentId,
+          evalId: member.evalId,
+          attempt: member.attempt,
+          fingerprint: member.fingerprint,
+          comparisons: member.comparisons,
+        })),
+      })),
     ),
   );
 }
@@ -1103,18 +1073,14 @@ export function applyRunAccept(
     "accept",
     acceptRun(input).pipe(
       Effect.map((receipts) =>
-        freezeArray(
-          receipts.map((receipt) =>
-            Object.freeze({
-              invocationId: receipt.invocationId,
-              runId: receipt.runId,
-              slotId: receipt.slotId,
-              locator: receipt.locator,
-              sourceLocator: receipt.sourceLocator,
-              fingerprint: receipt.fingerprint,
-            }),
-          ),
-        ),
+        receipts.map((receipt) => ({
+          invocationId: receipt.invocationId,
+          runId: receipt.runId,
+          slotId: receipt.slotId,
+          locator: receipt.locator,
+          sourceLocator: receipt.sourceLocator,
+          fingerprint: receipt.fingerprint,
+        })),
       ),
     ),
   );

@@ -34,18 +34,14 @@ export function viewManifest(catalog: ViewCatalogSelection, initialRunIds: reado
     current.members.push(experimentId);
     byKey.set(identity.key, current);
   }
-  const groups = Object.freeze(
-    [...byKey.values()]
-      .sort((left, right) => compareCodeUnits(left.identity.key, right.identity.key))
-      .map(({ identity, members }) =>
-        Object.freeze({
-          identity,
-          members: Object.freeze(members),
-          route: groupRoute(identity),
-          label: identity.key,
-        }),
-      ),
-  );
+  const groups = [...byKey.values()]
+    .sort((left, right) => compareCodeUnits(left.identity.key, right.identity.key))
+    .map(({ identity, members }) => ({
+      identity,
+      members,
+      route: groupRoute(identity),
+      label: identity.key,
+    }));
   const initialExperimentId = initialRunIds
     .map((runId) => catalog.runExperiments.find((candidate) => candidate.runId === runId)?.experimentId)
     .find((experimentId): experimentId is string => experimentId !== undefined);
@@ -100,28 +96,29 @@ export function viewManifest(catalog: ViewCatalogSelection, initialRunIds: reado
       }),
     );
   }
+  function overviewTarget(): InsightTarget {
+    if (defaultGroup === undefined) return { kind: "group", groupKind: "singleton", key: "" };
+    if (defaultGroup.identity.kind === "named")
+      return { kind: "group", groupKind: "named", key: defaultGroup.identity.groupId };
+    return { kind: "group", groupKind: "singleton", key: defaultGroup.identity.experimentId };
+  }
   pages.unshift(
     page({
       pageId: "overview",
       route: "/",
       title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
       navigation: true,
-      target:
-        defaultGroup === undefined
-          ? { kind: "group", groupKind: "singleton", key: "" }
-          : defaultGroup.identity.kind === "named"
-            ? { kind: "group", groupKind: "named", key: defaultGroup.identity.groupId }
-            : { kind: "group", groupKind: "singleton", key: defaultGroup.identity.experimentId },
+      target: overviewTarget(),
     }),
   );
 
-  return Object.freeze({
+  return {
     title: { en: "NiceEval Insight", "zh-CN": "NiceEval Insight" },
     defaultRoute,
-    experimentSelection: { options: groups.map(({ route, label }) => Object.freeze({ route, label })) },
-    pages: Object.freeze(pages),
+    experimentSelection: { options: groups.map(({ route, label }) => ({ route, label })) },
+    pages,
     groups,
-  });
+  };
 }
 
 function groupRoute(identity: ExperimentGroupIdentityValue): string {
@@ -168,12 +165,12 @@ export function resolveSurfacePlan(
   const target = targetForRoute(manifest, route);
   if (target === undefined) throw new Error("Insight route target is malformed.");
   const current = surface(location, target, "page");
-  if (target.kind === "group" || target.kind === "experiment") return { background: current };
+  if (target.kind === "group" || target.kind === "experiment") return { background: current, foreground: undefined };
 
   const routeState = insightRouteState(location.state);
   const background =
     routeState?.background === undefined ? undefined : pageSurfaceForRoute(manifest, routeState.background);
-  if (target.kind === "run" && background === undefined) return { background: current };
+  if (target.kind === "run" && background === undefined) return { background: current, foreground: undefined };
   if (background !== undefined) {
     return {
       background,
@@ -181,7 +178,7 @@ export function resolveSurfacePlan(
     };
   }
 
-  const defaultLocation = Object.freeze({ pathname: manifest.defaultRoute });
+  const defaultLocation = { pathname: manifest.defaultRoute, search: "" };
   const defaultTarget = targetForRoute(manifest, defaultLocation.pathname);
   if (defaultTarget === undefined) throw new Error("Insight default route target is missing.");
   return {
@@ -208,14 +205,14 @@ function surface(
   target: InsightTarget,
   presentation: InsightSurface["presentation"],
 ): InsightSurface {
-  return Object.freeze({
-    location: Object.freeze({
+  return {
+    location: {
       pathname: location.pathname,
-      ...(location.search === undefined ? {} : { search: location.search }),
-    }),
+      search: location.search,
+    },
     target,
     presentation,
-  });
+  };
 }
 
 function insightRouteState(value: unknown): InsightRouteState | undefined {
@@ -229,8 +226,8 @@ function insightRouteState(value: unknown): InsightRouteState | undefined {
   ) {
     return undefined;
   }
-  const search = "search" in background && typeof background.search === "string" ? background.search : undefined;
-  return { background: { pathname: background.pathname, ...(search === undefined ? {} : { search }) } };
+  const search = "search" in background && typeof background.search === "string" ? background.search : "";
+  return { background: { pathname: background.pathname, search } };
 }
 
 function uniqueBy<Value>(values: readonly Value[], keyOf: (value: Value) => string): readonly Value[] {
@@ -240,9 +237,11 @@ function uniqueBy<Value>(values: readonly Value[], keyOf: (value: Value) => stri
 }
 
 function page(definition: InsightPage): InsightPage {
-  return Object.freeze(definition);
+  return definition;
 }
 
 function compareCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

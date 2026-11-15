@@ -51,36 +51,36 @@ export interface PythonPluginSpec {
 
 export interface BubConfig {
   /** OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容代理的 base URL。省略时读 BUB_API_BASE env。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md(bub 没有原生 Skill 加载机制)。
    */
-  skills?: SkillSpec[];
+  skills?: SkillSpec[] | undefined;
   /**
    * 固定 Bub 0.5.1 协议。省略或填写 "0.5.1"；其它版本在定义期抛出 TypeError。
    */
-  version?: string;
+  version?: string | undefined;
   /**
    * OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
    *
    * 自定义插件必须支持固定版本 Bub 0.5.1 的 tape 协议。
    */
-  otelPlugin?: string;
+  otelPlugin?: string | undefined;
   /**
    * 额外装进 bub tool 环境的 Python Package,每个 Sandbox before 时进 `uv tool install … --with <pkg>`。
    * 规范化后的 package 列表进安装 checkpoint key:plugin 集合不同的两个 agent 变体不会复用同一个
    * 安装 checkpoint(否则第二个变体会静默拿到第一个变体的环境)。
    */
-  pythonPlugins?: PythonPluginSpec[];
+  pythonPlugins?: PythonPluginSpec[] | undefined;
   /**
    * 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在装 bub、装 Skills /
    * Python package、写 manifest 全部完成后执行。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  before?: SandboxCommand[];
+  before?: SandboxCommand[] | undefined;
   /**
    * 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
    * 之前执行(LIFO 镜像 —— `before` 跑在 agent 安装之后,`after` 就跑在 agent 收尾
@@ -88,7 +88,7 @@ export interface BubConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  after?: SandboxCommand[];
+  after?: SandboxCommand[] | undefined;
 }
 
 const UV = "$HOME/.local/bin/uv";
@@ -350,7 +350,7 @@ ${last}`);
                 events,
                 usage: parsed.usage,
                 status: "completed",
-                ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+                evidenceCoverage: turnEvidenceCoverage,
               };
             },
             catch: (cause) => cause,

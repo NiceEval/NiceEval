@@ -1,4 +1,5 @@
 import { PiFailure } from "./pi-failure.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { findPackageJSON } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -29,12 +30,14 @@ function resolveInstalledPi(): {
       kind: "dependency",
       message:
         "judge.agent-dependency-missing: install the review runtime with pnpm add @earendil-works/pi-coding-agent@1.5.2",
+      cause: undefined,
     });
   const ai = findPackageJSON("@earendil-works/pi-ai", pathToFileURL(manifest));
   if (ai === undefined)
     throw new PiFailure({
       kind: "dependency",
       message: "judge.agent-dependency-missing: reinstall @earendil-works/pi-coding-agent@1.5.2 and its dependencies",
+      cause: undefined,
     });
   return {
     coding: join(dirname(manifest), "dist/index.js"),
@@ -49,6 +52,10 @@ export function resolvePiCodingAgent(): ReturnType<typeof resolveInstalledPi> {
     return resolveInstalledPi();
   } catch (cause) {
     if (cause instanceof PiFailure) throw cause;
-    throw new PiFailure({ kind: "dependency", message: "pi dependency could not be resolved", cause });
+    throw new PiFailure({
+      kind: "dependency",
+      message: "pi dependency could not be resolved",
+      cause: normalizeExternalCause(cause),
+    });
   }
 }

@@ -218,12 +218,12 @@ function decodeRecoveryActor(value: unknown): SharedStateRecoveryActor | undefin
   ) {
     return undefined;
   }
-  return Object.freeze({
+  return {
     pid: actor.pid,
     host: actor.host,
     processIdentity: actor.processIdentity,
     startedAt: actor.startedAt,
-  });
+  };
 }
 
 function decodeSharedStateLeaseRecord(
@@ -254,7 +254,7 @@ function decodeSharedStateLeaseRecord(
   ) {
     return undefined;
   }
-  return Object.freeze({
+  return {
     key,
     experimentId: record.experimentId,
     ownerToken: record.ownerToken,
@@ -267,7 +267,7 @@ function decodeSharedStateLeaseRecord(
     generation: generation as number,
     parentGeneration: parentGeneration as number,
     ...(recovering ? { recoveryId: record.recoveryId as string, recoveryActor: recoveryActor! } : {}),
-  });
+  };
 }
 
 function readDiagnosticHeartbeatEffect(
@@ -282,7 +282,7 @@ function readDiagnosticHeartbeatEffect(
       head.heartbeatAt === record.heartbeatAt ||
       !isTimestamp(head.heartbeatAt)
         ? record
-        : Object.freeze({ ...record, heartbeatAt: head.heartbeatAt }),
+        : { ...record, heartbeatAt: head.heartbeatAt },
     ),
     Effect.catch(() => Effect.succeed(record)),
   );
@@ -307,7 +307,7 @@ function decodeGeneration(key: string, value: unknown): SharedStateGeneration | 
   if (generation === undefined || generation.format !== SHARED_STATE_GENERATION_FORMAT) return undefined;
   if (generation.kind === "lease") {
     const record = decodeSharedStateLeaseRecord(key, generation);
-    return record === undefined ? undefined : Object.freeze({ kind: "lease" as const, record });
+    return record === undefined ? undefined : { kind: "lease" as const, record };
   }
   if (generation.kind !== "free") return undefined;
   const previous = decodeSharedStateLeaseRecord(key, generation.previous);
@@ -322,14 +322,14 @@ function decodeGeneration(key: string, value: unknown): SharedStateGeneration | 
   ) {
     return undefined;
   }
-  return Object.freeze({
+  return {
     kind: "free" as const,
     key,
     generation: generation.generation,
     parentGeneration: generation.parentGeneration,
     releasedAt: generation.releasedAt,
     previous,
-  });
+  };
 }
 
 function durableLeaseGeneration(record: SharedStateLeaseRecord): globalThis.Record<string, unknown> {
@@ -505,9 +505,7 @@ function readSharedStateLedgerEffect(
         entries.push({ generation: row.generation, state: decoded });
       }
       const invalid = validateGenerationTransitions(key, entries, undefined);
-      return invalid === undefined
-        ? Effect.succeed(Object.freeze({ dir, latest: entries.at(-1)?.state }))
-        : Effect.fail(invalid);
+      return invalid === undefined ? Effect.succeed({ dir, latest: entries.at(-1)?.state }) : Effect.fail(invalid);
     }),
   );
 }
@@ -699,12 +697,12 @@ export function currentProcessIdentityEffect(): Effect.Effect<string, SharedStat
 }
 
 function recoveryActor(host: string, processIdentity: string): SharedStateRecoveryActor {
-  return Object.freeze({
+  return {
     pid: process.pid,
     host,
     processIdentity,
     startedAt: new Date().toISOString(),
-  });
+  };
 }
 
 /**
@@ -744,7 +742,7 @@ function makeActiveLeaseRecord(input: {
   readonly parentGeneration: number;
   readonly now: string;
 }): SharedStateLeaseRecord {
-  return Object.freeze({
+  return {
     key: input.key,
     experimentId: input.identity.experimentId,
     ownerToken: input.ownerToken,
@@ -756,7 +754,7 @@ function makeActiveLeaseRecord(input: {
     status: "active",
     generation: input.generation,
     parentGeneration: input.parentGeneration,
-  });
+  };
 }
 
 function freeGenerationFrom(
@@ -764,14 +762,14 @@ function freeGenerationFrom(
   generation: number,
   releasedAt: string,
 ): SharedStateFreeGeneration {
-  return Object.freeze({
+  return {
     kind: "free",
     key: record.key,
     generation,
     parentGeneration: record.generation,
     releasedAt,
     previous: record,
-  });
+  };
 }
 
 function releaseError(key: string, latest: SharedStateGeneration | undefined): SharedStateLeaseError {
@@ -819,15 +817,16 @@ export function acquireSharedStateLeaseEffect(
   key: string,
   identity: SharedStateLeaseIdentity,
   opts: {
-    readonly signal?: AbortSignal;
-    readonly pollIntervalMs?: number;
-    readonly heartbeatIntervalMs?: number;
-    readonly onWaitStart?: (holder: SharedStateLeaseRecord) => void;
+    readonly signal?: AbortSignal | undefined;
+    readonly pollIntervalMs?: number | undefined;
+    readonly heartbeatIntervalMs?: number | undefined;
+    readonly onWaitStart?: ((holder: SharedStateLeaseRecord) => void) | undefined;
   } = {},
 ): Effect.Effect<AcquireSharedStateLeaseEffectResult, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const ownerToken = randomUUID();
   const pollIntervalMs = opts.pollIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
+  const onWaitStart = opts.onWaitStart ?? (() => {});
   let waitReported = false;
   const acquire = (): Effect.Effect<
     SharedStateLeaseRecord,
@@ -846,7 +845,7 @@ export function acquireSharedStateLeaseEffect(
                   Effect.flatMap((displayHolder) =>
                     Effect.sync(() => {
                       waitReported = true;
-                      opts.onWaitStart?.(displayHolder);
+                      onWaitStart(displayHolder);
                     }),
                   ),
                 );
@@ -866,7 +865,7 @@ export function acquireSharedStateLeaseEffect(
                 parentGeneration,
                 now: new Date(nowMs).toISOString(),
               });
-              const next: SharedStateGeneration = Object.freeze({ kind: "lease" as const, record });
+              const next: SharedStateGeneration = { kind: "lease" as const, record };
               return publishGenerationExclusiveEffect(ledger.dir, record.generation, next).pipe(
                 Effect.flatMap((published) => (published === "published" ? Effect.succeed(record) : acquire())),
               );
@@ -929,7 +928,7 @@ export function acquireSharedStateLeaseEffect(
                     Effect.andThen(Deferred.await(releaseCompletion)),
                   ),
                 );
-                return Object.freeze({ claim: Object.freeze({ ownerToken, release, abandon: stopHeartbeat }) });
+                return { claim: { ownerToken, release, abandon: stopHeartbeat } };
               }),
             ),
           ),
@@ -997,14 +996,14 @@ function recoveryRecordFrom(
   recoveryId: string,
   actor: SharedStateRecoveryActor,
 ): SharedStateLeaseRecord {
-  return Object.freeze({
+  return {
     ...source,
     status: "recovering",
     generation: source.generation + 1,
     parentGeneration: source.generation,
     recoveryId,
     recoveryActor: actor,
-  });
+  };
 }
 
 function isExactRecoveringSource(
@@ -1051,7 +1050,7 @@ export function beginExplicitSharedStateRecoveryEffect(input: {
     }
     if (ledger.latest.kind === "free") {
       if (ledger.latest.previous.ownerToken === input.ownerToken) {
-        return Object.freeze({ _tag: "AlreadyReleased" as const, record: ledger.latest.previous });
+        return { _tag: "AlreadyReleased" as const, record: ledger.latest.previous };
       }
       return yield* Effect.fail(
         new SharedStateLeaseError(
@@ -1093,9 +1092,9 @@ export function beginExplicitSharedStateRecoveryEffect(input: {
     }
     const recoveryId = randomUUID();
     const recovered = recoveryRecordFrom(observed, recoveryId, actor);
-    const next: SharedStateGeneration = Object.freeze({ kind: "lease" as const, record: recovered });
+    const next: SharedStateGeneration = { kind: "lease" as const, record: recovered };
     const published = yield* publishGenerationExclusiveEffect(ledger.dir, recovered.generation, next);
-    if (published === "published") return Object.freeze({ _tag: "Claimed" as const, record: recovered, recoveryId });
+    if (published === "published") return { _tag: "Claimed" as const, record: recovered, recoveryId };
     return yield* Effect.fail(
       new SharedStateLeaseError(
         "shared-state-recovery-state-mismatch",

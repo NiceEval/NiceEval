@@ -147,13 +147,13 @@ export function summarize(
   startedAt: string,
   durationMs: number,
   name?: LocalizedText,
-  beforeCaches: InvocationSummary["beforeCaches"] = Object.freeze({
+  beforeCaches: InvocationSummary["beforeCaches"] = {
     total: 0,
     hit: 0,
     prepared: 0,
     degraded: 0,
     failed: 0,
-  }),
+  },
 ): InvocationSummary {
   const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
   let inTok: number | undefined = 0;
@@ -173,7 +173,7 @@ export function summarize(
     counts[attempt.verdict] += 1;
   }
   return {
-    ...(name === undefined ? {} : { name: name }),
+    name: name,
     startedAt,
     completedAt: new Date().toISOString(),
     passed: counts.passed,
@@ -182,12 +182,12 @@ export function summarize(
     errored: counts.errored,
     durationMs,
     usage: {
-      ...(inTok === undefined ? {} : { inputTokens: inTok }),
-      ...(outTok === undefined ? {} : { outputTokens: outTok }),
+      inputTokens: inTok,
+      outputTokens: outTok,
     },
     // 0 是合法估算值:至少一条 fresh 结果带 estimatedCostUSD 就输出累计值(可为 0),全缺才省略。
-    ...(hasEstimatedCost ? { estimatedCostUSD: cost } : {}),
-    reusedAttempts: Object.freeze([...reusedAttempts]),
+    estimatedCostUSD: hasEstimatedCost ? cost : undefined,
+    reusedAttempts,
     results,
     beforeCaches,
   };

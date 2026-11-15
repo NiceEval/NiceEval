@@ -34,13 +34,13 @@ function recordFromProjection(
 ): CaseLockRecord | undefined {
   return projection === undefined
     ? undefined
-    : Object.freeze({
+    : {
         experimentId,
         evalId,
         ...projection.owner,
         startedAt: projection.acquiredAt,
         heartbeatAt: projection.heartbeatAt,
-      });
+      };
 }
 
 export function readCaseLockEffect(
@@ -164,10 +164,10 @@ export function acquireCaseLockEffect(
   evalId: string,
   identity: Pick<ProcessOwnerIdentity, "pid" | "host"> & Partial<ProcessOwnerIdentity>,
   opts: {
-    signal?: AbortSignal;
-    pollIntervalMs?: number;
-    heartbeatIntervalMs?: number;
-    onWaitStart?: (holder: CaseLockRecord) => void;
+    readonly signal?: AbortSignal | undefined;
+    readonly pollIntervalMs?: number | undefined;
+    readonly heartbeatIntervalMs?: number | undefined;
+    readonly onWaitStart?: ((holder: CaseLockRecord) => void) | undefined;
   } = {},
 ): Effect.Effect<AcquireCaseLockEffectResult, unknown, ProjectStateDatabase> {
   const ownerIdentity =
@@ -176,6 +176,7 @@ export function acquireCaseLockEffect(
       : currentProcessOwnerIdentity();
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? CASE_LOCK_HEARTBEAT_INTERVAL_MS;
   const pollIntervalMs = opts.pollIntervalMs ?? heartbeatIntervalMs;
+  const onWaitStart = opts.onWaitStart ?? (() => {});
   let waitStarted = false;
   const acquire = (): Effect.Effect<{ owner: FencedOwner; takenOver: boolean }, unknown, ProjectStateDatabase> =>
     Effect.suspend(() =>
@@ -185,7 +186,7 @@ export function acquireCaseLockEffect(
           if (result.kind === "acquired") return Effect.succeed({ owner: result.owner, takenOver: result.takenOver });
           if (!waitStarted) {
             waitStarted = true;
-            opts.onWaitStart?.(result.holder);
+            onWaitStart(result.holder);
           }
           return delayOrAbort(pollIntervalMs, opts.signal).pipe(Effect.andThen(acquire()));
         }),
@@ -241,7 +242,7 @@ export function acquireCaseLockEffect(
             }),
           );
           held.set(key, release);
-          return Object.freeze({ claim: Object.freeze({ release }), takenOver });
+          return { claim: { release }, takenOver };
         }),
       );
     }),

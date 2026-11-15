@@ -19,6 +19,7 @@ export const MANIFESTS_FILE = "manifests.json";
  * - `data` —— loader 登记文件(`loadYaml` / `loadJson` / `loadText` 读入,`loadCriteria` 登记)
  *   的同口径清单。
  */
+/** Record JSON and identity material: omitted plan/plugin keys remain absent in canonical manifests. */
 export interface EvalManifest {
   niceeval: globalThis.Record<string, JsonValue>;
   config: globalThis.Record<string, JsonValue>;

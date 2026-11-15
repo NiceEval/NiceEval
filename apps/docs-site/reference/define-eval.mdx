@@ -33,7 +33,7 @@ export default defineEval({
 #### `description`
 
 ```ts
-description?: string;
+description?: string | undefined;
 ```
 
 A one-sentence description shown in `niceeval list` and the view; purely informational, it does not affect scheduling or scoring.
@@ -41,7 +41,7 @@ A one-sentence description shown in `niceeval list` and the view; purely informa
 #### `tags`
 
 ```ts
-tags?: string[];
+tags?: string[] | undefined;
 ```
 
 Tags for CLI `--tag` filtering and view categorization; a selection dimension independent of id-prefix filtering.
@@ -49,7 +49,7 @@ Tags for CLI `--tag` filtering and view categorization; a selection dimension in
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer;
+sandbox?: SandboxLayer | undefined;
 ```
 
 The Sandbox declaration layer this Eval contributes. Omitting it is equivalent to an empty command-only layer and provides no implicit template.
@@ -58,7 +58,7 @@ In each actual Eval × Experiment pair, exactly one side must provide a template
 #### `plugins`
 
 ```ts
-plugins?: readonly PluginInstance<"eval">[];
+plugins?: readonly PluginInstance<"eval">[] | undefined;
 ```
 
 Explicit, immutable Eval Plugin occurrences; there is no directory inheritance.
@@ -66,7 +66,7 @@ Explicit, immutable Eval Plugin occurrences; there is no directory inheritance.
 #### `judge`
 
 ```ts
-judge?: JudgeSelection;
+judge?: JudgeSelection | undefined;
 ```
 
 A model string replaces only the model of the project's Judge Provider; a Provider instance replaces it entirely. The Experiment setting takes priority.
@@ -74,7 +74,7 @@ A model string replaces only the model of the project's Judge Provider; a Provid
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 Overrides the project-level / CLI per-attempt timeout (milliseconds), only for this Eval.
@@ -82,7 +82,7 @@ Overrides the project-level / CLI per-attempt timeout (milliseconds), only for t
 #### `metadata`
 
 ```ts
-metadata?: globalThis.Record<string, JsonValue>;
+metadata?: globalThis.Record<string, JsonValue> | undefined;
 ```
 
 Arbitrary extra metadata, saved as Attempt Provenance; it does not take part in scheduling or scoring and is for custom reporters to consume.
@@ -90,7 +90,7 @@ Arbitrary extra metadata, saved as Attempt Provenance; it does not take part in 
 #### `diff`
 
 ```ts
-diff?: { include?: string[]; ignore?: string[] };
+diff?: { include?: string[] | undefined; ignore?: string[] | undefined } | undefined;
 ```
 
 Adjusts the attribution exclusion list for the agent diff (Sandbox only; see docs/feature/eval/README.md): both arrays are
@@ -160,7 +160,7 @@ readonly evaluationKind: Kind;
 
 ```ts
 send(
-  input: string | { readonly text: string; readonly files?: readonly InputFile[] },
+  input: string | { readonly text: string; readonly files?: readonly InputFile[] | undefined },
 ): Promise<TurnHandle<Kind>>;
 ```
 
@@ -227,13 +227,13 @@ readonly signal: AbortSignal;
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model: string | undefined;
 ```
 
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort: string | undefined;
 ```
 
 #### `flags`
@@ -595,7 +595,7 @@ readonly reply: string;
 #### `data`
 
 ```ts
-readonly data?: JsonValue;
+readonly data: JsonValue | undefined;
 ```
 
 #### `usage`

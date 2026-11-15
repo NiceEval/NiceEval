@@ -12,6 +12,7 @@ import type {
 import type { ContextMatchDefinition, MaterialItem, ResolvedMaterialCaptureBudget } from "./context-match.ts";
 import {
   exactLlmOptions,
+  createMatchDiagnostic,
   evaluateBooleanMatch,
   evaluateScoreMatch,
   managedScoreMatchOf,
@@ -34,6 +35,8 @@ import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
+import { matchedAssertionEvaluation, mismatchedAssertionEvaluation, unavailableAssertionEvaluation } from "./api.ts";
 
 const utf8 = new TextEncoder();
 const owners = new WeakMap<object, object>();
@@ -46,22 +49,49 @@ interface CaptureProblem {
   readonly code: string;
   readonly message: string;
   readonly reason: string;
+  readonly limit: { readonly configured: number; readonly observed: number } | undefined;
+  readonly stoppingIndex: number | undefined;
+}
+/** Canonical snapshot boundary: only observed problem fields enter the retained material bytes. */
+interface CaptureProblemSnapshot {
+  readonly code: string;
+  readonly message: string;
+  readonly reason: string;
   readonly configured?: number;
   readonly observed?: number;
   readonly stoppingIndex?: number;
+}
+
+function problemSnapshot(value: CaptureProblem): CaptureProblemSnapshot {
+  if (value.limit !== undefined) {
+    return omitUndefined({
+      code: value.code,
+      reason: value.reason,
+      message: value.message,
+      configured: value.limit.configured,
+      observed: value.limit.observed,
+      stoppingIndex: value.stoppingIndex,
+    });
+  }
+  return omitUndefined({
+    code: value.code,
+    message: value.message,
+    reason: value.reason,
+    stoppingIndex: value.stoppingIndex,
+  });
 }
 interface PreparedBase {
   readonly source: string;
   readonly predicate: string;
   readonly captured: CapturedAssertionSnapshot;
   readonly sourceBytes: number;
-  readonly problem?: CaptureProblem;
+  readonly problem: CaptureProblem | undefined;
 }
 export interface PreparedMaterial extends PreparedBase {
   readonly kind: "material";
   readonly complete: boolean;
   readonly exhaustive: boolean;
-  readonly knownTotal: number | null;
+  readonly knownTotal: number | undefined;
   readonly items: readonly MaterialItem<unknown>[];
   readonly evaluate: (index: number) => Promise<BooleanMatchEvaluation<unknown>>;
   readonly selectable: boolean;
@@ -97,27 +127,33 @@ function producerReason(raw: unknown, label: string): string {
   return reason.slice(0, 1024);
 }
 function problem(code: string, message: string, reason = code): CaptureProblem {
-  return Object.freeze({ code: code.slice(0, 128), message: message.slice(0, 1024), reason: reason.slice(0, 1024) });
+  return {
+    code: code.slice(0, 128),
+    message: message.slice(0, 1024),
+    reason: reason.slice(0, 1024),
+    limit: undefined,
+    stoppingIndex: undefined,
+  };
 }
 function diagnostic(value: CaptureProblem): MatchDiagnostic {
-  return Object.freeze({
-    code: value.code,
-    message: value.message,
-    reason: value.reason,
-    path: Object.freeze(value.stoppingIndex === undefined ? [] : ["items", value.stoppingIndex]),
-    ...(value.configured === undefined ? {} : { expected: String(value.configured) }),
-    ...(value.observed === undefined ? {} : { received: String(value.observed) }),
-  });
+  return createMatchDiagnostic(
+    value.code,
+    value.message,
+    value.stoppingIndex === undefined ? [] : ["items", value.stoppingIndex],
+    value.limit === undefined ? undefined : String(value.limit.configured),
+    value.limit === undefined ? undefined : String(value.limit.observed),
+    value.reason,
+  );
 }
 function problemDetail(value: CaptureProblem): AssertionSnapshotObject {
-  return {
+  return omitUndefined({
     failureDetail: value.code,
     failureEvidence: value.message,
     reason: value.reason,
-    ...(value.configured === undefined ? {} : { configured: value.configured }),
-    ...(value.observed === undefined ? {} : { observed: value.observed }),
-    ...(value.stoppingIndex === undefined ? {} : { stoppingIndex: value.stoppingIndex }),
-  };
+    configured: value.limit?.configured,
+    observed: value.limit?.observed,
+    stoppingIndex: value.stoppingIndex,
+  });
 }
 class CaptureRejected extends Error {
   constructor(readonly problem: CaptureProblem) {
@@ -131,17 +167,24 @@ class CaptureCounter {
   nodes = 0;
   constructor(readonly limits: ResolvedMaterialCaptureBudget) {}
   limit(kind: "byte" | "node" | "depth", observed: number): never {
-    const configured =
-      kind === "byte" ? this.limits.maxBytes : kind === "node" ? this.limits.maxNodes : this.limits.maxDepth;
-    throw new CaptureRejected(
-      Object.freeze({
-        code: `source-${kind}-limit`,
-        reason: `source-${kind}-limit`,
-        message: `Material capture exceeded its ${kind} limit`,
-        configured,
-        observed,
-      }),
-    );
+    const configuredLimit = (): number => {
+      switch (kind) {
+        case "byte":
+          return this.limits.maxBytes;
+        case "node":
+          return this.limits.maxNodes;
+        case "depth":
+          return this.limits.maxDepth;
+      }
+    };
+    const configured = configuredLimit();
+    throw new CaptureRejected({
+      code: `source-${kind}-limit`,
+      reason: `source-${kind}-limit`,
+      message: `Material capture exceeded its ${kind} limit`,
+      limit: { configured, observed },
+      stoppingIndex: undefined,
+    });
   }
   add(count: number): void {
     const observed = this.bytes + count;
@@ -247,31 +290,35 @@ function sourceFrame(
   declaredState: string,
   captureProblem: CaptureProblem | undefined,
   capturedItems: number,
-  knownTotal: number | null,
+  knownTotal: number | undefined,
 ): CapturedAssertionSnapshot {
   const full = captureFullAssertionSnapshot(payload);
-  if (captureProblem?.code.startsWith("source-") && captureProblem.code.endsWith("-limit")) {
-    return Object.freeze({
+  if (
+    knownTotal !== undefined &&
+    captureProblem?.code.startsWith("source-") &&
+    captureProblem.code.endsWith("-limit")
+  ) {
+    return {
       ...full,
-      coverage: Object.freeze({ state: "partial" as const, reason: "capacity-limited" as const }),
-      limitations: Object.freeze([
-        { kind: "capacity-limited" as const, capturedItems, knownTotalItems: knownTotal!, omittedBytes: null },
+      coverage: { state: "partial" as const, reason: "capacity-limited" as const },
+      limitations: [
+        { kind: "capacity-limited" as const, capturedItems, knownTotalItems: knownTotal, omittedBytes: null },
         ...(declaredState === "partial" ? [{ kind: "provider-limited" as const }] : []),
-      ]),
-    });
+      ],
+    };
   }
   if (captureProblem !== undefined && captureProblem.code !== "material-source-partial")
-    return Object.freeze({
+    return {
       ...full,
-      coverage: Object.freeze({ state: "unavailable", reason: "source-unavailable" }),
-      limitations: Object.freeze([]),
-    });
+      coverage: { state: "unavailable", reason: "source-unavailable" },
+      limitations: [],
+    };
   if (declaredState === "partial")
-    return Object.freeze({
+    return {
       ...full,
-      coverage: Object.freeze({ state: "partial" as const, reason: "provider-limited" as const }),
-      limitations: Object.freeze([{ kind: "provider-limited" as const }]),
-    });
+      coverage: { state: "partial" as const, reason: "provider-limited" as const },
+      limitations: [{ kind: "provider-limited" as const }],
+    };
   return full;
 }
 function base(
@@ -285,7 +332,7 @@ function base(
     predicate,
     captured,
     sourceBytes: fullAssertionContentByteLength(captured.material)!,
-    ...(captureProblem === undefined ? {} : { problem: captureProblem }),
+    problem: captureProblem,
   };
 }
 
@@ -303,7 +350,7 @@ function prepareFact(definition: ContextMatchDefinition, raw: unknown): Prepared
       "Context fact is unavailable",
       producerReason(raw, "Context fact"),
     );
-    payload = { source, predicate, declaredState: state, problem: captureProblem };
+    payload = { source, predicate, declaredState: state, problem: problemSnapshot(captureProblem) };
   } else {
     const counter = new CaptureCounter(capture);
     const original = data(raw, "value", "Context fact");
@@ -317,25 +364,25 @@ function prepareFact(definition: ContextMatchDefinition, raw: unknown): Prepared
     } catch (error) {
       if (!(error instanceof CaptureRejected)) throw error;
       captureProblem = error.problem;
-      payload = { source, predicate, declaredState: state, problem: captureProblem };
+      payload = { source, predicate, declaredState: state, problem: problemSnapshot(captureProblem) };
     }
   }
   const full = captureFullAssertionSnapshot(payload);
   const captured =
     captureProblem === undefined
       ? full
-      : Object.freeze({
+      : {
           ...full,
-          coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
-          limitations: Object.freeze([]),
-        });
-  return Object.freeze({
+          coverage: { state: "unavailable" as const, reason: "source-unavailable" as const },
+          limitations: [],
+        };
+  return {
     ...base(source, predicate, captured, captureProblem),
     kind: kind as PreparedFact["kind"],
     match,
     value,
     available: captureProblem === undefined,
-  });
+  };
 }
 
 function cutProblem(source: MatcherSourceSnapshot, cut: MatcherSourceSnapshot | undefined): CaptureProblem | undefined {
@@ -364,7 +411,7 @@ function cutProblem(source: MatcherSourceSnapshot, cut: MatcherSourceSnapshot | 
 function prepareCollection(
   definition: ContextMatchDefinition,
   raw: unknown,
-  input: { readonly owner: object; readonly cut?: MatcherSourceSnapshot },
+  input: { readonly owner: object; readonly cut: MatcherSourceSnapshot | undefined },
 ): PreparedMaterial {
   const { name: source, match, capture } = definition;
   const predicate = (match as { readonly name: string }).name;
@@ -376,7 +423,7 @@ function prepareCollection(
   if (sidecar === undefined && (isManagedToolMatch(match) || isManagedEventMatch(match)))
     throw new TypeError("Domain Match requires a managed material collection");
   let declaredState: "complete" | "partial" | "unavailable";
-  let knownTotal: number | null;
+  let knownTotal: number | undefined;
   let readItem: (index: number) => unknown;
   let captureProblem: CaptureProblem | undefined;
   let reason: string | undefined;
@@ -403,7 +450,7 @@ function prepareCollection(
     declaredState = state;
     if (state !== "complete") reason = producerReason(raw, "Incomplete material");
     if (state === "unavailable") {
-      knownTotal = null;
+      knownTotal = undefined;
       readItem = () => undefined;
     } else {
       const items = data(raw, "items", "Material collection");
@@ -430,32 +477,29 @@ function prepareCollection(
     source,
     predicate,
     declaredState,
-    knownTotal,
+    knownTotal: knownTotal ?? null,
     items,
     exhaustive: false,
     ...(reason === undefined ? {} : { reason }),
   };
   let capturedSourceSnapshot: unknown;
-  if (captureProblem === undefined) {
+  if (captureProblem === undefined && knownTotal !== undefined) {
     try {
       const capturedEnvelope = counter.clone({
         ...envelope,
         exhaustive: true,
         ...(sidecar === undefined ? {} : { sourceSnapshot: sidecar.sourceSnapshot }),
-      }) as { readonly sourceSnapshot?: unknown };
+      }) as { readonly sourceSnapshot: unknown };
       capturedSourceSnapshot = capturedEnvelope.sourceSnapshot;
-      for (let index = 0; index < knownTotal!; index += 1) {
+      for (let index = 0; index < knownTotal; index += 1) {
         if (index >= capture.maxItems)
-          throw new CaptureRejected(
-            Object.freeze({
-              code: "source-item-limit",
-              reason: "source-item-limit",
-              message: "Material capture exceeded its item limit",
-              configured: capture.maxItems,
-              observed: knownTotal!,
-              stoppingIndex: index,
-            }),
-          );
+          throw new CaptureRejected({
+            code: "source-item-limit",
+            reason: "source-item-limit",
+            message: "Material capture exceeded its item limit",
+            limit: { configured: capture.maxItems, observed: knownTotal },
+            stoppingIndex: index,
+          });
         const original = readItem(index);
         const id = data(original, "id", "Material item");
         identifier(id);
@@ -487,6 +531,7 @@ function prepareCollection(
                 ? {
                     state: "unavailable",
                     reason: locator.relation.reason,
+                    receipt: undefined,
                     diagnostic: diagnostic(
                       problem(
                         "material-locator-unavailable",
@@ -500,8 +545,7 @@ function prepareCollection(
           }
         } catch (error) {
           counter.bytes = bytesBefore;
-          if (error instanceof CaptureRejected)
-            throw new CaptureRejected(Object.freeze({ ...error.problem, stoppingIndex: index }));
+          if (error instanceof CaptureRejected) throw new CaptureRejected({ ...error.problem, stoppingIndex: index });
           throw error;
         }
       }
@@ -513,13 +557,13 @@ function prepareCollection(
   }
   if (declaredState === "partial")
     captureProblem ??= problem("material-source-partial", "Material source is partial", reason);
-  const frozenItems = Object.freeze(items);
+  const frozenItems = items;
   const payload = {
     ...envelope,
     items: frozenItems,
     exhaustive,
     ...(capturedSourceSnapshot === undefined ? {} : { sourceSnapshot: capturedSourceSnapshot }),
-    ...(captureProblem === undefined ? {} : { problem: captureProblem }),
+    ...(captureProblem === undefined ? {} : { problem: problemSnapshot(captureProblem) }),
   };
   const captured = sourceFrame(payload, declaredState, captureProblem, items.length, knownTotal);
   const selectable =
@@ -527,7 +571,7 @@ function prepareCollection(
     (captureProblem === undefined ||
       captureProblem.code === "material-source-partial" ||
       (captureProblem.code.startsWith("source-") && captureProblem.code.endsWith("-limit")));
-  return Object.freeze({
+  return {
     ...base(source, predicate, captured, captureProblem),
     kind: "material",
     complete: declaredState === "complete",
@@ -536,14 +580,14 @@ function prepareCollection(
     items: frozenItems,
     selectable,
     evaluate: (index: number) => evaluators[index]!(),
-  });
+  };
 }
 
 /** @internal Called once while the owning receiver's reader guard is active. Never retains ctx. */
 export function captureContextualMatch(
   definition: ContextMatchDefinition,
   context: unknown,
-  input: { readonly owner: object; readonly cut?: MatcherSourceSnapshot },
+  input: { readonly owner: object; readonly cut: MatcherSourceSnapshot | undefined },
 ): PreparedMaterial | PreparedFact {
   const raw = definition.read(context);
   return definition.kind === "material" ? prepareCollection(definition, raw, input) : prepareFact(definition, raw);
@@ -564,42 +608,51 @@ export function captureUnavailableContextualMatch(
   const declaredState = "unavailable";
   if (definition.kind !== "material") {
     const captured = sourceFrame(
-      { source, predicate, declaredState, problem: captureProblem },
+      { source, predicate, declaredState, problem: problemSnapshot(captureProblem) },
       declaredState,
       captureProblem,
       0,
-      null,
+      undefined,
     );
-    return Object.freeze({
+    return {
       ...base(source, predicate, captured, captureProblem),
       kind: definition.kind,
       match: definition.match,
       value: undefined,
       available: false,
-    });
+    };
   }
   const captured = sourceFrame(
-    { source, predicate, declaredState, knownTotal: null, items: [], exhaustive: false, problem: captureProblem },
+    {
+      source,
+      predicate,
+      declaredState,
+      knownTotal: null,
+      items: [],
+      exhaustive: false,
+      problem: problemSnapshot(captureProblem),
+    },
     declaredState,
     captureProblem,
     0,
-    null,
+    undefined,
   );
-  return Object.freeze({
+  return {
     ...base(source, predicate, captured, captureProblem),
     kind: "material",
     complete: false,
     exhaustive: false,
-    knownTotal: null,
-    items: Object.freeze([]),
+    knownTotal: undefined,
+    items: [],
     selectable: false,
     evaluate: () =>
       Promise.resolve({
         state: "unavailable" as const,
         reason: captureProblem.reason,
         diagnostic: diagnostic(captureProblem),
+        receipt: undefined,
       }),
-  });
+  };
 }
 
 function receipt(prepared: PreparedMaterial): AssertionCollectionReceipt {
@@ -608,7 +661,7 @@ function receipt(prepared: PreparedMaterial): AssertionCollectionReceipt {
     matched: 0,
     mismatched: 0,
     unavailable: 0,
-    knownTotal: prepared.knownTotal,
+    knownTotal: prepared.knownTotal ?? null,
     complete: prepared.complete,
     exhaustive: false,
     decisive: false,
@@ -621,7 +674,7 @@ function selection(prepared: PreparedMaterial, proposition: "existence" | "qa") 
   let firstUnknown: CaptureProblem | undefined;
   const terminal = () => {
     closed = true;
-    return Object.freeze({ ...current });
+    return current;
   };
   const run = Effect.fn("materialSelection")(function* () {
     if (closed || started) return yield* Effect.fail(new Error("Material selection may only evaluate once"));
@@ -644,20 +697,27 @@ function selection(prepared: PreparedMaterial, proposition: "existence" | "qa") 
       };
     }
     return {
-      receipt: Object.freeze({ ...current }),
-      items: Object.freeze(selected),
+      receipt: current,
+      items: selected,
       problem: prepared.problem ?? firstUnknown,
       predicateProblem: firstUnknown,
     };
   });
   return { terminal, run };
 }
-function registrationBase(prepared: PreparedBase) {
+function registrationBase(prepared: PreparedBase, criterion: AssertionCriterion) {
   return {
     retainedBytes: prepared.sourceBytes,
     subject: prepared.captured.material,
     coverage: prepared.captured.coverage,
     limitations: prepared.captured.limitations,
+    evidence: [],
+    terminalEvidence: () => [],
+    terminalReceipt: () => undefined,
+    terminalDetail: () => undefined,
+    terminalCriterion: () => criterion,
+    interruptedMatcherArtifact: undefined,
+    retainedImageBytes: 0,
   };
 }
 function valueCriterion(name: string) {
@@ -670,7 +730,7 @@ function valueCriterion(name: string) {
 export function materialExistenceRegistration(prepared: PreparedMaterial): BooleanAssertionRegistration<void> {
   const selected = selection(prepared, "existence");
   return {
-    ...registrationBase(prepared),
+    ...registrationBase(prepared, valueCriterion(`material-exists(${prepared.source}, ${prepared.predicate})`)),
     criterion: valueCriterion(`material-exists(${prepared.source}, ${prepared.predicate})`),
     terminalReceipt: selected.terminal,
     evaluate: () =>
@@ -678,32 +738,39 @@ export function materialExistenceRegistration(prepared: PreparedMaterial): Boole
         Effect.map((result) => {
           const detail =
             result.problem === undefined
-              ? {}
+              ? { diagnostic: undefined }
               : {
-                  diagnostic: Object.freeze({
+                  diagnostic: {
                     ...diagnostic(result.problem),
                     ...(result.predicateProblem === undefined || result.predicateProblem === result.problem
                       ? {}
                       : {
-                          children: Object.freeze([
+                          children: [
                             {
                               index: 0,
                               label: "predicate",
                               state: "unavailable" as const,
                               diagnostic: diagnostic(result.predicateProblem),
                             },
-                          ]),
+                          ],
                         }),
-                  }),
+                  },
                 };
           if (result.receipt.matched > 0)
-            return { state: "matched" as const, value: undefined, receipt: result.receipt, ...detail };
-          if (result.receipt.decisive) return { state: "mismatched" as const, receipt: result.receipt, ...detail };
+            return {
+              state: "matched" as const,
+              value: undefined,
+              receipt: result.receipt,
+              ...detail,
+              matcherArtifact: undefined,
+            };
+          if (result.receipt.decisive) return mismatchedAssertionEvaluation(detail.diagnostic, result.receipt);
           return {
             state: "unavailable" as const,
             reason: "source-unavailable" as const,
             receipt: result.receipt,
             ...detail,
+            matcherArtifact: undefined,
           };
         }),
       ),
@@ -746,7 +813,7 @@ export function materialQARegistration(
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
 ): MeasurementAssertionRegistration & {
   readonly actualRetainedBytes: () => number;
-  readonly terminalCriterion?: () => AssertionCriterion;
+  readonly terminalCriterion: () => AssertionCriterion;
 } {
   validateMaterialQAInputs(question, options);
   const selected = selection(prepared, "qa");
@@ -756,7 +823,7 @@ export function materialQARegistration(
     // A known zero-call path does not acquire a gateway or retain an audit reservation.
     selectionProblem = prepared.problem;
     return {
-      ...registrationBase(prepared),
+      ...registrationBase(prepared, criterion),
       criterion,
       actualRetainedBytes: () => prepared.sourceBytes,
       terminalReceipt: selected.terminal,
@@ -765,7 +832,13 @@ export function materialQARegistration(
       evaluate: () =>
         selected.run().pipe(
           Effect.map((result) => {
-            if (result.receipt.decisive) return { state: "measured" as const, value: 0, receipt: selected.terminal() };
+            if (result.receipt.decisive)
+              return {
+                state: "measured" as const,
+                value: 0,
+                receipt: selected.terminal(),
+                detail: undefined,
+              };
             selectionProblem =
               result.problem ??
               problem("material-selection-unavailable", "Complete known selection is required for whole-group QA");
@@ -801,13 +874,13 @@ export function materialQARegistration(
               state: "unavailable" as const,
               reason: "insufficient-evidence",
               rationale: resultClassified.rationale,
-              ...(resultClassified.citations === undefined ? {} : { citations: resultClassified.citations }),
+              citations: resultClassified.citations,
             }
           : {
               state: "measured" as const,
               measurement: resultClassified.choice === "satisfied" ? 1 : 0,
               rationale: resultClassified.rationale,
-              ...(resultClassified.citations === undefined ? {} : { citations: resultClassified.citations }),
+              citations: resultClassified.citations,
             };
       }),
   });
@@ -825,7 +898,13 @@ export function materialQARegistration(
         receipt: selected.terminal(),
       };
     }
-    if (result.items.length === 0) return { state: "measured" as const, value: 0, receipt: selected.terminal() };
+    if (result.items.length === 0)
+      return {
+        state: "measured" as const,
+        value: 0,
+        receipt: selected.terminal(),
+        detail: undefined,
+      };
     selectedMaterial = { question, items: result.items, receipt: result.receipt };
     try {
       assertJSON(selectedMaterial);
@@ -845,19 +924,19 @@ export function materialQARegistration(
       options: managed,
       material: { question },
       judge,
-      ...(signal === undefined ? {} : { signal }),
-      ...(usage === undefined ? {} : { usage }),
+      signal,
+      usage,
     });
     const evaluation = yield* gateway.evaluate();
     return { ...evaluation, receipt: selected.terminal() };
   });
   return {
-    ...registrationBase(prepared),
+    ...registrationBase(prepared, criterion),
     criterion,
     terminalCriterion: () => gateway?.terminalCriterion?.() ?? gateway?.criterion ?? criterion,
     retainedBytes: prepared.sourceBytes,
     actualRetainedBytes: () => prepared.sourceBytes,
-    terminalEvidence: () => gateway?.terminalEvidence() ?? Object.freeze([]),
+    terminalEvidence: () => gateway?.terminalEvidence() ?? [],
     terminalReceipt: selected.terminal,
     terminalDetail: () =>
       selectionProblem === undefined ? { question } : { question, ...problemDetail(selectionProblem) },
@@ -868,7 +947,7 @@ export function materialQARegistration(
 export function contextBooleanRegistration(prepared: PreparedFact): BooleanAssertionRegistration<void> {
   if (prepared.kind !== "context-boolean") throw new TypeError("Context Boolean registration requires a Boolean Match");
   return {
-    ...registrationBase(prepared),
+    ...registrationBase(prepared, valueCriterion(prepared.predicate)),
     criterion: valueCriterion(prepared.predicate),
     evaluate: () => {
       if (!prepared.available)
@@ -876,22 +955,19 @@ export function contextBooleanRegistration(prepared: PreparedFact): BooleanAsser
           state: "unavailable" as const,
           reason: "source-unavailable" as const,
           diagnostic: diagnostic(prepared.problem!),
+          receipt: undefined,
+          matcherArtifact: undefined,
         });
       return Effect.tryPromise({
         try: () => evaluateBooleanMatch(prepared.match as BooleanMatch<unknown, unknown>, prepared.value),
         catch: (cause) => cause,
       }).pipe(
-        Effect.map((result) =>
-          result.state === "matched"
-            ? {
-                state: "matched" as const,
-                value: undefined,
-                ...(result.diagnostic === undefined ? {} : { diagnostic: result.diagnostic }),
-              }
-            : result.state === "mismatched"
-              ? result
-              : { ...result, reason: "source-unavailable" as const },
-        ),
+        Effect.map(function preparedEvaluation(result) {
+          if (result.state === "matched")
+            return matchedAssertionEvaluation(undefined, result.diagnostic, result.receipt);
+          if (result.state === "mismatched") return mismatchedAssertionEvaluation(result.diagnostic, result.receipt);
+          return unavailableAssertionEvaluation("source-unavailable", result.diagnostic, result.receipt);
+        }),
       );
     },
   };
@@ -917,23 +993,30 @@ export function contextScoreRegistration(
       options: managed,
       material: prepared.value,
       judge,
-      ...(signal === undefined ? {} : { signal }),
-      ...(usage === undefined ? {} : { usage }),
+      signal,
+      usage,
     });
     return {
       ...registration,
-      ...registrationBase(prepared),
+      ...registrationBase(prepared, registration.criterion),
       retainedBytes: prepared.sourceBytes,
       actualRetainedBytes: () => prepared.sourceBytes,
     };
   }
   if (!prepared.available) return unavailableFactScore(prepared, prepared.problem!);
   return {
-    ...registrationBase(prepared),
+    ...registrationBase(prepared, valueCriterion(prepared.predicate)),
     criterion: valueCriterion(prepared.predicate),
     actualRetainedBytes: () => prepared.sourceBytes,
     evaluate: () =>
-      evaluateScoreMatch(match, prepared.value).pipe(Effect.map((value) => ({ state: "measured" as const, value }))),
+      evaluateScoreMatch(match, prepared.value).pipe(
+        Effect.map((value) => ({
+          state: "measured" as const,
+          value,
+          receipt: undefined,
+          detail: undefined,
+        })),
+      ),
   };
 }
 function unavailableFactScore(
@@ -941,7 +1024,7 @@ function unavailableFactScore(
   captureProblem: CaptureProblem,
 ): MeasurementAssertionRegistration & { readonly actualRetainedBytes: () => number } {
   return {
-    ...registrationBase(prepared),
+    ...registrationBase(prepared, valueCriterion(prepared.predicate)),
     criterion: valueCriterion(prepared.predicate),
     actualRetainedBytes: () => prepared.sourceBytes,
     terminalDetail: () => problemDetail(captureProblem),
@@ -950,6 +1033,7 @@ function unavailableFactScore(
         state: "unavailable" as const,
         reason: "source-unavailable" as const,
         detail: problemDetail(captureProblem),
+        receipt: undefined,
       }),
   };
 }

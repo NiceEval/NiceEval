@@ -33,7 +33,7 @@ export const RunContextLimits: RecordSchemaLimits = Object.freeze({
 export type RunContextJsonValue = RecordJson;
 export type RunContextJsonObject = RecordJsonObject;
 
-/** Credential-free, presentation-neutral identity of the Adapter evaluated by a Run. */
+/** Record JSON boundary: credential-free Adapter identity keeps historical omitted keys absent. */
 export type AdapterIdentity = null | {
   readonly name: string;
   /** Descriptive contract name; pairing and capabilities use runtime construction evidence. */
@@ -50,6 +50,7 @@ export interface RunPluginIdentity {
   readonly identity: RunContextJsonObject;
 }
 
+/** Record JSON boundary: historical missing identity claims remain omitted during encoding. */
 export interface RunExecutionContext {
   readonly plugins?: readonly RunPluginIdentity[];
   readonly models?: ResolvedModelRoles;

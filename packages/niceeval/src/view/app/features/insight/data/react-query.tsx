@@ -39,7 +39,7 @@ export function inspectionQueryOptions<Kind extends InspectionOperationId>(
   });
 }
 
-const GenerationContext = createContext<ViewGenerationBinding<unknown> | null>(null);
+const GenerationContext = createContext<ViewGenerationBinding<unknown> | undefined>(undefined);
 
 export function InspectionRuntimeProvider<Snapshot>({
   runtime,
@@ -67,32 +67,47 @@ export function useGenerationSnapshot<Snapshot>(): Snapshot {
 
 export function useCurrentGeneration(): ViewGenerationBinding<unknown> {
   const generation = useContext(GenerationContext);
-  if (generation === null) throw new Error("useCurrentGeneration must be used inside InspectionRuntimeProvider.");
+  if (generation === undefined) throw new Error("useCurrentGeneration must be used inside InspectionRuntimeProvider.");
   return generation;
 }
 
-export function useInspectionQuery<Kind extends InspectionOperationId, Selected = InspectionSuccessDocumentFor<Kind>>(
-  operation: InspectionOperationFor<Kind> | null,
-  options: {
-    readonly enabled?: boolean;
-    readonly select?: (value: InspectionSuccessDocumentFor<Kind>) => Selected;
-  } = {},
-): QueryObserverResult<Selected, Error> {
+export function useInspectionQuery<Kind extends InspectionOperationId>(
+  operation: InspectionOperationFor<Kind> | undefined,
+): QueryObserverResult<InspectionSuccessDocumentFor<Kind>, Error>;
+export function useInspectionQuery<Kind extends InspectionOperationId, Selected>(
+  operation: InspectionOperationFor<Kind> | undefined,
+  options: { readonly select: (value: InspectionSuccessDocumentFor<Kind>) => Selected },
+): QueryObserverResult<Selected, Error>;
+export function useInspectionQuery<Kind extends InspectionOperationId, Selected>(
+  operation: InspectionOperationFor<Kind> | undefined,
+  options?: { readonly select: (value: InspectionSuccessDocumentFor<Kind>) => Selected },
+): QueryObserverResult<Selected | InspectionSuccessDocumentFor<Kind>, Error> {
   const generation = useContext(GenerationContext);
-  if (generation === null) throw new Error("useInspectionQuery must be used inside InspectionRuntimeProvider.");
-  const enabled = (options.enabled ?? true) && operation !== null;
-  if (operation === null) {
-    return useQuery<InspectionSuccessDocumentFor<Kind>, Error, Selected, InspectionQueryKey>({
+  if (generation === undefined) throw new Error("useInspectionQuery must be used inside InspectionRuntimeProvider.");
+  const select = (value: InspectionSuccessDocumentFor<Kind>): Selected | InspectionSuccessDocumentFor<Kind> =>
+    options === undefined ? value : options.select(value);
+  if (operation === undefined) {
+    return useQuery<
+      InspectionSuccessDocumentFor<Kind>,
+      Error,
+      Selected | InspectionSuccessDocumentFor<Kind>,
+      InspectionQueryKey
+    >({
       queryKey: ["inspection", generation.identity, "disabled"] as const,
       queryFn: skipToken,
       enabled: false,
     });
   }
   const query = inspectionQueryOptions(generation, operation);
-  return useQuery<InspectionSuccessDocumentFor<Kind>, Error, Selected, InspectionQueryKey>({
+  return useQuery<
+    InspectionSuccessDocumentFor<Kind>,
+    Error,
+    Selected | InspectionSuccessDocumentFor<Kind>,
+    InspectionQueryKey
+  >({
     queryKey: query.queryKey,
     ...(query.queryFn === undefined ? {} : { queryFn: query.queryFn }),
-    enabled,
-    ...(options.select === undefined ? {} : { select: options.select }),
+    enabled: true,
+    select,
   });
 }

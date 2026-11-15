@@ -53,6 +53,13 @@ export function recordStatement(connection: RecordDatabase, sql: string): Statem
   return prepared;
 }
 
+/** Mandatory-row boundary for aggregate and singleton queries. */
+export function requiredRecordRow(row: Record<string, SQLOutputValue> | undefined): Record<string, SQLOutputValue> {
+  if (row === undefined)
+    throw sqliteError("record-database-invalid", "decode-row", "SQLite query did not return a row");
+  return row;
+}
+
 function currentStatement(db: DatabaseSync, sql: string): StatementSync {
   return db.prepare(sql);
 }
@@ -171,11 +178,11 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
   assertRecordSqliteRuntime();
   const legacyPath = legacyRecordSqlitePath(path);
   if (legacyPath !== undefined && pathExists(legacyPath)) {
-    return Object.freeze({ state: "unsupported", format: "niceeval.record/0.13.x" });
+    return { state: "unsupported", format: "niceeval.record/0.13.x" };
   }
-  if (!pathExists(path)) return Object.freeze({ state: "current", exists: false });
+  if (!pathExists(path)) return { state: "current", exists: false };
   const metadata = lstatSync(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink()) return Object.freeze({ state: "foreign" });
+  if (!metadata.isFile() || metadata.isSymbolicLink()) return { state: "foreign" };
 
   let connection: RecordDatabase | undefined;
   try {
@@ -201,15 +208,15 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
     const hasLegacy017 = decodeInteger(legacy017Table.count, "sqlite_schema.record_metadata") === 1;
     const hasLegacy = decodeInteger(legacyTable.count, "sqlite_schema.record_metadata") === 1;
     if (Number(hasCurrent) + Number(hasLegacy018) + Number(hasLegacy017) + Number(hasLegacy) !== 1) {
-      return Object.freeze({ state: "foreign" });
+      return { state: "foreign" };
     }
-    const metadataTable = hasCurrent
-      ? "ne19_record_metadata"
-      : hasLegacy018
-        ? "ne18_record_metadata"
-        : hasLegacy017
-          ? "ne_record_metadata"
-          : "record_metadata";
+    function recordMetadataTable(): string {
+      if (hasCurrent) return "ne19_record_metadata";
+      if (hasLegacy018) return "ne18_record_metadata";
+      if (hasLegacy017) return "ne_record_metadata";
+      return "record_metadata";
+    }
+    const metadataTable = recordMetadataTable();
     let row: Record<string, SQLOutputValue> | undefined;
     try {
       row = connection.db
@@ -217,20 +224,20 @@ export function inspectProjectRecordDatabase(path: string): ProjectRecordDatabas
         FROM ${metadataTable} WHERE singleton=1`)
         .get() as Record<string, SQLOutputValue> | undefined;
     } catch {
-      return Object.freeze({ state: "foreign" });
+      return { state: "foreign" };
     }
-    if (row === undefined || typeof row.format !== "string") return Object.freeze({ state: "foreign" });
+    if (row === undefined || typeof row.format !== "string") return { state: "foreign" };
     if (row.format !== RECORD_SQLITE_FORMAT) {
-      return Object.freeze({ state: "unsupported", format: row.format });
+      return { state: "unsupported", format: row.format };
     }
     try {
       validateExactSchema(connection);
-      return Object.freeze({ state: "current", exists: true });
+      return { state: "current", exists: true };
     } catch {
-      return Object.freeze({ state: "unsupported", format: row.format });
+      return { state: "unsupported", format: row.format };
     }
   } catch {
-    return Object.freeze({ state: "foreign" });
+    return { state: "foreign" };
   } finally {
     if (connection !== undefined) closeRecordDatabase(connection);
   }
@@ -295,7 +302,7 @@ function schemaRows(db: DatabaseSync): readonly string[] {
     db,
     `SELECT type, name, tbl_name, sql FROM sqlite_schema
     WHERE name NOT LIKE 'sqlite_stat%' ORDER BY type, name LIMIT 257`,
-  ).all() as unknown as readonly Record<string, SQLOutputValue>[];
+  ).all();
   if (rows.length > 256)
     throw sqliteError(
       "record-database-invalid",
@@ -329,7 +336,7 @@ function expectedSchemaRows(sql?: string): readonly string[] {
   const db = new DatabaseSync(":memory:", { allowExtension: false, defensive: true, readBigInts: true });
   try {
     db.exec(sql ?? RECORD_SQLITE_BASELINE_SQL);
-    const rows = Object.freeze(schemaRows(db));
+    const rows = schemaRows(db);
     canonicalSchemaRows.set(key, rows);
     return rows;
   } finally {

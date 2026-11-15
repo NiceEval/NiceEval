@@ -57,7 +57,7 @@ interface ExecutionNodeBase {
    * span.attributes 额外补了 io.tool/io.input/io.output/io.status(见 withIoAttributes);
    * 其余节点原样保留。缺失 = timing unavailable——要么这次运行没有 OTel 接入,要么有 span
    * 但没能唯一关联到这个节点上;两种情况都不是「假装有耗时」,统一表现为字段不存在。 */
-  span?: TraceSpan;
+  span: TraceSpan | undefined;
 }
 
 export interface ExecutionMessageNode extends ExecutionNodeBase {
@@ -79,7 +79,7 @@ export interface ExecutionThinkingNode extends ExecutionNodeBase {
 export interface ExecutionContextInjectedNode extends ExecutionNodeBase {
   kind: "context.injected";
   text: string;
-  source?: string;
+  source: string | undefined;
 }
 
 /** Skill 加载节点——一等,直接来自 StreamEvent 的 "skill.loaded",不靠工具名/文本猜。 */
@@ -93,7 +93,7 @@ export interface ExecutionSkillNode extends ExecutionNodeBase {
    * span.attributes.call_id,唯一命中时这个节点也应该拿到 timing,不因为节点 kind 是
    * skill.loaded 就被排除在 enrichment 之外。
    */
-  operationId?: string;
+  operationId: string | undefined;
 }
 
 /**
@@ -108,9 +108,9 @@ export interface ExecutionActionNode extends ExecutionNodeBase {
   /** 原始工具名(未归一化),对齐 StreamEvent.operation.started.name。 */
   name: string;
   /** 归一化后的规范工具名,省略表示 adapter 没能归一(等同 ToolCall.name 缺省为 "unknown")。 */
-  tool?: ToolName;
+  tool: ToolName | undefined;
   input: JsonValue;
-  output?: JsonValue;
+  output: JsonValue | undefined;
   status: "pending" | "completed" | "failed" | "rejected";
 }
 
@@ -119,8 +119,8 @@ export interface ExecutionSubagentNode extends ExecutionNodeBase {
   kind: "subagent";
   operationId: string;
   name: string;
-  remoteUrl?: string;
-  output?: JsonValue;
+  remoteUrl: string | undefined;
+  output: JsonValue | undefined;
   status: "pending" | "completed" | "failed";
 }
 
@@ -131,7 +131,7 @@ export interface ExecutionInputRequestedNode extends ExecutionNodeBase {
 
 export interface ExecutionCompactionNode extends ExecutionNodeBase {
   kind: "compaction";
-  reason?: string;
+  reason: string | undefined;
 }
 
 export interface ExecutionErrorNode extends ExecutionNodeBase {
@@ -243,11 +243,22 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
   for (const ev of events) {
     switch (ev.type) {
       case "message":
-        nodes.push({ id: nextId("message"), kind: "message", role: ev.role, text: ev.text });
+        nodes.push({
+          id: nextId("message"),
+          kind: "message",
+          role: ev.role,
+          text: ev.text,
+          span: undefined,
+        });
         break;
 
       case "thinking":
-        nodes.push({ id: nextId("thinking"), kind: "thinking", text: ev.text });
+        nodes.push({
+          id: nextId("thinking"),
+          kind: "thinking",
+          text: ev.text,
+          span: undefined,
+        });
         break;
 
       case "context.injected":
@@ -255,7 +266,8 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
           id: nextId("context-injected"),
           kind: "context.injected",
           text: ev.text,
-          ...(ev.source === undefined ? {} : { source: ev.source }),
+          source: ev.source,
+          span: undefined,
         });
         break;
 
@@ -264,7 +276,8 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
           id: nextId("skill"),
           kind: "skill.loaded",
           skill: ev.skill,
-          ...(ev.operationId === undefined ? {} : { operationId: ev.operationId }),
+          operationId: ev.operationId,
+          span: undefined,
         };
         if (ev.operationId) addCorrelatable(ev.operationId, node);
         nodes.push(node);
@@ -278,9 +291,11 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
             kind: "action",
             operationId: ev.operationId,
             name: ev.operation.name,
-            ...(ev.operation.tool === undefined ? {} : { tool: ev.operation.tool }),
+            tool: ev.operation.tool,
             input: ev.operation.input,
             status: "pending",
+            output: undefined,
+            span: undefined,
           };
           openActionById.set(ev.operationId, node);
           addCorrelatable(ev.operationId, node);
@@ -291,8 +306,10 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
             kind: "subagent",
             operationId: ev.operationId,
             name: ev.operation.name,
-            ...(ev.operation.remoteUrl === undefined ? {} : { remoteUrl: ev.operation.remoteUrl }),
+            remoteUrl: ev.operation.remoteUrl,
             status: "pending",
+            output: undefined,
+            span: undefined,
           };
           openSubagentById.set(ev.operationId, node);
           addCorrelatable(ev.operationId, node);
@@ -305,8 +322,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         if (ev.kind === "tool") {
           const existing = openActionById.get(ev.operationId);
           if (existing) {
-            if (ev.output === undefined) delete existing.output;
-            else existing.output = ev.output;
+            existing.output = ev.output;
             existing.status = ev.status;
             openActionById.delete(ev.operationId);
           } else {
@@ -316,8 +332,10 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
               operationId: ev.operationId,
               name: "unknown",
               input: null,
-              ...(ev.output === undefined ? {} : { output: ev.output }),
+              output: ev.output,
               status: ev.status,
+              tool: undefined,
+              span: undefined,
             };
             addCorrelatable(ev.operationId, node);
             nodes.push(node);
@@ -325,8 +343,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         } else {
           const existing = openSubagentById.get(ev.operationId);
           if (existing) {
-            if (ev.output === undefined) delete existing.output;
-            else existing.output = ev.output;
+            existing.output = ev.output;
             existing.status = ev.status;
             openSubagentById.delete(ev.operationId);
           } else {
@@ -335,8 +352,10 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
               kind: "subagent",
               operationId: ev.operationId,
               name: "unknown",
-              ...(ev.output === undefined ? {} : { output: ev.output }),
+              output: ev.output,
               status: ev.status,
+              remoteUrl: undefined,
+              span: undefined,
             };
             addCorrelatable(ev.operationId, node);
             nodes.push(node);
@@ -346,19 +365,30 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
       }
 
       case "input.requested":
-        nodes.push({ id: nextId("input"), kind: "input.requested", request: ev.request });
+        nodes.push({
+          id: nextId("input"),
+          kind: "input.requested",
+          request: ev.request,
+          span: undefined,
+        });
         break;
 
       case "compaction":
         nodes.push({
           id: nextId("compaction"),
           kind: "compaction",
-          ...(ev.reason === undefined ? {} : { reason: ev.reason }),
+          reason: ev.reason,
+          span: undefined,
         });
         break;
 
       case "error":
-        nodes.push({ id: nextId("error"), kind: "error", message: ev.message });
+        nodes.push({
+          id: nextId("error"),
+          kind: "error",
+          message: ev.message,
+          span: undefined,
+        });
         break;
 
       default: {

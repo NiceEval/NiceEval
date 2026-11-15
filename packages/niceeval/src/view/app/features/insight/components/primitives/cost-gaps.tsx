@@ -9,14 +9,16 @@ export function CostGaps({
 }): ReactElement | null {
   const { t } = useTranslation();
   if (costs.gaps.length === 0) return null;
-  const sourceLabel = (source: "application" | "judge" | "simulated-user") =>
-    t(
-      source === "application"
-        ? "usage.applicationCost"
-        : source === "judge"
-          ? "usage.judgeUsage"
-          : "usage.simulatedUserCost",
-    );
+  const sourceLabel = (source: "application" | "judge" | "simulated-user") => {
+    switch (source) {
+      case "application":
+        return t("usage.applicationCost");
+      case "judge":
+        return t("usage.judgeUsage");
+      default:
+        return t("usage.simulatedUserCost");
+    }
+  };
   const models = [...new Set(costs.gaps.flatMap((gap) => gap.models))].sort();
   return (
     <div>

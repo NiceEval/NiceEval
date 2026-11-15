@@ -148,16 +148,13 @@ export type RunSlotPublication =
       readonly absenceRevision: number;
     };
 
-export interface ReadableRunResource {
+interface ReadableRunResourceBase {
   readonly runId: string;
   readonly invocationId: string;
   readonly experimentId: string;
   readonly startedAt: string;
-  readonly completedAt?: string;
-  readonly state: RunState;
   readonly writerGeneration: string;
   readonly createdRevision: number;
-  readonly closeRevision?: number;
   readonly expected: number;
   readonly published: number;
   readonly missing: number;
@@ -165,6 +162,12 @@ export interface ReadableRunResource {
     readonly publication: RunSlotPublication;
   })[];
 }
+
+export type ReadableRunResource = ReadableRunResourceBase &
+  (
+    | { readonly state: "active" | "recovering" }
+    | { readonly state: RunTerminalState; readonly completedAt: string; readonly closeRevision: number }
+  );
 
 export interface RunResourcePage {
   readonly cutoff: PublicationCutoff;

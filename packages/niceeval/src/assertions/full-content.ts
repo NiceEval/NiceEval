@@ -112,5 +112,6 @@ export function fullAssertionContentOf(material: AssertionMaterial): string | un
 
 export function fullAssertionContentByteLength(material: AssertionMaterial): number | undefined {
   const content = contentByMaterial.get(material);
-  return content === undefined ? undefined : utf8.encode(content).byteLength;
+  if (content === undefined) return undefined;
+  return utf8.encode(content).byteLength;
 }

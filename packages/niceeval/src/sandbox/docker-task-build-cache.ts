@@ -5,7 +5,8 @@ import { access } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import { decodeJsonRecord } from "../shared/json-value.ts";
 import type {
   DockerCapacityObservation as ProviderCapacityObservation,
   DockerCacheDomainInventory,
@@ -125,6 +126,22 @@ export interface TaskBuildGcOutcome {
   }>;
 }
 
+const decodeGcOutcome = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      planId: Schema.String,
+      domainId: Schema.String,
+      outcomes: Schema.Array(
+        Schema.Struct({
+          buildKey: Schema.String,
+          status: Schema.Literals(["deleted", "already-absent", "skipped", "failed"]),
+          reason: Schema.String,
+        }),
+      ),
+    }),
+  ),
+);
+
 function domainIdFor(ownerId: string, daemonId: string, storageDriver: string, sentinelId: string): string {
   return createHash("sha256")
     .update(`docker-images\0${ownerId}\0${daemonId}\0${storageDriver}\0${sentinelId}`)
@@ -139,11 +156,9 @@ export function taskBuildInventoryState(
   liveLeases: number,
   unverifiedOwners: number,
 ): TaskBuildInventoryEntry["state"] {
-  return actual !== expected || unverifiedOwners > 0
-    ? "unverified"
-    : liveLeases > 0
-      ? "active-leased"
-      : "cold-reusable";
+  if (actual !== expected || unverifiedOwners > 0) return "unverified";
+  if (liveLeases > 0) return "active-leased";
+  return "cold-reusable";
 }
 
 /** @internal Counts retain every protection claim while separating verified-live owners from unverifiable ones. */
@@ -592,12 +607,12 @@ export const dockerTaskBuildAuthorityFingerprintEffect = Effect.scoped(
   Effect.map(openDockerCacheDomainEffect(), (domain) => domain.domainId),
 );
 
-function decimalBytes(value: unknown): number | null {
-  if (typeof value !== "string") return null;
+function decimalBytes(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
   const match = /^([0-9]+(?:\.[0-9]+)?)\s*([kmgtp]?b)$/iu.exec(value.trim());
-  if (match === null) return null;
+  if (match === null) return undefined;
   const power = ["b", "kb", "mb", "gb", "tb", "pb"].indexOf(match[2]!.toLowerCase());
-  return power < 0 ? null : Math.round(Number(match[1]) * 1000 ** power);
+  return power < 0 ? undefined : Math.round(Number(match[1]) * 1000 ** power);
 }
 
 export async function observeDockerBuildKitCapacity(): Promise<ProviderCapacityObservation> {
@@ -606,19 +621,19 @@ export async function observeDockerBuildKitCapacity(): Promise<ProviderCapacityO
   const rows = output
     .split(/\r?\n/u)
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => decodeJsonRecord(line));
   const build = rows.find((row) => row.Type === "Build Cache");
   const reclaimable = typeof build?.Reclaimable === "string" ? build.Reclaimable.trim().split(/\s+/u)[0] : undefined;
-  return Object.freeze({
+  return {
     scope: "provider",
     providerFamily: "docker",
     backendKind: "buildkit",
     state: "unverified",
     observedAt: new Date().toISOString(),
-    totalBytes: decimalBytes(build?.Size),
-    reclaimableEstimateBytes: decimalBytes(reclaimable),
+    totalBytes: decimalBytes(build?.Size) ?? null,
+    reclaimableEstimateBytes: decimalBytes(reclaimable) ?? null,
     reason: "shared-builder-unattributed",
-  });
+  };
 }
 
 export const observeDockerBuildKitCapacityEffect: Effect.Effect<ProviderCapacityObservation, unknown> = promiseEffect(
@@ -906,7 +921,7 @@ export async function applyTaskBuildGc(domainId: string, planId: string): Promis
     planId,
   });
   if (saved.plan === null) throw new Error(`unknown GC plan ${planId}`);
-  if (saved.plan.outcome !== null) return JSON.parse(saved.plan.outcome) as TaskBuildGcOutcome;
+  if (saved.plan.outcome !== null) return decodeGcOutcome(saved.plan.outcome);
   if (Date.parse(saved.plan.expiresAt) < Date.now()) throw new Error(`GC plan ${planId} expired`);
   const value: unknown = JSON.parse(saved.plan.payload);
   if (!isTaskBuildGcPlan(value)) throw new Error(`GC plan ${planId} is invalid`);

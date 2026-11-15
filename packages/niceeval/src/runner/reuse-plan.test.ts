@@ -13,7 +13,7 @@ import {
   type CurrentTargetSlot,
 } from "./reuse-plan.ts";
 import { ADOPTION_CONFIG_IDENTITY_DOMAIN, ADOPTION_INPUT_IDENTITY_DOMAIN } from "./adoption.ts";
-import { executionDigestForManifestOrigin } from "./manifest.ts";
+import { executionDigestForManifestOrigin, explainIdentityMismatch } from "./manifest.ts";
 import { executionDigestForExperiment } from "./rename-identity.ts";
 
 // @feature docs/feature/experiments/README.md
@@ -32,8 +32,9 @@ it.concurrent("删除最新 Run 后回退到最近未删除的 source barrier，
       experimentId,
       startedAt: Schema.decodeUnknownSync(UtcMillisSchema)(revision),
       expectedSlots: [expected],
+      context: undefined,
     },
-    ...(revision >= 3 ? { lifecycle: { state: "deleted" as const, slots: [] } } : {}),
+    lifecycle: revision >= 3 ? { state: "deleted" as const, slots: [] } : undefined,
     members: [],
   }));
   const assess = (sources: readonly CurrentAssessmentRun<never>[]) =>
@@ -47,6 +48,10 @@ it.concurrent("删除最新 Run 后回退到最近未删除的 source barrier，
           executionIdentityDigest: expected.executionIdentityDigest,
           inputIdentity: { domain: "input", value: "current" },
           configIdentity: { domain: "config", value: "current" },
+          identityManifest: undefined,
+          renameFingerprint: () => undefined,
+          timeout: undefined,
+          reuseEligibility: { kind: "eligible" },
         },
         policy: {
           identity: projectTargetPolicyIdentity,
@@ -57,6 +62,10 @@ it.concurrent("删除最新 Run 后回退到最近未删除的 source barrier，
         runs: sources,
         byRunId: new Map(sources.map((run) => [run.document.runId, run])),
         selectionHasProblem: false,
+        selectionProblemScope: "target",
+        readIdentityComparison: () => {
+          throw new Error("No source identity to compare");
+        },
         coreIssues: [],
         readAttempt: () => {
           throw new Error("No source member to read");
@@ -84,7 +93,8 @@ it.concurrent("删除最新 Run 后回退到最近未删除的 source barrier，
     })),
   );
   expect(withoutSources).toMatchObject({ state: "gap", reason: "no-source-run" });
-  expect(withoutSources).not.toHaveProperty("sourceBarrier");
+  if (withoutSources.state !== "gap") throw new Error("Expected no source run");
+  expect(withoutSources.sourceBarrier).toBeUndefined();
 });
 
 it("完整执行仍不能沿用含不适用计分证据的不完整 Score", async () => {
@@ -145,6 +155,7 @@ it("完整执行仍不能沿用含不适用计分证据的不完整 Score", asyn
       experimentId,
       startedAt: Schema.decodeUnknownSync(UtcMillisSchema)(0),
       expectedSlots: [expected],
+      context: undefined,
     },
     members: [
       {
@@ -154,8 +165,10 @@ it("完整执行仍不能沿用含不适用计分证据的不完整 Score", asyn
           attempt: { originRunId: runId, attemptId: document.attemptId },
         },
         attempt: 0,
+        bindingRevision: undefined,
       },
     ],
+    lifecycle: undefined,
   };
   const target: CurrentTargetSlot = {
     experimentId,
@@ -165,6 +178,10 @@ it("完整执行仍不能沿用含不适用计分证据的不完整 Score", asyn
     executionIdentityDigest: expected.executionIdentityDigest,
     inputIdentity: { domain: "input", value: "current" },
     configIdentity: { domain: "config", value: "current" },
+    identityManifest: undefined,
+    renameFingerprint: () => undefined,
+    timeout: undefined,
+    reuseEligibility: { kind: "eligible" },
   };
   const assessed = await Effect.runPromise(
     assessCurrentTargetSlot({
@@ -178,6 +195,17 @@ it("完整执行仍不能沿用含不适用计分证据的不完整 Score", asyn
       runs: [source],
       byRunId: new Map([[runId, source]]),
       selectionHasProblem: false,
+      selectionProblemScope: "target",
+      readIdentityComparison: (_run, current) =>
+        Effect.succeed({
+          historical: undefined,
+          explanation: explainIdentityMismatch({
+            historical: undefined,
+            current: current.identityManifest,
+            context: source.document.context,
+            source: undefined,
+          }),
+        }),
       coreIssues: [],
       readAttempt: () =>
         Effect.succeed({ state: "available" as const, value: { document, publicationAvailable: true } }),
@@ -206,6 +234,8 @@ it("没有 identity manifest 的历史 Run 仍按当前算法证明纯改名", (
     inputIdentity: { domain: ADOPTION_INPUT_IDENTITY_DOMAIN, value: fingerprints.get("renamed")! },
     configIdentity: { domain: ADOPTION_CONFIG_IDENTITY_DOMAIN, value: "c".repeat(64) },
     renameFingerprint: (experimentId: string) => fingerprints.get(experimentId),
+    timeout: undefined,
+    identityManifest: undefined,
   };
   const current = executionDigestForExperiment(target, "history");
   expect(current).toMatch(/^[0-9a-f]{64}$/u);

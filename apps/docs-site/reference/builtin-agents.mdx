@@ -65,7 +65,7 @@ When you need `t.respond()` / `t.requireInputRequest()`: if the system under tes
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 The Anthropic API key. When omitted, read `ANTHROPIC_API_KEY` from the environment.
@@ -73,7 +73,7 @@ The Anthropic API key. When omitted, read `ANTHROPIC_API_KEY` from the environme
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 A custom API base URL, for a proxy or internal endpoint. When omitted, read `ANTHROPIC_BASE_URL` from the environment. When neither exists, use the Anthropic official endpoint, the claude CLI default behavior.
@@ -81,7 +81,7 @@ A custom API base URL, for a proxy or internal endpoint. When omitted, read `ANT
 #### `env`
 
 ```ts
-env?: Readonly<globalThis.Record<string, string>>;
+env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 Extra environment variables for the Claude Code process. Values remain only at runtime and do not enter result carry identity. A non-sensitive value that changes behavior must also appear in Experiment Flags or the owning Plugin's identity.
@@ -89,7 +89,7 @@ Extra environment variables for the Claude Code process. Values remain only at r
 #### `maxTurns`
 
 ```ts
-maxTurns?: number;
+maxTurns?: number | undefined;
 ```
 
 The maximum number of tool-use turns, passed to `--max-turns`. It limits Eval cost; when omitted, the CLI native default is unlimited.
@@ -97,7 +97,7 @@ The maximum number of tool-use turns, passed to `--max-turns`. It limits Eval co
 #### `mcpServers`
 
 ```ts
-mcpServers?: readonly McpServer[];
+mcpServers?: readonly McpServer[] | undefined;
 ```
 
 Extra MCP servers, written to user-level `~/.claude.json` during each Sandbox before. The stdio form writes `command`, optionally with `args` / `env`. The Streamable HTTP form writes `url`, optionally with `headers`, copied verbatim into request headers, as a `{ "type": "http", "url": …, "headers": … }` entry.
@@ -105,7 +105,7 @@ Extra MCP servers, written to user-level `~/.claude.json` during each Sandbox be
 #### `skills`
 
 ```ts
-skills?: readonly SkillSpec[];
+skills?: readonly SkillSpec[] | undefined;
 ```
 
 Skills installed in the Sandbox: a local directory or file, or a Repo with a pinnable ref and optional enabled subset. They go to project-level `.claude/skills/<name>/`, where the claude CLI discovers them natively.
@@ -113,7 +113,7 @@ Skills installed in the Sandbox: a local directory or file, or a Repo with a pin
 #### `plugins`
 
 ```ts
-plugins?: readonly ClaudeCodePluginSpec[];
+plugins?: readonly ClaudeCodePluginSpec[] | undefined;
 ```
 
 Native Claude Code Plugins: first connect a Marketplace, then install the named Plugin from it.
@@ -121,7 +121,7 @@ Native Claude Code Plugins: first connect a Marketplace, then install the named 
 #### `settingsFile`
 
 ```ts
-settingsFile?: string;
+settingsFile?: string | undefined;
 ```
 
 The path to a complete official-format Claude Code `settings.json` in the local project. It resolves relative to the project root that runs niceeval—the directory containing `niceeval.config.ts`—not inside the Sandbox. It accepts only a relative path within the project root. A path containing `..`, an absolute path, a `~` path, or a symlink that resolves outside the project root errors during before. Its original bytes are uploaded verbatim as the otherwise-empty user-level `~/.claude/settings.json` in the Sandbox. It does not inherit host configuration, concatenate, or reserialize. Reserved keys `model` and `env` cause a before error when present. The manifest records only the project-relative path and byte SHA-256, not the contents.
@@ -129,7 +129,7 @@ The path to a complete official-format Claude Code `settings.json` in the local 
 #### `before`
 
 ```ts
-before?: readonly SandboxCommand[];
+before?: readonly SandboxCommand[] | undefined;
 ```
 
 User Hooks run in array order after installation. They reuse SandboxCommand's narrow context and run only after settings are written, MCP attached, Skills and Plugins installed, and the manifest written. They suit process actions that can run only after installed artifacts are ready, such as a Plugin's before script. A throw counts as an infrastructure error (`attempt errored`). See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -137,7 +137,7 @@ User Hooks run in array order after installation. They reuse SandboxCommand's na
 #### `after`
 
 ```ts
-after?: readonly SandboxCommand[];
+after?: readonly SandboxCommand[] | undefined;
 ```
 
 The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs before the Agent's own after step: a LIFO mirror—`before` runs after Agent installation, while `after` runs before Agent cleanup. It runs only if execution reached the `before` point. A throw counts as an infrastructure error, and the after phase closes it with a teardown-failed diagnostic. See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -147,7 +147,7 @@ The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 Proxy / OpenAI API key. Falls back to the `CODEX_API_KEY` env var if omitted.
@@ -155,7 +155,7 @@ Proxy / OpenAI API key. Falls back to the `CODEX_API_KEY` env var if omitted.
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back to the `CODEX_BASE_URL` env var if omitted.
@@ -163,7 +163,7 @@ OpenAI-compatible proxy base URL (e.g. `https://s2a.example.com/v1`). Falls back
 #### `headers`
 
 ```ts
-headers?: Readonly<globalThis.Record<string, string>>;
+headers?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 Static HTTP headers to include with each request to a custom model provider, such as Cloudflare Access Service Token headers. Values are automatically redacted.
@@ -171,7 +171,7 @@ Static HTTP headers to include with each request to a custom model provider, suc
 #### `env`
 
 ```ts
-env?: Readonly<globalThis.Record<string, string>>;
+env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 Extra environment variables injected into every Codex CLI process. The first `codex exec` and continuing `codex exec resume` use the same declaration; lifecycle Hooks started by Codex, dynamic MCP headers, and command subprocesses all inherit it. Values enter only through Sandbox command options: they are not concatenated into shell text or written to the before manifest, and are all redacted as potential sensitive values from timing, execution, and error evidence. `CODEX_API_KEY` still comes from `apiKey` or the same host environment variable; the Adapter's authentication value overrides a same-named key here.
@@ -181,7 +181,7 @@ An environment value does not enter carry identity. A non-sensitive value that c
 #### `mcpServers`
 
 ```ts
-mcpServers?: readonly McpServer[];
+mcpServers?: readonly McpServer[] | undefined;
 ```
 
 Extra MCP servers, appended to `~/.codex/config.toml` during each Sandbox before. The stdio form (`command` / `args` / `env`) writes a `command` line in `[mcp_servers.<name>]`. The Streamable HTTP form (`url` / `headers`) writes the `url` line and headers in the `[mcp_servers.<name>.http_headers]` subtable.
@@ -189,7 +189,7 @@ Extra MCP servers, appended to `~/.codex/config.toml` during each Sandbox before
 #### `skills`
 
 ```ts
-skills?: readonly SkillSpec[];
+skills?: readonly SkillSpec[] | undefined;
 ```
 
 Skills installed in the Sandbox: a local directory or file, or a Repo with a pinnable ref and optional enabled subset. They go to `.agents/skills/<name>/`, and a discovery instruction is written into AGENTS.md. Codex has no native Skill tool like Claude Code, so installing the file alone does not make it read it. See `memory/codex-no-native-skill-tool.md`.
@@ -197,7 +197,7 @@ Skills installed in the Sandbox: a local directory or file, or a Repo with a pin
 #### `plugins`
 
 ```ts
-plugins?: readonly CodexPluginSpec[];
+plugins?: readonly CodexPluginSpec[] | undefined;
 ```
 
 Native Codex Plugins: first connect a Marketplace, then install the named Plugin from it.
@@ -205,7 +205,7 @@ Native Codex Plugins: first connect a Marketplace, then install the named Plugin
 #### `configFile`
 
 ```ts
-configFile?: string;
+configFile?: string | undefined;
 ```
 
 The path to a complete official-TOML Codex `config.toml` in the local project. It resolves relative to the project root that runs niceeval—the directory containing `niceeval.config.ts`—not inside the Sandbox. It accepts only a relative path within the project root. A path containing `..`, an absolute path, a `~` path, or a symlink that resolves outside the project root errors during before. Its original bytes are uploaded verbatim into the otherwise-empty user-level `~/.codex/config.toml` in the Sandbox. It does not inherit host configuration or parse and rewrite it. Reserved keys `model`, `model_provider`, `model_providers`, `model_reasoning_effort`, `mcp_servers`, and `otel` cause a before error when present. The manifest records only the project-relative path and byte SHA-256, not the contents.
@@ -213,7 +213,7 @@ The path to a complete official-TOML Codex `config.toml` in the local project. I
 #### `before`
 
 ```ts
-before?: readonly SandboxCommand[];
+before?: readonly SandboxCommand[] | undefined;
 ```
 
 User Hooks run in array order after installation. They reuse SandboxCommand's narrow context and run only after the main configuration is written, MCP attached, Skills and Plugins installed, and the manifest written. They suit process actions that can run only after installed artifacts are ready, such as a Plugin's before script. A throw counts as an infrastructure error (`attempt errored`). See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -221,7 +221,7 @@ User Hooks run in array order after installation. They reuse SandboxCommand's na
 #### `after`
 
 ```ts
-after?: readonly SandboxCommand[];
+after?: readonly SandboxCommand[] | undefined;
 ```
 
 The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs before the Agent's own after step: a LIFO mirror—`before` runs after Agent installation, while `after` runs before Agent cleanup. It runs only if execution reached the `before` point. A throw counts as an infrastructure error, and the after phase closes it with a teardown-failed diagnostic. See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -231,7 +231,7 @@ The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 API key for the OpenAI-compatible proxy. Falls back to the `BUB_API_KEY` env var if omitted.
@@ -239,7 +239,7 @@ API key for the OpenAI-compatible proxy. Falls back to the `BUB_API_KEY` env var
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 Base URL for the OpenAI-compatible proxy. Falls back to the `BUB_API_BASE` env var if omitted.
@@ -247,7 +247,7 @@ Base URL for the OpenAI-compatible proxy. Falls back to the `BUB_API_BASE` env v
 #### `skills`
 
 ```ts
-skills?: SkillSpec[];
+skills?: SkillSpec[] | undefined;
 ```
 
 Skills installed in the Sandbox: a local directory or file, or a Repo with a pinnable ref and optional enabled subset. They go to `.agents/skills/<name>/`, and a discovery instruction is written into AGENTS.md. Bub has no native Skill-loading mechanism.
@@ -255,7 +255,7 @@ Skills installed in the Sandbox: a local directory or file, or a Repo with a pin
 #### `version`
 
 ```ts
-version?: string;
+version?: string | undefined;
 ```
 
 Uses the fixed Bub 0.5.1 protocol. Omit this option or set it to `"0.5.1"`; any other version throws a `TypeError` when the Agent is defined.
@@ -263,7 +263,7 @@ Uses the fixed Bub 0.5.1 protocol. Omit this option or set it to `"0.5.1"`; any 
 #### `otelPlugin`
 
 ```ts
-otelPlugin?: string;
+otelPlugin?: string | undefined;
 ```
 
 The git dependency for the OTel tape-store Plugin, the source of the timeline. When omitted, use NiceEval's default pin.
@@ -273,7 +273,7 @@ Custom Plugins must support the tape protocol of the fixed Bub 0.5.1 version.
 #### `pythonPlugins`
 
 ```ts
-pythonPlugins?: PythonPluginSpec[];
+pythonPlugins?: PythonPluginSpec[] | undefined;
 ```
 
 Extra Python packages installed into the bub tool environment. Each Sandbox before adds them through `uv tool install … --with <pkg>`. The normalized package list enters the installation checkpoint key, so two Agent variants with different Plugin sets never reuse the same checkpoint; otherwise the second could silently receive the first variant's environment.
@@ -281,7 +281,7 @@ Extra Python packages installed into the bub tool environment. Each Sandbox befo
 #### `before`
 
 ```ts
-before?: SandboxCommand[];
+before?: SandboxCommand[] | undefined;
 ```
 
 User Hooks run in array order after installation. They reuse SandboxCommand's narrow context and run only after bub, Skills and Python packages are installed, and the manifest is written. A throw counts as an infrastructure error (`attempt errored`). See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -289,7 +289,7 @@ User Hooks run in array order after installation. They reuse SandboxCommand's na
 #### `after`
 
 ```ts
-after?: SandboxCommand[];
+after?: SandboxCommand[] | undefined;
 ```
 
 The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs before the Agent's own after step: a LIFO mirror—`before` runs after Agent installation, while `after` runs before Agent cleanup. It runs only if execution reached the `before` point. A throw counts as an infrastructure error, and the after phase closes it with a teardown-failed diagnostic. See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
@@ -329,7 +329,7 @@ Complete `uiMessageStreamAgent(options)` parameters (`UiMessageStreamAgentOption
 #### `name`
 
 ```ts
-name?: string;
+name?: string | undefined;
 ```
 
 The Agent name used for Report and result-aggregation identity. Defaults to `"ui-message-stream"`.
@@ -345,7 +345,7 @@ The chat endpoint of the application under test. Use its full URL wherever the a
 #### `headers`
 
 ```ts
-headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
+headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>) | undefined;
 ```
 
 Additional request headers, such as authentication. `ctx.telemetry.headers` for `traceparent` always merges in automatically.
@@ -353,7 +353,7 @@ Additional request headers, such as authentication. `ctx.telemetry.headers` for 
 #### `body`
 
 ```ts
-body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
+body?: ((ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>) | undefined;
 ```
 
 Fields to merge into the request body in addition to `messages`, such as `(ctx) => ({ model: ctx.model })`. Fields whose value is `undefined` are automatically omitted during serialization.
@@ -369,7 +369,7 @@ Lets the endpoint owner classify every logical tool call as command or not-comma
 #### `denyReason`
 
 ```ts
-denyReason?: string;
+denyReason?: string | undefined;
 ```
 
 The reason sent with `approval-responded` when approval is denied. The application and SDK make it tool-result text that the model sees. A clear "do not retry" message measurably lowers the chance that a model repeats the same call.
@@ -377,7 +377,7 @@ The reason sent with `approval-responded` when approval is denied. The applicati
 #### `settleMs`
 
 ```ts
-settleMs?: number;
+settleMs?: number | undefined;
 ```
 
 Milliseconds to wait after the stream ends before returning, giving application observability exporters such as BatchSpanProcessor time to export.
@@ -385,7 +385,7 @@ Milliseconds to wait after the stream ends before returning, giving application 
 #### `tracing`
 
 ```ts
-tracing?: AgentTracing;
+tracing?: AgentTracing | undefined;
 ```
 
 How an application with OTel delivers spans to the endpoint, for the waterfall. The event stream does not depend on it.
@@ -393,7 +393,7 @@ How an application with OTel delivers spans to the endpoint, for the waterfall. 
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 How an application with OTel normalizes spans, for the waterfall. The event stream does not depend on it.
@@ -426,10 +426,13 @@ Each Agent SDK defines its own streaming protocol, rather than a private applica
 ```ts
 import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 
-const frames = sseJsonFrames<SDKMessage>(res.body);   // standard SSE → JSON for each frame
+const frames = sseJsonFrames(res.body);              // standard SSE → JsonValue for each frame
 const stream = createClaudeSdkEventStream();          // SDKMessage → standard events
 return driveFrameStream(frames, stream, ctx);         // feed every frame to stream.add(), aggregate into a Turn
 ```
+
+`sseJsonFrames(body)` returns `SseFrameCursor<JsonValue>`; each SDK converter decodes its native events at its entry.
+For a custom protocol, `sseJsonFrames(body, FrameSchema)` returns the Effect Schema's decoded type. Invalid frames throw `SseFrameDecodeError`.
 
 - **`createClaudeSdkEventStream`** (`SDKMessage`): `assistant` text/tool_use blocks, `user` tool_result blocks, `system` / `permission_denied` (→ `rejected`), and `result` usage. `markRejected()` records a rejected invocation.
 - **`createPiAgentEventStream`** (pi-agent-core `AgentEvent`): `message_end` text/thinking/usage and paired `tool_execution_start/end` tools.

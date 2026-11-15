@@ -27,9 +27,9 @@ export interface ClaimExecutionRequest {
   readonly projectDatabaseRoot: string;
   readonly experimentId: string;
   readonly evalId: string;
-  readonly identity?: ProcessOwnerIdentity;
-  readonly signal?: AbortSignal;
-  readonly onCaseWait?: (holder: CaseLockRecord) => void;
+  readonly identity?: ProcessOwnerIdentity | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly onCaseWait?: ((holder: CaseLockRecord) => void) | undefined;
 }
 
 /** Narrow coordination operations shared by the Record and command hosts. */

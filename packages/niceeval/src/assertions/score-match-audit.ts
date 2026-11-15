@@ -45,6 +45,7 @@ export type ScoreMatchAuditCall =
         | { readonly state: "interrupted" };
     };
 /** Stores the managed scoring definition, input, calls and terminal result; historical audit data is evidence rather than an instruction to rerun the model. */
+// Identity/canonical boundary: audit limits are enumerated when hashing and encoding.
 export interface ScoreMatchAudit {
   readonly kind: "chat";
 
@@ -98,6 +99,29 @@ export interface ScoreMatchAuditImage {
   readonly sha256: string;
   readonly paths: readonly string[];
 }
+const AuditImageSchema = Schema.Struct({
+  imageId: Schema.String,
+  evidenceIndex: Schema.Number,
+  mediaType: Schema.Literals(["image/png", "image/jpeg"]),
+  byteLength: Schema.Number,
+  sha256: Schema.String,
+  paths: Schema.Array(Schema.String),
+});
+const decodeAuditImage = Schema.decodeUnknownResult(
+  Schema.declare<typeof AuditImageSchema.Type>(
+    Schema.is(AuditImageSchema.annotate({ parseOptions: { onExcessProperty: "error" } })),
+  ),
+);
+const AuditLimitsSchema = Schema.Struct({
+  maxCalls: Schema.Number,
+  maxMaterialBytes: Schema.optionalKey(Schema.Number),
+  contextWindow: Schema.optionalKey(Schema.Number),
+});
+const decodeAuditLimits = Schema.decodeUnknownResult(
+  Schema.declare<typeof AuditLimitsSchema.Type>(
+    Schema.is(AuditLimitsSchema.annotate({ parseOptions: { onExcessProperty: "error" } })),
+  ),
+);
 export type ImageScoreMatchAuditCall =
   | Extract<ScoreMatchAuditCall, { readonly state: "rejected" }>
   | {
@@ -150,7 +174,7 @@ function exact(value: unknown, keys: readonly string[]): Readonly<Record<string,
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) return undefined;
     captured[key] = descriptor.value;
   }
-  return Object.freeze(captured);
+  return captured;
 }
 
 export function canonicalScoreMatchAuditJson(value: unknown): string {
@@ -201,12 +225,15 @@ function failure(value: unknown): value is ScoreMatchAuditFailure {
 }
 const unit = Schema.is(unitSchema);
 
-interface PrimitiveRequest {
-  readonly evidenceIds?: ReadonlySet<string>;
-  readonly choices?: ReadonlySet<string>;
-  readonly maxItems?: number;
-  readonly itemIds?: ReadonlySet<string>;
-}
+type PrimitiveRequest =
+  | { readonly operation: "score" }
+  | { readonly operation: "extract"; readonly maxItems: number }
+  | {
+      readonly operation: "classify";
+      readonly evidenceIds: ReadonlySet<string> | undefined;
+      readonly choices: ReadonlySet<string>;
+    }
+  | { readonly operation: "batch"; readonly choices: ReadonlySet<string>; readonly itemIds: ReadonlySet<string> };
 
 function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: unknown): PrimitiveRequest | undefined {
   const body = record(value);
@@ -240,12 +267,12 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
     canonicalScoreMatchAuditJson(user) !== userMessage.content
   )
     return undefined;
-  const systemKeys =
-    operation === "score"
-      ? ["operation", "rubric", "anchors"]
-      : operation === "classify" || operation === "batchClassify"
-        ? ["operation", "rubric", "choices"]
-        : ["operation", "rubric", "maxItems"];
+  function operationSystemKeys(): string[] {
+    if (operation === "score") return ["operation", "rubric", "anchors"];
+    if (operation === "classify" || operation === "batchClassify") return ["operation", "rubric", "choices"];
+    return ["operation", "rubric", "maxItems"];
+  }
+  const systemKeys = operationSystemKeys();
   const evidenceIds = operation === "classify" ? record(system)?.evidenceIds : undefined;
   if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
   const systemInput = exact(system, [
@@ -279,10 +306,12 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
     }
     if (record(systemInput.anchors[0])?.measurement !== 0 || record(systemInput.anchors.at(-1))?.measurement !== 1)
       return undefined;
-    return Object.freeze({});
+    return { operation: "score" };
   }
   if (operation === "extract") {
-    return positiveInteger(systemInput.maxItems, 32) ? Object.freeze({ maxItems: systemInput.maxItems }) : undefined;
+    return positiveInteger(systemInput.maxItems, 32)
+      ? { operation: "extract", maxItems: systemInput.maxItems }
+      : undefined;
   }
   if (
     !Array.isArray(systemInput.choices) ||
@@ -294,10 +323,11 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   const choices = new Set(systemInput.choices as string[]);
   if (choices.size !== systemInput.choices.length) return undefined;
   if (operation === "classify")
-    return Object.freeze({
+    return {
       choices,
-      ...(evidenceIds === undefined ? {} : { evidenceIds: new Set(evidenceIds as string[]) }),
-    });
+      operation: "classify",
+      evidenceIds: evidenceIds === undefined ? undefined : new Set(evidenceIds as string[]),
+    };
   if (!Array.isArray(userInput.items) || userInput.items.length === 0 || userInput.items.length > 32) return undefined;
   const itemIds = new Set<string>();
   for (const raw of userInput.items) {
@@ -305,7 +335,7 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
     if (item === undefined || !text(item.id) || !text(item.text) || itemIds.has(item.id)) return undefined;
     itemIds.add(item.id);
   }
-  return Object.freeze({ choices, itemIds });
+  return { operation: "batch", choices, itemIds };
 }
 
 function primitiveOutput(operation: ScoreMatchAuditCall["operation"], output: string, request: string): boolean {
@@ -321,37 +351,29 @@ function primitiveOutput(operation: ScoreMatchAuditCall["operation"], output: st
     return false;
   const requestInput = primitiveRequest(operation, requestValue);
   if (requestInput === undefined) return false;
-  if (operation === "score") return isAuditPrimitive.score(value);
-  if (operation === "classify") {
-    if (requestInput.evidenceIds === undefined) {
-      return isAuditPrimitive.classify(value) && requestInput.choices?.has(value.choice) === true;
+  if (requestInput.operation === "score") return isAuditPrimitive.score(value);
+  if (requestInput.operation === "classify") {
+    const evidenceIds = requestInput.evidenceIds;
+    if (evidenceIds === undefined) {
+      return isAuditPrimitive.classify(value) && requestInput.choices.has(value.choice);
     }
     return (
       isAuditPrimitive.citedClassify(value) &&
-      requestInput.choices?.has(value.choice) === true &&
+      requestInput.choices.has(value.choice) &&
       validEvidenceIds(value.citations, true) &&
-      value.citations.every((id) => requestInput.evidenceIds!.has(id))
+      value.citations.every((id) => evidenceIds.has(id))
     );
   }
-  if (operation === "extract") {
-    return (
-      isAuditPrimitive.extract(value) &&
-      value.complete === true &&
-      requestInput.maxItems !== undefined &&
-      value.items.length <= requestInput.maxItems
-    );
+  if (requestInput.operation === "extract") {
+    return isAuditPrimitive.extract(value) && value.complete === true && value.items.length <= requestInput.maxItems;
   }
   if (!isAuditPrimitive.batch(value)) return false;
   const ids = new Set<string>();
   for (const result of value.items) {
-    if (ids.has(result.id) || requestInput.choices?.has(result.choice) !== true) return false;
+    if (ids.has(result.id) || !requestInput.choices.has(result.choice)) return false;
     ids.add(result.id);
   }
-  return (
-    requestInput.itemIds !== undefined &&
-    requestInput.itemIds.size === ids.size &&
-    [...requestInput.itemIds].every((id) => ids.has(id))
-  );
+  return requestInput.itemIds.size === ids.size && [...requestInput.itemIds].every((id) => ids.has(id));
 }
 
 function validAttempt(value: unknown, ordinal: number): value is ScoreMatchAuditAttempt {
@@ -460,12 +482,12 @@ function mappingRequestAndOutput(
   )
     return undefined;
   const operation = mapping.operation as TypeSafeMapping["operation"];
-  const inputKeys =
-    operation === "score"
-      ? ["rubric", "anchors", "material"]
-      : operation === "classify"
-        ? ["rubric", "choices", "material"]
-        : ["rubric", "choices", "items", "material"];
+  function mappingInputKeys(): string[] {
+    if (operation === "score") return ["rubric", "anchors", "material"];
+    if (operation === "classify") return ["rubric", "choices", "material"];
+    return ["rubric", "choices", "items", "material"];
+  }
+  const inputKeys = mappingInputKeys();
   const evidenceIds = operation === "classify" ? record(mapping.input)?.evidenceIds : undefined;
   if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
   const input = exactKeys(mapping.input, [...inputKeys, ...(evidenceIds === undefined ? [] : ["evidenceIds"])]);
@@ -712,14 +734,6 @@ function validTypeSafeCall(value: unknown, ordinal: number): value is TypeSafeAu
   return failure(result) || (result?.state === "interrupted" && exact(result, ["state"]) !== undefined);
 }
 
-function deepFreeze<T>(value: T): T {
-  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
 function validImages(
   value: unknown,
   input: string,
@@ -739,18 +753,16 @@ function validImages(
   let referenceCount = 0;
   const paths = new Set<string>();
   for (let index = 0; index < value.length; index++) {
-    const item = exact(value[index], ["imageId", "evidenceIndex", "mediaType", "byteLength", "sha256", "paths"]);
+    const decoded = decodeAuditImage(value[index]);
+    if (decoded._tag === "Failure") return undefined;
+    const item = decoded.success;
     const content = contents[index];
     if (
-      item === undefined ||
       item.imageId !== `image-${index}` ||
       item.evidenceIndex !== index ||
       result.has(item.imageId) ||
-      (item.mediaType !== "image/png" && item.mediaType !== "image/jpeg") ||
       !positiveInteger(item.byteLength, 4 * 1024 * 1024) ||
-      typeof item.sha256 !== "string" ||
       !/^[a-f0-9]{64}$/u.test(item.sha256) ||
-      !Array.isArray(item.paths) ||
       item.paths.length < 1 ||
       content?.evidenceIndex !== index ||
       content.mediaType !== item.mediaType ||
@@ -766,7 +778,7 @@ function validImages(
         : bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8;
     if (!signature) return undefined;
     for (const path of item.paths) {
-      if (typeof path !== "string" || (path !== "" && !path.startsWith("/")) || paths.has(path)) return undefined;
+      if ((path !== "" && !path.startsWith("/")) || paths.has(path)) return undefined;
       paths.add(path);
       referenceCount += 1;
       totalBytes += bytes.length;
@@ -780,7 +792,7 @@ function validImages(
       }
       if (pointed !== `niceeval-image:${item.imageId}`) return undefined;
     }
-    result.set(item.imageId, { descriptor: item as unknown as ScoreMatchAuditImage, bytes });
+    result.set(item.imageId, { descriptor: item, bytes });
   }
   return result;
 }
@@ -879,7 +891,7 @@ export function readScoreMatchAudit(
       typeof manifest.digest !== "string" ||
       !/^[a-f0-9]{64}$/u.test(manifest.digest)
     )
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const chunks: string[] = [];
     for (let index = 0; index < outer.content.length; index += 1) {
       const chunk = outer.content[index];
@@ -892,14 +904,14 @@ export function readScoreMatchAudit(
         bytes > 4 * 1024 ||
         utf8ByteLength(chunk) !== bytes
       )
-        return Object.freeze({ state: "invalid" });
+        return { state: "invalid" };
       chunks.push(chunk);
     }
     const content = chunks.join("");
     if (utf8ByteLength(content) !== manifest.byteLength || sha256(content) !== manifest.digest)
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const parsed = JSON.parse(content) as unknown;
-    if (canonicalScoreMatchAuditJson(parsed) !== content) return Object.freeze({ state: "invalid" });
+    if (canonicalScoreMatchAuditJson(parsed) !== content) return { state: "invalid" };
     const audit = exact(
       parsed,
       record(parsed)?.kind === "images"
@@ -907,15 +919,9 @@ export function readScoreMatchAudit(
         : ["kind", "definition", "input", "calls", "result"],
     );
     const definition = exact(audit?.definition, ["version", "config", "digest", "limits"]);
-    const rawLimits = record(definition?.limits);
-    const limits =
-      rawLimits === undefined
-        ? undefined
-        : exact(rawLimits, [
-            "maxCalls",
-            ...("maxMaterialBytes" in rawLimits ? ["maxMaterialBytes"] : []),
-            ...("contextWindow" in rawLimits ? ["contextWindow"] : []),
-          ]);
+    const decodedLimits = decodeAuditLimits(definition?.limits);
+    if (decodedLimits._tag === "Failure") return { state: "invalid" };
+    const limits = decodedLimits.success;
     if (
       audit === undefined ||
       !["chat", "typed", "images"].includes(String(audit.kind)) ||
@@ -923,12 +929,11 @@ export function readScoreMatchAudit(
       !text(definition.version) ||
       typeof definition.config !== "string" ||
       typeof definition.digest !== "string" ||
-      limits === undefined ||
       !positiveInteger(limits.maxCalls, 16) ||
       (limits.maxMaterialBytes !== undefined && !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024)) ||
       (limits.contextWindow !== undefined && !positiveInteger(limits.contextWindow, Number.MAX_SAFE_INTEGER))
     )
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const configValue = JSON.parse(definition.config);
     if (
       canonicalScoreMatchAuditJson(configValue) !== definition.config ||
@@ -936,10 +941,10 @@ export function readScoreMatchAudit(
         scoreMatchDefinitionDigest({
           version: definition.version,
           config: definition.config,
-          limits: limits as unknown as ScoreMatchAudit["definition"]["limits"],
+          limits,
         })
     )
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const images =
       record(parsed)?.kind === "images" ? validImages(audit.images, audit.input as string, imageContent) : undefined;
     const initialMaterialRejected =
@@ -949,7 +954,7 @@ export function readScoreMatchAudit(
       audit.calls.length === 0;
     if (
       typeof audit.input !== "string" ||
-      (typeof limits.maxMaterialBytes === "number" &&
+      (limits.maxMaterialBytes !== undefined &&
         utf8ByteLength(audit.input) > limits.maxMaterialBytes &&
         !initialMaterialRejected) ||
       canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input ||
@@ -964,7 +969,7 @@ export function readScoreMatchAudit(
             : !validImageCall(call, index + 1, images!),
       )
     )
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const result = record(audit.result);
     const validResult =
       result?.state === "measured"
@@ -979,10 +984,10 @@ export function readScoreMatchAudit(
           (call) => record(call)?.state !== "admitted" || record(record(call)?.result)?.state !== "completed",
         ))
     )
-      return Object.freeze({ state: "invalid" });
-    return Object.freeze({ state: "available", audit: deepFreeze(parsed as ScoreMatchAuditAny) });
+      return { state: "invalid" };
+    return { state: "available", audit: parsed as ScoreMatchAuditAny };
   } catch {
-    return Object.freeze({ state: "invalid" });
+    return { state: "invalid" };
   }
 }
 

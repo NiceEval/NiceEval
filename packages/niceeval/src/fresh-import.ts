@@ -28,6 +28,7 @@ function sourceRuntimeModules(): Record<string, unknown> | undefined {
 }
 
 const virtualModules = sourceRuntimeModules();
+// Third-party exact optional boundary: Jiti observes which loader options are supplied.
 const loaderOptions = Object.freeze({
   interopDefault: false,
   moduleCache: true,

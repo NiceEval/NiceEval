@@ -8,10 +8,10 @@ import { judgeMaterialBudget, judgeRubricAndAnchors } from "./judge-definition.t
 
 /** Configures one reviewer for conversational scoring in the Attempt's exclusive Sandbox. */
 export interface AgentJudgeDefinition {
-  readonly instructions?: string;
-  readonly maxTurns?: number;
-  readonly timeoutMs?: number;
-  readonly maxMaterialBytes?: number;
+  readonly instructions?: string | undefined;
+  readonly maxTurns?: number | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly maxMaterialBytes?: number | undefined;
 }
 declare const agentJudgeBrand: unique symbol;
 /** Immutable reviewer created by defineAgentJudge. Open a conversation with t.agentJudge. */
@@ -31,7 +31,7 @@ export interface NormalizedAgentJudge {
   readonly instructions: string;
   readonly maxTurns: number;
   readonly timeoutMs: number;
-  readonly maxMaterialBytes?: number;
+  readonly maxMaterialBytes: number | undefined;
 }
 const definitions = new WeakMap<object, NormalizedAgentJudge>();
 /** @internal Validates the opaque reviewer without reading consumer properties. */
@@ -79,14 +79,15 @@ export function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge {
   ) {
     throw new TypeError("Agent Judge instructions must be non-empty and at most 8192 UTF-8 bytes");
   }
-  const normalized: NormalizedAgentJudge = Object.freeze({
+  const normalized: NormalizedAgentJudge = {
     instructions: (input.instructions as string | undefined) ?? "",
     maxTurns: positive(input.maxTurns, 40, "Agent Judge maxTurns"),
     timeoutMs: positive(input.timeoutMs, 600_000, "Agent Judge timeoutMs"),
-    ...(input.maxMaterialBytes === undefined
-      ? {}
-      : { maxMaterialBytes: positive(input.maxMaterialBytes, 1, "Agent Judge maxMaterialBytes") }),
-  });
+    maxMaterialBytes:
+      input.maxMaterialBytes === undefined
+        ? undefined
+        : positive(input.maxMaterialBytes, 1, "Agent Judge maxMaterialBytes"),
+  };
   const reviewer = Object.freeze({}) as AgentJudge;
   definitions.set(reviewer, normalized);
   return reviewer;
@@ -102,10 +103,9 @@ export function agentJudgeQuestion(
   if (kind === "judge" && options !== undefined) throw new TypeError("Agent Judge judge accepts only a criterion");
   const question = judgeRubricAndAnchors(prompt, kind === "grade" ? input.anchors : undefined);
   // Match config capture sorts object keys; preserve that observable anchor order.
-  const anchors = Object.freeze(
-    question.anchors.map(({ description, measurement }) =>
-      Object.freeze({ description, measurement: Object.is(measurement, -0) ? 0 : measurement }),
-    ),
-  );
-  return { rubric: question.rubric, anchors: kind === "grade" ? anchors : null };
+  const anchors = question.anchors.map(({ description, measurement }) => ({
+    description,
+    measurement: Object.is(measurement, -0) ? 0 : measurement,
+  }));
+  return kind === "grade" ? { kind, rubric: question.rubric, anchors } : { kind, rubric: question.rubric };
 }

@@ -92,7 +92,7 @@ function assertLoaderTiming(path: string): void {
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
-  options: { readonly entryPath?: string } = {},
+  options: { readonly entryPath?: string | undefined } = {},
 ): Promise<{
   value: T;
   paths: string[];
@@ -119,23 +119,19 @@ export async function captureLoadedFiles<T>(
       paths: [...capture.data].sort(),
       criteriaPaths: [...capture.criteria].sort(),
       privatePaths: [...capture.private].sort(),
-      origins: Object.freeze(
-        [...capture.origins.entries()]
-          .map(([sourcePath, buckets]) =>
-            Object.freeze({
-              sourcePath,
-              paths: Object.freeze([...buckets.data].sort()),
-              criteriaPaths: Object.freeze([...buckets.criteria].sort()),
-              privatePaths: Object.freeze([...buckets.private].sort()),
-            }),
-          )
-          .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
-      ),
-      unattributed: Object.freeze({
-        paths: Object.freeze([...capture.unattributed.data].sort()),
-        criteriaPaths: Object.freeze([...capture.unattributed.criteria].sort()),
-        privatePaths: Object.freeze([...capture.unattributed.private].sort()),
-      }),
+      origins: [...capture.origins.entries()]
+        .map(([sourcePath, buckets]) => ({
+          sourcePath,
+          paths: [...buckets.data].sort(),
+          criteriaPaths: [...buckets.criteria].sort(),
+          privatePaths: [...buckets.private].sort(),
+        }))
+        .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
+      unattributed: {
+        paths: [...capture.unattributed.data].sort(),
+        criteriaPaths: [...capture.unattributed.criteria].sort(),
+        privatePaths: [...capture.unattributed.private].sort(),
+      },
     };
   } finally {
     activeCapture = previous;

@@ -28,6 +28,7 @@ import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { firstLine, formatThrown } from "../util.ts";
 import { Cause, Deferred, Effect, Result, Exit, Scope } from "effect";
 import type { GroupPluginContext, LinkedPluginLifecycle } from "../plugin/contracts.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 
 export interface ReusableSandboxLease {
   /** Provider-owned facade used only by Scope finalizers after the lease Scope starts closing. */
@@ -117,7 +118,7 @@ export class ReusableSandboxPool {
   /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
   private created = 0;
   private groupPluginSetupStarted = false;
-  private groupPluginSetupError: unknown;
+  private groupPluginSetupError: Error | undefined;
   private activatedGroupPlugins = 0;
 
   constructor(
@@ -130,7 +131,7 @@ export class ReusableSandboxPool {
     private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
     materializationOwnerId?: string,
     private readonly nextReuseSandboxNumber?: () => number,
-    private readonly groupPlugins: readonly LinkedPluginLifecycle[] = Object.freeze([]),
+    private readonly groupPlugins: readonly LinkedPluginLifecycle[] = [],
     private readonly groupPluginContext?: GroupPluginContext,
     private readonly preparedBeforeCache?: PreparedBeforeCacheUse,
     private readonly runId?: string,
@@ -312,7 +313,7 @@ export class ReusableSandboxPool {
 
   /** Drained by the scheduler after the lease Scope sealed the prior result. */
   drainRuntimeFailures(): readonly ReusableSandboxPoolRuntimeFailure[] {
-    return Object.freeze(this.runtimeFailures.splice(0));
+    return this.runtimeFailures.splice(0);
   }
 
   private create(
@@ -323,7 +324,7 @@ export class ReusableSandboxPool {
     provenance?: SandboxCreationProvenance,
   ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
     return Effect.gen({ self: this }, function* () {
-      if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError as Error);
+      if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError);
       if (!this.groupPluginSetupStarted && this.groupPluginContext !== undefined) {
         this.groupPluginSetupStarted = true;
         const setup = yield* Effect.exit(
@@ -343,8 +344,11 @@ export class ReusableSandboxPool {
           ),
         );
         if (Exit.isFailure(setup)) {
-          this.groupPluginSetupError = Cause.squash(setup.cause);
-          return yield* Effect.fail(this.groupPluginSetupError as Error);
+          const cause = Cause.squash(setup.cause);
+          const external = normalizeExternalCause(cause);
+          this.groupPluginSetupError =
+            cause instanceof Error ? cause : new Error(external.message, { cause: external });
+          return yield* Effect.fail(this.groupPluginSetupError);
         }
       }
       const capabilities = sandboxRuntimeCapabilities(this.plan);
@@ -372,10 +376,11 @@ export class ReusableSandboxPool {
       };
       const materialized = yield* Scope.provide(
         materializeSandboxRunPlan({
-          ...(this.runId === undefined ? {} : { runId: this.runId }),
-          ...provenance,
+          runId: this.runId,
+          attemptId: provenance?.attemptId,
           evalId: this.materializationOwnerId,
-          ...(provenance?.evalId === undefined ? {} : { creationEvalId: provenance?.evalId }),
+          sandboxLabels: provenance?.sandboxLabels,
+          creationEvalId: provenance?.evalId,
           plan: this.plan,
           deadline,
           // Runtime intentionally reports SandboxLayer/provider finalizer errors
@@ -387,16 +392,10 @@ export class ReusableSandboxPool {
           signal: this.setupContext.signal,
           hookContext: lifecycleHookContext,
           buildLocators,
-          ...(this.preparedBeforeCache === undefined
-            ? {}
-            : {
-                beforeCachePreparationContext: this.preparedBeforeCache.context,
-                ...(this.preparedBeforeCache.artifact === undefined
-                  ? {}
-                  : { beforeCacheArtifact: this.preparedBeforeCache.artifact }),
-              }),
-          ...(this.agent !== undefined ? { agent: this.agent } : {}),
-          ...(this.runTiming !== undefined ? { runTiming: this.runTiming } : {}),
+          beforeCacheArtifact: this.preparedBeforeCache?.artifact,
+          beforeCachePreparationContext: this.preparedBeforeCache?.context,
+          agent: this.agent,
+          runTiming: this.runTiming,
           provisionSlot: { _tag: "Detached" },
           admission: admission === undefined ? { _tag: "Detached" } : { _tag: "Bound", value: admission },
           services: this.runtimeServices,
@@ -504,7 +503,7 @@ export class ReusableSandboxPool {
           } else if (entry.lifecycle._tag !== "Retired") {
             const reset = yield* Effect.result(externalPromise(() => entry.ledger.resetToAnchor()));
             if (Result.isFailure(reset)) {
-              this.runtimeFailures.push(Object.freeze({ stage: "sandbox.reset", error: reset.failure }));
+              this.runtimeFailures.push({ stage: "sandbox.reset", error: reset.failure });
               this.recordCleanupFailure("sandbox.reset", reset.failure);
               this.feedback.diagnostic({
                 code: "sandbox-reset-failed",
@@ -617,7 +616,7 @@ export class ReusableSandboxPool {
 
   private recordCleanupFailure(stage: ReusableSandboxPoolCleanupFailure["stage"], cause: unknown): Error {
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    this.cleanupFailures.push(Object.freeze({ stage, error }));
+    this.cleanupFailures.push({ stage, error });
     return error;
   }
 

@@ -79,7 +79,7 @@ import { AssertionAuthoringClosedError } from "../assertions/api.ts";
 import { createAssertionsRuntime, attachAssertionsAgentJudgeSandbox } from "../assertions/runtime.ts";
 import type { AssertionStopError, AssertionsRuntime, SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
-import { sealAttemptAssertions } from "./assertions.ts";
+import { assertionEvaluationFacts, sealAttemptAssertions } from "./assertions.ts";
 import {
   makeAssertFirstAttemptBridge,
   type AssertFirstAttemptBridge,
@@ -155,6 +155,7 @@ import {
 } from "./source-receipts/runtime.ts";
 import { attemptFailureInfo, resolveAttemptFailureClass, type FailureClass } from "../shared/failure-class.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
+import type { CommandOptions, CommandResult } from "../sandbox/types.ts";
 import type {
   AgentContext,
   SandboxAgentContext,
@@ -198,7 +199,7 @@ import type {
   AttemptRef,
   DiagnosticRecord,
   LifecyclePhase,
-  RunOptions,
+  RunRuntimeOptions,
 } from "./types.ts";
 
 const ACTIVE_DETAIL_UTF8_LIMIT = 256;
@@ -207,6 +208,11 @@ const ACTIVE_ESCAPE_SEQUENCE =
 const ACTIVE_CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/g;
 const activeDetailEncoder = new TextEncoder();
 const activeDetailSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function evalGroupContext(evalDef: Attempt["evalDef"]): AttemptPluginContext["evalGroup"] {
+  const group = evalDef.evalGroup;
+  return group === undefined ? undefined : { id: group.id, definitionHash: group.definitionHash };
+}
 
 /**
  * ACTIVE receives untrusted Adapter and author text. Redact before cleanup so
@@ -286,71 +292,75 @@ export function attemptFailureDeclaration(phase: LifecyclePhase, e: unknown): At
 }
 
 export interface RunAttemptEffectOptions<SealRequirements = never> {
-  readonly runId?: string;
+  readonly runId: string | undefined;
   /** Retains staged attachment files through publication and releases them on every Invocation exit. */
   readonly attachmentScope: Scope.Scope;
   /** Run 级构建执行产出的 locator；key 集合必须与 Attempt.plan 的完成态物理计划完全一致。 */
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
-  readonly preparedBeforeCache?: PreparedBeforeCacheUse;
+  readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
-  readonly runTiming?: import("./timing.ts").RunTimingRecorder;
+  readonly runTiming: import("./timing.ts").RunTimingRecorder | undefined;
   /**
    * Attempt 的协作取消信号；可同时包含 Invocation 取消、earlyExit sibling
    * 取消等来源。测试直调时省略。
    */
-  parentSignal?: AbortSignal;
+  parentSignal: AbortSignal | undefined;
   /**
    * 只代表整个 Invocation 的外部取消。与 parentSignal 分开保存，避免把
    * earlyExit 的 Attempt-local abort 升级成 Ctrl+C / exit 130。
    */
-  invocationSignal?: AbortSignal;
+  invocationSignal: AbortSignal | undefined;
   /** 每次跨入一个新 `LifecyclePhase` 边界时同步回调一次(与下面的 `enterPhase` 同一调用点,见
    *  该函数)。run.ts 用它在本地跟踪「这个 attempt 目前所在的阶段」,好在 attempt 失败/errored
    *  时把 phase 塞进 `reportFailure()`(见 sink.ts 的 `FailureInput.phase`)—— 到那时
    *  attempt:complete 已经让 coordinator 把 active map 里的条目删掉,没有别的地方能事后查到。 */
-  onPhase?: (phase: LifecyclePhase) => void;
+  onPhase: (phase: LifecyclePhase) => void;
   /**
    * turn 级重试退避期间释放/收回的全局并发槽位(globalSem / 实验级 runSem,见 run.ts 的调用点)。
    * 省略时(如测试直调)退避不释放槽位。
    */
-  concurrencySlot?: ConcurrencySlot;
+  concurrencySlot: ConcurrencySlot | undefined;
   /** Provider admission moves an Attempt from queued to running only after capacity is granted. */
-  providerAdmission?: {
-    readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
-    readonly granted: Effect.Effect<void>;
-  };
+  providerAdmission:
+    | {
+        readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
+        readonly granted: Effect.Effect<void>;
+      }
+    | undefined;
   /**
    * 终局失败的空间轴回执(每条终局失败各回调一次,含 per-attempt teardown 的失败——teardown
    * 声明照常落闸、不改 verdict,见 architecture.md「生命周期边界」)。省略(如测试直调)时
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
-  onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
+  onFailureClass: (declaration: AttemptFailureDeclaration) => void;
   /** An unresolved Host publication stops later Invocation dispatch without interrupting running siblings. */
-  onEnvironmentIncomplete?: (failure: BeforeCacheAmbiguityError) => void;
+  onEnvironmentIncomplete: (failure: BeforeCacheAmbiguityError) => void;
   /**
    * Sandbox cleanup normally turns errors into diagnostics so the remaining
    * finalizers can run. An Experiment with sharedState must still retain every
    * terminal cleanup fact until it decides whether releasing its lease is safe.
    */
-  onSandboxCleanupFailure?: (failure: SandboxCleanupFailure) => void;
+  onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => void;
   /**
    * Invocation coordination may consume the single sealed Assert-first result
    * here and pass it to EvaluationRecordContract. The Attempt never opens a
    * Record session or owns Record I/O itself.
    */
-  onSealedEvaluation?: (sealed: SealedAttemptAssertions) => Effect.Effect<void, never, SealRequirements>;
+  onSealedEvaluation: (sealed: SealedAttemptAssertions) => Effect.Effect<void, never, SealRequirements>;
   /** Publish a drained custom Attempt before restoring Invocation interruption. */
-  onInterruptedResult?: (result: EvalResult) => Effect.Effect<void, never, SealRequirements>;
+  onInterruptedResult: (result: EvalResult) => Effect.Effect<void, never, SealRequirements>;
   /** 由复用池独占借出的实例；池负责物理 Sandbox 生命周期与最终 stop。 */
-  reusedSandbox?: {
-    /** Resource facade remains callable while this Attempt Scope is closing. */
-    resourceSandbox: Sandbox;
-    sandbox: Sandbox;
-    reuseSandbox: number;
-    reuseOrdinal: number;
-    materializedCase: MaterializedSandboxCase;
-  };
+  reusedSandbox:
+    | {
+        /** Resource facade remains callable while this Attempt Scope is closing. */
+        resourceSandbox: Sandbox;
+        sandbox: Sandbox;
+        reuseSandbox: number;
+        reuseOrdinal: number;
+        materializedCase: MaterializedSandboxCase;
+      }
+    | undefined;
 }
 
 /** Internal handoff from an Attempt Scope to its owning Experiment lifecycle. */
@@ -361,7 +371,7 @@ export interface SandboxCleanupFailure {
 
 export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRequirements>(
   a: Attempt,
-  opts: RunOptions<AttachmentError, AttachmentRequirements>,
+  opts: RunRuntimeOptions<AttachmentError, AttachmentRequirements>,
   sandboxSem: Semaphore.Semaphore,
   {
     attachmentScope,
@@ -391,7 +401,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
             assistanceReported = true;
             reportJudgeErrorAssistance(a, sealed);
           }
-          return publishSealedEvaluation?.(sealed) ?? Effect.void;
+          return publishSealedEvaluation(sealed);
         });
       const config = opts.config;
       const { evalDef, run, attempt } = a;
@@ -544,7 +554,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       const enterPhase = (phase: LifecyclePhase) => {
         lastPhase = phase;
         recorder.enter(phase);
-        onPhase?.(phase);
+        onPhase(phase);
         reportAttemptLifecycle({ type: "attempt:phase", at: Date.now(), identity, phase });
       };
       /**
@@ -556,7 +566,6 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
        * 缺省档(`scope` 省略或 `"attempt"`)不回执:那是「死因只属于本次执行」,没有闸可落。
        */
       const declareFailure = (phase: LifecyclePhase, e: unknown): void => {
-        if (!onFailureClass) return;
         const declaration = attemptFailureDeclaration(phase, e);
         if (declaration) {
           // 空间轴回执会先于 Attempt 结果封口进入 run.ts，并立即生成运行期反馈与 run.json 的
@@ -644,7 +653,6 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         diagnostic: recordDiagnostic,
       };
       const recordSandboxCleanupFailure = (stage: SandboxCleanupFailure["stage"], cause: unknown): void => {
-        if (onSandboxCleanupFailure === undefined) return;
         // The ledger is later surfaced as an Experiment diagnostic, outside this
         // Attempt's normal diagnostic sink. Preserve the real cleanup outcome, but
         // cross that boundary only after applying this Attempt's evidence redaction.
@@ -696,8 +704,20 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         const runtime =
           liveAssertions ??
           (evalDef.evaluationKind === "score"
-            ? createAssertionsRuntime({ evaluationKind: "score", judgeUsage })
-            : createAssertionsRuntime({ evaluationKind: "pass", judgeUsage }));
+            ? createAssertionsRuntime({
+                evaluationKind: "score",
+                executeStop: () => Promise.reject(new AssertionAuthoringClosedError("runtime-unattached")),
+                judge: undefined,
+                signal,
+                judgeUsage,
+              })
+            : createAssertionsRuntime({
+                evaluationKind: "pass",
+                executeStop: () => Promise.reject(new AssertionAuthoringClosedError("runtime-unattached")),
+                judge: undefined,
+                signal,
+                judgeUsage,
+              }));
         if (liveAssertions === undefined) {
           // Sandbox acquire/prepare may fail before TestContext exists. It is still
           // an executed Attempt, so seal its empty assertion set with the same
@@ -705,7 +725,11 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
           liveAssertions = runtime;
           sourceCapture.attachAssertions(runtime);
         }
-        return sealAttemptAssertions(runtime, { execution: "errored" }).pipe(
+        return sealAttemptAssertions(runtime, {
+          execution: "errored",
+          explicitlySkipped: false,
+          interrupted: false,
+        }).pipe(
           Effect.tap(() =>
             Effect.sync(() => {
               markExecutionTerminal();
@@ -843,7 +867,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     parentSignal ?? invocationSignal,
                     {
                       nonInteractive: opts.maxConcurrency > 1 || process.stdin.isTTY !== true,
-                      ...(sandboxId === undefined ? {} : { sandboxId }),
+                      sandboxId,
                     },
                   );
                 }),
@@ -887,9 +911,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   experimentId: run.experimentId,
                   evalId: evalDef.id,
                   attempt: a.attempt,
-                  ...(evalDef.evalGroup === undefined
-                    ? {}
-                    : { evalGroup: { id: evalDef.evalGroup.id, definitionHash: evalDef.evalGroup.definitionHash } }),
+                  evalGroup: evalGroupContext(evalDef),
                   signal,
                   progress: scopedFeedback.progress,
                   diagnostic: scopedFeedback.diagnostic,
@@ -934,7 +956,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   adapterUsage = new AdapterUsageCollector(
                     () => resources.assertCaptureOpen(),
                     config.pricing,
-                    run.models ?? Object.freeze({}),
+                    run.models ?? {},
                   );
                   adapterAttachments = createAdapterAttachmentCollector(
                     `${recordRootPaths(opts.recordRoot)!.portableRoot}/attachment-staging`,
@@ -972,6 +994,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     return sealAttemptAssertions(liveAssertions, {
                       execution: "errored",
                       interrupted: true,
+                      explicitlySkipped: false,
                     }).pipe(
                       Effect.tap((sealed) =>
                         Effect.sync(() => {
@@ -1102,31 +1125,27 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                           ? { _tag: "Unlimited" }
                           : { _tag: "Bounded", timeoutMs: attemptTimeout.timeoutMs, deadlineAt };
                       const runtimeInput: SandboxRuntimeMaterializeInput = {
-                        ...(runId === undefined ? {} : { runId: runId }),
-                        ...(a.attemptId === undefined ? {} : { attemptId: a.attemptId }),
-                        ...(run.sandboxLabels === undefined ? {} : { sandboxLabels: run.sandboxLabels }),
+                        runId: runId,
+                        attemptId: a.attemptId,
+                        sandboxLabels: run.sandboxLabels,
                         plan: sandboxPlan,
                         evalId: evalDef.id,
+                        creationEvalId: evalDef.id,
                         deadline: runtimeDeadline,
                         feedback: freshSandboxLifecycleFeedback,
                         signal,
                         hookContext: {
                           experimentId: sandboxPlan.pair.experimentId,
+                          evalGroup: evalGroupContext(evalDef),
                           signal,
                           progress: freshSandboxLifecycleFeedback.progress,
                           diagnostic: freshSandboxLifecycleFeedback.diagnostic,
                         },
                         buildLocators,
-                        ...(preparedBeforeCache === undefined
-                          ? {}
-                          : {
-                              beforeCachePreparationContext: preparedBeforeCache.context,
-                              ...(preparedBeforeCache.artifact === undefined
-                                ? {}
-                                : { beforeCacheArtifact: preparedBeforeCache.artifact }),
-                            }),
-                        ...(agent.kind === "sandbox" ? { agent } : {}),
-                        ...(runTiming !== undefined ? { runTiming } : {}),
+                        beforeCachePreparationContext: preparedBeforeCache?.context,
+                        beforeCacheArtifact: preparedBeforeCache?.artifact,
+                        agent: agent.kind === "sandbox" ? agent : undefined,
+                        runTiming,
                         provisionSlot: { _tag: "Bound", value: provisionSlot },
                         admission: { _tag: "Bound", value: runtimeAdmission },
                         services: liveSandboxRuntimeServices,
@@ -1212,7 +1231,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         at: Date.now(),
                         identity,
                         provider: runtimeCapabilities.provider,
-                        nativeInstanceId: materialized.sandbox.nativeInstanceId ?? null,
+                        nativeInstanceId: materialized.sandbox.nativeInstanceId,
                       });
                       // Legacy layer/plugin setup is the earliest opaque barrier and runs after
                       // provider admission has been returned, while the same Attempt Scope still owns release.
@@ -1241,7 +1260,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   at: Date.now(),
                   identity,
                   provider: runtimeCapabilities!.provider,
-                  nativeInstanceId: sandbox.nativeInstanceId ?? null,
+                  nativeInstanceId: sandbox.nativeInstanceId,
                 });
               }
               if (agent.kind !== "sandbox") log(`using Direct Agent (no Sandbox created)...`);
@@ -1267,10 +1286,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // 共享池仅限:config 配了 telemetry(固定端口,无侵入接入的长驻服务)或显式 tracing.scope === "run"。
               // 只声明 tracing 的进程内 adapter(如 aiSdkAgent)保持 per-attempt receiver,attempt 全并发。
               const wantsSharedOtel = config.telemetry !== undefined || agent.tracing?.scope === "run";
-              if (agent.kind !== "sandbox" && wantsSharedOtel && opts.otelPool) {
+              if (agent.kind !== "sandbox" && wantsSharedOtel) {
                 enterPhase("telemetry.configure");
                 try {
-                  otelChannel = yield* opts.otelPool!.channel(agent.name);
+                  otelChannel = yield* opts.otelPool.channel(agent.name);
                   const endpoint = otelChannel.receiver.endpoint(config.telemetry?.host ?? "127.0.0.1");
                   const env = agent.tracing?.env?.(endpoint);
                   telemetry = env ? { endpoint, env } : { endpoint };
@@ -1368,11 +1387,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         timeoutFileChangesCapture = createEmptyFileChangesCapture({
                           policy: liveLedger.attribution,
                           limitations: [
-                            Object.freeze({
+                            {
                               code: "capture-failed" as const,
                               stage: "normalize" as const,
                               atWindowId: null,
-                            }),
+                            },
                           ],
                         });
                       }
@@ -1380,11 +1399,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         timeoutFileChangesCapture = createFileChangesCapture({
                           document,
                           limitations: [
-                            Object.freeze({
+                            {
                               code: "capture-interrupted" as const,
                               stage: "finalizer-export" as const,
                               atWindowId: null,
-                            }),
+                            },
                           ],
                         });
                       }
@@ -1392,11 +1411,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       timeoutFileChangesCapture = createEmptyFileChangesCapture({
                         policy: liveLedger.attribution,
                         limitations: [
-                          Object.freeze({
+                          {
                             code: "capture-interrupted" as const,
                             stage: "finalizer-export" as const,
                             atWindowId: null,
-                          }),
+                          },
                         ],
                       });
                     }
@@ -1432,14 +1451,15 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     return Effect.void;
                   }
                   if (liveAssertionState?.late.diff.state === "pending") {
-                    liveAssertionState.late.diff = Object.freeze({
+                    liveAssertionState.late.diff = {
                       state: "unavailable" as const,
                       reason: "producer-interrupted" as const,
-                    });
+                    };
                   }
                   return sealAttemptAssertions(liveAssertions, {
                     execution: "errored",
                     interrupted: true,
+                    explicitlySkipped: false,
                   }).pipe(
                     Effect.tap((sealed) =>
                       Effect.sync(() => {
@@ -1473,6 +1493,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         const node = recorder.child(
                           sandboxPrepareActivity({
                             label: `${cleanup.label} cleanup`,
+                            durationMs: 0,
+                            failed: false,
                             startOffsetMs: startedAt,
                           }),
                         );
@@ -1554,6 +1576,18 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
               // author execution, and sealing run in this Attempt's Effect scope. No
               // nested runtime is introduced.
+              function beforeCacheForAttempt(): PreparedBeforeCacheUse | undefined {
+                if (preparedBeforeCache === undefined) return undefined;
+                if (reusedSandbox !== undefined && reusedSandbox.reuseOrdinal > 1)
+                  return {
+                    context: preparedBeforeCache.context,
+                    satisfiedActionCount: 0,
+                    artifact: undefined,
+                    agentDerived: false,
+                    degraded: undefined,
+                  };
+                return preparedBeforeCache;
+              }
               const bodyFiber = yield* Effect.forkChild(
                 tryPromiseAsDefect((interruptSignal) =>
                   runAttemptBody(
@@ -1605,9 +1639,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       sandbox,
                       sourceRegistry,
                       sourceCapture,
-                      ...(receiver === undefined ? {} : { receiver: receiver }),
-                      ...(telemetry === undefined ? {} : { telemetry: telemetry }),
-                      ...(otelChannel === undefined ? {} : { otel: otelChannel }),
+                      receiver: receiver,
+                      telemetry: telemetry,
+                      otel: otelChannel,
                       signal: AbortSignal.any([signal, interruptSignal]),
                       log,
                       enterPhase,
@@ -1623,27 +1657,18 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         });
                       },
                       recorder,
-                      ...(attemptTimeout ? { attemptTimeout } : {}),
-                      ...(deadlineAt !== undefined ? { deadlineAt } : {}),
+                      attemptTimeout,
+                      deadlineAt,
                       feedback: scopedFeedback,
                       diagnostics,
                       commands,
                       sensitiveValues,
                       observabilityRuntime,
-                      ...(materializedCase === undefined ? {} : { materializedCase }),
-                      ...(preparedBeforeCache === undefined
-                        ? {}
-                        : {
-                            preparedBeforeCache:
-                              reusedSandbox !== undefined && reusedSandbox.reuseOrdinal > 1
-                                ? { context: preparedBeforeCache.context, satisfiedActionCount: 0 }
-                                : preparedBeforeCache,
-                          }),
-                      ...(concurrencySlot === undefined ? {} : { concurrencySlot: concurrencySlot }),
+                      materializedCase,
+                      preparedBeforeCache: beforeCacheForAttempt(),
+                      concurrencySlot: concurrencySlot,
                       declareFailure,
-                      ...(onEnvironmentIncomplete === undefined
-                        ? {}
-                        : { onEnvironmentIncomplete: onEnvironmentIncomplete }),
+                      onEnvironmentIncomplete: onEnvironmentIncomplete,
                       isDeadlineTimedOut: () => timedOut,
                       layerCleanups,
                       attemptResources,
@@ -1672,7 +1697,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         liveAssertions = runtime;
                         liveAssertionState = state;
                       },
-                      ...(opts.artifactPrepare !== undefined ? { prepareCoordinator: opts.artifactPrepare } : {}),
+                      prepareCoordinator: opts.artifactPrepare,
                     },
                     parentSignal,
                   ),
@@ -1783,13 +1808,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       provider: providerName,
                       evalId: evalDef.id,
                       attempt,
-                      ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
+                      experimentId: run.experimentId,
                       locator: String(a.locator),
                       verdict: bodyResult.verdict,
                       keptAt,
                       workdir: sandbox.workdir,
-                      ...(enter !== undefined ? { enter } : {}),
-                      ...(expiresAt !== undefined ? { expiresAt } : {}),
+                      enter,
+                      expiresAt,
                       state: "alive",
                     }),
                   );
@@ -1800,13 +1825,13 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       identity,
                       who: runWho({
                         agentName: agent.name,
-                        ...(run.model === undefined ? {} : { model: run.model }),
+                        model: run.model,
                         experimentId: run.experimentId,
                       }),
                       verdict: bodyResult.verdict,
                       provider: providerName,
                       sandboxId: sandbox.sandboxId,
-                      ...(enter !== undefined ? { enter } : {}),
+                      enter,
                     });
                     // 只有 `kept` 在收尾时点决定;provider / sandboxId 等归属键仍由租借时刻的
                     // sandboxFacts 统一挂上(见下方 Effect.map)。
@@ -1909,15 +1934,16 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               if (error !== undefined || invocationInterrupted) {
                 // Assertions were evaluated once before cleanup. Only the execution
                 // outcome changes; the existing domain folds retain every earned point.
-                const evaluation = Object.freeze({ ...sealed.evaluation, execution: "errored" as const });
-                const score = evalDef.evaluationKind === "score" ? buildScorePayload(evaluation) : undefined;
+                const evaluation = { ...sealed.evaluation, execution: "errored" as const };
+                const facts = assertionEvaluationFacts(evaluation);
+                const score = evalDef.evaluationKind === "score" ? buildScorePayload(facts) : undefined;
                 if (score !== undefined && Result.isFailure(score)) return yield* Effect.fail(score.failure);
-                sealed = Object.freeze({
+                sealed = {
                   ...sealed,
                   evaluation,
-                  verdict: Object.freeze({ state: foldVerdict(evaluation) }),
+                  verdict: { state: foldVerdict(facts) },
                   ...(score === undefined ? {} : { score: score.success }),
-                });
+                };
               }
               yield* onSealedEvaluation?.(sealed) ?? Effect.void;
               return withSealedAssertions({ ...result, ...(error === undefined ? {} : { error }) }, sealed);
@@ -2067,12 +2093,12 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
   } = input;
   return Effect.gen(function* () {
     const { context: core, state } = createAssertFirstCoreContext({
-      ...(usage === undefined ? {} : { readUsage: () => usage.snapshot() }),
+      readUsage: usage === undefined ? undefined : () => usage.snapshot(),
       judgeUsage: input.judgeUsage,
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
-      ...(a.run.model === undefined ? {} : { model: a.run.model }),
-      ...(a.run.reasoningEffort === undefined ? {} : { reasoningEffort: a.run.reasoningEffort }),
+      model: a.run.model,
+      reasoningEffort: a.run.reasoningEffort,
       flags: a.run.flags,
       signal,
       feedback,
@@ -2102,9 +2128,9 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
             experimentId: a.run.experimentId,
             attempt: a.attempt,
             signal,
-            models: a.run.models ?? Object.freeze({}),
-            ...(a.run.model === undefined ? {} : { model: a.run.model }),
-            ...(a.run.reasoningEffort === undefined ? {} : { reasoningEffort: a.run.reasoningEffort }),
+            models: a.run.models ?? {},
+            model: a.run.model,
+            reasoningEffort: a.run.reasoningEffort,
             flags: a.run.flags,
             progress: feedback.progress,
             diagnostic: feedback.diagnostic,
@@ -2161,6 +2187,7 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
     const sealed = yield* sealAttemptAssertions(state.assertions, {
       execution: error === undefined ? "completed" : "errored",
       explicitlySkipped: skipReason !== undefined,
+      interrupted: false,
     });
     markAssertionsSealed(sealed);
     recorder.closeCurrent();
@@ -2212,7 +2239,7 @@ function cleanupAdapterResources(
       const startedAt = input.recorder.offsetNow();
       let failed = false;
       return cleanupCallback(
-        (signal) => resources.cleanup(Object.freeze({ signal, timeoutMs, deadlineAt })),
+        (signal) => resources.cleanup({ signal, timeoutMs, deadlineAt }),
         Math.max(0, Math.ceil(timeoutMs - Number(clock.monotonicTimeNanosUnsafe() - cleanupStartedAt) / 1_000_000)),
       ).pipe(
         Effect.tap((result) =>
@@ -2274,82 +2301,89 @@ function legacyResultProjectionFromSealedAssertions(
   error?: AttemptError,
   skipReason?: string,
 ): Pick<EvalResult, "factResults" | "factUses" | "scoreResult"> {
-  const empty = Object.freeze({
-    factResults: Object.freeze([]),
-    factUses: Object.freeze([]),
-  });
+  const empty = {
+    factResults: [],
+    factUses: [],
+  };
   if (sealed.score === undefined) return empty;
   const score = sealed.score;
   const earned = score.state === "unavailable" ? 0 : score.earned;
   if (sealed.verdict.state === "errored") {
     const reasons = score.state === "complete" ? [] : score.reasons;
     const errors = [
-      Object.freeze({
+      {
         kind: "error" as const,
-        error: Object.freeze({
+        error: {
           class: "execution" as const,
           code: error?.code ?? "assertion-execution-errored",
           message: error?.message ?? "Assert-first Attempt sealed after an execution error",
-        }),
-      }),
+        },
+        factId: undefined,
+        useSourceOrder: undefined,
+      },
     ] as const;
     const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "errored" }> = {
       status: "errored",
       earnedScore: earned,
       creditedScore: null,
       errors,
-      issues: reasons.map((reason) =>
-        Object.freeze({
-          kind: "unavailable" as const,
-          reason,
-        }),
-      ),
+      issues: reasons.map((reason) => ({
+        kind: "unavailable" as const,
+        reason,
+        factId: undefined,
+        useSourceOrder: undefined,
+      })),
     };
-    return Object.freeze({
+    return {
       ...empty,
       scoreResult,
-    });
+    };
   }
   if (sealed.verdict.state === "failed") {
-    return Object.freeze({
+    return {
       ...empty,
-      scoreResult: Object.freeze({
+      scoreResult: {
         status: "failed" as const,
         earnedScore: earned,
         creditedScore: null,
-      }),
-    });
+      },
+    };
   }
   if (sealed.verdict.state === "skipped") {
-    return Object.freeze({
+    return {
       ...empty,
-      scoreResult: Object.freeze({
+      scoreResult: {
         status: "skipped" as const,
         earnedScore: earned,
         creditedScore: null,
         reason: skipReason ?? "Attempt skipped",
-      }),
-    });
+      },
+    };
   }
   if (score.state === "complete") {
-    return Object.freeze({
+    return {
       ...empty,
-      scoreResult: Object.freeze({
+      scoreResult: {
         status: "scored" as const,
         earnedScore: score.earned,
         creditedScore: score.earned,
-      }),
-    });
+      },
+    };
   }
   const [firstReason, ...laterReasons] = score.reasons;
   const issues = [
-    Object.freeze({ kind: "unavailable" as const, reason: firstReason }),
-    ...laterReasons.map((reason) =>
-      Object.freeze({
-        kind: "unavailable" as const,
-        reason,
-      }),
-    ),
+    {
+      kind: "unavailable" as const,
+      reason: firstReason,
+      factId: undefined,
+      useSourceOrder: undefined,
+    },
+    ...laterReasons.map((reason) => ({
+      kind: "unavailable" as const,
+      reason,
+      factId: undefined,
+      useSourceOrder: undefined,
+    })),
   ] as const;
   const scoreResult: Extract<NonNullable<EvalResult["scoreResult"]>, { readonly status: "unavailable" }> = {
     status: "unavailable",
@@ -2357,10 +2391,10 @@ function legacyResultProjectionFromSealedAssertions(
     creditedScore: null,
     issues,
   };
-  return Object.freeze({
+  return {
     ...empty,
     scoreResult,
-  });
+  };
 }
 
 function withSealedAssertions(result: EvalResult, sealed: SealedAttemptAssertions): EvalResult {
@@ -2389,6 +2423,8 @@ export function scoreFactOutcomeForAttemptError(
       {
         kind: "error",
         error: { class: "execution", code: error.code, message: error.message },
+        factId: undefined,
+        useSourceOrder: undefined,
       },
     ],
     issues: [],
@@ -2463,12 +2499,12 @@ export function errorFromThrown(
 }
 
 function describeExternalCause(cause: ExternalCause): {
-  stack?: string;
-  cause: { name?: string; code?: string; message: string };
+  stack: string | undefined;
+  cause: NonNullable<AttemptError["cause"]>;
 } {
-  if (cause._tag === "ThrownValue") return { cause: { message: cause.message } };
+  if (cause._tag === "ThrownValue") return { stack: undefined, cause: { message: cause.message } };
   return {
-    ...(cause.stack._tag === "Present" ? { stack: cause.stack.value } : {}),
+    stack: cause.stack._tag === "Present" ? cause.stack.value : undefined,
     cause: {
       name: cause.name,
       ...(cause.code._tag === "Present" ? { code: String(cause.code.value) } : {}),
@@ -2515,25 +2551,25 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
-  readonly recordTelemetryTrace?: (spans: TraceSpan[], partial: boolean) => Promise<void>;
+  readonly recordTelemetryTrace: (spans: TraceSpan[], partial: boolean) => Promise<void>;
   readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
   sandbox: Sandbox;
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
-  materializedCase?: MaterializedSandboxCase;
-  preparedBeforeCache?: PreparedBeforeCacheUse;
+  materializedCase: MaterializedSandboxCase | undefined;
+  preparedBeforeCache: PreparedBeforeCacheUse | undefined;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
   /** 本 attempt 解析出的超时上限与它的出处;超时归属(`error.timeout`)照它落盘。 */
-  attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
+  attemptTimeout: { timeoutMs: number; source: TimeoutSource } | undefined;
   /** attempt deadline 的截止**时刻**;命令节点的时限归属按它算剩余量。四层都没声明上限时缺席。 */
-  deadlineAt?: number;
-  receiver?: TraceReceiver;
-  telemetry?: Telemetry;
+  deadlineAt: number | undefined;
+  receiver: TraceReceiver | undefined;
+  telemetry: Telemetry | undefined;
   /** 非沙箱 tracing agent 的共享 OTLP 通道(run 级池持有,不随 attempt 关)。 */
-  otel?: AgentOtelChannel;
+  otel: AgentOtelChannel | undefined;
   signal: AbortSignal;
   log: (m: string) => void;
   /** 进入一个正式 LifecyclePhase 边界(见 runAttemptEffect 顶部的定义)。 */
@@ -2559,11 +2595,11 @@ interface AttemptResources {
   /** Private Observability capture; its final attachment facts are read only by the Record adapter. */
   observabilityRuntime: RunnerAttemptObservabilityRuntime;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
-  concurrencySlot?: ConcurrencySlot;
+  concurrencySlot: ConcurrencySlot | undefined;
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
-  onEnvironmentIncomplete?: (failure: BeforeCacheAmbiguityError) => void;
+  onEnvironmentIncomplete: (failure: BeforeCacheAmbiguityError) => void;
   /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
   isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
@@ -2584,7 +2620,7 @@ interface AttemptResources {
   /** Registers the Attempt-local runtime and its post-run evidence state for scope sealing. */
   registerAssertions: (runtime: AssertionsRuntime<"pass" | "score">, state: AssertFirstContextState) => void;
   /** Run 级 Agent artifact prepare 协调器；仅 Runner 的 agent.install 使用。 */
-  prepareCoordinator?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
+  prepareCoordinator: import("../agents/provisioner.ts").ArtifactPrepareCoordinator | undefined;
   /** Attempt Scope-owned registry for adapter processes spanning sends. */
   attemptResources: ManagedAttemptResources;
   /** Records the registry's single terminal release failure at most once. */
@@ -2883,9 +2919,7 @@ async function runAttemptBody(
     experimentId: run.experimentId,
     evalId: evalDef.id,
     attempt,
-    ...(evalDef.evalGroup === undefined
-      ? {}
-      : { evalGroup: { id: evalDef.evalGroup.id, definitionHash: evalDef.evalGroup.definitionHash } }),
+    evalGroup: evalGroupContext(evalDef),
     signal,
     progress: feedback.progress,
     diagnostic: feedback.diagnostic,
@@ -2903,14 +2937,13 @@ async function runAttemptBody(
 
   const cleanupContextFor = (owner: ScheduledSandboxBefore["owner"]): Omit<SandboxCommandContext, "onCleanup"> => ({
     phase: "before",
-    ...(evalDef.evalGroup === undefined
-      ? {}
-      : {
-          evalGroup: {
+    evalGroup:
+      evalDef.evalGroup === undefined
+        ? undefined
+        : {
             id: evalDef.evalGroup.id,
             definitionHash: evalDef.evalGroup.definitionHash,
           },
-        }),
     owner,
     attempt: { id: `${run.experimentId}/${evalDef.id}`, index: attempt },
     signal,
@@ -2943,18 +2976,24 @@ async function runAttemptBody(
   }
 
   const executeBefore = async (entry: ScheduledSandboxBefore): Promise<void> => {
-    const ownerPhase: LifecyclePhase =
-      entry.owner.kind === "eval"
-        ? "sandbox.prepare.eval"
-        : entry.owner.kind === "eval-group"
-          ? "sandbox.prepare.group"
-          : entry.owner.kind === "experiment"
-            ? "sandbox.prepare.experiment"
-            : "sandbox.prepare";
-    enterPhase(ownerPhase);
+    function ownerPhase(): LifecyclePhase {
+      switch (entry.owner.kind) {
+        case "eval":
+          return "sandbox.prepare.eval";
+        case "eval-group":
+          return "sandbox.prepare.group";
+        case "experiment":
+          return "sandbox.prepare.experiment";
+        default:
+          return "sandbox.prepare";
+      }
+    }
+    enterPhase(ownerPhase());
     const label = `${entry.owner.kind}:${entry.owner.id}/${entry.id}`;
     const startedAt = recorder.offsetNow();
-    const node = recorder.child(sandboxPrepareActivity({ label, startOffsetMs: startedAt }));
+    const node = recorder.child(
+      sandboxPrepareActivity({ label, startOffsetMs: startedAt, durationMs: 0, failed: false }),
+    );
     if (node) recorder.pushParent(node);
     const cleanupContext = cleanupContextFor(entry.owner);
     let acceptingCleanup = true;
@@ -3013,19 +3052,24 @@ async function runAttemptBody(
       | "unsupported"
       | "degraded",
     entry: ScheduledSandboxBefore,
-  ): void =>
-    feedback.progress({
-      message:
-        status === "unsupported-state" || status === "unsupported-state-ancestor"
-          ? `before-cache cache=unsupported reason=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
-          : status === "replay(contended)"
-            ? `before-cache cache=replay reason=contended action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
-            : status === "replay(restore-failed)"
-              ? `before-cache cache=replay reason=restore-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
-              : status === "executed(publish-failed)"
-                ? `before-cache cache=uncached reason=publish-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`
-                : `before-cache cache=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`,
-    });
+  ): void => {
+    function cacheMessage(): string {
+      switch (status) {
+        case "unsupported-state":
+        case "unsupported-state-ancestor":
+          return `before-cache cache=unsupported reason=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`;
+        case "replay(contended)":
+          return `before-cache cache=replay reason=contended action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`;
+        case "replay(restore-failed)":
+          return `before-cache cache=replay reason=restore-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`;
+        case "executed(publish-failed)":
+          return `before-cache cache=uncached reason=publish-failed action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`;
+        default:
+          return `before-cache cache=${status} action=${entry.id} owner=${entry.owner.kind}:${entry.owner.id}`;
+      }
+    }
+    feedback.progress({ message: cacheMessage() });
+  };
 
   const restoreFailedDiagnostic = (entry: ScheduledSandboxBefore): void =>
     feedback.diagnostic({
@@ -3083,7 +3127,8 @@ async function runAttemptBody(
           "Run-level prepared before-cache coverage does not match the linked before plan.",
         );
       }
-      const start = materializedCase.beforeCacheStart;
+      const start =
+        materializedCase.beforeCache._tag === "RunPrepared" ? materializedCase.beforeCache.start : undefined;
       const degraded =
         start?._tag === "FellBackToBase"
           ? { reason: start.reason, operationId: `before-cache-${randomUUID()}` }
@@ -3132,7 +3177,13 @@ async function runAttemptBody(
       return;
     }
     // The module's AttemptCaptured materializer must supply this implementation.
-    const capability: AttemptBeforeCache = materializedCase.attemptBeforeCache!;
+    if (materializedCase.beforeCache._tag !== "AttemptCaptured") {
+      throw new SandboxStepOperationUnavailableError(
+        "beforeCache",
+        "AttemptCaptured materialization has no cache capability.",
+      );
+    }
+    const capability = materializedCase.beforeCache.capability;
     let eligibility: ReturnType<AttemptBeforeCache["eligibility"]>;
     try {
       eligibility = capability.eligibility();
@@ -3178,17 +3229,15 @@ async function runAttemptBody(
       eligibleCount += 1;
     }
     const stateBarrierIndex = eligibleCount < structurallyEligibleCount ? eligibleCount : undefined;
+    function stateBarrierStatus(index: number, fallback: "unsupported" | "replay(miss)") {
+      if (stateBarrierIndex === index) return "unsupported-state";
+      if (stateBarrierIndex !== undefined && index > stateBarrierIndex) return "unsupported-state-ancestor";
+      return fallback;
+    }
     if (eligibleCount === 0) {
       for (let index = 0; index < linked.before.length; index++) {
         const entry = linked.before[index]!;
-        cacheProgress(
-          stateBarrierIndex === index
-            ? "unsupported-state"
-            : stateBarrierIndex !== undefined && index > stateBarrierIndex
-              ? "unsupported-state-ancestor"
-              : "unsupported",
-          entry,
-        );
+        cacheProgress(stateBarrierStatus(index, "unsupported"), entry);
         await executeBefore(entry);
       }
       return;
@@ -3355,7 +3404,7 @@ async function runAttemptBody(
               },
               dedupeKey: `sandbox-environment-incomplete:${captured.failure.operationId}`,
             });
-            onEnvironmentIncomplete?.(captured.failure);
+            onEnvironmentIncomplete(captured.failure);
           }
           feedback.diagnostic({
             code: "cache-capture-failed-after-execution",
@@ -3456,14 +3505,7 @@ async function runAttemptBody(
     // The first opaque or unsupported-state node is a lineage barrier. Every
     // suffix action replays even if its own declared state would fit coverage.
     for (let index = eligibleCount; index < linked.before.length; index++) {
-      cacheProgress(
-        stateBarrierIndex === index
-          ? "unsupported-state"
-          : stateBarrierIndex !== undefined && index > stateBarrierIndex
-            ? "unsupported-state-ancestor"
-            : "replay(miss)",
-        linked.before[index]!,
-      );
+      cacheProgress(stateBarrierStatus(index, "replay(miss)"), linked.before[index]!);
       await executeBefore(linked.before[index]!);
     }
   };
@@ -3496,7 +3538,7 @@ async function runAttemptBody(
           code: "sandbox.before-capability-unavailable",
           capability: "managed-process",
           provider: a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : "direct",
-          actionIds: Object.freeze(stdinActions.map((entry) => entry.data.plan.id)),
+          actionIds: stdinActions.map((entry) => entry.data.plan.id),
           reason,
           message: `Sandbox before planning requires managed-process stdin for ${stdinActions.length} actions, but the provider cannot supply it: ${reason}`,
         });
@@ -3512,7 +3554,7 @@ async function runAttemptBody(
           code: "sandbox.before-capability-unavailable",
           capability: "managed-process-user",
           provider: a.plan._tag === "Sandbox" ? a.plan.providerPlan.provider : "direct",
-          actionIds: Object.freeze(explicitUserActions.map((entry) => entry.data.plan.id)),
+          actionIds: explicitUserActions.map((entry) => entry.data.plan.id),
           reason: "the provider-neutral managed-process seam does not yet carry an execution-user override",
           message:
             "Sandbox before planning cannot combine exec.stdin with an explicit user until the provider-neutral managed-process seam carries that option.",
@@ -3551,7 +3593,10 @@ async function runAttemptBody(
         if (Result.isFailure(installed)) throw installed.failure;
         if (
           preparedBeforeCache?.agentDerived === true &&
-          materializedCase?.beforeCacheStart?._tag !== "FellBackToBase"
+          !(
+            materializedCase?.beforeCache._tag === "RunPrepared" &&
+            materializedCase.beforeCache.start._tag === "FellBackToBase"
+          )
         ) {
           for (const result of installed.success) {
             if (result.outcome === "hit")
@@ -3636,24 +3681,23 @@ async function runAttemptBody(
     log(`driving agent...`);
     const { context, state } = createAssertFirstEvalContext({
       captureSimulatedUser: res.captureSimulatedUser,
-      ...(res.deadlineAt === undefined ? {} : { deadlineAt: res.deadlineAt }),
+      deadlineAt: res.deadlineAt,
       agent,
       sandbox,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
-      ...(evalDef.evalGroup === undefined
-        ? {}
-        : {
-            evalGroup: {
+      evalGroup:
+        evalDef.evalGroup === undefined
+          ? undefined
+          : {
               id: evalDef.evalGroup.id,
               definitionHash: evalDef.evalGroup.definitionHash,
             },
-          }),
-      ...(run.model === undefined ? {} : { model: run.model }),
-      ...(run.reasoningEffort === undefined ? {} : { reasoningEffort: run.reasoningEffort }),
+      model: run.model,
+      reasoningEffort: run.reasoningEffort,
       judgeUsage: res.judgeUsage,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
-      ...(config.pricing === undefined ? {} : { pricing: config.pricing }),
+      pricing: config.pricing,
       flags: run.flags,
       experimentId: run.experimentId,
       judge: a.judge,
@@ -3663,10 +3707,10 @@ async function runAttemptBody(
       requestEffect: assertFirst.requestEffect,
       signal,
       log,
-      ...(telemetry === undefined ? {} : { telemetry: telemetry }),
-      ...(otel === undefined ? {} : { otel: otel }),
+      telemetry,
+      otel,
       feedback,
-      ...(concurrencySlot === undefined ? {} : { concurrencySlot: concurrencySlot }),
+      concurrencySlot,
       sourceRegistry,
       resources: attemptResources,
       nextSourceOrder: sourceCapture.nextSourceOrder,
@@ -3695,8 +3739,8 @@ async function runAttemptBody(
             turnId: info.turnId,
             outcome: info.outcome,
             observed: info.observed,
-            ...(info.adapterStatus === undefined ? {} : { adapterStatus: info.adapterStatus }),
-            ...(info.evidenceCoverage === undefined ? {} : { evidenceCoverage: info.evidenceCoverage }),
+            adapterStatus: info.adapterStatus,
+            evidenceCoverage: info.evidenceCoverage,
           });
           if (info.usage !== undefined) {
             captureRunnerTurnUsage(observabilityRuntime, info.turnId, info.usage);
@@ -3706,13 +3750,13 @@ async function runAttemptBody(
               label: info.label,
               startOffsetMs: info.startOffsetMs,
               durationMs: info.durationMs,
-              ...(info.failed ? { failed: true as const } : {}),
+              failed: info.outcome !== "completed",
               sessionIndex: info.sessionIndex,
               turnIndex: info.turnIndex,
               turnId: info.turnId,
-              ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
-              ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
-              ...(info.usage !== undefined ? { usage: info.usage } : {}),
+              traceId: info.trace.attribution === "none" ? undefined : info.trace.traceId,
+              traceAttribution: info.trace.attribution,
+              usage: info.usage,
             }),
           );
         },
@@ -3720,8 +3764,7 @@ async function runAttemptBody(
           normalizeObservedText: (value: string) => redactSensitiveText(value, sensitiveValues),
           onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
             beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId, info.sessionScopeId);
-            const { loc, ...turn } = info;
-            sourceCapture.onTurnStart({ ...turn, ...(loc === undefined ? {} : { loc }) });
+            sourceCapture.onTurnStart(info);
           },
         },
       ),
@@ -3797,6 +3840,7 @@ async function runAttemptBody(
           label: "export workspace diff",
           startOffsetMs: startedAt,
           durationMs: 0,
+          failed: false,
         }),
       );
       if (operation) recorder.pushParent(operation);
@@ -3857,19 +3901,19 @@ async function runAttemptBody(
         ...(captureFailure === undefined
           ? []
           : [
-              Object.freeze({
+              {
                 code: "capture-failed" as const,
                 stage: "checkpoint" as const,
                 atWindowId: captureFailure.label,
-              }),
+              },
             ]),
         ...(!diffExportAvailable
           ? [
-              Object.freeze({
+              {
                 code: "capture-failed" as const,
                 stage: "export" as const,
                 atWindowId: null,
-              }),
+              },
             ]
           : []),
       ];
@@ -3880,11 +3924,11 @@ async function runAttemptBody(
             ...limitations,
             ...(diffExportAvailable
               ? [
-                  Object.freeze({
+                  {
                     code: "capture-failed" as const,
                     stage: "normalize" as const,
                     atWindowId: null,
-                  }),
+                  },
                 ]
               : []),
           ],
@@ -3900,22 +3944,22 @@ async function runAttemptBody(
       // not a collector limitation. Keep this outside the collector catches.
 
       if (!skipReason && diffArtifactAvailable && captureFailure === undefined && document !== undefined) {
-        state.late.diff = Object.freeze({
+        state.late.diff = {
           state: "available" as const,
           document,
-        });
+        };
         workspaceDiff = document;
       } else {
-        state.late.diff = Object.freeze({
+        state.late.diff = {
           state: "unavailable" as const,
           reason: "producer-failed" as const,
-        });
+        };
       }
     } else {
-      state.late.diff = Object.freeze({
+      state.late.diff = {
         state: "unavailable" as const,
         reason: usesSandbox ? ("producer-failed" as const) : ("sandbox-unavailable" as const),
-      });
+      };
     }
     if (!skipReason && usesSandbox && diffArtifactAvailable) {
       const files = Object.values(diff.files);
@@ -3941,8 +3985,9 @@ async function runAttemptBody(
           options: {
             execution: error === undefined ? "completed" : "errored",
             explicitlySkipped: skipReason !== undefined,
+            interrupted: false,
           },
-          ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
+          workspaceDiff,
         }),
       );
     } finally {
@@ -3987,7 +4032,7 @@ async function runAttemptBody(
           ),
         );
         trace = collected.trace;
-        await res.recordTelemetryTrace?.(collected.trace, collected.partial);
+        await res.recordTelemetryTrace(collected.trace, collected.partial);
       } catch (collectError) {
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({
@@ -4068,16 +4113,17 @@ async function runAttemptBody(
     let sealed: SealedAttemptAssertions | undefined;
     if (assertionState !== undefined) {
       if (assertionState.late.diff.state === "pending") {
-        assertionState.late.diff = Object.freeze({
+        assertionState.late.diff = {
           state: "unavailable" as const,
           reason: "producer-failed" as const,
-        });
+        };
       }
       try {
         sealed = await assertFirst.requestEffect(
           assertFirst.requestSeal({
             runtime: assertionState.assertions,
-            options: { execution: "errored" },
+            options: { execution: "errored", explicitlySkipped: false, interrupted: false },
+            workspaceDiff: undefined,
           }),
         );
       } catch {
@@ -4085,15 +4131,16 @@ async function runAttemptBody(
         // fallback as an execution error without inventing another runtime.
       }
     }
+    function failedResultProjection() {
+      if (sealed !== undefined) return legacyResultProjectionFromSealedAssertions(sealed, error);
+      if (evalDef.evaluationKind === "score") return { scoreResult: scoreFactOutcomeForAttemptError(error) };
+      return {};
+    }
     const value: EvalResult = {
       ...base,
       durationMs: recorder.offsetNow(),
       error,
-      ...(sealed === undefined
-        ? evalDef.evaluationKind === "score"
-          ? { scoreResult: scoreFactOutcomeForAttemptError(error) }
-          : {}
-        : legacyResultProjectionFromSealedAssertions(sealed, error)),
+      ...failedResultProjection(),
       ...(agentInstallation !== undefined ? { agentInstallation } : {}),
     };
     return value;
@@ -4349,7 +4396,7 @@ function withCommandTiming(
   const recordCommandExit = (
     node: TimingActivity | undefined,
     display: string,
-    result: { exitCode: number; stdout?: unknown; stderr?: unknown },
+    result: CommandResult,
     checked: boolean,
   ): void => {
     if (!node) return;
@@ -4364,10 +4411,10 @@ function withCommandTiming(
     });
   };
 
-  const wrap = async <T>(
+  const wrap = async <T extends CommandResult>(
     cmd: string,
     args: readonly string[] | undefined,
-    opts: unknown,
+    opts: CommandOptions | undefined,
     checked: boolean,
     invocationKind: "argv" | "shell",
     fn: () => Promise<T>,
@@ -4381,56 +4428,40 @@ function withCommandTiming(
       phase: getPhase() ?? "eval.run",
       invocationKind,
       command: cmd,
-      ...(args === undefined ? {} : { args }),
-      ...(opts === undefined ? {} : { options: opts }),
+      args,
+      options: opts,
     });
     const startOffsetMs = recorder.offsetNow();
     const wallStartedAt = Date.now();
     // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
     // 这一刻**的剩余量——同一台沙箱上的第二条命令拿到的不是一整份上限。
     const limit = commandLimitAttribution(
-      opts as { timeoutMs?: number } | undefined,
-      { ...(deadlineAt === undefined ? {} : { deadlineAt: deadlineAt }) },
+      { timeoutMs: opts?.timeoutMs },
+      { commandTimeoutMs: undefined, deadlineAt },
       wallStartedAt,
     );
     try {
       const result = await fn();
-      const exitCode = (result as { exitCode?: unknown })?.exitCode;
-      const nonZero = typeof exitCode === "number" && exitCode !== 0;
+      const exitCode = result.exitCode;
+      const nonZero = exitCode !== 0;
       const node = recorder.child(
         commandNode({
           display,
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           checked,
-          ...(limit !== undefined ? { limit } : {}),
-          ...(typeof exitCode === "number"
-            ? {
-                exitCode,
-                ...(nonZero
-                  ? {
-                      ...(checked ? { failed: true } : {}),
-                    }
-                  : {}),
-              }
-            : {}),
+          limit,
+          exitCode,
+          failed: nonZero && checked,
         }),
       );
       if (typeof exitCode === "number") {
-        recordCommandExit(
-          node,
-          display,
-          {
-            exitCode,
-            ...(result as { stdout?: unknown; stderr?: unknown }),
-          },
-          checked,
-        );
+        recordCommandExit(node, display, result, checked);
         captureRunnerCommandResult({
           handle: observabilityCommand,
           exitCode,
-          stdout: (result as { stdout?: unknown }).stdout,
-          stderr: (result as { stderr?: unknown }).stderr,
+          stdout: result.stdout,
+          stderr: result.stderr,
         });
       } else {
         captureRunnerCommandCaptureFailed(observabilityCommand);
@@ -4439,7 +4470,7 @@ function withCommandTiming(
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
       // 不能让它从 CommandResult → assertion/error 旁路带出未脱敏文本。
       if (result !== null && typeof result === "object") {
-        return { ...result, command: display } as T;
+        return { ...result, command: display };
       }
       return result;
     } catch (e) {
@@ -4461,13 +4492,9 @@ function withCommandTiming(
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           checked,
-          ...(typeof exitCode === "number"
-            ? {
-                exitCode,
-                ...(checked && exitCode !== 0 ? { failed: true } : {}),
-              }
-            : { failed: true }),
-          ...(hit !== undefined ? { limit: hit } : {}),
+          exitCode,
+          failed: exitCode === undefined || (checked && exitCode !== 0),
+          limit: hit,
         }),
       );
       if (commandResult !== undefined) {
@@ -4480,7 +4507,7 @@ function withCommandTiming(
         });
       } else if (e instanceof SandboxCommandTimeoutError) {
         captureRunnerCommandTimeout(observabilityCommand);
-      } else if (attemptSignal.aborted || (opts as { signal?: AbortSignal } | undefined)?.signal?.aborted === true) {
+      } else if (attemptSignal.aborted || opts?.signal?.aborted === true) {
         // The provider call was already entered, so cancellation terminates
         // this registered command rather than claiming it never started.
         captureRunnerCommandInterrupted(observabilityCommand);
@@ -4496,28 +4523,20 @@ function withCommandTiming(
   const timed = new Proxy(sandbox, {
     get(target, prop, receiver) {
       if (prop === "runCommand") {
-        return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, false, "argv", () =>
-            (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
-          );
+        return (cmd: string, args?: readonly string[], opts?: CommandOptions) =>
+          wrap(cmd, args, opts, false, "argv", () => target.runCommand(cmd, args, opts));
       }
       if (prop === "runShell") {
-        return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, false, "shell", () =>
-            (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts),
-          );
+        return (script: string, opts?: CommandOptions) =>
+          wrap(script, undefined, opts, false, "shell", () => target.runShell(script, opts));
       }
       if (prop === "runCommandOrThrow") {
-        return (cmd: string, args?: readonly string[], opts?: unknown) =>
-          wrap(cmd, args, opts, true, "argv", () =>
-            (target.runCommandOrThrow as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts),
-          );
+        return (cmd: string, args?: readonly string[], opts?: CommandOptions) =>
+          wrap(cmd, args, opts, true, "argv", () => target.runCommandOrThrow(cmd, args, opts));
       }
       if (prop === "runShellOrThrow") {
-        return (script: string, opts?: unknown) =>
-          wrap(script, undefined, opts, true, "shell", () =>
-            (target.runShellOrThrow as (...a: unknown[]) => Promise<unknown>)(script, opts),
-          );
+        return (script: string, opts?: CommandOptions) =>
+          wrap(script, undefined, opts, true, "shell", () => target.runShellOrThrow(script, opts));
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;

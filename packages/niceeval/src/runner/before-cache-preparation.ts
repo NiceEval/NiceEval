@@ -29,19 +29,21 @@ import { plannedBeforeCacheActions, beforeCacheStep, type PlannedBeforeCacheActi
 
 export interface PreparedBeforeCacheUse {
   readonly context: BeforeCachePreparationContext;
-  readonly artifact?: BeforeCacheArtifact;
+  readonly artifact: BeforeCacheArtifact | undefined;
   readonly satisfiedActionCount: number;
-  readonly agentDerived?: true;
-  readonly degraded?: {
-    readonly reason: string;
-    readonly operationId: string;
-    readonly nodes?: readonly {
-      readonly key: string;
-      readonly actionId: string;
-      readonly owner: string;
-      readonly reason: string;
-    }[];
-  };
+  readonly agentDerived: boolean;
+  readonly degraded:
+    | {
+        readonly reason: string;
+        readonly operationId: string;
+        readonly nodes: readonly {
+          readonly key: string;
+          readonly actionId: string;
+          readonly owner: string;
+          readonly reason: string;
+        }[];
+      }
+    | undefined;
 }
 
 export interface BeforeCachePreparationResult {
@@ -80,7 +82,7 @@ export type BeforeCachePreparationActivityEvent =
       readonly phase: "materialize" | "action" | "capture" | "provider";
       readonly actionIndex: number;
       readonly actionId: string;
-      readonly detail?: string;
+      readonly detail: string | undefined;
     })
   | (BeforeCachePreparationActivityBase & {
       readonly status: "done";
@@ -95,16 +97,16 @@ export type BeforeCachePreparationActivityEvent =
 
 export interface PrepareBeforeCachesOptions {
   readonly runIds: ReadonlyMap<string, string>;
-  readonly onWarning?: (warning: ReturnType<typeof beforeCacheReplacementWarnings>[number]) => void;
-  readonly signal?: AbortSignal;
-  readonly onActivity?: (event: BeforeCachePreparationActivityEvent) => void;
-  readonly maxConcurrency?: number;
-  readonly artifactPrepare?: ArtifactPrepareCoordinator;
+  readonly onWarning: (warning: ReturnType<typeof beforeCacheReplacementWarnings>[number]) => void;
+  readonly signal: AbortSignal | undefined;
+  readonly onActivity: (event: BeforeCachePreparationActivityEvent) => void;
+  readonly maxConcurrency: number;
+  readonly artifactPrepare: ArtifactPrepareCoordinator;
 }
 
 interface PreparationNode {
   readonly key: string;
-  readonly parentKey?: string;
+  readonly parentKey: string | undefined;
   readonly representative: Attempt;
   readonly recordRunId: string;
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
@@ -134,8 +136,7 @@ function continuousEligibleActions(
   coverage: SandboxActionState,
 ): readonly Extract<ScheduledSandboxBefore, { readonly kind: "action" }>[] {
   const pair = plan.pair;
-  if (pair.setupHooks.length > 0 || pair.teardownHooks.length > 0 || pair.pluginLifecycles.length > 0)
-    return Object.freeze([]);
+  if (pair.setupHooks.length > 0 || pair.teardownHooks.length > 0 || pair.pluginLifecycles.length > 0) return [];
 
   const eligible: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>[] = [];
   let cumulative: SandboxActionState | undefined;
@@ -154,7 +155,7 @@ function continuousEligibleActions(
     if (!sandboxActionStateCovers(coverage, cumulative)) break;
     eligible.push(entry);
   }
-  return Object.freeze(eligible);
+  return eligible;
 }
 
 function preparationFeedback(progress: (message: string) => void): ScopedFeedback {
@@ -162,7 +163,7 @@ function preparationFeedback(progress: (message: string) => void): ScopedFeedbac
     progress: ({ message }) => progress(message),
     diagnostic: () => undefined,
   };
-  return Object.freeze(feedback);
+  return feedback;
 }
 
 function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
@@ -199,10 +200,10 @@ function lookupPreparationNode(
     ) {
       return yield* Effect.fail(new Error("Provider returned a before-cache artifact outside the requested lineage."));
     }
-    return Object.freeze({
+    return {
       artifact,
       outcome: "hit" as const,
-    });
+    };
   });
 }
 
@@ -236,6 +237,9 @@ function materializePreparationNode(
           const signal = yield* Effect.abortSignal;
           const runtimeInput: SandboxRuntimeMaterializeInput = {
             runId: node.recordRunId,
+            attemptId: undefined,
+            creationEvalId: undefined,
+            sandboxLabels: node.representative.run.sandboxLabels,
             plan: node.plan,
             evalId: node.representative.evalDef.id,
             deadline: { _tag: "Unlimited" },
@@ -243,13 +247,22 @@ function materializePreparationNode(
             signal,
             hookContext: {
               experimentId: node.plan.pair.experimentId,
+              evalGroup:
+                node.representative.evalDef.evalGroup === undefined
+                  ? undefined
+                  : {
+                      id: node.representative.evalDef.evalGroup.id,
+                      definitionHash: node.representative.evalDef.evalGroup.definitionHash,
+                    },
               signal,
               progress: feedback.progress,
               diagnostic: feedback.diagnostic,
             },
             buildLocators: new Map<string, JsonValue>(),
             beforeCachePreparationContext: node.context,
-            ...(parent === undefined ? {} : { beforeCacheArtifact: parent }),
+            beforeCacheArtifact: parent,
+            agent: node.representative.run.agent?.kind === "sandbox" ? node.representative.run.agent : undefined,
+            runTiming: undefined,
             provisionSlot: { _tag: "Detached" },
             admission: { _tag: "Detached" },
             services: liveSandboxRuntimeServices,
@@ -335,10 +348,10 @@ function materializePreparationNode(
         }),
       );
       if (captured.outcome === "degraded") return captured;
-      return Object.freeze({
+      return {
         artifact: captured.artifact,
         outcome: "prepared" as const,
-      });
+      };
     }
   });
 }
@@ -353,7 +366,7 @@ export function prepareBeforeCaches(
   options: PrepareBeforeCachesOptions,
 ): Effect.Effect<BeforeCachePreparationResult, Error, Scope.Scope> {
   const program = Effect.gen(function* () {
-    const artifactPrepare = options.artifactPrepare ?? new ArtifactPrepareCoordinator();
+    const artifactPrepare = options.artifactPrepare;
     // The graph is shared by every Record Run in this Invocation. Its holds,
     // reservations and disabled-domain state must use that same ownership.
     const preparationId = randomUUID();
@@ -398,7 +411,9 @@ export function prepareBeforeCaches(
         preparedByPair.set(pairKey, {
           context,
           satisfiedActionCount: 0,
-          degraded: { reason: eligibility.reason, operationId: `before-cache-${randomUUID()}` },
+          artifact: undefined,
+          agentDerived: false,
+          degraded: { reason: eligibility.reason, operationId: `before-cache-${randomUUID()}`, nodes: [] },
         });
         continue;
       }
@@ -418,7 +433,7 @@ export function prepareBeforeCaches(
         const candidate = candidates[index]!;
         const incoming: PreparationNode = {
           key: candidate.key,
-          ...(index === 0 ? {} : { parentKey: candidates[index - 1]!.key }),
+          parentKey: index === 0 ? undefined : candidates[index - 1]!.key,
           representative: attempt,
           recordRunId: runId,
           plan: attempt.plan,
@@ -462,7 +477,7 @@ export function prepareBeforeCaches(
     }
 
     for (const warning of beforeCacheReplacementWarnings([...replacementScopes.keys()], replacementScopes))
-      options.onWarning?.(warning);
+      options.onWarning(warning);
 
     // Validate the complete graph before the first provider lookup or materialization.
     for (const node of nodes.values()) {
@@ -482,7 +497,7 @@ export function prepareBeforeCaches(
       }
     }
 
-    const globalGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency ?? 2));
+    const globalGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency));
     const laneGates = new Map<string, Semaphore.Semaphore>();
     for (const node of nodes.values()) {
       if (!laneGates.has(node.laneKey)) laneGates.set(node.laneKey, yield* Semaphore.make(node.laneLimit));
@@ -520,7 +535,7 @@ export function prepareBeforeCaches(
             id: randomUUID(),
           }));
           const emit = (event: BeforeCachePreparationActivityEvent) => {
-            for (const consumer of activities) options.onActivity?.({ ...event, ...consumer });
+            for (const consumer of activities) options.onActivity({ ...event, ...consumer });
           };
           const startedAt = Date.now();
           let finished = false;
@@ -579,7 +594,7 @@ export function prepareBeforeCaches(
                     phase,
                     actionIndex,
                     actionId,
-                    ...(detail === undefined ? {} : { detail }),
+                    detail,
                   }),
                 inherited,
                 (prepared, staging) =>
@@ -619,7 +634,13 @@ export function prepareBeforeCaches(
         continue;
       }
       let cursor: PreparationNode | undefined = nodes.get(target.finalKey);
-      let use: Omit<PreparedBeforeCacheUse, "context"> = { satisfiedActionCount: 0 };
+      let use: Omit<PreparedBeforeCacheUse, "context"> = {
+        satisfiedActionCount: 0,
+
+        artifact: undefined,
+        degraded: undefined,
+        agentDerived: false,
+      };
       const degradedNodes: NonNullable<NonNullable<PreparedBeforeCacheUse["degraded"]>["nodes"]>[number][] = [];
       while (cursor !== undefined) {
         const ancestor = terminal.get(cursor.key)!;
@@ -627,7 +648,8 @@ export function prepareBeforeCaches(
           use = {
             artifact: ancestor.success.artifact,
             satisfiedActionCount: cursor.actionIndex,
-            ...("installs" in cursor.planned ? { agentDerived: true as const } : {}),
+            agentDerived: "installs" in cursor.planned,
+            degraded: undefined,
           };
           break;
         }
@@ -652,20 +674,20 @@ export function prepareBeforeCaches(
           },
         };
       for (const pairKey of target.pairKeys)
-        preparedByPair.set(pairKey, Object.freeze({ ...use, context: contextsByPair.get(pairKey)! }));
+        preparedByPair.set(pairKey, { ...use, context: contextsByPair.get(pairKey)! });
     }
     const settled = [...outcomes.values()];
-    return Object.freeze({
+    return {
       preparedByPair,
       failuresByPair,
-      summary: Object.freeze({
+      summary: {
         total: nodes.size,
         hit: settled.filter((outcome) => outcome === "hit").length,
         prepared: settled.filter((outcome) => outcome === "prepared").length,
         degraded: settled.filter((outcome) => outcome === "degraded").length,
         failed: settled.filter((outcome) => outcome === "failed").length,
-      }),
-    });
+      },
+    };
   });
   return options.signal === undefined ? program : Effect.raceFirst(program, interruptOnAbort(options.signal));
 }

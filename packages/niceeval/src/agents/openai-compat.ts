@@ -7,6 +7,8 @@
 // 三值逻辑；转换器在单轮缺 usage 时再据实降级该通道。
 
 import type { EvidenceCoverage, JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
+import { isRecord } from "../shared/objects.ts";
+import { decodeJsonValue } from "../shared/json-value.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 const COMPLETE = Object.freeze({ status: "complete" as const });
@@ -58,7 +60,7 @@ function turnCoverage(events: readonly StreamEvent[], usage: Usage | undefined):
 function parseArgs(raw: string | undefined): JsonValue {
   if (!raw) return {};
   try {
-    return JSON.parse(raw) as JsonValue;
+    return decodeJsonValue(raw);
   } catch {
     return raw;
   }
@@ -80,7 +82,7 @@ export interface ChatCompletionCustomToolCallLike {
 
 /** Extensible fallback; unknown future tool-call variants are ignored. */
 export interface ChatCompletionUnknownToolCallLike {
-  id?: string;
+  id?: string | undefined;
   type: string;
 }
 
@@ -90,22 +92,23 @@ export type ChatCompletionToolCallLike =
   | ChatCompletionUnknownToolCallLike;
 
 export interface ChatCompletionMessageLike {
-  role?: string;
+  role?: string | undefined;
+  // 第三方输入边界：Chat Completions 的原生消息允许 null content。
   content?: string | null;
-  tool_calls?: readonly ChatCompletionToolCallLike[];
+  tool_calls?: readonly ChatCompletionToolCallLike[] | undefined;
 }
 
 export interface ChatCompletionUsageLike {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
+  prompt_tokens?: number | undefined;
+  completion_tokens?: number | undefined;
+  prompt_tokens_details?: { cached_tokens?: number | undefined } | undefined;
   /** 推理模型(o-series 等)经 Chat Completions 端点也会带回这项,拆自 completion_tokens。 */
-  completion_tokens_details?: { reasoning_tokens?: number };
+  completion_tokens_details?: { reasoning_tokens?: number | undefined } | undefined;
 }
 
 export interface ChatCompletionLike {
   choices: { message: ChatCompletionMessageLike }[];
-  usage?: ChatCompletionUsageLike;
+  usage?: ChatCompletionUsageLike | undefined;
 }
 
 function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage | undefined {
@@ -154,8 +157,8 @@ export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   return {
     events,
     status: "completed",
-    ...(usage === undefined ? {} : { usage: usage }),
-    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+    usage: usage,
+    evidenceCoverage,
   };
 }
 
@@ -168,7 +171,7 @@ export interface ResponseOutputTextLike {
 
 export interface ResponseMessageItemLike {
   type: "message";
-  content?: readonly unknown[];
+  content?: readonly unknown[] | undefined;
 }
 
 export interface ResponseFunctionCallItemLike {
@@ -179,10 +182,6 @@ export interface ResponseFunctionCallItemLike {
 }
 
 export type ResponseOutputItemLike = ResponseMessageItemLike | ResponseFunctionCallItemLike;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isMessageItem(item: unknown): item is ResponseMessageItemLike {
   return isRecord(item) && item.type === "message";
@@ -199,17 +198,17 @@ function isFunctionCallItem(item: unknown): item is ResponseFunctionCallItemLike
 }
 
 export interface ResponseUsageLike {
-  input_tokens?: number;
-  output_tokens?: number;
-  input_tokens_details?: { cached_tokens?: number };
+  input_tokens?: number | undefined;
+  output_tokens?: number | undefined;
+  input_tokens_details?: { cached_tokens?: number | undefined } | undefined;
   /** 推理模型经 Responses 端点带回的思考 token 拆分,拆自 output_tokens。 */
-  output_tokens_details?: { reasoning_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number | undefined } | undefined;
 }
 
 export interface ResponseLike {
   /** Full official Responses output union; recognized items are narrowed at runtime. */
   output: readonly unknown[];
-  usage?: ResponseUsageLike;
+  usage?: ResponseUsageLike | undefined;
 }
 
 function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined {
@@ -258,7 +257,7 @@ export function turnFromResponses(res: ResponseLike): Turn {
   return {
     events,
     status: "completed",
-    ...(usage === undefined ? {} : { usage: usage }),
-    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+    usage: usage,
+    evidenceCoverage,
   };
 }

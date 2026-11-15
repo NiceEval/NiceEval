@@ -24,7 +24,8 @@ function entry(
   ...parameters: readonly SQLInputValue[]
 ): SnapshotLedgerEntry | undefined {
   const row = database.prepare(sql).get(...parameters);
-  return row === undefined ? undefined : decodeEntry(row);
+  if (row === undefined) return undefined;
+  return decodeEntry(row);
 }
 
 function insertRunHold(database: DatabaseSync, row: SnapshotLedgerEntry, holdId: string, now: number): void {
@@ -123,6 +124,7 @@ function lookupReserve(
       code: "user-database-invalid",
       message: "Before cache snapshot generation is exhausted",
       repository: BEFORE_CACHE_SNAPSHOTS_REPOSITORY,
+      cause: undefined,
     });
   database
     .prepare(`INSERT INTO before_cache_snapshots

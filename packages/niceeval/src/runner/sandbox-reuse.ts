@@ -34,7 +34,7 @@ export type SandboxReusePoolIdentityFacet = "provider plan" | "agent install" | 
 export interface SandboxReusePoolDescriptorInput {
   readonly run: AgentRun;
   readonly evalId: string;
-  readonly evalGroupId?: string;
+  readonly evalGroupId: string | undefined;
   readonly plan: LinkedRunPlan;
 }
 
@@ -57,18 +57,18 @@ export function sandboxReusePoolDescriptor(
     if (input.run.sandboxReuse !== true) return undefined;
     scope = input.plan.pair.hasEvalPhysicalLifecycle ? { kind: "eval", evalId: input.evalId } : { kind: "shared" };
   }
-  const identity = Object.freeze({
+  const identity = {
     providerPlan: input.plan.providerPlan.identity,
     agentInstalls: [...agentInstallPlansForRun(input.run)],
     physicalLifecycle: sandboxPhysicalLifecycleIdentity(input.plan.pair),
-    scope: Object.freeze(scope),
-  });
+    scope,
+  };
   const digest = digestOf(identity);
-  return Object.freeze({
+  return {
     key: `sandbox-reuse-pool:${digest}`,
     scope: identity.scope,
     identity,
-  });
+  };
 }
 
 /** Explain a failed cohort comparison without duplicating lifecycle projection logic. */
@@ -80,5 +80,5 @@ export function sandboxReusePoolIdentityDifferences(
   if (digestOf(left.providerPlan) !== digestOf(right.providerPlan)) differences.push("provider plan");
   if (digestOf(left.agentInstalls) !== digestOf(right.agentInstalls)) differences.push("agent install");
   if (digestOf(left.physicalLifecycle) !== digestOf(right.physicalLifecycle)) differences.push("physical lifecycle");
-  return Object.freeze(differences);
+  return differences;
 }

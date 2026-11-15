@@ -48,12 +48,11 @@ export function failureDetailFromResult(
   // 「时限归属」)。
   const timeout = fallbackError?.timeout;
   const attribution = timeout ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})` : "";
-  const reason =
-    fallbackError !== undefined
-      ? `${executionErrorReason(fallbackError.message)}${attribution}`
-      : fact !== undefined
-        ? compactAssertionSummary(fact)
-        : summaryText(result.verdict);
+  function failureReason(): string {
+    if (fallbackError !== undefined) return `${executionErrorReason(fallbackError.message)}${attribution}`;
+    if (fact !== undefined) return compactAssertionSummary(fact);
+    return summaryText(result.verdict);
+  }
   const origin = fallbackError?.origin;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
@@ -63,21 +62,21 @@ export function failureDetailFromResult(
   return {
     locator,
     identity: {
-      ...(result.experimentId === undefined ? {} : { experimentId: result.experimentId }),
+      experimentId: result.experimentId,
       evalId: result.id,
       attempt: result.attempt,
     },
     who: runWho({
       agentName: result.adapter?.name ?? "",
-      ...(result.model === undefined ? {} : { model: result.model }),
-      ...(result.experimentId === undefined ? {} : { experimentId: result.experimentId }),
+      model: result.model,
+      experimentId: result.experimentId,
     }),
     verdict: result.verdict,
-    reason,
-    ...(fact !== undefined ? { fact } : {}),
-    ...(phase !== undefined ? { phase } : {}),
-    ...(code !== undefined ? { code } : {}),
-    ...(origin !== undefined ? { origin } : {}),
+    reason: failureReason(),
+    fact,
+    phase,
+    code,
+    origin,
   };
 }
 
@@ -123,23 +122,29 @@ function criterionTitle(criterion: AssertionCriterion): string {
 }
 
 function diagnosticFields(diagnostic: AssertionSnapshotObject | undefined): {
-  readonly matcher?: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
+  readonly matcher: string | undefined;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
 } {
   const value = record(diagnostic);
-  if (value === undefined) return {};
+  if (value === undefined)
+    return {
+      matcher: undefined,
+      expected: undefined,
+      received: undefined,
+      reason: undefined,
+    };
   const string = (key: string): string | undefined => (typeof value[key] === "string" ? value[key] : undefined);
   const matcher = string("message");
   const expected = string("expected");
   const received = string("received");
   const reason = string("reason");
   return {
-    ...(matcher === undefined ? {} : { matcher }),
-    ...(expected === undefined ? {} : { expected }),
-    ...(received === undefined ? {} : { received }),
-    ...(reason === undefined ? {} : { reason }),
+    matcher,
+    expected,
+    received,
+    reason,
   };
 }
 
@@ -151,15 +156,15 @@ function assertionCandidate(
   const subject = entry.subject.kind === "snapshot" ? record(entry.subject.value) : undefined;
   const errorReason = [...(result.events ?? [])].reverse().find((event) => event.type === "error")?.message;
   if (entry.criterion.kind === "scope-status") {
-    delete diagnostic.expected;
-    delete diagnostic.received;
+    diagnostic.expected = undefined;
+    diagnostic.received = undefined;
     if (entry.criterion.assertion === "succeeded") diagnostic.expected = "completed";
     if (typeof subject?.status === "string") diagnostic.received = subject.status;
   }
   return {
     title: entry.display.label ?? criterionTitle(entry.criterion),
     ...diagnostic,
-    ...(errorReason === undefined ? {} : { reason: errorReason }),
+    reason: errorReason,
   };
 }
 
@@ -179,10 +184,10 @@ function primaryAssertionSummary(
   const candidate = assertionCandidate(primary, result);
   return {
     title: summaryText(candidate.title),
-    ...(candidate.matcher === undefined ? {} : { matcher: summaryText(candidate.matcher) }),
-    ...(candidate.expected === undefined ? {} : { expected: summaryText(candidate.expected) }),
-    ...(candidate.received === undefined ? {} : { received: summaryText(candidate.received) }),
-    ...(candidate.reason === undefined ? {} : { reason: summaryText(candidate.reason) }),
+    matcher: candidate.matcher === undefined ? undefined : summaryText(candidate.matcher),
+    expected: candidate.expected === undefined ? undefined : summaryText(candidate.expected),
+    received: candidate.received === undefined ? undefined : summaryText(candidate.received),
+    reason: candidate.reason === undefined ? undefined : summaryText(candidate.reason),
     additionalFailures: failures.length - 1,
   };
 }
@@ -206,11 +211,16 @@ export function failureDetailFromCurrentReusedAttempt(
     },
     who: runWho({
       agentName: run.adapter?.name ?? "",
-      ...(run.model === undefined ? {} : { model: run.model }),
+      model: run.model,
       experimentId: run.experimentId,
     }),
     verdict: "failed",
     reason: diagnostic === undefined ? summaryText(readback.verdict) : executionErrorReason(diagnostic.summary),
+
+    fact: undefined,
+    phase: undefined,
+    code: undefined,
+    origin: undefined,
   };
 }
 
@@ -252,22 +262,22 @@ function primaryFactSummary(result: EvalResult, terminal: FailureSummaryTerminal
   if (primary === undefined) return undefined;
   return {
     title: summaryText(primary.title),
-    ...(primary.matcher === undefined ? {} : { matcher: summaryText(primary.matcher) }),
-    ...(primary.expected === undefined ? {} : { expected: summaryText(primary.expected) }),
-    ...(primary.received === undefined ? {} : { received: summaryText(primary.received) }),
-    ...(primary.reason === undefined ? {} : { reason: summaryText(primary.reason) }),
+    matcher: primary.matcher === undefined ? undefined : summaryText(primary.matcher),
+    expected: primary.expected === undefined ? undefined : summaryText(primary.expected),
+    received: primary.received === undefined ? undefined : summaryText(primary.received),
+    reason: primary.reason === undefined ? undefined : summaryText(primary.reason),
     additionalFailures: ordered.length - 1,
   };
 }
 
 interface FactFailureCandidate {
   readonly sourceOrder: number;
-  readonly factId?: string;
+  readonly factId: string | undefined;
   readonly title: string;
-  readonly matcher?: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
+  readonly matcher: string | undefined;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
 }
 
 function useCandidate(
@@ -280,22 +290,30 @@ function useCandidate(
       ? use.useKind === "verdict" && use.outcome === "failed"
       : use.outcome === "errored" || use.outcome === "unavailable";
   if (!isFailure) return undefined;
-  const factId =
-    use.useKind === "verdict" ? use.target.factId : use.input.kind === "fact" ? use.input.factId : undefined;
+  function usedFactId(): string | undefined {
+    if (use.useKind === "verdict") return use.target.factId;
+    if (use.input.kind === "fact") return use.input.factId;
+    return undefined;
+  }
+  const factId = usedFactId();
   if (factId === undefined) return undefined;
   const fact = facts.get(factId);
   const label = use.label;
   const title = label ?? use.key ?? fact?.name ?? factId;
   const matcher = fact?.name === undefined || fact.name === title ? undefined : fact.name;
-  const reason = use.outcome === "unavailable" ? use.reason : use.outcome === "errored" ? use.error.message : undefined;
+  function useReason(): string | undefined {
+    if (use.outcome === "unavailable") return use.reason;
+    if (use.outcome === "errored") return use.error.message;
+    return undefined;
+  }
   return {
     sourceOrder: use.sourceOrder,
     factId,
     title,
-    ...(matcher === undefined ? {} : { matcher }),
-    ...(fact?.expected === undefined ? {} : { expected: fact.expected }),
-    ...(fact?.received === undefined ? {} : { received: fact.received }),
-    ...(reason === undefined ? {} : { reason }),
+    matcher,
+    expected: fact?.expected,
+    received: fact?.received,
+    reason: useReason(),
   };
 }
 
@@ -310,6 +328,10 @@ function factCandidate(
       factId: fact.factId,
       title: fact.name,
       reason: fact.error.message,
+
+      matcher: undefined,
+      expected: undefined,
+      received: undefined,
     };
   }
   if (fact.outcome !== "unavailable") return undefined;
@@ -324,5 +346,9 @@ function factCandidate(
     factId: fact.factId,
     title: fact.name,
     reason: fact.reason,
+
+    matcher: undefined,
+    expected: undefined,
+    received: undefined,
   };
 }

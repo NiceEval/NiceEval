@@ -1,4 +1,5 @@
 import { dockerProfileError, DockerProfileError } from "./errors.ts";
+import { isPlainObject as isRecord } from "../../shared/objects.ts";
 import {
   dockerExecutionProfileV1Digest,
   decodeDockerExecutionProfile,
@@ -7,26 +8,26 @@ import {
 
 /** 由宿主 registry loader 提供的文件事实；本模块不会自行读文件或执行路径。 */
 export interface DockerProfileRegistryFileFacts {
-  readonly isSymlink?: boolean;
-  readonly ownerUid?: number;
-  readonly mode?: number;
-  readonly parentWritable?: boolean;
-  readonly parentModes?: readonly number[];
+  readonly isSymlink?: boolean | undefined;
+  readonly ownerUid?: number | undefined;
+  readonly mode?: number | undefined;
+  readonly parentWritable?: boolean | undefined;
+  readonly parentModes?: readonly number[] | undefined;
 }
 
 /** Associates a profile alias with a descriptor and optional file facts; a descriptor value alone does not establish host file ownership. */
 export interface DockerProfileRegistryEntry {
   readonly alias: string;
-  readonly profile?: unknown;
-  readonly descriptor?: unknown;
-  readonly source?: string;
-  readonly fileFacts?: DockerProfileRegistryFileFacts;
+  readonly profile?: unknown | undefined;
+  readonly descriptor?: unknown | undefined;
+  readonly source?: string | undefined;
+  readonly fileFacts?: DockerProfileRegistryFileFacts | undefined;
 }
 
 /** Sets expected descriptor ownership for registry validation; pure parsing cannot invent missing file permission evidence. */
 export interface DockerProfileRegistryOptions {
   /** descriptor 必须由 root 持有；未提供 file facts 时纯解析不会臆造权限事实。 */
-  readonly expectedOwnerUid?: number;
+  readonly expectedOwnerUid?: number | undefined;
 }
 
 /** Binds a registry alias to a decoded profile and descriptor digest; this does not attest dedicated-kernel/v1 execution. */
@@ -35,7 +36,7 @@ export interface ResolvedDockerProfileEntry {
   readonly profile: DockerExecutionProfileV1;
   readonly profileId: string;
   readonly descriptorDigest: string;
-  readonly source?: string;
+  readonly source: string | undefined;
 }
 
 /** Contains resolved profile aliases and validated descriptor identities; registry membership does not prove live execution capability. */
@@ -48,12 +49,6 @@ export type DockerProfileRegistryInput =
   | readonly DockerProfileRegistryEntry[]
   | Readonly<globalThis.Record<string, unknown>>
   | { readonly entries: readonly DockerProfileRegistryEntry[] };
-
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 
 function hasOwn(record: globalThis.Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
@@ -159,13 +154,13 @@ function sourceFacts(value: unknown, path: string): DockerProfileRegistryFileFac
       message: `${path}.parentModes must contain file modes`,
     });
   }
-  return Object.freeze({
+  return {
     ...(value.isSymlink === undefined ? {} : { isSymlink: value.isSymlink }),
     ...(ownerUid === undefined ? {} : { ownerUid }),
     ...(mode === undefined ? {} : { mode }),
     ...(value.parentWritable === undefined ? {} : { parentWritable: value.parentWritable }),
-    ...(parentModes === undefined ? {} : { parentModes: Object.freeze([...parentModes]) }),
-  });
+    ...(parentModes === undefined ? {} : { parentModes }),
+  };
 }
 
 function checkSourceFacts(
@@ -242,24 +237,24 @@ function entryFromArray(value: unknown, index: number): DockerProfileRegistryEnt
   const alias = requiredAlias(value.alias, `${path}.alias`);
   const source = value.source === undefined ? undefined : requiredSource(value.source, `${path}.source`);
   const fileFacts = sourceFacts(value.fileFacts, `${path}.fileFacts`);
-  return Object.freeze({
+  return {
     alias,
     profile,
     ...(source === undefined ? {} : { source }),
     ...(fileFacts === undefined ? {} : { fileFacts }),
-  });
+  };
 }
 
 function entryFromAlias(alias: string, value: unknown): DockerProfileRegistryEntry[] {
   const normalizedAlias = requiredAlias(alias, `registry.${alias}`);
   if (Array.isArray(value)) {
-    return value.map((candidate) => Object.freeze({ alias: normalizedAlias, profile: candidate }));
+    return value.map((candidate) => ({ alias: normalizedAlias, profile: candidate }));
   }
-  return [Object.freeze({ alias: normalizedAlias, profile: value })];
+  return [{ alias: normalizedAlias, profile: value }];
 }
 
 function rawEntries(input: unknown): readonly DockerProfileRegistryEntry[] {
-  if (Array.isArray(input)) return Object.freeze(input.map(entryFromArray));
+  if (Array.isArray(input)) return input.map(entryFromArray);
   if (!isRecord(input)) {
     throw dockerProfileError({
       code: "sandbox.docker-profile-registry-entry-invalid",
@@ -283,21 +278,21 @@ function rawEntries(input: unknown): readonly DockerProfileRegistryEntry[] {
         message: "registry.entries must be an array",
       });
     }
-    return Object.freeze(input.entries.map(entryFromArray));
+    return input.entries.map(entryFromArray);
   }
   const entries = Object.entries(input).flatMap(([alias, profile]) => entryFromAlias(alias, profile));
-  return Object.freeze(entries);
+  return entries;
 }
 
 function withAlias(error: DockerProfileError, alias: string): DockerProfileError {
   return dockerProfileError({
     code: error.code,
     message: `Docker profile alias ${JSON.stringify(alias)}: ${error.message}`,
-    ...(error.path === undefined ? {} : { path: error.path }),
+    path: error.path,
     alias,
-    ...(error.profileId === undefined ? {} : { profileId: error.profileId }),
-    ...(error.candidates === undefined ? {} : { candidates: error.candidates }),
-    ...(error.details === undefined ? {} : { details: error.details }),
+    profileId: error.profileId,
+    candidates: error.candidates,
+    details: error.details,
   });
 }
 
@@ -315,7 +310,7 @@ function resolveEntry(
       profile,
       profileId: profile.profileId,
       descriptorDigest: dockerExecutionProfileV1Digest(profile),
-      ...(entry.source === undefined ? {} : { source: entry.source }),
+      source: entry.source,
     });
   } catch (error) {
     if (error instanceof DockerProfileError) throw withAlias(error, alias);
@@ -394,13 +389,13 @@ function indexOf(input: DockerProfileRegistryIndex | DockerProfileRegistryInput 
             },
           });
         }
-        return Object.freeze({
+        return {
           alias,
           profile,
           ...(entry.source === undefined
             ? {}
             : { source: requiredSource(entry.source, `registry.entries[${index}].source`) }),
-        });
+        };
       } catch (error) {
         if (error instanceof DockerProfileError) throw withAlias(error, alias);
         throw error;

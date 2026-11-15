@@ -180,15 +180,15 @@ function runRunnerDiagnosticsAttachment(input: RunRunnerDiagnosticsAttachment): 
 }
 
 export interface AttemptSourceReceiptAttachments {
-  readonly agentTurns?: AgentTurnsAttachment;
-  readonly sandboxCommands?: SandboxCommandsAttachmentBuild;
+  readonly agentTurns: AgentTurnsAttachment | undefined;
+  readonly sandboxCommands: SandboxCommandsAttachmentBuild | undefined;
   readonly runnerActivities: AttemptRunnerActivitiesAttachment;
   readonly runnerDiagnostics: AttemptRunnerDiagnosticsAttachmentBuild;
 }
 
 export interface RunSourceReceiptAttachments {
-  readonly runnerActivities?: RunRunnerActivitiesAttachment;
-  readonly runnerDiagnostics?: RunRunnerDiagnosticsAttachmentBuild;
+  readonly runnerActivities: RunRunnerActivitiesAttachment | undefined;
+  readonly runnerDiagnostics: RunRunnerDiagnosticsAttachmentBuild | undefined;
 }
 
 export function createAttemptSourceReceiptAttachments(
@@ -209,8 +209,8 @@ export function createAttemptSourceReceiptAttachments(
   }
 
   return Result.succeed({
-    ...(agentTurns === undefined ? {} : { agentTurns: agentTurns.success }),
-    ...(sandboxCommands === undefined ? {} : { sandboxCommands: sandboxCommands.success }),
+    agentTurns: agentTurns?.success,
+    sandboxCommands: sandboxCommands?.success,
     runnerActivities: activities.success,
     runnerDiagnostics: attemptRunnerDiagnosticsAttachment(diagnostics.success),
   });
@@ -231,11 +231,7 @@ export function createRunSourceReceiptAttachments(
   if (diagnostics !== undefined && Result.isFailure(diagnostics)) return Result.fail(diagnostics.failure);
 
   return Result.succeed({
-    ...(activities === undefined ? {} : { runnerActivities: activities.success }),
-    ...(diagnostics === undefined
-      ? {}
-      : {
-          runnerDiagnostics: runRunnerDiagnosticsAttachment(diagnostics.success),
-        }),
+    runnerActivities: activities?.success,
+    runnerDiagnostics: diagnostics === undefined ? undefined : runRunnerDiagnosticsAttachment(diagnostics.success),
   });
 }

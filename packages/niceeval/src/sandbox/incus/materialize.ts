@@ -2,7 +2,8 @@ import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import { sandboxCreationLabels } from "../creation-labels.ts";
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
-import { Effect, Option, Result, Scope } from "effect";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
+import { Effect, Option, Result, Schema, Scope } from "effect";
 import type { JsonValue } from "../../shared/types.ts";
 import { digestOf } from "../identity.ts";
 import {
@@ -68,7 +69,7 @@ import {
   type IncusArtifactLocator,
 } from "./artifact.ts";
 import { INCUS_GUEST_INIT_BLOCK_DOCKER_DATA } from "./image.ts";
-import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
+import { IncusArtifactLocatorSchema, incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
@@ -97,8 +98,10 @@ function wrapBackend(
   registerSandbox(sandbox);
   let stopped = false;
   let stopping: Promise<void> | undefined;
-  return Object.freeze({
+  return {
     sandbox,
+    beforeCache: { _tag: "None" as const },
+    services: { _tag: "None" },
     authorBackend: backend,
     group: {
       get primary() {
@@ -128,7 +131,7 @@ function wrapBackend(
     buildKeys: context.plan.providerPlan.build.buildKeys,
     identity: context.plan.providerPlan.identity,
     facts,
-  });
+  };
 }
 
 function requirementDigestOf(context: SandboxRuntimeMaterializeContext): string {
@@ -149,7 +152,7 @@ function requirementDigestOf(context: SandboxRuntimeMaterializeContext): string 
 }
 
 function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
-  return Object.freeze({
+  return {
     domain: "niceeval.incus-before-cache",
     executionDomainId: plan.executionDomainId,
     runtimeProject: plan.project,
@@ -175,14 +178,16 @@ function preparationSemanticIdentity(plan: IncusRuntimePlan): JsonValue {
       guestInit: INCUS_GUEST_INIT_BLOCK_DOCKER_DATA,
       capture: INCUS_CACHE_FORMAT,
     },
-  });
+  };
 }
 
 function preparationFailure(cause: unknown): BeforeCacheRegistryError {
   return new BeforeCacheRegistryError({
     operation: "before-cache.prepare",
     reason: cause instanceof Error ? cause.message : String(cause),
-    cause,
+    beforeCacheKey: undefined,
+    domainId: undefined,
+    cause: normalizeExternalCause(cause),
   });
 }
 
@@ -440,18 +445,14 @@ export function materializeIncusProviderPlan(
     ).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     return yield* Effect.try({
       try: () =>
-        wrapBackend(
-          backend,
-          context,
-          Object.freeze({
-            instance: backend.sandboxId,
-            dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
-            project: plan.project,
-            storagePool: plan.storagePool,
-            executionDomainId: plan.executionDomainId,
-            imageFingerprint: plan.imageFingerprint,
-          }),
-        ),
+        wrapBackend(backend, context, {
+          instance: backend.sandboxId,
+          dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
+          project: plan.project,
+          storagePool: plan.storagePool,
+          executionDomainId: plan.executionDomainId,
+          imageFingerprint: plan.imageFingerprint,
+        }),
       catch: (cause) => runtimeFailure(context, cause),
     }).pipe(Effect.tapError(() => providerBoundaryEffect(() => backend.stop()).pipe(Effect.ignore)));
   }).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
@@ -461,7 +462,9 @@ const holdRunArtifact = Effect.fn("holdRunIncusBeforeCacheArtifact")(function* (
   repository: IncusRepository,
   artifact: BeforeCacheArtifact,
 ) {
-  const locator = artifact.locator as unknown as IncusArtifactLocator;
+  const locator = yield* Schema.decodeUnknownEffect(IncusArtifactLocatorSchema)(artifact.locator).pipe(
+    Effect.mapError(preparationFailure),
+  );
   yield* Effect.acquireRelease(
     Effect.tryPromise({
       try: () =>
@@ -481,17 +484,17 @@ const holdRunArtifact = Effect.fn("holdRunIncusBeforeCacheArtifact")(function* (
 export function incusProviderModule(
   dockerExecution: SandboxProviderCapabilities["dockerExecution"],
 ): SandboxProviderModule<IncusRuntimePlan> {
-  return Object.freeze({
+  return {
     id: INCUS_MODULE_ID,
-    capabilities: Object.freeze({
-      retention: Object.freeze({ _tag: "DestroyOnly" as const }),
-      reuse: Object.freeze({
+    capabilities: {
+      retention: { _tag: "DestroyOnly" as const },
+      reuse: {
         _tag: "Unsupported" as const,
         reason: "Incus V1 sandboxes are disposable VMs and do not support reuse.",
-      }),
-      sessionLimit: Object.freeze({ _tag: "Unlimited" as const }),
-      ...(dockerExecution === undefined ? {} : { dockerExecution }),
-    }),
+      },
+      sessionLimit: { _tag: "Unlimited" as const },
+      dockerExecution,
+    },
     materialize: (plan: IncusRuntimePlan, context: SandboxRuntimeMaterializeContext) =>
       materializeIncusProviderPlan(plan, context),
     collectBuildPreparation: (): Effect.Effect<
@@ -503,6 +506,7 @@ export function incusProviderModule(
       coverage: sandboxState.all,
       preparer: {
         continuesStaging: false,
+        supportsAgentDerived: false,
         materializeFrom: (
           plan: IncusRuntimePlan,
           preparationContext: BeforeCachePreparationContext,
@@ -525,7 +529,7 @@ export function incusProviderModule(
                   start: { _tag: "Restored" as const },
                 })),
                 Effect.catch(() =>
-                  preparationContext.materializeBase(baseMaterializeContext(context)).pipe(
+                  preparationContext.materializeBase({ ...context, beforeCacheArtifact: undefined }).pipe(
                     Effect.map((sandbox) => ({
                       _tag: "Materialized" as const,
                       sandbox,
@@ -546,19 +550,18 @@ export function incusProviderModule(
             ),
           ),
         eligibility: (plan: IncusRuntimePlan, _context: BeforeCachePreparationContext) =>
-          Effect.succeed(
-            Object.freeze({
-              _tag: "Eligible" as const,
-              persistence: "persistent" as const,
-              dependency: "parent-backed" as const,
-              coverage: sandboxState.all,
-              baseIdentity: plan.imageFingerprint,
-              keyScope: decodeBeforeCacheKeyScope({
-                cacheFormat: INCUS_CACHE_FORMAT,
-                semanticIdentity: preparationSemanticIdentity(plan),
-              }),
+          Effect.succeed({
+            _tag: "Eligible" as const,
+            persistence: "persistent" as const,
+            dependency: "parent-backed" as const,
+            coverage: sandboxState.all,
+            baseIdentity: plan.imageFingerprint,
+            keyScope: decodeBeforeCacheKeyScope({
+              cacheFormat: INCUS_CACHE_FORMAT,
+              semanticIdentity: preparationSemanticIdentity(plan),
             }),
-          ),
+            replacementScope: undefined,
+          }),
         lookup: (
           plan: IncusRuntimePlan,
           _context: BeforeCachePreparationContext,
@@ -577,15 +580,15 @@ export function incusProviderModule(
                   })),
                 );
                 return found === undefined
-                  ? Object.freeze({ _tag: "Miss" as const })
-                  : Object.freeze({
+                  ? { _tag: "Miss" as const }
+                  : {
                       _tag: "Hit" as const,
-                      artifact: Object.freeze({
-                        locator: found as unknown as JsonValue,
+                      artifact: {
+                        locator: found,
                         beforeCacheKey: found.beforeCacheKey,
                         declarationDigest: found.manifestDigest,
-                      }),
-                    });
+                      },
+                    };
               },
               catch: preparationFailure,
             });
@@ -660,7 +663,7 @@ export function incusProviderModule(
                   },
                   identity,
                 );
-                const locator: IncusArtifactLocator = Object.freeze({
+                const locator: IncusArtifactLocator = {
                   artifactId: committed.artifactId,
                   generation: committed.generation,
                   project: committed.project,
@@ -668,17 +671,17 @@ export function incusProviderModule(
                   dockerDataVolume: committed.dockerDataVolume,
                   beforeCacheKey: committed.beforeCacheKey,
                   manifestDigest: committed.manifestDigest,
-                });
-                return Object.freeze({
-                  locator: locator as unknown as JsonValue,
+                };
+                return {
+                  locator,
                   beforeCacheKey: locator.beforeCacheKey,
                   declarationDigest: locator.manifestDigest,
-                });
+                };
               },
               catch: preparationFailure,
             });
             yield* holdRunArtifact(repository, artifact);
-            return Object.freeze({ _tag: "Published" as const, artifact });
+            return { _tag: "Published" as const, artifact };
           }).pipe(
             Effect.catch(() =>
               Effect.succeed({
@@ -690,7 +693,7 @@ export function incusProviderModule(
           ),
       },
     },
-  });
+  };
 }
 
 export function toPlanningError(cause: unknown): IncusProviderError {
@@ -702,10 +705,4 @@ export function toPlanningError(cause: unknown): IncusProviderError {
         ["Make the Incus control plane reachable and retry."],
         cause,
       );
-}
-
-function baseMaterializeContext(context: SandboxRuntimeMaterializeContext): SandboxRuntimeMaterializeContext {
-  const base = { ...context };
-  delete base.beforeCacheArtifact;
-  return base;
 }

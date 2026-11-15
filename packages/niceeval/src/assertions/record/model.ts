@@ -16,9 +16,9 @@ export interface BoundedJsonObject {
 /** JSON-only material bounded before it enters a Record content source. */
 export type BoundedJsonValue = BoundedJsonPrimitive | readonly BoundedJsonValue[] | BoundedJsonObject;
 
-/** Optional codec fields also retain explicitly supplied undefined values. */
+/** Record JSON boundary: absent labels must remain absent during encoding. */
 export interface AssertionDisplay {
-  readonly label?: string | undefined;
+  readonly label?: string;
   readonly groupPath: readonly string[];
 }
 
@@ -68,6 +68,7 @@ export type CriterionEnvelope = BuiltInCriterionEnvelope | ThirdPartyCriterion;
 
 export type CriterionOuterEnvelope = CriterionEnvelope;
 
+// Record JSON boundary: criterion keys are canonicalized before persistence.
 export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
@@ -83,8 +84,8 @@ export type BuiltInCriterion =
       readonly data: {
         readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least" | "between";
         readonly threshold: number;
-        readonly upperThreshold?: number | undefined;
-        readonly unit?: import("../quantity.ts").Unit | undefined;
+        readonly upperThreshold?: number;
+        readonly unit?: import("../quantity.ts").Unit;
         readonly subject:
           | { readonly kind: "explicit-value" }
           | {
@@ -122,14 +123,13 @@ export type BuiltInCriterion =
         readonly occurrence: "tool" | "skill" | "event";
         readonly assertion: "present" | "absent" | "count" | "order";
         /** Tool assertions retain the single managed matcher identity. */
-        readonly matcher?: string | undefined;
+        readonly matcher?: string;
         readonly quantifier?:
           | { readonly kind: "absent" }
           | {
               readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
               readonly count: number;
-            }
-          | undefined;
+            };
       };
     }
   | {
@@ -195,10 +195,10 @@ export type BuiltInCriterion =
       readonly data: {
         readonly operation: "file-changed";
         readonly path: string;
-        readonly status?: "added" | "modified" | "deleted" | undefined;
+        readonly status?: "added" | "modified" | "deleted";
         /** Persisted display identity only; evaluators retain the managed Match. */
-        readonly before?: string | undefined;
-        readonly after?: string | undefined;
+        readonly before?: string;
+        readonly after?: string;
       };
     }
   | {
@@ -258,12 +258,13 @@ export type AssertionCoverage =
       readonly reason: "optional-material" | "unsupported-subject";
     };
 
+// Record JSON boundary: limitations are embedded in the canonical attachment.
 export type AssertionLimitation =
   | { readonly kind: "redacted"; readonly fieldCount: number }
   | {
       readonly kind: "sampled";
       readonly captured: number;
-      readonly knownTotal?: number | undefined;
+      readonly knownTotal?: number;
     }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" }
@@ -310,10 +311,11 @@ import type { MatcherSourceLocator } from "../api.ts";
 
 export type MatcherOverlayResult = "matched" | "mismatched" | "unavailable" | "not-evaluated";
 
+// Record JSON boundary: retained differences are encoded only when present.
 export interface MatcherRetainedRow {
   readonly locator: MatcherSourceLocator;
   readonly result: MatcherOverlayResult;
-  readonly difference?: AssertionFactValue | undefined;
+  readonly difference?: AssertionFactValue;
 }
 
 export interface MatcherQueryStep {
@@ -419,46 +421,47 @@ export type MatcherQueryArtifact =
       readonly retainedRows: readonly MatcherRetainedRow[];
     };
 
+// Record JSON boundary: this legacy result projection has an exact codec.
 export type SealedAssertionResult =
   | {
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
       readonly score: NoScoreContribution | EarnedScoreContribution;
       /** Bounded evaluator diagnostics, including ToolMatch evidence paths. */
-      readonly diagnostic?: BoundedJsonObject | undefined;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly diagnostic?: BoundedJsonObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
       readonly score: NoScoreContribution | EarnedScoreContribution;
-      readonly diagnostic?: BoundedJsonObject | undefined;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly diagnostic?: BoundedJsonObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject | undefined;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly diagnostic?: BoundedJsonObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject | undefined;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly diagnostic?: BoundedJsonObject;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject | undefined;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly diagnostic?: BoundedJsonObject;
+      readonly receipt?: AssertionCollectionReceipt;
     };
 
 export type AssertionCriterionRecord =
@@ -476,18 +479,19 @@ export interface AssertionMaterials<Content> {
   readonly limitations: readonly AssertionLimitation[];
 }
 
+// Record JSON boundary: matcher-current evaluations must not carry ordinary receipts.
 export type AssertionEvaluation =
   | {
       readonly kind: "ordinary";
       readonly observed: AssertionFactValue;
-      readonly receipt?: AssertionCollectionReceipt | undefined;
+      readonly receipt?: AssertionCollectionReceipt;
     }
   | {
       readonly kind: "matcher-current";
       readonly observed: AssertionFactValue;
       readonly artifact: MatcherQueryArtifact;
       /** Current matcher receipts live only inside `artifact`. */
-      readonly receipt?: undefined;
+      readonly receipt?: never;
     };
 
 export interface AssertionDecision {
@@ -508,53 +512,54 @@ export interface AssertionDecision {
 export function sealedAssertionResult(
   entry: Pick<AssertionEntry<unknown>, "decision" | "contribution" | "evaluation">,
 ): SealedAssertionResult {
-  const evaluationReceipt =
-    entry.evaluation.kind === "ordinary"
-      ? entry.evaluation.receipt
-      : entry.evaluation.kind === "matcher-current" && entry.evaluation.artifact.kind === "collection-filter"
-        ? entry.evaluation.artifact.receipt
-        : undefined;
+  function receiptOfEvaluation() {
+    if (entry.evaluation.kind === "ordinary") return entry.evaluation.receipt;
+    if (entry.evaluation.kind === "matcher-current" && entry.evaluation.artifact.kind === "collection-filter")
+      return entry.evaluation.artifact.receipt;
+    return undefined;
+  }
+  const evaluationReceipt = receiptOfEvaluation();
   const receipt = evaluationReceipt === undefined ? {} : { receipt: evaluationReceipt };
   switch (entry.decision.result) {
     case "matched":
-      return Object.freeze({
+      return {
         state: "matched",
         gate: entry.decision.gate as "not-gate" | "satisfied",
         score: entry.contribution as NoScoreContribution | EarnedScoreContribution,
         ...receipt,
-      });
+      };
     case "mismatched":
-      return Object.freeze({
+      return {
         state: "mismatched",
         reason: "condition-not-met",
         gate: entry.decision.gate as "not-gate" | "failed",
         score: entry.contribution as NoScoreContribution | EarnedScoreContribution,
         ...receipt,
-      });
+      };
     case "unavailable":
-      return Object.freeze({
+      return {
         state: "unavailable",
         reason: entry.decision.reason as "evidence-unavailable" | "source-unavailable" | "redacted",
         gate: entry.decision.gate as "not-gate" | "unavailable",
         score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
         ...receipt,
-      });
+      };
     case "errored":
-      return Object.freeze({
+      return {
         state: "errored",
         reason: entry.decision.reason as "evaluator-failed" | "producer-interrupted" | "invalid-subject",
         gate: entry.decision.gate as "not-gate" | "unavailable",
         score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
         ...receipt,
-      });
+      };
     case "not-applicable":
-      return Object.freeze({
+      return {
         state: "not-applicable",
         reason: "coverage-not-applicable",
         gate: entry.decision.gate as "not-gate" | "not-applicable",
         score: entry.contribution as NoScoreContribution | UnavailableScoreContribution,
         ...receipt,
-      });
+      };
   }
 }
 

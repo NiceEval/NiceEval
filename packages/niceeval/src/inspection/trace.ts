@@ -69,16 +69,16 @@ export interface TraceAttachmentInput {
 }
 
 export interface AttemptTraceAttachments {
-  readonly attemptCost?: TraceAttachmentInput;
+  readonly attemptCost: TraceAttachmentInput | undefined;
   /** Only the sealed origin Run's configuration may validate or describe these calls. */
-  readonly models?: ResolvedModelRoles;
-  readonly adapterUsage?: TraceAttachmentInput;
-  readonly judgeUsage?: TraceAttachmentInput;
-  readonly agentTurns?: TraceAttachmentInput;
-  readonly turnContexts?: TraceAttachmentInput;
-  readonly sandboxCommands?: TraceAttachmentInput;
-  readonly runnerActivities?: TraceAttachmentInput;
-  readonly runnerDiagnostics?: TraceAttachmentInput;
+  readonly models: ResolvedModelRoles | undefined;
+  readonly adapterUsage: TraceAttachmentInput | undefined;
+  readonly judgeUsage: TraceAttachmentInput | undefined;
+  readonly agentTurns: TraceAttachmentInput | undefined;
+  readonly turnContexts: TraceAttachmentInput | undefined;
+  readonly sandboxCommands: TraceAttachmentInput | undefined;
+  readonly runnerActivities: TraceAttachmentInput | undefined;
+  readonly runnerDiagnostics: TraceAttachmentInput | undefined;
 }
 
 /** One stable, sealed identity accepted by `attempt.trace.detail`. */
@@ -120,12 +120,18 @@ export function projectAttemptTrace(
   attachments: AttemptTraceAttachments,
   execution: InspectionTraceResult["execution"],
   executionFilters: {
-    readonly traceId?: string;
-    readonly sourceId?: string;
-    readonly actorId?: string;
-    readonly eventType?: string;
-    readonly continuation?: string;
-  } = {},
+    readonly traceId: string | undefined;
+    readonly sourceId: string | undefined;
+    readonly actorId: string | undefined;
+    readonly eventType: string | undefined;
+    readonly continuation: string | undefined;
+  } = {
+    traceId: undefined,
+    sourceId: undefined,
+    actorId: undefined,
+    eventType: undefined,
+    continuation: undefined,
+  },
 ): InspectionTraceResult {
   const agentTurns = readCurrentAttachment(NiceEvalCurrentRecordAttachments.agentTurns, attachments.agentTurns);
   const turnContexts = readCurrentAttachment(NiceEvalCurrentRecordAttachments.turnContexts, attachments.turnContexts);
@@ -140,14 +146,14 @@ export function projectAttemptTrace(
   const conversationEvidenceLimitations = typedConversationCoverageLimitations(agentTurns);
   const contextLimitations: InspectionTraceResult["conversation"]["limitations"] =
     contextProjection.state === "complete"
-      ? Object.freeze([])
-      : Object.freeze([
-          Object.freeze({
+      ? []
+      : [
+          {
             source: "turn-contexts" as const,
             state: contextProjection.state,
             limitations: contextProjection.limitations,
-          }),
-        ]);
+          },
+        ];
   const allConversationLimitations = [
     ...conversationProjection.limitations,
     ...conversationEvidenceLimitations,
@@ -163,16 +169,14 @@ export function projectAttemptTrace(
       : new Map();
   const turns =
     retainedTurns.length > 0
-      ? retainedTurns.map((turn) =>
-          Object.freeze({
-            turnId: turn.turnId,
-            sequence: turn.sequence,
-            ...("sessionId" in turn ? { sessionId: turn.sessionId } : {}),
-            outcome: turn.outcome,
-            terminal: projectTypedTurnTerminal(turn.terminal),
-            context: projectTypedTurnContext(contexts.get(turn.turnId)),
-          }),
-        )
+      ? retainedTurns.map((turn) => ({
+          turnId: turn.turnId,
+          sequence: turn.sequence,
+          ...("sessionId" in turn ? { sessionId: turn.sessionId } : {}),
+          outcome: turn.outcome,
+          terminal: projectTypedTurnTerminal(turn.terminal),
+          context: projectTypedTurnContext(contexts.get(turn.turnId)),
+        }))
       : [];
   const items =
     retainedTurns.length > 0
@@ -182,13 +186,11 @@ export function projectAttemptTrace(
       : [];
   const commandItems =
     sandboxCommands.state === "available"
-      ? sandboxCommands.value.segments.slice(0, MAX_COMMANDS).map((command) =>
-          Object.freeze({
-            commandId: command.commandId,
-            phase: projectLifecyclePhase(command.phase),
-            outcome: command.outcome,
-          }),
-        )
+      ? sandboxCommands.value.segments.slice(0, MAX_COMMANDS).map((command) => ({
+          commandId: command.commandId,
+          phase: projectLifecyclePhase(command.phase),
+          outcome: command.outcome,
+        }))
       : [];
   const identityIndex = projectTypedTraceIdentityIndex(agentTurns, sandboxCommands);
   const totalTurnCount = agentTurns.state === "available" ? agentTurns.value.segments.length : 0;
@@ -207,35 +209,35 @@ export function projectAttemptTrace(
           executionFilters,
         )
       : execution;
-  const result: InspectionTraceResult = Object.freeze({
+  const result: InspectionTraceResult = {
     execution: executionProjection,
-    conversation: Object.freeze({
+    conversation: {
       state:
         conversationProjection.state === "complete" && allConversationLimitations.length > 0
           ? "partial"
           : conversationProjection.state,
-      limitations: Object.freeze(conversationLimitations),
+      limitations: conversationLimitations,
       limitationsTruncated: conversationLimitations.length < allConversationLimitations.length,
       omittedLimitationCount: allConversationLimitations.length - conversationLimitations.length,
-      turns: Object.freeze(turns),
+      turns: turns,
       turnsTruncated: turns.length < totalTurnCount,
       omittedTurnCount: totalTurnCount - turns.length,
-      items: Object.freeze(items),
+      items: items,
       itemsTruncated: items.length < totalItemCount,
       omittedItemCount: totalItemCount - items.length,
-    }),
+    },
     identityIndex,
-    commands: Object.freeze({
+    commands: {
       state: commandProjection.state,
-      limitations: Object.freeze(commandLimitations),
+      limitations: commandLimitations,
       limitationsTruncated: commandLimitations.length < commandProjection.limitations.length,
       omittedLimitationCount: commandProjection.limitations.length - commandLimitations.length,
-      items: Object.freeze(commandItems),
+      items: commandItems,
       hasMore: commandItems.length < totalCommandCount,
       omittedCommandCount: totalCommandCount - commandItems.length,
-    }),
+    },
     diagnostics: projectDiagnostics(runnerDiagnostics),
-  });
+  };
   if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
     throw new Error("Trace semantic projection exceeds its fixed result byte limit");
   }
@@ -252,15 +254,15 @@ function projectAgentItemsAsExecution(
   attachment: TraceAttachmentInput | undefined,
   agentTurns: InspectionAgentTurnsRead,
   state: "complete" | "partial" | "not-recorded" | "invalid",
-  request: ExecutionTraceFilters & { readonly continuation?: string },
+  request: ExecutionTraceFilters & { readonly continuation: string | undefined },
 ): InspectionTraceResult["execution"] {
-  const filters: ExecutionTraceFilters = Object.freeze({
-    ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
-    ...(request.sourceId === undefined ? {} : { sourceId: request.sourceId }),
-    ...(request.actorId === undefined ? {} : { actorId: request.actorId }),
-    ...(request.eventType === undefined ? {} : { eventType: request.eventType }),
-  });
-  const continuationContext = Object.freeze({
+  const filters: ExecutionTraceFilters = {
+    traceId: request.traceId,
+    sourceId: request.sourceId,
+    actorId: request.actorId,
+    eventType: request.eventType,
+  };
+  const continuationContext = {
     source,
     originAttempt:
       attachment === undefined
@@ -269,58 +271,58 @@ function projectAgentItemsAsExecution(
     sourceFamily: EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns,
     familyRevision: NiceEvalCurrentRecordAttachments.agentTurns.revision,
     filters,
-  });
+  };
   const resumeAfter =
     request.continuation === undefined
       ? -1
       : decodeExecutionTraceContinuation(request.continuation, continuationContext);
   if (state === "not-recorded") {
-    return Object.freeze({
+    return {
       state: "not-recorded",
-      limitations: Object.freeze([]),
-      traces: Object.freeze([]),
-      events: Object.freeze([]),
-      identityIndex: Object.freeze({
-        traceIds: Object.freeze([]),
+      limitations: [],
+      traces: [],
+      events: [],
+      identityIndex: {
+        traceIds: [],
         omittedTraceIdCount: 0,
-        eventIds: Object.freeze([]),
+        eventIds: [],
         omittedEventIdCount: 0,
-        evidenceIds: Object.freeze([]),
+        evidenceIds: [],
         omittedEvidenceIdCount: 0,
-      }),
+      },
       hasMore: false,
       omittedEventCount: 0,
-    });
+    };
   }
   const traceId = "agent-turns";
   const sourceId = "niceeval.agent-turns";
   const limitations =
     state === "complete"
-      ? Object.freeze([])
-      : Object.freeze([
-          Object.freeze({
+      ? []
+      : [
+          {
             code: "legacy-source-state" as const,
             state,
             message: state === "invalid" ? "The Agent Turns source is invalid." : "The Agent Turns source is partial.",
-          }),
-        ]);
+          },
+        ];
   if (state === "invalid") {
-    return Object.freeze({
+    return {
       state,
       limitations,
-      traces: Object.freeze([]),
-      events: Object.freeze([]),
-      identityIndex: Object.freeze({
-        traceIds: Object.freeze([]),
+      traces: [],
+      events: [],
+      identityIndex: {
+        traceIds: [],
         omittedTraceIdCount: 0,
-        eventIds: Object.freeze([]),
+        eventIds: [],
         omittedEventIdCount: 0,
-        evidenceIds: Object.freeze([]),
+        evidenceIds: [],
         omittedEvidenceIdCount: 0,
-      }),
+      },
       hasMore: false,
       omittedEventCount: 0,
-    });
+    };
   }
   const traceSelected = filters.traceId === undefined || filters.traceId === traceId;
   const sourceSelected = filters.sourceId === undefined || filters.sourceId === sourceId;
@@ -355,20 +357,20 @@ function projectAgentItemsAsExecution(
           continue;
         }
         const item = projectTypedConversationItem(rawItem, turn.turnId);
-        const event = Object.freeze({
+        const event = {
           traceId,
           eventId: item.itemId,
-          origin: Object.freeze({ kind: "agent-item" as const, itemId: item.itemId }),
+          origin: { kind: "agent-item" as const, itemId: item.itemId },
           ordinal,
           type: `agent.${item.kind}`,
-          source: Object.freeze({ id: sourceId, sequence: item.sequence }),
-          actor: Object.freeze({ id: agentItemActorId(item) }),
+          source: { id: sourceId, sequence: item.sequence },
+          actor: { id: agentItemActorId(item) },
           summary: boundedText(agentItemSummary(item), 512).value,
-          links: Object.freeze([]),
-          evidence: Object.freeze([]),
-          scopeMemberships: Object.freeze([]),
-          display: Object.freeze({ state: "absent" as const }),
-        });
+          links: [],
+          evidence: [],
+          scopeMemberships: [],
+          display: { state: "absent" as const },
+        };
         if (
           utf8ByteLength(JSON.stringify([...retained.map(({ event: prior }) => prior), event])) >
           ExecutionTraceRecordLimits.maximumOutlineBytes
@@ -376,52 +378,52 @@ function projectAgentItemsAsExecution(
           pageFull = true;
           continue;
         }
-        retained.push(Object.freeze({ event, sourceOrdinal: ordinal }));
+        retained.push({ event, sourceOrdinal: ordinal });
       }
     }
   }
   const events = retained.map(({ event }) => event);
   const omittedEventCount = Math.max(0, totalMatching - priorMatches - events.length);
   const lastOrdinal = retained.at(-1)?.sourceOrdinal;
-  return Object.freeze({
+  return {
     state,
     limitations,
     traces: traceSelected
-      ? Object.freeze([
-          Object.freeze({
+      ? [
+          {
             kind: "trace-header" as const,
             traceId,
             sourceTraceId: sourceId,
-            schema: Object.freeze({ id: sourceId }),
+            schema: { id: sourceId },
             collection:
               state === "complete"
-                ? Object.freeze({ state: "complete" as const, limitations: [] as const })
-                : Object.freeze({
+                ? { state: "complete" as const, limitations: [] as const }
+                : {
                     state: "partial" as const,
                     limitations: [
                       { code: "legacy-source-state", message: "The Agent Turns source is partial." },
                     ] as const,
-                  }),
-            scopes: Object.freeze([]),
+                  },
+            scopes: [],
             eventCount: totalSourceEvents,
-          }),
-        ])
-      : Object.freeze([]),
-    events: Object.freeze(events),
-    identityIndex: Object.freeze({
-      traceIds: Object.freeze([traceId]),
+          },
+        ]
+      : [],
+    events: events,
+    identityIndex: {
+      traceIds: [traceId],
       omittedTraceIdCount: 0,
-      eventIds: Object.freeze(indexedEventIds),
+      eventIds: indexedEventIds,
       omittedEventIdCount: totalSourceEvents - indexedEventIds.length,
-      evidenceIds: Object.freeze([]),
+      evidenceIds: [],
       omittedEvidenceIdCount: 0,
-    }),
+    },
     hasMore: omittedEventCount > 0,
     omittedEventCount,
     ...(omittedEventCount > 0 && lastOrdinal !== undefined
       ? { continuation: encodeExecutionTraceContinuation(continuationContext, lastOrdinal) }
       : {}),
-  });
+  };
 }
 
 function agentItemActorId(item: InspectionTraceResult["conversation"]["items"][number]): string {
@@ -473,77 +475,73 @@ function projectTypedTurnTerminal(
 ): InspectionTraceResult["conversation"]["turns"][number]["terminal"] {
   const coverage = conversationCoverage(terminal);
   if (terminal.state === "unavailable") {
-    return Object.freeze({
+    return {
       state: terminal.state,
       reason: terminal.reason,
-      coverage: Object.freeze({ state: "unavailable" as const, reason: terminal.reason }),
-    });
+      coverage: { state: "unavailable" as const, reason: terminal.reason },
+    };
   }
-  return Object.freeze({
+  return {
     state: terminal.state,
     status: terminal.status,
     coverage: coverage.coverage,
-  }) as InspectionTraceResult["conversation"]["turns"][number]["terminal"];
+  } as InspectionTraceResult["conversation"]["turns"][number]["terminal"];
 }
 
 function projectTypedTurnContext(
   context: InspectionTurnContextSegment | undefined,
 ): InspectionTraceResult["conversation"]["turns"][number]["context"] {
-  if (context === undefined) return Object.freeze({ state: "not-recorded" as const });
+  if (context === undefined) return { state: "not-recorded" as const };
   if ("state" in context.source) {
-    return Object.freeze({
+    return {
       state: context.source.state,
       reason: context.source.reason,
       sessionIndex: context.sessionIndex,
       turnIndex: context.turnIndex,
       sourceOrder: context.sourceOrder,
-    });
+    };
   }
   if (context.sourceOrder === null) {
     throw new Error("Mapped turn context is missing its validated source order");
   }
-  return Object.freeze({
+  return {
     sessionIndex: context.sessionIndex,
     turnIndex: context.turnIndex,
     sourceOrder: context.sourceOrder,
     ...context.source.value,
-  });
+  };
 }
 
 function typedConversationCoverageLimitations(
   agentTurns: ReturnType<typeof readAgentTurns>,
 ): readonly TraceEvidenceCoverageLimitation[] {
-  if (agentTurns.state !== "available") return Object.freeze([]);
+  if (agentTurns.state !== "available") return [];
   const limitations: TraceEvidenceCoverageLimitation[] = [];
   const channels = ["events", "actions", "messages", "status", "data"] as const;
   for (const turn of agentTurns.value.segments) {
     if (turn.terminal.state === "unavailable") {
-      limitations.push(
-        Object.freeze({
-          source: "agent-turns",
-          turnId: turn.turnId,
-          channel: "conversation",
-          state: "unavailable",
-          reason: turn.terminal.reason,
-        }),
-      );
+      limitations.push({
+        source: "agent-turns",
+        turnId: turn.turnId,
+        channel: "conversation",
+        state: "unavailable",
+        reason: turn.terminal.reason,
+      });
       continue;
     }
     for (const channel of channels) {
       const coverage = turn.terminal.evidenceCoverage[channel];
       if (coverage.status === "complete") continue;
-      limitations.push(
-        Object.freeze({
-          source: "agent-turns",
-          turnId: turn.turnId,
-          channel,
-          state: coverage.status,
-          reason: boundedText(coverage.reason, MAX_COVERAGE_REASON_BYTES).value,
-        }),
-      );
+      limitations.push({
+        source: "agent-turns",
+        turnId: turn.turnId,
+        channel,
+        state: coverage.status,
+        reason: boundedText(coverage.reason, MAX_COVERAGE_REASON_BYTES).value,
+      });
     }
   }
-  return Object.freeze(limitations);
+  return limitations;
 }
 
 /**
@@ -598,16 +596,16 @@ function projectTypedTraceIdentityIndex(
   }
   const allToolOccurrenceIds = [...toolOccurrenceIds];
   const allCommandIds = commands.state === "available" ? commands.value.segments.map(({ commandId }) => commandId) : [];
-  return Object.freeze({
-    itemIds: Object.freeze(itemIds.slice(0, maximumIdentityCount)),
+  return {
+    itemIds: itemIds.slice(0, maximumIdentityCount),
     omittedItemIdCount: Math.max(0, itemIds.length - maximumIdentityCount),
-    toolOccurrenceIds: Object.freeze({
-      ids: Object.freeze(allToolOccurrenceIds.slice(0, maximumIdentityCount)),
+    toolOccurrenceIds: {
+      ids: allToolOccurrenceIds.slice(0, maximumIdentityCount),
       omittedIdCount: Math.max(0, allToolOccurrenceIds.length - maximumIdentityCount),
-    }),
-    commandIds: Object.freeze(allCommandIds.slice(0, maximumIdentityCount)),
+    },
+    commandIds: allCommandIds.slice(0, maximumIdentityCount),
     omittedCommandIdCount: Math.max(0, allCommandIds.length - maximumIdentityCount),
-  });
+  };
 }
 
 function projectTypedConversationItem(
@@ -625,58 +623,58 @@ function projectTypedConversationItem(
   switch (item.kind) {
     case "message": {
       const text = boundedText(item.text, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: item.kind,
         role: item.role,
         text: text.value,
         textTruncated: text.truncated,
-      });
+      };
     }
     case "tool-start": {
       const input = boundedText(item.inputSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: "tool-call",
         tool: item.tool,
         input: input.value,
         inputTruncated: input.truncated,
         toolOccurrenceId: item.toolOccurrenceId,
-      });
+      };
     }
     case "tool-finish": {
       const output = boundedText(item.outputSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: "tool-result",
         outcome: item.outcome,
         output: output.value,
         outputTruncated: output.truncated,
         ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}),
-      });
+      };
     }
     case "thinking-summary":
     case "compaction":
     case "context-injection": {
       const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({ ...base, kind: item.kind, summary: summary.value, summaryTruncated: summary.truncated });
+      return { ...base, kind: item.kind, summary: summary.value, summaryTruncated: summary.truncated };
     }
     case "subagent": {
       const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: item.kind,
         state: item.state,
         label: item.label,
         summary: summary.value,
         summaryTruncated: summary.truncated,
-      });
+      };
     }
     case "input-request": {
       const prompt = boundedText(item.promptSummary, MAX_CONVERSATION_TEXT_BYTES);
       const response =
         item.responseSummary === null ? null : boundedText(item.responseSummary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: item.kind,
         state: item.state,
@@ -684,18 +682,18 @@ function projectTypedConversationItem(
         promptTruncated: prompt.truncated,
         response: response?.value ?? null,
         responseTruncated: response?.truncated ?? false,
-      });
+      };
     }
     case "skill-load":
     case "conversation-error": {
       const summary = boundedText(item.summary, MAX_CONVERSATION_TEXT_BYTES);
-      return Object.freeze({
+      return {
         ...base,
         kind: item.kind,
         code: item.code,
         summary: summary.value,
         summaryTruncated: summary.truncated,
-      });
+      };
     }
   }
 }
@@ -724,11 +722,11 @@ function projectTraceItemDetail(
   for (const turn of agentTurns.value.segments) {
     const item = turn.items.find((candidate) => candidate.itemId === itemId);
     if (item === undefined) continue;
-    return Object.freeze({
+    return {
       kind: "item",
       itemId,
       item: projectFullConversationItem(item, turn),
-    });
+    };
   }
   return undefined;
 }
@@ -759,13 +757,13 @@ function projectToolOccurrenceDetail(
     }
   }
   if (call === undefined && result === undefined) return undefined;
-  return Object.freeze({
+  return {
     kind: "tool-occurrence",
     toolOccurrenceId,
     call: call ?? null,
     result: result ?? null,
-    turn: Object.freeze({ call: callTurn ?? null, result: resultTurn ?? null }),
-  });
+    turn: { call: callTurn ?? null, result: resultTurn ?? null },
+  };
 }
 
 function projectTraceCommandDetail(
@@ -781,19 +779,19 @@ function projectTraceCommandDetail(
     if (metadata === undefined || metadata.byteLength !== value.retainedBytes || metadata.digest !== value.sha256) {
       throw new Error("Command stream metadata is invalid");
     }
-    return Object.freeze({
+    return {
       text: readVerifiedText(source, metadata),
       retainedBytes: value.retainedBytes,
       totalSafeUtf8Bytes: value.totalSafeUtf8Bytes,
       sha256: value.sha256,
-      truncation: Object.freeze({
+      truncation: {
         state: value.retainedBytes === value.totalSafeUtf8Bytes ? ("not-truncated" as const) : ("truncated" as const),
         omittedSafeUtf8Bytes: value.totalSafeUtf8Bytes - value.retainedBytes,
-      }),
-    });
+      },
+    };
   };
-  return Object.freeze({
-    kind: "command",
+  const detail = {
+    kind: "command" as const,
     commandId,
     invocation: projectFullInvocation(command.invocation),
     workingDirectory: command.workingDirectory,
@@ -803,7 +801,9 @@ function projectTraceCommandDetail(
     sequence: command.sequence,
     stdout: stream(command.stdout),
     stderr: stream(command.stderr),
-  });
+    command: undefined,
+  };
+  return detail;
 }
 
 function traceTurnIdentity(turn: {
@@ -811,22 +811,21 @@ function traceTurnIdentity(turn: {
   readonly sequence: number;
   readonly outcome: AgentTurnOutcome;
 }) {
-  return Object.freeze({ turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome });
+  return { turnId: turn.turnId, sequence: turn.sequence, outcome: turn.outcome };
 }
 
-function projectFullInvocation(invocation: {
-  readonly kind: "shell" | "argv";
-  readonly command?: string;
-  readonly executable?: string;
-  readonly arguments?: readonly string[];
-}): Extract<InspectionTraceDetailResult, { readonly kind: "command" }>["invocation"] {
+function projectFullInvocation(
+  invocation:
+    | { readonly kind: "shell"; readonly command: string }
+    | { readonly kind: "argv"; readonly executable: string; readonly arguments: readonly string[] },
+): Extract<InspectionTraceDetailResult, { readonly kind: "command" }>["invocation"] {
   return invocation.kind === "shell"
-    ? Object.freeze({ kind: invocation.kind, command: invocation.command! })
-    : Object.freeze({
+    ? { kind: invocation.kind, command: invocation.command }
+    : {
         kind: invocation.kind,
-        executable: invocation.executable!,
-        arguments: Object.freeze([...(invocation.arguments ?? [])]),
-      });
+        executable: invocation.executable,
+        arguments: invocation.arguments,
+      };
 }
 
 function projectFullConversationItem(
@@ -841,7 +840,7 @@ function projectFullConversationItem(
     readonly turnId: string;
     readonly sequence: number;
     readonly outcome: AgentTurnOutcome;
-    readonly sessionId?: string;
+    readonly sessionId: string | undefined;
   },
 ): Extract<InspectionTraceDetailResult, { readonly kind: "item" }>["item"] {
   const base = {
@@ -853,7 +852,7 @@ function projectFullConversationItem(
   };
   switch (item.kind) {
     case "tool-start":
-      return Object.freeze({
+      return {
         ...base,
         kind: "tool-call",
         eventId: item.eventId,
@@ -861,9 +860,9 @@ function projectFullConversationItem(
         toolOccurrenceId: item.toolOccurrenceId,
         tool: item.tool,
         input: item.inputSummary,
-      });
+      };
     case "tool-finish":
-      return Object.freeze({
+      return {
         ...base,
         kind: "tool-result",
         eventId: item.eventId,
@@ -871,26 +870,26 @@ function projectFullConversationItem(
         ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}),
         outcome: item.outcome,
         output: item.outputSummary,
-      });
+      };
     case "message":
-      return Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text });
+      return { ...base, kind: item.kind, role: item.role, text: item.text };
     case "thinking-summary":
     case "compaction":
     case "context-injection":
-      return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
+      return { ...base, kind: item.kind, summary: item.summary };
     case "subagent":
-      return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary });
+      return { ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary };
     case "input-request":
-      return Object.freeze({
+      return {
         ...base,
         kind: item.kind,
         state: item.state,
         prompt: item.promptSummary,
         response: item.responseSummary,
-      });
+      };
     case "skill-load":
     case "conversation-error":
-      return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: item.summary });
+      return { ...base, kind: item.kind, code: item.code, summary: item.summary };
   }
 }
 
@@ -906,7 +905,7 @@ export function readCurrentAttachment<
   }>,
   attachment: TraceAttachmentInput | undefined,
 ): AttachmentRead<ValueSchema["Type"]> {
-  if (attachment === undefined) return Object.freeze({ state: "not-recorded" as const });
+  if (attachment === undefined) return { state: "not-recorded" as const };
   if (
     attachment.physical.ownerKind !== persistence.attachment.owner ||
     attachment.physical.family !== persistence.attachment.family
@@ -972,22 +971,13 @@ export function readCurrentAttachment<
   for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return invalidRead("source-reference-invalid");
-    logicalReferences.set(
-      `${wire.owner}\u0000${wire.family}`,
-      Object.freeze({ owner: wire.owner, family: wire.family }),
-    );
+    logicalReferences.set(`${wire.owner}\u0000${wire.family}`, { owner: wire.owner, family: wire.family });
   }
-  const orderedReferences = [...logicalReferences.values()].sort((left, right) =>
-    left.owner === right.owner
-      ? left.family === right.family
-        ? 0
-        : left.family < right.family
-          ? -1
-          : 1
-      : left.owner < right.owner
-        ? -1
-        : 1,
-  );
+  const orderedReferences = [...logicalReferences.values()].sort(function compareReferences(left, right) {
+    if (left.owner !== right.owner) return left.owner < right.owner ? -1 : 1;
+    if (left.family === right.family) return 0;
+    return left.family < right.family ? -1 : 1;
+  });
   if (orderedReferences.length !== attachment.physical.references.length) {
     return invalidRead("source-reference-invalid");
   }
@@ -997,11 +987,11 @@ export function readCurrentAttachment<
     if (physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family)
       return invalidRead("source-reference-invalid");
   }
-  return Object.freeze({ state: "available" as const, value: hydrated.success, contentMetadata });
+  return { state: "available" as const, value: hydrated.success, contentMetadata };
 }
 
 function invalidRead<Value>(issue: string): AttachmentRead<Value> {
-  return Object.freeze({ state: "invalid" as const, issues: Object.freeze([issue]) });
+  return { state: "invalid" as const, issues: [issue] };
 }
 
 /** Decode only the current official usage payload. */
@@ -1027,18 +1017,18 @@ function availability<Value extends CollectionValue>(
 ): ProjectionState {
   switch (read.state) {
     case "not-recorded":
-      return Object.freeze({ state: read.state, limitations: Object.freeze([]) });
+      return { state: read.state, limitations: [] };
     case "invalid":
-      return Object.freeze({
+      return {
         state: read.state,
-        limitations: Object.freeze(read.issues.map((issue) => Object.freeze({ issue }))),
-      });
+        limitations: read.issues.map((issue) => ({ issue })),
+      };
     case "available": {
       const matching = read.value.collection.limitations.filter(({ target }) => targets.has(target));
-      return Object.freeze({
+      return {
         state: matching.length === 0 ? ("complete" as const) : ("partial" as const),
-        limitations: Object.freeze(matching),
-      });
+        limitations: matching,
+      };
     }
   }
 }
@@ -1078,40 +1068,38 @@ function conversationCoverage(
     : never,
 ) {
   if (terminal.state === "unavailable") {
-    return Object.freeze({
-      coverage: Object.freeze({ state: "unavailable" as const, reason: terminal.reason }),
-      limitations: Object.freeze([
-        Object.freeze({
+    return {
+      coverage: { state: "unavailable" as const, reason: terminal.reason },
+      limitations: [
+        {
           channel: "conversation",
           state: "unavailable" as const,
           reason: terminal.reason,
-        }),
-      ]),
-    });
+        },
+      ],
+    };
   }
   const names = ["events", "actions", "messages", "status", "data"] as const;
-  const limitations: { readonly channel: string; readonly state: string; readonly reason?: string }[] = [];
+  const limitations: { readonly channel: string; readonly state: string; readonly reason: string | undefined }[] = [];
   const entries: Record<string, object> = {};
   for (const name of names) {
     const entry = terminal.evidenceCoverage[name];
     entries[name] =
       entry.status === "complete"
-        ? Object.freeze({ state: "complete" as const })
-        : Object.freeze({
+        ? { state: "complete" as const }
+        : {
             state: entry.status,
             reason: boundedText(entry.reason, MAX_COVERAGE_REASON_BYTES).value,
-          });
+          };
     if (entry.status !== "complete") {
-      limitations.push(
-        Object.freeze({
-          channel: name,
-          state: entry.status,
-          reason: boundedText(entry.reason, MAX_COVERAGE_REASON_BYTES).value,
-        }),
-      );
+      limitations.push({
+        channel: name,
+        state: entry.status,
+        reason: boundedText(entry.reason, MAX_COVERAGE_REASON_BYTES).value,
+      });
     }
   }
-  return Object.freeze({ coverage: Object.freeze(entries), limitations: Object.freeze(limitations) });
+  return { coverage: entries, limitations: limitations };
 }
 
 export function projectAttemptRepricing(
@@ -1120,38 +1108,31 @@ export function projectAttemptRepricing(
 ): InspectionRepricingResult {
   const application = readAdapterUsageAttachment(attachments.adapterUsage, attachments.models);
   const judge = readCurrentAttachment(NiceEvalCurrentRecordAttachments.judgeUsage, attachments.judgeUsage);
+  function collectionState(read: typeof application | typeof judge) {
+    if (read.state === "available") return read.value.collection.state;
+    return read.state === "invalid" ? ("invalid" as const) : ("unavailable" as const);
+  }
   return repriceRecordedUsage({
     application: application.state === "available" ? application.value : undefined,
-    applicationCollection:
-      application.state === "available"
-        ? application.value.collection.state
-        : application.state === "invalid"
-          ? "invalid"
-          : "unavailable",
+    applicationCollection: collectionState(application),
     judge: judge.state === "available" ? judge.value : undefined,
-    judgeCollection:
-      judge.state === "available"
-        ? judge.value.collection.state
-        : judge.state === "invalid"
-          ? "invalid"
-          : "unavailable",
+    judgeCollection: collectionState(judge),
     pricing,
   });
 }
 
 export function projectAttemptUsage(
-  attachments: AttemptTraceAttachments,
+  attachments: Pick<AttemptTraceAttachments, "models" | "adapterUsage" | "judgeUsage" | "attemptCost" | "agentTurns">,
   models: ResolvedModelRoles | undefined = attachments.models,
 ): InspectionAttemptUsageResult {
   const usage = projectApplicationUsage(attachments, models);
   const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
   const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.judgeUsage, attachments.judgeUsage);
-  const judgeUsage =
-    read.state === "available"
-      ? projectJudgeUsage(read.value)
-      : read.state === "invalid"
-        ? Object.freeze({ state: "invalid" as const, reason: "judge-usage-source-invalid" as const })
-        : Object.freeze({ state: "unavailable" as const, reason: "judge-usage-not-recorded" as const });
+  function judgeUsage() {
+    if (read.state === "available") return projectJudgeUsage(read.value);
+    if (read.state === "invalid") return { state: "invalid" as const, reason: "judge-usage-source-invalid" as const };
+    return { state: "unavailable" as const, reason: "judge-usage-not-recorded" as const };
+  }
   const applicationEmptyComplete =
     attachments.adapterUsage !== undefined &&
     usage.totals.requests.state === "available" &&
@@ -1159,12 +1140,12 @@ export function projectAttemptUsage(
     usage.totals.costs?.totalCalls === 0;
   const cost = readCurrentAttachment(NiceEvalCurrentRecordAttachments.attemptCost, attachments.attemptCost);
   const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
-  return Object.freeze({
+  return {
     ...usage,
-    judgeUsage,
+    judgeUsage: judgeUsage(),
     totalCosts: projectTotalUsageCosts(
       usage.totals,
-      judgeUsage,
+      judgeUsage(),
       applicationEmptyComplete,
       application.state === "available" && application.value.collection.state === "complete",
       simulatedUser,
@@ -1173,16 +1154,16 @@ export function projectAttemptUsage(
         ...recordedCostGaps("judge", read.state === "available" ? read.value : undefined),
       ],
     ),
-  });
+  };
 }
 
-function projectApplicationUsage(
-  attachments: AttemptTraceAttachments,
+export function projectApplicationUsage(
+  attachments: Pick<AttemptTraceAttachments, "adapterUsage" | "agentTurns">,
   models: ResolvedModelRoles | undefined,
 ): Omit<InspectionAttemptUsageResult, "judgeUsage" | "totalCosts"> {
   if (attachments.adapterUsage !== undefined) {
     const read = readAdapterUsageAttachment(attachments.adapterUsage, models);
-    const modelUsage = projectAdapterModelUsage(read.state === "available" ? read.value : null, models, {
+    const modelUsage = projectAdapterModelUsage(read.state === "available" ? read.value : undefined, models, {
       basis: "recorded-calls",
       reason: read.state === "invalid" ? "source-invalid" : "usage-not-recorded",
     });
@@ -1242,7 +1223,7 @@ function projectApplicationUsage(
           (call.inputTotalTokens !== null ||
             [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens].every((value) => value !== null)),
       );
-    const unknownCosts = calls.filter((call) => call.effectiveCost === null).length;
+    const unknownCosts = calls.filter((call) => call.effectiveCost === undefined).length;
     const partialCosts = calls.filter((call) => call.effectiveCost?.state === "partial").length;
     const costs = effectiveCostTotals(calls, read.value.collection.state);
     return {
@@ -1269,7 +1250,7 @@ function projectApplicationUsage(
               },
             ]),
       ],
-      calls: calls.slice(0, 128),
+      calls: calls.slice(0, 128).map((call) => ({ ...call, effectiveCost: call.effectiveCost ?? null })),
       callsTruncated: all.length > 128,
       omittedCallCount: Math.max(0, all.length - 128),
       priceReceipts: read.value.priceReceipts,
@@ -1290,18 +1271,18 @@ function projectApplicationUsage(
   }
   const read = readAgentTurns(attachments.agentTurns);
   const usage = projectUsage(read);
-  return Object.freeze({
+  function modelUsageReason() {
+    if (read.state === "invalid") return "source-invalid" as const;
+    if (attachments.agentTurns === undefined) return "usage-not-recorded" as const;
+    return "physical-call-identity-not-recorded" as const;
+  }
+  return {
     ...usage,
-    ...projectAdapterModelUsage(null, models, {
+    ...projectAdapterModelUsage(undefined, models, {
       basis: attachments.agentTurns === undefined ? "unavailable" : "reported-sends",
-      reason:
-        read.state === "invalid"
-          ? "source-invalid"
-          : attachments.agentTurns === undefined
-            ? "usage-not-recorded"
-            : "physical-call-identity-not-recorded",
+      reason: modelUsageReason(),
     }),
-  });
+  };
 }
 
 export function projectAdapterUsageTokens(
@@ -1310,23 +1291,21 @@ export function projectAdapterUsageTokens(
 ): { readonly value: number | null; readonly state: "available" | "partial" | "unavailable" | "failed" } {
   const read = readAdapterUsageAttachment(attachment, models);
   if (read.state !== "available") {
-    return Object.freeze({
+    return {
       value: null,
       state: read.state === "invalid" ? ("failed" as const) : ("unavailable" as const),
-    });
+    };
   }
   const material = adapterTokenMaterial(read.value, "totalTokens");
-  return Object.freeze({
+  function tokenState() {
+    if (material.state === "exact") return "available" as const;
+    if (material.state === "lower-bound") return "partial" as const;
+    return material.reason === "usage-exceeds-safe-integer" ? ("failed" as const) : ("unavailable" as const);
+  }
+  return {
     value: material.state === "unavailable" ? null : material.value,
-    state:
-      material.state === "exact"
-        ? ("available" as const)
-        : material.state === "lower-bound"
-          ? ("partial" as const)
-          : material.reason === "usage-exceeds-safe-integer"
-            ? ("failed" as const)
-            : ("unavailable" as const),
-  });
+    state: tokenState(),
+  };
 }
 
 function projectUsage(
@@ -1334,81 +1313,79 @@ function projectUsage(
 ): Omit<InspectionAttemptUsageResult, "configuredModels" | "modelGroups" | "judgeUsage" | "totalCosts" | "cacheRead"> {
   const sourceState = availability(agentTurns, USAGE_TARGETS);
   if (agentTurns.state !== "available") {
-    return Object.freeze({
+    return {
       ...sourceState,
       limitationsTruncated: false,
       omittedLimitationCount: 0,
-      turns: Object.freeze([]),
+      turns: [],
       turnsTruncated: false,
       omittedTurnCount: 0,
-      observations: Object.freeze([]),
+      observations: [],
       totals: unavailableInspectionUsageTotals(),
       hasMore: false,
       omittedObservationCount: 0,
-    });
+    };
   }
 
   const limitations: InspectionAttemptUsageResult["limitations"][number][] = [...sourceState.limitations];
   const turns = agentTurns.value.segments.slice(0, MAX_CONVERSATION_TURNS).map((turn) => {
-    const coverage =
-      turn.terminal.state === "unavailable"
-        ? Object.freeze({ state: "unavailable" as const, reason: turn.terminal.reason })
-        : turn.terminal.evidenceCoverage.usage.status === "complete"
-          ? Object.freeze({ state: "complete" as const })
-          : Object.freeze({
-              state: turn.terminal.evidenceCoverage.usage.status,
-              reason: boundedText(turn.terminal.evidenceCoverage.usage.reason, MAX_COVERAGE_REASON_BYTES).value,
-            });
-    if (coverage.state !== "complete") {
-      limitations.push(
-        Object.freeze({
-          source: "agent-turns",
-          turnId: turn.turnId,
-          channel: "usage",
-          ...coverage,
-        }),
-      );
+    function usageCoverage() {
+      if (turn.terminal.state === "unavailable") return { state: "unavailable" as const, reason: turn.terminal.reason };
+      if (turn.terminal.evidenceCoverage.usage.status === "complete") return { state: "complete" as const };
+      return {
+        state: turn.terminal.evidenceCoverage.usage.status,
+        reason: boundedText(turn.terminal.evidenceCoverage.usage.reason, MAX_COVERAGE_REASON_BYTES).value,
+      };
     }
-    return Object.freeze({ turnId: turn.turnId, coverage });
+    const coverage = usageCoverage();
+    if (coverage.state !== "complete") {
+      limitations.push({
+        source: "agent-turns",
+        turnId: turn.turnId,
+        channel: "usage",
+        ...coverage,
+      });
+    }
+    return { turnId: turn.turnId, coverage };
   });
   const allObservations: InspectionAttemptUsageResult["observations"][number][] = [];
   for (const turn of agentTurns.value.segments) {
     for (const observation of turn.usage) {
-      allObservations.push(Object.freeze({ turnId: turn.turnId, ...observation }));
+      allObservations.push({ turnId: turn.turnId, ...observation });
     }
   }
   const observations = allObservations.slice(0, MAX_USAGE_OBSERVATIONS);
-  return Object.freeze({
+  return {
     state: sourceState.state === "complete" && limitations.length === 0 ? "complete" : "partial",
-    limitations: Object.freeze(limitations.slice(0, MAX_SOURCE_LIMITATIONS)),
+    limitations: limitations.slice(0, MAX_SOURCE_LIMITATIONS),
     limitationsTruncated: limitations.length > MAX_SOURCE_LIMITATIONS,
     omittedLimitationCount: Math.max(0, limitations.length - MAX_SOURCE_LIMITATIONS),
-    turns: Object.freeze(turns),
+    turns: turns,
     turnsTruncated: turns.length < agentTurns.value.segments.length,
     omittedTurnCount: agentTurns.value.segments.length - turns.length,
-    observations: Object.freeze(observations),
+    observations: observations,
     totals: usageTotals(allObservations, sourceState.state),
     hasMore: observations.length < allObservations.length,
     omittedObservationCount: allObservations.length - observations.length,
-  });
+  };
 }
 
 export function unavailableInspectionUsageTotals(): InspectionAttemptUsageResult["totals"] {
-  const unavailable = Object.freeze({
+  const unavailable = {
     state: "unavailable" as const,
     value: null,
     observationCount: 0,
-  });
-  return Object.freeze({
+  };
+  return {
     inputTokens: unavailable,
     outputTokens: unavailable,
     requests: unavailable,
-    providerCosts: Object.freeze({
+    providerCosts: {
       state: "unavailable" as const,
-      values: Object.freeze([]),
+      values: [],
       observationCount: 0,
-    }),
-  });
+    },
+  };
 }
 
 export function combineInspectionUsageTotals(
@@ -1423,28 +1400,25 @@ export function combineInspectionUsageTotals(
       return value.value === null ? [] : [value];
     });
     if (available.length === 0) {
-      return Object.freeze({ state: "unavailable", value: null, observationCount: 0 });
+      return { state: "unavailable", value: null, observationCount: 0 };
     }
-    return Object.freeze({
+    return {
       state:
         incomplete || usages.some(({ totals }) => totals[key].state !== "available")
           ? ("partial" as const)
           : ("available" as const),
       value: available.reduce((total, entry) => total + entry.value!, 0),
       observationCount: available.reduce((total, entry) => total + entry.observationCount, 0),
-    });
+    };
   };
   const costs = new Map<string, { readonly amount: string; readonly count: number }>();
   for (const usage of usages) {
     for (const entry of usage.totals.providerCosts?.values ?? []) {
       const current = costs.get(entry.currency);
-      costs.set(
-        entry.currency,
-        Object.freeze({
-          amount: current === undefined ? entry.value : addCanonicalDecimal(current.amount, entry.value),
-          count: (current?.count ?? 0) + entry.observationCount,
-        }),
-      );
+      costs.set(entry.currency, {
+        amount: current === undefined ? entry.value : addCanonicalDecimal(current.amount, entry.value),
+        count: (current?.count ?? 0) + entry.observationCount,
+      });
     }
   }
   const effectiveCosts = new Map<
@@ -1460,29 +1434,29 @@ export function combineInspectionUsageTotals(
   for (const total of adapterCosts) {
     for (const entry of total.values) {
       const current = effectiveCosts.get(entry.currency);
-      effectiveCosts.set(
-        entry.currency,
-        Object.freeze({
-          amount: current === undefined ? entry.value : addCanonicalDecimal(current.amount, entry.value),
-          coveredCalls: (current?.coveredCalls ?? 0) + entry.coveredCalls,
-          reportedCalls: (current?.reportedCalls ?? 0) + entry.reportedCalls,
-          estimatedCalls: (current?.estimatedCalls ?? 0) + entry.estimatedCalls,
-        }),
-      );
+      effectiveCosts.set(entry.currency, {
+        amount: current === undefined ? entry.value : addCanonicalDecimal(current.amount, entry.value),
+        coveredCalls: (current?.coveredCalls ?? 0) + entry.coveredCalls,
+        reportedCalls: (current?.reportedCalls ?? 0) + entry.reportedCalls,
+        estimatedCalls: (current?.estimatedCalls ?? 0) + entry.estimatedCalls,
+      });
     }
   }
-  const sourceFor = (reported: number, estimated: number) =>
-    reported > 0 && estimated > 0
-      ? ("mixed" as const)
-      : reported > 0
-        ? ("reported" as const)
-        : estimated > 0
-          ? ("estimated" as const)
-          : null;
+  function sourceFor(reported: number, estimated: number) {
+    if (reported > 0 && estimated > 0) return "mixed" as const;
+    if (reported > 0) return "reported" as const;
+    if (estimated > 0) return "estimated" as const;
+    return null;
+  }
+  function costState() {
+    if (effectiveCosts.size === 0) return "unavailable" as const;
+    if (incomplete || adapterCosts.some((value) => value.state !== "complete")) return "partial" as const;
+    return "complete" as const;
+  }
   const totalCalls = adapterCosts.reduce((sum, value) => sum + value.totalCalls, 0);
   const reportedCalls = [...effectiveCosts.values()].reduce((sum, value) => sum + value.reportedCalls, 0);
   const estimatedCalls = [...effectiveCosts.values()].reduce((sum, value) => sum + value.estimatedCalls, 0);
-  return Object.freeze({
+  return {
     inputTokens: numeric("inputTokens"),
     outputTokens: numeric("outputTokens"),
     requests: numeric("requests"),
@@ -1492,54 +1466,41 @@ export function combineInspectionUsageTotals(
           providerCosts:
             costs.size === 0
               ? unavailableInspectionUsageTotals().providerCosts
-              : Object.freeze({
+              : {
                   state:
                     incomplete || usages.some(({ totals }) => totals.providerCosts?.state !== "available")
                       ? ("partial" as const)
                       : ("available" as const),
-                  values: Object.freeze(
-                    [...costs.entries()]
-                      .sort(([left], [right]) => left.localeCompare(right))
-                      .map(([currency, total]) =>
-                        Object.freeze({
-                          currency,
-                          value: total.amount,
-                          observationCount: total.count,
-                        }),
-                      ),
-                  ),
+                  values: [...costs.entries()]
+                    .sort(([left], [right]) => left.localeCompare(right))
+                    .map(([currency, total]) => ({
+                      currency,
+                      value: total.amount,
+                      observationCount: total.count,
+                    })),
                   observationCount: [...costs.values()].reduce((total, value) => total + value.count, 0),
-                }),
+                },
         }),
     ...(adapterCosts.length === 0
       ? {}
       : {
-          costs: Object.freeze({
-            state:
-              effectiveCosts.size === 0
-                ? ("unavailable" as const)
-                : incomplete || adapterCosts.some((value) => value.state !== "complete")
-                  ? ("partial" as const)
-                  : ("complete" as const),
+          costs: {
+            state: costState(),
             source: sourceFor(reportedCalls, estimatedCalls),
-            values: Object.freeze(
-              [...effectiveCosts.entries()]
-                .sort(([left], [right]) => left.localeCompare(right))
-                .map(([currency, value]) =>
-                  Object.freeze({
-                    currency,
-                    value: value.amount,
-                    source: sourceFor(value.reportedCalls, value.estimatedCalls)!,
-                    coveredCalls: value.coveredCalls,
-                    reportedCalls: value.reportedCalls,
-                    estimatedCalls: value.estimatedCalls,
-                  }),
-                ),
-            ),
+            values: [...effectiveCosts.entries()]
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([currency, value]) => ({
+                currency,
+                value: value.amount,
+                source: sourceFor(value.reportedCalls, value.estimatedCalls)!,
+                coveredCalls: value.coveredCalls,
+                reportedCalls: value.reportedCalls,
+                estimatedCalls: value.estimatedCalls,
+              })),
             totalCalls,
-          }),
+          },
         }),
-  });
+  };
 }
 
 function usageTotals(
@@ -1549,12 +1510,12 @@ function usageTotals(
   const state = projectionState === "complete" ? ("available" as const) : ("partial" as const);
   const numeric = (values: readonly number[]): InspectionAttemptUsageResult["totals"]["inputTokens"] =>
     values.length === 0
-      ? Object.freeze({ state: "unavailable", value: null, observationCount: 0 })
-      : Object.freeze({
+      ? { state: "unavailable", value: null, observationCount: 0 }
+      : {
           state,
           value: values.reduce((total, value) => total + value, 0),
           observationCount: values.length,
-        });
+        };
   const inputTokens = observations.flatMap((observation) =>
     observation.kind === "token-bucket" && observation.bucket === "input" ? [observation.tokens] : [],
   );
@@ -1566,41 +1527,34 @@ function usageTotals(
   for (const observation of observations) {
     if (observation.kind !== "provider-cost") continue;
     const current = costs.get(observation.currency);
-    costs.set(
-      observation.currency,
-      Object.freeze({
-        amount: current === undefined ? observation.amount : addCanonicalDecimal(current.amount, observation.amount),
-        count: (current?.count ?? 0) + 1,
-      }),
-    );
+    costs.set(observation.currency, {
+      amount: current === undefined ? observation.amount : addCanonicalDecimal(current.amount, observation.amount),
+      count: (current?.count ?? 0) + 1,
+    });
   }
-  return Object.freeze({
+  return {
     inputTokens: numeric(inputTokens),
     outputTokens: numeric(outputTokens),
     requests: numeric(requests.map(() => 1)),
     providerCosts:
       costs.size === 0
-        ? Object.freeze({
+        ? {
             state: "unavailable" as const,
-            values: Object.freeze([]),
+            values: [],
             observationCount: 0,
-          })
-        : Object.freeze({
+          }
+        : {
             state,
-            values: Object.freeze(
-              [...costs.entries()]
-                .sort(([left], [right]) => left.localeCompare(right))
-                .map(([currency, total]) =>
-                  Object.freeze({
-                    currency,
-                    value: total.amount,
-                    observationCount: total.count,
-                  }),
-                ),
-            ),
+            values: [...costs.entries()]
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([currency, total]) => ({
+                currency,
+                value: total.amount,
+                observationCount: total.count,
+              })),
             observationCount: [...costs.values()].reduce((total, value) => total + value.count, 0),
-          }),
-  });
+          },
+  };
 }
 
 function addCanonicalDecimal(left: string, right: string): string {
@@ -1623,7 +1577,9 @@ function readSandboxCommands(attachment?: TraceAttachmentInput) {
   return readCurrentAttachment(NiceEvalCurrentRecordAttachments.sandboxCommands, attachment);
 }
 
-export function projectAttemptTiming(attachments: AttemptTraceAttachments): InspectionAttemptTimingResult {
+export function projectAttemptTiming(
+  attachments: Pick<AttemptTraceAttachments, "runnerActivities">,
+): InspectionAttemptTimingResult {
   return projectTiming(readRunnerActivities(attachments.runnerActivities));
 }
 
@@ -1631,39 +1587,37 @@ function projectTiming(activities: ReturnType<typeof readRunnerActivities>): Ins
   const sourceState = availability(activities, TIMING_TARGETS);
   if (activities.state !== "available") {
     const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
-    return Object.freeze({
+    return {
       state: sourceState.state,
-      limitations: Object.freeze(limitations),
+      limitations: limitations,
       limitationsTruncated: limitations.length < sourceState.limitations.length,
       omittedLimitationCount: sourceState.limitations.length - limitations.length,
-      activities: Object.freeze([]),
+      activities: [],
       hasMore: false,
       omittedActivityCount: 0,
-    });
+    };
   }
-  const items = activities.value.segments.slice(0, MAX_ACTIVITIES).map((activity) =>
-    Object.freeze({
-      activityId: activity.activityId,
-      sequence: activity.sequence,
-      parentActivityId: activity.parentActivityId,
-      turnId: activity.turnId,
-      phase: projectLifecyclePhase(activity.phase),
-      label: projectLifecyclePhase(activity.label),
-      startOffsetMs: activity.startOffsetMs,
-      durationMs: activity.durationMs,
-      outcome: activity.outcome,
-    }),
-  );
+  const items = activities.value.segments.slice(0, MAX_ACTIVITIES).map((activity) => ({
+    activityId: activity.activityId,
+    sequence: activity.sequence,
+    parentActivityId: activity.parentActivityId,
+    turnId: activity.turnId,
+    phase: projectLifecyclePhase(activity.phase),
+    label: projectLifecyclePhase(activity.label),
+    startOffsetMs: activity.startOffsetMs,
+    durationMs: activity.durationMs,
+    outcome: activity.outcome,
+  }));
   const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
-  return Object.freeze({
+  return {
     state: sourceState.state,
-    limitations: Object.freeze(limitations),
+    limitations: limitations,
     limitationsTruncated: limitations.length < sourceState.limitations.length,
     omittedLimitationCount: sourceState.limitations.length - limitations.length,
-    activities: Object.freeze(items),
+    activities: items,
     hasMore: items.length < activities.value.segments.length,
     omittedActivityCount: activities.value.segments.length - items.length,
-  });
+  };
 }
 
 function readRunnerActivities(attachment?: TraceAttachmentInput) {
@@ -1676,27 +1630,27 @@ function projectDiagnostics(
   const sourceState = availability(diagnostics, DIAGNOSTIC_TARGETS);
   const limitations = sourceState.limitations.slice(0, MAX_SOURCE_LIMITATIONS);
   if (diagnostics.state !== "available") {
-    return Object.freeze({
+    return {
       state: sourceState.state,
-      limitations: Object.freeze(limitations),
+      limitations: limitations,
       limitationsTruncated: limitations.length < sourceState.limitations.length,
       omittedLimitationCount: sourceState.limitations.length - limitations.length,
-      items: Object.freeze([]),
+      items: [],
       hasMore: false,
       omittedDiagnosticCount: 0,
-    });
+    };
   }
   const items = diagnostics.value.segments.slice(0, MAX_DIAGNOSTICS).map((diagnostic) => {
     const summary = boundedText(diagnostic.summary, MAX_DIAGNOSTIC_SUMMARY_BYTES);
     const causes = diagnostic.causes.slice(0, MAX_DIAGNOSTIC_CAUSES).map((cause) => {
       const causeSummary = boundedText(cause.summary, MAX_DIAGNOSTIC_CAUSE_BYTES);
-      return Object.freeze({
+      return {
         code: projectLifecyclePhase(cause.code),
         summary: causeSummary.value,
         summaryTruncated: causeSummary.truncated,
-      });
+      };
     });
-    return Object.freeze({
+    return {
       diagnosticId: diagnostic.diagnosticId,
       evidenceId: diagnostic.diagnosticId,
       sequence: diagnostic.sequence,
@@ -1706,22 +1660,22 @@ function projectDiagnostics(
       code: projectLifecyclePhase(diagnostic.code),
       summary: summary.value,
       summaryTruncated: summary.truncated,
-      causes: Object.freeze(causes),
+      causes: causes,
       causesTruncated: causes.length < diagnostic.causes.length,
       omittedCauseCount: diagnostic.causes.length - causes.length,
       redaction: diagnostic.redaction,
       sourceFrame: diagnostic.sourceFrame === null ? null : diagnostic.sourceFrame.value,
-    });
+    };
   });
-  return Object.freeze({
+  return {
     state: sourceState.state,
-    limitations: Object.freeze(limitations),
+    limitations: limitations,
     limitationsTruncated: limitations.length < sourceState.limitations.length,
     omittedLimitationCount: sourceState.limitations.length - limitations.length,
-    items: Object.freeze(items),
+    items: items,
     hasMore: items.length < diagnostics.value.segments.length,
     omittedDiagnosticCount: diagnostics.value.segments.length - items.length,
-  });
+  };
 }
 
 function readRunnerDiagnostics(attachment?: TraceAttachmentInput) {
@@ -1776,7 +1730,7 @@ function boundedText(
   readonly truncated: boolean;
 } {
   if (utf8ByteLength(value) <= maximumBytes) {
-    return Object.freeze({ value, truncated: false });
+    return { value, truncated: false };
   }
   let output = "";
   let bytes = 0;
@@ -1786,7 +1740,7 @@ function boundedText(
     output += character;
     bytes += characterBytes;
   }
-  return Object.freeze({ value: output, truncated: true });
+  return { value: output, truncated: true };
 }
 
 function exactMarker(value: unknown, key: string): unknown | undefined {

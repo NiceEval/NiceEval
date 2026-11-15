@@ -42,7 +42,14 @@ const Declaration = Schema.Struct({
 });
 const decodeDeclaration = Schema.decodeUnknownSync(Declaration, { onExcessProperty: "error" });
 const degraded = (reason: BeforeCacheDegradedReason, detail: string) => ({ _tag: "Degraded" as const, reason, detail });
-const ledgerError = () => new BeforeCacheLookupError({ operation: "ledger", reason: "ledger-unavailable" });
+const ledgerError = () =>
+  new BeforeCacheLookupError({
+    operation: "ledger",
+    reason: "ledger-unavailable",
+    beforeCacheKey: undefined,
+    domainId: undefined,
+    cause: undefined,
+  });
 const io = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({ try: run, catch: () => ledgerError() });
 
 interface Reservation {
@@ -188,6 +195,9 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
             return yield* new BeforeCacheLookupError({
               operation: "cleanup",
               reason: "Refusing to delete the declared Base snapshot",
+              beforeCacheKey: undefined,
+              domainId: undefined,
+              cause: undefined,
             });
           }
           yield* driver.deleteSnapshot(state.plan, snapshotId);
@@ -204,6 +214,9 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
         return yield* new BeforeCacheLookupError({
           operation: "cleanup",
           reason: "Snapshot deletion failed; its ledger entry is retained",
+          beforeCacheKey: undefined,
+          domainId: undefined,
+          cause: undefined,
         });
     }
   });
@@ -308,11 +321,18 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     const key = contextKey(context);
     const known = targets.get(key)?.get(plan);
     if (known !== undefined && disabledDomains.has(runKey(context, known))) return yield* ledgerError();
-    const target = yield* driver
-      .resolveBase(plan)
-      .pipe(
-        Effect.mapError(() => new BeforeCacheLookupError({ operation: "eligibility", reason: "eligibility-failed" })),
-      );
+    const target = yield* driver.resolveBase(plan).pipe(
+      Effect.mapError(
+        () =>
+          new BeforeCacheLookupError({
+            operation: "eligibility",
+            reason: "eligibility-failed",
+            beforeCacheKey: undefined,
+            domainId: undefined,
+            cause: undefined,
+          }),
+      ),
+    );
     if (target._tag === "Resolved") {
       let group = targets.get(key);
       if (group === undefined) {
@@ -376,13 +396,18 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
           if (result._tag === "Reserved") return { _tag: "Miss" };
           while (true) {
             if (reservation.lost) return degraded("lease-lost", "Snapshot publication lease was lost");
-            const found = yield* driver
-              .findSnapshot(plan, result.entry.snapshot_name)
-              .pipe(
-                Effect.mapError(
-                  () => new BeforeCacheLookupError({ operation: "snapshot", reason: "snapshot-uncertain" }),
-                ),
-              );
+            const found = yield* driver.findSnapshot(plan, result.entry.snapshot_name).pipe(
+              Effect.mapError(
+                () =>
+                  new BeforeCacheLookupError({
+                    operation: "snapshot",
+                    reason: "snapshot-uncertain",
+                    beforeCacheKey: undefined,
+                    domainId: undefined,
+                    cause: undefined,
+                  }),
+              ),
+            );
             if (found._tag === "Pending") {
               yield* Effect.sleep("1 second");
               continue;
@@ -663,7 +688,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
         if (!proof.mounts.has(mount) && !driver.preserves.disks.includes(mount.split("\0")[1]!))
           return degraded("mounted-state", "New writable mount is outside the snapshot disks");
       }
-      const values = (step.knownSensitiveValues ?? []).filter((value) => value.length > 0);
+      const values = step.knownSensitiveValues.filter((value) => value.length > 0);
       if (values.length > 0) {
         const scan = yield* Effect.result(
           io((signal) =>

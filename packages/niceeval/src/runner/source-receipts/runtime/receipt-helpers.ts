@@ -22,24 +22,29 @@ export function sourceSegmentId(): SafeIdentifier | undefined {
 }
 
 export function agentTurnTerminal(turn: CapturedConversationTurn): NormalizedAgentTurnTerminal {
-  if (turn.adapterStatus !== undefined && turn.evidenceCoverage !== undefined) {
+  const completion = turn.completion;
+  if (completion.state === "observed" && completion.adapter.state === "recorded") {
+    const adapter = completion.adapter;
     return {
       state: "recorded" as const,
-      status: turn.adapterStatus,
+      status: adapter.status,
       // Adapter-owned entries can retain mutable aliases beyond this receipt.
       evidenceCoverage: {
-        events: { ...turn.evidenceCoverage.events },
-        actions: { ...turn.evidenceCoverage.actions },
-        messages: { ...turn.evidenceCoverage.messages },
-        usage: { ...turn.evidenceCoverage.usage },
-        status: { ...turn.evidenceCoverage.status },
-        data: { ...turn.evidenceCoverage.data },
+        events: { ...adapter.evidenceCoverage.events },
+        actions: { ...adapter.evidenceCoverage.actions },
+        messages: { ...adapter.evidenceCoverage.messages },
+        usage: { ...adapter.evidenceCoverage.usage },
+        status: { ...adapter.evidenceCoverage.status },
+        data: { ...adapter.evidenceCoverage.data },
       },
     };
   }
   return {
     state: "unavailable" as const,
-    reason: turn.outcome === "interrupted" ? ("send-interrupted" as const) : ("send-failed" as const),
+    reason:
+      completion.state === "interrupted" || (completion.state === "observed" && completion.outcome === "interrupted")
+        ? "send-interrupted"
+        : "send-failed",
   };
 }
 

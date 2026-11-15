@@ -14,7 +14,6 @@ export type MatcherFilterRowState =
 export interface MatcherFilterFieldContent {
   readonly label: string;
   readonly value: string;
-  readonly state?: "matched" | "mismatched" | "unavailable";
 }
 
 export interface MatcherFilterRowContent {
@@ -23,25 +22,25 @@ export interface MatcherFilterRowContent {
   readonly kind: "tool" | "event" | "legacy-source-row";
   readonly summary: string;
   readonly state: MatcherFilterRowState;
-  readonly note?: string;
   readonly fields: readonly MatcherFilterFieldContent[];
-  readonly difference?: readonly MatcherFilterFieldContent[];
-  readonly conversationTarget?: {
-    readonly anchor: string;
-  };
-  readonly retainedIdentity?:
-    | { readonly kind: "tool"; readonly toolOccurrenceId: string }
-    | { readonly kind: "event"; readonly itemId: string };
+  readonly difference: readonly MatcherFilterFieldContent[] | undefined;
+  readonly conversationTarget:
+    | {
+        readonly anchor: string;
+      }
+    | undefined;
 }
 
 export interface MatcherFilterStepContent {
   readonly step: number;
   readonly summary: string;
   readonly state: "matched" | "possible" | "blocked" | "not-reached";
-  readonly sourceRow?: string;
-  readonly conversationTarget?: {
-    readonly anchor: string;
-  };
+  readonly sourceRow: string | undefined;
+  readonly conversationTarget:
+    | {
+        readonly anchor: string;
+      }
+    | undefined;
 }
 
 export interface MatcherFilterFactContent {
@@ -53,7 +52,7 @@ export interface MatcherComparatorContent {
   readonly kind: string;
   readonly display: string;
   /** Complete retained comparator payload from Inspection. */
-  readonly value?: ClosedJsonValue;
+  readonly value: ClosedJsonValue | undefined;
 }
 
 export type MatcherRetainedTarget =
@@ -67,7 +66,7 @@ export interface MatcherRetainedSourceTarget {
     | { readonly kind: "event"; readonly eventId: string };
   readonly difference: ClosedJsonValue;
   /** Stable DOM anchor from the same trace projection, when retained. */
-  readonly conversationTarget?: { readonly anchor: string };
+  readonly conversationTarget: { readonly anchor: string } | undefined;
 }
 
 export type MatcherCommandMatch =
@@ -79,24 +78,15 @@ export interface MatcherFilterDebuggerContent {
   readonly queryKind: "collection-filter" | "ordered-sequence" | "unavailable";
   readonly subject: "tool" | "event" | "source-row";
   readonly querySummary: string;
-  readonly comparator?: MatcherComparatorContent | ClosedJsonValue;
-  /** Complete retained source ledger, alongside its bounded display rows. */
-  readonly sourceLedger?: ClosedJsonValue;
-  readonly receipt?: ClosedJsonValue;
-  readonly result?: ClosedJsonValue;
-  readonly targets?: readonly MatcherRetainedSourceTarget[];
-  readonly commandMatch?: MatcherCommandMatch;
   readonly facts: readonly MatcherFilterFactContent[];
-  readonly steps?: readonly MatcherFilterStepContent[];
+  readonly steps: readonly MatcherFilterStepContent[];
   readonly atEvaluation: {
     readonly state: "complete" | "partial" | "unavailable";
     readonly rows: readonly MatcherFilterRowContent[];
-    readonly notices?: readonly MatcherFilterNotice[];
+    readonly notices: readonly MatcherFilterNotice[];
   };
   readonly afterEvaluation: readonly MatcherFilterRowContent[];
-  readonly relationNotice?: MatcherFilterNotice;
-  /** Explicit stable target retained with the matcher; never reconstructed. */
-  readonly retainedTarget?: MatcherRetainedTarget;
+  readonly relationNotice: MatcherFilterNotice | undefined;
 }
 
 export type MatcherFilterNotice =
@@ -153,16 +143,8 @@ function rowKindLabel(kind: MatcherFilterRowContent["kind"], locale: ReportLocal
   }
 }
 
-function fieldStateLabel(state: MatcherFilterFieldContent["state"], locale: ReportLocale): string | null {
-  if (state === undefined) return null;
-  if (state === "matched") return text(locale, "match", "命中");
-  if (state === "mismatched") return text(locale, "different", "不匹配");
-  return text(locale, "unknown", "无法判断");
-}
-
 function Fields({
   fields,
-  locale,
 }: {
   readonly fields: readonly MatcherFilterFieldContent[];
   readonly locale: ReportLocale;
@@ -171,14 +153,12 @@ function Fields({
   return (
     <dl className="niceeval-filter-row-fields">
       {fields.map((field, index) => {
-        const state = fieldStateLabel(field.state, locale);
         return (
-          <div key={`${field.label}:${index}`} data-field-state={field.state}>
+          <div key={`${field.label}:${index}`}>
             <dt>{field.label}</dt>
             <dd>
               <pre>{field.value}</pre>
             </dd>
-            {state === null ? null : <span>{state}</span>}
           </div>
         );
       })}
@@ -213,11 +193,7 @@ function ConversationTarget({
 
 function Row({ row, locale }: { readonly row: MatcherFilterRowContent; readonly locale: ReportLocale }): ReactElement {
   const title = `${rowKindLabel(row.kind, locale)} ${row.number}`;
-  const body =
-    row.fields.length > 0 ||
-    (row.difference?.length ?? 0) > 0 ||
-    row.note !== undefined ||
-    row.conversationTarget !== undefined;
+  const body = row.fields.length > 0 || (row.difference?.length ?? 0) > 0 || row.conversationTarget !== undefined;
   const summary = (
     <span className="niceeval-filter-row-summary">
       <span className="niceeval-filter-row-number">{title}</span>
@@ -238,7 +214,6 @@ function Row({ row, locale }: { readonly row: MatcherFilterRowContent; readonly 
     <details className="niceeval-filter-row" data-state={row.state}>
       <summary>{summary}</summary>
       <div className="niceeval-filter-row-detail">
-        {row.note === undefined ? null : <p className="niceeval-filter-row-note">{row.note}</p>}
         {row.difference === undefined || row.difference.length === 0 ? null : (
           <section>
             <h6>{text(locale, "Filter comparison", "Filter 对比")}</h6>
@@ -347,29 +322,6 @@ function debuggerLabel(content: MatcherFilterDebuggerContent, locale: ReportLoca
   return text(locale, "Event filter", "事件筛选");
 }
 
-function comparatorKind(comparator: MatcherFilterDebuggerContent["comparator"]): string | undefined {
-  return comparator !== null &&
-    typeof comparator === "object" &&
-    !Array.isArray(comparator) &&
-    "kind" in comparator &&
-    typeof comparator.kind === "string"
-    ? comparator.kind
-    : undefined;
-}
-
-function comparatorDisplay(content: MatcherFilterDebuggerContent): string {
-  const comparator = content.comparator;
-  if (
-    comparator !== null &&
-    typeof comparator === "object" &&
-    !Array.isArray(comparator) &&
-    "display" in comparator &&
-    typeof comparator.display === "string"
-  )
-    return comparator.display;
-  return comparator === undefined || comparator === null ? content.querySummary : JSON.stringify(comparator);
-}
-
 function ledgerSummary(content: MatcherFilterDebuggerContent, subjects: string, locale: ReportLocale): string {
   const count = content.atEvaluation.rows.length;
   if (locale === "zh-CN") {
@@ -395,15 +347,11 @@ export function MatcherFilterDebugger({
       aria-label={debuggerLabel(content, locale)}
       data-state={content.state}
       data-source-state={content.atEvaluation.state}
-      data-comparator={comparatorKind(content.comparator)}
     >
       {historical ? null : (
         <header className="niceeval-filter-debugger-head">
           <span>{debuggerLabel(content, locale)}</span>
-          <code>{comparatorDisplay(content)}</code>
-          {content.retainedTarget?.state === "available" ? (
-            <ConversationTarget anchor={content.retainedTarget.anchor} locale={locale} />
-          ) : null}
+          <code>{content.querySummary}</code>
         </header>
       )}
 
@@ -418,18 +366,12 @@ export function MatcherFilterDebugger({
         </dl>
       )}
 
-      <Steps steps={content.steps ?? []} locale={locale} />
+      <Steps steps={content.steps} locale={locale} />
 
       {content.relationNotice === undefined ? null : (
         <p className="niceeval-filter-notice">{noticeText(content.relationNotice, locale)}</p>
       )}
-      {content.retainedTarget?.state === "unavailable" ? (
-        <p className="niceeval-filter-notice">{content.retainedTarget.reason}</p>
-      ) : null}
-      {content.commandMatch?.state === "unavailable" ? (
-        <p className="niceeval-filter-notice">{content.commandMatch.reason}</p>
-      ) : null}
-      {(content.atEvaluation.notices ?? []).map((notice) => (
+      {content.atEvaluation.notices.map((notice) => (
         <p key={notice} className="niceeval-filter-notice">
           {noticeText(notice, locale)}
         </p>
@@ -499,7 +441,7 @@ export function matcherFilterDebuggerText(content: MatcherFilterDebuggerContent)
     querySummary,
     ...content.facts.map((fact) => `${fact.kind}: ${resolveLocalizedText(fact.value, "en")}`),
   ];
-  for (const step of content.steps ?? []) {
+  for (const step of content.steps) {
     lines.push(
       `${step.step}. ${step.summary}: ${step.state}${step.sourceRow === undefined ? "" : ` (${step.sourceRow})`}`,
     );

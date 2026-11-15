@@ -35,13 +35,13 @@ export interface DockerfileBuildDetails {
   readonly contextDir: string;
   readonly dockerfilePath: string;
   readonly dockerfile: string;
-  readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
-  readonly target?: string;
+  readonly buildArgs: Readonly<globalThis.Record<string, string>>;
+  readonly target: string | undefined;
   readonly platform: string;
   readonly contextFiles: readonly string[];
-  readonly dockerSocketPath?: string;
+  readonly dockerSocketPath: string | undefined;
   /** managed profile 在 daemon bridge=none 时为本次 build 创建的独占 bridge。 */
-  readonly dockerNetworkMode?: string;
+  readonly dockerNetworkMode: string | undefined;
 }
 
 export interface DockerfileBuildCollection {
@@ -49,7 +49,7 @@ export interface DockerfileBuildCollection {
   readonly caseKey: CaseKey;
   readonly work: SandboxBuildWork;
   readonly details: DockerfileBuildDetails;
-  readonly providerIdentityMarker?: import("../shared/types.ts").JsonValue;
+  readonly providerIdentityMarker: import("../shared/types.ts").JsonValue | undefined;
 }
 
 export class DockerfileBuildCollectionError extends Data.TaggedError("DockerfileBuildCollectionError")<{
@@ -63,10 +63,10 @@ export function collectDockerfileBuildFromIdentity(input: {
   readonly context: SandboxLocation;
   readonly dockerfile: string;
   readonly buildArgs: Readonly<Record<string, string>>;
-  readonly target?: string;
+  readonly target: string | undefined;
   readonly platform: string;
   readonly expected: DockerfileBuildIdentity;
-  readonly dockerSocketPath?: string;
+  readonly dockerSocketPath: string | undefined;
 }): Effect.Effect<DockerfileBuildCollection, DockerfileBuildCollectionError> {
   return Effect.gen(function* () {
     const context = input.context._tag === "Url" ? new URL(input.context.value) : input.context.value;
@@ -75,8 +75,9 @@ export function collectDockerfileBuildFromIdentity(input: {
       context,
       dockerfile: input.dockerfile,
       buildArgs: input.buildArgs,
-      ...(input.target === undefined ? {} : { target: input.target }),
+      target: input.target,
       platform: input.platform,
+      baseDir: process.cwd(),
       label: `sandbox profile ${input.profile}`,
     }).pipe(Effect.mapError((cause) => new DockerfileBuildCollectionError({ message: cause.message })));
     if (identity.buildKey !== input.expected.buildKey) {
@@ -89,6 +90,9 @@ export function collectDockerfileBuildFromIdentity(input: {
     const contextFiles = yield* listFilteredBuildContextFiles({
       contextDir: identity.contextDir,
       label: `sandbox profile ${input.profile}`,
+
+      dockerignorePath: undefined,
+      extraIgnoreRules: undefined,
     });
     const authorityFingerprint =
       input.provider === "docker" && input.dockerSocketPath === undefined
@@ -113,30 +117,29 @@ export function collectDockerfileBuildFromIdentity(input: {
           dockerfilePath: identity.dockerfilePath,
           dockerfile: identity.dockerfile,
           buildArgs: input.buildArgs,
-          ...(input.target === undefined ? {} : { target: input.target }),
+          target: input.target,
           platform: input.platform,
-          contextFiles: Object.freeze([...contextFiles]),
-          ...(input.dockerSocketPath === undefined ? {} : { dockerSocketPath: input.dockerSocketPath }),
+          contextFiles,
+          dockerSocketPath: input.dockerSocketPath,
+          dockerNetworkMode: undefined,
         };
         const scopeId = materializationScopeId({
           providerFamily: input.provider,
           authorityFingerprint,
           materializationProtocolVersion: 1,
         });
-        return Object.freeze({
+        return {
           buildKey: identity.buildKey,
           caseKey,
           details,
-          ...(identity.providerIdentityMarker === undefined
-            ? {}
-            : { providerIdentityMarker: identity.providerIdentityMarker }),
-          work: Object.freeze({
+          providerIdentityMarker: identity.providerIdentityMarker,
+          work: {
             ref: sandboxBuildRef(scopeId, identity.buildKey),
             scopeId,
             buildKey: identity.buildKey,
             provider: input.provider,
             label: `${input.provider}:dockerfile:${input.profile}`,
-            inputs: Object.freeze({
+            inputs: {
               kind: "dockerfile",
               profile: input.profile,
               platform: input.platform,
@@ -144,9 +147,9 @@ export function collectDockerfileBuildFromIdentity(input: {
               dockerfile: identity.dockerfilePath,
               contextFilterRules: identity.contextFilterRules,
               args: input.buildArgs,
-            }),
-          }),
-        });
+            },
+          },
+        };
       },
       catch: (cause) =>
         new DockerfileBuildCollectionError({
@@ -360,7 +363,7 @@ async function defaultRunDockerBuild(
     details.dockerfilePath,
     "--tag",
     tag,
-    ...Object.entries(details.buildArgs ?? {}).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
+    ...Object.entries(details.buildArgs).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
     ...(details.target !== undefined ? ["--target", details.target] : []),
     details.contextDir,
   ];

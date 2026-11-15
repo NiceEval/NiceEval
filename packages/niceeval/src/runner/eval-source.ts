@@ -36,7 +36,10 @@ export interface CapturedEvalSource {
  * 与 collectSources() 运行后"读不到就跳过"的降级语义不同:那时源码可能已经在沙箱里、
  * 已被清理;这里读的是刚刚 import 成功的同一个文件,读不到是需要暴露的异常。
  */
-export async function captureEvalSource(filePath: string, opts?: { root?: string }): Promise<CapturedEvalSource> {
+export async function captureEvalSource(
+  filePath: string,
+  opts?: { root: string | undefined },
+): Promise<CapturedEvalSource> {
   const root = opts?.root ?? process.cwd();
   const raw = await readFile(filePath, "utf-8");
   const content = normalizeEvalSource(raw);

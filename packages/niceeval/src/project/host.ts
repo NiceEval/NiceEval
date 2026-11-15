@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { upsertManagedBlock } from "../util.ts";
 import {
   ProjectFileSystem,
@@ -39,7 +40,12 @@ export interface ProjectHostSDK {
 }
 
 function invalid(resource: string, message: string): ProjectPlatformError {
-  return new ProjectPlatformError({ operation: "write-file", resource, cause: message, message });
+  return new ProjectPlatformError({
+    operation: "write-file",
+    resource,
+    cause: normalizeExternalCause(message),
+    message,
+  });
 }
 
 const initializeProject = Effect.fn("project.initialize")(function* () {
@@ -87,7 +93,7 @@ const initializeProject = Effect.fn("project.initialize")(function* () {
       }
       text = upsertManagedBlock(source, AGENT_RULE_BEGIN, AGENT_RULE_END, content);
     } else {
-      if (existing !== null && !existing.includes(AGENT_SKILL_MANAGED)) {
+      if (existing !== undefined && !existing.includes(AGENT_SKILL_MANAGED)) {
         return yield* invalid(
           path,
           `agent-skill-not-managed: ${path}: This skill belongs to you. Move it aside before retrying init.`,
@@ -95,12 +101,21 @@ const initializeProject = Effect.fn("project.initialize")(function* () {
       }
       text = agentSkillContent(content);
     }
-    planned.push({ path, text, change: existing === null ? "created" : text === existing ? "unchanged" : "updated" });
+    function fileChange() {
+      if (existing === undefined) return "created" as const;
+      if (text === existing) return "unchanged" as const;
+      return "updated" as const;
+    }
+    planned.push({
+      path,
+      text,
+      change: fileChange(),
+    });
   }
 
   const evals = yield* fileSystem.ensureDirectory({ root: projectRoot, path: "evals" });
   const existingConfig = yield* fileSystem.readText({ root: projectRoot, path: "niceeval.config.ts" });
-  if (existingConfig === null) {
+  if (existingConfig === undefined) {
     yield* fileSystem.writeText({ root: projectRoot, path: "niceeval.config.ts", text: NICEEVAL_CONFIG_TEMPLATE });
   }
   const updated: string[] = [];
@@ -114,7 +129,7 @@ const initializeProject = Effect.fn("project.initialize")(function* () {
             `init write failed: ${target.path}. Updated: ${updated.join(", ") || "none"}. Not updated: ${planned
               .slice(index)
               .map((item) => item.path)
-              .join(", ")}. Fix the I/O error and retry init. ${String(cause.cause)}`,
+              .join(", ")}. Fix the I/O error and retry init. ${cause.message}`,
           ),
         ),
       );
@@ -122,13 +137,13 @@ const initializeProject = Effect.fn("project.initialize")(function* () {
     }
   }
   const moduleKind = yield* manifest.moduleKind(projectRoot);
-  return Object.freeze({
+  return {
     projectRoot,
     evals,
-    config: existingConfig === null ? ("created" as const) : ("existing" as const),
-    agentInstructions: planned.map(({ path, change }) => Object.freeze({ path, change })),
+    config: existingConfig === undefined ? ("created" as const) : ("existing" as const),
+    agentInstructions: planned.map(({ path, change }) => ({ path, change })),
     prefersEsm: moduleKind === "esm",
-  });
+  };
 });
 
 /** Project initialization entry; provide the platform services before running. */

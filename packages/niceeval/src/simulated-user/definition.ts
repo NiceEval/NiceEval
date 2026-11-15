@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { TurnHandle } from "../context/types.ts";
 
 /** Author-provided facts used by a simulated user. */
@@ -46,6 +47,7 @@ export function defineSimulatedUser(definition: SimulatedUserDefinition): Simula
 }
 
 export class SimulatedUserError extends Error {
+  override readonly cause: ExternalCause | undefined;
   readonly phase = "eval.run";
   readonly retryable = false;
   readonly scope = "attempt";
@@ -57,8 +59,9 @@ export class SimulatedUserError extends Error {
   ) {
     super(
       `${code}: ${reason}${diagnostic === undefined ? "" : `: ${diagnostic}`}`,
-      cause === undefined ? undefined : { cause },
+      cause === undefined ? undefined : { cause: normalizeExternalCause(cause) },
     );
     this.name = "SimulatedUserError";
+    this.cause = cause === undefined ? undefined : normalizeExternalCause(cause);
   }
 }

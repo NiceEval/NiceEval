@@ -26,8 +26,10 @@ export const AgentJudgeSubmissionSchema = Schema.Union([
   AgentJudgeGradeSubmissionSchema,
 ]);
 export type AgentJudgeSubmission = typeof AgentJudgeSubmissionSchema.Type;
-export const agentJudgeMeasurement = (value: AgentJudgeSubmission): number =>
-  "satisfied" in value ? (value.satisfied ? 1 : 0) : value.measurement;
+export const agentJudgeMeasurement = (value: AgentJudgeSubmission): number => {
+  if ("satisfied" in value) return value.satisfied ? 1 : 0;
+  return value.measurement;
+};
 export const AgentJudgeFailureSchema = Schema.Struct({
   state: Schema.Literals(["unavailable", "errored"]),
   code: text,

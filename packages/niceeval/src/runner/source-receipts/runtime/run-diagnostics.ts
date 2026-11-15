@@ -49,7 +49,7 @@ export function bindRunnerRunObservabilityDiagnostics(input: {
     const runnerDiagnostics = yield* decodeReceipt(RunRunnerDiagnosticsAttachmentSchema, candidate, "run");
     storeRunCapture(input.run, {
       capture,
-      snapshot: { runnerDiagnostics },
+      snapshot: { runnerActivities: undefined, runnerDiagnostics },
     });
   });
 }

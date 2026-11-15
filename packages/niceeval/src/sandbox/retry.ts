@@ -100,7 +100,15 @@ export function withProvisionRetry<T>(
                 yield* Effect.sync(() => {
                   if (feedback) feedback.diagnostic(diagnostic);
                   else
-                    reportDiagnostic({ key: diagnostic.code, severity: diagnostic.level, message: diagnostic.message });
+                    reportDiagnostic({
+                      key: diagnostic.code,
+                      severity: diagnostic.level,
+                      message: diagnostic.message,
+
+                      code: undefined,
+                      identity: undefined,
+                      data: undefined,
+                    });
                 });
                 return yield* Effect.fail(error);
               }

@@ -40,12 +40,13 @@ export interface ErrorDiagnostic {
   /** Safe owner-supplied label, never a serialization of the failed value. */
   readonly affectedObject: string;
   /** Distinguishes services that can use the same repair target. */
-  readonly service?: string;
-  readonly guideId?: string;
-  readonly source?: ErrorSource;
+  readonly service?: string | undefined;
+  readonly guideId?: string | undefined;
+  readonly source?: ErrorSource | undefined;
 }
 
 export interface ErrorAssistanceData {
+  // Record JSON 边界：诊断载荷的可选字段只编码实际存在的值。
   readonly __niceevalErrorAssistance: 1;
   readonly owner: string;
   readonly repairTarget: string;
@@ -59,7 +60,7 @@ export interface ErrorAssistanceData {
 }
 
 export interface ErrorAffectedAttempt {
-  readonly experimentId?: string;
+  readonly experimentId: string | undefined;
   readonly evalId: string;
   readonly attempt: number;
 }

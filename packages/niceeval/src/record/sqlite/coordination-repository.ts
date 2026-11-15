@@ -41,11 +41,13 @@ export interface CreateInvocationInput {
   readonly owner: ProcessOwnerIdentity;
   readonly startedAt: string;
   readonly runs: readonly InvocationRunInput[];
-  readonly queuedAttempts?: readonly {
-    readonly attemptId: string;
-    readonly runId: string;
-    readonly slotId: string;
-  }[];
+  readonly queuedAttempts:
+    | readonly {
+        readonly attemptId: string;
+        readonly runId: string;
+        readonly slotId: string;
+      }[]
+    | undefined;
   readonly deadlineEpochMs: number;
 }
 
@@ -57,10 +59,7 @@ export interface InvocationSessionRecord {
   readonly owner: FencedOwner;
   readonly startedAt: string;
   readonly heartbeatAt: string;
-  readonly recoveringAt?: string;
-  readonly closedAt?: string;
-  readonly activeProjection?: Uint8Array;
-  readonly terminalProjection?: Uint8Array;
+  readonly projection: { readonly kind: "active" | "terminal"; readonly bytes: Uint8Array } | undefined;
 }
 
 function conflict(operation: string, message: string): never {
@@ -104,24 +103,26 @@ function ownerArgs(owner: FencedOwner): readonly (string | number)[] {
 function decodeSession(row: Row): InvocationSessionRecord {
   const active = row.active_projection;
   const terminal = row.terminal_projection;
-  return Object.freeze({
+  function sessionProjection(): InvocationSessionRecord["projection"] {
+    if (terminal instanceof Uint8Array) return { kind: "terminal", bytes: terminal };
+    if (active instanceof Uint8Array) return { kind: "active", bytes: active };
+    return undefined;
+  }
+  return {
     invocationId: text(row, "invocation_id"),
     state: text(row, "state") as InvocationSessionState,
-    owner: Object.freeze({
+    owner: {
       ownerId: text(row, "owner_id"),
       generation: integer(row, "owner_generation"),
       host: text(row, "owner_host"),
       pid: integer(row, "owner_pid"),
       bootId: text(row, "owner_boot_id"),
       processStart: text(row, "owner_process_start"),
-    }),
+    },
     startedAt: text(row, "started_at"),
     heartbeatAt: text(row, "heartbeat_at"),
-    ...(typeof row.recovering_at === "string" ? { recoveringAt: row.recovering_at } : {}),
-    ...(typeof row.closed_at === "string" ? { closedAt: row.closed_at } : {}),
-    ...(active instanceof Uint8Array ? { activeProjection: new Uint8Array(active) } : {}),
-    ...(terminal instanceof Uint8Array ? { terminalProjection: new Uint8Array(terminal) } : {}),
-  });
+    projection: sessionProjection(),
+  };
 }
 
 export function createInvocationOnConnection(
@@ -200,18 +201,14 @@ export function readInvocationOnConnection(
   const row = recordStatement(connection, "SELECT * FROM ne19_invocation_sessions WHERE invocation_id=?").get(
     invocationId,
   ) as Row | undefined;
-  return row === undefined ? undefined : decodeSession(row);
+  if (row === undefined) return undefined;
+  return decodeSession(row);
 }
 
 export function listInvocationsOnConnection(connection: RecordDatabase): readonly InvocationSessionRecord[] {
-  return Object.freeze(
-    (
-      recordStatement(
-        connection,
-        "SELECT * FROM ne19_invocation_sessions ORDER BY started_at,invocation_id",
-      ).all() as unknown as readonly Row[]
-    ).map(decodeSession),
-  );
+  return recordStatement(connection, "SELECT * FROM ne19_invocation_sessions ORDER BY started_at,invocation_id")
+    .all()
+    .map(decodeSession);
 }
 
 export function heartbeatInvocationOnConnection(
@@ -332,7 +329,7 @@ export function beginInvocationRecoveryOnConnection(
     );
     if (Number(changed.changes) !== 1)
       conflict("begin-invocation-recovery", "exact dead invocation owner did not match");
-    return Object.freeze({ ...recoveryOwner, generation: deadOwner.generation + 1 });
+    return { ...recoveryOwner, generation: deadOwner.generation + 1 };
   });
 }
 
@@ -389,7 +386,7 @@ export function acquireCaseLockOnConnection(
       `INSERT INTO ne19_case_locks(case_id,owner_id,owner_generation,owner_host,owner_pid,owner_boot_id,owner_process_start,acquired_at,heartbeat_at)
       VALUES (?,?,1,?,?,?,?,?,?)`,
     ).run(caseId, owner.ownerId, owner.host, owner.pid, owner.bootId, owner.processStart, at, at);
-    return Object.freeze({ ...owner, generation: 1 });
+    return { ...owner, generation: 1 };
   });
 }
 
@@ -400,20 +397,19 @@ export function readCaseLockProjectionOnConnection(
   const row = recordStatement(connection, "SELECT * FROM ne19_case_locks WHERE case_id=?").get(caseId) as
     | Row
     | undefined;
-  return row === undefined
-    ? undefined
-    : Object.freeze({
-        owner: Object.freeze({
-          ownerId: text(row, "owner_id"),
-          generation: integer(row, "owner_generation"),
-          host: text(row, "owner_host"),
-          pid: integer(row, "owner_pid"),
-          bootId: text(row, "owner_boot_id"),
-          processStart: text(row, "owner_process_start"),
-        }),
-        acquiredAt: text(row, "acquired_at"),
-        heartbeatAt: text(row, "heartbeat_at"),
-      });
+  if (row === undefined) return undefined;
+  return {
+    owner: {
+      ownerId: text(row, "owner_id"),
+      generation: integer(row, "owner_generation"),
+      host: text(row, "owner_host"),
+      pid: integer(row, "owner_pid"),
+      bootId: text(row, "owner_boot_id"),
+      processStart: text(row, "owner_process_start"),
+    },
+    acquiredAt: text(row, "acquired_at"),
+    heartbeatAt: text(row, "heartbeat_at"),
+  };
 }
 
 export function readCaseLockOnConnection(connection: RecordDatabase, caseId: string): FencedOwner | undefined {
@@ -479,6 +475,6 @@ export function takeoverDeadCaseLockOnConnection(
       ...ownerArgs(deadOwner),
     );
     if (Number(changed.changes) !== 1) conflict("takeover-case-lock", "exact dead case owner did not match");
-    return Object.freeze({ ...replacement, generation: deadOwner.generation + 1 });
+    return { ...replacement, generation: deadOwner.generation + 1 };
   });
 }

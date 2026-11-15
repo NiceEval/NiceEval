@@ -22,13 +22,11 @@ export function ResultsPage({
 }: {
   readonly model: ResultsPageModel;
   readonly locale: Locale;
-  readonly unavailableReason?: string | null;
+  readonly unavailableReason: string | undefined;
 }): ReactElement {
   const { t } = useTranslation();
-  if (model.targetMode === "current" && model.current !== undefined) {
-    return (
-      <CurrentResults project={model.current} history={model.currentHistory ?? model.current.history} locale={locale} />
-    );
+  if (model.targetMode === "current") {
+    return <CurrentResults project={model.current} history={model.currentHistory} locale={locale} />;
   }
   if (model.targetMode === "unavailable") {
     const historicalRun = model.overview.catalog.runExperiments[0]?.runId;
@@ -71,7 +69,7 @@ export function ResultsPage({
         )}
       </header>
       <div className="niceeval-view-report-slot">
-        {model.costSummary === undefined ? null : <ExperimentCosts summary={model.costSummary} />}
+        {model.costSummary.state === "not-requested" ? null : <ExperimentCosts summary={model.costSummary.value} />}
         {experiments.length <= 1 ? null : (
           <nav aria-label={t("nav.experiments")}>
             <ul>
@@ -98,12 +96,25 @@ export function ResultsPage({
 function ExperimentCosts({
   summary,
 }: {
-  readonly summary: NonNullable<ResultsPageModel["costSummary"]>;
+  readonly summary: Extract<
+    Extract<ResultsPageModel, { readonly targetMode: "history" }>["costSummary"],
+    { readonly state: "available" }
+  >["value"];
 }): ReactElement {
   const { t } = useTranslation();
   const { totalCosts, coverage } = summary;
   const complete = totalCosts.state === "complete";
   const title = t(complete ? "experimentCost.totalCosts" : "experimentCost.knownSubtotal");
+  function costSourceText(source: "reported" | "estimated" | "mixed"): string {
+    switch (source) {
+      case "reported":
+        return t("cell.costReported");
+      case "estimated":
+        return t("cell.costEstimated");
+      default:
+        return t("cell.costMixed");
+    }
+  }
   const counts = [
     ["experimentCost.selectedSlots", coverage.plannedAttemptCount],
     ["experimentCost.resolvedSlots", coverage.recordedAttemptCount],
@@ -124,18 +135,11 @@ function ExperimentCosts({
       ) : (
         totalCosts.values.map((cost) => (
           <p key={cost.currency}>
-            {cost.value} {cost.currency} ·{" "}
-            {t(
-              cost.source === "reported"
-                ? "cell.costReported"
-                : cost.source === "estimated"
-                  ? "cell.costEstimated"
-                  : "cell.costMixed",
-            )}
+            {cost.value} {cost.currency} · {costSourceText(cost.source)}
           </p>
         ))
       )}
-      <Grid>
+      <Grid className="">
         {counts.map(([label, count]) => (
           <div className="niceeval-kpi" key={label}>
             <span className="niceeval-kpi-label">{t(label)}</span>
@@ -154,12 +158,12 @@ export function ResultsRoute({
 }): ReactElement {
   const selection = new URLSearchParams(useLocation().search);
   const ids = selection.getAll("experiment");
-  if (selection.get("aspect") === "assertions")
-    return (
-      <AssertionMatrix
-        experimentIds={ids.length > 0 ? ids : target.kind === "experiment" ? [target.experimentId] : []}
-      />
-    );
+  function assertionExperimentIds(): readonly string[] {
+    if (ids.length > 0) return ids;
+    if (target.kind === "experiment") return [target.experimentId];
+    return [];
+  }
+  if (selection.get("aspect") === "assertions") return <AssertionMatrix experimentIds={assertionExperimentIds()} />;
   return target.kind === "group" ? (
     <GroupResultsRoute groupKind={target.groupKind} groupKey={target.key} />
   ) : (
@@ -167,7 +171,13 @@ export function ResultsRoute({
   );
 }
 
-function GroupResultsRoute({ groupKind, groupKey }: { readonly groupKind?: string; readonly groupKey?: string }) {
+function GroupResultsRoute({
+  groupKind,
+  groupKey,
+}: {
+  readonly groupKind: string | undefined;
+  readonly groupKey: string | undefined;
+}) {
   const generation = useCurrentGeneration();
   const snapshot = generation.snapshot as InsightRuntimeSnapshot;
   const { data: model } = useSuspenseQuery(
@@ -188,12 +198,13 @@ function ExperimentResultsRoute({ experimentId }: { readonly experimentId: strin
 function LocalizedResultsPage({ model }: { readonly model: ResultsPageModel }) {
   const { i18n } = useTranslation();
   const generation = useCurrentGeneration();
+  const snapshot = generation.snapshot as InsightRuntimeSnapshot;
   const locale = (i18n.resolvedLanguage ?? "en") as Locale;
   return (
     <ResultsPage
       model={model}
       locale={locale}
-      unavailableReason={(generation.snapshot as InsightRuntimeSnapshot).targetFailureReason}
+      unavailableReason={snapshot.targetMode === "unavailable" ? snapshot.targetFailureReason : undefined}
     />
   );
 }
@@ -202,7 +213,7 @@ function AssertionMatrix({ experimentIds }: { readonly experimentIds: readonly s
   const { t } = useTranslation();
   const decoded = decodeInspectionOperation({ kind: "experiments.assertions", experimentIds });
   const query = useInspectionQuery<"experiments.assertions">(
-    Result.isSuccess(decoded) && decoded.success.kind === "experiments.assertions" ? decoded.success : null,
+    Result.isSuccess(decoded) && decoded.success.kind === "experiments.assertions" ? decoded.success : undefined,
   );
   if (query.isError || Result.isFailure(decoded)) return <p role="alert">{t("report.unableToLoadDetails")}</p>;
   if (query.isPending) return <p role="status">{t("report.loadingDetails")}</p>;

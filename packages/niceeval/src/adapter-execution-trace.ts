@@ -17,14 +17,14 @@ export interface ExecutionTraceScope {
 /** Preserves an application's original source and optional event sequence; it is separate from the stored event ID returned by recordTrace. */
 export interface ExecutionTraceSource {
   readonly id: string;
-  readonly eventId?: string;
-  readonly sequence?: number;
+  readonly eventId?: string | undefined;
+  readonly sequence?: number | undefined;
 }
 
 /** Identifies a participant within a submitted execution trace; labels are display text and must not replace stable actor IDs. */
 export interface ExecutionTraceActor {
   readonly id: string;
-  readonly label?: string;
+  readonly label?: string | undefined;
 }
 
 /** Carries a timestamp with its explicit clock and unit; values from different clocks must not be ordered as if they shared a timebase. */
@@ -65,7 +65,7 @@ export type ExecutionDisplayBlock =
   | {
       readonly kind: "message";
       readonly role: "user" | "assistant" | "system" | "other";
-      readonly speaker?: string;
+      readonly speaker?: string | undefined;
       readonly text: string;
     }
   | {
@@ -75,7 +75,7 @@ export type ExecutionDisplayBlock =
         readonly value: string | number | boolean | null;
       }[];
     }
-  | { readonly kind: "code"; readonly language?: string; readonly text: string }
+  | { readonly kind: "code"; readonly language?: string | undefined; readonly text: string }
   | { readonly kind: "image"; readonly artifactId: string; readonly alt: string };
 
 /**
@@ -86,15 +86,15 @@ export interface ExecutionTraceEvent<out Type extends string = string, out Paylo
   readonly key: string;
   readonly type: Type;
   readonly source: ExecutionTraceSource;
-  readonly actor?: ExecutionTraceActor;
-  readonly time?: ExecutionTraceTime;
+  readonly actor?: ExecutionTraceActor | undefined;
+  readonly time?: ExecutionTraceTime | undefined;
   readonly summary: string;
-  readonly payload?: Payload;
-  readonly links?: readonly ExecutionTraceLink[];
-  readonly evidence?: readonly ExecutionTraceEvidence[];
-  readonly scopeMemberships?: readonly ExecutionTraceScopeMembership[];
+  readonly payload?: Payload | undefined;
+  readonly links?: readonly ExecutionTraceLink[] | undefined;
+  readonly evidence?: readonly ExecutionTraceEvidence[] | undefined;
+  readonly scopeMemberships?: readonly ExecutionTraceScopeMembership[] | undefined;
   /** Optional human-readable blocks; omitted means the event has no display. */
-  readonly display?: readonly ExecutionDisplayBlock[];
+  readonly display?: readonly ExecutionDisplayBlock[] | undefined;
 }
 
 /** Submits application-owned events, scopes and completeness evidence; a partial collection must retain its limitations. */

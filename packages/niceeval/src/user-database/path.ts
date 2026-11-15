@@ -8,7 +8,7 @@ export interface UserDatabasePaths {
 }
 
 export function userDatabaseHome(
-  input: { readonly env?: NodeJS.ProcessEnv; readonly homeDirectory?: string } = {},
+  input: { readonly env?: NodeJS.ProcessEnv | undefined; readonly homeDirectory?: string | undefined } = {},
 ): string {
   const configured = input.env?.NICEEVAL_HOME ?? process.env.NICEEVAL_HOME;
   const osHome = input.homeDirectory ?? homedir();
@@ -20,12 +20,16 @@ export function userDatabaseHome(
 }
 
 export function userDatabasePaths(
-  input: { readonly home?: string; readonly env?: NodeJS.ProcessEnv; readonly homeDirectory?: string } = {},
+  input: {
+    readonly home?: string | undefined;
+    readonly env?: NodeJS.ProcessEnv | undefined;
+    readonly homeDirectory?: string | undefined;
+  } = {},
 ): UserDatabasePaths {
   const home = input.home === undefined ? userDatabaseHome(input) : resolve(input.home);
-  return Object.freeze({
+  return {
     home,
     database: join(home, "niceeval.sqlite"),
     legacy: join(home, "state.sqlite"),
-  });
+  };
 }

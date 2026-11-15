@@ -38,14 +38,32 @@ export type AssertionSource =
 export type CommandPhase = InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["phase"];
 export type CommandOutcome =
   InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["outcome"];
-export type Metric = { readonly state: MetricState; readonly value: number | null };
+export type Metric = { readonly state: MetricState; readonly value: number | undefined };
 export type ExecutionValue =
   | { readonly state: "available"; readonly value: string }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
 export type AdapterValue =
-  | { readonly state: "available"; readonly value: AdapterIdentity }
-  | { readonly state: "mixed" };
+  | { readonly state: "available"; readonly value: ShowAdapterIdentity }
+  | { readonly state: "mixed" }
+  | { readonly state: "none" };
+interface ShowAdapterIdentity {
+  readonly name: string;
+  readonly contract: string;
+  readonly behaviorRevision: string | undefined;
+}
+
+function adapterIdentity(value: AdapterIdentity | undefined): ShowAdapterIdentity | undefined {
+  if (value === null || value === undefined) return undefined;
+  return { name: value.name, contract: value.contract, behaviorRevision: value.behaviorRevision ?? undefined };
+}
+
+function adapterValue(value: InspectionOverviewResult["experiments"][number]["adapter"]): AdapterValue {
+  if (value.state === "mixed") return value;
+  const identity = adapterIdentity(value.value);
+  if (identity === undefined) return { state: "none" };
+  return { state: "available", value: identity };
+}
 export type Aggregate = {
   readonly evaluationKind: "pass" | "points" | "mixed";
   readonly expected: number;
@@ -82,8 +100,8 @@ export interface OverviewView {
             readonly attemptLocator: string;
             readonly originRunId: string;
             readonly originPlannedAttemptId: string;
-            readonly verdict: Verdict | null;
-            readonly stoppedAt?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"];
+            readonly verdict: Verdict | undefined;
+            readonly stoppedAt: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"] | undefined;
             readonly score: Metric;
             readonly durationMs: Metric;
             readonly tokens: Metric;
@@ -104,10 +122,10 @@ export interface RunView {
   readonly diagnostics: InspectionSuccessDocumentFor<"run.get">["run"]["diagnostics"];
   readonly runId: string;
   readonly experimentId: string;
-  readonly adapter: AdapterIdentity | null;
+  readonly adapter: ShowAdapterIdentity | undefined;
   readonly state: "active" | "recovering" | "completed" | "interrupted" | "failed";
   readonly startedAt: number;
-  readonly completedAt?: number;
+  readonly completedAt: number | undefined;
   readonly expected: number;
   readonly observed: number;
   readonly coverage: InspectionSuccessDocumentFor<"run.get">["run"]["coverage"];
@@ -117,11 +135,12 @@ export interface RunView {
     readonly plannedAttemptId: string;
     readonly evalId: string;
     readonly attemptOrdinal: number;
-    readonly locator: string | null;
+    readonly locator: string | undefined;
     readonly state: MembershipAction | "pending";
-    readonly relation: "origin" | "reference" | null;
-    readonly outcome: AttemptOutcome | null;
-    readonly verdict: Verdict | null;
+    readonly execution:
+      | { readonly state: "not-recorded" }
+      | { readonly state: "recorded"; readonly relation: "origin" | "reference"; readonly outcome: AttemptOutcome };
+    readonly verdict: Verdict | undefined;
     readonly score: Metric;
     readonly coverage: InspectionSuccessDocumentFor<"run.get">["run"]["plannedAttempts"][number]["coverage"];
     readonly usage: InspectionSuccessDocumentFor<"run.get">["run"]["plannedAttempts"][number]["usage"];
@@ -129,13 +148,13 @@ export interface RunView {
   }[];
 }
 export interface AttemptView {
-  readonly verdictCauses?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"];
-  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"];
-  readonly stoppedAt?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"];
+  readonly verdictCauses: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"] | undefined;
+  readonly diagnostics: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"] | undefined;
+  readonly stoppedAt: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["stoppedAt"] | undefined;
   readonly notes: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["notes"];
-  readonly totalCosts?: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"];
+  readonly totalCosts: InspectionSuccessDocumentFor<"attempt.usage">["usage"]["totalCosts"] | undefined;
   readonly locator: string;
-  readonly verdict: Verdict | null;
+  readonly verdict: Verdict | undefined;
   readonly attemptId: string;
   readonly evalId: string;
   readonly plannedAttemptId: string;
@@ -156,7 +175,7 @@ export interface AttemptView {
     readonly state: SourceState;
     readonly entries: readonly {
       readonly entryId: string;
-      readonly label?: string;
+      readonly label: string | undefined;
       readonly groupPath: readonly string[];
     }[];
   };
@@ -251,10 +270,11 @@ export type TimingView = { readonly locator: string } & InspectionSuccessDocumen
 export type UsageView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.usage">["usage"];
 export type DiffView = { readonly locator: string } & InspectionSuccessDocumentFor<"attempt.diff">["diff"];
 
-const metric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({
+export const projectMetric = (value: { readonly state: MetricState; readonly value: number | null }): Metric => ({
   state: value.state,
-  value: value.value,
+  value: value.value ?? undefined,
 });
+const metric = projectMetric;
 const aggregate = (value: InspectionOverviewResult["totals"]): Aggregate => ({
   evaluationKind: value.evaluationKind,
   expected: value.denominator.expected,
@@ -278,8 +298,8 @@ const cells = (values: InspectionOverviewResult["cells"]): OverviewView["cells"]
         member.publication.state === "published"
           ? {
               ...member.publication,
-              verdict: member.verdict,
-              ...(member.stoppedAt === undefined ? {} : { stoppedAt: member.stoppedAt }),
+              verdict: member.verdict ?? undefined,
+              stoppedAt: member.stoppedAt,
               score: metric(member.score),
               durationMs: metric(member.durationMs),
               tokens: metric(member.tokens),
@@ -293,7 +313,7 @@ export function projectOverview(document: InspectionSuccessDocumentFor<"overview
     totals: aggregate(document.overview.totals),
     experiments: document.overview.experiments.map((experiment) => ({
       experimentId: experiment.experimentId,
-      adapter: experiment.adapter,
+      adapter: adapterValue(experiment.adapter),
       model: experiment.model,
       aggregate: aggregate(experiment),
     })),
@@ -320,10 +340,10 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): R
     diagnostics: detail.diagnostics,
     runId: value.runId,
     experimentId: value.experimentId,
-    adapter: value.context?.execution.adapter ?? null,
+    adapter: adapterIdentity(value.context?.execution.adapter),
     state: value.state,
     startedAt: value.startedAt,
-    ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
+    completedAt: value.completedAt,
     expected: detail.denominator.expected,
     observed: detail.denominator.published,
     coverage: detail.coverage,
@@ -333,11 +353,13 @@ export function projectRun(document: InspectionSuccessDocumentFor<"run.get">): R
       plannedAttemptId: member.plannedAttemptId,
       evalId: member.evalId,
       attemptOrdinal: member.attemptOrdinal,
-      locator: member.publication.state === "published" ? member.publication.attemptLocator : null,
+      locator: member.publication.state === "published" ? member.publication.attemptLocator : undefined,
       state: member.state,
-      relation: member.relation,
-      outcome: member.outcome,
-      verdict: member.verdict,
+      execution:
+        member.relation === null || member.outcome === null
+          ? { state: "not-recorded" }
+          : { state: "recorded", relation: member.relation, outcome: member.outcome },
+      verdict: member.verdict ?? undefined,
       score: metric(member.score),
       coverage: member.coverage,
       usage: member.usage,
@@ -358,8 +380,8 @@ export function projectAttempt(
     diagnostics: value.diagnostics,
     verdictCauses: value.verdictCauses,
     stoppedAt: value.stoppedAt,
-    ...(usage?.usage.totalCosts === undefined ? {} : { totalCosts: usage?.usage.totalCosts }),
-    verdict: value.verdict,
+    totalCosts: usage?.usage.totalCosts,
+    verdict: value.verdict ?? undefined,
     attemptId: value.core.attemptId,
     evalId: value.core.evalId,
     plannedAttemptId: value.core.plannedAttemptId,
@@ -381,7 +403,7 @@ export function projectAttempt(
       entries: value.assertions.entries.map((entry) => ({
         entryId: entry.entryId,
         groupPath: entry.display.groupPath,
-        ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
+        label: entry.display.label,
       })),
     },
     evidenceCoverage: value.evidenceCoverage.map((entry) => JSON.stringify(entry)),
@@ -469,21 +491,26 @@ export function projectTraceDetail(
   locator: string,
 ): TraceDetailView {
   const body = document.detail;
+  function stableId(): string {
+    switch (body.kind) {
+      case "turn":
+        return body.turnId;
+      case "item":
+        return body.itemId;
+      case "tool-occurrence":
+        return body.toolOccurrenceId;
+      case "command":
+        return body.commandId;
+      case "execution-event":
+        return body.event.eventId;
+      default:
+        return body.evidenceId;
+    }
+  }
   return {
     locator,
     kind: body.kind,
-    stableId:
-      body.kind === "turn"
-        ? body.turnId
-        : body.kind === "item"
-          ? body.itemId
-          : body.kind === "tool-occurrence"
-            ? body.toolOccurrenceId
-            : body.kind === "command"
-              ? body.commandId
-              : body.kind === "execution-event"
-                ? body.event.eventId
-                : body.evidenceId,
+    stableId: stableId(),
     body,
   };
 }

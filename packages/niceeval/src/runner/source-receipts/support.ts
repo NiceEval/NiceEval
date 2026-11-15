@@ -314,7 +314,10 @@ export function sourceCollection(
   ];
   const byKey = new Map(limitations.map((limitation) => [sourceReceiptLimitationKey(limitation), limitation] as const));
   const canonical = [...byKey.entries()]
-    .sort(([left], [right]) => (left === right ? 0 : left < right ? -1 : 1))
+    .sort(function compareLimitationKeys([left], [right]) {
+      if (left === right) return 0;
+      return left < right ? -1 : 1;
+    })
     .map(([, limitation]) => limitation);
   if (canonical.length === 0) {
     return {

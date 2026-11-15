@@ -2,7 +2,7 @@
 
 import { lazy, Suspense, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { TableContentView } from "../../components/TableContentView.tsx";
+import { canonicalAttemptHref, TableContentView } from "../../components/TableContentView.tsx";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../components/locale.ts";
 import {
   experimentListEvaluationKindComposition,
@@ -40,7 +40,14 @@ export function ExperimentResults({ data, locale }: ExperimentResultsProps): Rea
           <QualityCostScatter items={items} kind={qualityKind} locale={locale} />
         </Suspense>
       </div>
-      <TableContentView data={experimentListContent(items)} sort="summary" searchable locale={locale} />
+      <TableContentView
+        data={experimentListContent(items)}
+        sort="summary"
+        searchable
+        locale={locale}
+        hrefForLocator={canonicalAttemptHref}
+        className=""
+      />
     </section>
   );
 }

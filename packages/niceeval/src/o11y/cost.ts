@@ -15,8 +15,8 @@ import type { PriceOverride, Usage } from "../types.ts";
 interface Price {
   in: number;
   out: number;
-  cacheRead?: number;
-  cacheWrite?: number;
+  cacheRead: number | undefined;
+  cacheWrite: number | undefined;
 }
 
 export interface PricingEstimateCharge {
@@ -52,8 +52,8 @@ function toPrice(o: PriceOverride): Price {
   return {
     in: o.inputPerMTok,
     out: o.outputPerMTok,
-    ...(o.cacheReadPerMTok === undefined ? {} : { cacheRead: o.cacheReadPerMTok }),
-    ...(o.cacheWritePerMTok === undefined ? {} : { cacheWrite: o.cacheWritePerMTok }),
+    cacheRead: o.cacheReadPerMTok,
+    cacheWrite: o.cacheWritePerMTok,
   };
 }
 
@@ -66,11 +66,11 @@ function lookupOverride(
   overrides: globalThis.Record<string, PriceOverride> | undefined,
 ): { readonly price: Price; readonly selector: string } | undefined {
   if (!overrides) return undefined;
-  if (overrides[model]) return Object.freeze({ price: toPrice(overrides[model]), selector: model });
-  const provider = model.includes("/") ? model.slice(0, model.indexOf("/")) : undefined;
-  const wildcard = provider === undefined ? undefined : `${provider}/*`;
-  if (wildcard !== undefined && overrides[wildcard]) {
-    return Object.freeze({ price: toPrice(overrides[wildcard]), selector: wildcard });
+  if (overrides[model]) return { price: toPrice(overrides[model]), selector: model };
+  if (!model.includes("/")) return undefined;
+  const wildcard = `${model.slice(0, model.indexOf("/"))}/*`;
+  if (overrides[wildcard]) {
+    return { price: toPrice(overrides[wildcard]), selector: wildcard };
   }
   return undefined;
 }
@@ -81,7 +81,9 @@ function lookupOverride(
  */
 function lookupBuiltin(model: string): { readonly price: Price; readonly selector: string } | undefined {
   const selected = lookupBuiltinModel(PRICES, model);
-  return selected === undefined ? undefined : Object.freeze({ price: selected.value, selector: selected.selector });
+  if (selected === undefined) return undefined;
+  const { in: input, out, cacheRead, cacheWrite } = selected.value;
+  return { price: { in: input, out, cacheRead, cacheWrite }, selector: selected.selector };
 }
 
 function pricingEstimateCharge(
@@ -91,7 +93,7 @@ function pricingEstimateCharge(
 ): PricingEstimateCharge | undefined {
   if (tokens === undefined) return undefined;
   const amountUSD = (tokens * rateUSDPerMTok) / 1e6;
-  return Object.freeze({ bucket, tokens, rateUSDPerMTok, amountUSD });
+  return { bucket, tokens, rateUSDPerMTok, amountUSD };
 }
 
 /**
@@ -104,11 +106,11 @@ export function pricingEstimate(
   usage: Usage,
   overrides?: globalThis.Record<string, PriceOverride>,
 ): PricingEstimateResult {
-  if (!model) return Object.freeze({ state: "unavailable", reason: "model-not-recorded" });
+  if (!model) return { state: "unavailable", reason: "model-not-recorded" };
   const override = lookupOverride(model, overrides);
   const selected = override ?? lookupBuiltin(model);
   if (selected === undefined) {
-    return Object.freeze({ state: "unavailable", reason: "price-source-not-found" });
+    return { state: "unavailable", reason: "price-source-not-found" };
   }
   const p = selected.price;
   const buckets = [
@@ -123,31 +125,30 @@ export function pricingEstimate(
         (tokens !== undefined && (!Number.isFinite(tokens) || tokens < 0)) || !Number.isFinite(rate) || rate < 0,
     )
   )
-    return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
+    return { state: "unavailable", reason: "pricing-input-invalid" };
   const charges = buckets
     .map(([bucket, tokens, rate]) => pricingEstimateCharge(bucket, tokens, rate))
     .filter((charge): charge is PricingEstimateCharge => charge !== undefined);
   if (charges.length === 0) {
-    return Object.freeze({ state: "unavailable", reason: "usage-not-recorded" });
+    return { state: "unavailable", reason: "usage-not-recorded" };
   }
   const amountUSD = charges.reduce((sum, charge) => sum + charge.amountUSD, 0);
   if (!Number.isFinite(amountUSD) || amountUSD < 0) {
-    return Object.freeze({ state: "unavailable", reason: "pricing-input-invalid" });
+    return { state: "unavailable", reason: "pricing-input-invalid" };
   }
-  return Object.freeze({
+  return {
     state: "available" as const,
-    receipt: Object.freeze({
+    receipt: {
       kind: "pricing-estimate" as const,
       model,
-      priceSource: Object.freeze(
+      priceSource:
         override === undefined
           ? { kind: "builtin" as const, selector: selected.selector }
           : { kind: "configured-override" as const, selector: selected.selector },
-      ),
-      charges: Object.freeze(charges),
+      charges: charges,
       amountUSD,
-    }),
-  });
+    },
+  };
 }
 
 /**

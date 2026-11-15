@@ -97,14 +97,11 @@ function fingerprint(connection: RecordDatabase, runId: string, deadline: number
                 name !== "mutation_sequence" &&
                 !(table === "runs" && (name === "candidate_seal_identity" || name === "logical_seal_identity")),
             )
-            .map(([name, value]) => [
-              name,
-              typeof value === "bigint"
-                ? value.toString()
-                : value instanceof Uint8Array
-                  ? Buffer.from(value).toString("hex")
-                  : value,
-            ]),
+            .map(function canonicalRowEntry([name, value]) {
+              if (typeof value === "bigint") return [name, value.toString()];
+              if (value instanceof Uint8Array) return [name, Buffer.from(value).toString("hex")];
+              return [name, value];
+            }),
         ),
       );
     }

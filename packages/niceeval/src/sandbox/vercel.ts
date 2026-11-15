@@ -102,25 +102,23 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.deadlineAt = deadlineAt;
   }
 
-  static async create(
-    opts: {
-      timeout?: number;
-      /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
-      deadlineAt?: number;
-      runtime?: "node20" | "node24";
-      snapshotId?: string;
-      /** 实例 session 寿命；由当前 Vercel project plan 在 create 时真实校验。 */
-      lifetimeMs?: number;
-      feedback?: import("../types.ts").ScopedFeedback;
-      /**
-       * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
-       * 「PATH:受管变量与 pathPrepend」)。
-       */
-      pathPrepend?: readonly string[];
-    } = {},
-  ): Promise<VercelSandbox> {
+  static async create(opts: {
+    timeout: number | undefined;
+    /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
+    deadlineAt: number | undefined;
+    runtime: "node20" | "node24";
+    snapshotId: string;
+    /** 实例 session 寿命；由当前 Vercel project plan 在 create 时真实校验。 */
+    lifetimeMs: number | undefined;
+    feedback: import("../types.ts").ScopedFeedback;
+    /**
+     * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
+     * 「PATH:受管变量与 pathPrepend」)。
+     */
+    pathPrepend: readonly string[];
+  }): Promise<VercelSandbox> {
     // Vercel 支持 node22/node24/node26/python3.13;node20 回退到 node22。
-    const runtime = opts.runtime === "node20" ? "node22" : (opts.runtime ?? "node24");
+    const runtime = opts.runtime === "node20" ? "node22" : opts.runtime;
     // 单条命令没有 provider 级默认:上限恒从 attempt deadline 派生(见 deadline.ts)。
     const commandTimeoutMs = opts.timeout;
 
@@ -186,6 +184,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           severity: "warning",
           message: `[VercelSandbox] warning: failed to stop rotated-out session, microVM may leak until session timeout: ${String(stopErr)}`,
           data: { sandboxId: this.sandboxId, error: String(stopErr) },
+
+          code: undefined,
+          identity: undefined,
         });
       });
       reportActivity(
@@ -197,6 +198,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         severity: "warning",
         message: `[VercelSandbox] session rotate failed (${Math.round(elapsed / 1000)}s): ${String(err)}`.trimEnd(),
         data: { sandboxId: this.sandboxId, error: String(err) },
+
+        code: undefined,
+        identity: undefined,
       });
     }
   }
@@ -266,8 +270,8 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       );
     }
     const limit = commandLimit(opts, {
-      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
-      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+      commandTimeoutMs: this.commandTimeoutMs,
+      deadlineAt: this.deadlineAt,
     });
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
     // 普通 provider 调用或显式的单命令 timeout 只是这条命令的执行上限，不能为此读取

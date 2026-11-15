@@ -7,6 +7,7 @@ import { digestOf } from "../sandbox/identity.ts";
 import {
   linkSandboxLayers,
   attachSandboxPluginLifecycles,
+  sandboxLayerFileSite,
   type LinkedSandboxLayerPair,
   type SandboxBeforePlanningError,
   type SandboxLayerLinkError,
@@ -88,8 +89,8 @@ export type SandboxRunPlanningError =
   | PluginLinkError;
 
 export interface SandboxRunPlanningOptions {
-  readonly keepSandbox?: "failed" | "all";
-  readonly configTimeoutMs?: number;
+  readonly keepSandbox: "failed" | "all" | undefined;
+  readonly configTimeoutMs: number | undefined;
 }
 
 function physicalCapabilityRequirements(
@@ -99,14 +100,14 @@ function physicalCapabilityRequirements(
 ): readonly SandboxPhysicalCapabilityRequirement[] {
   const requirements: SandboxPhysicalCapabilityRequirement[] = [];
   if (run.sandboxReuse === true || evalDef.evalGroup !== undefined) {
-    requirements.push(Object.freeze({ _tag: "Reuse" }));
+    requirements.push({ _tag: "Reuse" });
   }
-  if (options.keepSandbox !== undefined) requirements.push(Object.freeze({ _tag: "Retention" }));
+  if (options.keepSandbox !== undefined) requirements.push({ _tag: "Retention" });
   const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? options.configTimeoutMs;
   if (timeoutMs !== undefined) {
-    requirements.push(Object.freeze({ _tag: "SessionDuration", milliseconds: timeoutMs }));
+    requirements.push({ _tag: "SessionDuration", milliseconds: timeoutMs });
   }
-  return Object.freeze(requirements);
+  return requirements;
 }
 
 /** Injective tuple encoding keeps `(a|b,c)` distinct from `(a,b|c)` without forbidding characters in either id. */
@@ -221,7 +222,7 @@ export function linkRunSandboxes(
       }
       let linkedAdapter: SandboxLayerPairInput["agent"];
       if (run.adapter === undefined) {
-        linkedAdapter = null;
+        linkedAdapter = undefined;
       } else if (run.adapter.kind === "custom") {
         linkedAdapter = { kind: "custom", name: run.adapter.name };
       } else {
@@ -236,47 +237,44 @@ export function linkRunSandboxes(
         }
         linkedAdapter =
           agent.kind === "sandbox"
-            ? { kind: agent.kind, name: agent.name, ...(agent.sandbox === undefined ? {} : { sandbox: agent.sandbox }) }
+            ? { kind: agent.kind, name: agent.name, sandbox: agent.sandbox }
             : { kind: agent.kind, name: agent.name };
       }
       const input: SandboxLayerPairInput = {
         eval: {
           id: evalDef.id,
-          ...(plugin.evalLayer === undefined ? {} : { layer: plugin.evalLayer }),
-          declaredAt: { file: evalDef.sourcePath },
+          layer: plugin.evalLayer,
+          declaredAt: sandboxLayerFileSite(evalDef.sourcePath),
         },
-        ...(evalDef.evalGroup === undefined
-          ? {}
-          : {
-              group: {
+        group:
+          evalDef.evalGroup === undefined
+            ? undefined
+            : {
                 id: evalDef.evalGroup.id,
-                ...(plugin.groupLayer === undefined ? {} : { layer: plugin.groupLayer }),
-                declaredAt: { file: evalDef.evalGroup.sourcePath },
+                layer: plugin.groupLayer,
+                declaredAt: sandboxLayerFileSite(evalDef.evalGroup.sourcePath),
               },
-            }),
         experiment: {
           id: experimentId,
-          ...(plugin.experimentLayer === undefined ? {} : { layer: plugin.experimentLayer }),
-          declaredAt: { file: experimentSourcePath },
+          layer: plugin.experimentLayer,
+          declaredAt: sandboxLayerFileSite(experimentSourcePath),
         },
         agent: linkedAdapter,
       };
-      records.push(
-        Object.freeze({
-          input,
-          ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent?.name ?? ""]),
-          key: runPairKey(experimentId, evalDef.id),
-          sourceRun,
-          run,
-          evalDef,
-          plugin,
-          authorBaseDirs: Object.freeze({
-            eval: evalDef.baseDir,
-            ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
-            experiment: experimentBaseDir,
-          }),
-        }),
-      );
+      records.push({
+        input,
+        ownerKey: JSON.stringify([experimentId, evalDef.id, input.agent?.name ?? ""]),
+        key: runPairKey(experimentId, evalDef.id),
+        sourceRun,
+        run,
+        evalDef,
+        plugin,
+        authorBaseDirs: {
+          eval: evalDef.baseDir,
+          ...(evalDef.evalGroup === undefined ? {} : { "eval-group": evalDef.evalGroup.baseDir }),
+          experiment: experimentBaseDir,
+        },
+      });
     }
   }
 
@@ -293,19 +291,17 @@ export function linkRunSandboxes(
   }
   const duplicates = [...occurrences.entries()]
     .filter(([, entry]) => entry.count > 1)
-    .map(([key, entry]) =>
-      Object.freeze({
-        key,
-        experimentId: entry.experimentId,
-        evalId: entry.evalId,
-        occurrences: entry.count,
-      }),
-    );
+    .map(([key, entry]) => ({
+      key,
+      experimentId: entry.experimentId,
+      evalId: entry.evalId,
+      occurrences: entry.count,
+    }));
   if (duplicates.length > 0) {
     return Effect.fail(
       new SandboxRunPairDuplicateError({
         code: "sandbox.duplicate-run-pair",
-        duplicates: Object.freeze(duplicates),
+        duplicates,
         message: `Sandbox planning received ${duplicates.length} duplicate (Experiment, Eval) pairs. Every discovered pair must have one owner.`,
       }),
     );
@@ -344,17 +340,15 @@ export function linkRunSandboxes(
         "eval-group": owner.plugin.sandboxLifecycles.group,
         eval: owner.plugin.sandboxLifecycles.eval,
       });
-      linked.push(
-        Object.freeze({
-          key: owner.key,
-          sourceRun: owner.sourceRun,
-          run: owner.run,
-          evalDef: owner.evalDef,
-          pair: pairWithPlugins,
-          plugin: owner.plugin,
-          authorBaseDirs: owner.authorBaseDirs,
-        }),
-      );
+      linked.push({
+        key: owner.key,
+        sourceRun: owner.sourceRun,
+        run: owner.run,
+        evalDef: owner.evalDef,
+        pair: pairWithPlugins,
+        plugin: owner.plugin,
+        authorBaseDirs: owner.authorBaseDirs,
+      });
     }
     const remaining = [...ownersByKey.values()].reduce((count, queue) => count + queue.length, 0);
     if (remaining !== 0) {
@@ -365,7 +359,7 @@ export function linkRunSandboxes(
         }),
       );
     }
-    return Effect.succeed(Object.freeze(linked));
+    return Effect.succeed(linked);
   });
 }
 
@@ -377,7 +371,10 @@ export function prepareRunSandboxes(
   evals: readonly DiscoveredEval[],
   runs: readonly AgentRun[],
   services: SandboxPlanningServices = liveSandboxPlanningServices(),
-  options: SandboxRunPlanningOptions = {},
+  options: SandboxRunPlanningOptions = {
+    keepSandbox: undefined,
+    configTimeoutMs: undefined,
+  },
 ): Effect.Effect<readonly PreparedRunPair[], SandboxRunPlanningError> {
   if (options.keepSandbox !== undefined) {
     const conflicts = runs.flatMap((run) =>
@@ -413,10 +410,10 @@ export function prepareRunSandboxes(
         linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({
           pair,
           authorBaseDirs,
-          requirements: Object.freeze([
+          requirements: [
             ...physicalCapabilityRequirements(run, evalDef, options),
             ...(pair.kind === "sandbox" ? pair.requirements.map(({ requirement }) => requirement) : []),
-          ]),
+          ],
         })),
         services,
       ),
@@ -433,17 +430,15 @@ export function prepareRunSandboxes(
               }),
             );
           }
-          prepared.push(
-            Object.freeze({
-              key: linked.key,
-              sourceRun: linked.sourceRun,
-              run: linked.run,
-              evalDef: linked.evalDef,
-              plan,
-              identity: linkedRunRecordIdentity(plan),
-              plugin: linked.plugin,
-            }),
-          );
+          prepared.push({
+            key: linked.key,
+            sourceRun: linked.sourceRun,
+            run: linked.run,
+            evalDef: linked.evalDef,
+            plan,
+            identity: linkedRunRecordIdentity(plan),
+            plugin: linked.plugin,
+          });
         }
         if (prepared.length !== linkedPairs.length) {
           return Effect.fail(
@@ -491,7 +486,7 @@ export function prepareRunSandboxes(
           }
           groupPlans.set(key, { evalId: entry.evalDef.id, descriptor });
         }
-        return Effect.succeed(Object.freeze(prepared));
+        return Effect.succeed(prepared);
       },
     ),
   );
@@ -515,17 +510,17 @@ export function preparedPairsByKey(pairs: readonly PreparedRunPair[]): ReadonlyM
     values: () => snapshot.values(),
     [Symbol.iterator]: () => snapshot[Symbol.iterator](),
   };
-  return Object.freeze(view);
+  return view;
 }
 
 /** 结果记录只投影当前 pair 的实际计划，不虚构 Experiment 级默认 Sandbox。 */
 export function sandboxRunInfoForPlan(plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>): SandboxRunInfo {
   const identity = providerPlanRecordIdentity(plan.providerPlan);
-  return Object.freeze({
+  return {
     provider: plan.providerPlan.provider,
     params: { plan: identity },
     fingerprint: digestOf(identity),
-  });
+  };
 }
 
 export interface PreparedSandboxScheduling {
@@ -560,12 +555,12 @@ export function schedulingForPreparedPairs(pairs: readonly PreparedRunPair[]): P
       admission: current.admission === "Exclusive" || admission === "Exclusive" ? "Exclusive" : "Shared",
     });
   }
-  const values = Object.freeze([...lanes.values()].map((lane) => Object.freeze(lane)));
-  return Object.freeze({
+  const values = [...lanes.values()];
+  return {
     recommendedConcurrency: values.length === 0 ? 10 : Math.min(...values.map(({ limit }) => limit)),
     exclusive: values.some(({ admission }) => admission === "Exclusive"),
     lanes: values,
-  });
+  };
 }
 
 export function recommendedConcurrencyForPreparedPairs(pairs: readonly PreparedRunPair[]): number {

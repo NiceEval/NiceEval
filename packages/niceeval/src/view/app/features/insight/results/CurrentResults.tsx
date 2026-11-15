@@ -44,7 +44,7 @@ export function CurrentResults({
       </header>
       <section className="niceeval-report niceeval-section" aria-label={t("current.summary")}>
         <h2 className="niceeval-section-title">{t("current.summary")}</h2>
-        <Grid>
+        <Grid className="">
           <div className="niceeval-kpi">
             <span className="niceeval-kpi-label">{t("current.covered")}</span>
             <span className="niceeval-kpi-value">
@@ -148,7 +148,7 @@ export function CurrentResults({
             {slots.some((slot) => slot.state === "gap") ? (
               <p>
                 {t("current.next")}{" "}
-                <CopyButton text={`niceeval exp ${experiment.experimentId} --dry`}>
+                <CopyButton text={`niceeval exp ${experiment.experimentId} --dry`} className={undefined}>
                   <code>niceeval exp {experiment.experimentId} --dry</code>
                 </CopyButton>
               </p>

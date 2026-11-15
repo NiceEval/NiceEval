@@ -23,7 +23,7 @@ type CodexState = {
   readonly driver: ManagedJsonlDriver;
   cursor: number;
   readonly threadId: string;
-  pending?: PendingBatch;
+  pending: PendingBatch | undefined;
   readonly reported: Set<string>;
 };
 
@@ -134,9 +134,9 @@ function nativeTurnIdentity(value: unknown): { readonly threadId: string; readon
   if (!params || typeof params.threadId !== "string") return undefined;
   const directTurnId = params.turnId;
   const nestedTurnId = record(params.turn)?.id;
-  const turnId =
-    typeof directTurnId === "string" ? directTurnId : typeof nestedTurnId === "string" ? nestedTurnId : undefined;
-  return turnId === undefined ? undefined : { threadId: params.threadId, turnId };
+  if (typeof directTurnId === "string") return { threadId: params.threadId, turnId: directTurnId };
+  if (typeof nestedTurnId === "string") return { threadId: params.threadId, turnId: nestedTurnId };
+  return undefined;
 }
 
 function belongsToTurn(value: unknown, threadId: string, turnId: string): boolean {
@@ -193,7 +193,10 @@ function appServerUsage(frames: readonly unknown[]): Usage | undefined {
   };
 }
 
-function protocolEvents(frames: readonly unknown[], reported: Set<string>): { events: StreamEvent[]; usage?: Usage } {
+function protocolEvents(
+  frames: readonly unknown[],
+  reported: Set<string>,
+): { events: StreamEvent[]; usage: Usage | undefined } {
   const normalized = frames.flatMap((value) => {
     const frame = record(value);
     if (!frame || typeof frame.method !== "string") return [];
@@ -212,7 +215,7 @@ function protocolEvents(frames: readonly unknown[], reported: Set<string>): { ev
     reported.add(key);
     return true;
   });
-  return { events, ...(usage === undefined ? {} : { usage }) };
+  return { events, usage };
 }
 
 function evidence(
@@ -303,7 +306,7 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
     "thread/start",
     {
       cwd: ctx.sandbox.workdir,
-      ...(ctx.model === undefined ? {} : { model: ctx.model }),
+      model: ctx.model,
       approvalPolicy: "never",
       sandbox: "danger-full-access",
       // app-server 没有 `codex exec --dangerously-bypass-hook-trust` 的顶层 flag，
@@ -318,7 +321,13 @@ async function createState(ctx: SandboxAgentContext, env: Readonly<Record<string
   if (typeof threadId !== "string" || !threadId)
     throw new Error("Codex app-server thread/start returned no native thread id");
   ctx.session.capture(threadId);
-  return { driver, cursor, threadId, reported: new Set() };
+  return {
+    driver,
+    cursor,
+    threadId,
+    pending: undefined,
+    reported: new Set(),
+  };
 }
 
 function validateResponses(
@@ -385,7 +394,7 @@ function waitingTurn(state: CodexState, frame: RecordValue, from: number, cursor
         }),
       ),
     ],
-    ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
+    usage: parsed.usage,
     evidenceCoverage: evidence(frames, true, parsed.events),
   };
 }
@@ -419,20 +428,20 @@ async function drive(state: CodexState, ctx: SandboxAgentContext, from: number, 
       message: `Codex app-server turn failed: ${JSON.stringify(frame.params)}`,
       cause: normalizeExternalCause(frame.params),
       events: parsed.events,
-      ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
+      usage: parsed.usage,
       process: state.driver.processReceipt(),
     });
   }
   return {
     status: status === "failed" ? "failed" : "completed",
     events: parsed.events,
-    ...(parsed.usage === undefined ? {} : { usage: parsed.usage }),
+    usage: parsed.usage,
     evidenceCoverage: evidence(frames, true, parsed.events),
   };
 }
 
 export async function sendCodexAppServer(
-  input: { readonly text: string; readonly responses?: readonly InputResponse[] },
+  input: { readonly text: string; readonly responses?: readonly InputResponse[] | undefined },
   ctx: SandboxAgentContext,
   env: Readonly<Record<string, string>>,
   failureFacts?: (
@@ -441,7 +450,7 @@ export async function sendCodexAppServer(
     nativeText: string,
   ) => {
     readonly acceptance: "rejected" | "started" | "unknown";
-    readonly cause?: ExternalCause;
+    readonly cause?: ExternalCause | undefined;
   },
 ): Promise<Turn> {
   let state = ctx.session.get(stateSlot);
@@ -481,7 +490,7 @@ export async function sendCodexAppServer(
       }
       // JSON-RPC response ids are native idempotency identities. Keep pending through
       // validation and transport failure; commit only after the write receipt succeeds.
-      delete state.pending;
+      state.pending = undefined;
     } else {
       if (input.responses?.length)
         throw new Error("Codex app-server received responses while no input request was pending");
@@ -495,8 +504,8 @@ export async function sendCodexAppServer(
           input: [{ type: "text", text: input.text }],
           approvalPolicy: "never",
           sandboxPolicy: { type: "dangerFullAccess" },
-          ...(ctx.model === undefined ? {} : { model: ctx.model }),
-          ...(ctx.reasoningEffort === undefined ? {} : { effort: ctx.reasoningEffort }),
+          model: ctx.model,
+          effort: ctx.reasoningEffort,
         },
         ctx.signal,
       );

@@ -1,4 +1,5 @@
 import * as Result from "effect/Result";
+import { isRecord as isObject } from "../shared/objects.ts";
 import * as Schema from "effect/Schema";
 import type * as SchemaIssue from "effect/SchemaIssue";
 import { inspectionProtocolRegistry, INSPECTION_OPERATION_IDS } from "./protocol.ts";
@@ -13,12 +14,14 @@ export type {
 export type InspectionDocument = import("./protocol.ts").InspectionOperationDocument;
 
 /** Explains why an Inspection request or result failed strict decoding; it is a protocol error rather than an evaluation Verdict. */
-export interface InspectionCodecError {
-  readonly code: "inspection-request-invalid" | "inspection-result-invalid";
-  readonly reason: string;
-  readonly issues?: readonly { readonly path: string; readonly expected: string; readonly received: string }[];
-  readonly omittedIssueCount?: number;
-}
+export type InspectionCodecError =
+  | {
+      readonly code: "inspection-request-invalid";
+      readonly reason: string;
+      readonly issues: readonly { readonly path: string; readonly expected: string; readonly received: string }[];
+      readonly omittedIssueCount: number;
+    }
+  | { readonly code: "inspection-result-invalid"; readonly reason: string };
 
 const inspectionCodecErrors = new WeakSet<object>();
 
@@ -48,7 +51,11 @@ export function decodeInspectionRequest(input: unknown): Result.Result<Inspectio
         })(input);
   if (Result.isSuccess(decoded)) return Result.succeed(decoded.success);
   const issues: { path: string; expected: string; received: string }[] = [];
-  const type = (value: unknown) => (value === null ? "null" : Array.isArray(value) ? "array" : typeof value);
+  const type = (value: unknown): string => {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    return typeof value;
+  };
   if (known === undefined)
     issues.push({ path: "/operation/kind", expected: INSPECTION_OPERATION_IDS.join(", "), received: type(kind) });
   const visit = (issue: SchemaIssue.Issue, path: readonly PropertyKey[] = []): void => {
@@ -68,14 +75,14 @@ export function decodeInspectionRequest(input: unknown): Result.Result<Inspectio
     issues.push({ path: pointer, expected, received: type(received) });
   };
   visit(decoded.failure.issue);
-  return Result.fail(
-    Object.freeze({
-      code: "inspection-request-invalid" as const,
-      reason: "The Inspection request does not match Inspection.",
-      issues: Object.freeze(issues.slice(0, 20)),
-      omittedIssueCount: Math.max(0, issues.length - 20),
-    }),
-  );
+  const error: InspectionCodecError = {
+    code: "inspection-request-invalid" as const,
+    reason: "The Inspection request does not match Inspection.",
+    issues: issues.slice(0, 20),
+    omittedIssueCount: Math.max(0, issues.length - 20),
+  };
+  inspectionCodecErrors.add(error);
+  return Result.fail(error);
 }
 
 /** JSON value accepted at the final machine-delivery boundary. */
@@ -120,7 +127,7 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
         output.push(closed);
       }
       seen.delete(current);
-      return Object.freeze(output);
+      return output;
     }
     if (typeof current !== "object" || current === null)
       return invalidResult(path, `unsupported ${typeof current} value`);
@@ -136,30 +143,28 @@ export function closeInspectionJson(value: unknown): InspectionJson | Inspection
       output[key] = closed;
     }
     seen.delete(current);
-    return Object.freeze(output);
+    return output;
   };
   return close(value, []);
 }
 
 function invalidResult(path: readonly string[], reason: string): InspectionCodecError {
-  const error = Object.freeze({
+  const error = {
     code: "inspection-result-invalid" as const,
     reason: `${path.length === 0 ? "$" : path.join(".")}: ${reason}`,
-  });
+  };
   inspectionCodecErrors.add(error);
   return error;
 }
 
-export function isInspectionCodecError(value: InspectionJson | InspectionCodecError): value is InspectionCodecError {
+export function isInspectionCodecError(value: unknown): value is InspectionCodecError {
   return isObject(value) && inspectionCodecErrors.has(value);
 }
 
 const isCodecError = isInspectionCodecError;
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function compareCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

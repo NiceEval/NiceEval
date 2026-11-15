@@ -1,4 +1,23 @@
 import type Docker from "dockerode";
+import * as Schema from "effect/Schema";
+
+const decodeDiagnostic = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      ok: Schema.optionalKey(Schema.Boolean),
+      unixOnly: Schema.optionalKey(Schema.Boolean),
+      nestedDocker: Schema.optionalKey(Schema.Boolean),
+      limits: Schema.optionalKey(
+        Schema.Struct({
+          cpuMax: Schema.optionalKey(Schema.String),
+          memoryMax: Schema.optionalKey(Schema.String),
+          swapMax: Schema.optionalKey(Schema.String),
+          pidsMax: Schema.optionalKey(Schema.String),
+        }),
+      ),
+    }),
+  ),
+);
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -50,14 +69,6 @@ interface Check {
   readonly status: DoctorStatus;
   readonly code?: string;
   readonly detail: string;
-}
-
-interface ControlStatus {
-  readonly journal?: { readonly state?: string; readonly durableTransitions?: boolean };
-  readonly assets?: {
-    readonly state?: string;
-    readonly images?: readonly { readonly reference?: string; readonly present?: boolean }[];
-  };
 }
 
 const DOCTOR_CHECK_IDS = [
@@ -187,14 +198,7 @@ async function runDynamicChecks(alias: string): Promise<Check[]> {
     if (Buffer.byteLength(logs) > 64 * 1024) throw new Error("control-owned diagnostic logs exceed 64 KiB");
     const results = logs.split(/\r?\n/).flatMap((line) => {
       try {
-        return [
-          JSON.parse(line) as {
-            ok?: boolean;
-            unixOnly?: boolean;
-            nestedDocker?: boolean;
-            limits?: { cpuMax?: string; memoryMax?: string; swapMax?: string; pidsMax?: string };
-          },
-        ];
+        return [decodeDiagnostic(line)];
       } catch {
         return [];
       }
@@ -294,7 +298,7 @@ export async function runDockerProfileCommand(
         { id: "cgroup", status: "PASS", detail: binding.profile.backend.cgroup.aggregatePath },
         { id: "storage", status: "PASS", detail: binding.profile.backend.filesystem.identity },
       );
-      const control = await dockerProfileControlRequest<ControlStatus>(binding.controlSocketPath, { kind: "status" });
+      const control = await dockerProfileControlRequest(binding.controlSocketPath, { kind: "status" });
       if (control.journal?.state !== "healthy" || control.journal.durableTransitions !== true) {
         throw new Error("watchdog did not attest a healthy durable journal");
       }
@@ -349,11 +353,12 @@ export async function runDockerProfileCommand(
           detail: "diagnostic produced no result",
         },
     );
-    const status: DoctorStatus = ordered.some((check) => check.status === "FAIL")
-      ? "FAIL"
-      : ordered.some((check) => check.status === "BLOCKED")
-        ? "BLOCKED"
-        : "PASS";
+    function doctorStatus(): DoctorStatus {
+      if (ordered.some((check) => check.status === "FAIL")) return "FAIL";
+      if (ordered.some((check) => check.status === "BLOCKED")) return "BLOCKED";
+      return "PASS";
+    }
+    const status = doctorStatus();
     if (options.json) options.out(`${JSON.stringify({ alias, status, checks: ordered })}\n`);
     else
       for (const check of ordered)

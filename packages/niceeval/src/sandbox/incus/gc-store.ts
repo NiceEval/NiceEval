@@ -65,7 +65,7 @@ export const isGcStoreRequest = (value: unknown): value is GcStoreRequest =>
 export const isGcStoreResult = (value: unknown): value is GcStoreResult =>
   Result.isSuccess(Schema.decodeUnknownResult(ResultSchema, gcParseOptions)(value));
 const invalid = (message: string) =>
-  new UserDatabaseInvalid({ code: "user-database-invalid", repository: "incus", message });
+  new UserDatabaseInvalid({ code: "user-database-invalid", repository: "incus", message, cause: undefined });
 
 export function readStoredGcPlan(database: DatabaseSync, planId: string): StoredGcPlan | null {
   const row = database

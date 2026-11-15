@@ -5,6 +5,7 @@
 // span 的语义(span 名、属性约定)各 agent 不同,这里不解释,原样带给 view。
 
 import type { JsonValue, TraceSpan } from "../../types.ts";
+import { isRecord } from "../../shared/objects.ts";
 
 /** 按 Content-Type 选编码,失败一律回空数组(导出端不该因我们解析挂而报错)。 */
 export function parseOtlpTraces(body: Buffer, contentType: string): TraceSpan[] {
@@ -35,10 +36,6 @@ function statusFromCode(code: number | string | undefined): TraceSpan["status"] 
 }
 
 // ───────────────────────── OTLP/JSON ─────────────────────────
-
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function jsonAnyValue(value: unknown): JsonValue {
   if (!isRecord(value)) return null;
@@ -112,7 +109,7 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
         ? span.endTimeUnixNano
         : undefined,
     ),
-    ...(parsedStatus === undefined ? {} : { status: parsedStatus }),
+    status: parsedStatus,
     ...(Object.keys(attributes).length ? { attributes } : {}),
   };
 }
@@ -274,7 +271,7 @@ function protoStatus(buf: Buffer): TraceSpan["status"] {
   return statusFromCode(code);
 }
 
-function protoKeyValue(buf: Buffer): { key?: string; value: JsonValue } {
+function protoKeyValue(buf: Buffer): { key: string | undefined; value: JsonValue } {
   let key: string | undefined;
   let value: JsonValue = null;
   // KeyValue { 1:key 2:AnyValue }
@@ -283,7 +280,7 @@ function protoKeyValue(buf: Buffer): { key?: string; value: JsonValue } {
     else if (field === 2 && wire === 2) value = protoAnyValue(r.bytes());
     else r.skip(wire);
   });
-  return { ...(key === undefined ? {} : { key }), value };
+  return { key, value };
 }
 
 function protoAnyValue(buf: Buffer): JsonValue {

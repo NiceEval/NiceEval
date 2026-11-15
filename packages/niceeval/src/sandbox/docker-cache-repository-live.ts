@@ -23,6 +23,7 @@ function wrongResult(operation: DockerCacheRepositoryRequest["operation"]): User
     code: "user-database-invalid",
     message: `docker-cache worker returned the wrong result for ${operation}`,
     repository: DOCKER_CACHE_REPOSITORY,
+    cause: undefined,
   });
 }
 

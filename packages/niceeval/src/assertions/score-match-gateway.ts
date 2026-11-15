@@ -1,4 +1,5 @@
 import { ordinaryJudgeIdentity } from "../runner/judge-identity.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import {
   SCORE_MATCH_INSTRUCTION,
   SCORE_MATCH_TOOL_DESCRIPTION,
@@ -117,14 +118,19 @@ function primitiveOptions(
   if (material.images.some((image) => !images?.has(image.image)))
     throw new TypeError("LLM material contains an image not captured by this Assertion");
   options.material = material.material;
-  const allowed =
-    operation === "score"
-      ? ["rubric", "anchors", "material"]
-      : operation === "classify"
-        ? ["rubric", "choices", "material"]
-        : operation === "extract"
-          ? ["rubric", "maxItems", "material"]
-          : ["rubric", "choices", "items", "material"];
+  function operationFields(): string[] {
+    switch (operation) {
+      case "score":
+        return ["rubric", "anchors", "material"];
+      case "classify":
+        return ["rubric", "choices", "material"];
+      case "extract":
+        return ["rubric", "maxItems", "material"];
+      default:
+        return ["rubric", "choices", "items", "material"];
+    }
+  }
+  const allowed = operationFields();
   if (
     Object.keys(options).some(
       (key) => !allowed.includes(key) && !(operation === "classify" && key === "evidenceIds"),
@@ -182,12 +188,17 @@ function validatePrimitiveOptions(operation: Operation, options: Record<string, 
 }
 interface PreparedRequest {
   readonly request: string;
-  readonly requestTemplate?: string;
-  readonly wireBody?: { readonly byteLength: number; readonly sha256: string };
+  readonly imageAudit:
+    | { readonly kind: "none" }
+    | {
+        readonly kind: "images";
+        readonly requestTemplate: string;
+        readonly wireBody: { readonly byteLength: number; readonly sha256: string };
+      };
   readonly imageCount: number;
   readonly material: string;
   readonly options: Record<string, unknown>;
-  readonly mapping?: TypeSafeMapping;
+  readonly mapping: TypeSafeMapping | undefined;
 }
 function chatRequestFor(
   operation: Operation,
@@ -298,17 +309,51 @@ function chatRequestFor(
     : requestTemplate;
   return {
     request: wireBody,
-    ...(imageAudit
+    imageAudit: imageAudit
       ? {
+          kind: "images",
           requestTemplate,
           wireBody: { byteLength: bytes(wireBody), sha256: createHash("sha256").update(wireBody).digest("hex") },
         }
-      : {}),
+      : { kind: "none" },
     imageCount: projected.parts.length,
     material: canonical(user),
     options,
+    mapping: undefined,
   };
 }
+const TypeSafeMappingSchema = Schema.Union([
+  Schema.Struct({
+    operation: Schema.Literal("score"),
+    input: Schema.Struct({
+      rubric: Schema.String,
+      anchors: Schema.Array(Schema.Struct({ measurement: Schema.Number, description: Schema.String })),
+      material: Schema.MutableJson,
+    }),
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("classify"),
+    input: Schema.Struct({
+      rubric: Schema.String,
+      choices: Schema.Array(Schema.String),
+      evidenceIds: Schema.optionalKey(Schema.Array(Schema.String)),
+      material: Schema.MutableJson,
+    }),
+  }),
+  Schema.Struct({
+    operation: Schema.Literal("batchClassify"),
+    input: Schema.Struct({
+      rubric: Schema.String,
+      choices: Schema.Array(Schema.String),
+      items: Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String })),
+      material: Schema.MutableJson,
+    }),
+  }),
+]);
+const decodeTypeSafeMapping = Schema.decodeUnknownSync(
+  Schema.declare<typeof TypeSafeMappingSchema.Type>(Schema.is(TypeSafeMappingSchema)),
+);
+
 function typesafeRequestFor(
   operation: Exclude<Operation, "extract">,
   input: unknown,
@@ -346,16 +391,17 @@ function typesafeRequestFor(
             criteria,
           },
         };
-  const mapping = Object.freeze({
+  const mapping: TypeSafeMapping = decodeTypeSafeMapping({
     operation,
     input: snapshotScoreMatchMaterial(options),
-  }) as unknown as TypeSafeMapping;
+  });
   return {
     request: canonical({ model: profile.model, state, questions }),
     material: canonical(state),
     options,
     mapping,
     imageCount: 0,
+    imageAudit: { kind: "none" },
   };
 }
 function decodeChatOutput<K extends Operation>(
@@ -379,15 +425,15 @@ function decodeChatOutput<K extends Operation>(
   let output: unknown;
   if (operation === "score") output = Schema.decodeUnknownSync(scoreSchema, parse)(raw);
   else if (operation === "classify") {
-    const result =
-      options.evidenceIds === undefined
-        ? Schema.decodeUnknownSync(classifySchema, parse)(raw)
-        : Schema.decodeUnknownSync(citedClassifySchema, parse)(raw);
-    if (options.evidenceIds !== undefined) {
-      const citations = (result as unknown as { citations: readonly string[] }).citations;
-      validateEvidenceIds(citations, true);
-      if (citations.some((id) => !(options.evidenceIds as readonly string[]).includes(id)))
+    let result: typeof classifySchema.Type;
+    if (options.evidenceIds === undefined) {
+      result = Schema.decodeUnknownSync(classifySchema, parse)(raw);
+    } else {
+      const cited = Schema.decodeUnknownSync(citedClassifySchema, parse)(raw);
+      validateEvidenceIds(cited.citations, true);
+      if (cited.citations.some((id) => !(options.evidenceIds as readonly string[]).includes(id)))
         throw new TypeError("Unknown evidence citation");
+      result = cited;
     }
     if (!choicesOf(options.choices).includes(result.choice)) throw new TypeError("Unknown classification label");
     output = result;
@@ -483,8 +529,8 @@ export function prepareManagedScoreMatch(input: {
   readonly options: ManagedScoreMatchDefinition<unknown, unknown>;
   readonly material: unknown;
   readonly judge: ResolvedJudgeConfig | undefined;
-  readonly signal?: AbortSignal;
-  readonly usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry;
+  readonly signal: AbortSignal | undefined;
+  readonly usage: import("../o11y/judge-usage.ts").JudgeUsageEntry | undefined;
 }): MeasurementAssertionRegistration & {
   readonly terminalEvidence: () => readonly AssertionMaterial[];
   readonly actualRetainedBytes: () => number;
@@ -505,7 +551,7 @@ export function prepareManagedScoreMatch(input: {
   const definitionBase = {
     version: options.version,
     config: canonical({ definition: JSON.parse(options.canonicalConfig), ordinaryJudge: ordinaryJudgeIdentity() }),
-    limits: { ...options.llm, ...(contextWindow === undefined ? {} : { contextWindow }) },
+    limits: omitUndefined({ ...options.llm, contextWindow }),
   };
   const definition = { ...definitionBase, digest: scoreMatchDefinitionDigest(definitionBase) };
   const typesafe = input.judge?.protocol.kind === "typesafe-system-one";
@@ -519,41 +565,42 @@ export function prepareManagedScoreMatch(input: {
   let evaluationStarted = false;
   const pending = new Set<Fiber.Fiber<unknown, unknown>>();
   let sealed: readonly AssertionMaterial[] | undefined;
-  const audit = (): ScoreMatchAuditAny =>
-    images.length > 0
-      ? {
-          kind: "images",
+  const audit = (): ScoreMatchAuditAny => {
+    if (images.length > 0)
+      return {
+        kind: "images",
 
-          definition,
-          input: captured,
-          images: images.map(({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths }) => ({
-            imageId,
-            evidenceIndex,
-            mediaType,
-            byteLength,
-            sha256,
-            paths,
-          })),
-          calls: calls as import("./score-match-audit.ts").ImageScoreMatchAudit["calls"],
-          result,
-        }
-      : typesafe
-        ? ({
-            kind: "typed",
+        definition,
+        input: captured,
+        images: images.map(({ imageId, evidenceIndex, mediaType, byteLength, sha256, paths }) => ({
+          imageId,
+          evidenceIndex,
+          mediaType,
+          byteLength,
+          sha256,
+          paths,
+        })),
+        calls: calls as import("./score-match-audit.ts").ImageScoreMatchAudit["calls"],
+        result,
+      };
+    if (typesafe)
+      return {
+        kind: "typed",
 
-            definition,
-            input: captured,
-            calls: calls as TypeSafeAuditCall[],
-            result,
-          } as TypedScoreMatchAudit)
-        : {
-            kind: "chat",
+        definition,
+        input: captured,
+        calls: calls as TypeSafeAuditCall[],
+        result,
+      } as TypedScoreMatchAudit;
+    return {
+      kind: "chat",
 
-            definition,
-            input: captured,
-            calls: calls as ScoreMatchAuditCall[],
-            result,
-          };
+      definition,
+      input: captured,
+      calls: calls as ScoreMatchAuditCall[],
+      result,
+    };
+  };
   const envelopeOf = (value: ScoreMatchAuditAny) => {
     const encoded = canonical(value);
     const chunks = chunkUtf8(encoded);
@@ -649,12 +696,12 @@ export function prepareManagedScoreMatch(input: {
               );
         const fitted = fitJudgeContext({
           model: profile.model,
-          ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
+          contextWindow: profile.contextWindow,
           maxOutputTokens: profile.protocol.kind === "chat-completions" ? profile.protocol.maxOutputTokens : 0,
           material: prepared.options.material,
           encodeRequest: (material) => {
             const request = requestFor(material);
-            return request.requestTemplate ?? request.request;
+            return request.imageAudit.kind === "images" ? request.imageAudit.requestTemplate : request.request;
           },
         });
         if (fitted.state === "unavailable") return reject(failure("unavailable", fitted.code, fitted.message));
@@ -681,9 +728,9 @@ export function prepareManagedScoreMatch(input: {
             ordinal: index + 1,
             operation,
             state: "admitted",
-            ...(prepared.requestTemplate === undefined
+            ...(prepared.imageAudit.kind === "none"
               ? { request: prepared.request }
-              : { requestTemplate: prepared.requestTemplate, wireBody: prepared.wireBody }),
+              : { requestTemplate: prepared.imageAudit.requestTemplate, wireBody: prepared.imageAudit.wireBody }),
             attempts: [...attempts],
             result: callResult,
             ...(prepared.mapping === undefined ? {} : { mapping: prepared.mapping }),
@@ -712,11 +759,11 @@ export function prepareManagedScoreMatch(input: {
                 baseUrl: profile.baseUrl,
                 endpoint: profile.protocol.kind === "chat-completions" ? "chat/completions" : "systemone",
                 apiKey,
-                ...(profile.headers === undefined ? {} : { headers: profile.headers }),
+                headers: profile.headers,
                 body: prepared.request,
                 maxBytes: responseCap,
                 signal,
-                ...(usage === undefined ? {} : { usage }),
+                usage,
                 deadlineAt,
               });
             },
@@ -877,7 +924,12 @@ export function prepareManagedScoreMatch(input: {
           );
         else {
           result = { state: "measured", value: measurement };
-          return { state: "measured", value: measurement, detail: explanation };
+          return {
+            state: "measured",
+            value: measurement,
+            detail: explanation,
+            receipt: undefined,
+          };
         }
       } else if (output?.state === "unavailable")
         latch(failure("unavailable", "score-match-unavailable", output.reason));
@@ -899,8 +951,13 @@ export function prepareManagedScoreMatch(input: {
             citations: { state: "unavailable", reason: "not-recorded" },
             ...explanation,
           },
+          receipt: undefined,
         }
-      : { state: "errored", detail: { code: problem.code, message: problem.message } };
+      : {
+          state: "errored",
+          detail: { code: problem.code, message: problem.message },
+          receipt: undefined,
+        };
   };
   const evaluate = (): Effect.Effect<MeasurementAssertionEvaluation> => {
     const callback = Effect.gen(function* (): Effect.fn.Return<ScoreMatchResult, unknown> {
@@ -952,17 +1009,21 @@ export function prepareManagedScoreMatch(input: {
     subject,
     retainedBytes: 0,
     retainedImageBytes: images.reduce((sum, image) => sum + image.byteLength, 0),
-    evidence: Object.freeze(images.map((image) => ({ kind: "judge-image" as const, image: image.image }))),
+    evidence: images.map((image) => ({ kind: "judge-image" as const, image: image.image })),
     evaluate,
     terminalEvidence: () => {
       if (sealed !== undefined) return sealed;
       input.usage?.close();
       closed = true;
       const payload = envelopeOf(audit());
-      sealed = Object.freeze([captureFullAssertionSnapshot(payload, Infinity).material]);
+      sealed = [captureFullAssertionSnapshot(payload, Infinity).material];
       return sealed;
     },
     actualRetainedBytes: () => 0,
+    terminalDetail: () => undefined,
+    terminalReceipt: () => undefined,
+    coverage: { state: "complete" },
+    limitations: [],
   };
 }
 

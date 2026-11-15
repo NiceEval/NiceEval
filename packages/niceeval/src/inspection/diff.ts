@@ -16,10 +16,10 @@ export function projectAttemptDiff(
   selection?: { readonly source: InspectionFactSource; readonly changeId: string },
 ): InspectionAttemptDiffResult {
   if (attachment === undefined) {
-    return Object.freeze({
+    return {
       state: "not-recorded",
-      windows: Object.freeze([] as const),
-    });
+      windows: [] as const,
+    };
   }
   const current = NiceEvalCurrentRecordAttachments.fileChanges;
   if (
@@ -69,30 +69,22 @@ export function projectAttemptDiff(
     change === undefined || selection === undefined
       ? undefined
       : changeDetail(change, byHydratedHandle, selection.source);
-  return Object.freeze({
-    ...(detail === undefined ? {} : { detail }),
+  return {
+    detail,
     state: value.collection.state,
-    limitations: Object.freeze([...value.collection.limitations]),
-    windows: Object.freeze(
-      value.windows.map((window) =>
-        Object.freeze({
-          windowId: window.windowId,
-          sequence: window.sequence,
-          changes: Object.freeze(
-            window.changes.map((change) =>
-              Object.freeze({
-                changeId: change.changeId,
-                path: change.path,
-                kind: change.kind,
-                before: projectEndpoint(change.before, byHydratedHandle),
-                after: projectEndpoint(change.after, byHydratedHandle),
-              }),
-            ),
-          ),
-        }),
-      ),
-    ),
-  });
+    limitations: value.collection.limitations,
+    windows: value.windows.map((window) => ({
+      windowId: window.windowId,
+      sequence: window.sequence,
+      changes: window.changes.map((change) => ({
+        changeId: change.changeId,
+        path: change.path,
+        kind: change.kind,
+        before: projectEndpoint(change.before, byHydratedHandle),
+        after: projectEndpoint(change.after, byHydratedHandle),
+      })),
+    })),
+  };
 }
 
 function projectEndpoint(
@@ -107,30 +99,30 @@ function projectEndpoint(
       : never
     : never
   : never {
-  if (endpoint.state === "absent") return Object.freeze({ state: "absent" });
-  return Object.freeze({
+  if (endpoint.state === "absent") return { state: "absent" };
+  return {
     state: "present",
     revision: projectRevision(endpoint.revision, metadata),
-  });
+  };
 }
 
 function projectRevision(revision: FileRevision, metadata: WeakMap<object, PersistedContentMetadata>) {
-  if (revision.kind !== "text") return Object.freeze({ ...revision });
+  if (revision.kind !== "text") return revision;
   if (revision.content.state === "omitted") {
-    return Object.freeze({
+    return {
       kind: revision.kind,
       sha256: revision.sha256,
       byteLength: revision.byteLength,
       content: "omitted" as const,
-    });
+    };
   }
   requireContentMetadata(revision.content.content, revision, metadata);
-  return Object.freeze({
+  return {
     kind: revision.kind,
     sha256: revision.sha256,
     byteLength: revision.byteLength,
     content: "available" as const,
-  });
+  };
 }
 
 function requireContentMetadata(
@@ -145,11 +137,11 @@ function requireContentMetadata(
 }
 
 function invalidDiff(issue: string): InspectionAttemptDiffResult {
-  return Object.freeze({
+  return {
     state: "invalid",
-    issues: Object.freeze([issue]),
-    windows: Object.freeze([] as const),
-  });
+    issues: [issue],
+    windows: [] as const,
+  };
 }
 
 function exactMarker(value: unknown, key: string): unknown | undefined {

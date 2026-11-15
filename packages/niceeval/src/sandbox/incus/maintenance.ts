@@ -49,10 +49,10 @@ class MaintenanceFailure extends Error {
 }
 export interface IncusMaintenanceOptions {
   readonly action: "inventory" | "gc";
-  readonly domain?: IncusDomainName;
-  readonly json?: boolean;
-  readonly apply?: string;
-  readonly unusedFor?: string;
+  readonly domain: IncusDomainName;
+  readonly json: boolean;
+  readonly apply: string | undefined;
+  readonly unusedFor: string | undefined;
 }
 export interface IncusMaintenanceResult {
   readonly exitCode: number;
@@ -136,7 +136,7 @@ async function ruleFor(
   if (a.retirementPlanId !== undefined) {
     if (a.state !== "invalid" && a.state !== "retiring") return undefined;
     const stored = await repository.getGcPlan(a.retirementPlanId);
-    if (stored === null) return undefined;
+    if (stored === undefined) return undefined;
     let previous: GcPlan;
     try {
       previous = Schema.decodeUnknownSync(GcPlanSchema, gcParseOptions)(JSON.parse(stored.payload));
@@ -398,7 +398,7 @@ async function apply(
   const lock = await acquireDomainAdmissionLock(repository, `incus-gc-plan:${planId}`);
   try {
     const stored = await repository.getGcPlan(planId);
-    if (stored === null) throw new MaintenanceFailure(3, "plan-corrupt", "Unknown GC plan id");
+    if (stored === undefined) throw new MaintenanceFailure(3, "plan-corrupt", "Unknown GC plan id");
     let plan: GcPlan;
     let previous: readonly GcItemOutcome[];
     try {
@@ -518,7 +518,7 @@ export function runIncusMaintenance(options: IncusMaintenanceOptions): Effect.Ef
       const repository = yield* incusRepositoryHost.open();
       return yield* Effect.tryPromise({
         try: async () => {
-          const domain = domainByName(await loadIncusDescriptor(), options.domain ?? "reference");
+          const domain = domainByName(await loadIncusDescriptor(), options.domain);
           if (domain === undefined)
             throw new MaintenanceFailure(4, "domain-unavailable", "The requested Incus domain is not configured");
           const control =

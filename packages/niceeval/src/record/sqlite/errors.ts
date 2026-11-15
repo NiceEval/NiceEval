@@ -1,3 +1,5 @@
+import { Data } from "effect";
+
 export type SqliteRecordErrorCode =
   | "record-runtime-unsupported"
   | "record-database-invalid"
@@ -23,7 +25,13 @@ export function isSqliteRecordErrorCode(value: unknown): value is SqliteRecordEr
   );
 }
 
-export class SqliteRecordError extends Error {
+export type SqliteRecordFailure = {
+  readonly [Code in SqliteRecordErrorCode]: { readonly _tag: Code };
+}[SqliteRecordErrorCode];
+
+export class SqliteRecordError extends Data.TaggedError("SqliteRecordError")<{
+  readonly reason: SqliteRecordFailure;
+}> {
   readonly name = "SqliteRecordError";
 
   constructor(
@@ -32,7 +40,11 @@ export class SqliteRecordError extends Error {
     message: string,
     options?: ErrorOptions,
   ) {
-    super(message, options);
+    super({ reason: { _tag: code } });
+    this.message = message;
+    if (options !== undefined && "cause" in options) {
+      Object.defineProperty(this, "cause", { value: options.cause, configurable: true, writable: true });
+    }
   }
 }
 

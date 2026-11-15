@@ -58,11 +58,8 @@ export type EvaluationsPayloadIssue =
     };
 
 function compareEvaluationSlots(left: EvaluationSlot, right: EvaluationSlot): number {
-  return left.attempt === right.attempt
-    ? compareCanonicalIdentity(left.slotId, right.slotId)
-    : left.attempt < right.attempt
-      ? -1
-      : 1;
+  if (left.attempt === right.attempt) return compareCanonicalIdentity(left.slotId, right.slotId);
+  return left.attempt < right.attempt ? -1 : 1;
 }
 
 export function validateEvaluationsPayload(payload: EvaluationsPayload): readonly EvaluationsPayloadIssue[] {
@@ -72,37 +69,31 @@ export function validateEvaluationsPayload(payload: EvaluationsPayload): readonl
   for (const [definitionIndex, definition] of payload.evaluations.entries()) {
     if (previousEvalId !== undefined && compareCanonicalIdentity(previousEvalId, definition.evalId) >= 0) {
       issues.push(
-        Object.freeze(
-          previousEvalId === definition.evalId
-            ? { code: "evaluations-eval-duplicate" as const, evalId: definition.evalId }
-            : { code: "evaluations-eval-order-invalid" as const, index: definitionIndex, evalId: definition.evalId },
-        ),
+        previousEvalId === definition.evalId
+          ? { code: "evaluations-eval-duplicate" as const, evalId: definition.evalId }
+          : { code: "evaluations-eval-order-invalid" as const, index: definitionIndex, evalId: definition.evalId },
       );
     }
     const attempts = new Set<number>();
     let previousSlot: EvaluationSlot | undefined;
     for (const [slotIndex, slot] of definition.slots.entries()) {
       if (previousSlot !== undefined && compareEvaluationSlots(previousSlot, slot) >= 0) {
-        issues.push(
-          Object.freeze({
-            code: "evaluations-slot-order-invalid" as const,
-            evalId: definition.evalId,
-            index: slotIndex,
-            slotId: slot.slotId,
-          }),
-        );
+        issues.push({
+          code: "evaluations-slot-order-invalid" as const,
+          evalId: definition.evalId,
+          index: slotIndex,
+          slotId: slot.slotId,
+        });
       }
       if (slots.has(slot.slotId)) {
-        issues.push(Object.freeze({ code: "evaluations-slot-duplicate" as const, slotId: slot.slotId }));
+        issues.push({ code: "evaluations-slot-duplicate" as const, slotId: slot.slotId });
       }
       if (attempts.has(slot.attempt)) {
-        issues.push(
-          Object.freeze({
-            code: "evaluations-attempt-duplicate" as const,
-            evalId: definition.evalId,
-            attempt: slot.attempt,
-          }),
-        );
+        issues.push({
+          code: "evaluations-attempt-duplicate" as const,
+          evalId: definition.evalId,
+          attempt: slot.attempt,
+        });
       }
       slots.add(slot.slotId);
       attempts.add(slot.attempt);
@@ -110,7 +101,7 @@ export function validateEvaluationsPayload(payload: EvaluationsPayload): readonl
     }
     previousEvalId = definition.evalId;
   }
-  return Object.freeze(issues);
+  return issues;
 }
 
 export const EvaluationsPayloadSchema = EvaluationsPayloadStructuralSchema.pipe(
@@ -122,7 +113,7 @@ export const EvaluationsPayloadSchema = EvaluationsPayloadStructuralSchema.pipe(
 
 export type EvaluationsPayloadBuildError = {
   readonly code: "evaluations-payload-schema-invalid" | "evaluations-payload-coherence-invalid";
-  readonly issues?: readonly EvaluationsPayloadIssue[];
+  readonly issues: readonly EvaluationsPayloadIssue[];
 };
 
 export function decodeEvaluationsPayload(
@@ -130,7 +121,7 @@ export function decodeEvaluationsPayload(
 ): Result.Result<EvaluationsPayload, EvaluationsPayloadBuildError> {
   const decoded = Schema.decodeUnknownResult(EvaluationsPayloadSchema, ExactEvaluationParseOptions)(input);
   return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }))
+    ? Result.fail({ code: "evaluations-payload-schema-invalid" as const, issues: [] })
     : Result.succeed(decoded.success);
 }
 
@@ -139,10 +130,9 @@ export function buildEvaluationsPayload(
 ): Result.Result<EvaluationsPayload, EvaluationsPayloadBuildError> {
   const decoded = Schema.decodeUnknownResult(EvaluationsPayloadStructuralSchema, ExactEvaluationParseOptions)(input);
   if (Result.isFailure(decoded))
-    return Result.fail(Object.freeze({ code: "evaluations-payload-schema-invalid" as const }));
+    return Result.fail({ code: "evaluations-payload-schema-invalid" as const, issues: [] });
   const issues = validateEvaluationsPayload(decoded.success);
-  if (issues.length > 0)
-    return Result.fail(Object.freeze({ code: "evaluations-payload-coherence-invalid" as const, issues }));
+  if (issues.length > 0) return Result.fail({ code: "evaluations-payload-coherence-invalid" as const, issues });
   return Result.succeed(decoded.success);
 }
 
@@ -158,13 +148,10 @@ export function projectEvaluationsPayload(payload: EvaluationsPayload): Evaluati
   const slots = new Map<string, EvaluationSlotProjection>();
   for (const evaluation of payload.evaluations) {
     for (const slot of evaluation.slots) {
-      slots.set(
-        slot.slotId,
-        Object.freeze({ ...slot, evalId: evaluation.evalId, evaluationKind: evaluation.evaluationKind }),
-      );
+      slots.set(slot.slotId, { ...slot, evalId: evaluation.evalId, evaluationKind: evaluation.evaluationKind });
     }
   }
-  return Object.freeze({ evaluationForSlot: (slotId: SlotId) => slots.get(slotId) });
+  return { evaluationForSlot: (slotId: SlotId) => slots.get(slotId) };
 }
 
 export interface Evaluation {
@@ -178,16 +165,12 @@ export interface Evaluations {
 }
 
 export function projectEvaluations(payload: EvaluationsPayload): Evaluations {
-  return Object.freeze({
+  return {
     experimentId: payload.experimentId,
-    evaluations: Object.freeze(
-      payload.evaluations.map((evaluation) =>
-        Object.freeze({
-          id: evaluation.evalId,
-          kind: evaluation.evaluationKind,
-          slots: Object.freeze([...evaluation.slots]),
-        }),
-      ),
-    ),
-  });
+    evaluations: payload.evaluations.map((evaluation) => ({
+      id: evaluation.evalId,
+      kind: evaluation.evaluationKind,
+      slots: evaluation.slots,
+    })),
+  };
 }

@@ -84,8 +84,8 @@ export interface CompileRecordSchemaCodecInput<SourceSchema extends RecordSchema
   readonly schema: SourceSchema;
   readonly limits: RecordSchemaLimits;
   /** Omitted for Core; Attachment supplies the one minted BlobRef declaration. */
-  readonly blobRef?: RecordSchemaBlobRef<Blob>;
-  readonly attachmentDeclarations?: readonly RecordSchemaOpaqueDeclaration[];
+  readonly blobRef?: RecordSchemaBlobRef<Blob> | undefined;
+  readonly attachmentDeclarations?: readonly RecordSchemaOpaqueDeclaration[] | undefined;
   readonly getAttachmentDeclaration?: (ast: SchemaAST.AST) => RecordSchemaDynamicDeclaration | undefined;
   readonly isAttachmentOpaque?: (value: object) => unknown | undefined;
 }
@@ -104,20 +104,18 @@ const schemaFailure: RecordSchemaFailure = Object.freeze({
 
 function schemaParseFailure(error: Schema.SchemaError): RecordSchemaFailure {
   try {
-    const issues: RecordSchemaIssue[] = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map((issue) =>
-      Object.freeze({
-        path: Object.freeze(
-          (issue.path ?? []).map((segment) =>
-            typeof segment === "object" && segment !== null && "key" in segment ? segment.key : segment,
-          ),
+    const issues: RecordSchemaIssue[] = SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues.map(
+      (issue) => ({
+        path: (issue.path ?? []).map((segment) =>
+          typeof segment === "object" && segment !== null && "key" in segment ? segment.key : segment,
         ),
         message: issue.message,
       }),
     );
-    return Object.freeze({
+    return {
       kind: "schema" as const,
-      issues: Object.freeze(issues),
-    });
+      issues,
+    };
   } catch {
     // Formatting diagnostics must never turn a typed schema rejection into a
     // defect. Callers still receive the stable generic schema failure.
@@ -137,7 +135,7 @@ function schemaParseFailureFromExit(exit: Exit.Failure<unknown, Schema.SchemaErr
 }
 
 function canonicalFailure(failure: RecordCanonicalizationFailure): RecordSchemaFailure {
-  return Object.freeze({ kind: "canonical" as const, failure });
+  return { kind: "canonical" as const, failure };
 }
 
 function assertLimits(limits: RecordSchemaLimits): RecordSchemaLimits {
@@ -146,7 +144,7 @@ function assertLimits(limits: RecordSchemaLimits): RecordSchemaLimits {
       throw new TypeError(`Record schema limit ${name} must be a positive safe integer`);
     }
   }
-  return Object.freeze({ ...limits });
+  return { ...limits };
 }
 
 function isJsonLiteral(value: SchemaAST.LiteralValue): boolean {
@@ -307,22 +305,6 @@ function collectOpaqueDeclarationMetadata<SourceSchema extends RecordSchema, Blo
   }
 }
 
-function deepFreeze<Value>(
-  value: Value,
-  isBlobRef: ((value: object) => boolean) | undefined,
-  seen = new WeakSet<object>(),
-): Value {
-  if (typeof value !== "object" || value === null || isBlobRef?.(value) === true || seen.has(value)) {
-    return value;
-  }
-  seen.add(value);
-  for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
-    if ("value" in descriptor) deepFreeze(descriptor.value, isBlobRef, seen);
-  }
-  Object.freeze(value);
-  return value;
-}
-
 /**
  * Compile one exact Effect Schema into the sole Record codec primitive. The
  * canonicalizer stays the final hostile-JS boundary after schema encoding and
@@ -428,10 +410,10 @@ export function compileRecordSchemaCodec<SourceSchema extends RecordSchema, Blob
     return walk(side === "type" ? input.schema.ast : SchemaAST.toEncoded(input.schema.ast), value).value;
   };
 
-  return Object.freeze({
+  return {
     schema: input.schema,
     limits,
-    opaqueDeclarationMetadata: Object.freeze(opaqueDeclarationMetadata),
+    opaqueDeclarationMetadata,
     decode: (inputValue: unknown): Result.Result<SourceSchema["Type"], RecordSchemaFailure> => {
       const canonical = canonicalize(inputValue);
       if (Result.isFailure(canonical)) return Result.fail(canonical.failure);
@@ -446,7 +428,7 @@ export function compileRecordSchemaCodec<SourceSchema extends RecordSchema, Blob
       const canonicalTypeChecked = validateType(canonicalType.success);
       return Exit.isFailure(canonicalTypeChecked)
         ? Result.fail(schemaParseFailureFromExit(canonicalTypeChecked))
-        : Result.succeed(deepFreeze(canonicalTypeChecked.value, options.isBlobRef));
+        : Result.succeed(canonicalTypeChecked.value);
     },
     enumerateOpaque: (value: SourceSchema["Type"]) => {
       const entries: { readonly value: object; readonly metadata: unknown }[] = [];
@@ -463,7 +445,7 @@ export function compileRecordSchemaCodec<SourceSchema extends RecordSchema, Blob
         const declaration = declarationFor(ast);
         if (declaration !== undefined) {
           if (typeof node === "object" && node !== null && declaration.accepts(node))
-            entries.push(Object.freeze({ value: node, metadata: declaration.metadata }));
+            entries.push({ value: node, metadata: declaration.metadata });
           return;
         }
         if (typeof node !== "object" || node === null) return;
@@ -496,7 +478,7 @@ export function compileRecordSchemaCodec<SourceSchema extends RecordSchema, Blob
         }
       };
       walk(input.schema.ast, value);
-      return Object.freeze(entries);
+      return entries;
     },
     mapOpaque: (value: SourceSchema["Type"], map: (value: unknown, metadata: unknown) => RecordOpaqueMapResult) =>
       mapOpaque(value, map, "type"),
@@ -511,5 +493,5 @@ export function compileRecordSchemaCodec<SourceSchema extends RecordSchema, Blob
       const encoded = encodeUnknown(canonicalType.success);
       return Exit.isFailure(encoded) ? Result.fail(schemaParseFailureFromExit(encoded)) : canonicalize(encoded.value);
     },
-  });
+  };
 }

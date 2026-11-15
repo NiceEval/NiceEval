@@ -10,7 +10,7 @@ import {
   encodeMemberDocument,
 } from "../codec/core.ts";
 import { encodeRecordJsonUtf8 } from "../writer/limits.ts";
-import { recordStatement, type RecordDatabase } from "./database.ts";
+import { recordStatement, requiredRecordRow, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
 import {
   assertCanonicalIdentity,
@@ -56,6 +56,7 @@ import {
   type CollectionItemPage,
   type FenceRunFinalizationInput,
   type PersistedCollectionItem,
+  type PersistedMember,
   type PersistSealedRunInput,
   type PublishedSealedRun,
   type PrepareRunFinalizationInput,
@@ -123,7 +124,7 @@ const DIGEST = /^[0-9a-f]{64}$/u;
 interface CachedSealEntries {
   readonly identity: string;
   readonly count: number;
-  readonly mutationSequence?: number;
+  readonly mutationSequence: number | undefined;
 }
 const sealEntryCaches = new WeakMap<RecordDatabase, Map<string, CachedSealEntries>>();
 
@@ -163,15 +164,15 @@ function spillPreparedSealEntries(
       connection,
       `SELECT entry_kind,logical_identity,digest
       FROM temp.niceeval_prepared_seal_raw WHERE run_id=? ORDER BY entry_kind,logical_identity,digest`,
-    ).iterate(runId) as unknown as Iterable<Row>;
+    ).iterate(runId);
     function* ordered(): Iterable<SealEntry> {
       let ordinal = 0;
       for (const row of orderedRows) {
-        const entry = Object.freeze({
+        const entry: SealEntry = {
           kind: sealEntryKind(row, "entry_kind"),
           logicalIdentity: text(row, "logical_identity"),
           digest: text(row, "digest"),
-        });
+        };
         insertOrdered.run(runId, ordinal, entry.kind, entry.logicalIdentity, entry.digest);
         ordinal += 1;
         yield entry;
@@ -180,7 +181,7 @@ function spillPreparedSealEntries(
     const identity = exactLogicalSealIdentityFromOrdered(ordered(), count);
     recordStatement(connection, "DELETE FROM temp.niceeval_prepared_seal_raw WHERE run_id=?").run(runId);
     connection.db.exec("RELEASE niceeval_prepare_seal");
-    return Object.freeze({ identity, count });
+    return { identity, count };
   } catch (cause) {
     connection.db.exec("ROLLBACK TO niceeval_prepare_seal; RELEASE niceeval_prepare_seal");
     throw cause;
@@ -252,14 +253,20 @@ function absenceMember(row: Row): {
 } {
   const slotId = text(row, "slot_id");
   const absenceReason = text(row, "absence_reason");
-  const action =
-    absenceReason === "early-exit-satisfied" ||
-    absenceReason === "budget-exhausted" ||
-    absenceReason === "stopped-by-failure"
-      ? ("not-dispatched" as const)
-      : absenceReason === "interrupted-before-publication" || absenceReason === "dispatch-failed"
-        ? ("interrupted" as const)
-        : undefined;
+  function absenceAction() {
+    switch (absenceReason) {
+      case "early-exit-satisfied":
+      case "budget-exhausted":
+      case "stopped-by-failure":
+        return "not-dispatched" as const;
+      case "interrupted-before-publication":
+      case "dispatch-failed":
+        return "interrupted" as const;
+      default:
+        return undefined;
+    }
+  }
+  const action = absenceAction();
   if (action === undefined) {
     throw sqliteError(
       "record-database-invalid",
@@ -284,7 +291,7 @@ function absenceMember(row: Row): {
     );
   }
   const coreBytes = encodeRecordJsonUtf8(encoded.success);
-  return Object.freeze({ action, coreBytes, coreDigest: digestBytes(coreBytes) });
+  return { action, coreBytes, coreDigest: digestBytes(coreBytes) };
 }
 
 function sealEntryKind(row: Row, field: string): SealEntryKind {
@@ -443,16 +450,17 @@ function validateInput(input: PersistSealedRunInput): readonly SealEntry[] {
       );
     }
     memberSlots.add(member.slotId);
-    const hasAttempt = member.originRunId !== undefined && member.attemptId !== undefined;
+    const attempt = "attempt" in member ? member.attempt : undefined;
+    const hasAttempt = attempt?.originRunId !== undefined && attempt.attemptId !== undefined;
     const terminal = member.action === "not-dispatched" || member.action === "interrupted";
-    if (terminal === hasAttempt || (member.originRunId === undefined) !== (member.attemptId === undefined)) {
+    if (terminal === hasAttempt || (attempt?.originRunId === undefined) !== (attempt?.attemptId === undefined)) {
       throw sqliteError(
         "record-content-invalid",
         "persist-sealed-run",
         `member ${member.slotId} action and attempt locator disagree`,
       );
     }
-    if (member.action === "executed" && member.originRunId !== input.runId) {
+    if (member.action === "executed" && attempt?.originRunId !== input.runId) {
       throw sqliteError(
         "record-command-conflict",
         "persist-sealed-run",
@@ -461,7 +469,7 @@ function validateInput(input: PersistSealedRunInput): readonly SealEntry[] {
     }
     requireBytesDigest(member.coreBytes, member.coreDigest, `member ${member.slotId}`);
     byteCount += member.coreBytes.byteLength;
-    add(memberSealEntry(input.runId, member));
+    add(memberSealEntry(input.runId, member, attempt?.originRunId, attempt?.attemptId));
   }
   if (memberSlots.size !== slotIds.size)
     throw sqliteError(
@@ -563,7 +571,7 @@ function validateInput(input: PersistSealedRunInput): readonly SealEntry[] {
 }
 
 function rows(connection: RecordDatabase, sql: string, ...parameters: (string | number)[]): readonly Row[] {
-  return recordStatement(connection, sql).all(...parameters) as unknown as readonly Row[];
+  return recordStatement(connection, sql).all(...parameters);
 }
 
 function visitRunSealEntries(
@@ -581,15 +589,17 @@ function visitRunSealEntries(
     }
     return value;
   };
-  const record = recordStatement(
-    connection,
-    "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
-  ).get() as unknown as Row;
+  const record = requiredRecordRow(
+    recordStatement(
+      connection,
+      "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
+    ).get(),
+  );
   visit(recordSealEntry(verified(record, "record_digest", "record_payload")));
   const run = recordStatement(
     connection,
     `SELECT run_id,writer_generation,started_at,core_payload,core_digest FROM ne19_runs WHERE run_id=?`,
-  ).get(runId) as unknown as Row | undefined;
+  ).get(runId);
   if (run === undefined) throw sqliteError("record-seal-incomplete", "verify-seal", `Run ${runId} is missing`);
   visit(
     runSealEntry({
@@ -602,7 +612,7 @@ function visitRunSealEntries(
   for (const row of recordStatement(
     connection,
     "SELECT slot_id,ordinal,core_payload,core_digest FROM ne19_slots WHERE run_id=?",
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     visit(
       slotSealEntry(runId, {
         slotId: text(row, "slot_id"),
@@ -614,7 +624,7 @@ function visitRunSealEntries(
   for (const row of recordStatement(
     connection,
     "SELECT attempt_id,attempt_locator,core_payload,core_digest FROM ne19_attempts WHERE origin_run_id=?",
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     visit(
       attemptSealEntry(
         runId,
@@ -627,24 +637,27 @@ function visitRunSealEntries(
   for (const row of recordStatement(
     connection,
     `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM ne19_members WHERE target_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     const originRunId = optionalText(row, "origin_run_id");
     const attemptId = optionalText(row, "attempt_id");
     visit(
-      memberSealEntry(runId, {
-        slotId: text(row, "slot_id"),
-        ...(originRunId === undefined ? {} : { originRunId }),
-        ...(attemptId === undefined ? {} : { attemptId }),
-        action: memberAction(row, "action"),
-        coreDigest: verified(row, "core_digest", "core_payload"),
-      }),
+      memberSealEntry(
+        runId,
+        {
+          slotId: text(row, "slot_id"),
+          action: memberAction(row, "action"),
+          coreDigest: verified(row, "core_digest", "core_payload"),
+        },
+        originRunId,
+        attemptId,
+      ),
     );
   }
   for (const row of recordStatement(
     connection,
     `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,logical_identity,
     canonical_payload,canonical_digest,logical_inventory,inventory_digest FROM ne19_attachments WHERE owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     const ownerAttemptId = optionalText(row, "owner_attempt_id");
     const canonicalDigest = verified(row, "canonical_digest", "canonical_payload");
     const inventoryDigest = verified(row, "inventory_digest", "logical_inventory");
@@ -653,7 +666,7 @@ function visitRunSealEntries(
         attachmentId: text(row, "attachment_id"),
         ownerKind: ownerKind(row, "owner_kind"),
         ownerRunId: text(row, "owner_run_id"),
-        ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
+        ownerAttemptId,
         family: text(row, "family"),
         familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
         logicalIdentity: text(row, "logical_identity"),
@@ -666,7 +679,7 @@ function visitRunSealEntries(
     connection,
     `SELECT r.attachment_id,r.ordinal,r.target_owner_kind,r.target_family,r.canonical_payload,r.reference_digest
     FROM ne19_attachment_references r JOIN ne19_attachments a ON a.attachment_id=r.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     visit(
       referenceSealEntry(text(row, "attachment_id"), {
         ordinal: integer(row, "ordinal"),
@@ -680,7 +693,7 @@ function visitRunSealEntries(
     connection,
     `SELECT i.attachment_id,i.ordinal,i.logical_identity,i.canonical_payload,i.canonical_digest
     FROM ne19_collection_items i JOIN ne19_attachments a ON a.attachment_id=i.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     visit(
       collectionItemSealEntry(text(row, "attachment_id"), {
         ordinal: integer(row, "ordinal"),
@@ -693,7 +706,7 @@ function visitRunSealEntries(
     connection,
     `SELECT c.content_id,c.attachment_id,c.logical_handle,c.byte_length,c.overall_digest,c.chunk_count
     FROM ne19_contents c JOIN ne19_attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>) {
+  ).iterate(runId)) {
     visit(
       contentSealEntry(text(row, "attachment_id"), {
         contentId: text(row, "content_id"),
@@ -709,7 +722,7 @@ function visitRunSealEntries(
       JOIN ne19_contents n ON n.content_id=c.content_id JOIN ne19_attachments a ON a.attachment_id=n.attachment_id WHERE a.owner_run_id=?`
     : `SELECT c.content_id,c.ordinal,c.chunk_digest FROM ne19_content_chunks c
       JOIN ne19_contents n ON n.content_id=c.content_id JOIN ne19_attachments a ON a.attachment_id=n.attachment_id WHERE a.owner_run_id=?`;
-  for (const row of recordStatement(connection, chunkSql).iterate(runId) as unknown as Iterable<Row>) {
+  for (const row of recordStatement(connection, chunkSql).iterate(runId)) {
     const chunkDigest = text(row, "chunk_digest");
     requireDigest(chunkDigest, "chunk_digest");
     if (verifyContentChunkBytes && digestBytes(bytes(row, "bytes")) !== chunkDigest) {
@@ -730,7 +743,7 @@ function runRow(connection: RecordDatabase, runId: string): Row | undefined {
     connection,
     `SELECT run_id,experiment_id,status,writer_generation,started_at,core_payload,core_digest,mutation_sequence,
     candidate_seal_identity,candidate_seal_entry_count,candidate_seal_staged_count,logical_seal_identity FROM ne19_runs WHERE run_id=?`,
-  ).get(runId) as unknown as Row | undefined;
+  ).get(runId);
 }
 
 function assertBoundedBatch(operation: string, rowCount: number, byteCount: number): void {
@@ -808,7 +821,7 @@ function assertAttachmentFence(
     `SELECT a.owner_run_id,a.owner_kind,at.publication_state FROM ne19_attachments a
     LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id
     WHERE a.attachment_id=?`,
-  ).get(attachmentId) as unknown as Row | undefined;
+  ).get(attachmentId);
   if (
     row === undefined ||
     text(row, "owner_run_id") !== runId ||
@@ -894,7 +907,7 @@ export function admitAttempt(connection: RecordDatabase, input: AdmitAttemptInpu
     const stored = recordStatement(
       connection,
       "SELECT origin_run_id,attempt_locator FROM ne19_attempts WHERE origin_run_id=? AND attempt_id=?",
-    ).get(input.runId, input.attemptId) as unknown as Row | undefined;
+    ).get(input.runId, input.attemptId);
     if (
       stored === undefined ||
       text(stored, "origin_run_id") !== input.runId ||
@@ -928,7 +941,7 @@ export function admitAttachment(connection: RecordDatabase, input: AdmitAttachme
       const admitted = recordStatement(
         connection,
         "SELECT 1 AS admitted FROM ne19_attempts WHERE origin_run_id=? AND attempt_id=?",
-      ).get(input.runId, input.ownerAttemptId!) as unknown as Row | undefined;
+      ).get(input.runId, input.ownerAttemptId!);
       if (admitted === undefined)
         throw sqliteError("record-command-conflict", "admit-attachment", "attempt owner is not admitted");
     }
@@ -949,7 +962,7 @@ export function admitAttachment(connection: RecordDatabase, input: AdmitAttachme
       connection,
       `SELECT owner_kind,owner_run_id,owner_attempt_id,family,family_revision FROM ne19_attachments
       WHERE attachment_id=?`,
-    ).get(input.attachmentId) as unknown as Row | undefined;
+    ).get(input.attachmentId);
     if (
       stored === undefined ||
       text(stored, "owner_kind") !== input.ownerKind ||
@@ -977,7 +990,7 @@ export function admitContent(connection: RecordDatabase, input: AdmitContentInpu
       connection,
       `SELECT a.owner_run_id,a.owner_kind,at.publication_state FROM ne19_attachments a
       LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id WHERE a.attachment_id=?`,
-    ).get(input.attachmentId) as unknown as Row | undefined;
+    ).get(input.attachmentId);
     if (
       attachment === undefined ||
       text(attachment, "owner_run_id") !== input.runId ||
@@ -993,7 +1006,7 @@ export function admitContent(connection: RecordDatabase, input: AdmitContentInpu
     const stored = recordStatement(
       connection,
       "SELECT attachment_id,logical_handle FROM ne19_contents WHERE content_id=?",
-    ).get(input.contentId) as unknown as Row | undefined;
+    ).get(input.contentId);
     if (
       stored === undefined ||
       text(stored, "attachment_id") !== input.attachmentId ||
@@ -1061,7 +1074,7 @@ export function stageAttachmentMetadata(connection: RecordDatabase, input: Stage
       connection,
       `SELECT owner_kind,owner_run_id,owner_attempt_id,family,family_revision,logical_identity,
       canonical_payload,canonical_digest,logical_inventory,inventory_digest FROM ne19_attachments WHERE attachment_id=?`,
-    ).get(attachment.attachmentId) as unknown as Row | undefined;
+    ).get(attachment.attachmentId);
     if (
       stored === undefined ||
       text(stored, "owner_kind") !== attachment.ownerKind ||
@@ -1086,7 +1099,7 @@ export function stageAttachmentMetadata(connection: RecordDatabase, input: Stage
         connection,
         `SELECT attachment_id,logical_handle,byte_length,overall_digest,chunk_count
         FROM ne19_contents WHERE content_id=?`,
-      ).get(content.contentId) as unknown as Row | undefined;
+      ).get(content.contentId);
       if (
         persisted === undefined ||
         text(persisted, "attachment_id") !== attachment.attachmentId ||
@@ -1126,16 +1139,17 @@ function validateFinalInput(input: StageRunCoreInput, requireCompleteMembers = t
     requireBytesDigest(member.coreBytes, member.coreDigest, `member ${member.slotId}`);
     assertBoundedRow("finalize-run", `member ${member.slotId}`, member.coreBytes);
     byteCount += member.coreBytes.byteLength;
-    const hasAttempt = member.originRunId !== undefined && member.attemptId !== undefined;
+    const attempt = "attempt" in member ? member.attempt : undefined;
+    const hasAttempt = attempt?.originRunId !== undefined && attempt.attemptId !== undefined;
     const terminal = member.action === "not-dispatched" || member.action === "interrupted";
-    if (terminal === hasAttempt || (member.originRunId === undefined) !== (member.attemptId === undefined)) {
+    if (terminal === hasAttempt || (attempt?.originRunId === undefined) !== (attempt?.attemptId === undefined)) {
       throw sqliteError(
         "record-content-invalid",
         "finalize-run",
         `Member ${member.slotId} action and locator disagree`,
       );
     }
-    if (member.action === "executed" && member.originRunId !== input.runId) {
+    if (member.action === "executed" && attempt?.originRunId !== input.runId) {
       throw sqliteError(
         "record-command-conflict",
         "finalize-run",
@@ -1215,10 +1229,12 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
       `Run ${input.runId} conflicts with committed finalization`,
     );
   }
-  const record = recordStatement(
-    connection,
-    "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
-  ).get() as unknown as Row;
+  const record = requiredRecordRow(
+    recordStatement(
+      connection,
+      "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
+    ).get(),
+  );
   if (
     text(record, "record_digest") !== input.recordCoreDigest ||
     !bytesEqual(bytes(record, "record_payload"), input.recordCoreBytes)
@@ -1229,12 +1245,14 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
       "Project RecordDocument conflicts with committed finalization",
     );
   }
-  const counts = recordStatement(
-    connection,
-    `SELECT (SELECT count(*) FROM ne19_slots WHERE run_id=?) slots,
+  const counts = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT (SELECT count(*) FROM ne19_slots WHERE run_id=?) slots,
     (SELECT count(*) FROM ne19_attempts WHERE origin_run_id=?) attempts,(SELECT count(*) FROM ne19_members WHERE target_run_id=?) members,
     (SELECT count(*) FROM ne19_attachments WHERE owner_run_id=?) attachments`,
-  ).get(input.runId, input.runId, input.runId, input.runId) as unknown as Row;
+    ).get(input.runId, input.runId, input.runId, input.runId),
+  );
   if (
     integer(counts, "slots") !== input.slots.length ||
     integer(counts, "attempts") !== input.attempts.length ||
@@ -1247,7 +1265,7 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
     const stored = recordStatement(
       connection,
       "SELECT ordinal,core_payload,core_digest FROM ne19_slots WHERE run_id=? AND slot_id=?",
-    ).get(input.runId, slot.slotId) as unknown as Row | undefined;
+    ).get(input.runId, slot.slotId);
     if (
       stored === undefined ||
       integer(stored, "ordinal") !== slot.ordinal ||
@@ -1265,7 +1283,7 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
     const stored = recordStatement(
       connection,
       "SELECT attempt_locator,core_payload,core_digest FROM ne19_attempts WHERE origin_run_id=? AND attempt_id=?",
-    ).get(input.runId, attempt.attemptId) as unknown as Row | undefined;
+    ).get(input.runId, attempt.attemptId);
     if (
       stored === undefined ||
       text(stored, "attempt_locator") !== attempt.attemptLocator ||
@@ -1283,11 +1301,12 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
     const stored = recordStatement(
       connection,
       "SELECT origin_run_id,attempt_id,action,core_payload,core_digest FROM ne19_members WHERE target_run_id=? AND slot_id=?",
-    ).get(input.runId, member.slotId) as unknown as Row | undefined;
+    ).get(input.runId, member.slotId);
+    const attempt = "attempt" in member ? member.attempt : undefined;
     if (
       stored === undefined ||
-      optionalText(stored, "origin_run_id") !== member.originRunId ||
-      optionalText(stored, "attempt_id") !== member.attemptId ||
+      optionalText(stored, "origin_run_id") !== attempt?.originRunId ||
+      optionalText(stored, "attempt_id") !== attempt?.attemptId ||
       text(stored, "action") !== member.action ||
       text(stored, "core_digest") !== member.coreDigest ||
       !bytesEqual(bytes(stored, "core_payload"), member.coreBytes)
@@ -1304,7 +1323,7 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
       connection,
       `SELECT owner_kind,owner_run_id,owner_attempt_id,family,family_revision,logical_identity,canonical_payload,canonical_digest,logical_inventory,inventory_digest
       FROM ne19_attachments WHERE attachment_id=? AND owner_run_id=?`,
-    ).get(attachment.attachmentId, input.runId) as unknown as Row | undefined;
+    ).get(attachment.attachmentId, input.runId);
     if (
       stored === undefined ||
       text(stored, "owner_kind") !== attachment.ownerKind ||
@@ -1325,9 +1344,11 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
         `Attachment ${attachment.attachmentId} conflicts with committed finalization`,
       );
     }
-    const count = recordStatement(connection, "SELECT count(*) AS count FROM ne19_contents WHERE attachment_id=?").get(
-      attachment.attachmentId,
-    ) as unknown as Row;
+    const count = requiredRecordRow(
+      recordStatement(connection, "SELECT count(*) AS count FROM ne19_contents WHERE attachment_id=?").get(
+        attachment.attachmentId,
+      ),
+    );
     if (integer(count, "count") !== attachment.contents.length)
       throw sqliteError(
         "record-command-conflict",
@@ -1338,7 +1359,7 @@ function assertFinalInputStored(connection: RecordDatabase, input: StageRunCoreI
       const persisted = recordStatement(
         connection,
         "SELECT logical_handle,byte_length,overall_digest,chunk_count FROM ne19_contents WHERE content_id=? AND attachment_id=?",
-      ).get(content.contentId, attachment.attachmentId) as unknown as Row | undefined;
+      ).get(content.contentId, attachment.attachmentId);
       if (
         persisted === undefined ||
         text(persisted, "logical_handle") !== content.logicalHandle ||
@@ -1378,7 +1399,7 @@ function preparedSealBatch(
     connection,
     `SELECT ordinal,entry_kind,logical_identity,digest
     FROM temp.niceeval_prepared_seal_ordered WHERE run_id=? AND ordinal>=? ORDER BY ordinal LIMIT ?`,
-  ).iterate(runId, startOrdinal, maximumRows) as unknown as Iterable<Row>) {
+  ).iterate(runId, startOrdinal, maximumRows)) {
     if (integer(row, "ordinal") !== expectedOrdinal) {
       throw sqliteError(
         "record-command-conflict",
@@ -1386,13 +1407,11 @@ function preparedSealBatch(
         "prepared Seal closure is not a contiguous ordered prefix",
       );
     }
-    result.push(
-      Object.freeze({
-        kind: sealEntryKind(row, "entry_kind"),
-        logicalIdentity: text(row, "logical_identity"),
-        digest: text(row, "digest"),
-      }),
-    );
+    result.push({
+      kind: sealEntryKind(row, "entry_kind"),
+      logicalIdentity: text(row, "logical_identity"),
+      digest: text(row, "digest"),
+    });
     expectedOrdinal += 1;
   }
   if (startOrdinal < expectedCount && result.length === 0) {
@@ -1402,7 +1421,7 @@ function preparedSealBatch(
       "prepared Seal closure ended before its declared count",
     );
   }
-  return Object.freeze(result);
+  return result;
 }
 
 export function stageSealEntries(connection: RecordDatabase, input: StageSealEntriesInput): StageSealEntriesResult {
@@ -1435,7 +1454,7 @@ export function stageSealEntries(connection: RecordDatabase, input: StageSealEnt
         "sealed Run does not have its complete staged Seal inventory",
       );
     }
-    return Object.freeze({ nextOrdinal: null, stagedCount: 0 });
+    return { nextOrdinal: null, stagedCount: 0 };
   }
   const header = assertRunFence(connection, input.runId, input.writerGeneration, "prepare-seal", "sealing");
   const expectedCount = integer(header, "candidate_seal_entry_count");
@@ -1475,7 +1494,7 @@ export function stageSealEntries(connection: RecordDatabase, input: StageSealEnt
     batch.forEach((entry, index) => {
       const ordinal = input.startOrdinal + index;
       insert.run(input.runId, ordinal, entry.kind, entry.logicalIdentity, entry.digest);
-      const stored = read.get(input.runId, ordinal) as unknown as Row | undefined;
+      const stored = read.get(input.runId, ordinal);
       if (
         stored === undefined ||
         text(stored, "entry_kind") !== entry.kind ||
@@ -1503,7 +1522,7 @@ export function stageSealEntries(connection: RecordDatabase, input: StageSealEnt
       );
   });
   const next = input.startOrdinal + batch.length;
-  return Object.freeze({ nextOrdinal: next === expectedCount ? null : next, stagedCount: batch.length });
+  return { nextOrdinal: next === expectedCount ? null : next, stagedCount: batch.length };
 }
 
 /** Reads the durable identity shared by every Run, including after a project move. */
@@ -1575,8 +1594,8 @@ export function stageRunFinalMetadata(connection: RecordDatabase, input: StageRu
         ).run(
           input.runId,
           member.slotId,
-          member.originRunId ?? null,
-          member.attemptId ?? null,
+          "attempt" in member ? member.attempt.originRunId : null,
+          "attempt" in member ? member.attempt.attemptId : null,
           member.action,
           member.coreBytes,
           member.coreDigest,
@@ -1653,8 +1672,8 @@ export function stageRunPublicationMetadata(connection: RecordDatabase, input: S
       ).run(
         input.runId,
         member.slotId,
-        member.originRunId ?? null,
-        member.attemptId ?? null,
+        "attempt" in member ? member.attempt.originRunId : null,
+        "attempt" in member ? member.attempt.attemptId : null,
         member.action,
         member.coreBytes,
         member.coreDigest,
@@ -1742,17 +1761,14 @@ export function prepareRunFinalization(
       );
     }
   }
-  sealEntryCache(connection).set(
-    input.runId,
-    Object.freeze({ identity: candidateIdentity, count: prepared.count, mutationSequence }),
-  );
-  return Object.freeze({
+  sealEntryCache(connection).set(input.runId, { identity: candidateIdentity, count: prepared.count, mutationSequence });
+  return {
     runId: input.runId,
     writerGeneration: input.writerGeneration,
     logicalSealIdentity: candidateIdentity,
     sealEntryCount: prepared.count,
     mutationSequence,
-  });
+  };
 }
 
 /** One bounded transaction atomically installs the previously prepared fence. */
@@ -1811,12 +1827,12 @@ export function fenceRunFinalization(connection: RecordDatabase, input: FenceRun
       "durable finalization fence differs from prepared closure",
     );
   }
-  return Object.freeze({
+  return {
     runId: input.runId,
     writerGeneration: input.writerGeneration,
     logicalSealIdentity: identity,
     sealEntryCount: input.expectedSealEntryCount,
-  });
+  };
 }
 
 /** Compatibility composite for direct callers without a coordination ticket. */
@@ -1866,12 +1882,14 @@ export function stageAttachmentReferences(connection: RecordDatabase, input: Sta
         connection,
         `SELECT target_owner_kind,target_family,canonical_payload,reference_digest FROM ne19_attachment_references
         WHERE attachment_id=? AND ordinal=?`,
-      ).get(input.attachmentId, reference.ordinal) as unknown as Row | undefined;
+      ).get(input.attachmentId, reference.ordinal);
       if (stored === undefined) {
-        const count = recordStatement(
-          connection,
-          "SELECT count(*) AS count FROM ne19_attachment_references WHERE attachment_id=?",
-        ).get(input.attachmentId) as unknown as Row;
+        const count = requiredRecordRow(
+          recordStatement(
+            connection,
+            "SELECT count(*) AS count FROM ne19_attachment_references WHERE attachment_id=?",
+          ).get(input.attachmentId),
+        );
         if (reference.ordinal !== integer(count, "count"))
           throw sqliteError(
             "record-command-conflict",
@@ -1931,17 +1949,18 @@ export function stageCollectionItems(connection: RecordDatabase, input: StageCol
     let changed = false;
     // The immediate transaction owns this prefix until commit. Counting for
     // every appended item rescans a growing collection quadratically.
-    const count = recordStatement(
-      connection,
-      "SELECT count(*) AS count FROM ne19_collection_items WHERE attachment_id=?",
-    ).get(input.attachmentId) as unknown as Row;
+    const count = requiredRecordRow(
+      recordStatement(connection, "SELECT count(*) AS count FROM ne19_collection_items WHERE attachment_id=?").get(
+        input.attachmentId,
+      ),
+    );
     let nextOrdinal = integer(count, "count");
     for (const item of input.items) {
       const stored = recordStatement(
         connection,
         `SELECT logical_identity,canonical_payload,canonical_digest FROM ne19_collection_items
         WHERE attachment_id=? AND ordinal=?`,
-      ).get(input.attachmentId, item.ordinal) as unknown as Row | undefined;
+      ).get(input.attachmentId, item.ordinal);
       if (stored === undefined) {
         if (item.ordinal !== nextOrdinal)
           throw sqliteError(
@@ -2026,7 +2045,7 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
       attachmentId: attachment.attachmentId,
       ownerKind: attachment.ownerKind,
       ownerRunId: attachment.ownerRunId,
-      ...(attachment.ownerAttemptId === undefined ? {} : { ownerAttemptId: attachment.ownerAttemptId }),
+      ownerAttemptId: attachment.ownerAttemptId,
       family: attachment.family,
       familyRevision: attachment.familyRevision,
       logicalIdentity: attachment.logicalIdentity,
@@ -2045,12 +2064,14 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
     deadlineEpochMs: input.deadlineEpochMs,
   });
   for (const attachment of input.attachments) {
-    const counts = recordStatement(
-      connection,
-      `SELECT
+    const counts = requiredRecordRow(
+      recordStatement(
+        connection,
+        `SELECT
       (SELECT count(*) FROM ne19_attachment_references WHERE attachment_id=?) reference_count,
       (SELECT count(*) FROM ne19_collection_items WHERE attachment_id=?) item_count`,
-    ).get(attachment.attachmentId, attachment.attachmentId) as unknown as Row;
+      ).get(attachment.attachmentId, attachment.attachmentId),
+    );
     if (
       integer(counts, "reference_count") !== attachment.references.length ||
       integer(counts, "item_count") !== attachment.collectionItems.length
@@ -2066,7 +2087,7 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
         connection,
         `SELECT target_owner_kind,target_family,canonical_payload,reference_digest FROM ne19_attachment_references
         WHERE attachment_id=? AND ordinal=?`,
-      ).get(attachment.attachmentId, reference.ordinal) as unknown as Row | undefined;
+      ).get(attachment.attachmentId, reference.ordinal);
       if (
         row === undefined ||
         ownerKind(row, "target_owner_kind") !== reference.owner ||
@@ -2086,7 +2107,7 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
         connection,
         `SELECT logical_identity,canonical_payload,canonical_digest FROM ne19_collection_items
         WHERE attachment_id=? AND ordinal=?`,
-      ).get(attachment.attachmentId, item.ordinal) as unknown as Row | undefined;
+      ).get(attachment.attachmentId, item.ordinal);
       if (
         row === undefined ||
         text(row, "logical_identity") !== item.logicalIdentity ||
@@ -2101,10 +2122,11 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
       }
     }
     for (const content of attachment.contents) {
-      const count = recordStatement(
-        connection,
-        "SELECT count(*) AS count FROM ne19_content_chunks WHERE content_id=?",
-      ).get(content.contentId) as unknown as Row;
+      const count = requiredRecordRow(
+        recordStatement(connection, "SELECT count(*) AS count FROM ne19_content_chunks WHERE content_id=?").get(
+          content.contentId,
+        ),
+      );
       if (integer(count, "count") !== content.chunks.length)
         throw sqliteError(
           "record-command-conflict",
@@ -2115,7 +2137,7 @@ function assertSealedRetryExact(connection: RecordDatabase, input: PersistSealed
         const row = recordStatement(
           connection,
           "SELECT bytes,chunk_digest FROM ne19_content_chunks WHERE content_id=? AND ordinal=?",
-        ).get(content.contentId, chunk.ordinal) as unknown as Row | undefined;
+        ).get(content.contentId, chunk.ordinal);
         if (
           row === undefined ||
           text(row, "chunk_digest") !== chunk.chunkDigest ||
@@ -2172,7 +2194,7 @@ export function persistSealedRun(connection: RecordDatabase, input: PersistSeale
       attachmentId: attachment.attachmentId,
       ownerKind: attachment.ownerKind,
       ownerRunId: attachment.ownerRunId,
-      ...(attachment.ownerAttemptId === undefined ? {} : { ownerAttemptId: attachment.ownerAttemptId }),
+      ownerAttemptId: attachment.ownerAttemptId,
       family: attachment.family,
       familyRevision: attachment.familyRevision,
       deadlineEpochMs: input.deadlineEpochMs,
@@ -2231,7 +2253,7 @@ export function persistSealedRun(connection: RecordDatabase, input: PersistSeale
       attachmentId: attachment.attachmentId,
       ownerKind: attachment.ownerKind,
       ownerRunId: attachment.ownerRunId,
-      ...(attachment.ownerAttemptId === undefined ? {} : { ownerAttemptId: attachment.ownerAttemptId }),
+      ownerAttemptId: attachment.ownerAttemptId,
       family: attachment.family,
       familyRevision: attachment.familyRevision,
       logicalIdentity: attachment.logicalIdentity,
@@ -2251,16 +2273,17 @@ export function persistSealedRun(connection: RecordDatabase, input: PersistSeale
   });
   if (finalized.logicalSealIdentity !== expectedIdentity)
     throw sqliteError("record-command-conflict", "persist-sealed-run", "bulk input differs from finalized closure");
-  let sealOrdinal: number | null = 0;
-  while (sealOrdinal !== null) {
-    sealOrdinal = stageSealEntries(connection, {
-      runId: input.runId,
-      writerGeneration: input.writerGeneration,
-      expectedLogicalSealIdentity: expectedIdentity,
-      startOrdinal: sealOrdinal,
-      maximumRows: 256,
-      deadlineEpochMs: input.deadlineEpochMs,
-    }).nextOrdinal;
+  let sealOrdinal: number | undefined = 0;
+  while (sealOrdinal !== undefined) {
+    sealOrdinal =
+      stageSealEntries(connection, {
+        runId: input.runId,
+        writerGeneration: input.writerGeneration,
+        expectedLogicalSealIdentity: expectedIdentity,
+        startOrdinal: sealOrdinal,
+        maximumRows: 256,
+        deadlineEpochMs: input.deadlineEpochMs,
+      }).nextOrdinal ?? undefined;
   }
   return sealRun(connection, {
     runId: input.runId,
@@ -2359,7 +2382,7 @@ function verifyStoredSealStreaming(
       connection,
       `SELECT ordinal,entry_kind,logical_identity,digest
       FROM temp.niceeval_prepared_seal_ordered WHERE run_id=? ORDER BY ordinal`,
-    ).iterate(runId) as unknown as Iterable<Row>) {
+    ).iterate(runId)) {
       if (integer(row, "ordinal") !== ordinal) {
         throw sqliteError(
           "record-seal-incomplete",
@@ -2372,7 +2395,7 @@ function verifyStoredSealStreaming(
         logicalIdentity: text(row, "logical_identity"),
         digest: text(row, "digest"),
       } as const;
-      const stored = statement.get(runId, ordinal) as unknown as Row | undefined;
+      const stored = statement.get(runId, ordinal);
       if (
         stored === undefined ||
         sealEntryKind(stored, "entry_kind") !== entry.kind ||
@@ -2387,10 +2410,9 @@ function verifyStoredSealStreaming(
       }
       ordinal += 1;
     }
-    const storedCount = recordStatement(
-      connection,
-      "SELECT count(*) AS count FROM ne19_run_seal_entries WHERE run_id=?",
-    ).get(runId) as unknown as Row;
+    const storedCount = requiredRecordRow(
+      recordStatement(connection, "SELECT count(*) AS count FROM ne19_run_seal_entries WHERE run_id=?").get(runId),
+    );
     if (ordinal !== expectedCount || integer(storedCount, "count") !== ordinal) {
       throw sqliteError("record-seal-incomplete", "verify-seal", `Run ${runId} exact Seal does not match its closure`);
     }
@@ -2423,14 +2445,16 @@ export function verifyAllSealedRuns(
     }
   };
   checkDeadline();
-  const admission = recordStatement(
-    connection,
-    `SELECT
+  const admission = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT
     (SELECT count(*) FROM ne19_runs) run_count,
     (SELECT count(*) FROM ne19_runs)+(SELECT count(*) FROM ne19_slots)+(SELECT count(*) FROM ne19_attempts)+(SELECT count(*) FROM ne19_members)+
       (SELECT count(*) FROM ne19_attachments)+(SELECT count(*) FROM ne19_attachment_references)+(SELECT count(*) FROM ne19_collection_items)+
       (SELECT count(*) FROM ne19_contents)+(SELECT count(*) FROM ne19_content_chunks)+(SELECT count(*) FROM ne19_run_seal_entries) row_count`,
-  ).get() as unknown as Row;
+    ).get(),
+  );
   if (
     integer(admission, "run_count") > RECORD_SQLITE_MAX_VALIDATION_RUNS ||
     integer(admission, "row_count") > RECORD_SQLITE_MAX_VALIDATION_ROWS
@@ -2441,7 +2465,7 @@ export function verifyAllSealedRuns(
       "Record validation inventory exceeds its hostile-input ceiling",
     );
   }
-  const integrity = recordStatement(connection, "PRAGMA quick_check").all() as unknown as readonly Row[];
+  const integrity = recordStatement(connection, "PRAGMA quick_check").all();
   checkDeadline();
   if (integrity.length !== 1 || text(integrity[0]!, "quick_check") !== "ok") {
     throw sqliteError("record-database-invalid", "verify-database", "SQLite quick_check failed");
@@ -2452,7 +2476,7 @@ export function verifyAllSealedRuns(
   const runRows = recordStatement(
     connection,
     "SELECT run_id,status,logical_seal_identity FROM ne19_runs ORDER BY run_id",
-  ).iterate() as unknown as Iterable<Row>;
+  ).iterate();
   let sealed = 0;
   for (const row of runRows) {
     checkDeadline();
@@ -2487,7 +2511,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
   const attempts = recordStatement(
     connection,
     "SELECT attempt_id,attempt_locator FROM ne19_attempts WHERE origin_run_id=?",
-  ).iterate(runId) as unknown as Iterable<Row>;
+  ).iterate(runId);
   for (const attempt of attempts) {
     const attemptId = text(attempt, "attempt_id");
     const locator = text(attempt, "attempt_locator");
@@ -2505,7 +2529,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     connection,
     `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
     logical_identity,canonical_digest,logical_inventory,inventory_digest FROM ne19_attachments WHERE owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>;
+  ).iterate(runId);
   for (const attachment of attachments) {
     const attachmentId = text(attachment, "attachment_id");
     if (digestBytes(bytes(attachment, "logical_inventory")) !== text(attachment, "inventory_digest")) {
@@ -2520,7 +2544,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     const expectedAttachmentId = recordAttachmentId({
       runId: text(attachment, "owner_run_id"),
       owner,
-      ...(owner === "attempt" && attemptId !== undefined ? { attemptId } : {}),
+      attemptId: owner === "attempt" ? attemptId : undefined,
       family: text(attachment, "family"),
     });
     const expectedLogicalIdentity = attachmentLogicalIdentity(
@@ -2555,7 +2579,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
         ).get(attachmentId),
       ],
     ] as const) {
-      const decoded = counts as unknown as Row;
+      const decoded = requiredRecordRow(counts);
       const count = integer(decoded, "count");
       if (
         count > 0 &&
@@ -2573,7 +2597,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     connection,
     `SELECT i.attachment_id,i.ordinal,i.logical_identity,i.canonical_digest FROM ne19_collection_items i
     JOIN ne19_attachments a ON a.attachment_id=i.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>;
+  ).iterate(runId);
   for (const item of items) {
     const expected = collectionItemLogicalIdentity(integer(item, "ordinal"), text(item, "canonical_digest"));
     if (text(item, "logical_identity") !== expected) {
@@ -2584,14 +2608,16 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
       );
     }
   }
-  const coverage = recordStatement(
-    connection,
-    `SELECT
+  const coverage = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT
     (SELECT count(*) FROM ne19_slots WHERE run_id=?) slot_count,
     (SELECT count(*) FROM ne19_members WHERE target_run_id=?) member_count,
     (SELECT count(*) FROM ne19_slots s LEFT JOIN ne19_members m ON m.target_run_id=s.run_id AND m.slot_id=s.slot_id
       WHERE s.run_id=? AND m.slot_id IS NULL) missing_count`,
-  ).get(runId, runId, runId) as unknown as Row;
+    ).get(runId, runId, runId),
+  );
   if (
     integer(coverage, "slot_count") !== integer(coverage, "member_count") ||
     integer(coverage, "missing_count") !== 0
@@ -2607,7 +2633,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     `SELECT r.attachment_id,r.ordinal,r.target_owner_kind,r.target_family,
     a.owner_kind source_owner_kind,a.owner_run_id,a.owner_attempt_id FROM ne19_attachment_references r
     JOIN ne19_attachments a ON a.attachment_id=r.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>;
+  ).iterate(runId);
   for (const reference of references) {
     const targetOwner = text(reference, "target_owner_kind");
     const sourceOwner = text(reference, "source_owner_kind");
@@ -2618,20 +2644,17 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
         `run-owned attachment ${text(reference, "attachment_id")} cannot resolve an attempt reference`,
       );
     }
-    const target =
+    const target = requiredRecordRow(
       targetOwner === "run"
-        ? (recordStatement(
+        ? recordStatement(
             connection,
             `SELECT count(*) AS count FROM ne19_attachments WHERE owner_kind='run' AND owner_run_id=? AND family=?`,
-          ).get(text(reference, "owner_run_id"), text(reference, "target_family")) as unknown as Row)
-        : (recordStatement(
+          ).get(text(reference, "owner_run_id"), text(reference, "target_family"))
+        : recordStatement(
             connection,
             `SELECT count(*) AS count FROM ne19_attachments WHERE owner_kind='attempt' AND owner_run_id=? AND owner_attempt_id=? AND family=?`,
-          ).get(
-            text(reference, "owner_run_id"),
-            text(reference, "owner_attempt_id"),
-            text(reference, "target_family"),
-          ) as unknown as Row);
+          ).get(text(reference, "owner_run_id"), text(reference, "owner_attempt_id"), text(reference, "target_family")),
+    );
     if (integer(target, "count") !== 1) {
       throw sqliteError(
         "record-seal-incomplete",
@@ -2644,7 +2667,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
     connection,
     `SELECT c.content_id,c.attachment_id,c.logical_handle,c.byte_length,c.overall_digest,c.chunk_count FROM ne19_contents c
     JOIN ne19_attachments a ON a.attachment_id=c.attachment_id WHERE a.owner_run_id=?`,
-  ).iterate(runId) as unknown as Iterable<Row>;
+  ).iterate(runId);
   for (const content of contents) {
     const contentId = text(content, "content_id");
     const expectedContentId = recordContentId(text(content, "attachment_id"), text(content, "logical_handle"));
@@ -2657,7 +2680,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
       const chunks = recordStatement(
         connection,
         "SELECT ordinal,bytes,chunk_digest FROM ne19_content_chunks WHERE content_id=? ORDER BY ordinal",
-      ).iterate(contentId) as unknown as Iterable<Row>;
+      ).iterate(contentId);
       for (const chunk of chunks) {
         if (integer(chunk, "ordinal") !== ordinal)
           throw sqliteError("record-seal-incomplete", "verify-seal", `content ${contentId} chunk ordinals are invalid`);
@@ -2680,11 +2703,13 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
         throw sqliteError("record-seal-incomplete", "verify-seal", `content ${contentId} whole digest is invalid`);
       }
     } else {
-      const aggregate = recordStatement(
-        connection,
-        `SELECT count(*) AS count,min(ordinal) AS minimum,max(ordinal) AS maximum,
+      const aggregate = requiredRecordRow(
+        recordStatement(
+          connection,
+          `SELECT count(*) AS count,min(ordinal) AS minimum,max(ordinal) AS maximum,
         coalesce(sum(length(bytes)),0) AS byte_length FROM ne19_content_chunks WHERE content_id=?`,
-      ).get(contentId) as unknown as Row;
+        ).get(contentId),
+      );
       const chunkCount = integer(content, "chunk_count");
       if (
         integer(aggregate, "count") !== chunkCount ||
@@ -2701,7 +2726,7 @@ function verifyRunPayloadClosures(connection: RecordDatabase, runId: string, ver
       for (const chunk of recordStatement(
         connection,
         "SELECT chunk_digest FROM ne19_content_chunks WHERE content_id=?",
-      ).iterate(contentId) as unknown as Iterable<Row>) {
+      ).iterate(contentId)) {
         requireDigest(text(chunk, "chunk_digest"), `content ${contentId} chunk digest`);
       }
     }
@@ -2740,7 +2765,7 @@ export function readSealedRunSummary(connection: RecordDatabase, runId: string):
       AND (r.status='sealed' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id))`,
   ).get(runId) as Row | undefined;
   if (row === undefined) return undefined;
-  return Object.freeze({
+  return {
     runId: text(row, "run_id"),
     writerGeneration: text(row, "writer_generation"),
     startedAt: text(row, "started_at"),
@@ -2752,7 +2777,7 @@ export function readSealedRunSummary(connection: RecordDatabase, runId: string):
     contentCount: integer(row, "content_count"),
     contentByteLength: integer(row, "content_bytes"),
     sealEntryCount: integer(row, "seal_count"),
-  });
+  };
 }
 
 /** Pinned publication identity, plus a metadata-only count; no Seal hashing. */
@@ -2763,7 +2788,7 @@ export function readSealedRunCutoff(connection: RecordDatabase, identity: string
     WHERE NOT EXISTS (SELECT 1 FROM ne19_run_deletion_tombstones d WHERE d.run_id=r.run_id)
       AND (status='sealed' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id))`,
   ).get() as Row;
-  return Object.freeze({ identity, runCount: integer(row, "count") });
+  return { identity, runCount: integer(row, "count") };
 }
 
 /** Filter lightweight Run metadata before loading any selected Core or payload. */
@@ -2795,7 +2820,7 @@ export function findSourceBarrierCandidate(
     request.attemptOrdinal,
   )[0];
   if (current !== undefined)
-    return Object.freeze({ runId: text(current, "run_id"), createdRevision: integer(current, "created_revision") });
+    return { runId: text(current, "run_id"), createdRevision: integer(current, "created_revision") };
   // Legacy Runs deliberately have no fabricated resource/revision. Inspect
   // only their indexed Experiment's expected rows, never unrelated Core.
   // Malformed expected rows remain candidates so validation cannot fall back.
@@ -2818,7 +2843,7 @@ export function findSourceBarrierCandidate(
     request.evalId,
     request.attemptOrdinal,
   )[0];
-  return legacy === undefined ? undefined : Object.freeze({ runId: text(legacy, "run_id"), createdRevision: 0 });
+  return legacy === undefined ? undefined : { runId: text(legacy, "run_id"), createdRevision: 0 };
 }
 
 /** Locate adoption proofs for one exact Attempt without scanning Run Core. */
@@ -2854,7 +2879,7 @@ export function findAcceptedAttemptRunIds(
       "Attempt exceeds its adoption proof ceiling",
     );
   }
-  return Object.freeze(selected.map((row) => text(row, "target_run_id")));
+  return selected.map((row) => text(row, "target_run_id"));
 }
 
 export function findExperimentRunIds(connection: RecordDatabase, experimentId: string): readonly string[] {
@@ -2872,7 +2897,7 @@ export function findExperimentRunIds(connection: RecordDatabase, experimentId: s
   if (selected.length > RECORD_SQLITE_MAX_VALIDATION_RUNS) {
     throw sqliteError("record-resource-limit-exceeded", "find-experiment-runs", "Experiment exceeds its Run ceiling");
   }
-  return Object.freeze(selected.map((row) => text(row, "run_id")));
+  return selected.map((row) => text(row, "run_id"));
 }
 
 export function listSealedRunSummaries(
@@ -2892,14 +2917,12 @@ export function listSealedRunSummaries(
     afterRunId,
     pageSize,
   );
-  return Object.freeze(
-    runIds.map((row) => {
-      const summary = readSealedRunSummary(connection, text(row, "run_id"));
-      if (summary === undefined)
-        throw sqliteError("record-database-invalid", "list-sealed-runs", "sealed Run disappeared during a short read");
-      return summary;
-    }),
-  );
+  return runIds.map((row) => {
+    const summary = readSealedRunSummary(connection, text(row, "run_id"));
+    if (summary === undefined)
+      throw sqliteError("record-database-invalid", "list-sealed-runs", "sealed Run disappeared during a short read");
+    return summary;
+  });
 }
 
 /**
@@ -2933,7 +2956,7 @@ export function readSealedRunSummaryPage(
         AND (status='sealed' OR EXISTS
           (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=ne19_runs.run_id))
       ORDER BY run_id`,
-      ).iterate() as unknown as Iterable<Row>;
+      ).iterate();
       for (const row of inventory) {
         if (runCount >= RECORD_SQLITE_MAX_VALIDATION_RUNS) {
           throw sqliteError(
@@ -2957,7 +2980,7 @@ export function readSealedRunSummaryPage(
       }
       cutoffHash.update("]");
       const identity = cutoffHash.digest("hex");
-      return Object.freeze({ identity, runCount });
+      return { identity, runCount };
     })();
   const { identity, runCount } = cutoff;
   if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== identity) {
@@ -2984,12 +3007,12 @@ export function readSealedRunSummaryPage(
     return summary;
   });
   const nextAfterRunId = pageRows.length > pageSize && summaries.length > 0 ? summaries.at(-1)!.runId : null;
-  return Object.freeze({
-    cutoff: Object.freeze({ identity, runCount }),
+  return {
+    cutoff: { identity, runCount },
     afterRunId,
-    summaries: Object.freeze(summaries),
+    summaries,
     nextAfterRunId,
-  });
+  };
 }
 
 /** Indexed, bounded locator projection. No Core or attachment payload is selected. */
@@ -3027,7 +3050,7 @@ export function findAttemptLocatorCandidates(
         `Attempt locator exceeds the fixed ${maximumCandidateRuns}-Run candidate limit`,
       );
     }
-    candidates.push(Object.freeze(candidate));
+    candidates.push(candidate);
   };
   for (const row of matching) {
     const originRunId = text(row, "origin_run_id");
@@ -3054,7 +3077,7 @@ export function findAttemptLocatorCandidates(
     for (const target of targets)
       add({ locator, originRunId, attemptId, relation: "target", runId: text(target, "target_run_id") });
   }
-  return Object.freeze({ locator, ambiguous: identities.size > 1, candidates: Object.freeze(candidates) });
+  return { locator, ambiguous: identities.size > 1, candidates };
 }
 
 export function readCollectionItemPage(
@@ -3092,7 +3115,7 @@ export function readCollectionItemPage(
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM ne19_attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY i.ordinal LIMIT ?`,
-  ).iterate(attachmentId, afterOrdinal, pageSize) as unknown as Iterable<Row>;
+  ).iterate(attachmentId, afterOrdinal, pageSize);
   for (const row of pageRows) {
     const payload = bytes(row, "canonical_payload");
     if (pending.length > 0 && pageBytes + payload.byteLength > RECORD_SQLITE_MAX_PAGE_BYTES) {
@@ -3101,14 +3124,12 @@ export function readCollectionItemPage(
     }
     cursor = integer(row, "ordinal");
     pageBytes += payload.byteLength;
-    pending.push(
-      Object.freeze({
-        ordinal: cursor,
-        logicalIdentity: text(row, "logical_identity"),
-        payload,
-        canonicalDigest: text(row, "canonical_digest"),
-      }),
-    );
+    pending.push({
+      ordinal: cursor,
+      logicalIdentity: text(row, "logical_identity"),
+      payload,
+      canonicalDigest: text(row, "canonical_digest"),
+    });
     hasMore = integer(row, "has_more") === 1;
   }
   // One page owns one transferable backing store. Transferring a separate
@@ -3120,15 +3141,15 @@ export function readCollectionItemPage(
     packed.set(item.payload, packedOffset);
     const canonicalBytes = packed.subarray(packedOffset, packedOffset + item.payload.byteLength);
     packedOffset += item.payload.byteLength;
-    return Object.freeze({
+    return {
       ordinal: item.ordinal,
       logicalIdentity: item.logicalIdentity,
       canonicalBytes,
       canonicalDigest: item.canonicalDigest,
-    });
+    };
   });
   const nextOrdinal = hasMore ? cursor : null;
-  return Object.freeze({ attachmentId, afterOrdinal, items: Object.freeze(items), nextOrdinal });
+  return { attachmentId, afterOrdinal, items, nextOrdinal };
 }
 
 /** Bounded sealed Core projection. Collection item bytes and Content chunk bytes are never selected. */
@@ -3159,7 +3180,7 @@ export function readPublishedSealedRun(
       AND NOT EXISTS (SELECT 1 FROM ne19_run_deletion_tombstones d WHERE d.run_id=ne19_runs.run_id)
       AND (status='sealed' OR EXISTS
       (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=ne19_runs.run_id))`,
-  ).get(runId) as unknown as Row | undefined;
+  ).get(runId);
   if (run === undefined) return undefined;
   let runCoreBytes: Uint8Array;
   let runCoreDigest: string;
@@ -3184,9 +3205,10 @@ export function readPublishedSealedRun(
     runCoreBytes = new TextEncoder().encode(JSON.stringify(decoded.success.originRun));
     runCoreDigest = digestBytes(runCoreBytes);
   }
-  const admission = recordStatement(
-    connection,
-    `SELECT
+  const admission = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT
     1+(SELECT count(*) FROM ne19_slots WHERE run_id=?)+(SELECT count(*) FROM ne19_attempts WHERE origin_run_id=?)+
       (SELECT count(*) FROM ne19_members WHERE target_run_id=?)+(SELECT count(*) FROM ne19_attachments WHERE owner_run_id=?)+
       (SELECT count(*) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id WHERE aa.owner_run_id=?)+
@@ -3199,24 +3221,25 @@ export function readPublishedSealedRun(
       (SELECT coalesce(sum(length(rr.canonical_payload)),0) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id WHERE aa.owner_run_id=?) byte_count
     FROM ne19_runs r WHERE r.run_id=? AND (r.status='sealed' OR EXISTS
       (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id))`,
-  ).get(runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId) as unknown as Row;
+    ).get(runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId),
+  );
   assertBoundedBatch("read-sealed-run-core", integer(admission, "row_count"), integer(admission, "byte_count"));
-  const record = recordStatement(
-    connection,
-    "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
-  ).get() as unknown as Row;
+  const record = requiredRecordRow(
+    recordStatement(
+      connection,
+      "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
+    ).get(),
+  );
   const slots = rows(
     connection,
     "SELECT slot_id,ordinal,core_payload,core_digest FROM ne19_slots WHERE run_id=? ORDER BY ordinal",
     runId,
-  ).map((row) =>
-    Object.freeze({
-      slotId: text(row, "slot_id"),
-      ordinal: integer(row, "ordinal"),
-      coreBytes: transferableBytes(bytes(row, "core_payload")),
-      coreDigest: text(row, "core_digest"),
-    }),
-  );
+  ).map((row) => ({
+    slotId: text(row, "slot_id"),
+    ordinal: integer(row, "ordinal"),
+    coreBytes: transferableBytes(bytes(row, "core_payload")),
+    coreDigest: text(row, "core_digest"),
+  }));
   const publicationResource = recordStatement(
     connection,
     "SELECT created_revision FROM ne19_run_resources WHERE run_id=?",
@@ -3239,21 +3262,19 @@ export function readPublishedSealedRun(
         `Attempt ${text(row, "attempt_id")} Core is not published`,
       );
     const attemptId = text(row, "attempt_id");
-    return Object.freeze({
+    return {
       attemptId,
       attemptLocator: text(row, "attempt_locator"),
       coreBytes: transferableBytes(bytes(row, "core_payload")),
       coreDigest: text(row, "core_digest"),
-      ...(publicationManaged
+      publicationIdentity: publicationManaged
         ? {
-            publicationIdentity: Object.freeze({
-              originRunId: runId,
-              attemptId,
-              revision: integer(row, "published_revision"),
-            }),
+            originRunId: runId,
+            attemptId,
+            revision: integer(row, "published_revision"),
           }
-        : {}),
-    });
+        : undefined,
+    };
   });
   const memberRows = publicationManaged
     ? [
@@ -3299,12 +3320,12 @@ export function readPublishedSealedRun(
           );
         }
         const projected = absenceMember(row);
-        return Object.freeze({
+        return {
           slotId: text(row, "slot_id"),
           action: projected.action,
           coreBytes: transferableBytes(projected.coreBytes),
           coreDigest: projected.coreDigest,
-        });
+        };
       }
       const projectReference = (row.action === "carried" || row.action === "accepted") && row.core_payload == null;
       const bindingInvalid =
@@ -3341,24 +3362,31 @@ export function readPublishedSealedRun(
         referenceCore = { bytes: projectedBytes, digest: digestBytes(projectedBytes) };
       }
     }
-    return Object.freeze({
+    const base = {
       slotId: text(row, "slot_id"),
-      ...(publicationManaged && attemptId !== undefined ? { bindingRevision: integer(row, "binding_revision") } : {}),
-      ...(originRunId === undefined ? {} : { originRunId }),
-      ...(attemptId === undefined ? {} : { attemptId }),
-      action: memberAction(row, "action"),
-      ...(publicationManaged && attemptId !== undefined
-        ? {
-            publicationIdentity: Object.freeze({
-              originRunId: text(row, "origin_run_id"),
-              attemptId,
-              revision: integer(row, "published_revision"),
-            }),
-          }
-        : {}),
       coreBytes: transferableBytes(referenceCore?.bytes ?? bytes(row, "core_payload")),
       coreDigest: referenceCore?.digest ?? text(row, "core_digest"),
-    });
+    };
+    const action = memberAction(row, "action");
+    if (action === "not-dispatched" || action === "interrupted") return { ...base, action };
+    return {
+      ...base,
+      action,
+      attempt: {
+        originRunId: originRunId ?? text(row, "origin_run_id"),
+        attemptId: attemptId ?? text(row, "attempt_id"),
+        publication: publicationManaged
+          ? {
+              identity: {
+                originRunId: text(row, "origin_run_id"),
+                attemptId: text(row, "attempt_id"),
+                revision: integer(row, "published_revision"),
+              },
+              bindingRevision: integer(row, "binding_revision"),
+            }
+          : undefined,
+      },
+    } satisfies PersistedMember;
   });
   const attachmentRows = rows(
     connection,
@@ -3388,42 +3416,34 @@ export function readPublishedSealedRun(
     }, defer);
     const references = memoRecordRead(
       () =>
-        Object.freeze(
-          rows(
-            connection,
-            `SELECT ordinal,target_owner_kind,target_family,canonical_payload,reference_digest
+        rows(
+          connection,
+          `SELECT ordinal,target_owner_kind,target_family,canonical_payload,reference_digest
       FROM ne19_attachment_references WHERE attachment_id=? ORDER BY ordinal`,
-            attachmentId,
-          ).map((reference) =>
-            Object.freeze({
-              ordinal: integer(reference, "ordinal"),
-              owner: ownerKind(reference, "target_owner_kind"),
-              family: text(reference, "target_family"),
-              canonicalBytes: transferableBytes(bytes(reference, "canonical_payload")),
-              referenceDigest: text(reference, "reference_digest"),
-            }),
-          ),
-        ),
+          attachmentId,
+        ).map((reference) => ({
+          ordinal: integer(reference, "ordinal"),
+          owner: ownerKind(reference, "target_owner_kind"),
+          family: text(reference, "target_family"),
+          canonicalBytes: transferableBytes(bytes(reference, "canonical_payload")),
+          referenceDigest: text(reference, "reference_digest"),
+        })),
       defer,
     );
     const contents = memoRecordRead(
       () =>
-        Object.freeze(
-          rows(
-            connection,
-            `SELECT content_id,logical_handle,byte_length,overall_digest,chunk_count
+        rows(
+          connection,
+          `SELECT content_id,logical_handle,byte_length,overall_digest,chunk_count
       FROM ne19_contents WHERE attachment_id=? ORDER BY content_id`,
-            attachmentId,
-          ).map((content) =>
-            Object.freeze({
-              contentId: text(content, "content_id"),
-              logicalHandle: text(content, "logical_handle"),
-              byteLength: integer(content, "byte_length"),
-              digest: text(content, "overall_digest"),
-              chunkCount: integer(content, "chunk_count"),
-            }),
-          ),
-        ),
+          attachmentId,
+        ).map((content) => ({
+          contentId: text(content, "content_id"),
+          logicalHandle: text(content, "logical_handle"),
+          byteLength: integer(content, "byte_length"),
+          digest: text(content, "overall_digest"),
+          chunkCount: integer(content, "chunk_count"),
+        })),
       defer,
     );
     const collection = memoRecordRead(() => {
@@ -3434,11 +3454,11 @@ export function readPublishedSealedRun(
       ).get(attachmentId) as Row;
       return { count: integer(aggregate, "item_count"), byteLength: integer(aggregate, "item_bytes") };
     }, defer);
-    return Object.freeze({
+    return {
       attachmentId,
       ownerKind: ownerKind(row, "owner_kind"),
       ownerRunId: text(row, "owner_run_id"),
-      ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
+      ownerAttemptId,
       family: text(row, "family"),
       familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
       logicalIdentity: text(row, "logical_identity"),
@@ -3462,31 +3482,29 @@ export function readPublishedSealedRun(
       get collectionItemByteLength() {
         return collection().byteLength;
       },
-    });
+    };
   });
-  const core: SealedRunCore = Object.freeze({
+  const core: SealedRunCore = {
     runId: text(run, "run_id"),
     writerGeneration: text(run, "writer_generation"),
     startedAt: text(run, "started_at"),
     logicalSealIdentity: text(run, "logical_seal_identity"),
-    ...(publicationManaged
-      ? { publicationManaged: true, createdRevision: integer(publicationResource!, "created_revision") }
-      : {}),
+    createdRevision: publicationResource === undefined ? undefined : integer(publicationResource, "created_revision"),
     recordCoreBytes: transferableBytes(bytes(record, "record_payload")),
     recordCoreDigest: text(record, "record_digest"),
     runCoreBytes,
     runCoreDigest,
-    slots: Object.freeze(slots),
-    attempts: Object.freeze(attempts),
-    members: Object.freeze(members),
-    attachments: Object.freeze(attachments),
-  });
-  return Object.freeze({
+    slots,
+    attempts,
+    members,
+    attachments,
+  };
+  return {
     core,
     get summary() {
       return readSealedRunSummary(connection, runId)!;
     },
-  });
+  };
 }
 
 /** Inspection may defer Attachment reads within its existing pinned session. */
@@ -3504,58 +3522,61 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
     connection,
     `SELECT run_id,writer_generation,started_at,logical_seal_identity,core_payload,core_digest
     FROM ne19_runs WHERE run_id=? AND status='sealed'`,
-  ).get(runId) as unknown as Row | undefined;
+  ).get(runId);
   if (run === undefined) return undefined;
-  const whole = recordStatement(
-    connection,
-    `SELECT count(*) row_count,coalesce(sum(length(i.canonical_payload)),0) byte_count
+  const whole = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT count(*) row_count,coalesce(sum(length(i.canonical_payload)),0) byte_count
     FROM ne19_collection_items i JOIN ne19_attachments a ON a.attachment_id=i.attachment_id WHERE a.owner_run_id=?`,
-  ).get(runId) as unknown as Row;
+    ).get(runId),
+  );
   assertBoundedBatch("read-sealed-run-document", integer(whole, "row_count"), integer(whole, "byte_count"));
-  const record = recordStatement(
-    connection,
-    "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
-  ).get() as unknown as Row;
+  const record = requiredRecordRow(
+    recordStatement(
+      connection,
+      "SELECT record_payload,record_digest FROM ne19_record_metadata WHERE singleton=1",
+    ).get(),
+  );
   const slots = rows(
     connection,
     "SELECT slot_id,ordinal,core_payload,core_digest FROM ne19_slots WHERE run_id=? ORDER BY ordinal",
     runId,
-  ).map((row) =>
-    Object.freeze({
-      slotId: text(row, "slot_id"),
-      ordinal: integer(row, "ordinal"),
-      coreBytes: transferableBytes(bytes(row, "core_payload")),
-      coreDigest: text(row, "core_digest"),
-    }),
-  );
+  ).map((row) => ({
+    slotId: text(row, "slot_id"),
+    ordinal: integer(row, "ordinal"),
+    coreBytes: transferableBytes(bytes(row, "core_payload")),
+    coreDigest: text(row, "core_digest"),
+  }));
   const attempts = rows(
     connection,
     "SELECT attempt_id,attempt_locator,core_payload,core_digest FROM ne19_attempts WHERE origin_run_id=? ORDER BY attempt_id",
     runId,
-  ).map((row) =>
-    Object.freeze({
-      attemptId: text(row, "attempt_id"),
-      attemptLocator: text(row, "attempt_locator"),
-      coreBytes: transferableBytes(bytes(row, "core_payload")),
-      coreDigest: text(row, "core_digest"),
-    }),
-  );
+  ).map((row) => ({
+    attemptId: text(row, "attempt_id"),
+    attemptLocator: text(row, "attempt_locator"),
+    coreBytes: transferableBytes(bytes(row, "core_payload")),
+    coreDigest: text(row, "core_digest"),
+    publicationIdentity: undefined,
+  }));
   const members = rows(
     connection,
     `SELECT slot_id,origin_run_id,attempt_id,action,core_payload,core_digest FROM ne19_members
     WHERE target_run_id=? ORDER BY slot_id`,
     runId,
   ).map((row) => {
-    const originRunId = optionalText(row, "origin_run_id");
-    const attemptId = optionalText(row, "attempt_id");
-    return Object.freeze({
+    const base = {
       slotId: text(row, "slot_id"),
-      ...(originRunId === undefined ? {} : { originRunId }),
-      ...(attemptId === undefined ? {} : { attemptId }),
-      action: memberAction(row, "action"),
       coreBytes: transferableBytes(bytes(row, "core_payload")),
       coreDigest: text(row, "core_digest"),
-    });
+    };
+    const action = memberAction(row, "action");
+    if (action === "not-dispatched" || action === "interrupted") return { ...base, action };
+    return {
+      ...base,
+      action,
+      attempt: { originRunId: text(row, "origin_run_id"), attemptId: text(row, "attempt_id"), publication: undefined },
+    };
   });
   const attachmentRows = rows(
     connection,
@@ -3572,48 +3593,42 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
       `SELECT ordinal,target_owner_kind,target_family,
       canonical_payload,reference_digest FROM ne19_attachment_references WHERE attachment_id=? ORDER BY ordinal`,
       attachmentId,
-    ).map((reference) =>
-      Object.freeze({
-        ordinal: integer(reference, "ordinal"),
-        owner: ownerKind(reference, "target_owner_kind"),
-        family: text(reference, "target_family"),
-        canonicalBytes: transferableBytes(bytes(reference, "canonical_payload")),
-        referenceDigest: text(reference, "reference_digest"),
-      }),
-    );
+    ).map((reference) => ({
+      ordinal: integer(reference, "ordinal"),
+      owner: ownerKind(reference, "target_owner_kind"),
+      family: text(reference, "target_family"),
+      canonicalBytes: transferableBytes(bytes(reference, "canonical_payload")),
+      referenceDigest: text(reference, "reference_digest"),
+    }));
     const collectionItems = rows(
       connection,
       `SELECT ordinal,logical_identity,canonical_payload,canonical_digest
       FROM ne19_collection_items WHERE attachment_id=? ORDER BY ordinal`,
       attachmentId,
-    ).map((item) =>
-      Object.freeze({
-        ordinal: integer(item, "ordinal"),
-        logicalIdentity: text(item, "logical_identity"),
-        canonicalBytes: transferableBytes(bytes(item, "canonical_payload")),
-        canonicalDigest: text(item, "canonical_digest"),
-      }),
-    );
+    ).map((item) => ({
+      ordinal: integer(item, "ordinal"),
+      logicalIdentity: text(item, "logical_identity"),
+      canonicalBytes: transferableBytes(bytes(item, "canonical_payload")),
+      canonicalDigest: text(item, "canonical_digest"),
+    }));
     const contents = rows(
       connection,
       `SELECT content_id,logical_handle,byte_length,overall_digest,chunk_count
       FROM ne19_contents WHERE attachment_id=? ORDER BY content_id`,
       attachmentId,
-    ).map((content) =>
-      Object.freeze({
-        contentId: text(content, "content_id"),
-        logicalHandle: text(content, "logical_handle"),
-        byteLength: integer(content, "byte_length"),
-        digest: text(content, "overall_digest"),
-        chunkCount: integer(content, "chunk_count"),
-      }),
-    );
+    ).map((content) => ({
+      contentId: text(content, "content_id"),
+      logicalHandle: text(content, "logical_handle"),
+      byteLength: integer(content, "byte_length"),
+      digest: text(content, "overall_digest"),
+      chunkCount: integer(content, "chunk_count"),
+    }));
     const decodedOwnerKind = ownerKind(row, "owner_kind");
-    return Object.freeze({
+    return {
       attachmentId,
       ownerKind: decodedOwnerKind,
       ownerRunId: text(row, "owner_run_id"),
-      ...(ownerAttemptId === undefined ? {} : { ownerAttemptId }),
+      ownerAttemptId,
       family: text(row, "family"),
       familyRevision: row.family_revision === null ? undefined : integer(row, "family_revision"),
       logicalIdentity: text(row, "logical_identity"),
@@ -3621,12 +3636,12 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
       canonicalDigest: text(row, "canonical_digest"),
       logicalInventoryBytes: transferableBytes(bytes(row, "logical_inventory")),
       inventoryDigest: text(row, "inventory_digest"),
-      references: Object.freeze(references),
-      collectionItems: Object.freeze(collectionItems),
-      contents: Object.freeze(contents),
-    });
+      references,
+      collectionItems,
+      contents,
+    };
   });
-  return Object.freeze({
+  return {
     runId: text(run, "run_id"),
     writerGeneration: text(run, "writer_generation"),
     startedAt: text(run, "started_at"),
@@ -3635,11 +3650,11 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
     recordCoreDigest: text(record, "record_digest"),
     runCoreBytes: transferableBytes(bytes(run, "core_payload")),
     runCoreDigest: text(run, "core_digest"),
-    slots: Object.freeze(slots),
-    attempts: Object.freeze(attempts),
-    members: Object.freeze(members),
-    attachments: Object.freeze(attachments),
-  });
+    slots,
+    attempts,
+    members,
+    attachments,
+  };
 }
 
 export function appendContentChunks(connection: RecordDatabase, input: AppendContentChunksInput): void {
@@ -3671,7 +3686,7 @@ export function appendContentChunks(connection: RecordDatabase, input: AppendCon
       JOIN ne19_attachments a ON a.attachment_id=c.attachment_id JOIN ne19_runs r ON r.run_id=a.owner_run_id
       LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id
       WHERE c.content_id=?`,
-    ).get(input.contentId) as unknown as Row | undefined;
+    ).get(input.contentId);
     if (
       metadata === undefined ||
       text(metadata, "owner_run_id") !== input.runId ||
@@ -3689,12 +3704,13 @@ export function appendContentChunks(connection: RecordDatabase, input: AppendCon
       const stored = recordStatement(
         connection,
         "SELECT bytes,chunk_digest FROM ne19_content_chunks WHERE content_id=? AND ordinal=?",
-      ).get(input.contentId, chunk.ordinal) as unknown as Row | undefined;
+      ).get(input.contentId, chunk.ordinal);
       if (stored === undefined) {
-        const count = recordStatement(
-          connection,
-          "SELECT count(*) AS count FROM ne19_content_chunks WHERE content_id=?",
-        ).get(input.contentId) as unknown as Row;
+        const count = requiredRecordRow(
+          recordStatement(connection, "SELECT count(*) AS count FROM ne19_content_chunks WHERE content_id=?").get(
+            input.contentId,
+          ),
+        );
         if (chunk.ordinal !== integer(count, "count"))
           throw sqliteError(
             "record-command-conflict",
@@ -3751,7 +3767,7 @@ export function readContentChunkPage(
          (a.owner_kind='attempt' AND EXISTS (SELECT 1 FROM ne19_attempt_publications p
            WHERE p.origin_run_id=a.owner_run_id AND p.attempt_id=a.owner_attempt_id)))
       ORDER BY c.ordinal LIMIT ?`,
-  ).iterate(contentId, afterOrdinal, pageSize) as unknown as Iterable<Row>;
+  ).iterate(contentId, afterOrdinal, pageSize);
   for (const row of pageRows) {
     const value = bytes(row, "bytes");
     if (page.length > 0 && pageBytes + value.byteLength > RECORD_SQLITE_MAX_PAGE_BYTES) {
@@ -3760,11 +3776,9 @@ export function readContentChunkPage(
     }
     cursor = integer(row, "ordinal");
     pageBytes += value.byteLength;
-    page.push(
-      Object.freeze({ ordinal: cursor, bytes: transferableBytes(value), chunkDigest: text(row, "chunk_digest") }),
-    );
+    page.push({ ordinal: cursor, bytes: transferableBytes(value), chunkDigest: text(row, "chunk_digest") });
     hasMore = integer(row, "has_more") === 1;
   }
   const nextOrdinal = hasMore ? cursor : null;
-  return Object.freeze({ contentId, afterOrdinal, chunks: Object.freeze(page), nextOrdinal });
+  return { contentId, afterOrdinal, chunks: page, nextOrdinal };
 }

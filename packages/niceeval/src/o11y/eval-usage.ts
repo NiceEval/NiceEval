@@ -25,10 +25,15 @@ export interface EvalCacheRead<ModelRole extends string = string> extends CacheR
 function authorCacheRead(report: CacheReadReport, models?: ResolvedModelRoles): EvalCacheRead {
   const declared = new Set(Object.keys(models ?? {}));
   const rates = new Map(report.roles.map((group) => [group.modelRole, group.rate]));
-  return Object.freeze({
+  return {
     ...report,
     rate: (role?: string): NumericMaterial<"ratio"> => {
-      if (role === undefined) return Object.freeze({ ...report.total.rate, unit: "ratio" });
+      if (role === undefined)
+        return Object.freeze({
+          ...report.total.rate,
+          unit: "ratio",
+          provenance: undefined,
+        });
       if (!declared.has(role)) {
         throw new TypeError(
           `Undeclared model role ${JSON.stringify(role)}; declared roles: ${[...declared].join(", ") || "(none)"}.`,
@@ -36,10 +41,19 @@ function authorCacheRead(report: CacheReadReport, models?: ResolvedModelRoles): 
       }
       const rate = rates.get(role);
       if (rate !== undefined && !(rate.state === "unavailable" && rate.reason === "no-calls"))
-        return Object.freeze({ ...rate, unit: "ratio" });
-      return Object.freeze({ state: "unavailable", reason: "role-has-no-calls", unit: "ratio" });
+        return Object.freeze({
+          ...rate,
+          unit: "ratio",
+          provenance: undefined,
+        });
+      return Object.freeze({
+        state: "unavailable",
+        reason: "role-has-no-calls",
+        unit: "ratio",
+        provenance: undefined,
+      });
     },
-  });
+  };
 }
 
 /** Internal source-owned shape; package-root exposure belongs to the author facade. */
@@ -69,16 +83,23 @@ export interface EvalUsage<ModelRole extends string = string> {
   };
 }
 
-export interface AgentUsageContribution {
+interface AgentUsageContributionIdentity {
   readonly sessionScopeId: string;
   readonly turnId: string;
   readonly sendAttempt: number;
-  readonly state: "pending" | "terminal";
-  readonly outcome: "completed" | "failed" | "interrupted" | null;
-  readonly model: string | null;
-  readonly usage: Readonly<Usage> | null;
+  readonly model: string | undefined;
   readonly coverage: ResolvedEvidenceCoverage["usage"];
 }
+
+export type AgentUsageContribution = AgentUsageContributionIdentity &
+  (
+    | { readonly state: "pending" }
+    | {
+        readonly state: "terminal";
+        readonly outcome: "completed" | "failed" | "interrupted";
+        readonly usage: Readonly<Usage> | undefined;
+      }
+  );
 
 type TokenMetric =
   | "inputTokens"
@@ -89,30 +110,34 @@ type TokenMetric =
   | "totalTokens";
 
 function contributionCosts(
-  calls: readonly { readonly effectiveCost: EffectiveCallCost | null }[],
+  calls: readonly { readonly effectiveCost: EffectiveCallCost | undefined }[],
   complete: boolean,
 ): EvalUsage["costs"] {
   const totals = effectiveCostTotals(calls, complete ? "complete" : "partial");
-  return Object.freeze({
+  return {
     state: totals.state,
-    values: Object.freeze(
-      totals.values.map((value) =>
-        Object.freeze({
-          currency: value.currency,
-          value: value.value,
-          source: value.source,
-          coveredContributions: value.coveredCalls,
-          reportedContributions: value.reportedCalls,
-          estimatedContributions: value.estimatedCalls,
-        }),
-      ),
-    ),
+    values: totals.values.map((value) => ({
+      currency: value.currency,
+      value: value.value,
+      source: value.source,
+      coveredContributions: value.coveredCalls,
+      reportedContributions: value.reportedCalls,
+      estimatedContributions: value.estimatedCalls,
+    })),
     totalContributions: totals.totalCalls,
-  });
+  };
+}
+
+function freezeUsageSnapshot<Value>(value: Value): Value {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value)) freezeUsageSnapshot(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 export function projectAdapterEvalUsage(usage: ReadableAdapterUsageAttachment, models?: ResolvedModelRoles): EvalUsage {
-  return Object.freeze({
+  return freezeUsageSnapshot({
     source: "adapter",
     scope: "attempt",
     basis: "recorded-calls",
@@ -130,8 +155,8 @@ export function projectAdapterEvalUsage(usage: ReadableAdapterUsageAttachment, m
 
 function tokenBuckets(contribution: AgentUsageContribution, metric: TokenMetric): readonly (number | undefined)[] {
   // Some producers have an independent total. Missing totals retain the mutually exclusive bucket fallback.
-  const usage: (Readonly<Usage> & { readonly inputTotalTokens?: number }) | null = contribution.usage;
-  if (contribution.state === "pending" || usage === null) return [undefined];
+  if (contribution.state === "pending" || contribution.usage === undefined) return [undefined];
+  const usage: Readonly<Usage> & { readonly inputTotalTokens?: number } = contribution.usage;
   const input =
     usage.inputTotalTokens !== undefined
       ? [usage.inputTotalTokens]
@@ -153,7 +178,7 @@ function agentTokenMaterial(
   metric: TokenMetric,
   scope: EvalUsage["scope"],
 ): NumericMaterial {
-  const provenance = Object.freeze({ source: "agent", scope, unit: "tokens", cut: "call-time" });
+  const provenance = { source: "agent", scope, unit: "tokens", cut: "call-time" };
   let value = 0;
   let observed = false;
   let complete = contributions.length > 0;
@@ -165,54 +190,73 @@ function agentTokenMaterial(
         continue;
       }
       if (!Number.isSafeInteger(bucket) || bucket < 0) {
-        return Object.freeze({ state: "unavailable", reason: "usage-invalid-token-value", provenance });
+        return {
+          state: "unavailable",
+          reason: "usage-invalid-token-value",
+          provenance,
+          unit: undefined,
+        };
       }
       value += bucket;
       observed = true;
       if (!Number.isSafeInteger(value)) {
-        return Object.freeze({ state: "unavailable", reason: "usage-exceeds-safe-integer", provenance });
+        return {
+          state: "unavailable",
+          reason: "usage-exceeds-safe-integer",
+          provenance,
+          unit: undefined,
+        };
       }
     }
   }
-  return Object.freeze(
-    !observed
-      ? { state: "unavailable", reason: "usage-not-reported", provenance }
-      : { state: complete ? "exact" : "lower-bound", value, provenance },
-  );
+  if (!observed)
+    return {
+      state: "unavailable",
+      reason: "usage-not-reported",
+      provenance,
+      unit: undefined,
+    };
+  return {
+    state: complete ? "exact" : "lower-bound",
+    value,
+    provenance,
+    unit: undefined,
+  };
 }
 
 function agentCost(
   contribution: AgentUsageContribution,
   pricing: Record<string, PriceOverride> | undefined,
-): EffectiveCallCost | null {
+): EffectiveCallCost | undefined {
+  if (contribution.state === "pending" || contribution.usage === undefined) return undefined;
   const usage = contribution.usage;
-  if (contribution.state === "pending" || usage === null) return null;
   const coverageComplete = contribution.coverage.status === "complete";
   if (usage.costUSD !== undefined) {
     const amount = canonicalDecimalFromNumber(usage.costUSD);
     return amount === undefined
-      ? null
-      : Object.freeze({
+      ? undefined
+      : {
           amount,
           currency: "USD",
-          source: Object.freeze({ kind: "reported", id: "agent-send" }),
+          source: { kind: "reported", id: "agent-send" },
           state: coverageComplete ? "complete" : "partial",
-        });
+        };
   }
   const model = contribution.model;
-  if (model === null || pricing === undefined) return null;
+  if (model === undefined || pricing === undefined) return undefined;
   const wildcard = model.includes("/") ? `${model.slice(0, model.indexOf("/"))}/*` : undefined;
-  const profile = Object.hasOwn(pricing, model)
-    ? pricing[model]
-    : wildcard !== undefined && Object.hasOwn(pricing, wildcard)
-      ? pricing[wildcard]
-      : undefined;
+  const configuredPrice = () => {
+    if (Object.hasOwn(pricing, model)) return pricing[model];
+    if (wildcard !== undefined && Object.hasOwn(pricing, wildcard)) return pricing[wildcard];
+    return undefined;
+  };
+  const profile = configuredPrice();
   if (
     profile === undefined ||
     (profile.currency !== undefined && profile.currency !== "USD") ||
     (profile.basis !== undefined && profile.basis !== "catalog-reference")
   )
-    return null;
+    return undefined;
   const buckets = [
     [usage.inputTokens, profile.inputPerMTok],
     [usage.outputTokens, profile.outputPerMTok],
@@ -238,27 +282,27 @@ function agentCost(
     charges.push(multiplyCanonicalDecimalPerMillion(rate, tokens));
   }
   return charges.length === 0
-    ? null
-    : Object.freeze({
+    ? undefined
+    : {
         amount: addCanonicalDecimals(charges),
         currency: "USD",
-        source: Object.freeze({ kind: "estimated", id: profile.source?.id ?? "niceeval.config.pricing" }),
+        source: { kind: "estimated", id: profile.source?.id ?? "niceeval.config.pricing" },
         state: complete ? "complete" : "partial",
-      });
+      };
 }
 
 /** The receiver selects scope membership before calling this pure projection. */
 export function projectAgentEvalUsage(input: {
   contributions: readonly AgentUsageContribution[];
   scope: "turn" | "session" | "attempt";
-  pricing?: Record<string, PriceOverride>;
+  pricing: Record<string, PriceOverride> | undefined;
 }): EvalUsage {
-  return Object.freeze({
+  return freezeUsageSnapshot({
     source: "agent",
     scope: input.scope,
     basis: "reported-sends",
     cut: "call-time",
-    cacheRead: authorCacheRead(projectCacheRead(null, undefined, false, "adapter-usage-required")),
+    cacheRead: authorCacheRead(projectCacheRead(undefined, undefined, false, "adapter-usage-required")),
     inputTokens: agentTokenMaterial(input.contributions, "inputTokens", input.scope),
     inputTotalTokens: agentTokenMaterial(input.contributions, "inputTotalTokens", input.scope),
     outputTokens: agentTokenMaterial(input.contributions, "outputTokens", input.scope),

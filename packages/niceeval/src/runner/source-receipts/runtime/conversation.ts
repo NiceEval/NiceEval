@@ -22,31 +22,32 @@ export function captureRunnerPhysicalConversationTurn(input: {
   readonly turnId: TurnId;
   readonly outcome: ConversationTurn["outcome"];
   readonly observed: ObservedTurnSnapshot;
-  readonly adapterStatus?: "completed" | "failed" | "waiting";
-  readonly evidenceCoverage?: ResolvedEvidenceCoverage;
+  readonly adapterStatus: "completed" | "failed" | "waiting" | undefined;
+  readonly evidenceCoverage: ResolvedEvidenceCoverage | undefined;
 }): void {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
   const captured = runtime.conversationTurns.find((turn) => turn.turnId === input.turnId);
   if (captured === undefined && runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) return;
-  if (captured === undefined || captured.outcome !== undefined) {
+  if (captured === undefined || captured.completion.state !== "pending") {
     markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
     return;
   }
-  captured.outcome = input.outcome;
-  if (
-    input.observed.turnId !== input.turnId ||
-    input.observed.sessionId !== captured.sessionId ||
-    captured.observed !== undefined
-  ) {
+  if (input.observed.turnId !== input.turnId || input.observed.sessionId !== captured.sessionId) {
     markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
     return;
   }
-  captured.observed = input.observed;
+  captured.completion = {
+    state: "observed",
+    outcome: input.outcome,
+    observed: input.observed,
+    adapter:
+      input.adapterStatus !== undefined && input.evidenceCoverage !== undefined
+        ? { state: "recorded", status: input.adapterStatus, evidenceCoverage: input.evidenceCoverage }
+        : { state: "unavailable" },
+  };
   registerObservedTurn(runtime, input.observed);
   if (input.adapterStatus !== undefined && input.evidenceCoverage !== undefined) {
-    captured.adapterStatus = input.adapterStatus;
-    captured.evidenceCoverage = input.evidenceCoverage;
     if (input.evidenceCoverage.usage.status === "unavailable") {
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else if (input.evidenceCoverage.usage.status === "partial") {
@@ -86,6 +87,8 @@ export function beginRunnerPhysicalConversationTurn(
     segmentId,
     sequence: requiredPositive(runtime.conversationTurns.length + 1),
     usage: [],
+
+    completion: { state: "pending" },
   });
   return true;
 }

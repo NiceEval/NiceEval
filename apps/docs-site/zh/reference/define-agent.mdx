@@ -216,7 +216,7 @@ Attempt 执行信号；reason 区分 timeout 与 cancelled，不用于 cleanup �
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model: string | undefined;
 ```
 
 Experiment 选择的模型。
@@ -224,7 +224,7 @@ Experiment 选择的模型。
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort: string | undefined;
 ```
 
 Experiment 选择的推理强度。
@@ -291,7 +291,7 @@ evidenceCoverage: EvidenceCoverage;
 #### `before`
 
 ```ts
-before?: DirectAgentBefore;
+before?: DirectAgentBefore | undefined;
 ```
 
 每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
@@ -299,7 +299,7 @@ before?: DirectAgentBefore;
 #### `tracing`
 
 ```ts
-tracing?: Omit<AgentTracing, "configure">;
+tracing?: Omit<AgentTracing, "configure"> | undefined;
 ```
 
 OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)。
@@ -307,7 +307,7 @@ OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)�
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。
@@ -323,7 +323,7 @@ send(input: TurnInput, ctx: AgentSendContext): Promise<Turn>;
 #### `classifySendFailure`
 
 ```ts
-classifySendFailure?: SendFailureClassifier;
+classifySendFailure?: SendFailureClassifier | undefined;
 ```
 
 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
@@ -331,7 +331,7 @@ classifySendFailure?: SendFailureClassifier;
 #### `after`
 
 ```ts
-after?: DirectAgentAfter;
+after?: DirectAgentAfter | undefined;
 ```
 
 运行结束前的清理,当且仅当本 attempt 走到过 `before` 时点才执行(`before` 抛错不豁免),
@@ -358,7 +358,7 @@ evidenceCoverage: EvidenceCoverage;
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer<"command-only">;
+sandbox?: SandboxLayer<"command-only"> | undefined;
 ```
 
 Adapter 自有的 Sandbox action；Agent 不能选择或贡献 template。
@@ -374,7 +374,7 @@ readonly install: AgentInstall | readonly AgentInstall[];
 #### `installers`
 
 ```ts
-installers?: readonly AgentInstaller[];
+installers?: readonly AgentInstaller[] | undefined;
 ```
 
 配对安装层；省略表示这个 adapter 只提供 probe 协议，未命中时 Runner 在
@@ -383,7 +383,7 @@ installers?: readonly AgentInstaller[];
 #### `before`
 
 ```ts
-before?: AgentBefore;
+before?: AgentBefore | undefined;
 ```
 
 每条 Attempt 一次(不是每轮 send 一次):写 config.toml / 鉴权配置(model/base/auth 等
@@ -393,7 +393,7 @@ before?: AgentBefore;
 #### `tracing`
 
 ```ts
-tracing?: AgentTracing;
+tracing?: AgentTracing | undefined;
 ```
 
 OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 before 拆出。
@@ -401,7 +401,7 @@ OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配�
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。
@@ -417,7 +417,7 @@ send(input: TurnInput, ctx: SandboxAgentSendContext): Promise<Turn>;
 #### `classifySendFailure`
 
 ```ts
-classifySendFailure?: SendFailureClassifier;
+classifySendFailure?: SendFailureClassifier | undefined;
 ```
 
 可选 send 执行失败分类器:见 `Agent.classifySendFailure`。
@@ -425,7 +425,7 @@ classifySendFailure?: SendFailureClassifier;
 #### `after`
 
 ```ts
-after?: AgentAfter;
+after?: AgentAfter | undefined;
 ```
 
 Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `before` 时点才执行(`before` 抛错不豁免),
@@ -447,7 +447,7 @@ readonly signal: AbortSignal;
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model?: string | undefined;
 ```
 
 本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 before 里用它写配置,direct 型通常在 send 里用它选模型。
@@ -455,7 +455,7 @@ readonly model?: string;
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort?: string | undefined;
 ```
 
 模型推理努力程度;归属同 model——实验决定,省略时不覆盖 agent 原生默认。
@@ -474,7 +474,7 @@ experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment �
 #### `experimentId`
 
 ```ts
-readonly experimentId?: string;
+readonly experimentId?: string | undefined;
 ```
 
 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
@@ -486,7 +486,7 @@ SandboxLayer command 按实验隔离跨 attempt 的基础设施内容，或 adap
 #### `evalId`
 
 ```ts
-readonly evalId?: string;
+readonly evalId?: string | undefined;
 ```
 
 当前 Attempt 对应的 eval ID。NiceEval Runner 始终从 discovery 后的评估用例身份填入；
@@ -496,10 +496,12 @@ readonly evalId?: string;
 #### `evalGroup`
 
 ```ts
-readonly evalGroup?: {
-  readonly id: string;
-  readonly definitionHash: string;
-};
+readonly evalGroup?:
+| {
+    readonly id: string;
+    readonly definitionHash: string;
+  }
+| undefined;
 ```
 
 当前 Attempt 的评估组；未分组评估用例省略。
@@ -507,7 +509,7 @@ readonly evalGroup?: {
 #### `attempt`
 
 ```ts
-readonly attempt?: AttemptRef;
+readonly attempt?: AttemptRef | undefined;
 ```
 
 Runner 填入的当前 Attempt 引用；第三方直接构造上下文时可省略。
@@ -521,7 +523,7 @@ readonly session: AgentSession;
 #### `telemetry`
 
 ```ts
-readonly telemetry?: Telemetry;
+readonly telemetry?: Telemetry | undefined;
 ```
 
 仅当配置了 OTel 接入时有(agent 的 `tracing` 块 / config 的 telemetry 存在):
@@ -761,7 +763,7 @@ Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider
 #### `sensitiveValues`
 
 ```ts
-readonly sensitiveValues?: readonly string[];
+readonly sensitiveValues?: readonly string[] | undefined;
 ```
 
 这条命令已知会处理的敏感明文（例如 API key、token、HTTP header value）。Runner 仍把
@@ -774,7 +776,7 @@ readonly sensitiveValues?: readonly string[];
 #### `env`
 
 ```ts
-readonly env?: Readonly<globalThis.Record<string, string>>;
+readonly env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
@@ -785,7 +787,7 @@ pathPrepend」)。
 #### `cwd`
 
 ```ts
-readonly cwd?: string;
+readonly cwd?: string | undefined;
 ```
 
 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。
@@ -793,7 +795,7 @@ readonly cwd?: string;
 #### `stream`
 
 ```ts
-readonly stream?: boolean;
+readonly stream?: boolean | undefined;
 ```
 
 把本命令的输出也送进 Sandbox 的「原生日志流」(于是 `docker logs` / Docker UI 的 Logs
@@ -804,7 +806,7 @@ readonly stream?: boolean;
 #### `onStdout`
 
 ```ts
-readonly onStdout?: (chunk: string) => void | Promise<void>;
+readonly onStdout?: ((chunk: string) => void | Promise<void>) | undefined;
 ```
 
 命令 stdout 每到一块就调用一次。回调只用于运行中的短命反馈；完整 stdout 仍会原样
@@ -814,7 +816,7 @@ stdout 调用一次，不能静默丢掉。
 #### `onStderr`
 
 ```ts
-readonly onStderr?: (chunk: string) => void | Promise<void>;
+readonly onStderr?: ((chunk: string) => void | Promise<void>) | undefined;
 ```
 
 `onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。
@@ -822,7 +824,7 @@ readonly onStderr?: (chunk: string) => void | Promise<void>;
 #### `user`
 
 ```ts
-readonly user?: string;
+readonly user?: string | undefined;
 ```
 
 覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
@@ -837,7 +839,7 @@ docs/feature/sandbox/library/README.md「执行身份」)。
 #### `timeoutMs`
 
 ```ts
-readonly timeoutMs?: number;
+readonly timeoutMs?: number | undefined;
 ```
 
 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
@@ -847,7 +849,7 @@ readonly timeoutMs?: number;
 #### `signal`
 
 ```ts
-readonly signal?: AbortSignal;
+readonly signal?: AbortSignal | undefined;
 ```
 
 取消本次受管命令树。Provider 必须在 Promise settle 前确认命令树已经终止；无法精确

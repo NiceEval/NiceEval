@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
 import { agentJudgeIdentity } from "../runner/judge-identity.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import { AGENT_JUDGE_ALGORITHM_REVISION } from "./agent-judge-revisions.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
 import { agentJudgeSystemPrompt, AGENT_JUDGE_TOOL_DESCRIPTION } from "./agent-judge.prompt.ts";
@@ -43,23 +44,22 @@ const gradeParameters = Schema.toJsonSchemaDocument(AgentJudgeGradeSubmissionSch
 const binaryParameters = Schema.toJsonSchemaDocument(AgentJudgeBinarySubmissionSchema).schema;
 
 type Submitted = NonNullable<AgentJudgeAudit["submission"]>;
-type ReviewStep = {
-  kind: "chat" | "judge" | "grade";
-  message: string;
-  key: string | null;
-  anchors: readonly JudgeAnchor[] | null;
-};
+type ReviewStep = { readonly message: string } & (
+  | { readonly kind: "chat" }
+  | { readonly kind: "judge"; readonly key: string }
+  | { readonly kind: "grade"; readonly key: string; readonly anchors: readonly JudgeAnchor[] }
+);
 const stepPrompt = (step: ReviewStep) =>
-  canonical({ kind: step.kind, message: step.message, ...(step.anchors === null ? {} : { anchors: step.anchors }) });
+  canonical({ kind: step.kind, message: step.message, ...(step.kind === "grade" ? { anchors: step.anchors } : {}) });
 /** Attempt-local owner of a single real pi conversation and its shared evidence. */
 export class AgentJudgeSession {
   private readonly snapshot: ReturnType<typeof snapshotJudgeMaterial>;
   private captured: string;
   private readonly keys: string[] = [];
   private readonly steps: ReviewStep[] = [];
-  private currentKey?: string;
+  private currentKey: string | undefined;
   private currentTurns = 0;
-  private currentFailure?: AgentJudgeFailure;
+  private currentFailure: AgentJudgeFailure | undefined;
   private currentStep = 0;
   entryIndex = -1;
   private usage: JudgeUsageEntry | undefined;
@@ -70,17 +70,17 @@ export class AgentJudgeSession {
   private readonly compactions: AgentJudgeTrace["compactions"][number][] = [];
   private readonly results = new Map<string, AgentJudgeAudit["result"]>();
   private readonly definition: AgentJudgeTrace["definition"];
-  private pi?: ReturnType<typeof resolvePiCodingAgent>;
+  private pi: ReturnType<typeof resolvePiCodingAgent> | undefined;
   private readonly subject: AssertionMaterial;
-  private problem?: AgentJudgeFailure;
+  private problem: AgentJudgeFailure | undefined;
   private started = false;
   private closed = false;
-  private agent?: PiAgent;
-  private controller?: AbortController;
-  private running?: Promise<void>;
+  private agent: PiAgent | undefined;
+  private controller: AbortController | undefined;
+  private running: Promise<void> | undefined;
   private ordinal = 0;
   private usageOrdinal = 0;
-  private sealedTrace?: AgentJudgeTrace;
+  private sealedTrace: AgentJudgeTrace | undefined;
   private cleanup: AgentJudgeTrace["cleanup"] = { state: "released", diagnostic: null };
   private readonly evidence = new Map<string, readonly AssertionMaterial[]>();
 
@@ -90,7 +90,7 @@ export class AgentJudgeSession {
     private readonly sandbox: Sandbox,
     private readonly profile: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
-    private readonly usageForEntry: ((index: number) => JudgeUsageEntry) | undefined,
+    private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined,
   ) {
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
@@ -98,7 +98,7 @@ export class AgentJudgeSession {
     const base = {
       version: "1",
       config: canonical({
-        ...judge,
+        ...omitUndefined({ ...judge, instructions: judge.instructions === "" ? undefined : judge.instructions }),
         contextWindow:
           profile?.contextWindow ?? (profile === undefined ? undefined : builtinContextWindow(profile.model)) ?? null,
         algorithmRevision: AGENT_JUDGE_ALGORITHM_REVISION,
@@ -106,11 +106,11 @@ export class AgentJudgeSession {
         gradeParameters,
         binaryParameters,
       }),
-      limits: {
+      limits: omitUndefined({
         maxTurns: judge.maxTurns,
         timeoutMs: judge.timeoutMs,
-        ...(judge.maxMaterialBytes === undefined ? {} : { maxMaterialBytes: judge.maxMaterialBytes }),
-      },
+        maxMaterialBytes: judge.maxMaterialBytes,
+      }),
     };
     this.definition = { ...base, digest: agentJudgeDigest(canonical(base)) };
     if (judge.maxMaterialBytes !== undefined && size(this.captured) > judge.maxMaterialBytes)
@@ -160,7 +160,12 @@ export class AgentJudgeSession {
         input: this.captured,
         systemPrompt: this.piSystemPrompt || this.systemPrompt(),
         criteria: this.keys as [string, ...string[]],
-        steps: this.steps,
+        steps: this.steps.map((step) => ({
+          kind: step.kind,
+          message: step.message,
+          key: step.kind === "chat" ? null : step.key,
+          anchors: step.kind === "grade" ? step.anchors : null,
+        })),
         images: this.images(),
         session: this.sessionEntries,
         tools: this.tools,
@@ -177,7 +182,7 @@ export class AgentJudgeSession {
   chat(message: string): void {
     if (typeof message !== "string" || message.trim() === "")
       throw new TypeError("Agent Judge chat message must be non-empty");
-    this.steps.push({ kind: "chat", message, key: null, anchors: null });
+    this.steps.push({ kind: "chat", message });
   }
 
   register(
@@ -191,10 +196,14 @@ export class AgentJudgeSession {
     this.pi ??= resolvePiCodingAgent();
     if (this.keys.length === 0) {
       this.entryIndex = entryIndex;
-      this.usage = this.usageForEntry?.(entryIndex);
+      this.usage = this.usageForEntry(entryIndex);
     }
     this.keys.push(key);
-    this.steps.push({ kind, message: question.rubric, key, anchors: question.anchors });
+    this.steps.push(
+      question.kind === "grade"
+        ? { kind: question.kind, message: question.rubric, key, anchors: question.anchors }
+        : { kind: question.kind, message: question.rubric, key },
+    );
     const first = this.keys.length === 1;
     return {
       criterion: { kind: "agent-judge-measurement", name: `agent-judge:${kind}`, scale: "unit-interval" },
@@ -213,6 +222,10 @@ export class AgentJudgeSession {
         : [],
       evaluate: () => this.evaluate(key),
       terminalEvidence: () => this.terminalEvidence(key, first),
+      terminalDetail: () => undefined,
+      terminalReceipt: () => undefined,
+      coverage: { state: "complete" },
+      limitations: [],
     };
   }
 
@@ -221,10 +234,10 @@ export class AgentJudgeSession {
     if (previous !== undefined) return previous;
     this.closed = true;
     this.sealedTrace ??= structuredClone(this.trace());
-    const evidence = Object.freeze([
+    const evidence = [
       ...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace)), Infinity).material] : []),
       captureFullAssertionSnapshot(this.envelope(key), Infinity).material,
-    ]);
+    ];
     this.evidence.set(key, evidence);
     return evidence;
   }
@@ -234,7 +247,7 @@ export class AgentJudgeSession {
     const payload: AgentJudgeAudit = {
       trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key,
-      prompt: this.steps.find((step) => step.key === key)!.message,
+      prompt: this.steps.find((step) => step.kind !== "chat" && step.key === key)!.message,
       submission: this.submissions.get(key) ?? null,
       result: this.results.get(key) ?? { state: "interrupted" },
     };
@@ -328,7 +341,11 @@ export class AgentJudgeSession {
                 message: "Agent Judge terminal audit failed validation",
               };
               this.results.set(key, failure);
-              return { state: "errored", detail: { code: failure.code, message: failure.message } };
+              return {
+                state: "errored",
+                detail: { code: failure.code, message: failure.message },
+                receipt: undefined,
+              };
             }
             return {
               state: "measured" as const,
@@ -337,6 +354,7 @@ export class AgentJudgeSession {
                 rationale: { state: "available", value: submitted.value.rationale },
                 evidence: { state: "available", value: submitted.value.evidence },
               },
+              receipt: undefined,
             };
           }
           const stored = this.results.get(key);
@@ -350,11 +368,16 @@ export class AgentJudgeSession {
                 });
           this.results.set(key, failure);
           return failure.state === "errored"
-            ? { state: "errored" as const, detail: { code: failure.code, message: failure.message } }
+            ? {
+                state: "errored" as const,
+                detail: { code: failure.code, message: failure.message },
+                receipt: undefined,
+              }
             : {
                 state: "unavailable" as const,
                 reason: "source-unavailable" as const,
                 detail: { failureDetail: failure.code, failureEvidence: failure.message },
+                receipt: undefined,
               };
         }),
       ),
@@ -441,7 +464,7 @@ export class AgentJudgeSession {
       this.piSystemPrompt = agent.systemPrompt;
       const opening = fitJudgeContext({
         model: profile.model,
-        ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
+        contextWindow: profile.contextWindow,
         maxOutputTokens: profile.protocol.maxOutputTokens,
         material: this.snapshot.material,
         encodeRequest: (material) =>
@@ -545,6 +568,7 @@ export class AgentJudgeSession {
             result: null,
           });
         if (event.type === "tool_execution_end") {
+          const isError = event.isError;
           const index = this.tools.findIndex((tool) => tool.callId === event.toolCallId);
           if (index < 0) return;
           const current = this.tools[index]!;
@@ -552,11 +576,19 @@ export class AgentJudgeSession {
             this.currentKey !== undefined &&
             this.submissions.has(this.currentKey) &&
             current.name !== "submit_evaluation";
+          function toolValidation() {
+            if (current.validation !== "not-checked") return current.validation;
+            return isError ? ("invalid" as const) : ("valid" as const);
+          }
+          function toolExecutionState() {
+            if (signal.aborted) return "interrupted" as const;
+            if (locked) return "not-started" as const;
+            return isError ? ("failed" as const) : ("completed" as const);
+          }
           this.tools[index] = {
             ...current,
-            validation:
-              current.validation === "not-checked" ? (event.isError ? "invalid" : "valid") : current.validation,
-            state: signal.aborted ? "interrupted" : locked ? "not-started" : event.isError ? "failed" : "completed",
+            validation: toolValidation(),
+            state: toolExecutionState(),
             result: event.result.content
               .filter((item: { type: string }) => item.type === "text")
               .map((item: { text: string }) => item.text)
@@ -598,10 +630,9 @@ export class AgentJudgeSession {
       for (const [index, step] of this.steps.entries()) {
         if (index > lastQuestion || signal.aborted || this.closed || this.problem !== undefined) break;
         this.currentStep = index + 1;
-        if (step.key === null) delete this.currentKey;
-        else this.currentKey = step.key;
+        this.currentKey = step.kind === "chat" ? undefined : step.key;
         this.currentTurns = 0;
-        delete this.currentFailure;
+        this.currentFailure = undefined;
         const submitTool = agent.agent.state.tools.find((tool) => tool.name === "submit_evaluation");
         // pi retains this tool object in its registry and restores it before each prompt.
         if (submitTool !== undefined)
@@ -614,7 +645,7 @@ export class AgentJudgeSession {
           this.failPi(piDefect(cause));
         }
         captureSession();
-        if (step.key !== null && !this.submissions.has(step.key))
+        if (step.kind !== "chat" && !this.submissions.has(step.key))
           this.results.set(
             step.key,
             this.problem ??

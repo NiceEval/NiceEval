@@ -4,7 +4,7 @@
 // @concord-implements docs/feature/experiments/use-case/rerun-all.md
 
 import type { IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
-import { executionDigestForManifestOrigin, explainIdentityMismatch, type IdentityExplanation } from "./manifest.ts";
+import { executionDigestForManifestOrigin, type IdentityExplanation } from "./manifest.ts";
 import { readIdentityExplanation, type HistoricalIdentityComparison } from "./identity-explanation-read.ts";
 import { Effect, Result, Schema } from "effect";
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
@@ -19,6 +19,7 @@ import { RecordSlotIdentitySchema } from "../record/codec/core.ts";
 import type { ReadableRunResource } from "../run/storage/types.ts";
 import { foldRecordedAttemptScore } from "../eval/record/score.ts";
 import { hasProvenNoExperimentHooks } from "./rename-identity.ts";
+import type { ModuleReuseEligibility } from "./module-graph.ts";
 
 import type { RecordIssue } from "../record/errors/record-errors.ts";
 import { nonEmptyRecordIssues, recordIssue } from "../record/errors/record-errors.ts";
@@ -102,7 +103,7 @@ export type ExecutionComparisonResult = ComparisonResult;
 export type ExecutionRecordedClaim = RecordedAttemptClaim;
 
 export interface ExecutionComparison {
-  readonly explanation?: IdentityExplanation;
+  readonly explanation: IdentityExplanation | undefined;
   readonly attachment: ExecutionComparisonAttachment;
   readonly recordedClaim: ExecutionRecordedClaim;
   readonly sourceState: ExecutionComparisonSourceState;
@@ -180,8 +181,8 @@ export interface TargetRun {
  * Attempt without an out-of-band provenance Attachment.
  */
 export interface TargetSlot {
-  readonly identityManifest?: IdentityManifestEntry;
-  readonly renameFingerprint?: (experimentId: string) => string | undefined;
+  readonly identityManifest: IdentityManifestEntry | undefined;
+  readonly renameFingerprint: (experimentId: string) => string | undefined;
   readonly runId: RunId;
   readonly slotId: SlotId;
   readonly experimentId: string;
@@ -191,28 +192,29 @@ export interface TargetSlot {
   readonly executionIdentityDigest: ExecutionIdentityDigest;
   readonly inputIdentity: ExecutionIdentity;
   readonly configIdentity: ExecutionIdentity;
-  readonly timeout?: ExecutionDurationLimit;
-  /** Current-only eligibility fact; omitted means behavior identity is reusable. */
-  readonly reuseEligibility?: "adapter-behavior-revision-required" | "dynamic-module-unresolved";
-  readonly reuseEligibilityFacts?: readonly { readonly file: string; readonly line: number; readonly column: number }[];
+  readonly timeout: ExecutionDurationLimit | undefined;
+  /** Current-only eligibility facts never enter execution identity material. */
+  readonly reuseEligibility: ModuleReuseEligibility | { readonly kind: "adapter-behavior-revision-required" };
 }
 
 /** Logical current input; evaluating it never allocates durable identities. */
 export type CurrentTargetSlot = Omit<TargetSlot, "runId" | "slotId">;
 
 export interface CurrentAssessmentRun<Ref> {
-  readonly createdRevision?: number;
-  readonly lifecycle?: {
-    readonly state: ReadableRunResource["state"] | "deleted";
-    readonly slots: ReadableRunResource["slots"];
-  };
+  readonly createdRevision: number | undefined;
+  readonly lifecycle:
+    | {
+        readonly state: ReadableRunResource["state"] | "deleted";
+        readonly slots: ReadableRunResource["slots"];
+      }
+    | undefined;
   readonly document: Pick<RunDocument, "runId" | "experimentId" | "startedAt" | "expectedSlots"> & {
-    readonly context?: RunDocument["context"];
+    readonly context: RunDocument["context"] | undefined;
   };
   readonly members: readonly {
     readonly document: MemberDocument;
-    readonly bindingRevision?: number;
-    readonly attempt: Ref | null;
+    readonly bindingRevision: number | undefined;
+    readonly attempt: Ref | undefined;
   }[];
 }
 
@@ -235,8 +237,8 @@ export type CurrentSlotAssessment<Target extends CurrentTargetSlot, Source exten
         readonly reason: ExecutionGapReason;
         readonly scope: ExecutionGapScope;
         readonly issues: readonly PlanningIssue[];
-        readonly sourceBarrier?: ExecutionSourceBarrier;
-        readonly candidate?: Source;
+        readonly sourceBarrier: ExecutionSourceBarrier | undefined;
+        readonly candidate: Source | undefined;
         readonly comparisons: readonly ExecutionComparison[];
       }
   );
@@ -256,9 +258,9 @@ export function mergeCurrentAssessmentRuns<Ref>(
       resources,
       (resource) => {
         const published = runs.find((run) => run.document.runId === resource.runId);
-        const lifecycle = Object.freeze({ state: resource.state, slots: resource.slots });
+        const lifecycle = { state: resource.state, slots: resource.slots };
         if (published !== undefined)
-          return Effect.succeed(Object.freeze({ ...published, createdRevision: resource.createdRevision, lifecycle }));
+          return Effect.succeed({ ...published, createdRevision: resource.createdRevision, lifecycle });
         return Schema.decodeUnknownEffect(
           Schema.Struct({
             runId: RunIdSchema,
@@ -273,13 +275,12 @@ export function mergeCurrentAssessmentRuns<Ref>(
           expectedSlots: resource.slots.map(({ publication: _publication, ...slot }) => slot),
         }).pipe(
           Effect.map(
-            (document): CurrentAssessmentRun<Ref> =>
-              Object.freeze({
-                createdRevision: resource.createdRevision,
-                lifecycle,
-                document,
-                members: Object.freeze([]),
-              }),
+            (document): CurrentAssessmentRun<Ref> => ({
+              createdRevision: resource.createdRevision,
+              lifecycle,
+              document: { ...document, context: undefined },
+              members: [],
+            }),
           ),
           Effect.mapError(
             () =>
@@ -293,11 +294,10 @@ export function mergeCurrentAssessmentRuns<Ref>(
       },
       { concurrency: 1 },
     ),
-    (lifecycle) =>
-      Object.freeze([
-        ...lifecycle,
-        ...runs.filter((run) => !resources.some((resource) => resource.runId === run.document.runId)),
-      ]),
+    (lifecycle) => [
+      ...lifecycle,
+      ...runs.filter((run) => !resources.some((resource) => resource.runId === run.document.runId)),
+    ],
   );
 }
 
@@ -338,8 +338,8 @@ export interface ExecutionGapSlot extends ExecutionReusePlanSlotBase {
   readonly reason: ExecutionGapReason;
   readonly scope: ExecutionGapScope;
   readonly issues: readonly PlanningIssue[];
-  readonly sourceBarrier?: ExecutionSourceBarrier;
-  readonly candidate?: ExecutionReusePlanSource;
+  readonly sourceBarrier: ExecutionSourceBarrier | undefined;
+  readonly candidate: ExecutionReusePlanSource | undefined;
 }
 
 export type ExecutionReusePlanSlot = ReusePlanSlot | ExecutionGapSlot;
@@ -488,11 +488,12 @@ export function planProjectTargetReuse(
         if (read.state === "available") publishedRuns.push(read.value);
         else if (read.state === "core-invalid") coreIssues.push(...read.issues);
       }
-      const merged = yield* mergeCurrentAssessmentRuns(publishedRuns, selected.resources);
+      const merged = yield* mergeCurrentAssessmentRuns(
+        publishedRuns.map((run) => ({ ...run, lifecycle: undefined })),
+        selected.resources,
+      );
       const runs = merged.map((run) =>
-        selected.members.has(run.document.runId)
-          ? Object.freeze({ ...run, members: selected.members.get(run.document.runId)! })
-          : run,
+        selected.members.has(run.document.runId) ? { ...run, members: selected.members.get(run.document.runId)! } : run,
       );
       const byRunId = new Map(publishedRuns.map((run) => [run.document.runId, run] as const));
       const slots: ExecutionReusePlanSlot[] = [];
@@ -521,14 +522,14 @@ export function planProjectTargetReuse(
       }
       const reuse = slots.filter((slot): slot is ReusePlanSlot => slot.state === "reuse");
       const gaps = slots.filter((slot): slot is ExecutionGapSlot => slot.state === "gap");
-      return Object.freeze({
+      return {
         target: input.target,
         policy: projectTargetPolicyIdentity,
         effectiveOptions: effectiveOptions(input.policy),
-        slots: Object.freeze(slots),
-        reuse: Object.freeze(reuse),
-        gaps: Object.freeze(gaps),
-      });
+        slots,
+        reuse,
+        gaps,
+      };
     });
   });
 }
@@ -541,26 +542,25 @@ export function planProjectTargetReuseWithoutSources(input: {
   return Effect.suspend(() => {
     const invalid = validateProjectTargetReusePlanInput(input);
     if (invalid !== undefined) return Effect.fail(invalid);
-    const gaps = Object.freeze(
-      flattenTargetSlots(input.target).map((target) =>
-        gapSlot(target, {
-          reason: target.reuseEligibility ?? "no-source-run",
-          scope: "slot",
-          issues: [],
-          comparisons: [],
-        }),
-      ),
-    );
-    return Effect.succeed(
-      Object.freeze({
-        target: input.target,
-        policy: projectTargetPolicyIdentity,
-        effectiveOptions: effectiveOptions(input.policy),
-        slots: gaps,
-        reuse: Object.freeze([]),
-        gaps,
+    const gaps = flattenTargetSlots(input.target).map((target) =>
+      gapSlot(target, {
+        reason: target.reuseEligibility.kind === "eligible" ? "no-source-run" : target.reuseEligibility.kind,
+        scope: "slot",
+        issues: [],
+        comparisons: [],
+
+        sourceBarrier: undefined,
+        candidate: undefined,
       }),
     );
+    return Effect.succeed({
+      target: input.target,
+      policy: projectTargetPolicyIdentity,
+      effectiveOptions: effectiveOptions(input.policy),
+      slots: gaps,
+      reuse: [],
+      gaps,
+    });
   });
 }
 
@@ -573,11 +573,12 @@ function planTargetSlot(input: {
   readonly runs: readonly CurrentAssessmentRun<SelectedAttemptRef>[];
   readonly byRunId: ReadonlyMap<RunId, ReadableRun>;
   readonly selectionHasProblem: boolean;
-  readonly selectionProblemScope?: ExecutionGapScope;
+  readonly selectionProblemScope: ExecutionGapScope | undefined;
   readonly coreIssues: readonly RecordIssue[];
 }): Effect.Effect<ExecutionReusePlanSlot, RecordReaderReadError> {
   return assessCurrentTargetSlot({
     ...input,
+    byRunId: new Map(input.runs.map((run) => [run.document.runId, run])),
     readAttempt: (ref) =>
       input.reader.readAttempt(ref).pipe(
         Effect.catch((error) =>
@@ -618,7 +619,7 @@ function planTargetSlot(input: {
         reader: input.reader,
         historical: input.byRunId.get(run.document.runId)!,
         evalId: target.evalId,
-        ...(target.identityManifest === undefined ? {} : { current: target.identityManifest }),
+        current: target.identityManifest,
       }),
     sourceFor: (attempt, sourceBarrier) => {
       if (!hasPublicationIdentity(attempt)) throw new Error("Expected a published Attempt");
@@ -663,9 +664,9 @@ export interface CurrentAssessmentInput<
   readonly runs: readonly CurrentAssessmentRun<Ref>[];
   readonly byRunId: ReadonlyMap<RunId, CurrentAssessmentRun<Ref>>;
   readonly selectionHasProblem: boolean;
-  readonly selectionProblemScope?: ExecutionGapScope;
+  readonly selectionProblemScope: ExecutionGapScope | undefined;
   readonly coreIssues: readonly RecordIssue[];
-  readonly readIdentityComparison?: (
+  readonly readIdentityComparison: (
     run: CurrentAssessmentRun<Ref>,
     target: Target,
   ) => Effect.Effect<HistoricalIdentityComparison, Error>;
@@ -687,12 +688,15 @@ export function assessCurrentTargetSlot<
   input: CurrentAssessmentInput<Ref, Attempt, Source, Target, Error>,
 ): Effect.Effect<CurrentSlotAssessment<Target, Source>, Error> {
   return Effect.gen(function* () {
-    if (input.target.reuseEligibility !== undefined) {
+    if (input.target.reuseEligibility.kind !== "eligible") {
       return gapSlot(input.target, {
-        reason: input.target.reuseEligibility,
+        reason: input.target.reuseEligibility.kind,
         scope: "slot",
         issues: [],
         comparisons: [],
+
+        sourceBarrier: undefined,
+        candidate: undefined,
       });
     }
     if (input.selectionHasProblem) {
@@ -701,6 +705,9 @@ export function assessCurrentTargetSlot<
         scope: input.selectionProblemScope ?? "target",
         issues: input.coreIssues,
         comparisons: [],
+
+        sourceBarrier: undefined,
+        candidate: undefined,
       });
     }
     const sourceRun = latestSourceRun(input.runs, input.target);
@@ -710,12 +717,15 @@ export function assessCurrentTargetSlot<
         scope: "slot",
         issues: [],
         comparisons: [],
+
+        sourceBarrier: undefined,
+        candidate: undefined,
       });
     }
-    const sourceBarrier = Object.freeze({
+    const sourceBarrier = {
       runId: sourceRun.document.runId,
       startedAt: sourceRun.document.startedAt,
-    });
+    };
     const expected = sourceRun.document.expectedSlots.find(
       (slot) => slot.evalId === input.target.evalId && slot.attemptOrdinal === input.target.attempt,
     );
@@ -726,10 +736,12 @@ export function assessCurrentTargetSlot<
         issues: [],
         sourceBarrier,
         comparisons: [],
+
+        candidate: undefined,
       });
     }
     const member = sourceRun.members.find((candidate) => candidate.document.slotId === expected.slotId);
-    if (member === undefined || member.attempt === null) {
+    if (member === undefined || member.attempt === undefined) {
       const publication = sourceRun.lifecycle?.slots.find((slot) => slot.slotId === expected.slotId)?.publication;
       return gapSlot(input.target, {
         reason: "source-member-missing",
@@ -748,6 +760,8 @@ export function assessCurrentTargetSlot<
                 ),
               ]
             : [],
+
+        candidate: undefined,
       });
     }
     const readAttempt = yield* input.readAttempt(member.attempt);
@@ -758,6 +772,8 @@ export function assessCurrentTargetSlot<
         issues: issuesOf(readAttempt),
         sourceBarrier,
         comparisons: [],
+
+        candidate: undefined,
       });
     }
     if (!readAttempt.value.publicationAvailable) {
@@ -767,6 +783,8 @@ export function assessCurrentTargetSlot<
         issues: [],
         sourceBarrier,
         comparisons: [],
+
+        candidate: undefined,
       });
     }
     const document = readAttempt.value.document;
@@ -783,20 +801,13 @@ export function assessCurrentTargetSlot<
         issues: [],
         sourceBarrier,
         comparisons: [],
+
+        candidate: undefined,
       });
     }
     const candidate = input.sourceFor(readAttempt.value, sourceBarrier);
     let identityComparison = comparison("core", "execution-identity", "available", "match", "execution-identity-match");
-    const compareRun = (run: CurrentAssessmentRun<Ref>) =>
-      input.readIdentityComparison === undefined
-        ? Effect.succeed({
-            historical: undefined,
-            explanation: explainIdentityMismatch({
-              ...(input.target.identityManifest === undefined ? {} : { current: input.target.identityManifest }),
-              ...(run.document.context === undefined ? {} : { context: run.document.context }),
-            }),
-          })
-        : input.readIdentityComparison(run, input.target);
+    const compareRun = (run: CurrentAssessmentRun<Ref>) => input.readIdentityComparison(run, input.target);
     if (input.target.executionIdentityDigest !== expected.executionIdentityDigest) {
       const sourceIdentity = yield* compareRun(sourceRun);
       const explanation = sourceIdentity.explanation;
@@ -1022,18 +1033,18 @@ export function assessCurrentTargetSlot<
         comparisons: [...explainedIdentity, verdictComparison(verdict, "match"), duration.comparison],
       });
     }
-    return Object.freeze({
+    return {
       ...input.target,
       state: "reuse" as const,
       adoption: "carried" as const,
       source: candidate,
-      comparisons: Object.freeze([
+      comparisons: [
         identityComparison,
         comparison("core", "attempt-outcome", "available", "match", "attempt-completed"),
         verdictComparison(verdict, "match"),
         duration.comparison,
-      ]),
-    });
+      ],
+    };
   });
 }
 
@@ -1092,29 +1103,30 @@ function candidateFor(input: {
   }
   const reference = detachPlanningReference(input.reader, input.attempt.ref);
   if (reference === undefined) return undefined;
-  return Object.freeze({
-    source: Object.freeze({
+  return {
+    source: {
       reference,
       attemptId: input.attempt.ref.attemptId,
       attempt: input.attempt.ref,
-      origin: Object.freeze({ runId: document.originRunId, slotId: document.slotId }),
+      origin: { runId: document.originRunId, slotId: document.slotId },
       originRun: originRun.ref,
       sourceBarrier: input.sourceBarrier,
       evaluationKind: input.target.evaluationKind,
-    }),
+    },
     originExpected,
-  });
+  };
 }
 
 function issuesOf(read: RecordCoreRead<unknown>): readonly RecordIssue[] {
-  return read.state === "core-invalid" ? read.issues : Object.freeze([]);
+  return read.state === "core-invalid" ? read.issues : [];
 }
 
-function attachmentProblem(input: {
-  readonly state: "not-recorded" | "unsupported" | "invalid";
-  readonly family?: string;
-  readonly issues?: readonly RecordIssue[];
-}): {
+function attachmentProblem(
+  input:
+    | { readonly state: "not-recorded" }
+    | { readonly state: "unsupported"; readonly family: string }
+    | { readonly state: "invalid"; readonly issues: readonly RecordIssue[] },
+): {
   readonly reason: Extract<
     ExecutionGapReason,
     "source-attachment-unavailable" | "source-attachment-unsupported" | "source-attachment-invalid"
@@ -1124,31 +1136,31 @@ function attachmentProblem(input: {
 } {
   switch (input.state) {
     case "not-recorded":
-      return Object.freeze({
+      return {
         reason: "source-attachment-unavailable" as const,
         state: "unavailable" as const,
-        issues: Object.freeze([]),
-      });
+        issues: [],
+      };
     case "unsupported":
-      return Object.freeze({
+      return {
         reason: "source-attachment-unsupported" as const,
         state: "unsupported" as const,
-        issues: Object.freeze([]),
-      });
+        issues: [],
+      };
     case "invalid":
-      return Object.freeze({
+      return {
         reason: "source-attachment-invalid" as const,
         state: "invalid" as const,
-        issues: input.issues ?? Object.freeze([]),
-      });
+        issues: input.issues,
+      };
   }
 }
 
 function identityMismatchComparison(explanation: IdentityExplanation): ExecutionComparison {
-  return Object.freeze({
+  return {
     ...comparison("core", "execution-identity", "available", "mismatch", "identity-mismatch"),
     explanation,
-  });
+  };
 }
 
 function verdictComparison(
@@ -1169,7 +1181,7 @@ function durationComparison(input: {
   readonly target: ExecutionDurationLimit | undefined;
 }): {
   readonly comparison: ExecutionComparison;
-  readonly failure?: "duration-domain-mismatch" | "timeout-exceeded";
+  readonly failure: "duration-domain-mismatch" | "timeout-exceeded" | undefined;
 } {
   if (input.target === undefined) {
     return {
@@ -1180,6 +1192,8 @@ function durationComparison(input: {
         "match",
         "timeout-unbounded",
       ),
+
+      failure: undefined,
     };
   }
   if (input.source.domain !== input.target.domain) {
@@ -1214,6 +1228,8 @@ function durationComparison(input: {
       "match",
       "duration-within-timeout",
     ),
+
+    failure: undefined,
   };
 }
 
@@ -1224,56 +1240,65 @@ function comparison(
   result: ExecutionComparisonResult,
   reason: string,
 ): ExecutionComparison {
-  return Object.freeze({ attachment, recordedClaim, sourceState, result, reason });
+  return { attachment, recordedClaim, sourceState, result, reason, explanation: undefined };
 }
 
-function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource = ExecutionReusePlanSource>(
+interface GapSlotInput<Source extends CurrentAssessmentSource> {
+  readonly reason: ExecutionGapReason;
+  readonly scope: ExecutionGapScope;
+  readonly issues: readonly PlanningIssue[];
+  readonly comparisons: readonly ExecutionComparison[];
+  readonly sourceBarrier: ExecutionSourceBarrier | undefined;
+  readonly candidate: Source | undefined;
+}
+
+function gapSlot<Target extends CurrentTargetSlot>(
   target: Target,
-  input: {
-    readonly reason: ExecutionGapReason;
-    readonly scope: ExecutionGapScope;
-    readonly issues: readonly PlanningIssue[];
-    readonly comparisons: readonly ExecutionComparison[];
-    readonly sourceBarrier?: ExecutionSourceBarrier;
-    readonly candidate?: Source;
-  },
+  input: GapSlotInput<never>,
+): Extract<CurrentSlotAssessment<Target, never>, { readonly state: "gap" }>;
+function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource>(
+  target: Target,
+  input: GapSlotInput<Source>,
+): Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }>;
+function gapSlot<Target extends CurrentTargetSlot, Source extends CurrentAssessmentSource>(
+  target: Target,
+  input: GapSlotInput<Source>,
 ): Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }> {
   const result: Extract<CurrentSlotAssessment<Target, Source>, { readonly state: "gap" }> = {
     ...target,
     state: "gap" as const,
     reason: input.reason,
     scope: input.scope,
-    issues: Object.freeze([
+    issues: [
       ...input.issues,
-      ...(target.reuseEligibilityFacts ?? []).map((fact) =>
-        Object.freeze({
+      ...(target.reuseEligibility.kind === "dynamic-module-unresolved" ? target.reuseEligibility.facts : []).map(
+        (fact) => ({
           code: "dynamic-module-unresolved" as const,
           path: [fact.file, String(fact.line), String(fact.column)],
           ...fact,
         }),
       ),
-    ]),
-    ...(input.sourceBarrier === undefined ? {} : { sourceBarrier: input.sourceBarrier }),
-    ...(input.candidate === undefined ? {} : { candidate: input.candidate }),
-    comparisons: Object.freeze([...input.comparisons]),
+    ],
+    sourceBarrier: input.sourceBarrier,
+    candidate: input.candidate,
+    comparisons: input.comparisons,
   };
-  Object.freeze(result);
   return result;
 }
 
 function effectiveOptions(policy: ProjectTargetPolicy): ExecutionReuseEffectiveOptions {
-  return Object.freeze({
+  return {
     rerun: policy.rerun,
     keepSandbox: policy.keepSandbox,
-    reuseContract: Object.freeze({
+    reuseContract: {
       domain: policy.reuseContract.domain,
       value: policy.reuseContract.value,
-    }),
-  });
+    },
+  };
 }
 
 function flattenTargetSlots(target: ExecutionTarget): readonly TargetSlot[] {
-  return Object.freeze(target.runs.flatMap((run) => run.slots));
+  return target.runs.flatMap((run) => run.slots);
 }
 
 function sourceKey(experimentId: string, evalId: string, ordinal?: string): string {
@@ -1281,7 +1306,7 @@ function sourceKey(experimentId: string, evalId: string, ordinal?: string): stri
 }
 
 function invalidPlan(reason: ProjectTargetReusePlanInvalidReason): ProjectTargetReusePlanInvalid {
-  return Object.freeze({ code: "project-target-reuse-plan-invalid", reason });
+  return { code: "project-target-reuse-plan-invalid", reason };
 }
 
 function isTargetRun(value: unknown): value is TargetRun {
@@ -1314,9 +1339,9 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     Number.isSafeInteger(slot.attempt) &&
     slot.attempt >= 0 &&
     (slot.evaluationKind === "pass" || slot.evaluationKind === "score") &&
-    (slot.reuseEligibility === undefined ||
-      slot.reuseEligibility === "adapter-behavior-revision-required" ||
-      slot.reuseEligibility === "dynamic-module-unresolved") &&
+    (slot.reuseEligibility?.kind === "eligible" ||
+      slot.reuseEligibility?.kind === "adapter-behavior-revision-required" ||
+      (slot.reuseEligibility?.kind === "dynamic-module-unresolved" && Array.isArray(slot.reuseEligibility.facts))) &&
     typeof slot.executionIdentityDigest === "string" &&
     isSha256Digest(slot.executionIdentityDigest) &&
     isExecutionIdentity(slot.inputIdentity) &&

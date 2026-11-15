@@ -268,7 +268,7 @@ export function ExecutionTrace({
 }: {
   readonly locator: string;
   readonly initial: Outline;
-  readonly selectedId?: string;
+  readonly selectedId: string | undefined;
 }): ReactElement | null {
   const { t } = useTranslation();
   const [continuation, setContinuation] = useState<string>();
@@ -277,7 +277,7 @@ export function ExecutionTrace({
   );
   const [identity, setIdentity] = useState("");
   const page = useInspectionQuery<"attempt.trace">(
-    continuation === undefined ? null : { ...attemptOperations(locator)[1], continuation },
+    continuation === undefined ? undefined : { ...attemptOperations(locator)[1], continuation },
   );
   const outline = continuation === undefined ? initial : page.data?.trace.execution;
   if (initial.state === "not-recorded") return null;

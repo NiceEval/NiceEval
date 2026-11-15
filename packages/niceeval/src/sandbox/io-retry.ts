@@ -9,11 +9,13 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 
 export interface SandboxIoRetryOptions {
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  classify?: (error: unknown) => SandboxIoErrorKind;
+  maxAttempts?: number | undefined;
+  baseDelayMs?: number | undefined;
+  classify?: ((error: unknown) => SandboxIoErrorKind) | undefined;
   /** 内部可观察挂点；runner feedback 接入后由统一包装层注入。 */
-  onRetry?: (event: { attempt: number; delayMs: number; kind: SandboxIoErrorKind; error: unknown }) => void;
+  onRetry?:
+    | ((event: { attempt: number; delayMs: number; kind: SandboxIoErrorKind; error: unknown }) => void)
+    | undefined;
 }
 
 /**

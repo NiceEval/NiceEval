@@ -231,6 +231,8 @@ describe("Judge Provider headers and Cloudflare Access", () => {
         body: JSON.stringify({ model: "gpt-4o" }),
         maxBytes: 16_384,
         signal: controller.signal,
+        usage: undefined,
+        deadlineAt: undefined,
       });
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);

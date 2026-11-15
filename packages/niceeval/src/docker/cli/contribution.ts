@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import { CliArguments, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure } from "../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import {
   DockerCacheAdministration,
   type DockerCacheDomainInventory,
@@ -32,7 +34,7 @@ export const DOCKER_OPTIONS = Object.freeze({
   }),
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
-export type DockerCliError = CliFeatureError;
+export type DockerCliError = CliFeatureError<ExternalCause>;
 
 const DOCKER_HELP = `niceeval docker — Docker-specific administration
 
@@ -55,7 +57,12 @@ Usage:
 `;
 
 const dockerFailure = (operation: string, cause: unknown, exitCode = 4) =>
-  new CliFeatureError({ feature: "docker", operation, cause, exitCode });
+  externalCliFailure(cause, {
+    feature: "docker",
+    operation,
+    exitCode,
+    display: undefined,
+  });
 
 const DOCKER_COMMAND_OPTIONS = Object.freeze({
   "profile/list": Object.freeze(["json", "help"]),

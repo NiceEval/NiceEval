@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { CommandOptions, CommandResult, ManagedProcess, ManagedProcessStart } from "../types.ts";
-import type { OpenSandboxOptions } from "../opensandbox.ts";
+import type { OpenSandboxProviderPlan } from "../opensandbox.ts";
 import { noSandboxBackendCapabilities, supportedBackendCapability, type SandboxProviderBackend } from "../backend.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
 import { shellQuote } from "../shell.ts";
@@ -37,7 +37,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
 
   private constructor(
     private remote: RemoteSandbox,
-    private readonly options: OpenSandboxOptions & { readonly lifetimeMs: number },
+    private readonly options: OpenSandboxProviderPlan & { readonly lifetimeMs: number },
     _connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
     private deadlineAt?: number,
   ) {}
@@ -50,7 +50,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   }
 
   static async create(
-    options: OpenSandboxOptions & { readonly lifetimeMs: number },
+    options: OpenSandboxProviderPlan & { readonly lifetimeMs: number },
     deadlineAt?: number,
     snapshotId?: string,
     runId?: string,
@@ -72,7 +72,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   }
 
   private static async provision(
-    options: OpenSandboxOptions & { readonly lifetimeMs: number },
+    options: OpenSandboxProviderPlan & { readonly lifetimeMs: number },
     connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
     snapshotId?: string,
     runId?: string,
@@ -87,7 +87,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
         metadata,
         timeoutSeconds: Math.ceil(options.lifetimeMs / 1000),
         platform: { os: "linux", arch: options.targetPlatform.arch === "x64" ? "amd64" : "arm64" },
-        resource: { cpu: options.resources?.cpu ?? "1", memory: options.resources?.memory ?? "2Gi" },
+        resource: options.resources,
         secureAccess: false,
         skipHealthCheck: true,
       });
@@ -134,13 +134,15 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
     }
     // The SDK serializes octal permission digits (755), not a JS octal integer.
     await this.remote.files.createDirectories([{ path: this.workdir, mode: 755 }]);
-    if (this.options.user !== undefined) {
-      const result = await this.runCommand("chown", [this.options.user, this.workdir], { user: "root", signal });
+    if (this.options.user._tag === "Configured") {
+      const result = await this.runCommand("chown", [this.options.user.value, this.workdir], { user: "root", signal });
       if (result.exitCode !== 0) throw new Error(`Cannot initialize OpenSandbox workspace: ${result.stderr}`);
     }
   }
 
-  private identity(user = this.options.user ?? "root"): Promise<ExecutionIdentity> {
+  private identity(
+    user = this.options.user._tag === "Configured" ? this.options.user.value : "root",
+  ): Promise<ExecutionIdentity> {
     const existing = this.identities.get(user);
     if (existing !== undefined) return existing;
     const pending = this.remote.files.readFile("/etc/passwd").then((passwd) => {
@@ -171,7 +173,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
     if (this.stopped || this.stopping) throw new Error("OpenSandbox is stopped");
     try {
       const identity = await this.identity();
-      const prefix = this.options.pathPrepend ?? [];
+      const prefix = this.options.pathPrepend;
       const env: Record<string, string> = { ...identity.env, ...input.env };
       if (prefix.length > 0) {
         const path = await this.runCommand("printenv", ["PATH"], { user: "root" });
@@ -197,7 +199,11 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
     options: CommandOptions = {},
   ): Promise<CommandResult> {
     if (this.stopped || this.stopping) throw new Error("OpenSandbox is stopped");
-    const limit = commandLimit(options, { ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }) });
+    const limit = commandLimit(options, {
+      // OpenSandbox has no provider command timeout separate from the Attempt deadline.
+      commandTimeoutMs: undefined,
+      deadlineAt: this.deadlineAt,
+    });
     const controller = new AbortController();
     let interrupted!: () => void;
     const interruption = new Promise<never>((_resolve, reject) => {
@@ -256,7 +262,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   ): Promise<CommandResult> {
     const identity = await this.identity(options.user);
     const argv = [command, ...args];
-    const prefix = this.options.pathPrepend ?? [];
+    const prefix = this.options.pathPrepend;
     const invocation =
       prefix.length === 0
         ? argv
@@ -295,10 +301,18 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   async writeBytes(path: string, content: Uint8Array): Promise<void> {
     const absolute = resolveSandboxPath(this.workdir, path);
     await this.remote.files.createDirectories([
-      { path: dirname(absolute), mode: 755, ...(this.options.user === undefined ? {} : { owner: this.options.user }) },
+      {
+        path: dirname(absolute),
+        mode: 755,
+        ...(this.options.user._tag === "Configured" ? { owner: this.options.user.value } : {}),
+      },
     ]);
     await this.remote.files.writeFiles([
-      { path: absolute, data: content, ...(this.options.user === undefined ? {} : { owner: this.options.user }) },
+      {
+        path: absolute,
+        data: content,
+        ...(this.options.user._tag === "Configured" ? { owner: this.options.user.value } : {}),
+      },
     ]);
   }
   writeText(path: string, content: string): Promise<void> {

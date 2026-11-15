@@ -6,7 +6,7 @@ export function CopyButton({
   children,
 }: {
   readonly text: string;
-  readonly className?: string;
+  readonly className: string | undefined;
   readonly children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);

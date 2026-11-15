@@ -141,14 +141,17 @@ export function readAllEntryFilesEffect<T extends {}>(
     Effect.catch(() => Effect.succeed([] as string[])),
     Effect.flatMap((files) =>
       Effect.forEach(files, (file) => {
-        if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed(undefined);
+        if (!file.endsWith(".json") || file.startsWith(".")) return Effect.succeed([] as { id: string; entry: T }[]);
         const id = file.slice(0, -".json".length);
         return readEntryFileEffect(dir, id, decode).pipe(
-          Effect.map((entry) => (entry === undefined ? undefined : { id, entry })),
+          Effect.map(function retainedEntry(entry): { id: string; entry: T }[] {
+            if (entry === undefined) return [];
+            return [{ id, entry }];
+          }),
         );
       }),
     ),
-    Effect.map((entries) => entries.filter((entry): entry is { id: string; entry: T } => entry !== undefined)),
+    Effect.map((entries) => entries.flat()),
   );
 }
 

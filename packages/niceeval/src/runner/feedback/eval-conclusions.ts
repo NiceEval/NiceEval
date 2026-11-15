@@ -20,25 +20,24 @@ import type { DiagnosticNotice, EvalResult } from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 
 /** `earlyExitByEval` 与结论行分组共用的同一把 key——两处必须同源,不能各写一份拼法。 */
-export function evalConclusionKey(ref: { experimentId?: string; evalId: string }): string {
+export function evalConclusionKey(ref: { experimentId: string | undefined; evalId: string }): string {
   return `${ref.experimentId ?? ""}|${ref.evalId}`;
 }
 
-export interface EvalConclusionRow {
-  experimentId?: string;
+interface EvalConclusionBase {
+  experimentId: string | undefined;
   evalId: string;
   /** 代表 attempt 的 locator;第三方 harness 落盘的结果可能没有,原样透出 undefined。 */
   locator: string | undefined;
   verdict: Verdict;
   attempts: number;
-  /** earlyExit 触发(该 eval 确有省略)时给出;跑满时省略。 */
-  planned?: number;
-  unstarted?: number;
-  reason?: "early_exit";
-  /** 跑满(该 eval 没有省略)时给出;earlyExit 触发时省略。 */
-  passed?: number;
-  rate?: number;
 }
+
+export type EvalConclusionRow = EvalConclusionBase &
+  (
+    | { reason: "early_exit"; planned: number; unstarted: number }
+    | { reason: "completed"; passed: number; rate: number }
+  );
 
 /** `diagnostics` 里 fail-fast 记录按 (experiment, eval) 求和的未派发次数;没有 `identity`
  *  的记录(理论上不应出现——fail-fast 诊断恒带 identity,见 run.ts)不计入任何 key。
@@ -72,7 +71,7 @@ export function evalConclusionRows(
   const groups = new Map<string, EvalResult[]>();
   for (const r of results) {
     const key = evalConclusionKey({
-      ...(r.experimentId === undefined ? {} : { experimentId: r.experimentId }),
+      experimentId: r.experimentId,
       evalId: r.id,
     });
     let group = groups.get(key);
@@ -92,7 +91,7 @@ export function evalConclusionRows(
     if (unstarted > 0) {
       const hit = [...group].sort((a, b) => a.attempt - b.attempt).find((r) => r.verdict === "passed") ?? group[0]!;
       return {
-        ...(hit.experimentId === undefined ? {} : { experimentId: hit.experimentId }),
+        experimentId: hit.experimentId,
         evalId: hit.id,
         locator: hit.locator,
         verdict: hit.verdict,
@@ -106,11 +105,12 @@ export function evalConclusionRows(
     const last = [...group].sort((a, b) => b.attempt - a.attempt)[0]!;
     const passed = group.filter((r) => r.verdict === "passed").length;
     return {
-      ...(last.experimentId === undefined ? {} : { experimentId: last.experimentId }),
+      experimentId: last.experimentId,
       evalId: last.id,
       locator: last.locator,
       verdict: last.verdict,
       attempts,
+      reason: "completed" as const,
       passed,
       rate: Math.round((passed / attempts) * 1000) / 1000,
     };

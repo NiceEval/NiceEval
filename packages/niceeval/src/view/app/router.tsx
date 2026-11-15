@@ -30,8 +30,7 @@ import {
 
 export interface RefreshResult {
   readonly manifest: ViewManifest;
-  readonly fallbackRoute?: string;
-  readonly noticeKey?: "refresh.selectionChanged";
+  readonly selectionChanged: boolean;
 }
 export class GenerationPrepareError extends Error {
   readonly classification = "generation-prepare" as const;
@@ -76,7 +75,7 @@ export async function createViewRouter(unmountRoot: () => void) {
     const initialLocation = decodeInitialHashLocation(manifest.defaultRoute);
     const preparedLocation =
       targetForRoute(manifest, initialLocation.pathname) === undefined
-        ? { pathname: manifest.defaultRoute }
+        ? { pathname: manifest.defaultRoute, search: "" }
         : initialLocation;
     await prepareSurfacePlan(
       prepared.lease,
@@ -137,11 +136,9 @@ export async function createViewRouter(unmountRoot: () => void) {
               requireActivePage(pageLifetime.signal);
               const descriptor = await fetchCurrentGeneration();
               requireActivePage(pageLifetime.signal);
-              return descriptor.stale
-                ? ("stale" as const)
-                : descriptor.generationId !== generations.current?.identity
-                  ? ("available" as const)
-                  : ("none" as const);
+              if (descriptor.stale) return "stale" as const;
+              if (descriptor.generationId !== generations.current?.identity) return "available" as const;
+              return "none" as const;
             }}
             refresh={async (acquireLock) => {
               const refreshEpoch = locationEpoch;
@@ -178,6 +175,7 @@ export async function createViewRouter(unmountRoot: () => void) {
                 const surfaces = resolveSurfacePlan(nextManifest, {
                   pathname: selection.route,
                   state: selection.fallback ? null : locationState,
+                  search: "",
                 });
                 await prepareSurfacePlan(candidate.lease, nextManifest, nextOverview, descriptor.targetMode, surfaces);
                 requireActivePage(pageLifetime.signal);
@@ -236,12 +234,10 @@ export async function createViewRouter(unmountRoot: () => void) {
                 const proceeded = await commitLock.release();
                 lockOpen = false;
                 const fallbackApplied = selection.fallback && proceeded !== "user";
-                return Object.freeze({
+                return {
                   manifest: nextManifest,
-                  ...(fallbackApplied
-                    ? { fallbackRoute: selection.route, noticeKey: "refresh.selectionChanged" as const }
-                    : {}),
-                });
+                  selectionChanged: fallbackApplied,
+                };
               } catch (cause) {
                 if (pageLifetime.signal.aborted) throw pageLifetime.signal.reason;
                 if (hostCommitted && lockOpen) {
@@ -334,7 +330,7 @@ function refreshLocationStable(
 }
 
 function currentRefreshResult(runtime: ViewRuntime<InsightRuntimeSnapshot>): RefreshResult {
-  return Object.freeze({ manifest: runtime.current!.snapshot.manifest });
+  return { manifest: runtime.current!.snapshot.manifest, selectionChanged: false };
 }
 
 async function resolveHostCommit(
@@ -375,7 +371,7 @@ function decodeInitialHashLocation(defaultRoute: string): BackgroundLocation & {
   const searchStart = route.indexOf("?");
   return {
     pathname: searchStart < 0 ? route : route.slice(0, searchStart),
-    ...(searchStart < 0 ? {} : { search: route.slice(searchStart) }),
+    search: searchStart < 0 ? "" : route.slice(searchStart),
     state: initialRouteState(),
   };
 }
@@ -476,7 +472,9 @@ function refreshSelection(
 }
 
 function compareCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 function generationSnapshot(
   manifest: ViewManifest,
@@ -485,18 +483,19 @@ function generationSnapshot(
   targetFailureReason: string | null,
   presentation?: PreparedInsightPresentation,
 ): InsightRuntimeSnapshot {
-  return Object.freeze({
+  const base = {
     manifest,
     overview,
-    targetMode,
-    targetFailureReason,
-    ...(presentation === undefined ? {} : { presentation }),
-  });
+    presentation,
+  };
+  return targetMode === "unavailable"
+    ? { ...base, targetMode, targetFailureReason: targetFailureReason ?? undefined }
+    : { ...base, targetMode };
 }
 
 function withCurrentCatalog(overview: ClosedOverview, experiments: readonly string[]): ClosedOverview {
-  return Object.freeze({
+  return {
     ...overview,
-    catalog: Object.freeze({ ...overview.catalog, experiments: Object.freeze([...experiments]) }),
-  });
+    catalog: { ...overview.catalog, experiments },
+  };
 }

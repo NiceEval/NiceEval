@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Data, Schema } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 
 export const Operation = Schema.Struct({
   id: Schema.String,
@@ -27,14 +28,73 @@ const ApiError = Schema.Struct({
   error: Schema.Struct({ code: Schema.String, requestId: Schema.optionalKey(Schema.String) }),
 });
 
-export class InstaboxApiError extends Error {
+export type InstaboxApiFailure =
+  | { readonly _tag: "NotFound" }
+  | { readonly _tag: "OperationConflict" }
+  | { readonly _tag: "RequestRejected" }
+  | { readonly _tag: "ServiceUnavailable" };
+
+function apiFailure(status: number, code: string): InstaboxApiFailure {
+  if (status === 404) return { _tag: "NotFound" };
+  if (code === "operation_conflict") return { _tag: "OperationConflict" };
+  if (status < 500) return { _tag: "RequestRejected" };
+  return { _tag: "ServiceUnavailable" };
+}
+
+export class InstaboxApiError extends Data.TaggedError("InstaboxApiError")<{
+  readonly reason: InstaboxApiFailure;
+}> {
   constructor(
     readonly status: number,
     readonly code: string,
   ) {
-    super(`Instabox API failed: HTTP ${status} (${code})`);
+    super({ reason: apiFailure(status, code) });
+    this.message = `Instabox API failed: HTTP ${status} (${code})`;
     this.name = "InstaboxApiError";
   }
+}
+
+export class InstaboxProtocolError extends Data.TaggedError("InstaboxProtocolError")<{}> {
+  constructor() {
+    super();
+    this.name = "Error";
+    this.message = "Instabox returned an invalid protocol response";
+  }
+}
+
+export class InstaboxOperationError extends Data.TaggedError("InstaboxOperationError")<{
+  readonly code: string | undefined;
+}> {
+  constructor(code: string | undefined) {
+    super({ code });
+    this.name = "Error";
+    this.message = `Instabox operation failed (${code ?? "unknown"})`;
+  }
+}
+
+export class InstaboxTransportError extends Data.TaggedError("InstaboxTransportError")<{
+  readonly cause: ExternalCause;
+}> {
+  constructor(cause: ExternalCause) {
+    super({ cause });
+    this.name = cause._tag === "ThrownValue" ? "Error" : cause.name;
+    this.message = cause.message;
+  }
+}
+
+export type InstaboxRequestError =
+  | InstaboxApiError
+  | InstaboxProtocolError
+  | InstaboxOperationError
+  | InstaboxTransportError;
+
+/** Only the SDK boundary may accept arbitrary thrown values. */
+export function instaboxRequestError(cause: unknown): InstaboxRequestError {
+  if (cause instanceof InstaboxApiError) return cause;
+  if (cause instanceof InstaboxProtocolError) return cause;
+  if (cause instanceof InstaboxOperationError) return cause;
+  if (cause instanceof InstaboxTransportError) return cause;
+  return new InstaboxTransportError(normalizeExternalCause(cause));
 }
 
 export type InstaboxRequestInit = RequestInit & { readonly timeoutMs?: number };
@@ -73,7 +133,7 @@ export class InstaboxApi {
     try {
       return Schema.decodeUnknownSync(schema)(await response.json());
     } catch {
-      throw new Error("Instabox returned an invalid protocol response");
+      throw new InstaboxProtocolError();
     }
   }
 
@@ -83,7 +143,6 @@ export class InstaboxApi {
       signal.throwIfAborted();
       current = await this.json(Operation, `/operations/${encodeURIComponent(operation.id)}?wait=25s`, { signal });
     }
-    if (current.state !== "succeeded")
-      throw new Error(`Instabox operation failed (${current.error?.code ?? "unknown"})`);
+    if (current.state !== "succeeded") throw new InstaboxOperationError(current.error?.code);
   }
 }

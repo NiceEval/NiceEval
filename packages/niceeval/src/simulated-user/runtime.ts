@@ -126,7 +126,13 @@ export function createSimulatedUserConversation(
     failure = undefined;
     invalid = false;
     if (profile === undefined)
-      throw failPi(new PiFailure({ kind: "provider", message: "Judge Provider is not configured" }));
+      throw failPi(
+        new PiFailure({
+          kind: "provider",
+          message: "Judge Provider is not configured",
+          cause: undefined,
+        }),
+      );
     if (profile.protocol.kind !== "chat-completions")
       throw new SimulatedUserError("simulated-user-unsupported-provider", "typesafe");
     if (closed) throw new SimulatedUserError("simulated-user-invalid-turn", "closed");
@@ -152,6 +158,8 @@ export function createSimulatedUserConversation(
           tools: [],
           customTools: () => [tool()],
           systemPrompt: simulatedUserSystemPrompt(definition.instructions),
+          cwd: "/",
+          retry: undefined,
         });
         session = managed.session;
         sessionManager = managed.sessionManager;

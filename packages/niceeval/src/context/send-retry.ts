@@ -41,12 +41,12 @@ export interface RetriedSendFailure {
 }
 
 export interface SendRetryDeps {
-  classifier?: SendFailureClassifier;
+  classifier?: SendFailureClassifier | undefined;
   /** 只回报被自动重试吸收的物理失败；终局失败由抛出值承载。 */
-  onRetryAttempt?: (attempt: RetriedSendFailure) => void;
+  onRetryAttempt?: ((attempt: RetriedSendFailure) => void) | undefined;
   budget: AttemptRetryBudget;
-  slot?: ConcurrencySlot;
-  reportRetry?: (message: string) => void;
+  slot?: ConcurrencySlot | undefined;
+  reportRetry?: ((message: string) => void) | undefined;
   signal: AbortSignal;
 }
 
@@ -106,7 +106,7 @@ export function sendWithTurnRetry<T>(
             const monotonicEndedAt = yield* Clock.currentTimeNanos;
             const durationMs = Math.max(0, Number(monotonicEndedAt - monotonicStartedAt) / 1_000_000);
             const cls = resolveSendFailureClass(failure, {
-              ...(deps.classifier === undefined ? {} : { adapter: deps.classifier }),
+              adapter: deps.classifier,
             });
             if (!cls.retryable) return yield* Effect.fail(attachFailureClass(failure, cls));
             if (sendAttempt + 1 >= SEND_MAX_ATTEMPTS) {

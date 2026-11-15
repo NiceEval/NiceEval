@@ -24,7 +24,7 @@
 // 事件流始终从协议帧直构。
 
 import { randomUUID } from "node:crypto";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { makeDirectAgent } from "../define.ts";
 import { makeSendFailure } from "../context/send-failures.ts";
@@ -66,32 +66,42 @@ export interface UIMessageLike {
 
 export interface UIMessagePartLike {
   type: string;
-  state?: string;
-  text?: string;
-  toolCallId?: string;
-  toolName?: string;
-  input?: JsonValue;
-  output?: JsonValue;
-  errorText?: string;
-  approval?: { id: string; approved?: boolean; reason?: string };
+  state?: string | undefined;
+  text?: string | undefined;
+  toolCallId?: string | undefined;
+  toolName?: string | undefined;
+  input?: JsonValue | undefined;
+  output?: JsonValue | undefined;
+  errorText?: string | undefined;
+  // Record JSON boundary: nested approval fields must remain valid JsonValue members.
+  approval?: { id: string; approved?: boolean; reason?: string } | undefined;
   [key: string]: JsonValue | undefined;
 }
 
 interface UIMessageChunkLike {
   type: string;
-  errorText?: string;
+  errorText?: string | undefined;
   [key: string]: JsonValue | undefined;
 }
 
+const MessageChunkSchema = Schema.StructWithRest(
+  Schema.Struct({ type: Schema.String, errorText: Schema.optional(Schema.String) }),
+  [Schema.Record(Schema.String, Schema.UndefinedOr(Schema.MutableJson))],
+);
+const decodeMessageChunk = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.declare<typeof MessageChunkSchema.Type>(Schema.is(MessageChunkSchema))),
+);
+
 interface UiMessageSessionState {
-  chatId?: string;
-  reported?: ReportedState;
+  readonly chatId: string;
+  reported: ReportedState | undefined;
 }
 
 const historySlot = createSessionKey<UIMessageLike[]>("ui-message-stream/history");
 const sessionStateSlot = createSessionKey<UiMessageSessionState>("ui-message-stream/state");
 
 type ReadUIMessageStream = (options: {
+  // Third-party exact optional input to AI SDK's readUIMessageStream.
   message?: UIMessageLike;
   stream: ReadableStream<UIMessageChunkLike>;
 }) => AsyncIterable<UIMessageLike>;
@@ -151,7 +161,7 @@ function drainSseEvents(
       controller.terminate();
       return "";
     }
-    const chunk = JSON.parse(payload) as UIMessageChunkLike;
+    const chunk = decodeMessageChunk(payload);
     onChunk(chunk);
     controller.enqueue(chunk);
   }
@@ -290,7 +300,7 @@ function deriveTurnEvents(
           kind: "tool",
           name,
           input,
-          ...(command === undefined ? {} : { command }),
+          command,
         },
       });
       reported.startedCalls.add(callId);
@@ -311,7 +321,7 @@ function deriveTurnEvents(
         type: "operation.finished",
         operationId: callId,
         kind: "tool",
-        ...(part.errorText === undefined ? {} : { output: part.errorText }),
+        output: part.errorText,
         status: "failed",
       });
       reported.finishedCalls.add(callId);
@@ -338,13 +348,13 @@ function deriveTurnEvents(
 
 export interface UiMessageStreamAgentOptions {
   /** agent 名(报告 / 结果聚合的身份)。默认 "ui-message-stream"。 */
-  name?: string;
+  name?: string | undefined;
   /** 被测应用的 chat 端点(完整 URL,应用在哪部署就指哪);函数形式每轮解析。 */
   url: string | ((ctx: AgentContext) => string | Promise<string>);
   /** 附加请求头(鉴权等);`ctx.telemetry.headers`(traceparent)总会自动并入。 */
-  headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
+  headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>) | undefined;
   /** 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。 */
-  body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
+  body?: ((ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>) | undefined;
   /**
    * 由 endpoint owner 逐笔把逻辑工具调用分类为 command 或 not-command。
    * 未知调用返回 undefined 并保持 actions coverage partial；NiceEval 不按名称或 input 猜测。
@@ -354,13 +364,13 @@ export interface UiMessageStreamAgentOptions {
    * 拒绝审批时随 `approval-responded` 带出的理由。应用/SDK 会把它作为模型看到的工具结果
    * 文本 —— 写清楚「不要重试」能明显降低模型原样重发同一调用的概率(实测)。
    */
-  denyReason?: string;
+  denyReason?: string | undefined;
   /** 流结束后再等这么久才返回(毫秒),给应用侧的观测导出(如 BatchSpanProcessor)留时间。 */
-  settleMs?: number;
+  settleMs?: number | undefined;
   /** 应用有 OTel 时的端点投递方式(拿瀑布图);事件流不依赖它。 */
-  tracing?: AgentTracing;
+  tracing?: AgentTracing | undefined;
   /** 应用有 OTel 时的 span 归一函数(拿瀑布图);事件流不依赖它。 */
-  spanMapper?: SpanMapper;
+  spanMapper?: SpanMapper | undefined;
 }
 
 const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告知用户操作未执行。";
@@ -413,13 +423,14 @@ function prepareMessages(
   // 会话续接是「客户端带全量历史」模式:历史与协议簿记各用一个 typed slot,
   // 新线自然两者都为空；相同名字不会让其它 Adapter 的 slot 与它们碰撞。
   const priorMessages = ctx.session.get(historySlot) ?? [];
-  const bookkeeping = ctx.session.get(sessionStateSlot) ?? {};
-  ctx.session.set(sessionStateSlot, bookkeeping);
-  let id = bookkeeping.chatId;
-  if (!id) {
-    id = `uims-${randomUUID()}`;
-    bookkeeping.chatId = id;
-    ctx.session.capture(id); // 镜像:t.sessionId / 报告可见
+  let bookkeeping = ctx.session.get(sessionStateSlot);
+  if (bookkeeping === undefined) {
+    bookkeeping = {
+      chatId: `uims-${randomUUID()}`,
+      reported: undefined,
+    };
+    ctx.session.set(sessionStateSlot, bookkeeping);
+    ctx.session.capture(bookkeeping.chatId); // 镜像:t.sessionId / 报告可见
   }
 
   const lastMessage = priorMessages.at(-1);
@@ -613,7 +624,7 @@ function uiMessageStreamSendEffect(
               {
                 type: "input.requested" as const,
                 request: {
-                  ...(id === undefined ? {} : { id }),
+                  id,
                   action: toolNameOf(request),
                   input: (request.input ?? null) as JsonValue,
                   options: [{ id: "approve" }, { id: "deny" }],
@@ -624,7 +635,7 @@ function uiMessageStreamSendEffect(
             return {
               status: "waiting" as const,
               events: waitingEvents,
-              ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+              evidenceCoverage,
             };
           },
           catch: (cause) => cause,
@@ -642,7 +653,7 @@ function uiMessageStreamSendEffect(
           return {
             status: streamState.sawError ? ("failed" as const) : ("completed" as const),
             events: finalEvents,
-            ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+            evidenceCoverage,
           };
         },
         catch: (cause) => cause,
@@ -672,9 +683,11 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
   return makeDirectAgent({
     name: options.name ?? "ui-message-stream",
     evidenceCoverage: COVERAGE,
-    ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
-    ...(options.spanMapper === undefined ? {} : { spanMapper: options.spanMapper }),
+    tracing: options.tracing,
+    spanMapper: options.spanMapper,
 
     send: (input, ctx) => uiMessageStreamSendEffect(options, input, ctx),
+    before: () => Effect.void,
+    after: () => Effect.void,
   });
 }

@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/architecture.md
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
+import * as Data from "effect/Data";
 import { attachmentValueContents, readAttachmentPayload } from "../record/sqlite/attachment-payload.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
@@ -35,8 +36,13 @@ import type { InspectionFactSource } from "./source.ts";
 import { InspectionSha256 } from "./bytes.ts";
 import type { ReadableRunResource } from "../run/storage/types.ts";
 
-export class InspectionUnsupportedFormatError extends Error {
+export class InspectionUnsupportedFormatError extends Data.TaggedError("InspectionUnsupportedFormatError")<{}> {
   readonly code = "unsupported-format";
+  constructor(message: string) {
+    super();
+    this.name = "Error";
+    this.message = message;
+  }
 }
 
 export interface DecodedInspectionAttachment {
@@ -60,7 +66,7 @@ export interface LoadedInspectionRunResource {
   readonly resource: ReadableRunResource;
   readonly members: readonly MemberDocument[];
   readonly supporting: readonly LoadedInspectionRun[];
-  readonly published?: LoadedInspectionRun;
+  readonly published: LoadedInspectionRun | undefined;
 }
 
 export interface InspectionAttemptTarget {
@@ -86,7 +92,7 @@ export type InspectionAssertionsRead =
     }
   | {
       readonly state: "not-recorded" | "unsupported" | "failed";
-      readonly attachment?: DecodedInspectionAttachment;
+      readonly attachment: DecodedInspectionAttachment | undefined;
       readonly issues: readonly InspectionJson[];
     };
 
@@ -157,15 +163,13 @@ export function loadInspectionRuns(source: InspectionFactSource): readonly Loade
   if (summaries.length !== expectedRunCount) {
     throw factsError("Run pagination did not close the pinned sealed cutoff");
   }
-  return Object.freeze(
-    summaries.map((summary) => {
-      const run = readInspectionRun(source, summary.runId);
-      if (run === undefined) {
-        throw factsError(`Sealed Run ${summary.runId} disappeared from the pinned cutoff`);
-      }
-      return run;
-    }),
-  );
+  return summaries.map((summary) => {
+    const run = readInspectionRun(source, summary.runId);
+    if (run === undefined) {
+      throw factsError(`Sealed Run ${summary.runId} disappeared from the pinned cutoff`);
+    }
+    return run;
+  });
 }
 
 /** Reads a bounded, explicit Run selection without changing its caller order. */
@@ -180,7 +184,7 @@ export function loadSelectedInspectionRuns(
     if (run !== undefined) loaded.push(run);
   }
   requireCutoff(source.cutoff(), cutoff);
-  return Object.freeze(loaded);
+  return loaded;
 }
 
 /** Reads Run create/close facts even when no Attempt Core has been published. */
@@ -252,13 +256,13 @@ export function loadInspectionRunResource(
     })
     .sort((left, right) => compareText(left.slotId, right.slotId));
   requireCutoff(source.cutoff(), cutoff);
-  return Object.freeze({
+  return {
     source,
     resource,
-    members: Object.freeze(members),
+    members: members,
     supporting,
-    ...(published === undefined ? {} : { published }),
-  });
+    published,
+  };
 }
 
 function validateRunResourceCore(resource: ReadableRunResource, published: LoadedInspectionRun): void {
@@ -323,11 +327,15 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
       decodeMemberDocument(parseVerifiedJson(stored.coreBytes, stored.coreDigest, "Member Core")),
       "Member Core is invalid",
     );
+    const storedAttempt =
+      stored.action === "executed" || stored.action === "carried" || stored.action === "accepted"
+        ? stored.attempt
+        : undefined;
     if (
       member.slotId !== stored.slotId ||
       member.action !== stored.action ||
-      (member.attempt?.originRunId ?? undefined) !== stored.originRunId ||
-      (member.attempt?.attemptId ?? undefined) !== stored.attemptId
+      member.attempt?.originRunId !== storedAttempt?.originRunId ||
+      member.attempt?.attemptId !== storedAttempt?.attemptId
     ) {
       throw factsError("Member Core does not match its sealed row");
     }
@@ -347,7 +355,7 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
     }
     return attempt;
   });
-  validateCoreRelations(run, members, attempts, physical.publicationManaged === true);
+  validateCoreRelations(run, members, attempts, physical.createdRevision !== undefined);
 
   const localAttemptIds = new Set<string>(attempts.map(({ attemptId }) => attemptId));
   const attachments = physical.attachments.map((attachment): DecodedInspectionAttachment => {
@@ -361,15 +369,13 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
     }
     let value: InspectionJson | undefined;
     let decoded = false;
-    return Object.freeze({
-      physical: Object.freeze(
-        Object.defineProperties(
-          {},
-          {
-            ...Object.getOwnPropertyDescriptors(attachment),
-            contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
-          },
-        ),
+    return {
+      physical: Object.defineProperties(
+        {},
+        {
+          ...Object.getOwnPropertyDescriptors(attachment),
+          contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
+        },
       ) as typeof attachment,
       get value(): InspectionJson {
         if (!decoded) {
@@ -380,17 +386,17 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
         }
         return value!;
       },
-    });
+    };
   });
 
-  return Object.freeze({
+  return {
     source,
     physical,
     run,
-    members: Object.freeze(members),
-    attempts: Object.freeze(attempts),
-    attachments: Object.freeze(attachments),
-  });
+    members: members,
+    attempts: attempts,
+    attachments: attachments,
+  };
 }
 
 /** Resolves a public locator through the source's bounded exact index. */
@@ -449,14 +455,14 @@ export function resolveInspectionAttempt(
     if (targets.length + members.length > ATTEMPT_TARGET_MEMBER_LIMIT) {
       throw factsError(`Attempt ${locator} exceeds its fixed target member limit`);
     }
-    targets.push(...members.map((member) => Object.freeze({ run, member })));
+    targets.push(...members.map((member) => ({ run, member })));
   }
-  return Object.freeze({
+  return {
     attempt,
     origin,
     locator,
-    targets: Object.freeze(targets),
-  });
+    targets: targets,
+  };
 }
 
 interface InspectionMemberIndex {
@@ -494,9 +500,8 @@ function memberIndex(runs: readonly LoadedInspectionRun[]): InspectionMemberInde
       if (byAttempt === undefined) targets.set(originRunId, (byAttempt = new Map()));
       let members = byAttempt.get(attemptId);
       if (members === undefined) byAttempt.set(attemptId, (members = []));
-      members.push(Object.freeze({ run, member }));
+      members.push({ run, member });
     }
-  for (const byAttempt of targets.values()) for (const members of byAttempt.values()) Object.freeze(members);
   const index = { origins, targets };
   memberIndexes.set(runs, index);
   return index;
@@ -521,7 +526,7 @@ export function resolveInspectionMemberAttempt(
     targetMember.attempt.attemptId !== attempt.attemptId
   )
     return undefined;
-  return Object.freeze({ attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets });
+  return { attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets };
 }
 
 /** A target binding does not require the target to have published its own Run Core. */
@@ -535,7 +540,7 @@ export function resolveInspectionResourceMemberAttempt(
   const attempt = origin?.attempts.get(member.attempt.attemptId);
   if (origin === undefined || attempt === undefined) return undefined;
   const targets = index.targets.get(attempt.originRunId)?.get(attempt.attemptId) ?? [];
-  return Object.freeze({ attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets });
+  return { attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets };
 }
 
 export function attemptAttachment(
@@ -561,10 +566,11 @@ export function runAttachment(run: LoadedInspectionRun, family: string): Decoded
 export function readInspectionAssertions(resolved: ResolvedInspectionAttempt): InspectionAssertionsRead {
   const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family);
   if (attachment === undefined) {
-    return Object.freeze({
+    return {
       state: "not-recorded" as const,
-      issues: Object.freeze([issue("assertions-not-recorded", resolved.locator)]),
-    });
+      issues: [issue("assertions-not-recorded", resolved.locator)],
+      attachment: undefined,
+    };
   }
   if (attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.assertions.revision) {
     throw new InspectionUnsupportedFormatError(
@@ -575,19 +581,19 @@ export function readInspectionAssertions(resolved: ResolvedInspectionAttempt): I
   if (cached !== undefined) return cached;
   const decoded = decodeCurrentAssertions(attachment);
   if (decoded === undefined) {
-    return Object.freeze({
+    return {
       state: "failed" as const,
       attachment,
-      issues: Object.freeze([issue("assertions-current-invalid", resolved.locator)]),
-    });
+      issues: [issue("assertions-current-invalid", resolved.locator)],
+    };
   }
-  const result = Object.freeze({
+  const result = {
     state: "available" as const,
     attachment,
     value: decoded.value,
     contents: decoded.contents,
-    issues: Object.freeze([]),
-  });
+    issues: [],
+  };
   decodedAssertions.set(attachment, result);
   return result;
 }
@@ -663,7 +669,7 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
   for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return undefined;
-    references.set(`${wire.owner}\u0000${wire.family}`, Object.freeze({ owner: wire.owner, family: wire.family }));
+    references.set(`${wire.owner}\u0000${wire.family}`, { owner: wire.owner, family: wire.family });
   }
   const ordered = [...references.values()].sort(
     (left, right) => compareText(left.owner, right.owner) || compareText(left.family, right.family),
@@ -676,7 +682,7 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
       return undefined;
     }
   }
-  return Object.freeze({ value: hydrated.success, contents });
+  return { value: hydrated.success, contents };
 }
 
 function validateCoreRelations(
@@ -782,7 +788,7 @@ function hasOwnMarker(value: unknown, key: string): boolean {
 }
 
 function issue(code: string, locator: string): InspectionJson {
-  return Object.freeze({ code, locator });
+  return { code, locator };
 }
 
 function factsError(reason: string, cause?: unknown): Error {
@@ -790,7 +796,9 @@ function factsError(reason: string, cause?: unknown): Error {
 }
 
 function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function verifyDigest(bytes: Uint8Array, digest: string, label: string): void {

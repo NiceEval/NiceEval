@@ -65,7 +65,7 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 Anthropic API key。省略时读 ANTHROPIC_API_KEY env。
@@ -73,7 +73,7 @@ Anthropic API key。省略时读 ANTHROPIC_API_KEY env。
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 自定义 API base URL(代理 / 内网端点)。省略时读 ANTHROPIC_BASE_URL env;
@@ -82,7 +82,7 @@ baseUrl?: string;
 #### `env`
 
 ```ts
-env?: Readonly<globalThis.Record<string, string>>;
+env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
@@ -91,7 +91,7 @@ Claude Code 进程的额外环境变量。值只保留在运行时，不进入�
 #### `maxTurns`
 
 ```ts
-maxTurns?: number;
+maxTurns?: number | undefined;
 ```
 
 最多跑几个 tool-use 轮次(→ `--max-turns`)。
@@ -100,7 +100,7 @@ maxTurns?: number;
 #### `mcpServers`
 
 ```ts
-mcpServers?: readonly McpServer[];
+mcpServers?: readonly McpServer[] | undefined;
 ```
 
 额外 MCP server(每个 Sandbox before 时写进用户级 ~/.claude.json)。
@@ -110,7 +110,7 @@ stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 
 #### `skills`
 
 ```ts
-skills?: readonly SkillSpec[];
+skills?: readonly SkillSpec[] | undefined;
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -119,7 +119,7 @@ skills?: readonly SkillSpec[];
 #### `plugins`
 
 ```ts
-plugins?: readonly ClaudeCodePluginSpec[];
+plugins?: readonly ClaudeCodePluginSpec[] | undefined;
 ```
 
 Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
@@ -127,7 +127,7 @@ Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
 #### `settingsFile`
 
 ```ts
-settingsFile?: string;
+settingsFile?: string | undefined;
 ```
 
 一份完整的 Claude Code `settings.json`(官方格式)在本地项目里的路径 —— 相对运行
@@ -140,7 +140,7 @@ before 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文�
 #### `before`
 
 ```ts
-before?: readonly SandboxCommand[];
+before?: readonly SandboxCommand[] | undefined;
 ```
 
 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写 settings、挂 MCP、
@@ -151,7 +151,7 @@ before?: readonly SandboxCommand[];
 #### `after`
 
 ```ts
-after?: readonly SandboxCommand[];
+after?: readonly SandboxCommand[] | undefined;
 ```
 
 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
@@ -165,7 +165,7 @@ after?: readonly SandboxCommand[];
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 代理 / OpenAI API key。省略时读 CODEX_API_KEY env。
@@ -173,7 +173,7 @@ apiKey?: string;
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 CODEX_BASE_URL env。
@@ -181,7 +181,7 @@ OpenAI 兼容代理 base URL(如 `https://s2a.example.com/v1`)。省略时读 CO
 #### `headers`
 
 ```ts
-headers?: Readonly<globalThis.Record<string, string>>;
+headers?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 传给自定义 provider 的静态 HTTP 请求头（如 Cloudflare Access 的 Service Token 头）。
@@ -190,7 +190,7 @@ headers?: Readonly<globalThis.Record<string, string>>;
 #### `env`
 
 ```ts
-env?: Readonly<globalThis.Record<string, string>>;
+env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
@@ -206,7 +206,7 @@ Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library/README.md�
 #### `mcpServers`
 
 ```ts
-mcpServers?: readonly McpServer[];
+mcpServers?: readonly McpServer[] | undefined;
 ```
 
 额外 MCP server(每个 Sandbox before 时追加进 ~/.codex/config.toml)。
@@ -216,7 +216,7 @@ Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.&lt;name
 #### `skills`
 
 ```ts
-skills?: readonly SkillSpec[];
+skills?: readonly SkillSpec[] | undefined;
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -226,7 +226,7 @@ skills?: readonly SkillSpec[];
 #### `plugins`
 
 ```ts
-plugins?: readonly CodexPluginSpec[];
+plugins?: readonly CodexPluginSpec[] | undefined;
 ```
 
 Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
@@ -234,7 +234,7 @@ Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。
 #### `configFile`
 
 ```ts
-configFile?: string;
+configFile?: string | undefined;
 ```
 
 一份完整的 Codex `config.toml`(官方 TOML 格式)在本地项目里的路径 —— 相对运行
@@ -248,7 +248,7 @@ niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox �
 #### `before`
 
 ```ts
-before?: readonly SandboxCommand[];
+before?: readonly SandboxCommand[] | undefined;
 ```
 
 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写主配置、挂 MCP、
@@ -259,7 +259,7 @@ before?: readonly SandboxCommand[];
 #### `after`
 
 ```ts
-after?: readonly SandboxCommand[];
+after?: readonly SandboxCommand[] | undefined;
 ```
 
 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
@@ -273,7 +273,7 @@ after?: readonly SandboxCommand[];
 #### `apiKey`
 
 ```ts
-apiKey?: string;
+apiKey?: string | undefined;
 ```
 
 OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。
@@ -281,7 +281,7 @@ OpenAI 兼容代理的 API key。省略时读 BUB_API_KEY env。
 #### `baseUrl`
 
 ```ts
-baseUrl?: string;
+baseUrl?: string | undefined;
 ```
 
 OpenAI 兼容代理的 base URL。省略时读 BUB_API_BASE env。
@@ -289,7 +289,7 @@ OpenAI 兼容代理的 base URL。省略时读 BUB_API_BASE env。
 #### `skills`
 
 ```ts
-skills?: SkillSpec[];
+skills?: SkillSpec[] | undefined;
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
@@ -298,7 +298,7 @@ skills?: SkillSpec[];
 #### `version`
 
 ```ts
-version?: string;
+version?: string | undefined;
 ```
 
 固定 Bub 0.5.1 协议。省略或填写 "0.5.1"；其它版本在定义期抛出 TypeError。
@@ -306,7 +306,7 @@ version?: string;
 #### `otelPlugin`
 
 ```ts
-otelPlugin?: string;
+otelPlugin?: string | undefined;
 ```
 
 OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
@@ -316,7 +316,7 @@ OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval
 #### `pythonPlugins`
 
 ```ts
-pythonPlugins?: PythonPluginSpec[];
+pythonPlugins?: PythonPluginSpec[] | undefined;
 ```
 
 额外装进 bub tool 环境的 Python Package,每个 Sandbox before 时进 `uv tool install … --with <pkg>`。
@@ -326,7 +326,7 @@ pythonPlugins?: PythonPluginSpec[];
 #### `before`
 
 ```ts
-before?: SandboxCommand[];
+before?: SandboxCommand[] | undefined;
 ```
 
 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在装 bub、装 Skills /
@@ -336,7 +336,7 @@ Python package、写 manifest 全部完成后执行。抛错按基础设施错�
 #### `after`
 
 ```ts
-after?: SandboxCommand[];
+after?: SandboxCommand[] | undefined;
 ```
 
 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
@@ -380,7 +380,7 @@ export default uiMessageStreamAgent({
 #### `name`
 
 ```ts
-name?: string;
+name?: string | undefined;
 ```
 
 agent 名(报告 / 结果聚合的身份)。默认 "ui-message-stream"。
@@ -396,7 +396,7 @@ url: string | ((ctx: AgentContext) => string | Promise<string>);
 #### `headers`
 
 ```ts
-headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
+headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>) | undefined;
 ```
 
 附加请求头(鉴权等);`ctx.telemetry.headers`(traceparent)总会自动并入。
@@ -404,7 +404,7 @@ headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis
 #### `body`
 
 ```ts
-body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
+body?: ((ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>) | undefined;
 ```
 
 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。
@@ -421,7 +421,7 @@ projectToolCommand?: (tool: Readonly<{ name: string; input: JsonValue }>) => Com
 #### `denyReason`
 
 ```ts
-denyReason?: string;
+denyReason?: string | undefined;
 ```
 
 拒绝审批时随 `approval-responded` 带出的理由。应用/SDK 会把它作为模型看到的工具结果
@@ -430,7 +430,7 @@ denyReason?: string;
 #### `settleMs`
 
 ```ts
-settleMs?: number;
+settleMs?: number | undefined;
 ```
 
 流结束后再等这么久才返回(毫秒),给应用侧的观测导出(如 BatchSpanProcessor)留时间。
@@ -438,7 +438,7 @@ settleMs?: number;
 #### `tracing`
 
 ```ts
-tracing?: AgentTracing;
+tracing?: AgentTracing | undefined;
 ```
 
 应用有 OTel 时的端点投递方式(拿瀑布图);事件流不依赖它。
@@ -446,7 +446,7 @@ tracing?: AgentTracing;
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 应用有 OTel 时的 span 归一函数(拿瀑布图);事件流不依赖它。
@@ -479,10 +479,13 @@ export default defineAgent({
 ```ts
 import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 
-const frames = sseJsonFrames<SDKMessage>(res.body);   // 标准 SSE → 逐帧 JSON
+const frames = sseJsonFrames(res.body);              // 标准 SSE → 逐帧 JsonValue
 const stream = createClaudeSdkEventStream();               // SDKMessage → 标准事件
 return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()，汇总成 Turn
 ```
+
+`sseJsonFrames(body)` 返回 `SseFrameCursor<JsonValue>`，SDK 转换器在入口解码原生事件。
+自定义协议可传入 Effect Schema：`sseJsonFrames(body, FrameSchema)` 返回该 Schema 的解码类型；无效帧抛出 `SseFrameDecodeError`。
 
 - **`createClaudeSdkEventStream`**（`SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage。`markRejected()` 登记被拒调用。
 - **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。

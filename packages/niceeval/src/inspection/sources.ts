@@ -77,14 +77,12 @@ export function projectAttemptSources(
   const items: InspectionSourcesResult["items"][number][] = [];
   const requestedPositions = assertionSourcePositions(assertionsRead);
   const verifiedSourcePositions = new Map<string, ReadonlySet<string>>();
-  let projectedBytes = jsonByteLength(
-    Object.freeze({
-      state,
-      items: Object.freeze([]),
-      hasMore: decoded.length > 0,
-      omittedItemCount: decoded.length,
-    }),
-  );
+  let projectedBytes = jsonByteLength({
+    state,
+    items: [],
+    hasMore: decoded.length > 0,
+    omittedItemCount: decoded.length,
+  });
   let acceptProjectedItems = true;
 
   try {
@@ -96,7 +94,7 @@ export function projectAttemptSources(
       if (!includeItem) acceptProjectedItems = false;
 
       let projected = omitted;
-      const positions = requestedPositions.get(entry.item.sourceItemId) ?? Object.freeze([]);
+      const positions = requestedPositions.get(entry.item.sourceItemId) ?? [];
       const verified =
         positions.length > 0 || (includeItem && entry.content.byteLength <= SOURCE_TEXT_BYTE_LIMIT)
           ? readVerifiedSource(source, entry.content, positions)
@@ -105,13 +103,10 @@ export function projectAttemptSources(
         verifiedSourcePositions.set(entry.item.sourceItemId, verified.displayablePositions);
       }
       if (verified?.text !== undefined) {
-        const available = projectedSourceItem(
-          entry,
-          Object.freeze({
-            state: "available" as const,
-            text: verified.text,
-          }),
-        );
+        const available = projectedSourceItem(entry, {
+          state: "available" as const,
+          text: verified.text,
+        });
         const availableBytes = jsonByteLength(available) + (items.length === 0 ? 0 : 1);
         if (projectedBytes + availableBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) {
           projected = available;
@@ -125,7 +120,7 @@ export function projectAttemptSources(
     }
   } catch {
     state = "invalid";
-    decoded = Object.freeze([]);
+    decoded = [];
     items.splice(0, items.length);
     verifiedSourcePositions.clear();
   }
@@ -163,19 +158,19 @@ function assertionSourcePositions(assertions: AssertionsRead): ReadonlyMap<strin
     positions.push(site.start, site.end);
     output.set(sourceItemId, positions);
   }
-  return new Map([...output].map(([sourceItemId, positions]) => [sourceItemId, Object.freeze(positions)] as const));
+  return new Map([...output].map(([sourceItemId, positions]) => [sourceItemId, positions] as const));
 }
 
 function readAssertionSites(input: InspectionAssertionsRead): AssertionsRead {
   if (input.state === "available") {
-    return Object.freeze({
+    return {
       state: "available" as const,
       sourceSites: input.value.sourceSites,
-    });
+    };
   }
-  return Object.freeze({
+  return {
     state: input.state === "not-recorded" ? ("not-recorded" as const) : ("invalid" as const),
-  });
+  };
 }
 
 function projectAssertionSourceSite(
@@ -186,24 +181,25 @@ function projectAssertionSourceSite(
 ): Extract<InspectionSourcesResult["assertions"], { readonly state: "available" }>["sourceSites"][number] {
   const anchor = site.source.value;
   const item = sourceState === "available" ? sourceItems.get(anchor.sourceItemId) : undefined;
-  const source =
-    item === undefined || item.item.sha256 !== anchor.sha256
-      ? unmappedSource("source-snapshot-not-recorded")
-      : !positionsAreDisplayable(verifiedSourcePositions.get(anchor.sourceItemId), site.start, site.end)
-        ? unmappedSource("position-unrepresentable")
-        : Object.freeze({
-            state: "mapped" as const,
-            sourceItemId: anchor.sourceItemId,
-            sha256: anchor.sha256,
-          });
-  return Object.freeze({
+  function sourceSite() {
+    if (item === undefined || item.item.sha256 !== anchor.sha256) return unmappedSource("source-snapshot-not-recorded");
+    if (!positionsAreDisplayable(verifiedSourcePositions.get(anchor.sourceItemId), site.start, site.end))
+      return unmappedSource("position-unrepresentable");
+    return {
+      state: "mapped" as const,
+      sourceItemId: anchor.sourceItemId,
+      sha256: anchor.sha256,
+    };
+  }
+  const source = sourceSite();
+  return {
     entryId: site.entryId,
     sourceOrder: site.sourceOrder,
     role: site.role,
-    start: Object.freeze({ line: site.start.line, column: site.start.column }),
-    end: Object.freeze({ line: site.end.line, column: site.end.column }),
+    start: { line: site.start.line, column: site.start.column },
+    end: { line: site.end.line, column: site.end.column },
     source,
-  });
+  };
 }
 
 function assertionResult(
@@ -215,19 +211,19 @@ function assertionResult(
   projectedSiteCount: number,
 ): InspectionSourcesResult["assertions"] {
   if (assertions.state !== "available") {
-    return Object.freeze({
+    return {
       state: assertions.state,
-      sourceSites: Object.freeze([] as const),
+      sourceSites: [] as const,
       hasMoreSourceSites: false as const,
       omittedSourceSiteCount: 0 as const,
-    });
+    };
   }
-  return Object.freeze({
+  return {
     state: "available" as const,
-    sourceSites: Object.freeze(sites.slice(0, projectedSiteCount)),
+    sourceSites: sites.slice(0, projectedSiteCount),
     hasMoreSourceSites: projectedSiteCount < sites.length,
     omittedSourceSiteCount: sites.length - projectedSiteCount,
-  });
+  };
 }
 
 function unmappedSource(
@@ -236,7 +232,7 @@ function unmappedSource(
   Extract<InspectionSourcesResult["assertions"], { readonly state: "available" }>["sourceSites"][number]["source"],
   { readonly state: "unmapped" }
 > {
-  return Object.freeze({ state: "unmapped" as const, reason });
+  return { state: "unmapped" as const, reason };
 }
 
 function positionsAreDisplayable(
@@ -296,9 +292,9 @@ function hydrateSourceItems(attachment: SourcesAttachmentInput): readonly BoundS
     if (metadata === undefined || metadata.byteLength !== item.byteLength || metadata.digest !== item.sha256) {
       throw new Error("Sources Attachment item does not match its sealed Content metadata");
     }
-    output.push(Object.freeze({ item, content: metadata }));
+    output.push({ item, content: metadata });
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function readVerifiedSource(
@@ -306,7 +302,7 @@ function readVerifiedSource(
   metadata: PersistedContentMetadata,
   positions: readonly SourcePosition[],
 ): {
-  readonly text?: string;
+  readonly text: string | undefined;
   readonly displayablePositions: ReadonlySet<string>;
 } {
   const digest = new InspectionSha256();
@@ -382,32 +378,32 @@ function readVerifiedSource(
   ) {
     throw new Error("Sources Content does not match its sealed metadata");
   }
-  return Object.freeze({
-    ...(retainText ? { text: text.join("") } : {}),
+  return {
+    text: retainText ? text.join("") : undefined,
     displayablePositions,
-  });
+  };
 }
 
 function projectedSourceItem(
   entry: BoundSourceItem,
   content: InspectionSourcesResult["items"][number]["content"],
 ): InspectionSourcesResult["items"][number] {
-  return Object.freeze({
+  return {
     sourceItemId: entry.item.sourceItemId,
     path: entry.item.path,
     byteLength: entry.item.byteLength,
     sha256: entry.item.sha256,
     content,
-  });
+  };
 }
 
 function omittedContent(byteLength: number): InspectionSourcesResult["items"][number]["content"] {
-  return Object.freeze({
+  return {
     state: "omitted" as const,
     reason: "inspection-result-byte-limit" as const,
     byteLength,
     byteLimit: SOURCE_TEXT_BYTE_LIMIT,
-  });
+  };
 }
 
 function sourceResult(
@@ -416,13 +412,13 @@ function sourceResult(
   total: number,
   assertions: InspectionSourcesResult["assertions"],
 ): InspectionSourcesResult {
-  return Object.freeze({
+  return {
     state,
-    items: Object.freeze([...items]),
+    items,
     hasMore: items.length < total,
     omittedItemCount: total - items.length,
     assertions,
-  });
+  };
 }
 
 function exactMarker(value: unknown, key: string): unknown | undefined {
@@ -448,5 +444,5 @@ function jsonByteLength(value: unknown): number {
 
 /** Metadata-only projection; hydration verifies the family and content bindings without reading bytes. */
 export function sourceHashesForIdentity(attachment: SourcesAttachmentInput): Readonly<Record<string, string>> {
-  return Object.freeze(Object.fromEntries(hydrateSourceItems(attachment).map(({ item }) => [item.path, item.sha256])));
+  return Object.fromEntries(hydrateSourceItems(attachment).map(({ item }) => [item.path, item.sha256]));
 }

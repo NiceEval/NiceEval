@@ -217,6 +217,7 @@ describe("ProjectStateDatabase scoped composition", () => {
                     startedAt: new Date().toISOString(),
                     runs: [],
                     deadlineEpochMs: deadline,
+                    queuedAttempts: undefined,
                   },
                 }),
               ),
@@ -455,6 +456,7 @@ describe("ProjectStateDatabase scoped composition", () => {
                 startedAt: new Date().toISOString(),
                 runs: [],
                 deadlineEpochMs: Date.now() + 5_000,
+                queuedAttempts: undefined,
               },
             }),
           );

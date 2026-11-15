@@ -15,7 +15,7 @@ export interface AdapterAttachmentInput {
         readonly stream: (signal: AbortSignal) => AsyncIterable<Uint8Array>;
       };
   /** Optional transfer cancellation. Cleanup may supply its independent signal. */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Acceptance receipt. Durable publication happens when the Attempt is published. */

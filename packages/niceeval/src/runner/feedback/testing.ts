@@ -52,10 +52,10 @@ interface FakeTimer {
 /** 创建一份完全确定性的假 IO；env 默认空对象，因此 human renderer 默认未设置 NO_COLOR。 */
 export function createFakeFeedbackIO(
   opts: {
-    stdout?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">>;
-    stderr?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">>;
-    env?: Readonly<globalThis.Record<string, string | undefined>>;
-    startAt?: number;
+    stdout?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">> | undefined;
+    stderr?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">> | undefined;
+    env?: Readonly<globalThis.Record<string, string | undefined>> | undefined;
+    startAt?: number | undefined;
   } = {},
 ): FakeFeedbackIO {
   const stdout = createFakeStream(opts.stdout);

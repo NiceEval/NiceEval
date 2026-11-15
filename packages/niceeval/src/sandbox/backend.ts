@@ -2,6 +2,8 @@
 
 import { Data, Effect, Schema } from "effect";
 import { isJsonValue } from "../shared/json-value.ts";
+import type { JsonValue } from "../shared/types.ts";
+import type { ExternalCause } from "../shared/external-cause.ts";
 import type { SandboxActionState } from "./action.ts";
 import type { BeforeCacheDegradedReason } from "./layer.ts";
 import type {
@@ -56,11 +58,13 @@ export type BeforeCacheEligibility =
       /** Complete provider-owned identity, decoded before entering core planning. */
       readonly keyScope: BeforeCacheKeyScope;
       /** Resolved positional replacement identity; does not change content keys. */
-      readonly replacementScope?: {
-        readonly provider: string;
-        readonly executionDomainId: string;
-        readonly baseReference: string;
-      };
+      readonly replacementScope:
+        | {
+            readonly provider: string;
+            readonly executionDomainId: string;
+            readonly baseReference: string;
+          }
+        | undefined;
     }
   | {
       readonly _tag: "Unsupported";
@@ -79,7 +83,7 @@ export interface BeforeCacheDeclaration {
   readonly cacheFormat: string;
   readonly changeFrequency: number;
   /** Frozen, non-sensitive declaration metadata used for bidirectional registry validation. */
-  readonly declarationMetadata: unknown;
+  readonly declarationMetadata: JsonValue;
 }
 
 export interface BeforeCacheStep {
@@ -89,15 +93,15 @@ export interface BeforeCacheStep {
   /** Layer declaring this action; excluded from the content-addressed declaration. */
   readonly declaringOwner: string;
   /** Defense-in-depth only; values are checked before an image is published and are never persisted. */
-  readonly knownSensitiveValues?: readonly string[];
+  readonly knownSensitiveValues: readonly string[];
 }
 
 interface BeforeCacheErrorFields {
   readonly operation: string;
   readonly reason: string;
-  readonly beforeCacheKey?: string;
-  readonly domainId?: string;
-  readonly cause?: unknown;
+  readonly beforeCacheKey: string | undefined;
+  readonly domainId: string | undefined;
+  readonly cause: ExternalCause | undefined;
 }
 
 export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<BeforeCacheErrorFields> {}
@@ -145,7 +149,7 @@ export type AttemptBeforeCacheLookup =
       readonly _tag: "Miss";
       readonly beforeCacheKey: string;
       /** A failed hit was scrubbed in the same private slot before this clean miss receipt. */
-      readonly recovery?: "restore-failed-replayed";
+      readonly recovery: "restore-failed-replayed" | undefined;
     }
   | {
       readonly _tag: "Restored";
@@ -155,7 +159,7 @@ export type AttemptBeforeCacheLookup =
       /** Provider-neutral immutable artifact identity. */
       readonly artifactId: string;
       /** Present only when the provider artifact is an exact Docker image. */
-      readonly imageId?: string;
+      readonly imageId: string | undefined;
       readonly sandboxId: string;
     };
 
@@ -185,7 +189,7 @@ export type AttemptBeforeCacheCapture =
       /** Provider-neutral immutable artifact identity. */
       readonly artifactId: string;
       /** Present only when the provider artifact is an exact Docker image. */
-      readonly imageId?: string;
+      readonly imageId: string | undefined;
       readonly sandboxId: string;
     };
 
@@ -245,7 +249,7 @@ export const unsupportedBackendCapability: SandboxBackendSupport<never> = Object
 });
 
 export function unsupportedBackendCapabilityBecause(reason: string): SandboxBackendSupport<never> {
-  return Object.freeze({ _tag: "Unsupported", reason });
+  return { _tag: "Unsupported", reason };
 }
 
 export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.freeze({
@@ -258,7 +262,7 @@ export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.f
 });
 
 export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T> {
-  return Object.freeze({ _tag: "Supported", value });
+  return { _tag: "Supported", value };
 }
 
 function providerBoundaryError(cause: unknown): Error {

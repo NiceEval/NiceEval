@@ -38,18 +38,22 @@ export function formatDryDelta(delta: {
   from?: string;
   to?: string;
 }): string {
-  const kind =
-    delta.kind ??
-    (delta._tag === "Added"
-      ? "added"
-      : delta._tag === "Removed"
-        ? "removed"
-        : delta._tag === "Unknown"
-          ? "unknown"
-          : delta._tag === "Changed"
-            ? "changed"
-            : undefined);
-  switch (kind) {
+  function deltaKind() {
+    if (delta.kind !== undefined) return delta.kind;
+    switch (delta._tag) {
+      case "Added":
+        return "added";
+      case "Removed":
+        return "removed";
+      case "Unknown":
+        return "unknown";
+      case "Changed":
+        return "changed";
+      default:
+        return undefined;
+    }
+  }
+  switch (deltaKind()) {
     case "added":
       return `${delta.selector} added (${boundedSingleSide(delta.to ?? "")})`;
     case "removed":

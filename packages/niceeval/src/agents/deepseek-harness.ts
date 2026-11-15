@@ -22,13 +22,13 @@ const DSH_EVIDENCE_COVERAGE: EvidenceCoverage = {
 
 export interface DeepSeekHarnessConfig {
   /** DeepSeek-compatible API key. Defaults to DSH_API_KEY, then DEEPSEEK_API_KEY. */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** DeepSeek-compatible endpoint. Defaults to DSH_BASE_URL, then DEEPSEEK_BASE_URL. */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** Exact npm version of `@deepseek-ai/dsh`. */
-  version?: string;
+  version?: string | undefined;
   /** Native DSH bundles as exact npm package@version declarations. */
-  plugins?: readonly string[];
+  plugins?: readonly string[] | undefined;
 }
 
 const DSH_PNPM_VERSION = "10.17.1";
@@ -176,6 +176,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         const events: StreamEvent[] = [{ type: "message", role: "assistant", text }];
         return { events, status: "completed" as const };
       }),
+    after: () => Effect.void,
   });
 }
 

@@ -14,7 +14,10 @@ import {
 } from "./conversation.tsx";
 import { resolveLocalizedText, type ReportLocale, type ValueProps } from "./shared.ts";
 
-export type TurnTraceProps = ValueProps<ConversationContent | null, { locale: ReportLocale; className?: string }>;
+export type TurnTraceProps = ValueProps<
+  ConversationContent | undefined,
+  { locale: ReportLocale; className: string | undefined }
+>;
 
 type TraceLane = "input" | "model" | "tools";
 
@@ -27,13 +30,13 @@ interface TraceInteraction {
   setCallsCollapsed(value: boolean): void;
   query: string;
   setQuery(value: string): void;
-  selected: string | null;
-  setSelected(value: string | null): void;
+  selected: string | undefined;
+  setSelected(value: string | undefined): void;
 }
-const TraceInteractionContext = createContext<TraceInteraction | null>(null);
+const TraceInteractionContext = createContext<TraceInteraction | undefined>(undefined);
 function useTraceInteraction(): TraceInteraction {
   const value = useContext(TraceInteractionContext);
-  if (value === null) throw new Error("Trace interaction context is missing");
+  if (value === undefined) throw new Error("Trace interaction context is missing");
   return value;
 }
 
@@ -141,24 +144,27 @@ function lifecycleEntriesOf(
     const finished = turn.entries[finishedIndex]!;
     const raw = [started.raw, finished.raw].filter((value): value is string => value !== undefined).join("\n");
     const details = [started.detail, finished.detail].filter((value) => value !== undefined);
+    function lifecycleDetail(): ConversationEntry["detail"] {
+      if (details.length === 0) return undefined;
+      if (details.length === 1) return details[0];
+      return { kind: "stack", items: details };
+    }
     const callId = exactToolOccurrenceId(started);
     lifecycleByStartedIndex.set(startedIndex, {
       id: started.id,
       kind: started.kind,
       preview: started.preview,
-      ...(started.anchor === undefined ? {} : { anchor: started.anchor }),
-      ...(callId === undefined ? {} : { callId }),
-      ...(started.toolOccurrence === undefined ? {} : { toolOccurrence: started.toolOccurrence }),
+      anchor: started.anchor,
+      callId,
+      toolOccurrence: started.toolOccurrence,
       callPhase: "finished",
-      ...(finished.callOutcome === undefined ? {} : { callOutcome: finished.callOutcome }),
-      ...(started.failed === true || finished.failed === true ? { failed: true } : {}),
-      ...((finished.commandMatch ?? started.commandMatch) === undefined
-        ? {}
-        : { commandMatch: finished.commandMatch ?? started.commandMatch }),
-      ...(raw === "" ? {} : { raw }),
-      ...(details.length === 0
-        ? {}
-        : { detail: details.length === 1 ? details[0] : { kind: "stack" as const, items: details } }),
+      callOutcome: finished.callOutcome,
+      failed: started.failed || finished.failed,
+      commandMatch: finished.commandMatch ?? started.commandMatch,
+      raw: raw === "" ? undefined : raw,
+      detail: lifecycleDetail(),
+      eventId: undefined,
+      sequence: undefined,
     });
     pairedFinishedIndexes.add(finishedIndex);
   }
@@ -231,7 +237,14 @@ function timelinePositions(
 }
 
 function timelineLaneY(lane: TraceLane): number {
-  return lane === "input" ? 7 : lane === "model" ? 21 : 35;
+  switch (lane) {
+    case "input":
+      return 7;
+    case "model":
+      return 21;
+    default:
+      return 35;
+  }
 }
 
 function timelineEventLabel(event: TraceEvent, locale: ReportLocale): string {
@@ -384,10 +397,10 @@ function TraceTimeline({
             className="niceeval-trace-timeline-span"
             role="button"
             tabIndex={0}
-            onClick={() => interaction.setSelected(interaction.selected === event.id ? null : event.id)}
+            onClick={() => interaction.setSelected(interaction.selected === event.id ? undefined : event.id)}
             onKeyDown={(keyboardEvent) => {
               if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ")
-                interaction.setSelected(interaction.selected === event.id ? null : event.id);
+                interaction.setSelected(interaction.selected === event.id ? undefined : event.id);
             }}
             data-lane={event.lane}
             data-failed={event.entry.failed ? "true" : undefined}
@@ -456,6 +469,25 @@ function TraceEvidence({ event, locale }: { event: TraceEvent; locale: ReportLoc
   const duration = turnDuration(event.turn);
   const interaction = useTraceInteraction();
   const [tab, setTab] = useState<"preview" | "raw">("preview");
+  function commandMatchEvidence(): ReactElement | null {
+    const match = event.entry.commandMatch;
+    if (match === undefined) return null;
+    if (match.state === "matched")
+      return (
+        <div>
+          <dt>{text(locale, "Command", "命令")}</dt>
+          <dd>{match.commandId}</dd>
+        </div>
+      );
+    return (
+      <div>
+        <dt>{text(locale, "Command", "命令")}</dt>
+        <dd>
+          {text(locale, "Unavailable", "不可用")} · {match.reason}
+        </dd>
+      </div>
+    );
+  }
   return (
     <details className="niceeval-trace-evidence" open={interaction.selected === event.id}>
       <summary>{text(locale, "Evidence", "证据")}</summary>
@@ -493,19 +525,7 @@ function TraceEvidence({ event, locale }: { event: TraceEvent; locale: ReportLoc
               </dd>
             </div>
           ) : null}
-          {event.entry.commandMatch === undefined ? null : event.entry.commandMatch.state === "matched" ? (
-            <div>
-              <dt>{text(locale, "Command", "命令")}</dt>
-              <dd>{event.entry.commandMatch.commandId}</dd>
-            </div>
-          ) : (
-            <div>
-              <dt>{text(locale, "Command", "命令")}</dt>
-              <dd>
-                {text(locale, "Unavailable", "不可用")} · {event.entry.commandMatch.reason}
-              </dd>
-            </div>
-          )}
+          {commandMatchEvidence()}
         </dl>
         <div
           className="niceeval-trace-evidence-tabs"
@@ -585,7 +605,7 @@ function TraceEventRow({ event, locale }: { event: TraceEvent; locale: ReportLoc
       <button
         type="button"
         className="niceeval-trace-event-select"
-        onClick={() => interaction.setSelected(interaction.selected === event.id ? null : event.id)}
+        onClick={() => interaction.setSelected(interaction.selected === event.id ? undefined : event.id)}
         aria-pressed={interaction.selected === event.id}
         aria-expanded={interaction.selected === event.id}
         aria-label={`${event.entry.kind}: ${event.summary || text(locale, "captured event", "已捕获事件")}`}
@@ -676,8 +696,8 @@ function TraceTurn({
   );
 }
 
-export function turnTraceText(data: ConversationContent | null, locale: ReportLocale): string {
-  return data === null || data.turns.length === 0 ? "" : conversationText(data, locale);
+export function turnTraceText(data: ConversationContent | undefined, locale: ReportLocale): string {
+  return data === undefined || data.turns.length === 0 ? "" : conversationText(data, locale);
 }
 
 export function TurnTrace({ data, locale, className }: TurnTraceProps): ReactElement | null {
@@ -685,8 +705,8 @@ export function TurnTrace({ data, locale, className }: TurnTraceProps): ReactEle
   const [turnsCollapsed, setTurnsCollapsed] = useState(false);
   const [callsCollapsed, setCallsCollapsed] = useState(false);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
-  if (data === null || data.turns.length === 0) return null;
+  const [selected, setSelected] = useState<string | undefined>(undefined);
+  if (data === undefined || data.turns.length === 0) return null;
   const events = traceEventsOf(data, locale);
   const interaction = {
     duration,
@@ -706,7 +726,7 @@ export function TurnTrace({ data, locale, className }: TurnTraceProps): ReactEle
         className={cx("niceeval-report", "niceeval-turn-trace", className)}
         data-duration-mode={duration ? "duration" : "sequence"}
         onKeyDown={(event) => {
-          if (event.key === "Escape") setSelected(null);
+          if (event.key === "Escape") setSelected(undefined);
         }}
       >
         <TraceToolbar content={data} events={events} locale={locale} />

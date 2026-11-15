@@ -22,22 +22,24 @@ export interface InsightPage {
 export interface InsightManifest {
   readonly title: LocalizedText;
   readonly defaultRoute: string;
-  readonly experimentSelection?: {
-    readonly options: readonly {
-      readonly route: string;
-      readonly label: string;
-    }[];
-  };
+  readonly experimentSelection:
+    | {
+        readonly options: readonly {
+          readonly route: string;
+          readonly label: string;
+        }[];
+      }
+    | undefined;
   readonly pages: readonly InsightPage[];
 }
 
 export interface BackgroundLocation {
   readonly pathname: string;
-  readonly search?: string;
+  readonly search: string;
 }
 
 export interface InsightRouteState {
-  readonly background?: BackgroundLocation;
+  readonly background: BackgroundLocation | undefined;
 }
 
 export interface InsightSurface {
@@ -50,5 +52,5 @@ export type InsightCloseTarget = { readonly kind: "history" } | { readonly kind:
 
 export interface InsightSurfacePlan {
   readonly background: InsightSurface;
-  readonly foreground?: InsightSurface & { readonly close: InsightCloseTarget };
+  readonly foreground: (InsightSurface & { readonly close: InsightCloseTarget }) | undefined;
 }

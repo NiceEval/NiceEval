@@ -1,5 +1,5 @@
 import { SessionActiveAttemptsSchema } from "../../../runner/session.ts";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import type {
   ExpiredSessionRecord,
   SessionExperimentRecord,
@@ -9,6 +9,10 @@ import type {
   SessionShowDocument,
 } from "../../../runner/session.ts";
 import type { InvocationCompletion } from "../../../runner/types.ts";
+
+function optionalFact<S extends Schema.Constraint>(schema: S) {
+  return Schema.UndefinedOr(schema).pipe(Schema.withDecodingDefault(Effect.succeed(undefined)));
+}
 
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
@@ -42,46 +46,56 @@ const SessionQueuedAttemptSchema: Schema.Codec<SessionQueuedAttemptRecord> = Sch
   reason: Schema.Literal("provider-capacity"),
 });
 
-const SessionExperimentSchema: Schema.Codec<SessionExperimentRecord> = Schema.Struct({
+const SessionExperimentSchema: Schema.Codec<SessionExperimentRecord, unknown> = Schema.Struct({
   experimentId: Schema.String,
   runId: Schema.String,
-  published: Schema.optional(Schema.Boolean),
-  state: Schema.optional(Schema.Literals(["setup", "running", "waiting", "teardown"])),
-  running: Schema.optional(NonNegativeIntegerSchema),
-  queued: Schema.optional(NonNegativeIntegerSchema),
-  elsewhere: Schema.optional(NonNegativeIntegerSchema),
-  activeAttempts: Schema.optional(SessionActiveAttemptsSchema),
-  attempts: Schema.optional(Schema.mutable(Schema.Array(SessionQueuedAttemptSchema))),
+  published: optionalFact(Schema.Boolean),
+  state: optionalFact(Schema.Literals(["setup", "running", "waiting", "teardown"])),
+  running: optionalFact(NonNegativeIntegerSchema),
+  queued: optionalFact(NonNegativeIntegerSchema),
+  elsewhere: optionalFact(NonNegativeIntegerSchema),
+  activeAttempts: optionalFact(SessionActiveAttemptsSchema),
+  attempts: optionalFact(Schema.mutable(Schema.Array(SessionQueuedAttemptSchema))),
 });
 
-const SessionRecordSchema: Schema.Codec<SessionRecord> = Schema.Struct({
+const SessionRecordFields = {
   sessionId: Schema.String,
   pid: PositiveIntegerSchema,
   startedAt: TimestampSchema,
-  status: Schema.Literals(["active", "completed", "incomplete", "interrupted"]),
-  experiments: Schema.mutable(Schema.Array(SessionExperimentSchema)),
-  heartbeatAt: Schema.optional(TimestampSchema),
-  completedAt: Schema.optional(TimestampSchema),
-  completion: Schema.optional(InvocationCompletionSchema),
-});
+};
+const SessionRecordSchema: Schema.Codec<SessionRecord, unknown> = Schema.Union([
+  Schema.Struct({
+    ...SessionRecordFields,
+    status: Schema.Literal("active"),
+    experiments: Schema.mutable(Schema.Array(SessionExperimentSchema)),
+    heartbeatAt: optionalFact(TimestampSchema),
+  }),
+  Schema.Struct({
+    ...SessionRecordFields,
+    status: Schema.Literals(["completed", "incomplete", "interrupted"]),
+    experiments: Schema.mutable(Schema.Array(SessionExperimentSchema)),
+    completedAt: optionalFact(TimestampSchema),
+    completion: optionalFact(InvocationCompletionSchema),
+  }),
+]);
 
-const ExpiredSessionRecordSchema: Schema.Codec<ExpiredSessionRecord> = Schema.Struct({
+const ExpiredSessionRecordSchema: Schema.Codec<ExpiredSessionRecord, unknown> = Schema.Struct({
   sessionId: Schema.String,
   pid: PositiveIntegerSchema,
   startedAt: TimestampSchema,
-  heartbeatAt: Schema.optional(TimestampSchema),
+  heartbeatAt: optionalFact(TimestampSchema),
 });
 
 /** The `niceeval session list --json` document. */
-export const SessionListDocumentSchema: Schema.Codec<SessionListDocument> = Schema.Struct({
+export const SessionListDocumentSchema: Schema.Codec<SessionListDocument, unknown> = Schema.Struct({
   sessions: Schema.mutable(Schema.Array(SessionRecordSchema)),
   expired: Schema.mutable(Schema.Array(ExpiredSessionRecordSchema)),
 });
 
 /** The `niceeval session show --json` document. */
-export const SessionShowDocumentSchema: Schema.Codec<SessionShowDocument> = Schema.Struct({
+export const SessionShowDocumentSchema: Schema.Codec<SessionShowDocument, unknown> = Schema.Struct({
   session: Schema.Union([SessionRecordSchema, ExpiredSessionRecordSchema]),
-  expired: Schema.optional(Schema.Boolean),
+  expired: optionalFact(Schema.Boolean),
 });
 
 /** Strictly decode the sole document written by `niceeval session list --json`. */

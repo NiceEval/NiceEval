@@ -6,13 +6,14 @@
 // Agent Protocol Event values unchanged.
 
 import type { JsonValue, StreamEvent, Usage } from "../types.ts";
+import { isRecord } from "../shared/objects.ts";
 import { normalizeToolName } from "../o11y/tool-names.ts";
 
 /** Structural subset of the official protocol event params. */
 export interface LangGraphEventParamsLike {
-  namespace?: readonly string[];
-  timestamp?: string | number;
-  node?: string;
+  namespace?: readonly string[] | undefined;
+  timestamp?: string | number | undefined;
+  node?: string | undefined;
   data?: unknown;
 }
 
@@ -22,17 +23,18 @@ export interface LangGraphEventParamsLike {
  */
 export interface LangGraphEventLike {
   type: string;
-  event_id?: string;
-  seq?: number;
-  method?: string;
-  params?: LangGraphEventParamsLike;
+  event_id?: string | undefined;
+  seq?: number | undefined;
+  method?: string | undefined;
+  params?: LangGraphEventParamsLike | undefined;
 }
 
 /** Official content-block fields used by the messages channel. */
 export interface LangGraphContentBlockLike {
   type: string;
-  text?: string;
-  reasoning?: string;
+  text?: string | undefined;
+  reasoning?: string | undefined;
+  // 第三方输入边界：LangGraph 原生 content block 允许省略或 null 标识。
   id?: string | null;
   name?: string | null;
   args?: unknown;
@@ -47,10 +49,6 @@ export interface LangGraphStream {
   readonly status: "completed" | "failed" | "waiting" | undefined;
   /** Mark a tool error in this run as a human rejection. */
   markRejected(toolCallId: string): void;
-}
-
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function str(value: unknown): string | undefined {
@@ -157,7 +155,7 @@ export function createLangGraphEventStream(): LangGraphStream {
       type: "operation.finished",
       operationId: callId,
       kind: "tool",
-      ...(output === undefined ? {} : { output: output as JsonValue }),
+      output: output as JsonValue,
       status: terminalStatus,
     });
   };
@@ -289,8 +287,8 @@ export function createLangGraphEventStream(): LangGraphStream {
     const key = messageKey(event, namespace);
     switch (kind) {
       case "message-start": {
-        const role = data.role === "human" ? "user" : data.role === "ai" ? "assistant" : undefined;
-        if (role !== undefined) messageRoles.set(key, role);
+        if (data.role === "human") messageRoles.set(key, "user");
+        else if (data.role === "ai") messageRoles.set(key, "assistant");
         messageBlocks.set(key, new Map());
         break;
       }

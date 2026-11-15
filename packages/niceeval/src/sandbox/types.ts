@@ -14,7 +14,7 @@ export interface CommandResult {
    * 公开调用处附加;直接从 provider 拿到的裸结果可能没有。断言失败时用作 evidence
    * (`commandSucceeded()` 的「命令行本身」),消费方按可选字段读。
    */
-  command?: string;
+  command?: string | undefined;
 }
 
 /** 内置 provider 名；ProviderModule 的完成态计划使用普通 string 兼容自定义 provider。 */
@@ -32,10 +32,12 @@ export interface SandboxHookContext extends ScopedFeedback {
   /** 运行计划中已解析的实验 id；生命周期 hook 不在脱离 Experiment 的上下文执行。 */
   readonly experimentId: string;
   /** 当前物理 Sandbox 归属的 Eval Group；未分组 Sandbox 省略。 */
-  readonly evalGroup?: {
-    readonly id: string;
-    readonly definitionHash: string;
-  };
+  readonly evalGroup:
+    | {
+        readonly id: string;
+        readonly definitionHash: string;
+      }
+    | undefined;
   /** 当前 Invocation 的中止信号；物理 Sandbox 生命周期不从某条 Attempt 借用信号。 */
   readonly signal: AbortSignal;
 }
@@ -53,31 +55,31 @@ export interface CommandOptions {
    * 这是显式 provenance，不是 secret 扫描器：没有登记的自由文本无法被可靠识别；值若先被
    * 调用方编码或拆分，应把实际会出现在命令/输出里的编码形态一并登记。
    */
-  readonly sensitiveValues?: readonly string[];
+  readonly sensitiveValues?: readonly string[] | undefined;
   /**
    * 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值)。`PATH` 是 Sandbox
    * 受管变量,各 provider 保留自己算出的 `PATH`,不保证能被这里覆盖;需要扩展 PATH 用
    * Sandbox factory 的 `pathPrepend`(见 docs/feature/sandbox/library/README.md「PATH:受管变量与
    * pathPrepend」)。
    */
-  readonly env?: Readonly<globalThis.Record<string, string>>;
+  readonly env?: Readonly<globalThis.Record<string, string>> | undefined;
   /** 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。 */
-  readonly cwd?: string;
+  readonly cwd?: string | undefined;
   /**
    * 把本命令的输出也送进 Sandbox 的「原生日志流」(于是 `docker logs` / Docker UI 的 Logs
    * 标签页能实时看到它)。给 agent 命令(codex exec / bub run / claude)开它,就能在容器
    * 日志里看到 agent 的【原始输出】。provider 各自实现(docker:tee 到 PID1 tail 的文件;
    * 不支持的 provider 忽略)—— 日志怎么浮现是 provider 的事,adapter 只声明意图。
    */
-  readonly stream?: boolean;
+  readonly stream?: boolean | undefined;
   /**
    * 命令 stdout 每到一块就调用一次。回调只用于运行中的短命反馈；完整 stdout 仍会原样
    * 出现在返回的 `CommandResult` 里。provider 不支持真流时，至少会在命令结束后按完整
    * stdout 调用一次，不能静默丢掉。
    */
-  readonly onStdout?: (chunk: string) => void | Promise<void>;
+  readonly onStdout?: ((chunk: string) => void | Promise<void>) | undefined;
   /** `onStdout` 的 stderr 对应物；完整 stderr 仍保留在 `CommandResult`。 */
-  readonly onStderr?: (chunk: string) => void | Promise<void>;
+  readonly onStderr?: ((chunk: string) => void | Promise<void>) | undefined;
   /**
    * 覆盖本条命令的执行身份;省略 = Sandbox 默认身份(沿用环境自己声明的身份——Docker 镜像 `USER`、
    * Compose service `user:`、E2B template 默认用户,见
@@ -88,18 +90,18 @@ export interface CommandOptions {
    * 本就全程 root 的 provider 视作 no-op；完全无法换身份的 provider 可不支持（抛错）——但**省略与
    * 显式值的语义保持一致**,不因 provider 而变。
    */
-  readonly user?: string;
+  readonly user?: string | undefined;
   /**
    * 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
    * (见 docs/feature/sandbox/architecture/README.md「时限归属」),provider 层没有独立默认。
    * 显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number | undefined;
   /**
    * 取消本次受管命令树。Provider 必须在 Promise settle 前确认命令树已经终止；无法精确
    * 终止时应退休整个 Sandbox，不能只关闭 transport 后把进程留在后台。
    */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** A command result known to have exit code zero; this does not establish the semantic correctness of its output. */
@@ -109,8 +111,8 @@ export interface SuccessfulCommandResult extends CommandResult {
 
 export interface ManagedProcessStart {
   readonly argv: readonly [string, ...string[]];
-  readonly cwd?: string;
-  readonly env?: Readonly<globalThis.Record<string, string>>;
+  readonly cwd?: string | undefined;
+  readonly env?: Readonly<globalThis.Record<string, string>> | undefined;
 }
 
 export type ManagedProcessChunk =
@@ -119,7 +121,7 @@ export type ManagedProcessChunk =
 
 export interface ManagedProcessExit {
   readonly exitCode: number | null;
-  readonly signal?: string;
+  readonly signal: string | undefined;
 }
 
 /** Attempt-owned bidirectional process. `output` has exactly one consumer. */
@@ -217,5 +219,5 @@ export type CustomProviderSandbox = Omit<Sandbox, "upload" | "runCommandOrThrow"
 export interface SandboxReuseCapability {
   ensureLifetime(
     minRemainingMs: number,
-  ): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }>;
+  ): Promise<{ ready: true; expiresAt?: string | undefined } | { ready: false; reason: string }>;
 }

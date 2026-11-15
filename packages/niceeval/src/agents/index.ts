@@ -126,6 +126,9 @@ export type {
 // SDK 原生事件流 → 标准事件的官方转换器(无侵入 adapter 只剩传输粘合)+ 通用 SSE 读帧器。
 export {
   sseJsonFrames,
+  openSseJsonFrames,
+  SseFrameDecodeError,
+  SseFrameDecoderError,
   createClaudeSdkEventStream,
   createPiAgentEventStream,
   createCodexThreadEventStream,

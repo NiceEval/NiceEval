@@ -7,19 +7,39 @@ import { CanonicalDecimalSchema, CurrencyCodeSchema } from "../record/family/sou
 import { createAdapterCallPriceReceipts } from "./adapter-call-price.ts";
 import { projectAdapterEvalUsage, projectAgentEvalUsage, type AgentUsageContribution } from "./eval-usage.ts";
 
+type TerminalContribution = Extract<AgentUsageContribution, { readonly state: "terminal" }>;
+type PendingContribution = Extract<AgentUsageContribution, { readonly state: "pending" }>;
+
 function contribution(
-  usage: (Usage & { inputTotalTokens?: number }) | null,
-  fields: Partial<AgentUsageContribution> = {},
+  usage: (Usage & { inputTotalTokens?: number }) | undefined,
+  fields?: Partial<TerminalContribution>,
+): TerminalContribution;
+function contribution(
+  usage: undefined,
+  fields: { readonly state: "pending"; readonly sendAttempt?: number },
+): PendingContribution;
+function contribution(
+  usage: (Usage & { inputTotalTokens?: number }) | undefined,
+  fields:
+    | Partial<TerminalContribution>
+    | {
+        readonly state: "pending";
+        readonly sendAttempt?: number;
+      } = {},
 ): AgentUsageContribution {
-  return {
+  const identity = {
     sessionScopeId: "session-a",
     turnId: "turn-a",
-    sendAttempt: 0,
+    sendAttempt: fields.sendAttempt ?? 0,
+    model: "provider/model",
+    coverage: { status: "complete" as const },
+  };
+  if (fields.state === "pending") return { ...identity, state: "pending" };
+  return {
+    ...identity,
     state: "terminal",
     outcome: "completed",
-    model: "provider/model",
     usage,
-    coverage: { status: "complete" },
     ...fields,
   };
 }
@@ -62,7 +82,11 @@ describe("Official usage evidence and decimal arithmetic", () => {
       outputTokens: 5,
       reasoningTokens: 4,
     });
-    const agent = projectAgentEvalUsage({ contributions: [withTotal, buckets], scope: "turn" });
+    const agent = projectAgentEvalUsage({
+      contributions: [withTotal, buckets],
+      scope: "turn",
+      pricing: undefined,
+    });
     expect(agent.inputTotalTokens).toMatchObject({ state: "exact", value: 30 });
     expect(agent.totalTokens).toMatchObject({ state: "exact", value: 40 });
     const application = projectAdapterEvalUsage(
@@ -84,8 +108,12 @@ describe("Official usage evidence and decimal arithmetic", () => {
         coverage: { status: "partial", reason: "provider-limited" },
       },
     );
-    const pending = contribution(null, { sendAttempt: 2, state: "pending", outcome: null });
-    const agent = projectAgentEvalUsage({ contributions: [failed, partial, pending], scope: "turn" });
+    const pending = contribution(undefined, { sendAttempt: 2, state: "pending" });
+    const agent = projectAgentEvalUsage({
+      contributions: [failed, partial, pending],
+      scope: "turn",
+      pricing: undefined,
+    });
     expect(agent.inputTokens).toMatchObject({ state: "lower-bound", value: 12 });
     expect(agent.inputTotalTokens).toMatchObject({ state: "lower-bound", value: 12 });
     expect(agent.totalTokens).toMatchObject({ state: "lower-bound", value: 18 });
@@ -96,15 +124,33 @@ describe("Official usage evidence and decimal arithmetic", () => {
   });
 
   it("distinguishes observed zero from absence and rejects invalid or overflowing tokens", () => {
-    expect(projectAgentEvalUsage({ contributions: [], scope: "attempt" }).totalTokens.state).toBe("unavailable");
-    expect(projectAgentEvalUsage({ contributions: [contribution({})], scope: "attempt" }).inputTokens.state).toBe(
-      "unavailable",
-    );
     expect(
-      projectAgentEvalUsage({ contributions: [contribution({ inputTokens: 0 })], scope: "attempt" }).inputTokens,
+      projectAgentEvalUsage({
+        contributions: [],
+        scope: "attempt",
+        pricing: undefined,
+      }).totalTokens.state,
+    ).toBe("unavailable");
+    expect(
+      projectAgentEvalUsage({
+        contributions: [contribution({})],
+        scope: "attempt",
+        pricing: undefined,
+      }).inputTokens.state,
+    ).toBe("unavailable");
+    expect(
+      projectAgentEvalUsage({
+        contributions: [contribution({ inputTokens: 0 })],
+        scope: "attempt",
+        pricing: undefined,
+      }).inputTokens,
     ).toMatchObject({ state: "exact", value: 0 });
     expect(
-      projectAgentEvalUsage({ contributions: [contribution({ inputTokens: -1 })], scope: "attempt" }).inputTokens,
+      projectAgentEvalUsage({
+        contributions: [contribution({ inputTokens: -1 })],
+        scope: "attempt",
+        pricing: undefined,
+      }).inputTokens,
     ).toMatchObject({ state: "unavailable", reason: "usage-invalid-token-value" });
     expect(projectAdapterEvalUsage(adapter([call({ inputTokens: -1 })])).inputTotalTokens).toMatchObject({
       state: "unavailable",
@@ -114,6 +160,7 @@ describe("Official usage evidence and decimal arithmetic", () => {
       projectAgentEvalUsage({
         contributions: [contribution({ inputTokens: Number.MAX_SAFE_INTEGER }), contribution({ inputTokens: 1 })],
         scope: "attempt",
+        pricing: undefined,
       }).inputTokens,
     ).toMatchObject({ state: "unavailable", reason: "usage-exceeds-safe-integer" });
   });
@@ -177,16 +224,23 @@ describe("Official usage evidence and decimal arithmetic", () => {
       pricing: { "provider/model": { inputPerMTok: 0.1, outputPerMTok: 0.2 } },
     });
     expect(missingRate.costs).toMatchObject({ state: "partial", values: [{ value: "0.0000017" }] });
-    expect(projectAgentEvalUsage({ contributions: [known], scope: "session" }).costs.state).toBe("unavailable");
+    expect(
+      projectAgentEvalUsage({
+        contributions: [known],
+        scope: "session",
+        pricing: undefined,
+      }).costs.state,
+    ).toBe("unavailable");
   });
 
   it("keeps partial coverage and pending contributions from completing known costs", () => {
     const usage = projectAgentEvalUsage({
       contributions: [
         contribution({ costUSD: 0 }, { coverage: { status: "partial", reason: "missing-internal-send" } }),
-        contribution(null, { state: "pending", outcome: null }),
+        contribution(undefined, { state: "pending" }),
       ],
       scope: "attempt",
+      pricing: undefined,
     });
     expect(usage.costs).toMatchObject({
       state: "partial",
@@ -233,7 +287,11 @@ describe("Official usage evidence and decimal arithmetic", () => {
 
   it("freezes nested projected values and does not retain mutable source amounts", () => {
     const source = { inputTokens: 10, costUSD: 0.1 };
-    const usage = projectAgentEvalUsage({ contributions: [contribution(source)], scope: "turn" });
+    const usage = projectAgentEvalUsage({
+      contributions: [contribution(source)],
+      scope: "turn",
+      pricing: undefined,
+    });
     source.inputTokens = 20;
     source.costUSD = 0.2;
     expect(usage.inputTokens).toMatchObject({ value: 10 });

@@ -11,8 +11,8 @@ import { type ManagedScoreMatchOptions, type ScoreMatch } from "./match.ts";
 
 /** Shared resource limits for the fixed Judge presets. */
 export interface JudgePresetOptions {
-  readonly maxCalls?: number;
-  readonly maxMaterialBytes?: number;
+  readonly maxCalls?: number | undefined;
+  readonly maxMaterialBytes?: number | undefined;
 }
 
 /** Supplies the question, candidate and reference for factuality scoring; expected is the author's reference rather than independently verified truth. */
@@ -94,9 +94,19 @@ export function factuality(options: JudgePresetOptions = {}): ScoreMatch<Factual
           choices: ["consistent", "incomplete", "contradictory"],
           material,
         });
+        function factualityMeasurement(): number {
+          switch (result.choice) {
+            case "consistent":
+              return 1;
+            case "incomplete":
+              return 0.5;
+            default:
+              return 0;
+          }
+        }
         return {
           state: "measured" as const,
-          measurement: result.choice === "consistent" ? 1 : result.choice === "incomplete" ? 0.5 : 0,
+          measurement: factualityMeasurement(),
           rationale: result.rationale,
         };
       }),
@@ -188,9 +198,19 @@ export function pairwisePreference(options: JudgePresetOptions = {}): ScoreMatch
           choices: ["candidate", "tie", "reference"],
           material,
         });
+        function preferenceMeasurement(): number {
+          switch (result.choice) {
+            case "candidate":
+              return 1;
+            case "tie":
+              return 0.5;
+            default:
+              return 0;
+          }
+        }
         return {
           state: "measured" as const,
-          measurement: result.choice === "candidate" ? 1 : result.choice === "tie" ? 0.5 : 0,
+          measurement: preferenceMeasurement(),
           rationale: result.rationale,
         };
       }),

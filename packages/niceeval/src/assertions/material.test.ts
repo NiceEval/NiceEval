@@ -14,12 +14,23 @@ function capture(value: unknown, maxBytes = 49152) {
     match: defineValueMatch({ name: "known", evaluate: () => true }),
     capture: { maxBytes },
   });
-  return captureContextualMatch(contextMatchDefinitionOf(match), {}, { owner: {} });
+  return captureContextualMatch(
+    contextMatchDefinitionOf(match),
+    {},
+    {
+      owner: {},
+      cut: undefined,
+    },
+  );
 }
 
 describe("context fact data capture boundaries", () => {
   it("counts escaped UTF-8 and undefined markers without losing undefined facts", () => {
-    const value = { 'quote"': '\u0000\b\t\n\f\r\\"臺😀\ud800', absent: undefined, array: [undefined, null, -0] };
+    const value = {
+      'quote"': '\u0000\b\t\n\f\r\\"臺😀\ud800',
+      absent: undefined,
+      array: [undefined, null, -0],
+    };
     const captured = capture(value);
     expect(captured.kind).toBe("context-boolean");
     if (captured.kind === "material") throw new Error("Expected a fact");

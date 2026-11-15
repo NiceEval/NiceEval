@@ -6,7 +6,9 @@ import {
   CliPath,
   type CliOptionDefinition,
 } from "../../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../../cli/contribution.ts";
+import { externalCliFailure } from "../../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../../shared/external-cause.ts";
 import { RecordCoordination } from "../../../coordination/record-leases.ts";
 import { makeRecordRoot, type RecordRoot, type RecordRootConstructionError } from "../../platform/root.ts";
 import { RecordFileSystem } from "../../platform/services.ts";
@@ -52,18 +54,18 @@ Options:
 
 type RecordCliBaseRequirement = CliArguments | CliInvocationFacts | CliOutput | CliPath;
 
-type RecordCliError = CliFeatureError;
+type RecordCliError = CliFeatureError<ExternalCause>;
 
 function assertNever(value: never): never {
   throw new Error(`Unreachable Record CLI contribution value: ${String(value)}`);
 }
 
 function recordCliFailure(command: "clean", operation: string, cause: unknown): RecordCliError {
-  return new CliFeatureError({
+  return externalCliFailure(cause, {
     feature: `record ${command}`,
     operation,
-    cause,
     exitCode: 1,
+    display: undefined,
   });
 }
 
@@ -129,7 +131,7 @@ function parseRecordCommand(
       yield* write(command, "stderr", `${recordRootErrorCode(root.failure)}\n`);
       return 1;
     }
-    return Object.freeze({ rootPath, root: root.success, yes: parsed.values.yes === true });
+    return { rootPath, root: root.success, yes: parsed.values.yes === true };
   });
 }
 

@@ -1,4 +1,5 @@
 import { Result, Schema } from "effect";
+import { isRecord } from "../../shared/objects.ts";
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
@@ -17,11 +18,11 @@ import {
 
 const QUERY_TIMEOUT_MS = 15_000;
 const MUTATION_TIMEOUT_MS = 120_000;
-const ParseOptions = Object.freeze({
+const ParseOptions = {
   errors: "all" as const,
   exact: true,
   onExcessProperty: "error" as const,
-});
+};
 
 export const INCUS_METADATA = Object.freeze({
   allocationId: "user.niceeval.allocationId",
@@ -121,10 +122,6 @@ const EnvelopeSchema = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   operation: Schema.optional(Schema.String),
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function asStringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
@@ -357,7 +354,7 @@ function candidateSockets(env: NodeJS.ProcessEnv): readonly string[] {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   if (uid !== undefined) sockets.push(`/run/user/${uid}/incus/unix.socket`);
   sockets.push(join(homedir(), ".config/incus/unix.socket"));
-  return Object.freeze([...new Set(sockets)]);
+  return [...new Set(sockets)];
 }
 
 async function probeCli(): Promise<Transport | undefined> {
@@ -477,12 +474,12 @@ export class IncusControl {
     const config = asStringRecord(metadata.config);
     const source = config.source ?? "";
     const backingDevice = config["zfs.pool_name"] ?? config["source"] ?? config["lvm.vg_name"] ?? "";
-    return Object.freeze({
+    return {
       name: metadata.name,
       driver: metadata.driver,
       source,
       backingDevice,
-    });
+    };
   }
 
   async getStoragePoolResources(
@@ -506,7 +503,7 @@ export class IncusControl {
     ) {
       throw shapeError(`GET storage pool ${pool} resources (storage bytes unknown)`);
     }
-    return Object.freeze({ total, used, free: total - used });
+    return { total, used, free: total - used };
   }
 
   async getServerIdentity(): Promise<{ readonly fingerprint: string; readonly name: string; readonly pid: number }> {
@@ -523,11 +520,11 @@ export class IncusControl {
     ) {
       throw shapeError("GET server identity");
     }
-    return Object.freeze({
+    return {
       fingerprint: environment.certificate_fingerprint,
       name: environment.server_name,
       pid: environment.server_pid,
-    });
+    };
   }
 
   async attestReferenceStorage(
@@ -599,25 +596,23 @@ export class IncusControl {
 
   async listImages(project: string): Promise<readonly IncusImage[]> {
     const metadata = await this.get(this.projectPath("/1.0/images?recursion=1", project));
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET /1.0/images");
-    return Object.freeze(
-      metadata.flatMap((entry) => {
-        if (!isRecord(entry) || typeof entry.fingerprint !== "string") return [];
-        if (!/^[a-f0-9]{64}$/u.test(entry.fingerprint)) return [];
-        const aliases = Array.isArray(entry.aliases)
-          ? entry.aliases.flatMap((alias) => (isRecord(alias) && typeof alias.name === "string" ? [alias.name] : []))
-          : [];
-        return [
-          Object.freeze({
-            fingerprint: entry.fingerprint,
-            aliases: Object.freeze(aliases),
-            type: typeof entry.type === "string" ? entry.type : "container",
-            properties: Object.freeze(asStringRecord(entry.properties)),
-          }),
-        ];
-      }),
-    );
+    return metadata.flatMap((entry) => {
+      if (!isRecord(entry) || typeof entry.fingerprint !== "string") return [];
+      if (!/^[a-f0-9]{64}$/u.test(entry.fingerprint)) return [];
+      const aliases = Array.isArray(entry.aliases)
+        ? entry.aliases.flatMap((alias) => (isRecord(alias) && typeof alias.name === "string" ? [alias.name] : []))
+        : [];
+      return [
+        {
+          fingerprint: entry.fingerprint,
+          aliases,
+          type: typeof entry.type === "string" ? entry.type : "container",
+          properties: asStringRecord(entry.properties),
+        },
+      ];
+    });
   }
 
   async resolveTrustedImage(
@@ -688,9 +683,9 @@ export class IncusControl {
 
   async listInstances(project: string): Promise<readonly IncusInstance[]> {
     const metadata = await this.get(this.projectPath("/1.0/instances?recursion=1", project));
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET /1.0/instances");
-    return Object.freeze(metadata.flatMap((entry) => this.decodeInstance(entry, "GET /1.0/instances")));
+    return metadata.flatMap((entry) => this.decodeInstance(entry, "GET /1.0/instances"));
   }
 
   private decodeInstance(entry: unknown, path: string): IncusInstance[] {
@@ -699,21 +694,19 @@ export class IncusControl {
     const expanded =
       devices === undefined
         ? undefined
-        : Object.freeze(
-            Object.fromEntries(
-              Object.entries(devices).flatMap(([key, value]) =>
-                isRecord(value) ? [[key, Object.freeze(asStringRecord(value))] as const] : [],
-              ),
+        : Object.fromEntries(
+            Object.entries(devices).flatMap(([key, value]) =>
+              isRecord(value) ? [[key, asStringRecord(value)] as const] : [],
             ),
           );
     return [
-      Object.freeze({
+      {
         name: entry.name,
         status: typeof entry.status === "string" ? entry.status : "Unknown",
         type: typeof entry.type === "string" ? entry.type : "container",
-        config: Object.freeze(asStringRecord(entry.config)),
+        config: asStringRecord(entry.config),
         ...(expanded === undefined ? {} : { expandedDevices: expanded }),
-      }),
+      },
     ];
   }
 
@@ -728,13 +721,11 @@ export class IncusControl {
     const metadata = await this.get(
       this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}/volumes/custom?recursion=1`, project),
     );
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET storage volumes");
-    return Object.freeze(
-      metadata
-        .flatMap((entry) => this.decodeVolume(entry, "GET storage volumes"))
-        .filter((volume) => volume.type === "custom"),
-    );
+    return metadata
+      .flatMap((entry) => this.decodeVolume(entry, "GET storage volumes"))
+      .filter((volume) => volume.type === "custom");
   }
 
   async getVolume(project: string, pool: string, name: string): Promise<IncusVolume | undefined> {
@@ -750,19 +741,19 @@ export class IncusControl {
 
   private decodeVolume(entry: unknown, path: string): IncusVolume[] {
     if (!isRecord(entry) || typeof entry.name !== "string") throw shapeError(path);
-    const contentType =
-      typeof entry.content_type === "string"
-        ? entry.content_type
-        : typeof entry.contentType === "string"
-          ? entry.contentType
-          : "";
+    const volumeContentType = (): string => {
+      if (typeof entry.content_type === "string") return entry.content_type;
+      if (typeof entry.contentType === "string") return entry.contentType;
+      return "";
+    };
+    const contentType = volumeContentType();
     return [
-      Object.freeze({
+      {
         name: entry.name,
         type: typeof entry.type === "string" ? entry.type : "custom",
         contentType,
-        config: Object.freeze(asStringRecord(entry.config)),
-      }),
+        config: asStringRecord(entry.config),
+      },
     ];
   }
 

@@ -10,7 +10,7 @@ import type { DiffArtifact, DiffData, DiffFileSummary, WindowChange } from "./ty
 export function deriveDiffData(windows: DiffArtifact): DiffData {
   const touched = new Map<
     string,
-    { first: WindowChange; last: WindowChange; windows: string[]; elided?: DiffFileSummary["elided"] }
+    { first: WindowChange; last: WindowChange; windows: string[]; elided: DiffFileSummary["elided"] | undefined }
   >();
   for (const window of windows) {
     for (const [path, change] of Object.entries(window.changes)) {
@@ -27,7 +27,7 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
           first: change,
           last: change,
           windows: [window.window],
-          ...(reason ? { elided: reason } : {}),
+          elided: reason,
         });
       }
     }
@@ -38,7 +38,7 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
     files[path] = {
       net: computeNet(entry.first, entry.last),
       windows: entry.windows,
-      ...(entry.elided ? { elided: entry.elided } : {}),
+      elided: entry.elided,
     };
   }
 
@@ -113,10 +113,9 @@ export function elidedContentPaths(diff: DiffData): string[] {
 
 /** 内容被省略的条目怎么向人交代:reason + 已知字节数。 */
 export function describeElided(elided: NonNullable<WindowChange["elided"]>): string {
-  const bytes = [
-    elided.beforeBytes === undefined ? undefined : `before ${elided.beforeBytes} bytes`,
-    elided.afterBytes === undefined ? undefined : `after ${elided.afterBytes} bytes`,
-  ].filter((part) => part !== undefined);
+  const bytes: string[] = [];
+  if (elided.beforeBytes !== undefined) bytes.push(`before ${elided.beforeBytes} bytes`);
+  if (elided.afterBytes !== undefined) bytes.push(`after ${elided.afterBytes} bytes`);
   return bytes.length > 0 ? `${elided.reason} (${bytes.join(", ")})` : elided.reason;
 }
 
@@ -243,7 +242,7 @@ export type ChangeContentState =
       /** 内容被省略(binary / oversized-text),字节数只知部分时省略 bytes。 */
       readonly state: "elided";
       readonly reason: "binary" | "oversized-text";
-      readonly bytes?: number;
+      readonly bytes: number | undefined;
     }
   | {
       /** 内容证据不在(如 provider 不支持内容导出);与「缺失」相反,不能确定该侧不成立。 */
@@ -265,7 +264,7 @@ function contentStateOf(change: WindowChange, side: "before" | "after"): ChangeC
   const elided = change.elided;
   if (elided) {
     const bytes = side === "before" ? elided.beforeBytes : elided.afterBytes;
-    return { state: "elided", reason: elided.reason, ...(bytes !== undefined ? { bytes } : {}) };
+    return { state: "elided", reason: elided.reason, bytes };
   }
   const text = side === "before" ? change.before : change.after;
   if (text === undefined) return { state: "unavailable", reason: "content-evidence-missing" };

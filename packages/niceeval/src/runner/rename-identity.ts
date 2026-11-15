@@ -15,8 +15,8 @@ export interface RenameIdentityTarget {
   readonly executionIdentityDigest: string;
   readonly inputIdentity: { readonly domain: string; readonly value: string };
   readonly configIdentity: { readonly domain: string; readonly value: string };
-  readonly timeout?: { readonly domain: string; readonly milliseconds: number };
-  readonly renameFingerprint?: (experimentId: string) => string | undefined;
+  readonly timeout: { readonly domain: string; readonly milliseconds: number } | undefined;
+  readonly renameFingerprint: (experimentId: string) => string | undefined;
 }
 
 /** First-party experiment-rename/v1 proof, shared by explicit adoption and later reuse. */
@@ -27,7 +27,7 @@ export function executionDigestForExperiment(target: RenameIdentityTarget, exper
     target.configIdentity.domain !== "niceeval.config/identity"
   )
     return undefined;
-  const fingerprint = target.renameFingerprint?.(experimentId);
+  const fingerprint = target.renameFingerprint(experimentId);
   if (fingerprint === undefined) return undefined;
   return slotExecutionIdentityDigestHex({
     experimentId,

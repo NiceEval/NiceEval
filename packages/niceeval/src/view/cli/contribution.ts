@@ -18,6 +18,9 @@ import {
   type CliOptionDefinition,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure, cliFailureDisplay } from "../../cli/feature-failure.ts";
+import { CurrentTargetUnavailable } from "../../experiment/host/current.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { RunId } from "../../record/model/identifiers.ts";
 import { openHostOwnedRecordReadSession, acquireProjectRecordReadSession } from "../../record/sqlite/index.ts";
@@ -58,30 +61,51 @@ type Requirements =
   | ViewApplicationRuntime
   | ProjectConfiguration
   | Scope.Scope;
-type Error = CliFeatureError;
+type ViewCliCause = CurrentTargetUnavailable | ExternalCause;
+type Error = CliFeatureError<ViewCliCause>;
 const VIEW_RUN_SELECTION_LIMIT = 64;
 const RECORD_IMPORT_DEADLINE_MS = 30_000;
 
 function failure(operation: string, cause: unknown): Error {
-  return new CliFeatureError({ feature: "view", operation, cause, exitCode: 1 });
+  if (cause instanceof CurrentTargetUnavailable) {
+    return new CliFeatureError({
+      feature: "view",
+      operation,
+      cause,
+      exitCode: 1,
+      display: cliFailureDisplay(cause, {
+        feature: "view",
+        operation,
+        display: undefined,
+      }),
+    });
+  }
+  return externalCliFailure(cause, {
+    feature: "view",
+    operation,
+    exitCode: 1,
+    display: undefined,
+  });
 }
 
-function targetFailureReason(cause: unknown): string {
-  const underlying = cause instanceof CliFeatureError ? cause.cause : cause;
-  const reason =
-    typeof underlying === "object" &&
-    underlying !== null &&
-    "reason" in underlying &&
-    typeof underlying.reason === "string"
-      ? underlying.reason
-      : underlying instanceof Error
-        ? underlying.message
-        : String(underlying);
-  return `${
-    typeof underlying === "object" && underlying !== null && "code" in underlying && typeof underlying.code === "string"
-      ? underlying.code
-      : "prepare-current-target"
-  }: ${reason}`.slice(0, 2000);
+function targetFailureReason(failure: Error): string {
+  const cause = failure.cause;
+  switch (cause._tag) {
+    case "CurrentTargetUnavailable":
+      return `${cause.code}: ${cause.reason}`.slice(0, 2000);
+    case "Error":
+    case "Object": {
+      const code =
+        cause.code._tag === "Present" && typeof cause.code.value === "string"
+          ? cause.code.value
+          : "prepare-current-target";
+      return `${code}: ${cause.message}`.slice(0, 2000);
+    }
+    case "ThrownValue":
+      return `prepare-current-target: ${cause.message}`.slice(0, 2000);
+    default:
+      return cause satisfies never;
+  }
 }
 
 function write(channel: "stdout" | "stderr", text: string) {
@@ -133,26 +157,56 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
               catch: (cause) => failure("validate address", cause),
             });
           } else {
-            const operations =
-              address.aspect === "artifacts"
-                ? [
-                    address.id === undefined
-                      ? { kind: "attempt.artifacts" as const, locator: address.locator! }
-                      : {
-                          kind: "attempt.artifact" as const,
-                          locator: address.locator!,
-                          artifactId: Schema.decodeUnknownSync(ArtifactIdSchema)(address.id),
-                        },
-                  ]
-                : showOperations({
-                    current: false,
-                    runIds,
-                    experimentIds,
-                    ...(address.locator === undefined ? {} : { locator: address.locator }),
-                    ...(address.aspect === undefined ? {} : { slice: address.aspect }),
-                    entryIds: address.aspect === "assertions" && address.id !== undefined ? [address.id] : [],
-                    ...(address.aspect === "diff" && address.id !== undefined ? { changeId: address.id } : {}),
-                  });
+            const selectedOperations = () => {
+              if (address.aspect === "artifacts")
+                return [
+                  address.id === undefined
+                    ? { kind: "attempt.artifacts" as const, locator: address.locator! }
+                    : {
+                        kind: "attempt.artifact" as const,
+                        locator: address.locator!,
+                        artifactId: Schema.decodeUnknownSync(ArtifactIdSchema)(address.id),
+                      },
+                ];
+              if (runIds.length > 0) return showOperations({ kind: "runs", runIds });
+              if (experimentIds.length > 0)
+                return showOperations(
+                  address.aspect === "assertions"
+                    ? {
+                        kind: "assertion-matrix",
+                        experimentIds,
+                        evalIdPrefix: undefined,
+                      }
+                    : { kind: "experiments", experimentIds },
+                );
+              if (address.locator === undefined) return showOperations({ kind: "overview", current: false });
+              if (address.aspect === "assertions")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "assertions",
+                  entryIds: address.id === undefined ? [] : [address.id],
+                  projection: "compact",
+                });
+              if (address.aspect === "execution")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "execution",
+                  actorId: undefined,
+                  eventType: undefined,
+                  continuation: undefined,
+                });
+              if (address.aspect === "diff")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "diff",
+                  changeId: address.id,
+                });
+              return showOperations({ kind: "attempt", locator: address.locator, slice: address.aspect ?? "summary" });
+            };
+            const operations = selectedOperations();
             if (parsed.positionals.length > 0)
               for (const operation of operations)
                 yield* Effect.try({
@@ -164,12 +218,14 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       ).pipe(
         Effect.mapError((cause) => (cause instanceof CliFeatureError ? cause : failure("validate selection", cause))),
       );
-      const entryPath =
-        address.locator !== undefined
-          ? `/attempt/${encodeURIComponent(address.locator.slice(1))}`
-          : address.experimentIds.length === 1
-            ? `/experiment/${encodeURIComponent(address.experimentIds[0]!)}`
-            : "/";
+      function selectedEntryPath(): string {
+        if (address.locator !== undefined) return `/attempt/${encodeURIComponent(address.locator.slice(1))}`;
+        const [experimentId] = address.experimentIds;
+        if (address.experimentIds.length === 1 && experimentId !== undefined)
+          return `/experiment/${encodeURIComponent(experimentId)}`;
+        return "/";
+      }
+      const entryPath = selectedEntryPath();
       const selection = new URLSearchParams();
       if (address.aspect !== undefined) selection.set("aspect", address.aspect);
       if (address.id !== undefined) selection.set("id", address.id);
@@ -252,7 +308,7 @@ function buildRecordGeneration(
           if (frozen === undefined || frozen.cutoffIdentity !== cutoff.identity) {
             return yield* Effect.fail(new Error("Current target and imported Record cutoff differ."));
           }
-          return Object.freeze({ kind: "current" as const, identity: frozen.target.identity, input: frozen });
+          return { kind: "current" as const, identity: frozen.target.identity, input: frozen };
         }),
       ).pipe(Effect.mapError((cause) => failure("prepare current target", cause)));
       const target: ViewTarget = !currentCapable
@@ -270,7 +326,7 @@ function buildRecordGeneration(
         target,
         retire,
       }).pipe(Effect.mapError((cause) => failure("build View revision", cause)));
-      return Object.freeze({ generation, cutoffIdentity: cutoff.identity });
+      return { generation, cutoffIdentity: cutoff.identity };
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.promise(() => importer.close().catch(() => undefined)).pipe(Effect.andThen(Effect.failCause(cause))),
@@ -325,7 +381,12 @@ function invocationFacts() {
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
-  const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+  function selectedValues(): readonly string[] {
+    if (typeof value === "string") return [value];
+    if (Array.isArray(value)) return value;
+    return [];
+  }
+  const values = selectedValues();
   if (values.length > VIEW_RUN_SELECTION_LIMIT)
     return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} run: selections.`;
   const output: RunId[] = [];
@@ -334,7 +395,7 @@ function parseRunIds(value: string | boolean | string[] | undefined): readonly R
     if (Result.isFailure(decoded)) return `Invalid run: ID ${JSON.stringify(candidate)}.`;
     output.push(decoded.success);
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function parsePort(value: string | boolean | string[] | undefined): number | string {

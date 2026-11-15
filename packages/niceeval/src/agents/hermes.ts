@@ -33,13 +33,13 @@ const HERMES = "$HOME/.local/bin/hermes";
 
 export interface HermesConfig {
   /** 模型 API key。省略时读 HERMES_API_KEY → OPENROUTER_API_KEY → ANTHROPIC_API_KEY。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容端点。省略时读 HERMES_API_BASE。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** 钉 PyPI `hermes-agent` 版本;省略时用 NiceEval 默认 pin。 */
-  version?: string;
+  version?: string | undefined;
   /** 装进沙箱的 Skill,落在 `~/.hermes/skills/<name>/`。 */
-  skills?: SkillSpec[];
+  skills?: SkillSpec[] | undefined;
 }
 
 function resolveApiKey(config?: HermesConfig): string {
@@ -54,14 +54,14 @@ async function hermesShell(
   sb: Sandbox,
   args: string[],
   env: globalThis.Record<string, string>,
-  opts?: { stream?: boolean; sensitiveValues?: readonly string[] },
+  opts?: { stream?: boolean | undefined; sensitiveValues?: readonly string[] | undefined },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   // HERMES 变量本身不要 quote,以便 shell 展开 $HOME。
   const script = `${HERMES} ${args.map(shellQuote).join(" ")}`;
   return sb.runShell(script, {
     env,
-    ...(opts?.sensitiveValues === undefined ? {} : { sensitiveValues: opts?.sensitiveValues }),
-    ...(opts?.stream === undefined ? {} : { stream: opts?.stream }),
+    sensitiveValues: opts?.sensitiveValues,
+    stream: opts?.stream,
   });
 }
 
@@ -292,6 +292,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
         },
         catch: (cause) => cause,
       }),
+    after: () => Effect.void,
   });
 }
 

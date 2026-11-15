@@ -22,7 +22,7 @@ export type ProviderLocator = JsonValue;
 
 export interface SandboxLocator {
   readonly sandboxId: string;
-  readonly provider?: string;
+  readonly provider?: string | undefined;
 }
 
 /**
@@ -42,15 +42,15 @@ export interface SandboxResourceGroup {
   readonly primary: SandboxLocator;
   readonly resources: ProviderLocator;
   stop(): Promise<void>;
-  readonly entry?: SandboxGroupEntry;
+  readonly entry?: SandboxGroupEntry | undefined;
 }
 
 /** materialize 成功后的完整产物:永远只有一个主 Sandbox。 */
 export interface MaterializedSandboxCase {
-  /** Present on instances produced by an AttemptCaptured module. */
-  readonly attemptBeforeCache?: AttemptBeforeCache;
-  /** Run-prepared artifact restoration receipt, owned by this materialization. */
-  readonly beforeCacheStart?: BeforeCacheStart;
+  readonly beforeCache:
+    | { readonly _tag: "None" }
+    | { readonly _tag: "AttemptCaptured"; readonly capability: AttemptBeforeCache }
+    | { readonly _tag: "RunPrepared"; readonly start: BeforeCacheStart };
   /** 唯一主 Sandbox:Agent / Eval / 文件 API / workdir / 分类账 / diff 都观察它。 */
   readonly sandbox: Sandbox;
   /**
@@ -58,7 +58,7 @@ export interface MaterializedSandboxCase {
    * 请求执行,不进公共 Sandbox API,也不进 registry / stop / suspend / ledger 等资源流程。
    */
   readonly authorBackend: SandboxProviderBackend;
-  readonly services?: ServiceController;
+  readonly services: { readonly _tag: "None" } | { readonly _tag: "Available"; readonly value: ServiceController };
   readonly group: SandboxResourceGroup;
   readonly caseKind: SandboxCaseKind;
   readonly caseKey: CaseKey;
@@ -68,6 +68,10 @@ export interface MaterializedSandboxCase {
   /** 物化事实(locator、实际 digest、project name 等),不进 CaseKey。 */
   readonly facts: JsonValue;
 }
+
+export type AttemptCapturedSandboxCase = MaterializedSandboxCase & {
+  readonly beforeCache: { readonly _tag: "AttemptCaptured"; readonly capability: AttemptBeforeCache };
+};
 
 /** Provides case identity, cancellation and prepared build locators to materialization; consume supplied locators rather than independently rebuilding the same keys. */
 export interface SandboxMaterializeContext {

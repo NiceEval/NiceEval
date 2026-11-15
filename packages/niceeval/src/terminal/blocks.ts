@@ -169,13 +169,19 @@ function renderKeyValue(block: TerminalKeyValueBlock, width: number): string[] {
 
 function renderTree(block: TerminalTreeBlock, width: number, mode: PanelMode): string[] {
   const lines: string[] = [];
+  function ancestorIndent(ancestorLast: boolean): string {
+    if (ancestorLast) return "   ";
+    return mode === "boxed" ? "│  " : "|  ";
+  }
+  function branchPrefix(last: boolean): string {
+    if (mode !== "boxed") return "- ";
+    return last ? "└─ " : "├─ ";
+  }
   const visit = (nodes: readonly TerminalTreeNode[], ancestors: readonly boolean[]): void => {
     nodes.forEach((node, index) => {
       const last = index === nodes.length - 1;
-      const indent = ancestors
-        .map((ancestorLast) => (ancestorLast ? "   " : mode === "boxed" ? "│  " : "|  "))
-        .join("");
-      const branch = mode === "boxed" ? (last ? "└─ " : "├─ ") : "- ";
+      const indent = ancestors.map(ancestorIndent).join("");
+      const branch = branchPrefix(last);
       const prefix = `${indent}${branch}`;
       const labelWidth = Math.max(4, width - stringWidth(prefix));
       const labels = wrapDisplay(node.label, labelWidth);
@@ -221,7 +227,7 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
       }
     }
     if (child.kind === "divider") {
-      rows.push({ kind: "divider", title: child.title, ...(child.meta === undefined ? {} : { meta: child.meta }) });
+      rows.push({ kind: "divider", title: child.title, meta: child.meta });
       return;
     }
     rows.push(
@@ -232,13 +238,13 @@ function renderPanelBlock(block: TerminalPanelBlock, options: TerminalRenderOpti
     );
   });
   return renderPanel({
-    ...(block.title === undefined ? {} : { title: block.title }),
-    ...(block.meta === undefined ? {} : { meta: block.meta }),
-    ...(block.footerCommand === undefined ? {} : { footerCommand: block.footerCommand }),
+    title: block.title,
+    meta: block.meta,
+    footerCommand: block.footerCommand,
     rows,
     width: options.width,
     mode: options.mode,
-    ...(block.capWidth === undefined ? {} : { capWidth: block.capWidth }),
+    capWidth: block.capWidth ?? true,
   });
 }
 

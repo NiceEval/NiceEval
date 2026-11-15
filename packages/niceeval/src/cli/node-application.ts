@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
-import { Effect, Layer, Predicate } from "effect";
+import { Effect, Layer, Predicate, Schema } from "effect";
 import {
   CliArguments,
   CliConfirmation,
@@ -19,18 +19,16 @@ import {
 const failure = (operation: string, cause: unknown) => new CliInvocationError({ operation, cause });
 
 export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
-  facts: Effect.sync(() =>
-    Object.freeze({
-      cwd: process.cwd(),
-      argv: Object.freeze(process.argv.slice(2)),
-      hostname: hostname(),
-      pid: process.pid,
-      platform: process.platform,
-      ...(process.env.NO_COLOR === undefined ? {} : { noColor: process.env.NO_COLOR }),
-      stdout: Object.freeze({ isTTY: process.stdout.isTTY === true, columns: process.stdout.columns }),
-      stderr: Object.freeze({ isTTY: process.stderr.isTTY === true, columns: process.stderr.columns }),
-    }),
-  ),
+  facts: Effect.sync(() => ({
+    cwd: process.cwd(),
+    argv: process.argv.slice(2),
+    hostname: hostname(),
+    pid: process.pid,
+    platform: process.platform,
+    noColor: process.env.NO_COLOR,
+    stdout: { isTTY: process.stdout.isTTY === true, columns: process.stdout.columns },
+    stderr: { isTTY: process.stderr.isTTY === true, columns: process.stderr.columns },
+  })),
 });
 
 export function ignoreBrokenOutputPipe(cause: unknown): void {
@@ -80,7 +78,7 @@ const NodeCliConfirmationLive = Layer.succeed(CliConfirmation, {
 interface OptionalValueOccurrence {
   readonly name: string;
   readonly value: string | true;
-  readonly inlineValue?: boolean;
+  readonly inlineValue: boolean | undefined;
 }
 
 interface NormalizedCliArgv {
@@ -163,21 +161,18 @@ function normalizeCliArgv(
 
     normalized.push(`--${name}`);
     originalIndexes.push(optionOriginalIndex);
-    optionalValues.set(
-      normalizedIndex,
-      Object.freeze({
-        name,
-        value,
-        ...(inlineValue === undefined ? {} : { inlineValue }),
-      }),
-    );
+    optionalValues.set(normalizedIndex, {
+      name,
+      value,
+      inlineValue,
+    });
   }
 
-  return Object.freeze({
-    argv: Object.freeze(normalized),
-    originalIndexes: Object.freeze(originalIndexes),
+  return {
+    argv: normalized,
+    originalIndexes: originalIndexes,
     optionalValues,
-  });
+  };
 }
 
 export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
@@ -205,11 +200,11 @@ export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
     const tokens = parsed.tokens.map((token): CliParsedToken => {
       const index = normalized.originalIndexes[token.index];
       if (index === undefined) throw new Error(`CLI parser returned an unmapped argv index ${token.index}`);
-      if (token.kind !== "option") return Object.freeze({ ...token, index }) as CliParsedToken;
+      if (token.kind !== "option") return { ...token, index } as CliParsedToken;
       const occurrence = normalized.optionalValues.get(token.index);
       return occurrence === undefined
-        ? (Object.freeze({ ...token, index }) as CliParsedToken)
-        : Object.freeze({
+        ? ({ ...token, index } as CliParsedToken)
+        : {
             kind: "option" as const,
             index,
             name: token.name,
@@ -220,22 +215,26 @@ export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
                   ...(occurrence.inlineValue === undefined ? {} : { inlineValue: occurrence.inlineValue }),
                 }
               : {}),
-          });
+          };
     });
-    return Object.freeze({
-      values: Object.freeze(values),
-      positionals: Object.freeze([...parsed.positionals]),
-      tokens: Object.freeze(tokens),
-    });
+    return {
+      values: values,
+      positionals: parsed.positionals,
+      tokens: tokens,
+    };
   },
 });
 
 export const NodeCliPathLive = Layer.succeed(CliPath, { resolve, isAbsolute });
 
+const decodePackageMetadata = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
+);
+
 export const NodePackageMetadataLive = Layer.succeed(PackageMetadata, {
   version: Effect.tryPromise({
     try: async () =>
-      JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version as string,
+      decodePackageMetadata(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version,
     catch: (cause) => failure("read-package-metadata", cause),
   }),
 });

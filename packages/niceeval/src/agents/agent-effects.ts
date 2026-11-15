@@ -7,8 +7,8 @@ export type AgentSendEffect = (input: TurnInput, context: AgentSendContext) => E
 
 export interface AgentEffects {
   readonly send: AgentSendEffect;
-  readonly before?: (sandbox: Sandbox, context: AgentBeforeContext) => Effect.Effect<void, unknown, never>;
-  readonly after?: (sandbox: Sandbox, context: AgentContext) => Effect.Effect<void, unknown, never>;
+  readonly before: (sandbox: Sandbox, context: AgentBeforeContext) => Effect.Effect<void, unknown, never>;
+  readonly after: (sandbox: Sandbox, context: AgentContext) => Effect.Effect<void, unknown, never>;
 }
 
 const effects = new WeakMap<Agent, AgentEffects>();
@@ -53,7 +53,7 @@ export function agentBeforeEffect(
   sandbox: Sandbox,
   context: AgentBeforeContext,
 ): Effect.Effect<void, unknown, never> | undefined {
-  return effects.get(agent)?.before?.(sandbox, context);
+  return effects.get(agent)?.before(sandbox, context);
 }
 
 export function agentAfterEffect(
@@ -61,13 +61,13 @@ export function agentAfterEffect(
   sandbox: Sandbox,
   context: AgentContext,
 ): Effect.Effect<void, unknown, never> | undefined {
-  return effects.get(agent)?.after?.(sandbox, context);
+  return effects.get(agent)?.after(sandbox, context);
 }
 
 export type InternalSandboxAgentDefinition = AgentEffects;
 
 export type InternalDirectAgentDefinition = {
   readonly send: (input: TurnInput, context: AgentSendContext) => Effect.Effect<Turn, unknown, never>;
-  readonly before?: (context: AgentContext) => Effect.Effect<void, unknown, never>;
-  readonly after?: (context: AgentContext) => Effect.Effect<void, unknown, never>;
+  readonly before: (context: AgentContext) => Effect.Effect<void, unknown, never>;
+  readonly after: (context: AgentContext) => Effect.Effect<void, unknown, never>;
 };

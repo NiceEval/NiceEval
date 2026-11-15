@@ -1,7 +1,20 @@
-import type { ManagedProcess, ManagedProcessStart, Sandbox } from "../types.ts";
+import type { JsonValue, ManagedProcess, ManagedProcessStart, Sandbox } from "../types.ts";
+import * as Schema from "effect/Schema";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 
 const encoder = new TextEncoder();
+const decodeFrame = Schema.decodeUnknownSync(Schema.MutableJson);
+
+class ManagedJsonlOutputError extends Error {
+  readonly _tag = "ManagedJsonlOutputError";
+  override readonly cause: ExternalCause;
+
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.cause = normalizeExternalCause(cause);
+  }
+}
 
 function timeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -23,22 +36,22 @@ function timeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
 }
 
 export class ManagedJsonlDriver {
-  private readonly frames: unknown[] = [];
-  private readonly frameSubscribers = new Set<(frame: unknown) => void>();
+  private readonly frames: JsonValue[] = [];
+  private readonly frameSubscribers = new Set<(frame: JsonValue) => void>();
   private readonly waiters = new Set<() => void>();
   private stderrText = "";
-  private outputFailure: unknown;
+  private outputFailure: ManagedJsonlOutputError | undefined;
   private state: "open" | "closing" | "closed" = "open";
   private revision = 0;
-  private shutdownReceipt?: Promise<void>;
-  private releaseReceipt?: Promise<void>;
+  private shutdownReceipt: Promise<void> | undefined;
+  private releaseReceipt: Promise<void> | undefined;
   private writes: Promise<void> = Promise.resolve();
   private readonly exit: ReturnType<ManagedProcess["wait"]>;
-  private observedExit?: Awaited<ReturnType<ManagedProcess["wait"]>>;
+  private observedExit: Awaited<ReturnType<ManagedProcess["wait"]>> | undefined;
 
   private constructor(
     private readonly process: ManagedProcess,
-    private readonly shutdownFrame: (() => unknown | undefined) | undefined,
+    private readonly shutdownFrame: () => JsonValue | undefined,
   ) {
     this.exit = process.wait().then((receipt) => {
       this.observedExit = receipt;
@@ -53,14 +66,14 @@ export class ManagedJsonlDriver {
     agent: string,
     resources: import("../types.ts").AttemptResourceRegistry,
     input: ManagedProcessStart,
-    shutdownFrame?: () => unknown | undefined,
+    shutdownFrame?: () => JsonValue | undefined,
   ): Promise<ManagedJsonlDriver> {
     const startProcess = requireManagedProcessCapability(sandbox, agent);
     return resources.acquire(
       async () => {
         const process = await startProcess(input);
         try {
-          return new ManagedJsonlDriver(process, shutdownFrame);
+          return new ManagedJsonlDriver(process, shutdownFrame ?? (() => undefined));
         } catch (cause) {
           // The process exists but the registry has not received a Driver yet.
           // Close this constructor gap locally with the same bounded cleanup.
@@ -83,10 +96,14 @@ export class ManagedJsonlDriver {
   stderr(): string {
     return this.stderrText;
   }
-  processReceipt(): { readonly exitCode?: number; readonly signal?: string; readonly stderr: string } {
+  processReceipt(): {
+    readonly exitCode: number | undefined;
+    readonly signal: string | undefined;
+    readonly stderr: string;
+  } {
     return {
-      ...(this.observedExit?.exitCode == null ? {} : { exitCode: this.observedExit.exitCode }),
-      ...(this.observedExit?.signal === undefined ? {} : { signal: this.observedExit.signal }),
+      exitCode: this.observedExit?.exitCode ?? undefined,
+      signal: this.observedExit?.signal,
       stderr: this.stderrText,
     };
   }
@@ -100,9 +117,9 @@ export class ManagedJsonlDriver {
 
   async waitFor(
     cursor: number,
-    accept: (frame: unknown) => boolean,
+    accept: (frame: JsonValue) => boolean,
     signal: AbortSignal,
-  ): Promise<{ readonly frame: unknown; readonly cursor: number }> {
+  ): Promise<{ readonly frame: JsonValue; readonly cursor: number }> {
     let next = cursor;
     for (;;) {
       while (next < this.frames.length) {
@@ -123,11 +140,11 @@ export class ManagedJsonlDriver {
     }
   }
 
-  framesSince(cursor: number): readonly unknown[] {
+  framesSince(cursor: number): readonly JsonValue[] {
     return this.frames.slice(cursor);
   }
   /** Observe only future frames. The owning physical send must always unsubscribe. */
-  subscribeFrames(subscriber: (frame: unknown) => void): () => void {
+  subscribeFrames(subscriber: (frame: JsonValue) => void): () => void {
     this.frameSubscribers.add(subscriber);
     let subscribed = true;
     return () => {
@@ -141,9 +158,8 @@ export class ManagedJsonlDriver {
       .slice(-12)
       .map((value) => {
         if (value === null || typeof value !== "object" || Array.isArray(value)) return typeof value;
-        const frame = value as Record<string, unknown>;
         return String(
-          frame.type ?? frame.method ?? (frame.id === undefined ? "object" : `response:${String(frame.id)}`),
+          value.type ?? value.method ?? (value.id === undefined ? "object" : `response:${String(value.id)}`),
         );
       })
       .join(",");
@@ -154,7 +170,7 @@ export class ManagedJsonlDriver {
       if (this.state !== "open") return;
       this.state = "closing";
       await this.writes;
-      const frame = this.shutdownFrame?.();
+      const frame = this.shutdownFrame();
       if (frame !== undefined) await this.writeRaw(frame).catch(() => undefined);
       await this.process.closeStdin().catch(() => undefined);
       this.state = "closed";
@@ -190,7 +206,7 @@ export class ManagedJsonlDriver {
           const line = stdout.slice(0, newline).trim();
           stdout = stdout.slice(newline + 1);
           if (!line) continue;
-          const frame: unknown = JSON.parse(line);
+          const frame = decodeFrame(JSON.parse(line));
           this.frames.push(frame);
           this.publishFrame(frame);
           this.notify();
@@ -198,14 +214,14 @@ export class ManagedJsonlDriver {
       }
       const tail = `${stdout}${stdoutDecoder.decode()}`.trim();
       if (tail) {
-        const frame: unknown = JSON.parse(tail);
+        const frame = decodeFrame(JSON.parse(tail));
         this.frames.push(frame);
         this.publishFrame(frame);
         this.notify();
       }
       this.stderrText += stderrDecoder.decode();
     } catch (error) {
-      this.outputFailure = error;
+      this.outputFailure = new ManagedJsonlOutputError(error);
     } finally {
       this.notify();
     }
@@ -247,7 +263,7 @@ export class ManagedJsonlDriver {
     for (const waiter of [...this.waiters]) waiter();
   }
 
-  private publishFrame(frame: unknown): void {
+  private publishFrame(frame: JsonValue): void {
     for (const subscriber of [...this.frameSubscribers]) {
       try {
         subscriber(frame);

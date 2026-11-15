@@ -16,6 +16,7 @@ import {
 import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch } from "./context-match.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import { Cause, Deferred, Effect, Schema } from "effect";
+import { isRecord } from "../shared/objects.ts";
 
 import type { SourceLoc } from "../shared/types.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
@@ -84,6 +85,7 @@ import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
 import { isQuantity, type Unit } from "./quantity.ts";
 import { transferFullAssertionContent } from "./full-content.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 
 const unitRatio = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 const weightedScoreInput = Schema.Struct({
@@ -101,9 +103,14 @@ const UTF8 = new TextEncoder();
 const runtimeByCheck = new WeakMap<object, AssertionsRuntimeImplementation>();
 interface AssertionContextReceiver {
   readonly owner: object;
-  read?: () => unknown;
-  cut?: () => import("./api.ts").MatcherSourceSnapshot;
-  release?: () => void;
+  binding:
+    | { readonly state: "unbound" | "closed" }
+    | {
+        readonly state: "bound";
+        readonly read: () => unknown;
+        readonly cut: () => import("./api.ts").MatcherSourceSnapshot | undefined;
+        readonly release: () => void;
+      };
 }
 const contextByCheck = new WeakMap<object, AssertionContextReceiver>();
 /** @internal Binding is Attempt-local and happens only after app assembly. */
@@ -115,11 +122,9 @@ export function bindAssertionContext(
 ): void {
   runtimeByCheck.get(check)?.assertAuthoringOpen();
   const receiver = contextByCheck.get(check);
-  if (receiver === undefined || receiver.read !== undefined)
+  if (receiver === undefined || receiver.binding.state !== "unbound")
     throw new TypeError("Assertion context must bind exactly once to its owning receiver");
-  receiver.read = read;
-  if (cut !== undefined) receiver.cut = cut;
-  if (release !== undefined) receiver.release = release;
+  receiver.binding = { state: "bound", read, cut: cut ?? (() => undefined), release: release ?? (() => {}) };
 }
 /** @internal A scope owns its ctx and observation cut while sharing the Attempt runtime. */
 export function createScopedAssertionCheck<Kind extends import("./api.ts").AssertionCheckKind, C>(
@@ -136,9 +141,7 @@ export function createScopedAssertionCheck<Kind extends import("./api.ts").Asser
   const scoped = (...args: readonly unknown[]) => runtime.checkFor(scoped, args);
   const scopedReceiver: AssertionContextReceiver = {
     owner: receiver.owner,
-    read,
-    cut,
-    ...(release === undefined ? {} : { release: release }),
+    binding: { state: "bound", read, cut, release: release ?? (() => {}) },
   };
   runtimeByCheck.set(scoped, runtime);
   contextByCheck.set(scoped, scopedReceiver);
@@ -157,10 +160,15 @@ export function assertAssertionSubject(value: unknown, operation: "check" | "jud
 type EntryKind = "boolean" | "measurement" | "direct-score";
 
 interface SettlementDiagnostic {
-  readonly diagnostic?: MatchDiagnostic;
-  readonly explanation?: AssertionSnapshotObject;
-  readonly receipt?: AssertionCollectionReceipt;
-  readonly matcherArtifact?: MatcherQueryArtifact;
+  readonly receipt: AssertionCollectionReceipt | undefined;
+  readonly evidence:
+    | { readonly kind: "none" }
+    | {
+        readonly kind: "matcher";
+        readonly diagnostic: MatchDiagnostic | undefined;
+        readonly artifact: MatcherQueryArtifact | undefined;
+      }
+    | { readonly kind: "measurement"; readonly detail: AssertionSnapshotObject | undefined };
 }
 
 type AvailableResult =
@@ -191,12 +199,11 @@ interface AssertionEntry {
     label: string | undefined;
     groupPath: string[];
   };
-  readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
-  readonly terminalReceipt: (() => import("./api.ts").AssertionCollectionReceipt) | undefined;
-  readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
-  readonly terminalEvidence: (() => readonly AssertionMaterial[]) | undefined;
-  readonly terminalCriterion: (() => AssertionCriterion) | undefined;
+  readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
+  readonly terminalDetail: () => AssertionSnapshotObject | undefined;
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
+  readonly terminalCriterion: () => AssertionCriterion;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   conditionMinimum: number | undefined;
@@ -205,9 +212,15 @@ interface AssertionEntry {
   stopConfigured: boolean;
   control: "none" | "continued" | "stopped";
   stopPromise: Promise<unknown> | undefined;
-  settled: EntrySettlement | undefined;
-  pending: Deferred.Deferred<EntrySettlement> | undefined;
+  evaluation:
+    | { readonly state: "unstarted" }
+    | { readonly state: "pending"; readonly deferred: Deferred.Deferred<EntrySettlement> }
+    | { readonly state: "settled"; readonly value: EntrySettlement };
   sealedEvidence: readonly AssertionMaterial[] | undefined;
+}
+
+function settledValueOf(entry: AssertionEntry): EntrySettlement | undefined {
+  return entry.evaluation.state === "settled" ? entry.evaluation.value : undefined;
 }
 
 /**
@@ -224,8 +237,8 @@ export interface AssertionRuntimeSourceSite {
 
 export interface AssertionRuntimeSourceOccurrence {
   readonly role: AssertionRuntimeSourceRole;
-  readonly site?: AssertionRuntimeSourceSite;
-  readonly outcome?: "continued" | "stopped" | "interrupted";
+  readonly site: AssertionRuntimeSourceSite | undefined;
+  readonly outcome: "continued" | "stopped" | "interrupted" | undefined;
 }
 
 export interface AssertionsRuntimeSourceCaptureSnapshot {
@@ -236,8 +249,8 @@ export interface AssertionsRuntimeSourceCaptureSnapshot {
 
 interface MutableAssertionRuntimeSourceOccurrence {
   readonly role: AssertionRuntimeSourceRole;
-  readonly site?: AssertionRuntimeSourceSite;
-  outcome?: "continued" | "stopped" | "interrupted";
+  readonly site: AssertionRuntimeSourceSite | undefined;
+  outcome: "continued" | "stopped" | "interrupted" | undefined;
 }
 
 interface AssertionRuntimeSourceEntry {
@@ -264,10 +277,6 @@ type IncompleteScoreContribution = Extract<
   AssertionScoreContribution,
   { readonly state: "not-scored" | "unavailable" }
 >;
-
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Sandbox result criteria read the Attempt-owned workspace diff, which is frozen
@@ -478,22 +487,22 @@ export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnaps
     value: snapshot,
   });
   if (!state.truncated) {
-    return Object.freeze({
+    return {
       material,
-      coverage: Object.freeze({ state: "complete" as const }),
-      limitations: Object.freeze([]),
-    });
+      coverage: { state: "complete" as const },
+      limitations: [],
+    };
   }
-  return Object.freeze({
+  return {
     material,
-    coverage: Object.freeze({ state: "partial" as const, reason: "truncated" as const }),
-    limitations: Object.freeze([
-      Object.freeze({
+    coverage: { state: "partial" as const, reason: "truncated" as const },
+    limitations: [
+      {
         kind: "truncated" as const,
         omittedBytes: Math.max(1, state.omittedBytes),
-      }),
-    ]),
-  });
+      },
+    ],
+  };
 }
 
 /**
@@ -509,22 +518,22 @@ function captureMatchDiagnostic(
 ): AssertionSnapshotObject | undefined {
   if (value === undefined) return undefined;
   if (budget.remainingNodes <= 0) {
-    return Object.freeze({
+    return {
       code: "diagnostic-truncated",
       message: "matcher diagnostic exceeded the persisted node limit",
-      path: Object.freeze([]),
-    });
+      path: [],
+    };
   }
   budget.remainingNodes -= 1;
   if (depth >= assertionRuntimeLimits.diagnosticDepth || seen.has(value)) {
-    return Object.freeze({
+    return {
       code: "diagnostic-truncated",
       message:
         depth >= assertionRuntimeLimits.diagnosticDepth
           ? "matcher diagnostic exceeded the persisted depth limit"
           : "matcher diagnostic contained a cycle",
-      path: Object.freeze([]),
-    });
+      path: [],
+    };
   }
   seen.add(value);
   try {
@@ -535,7 +544,7 @@ function captureMatchDiagnostic(
     const output: globalThis.Record<string, AssertionSnapshotValue> = {
       code: text(value.code),
       message: text(value.message),
-      path: Object.freeze(value.path.map((segment) => (typeof segment === "string" ? text(segment) : segment))),
+      path: value.path.map((segment) => (typeof segment === "string" ? text(segment) : segment)),
     };
     if (value.expected !== undefined) output.expected = text(value.expected);
     if (value.received !== undefined) output.received = text(value.received);
@@ -543,11 +552,11 @@ function captureMatchDiagnostic(
     if (value.locator !== undefined) {
       output.locator =
         value.locator.kind === "json-pointer"
-          ? Object.freeze({ kind: "json-pointer", pointer: text(value.locator.pointer) })
-          : Object.freeze({ kind: "tool-occurrence", id: text(value.locator.id) });
+          ? { kind: "json-pointer", pointer: text(value.locator.pointer) }
+          : { kind: "tool-occurrence", id: text(value.locator.id) };
     }
     if (value.truncation !== undefined) {
-      output.truncation = Object.freeze({ ...value.truncation });
+      output.truncation = value.truncation;
     }
     if (value.children !== undefined) {
       const children: AssertionSnapshotValue[] = [];
@@ -560,37 +569,37 @@ function captureMatchDiagnostic(
         if (child.label !== undefined) entry.label = text(child.label);
         const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen, budget);
         if (diagnostic !== undefined) entry.diagnostic = diagnostic;
-        children.push(Object.freeze(entry));
+        children.push(entry);
       }
-      output.children = Object.freeze(children);
+      output.children = children;
       if (children.length < value.children.length && output.truncation === undefined) {
-        output.truncation = Object.freeze({
+        output.truncation = {
           code: "diagnostic-truncated",
           reason: "sampled",
           captured: children.length,
           knownTotal: value.children.length,
-        });
+        };
       }
     }
-    const captured = Object.freeze(output);
+    const captured = output;
     const serialized = JSON.stringify(captured);
     const originalBytes = UTF8.encode(serialized).byteLength;
     if (originalBytes <= assertionRuntimeLimits.diagnosticBytes) return captured;
-    return Object.freeze({
+    return {
       code: output.code,
       message: output.message,
       path: output.path,
-      ...(output.expected === undefined ? {} : { expected: output.expected }),
-      ...(output.received === undefined ? {} : { received: output.received }),
-      ...(output.reason === undefined ? {} : { reason: output.reason }),
-      ...(output.locator === undefined ? {} : { locator: output.locator }),
-      truncation: Object.freeze({
+      expected: output.expected,
+      received: output.received,
+      reason: output.reason,
+      locator: output.locator,
+      truncation: {
         code: "diagnostic-truncated",
         reason: "byte-limit",
         limitBytes: assertionRuntimeLimits.diagnosticBytes,
         originalBytes,
-      }),
-    });
+      },
+    };
   } finally {
     seen.delete(value);
   }
@@ -616,29 +625,29 @@ function freezeAssertionMaterial(material: AssertionMaterial): AssertionMaterial
 }
 
 function cloneCoverage(coverage: AssertionCoverage): AssertionCoverage {
-  return Object.freeze({ ...coverage });
+  return { ...coverage };
 }
 
 function cloneLimitations(limitations: readonly AssertionLimitation[]): readonly AssertionLimitation[] {
-  return Object.freeze(limitations.map((limitation) => Object.freeze({ ...limitation })));
+  return limitations.map((limitation) => ({ ...limitation }));
 }
 
 function noScore(): Extract<AssertionScoreContribution, { readonly state: "not-scored" }> {
-  return Object.freeze({ state: "not-scored" as const });
+  return { state: "not-scored" as const };
 }
 
 function earnedScore(
   points: number,
   earned: number,
 ): Extract<AssertionScoreContribution, { readonly state: "earned" }> {
-  return Object.freeze({ state: "earned" as const, points, earned });
+  return { state: "earned" as const, points, earned };
 }
 
 function unavailableScore(
   points: number,
   reason: Extract<AssertionScoreContribution, { readonly state: "unavailable" }>["reason"],
 ): Extract<AssertionScoreContribution, { readonly state: "unavailable" }> {
-  return Object.freeze({ state: "unavailable" as const, points, reason });
+  return { state: "unavailable" as const, points, reason };
 }
 
 class HandleBase {
@@ -789,12 +798,11 @@ class DirectScoreHandle extends HandleBase {
 }
 
 class AssertionsRuntimeImplementation {
-  private agentJudgeSandbox?: import("../sandbox/types.ts").Sandbox;
+  private agentJudgeSandbox: import("../sandbox/types.ts").Sandbox | undefined;
   private agentJudgeShared = false;
   private readonly agentJudgeReviews: Array<{ session: AgentJudgeSession; entries: AssertionEntry[] }> = [];
   attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
-    if (sandbox === undefined) delete this.agentJudgeSandbox;
-    else this.agentJudgeSandbox = sandbox;
+    this.agentJudgeSandbox = sandbox;
     this.agentJudgeShared = shared;
   }
   private readonly contextReceivers = new Set<AssertionContextReceiver>();
@@ -829,7 +837,10 @@ class AssertionsRuntimeImplementation {
       group: this.withGroup.bind(this),
     };
     runtimeByCheck.set(base.check, this);
-    const receiver: AssertionContextReceiver = { owner: base.check };
+    const receiver: AssertionContextReceiver = {
+      owner: base.check,
+      binding: { state: "unbound" },
+    };
     contextByCheck.set(base.check, receiver);
     this.trackContextReceiver(receiver);
     this.t = Object.freeze(
@@ -853,7 +864,7 @@ class AssertionsRuntimeImplementation {
       this.agentJudgeSandbox,
       this.judge,
       this.signal,
-      this.judgeUsage === undefined ? undefined : (index) => this.judgeUsage!.forEntry(index),
+      (index) => this.judgeUsage?.forEntry(index),
     );
     const owner = { session, entries: [] as AssertionEntry[] };
     this.agentJudgeReviews.push(owner);
@@ -894,7 +905,8 @@ class AssertionsRuntimeImplementation {
     }
     const occurrence: MutableAssertionRuntimeSourceOccurrence = {
       role,
-      ...(site === undefined ? {} : { site }),
+      site,
+      outcome: undefined,
     };
     capturedEntry.occurrences.push(occurrence);
     return occurrence;
@@ -903,11 +915,12 @@ class AssertionsRuntimeImplementation {
   private contextualRegistration(
     check: object,
     match: ContextualMatch,
-    qa?: { question: string; options?: JudgePresetOptions },
+    qa?: { question: string; options: JudgePresetOptions | undefined },
   ): BooleanHandle | MeasurementHandle {
     this.assertCanRegister();
     const receiver = contextByCheck.get(check);
-    if (receiver?.read === undefined)
+    const binding = receiver?.binding;
+    if (receiver === undefined || binding === undefined || binding.state !== "bound")
       throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
     const definition = contextMatchDefinitionOf(match);
     if (qa !== undefined) exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm);
@@ -919,36 +932,38 @@ class AssertionsRuntimeImplementation {
       this.readingContext = true;
       let prepared: ReturnType<typeof captureContextualMatch>;
       try {
-        const cut = admitted ? receiver.cut?.() : undefined;
+        const cut = admitted ? binding.cut() : undefined;
         prepared = admitted
-          ? captureContextualMatch(definition, receiver.read(), {
+          ? captureContextualMatch(definition, binding.read(), {
               owner: receiver.owner,
-              ...(cut === undefined ? {} : { cut }),
+              cut,
             })
           : captureUnavailableContextualMatch(definition, "assertion-retention-budget");
       } finally {
         this.readingContext = false;
       }
-      const registration =
-        qa !== undefined && prepared.kind === "material"
-          ? materialQARegistration(
+      const contextualRegistration = () => {
+        if (prepared.kind === "material") {
+          if (qa !== undefined)
+            return materialQARegistration(
               prepared,
               qa.question,
               qa.options,
               this.judge,
               this.signal,
               this.judgeUsage?.forEntry(this.entries.length),
-            )
-          : prepared.kind === "material"
-            ? materialExistenceRegistration(prepared)
-            : prepared.kind === "context-boolean"
-              ? contextBooleanRegistration(prepared)
-              : contextScoreRegistration(
-                  prepared,
-                  this.judge,
-                  this.signal,
-                  this.judgeUsage?.forEntry(this.entries.length),
-                );
+            );
+          return materialExistenceRegistration(prepared);
+        }
+        if (prepared.kind === "context-boolean") return contextBooleanRegistration(prepared);
+        return contextScoreRegistration(
+          prepared,
+          this.judge,
+          this.signal,
+          this.judgeUsage?.forEntry(this.entries.length),
+        );
+      };
+      const registration = contextualRegistration();
       const actual =
         "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function"
           ? registration.actualRetainedBytes
@@ -1021,26 +1036,41 @@ class AssertionsRuntimeImplementation {
         const isMaterial =
           typeof value === "object" &&
           value !== null &&
-          ["exact", "lower-bound", "unavailable"].includes(String((value as { state?: unknown }).state));
-        const material: NumericMaterial<Unit | undefined> = isMaterial
-          ? (value as NumericMaterial<Unit | undefined>)
-          : isQuantity(value)
-            ? Object.freeze({ state: "exact" as const, value: value.value, unit: value.unit })
-            : typeof value === "number" && Number.isFinite(value)
-              ? Object.freeze({ state: "exact" as const, value })
-              : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" });
-        const captured = captureAssertionSnapshot(
-          Object.freeze({
-            ...material,
-            cut: Object.freeze({ kind: "call-time" as const }),
-            coverage: Object.freeze({ state: "complete" as const }),
-            derivation: Object.freeze({ kind: "explicit-value" as const }),
-          }),
-        );
+          ["exact", "lower-bound", "unavailable"].includes(String((value as { state: unknown }).state));
+        function numericMaterial(): NumericMaterial<Unit | undefined> {
+          if (isMaterial) return value as NumericMaterial<Unit | undefined>;
+          if (isQuantity(value))
+            return {
+              state: "exact" as const,
+              value: value.value,
+              unit: value.unit,
+              provenance: undefined,
+            };
+          if (typeof value === "number" && Number.isFinite(value))
+            return {
+              state: "exact" as const,
+              value,
+              unit: undefined,
+              provenance: undefined,
+            };
+          return {
+            state: "unavailable" as const,
+            reason: "non-finite-number",
+            unit: undefined,
+            provenance: undefined,
+          };
+        }
+        const material = numericMaterial();
+        const captured = captureAssertionSnapshot({
+          ...omitUndefined(material),
+          cut: { kind: "call-time" as const },
+          coverage: { state: "complete" as const },
+          derivation: { kind: "explicit-value" as const },
+        });
         return this.registerBoolean(
           numericBooleanRegistration({
             match: managed,
-            criterionSubject: Object.freeze({ kind: "explicit-value" as const }),
+            criterionSubject: { kind: "explicit-value" as const },
             material,
             captured,
             matchedValue: (numericValue) => (!isMaterial && isQuantity(value) ? value : numericValue),
@@ -1050,16 +1080,27 @@ class AssertionsRuntimeImplementation {
       const captured = captureAssertionSnapshot(value);
       const entry = this.createEntry({
         kind: "boolean",
-        criterion: Object.freeze({
+        criterion: {
           kind: "value-match" as const,
           subject: "explicit-value" as const,
-          matcher: Object.freeze({ state: "declared" as const, name: managed.name }),
-        }),
+          matcher: { state: "declared" as const, name: managed.name },
+        },
         subject: captured.material,
-        evidence: Object.freeze([]),
+        evidence: [],
         coverage: captured.coverage,
         limitations: captured.limitations,
         evaluate: () => this.evaluateBooleanMatch(managed, value),
+        terminalReceipt: () => undefined,
+        terminalDetail: () => undefined,
+        terminalEvidence: () => [],
+        terminalCriterion: () => ({
+          kind: "value-match",
+          subject: "explicit-value",
+          matcher: { state: "declared", name: managed.name },
+        }),
+        interruptedMatcherArtifact: undefined,
+        retainedBytes: 0,
+        retainedImageBytes: 0,
       });
       return new BooleanHandle(this, entry);
     }
@@ -1071,24 +1112,35 @@ class AssertionsRuntimeImplementation {
           options: managedScore,
           material: value,
           judge: this.judge,
-          ...(this.judgeUsage === undefined ? {} : { usage: this.judgeUsage.forEntry(this.entries.length) }),
-          ...(this.signal === undefined ? {} : { signal: this.signal }),
+          usage: this.judgeUsage === undefined ? undefined : this.judgeUsage.forEntry(this.entries.length),
+          signal: this.signal,
         }),
       );
     }
     const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
-      criterion: Object.freeze({
+      criterion: {
         kind: "value-match" as const,
         subject: "explicit-value" as const,
-        matcher: Object.freeze({ state: "declared" as const, name: managed.name }),
-      }),
+        matcher: { state: "declared" as const, name: managed.name },
+      },
       subject: captured.material,
-      evidence: Object.freeze([]),
+      evidence: [],
       coverage: captured.coverage,
       limitations: captured.limitations,
       evaluate: () => this.evaluateScoreMatch(managed, value),
+      terminalReceipt: () => undefined,
+      terminalDetail: () => undefined,
+      terminalEvidence: () => [],
+      terminalCriterion: () => ({
+        kind: "value-match",
+        subject: "explicit-value",
+        matcher: { state: "declared", name: managed.name },
+      }),
+      interruptedMatcherArtifact: undefined,
+      retainedBytes: 0,
+      retainedImageBytes: 0,
     });
     return new MeasurementHandle(this, entry);
   }
@@ -1100,21 +1152,21 @@ class AssertionsRuntimeImplementation {
       kind: "boolean",
       criterion: definition.criterion,
       subject: freezeAssertionMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
-      coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
-      limitations: cloneLimitations(definition.limitations ?? []),
-      ...(definition.retainedBytes === undefined ? {} : { retainedBytes: definition.retainedBytes }),
-      ...(definition.terminalReceipt === undefined ? {} : { terminalReceipt: definition.terminalReceipt }),
-      ...(definition.terminalCriterion === undefined ? {} : { terminalCriterion: definition.terminalCriterion }),
-      ...(definition.terminalEvidence === undefined ? {} : { terminalEvidence: definition.terminalEvidence }),
-      ...(definition.interruptedMatcherArtifact === undefined
-        ? {}
-        : { interruptedMatcherArtifact: definition.interruptedMatcherArtifact }),
+      evidence: definition.evidence.map(freezeAssertionMaterial),
+      coverage: cloneCoverage(definition.coverage),
+      limitations: cloneLimitations(definition.limitations),
+      retainedBytes: definition.retainedBytes,
+      terminalReceipt: definition.terminalReceipt,
+      terminalCriterion: definition.terminalCriterion,
+      terminalEvidence: definition.terminalEvidence,
+      interruptedMatcherArtifact: definition.interruptedMatcherArtifact,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
           this.captureEvaluationFailure(definition.interruptedMatcherArtifact),
         ),
+      retainedImageBytes: 0,
+      terminalDetail: () => undefined,
     });
     return new BooleanHandle(this, entry);
   }
@@ -1126,19 +1178,20 @@ class AssertionsRuntimeImplementation {
       kind: "measurement",
       criterion: definition.criterion,
       subject: freezeAssertionMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
-      coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
-      limitations: cloneLimitations(definition.limitations ?? []),
-      ...(definition.retainedBytes === undefined ? {} : { retainedBytes: definition.retainedBytes }),
-      ...(definition.retainedImageBytes === undefined ? {} : { retainedImageBytes: definition.retainedImageBytes }),
-      ...(definition.terminalReceipt === undefined ? {} : { terminalReceipt: definition.terminalReceipt }),
-      ...(definition.terminalCriterion === undefined ? {} : { terminalCriterion: definition.terminalCriterion }),
-      ...(definition.terminalDetail === undefined ? {} : { terminalDetail: definition.terminalDetail }),
-      ...(definition.terminalEvidence === undefined ? {} : { terminalEvidence: definition.terminalEvidence }),
+      evidence: definition.evidence.map(freezeAssertionMaterial),
+      coverage: cloneCoverage(definition.coverage),
+      limitations: cloneLimitations(definition.limitations),
+      retainedBytes: definition.retainedBytes,
+      retainedImageBytes: definition.retainedImageBytes,
+      terminalReceipt: definition.terminalReceipt,
+      terminalCriterion: definition.terminalCriterion,
+      terminalDetail: definition.terminalDetail,
+      terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
         ),
+      interruptedMatcherArtifact: undefined,
     });
     return new MeasurementHandle(this, entry);
   }
@@ -1166,19 +1219,19 @@ class AssertionsRuntimeImplementation {
       } catch (cause) {
         throw new TypeError("t.score() requires a finite ratio in [0, 1] and a finite non-negative weight", { cause });
       }
-      const ratio =
-        typeof decoded.ratio === "number"
-          ? decoded.ratio
-          : decoded.ratio.state === "exact"
-            ? decoded.ratio.value
-            : undefined;
+      function exactRatio(): number | undefined {
+        if (typeof decoded.ratio === "number") return decoded.ratio;
+        if (decoded.ratio.state === "exact") return decoded.ratio.value;
+        return undefined;
+      }
+      const ratio = exactRatio();
       const captured = captureAssertionSnapshot({ ratio: points, weight: decoded.weight });
       const handle = this.registerMeasurement({
-        criterion: Object.freeze({
+        criterion: {
           kind: "value-match",
           subject: "explicit-value",
-          matcher: Object.freeze({ state: "declared", name: "author-weighted-score" }),
-        }),
+          matcher: { state: "declared", name: "author-weighted-score" },
+        },
         subject: captured.material,
         coverage: captured.coverage,
         limitations: captured.limitations,
@@ -1194,9 +1247,26 @@ class AssertionsRuntimeImplementation {
                         ? decoded.ratio.reason
                         : "ratio-is-only-a-lower-bound",
                   },
+                  receipt: undefined,
                 }
-              : { state: "measured", value: ratio },
+              : {
+                  state: "measured",
+                  value: ratio,
+                  detail: undefined,
+                  receipt: undefined,
+                },
           ),
+        terminalCriterion: () => ({
+          kind: "value-match",
+          subject: "explicit-value",
+          matcher: { state: "declared", name: "author-weighted-score" },
+        }),
+        terminalReceipt: () => undefined,
+        terminalDetail: () => undefined,
+        terminalEvidence: () => [],
+        evidence: [],
+        retainedBytes: 0,
+        retainedImageBytes: 0,
       });
       handle.score(decoded.weight);
       return handle;
@@ -1205,13 +1275,26 @@ class AssertionsRuntimeImplementation {
     const captured = captureAssertionSnapshot(points);
     const entry = this.createEntry({
       kind: "direct-score",
-      criterion: Object.freeze({ kind: "direct-score" as const, source: "author" as const }),
+      criterion: { kind: "direct-score" as const, source: "author" as const },
       subject: captured.material,
-      evidence: Object.freeze([]),
+      evidence: [],
       coverage: captured.coverage,
       limitations: captured.limitations,
       directScorePoints: points,
-      evaluate: () => Effect.succeed({ state: "matched", value: points }),
+      evaluate: () =>
+        Effect.succeed({
+          state: "matched",
+          value: points,
+          receipt: undefined,
+          evidence: { kind: "none" },
+        }),
+      interruptedMatcherArtifact: undefined,
+      retainedBytes: 0,
+      retainedImageBytes: 0,
+      terminalReceipt: () => undefined,
+      terminalDetail: () => undefined,
+      terminalEvidence: () => [],
+      terminalCriterion: () => ({ kind: "direct-score", source: "author" }),
     });
     return new DirectScoreHandle(this, entry);
   }
@@ -1397,19 +1480,27 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  seal(options: AssertionSealOptions = {}): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never> {
+  seal(
+    options: AssertionSealOptions = { execution: "completed", explicitlySkipped: false, interrupted: false },
+  ): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never> {
     return Effect.suspend(() => {
       if (this.sealed !== undefined) return Effect.succeed(this.sealed);
       if (options.interrupted) {
         this.closeAuthoring("attempt-interrupted");
         for (const entry of this.entries) {
-          if (entry.settled === undefined) {
-            entry.settled = Object.freeze({
-              state: "interrupted" as const,
-              ...(entry.interruptedMatcherArtifact === undefined
-                ? {}
-                : { matcherArtifact: entry.interruptedMatcherArtifact }),
-            });
+          if (entry.evaluation.state !== "settled") {
+            entry.evaluation = {
+              state: "settled",
+              value: {
+                state: "interrupted" as const,
+                evidence: {
+                  kind: "matcher",
+                  artifact: entry.interruptedMatcherArtifact,
+                  diagnostic: undefined,
+                },
+                receipt: undefined,
+              },
+            };
           }
         }
         return Effect.sync(() =>
@@ -1449,11 +1540,9 @@ class AssertionsRuntimeImplementation {
     if (this.closingReason !== "attempt-interrupted") this.closingReason = reason;
     this.closing = true;
     for (const receiver of this.contextReceivers) {
-      const release = receiver.release;
-      delete receiver.read;
-      delete receiver.cut;
-      delete receiver.release;
-      release?.();
+      const binding = receiver.binding;
+      receiver.binding = { state: "closed" };
+      if (binding.state === "bound") binding.release();
     }
     this.contextReceivers.clear();
   }
@@ -1462,28 +1551,31 @@ class AssertionsRuntimeImplementation {
     this.assertCanRegister(false);
   }
 
-  private createEntry(input: {
-    readonly kind: EntryKind;
-    readonly criterion: AssertionCriterion;
-    readonly subject: AssertionMaterial;
-    readonly evidence: readonly AssertionMaterial[];
-    readonly coverage: AssertionCoverage;
-    readonly limitations: readonly AssertionLimitation[];
-    readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
-    readonly directScorePoints?: number;
-    readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
-    readonly retainedBytes?: number;
-    readonly retainedImageBytes?: number;
-    readonly terminalReceipt?: () => import("./api.ts").AssertionCollectionReceipt;
-    readonly terminalDetail?: () => AssertionSnapshotObject;
-    readonly terminalEvidence?: () => readonly AssertionMaterial[];
-    readonly terminalCriterion?: () => AssertionCriterion;
-  }): AssertionEntry {
+  private createEntry(
+    input: {
+      readonly criterion: AssertionCriterion;
+      readonly subject: AssertionMaterial;
+      readonly evidence: readonly AssertionMaterial[];
+      readonly coverage: AssertionCoverage;
+      readonly limitations: readonly AssertionLimitation[];
+      readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
+      readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+      readonly retainedBytes: number;
+      readonly retainedImageBytes: number;
+      readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
+      readonly terminalDetail: () => AssertionSnapshotObject | undefined;
+      readonly terminalEvidence: () => readonly AssertionMaterial[];
+      readonly terminalCriterion: () => AssertionCriterion;
+    } & (
+      | { readonly kind: "direct-score"; readonly directScorePoints: number }
+      | { readonly kind: "boolean" | "measurement" }
+    ),
+  ): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
       throw new Error(`An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`);
     }
-    const retainedBytes = input.retainedBytes ?? 0;
-    const retainedImageBytes = input.retainedImageBytes ?? 0;
+    const retainedBytes = input.retainedBytes;
+    const retainedImageBytes = input.retainedImageBytes;
     if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
       throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
     }
@@ -1507,7 +1599,6 @@ class AssertionsRuntimeImplementation {
       initialLimitations: input.limitations,
       evaluate: input.evaluate,
       display: { label: undefined, groupPath: [...this.groupStack] },
-      directScorePoints: input.directScorePoints,
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       terminalReceipt: input.terminalReceipt,
       terminalDetail: input.terminalDetail,
@@ -1516,13 +1607,12 @@ class AssertionsRuntimeImplementation {
       optionalConfigured: false,
       gateConfigured: false,
       conditionMinimum: undefined,
-      scorePoints: input.directScorePoints,
+      scorePoints: input.kind === "direct-score" ? input.directScorePoints : undefined,
       configurationClosed: false,
       stopConfigured: false,
       control: "none",
       stopPromise: undefined,
-      settled: undefined,
-      pending: undefined,
+      evaluation: { state: "unstarted" },
       sealedEvidence: undefined,
     };
     this.entries.push(entry);
@@ -1582,12 +1672,20 @@ class AssertionsRuntimeImplementation {
       Effect.map(
         (evaluation): EntrySettlement =>
           evaluation.state === "unavailable"
-            ? Object.freeze({
+            ? {
                 state: "unavailable" as const,
                 reason: "source-unavailable" as const,
-                ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-              })
-            : this.booleanSettlement(evaluation),
+                evidence: {
+                  kind: "matcher",
+                  diagnostic: evaluation.diagnostic,
+                  artifact: undefined,
+                },
+                receipt: evaluation.receipt,
+              }
+            : this.booleanSettlement({
+                ...evaluation,
+                matcherArtifact: undefined,
+              }),
       ),
       this.captureEvaluationFailure(),
     );
@@ -1597,7 +1695,12 @@ class AssertionsRuntimeImplementation {
     return evaluateScoreMatch(match, value).pipe(
       Effect.map((value): EntrySettlement => {
         assertUnitInterval(value, "measurement Match result");
-        return Object.freeze({ state: "measured" as const, value });
+        return {
+          state: "measured" as const,
+          value,
+          receipt: undefined,
+          evidence: { kind: "none" },
+        };
       }),
       this.captureEvaluationFailure(),
     );
@@ -1611,12 +1714,15 @@ class AssertionsRuntimeImplementation {
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.interrupt
-            : Effect.succeed(
-                Object.freeze({
-                  state: "errored" as const,
-                  ...(matcherArtifact === undefined ? {} : { matcherArtifact }),
-                }),
-              ),
+            : Effect.succeed<EntrySettlement>({
+                state: "errored" as const,
+                evidence: {
+                  kind: "matcher",
+                  diagnostic: undefined,
+                  artifact: matcherArtifact,
+                },
+                receipt: undefined,
+              }),
         ),
       );
   }
@@ -1624,34 +1730,31 @@ class AssertionsRuntimeImplementation {
   private booleanSettlement(evaluation: BooleanAssertionEvaluation<unknown>): EntrySettlement {
     switch (evaluation.state) {
       case "matched":
-        return Object.freeze({
+        return {
           state: "matched" as const,
           value: evaluation.value,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "mismatched":
-        return Object.freeze({
+        return {
           state: "mismatched" as const,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "unavailable":
-        return Object.freeze({
+        return {
           state: "unavailable" as const,
           reason: evaluation.reason,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "not-applicable":
-        return Object.freeze({
+        return {
           state: "not-applicable" as const,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+          receipt: undefined,
+        };
     }
   }
 
@@ -1659,49 +1762,55 @@ class AssertionsRuntimeImplementation {
     switch (evaluation.state) {
       case "measured":
         assertUnitInterval(evaluation.value, "measurement Assertion result");
-        return Object.freeze({
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+        return {
+          receipt: evaluation.receipt,
           state: "measured" as const,
           value: evaluation.value,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+        };
       case "unavailable":
-        return Object.freeze({
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+        return {
+          receipt: evaluation.receipt,
           state: "unavailable" as const,
           reason: evaluation.reason,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+        };
       case "not-applicable":
-        return Object.freeze({
+        return {
           state: "not-applicable" as const,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+          receipt: undefined,
+        };
       case "errored":
-        return Object.freeze({
+        return {
           state: "errored" as const,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+          receipt: undefined,
+        };
     }
   }
 
   /** Evaluates an entry at most once even when multiple Effect fibers await it. */
   private settle(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
     return Effect.suspend(() => {
-      if (entry.settled !== undefined) return Effect.succeed(entry.settled);
-      if (entry.pending !== undefined) return Deferred.await(entry.pending);
+      if (entry.evaluation.state === "settled") return Effect.succeed(entry.evaluation.value);
+      if (entry.evaluation.state === "pending") return Deferred.await(entry.evaluation.deferred);
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          if (entry.settled !== undefined) return entry.settled;
-          if (entry.pending !== undefined) return yield* Deferred.await(entry.pending);
+          if (entry.evaluation.state === "settled") return entry.evaluation.value;
+          if (entry.evaluation.state === "pending") return yield* Deferred.await(entry.evaluation.deferred);
           const deferred = yield* Deferred.make<EntrySettlement>();
-          entry.pending = deferred;
+          entry.evaluation = { state: "pending", deferred };
           const settled = yield* restore(
             Effect.suspend(entry.evaluate).pipe(
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.interrupt
-                  : Effect.succeed(Object.freeze({ state: "errored" as const })),
+                  : Effect.succeed({
+                      state: "errored" as const,
+                      receipt: undefined,
+                      evidence: { kind: "none" as const },
+                    }),
               ),
             ),
           ).pipe(
@@ -1709,7 +1818,8 @@ class AssertionsRuntimeImplementation {
               Deferred.interrupt(deferred).pipe(
                 Effect.andThen(
                   Effect.sync(() => {
-                    if (entry.pending === deferred) entry.pending = undefined;
+                    if (entry.evaluation.state === "pending" && entry.evaluation.deferred === deferred)
+                      entry.evaluation = { state: "unstarted" };
                   }),
                 ),
               ),
@@ -1719,8 +1829,8 @@ class AssertionsRuntimeImplementation {
           // this entry while its evaluator was unwinding. Preserve that
           // producer-interrupted terminal fact rather than resurrecting a
           // late evaluator result.
-          const terminal = entry.settled ?? settled;
-          entry.settled = terminal;
+          const terminal = settledValueOf(entry) ?? settled;
+          entry.evaluation = { state: "settled", value: terminal };
           yield* Deferred.succeed(deferred, terminal);
           return terminal;
         }),
@@ -1749,19 +1859,24 @@ class AssertionsRuntimeImplementation {
 
   private latchStop(entry: AssertionEntry, settlement: EntrySettlement): AssertionStopError {
     if (this.stopped !== undefined) return this.stopped;
-    const reason =
-      settlement.state === "mismatched" || settlement.state === "measured"
-        ? ("condition-not-met" as const)
-        : settlement.state === "unavailable"
-          ? ("source-unavailable" as const)
-          : settlement.state === "not-applicable"
-            ? ("not-applicable" as const)
-            : ("evaluator-failed" as const);
-    this.stopped = Object.freeze({
+    function stopReason(): AssertionStopError["reason"] {
+      switch (settlement.state) {
+        case "mismatched":
+        case "measured":
+          return "condition-not-met";
+        case "unavailable":
+          return "source-unavailable";
+        case "not-applicable":
+          return "not-applicable";
+        default:
+          return "evaluator-failed";
+      }
+    }
+    this.stopped = {
       _tag: "AssertionStopError" as const,
       entryIndex: entry.index,
-      reason,
-    });
+      reason: stopReason(),
+    };
     return this.stopped;
   }
 
@@ -1772,64 +1887,68 @@ class AssertionsRuntimeImplementation {
     for (const entry of this.entries) {
       const sealedEntry = this.toSealedEntry(entry);
       entries.push(sealedEntry);
-      assertions.push(
-        Object.freeze({
-          required: this.isRequired(entry),
-          result: sealedEntry.result,
-        }),
-      );
+      assertions.push({
+        required: this.isRequired(entry),
+        result: sealedEntry.result,
+      });
     }
-    const evaluation: SealedAssertionEvaluation = Object.freeze({
-      execution: options.execution ?? "completed",
-      explicitlySkipped: options.explicitlySkipped ?? false,
-      assertions: Object.freeze(assertions),
-    });
-    this.sealed = Object.freeze({
-      entries: Object.freeze(entries),
+    const evaluation: SealedAssertionEvaluation = {
+      execution: options.execution,
+      explicitlySkipped: options.explicitlySkipped,
+      assertions,
+    };
+    this.sealed = {
+      entries,
       evaluation,
-    });
+    };
     return this.sealed;
   }
 
   private toSealedEntry(entry: AssertionEntry): SealedAssertionEntry {
-    const settlement = entry.settled;
-    if (settlement === undefined) throw new Error("Attempted to seal an unsettled Assertion entry");
-    const display: AssertionDisplay = Object.freeze({
-      ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
-      groupPath: Object.freeze([...entry.display.groupPath]),
-    });
+    if (entry.evaluation.state !== "settled") throw new Error("Attempted to seal an unsettled Assertion entry");
+    const settlement = entry.evaluation.value;
+    const display: AssertionDisplay = {
+      label: entry.display.label,
+      groupPath: entry.display.groupPath,
+    };
     const material = this.materialFor(entry, settlement);
-    return Object.freeze({
+    function observedResult(settlement: EntrySettlement): SealedAssertionEntry["observed"] {
+      if (entry.kind === "boolean") {
+        return {
+          kind: "boolean" as const,
+          outcome:
+            settlement.state === "measured" || settlement.state === "interrupted"
+              ? ("errored" as const)
+              : settlement.state,
+        };
+      }
+      if (entry.kind === "measurement") {
+        if (settlement.state === "measured") {
+          return { kind: "measurement" as const, state: "available" as const, value: settlement.value };
+        }
+        return { kind: "measurement" as const, state: "unavailable" as const };
+      }
+      if (settlement.state === "measured") {
+        return { kind: "direct-score" as const, state: "available" as const, value: settlement.value };
+      }
+      return { kind: "direct-score" as const, state: "unavailable" as const };
+    }
+    return {
       display,
-      criterion: entry.terminalCriterion?.() ?? entry.criterion,
+      criterion: entry.terminalCriterion(),
       subject: entry.subject,
       evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement),
-      policy: Object.freeze({
+      policy: {
         requirement: this.isRequired(entry) ? ("required" as const) : ("optional" as const),
         condition: this.conditionFor(entry),
-      }),
-      control: Object.freeze({ state: "available" as const, value: entry.control }),
-      observed:
-        entry.kind === "boolean"
-          ? Object.freeze({
-              kind: "boolean" as const,
-              outcome:
-                settlement.state === "measured" || settlement.state === "interrupted"
-                  ? ("errored" as const)
-                  : settlement.state,
-            })
-          : entry.kind === "measurement"
-            ? settlement.state === "measured"
-              ? Object.freeze({ kind: "measurement" as const, state: "available" as const, value: settlement.value })
-              : Object.freeze({ kind: "measurement" as const, state: "unavailable" as const })
-            : settlement.state === "measured"
-              ? Object.freeze({ kind: "direct-score" as const, state: "available" as const, value: settlement.value })
-              : Object.freeze({ kind: "direct-score" as const, state: "unavailable" as const }),
-      ...(settlement.matcherArtifact === undefined ? {} : { matcherArtifact: settlement.matcherArtifact }),
-    });
+      },
+      control: { state: "available" as const, value: entry.control },
+      observed: observedResult(settlement),
+      matcherArtifact: settlement.evidence.kind === "matcher" ? settlement.evidence.artifact : undefined,
+    };
   }
 
   private materialFor(
@@ -1844,33 +1963,33 @@ class AssertionsRuntimeImplementation {
       this.retentionByEntry.has(entry) &&
       entry.initialCoverage.state === "partial"
     )
-      return Object.freeze({ coverage: entry.initialCoverage, limitations: entry.initialLimitations });
+      return { coverage: entry.initialCoverage, limitations: entry.initialLimitations };
     if (settlement.state === "unavailable") {
-      return Object.freeze({
-        coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
-        limitations: Object.freeze([]),
-      });
+      return {
+        coverage: { state: "unavailable" as const, reason: "source-unavailable" as const },
+        limitations: [],
+      };
     }
     if (settlement.state === "not-applicable") {
-      return Object.freeze({
-        coverage: Object.freeze({ state: "not-applicable" as const, reason: "optional-material" as const }),
-        limitations: Object.freeze([]),
-      });
+      return {
+        coverage: { state: "not-applicable" as const, reason: "optional-material" as const },
+        limitations: [],
+      };
     }
-    return Object.freeze({
+    return {
       coverage: entry.initialCoverage,
       limitations: entry.initialLimitations,
-    });
+    };
   }
 
   private evidenceFor(entry: AssertionEntry): readonly AssertionMaterial[] {
     if (entry.sealedEvidence !== undefined) return entry.sealedEvidence;
-    const terminal = entry.terminalEvidence?.() ?? [];
-    entry.sealedEvidence = Object.freeze([...entry.evidence, ...terminal.map(freezeAssertionMaterial)]);
+    const terminal = entry.terminalEvidence();
+    entry.sealedEvidence = [...entry.evidence, ...terminal.map(freezeAssertionMaterial)];
     const retention = this.retentionByEntry.get(entry);
     if (retention !== undefined && !retention.settled) {
       const diagnosticBytes = UTF8.encode(
-        JSON.stringify(entry.settled === undefined ? {} : this.resultFor(entry, entry.settled)),
+        JSON.stringify(entry.evaluation.state === "settled" ? this.resultFor(entry, entry.evaluation.value) : {}),
       ).byteLength;
       const actual = retention.actual() + diagnosticBytes;
       this.retainedProducerBytes += actual - retention.reserved;
@@ -1880,86 +1999,96 @@ class AssertionsRuntimeImplementation {
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
-    const terminalDetail = entry.terminalDetail?.();
-    const baseDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
+    const terminalDetail = entry.terminalDetail();
+    const evidence = settlement.evidence;
+    function evidenceDiagnostic() {
+      switch (evidence.kind) {
+        case "measurement":
+          return evidence.detail;
+        case "matcher":
+          return captureMatchDiagnostic(evidence.diagnostic);
+        default:
+          return undefined;
+      }
+    }
+    const baseDiagnostic = evidenceDiagnostic();
     const capturedDiagnostic =
-      terminalDetail === undefined ? baseDiagnostic : Object.freeze({ ...(baseDiagnostic ?? {}), ...terminalDetail });
-    const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
-    const terminalReceipt = entry.terminalReceipt?.() ?? settlement.receipt;
-    const receipt = terminalReceipt === undefined ? {} : { receipt: terminalReceipt };
+      terminalDetail === undefined ? baseDiagnostic : { ...(baseDiagnostic ?? {}), ...terminalDetail };
+    const diagnostic = capturedDiagnostic;
+    const receipt = entry.terminalReceipt() ?? settlement.receipt;
     switch (settlement.state) {
       case "matched":
-        return Object.freeze({
+        return {
           state: "matched" as const,
           gate: this.gateForMatched(entry),
           score: this.availableScoreFor(entry, 1),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "mismatched":
-        return Object.freeze({
+        return {
           state: "mismatched" as const,
           reason: "condition-not-met" as const,
           gate: this.gateForMismatched(entry),
           score: this.availableScoreFor(entry, 0),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "measured": {
         const matched = entry.conditionMinimum === undefined || settlement.value >= entry.conditionMinimum;
         return matched
-          ? Object.freeze({
+          ? {
               state: "matched" as const,
               gate: this.gateForMatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
-              ...diagnostic,
-              ...receipt,
-            })
-          : Object.freeze({
+              diagnostic,
+              receipt,
+            }
+          : {
               state: "mismatched" as const,
               reason: "condition-not-met" as const,
               gate: this.gateForMismatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
-              ...diagnostic,
-              ...receipt,
-            });
+              diagnostic,
+              receipt,
+            };
       }
       case "unavailable":
-        return Object.freeze({
+        return {
           state: "unavailable" as const,
           reason: settlement.reason,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "source-unavailable"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "not-applicable":
-        return Object.freeze({
+        return {
           state: "not-applicable" as const,
           reason: "coverage-not-applicable" as const,
           gate: this.gateForNotApplicable(entry),
           score: this.incompleteScoreFor(entry, "not-applicable"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "errored":
-        return Object.freeze({
+        return {
           state: "errored" as const,
           reason: "evaluator-failed" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "interrupted":
-        return Object.freeze({
+        return {
           state: "errored" as const,
           reason: "producer-interrupted" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
     }
   }
 
@@ -1976,7 +2105,7 @@ class AssertionsRuntimeImplementation {
 
   private conditionFor(entry: AssertionEntry): SealedAssertionEntry["policy"]["condition"] {
     if (entry.kind === "measurement" && entry.conditionMinimum !== undefined) {
-      return Object.freeze({ kind: "at-least" as const, threshold: entry.conditionMinimum });
+      return { kind: "at-least" as const, threshold: entry.conditionMinimum };
     }
     if (
       entry.kind === "boolean" &&
@@ -1985,9 +2114,9 @@ class AssertionsRuntimeImplementation {
         entry.scorePoints !== undefined ||
         entry.stopConfigured)
     ) {
-      return Object.freeze({ kind: "boolean" as const, expected: true as const });
+      return { kind: "boolean" as const, expected: true as const };
     }
-    return Object.freeze({ kind: "record-only" as const });
+    return { kind: "record-only" as const };
   }
 
   private gateForMatched(entry: AssertionEntry): "not-gate" | "satisfied" {
@@ -2038,7 +2167,7 @@ class AssertionsRuntimeImplementation {
     if (entry.configurationClosed) {
       throw new Error(`Cannot configure an Assertion after orStop() closed its configuration`);
     }
-    if (entry.settled !== undefined || entry.pending !== undefined) {
+    if (entry.evaluation.state !== "unstarted") {
       throw new Error(`Cannot configure an Assertion after ${method} has begun evaluation`);
     }
   }
@@ -2085,31 +2214,25 @@ export function assertionsRuntimeSourceCaptureSnapshot(
   runtime: AssertionsRuntime<"pass" | "score">,
 ): AssertionsRuntimeSourceCaptureSnapshot | undefined {
   const implementation = sourceCaptureRuntime(runtime);
-  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (implementation === undefined) return undefined;
+  const capture = sourceCaptureByRuntime.get(implementation);
   if (capture === undefined) return undefined;
-  return Object.freeze({
-    entries: Object.freeze(
-      capture.entries.map((entry) =>
-        Object.freeze({
-          occurrences: Object.freeze(
-            entry.occurrences.map((occurrence) =>
-              Object.freeze({
-                role: occurrence.role,
-                ...(occurrence.site === undefined ? {} : { site: occurrence.site }),
-                ...(occurrence.outcome === undefined ? {} : { outcome: occurrence.outcome }),
-              }),
-            ),
-          ),
-        }),
-      ),
-    ),
-  });
+  return {
+    entries: capture.entries.map((entry) => ({
+      occurrences: entry.occurrences.map((occurrence) => ({
+        role: occurrence.role,
+        site: occurrence.site,
+        outcome: occurrence.outcome,
+      })),
+    })),
+  };
 }
 
 /** @internal Attempt interruption gives pending real stop calls their terminal disposition. */
 export function markAssertionsRuntimeSourceCaptureInterrupted(runtime: AssertionsRuntime<"pass" | "score">): void {
   const implementation = sourceCaptureRuntime(runtime);
-  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (implementation === undefined) return;
+  const capture = sourceCaptureByRuntime.get(implementation);
   if (capture === undefined) return;
   for (const entry of capture.entries) {
     for (const occurrence of entry.occurrences) {
@@ -2123,33 +2246,31 @@ export function markAssertionsRuntimeSourceCaptureInterrupted(runtime: Assertion
 /** Creates one Attempt-local assert-first authoring runtime. */
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError('Assertions runtime evaluationKind must be "pass" or "score"');
   }
-  const executeStop =
-    input.executeStop ?? (() => Promise.reject(new AssertionAuthoringClosedError("runtime-unattached")));
   const runtime = new AssertionsRuntimeImplementation(
     input.evaluationKind,
-    executeStop,
+    input.executeStop,
     input.judge,
     input.signal,
     input.judgeUsage,
@@ -2160,7 +2281,7 @@ export function createAssertionsRuntime(input: {
 /** @internal Core preset dispatch shares the exact owning runtime. */
 const compiledMaterialQA = new WeakMap<
   object,
-  { readonly selector: ContextualMatch; readonly question: string; readonly options?: JudgePresetOptions }
+  { readonly selector: ContextualMatch; readonly question: string; readonly options: JudgePresetOptions | undefined }
 >();
 export function registerMaterialQA(
   check: object,
@@ -2173,10 +2294,7 @@ export function registerMaterialQA(
   if (!isContextualMatch(selector) || selector.kind !== "material")
     throw new TypeError("closeQA requires a MaterialMatch");
   validateMaterialQAInputs(question, options);
-  const compiled = Object.freeze({});
-  compiledMaterialQA.set(
-    compiled,
-    Object.freeze({ selector, question, ...(options === undefined ? {} : { options }) }),
-  );
+  const compiled = {};
+  compiledMaterialQA.set(compiled, { selector, question, options });
   return Reflect.apply(check as (...args: readonly unknown[]) => unknown, undefined, [compiled]);
 }

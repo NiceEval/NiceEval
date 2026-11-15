@@ -171,7 +171,7 @@ export interface CapturedCommandRuntime {
   readonly registered: RegisteredCommandCapture;
   readonly sequence: PositiveSafeInteger;
   readonly manifest: CommandManifest;
-  result?: CapturedCommandResult;
+  result: CapturedCommandResult | undefined;
 }
 
 export interface RunnerAttemptObservabilityRuntimeState {
@@ -193,8 +193,8 @@ export interface RunnerAttemptObservabilityRuntimeState {
   readonly conversationLimitations: RunnerCollectionLimitations;
   readonly registeredSessionScopes: Set<SessionScopeId>;
   readonly registeredToolOccurrences: Set<ToolOccurrenceId>;
-  snapshot?: RunnerAttemptSourceReceiptsCapture;
-  failure?: RunnerObservabilityProducerError;
+  snapshot: RunnerAttemptSourceReceiptsCapture | undefined;
+  failure: RunnerObservabilityProducerError | undefined;
 }
 
 export interface CapturedConversationTurn {
@@ -203,10 +203,21 @@ export interface CapturedConversationTurn {
   readonly segmentId: SafeIdentifier;
   readonly sequence: PositiveSafeInteger;
   readonly usage: UsageObservation[];
-  observed?: ObservedTurnSnapshot;
-  outcome?: ConversationTurn["outcome"];
-  adapterStatus?: "completed" | "failed" | "waiting";
-  evidenceCoverage?: ResolvedEvidenceCoverage;
+  completion:
+    | { readonly state: "pending" }
+    | { readonly state: "interrupted" }
+    | {
+        readonly state: "observed";
+        readonly observed: ObservedTurnSnapshot;
+        readonly outcome: ConversationTurn["outcome"];
+        readonly adapter:
+          | { readonly state: "unavailable" }
+          | {
+              readonly state: "recorded";
+              readonly status: "completed" | "failed" | "waiting";
+              readonly evidenceCoverage: ResolvedEvidenceCoverage;
+            };
+      };
 }
 
 interface RunCaptureState {
@@ -454,6 +465,9 @@ export function createRunnerAttemptObservabilityRuntime(input: {
     conversationLimitations: new RunnerCollectionLimitations(),
     registeredSessionScopes: new Set(),
     registeredToolOccurrences: new Set(),
+
+    snapshot: undefined,
+    failure: undefined,
   });
   return runtime;
 }

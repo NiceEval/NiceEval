@@ -82,22 +82,27 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
     writeText: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return providerCompatibilityPromise(() =>
-        withTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }, () =>
-          sandbox.writeText(abs, content),
+        withTransferErrors(
+          { provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content), localPath: undefined },
+          () => sandbox.writeText(abs, content),
         ),
       );
     },
     readBytes: (path) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return providerCompatibilityPromise(() =>
-        withTransferErrors({ provider, operation: "readBytes", path: abs }, () => sandbox.readBytes(abs)),
+        withTransferErrors(
+          { provider, operation: "readBytes", path: abs, localPath: undefined, bytes: undefined },
+          () => sandbox.readBytes(abs),
+        ),
       );
     },
     writeBytes: (path, content) => {
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return providerCompatibilityPromise(() =>
-        withTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }, () =>
-          sandbox.writeBytes(abs, content),
+        withTransferErrors(
+          { provider, operation: "writeBytes", path: abs, bytes: content.byteLength, localPath: undefined },
+          () => sandbox.writeBytes(abs, content),
         ),
       );
     },
@@ -113,7 +118,13 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       const abs = resolveSandboxPath(sandbox.workdir, targetPath);
       return providerCompatibilityPromise(() =>
         withTransferErrors(
-          { provider, operation: "uploadFile", path: abs, localPath: resolveLocalPath(undefined, source) },
+          {
+            provider,
+            operation: "uploadFile",
+            path: abs,
+            localPath: resolveLocalPath(undefined, source),
+            bytes: undefined,
+          },
           () => sandbox.uploadFile(source, abs),
         ),
       );
@@ -122,7 +133,13 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
       return providerCompatibilityPromise(() =>
         withTransferErrors(
-          { provider, operation: "uploadDirectory", path: base, localPath: resolveLocalPath(undefined, sourceDir) },
+          {
+            provider,
+            operation: "uploadDirectory",
+            path: base,
+            localPath: resolveLocalPath(undefined, sourceDir),
+            bytes: undefined,
+          },
           () => sandbox.uploadDirectory(sourceDir, base, opts),
         ),
       );
@@ -131,7 +148,13 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       const abs = resolveSandboxPath(sandbox.workdir, sourcePath);
       return providerCompatibilityPromise(() =>
         withTransferErrors(
-          { provider, operation: "downloadFile", path: abs, localPath: resolveLocalPath(undefined, target) },
+          {
+            provider,
+            operation: "downloadFile",
+            path: abs,
+            localPath: resolveLocalPath(undefined, target),
+            bytes: undefined,
+          },
           () => sandbox.downloadFile(abs, target),
         ),
       );
@@ -140,7 +163,13 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
       const base = resolveSandboxPath(sandbox.workdir, sourceDir);
       return providerCompatibilityPromise(() =>
         withTransferErrors(
-          { provider, operation: "downloadDirectory", path: base, localPath: resolveLocalPath(undefined, targetDir) },
+          {
+            provider,
+            operation: "downloadDirectory",
+            path: base,
+            localPath: resolveLocalPath(undefined, targetDir),
+            bytes: undefined,
+          },
           () => sandbox.downloadDirectory(base, targetDir, opts),
         ),
       );
@@ -217,7 +246,13 @@ export function makeSandboxAuthorFacade(
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return executor.run(
         withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeText(abs, content))).pipe(
-          enrichTransferErrors({ provider, operation: "writeText", path: abs, bytes: Buffer.byteLength(content) }),
+          enrichTransferErrors({
+            provider,
+            operation: "writeText",
+            path: abs,
+            bytes: Buffer.byteLength(content),
+            localPath: undefined,
+          }),
         ),
       );
     },
@@ -225,7 +260,7 @@ export function makeSandboxAuthorFacade(
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return executor.run(
         withSandboxIoRetry(providerBoundaryEffect(() => sandbox.readBytes(abs))).pipe(
-          enrichTransferErrors({ provider, operation: "readBytes", path: abs }),
+          enrichTransferErrors({ provider, operation: "readBytes", path: abs, localPath: undefined, bytes: undefined }),
         ),
       );
     },
@@ -233,7 +268,13 @@ export function makeSandboxAuthorFacade(
       const abs = resolveSandboxPath(sandbox.workdir, path);
       return executor.run(
         withSandboxIoRetry(providerBoundaryEffect(() => sandbox.writeBytes(abs, content))).pipe(
-          enrichTransferErrors({ provider, operation: "writeBytes", path: abs, bytes: content.byteLength }),
+          enrichTransferErrors({
+            provider,
+            operation: "writeBytes",
+            path: abs,
+            bytes: content.byteLength,
+            localPath: undefined,
+          }),
         ),
       );
     },
@@ -256,6 +297,8 @@ export function makeSandboxAuthorFacade(
             operation: "uploadFile",
             path: abs,
             localPath: resolveLocalPath(undefined, source),
+
+            bytes: undefined,
           }),
         ),
       );
@@ -269,6 +312,8 @@ export function makeSandboxAuthorFacade(
             operation: "uploadDirectory",
             path: base,
             localPath: resolveLocalPath(undefined, sourceDir),
+
+            bytes: undefined,
           }),
         ),
       );
@@ -282,6 +327,8 @@ export function makeSandboxAuthorFacade(
             operation: "downloadFile",
             path: abs,
             localPath: resolveLocalPath(undefined, target),
+
+            bytes: undefined,
           }),
         ),
       );
@@ -295,6 +342,8 @@ export function makeSandboxAuthorFacade(
             operation: "downloadDirectory",
             path: base,
             localPath: resolveLocalPath(undefined, targetDir),
+
+            bytes: undefined,
           }),
         ),
       );

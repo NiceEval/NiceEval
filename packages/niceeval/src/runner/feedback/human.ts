@@ -38,7 +38,8 @@ import {
 } from "../../terminal/panel.ts";
 import { charDisplayWidth, padDisplay, padStartDisplay, stringWidth, wrapDisplay } from "../../terminal/text-layout.ts";
 import { nativeEnterCommand } from "../../sandbox/keep.ts";
-import type { CommandPlan, CommandPlanLane, CommandPlanStep } from "../command-plan.ts";
+import type { CommandPlan, CommandPlanCache, CommandPlanLane, CommandPlanStep } from "../command-plan.ts";
+import type { SandboxCommandPlanCommand } from "../../sandbox/commands.ts";
 import type {
   ActiveAttempt,
   ActiveExperimentHook,
@@ -106,7 +107,7 @@ type HumanFingerprintComparison =
 function panelCapabilityForFeedback(io: FeedbackIO): { mode: PanelMode; width: number } {
   return panelCapability({
     isTTY: io.stderr.isTTY,
-    ...(io.env.NO_COLOR === undefined ? {} : { noColor: io.env.NO_COLOR }),
+    noColor: io.env.NO_COLOR,
     width: io.stderr.columns,
   });
 }
@@ -136,26 +137,24 @@ type HumanResultItem = {
   readonly evalId: string;
   readonly evaluationKind: "pass" | "score";
   readonly verdict: import("../../shared/types.ts").Verdict;
-  readonly scoreState?: "complete" | "partial" | "unavailable";
-  readonly earned?: number;
+  readonly scoreState: "complete" | "partial" | "unavailable" | undefined;
+  readonly earned: number | undefined;
 };
 
 function freshHumanResult(result: EvalResult): HumanResultItem {
   const score = result.scoreResult;
-  const scoreState =
-    score === undefined
-      ? undefined
-      : score.status === "scored" || score.status === "failed"
-        ? ("complete" as const)
-        : score.earnedScore > 0
-          ? ("partial" as const)
-          : ("unavailable" as const);
+  function scoreState(): HumanResultItem["scoreState"] {
+    if (score === undefined) return undefined;
+    if (score.status === "scored" || score.status === "failed") return "complete";
+    return score.earnedScore > 0 ? "partial" : "unavailable";
+  }
   return {
     experimentId: result.experimentId ?? "default",
     evalId: result.id,
     evaluationKind: result.evaluationKind,
     verdict: result.verdict,
-    ...(scoreState === undefined || score === undefined ? {} : { scoreState, earned: score.earnedScore }),
+    scoreState: scoreState(),
+    earned: score?.earnedScore,
   };
 }
 
@@ -169,12 +168,8 @@ function reusedHumanResult(result: CurrentReusedAttemptReadback): HumanResultIte
     evalId: result.target.evalId,
     evaluationKind: result.source.evaluationKind,
     verdict: result.verdict,
-    ...(attachment === undefined
-      ? {}
-      : {
-          scoreState: attachment.state,
-          ...("earned" in attachment ? { earned: attachment.earned } : {}),
-        }),
+    scoreState: attachment?.state,
+    earned: attachment !== undefined && "earned" in attachment ? attachment.earned : undefined,
   };
 }
 
@@ -202,7 +197,7 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
     for (const [evalId, attempts] of byEval) {
       if (attempts.some((attempt) => attempt.evaluationKind === "score")) {
         const complete = attempts.filter(
-          (attempt) =>
+          (attempt): attempt is HumanResultItem & { readonly earned: number } =>
             attempt.verdict === "passed" && attempt.scoreState === "complete" && attempt.earned !== undefined,
         );
         const unranked = attempts.filter(
@@ -210,15 +205,14 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
             attempt.verdict !== "passed" && attempt.scoreState === "complete" && attempt.earned !== undefined,
         );
         const partial = attempts.filter((attempt) => attempt.scoreState === "partial" && attempt.earned !== undefined);
-        const reading =
-          complete.length > 0
-            ? `${complete.reduce((sum, attempt) => sum + attempt.earned!, 0) / complete.length} score · ${complete.length}/${attempts.length} ranked`
-            : partial.length > 0
-              ? `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`
-              : unranked.length > 0
-                ? `0/${attempts.length} ranked`
-                : "score unavailable";
-        rows.push({ kind: "line", text: `  ${evalId}  ${reading}` });
+        function scoreReading(): string {
+          if (complete.length > 0)
+            return `${complete.reduce((sum, attempt) => sum + attempt.earned, 0) / complete.length} score · ${complete.length}/${attempts.length} ranked`;
+          if (partial.length > 0) return `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`;
+          if (unranked.length > 0) return `0/${attempts.length} ranked`;
+          return "score unavailable";
+        }
+        rows.push({ kind: "line", text: `  ${evalId}  ${scoreReading()}` });
         for (const attempt of unranked) {
           rows.push({ kind: "line", text: `    ${attempt.earned} score · ${attempt.verdict} · unranked` });
         }
@@ -467,7 +461,15 @@ function buildPlanLines(plan: RunFeedbackPlan, panel: { mode: PanelMode; width: 
       text: `${plan.reused} of ${plan.shape.totalAttempts} carried in from cache · ${Math.max(0, plan.shape.totalAttempts - plan.reused)} to run`,
     });
   }
-  return renderPanel({ title: `PLAN`, rows, width: panel.width, mode: panel.mode });
+  return renderPanel({
+    title: `PLAN`,
+    meta: undefined,
+    footerCommand: undefined,
+    rows,
+    width: panel.width,
+    mode: panel.mode,
+    capWidth: true,
+  });
 }
 
 /** 失败/errored 的最小事实面:TTY live 面板 FAILURES 分节、非 TTY 追加流与结束 FAILURES 面板
@@ -478,9 +480,9 @@ interface FailureFact {
   readonly who: string;
   readonly verdict: "failed" | "errored";
   readonly reason: string;
-  readonly fact?: PrimaryFactSummary;
-  readonly phase?: LifecyclePhase;
-  readonly code?: string;
+  readonly fact: PrimaryFactSummary | undefined;
+  readonly phase: LifecyclePhase | undefined;
+  readonly code: string | undefined;
 }
 
 /** exp 失败/errored 单行事实行与 FAILURES 面板组行的行首符号:`failed`/`errored` 两种 verdict
@@ -533,7 +535,12 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
   // exposes machine vocabulary in the default profile.
   if (code === "judge-precheck-failed" || event.data?.preAttempt === true) return [];
   const count = state.diagnostics.find((d) => d.key === event.key)?.count ?? 1;
-  const sym = event.severity === "error" ? "✗" : event.severity === "warning" ? "!" : "i";
+  function diagnosticSymbol(): string {
+    if (event.severity === "error") return "✗";
+    if (event.severity === "warning") return "!";
+    return "i";
+  }
+  const sym = diagnosticSymbol();
   const assistance = readErrorAssistanceData(event.data);
   if (assistance !== undefined) {
     if (count > 1) return [];
@@ -581,38 +588,33 @@ function buildSummaryLines(
   // required reporter(显式 --junit)写失败必须让这行判红——它不是
   // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但必须
   // 避免人看到一句会被误读成"全绿"的 PASSED、进程却以非零退出。
-  const verdictWord =
-    completion.status === "interrupted"
-      ? `INTERRUPTED`
-      : summary.errored > 0
-        ? `ERRORED`
-        : completion.status === "incomplete"
-          ? `INCOMPLETE`
-          : completion.reporterErrors.some((e) => e.required)
-            ? `FAILED`
-            : hasScore && !hasPass
-              ? summary.failed > 0
-                ? `FAILED`
-                : `SCORED`
-              : hasScore && hasPass
-                ? summary.failed > 0
-                  ? `FAILED`
-                  : `COMPLETED`
-                : summary.failed > 0
-                  ? `FAILED`
-                  : `PASSED`;
+  function verdictWord(): string {
+    if (completion.status === "interrupted") return `INTERRUPTED`;
+    if (summary.errored > 0) return `ERRORED`;
+    if (completion.status === "incomplete") return `INCOMPLETE`;
+    if (completion.reporterErrors.some((e) => e.required)) return `FAILED`;
+    if (summary.failed > 0) return `FAILED`;
+    if (hasScore && !hasPass) return `SCORED`;
+    if (hasScore && hasPass) return `COMPLETED`;
+    return `PASSED`;
+  }
+  function summaryReading(): string {
+    if (hasScore && !hasPass) {
+      return `${scored} scored · ${summary.failed} failed · ${summary.skipped} skipped · ${summary.errored} errored${completion.unstarted > 0 ? ` · ${completion.unstarted} not started` : ""}  (${state.reused} reused)`;
+    }
+    if (completion.unstarted > 0) {
+      return `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored · ${completion.unstarted} unstarted  (${state.reused} reused)`;
+    }
+    if (fullReuse) {
+      return `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (all ${state.reused} reused)`;
+    }
+    return `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (${state.reused} reused)`;
+  }
 
   const summaryRows: PanelRow[] = [
     {
       kind: "line",
-      text:
-        hasScore && !hasPass
-          ? `${scored} scored · ${summary.failed} failed · ${summary.skipped} skipped · ${summary.errored} errored${completion.unstarted > 0 ? ` · ${completion.unstarted} not started` : ""}  (${state.reused} reused)`
-          : completion.unstarted > 0
-            ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored · ${completion.unstarted} unstarted  (${state.reused} reused)`
-            : fullReuse
-              ? `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (all ${state.reused} reused)`
-              : `${summary.passed} passed · ${summary.failed} failed · ${summary.errored} errored  (${state.reused} reused)`,
+      text: summaryReading(),
     },
     { kind: "line", text: formatSummaryCostLine(state) },
     {
@@ -622,8 +624,10 @@ function buildSummaryLines(
   ];
   const blocks: string[][] = [
     renderPanel({
-      title: verdictWord,
+      title: verdictWord(),
       meta: formatElapsed(summary.durationMs),
+      footerCommand: undefined,
+      capWidth: true,
       rows: summaryRows,
       width: panel.width,
       mode: panel.mode,
@@ -635,6 +639,8 @@ function buildSummaryLines(
       renderPanel({
         title: `RESULTS`,
         meta: `${new Set(resultItems.map((item) => item.experimentId)).size} configs`,
+        footerCommand: undefined,
+        capWidth: true,
         rows: buildResultsPanelRows(resultItems),
         width: panel.width,
         mode: panel.mode,
@@ -648,6 +654,9 @@ function buildSummaryLines(
     blocks.push(
       renderPanel({
         title: `Assertions ${result.locator ?? result.id}`,
+        meta: undefined,
+        footerCommand: undefined,
+        capWidth: true,
         rows: lines.map((text) => ({ kind: "line" as const, text })),
         width: panel.width,
         mode: panel.mode,
@@ -661,6 +670,8 @@ function buildSummaryLines(
       renderPanel({
         title: `ERRORS`,
         meta: `${preAttemptErrors.slots} attempts not started`,
+        footerCommand: undefined,
+        capWidth: true,
         rows: preAttemptErrors.rows,
         width: panel.width,
         mode: panel.mode,
@@ -673,7 +684,17 @@ function buildSummaryLines(
   // 整套结果集(含携入)都要出现在这里,不只是本次派发的那部分(见 cli.md「计数口径…」)。
   if (state.failures.length > 0) {
     const { rows: failureRows, meta } = buildFailuresPanelRows(state.failures, panel);
-    blocks.push(renderPanel({ title: `FAILURES`, meta, rows: failureRows, width: panel.width, mode: panel.mode }));
+    blocks.push(
+      renderPanel({
+        title: `FAILURES`,
+        meta,
+        footerCommand: undefined,
+        rows: failureRows,
+        width: panel.width,
+        mode: panel.mode,
+        capWidth: true,
+      }),
+    );
   }
 
   // 留存授予块(--keep-sandbox,见 docs/feature/sandbox/cli.md「run 收尾输出」):
@@ -696,6 +717,8 @@ function buildSummaryLines(
       renderPanel({
         title: `KEPT SANDBOXES`,
         meta: `${state.kept.length} kept`,
+        footerCommand: undefined,
+        capWidth: true,
         rows: keptRows,
         width: panel.width,
         mode: panel.mode,
@@ -721,12 +744,32 @@ function buildSummaryLines(
     ),
   );
   if (warningsRows) {
-    blocks.push(renderPanel({ title: `WARNINGS`, rows: warningsRows, width: panel.width, mode: panel.mode }));
+    blocks.push(
+      renderPanel({
+        title: `WARNINGS`,
+        meta: undefined,
+        footerCommand: undefined,
+        rows: warningsRows,
+        width: panel.width,
+        mode: panel.mode,
+        capWidth: true,
+      }),
+    );
   }
 
   const recoveryRows = buildRecoveryPanelRows(state.diagnostics);
   if (recoveryRows) {
-    blocks.push(renderPanel({ title: `RECOVERY`, rows: recoveryRows, width: panel.width, mode: panel.mode }));
+    blocks.push(
+      renderPanel({
+        title: `RECOVERY`,
+        meta: undefined,
+        footerCommand: undefined,
+        rows: recoveryRows,
+        width: panel.width,
+        mode: panel.mode,
+        capWidth: true,
+      }),
+    );
   }
 
   return blocks.flatMap((block, i) => (i === 0 ? block : ["", ...block]));
@@ -800,7 +843,7 @@ function groupFailuresByShape(failures: readonly FailureNotice[]): FailureShapeG
 function failureShapeOf(failure: FailureNotice): { key: string; shapeText: string } {
   if (failure.fact) {
     const { received: _received, ...fact } = failure.fact;
-    const shapeText = compactAssertionSummary({ ...fact, additionalFailures: 0 });
+    const shapeText = compactAssertionSummary({ ...fact, additionalFailures: 0, received: undefined });
     return { key: `fact\u0000${failure.fact.title}\u0000${failure.fact.matcher ?? ""}`, shapeText };
   }
   return { key: `errored\u0000${failure.locator}`, shapeText: "error" };
@@ -844,7 +887,7 @@ function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): Panel
       count: number;
       message: string;
       severity: "warning" | "error";
-      assistance?: ReturnType<typeof readErrorAssistanceData>;
+      assistance: ReturnType<typeof readErrorAssistanceData> | undefined;
     }
   >();
   for (const d of diagnostics) {
@@ -934,7 +977,15 @@ function buildReceiptLines(
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No Runs were created for this invocation." });
   }
-  return renderPanel({ title: `NEXT`, rows, width: panel.width, mode: panel.mode });
+  return renderPanel({
+    title: `NEXT`,
+    meta: undefined,
+    footerCommand: undefined,
+    capWidth: true,
+    rows,
+    width: panel.width,
+    mode: panel.mode,
+  });
 }
 
 function boundedHumanError(message: string): string {
@@ -1180,7 +1231,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       lockWaitRows.length > 0 ||
       precheck
     ) {
-      rows.push({ kind: "divider", title: `ACTIVE` });
+      rows.push({ kind: "divider", title: `ACTIVE`, meta: undefined });
       // ACTIVE 横隔自己也占一行,从分给 ACTIVE 小节的预算里再扣一行,剩下的才是内容行数。
       const rowBudget = Math.max(0, activeSectionBudget - 1);
       const precheckCount = precheck ? 1 : 0;
@@ -1242,7 +1293,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     return renderPanel({
       title: command,
       meta: formatElapsed(state.elapsedMs),
-      ...(footerCommand === undefined ? {} : { footerCommand: footerCommand }),
+      footerCommand,
       rows,
       width: capability.width,
       mode: capability.mode,
@@ -1360,15 +1411,14 @@ function formatActiveRow(
   const whoCol = padTrunc(active.who, whoWidth);
   const prefix = `${sym}${evalCol}  ${whoCol}  ${elapsed}  `;
   const budget = Math.max(0, columns - prefix.length);
-  const detail =
-    "reason" in active
-      ? active.reason === "provider-capacity"
-        ? "waiting for provider capacity"
-        : active.reason
-      : active.detail
-        ? `${phaseLabel(active.phase)}: ${active.detail}`
-        : phaseLabel(active.phase);
-  return prefix + detail.slice(0, budget);
+  function activeDetail(): string {
+    if ("reason" in active) {
+      return active.reason === "provider-capacity" ? "waiting for provider capacity" : active.reason;
+    }
+    if (active.detail) return `${phaseLabel(active.phase)}: ${active.detail}`;
+    return phaseLabel(active.phase);
+  }
+  return prefix + activeDetail().slice(0, budget);
 }
 
 /** 实验级钩子的运行级行:与 attempt 行同一套定宽结果,label 跨过 evalId + 两格间隔 + who
@@ -1536,10 +1586,10 @@ export interface HumanDryPlanInput {
   attempts: number;
   /** 携带预测的复用 attempt 数;省略或 `0` 时不追加复用摘要行(docs 契约首行示例展示的是
    *  全新派发场景,没有第二行)。 */
-  reused?: number;
+  reused: number | undefined;
   rows: readonly HumanDryPlanRow[];
   /** 兼容旧调用方的命令前缀；accept 行现在固定指向每条历史结果的 locator。 */
-  command?: string;
+  command: string | undefined;
 }
 
 /** 契约首行(docs/feature/experiments/cli/README.md 开头的 `--dry` 示例):
@@ -1577,9 +1627,9 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
 }
 
 export interface HumanCommandPlanOptions {
-  readonly isTTY?: boolean;
-  readonly noColor?: string;
-  readonly width?: number;
+  readonly isTTY: boolean | undefined;
+  readonly noColor: string | undefined;
+  readonly width: number | undefined;
 }
 
 function commandPlanOwner(step: CommandPlanStep): string | undefined {
@@ -1587,23 +1637,40 @@ function commandPlanOwner(step: CommandPlanStep): string | undefined {
   return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
+/** Render argv as a copyable shell command; preserve argument boundaries. */
+
 function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
-  const action = step.action;
+  const action = "action" in step ? step.action : undefined;
   if (action === undefined) return [];
 
-  const order = step.executionOrder;
-  const frequency = step.changeFrequency;
-  const cache = step.cache;
-  const dependencies = step.dependencies ?? [];
+  const order = "executionOrder" in step ? step.executionOrder : undefined;
+  const frequency = "changeFrequency" in step ? step.changeFrequency : undefined;
+  const cache = "cache" in step ? step.cache : undefined;
+  const dependencies = "dependencies" in step ? step.dependencies : [];
+  const scriptSource = "scriptSource" in step ? step.scriptSource : undefined;
   const family = "family" in action && typeof action.family === "string" ? action.family : undefined;
+  function dependencyReason(dependency: (typeof dependencies)[number]): string {
+    switch (dependency.source) {
+      case "explicit":
+        return "explicit";
+      case "same-layer":
+        return "same-layer";
+      case "capability":
+        return `capability${dependency.capability === undefined ? "" : `:${dependency.capability}`}`;
+    }
+  }
+  function cacheSupport(capability: CommandPlanCache["capability"]): string {
+    return capability;
+  }
+  function cacheBarrier(barrier: CommandPlanCache["state"]["barrier"]): string {
+    return barrier;
+  }
 
   return [
     `action: ${action.id}`,
-    ...(step.scriptSource === undefined
+    ...(scriptSource === undefined
       ? []
-      : [
-          `script file: ${JSON.stringify(step.scriptSource.path)} · ${step.scriptSource.digest} · ${step.scriptSource.bytes} bytes`,
-        ]),
+      : [`script file: ${JSON.stringify(scriptSource.path)} · ${scriptSource.digest} · ${scriptSource.bytes} bytes`]),
     ...(family === undefined ? [] : [`family: ${family}`]),
     ...(order === undefined
       ? []
@@ -1614,25 +1681,22 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
           `change frequency: ${frequency.value} · ${frequency.source}` +
             `${frequency.preset === undefined ? "" : ` · ${frequency.preset}`}`,
         ]),
-    ...(step.schedulingReason === undefined ? [] : [`scheduled by: ${step.schedulingReason}`]),
+    ...(!("schedulingReason" in step) ? [] : [`scheduled by: ${step.schedulingReason}`]),
     ...(dependencies.length === 0
       ? []
       : [
           `depends on: ${dependencies
-            .map(
-              (dependency) =>
-                `${dependency.id} (${dependency.source}${dependency.capability === undefined ? "" : `:${dependency.capability}`})`,
-            )
+            .map((dependency) => `${dependency.id} (${dependencyReason(dependency)})`)
             .join(", ")}`,
         ]),
-    ...(step.occurrence === undefined ? [] : [`occurrence: ${step.occurrence.kind}`]),
+    ...(!("occurrence" in step) ? [] : [`occurrence: ${step.occurrence.kind}`]),
     ...(cache === undefined
       ? []
       : [
-          `cache: ${cache.lookup} · ${cache.capability} · runtime ${cache.runtime.status} · final key ${cache.runtime.finalKey}`,
+          `cache: ${cache.lookup} · ${cacheSupport(cache.capability)} · runtime ${cache.runtime.status} · final key ${cache.runtime.finalKey}`,
           ...(cache.prefixIdentity === undefined ? [] : [`prefix identity: ${cache.prefixIdentity}`]),
           `cache state: declared ${cache.state.declared} · cumulative ${cache.state.cumulative} · ` +
-            `provider coverage ${cache.state.providerCoverage} · barrier ${cache.state.barrier}` +
+            `provider coverage ${cache.state.providerCoverage} · barrier ${cacheBarrier(cache.state.barrier)}` +
             `${cache.state.barrierActionId === undefined ? "" : ` (${cache.state.barrierActionId})`}`,
           ...(cache.capabilityReason === undefined ? [] : [`cache unsupported reason: ${cache.capabilityReason}`]),
         ]),
@@ -1658,19 +1722,27 @@ function visibleCommandPlanTerminalText(text: string): string {
 }
 
 function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
-  const action = step.action;
+  const action = "action" in step ? step.action : undefined;
   if (action === undefined || !("steps" in action)) return [];
-
-  return action.steps.flatMap((actionStep, index): readonly string[] => {
+  const steps = action.steps;
+  return steps.flatMap((actionStep, index): readonly string[] => {
     const prefix = `step #${index}`;
     switch (actionStep.kind) {
-      case "exec":
+      case "exec": {
+        function executionLines(
+          actionStep: Extract<(typeof steps)[number], { readonly kind: "exec" }>,
+          shell: boolean,
+        ): readonly string[] {
+          if (shell) {
+            if (actionStep.args[1]!.includes("\n")) {
+              return [`${prefix}: shell script`, ...actionStep.args[1]!.split("\n").map((line) => `  │ ${line}`)];
+            }
+            return [`${prefix}: shell ${JSON.stringify(actionStep.args[1])}`];
+          }
+          return [`${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`];
+        }
         return [
-          ...("family" in action && action.family === "niceeval.sandbox.shell"
-            ? actionStep.args[1]!.includes("\n")
-              ? [`${prefix}: shell script`, ...actionStep.args[1]!.split("\n").map((line) => `  │ ${line}`)]
-              : [`${prefix}: shell ${JSON.stringify(actionStep.args[1])}`]
-            : [`${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`]),
+          ...executionLines(actionStep, "family" in action && action.family === "niceeval.sandbox.shell"),
           ...(actionStep.cwd === undefined ? [] : [`${prefix} cwd: ${JSON.stringify(actionStep.cwd)}`]),
           ...(actionStep.user === undefined ? [] : [`${prefix} user: ${JSON.stringify(actionStep.user)}`]),
           ...(actionStep.timeoutMs === undefined ? [] : [`${prefix} timeout: ${actionStep.timeoutMs}ms`]),
@@ -1681,6 +1753,7 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
             ? []
             : [`${prefix} stdin: ${actionStep.stdinDigest} · ${actionStep.stdinBytes ?? 0} bytes`]),
         ];
+      }
       case "putText":
       case "putBytes":
         return [
@@ -1704,38 +1777,38 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
 
 function commandPlanExact(step: CommandPlanStep): readonly string[] {
   const actionSteps = commandPlanActionStepLines(step);
-  const command = step.command;
+  const command = "command" in step ? step.command : undefined;
   if (command === undefined) {
     return actionSteps.length === 0 ? ["command: exact command unavailable"] : actionSteps;
   }
-  const operation =
-    command.kind === "argv"
-      ? [`command: argv ${JSON.stringify([command.executable, ...command.args])}`]
-      : command.script.includes("\n")
-        ? [
-            `command: shell · ${command.script.split("\n").length} lines`,
-            ...command.script.split("\n").map((line) => {
-              return line === "" ? "  │" : `  │ ${line}`;
-            }),
-          ]
-        : [`command: shell ${JSON.stringify(command.script)}`];
-  const options = [
-    command.cwd === undefined ? undefined : `cwd: ${JSON.stringify(command.cwd)}`,
-    command.user === undefined ? undefined : `user: ${JSON.stringify(command.user)}`,
-    command.timeoutMs === undefined ? undefined : `timeout: ${command.timeoutMs}ms`,
-    command.envKeys === undefined ? undefined : `environment keys: ${JSON.stringify(command.envKeys)}`,
-  ].filter((value): value is string => value !== undefined);
+  function operationLines(command: SandboxCommandPlanCommand): readonly string[] {
+    if (command.kind === "argv") {
+      return [`command: argv ${JSON.stringify([command.executable, ...command.args])}`];
+    }
+    if (command.script.includes("\n")) {
+      return [
+        `command: shell · ${command.script.split("\n").length} lines`,
+        ...command.script.split("\n").map((line) => (line === "" ? "  │" : `  │ ${line}`)),
+      ];
+    }
+    return [`command: shell ${JSON.stringify(command.script)}`];
+  }
+  const options: string[] = [];
+  if (command.cwd !== undefined) options.push(`cwd: ${JSON.stringify(command.cwd)}`);
+  if (command.user !== undefined) options.push(`user: ${JSON.stringify(command.user)}`);
+  if (command.timeoutMs !== undefined) options.push(`timeout: ${command.timeoutMs}ms`);
+  if (command.envKeys !== undefined) options.push(`environment keys: ${JSON.stringify(command.envKeys)}`);
   return [
     ...actionSteps,
-    ...operation,
+    ...operationLines(command),
     ...options,
-    ...(step.redactions === undefined ? [] : [`redacted: ${step.redactions.join(", ")}`]),
+    ...("redactions" in step && step.redactions !== undefined ? [`redacted: ${step.redactions.join(", ")}`] : []),
   ];
 }
 
 function commandPlanTemplate(step: CommandPlanStep): readonly string[] {
+  if (!("template" in step)) return [];
   const template = step.template;
-  if (template === undefined) return [];
   const owner = `${template.owner.kind}:${template.owner.id}`;
   const prefix = [`template: ${template.provider}:${template.kind}`, `template owner: ${owner}`];
   if (template.locator._tag === "Opaque") {
@@ -1762,25 +1835,27 @@ function commandPlanStepMeta(step: CommandPlanStep): string {
 
 function commandPlanStepLines(step: CommandPlanStep, position: string): readonly string[] {
   const owner = commandPlanOwner(step);
-  const detail =
-    step.truth === "exact"
-      ? commandPlanExact(step)
-      : step.truth === "conditional"
-        ? [`branches: ${step.children?.length ?? 0} command blocks follow`]
-        : step.truth === "opaque"
-          ? [`reason: ${step.reason?.summary ?? "runtime callback"}`]
-          : [
-              step.reason === undefined
-                ? "reason: this lifecycle step has no command"
-                : `reason: ${step.reason.summary}`,
-            ];
+  function stepDetail(): readonly string[] {
+    switch (step.truth) {
+      case "exact":
+        return commandPlanExact(step);
+      case "conditional":
+        return [`branches: ${step.children.length} command blocks follow`];
+      case "opaque":
+        return [`reason: ${step.reason.summary}`];
+      case "known-no-command":
+        return [
+          step.reason === undefined ? "reason: this lifecycle step has no command" : `reason: ${step.reason.summary}`,
+        ];
+    }
+  }
   return [
     `position: ${position}`,
     ...(owner === undefined ? [] : [owner]),
     ...(step.label === undefined ? [] : [`label: ${step.label}`]),
     ...commandPlanActionLines(step),
     ...commandPlanTemplate(step),
-    ...detail,
+    ...stepDetail(),
     ...(step.condition === undefined ? [] : [`if: ${step.condition.summary}`]),
   ];
 }
@@ -1829,7 +1904,9 @@ function renderCommandPlanPanel(
   }
   return renderPanel({
     title: visibleCommandPlanTerminalText(title),
-    ...(meta === undefined ? {} : { meta: visibleCommandPlanTerminalText(meta) }),
+    meta: meta === undefined ? undefined : visibleCommandPlanTerminalText(meta),
+    footerCommand: undefined,
+    capWidth: true,
     rows,
     width: capability.width,
     mode: capability.mode,
@@ -1846,9 +1923,9 @@ function renderCommandPlanSteps(
     target.push(
       renderCommandPlanPanel(step.phase, commandPlanStepMeta(step), commandPlanStepLines(step, position), capability),
     );
-    if ((step.children?.length ?? 0) > 0) {
+    if (step.truth === "conditional" && step.children.length > 0) {
       const childPosition = `${position} > ${step.phase}${step.label === undefined ? "" : ` (${step.label})`}`;
-      renderCommandPlanSteps(target, step.children!, childPosition, capability);
+      renderCommandPlanSteps(target, step.children, childPosition, capability);
     }
   }
 }
@@ -1870,7 +1947,7 @@ function commandPlanLaneLabel(lane: CommandPlanLane): string {
 export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandPlanOptions): string {
   const capability = panelCapability({
     isTTY: options.isTTY,
-    ...(options.noColor === undefined ? {} : { noColor: options.noColor }),
+    noColor: options.noColor,
     width: options.width,
   });
   const panels: string[][] = [];
@@ -2024,10 +2101,11 @@ function dryPlanReasonSuffix(
   carried: HumanDryPlanRow["carried"] = [],
   totalAttempts = 1,
 ): string {
-  const carriedSuffix = carried.length > 0 ? formatCarriedSuffix(carried, totalAttempts) : undefined;
-  if (dispatch === undefined || dispatch.length === 0) return carriedSuffix ?? "carried";
+  if (dispatch === undefined || dispatch.length === 0) {
+    return carried.length > 0 ? formatCarriedSuffix(carried, totalAttempts) : "carried";
+  }
   return [
-    ...(carriedSuffix === undefined ? [] : [carriedSuffix]),
+    ...(carried.length > 0 ? [formatCarriedSuffix(carried, totalAttempts)] : []),
     ...dispatch.map((group) => formatDispatchGroup(group, prior, totalAttempts)),
   ].join(" · ");
 }

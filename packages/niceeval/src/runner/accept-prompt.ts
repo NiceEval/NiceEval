@@ -10,8 +10,8 @@ import { createInterface } from "node:readline/promises";
 /** 一条可被授权的差异,连同它在本次计划里的影响面。 */
 export interface AcceptChoice {
   selector: string;
-  from?: string;
-  to?: string;
+  from: string | undefined;
+  to: string | undefined;
   /** 本次计划里被这条差异拦下的 eval 数。 */
   evals: number;
 }

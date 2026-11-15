@@ -70,7 +70,13 @@ describe("Model usage algorithm and codec boundaries", () => {
   it("strictly decodes closed usage results and rejects inconsistent previews or invented total completeness", () => {
     const source = ledger([call({ modelSlot: "a" })]);
     const result = {
-      ...projectAttemptUsage({ models }),
+      ...projectAttemptUsage({
+        models,
+        attemptCost: undefined,
+        adapterUsage: undefined,
+        judgeUsage: undefined,
+        agentTurns: undefined,
+      }),
       ...projectAdapterModelUsage(source, models),
       totalCosts: {
         state: "partial",

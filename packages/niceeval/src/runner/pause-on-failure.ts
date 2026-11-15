@@ -9,7 +9,10 @@ const terminal = Semaphore.makeUnsafe(1);
 export const pauseOnFailure = Effect.fn("pauseOnFailure")(function* (
   nativeCommand: string | undefined,
   invocationSignal: AbortSignal | undefined,
-  options: { readonly nonInteractive?: boolean; readonly sandboxId?: string } = {},
+  options: { readonly nonInteractive: boolean | undefined; readonly sandboxId: string | undefined } = {
+    nonInteractive: undefined,
+    sandboxId: undefined,
+  },
 ) {
   if (process.stdin.isTTY !== true || options.nonInteractive === true) {
     try {

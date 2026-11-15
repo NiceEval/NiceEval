@@ -8,6 +8,7 @@ import {
   type Verdict,
 } from "../results/experiment-table/index.tsx";
 import type { ViewCatalogSelection } from "../shell/manifest.ts";
+import { closeAdapterIdentity } from "../data/adapter-identity.ts";
 
 interface OverviewCell {
   readonly experimentId: string;
@@ -72,15 +73,30 @@ export interface ClosedOverview {
   readonly catalog: ViewCatalogSelection;
 }
 
-export interface ResultsPageModel {
+interface ResultsPageBase {
   readonly overview: ClosedOverview;
   readonly selectedExperiments: readonly string[];
   readonly selectionTitle: string;
-  readonly current?: InspectionSuccessDocumentFor<"project.get">["project"];
-  readonly currentHistory?: InspectionSuccessDocumentFor<"project.get">["project"]["history"];
-  readonly targetMode: "current" | "history" | "unavailable";
-  readonly costSummary?: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["costSummary"];
 }
+
+export type ResultsPageModel = ResultsPageBase &
+  (
+    | {
+        readonly targetMode: "current";
+        readonly current: InspectionSuccessDocumentFor<"project.get">["project"];
+        readonly currentHistory: InspectionSuccessDocumentFor<"project.get">["project"]["history"];
+      }
+    | {
+        readonly targetMode: "history";
+        readonly costSummary:
+          | { readonly state: "not-requested" }
+          | {
+              readonly state: "available";
+              readonly value: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["costSummary"];
+            };
+      }
+    | { readonly targetMode: "unavailable" }
+  );
 
 type CurrentProject = InspectionSuccessDocumentFor<"project.get">["project"];
 
@@ -89,70 +105,58 @@ export function currentExperimentRows(project: CurrentProject) {
   return project.experiments.map((experiment) => {
     const slots = project.plannedAttempts.filter((slot) => slot.experimentId === experiment.experimentId);
     const covered = slots.filter((slot) => slot.state === "reuse").length;
-    return Object.freeze({ experiment, slots, covered, gaps: slots.length - covered });
+    return { experiment, slots, covered, gaps: slots.length - covered };
   });
 }
 
 export function closeOverview(document: InspectionSuccessDocumentFor<"overview.get">): ClosedOverview {
-  const cells = document.overview.cells.map((cell) =>
-    Object.freeze({
-      experimentId: cell.experimentId,
-      evalId: cell.evalId,
-      evaluationKind: cell.evaluationKind,
-      passRate: projectMetric(cell.verdict.passRate),
-      score: projectMetric(cell.score),
-      costUSD: projectMetric(cell.costUSD),
-      durationMs: projectMetric(cell.durationMs),
-      tokens: projectMetric(cell.tokens),
-      tally: Object.freeze({ ...cell.verdict.tally }),
-      members: Object.freeze(
-        cell.members.map((member) =>
-          Object.freeze({
-            runId: member.runId,
-            attemptOrdinal: member.attemptOrdinal,
-            publication:
-              member.publication.state === "published"
-                ? Object.freeze({
-                    state: "published" as const,
-                    locator: member.publication.attemptLocator,
-                    score: projectMetric(member.score),
-                    costUSD: projectMetric(member.costUSD),
-                    durationMs: projectMetric(member.durationMs),
-                    tokens: projectMetric(member.tokens),
-                  })
-                : member.publication,
-          }),
-        ),
-      ),
-    }),
-  );
-  const experiments = document.overview.experiments.map((experiment) =>
-    Object.freeze({
-      experimentId: experiment.experimentId,
-      evaluationKind: experiment.evaluationKind,
-      passRate: projectMetric(experiment.verdict.passRate),
-      score: projectMetric(experiment.score),
-      costUSD: projectMetric(experiment.costUSD),
-      durationMs: projectMetric(experiment.durationMs),
-      tokens: projectMetric(experiment.tokens),
-      adapter: experiment.adapter,
-      plugins: experiment.plugins,
-      model: experiment.model,
-      groups: Object.freeze(
-        experiment.groups.map((group) =>
-          Object.freeze({
-            groupPath: Object.freeze([...group.groupPath]),
-            evaluationKind: group.evaluationKind,
-            passRate: projectMetric(group.verdict.passRate),
-            score: projectMetric(group.score),
-            costUSD: projectMetric(group.costUSD),
-            durationMs: projectMetric(group.durationMs),
-            tokens: projectMetric(group.tokens),
-          }),
-        ),
-      ),
-    }),
-  );
+  const cells = document.overview.cells.map((cell) => ({
+    experimentId: cell.experimentId,
+    evalId: cell.evalId,
+    evaluationKind: cell.evaluationKind,
+    passRate: projectMetric(cell.verdict.passRate),
+    score: projectMetric(cell.score),
+    costUSD: projectMetric(cell.costUSD),
+    durationMs: projectMetric(cell.durationMs),
+    tokens: projectMetric(cell.tokens),
+    tally: cell.verdict.tally,
+    members: cell.members.map((member) => ({
+      runId: member.runId,
+      attemptOrdinal: member.attemptOrdinal,
+      publication:
+        member.publication.state === "published"
+          ? {
+              state: "published" as const,
+              locator: member.publication.attemptLocator,
+              score: projectMetric(member.score),
+              costUSD: projectMetric(member.costUSD),
+              durationMs: projectMetric(member.durationMs),
+              tokens: projectMetric(member.tokens),
+            }
+          : member.publication,
+    })),
+  }));
+  const experiments = document.overview.experiments.map((experiment) => ({
+    experimentId: experiment.experimentId,
+    evaluationKind: experiment.evaluationKind,
+    passRate: projectMetric(experiment.verdict.passRate),
+    score: projectMetric(experiment.score),
+    costUSD: projectMetric(experiment.costUSD),
+    durationMs: projectMetric(experiment.durationMs),
+    tokens: projectMetric(experiment.tokens),
+    adapter: projectAdapter(experiment.adapter),
+    plugins: experiment.plugins,
+    model: experiment.model,
+    groups: experiment.groups.map((group) => ({
+      groupPath: group.groupPath,
+      evaluationKind: group.evaluationKind,
+      passRate: projectMetric(group.verdict.passRate),
+      score: projectMetric(group.score),
+      costUSD: projectMetric(group.costUSD),
+      durationMs: projectMetric(group.durationMs),
+      tokens: projectMetric(group.tokens),
+    })),
+  }));
   const experimentIds = experiments.map(({ experimentId }) => experimentId);
   const runExperiments = uniqueBy(
     cells.flatMap((cell) =>
@@ -173,44 +177,44 @@ export function closeOverview(document: InspectionSuccessDocumentFor<"overview.g
     ),
     ({ locator }) => locator,
   );
-  return Object.freeze({
-    cells: Object.freeze(cells),
-    experiments: Object.freeze(experiments),
-    catalog: Object.freeze({
-      experiments: Object.freeze(experimentIds),
-      runExperiments: Object.freeze(runExperiments),
-      attemptExperiments: Object.freeze(attemptExperiments),
-    }),
-  });
+  return {
+    cells,
+    experiments,
+    catalog: {
+      experiments: experimentIds,
+      runExperiments,
+      attemptExperiments,
+    },
+  };
 }
 
 type OverviewMetric = InspectionSuccessDocumentFor<"overview.get">["overview"]["cells"][number]["score"];
 
+function projectAdapter(
+  value: InspectionSuccessDocumentFor<"overview.get">["overview"]["experiments"][number]["adapter"],
+): AdapterValue {
+  if (value.state === "mixed") return value;
+  const identity = closeAdapterIdentity(value.value);
+  return identity === undefined ? { state: "none" } : { state: "available", value: identity };
+}
+
 function projectMetric(metric: OverviewMetric): MetricValue<number> {
-  return Object.freeze({
-    value: metric.value,
+  return {
+    value: metric.value ?? undefined,
     state: metric.state,
     samples: metric.samples,
     total: metric.total,
     basis: metric.basis === "planned-attempt" ? "slot" : metric.basis,
-    issues: Object.freeze(metric.issues),
-    refs: Object.freeze(
-      metric.refs.map((ref) =>
-        Object.freeze({
-          identity: Object.freeze({ kind: ref.identity.kind, locator: ref.identity.locator }),
-        }),
-      ),
-    ),
-    ...(metric.unit === undefined ? {} : { unit: metric.unit }),
-    ...("source" in metric &&
-    (metric.source === "reported" ||
-      metric.source === "estimated" ||
-      metric.source === "mixed" ||
-      metric.source === null)
-      ? { source: metric.source }
-      : {}),
-    ...(metric.bounds === undefined ? {} : { bounds: Object.freeze({ ...metric.bounds }) }),
-  });
+    issues: metric.issues,
+    refs: metric.refs.map((ref) => ({
+      identity: { kind: ref.identity.kind, locator: ref.identity.locator },
+    })),
+    unit: metric.unit,
+    source:
+      "source" in metric && (metric.source === "reported" || metric.source === "estimated" || metric.source === "mixed")
+        ? metric.source
+        : undefined,
+  };
 }
 
 export function overviewData(
@@ -229,23 +233,23 @@ export function overviewData(
     const evaluationKind = experiment.evaluationKind;
     const missingEvalIds = allEvalIds.filter((evalId) => !experimentCells.some((cell) => cell.evalId === evalId));
     return [
-      Object.freeze({
+      {
         experimentId,
         adapter: experiment.adapter,
         plugins: experiment.plugins,
         model: experiment.model,
-        flags: null,
+        flags: undefined,
         evaluationKind,
         score: experiment.score,
         costUSD: experiment.costUSD,
         durationMs: experiment.durationMs,
         tokens: experiment.tokens,
         endToEndPassRate: experiment.passRate,
-        missingEvalIds: Object.freeze(missingEvalIds),
+        missingEvalIds,
         groupMetrics: groupMetrics(experiment.groups),
-        evalRows: Object.freeze(evalRows),
+        evalRows,
         href: `#/experiment/${encodeURIComponent(experimentId)}`,
-      } satisfies ExperimentListItem),
+      } satisfies ExperimentListItem,
     ];
   });
 }
@@ -253,26 +257,27 @@ export function overviewData(
 function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
   const attempts = cell.members.flatMap((member): readonly AttemptListItem[] => {
     if (member.publication.state !== "published") return [];
-    const verdict = cell.members.length === 1 ? onlyVerdict(cell.tally) : null;
+    const verdict = cell.members.length === 1 ? onlyVerdict(cell.tally) : undefined;
     return [
-      Object.freeze({
+      {
         locator: member.publication.locator,
         experimentId: cell.experimentId,
         evalId: cell.evalId,
         attemptOrdinal: member.attemptOrdinal,
         verdict,
-        failureSummary: null,
+        failureSummary: undefined,
         evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
         score: member.publication.score,
         costUSD: member.publication.costUSD,
         durationMs: member.publication.durationMs,
         tokens: member.publication.tokens,
-        startedAt: null,
+        startedAt: undefined,
         href: `#/attempt/${member.publication.locator.startsWith("@") ? member.publication.locator.slice(1) : member.publication.locator}`,
-      }),
+        passRate: undefined,
+      },
     ];
   });
-  return Object.freeze({
+  return {
     evalId: cell.evalId,
     evaluationKind: cell.evaluationKind === "pass" ? "pass" : "points",
     score: cell.score,
@@ -280,8 +285,8 @@ function closeEvalRow(cell: OverviewCell): ExperimentListEvalRow {
     durationMs: cell.durationMs,
     tokens: cell.tokens,
     endToEndPassRate: cell.passRate,
-    attempts: Object.freeze(attempts),
-  });
+    attempts,
+  };
 }
 
 function groupMetrics(groups: readonly OverviewGroup[]): ReadonlyMap<string, ExperimentMetrics> {
@@ -290,19 +295,19 @@ function groupMetrics(groups: readonly OverviewGroup[]): ReadonlyMap<string, Exp
       (group) =>
         [
           group.groupPath.join("/"),
-          Object.freeze({
+          {
             passRate: group.passRate,
             score: group.score,
             costUSD: group.costUSD,
             durationMs: group.durationMs,
             tokens: group.tokens,
-          }),
+          },
         ] as const,
     ),
   );
 }
 
-function onlyVerdict(tally: Readonly<Record<Verdict, number>>): Verdict | null {
+function onlyVerdict(tally: Readonly<Record<Verdict, number>>): Verdict | undefined {
   if (tally.passed === 1 && tally.failed === 0 && tally.errored === 0 && tally.skipped === 0) {
     return "passed";
   }
@@ -315,11 +320,11 @@ function onlyVerdict(tally: Readonly<Record<Verdict, number>>): Verdict | null {
   if (tally.passed === 0 && tally.failed === 0 && tally.errored === 0 && tally.skipped === 1) {
     return "skipped";
   }
-  return null;
+  return undefined;
 }
 
 function uniqueBy<Value>(values: readonly Value[], keyOf: (value: Value) => string): readonly Value[] {
   const output = new Map<string, Value>();
   for (const value of values) output.set(keyOf(value), value);
-  return Object.freeze([...output.values()]);
+  return [...output.values()];
 }

@@ -14,12 +14,34 @@ export function measured(
   if (typeof options?.unavailable !== "string" || options.unavailable.trim().length === 0) {
     throw new TypeError("measured() requires a non-empty unavailable reason.");
   }
-  if (value === null) return Object.freeze({ state: "unavailable", reason: options.unavailable });
-  if (isQuantity(value)) return Object.freeze({ state: "exact", value: value.value, unit: value.unit });
+  if (value === null)
+    return Object.freeze({
+      state: "unavailable",
+      reason: options.unavailable,
+      unit: undefined,
+      provenance: undefined,
+    });
+  if (isQuantity(value))
+    return Object.freeze({
+      state: "exact",
+      value: value.value,
+      unit: value.unit,
+      provenance: undefined,
+    });
   if (typeof value !== "number") throw new TypeError("measured() requires a number or null.");
   return Number.isFinite(value)
-    ? Object.freeze({ state: "exact", value })
-    : Object.freeze({ state: "unavailable", reason: "non-finite-number" });
+    ? Object.freeze({
+        state: "exact",
+        value,
+        unit: undefined,
+        provenance: undefined,
+      })
+    : Object.freeze({
+        state: "unavailable",
+        reason: "non-finite-number",
+        unit: undefined,
+        provenance: undefined,
+      });
 }
 
 /** Chooses linear interpolation or nearest-rank sample quantiles; the method is part of the observation and must not be inferred. */
@@ -56,7 +78,14 @@ export function quantile(
   if (method !== "linear" && method !== "nearest-rank")
     throw new TypeError("quantile() method must be linear or nearest-rank.");
   const statistics = Object.freeze({ sampleCount: samples.length, probability: p, method });
-  if (samples.length === 0) return Object.freeze({ state: "unavailable", reason: "no-samples", statistics });
+  if (samples.length === 0)
+    return Object.freeze({
+      state: "unavailable",
+      reason: "no-samples",
+      statistics,
+      unit: undefined,
+      provenance: undefined,
+    });
   const sampleUnits = new Set<Unit | undefined>();
   const values: number[] = [];
   let invalidSample = false;
@@ -77,7 +106,8 @@ export function quantile(
       state: "unavailable",
       reason: "non-finite-sample",
       statistics,
-      ...(unit === undefined ? {} : { unit }),
+      unit,
+      provenance: undefined,
     });
   const sorted = values.sort((a, b) => a - b);
   const position = (sorted.length - 1) * p;
@@ -91,5 +121,11 @@ export function quantile(
       : Number.isFinite(delta)
         ? lower + delta * fraction
         : lower * (1 - fraction) + upper * fraction;
-  return Object.freeze({ state: "exact", value, statistics, ...(unit === undefined ? {} : { unit }) });
+  return Object.freeze({
+    state: "exact",
+    value,
+    statistics,
+    unit,
+    provenance: undefined,
+  });
 }

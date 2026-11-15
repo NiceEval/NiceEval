@@ -10,23 +10,22 @@ import { showCliCommand, showOperations } from "./contribution.ts";
 
 const locator = "@1000000000000";
 const entryId = "ae_00000000000000000001";
-const base = { current: true, runIds: [], experimentIds: [] } as const;
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md
 test.concurrent("resource JSON selects the documented operations and preserves Attempt line order", () => {
-  expect(showOperations(base)).toEqual([{ kind: "project.get" }]);
-  expect(showOperations({ ...base, current: false })).toEqual([{ kind: "overview.get" }]);
+  expect(showOperations({ kind: "overview", current: true })).toEqual([{ kind: "project.get" }]);
+  expect(showOperations({ kind: "overview", current: false })).toEqual([{ kind: "overview.get" }]);
   const runIds = ["run-a", "run-b"].map((id) => Schema.decodeUnknownSync(RunIdSchema)(id));
   const experimentIds = ["main", "next"].map((id) => Schema.decodeUnknownSync(ExperimentIdSchema)(id));
-  expect(showOperations({ ...base, runIds })).toEqual([
+  expect(showOperations({ kind: "runs", runIds })).toEqual([
     { kind: "run.get", runId: "run-a" },
     { kind: "run.get", runId: "run-b" },
   ]);
-  expect(showOperations({ ...base, experimentIds })).toEqual([
+  expect(showOperations({ kind: "experiments", experimentIds })).toEqual([
     { kind: "experiment.get", experimentId: "main" },
     { kind: "experiment.get", experimentId: "next" },
   ]);
-  expect(showOperations({ ...base, locator })).toEqual([
+  expect(showOperations({ kind: "attempt", locator, slice: "summary" })).toEqual([
     { kind: "attempt.get", locator },
     { kind: "attempt.usage", locator },
   ]);
@@ -34,23 +33,40 @@ test.concurrent("resource JSON selects the documented operations and preserves A
     ["source", "attempt.sources"],
     ["timing", "attempt.timing"],
     ["usage", "attempt.usage"],
-    ["diff", "attempt.diff"],
   ] as const)
-    expect(showOperations({ ...base, locator, slice })).toEqual([{ kind, locator }]);
+    expect(showOperations({ kind: "attempt", locator, slice })).toEqual([{ kind, locator }]);
+  expect(showOperations({ kind: "attempt", locator, slice: "diff", changeId: undefined })).toEqual([
+    { kind: "attempt.diff", locator },
+  ]);
   expect(
-    showOperations({ ...base, locator, slice: "execution", actorId: "actor", eventType: "tool", continuation: "next" }),
+    showOperations({
+      kind: "attempt",
+      locator,
+      slice: "execution",
+      actorId: "actor",
+      eventType: "tool",
+      continuation: "next",
+    }),
   ).toEqual([{ kind: "attempt.trace", locator, actorId: "actor", eventType: "tool", continuation: "next" }]);
 });
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md
 test.concurrent("Assertion JSON defaults to compact and selects exact entries without an extra outline line", () => {
   const second = "ae_00000000000000000002";
-  expect(showOperations({ ...base, locator, slice: "assertions", entryIds: [entryId, second] })).toEqual([
+  expect(
+    showOperations({
+      kind: "attempt",
+      locator,
+      slice: "assertions",
+      entryIds: [entryId, second],
+      projection: "compact",
+    }),
+  ).toEqual([
     { kind: "attempt.assertion.detail", locator, entryId, projection: "compact" },
     { kind: "attempt.assertion.detail", locator, entryId: second, projection: "compact" },
   ]);
   const [operation] = showOperations({
-    ...base,
+    kind: "attempt",
     locator,
     slice: "assertions",
     entryIds: [entryId],
@@ -62,7 +78,9 @@ test.concurrent("Assertion JSON defaults to compact and selects exact entries wi
     true,
   );
   expect(Result.isFailure(decodeInspectionOperation({ ...operation, projection: "tiny" }))).toBe(true);
-  expect(showOperations({ ...base, locator, slice: "assertions", entryIds: [] })).toEqual([]);
+  expect(
+    showOperations({ kind: "attempt", locator, slice: "assertions", entryIds: [], projection: "compact" }),
+  ).toEqual([]);
 });
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md

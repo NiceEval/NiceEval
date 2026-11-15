@@ -41,7 +41,7 @@ import {
   type BeforeCacheEligibility,
   type AttemptBeforeCache,
 } from "./backend.ts";
-import type { DockerSandboxAccess, DockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
+import type { DockerSandboxAccess, NormalizedDockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
 import { DIND_CAPTURE_QUIESCE_COMMAND, dindContainerCommand } from "./dind-supervisor.ts";
 import { sandboxState } from "./action.ts";
 import { ManagedProcessOutput } from "./managed-process.ts";
@@ -168,67 +168,91 @@ function isRootLikeUserSpec(value: string): boolean {
 /** 创建 Docker 沙箱的选项。 */
 export interface DockerSandboxOptions {
   /** attempt 的超时上限(毫秒),单条命令未显式传 `timeout` 时的上限来源;省略 = 没有上限。 */
-  timeout?: number;
+  timeout: number | undefined;
   /** attempt deadline 的截止时刻(epoch ms);单条命令按**剩余量**取上限(见 deadline.ts)。 */
-  deadlineAt?: number;
+  deadlineAt: number | undefined;
   /** 容器实例寿命；与单条命令 timeout 分离。 */
-  lifetimeMs?: number;
+  lifetimeMs: number | undefined;
   /** Node 运行时。 */
-  runtime?: "node20" | "node24";
+  runtime: "node20" | "node24";
   /** 覆盖默认镜像(默认按 runtime 选 `node:*-slim`)。预制模板:烘焙好 agent CLI 的镜像名。 */
-  image?: string;
+  image: string | undefined;
   /** runner 绑定到 `sandbox.create` 的反馈句柄(镜像拉取进度走它);省略退回全局 sink。 */
-  feedback?: import("../types.ts").ScopedFeedback;
+  feedback: import("../types.ts").ScopedFeedback | undefined;
   /** 一次性 provision token:写进容器 label,歧义类失败重试前按它对账(见 errors.ts 的两维分类)。 */
-  provisionToken?: string;
+  provisionToken: string | undefined;
   /**
    * 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 label 事后收回(见
    * docs/feature/sandbox/architecture/README.md「孤儿核对」)。省略时不写这组 label(如直接单测构造
    * DockerSandbox,不经 runtime.ts 的 provider materializer)。
    */
-  runIdentity?: RunIdentity;
+  runIdentity: RunIdentity | undefined;
   /**
    * 覆盖默认 workdir。Compose mainService 附着时用容器 inspect 的 WorkingDir;
    * 省略 = `/home/sandbox/workspace`。
    */
-  workdir?: string;
+  workdir: string | undefined;
   /**
    * 覆盖整个 Sandbox 的默认执行身份;省略时沿用镜像 `USER`(未声明按 Docker 语义是 root)、
    * Compose service `user:` 或其镜像 `USER`。
    */
-  user?: string;
+  user: string | undefined;
   /** raw = 直接请求 privileged；rootless = 只允许受管 rootless daemon。 */
-  privileged?: "disabled" | "raw" | "rootless";
+  privileged: "disabled" | "raw" | "rootless";
   /** Agent在Sandbox内访问Docker的模式；socket模式会显式挂载宿主Unix socket。 */
-  dockerAccess?: Readonly<DockerSandboxAccess>;
+  dockerAccess: Readonly<DockerSandboxAccess> | undefined;
   /** 创建容器时交给 daemon 强制执行的资源边界。 */
-  resources?: Readonly<DockerSandboxResources>;
+  resources: Readonly<DockerSandboxResources>;
   /** PID 1 启动后、任何 setup/prepare/agent 命令之前必须通过的作者声明探针。 */
-  readiness?: Readonly<DockerSandboxReadiness>;
+  readiness: NormalizedDockerSandboxReadiness | undefined;
   /** profile-bound provider fixes every Docker I/O to the attested Unix endpoint. */
-  dockerSocketPath?: string;
+  dockerSocketPath: string | undefined;
   /** Descriptor-pinned public resolvers; managed privileged mode never invents defaults. */
-  dns?: readonly string[];
+  dns: readonly string[];
   /** Durable watchdog ownership labels, copied to both container and exclusive network. */
-  managedLabels?: Readonly<Record<string, string>>;
-  rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
+  managedLabels: Readonly<Record<string, string>>;
+  rootlessAttestation: { readonly daemonId: string; readonly dataRoot: string } | undefined;
   /** Current profile lease/reservation; full-copy restore may only replace this reservation's private slot. */
-  profileBeforeCache?: DockerProfileBeforeCacheSession;
-  afterStop?: () => Promise<void>;
+  profileBeforeCache: DockerProfileBeforeCacheSession | undefined;
+  afterStop: () => Promise<void>;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
    * 「PATH:受管变量与 pathPrepend」)。
    */
-  pathPrepend?: readonly string[];
+  pathPrepend: readonly string[];
 }
+
+export const defaultDockerSandboxOptions: DockerSandboxOptions = {
+  timeout: undefined,
+  deadlineAt: undefined,
+  lifetimeMs: undefined,
+  runtime: "node24",
+  image: undefined,
+  feedback: undefined,
+  provisionToken: undefined,
+  runIdentity: undefined,
+  workdir: undefined,
+  user: undefined,
+  privileged: "disabled",
+  dockerAccess: undefined,
+  resources: {},
+  readiness: undefined,
+  dockerSocketPath: undefined,
+  dns: [],
+  managedLabels: {},
+  rootlessAttestation: undefined,
+  profileBeforeCache: undefined,
+  afterStop: async () => {},
+  pathPrepend: [],
+};
 
 export interface DockerControlCreateSpec {
   readonly image: string;
   readonly command: readonly string[];
-  readonly entrypoint?: string;
+  readonly entrypoint: string | undefined;
   readonly environment: readonly string[];
   readonly workingDir: string;
-  readonly user?: string;
+  readonly user: string | undefined;
   readonly tmpfs: Readonly<Record<string, string>>;
 }
 
@@ -370,7 +394,7 @@ export async function resolveDockerSocketMount(
   const source = await realpath(socketPath);
   const info = await stat(source);
   if (!info.isSocket()) throw new TypeError(`Docker socket path is not a Unix socket: ${socketPath}`);
-  return Object.freeze({ source, gid: info.gid });
+  return { source, gid: info.gid };
 }
 
 /** managed privileged Attempt 的独占 outer network；允许 NAT 出站，但禁止 sibling 互通。 */
@@ -407,8 +431,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly workdir: string;
   readonly otlpHost: string | null;
   private docker: Docker;
-  private container: Docker.Container | null = null;
-  private network: Docker.Network | null = null;
+  private container: Docker.Container | undefined;
+  private network: Docker.Network | undefined;
   private _containerId = "";
   private timeout: number | undefined;
   private deadlineAt: number | undefined;
@@ -430,7 +454,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private readonly privileged: "disabled" | "raw" | "rootless";
   private readonly dockerAccess: Readonly<DockerSandboxAccess> | undefined;
   private readonly resources: Readonly<DockerSandboxResources>;
-  private readonly readiness: Readonly<DockerSandboxReadiness> | undefined;
+  private readonly readiness: NormalizedDockerSandboxReadiness | undefined;
   private readonly dockerSocketPath: string | undefined;
   private readonly dns: readonly string[];
   private readonly managedLabels: Readonly<Record<string, string>>;
@@ -441,7 +465,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     | ((spec: DockerControlCreateSpec, signal?: AbortSignal) => Promise<DockerControlCreateResult>)
     | undefined;
   private controlledCreateSpec: DockerControlCreateSpec | undefined;
-  private readonly afterStop: (() => Promise<void>) | undefined;
+  private readonly afterStop: () => Promise<void>;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   /** DinD 覆盖容器 User 为 root 后，仍用镜像 USER 作为 Agent 默认身份。 */
@@ -527,7 +551,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           if (poll !== undefined) clearInterval(poll);
           output.end();
           stream.destroy();
-          resolve({ exitCode: inspection.ExitCode ?? null });
+          resolve({ exitCode: inspection.ExitCode ?? null, signal: undefined });
         }, finishError);
       }, 100);
     });
@@ -595,7 +619,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     };
   }
 
-  constructor(options: DockerSandboxOptions = {}) {
+  constructor(options: DockerSandboxOptions = defaultDockerSandboxOptions) {
     this.docker = new Docker(
       options.dockerSocketPath === undefined ? undefined : { socketPath: options.dockerSocketPath },
     );
@@ -603,27 +627,27 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.timeout = options.timeout;
     this.deadlineAt = options.deadlineAt;
     this.lifetimeMs = options.lifetimeMs;
-    this.runtime = options.runtime ?? "node24";
+    this.runtime = options.runtime;
     this.image = options.image;
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
     this.userOverride = options.user === "" ? undefined : options.user;
-    this.privileged = options.privileged ?? "disabled";
+    this.privileged = options.privileged;
     this.dockerAccess = options.dockerAccess;
     // Docker bridge 能否回连宿主取决于宿主防火墙与 daemon 网络策略，provider 不能把
     // host-gateway 伪装成稳定能力。null 让 runner 把 attempt-scope collector 放进沙箱；
     // 作者确有受控 tunnel 时仍可用 config.telemetry.host 显式覆盖。
     this.otlpHost = null;
-    this.resources = options.resources ?? {};
+    this.resources = options.resources;
     this.readiness = options.readiness;
     this.dockerSocketPath = options.dockerSocketPath;
-    this.dns = Object.freeze([...(options.dns ?? [])]);
-    this.managedLabels = Object.freeze({ ...(options.managedLabels ?? {}) });
+    this.dns = options.dns;
+    this.managedLabels = options.managedLabels;
     this.rootlessAttestation = options.rootlessAttestation;
     this.profileBeforeCache = options.profileBeforeCache;
     this.afterStop = options.afterStop;
-    this.pathPrepend = options.pathPrepend ?? [];
+    this.pathPrepend = options.pathPrepend;
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
     this.attemptBeforeCache =
       this.profileBeforeCache === undefined
@@ -646,14 +670,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
             retireStopped: () => this.retireProfileBeforeCache(),
             createFromCurrent: (signal) => this.createProfileBeforeCacheContinuation(signal),
           });
-    this.capabilities = Object.freeze({
+    this.capabilities = {
       rootCommands: supportedBackendCapability(true as const),
       appendLog: supportedBackendCapability((line: string) => this.appendLog(line)),
       suspend: supportedBackendCapability(() => this.suspend()),
       ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
       setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
       managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
-    });
+    };
   }
 
   readonly attemptBeforeCache: AttemptBeforeCache;
@@ -707,13 +731,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         dependency: "parent-backed",
         coverage: sandboxState.dockerData,
         baseIdentity: this.baseIdentity,
+        replacementScope: undefined,
         keyScope: decodeBeforeCacheKeyScope({
           cacheFormat: JSON.stringify({
             protocol: capability.protocol,
             publication: capability.publicationRevision,
             copy: capability.copyRevision,
           }),
-          semanticIdentity: Object.freeze({
+          semanticIdentity: {
             component: "durable-docker-data",
             coverage: capability.coverage,
             requiredState: capability.requiredState,
@@ -726,14 +751,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
             quiesceRevision: capability.quiesceRevision,
             slotAttestation: capability.slotAttestation,
             filesystemSizeBytes: capability.filesystemSizeBytes,
-            filesystemFeatures: [...capability.filesystemFeatures],
+            filesystemFeatures: capability.filesystemFeatures,
             seedPolicy: capability.seedPolicy,
             publicationRevision: capability.publicationRevision,
             recoveryRevision: capability.recoveryRevision,
             manifestSchema: capability.manifestSchema,
             seedLimitBytes: capability.seedLimitBytes,
             filesystemIdentity: capability.filesystemIdentity,
-          }),
+          },
         }),
       };
     }
@@ -810,6 +835,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       dependency: "parent-backed",
       coverage: sandboxState.all,
       baseIdentity: this.baseIdentity,
+      replacementScope: undefined,
       keyScope: decodeBeforeCacheKeyScope({
         cacheFormat: "niceeval-docker-cache/current",
         semanticIdentity: { capture: "outer-writable-rootfs" },
@@ -823,7 +849,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       throw new Error("Docker profile before-cache quiesce requires a bound DinD reservation");
     }
     const container = this.container;
-    if (container === null) throw new Error("Docker profile before-cache private container is not available");
+    if (container === undefined) throw new Error("Docker profile before-cache private container is not available");
     const state = await container.inspect({ abortSignal: signal });
     if (state.State?.Running !== true) {
       throw new Error(
@@ -891,7 +917,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   private async resumeProfileBeforeCache(signal: AbortSignal): Promise<string> {
     signal.throwIfAborted();
-    if (this.container === null) throw new Error("Docker Profile stopped private container is unavailable");
+    if (this.container === undefined) throw new Error("Docker Profile stopped private container is unavailable");
     await startContainerIdempotently(this.container, signal);
     await this.waitForReadiness(signal);
     await this.resolveDefaultIdentity(signal);
@@ -899,8 +925,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   private retireProfileBeforeCache(): void {
-    this.container = null;
-    this.network = null;
+    this.container = undefined;
+    this.network = undefined;
     this._containerId = "";
   }
 
@@ -927,27 +953,15 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.waitForReadiness(signal);
     await this.ensureRunnerTools();
     await this.resolveDefaultIdentity(signal);
-    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], signal === undefined ? {} : { signal });
-    await this.runCommandAsRoot(
-      "chown",
-      ["-R", this.chownTarget(), this.workdir],
-      signal === undefined ? {} : { signal },
-    );
-    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], signal === undefined ? {} : { signal });
-    await this.runCommandAsRoot(
-      "chown",
-      ["-R", this.chownTarget(), this.npmGlobalDir],
-      signal === undefined ? {} : { signal },
-    );
-    await this.runCommand(
-      "npm",
-      ["config", "set", "prefix", this.npmGlobalDir],
-      signal === undefined ? {} : { signal },
-    );
+    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], { signal });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], { signal });
+    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], { signal });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], { signal });
+    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], { signal });
   }
 
   private adoptBeforeCacheHold(hold: DockerBeforeCacheHoldOwnership): void {
-    if (this.container === null || this._containerId !== hold.containerId) {
+    if (this.container === undefined || this._containerId !== hold.containerId) {
       throw new Error("cannot attach a before-cache durable hold to a different Docker container");
     }
     if (this.beforeCacheHold !== undefined) {
@@ -973,7 +987,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    */
   static async attach(
     containerId: string,
-    options: DockerSandboxOptions & { releaseMode?: DockerSandboxReleaseMode } = {},
+    options: DockerSandboxOptions & {
+      releaseMode?: DockerSandboxReleaseMode | undefined;
+    } = defaultDockerSandboxOptions,
   ): Promise<DockerSandbox> {
     const docker = new Docker();
     const container = docker.getContainer(containerId);
@@ -1027,12 +1043,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   /** 创建并启动一个 Docker 沙箱。 */
-  static async create(options: DockerSandboxOptions = {}): Promise<DockerSandbox> {
+  static async create(options: DockerSandboxOptions = defaultDockerSandboxOptions): Promise<DockerSandbox> {
     return Effect.runPromise(DockerSandbox.createEffect(options));
   }
 
   /** The runtime-facing provisioning path keeps Clock and interruption in its caller's Effect. */
-  static createEffect(options: DockerSandboxOptions = {}): Effect.Effect<DockerSandbox, unknown> {
+  static createEffect(
+    options: DockerSandboxOptions = defaultDockerSandboxOptions,
+  ): Effect.Effect<DockerSandbox, unknown> {
     const sandbox = new DockerSandbox(options);
     return Effect.tryPromise({
       try: () => sandbox.initializeBeforeReadiness(),
@@ -1060,20 +1078,20 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         const cleanupErrors: unknown[] = [];
         try {
           await this.container?.remove({ force: true });
-          this.container = null;
+          this.container = undefined;
         } catch (cleanupError) {
           if (benignRemoveError(cleanupError)) {
-            this.container = null;
+            this.container = undefined;
           } else {
             cleanupErrors.push(cleanupError);
           }
         }
         try {
           await this.network?.remove();
-          this.network = null;
+          this.network = undefined;
         } catch (cleanupError) {
           if (dockerStatusCode(cleanupError) === 404) {
-            this.network = null;
+            this.network = undefined;
           } else {
             cleanupErrors.push(cleanupError);
           }
@@ -1121,7 +1139,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     sandbox.expiresAtMs = Date.now() + ttlSec * 1000;
     const dindCommand = isDind ? dindContainerCommand(ttlSec, CONTAINER_LOG) : undefined;
     const tmpfs = dockerHostConfig(sandbox.privileged, sandbox.resources).Tmpfs ?? {};
-    const createSpec: DockerControlCreateSpec = Object.freeze({
+    const createSpec: DockerControlCreateSpec = {
       image: inspectedImage.Id,
       command:
         dindCommand === undefined
@@ -1131,12 +1149,12 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
               `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
             ]
           : [...dindCommand.Entrypoint.slice(1), ...dindCommand.Cmd],
-      ...(dindCommand === undefined ? {} : { entrypoint: dindCommand.Entrypoint[0]! }),
+      entrypoint: dindCommand?.Entrypoint[0],
       environment: [],
       workingDir: sandbox.workdir,
-      ...(isDind ? { user: ROOT_USER } : sandbox.userOverride === undefined ? {} : { user: sandbox.userOverride }),
+      user: isDind ? ROOT_USER : sandbox.userOverride,
       tmpfs,
-    });
+    };
     sandbox.controlledCreate = create;
     sandbox.controlledCreateSpec = createSpec;
     const created = await create(createSpec);
@@ -1155,7 +1173,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   /** DinD 容器 kill-on-failure 前收集有界诊断，普通 Docker 保持原错误形状。 */
   private async withInitializationDiagnostics(error: unknown): Promise<unknown> {
-    if (this.dockerAccess?.mode !== "dind" || this.container === null) return error;
+    if (this.dockerAccess?.mode !== "dind" || this.container === undefined) return error;
     const sections: string[] = [];
     try {
       const logs = await this.container.logs({ stdout: true, stderr: true, tail: 256 });
@@ -1290,7 +1308,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 宿主异常硬退留下的孤儿由 TTL dead-man switch 停驻后按 keep-candidate 标签事后核对。
       HostConfig: {
         ...dockerHostConfig(this.privileged, this.resources, this.dns, socketMount),
-        ...(this.network === null ? {} : { NetworkMode: this.network.id }),
+        ...(this.network === undefined ? {} : { NetworkMode: this.network.id }),
       },
     });
 
@@ -1323,23 +1341,23 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
     // 工作目录交给默认执行身份。
     await this.runCommandAsRoot("mkdir", ["-p", this.workdir], {
-      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+      signal: operationSignal,
     });
     await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], {
-      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+      signal: operationSignal,
     });
 
     // 为非 root 全局安装准备 npm 目录;root 身份下这一步是无害的自有目录。
     await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], {
-      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+      signal: operationSignal,
     });
     await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], {
-      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+      signal: operationSignal,
     });
 
     // 让 npm 用这个目录当全局前缀(配置落在默认身份的家目录,供 agent 全局装 CLI 用)。
     await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], {
-      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+      signal: operationSignal,
     });
   }
 
@@ -1363,7 +1381,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           deadline,
           phase: "Docker access compatibility",
           timeoutMs: readiness.timeoutMs,
-          ...(signal === undefined ? {} : { signal: signal }),
+          signal,
         });
       }
       yield* this.waitForReadinessProbeEffect({
@@ -1373,7 +1391,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         deadline,
         phase: "Docker sandbox readiness",
         timeoutMs: readiness.timeoutMs,
-        ...(signal === undefined ? {} : { signal: signal }),
+        signal,
       });
     });
   }
@@ -1381,11 +1399,11 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private waitForReadinessProbeEffect(input: {
     readonly command: readonly [string, ...string[]];
     readonly user: string | undefined;
-    readonly intervalMs: number | undefined;
+    readonly intervalMs: number;
     readonly deadline: number;
     readonly phase: string;
     readonly timeoutMs: number;
-    readonly signal?: AbortSignal;
+    readonly signal: AbortSignal | undefined;
   }): Effect.Effect<void, unknown> {
     const [command, ...args] = input.command;
     let lastFailure = "probe has not run";
@@ -1411,12 +1429,16 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       const result = yield* Effect.result(
         Effect.tryPromise({
           try: () =>
-            this.execCommand(command, args, {
-              ...(input.user === undefined ? {} : { user: input.user }),
-              timeoutMs: Math.max(1, input.deadline - probeNow),
-              timeoutRetirement: "stop",
-              ...(input.signal === undefined ? {} : { signal: input.signal }),
-            }),
+            this.execCommand(
+              command,
+              args,
+              {
+                user: input.user,
+                timeoutMs: Math.max(1, input.deadline - probeNow),
+                signal: input.signal,
+              },
+              "stop",
+            ),
           catch: (error) => error,
         }),
       );
@@ -1429,7 +1451,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       const afterAttempt = yield* Clock.currentTimeMillis;
       const remaining = input.deadline - afterAttempt;
       if (remaining <= 0) return yield* timedOut();
-      yield* Effect.sleep(Math.min(input.intervalMs ?? 250, remaining));
+      yield* Effect.sleep(Math.min(input.intervalMs, remaining));
       return yield* attempt;
     });
     const timedOut = (): Effect.Effect<never, Error> => {
@@ -1457,8 +1479,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       "sh",
       ["-c", 'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"'],
       {
-        ...(user === undefined ? {} : { user }),
-        ...(signal === undefined ? {} : { signal: signal }),
+        user,
+        signal,
       },
     );
     const [rawUid = "", rawName = "", rawHome = ""] = probe.stdout.split("\n");
@@ -1466,8 +1488,18 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const name = rawName.trim();
     const home = rawHome.trim();
     this.defaultIsRoot = uid === "0";
-    this.defaultUserName = name !== "" ? name : this.defaultIsRoot ? ROOT_USER : (this.userOverride ?? uid);
-    this.defaultHome = home !== "" ? home : this.defaultIsRoot ? "/root" : `/home/${this.defaultUserName}`;
+    const detectedUserName = (): string => {
+      if (name !== "") return name;
+      if (this.defaultIsRoot) return ROOT_USER;
+      return this.userOverride ?? uid;
+    };
+    this.defaultUserName = detectedUserName();
+    const detectedHome = (): string => {
+      if (home !== "") return home;
+      if (this.defaultIsRoot) return "/root";
+      return `/home/${this.defaultUserName}`;
+    };
+    this.defaultHome = detectedHome();
     this.npmGlobalDir = `${this.defaultHome}/.npm-global`;
     this.sandboxPath = this.managedPath(this.npmGlobalDir);
   }
@@ -1516,7 +1548,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    */
   async ensureRunnerTools(signal?: AbortSignal): Promise<void> {
     const probe = await this.runCommandAsRoot("sh", ["-c", "command -v git >/dev/null 2>&1"], {
-      ...(signal === undefined ? {} : { signal: signal }),
+      signal,
     });
     if (probe.exitCode === 0) return;
     this.runnerToolsInstalledDynamically = true;
@@ -1540,7 +1572,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       'command -v git >/dev/null 2>&1 || { printf "%s\\n" "niceeval Docker runtime could not install git for its private change ledger" >&2; exit 127; }',
     ].join("\n");
     const result = await this.runCommandAsRoot("sh", ["-c", script], {
-      ...(signal === undefined ? {} : { signal: signal }),
+      signal,
     });
     if (result.exitCode === 0) return;
     const detail = result.stderr.trim().split("\n").at(-1);
@@ -1591,14 +1623,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (opts.stream) {
       const joined = [cmd, ...args].map(shellQuote).join(" ");
       return this.runShell(joined, {
-        ...(opts.env === undefined ? {} : { env: opts.env }),
-        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
+        env: opts.env,
+        cwd: opts.cwd,
         stream: true,
-        ...(opts.user === undefined ? {} : { user: opts.user }),
-        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-        ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
-        ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
+        user: opts.user,
+        timeoutMs: opts.timeoutMs,
+        signal: opts.signal,
+        onStdout: opts.onStdout,
+        onStderr: opts.onStderr,
       });
     }
 
@@ -1622,24 +1654,24 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     return this.execCommand(cmd, [...args], {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      ...(user === undefined ? {} : { user }),
-      ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-      ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
-      ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
-      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+      user,
+      timeoutMs: opts.timeoutMs,
+      onStdout: opts.onStdout,
+      onStderr: opts.onStderr,
+      signal: opts.signal,
     });
   }
 
   /** 以 root 跑命令(provider 内部用:容器初始化、属主收敛)。 */
   private async runCommandAsRoot(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     return this.execCommand(cmd, args, {
-      ...(opts.env === undefined ? {} : { env: opts.env }),
+      env: opts.env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: ROOT_USER,
-      ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-      ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
-      ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
+      timeoutMs: opts.timeoutMs,
+      signal: opts.signal,
+      onStdout: opts.onStdout,
+      onStderr: opts.onStderr,
     });
   }
 
@@ -1652,18 +1684,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private async execCommand(
     cmd: string,
     args: string[] = [],
-    opts: {
-      env?: globalThis.Record<string, string>;
-      cwd?: string;
-      user?: string;
-      /** 这条命令的显式上限;省略 = 按 attempt deadline 的剩余量。 */
-      timeoutMs?: number;
-      /** create/readiness 失败需在删除前采集日志，因此只先停容器。 */
-      timeoutRetirement?: "destroy" | "stop";
-      onStdout?: (chunk: string) => void | Promise<void>;
-      onStderr?: (chunk: string) => void | Promise<void>;
-      signal?: AbortSignal;
-    } = {},
+    opts: CommandOptions = {},
+    /** create/readiness 失败需在删除前采集日志，因此只先停容器。 */
+    timeoutRetirement: "destroy" | "stop" = "destroy",
   ): Promise<CommandResult> {
     if (!this.container) {
       throw new Error(`Container not initialized`);
@@ -1708,8 +1731,8 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
       // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
       const limit = commandLimit(opts, {
-        ...(this.timeout === undefined ? {} : { commandTimeoutMs: this.timeout }),
-        ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+        commandTimeoutMs: this.timeout,
+        deadlineAt: this.deadlineAt,
       });
       let settled = false;
       let drainTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1727,7 +1750,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         cleanup();
         stream.destroy();
         const retirement =
-          opts.timeoutRetirement === "stop"
+          timeoutRetirement === "stop"
             ? (this.container?.stop({ t: 5 }).catch((stopError) => {
                 if (!benignStopError(stopError)) throw stopError;
               }) ?? Promise.resolve())
@@ -1810,13 +1833,13 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 只 tee stdout 到容器主日志:保留 stderr 分离(解析器要)+ pipefail 保留命令退出码。
       const wrapped = `set -o pipefail; { ${script} ; } | tee -a ${CONTAINER_LOG}`;
       return this.runCommand("bash", ["-c", wrapped], {
-        ...(opts.env === undefined ? {} : { env: opts.env }),
-        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
-        ...(opts.user === undefined ? {} : { user: opts.user }),
-        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-        ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
-        ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
+        env: opts.env,
+        cwd: opts.cwd,
+        user: opts.user,
+        timeoutMs: opts.timeoutMs,
+        signal: opts.signal,
+        onStdout: opts.onStdout,
+        onStderr: opts.onStderr,
       });
     }
     return this.runCommand("bash", ["-c", script], opts);
@@ -2081,7 +2104,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const eligibility = this.beforeCacheEligibility();
     if (eligibility._tag === "Unsupported") throw new Error(eligibility.reason);
     const container = this.container;
-    if (container === null) throw new Error("Docker before-cache staging container has already been released");
+    if (container === undefined) throw new Error("Docker before-cache staging container has already been released");
 
     if (this.dockerAccess?.mode === "dind") {
       const [command, ...args] = DIND_CAPTURE_QUIESCE_COMMAND;
@@ -2239,7 +2262,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private async destroyCurrentContainer(runAfterStop: boolean, operationSignal?: AbortSignal): Promise<void> {
     const cleanupSignal = operationSignal ?? AbortSignal.timeout(BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS);
     const container = this.container;
-    if (container === null) {
+    if (container === undefined) {
       if (this.beforeCacheHold !== undefined) {
         const hold = this.beforeCacheHold;
         await hold.release();
@@ -2248,9 +2271,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       return;
     }
     if (this.releaseMode === "detach") {
-      this.container = null;
-      this.network = null;
-      if (runAfterStop) await this.afterStop?.();
+      this.container = undefined;
+      this.network = undefined;
+      if (runAfterStop) await this.afterStop();
       return;
     }
 
@@ -2270,15 +2293,15 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       if (benignRemoveError(error)) removed = true;
       else cleanupErrors.push(error);
     }
-    if (removed && this.container === container) this.container = null;
-    if (removed && this.network !== null) {
+    if (removed && this.container === container) this.container = undefined;
+    if (removed && this.network !== undefined) {
       const network = this.network;
       try {
         await network.remove({ abortSignal: cleanupSignal } as {});
-        if (this.network === network) this.network = null;
+        if (this.network === network) this.network = undefined;
       } catch (error) {
         if (dockerStatusCode(error) === 404) {
-          if (this.network === network) this.network = null;
+          if (this.network === network) this.network = undefined;
         } else {
           cleanupErrors.push(error);
         }
@@ -2300,7 +2323,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (cleanupErrors.length > 0) {
       throw new AggregateError(cleanupErrors, `failed to destroy Docker sandbox ${this.sandboxId}`);
     }
-    if (runAfterStop) await this.afterStop?.();
+    if (runAfterStop) await this.afterStop();
   }
 
   /**

@@ -21,7 +21,7 @@ export type DiffChange = "added" | "modified" | "deleted";
 /** 一个 send 窗口内这个文件的改动;`patch` 省略即这一段没有内联内容。 */
 export interface DiffFileWindow {
   window: string;
-  patch?: string;
+  patch: string | undefined;
 }
 
 export interface DiffFile {
@@ -32,7 +32,9 @@ export interface DiffFile {
   added: number;
   removed: number;
   /** 内容被省略的文件只报字节数与原因(二进制 / 超过单文件阈值的文本),`windows` 里不带 patch。 */
-  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
+  elided:
+    | { reason: "binary" | "oversized-text"; beforeBytes: number | undefined; afterBytes: number | undefined }
+    | undefined;
   /** 触碰过该文件的窗口,按时序,至少一条。 */
   windows: readonly DiffFileWindow[];
 }
@@ -41,7 +43,14 @@ export type DiffContent = readonly DiffFile[];
 
 /** 与 diff.json 的 net 同一套词:两面都打印 A / M / D。 */
 export function diffChangeLetter(change: DiffChange): string {
-  return change === "added" ? "A" : change === "deleted" ? "D" : "M";
+  switch (change) {
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    default:
+      return "M";
+  }
 }
 
 export function diffWindowLabels(file: DiffFile): string {
@@ -72,7 +81,10 @@ export function sortDiffFiles(files: DiffContent): DiffFile[] {
  */
 export function diffSummaryText(
   files: DiffContent,
-  opts: { drillDown?: string; singleFileHint?: boolean } = {},
+  opts: { drillDown: string | undefined; singleFileHint: boolean | undefined } = {
+    drillDown: undefined,
+    singleFileHint: undefined,
+  },
 ): string {
   if (files.length === 0) return "";
   const sorted = sortDiffFiles(files);

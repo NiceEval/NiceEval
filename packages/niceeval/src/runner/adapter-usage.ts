@@ -65,7 +65,7 @@ export class AdapterUsageCollector {
         cacheWriteTokens: input.cacheWriteTokens ?? null,
       });
       if (Result.isFailure(decoded)) throw new Error("Invalid Adapter usage snapshot");
-      const call = deepFreeze(structuredClone(decoded.success));
+      const call = structuredClone(decoded.success);
       if (call.modelSlot !== null && !Object.hasOwn(this.models, call.modelSlot)) {
         throw new Error("Adapter usage modelRole must reference a configured model purpose in this Attempt");
       }
@@ -98,49 +98,43 @@ export class AdapterUsageCollector {
         throw new Error(
           "Invalid Adapter usage seal: sealUsage partial reason must be 1-128 ASCII characters, start with a letter or digit, and contain only letters, digits, dot, underscore, colon, or hyphen; complete seals accept only state",
         );
-      this.sealed = Object.freeze({ ...decoded.success });
+      this.sealed = decoded.success;
     } catch (cause) {
       this.failed ??= cause instanceof Error ? cause : new Error("Adapter usage capture failed");
       throw cause;
     }
   };
   snapshot(): EvalUsage {
-    return projectAdapterEvalUsage(deepFreeze(structuredClone(this.capture())), this.models);
+    return projectAdapterEvalUsage(this.capture(), this.models);
   }
   close(): AdapterUsageAttachment {
     this.closed = true;
     return this.capture();
   }
   private capture(): AdapterUsageAttachment {
-    const calls = Object.freeze([...this.calls.values()]);
-    return Object.freeze({
-      collection:
-        this.failed !== undefined
-          ? {
-              state: "partial" as const,
-              limitations: [{ code: "capture-failed" as const, stage: "adapter-usage" }] as const,
-            }
-          : this.sealed === undefined
-            ? {
-                state: "partial" as const,
-                limitations: [{ code: "capture-interrupted" as const, stage: "adapter-usage-unsealed" }] as const,
-              }
-            : this.sealed.state === "partial"
-              ? {
-                  state: "partial" as const,
-                  limitations: [{ code: "capture-failed" as const, stage: this.sealed.reason }] as const,
-                }
-              : { state: "complete" as const, limitations: [] as const },
+    const calls = [...this.calls.values()];
+    const collectionState = (): AdapterUsageAttachment["collection"] => {
+      if (this.failed !== undefined)
+        return {
+          state: "partial" as const,
+          limitations: [{ code: "capture-failed" as const, stage: "adapter-usage" }] as const,
+        };
+      if (this.sealed === undefined)
+        return {
+          state: "partial" as const,
+          limitations: [{ code: "capture-interrupted" as const, stage: "adapter-usage-unsealed" }] as const,
+        };
+      if (this.sealed.state === "partial")
+        return {
+          state: "partial" as const,
+          limitations: [{ code: "capture-failed" as const, stage: this.sealed.reason }] as const,
+        };
+      return { state: "complete" as const, limitations: [] as const };
+    };
+    return {
+      collection: collectionState(),
       calls,
       priceReceipts: createAdapterCallPriceReceipts(calls, this.pricing),
-    });
+    };
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
 }

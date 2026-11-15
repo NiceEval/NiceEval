@@ -22,9 +22,15 @@ import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 /** Bounds VM CPU, memory and Docker data capacity; memoryBytes and dockerDataBytes use bytes rather than MiB. */
 export interface IncusSandboxResources {
-  readonly cpus?: number;
-  readonly memoryBytes?: number;
-  readonly dockerDataBytes?: number;
+  readonly cpus?: number | undefined;
+  readonly memoryBytes?: number | undefined;
+  readonly dockerDataBytes?: number | undefined;
+}
+
+export interface NormalizedIncusSandboxResources {
+  readonly cpus: number | undefined;
+  readonly memoryBytes: number | undefined;
+  readonly dockerDataBytes: number | undefined;
 }
 
 /** Selects the Incus image, project, storage pool and VM resources; accepting a development domain is an explicit opt-in. */
@@ -32,15 +38,15 @@ export interface IncusSandboxOptions {
   readonly image: string;
   readonly project: string;
   readonly storagePool: string;
-  readonly resources?: IncusSandboxResources;
-  readonly acceptDevelopmentDomain?: boolean;
+  readonly resources?: IncusSandboxResources | undefined;
+  readonly acceptDevelopmentDomain?: boolean | undefined;
 }
 
 export interface NormalizedIncusSandboxOptions {
   readonly image: IncusImageLocator;
   readonly project: string;
   readonly storagePool: string;
-  readonly resources: IncusSandboxResources;
+  readonly resources: NormalizedIncusSandboxResources;
   readonly acceptDevelopmentDomain: boolean;
 }
 
@@ -53,8 +59,8 @@ export interface IncusRuntimePlan {
   readonly workdir: typeof INCUS_WORKDIR;
   readonly user: typeof INCUS_USER;
   readonly hostGateway: string;
-  readonly targetAppProxyPort?: number;
-  readonly resources: IncusSandboxResources;
+  readonly targetAppProxyPort: number | undefined;
+  readonly resources: Pick<NormalizedIncusSandboxResources, "cpus" | "memoryBytes">;
   readonly allocatedDockerDataBytes: number;
   readonly acceptDevelopmentDomain: boolean;
   readonly executionDomain: IncusDomainName;
@@ -66,7 +72,7 @@ export interface IncusRuntimePlan {
   readonly artifactProject: string;
   readonly artifactMaxInstances: number;
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
+  readonly artifactEstimatedBytes: number | undefined;
 }
 
 export interface IncusPlannedSandbox {
@@ -104,32 +110,32 @@ export function dockerExecutionCapability(
   allocatedDockerDataBytes: number,
 ): DockerExecutionCapability {
   if (domain.name === "development") {
-    return Object.freeze({
+    return {
       api: "docker/v1",
       compose: "v2",
       isolation: "dedicated-kernel/v1",
       daemon: "sandbox-private",
       executionDomain: "development",
       executionDomainId: domain.executionDomainId,
-      capacity: Object.freeze({
+      capacity: {
         _tag: "Unattested" as const,
         acceptedByExperiment: acceptDevelopmentDomain,
         reason: "development Incus domain does not attest Docker data capacity",
-      }),
-    });
+      },
+    };
   }
-  return Object.freeze({
+  return {
     api: "docker/v1",
     compose: "v2",
     isolation: "dedicated-kernel/v1",
     daemon: "sandbox-private",
     executionDomain: "reference",
     executionDomainId: domain.executionDomainId,
-    capacity: Object.freeze({
+    capacity: {
       _tag: "Attested" as const,
       bytes: allocatedDockerDataBytes,
-    }),
-  });
+    },
+  };
 }
 
 export async function selectDomain(
@@ -245,7 +251,7 @@ async function planIncusSandboxWithRepository(
     );
   }
   const dockerExecution = dockerExecutionCapability(domain, options.acceptDevelopmentDomain, allocatedDockerDataBytes);
-  const runtime: IncusRuntimePlan = Object.freeze({
+  const runtime: IncusRuntimePlan = {
     image: options.image,
     imageFingerprint: image.fingerprint,
     project: domain.project,
@@ -254,8 +260,8 @@ async function planIncusSandboxWithRepository(
     workdir: INCUS_WORKDIR,
     user: INCUS_USER,
     hostGateway: domain.hostGateway,
-    ...(domain.targetAppProxyPort === undefined ? {} : { targetAppProxyPort: domain.targetAppProxyPort }),
-    resources: Object.freeze({ ...options.resources, dockerDataBytes: allocatedDockerDataBytes }),
+    targetAppProxyPort: domain.targetAppProxyPort,
+    resources: { cpus: options.resources.cpus, memoryBytes: options.resources.memoryBytes },
     allocatedDockerDataBytes,
     acceptDevelopmentDomain: options.acceptDevelopmentDomain,
     executionDomain: domain.name,
@@ -267,9 +273,9 @@ async function planIncusSandboxWithRepository(
     artifactProject: domain.artifactProject,
     artifactMaxInstances: domain.artifactMaxInstances,
     artifactStorageReserveBytes: domain.artifactStorageReserveBytes,
-    ...(domain.artifactEstimatedBytes === undefined ? {} : { artifactEstimatedBytes: domain.artifactEstimatedBytes }),
-  });
-  return Object.freeze({ descriptor, domain, image, runtime, dockerExecution });
+    artifactEstimatedBytes: domain.artifactEstimatedBytes,
+  };
+  return { descriptor, domain, image, runtime, dockerExecution };
 }
 
 function repositoryPlanningError(cause: unknown): IncusProviderError {
@@ -332,7 +338,7 @@ export function loadDomainForDoctor(
           "Add the requested domain to the Incus provider descriptor.",
         ]);
       }
-      return Object.freeze({ descriptor, domain });
+      return { descriptor, domain };
     },
     catch: (cause) =>
       cause instanceof Error && "code" in cause

@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import { CliArguments, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure } from "../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import { projectHost } from "../host.ts";
 import { ProjectFileSystem, ProjectManifestFacts, ProjectProcessFacts } from "../services.ts";
 
@@ -30,14 +32,14 @@ Requires node_modules/niceeval/INDEX.md on disk.
 
 type ProjectCliRequirement = CliArguments | CliOutput | ProjectFileSystem | ProjectManifestFacts | ProjectProcessFacts;
 
-type ProjectCliError = CliFeatureError;
+type ProjectCliError = CliFeatureError<ExternalCause>;
 
 function projectFailure(operation: string, cause: unknown): ProjectCliError {
-  return new CliFeatureError({
+  return externalCliFailure(cause, {
     feature: "project init",
     operation,
-    cause,
     exitCode: 1,
+    display: undefined,
   });
 }
 

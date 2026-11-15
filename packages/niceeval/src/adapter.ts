@@ -212,9 +212,9 @@ export interface AdapterCreateContext<Flags = ExperimentFlags, Roles extends str
   /** Attempt 执行信号；reason 区分 timeout 与 cancelled，不用于 cleanup 窗口。 */
   readonly signal: AttemptSignal;
   /** Experiment 选择的模型。 */
-  readonly model?: string;
+  readonly model: string | undefined;
   /** Experiment 选择的推理强度。 */
-  readonly reasoningEffort?: string;
+  readonly reasoningEffort: string | undefined;
   /** Experiment 传给 Adapter 的只读 flags。 */
   readonly flags: Flags;
   /** 更新当前 Attempt 的人读进度。 */
@@ -238,8 +238,8 @@ type EvalContextBase<Kind extends EvaluationKind, Flags, Context> = JudgePresetM
   maxCost(usd: number | string): BooleanAssertionHandle<Kind, string>;
   readonly evaluationKind: Kind;
   readonly signal: AbortSignal;
-  readonly model?: string;
-  readonly reasoningEffort?: string;
+  readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
   readonly flags: Flags;
   progress(update: ProgressUpdate): void;
   diagnostic(input: DiagnosticInput): void;
@@ -279,7 +279,7 @@ export type AdapterEvalInput<
   Flags extends AdapterFlagsParser = undefined,
   Roles extends string = string,
 > = AdapterEvalFields & {
-  readonly requires?: ModelRequirements<Roles>;
+  readonly requires?: ModelRequirements<Roles> | undefined;
   test(
     t: Omit<EvalContext<"pass", AdapterFlagsOutput<Flags>, Context>, "usage"> & {
       readonly usage: EvalUsage<NoInfer<Roles>>;
@@ -295,7 +295,7 @@ export type AdapterScoreEvalInput<
   Flags extends AdapterFlagsParser = undefined,
   Roles extends string = string,
 > = AdapterScoreEvalFields & {
-  readonly requires?: ModelRequirements<Roles>;
+  readonly requires?: ModelRequirements<Roles> | undefined;
   test(
     t: Omit<EvalContext<"score", AdapterFlagsOutput<Flags>, Context>, "usage"> & {
       readonly usage: EvalUsage<NoInfer<Roles>>;
@@ -361,7 +361,7 @@ export interface AdapterRuntimeDefinition {
   readonly requiredModelRoles?: readonly string[];
   readonly name: string;
   readonly contract: string;
-  readonly behaviorRevision: string | null;
+  readonly behaviorRevision: string | undefined;
   readonly cleanupTimeoutMs: number;
   readonly [ADAPTER_CONTRACT_TOKEN]: object;
   readonly defineEval: (...args: never[]) => unknown;
@@ -377,7 +377,7 @@ export interface AdapterImplementation<
 > extends AdapterDefinition<Context, Assertions, Flags> {
   readonly kind: "custom";
   readonly contract: string;
-  readonly behaviorRevision: string | null;
+  readonly behaviorRevision: string | undefined;
   readonly cleanupTimeoutMs: number;
   readonly [ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
   create(context: AdapterCreateContext<AdapterFlagsOutput<Flags>>): Context | Promise<Context>;
@@ -390,9 +390,9 @@ export type AdapterImplementationInput<
   Flags extends AdapterFlagsParser = undefined,
 > = {
   readonly name: string;
-  readonly behaviorRevision?: string;
+  readonly behaviorRevision?: string | undefined;
   /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
-  readonly cleanupTimeoutMs?: number;
+  readonly cleanupTimeoutMs?: number | undefined;
   readonly create: AdapterFactory<ImplementationContext, Flags>;
 } & AdapterContextValidation<NoInfer<ImplementationContext>>;
 
@@ -465,7 +465,7 @@ function boundEvalFactories<
   return {
     defineEval(input) {
       assertAdapterEvalInput(input, "defineEval");
-      const requiredModelRoles = normalizeModelRequirements(input.requires);
+      const requiredModelRoles = normalizeModelRequirements(input.requires) ?? [];
       return defineEvalForContext<
         "pass",
         EvalContext<"pass", AdapterFlagsOutput<Flags>, Context> &
@@ -474,16 +474,16 @@ function boundEvalFactories<
         undefined,
         {
           readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
-          readonly requiredModelRoles?: readonly string[];
+          readonly requiredModelRoles: readonly string[];
         }
       >("pass", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-        ...(requiredModelRoles === undefined ? {} : { requiredModelRoles }),
+        requiredModelRoles,
       });
     },
     defineScoreEval(input) {
       assertAdapterEvalInput(input, "defineScoreEval");
-      const requiredModelRoles = normalizeModelRequirements(input.requires);
+      const requiredModelRoles = normalizeModelRequirements(input.requires) ?? [];
       return defineEvalForContext<
         "score",
         EvalContext<"score", AdapterFlagsOutput<Flags>, Context> &
@@ -492,11 +492,11 @@ function boundEvalFactories<
         undefined,
         {
           readonly [EVAL_ADAPTER_CONTRACT_TOKEN]: AdapterContractToken<Context, Assertions, Flags>;
-          readonly requiredModelRoles?: readonly string[];
+          readonly requiredModelRoles: readonly string[];
         }
       >("score", input, {
         [EVAL_ADAPTER_CONTRACT_TOKEN]: token,
-        ...(requiredModelRoles === undefined ? {} : { requiredModelRoles }),
+        requiredModelRoles,
       });
     },
   };
@@ -510,10 +510,10 @@ function implementAdapter<
   token: AdapterContractToken<Context, Assertions, Flags>,
   input: {
     readonly name: string;
-    readonly requires?: ModelRequirements;
-    readonly behaviorRevision?: string;
+    readonly requires?: ModelRequirements | undefined;
+    readonly behaviorRevision?: string | undefined;
     /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
-    readonly cleanupTimeoutMs?: number;
+    readonly cleanupTimeoutMs?: number | undefined;
     readonly create: AdapterFactory<Context, Flags>;
   },
   factory: "defineAdapter" | "AdapterContract.implement",
@@ -545,7 +545,7 @@ function implementAdapter<
     parseFlags: token.parseFlags,
     name: input.name,
     contract: token.name,
-    behaviorRevision: input.behaviorRevision ?? null,
+    behaviorRevision: input.behaviorRevision,
     cleanupTimeoutMs,
     create,
     [ADAPTER_CONTRACT_TOKEN]: token,
@@ -561,14 +561,14 @@ export function defineAdapter<
 >(
   input: {
     readonly name: string;
-    readonly requires?: ModelRequirements<Roles>;
-    readonly behaviorRevision?: string;
+    readonly requires?: ModelRequirements<Roles> | undefined;
+    readonly behaviorRevision?: string | undefined;
     /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
-    readonly cleanupTimeoutMs?: number;
+    readonly cleanupTimeoutMs?: number | undefined;
     readonly create: (
       context: AdapterCreateContext<AdapterFlagsOutput<Flags>, NoInfer<Roles>>,
     ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
-    readonly parseFlags?: Flags;
+    readonly parseFlags?: Flags | undefined;
     readonly assertions?: undefined;
   } & AdapterContextValidation<NoInfer<Context>> &
     AdapterFlagsParserValidation<NoInfer<Flags>>,
@@ -581,14 +581,14 @@ export function defineAdapter<
 >(
   input: {
     readonly name: string;
-    readonly requires?: ModelRequirements<Roles>;
-    readonly behaviorRevision?: string;
+    readonly requires?: ModelRequirements<Roles> | undefined;
+    readonly behaviorRevision?: string | undefined;
     /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
-    readonly cleanupTimeoutMs?: number;
+    readonly cleanupTimeoutMs?: number | undefined;
     readonly create: (
       context: AdapterCreateContext<AdapterFlagsOutput<Flags>, NoInfer<Roles>>,
     ) => (Context & ThisType<Context>) | Promise<Context & ThisType<Context>>;
-    readonly parseFlags?: Flags;
+    readonly parseFlags?: Flags | undefined;
     /** Attempt-local Assertion sugar, assembled once after create() succeeds. */
     readonly assertions: AdapterAssertionsFactory<Context, Assertions>;
   } & AdapterContextValidation<NoInfer<Context>> &
@@ -600,12 +600,12 @@ export function defineAdapter<
 // @concord-implements docs/feature/adapters/library/writing-an-adapter.md
 export function defineAdapter(input: {
   readonly name: string;
-  readonly requires?: ModelRequirements;
-  readonly behaviorRevision?: string;
+  readonly requires?: ModelRequirements | undefined;
+  readonly behaviorRevision?: string | undefined;
   /** Adapter 总清理预算，默认 30000 ms；允许整数 1–300000。 */
-  readonly cleanupTimeoutMs?: number;
+  readonly cleanupTimeoutMs?: number | undefined;
   readonly create: AdapterFactory<object, AdapterFlagsParser>;
-  readonly parseFlags?: AdapterFlagsParser;
+  readonly parseFlags?: AdapterFlagsParser | undefined;
   readonly assertions?: AdapterAssertionsFactory<object> | undefined;
 }): AdapterRuntimeDefinition {
   if (input.parseFlags !== undefined) assertAdapterFlagsParser(input.parseFlags);
@@ -671,17 +671,17 @@ function makeAdapterContract<
 export function adapterIdentity(adapter: Adapter | undefined): AdapterIdentity {
   if (adapter === undefined) return null;
   return adapter.kind === "custom"
-    ? Object.freeze({
+    ? {
         name: adapter.name,
         contract: adapter.contract,
-        behaviorRevision: adapter.behaviorRevision,
+        behaviorRevision: adapter.behaviorRevision ?? null,
         cleanupTimeoutMs: adapter.cleanupTimeoutMs,
-      })
-    : Object.freeze({
+      }
+    : {
         name: adapter.name,
         contract: "niceeval.agent/v1",
         behaviorRevision: null,
-      });
+      };
 }
 
 /** @internal Runtime contract pairing; the token itself never enters persistence. */
@@ -863,7 +863,7 @@ function bindAdapterAssertions<Kind extends EvaluationKind, Context extends obje
       },
     });
   }
-  return Object.freeze({ app, assertions: Object.freeze(assertions) });
+  return { app, assertions: Object.freeze(assertions) };
 }
 
 /** @internal Builds the frozen single-t facade after create settles. */

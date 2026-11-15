@@ -341,7 +341,7 @@ export const AssertionEntryIdSchema: Schema.Codec<AssertionEntryId, string> = Sc
 ).pipe(Schema.brand(ASSERTION_ENTRY_ID_BRAND));
 
 export const AssertionDisplaySchema: Schema.Schema<AssertionDisplay> = Schema.Struct({
-  label: Schema.optional(AssertionDisplayTextSchema),
+  label: Schema.optionalKey(AssertionDisplayTextSchema),
   groupPath: Schema.Array(AssertionDisplayTextSchema).check(
     Schema.makeFilter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {
       identifier: "AssertionDisplayGroupPath",
@@ -385,8 +385,8 @@ const NumericComparisonCriterionSchema = Schema.Struct({
   data: Schema.Struct({
     comparator: Schema.Literals(NUMERIC_COMPARATORS),
     threshold: Schema.Finite,
-    upperThreshold: Schema.optional(Schema.Finite),
-    unit: Schema.optional(Schema.Literals(["ms", "seconds", "tokens", "usd", "ratio", "count", "bytes"])),
+    upperThreshold: Schema.optionalKey(Schema.Finite),
+    unit: Schema.optionalKey(Schema.Literals(["ms", "seconds", "tokens", "usd", "ratio", "count", "bytes"])),
     subject: Schema.Union([
       Schema.Struct({ kind: Schema.Literal("explicit-value") }),
       Schema.Struct({
@@ -434,8 +434,8 @@ const OccurrenceCriterionSchema = Schema.Struct({
     scope: Schema.Literals(["turn", "session", "attempt"]),
     occurrence: Schema.Literals(["tool", "skill", "event"]),
     assertion: Schema.Literals(["present", "absent", "count", "order"]),
-    matcher: Schema.optional(BoundedJsonStringSchema),
-    quantifier: Schema.optional(
+    matcher: Schema.optionalKey(BoundedJsonStringSchema),
+    quantifier: Schema.optionalKey(
       Schema.Union([
         Schema.Struct({ kind: Schema.Literal("absent") }),
         Schema.Struct({
@@ -543,9 +543,9 @@ const SandboxResultCriterionSchema = Schema.Union([
     data: Schema.Struct({
       operation: Schema.Literal("file-changed"),
       path: BoundedJsonStringSchema,
-      status: Schema.optional(Schema.Literals(["added", "modified", "deleted"])),
-      before: Schema.optional(BoundedJsonStringSchema),
-      after: Schema.optional(BoundedJsonStringSchema),
+      status: Schema.optionalKey(Schema.Literals(["added", "modified", "deleted"])),
+      before: Schema.optionalKey(BoundedJsonStringSchema),
+      after: Schema.optionalKey(BoundedJsonStringSchema),
     }),
   }),
   Schema.Struct({
@@ -618,7 +618,7 @@ export const AssertionLimitationSchema: Schema.Schema<AssertionLimitation> = Sch
   Schema.Struct({
     kind: Schema.Literal("sampled"),
     captured: NonNegativeIntegerSchema,
-    knownTotal: Schema.optional(NonNegativeIntegerSchema),
+    knownTotal: Schema.optionalKey(NonNegativeIntegerSchema),
   }),
   Schema.Struct({
     kind: Schema.Literal("truncated"),
@@ -738,7 +738,7 @@ export const MatcherSourceLocatorSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("event"),
     eventId: MatcherIdentitySchema,
-    toolOccurrenceId: Schema.optional(MatcherIdentitySchema),
+    toolOccurrenceId: Schema.optionalKey(MatcherIdentitySchema),
     relation: MatcherRelationStatusSchema,
   }),
 ]);
@@ -746,7 +746,7 @@ export const MatcherSourceLocatorSchema = Schema.Union([
 export const MatcherRetainedRowSchema = Schema.Struct({
   locator: MatcherSourceLocatorSchema,
   result: Schema.Literals(["matched", "mismatched", "unavailable", "not-evaluated"]),
-  difference: Schema.optional(AssertionFactValueSchema),
+  difference: Schema.optionalKey(AssertionFactValueSchema),
 });
 
 const MatcherRetainedRowsSchema = Schema.Array(MatcherRetainedRowSchema).check(
@@ -1043,40 +1043,40 @@ export const SealedAssertionResultSchema: Schema.Schema<SealedAssertionResult> =
     state: Schema.Literal("matched"),
     gate: Schema.Literals(["not-gate", "satisfied"]),
     score: Schema.Union([NoScoreContributionSchema, EarnedScoreContributionSchema]),
-    diagnostic: Schema.optional(BoundedJsonObjectSchema),
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    diagnostic: Schema.optionalKey(BoundedJsonObjectSchema),
+    receipt: Schema.optionalKey(AssertionCollectionReceiptSchema),
   }),
   Schema.Struct({
     state: Schema.Literal("mismatched"),
     reason: Schema.Literal("condition-not-met"),
     gate: Schema.Literals(["not-gate", "failed"]),
     score: Schema.Union([NoScoreContributionSchema, EarnedScoreContributionSchema]),
-    diagnostic: Schema.optional(BoundedJsonObjectSchema),
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    diagnostic: Schema.optionalKey(BoundedJsonObjectSchema),
+    receipt: Schema.optionalKey(AssertionCollectionReceiptSchema),
   }),
   Schema.Struct({
     state: Schema.Literal("unavailable"),
     reason: Schema.Literals(["evidence-unavailable", "source-unavailable", "redacted"]),
     gate: Schema.Literals(["not-gate", "unavailable"]),
     score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
-    diagnostic: Schema.optional(BoundedJsonObjectSchema),
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    diagnostic: Schema.optionalKey(BoundedJsonObjectSchema),
+    receipt: Schema.optionalKey(AssertionCollectionReceiptSchema),
   }),
   Schema.Struct({
     state: Schema.Literal("errored"),
     reason: Schema.Literals(["evaluator-failed", "producer-interrupted", "invalid-subject"]),
     gate: Schema.Literals(["not-gate", "unavailable"]),
     score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
-    diagnostic: Schema.optional(BoundedJsonObjectSchema),
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    diagnostic: Schema.optionalKey(BoundedJsonObjectSchema),
+    receipt: Schema.optionalKey(AssertionCollectionReceiptSchema),
   }),
   Schema.Struct({
     state: Schema.Literal("not-applicable"),
     reason: Schema.Literal("coverage-not-applicable"),
     gate: Schema.Literals(["not-gate", "not-applicable"]),
     score: Schema.Union([NoScoreContributionSchema, UnavailableScoreContributionSchema]),
-    diagnostic: Schema.optional(BoundedJsonObjectSchema),
-    receipt: Schema.optional(AssertionCollectionReceiptSchema),
+    diagnostic: Schema.optionalKey(BoundedJsonObjectSchema),
+    receipt: Schema.optionalKey(AssertionCollectionReceiptSchema),
   }),
 ]);
 
@@ -1106,13 +1106,13 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     Schema.Struct({
       kind: Schema.Literal("ordinary"),
       observed: Schema.toType(AssertionFactValueSchema),
-      receipt: Schema.optional(Schema.toType(AssertionCollectionReceiptSchema)),
+      receipt: Schema.optionalKey(Schema.toType(AssertionCollectionReceiptSchema)),
     }),
     Schema.Struct({
       kind: Schema.Literal("matcher-current"),
       observed: Schema.toType(AssertionFactValueSchema),
       artifact: Schema.toType(MatcherQueryArtifactSchema),
-      receipt: Schema.optional(Schema.Never),
+      receipt: Schema.optionalKey(Schema.Never),
     }),
   ]);
   const decision = Schema.Struct({
@@ -1226,22 +1226,22 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     }),
   );
 
-  return Object.freeze({
+  return {
     material,
     entry,
     entries,
     outerDocument,
     document,
-  });
+  };
 }
 
 export interface AssertionsRecordCodecError {
   readonly code: "assertions-document-invalid";
 }
 
-const assertionsDocumentInvalid: AssertionsRecordCodecError = Object.freeze({
+const assertionsDocumentInvalid: AssertionsRecordCodecError = {
   code: "assertions-document-invalid",
-});
+};
 
 export function decodeAssertionsDocumentOuter<Content, Encoded>(
   schema: Schema.Codec<AssertionsDocumentOuter<Content>, Encoded>,
@@ -1339,9 +1339,9 @@ function availableEntry<Content>(
 ): AssertionEntryRead<Content> {
   const available: AssertionEntry<Content> = {
     ...entry,
-    criterion: Object.freeze({ state: "available" as const, value: criterion }),
+    criterion: { state: "available" as const, value: criterion },
   };
-  return Object.freeze({ state: "available", entry: Object.freeze(available) });
+  return { state: "available", entry: available };
 }
 
 function projectAssertionEntry<Content>(
@@ -1349,7 +1349,7 @@ function projectAssertionEntry<Content>(
   registry: ThirdPartyCriterionRegistry,
 ): AssertionEntryRead<Content> {
   if (entry.criterion.state === "unavailable") {
-    return Object.freeze({ state: "available", entry: entry as AssertionEntry<Content> });
+    return { state: "available", entry: entry as AssertionEntry<Content> };
   }
   const criterionValue = entry.criterion.value;
   const builtinEnvelope = Schema.decodeUnknownResult(
@@ -1365,17 +1365,17 @@ function projectAssertionEntry<Content>(
       return availableEntry(entry, builtin.success);
     }
     if (KNOWN_BUILTIN_CRITERION_IDS.has(builtinEnvelope.success.id)) {
-      return Object.freeze({
+      return {
         state: "invalid",
         entry,
         reason: "criterion-data-invalid",
-      });
+      };
     }
-    return Object.freeze({
+    return {
       state: "unsupported",
       entry,
       reason: "builtin-unknown",
-    });
+    };
   }
 
   const thirdParty = Schema.decodeUnknownResult(
@@ -1383,31 +1383,31 @@ function projectAssertionEntry<Content>(
     AssertionsExactParseOptions,
   )(criterionValue);
   if (Result.isFailure(thirdParty)) {
-    return Object.freeze({
+    return {
       state: "invalid",
       entry,
       reason: "criterion-envelope-invalid",
-    });
+    };
   }
 
   const definition = registry.lookup(thirdParty.success.name, thirdParty.success.schemaId);
   if (definition === undefined) {
-    return Object.freeze({
+    return {
       state: "unsupported",
       entry,
       reason: "third-party-schema-unavailable",
-    });
+    };
   }
   const data = Schema.decodeUnknownResult(
     Schema.toType(definition.dataSchema),
     AssertionsExactParseOptions,
   )(thirdParty.success.data);
   if (Result.isFailure(data)) {
-    return Object.freeze({
+    return {
       state: "invalid",
       entry,
       reason: "criterion-data-invalid",
-    });
+    };
   }
   return availableEntry(entry, thirdParty.success);
 }
@@ -1420,7 +1420,7 @@ export function projectAssertionsDocument<Content>(
   document: AssertionsDocumentOuter<Content>,
   registry: ThirdPartyCriterionRegistry,
 ): AssertionsProjection<Content> {
-  return Object.freeze({
-    entries: Object.freeze(document.entries.map((entry) => projectAssertionEntry(entry, registry))),
-  });
+  return {
+    entries: document.entries.map((entry) => projectAssertionEntry(entry, registry)),
+  };
 }

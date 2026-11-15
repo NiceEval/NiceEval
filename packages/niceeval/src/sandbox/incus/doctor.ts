@@ -31,7 +31,7 @@ export type IncusDoctorCheckId =
 export interface IncusDoctorCheck {
   readonly id: IncusDoctorCheckId;
   readonly status: IncusDoctorStatus;
-  readonly code?: string;
+  readonly code: string | undefined;
   readonly detail: string;
 }
 
@@ -42,20 +42,20 @@ export interface IncusDoctorReport {
   readonly descriptorPath: string;
   readonly failClosed: true;
   readonly checks: readonly IncusDoctorCheck[];
-  readonly dockerExecution?: ReturnType<typeof dockerExecutionCapability>;
+  readonly dockerExecution: ReturnType<typeof dockerExecutionCapability> | undefined;
 }
 
 export interface IncusDoctorOptions {
-  readonly domain?: IncusDomainName;
+  readonly domain?: IncusDomainName | undefined;
 }
 
 function check(id: IncusDoctorCheckId, status: IncusDoctorStatus, detail: string, code?: string): IncusDoctorCheck {
-  return Object.freeze({
+  return {
     id,
     status,
     detail,
-    ...(code === undefined ? {} : { code }),
-  });
+    code,
+  };
 }
 
 function failRest(after: readonly IncusDoctorCheckId[], code: string, detail: string): IncusDoctorCheck[] {
@@ -92,14 +92,15 @@ async function doctorIncusProviderWithRepository(
       "artifact-storage",
     ].filter((id) => !checks.some((entry) => entry.id === id) && id !== after) as IncusDoctorCheckId[];
     checks.push(...failRest(rest, "PREREQUISITE_FAILED", "the preceding diagnostic stage failed closed"));
-    return Object.freeze({
+    return {
       provider: "incus",
       domain: domainName,
       status: "FAIL",
       descriptorPath,
       failClosed: true,
-      checks: Object.freeze([...checks]),
-    });
+      checks,
+      dockerExecution: undefined,
+    };
   };
 
   let descriptor;
@@ -336,15 +337,15 @@ async function doctorIncusProviderWithRepository(
   }
 
   const failed = checks.some((entry) => entry.status === "FAIL");
-  return Object.freeze({
+  return {
     provider: "incus",
     domain: domainName,
     status: failed ? "FAIL" : "PASS",
     descriptorPath,
     failClosed: true,
-    checks: Object.freeze([...checks]),
+    checks,
     dockerExecution: dockerExecutionCapability(domain, domainName === "development", domain.dockerDataBytes ?? 1),
-  });
+  };
 }
 
 export function doctorIncusProvider(

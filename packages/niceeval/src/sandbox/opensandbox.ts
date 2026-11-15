@@ -17,20 +17,31 @@ import { openSandboxSnapshotDriver } from "./opensandbox/snapshot-driver.ts";
 export interface OpenSandboxOptions {
   readonly image: string;
   readonly targetPlatform: Extract<SandboxTargetPlatform, { readonly _tag: "Linux" }>;
-  readonly resources?: { readonly cpu?: string; readonly memory?: string };
-  readonly user?: string;
+  readonly resources?: { readonly cpu?: string | undefined; readonly memory?: string | undefined } | undefined;
+  readonly user?: string | undefined;
   /** Finite instance lifetime; normal completion still destroys it immediately. */
-  readonly lifetimeMs?: number;
-  readonly pathPrepend?: readonly string[];
+  readonly lifetimeMs?: number | undefined;
+  readonly pathPrepend?: readonly string[] | undefined;
 }
 
-const providerModule: SandboxProviderModule<OpenSandboxOptions> = {
+export interface OpenSandboxProviderPlan {
+  readonly image: string;
+  readonly targetPlatform: Extract<SandboxTargetPlatform, { readonly _tag: "Linux" }>;
+  readonly resources: { readonly cpu: string; readonly memory: string };
+  readonly user: { readonly _tag: "EnvironmentDefault" } | { readonly _tag: "Configured"; readonly value: string };
+  readonly lifetimeMs: number | undefined;
+  readonly pathPrepend: readonly string[];
+}
+
+const providerModule: SandboxProviderModule<OpenSandboxProviderPlan> = {
   id: "niceeval/opensandbox-image",
   beforeCache: { _tag: "RunPrepared", coverage: "all", preparer: remoteSnapshotPreparer(openSandboxSnapshotDriver) },
   capabilities: {
     retention: { _tag: "DestroyOnly" },
     reuse: { _tag: "Unsupported", reason: "OpenSandbox instances belong to one Attempt." },
     sessionLimit: { _tag: "ProviderValidated", reason: "The OpenSandbox service validates instance lifetime." },
+
+    dockerExecution: undefined,
   },
   collectBuildPreparation: () => Effect.succeed(Option.none()),
   materialize: (plan, context) =>
@@ -92,6 +103,7 @@ export function openSandbox(options: OpenSandboxOptions): SandboxLayer<"template
   if (options.pathPrepend !== undefined && !Array.isArray(options.pathPrepend))
     throw new TypeError("OpenSandbox pathPrepend must be an array");
   const pathPrepend = (options.pathPrepend ?? []).map((value) => nonempty(value, "pathPrepend"));
+  // Identity boundary: omitted resource declarations must not become default-valued digest keys.
   const resources: { cpu?: string; memory?: string } = {};
   if (options.resources !== undefined) {
     if (options.resources === null || typeof options.resources !== "object")
@@ -102,21 +114,24 @@ export function openSandbox(options: OpenSandboxOptions): SandboxLayer<"template
     if (options.resources.memory !== undefined)
       resources.memory = nonempty(options.resources.memory, "resources.memory");
   }
-  const plan: OpenSandboxOptions = Object.freeze({
+  const plan: OpenSandboxProviderPlan = {
     image,
-    ...(options.lifetimeMs === undefined ? {} : { lifetimeMs: options.lifetimeMs }),
-    targetPlatform: Object.freeze({ ...platform }),
-    resources: Object.freeze(resources),
-    pathPrepend: Object.freeze(pathPrepend),
-    ...(options.user === undefined ? {} : { user: nonempty(options.user, "user") }),
-  });
+    lifetimeMs: options.lifetimeMs,
+    targetPlatform: { ...platform },
+    resources: { cpu: resources.cpu ?? "1", memory: resources.memory ?? "2Gi" },
+    pathPrepend,
+    user:
+      options.user === undefined
+        ? { _tag: "EnvironmentDefault" }
+        : { _tag: "Configured", value: nonempty(options.user, "user") },
+  };
   const identity: JsonValue = {
     image,
     ...(plan.lifetimeMs === undefined ? {} : { lifetimeMs: plan.lifetimeMs }),
     targetPlatform: { os: platform.os, arch: platform.arch, libc: platform.libc },
     resources,
     pathPrepend,
-    ...(plan.user === undefined ? {} : { user: plan.user }),
+    ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
   };
   return defineSandboxTemplate({
     provider: "opensandbox",
@@ -151,6 +166,9 @@ export function openSandbox(options: OpenSandboxOptions): SandboxLayer<"template
           },
           publishableIdentity: identity,
           privateFingerprintIdentity: identity,
+
+          interruptibleAcquisition: false,
+          identityMarker: undefined,
         }),
       ),
   });

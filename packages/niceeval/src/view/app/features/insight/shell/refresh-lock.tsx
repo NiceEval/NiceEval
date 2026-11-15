@@ -19,8 +19,8 @@ export type AcquireRefreshNavigationLock = (signal: AbortSignal) => Promise<Refr
 interface LockSession {
   readonly signal: AbortSignal;
   active: boolean;
-  latestIntent?: NavigationIntent;
-  release?: Promise<NavigationIntent["source"] | undefined>;
+  latestIntent: NavigationIntent | undefined;
+  release: Promise<NavigationIntent["source"] | undefined> | undefined;
   removeAbortListener: () => void;
 }
 
@@ -164,6 +164,8 @@ export function useRefreshNavigationLock(): {
         signal,
         active: true,
         removeAbortListener: () => signal.removeEventListener("abort", abort),
+        latestIntent: undefined,
+        release: undefined,
       };
       sessionRef.current = session;
       signal.addEventListener("abort", abort, { once: true });

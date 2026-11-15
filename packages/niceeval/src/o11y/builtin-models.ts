@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import * as Schema from "effect/Schema";
 
+// Third-party JSON input boundary: the bundled catalog omits prices for unreported token buckets.
 export interface BuiltinPrice {
   readonly in: number;
   readonly out: number;

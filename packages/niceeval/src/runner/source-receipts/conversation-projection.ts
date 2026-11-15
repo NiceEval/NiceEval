@@ -54,7 +54,7 @@ function sourceNativeToolName(value: string): SourceNativeToolName | undefined {
 }
 
 function eventCannotBePersisted(
-  event: { readonly redacted?: readonly string[]; readonly truncated?: readonly unknown[] },
+  event: Pick<StreamEvent, "redacted" | "truncated">,
   limitations: RunnerCollectionLimitations,
 ): boolean {
   if ((event.redacted?.length ?? 0) > 0) {
@@ -235,13 +235,14 @@ export function normalizeConversationTurn(
         break;
       }
       case "input.requested": {
+        const request = event.request;
         const source = event.request.prompt ?? event.request.display;
-        const summary =
-          source === undefined
-            ? event.request.input === undefined
-              ? undefined
-              : jsonConversationSummary(event.request.input, runtime, limitations)
-            : retainConversationText(source, runtime, limitations);
+        function inputRequestSummary() {
+          if (source !== undefined) return retainConversationText(source, runtime, limitations);
+          if (request.input !== undefined) return jsonConversationSummary(request.input, runtime, limitations);
+          return undefined;
+        }
+        const summary = inputRequestSummary();
         if (summary === undefined) {
           limitations.addUnsupported("conversation-item");
           break;

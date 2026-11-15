@@ -45,20 +45,19 @@ function read(connection: RecordDatabase, caseId: string) {
   const row = recordStatement(connection, "SELECT * FROM ne19_case_locks WHERE case_id=?").get(caseId) as
     | Row
     | undefined;
-  return row === undefined
-    ? undefined
-    : {
-        owner: {
-          ownerId: text(row, "owner_id"),
-          generation: integer(row, "owner_generation"),
-          host: text(row, "owner_host"),
-          pid: integer(row, "owner_pid"),
-          bootId: text(row, "owner_boot_id"),
-          processStart: text(row, "owner_process_start"),
-        },
-        acquiredAt: text(row, "acquired_at"),
-        heartbeatAt: text(row, "heartbeat_at"),
-      };
+  if (row === undefined) return undefined;
+  return {
+    owner: {
+      ownerId: text(row, "owner_id"),
+      generation: integer(row, "owner_generation"),
+      host: text(row, "owner_host"),
+      pid: integer(row, "owner_pid"),
+      bootId: text(row, "owner_boot_id"),
+      processStart: text(row, "owner_process_start"),
+    },
+    acquiredAt: text(row, "acquired_at"),
+    heartbeatAt: text(row, "heartbeat_at"),
+  };
 }
 
 export function executeCaseCommand(connection: RecordDatabase, command: CaseCoordinationCommand): object | undefined {

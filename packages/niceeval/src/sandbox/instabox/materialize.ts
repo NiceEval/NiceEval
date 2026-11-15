@@ -2,7 +2,7 @@ import { sandboxCreationLabels } from "../creation-labels.ts";
 import { cloudLifetimeMs } from "../cloud-lifetime.ts";
 import { Effect } from "effect";
 import { providerBoundaryEffect } from "../backend.ts";
-import type { InstaboxSandboxOptions } from "../instabox.ts";
+import type { InstaboxProviderPlan } from "../instabox.ts";
 import {
   SandboxRuntimeMaterializationError,
   wrapSingleSandbox,
@@ -11,7 +11,7 @@ import {
 import { InstaboxBackend } from "./sandbox.ts";
 
 export const materializeInstabox = Effect.fn("materializeInstabox")(
-  function* (plan: InstaboxSandboxOptions, context: SandboxRuntimeMaterializeContext) {
+  function* (plan: InstaboxProviderPlan, context: SandboxRuntimeMaterializeContext) {
     if (context.admission._tag === "Bound") yield* context.admission.value.granted;
     const deadlineAt = context.deadline._tag === "Bounded" ? context.deadline.deadlineAt : undefined;
     if (
@@ -44,9 +44,7 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
     const materialized = wrapSingleSandbox(
       backend,
       context,
-      plan.snapshotId !== undefined
-        ? { snapshotId: plan.snapshotId }
-        : { templateId: plan.templateId ?? plan.template ?? "universal" },
+      plan.source._tag === "Snapshot" ? { snapshotId: plan.source.id } : { templateId: plan.source.id },
     );
     yield* Effect.addFinalizer(() => providerBoundaryEffect(() => materialized.group.stop()).pipe(Effect.orDie));
     yield* providerBoundaryEffect((signal) => backend.initialize(signal));

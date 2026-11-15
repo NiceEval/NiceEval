@@ -69,13 +69,13 @@ async function addOpenCodeSkillFrontmatter(sb: Sandbox, names: readonly string[]
 
 export interface OpenCodeConfig {
   /** 模型 API key。省略时读 OPENCODE_API_KEY,再回落 ANTHROPIC_API_KEY。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容端点。省略时读 OPENCODE_BASE_URL。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** 钉 npm `opencode-ai` 版本;省略时用 NiceEval 默认 pin。 */
-  version?: string;
+  version?: string | undefined;
   /** 装进沙箱的 Skill,落在 `.agents/skills/<name>/`。 */
-  skills?: SkillSpec[];
+  skills?: SkillSpec[] | undefined;
 }
 
 function resolveApiKey(config?: OpenCodeConfig): string {
@@ -278,7 +278,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
           events,
           usage: parsed.usage,
           status: hasErrorEvent ? ("failed" as const) : ("completed" as const),
-          ...(turnEvidenceCoverage === undefined ? {} : { evidenceCoverage: turnEvidenceCoverage }),
+          evidenceCoverage: turnEvidenceCoverage,
         };
       }),
   });

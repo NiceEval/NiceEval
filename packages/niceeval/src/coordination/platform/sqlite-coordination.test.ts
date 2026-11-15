@@ -89,6 +89,7 @@ describe("canonical SQLite coordination", () => {
       startedAt: "2026-01-01T00:00:00Z",
       runs: [],
       deadlineEpochMs: deadline(),
+      queuedAttempts: undefined,
     });
     updateInvocationActiveProjectionOnConnection(
       db,
@@ -98,7 +99,7 @@ describe("canonical SQLite coordination", () => {
       new TextEncoder().encode("active"),
       deadline(),
     );
-    expect(new TextDecoder().decode(readInvocationOnConnection(db, "inv-a")?.activeProjection)).toBe("active");
+    expect(new TextDecoder().decode(readInvocationOnConnection(db, "inv-a")?.projection?.bytes)).toBe("active");
     closeInvocationOnConnection(
       db,
       "inv-a",
@@ -108,11 +109,11 @@ describe("canonical SQLite coordination", () => {
       new TextEncoder().encode("portable-terminal"),
       deadline(),
     );
-    expect(readInvocationOnConnection(db, "inv-a")?.activeProjection).toBeUndefined();
+    expect(readInvocationOnConnection(db, "inv-a")?.projection?.kind).toBe("terminal");
     closeRecordDatabase(db);
     expect(finalizeInvocationPortable(path)).toBe(true);
     const reader = openRecordReader(path);
-    expect(new TextDecoder().decode(readInvocationOnConnection(reader, "inv-a")?.terminalProjection)).toBe(
+    expect(new TextDecoder().decode(readInvocationOnConnection(reader, "inv-a")?.projection?.bytes)).toBe(
       "portable-terminal",
     );
     closeRecordDatabase(reader);
@@ -127,6 +128,7 @@ describe("canonical SQLite coordination", () => {
       startedAt: "2026-01-01T00:00:00Z",
       runs: [],
       deadlineEpochMs: deadline(),
+      queuedAttempts: undefined,
     });
     expect(() =>
       beginInvocationRecoveryOnConnection(

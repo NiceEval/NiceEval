@@ -45,22 +45,22 @@ export interface NpmCliInstallerOptions {
   /** 从 `--version` 输出解析精确版本;默认取最后一个 `\d+\.\d+\.\d+…` 片段。 */
   parseVersion?(stdout: string): string | undefined;
   /** 宿主制品 cache 根;省略用 ~/.cache/niceeval/agent-artifacts。 */
-  cacheDir?: string;
+  cacheDir?: string | undefined;
   /** 覆盖 prepare(测试注入 / 离线预置)。 */
   prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
   /** Human-only transient labels; omitted labels are not synthesized by the Runner. */
-  progress?: {
-    readonly checking?: string;
-    readonly installing?: string;
-    readonly ready?: string;
-  };
+  progress?:
+    | {
+        readonly checking?: string | undefined;
+        readonly installing?: string | undefined;
+        readonly ready?: string | undefined;
+      }
+    | undefined;
 }
 
-interface AgentProbeResult {
-  readonly ok: boolean;
-  readonly actualVersion?: string;
-  readonly detail?: string;
-}
+type AgentProbeResult =
+  | { readonly ok: true; readonly actualVersion: string }
+  | { readonly ok: false; readonly actualVersion: string | undefined; readonly detail: string };
 
 function defaultParseVersion(stdout: string): string | undefined {
   const matches = stdout.match(/\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/g);
@@ -210,7 +210,7 @@ function npmPackToCacheEffect(opts: {
   platform: AgentArtifactPlatform;
   identity: AgentIdentity;
   /** 覆盖 pack 的 spec(原生平台包);省略时用 `<packageName>@<version>`。 */
-  spec?: string;
+  spec?: string | undefined;
   install: AgentStagedArtifact["install"];
 }): Effect.Effect<AgentStagedArtifact, unknown> {
   return Effect.gen(function* () {
@@ -273,6 +273,7 @@ function checkNpmCliEffect(
       if (res.exitCode !== 0) {
         return Effect.succeed({
           ok: false,
+          actualVersion: undefined,
           detail: `Command ${bin} not found. ${(res.stdout + res.stderr).trim().slice(0, 200)}`,
         });
       }
@@ -284,6 +285,7 @@ function checkNpmCliEffect(
           if (actualVersion === undefined) {
             return {
               ok: false,
+              actualVersion: undefined,
               detail: `Could not parse a version from \`${bin} --version\`: ${res.stdout.trim().slice(0, 200)}`,
             };
           }

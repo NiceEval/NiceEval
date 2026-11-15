@@ -4,11 +4,26 @@ import type {
   AssertionSealError,
   AssertionSealOptions,
   AssertionsRuntime,
+  SealedAssertionEvaluation,
   SealedAttemptAssertions,
 } from "../assertions/api.ts";
 import type { AgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import { buildScorePayload, type ScorePayloadBuildError } from "../eval/record/score.ts";
 import { foldVerdict } from "../eval/record/verdict.ts";
+import type { EvaluationAttemptFacts } from "../eval/record/sealed-assertion.ts";
+import { encodeAssertionResult } from "../assertions/record/attachment.ts";
+
+/** Encode internal Assertion facts once at the canonical Eval fold boundary. */
+export function assertionEvaluationFacts(evaluation: SealedAssertionEvaluation): EvaluationAttemptFacts {
+  return {
+    execution: evaluation.execution,
+    explicitlySkipped: evaluation.explicitlySkipped,
+    assertions: evaluation.assertions.map((assertion) => ({
+      required: assertion.required,
+      result: encodeAssertionResult(assertion.result),
+    })),
+  };
+}
 
 /**
  * Seals Assert-first's immutable runtime result. Durable attachment encoding
@@ -21,17 +36,16 @@ export function sealAttemptAssertions<Kind extends "pass" | "score">(
 ): Effect.Effect<SealedAttemptAssertions, AssertionSealError | ScorePayloadBuildError> {
   return runtime.seal(options).pipe(
     Effect.flatMap((sealed) => {
-      const score = runtime.evaluationKind === "score" ? buildScorePayload(sealed.evaluation) : undefined;
+      const facts = assertionEvaluationFacts(sealed.evaluation);
+      const score = runtime.evaluationKind === "score" ? buildScorePayload(facts) : undefined;
       if (score !== undefined && Result.isFailure(score)) return Effect.fail(score.failure);
-      return Effect.succeed(
-        Object.freeze({
-          entries: sealed.entries,
-          evaluation: sealed.evaluation,
-          ...(workspaceDiff === undefined ? {} : { workspaceDiff }),
-          verdict: Object.freeze({ state: foldVerdict(sealed.evaluation) }),
-          ...(score === undefined ? {} : { score: score.success }),
-        }),
-      );
+      return Effect.succeed({
+        entries: sealed.entries,
+        evaluation: sealed.evaluation,
+        workspaceDiff,
+        verdict: { state: foldVerdict(facts) },
+        score: score?.success,
+      });
     }),
   );
 }

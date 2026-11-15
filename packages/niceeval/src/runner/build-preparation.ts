@@ -22,7 +22,7 @@ export function collectBuildPreparation(opts: {
   readonly preparedPairs: readonly PreparedRunPair[];
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
   /** 测试可注入单一 provider；生产默认按每条 BuildKey 的 ProviderModule 路由。 */
-  readonly provider?: SandboxBuildProvider;
+  readonly provider: SandboxBuildProvider | undefined;
 }): Effect.Effect<Option.Option<CollectedBuildPreparation>, SandboxRuntimeMaterializationError> {
   return Effect.gen(function* () {
     const worksByKey = new Map<SandboxBuildRef, SandboxBuildWork>();
@@ -79,13 +79,11 @@ export function collectBuildPreparation(opts: {
 
     if (worksByKey.size === 0) return Option.none();
     const provider = opts.provider ?? routeBuildProviders(providerByKey);
-    return Option.some(
-      Object.freeze({
-        works: Object.freeze([...worksByKey.values()]),
-        pairBuildKeys: Object.freeze(Object.fromEntries(pairBuildKeys)),
-        provider,
-      }),
-    );
+    return Option.some({
+      works: [...worksByKey.values()],
+      pairBuildKeys: Object.fromEntries(pairBuildKeys),
+      provider,
+    });
   });
 }
 
@@ -98,5 +96,8 @@ export function toBuildPreparation(
     works: collected.works,
     pairBuildKeys: collected.pairBuildKeys,
     provider: collected.provider,
+    maxConcurrency: 2,
+    buildTimeoutMs: undefined,
+    prepareBudgetMs: undefined,
   });
 }

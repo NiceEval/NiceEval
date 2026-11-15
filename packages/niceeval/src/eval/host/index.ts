@@ -2,11 +2,12 @@
 // @concord-implements docs/feature/eval/README.md
 import { Data, Effect } from "effect";
 import { discoverEvals } from "../../runner/discover.ts";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 
 /** Identifies a discovered Eval with tags and Pass or Score kind; its ID is the selection identity rather than its display description. */
 export interface EvalCatalogEntry {
   readonly id: string;
-  readonly description?: string;
+  readonly description: string | undefined;
   readonly tags: readonly string[];
   readonly evaluationKind: "pass" | "score";
 }
@@ -19,28 +20,25 @@ export interface EvalCatalog {
 /** Reports failure to discover the Eval catalog; this is a Host operation error rather than an Attempt Verdict. */
 export class EvalCatalogError extends Data.TaggedError("EvalCatalogError")<{
   readonly operation: "catalog";
-  readonly cause: unknown;
+  readonly cause: ExternalCause;
 }> {}
 
-function catalog(input: { readonly cwd: string; readonly tag?: string }): Effect.Effect<EvalCatalog, EvalCatalogError> {
+function catalog(input: {
+  readonly cwd: string;
+  readonly tag?: string | undefined;
+}): Effect.Effect<EvalCatalog, EvalCatalogError> {
   return discoverEvals(input.cwd).pipe(
-    Effect.map((discovered) =>
-      Object.freeze({
-        entries: Object.freeze(
-          discovered
-            .filter((definition) => input.tag === undefined || definition.tags?.includes(input.tag))
-            .map((definition) =>
-              Object.freeze({
-                id: definition.id,
-                ...(definition.description === undefined ? {} : { description: definition.description }),
-                tags: Object.freeze([...(definition.tags ?? [])]),
-                evaluationKind: definition.evaluationKind,
-              }),
-            ),
-        ),
-      }),
-    ),
-    Effect.mapError((cause) => new EvalCatalogError({ operation: "catalog", cause })),
+    Effect.map((discovered) => ({
+      entries: discovered
+        .filter((definition) => input.tag === undefined || definition.tags?.includes(input.tag))
+        .map((definition) => ({
+          id: definition.id,
+          description: definition.description,
+          tags: definition.tags ?? [],
+          evaluationKind: definition.evaluationKind,
+        })),
+    })),
+    Effect.mapError((cause) => new EvalCatalogError({ operation: "catalog", cause: normalizeExternalCause(cause) })),
   );
 }
 

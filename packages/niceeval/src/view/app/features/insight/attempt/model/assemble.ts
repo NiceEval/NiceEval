@@ -54,19 +54,17 @@ export interface TraceDetailViewModel {
 
 export function projectTraceDetail(document: TraceDetailDocument): TraceDetailViewModel {
   const detail = recordField(document, "detail");
-  const identity =
-    typeof detail.itemId === "string"
-      ? detail.itemId
-      : typeof detail.toolOccurrenceId === "string"
-        ? detail.toolOccurrenceId
-        : typeof detail.commandId === "string"
-          ? detail.commandId
-          : "trace-detail";
-  return Object.freeze({
+  function traceIdentity(): string {
+    if (typeof detail.itemId === "string") return detail.itemId;
+    if (typeof detail.toolOccurrenceId === "string") return detail.toolOccurrenceId;
+    if (typeof detail.commandId === "string") return detail.commandId;
+    return "trace-detail";
+  }
+  return {
     kind: stringField(detail, "kind"),
-    identity,
+    identity: traceIdentity(),
     content: closedJson(detail),
-  });
+  };
 }
 
 export function projectConversation(
@@ -109,7 +107,7 @@ export function projectSources(
   document: InspectionSuccessDocumentFor<"attempt.sources">,
   trace: InspectionSuccessDocumentFor<"attempt.trace">,
   locator: string,
-): ClosedEvidenceSlice<SourceContent> {
+): ClosedEvidenceSlice<SourceContent | undefined> {
   return closeSources(recordField(document, "sources"), recordField(trace, "trace"), locator).slice;
 }
 
@@ -117,26 +115,28 @@ export function projectDiff(document: InspectionSuccessDocumentFor<"attempt.diff
   return closeDiff(recordField(document, "diff"));
 }
 
-export interface AttemptArtifactsViewModel {
-  readonly state: "available" | "not-recorded";
-  readonly contentCount: number;
-  readonly contentsTruncated: boolean;
-  readonly value: ClosedJsonValue | null;
-}
+export type AttemptArtifactsViewModel =
+  | { readonly state: "not-recorded" }
+  | {
+      readonly state: "available";
+      readonly contentCount: number;
+      readonly contentsTruncated: boolean;
+      readonly value: ClosedJsonValue;
+    };
 
 export function projectArtifacts(
   document: InspectionSuccessDocumentFor<"attempt.artifacts">,
 ): AttemptArtifactsViewModel {
   const artifacts = recordField(document, "artifacts");
   if (artifacts.state !== "available") {
-    return Object.freeze({ state: "not-recorded", contentCount: 0, contentsTruncated: false, value: null });
+    return { state: "not-recorded" };
   }
-  return Object.freeze({
+  return {
     state: "available",
     contentCount: Array.isArray(artifacts.contents) ? artifacts.contents.length : 0,
     contentsTruncated: artifacts.contentsTruncated === true,
     value: closedJson(artifacts.value),
-  });
+  };
 }
 
 function closeAssertions(details: readonly JsonRecord[]): {
@@ -160,22 +160,18 @@ function closeAssertions(details: readonly JsonRecord[]): {
     byGroup.set(group, values);
   }
   const scoreEntries = entries.flatMap(({ score }) => (score === undefined ? [] : [score]));
-  const data: AttemptAssertionsData = Object.freeze({
-    attention: Object.freeze(attention),
-    passedGroups: Object.freeze(
-      [...byGroup].map(([group, items]) =>
-        Object.freeze({
-          group,
-          items: Object.freeze(items),
-        }),
-      ),
-    ),
+  const data: AttemptAssertionsData = {
+    attention,
+    passedGroups: [...byGroup].map(([group, items]) => ({
+      group,
+      items,
+    })),
     evaluationKind: scoreEntries.length === 0 ? "pass" : "points",
-  });
-  return Object.freeze({
+  };
+  return {
     data,
-    slice: Object.freeze({ state: "available" as const, data }),
-  });
+    slice: { state: "available" as const, data },
+  };
 }
 
 function closeAssertion(detail: JsonRecord): AttemptAssertionView {
@@ -213,26 +209,26 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
     )
       return [];
     return [
-      Object.freeze({
+      {
         entryId: site.entryId,
         sourceOrder: site.sourceOrder,
         role: site.role,
         source: source as ClosedJsonValue,
-        start: Object.freeze({ line: start.line, column: start.column }),
-        end: Object.freeze({ line: end.line, column: end.column }),
-      } satisfies AttemptInspectionAssertionSourceSite),
+        start: { line: start.line, column: start.column },
+        end: { line: end.line, column: end.column },
+      } satisfies AttemptInspectionAssertionSourceSite,
     ];
   });
   const sourceSites: readonly AttemptAssertionSourceSite[] = retainedSourceSites.map((site) => {
     const source = record(site.source, "assertion.sourceSites[].source");
-    return Object.freeze({
+    return {
       ...site,
-      target: Object.freeze({
+      target: {
         state: "exact" as const,
         sourceItemId: stringField(source, "sourceItemId"),
         sha256: stringField(source, "sha256"),
-      }),
-    });
+      },
+    };
   });
   const check = closeDiagnostic(recordField(detail, "check"));
   const matcherDetail = recordField(detail, "matcher");
@@ -247,95 +243,103 @@ function closeAssertion(detail: JsonRecord): AttemptAssertionView {
     judgeMaterial,
     optionalRecord(entry.agentJudgeAudit) ?? scoreMatchAudit,
   );
-  const closed: AttemptClosedAssertionEntry = Object.freeze({
+  const closed: AttemptClosedAssertionEntry = {
     entryId: stringField(detail, "entryId"),
-    display: Object.freeze({
-      ...(typeof display.label === "string" ? { label: display.label } : {}),
-      groupPath: Object.freeze(stringArray(display.groupPath)),
-    }),
+    display: {
+      label: typeof display.label === "string" ? display.label : undefined,
+      groupPath: stringArray(display.groupPath),
+    },
     entry: entry as ClosedJsonValue,
-    sourceSites: Object.freeze(retainedSourceSites),
+    sourceSites: retainedSourceSites,
     check,
     matcher,
-  });
+  };
   const name = typeof display.label === "string" ? display.label : closed.entryId;
   const score = closeScore(contribution);
   const gate = decision.gate;
-  const outcome =
-    result === "matched"
-      ? ("passed" as const)
-      : result === "mismatched" || result === "errored"
-        ? ("failed" as const)
-        : ("unavailable" as const);
-  return Object.freeze({
+  function assertionOutcome() {
+    if (result === "matched") return "passed" as const;
+    if (result === "mismatched" || result === "errored") return "failed" as const;
+    return "unavailable" as const;
+  }
+  function assertionSeverity() {
+    if (gate === "failed" || gate === "unavailable") return "gate" as const;
+    return score === undefined ? ("recorded" as const) : ("scored" as const);
+  }
+  return {
     entryId: closed.entryId,
     closed,
-    display: Object.freeze({
+    display: {
       name,
-      severity: gate === "failed" || gate === "unavailable" ? "gate" : score === undefined ? "recorded" : "scored",
-      outcome,
+      severity: assertionSeverity(),
+      outcome: assertionOutcome(),
       groupPath: closed.display.groupPath,
       detail: typeof decision.reason === "string" ? decision.reason : "",
-    }),
-    sourceSites: Object.freeze(sourceSites),
+    },
+    sourceSites,
     check: checkFact,
-    decision: Object.freeze({
+    decision: {
       result,
       observed: observedFact,
       expected: expectedFact,
       diagnosticTree: explanationFact,
-      ...(typeof decision.reason === "string" ? { reason: decision.reason } : {}),
-    }),
-    evidence: Object.freeze({
+      reason: typeof decision.reason === "string" ? decision.reason : undefined,
+    },
+    evidence: {
       source: sourceFact,
       check: checkFact,
       observed: observedFact,
       expected: expectedFact,
       explanation: explanationFact,
-      ...(matcherDebugger === undefined ? {} : { matcherDebugger }),
-    }),
-    ...(score === undefined ? {} : { score }),
-    retained: Object.freeze({ matcher: matcher as unknown as ClosedJsonValue }),
-  });
+      matcherDebugger,
+    },
+    score,
+  };
 }
 
 function closeDiagnostic(value: JsonRecord): AttemptAssertionDiagnosticNode {
-  return Object.freeze({
+  return {
     label: stringField(value, "label"),
     state: stringField(value, "state"),
     expected: closedJson(value.expected),
     observed: closedJson(value.observed),
     reason: nullableString(value.reason),
     anchor: closedJson(value.anchor),
-    children: Object.freeze(
-      arrayField(value, "children").map((child, index) => closeDiagnostic(record(child, `check.children[${index}]`))),
+    children: arrayField(value, "children").map((child, index) =>
+      closeDiagnostic(record(child, `check.children[${index}]`)),
     ),
-  });
+  };
 }
 
 function assertionCriterionFact(criterion: JsonRecord): ClosedAssertionFactValue {
   return criterion.state === "available"
     ? assertionFact(criterion.value)
-    : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" });
+    : { kind: "unavailable" as const, reason: "not-recorded" };
 }
 
 function assertionExpectedFact(condition: JsonRecord | undefined): ClosedAssertionFactValue {
   return condition?.state === "available"
     ? assertionFact(condition.value)
-    : Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" });
+    : { kind: "unavailable" as const, reason: "not-recorded" };
 }
 
 function assertionObservedFact(evaluation: JsonRecord, matcher: AttemptMatcherDetail): ClosedAssertionFactValue {
   const observed = closeRecordedAssertionFact(evaluation.observed);
-  const receipt =
-    evaluation.kind === "ordinary"
-      ? evaluation.receipt
-      : evaluation.kind === "matcher-current" && !Array.isArray(matcher.comparator)
-        ? matcher.receipt
-        : undefined;
+  function receiptFields() {
+    if (evaluation.kind === "ordinary") {
+      const receipt = evaluation.receipt;
+      if (receipt === undefined || receipt === null) return [];
+      return [{ label: "receipt", value: assertionFact(receipt) }];
+    }
+    if (evaluation.kind === "matcher-current" && !Array.isArray(matcher.comparator)) {
+      const receipt = matcher.receipt;
+      if (receipt !== undefined && receipt !== null) return [{ label: "receipt", value: assertionFact(receipt) }];
+    }
+    return [];
+  }
   return factFields([
     ...(observed.kind === "fields" ? observed.fields : [{ label: "value", value: observed }]),
-    ...(receipt === undefined || receipt === null ? [] : [{ label: "receipt", value: assertionFact(receipt) }]),
+    ...receiptFields(),
   ]);
 }
 
@@ -353,13 +357,11 @@ function assertionSourceFact(
     { label: "input", value: source },
     ...(judgeMaterial === undefined ? [] : [{ label: "judge material", value: assertionFact(judgeMaterial) }]),
     ...(scoreMatchAudit === undefined ? [] : [{ label: "model evaluation", value: assertionFact(scoreMatchAudit) }]),
-    ...(evidence.length === 0
-      ? []
-      : [{ label: "evidence", value: Object.freeze({ kind: "list" as const, items: Object.freeze(evidence) }) }]),
+    ...(evidence.length === 0 ? [] : [{ label: "evidence", value: { kind: "list" as const, items: evidence } }]),
     { label: "coverage", value: assertionFact(materials.coverage) },
     ...(limitations.length === 0
       ? []
-      : [{ label: "limitations", value: Object.freeze({ kind: "list" as const, items: Object.freeze(limitations) }) }]),
+      : [{ label: "limitations", value: { kind: "list" as const, items: limitations } }]),
   ]);
 }
 
@@ -377,7 +379,9 @@ function assertionExplanationFact(entry: JsonRecord, check: AttemptAssertionDiag
       ...(!labels.has("received") && check.observed !== null
         ? [{ label: "received", value: assertionDiagnosticValue(check.observed) }]
         : []),
-      ...(!labels.has("reason") && check.reason !== null ? [{ label: "reason", value: factValue(check.reason) }] : []),
+      ...(!labels.has("reason") && check.reason !== undefined
+        ? [{ label: "reason", value: factValue(check.reason) }]
+        : []),
     ]);
   }
   return diagnosticFact(check);
@@ -398,21 +402,21 @@ function assertionDiagnosticValue(value: unknown): ClosedAssertionFactValue {
 /** Current diagnostic field names -> the old AssertionEvidence field names. */
 function renameLegacyDiagnosticFields(value: ClosedAssertionFactValue): ClosedAssertionFactValue {
   if (value.kind === "list") {
-    return Object.freeze({
+    return {
       kind: "list" as const,
-      items: Object.freeze(value.items.map(renameLegacyDiagnosticFields)),
-    });
+      items: value.items.map(renameLegacyDiagnosticFields),
+    };
   }
   if (value.kind !== "fields") return value;
   const labels = new Set(value.fields.map((field) => field.label));
+  function diagnosticLabel(label: string): string {
+    if (label === "observed" && !labels.has("received")) return "received";
+    if (label === "message" && !labels.has("reason")) return "reason";
+    return label;
+  }
   return factFields(
     value.fields.map((field) => ({
-      label:
-        field.label === "observed" && !labels.has("received")
-          ? "received"
-          : field.label === "message" && !labels.has("reason")
-            ? "reason"
-            : field.label,
+      label: diagnosticLabel(field.label),
       value: renameLegacyDiagnosticFields(field.value),
     })),
   );
@@ -421,37 +425,36 @@ function renameLegacyDiagnosticFields(value: ClosedAssertionFactValue): ClosedAs
 /** Current Inspection diagnostic node -> the old MatchDiagnostic fact algebra. */
 function diagnosticFact(node: AttemptAssertionDiagnosticNode): ClosedAssertionFactValue {
   const anchor = optionalRecord(node.anchor);
-  const locatorId =
-    typeof anchor?.id === "string"
-      ? anchor.id
-      : typeof anchor?.toolOccurrenceId === "string"
-        ? anchor.toolOccurrenceId
-        : typeof anchor?.eventId === "string"
-          ? anchor.eventId
-          : undefined;
+  function locatorFields() {
+    function locatorIdentity(): string | undefined {
+      if (typeof anchor?.id === "string") return anchor.id;
+      if (typeof anchor?.toolOccurrenceId === "string") return anchor.toolOccurrenceId;
+      if (typeof anchor?.eventId === "string") return anchor.eventId;
+      return undefined;
+    }
+    const id = locatorIdentity();
+    if (id === undefined) return [];
+    return [{ label: "locator", value: factFields([{ label: "id", value: factValue(id) }]) }];
+  }
   return factFields([
     { label: "code", value: factValue(node.label) },
     ...(node.expected === null ? [] : [{ label: "expected", value: assertionDiagnosticValue(node.expected) }]),
     ...(node.observed === null ? [] : [{ label: "received", value: assertionDiagnosticValue(node.observed) }]),
-    ...(node.reason === null ? [] : [{ label: "reason", value: factValue(node.reason) }]),
-    ...(locatorId === undefined
-      ? []
-      : [{ label: "locator", value: factFields([{ label: "id", value: factValue(locatorId) }]) }]),
+    ...(node.reason === undefined ? [] : [{ label: "reason", value: factValue(node.reason) }]),
+    ...locatorFields(),
     {
       label: "children",
-      value: Object.freeze({
+      value: {
         kind: "list" as const,
-        items: Object.freeze(
-          node.children.map((child, index) =>
-            factFields([
-              { label: "index", value: factValue(index) },
-              { label: "label", value: factValue(child.label) },
-              { label: "state", value: factValue(diagnosticMatchState(child.state)) },
-              { label: "diagnostic", value: diagnosticFact(child) },
-            ]),
-          ),
+        items: node.children.map((child, index) =>
+          factFields([
+            { label: "index", value: factValue(index) },
+            { label: "label", value: factValue(child.label) },
+            { label: "state", value: factValue(diagnosticMatchState(child.state)) },
+            { label: "diagnostic", value: diagnosticFact(child) },
+          ]),
         ),
-      }),
+      },
     },
   ]);
 }
@@ -463,7 +466,7 @@ function diagnosticMatchState(value: string): "matched" | "mismatched" | "unavai
 function assertionMaterialFact(value: JsonRecord): ClosedAssertionFactValue {
   if (value.kind === "snapshot") return assertionFact(value.value);
   if (value.kind === "unavailable") {
-    return Object.freeze({ kind: "unavailable" as const, reason: "not-recorded" });
+    return { kind: "unavailable" as const, reason: "not-recorded" };
   }
   if (value.kind !== "content") throw new Error("Assertion material kind is invalid");
   const content = recordField(value, "content");
@@ -472,7 +475,7 @@ function assertionMaterialFact(value: JsonRecord): ClosedAssertionFactValue {
   }
   const text = decodeUtf8Base64(content.base64);
   if (value.encoding === "json") return assertionFact(JSON.parse(text));
-  if (value.encoding === "utf-8") return Object.freeze({ kind: "text" as const, text });
+  if (value.encoding === "utf-8") return { kind: "text" as const, text };
   return assertionFact({
     encoding: value.encoding,
     byteLength: value.byteLength,
@@ -504,27 +507,29 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
   const source = recordField(debuggerView, "source");
   const final = closeMatcherSourceCollection(recordField(source, "final"));
   if (state === "legacy") {
-    return Object.freeze({
+    return {
       state,
       queryKind: "unavailable" as const,
       subject,
       querySummary: "Matcher query was not retained",
-      facts: Object.freeze([]),
-      atEvaluation: Object.freeze({
+      facts: [],
+      steps: [],
+      atEvaluation: {
         state: final.state,
-        rows: Object.freeze(final.rows.map((row) => row.content)),
-      }),
-      afterEvaluation: Object.freeze([]),
+        rows: final.rows.map((row) => row.content),
+        notices: [],
+      },
+      afterEvaluation: [],
       relationNotice: "historical-not-recorded" as const,
-    });
+    };
   }
 
   const query = recordField(debuggerView, "query");
   const queryKind = matcherQueryKind(query.kind);
   const querySummaries =
     queryKind === "collection-filter"
-      ? Object.freeze([closeRecordedAssertionFact(query.summary)])
-      : Object.freeze(arrayField(query, "summaries").map(closeRecordedAssertionFact));
+      ? [closeRecordedAssertionFact(query.summary)]
+      : arrayField(query, "summaries").map(closeRecordedAssertionFact);
   const querySummary =
     queryKind === "collection-filter"
       ? matcherCollectionQuerySummary(querySummaries[0]!)
@@ -537,45 +542,39 @@ function closeMatcherDebugger(value: unknown): MatcherFilterDebuggerContent | un
     ...(debuggerView.overlayRetention === "partial" ? ["overlay-partial" as const] : []),
     ...(atEvaluation.state === "unavailable" ? ["source-unavailable" as const] : []),
   ].filter((notice) => notice !== relationNotice);
-  return Object.freeze({
+  return {
     state,
     queryKind,
     subject,
     querySummary,
-    receipt: closedJson(receipt),
-    sourceLedger: closedJson(source),
-    facts: Object.freeze([
-      Object.freeze({
+    facts: [
+      {
         kind: "observed" as const,
         value: matcherObservedFact(queryKind, querySummaries.length, receipt),
-      }),
-      Object.freeze({
+      },
+      {
         kind: "examined" as const,
         value: matcherExaminedFact(queryKind, receipt),
-      }),
-    ]),
-    steps: Object.freeze(arrayField(debuggerView, "steps").map(closeMatcherStep)),
-    atEvaluation: Object.freeze({
+      },
+    ],
+    steps: arrayField(debuggerView, "steps").map(closeMatcherStep),
+    atEvaluation: {
       state: atEvaluation.state,
-      rows: Object.freeze(atEvaluation.rows.map((row) => row.content)),
-      ...(notices.length === 0 ? {} : { notices: Object.freeze(notices) }),
-    }),
-    afterEvaluation: Object.freeze(
-      final.rows.filter((row) => row.phase === "outside-evaluation-snapshot").map((row) => row.content),
-    ),
-    ...(relationNotice === undefined ? {} : { relationNotice }),
-  });
+      rows: atEvaluation.rows.map((row) => row.content),
+      notices,
+    },
+    afterEvaluation: final.rows.filter((row) => row.phase === "outside-evaluation-snapshot").map((row) => row.content),
+    relationNotice,
+  };
 }
 
 function closeMatcherSourceCollection(value: JsonRecord): ClosedMatcherSourceCollection {
-  return Object.freeze({
+  return {
     state: matcherSourceState(value.state),
-    rows: Object.freeze(
-      arrayField(value, "rows").map((row, index) =>
-        closeMatcherFilterRow(record(row, `matcher.debugger.source.rows[${index}]`)),
-      ),
+    rows: arrayField(value, "rows").map((row, index) =>
+      closeMatcherFilterRow(record(row, `matcher.debugger.source.rows[${index}]`)),
     ),
-  });
+  };
 }
 
 function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
@@ -586,59 +585,53 @@ function closeMatcherFilterRow(row: JsonRecord): ClosedMatcherFilterRow {
       ? undefined
       : matcherFilterFields(closeRecordedAssertionFact(evaluation.difference));
   const conversationTarget = optionalRecord(row.conversationTarget);
-  return Object.freeze({
+  return {
     phase: matcherRowPhase(row.phase),
-    content: Object.freeze({
+    content: {
       key: stringField(row, "rowId"),
       number: stringField(row, "number"),
       kind: matcherRowKind(row.kind),
       summary: stringField(row, "summary"),
       state: result,
       fields: matcherFilterFields(closeRecordedAssertionFact(row.detail)),
-      ...(difference === undefined ? {} : { difference }),
-      ...(conversationTarget?.state === "exact" && typeof conversationTarget.anchor === "string"
-        ? { conversationTarget: Object.freeze({ anchor: conversationTarget.anchor }) }
-        : {}),
-    }),
-  });
+      difference,
+      conversationTarget:
+        conversationTarget?.state === "exact" && typeof conversationTarget.anchor === "string"
+          ? { anchor: conversationTarget.anchor }
+          : undefined,
+    },
+  };
 }
 
 function closeMatcherStep(value: unknown, index: number): NonNullable<MatcherFilterDebuggerContent["steps"]>[number] {
   const step = record(value, `matcher.debugger.steps[${index}]`);
   const conversationTarget = optionalRecord(step.conversationTarget);
-  return Object.freeze({
+  return {
     step: integerField(step, "step"),
     summary: closedFactText(closeRecordedAssertionFact(step.summary)),
     state: matcherStepState(step.state),
-    ...(typeof step.sourceRow === "string" ? { sourceRow: step.sourceRow } : {}),
-    ...(conversationTarget?.state === "exact" && typeof conversationTarget.anchor === "string"
-      ? { conversationTarget: Object.freeze({ anchor: conversationTarget.anchor }) }
-      : {}),
-  });
+    sourceRow: typeof step.sourceRow === "string" ? step.sourceRow : undefined,
+    conversationTarget:
+      conversationTarget?.state === "exact" && typeof conversationTarget.anchor === "string"
+        ? { anchor: conversationTarget.anchor }
+        : undefined,
+  };
 }
 
 function matcherFilterFields(value: ClosedAssertionFactValue): readonly MatcherFilterFieldContent[] {
   if (value.kind === "fields") {
-    return Object.freeze(
-      value.fields.map((field) =>
-        Object.freeze({
-          label: field.label,
-          value: closedFactText(field.value),
-        }),
-      ),
-    );
+    return value.fields.map((field) => ({
+      label: field.label,
+      value: closedFactText(field.value),
+    }));
   }
   if (value.kind === "list") {
-    return Object.freeze(
-      value.items.map((item, index) =>
-        Object.freeze({
-          label: String(index + 1),
-          value: closedFactText(item),
-        }),
-      ),
-    );
+    return value.items.map((item, index) => ({
+      label: String(index + 1),
+      value: closedFactText(item),
+    }));
   }
-  return Object.freeze([Object.freeze({ label: "value", value: closedFactText(value) })]);
+  return [{ label: "value", value: closedFactText(value) }];
 }
 
 function matcherCollectionQuerySummary(value: ClosedAssertionFactValue): string {
@@ -686,22 +679,22 @@ function matcherObservedFact(
     typeof receipt.mismatched === "number" &&
     typeof receipt.unavailable === "number"
   ) {
-    return Object.freeze({
+    return {
       en: `${receipt.matched} matched · ${receipt.mismatched} not matched · ${receipt.unavailable} unknown`,
       "zh-CN": `${receipt.matched} 条命中 · ${receipt.mismatched} 条未命中 · ${receipt.unavailable} 条无法判断`,
-    });
+    };
   }
   if (
     queryKind === "ordered-sequence" &&
     typeof receipt.definitePrefixLength === "number" &&
     typeof receipt.possiblePrefixLength === "number"
   ) {
-    return Object.freeze({
+    return {
       en: `${receipt.definitePrefixLength}/${stepCount} definite · ${receipt.possiblePrefixLength}/${stepCount} possible`,
       "zh-CN": `${receipt.definitePrefixLength}/${stepCount} 步确定 · ${receipt.possiblePrefixLength}/${stepCount} 步可能`,
-    });
+    };
   }
-  return Object.freeze({ en: "unavailable", "zh-CN": "不可用" });
+  return { en: "unavailable", "zh-CN": "不可用" };
 }
 
 function matcherExaminedFact(
@@ -710,22 +703,22 @@ function matcherExaminedFact(
 ): { readonly en: string; readonly "zh-CN": string } {
   if (queryKind === "collection-filter" && typeof receipt.examined === "number") {
     const knownTotal = typeof receipt.knownTotal === "number" ? receipt.knownTotal : "?";
-    return Object.freeze({
+    return {
       en: `${receipt.examined}/${knownTotal} rows`,
       "zh-CN": `${receipt.examined}/${knownTotal} 条记录`,
-    });
+    };
   }
   if (
     queryKind === "ordered-sequence" &&
     typeof receipt.sourceRows === "number" &&
     typeof receipt.comparisons === "number"
   ) {
-    return Object.freeze({
+    return {
       en: `${receipt.sourceRows} rows · ${receipt.comparisons} comparisons`,
       "zh-CN": `${receipt.sourceRows} 条记录 · ${receipt.comparisons} 次比较`,
-    });
+    };
   }
-  return Object.freeze({ en: "unavailable", "zh-CN": "不可用" });
+  return { en: "unavailable", "zh-CN": "不可用" };
 }
 
 function matcherRelationNotice(value: JsonRecord): MatcherFilterNotice | undefined {
@@ -795,12 +788,12 @@ function closeMatcher(value: JsonRecord): AttemptMatcherDetail {
     }
     if (closedAnchor === undefined) return [];
     return [
-      Object.freeze({
+      {
         state: target.state,
-        anchor: Object.freeze(closedAnchor),
+        anchor: closedAnchor,
         difference: closedJson(target.difference),
         conversationAnchor: matcherAnchor(closedAnchor),
-      }),
+      },
     ];
   });
   const join = optionalRecord(value.sandboxCommandJoin);
@@ -815,18 +808,18 @@ function closeMatcher(value: JsonRecord): AttemptMatcherDetail {
     value.state === "ordinary" || value.state === "legacy" || value.state === "available" || value.state === "missing"
       ? value.state
       : "missing";
-  return Object.freeze({
+  return {
     state,
-    sourceState: typeof value.sourceState === "string" ? value.sourceState : null,
+    sourceState: typeof value.sourceState === "string" ? value.sourceState : undefined,
     comparator: closedJson(value.comparator),
     sourceLedger: closedJson(value.sourceLedger),
     receipt: closedJson(value.receipt),
     result: closedJson(value.result),
-    targets: Object.freeze(targets),
+    targets,
     sandboxCommandJoin: commandMatch,
     commandMatch,
-    ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
-  });
+    reason: typeof value.reason === "string" ? value.reason : undefined,
+  };
 }
 
 function closeConversation(
@@ -856,14 +849,15 @@ function closeConversation(
       .filter((item) => item.turnId === turnId)
       .map((item) => closeConversationEntry(itemDetails.get(stringField(item, "itemId")) ?? item));
     const verdict = turnVerdict(turn.outcome);
-    return Object.freeze({
+    return {
       key: turnId,
       label: `Turn ${integerField(turn, "sequence")}`,
-      ...(verdict === undefined ? {} : { verdict }),
-      entries: Object.freeze(entries),
-    });
+      verdict,
+      entries,
+      durationMs: undefined,
+    };
   });
-  const data: ConversationContent = Object.freeze({ turns: Object.freeze(turns), locator });
+  const data: ConversationContent = { turns, locator };
   return sliceFromState(conversation.state, data, "Closed observability");
 }
 
@@ -890,12 +884,17 @@ function closeConversationEntry(item: JsonRecord): ConversationEntry {
       : kind === "tool-call" || kind === "tool-result"
         ? "tool"
         : kind;
-  const tool = typeof item.tool === "string" ? item.tool : "tool";
   const input = typeof item.input === "string" ? item.input : "";
   const output = typeof item.output === "string" ? item.output : undefined;
   const phase =
     kind === "tool-call" ? ("started" as const) : kind === "tool-result" ? ("finished" as const) : undefined;
   const outcome = toolOutcome(item.outcome);
+  const toolOccurrence: ConversationEntry["toolOccurrence"] =
+    occurrence === undefined
+      ? undefined
+      : occurrenceId === undefined
+        ? { state: "unavailable", reason: String(occurrence.reason ?? "not-recorded") }
+        : { state: "exact", toolOccurrenceId: occurrenceId };
   const anchor =
     occurrenceId !== undefined
       ? matcherAnchor({ kind: "tool-occurrence", toolOccurrenceId: occurrenceId })
@@ -904,63 +903,42 @@ function closeConversationEntry(item: JsonRecord): ConversationEntry {
         : matcherAnchor({ kind: "event", eventId });
   const detail: ConversationEntry["detail"] =
     phase === undefined
-      ? { kind: "text", text: preview }
+      ? { kind: "text", text: preview, className: "" }
       : {
           kind: "tool-evidence",
-          content: {
-            phase,
-            tool,
-            ...(occurrenceId === undefined ? {} : { callId: occurrenceId }),
-            ...(occurrence === undefined
-              ? {}
-              : occurrenceId === undefined
-                ? {
-                    toolOccurrence: {
-                      state: "unavailable" as const,
-                      reason: String(occurrence.reason ?? "not-recorded"),
-                    },
-                  }
-                : { toolOccurrence: { state: "exact" as const, toolOccurrenceId: occurrenceId } }),
-            inputSummary: input,
-            ...(output === undefined ? {} : { outputSummary: output }),
-            ...(outcome === undefined ? {} : { outcome }),
-          },
+          content: phase === "started" ? { phase, inputSummary: input } : { phase, outputSummary: output, outcome },
         };
-  return Object.freeze({
+  return {
     id: itemId,
-    ...(eventId === undefined ? {} : { eventId }),
-    ...(typeof item.sequence === "number" ? { sequence: item.sequence } : {}),
+    eventId,
+    sequence: typeof item.sequence === "number" ? item.sequence : undefined,
     kind: displayKind,
     preview,
-    ...(anchor === undefined ? {} : { anchor }),
+    anchor,
     detail,
     raw: JSON.stringify(item),
-    ...(outcome === "failed" || outcome === "rejected" ? { failed: true } : {}),
-    ...(phase === undefined ? {} : { callPhase: phase }),
-    ...(occurrenceId === undefined ? {} : { callId: occurrenceId }),
-    ...(occurrence === undefined
-      ? {}
-      : occurrenceId === undefined
-        ? { toolOccurrence: { state: "unavailable" as const, reason: String(occurrence.reason ?? "not-recorded") } }
-        : { toolOccurrence: { state: "exact" as const, toolOccurrenceId: occurrenceId } }),
-    ...(outcome === undefined ? {} : { callOutcome: outcome }),
+    failed: outcome === "failed" || outcome === "rejected",
+    callPhase: phase,
+    callId: occurrenceId,
+    toolOccurrence,
+    callOutcome: outcome,
     commandMatch: { state: "unavailable" as const, reason: "not-recorded" },
-  } satisfies ConversationEntry);
+  } satisfies ConversationEntry;
 }
 
 function closeTiming(
   timing: JsonRecord,
   locator: string,
 ): {
-  readonly data: WaterfallContent | null;
+  readonly data: WaterfallContent;
   readonly slice: ClosedEvidenceSlice<WaterfallContent>;
 } {
   const activities = arrayField(timing, "activities").map((value, index) =>
     record(value, `timing.activities[${index}]`),
   );
-  const byParent = new Map<string | null, JsonRecord[]>();
+  const byParent = new Map<string | undefined, JsonRecord[]>();
   for (const activity of activities) {
-    const parent = typeof activity.parentActivityId === "string" ? activity.parentActivityId : null;
+    const parent = typeof activity.parentActivityId === "string" ? activity.parentActivityId : undefined;
     const siblings = byParent.get(parent) ?? [];
     siblings.push(activity);
     byParent.set(parent, siblings);
@@ -968,35 +946,37 @@ function closeTiming(
   const node = (activity: JsonRecord): WaterfallNode => {
     const key = stringField(activity, "activityId");
     const children = (byParent.get(key) ?? []).map(node);
-    return Object.freeze({
+    return {
       key,
       label: stringField(activity, "label"),
       kind: stringField(activity, "phase"),
       startOffsetMs: numberField(activity, "startOffsetMs"),
       durationMs: nullableNumber(activity.durationMs),
-      ...(activity.outcome === "failed" ? { failed: true } : {}),
-      ...(children.length === 0 ? {} : { children: Object.freeze(children) }),
-    });
+      failed: activity.outcome === "failed",
+      children,
+      open: false,
+    };
   };
-  const nodes = (byParent.get(null) ?? []).map(node);
-  const durationMs = activities.reduce<number | null>((maximum, activity) => {
+  const nodes = (byParent.get(undefined) ?? []).map(node);
+  const durationMs = activities.reduce<number | undefined>((maximum, activity) => {
     const start = numberField(activity, "startOffsetMs");
     const duration = nullableNumber(activity.durationMs);
-    return duration === null ? maximum : Math.max(maximum ?? 0, start + duration);
-  }, null);
+    return duration === undefined ? maximum : Math.max(maximum ?? 0, start + duration);
+  }, undefined);
   const data: WaterfallContent =
     activities.length === 0
-      ? Object.freeze([])
-      : Object.freeze([
+      ? []
+      : [
           {
             key: locator,
             label: locator,
             durationMs,
-            nodes: Object.freeze(nodes),
+            nodes,
             locator,
+            href: undefined,
           },
-        ]);
-  return Object.freeze({ data, slice: sliceFromState(timing.state, data, "Execution timeline") });
+        ];
+  return { data, slice: sliceFromState(timing.state, data, "Execution timeline") };
 }
 
 function closeUsage(trace: JsonRecord, usage: JsonRecord): ClosedEvidenceSlice<UsageTableData> {
@@ -1054,11 +1034,11 @@ function closeUsage(trace: JsonRecord, usage: JsonRecord): ClosedEvidenceSlice<U
     }
   }
   const conversation = recordField(trace, "conversation");
-  const data: UsageTableData = Object.freeze({
+  const data: UsageTableData = {
     turns: arrayField(conversation, "turns").length,
     toolCalls: arrayField(conversation, "items").filter((value) => optionalRecord(value)?.kind === "tool-call").length,
-    observations: Object.freeze(observations),
-  });
+    observations,
+  };
   return sliceFromState(usage.state, data, "Usage");
 }
 
@@ -1084,55 +1064,33 @@ function closeCommands(
     const outcome = recordField(command, "outcome");
     const stdout = optionalRecord(command.stdout);
     const stderr = optionalRecord(command.stderr);
-    const stdoutTruncation = optionalRecord(stdout?.truncation);
-    const stderrTruncation = optionalRecord(stderr?.truncation);
     const exitCode = outcome.kind === "exited" && typeof outcome.exitCode === "number" ? outcome.exitCode : undefined;
-    return Object.freeze({
+    return {
       commandId,
-      timingNodeId: commandId,
       phase: stringField(command, "phase"),
       display: invocationText(invocation),
-      ...(exitCode === undefined ? {} : { exitCode }),
-      invocation: invocation as ClosedJsonValue,
-      ...(typeof command.workingDirectory === "string" ? { workingDirectory: command.workingDirectory } : {}),
+      exitCode,
       outcome: outcome as ClosedJsonValue,
       classification: exitCode === 0 ? "succeeded" : exitCode === undefined ? "observed" : "failed",
-      ...(typeof stdout?.text === "string" && stdout.text.length > 0 ? { stdout: stdout.text } : {}),
-      ...(typeof stderr?.text === "string" && stderr.text.length > 0 ? { stderr: stderr.text } : {}),
-      collectionState: commands.state === "partial" ? "partial" : "complete",
-      ...(stdout === undefined
-        ? {}
-        : {
-            stdoutState:
-              stdout.textTruncated === true || stdoutTruncation?.state === "truncated" ? "truncated" : "complete",
-            ...(typeof stdout.retainedBytes === "number" ? { stdoutRetainedBytes: stdout.retainedBytes } : {}),
-            ...(typeof stdout.totalSafeUtf8Bytes === "number" ? { stdoutTotalBytes: stdout.totalSafeUtf8Bytes } : {}),
-          }),
-      ...(stderr === undefined
-        ? {}
-        : {
-            stderrState:
-              stderr.textTruncated === true || stderrTruncation?.state === "truncated" ? "truncated" : "complete",
-            ...(typeof stderr.retainedBytes === "number" ? { stderrRetainedBytes: stderr.retainedBytes } : {}),
-            ...(typeof stderr.totalSafeUtf8Bytes === "number" ? { stderrTotalBytes: stderr.totalSafeUtf8Bytes } : {}),
-          }),
-    });
+      stdout: typeof stdout?.text === "string" && stdout.text.length > 0 ? stdout.text : undefined,
+      stderr: typeof stderr?.text === "string" && stderr.text.length > 0 ? stderr.text : undefined,
+    };
   });
-  return sliceFromState(commands.state, Object.freeze({ commands: Object.freeze(items), locator }), "Commands");
+  return sliceFromState(commands.state, { commands: items, locator }, "Commands");
 }
 
 function closeDiagnostics(trace: JsonRecord): ClosedEvidenceSlice<AttemptDiagnosticsData> {
   const diagnostics = optionalRecord(trace.diagnostics);
   if (diagnostics === undefined) {
-    return Object.freeze({
+    return {
       state: "unavailable",
-      limitations: Object.freeze([
+      limitations: [
         {
           code: "diagnostics-projection-unavailable",
           summary: "Diagnostics are not exposed by the fixed execution projection.",
         },
-      ]),
-    });
+      ],
+    };
   }
   const items = arrayField(diagnostics, "items").map((value, index): AttemptDiagnosticView => {
     const item = record(value, `trace.diagnostics.items[${index}]`);
@@ -1142,26 +1100,22 @@ function closeDiagnostics(trace: JsonRecord): ClosedEvidenceSlice<AttemptDiagnos
       redaction?.state === "applied" && typeof redaction.replacements === "number"
         ? { state: "applied", replacements: redaction.replacements }
         : { state: "none" };
-    return Object.freeze({
+    return {
       diagnosticId: stringField(item, "diagnosticId"),
       code: stringField(item, "code"),
       kind,
       phase: stringField(item, "phase"),
       summary: stringField(item, "summary"),
       level: kind === "execution-error" ? "error" : "warning",
-      causes: Object.freeze(
-        arrayField(item, "causes").flatMap((cause) => {
-          const row = optionalRecord(cause);
-          return typeof row?.code === "string" && typeof row.summary === "string"
-            ? [{ code: row.code, summary: row.summary }]
-            : [];
-        }),
-      ),
+      causes: arrayField(item, "causes").flatMap((cause) => {
+        const row = optionalRecord(cause);
+        return typeof row?.code === "string" && typeof row.summary === "string"
+          ? [{ code: row.code, summary: row.summary }]
+          : [];
+      }),
       redaction: closedRedaction,
-      ...(item.sourceFrame === null || item.sourceFrame === undefined
-        ? {}
-        : { sourceFrame: closedJson(item.sourceFrame) }),
-    });
+      sourceFrame: closedJson(item.sourceFrame),
+    };
   });
   const byPhase = new Map<string, AttemptDiagnosticView[]>();
   for (const item of items) {
@@ -1169,16 +1123,12 @@ function closeDiagnostics(trace: JsonRecord): ClosedEvidenceSlice<AttemptDiagnos
     group.push(item);
     byPhase.set(item.phase, group);
   }
-  const data: AttemptDiagnosticsData = Object.freeze({
-    groups: Object.freeze(
-      [...byPhase].map(([phase, group]) =>
-        Object.freeze({
-          phase,
-          items: Object.freeze(group),
-        }),
-      ),
-    ),
-  });
+  const data: AttemptDiagnosticsData = {
+    groups: [...byPhase].map(([phase, group]) => ({
+      phase,
+      items: group,
+    })),
+  };
   return sliceFromState(diagnostics.state, data, "Diagnostics");
 }
 
@@ -1187,8 +1137,8 @@ function closeSources(
   trace: JsonRecord,
   locator: string,
 ): {
-  readonly data: SourceContent | null;
-  readonly slice: ClosedEvidenceSlice<SourceContent>;
+  readonly data: SourceContent | undefined;
+  readonly slice: ClosedEvidenceSlice<SourceContent | undefined>;
 } {
   const contexts = arrayField(recordField(trace, "conversation"), "turns");
   const items = arrayField(sources, "items").flatMap((value, _index) => {
@@ -1223,80 +1173,87 @@ function closeSources(
           ? [context.turnId]
           : [],
       );
-      return Object.freeze({
+      return {
         number,
         text,
-        ...(turnIds.length === 0 ? {} : { tone: "send" as const, turnIds: Object.freeze(turnIds) }),
-      });
+        interaction: undefined,
+        tone: turnIds.length === 0 ? undefined : "send",
+        turnIds,
+        pill: undefined,
+        aborted: false,
+        details: [],
+        calls: [],
+      };
     });
     return [
-      Object.freeze({
+      {
         sourceItemId: item.sourceItemId,
         sha256: item.sha256,
         path: item.path,
-        lines: Object.freeze(lines),
-      } satisfies SourceBlockContent),
+        lines,
+      } satisfies SourceBlockContent,
     ];
   });
   if (items.length === 0) {
-    return Object.freeze({
-      data: null,
-      slice: sliceFromState(sources.state, null as never, "Source navigation") as ClosedEvidenceSlice<SourceContent>,
-    });
+    return {
+      data: undefined,
+      slice: sliceFromState(sources.state, undefined, "Source navigation"),
+    };
   }
-  const data: SourceContent = Object.freeze({
+  const data: SourceContent = {
     spine: items[0]!,
-    detached: Object.freeze(items.slice(1)),
+    detached: items.slice(1),
     locator,
-  });
+    unmapped: undefined,
+  };
   const slice = sliceFromState(sources.state, data, "Source navigation");
-  return Object.freeze({ data, slice });
+  return { data, slice };
 }
 
 function closeDiff(diff: JsonRecord): ClosedEvidenceSlice<DiffContent> {
   if (diff.state === "not-recorded" || Object.keys(diff).length === 0) {
-    return Object.freeze({
+    return {
       state: "not-recorded",
-      limitations: Object.freeze([
+      limitations: [
         {
           code: "file-changes-not-recorded",
           summary: "File changes collection was not recorded for this Attempt.",
         },
-      ]),
-    });
+      ],
+    };
   }
   // attempt.diff remains a fixed Inspection operation. The current compact
   // result does not expose verified patch text, so the UI keeps an explicit
   // unavailable slice instead of interpreting content handles or inventing a diff.
-  return Object.freeze({
+  return {
     state: "unavailable",
-    limitations: Object.freeze([
+    limitations: [
       {
         code: "file-changes-content-unavailable",
         summary: "File changes collection has no display-safe patch projection.",
       },
-    ]),
-  });
+    ],
+  };
 }
 
 function sliceFromState<Data>(state: unknown, data: Data, label: string): ClosedEvidenceSlice<Data> {
   if (state === "available" || state === "complete") {
-    return Object.freeze({ state: "available", data });
+    return { state: "available", data };
   }
-  const limitations = Object.freeze([
+  const limitations = [
     { code: String(state ?? "unavailable"), summary: `${label}: ${String(state ?? "unavailable")}.` },
-  ]);
-  if (state === "partial") return Object.freeze({ state: "partial", data, limitations });
-  if (state === "not-recorded") return Object.freeze({ state: "not-recorded", limitations });
-  return Object.freeze({ state: "unavailable", limitations });
+  ];
+  if (state === "partial") return { state: "partial", data, limitations };
+  if (state === "not-recorded") return { state: "not-recorded", limitations };
+  return { state: "unavailable", limitations };
 }
 
 function closeScore(value: JsonRecord | undefined): AttemptAssertionView["score"] {
   if (value === undefined || value.state === "not-scored" || typeof value.points !== "number") return undefined;
   if (value.state === "earned" && typeof value.earned === "number") {
-    return Object.freeze({ state: "earned", points: value.points, earned: value.earned });
+    return { state: "earned", points: value.points, earned: value.earned };
   }
-  return Object.freeze({ state: "unavailable", points: value.points });
+  return { state: "unavailable", points: value.points };
 }
 
 function assertionDecision(value: unknown): AssertionDecisionState {
@@ -1318,23 +1275,23 @@ function matcherAnchor(
 }
 
 function factValue(value: null | boolean | number | string): ClosedAssertionFactValue {
-  return Object.freeze({ kind: "value" as const, value });
+  return { kind: "value" as const, value };
 }
 
 function factFields(
   fields: readonly { readonly label: string; readonly value: ClosedAssertionFactValue }[],
 ): ClosedAssertionFactValue {
-  return Object.freeze({
+  return {
     kind: "fields" as const,
-    fields: Object.freeze(fields.map((field) => Object.freeze(field))),
-  });
+    fields,
+  };
 }
 
 /** Exact recursive close for the persisted AssertionFactValue algebra. */
 function closeRecordedAssertionFact(value: unknown): ClosedAssertionFactValue {
   const fact = record(value, "assertion fact");
   if (fact.kind === "unavailable" && typeof fact.reason === "string") {
-    return Object.freeze({ kind: "unavailable" as const, reason: fact.reason });
+    return { kind: "unavailable" as const, reason: fact.reason };
   }
   if (
     fact.kind === "value" &&
@@ -1346,22 +1303,22 @@ function closeRecordedAssertionFact(value: unknown): ClosedAssertionFactValue {
     return factValue(fact.value);
   }
   if (fact.kind === "text" && typeof fact.text === "string") {
-    return Object.freeze({ kind: "text" as const, text: fact.text });
+    return { kind: "text" as const, text: fact.text };
   }
   if (fact.kind === "list") {
-    return Object.freeze({
+    return {
       kind: "list" as const,
-      items: Object.freeze(arrayField(fact, "items").map(closeRecordedAssertionFact)),
-    });
+      items: arrayField(fact, "items").map(closeRecordedAssertionFact),
+    };
   }
   if (fact.kind === "fields") {
     return factFields(
       arrayField(fact, "fields").map((value, index) => {
         const field = record(value, `assertion fact.fields[${index}]`);
-        return Object.freeze({
+        return {
           label: stringField(field, "label"),
           value: closeRecordedAssertionFact(field.value),
-        });
+        };
       }),
     );
   }
@@ -1374,15 +1331,13 @@ function assertionFact(value: unknown): ClosedAssertionFactValue {
     return factValue(value);
   }
   if (typeof value === "number") {
-    return Number.isFinite(value)
-      ? factValue(value)
-      : Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" });
+    return Number.isFinite(value) ? factValue(value) : { kind: "unavailable" as const, reason: "source-unavailable" };
   }
   if (Array.isArray(value)) {
-    return Object.freeze({ kind: "list" as const, items: Object.freeze(value.map(assertionFact)) });
+    return { kind: "list" as const, items: value.map(assertionFact) };
   }
   const object = optionalRecord(value);
-  if (object === undefined) return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" });
+  if (object === undefined) return { kind: "unavailable" as const, reason: "source-unavailable" };
   return factFields(
     Object.entries(object).map(([label, entry]) => ({
       label,
@@ -1484,12 +1439,12 @@ function integerField(value: JsonRecord, key: string): number {
   return field;
 }
 
-function nullableString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
+function nullableString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
-function nullableNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function nullableNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function closedJson(value: unknown): ClosedJsonValue {
@@ -1500,8 +1455,8 @@ function closedJson(value: unknown): ClosedJsonValue {
     (typeof value === "number" && Number.isFinite(value))
   )
     return value;
-  if (Array.isArray(value)) return Object.freeze(value.map(closedJson));
+  if (Array.isArray(value)) return value.map(closedJson);
   const object = optionalRecord(value);
   if (object === undefined) return null;
-  return Object.freeze(Object.fromEntries(Object.entries(object).map(([key, entry]) => [key, closedJson(entry)])));
+  return Object.fromEntries(Object.entries(object).map(([key, entry]) => [key, closedJson(entry)]));
 }

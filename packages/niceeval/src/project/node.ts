@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { Effect, Layer, Schema } from "effect";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {
   ProjectFileSystem,
   ProjectManifestFacts,
@@ -13,7 +14,12 @@ import {
 } from "./services.ts";
 
 function failure(operation: ProjectPlatformError["operation"], resource: string, cause: unknown): ProjectPlatformError {
-  return new ProjectPlatformError({ operation, resource, cause });
+  return new ProjectPlatformError({
+    operation,
+    resource,
+    cause: normalizeExternalCause(cause),
+    message: String(cause),
+  });
 }
 
 function managedPath(root: string, path: ProjectManagedPath): string {
@@ -25,7 +31,11 @@ function nodePathKind(path: string): Effect.Effect<ProjectPathKind, ProjectPlatf
     try: () => lstat(path),
     catch: (cause) => cause,
   }).pipe(
-    Effect.map((stats) => (stats.isFile() ? "file" : stats.isDirectory() ? "directory" : "other")),
+    Effect.map(function existingPathKind(stats) {
+      if (stats.isFile()) return "file" as const;
+      if (stats.isDirectory()) return "directory" as const;
+      return "other" as const;
+    }),
     Effect.catch((cause) => {
       if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
         return Effect.succeed("missing" as const);
@@ -52,7 +62,7 @@ const nodeProjectFileSystem: ProjectFileSystemService = {
     return nodePathKind(target).pipe(
       Effect.flatMap((kind) =>
         kind === "missing"
-          ? Effect.succeed(null)
+          ? Effect.succeed(undefined)
           : Effect.tryPromise({
               try: () => readFile(target, "utf8"),
               catch: (cause) => failure("read-file", target, cause),
@@ -159,14 +169,19 @@ export const NodeProjectProcessFactsLive = Layer.succeed(ProjectProcessFacts, {
       });
       const tool = ["pnpm", "yarn", "npm", "bun"].includes(manager) ? manager : "pnpm";
       const quoted = prefix === "" ? "" : `'${prefix.replaceAll("'", "'\\''")}'`;
-      const command =
-        tool === "pnpm"
-          ? `pnpm${quoted ? ` --dir ${quoted}` : ""} exec niceeval`
-          : tool === "npm"
-            ? `npm${quoted ? ` --prefix ${quoted}` : ""} exec -- niceeval`
-            : tool === "yarn"
-              ? `yarn${quoted ? ` --cwd ${quoted}` : ""} exec niceeval`
-              : `bun${quoted ? ` --cwd ${quoted}` : ""} run niceeval`;
+      function executionCommand(): string {
+        switch (tool) {
+          case "pnpm":
+            return `pnpm${quoted ? ` --dir ${quoted}` : ""} exec niceeval`;
+          case "npm":
+            return `npm${quoted ? ` --prefix ${quoted}` : ""} exec -- niceeval`;
+          case "yarn":
+            return `yarn${quoted ? ` --cwd ${quoted}` : ""} exec niceeval`;
+          default:
+            return `bun${quoted ? ` --cwd ${quoted}` : ""} run niceeval`;
+        }
+      }
+      const command = executionCommand();
       return { repositoryRoot, indexPath: `${prefix ? `${prefix}/` : ""}node_modules/niceeval/INDEX.md`, command };
     }),
   cwd: Effect.try({

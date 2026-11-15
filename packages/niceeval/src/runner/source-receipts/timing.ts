@@ -223,17 +223,20 @@ export function normalizeAttemptTiming(input: {
             continue;
           }
           const intervalId = yield* input.mint("interval");
-          const parentIntervalId =
-            parent === undefined || translatedStartOffsetMs === undefined
-              ? null
-              : timingSpanContains({
-                    parentStartOffsetMs: parent.startOffsetMs,
-                    parentDurationMs: parent.durationMs,
-                    childStartOffsetMs: startOffsetMs,
-                    childDurationMs: durationMs,
-                  })
-                ? parent.intervalId
-                : null;
+          function containingParentInterval(startOffsetMs: NonNegativeSafeInteger, durationMs: NonNegativeSafeInteger) {
+            if (parent === undefined || translatedStartOffsetMs === undefined) return null;
+            if (
+              timingSpanContains({
+                parentStartOffsetMs: parent.startOffsetMs,
+                parentDurationMs: parent.durationMs,
+                childStartOffsetMs: startOffsetMs,
+                childDurationMs: durationMs,
+              })
+            )
+              return parent.intervalId;
+            return null;
+          }
+          const parentIntervalId = containingParentInterval(startOffsetMs, durationMs);
           intervals.push({
             intervalId,
             phase: projection.phase,

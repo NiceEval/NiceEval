@@ -13,6 +13,7 @@ import {
   type ProjectStateFacets,
 } from "../record/sqlite/project-state-database.ts";
 import { hashEntryId } from "../shared/entry-file-store.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { processIdentityForPidEffect } from "../runner/shared-state-lease.ts";
 import type { Verdict } from "../types.ts";
 
@@ -65,15 +66,15 @@ export interface KeptSandboxEntry {
   provider: string;
   evalId: string;
   attempt: number;
-  experimentId?: string | undefined;
+  experimentId: string | undefined;
   locator: string;
   verdict: Verdict;
   keptAt: string;
   workdir: string;
   /** provider 原生的进入命令(直连与审计用);日常入口是 `niceeval sandbox enter`。 */
-  enter?: string | undefined;
+  enter: string | undefined;
   /** 现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。 */
-  expiresAt?: string | undefined;
+  expiresAt: string | undefined;
   /** alive = 实例在跑;dormant = 可唤醒;expired = 确认不存在;unknown = 探测失败。 */
   state: "alive" | "dormant" | "expired" | "unknown";
 }
@@ -87,24 +88,24 @@ export interface KeptSandboxLease {
 }
 
 interface PersistedKeptSandboxLease extends KeptSandboxLease {
-  token?: string;
-  generation?: number;
-  ownerPid?: number;
-  ownerHost?: string;
-  ownerProcessIdentity?: string;
+  token: string;
+  generation: number;
+  ownerPid: number;
+  ownerHost: string;
+  ownerProcessIdentity: string | undefined;
 }
 
 /** 注册表自己的可恢复 I/O 失败；损坏或缺失的逐条目数据仍是成功 ADT。 */
 export class KeptSandboxRegistryError extends Data.TaggedError("KeptSandboxRegistryError")<{
   readonly operation: string;
-  readonly cause: unknown;
+  readonly cause: ExternalCause;
 }> {}
 
 export type KeptSandboxRegistryEffect<A> = Effect.Effect<A, KeptSandboxRegistryError, ProjectDatabaseRequirement>;
 type RegistryEffect<A> = KeptSandboxRegistryEffect<A>;
 
 function registryError(operation: string, cause: unknown): KeptSandboxRegistryError {
-  return new KeptSandboxRegistryError({ operation, cause });
+  return new KeptSandboxRegistryError({ operation, cause: normalizeExternalCause(cause) });
 }
 
 /** Node Promise 边界：传入 Effect 的 signal，因而 fiber interruption 能传给支持 AbortSignal 的调用。 */
@@ -116,9 +117,9 @@ function nodeIo<A>(operation: string, run: (signal: AbortSignal) => Promise<A>):
 }
 
 function errnoCode(cause: unknown): string | undefined {
-  const original = cause instanceof KeptSandboxRegistryError ? cause.cause : cause;
-  return typeof original === "object" && original !== null && "code" in original && typeof original.code === "string"
-    ? original.code
+  const original = cause instanceof KeptSandboxRegistryError ? cause.cause : normalizeExternalCause(cause);
+  return original._tag !== "ThrownValue" && original.code._tag === "Present" && typeof original.code.value === "string"
+    ? original.code.value
     : undefined;
 }
 
@@ -161,7 +162,9 @@ const KeptSandboxEntrySchema = Schema.Struct({
 /** 留存条目的全部字段均在持久化边界验证，特别是两个字符串联合与可选时间字段。 */
 function decodeKeptSandboxEntry(value: unknown): KeptSandboxEntry | undefined {
   const decoded = Schema.decodeUnknownResult(KeptSandboxEntrySchema)(value);
-  return Result.isSuccess(decoded) ? decoded.success : undefined;
+  if (Result.isFailure(decoded)) return undefined;
+  const entry = decoded.success;
+  return { ...entry, experimentId: entry.experimentId, enter: entry.enter, expiresAt: entry.expiresAt };
 }
 
 /** entry id:provider + sandboxId 的稳定散列。 */
@@ -271,16 +274,21 @@ export function acquireKeptLeaseEffect(
   });
 }
 
+const decodeKeptLeaseToken = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      secret: Schema.String,
+      generation: Schema.Number,
+      ownerPid: Schema.Number,
+      ownerHost: Schema.String,
+      ownerProcessIdentity: Schema.String,
+    }),
+  ),
+);
+
 export function releaseKeptLeaseEffect(niceevalRoot: string, id: string, token: string): RegistryEffect<void> {
   return Effect.try({
-    try: () =>
-      JSON.parse(Buffer.from(token, "base64url").toString("utf8")) as {
-        secret: string;
-        generation: number;
-        ownerPid: number;
-        ownerHost: string;
-        ownerProcessIdentity: string;
-      },
+    try: () => decodeKeptLeaseToken(Buffer.from(token, "base64url").toString("utf8")),
     catch: (cause) => registryError("decode kept sandbox lease token", cause),
   }).pipe(
     Effect.flatMap((owner) => releaseKeptSandboxLease({ root: niceevalRoot, id, token: owner.secret, ...owner })),

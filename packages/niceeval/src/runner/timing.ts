@@ -281,11 +281,11 @@ export function commandNode(opts: {
   display: string;
   startOffsetMs: number;
   durationMs: number;
-  exitCode?: number;
-  failed?: boolean;
-  checked?: boolean;
+  exitCode: number | undefined;
+  failed: boolean | undefined;
+  checked: boolean | undefined;
   /** 这条命令生效的时限归属;四层解析链一个上限都没声明时省略。 */
-  limit?: CommandLimitAttribution;
+  limit: CommandLimitAttribution | undefined;
 }): Omit<TimingActivity, "id"> {
   return {
     key: "sandbox.command",
@@ -309,8 +309,8 @@ export function commandNode(opts: {
  * 没有线就是没有线,不给节点编一条。
  */
 export function commandLimitAttribution(
-  opts: { timeoutMs?: number } | undefined,
-  base: { commandTimeoutMs?: number; deadlineAt?: number },
+  opts: { timeoutMs: number | undefined } | undefined,
+  base: { commandTimeoutMs: number | undefined; deadlineAt: number | undefined },
   now = Date.now(),
 ): CommandLimitAttribution | undefined {
   const limit = commandLimit(opts, base, now);
@@ -322,8 +322,8 @@ export function commandLimitAttribution(
 export function sandboxPrepareActivity(opts: {
   label: string;
   startOffsetMs: number;
-  durationMs?: number;
-  failed?: boolean;
+  durationMs: number | undefined;
+  failed: boolean | undefined;
 }): Omit<TimingActivity, "id"> {
   return {
     key: "sandbox.prepare",
@@ -341,11 +341,11 @@ export function turnActivity(opts: {
   durationMs: number;
   sessionIndex: number;
   turnIndex: number;
-  failed?: boolean;
-  turnId?: string;
-  traceId?: string;
-  traceAttribution?: TimingActivity["traceAttribution"];
-  usage?: TimingActivity["usage"];
+  failed: boolean | undefined;
+  turnId: string | undefined;
+  traceId: string | undefined;
+  traceAttribution: TimingActivity["traceAttribution"] | undefined;
+  usage: TimingActivity["usage"] | undefined;
 }): Omit<TimingActivity, "id"> {
   return {
     key: "agent.turn",
@@ -366,8 +366,8 @@ export function turnActivity(opts: {
 export function workspaceDiffExportActivity(opts: {
   label: string;
   startOffsetMs: number;
-  durationMs?: number;
-  failed?: boolean;
+  durationMs: number | undefined;
+  failed: boolean | undefined;
 }): Omit<TimingActivity, "id"> {
   return {
     key: "workspace.diff.export",

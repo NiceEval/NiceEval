@@ -133,7 +133,7 @@ export function selectInspectionProject(
         adapter: experiment.adapter,
         model: experiment.model ?? null,
         labels: experiment.labels,
-        ...(recorded === undefined ? {} : { recorded }),
+        recorded,
       };
     }),
   );
@@ -206,5 +206,7 @@ function gapReason(
   }
 }
 function compare(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }

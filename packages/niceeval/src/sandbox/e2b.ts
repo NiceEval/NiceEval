@@ -305,25 +305,24 @@ export type E2BSandboxLifetime = {
 };
 
 interface E2BSandboxCreateOptions {
-  readonly timeout?: number;
+  readonly timeout: number | undefined;
   /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
-  readonly deadlineAt?: number;
-  readonly runtime?: "node20" | "node24";
-  readonly template?: string;
+  readonly deadlineAt: number | undefined;
+  readonly template: string;
   /** 覆盖整个 Sandbox 的默认执行身份;省略时沿用 template 的默认用户。 */
-  readonly user?: string;
+  readonly user: string | undefined;
   /**
    * 按序前置到受管 `PATH` 的目录;省略 = 不改 PATH(见 docs/feature/sandbox/library/README.md
    * 「PATH:受管变量与 pathPrepend」)。
    */
-  readonly pathPrepend?: readonly string[];
-  readonly provisionToken?: string;
+  readonly pathPrepend: readonly string[];
+  readonly provisionToken: string;
   /** 运行时已解析的实例寿命；bounded attempt 不能退回 E2B 的 SDK 默认值。 */
   readonly lifetime: E2BSandboxLifetime;
   /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
    *  (见 docs/feature/sandbox/architecture/README.md「孤儿核对」)。 */
-  readonly runIdentity?: RunIdentity;
-  readonly runId?: string;
+  readonly runIdentity: RunIdentity;
+  readonly runId: string | undefined;
 }
 
 /**
@@ -541,7 +540,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
         commandTimeoutMs,
         lifetime,
         opts.user,
-        opts.pathPrepend ?? [],
+        opts.pathPrepend,
         opts.deadlineAt,
       );
     } catch (e) {
@@ -560,8 +559,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // 覆盖后的身份,否则 template 默认用户)—— 跨 provider 语义一致
     // (见 docs/feature/sandbox/library/README.md「执行身份」)。
     const limit = commandLimit(opts, {
-      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
-      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+      commandTimeoutMs: this.commandTimeoutMs,
+      deadlineAt: this.deadlineAt,
     });
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // envs 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效

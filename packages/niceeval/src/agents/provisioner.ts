@@ -210,6 +210,7 @@ export function assertStableAgentIdentity(identity: AgentIdentity): void {
 }
 
 /** identity (+ 可选制品 digest/platform) → 指纹 / configHash 输入投影。 */
+// Identity/canonical boundary: artifact keys participate in installation fingerprints only when supplied.
 export function agentInstallIdentityInput(
   identity: AgentIdentity,
   artifact?: Pick<AgentStagedArtifact, "content" | "platform">,
@@ -266,8 +267,12 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
   }
   const [unameS = "", unameM = "", ldd = ""] = probe.stdout.split("\n").map((line) => line.trim());
   const os = unameS.toLowerCase();
-  const arch =
-    unameM === "x86_64" || unameM === "amd64" ? "x64" : unameM === "aarch64" || unameM === "arm64" ? "arm64" : unameM;
+  function targetArchitecture(): string {
+    if (unameM === "x86_64" || unameM === "amd64") return "x64";
+    if (unameM === "aarch64" || unameM === "arm64") return "arm64";
+    return unameM;
+  }
+  const arch = targetArchitecture();
   if (!os || !arch) {
     throw new Error(
       `Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`,
@@ -410,14 +415,15 @@ function formatInstallError(opts: {
   phase: "probe" | "install" | "recheck" | "verify-only" | "installer";
   result?: { detail?: string };
 }): string {
+  function installationNextStep(): string {
+    if (opts.phase === "verify-only")
+      return "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner.";
+    if (opts.phase === "installer")
+      return "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool().";
+    return "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task.";
+  }
   return `Agent Install failed (agent=${opts.identity.agent}, phase=${opts.phase}): expected ${opts.identity.version}, actual ${"(none)"}. ${opts.result?.detail ?? ""}
-Next: ${
-    opts.phase === "verify-only"
-      ? "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner."
-      : opts.phase === "installer"
-        ? "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool()."
-        : "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task."
-  }`;
+Next: ${installationNextStep()}`;
 }
 
 /**
@@ -631,6 +637,8 @@ function probeMatches(
           progress: context.progress,
           diagnostic: () => {},
           onCleanup: () => {},
+
+          evalGroup: undefined,
         } satisfies SandboxCommandContext),
       ).then(() => ({ hit: true as const })),
     catch: (cause) => cause,

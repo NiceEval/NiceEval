@@ -26,6 +26,7 @@ import {
   type InstallSkillsOptions,
 } from "./skills.ts";
 import { agentBin } from "./npm-staged.ts";
+import { decodeJsonRecord } from "../shared/json-value.ts";
 
 /** 每个沙箱里「已经装过的全局包」去重,避免每轮 send 重复 npm i -g。 */
 const installedBySandbox = new WeakMap<Sandbox, Set<string>>();
@@ -66,7 +67,7 @@ ${tail}`);
 async function captureLatestJsonl(
   sandbox: Sandbox,
   dir: string,
-  opts?: { excludeName?: RegExp },
+  opts?: { excludeName?: RegExp | undefined },
 ): Promise<string | undefined> {
   const excludeSource = opts?.excludeName?.source ?? "";
   const excludeFlags = opts?.excludeName?.flags ?? "";
@@ -121,7 +122,7 @@ function scanJsonl(
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      const v = pick(JSON.parse(trimmed) as globalThis.Record<string, unknown>);
+      const v = pick(decodeJsonRecord(trimmed));
       if (typeof v === "string" && v) {
         if (mode === "first") return v;
         hit = v;

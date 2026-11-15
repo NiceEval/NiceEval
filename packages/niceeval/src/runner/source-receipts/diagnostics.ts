@@ -75,8 +75,8 @@ export function normalizeAttemptDiagnostics(input: {
       readonly code: string;
       readonly detail: string;
       readonly kind: AttemptDiagnostic["kind"];
-      readonly reason?: string;
-      readonly origin?: DiagnosticRecord["origin"];
+      readonly reason: string | undefined;
+      readonly origin: DiagnosticRecord["origin"] | undefined;
     }): Effect.Effect<void, RunnerObservabilityProducerError> => {
       const code = makeSafeIdentifier(value.code);
       if (code === undefined) {
@@ -135,9 +135,7 @@ export function normalizeAttemptDiagnostics(input: {
         detail: input.result.error.message,
         kind: "execution-error" as const,
         origin: input.result.error.origin,
-        ...(input.result.error.code.startsWith("simulated-user-") && input.result.error.cause?.code !== undefined
-          ? { reason: input.result.error.cause.code }
-          : {}),
+        reason: input.result.error.code.startsWith("simulated-user-") ? input.result.error.cause?.code : undefined,
       });
     }
     for (const diagnostic of input.result.diagnostics ?? []) {
@@ -145,7 +143,8 @@ export function normalizeAttemptDiagnostics(input: {
         code: diagnostic.code,
         detail: diagnostic.detail,
         kind: diagnostic.level === "error" ? ("execution-error" as const) : ("advisory" as const),
-        ...(diagnostic.origin === undefined ? {} : { origin: diagnostic.origin }),
+        origin: diagnostic.origin,
+        reason: undefined,
       });
     }
     return {

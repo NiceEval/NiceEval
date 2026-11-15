@@ -4,27 +4,28 @@ export type PanelMode = "boxed" | "plain";
 
 export function panelCapabilityOf(input: {
   readonly isTTY: boolean | undefined;
-  readonly noColor?: string;
+  readonly noColor: string | undefined;
   readonly width: number | undefined;
 }): { readonly mode: PanelMode; readonly width: number } {
-  return Object.freeze({
+  const width = input.width;
+  return {
     mode: input.isTTY === true && input.noColor === undefined ? "boxed" : "plain",
-    width: Number.isFinite(input.width) && (input.width ?? 0) > 0 ? input.width! : 80,
-  });
+    width: width !== undefined && Number.isFinite(width) && width > 0 ? width : 80,
+  };
 }
 
 export type PanelRow =
   | { readonly kind: "line"; readonly text: string }
-  | { readonly kind: "divider"; readonly title: string; readonly meta?: string };
+  | { readonly kind: "divider"; readonly title: string; readonly meta: string | undefined };
 
 export interface PanelInput {
-  readonly title?: string;
-  readonly meta?: string;
-  readonly footerCommand?: string;
+  readonly title: string | undefined;
+  readonly meta: string | undefined;
+  readonly footerCommand: string | undefined;
   readonly rows: readonly PanelRow[];
   readonly width: number;
   readonly mode: PanelMode;
-  readonly capWidth?: boolean;
+  readonly capWidth: boolean;
 }
 
 const MAX_BOX_WIDTH = 100;
@@ -132,7 +133,7 @@ function renderPlain(input: PanelInput): string[] {
 }
 
 function renderBoxed(input: PanelInput): string[] {
-  const width = boxWidthOf(input.width, input.capWidth ?? true);
+  const width = boxWidthOf(input.width, input.capWidth);
   const lines = [border(["╭", "╮"], input.title, input.meta, width)];
   for (const row of input.rows) {
     if (row.kind === "divider") lines.push(border(["├", "┤"], row.title, row.meta, width));

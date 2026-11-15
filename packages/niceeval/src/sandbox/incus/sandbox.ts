@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import * as Schema from "effect/Schema";
+import { decodeJsonRecord } from "../../shared/json-value.ts";
 import { basename, dirname, resolve } from "node:path";
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import type {
@@ -106,8 +108,8 @@ export class IncusSandbox implements SandboxProviderBackend {
 
   private async execArgv(argv: readonly [string, ...string[]], opts: CommandOptions = {}): Promise<CommandResult> {
     const limit = commandLimit(opts, {
-      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
-      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+      commandTimeoutMs: this.commandTimeoutMs,
+      deadlineAt: this.deadlineAt,
     });
     const mapped = this.mapUser(opts.user);
     const marker = `__niceeval_incus_pgid_${randomUUID().replaceAll("-", "")}__`;
@@ -294,7 +296,7 @@ export class IncusSandbox implements SandboxProviderBackend {
       (exitCode) => {
         flushStderrPrefix();
         output.end();
-        return { exitCode } as const;
+        return { exitCode, signal: undefined } as const;
       },
       async (error: unknown) => {
         flushStderrPrefix();
@@ -665,9 +667,9 @@ async function assertReferenceReadiness(
       ["Inspect guest docker and the dedicated data disk; NiceEval will not mark the sandbox ready."],
     );
   }
-  let parsed: { total?: number };
+  let parsed: ReturnType<typeof decodeJsonRecord>;
   try {
-    parsed = JSON.parse(proof.stdout.trim().split("\n").at(-1) ?? "") as { total?: number };
+    parsed = decodeJsonRecord(proof.stdout.trim().split("\n").at(-1) ?? "");
   } catch {
     throw incusError("sandbox-readiness-failed", "Reference readiness could not parse guest statfs proof.", [
       "The trusted image must provide python3 for capacity attestation.",
@@ -675,7 +677,8 @@ async function assertReferenceReadiness(
   }
   const allocated = plan.allocatedDockerDataBytes;
   const overhead = Math.max(FILESYSTEM_FORMAT_OVERHEAD_MIN, Math.floor(allocated * FILESYSTEM_FORMAT_OVERHEAD_RATIO));
-  if (typeof parsed.total !== "number" || parsed.total > allocated || parsed.total + overhead < allocated) {
+  const total = Schema.decodeUnknownOption(Schema.Number)(parsed.total);
+  if (total._tag === "None" || total.value > allocated || total.value + overhead < allocated) {
     throw incusError(
       "sandbox-readiness-failed",
       "Guest statfs total size does not prove the allocated Docker data disk (formatting overhead excluded from available space).",

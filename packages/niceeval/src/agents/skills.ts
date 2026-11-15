@@ -23,7 +23,7 @@ export interface InstallSkillsOptions {
   /** 沙箱里的 Skill 安装根目录(相对 workdir):claude-code 用 `.claude/skills`,codex/bub 用 `.agents/skills`。 */
   dir: string;
   /** 本地 Skill 的解析根;省略用跑 niceeval 的项目根(process.cwd())。 */
-  projectRoot?: string;
+  projectRoot?: string | undefined;
 }
 
 /**

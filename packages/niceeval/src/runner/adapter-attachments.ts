@@ -168,14 +168,13 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
               await setImmediate();
               continue;
             }
-            const exceeded =
-              size > AdapterAttachmentLimits.maximumChunkBytes
-                ? "1 MiB chunk"
-                : reservedBytes + size > AdapterAttachmentLimits.maximumStreamBytes
-                  ? "1 GiB stream"
-                  : archivedBytes + size > AdapterAttachmentLimits.maximumArchivedBytes
-                    ? "2 GiB Attempt"
-                    : undefined;
+            function exceededLimit(): string | undefined {
+              if (size > AdapterAttachmentLimits.maximumChunkBytes) return "1 MiB chunk";
+              if (reservedBytes + size > AdapterAttachmentLimits.maximumStreamBytes) return "1 GiB stream";
+              if (archivedBytes + size > AdapterAttachmentLimits.maximumArchivedBytes) return "2 GiB Attempt";
+              return undefined;
+            }
+            const exceeded = exceededLimit();
             if (exceeded !== undefined) {
               throw new AdapterAttachmentError({
                 code: "adapter-attachment-limit",
@@ -202,15 +201,15 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
               code: "adapter-attachment-closed",
               message: "Attachment collection is closed.",
             });
-          const receipt = Object.freeze({
+          const receipt = {
             artifactId,
             name: value.name,
             mediaType: value.mediaType,
             byteLength: reservedBytes,
             sha256: hash.digest("hex"),
-          });
+          };
           pendingItems.delete(controller);
-          artifacts.push(Object.freeze({ ...receipt, filePath }));
+          artifacts.push({ ...receipt, filePath });
           accepted = true;
           return receipt;
         } finally {
@@ -301,14 +300,14 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
       }
       // This must happen before returning the Promise; caller mutation cannot race acceptance.
       const bytes = typeof value.body === "string" ? new TextEncoder().encode(value.body) : new Uint8Array(value.body);
-      const receipt = Object.freeze({
+      const receipt = {
         artifactId: `art_${randomBytes(10).toString("hex")}`,
         name: value.name,
         mediaType: value.mediaType,
         byteLength: bytes.byteLength,
         sha256: createHash("sha256").update(bytes).digest("hex"),
-      });
-      artifacts.push(Object.freeze({ ...receipt, bytes }));
+      };
+      artifacts.push({ ...receipt, bytes });
       totalBytes += bytes.byteLength;
       archivedBytes += bytes.byteLength;
       return Promise.resolve(receipt);
@@ -334,11 +333,11 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
       sealed = undefined;
     })());
 
-  return Object.freeze({
+  return {
     attach,
     markFailure,
     failure: () => firstFailure,
-    artifacts: () => Object.freeze([...artifacts]),
+    artifacts: () => [...artifacts],
     close: () => {
       if (closed) return;
       if (pending.size > 0) {
@@ -351,12 +350,12 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
       }
       closed = true;
       for (const controller of pending.keys()) controller.abort();
-      sealed = Object.freeze({ artifacts: Object.freeze([...artifacts]), failure: firstFailure, dispose });
+      sealed = { artifacts: [...artifacts], failure: firstFailure, dispose };
     },
     dispose,
     snapshot: () => {
       if (sealed === undefined) throw new Error("Attachment collection must close before taking its snapshot.");
       return sealed;
     },
-  });
+  };
 }

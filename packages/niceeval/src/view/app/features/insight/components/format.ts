@@ -1,6 +1,6 @@
 // unit 驱动的内置格式化:
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
-// 输入是已闭合的完整 MetricValue(value 可以为 null,state/samples/total 原样保留);
+// 输入是已闭合的完整 MetricValue(value 可以缺席,state/samples/total 原样保留);
 // 这里只格式化显示字节,不重新统计、不把 null 猜成零。
 
 import type { MetricState, MetricValue, Verdict } from "./cell.tsx";
@@ -11,7 +11,6 @@ export type MetricFormat =
   | string
   | {
       readonly kind: string;
-      readonly options?: unknown;
     }
   | { readonly kind: "custom"; readonly format: (value: number, locale: string) => string };
 
@@ -56,7 +55,12 @@ function formatNumberWithUnit(value: number, unit?: string): string {
 
 /** 当前 MeasureFormat kind 词表 → unit 开关。未知 kind 回落声明 unit。 */
 function resolveFormatUnit(format: MetricFormat | undefined, unit?: string): string | undefined {
-  const kind = typeof format === "string" ? format : format && "kind" in format ? format.kind : undefined;
+  function formatKind() {
+    if (typeof format === "string") return format;
+    if (format && "kind" in format) return format.kind;
+    return undefined;
+  }
+  const kind = formatKind();
   switch (kind) {
     case "percent":
     case "ratio":
@@ -80,12 +84,12 @@ function resolveFormatUnit(format: MetricFormat | undefined, unit?: string): str
 
 /** @internal Scalar display for the legacy table implementation only. */
 export function formatMetricScalar(
-  value: number | null,
+  value: number | undefined,
   unit?: string,
   format?: MetricFormat,
   locale: ReportLocale = DEFAULT_REPORT_LOCALE,
 ): string {
-  if (value === null) return missingText("noSamples", locale);
+  if (value === undefined) return missingText("noSamples", locale);
   if (
     format &&
     typeof format === "object" &&
@@ -122,9 +126,9 @@ export function metricStateText(state: MetricState, locale: ReportLocale = DEFAU
 /** Formats one complete closed MetricValue without discarding state or coverage. */
 export function formatMetricValue(metric: MetricValue, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const display =
-    metric.value === null
+    metric.value === undefined
       ? metricStateText(metric.state, locale)
-      : `${metric.source === "estimated" ? "~" : ""}${formatMetricScalar(metric.value, metric.unit, metric.format, locale)}`;
+      : `${metric.source === "estimated" ? "~" : ""}${formatMetricScalar(metric.value, metric.unit, undefined, locale)}`;
   return `${display} · ${metric.samples} / ${metric.total} ${metric.basis} · ${metric.state}`;
 }
 

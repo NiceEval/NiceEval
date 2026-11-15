@@ -45,6 +45,8 @@ test -n "$codex_native" || fail 'native binary for the locked Codex version was 
       progress: context.progress,
       diagnostic: () => {},
       onCleanup: () => {},
+
+      evalGroup: undefined,
     });
     await sandbox.runShellOrThrow(
       `${native}

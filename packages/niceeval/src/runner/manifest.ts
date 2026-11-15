@@ -24,7 +24,13 @@ const serializeValue = (value: JsonValue): string =>
 const canonical = (value: JsonValue): string =>
   JSON.stringify(value, (_key, item: unknown) =>
     item !== null && typeof item === "object" && !Array.isArray(item)
-      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      ? Object.fromEntries(
+          Object.entries(item).sort(function compareKeys([a], [b]) {
+            if (a < b) return -1;
+            if (a > b) return 1;
+            return 0;
+          }),
+        )
       : item,
   );
 
@@ -38,13 +44,18 @@ function faceDeltas<T extends JsonValue>(
     const hasFrom = Object.hasOwn(from, key),
       hasTo = Object.hasOwn(to, key);
     if (hasFrom && hasTo && canonical(from[key]!) === canonical(to[key]!)) return [];
+    function deltaKind(): IdentityDelta["kind"] {
+      if (!hasFrom) return "added";
+      if (!hasTo) return "removed";
+      return "changed";
+    }
     return [
-      Object.freeze({
+      {
         selector: `${prefix}:${key}`,
-        kind: !hasFrom ? ("added" as const) : !hasTo ? ("removed" as const) : ("changed" as const),
+        kind: deltaKind(),
         ...(hasFrom ? { from: render(from[key]!) } : {}),
         ...(hasTo ? { to: render(to[key]!) } : {}),
-      }),
+      },
     ];
   });
 }
@@ -58,21 +69,21 @@ export function identityDeltas(
     historical.plan === undefined ? {} : { physical: historical.plan },
     current.plan === undefined ? {} : { physical: current.plan },
   );
-  return Object.freeze([
+  return [
     ...faceDeltas("niceeval", historical.niceeval, current.niceeval),
     ...faceDeltas("config", historical.config, current.config),
     ...plan,
     ...faceDeltas("plugins", historical.plugins ?? {}, current.plugins ?? {}),
     ...faceDeltas("source", historical.source, current.source, shortHash),
     ...faceDeltas("data", historical.data, current.data, shortHash),
-  ]);
+  ];
 }
 
 /** Only persisted context fields whose selector exists in the current manifest are comparable. */
 export function legacyIdentityDeltas(input: {
   readonly current: IdentityManifestEntry;
-  readonly context?: RunContext;
-  readonly source?: Readonly<Record<string, string>>;
+  readonly context: RunContext | undefined;
+  readonly source: Readonly<Record<string, string>> | undefined;
 }): readonly IdentityDelta[] {
   const prior: Record<string, JsonValue> = {};
   const current: Record<string, JsonValue> = {};
@@ -128,10 +139,7 @@ export function legacyIdentityDeltas(input: {
       currentSource[path] = input.current.source[path]!;
     }
   }
-  return Object.freeze([
-    ...faceDeltas("config", prior, current),
-    ...faceDeltas("source", priorSource, currentSource, shortHash),
-  ]);
+  return [...faceDeltas("config", prior, current), ...faceDeltas("source", priorSource, currentSource, shortHash)];
 }
 
 export function unexplainedIdentity(
@@ -141,24 +149,24 @@ export function unexplainedIdentity(
   limitations?: readonly string[],
   facts?: readonly IdentityDiagnosticFact[],
 ): IdentityExplanation {
-  return Object.freeze({
+  return {
     kind: "unexplained",
-    diagnostic: Object.freeze({
+    diagnostic: {
       code,
       summary,
-      ...(observedDeltas === undefined ? {} : { observedDeltas: Object.freeze([...observedDeltas]) }),
-      ...(limitations === undefined ? {} : { limitations: Object.freeze([...limitations]) }),
-      ...(facts === undefined ? {} : { facts: Object.freeze([...facts]) }),
-    }),
-  });
+      ...(observedDeltas === undefined ? {} : { observedDeltas }),
+      ...(limitations === undefined ? {} : { limitations }),
+      ...(facts === undefined ? {} : { facts }),
+    },
+  };
 }
 
 /** Called only for unequal Core execution digests; equality never needs a manifest. */
 export function explainIdentityMismatch(input: {
-  readonly historical?: IdentityManifestEntry;
-  readonly current?: IdentityManifestEntry;
-  readonly context?: RunContext;
-  readonly source?: Readonly<Record<string, string>>;
+  readonly historical: IdentityManifestEntry | undefined;
+  readonly current: IdentityManifestEntry | undefined;
+  readonly context: RunContext | undefined;
+  readonly source: Readonly<Record<string, string>> | undefined;
 }): IdentityExplanation {
   if (input.historical === undefined || input.current === undefined) {
     return unexplainedIdentity(
@@ -168,8 +176,8 @@ export function explainIdentityMismatch(input: {
         ? undefined
         : legacyIdentityDeltas({
             current: input.current,
-            ...(input.context === undefined ? {} : { context: input.context }),
-            ...(input.source === undefined ? {} : { source: input.source }),
+            context: input.context,
+            source: input.source,
           }),
       [
         "Physical plan, managed data, remaining configuration, and NiceEval identity cannot be compared without the identity manifest.",
@@ -184,7 +192,7 @@ export function explainIdentityMismatch(input: {
       "NiceEval identity changed. Rerun the affected experiments.",
       deltas,
     );
-  if (deltas.length > 0) return Object.freeze({ kind: "changed", deltas: [deltas[0]!, ...deltas.slice(1)] as const });
+  if (deltas.length > 0) return { kind: "changed", deltas: [deltas[0]!, ...deltas.slice(1)] as const };
   return unexplainedIdentity(
     "niceeval-identity-changed",
     "NiceEval identity calculation changed. Rerun the affected experiments.",
@@ -194,7 +202,7 @@ export function explainIdentityMismatch(input: {
 
 /** Finite rename proof uses only the current frozen fingerprint recipe. */
 export function executionDigestForManifestOrigin(
-  target: RenameIdentityTarget & { readonly identityManifest?: IdentityManifestEntry },
+  target: RenameIdentityTarget & { readonly identityManifest: IdentityManifestEntry | undefined },
   experimentId: string,
   historical: IdentityManifestEntry | undefined,
 ): string | undefined {

@@ -56,14 +56,14 @@ export class AcceptError extends Error {
 export interface AcceptLocatorOptions {
   readonly cwd: string;
   readonly locator: string;
-  readonly recordRoot?: string;
-  readonly config?: Config;
-  readonly evals?: readonly DiscoveredEval[];
-  readonly experiments?: readonly DiscoveredExperiment[];
-  readonly planningServices?: SandboxPlanningServices;
-  readonly now?: () => string | number;
+  readonly recordRoot?: string | undefined;
+  readonly config?: Config | undefined;
+  readonly evals?: readonly DiscoveredEval[] | undefined;
+  readonly experiments?: readonly DiscoveredExperiment[] | undefined;
+  readonly planningServices?: SandboxPlanningServices | undefined;
+  readonly now?: (() => string | number) | undefined;
   /** Durable accepted-action context; never copied into the source Attempt. */
-  readonly operatorReason?: string;
+  readonly operatorReason?: string | undefined;
 }
 
 export interface AcceptLocatorsOptions extends Omit<AcceptLocatorOptions, "locator"> {
@@ -123,15 +123,15 @@ function selectedAcceptTarget(
   members: readonly ExplicitAdoptionMember[],
 ): CurrentAdoptionTarget {
   const selectedIds = new Set(members.map(({ target: slot }) => String(slot.slotId)));
-  const slots = Object.freeze(target.slots.filter(({ slotId }) => selectedIds.has(String(slotId))));
-  const expectedSlots = Object.freeze(target.expectedSlots.filter(({ slotId }) => selectedIds.has(String(slotId))));
+  const slots = target.slots.filter(({ slotId }) => selectedIds.has(String(slotId)));
+  const expectedSlots = target.expectedSlots.filter(({ slotId }) => selectedIds.has(String(slotId)));
   const byKey = new Map(slots.map((slot) => [`${slot.evalId}\u0000${String(slot.attempt)}`, slot] as const));
-  return Object.freeze({
+  return {
     ...target,
     slots,
     expectedSlots,
     slotFor: (evalId: string, attempt: number) => byKey.get(`${evalId}\u0000${String(attempt)}`),
-  });
+  };
 }
 
 function explicitError(code: ExplicitAdoptionError["code"], message: string): ExplicitAdoptionError {
@@ -174,14 +174,10 @@ function groupAcceptSources(sources: readonly ResolvedAdoptionAttempt[]): readon
       group.push(source);
     }
   }
-  return Object.freeze(
-    [...grouped.entries()].map(([experimentId, group]) =>
-      Object.freeze({
-        experimentId,
-        sources: Object.freeze(group),
-      }),
-    ),
-  );
+  return [...grouped.entries()].map(([experimentId, group]) => ({
+    experimentId,
+    sources: group,
+  }));
 }
 
 /**
@@ -194,7 +190,7 @@ function prepareAcceptPreflight(input: {
   readonly project: AdoptionProject;
   readonly locators: readonly string[];
   readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
-  readonly operatorReason?: string;
+  readonly operatorReason: string | undefined;
 }): Effect.Effect<AcceptPreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     yield* assertUniqueLocators(input.locators);
@@ -221,7 +217,7 @@ function prepareAcceptPreflight(input: {
                 source,
                 evalId: source.originEvalId,
                 attempt: source.originAttempt,
-                ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+                operatorReason: input.operatorReason,
               }),
             { concurrency: 1 },
           );
@@ -231,34 +227,30 @@ function prepareAcceptPreflight(input: {
             target: selectedTarget,
             members,
           });
-          return Object.freeze({
+          return {
             target: selectedTarget,
-            members: Object.freeze(members),
+            members,
             plan,
-          });
+          };
         }),
       // Physical planning can be costly; retain one complete target at a time.
       { concurrency: 1 },
     );
-    return Object.freeze({ groups: Object.freeze(groups) });
+    return { groups };
   });
 }
 
 function projectAcceptPreview(preflight: AcceptPreflight): readonly AcceptedAttemptPreview[] {
-  return Object.freeze(
-    preflight.groups.flatMap((group) =>
-      group.members.map((member) =>
-        Object.freeze({
-          locator: member.locator,
-          sourceLocator: member.locator,
-          experimentId: group.target.experimentId,
-          evalId: member.target.evalId,
-          attempt: member.target.attempt,
-          fingerprint: member.target.inputIdentity.value,
-          comparisons: member.comparisons,
-        }),
-      ),
-    ),
+  return preflight.groups.flatMap((group) =>
+    group.members.map((member) => ({
+      locator: member.locator,
+      sourceLocator: member.locator,
+      experimentId: group.target.experimentId,
+      evalId: member.target.evalId,
+      attempt: member.target.attempt,
+      fingerprint: member.target.inputIdentity.value,
+      comparisons: member.comparisons,
+    })),
   );
 }
 
@@ -336,17 +328,14 @@ function receiptsForAccept(input: {
             ),
           );
         }
-        byLocator.set(
-          member.locator,
-          Object.freeze({
-            invocationId: input.invocationId,
-            runId: receipt.runId,
-            slotId: memberReceipt.slotId,
-            locator: member.locator,
-            sourceLocator: member.locator,
-            fingerprint: member.target.inputIdentity.value,
-          }),
-        );
+        byLocator.set(member.locator, {
+          invocationId: input.invocationId,
+          runId: receipt.runId,
+          slotId: memberReceipt.slotId,
+          locator: member.locator,
+          sourceLocator: member.locator,
+          fingerprint: member.target.inputIdentity.value,
+        });
       }
       if (membersByLocator.size !== group.members.length) {
         return yield* Effect.fail(
@@ -370,17 +359,17 @@ function receiptsForAccept(input: {
       }
       ordered.push(receipt);
     }
-    return Object.freeze(ordered);
+    return ordered;
   });
 }
 
 function projectInput(input: AcceptLocatorsOptions): AdoptionProjectInput {
   return {
     cwd: input.cwd,
-    ...(input.config === undefined ? {} : { config: input.config }),
-    ...(input.evals === undefined ? {} : { evals: input.evals }),
-    ...(input.experiments === undefined ? {} : { experiments: input.experiments }),
-    ...(input.planningServices === undefined ? {} : { planningServices: input.planningServices }),
+    config: input.config,
+    evals: input.evals,
+    experiments: input.experiments,
+    planningServices: input.planningServices,
   };
 }
 
@@ -389,7 +378,7 @@ function prepareAcceptRunPreflight(input: {
   readonly project: AdoptionProject;
   readonly runId: string;
   readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
-  readonly operatorReason?: string;
+  readonly operatorReason: string | undefined;
 }): Effect.Effect<AcceptPreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     const sourceRun = yield* resolveExactAdoptionSourceRun({
@@ -412,14 +401,14 @@ function prepareAcceptRunPreflight(input: {
       target,
       operatorReason: input.operatorReason ?? `Accepted source Run ${input.runId}`,
     });
-    const members = Object.freeze(prepared.members.map((entry) => entry.member));
+    const members = prepared.members.map((entry) => entry.member);
     const plan = yield* buildExplicitAdoptionRunPlan({ intent: "accept", target, members });
-    return Object.freeze({ groups: Object.freeze([Object.freeze({ target, members, plan })]) });
+    return { groups: [{ target, members, plan }] };
   });
 }
 
 function acceptRunProjectInput(input: AcceptRunOptions): AdoptionProjectInput {
-  return projectInput({ ...input, locators: Object.freeze([]) });
+  return projectInput({ ...input, locators: [] });
 }
 
 export function planAcceptRun(input: AcceptRunOptions) {
@@ -435,10 +424,10 @@ export function planAcceptRun(input: AcceptRunOptions) {
           project,
           runId: input.runId,
           startedAt,
-          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+          operatorReason: input.operatorReason,
         }),
     });
-    return Object.freeze({ sourceRunId: input.runId, members: projectAcceptPreview(preflight) });
+    return { sourceRunId: input.runId, members: projectAcceptPreview(preflight) };
   });
 }
 
@@ -456,7 +445,7 @@ export function acceptRun(input: AcceptRunOptions) {
           project,
           runId: input.runId,
           startedAt,
-          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+          operatorReason: input.operatorReason,
         }),
     });
     const invocationId = yield* createExplicitAdoptionInvocationId();
@@ -487,7 +476,7 @@ export function planAcceptLocators(input: AcceptLocatorsOptions) {
           project,
           locators: input.locators,
           startedAt,
-          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+          operatorReason: input.operatorReason,
         }),
     });
     return projectAcceptPreview(preflight);
@@ -512,7 +501,7 @@ export function acceptLocators(input: AcceptLocatorsOptions) {
           project,
           locators: input.locators,
           startedAt,
-          ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+          operatorReason: input.operatorReason,
         }),
     });
 

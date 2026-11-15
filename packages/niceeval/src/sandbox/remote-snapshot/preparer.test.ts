@@ -123,6 +123,8 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
         return {
           sandbox: normalizeSandboxPaths(backend, "recording"),
           authorBackend: backend,
+          beforeCache: { _tag: "None" },
+          services: { _tag: "None" },
           group: { primary: { sandboxId: backend.sandboxId }, resources: {}, stop: () => backend.stop() },
           caseKind: "prebuilt",
           caseKey: computeCaseKey({
@@ -193,6 +195,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
     operationId: randomUUID(),
     positions: ["prepare"],
     declaringOwner: "eval:prepare",
+    knownSensitiveValues: [],
     declaration: {
       baseIdentity: "immutable-base",
       beforeCacheKey: `prefix:${domain}`,
@@ -270,12 +273,15 @@ async function agentAttempts(
         retention: { _tag: "DestroyOnly" },
         reuse: { _tag: "Unsupported", reason: "test" },
         sessionLimit: { _tag: "Unlimited" },
+        dockerExecution: undefined,
       },
       beforeCache: { _tag: "RunPrepared", coverage: "all", preparer },
       materialize: (_plan, context) => f.context.materializeBase(context),
       collectBuildPreparation: () => Effect.succeed(Option.none()),
     },
     runtimePlan: undefined,
+    interruptibleAcquisition: false,
+    identityMarker: undefined,
     build: {
       _tag: "None",
       caseKey: computeCaseKey({
@@ -307,7 +313,12 @@ async function agentAttempts(
     .before(shell({ id: "after-opaque", command: "must-not-be-cached" }));
   const pairs = await Effect.runPromise(
     linkSandboxLayers([
-      { eval: { id: "one" }, experiment: { id: "cloud", layer }, agent: { kind: "sandbox", name: "probe" } },
+      {
+        eval: { id: "one", layer: undefined, declaredAt: undefined },
+        group: undefined,
+        experiment: { id: "cloud", layer, declaredAt: undefined },
+        agent: { kind: "sandbox", name: "probe", sandbox: undefined },
+      },
     ]),
   );
   const planned = await Effect.runPromise(
@@ -315,8 +326,10 @@ async function agentAttempts(
       pairs.map((pair) => ({ pair, authorBaseDirs: { eval: "/tmp", experiment: "/tmp" }, requirements: [] })),
     ),
   );
-  const installer = { ...agent.installer };
-  if (options.safe === false) delete installer[AGENT_DOCKERFILE_CACHE_SAFE];
+  const installer = {
+    ...agent.installer,
+    [AGENT_DOCKERFILE_CACHE_SAFE]: options.safe === false ? undefined : agent.installer[AGENT_DOCKERFILE_CACHE_SAFE],
+  };
   const adapter = defineSandboxAgent({
     name: "recording-agent",
     evidenceCoverage: completeEvidenceCoverage,
@@ -349,6 +362,10 @@ test.concurrent.each([true, false])(
       prepareBeforeCaches(attempts, {
         runIds: new Map([["cloud", randomUUID()]]),
         artifactPrepare: coordinator,
+        onWarning: () => {},
+        onActivity: () => {},
+        signal: undefined,
+        maxConcurrency: 2,
       });
     let initialKey: string | undefined;
     await Effect.runPromise(
@@ -433,12 +450,19 @@ test.concurrent.each(["install-failed", "recheck-missed"] as const)(
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const result = yield* prepareBeforeCaches(input, { runIds: new Map([["cloud", randomUUID()]]) });
+          const result = yield* prepareBeforeCaches(input, {
+            runIds: new Map([["cloud", randomUUID()]]),
+            artifactPrepare: new ArtifactPrepareCoordinator(),
+            onWarning: () => {},
+            onActivity: () => {},
+            signal: undefined,
+            maxConcurrency: 2,
+          });
           expect(result.failuresByPair.size).toBe(0);
           expect(result.summary).toMatchObject({ prepared: 2, degraded: 1, failed: 0 });
           const use = [...result.preparedByPair.values()][0]!;
           expect(use).toMatchObject({ satisfiedActionCount: 2, degraded: { reason: "agent-install-failed" } });
-          expect(use.agentDerived).toBeUndefined();
+          expect(use.agentDerived).toBe(false);
           expect(use.artifact!.beforeCacheKey).toMatch(/^prefix:/);
           expect(f.snapshotCalls()).toBe(2);
         }),
@@ -459,7 +483,14 @@ test.concurrent.each([true, false])(
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const result = yield* prepareBeforeCaches(input, { runIds: new Map([["cloud", randomUUID()]]) });
+          const result = yield* prepareBeforeCaches(input, {
+            runIds: new Map([["cloud", randomUUID()]]),
+            artifactPrepare: new ArtifactPrepareCoordinator(),
+            onWarning: () => {},
+            onActivity: () => {},
+            signal: undefined,
+            maxConcurrency: 2,
+          });
           expect(result.summary).toMatchObject({ total: safe ? 1 : 0, prepared: safe ? 1 : 0, failed: 0 });
           if (safe)
             expect([...result.preparedByPair.values()][0]).toMatchObject({

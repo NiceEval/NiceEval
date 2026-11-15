@@ -10,17 +10,19 @@
 // ```typescript
 // import { sseJsonFrames, createClaudeSdkEventStream } from "niceeval/adapter";
 //
-// const frames = sseJsonFrames<SDKMessage>(res.body);
+// const frames = sseJsonFrames(res.body);
 // const stream = createClaudeSdkEventStream();
 // for (;;) {
 //   const frame = await frames.next();
-//   if (frame === null) break;
-//   events.push(...stream.add(frame));   // 逐帧翻译;认不出的帧返回 []
+//   if (frame.done) break;
+//   events.push(...stream.add(frame.value));   // 逐帧翻译;认不出的帧返回 []
 // }
 // return { status: stream.failed ? "failed" : "completed", events, usage: stream.usage };
 // ```
 
 import type { CommandProjection, JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
+import { isObject as isRecord } from "../shared/objects.ts";
+import * as Schema from "effect/Schema";
 import { normalizeToolName } from "../o11y/tool-names.ts";
 import { CODEX_TOOL_ALIASES } from "../o11y/parsers/codex.ts";
 import { CLAUDE_TOOL_ALIASES } from "../o11y/parsers/claude-code.ts";
@@ -28,45 +30,25 @@ import { notCommandProjection, opaqueCommandProjection } from "../o11y/command-p
 
 // ───────────────────────── 通用 SSE 读帧器 ─────────────────────────
 
-export interface SseFrameCursor<T> {
-  /** 下一个 `data:` JSON 帧;流结束返回 null。`data: [DONE]` 哨兵帧自动跳过。 */
-  next(): Promise<T | null>;
-}
-
-/** 标准 SSE(`data: {...}\n\n`)→ 逐帧 JSON。各 adapter 不用再手写 buffer 状态机。 */
-export function sseJsonFrames<T>(body: ReadableStream<Uint8Array>): SseFrameCursor<T> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  async function next(): Promise<T | null> {
-    for (;;) {
-      const sepIndex = buffer.indexOf("\n\n");
-      if (sepIndex !== -1) {
-        const rawEvent = buffer.slice(0, sepIndex);
-        buffer = buffer.slice(sepIndex + 2);
-        const line = rawEvent.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        const payload = line.slice("data: ".length);
-        if (payload === "[DONE]") continue;
-        return JSON.parse(payload) as T;
-      }
-      const { value, done } = await reader.read();
-      if (done) return null;
-      buffer += decoder.decode(value, { stream: true });
-    }
-  }
-
-  return { next };
-}
-
-function isRecord(v: unknown): v is globalThis.Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
+export { sseJsonFrames, openSseJsonFrames, SseFrameDecodeError, SseFrameDecoderError } from "./sse-frames.ts";
+export type { SseFrameCursor } from "./sse-frames.ts";
 
 /** Claude Agent SDK 的原生 Bash tool 只交付 shell source，不交付 argv。 */
 function commandProjectionForClaudeSdkTool(name: string): CommandProjection | undefined {
   return name === "Bash" ? opaqueCommandProjection("unsupported-protocol") : undefined;
+}
+
+class SdkEventDecodeError extends Schema.TaggedError<SdkEventDecodeError>()("SdkEventDecodeError", {
+  message: Schema.String,
+}) {}
+
+function sdkEventDecoder<S extends Schema.ConstraintDecoder<unknown>>(schema: S) {
+  const decode = Schema.decodeUnknownResult(schema);
+  return (input: unknown): S["Type"] => {
+    const decoded = decode(input);
+    if (decoded._tag === "Failure") throw new SdkEventDecodeError({ message: decoded.failure.message });
+    return decoded.success;
+  };
 }
 
 // ───────────────────────── Claude Agent SDK:SDKMessage ─────────────────────────
@@ -74,25 +56,28 @@ function commandProjectionForClaudeSdkTool(name: string): CommandProjection | un
 /** 只声明转换器要读的字段;真实的 SDKMessage 直接喂进来即可。 */
 export interface ClaudeSdkMessageLike {
   type: string;
-  subtype?: string;
-  session_id?: string;
-  tool_use_id?: string;
-  is_error?: boolean;
-  num_turns?: number;
-  total_cost_usd?: number;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number | null;
-    cache_creation_input_tokens?: number | null;
-  };
-  message?: { content?: unknown };
+  subtype?: string | undefined;
+  session_id?: string | undefined;
+  tool_use_id?: string | undefined;
+  is_error?: boolean | undefined;
+  num_turns?: number | undefined;
+  total_cost_usd?: number | undefined;
+  usage?:
+    | {
+        input_tokens: number;
+        output_tokens: number;
+        // 第三方输入边界：Claude SDK 的原生 usage 允许省略或 null 桶。
+        cache_read_input_tokens?: number | null;
+        cache_creation_input_tokens?: number | null;
+      }
+    | undefined;
+  message?: { content?: unknown } | undefined;
   [key: string]: unknown;
 }
 
 export interface ClaudeSdkStream {
   /** 逐帧喂 `SDKMessage`,返回这一帧派生的标准事件;认不出的帧(stream_event 等)返回 []。 */
-  add(message: ClaudeSdkMessageLike): StreamEvent[];
+  add(message: ClaudeSdkMessageLike | JsonValue): StreamEvent[];
   /** `system`/`init` 帧带回的 session_id(首帧之后可读),回写 `ctx.session.id` 用。 */
   readonly sessionId: string | undefined;
   /** `result` 帧的聚合用量。 */
@@ -105,6 +90,30 @@ export interface ClaudeSdkStream {
    */
   markRejected(toolUseId: string): void;
 }
+
+const decodeClaudeSdkMessage = sdkEventDecoder(
+  Schema.StructWithRest(
+    Schema.Struct({
+      type: Schema.String,
+      subtype: Schema.optional(Schema.String),
+      session_id: Schema.optional(Schema.String),
+      tool_use_id: Schema.optional(Schema.String),
+      is_error: Schema.optional(Schema.Boolean),
+      num_turns: Schema.optional(Schema.Number),
+      total_cost_usd: Schema.optional(Schema.Number),
+      usage: Schema.optional(
+        Schema.Struct({
+          input_tokens: Schema.Number,
+          output_tokens: Schema.Number,
+          cache_read_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+          cache_creation_input_tokens: Schema.optional(Schema.NullOr(Schema.Number)),
+        }),
+      ),
+      message: Schema.optional(Schema.Struct({ content: Schema.optional(Schema.Unknown) })),
+    }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
+);
 
 /**
  * Claude Agent SDK 消息流(`system` / `assistant` / `user` / `result`)→ 标准事件。
@@ -149,13 +158,15 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
     markRejected(toolUseId) {
       rejected.add(toolUseId);
     },
-    add(frame) {
+    add(input) {
+      if (isRecord(input) && !["system", "assistant", "user", "result"].includes(String(input.type))) return [];
+      const frame = decodeClaudeSdkMessage(input);
       const events: StreamEvent[] = [];
       switch (frame.type) {
         case "system": {
-          if (frame.subtype === "init" && typeof frame.session_id === "string") {
+          if (frame.subtype === "init" && frame.session_id !== undefined) {
             sessionId ??= frame.session_id;
-          } else if (frame.subtype === "permission_denied" && typeof frame.tool_use_id === "string") {
+          } else if (frame.subtype === "permission_denied" && frame.tool_use_id !== undefined) {
             if (!resolvedCallIds.has(frame.tool_use_id)) {
               resolvedCallIds.add(frame.tool_use_id);
               events.push({
@@ -186,7 +197,7 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
                   name: block.name,
                   input: block.input as JsonValue,
                   tool: normalizeToolName(block.name, CLAUDE_TOOL_ALIASES),
-                  ...(command === undefined ? {} : { command }),
+                  command,
                 },
               });
             }
@@ -199,12 +210,17 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
             if (!isRecord(block) || block.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
             if (resolvedCallIds.has(block.tool_use_id)) continue;
             resolvedCallIds.add(block.tool_use_id);
+            const resultBlock = block;
+            function toolResultStatus(callId: string): "rejected" | "failed" | "completed" {
+              if (rejected.has(callId)) return "rejected";
+              return resultBlock.is_error ? "failed" : "completed";
+            }
             events.push({
               type: "operation.finished",
               operationId: block.tool_use_id,
               kind: "tool",
               output: toolResultText(block.content) as JsonValue,
-              status: rejected.has(block.tool_use_id) ? "rejected" : block.is_error ? "failed" : "completed",
+              status: toolResultStatus(block.tool_use_id),
             });
           }
           break;
@@ -221,8 +237,8 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
               ...(frame.usage.cache_creation_input_tokens == null
                 ? {}
                 : { cacheCreationTokens: frame.usage.cache_creation_input_tokens }),
-              ...(frame.num_turns === undefined ? {} : { requests: frame.num_turns }),
-              ...(frame.total_cost_usd === undefined ? {} : { costUSD: frame.total_cost_usd }),
+              requests: frame.num_turns,
+              costUSD: frame.total_cost_usd,
             };
           }
           break;
@@ -240,29 +256,33 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
 
 export interface PiAgentEventLike {
   type: string;
-  toolCallId?: string;
-  toolName?: string;
+  toolCallId?: string | undefined;
+  toolName?: string | undefined;
   args?: unknown;
   result?: unknown;
-  isError?: boolean;
+  isError?: boolean | undefined;
   /** content 在 user 消息上是 string、assistant 消息上是 parts 数组——按 unknown 收,防御式解析。 */
-  message?: {
-    role?: string;
-    content?: unknown;
-    /** assistant 消息的收尾原因;"error" / "aborted" 表示这条消息以失败告终。 */
-    stopReason?: string;
-    /** stopReason 为 "error" 时的错误说明。 */
-    errorMessage?: string;
-    usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } };
-  };
+  message?:
+    | {
+        role?: string | undefined;
+        content?: unknown;
+        /** assistant 消息的收尾原因;"error" / "aborted" 表示这条消息以失败告终。 */
+        stopReason?: string | undefined;
+        /** stopReason 为 "error" 时的错误说明。 */
+        errorMessage?: string | undefined;
+        usage?:
+          | { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } }
+          | undefined;
+      }
+    | undefined;
   /** `message_update` 帧携带的增量事件(text_delta / thinking_delta 等)——只读 type/delta,防御式解析。 */
-  assistantMessageEvent?: { type?: string; delta?: unknown; [key: string]: unknown };
+  assistantMessageEvent?: { type?: string | undefined; delta?: unknown; [key: string]: unknown } | undefined;
   [key: string]: unknown;
 }
 
 export interface PiAgentStream {
   /** 逐帧喂 `AgentEvent`,返回这一帧派生的标准事件;生命周期帧(turn_start 等)返回 []。 */
-  add(event: PiAgentEventLike): StreamEvent[];
+  add(event: PiAgentEventLike | JsonValue): StreamEvent[];
   /** assistant `message_end` 逐条累加的用量。 */
   readonly usage: Usage | undefined;
   /** assistant 消息以 stopReason "error" / "aborted" 收尾过。 */
@@ -270,6 +290,46 @@ export interface PiAgentStream {
   /** 拒绝审批后续读前登记:该调用 `tool_execution_end` 的 isError 判成 "rejected" 而非 "failed"。 */
   markRejected(toolCallId: string): void;
 }
+
+const decodePiAgentEvent = sdkEventDecoder(
+  Schema.StructWithRest(
+    Schema.Struct({
+      type: Schema.String,
+      toolCallId: Schema.optional(Schema.String),
+      toolName: Schema.optional(Schema.String),
+      args: Schema.optional(Schema.Unknown),
+      result: Schema.optional(Schema.Unknown),
+      isError: Schema.optional(Schema.Boolean),
+      message: Schema.optional(
+        Schema.Struct({
+          role: Schema.optional(Schema.String),
+          content: Schema.optional(Schema.Unknown),
+          stopReason: Schema.optional(Schema.String),
+          errorMessage: Schema.optional(Schema.String),
+          usage: Schema.optional(
+            Schema.Struct({
+              input: Schema.Number,
+              output: Schema.Number,
+              cacheRead: Schema.Number,
+              cacheWrite: Schema.Number,
+              cost: Schema.Struct({ total: Schema.Number }),
+            }),
+          ),
+        }),
+      ),
+      assistantMessageEvent: Schema.optional(
+        Schema.StructWithRest(
+          Schema.Struct({
+            type: Schema.optional(Schema.String),
+            delta: Schema.optional(Schema.Unknown),
+          }),
+          [Schema.Record(Schema.String, Schema.Unknown)],
+        ),
+      ),
+    }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
+);
 
 /**
  * pi-agent-core 事件流(`message_start` / `message_update` / `message_end` /
@@ -312,7 +372,15 @@ export function createPiAgentEventStream(): PiAgentStream {
     markRejected(toolCallId) {
       rejected.add(toolCallId);
     },
-    add(event) {
+    add(input) {
+      if (
+        isRecord(input) &&
+        !["message_start", "message_update", "message_end", "tool_execution_start", "tool_execution_end"].includes(
+          String(input.type),
+        )
+      )
+        return [];
+      const event = decodePiAgentEvent(input);
       const events: StreamEvent[] = [];
       switch (event.type) {
         case "message_start": {
@@ -362,7 +430,7 @@ export function createPiAgentEventStream(): PiAgentStream {
           break;
         }
         case "tool_execution_start": {
-          if (typeof event.toolCallId === "string" && typeof event.toolName === "string") {
+          if (event.toolCallId !== undefined && event.toolName !== undefined) {
             events.push({
               type: "operation.started",
               operationId: event.toolCallId,
@@ -372,8 +440,12 @@ export function createPiAgentEventStream(): PiAgentStream {
           break;
         }
         case "tool_execution_end": {
-          if (typeof event.toolCallId === "string") {
-            const status = event.isError ? (rejected.has(event.toolCallId) ? "rejected" : "failed") : "completed";
+          if (event.toolCallId !== undefined) {
+            function toolExecutionStatus(callId: string): "rejected" | "failed" | "completed" {
+              if (!event.isError) return "completed";
+              return rejected.has(callId) ? "rejected" : "failed";
+            }
+            const status = toolExecutionStatus(event.toolCallId);
             events.push({
               type: "operation.finished",
               operationId: event.toolCallId,
@@ -398,10 +470,12 @@ export function createPiAgentEventStream(): PiAgentStream {
 
 export interface CodexThreadEventLike {
   type: string;
-  message?: string;
-  thread_id?: string;
-  item?: { type?: string; text?: string; message?: string; [key: string]: unknown };
-  error?: { message: string };
+  message?: string | undefined;
+  thread_id?: string | undefined;
+  item?:
+    | { type?: string | undefined; text?: string | undefined; message?: string | undefined; [key: string]: unknown }
+    | undefined;
+  error?: { message: string } | undefined;
   [key: string]: unknown;
 }
 
@@ -413,7 +487,7 @@ export interface CodexThreadStream {
    * `"shell"`,供 `calledTool("shell")` 这类跨 agent 断言命中)。usage 从 `turn.completed` 聚合,经 `usage` 读。
    * 断言依据全部来自这条流;codex CLI 的原生 OTLP span 只用于瀑布图(spanMapper: mapCodexSpans)。
    */
-  add(event: CodexThreadEventLike): StreamEvent[];
+  add(event: CodexThreadEventLike | JsonValue): StreamEvent[];
   /** `thread.started` 带回的 thread_id,回写 `ctx.session.id` 用。 */
   readonly threadId: string | undefined;
   /** `turn.completed` 聚合的用量(input/cached/output tokens)。 */
@@ -421,6 +495,28 @@ export interface CodexThreadStream {
   /** turn.failed 或顶层不可恢复 error 出现过；非致命 error item 只保留诊断。 */
   readonly failed: boolean;
 }
+
+const decodeCodexThreadEvent = sdkEventDecoder(
+  Schema.StructWithRest(
+    Schema.Struct({
+      type: Schema.String,
+      message: Schema.optional(Schema.String),
+      thread_id: Schema.optional(Schema.String),
+      item: Schema.optional(
+        Schema.StructWithRest(
+          Schema.Struct({
+            type: Schema.optional(Schema.String),
+            text: Schema.optional(Schema.String),
+            message: Schema.optional(Schema.String),
+          }),
+          [Schema.Record(Schema.String, Schema.Unknown)],
+        ),
+      ),
+      error: Schema.optional(Schema.Struct({ message: Schema.String })),
+    }),
+    [Schema.Record(Schema.String, Schema.Unknown)],
+  ),
+);
 
 /** Codex SDK 线程事件流(`thread.started` / `item.*` / `turn.completed` / `turn.failed`)→ 标准事件。 */
 // @concord-code
@@ -474,12 +570,12 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         if (isCompleted) {
           const exit = item.exit_code ?? item.exitCode;
           const output = item.aggregated_output ?? item.aggregatedOutput ?? item.output;
-          const status =
-            item.status === "declined" || item.status === "rejected"
-              ? ("rejected" as const)
-              : exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error")
-                ? ("completed" as const)
-                : ("failed" as const);
+          function commandExecutionStatus(): "rejected" | "completed" | "failed" {
+            if (item.status === "declined" || item.status === "rejected") return "rejected";
+            if (exit === 0 || (exit == null && item.status !== "failed" && item.status !== "error")) return "completed";
+            return "failed";
+          }
+          const status = commandExecutionStatus();
           events.push({
             type: "operation.finished",
             operationId: callId,
@@ -579,11 +675,19 @@ export function createCodexThreadEventStream(): CodexThreadStream {
     get failed() {
       return failed;
     },
-    add(event) {
+    add(input) {
+      if (
+        isRecord(input) &&
+        !["thread.started", "item.started", "item.completed", "turn.completed", "turn.failed", "error"].includes(
+          String(input.type),
+        )
+      )
+        return [];
+      const event = decodeCodexThreadEvent(input);
       const events: StreamEvent[] = [];
       switch (event.type) {
         case "thread.started": {
-          if (typeof event.thread_id === "string") threadId ??= event.thread_id;
+          if (event.thread_id !== undefined) threadId ??= event.thread_id;
           break;
         }
         case "item.started": {
@@ -593,11 +697,11 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         case "item.completed": {
           const item = event.item;
           if (!item) break;
-          if (item.type === "agent_message" && typeof item.text === "string" && item.text) {
+          if (item.type === "agent_message" && item.text) {
             events.push({ type: "message", role: "assistant", text: item.text });
-          } else if (item.type === "reasoning" && typeof item.text === "string" && item.text) {
+          } else if (item.type === "reasoning" && item.text) {
             events.push({ type: "thinking", text: item.text });
-          } else if (item.type === "error" && typeof item.message === "string") {
+          } else if (item.type === "error" && item.message !== undefined) {
             events.push({ type: "error", message: item.message });
           } else {
             events.push(...handleToolItem(item, true));
@@ -626,7 +730,7 @@ export function createCodexThreadEventStream(): CodexThreadStream {
         }
         case "error": {
           failed = true;
-          if (typeof event.message === "string") events.push({ type: "error", message: event.message });
+          if (event.message !== undefined) events.push({ type: "error", message: event.message });
           break;
         }
         case "turn.failed": {

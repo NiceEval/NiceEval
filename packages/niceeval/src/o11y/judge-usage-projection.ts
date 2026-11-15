@@ -20,15 +20,15 @@ import {
 /** The ledger is already validated; independent metrics retain their own coverage. */
 export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
   const receipts = new Map(ledger.priceReceipts.map((receipt) => [receipt.callId, receipt]));
-  const costCalls = ledger.calls.map((call): { readonly effectiveCost: EffectiveCallCost | null } => {
+  const costCalls = ledger.calls.map((call): { readonly effectiveCost: EffectiveCallCost | undefined } => {
     const receipt = receipts.get(call.callId);
+    function effectiveCost(): EffectiveCallCost | undefined {
+      if (call.cost !== null) return { ...call.cost, state: "complete" };
+      if (receipt === undefined) return undefined;
+      return { amount: receipt.amount, currency: receipt.currency, source: receipt.source, state: receipt.state };
+    }
     return {
-      effectiveCost:
-        call.cost !== null
-          ? { ...call.cost, state: "complete" }
-          : receipt === undefined
-            ? null
-            : { amount: receipt.amount, currency: receipt.currency, source: receipt.source, state: receipt.state },
+      effectiveCost: effectiveCost(),
     };
   });
   const costs = effectiveCostTotals(costCalls, ledger.collection.state);
@@ -42,12 +42,12 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
       const input =
         call.inputTotalTokens ??
         (knownInputs.length === 0 ? null : knownInputs.reduce((sum, bucket) => sum + bucket, 0));
-      const buckets =
-        metric === "inputTotalTokens"
-          ? [input]
-          : metric === "outputTokens"
-            ? [call.outputTokens]
-            : [input, call.outputTokens];
+      function tokenBuckets() {
+        if (metric === "inputTotalTokens") return [input];
+        if (metric === "outputTokens") return [call.outputTokens];
+        return [input, call.outputTokens];
+      }
+      const buckets = tokenBuckets();
       if (buckets.some((bucket) => bucket !== null)) observationCount++;
       for (const bucket of buckets) {
         if (bucket === null) complete = false;
@@ -60,33 +60,31 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
       (observationCount === 0 && ledger.calls.length > 0) ||
       (ledger.calls.length === 0 && !complete)
     ) {
-      return Object.freeze({ state: "unavailable" as const, value: null, observationCount });
+      return { state: "unavailable" as const, value: null, observationCount };
     }
-    return Object.freeze({ state: complete ? ("available" as const) : ("partial" as const), value, observationCount });
+    return { state: complete ? ("available" as const) : ("partial" as const), value, observationCount };
   };
-  const all: Extract<JudgeUsage, { readonly state: "complete" | "partial" }> = Object.freeze({
+  const all: Extract<JudgeUsage, { readonly state: "complete" | "partial" }> = {
     state: ledger.collection.state,
     coverage: "physical-transmissions",
     collection: ledger.collection,
-    calls: Object.freeze([...ledger.calls].sort(compareJudgeUsageCalls)),
+    calls: [...ledger.calls].sort(compareJudgeUsageCalls),
     callsTruncated: false,
     omittedCallCount: 0,
-    totals: Object.freeze({
-      requests: Object.freeze({
+    totals: {
+      requests: {
         state: ledger.collection.state === "complete" ? "available" : "partial",
         value: ledger.calls.length,
         observationCount: ledger.calls.length,
-      }),
+      },
       inputTotalTokens: numeric("inputTotalTokens"),
       outputTokens: numeric("outputTokens"),
       totalTokens: numeric("totalTokens"),
       costs:
-        ledger.collection.state === "complete" && ledger.calls.length === 0
-          ? Object.freeze({ ...costs, state: "complete" })
-          : costs,
-    }),
+        ledger.collection.state === "complete" && ledger.calls.length === 0 ? { ...costs, state: "complete" } : costs,
+    },
     priceReceipts: ledger.priceReceipts,
-  });
+  };
   let preview = takeJudgeUsagePreview(all, JUDGE_USAGE_PREVIEW_CALL_LIMIT);
   while (
     utf8ByteLength(JSON.stringify({ calls: preview.calls, priceReceipts: preview.priceReceipts })) >
@@ -103,26 +101,24 @@ export function takeJudgeUsagePreview(
   usage: Extract<JudgeUsage, { readonly state: "complete" | "partial" }>,
   maximumCalls: number,
 ): Extract<JudgeUsage, { readonly state: "complete" | "partial" }> {
-  const calls = Object.freeze(usage.calls.slice(0, maximumCalls));
+  const calls = usage.calls.slice(0, maximumCalls);
   const receipts = new Map(usage.priceReceipts.map((receipt) => [receipt.callId, receipt]));
-  const priceReceipts = Object.freeze(
-    calls.flatMap((call) => {
-      const receipt = receipts.get(call.callId);
-      return receipt === undefined ? [] : [receipt];
-    }),
-  );
+  const priceReceipts = calls.flatMap((call) => {
+    const receipt = receipts.get(call.callId);
+    return receipt === undefined ? [] : [receipt];
+  });
   const omittedCallCount = usage.omittedCallCount + usage.calls.length - calls.length;
-  return Object.freeze({ ...usage, calls, priceReceipts, callsTruncated: omittedCallCount > 0, omittedCallCount });
+  return { ...usage, calls, priceReceipts, callsTruncated: omittedCallCount > 0, omittedCallCount };
 }
 
 export function summarizeJudgeUsage(usage: JudgeUsage): JudgeUsageSummary {
   if (usage.state === "unavailable" || usage.state === "invalid") return usage;
-  return Object.freeze({
+  return {
     state: usage.state,
     coverage: usage.coverage,
     collection: usage.collection,
     totals: usage.totals,
-  });
+  };
 }
 
 /** Currency-preserving known subtotals; no exchange rate or fabricated zero currency. */
@@ -165,10 +161,10 @@ export function projectTotalUsageCosts(
           },
         ]),
   ]);
-  return Object.freeze({
-    state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
+  return {
+    state: totalCostState(missingSources.length, values.length),
     values,
-    missingSources: Object.freeze(missingSources),
+    missingSources: missingSources,
     gaps: combineCostGaps(
       missingSources.flatMap((source) => {
         const gaps = recordedGaps.filter((gap) => gap.source === source);
@@ -186,8 +182,8 @@ export function projectTotalUsageCosts(
             ];
       }),
     ),
-    ...(simulatedUser === undefined ? {} : { simulatedUser }),
-  });
+    simulatedUser,
+  };
 }
 
 /** Inputs are unique origin Attempts, never preview rows or verdict-filtered members. */
@@ -199,23 +195,23 @@ export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unres
   const values = sumCostValues(totals.flatMap((total) => total.values));
   const sources = totals.flatMap((total) => (total.simulatedUser === undefined ? [] : [total.simulatedUser]));
   const amounts = sources.flatMap((source) => (source.amountUSD === null ? [] : [source.amountUSD]));
+  function simulatedUserState() {
+    if (sources.every((source) => source.state === "complete")) return "complete" as const;
+    return amounts.length > 0 ? ("partial" as const) : ("unpriced" as const);
+  }
   const simulatedUser: TotalUsageCosts["simulatedUser"] =
     sources.length === 0
       ? undefined
       : {
           source: "simulated-user",
-          state: sources.every((source) => source.state === "complete")
-            ? "complete"
-            : amounts.length > 0
-              ? "partial"
-              : "unpriced",
+          state: simulatedUserState(),
           amountUSD: amounts.length === 0 ? null : amounts.reduce((sum, amount) => sum + amount, 0),
           calls: sources.reduce((sum, source) => sum + source.calls, 0),
         };
-  return Object.freeze({
-    state: missingSources.length === 0 ? "complete" : values.length === 0 ? "unavailable" : "partial",
+  return {
+    state: totalCostState(missingSources.length, values.length),
     values,
-    missingSources: Object.freeze(missingSources),
+    missingSources: missingSources,
     gaps: combineCostGaps([
       ...totals.flatMap((total) => total.gaps),
       ...(unresolved
@@ -226,8 +222,13 @@ export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unres
           }))
         : []),
     ]),
-    ...(simulatedUser === undefined ? {} : { simulatedUser }),
-  });
+    simulatedUser,
+  };
+}
+
+function totalCostState(missingSources: number, values: number): TotalUsageCosts["state"] {
+  if (missingSources === 0) return "complete";
+  return values === 0 ? "unavailable" : "partial";
 }
 
 function sumCostValues(entries: TotalUsageCosts["values"]): TotalUsageCosts["values"] {
@@ -237,17 +238,14 @@ function sumCostValues(entries: TotalUsageCosts["values"]): TotalUsageCosts["val
     if (group === undefined) grouped.set(entry.currency, [entry]);
     else group.push(entry);
   }
-  return Object.freeze(
-    [...grouped.entries()]
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([currency, entries]) =>
-        Object.freeze({
-          currency,
-          value: addCanonicalDecimals(entries.map((entry) => entry.value)),
-          source: entries.every((entry) => entry.source === entries[0]!.source)
-            ? entries[0]!.source
-            : ("mixed" as const),
-        }),
-      ),
-  );
+  return [...grouped.entries()]
+    .sort(function compareCurrencies([left], [right]) {
+      if (left < right) return -1;
+      return left > right ? 1 : 0;
+    })
+    .map(([currency, entries]) => ({
+      currency,
+      value: addCanonicalDecimals(entries.map((entry) => entry.value)),
+      source: entries.every((entry) => entry.source === entries[0]!.source) ? entries[0]!.source : ("mixed" as const),
+    }));
 }

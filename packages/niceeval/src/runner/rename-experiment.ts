@@ -28,12 +28,12 @@ export interface ExperimentRenameOptions {
   readonly cwd: string;
   readonly sourceRunId: string;
   readonly newId: string;
-  readonly config?: Config;
-  readonly evals?: readonly DiscoveredEval[];
-  readonly experiments?: readonly DiscoveredExperiment[];
-  readonly planningServices?: SandboxPlanningServices;
-  readonly now?: () => string | number;
-  readonly operatorReason?: string;
+  readonly config?: Config | undefined;
+  readonly evals?: readonly DiscoveredEval[] | undefined;
+  readonly experiments?: readonly DiscoveredExperiment[] | undefined;
+  readonly planningServices?: SandboxPlanningServices | undefined;
+  readonly now?: (() => string | number) | undefined;
+  readonly operatorReason?: string | undefined;
 }
 export interface ExperimentRenameMigration {
   readonly evalId: string;
@@ -42,21 +42,30 @@ export interface ExperimentRenameMigration {
   readonly targetExperimentId: string;
   readonly fingerprint: string;
 }
-export interface ExperimentRenamePlan {
+interface ExperimentRenamePlanBase {
   readonly status: "plan";
   readonly sourceRunId: string;
-  readonly oldId: string | null;
   readonly newId: string;
-  readonly migrations: readonly ExperimentRenameMigration[];
-  readonly blocked?: { readonly reason: ExperimentRenameReason; readonly detail: string };
 }
+interface BlockedExperimentRenamePlan extends ExperimentRenamePlanBase {
+  readonly oldId: string | undefined;
+  readonly migrations: readonly [];
+  readonly blocked: { readonly reason: ExperimentRenameReason; readonly detail: string };
+}
+export type ExperimentRenamePlan =
+  | BlockedExperimentRenamePlan
+  | (ExperimentRenamePlanBase & {
+      readonly oldId: string;
+      readonly migrations: readonly ExperimentRenameMigration[];
+      readonly blocked: undefined;
+    });
 export class ExperimentRenameError extends Error {
   readonly name = "ExperimentRenameError";
-  constructor(readonly plan: ExperimentRenamePlan) {
-    super(plan.blocked!.detail);
+  constructor(readonly plan: BlockedExperimentRenamePlan) {
+    super(plan.blocked.detail);
   }
   get reason(): ExperimentRenameReason {
-    return this.plan.blocked!.reason;
+    return this.plan.blocked.reason;
   }
 }
 export interface RenamedAttemptSourceReceipt {
@@ -91,10 +100,10 @@ const explicitError = (code: ExplicitAdoptionFailureCode, message: string) => ne
 function projectInput(input: ExperimentRenameOptions): AdoptionProjectInput {
   return {
     cwd: input.cwd,
-    ...(input.config === undefined ? {} : { config: input.config }),
-    ...(input.evals === undefined ? {} : { evals: input.evals }),
-    ...(input.experiments === undefined ? {} : { experiments: input.experiments }),
-    ...(input.planningServices === undefined ? {} : { planningServices: input.planningServices }),
+    config: input.config,
+    evals: input.evals,
+    experiments: input.experiments,
+    planningServices: input.planningServices,
   };
 }
 export function preflightExperimentRename(input: {
@@ -103,7 +112,7 @@ export function preflightExperimentRename(input: {
   readonly sourceRun: AwaitedSourceRun;
   readonly newId: string;
   readonly startedAt: Parameters<typeof prepareCurrentAdoptionTarget>[0]["startedAt"];
-  readonly operatorReason?: string;
+  readonly operatorReason: string | undefined;
 }): Effect.Effect<RenamePreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     if (input.sourceRun.experimentId === input.newId)
@@ -130,23 +139,23 @@ export function preflightExperimentRename(input: {
       target,
       members: source.members.map((entry) => entry.member),
     });
-    return Object.freeze({ source, plan });
+    return { source, plan };
   });
 }
 type AwaitedSourceRun = RenameAdoptionPreflight["sourceRun"];
 function blockedPlan(
   input: ExperimentRenameOptions,
-  oldId: string | null,
+  oldId: string | undefined,
   error: ExplicitAdoptionError,
-): ExperimentRenamePlan {
-  return Object.freeze({
+): BlockedExperimentRenamePlan {
+  return {
     status: "plan",
     sourceRunId: input.sourceRunId,
     oldId,
     newId: input.newId,
-    migrations: Object.freeze([]),
-    blocked: Object.freeze({ reason: error.code, detail: error.message }),
-  });
+    migrations: [],
+    blocked: { reason: error.code, detail: error.message },
+  };
 }
 function prepare(
   input: ExperimentRenameOptions,
@@ -158,7 +167,7 @@ function prepare(
     const source = yield* Effect.result(resolveExactAdoptionSourceRun({ reader, sourceRunId: input.sourceRunId }));
     if (Result.isFailure(source)) {
       if (source.failure instanceof ExplicitAdoptionError)
-        return yield* Effect.fail(new ExperimentRenameError(blockedPlan(input, null, source.failure)));
+        return yield* Effect.fail(new ExperimentRenameError(blockedPlan(input, undefined, source.failure)));
       return yield* Effect.fail(source.failure);
     }
     return yield* preflightExperimentRename({
@@ -167,7 +176,7 @@ function prepare(
       sourceRun: source.success,
       newId: input.newId,
       startedAt,
-      ...(input.operatorReason === undefined ? {} : { operatorReason: input.operatorReason }),
+      operatorReason: input.operatorReason,
     }).pipe(
       Effect.mapError((error) =>
         error instanceof ExplicitAdoptionError
@@ -187,24 +196,20 @@ export function planExperimentRename(input: ExperimentRenameOptions) {
       use: (reader) =>
         prepare(input, reader, project, startedAt).pipe(
           Effect.map(
-            (preflight): ExperimentRenamePlan =>
-              Object.freeze({
-                status: "plan",
-                sourceRunId: input.sourceRunId,
-                oldId: preflight.source.sourceRun.experimentId,
-                newId: input.newId,
-                migrations: Object.freeze(
-                  preflight.source.members.map((entry) =>
-                    Object.freeze({
-                      evalId: entry.evalId,
-                      attempt: entry.attempt,
-                      sourceLocator: entry.member.locator,
-                      targetExperimentId: input.newId,
-                      fingerprint: entry.member.target.inputIdentity.value,
-                    }),
-                  ),
-                ),
-              }),
+            (preflight): ExperimentRenamePlan => ({
+              status: "plan",
+              sourceRunId: input.sourceRunId,
+              oldId: preflight.source.sourceRun.experimentId,
+              blocked: undefined,
+              newId: input.newId,
+              migrations: preflight.source.members.map((entry) => ({
+                evalId: entry.evalId,
+                attempt: entry.attempt,
+                sourceLocator: entry.member.locator,
+                targetExperimentId: input.newId,
+                fingerprint: entry.member.target.inputIdentity.value,
+              })),
+            }),
           ),
           Effect.catchIf(
             (error): error is ExperimentRenameError => error instanceof ExperimentRenameError,
@@ -328,33 +333,31 @@ function renamedReceipt(input: {
           ),
         );
       }
-      migrated.push(
-        Object.freeze({
-          evalId: entry.evalId,
-          attempt: entry.attempt,
-          sourceLocator: entry.member.locator,
-          // A reference has no new Attempt; the exact source locator remains it.
+      migrated.push({
+        evalId: entry.evalId,
+        attempt: entry.attempt,
+        sourceLocator: entry.member.locator,
+        // A reference has no new Attempt; the exact source locator remains it.
+        locator: entry.member.locator,
+        fingerprint: entry.member.target.inputIdentity.value,
+        verdict: entry.member.verdict,
+        renamedFrom: {
+          experimentId: input.oldId,
           locator: entry.member.locator,
-          fingerprint: entry.member.target.inputIdentity.value,
-          verdict: entry.member.verdict,
-          renamedFrom: Object.freeze({
-            experimentId: input.oldId,
-            locator: entry.member.locator,
-            originRunId: entry.member.source.origin.runId,
-            attemptId: entry.member.source.attempt.attemptId,
-          }),
-        }),
-      );
+          originRunId: entry.member.source.origin.runId,
+          attemptId: entry.member.source.attempt.attemptId,
+        },
+      });
     }
-    return Object.freeze({
+    return {
       status: "done" as const,
       invocationId: input.invocationId,
       runId: runReceipt.runId,
       sourceRunId: input.sourceRunId,
       oldId: input.oldId,
       newId: input.newId,
-      migrated: Object.freeze(migrated),
-    });
+      migrated,
+    };
   });
 }
 

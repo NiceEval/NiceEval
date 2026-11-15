@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
 import type { ParserOptions } from "oxc-parser";
+import * as Schema from "effect/Schema";
+import { decodeJsonRecord } from "../shared/json-value.ts";
 
 const VERSION = "0.158.0";
 const parserRequireAtRuntime = createRequire(import.meta.url);
@@ -12,6 +14,19 @@ export type SyntaxNode = {
   readonly end: number;
   readonly [key: string]: unknown;
 };
+const SyntaxNodeSchema = Schema.declare<SyntaxNode>(
+  Schema.is(
+    Schema.StructWithRest(
+      Schema.Struct({
+        type: Schema.String,
+        start: Schema.Number,
+        end: Schema.Number,
+      }),
+      [Schema.Record(Schema.String, Schema.Unknown)],
+    ),
+  ),
+);
+const decodeSyntaxTree = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ node: SyntaxNodeSchema })));
 type Comment = { readonly start: number; readonly end: number; readonly value: string };
 type Binding = {
   parseSync(
@@ -61,14 +76,11 @@ function nativeBinding(): Binding {
   let target = `${process.platform}-${process.arch}`;
   if (process.platform === "linux") {
     const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
-    target +=
-      process.arch === "arm"
-        ? report.header?.glibcVersionRuntime
-          ? "-gnueabihf"
-          : "-musleabihf"
-        : report.header?.glibcVersionRuntime
-          ? "-gnu"
-          : "-musl";
+    function linuxAbi(): string {
+      if (process.arch === "arm") return report.header?.glibcVersionRuntime ? "-gnueabihf" : "-musleabihf";
+      return report.header?.glibcVersionRuntime ? "-gnu" : "-musl";
+    }
+    target += linuxAbi();
   } else if (process.platform === "win32") target += "-msvc";
   else if (process.platform === "android" && process.arch === "arm") target += "-eabi";
   const name = `@oxc-parser/binding-${target}`;
@@ -97,9 +109,10 @@ export function syntaxNode(value: unknown): value is SyntaxNode {
   );
 }
 export function childNodes(node: SyntaxNode): SyntaxNode[] {
-  return Object.values(node).flatMap((value) =>
-    Array.isArray(value) ? value.filter(syntaxNode) : syntaxNode(value) ? [value] : [],
-  );
+  return Object.values(node).flatMap(function childSyntaxNodes(value) {
+    if (Array.isArray(value)) return value.filter(syntaxNode);
+    return syntaxNode(value) ? [value] : [];
+  });
 }
 export function walkSyntax(node: SyntaxNode, visit: (node: SyntaxNode) => void): void {
   visit(node);
@@ -116,7 +129,7 @@ function moduleType(file: string): "module" | "commonjs" {
   let dir = dirname(file);
   for (;;) {
     try {
-      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { type?: string };
+      const pkg = decodeJsonRecord(readFileSync(join(dir, "package.json"), "utf8"));
       return pkg.type === "module" ? "module" : "commonjs";
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) throw cause;
@@ -132,15 +145,13 @@ export function parseSource(
   transformed = false,
 ): { program: SyntaxNode; comments: readonly Comment[] } {
   const extension = extname(file);
-  const lang = transformed
-    ? "js"
-    : extension === ".tsx"
-      ? "tsx"
-      : extension === ".jsx"
-        ? "jsx"
-        : /\.[cm]?ts$/u.test(extension)
-          ? "ts"
-          : "js";
+  function sourceLanguage() {
+    if (transformed) return "js" as const;
+    if (extension === ".tsx") return "tsx" as const;
+    if (extension === ".jsx") return "jsx" as const;
+    return /\.[cm]?ts$/u.test(extension) ? ("ts" as const) : ("js" as const);
+  }
+  const lang = sourceLanguage();
   const sourceType = transformed ? "commonjs" : moduleType(file);
   const parsed = nativeBinding().parseSync(file, source, { lang, sourceType, astType: "ts", preserveParens: true });
   const first = parsed.errors[0];
@@ -150,7 +161,7 @@ export function parseSource(
   }
   // The binding's serialized tree uses UTF-16 ranges. RegExp / BigInt value repair is unnecessary:
   // identity uses raw lexemes and dependency specifiers are string literals only.
-  const program = (JSON.parse(parsed.program) as { node: SyntaxNode }).node;
+  const program = decodeSyntaxTree(parsed.program).node;
   return { program, comments: parsed.comments };
 }
 const lineTerminator = /[\n\r\u2028\u2029]/u;
@@ -180,10 +191,14 @@ export function normalizeSource(source: string, program: SyntaxNode, comments: r
     // jiti 2.7.0's Babel JSX / TypeScript transforms recognize @jsx, @jsxFrag,
     // @jsxRuntime and @jsxImportSource. Preserve unknown JSX pragmas conservatively.
     const directive = /@jsx\w*\b/u.test(comment.value);
+    function normalizedComment(): string {
+      if (directive) return raw;
+      return lineTerminator.test(raw) ? "\n" : " ";
+    }
     spans.push({
       start: comment.start,
       end: comment.end,
-      text: directive ? raw : lineTerminator.test(raw) ? "\n" : " ",
+      text: normalizedComment(),
     });
   }
   spans.sort((a, b) => a.start - b.start || b.end - a.end);

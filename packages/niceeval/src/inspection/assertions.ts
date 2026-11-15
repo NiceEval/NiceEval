@@ -9,6 +9,7 @@ import {
   decodeAgentJudgeTrace,
 } from "../assertions/agent-judge-audit.ts";
 import { Result, Schema } from "effect";
+import { isRecord } from "../shared/objects.ts";
 import { isRecordContentHandle } from "../record/attachment/content.ts";
 import type {
   AssertionFactValue as RecordedAssertionFactValue,
@@ -60,28 +61,20 @@ type MatcherAssertionEntry = Omit<AssertionEntry, "evaluation"> & {
 export function projectAttemptAssertionIndex(input: InspectionAssertionsRead): InspectionJson {
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
-    return closeJson(
-      Object.freeze({
-        state: assertions.state,
-        entries: Object.freeze([]),
-        ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
-      }),
-    );
+    return closeJson({
+      state: assertions.state,
+      entries: [],
+      ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
+    });
   }
-  return closeJson(
-    Object.freeze({
-      state: "available" as const,
-      entries: Object.freeze(
-        assertions.value.entries.map((entry) =>
-          Object.freeze({
-            entryId: entry.entryId,
-            display: entry.display,
-            sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
-          }),
-        ),
-      ),
-    }),
-  );
+  return closeJson({
+    state: "available" as const,
+    entries: assertions.value.entries.map((entry) => ({
+      entryId: entry.entryId,
+      display: entry.display,
+      sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
+    })),
+  });
 }
 
 /**
@@ -99,16 +92,14 @@ export function projectAttemptAssertionDetail(
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
     return decodeAssertionDetail(
-      closeJson(
-        Object.freeze({
-          entryId,
-          state: assertions.state,
-          ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
-          sourceSites: Object.freeze([]),
-          check: missingCheck(entryId, assertions.state),
-          matcher: missingMatcher(assertions.state),
-        }),
-      ),
+      closeJson({
+        entryId,
+        state: assertions.state,
+        ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
+        sourceSites: [],
+        check: missingCheck(entryId, assertions.state),
+        matcher: missingMatcher(assertions.state),
+      }),
     );
   }
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
@@ -130,16 +121,14 @@ export function projectAttemptAssertionDetail(
       matcher: { state: "compact" },
     });
   }
-  const result = closeJson(
-    Object.freeze({
-      entryId: entry.entryId,
-      display: entry.display,
-      entry: projectEntry(source, entry, assertions.contents, false, assertions.value.entries),
-      sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
-      check: projectCheck(entry),
-      matcher: projectMatcher(entry, agentTurns, projection),
-    }),
-  );
+  const result = closeJson({
+    entryId: entry.entryId,
+    display: entry.display,
+    entry: projectEntry(source, entry, assertions.contents, false, assertions.value.entries),
+    sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
+    check: projectCheck(entry),
+    matcher: projectMatcher(entry, agentTurns, projection),
+  });
   if (jsonByteLength(result) > INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT) {
     throw new Error("Assertion detail exceeds its fixed result byte limit");
   }
@@ -150,7 +139,7 @@ export function projectAttemptAssertionDetail(
 export function projectAssertionContentDetail(
   source: InspectionFactSource,
   input: InspectionAssertionsRead,
-  selector: { readonly evidenceId: string; readonly offset?: number; readonly limit?: number },
+  selector: { readonly evidenceId: string; readonly offset: number | undefined; readonly limit: number | undefined },
 ): ExecutionTraceDetailResult | undefined {
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") return undefined;
@@ -283,39 +272,35 @@ function decodeAssertionDetail(input: unknown): AssertionDetailResult {
 
 function readCurrentAssertions(input: InspectionAssertionsRead): AssertionsRead {
   if (input.state === "not-recorded") {
-    return Object.freeze({ state: "not-recorded" as const });
+    return { state: "not-recorded" as const };
   }
   if (input.state !== "available") {
-    return Object.freeze({ state: "invalid" as const, issues: input.issues });
+    return { state: "invalid" as const, issues: input.issues };
   }
-  return Object.freeze({
+  return {
     state: "available" as const,
     value: input.value as unknown as {
       readonly entries: readonly AssertionEntry[];
       readonly sourceSites: readonly AssertionSourceSite[];
     },
     contents: input.contents,
-  });
+  };
 }
 
 function projectSourceSites(sites: readonly AssertionSourceSite[], entryId: string): InspectionJson {
   return closeJson(
-    Object.freeze(
-      sites
-        .filter((site) => site.entryId === entryId)
-        .slice()
-        .sort((left, right) => left.sourceOrder - right.sourceOrder)
-        .map((site) =>
-          Object.freeze({
-            entryId: site.entryId,
-            sourceOrder: site.sourceOrder,
-            role: site.role,
-            source: projectReferenceValue(site.source),
-            start: Object.freeze({ line: site.start.line, column: site.start.column }),
-            end: Object.freeze({ line: site.end.line, column: site.end.column }),
-          }),
-        ),
-    ),
+    sites
+      .filter((site) => site.entryId === entryId)
+      .slice()
+      .sort((left, right) => left.sourceOrder - right.sourceOrder)
+      .map((site) => ({
+        entryId: site.entryId,
+        sourceOrder: site.sourceOrder,
+        role: site.role,
+        source: projectReferenceValue(site.source),
+        start: { line: site.start.line, column: site.start.column },
+        end: { line: site.end.line, column: site.end.column },
+      })),
   );
 }
 
@@ -430,15 +415,10 @@ function projectEntry(
         material.encoding !== "json" ||
         !isRecordContentHandle(material.content)
       ) {
-        return closeJson(
-          Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }),
-        );
+        return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
       }
       const metadata = contentMetadata.get(material.content);
-      if (metadata === undefined)
-        return closeJson(
-          Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }),
-        );
+      if (metadata === undefined) return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
       if (pageContent)
         return closeJson({
           ...projected,
@@ -449,36 +429,32 @@ function projectEntry(
         });
       const bytes = readSealedBytes(source, metadata);
       if (material.byteLength !== bytes.byteLength)
-        return closeJson(
-          Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }),
-        );
+        return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
       const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-      return closeJson(
-        Object.freeze({
-          ...projected,
-          scoreMatchAudit: readScoreMatchAudit(
-            decoded,
-            observedMeasurement(entry.evaluation.observed),
-            hasImages
-              ? entry.materials.evidence.slice(0, -1).map((image, evidenceIndex) => {
-                  if (image.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content))
-                    throw new Error("Invalid Judge image material");
-                  const imageMetadata = contentMetadata.get(image.content);
-                  if (imageMetadata === undefined || imageMetadata.byteLength !== image.byteLength)
-                    throw new Error("Invalid Judge image metadata");
-                  const imageDescriptor = JSON.parse(decoded.content.join(""))?.images?.[evidenceIndex];
-                  return {
-                    evidenceIndex,
-                    mediaType: imageDescriptor?.mediaType,
-                    bytes: readSealedBytes(source, imageMetadata),
-                  } as ScoreMatchAuditImageContent;
-                })
-              : undefined,
-          ),
-        }),
-      );
+      return closeJson({
+        ...projected,
+        scoreMatchAudit: readScoreMatchAudit(
+          decoded,
+          observedMeasurement(entry.evaluation.observed),
+          hasImages
+            ? entry.materials.evidence.slice(0, -1).map((image, evidenceIndex) => {
+                if (image.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content))
+                  throw new Error("Invalid Judge image material");
+                const imageMetadata = contentMetadata.get(image.content);
+                if (imageMetadata === undefined || imageMetadata.byteLength !== image.byteLength)
+                  throw new Error("Invalid Judge image metadata");
+                const imageDescriptor = JSON.parse(decoded.content.join(""))?.images?.[evidenceIndex];
+                return {
+                  evidenceIndex,
+                  mediaType: imageDescriptor?.mediaType,
+                  bytes: readSealedBytes(source, imageMetadata),
+                } as ScoreMatchAuditImageContent;
+              })
+            : undefined,
+        ),
+      });
     } catch {
-      return closeJson(Object.freeze({ ...projected, scoreMatchAudit: Object.freeze({ state: "invalid" as const }) }));
+      return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
     }
   }
   if (!currentJudge) return projectSealedValue(source, entry, contentMetadata);
@@ -489,11 +465,10 @@ function projectEntry(
   try {
     const material = entry.materials.source;
     if (material.kind !== "content" || !isRecordContentHandle(material.content)) {
-      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+      return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
     }
     const metadata = contentMetadata.get(material.content);
-    if (metadata === undefined)
-      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    if (metadata === undefined) return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
     if (pageContent)
       return closeJson({
         ...projected,
@@ -504,20 +479,17 @@ function projectEntry(
       });
     const bytes = readSealedBytes(source, metadata);
     if (material.byteLength !== bytes.byteLength || material.encoding !== "json") {
-      return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+      return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
     }
     const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const criterionData = entry.criterion.value.data;
     const name = isRecord(criterionData) && typeof criterionData.name === "string" ? criterionData.name : undefined;
-    return closeJson(
-      Object.freeze({
-        ...projected,
-        judgeMaterial:
-          name === undefined ? Object.freeze({ state: "invalid" as const }) : readJudgeMaterial(decoded, name),
-      }),
-    );
+    return closeJson({
+      ...projected,
+      judgeMaterial: name === undefined ? { state: "invalid" as const } : readJudgeMaterial(decoded, name),
+    });
   } catch {
-    return closeJson(Object.freeze({ ...projected, judgeMaterial: Object.freeze({ state: "invalid" as const }) }));
+    return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
   }
 }
 
@@ -556,28 +528,24 @@ function projectSealedValue(
   if (isRecordContentHandle(value)) {
     const metadata = contentMetadata.get(value);
     if (metadata === undefined) throw new Error("Assertion content metadata is invalid");
-    return closeJson(
-      Object.freeze({
-        state: "available" as const,
-        byteLength: metadata.byteLength,
-        sha256: metadata.digest,
-        ...(deferContent ? { id: metadata.contentId } : { base64: base64(readSealedBytes(source, metadata)) }),
-      }),
-    );
+    return closeJson({
+      state: "available" as const,
+      byteLength: metadata.byteLength,
+      sha256: metadata.digest,
+      ...(deferContent ? { id: metadata.contentId } : { base64: base64(readSealedBytes(source, metadata)) }),
+    });
   }
   if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
     return closeJson(value);
   }
   if (Array.isArray(value))
-    return closeJson(
-      Object.freeze(value.map((item) => projectSealedValue(source, item, contentMetadata, deferContent))),
-    );
+    return closeJson(value.map((item) => projectSealedValue(source, item, contentMetadata, deferContent)));
   if (typeof value !== "object") throw new Error("Assertion entry contains an unsupported value");
   const output: Record<string, InspectionJson> = {};
   for (const key of Object.keys(value).sort()) {
     output[key] = projectSealedValue(source, Reflect.get(value, key), contentMetadata, deferContent);
   }
-  return closeJson(Object.freeze(output));
+  return closeJson(output);
 }
 
 function projectCheck(entry: AssertionEntry): InspectionJson {
@@ -597,7 +565,7 @@ function projectCheck(entry: AssertionEntry): InspectionJson {
 function diagnosticChildren(entry: AssertionEntry): readonly InspectionJson[] {
   const retained = entry.explanationRetention as { readonly state?: string; readonly value?: unknown };
   const value = retained?.state === "retained" ? retained.value : undefined;
-  return value === undefined ? Object.freeze([]) : Object.freeze([diagnosticValueNode(value, "diagnostic")]);
+  return value === undefined ? [] : [diagnosticValueNode(value, "diagnostic")];
 }
 
 function diagnosticValueNode(value: unknown, label: string): InspectionJson {
@@ -609,7 +577,7 @@ function diagnosticValueNode(value: unknown, label: string): InspectionJson {
       value.observed ?? value,
       typeof value.reason === "string" ? value.reason : null,
       value.anchor ?? null,
-      Object.freeze(value.children.map((child) => diagnosticValueNode(child, "diagnostic"))),
+      value.children.map((child) => diagnosticValueNode(child, "diagnostic")),
     );
   }
   if (isRecord(value) && Array.isArray(value.fields)) {
@@ -620,16 +588,14 @@ function diagnosticValueNode(value: unknown, label: string): InspectionJson {
       value,
       null,
       null,
-      Object.freeze(
-        value.fields.map((field) =>
-          isRecord(field)
-            ? diagnosticValueNode(field.value, typeof field.label === "string" ? field.label : "diagnostic")
-            : diagnosticValueNode(field, "diagnostic"),
-        ),
+      value.fields.map((field) =>
+        isRecord(field)
+          ? diagnosticValueNode(field.value, typeof field.label === "string" ? field.label : "diagnostic")
+          : diagnosticValueNode(field, "diagnostic"),
       ),
     );
   }
-  return diagnosticNode(label, "available", null, value, null, null, Object.freeze([]));
+  return diagnosticNode(label, "available", null, value, null, null, []);
 }
 
 function diagnosticNode(
@@ -641,17 +607,15 @@ function diagnosticNode(
   anchor: unknown,
   children: readonly InspectionJson[],
 ): InspectionJson {
-  return closeJson(
-    Object.freeze({
-      label,
-      state,
-      expected: expected === undefined ? null : expected,
-      observed: observed === undefined ? null : observed,
-      reason,
-      anchor: anchor === undefined ? null : anchor,
-      children: Object.freeze([...children]),
-    }),
-  );
+  return closeJson({
+    label,
+    state,
+    expected: expected === undefined ? null : expected,
+    observed: observed === undefined ? null : observed,
+    reason,
+    anchor: anchor === undefined ? null : anchor,
+    children,
+  });
 }
 
 function policyExpected(policy: unknown): unknown | null {
@@ -666,45 +630,37 @@ function projectMatcher(
 ): InspectionJson {
   const evaluation = entry.evaluation;
   if (evaluation.kind === "ordinary")
-    return closeJson(
-      Object.freeze({
-        state: "ordinary" as const,
-        sourceState: null,
-        comparator: null,
-        sourceLedger: evaluation.receipt ?? null,
-        receipt: evaluation.receipt ?? null,
-        result: null,
-        targets: Object.freeze([]),
-        debugger: null,
-        sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
-      }),
-    );
+    return closeJson({
+      state: "ordinary" as const,
+      sourceState: null,
+      comparator: null,
+      sourceLedger: evaluation.receipt ?? null,
+      receipt: evaluation.receipt ?? null,
+      result: null,
+      targets: [],
+      debugger: null,
+      sandboxCommandJoin: { state: "unavailable" as const, reason: "not-recorded" as const },
+    });
   const artifact = evaluation.artifact;
   const comparator = artifact.kind === "collection-filter" ? (artifact.query ?? null) : (artifact.querySteps ?? null);
-  return closeJson(
-    Object.freeze({
-      state: "available" as const,
-      sourceState: artifact.sourceSnapshot.collectionAtCut,
-      comparator,
-      sourceLedger: Object.freeze({ sourceSnapshot: artifact.sourceSnapshot, receipt: artifact.receipt }),
-      receipt: artifact.receipt,
-      result: artifact.kind === "ordered-sequence" ? artifact.result : null,
-      debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
-      targets: Object.freeze(
-        artifact.retainedRows.map((row) =>
-          Object.freeze({
-            state: row.result,
-            anchor:
-              row.locator.kind === "tool-occurrence"
-                ? Object.freeze({ kind: "tool-occurrence" as const, toolOccurrenceId: row.locator.toolOccurrenceId })
-                : Object.freeze({ kind: "event" as const, eventId: row.locator.eventId }),
-            difference: row.difference ?? null,
-          }),
-        ),
-      ),
-      sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
-    }),
-  );
+  return closeJson({
+    state: "available" as const,
+    sourceState: artifact.sourceSnapshot.collectionAtCut,
+    comparator,
+    sourceLedger: { sourceSnapshot: artifact.sourceSnapshot, receipt: artifact.receipt },
+    receipt: artifact.receipt,
+    result: artifact.kind === "ordered-sequence" ? artifact.result : null,
+    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
+    targets: artifact.retainedRows.map((row) => ({
+      state: row.result,
+      anchor:
+        row.locator.kind === "tool-occurrence"
+          ? { kind: "tool-occurrence" as const, toolOccurrenceId: row.locator.toolOccurrenceId }
+          : { kind: "event" as const, eventId: row.locator.eventId },
+      difference: row.difference ?? null,
+    })),
+    sandboxCommandJoin: { state: "unavailable" as const, reason: "not-recorded" as const },
+  });
 }
 
 type MatcherConversationTarget =
@@ -730,7 +686,7 @@ interface MatcherFilterRow {
   readonly phase: "at-evaluation" | "outside-evaluation-snapshot" | "historical";
   readonly summary: string;
   readonly detail: InspectionJson;
-  readonly locator?: MatcherSourceLocator;
+  readonly locator: MatcherSourceLocator | undefined;
   readonly evaluation: Readonly<{
     readonly result:
       | "matched"
@@ -740,70 +696,57 @@ interface MatcherFilterRow {
       | "not-retained"
       | "outside-snapshot"
       | "legacy";
-    readonly difference?: InspectionJson;
+    readonly difference: InspectionJson | undefined;
   }>;
   readonly conversationTarget: MatcherConversationTarget;
 }
 
 function factValue(value: null | boolean | number | string): InspectionJson {
-  return closeJson(Object.freeze({ kind: "value" as const, value }));
+  return closeJson({ kind: "value" as const, value });
 }
 
 function factFields(fields: readonly { readonly label: string; readonly value: InspectionJson }[]): InspectionJson {
-  return closeJson(
-    Object.freeze({
-      kind: "fields" as const,
-      fields: Object.freeze(fields.map((field) => Object.freeze(field))),
-    }),
-  );
+  return closeJson({
+    kind: "fields" as const,
+    fields,
+  });
 }
 
 function closeRecordedAssertionFact(value: RecordedAssertionFactValue): InspectionJson {
   switch (value.kind) {
     case "unavailable":
-      return closeJson(Object.freeze({ kind: value.kind, reason: value.reason }));
+      return closeJson({ kind: value.kind, reason: value.reason });
     case "value":
-      return closeJson(Object.freeze({ kind: value.kind, value: value.value }));
+      return closeJson({ kind: value.kind, value: value.value });
     case "text":
-      return closeJson(Object.freeze({ kind: value.kind, text: value.text }));
+      return closeJson({ kind: value.kind, text: value.text });
     case "list":
-      return closeJson(
-        Object.freeze({
-          kind: value.kind,
-          items: Object.freeze(value.items.map(closeRecordedAssertionFact)),
-        }),
-      );
+      return closeJson({
+        kind: value.kind,
+        items: value.items.map(closeRecordedAssertionFact),
+      });
     case "fields":
-      return closeJson(
-        Object.freeze({
-          kind: value.kind,
-          fields: Object.freeze(
-            value.fields.map((field) =>
-              Object.freeze({
-                label: field.label,
-                value: closeRecordedAssertionFact(field.value),
-              }),
-            ),
-          ),
-        }),
-      );
+      return closeJson({
+        kind: value.kind,
+        fields: value.fields.map((field) => ({
+          label: field.label,
+          value: closeRecordedAssertionFact(field.value),
+        })),
+      });
   }
 }
 
 function sourceLimitationFact(limitation: SourceReceiptLimitation): InspectionJson {
+  function limitationFields() {
+    if ("stage" in limitation) return [{ label: "stage", value: factValue(limitation.stage) }];
+    if ("omittedAtLeast" in limitation)
+      return [{ label: "omittedAtLeast", value: factValue(limitation.omittedAtLeast) }];
+    return [{ label: "replacementOrOmittedCount", value: factValue(limitation.replacementOrOmittedCount) }];
+  }
   return factFields([
     { label: "code", value: factValue(limitation.code) },
     { label: "target", value: factValue(limitation.target) },
-    ...("stage" in limitation
-      ? [{ label: "stage", value: factValue(limitation.stage) }]
-      : "omittedAtLeast" in limitation
-        ? [{ label: "omittedAtLeast", value: factValue(limitation.omittedAtLeast) }]
-        : [
-            {
-              label: "replacementOrOmittedCount",
-              value: factValue(limitation.replacementOrOmittedCount),
-            },
-          ]),
+    ...limitationFields(),
   ]);
 }
 
@@ -817,14 +760,14 @@ function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "sourc
   }
   if (entry.evaluation.kind === "matcher-current") {
     const artifact = entry.evaluation.artifact;
-    const locator =
-      artifact.kind === "collection-filter"
-        ? artifact.retainedRows[0]?.locator
-        : artifact.result.state === "matched"
-          ? artifact.result.witnessPath[0]?.locator
-          : artifact.result.state === "mismatched"
-            ? artifact.result.failureFrontier.longestPossiblePrefix[0]?.locator
-            : artifact.retainedRows[0]?.locator;
+    function firstLocator() {
+      if (artifact.kind === "collection-filter") return artifact.retainedRows[0]?.locator;
+      if (artifact.result.state === "matched") return artifact.result.witnessPath[0]?.locator;
+      if (artifact.result.state === "mismatched")
+        return artifact.result.failureFrontier.longestPossiblePrefix[0]?.locator;
+      return artifact.retainedRows[0]?.locator;
+    }
+    const locator = firstLocator();
     if (locator?.kind === "tool-occurrence") return "tool";
     if (locator?.kind === "event") return "event";
   }
@@ -832,25 +775,23 @@ function matcherSubject(entry: MatcherAssertionEntry): "tool" | "event" | "sourc
 }
 
 function exactMatcherTarget(row: ObservedEventLedgerRow, anchor: string): MatcherConversationTarget {
-  return Object.freeze({
+  return {
     state: "exact" as const,
     turnId: row.turnId,
     eventId: row.eventId,
     anchor,
-  });
+  };
 }
 
 function sourceUnavailableCollection(
   reason: "historical-not-recorded" | "source-unavailable" | "ambiguous",
 ): InspectionJson {
-  return closeJson(
-    Object.freeze({
-      state: "unavailable" as const,
-      reason,
-      rows: Object.freeze([]),
-      limitations: Object.freeze([]),
-    }),
-  );
+  return closeJson({
+    state: "unavailable" as const,
+    reason,
+    rows: [],
+    limitations: [],
+  });
 }
 
 function currentSourceCollection(
@@ -858,13 +799,11 @@ function currentSourceCollection(
   rows: readonly MatcherFilterRow[],
   limitations: readonly SourceReceiptLimitation[],
 ): InspectionJson {
-  return closeJson(
-    Object.freeze({
-      state,
-      rows: Object.freeze([...rows]),
-      limitations: Object.freeze(limitations.map(sourceLimitationFact)),
-    }),
-  );
+  return closeJson({
+    state,
+    rows,
+    limitations: limitations.map(sourceLimitationFact),
+  });
 }
 
 function matcherLocatorKey(locator: MatcherSourceLocator): string {
@@ -875,8 +814,8 @@ function closeMatcherLocator(
   locator: RecordedMatcherQueryArtifact["retainedRows"][number]["locator"],
 ): MatcherSourceLocator {
   return locator.kind === "tool-occurrence"
-    ? Object.freeze({ kind: locator.kind, toolOccurrenceId: locator.toolOccurrenceId })
-    : Object.freeze({ kind: locator.kind, eventId: locator.eventId });
+    ? { kind: locator.kind, toolOccurrenceId: locator.toolOccurrenceId }
+    : { kind: locator.kind, eventId: locator.eventId };
 }
 
 function eventSummary(row: ObservedEventLedgerRow): string {
@@ -975,8 +914,8 @@ function toolDetail(
   | undefined {
   const start = eventsById.get(occurrence.startEventId);
   if (start?.event.kind !== "tool-start") return undefined;
-  const finish = occurrence.finish === null ? undefined : eventsById.get(occurrence.finish.eventId);
-  return Object.freeze({
+  const finish = occurrence.finish === undefined ? undefined : eventsById.get(occurrence.finish.eventId);
+  return {
     summary: start.event.tool,
     detail: factFields([
       { label: "name", value: factValue(start.event.tool) },
@@ -987,7 +926,7 @@ function toolDetail(
       { label: "finishTurn", value: factValue(occurrence.finish?.turnId ?? null) },
     ]),
     target: exactMatcherTarget(start, `tool:${occurrence.toolOccurrenceId}`),
-  });
+  };
 }
 
 function snapshotOwnsEvent(snapshot: RecordedMatcherSourceSnapshot, row: ObservedEventLedgerRow): boolean {
@@ -1038,7 +977,7 @@ function currentMatcherRows(
       string,
       Readonly<{
         readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
-        readonly difference?: InspectionJson;
+        readonly difference: InspectionJson | undefined;
       }>
     >;
     readonly examined: number;
@@ -1058,15 +997,13 @@ function currentMatcherRows(
               snapshotOwnsEvent(input.snapshot, row) &&
               (row.event.kind === "message" || row.event.kind === "tool-start" || row.event.kind === "tool-finish"),
           )
-          .map((row) =>
-            Object.freeze({
-              locator: Object.freeze({ kind: "event" as const, eventId: row.eventId }),
-              inSnapshot: snapshotContainsEvent(input.snapshot, row),
-              summary: eventSummary(row),
-              detail: eventDetail(row),
-              target: exactMatcherTarget(row, `event:${row.eventId}`),
-            }),
-          )
+          .map((row) => ({
+            locator: { kind: "event" as const, eventId: row.eventId },
+            inSnapshot: snapshotContainsEvent(input.snapshot, row),
+            summary: eventSummary(row),
+            detail: eventDetail(row),
+            target: exactMatcherTarget(row, `event:${row.eventId}`),
+          }))
       : input.occurrences.flatMap((row) => {
           if (!snapshotOwnsOccurrence(input.snapshot, row)) return [];
           const material = toolDetail(row, eventsById);
@@ -1075,33 +1012,39 @@ function currentMatcherRows(
             return [];
           }
           return [
-            Object.freeze({
-              locator: Object.freeze({
+            {
+              locator: {
                 kind: "tool-occurrence" as const,
                 toolOccurrenceId: row.toolOccurrenceId,
-              }),
+              },
               inSnapshot: snapshotContainsOccurrence(input.snapshot, row),
               summary: material.summary,
               detail: material.detail,
               target: material.target,
-            }),
+            },
           ];
         });
   let evaluatedOrdinal = 0;
   const final = sourceRows.map((row, index): MatcherFilterRow => {
     const overlay = input.overlays.get(matcherLocatorKey(row.locator));
     if (row.inSnapshot) evaluatedOrdinal += 1;
-    const evaluation = !row.inSnapshot
-      ? Object.freeze({ result: "outside-snapshot" as const })
-      : overlay === undefined
-        ? Object.freeze({
-            result: evaluatedOrdinal <= input.examined ? ("not-retained" as const) : ("not-evaluated" as const),
-          })
-        : Object.freeze({
-            result: overlay.result,
-            ...(overlay.difference === undefined ? {} : { difference: overlay.difference }),
-          });
-    return Object.freeze({
+    function rowEvaluation() {
+      if (!row.inSnapshot)
+        return {
+          result: "outside-snapshot" as const,
+          difference: undefined,
+        };
+      if (overlay === undefined)
+        return {
+          result: evaluatedOrdinal <= input.examined ? ("not-retained" as const) : ("not-evaluated" as const),
+          difference: undefined,
+        };
+      return {
+        result: overlay.result,
+        difference: overlay.difference,
+      };
+    }
+    return {
       kind: input.subject,
       rowId: matcherLocatorKey(row.locator),
       number: String(index + 1),
@@ -1109,22 +1052,22 @@ function currentMatcherRows(
       summary: row.summary,
       detail: row.detail,
       locator: row.locator,
-      evaluation,
+      evaluation: rowEvaluation(),
       conversationTarget: row.target,
-    });
+    };
   });
-  return Object.freeze({
-    final: Object.freeze(final),
-    atEvaluation: Object.freeze(final.filter((row) => row.phase === "at-evaluation")),
+  return {
+    final: final,
+    atEvaluation: final.filter((row) => row.phase === "at-evaluation"),
     exact,
-  });
+  };
 }
 
 function retainedOverlay(artifact: RecordedMatcherQueryArtifact): ReadonlyMap<
   string,
   Readonly<{
     readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
-    readonly difference?: InspectionJson;
+    readonly difference: InspectionJson | undefined;
   }>
 > {
   return new Map(
@@ -1132,10 +1075,10 @@ function retainedOverlay(artifact: RecordedMatcherQueryArtifact): ReadonlyMap<
       (row) =>
         [
           matcherLocatorKey(closeMatcherLocator(row.locator)),
-          Object.freeze({
+          {
             result: row.result,
-            ...(row.difference === undefined ? {} : { difference: closeRecordedAssertionFact(row.difference) }),
-          }),
+            difference: row.difference === undefined ? undefined : closeRecordedAssertionFact(row.difference),
+          },
         ] as const,
     ),
   );
@@ -1145,46 +1088,38 @@ function orderSteps(
   artifact: RecordedMatcherQueryArtifact,
   rowsByLocator: ReadonlyMap<string, MatcherFilterRow>,
 ): readonly InspectionJson[] {
-  if (artifact.kind !== "ordered-sequence") return Object.freeze([]);
-  const definite =
-    artifact.result.state === "matched"
-      ? artifact.result.witnessPath
-      : artifact.result.state === "mismatched"
-        ? artifact.result.failureFrontier.longestDefinitePrefix
-        : Object.freeze([]);
-  const possible =
-    artifact.result.state === "mismatched" ? artifact.result.failureFrontier.longestPossiblePrefix : Object.freeze([]);
+  if (artifact.kind !== "ordered-sequence") return [];
+  function definitePath(artifact: Extract<RecordedMatcherQueryArtifact, { readonly kind: "ordered-sequence" }>) {
+    if (artifact.result.state === "matched") return artifact.result.witnessPath;
+    if (artifact.result.state === "mismatched") return artifact.result.failureFrontier.longestDefinitePrefix;
+    return [];
+  }
+  const definite = definitePath(artifact);
+  const possible = artifact.result.state === "mismatched" ? artifact.result.failureFrontier.longestPossiblePrefix : [];
   const nodes = new Map([...possible, ...definite].map((node) => [node.step, node] as const));
   const blocked =
     artifact.result.state === "mismatched" ? artifact.result.failureFrontier.firstBlockingStep : undefined;
-  return Object.freeze(
-    artifact.querySteps.map((query) => {
-      const node = nodes.get(query.step);
-      const sourceRow =
-        node === undefined ? undefined : rowsByLocator.get(matcherLocatorKey(closeMatcherLocator(node.locator)));
-      const state =
-        query.step <= definite.length
-          ? ("matched" as const)
-          : query.step <= possible.length
-            ? ("possible" as const)
-            : query.step === blocked
-              ? ("blocked" as const)
-              : ("not-reached" as const);
-      return closeJson(
-        Object.freeze({
-          step: query.step,
-          summary: closeRecordedAssertionFact(query.summary),
-          state,
-          ...(sourceRow === undefined
-            ? {}
-            : {
-                sourceRow: sourceRow.rowId,
-                conversationTarget: sourceRow.conversationTarget,
-              }),
-        }),
-      );
-    }),
-  );
+  return artifact.querySteps.map((query) => {
+    const node = nodes.get(query.step);
+    const sourceRow =
+      node === undefined ? undefined : rowsByLocator.get(matcherLocatorKey(closeMatcherLocator(node.locator)));
+    function stepState() {
+      if (query.step <= definite.length) return "matched" as const;
+      if (query.step <= possible.length) return "possible" as const;
+      return query.step === blocked ? ("blocked" as const) : ("not-reached" as const);
+    }
+    return closeJson({
+      step: query.step,
+      summary: closeRecordedAssertionFact(query.summary),
+      state: stepState(),
+      ...(sourceRow === undefined
+        ? {}
+        : {
+            sourceRow: sourceRow.rowId,
+            conversationTarget: sourceRow.conversationTarget,
+          }),
+    });
+  });
 }
 
 function projectMatcherDebugger(
@@ -1196,30 +1131,28 @@ function projectMatcherDebugger(
   const artifact = entry.evaluation.artifact;
   const query =
     artifact.kind === "collection-filter"
-      ? Object.freeze({
+      ? {
           kind: artifact.kind,
           summary: closeRecordedAssertionFact(artifact.query.summary),
-        })
-      : Object.freeze({
+        }
+      : {
           kind: artifact.kind,
-          summaries: Object.freeze(artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary))),
-        });
+          summaries: artifact.querySteps.map((step) => closeRecordedAssertionFact(step.summary)),
+        };
   const unavailableCurrent = (reason: "source-unavailable" | "ambiguous"): InspectionJson =>
-    closeJson(
-      Object.freeze({
-        state: "current" as const,
-        subject: subject === "source-row" ? ("event" as const) : subject,
-        query,
-        receipt: artifact.receipt,
-        source: Object.freeze({
-          final: sourceUnavailableCollection(reason),
-          atEvaluation: sourceUnavailableCollection(reason),
-        }),
-        identityRelation: Object.freeze({ state: "unavailable" as const, reason }),
-        overlayRetention: "unavailable" as const,
-        steps: Object.freeze([]),
-      }),
-    );
+    closeJson({
+      state: "current" as const,
+      subject: subject === "source-row" ? ("event" as const) : subject,
+      query,
+      receipt: artifact.receipt,
+      source: {
+        final: sourceUnavailableCollection(reason),
+        atEvaluation: sourceUnavailableCollection(reason),
+      },
+      identityRelation: { state: "unavailable" as const, reason },
+      overlayRetention: "unavailable" as const,
+      steps: [],
+    });
   if (
     subject === "source-row" ||
     agentTurns.state !== "available" ||
@@ -1259,7 +1192,7 @@ function projectMatcherDebugger(
           (row) =>
             [
               matcherLocatorKey({ kind: "event", eventId: row.eventId }),
-              Object.freeze({ sessionId: row.sessionId, sessionSequence: row.sessionSequence }),
+              { sessionId: row.sessionId, sessionSequence: row.sessionSequence },
             ] as const,
         )
       : projected.toolOccurrences.map(
@@ -1269,22 +1202,22 @@ function projectMatcherDebugger(
                 kind: "tool-occurrence",
                 toolOccurrenceId: row.toolOccurrenceId,
               }),
-              Object.freeze({
+              {
                 sessionId: row.sessionId,
                 sessionSequence: row.startSessionSequence,
-              }),
+              },
             ] as const,
         ),
   );
-  const orderNodes =
-    artifact.kind !== "ordered-sequence" || artifact.result.state === "unavailable"
-      ? Object.freeze([])
-      : artifact.result.state === "matched"
-        ? artifact.result.witnessPath
-        : Object.freeze([
-            ...artifact.result.failureFrontier.longestDefinitePrefix,
-            ...artifact.result.failureFrontier.longestPossiblePrefix,
-          ]);
+  function retainedOrderNodes() {
+    if (artifact.kind !== "ordered-sequence" || artifact.result.state === "unavailable") return [];
+    if (artifact.result.state === "matched") return artifact.result.witnessPath;
+    return [
+      ...artifact.result.failureFrontier.longestDefinitePrefix,
+      ...artifact.result.failureFrontier.longestPossiblePrefix,
+    ];
+  }
+  const orderNodes = retainedOrderNodes();
   const pathsInsideCut = orderNodes.every((node) => {
     if (node.locator.relation.state !== "exact") return false;
     const key = matcherLocatorKey(closeMatcherLocator(node.locator));
@@ -1320,38 +1253,34 @@ function projectMatcherDebugger(
   const retainedCount = overlays.size;
   const overlayRetention =
     retainedCount >= Math.min(examined, rows.atEvaluation.length) ? ("complete" as const) : ("partial" as const);
-  return closeJson(
-    Object.freeze({
-      state: "current" as const,
-      subject,
-      query,
-      receipt: artifact.receipt,
-      source: Object.freeze({ final, atEvaluation }),
-      identityRelation: Object.freeze({ state: "exact" as const }),
-      overlayRetention,
-      steps: orderSteps(artifact, rowsByLocator),
-    }),
-  );
+  return closeJson({
+    state: "current" as const,
+    subject,
+    query,
+    receipt: artifact.receipt,
+    source: { final, atEvaluation },
+    identityRelation: { state: "exact" as const },
+    overlayRetention,
+    steps: orderSteps(artifact, rowsByLocator),
+  });
 }
 
 function missingCheck(entryId: string, state: string): InspectionJson {
-  return diagnosticNode(entryId, state, null, null, "not-recorded", null, Object.freeze([]));
+  return diagnosticNode(entryId, state, null, null, "not-recorded", null, []);
 }
 
 function missingMatcher(state: string): InspectionJson {
-  return closeJson(
-    Object.freeze({
-      state: "missing" as const,
-      sourceState: state,
-      comparator: null,
-      sourceLedger: null,
-      receipt: null,
-      result: null,
-      targets: Object.freeze([]),
-      debugger: null,
-      sandboxCommandJoin: Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const }),
-    }),
-  );
+  return closeJson({
+    state: "missing" as const,
+    sourceState: state,
+    comparator: null,
+    sourceLedger: null,
+    receipt: null,
+    result: null,
+    targets: [],
+    debugger: null,
+    sandboxCommandJoin: { state: "unavailable" as const, reason: "not-recorded" as const },
+  });
 }
 
 /**
@@ -1398,10 +1327,6 @@ function readSealedBytes(source: InspectionFactSource, metadata: PersistedConten
     throw new Error("Assertion content does not match its sealed metadata");
   }
   return bytes;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function closeJson(value: unknown): InspectionJson {

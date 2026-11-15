@@ -1,4 +1,6 @@
 import { Result, Schema } from "effect";
+import * as Data from "effect/Data";
+import { decodeJsonRecord } from "../shared/json-value.ts";
 
 import { canonicalizeRecordJson, canonicalRecordJsonText, type RecordJson } from "../record/definition/canonical.ts";
 import type { AttemptRecordCollectionLimitation } from "../record/authoring.ts";
@@ -29,7 +31,7 @@ import type { InspectionFactSource } from "./source.ts";
 
 const PAGE_ROWS = 64;
 const IDENTITY_INDEX_LIMIT = 256;
-const TARGET_LIMITS = Object.freeze({
+const TARGET_LIMITS = {
   maximumJsonBytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
   maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
   maximumNodes: 70_000_000,
@@ -37,8 +39,8 @@ const TARGET_LIMITS = Object.freeze({
   maximumArrayItems: 70_000_000,
   maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
   maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
-});
-const PAYLOAD_LIMITS = Object.freeze({
+};
+const PAYLOAD_LIMITS = {
   maximumJsonBytes: ExecutionTraceRecordLimits.maximumPayloadBytes,
   maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
   maximumNodes: 20_000,
@@ -46,8 +48,8 @@ const PAYLOAD_LIMITS = Object.freeze({
   maximumArrayItems: 20_000,
   maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumPayloadBytes,
   maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumPayloadBytes,
-});
-const SCOPE_BOUNDARY_LIMITS = Object.freeze({
+};
+const SCOPE_BOUNDARY_LIMITS = {
   maximumJsonBytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
   maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
   maximumNodes: 40_000_000,
@@ -55,18 +57,22 @@ const SCOPE_BOUNDARY_LIMITS = Object.freeze({
   maximumArrayItems: 40_000_000,
   maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
   maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
-});
+};
 const utf8 = new TextEncoder();
 
 export interface ExecutionTraceFilters {
-  readonly traceId?: string;
-  readonly sourceId?: string;
-  readonly actorId?: string;
-  readonly eventType?: string;
+  readonly traceId: string | undefined;
+  readonly sourceId: string | undefined;
+  readonly actorId: string | undefined;
+  readonly eventType: string | undefined;
 }
 
-export interface ExecutionTraceOutlineRequest extends ExecutionTraceFilters {
-  readonly continuation?: string;
+export interface ExecutionTraceOutlineRequest {
+  readonly traceId?: string | undefined;
+  readonly sourceId?: string | undefined;
+  readonly actorId?: string | undefined;
+  readonly eventType?: string | undefined;
+  readonly continuation?: string | undefined;
 }
 
 export type ExecutionTraceDetailSelector =
@@ -78,6 +84,7 @@ export type ExecutionTraceDetailSelector =
       readonly limit?: number;
     };
 
+// Key-enumeration boundary: this outline crosses closeInspectionJson without another projection.
 export interface ExecutionTraceOutlineResult {
   readonly state: "complete" | "partial" | "not-recorded" | "invalid";
   readonly limitations: readonly (
@@ -106,6 +113,7 @@ export interface ExecutionDisplayPreviewText {
   readonly omittedBytes: number;
 }
 
+// Key-enumeration boundary: preview blocks are embedded directly in Inspection JSON.
 export type ExecutionDisplayBlockPreview =
   | { readonly kind: "text"; readonly text: ExecutionDisplayPreviewText }
   | {
@@ -135,6 +143,7 @@ export type ExecutionDisplayPreview =
   | { readonly state: "absent" }
   | { readonly state: "present"; readonly blocks: readonly ExecutionDisplayBlockPreview[] };
 
+// Key-enumeration boundary: event outlines are embedded directly in Inspection JSON.
 export interface ExecutionTraceEventOutline {
   readonly traceId: string;
   readonly eventId: string;
@@ -144,8 +153,8 @@ export interface ExecutionTraceEventOutline {
   readonly ordinal: number;
   readonly type: string;
   readonly source: ExecutionTraceEventRecord["source"];
-  readonly actor?: ExecutionTraceEventRecord["actor"];
-  readonly time?: ExecutionTraceEventRecord["time"];
+  readonly actor?: NonNullable<ExecutionTraceEventRecord["actor"]>;
+  readonly time?: NonNullable<ExecutionTraceEventRecord["time"]>;
   readonly summary: string;
   readonly links: ExecutionTraceEventRecord["links"];
   readonly evidence: readonly {
@@ -186,14 +195,15 @@ export interface ExecutionEvidenceRange extends Omit<ExecutionEvidencePreview, "
   readonly offset: number;
 }
 
-export class InspectionExecutionTraceError extends Error {
+export class InspectionExecutionTraceError extends Data.TaggedError("InspectionExecutionTraceError")<{}> {
   readonly code:
     | "inspection-request-invalid"
     | "inspection-record-integrity-failure"
     | "evidence-budget-exceeded"
     | "restart-required";
   constructor(code: InspectionExecutionTraceError["code"], message: string) {
-    super(message);
+    super();
+    this.message = message;
     this.name = "InspectionExecutionTraceError";
     this.code = code;
   }
@@ -377,10 +387,10 @@ function validateAttachment(
     typeof inventory.collection.digest !== "string"
   )
     throw integrity("Execution trace collection inventory is invalid.");
-  return Object.freeze({
+  return {
     collection: shell.success.collection,
     expectedDigest: inventory.collection.digest,
-  });
+  };
 }
 
 function newScanState(): ScanState {
@@ -466,7 +476,7 @@ function verifyEvidence(
   if (digest(bytes) !== evidence.targetSha256 || bytes.byteLength !== evidence.targetByteLength) {
     throw integrity("Execution evidence target digest or length is invalid.");
   }
-  const verified = Object.freeze({ bytes, artifact, targetSha256: evidence.targetSha256 });
+  const verified = { bytes, artifact, targetSha256: evidence.targetSha256 };
   state.targets.set(cacheKey, verified);
   return verified;
 }
@@ -509,20 +519,21 @@ function verifyDisplay(
     if (block.kind === "fields" && block.fields.length > limits.maximumDisplayFields) {
       throw integrity("Execution display fields exceed their fixed limit.");
     }
-    const singleLine =
-      block.kind === "fields"
-        ? block.fields.map((field) => field.label)
-        : block.kind === "message"
-          ? block.speaker === undefined
-            ? []
-            : [block.speaker]
-          : block.kind === "code"
-            ? block.language === undefined
-              ? []
-              : [block.language]
-            : block.kind === "image"
-              ? [block.alt]
-              : [];
+    function singleLineLabels(): readonly string[] {
+      switch (block.kind) {
+        case "fields":
+          return block.fields.map((field) => field.label);
+        case "message":
+          return block.speaker === undefined ? [] : [block.speaker];
+        case "code":
+          return block.language === undefined ? [] : [block.language];
+        case "image":
+          return [block.alt];
+        default:
+          return [];
+      }
+    }
+    const singleLine = singleLineLabels();
     const maximumBytes = block.kind === "image" ? limits.maximumDisplayAltBytes : limits.maximumDisplayLabelBytes;
     if (singleLine.some((text) => text.includes("\n") || utf8ByteLength(text) > maximumBytes)) {
       throw integrity("Execution display label exceeds its single-line or byte limit.");
@@ -626,7 +637,7 @@ function observeRecord(
   }
   for (const link of record.links) {
     if (!("targetKey" in link)) continue;
-    state.resolvedLinks.push(Object.freeze({ traceId: record.traceId, targetKey: link.targetKey }));
+    state.resolvedLinks.push({ traceId: record.traceId, targetKey: link.targetKey });
     if (link.relation === "causes") {
       const edges = state.causeEdges.get(record.traceId)!;
       const targets = edges.get(record.key) ?? [];
@@ -744,7 +755,7 @@ function scanCollection(
   )
     throw integrity("Execution trace collection aggregate closure is invalid.");
   validateScanSemantics(state);
-  return Object.freeze({ state, collection: validated.collection });
+  return { state, collection: validated.collection };
 }
 
 function matches(event: ExecutionTraceEventRecord, filters: ExecutionTraceFilters): boolean {
@@ -786,7 +797,7 @@ export interface ExecutionTraceContinuationContext {
 }
 
 function continuationBinding(context: ExecutionTraceContinuationContext, lastOrdinal: number): ContinuationBinding {
-  return Object.freeze({
+  return {
     operation: "attempt.trace",
     sourceIdentity: context.source.kind,
     cutoff: context.source.cutoff().identity,
@@ -794,14 +805,14 @@ function continuationBinding(context: ExecutionTraceContinuationContext, lastOrd
     sourceFamily: context.sourceFamily,
     familyRevision: context.familyRevision,
 
-    filters: Object.freeze({
+    filters: {
       traceId: context.filters.traceId ?? null,
       sourceId: context.filters.sourceId ?? null,
       actorId: context.filters.actorId ?? null,
       eventType: context.filters.eventType ?? null,
-    }),
+    },
     lastOrdinal,
-  });
+  };
 }
 
 function nativeContinuationContext(
@@ -809,13 +820,13 @@ function nativeContinuationContext(
   resolved: ResolvedInspectionAttempt,
   filters: ExecutionTraceFilters,
 ): ExecutionTraceContinuationContext {
-  return Object.freeze({
+  return {
     source,
     originAttempt: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
     sourceFamily: EXECUTION_TRACE_CONTINUATION_FAMILIES.executionTraces,
     familyRevision: undefined,
     filters,
-  });
+  };
 }
 
 export function encodeExecutionTraceContinuation(
@@ -833,16 +844,13 @@ export function encodeExecutionTraceContinuation(
 
 export function decodeExecutionTraceContinuation(token: string, context: ExecutionTraceContinuationContext): number {
   try {
-    const parsed = JSON.parse(decodeBase64UrlUtf8(token)) as ContinuationBinding;
-    const expected = continuationBinding(context, parsed.lastOrdinal);
-    if (
-      !Number.isSafeInteger(parsed.lastOrdinal) ||
-      parsed.lastOrdinal < 0 ||
-      JSON.stringify(parsed) !== JSON.stringify(expected)
-    ) {
+    const parsed = decodeJsonRecord(decodeBase64UrlUtf8(token));
+    const lastOrdinal = Schema.decodeUnknownSync(Schema.Number)(parsed.lastOrdinal);
+    const expected = continuationBinding(context, lastOrdinal);
+    if (!Number.isSafeInteger(lastOrdinal) || lastOrdinal < 0 || JSON.stringify(parsed) !== JSON.stringify(expected)) {
       throw new Error("binding changed");
     }
-    return parsed.lastOrdinal;
+    return lastOrdinal;
   } catch {
     throw new InspectionExecutionTraceError(
       "restart-required",
@@ -853,8 +861,8 @@ export function decodeExecutionTraceContinuation(token: string, context: Executi
 
 function continuationSourceFamily(token: string): string | undefined {
   try {
-    const parsed = JSON.parse(decodeBase64UrlUtf8(token)) as { readonly sourceFamily?: unknown };
-    return typeof parsed.sourceFamily === "string" ? parsed.sourceFamily : undefined;
+    const parsed = decodeJsonRecord(decodeBase64UrlUtf8(token));
+    return Schema.decodeUnknownSync(Schema.String)(parsed.sourceFamily);
   } catch {
     return undefined;
   }
@@ -863,7 +871,7 @@ function continuationSourceFamily(token: string): string | undefined {
 /** UTF-8-safe prefix: never splits a code point; omitted bytes count the remainder. */
 function previewText(value: string, limit: number): ExecutionDisplayPreviewText {
   const total = utf8ByteLength(value);
-  if (total <= limit) return Object.freeze({ preview: value, omittedBytes: 0 });
+  if (total <= limit) return { preview: value, omittedBytes: 0 };
   let used = 0;
   let end = 0;
   for (const character of value) {
@@ -872,54 +880,50 @@ function previewText(value: string, limit: number): ExecutionDisplayPreviewText 
     used += size;
     end += character.length;
   }
-  return Object.freeze({ preview: value.slice(0, end), omittedBytes: total - used });
+  return { preview: value.slice(0, end), omittedBytes: total - used };
 }
 
 function previewBlock(block: ExecutionDisplayBlockRecord, limit: number): ExecutionDisplayBlockPreview {
   switch (block.kind) {
     case "text":
-      return Object.freeze({ kind: "text", text: previewText(block.text, limit) });
+      return { kind: "text", text: previewText(block.text, limit) };
     case "message":
-      return Object.freeze({
+      return {
         kind: "message",
         role: block.role,
         ...(block.speaker === undefined ? {} : { speaker: block.speaker }),
         text: previewText(block.text, limit),
-      });
+      };
     case "fields":
-      return Object.freeze({
+      return {
         kind: "fields",
-        fields: Object.freeze(
-          block.fields.map((field) =>
-            Object.freeze({
-              label: field.label,
-              value: typeof field.value === "string" ? previewText(field.value, limit) : field.value,
-            }),
-          ),
-        ),
-      });
+        fields: block.fields.map((field) => ({
+          label: field.label,
+          value: typeof field.value === "string" ? previewText(field.value, limit) : field.value,
+        })),
+      };
     case "code":
-      return Object.freeze({
+      return {
         kind: "code",
         ...(block.language === undefined ? {} : { language: block.language }),
         text: previewText(block.text, limit),
-      });
+      };
     case "image":
-      return Object.freeze({ ...block });
+      return block;
   }
 }
 
 function previewDisplay(display: ExecutionTraceEventRecord["display"], limit: number): ExecutionDisplayPreview {
   return display === undefined
-    ? Object.freeze({ state: "absent" })
-    : Object.freeze({ state: "present", blocks: Object.freeze(display.map((block) => previewBlock(block, limit))) });
+    ? { state: "absent" }
+    : { state: "present", blocks: display.map((block) => previewBlock(block, limit)) };
 }
 
 function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutline {
   const envelope = {
     traceId: event.traceId,
     eventId: event.eventId,
-    origin: Object.freeze({ kind: "execution-event", eventId: event.eventId }),
+    origin: { kind: "execution-event" as const, eventId: event.eventId },
     ordinal: event.ordinal,
     type: event.type,
     source: event.source,
@@ -927,14 +931,12 @@ function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutl
     ...(event.time === undefined ? {} : { time: event.time }),
     summary: event.summary,
     links: event.links,
-    evidence: Object.freeze(
-      event.evidence.map(({ evidenceId, key, label }) => Object.freeze({ evidenceId, key, label })),
-    ),
+    evidence: event.evidence.map(({ evidenceId, key, label }) => ({ evidenceId, key, label })),
     scopeMemberships: event.scopeMemberships,
   };
   let limit: number = ExecutionTraceRecordLimits.maximumDisplayPreviewBytes;
   while (true) {
-    const projected = Object.freeze({ ...envelope, display: previewDisplay(event.display, limit) });
+    const projected = { ...envelope, display: previewDisplay(event.display, limit) };
     if (
       event.display === undefined ||
       utf8ByteLength(JSON.stringify(projected)) <= ExecutionTraceRecordLimits.maximumOutlineEventBytes
@@ -951,34 +953,34 @@ export function projectExecutionTraceOutline(
   resolved: ResolvedInspectionAttempt,
   request: ExecutionTraceOutlineRequest,
 ): ExecutionTraceOutlineResult {
-  const filters: ExecutionTraceFilters = Object.freeze({
-    ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
-    ...(request.sourceId === undefined ? {} : { sourceId: request.sourceId }),
-    ...(request.actorId === undefined ? {} : { actorId: request.actorId }),
-    ...(request.eventType === undefined ? {} : { eventType: request.eventType }),
-  });
+  const filters: ExecutionTraceFilters = {
+    traceId: request.traceId,
+    sourceId: request.sourceId,
+    actorId: request.actorId,
+    eventType: request.eventType,
+  };
   const nativeAttachment = collectionAttachment(resolved);
   if (
     request.continuation !== undefined &&
     nativeAttachment === undefined &&
     continuationSourceFamily(request.continuation) === EXECUTION_TRACE_CONTINUATION_FAMILIES.agentTurns
   ) {
-    return Object.freeze({
+    return {
       state: "not-recorded",
-      limitations: Object.freeze([]),
-      traces: Object.freeze([]),
-      events: Object.freeze([]),
-      identityIndex: Object.freeze({
-        traceIds: Object.freeze([]),
+      limitations: [],
+      traces: [],
+      events: [],
+      identityIndex: {
+        traceIds: [],
         omittedTraceIdCount: 0,
-        eventIds: Object.freeze([]),
+        eventIds: [],
         omittedEventIdCount: 0,
-        evidenceIds: Object.freeze([]),
+        evidenceIds: [],
         omittedEvidenceIdCount: 0,
-      }),
+      },
       hasMore: false,
       omittedEventCount: 0,
-    });
+    };
   }
   const continuationContext = nativeContinuationContext(source, resolved, filters);
   const resumeAfter =
@@ -1000,7 +1002,7 @@ export function projectExecutionTraceOutline(
       pageFull = true;
       return;
     }
-    const candidate = Object.freeze({ event: outlineEvent(record), collectionOrdinal });
+    const candidate = { event: outlineEvent(record), collectionOrdinal };
     const nextEvents = [...retained.map(({ event }) => event), candidate.event];
     if (utf8ByteLength(JSON.stringify(nextEvents)) > ExecutionTraceRecordLimits.maximumOutlineBytes) {
       if (retained.length === 0) throw integrity("One execution trace outline event exceeds the fixed page budget.");
@@ -1010,52 +1012,50 @@ export function projectExecutionTraceOutline(
     retained.push(candidate);
   });
   if (scanned === undefined)
-    return Object.freeze({
+    return {
       state: "not-recorded",
-      limitations: Object.freeze([]),
-      traces: Object.freeze([]),
-      events: Object.freeze([]),
-      identityIndex: Object.freeze({
-        traceIds: Object.freeze([]),
+      limitations: [],
+      traces: [],
+      events: [],
+      identityIndex: {
+        traceIds: [],
         omittedTraceIdCount: 0,
-        eventIds: Object.freeze([]),
+        eventIds: [],
         omittedEventIdCount: 0,
-        evidenceIds: Object.freeze([]),
+        evidenceIds: [],
         omittedEvidenceIdCount: 0,
-      }),
+      },
       hasMore: false,
       omittedEventCount: 0,
-    });
+    };
   const remaining = Math.max(0, matched - priorMatches - retained.length);
   const lastOrdinal = retained.at(-1)?.collectionOrdinal;
   const traceHeaders = [...scanned.state.headers.values()]
     // An empty filtered page does not prove the producer captured all events.
     .filter((header) => filters.traceId === undefined || header.traceId === filters.traceId)
-    .map((header) =>
-      Object.freeze({
-        ...header,
-        eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,
-      }),
-    );
-  return Object.freeze({
+    .map((header) => ({
+      ...header,
+      eventCount: scanned.state.eventCounts.get(header.traceId) ?? 0,
+    }));
+  return {
     state: scanned.collection.state,
     limitations: scanned.collection.limitations,
-    traces: Object.freeze(traceHeaders),
-    events: Object.freeze(retained.map(({ event }) => event)),
-    identityIndex: Object.freeze({
-      traceIds: Object.freeze(scanned.state.traceIdsForIndex),
+    traces: traceHeaders,
+    events: retained.map(({ event }) => event),
+    identityIndex: {
+      traceIds: scanned.state.traceIdsForIndex,
       omittedTraceIdCount: scanned.state.headers.size - scanned.state.traceIdsForIndex.length,
-      eventIds: Object.freeze(scanned.state.eventIdsForIndex),
+      eventIds: scanned.state.eventIdsForIndex,
       omittedEventIdCount: scanned.state.eventIds.size - scanned.state.eventIdsForIndex.length,
-      evidenceIds: Object.freeze(scanned.state.evidenceIdsForIndex),
+      evidenceIds: scanned.state.evidenceIdsForIndex,
       omittedEvidenceIdCount: scanned.state.evidenceIds.size - scanned.state.evidenceIdsForIndex.length,
-    }),
+    },
     hasMore: remaining > 0,
     omittedEventCount: remaining,
     ...(remaining > 0 && lastOrdinal !== undefined
       ? { continuation: encodeExecutionTraceContinuation(continuationContext, lastOrdinal) }
       : {}),
-  });
+  };
 }
 
 function range(
@@ -1079,7 +1079,7 @@ function range(
     );
   }
   const bytes = target.bytes.subarray(offset, Math.min(target.bytes.byteLength, offset + limit));
-  return Object.freeze({
+  return {
     evidenceId: evidence.evidenceId,
     eventId: event.eventId,
     traceId: event.traceId,
@@ -1093,7 +1093,7 @@ function range(
     offset,
     base64: encodeBase64Bytes(bytes),
     nextOffset: offset + bytes.byteLength < target.bytes.byteLength ? offset + bytes.byteLength : null,
-  });
+  };
 }
 
 export function projectExecutionTraceDetail(
@@ -1118,10 +1118,10 @@ export function projectExecutionTraceDetail(
   if (scanned === undefined || selectedEvent === undefined) return undefined;
   if (selector.kind === "execution-evidence") {
     if (selectedEvidence === undefined || selectedTarget === undefined) return undefined;
-    return Object.freeze({
+    return {
       kind: "execution-evidence",
       ...range(selectedEvent, selectedEvidence, selectedTarget, selector.offset ?? 0, selector.limit ?? 64 * 1024),
-    });
+    };
   }
   const previews = selectedEvent.evidence.map((evidence) => {
     const target = scanned.state.targets.get(
@@ -1129,7 +1129,7 @@ export function projectExecutionTraceDetail(
     );
     if (target === undefined) throw integrity("Execution evidence cache is unavailable.");
     const value = range(selectedEvent!, evidence, target, 0, ExecutionTraceRecordLimits.maximumDetailPreviewBytes);
-    return Object.freeze({
+    return {
       evidenceId: value.evidenceId,
       key: value.key,
       label: value.label,
@@ -1141,13 +1141,13 @@ export function projectExecutionTraceDetail(
       base64: value.base64,
       nextOffset: value.nextOffset,
       truncated: value.nextOffset !== null,
-    });
+    };
   });
-  const result: ExecutionTraceDetailResult = Object.freeze({
+  const result: ExecutionTraceDetailResult = {
     kind: "execution-event",
     event: selectedEvent,
-    evidence: Object.freeze(previews),
-  });
+    evidence: previews,
+  };
   if (utf8ByteLength(JSON.stringify(result)) > ExecutionTraceRecordLimits.maximumDetailBytes) {
     throw integrity("Execution event detail exceeds its fixed response budget.");
   }

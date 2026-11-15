@@ -6,7 +6,12 @@ import { relative, sep } from "node:path";
 import { Data, Effect, Option, Scope } from "effect";
 import type { ProvisionSlot } from "./retry.ts";
 import { withProvisionRetry } from "./retry.ts";
-import type { MaterializedSandboxCase, SandboxResourceGroup, ServiceController } from "./case-types.ts";
+import type {
+  AttemptCapturedSandboxCase,
+  MaterializedSandboxCase,
+  SandboxResourceGroup,
+  ServiceController,
+} from "./case-types.ts";
 import {
   collectComposeBuilds,
   composeCollectionIdentity,
@@ -34,6 +39,7 @@ import {
 import { normalizeSandboxPaths } from "./paths.ts";
 import { applyCommandDeadline } from "./deadline.ts";
 import { registerSandbox, unregisterSandbox } from "./registry.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import { currentRunIdentity } from "./run-identity.ts";
 import {
   sandboxProviderBindingOf,
@@ -85,7 +91,7 @@ export type SandboxRuntimeQueueReason = "provider-capacity";
 export interface SandboxRuntimeAdmission {
   readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
   readonly granted: Effect.Effect<void>;
-  readonly slot?: ProvisionSlot;
+  readonly slot: ProvisionSlot | undefined;
 }
 
 /** Scope 退出时的唯一释放协议；不以 optional callback 或 boolean 表达所有权。 */
@@ -97,10 +103,10 @@ export type SandboxRuntimeRelease =
     };
 
 export interface SandboxRuntimeMaterializeInput {
-  readonly attemptId?: string;
-  readonly creationEvalId?: string;
-  readonly sandboxLabels?: "run-only";
-  readonly runId?: string;
+  readonly attemptId: string | undefined;
+  readonly creationEvalId: string | undefined;
+  readonly sandboxLabels: "run-only" | undefined;
+  readonly runId: string | undefined;
   readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
   readonly evalId: string;
   readonly deadline: SandboxRuntimeDeadline;
@@ -110,8 +116,8 @@ export interface SandboxRuntimeMaterializeInput {
   readonly hookContext: SandboxHookContext;
   readonly buildLocators: ReadonlyMap<BuildKey, JsonValue>;
   /** Committed provider-native setup artifact selected by the Run-level coordinator. */
-  readonly beforeCacheArtifact?: BeforeCacheArtifact;
-  readonly beforeCachePreparationContext?: BeforeCachePreparationContext;
+  readonly beforeCacheArtifact: BeforeCacheArtifact | undefined;
+  readonly beforeCachePreparationContext: BeforeCachePreparationContext | undefined;
   readonly provisionSlot: { readonly _tag: "Detached" } | { readonly _tag: "Bound"; readonly value: ProvisionSlot };
   /** Runner projection of provider admission. Detached physical owners remain valid. */
   readonly admission:
@@ -119,9 +125,9 @@ export interface SandboxRuntimeMaterializeInput {
     | { readonly _tag: "Bound"; readonly value: SandboxRuntimeAdmission };
   readonly services: SandboxRuntimeServices;
   /** Internal runner input; only Dockerfile provider consumes the staged cache opt-in. */
-  readonly agent?: SandboxAgent;
+  readonly agent: SandboxAgent | undefined;
   /** Invocation-level timing tree for derived Dockerfile Agent image lookup/build. */
-  readonly runTiming?: import("../runner/timing.ts").RunTimingRecorder;
+  readonly runTiming: import("../runner/timing.ts").RunTimingRecorder | undefined;
   readonly release: SandboxRuntimeRelease;
 }
 
@@ -213,15 +219,70 @@ function providerBinding(
   });
 }
 
-function deadlineOptions(deadline: SandboxRuntimeDeadline): {
-  readonly timeout?: number;
-  readonly deadlineAt?: number;
-} {
-  return deadline._tag === "Unlimited" ? {} : { timeout: deadline.timeoutMs, deadlineAt: deadline.deadlineAt };
-}
-
 function configuredLifetime(value: SandboxProviderLifetime): number | undefined {
   return value._tag === "Configured" ? value.milliseconds : undefined;
+}
+
+function deadlineOptions(deadline: SandboxRuntimeDeadline): {
+  readonly timeout: number | undefined;
+  readonly deadlineAt: number | undefined;
+} {
+  return deadline._tag === "Unlimited"
+    ? { timeout: undefined, deadlineAt: undefined }
+    : { timeout: deadline.timeoutMs, deadlineAt: deadline.deadlineAt };
+}
+
+function lifetimeOptions(lifetime: SandboxProviderLifetime): { readonly lifetimeMs: number | undefined } {
+  return { lifetimeMs: configuredLifetime(lifetime) };
+}
+
+function dockerCreateOptions(
+  plan: DockerfileProviderPlan | DockerImageProviderPlan,
+  image: string,
+  context: SandboxRuntimeMaterializeContext,
+  provisionToken: string,
+  managed: Effect.Success<ReturnType<typeof managedContainerSession>> | undefined,
+): import("./docker.ts").DockerSandboxOptions {
+  const binding = managed?.lease.binding;
+  return {
+    timeout: context.deadline._tag === "Bounded" ? context.deadline.timeoutMs : undefined,
+    deadlineAt: context.deadline._tag === "Bounded" ? context.deadline.deadlineAt : undefined,
+    runtime: "node24",
+    image,
+    workdir: undefined,
+    user: plan.user._tag === "Configured" ? plan.user.value : undefined,
+    privileged: plan.privileged,
+    dockerAccess: plan.dockerAccess,
+    resources: plan.resources,
+    readiness: plan.readiness,
+    lifetimeMs: configuredLifetime(plan.lifetime),
+    pathPrepend: plan.pathPrepend,
+    feedback: context.feedback,
+    provisionToken,
+    runIdentity: currentRunIdentity(
+      context.runId,
+      sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
+    ),
+    dockerSocketPath: binding?.dockerSocketPath,
+    dns: binding?.profile.policy.level === "managed-rootless/v1" ? binding.profile.policy.network.dns.servers : [],
+    managedLabels: managed?.labels ?? {},
+    rootlessAttestation:
+      binding === undefined
+        ? undefined
+        : {
+            daemonId: binding.daemonId,
+            dataRoot: binding.profile.backend.filesystem.dockerRootDir,
+          },
+    profileBeforeCache:
+      managed === undefined
+        ? undefined
+        : {
+            lease: managed.lease,
+            currentReservation: () => managed.reservation,
+            replaceReservation: managed.replaceReservation,
+          },
+    afterStop: managed?.finish ?? (async () => {}),
+  };
 }
 
 function managedContainerSession(
@@ -281,12 +342,12 @@ function managedContainerSession(
         return owner.reservation;
       },
       get labels() {
-        return Object.freeze({
+        return {
           "niceeval.profile-id": binding.profile.profileId,
           "niceeval.invocation-id": lease.invocationId,
           "niceeval.reservation-id": owner.reservation.reservationId,
           "niceeval.provision-token": owner.reservation.provisionToken,
-        });
+        };
       },
       replaceReservation,
       finish: async () => {
@@ -352,7 +413,7 @@ function dockerProfileAdmission(
   return {
     queued: admission?.queued("provider-capacity") ?? Effect.void,
     granted: admission?.granted ?? Effect.void,
-    ...(admission?.slot === undefined ? {} : { slot: admission.slot }),
+    slot: admission?.slot === undefined ? undefined : admission.slot,
   };
 }
 
@@ -392,27 +453,29 @@ export function wrapSingleSandbox(
       }
     },
   };
-  return Object.freeze({
+  return {
     sandbox,
     authorBackend: backend,
+    beforeCache: { _tag: "None" as const },
+    services: { _tag: "None" },
     group,
     caseKind: context.plan.providerPlan.caseKind,
     caseKey: context.plan.providerPlan.build.caseKey,
     buildKeys: context.plan.providerPlan.build.buildKeys,
     identity: context.plan.providerPlan.identity,
     facts,
-  });
+  };
 }
 
 function wrapAttemptCapturedSandbox(
   backend: SandboxProviderBackend & { readonly attemptBeforeCache: AttemptBeforeCache },
   context: SandboxRuntimeMaterializeContext,
   facts: JsonValue,
-): MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache } {
-  return Object.freeze({
+): AttemptCapturedSandboxCase {
+  return {
     ...wrapSingleSandbox(backend, context, facts),
-    attemptBeforeCache: backend.attemptBeforeCache,
-  });
+    beforeCache: { _tag: "AttemptCaptured" as const, capability: backend.attemptBeforeCache },
+  };
 }
 
 function normalizeMaterialized(
@@ -433,7 +496,7 @@ function normalizeMaterialized(
     get resources() {
       return materialized.group.resources;
     },
-    ...(materialized.group.entry === undefined ? {} : { entry: materialized.group.entry }),
+    entry: materialized.group.entry,
     async stop() {
       if (stopped) return;
       if (stopping !== undefined) return stopping;
@@ -451,7 +514,7 @@ function normalizeMaterialized(
       }
     },
   };
-  return Object.freeze({ ...materialized, sandbox, group });
+  return { ...materialized, sandbox, group };
 }
 
 function materializationEffect<A extends MaterializedSandboxCase, R>(
@@ -476,7 +539,8 @@ export function materializeDockerComposeProviderPlan(
           evalId: context.evalId,
           profile: context.evalId,
           mainService: plan.workspaceService,
-          ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+          user: plan.user._tag === "Configured" ? plan.user.value : undefined,
+          projectName: undefined,
           env: plan.env,
           pathPrepend: plan.pathPrepend,
           collection: plan.collection,
@@ -505,11 +569,7 @@ export function materializeDockerComposeProviderPlan(
 export function materializeDockerfileProviderPlan(
   plan: DockerfileProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<
-  MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
-  SandboxRuntimeMaterializationError,
-  Scope.Scope
-> {
+): Effect.Effect<AttemptCapturedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return Option.match(Option.fromNullishOr(context.buildLocators.get(plan.buildKey)), {
     onNone: () =>
       Effect.fail(
@@ -544,46 +604,16 @@ export function materializeDockerfileProviderPlan(
                     const managed =
                       plan.profileBinding === undefined
                         ? undefined
-                        : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
+                        : yield* managedContainerSession(plan.profileBinding, plan.resources, context);
                     const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
                     return yield* Effect.gen(function* () {
-                      const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
-                        ...deadlineOptions(context.deadline),
-                        runtime: "node24",
-                        image: resolved.locator,
-                        ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-                        privileged: plan.privileged,
-                        ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
-                        resources: plan.resources,
-                        ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-                        ...lifetimeOptions(plan.lifetime),
-                        pathPrepend: plan.pathPrepend,
-                        feedback: context.feedback,
+                      const createOptions = dockerCreateOptions(
+                        plan,
+                        resolved.locator,
+                        context,
                         provisionToken,
-                        runIdentity: currentRunIdentity(
-                          context.runId,
-                          sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
-                        ),
-                        ...(plan.profileBinding === undefined
-                          ? {}
-                          : {
-                              dockerSocketPath: plan.profileBinding.dockerSocketPath,
-                              ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
-                                ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
-                                : {}),
-                              ...(managed === undefined ? {} : { managedLabels: managed.labels }),
-                              rootlessAttestation: {
-                                daemonId: plan.profileBinding.daemonId,
-                                dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
-                              },
-                              profileBeforeCache: {
-                                lease: managed!.lease,
-                                currentReservation: () => managed!.reservation,
-                                replaceReservation: managed!.replaceReservation,
-                              },
-                              ...(managed === undefined ? {} : { afterStop: managed.finish }),
-                            }),
-                      };
+                        managed,
+                      );
                       const backend = yield* withProvisionRetry(
                         managed === undefined
                           ? DockerSandbox.createEffect(createOptions)
@@ -592,7 +622,7 @@ export function materializeDockerfileProviderPlan(
                                 createDockerProfileContainer(
                                   managed.lease,
                                   managed.reservation.reservationId,
-                                  { ...create, attemptId: context.evalId },
+                                  omitUndefined({ ...create, attemptId: context.evalId }),
                                   signal,
                                 ),
                               ),
@@ -704,11 +734,11 @@ export interface DockerfileAgentImageProvisionServices {
   readonly commit: (sandboxId: string, derivedLocator: string) => Effect.Effect<void, Error>;
 }
 
-const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionServices = Object.freeze({
+const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionServices = {
   create: (taskLocator: string) =>
     providerBoundaryEffect(async () => {
-      const { DockerSandbox } = await import("./docker.ts");
-      const sandbox = await DockerSandbox.create({ image: taskLocator, runtime: "node24" });
+      const { DockerSandbox, defaultDockerSandboxOptions } = await import("./docker.ts");
+      const sandbox = await DockerSandbox.create({ ...defaultDockerSandboxOptions, image: taskLocator });
       return { operations: sandbox, sandboxId: sandbox.sandboxId, stop: () => sandbox.stop() };
     }),
   commit: (sandboxId: string, derivedLocator: string) =>
@@ -717,7 +747,7 @@ const liveDockerfileAgentImageProvisionServices: DockerfileAgentImageProvisionSe
       const { default: Docker } = await import("dockerode");
       await new Docker().getContainer(sandboxId).commit(dockerCommitReference(derivedLocator));
     }),
-});
+};
 
 /** Dockerode 的 commit 参数把仓库与 tag 分开；不能把 `repo:tag` 整串塞进 repo。 */
 export function dockerCommitReference(locator: string): { readonly repo: string; readonly tag?: string } {
@@ -760,11 +790,7 @@ export function buildDockerfileAgentImageWithServices(
 export function materializeDockerImageProviderPlan(
   plan: DockerImageProviderPlan,
   context: SandboxRuntimeMaterializeContext,
-): Effect.Effect<
-  MaterializedSandboxCase & { readonly attemptBeforeCache: AttemptBeforeCache },
-  SandboxRuntimeMaterializationError,
-  Scope.Scope
-> {
+): Effect.Effect<AttemptCapturedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   return materializationEffect(
     context,
     Effect.gen(function* () {
@@ -775,46 +801,10 @@ export function materializeDockerImageProviderPlan(
       const managed =
         plan.profileBinding === undefined
           ? undefined
-          : yield* managedContainerSession(plan.profileBinding!, plan.resources, context);
+          : yield* managedContainerSession(plan.profileBinding, plan.resources, context);
       const provisionToken = managed?.reservation.provisionToken ?? randomUUID();
       return yield* Effect.gen(function* () {
-        const createOptions: Parameters<typeof DockerSandbox.create>[0] = {
-          ...deadlineOptions(context.deadline),
-          runtime: "node24",
-          image: plan.image,
-          ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
-          privileged: plan.privileged,
-          ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
-          resources: plan.resources,
-          ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-          ...lifetimeOptions(plan.lifetime),
-          pathPrepend: plan.pathPrepend,
-          feedback: context.feedback,
-          provisionToken,
-          runIdentity: currentRunIdentity(
-            context.runId,
-            sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
-          ),
-          ...(plan.profileBinding === undefined
-            ? {}
-            : {
-                dockerSocketPath: plan.profileBinding.dockerSocketPath,
-                ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
-                  ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
-                  : {}),
-                ...(managed === undefined ? {} : { managedLabels: managed.labels }),
-                rootlessAttestation: {
-                  daemonId: plan.profileBinding.daemonId,
-                  dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
-                },
-                profileBeforeCache: {
-                  lease: managed!.lease,
-                  currentReservation: () => managed!.reservation,
-                  replaceReservation: managed!.replaceReservation,
-                },
-                ...(managed === undefined ? {} : { afterStop: managed.finish }),
-              }),
-        };
+        const createOptions = dockerCreateOptions(plan, plan.image, context, provisionToken, managed);
         const backend = yield* withProvisionRetry(
           managed === undefined
             ? DockerSandbox.createEffect(createOptions)
@@ -823,7 +813,7 @@ export function materializeDockerImageProviderPlan(
                   createDockerProfileContainer(
                     managed.lease,
                     managed.reservation.reservationId,
-                    { ...create, attemptId: context.evalId },
+                    omitUndefined({ ...create, attemptId: context.evalId }),
                     signal,
                   ),
                 ),
@@ -866,13 +856,12 @@ export function materializeE2BProviderPlan(
         providerBoundaryEffect(() =>
           E2BSandbox.create({
             ...deadlineOptions(context.deadline),
-            runtime: "node24",
             template: plan.template,
-            ...(plan.user._tag === "Configured" ? { user: plan.user.value } : {}),
+            user: plan.user._tag === "Configured" ? plan.user.value : undefined,
             lifetime,
             pathPrepend: plan.pathPrepend,
             provisionToken,
-            ...(context.runId === undefined ? {} : { runId: context.runId }),
+            runId: context.runId,
             runIdentity,
           }),
         ),
@@ -967,13 +956,14 @@ export function materializeCustomCaseProviderPlan(
               // 自定义 case 的显式适配点:author 返回的公共 Sandbox 在这里降成 provider backend,
               // 供 attempt-scope author facade 使用;resource facade 仍由 normalizeMaterialized 归一。
               authorBackend: customSandboxBackend(result.sandbox),
-              ...(result.services._tag === "Available" ? { services: result.services.value } : {}),
+              services: result.services,
               group: result.group,
               caseKind: "custom",
               caseKey: context.plan.providerPlan.build.caseKey,
               buildKeys: context.plan.providerPlan.build.buildKeys,
               identity: context.plan.providerPlan.identity,
               facts: result.facts,
+              beforeCache: { _tag: "None" },
             },
             context,
           );
@@ -1142,10 +1132,10 @@ export function collectDockerfileProviderBuildPreparation(
       context: plan.context,
       dockerfile: plan.dockerfile,
       buildArgs: plan.buildArgs,
-      ...(plan.target === undefined ? {} : { target: plan.target }),
+      target: plan.target,
       platform: plan.platform,
       expected: plan.build,
-      ...(plan.profileBinding === undefined ? {} : { dockerSocketPath: plan.profileBinding.dockerSocketPath }),
+      dockerSocketPath: plan.profileBinding?.dockerSocketPath,
     }).pipe(Effect.mapError((cause) => buildFailure(published, "sandbox.build-input-drift", cause)));
     return yield* Effect.try({
       try: () => {
@@ -1388,7 +1378,7 @@ function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: Materialized
 }
 
 function sortedBuildKeys(keys: Iterable<BuildKey>): readonly BuildKey[] {
-  return Object.freeze([...keys].sort());
+  return [...keys].sort();
 }
 
 /** 动态 locator 只负责把已规划 BuildKey 绑定到产物；不能在物化时改写 physical plan。 */
@@ -1448,10 +1438,10 @@ export function acquireSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const context: SandboxRuntimeMaterializeContext = {
-    ...(input.runId === undefined ? {} : { runId: input.runId }),
-    ...(input.attemptId === undefined ? {} : { attemptId: input.attemptId }),
-    ...(input.creationEvalId === undefined ? {} : { creationEvalId: input.creationEvalId }),
-    ...(input.sandboxLabels === undefined ? {} : { sandboxLabels: input.sandboxLabels }),
+    runId: input.runId,
+    attemptId: input.attemptId,
+    creationEvalId: input.creationEvalId,
+    sandboxLabels: input.sandboxLabels,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1459,15 +1449,13 @@ export function acquireSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
-    ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
-    ...(input.beforeCachePreparationContext === undefined
-      ? {}
-      : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
+    beforeCacheArtifact: input.beforeCacheArtifact,
+    beforeCachePreparationContext: input.beforeCachePreparationContext,
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
-    ...(input.agent !== undefined ? { agent: input.agent } : {}),
-    ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
+    agent: input.agent,
+    runTiming: input.runTiming,
   };
   return Effect.andThen(
     verifyBuildLocators(context),
@@ -1498,7 +1486,10 @@ export function acquireSandboxRunPlan(
                 Effect.flatMap((result) =>
                   result._tag === "Degraded"
                     ? Effect.fail(runtimeFailure(context, "sandbox.materialization-failed", new Error(result.detail)))
-                    : Effect.succeed(Object.freeze({ ...result.sandbox, beforeCacheStart: result.start })),
+                    : Effect.succeed({
+                        ...result.sandbox,
+                        beforeCache: { _tag: "RunPrepared" as const, start: result.start },
+                      }),
                 ),
               )
           : binding.materialize(context);
@@ -1531,10 +1522,10 @@ export function prepareMaterializedSandboxRunPlan(
   owned: MaterializedSandboxCase,
 ): Effect.Effect<void, SandboxRuntimeMaterializationError> {
   const context: SandboxRuntimeMaterializeContext = {
-    ...(input.runId === undefined ? {} : { runId: input.runId }),
-    ...(input.attemptId === undefined ? {} : { attemptId: input.attemptId }),
-    ...(input.creationEvalId === undefined ? {} : { creationEvalId: input.creationEvalId }),
-    ...(input.sandboxLabels === undefined ? {} : { sandboxLabels: input.sandboxLabels }),
+    runId: input.runId,
+    attemptId: input.attemptId,
+    creationEvalId: input.creationEvalId,
+    sandboxLabels: input.sandboxLabels,
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1542,15 +1533,13 @@ export function prepareMaterializedSandboxRunPlan(
     signal: input.signal,
     hookContext: input.hookContext,
     buildLocators: input.buildLocators,
-    ...(input.beforeCacheArtifact === undefined ? {} : { beforeCacheArtifact: input.beforeCacheArtifact }),
-    ...(input.beforeCachePreparationContext === undefined
-      ? {}
-      : { beforeCachePreparationContext: input.beforeCachePreparationContext }),
+    beforeCacheArtifact: input.beforeCacheArtifact,
+    beforeCachePreparationContext: input.beforeCachePreparationContext,
     provisionSlot: input.provisionSlot,
     admission: input.admission,
     services: input.services,
-    ...(input.agent !== undefined ? { agent: input.agent } : {}),
-    ...(input.runTiming !== undefined ? { runTiming: input.runTiming } : {}),
+    agent: input.agent,
+    runTiming: input.runTiming,
   };
   return runSetupHooks(input.plan.pair.setupHooks, owned.sandbox, input.hookContext).pipe(
     Effect.andThen(runSandboxPluginSetups(input, owned)),
@@ -1578,7 +1567,7 @@ export function sandboxRuntimeCapabilities(
   plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
 ): SandboxRuntimeCapabilities {
   const capabilities = plan.providerPlan.capabilities;
-  return Object.freeze({
+  return {
     provider: plan.providerPlan.provider,
     schedulingLane: plan.providerPlan.scheduling.lane.key,
     admission: plan.providerPlan.scheduling.admission._tag,
@@ -1586,10 +1575,5 @@ export function sandboxRuntimeCapabilities(
     reuse: capabilities.reuse,
     beforeCache: capabilities.beforeCache,
     sessionLimit: capabilities.sessionLimit,
-  });
-}
-
-function lifetimeOptions(lifetime: Parameters<typeof configuredLifetime>[0]): { lifetimeMs?: number } {
-  const lifetimeMs = configuredLifetime(lifetime);
-  return lifetimeMs === undefined ? {} : { lifetimeMs };
+  };
 }

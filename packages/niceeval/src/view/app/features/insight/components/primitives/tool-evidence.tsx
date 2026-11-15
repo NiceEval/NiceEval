@@ -3,17 +3,13 @@
 import type { ReactElement, ReactNode } from "react";
 import { isObject, type ReportLocale } from "./shared.ts";
 
-export interface ToolEvidenceContent {
-  readonly phase: "started" | "finished";
-  readonly tool: string;
-  readonly callId?: string;
-  readonly toolOccurrence?:
-    | { readonly state: "exact"; readonly toolOccurrenceId: string }
-    | { readonly state: "unavailable"; readonly reason: string };
-  readonly inputSummary: string;
-  readonly outputSummary?: string;
-  readonly outcome?: "completed" | "rejected" | "failed" | "cancelled";
-}
+export type ToolEvidenceContent =
+  | { readonly phase: "started"; readonly inputSummary: string }
+  | {
+      readonly phase: "finished";
+      readonly outputSummary: string | undefined;
+      readonly outcome: "completed" | "rejected" | "failed" | "cancelled" | undefined;
+    };
 
 function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -61,7 +57,7 @@ function withoutFields(
   return Object.fromEntries(Object.entries(record).filter(([key]) => !omitted.has(key)));
 }
 
-function EvidenceCode({ children, tone }: { children: string; tone?: "error" }): ReactElement {
+function EvidenceCode({ children, tone }: { children: string; tone: "normal" | "error" }): ReactElement {
   return (
     <pre className={cx("niceeval-tool-evidence-code", tone === "error" && "niceeval-tool-evidence-code--error")}>
       {children}
@@ -92,11 +88,11 @@ function commandEvidence(record: globalThis.Record<string, unknown>, locale: str
         </div>
       )}
       <EvidenceSection label={label(locale, "Command", "命令")}>
-        <EvidenceCode>{command}</EvidenceCode>
+        <EvidenceCode tone="normal">{command}</EvidenceCode>
       </EvidenceSection>
       {Object.keys(rest).length === 0 ? null : (
         <EvidenceSection label={label(locale, "Additional input", "其他输入")}>
-          <EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode>
+          <EvidenceCode tone="normal">{JSON.stringify(rest, null, 2)}</EvidenceCode>
         </EvidenceSection>
       )}
     </div>
@@ -127,7 +123,7 @@ function terminalEvidence(record: globalThis.Record<string, unknown>, locale: st
       </div>
       {output === undefined ? null : (
         <EvidenceSection label={label(locale, "Output", "输出")}>
-          <EvidenceCode>{output || label(locale, "No output", "无输出")}</EvidenceCode>
+          <EvidenceCode tone="normal">{output || label(locale, "No output", "无输出")}</EvidenceCode>
         </EvidenceSection>
       )}
       {stderr === undefined || stderr === "" ? null : (
@@ -137,7 +133,7 @@ function terminalEvidence(record: globalThis.Record<string, unknown>, locale: st
       )}
       {Object.keys(rest).length === 0 ? null : (
         <EvidenceSection label={label(locale, "Additional result", "其他结果")}>
-          <EvidenceCode>{JSON.stringify(rest, null, 2)}</EvidenceCode>
+          <EvidenceCode tone="normal">{JSON.stringify(rest, null, 2)}</EvidenceCode>
         </EvidenceSection>
       )}
     </div>
@@ -148,19 +144,24 @@ function structuredEvidence(data: ToolEvidenceContent, locale: string): ReactEle
   const raw = data.phase === "finished" ? (data.outputSummary ?? "") : data.inputSummary;
   const parsed = parseJson(raw);
   const record = recordOf(parsed);
-  const specialized =
-    record === undefined
-      ? undefined
-      : data.phase === "started"
-        ? commandEvidence(record, locale)
-        : terminalEvidence(record, locale);
-  if (specialized !== undefined) return specialized;
-  const display = parsed === undefined ? raw : typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+  if (record !== undefined) {
+    const specialized = data.phase === "started" ? commandEvidence(record, locale) : terminalEvidence(record, locale);
+    if (specialized !== undefined) return specialized;
+  }
+  function displayText() {
+    if (parsed === undefined) return raw;
+    if (typeof parsed === "string") return parsed;
+    return JSON.stringify(parsed, null, 2);
+  }
   return (
     <div className="niceeval-tool-evidence" data-tool-evidence-kind={parsed === undefined ? "text" : "json"}>
       <EvidenceSection label={parsed === undefined ? label(locale, "Text", "文本") : "JSON"}>
-        <EvidenceCode {...(data.outcome === "failed" || data.outcome === "rejected" ? { tone: "error" } : {})}>
-          {display}
+        <EvidenceCode
+          tone={
+            data.phase === "finished" && (data.outcome === "failed" || data.outcome === "rejected") ? "error" : "normal"
+          }
+        >
+          {displayText()}
         </EvidenceCode>
       </EvidenceSection>
     </div>

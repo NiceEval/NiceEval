@@ -1,4 +1,5 @@
 import { Data } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 
 export type IncusPlanningCode =
   | "incus-unreachable"
@@ -19,8 +20,8 @@ export class IncusProviderError extends Data.TaggedError("IncusProviderError")<{
   readonly code: IncusRuntimeCode;
   readonly summary: string;
   readonly actions: readonly string[];
-  readonly cause?: unknown;
-  readonly reason?: "storage-bytes";
+  readonly cause: ExternalCause | undefined;
+  readonly reason: "storage-bytes" | undefined;
 }> {
   get message(): string {
     return this.summary;
@@ -36,8 +37,9 @@ export function incusError(
   return new IncusProviderError({
     code,
     summary,
-    actions: Object.freeze([...actions]),
-    ...(cause === undefined ? {} : { cause }),
+    actions,
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
+    reason: undefined,
   });
 }
 

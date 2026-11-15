@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/inspection/README.md
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 
 import {
   InspectionRequestSchema,
@@ -31,8 +32,8 @@ export interface InspectionQueryProtocolError {
     | "evidence-budget-exceeded"
     | "restart-required";
   readonly reason: string;
-  readonly identity?: { readonly runId: string };
-  readonly cause?: unknown;
+  readonly identity: { readonly runId: string } | undefined;
+  readonly cause: ExternalCause | undefined;
 }
 
 /** Reports that the requested Inspection selection is missing; it must not be converted into an empty successful result. */
@@ -40,7 +41,7 @@ export interface InspectionQuerySelectionError {
   readonly classification: "selection";
   readonly code: "inspection-selection-missing";
   readonly reason: string;
-  readonly cause?: unknown;
+  readonly cause: ExternalCause | undefined;
 }
 
 /** Distinguishes a missing selection from a protocol or evidence-reading failure; callers should branch on classification. */
@@ -61,12 +62,12 @@ export function decodeInspectionOperation(
 ): Result.Result<InspectionOperation, InspectionOperationDecodeError> {
   const decoded = decodeRequest({ operation: input });
   return Result.isFailure(decoded)
-    ? Result.fail(
-        Object.freeze({
-          classification: "protocol/query" as const,
-          code: "inspection-request-invalid" as const,
-          reason: String(decoded.failure),
-        }),
-      )
+    ? Result.fail({
+        classification: "protocol/query" as const,
+        code: "inspection-request-invalid" as const,
+        reason: String(decoded.failure),
+        identity: undefined,
+        cause: normalizeExternalCause(decoded.failure),
+      })
     : Result.succeed(decoded.success.operation);
 }

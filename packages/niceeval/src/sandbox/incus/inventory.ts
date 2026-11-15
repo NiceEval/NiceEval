@@ -16,7 +16,7 @@ export interface ArtifactInventoryEntry {
 export interface ArtifactInventory {
   readonly entries: readonly ArtifactInventoryEntry[];
   readonly orphans: readonly { readonly kind: "instance" | "custom-storage-volume"; readonly name: string }[];
-  readonly pool: { readonly total: number; readonly used: number; readonly free: number } | null;
+  readonly pool: { readonly total: number; readonly used: number; readonly free: number } | undefined;
 }
 export function artifactBelongsToDomain(intent: ArtifactIntent, domain: IncusDomainDescriptor): boolean {
   return (
@@ -80,7 +80,7 @@ export async function readArtifactInventory(
       .filter((volume) => !owned.some((intent) => intent.dockerDataVolume === volume.name))
       .map((volume) => ({ kind: "custom-storage-volume" as const, name: volume.name })),
   ];
-  const pool = await control.getStoragePoolResources(domain.artifactProject, domain.storagePool).catch(() => null);
+  const pool = await control.getStoragePoolResources(domain.artifactProject, domain.storagePool).catch(() => undefined);
   return { entries, orphans, pool };
 }
 
@@ -94,7 +94,7 @@ export function inventoryDocument(domain: IncusDomainDescriptor, inventory: Arti
         project: domain.artifactProject,
         pool: domain.storagePool,
         entryCount: inventory.entries.length,
-        storage: inventory.pool,
+        storage: inventory.pool ?? null,
         estimate: "not additive",
       },
     ],
@@ -136,7 +136,7 @@ export function renderArtifactInventory(domain: IncusDomainDescriptor, inventory
   }
   for (const orphan of inventory.orphans) lines.push(`orphan ${orphan.kind} ${orphan.name} · not eligible for GC`);
   lines.push(
-    inventory.pool === null
+    inventory.pool === undefined
       ? "pool bytes unknown"
       : `pool bytes: total=${inventory.pool.total} used=${inventory.pool.used} free=${inventory.pool.free}`,
   );

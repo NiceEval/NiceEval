@@ -9,20 +9,20 @@ import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentAuthorFields }
 
 /** `DiscoveredEval` → 用户谓词可见的显式白名单投影;不透传内部路径/执行字段。 */
 export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
-  return Object.freeze({
+  return {
     id: evalDef.id,
-    ...(evalDef.description !== undefined ? { description: evalDef.description } : {}),
-    tags: Object.freeze([...(evalDef.tags ?? [])]),
-    evaluationKind: evalDef.evaluationKind ?? "pass",
-    ...(Object.keys(evalDef.metadata ?? {}).length > 0 ? { metadata: Object.freeze({ ...evalDef.metadata }) } : {}),
-  });
+    description: evalDef.description,
+    tags: [...evalDef.tags],
+    evaluationKind: evalDef.evaluationKind,
+    metadata: { ...evalDef.metadata },
+  };
 }
 
 export interface ResolveExperimentEvalsInput {
   experimentId: string;
-  models?: ResolvedModelRoles;
-  tag?: string;
-  validateModelRequirements?: boolean;
+  models: ResolvedModelRoles | undefined;
+  tag: string | undefined;
+  validateModelRequirements: boolean | undefined;
   selector: ExperimentAuthorFields["evals"];
   cliPatterns: readonly string[];
   evals: readonly DiscoveredEval[];

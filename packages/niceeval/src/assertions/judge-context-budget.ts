@@ -6,7 +6,7 @@ import { trimConversationMaterial } from "./conversation-material.ts";
  * UTF-8 bytes / 3 is a deterministic estimate, not a provider tokenizer. */
 export function fitJudgeContext<T>(input: {
   readonly model: string;
-  readonly contextWindow?: number;
+  readonly contextWindow: number | undefined;
   readonly maxOutputTokens: number;
   readonly material: T;
   readonly encodeRequest: (material: T) => string;
@@ -14,8 +14,6 @@ export function fitJudgeContext<T>(input: {
   | {
       readonly state: "available";
       readonly material: T;
-      readonly contextWindow?: number;
-      readonly estimatedTokens?: number;
     }
   | {
       readonly state: "unavailable";
@@ -46,7 +44,7 @@ export function fitJudgeContext<T>(input: {
       estimatedTokens,
       message: `Judge request estimates ${estimatedTokens} tokens (before trimming: ${originalEstimate}), exceeding context window ${contextWindow} tokens including ${input.maxOutputTokens} output tokens.`,
     };
-  return { state: "available", material, contextWindow, estimatedTokens };
+  return { state: "available", material };
 }
 
 /** Provider context errors are material unavailability, including unknown models. */

@@ -11,7 +11,6 @@ import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
 import { resolveRunTimeout } from "../../runner/timeout.ts";
 import type { AgentRun, Config, DiscoveredEval, DiscoveredExperiment } from "../../runner/types.ts";
 import { resolveSandboxBeforeCache } from "../../runner/types.ts";
-import { matchExperimentSelector } from "../../shared/aggregate.ts";
 import {
   accept,
   applyRunAccept,
@@ -26,7 +25,7 @@ import {
   showInvocationStatus,
 } from "./operations.ts";
 import { inspectTeardown, runTeardown } from "./teardown.ts";
-import { ExperimentHostError } from "./types.ts";
+import { ExperimentHostError, normalizeExperimentHostCause } from "./types.ts";
 
 /** One discovered Experiment after its author selector and CLI prefixes close. */
 interface ExperimentHostSelection {
@@ -47,48 +46,36 @@ interface ExperimentHostListResult {
  * Discovery and selection are owned here so consumers cannot invoke an
  * Experiment's predicate a second time while reconstructing an AgentRun.
  */
-function discoverSelection(input: {
-  readonly cwd: string;
-  /** Keep the CLI's public `--tag` selection inside the Experiment boundary. */
-  readonly tag?: string;
-  readonly selector?: string;
-  readonly evalPatterns?: readonly string[];
-}): Effect.Effect<ExperimentHostListResult, unknown> {
+function discoverSelection(cwd: string): Effect.Effect<ExperimentHostListResult, unknown> {
   return Effect.gen(function* () {
-    const discoveredEvals = yield* discoverEvals(input.cwd);
-    const evals =
-      input.tag === undefined
-        ? discoveredEvals
-        : discoveredEvals.filter((evalDefinition) => evalDefinition.tags?.includes(input.tag!));
-    const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-      ...(input.selector === undefined
-        ? {}
-        : { select: (ids: readonly string[]) => matchExperimentSelector(ids, input.selector!) }),
+    const evals = yield* discoverEvals(cwd);
+    const { experiments, experimentIds } = yield* discoverExperimentSelection(cwd, {
+      select: (ids) => ids,
+      freshImport: false,
+      generation: undefined,
     });
-    const selectedIds =
-      input.selector === undefined ? undefined : new Set(matchExperimentSelector(experimentIds, input.selector));
-    const selections = experiments
-      .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
-      .map((experiment): ExperimentHostSelection => {
-        const selected = resolveExperimentEvals({
-          experimentId: experiment.id,
-          ...(experiment.models === undefined ? {} : { models: experiment.models }),
-          ...(input.tag === undefined ? {} : { tag: input.tag }),
-          selector: experiment.evals,
-          cliPatterns: input.evalPatterns ?? [],
-          evals: discoveredEvals,
-        });
-        return Object.freeze({
-          experiment,
-          selectedEvalIds: Object.freeze([...selected.selectedEvalIds]),
-          selectorEvalIds: Object.freeze(selected.selectorEvals.map((evalDefinition) => evalDefinition.id)),
-        });
+    const selections = experiments.map((experiment): ExperimentHostSelection => {
+      const selected = resolveExperimentEvals({
+        experimentId: experiment.id,
+        models: experiment.models,
+        tag: undefined,
+        selector: experiment.evals,
+        cliPatterns: [],
+        evals,
+
+        validateModelRequirements: undefined,
       });
-    return Object.freeze({
-      evals: Object.freeze([...evals]),
-      experimentIds,
-      selections: Object.freeze(selections),
+      return {
+        experiment,
+        selectedEvalIds: selected.selectedEvalIds,
+        selectorEvalIds: selected.selectorEvals.map((evalDefinition) => evalDefinition.id),
+      };
     });
+    return {
+      evals,
+      experimentIds,
+      selections,
+    };
   });
 }
 
@@ -97,7 +84,7 @@ export interface ExperimentHostDebugPlanRequest {
   readonly cwd: string;
   readonly config: Config;
   readonly experimentSelector: string;
-  readonly evalSelector?: string;
+  readonly evalSelector?: string | undefined;
 }
 
 /** A fully closed, read-only lifecycle plan for exactly one Experiment × Eval pair. */
@@ -105,7 +92,7 @@ export interface ExperimentHostDebugPlan {
   readonly status: "planned";
   readonly experimentId: string;
   /** Retained for the existing single-pair response. */
-  readonly evalId?: string;
+  readonly evalId: string | undefined;
   readonly evalIds: readonly string[];
   readonly commandPlan: CommandPlan;
   readonly beforeCachePlan: BeforeCachePlan;
@@ -151,32 +138,33 @@ function uniqueExactOrPrefix<T>(
 
 function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config: Config): AgentRun {
   return {
-    ...(experiment.adapter === undefined ? {} : { adapter: experiment.adapter }),
-    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
-    ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    ...(experiment.model === undefined ? {} : { model: experiment.model }),
-    ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
+    adapter: experiment.adapter,
+    agent: experiment.adapter?.kind === "custom" ? undefined : experiment.adapter,
+    models: experiment.models,
+    model: experiment.model,
+    reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags ?? {},
     plugins: experiment.plugins,
+    pluginBehavior: undefined,
     attempts: experiment.attempts ?? 1,
     earlyExit: experiment.earlyExit ?? false,
     sandboxBeforeCache: resolveSandboxBeforeCache(undefined, experiment.sandboxCache, config.sandboxCache),
-    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
+    sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
-    ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
-    ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
+    sandboxLabels: experiment.sandboxLabels,
+    sharedState: experiment.sharedState,
+    judge: experiment.judge,
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
-    ...(experiment.budget === undefined ? {} : { budget: experiment.budget }),
+    budget: experiment.budget,
     selectedEvalIds: [evalId],
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    ...(experiment.description === undefined ? {} : { description: experiment.description }),
+    description: experiment.description,
     labels: experiment.labels,
-    ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
-    ...(experiment.before === undefined ? {} : { setup: experiment.before }),
-    ...(experiment.after === undefined ? {} : { teardown: experiment.after }),
+    maxConcurrency: experiment.maxConcurrency,
+    setup: experiment.before,
+    teardown: experiment.after,
   };
 }
 
@@ -189,7 +177,7 @@ function debug(
   input: ExperimentHostDebugPlanRequest,
 ): Effect.Effect<ExperimentHostDebugPlanResult, ExperimentHostError> {
   return Effect.gen(function* () {
-    const listed = yield* discoverSelection({ cwd: input.cwd });
+    const listed = yield* discoverSelection(input.cwd);
     const selectedExperiments = uniqueExactOrPrefix(
       listed.selections,
       input.experimentSelector,
@@ -198,18 +186,18 @@ function debug(
       .slice()
       .sort((left, right) => left.experiment.id.localeCompare(right.experiment.id));
     if (selectedExperiments.length === 0) {
-      return Object.freeze({
+      return {
         status: "experiment-no-match" as const,
         selector: input.experimentSelector,
-        candidates: Object.freeze([...listed.experimentIds].sort()),
-      });
+        candidates: [...listed.experimentIds].sort(),
+      };
     }
     if (selectedExperiments.length > 1) {
-      return Object.freeze({
+      return {
         status: "experiment-ambiguous" as const,
         selector: input.experimentSelector,
-        candidates: Object.freeze(selectedExperiments.map(({ experiment }) => experiment.id)),
-      });
+        candidates: selectedExperiments.map(({ experiment }) => experiment.id),
+      };
     }
 
     const selection = selectedExperiments[0]!;
@@ -224,25 +212,26 @@ function debug(
       .slice()
       .sort((left, right) => left.id.localeCompare(right.id));
     if (selectedEvals.length === 0) {
-      return Object.freeze({
+      return {
         status: "eval-no-match" as const,
         selector: input.evalSelector ?? "",
         experimentId: experiment.id,
-        candidates: Object.freeze(selectorEvals.map((evalDef) => evalDef.id).sort()),
-      });
+        candidates: selectorEvals.map((evalDef) => evalDef.id).sort(),
+      };
     }
     if (input.evalSelector !== undefined && selectedEvals.length > 1) {
-      return Object.freeze({
+      return {
         status: "eval-ambiguous" as const,
         selector: input.evalSelector,
         experimentId: experiment.id,
-        candidates: Object.freeze(selectedEvals.map((evalDef) => evalDef.id)),
-      });
+        candidates: selectedEvals.map((evalDef) => evalDef.id),
+      };
     }
 
     const runs = selectedEvals.map((evalDef) => debugAgentRun(experiment, evalDef.id, input.config));
     const target = yield* planProjectTarget(listed.evals, runs, input.config.timeoutMs, {
-      ...(input.config.judgeProvider === undefined ? {} : { configJudge: input.config.judgeProvider }),
+      configJudge: input.config.judgeProvider,
+      keepSandbox: undefined,
     });
     const commandPlan = assembleCommandPlan({
       rows: selectedEvals.map((evalDef) => {
@@ -250,21 +239,21 @@ function debug(
         return {
           experimentId: experiment.id,
           evalId: evalDef.id,
-          ...(evalDef.evalGroup === undefined ? {} : { evalGroupId: evalDef.evalGroup.id }),
+          evalGroupId: evalDef.evalGroup?.id,
           attempts: run.attempts,
           dispatch: [{ attempts: Array.from({ length: run.attempts }, (_, attempt) => attempt) }],
         };
       }),
       preparedPairsByKey: target.preparedPairsByKey,
     });
-    return Object.freeze({
+    return {
       status: "planned" as const,
       experimentId: experiment.id,
-      ...(selectedEvals.length === 1 ? { evalId: selectedEvals[0]!.id } : {}),
-      evalIds: Object.freeze(selectedEvals.map((evalDef) => evalDef.id)),
+      evalId: selectedEvals.length === 1 ? selectedEvals[0]?.id : undefined,
+      evalIds: selectedEvals.map((evalDef) => evalDef.id),
       commandPlan,
       beforeCachePlan: beforeCachePlanOf(commandPlan),
-    });
+    };
   }).pipe(
     Effect.mapError(
       (cause) =>
@@ -275,7 +264,8 @@ function debug(
               ? String(Reflect.get(cause, "code"))
               : "experiment-host-operation-failed",
           message: cause instanceof Error ? cause.message : String(cause),
-          cause,
+          cause: normalizeExperimentHostCause(cause),
+          comparisons: undefined,
         }),
     ),
   );

@@ -1,4 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
+import { normalizeExternalCause, type ExternalCause } from "./shared/external-cause.ts";
 
 export interface SqliteMigration {
   readonly version: number;
@@ -29,13 +30,21 @@ export type SqliteMigrationFailureReason =
 
 export class SqliteMigrationKernelFailure extends Error {
   readonly name = "SqliteMigrationKernelFailure";
+  readonly cause: ExternalCause | undefined;
+  readonly rollback: { readonly state: "not-failed" } | { readonly state: "failed"; readonly cause: ExternalCause };
   constructor(
     readonly reason: SqliteMigrationFailureReason,
     message: string,
-    readonly cause?: unknown,
-    readonly rollbackCause?: unknown,
+    cause?: unknown,
+    rollbackCause?: unknown,
   ) {
-    super(message, cause === undefined ? undefined : { cause });
+    const normalized = cause === undefined ? undefined : normalizeExternalCause(cause);
+    super(message, normalized === undefined ? undefined : { cause: normalized });
+    this.cause = normalized;
+    this.rollback =
+      reason === "rollback-failure"
+        ? { state: "failed", cause: normalizeExternalCause(rollbackCause) }
+        : { state: "not-failed" };
   }
 }
 
@@ -92,7 +101,7 @@ export function inspectSqliteMigrationLedger(
   const table = quotedIdentifier(tableName);
   const rows = database
     .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name = ? OR tbl_name = ? ORDER BY type, name")
-    .all(tableName, tableName) as unknown as readonly Record<string, SQLOutputValue>[];
+    .all(tableName, tableName);
   const schema = rows.length === 1 ? rows[0] : undefined;
   if (
     schema === undefined ||
@@ -104,9 +113,7 @@ export function inspectSqliteMigrationLedger(
   ) {
     throw new SqliteMigrationKernelFailure("ledger-schema-invalid", "SQLite migration ledger schema is invalid");
   }
-  const receipts = database
-    .prepare(`SELECT version, migration_digest FROM ${table} ORDER BY version`)
-    .all() as unknown as readonly Record<string, SQLOutputValue>[];
+  const receipts = database.prepare(`SELECT version, migration_digest FROM ${table} ORDER BY version`).all();
   const versions = receipts.map((receipt) =>
     typeof receipt.version === "bigint" ? Number(receipt.version) : receipt.version,
   );
@@ -169,12 +176,12 @@ export function migrateSqliteDatabase(input: {
     const currentVersion = inspectSqliteMigrationLedger(database, ledgerTable, catalog);
     if (currentVersion === catalog.length) {
       input.validateCurrent();
-      return Object.freeze({
+      return {
         status: "current",
         fromVersion: currentVersion,
         toVersion: currentVersion,
         receipts: catalogReceipts(catalog),
-      });
+      };
     }
   }
 
@@ -200,12 +207,12 @@ export function migrateSqliteDatabase(input: {
         } catch (cause) {
           throw new SqliteMigrationKernelFailure("commit-failure", "SQLite migration commit failed", cause);
         }
-        return Object.freeze({
+        return {
           status: "current",
           fromVersion: admittedVersion,
           toVersion: admittedVersion,
           receipts: catalogReceipts(catalog),
-        });
+        };
       }
       throw new SqliteMigrationKernelFailure(
         "admission-changed",
@@ -234,16 +241,16 @@ export function migrateSqliteDatabase(input: {
   } catch (cause) {
     return rollback(database, cause);
   }
-  return Object.freeze({
+  return {
     status: input.bootstrapping ? "bootstrapped" : "migrated",
     fromVersion: expectedFromVersion,
     toVersion: catalog.length,
     receipts: catalogReceipts(catalog),
-  });
+  };
 }
 
 function catalogReceipts(
   catalog: readonly SqliteMigration[],
 ): readonly { readonly version: number; readonly digest: string }[] {
-  return Object.freeze(catalog.map(({ version, digest }) => Object.freeze({ version, digest })));
+  return catalog.map(({ version, digest }) => ({ version, digest }));
 }

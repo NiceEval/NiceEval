@@ -60,7 +60,7 @@ export interface ClaudeCodePluginSpec {
     /** Marketplace 来源:GitHub `owner/repo`、Git URL 或路径。 */
     source: string;
     /** 固定 Marketplace 的 Tag、Commit 或 Branch;给了就先按 ref clone 下来再以本地路径连接。 */
-    ref?: string;
+    ref?: string | undefined;
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -68,35 +68,35 @@ export interface ClaudeCodePluginSpec {
 
 export interface ClaudeCodeConfig {
   /** Anthropic API key。省略时读 ANTHROPIC_API_KEY env。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /**
    * 自定义 API base URL(代理 / 内网端点)。省略时读 ANTHROPIC_BASE_URL env;
    * 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
    */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /**
    * Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
    * 会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
    */
-  env?: Readonly<globalThis.Record<string, string>>;
+  env?: Readonly<globalThis.Record<string, string>> | undefined;
   /**
    * 最多跑几个 tool-use 轮次(→ `--max-turns`)。
    * 控制评估用例成本上限;省略时用 CLI 原生默认(无限制)。
    */
-  maxTurns?: number;
+  maxTurns?: number | undefined;
   /**
    * 额外 MCP server(每个 Sandbox before 时写进用户级 ~/.claude.json)。
    * stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 headers,
    * 逐字进请求头),落成 { "type": "http", "url": …, "headers": … } 条目。
    */
-  mcpServers?: readonly McpServer[];
+  mcpServers?: readonly McpServer[] | undefined;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 project 级 `.claude/skills/<name>/`,claude CLI 原生发现。
    */
-  skills?: readonly SkillSpec[];
+  skills?: readonly SkillSpec[] | undefined;
   /** Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: readonly ClaudeCodePluginSpec[];
+  plugins?: readonly ClaudeCodePluginSpec[] | undefined;
   /**
    * 一份完整的 Claude Code `settings.json`(官方格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -105,14 +105,14 @@ export interface ClaudeCodeConfig {
    * (不继承宿主机配置、不拼接、不重新序列化);保留键 `model` 与 `env` 出现在文件里
    * before 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文。
    */
-  settingsFile?: string;
+  settingsFile?: string | undefined;
   /**
    * 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写 settings、挂 MCP、
    * 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 before 脚本这类
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  before?: readonly SandboxCommand[];
+  before?: readonly SandboxCommand[] | undefined;
   /**
    * 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
    * 之前执行(LIFO 镜像 —— `before` 跑在 agent 安装之后,`after` 就跑在 agent 收尾
@@ -120,7 +120,7 @@ export interface ClaudeCodeConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  after?: readonly SandboxCommand[];
+  after?: readonly SandboxCommand[] | undefined;
 }
 
 // @concord-code
@@ -391,6 +391,7 @@ ${outputTail(install)}`,
  * (真机核对 claude 2.1.220)。同一个 plugin 可以在 user / project / local 多个 scope 各有一条,
  * 卸载要带上条目自己的 scope。抠不出(非 JSON / 未知形状)返回 undefined,由调用方决定放行还是抛错。
  */
+// Third-party JSON boundary: Claude's installed-plugin output omits unavailable fields.
 interface ClaudeInstalledPlugin {
   id?: string;
   version?: string;
@@ -422,11 +423,11 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
 ${outputTail(res)}`);
   }
 
-  const targets = new Map<string, { id: string; scope?: string }>();
+  const targets = new Map<string, { id: string; scope: string | undefined }>();
   for (const entry of list) {
     const id = entry.id;
     if (!id || id.split("@")[0] !== name) continue;
-    targets.set(`${id} ${entry.scope ?? ""}`, { id, ...(entry.scope ? { scope: entry.scope } : {}) });
+    targets.set(`${id} ${entry.scope ?? ""}`, { id, scope: entry.scope });
   }
   for (const target of targets.values()) {
     const scopeFlag = target.scope ? ` --scope ${shared.shellQuote(target.scope)}` : "";

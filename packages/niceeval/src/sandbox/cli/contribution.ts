@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import { CliArguments, CliOutput, type CliOptionDefinition, type CliParsedTokens } from "../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure } from "../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import { doctorExitCode, doctorIncusProvider, renderIncusDoctorReport } from "../incus.ts";
 import { runIncusMaintenance } from "../incus/maintenance.ts";
 
@@ -75,14 +77,19 @@ interface ParsedSandboxArgs {
   readonly help: boolean;
   readonly development: boolean;
   readonly json: boolean;
-  readonly apply?: string;
-  readonly unusedFor?: string;
+  readonly apply: string | undefined;
+  readonly unusedFor: string | undefined;
 }
 
-type SandboxCliError = CliFeatureError;
+type SandboxCliError = CliFeatureError<ExternalCause>;
 
 function sandboxFailure(operation: string, cause: unknown, exitCode = 1): SandboxCliError {
-  return new CliFeatureError({ feature: "sandbox", operation, cause, exitCode });
+  return externalCliFailure(cause, {
+    feature: "sandbox",
+    operation,
+    exitCode,
+    display: undefined,
+  });
 }
 
 function isSandboxSubcommand(value: string | undefined): value is SandboxSubcommand {
@@ -94,20 +101,20 @@ function parseSandboxArgs(
   parse: (argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) => CliParsedTokens,
 ): ParsedSandboxArgs {
   const parsed = parse(argv, SANDBOX_CLI_OPTIONS);
-  return Object.freeze({
-    positionals: Object.freeze([...parsed.positionals]),
-    providedOptions: Object.freeze(parsed.tokens.filter((token) => token.kind === "option").map((token) => token.name)),
+  return {
+    positionals: parsed.positionals,
+    providedOptions: parsed.tokens.filter((token) => token.kind === "option").map((token) => token.name),
     help: parsed.values.help === true,
     development: parsed.values.development === true,
     json: parsed.values.json === true,
-    ...(typeof parsed.values.apply === "string" ? { apply: parsed.values.apply } : {}),
-    ...(typeof parsed.values["unused-for"] === "string" ? { unusedFor: parsed.values["unused-for"] } : {}),
-  });
+    apply: typeof parsed.values.apply === "string" ? parsed.values.apply : undefined,
+    unusedFor: typeof parsed.values["unused-for"] === "string" ? parsed.values["unused-for"] : undefined,
+  };
 }
 
-const SANDBOX_SUBCOMMAND_OPTIONS: Readonly<Record<SandboxSubcommand, readonly string[]>> = Object.freeze({
-  provider: Object.freeze(["development", "help", "json", "apply", "unused-for"]),
-});
+const SANDBOX_SUBCOMMAND_OPTIONS: Readonly<Record<SandboxSubcommand, readonly string[]>> = {
+  provider: ["development", "help", "json", "apply", "unused-for"],
+};
 
 function write(channel: "stdout" | "stderr", text: string): Effect.Effect<void, SandboxCliError, CliOutput> {
   return Effect.flatMap(CliOutput, (output) =>
@@ -138,8 +145,8 @@ function runProviderDoctor(parsed: ParsedSandboxArgs): Effect.Effect<number, San
         action,
         domain: parsed.development ? "development" : "reference",
         json: parsed.json,
-        ...(parsed.apply === undefined ? {} : { apply: parsed.apply }),
-        ...(parsed.unusedFor === undefined ? {} : { unusedFor: parsed.unusedFor }),
+        apply: parsed.apply,
+        unusedFor: parsed.unusedFor,
       });
       if (result.stdout !== "") yield* write("stdout", result.stdout);
       if (result.stderr !== "") yield* write("stderr", result.stderr);

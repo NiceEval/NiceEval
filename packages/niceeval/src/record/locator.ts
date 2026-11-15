@@ -63,7 +63,7 @@ export interface LocatorAttempt<T> {
   identity: AttemptIdentity;
   handle: T;
   /** reader 使用落盘的权威 locator；省略时按 identity 派生。 */
-  locator?: AttemptLocator;
+  locator: AttemptLocator | undefined;
 }
 
 export type LocatorIndex<T> = Map<AttemptLocator, LocatorAttempt<T>[]>;

@@ -8,6 +8,19 @@ import { InstaboxConnection, InstaboxReconnectExhausted } from "./connection.ts"
 import { spoolReader, spoolSupervisor } from "./spool.ts";
 import type { DiagnosticInput } from "../../types.ts";
 import { Schema } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
+
+const decodeProcessExit = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      exitCode: Schema.NullOr(Schema.Number),
+      signal: Schema.optionalKey(Schema.String),
+      stdoutSize: Schema.Number,
+      stderrSize: Schema.Number,
+    }),
+  ),
+);
+const decodeMissingSpool = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ reason: Schema.String })));
 
 const decodeStdinReceipt = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -40,8 +53,8 @@ export async function startInstaboxProcess(input: {
   let lastAttachedClient: Client | undefined;
   let detach: (() => void) | undefined;
   let reconnecting: Promise<void> | undefined;
-  let queuedRecovery: { reason: unknown; client: Client } | undefined;
-  let originalReason: unknown;
+  let queuedRecovery: { reason: ExternalCause; client: Client } | undefined;
+  let originalReason: ExternalCause | undefined;
   let failure: Promise<void> | undefined;
   let sequence = 0;
   let stdinOffset = 0,
@@ -63,7 +76,7 @@ export async function startInstaboxProcess(input: {
   });
   void done.catch(() => undefined);
   const detail = (reason: unknown): string =>
-    (reason instanceof Error ? reason.message : String(reason)).replaceAll(input.token.token, "[REDACTED]");
+    normalizeExternalCause(reason).message.replaceAll(input.token.token, "[REDACTED]");
   const counters = () => ({
     reconnectAttempts: input.connection.reconnectAttempts - initialReconnects,
     elapsedMs: Math.round(performance.now() - startedAt),
@@ -102,16 +115,17 @@ export async function startInstaboxProcess(input: {
 
   const recover = (reason: unknown, client: Client): void => {
     if (terminal) return;
+    const normalizedReason = normalizeExternalCause(reason);
     if (reconnecting) {
-      queuedRecovery = { reason, client };
+      queuedRecovery = { reason: normalizedReason, client };
       return;
     }
-    originalReason ??= reason;
+    originalReason ??= normalizedReason;
     const recoveryDeadline = performance.now() + 60_000;
     const initialAttempts = input.connection.reconnectAttempts;
     closeChannel();
     reconnecting = (async () => {
-      let lastReason = reason;
+      let lastReason = normalizedReason;
       let failedClient = client;
       while (
         !terminal &&
@@ -135,7 +149,7 @@ export async function startInstaboxProcess(input: {
           });
           return;
         } catch (error) {
-          lastReason = error;
+          lastReason = normalizeExternalCause(error);
           if (error instanceof InstaboxReconnectExhausted) break;
         }
       }
@@ -268,10 +282,7 @@ export async function startInstaboxProcess(input: {
                 } else if (tag === 4) {
                   confirmStdin(decodeStdinReceipt(JSON.parse(payload.toString("utf8"))));
                 } else if (tag === 5) {
-                  const exit = JSON.parse(payload.toString("utf8")) as ManagedProcessExit & {
-                    stdoutSize: number;
-                    stderrSize: number;
-                  };
+                  const exit = decodeProcessExit(payload.toString("utf8"));
                   if (
                     (exit.exitCode !== null && !Number.isInteger(exit.exitCode)) ||
                     stdoutBytes !== exit.stdoutSize ||
@@ -286,10 +297,10 @@ export async function startInstaboxProcess(input: {
                   pending.clear();
                   closeChannel();
                   output.end();
-                  resolveDone({ exitCode: exit.exitCode, ...(exit.signal ? { signal: exit.signal } : {}) });
+                  resolveDone({ exitCode: exit.exitCode, signal: exit.signal || undefined });
                   return;
                 } else if (tag === 6) {
-                  const missing = JSON.parse(payload.toString("utf8")) as { reason: string };
+                  const missing = decodeMissingSpool(payload.toString("utf8"));
                   reject(new Error(missing.reason));
                   void fail(missing.reason);
                   return;

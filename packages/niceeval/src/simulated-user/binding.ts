@@ -37,7 +37,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
     readonly signal: AbortSignal;
     readonly assertOpen: () => void;
     readonly now: () => number;
-    readonly deadlineAt?: number;
+    readonly deadlineAt: number | undefined;
     readonly createConversation: (definition: SimulatedUserDefinition) => SimulatedUserConversation;
     readonly latchFailure: (error: SimulatedUserError) => void;
     readonly capture: (activity: SimulatedUserActivity) => Promise<void>;
@@ -74,12 +74,12 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
       const requests = turn.status === "waiting" ? turn.inputRequests : undefined;
       const question = JSON.stringify({
         reply: turn.reply,
-        ...(requests === undefined ? {} : { inputRequests: requests }),
+        inputRequests: requests,
       });
       const generations: SimulatedUserGeneration[] = [];
       let answer: SimulatedUserAnswer | undefined;
       let failure: SimulatedUserActivity["failure"] = null;
-      let targetTurnId: string | null = null;
+      let targetTurnId: string | undefined;
       try {
         try {
           conversation ??= deps.createConversation(definition);
@@ -130,7 +130,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
             id: `su_${randomUUID()}`,
             sessionId: source.sessionId,
             sourceTurnId: source.turnId,
-            targetTurnId,
+            targetTurnId: targetTurnId ?? null,
             question,
             conversation: (await conversation?.snapshot()) ?? "[]",
             answer: answer === undefined ? null : JSON.stringify(answer),

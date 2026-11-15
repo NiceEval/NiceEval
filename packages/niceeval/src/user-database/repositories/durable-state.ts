@@ -29,6 +29,7 @@ function invalid(message: string): UserDatabaseInvalid {
     code: "user-database-invalid",
     message,
     repository: DURABLE_STATE_REPOSITORY,
+    cause: undefined,
   });
 }
 
@@ -39,7 +40,7 @@ function decodeEntry(row: unknown): DurableStateEntry {
   const value = Reflect.get(row, "value");
   if (typeof key !== "string" || typeof value !== "string")
     throw invalid("durable-state row has invalid key/value fields");
-  return Object.freeze({ key, value });
+  return { key, value };
 }
 
 function assertCurrentSchema(database: DatabaseSync): void {
@@ -75,7 +76,7 @@ function dispatch(database: DatabaseSync, request: DurableStateRequest): Durable
       const changes = Number(receipt.changes);
       if (!Number.isSafeInteger(changes)) throw invalid("durable-state write returned an unsafe change count");
       database.exec("COMMIT");
-      return Object.freeze({ repository: DURABLE_STATE_REPOSITORY, operation: "put", changes });
+      return { repository: DURABLE_STATE_REPOSITORY, operation: "put", changes };
     } catch (cause) {
       if (database.isTransaction) database.exec("ROLLBACK");
       throw cause;
@@ -83,14 +84,14 @@ function dispatch(database: DatabaseSync, request: DurableStateRequest): Durable
   }
   if (request.operation === "get") {
     const row = database.prepare(`SELECT key, value FROM ${EntriesTable} WHERE key = ?`).get(request.key);
-    return Object.freeze({
+    return {
       repository: DURABLE_STATE_REPOSITORY,
       operation: "get",
       entry: row === undefined ? null : decodeEntry(row),
-    });
+    };
   }
   const entries = database.prepare(`SELECT key, value FROM ${EntriesTable} ORDER BY key`).all().map(decodeEntry);
-  return Object.freeze({ repository: DURABLE_STATE_REPOSITORY, operation: "list", entries: Object.freeze(entries) });
+  return { repository: DURABLE_STATE_REPOSITORY, operation: "list", entries };
 }
 
 type DurableStateResult = Extract<

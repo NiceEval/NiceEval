@@ -66,50 +66,30 @@ export function executionIdFor(allocationId: string): string {
 }
 
 export function currentOwner(): AllocationOwner {
-  return Object.freeze({
+  return {
     host: hostname(),
     pid: process.pid,
     startedAt: new Date().toISOString(),
-  });
+  };
 }
 
 export function metadataOf(instance: IncusInstance): {
-  readonly allocationId?: string;
-  readonly executionId?: string;
-  readonly generation?: number;
-  readonly artifactDigest?: string;
-  readonly executionDomainId?: string;
-  readonly provisionToken?: string;
-  readonly host?: string;
-  readonly pid?: number;
-  readonly startedAt?: string;
+  readonly allocationId: string | undefined;
+  readonly executionId: string | undefined;
+  readonly generation: number | undefined;
+  readonly artifactDigest: string | undefined;
+  readonly executionDomainId: string | undefined;
+  readonly provisionToken: string | undefined;
 } {
   const generationRaw = instance.config[INCUS_METADATA.generation];
   const generation = generationRaw === undefined ? undefined : Number(generationRaw);
-  const pidRaw = instance.config[INCUS_METADATA.pid];
-  const pid = pidRaw === undefined ? undefined : Number(pidRaw);
   return {
-    ...(instance.config[INCUS_METADATA.allocationId] === undefined
-      ? {}
-      : { allocationId: instance.config[INCUS_METADATA.allocationId] }),
-    ...(instance.config[INCUS_METADATA.executionId] === undefined
-      ? {}
-      : { executionId: instance.config[INCUS_METADATA.executionId] }),
-    ...(generation !== undefined && Number.isSafeInteger(generation) ? { generation } : {}),
-    ...(instance.config[INCUS_METADATA.artifactDigest] === undefined
-      ? {}
-      : { artifactDigest: instance.config[INCUS_METADATA.artifactDigest] }),
-    ...(instance.config[INCUS_METADATA.executionDomainId] === undefined
-      ? {}
-      : { executionDomainId: instance.config[INCUS_METADATA.executionDomainId] }),
-    ...(instance.config[INCUS_METADATA.provisionToken] === undefined
-      ? {}
-      : { provisionToken: instance.config[INCUS_METADATA.provisionToken] }),
-    ...(instance.config[INCUS_METADATA.host] === undefined ? {} : { host: instance.config[INCUS_METADATA.host] }),
-    ...(pid !== undefined && Number.isSafeInteger(pid) ? { pid } : {}),
-    ...(instance.config[INCUS_METADATA.startedAt] === undefined
-      ? {}
-      : { startedAt: instance.config[INCUS_METADATA.startedAt] }),
+    allocationId: instance.config[INCUS_METADATA.allocationId],
+    executionId: instance.config[INCUS_METADATA.executionId],
+    generation: Number.isSafeInteger(generation) ? generation : undefined,
+    artifactDigest: instance.config[INCUS_METADATA.artifactDigest],
+    executionDomainId: instance.config[INCUS_METADATA.executionDomainId],
+    provisionToken: instance.config[INCUS_METADATA.provisionToken],
   };
 }
 
@@ -368,10 +348,10 @@ export async function reconcileDomain(
       ],
     );
   }
-  return Object.freeze({
-    intents: Object.freeze(next),
+  return {
+    intents: next,
     instances: reconciledInstances,
-  });
+  };
 }
 
 export async function destroyAllocation(

@@ -28,7 +28,7 @@ export interface CheckoutOptions {
   /** commit SHA 或 tag 等 Git revision。 */
   readonly ref: string;
   /** 相对 workdir 的目标目录；省略或 `.` 就是 workdir 根。 */
-  readonly into?: string;
+  readonly into?: string | undefined;
 }
 
 /** Declares a named tool's identity, probe and installer; zero probe exit means present, and installation runs only after a nonzero probe. */
@@ -107,11 +107,11 @@ function normalizeInto(value: unknown): string {
 function normalizeCheckoutOptions(value: unknown): Readonly<{ repo: string; ref: string; into: string }> {
   assertPlainRecord(value, "checkout options");
   assertOnlyKeys(value, new Set(["repo", "ref", "into"]), "checkout options");
-  return Object.freeze({
+  return {
     repo: normalizeRepo(value.repo),
     ref: nonEmptyString(value.ref, "checkout options.ref"),
     into: normalizeInto(value.into),
-  });
+  };
 }
 
 function normalizeInstallToolOptions(value: unknown): Readonly<{
@@ -141,16 +141,16 @@ function normalizeInstallToolOptions(value: unknown): Readonly<{
     );
   }
 
-  // defineSandboxCommand owns the recursive JSON-content validation and frozen snapshot. Keeping
+  // defineSandboxCommand owns the recursive JSON-content validation. Keeping
   // this raw value here prevents a second, subtly different identity grammar at this public edge.
-  return Object.freeze({
+  return {
     tool: nonEmptyString(value.tool, "installTool options.tool"),
     identity: value.identity as SandboxCommandIdentityValue,
     probe: probe as StableSandboxCommand,
     install: install as StableSandboxCommand,
     probeIdentity,
     installIdentity,
-  });
+  };
 }
 
 function sha256(value: string): string {
@@ -316,6 +316,8 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
   const normalized = normalizeInstallToolOptions(options);
   const probePlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.probe) ?? {
     truth: "opaque",
+    label: undefined,
+    condition: undefined,
     reason: {
       code: "custom-stable-command",
       summary: "custom probe callback; commands are only known when it runs",
@@ -323,15 +325,17 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
   };
   const installPlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.install) ?? {
     truth: "opaque",
+    label: undefined,
+    condition: undefined,
     reason: {
       code: "custom-stable-command",
       summary: "custom installer callback; commands are only known when it runs",
     },
   };
-  const probeMiss = Object.freeze({
+  const probeMiss = {
     code: "probe-miss",
     summary: `${normalized.tool} probe exits non-zero`,
-  });
+  };
   return definePlannedSandboxCommand(
     {
       id: "niceeval.sandbox.install-tool",
@@ -358,6 +362,7 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
     {
       truth: "conditional",
       label: `installTool(${JSON.stringify(normalized.tool)})`,
+      condition: undefined,
       children: [
         { ...probePlan, label: "probe" },
         { ...installPlan, label: "install", condition: probeMiss },

@@ -125,7 +125,7 @@ it("seals large Attempt payloads as chunks and reads the complete value after la
           const readRun = yield* reader.readRun(selection.runRefs[0]!);
           if (readRun.state !== "available") throw new Error("Run is unavailable");
           for (const member of readRun.value.members) {
-            if (member.attempt === null) throw new Error("Attempt is absent");
+            if (member.attempt === undefined) throw new Error("Attempt is absent");
             const readAttempt = yield* reader.readAttempt(member.attempt);
             if (readAttempt.state !== "available") throw new Error("Attempt is unavailable");
             const value = yield* reader.read(readAttempt.value.owner, attachment);

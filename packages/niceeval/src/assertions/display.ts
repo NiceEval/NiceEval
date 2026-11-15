@@ -31,10 +31,10 @@ function shrinkTo(text: string, target: number): string {
 /** The portable fields required for a compact Assertion line. */
 export interface CompactAssertionSummary {
   readonly title: string;
-  readonly matcher?: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
+  readonly matcher: string | undefined;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
   readonly additionalFailures: number;
 }
 

@@ -13,7 +13,7 @@ import { sandboxCapabilities } from "./backend.ts";
 /** 一条命令这次实际生效的上限,以及它是不是用户显式声明的。 */
 export interface CommandLimit {
   /** 缺席 = 这条命令没有上限(没有 deadline,也没人显式给)。 */
-  timeoutMs?: number;
+  timeoutMs: number | undefined;
   /** `true` = 用户代码给这条命令显式传了 `timeout`,那是有意声明,不是默认值。 */
   explicit: boolean;
 }
@@ -26,13 +26,13 @@ export interface CommandLimit {
  */
 export function commandLimit(
   opts: Pick<CommandOptions, "timeoutMs"> | undefined,
-  base: { commandTimeoutMs?: number; deadlineAt?: number },
+  base: { commandTimeoutMs: number | undefined; deadlineAt: number | undefined },
   now = Date.now(),
 ): CommandLimit {
   if (opts?.timeoutMs !== undefined) return { timeoutMs: opts.timeoutMs, explicit: true };
   if (base.deadlineAt !== undefined) return { timeoutMs: Math.max(1, base.deadlineAt - now), explicit: false };
   if (base.commandTimeoutMs !== undefined) return { timeoutMs: base.commandTimeoutMs, explicit: false };
-  return { explicit: false };
+  return { explicit: false, timeoutMs: undefined };
 }
 
 /**

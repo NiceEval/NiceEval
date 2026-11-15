@@ -2,7 +2,6 @@
 // TableContentView 与 entity-lists 共用这份判别联合；输入必须已经闭合，组件不会
 // 读取 Sample、Analysis、SQLite snapshot 或 repository。
 
-import type { MetricFormat } from "./format.ts";
 import type { Verdict as PublicVerdict } from "../../../../../shared/types.ts";
 import { formatMetricScalar, formatPlainNumber, metricStateText, missingText, verdictMark } from "./format.ts";
 import {
@@ -47,18 +46,15 @@ export type MetricIssue =
 
 /** A closed metric cell. Extra producer-owned fields remain structurally compatible. */
 export interface MetricValue<Value = number> {
-  readonly value: Value | null;
+  readonly value: Value | undefined;
   readonly state: MetricState;
   readonly samples: number;
   readonly total: number;
   readonly basis: MetricBasis;
   readonly issues: readonly MetricIssue[];
   readonly refs: readonly EvidenceRef[];
-  readonly unit?: string;
-  readonly source?: "reported" | "estimated" | "mixed" | null;
-  readonly format?: MetricFormat;
-  readonly better?: "higher" | "lower" | "neutral";
-  readonly bounds?: { readonly min?: number; readonly max?: number };
+  readonly unit: string | undefined;
+  readonly source: "reported" | "estimated" | "mixed" | undefined;
 }
 
 /** 判定计票:passed / failed / errored / skipped。 */
@@ -85,45 +81,48 @@ export type Cell =
       readonly kind: "metric";
       readonly metric: MetricValue;
       /** Hide the compact samples/total suffix only when an adjacent region presents coverage. */
-      readonly showCoverage?: boolean;
+      readonly showCoverage: boolean;
     }
   | {
       readonly kind: "verdict";
-      readonly verdict?: Verdict;
+      readonly mode: "single";
+      readonly verdict: Verdict;
       /** Human result label; the underlying Verdict keeps its canonical value. */
-      readonly label?: LocalizedText;
-      readonly counts?: VerdictCounts;
-      readonly refs?: readonly AttemptLocator[];
+      readonly label: LocalizedText | undefined;
       /** 单判定形态省略判定词、只留判定符。 */
-      readonly bare?: boolean;
+      readonly bare: boolean;
+    }
+  | {
+      readonly kind: "verdict";
+      readonly mode: "counts";
+      readonly counts: VerdictCounts;
     }
   | {
       readonly kind: "score";
       readonly earned: number;
-      readonly possible?: number;
-      readonly missedScoreItems?: number;
+      readonly possible: number | undefined;
+      readonly missedScoreItems: number | undefined;
     }
-  | { readonly kind: "summary"; readonly text: string; readonly more?: number }
+  | { readonly kind: "summary"; readonly text: string }
   | {
       readonly kind: "locator";
       readonly locator: AttemptLocator;
-      readonly verdict?: Verdict;
+      readonly verdict: Verdict | undefined;
     }
-  | { readonly kind: "text"; readonly text: string; readonly detail?: string }
+  | { readonly kind: "text"; readonly text: string; readonly detail: string | undefined }
   | { readonly kind: "notApplicable" }
   | {
       readonly kind: "missing";
       readonly code: string;
       /** 补上这一格的命令,可直接复制。 */
-      readonly detail?: string;
+      readonly detail: string | undefined;
     };
 
 export interface ColumnSpec {
   readonly key: string;
-  readonly unit?: string;
-  readonly better?: "higher" | "lower";
+  readonly better: "higher" | "lower" | undefined;
   /** 列表头；省略时按 key 原样显示。 */
-  readonly header?: LocalizedText;
+  readonly header: LocalizedText;
 }
 
 /**
@@ -133,8 +132,8 @@ export interface ColumnSpec {
 export interface TableContentRow {
   readonly key: string;
   readonly cells: Readonly<globalThis.Record<string, Cell>>;
-  readonly subRows?: readonly TableContentRow[];
-  readonly variant?: "normal" | "placeholder" | "group";
+  readonly subRows: readonly TableContentRow[];
+  readonly variant: "normal" | "placeholder" | "group";
 }
 
 export interface TableContent {
@@ -144,7 +143,7 @@ export interface TableContent {
 
 interface CostProjectionLike {
   readonly state: "available" | "partial" | "unavailable" | "migration-required";
-  readonly combined: { readonly amount: string } | null;
+  readonly combined: { readonly amount: string } | undefined;
 }
 
 /** Structural narrowing for old closed cost metrics without reviving pricing wrappers. */
@@ -163,7 +162,10 @@ export function costProjectionOf(metric: MetricValue): CostProjectionLike | unde
   )
     return undefined;
   if (projection.combined === null) {
-    return { state: projection.state, combined: null };
+    return {
+      state: projection.state,
+      combined: undefined,
+    };
   }
   if (
     typeof projection.combined !== "object" ||
@@ -183,14 +185,14 @@ function formatMetricCellText(
   coverageDetail = false,
 ): string {
   const projection = costProjectionOf(cell.metric);
-  const display =
-    projection?.combined !== null && projection?.combined !== undefined
-      ? `$${projection.combined.amount}`
-      : cell.metric.value === null
-        ? metricStateText(cell.metric.state, locale)
-        : `${cell.metric.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.metric.value, cell.metric.unit, cell.metric.format, locale)}`;
+  function metricDisplay(): string {
+    if (projection?.combined !== undefined) return `$${projection.combined.amount}`;
+    if (cell.metric.value === undefined) return metricStateText(cell.metric.state, locale);
+    return `${cell.metric.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.metric.value, cell.metric.unit, undefined, locale)}`;
+  }
+  const display = metricDisplay();
   if (cell.showCoverage === false) return display;
-  if (coverageDetail && cell.metric.value !== null && cell.metric.samples < cell.metric.total) {
+  if (coverageDetail && cell.metric.value !== undefined && cell.metric.samples < cell.metric.total) {
     return `${display}\n  ${localeText(locale, "cell.coverageDetail", {
       samples: cell.metric.samples,
       total: cell.metric.total,
@@ -199,8 +201,8 @@ function formatMetricCellText(
   return `${display} · ${cell.metric.state}`;
 }
 
-export function formatCellText(cell: Cell | null | undefined, locale?: ReportLocale): string {
-  if (cell == null) return "—";
+export function formatCellText(cell: Cell | undefined, locale?: ReportLocale): string {
+  if (cell === undefined) return "—";
   switch (cell.kind) {
     case "stack": {
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
@@ -235,10 +237,8 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict)} ` : "";
       return `${mark}${cell.locator}`;
     }
-    case "summary": {
-      const more = cell.more && cell.more > 0 ? ` +${cell.more} more` : "";
-      return `${cell.text}${more}`;
-    }
+    case "summary":
+      return cell.text;
     case "score": {
       const earned = formatPlainNumber(cell.earned);
       const score = cell.possible !== undefined ? `${earned} / ${formatPlainNumber(cell.possible)}` : earned;
@@ -248,10 +248,11 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
     }
     case "verdict": {
       const loc = locale ?? DEFAULT_REPORT_LOCALE;
-      if (cell.counts) {
+      if (cell.mode === "counts") {
+        const counts = cell.counts;
         const parts = (["passed", "failed", "errored", "skipped"] as const)
-          .filter((kind) => cell.counts![kind] > 0)
-          .map((kind) => `${cell.counts![kind]} ${localeText(loc, `verdict.${kind}`)}`);
+          .filter((kind) => counts[kind] > 0)
+          .map((kind) => `${counts[kind]} ${localeText(loc, `verdict.${kind}`)}`);
         return parts.join(" · ") || "—";
       }
       if (cell.verdict !== undefined) {

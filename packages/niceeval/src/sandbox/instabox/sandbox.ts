@@ -20,10 +20,56 @@ import type {
   ManagedProcess,
   SandboxOperations,
 } from "../types.ts";
-import { INSTABOX_MACHINE_SPECS, type InstaboxSandboxOptions } from "../instabox.ts";
-import { InstaboxApi, InstaboxApiError, Machine, Operation, Snapshot, SSHToken } from "./api.ts";
+import type { InstaboxProviderPlan } from "../instabox.ts";
+import {
+  InstaboxApi,
+  instaboxRequestError,
+  type InstaboxRequestError,
+  Machine,
+  Operation,
+  Snapshot,
+  SSHToken,
+} from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
 import { InstaboxConnection } from "./connection.ts";
+
+function recoveryForRequest(cause: InstaboxRequestError): "not-found" | "operation-conflict" | "other" {
+  switch (cause._tag) {
+    case "InstaboxApiError": {
+      const reason = cause.reason;
+      switch (reason._tag) {
+        case "NotFound":
+          return "not-found";
+        case "OperationConflict":
+          return "operation-conflict";
+        case "RequestRejected":
+        case "ServiceUnavailable":
+          return "other";
+        default:
+          return reason satisfies never;
+      }
+    }
+    case "InstaboxProtocolError":
+    case "InstaboxOperationError":
+    case "InstaboxTransportError":
+      return "other";
+    default:
+      return cause satisfies never;
+  }
+}
+
+function allocationRejected(cause: InstaboxRequestError): boolean {
+  switch (cause._tag) {
+    case "InstaboxApiError":
+      return cause.status < 500;
+    case "InstaboxProtocolError":
+    case "InstaboxOperationError":
+    case "InstaboxTransportError":
+      return false;
+    default:
+      return cause satisfies never;
+  }
+}
 
 export class InstaboxBackend implements SandboxProviderBackend {
   readonly workdir = "/data/home/workspace";
@@ -42,7 +88,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
 
   private constructor(
     private readonly api: InstaboxApi,
-    private readonly options: InstaboxSandboxOptions & { readonly lifetimeMs: number },
+    private readonly options: InstaboxProviderPlan & { readonly lifetimeMs: number },
     private readonly operation: Operation,
     private readonly deadlineAt?: number,
     private readonly diagnostic: (input: DiagnosticInput) => void = () => {},
@@ -60,7 +106,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
   }
 
   static async create(
-    options: InstaboxSandboxOptions & { readonly lifetimeMs: number },
+    options: InstaboxProviderPlan & { readonly lifetimeMs: number },
     deadlineAt?: number,
     runId?: string,
     diagnostic?: (input: DiagnosticInput) => void,
@@ -71,18 +117,16 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const key = process.env.INSTABOX_API_KEY;
     if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
     const api = new InstaboxApi(key);
-    if (options.snapshotId !== undefined) {
-      const snapshot = await api.json(Snapshot, `/snapshots/${encodeURIComponent(options.snapshotId)}`);
-      if (snapshot.id !== options.snapshotId || snapshot.status !== "ready")
+    if (options.source._tag === "Snapshot") {
+      const snapshot = await api.json(Snapshot, `/snapshots/${encodeURIComponent(options.source.id)}`);
+      if (snapshot.id !== options.source.id || snapshot.status !== "ready")
         throw new Error("Instabox snapshot must match the configured ID and be ready");
     }
     const idempotencyKey = randomUUID();
     const body = JSON.stringify({
-      ...(options.snapshotId !== undefined
-        ? { snapshotId: options.snapshotId }
-        : { templateId: options.templateId ?? options.template ?? "universal" }),
+      ...(options.source._tag === "Snapshot" ? { snapshotId: options.source.id } : { templateId: options.source.id }),
       name: `niceeval-${idempotencyKey}`,
-      ...(options.resources ?? INSTABOX_MACHINE_SPECS["4/8"]),
+      ...options.resources,
       deleteAfterSeconds: Math.ceil(options.lifetimeMs / 1000),
       autoSuspendAfterSeconds: 0,
       maxRunMinutes: -1,
@@ -96,7 +140,8 @@ export class InstaboxBackend implements SandboxProviderBackend {
     try {
       operation = await request();
     } catch (cause) {
-      if (cause instanceof InstaboxApiError && cause.status < 500) throw cause;
+      const failure = instaboxRequestError(cause);
+      if (allocationRejected(failure)) throw failure;
       // Replay only the same allocation identity, never allocate a second machine.
       try {
         operation = await request();
@@ -142,7 +187,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     return startInstaboxProcess({
       token: this.token,
       process: { ...input, cwd: resolveSandboxPath(this.workdir, input.cwd) },
-      pathPrepend: this.options.pathPrepend ?? [],
+      pathPrepend: this.options.pathPrepend,
       root,
       retire: (cause) => {
         this.retirementCause ??= cause;
@@ -162,7 +207,11 @@ export class InstaboxBackend implements SandboxProviderBackend {
     if (options.user !== undefined && options.user !== "root")
       throw new Error("Instabox supports only the snapshot login user or an explicit root override");
     options.signal?.throwIfAborted();
-    const limit = commandLimit(options, { ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }) });
+    const limit = commandLimit(options, {
+      // Instabox has no provider command timeout separate from the Attempt deadline.
+      commandTimeoutMs: undefined,
+      deadlineAt: this.deadlineAt,
+    });
     const timeout =
       limit.timeoutMs === undefined ? undefined : AbortSignal.timeout(Math.max(1, Math.ceil(limit.timeoutMs)));
     const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), ...(timeout ? [timeout] : [])]);
@@ -186,8 +235,8 @@ export class InstaboxBackend implements SandboxProviderBackend {
       const process = await this.startProcess(
         {
           argv: [command, ...args],
-          ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-          ...(options.env === undefined ? {} : { env: options.env }),
+          cwd: options.cwd,
+          env: options.env,
         },
         options.user === "root",
       );
@@ -294,7 +343,8 @@ export class InstaboxBackend implements SandboxProviderBackend {
       await response.arrayBuffer();
       return true;
     } catch (cause) {
-      if (cause instanceof InstaboxApiError && cause.status === 404) {
+      const failure = instaboxRequestError(cause);
+      if (recoveryForRequest(failure) === "not-found") {
         // Distinguish an absent file from a deleted Machine.
         this.assertAvailable();
         try {
@@ -304,7 +354,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
         }
         return false;
       }
-      throw cause;
+      throw failure;
     }
   }
   async uploadFile(source: string | URL, target: string): Promise<void> {
@@ -413,8 +463,15 @@ export class InstaboxBackend implements SandboxProviderBackend {
           await this.api.wait(operation, signal);
           break;
         } catch (cause) {
-          if (cause instanceof InstaboxApiError && cause.status === 404) break;
-          if (!(cause instanceof InstaboxApiError && cause.code === "operation_conflict")) throw cause;
+          const failure = instaboxRequestError(cause);
+          switch (recoveryForRequest(failure)) {
+            case "not-found":
+              return;
+            case "other":
+              throw failure;
+            case "operation-conflict":
+              break;
+          }
           const machine = await this.api.json(Machine, this.path, { signal });
           if (machine.operationId !== null) {
             const operation = await this.api.json(Operation, `/operations/${encodeURIComponent(machine.operationId)}`, {

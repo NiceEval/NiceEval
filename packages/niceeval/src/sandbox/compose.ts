@@ -94,13 +94,12 @@ export function normalizeBuildPlatform(value: string): string {
   const [rawOs, rawArch] = value.trim().toLowerCase().split("/");
   const os = rawOs && rawArch ? rawOs : "linux";
   const arch = rawArch ?? rawOs ?? "";
-  const normalizedArch =
-    arch === "x86_64" || arch === "x64" || arch === "amd64"
-      ? "amd64"
-      : arch === "aarch64" || arch === "arm64"
-        ? "arm64"
-        : arch;
-  return `${os}/${normalizedArch}`;
+  function normalizedArch(): string {
+    if (arch === "x86_64" || arch === "x64" || arch === "amd64") return "amd64";
+    if (arch === "aarch64" || arch === "arm64") return "arm64";
+    return arch;
+  }
+  return `${os}/${normalizedArch()}`;
 }
 
 let dockerPlatformProbe: Promise<string> | undefined;
@@ -155,22 +154,22 @@ function probeDockerServerPlatform(): Promise<string | undefined> {
 
 export interface ComposeBuildDecl {
   readonly context: string;
-  readonly dockerfile?: string;
-  readonly args?: Readonly<globalThis.Record<string, string>>;
-  readonly target?: string;
+  readonly dockerfile: string | undefined;
+  readonly args: Readonly<globalThis.Record<string, string>> | undefined;
+  readonly target: string | undefined;
   /** Compose `build.platforms` 原样保留;进 BuildKey 前由收集器裁决(多元素拒绝)。 */
-  readonly platforms?: readonly string[];
+  readonly platforms: readonly string[] | undefined;
 }
 
 /** Describes one inspected Compose service; its platform overrides the default build platform when explicitly set. */
 export interface ComposeServiceInspection {
   readonly name: string;
-  readonly build?: ComposeBuildDecl;
+  readonly build: ComposeBuildDecl | undefined;
   /** service 级 `platform`:Compose 用它决定构建与运行平台,压过 DOCKER_DEFAULT_PLATFORM。 */
-  readonly platform?: string;
-  readonly image?: string;
-  readonly networkMode?: string;
-  readonly workingDir?: string;
+  readonly platform: string | undefined;
+  readonly image: string | undefined;
+  readonly networkMode: string | undefined;
+  readonly workingDir: string | undefined;
   /** 原始 volume 条目(短语法字符串或长语法摘要)。 */
   readonly volumes: readonly string[];
 }
@@ -210,7 +209,15 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
   const localFiles: ComposeLocalFileRef[] = topLevelLocalFiles(doc);
   for (const [name, value] of Object.entries(servicesNode as globalThis.Record<string, unknown>)) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      services.push({ name, volumes: [] });
+      services.push({
+        name,
+        build: undefined,
+        platform: undefined,
+        image: undefined,
+        networkMode: undefined,
+        workingDir: undefined,
+        volumes: [],
+      });
       continue;
     }
     const svc = value as globalThis.Record<string, unknown>;
@@ -219,19 +226,11 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
     }
     services.push({
       name,
-      ...(parseBuild(svc.build) !== undefined ? { build: parseBuild(svc.build)! } : {}),
-      ...(typeof svc.platform === "string" ? { platform: svc.platform } : {}),
-      ...(typeof svc.image === "string" ? { image: svc.image } : {}),
-      ...(typeof svc.network_mode === "string"
-        ? { networkMode: svc.network_mode }
-        : typeof svc.networkMode === "string"
-          ? { networkMode: svc.networkMode }
-          : {}),
-      ...(typeof svc.working_dir === "string"
-        ? { workingDir: svc.working_dir }
-        : typeof svc.workingDir === "string"
-          ? { workingDir: svc.workingDir }
-          : {}),
+      build: parseBuild(svc.build),
+      platform: typeof svc.platform === "string" ? svc.platform : undefined,
+      image: typeof svc.image === "string" ? svc.image : undefined,
+      networkMode: composeStringValue(svc.network_mode, svc.networkMode),
+      workingDir: composeStringValue(svc.working_dir, svc.workingDir),
       volumes: volumeStrings(svc.volumes),
     });
   }
@@ -299,12 +298,20 @@ function managedNetworkNames(
   }
   const managed = [...used].filter((n) => !external.has(n));
   // 没有服务显式声明网络时,Compose 建的是 project 的 default 网络。
-  return managed.length > 0 ? managed : used.size > 0 ? [] : ["default"];
+  if (managed.length > 0) return managed;
+  if (used.size > 0) return [];
+  return ["default"];
+}
+
+function composeStringValue(primary: unknown, alternate: unknown): string | undefined {
+  if (typeof primary === "string") return primary;
+  if (typeof alternate === "string") return alternate;
+  return undefined;
 }
 
 function parseBuild(value: unknown): ComposeBuildDecl | undefined {
   if (typeof value === "string") {
-    return { context: value };
+    return { context: value, dockerfile: undefined, args: undefined, target: undefined, platforms: undefined };
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const b = value as globalThis.Record<string, unknown>;
@@ -320,10 +327,10 @@ function parseBuild(value: unknown): ComposeBuildDecl | undefined {
       : undefined;
   return {
     context,
-    ...(dockerfile !== undefined ? { dockerfile } : {}),
-    ...(args !== undefined ? { args } : {}),
-    ...(target !== undefined ? { target } : {}),
-    ...(platforms !== undefined && platforms.length > 0 ? { platforms } : {}),
+    dockerfile,
+    args,
+    target,
+    platforms: platforms !== undefined && platforms.length > 0 ? platforms : undefined,
   };
 }
 
@@ -337,8 +344,8 @@ function volumeStrings(value: unknown): string[] {
     }
     if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
       const v = entry as globalThis.Record<string, unknown>;
-      const source = typeof v.source === "string" ? v.source : typeof v.Source === "string" ? v.Source : "";
-      const target = typeof v.target === "string" ? v.target : typeof v.Target === "string" ? v.Target : "";
+      const source = composeStringValue(v.source, v.Source) ?? "";
+      const target = composeStringValue(v.target, v.Target) ?? "";
       const type = typeof v.type === "string" ? v.type : "";
       out.push([type, source, target].filter(Boolean).join(":"));
     }
@@ -527,11 +534,9 @@ function composeConfigRunner(
  * 模型只在内存解码;config 失败只报安全阶段与 exit code,绝不带 stdout/stderr/模型原文。
  */
 async function assertComposeEffectiveModelSecurity(opts: {
-  readonly composePath: string;
-  readonly env?: Readonly<globalThis.Record<string, string>>;
-  readonly runComposeConfig?: (projectName: string) => Promise<ComposeCommandResult>;
+  readonly runComposeConfig: (projectName: string) => Promise<ComposeCommandResult>;
 }): Promise<void> {
-  const runConfig = opts.runComposeConfig ?? composeConfigRunner(opts.composePath, opts.env);
+  const runConfig = opts.runComposeConfig;
   const models = new Map<string, ComposeEffectiveModel>();
   for (const project of COMPOSE_PLAN_SENTINEL_PROJECTS) {
     let result: ComposeCommandResult;
@@ -646,6 +651,9 @@ export function leakGateHintsFromInspection(
       buildContexts.push({
         contextDir,
         label: `compose service ${svc.name}`,
+
+        dockerignorePath: undefined,
+        extraIgnoreRules: undefined,
       });
     }
     for (const vol of svc.volumes) {
@@ -662,14 +670,14 @@ export function leakGateHintsFromInspection(
   }
   return {
     buildContexts,
-    ...(bindMounts.length > 0 ? { bindMounts } : {}),
+    bindMounts,
   };
 }
 
 /** 读 Compose 文件并产出泄题门 hints(供 discover / prepare 挂 attachLeakGateHints)。 */
 export function leakGateHintsFromComposeFile(
   file: string | URL,
-  opts: { readonly mainService: string; readonly baseDir?: string },
+  opts: { readonly mainService: string; readonly baseDir: string | undefined },
 ): Effect.Effect<
   { hints: LeakGateHints; inspection: ComposeInspection; composePath: string },
   ComposeBuildCollectionError
@@ -746,7 +754,7 @@ export interface ComposeBuildCollection {
   /** 本次进 BuildKey 的目标平台;构建执行拿同一个值。 */
   readonly platform: string;
   /** 兼容旧 provider identity 的 inert fingerprint marker；不参与 carry gate。 */
-  readonly providerIdentityMarker?: JsonValue;
+  readonly providerIdentityMarker: JsonValue | undefined;
   readonly bindMountDigests: Readonly<globalThis.Record<string, string>>;
   readonly configContents: Readonly<globalThis.Record<string, string>>;
 }
@@ -795,7 +803,7 @@ function collectComposeBuildsInternal(
   return Effect.gen(function* () {
     const { hints, inspection, composePath } = yield* leakGateHintsFromComposeFile(opts.file, {
       mainService: opts.mainService,
-      ...(opts.baseDir === undefined ? {} : { baseDir: opts.baseDir }),
+      baseDir: opts.baseDir,
     });
     // physical planning 安全门:合成声明 + 双哨兵有效模型,早于 BuildKey 收集与任何携带决策。
     const raw = yield* Effect.tryPromise({
@@ -809,9 +817,7 @@ function collectComposeBuildsInternal(
     yield* Effect.tryPromise({
       try: () =>
         assertComposeEffectiveModelSecurity({
-          composePath,
-          ...(opts.env === undefined ? {} : { env: opts.env }),
-          ...(runComposeConfig === undefined ? {} : { runComposeConfig: runComposeConfig }),
+          runComposeConfig: runComposeConfig ?? composeConfigRunner(composePath, opts.env),
         }),
       catch: (cause) => composeCollectionError("security", cause),
     });
@@ -912,6 +918,9 @@ function collectComposeBuildsInternal(
           const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
             contextDir,
             label: `compose service ${service.name}`,
+
+            dockerignorePath: undefined,
+            extraIgnoreRules: undefined,
           }).pipe(Effect.mapError((cause) => composeCollectionError("identity", cause)));
           const collected = yield* Effect.try({
             try: () => {
@@ -978,7 +987,7 @@ function collectComposeBuildsInternal(
       inspection,
       imageRefs,
       platform,
-      ...(providerIdentityMarker === undefined ? {} : { providerIdentityMarker }),
+      providerIdentityMarker,
       bindMountDigests,
       configContents,
     };
@@ -1064,11 +1073,10 @@ function composeBuildTag(buildKey: BuildKey): string {
 // Overlay + materialize
 // ---------------------------------------------------------------------------
 
-/** Carries the generated Compose overlay and project identity; its optional path is a host-side materialization detail. */
+/** Carries the generated Compose overlay and project identity. */
 export interface ComposeOverlay {
   readonly yaml: string;
   readonly projectName: string;
-  readonly overlayPath?: string;
 }
 
 /** 生成受管 overlay:labels / 可选 project 名。不改 dns、extra_hosts、volumes、depends_on。 */
@@ -1132,17 +1140,17 @@ export function buildComposeIdentityOverlay(opts: {
 
 /** Supplies prepared case context and resource-lifetime controls for Compose materialization; lifetimeMs caps the physical resource group, not just one command. */
 export interface MaterializeComposeOpts {
-  readonly runId?: string;
-  readonly creationLabels?: Readonly<Record<string, string>>;
+  readonly runId?: string | undefined;
+  readonly creationLabels?: Readonly<Record<string, string>> | undefined;
   readonly ctx: SandboxMaterializeContext;
-  readonly timeout?: number;
-  readonly feedback?: ScopedFeedback;
-  readonly baseDir?: string;
-  readonly platform?: string;
+  readonly timeout?: number | undefined;
+  readonly feedback?: ScopedFeedback | undefined;
+  readonly baseDir?: string | undefined;
+  readonly platform?: string | undefined;
   /** Runner 持有的 provisioning 并发槽；退避期间临时归还，避免网络抖动拖住整批并发。 */
-  readonly provisionSlot?: ProvisionSlot;
+  readonly provisionSlot?: ProvisionSlot | undefined;
   /** Compose 资源组的最长物理寿命；附着的主 Sandbox 用同一完成态做复用确认。 */
-  readonly lifetimeMs?: number;
+  readonly lifetimeMs?: number | undefined;
   /** 测试可注入:跳过真实 docker compose,直接返回已构造的主 Sandbox。 */
   readonly _testHooks?: {
     readonly runCompose?: typeof runDockerCompose;
@@ -1156,10 +1164,10 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly evalId: string;
   readonly profile: string;
   readonly mainService: string;
-  readonly user?: string;
+  readonly user: string | undefined;
   readonly env: Readonly<Record<string, string>>;
-  readonly pathPrepend?: readonly string[];
-  readonly projectName?: string;
+  readonly pathPrepend: readonly string[];
+  readonly projectName: string | undefined;
   readonly collection: ComposeBuildCollection;
   readonly caseKey: import("./identity.ts").CaseKey;
   readonly identity: JsonValue;
@@ -1321,7 +1329,7 @@ export function materializeDockerComposeProviderCase(
       if (opts.ctx.signal?.aborted) return yield* Effect.interrupt;
 
       // dockerode 是 optional peer：compose 实现在 materialize 热路径才加载 docker.ts。
-      const { classifyProvisionError, DockerSandbox } = yield* Effect.tryPromise({
+      const { classifyProvisionError, DockerSandbox, defaultDockerSandboxOptions } = yield* Effect.tryPromise({
         try: () => import("./docker.ts"),
         catch: (cause) => cause,
       });
@@ -1384,12 +1392,13 @@ export function materializeDockerComposeProviderCase(
         opts._testHooks?.attachMain ??
         ((id: string) =>
           DockerSandbox.attach(id, {
-            ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
-            ...(opts.lifetimeMs === undefined ? {} : { lifetimeMs: opts.lifetimeMs }),
-            ...(opts.feedback === undefined ? {} : { feedback: opts.feedback }),
+            ...defaultDockerSandboxOptions,
+            timeout: opts.timeout,
+            lifetimeMs: opts.lifetimeMs,
+            feedback: opts.feedback,
             releaseMode: "detach",
-            ...(plan.user !== undefined ? { user: plan.user } : {}),
-            ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
+            user: plan.user,
+            pathPrepend: plan.pathPrepend,
           }));
       const attached = yield* Effect.tryPromise({
         try: () => attach(containerId),
@@ -1439,6 +1448,7 @@ export function materializeDockerComposeProviderCase(
 
       const materialized: MaterializedSandboxCase = {
         sandbox,
+        beforeCache: { _tag: "None" },
         // 生产路径 attach 返回 raw DockerSandbox(自带 provider backend capabilities),直接作为
         // author backend;测试 hook 注入的普通 Sandbox 走 customSandboxBackend 显式适配,不回读
         // provider 私有成员。
@@ -1446,7 +1456,7 @@ export function materializeDockerComposeProviderCase(
           opts._testHooks?.attachMain === undefined
             ? (attached as unknown as DockerSandbox)
             : customSandboxBackend(sandbox),
-        services,
+        services: { _tag: "Available", value: services },
         group,
         caseKind: "compose",
         caseKey: plan.caseKey,

@@ -1,9 +1,10 @@
 import type { InspectionSuccessDocumentFor } from "@niceeval/inspection/public.ts";
+import { closeAdapterIdentity } from "../../data/adapter-identity.ts";
 import { availableValue, type AttemptSummaryData, unavailableValue } from "../details/compute.ts";
 
 export interface AttemptPageModel {
-  readonly verdictCauses?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"];
-  readonly diagnostics?: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"];
+  readonly verdictCauses: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["verdictCauses"] | undefined;
+  readonly diagnostics: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["diagnostics"] | undefined;
   readonly locator: string;
   readonly runId: string;
   readonly experimentId: string;
@@ -24,35 +25,35 @@ export function closeAttemptPage(
   );
   const score = attempt.attempt.score;
   const totalScore = score.state === "complete" ? score.earned : undefined;
-  return Object.freeze({
+  return {
     locator: attempt.attempt.locator,
     verdictCauses: attempt.attempt.verdictCauses,
     diagnostics: attempt.attempt.diagnostics,
     runId: attempt.attempt.originRun.runId,
     experimentId: attempt.attempt.originRun.experimentId,
     evalId: attempt.attempt.core.evalId,
-    summary: Object.freeze({
+    summary: {
       experimentId: attempt.attempt.originRun.experimentId,
-      adapter: attempt.attempt.originRun.context.execution.adapter,
-      identity: Object.freeze({
+      adapter: closeAdapterIdentity(attempt.attempt.originRun.context.execution.adapter),
+      identity: {
         runId: attempt.attempt.originRun.runId,
         evalId: attempt.attempt.core.evalId,
         attempt: slot === undefined ? unavailableValue<number>() : availableValue(slot.attemptOrdinal),
-      }),
+      },
       verdict: attempt.attempt.verdict ?? "unknown",
       startedAt: new Date(attempt.attempt.originRun.startedAt).toISOString(),
       durationMs: unavailableValue<number>(),
-      capabilities: Object.freeze({
+      capabilities: {
         source: attempt.attempt.sections.sources.state,
         execution: attempt.attempt.sections.trace.state,
         timing: attempt.attempt.sections.timing.state,
         diff: attempt.attempt.sections.diff.state,
-      }),
-      ...(totalScore === undefined ? {} : { totalScore }),
-    }),
-    assertionEntryIds: Object.freeze(attempt.attempt.assertions.entries.map(({ entryId }) => entryId)),
-    traceItemIds: Object.freeze([...trace.trace.identityIndex.itemIds]),
-    toolOccurrenceIds: Object.freeze([...trace.trace.identityIndex.toolOccurrenceIds.ids]),
-    commandIds: Object.freeze([...trace.trace.identityIndex.commandIds]),
-  });
+      },
+      totalScore,
+    },
+    assertionEntryIds: attempt.attempt.assertions.entries.map(({ entryId }) => entryId),
+    traceItemIds: trace.trace.identityIndex.itemIds,
+    toolOccurrenceIds: trace.trace.identityIndex.toolOccurrenceIds.ids,
+    commandIds: trace.trace.identityIndex.commandIds,
+  };
 }

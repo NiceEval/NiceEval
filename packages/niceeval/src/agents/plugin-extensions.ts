@@ -3,18 +3,21 @@ import { basename, extname, resolve } from "node:path";
 import type { Agent, SkillSpec, McpServer } from "./types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import type { PluginAgentExtensions } from "../plugin/contracts.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 
 type CodingAgentKind = "codex" | "claudeCode" | "bub";
 interface ExtensionConfig {
-  readonly skills?: readonly SkillSpec[];
-  readonly mcpServers?: readonly McpServer[];
-  readonly plugins?: readonly { readonly name: string }[];
-  readonly pythonPlugins?: readonly { readonly package: string }[];
-  readonly configFile?: string;
-  readonly settingsFile?: string;
-  readonly before?: readonly SandboxCommand[];
-  readonly after?: readonly SandboxCommand[];
+  readonly skills?: readonly SkillSpec[] | undefined;
+  readonly mcpServers?: readonly McpServer[] | undefined;
+  readonly plugins?: readonly { readonly name: string }[] | undefined;
+  readonly pythonPlugins?: readonly { readonly package: string }[] | undefined;
+  readonly configFile?: string | undefined;
+  readonly settingsFile?: string | undefined;
+  readonly before?: readonly SandboxCommand[] | undefined;
+  readonly after?: readonly SandboxCommand[] | undefined;
 }
+// 合并补丁边界：显式 undefined 不得抹掉既有配置。
+type ExtensionPatch = { readonly [Key in keyof ExtensionConfig]?: Exclude<ExtensionConfig[Key], undefined> };
 export interface PluginAgentContribution {
   readonly extension: PluginAgentExtensions;
   readonly source: string;
@@ -25,13 +28,9 @@ function skillNames(skill: SkillSpec): readonly string[] {
   if (skill.name !== undefined) return [skill.name];
   const path = resolve(skill.path);
   const file = basename(path);
-  return [
-    file.toLowerCase() === "skill.md"
-      ? basename(resolve(path, ".."))
-      : extname(file).toLowerCase() === ".md"
-        ? basename(file, extname(file))
-        : file,
-  ];
+  if (file.toLowerCase() === "skill.md") return [basename(resolve(path, ".."))];
+  if (extname(file).toLowerCase() === ".md") return [basename(file, extname(file))];
+  return [file];
 }
 /** Registration captures factory options without evaluating connection or credential providers. */
 export function attachCodingAgentExtensions<Config extends ExtensionConfig>(
@@ -79,11 +78,11 @@ export function attachCodingAgentExtensions<Config extends ExtensionConfig>(
         throw new TypeError(`${source} has no agent.${kind} extension for the selected Adapter.`);
       if (kind === "bub" && extension.mcpServers !== undefined)
         throw new TypeError(`${source}: Bub does not support agent.mcpServers.`);
-      const addition: ExtensionConfig = {
+      // 合并补丁边界：未提供的扩展不能覆盖已声明的配置。
+      const addition: ExtensionPatch = omitUndefined({
         ...extension[kind],
-        ...(extension.skills === undefined ? {} : { skills: extension.skills }),
-        ...(extension.mcpServers === undefined ? {} : { mcpServers: extension.mcpServers }),
-      };
+        ...omitUndefined({ skills: extension.skills, mcpServers: extension.mcpServers }),
+      });
       record(addition, source);
       const append = <T>(first: readonly T[] | undefined, second: readonly T[] | undefined) =>
         second === undefined ? first : [...(first ?? []), ...second];
@@ -96,12 +95,7 @@ export function attachCodingAgentExtensions<Config extends ExtensionConfig>(
       merged = {
         ...merged,
         ...addition,
-        ...(skills === undefined ? {} : { skills }),
-        ...(mcpServers === undefined ? {} : { mcpServers }),
-        ...(before === undefined ? {} : { before }),
-        ...(after === undefined ? {} : { after }),
-        ...(plugins === undefined ? {} : { plugins }),
-        ...(pythonPlugins === undefined ? {} : { pythonPlugins }),
+        ...omitUndefined({ skills, mcpServers, before, after, plugins, pythonPlugins }),
       };
     }
     return rebuild(merged as Config);

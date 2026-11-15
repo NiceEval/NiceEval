@@ -59,6 +59,9 @@ describe("Docker Compose provider real cleanup", () => {
         evalId: `docker/abort-cleanup-${suffix}`,
         profile: `docker-abort-cleanup-${suffix}`,
         mainService: "client",
+        user: undefined,
+        pathPrepend: [],
+        projectName: undefined,
         env: {},
         collection,
         caseKey: computeCaseKey({

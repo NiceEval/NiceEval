@@ -1,4 +1,5 @@
 import { Data, type Effect } from "effect";
+import type { RunStorageCommandError } from "../storage/sqlite.ts";
 import type { PublicationCutoff, RunDetail, RunState, RunSummary } from "../protocol.ts";
 
 export type { RunDetail, RunSlot, RunState, RunSummary } from "../protocol.ts";
@@ -7,14 +8,14 @@ export type { RunDetail, RunSlot, RunState, RunSummary } from "../protocol.ts";
 export interface RunListRequest {
   readonly cwd: string;
   /** Select exactly one Invocation, as with `run list --invocation`. */
-  readonly invocationId?: string;
+  readonly invocationId?: string | undefined;
   /** Include any selected state; provide at least one when filtering. */
-  readonly states?: readonly [RunState, ...RunState[]];
+  readonly states?: readonly [RunState, ...RunState[]] | undefined;
   /** Match an Experiment ID path prefix, as with `run list --experiment`. */
-  readonly experimentIdPrefix?: string;
+  readonly experimentIdPrefix?: string | undefined;
   /** Keep the newest n matching Runs; must be a positive safe integer. */
-  readonly limit?: number;
-  readonly continuation?: string;
+  readonly limit?: number | undefined;
+  readonly continuation?: string | undefined;
 }
 
 /** Selects an exact Run ID in the project at cwd; this is not an Experiment prefix or Attempt locator. */
@@ -36,7 +37,7 @@ export interface RunListResult {
   readonly runs: readonly RunSummary[];
   /** Count matching Runs excluded by limit at this publication cutoff. */
   readonly omitted: number;
-  readonly continuation?: string;
+  readonly continuation: string | undefined;
 }
 
 /** Returns exact Run detail at a publication cutoff; Run completion state is separate from individual Attempt Verdicts. */
@@ -69,7 +70,7 @@ export class RunReadError extends Data.TaggedError("RunReadError")<{
     | "run-filter-invalid"
     | "run-read-failed";
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause: RunStorageCommandError | undefined;
 }> {}
 
 /** Reports a refused or failed Run deletion; active or referenced Runs cannot be deleted through this operation. */
@@ -83,7 +84,7 @@ export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
     | "run-lifecycle-adapter-unavailable"
     | "run-delete-failed";
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause: RunStorageCommandError | undefined;
 }> {}
 
 /** Reports refused or failed recovery; owner termination must be established before an abandoned Run can be recovered. */
@@ -98,7 +99,7 @@ export class RunRecoverError extends Data.TaggedError("RunRecoverError")<{
     | "run-lifecycle-adapter-unavailable"
     | "run-recover-failed";
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause: RunStorageCommandError | undefined;
 }> {}
 
 /** Provides lazy Node Host operations for listing, reading, deleting and recovering Runs; each execution owns and closes its resources. */

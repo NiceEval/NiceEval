@@ -3,6 +3,8 @@
 
 import { Data, Schema } from "effect";
 import type { JsonValue } from "../shared/types.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import { digestBytes, digestOf } from "./identity.ts";
 import {
   isRegisteredSandboxContent,
@@ -68,19 +70,18 @@ export type SandboxCapability = string;
 export interface SandboxChangeFrequency {
   readonly value: number;
   readonly source: "explicit" | "defaulted";
-  readonly preset?: keyof typeof changeFrequency | undefined;
 }
 
 /** Names and schedules a before action; lower changeFrequency wins only among dependency-ready actions, and label affects display rather than identity. */
 export interface SandboxBeforeActionOptions {
   readonly id: string;
   /** Human 进度与 debug 的显示名；省略时显示 id，不参与身份。 */
-  readonly label?: string;
-  readonly changeFrequency?: number;
-  readonly dependsOn?: readonly SandboxActionRef[];
-  readonly requires?: readonly SandboxCapability[];
-  readonly provides?: readonly SandboxCapability[];
-  readonly cache?: SandboxActionCacheOptions;
+  readonly label?: string | undefined;
+  readonly changeFrequency?: number | undefined;
+  readonly dependsOn?: readonly SandboxActionRef[] | undefined;
+  readonly requires?: readonly SandboxCapability[] | undefined;
+  readonly provides?: readonly SandboxCapability[] | undefined;
+  readonly cache?: SandboxActionCacheOptions | undefined;
 }
 
 export interface SandboxActionCacheOptions {
@@ -88,29 +89,29 @@ export interface SandboxActionCacheOptions {
    * Complete side-effect surface changed by this action. Omission is the
    * conservative `all` promise; this is never a partial-cache selector.
    */
-  readonly state?: SandboxActionState;
-  readonly fingerprint?: JsonValue;
+  readonly state?: SandboxActionState | undefined;
+  readonly fingerprint?: JsonValue | undefined;
 }
 
 /** Reusable family instances default to the family id; inline built-ins keep SandboxBeforeActionOptions. */
 export interface SandboxActionInstanceOptions {
-  readonly id?: string;
-  readonly label?: string;
-  readonly changeFrequency?: number;
-  readonly dependsOn?: readonly SandboxActionRef[];
-  readonly requires?: readonly SandboxCapability[];
-  readonly provides?: readonly SandboxCapability[];
-  readonly cache?: SandboxActionCacheOptions;
+  readonly id?: string | undefined;
+  readonly label?: string | undefined;
+  readonly changeFrequency?: number | undefined;
+  readonly dependsOn?: readonly SandboxActionRef[] | undefined;
+  readonly requires?: readonly SandboxCapability[] | undefined;
+  readonly provides?: readonly SandboxCapability[] | undefined;
+  readonly cache?: SandboxActionCacheOptions | undefined;
 }
 
 /** Names an action instance used during cleanup; after actions execute from the cleanup stack and are not cached. */
 export interface SandboxAfterActionOptions {
-  readonly id?: string;
+  readonly id?: string | undefined;
 }
 
 export interface NormalizedSandboxBeforeMetadata {
   readonly id: string;
-  readonly label?: string;
+  readonly label: string | undefined;
   readonly changeFrequency: SandboxChangeFrequency;
   readonly dependsOn: readonly SandboxActionRef[];
   readonly requires: readonly SandboxCapability[];
@@ -120,12 +121,12 @@ export interface NormalizedSandboxBeforeMetadata {
 /** Declares one argv-based Sandbox process step; arguments are passed literally and timeoutMs is in milliseconds. */
 export interface ExecSandboxStepInput {
   readonly executable: string;
-  readonly args?: readonly string[];
-  readonly cwd?: string;
-  readonly env?: Readonly<globalThis.Record<string, string>>;
-  readonly user?: string;
-  readonly timeoutMs?: number;
-  readonly stdin?: string;
+  readonly args?: readonly string[] | undefined;
+  readonly cwd?: string | undefined;
+  readonly env?: Readonly<globalThis.Record<string, string>> | undefined;
+  readonly user?: string | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly stdin?: string | undefined;
 }
 
 /** Declares text to write at a Sandbox path; the content is literal and is not a template or shell expression. */
@@ -160,10 +161,12 @@ export interface CheckoutGitSandboxStepInput {
   readonly repository: string;
   readonly ref: string;
   readonly to: string;
-  readonly sparse?: {
-    readonly include?: readonly string[];
-    readonly exclude?: readonly string[];
-  };
+  readonly sparse?:
+    | {
+        readonly include?: readonly string[] | undefined;
+        readonly exclude?: readonly string[] | undefined;
+      }
+    | undefined;
 }
 
 /** An opaque supported primitive in a declarative action; third parties compose these primitives rather than registering new step kinds. */
@@ -172,19 +175,21 @@ export interface SandboxStep {
   readonly kind: "exec" | "putText" | "putBytes" | "transferFile" | "transferDirectory" | "checkoutGit";
 }
 
-/** Describes the executable primitive plan with bounded content identities; environment values and stdin contents are not exposed in its public projection. */
+type SandboxStdinPlan =
+  | { readonly stdinDigest: undefined; readonly stdinBytes: undefined }
+  | { readonly stdinDigest: string; readonly stdinBytes: number };
+
+/** Describes an executable primitive using bounded content identities, without exposing environment values or stdin contents. */
 export type SandboxStepPlan =
-  | {
+  | ({
       readonly kind: "exec";
       readonly executable: string;
       readonly args: readonly string[];
-      readonly cwd?: string | undefined;
-      readonly user?: string | undefined;
-      readonly timeoutMs?: number | undefined;
-      readonly envKeys?: readonly string[] | undefined;
-      readonly stdinDigest?: string | undefined;
-      readonly stdinBytes?: number | undefined;
-    }
+      readonly cwd: string | undefined;
+      readonly user: string | undefined;
+      readonly timeoutMs: number | undefined;
+      readonly envKeys: readonly string[] | undefined;
+    } & SandboxStdinPlan)
   | { readonly kind: "putText"; readonly path: string; readonly digest: string; readonly bytes: number }
   | { readonly kind: "putBytes"; readonly path: string; readonly digest: string; readonly bytes: number }
   | {
@@ -197,7 +202,7 @@ export type SandboxStepPlan =
       readonly repository: string;
       readonly ref: string;
       readonly to: string;
-      readonly sparse?:
+      readonly sparse:
         | {
             readonly include: readonly string[];
             readonly exclude: readonly string[];
@@ -218,10 +223,10 @@ export type SandboxStepPresentation =
       readonly command:
         | { readonly kind: "argv"; readonly executable: string; readonly args: readonly string[] }
         | { readonly kind: "shell"; readonly command: string };
-      readonly cwd?: string;
-      readonly user?: string;
-      readonly timeoutMs?: number;
-      readonly envKeys?: readonly string[];
+      readonly cwd: string | undefined;
+      readonly user: string | undefined;
+      readonly timeoutMs: number | undefined;
+      readonly envKeys: readonly string[] | undefined;
     }
   | { readonly kind: "putText"; readonly path: string; readonly digest: string; readonly bytes: number }
   | { readonly kind: "putBytes"; readonly path: string; readonly digest: string; readonly bytes: number }
@@ -229,13 +234,13 @@ export type SandboxStepPresentation =
       readonly kind: "transferFile";
       readonly digest: string;
       readonly to: string;
-      readonly bytes?: number;
+      readonly bytes: number | undefined;
     }
   | {
       readonly kind: "transferDirectory";
       readonly digest: string;
       readonly to: string;
-      readonly bytes?: number;
+      readonly bytes: number | undefined;
     }
   | { readonly kind: "checkoutGit"; readonly repository: string; readonly ref: string; readonly to: string };
 
@@ -257,7 +262,7 @@ export interface SandboxActionFingerprintPlan {
 /** Describes normalized action input, steps and fingerprints for planning; it is not a mutable live execution handle. */
 export interface SandboxActionPlan {
   readonly id: string;
-  readonly label?: string | undefined;
+  readonly label: string | undefined;
   readonly family: string;
   readonly state: SandboxActionState;
   readonly input: JsonValue;
@@ -290,10 +295,12 @@ export type NonEmptySandboxSteps = readonly [SandboxStep, ...SandboxStep[]];
 export interface SandboxActionDefinition<A, I extends JsonValue> {
   readonly id: string;
   readonly input: Schema.Codec<A, I, never, never>;
-  readonly cache?: {
-    readonly state?: SandboxActionState;
-    readonly fingerprint?: JsonValue | ((input: A) => JsonValue);
-  };
+  readonly cache?:
+    | {
+        readonly state?: SandboxActionState | undefined;
+        readonly fingerprint?: JsonValue | ((input: A) => JsonValue) | undefined;
+      }
+    | undefined;
   readonly steps: (input: A) => NonEmptySandboxSteps;
 }
 
@@ -317,8 +324,8 @@ export type SandboxActionDefinitionErrorReason =
 export class SandboxActionDefinitionError extends Data.TaggedError("SandboxActionDefinitionError")<{
   readonly reason: SandboxActionDefinitionErrorReason;
   readonly message: string;
-  readonly field?: string;
-  readonly cause?: unknown;
+  readonly field: string | undefined;
+  readonly cause: ExternalCause | undefined;
 }> {}
 
 function actionError(
@@ -330,8 +337,8 @@ function actionError(
   return new SandboxActionDefinitionError({
     reason,
     message,
-    ...(field === undefined ? {} : { field }),
-    ...(cause === undefined ? {} : { cause }),
+    field,
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
   });
 }
 
@@ -354,18 +361,11 @@ function nonEmptyString(value: unknown, path: string): string {
   return value;
 }
 
-function stringArray(value: unknown, path: string): readonly string[] {
+function stringArray(value: unknown, path: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
     throw actionError("steps", `${path} must be an array of non-empty strings`, path);
   }
-  return Object.freeze([...value]);
-}
-
-function presetFor(value: number): keyof typeof changeFrequency | undefined {
-  if (value === changeFrequency.rare) return "rare";
-  if (value === changeFrequency.normal) return "normal";
-  if (value === changeFrequency.frequent) return "frequent";
-  return undefined;
+  return value;
 }
 
 export function normalizeSandboxChangeFrequency(value: unknown, path = "changeFrequency"): SandboxChangeFrequency {
@@ -375,16 +375,14 @@ export function normalizeSandboxChangeFrequency(value: unknown, path = "changeFr
     throw actionError("metadata", `${path} must be a finite non-negative number`, path);
   }
   const normalized = Object.is(selected, -0) ? 0 : selected;
-  const preset = presetFor(normalized);
-  return Object.freeze({
+  return {
     value: normalized,
     source,
-    ...(preset === undefined ? {} : { preset }),
-  });
+  };
 }
 
 function normalizeCapabilities(value: unknown, path: string): readonly SandboxCapability[] {
-  if (value === undefined) return Object.freeze([]);
+  if (value === undefined) return [];
   const capabilities = stringArray(value, path);
   if (new Set(capabilities).size !== capabilities.length) {
     throw actionError("metadata", `${path} must not contain duplicate capabilities`, path);
@@ -437,14 +435,14 @@ export function normalizeSandboxBeforeMetadata(
   if (new Set(ids).size !== ids.length) {
     throw actionError("metadata", `${path}.dependsOn must not contain duplicate refs`, `${path}.dependsOn`);
   }
-  return Object.freeze({
+  return {
     id: nonEmptyString(value.id, `${path}.id`),
-    ...(value.label === undefined ? {} : { label: value.label as string }),
+    label: value.label === undefined ? undefined : nonEmptyString(value.label, `${path}.label`),
     changeFrequency: normalizeSandboxChangeFrequency(value.changeFrequency, `${path}.changeFrequency`),
-    dependsOn: Object.freeze([...dependsOn]),
+    dependsOn,
     requires: normalizeCapabilities(value.requires, `${path}.requires`),
     provides: normalizeCapabilities(value.provides, `${path}.provides`),
-  });
+  };
 }
 
 function cloneJson(value: unknown, path: string, ancestors = new WeakSet<object>()): JsonValue {
@@ -464,9 +462,7 @@ function cloneJson(value: unknown, path: string, ancestors = new WeakSet<object>
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return Object.freeze(
-        value.map((child, index) => cloneJson(child, `${path}[${index}]`, ancestors)),
-      ) as unknown as JsonValue;
+      return value.map((child, index) => cloneJson(child, `${path}[${index}]`, ancestors));
     }
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
@@ -476,22 +472,30 @@ function cloneJson(value: unknown, path: string, ancestors = new WeakSet<object>
     for (const key of Object.keys(value as globalThis.Record<string, unknown>).sort()) {
       output[key] = cloneJson((value as globalThis.Record<string, unknown>)[key], `${path}.${key}`, ancestors);
     }
-    return Object.freeze(output);
+    return output;
   } finally {
     ancestors.delete(value);
   }
 }
 
-function normalizeSandboxActionCache(value: unknown, path: string): Readonly<SandboxActionCacheOptions> | undefined {
-  if (value === undefined) return undefined;
+interface NormalizedSandboxActionCache {
+  /** Omitted means no instance override; filling `all` here would hide duplicate declarations. */
+  readonly state: SandboxActionState | undefined;
+  /** Supplemental identity is independent of the declared state override. */
+  readonly fingerprint: JsonValue | undefined;
+}
+
+const noInstanceCache: NormalizedSandboxActionCache = { state: undefined, fingerprint: undefined };
+
+function normalizeSandboxActionCache(value: unknown, path: string): NormalizedSandboxActionCache {
+  if (value === undefined) return noInstanceCache;
   assertRecord(value, path);
   assertOnlyKeys(value, new Set(["state", "fingerprint"]), path);
   const state = normalizeSandboxActionState(value.state, `${path}.state`);
-  if (value.fingerprint !== undefined) cloneJson(value.fingerprint, `${path}.fingerprint`);
-  return Object.freeze({
-    ...(value.state === undefined ? {} : { state }),
-    ...(value.fingerprint === undefined ? {} : { fingerprint: value.fingerprint as JsonValue }),
-  });
+  return {
+    state: value.state === undefined ? undefined : state,
+    fingerprint: value.fingerprint === undefined ? undefined : cloneJson(value.fingerprint, `${path}.fingerprint`),
+  };
 }
 
 function normalizeSandboxActionState(value: unknown, path: string): SandboxActionState {
@@ -513,7 +517,12 @@ function envRecord(value: unknown, path: string): Readonly<globalThis.Record<str
     }
     env[key] = child;
   }
-  return Object.freeze(env);
+  return env;
+}
+
+function stdinPlan(stdin: string | undefined): SandboxStdinPlan {
+  if (stdin === undefined) return { stdinDigest: undefined, stdinBytes: undefined };
+  return { stdinDigest: `sha256:${digestBytes(stdin)}`, stdinBytes: Buffer.byteLength(stdin) };
 }
 
 function makeStep<K extends SandboxStep["kind"]>(
@@ -526,7 +535,7 @@ function makeStep<K extends SandboxStep["kind"]>(
   const step = { kind } as SandboxStep;
   Object.defineProperty(step, SANDBOX_STEP, { value: true });
   SANDBOX_STEPS.add(step);
-  SANDBOX_STEP_DATA.set(step, Object.freeze(data));
+  SANDBOX_STEP_DATA.set(step, data);
   return Object.freeze(step);
 }
 
@@ -534,10 +543,10 @@ function execPresentation(
   executable: string,
   args: readonly string[],
   options: {
-    readonly cwd?: string;
-    readonly user?: string;
-    readonly timeoutMs?: number;
-    readonly env?: Readonly<globalThis.Record<string, string>>;
+    readonly cwd: string | undefined;
+    readonly user: string | undefined;
+    readonly timeoutMs: number | undefined;
+    readonly env: Readonly<globalThis.Record<string, string>> | undefined;
   },
   command: Extract<SandboxStepPresentation, { readonly kind: "exec" }>["command"] = {
     kind: "argv",
@@ -545,19 +554,14 @@ function execPresentation(
     args,
   },
 ): Extract<SandboxStepPresentation, { readonly kind: "exec" }> {
-  return Object.freeze({
+  return {
     kind: "exec" as const,
-    command:
-      command.kind === "argv"
-        ? Object.freeze({ ...command, args: Object.freeze([...command.args]) })
-        : Object.freeze({ ...command }),
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(options.user === undefined ? {} : { user: options.user }),
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-    ...(options.env === undefined || Object.keys(options.env).length === 0
-      ? {}
-      : { envKeys: Object.freeze(Object.keys(options.env)) }),
-  });
+    command,
+    cwd: options.cwd,
+    user: options.user,
+    timeoutMs: options.timeoutMs,
+    envKeys: options.env === undefined || Object.keys(options.env).length === 0 ? undefined : Object.keys(options.env),
+  };
 }
 
 function normalizeTransferSource(
@@ -571,10 +575,10 @@ function normalizeTransferSource(
   if (!isRegisteredSandboxContent(source) || source.kind !== expectedKind) {
     throw actionError("steps", `${path} must be a ${expectedKind} handle returned by registerSandboxContent()`, path);
   }
-  return Object.freeze({
-    identity: Object.freeze({ kind: "content", contentKind: source.kind, digest: source.digest }),
-    plan: Object.freeze({ kind: "content", digest: source.digest }),
-  });
+  return {
+    identity: { kind: "content", contentKind: source.kind, digest: source.digest },
+    plan: { kind: "content", digest: source.digest },
+  };
 }
 
 function registeredContentBytes(source: RegisteredSandboxContent): number {
@@ -595,7 +599,7 @@ export const sandboxStep = Object.freeze({
       "sandboxStep.exec input",
     );
     const executable = nonEmptyString(input.executable, "sandboxStep.exec input.executable");
-    const args = input.args === undefined ? Object.freeze([]) : stringArray(input.args, "sandboxStep.exec input.args");
+    const args = input.args === undefined ? [] : stringArray(input.args, "sandboxStep.exec input.args");
     const cwd = input.cwd === undefined ? undefined : nonEmptyString(input.cwd, "sandboxStep.exec input.cwd");
     const user = input.user === undefined ? undefined : nonEmptyString(input.user, "sandboxStep.exec input.user");
     if (
@@ -608,52 +612,47 @@ export const sandboxStep = Object.freeze({
       throw actionError("steps", "sandboxStep.exec input.stdin must be a string", "stdin");
     }
     const env = envRecord(input.env, "sandboxStep.exec input.env");
-    const identity: JsonValue = Object.freeze({
-      kind: "exec",
-      executable,
-      args: [...args],
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(user === undefined ? {} : { user }),
-      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      ...(env === undefined ? {} : { env: { ...env } }),
-      ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
-    });
-    const plan: SandboxStepPlan = Object.freeze({
+    const identity: JsonValue = omitUndefined({
       kind: "exec",
       executable,
       args,
-      ...(cwd === undefined ? {} : { cwd }),
-      ...(user === undefined ? {} : { user }),
-      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      ...(env === undefined || Object.keys(env).length === 0 ? {} : { envKeys: Object.freeze(Object.keys(env)) }),
-      ...(input.stdin === undefined
-        ? {}
-        : {
-            stdinDigest: `sha256:${digestBytes(input.stdin)}`,
-            stdinBytes: Buffer.byteLength(input.stdin),
-          }),
+      cwd,
+      user,
+      timeoutMs: input.timeoutMs,
+      env,
+      stdin: input.stdin,
     });
+    const plan: SandboxStepPlan = {
+      kind: "exec",
+      executable,
+      args,
+      cwd,
+      user,
+      timeoutMs: input.timeoutMs,
+      envKeys: env === undefined || Object.keys(env).length === 0 ? undefined : Object.keys(env),
+      ...stdinPlan(input.stdin),
+    };
     return makeStep("exec", {
       identity,
       plan,
       presentation: execPresentation(executable, args, {
-        ...(cwd === undefined ? {} : { cwd }),
-        ...(user === undefined ? {} : { user }),
-        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-        ...(env === undefined ? {} : { env }),
+        cwd,
+        user,
+        timeoutMs: input.timeoutMs,
+        env,
       }),
-      execution: Object.freeze({
+      execution: {
         kind: "exec" as const,
-        input: Object.freeze({
+        input: {
           executable,
           args,
-          ...(cwd === undefined ? {} : { cwd }),
-          ...(env === undefined ? {} : { env }),
-          ...(user === undefined ? {} : { user }),
-          ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
-        }),
-      }),
+          cwd,
+          env,
+          user,
+          timeoutMs: input.timeoutMs,
+          stdin: input.stdin,
+        },
+      },
     });
   },
 
@@ -666,13 +665,13 @@ export const sandboxStep = Object.freeze({
     const digest = `sha256:${digestBytes(input.text)}`;
     const bytes = Buffer.byteLength(input.text);
     return makeStep("putText", {
-      identity: Object.freeze({ kind: "putText", path, digest, bytes }),
-      plan: Object.freeze({ kind: "putText", path, digest, bytes }),
-      presentation: Object.freeze({ kind: "putText", path, digest, bytes }),
-      execution: Object.freeze({
+      identity: { kind: "putText", path, digest, bytes },
+      plan: { kind: "putText", path, digest, bytes },
+      presentation: { kind: "putText", path, digest, bytes },
+      execution: {
         kind: "putText" as const,
-        input: Object.freeze({ path, text: input.text }),
-      }),
+        input: { path, text: input.text },
+      },
     });
   },
 
@@ -686,13 +685,13 @@ export const sandboxStep = Object.freeze({
     const bytes = Uint8Array.from(input.bytes);
     const digest = `sha256:${digestBytes(bytes)}`;
     return makeStep("putBytes", {
-      identity: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
-      plan: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
-      presentation: Object.freeze({ kind: "putBytes", path, digest, bytes: bytes.byteLength }),
-      execution: Object.freeze({
+      identity: { kind: "putBytes", path, digest, bytes: bytes.byteLength },
+      plan: { kind: "putBytes", path, digest, bytes: bytes.byteLength },
+      presentation: { kind: "putBytes", path, digest, bytes: bytes.byteLength },
+      execution: {
         kind: "putBytes" as const,
-        input: Object.freeze({ path, bytes }),
-      }),
+        input: { path, bytes },
+      },
     });
   },
 
@@ -702,18 +701,18 @@ export const sandboxStep = Object.freeze({
     const source = normalizeTransferSource(input.source, "file", "sandboxStep.transferFile input.source");
     const to = nonEmptyString(input.to, "sandboxStep.transferFile input.to");
     return makeStep("transferFile", {
-      identity: Object.freeze({ kind: "transferFile", source: source.identity, to }),
-      plan: Object.freeze({ kind: "transferFile", source: source.plan, to }),
-      presentation: Object.freeze({
+      identity: { kind: "transferFile", source: source.identity, to },
+      plan: { kind: "transferFile", source: source.plan, to },
+      presentation: {
         kind: "transferFile",
         digest: input.source.digest,
         to,
         bytes: registeredContentBytes(input.source),
-      }),
-      execution: Object.freeze({
+      },
+      execution: {
         kind: "transferFile" as const,
-        input: Object.freeze({ source: input.source, to }),
-      }),
+        input: { source: input.source, to },
+      },
     });
   },
 
@@ -723,18 +722,18 @@ export const sandboxStep = Object.freeze({
     const source = normalizeTransferSource(input.source, "directory", "sandboxStep.transferDirectory input.source");
     const to = nonEmptyString(input.to, "sandboxStep.transferDirectory input.to");
     return makeStep("transferDirectory", {
-      identity: Object.freeze({ kind: "transferDirectory", source: source.identity, to }),
-      plan: Object.freeze({ kind: "transferDirectory", source: source.plan, to }),
-      presentation: Object.freeze({
+      identity: { kind: "transferDirectory", source: source.identity, to },
+      plan: { kind: "transferDirectory", source: source.plan, to },
+      presentation: {
         kind: "transferDirectory",
         digest: input.source.digest,
         to,
         bytes: registeredContentBytes(input.source),
-      }),
-      execution: Object.freeze({
+      },
+      execution: {
         kind: "transferDirectory" as const,
-        input: Object.freeze({ source: input.source, to }),
-      }),
+        input: { source: input.source, to },
+      },
     });
   },
 
@@ -748,32 +747,32 @@ export const sandboxStep = Object.freeze({
     if (input.sparse !== undefined) {
       assertRecord(input.sparse, "sandboxStep.checkoutGit input.sparse");
       assertOnlyKeys(input.sparse, new Set(["include", "exclude"]), "sandboxStep.checkoutGit input.sparse");
-      sparse = Object.freeze({
+      sparse = {
         include:
           input.sparse.include === undefined
-            ? Object.freeze([])
+            ? []
             : stringArray(input.sparse.include, "sandboxStep.checkoutGit input.sparse.include"),
         exclude:
           input.sparse.exclude === undefined
-            ? Object.freeze([])
+            ? []
             : stringArray(input.sparse.exclude, "sandboxStep.checkoutGit input.sparse.exclude"),
-      });
+      };
     }
-    const projection = Object.freeze({
+    const projection = {
       kind: "checkoutGit" as const,
       repository,
       ref,
       to,
       ...(sparse === undefined ? {} : { sparse }),
-    });
+    };
     return makeStep("checkoutGit", {
       identity: cloneJson(projection, "sandboxStep.checkoutGit identity"),
-      plan: projection,
-      presentation: Object.freeze({ kind: "checkoutGit", repository, ref, to }),
-      execution: Object.freeze({
+      plan: { kind: "checkoutGit", repository, ref, to, sparse },
+      presentation: { kind: "checkoutGit", repository, ref, to },
+      execution: {
         kind: "checkoutGit" as const,
-        input: Object.freeze({ repository, ref, to, ...(sparse === undefined ? {} : { sparse }) }),
-      }),
+        input: { repository, ref, to, sparse },
+      },
     });
   },
 });
@@ -817,8 +816,8 @@ export function sandboxShellStep(input: ExecSandboxStepInput, command: string): 
     presentation: execPresentation(
       input.executable,
       input.args ?? [],
-      input,
-      Object.freeze({ kind: "shell", command }),
+      { cwd: input.cwd, user: input.user, timeoutMs: input.timeoutMs, env: input.env },
+      { kind: "shell", command },
     ),
   });
 }
@@ -855,12 +854,12 @@ export function formatSandboxStepActivity(presentation: SandboxStepPresentation)
         presentation.command.kind === "shell"
           ? `shell ${show(presentation.command.command)}`
           : `exec ${[presentation.command.executable, ...presentation.command.args].map((part) => JSON.stringify(show(part))).join(" ")}`;
-      const details = [
-        presentation.cwd === undefined ? undefined : `cwd=${JSON.stringify(show(presentation.cwd))}`,
-        presentation.user === undefined ? undefined : `user=${JSON.stringify(show(presentation.user))}`,
-        presentation.timeoutMs === undefined ? undefined : `timeout=${presentation.timeoutMs}ms`,
-        presentation.envKeys === undefined ? undefined : `env keys=${JSON.stringify(presentation.envKeys.map(show))}`,
-      ].filter((value): value is string => value !== undefined);
+      const details: string[] = [];
+      if (presentation.cwd !== undefined) details.push(`cwd=${JSON.stringify(show(presentation.cwd))}`);
+      if (presentation.user !== undefined) details.push(`user=${JSON.stringify(show(presentation.user))}`);
+      if (presentation.timeoutMs !== undefined) details.push(`timeout=${presentation.timeoutMs}ms`);
+      if (presentation.envKeys !== undefined)
+        details.push(`env keys=${JSON.stringify(presentation.envKeys.map(show))}`);
       return details.length === 0 ? command : `${command} · ${details.join(" · ")}`;
     }
     case "putText":
@@ -875,12 +874,12 @@ export function formatSandboxStepActivity(presentation: SandboxStepPresentation)
 }
 
 function validateAfterOptions(value: unknown, defaultId: string): Readonly<{ readonly id: string }> {
-  if (value === undefined) return Object.freeze({ id: defaultId });
+  if (value === undefined) return { id: defaultId };
   assertRecord(value, "Sandbox after options");
   assertOnlyKeys(value, new Set(["id"]), "Sandbox after options");
-  return Object.freeze({
+  return {
     id: value.id === undefined ? defaultId : nonEmptyString(value.id, "Sandbox after options.id"),
-  });
+  };
 }
 
 function makeAction(data: SandboxActionData): SandboxAction {
@@ -929,9 +928,9 @@ export function defineSandboxAction<A, I extends JsonValue>(
   const instantiate = (
     input: A,
     metadata: NormalizedSandboxBeforeMetadata,
-    instanceCache?: SandboxActionCacheOptions,
+    instanceCache: NormalizedSandboxActionCache = noInstanceCache,
   ): SandboxActionData => {
-    if (definition.cache?.state !== undefined && instanceCache?.state !== undefined) {
+    if (definition.cache?.state !== undefined && instanceCache.state !== undefined) {
       throw actionError(
         "cache-state",
         `Sandbox action ${JSON.stringify(familyId)} cache.state must be declared exactly once; an instance cannot repeat or override the definition state`,
@@ -939,7 +938,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
       );
     }
     const state = normalizeSandboxActionState(
-      instanceCache?.state ?? definition.cache?.state,
+      instanceCache.state ?? definition.cache?.state,
       `Sandbox action ${JSON.stringify(familyId)} cache.state`,
     );
     let validated: A;
@@ -979,14 +978,14 @@ export function defineSandboxAction<A, I extends JsonValue>(
       );
     }
     const stepData = steps.map((step) => SANDBOX_STEP_DATA.get(step as object)!);
-    const plans = Object.freeze(stepData.map((entry) => entry.plan));
-    const automaticIdentity: JsonValue = Object.freeze({
+    const plans = stepData.map((entry) => entry.plan);
+    const automaticIdentity: JsonValue = {
       family: familyId,
       state,
       input: canonicalInput,
       steps: stepData.map((entry) => entry.identity),
-    });
-    const absentFingerprint: JsonValue = Object.freeze({ _tag: "Absent" });
+    };
+    const absentFingerprint: JsonValue = { _tag: "Absent" };
     let definitionSupplemental: JsonValue = absentFingerprint;
     const fingerprint = definition.cache?.fingerprint;
     if (fingerprint !== undefined) {
@@ -1005,7 +1004,7 @@ export function defineSandboxAction<A, I extends JsonValue>(
       }
     }
     let instanceSupplemental: JsonValue = absentFingerprint;
-    if (instanceCache?.fingerprint !== undefined) {
+    if (instanceCache.fingerprint !== undefined) {
       try {
         instanceSupplemental = cloneJson(
           instanceCache.fingerprint,
@@ -1020,26 +1019,26 @@ export function defineSandboxAction<A, I extends JsonValue>(
         );
       }
     }
-    const supplementalValue: JsonValue = Object.freeze({
+    const supplementalValue: JsonValue = {
       definition: definitionSupplemental,
       instance: instanceSupplemental,
-    });
+    };
     const automatic = `sha256:${digestOf(automaticIdentity)}`;
     const supplemental = `sha256:${digestOf(supplementalValue)}`;
     const combined = `sha256:${digestOf({ automatic, supplemental })}`;
-    return Object.freeze({
+    return {
       metadata,
       steps: Object.freeze([...steps]),
-      plan: Object.freeze({
+      plan: {
         id: metadata.id,
-        ...(metadata.label === undefined ? {} : { label: metadata.label }),
+        label: metadata.label,
         family: familyId,
         state,
         input: canonicalInput,
         steps: plans,
-        fingerprint: Object.freeze({ automatic, supplemental, combined }),
-      }),
-    });
+        fingerprint: { automatic, supplemental, combined },
+      },
+    };
   };
 
   const family = ((input: A, options?: SandboxActionInstanceOptions): SandboxAction => {
@@ -1065,13 +1064,14 @@ export function defineSandboxAction<A, I extends JsonValue>(
   Object.defineProperty(family, "after", {
     value: (input: A, options?: SandboxAfterActionOptions): SandboxAfterAction => {
       const after = validateAfterOptions(options, familyId);
-      const metadata: NormalizedSandboxBeforeMetadata = Object.freeze({
+      const metadata: NormalizedSandboxBeforeMetadata = {
         id: after.id,
-        changeFrequency: Object.freeze({ value: changeFrequency.normal, source: "defaulted", preset: "normal" }),
-        dependsOn: Object.freeze([]),
-        requires: Object.freeze([]),
-        provides: Object.freeze([]),
-      });
+        label: undefined,
+        changeFrequency: { value: changeFrequency.normal, source: "defaulted" },
+        dependsOn: [],
+        requires: [],
+        provides: [],
+      };
       return makeAfterAction(instantiate(input, metadata));
     },
     enumerable: true,
@@ -1155,10 +1155,12 @@ export interface GitCheckoutActionInput extends SandboxBeforeActionOptions {
   /** V1 accepts only a complete immutable Git object id; moving refs require a future planning lookup seam. */
   readonly ref: string;
   readonly to: string;
-  readonly sparse?: {
-    readonly include?: readonly string[];
-    readonly exclude?: readonly string[];
-  };
+  readonly sparse?:
+    | {
+        readonly include?: readonly string[] | undefined;
+        readonly exclude?: readonly string[] | undefined;
+      }
+    | undefined;
 }
 
 /** Declares an unconditional Git checkout during cleanup; it must be safe even when later before steps never ran. */
@@ -1167,10 +1169,12 @@ export interface GitCheckoutAfterActionInput {
   readonly repository: string;
   readonly ref: string;
   readonly to: string;
-  readonly sparse?: {
-    readonly include?: readonly string[];
-    readonly exclude?: readonly string[];
-  };
+  readonly sparse?:
+    | {
+        readonly include?: readonly string[] | undefined;
+        readonly exclude?: readonly string[] | undefined;
+      }
+    | undefined;
 }
 
 /** Creates declarative literal-text writes for before or after; constructing the action does not mutate a running Sandbox. */
@@ -1208,12 +1212,12 @@ const INLINE_BEFORE_KEYS = ["id", "label", "changeFrequency", "dependsOn", "requ
 function inlineBeforeOptions(input: SandboxBeforeActionOptions): SandboxActionInstanceOptions {
   return {
     id: input.id,
-    ...(input.label === undefined ? {} : { label: input.label }),
-    ...(input.changeFrequency === undefined ? {} : { changeFrequency: input.changeFrequency }),
-    ...(input.dependsOn === undefined ? {} : { dependsOn: input.dependsOn }),
-    ...(input.requires === undefined ? {} : { requires: input.requires }),
-    ...(input.provides === undefined ? {} : { provides: input.provides }),
-    ...(input.cache === undefined ? {} : { cache: input.cache }),
+    label: input.label,
+    changeFrequency: input.changeFrequency,
+    dependsOn: input.dependsOn,
+    requires: input.requires,
+    provides: input.provides,
+    cache: input.cache,
   };
 }
 
@@ -1337,27 +1341,23 @@ function normalizeGitCheckout(input: GitCheckoutActionInput | GitCheckoutAfterAc
       "ref",
     );
   }
-  let include: readonly string[] = Object.freeze([]);
-  let exclude: readonly string[] = Object.freeze([]);
+  let include: readonly string[] = [];
+  let exclude: readonly string[] = [];
   if (input.sparse !== undefined) {
     assertRecord(input.sparse, "gitCheckout input.sparse");
     assertOnlyKeys(input.sparse, new Set(["include", "exclude"]), "gitCheckout input.sparse");
     include =
-      input.sparse.include === undefined
-        ? Object.freeze([])
-        : stringArray(input.sparse.include, "gitCheckout input.sparse.include");
+      input.sparse.include === undefined ? [] : stringArray(input.sparse.include, "gitCheckout input.sparse.include");
     exclude =
-      input.sparse.exclude === undefined
-        ? Object.freeze([])
-        : stringArray(input.sparse.exclude, "gitCheckout input.sparse.exclude");
+      input.sparse.exclude === undefined ? [] : stringArray(input.sparse.exclude, "gitCheckout input.sparse.exclude");
   }
-  return Object.freeze({
+  return {
     repository: repository.href,
     commit,
     to: nonEmptyString(input.to, "gitCheckout input.to"),
     include,
     exclude,
-  });
+  };
 }
 
 const writeTextImpl = ((input: WriteTextActionInput): SandboxAction => {

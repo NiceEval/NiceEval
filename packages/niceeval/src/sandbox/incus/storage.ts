@@ -1,10 +1,11 @@
 import type { IncusControl } from "./control.ts";
 import { IncusProviderError } from "./errors.ts";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
 import type { ArtifactIntent } from "./repository.ts";
 
 export interface ArtifactStoragePolicy {
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
+  readonly artifactEstimatedBytes: number | undefined;
 }
 interface PoolReservations {
   bytes: number;
@@ -64,7 +65,7 @@ function capacityError(
       "Inspect niceeval sandbox provider inventory incus (add --development for that domain).",
       "Preview niceeval sandbox provider gc incus --unused-for <duration>; apply only a reviewed plan.",
     ],
-    ...(cause === undefined ? {} : { cause }),
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
   });
 }
 export async function inspectArtifactStorage(

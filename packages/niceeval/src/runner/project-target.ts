@@ -20,12 +20,12 @@ export interface ProjectCurrentExperimentTarget {
   readonly runConfigHash: string;
   readonly attempts: number;
   readonly adapter: AdapterIdentity;
-  readonly model?: string;
-  readonly models?: ResolvedModelRoles;
-  readonly reasoningEffort?: string;
+  readonly model: string | undefined;
+  readonly models: ResolvedModelRoles | undefined;
+  readonly reasoningEffort: string | undefined;
   readonly flags: ExperimentFlags;
-  readonly labels?: globalThis.Record<string, string | number>;
-  readonly description?: string;
+  readonly labels: globalThis.Record<string, string | number> | undefined;
+  readonly description: string | undefined;
   readonly evals: readonly ProjectCurrentEvalTarget[];
 }
 

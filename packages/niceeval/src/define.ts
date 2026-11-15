@@ -47,7 +47,7 @@ import {
   type CustomProviderSandboxOptions,
   type SandboxLayer,
 } from "./sandbox/layer.ts";
-import { Result, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { assertEvidenceCoverage } from "./assertions/coverage.ts";
 import {
   effectAgentCallback,
@@ -170,24 +170,26 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     defineEval,
     defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
-    ...(def.sandbox === undefined ? {} : { sandbox: def.sandbox }),
+    sandbox: def.sandbox,
     install,
     installers: def.installers ?? [],
-    ...(before === undefined ? {} : { before: def.before }),
-    ...(def.tracing === undefined ? {} : { tracing: def.tracing }),
-    ...(def.spanMapper === undefined ? {} : { spanMapper: def.spanMapper }),
+    before: def.before,
+    tracing: def.tracing,
+    spanMapper: def.spanMapper,
     send: def.send,
-    ...(def.classifySendFailure === undefined ? {} : { classifySendFailure: def.classifySendFailure }),
-    ...(after === undefined ? {} : { after: def.after }),
+    classifySendFailure: def.classifySendFailure,
+    after: def.after,
   };
   return attachAgentEffects(agent, {
     send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
-    ...(before === undefined
-      ? {}
-      : { before: (sandbox, context) => authorCallbackEffect(() => before(sandbox, context)) }),
-    ...(after === undefined
-      ? {}
-      : { after: (sandbox, context) => authorCallbackEffect(() => after(sandbox, { ...context, sandbox })) }),
+    before:
+      before === undefined
+        ? () => Effect.void
+        : (sandbox, context) => authorCallbackEffect(() => before(sandbox, context)),
+    after:
+      after === undefined
+        ? () => Effect.void
+        : (sandbox, context) => authorCallbackEffect(() => after(sandbox, { ...context, sandbox })),
   });
 }
 
@@ -201,21 +203,13 @@ export function makeSandboxAgent(
   const agent = defineSandboxAgent({
     ...publicDefinition,
     send: effectAgentCallback(send, (_input, context) => context.signal),
-    ...(before === undefined
-      ? {}
-      : {
-          before: effectAgentCallback(before, (_sandbox, context) => context.signal),
-        }),
-    ...(after === undefined
-      ? {}
-      : {
-          after: effectAgentCallback(after, (_sandbox, context) => context.signal),
-        }),
+    before: effectAgentCallback(before, (_sandbox, context) => context.signal),
+    after: effectAgentCallback(after, (_sandbox, context) => context.signal),
   });
   return attachAgentEffects(agent, {
     send,
-    ...(before === undefined ? {} : { before }),
-    ...(after === undefined ? {} : { after }),
+    before,
+    after,
   });
 }
 
@@ -232,17 +226,18 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
     defineEval,
     defineScoreEval,
     evidenceCoverage: def.evidenceCoverage,
-    ...(before === undefined ? {} : { before: def.before }),
-    ...(def.tracing === undefined ? {} : { tracing: def.tracing }),
-    ...(def.spanMapper === undefined ? {} : { spanMapper: def.spanMapper }),
+    before: def.before,
+    tracing: def.tracing,
+    spanMapper: def.spanMapper,
     send: def.send,
-    ...(def.classifySendFailure === undefined ? {} : { classifySendFailure: def.classifySendFailure }),
-    ...(after === undefined ? {} : { after: def.after }),
+    classifySendFailure: def.classifySendFailure,
+    after: def.after,
   };
   return attachAgentEffects(agent, {
     send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
-    ...(before === undefined ? {} : { before: (_sandbox, context) => authorCallbackEffect(() => before(context)) }),
-    ...(after === undefined ? {} : { after: (_sandbox, context) => authorCallbackEffect(() => after(context)) }),
+    before:
+      before === undefined ? () => Effect.void : (_sandbox, context) => authorCallbackEffect(() => before(context)),
+    after: after === undefined ? () => Effect.void : (_sandbox, context) => authorCallbackEffect(() => after(context)),
   });
 }
 
@@ -254,21 +249,13 @@ export function makeDirectAgent(
   const agent = defineAgent({
     ...publicDefinition,
     send: effectAgentCallback(send, (_input, context) => context.signal),
-    ...(before === undefined
-      ? {}
-      : {
-          before: effectAgentCallback(before, (context) => context.signal),
-        }),
-    ...(after === undefined
-      ? {}
-      : {
-          after: effectAgentCallback(after, (context) => context.signal),
-        }),
+    before: effectAgentCallback(before, (context) => context.signal),
+    after: effectAgentCallback(after, (context) => context.signal),
   });
   return attachAgentEffects(agent, {
     send,
-    ...(before === undefined ? {} : { before: (_sandbox, context) => before(context) }),
-    ...(after === undefined ? {} : { after: (_sandbox, context) => after(context) }),
+    before: (_sandbox, context) => before(context),
+    after: (_sandbox, context) => after(context),
   });
 }
 
@@ -453,14 +440,11 @@ export function defineExperiment(
   const flags = decodeExperimentFlags(def.flags === undefined ? {} : def.flags);
   return brandExperimentDefinition({
     ...author,
-    ...(models === undefined
-      ? {}
-      : {
-          models,
-          ...(models.default?.model == null ? {} : { model: models.default.model }),
-          ...(models.default?.reasoningEffort == null ? {} : { reasoningEffort: models.default.reasoningEffort }),
-        }),
-    ...(adapter === undefined ? {} : { adapter }),
+    models,
+    model: models?.default?.model ?? def.model,
+    reasoningEffort: models?.default?.reasoningEffort ?? def.reasoningEffort,
+    description: def.description,
+    adapter,
     flags:
       adapter?.kind === "custom" && adapter.parseFlags !== undefined
         ? parseAdapterFlags(adapter.parseFlags, flags)
@@ -470,9 +454,16 @@ export function defineExperiment(
     earlyExit: def.earlyExit ?? false,
     evals: Array.isArray(def.evals) ? Object.freeze([...def.evals]) : (def.evals ?? "*"),
     sandboxReuse: def.sandboxReuse === true,
-    ...(judge === undefined ? {} : { judge }),
-    ...(sharedState === undefined ? {} : { sharedState }),
-    ...(sandboxCache === undefined ? {} : { sandboxCache }),
+    judge,
+    sharedState,
+    sandboxCache,
+    timeoutMs: def.timeoutMs,
+    sandbox: def.sandbox,
+    sandboxLabels: def.sandboxLabels,
+    budget: def.budget,
+    maxConcurrency: def.maxConcurrency,
+    before: def.before,
+    after: def.after,
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
   });
 }
@@ -522,12 +513,13 @@ function normalizeEvalFields<const Sandbox extends SandboxLayer | undefined>(
   rejectRemovedField(def, "reporters", "Use Config.reporters for project-level reporting.");
   const judge = def.judge === undefined ? undefined : normalizeDefinitionJudge(def.judge, "defineEval() judge");
   return {
-    ...(def.description !== undefined ? { description: def.description } : {}),
+    requiredModelRoles: Object.freeze([]),
+    description: def.description,
     tags: Object.freeze([...(def.tags ?? [])]),
-    ...(def.sandbox !== undefined ? { sandbox: def.sandbox } : {}),
+    sandbox: def.sandbox,
     plugins: normalizePlugins(def.plugins ?? [], "defineEval plugins", "eval"),
-    ...(judge !== undefined ? { judge } : {}),
-    ...(def.timeoutMs !== undefined ? { timeoutMs: def.timeoutMs } : {}),
+    judge,
+    timeoutMs: def.timeoutMs,
     metadata: decodeJsonRecord(def.metadata ?? {}, "Eval metadata"),
     diff: Object.freeze({
       include: Object.freeze([...(def.diff?.include ?? [])]),

@@ -15,13 +15,13 @@ export class CliCommandCompositionError extends Error {
 }
 
 /** Feature-owned typed failure consumed by the one CLI failure boundary. */
-export class CliFeatureError extends Data.TaggedError("CliFeatureError")<{
+export class CliFeatureError<Cause> extends Data.TaggedError("CliFeatureError")<{
   readonly feature: string;
   readonly operation: string;
-  readonly cause: unknown;
+  readonly cause: Cause;
   readonly exitCode: number;
   /** Feature-owned terminal text; the root only writes it once. */
-  readonly display?: string;
+  readonly display: string | undefined;
 }> {}
 
 const COMMAND_NAME = /^[a-z][a-z0-9-]*$/u;
@@ -193,7 +193,7 @@ export interface CliRootToken {
 /** First positional Node token identifies the root without rewriting the raw argv. */
 export function locateCliRoot(tokens: readonly CliParsedToken[]): CliRootToken | undefined {
   const token = tokens.find((candidate) => candidate.kind === "positional");
-  return token === undefined ? undefined : Object.freeze({ index: token.index, name: token.value });
+  return token === undefined ? undefined : { index: token.index, name: token.value };
 }
 
 /** Delete exactly the command token: flags before/after it and `--` retain byte order. */
@@ -201,7 +201,7 @@ export function projectCliArgvWithoutRoot(argv: readonly string[], root: CliRoot
   if (root.index < 0 || root.index >= argv.length || argv[root.index] !== root.name) {
     throw new CliCommandCompositionError(`CLI root token ${JSON.stringify(root.name)} has an invalid argv index`);
   }
-  return Object.freeze(argv.filter((_, index) => index !== root.index));
+  return argv.filter((_, index) => index !== root.index);
 }
 
 function precedingGlobalHelpOrVersion(tokens: readonly CliParsedToken[], root: CliRootToken): boolean {
@@ -241,18 +241,18 @@ export function matchCliFeatureCommand<R, E>(
       token.name === "help" &&
       (token.index < root.index || !Object.hasOwn(command.options, "help")),
   );
-  if (applicationHelp) return Object.freeze({ kind: "application-option", option: "help", root });
+  if (applicationHelp) return { kind: "application-option", option: "help", root };
   const applicationVersion = parsed.tokens.some(
     (token) =>
       token.kind === "option" &&
       token.name === "version" &&
       (token.index < root.index || !Object.hasOwn(command.options, "version")),
   );
-  if (applicationVersion) return Object.freeze({ kind: "application-option", option: "version", root });
+  if (applicationVersion) return { kind: "application-option", option: "version", root };
   if (precedingGlobalHelpOrVersion(parsed.tokens, root)) {
     throw new CliCommandCompositionError("Application help/version routing lost its owner");
   }
-  return Object.freeze({ kind: "command", command, argv: projectCliArgvWithoutRoot(argv, root), root });
+  return { kind: "command", command, argv: projectCliArgvWithoutRoot(argv, root), root };
 }
 
 export function renderFeatureCommandIndex<R, E>(contributions: readonly CliCommandContribution<R, E>[]): string {

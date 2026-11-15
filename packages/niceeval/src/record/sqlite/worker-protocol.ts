@@ -170,16 +170,16 @@ export type RunCommand =
   | {
       readonly _tag: "run-read";
       readonly runId: string;
-      readonly cutoff?: import("../../run/storage/types.ts").PublicationCutoff;
+      readonly cutoff: import("../../run/storage/types.ts").PublicationCutoff | undefined;
     }
   | {
       readonly _tag: "run-list";
-      readonly input?: Parameters<typeof import("../../run/storage/sqlite.ts").listRunResourcesOnConnection>[1];
+      readonly input: Parameters<typeof import("../../run/storage/sqlite.ts").listRunResourcesOnConnection>[1];
     }
   | {
       readonly _tag: "run-read-attempt";
       readonly attemptId: string;
-      readonly cutoff?: import("../../run/storage/types.ts").PublicationCutoff;
+      readonly cutoff: import("../../run/storage/types.ts").PublicationCutoff | undefined;
     };
 
 export type StorageWorkerRequest =

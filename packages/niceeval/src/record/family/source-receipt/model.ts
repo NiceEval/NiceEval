@@ -1,4 +1,5 @@
 import type { Brand } from "effect";
+import { isObject } from "../../../shared/objects.ts";
 import {
   MAX_CANONICAL_DECIMAL_BYTES,
   MAX_DIRECT_CROSS_FAMILY_REFS,
@@ -208,7 +209,7 @@ export type ObservabilityEntityId = ObservabilityEntityIdByKind[ObservabilityEnt
 const CROCKFORD_BASE32_LOWER = "0123456789abcdefghjkmnpqrstvwxyz";
 const CROCKFORD_BASE32_CHARACTER = "[0123456789abcdefghjkmnpqrstvwxyz]";
 
-const OBSERVABILITY_ENTITY_PREFIXES = Object.freeze({
+const OBSERVABILITY_ENTITY_PREFIXES = {
   turn: "turn_",
   item: "item_",
   call: "call_",
@@ -219,7 +220,7 @@ const OBSERVABILITY_ENTITY_PREFIXES = Object.freeze({
   "usage-observation": "usage_",
   interval: "interval_",
   diagnostic: "diagnostic_",
-} as const);
+} as const;
 
 function entityIdPattern(prefix: string): RegExp {
   return new RegExp(`^${prefix}${CROCKFORD_BASE32_CHARACTER}{${OBSERVABILITY_ENTITY_ID_BASE32_LENGTH}}$`);
@@ -393,9 +394,8 @@ export function entityIdFromEntropy<Kind extends ObservabilityEntityKind>(
   entropy: Uint8Array,
 ): ObservabilityEntityIdForKind<Kind> | undefined {
   const suffix = encodeObservabilityEntityEntropy(entropy);
-  return suffix === undefined
-    ? undefined
-    : makeObservabilityEntityId(`${OBSERVABILITY_ENTITY_PREFIXES[kind]}${suffix}`, kind);
+  if (suffix === undefined) return undefined;
+  return makeObservabilityEntityId(`${OBSERVABILITY_ENTITY_PREFIXES[kind]}${suffix}`, kind);
 }
 
 export const ATTEMPT_OBSERVABILITY_FAMILY_SCHEMA_IDS = Object.freeze([
@@ -502,10 +502,6 @@ export type AttemptReferencesForFamily<_Family extends AttemptObservabilityFamil
 
 export type RunReferencesForFamily<_Family extends RunObservabilityFamilySchemaId> = RunReferenceTarget;
 
-function isObject(value: unknown): value is object {
-  return typeof value === "object" && value !== null;
-}
-
 function ownDataProperty(value: object, key: string): unknown {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined;
@@ -558,7 +554,8 @@ export function isRunReferenceTarget(value: unknown): value is RunReferenceTarge
 }
 
 export function compareObservabilityText(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 export function referenceTargetKey(target: ObservabilityReferenceTarget): string {
@@ -848,7 +845,7 @@ export function validateObservabilityCollection(
     (collection.state === "complete" && collection.limitations.length !== 0) ||
     (collection.state === "partial" && collection.limitations.length === 0)
   ) {
-    issues.push(Object.freeze({ code: "observability-collection-state-invalid" as const }));
+    issues.push({ code: "observability-collection-state-invalid" as const });
   }
   let previous: ObservabilityLimitation | undefined;
   const aggregateKeys = new Set<string>();
@@ -856,37 +853,31 @@ export function validateObservabilityCollection(
     const indexValue = makeNonNegativeSafeInteger(index);
     if (indexValue === undefined) throw new Error("Array index must be a safe integer");
     if (!isObservabilityLimitation(limitation)) {
-      issues.push(
-        Object.freeze({
-          code: "observability-limitation-invalid" as const,
-          index: indexValue,
-        }),
-      );
+      issues.push({
+        code: "observability-limitation-invalid" as const,
+        index: indexValue,
+      });
       continue;
     }
     if (previous !== undefined && compareObservabilityLimitation(previous, limitation) >= 0) {
       const positiveIndex = makePositiveSafeInteger(index);
       if (positiveIndex === undefined) throw new Error("Non-first array index must be positive");
-      issues.push(
-        Object.freeze({
-          code: "observability-limitation-order-invalid" as const,
-          index: positiveIndex,
-        }),
-      );
+      issues.push({
+        code: "observability-limitation-order-invalid" as const,
+        index: positiveIndex,
+      });
     }
     const aggregationKey = observabilityLimitationAggregationKey(limitation);
     if (aggregateKeys.has(aggregationKey)) {
       const positiveIndex = makePositiveSafeInteger(index);
       if (positiveIndex === undefined) throw new Error("Duplicate cannot be at index zero");
-      issues.push(
-        Object.freeze({
-          code: "observability-limitation-duplicate" as const,
-          index: positiveIndex,
-        }),
-      );
+      issues.push({
+        code: "observability-limitation-duplicate" as const,
+        index: positiveIndex,
+      });
     }
     aggregateKeys.add(aggregationKey);
     previous = limitation;
   }
-  return Object.freeze(issues);
+  return issues;
 }

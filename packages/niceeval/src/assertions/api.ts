@@ -10,7 +10,6 @@ import type {
   CollectionMatch,
   ManagedToolCalls,
   MatchDiagnostic,
-  NumericComparator,
   NumericMaterial,
   NumericComparisonMatch,
   ScoreMatch,
@@ -42,7 +41,7 @@ export interface AssertionSnapshotObject {
 }
 
 export interface AssertionDisplay {
-  readonly label?: string;
+  readonly label: string | undefined;
   readonly groupPath: readonly string[];
 }
 
@@ -63,7 +62,7 @@ export type AssertionCoverage =
 
 export type AssertionLimitation =
   | { readonly kind: "redacted"; readonly fieldCount: number }
-  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
+  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal: number | undefined }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" }
   | {
@@ -95,11 +94,7 @@ export type AssertionCriterion =
   | {
       /** Package-private runtime variant encoded as numeric-comparison. */
       readonly kind: "value-match";
-      readonly numeric: {
-        readonly comparator: NumericComparator;
-        readonly threshold: number;
-        readonly upperThreshold?: number;
-        readonly unit?: import("./quantity.ts").Unit;
+      readonly numeric: import("./match.ts").NumericComparison & {
         readonly subject:
           | { readonly kind: "explicit-value" }
           | {
@@ -131,13 +126,14 @@ export type AssertionCriterion =
       readonly scope: "turn" | "session" | "attempt";
       readonly occurrence: "tool" | "skill" | "event";
       readonly assertion: "present" | "absent" | "count" | "order";
-      readonly matcher?: string;
-      readonly quantifier?:
+      readonly matcher: string | undefined;
+      readonly quantifier:
         | { readonly kind: "absent" }
         | {
             readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
             readonly count: number;
-          };
+          }
+        | undefined;
     }
   | {
       readonly kind: "judge-measurement";
@@ -174,9 +170,9 @@ export type AssertionCriterion =
       readonly kind: "sandbox-result";
       readonly operation: "file-changed";
       readonly path: string;
-      readonly status?: "added" | "modified" | "deleted";
-      readonly before?: string;
-      readonly after?: string;
+      readonly status: "added" | "modified" | "deleted" | undefined;
+      readonly before: string | undefined;
+      readonly after: string | undefined;
     }
   | { readonly kind: "sandbox-result"; readonly operation: "file-deleted"; readonly path: string }
   | {
@@ -222,6 +218,7 @@ export type MatcherRelationStatus =
       readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
     };
 
+// Record JSON boundary: locators are shared with the persisted matcher artifact codec.
 export type MatcherSourceLocator =
   | {
       readonly kind: "tool-occurrence";
@@ -231,14 +228,14 @@ export type MatcherSourceLocator =
   | {
       readonly kind: "event";
       readonly eventId: string;
-      readonly toolOccurrenceId?: string | undefined;
+      readonly toolOccurrenceId?: string;
       readonly relation: MatcherRelationStatus;
     };
 
 export interface MatcherRetainedRow {
   readonly locator: MatcherSourceLocator;
   readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
-  readonly difference?: AssertionSnapshotValue;
+  readonly difference: AssertionSnapshotValue | undefined;
 }
 
 export interface MatcherQueryStep {
@@ -362,40 +359,40 @@ export type AssertionResult =
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     };
 
 /** One fully formed author/runtime result, before durable attachment encoding. */
@@ -410,7 +407,7 @@ export interface SealedAssertionEntry {
   readonly policy: AssertionPolicy;
   readonly control: import("./record/model.ts").AssertionControl;
   readonly observed: AssertionObserved;
-  readonly matcherArtifact?: MatcherQueryArtifact;
+  readonly matcherArtifact: MatcherQueryArtifact | undefined;
 }
 
 /**
@@ -478,40 +475,67 @@ export type BooleanAssertionEvaluation<Refined> =
   | {
       readonly state: "matched";
       readonly value: Refined;
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "mismatched";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "not-applicable";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     };
 
 /** A measurement is always a finite unit-interval value when it is available. */
-export type MeasurementAssertionEvaluation = { readonly receipt?: AssertionCollectionReceipt } & (
-  | { readonly state: "measured"; readonly value: number; readonly detail?: AssertionSnapshotObject }
+export type MeasurementAssertionEvaluation = { readonly receipt: AssertionCollectionReceipt | undefined } & (
+  | { readonly state: "measured"; readonly value: number; readonly detail: AssertionSnapshotObject | undefined }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
-      readonly detail?: AssertionSnapshotObject;
+      readonly detail: AssertionSnapshotObject | undefined;
     }
-  | { readonly state: "not-applicable"; readonly detail?: AssertionSnapshotObject }
-  | { readonly state: "errored"; readonly detail?: AssertionSnapshotObject }
+  | { readonly state: "not-applicable"; readonly detail: AssertionSnapshotObject | undefined }
+  | { readonly state: "errored"; readonly detail: AssertionSnapshotObject | undefined }
 );
+
+/** Construct an evaluator result once; diagnostic, collection receipt and retained artifact are independent facts. */
+export function matchedAssertionEvaluation<Refined>(
+  value: Refined,
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<Refined> {
+  return { state: "matched", value, diagnostic, receipt, matcherArtifact };
+}
+
+export function mismatchedAssertionEvaluation(
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<never> {
+  return { state: "mismatched", diagnostic, receipt, matcherArtifact };
+}
+
+export function unavailableAssertionEvaluation(
+  reason: "evidence-unavailable" | "source-unavailable" | "redacted",
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<never> {
+  return { state: "unavailable", reason, diagnostic, receipt, matcherArtifact };
+}
 
 export interface CapturedAssertionSnapshot {
   readonly material: Extract<AssertionMaterial, { readonly kind: "snapshot" }>;
@@ -521,14 +545,14 @@ export interface CapturedAssertionSnapshot {
 
 export interface AssertionRegistrationBase {
   /** @internal Seal the criterion for the actual local or managed evaluation path. */
-  readonly terminalCriterion?: () => AssertionCriterion;
-  readonly retainedBytes?: number;
-  readonly terminalReceipt?: () => AssertionCollectionReceipt;
+  readonly terminalCriterion: () => AssertionCriterion;
+  readonly retainedBytes: number;
+  readonly terminalReceipt: () => AssertionCollectionReceipt | undefined;
   readonly criterion: AssertionCriterion;
   readonly subject: AssertionMaterial;
-  readonly evidence?: readonly AssertionMaterial[];
-  readonly coverage?: AssertionCoverage;
-  readonly limitations?: readonly AssertionLimitation[];
+  readonly evidence: readonly AssertionMaterial[];
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
 }
 
 /**
@@ -538,20 +562,20 @@ export interface AssertionRegistrationBase {
  */
 export interface BooleanAssertionRegistration<Refined> extends AssertionRegistrationBase {
   /** Same-owner evidence produced by the post-run evaluator and sealed once. */
-  readonly terminalEvidence?: () => readonly AssertionMaterial[];
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
   /** Sealed when Attempt interruption prevents the ordinary evaluator from running. */
-  readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
+  readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
   readonly evaluate: () => Effect.Effect<BooleanAssertionEvaluation<Refined>, unknown, never>;
 }
 
 export interface MeasurementAssertionRegistration extends AssertionRegistrationBase {
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
-  readonly retainedBytes?: number;
-  readonly retainedImageBytes?: number;
+  readonly retainedBytes: number;
+  readonly retainedImageBytes: number;
   /** Complete terminal Content appended exactly once by the shared sealing path. */
-  readonly terminalEvidence?: () => readonly AssertionMaterial[];
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
   /** Terminal producer facts frozen by the shared Assertion sealing path. */
-  readonly terminalDetail?: () => AssertionSnapshotObject;
+  readonly terminalDetail: () => AssertionSnapshotObject | undefined;
   readonly evaluate: () => Effect.Effect<MeasurementAssertionEvaluation, unknown, never>;
 }
 
@@ -768,14 +792,14 @@ export type MeasurementAssertionHandle<
   : ScoreMeasurementAssertionHandle<HasCondition, HasScore>;
 
 export interface AssertionSealOptions {
-  readonly execution?: "completed" | "errored";
-  readonly explicitlySkipped?: boolean;
+  readonly execution: "completed" | "errored";
+  readonly explicitlySkipped: boolean;
   /**
    * The owning Attempt was interrupted before ordinary evaluation could
    * finish. Unsettled entries are sealed as producer-interrupted instead of
    * being silently omitted or evaluated on a detached runtime.
    */
-  readonly interrupted?: boolean;
+  readonly interrupted: boolean;
 }
 
 /** Sealing has no expected authoring failure after registration-time validation. */
@@ -833,9 +857,9 @@ export type AssertionScore =
 export interface SealedAttemptAssertions {
   readonly entries: readonly SealedAssertionEntry[];
   readonly evaluation: SealedAssertionEvaluation;
-  readonly workspaceDiff?: AgentWorkspaceDiff;
+  readonly workspaceDiff: AgentWorkspaceDiff | undefined;
   readonly verdict: AssertionVerdict;
-  readonly score?: AssertionScore;
+  readonly score: AssertionScore | undefined;
 }
 
 export interface AssertionsRuntime<Kind extends AssertionEvaluationKind> {

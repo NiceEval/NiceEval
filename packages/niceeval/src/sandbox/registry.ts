@@ -64,6 +64,9 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
         `  · [sandbox] failed to stop sandbox ${sb.sandboxId} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): ${msg}
 `.trimEnd(),
       data: { sandboxId: sb.sandboxId, message: msg },
+
+      code: undefined,
+      identity: undefined,
     });
   } finally {
     if (stopped) live.delete(sb);
@@ -83,6 +86,9 @@ export async function stopAllSandboxes(timeoutMs = DEFAULT_STOP_TIMEOUT_MS): Pro
     message: `  · [sandbox] force-cleaning ${all.length} sandboxes...
 `.trimEnd(),
     data: { count: all.length },
+
+    code: undefined,
+    identity: undefined,
   });
   await Promise.allSettled(all.map((sb) => stopSandbox(sb, timeoutMs)));
   return all.length;

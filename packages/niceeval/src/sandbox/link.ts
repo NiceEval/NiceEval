@@ -43,9 +43,19 @@ import {
 
 export interface SandboxLayerDeclarationSite {
   readonly file: string;
-  readonly line?: number;
-  readonly column?: number;
-  readonly expression?: string;
+  readonly source:
+    | { readonly _tag: "File" }
+    | {
+        readonly _tag: "Expression";
+        readonly line: number;
+        readonly column: number;
+        readonly expression: string;
+      };
+}
+
+/** Discovery knows the owning file before it has an exact authored expression. */
+export function sandboxLayerFileSite(file: string): SandboxLayerDeclarationSite {
+  return { file, source: { _tag: "File" } };
 }
 
 export interface LinkedSandboxLayerDeclarationSite {
@@ -62,19 +72,22 @@ export type SandboxDeclaredValue<Value> =
 export interface SandboxLayerContributionInput {
   readonly id: string;
   /** undefined 表示作者省略字段；显式 sandboxLayer() 与 undefined 不等价于 Direct Agent。 */
-  readonly layer?: SandboxLayer;
-  readonly declaredAt?: SandboxLayerDeclarationSite;
+  readonly layer: SandboxLayer | undefined;
+  readonly declaredAt: SandboxLayerDeclarationSite | undefined;
 }
 
 export interface SandboxLayerPairInput {
   readonly eval: SandboxLayerContributionInput;
-  readonly group?: SandboxLayerContributionInput;
+  readonly group: SandboxLayerContributionInput | undefined;
   readonly experiment: SandboxLayerContributionInput;
-  readonly agent: null | {
-    readonly kind: "direct" | "sandbox" | "custom";
-    readonly name: string;
-    readonly sandbox?: SandboxLayer<"command-only">;
-  };
+  readonly agent:
+    | undefined
+    | { readonly kind: "direct" | "custom"; readonly name: string }
+    | {
+        readonly kind: "sandbox";
+        readonly name: string;
+        readonly sandbox: SandboxLayer<"command-only"> | undefined;
+      };
 }
 
 export interface SandboxLayerOwnerRef {
@@ -94,11 +107,9 @@ export interface SandboxDeclarationOrder {
   readonly ordinal: number;
 }
 
-export interface SandboxBeforeDependencyProjection {
-  readonly id: string;
-  readonly source: "explicit" | "capability" | "same-layer";
-  readonly capability?: string | undefined;
-}
+export type SandboxBeforeDependencyProjection =
+  | { readonly id: string; readonly source: "explicit" | "same-layer" }
+  | { readonly id: string; readonly source: "capability"; readonly capability: string };
 
 export type SandboxCommandFingerprint =
   | {
@@ -147,7 +158,7 @@ export interface SandboxLinkIssue {
     readonly agentName: string;
   };
   readonly eval: SandboxLayerDeclarationView;
-  readonly group?: SandboxLayerDeclarationView;
+  readonly group: SandboxLayerDeclarationView | undefined;
   readonly experiment: SandboxLayerDeclarationView;
   readonly summary: string;
   readonly actions: readonly string[];
@@ -166,61 +177,60 @@ export type SandboxBeforePlanningFailureReason =
   | "missing-capability"
   | "dependency-cycle";
 
-/** Author-declared DAG failures are planning failures, never Effect defects. */
-export class SandboxBeforePlanningError extends Data.TaggedError("SandboxBeforePlanningError")<{
-  readonly code: "sandbox.before-planning-failed";
-  readonly reason: SandboxBeforePlanningFailureReason;
+interface SandboxBeforePlanningErrorContext {
   readonly occurrencePath: readonly string[];
   /** Every action id directly involved in the failure, in stable declaration order. */
   readonly actionIds: readonly string[];
-  readonly actionId?: string;
-  readonly dependencyId?: string;
-  readonly capability?: string;
-  readonly providerActionIds?: readonly string[];
-  readonly blockedActionIds?: readonly string[];
   readonly message: string;
-}> {}
+}
+
+type SandboxBeforePlanningFailure =
+  | { readonly reason: "duplicate-action-id"; readonly actionId: string }
+  | {
+      readonly reason: "duplicate-capability-provider";
+      readonly capability: string;
+      readonly providerActionIds: readonly string[];
+    }
+  | { readonly reason: "missing-dependency"; readonly actionId: string; readonly dependencyId: string }
+  | { readonly reason: "missing-capability"; readonly actionId: string; readonly capability: string }
+  | { readonly reason: "dependency-cycle"; readonly blockedActionIds: readonly string[] };
+
+/** Author-declared DAG failures are planning failures, never Effect defects. */
+export const SandboxBeforePlanningError = Data.TaggedError("SandboxBeforePlanningError")<
+  SandboxBeforePlanningErrorContext & SandboxBeforePlanningFailure & { readonly code: "sandbox.before-planning-failed" }
+>;
+export type SandboxBeforePlanningError = InstanceType<typeof SandboxBeforePlanningError>;
 
 function beforePlanningError(
-  input: Omit<ConstructorParameters<typeof SandboxBeforePlanningError>[0], "code" | "occurrencePath"> & {
-    readonly occurrencePath: readonly string[];
-  },
+  input: SandboxBeforePlanningErrorContext & SandboxBeforePlanningFailure,
 ): SandboxBeforePlanningError {
   return new SandboxBeforePlanningError({
     code: "sandbox.before-planning-failed",
     ...input,
-    occurrencePath: Object.freeze([...input.occurrencePath]),
-    actionIds: Object.freeze([...input.actionIds]),
-    ...(input.providerActionIds === undefined
-      ? {}
-      : { providerActionIds: Object.freeze([...input.providerActionIds]) }),
-    ...(input.blockedActionIds === undefined ? {} : { blockedActionIds: Object.freeze([...input.blockedActionIds]) }),
   });
 }
 
 function sandboxLayerLinkError(issues: readonly SandboxLinkIssue[]): SandboxLayerLinkError {
-  const frozen = Object.freeze([...issues]);
   const counts = new Map<SandboxLinkIssueCode, number>();
-  for (const issue of frozen) counts.set(issue.code, (counts.get(issue.code) ?? 0) + 1);
+  for (const issue of issues) counts.set(issue.code, (counts.get(issue.code) ?? 0) + 1);
   const breakdown = [...counts].map(([code, count]) => `${code}=${count}`).join(", ");
   return new SandboxLayerLinkError({
     code: "sandbox.link-failed",
-    issues: frozen,
+    issues,
     message:
-      `Sandbox layer linking failed for ${frozen.length} pairs` +
+      `Sandbox layer linking failed for ${issues.length} pairs` +
       `${breakdown === "" ? "" : ` (${breakdown})`}. No Sandbox was created.`,
   });
 }
 
 function declarationSummary(view: SandboxLayerDeclarationView): string {
-  const expression =
-    view.declaredAt._tag === "Declared" && view.declaredAt.value.expression._tag === "Declared"
-      ? view.declaredAt.value.expression.value
-      : view.template._tag === "Declared"
-        ? `${view.template.value.provider}:${view.template.value.kind}`
-        : view.explicit
-          ? "sandboxLayer()"
-          : "<omitted>";
+  function declarationExpression(): string {
+    if (view.declaredAt._tag === "Declared" && view.declaredAt.value.expression._tag === "Declared")
+      return view.declaredAt.value.expression.value;
+    if (view.template._tag === "Declared") return `${view.template.value.provider}:${view.template.value.kind}`;
+    return view.explicit ? "sandboxLayer()" : "<omitted>";
+  }
+  const expression = declarationExpression();
   const location =
     view.declaredAt._tag === "Omitted"
       ? "<unknown source>"
@@ -256,7 +266,7 @@ export interface LinkedSandboxCommand {
 }
 
 interface LinkedSandboxBeforeBase {
-  readonly pluginSource?: string;
+  readonly pluginSource: string | undefined;
   readonly owner: SandboxScheduleOwnerRef;
   readonly ordinal: number;
   readonly id: string;
@@ -280,7 +290,7 @@ export type LinkedSandboxBefore =
 
 export type LinkedSandboxAfter =
   | {
-      readonly pluginSource?: string;
+      readonly pluginSource: string | undefined;
       readonly kind: "action";
       readonly owner: SandboxScheduleOwnerRef;
       readonly ordinal: number;
@@ -288,7 +298,7 @@ export type LinkedSandboxAfter =
       readonly fingerprint: SandboxCommandFingerprint;
     }
   | {
-      readonly pluginSource?: string;
+      readonly pluginSource: string | undefined;
       readonly kind: "command";
       readonly owner: SandboxScheduleOwnerRef;
       readonly ordinal: number;
@@ -305,6 +315,7 @@ export type ScheduledSandboxBefore = LinkedSandboxBefore & {
   readonly schedulingReason: string;
 };
 
+// 身份与摘要材料边界：该投影直接进入按键枚举的 canonical 身份。
 export interface SandboxLayerFingerprintProjection {
   readonly templateOwner: SandboxLayerOwnerRef;
   readonly template: JsonValue;
@@ -349,7 +360,7 @@ export interface LinkedSandboxPair {
   readonly pluginLifecycles: readonly LinkedSandboxPluginLifecycle[];
   /** Eval 自己声明 author hook 或 Sandbox Plugin lifecycle 时实例不得跨 Eval 共用。 */
   readonly hasEvalPhysicalLifecycle: boolean;
-  readonly evalGroupId?: string;
+  readonly evalGroupId: string | undefined;
   readonly fingerprint: SandboxLayerFingerprintProjection;
 }
 
@@ -381,20 +392,20 @@ function commandFingerprintIdentity(entry: SandboxCommandFingerprint): JsonValue
 
 /** Single owner-aware identity for every physical Sandbox lifecycle cohort. */
 export function sandboxPhysicalLifecycleIdentity(pair: LinkedSandboxLayerPair): JsonValue {
-  if (pair.kind === "direct") return Object.freeze({ kind: "direct" });
+  if (pair.kind === "direct") return { kind: "direct" };
   const author: JsonValue[] = (pair.fingerprint.lifecycle ?? []).map((entry) => ({
     kind: entry.kind,
     owner: { kind: entry.owner.kind, id: entry.owner.id },
     phase: entry.phase,
     index: entry.index,
   }));
-  return Object.freeze({
+  return {
     author,
     ...((pair.fingerprint.after?.length ?? 0) === 0
       ? {}
       : { after: pair.fingerprint.after!.map(commandFingerprintIdentity) }),
     plugins: pair.fingerprint.plugins ?? [],
-  });
+  };
 }
 
 /**
@@ -490,26 +501,26 @@ interface TemplateContribution extends NormalizedContribution {
 const OMITTED_LAYER = sandboxLayer();
 
 function freezeOwner(kind: SandboxLayerOwnerRef["kind"], id: string): SandboxLayerOwnerRef {
-  return Object.freeze({ kind, id });
+  return { kind, id };
 }
 
 function declaredValue<Value>(value: Value | undefined): SandboxDeclaredValue<Value> {
-  return value === undefined ? Object.freeze({ _tag: "Omitted" }) : Object.freeze({ _tag: "Declared", value });
+  return value === undefined ? { _tag: "Omitted" } : { _tag: "Declared", value };
 }
 
 function freezeSite(
   site: SandboxLayerDeclarationSite | undefined,
 ): SandboxDeclaredValue<LinkedSandboxLayerDeclarationSite> {
-  if (site === undefined) return Object.freeze({ _tag: "Omitted" });
-  return Object.freeze({
+  if (site === undefined) return { _tag: "Omitted" };
+  return {
     _tag: "Declared",
-    value: Object.freeze({
+    value: {
       file: site.file,
-      line: declaredValue(site.line),
-      column: declaredValue(site.column),
-      expression: declaredValue(site.expression),
-    }),
-  });
+      line: site.source._tag === "Expression" ? declaredValue(site.source.line) : { _tag: "Omitted" },
+      column: site.source._tag === "Expression" ? declaredValue(site.source.column) : { _tag: "Omitted" },
+      expression: site.source._tag === "Expression" ? declaredValue(site.source.expression) : { _tag: "Omitted" },
+    },
+  };
 }
 
 function fingerprintCommand(
@@ -579,7 +590,7 @@ function afterDeclarationFingerprint(
   if (declaration.kind === "action") {
     return actionFingerprint(owner, ordinal, sandboxAfterActionDataOf(declaration.action));
   }
-  return Object.freeze({ kind: "opaque" as const, owner, index: ordinal });
+  return { kind: "opaque" as const, owner, index: ordinal };
 }
 
 function generatedBeforeId(owner: SandboxScheduleOwnerRef, ordinal: number): string {
@@ -593,7 +604,7 @@ function beforeFromDeclaration(
 ): LinkedSandboxBefore {
   if (declaration.kind === "action") {
     const data = sandboxActionDataOf(declaration.action);
-    return Object.freeze({
+    return {
       kind: "action" as const,
       owner,
       ...pluginSourceField(declaration),
@@ -602,11 +613,11 @@ function beforeFromDeclaration(
       metadata: data.metadata,
       data,
       fingerprint: actionFingerprint(owner, ordinal, data),
-    });
+    };
   }
   if (declaration.kind === "hook") {
     const id = generatedBeforeId(owner, ordinal);
-    return Object.freeze({
+    return {
       kind: "hook" as const,
       owner,
       ...pluginSourceField(declaration),
@@ -614,17 +625,15 @@ function beforeFromDeclaration(
       id,
       metadata: normalizeSandboxBeforeMetadata({ id }),
       hook: declaration.hook,
-      fingerprint: Object.freeze({ kind: "opaque" as const, owner, index: ordinal }),
-    });
+      fingerprint: { kind: "opaque" as const, owner, index: ordinal },
+    };
   }
   const command = declaration.declaration;
   const explicit = command.kind === "stable" && command.metadata.explicitId;
   const id = explicit ? command.identity.id : generatedBeforeId(owner, ordinal);
   const metadata =
-    command.kind === "stable"
-      ? Object.freeze({ ...command.metadata.scheduling, id })
-      : normalizeSandboxBeforeMetadata({ id });
-  return Object.freeze({
+    command.kind === "stable" ? { ...command.metadata.scheduling, id } : normalizeSandboxBeforeMetadata({ id });
+  return {
     kind: "command" as const,
     owner,
     ...pluginSourceField(declaration),
@@ -633,7 +642,7 @@ function beforeFromDeclaration(
     metadata,
     declaration: command,
     fingerprint: fingerprintCommand(owner, ordinal, command),
-  });
+  };
 }
 
 /** @internal Agent install uses the same command declaration/link path as author-owned before entries. */
@@ -642,14 +651,10 @@ export function linkSandboxCommandBefore(
   ordinal: number,
   command: SandboxCommand,
 ): LinkedSandboxBefore {
-  return beforeFromDeclaration(
-    owner,
-    ordinal,
-    Object.freeze({
-      kind: "command" as const,
-      declaration: sandboxCommandDeclarationOf(command),
-    }),
-  );
+  return beforeFromDeclaration(owner, ordinal, {
+    kind: "command" as const,
+    declaration: sandboxCommandDeclarationOf(command),
+  });
 }
 
 function fingerprintLifecycle(
@@ -657,27 +662,23 @@ function fingerprintLifecycle(
   phase: SandboxLifecycleFingerprint["phase"],
   hooks: readonly SandboxHook[],
 ): readonly SandboxLifecycleFingerprint[] {
-  return Object.freeze(
-    hooks.map((_, index) =>
-      Object.freeze({
-        kind: "opaque" as const,
-        owner,
-        phase,
-        index,
-      }),
-    ),
-  );
+  return hooks.map((_, index) => ({
+    kind: "opaque" as const,
+    owner,
+    phase,
+    index,
+  }));
 }
 
 function normalizeAgentContribution(
-  input: NonNullable<SandboxLayerPairInput["agent"]>,
+  input: Extract<SandboxLayerPairInput["agent"], { readonly kind: "sandbox" }>,
 ): NormalizedScheduleContribution {
-  const owner = Object.freeze({ kind: "agent" as const, id: input.name });
+  const owner = { kind: "agent" as const, id: input.name };
   const state = sandboxLayerStateOf(input.sandbox ?? OMITTED_LAYER);
   if (state.kind !== "command-only") {
     throw new TypeError("Sandbox Agent layers must be command-only and cannot provide a template");
   }
-  return Object.freeze({ owner, explicit: input.sandbox !== undefined, state });
+  return { owner, explicit: input.sandbox !== undefined, state };
 }
 
 function normalizeContribution(
@@ -687,27 +688,28 @@ function normalizeContribution(
   const owner = freezeOwner(kind, input.id);
   const explicit = input.layer !== undefined;
   const state = sandboxLayerStateOf(input.layer ?? OMITTED_LAYER);
-  const commands = Object.freeze(
-    state.before.map((declaration, index) => beforeFromDeclaration(owner, index, declaration).fingerprint),
+  const commands = state.before.map(
+    (declaration, index) => beforeFromDeclaration(owner, index, declaration).fingerprint,
   );
   const template: SandboxDeclaredValue<SandboxTemplateDeclaration> =
-    state.kind === "template-bearing" ? declaredValue(state.template) : Object.freeze({ _tag: "Omitted" });
-  const view = Object.freeze({
+    state.kind === "template-bearing" ? declaredValue(state.template) : { _tag: "Omitted" };
+  const view = {
     owner,
     explicit,
     kind: state.kind,
     template,
     commands,
     declaredAt: freezeSite(input.declaredAt),
-  });
-  return Object.freeze({ owner, explicit, state, view });
+  };
+  return { owner, explicit, state, view };
 }
 
 /** Stable identity of one author-owned layer, before it is linked with the other owners. */
 export function sandboxLayerDefinitionIdentity(layer: SandboxLayer | undefined): JsonValue {
   const contribution = normalizeContribution("eval-group", {
     id: "<definition>",
-    ...(layer === undefined ? {} : { layer: layer }),
+    layer,
+    declaredAt: undefined,
   });
   const commands: JsonValue[] = contribution.view.commands.map(
     (command): JsonValue =>
@@ -743,12 +745,12 @@ export function sandboxLayerDefinitionIdentity(layer: SandboxLayer | undefined):
 }
 
 function pairRef(input: SandboxLayerPairInput): SandboxLinkIssue["pair"] {
-  return Object.freeze({
+  return {
     evalId: input.eval.id,
     experimentId: input.experiment.id,
     agentKind: input.agent?.kind ?? "none",
     agentName: input.agent?.name ?? "",
-  });
+  };
 }
 
 function isTemplateContribution(contribution: NormalizedContribution): contribution is TemplateContribution {
@@ -762,9 +764,9 @@ function issue(
   experimentContribution: NormalizedContribution,
   groupContribution?: NormalizedContribution,
 ): SandboxLinkIssue {
-  const group = groupContribution === undefined ? {} : { group: groupContribution.view };
+  const group = { group: groupContribution?.view };
   if (code === "sandbox.template-missing") {
-    return Object.freeze({
+    return {
       code,
       pair,
       eval: evalContribution.view,
@@ -774,16 +776,16 @@ function issue(
         groupContribution === undefined
           ? `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" do not declare a Sandbox template.`
           : `Eval Group "${groupContribution.owner.id}", Eval "${pair.evalId}", and Experiment "${pair.experimentId}" do not declare a Sandbox template.`,
-      actions: Object.freeze([
+      actions: [
         groupContribution === undefined
           ? "Declare one template-bearing SandboxLayer on the Eval or Experiment."
           : "Declare one template-bearing SandboxLayer on the Eval Group or Experiment; grouped Eval members may only contribute prepare commands.",
         "If this pairing is unintended, change the Experiment selector so the pair is not linked.",
-      ]),
-    });
+      ],
+    };
   }
   if (code === "sandbox.template-conflict") {
-    return Object.freeze({
+    return {
       code,
       pair,
       eval: evalContribution.view,
@@ -793,49 +795,51 @@ function issue(
         groupContribution === undefined
           ? `Eval "${pair.evalId}" and Experiment "${pair.experimentId}" both declare a Sandbox template.`
           : `Eval Group "${groupContribution.owner.id}", Eval "${pair.evalId}", and Experiment "${pair.experimentId}" declare more than one Sandbox template.`,
-      actions: Object.freeze([
+      actions: [
         "Keep exactly one template-bearing layer; NiceEval starts one Sandbox Case and does not merge or prioritize templates.",
         "If only some combinations are compatible, split the Experiment selector.",
-      ]),
-    });
+      ],
+    };
   }
   if (code === "eval-group-direct-agent") {
-    return Object.freeze({
+    return {
       code,
       pair,
       eval: evalContribution.view,
       ...group,
       experiment: experimentContribution.view,
       summary: `Eval Group "${groupContribution!.owner.id}" cannot run with Direct Agent "${pair.agentName}".`,
-      actions: Object.freeze([
+      actions: [
         "Use a Sandbox Agent for every Experiment that selects this Eval Group.",
         "If the Experiment must stay direct, change its selector so it does not select grouped Evals.",
-      ]),
-    });
+      ],
+    };
   }
-  return Object.freeze({
+  return {
     code,
     pair,
     eval: evalContribution.view,
     ...group,
     experiment: experimentContribution.view,
     summary: `Direct Agent "${pair.agentName}" cannot use an explicit SandboxLayer.`,
-    actions: Object.freeze([
+    actions: [
       "Remove every explicit Eval/Experiment sandbox declaration for this pairing.",
       "If the task needs Sandbox operations, use a Sandbox Agent instead.",
-    ]),
-  });
+    ],
+  };
 }
 
-const OWNER_ORDER: Readonly<Record<SandboxScheduleOwnerRef["kind"], number>> = Object.freeze({
+const OWNER_ORDER: Readonly<Record<SandboxScheduleOwnerRef["kind"], number>> = {
   experiment: 0,
   "eval-group": 1,
   eval: 2,
   agent: 3,
-});
+};
 
 function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function compareReady(left: LinkedSandboxBefore, right: LinkedSandboxBefore): number {
@@ -905,7 +909,7 @@ export function scheduleSandboxBefore(
         indegree.set(dependent.id, (indegree.get(dependent.id) ?? 0) + 1);
       }
       const projections = dependencies.get(dependent.id) ?? [];
-      projections.push(Object.freeze(projection));
+      projections.push(projection);
       dependencies.set(dependent.id, projections);
     };
 
@@ -963,23 +967,21 @@ export function scheduleSandboxBefore(
     const ordered: ScheduledSandboxBefore[] = [];
     while (ready.length > 0) {
       const entry = ready.shift()!;
-      const entryDependencies = Object.freeze([...(dependencies.get(entry.id) ?? [])]);
+      const entryDependencies = dependencies.get(entry.id) ?? [];
       const frequency: SandboxChangeFrequency = entry.metadata.changeFrequency;
-      ordered.push(
-        Object.freeze({
-          ...entry,
-          dependencies: entryDependencies,
-          executionOrder: Object.freeze({
-            topologicalOrdinal: ordered.length,
-            occurrencePath: Object.freeze([...occurrencePath]),
-          }),
-          schedulingReason:
-            entryDependencies.length === 0
-              ? `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`
-              : `dependencies satisfied (${entryDependencies.map((dependency) => `${dependency.id} [${dependency.source}]`).join(", ")}); ` +
-                `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`,
-        }),
-      );
+      ordered.push({
+        ...entry,
+        dependencies: entryDependencies,
+        executionOrder: {
+          topologicalOrdinal: ordered.length,
+          occurrencePath,
+        },
+        schedulingReason:
+          entryDependencies.length === 0
+            ? `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`
+            : `dependencies satisfied (${entryDependencies.map((dependency) => `${dependency.id} [${dependency.source}]`).join(", ")}); ` +
+              `ready-set frequency=${frequency.value}; owner=${entry.owner.kind}:${entry.owner.id}; ordinal=${entry.ordinal}`,
+      });
       for (const dependentId of outgoing.get(entry.id) ?? []) {
         const remaining = (indegree.get(dependentId) ?? 0) - 1;
         indegree.set(dependentId, remaining);
@@ -999,7 +1001,7 @@ export function scheduleSandboxBefore(
         }),
       );
     }
-    return Effect.succeed(Object.freeze(ordered));
+    return Effect.succeed(ordered);
   });
 }
 
@@ -1016,28 +1018,26 @@ function linkedBefore(
 }
 
 function linkedAfter(contributions: readonly NormalizedScheduleContribution[]): readonly LinkedSandboxAfter[] {
-  return Object.freeze(
-    contributions.flatMap((contribution) =>
-      contribution.state.after.map(
-        (declaration, ordinal): LinkedSandboxAfter =>
-          declaration.kind === "action"
-            ? Object.freeze({
-                kind: "action" as const,
-                owner: contribution.owner,
-                ordinal,
-                ...pluginSourceField(declaration),
-                data: sandboxAfterActionDataOf(declaration.action),
-                fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
-              })
-            : Object.freeze({
-                kind: "command" as const,
-                owner: contribution.owner,
-                ordinal,
-                ...pluginSourceField(declaration),
-                declaration,
-                fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
-              }),
-      ),
+  return contributions.flatMap((contribution) =>
+    contribution.state.after.map(
+      (declaration, ordinal): LinkedSandboxAfter =>
+        declaration.kind === "action"
+          ? {
+              kind: "action" as const,
+              owner: contribution.owner,
+              ordinal,
+              ...pluginSourceField(declaration),
+              data: sandboxAfterActionDataOf(declaration.action),
+              fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
+            }
+          : {
+              kind: "command" as const,
+              owner: contribution.owner,
+              ordinal,
+              ...pluginSourceField(declaration),
+              declaration,
+              fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
+            },
     ),
   );
 }
@@ -1052,10 +1052,10 @@ function linkedCommands(
   for (const contribution of [first, ...rest]) {
     contribution.state.commands.forEach((declaration, index) => {
       const fingerprint = fingerprintCommand(contribution.owner, index, declaration);
-      commands.push(Object.freeze({ owner: contribution.owner, index, command: declaration.command, fingerprint }));
+      commands.push({ owner: contribution.owner, index, command: declaration.command, fingerprint });
     });
   }
-  return Object.freeze({ commands: Object.freeze(commands) });
+  return { commands };
 }
 
 function linkSandboxPair(
@@ -1072,38 +1072,34 @@ function linkSandboxPair(
       OWNER_ORDER[left.owner.kind] - OWNER_ORDER[right.owner.kind] || compareText(left.owner.id, right.owner.id),
   );
   const after = linkedAfter(declarationContributions);
-  const lifecycle = Object.freeze([
+  const lifecycle = [
     ...fingerprintLifecycle(templateOwner.owner, "setup", templateOwner.state.setupHooks),
     ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "setup", owner.state.setupHooks)),
     ...fingerprintLifecycle(agentOwner.owner, "setup", agentOwner.state.setupHooks),
     ...fingerprintLifecycle(templateOwner.owner, "teardown", templateOwner.state.teardownHooks),
     ...otherOwners.flatMap((owner) => fingerprintLifecycle(owner.owner, "teardown", owner.state.teardownHooks)),
     ...fingerprintLifecycle(agentOwner.owner, "teardown", agentOwner.state.teardownHooks),
-  ]);
-  const requirements = Object.freeze(
-    declarationContributions.flatMap((contribution) =>
-      contribution.state.requirements.map((requirement) =>
-        Object.freeze({
-          owner: contribution.owner,
-          requirement,
-        }),
-      ),
-    ),
+  ];
+  const requirements = declarationContributions.flatMap((contribution) =>
+    contribution.state.requirements.map((requirement) => ({
+      owner: contribution.owner,
+      requirement,
+    })),
   );
   return Effect.map(
     linkedBefore(declarationContributions, [pair.experimentId, pair.evalId, "attempt"]),
     (before): LinkedSandboxPair => {
-      const fingerprints = Object.freeze(before.map((entry) => entry.fingerprint));
-      const afterFingerprints = Object.freeze(after.map((entry) => entry.fingerprint));
-      const fingerprint = Object.freeze({
+      const fingerprints = before.map((entry) => entry.fingerprint);
+      const afterFingerprints = after.map((entry) => entry.fingerprint);
+      const fingerprint = {
         templateOwner: templateOwner.owner,
         template: sandboxTemplateIdentity(template),
         commands: fingerprints,
         ...(requirements.length === 0 ? {} : { requirements }),
         ...(afterFingerprints.length === 0 ? {} : { after: afterFingerprints }),
         ...(lifecycle.length === 0 ? {} : { lifecycle }),
-      });
-      return Object.freeze({
+      };
+      return {
         kind: "sandbox",
         evalId: pair.evalId,
         experimentId: pair.experimentId,
@@ -1114,28 +1110,24 @@ function linkSandboxPair(
         requirements,
         before,
         after,
-        setupHooks: Object.freeze([
+        setupHooks: [
           ...templateOwner.state.setupHooks,
           ...otherOwners.flatMap((owner) => owner.state.setupHooks),
           ...agentOwner.state.setupHooks,
-        ]),
-        teardownHooks: Object.freeze([
+        ],
+        teardownHooks: [
           ...templateOwner.state.teardownHooks,
           ...otherOwners.flatMap((owner) => owner.state.teardownHooks),
           ...agentOwner.state.teardownHooks,
-        ]),
-        pluginLifecycles: Object.freeze([]),
+        ],
+        pluginLifecycles: [],
         hasEvalPhysicalLifecycle: [templateOwner, ...otherOwners].some(
           (owner) =>
             owner.owner.kind === "eval" && owner.state.setupHooks.length + owner.state.teardownHooks.length > 0,
         ),
-        ...([templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group") === undefined
-          ? {}
-          : {
-              evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")!.owner.id,
-            }),
+        evalGroupId: [templateOwner, ...otherOwners].find((owner) => owner.owner.kind === "eval-group")?.owner.id,
         fingerprint,
-      });
+      };
     },
   );
 }
@@ -1146,41 +1138,43 @@ export function attachSandboxPluginLifecycles(
   byOwner: Readonly<Partial<Record<SandboxLayerOwnerRef["kind"], readonly LinkedPluginLifecycle[]>>>,
 ): LinkedSandboxLayerPair {
   if (pair.kind === "direct") return pair;
-  const ownerOrder: readonly SandboxLayerOwnerRef["kind"][] =
-    pair.templateOwner.kind === "eval"
-      ? ["eval", "experiment"]
-      : pair.templateOwner.kind === "eval-group"
-        ? ["eval-group", "experiment", "eval"]
-        : ["experiment", "eval-group", "eval"];
-  const entries = Object.freeze(
-    ownerOrder.flatMap((kind) =>
-      (byOwner[kind] ?? []).map((lifecycle) =>
-        Object.freeze({
-          owner:
-            kind === "eval"
-              ? Object.freeze({ kind, id: pair.evalId })
-              : kind === "eval-group"
-                ? Object.freeze({ kind, id: pair.evalGroupId! })
-                : Object.freeze({ kind, id: pair.experimentId }),
-          lifecycle,
-        }),
-      ),
-    ),
+  const templateOwnerKind = pair.templateOwner.kind;
+  function lifecycleOwnerOrder(): readonly SandboxLayerOwnerRef["kind"][] {
+    switch (templateOwnerKind) {
+      case "eval":
+        return ["eval", "experiment"];
+      case "eval-group":
+        return ["eval-group", "experiment", "eval"];
+      default:
+        return ["experiment", "eval-group", "eval"];
+    }
+  }
+  const ownerOrder = lifecycleOwnerOrder();
+  const entries = ownerOrder.flatMap((kind) =>
+    (byOwner[kind] ?? []).map((lifecycle) => ({
+      owner:
+        kind === "eval"
+          ? { kind, id: pair.evalId }
+          : kind === "eval-group"
+            ? { kind, id: pair.evalGroupId! }
+            : { kind, id: pair.experimentId },
+      lifecycle,
+    })),
   );
   if (entries.length === 0) return pair;
   const plugins: JsonValue[] = entries.map((entry) => ({
     owner: { kind: entry.owner.kind, id: entry.owner.id },
     lifecycle: pluginLifecycleIdentity(entry.lifecycle),
   }));
-  return Object.freeze({
+  return {
     ...pair,
     pluginLifecycles: entries,
     hasEvalPhysicalLifecycle: pair.hasEvalPhysicalLifecycle || entries.some((entry) => entry.owner.kind === "eval"),
-    fingerprint: Object.freeze({
+    fingerprint: {
       ...pair.fingerprint,
       plugins,
-    }),
-  });
+    },
+  };
 }
 
 /**
@@ -1201,7 +1195,7 @@ export function linkSandboxLayers(
         const experimentContribution = normalizeContribution("experiment", input.experiment);
         const groupContribution =
           input.group === undefined ? undefined : normalizeContribution("eval-group", input.group);
-        if (input.agent === null || pair.agentKind === "direct" || pair.agentKind === "custom") {
+        if (input.agent === undefined || input.agent.kind !== "sandbox") {
           if (groupContribution !== undefined) {
             issues.push(
               issue("eval-group-direct-agent", pair, evalContribution, experimentContribution, groupContribution),
@@ -1210,14 +1204,12 @@ export function linkSandboxLayers(
             issues.push(issue("sandbox.unexpected-for-direct-agent", pair, evalContribution, experimentContribution));
           } else {
             linked.push(
-              Effect.succeed(
-                Object.freeze({
-                  kind: "direct",
-                  evalId: pair.evalId,
-                  experimentId: pair.experimentId,
-                  agentName: pair.agentName,
-                }),
-              ),
+              Effect.succeed({
+                kind: "direct",
+                evalId: pair.evalId,
+                experimentId: pair.experimentId,
+                agentName: pair.agentName,
+              }),
             );
           }
           continue;
@@ -1240,12 +1232,17 @@ export function linkSandboxLayers(
           );
         } else {
           const template = templates[0]!;
-          const ordered =
-            template.owner.kind === "eval-group"
-              ? [template, experimentContribution, evalContribution]
-              : template.owner.kind === "experiment"
-                ? [template, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution]
-                : [template, experimentContribution];
+          function contributionOrder() {
+            switch (template.owner.kind) {
+              case "eval-group":
+                return [template, experimentContribution, evalContribution];
+              case "experiment":
+                return [template, ...(groupContribution === undefined ? [] : [groupContribution]), evalContribution];
+              default:
+                return [template, experimentContribution];
+            }
+          }
+          const ordered = contributionOrder();
           linked.push(
             linkSandboxPair(
               pair,
@@ -1257,14 +1254,12 @@ export function linkSandboxLayers(
         }
       }
 
-      return issues.length > 0
-        ? Effect.fail(sandboxLayerLinkError(issues))
-        : Effect.map(Effect.all(linked), (values) => Object.freeze(values));
+      return issues.length > 0 ? Effect.fail(sandboxLayerLinkError(issues)) : Effect.all(linked);
     },
   );
 }
 
-function pluginSourceField(declaration: Parameters<typeof pluginSourceOf>[0]): { pluginSource?: string } {
+function pluginSourceField(declaration: Parameters<typeof pluginSourceOf>[0]): { pluginSource: string | undefined } {
   const pluginSource = pluginSourceOf(declaration);
-  return pluginSource === undefined ? {} : { pluginSource };
+  return { pluginSource };
 }

@@ -60,11 +60,13 @@ export interface SelectedAttemptRef {
   readonly originRunId: RunId;
   readonly attemptId: AttemptId;
   /** Complete durable identity required before this Attempt can be referenced. */
-  readonly publicationIdentity?: {
-    readonly originRunId: string;
-    readonly attemptId: string;
-    readonly revision: number;
-  };
+  readonly publicationIdentity:
+    | {
+        readonly originRunId: string;
+        readonly attemptId: string;
+        readonly revision: number;
+      }
+    | undefined;
   readonly [selectedAttemptRefBrand]: () => void;
 }
 
@@ -118,9 +120,9 @@ export type RecordSelectionProblem =
 
 export interface RecordSelectionRequest {
   /** Omitted means every terminal Run eligible for reuse during this scan. */
-  readonly runIds?: readonly RunId[];
+  readonly runIds?: readonly RunId[] | undefined;
   /** Explicit locator resolution may include immutable publications from an active origin Run. */
-  readonly includePublishedActive?: boolean;
+  readonly includePublishedActive?: boolean | undefined;
 }
 
 /**
@@ -151,14 +153,14 @@ export interface RecordSelection {
 }
 
 export interface ReadableRun {
-  readonly createdRevision?: number;
+  readonly createdRevision: number | undefined;
   readonly ref: SelectedRunRef;
   readonly owner: SelectedOwnerRef<"run">;
   readonly document: RunDocument;
   readonly members: readonly {
     readonly document: MemberDocument;
-    readonly bindingRevision?: number;
-    readonly attempt: SelectedAttemptRef | null;
+    readonly bindingRevision: number | undefined;
+    readonly attempt: SelectedAttemptRef | undefined;
   }[];
 }
 
@@ -184,9 +186,9 @@ export interface ReadableAttempt {
 export interface RecordReadSession {
   /** Lifecycle resources at this reader's cutoff, including zero-publication Runs. */
   readonly listRunResources: (input?: {
-    readonly invocationId?: string;
-    readonly afterRunId?: string;
-    readonly pageSize?: number;
+    readonly invocationId?: string | undefined;
+    readonly afterRunId?: string | undefined;
+    readonly pageSize?: number | undefined;
   }) => Effect.Effect<RunResourcePage, RecordReaderReadError>;
   readonly selectRuns: (request?: RecordSelectionRequest) => Effect.Effect<RecordSelection, RecordReaderReadError>;
   readonly readRun: (ref: SelectedRunRef) => Effect.Effect<RecordCoreRead<ReadableRun>, RecordReaderReadError>;
@@ -240,7 +242,7 @@ export interface CreateRunRequest {
   readonly startedAt: UtcMillis;
   readonly expectedSlots: readonly RecordSlotIdentity[];
   /** Host-private exact process identity used for crash recovery fencing. */
-  readonly writerGeneration?: string;
+  readonly writerGeneration?: string | undefined;
 }
 
 export interface CreateReferenceRunRequest extends CreateRunRequest {}

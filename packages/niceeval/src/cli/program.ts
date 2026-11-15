@@ -11,13 +11,13 @@ import {
   type CliOptionDefinition,
 } from "./application.ts";
 import {
-  CliFeatureError,
   composeCliOptionSchema,
   locateCliRoot,
   matchCliFeatureCommand,
   renderFeatureCommandIndex,
   type CliCommandContribution,
 } from "./contribution.ts";
+import type { AnyCliFeatureError } from "./feature-failure.ts";
 import { ownErrorCode, renderMigrationAssistance, summarizeUnknownError } from "../error-assistance/index.ts";
 
 /** A recoverable root-command usage error. */
@@ -33,7 +33,7 @@ export class CliOperationError extends Data.TaggedError("CliOperationError")<{
   readonly exitCode: number;
 }> {}
 
-export type CliFailure = CliUsageError | CliOperationError | CliFeatureError;
+export type CliFailure = CliUsageError | CliOperationError | AnyCliFeatureError;
 
 const APPLICATION_CLI_OPTIONS = Object.freeze({
   help: Object.freeze({
@@ -110,7 +110,7 @@ function packageVersion() {
   );
 }
 
-function rootHelp<R>(commands: readonly CliCommandContribution<R, CliFeatureError>[]): string {
+function rootHelp<R>(commands: readonly CliCommandContribution<R, AnyCliFeatureError>[]): string {
   return (
     `niceeval — agent-native evals
 
@@ -137,7 +137,7 @@ function optionBeforeRoot(option: "help" | "version", tokens: Parameters<typeof 
  * Route one immutable contribution. The aggregate parse discovers the indexed
  * root token only; the selected command performs its own authoritative parse.
  */
-export const cliProgram = <R>(commands: readonly CliCommandContribution<R, CliFeatureError>[]) =>
+export const cliProgram = <R>(commands: readonly CliCommandContribution<R, AnyCliFeatureError>[]) =>
   Effect.gen(function* () {
     const facts = yield* invocationFacts();
     const argumentsService = yield* CliArguments;

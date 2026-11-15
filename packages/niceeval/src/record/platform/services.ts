@@ -12,7 +12,7 @@ export interface RecordPortablePath {
 }
 
 export function recordPortablePath(root: RecordRoot, ...segments: readonly string[]): RecordPortablePath {
-  return Object.freeze({ root, segments: Object.freeze([...segments]) });
+  return { root, segments };
 }
 
 export interface RecordDirectoryEntry {
@@ -31,7 +31,7 @@ export interface RecordReadFileInput {
 }
 
 export interface RecordReadFileStreamInput extends RecordReadFileInput {
-  readonly chunkBytes?: number;
+  readonly chunkBytes?: number | undefined;
 }
 
 export type RecordFileWriteMode = "exclusive" | "replace" | "replace-no-follow";

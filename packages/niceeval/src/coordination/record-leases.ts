@@ -1,4 +1,5 @@
 import { Context, Effect } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { RecordFileSystemError, RecordMaintenanceBusy } from "../record/platform/errors.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 
@@ -10,7 +11,7 @@ export type RecordCoordinationWaitKind = "write-batch" | "write-freeze";
 export interface RecordCoordinationWaitRequest {
   readonly root: RecordRoot;
   readonly deadlineEpochMs: number;
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
 const recordLeaseTypeId: unique symbol = Symbol("@niceeval/coordination/RecordLease");
@@ -60,7 +61,7 @@ export interface RecordCoordinationCanceled {
 /** Malformed local authority is never guessed at or overwritten. */
 export interface RecordCoordinationStateInvalid {
   readonly code: "record-coordination-state-invalid";
-  readonly cause?: unknown;
+  readonly cause: ExternalCause | undefined;
 }
 
 /** Describes filesystem, maintenance or coordination failures when accessing a Record; inspect the discriminant before retrying. */
@@ -109,7 +110,7 @@ export function issueRecordLease(kind: RecordLeaseKind): RecordLease {
     kind,
     [recordLeaseTypeId]: recordLeaseTypeId,
   };
-  return Object.freeze(lease);
+  return lease;
 }
 
 /** @internal The Node platform is the only issuer of concrete admission handles. */
@@ -118,7 +119,7 @@ export function issueRecordWriteBatchAdmission(): RecordWriteBatchAdmission {
     kind: "write-batch",
     [recordWriteBatchAdmissionTypeId]: recordWriteBatchAdmissionTypeId,
   };
-  return Object.freeze(admission);
+  return admission;
 }
 
 /** @internal The Node platform is the only issuer of concrete barrier handles. */
@@ -127,34 +128,34 @@ export function issueRecordWriteFreeze(): RecordWriteFreeze {
     kind: "write-freeze",
     [recordWriteFreezeTypeId]: recordWriteFreezeTypeId,
   };
-  return Object.freeze(barrier);
+  return barrier;
 }
 
 export function recordCoordinationDeadlineInvalid(
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
 ): RecordCoordinationDeadlineInvalid {
-  return Object.freeze({
+  return {
     code: "record-coordination-deadline-invalid",
     operation,
     deadlineEpochMs,
-  });
+  };
 }
 
 export function recordCoordinationTimedOut(
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
 ): RecordCoordinationTimedOut {
-  return Object.freeze({ code: "record-coordination-timed-out", operation, deadlineEpochMs });
+  return { code: "record-coordination-timed-out", operation, deadlineEpochMs };
 }
 
 export function recordCoordinationCanceled(operation: RecordCoordinationWaitKind): RecordCoordinationCanceled {
-  return Object.freeze({ code: "record-coordination-canceled", operation });
+  return { code: "record-coordination-canceled", operation };
 }
 
 export function recordCoordinationStateInvalid(cause?: unknown): RecordCoordinationStateInvalid {
-  return Object.freeze({
+  return {
     code: "record-coordination-state-invalid",
-    ...(cause === undefined ? {} : { cause }),
-  });
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
+  };
 }

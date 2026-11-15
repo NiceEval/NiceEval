@@ -10,7 +10,9 @@ import {
   CliOutput,
   type CliOptionDefinition,
 } from "../../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../../cli/contribution.ts";
+import { externalCliFailure } from "../../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../../shared/external-cause.ts";
 import { ProjectConfiguration } from "../../../cli/project-configuration.ts";
 import {
   createFeedbackCoordinator,
@@ -20,10 +22,16 @@ import {
   renderHumanCommandPlan,
   resolveOutputForm,
 } from "../../../runner/feedback/index.ts";
-import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
+import { renderSessionListText, renderSessionShowText, sessionRecordToJson } from "../../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
 import { formatIdentityExplanation } from "../../../runner/feedback/identity-explanation.ts";
-import type { ExperimentHostDryComparison, ExperimentHostError, ExperimentHostJsonValue } from "../types.ts";
+import type {
+  ExperimentHostDryComparison,
+  ExperimentHostDryPlan,
+  ExperimentHostError,
+  ExperimentHostJsonValue,
+  ExperimentHostSelectionProblem,
+} from "../types.ts";
 import { browsableExperimentPaths } from "../../../shared/aggregate.ts";
 import {
   type ExperimentHostRenamePlan,
@@ -43,12 +51,12 @@ type ExperimentCliRequirements =
   | ExperimentCliTerminal
   | ProjectConfiguration
   | ExperimentHostRequirements;
-type ExperimentCliError = CliFeatureError;
+type ExperimentCliError = CliFeatureError<ExternalCause>;
 
 const option = (type: "string" | "boolean", summary: string, multiple?: true) =>
   Object.freeze({
     type,
-    ...(multiple === undefined ? {} : { multiple }),
+    multiple,
     help: Object.freeze({ summary, visibility: "public" as const }),
   });
 
@@ -234,12 +242,11 @@ const EXP_COMMAND_SUMMARY = `list, plan, run, rename, or recover Experiments
 ${SHARED_STATE_RECOVERY_USAGE}`;
 
 function failure(operation: string, cause: unknown, exitCode = 1, display?: string): ExperimentCliError {
-  return new CliFeatureError({
+  return externalCliFailure(cause, {
     feature: "experiments",
     operation,
-    cause,
     exitCode,
-    ...(display === undefined ? {} : { display }),
+    display,
   });
 }
 
@@ -265,14 +272,15 @@ function numberFlag(
   return parsed;
 }
 
-function enumFlag(
+function enumFlag<const Value extends string>(
   value: string | boolean | string[] | undefined,
   name: string,
-  values: readonly string[],
-): string | undefined {
+  values: readonly Value[],
+): Value | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !values.includes(value)) throw new Error(`${name} accepts ${values.join(" or ")}.`);
-  return value;
+  const matched = values.find((candidate) => candidate === value);
+  if (matched === undefined) throw new Error(`${name} accepts ${values.join(" or ")}.`);
+  return matched;
 }
 
 function jsonDocument(value: unknown): string {
@@ -282,9 +290,9 @@ function jsonDocument(value: unknown): string {
 function catalogText(catalog: {
   readonly experiments: readonly {
     readonly id: string;
-    readonly description?: string;
+    readonly description: string | undefined;
     readonly adapter: string | null;
-    readonly model?: string;
+    readonly model: string | undefined;
     readonly attempts: number;
     readonly evalIds: readonly string[];
     readonly labels: Readonly<Record<string, string | number>>;
@@ -310,9 +318,9 @@ function catalogText(catalog: {
 function catalogJson(catalog: {
   readonly experiments: readonly {
     readonly id: string;
-    readonly description?: string;
+    readonly description: string | undefined;
     readonly adapter: string | null;
-    readonly model?: string;
+    readonly model: string | undefined;
     readonly attempts: number;
     readonly evalIds: readonly string[];
     readonly labels: Readonly<Record<string, string | number>>;
@@ -332,7 +340,7 @@ function catalogJson(catalog: {
   });
 }
 
-function checkText(result: { readonly status: string; readonly pairCount?: number }): string {
+function checkText(result: { readonly status: string; readonly pairCount: number | undefined }): string {
   return result.status === "linked"
     ? `Sandbox layers linked: ${result.pairCount} pairs.\n`
     : `Experiment selection: ${result.status}.\n`;
@@ -348,12 +356,7 @@ function experimentOptionValues(ids: readonly string[]): readonly string[] {
   return [...values].sort();
 }
 
-function selectionProblemText(result: {
-  readonly status: string;
-  readonly selector?: string;
-  readonly candidates?: readonly string[];
-  readonly experimentIds?: readonly string[];
-}): string {
+function selectionProblemText(result: ExperimentHostSelectionProblem): string {
   if (result.status === "experiment-no-match") {
     return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${experimentOptionValues(result.candidates ?? []).join(", ") || "(none)"}.
 Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
@@ -392,11 +395,10 @@ function acceptText(
 }
 
 function identityExplanationLines(comparisons: readonly ExperimentHostDryComparison[]): string[] {
-  return comparisons.flatMap((comparison) =>
-    comparison.recordedClaim === "execution-identity" && comparison.explanation !== undefined
-      ? formatIdentityExplanation(comparison.explanation)
-      : [],
-  );
+  return comparisons.flatMap(function comparisonExplanation(comparison) {
+    if (comparison.recordedClaim !== "execution-identity" || comparison.explanation === undefined) return [];
+    return formatIdentityExplanation(comparison.explanation);
+  });
 }
 
 function acceptMembersText(
@@ -497,26 +499,7 @@ function teardownFailure(operation: string, cause: unknown, recoveryKey?: string
   return failure(operation, cause, 1, display);
 }
 
-function dryRows(plan: {
-  readonly slots: readonly {
-    readonly state: "reuse" | "gap";
-    readonly target: {
-      readonly runId: string;
-      readonly slotId: string;
-      readonly experimentId: string;
-      readonly evalId: string;
-      readonly evalGroupId?: string;
-      readonly evalGroupIndex?: number;
-      readonly attempt: number;
-    };
-    readonly comparisons: readonly ExperimentHostDryComparison[];
-    readonly reason?: string;
-    readonly scope?: string;
-    readonly issues?: readonly ExperimentHostJsonValue[];
-  }[];
-  readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
-  readonly lockedPairs: readonly string[];
-}) {
+function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lockedPairs">) {
   type ProjectedSlot = {
     readonly runId: string;
     readonly slotId: string;
@@ -525,20 +508,20 @@ function dryRows(plan: {
     readonly attempt: number;
     readonly state: "reused" | "gap";
     readonly comparisons: readonly ExperimentHostDryComparison[];
-    readonly reason?: string;
-    readonly scope?: string;
-    readonly issues?: readonly ExperimentHostJsonValue[];
+    readonly reason: string | undefined;
+    readonly scope: string | undefined;
+    readonly issues: readonly ExperimentHostJsonValue[] | undefined;
   };
   const rows = new Map<
     string,
     {
       experimentId: string;
       evalId: string;
-      evalGroupId?: string;
-      evalGroupIndex?: number;
+      evalGroupId: string | undefined;
+      evalGroupIndex: number | undefined;
       slots: ProjectedSlot[];
       readbacks: CurrentReuseReadbackSnapshot[];
-      locked?: true;
+      locked: true | undefined;
     }
   >();
   for (const slot of plan.slots) {
@@ -546,23 +529,19 @@ function dryRows(plan: {
     const row = rows.get(key) ?? {
       experimentId: slot.target.experimentId,
       evalId: slot.target.evalId,
-      ...(slot.target.evalGroupId === undefined
-        ? {}
-        : { evalGroupId: slot.target.evalGroupId, evalGroupIndex: slot.target.evalGroupIndex }),
+      evalGroupId: slot.target.evalGroup?.id,
+      evalGroupIndex: slot.target.evalGroup?.index,
       slots: [],
       readbacks: [],
+      locked: undefined,
     };
     row.slots.push({
       ...slot.target,
       state: slot.state === "reuse" ? "reused" : "gap",
       comparisons: slot.comparisons,
-      ...(slot.state === "gap"
-        ? {
-            ...(slot.reason === undefined ? {} : { reason: slot.reason }),
-            ...(slot.scope === undefined ? {} : { scope: slot.scope }),
-            ...(slot.reason === "dynamic-module-unresolved" ? { issues: slot.issues ?? [] } : {}),
-          }
-        : {}),
+      reason: slot.state === "gap" ? slot.reason : undefined,
+      scope: slot.state === "gap" ? slot.scope : undefined,
+      issues: slot.state === "gap" && slot.reason === "dynamic-module-unresolved" ? slot.issues : undefined,
     });
     if (plan.lockedPairs.includes(key)) row.locked = true;
     rows.set(key, row);
@@ -572,8 +551,11 @@ function dryRows(plan: {
     const row = rows.get(key) ?? {
       experimentId: readback.target.experimentId,
       evalId: readback.target.evalId,
+      evalGroupId: undefined,
+      evalGroupIndex: undefined,
       slots: [],
       readbacks: [],
+      locked: undefined,
     };
     row.readbacks.push(readback);
     if (plan.lockedPairs.includes(key)) row.locked = true;
@@ -641,13 +623,12 @@ function dryText(
       }
     }
     for (const readback of row.readbacks) {
-      const verdict =
-        readback.state === "reused"
-          ? readback.verdict
-          : readback.verdict.state === "available"
-            ? readback.verdict.value
-            : readback.verdict.state;
-      lines.push(`  source ${readback.source.locator} · ${readback.state} · verdict ${verdict}`);
+      function readbackVerdict() {
+        if (readback.state === "reused") return readback.verdict;
+        if (readback.verdict.state === "available") return readback.verdict.value;
+        return readback.verdict.state;
+      }
+      lines.push(`  source ${readback.source.locator} · ${readback.state} · verdict ${readbackVerdict()}`);
     }
   }
   return `${lines.join("\n")}\n`;
@@ -709,22 +690,22 @@ function factsAndConfig() {
     const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
     const project = yield* ProjectConfiguration;
     const config = yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-    return Object.freeze({ invocation, config });
+    return { invocation, config };
   });
 }
 
 function selection(positionals: readonly string[], experimentIds?: readonly string[]) {
   if (experimentIds !== undefined) {
-    return Object.freeze({
-      experimentIds: Object.freeze([...new Set(experimentIds)]),
-      ...(positionals.length === 0 ? {} : { evalSelectors: Object.freeze([...positionals]) }),
-    });
+    return {
+      experimentIds: [...new Set(experimentIds)],
+      evalSelectors: positionals.length === 0 ? undefined : positionals,
+    };
   }
   const [experimentSelector, ...evalSelectors] = positionals;
-  return Object.freeze({
-    ...(experimentSelector === undefined ? {} : { experimentSelector }),
-    ...(evalSelectors.length === 0 ? {} : { evalSelectors: Object.freeze(evalSelectors) }),
-  });
+  return {
+    experimentSelector,
+    evalSelectors: evalSelectors.length === 0 ? undefined : evalSelectors,
+  };
 }
 
 function overrides(values: Record<string, string | boolean | string[] | undefined>) {
@@ -741,27 +722,30 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
   const rerun = enumFlag(values.rerun, "--rerun", ["failed", "all"]);
   const keepSandbox = enumFlag(values["keep-sandbox"], "--keep-sandbox", ["failed", "all"]);
   const sandboxBeforeCache = enumFlag(values["sandbox-before-cache"], "--sandbox-before-cache", ["use", "bypass"]);
-  return Object.freeze({
-    ...(attempts === undefined ? {} : { attempts }),
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
-    ...(budget === undefined ? {} : { budget }),
-    ...(maxConcurrency === undefined ? {} : { maxConcurrency }),
-    ...(maxBuildConcurrency === undefined ? {} : { maxBuildConcurrency }),
-    ...(maxBeforeCacheConcurrency === undefined ? {} : { maxBeforeCacheConcurrency }),
-    ...(rerun === undefined ? {} : { rerun: rerun as "failed" | "all" }),
-    ...(keepSandbox === undefined ? {} : { keepSandbox: keepSandbox as "failed" | "all" }),
-    ...(values["no-pause"] === true
-      ? { pauseOnFailure: false }
-      : values["pause-on-failure"] === true
-        ? { pauseOnFailure: true }
-        : {}),
-    ...(sandboxBeforeCache === undefined ? {} : { sandboxBeforeCache: sandboxBeforeCache as "use" | "bypass" }),
-    ...(values["no-early-exit"] === true
-      ? { earlyExit: false }
-      : values["early-exit"] === true
-        ? { earlyExit: true }
-        : {}),
-  });
+  return {
+    attempts,
+    timeoutMs,
+    budget,
+    maxConcurrency,
+    maxBuildConcurrency,
+    maxBeforeCacheConcurrency,
+    rerun,
+    keepSandbox,
+    ...pauseOverride(),
+    sandboxBeforeCache,
+    ...earlyExitOverride(),
+  };
+
+  function pauseOverride() {
+    if (values["no-pause"] === true) return { pauseOnFailure: false };
+    if (values["pause-on-failure"] === true) return { pauseOnFailure: true };
+    return {};
+  }
+  function earlyExitOverride() {
+    if (values["no-early-exit"] === true) return { earlyExit: false };
+    if (values["early-exit"] === true) return { earlyExit: true };
+    return {};
+  }
 }
 
 const checkCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
@@ -802,16 +786,13 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
       if (preliminaryVerb === "help" && preliminary.positionals.length === 1) {
         return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
       }
-      const input = yield* parsed(
-        argv,
-        teardownMode
-          ? EXP_TEARDOWN_CLI_OPTIONS
-          : preliminaryVerb === "list"
-            ? EXP_LIST_CLI_OPTIONS
-            : preliminaryVerb === "rename"
-              ? EXP_RENAME_CLI_OPTIONS
-              : EXP_NORMAL_CLI_OPTIONS,
-      );
+      function commandOptions() {
+        if (teardownMode) return EXP_TEARDOWN_CLI_OPTIONS;
+        if (preliminaryVerb === "list") return EXP_LIST_CLI_OPTIONS;
+        if (preliminaryVerb === "rename") return EXP_RENAME_CLI_OPTIONS;
+        return EXP_NORMAL_CLI_OPTIONS;
+      }
+      const input = yield* parsed(argv, commandOptions());
       if (input.values.help === true) return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
       const [positionalVerb, ...rest] = input.positionals;
       const verb = input.values.experiment === undefined ? positionalVerb : undefined;
@@ -840,8 +821,8 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
           .inspect({
             cwd: invocation.cwd,
             currentHost: invocation.hostname,
-            ...(selector === undefined ? {} : { experimentSelector: selector }),
-            ...(recoveryKey === undefined ? {} : { recoveryKey }),
+            experimentSelector: selector,
+            recoveryKey,
           })
           .pipe(Effect.mapError((cause) => failure("inspect teardown", cause)));
         if (
@@ -888,17 +869,17 @@ const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCl
           .run({
             cwd: invocation.cwd,
             currentHost: invocation.hostname,
-            ...(selector === undefined ? {} : { experimentSelector: selector }),
-            ...(recoveryKey === undefined ? {} : { recoveryKey }),
+            experimentSelector: selector,
+            recoveryKey,
             ...(typeof input.values["owner-token"] === "string" ? { ownerToken: input.values["owner-token"] } : {}),
             ...(input.values["confirm-owner-terminated"] === true ? { confirmOwnerTerminated: true } : {}),
             ...(input.values["confirm-remote-quiesced"] === true ? { confirmRemoteQuiesced: true } : {}),
             signal: interruption.invocationSignal,
-            observer: Object.freeze({
+            observer: {
               observe(event: ExperimentHostAfterEvent) {
                 if (event.type === "diagnostic") output.writeStderrSync(`${event.message}\n`);
               },
-            }),
+            },
           })
           .pipe(Effect.mapError((cause) => teardownFailure("run teardown", cause, recoveryKey)));
         if (result.status === "completed") {
@@ -981,12 +962,12 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
       if (verb === "rename") {
         const [newId] = rest;
         const sourceRuns = input.values.run;
-        const sourceRunId =
-          Array.isArray(sourceRuns) && sourceRuns.length === 1
-            ? sourceRuns[0]
-            : typeof sourceRuns === "string"
-              ? sourceRuns
-              : undefined;
+        function renameSourceRun() {
+          if (Array.isArray(sourceRuns) && sourceRuns.length === 1) return sourceRuns[0];
+          if (typeof sourceRuns === "string") return sourceRuns;
+          return undefined;
+        }
+        const sourceRunId = renameSourceRun();
         if (newId === undefined || rest.length !== 1 || typeof sourceRunId !== "string" || sourceRunId.length === 0) {
           return yield* write(
             "stderr",
@@ -1097,6 +1078,9 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
         // Experiment Host installs one lossless multiplexing sink for feedback
         // and the project-local Session observer.
         activateSink: false,
+
+        tickIntervalMs: undefined,
+        onEvent: undefined,
       });
       const outcome = yield* Effect.result(
         Effect.scoped(
@@ -1108,6 +1092,8 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
                   stderrIsTTY: terminal.feedback.stderr.isTTY,
                   coordinator,
                   onInterrupt: interruption.requestInterrupt,
+
+                  process: undefined,
                 }),
               ),
               (guard) => Effect.sync(guard.stop),
@@ -1115,7 +1101,7 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
             return yield* experimentHost.invocation.run({
               plan: plan.plan,
               signal: interruption.invocationSignal,
-              feedback: Object.freeze({ coordinator }),
+              feedback: { coordinator },
               ...(typeof input.values.junit === "string" ? { junitPath: input.values.junit } : {}),
             });
           }),
@@ -1129,7 +1115,7 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
         return yield* Effect.fail(failure("run invocation", outcome.failure));
       }
       const result = outcome.success;
-      if (result.exitCode === undefined) {
+      if (result.feedback.kind === "not-requested") {
         return yield* Effect.fail(
           failure(
             "finish invocation feedback",
@@ -1137,7 +1123,7 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
           ),
         );
       }
-      return result.exitCode;
+      return result.feedback.exitCode;
     }),
 });
 
@@ -1164,7 +1150,7 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
           cwd: invocation.cwd,
           config,
           experimentSelector,
-          ...(evalSelector === undefined ? {} : { evalSelector }),
+          evalSelector,
         })
         .pipe(Effect.mapError((cause) => failure("debug", cause)));
       switch (result.status) {
@@ -1215,8 +1201,8 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
                   result.commandPlan,
                   {
                     isTTY: invocation.stdout.isTTY,
-                    ...(invocation.noColor === undefined ? {} : { noColor: invocation.noColor }),
-                    ...(invocation.stdout.columns === undefined ? {} : { width: invocation.stdout.columns }),
+                    noColor: invocation.noColor,
+                    width: invocation.stdout.columns,
                   },
                 )}`,
           );
@@ -1275,13 +1261,13 @@ const acceptCommand: CliCommandContribution<ExperimentCliRequirements, Experimen
         const members = yield* planLocatorAccept({
           cwd: invocation.cwd,
           config,
-          locators: Object.freeze(input.positionals),
+          locators: input.positionals,
         }).pipe(Effect.mapError(acceptFailure));
         yield* write("stdout", `Accept preview\n${acceptMembersText(members)}`);
         return 0;
       }
       const result = yield* experimentHost
-        .accept({ cwd: invocation.cwd, config, locators: Object.freeze(input.positionals) })
+        .accept({ cwd: invocation.cwd, config, locators: input.positionals })
         .pipe(Effect.mapError(acceptFailure));
       yield* write("stdout", acceptText(result));
       return 0;
@@ -1304,13 +1290,13 @@ const invocationCommand: CliCommandContribution<ExperimentCliRequirements, Exper
           .list({
             cwd: invocation.cwd,
             ...(input.values.all === true ? { all: true } : {}),
-            ...(value === undefined ? {} : { experimentSelector: value }),
+            experimentSelector: value,
           })
           .pipe(Effect.mapError((cause) => failure("list invocation status", cause)));
         yield* write(
           "stdout",
           input.values.json === true
-            ? jsonDocument(result)
+            ? jsonDocument({ ...result, sessions: result.sessions.map(sessionRecordToJson) })
             : renderSessionListText(result, Date.now(), input.values.all === true),
         );
         return 0;
@@ -1319,7 +1305,15 @@ const invocationCommand: CliCommandContribution<ExperimentCliRequirements, Exper
         const result = yield* experimentHost.invocationStatus
           .show({ cwd: invocation.cwd, invocationSelector: value })
           .pipe(Effect.mapError((cause) => failure("show invocation status", cause)));
-        yield* write("stdout", input.values.json === true ? jsonDocument(result) : renderSessionShowText(result));
+        yield* write(
+          "stdout",
+          input.values.json === true
+            ? jsonDocument({
+                ...result,
+                session: "experiments" in result.session ? sessionRecordToJson(result.session) : result.session,
+              })
+            : renderSessionShowText(result),
+        );
         return 0;
       }
       return yield* write(

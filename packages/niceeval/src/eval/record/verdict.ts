@@ -56,7 +56,7 @@ export function foldRecordedAttemptVerdict(input: {
 }
 
 export function buildVerdictPayload(input: VerdictFoldInput): VerdictPayload {
-  return Object.freeze({ state: foldVerdict(input) });
+  return { state: foldVerdict(input) };
 }
 
 export type VerdictCoherenceIssue = {
@@ -71,14 +71,14 @@ export function validateVerdictCoherence(input: {
 }): readonly VerdictCoherenceIssue[] {
   const expected = foldVerdict(input.fold);
   return input.payload.state === expected
-    ? Object.freeze([])
-    : Object.freeze([
-        Object.freeze({
+    ? []
+    : [
+        {
           code: "verdict-fold-mismatch" as const,
           expected,
           actual: input.payload.state,
-        }),
-      ]);
+        },
+      ];
 }
 
 /** Plain domain projection for callers that need NiceEval's public verdict. */

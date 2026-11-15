@@ -58,15 +58,15 @@ export interface FeedbackCoordinatorOptions {
   renderer: FeedbackRenderer;
   io: FeedbackIO;
   /** 覆盖默认 tick 周期;测试/未来某个 profile 需要更粗或更细的节奏时用。 */
-  tickIntervalMs?: number;
+  tickIntervalMs: number | undefined;
   /** 观察同一份 reducer 事实的轻量索引（如 Experiment Session）；观察者不得改变事件。 */
-  onEvent?: (event: RunFeedbackEvent, state: RunFeedbackState) => void;
+  onEvent: ((event: RunFeedbackEvent, state: RunFeedbackState) => void) | undefined;
   /**
    * The default coordinator installs itself as the active Runner sink. A Host
    * that must multiplex the same lossless events to another lifecycle owner
    * can disable that registration and install the wrapper itself.
    */
-  activateSink?: boolean;
+  activateSink: boolean | undefined;
 }
 
 export interface FeedbackCoordinator extends FeedbackSink {
@@ -229,11 +229,11 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       type: "diagnostic",
       at: io.clock.now(),
       key: input.key,
-      ...(input.code !== undefined ? { code: input.code } : {}),
+      code: input.code,
       severity: input.severity,
       message: input.message,
-      ...(input.identity === undefined ? {} : { identity: input.identity }),
-      ...(input.data === undefined ? {} : { data: input.data }),
+      identity: input.identity,
+      data: input.data,
     });
   }
 
@@ -250,10 +250,10 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       who: input.who,
       verdict: input.verdict,
       reason: input.reason,
-      ...(input.fact !== undefined ? { fact: input.fact } : {}),
-      ...(input.phase !== undefined ? { phase: input.phase } : {}),
-      ...(input.code !== undefined ? { code: input.code } : {}),
-      ...(input.origin !== undefined ? { origin: input.origin } : {}),
+      fact: input.fact,
+      phase: input.phase,
+      code: input.code,
+      origin: input.origin,
     });
   }
 
@@ -267,7 +267,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       verdict: input.verdict,
       provider: input.provider,
       sandboxId: input.sandboxId,
-      ...(input.enter !== undefined ? { enter: input.enter } : {}),
+      enter: input.enter,
     });
   }
 
@@ -288,8 +288,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       experimentId: input.experimentId,
       hook: input.hook,
       status: input.status,
-      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
-      ...(input.recovery !== undefined ? { recovery: input.recovery } : {}),
+      durationMs: input.durationMs,
+      recovery: input.recovery,
     });
   }
 
@@ -302,7 +302,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       type: "precheck",
       at: io.clock.now(),
       status: input.status,
-      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      durationMs: input.durationMs,
     });
   }
 
@@ -313,12 +313,12 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       experimentId: input.experimentId,
       evalId: input.evalId,
       status: input.status,
-      ...(input.holderPid !== undefined ? { holderPid: input.holderPid } : {}),
-      ...(input.holderHost !== undefined ? { holderHost: input.holderHost } : {}),
-      ...(input.attempts !== undefined ? { attempts: input.attempts } : {}),
-      ...(input.carried !== undefined ? { carried: input.carried } : {}),
-      ...(input.dispatched !== undefined ? { dispatched: input.dispatched } : {}),
-      ...(input.waitedMs !== undefined ? { waitedMs: input.waitedMs } : {}),
+      holderPid: input.holderPid,
+      holderHost: input.holderHost,
+      attempts: input.attempts,
+      carried: input.carried,
+      dispatched: input.dispatched,
+      waitedMs: input.waitedMs,
     });
   }
 
@@ -330,7 +330,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       key: input.key,
       label: input.label,
       status: input.status,
-      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      durationMs: input.durationMs,
     });
   }
 

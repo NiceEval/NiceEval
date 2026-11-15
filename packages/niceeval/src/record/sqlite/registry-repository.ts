@@ -51,7 +51,8 @@ export function getTeardownObligation(connection: RecordDatabase, id: string) {
       `SELECT obligation_id,generation,payload
       FROM ne19_teardown_obligations WHERE obligation_id=?`,
     ).get(id) as Row | undefined;
-    return row === undefined ? undefined : teardownRow(row, `teardown obligation ${id}`);
+    if (row === undefined) return undefined;
+    return teardownRow(row, `teardown obligation ${id}`);
   });
 }
 
@@ -204,9 +205,8 @@ export function getKeptSandbox(connection: RecordDatabase, id: string) {
     const row = recordStatement(connection, "SELECT entry_id,payload FROM ne19_kept_sandboxes WHERE entry_id=?").get(
       id,
     ) as Row | undefined;
-    return row === undefined
-      ? undefined
-      : { id: String(row.entry_id), payload: payload(row.payload, `kept sandbox ${id}`) };
+    if (row === undefined) return undefined;
+    return { id: String(row.entry_id), payload: payload(row.payload, `kept sandbox ${id}`) };
   });
 }
 
@@ -274,7 +274,8 @@ export function getKeptSandboxLease(connection: RecordDatabase, id: string) {
       `SELECT * FROM ne19_kept_sandbox_operation_leases
       WHERE entry_id=?`,
     ).get(id) as Row | undefined;
-    return row === undefined ? undefined : keptLeaseRow(row);
+    if (row === undefined) return undefined;
+    return keptLeaseRow(row);
   });
 }
 

@@ -85,8 +85,13 @@ function summarize(
     estimates.length > 0 || complete
       ? decimal(addCanonicalDecimals(estimates.map((estimate) => estimate.amount)))
       : null;
+  function sourceCostState(): RepricedSource["state"] {
+    if (complete) return "complete";
+    if (amount === null) return "unavailable";
+    return "partial";
+  }
   return {
-    state: complete ? "complete" : amount === null ? "unavailable" : "partial",
+    state: sourceCostState(),
     currency: "USD",
     amount,
     collection,
@@ -127,16 +132,16 @@ export function repriceRecordedUsage(input: {
     createJudgeCallPriceReceipts(input.judge?.calls.map((call) => ({ ...call, cost: null })) ?? [], pricing),
   );
   const known = [application.amount, judge.amount].filter((amount) => amount !== null);
+  function totalCostState() {
+    if (application.state === "complete" && judge.state === "complete") return "complete" as const;
+    if (known.length > 0) return "partial" as const;
+    return "unavailable" as const;
+  }
   return {
     application,
     judge,
     total: {
-      state:
-        application.state === "complete" && judge.state === "complete"
-          ? "complete"
-          : known.length > 0
-            ? "partial"
-            : "unavailable",
+      state: totalCostState(),
       currency: "USD",
       amount: known.length > 0 ? decimal(addCanonicalDecimals(known)) : null,
     },

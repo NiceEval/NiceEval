@@ -13,7 +13,7 @@ import {
   parseDockerRunIdentity,
   parseE2BRunIdentity,
   type OrphanState,
-  type RunIdentity,
+  type RunOwnerIdentity,
 } from "./run-identity.ts";
 
 /** Compose case 的资源组:一次核对、一次销毁的最小单位。 */
@@ -31,15 +31,15 @@ export interface OrphanCandidate {
   provider: "docker" | "e2b";
   /** 展示与销毁的主键:单实例是实例 id;Compose 组是主容器短 id,主容器已消失时退回 project 名。 */
   sandboxId: string;
-  identity: RunIdentity;
+  identity: RunOwnerIdentity;
   state: OrphanState;
   /** Compose case 才有:整组列出与整组销毁的资源清单。 */
-  resources?: ComposeResourceGroup;
+  resources: ComposeResourceGroup | undefined;
 }
 
 /** 孤儿三条件的裁决判据;默认走真实系统探测(`classifyRunIdentity`),测试注入窄判据以
  *  摆脱对当前进程真实启动时刻与 `ps` 可用性的依赖。 */
-export type OrphanClassifier = (identity: RunIdentity) => "alive" | OrphanState;
+export type OrphanClassifier = (identity: RunOwnerIdentity) => "alive" | OrphanState;
 
 interface DockerContainerInfo {
   Id: string;
@@ -108,7 +108,7 @@ async function dockerOrphanCandidates(
     if (!identity) continue;
     const state = classify(identity);
     if (state === "alive") continue; // 属主 run 还活着,属于并发运行中的另一次 run,不出现在列表里
-    out.push({ provider: "docker", sandboxId: id, identity, state });
+    out.push({ provider: "docker", sandboxId: id, identity, state, resources: undefined });
   }
   for (const net of networks) {
     const project = net.Labels?.[DOCKER_COMPOSE_PROJECT_LABEL];
@@ -178,7 +178,7 @@ async function e2bOrphanCandidates(
         if (!identity) continue;
         const state = classify(identity);
         if (state === "alive") continue;
-        out.push({ provider: "e2b", sandboxId: info.sandboxId, identity, state });
+        out.push({ provider: "e2b", sandboxId: info.sandboxId, identity, state, resources: undefined });
       }
     }
   } catch {

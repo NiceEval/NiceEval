@@ -100,7 +100,7 @@ function currentFingerprintProjection(
   pair: PreparedRunPair,
   identity: ConfigIdentity = configIdentityForRun(pair.run, pair.plan),
 ): FingerprintProjection {
-  return Object.freeze({ _tag: "Current", identity });
+  return { _tag: "Current", identity };
 }
 
 /**
@@ -148,7 +148,8 @@ function fingerprintPreparedPair(
       evalModules(evalDef) ??
       (yield* Effect.flatMap(cachedRead(evalDef.sourcePath, sourceCache), (source) =>
         Effect.try({
-          try: () => new ProjectModuleGraph(process.cwd()).capture(evalDef.sourcePath, { source }),
+          try: () =>
+            new ProjectModuleGraph(process.cwd()).capture(evalDef.sourcePath, { source, stopPaths: undefined }),
           catch: (cause) => fingerprintFileError("read", evalDef.sourcePath, cause),
         }),
       ));
@@ -202,7 +203,7 @@ function fingerprintPreparedPair(
         Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
-    const plugins = Object.freeze({ pair: pair.plugin.pairProjection });
+    const plugins = { pair: pair.plugin.pairProjection };
     const niceeval = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
       ...(selectsAgentJudge ? { agentJudge: { ...agentJudgeIdentity(), ...piRuntime } } : {}),
@@ -242,26 +243,23 @@ function fingerprintPreparedPair(
     //
     // 清单与哈希同一份原料:源码面把内容换成内容哈希,数据面直接沿用已经算好的哈希/内容。
     const manifest = yield* Effect.try({
-      try: (): EvalManifest =>
-        Object.freeze({
-          niceeval,
-          config: Object.freeze(Object.fromEntries(configIdentityPaths(identity))),
-          plan: pair.identity,
-          plugins,
-          source: Object.freeze(Object.fromEntries(source)),
-          data: Object.freeze(
-            Object.fromEntries([
-              ...loaderData.map(([path, content]) => [path, hashText(content)]),
-              ...criteria,
-              ...privateFiles,
-            ]),
-          ),
-        }),
+      try: (): EvalManifest => ({
+        niceeval,
+        config: Object.fromEntries(configIdentityPaths(identity)),
+        plan: pair.identity,
+        plugins,
+        source: Object.fromEntries(source),
+        data: Object.fromEntries([
+          ...loaderData.map(([path, content]) => [path, hashText(content)]),
+          ...criteria,
+          ...privateFiles,
+        ]),
+      }),
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
     return yield* Effect.try({
       try: () => {
-        const frozenPayload = freezeFingerprintInput(payload);
+        const frozenPayload = copyFingerprintInput(payload);
         const fingerprint = hash(frozenPayload);
         const pairPlanForExperiment = captureLinkedRunRenameFingerprintIdentity(pair.plan);
         const originalExperimentId = pair.run.experimentId;
@@ -274,12 +272,12 @@ function fingerprintPreparedPair(
           [...pair.plugin.groupLifecycles, ...pair.plugin.evalLifecycles].some(
             (lifecycle) => lifecycle.setup !== undefined || lifecycle.teardown !== undefined,
           );
-        const renameFingerprint = Object.freeze((experimentId: string): string | undefined => {
+        const renameFingerprint = (experimentId: string): string | undefined => {
           if (experimentId === originalExperimentId) return fingerprint;
           if (!pairPlanMatchesFingerprintInput || hasOpaqueExperimentBehavior) return undefined;
           const pairPlan = pairPlanForExperiment(experimentId);
           return pairPlan === undefined ? undefined : hash({ ...frozenPayload, pairPlan });
-        });
+        };
         return { fingerprint, manifest, renameFingerprint };
       },
       catch: (cause) => fingerprintPlanningError("configuration", cause),
@@ -385,19 +383,22 @@ export function planProjectTarget(
   agentRuns: readonly AgentRun[],
   configTimeoutMs?: number,
   options: {
-    readonly configJudge?: import("../judge/provider.ts").JudgeProvider;
-    readonly keepSandbox?: "failed" | "all";
-  } = {},
+    readonly configJudge: import("../judge/provider.ts").JudgeProvider | undefined;
+    readonly keepSandbox: "failed" | "all" | undefined;
+  } = {
+    configJudge: undefined,
+    keepSandbox: undefined,
+  },
 ): Effect.Effect<ProjectTargetPlan, SandboxRunPlanningError | FingerprintPlanningFailure> {
   return Effect.flatMap(
     prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices(), {
-      ...(options.keepSandbox === undefined ? {} : { keepSandbox: options.keepSandbox }),
-      ...(configTimeoutMs === undefined ? {} : { configTimeoutMs }),
+      keepSandbox: options.keepSandbox,
+      configTimeoutMs,
     }),
     (preparedPairs) =>
       planPreparedProjectTarget(preparedPairs, {
         ...options,
-        ...(configTimeoutMs === undefined ? {} : { configTimeoutMs: configTimeoutMs }),
+        configTimeoutMs: configTimeoutMs,
       }),
   );
 }
@@ -410,9 +411,9 @@ export function planProjectTarget(
 export function planPreparedProjectTarget(
   preparedPairs: readonly PreparedRunPair[],
   options: {
-    readonly configJudge?: import("../judge/provider.ts").JudgeProvider;
-    readonly keepSandbox?: "failed" | "all";
-    readonly configTimeoutMs?: number;
+    readonly configJudge: import("../judge/provider.ts").JudgeProvider | undefined;
+    readonly keepSandbox: "failed" | "all" | undefined;
+    readonly configTimeoutMs: number | undefined;
   },
 ): Effect.Effect<ProjectTargetPlan, FingerprintPlanningFailure> {
   return Effect.gen(function* () {
@@ -467,14 +468,12 @@ export function planPreparedProjectTarget(
           renameFingerprintsByKey.set(pair.key, renameFingerprint);
           manifestsByKey.set(pair.key, manifest);
           const bucket = targetEvals.get(pair.run.experimentId) ?? [];
-          bucket.push(
-            Object.freeze({
-              id: pair.evalDef.id,
-              resultConfigHash,
-              fingerprint,
-              evaluationKind: pair.evalDef.evaluationKind ?? "pass",
-            }),
-          );
+          bucket.push({
+            id: pair.evalDef.id,
+            resultConfigHash,
+            fingerprint,
+            evaluationKind: pair.evalDef.evaluationKind ?? "pass",
+          });
           targetEvals.set(pair.run.experimentId, bucket);
         }),
       { concurrency: "unbounded", discard: true },
@@ -488,21 +487,19 @@ export function planPreparedProjectTarget(
       seenRuns.add(run);
       const runConfigHash = runConfigHashes.get(run.experimentId);
       if (runConfigHash === undefined) continue;
-      experiments.push(
-        Object.freeze({
-          id: run.experimentId,
-          runConfigHash,
-          attempts: run.attempts,
-          adapter: adapterIdentity(run.adapter),
-          ...(run.models !== undefined ? { models: run.models } : {}),
-          ...(run.model !== undefined ? { model: run.model } : {}),
-          ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
-          flags: Object.freeze({ ...run.flags }),
-          ...(run.labels !== undefined ? { labels: Object.freeze({ ...run.labels }) } : {}),
-          ...(run.description !== undefined ? { description: run.description } : {}),
-          evals: Object.freeze([...(targetEvals.get(run.experimentId) ?? [])].sort((a, b) => a.id.localeCompare(b.id))),
-        }),
-      );
+      experiments.push({
+        id: run.experimentId,
+        runConfigHash,
+        attempts: run.attempts,
+        adapter: adapterIdentity(run.adapter),
+        models: run.models,
+        model: run.model,
+        reasoningEffort: run.reasoningEffort,
+        flags: { ...run.flags },
+        labels: run.labels === undefined ? undefined : { ...run.labels },
+        description: run.description,
+        evals: [...(targetEvals.get(run.experimentId) ?? [])].sort((a, b) => a.id.localeCompare(b.id)),
+      });
     }
     const watchInputs = new Set<string>();
     for (const pair of preparedPairs) {
@@ -514,16 +511,16 @@ export function planPreparedProjectTarget(
         watchInputs.add(resolve(process.cwd(), path));
       }
     }
-    return Object.freeze({
-      target: Object.freeze({ plannedAt: new Date().toISOString(), experiments: Object.freeze(experiments) }),
+    return {
+      target: { plannedAt: new Date().toISOString(), experiments },
       preparedPairsByKey: readonlyMapSnapshot(preparedPairsByKey),
       plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
       resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),
       plannedFingerprints: readonlyMapSnapshot(plannedFingerprints),
       renameFingerprintsByKey: readonlyMapSnapshot(renameFingerprintsByKey),
       manifestsByKey: readonlyMapSnapshot(manifestsByKey),
-      watchInputs: Object.freeze([...watchInputs].sort()),
-    });
+      watchInputs: [...watchInputs].sort(),
+    };
   });
 }
 
@@ -542,17 +539,14 @@ function readonlyMapSnapshot<Key, Value>(entries: Iterable<readonly [Key, Value]
     values: () => snapshot.values(),
     [Symbol.iterator]: () => snapshot[Symbol.iterator](),
   };
-  return Object.freeze(view);
+  return view;
 }
 
-function freezeFingerprintInput<Value>(value: Value): Value {
+// Rename proofs run after planning and must retain the captured author inputs.
+function copyFingerprintInput<Value>(value: Value): Value {
   if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map((entry) => freezeFingerprintInput(entry))) as Value;
-  }
-  return Object.freeze(
-    Object.fromEntries(Object.entries(value).map(([key, child]) => [key, freezeFingerprintInput(child)])),
-  ) as Value;
+  if (Array.isArray(value)) return value.map((entry) => copyFingerprintInput(entry)) as Value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, copyFingerprintInput(child)])) as Value;
 }
 
 /** folder-local source 进指纹时只留纯数据面(brand 不参与)。 */

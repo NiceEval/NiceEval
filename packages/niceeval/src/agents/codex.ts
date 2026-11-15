@@ -70,13 +70,13 @@ export interface CodexPluginSpec {
     /** Marketplace 来源:`owner/repo`、Git URL 或本地路径。 */
     source: string;
     /** 固定 Marketplace 的 Tag、Commit 或 Branch(→ `codex plugin marketplace add --ref`)。 */
-    ref?: string;
+    ref?: string | undefined;
     /**
      * sparse 拉取的路径列表,每项生成一个 `codex plugin marketplace add --sparse <path>`
      * (codex 的 `--sparse` 必须带路径参数、可重复):大仓库只取插件所需路径,省略或空数组即全量 clone。
      * 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
      */
-    sparse?: readonly string[];
+    sparse?: readonly string[] | undefined;
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -84,14 +84,14 @@ export interface CodexPluginSpec {
 
 export interface CodexConfig {
   /** 代理 / OpenAI API key。省略时读 CODEX_API_KEY env。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /**
    * 传给自定义 provider 的静态 HTTP 请求头（如 Cloudflare Access 的 Service Token 头）。
    * 当 base_url 存在时写入 [model_providers.s2a.http_headers] 并脱敏。
    */
-  headers?: Readonly<globalThis.Record<string, string>>;
+  headers?: Readonly<globalThis.Record<string, string>> | undefined;
   /**
    * 注入每次 Codex CLI 进程的额外环境变量。首轮 `codex exec` 与续轮 `codex exec resume`
    * 使用同一份声明；Codex 启动的 lifecycle Hook、MCP 动态 header 与命令子进程都会继承。
@@ -103,21 +103,21 @@ export interface CodexConfig {
    * `PATH` 是 Sandbox 受管变量，不接受经这里声明——出现即在 factory 构造时报错，改用
    * Sandbox factory 的 `pathPrepend`（见 docs/feature/sandbox/library/README.md）。
    */
-  env?: Readonly<globalThis.Record<string, string>>;
+  env?: Readonly<globalThis.Record<string, string>> | undefined;
   /**
    * 额外 MCP server(每个 Sandbox before 时追加进 ~/.codex/config.toml)。
    * stdio 形态(command/args/env)写 [mcp_servers.<name>] 的 command 行;
    * Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.<name>.http_headers] 子表。
    */
-  mcpServers?: readonly McpServer[];
+  mcpServers?: readonly McpServer[] | undefined;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md —— codex 没有 Claude Code 那种
    * 原生 Skill 工具,只把文件装进去它不会自己去读(见 memory/codex-no-native-skill-tool.md)。
    */
-  skills?: readonly SkillSpec[];
+  skills?: readonly SkillSpec[] | undefined;
   /** Codex 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: readonly CodexPluginSpec[];
+  plugins?: readonly CodexPluginSpec[] | undefined;
   /**
    * 一份完整的 Codex `config.toml`(官方 TOML 格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -127,14 +127,14 @@ export interface CodexConfig {
    * `model_reasoning_effort`、`mcp_servers`、`otel` 出现在文件里 before 报错。manifest 只记
    * 项目相对路径与字节 SHA-256,不落正文。
    */
-  configFile?: string;
+  configFile?: string | undefined;
   /**
    * 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写主配置、挂 MCP、
    * 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 before 脚本这类
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  before?: readonly SandboxCommand[];
+  before?: readonly SandboxCommand[] | undefined;
   /**
    * 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
    * 之前执行(LIFO 镜像 —— `before` 跑在 agent 安装之后,`after` 就跑在 agent 收尾
@@ -142,7 +142,7 @@ export interface CodexConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  after?: readonly SandboxCommand[];
+  after?: readonly SandboxCommand[] | undefined;
 }
 
 const CODEX_CAPACITY_CODES = new Set([
@@ -251,16 +251,18 @@ function codexPlatformPackage(
   platform: AgentArtifactPlatform,
   version: string,
 ): { spec: string; binPath: string } | undefined {
-  const target =
-    platform.os === "linux" && platform.arch === "x64"
-      ? { suffix: "linux-x64", triple: "x86_64-unknown-linux-musl" }
-      : platform.os === "linux" && platform.arch === "arm64"
-        ? { suffix: "linux-arm64", triple: "aarch64-unknown-linux-musl" }
-        : platform.os === "darwin" && platform.arch === "x64"
-          ? { suffix: "darwin-x64", triple: "x86_64-apple-darwin" }
-          : platform.os === "darwin" && platform.arch === "arm64"
-            ? { suffix: "darwin-arm64", triple: "aarch64-apple-darwin" }
-            : undefined;
+  function platformTarget() {
+    if (platform.os === "linux" && platform.arch === "x64")
+      return { suffix: "linux-x64", triple: "x86_64-unknown-linux-musl" };
+    if (platform.os === "linux" && platform.arch === "arm64")
+      return { suffix: "linux-arm64", triple: "aarch64-unknown-linux-musl" };
+    if (platform.os === "darwin" && platform.arch === "x64")
+      return { suffix: "darwin-x64", triple: "x86_64-apple-darwin" };
+    if (platform.os === "darwin" && platform.arch === "arm64")
+      return { suffix: "darwin-arm64", triple: "aarch64-apple-darwin" };
+    return undefined;
+  }
+  const target = platformTarget();
   if (target === undefined) return undefined;
   return {
     spec: `@openai/codex@${version}-${target.suffix}`,
@@ -569,9 +571,15 @@ export function codexAgent(config?: CodexConfig): Agent {
                 },
                 (raw, events, nativeText) => {
                   const code = codexCapacityCode(raw);
+                  const acceptance = codexAcceptance(raw, events, nativeText);
+                  if (code === undefined)
+                    return {
+                      acceptance,
+                      cause: undefined,
+                    };
                   return {
-                    acceptance: codexAcceptance(raw, events, nativeText),
-                    ...(code === undefined ? {} : { cause: normalizeExternalCause({ code }) }),
+                    acceptance,
+                    cause: normalizeExternalCause({ code }),
                   };
                 },
               );
@@ -693,6 +701,7 @@ ${outputTail(install)}`,
  * memory/native-plugin-marketplace-name-not-caller-assignable.md 的姊妹发现,2026-07-13 e2e 复现)。
  * 形状按 CLI 宽容解析,抠不出(非 JSON / 未知形状)返回 undefined,由调用方决定放行还是抛错。
  */
+// Third-party JSON boundary: Codex's installed-plugin output omits unavailable fields.
 interface CodexInstalledPlugin {
   pluginId?: string;
   id?: string;
@@ -708,11 +717,12 @@ function codexInstalledPlugins(stdout: string): CodexInstalledPlugin[] | undefin
   } catch {
     return undefined;
   }
-  const arr = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === "object"
-      ? (raw as { installed?: unknown }).installed
-      : undefined;
+  function installedEntries(): unknown {
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === "object") return (raw as { installed?: unknown }).installed;
+    return undefined;
+  }
+  const arr = installedEntries();
   if (!Array.isArray(arr)) return undefined;
   return arr.filter((item): item is CodexInstalledPlugin => !!item && typeof item === "object");
 }

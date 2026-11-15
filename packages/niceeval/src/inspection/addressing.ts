@@ -21,13 +21,13 @@ export const INSPECTION_ID_ROUTES = Object.freeze([
   })),
 ] as const);
 export interface InspectionAddress {
-  readonly locator?: string;
+  readonly locator: string | undefined;
   readonly runIds: readonly string[];
   readonly experimentIds: readonly string[];
   readonly runs: boolean;
-  readonly aspect?: InspectionAspect;
-  readonly id?: string;
-  readonly imageId?: string;
+  readonly aspect: InspectionAspect | undefined;
+  readonly id: string | undefined;
+  readonly imageId: string | undefined;
 }
 export function inspectionIdAspect(id: string): InspectionAspect | undefined {
   return /^[a-f0-9]{64}$/u.test(id)
@@ -53,7 +53,12 @@ export function parseInspectionAddress(tokens: readonly string[]): InspectionAdd
   }
   if ([locator !== undefined, runIds.length > 0, experimentIds.length > 0, runs].filter(Boolean).length > 1)
     throw new Error("Attempt, Experiment, Run, and runs objects cannot be combined.");
-  const available = locator !== undefined ? INSPECTION_ASPECTS : experimentIds.length > 0 ? ["assertions"] : [];
+  function availableAspects(): readonly string[] {
+    if (locator !== undefined) return INSPECTION_ASPECTS;
+    if (experimentIds.length > 0) return ["assertions"];
+    return [];
+  }
+  const available = availableAspects();
   const invalid = (message: string): never => {
     throw new Error(`${message} Available aspects: ${available.join(", ") || "none"}.`);
   };
@@ -80,13 +85,13 @@ export function parseInspectionAddress(tokens: readonly string[]): InspectionAdd
   if (runIds.some((id) => id.length === 0) || experimentIds.some((id) => id.length === 0))
     invalid("Object IDs must not be empty.");
   return {
-    ...(locator === undefined ? {} : { locator: locator }),
+    locator,
     runIds: [...new Set(runIds)],
     experimentIds: [...new Set(experimentIds)],
     runs,
-    ...(aspect === undefined ? {} : { aspect: aspect }),
+    aspect,
     id,
-    ...(imageId === undefined ? {} : { imageId: imageId }),
+    imageId,
   };
 }
 /** Quote one argv value for a pasteable POSIX shell command. */
@@ -100,6 +105,6 @@ export function inspectionTraceSelector(id: string, offset?: number) {
   if (id.startsWith("command_")) return { kind: "command" as const, commandId: id };
   if (id.startsWith("item_")) return { kind: "item" as const, itemId: id };
   if (id.startsWith("ev_") || /^[a-f0-9]{64}$/u.test(id))
-    return { kind: "execution-evidence" as const, evidenceId: id, ...(offset === undefined ? {} : { offset }) };
+    return { kind: "execution-evidence" as const, evidenceId: id, offset };
   return { kind: "execution-event" as const, eventId: id };
 }

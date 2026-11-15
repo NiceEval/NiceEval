@@ -36,6 +36,7 @@ import type {
   TraceView,
   UsageView,
 } from "./model.ts";
+import { projectMetric } from "./model.ts";
 import { decodeBase64Bytes } from "../inspection/bytes.ts";
 import { displayTextHasForbiddenCharacter } from "../record/family/execution-traces/schema.ts";
 import type { InspectionProjectResult } from "../inspection/project-result.ts";
@@ -49,7 +50,7 @@ const fmt = (value: number): string =>
   Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/u, "").replace(/\.$/u, "");
 
 const metric = (value: Metric, formatValue: (value: number) => string = fmt): string => {
-  if (value.value === null) return value.state;
+  if (value.value === undefined) return value.state;
   const rendered = formatValue(value.value);
   return value.state === "available" ? rendered : `${rendered} (${value.state})`;
 };
@@ -90,22 +91,23 @@ const aggregateEntries = (value: Aggregate): TerminalPanelContentBlock & { reado
 });
 
 interface ExperimentGroup {
-  readonly name: string | null;
+  readonly name: string | undefined;
   readonly experiments: OverviewView["experiments"];
 }
 
-function experimentGroup(experimentId: string): string | null {
+function experimentGroup(experimentId: string): string | undefined {
   const separator = experimentId.indexOf("/");
-  return separator <= 0 ? null : experimentId.slice(0, separator);
+  if (separator <= 0) return undefined;
+  return experimentId.slice(0, separator);
 }
 
-function relativeToGroup(id: string, group: string | null): string {
-  const prefix = group === null ? "" : `${group}/`;
+function relativeToGroup(id: string, group: string | undefined): string {
+  const prefix = group === undefined ? "" : `${group}/`;
   return prefix !== "" && id.startsWith(prefix) ? id.slice(prefix.length) : id;
 }
 
 function groupExperiments(value: OverviewView): readonly ExperimentGroup[] {
-  const groups = new Map<string | null, OverviewView["experiments"][number][]>();
+  const groups = new Map<string | undefined, OverviewView["experiments"][number][]>();
   for (const experiment of value.experiments) {
     const group = experimentGroup(experiment.experimentId);
     const members = groups.get(group) ?? [];
@@ -117,7 +119,7 @@ function groupExperiments(value: OverviewView): readonly ExperimentGroup[] {
 
 const attemptBlocks = (
   cells: OverviewView["cells"],
-  group: string | null,
+  group: string | undefined,
   all: boolean,
   showFailed = false,
 ): readonly TerminalPanelContentBlock[] => {
@@ -160,32 +162,35 @@ const attemptBlocks = (
                   ...(showScore ? [metric(cell.aggregate.score)] : []),
                 ],
               ]
-            : members.map((member) => [
-                member.publication.state === "published"
-                  ? member.publication.attemptLocator
-                  : member.publication.state === "absent"
-                    ? `absent (${member.publication.reason})`
-                    : "pending",
-                member.publication.state === "published"
-                  ? `${member.publication.verdict ?? "not-recorded"}${member.publication.stoppedAt?.state !== "available" || member.publication.stoppedAt.value === null ? "" : " stopped"}`
-                  : member.publication.state,
-                member.publication.state === "published"
-                  ? duration(member.publication.durationMs)
-                  : member.publication.state,
-                ...(showScore
-                  ? [
-                      member.publication.state === "published"
-                        ? `${metric(member.publication.score)}${member.publication.verdict === "passed" && member.publication.score.state === "available" && member.publication.score.value !== null ? " (scored)" : ""}`
-                        : member.publication.state,
-                    ]
-                  : []),
-              ]),
+            : members.map((member) => {
+                function publicationLabel(): string {
+                  if (member.publication.state === "published") return member.publication.attemptLocator;
+                  if (member.publication.state === "absent") return `absent (${member.publication.reason})`;
+                  return "pending";
+                }
+                return [
+                  publicationLabel(),
+                  member.publication.state === "published"
+                    ? `${member.publication.verdict ?? "not-recorded"}${member.publication.stoppedAt?.state !== "available" || member.publication.stoppedAt.value === null ? "" : " stopped"}`
+                    : member.publication.state,
+                  member.publication.state === "published"
+                    ? duration(member.publication.durationMs)
+                    : member.publication.state,
+                  ...(showScore
+                    ? [
+                        member.publication.state === "published"
+                          ? `${metric(member.publication.score)}${member.publication.verdict === "passed" && member.publication.score.state === "available" && member.publication.score.value !== undefined ? " (scored)" : ""}`
+                          : member.publication.state,
+                      ]
+                    : []),
+                ];
+              }),
       },
     ];
   });
 };
 
-const hiddenAttemptSummary = (cells: OverviewView["cells"], showFailed = false): string | null => {
+const hiddenAttemptSummary = (cells: OverviewView["cells"], showFailed = false): string | undefined => {
   const counts = { passed: 0, scored: 0, failed: 0, errored: 0 };
   for (const cell of cells) {
     for (const member of cell.members) {
@@ -195,7 +200,7 @@ const hiddenAttemptSummary = (cells: OverviewView["cells"], showFailed = false):
         if (
           cell.aggregate.evaluationKind === "points" &&
           member.publication.score.state === "available" &&
-          member.publication.score.value !== null
+          member.publication.score.value !== undefined
         ) {
           counts.scored += 1;
         } else {
@@ -212,7 +217,8 @@ const hiddenAttemptSummary = (cells: OverviewView["cells"], showFailed = false):
     ...(!showFailed && counts.failed > 0 ? [`${counts.failed} failed`] : []),
     ...(counts.errored > 5 ? [`${counts.errored - 5} errored`] : []),
   ];
-  return hidden.length === 0 ? null : `${hidden.join("; ")} Attempts hidden`;
+  if (hidden.length === 0) return undefined;
+  return `${hidden.join("; ")} Attempts hidden`;
 };
 
 const compactContinuation = (
@@ -223,7 +229,7 @@ const compactContinuation = (
 ): readonly TerminalPanelContentBlock[] => {
   if (all) return [];
   const hidden = hiddenAttemptSummary(cells, showFailed);
-  return hidden === null
+  return hidden === undefined
     ? []
     : [
         {
@@ -242,8 +248,6 @@ const compactContinuation = (
         },
       ];
 };
-
-const textOrNotRecorded = (value: string | null | undefined): string => value ?? "not-recorded";
 
 type ReferenceAttempts = ReadonlyMap<string, InspectionAttemptResult>;
 
@@ -337,26 +341,28 @@ function referenceSummary(project: InspectionProjectResult, attempts: ReferenceA
   ];
 }
 
+/** Current availability supplements the exact Experiment's recorded cost and result view. */
+
 export function renderOverview(
   value: OverviewView,
   options: {
-    readonly all?: boolean;
-    readonly recorded?: boolean;
-    readonly current?: InspectionProjectResult;
-    readonly references?: ReferenceAttempts;
-  } = {},
+    readonly all: boolean;
+    readonly source:
+      | { readonly kind: "current"; readonly project: InspectionProjectResult; readonly references: ReferenceAttempts }
+      | { readonly kind: "recorded" | "default" };
+  } = { all: false, source: { kind: "default" } },
 ): string {
-  const all = options.all === true;
-  const current = options.current;
+  const all = options.all;
+  const current = options.source.kind === "current" ? options.source.project : undefined;
+  const references = options.source.kind === "current" ? options.source.references : new Map();
+  function resultsTitle(): string {
+    if (current !== undefined) return "Current results";
+    return options.source.kind === "recorded" ? "Recorded results" : "NiceEval results";
+  }
   const blocks: TerminalBlock[] = [
     {
       kind: "panel",
-      title:
-        current === undefined
-          ? options.recorded === true
-            ? "Recorded results"
-            : "NiceEval results"
-          : "Current results",
+      title: resultsTitle(),
       blocks: [
         { kind: "divider", title: "Totals" },
         current === undefined
@@ -378,7 +384,7 @@ export function renderOverview(
                   : [{ key: "Score", value: metric(value.totals.score) }]),
               ],
             },
-        ...(current === undefined ? [] : referenceSummary(current, options.references ?? new Map())),
+        ...(current === undefined ? [] : referenceSummary(current, references ?? new Map())),
       ],
     },
   ];
@@ -391,7 +397,7 @@ export function renderOverview(
         const showPassRate = group.experiments.some(({ aggregate }) => aggregate.evaluationKind !== "points");
         const showScore = group.experiments.some(({ aggregate }) => aggregate.evaluationKind !== "pass");
         return [
-          ...(group.name === null ? [] : [{ kind: "divider" as const, title: group.name }]),
+          ...(group.name === undefined ? [] : [{ kind: "divider" as const, title: group.name }]),
           {
             kind: "table" as const,
             columns: [
@@ -422,8 +428,8 @@ export function renderOverview(
   }
   if (current !== undefined) {
     const currentGroups = groupExperiments(value).flatMap((group) =>
-      group.name === null
-        ? group.experiments.map((experiment) => ({ name: null, experiments: [experiment] }))
+      group.name === undefined
+        ? group.experiments.map((experiment) => ({ name: undefined, experiments: [experiment] }))
         : [group],
     );
     for (const group of currentGroups) {
@@ -441,7 +447,7 @@ export function renderOverview(
           const key = explanationKey(firstExplanation);
           const sharedExplanation = key !== undefined && gaps.every((slot) => explanationKey(slot.explanation) === key);
           return [
-            ...(group.name === null
+            ...(group.name === undefined
               ? []
               : [{ kind: "divider" as const, title: `Experiment ${experiment.experimentId}`, attachNext: true }]),
             ...(sharedExplanation ? gapExplanation(firstExplanation, gaps.length) : []),
@@ -457,7 +463,7 @@ export function renderOverview(
                       : [
                           {
                             kind: "divider" as const,
-                            title: previousResultText(slot.previous.locator, options.references ?? new Map()),
+                            title: previousResultText(slot.previous.locator, references ?? new Map()),
                           },
                         ]),
                   ],
@@ -501,7 +507,7 @@ export function renderOverview(
       const cells = value.cells.filter(({ experimentId }) => experimentIds.has(experimentId));
       blocks.push({
         kind: "panel",
-        title: group.name === null ? "Attempts" : `Attempts · ${group.name}`,
+        title: group.name === undefined ? "Attempts" : `Attempts · ${group.name}`,
         blocks: group.experiments.flatMap((experiment) => {
           const experimentCells = cells.filter(({ experimentId }) => experimentId === experiment.experimentId);
           return [
@@ -522,9 +528,9 @@ export function renderOverview(
 
 function adapterValue(value: import("./model.ts").AdapterValue): string {
   if (value.state === "mixed") return "mixed";
+  if (value.state === "none") return "—";
   const identity = value.value;
-  if (identity === null) return "—";
-  return identity.behaviorRevision === null
+  return identity.behaviorRevision === undefined
     ? `${identity.name} (${identity.contract}; revision not declared)`
     : `${identity.name} (${identity.contract}; revision ${identity.behaviorRevision})`;
 }
@@ -573,7 +579,7 @@ export function renderExperiment(value: ExperimentView): string {
         { kind: "divider", title: "Summary" },
         aggregateEntries(value.aggregate),
         { kind: "divider", title: "Attempts" },
-        ...attemptBlocks(value.cells, null, true),
+        ...attemptBlocks(value.cells, undefined, true),
         { kind: "divider", title: "Models and usage" },
         {
           kind: "keyValue",
@@ -623,7 +629,9 @@ export function renderRun(value: RunView): string {
             {
               key: "Adapter",
               value:
-                value.adapter === null ? "not-recorded" : adapterValue({ state: "available", value: value.adapter }),
+                value.adapter === undefined
+                  ? "not-recorded"
+                  : adapterValue({ state: "available", value: value.adapter }),
             },
             { key: "State", value: value.state },
             { key: "Started", value: new Date(value.startedAt).toISOString() },
@@ -696,6 +704,17 @@ export function renderRun(value: RunView): string {
     });
   }
   for (const member of value.members) {
+    function executionRelation(): string {
+      if (member.execution.state === "not-recorded") return "not-recorded";
+      switch (member.execution.relation) {
+        case "origin":
+          return "origin";
+        case "reference":
+          return "reference";
+        default:
+          return "not-recorded";
+      }
+    }
     blocks.push({
       kind: "panel",
       title: `Member ${member.plannedAttemptId}`,
@@ -707,12 +726,18 @@ export function renderRun(value: RunView): string {
             { key: "Eval", value: member.evalId },
             { key: "Attempt ordinal", value: String(member.attemptOrdinal) },
             { key: "Attempt", value: member.locator ?? "not-recorded" },
-            { key: "Relation", value: member.relation ?? "not-recorded" },
-            { key: "Outcome", value: member.outcome ?? "not-recorded" },
+            {
+              key: "Relation",
+              value: executionRelation(),
+            },
+            {
+              key: "Outcome",
+              value: member.execution.state === "recorded" ? member.execution.outcome : "not-recorded",
+            },
             { key: "Verdict", value: member.verdict ?? "not-recorded" },
             {
               key: "Score",
-              value: `${metric(member.score)}${member.verdict === "passed" && member.score.state === "available" && member.score.value !== null ? " (scored)" : ""}`,
+              value: `${metric(member.score)}${member.verdict === "passed" && member.score.state === "available" && member.score.value !== undefined ? " (scored)" : ""}`,
             },
           ],
         },
@@ -1088,10 +1113,6 @@ function safeEventText(text: string): string {
   return Array.from(text)
     .filter((character) => !displayTextHasForbiddenCharacter(character))
     .join("");
-}
-
-function safeEventJson(value: unknown, space?: number): string {
-  return JSON.stringify(value, (_key, item: unknown) => (typeof item === "string" ? safeEventText(item) : item), space);
 }
 
 function displayPreview(text: { readonly preview: string; readonly omittedBytes: number }, eventId: string): string {
@@ -1879,24 +1900,6 @@ function workingDirectory(value: CommandDetail["workingDirectory"]): string {
 
 const COMMAND_PHASES: ReadonlySet<string> = new Set(["sandbox.prepare", "sandbox.command", "agent.install"]);
 
-/** Every command that did not exit 0 gets a copyable --expand line to its full retained output. */
-function expandFailedCommands(
-  locator: string,
-  commands: readonly { readonly commandId: string; readonly outcome: CommandDetail["outcome"] }[],
-): TerminalPanelContentBlock[] {
-  const failed = commands.filter(({ outcome }) => !(outcome.kind === "exited" && outcome.exitCode === 0));
-  if (failed.length === 0) return [];
-  return [
-    { kind: "divider", title: "Next" },
-    ...failed.map(
-      ({ commandId }): TerminalPanelContentBlock => ({
-        kind: "command",
-        command: `niceeval show ${locator} ${commandId}`,
-      }),
-    ),
-  ];
-}
-
 function commandOutcome(value: CommandDetail["outcome"]): string {
   if (value.kind === "exited") return `exited; code ${value.exitCode}`;
   return `${value.kind}; ${value.reason}`;
@@ -1983,7 +1986,7 @@ export function renderTiming(value: TimingView): string {
 type UsageTotals = UsageView["totals"];
 
 function numericUsageTotal(total: UsageTotals["inputTokens"]): string {
-  return `${total.value === null ? "not-recorded" : fmt(total.value)} (${total.state}; ${total.observationCount} observations)`;
+  return `${total.value === null ? "not recorded" : fmt(total.value)} (${total.state}; ${total.observationCount} observations)`;
 }
 
 function usageTotalEntries(totals: UsageTotals): readonly { readonly key: string; readonly value: string }[] {
@@ -2192,7 +2195,7 @@ function modelUsageBlocks(
       ],
       rows: groups.groups.map((group) => [
         `Role: ${group.modelRole ?? "not-recorded"}\nProvider: ${group.provider ?? "not-recorded"}\n${group.model ?? "not-recorded"}`,
-        `${group.recordedCalls} calls\nInput incl. cache: ${metric(group.tokens.inputTotalTokens)}\nOutput: ${metric(group.tokens.outputTokens)}\nTotal: ${metric(group.tokens.totalTokens)}`,
+        `${group.recordedCalls} calls\nInput incl. cache: ${metric(projectMetric(group.tokens.inputTotalTokens))}\nOutput: ${metric(projectMetric(group.tokens.outputTokens))}\nTotal: ${metric(projectMetric(group.tokens.totalTokens))}`,
         group.costs.values.length === 0
           ? group.costs.state
           : group.costs.values
@@ -2215,11 +2218,11 @@ function modelUsageBlocks(
                 value:
                   value.judgeUsage.totals.requests.value === 0 && value.judgeUsage.totals.requests.state === "available"
                     ? "No Judge calls"
-                    : metric(value.judgeUsage.totals.requests),
+                    : metric(projectMetric(value.judgeUsage.totals.requests)),
               },
-              { key: "Input tokens", value: metric(value.judgeUsage.totals.inputTotalTokens) },
-              { key: "Output tokens", value: metric(value.judgeUsage.totals.outputTokens) },
-              { key: "Total tokens", value: metric(value.judgeUsage.totals.totalTokens) },
+              { key: "Input tokens", value: metric(projectMetric(value.judgeUsage.totals.inputTotalTokens)) },
+              { key: "Output tokens", value: metric(projectMetric(value.judgeUsage.totals.outputTokens)) },
+              { key: "Total tokens", value: metric(projectMetric(value.judgeUsage.totals.totalTokens)) },
               { key: "Cost", value: value.judgeUsage.totals.costs.state },
               ...value.judgeUsage.totals.costs.values.map((cost) => ({
                 key: cost.currency,
@@ -2515,7 +2518,11 @@ function comparisonCostDelta(left: ComparisonAttempt, right: ComparisonAttempt):
         };
         const delta = integer(b.value) - integer(a.value);
         const digits = (delta < 0n ? -delta : delta).toString().padStart(places + 1, "0");
-        return `${currency} ${delta < 0n ? "-" : delta > 0n ? "+" : ""}${places === 0 ? digits : `${digits.slice(0, -places)}.${digits.slice(-places)}`}`;
+        function deltaSign(): string {
+          if (delta < 0n) return "-";
+          return delta > 0n ? "+" : "";
+        }
+        return `${currency} ${deltaSign()}${places === 0 ? digits : `${digits.slice(0, -places)}.${digits.slice(-places)}`}`;
       })
       .join("; ") || "No charged calls"
   );
@@ -2653,11 +2660,11 @@ export function renderAssertions(
   assertions: readonly AssertionDetailResult[],
   options: {
     readonly full: boolean;
-    readonly agentJudgeTraces?: ReadonlyMap<string, AgentJudgeTrace>;
-    readonly entryId?: string;
-    readonly verdict?: string;
-    readonly score?: ScoredValue;
-  } = { full: false },
+    readonly agentJudgeTraces: ReadonlyMap<string, AgentJudgeTrace>;
+    readonly summary:
+      | { readonly kind: "not-requested" }
+      | { readonly kind: "available"; readonly verdict: string; readonly score: ScoredValue };
+  } = { full: false, agentJudgeTraces: new Map(), summary: { kind: "not-requested" } },
 ): string {
   const blocks: TerminalPanelContentBlock[] = [];
   const renderedAgentTraces = new Set<string>();
@@ -2672,8 +2679,8 @@ export function renderAssertions(
         ]
       : [],
   );
-  if (options.verdict !== undefined)
-    blocks.push({ kind: "divider", title: assertionVerdictLine(options.verdict, options.score) });
+  if (options.summary.kind === "available")
+    blocks.push({ kind: "divider", title: assertionVerdictLine(options.summary.verdict, options.summary.score) });
   const counts = assertionRoleCounts(roles);
   if (counts !== "") blocks.push({ kind: "divider", title: counts });
 
@@ -2865,7 +2872,7 @@ export function renderAssertions(
         overflow: "wrap",
       });
     }
-    if (!options.full || options.entryId !== entry.entryId) {
+    if (!options.full) {
       blocks.push({ kind: "divider", title: "Next" });
       blocks.push({ kind: "command", command: `niceeval show ${locator} ${JSON.stringify(entry.entryId)} --full` });
     }
@@ -2912,24 +2919,23 @@ export function renderAssertionMatrix(matrix: import("../inspection/assertion-ma
       kind: "table",
       columns: [{ header: "Criterion" }, ...value.columns.map((_, index) => ({ header: String(index + 1) }))],
       rows: [
-        ["Verdict / score", ...value.columns.map((column) => `${column.verdict ?? "—"} / ${metric(column.score)}`)],
+        [
+          "Verdict / score",
+          ...value.columns.map((column) => `${column.verdict ?? "—"} / ${metric(projectMetric(column.score))}`),
+        ],
         ...value.rows.map((row) => [
           `${row.distinct ? "* " : ""}${[...row.groupPath, row.label].join(" / ")}`,
-          ...row.cells.map((cell) =>
-            cell.state === "absent"
-              ? "—"
-              : cell.state !== "available"
-                ? cell.state
-                : cell.entries
-                    .map(({ result, contribution }) =>
-                      contribution.state === "earned"
-                        ? `${fmt(contribution.earned)}/${fmt(contribution.points)}`
-                        : contribution.state === "unavailable"
-                          ? `${result} (—/${fmt(contribution.points)})`
-                          : result,
-                    )
-                    .join("; "),
-          ),
+          ...row.cells.map(function matrixCell(cell) {
+            if (cell.state === "absent") return "—";
+            if (cell.state !== "available") return cell.state;
+            return cell.entries
+              .map(function entryScore({ result, contribution }) {
+                if (contribution.state === "earned") return `${fmt(contribution.earned)}/${fmt(contribution.points)}`;
+                if (contribution.state === "unavailable") return `${result} (—/${fmt(contribution.points)})`;
+                return result;
+              })
+              .join("; ");
+          }),
         ]),
       ],
     });
@@ -2942,3 +2948,26 @@ export function renderAssertionMatrix(matrix: import("../inspection/assertion-ma
   });
   return terminal(blocks);
 }
+
+function safeEventJson(value: unknown, space?: number): string {
+  return JSON.stringify(value, (_key, item: unknown) => (typeof item === "string" ? safeEventText(item) : item), space);
+}
+
+function expandFailedCommands(
+  locator: string,
+  commands: readonly { readonly commandId: string; readonly outcome: CommandDetail["outcome"] }[],
+): TerminalPanelContentBlock[] {
+  const failed = commands.filter(({ outcome }) => !(outcome.kind === "exited" && outcome.exitCode === 0));
+  if (failed.length === 0) return [];
+  return [
+    { kind: "divider", title: "Next" },
+    ...failed.map(
+      ({ commandId }): TerminalPanelContentBlock => ({
+        kind: "command",
+        command: `niceeval show ${locator} ${commandId}`,
+      }),
+    ),
+  ];
+}
+
+const textOrNotRecorded = (value: string | null | undefined): string => value ?? "not-recorded";

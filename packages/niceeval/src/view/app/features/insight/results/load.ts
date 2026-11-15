@@ -31,30 +31,28 @@ export function resultsQueryOptions(
           experimentQueryOptions(generation, overview, targetMode, selectedExperiments[0]!),
         );
       }
-      const current =
-        targetMode === "current"
-          ? (
-              await generation.queryClient.fetchQuery(
-                inspectionQueryOptions(
-                  generation,
-                  selectedExperiments.length === 0 ? projectOperation() : projectOperation(selectedExperiments),
-                ),
-              )
-            ).project
-          : undefined;
-      const currentHistory =
-        current === undefined
-          ? undefined
-          : (await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))).project
-              .history;
-      return Object.freeze({
+      const base = {
         overview,
         selectedExperiments,
         selectionTitle: group?.label ?? "Results",
-        targetMode,
-        ...(current === undefined ? {} : { current }),
-        ...(currentHistory === undefined ? {} : { currentHistory }),
-      });
+      };
+      if (targetMode === "current") {
+        const current = (
+          await generation.queryClient.fetchQuery(
+            inspectionQueryOptions(
+              generation,
+              selectedExperiments.length === 0 ? projectOperation() : projectOperation(selectedExperiments),
+            ),
+          )
+        ).project;
+        const currentHistory = (
+          await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))
+        ).project.history;
+        return { ...base, targetMode, current, currentHistory };
+      }
+      return targetMode === "history"
+        ? { ...base, targetMode, costSummary: { state: "not-requested" } }
+        : { ...base, targetMode };
     },
   });
 }
@@ -81,17 +79,17 @@ export function experimentQueryOptions(
         const currentHistory = (
           await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))
         ).project.history;
-        return Object.freeze({
+        return {
           overview,
           selectedExperiments,
           selectionTitle: experimentId,
           current,
           currentHistory,
           targetMode,
-        });
+        };
       }
       if (targetMode === "unavailable")
-        return Object.freeze({ overview, selectedExperiments, selectionTitle: experimentId, targetMode });
+        return { overview, selectedExperiments, selectionTitle: experimentId, targetMode };
       const operation = decodeInspectionOperation({
         kind: "experiment.get",
         experimentId,
@@ -100,13 +98,13 @@ export function experimentQueryOptions(
         throw new RouteInputError("Invalid experiment route.");
       }
       const document = await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, operation.success));
-      return Object.freeze({
+      return {
         overview,
-        selectedExperiments: Object.freeze(selectedExperiments),
+        selectedExperiments,
         selectionTitle: selectedExperiments[0] ?? "Results",
         targetMode,
-        costSummary: document.experiment.costSummary,
-      });
+        costSummary: { state: "available", value: document.experiment.costSummary },
+      };
     },
   });
 }

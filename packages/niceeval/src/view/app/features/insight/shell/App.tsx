@@ -22,13 +22,17 @@ export interface PreparedInsightPresentation {
   readonly plan: InsightSurfacePlan;
 }
 
-export interface InsightRuntimeSnapshot {
+interface InsightRuntimeSnapshotBase {
   readonly manifest: ViewManifest;
   readonly overview: ClosedOverview;
-  readonly targetMode: "current" | "history" | "unavailable";
-  readonly targetFailureReason: string | null;
-  readonly presentation?: PreparedInsightPresentation;
+  readonly presentation: PreparedInsightPresentation | undefined;
 }
+
+export type InsightRuntimeSnapshot = InsightRuntimeSnapshotBase &
+  (
+    | { readonly targetMode: "current" | "history" }
+    | { readonly targetMode: "unavailable"; readonly targetFailureReason: string | undefined }
+  );
 
 export function InsightApp({
   checkForUpdate,
@@ -55,7 +59,7 @@ export function InsightApp({
     <RefreshInteractionProvider locked={interactionLocked}>
       <InsightShell
         manifest={manifest}
-        {...(presentation === undefined ? {} : { presentation: presentation })}
+        presentation={presentation}
         refresh={() => refresh(acquire)}
         checkForUpdate={checkForUpdate}
         interactionLocked={interactionLocked}
@@ -72,14 +76,14 @@ function InsightShell({
   refresh,
 }: {
   readonly manifest: ViewManifest;
-  readonly presentation?: PreparedInsightPresentation;
+  readonly presentation: PreparedInsightPresentation | undefined;
   readonly refresh: () => Promise<RefreshResult>;
   readonly checkForUpdate: () => Promise<"stale" | "available" | "none">;
   readonly interactionLocked: boolean;
 }) {
   const generation = useCurrentGeneration();
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshNotice, setRefreshNotice] = useState<RefreshResult["noticeKey"]>();
+  const [refreshNotice, setRefreshNotice] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const { i18n, t } = useTranslation();
   const location = useLocation();
@@ -214,10 +218,10 @@ function InsightShell({
             onClick={() => {
               setRefreshing(true);
               setRefreshFailed(false);
-              setRefreshNotice(undefined);
+              setRefreshNotice(false);
               void refresh()
                 .then((result) => {
-                  setRefreshNotice(result.noticeKey);
+                  setRefreshNotice(result.selectionChanged);
                 })
                 .catch(() => setRefreshFailed(true))
                 .finally(() => setRefreshing(false));
@@ -227,17 +231,21 @@ function InsightShell({
           </button>
           {update.data === "available" && !refreshing ? <span role="status">{t("refresh.available")}</span> : null}
           {update.data === "stale" && !refreshing ? <span role="status">{t("refresh.lastGoodStale")}</span> : null}
-          {refreshNotice === undefined ? null : <span role="status">{t(refreshNotice)}</span>}
+          {refreshNotice ? <span role="status">{t("refresh.selectionChanged")}</span> : null}
           {refreshFailed ? <span role="alert">{t("refresh.failed")}</span> : null}
         </div>
       </header>
       <main className="niceeval-view-main" inert={interactionLocked ? true : undefined}>
-        <SurfaceView key={`background:${surfaceKey(surfaces.background)}`} surface={surfaces.background} />
+        <SurfaceView
+          key={`background:${surfaceKey(surfaces.background)}`}
+          surface={surfaces.background}
+          close={{ kind: "page" }}
+        />
         {foreground === undefined ? null : (
           <SurfaceView
             key={`foreground:${surfaceKey(foreground)}`}
             surface={foreground}
-            onClose={() => close(foreground.close)}
+            close={{ kind: "dialog", onClose: () => close(foreground.close) }}
           />
         )}
       </main>
@@ -247,21 +255,18 @@ function InsightShell({
 
 function SurfaceView({
   surface,
-  onClose,
+  close,
 }: {
   readonly surface: InsightSurface;
-  readonly onClose?: () => void;
+  readonly close: { readonly kind: "page" } | { readonly kind: "dialog"; readonly onClose: () => void };
 }): ReactElement {
   const { target, presentation } = surface;
   if (target.kind === "group" || target.kind === "experiment") return <ResultsRoute target={target} />;
-  if (target.kind === "run")
-    return (
-      <RunRoute
-        runId={target.runId}
-        presentation={presentation}
-        {...(onClose === undefined ? {} : { onClose: onClose })}
-      />
-    );
-  if (onClose === undefined) throw new Error("Attempt dialog close target is missing.");
-  return <AttemptRoute locator={target.locator} onClose={onClose} />;
+  if (target.kind === "run") {
+    if (presentation === "page") return <RunRoute runId={target.runId} presentation="page" />;
+    if (close.kind !== "dialog") throw new Error("Run dialog close target is missing.");
+    return <RunRoute runId={target.runId} presentation="dialog" onClose={close.onClose} />;
+  }
+  if (close.kind !== "dialog") throw new Error("Attempt dialog close target is missing.");
+  return <AttemptRoute locator={target.locator} onClose={close.onClose} />;
 }

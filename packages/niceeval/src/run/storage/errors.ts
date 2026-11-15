@@ -1,3 +1,4 @@
+import { Data } from "effect";
 import type { RunReferenceDependency } from "./types.ts";
 
 export type RunStorageErrorCode =
@@ -17,14 +18,21 @@ export type RunStorageErrorCode =
   | "publication-cutoff-restart-required"
   | "run-storage-invalid";
 
-export class RunStorageError extends Error {
+export type RunStorageFailure = {
+  readonly [Code in RunStorageErrorCode]: { readonly _tag: Code };
+}[RunStorageErrorCode];
+
+export class RunStorageError extends Data.TaggedError("RunStorageError")<{
+  readonly reason: RunStorageFailure;
+}> {
   readonly name = "RunStorageError";
 
   constructor(
     readonly code: RunStorageErrorCode,
     message: string,
-    readonly dependencies: readonly RunReferenceDependency[] = Object.freeze([]),
+    readonly dependencies: readonly RunReferenceDependency[] = [],
   ) {
-    super(message);
+    super({ reason: { _tag: code } });
+    this.message = message;
   }
 }

@@ -117,9 +117,9 @@ function summary(calls: readonly AdapterUsageCall[], collectionComplete: boolean
       : [absent];
   const rate: CacheReadSummary["rate"] =
     reasons.length === 0
-      ? Object.freeze({ state: "exact", value: numerator / denominator })
-      : Object.freeze({ state: "unavailable", reason: reasons[0]! });
-  return Object.freeze({
+      ? { state: "exact", value: numerator / denominator }
+      : { state: "unavailable", reason: reasons[0]! };
+  return {
     rate,
     recordedCalls: calls.length,
     coveredCalls,
@@ -127,21 +127,24 @@ function summary(calls: readonly AdapterUsageCall[], collectionComplete: boolean
     missingInputTotalCalls,
     unknownStatusCalls,
     collectionComplete,
-    reasons: Object.freeze(reasons),
-  });
+    reasons: reasons,
+  };
 }
-const compare = (a: string | null, b: string | null): number =>
-  a === b ? 0 : a === null ? -1 : b === null ? 1 : a < b ? -1 : 1;
+const compare = (a: string | null, b: string | null): number => {
+  if (a === b) return 0;
+  if (a === null) return -1;
+  if (b === null) return 1;
+  return a < b ? -1 : 1;
+};
 
 /** A historical collection marked complete is not proof of an explicit producer seal. */
 export function projectCacheRead(
-  usage: ReadableAdapterUsageAttachment | null,
+  usage: ReadableAdapterUsageAttachment | undefined,
   roles: ResolvedModelRoles | undefined,
   producerCompletenessKnown: boolean,
   absent: "usage-not-recorded" | "source-invalid" | "adapter-usage-required" = "usage-not-recorded",
 ): CacheReadReport {
-  if (usage === null)
-    return Object.freeze({ total: summary([], false, absent), roles: Object.freeze([]), models: Object.freeze([]) });
+  if (usage === undefined) return { total: summary([], false, absent), roles: [], models: [] };
   const complete = producerCompletenessKnown && usage.collection.state === "complete";
   const byRole = new Map<string | null, AdapterUsageCall[]>(Object.keys(roles ?? {}).map((role) => [role, []]));
   const byModel = new Map<string, AdapterUsageCall[]>();
@@ -157,16 +160,14 @@ export function projectCacheRead(
   const models = [...byModel.values()]
     .map((calls) => {
       const { modelSlot: modelRole, provider, model } = calls[0]!;
-      return Object.freeze({ modelRole, provider, model, ...summary(calls, complete) });
+      return { modelRole, provider, model, ...summary(calls, complete) };
     })
     .sort((a, b) => compare(a.modelRole, b.modelRole) || compare(a.provider, b.provider) || compare(a.model, b.model));
-  return Object.freeze({
+  return {
     total: summary(usage.calls, complete),
-    roles: Object.freeze(
-      [...byRole]
-        .sort(([a], [b]) => compare(a, b))
-        .map(([modelRole, calls]) => Object.freeze({ modelRole, ...summary(calls, complete) })),
-    ),
-    models: Object.freeze(models),
-  });
+    roles: [...byRole]
+      .sort(([a], [b]) => compare(a, b))
+      .map(([modelRole, calls]) => ({ modelRole, ...summary(calls, complete) })),
+    models: models,
+  };
 }

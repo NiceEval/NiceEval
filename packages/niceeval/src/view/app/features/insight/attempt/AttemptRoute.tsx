@@ -29,8 +29,9 @@ export function AttemptRoute({
         key={`${locator}:${aspect}:${id}`}
         model={model}
         locale={locale}
-        {...(aspect === undefined ? {} : { aspect: aspect })}
-        {...(id === undefined ? {} : { selectedId: id })}
+        aspect={aspect}
+        selectedId={id}
+        className=""
       />
     </AttemptDialog>
   );

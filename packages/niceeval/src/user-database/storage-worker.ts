@@ -4,6 +4,7 @@ import { access, link, mkdir, open as openFile, unlink } from "node:fs/promises"
 import { basename, dirname, join } from "node:path";
 import { constants, DatabaseSync } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
 import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
@@ -115,8 +116,8 @@ function invalid(message: string, repository?: string, cause?: unknown): UserDat
   return new UserDatabaseInvalid({
     code: "user-database-invalid",
     message,
-    ...(repository === undefined ? {} : { repository }),
-    cause,
+    repository,
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
   });
 }
 
@@ -213,7 +214,7 @@ function assertSupportedFormat(database: DatabaseSync, path: string): void {
       message: `User database ${path} was written by an older NiceEval or has an unsupported format. Stop its consumers, reconcile retained provider artifacts and holds, then remove ${path} and rerun. The database has not been migrated or cleared.`,
       repository: "global",
       databasePath: path,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
   assertCurrentDatabase(database);
@@ -290,7 +291,7 @@ function decodeWorkerData(value: unknown): UserDatabaseWorkerData {
   ) {
     throw invalid("UserDatabase worker data is invalid");
   }
-  return Object.freeze({ databasePath, legacyPath, busyTimeoutMs: Number(busyTimeoutMs) });
+  return { databasePath, legacyPath, busyTimeoutMs: Number(busyTimeoutMs) };
 }
 
 function isDurableStateRequest(value: unknown): value is DurableStateRequest {
@@ -312,14 +313,14 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
   if (typeof value !== "object" || value === null || !Number.isSafeInteger(Reflect.get(value, "id"))) return undefined;
   const id = Number(Reflect.get(value, "id"));
   const kind = Reflect.get(value, "kind");
-  if (kind === "close") return Object.freeze({ id, kind });
+  if (kind === "close") return { id, kind };
   const request = Reflect.get(value, "request");
   return kind === "repository" &&
     (isDurableStateRequest(request) ||
       isDockerCacheRepositoryRequest(request) ||
       isIncusRepositoryRequest(request) ||
       isBeforeCacheSnapshotRepositoryRequest(request))
-    ? Object.freeze({ id, kind, request })
+    ? { id, kind, request }
     : undefined;
 }
 
@@ -382,25 +383,25 @@ function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
       ? String(Reflect.get(object!, "repository"))
       : undefined;
   if (code === "user-database-legacy-found") {
-    return Object.freeze({
+    return {
       code,
       message,
       legacyPath: String(Reflect.get(object!, "legacyPath")),
       databasePath: String(Reflect.get(object!, "databasePath")),
-    });
+    };
   }
   if (code === "user-database-unsupported") {
-    return Object.freeze({
+    return {
       code,
       message,
       repository: repository ?? "unknown",
       databasePath: String(Reflect.get(object!, "databasePath")),
-    });
+    };
   }
   if (code === "user-database-busy" || /SQLITE_BUSY|database is locked/iu.test(message)) {
-    return Object.freeze({ code: "user-database-busy", message, ...(repository === undefined ? {} : { repository }) });
+    return { code: "user-database-busy", message, repository };
   }
-  return Object.freeze({ code: "user-database-invalid", message, ...(repository === undefined ? {} : { repository }) });
+  return { code: "user-database-invalid", message, repository };
 }
 
 if (!isMainThread && parentPort !== null) {
@@ -408,13 +409,13 @@ if (!isMainThread && parentPort !== null) {
   try {
     data = decodeWorkerData(workerData);
   } catch (cause) {
-    parentPort.postMessage(Object.freeze({ state: "startup-failure", error: serializeFailure(cause) }));
+    parentPort.postMessage({ state: "startup-failure", error: serializeFailure(cause) });
     parentPort.close();
   }
   if (data !== undefined) {
     void UserDatabaseStorage.open(data).then(
       (storage) => {
-        parentPort!.postMessage(Object.freeze({ state: "ready" }));
+        parentPort!.postMessage({ state: "ready" });
         let queue = Promise.resolve();
         parentPort!.on("message", (incoming: unknown) => {
           const request = decodeRequest(incoming);
@@ -425,10 +426,10 @@ if (!isMainThread && parentPort !== null) {
               const result =
                 request.kind === "repository"
                   ? storage.dispatch(request.request)
-                  : (storage.close(), Object.freeze({ kind: "void" as const }));
-              response = Object.freeze({ id: request.id, state: "success", result });
+                  : (storage.close(), { kind: "void" as const });
+              response = { id: request.id, state: "success", result };
             } catch (cause) {
-              response = Object.freeze({ id: request.id, state: "failure", error: serializeFailure(cause) });
+              response = { id: request.id, state: "failure", error: serializeFailure(cause) };
             }
             parentPort!.postMessage(response);
             if (request.kind === "close") parentPort!.close();
@@ -436,7 +437,7 @@ if (!isMainThread && parentPort !== null) {
         });
       },
       (cause) => {
-        parentPort!.postMessage(Object.freeze({ state: "startup-failure", error: serializeFailure(cause) }));
+        parentPort!.postMessage({ state: "startup-failure", error: serializeFailure(cause) });
         parentPort!.close();
       },
     );

@@ -214,7 +214,7 @@ function writeEvent(io: FeedbackIO, event: ExpEvent): void {
 }
 
 function terminalSummary(summary: InvocationSummary): ExpTerminalSummary {
-  return Object.freeze({
+  return {
     startedAt: summary.startedAt,
     completedAt: summary.completedAt,
     passed: summary.passed,
@@ -226,7 +226,7 @@ function terminalSummary(summary: InvocationSummary): ExpTerminalSummary {
     ...(summary.usage?.outputTokens === undefined ? {} : { outputTokens: summary.usage.outputTokens }),
     ...(summary.estimatedCostUSD === undefined ? {} : { estimatedCostUSD: summary.estimatedCostUSD }),
     beforeCaches: summary.beforeCaches,
-  });
+  };
 }
 
 /**
@@ -551,17 +551,17 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
     return;
   }
   if (event.verdict === "errored") {
+    function errorPhase() {
+      if (event.phase === "agent.setup") return "agent.before";
+      if (event.phase === "agent.teardown") return "agent.after";
+      return event.phase ?? "eval.run";
+    }
     writeEvent(io, {
       event: "error",
       locator: String(event.locator),
       evalId: event.identity.evalId,
       experimentId,
-      phase:
-        event.phase === "agent.setup"
-          ? "agent.before"
-          : event.phase === "agent.teardown"
-            ? "agent.after"
-            : (event.phase ?? "eval.run"),
+      phase: errorPhase(),
       reason: event.reason,
     });
     return;

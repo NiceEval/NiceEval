@@ -4,7 +4,8 @@
 import { Cause, Effect, Exit, FiberSet, Layer } from "effect";
 import type * as Scope from "effect/Scope";
 import { cliProgram, renderCliFailure } from "./program.ts";
-import { composeCliCommands, type CliFeatureError } from "./contribution.ts";
+import { composeCliCommands } from "./contribution.ts";
+import type { AnyCliFeatureError } from "./feature-failure.ts";
 import { dockerCliCommand } from "../docker/cli/contribution.ts";
 import { sandboxCliCommand } from "../sandbox/cli/contribution.ts";
 import { evalCatalogCliCommand } from "../eval/cli/contribution.ts";
@@ -144,7 +145,7 @@ type CliFeatureRequirements =
   | ViewApplicationRuntime
   | Scope.Scope;
 
-const featureCommands = composeCliCommands<CliFeatureRequirements, CliFeatureError>([
+const featureCommands = composeCliCommands<CliFeatureRequirements, AnyCliFeatureError>([
   ...experimentCliContributions,
   evalCatalogCliCommand,
   compareCliCommand,

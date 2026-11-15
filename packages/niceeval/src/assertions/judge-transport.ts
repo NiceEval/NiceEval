@@ -213,12 +213,12 @@ export async function requestScoreMatchProvider(input: {
   readonly baseUrl: string;
   readonly endpoint: "chat/completions" | "systemone";
   readonly apiKey: string;
-  readonly headers?: Readonly<Record<string, string>>;
+  readonly headers: Readonly<Record<string, string>> | undefined;
   readonly body: string;
   readonly maxBytes: number;
   readonly signal: AbortSignal;
-  readonly usage?: import("../o11y/judge-usage.ts").JudgeUsageTransmission;
-  readonly deadlineAt?: number;
+  readonly usage: import("../o11y/judge-usage.ts").JudgeUsageTransmission | undefined;
+  readonly deadlineAt: number | undefined;
 }): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
   const deadlineAt = input.deadlineAt ?? Infinity;
   let resolveSettled: () => void = () => undefined;

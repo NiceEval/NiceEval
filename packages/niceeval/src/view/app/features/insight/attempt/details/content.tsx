@@ -24,18 +24,26 @@ export function assertionDetailOf(assertion: AttemptAssertionView): SourceLineDe
     score === undefined
       ? ""
       : ` · weight ${score.points} ${score.points === 1 ? "pt" : "pts"} · earned ${earned === undefined ? "unavailable" : `${earned} ${earned === 1 ? "pt" : "pts"}`}`;
-  const tone =
-    assertion.decision.result === "matched"
-      ? "niceeval-tone-good"
-      : assertion.decision.result === "mismatched" && display.severity === "gate"
-        ? "niceeval-tone-bad"
-        : assertion.decision.result === "mismatched"
-          ? "niceeval-tone-warn"
-          : "niceeval-tone-na";
+  function assertionTone(): string {
+    if (assertion.decision.result === "matched") return "niceeval-tone-good";
+    if (assertion.decision.result === "mismatched")
+      return display.severity === "gate" ? "niceeval-tone-bad" : "niceeval-tone-warn";
+    return "niceeval-tone-na";
+  }
+  function evidenceState() {
+    switch (assertion.decision.result) {
+      case "matched":
+        return "matched" as const;
+      case "mismatched":
+        return "mismatched" as const;
+      default:
+        return "unavailable" as const;
+    }
+  }
   return [
     {
       kind: "text",
-      className: `niceeval-source-assertion ${tone}`,
+      className: `niceeval-source-assertion ${assertionTone()}`,
       text: `${display.name} · ${display.severity} ${display.outcome}${scoreText}`,
     },
     {
@@ -43,18 +51,13 @@ export function assertionDetailOf(assertion: AttemptAssertionView): SourceLineDe
       entryId: assertion.entryId,
       content: assertion.evidence,
       label: display.name,
-      state:
-        assertion.decision.result === "matched"
-          ? "matched"
-          : assertion.decision.result === "mismatched"
-            ? "mismatched"
-            : "unavailable",
+      state: evidenceState(),
     },
   ];
 }
 
-export function attemptAssertionsContent(data: AttemptAssertionsData | null): TableContent | null {
-  if (data === null || (data.attention.length === 0 && data.passedGroups.length === 0)) return null;
+export function attemptAssertionsContent(data: AttemptAssertionsData | undefined): TableContent | undefined {
+  if (data === undefined || (data.attention.length === 0 && data.passedGroups.length === 0)) return undefined;
   const rows: TableContentRow[] = data.attention.map((assertion) => ({
     key: assertion.entryId,
     cells: {
@@ -118,10 +121,10 @@ function strongerTone(
 
 /** Join full assertion entries to sealed source only through sourceItemId + sha256 + line range. */
 export function attachAssertionsToSource(
-  source: SourceContent | null,
-  assertions: AttemptAssertionsData | null,
-): SourceContent | null {
-  if (source === null || assertions === null) return source;
+  source: SourceContent | undefined,
+  assertions: AttemptAssertionsData | undefined,
+): SourceContent | undefined {
+  if (source === undefined || assertions === undefined) return source;
   const entries = [...assertions.attention, ...assertions.passedGroups.flatMap((group) => group.items)];
   const blocks = [source.spine, ...source.detached];
   const blockIdentities = new Set(blocks.map((block) => `${block.sourceItemId}\u0000${block.sha256}`));
@@ -163,9 +166,9 @@ export function attachAssertionsToSource(
       const tone = strongerTone(line.tone, assertionLineTone(assertionEntries));
       return {
         ...line,
-        ...(tone === undefined ? {} : { tone }),
-        ...(pill === undefined ? {} : { pill }),
-        ...(details.length === 0 ? {} : { details }),
+        tone,
+        pill,
+        details,
       };
     }),
   });
@@ -202,8 +205,13 @@ export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [
           en: "The events artifact is missing or was not published.",
           "zh-CN": "事件证据缺失或未发布。",
         },
+        command: undefined,
+        count: 1,
       },
     ],
+    command: undefined,
+    badges: [],
+    groups: [],
   },
 ];
 
@@ -217,21 +225,31 @@ export const adapterConversationNotRecordedCallouts: readonly CalloutGroup[] = [
           en: "This Adapter is evaluated through its native interface and has no Agent session or turns.",
           "zh-CN": "此应用通过原生接口接受评测，没有 Agent 会话或 Turn。",
         },
+        command: undefined,
+        count: 1,
       },
     ],
+    command: undefined,
+    badges: [],
+    groups: [],
   },
 ];
 
-export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): readonly CalloutGroup[] {
-  if (data === null) return [];
+export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | undefined): readonly CalloutGroup[] {
+  if (data === undefined) return [];
   return data.groups.map((group) => ({
     title: group.phase,
     items: group.items.map(
       (diagnostic): CalloutItem => ({
         level: diagnostic.level,
         message: `${diagnostic.code}: ${diagnostic.summary}`,
+        command: undefined,
+        count: 1,
       }),
     ),
+    command: undefined,
+    badges: [],
+    groups: [],
   }));
 }
 
@@ -239,6 +257,8 @@ function limitationItems(limitations: readonly EvidenceLimitation[]): readonly C
   return limitations.map((limitation) => ({
     level: "warning" as const,
     message: `${limitation.code}: ${limitation.summary}`,
+    command: undefined,
+    count: 1,
   }));
 }
 
@@ -248,13 +268,19 @@ export function evidenceSliceCallouts(label: string, slice: ClosedEvidenceSlice<
   return [
     {
       title: label,
-      items: items.length > 0 ? items : [{ level: "warning", message: `Evidence state: ${slice.state}.` }],
+      items:
+        items.length > 0
+          ? items
+          : [{ level: "warning", message: `Evidence state: ${slice.state}.`, command: undefined, count: 1 }],
+      command: undefined,
+      badges: [],
+      groups: [],
     },
   ];
 }
 
-export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | null {
-  return slice.state === "available" || slice.state === "partial" ? slice.data : null;
+export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | undefined {
+  return slice.state === "available" || slice.state === "partial" ? slice.data : undefined;
 }
 
 /**
@@ -262,47 +288,46 @@ export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | null {
  * label, source order, text, or ordinal fallback participates in this join.
  */
 export function embedConversationInSource(
-  source: SourceContent | null,
-  conversation: ConversationContent | null,
-): { readonly source: SourceContent | null; readonly conversation: ConversationContent | null } {
+  source: SourceContent | undefined,
+  conversation: ConversationContent | undefined,
+): { readonly source: SourceContent | undefined; readonly conversation: ConversationContent | undefined } {
   const turns = conversation?.turns ?? [];
   const turnById = new Map(turns.map((turn) => [turn.key, turn] as const));
   const mappedTurnIds = new Set<string>();
 
   const cloneLine = (line: SourceLine): SourceLine => {
-    const lineTurns = (line.turnIds ?? []).flatMap((turnId) => {
+    const lineTurns = line.turnIds.flatMap((turnId) => {
       const turn = turnById.get(turnId);
       if (turn === undefined) return [];
       mappedTurnIds.add(turnId);
       return [turn];
     });
-    const details =
-      line.details === undefined && lineTurns.length === 0
-        ? undefined
+    const details = [
+      ...line.details,
+      ...(lineTurns.length === 0
+        ? []
         : [
-            ...(line.details ?? []),
-            ...(lineTurns.length === 0
-              ? []
-              : [
-                  {
-                    kind: "turn-trace" as const,
-                    data: {
-                      turns: lineTurns,
-                      ...(conversation?.locator === undefined ? {} : { locator: conversation.locator }),
-                    },
-                  },
-                ]),
-          ];
-    return { ...line, ...(details === undefined ? {} : { details }) };
+            {
+              kind: "turn-trace" as const,
+              data: {
+                turns: lineTurns,
+                locator: conversation?.locator,
+              },
+            },
+          ]),
+    ];
+    return { ...line, details };
   };
   const cloneBlock = (block: SourceBlockContent): SourceBlockContent => ({
     ...block,
     lines: block.lines.map(cloneLine),
   });
   const embeddedSource =
-    source === null ? null : { ...source, spine: cloneBlock(source.spine), detached: source.detached.map(cloneBlock) };
+    source === undefined
+      ? undefined
+      : { ...source, spine: cloneBlock(source.spine), detached: source.detached.map(cloneBlock) };
   const remainingTurns = turns.filter((turn) => !mappedTurnIds.has(turn.key));
   const remainingConversation =
-    conversation === null || remainingTurns.length === 0 ? null : { ...conversation, turns: remainingTurns };
+    conversation === undefined || remainingTurns.length === 0 ? undefined : { ...conversation, turns: remainingTurns };
   return { source: embeddedSource, conversation: remainingConversation };
 }

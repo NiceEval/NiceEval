@@ -1,7 +1,10 @@
 import { isQuantity, type Quantity } from "../assertions/quantity.ts";
 import { isJsonValue } from "../shared/json-value.ts";
 import type { JsonValue } from "../shared/types.ts";
-import { AttemptNoteLimits, type AttemptNote } from "../record/family/attempt-note/schema.ts";
+import { AttemptNoteLimits, AttemptNoteSchema, type AttemptNote } from "../record/family/attempt-note/schema.ts";
+import * as Schema from "effect/Schema";
+
+const decodeNote = Schema.decodeUnknownSync(Schema.fromJsonString(AttemptNoteSchema));
 
 /** Attempt-owned display data; this collector never registers an Assertion. */
 export class AttemptNotesCollector {
@@ -26,20 +29,12 @@ export class AttemptNotesCollector {
     }
     if (new TextEncoder().encode(serialized).byteLength > AttemptNoteLimits.maximumJsonBytes)
       throw new TypeError("note() entry exceeds 64 KiB of JSON.");
-    const snapshot = JSON.parse(serialized) as AttemptNote;
-    this.entries.push(deepFreeze(snapshot));
+    const snapshot = decodeNote(serialized);
+    this.entries.push(snapshot);
     this.labels.add(label);
   }
 
   snapshot(): readonly AttemptNote[] {
-    return Object.freeze([...this.entries]);
+    return [...this.entries];
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === "object") {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
 }

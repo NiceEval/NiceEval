@@ -28,7 +28,7 @@ export async function acquireCommittedIncusArtifactHold(
     owner: currentOwner(),
     acquiredAt: new Date().toISOString(),
   });
-  return Object.freeze({
+  return {
     artifactId: artifact.artifactId,
     generation: artifact.generation,
     project: artifact.project,
@@ -37,7 +37,7 @@ export async function acquireCommittedIncusArtifactHold(
     beforeCacheKey: artifact.beforeCacheKey,
     manifestDigest: artifact.manifestDigest,
     consumerHoldId: hold.holdId,
-  });
+  };
 }
 
 export interface ArtifactIdentity {
@@ -47,7 +47,7 @@ export interface ArtifactIdentity {
   readonly pool: string;
   readonly artifactMaxInstances: number;
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
+  readonly artifactEstimatedBytes: number | undefined;
   readonly network: string;
   readonly baseFingerprint: string;
   readonly beforeCacheKey: string;
@@ -100,12 +100,12 @@ export function incusArtifactPreparationIdentity(
   plan: IncusRuntimePlan,
   input: ArtifactPreparationIdentityInput,
 ): ArtifactIdentity {
-  return Object.freeze({
+  return {
     executionDomainId: plan.executionDomainId,
     artifactProject: plan.artifactProject,
     artifactMaxInstances: plan.artifactMaxInstances,
     artifactStorageReserveBytes: plan.artifactStorageReserveBytes,
-    ...(plan.artifactEstimatedBytes === undefined ? {} : { artifactEstimatedBytes: plan.artifactEstimatedBytes }),
+    artifactEstimatedBytes: plan.artifactEstimatedBytes,
     runtimeProject: plan.project,
     pool: plan.storagePool,
     network: plan.network,
@@ -118,7 +118,7 @@ export function incusArtifactPreparationIdentity(
     coverage: input.coverage,
     resourcesDigest: input.resourcesDigest,
     replacementScopeDigest: input.replacementScopeDigest,
-  });
+  };
 }
 const artifactConfig = (a: ArtifactIntent): Record<string, string> => ({
   [INCUS_METADATA.allocationId]: a.artifactId,
@@ -255,7 +255,7 @@ export async function lookupCommittedIncusArtifactForPrefixes(
         ...found,
         updatedAt: new Date().toISOString(),
       });
-      return Object.freeze({
+      return {
         artifactId: touched.artifactId,
         generation: touched.generation,
         project: touched.project,
@@ -263,7 +263,7 @@ export async function lookupCommittedIncusArtifactForPrefixes(
         dockerDataVolume: touched.dockerDataVolume,
         beforeCacheKey: touched.beforeCacheKey,
         manifestDigest: touched.manifestDigest,
-      });
+      };
     }
   }
   return undefined;

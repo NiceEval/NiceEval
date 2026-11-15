@@ -114,7 +114,7 @@ export interface PinnedRecordReadSession {
   readonly kind: "canonical" | "private-generation";
   readonly deadlineEpochMs: number;
   /** Opt-in operation deadlines keep the same transaction and publication. */
-  readonly beginOperation?: (deadlineEpochMs: number) => void;
+  readonly beginOperation: (deadlineEpochMs: number) => void;
   readonly publicationCutoff: () => PublicationCutoff;
   readonly sealedCutoff: () => SealedRunCutoff;
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
@@ -202,26 +202,23 @@ function openPinnedRecordReadSession(
         readSealedRunCutoffOnConnection(connection, cutoffIdentity),
       ));
     assertUsable("open-read-session");
-    return Object.freeze({
+    return {
       kind,
       get deadlineEpochMs() {
         return deadlineEpochMs;
       },
-      ...(operationScoped
-        ? {
-            beginOperation: (nextDeadline: number) => {
-              if (closed)
-                throw sqliteError("record-database-invalid", "begin-read-operation", "pinned read session is closed");
-              if (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now())
-                throw sqliteError(
-                  "record-resource-limit-exceeded",
-                  "begin-read-operation",
-                  "operation deadline must be a future safe integer",
-                );
-              deadlineEpochMs = nextDeadline;
-            },
-          }
-        : {}),
+      beginOperation: (nextDeadline: number) => {
+        if (!operationScoped) return;
+        if (closed)
+          throw sqliteError("record-database-invalid", "begin-read-operation", "pinned read session is closed");
+        if (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now())
+          throw sqliteError(
+            "record-resource-limit-exceeded",
+            "begin-read-operation",
+            "operation deadline must be a future safe integer",
+          );
+        deadlineEpochMs = nextDeadline;
+      },
       publicationCutoff: () => publicationCutoff,
       sealedCutoff: readCutoff,
       findExperimentRunIds: (experimentId: string) =>
@@ -251,10 +248,10 @@ function openPinnedRecordReadSession(
             deadlineEpochMs,
             readCutoff(),
           );
-          return Object.freeze({
+          return {
             ...page,
-            cutoff: Object.freeze({ ...page.cutoff, identity: cutoffIdentity }),
-          });
+            cutoff: { ...page.cutoff, identity: cutoffIdentity },
+          };
         }),
       findSourceBarrierCandidate: (request: SourceBarrierRequest) =>
         readBounded("find-source-barrier", () =>
@@ -287,7 +284,7 @@ function openPinnedRecordReadSession(
           readCollectionItemPageOnConnection(connection, attachmentId, afterOrdinal, pageSize),
         ),
       close,
-    });
+    };
   } catch (cause) {
     close();
     throw cause;
@@ -310,7 +307,7 @@ export function openOperationalRecordReadSession(
 /** Read admission never binds a project writer or mutates historical input. */
 export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordReadSession")(function* (
   recordStorageRoot: string,
-  options: { readonly operationScoped?: boolean } = {},
+  options: { readonly operationScoped: boolean | undefined } = { operationScoped: undefined },
 ) {
   const path = recordSqlitePath(recordStorageRoot);
   const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });

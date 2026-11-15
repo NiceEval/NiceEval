@@ -106,11 +106,14 @@ function darwinProcessStart(pid: number): string | undefined {
 }
 
 function verifiedPrefix(): string | undefined {
-  return process.platform === "linux"
-    ? VERIFIED_WRITER_PREFIX
-    : process.platform === "darwin"
-      ? DARWIN_WRITER_PREFIX
-      : undefined;
+  switch (process.platform) {
+    case "linux":
+      return VERIFIED_WRITER_PREFIX;
+    case "darwin":
+      return DARWIN_WRITER_PREFIX;
+    default:
+      return undefined;
+  }
 }
 
 function encodeVerified(identity: VerifiedWriterIdentity): string {

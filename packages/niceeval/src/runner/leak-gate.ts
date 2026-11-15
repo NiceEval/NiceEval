@@ -51,11 +51,11 @@ export interface BuildContextSpec {
   /** build context 根目录(绝对路径)。 */
   readonly contextDir: string;
   /** `.dockerignore` 绝对路径;省略则读 `contextDir/.dockerignore`(不存在视为空规则)。 */
-  readonly dockerignorePath?: string;
+  readonly dockerignorePath: string | undefined;
   /** materializer 追加的过滤规则,dockerignore 语法。 */
-  readonly extraIgnoreRules?: readonly string[];
+  readonly extraIgnoreRules: readonly string[] | undefined;
   /** 报错时点名用(如 Compose 服务名)。 */
-  readonly label?: string;
+  readonly label: string | undefined;
 }
 
 /** bind mount 对 Agent 可见面的阶段。 */
@@ -68,7 +68,7 @@ export interface BindMountSpec {
   readonly phase: BindMountPhase;
   /** 是否挂到 Agent 可达服务(main 或 Agent 可交互的 sidecar)。 */
   readonly agentReachable: boolean;
-  readonly label?: string;
+  readonly label: string | undefined;
 }
 
 export interface LeakFinding {
@@ -81,7 +81,7 @@ export interface LeakFinding {
 /** sandbox source 可贴在 environment 对象上的泄题门提示(发现期自动交叉检查)。 */
 export interface LeakGateHints {
   readonly buildContexts: readonly BuildContextSpec[];
-  readonly bindMounts?: readonly BindMountSpec[];
+  readonly bindMounts: readonly BindMountSpec[] | undefined;
 }
 
 const LEAK_GATE_HINTS = Symbol.for("niceeval.leakGateHints");
@@ -139,7 +139,7 @@ export function isIgnoredByDockerignore(relativePath: string, rules: readonly st
 export function findHiddenInputLeaks(input: {
   readonly hidden: readonly HiddenInput[];
   readonly buildContexts: readonly BuildContextSpec[];
-  readonly bindMounts?: readonly BindMountSpec[];
+  readonly bindMounts: readonly BindMountSpec[] | undefined;
 }): Effect.Effect<LeakFinding[]> {
   return Effect.gen(function* () {
     const findings: LeakFinding[] = [];
@@ -203,9 +203,9 @@ export function findHiddenInputLeaks(input: {
 export function assertNoHiddenInputLeaks(input: {
   readonly hidden: readonly HiddenInput[];
   readonly buildContexts: readonly BuildContextSpec[];
-  readonly bindMounts?: readonly BindMountSpec[];
+  readonly bindMounts: readonly BindMountSpec[] | undefined;
   /** 报错前缀(如 eval id)。 */
-  readonly evalId?: string;
+  readonly evalId: string | undefined;
 }): Effect.Effect<void, HiddenInputLeakError> {
   return Effect.flatMap(findHiddenInputLeaks(input), (findings) => {
     if (findings.length === 0) return Effect.void;
@@ -213,7 +213,7 @@ export function assertNoHiddenInputLeaks(input: {
     const body = findings.map((f, i) => `  ${i + 1}. [${f.kind} via ${f.via}] ${f.path}\n     ${f.detail}`).join("\n");
     return Effect.fail(
       new HiddenInputLeakError({
-        findings: Object.freeze([...findings]),
+        findings,
         message: `Hidden input leak gate failed for ${where}: ${findings.length} path(s) would reach the Agent environment.\n${body}`,
       }),
     );
@@ -469,9 +469,11 @@ export function pathKind(path: string): Effect.Effect<"file" | "directory" | "mi
     try: () => stat(path),
     catch: (cause) => fileError("read-file", path, cause),
   }).pipe(
-    Effect.map((info) =>
-      info.isDirectory() ? ("directory" as const) : info.isFile() ? ("file" as const) : ("missing" as const),
-    ),
+    Effect.map(function existingPathKind(info) {
+      if (info.isDirectory()) return "directory" as const;
+      if (info.isFile()) return "file" as const;
+      return "missing" as const;
+    }),
     Effect.catch(() => Effect.succeed("missing" as const)),
   );
 }

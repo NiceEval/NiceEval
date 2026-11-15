@@ -38,9 +38,14 @@ export function projectConversation(
           truncated: event.truncated?.map((item) => ({ path: item.path, originalBytes: item.originalBytes })) ?? [],
           redacted: [...(event.redacted ?? [])],
         });
+      function messageKind(): string {
+        if (event.type === "message" && event.role === "user") return "user-input";
+        if (index === finalIndex) return "final-reply";
+        return "assistant-message";
+      }
       if (event.type === "message")
         records.push({
-          kind: event.role === "user" ? "user-input" : index === finalIndex ? "final-reply" : "assistant-message",
+          kind: messageKind(),
           text: event.text,
         });
       else if (event.type === "operation.started")
@@ -99,21 +104,28 @@ export function trimConversationMaterial<T>(material: T, maximumBytes: number, e
       const records = output.records as Record<string, unknown>[];
       const projection = output as { omissions: JsonValue[] };
       records.forEach((record, index) => {
-        const key =
-          record.kind === "tool-result"
-            ? "output"
-            : record.kind === "tool-call"
-              ? "input"
-              : record.kind === "assistant-message"
-                ? "text"
-                : undefined;
+        function retainedField() {
+          switch (record.kind) {
+            case "tool-result":
+              return { key: "output", priority: 0 };
+            case "tool-call":
+              return { key: "input", priority: 1 };
+            case "assistant-message":
+              return { key: "text", priority: 2 };
+            default:
+              return undefined;
+          }
+        }
+        const field = retainedField();
+        if (field === undefined) return;
+        const { key, priority } = field;
         if (key !== undefined && typeof record[key] === "string")
           candidates.push({
             parent: record,
             key,
             text: record[key],
             path: `${path}/records/${index}/${key}`,
-            priority: key === "output" ? 0 : key === "input" ? 1 : 2,
+            priority,
             projection,
           });
       });

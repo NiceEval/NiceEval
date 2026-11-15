@@ -42,9 +42,9 @@ function captureRunnerAttemptSourceSnapshot(
 ): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     for (const turn of runtime.conversationTurns) {
-      if (turn.outcome !== undefined) continue;
+      if (turn.completion.state !== "pending") continue;
       runtime.conversationLimitations.addCaptureInterrupted("adapter", "conversation-item");
-      turn.outcome = "interrupted";
+      turn.completion = { state: "interrupted" };
     }
     for (const command of runtime.commands) {
       if (command.result !== undefined) continue;
@@ -80,16 +80,18 @@ function captureRunnerAttemptSourceSnapshot(
                 { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
                 { collection: runtime.usageLimitations.collection(), stage: "adapter" },
               ],
-              runtime.conversationTurns.flatMap((turn) => turn.observed?.limitations ?? []),
+              runtime.conversationTurns.flatMap((turn) =>
+                turn.completion.state === "observed" ? turn.completion.observed.limitations : [],
+              ),
             ),
             segments: runtime.conversationTurns.map((turn) => ({
               segmentId: turn.segmentId,
               sessionId: turn.sessionId,
               turnId: turn.turnId,
               sequence: turn.sequence,
-              outcome: turn.outcome ?? "interrupted",
+              outcome: turn.completion.state === "observed" ? turn.completion.outcome : "interrupted",
               terminal: agentTurnTerminal(turn),
-              items: turn.observed?.items ?? [],
+              items: turn.completion.state === "observed" ? turn.completion.observed.items : [],
               usage: turn.usage.map(({ refs: _refs, ...usage }) => usage),
             })),
           };
@@ -163,17 +165,16 @@ function captureRunnerAttemptSourceSnapshot(
     );
 
     return {
-      ...(agentTurns === undefined ? {} : { agentTurns }),
-      ...(commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
-        ? {}
-        : {
-            sandboxCommands: {
+      agentTurns,
+      sandboxCommands:
+        commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
+          ? undefined
+          : {
               collection: sourceCollection([
                 { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
               ]),
               segments: commandSegments,
             },
-          }),
       runnerActivities,
       runnerDiagnostics,
     };
@@ -237,7 +238,7 @@ export function createRunnerRunSourceReceiptsCapture(input: {
 }): Effect.Effect<RunnerRunSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const captured = runCapture(input.run);
-    if (captured === undefined) return {};
+    if (captured === undefined) return { runnerActivities: undefined, runnerDiagnostics: undefined };
     if (!sealRunObservabilityCaptureIdentity(captured.capture)) {
       return yield* Effect.fail(producerCaptureSealInvalid("run"));
     }

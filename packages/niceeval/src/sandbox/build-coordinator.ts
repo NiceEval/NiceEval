@@ -47,7 +47,7 @@ export interface SandboxBuildWork {
   /** 解析后的构建输入投影;不含凭据值。 */
   readonly inputs: JsonValue;
   /** 有界人读标签;省略时用 BuildKey 短前缀。 */
-  readonly label?: string;
+  readonly label?: string | undefined;
 }
 
 /** Holds one use of a prepared artifact; release it after materialization so the artifact is not retained indefinitely. */
@@ -93,22 +93,22 @@ export interface PrepareSandboxBuildsOptions {
   readonly timing: RunTimingRecorder;
   readonly provider: SandboxBuildProvider;
   /** 同时 in-flight 的不同 BuildKey 上限;默认 2。不占 attempt 并发位。 */
-  readonly maxConcurrency?: number;
+  readonly maxConcurrency?: number | undefined;
   /** 逐 BuildKey 的 timeout(ms);省略 = 无逐 key 上限。 */
-  readonly buildTimeoutMs?: number;
+  readonly buildTimeoutMs?: number | undefined;
   /** 整段准备的全局墙钟上限(ms);省略 = 无全局上限。 */
-  readonly prepareBudgetMs?: number;
+  readonly prepareBudgetMs?: number | undefined;
   /** Invocation abort(Ctrl+C)。 */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
   /**
    * 每个 BuildKey 真正开始 / 结束时回调一次(有界起止事件)。
    * 供 live feedback 投影为运行级 active 行 / 非 TTY 永久事件;不改变协调语义。
    */
-  readonly onActivity?: (event: SandboxBuildActivityEvent) => void;
+  readonly onActivity?: ((event: SandboxBuildActivityEvent) => void) | undefined;
   /** 瞬时构建失败的退避重试上限(含首次尝试);默认 3。 */
-  readonly buildAttempts?: number;
+  readonly buildAttempts?: number | undefined;
   /** 退避基数(ms),第 n 次重试睡 base × 2^n × 抖动;默认 1000。 */
-  readonly buildRetryBaseMs?: number;
+  readonly buildRetryBaseMs?: number | undefined;
 }
 
 /** 构建协调器对外的有界 activity 事件(与 Run feedback 的 run-activity 字段对齐)。 */
@@ -205,7 +205,7 @@ export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(fu
     sources,
     records,
     failures,
-    ...(opts.onActivity === undefined ? {} : { onActivity: opts.onActivity }),
+    onActivity: opts.onActivity ?? (() => {}),
     buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
     buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
   };
@@ -268,7 +268,7 @@ export function buildFailureOrigin(failure: SandboxBuildFailure): {
     code: failure.error.code,
     message: failure.error.message,
     timingNodeId: failure.timingNodeId,
-    ...(failure.error.cause !== undefined ? { cause: failure.error.cause } : {}),
+    cause: failure.error.cause,
   };
 }
 
@@ -290,7 +290,7 @@ function prepareOne(
     sources: Map<SandboxBuildRef, SandboxBuildArtifactSource>;
     records: SandboxBuildRecord[];
     failures: Map<SandboxBuildRef, SandboxBuildFailure>;
-    onActivity?: (event: SandboxBuildActivityEvent) => void;
+    onActivity: (event: SandboxBuildActivityEvent) => void;
     buildAttempts: number;
     buildRetryBaseMs: number;
   },
@@ -306,7 +306,7 @@ function prepareOne(
       startOffsetMs,
       durationMs: 0,
     });
-    ctx.onActivity?.({
+    ctx.onActivity({
       status: "started",
       ref: work.ref,
       buildKey: work.buildKey,
@@ -349,7 +349,7 @@ function prepareOne(
           error,
         });
       }
-      ctx.onActivity?.({
+      ctx.onActivity({
         status: status === "failed" || status === "cancelled" ? "failed" : "done",
         ref: work.ref,
         outcome: status,

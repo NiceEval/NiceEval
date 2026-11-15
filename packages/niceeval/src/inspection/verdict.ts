@@ -5,7 +5,7 @@ import { readInspectionAssertions, type ResolvedInspectionAttempt } from "./fact
 export function attemptVerdict(
   resolved: ResolvedInspectionAttempt,
   assertions = readInspectionAssertions(resolved),
-): VerdictState | null {
+): VerdictState | undefined {
   if (assertions.state === "available") {
     return foldRecordedAttemptVerdict({
       outcome: resolved.attempt.outcome,
@@ -13,11 +13,11 @@ export function attemptVerdict(
     });
   }
   if (assertions.state !== "failed" || assertions.attachment === undefined) {
-    return null;
+    return undefined;
   }
   if (resolved.attempt.outcome === "errored" || resolved.attempt.outcome === "interrupted") return "errored";
   if (containsRequiredAssertionError(assertions.attachment.value)) return "errored";
-  return containsFailedDecision(assertions.attachment.value) ? "failed" : null;
+  return containsFailedDecision(assertions.attachment.value) ? "failed" : undefined;
 }
 
 function containsFailedDecision(value: InspectionJson): boolean {
@@ -74,7 +74,7 @@ function assertionWireEntries(value: InspectionJson): readonly InspectionJson[] 
 
 /** Bounded preview; counts are folded over every recorded required failure. */
 export function attemptVerdictCauses(
-  verdict: VerdictState | null,
+  verdict: VerdictState | undefined,
   assertions: ReturnType<typeof readInspectionAssertions>,
 ): import("./results.ts").InspectionAttemptResult["verdictCauses"] {
   if (verdict !== "errored" || assertions.state !== "available") return undefined;
@@ -91,7 +91,7 @@ export function attemptVerdictCauses(
     )
       continue;
     const detail = entry.explanationRetention.state === "retained" ? entry.explanationRetention.value : undefined;
-    const failureDetail = detail === undefined ? null : retainedFailureCode(detail);
+    const failureDetail = detail === undefined ? null : (retainedFailureCode(detail) ?? null);
     const cause = {
       result: entry.decision.result,
       reason: entry.decision.reason as Causes["items"][number]["reason"],
@@ -115,8 +115,8 @@ export function attemptVerdictCauses(
   };
 }
 
-function retainedFailureCode(value: import("../assertions/record/model.ts").AssertionFactValue): string | null {
-  if (value.kind !== "fields") return null;
+function retainedFailureCode(value: import("../assertions/record/model.ts").AssertionFactValue): string | undefined {
+  if (value.kind !== "fields") return undefined;
   // These are retained evaluator detail fields, never inferred from human messages.
   for (const name of ["failureDetail", "code"]) {
     const field = value.fields.find((field) => field.label === name)?.value;
@@ -125,7 +125,7 @@ function retainedFailureCode(value: import("../assertions/record/model.ts").Asse
   for (const field of value.fields) {
     if (field.label !== "detail") continue;
     const code = retainedFailureCode(field.value);
-    if (code !== null) return code;
+    if (code !== undefined) return code;
   }
-  return null;
+  return undefined;
 }

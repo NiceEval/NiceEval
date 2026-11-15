@@ -80,7 +80,8 @@ export function recordContentDeclarationMetadata(
   schema: object,
 ): (RecordContentDeclarationMetadata & { readonly category: "content" }) | undefined {
   const metadata = mintedDeclarationMetadata(schema);
-  return metadata === undefined ? undefined : { ...metadata, category: "content" };
+  if (metadata === undefined) return undefined;
+  return { ...metadata, category: "content" };
 }
 
 export function isRecordContentHandle(value: unknown): value is RecordContentHandle {

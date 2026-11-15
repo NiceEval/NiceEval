@@ -41,7 +41,9 @@ export function assertCanonicalIdentity(value: string, field: string): void {
 }
 
 export function compareCanonicalCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 type TuplePart = string | number | Uint8Array | null;
@@ -81,7 +83,7 @@ export function hashCanonicalTuple(domain: string, parts: readonly TuplePart[]):
 export function attachmentId(input: {
   readonly runId: string;
   readonly owner: import("../model/core.ts").RecordAttachmentOwner;
-  readonly attemptId?: string;
+  readonly attemptId: string | undefined;
   readonly family: string;
 }): string {
   return hashCanonicalTuple("niceeval.record.attachment-id", [
@@ -113,11 +115,11 @@ export function collectionItemLogicalIdentity(ordinal: number, canonicalDigest: 
 }
 
 function entry(kind: SealEntry["kind"], identity: readonly TuplePart[], closure: readonly TuplePart[]): SealEntry {
-  return Object.freeze({
+  return {
     kind,
     logicalIdentity: hashCanonicalTuple(`niceeval.record.seal.${kind}.identity`, identity),
     digest: hashCanonicalTuple(`niceeval.record.seal.${kind}.closure`, closure),
-  });
+  };
 }
 
 export const recordSealEntry = (recordDigest: string): SealEntry => entry("record", ["record"], [recordDigest]);
@@ -143,19 +145,17 @@ export const attemptSealEntry = (
 
 export const memberSealEntry = (
   runId: string,
-  member: Pick<PersistedMember, "slotId" | "originRunId" | "attemptId" | "action" | "coreDigest">,
+  member: Pick<PersistedMember, "slotId" | "action" | "coreDigest">,
+  originRunId: string | undefined,
+  attemptId: string | undefined,
 ): SealEntry =>
-  entry(
-    "member",
-    [runId, member.slotId],
-    [member.originRunId ?? null, member.attemptId ?? null, member.action, member.coreDigest],
-  );
+  entry("member", [runId, member.slotId], [originRunId ?? null, attemptId ?? null, member.action, member.coreDigest]);
 
 export const attachmentSealEntry = (input: {
   readonly attachmentId: string;
   readonly ownerKind: import("../model/core.ts").RecordAttachmentOwner;
   readonly ownerRunId: string;
-  readonly ownerAttemptId?: string;
+  readonly ownerAttemptId: string | undefined;
   readonly family: string;
   readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;

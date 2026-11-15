@@ -25,7 +25,7 @@ export default defineExperiment({
 #### `models`
 
 ```ts
-models?: Readonly<Record<string, ModelRoleSelection>>;
+models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
 ```
 
 为自定义 Adapter 的各个模型用途选择模型；不能与单模型简写同时使用。
@@ -33,7 +33,7 @@ models?: Readonly<Record<string, ModelRoleSelection>>;
 #### `description`
 
 ```ts
-description?: string;
+description?: string | undefined;
 ```
 
 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。
@@ -41,7 +41,7 @@ description?: string;
 #### `adapter`
 
 ```ts
-adapter?: Adapter;
+adapter?: Adapter | undefined;
 ```
 
 本实验使用的 Adapter 实现。
@@ -49,7 +49,7 @@ adapter?: Adapter;
 #### `model`
 
 ```ts
-model?: string;
+model?: string | undefined;
 ```
 
 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。
@@ -57,7 +57,7 @@ model?: string;
 #### `reasoningEffort`
 
 ```ts
-reasoningEffort?: string;
+reasoningEffort?: string | undefined;
 ```
 
 模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。
@@ -65,7 +65,7 @@ reasoningEffort?: string;
 #### `judge`
 
 ```ts
-judge?: JudgeSelection;
+judge?: JudgeSelection | undefined;
 ```
 
 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
@@ -75,7 +75,7 @@ Experiment → Eval → Config → 内置默认值解析。
 #### `flags`
 
 ```ts
-flags?: globalThis.Record<string, FlagValue>;
+flags?: globalThis.Record<string, FlagValue> | undefined;
 ```
 
 实验条件(A/B 里的 feature flag),由实验文件声明;必须是扁平标量对象
@@ -85,7 +85,7 @@ flags?: globalThis.Record<string, FlagValue>;
 #### `labels`
 
 ```ts
-labels?: globalThis.Record<string, string | number>;
+labels?: globalThis.Record<string, string | number> | undefined;
 ```
 
 报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
@@ -98,7 +98,7 @@ labels 不透传 ctx / t(agent 和 eval 看不见)、不参与可比性配置(�
 #### `attempts`
 
 ```ts
-attempts?: number;
+attempts?: number | undefined;
 ```
 
 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--attempts` 覆盖时默认 1。
@@ -106,7 +106,7 @@ attempts?: number;
 #### `earlyExit`
 
 ```ts
-earlyExit?: boolean;
+earlyExit?: boolean | undefined;
 ```
 
 一次重复(attempts &gt; 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`attempts` 跑满、测完整通过率),
@@ -115,7 +115,7 @@ earlyExit?: boolean;
 #### `evals`
 
 ```ts
-evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
+evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean) | undefined;
 ```
 
 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
@@ -127,7 +127,7 @@ evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这个实验生效。
@@ -135,7 +135,7 @@ timeoutMs?: number;
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer;
+sandbox?: SandboxLayer | undefined;
 ```
 
 本实验贡献的 Sandbox 声明层。它与每条选中 Eval 的同名字段逐配对链接；
@@ -144,7 +144,7 @@ sandbox?: SandboxLayer;
 #### `sandboxCache`
 
 ```ts
-sandboxCache?: SandboxCacheConfig;
+sandboxCache?: SandboxCacheConfig | undefined;
 ```
 
 Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身份计算。
@@ -152,7 +152,7 @@ Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身
 #### `sandboxLabels`
 
 ```ts
-sandboxLabels?: "run-only";
+sandboxLabels?: "run-only" | undefined;
 ```
 
 只向 Provider 写 Run 级标签，省略创建实例的 Attempt 与评估用例标签；不影响运行身份。
@@ -160,7 +160,7 @@ sandboxLabels?: "run-only";
 #### `plugins`
 
 ```ts
-plugins?: readonly PluginInstance<"experiment">[];
+plugins?: readonly PluginInstance<"experiment">[] | undefined;
 ```
 
 本实验显式声明的 Plugin 实例列表，由 `defineExperiment()` 规范化。
@@ -168,7 +168,7 @@ plugins?: readonly PluginInstance<"experiment">[];
 #### `sandboxReuse`
 
 ```ts
-sandboxReuse?: boolean;
+sandboxReuse?: boolean | undefined;
 ```
 
 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。
@@ -176,7 +176,7 @@ sandboxReuse?: boolean;
 #### `sharedState`
 
 ```ts
-sharedState?: SharedStateConfig;
+sharedState?: SharedStateConfig | undefined;
 ```
 
 声明本 Experiment 需要独占的共享外部状态。相同 key 的 Invocation 在同一项目
@@ -187,7 +187,7 @@ provider finalizer 与 Experiment after 全部完成；等待者不会先创建 
 #### `budget`
 
 ```ts
-budget?: number;
+budget?: number | undefined;
 ```
 
 本实验的估算花费上限(USD)。调度器累计已完成 attempt 的 `estimatedCostUSD`；该值由
@@ -198,7 +198,7 @@ attempt 并上报一次 `run:budgetExceeded`（已在飞的 attempt 仍会跑完
 #### `maxConcurrency`
 
 ```ts
-maxConcurrency?: number;
+maxConcurrency?: number | undefined;
 ```
 
 本 Invocation 内本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
@@ -212,7 +212,7 @@ after 与沙箱销毁完成才归还,中途任何等待(含 turn 重试退避)�
 #### `before`
 
 ```ts
-before?: ExperimentHook;
+before?: ExperimentHook | undefined;
 ```
 
 实验级生命周期钩子对的 before 侧:整场至多一次、宿主机侧,管「每实验一份、所有 attempt
@@ -227,7 +227,7 @@ runner 不做值的中介。before 抛错 → 本实验所有 Attempt 形成 `er
 #### `after`
 
 ```ts
-after?: ExperimentHook;
+after?: ExperimentHook | undefined;
 ```
 
 实验级生命周期钩子对的 after 侧:本实验全部 attempt 收尾后执行(运行被中断也执行),

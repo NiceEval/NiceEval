@@ -15,17 +15,17 @@ export interface AssertionEvidenceContent {
   readonly observed: ClosedAssertionFactValue;
   readonly expected: ClosedAssertionFactValue;
   readonly explanation: ClosedAssertionFactValue;
-  readonly matcherDebugger?: MatcherFilterDebuggerContent;
+  readonly matcherDebugger: MatcherFilterDebuggerContent | undefined;
 }
 
 type MatchState = "matched" | "mismatched" | "unavailable";
 
 interface MatchDiagnosticView {
-  readonly code?: string;
-  readonly expected?: ClosedAssertionFactValue;
-  readonly received?: ClosedAssertionFactValue;
-  readonly reason?: string;
-  readonly locator?: string;
+  readonly code: string | undefined;
+  readonly expected: ClosedAssertionFactValue | undefined;
+  readonly received: ClosedAssertionFactValue | undefined;
+  readonly reason: string | undefined;
+  readonly locator: string | undefined;
   readonly children: readonly MatchChildView[];
 }
 
@@ -33,7 +33,7 @@ interface MatchChildView {
   readonly index: number;
   readonly label: string;
   readonly state: MatchState;
-  readonly diagnostic: MatchDiagnosticView | null;
+  readonly diagnostic: MatchDiagnosticView | undefined;
 }
 
 const INLINE_STRING_CHARACTER_LIMIT = 240;
@@ -105,6 +105,21 @@ function numberValue(value: ClosedAssertionFactValue | undefined): number | unde
   return value?.kind === "value" && typeof value.value === "number" ? value.value : undefined;
 }
 
+function comparisonMethod(comparator: string | undefined): string | undefined {
+  switch (comparator) {
+    case "less-than":
+      return "lessThan";
+    case "at-most":
+      return "atMost";
+    case "greater-than":
+      return "greaterThan";
+    case "at-least":
+      return "atLeast";
+    default:
+      return undefined;
+  }
+}
+
 function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const data = field(check, "data");
   if (criterionId(check) === "numeric-comparison") {
@@ -117,16 +132,7 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
       if (comparator === "between" && upperThreshold !== undefined) {
         return `between(${formattedThreshold}, ${formatNumericUnit(upperThreshold, unit)})`;
       }
-      const name =
-        comparator === "less-than"
-          ? "lessThan"
-          : comparator === "at-most"
-            ? "atMost"
-            : comparator === "greater-than"
-              ? "greaterThan"
-              : comparator === "at-least"
-                ? "atLeast"
-                : undefined;
+      const name = comparisonMethod(comparator);
       if (name !== undefined) return `${name}(${formattedThreshold})`;
     }
   }
@@ -144,18 +150,7 @@ function matcherName(check: ClosedAssertionFactValue): string | undefined {
   const count = numberValue(field(quantifier, "count"));
   if (assertion === "absent" || quantifierKind === "absent") return `notCalledTool(${toolMatcher})`;
   if (quantifierKind === "at-least" && count === 1) return `calledTool(${toolMatcher})`;
-  const method =
-    quantifierKind === "at-least"
-      ? "atLeast"
-      : quantifierKind === "less-than"
-        ? "lessThan"
-        : quantifierKind === "at-most"
-          ? "atMost"
-          : quantifierKind === "greater-than"
-            ? "greaterThan"
-            : quantifierKind === "exact"
-              ? "exactly"
-              : undefined;
+  const method = quantifierKind === "exact" ? "exactly" : comparisonMethod(quantifierKind);
   return method !== undefined && count !== undefined
     ? `${toolMatcher}.${method}(${count})`
     : `calledTool(${toolMatcher})`;
@@ -166,8 +161,8 @@ function matchState(value: ClosedAssertionFactValue | undefined): MatchState | u
   return state === "matched" || state === "mismatched" || state === "unavailable" ? state : undefined;
 }
 
-function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagnosticView | null {
-  if (value?.kind !== "fields") return null;
+function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagnosticView | undefined {
+  if (value?.kind !== "fields") return undefined;
   const childrenValue = field(value, "children");
   const children =
     childrenValue?.kind === "list"
@@ -190,11 +185,11 @@ function diagnosticView(value: ClosedAssertionFactValue | undefined): MatchDiagn
   const reason = stringValue(field(value, "reason"));
   const locator = stringValue(field(field(value, "locator"), "id"));
   return {
-    ...(code === undefined ? {} : { code }),
-    ...(expected === undefined ? {} : { expected }),
-    ...(received === undefined ? {} : { received }),
-    ...(reason === undefined ? {} : { reason }),
-    ...(locator === undefined ? {} : { locator }),
+    code,
+    expected,
+    received,
+    reason,
+    locator,
     children,
   };
 }
@@ -211,22 +206,22 @@ type NumericComparator = "less-than" | "at-most" | "greater-than" | "at-least" |
 type NumericMaterialState = "exact" | "lower-bound" | "unavailable";
 
 interface NumericComparisonView {
-  readonly unit?: string;
+  readonly unit: string | undefined;
   readonly comparator: NumericComparator;
   readonly threshold: number;
-  readonly upperThreshold?: number;
+  readonly upperThreshold: number | undefined;
   readonly subject: {
     readonly kind: "explicit-value" | "scope-metric" | "collection-cardinality";
-    readonly metric?: "tokens" | "cost";
-    readonly scope?: "turn" | "session" | "attempt";
-    readonly unit?: "tokens" | "usd";
+    readonly metric: "tokens" | "cost" | undefined;
+    readonly scope: "turn" | "session" | "attempt" | undefined;
+    readonly unit: "tokens" | "usd" | undefined;
   };
   readonly material: {
-    readonly unit?: string;
+    readonly unit: string | undefined;
     readonly state: NumericMaterialState;
-    readonly value?: number;
-    readonly reason?: string;
-    readonly derivation?: ClosedAssertionFactValue;
+    readonly value: number | undefined;
+    readonly reason: string | undefined;
+    readonly derivation: ClosedAssertionFactValue | undefined;
   };
 }
 
@@ -287,20 +282,20 @@ function numericComparisonView(
   return {
     comparator,
     threshold,
-    ...(upperThreshold === undefined ? {} : { upperThreshold }),
-    ...(comparisonUnit === undefined ? {} : { unit: comparisonUnit }),
+    upperThreshold,
+    unit: comparisonUnit,
     subject: {
       kind: subjectKind,
-      ...(metric === "tokens" || metric === "cost" ? { metric } : {}),
-      ...(scope === "turn" || scope === "session" || scope === "attempt" ? { scope } : {}),
-      ...(unit === "tokens" || unit === "usd" ? { unit } : {}),
+      metric: metric === "tokens" || metric === "cost" ? metric : undefined,
+      scope: scope === "turn" || scope === "session" || scope === "attempt" ? scope : undefined,
+      unit: unit === "tokens" || unit === "usd" ? unit : undefined,
     },
     material: {
       state: materialState,
-      ...(materialUnit === undefined ? {} : { unit: materialUnit }),
-      ...(numberValue(field(input, "value")) === undefined ? {} : { value: numberValue(field(input, "value"))! }),
-      ...(stringValue(field(input, "reason")) === undefined ? {} : { reason: stringValue(field(input, "reason"))! }),
-      ...(field(input, "derivation") === undefined ? {} : { derivation: field(input, "derivation")! }),
+      unit: materialUnit,
+      value: numberValue(field(input, "value")),
+      reason: stringValue(field(input, "reason")),
+      derivation: field(input, "derivation"),
     },
   };
 }
@@ -512,7 +507,7 @@ function CommandEvidence({
   locale,
 }: {
   readonly input: ClosedAssertionFactValue;
-  readonly diagnostic: MatchDiagnosticView | null;
+  readonly diagnostic: MatchDiagnosticView | undefined;
   readonly locale: string;
 }): ReactElement {
   const command = stringValue(field(input, "command"));
@@ -551,7 +546,7 @@ function ToolEvidence({
   locale,
 }: {
   readonly observed: ClosedAssertionFactValue;
-  readonly diagnostic: MatchDiagnosticView | null;
+  readonly diagnostic: MatchDiagnosticView | undefined;
   readonly locale: string;
 }): ReactElement {
   const receipt = field(observed, "receipt");
@@ -696,11 +691,7 @@ function numericConclusion(view: NumericComparisonView, state: MatchState, local
       "观测值与阈值的单位不同，无法比较。",
     );
   }
-  const actual = numericValueText(
-    { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
-    value,
-    locale,
-  );
+  const actual = numericValueText({ subject: view.subject, unit: view.material.unit }, value, locale);
   const expected = thresholdText(view, locale);
   if (view.material.state === "lower-bound" && state === "unavailable") {
     return view.subject.kind === "collection-cardinality"
@@ -717,24 +708,20 @@ function numericConclusion(view: NumericComparisonView, state: MatchState, local
   }
   const relation =
     state === "mismatched" ? oppositeComparatorSymbol(view.comparator) : comparatorSymbol(view.comparator);
-  const knownPrefix =
-    view.material.state === "lower-bound"
-      ? label(locale, "Known minimum", "已知至少")
-      : view.subject.kind === "collection-cardinality"
-        ? label(locale, "Tool calls", "工具调用")
-        : view.subject.metric === "cost"
-          ? label(locale, "Estimated", "估算")
-          : view.subject.metric === "tokens"
-            ? label(locale, "Used", "已用")
-            : label(locale, "Observed", "实际");
-  const outcome =
-    state === "matched"
-      ? label(locale, "so it passes.", "所以通过。")
-      : state === "mismatched"
-        ? label(locale, "so it does not pass.", "所以未通过。")
-        : label(locale, "so the result is unavailable.", "所以无法判断。");
+  function knownPrefix(): string {
+    if (view.material.state === "lower-bound") return label(locale, "Known minimum", "已知至少");
+    if (view.subject.kind === "collection-cardinality") return label(locale, "Tool calls", "工具调用");
+    if (view.subject.metric === "cost") return label(locale, "Estimated", "估算");
+    if (view.subject.metric === "tokens") return label(locale, "Used", "已用");
+    return label(locale, "Observed", "实际");
+  }
+  function outcome(): string {
+    if (state === "matched") return label(locale, "so it passes.", "所以通过。");
+    if (state === "mismatched") return label(locale, "so it does not pass.", "所以未通过。");
+    return label(locale, "so the result is unavailable.", "所以无法判断。");
+  }
   const separator = locale === "zh-CN" ? "，" : ", ";
-  return `${knownPrefix} ${actual} ${relation} ${expected}${separator}${outcome}`;
+  return `${knownPrefix()} ${actual} ${relation} ${expected}${separator}${outcome()}`;
 }
 
 function chargeLabel(bucket: PricingChargeView["bucket"], locale: string): string {
@@ -801,40 +788,35 @@ function NumericEvidence({
   const formulaRelation =
     state === "mismatched" ? oppositeComparatorSymbol(view.comparator) : comparatorSymbol(view.comparator);
   const receipt = view.subject.metric === "cost" ? pricingReceiptView(view.material.derivation) : undefined;
-  return (
-    <section className="niceeval-numeric-evidence" data-state={state}>
-      <span className="niceeval-numeric-evidence-label">{numericSubjectLabel(view, locale)}</span>
-      {value === undefined || view.material.unit !== view.unit ? (
+  function numericFormula(): ReactElement {
+    if (value === undefined || view.material.unit !== view.unit)
+      return (
         <p className="niceeval-numeric-evidence-unavailable">
           {label(locale, "No comparable value", "没有可比较的数值")}
         </p>
-      ) : view.material.state === "lower-bound" && state === "unavailable" ? (
+      );
+    if (view.material.state === "lower-bound" && state === "unavailable")
+      return (
         <p className="niceeval-numeric-evidence-formula">
           <small>{label(locale, "Known minimum", "已知至少")}</small>
-          <strong>
-            {numericValueText(
-              { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
-              value,
-              locale,
-            )}
-          </strong>
+          <strong>{numericValueText({ subject: view.subject, unit: view.material.unit }, value, locale)}</strong>
           <span aria-hidden="true">·</span>
           <small>{thresholdText(view, locale)}</small>
         </p>
-      ) : (
-        <p className="niceeval-numeric-evidence-formula">
-          {view.material.state === "lower-bound" ? <small>{label(locale, "Known minimum", "已知至少")}</small> : null}
-          <strong>
-            {numericValueText(
-              { subject: view.subject, ...(view.material.unit === undefined ? {} : { unit: view.material.unit }) },
-              value,
-              locale,
-            )}
-          </strong>
-          <span className="niceeval-numeric-evidence-operator">{formulaRelation}</span>
-          <strong>{thresholdText(view, locale)}</strong>
-        </p>
-      )}
+      );
+    return (
+      <p className="niceeval-numeric-evidence-formula">
+        {view.material.state === "lower-bound" ? <small>{label(locale, "Known minimum", "已知至少")}</small> : null}
+        <strong>{numericValueText({ subject: view.subject, unit: view.material.unit }, value, locale)}</strong>
+        <span className="niceeval-numeric-evidence-operator">{formulaRelation}</span>
+        <strong>{thresholdText(view, locale)}</strong>
+      </p>
+    );
+  }
+  return (
+    <section className="niceeval-numeric-evidence" data-state={state}>
+      <span className="niceeval-numeric-evidence-label">{numericSubjectLabel(view, locale)}</span>
+      {numericFormula()}
       <p className="niceeval-numeric-evidence-conclusion">{numericConclusion(view, state, locale)}</p>
       {receipt === undefined ? null : <PricingReceipt receipt={receipt} locale={locale} />}
     </section>
@@ -849,7 +831,7 @@ function GenericEvidence({
 }: {
   readonly content: AssertionEvidenceContent;
   readonly input: ClosedAssertionFactValue;
-  readonly diagnostic: MatchDiagnosticView | null;
+  readonly diagnostic: MatchDiagnosticView | undefined;
   readonly locale: string;
 }): ReactElement {
   const expected = diagnostic?.expected === undefined ? semanticExpected(content.expected) : diagnostic.expected;
@@ -906,7 +888,7 @@ function stateLabel(state: MatchState, locale: string): string {
   return state;
 }
 
-function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boolean {
+function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | undefined): boolean {
   return (
     diagnostic?.code === "tool-count-match" ||
     diagnostic?.code === "tool-count-mismatch" ||
@@ -918,7 +900,7 @@ function isToolCollectionDiagnostic(diagnostic: MatchDiagnosticView | null): boo
   );
 }
 
-function candidateSubject(diagnostic: MatchDiagnosticView | null): string | undefined {
+function candidateSubject(diagnostic: MatchDiagnosticView | undefined): string | undefined {
   if (diagnostic?.received !== undefined) return inlineValue(diagnostic.received);
   const name = diagnostic?.children.find((child) => child.label === "name");
   if (name?.diagnostic?.received !== undefined) return inlineValue(name.diagnostic.received);
@@ -928,18 +910,17 @@ function candidateSubject(diagnostic: MatchDiagnosticView | null): string | unde
 function candidateLabel(
   index: number,
   nodeLabel: string,
-  diagnostic: MatchDiagnosticView | null,
+  diagnostic: MatchDiagnosticView | undefined,
   locale: string,
 ): string {
-  const kind =
-    nodeLabel === "command-candidate"
-      ? label(locale, "Command", "命令")
-      : nodeLabel === "tool-candidate"
-        ? label(locale, "Tool call", "工具调用")
-        : label(locale, "Candidate", "候选");
+  function candidateKind(): string {
+    if (nodeLabel === "command-candidate") return label(locale, "Command", "命令");
+    if (nodeLabel === "tool-candidate") return label(locale, "Tool call", "工具调用");
+    return label(locale, "Candidate", "候选");
+  }
   const subject = candidateSubject(diagnostic);
   const unavailable = label(locale, "invocation details not recorded", "调用详情未记录");
-  return `${kind} ${index + 1} · ${subject ?? unavailable}`;
+  return `${candidateKind()} ${index + 1} · ${subject ?? unavailable}`;
 }
 
 function toolFieldLabel(value: string, locale: string): string {
@@ -953,13 +934,13 @@ function toolFieldLabel(value: string, locale: string): string {
 }
 
 function summaryFacts(
-  diagnostic: MatchDiagnosticView | null,
+  diagnostic: MatchDiagnosticView | undefined,
   locale: string,
 ): readonly {
   readonly label: string;
   readonly value: string;
 }[] {
-  if (diagnostic === null || diagnostic.children.length > 0) return [];
+  if (diagnostic === undefined || diagnostic.children.length > 0) return [];
   const expected = inlineValue(diagnostic.expected);
   const received = inlineValue(diagnostic.received);
   return [
@@ -1002,19 +983,18 @@ function MatchNode({
 }: {
   readonly label: string;
   readonly state: MatchState;
-  readonly diagnostic: MatchDiagnosticView | null;
+  readonly diagnostic: MatchDiagnosticView | undefined;
   readonly locale: string;
-  readonly root?: boolean;
-  readonly toolCandidateIndex?: number;
-  readonly toolField?: boolean;
-  readonly children?: ReactElement;
+  readonly root: boolean;
+  readonly toolCandidateIndex: number | undefined;
+  readonly toolField: boolean;
+  readonly children: ReactElement | undefined;
 }): ReactElement {
-  const displayLabel =
-    toolCandidateIndex === undefined
-      ? toolField
-        ? toolFieldLabel(nodeLabel, locale)
-        : nodeLabel
-      : candidateLabel(toolCandidateIndex, nodeLabel, diagnostic, locale);
+  function nodeDisplayLabel(): string {
+    if (toolCandidateIndex !== undefined) return candidateLabel(toolCandidateIndex, nodeLabel, diagnostic, locale);
+    return toolField ? toolFieldLabel(nodeLabel, locale) : nodeLabel;
+  }
+  const displayLabel = nodeDisplayLabel();
   const visibleState = stateLabel(state, locale);
   const accessibleLabel = `${displayLabel}: ${visibleState}`;
   const facts = summaryFacts(diagnostic, locale);
@@ -1051,13 +1031,15 @@ function MatchNode({
                 state={child.state}
                 diagnostic={child.diagnostic}
                 locale={locale}
-                {...(childrenAreToolCandidates ? { toolCandidateIndex: child.index } : {})}
-                {...(toolCandidateIndex === undefined ? {} : { toolField: true })}
+                toolCandidateIndex={childrenAreToolCandidates ? child.index : undefined}
+                toolField={toolCandidateIndex !== undefined}
+                root={false}
+                children={undefined}
               />
             ))}
           </div>
         ) : null}
-        {root || diagnostic === null || diagnostic.locator === undefined ? null : (
+        {root || diagnostic === undefined || diagnostic.locator === undefined ? null : (
           <DiagnosticFacts diagnostic={diagnostic} locale={locale} />
         )}
         {children}
@@ -1088,20 +1070,27 @@ function web(
   const input = field(content.source, "input") ?? content.source;
   const code = diagnostic?.code;
   const numeric = numericComparisonView(content.check, content.source);
-  const primary =
-    numeric !== undefined ? (
-      <NumericEvidence view={numeric} state={state} locale={locale} />
-    ) : code === "command-succeeded" || code === "command-failed" ? (
-      <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />
-    ) : isToolCriterion(content.check) ? (
-      <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />
-    ) : (
-      <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />
-    );
-  const rootDiagnostic = numeric === undefined ? diagnostic : null;
+  function primaryEvidence(): ReactElement {
+    if (numeric !== undefined) return <NumericEvidence view={numeric} state={state} locale={locale} />;
+    if (code === "command-succeeded" || code === "command-failed")
+      return <CommandEvidence input={input} diagnostic={diagnostic} locale={locale} />;
+    if (isToolCriterion(content.check))
+      return <ToolEvidence observed={content.observed} diagnostic={diagnostic} locale={locale} />;
+    return <GenericEvidence content={content} input={input} diagnostic={diagnostic} locale={locale} />;
+  }
+  const primary = primaryEvidence();
+  const rootDiagnostic = numeric === undefined ? diagnostic : undefined;
   return (
     <div className="niceeval-assertion-evidence">
-      <MatchNode label={name} state={state} diagnostic={rootDiagnostic} locale={locale} root>
+      <MatchNode
+        label={name}
+        state={state}
+        diagnostic={rootDiagnostic}
+        locale={locale}
+        root
+        toolCandidateIndex={undefined}
+        toolField={false}
+      >
         <div className="niceeval-match-body">
           {content.matcherDebugger === undefined ? (
             primary
@@ -1128,8 +1117,8 @@ function web(
 
 export interface AssertionEvidenceProps {
   readonly content: AssertionEvidenceContent;
-  readonly label?: string;
-  readonly state?: MatchState;
+  readonly label: string | undefined;
+  readonly state: MatchState | undefined;
   readonly locale: ReportLocale;
 }
 

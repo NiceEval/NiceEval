@@ -77,14 +77,14 @@ export function validateScorePayload(payload: ScorePayload): readonly ScorePaylo
   for (const [index, reason] of incompleteReasonsOf(payload).entries()) {
     const rank = scoreIncompleteReasonRank(reason);
     if (seen.has(reason)) {
-      issues.push(Object.freeze({ code: "score-incomplete-reason-duplicate" as const, reason }));
+      issues.push({ code: "score-incomplete-reason-duplicate" as const, reason });
     } else if (previousRank !== undefined && previousRank >= rank) {
-      issues.push(Object.freeze({ code: "score-incomplete-reason-order-invalid" as const, index, reason }));
+      issues.push({ code: "score-incomplete-reason-order-invalid" as const, index, reason });
     }
     seen.add(reason);
     previousRank = rank;
   }
-  return Object.freeze(issues);
+  return issues;
 }
 
 export const ScorePayloadSchema = ScorePayloadStructuralSchema.pipe(
@@ -104,21 +104,21 @@ export type ScorePayloadBuildError =
   | { readonly code: "score-earned-overflow" };
 
 function canonicalIncompleteReasons(reasons: readonly ScoreIncompleteReason[]): readonly ScoreIncompleteReason[] {
-  return Object.freeze(
-    [...new Set(reasons)].sort((left, right) => scoreIncompleteReasonRank(left) - scoreIncompleteReasonRank(right)),
+  return [...new Set(reasons)].sort(
+    (left, right) => scoreIncompleteReasonRank(left) - scoreIncompleteReasonRank(right),
   );
 }
 
 function asNonEmptyReasons(reasons: readonly ScoreIncompleteReason[]): ScoreIncompleteReasons | undefined {
   const [first, ...rest] = reasons;
-  return first === undefined ? undefined : Object.freeze([first, ...rest]);
+  return first === undefined ? undefined : [first, ...rest];
 }
 
 /** Folds sealed Assertion facts without producing a durable Record write. */
 export function buildScorePayload(input: ScoreFoldInput): Result.Result<ScorePayload, ScorePayloadBuildError> {
   const decoded = Schema.decodeUnknownResult(Schema.toType(ScoreFoldInputSchema), ExactEvaluationParseOptions)(input);
   if (Result.isFailure(decoded)) {
-    return Result.fail(Object.freeze({ code: "score-fold-input-invalid" as const }));
+    return Result.fail({ code: "score-fold-input-invalid" as const });
   }
 
   let earned = 0;
@@ -132,7 +132,7 @@ export function buildScorePayload(input: ScoreFoldInput): Result.Result<ScorePay
         hasAuditableContribution = true;
         earned += assertion.result.score.earned;
         if (!Number.isFinite(earned)) {
-          return Result.fail(Object.freeze({ code: "score-earned-overflow" as const }));
+          return Result.fail({ code: "score-earned-overflow" as const });
         }
         break;
       case "unavailable":
@@ -142,12 +142,12 @@ export function buildScorePayload(input: ScoreFoldInput): Result.Result<ScorePay
   }
   if (decoded.success.execution === "errored") incompleteReasons.push("execution-errored");
   const reasons = canonicalIncompleteReasons(incompleteReasons);
-  if (reasons.length === 0) return Result.succeed(Object.freeze({ state: "complete" as const, earned }));
+  if (reasons.length === 0) return Result.succeed({ state: "complete" as const, earned });
   const nonEmptyReasons = asNonEmptyReasons(reasons);
   if (nonEmptyReasons === undefined) throw new Error("Non-empty score reasons became empty");
   return hasAuditableContribution
-    ? Result.succeed(Object.freeze({ state: "partial" as const, earned, reasons: nonEmptyReasons }))
-    : Result.succeed(Object.freeze({ state: "unavailable" as const, reasons: nonEmptyReasons }));
+    ? Result.succeed({ state: "partial" as const, earned, reasons: nonEmptyReasons })
+    : Result.succeed({ state: "unavailable" as const, reasons: nonEmptyReasons });
 }
 
 /** Folds Score from the same immutable Record/Core facts as Verdict. */
@@ -183,11 +183,9 @@ export function validateScoreCoherence(input: {
 }): readonly ScoreCoherenceIssue[] {
   const expected = buildScorePayload(input.fold);
   if (Result.isFailure(expected)) {
-    return Object.freeze([Object.freeze({ code: "score-fold-input-invalid" as const, reason: expected.failure.code })]);
+    return [{ code: "score-fold-input-invalid" as const, reason: expected.failure.code }];
   }
-  return sameScorePayload(input.payload, expected.success)
-    ? Object.freeze([])
-    : Object.freeze([Object.freeze({ code: "score-payload-mismatch" as const })]);
+  return sameScorePayload(input.payload, expected.success) ? [] : [{ code: "score-payload-mismatch" as const }];
 }
 
 export type Score =
@@ -204,25 +202,25 @@ export type ScoreProjection = Score;
 function scoreIncompleteReasons(reasons: readonly ScoreIncompleteReason[]): ScoreIncompleteReasons {
   const [first, ...rest] = reasons;
   if (first === undefined) throw new Error("An incomplete score needs a reason");
-  return Object.freeze([first, ...rest]);
+  return [first, ...rest];
 }
 
 export function projectScorePayload(payload: ScorePayload): Score {
   switch (payload.state) {
     case "complete":
-      return Object.freeze({ state: "complete" as const, earned: payload.earned, comparable: true as const });
+      return { state: "complete" as const, earned: payload.earned, comparable: true as const };
     case "partial":
-      return Object.freeze({
+      return {
         state: "partial" as const,
         earned: payload.earned,
         reasons: scoreIncompleteReasons(payload.reasons),
         comparable: false as const,
-      });
+      };
     case "unavailable":
-      return Object.freeze({
+      return {
         state: "unavailable" as const,
         reasons: scoreIncompleteReasons(payload.reasons),
         comparable: false as const,
-      });
+      };
   }
 }

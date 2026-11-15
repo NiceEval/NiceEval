@@ -1,17 +1,18 @@
 import { Data } from "effect";
+import type { ExternalCause } from "../shared/external-cause.ts";
 
 export class UserDatabaseInvalid extends Data.TaggedError("UserDatabaseInvalid")<{
   readonly code: "user-database-invalid";
   readonly message: string;
-  readonly repository?: string;
-  readonly cause?: unknown;
+  readonly repository: string | undefined;
+  readonly cause: ExternalCause | undefined;
 }> {}
 
 export class UserDatabaseBusy extends Data.TaggedError("UserDatabaseBusy")<{
   readonly code: "user-database-busy";
   readonly message: string;
-  readonly repository?: string;
-  readonly cause?: unknown;
+  readonly repository: string | undefined;
+  readonly cause: ExternalCause | undefined;
 }> {}
 
 export class UserDatabaseUnsupported extends Data.TaggedError("UserDatabaseUnsupported")<{
@@ -19,7 +20,7 @@ export class UserDatabaseUnsupported extends Data.TaggedError("UserDatabaseUnsup
   readonly message: string;
   readonly repository: string;
   readonly databasePath: string;
-  readonly cause?: unknown;
+  readonly cause: ExternalCause | undefined;
 }> {}
 
 export class UserDatabaseLegacyFound extends Data.TaggedError("UserDatabaseLegacyFound")<{

@@ -43,7 +43,7 @@ describe("fresh project imports", () => {
     const root = mkdtempSync(join(tmpdir(), "niceeval-shared-discovery-"));
     const factoriesKey = "__niceevalFreshDiscoveryTestFactories";
     try {
-      Object.assign(globalThis, { [factoriesKey]: Object.freeze({ defineAdapter, defineExperiment }) });
+      Object.assign(globalThis, { [factoriesKey]: { defineAdapter, defineExperiment } });
       mkdirSync(join(root, "adapters"));
       mkdirSync(join(root, "evals"));
       mkdirSync(join(root, "experiments"));
@@ -65,7 +65,16 @@ describe("fresh project imports", () => {
           `export default defineExperiment({ adapter: shared, evals: ["shared"] });\n`,
       );
 
-      const prepared = await Effect.runPromise(prepareRuns({ cwd: root, config: {} }, { freshImport: true }));
+      const prepared = await Effect.runPromise(
+        prepareRuns(
+          {
+            cwd: root,
+            config: {},
+            overrides: undefined,
+          },
+          { allowEmptySelection: false, freshImport: true },
+        ),
+      );
       expect(prepared.status).toBe("ready");
       if (prepared.status !== "ready") return;
       expect(prepared.selected.evals).toHaveLength(1);

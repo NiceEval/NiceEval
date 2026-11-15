@@ -57,19 +57,15 @@ export function recordedAttemptFacts(input: {
   readonly outcome: AttemptOutcome;
   readonly assertions: AssertionsAttachment;
 }): EvaluationAttemptFacts {
-  return Object.freeze({
+  return {
     execution:
       input.outcome === "errored" || input.outcome === "interrupted" ? ("errored" as const) : ("completed" as const),
     explicitlySkipped: input.outcome === "cancelled",
-    assertions: Object.freeze(
-      input.assertions.entries.map((entry) =>
-        Object.freeze({
-          required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
-          result: sealedAssertionResult(entry),
-        }),
-      ),
-    ),
-  });
+    assertions: input.assertions.entries.map((entry) => ({
+      required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
+      result: sealedAssertionResult(entry),
+    })),
+  };
 }
 
 export function isRequiredAssertionUnavailableOrErrored(assertion: SealedAssertionForEvaluation): boolean {

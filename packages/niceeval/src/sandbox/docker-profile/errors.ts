@@ -28,11 +28,11 @@ export type DockerProfileErrorCode =
 export interface DockerProfileErrorOptions {
   readonly code: DockerProfileErrorCode;
   readonly message: string;
-  readonly path?: string;
-  readonly alias?: string;
-  readonly profileId?: string;
-  readonly candidates?: readonly string[];
-  readonly details?: JsonValue;
+  readonly path?: string | undefined;
+  readonly alias?: string | undefined;
+  readonly profileId?: string | undefined;
+  readonly candidates?: readonly string[] | undefined;
+  readonly details?: JsonValue | undefined;
 }
 
 /** 纯数据 profile 边界的统一、可判别错误。 */
@@ -42,6 +42,6 @@ export class DockerProfileError extends Data.TaggedError("DockerProfileError")<D
 export function dockerProfileError(options: DockerProfileErrorOptions): DockerProfileError {
   return new DockerProfileError({
     ...options,
-    ...(options.candidates === undefined ? {} : { candidates: Object.freeze([...options.candidates]) }),
+    candidates: options.candidates,
   });
 }

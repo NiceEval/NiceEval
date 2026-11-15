@@ -23,18 +23,18 @@ export function claimExecution(
         request.evalId,
         request.identity ?? currentProcessOwnerIdentity(),
         {
-          ...(request.signal === undefined ? {} : { signal: request.signal }),
-          ...(request.onCaseWait === undefined ? {} : { onWaitStart: request.onCaseWait }),
+          signal: request.signal,
+          pollIntervalMs: undefined,
+          heartbeatIntervalMs: undefined,
+          onWaitStart: request.onCaseWait,
         },
       ),
     ).pipe(
-      Effect.map((caseResult) =>
-        Object.freeze({
-          caseClaim: caseResult.claim,
-          caseTakenOver: caseResult.takenOver,
-          release: caseResult.claim.release,
-        }),
-      ),
+      Effect.map((caseResult) => ({
+        caseClaim: caseResult.claim,
+        caseTakenOver: caseResult.takenOver,
+        release: caseResult.claim.release,
+      })),
     ),
   );
 }

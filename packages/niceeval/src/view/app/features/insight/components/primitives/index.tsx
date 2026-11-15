@@ -25,8 +25,8 @@ export { MatcherFilterDebugger } from "./matcher-filter-debugger.tsx";
 export { ToolEvidence } from "./tool-evidence.tsx";
 
 export interface LayoutProps {
-  readonly children?: ReactNode;
-  readonly className?: string;
+  readonly children: ReactNode | undefined;
+  readonly className: string | undefined;
 }
 
 export function Col({ children, className }: LayoutProps): ReactElement {
@@ -80,11 +80,11 @@ export function TableContentView({
   locale,
   className,
 }: {
-  readonly data: TableContent | null;
+  readonly data: TableContent | undefined;
   readonly locale: ReportLocale;
-  readonly className?: string;
+  readonly className: string | undefined;
 }): ReactElement | null {
-  if (data === null || data.rows.length === 0 || data.columns.length === 0) return null;
+  if (data === undefined || data.rows.length === 0 || data.columns.length === 0) return null;
   return (
     <table className={cx("niceeval-report", "niceeval-table", className)}>
       <thead>

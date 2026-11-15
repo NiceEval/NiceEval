@@ -37,12 +37,12 @@ export interface DiagnosticInput {
   /** 对外的稳定词法:`--json` 的 notice/warning `code`、human 通知行的标题都读它(见 cli.md)。
    *  省略 = 与 `key` 相同——
    *  折叠身份不进 key 的那些诊断天生就是干净字面量,不必重复写一遍。 */
-  code?: string;
+  code: string | undefined;
   severity: DiagnosticSeverity;
   /** 一句话人类可读摘要;renderer 的 appendDurable 直接展示,不需要再解析。 */
   message: string;
-  identity?: AttemptRef;
-  data?: Readonly<globalThis.Record<string, JsonValue>>;
+  identity: AttemptRef | undefined;
+  data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
 }
 
 /** `sink.failure()` 的输入 —— 与 `DurableFeedbackEvent` 的 "failure" 变体字段一致,只省略
@@ -68,9 +68,9 @@ export interface ExperimentHookInput {
   experimentId: string;
   hook: ExperimentHookName;
   status: "started" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
   /** 强杀后启动自愈的补执行(只在 teardown 的 started 上有意义);省略 = 正常路径。 */
-  recovery?: boolean;
+  recovery: boolean | undefined;
 }
 
 /** `sink.experimentProgress()` 的输入 —— 实验级 `ctx.progress` 压好的单行文本。 */
@@ -84,7 +84,7 @@ export interface ExperimentProgressInput {
  *  `durationMs` 在 done 与 failed 上给。 */
 export interface PrecheckInput {
   status: "started" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
 }
 
 /** `sink.lockWait()` 的输入 —— 与 `DurableFeedbackEvent` 的 "lock-wait" 变体字段一致,省略
@@ -95,12 +95,12 @@ export interface LockWaitInput {
   experimentId: string;
   evalId: string;
   status: "started" | "resolved";
-  holderPid?: number;
-  holderHost?: string;
-  attempts?: number;
-  carried?: number;
-  dispatched?: number;
-  waitedMs?: number;
+  holderPid: number | undefined;
+  holderHost: string | undefined;
+  attempts: number | undefined;
+  carried: number | undefined;
+  dispatched: number | undefined;
+  waitedMs: number | undefined;
 }
 
 /** `sink.runActivity()` 的输入 —— 与 `DurableFeedbackEvent` 的 "run-activity" 变体字段一致,
@@ -112,7 +112,7 @@ export interface RunActivityInput {
   key: string;
   label: string;
   status: "started" | "progress" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
 }
 
 /** `sink.kept()` 的输入 —— 与 `DurableFeedbackEvent` 的 "kept" 变体字段一致,省略 type/at。 */
@@ -123,7 +123,7 @@ export interface KeptInput {
   verdict: Verdict;
   provider: string;
   sandboxId: string;
-  enter?: string;
+  enter: string | undefined;
 }
 
 /** `sink.ts` façade 函数实际转发到的最小接口 —— `FeedbackCoordinator`(coordinator.ts)实现它。

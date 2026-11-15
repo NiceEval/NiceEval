@@ -5,10 +5,10 @@ import * as Predicate from "effect/Predicate";
 import type { JudgeAnchor } from "./judge.ts";
 
 const UTF8 = new TextEncoder();
-const DEFAULT_ANCHORS = Object.freeze([
-  Object.freeze({ measurement: 0, description: "Does not satisfy the rubric." }),
-  Object.freeze({ measurement: 1, description: "Fully satisfies the rubric." }),
-]);
+const DEFAULT_ANCHORS = [
+  { measurement: 0, description: "Does not satisfy the rubric." },
+  { measurement: 1, description: "Fully satisfies the rubric." },
+];
 
 function utf8Bytes(value: string): number {
   return UTF8.encode(value).byteLength;
@@ -39,7 +39,7 @@ export function exactDataObject(
       throw new TypeError(`${label}.${key} must be a data property`);
     captured.push([key, descriptor.value]);
   }
-  return Object.freeze(Object.fromEntries(captured));
+  return Object.fromEntries(captured);
 }
 export function boundedText(value: unknown, label: string, maximumBytes: number, controlFree = false): string {
   if (
@@ -99,16 +99,14 @@ export function judgeRubricAndAnchors(
     )
       throw new TypeError("Judge anchors must be strictly increasing finite measurements in [0, 1]");
     previous = measurement;
-    anchors.push(
-      Object.freeze({
-        measurement,
-        description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024),
-      }),
-    );
+    anchors.push({
+      measurement,
+      description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024),
+    });
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1)
     throw new TypeError("Judge anchors must include 0 and 1");
-  return { rubric, anchors: Object.freeze(anchors) };
+  return { rubric, anchors: anchors };
 }
 
 export function judgeMaterialBudget(value: unknown): number | undefined {

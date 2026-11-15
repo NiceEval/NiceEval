@@ -76,7 +76,7 @@ export interface FileChangesCapture {
 export interface CreateFileChangesCaptureInput {
   readonly document: AgentWorkspaceDiff;
   /** Collector-stage facts observed by the caller before this capture freezes. */
-  readonly limitations?: readonly FileChangesCollectionLimitation[];
+  readonly limitations: readonly FileChangesCollectionLimitation[] | undefined;
 }
 
 interface CaptureDocumentSource {
@@ -92,16 +92,13 @@ const encoder = new TextEncoder();
 // publication.
 const MAXIMUM_PRODUCED_CHANGES_PER_WINDOW = 1_000;
 const MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT = 1_000;
-const contentBudgetProjection = Object.freeze({
+const contentBudgetProjection = {
   "$niceeval.record.content": "content-000001",
-});
+};
 
 function compareAscii(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
-}
-
-function freezeArray<Value>(values: readonly Value[]): readonly Value[] {
-  return Object.freeze([...values]);
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 function nextChangeId(): string {
@@ -113,18 +110,18 @@ function sha256(bytes: Uint8Array): string {
 }
 
 function canonicalStrings(values: readonly string[]): readonly string[] {
-  return freezeArray([...new Set(values)].sort(compareAscii));
+  return [...new Set(values)].sort(compareAscii);
 }
 
 function captureAttribution(policy: AgentWorkspaceDiffPolicy): FileChangesAttribution {
-  return Object.freeze({
+  return {
     kind: "agent-send-window-endpoints" as const,
-    policy: Object.freeze({
+    policy: {
       defaultPolicy: policy.defaultPolicy,
       include: canonicalStrings(policy.include),
       ignore: canonicalStrings(policy.ignore),
-    }),
-  }) as FileChangesAttribution;
+    },
+  } as FileChangesAttribution;
 }
 
 function limitationKeyWithoutCount(
@@ -151,13 +148,10 @@ function canonicalLimitations(
       case "collection-cap-reached": {
         const key = limitationKeyWithoutCount(limitation);
         const prior = caps.get(key);
-        caps.set(
-          key,
-          Object.freeze({
-            ...limitation,
-            omittedAtLeast: (prior?.omittedAtLeast ?? 0) + limitation.omittedAtLeast,
-          }),
-        );
+        caps.set(key, {
+          ...limitation,
+          omittedAtLeast: (prior?.omittedAtLeast ?? 0) + limitation.omittedAtLeast,
+        });
         break;
       }
       case "unsupported-input":
@@ -167,29 +161,24 @@ function canonicalLimitations(
   }
 
   if (unsupported > 0) {
-    exact.set(
-      "unsupported-input\u0000endpoint-metadata",
-      Object.freeze({
-        code: "unsupported-input" as const,
-        target: "endpoint-metadata" as const,
-        omittedAtLeast: unsupported,
-      }),
-    );
+    exact.set("unsupported-input\u0000endpoint-metadata", {
+      code: "unsupported-input" as const,
+      target: "endpoint-metadata" as const,
+      omittedAtLeast: unsupported,
+    });
   }
 
   const merged = [...exact.values(), ...caps.values()];
-  return freezeArray(
-    merged.sort((left, right) =>
-      compareAscii(fileChangesCollectionLimitationKey(left), fileChangesCollectionLimitationKey(right)),
-    ),
+  return merged.sort((left, right) =>
+    compareAscii(fileChangesCollectionLimitationKey(left), fileChangesCollectionLimitationKey(right)),
   );
 }
 
 function collectionState(limitations: readonly FileChangesCollectionLimitation[]): FileChangesCollectionState {
   const canonical = canonicalLimitations(limitations);
   return canonical.length === 0
-    ? (Object.freeze({ state: "complete" as const, limitations: Object.freeze([]) }) as FileChangesCollectionState)
-    : (Object.freeze({ state: "partial" as const, limitations: canonical }) as FileChangesCollectionState);
+    ? ({ state: "complete" as const, limitations: [] } as FileChangesCollectionState)
+    : ({ state: "partial" as const, limitations: canonical } as FileChangesCollectionState);
 }
 
 function capLimitation(
@@ -197,20 +186,20 @@ function capLimitation(
   omittedAtLeast: number,
   atWindowId: string | null,
 ): FileChangesCollectionLimitation {
-  return Object.freeze({
+  return {
     code: "collection-cap-reached" as const,
     target,
     omittedAtLeast,
     atWindowId,
-  });
+  };
 }
 
 function unsupportedInputLimitation(omittedAtLeast: number): FileChangesCollectionLimitation {
-  return Object.freeze({
+  return {
     code: "unsupported-input" as const,
     target: "endpoint-metadata" as const,
     omittedAtLeast,
-  });
+  };
 }
 
 function endpointIsPresent(endpoint: AgentWorkspaceDiffEndpoint): boolean {
@@ -236,43 +225,43 @@ function endpointForCapture(endpoint: AgentWorkspaceDiffEndpoint): {
 } {
   switch (endpoint.state) {
     case "absent":
-      return Object.freeze({ endpoint: Object.freeze({ state: "absent" as const }), unsupportedEndpointCount: 0 });
+      return { endpoint: { state: "absent" as const }, unsupportedEndpointCount: 0 };
     case "text": {
       if (typeof endpoint.text !== "string") {
-        return Object.freeze({
-          endpoint: Object.freeze({
+        return {
+          endpoint: {
             state: "present" as const,
-            revision: Object.freeze({ kind: "unavailable" as const, reason: "unsupported-input" as const }),
-          }),
+            revision: { kind: "unavailable" as const, reason: "unsupported-input" as const },
+          },
           unsupportedEndpointCount: 1,
-        });
+        };
       }
       const content = encoder.encode(endpoint.text);
       if (content.byteLength > FileChangesLimits.maximumTextRevisionBytes) {
-        return Object.freeze({
-          endpoint: Object.freeze({
+        return {
+          endpoint: {
             state: "present" as const,
-            revision: Object.freeze({
+            revision: {
               kind: "elided" as const,
               reason: "oversized-text" as const,
               byteLength: content.byteLength,
-            }),
-          }),
+            },
+          },
           unsupportedEndpointCount: 0,
-        });
+        };
       }
-      return Object.freeze({
-        endpoint: Object.freeze({
+      return {
+        endpoint: {
           state: "present" as const,
-          revision: Object.freeze({
+          revision: {
             kind: "text" as const,
             sha256: sha256(content),
             byteLength: content.byteLength,
-            content: Object.freeze({ state: "available" as const, text: endpoint.text }),
-          }),
-        }),
+            content: { state: "available" as const, text: endpoint.text },
+          },
+        },
         unsupportedEndpointCount: 0,
-      });
+      };
     }
     case "elided": {
       const byteLength = endpoint.bytes;
@@ -282,25 +271,25 @@ function endpointForCapture(endpoint: AgentWorkspaceDiffEndpoint): {
         byteLength === undefined ||
         byteLength < 0
       ) {
-        return Object.freeze({
-          endpoint: Object.freeze({
+        return {
+          endpoint: {
             state: "present" as const,
-            revision: Object.freeze({ kind: "unavailable" as const, reason: "unsupported-input" as const }),
-          }),
+            revision: { kind: "unavailable" as const, reason: "unsupported-input" as const },
+          },
           unsupportedEndpointCount: 1,
-        });
+        };
       }
-      return Object.freeze({
-        endpoint: Object.freeze({
+      return {
+        endpoint: {
           state: "present" as const,
-          revision: Object.freeze({
+          revision: {
             kind: "elided" as const,
             reason: endpoint.reason,
             byteLength,
-          }),
-        }),
+          },
+        },
         unsupportedEndpointCount: 0,
-      });
+      };
     }
   }
 }
@@ -311,19 +300,24 @@ function prepareChange(change: AgentWorkspaceDiffWindowChange): PreparedChange {
   }
   const before = endpointForCapture(change.before);
   const after = endpointForCapture(change.after);
-  const kind =
-    change.status === "added"
-      ? ("created" as const)
-      : change.status === "deleted"
-        ? ("deleted" as const)
-        : ("modified" as const);
-  return Object.freeze({
+  function preparedChangeKind() {
+    switch (change.status) {
+      case "added":
+        return "created" as const;
+      case "deleted":
+        return "deleted" as const;
+      default:
+        return "modified" as const;
+    }
+  }
+  const kind = preparedChangeKind();
+  return {
     path: change.path,
     kind,
     before: before.endpoint,
     after: after.endpoint,
     unsupportedEndpointCount: before.unsupportedEndpointCount + after.unsupportedEndpointCount,
-  });
+  };
 }
 
 function captureWindowId(window: AgentWorkspaceDiffWindow): string {
@@ -380,13 +374,11 @@ function structuralCapture(source: CaptureDocumentSource): {
     if (prepared.length > MAXIMUM_PRODUCED_CHANGES_PER_WINDOW) {
       limitations.push(capLimitation("change", prepared.length - MAXIMUM_PRODUCED_CHANGES_PER_WINDOW, windowId));
     }
-    preparedWindows.push(
-      Object.freeze({
-        windowId,
-        sequence: index + 1,
-        changes: freezeArray(prepared.slice(0, MAXIMUM_PRODUCED_CHANGES_PER_WINDOW)),
-      }),
-    );
+    preparedWindows.push({
+      windowId,
+      sequence: index + 1,
+      changes: prepared.slice(0, MAXIMUM_PRODUCED_CHANGES_PER_WINDOW),
+    });
   }
 
   let remainingChanges = MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT;
@@ -396,21 +388,17 @@ function structuralCapture(source: CaptureDocumentSource): {
       limitations.push(capLimitation("change", window.changes.length - retained, window.windowId));
     }
     remainingChanges -= retained;
-    return Object.freeze({
+    return {
       windowId: window.windowId,
       sequence: window.sequence,
-      changes: freezeArray(
-        window.changes.slice(0, retained).map((change) =>
-          Object.freeze({
-            ...change,
-            changeId: nextChangeId(),
-          }),
-        ),
-      ),
-    });
+      changes: window.changes.slice(0, retained).map((change) => ({
+        ...change,
+        changeId: nextChangeId(),
+      })),
+    };
   });
 
-  return Object.freeze({ windows: freezeArray(capturedWindows), limitations: freezeArray(limitations) });
+  return { windows: capturedWindows, limitations };
 }
 
 function unsupportedLimitationsFor(windows: readonly CapturedWindow[]): readonly FileChangesCollectionLimitation[] {
@@ -419,7 +407,7 @@ function unsupportedLimitationsFor(windows: readonly CapturedWindow[]): readonly
       total + window.changes.reduce((windowTotal, change) => windowTotal + change.unsupportedEndpointCount, 0),
     0,
   );
-  return unsupported === 0 ? Object.freeze([]) : Object.freeze([unsupportedInputLimitation(unsupported)]);
+  return unsupported === 0 ? [] : [unsupportedInputLimitation(unsupported)];
 }
 
 function omitTextContent(endpoint: CaptureEndpoint): CaptureEndpoint {
@@ -430,13 +418,13 @@ function omitTextContent(endpoint: CaptureEndpoint): CaptureEndpoint {
   ) {
     return endpoint;
   }
-  return Object.freeze({
+  return {
     state: "present" as const,
-    revision: Object.freeze({
+    revision: {
       ...endpoint.revision,
-      content: Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-    }),
-  });
+      content: { state: "omitted" as const, reason: "collection-cap" as const },
+    },
+  };
 }
 
 function withContentCaps(windows: readonly CapturedWindow[]): {
@@ -470,81 +458,67 @@ function withContentCaps(windows: readonly CapturedWindow[]): {
     return endpoint;
   };
 
-  const capped = windows.map((window) =>
-    Object.freeze({
-      ...window,
-      changes: freezeArray(
-        window.changes.map((change) =>
-          Object.freeze({
-            ...change,
-            before: consume(change.before, window.windowId),
-            after: consume(change.after, window.windowId),
-          }),
-        ),
-      ),
-    }),
-  );
-  return Object.freeze({ windows: freezeArray(capped), limitations: freezeArray(limitations) });
+  const capped = windows.map((window) => ({
+    ...window,
+    changes: window.changes.map((change) => ({
+      ...change,
+      before: consume(change.before, window.windowId),
+      after: consume(change.after, window.windowId),
+    })),
+  }));
+  return { windows: capped, limitations };
 }
 
 function previewEndpoint(endpoint: CaptureEndpoint): unknown {
-  if (endpoint.state === "absent") return Object.freeze({ state: "absent" as const });
+  if (endpoint.state === "absent") return { state: "absent" as const };
   const revision = endpoint.revision;
   switch (revision.kind) {
     case "text":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({
+        revision: {
           kind: "text" as const,
           sha256: revision.sha256,
           byteLength: revision.byteLength,
           content:
             revision.content.state === "available"
-              ? Object.freeze({ state: "available" as const, content: contentBudgetProjection })
-              : Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-        }),
-      });
+              ? { state: "available" as const, content: contentBudgetProjection }
+              : { state: "omitted" as const, reason: "collection-cap" as const },
+        },
+      };
     case "elided":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({
+        revision: {
           kind: "elided" as const,
           reason: revision.reason,
           byteLength: revision.byteLength,
-        }),
-      });
+        },
+      };
     case "unavailable":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({ kind: "unavailable" as const, reason: revision.reason }),
-      });
+        revision: { kind: "unavailable" as const, reason: revision.reason },
+      };
   }
 }
 
 function previewPayload(capture: FileChangesCapture): unknown {
-  return Object.freeze({
+  return {
     "attribution-data": capture.attribution,
     "collection-data": capture.collection,
-    "windows-data": freezeArray(
-      capture.windows.map((window) =>
-        Object.freeze({
-          windowId: window.windowId,
-          sequence: window.sequence,
-          changes: freezeArray(
-            window.changes.map((change) =>
-              Object.freeze({
-                changeId: change.changeId,
-                path: change.path,
-                kind: change.kind,
-                before: previewEndpoint(change.before),
-                after: previewEndpoint(change.after),
-              }),
-            ),
-          ),
-        }),
-      ),
-    ),
-  });
+    "windows-data": capture.windows.map((window) => ({
+      windowId: window.windowId,
+      sequence: window.sequence,
+      changes: window.changes.map((change) => ({
+        changeId: change.changeId,
+        path: change.path,
+        kind: change.kind,
+        before: previewEndpoint(change.before),
+        after: previewEndpoint(change.after),
+      })),
+    })),
+  };
 }
 
 function jsonByteLength(capture: FileChangesCapture): number {
@@ -560,11 +534,11 @@ function trimLastChange(
     const window = windows[windowIndex]!;
     if (window.changes.length === 0) continue;
     const next = [...windows];
-    next[windowIndex] = Object.freeze({
+    next[windowIndex] = {
       ...window,
-      changes: freezeArray(window.changes.slice(0, -1)),
-    });
-    return Object.freeze({ windows: freezeArray(next), atWindowId: window.windowId });
+      changes: window.changes.slice(0, -1),
+    };
+    return { windows: next, atWindowId: window.windowId };
   }
   return undefined;
 }
@@ -591,11 +565,11 @@ function captureFrom(
       ...contentCapped.limitations,
       ...(jsonOmitted === 0 ? [] : [capLimitation("value", jsonOmitted, jsonAtWindowId)]),
     ];
-    const capture = Object.freeze({
+    const capture = {
       attribution,
       collection: collectionState(limitations),
       windows: contentCapped.windows,
-    }) as FileChangesCapture;
+    } as FileChangesCapture;
     if (jsonByteLength(capture) <= FileChangesLimits.maximumPayloadJsonBytes) {
       assertFileChangesCaptureIntegrity(capture);
       return capture;
@@ -613,7 +587,7 @@ function captureFrom(
 
 /** Freeze a normal or partial collector result before any Record preflight/write. */
 export function createFileChangesCapture(input: CreateFileChangesCaptureInput): FileChangesCapture {
-  return captureFrom(input.document, input.limitations ?? Object.freeze([]));
+  return captureFrom(input.document, input.limitations ?? []);
 }
 
 /** A started collector may have no safe export prefix but must still publish an honest partial capture. */
@@ -622,11 +596,11 @@ export function createEmptyFileChangesCapture(input: {
   readonly limitations: readonly FileChangesCollectionLimitation[];
 }): FileChangesCapture {
   return captureFrom(
-    Object.freeze({
+    {
       attribution: "agent-send-window-endpoints" as const,
       policy: input.policy,
-      windows: Object.freeze([]),
-    }),
+      windows: [],
+    },
     input.limitations,
   );
 }
@@ -635,36 +609,36 @@ function durableEndpoint(
   endpoint: CaptureEndpoint,
   availableContent: (revision: Extract<CaptureRevision, { readonly kind: "text" }>) => unknown,
 ): unknown {
-  if (endpoint.state === "absent") return Object.freeze({ state: "absent" as const });
+  if (endpoint.state === "absent") return { state: "absent" as const };
   const revision = endpoint.revision;
   switch (revision.kind) {
     case "text":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({
+        revision: {
           kind: "text" as const,
           sha256: revision.sha256,
           byteLength: revision.byteLength,
           content:
             revision.content.state === "available"
               ? availableContent(revision)
-              : Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-        }),
-      });
+              : { state: "omitted" as const, reason: "collection-cap" as const },
+        },
+      };
     case "elided":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({
+        revision: {
           kind: "elided" as const,
           reason: revision.reason,
           byteLength: revision.byteLength,
-        }),
-      });
+        },
+      };
     case "unavailable":
-      return Object.freeze({
+      return {
         state: "present" as const,
-        revision: Object.freeze({ kind: "unavailable" as const, reason: revision.reason }),
-      });
+        revision: { kind: "unavailable" as const, reason: revision.reason },
+      };
   }
 }
 
@@ -695,33 +669,27 @@ function assertFileChangesCaptureIntegrity(capture: FileChangesCapture): void {
 
   // Validate every non-content field against the current logical schema. The
   // real opaque handles can only be minted by the later owner Session.
-  const preview = Object.freeze({
+  const preview = {
     attribution: capture.attribution,
     collection: capture.collection,
-    windows: freezeArray(
-      capture.windows.map((window) =>
-        Object.freeze({
-          windowId: window.windowId,
-          sequence: window.sequence,
-          changes: freezeArray(
-            window.changes.map((change) =>
-              Object.freeze({
-                changeId: change.changeId,
-                path: change.path,
-                kind: change.kind,
-                before: durableEndpoint(change.before, () =>
-                  Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-                ),
-                after: durableEndpoint(change.after, () =>
-                  Object.freeze({ state: "omitted" as const, reason: "collection-cap" as const }),
-                ),
-              }),
-            ),
-          ),
-        }),
-      ),
-    ),
-  });
+    windows: capture.windows.map((window) => ({
+      windowId: window.windowId,
+      sequence: window.sequence,
+      changes: window.changes.map((change) => ({
+        changeId: change.changeId,
+        path: change.path,
+        kind: change.kind,
+        before: durableEndpoint(change.before, () => ({
+          state: "omitted" as const,
+          reason: "collection-cap" as const,
+        })),
+        after: durableEndpoint(change.after, () => ({
+          state: "omitted" as const,
+          reason: "collection-cap" as const,
+        })),
+      })),
+    })),
+  };
   const decoded = Schema.decodeUnknownResult(
     Schema.toType(FileChangesAttachmentSchema),
     RecordExactParseOptions,
@@ -746,34 +714,26 @@ export function createFileChangesCaptureAttachment(capture: FileChangesCapture):
       ) {
         throw new Error("File Changes producer lost frozen text revision integrity");
       }
-      return Object.freeze({
+      return {
         state: "available" as const,
         content: build.content.text(revision.content.text),
-      });
+      };
     };
-    const payload = Object.freeze({
+    const payload = {
       attribution: capture.attribution,
       collection: capture.collection,
-      windows: freezeArray(
-        capture.windows.map((window) =>
-          Object.freeze({
-            windowId: window.windowId,
-            sequence: window.sequence,
-            changes: freezeArray(
-              window.changes.map((change) =>
-                Object.freeze({
-                  changeId: change.changeId,
-                  path: change.path,
-                  kind: change.kind,
-                  before: durableEndpoint(change.before, availableContent),
-                  after: durableEndpoint(change.after, availableContent),
-                }),
-              ),
-            ),
-          }),
-        ),
-      ),
-    });
+      windows: capture.windows.map((window) => ({
+        windowId: window.windowId,
+        sequence: window.sequence,
+        changes: window.changes.map((change) => ({
+          changeId: change.changeId,
+          path: change.path,
+          kind: change.kind,
+          before: durableEndpoint(change.before, availableContent),
+          after: durableEndpoint(change.after, availableContent),
+        })),
+      })),
+    };
     const decoded = Schema.decodeUnknownResult(
       Schema.toType(FileChangesAttachmentSchema),
       RecordExactParseOptions,
@@ -792,14 +752,19 @@ export function assertFileChangesCaptureRecordable(capture: FileChangesCapture):
 
 /** Internal assertion-seal bridge; Runner itself retains the frozen capture, never this convenience path. */
 export function createAgentWorkspaceDiffAttachment(document: AgentWorkspaceDiff): FileChangesAttachmentBuild {
-  return createFileChangesCaptureAttachment(createFileChangesCapture({ document }));
+  return createFileChangesCaptureAttachment(
+    createFileChangesCapture({
+      document,
+      limitations: undefined,
+    }),
+  );
 }
 
 /** Pure projection for consumers already holding a decoded durable payload. */
 export function projectFileChangesAttachment(payload: FileChangesAttachment): FileChangesAttachment {
-  return Object.freeze({
+  return {
     attribution: payload.attribution,
     collection: payload.collection,
-    windows: freezeArray(payload.windows),
-  });
+    windows: payload.windows,
+  };
 }

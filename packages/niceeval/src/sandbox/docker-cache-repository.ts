@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
+import { isRecord as isObject } from "../shared/objects.ts";
 import { DatabaseSync } from "node:sqlite";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { UserDatabaseInvalid } from "../user-database/errors.ts";
 import type { UserDatabaseRepositoryHandler } from "../user-database/repository.ts";
 import { isFiniteValue, sqlIn, sqlLiteral, type FiniteValue } from "./finite-domain.ts";
 
-const DOCKER_CACHE_STATE = Object.freeze({
+const DOCKER_CACHE_STATE = {
   reserved: "reserved",
   building: "building",
   published: "published",
@@ -19,39 +21,39 @@ const DOCKER_CACHE_STATE = Object.freeze({
   released: "released",
   expiredUnverified: "expired-unverified",
   ended: "ended",
-} as const);
-const DOCKER_CACHE_KIND = Object.freeze({
+} as const;
+const DOCKER_CACHE_KIND = {
   taskBuild: "task-build",
   sandboxBeforeCache: "sandbox-before-cache",
-} as const);
-const DOCKER_LEASE_KIND = Object.freeze({ build: "build", read: "read", handoff: "handoff" } as const);
-const DOCKER_CACHE_DOMAIN = Object.freeze({
+} as const;
+const DOCKER_LEASE_KIND = { build: "build", read: "read", handoff: "handoff" } as const;
+const DOCKER_CACHE_DOMAIN = {
   providerFamily: "docker",
   backendKind: "docker-images",
   verifiedState: "verified-managed",
   beforeCacheDependency: "parent-backed",
-} as const);
-const DOCKER_RESERVATION_DISPOSITION = Object.freeze({ reserved: "reserved", contended: "contended" } as const);
-const DOCKER_CONTENTION_REASON = Object.freeze({
+} as const;
+const DOCKER_RESERVATION_DISPOSITION = { reserved: "reserved", contended: "contended" } as const;
+const DOCKER_CONTENTION_REASON = {
   activeWriter: "active-writer",
   indexedGeneration: "indexed-generation",
-} as const);
-const DOCKER_RESERVATION_REASON = Object.freeze({
+} as const;
+const DOCKER_RESERVATION_REASON = {
   entryChanged: "entry-changed",
   entryMissing: "entry-missing",
   entryLeaseRootOrCrossKindClaim: "entry-lease-root-or-cross-kind-claim",
   activeOwnerOrCrossKindClaim: "active-owner-or-cross-kind-claim",
   activeDeleteConflict: "active-delete-conflict",
-} as const);
-const DOCKER_CONTENTION_REASONS = Object.freeze(Object.values(DOCKER_CONTENTION_REASON));
-const DOCKER_RESERVATION_REASONS = Object.freeze(Object.values(DOCKER_RESERVATION_REASON));
-const DOCKER_TASK_ENTRY_STATES = Object.freeze([
+} as const;
+const DOCKER_CONTENTION_REASONS = Object.values(DOCKER_CONTENTION_REASON);
+const DOCKER_RESERVATION_REASONS = Object.values(DOCKER_RESERVATION_REASON);
+const DOCKER_TASK_ENTRY_STATES = [
   DOCKER_CACHE_STATE.indexed,
   DOCKER_CACHE_STATE.deleting,
   DOCKER_CACHE_STATE.tombstoned,
   DOCKER_CACHE_STATE.unverified,
-] as const);
-const DOCKER_BEFORE_CACHE_ENTRY_STATES = Object.freeze([
+] as const;
+const DOCKER_BEFORE_CACHE_ENTRY_STATES = [
   DOCKER_CACHE_STATE.reserved,
   DOCKER_CACHE_STATE.building,
   DOCKER_CACHE_STATE.published,
@@ -60,63 +62,51 @@ const DOCKER_BEFORE_CACHE_ENTRY_STATES = Object.freeze([
   DOCKER_CACHE_STATE.deleting,
   DOCKER_CACHE_STATE.tombstoned,
   DOCKER_CACHE_STATE.unverified,
-] as const);
-const DOCKER_BEFORE_CACHE_WRITER_STATES = Object.freeze([
+] as const;
+const DOCKER_BEFORE_CACHE_WRITER_STATES = [
   DOCKER_CACHE_STATE.reserved,
   DOCKER_CACHE_STATE.building,
   DOCKER_CACHE_STATE.published,
   DOCKER_CACHE_STATE.deleting,
-] as const);
-const DOCKER_BEFORE_CACHE_STARTUP_STATES = Object.freeze([
+] as const;
+const DOCKER_BEFORE_CACHE_STARTUP_STATES = [
   DOCKER_CACHE_STATE.reserved,
   DOCKER_CACHE_STATE.building,
   DOCKER_CACHE_STATE.published,
   DOCKER_CACHE_STATE.indexed,
   DOCKER_CACHE_STATE.deleting,
-] as const);
-const DOCKER_BEFORE_CACHE_RESERVABLE_STATES = Object.freeze([
-  DOCKER_CACHE_STATE.reserved,
-  DOCKER_CACHE_STATE.building,
-] as const);
-const DOCKER_BEFORE_CACHE_PUBLICATION_STATES = Object.freeze([
-  DOCKER_CACHE_STATE.published,
-  DOCKER_CACHE_STATE.indexed,
-] as const);
-const DOCKER_DELETE_SETTLEMENT_STATES = Object.freeze([
+] as const;
+const DOCKER_BEFORE_CACHE_RESERVABLE_STATES = [DOCKER_CACHE_STATE.reserved, DOCKER_CACHE_STATE.building] as const;
+const DOCKER_BEFORE_CACHE_PUBLICATION_STATES = [DOCKER_CACHE_STATE.published, DOCKER_CACHE_STATE.indexed] as const;
+const DOCKER_DELETE_SETTLEMENT_STATES = [
   DOCKER_CACHE_STATE.indexed,
   DOCKER_CACHE_STATE.tombstoned,
   DOCKER_CACHE_STATE.unverified,
-] as const);
-const DOCKER_DELETE_RECOVERY_STATES = Object.freeze([
-  DOCKER_CACHE_STATE.tombstoned,
-  DOCKER_CACHE_STATE.unverified,
-] as const);
-const DOCKER_DELETE_TRANSITION_STATES = Object.freeze([
-  DOCKER_CACHE_STATE.tombstoned,
-  DOCKER_CACHE_STATE.deleting,
-] as const);
-const DOCKER_TASK_ROOT_STATES = Object.freeze([DOCKER_CACHE_STATE.prepared, DOCKER_CACHE_STATE.active] as const);
-const DOCKER_BEFORE_CACHE_HOLD_STATES = Object.freeze([
+] as const;
+const DOCKER_DELETE_RECOVERY_STATES = [DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.unverified] as const;
+const DOCKER_DELETE_TRANSITION_STATES = [DOCKER_CACHE_STATE.tombstoned, DOCKER_CACHE_STATE.deleting] as const;
+const DOCKER_TASK_ROOT_STATES = [DOCKER_CACHE_STATE.prepared, DOCKER_CACHE_STATE.active] as const;
+const DOCKER_BEFORE_CACHE_HOLD_STATES = [
   DOCKER_CACHE_STATE.prepared,
   DOCKER_CACHE_STATE.active,
   DOCKER_CACHE_STATE.releasing,
-] as const);
-const DOCKER_BEFORE_CACHE_LEASE_STATES = Object.freeze([
+] as const;
+const DOCKER_BEFORE_CACHE_LEASE_STATES = [
   DOCKER_CACHE_STATE.active,
   DOCKER_CACHE_STATE.released,
   DOCKER_CACHE_STATE.expiredUnverified,
   DOCKER_CACHE_STATE.ended,
-] as const);
-const DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES = Object.freeze([
+] as const;
+const DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES = [
   DOCKER_CACHE_STATE.active,
   DOCKER_CACHE_STATE.expiredUnverified,
-] as const);
-const DOCKER_CACHE_KINDS = Object.freeze([DOCKER_CACHE_KIND.taskBuild, DOCKER_CACHE_KIND.sandboxBeforeCache] as const);
-const DOCKER_BEFORE_CACHE_LEASE_KINDS = Object.freeze([
+] as const;
+const DOCKER_CACHE_KINDS = [DOCKER_CACHE_KIND.taskBuild, DOCKER_CACHE_KIND.sandboxBeforeCache] as const;
+const DOCKER_BEFORE_CACHE_LEASE_KINDS = [
   DOCKER_LEASE_KIND.build,
   DOCKER_LEASE_KIND.read,
   DOCKER_LEASE_KIND.handoff,
-] as const);
+] as const;
 
 export const DOCKER_CACHE_REPOSITORY = "docker-cache" as const;
 
@@ -625,7 +615,7 @@ export type DockerCacheResultFor<Request extends DockerCacheRepositoryRequest> =
       : never
     : never;
 
-const TABLES = Object.freeze({
+const TABLES = {
   domains: "docker_cache_domains",
   metadata: "docker_cache_metadata",
   taskEntries: "docker_task_build_entries",
@@ -640,7 +630,7 @@ const TABLES = Object.freeze({
   beforeCacheHeads: "docker_before_cache_replacement_heads",
   beforeCacheLeases: "docker_before_cache_leases",
   beforeCacheHolds: "docker_before_cache_holds",
-});
+} as const;
 
 const CREATE_SCHEMA = `
 CREATE TABLE ${TABLES.domains} (
@@ -751,22 +741,20 @@ function normalizeSchemaSql(sql: string): string {
 }
 
 function readSchemaObjects(database: DatabaseSync): readonly SchemaObject[] {
-  return Object.freeze(
-    database
-      .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name, tbl_name")
-      .all()
-      .map((row) => {
-        const value = record(row, "schema object");
-        const sql = value.sql;
-        if (sql !== null && typeof sql !== "string") throw invalid("docker-cache schema object SQL is invalid");
-        return Object.freeze({
-          type: exactString(value.type, "schema object type"),
-          name: exactString(value.name, "schema object name"),
-          table: exactString(value.tbl_name, "schema object table"),
-          sql: sql === null ? null : normalizeSchemaSql(sql),
-        });
-      }),
-  );
+  return database
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY type, name, tbl_name")
+    .all()
+    .map((row) => {
+      const value = record(row, "schema object");
+      const sql = value.sql;
+      if (sql !== null && typeof sql !== "string") throw invalid("docker-cache schema object SQL is invalid");
+      return {
+        type: exactString(value.type, "schema object type"),
+        name: exactString(value.name, "schema object name"),
+        table: exactString(value.tbl_name, "schema object table"),
+        sql: sql === null ? null : normalizeSchemaSql(sql),
+      };
+    });
 }
 
 function canonicalSchemaForRevisionOne(): readonly SchemaObject[] {
@@ -797,7 +785,7 @@ function invalid(message: string, cause?: unknown): UserDatabaseInvalid {
     code: "user-database-invalid",
     message,
     repository: DOCKER_CACHE_REPOSITORY,
-    cause,
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
   });
 }
 
@@ -827,7 +815,7 @@ function taskEntry(row: unknown): DockerTaskBuildEntryRow {
   const state = exactString(value.state, "task-build state");
   if (!isFiniteValue(DOCKER_TASK_ENTRY_STATES, state))
     throw invalid(`docker-cache task-build state ${state} is invalid`);
-  return Object.freeze({
+  return {
     buildKey: exactString(value.build_key, "build_key"),
     tag: exactString(value.tag, "tag"),
     imageId: exactString(value.image_id, "image_id"),
@@ -838,7 +826,7 @@ function taskEntry(row: unknown): DockerTaskBuildEntryRow {
     generation: exactInteger(value.generation, "generation"),
     operationId: exactString(value.operation_id, "operation_id"),
     state,
-  });
+  };
 }
 
 function beforeCacheEntry(row: unknown): DockerBeforeCacheEntryRow {
@@ -854,7 +842,7 @@ function beforeCacheEntry(row: unknown): DockerBeforeCacheEntryRow {
   if (typeof changeFrequency !== "number" || !Number.isFinite(changeFrequency) || changeFrequency < 0) {
     throw invalid("docker-cache change_frequency is invalid");
   }
-  return Object.freeze({
+  return {
     entryId: exactString(value.entry_id, "entry_id"),
     beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"),
     baseIdentity: exactString(value.base_identity, "base_identity"),
@@ -871,12 +859,12 @@ function beforeCacheEntry(row: unknown): DockerBeforeCacheEntryRow {
     lastSuccessfulUseAt: nullableString(value.last_successful_use_at, "last_successful_use_at"),
     protectedUntil: exactString(value.protected_until, "protected_until"),
     state,
-  });
+  };
 }
 
 function taskLease(row: unknown): DockerTaskBuildLeaseRow {
   const value = record(row, "task-build lease");
-  return Object.freeze({
+  return {
     leaseId: exactString(value.lease_id, "lease_id"),
     buildKey: exactString(value.build_key, "build_key"),
     holderPid: exactInteger(value.holder_pid, "holder_pid"),
@@ -885,14 +873,14 @@ function taskLease(row: unknown): DockerTaskBuildLeaseRow {
     generation: exactInteger(value.generation, "generation"),
     createdAt: exactString(value.created_at, "created_at"),
     heartbeatAt: exactString(value.heartbeat_at, "heartbeat_at"),
-  });
+  };
 }
 
 function taskRoot(row: unknown): DockerTaskBuildRootRow {
   const value = record(row, "task-build root");
   const state = exactString(value.state, "root state");
   if (!isFiniteValue(DOCKER_TASK_ROOT_STATES, state)) throw invalid(`docker-cache task root state ${state} is invalid`);
-  return Object.freeze({
+  return {
     rootId: exactString(value.root_id, "root_id"),
     buildKey: exactString(value.build_key, "build_key"),
     holderPid: exactInteger(value.holder_pid, "holder_pid"),
@@ -901,7 +889,7 @@ function taskRoot(row: unknown): DockerTaskBuildRootRow {
     generation: exactInteger(value.generation, "generation"),
     state,
     createdAt: exactString(value.created_at, "created_at"),
-  });
+  };
 }
 
 function beforeCacheLease(row: unknown): DockerBeforeCacheLeaseRow {
@@ -913,7 +901,7 @@ function beforeCacheLease(row: unknown): DockerBeforeCacheLeaseRow {
   if (!isFiniteValue(DOCKER_BEFORE_CACHE_LEASE_STATES, state)) {
     throw invalid(`docker-cache before-cache lease state ${state} is invalid`);
   }
-  return Object.freeze({
+  return {
     leaseId: exactString(value.lease_id, "lease_id"),
     entryId: exactString(value.entry_id, "entry_id"),
     beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"),
@@ -928,7 +916,7 @@ function beforeCacheLease(row: unknown): DockerBeforeCacheLeaseRow {
     heartbeatAt: exactString(value.heartbeat_at, "heartbeat_at"),
     expiresAt: exactString(value.expires_at, "expires_at"),
     state,
-  });
+  };
 }
 
 function beforeCacheHold(row: unknown): DockerBeforeCacheHoldRow {
@@ -936,7 +924,7 @@ function beforeCacheHold(row: unknown): DockerBeforeCacheHoldRow {
   const state = exactString(value.state, "state");
   if (!isFiniteValue(DOCKER_BEFORE_CACHE_HOLD_STATES, state))
     throw invalid(`docker-cache before-cache hold state ${state} is invalid`);
-  return Object.freeze({
+  return {
     holdId: exactString(value.hold_id, "hold_id"),
     entryId: exactString(value.entry_id, "entry_id"),
     beforeCacheKey: exactString(value.before_cache_key, "before_cache_key"),
@@ -946,14 +934,14 @@ function beforeCacheHold(row: unknown): DockerBeforeCacheHoldRow {
     operationId: exactString(value.operation_id, "operation_id"),
     state,
     createdAt: exactString(value.created_at, "created_at"),
-  });
+  };
 }
 
 function gcLock(row: unknown): DockerImageGcLockRow {
   const value = record(row, "GC lock");
   const cacheKind = exactString(value.cache_kind, "cache_kind");
   if (!isFiniteValue(DOCKER_CACHE_KINDS, cacheKind)) throw invalid(`docker-cache kind ${cacheKind} is invalid`);
-  return Object.freeze({
+  return {
     imageId: exactString(value.image_id, "image_id"),
     cacheKind,
     planId: exactString(value.plan_id, "plan_id"),
@@ -963,7 +951,7 @@ function gcLock(row: unknown): DockerImageGcLockRow {
     holderBootId: exactString(value.holder_boot_id, "holder_boot_id"),
     holderProcessStart: exactString(value.holder_process_start, "holder_process_start"),
     createdAt: exactString(value.created_at, "created_at"),
-  });
+  };
 }
 
 function transaction<A>(database: DatabaseSync, run: () => A): A {
@@ -1035,7 +1023,7 @@ function installCurrentSchema(database: DatabaseSync): void {
 
 function domainRow(row: unknown): DockerCacheDomainRow {
   const value = record(row, "domain row");
-  return Object.freeze({
+  return {
     domainId: exactString(value.domain_id, "domain_id"),
     ownerId: exactString(value.owner_id, "owner_id"),
     daemonId: exactString(value.daemon_id, "daemon_id"),
@@ -1048,14 +1036,14 @@ function domainRow(row: unknown): DockerCacheDomainRow {
     firstVerifiedAt: exactString(value.first_verified_at, "first_verified_at"),
     lastVerifiedAt: exactString(value.last_verified_at, "last_verified_at"),
     lastState: DOCKER_CACHE_DOMAIN.verifiedState,
-  });
+  };
 }
 
 function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest): DockerCacheRepositoryResult {
   const result = <Operation extends DockerCacheRepositoryRequest["operation"], Value extends object>(
     operation: Operation,
     value: Value,
-  ) => Object.freeze({ repository: DOCKER_CACHE_REPOSITORY, operation, ...value }) as Result<Operation, Value>;
+  ) => ({ repository: DOCKER_CACHE_REPOSITORY, operation, ...value }) as Result<Operation, Value>;
 
   switch (request.operation) {
     case "ensure-owner": {
@@ -1119,60 +1107,46 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
     }
     case "list-domains":
       return result(request.operation, {
-        domains: Object.freeze(
-          database
-            .prepare(`SELECT * FROM ${TABLES.domains} ORDER BY first_verified_at, domain_id`)
-            .all()
-            .map(domainRow),
-        ),
+        domains: database
+          .prepare(`SELECT * FROM ${TABLES.domains} ORDER BY first_verified_at, domain_id`)
+          .all()
+          .map(domainRow),
       });
     case "list-inventory":
       return readTransaction(database, () =>
         result(request.operation, {
-          taskEntries: Object.freeze(
-            database
-              .prepare(
-                `SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY build_key`,
-              )
-              .all(request.domainId)
-              .map(taskEntry),
-          ),
-          taskLeases: Object.freeze(
-            database
-              .prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ORDER BY lease_id`)
-              .all(request.domainId)
-              .map(taskLease),
-          ),
-          taskRoots: Object.freeze(
-            database
-              .prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ORDER BY root_id`)
-              .all(request.domainId)
-              .map(taskRoot),
-          ),
-          beforeCacheEntries: Object.freeze(
-            database
-              .prepare(
-                `SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY before_cache_key, generation`,
-              )
-              .all(request.domainId)
-              .map(beforeCacheEntry),
-          ),
-          beforeCacheLeases: Object.freeze(
-            database
-              .prepare(
-                `SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`,
-              )
-              .all(request.domainId)
-              .map(beforeCacheLease),
-          ),
-          beforeCacheHolds: Object.freeze(
-            database
-              .prepare(
-                `SELECT * FROM ${TABLES.beforeCacheHolds} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)}) ORDER BY hold_id`,
-              )
-              .all(request.domainId)
-              .map(beforeCacheHold),
-          ),
+          taskEntries: database
+            .prepare(
+              `SELECT * FROM ${TABLES.taskEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY build_key`,
+            )
+            .all(request.domainId)
+            .map(taskEntry),
+          taskLeases: database
+            .prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ORDER BY lease_id`)
+            .all(request.domainId)
+            .map(taskLease),
+          taskRoots: database
+            .prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ORDER BY root_id`)
+            .all(request.domainId)
+            .map(taskRoot),
+          beforeCacheEntries: database
+            .prepare(
+              `SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state != ${sqlLiteral(DOCKER_CACHE_STATE.tombstoned)} ORDER BY before_cache_key, generation`,
+            )
+            .all(request.domainId)
+            .map(beforeCacheEntry),
+          beforeCacheLeases: database
+            .prepare(
+              `SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`,
+            )
+            .all(request.domainId)
+            .map(beforeCacheLease),
+          beforeCacheHolds: database
+            .prepare(
+              `SELECT * FROM ${TABLES.beforeCacheHolds} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_HOLD_STATES)}) ORDER BY hold_id`,
+            )
+            .all(request.domainId)
+            .map(beforeCacheHold),
         }),
       );
     case "task-get-indexed": {
@@ -1312,24 +1286,20 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
         )
         .all(request.domainId)
         .map(taskEntry);
-      return result(request.operation, { entries: Object.freeze(entries) });
+      return result(request.operation, { entries });
     }
     case "task-list-owners": {
       const suffix = request.buildKey === undefined ? "" : "AND build_key = ?";
       const args = request.buildKey === undefined ? [request.domainId] : [request.domainId, request.buildKey];
       return result(request.operation, {
-        leases: Object.freeze(
-          database
-            .prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ${suffix} ORDER BY lease_id`)
-            .all(...args)
-            .map(taskLease),
-        ),
-        roots: Object.freeze(
-          database
-            .prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ${suffix} ORDER BY root_id`)
-            .all(...args)
-            .map(taskRoot),
-        ),
+        leases: database
+          .prepare(`SELECT * FROM ${TABLES.taskLeases} WHERE domain_id = ? ${suffix} ORDER BY lease_id`)
+          .all(...args)
+          .map(taskLease),
+        roots: database
+          .prepare(`SELECT * FROM ${TABLES.taskRoots} WHERE domain_id = ? ${suffix} ORDER BY root_id`)
+          .all(...args)
+          .map(taskRoot),
       });
     }
     case "task-prune-owners": {
@@ -1374,12 +1344,12 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
       if (row === undefined) return result(request.operation, { plan: null });
       const value = record(row, "GC plan");
       return result(request.operation, {
-        plan: Object.freeze({
+        plan: {
           expiresAt: exactString(value.expires_at, "expires_at"),
           payload: exactString(value.payload, "payload"),
           digest: exactString(value.digest, "digest"),
           outcome: nullableString(value.outcome, "outcome"),
-        }),
+        },
       });
     }
     case "task-save-plan-outcome": {
@@ -1460,14 +1430,12 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
     }
     case "task-list-delete-locks":
       return result(request.operation, {
-        locks: Object.freeze(
-          database
-            .prepare(
-              `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.taskBuild)} ORDER BY created_at, image_id LIMIT 128`,
-            )
-            .all(request.domainId)
-            .map(gcLock),
-        ),
+        locks: database
+          .prepare(
+            `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.taskBuild)} ORDER BY created_at, image_id LIMIT 128`,
+          )
+          .all(request.domainId)
+          .map(gcLock),
       });
     case "task-recover-delete": {
       const count = transaction(database, () => {
@@ -1494,30 +1462,24 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
     }
     case "before-cache-startup-snapshot":
       return result(request.operation, {
-        entries: Object.freeze(
-          database
-            .prepare(
-              `SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_STARTUP_STATES)}) ORDER BY before_cache_key, generation`,
-            )
-            .all(request.domainId)
-            .map(beforeCacheEntry),
-        ),
-        leases: Object.freeze(
-          database
-            .prepare(
-              `SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`,
-            )
-            .all(request.domainId)
-            .map(beforeCacheLease),
-        ),
-        locks: Object.freeze(
-          database
-            .prepare(
-              `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)} ORDER BY created_at, image_id LIMIT 128`,
-            )
-            .all(request.domainId)
-            .map(gcLock),
-        ),
+        entries: database
+          .prepare(
+            `SELECT * FROM ${TABLES.beforeCacheEntries} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_BEFORE_CACHE_STARTUP_STATES)}) ORDER BY before_cache_key, generation`,
+          )
+          .all(request.domainId)
+          .map(beforeCacheEntry),
+        leases: database
+          .prepare(
+            `SELECT * FROM ${TABLES.beforeCacheLeases} WHERE domain_id = ? AND state IN (${sqlIn(DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES)}) ORDER BY lease_id`,
+          )
+          .all(request.domainId)
+          .map(beforeCacheLease),
+        locks: database
+          .prepare(
+            `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)} ORDER BY created_at, image_id LIMIT 128`,
+          )
+          .all(request.domainId)
+          .map(gcLock),
       });
     case "before-cache-prune-leases": {
       const count = transaction(database, () => {
@@ -1954,7 +1916,7 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
           request.exceptEntryId ?? null,
         )
         .map(beforeCacheEntry);
-      return result(request.operation, { entries: Object.freeze(entries) });
+      return result(request.operation, { entries });
     }
     case "before-cache-reserve-delete": {
       const outcome = transaction(database, () => {
@@ -2070,10 +2032,6 @@ export const dockerCacheRepositoryHandler: UserDatabaseRepositoryHandler<
   assertCurrentSchema,
   dispatch,
 });
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function strings(value: Record<string, unknown>, fields: readonly string[]): boolean {
   return fields.every((field) => typeof value[field] === "string");

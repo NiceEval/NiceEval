@@ -106,6 +106,7 @@ export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
 }
 
 /** Describes Docker sockets, host storage, capacity and policy in a versioned descriptor; it is not a supported substitute for an Incus dedicated-kernel receipt. */
+// 身份与摘要材料边界：descriptor 直接进入 canonical digest，必须省略不存在的能力。
 export interface DockerExecutionProfileV1 {
   readonly schemaVersion: 1;
   readonly profileId: string;
@@ -134,7 +135,7 @@ export interface DockerExecutionProfileV1 {
         readonly attestation: "linux-project-quota/v1" | "independent-fixed-filesystem/v1";
       };
       /** Presence is the descriptor's explicit, default-off full-copy capability. */
-      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1 | undefined;
+      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1;
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -174,11 +175,11 @@ export interface DockerProfilePublicSummary {
 
 type DockerExecutionProfileSemanticInput = Pick<DockerExecutionProfileV1, "securityLevel" | "backend" | "policy">;
 
-const ParseOptions = Object.freeze({
+const ParseOptions = {
   errors: "all" as const,
   exact: true,
   onExcessProperty: "error" as const,
-});
+};
 
 type PlainObject = Readonly<Record<PropertyKey, unknown>>;
 
@@ -420,7 +421,7 @@ export const DockerExecutionProfileV1Schema: Schema.Codec<DockerExecutionProfile
         bytesPerAllocation: positiveSafeInteger("DockerProfileDockerDataAllocationLimitBytes"),
         attestation: Schema.Literals(["linux-project-quota/v1", "independent-fixed-filesystem/v1"]),
       }),
-      beforeCache: Schema.optional(BeforeCacheFullCopyCapabilitySchema),
+      beforeCache: Schema.optionalKey(BeforeCacheFullCopyCapabilitySchema),
     }),
     cgroup: plainStruct({
       aggregatePath: absolutePath("DockerProfileAggregatePath"),
@@ -775,14 +776,11 @@ export const dockerProfileDigestOf = dockerExecutionProfileV1Digest;
 /** Validates a descriptor and returns its bounded identity and capacity summary. The summary is not the complete descriptor or a runtime attestation. */
 export function dockerProfilePublicSummaryOf(profile: DockerExecutionProfileV1): DockerProfilePublicSummary {
   const normalized = decodeDockerExecutionProfile(profile);
-  return Object.freeze({
+  return {
     schemaVersion: 1,
     profileId: normalized.profileId,
     securityLevel: normalized.securityLevel,
     semanticPolicyRevision: normalized.semanticPolicyRevision,
-    capacity: Object.freeze({
-      ...normalized.capacity,
-      aggregate: Object.freeze({ ...normalized.capacity.aggregate }),
-    }),
-  });
+    capacity: normalized.capacity,
+  };
 }

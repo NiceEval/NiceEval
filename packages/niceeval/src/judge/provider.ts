@@ -1,4 +1,5 @@
 import { Predicate } from "effect";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 
 const judgeProviderBrand: unique symbol = Symbol("niceeval.judge.provider");
 
@@ -12,25 +13,25 @@ export type JudgeSelection = string | JudgeProvider;
 
 /** Selects an inline key or one environment variable, never both; environment credentials are resolved only when a request is needed. */
 export type JudgeCredentials =
-  | { readonly apiKey?: never; readonly apiKeyEnv?: string }
-  | { readonly apiKey: string; readonly apiKeyEnv?: never };
+  | { readonly apiKey?: never | undefined; readonly apiKeyEnv?: string | undefined }
+  | { readonly apiKey: string; readonly apiKeyEnv?: never | undefined };
 
 /** Selects the Judge model, endpoint and bounded execution settings; timeoutMs is in milliseconds and maxResponseBytes caps bytes before JSON parsing. */
 export interface JudgeProviderSettings {
   readonly model: string;
-  readonly baseUrl?: string;
-  readonly timeoutMs?: number;
-  readonly maxResponseBytes?: number;
-  readonly headers?: Readonly<Record<string, string>>;
+  readonly baseUrl?: string | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly maxResponseBytes?: number | undefined;
+  readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
 /** Configures a managed Chat Completions Judge; image support requires explicit opt-in and a model that supports images and forced tool output. */
 export type ChatJudgeProviderOptions = JudgeProviderSettings &
   JudgeCredentials & {
-    readonly maxOutputTokens?: number;
+    readonly maxOutputTokens?: number | undefined;
     /** Context tokens for pi coding-agent sessions; omitted values use the built-in model catalog. */
-    readonly contextWindow?: number;
-    readonly supportsImages?: boolean;
+    readonly contextWindow?: number | undefined;
+    readonly supportsImages?: boolean | undefined;
   };
 
 /** Configures TypeSafe System One credentials and execution limits; maxOutputTokens is not supported by this protocol. */
@@ -44,6 +45,7 @@ export interface JudgeProviderIdentity {
   readonly credential: { readonly kind: "inline" } | { readonly kind: "environment"; readonly name: string };
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
+  // Identity digest material: omitted capabilities and settings must not add canonical keys.
   readonly supportsImages?: boolean;
   readonly contextWindow?: number;
   readonly headers?: Readonly<Record<string, string>>;
@@ -80,7 +82,7 @@ function exactOptions(value: unknown, label: string, allowed: readonly string[])
     }
     captured[key] = descriptor.value;
   }
-  return Object.freeze(captured);
+  return captured;
 }
 
 function boundedText(value: unknown, label: string, maximumBytes: number): string {
@@ -158,7 +160,7 @@ function freezeIdentity(identity: JudgeProviderIdentity): JudgeProviderIdentity 
     ...identity,
     credential: Object.freeze({ ...identity.credential }),
     protocol: Object.freeze({ ...identity.protocol }),
-    ...(identity.headers !== undefined ? { headers: Object.freeze({ ...identity.headers }) } : {}),
+    ...(identity.headers === undefined ? {} : { headers: Object.freeze({ ...identity.headers }) }),
   });
 }
 
@@ -167,7 +169,19 @@ function createProvider(
   raw: unknown,
   protocolKind: "chat-completions" | "typesafe-system-one",
 ): JudgeProvider {
-  const label = `${provider === "typesafe" ? "Typesafe" : provider === "openai" ? "OpenAI" : provider === "openrouter" ? "OpenRouter" : "Vercel"}Provider() options`;
+  function providerName(): string {
+    switch (provider) {
+      case "typesafe":
+        return "Typesafe";
+      case "openai":
+        return "OpenAI";
+      case "openrouter":
+        return "OpenRouter";
+      default:
+        return "Vercel";
+    }
+  }
+  const label = `${providerName()}Provider() options`;
   const allowed =
     protocolKind === "chat-completions"
       ? [
@@ -211,17 +225,17 @@ function createProvider(
     if (typeof input.apiKey !== "string" || input.apiKey.length === 0)
       throw new TypeError(`${label}.apiKey must be a non-empty string`);
     const apiKey = input.apiKey;
-    credential = Object.freeze({ kind: "inline" as const });
+    credential = { kind: "inline" as const };
     resolveCredential = () => apiKey;
   } else {
     const name = environmentName(input.apiKeyEnv, defaults[provider].apiKeyEnv, `${label}.apiKeyEnv`);
-    credential = Object.freeze({ kind: "environment" as const, name });
+    credential = { kind: "environment" as const, name };
     resolveCredential = () => process.env[name];
   }
 
   const protocol =
     protocolKind === "chat-completions"
-      ? Object.freeze({
+      ? {
           kind: "chat-completions" as const,
           maxOutputTokens: positiveInteger(
             input.maxOutputTokens,
@@ -229,22 +243,25 @@ function createProvider(
             `${label}.maxOutputTokens`,
             Number.MAX_SAFE_INTEGER,
           ),
-        })
-      : Object.freeze({ kind: "typesafe-system-one" as const });
-  const identity = freezeIdentity({
-    provider,
-    model,
-    baseUrl,
-    credential,
-    timeoutMs,
-    maxResponseBytes,
-    protocol,
-    ...(headers !== undefined ? { headers } : {}),
-    ...(input.contextWindow === undefined
-      ? {}
-      : { contextWindow: positiveInteger(input.contextWindow, 1, `${label}.contextWindow`, Number.MAX_SAFE_INTEGER) }),
-    ...(input.supportsImages === true ? { supportsImages: true } : {}),
-  });
+        }
+      : { kind: "typesafe-system-one" as const };
+  const identity = freezeIdentity(
+    omitUndefined({
+      provider,
+      model,
+      baseUrl,
+      credential,
+      timeoutMs,
+      maxResponseBytes,
+      protocol,
+      headers,
+      contextWindow:
+        input.contextWindow === undefined
+          ? undefined
+          : positiveInteger(input.contextWindow, 1, `${label}.contextWindow`, Number.MAX_SAFE_INTEGER),
+      supportsImages: input.supportsImages === true ? true : undefined,
+    }),
+  );
   const value = Object.create(null) as Record<PropertyKey, unknown>;
   Object.defineProperty(value, judgeProviderBrand, {
     value: true,
@@ -253,7 +270,7 @@ function createProvider(
     configurable: false,
   });
   const frozen = Object.freeze(value) as unknown as JudgeProvider;
-  providerPrivate.set(frozen, Object.freeze({ identity, credential: resolveCredential }));
+  providerPrivate.set(frozen, { identity, credential: resolveCredential });
   return frozen;
 }
 

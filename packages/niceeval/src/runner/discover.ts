@@ -16,6 +16,11 @@ import { assertNoHiddenInputLeaks, folderEntryBaseId, type HiddenInput, type Lea
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {
+  collectMigrationOccurrences,
+  isMigrationRequiredError,
+  MigrationRequiredError,
+} from "../error-assistance/migration.ts";
+import {
   captureLoadedFiles,
   enterLoaderDiscoveryHost,
   type LoaderCaptureOrigin,
@@ -69,7 +74,7 @@ export interface DiscoveryIssue {
   readonly message: string;
   readonly actions: readonly string[];
   /** Retained in-process for structured error assistance; never persisted. */
-  readonly cause?: unknown;
+  readonly cause: MigrationRequiredError | import("../shared/external-cause.ts").ExternalCause | undefined;
 }
 
 /** Discovery reports the whole invalid batch, rather than stopping at the first bad file. */
@@ -136,19 +141,11 @@ const EvalGroupModuleSchema: Schema.Schema<EvalGroupModule> = Schema.Struct({
 });
 
 function discoveryError(issues: readonly DiscoveryIssue[]): DiscoveryError {
-  const frozenIssues = Object.freeze(
-    issues.map((issue) =>
-      Object.freeze({
-        ...issue,
-        actions: Object.freeze([...issue.actions]),
-      }),
-    ),
-  );
   return new DiscoveryError({
-    message: frozenIssues
+    message: issues
       .map((issue) => `${issue.code} ${issue.file}: ${issue.message} Actions: ${issue.actions.join(" ")}`)
       .join("\n"),
-    issues: frozenIssues,
+    issues,
   });
 }
 
@@ -159,7 +156,18 @@ function issue(
   actions: readonly string[],
   cause?: unknown,
 ): DiscoveryError {
-  return discoveryError([{ file, code, message, actions, ...(cause === undefined ? {} : { cause }) }]);
+  return discoveryError([
+    { file, code, message, actions, cause: cause === undefined ? undefined : discoveryIssueCause(cause) },
+  ]);
+}
+
+function discoveryIssueCause(
+  cause: unknown,
+): MigrationRequiredError | import("../shared/external-cause.ts").ExternalCause {
+  if (isMigrationRequiredError(cause)) return cause;
+  const occurrences = collectMigrationOccurrences(cause);
+  if (occurrences.length > 0) return new MigrationRequiredError({ occurrences });
+  return normalizeExternalCause(cause);
 }
 
 function causeMessage(cause: unknown): string {
@@ -225,9 +233,7 @@ function collectAll<A, B>(
 ): Effect.Effect<readonly B[], DiscoveryError> {
   return Effect.partition(values, f, { concurrency: 1 }).pipe(
     Effect.flatMap(([groups, errors]) =>
-      errors.length > 0
-        ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues)))
-        : Effect.succeed(Object.freeze(groups)),
+      errors.length > 0 ? Effect.fail(discoveryError(errors.flatMap((error) => error.issues))) : Effect.succeed(groups),
     ),
   );
 }
@@ -263,7 +269,7 @@ function walkFiles(
     Effect.suspend(() =>
       readDirectory(current, allowAbsent).pipe(
         Effect.flatMap((entries) => {
-          if (entries === undefined) return Effect.succeed(Object.freeze([]));
+          if (entries === undefined) return Effect.succeed([]);
           const isCase = stopAtCase && entries.some((entry) => entry.isFile() && isFolderEntryName(entry.name));
           return Effect.forEach(
             entries,
@@ -275,12 +281,12 @@ function walkFiles(
               return entry.isFile() && match(entry.name) ? Effect.succeed([full]) : Effect.succeed([]);
             },
             { concurrency: 1 },
-          ).pipe(Effect.map((groups) => Object.freeze(groups.flat())));
+          ).pipe(Effect.map((groups) => groups.flat()));
         }),
       ),
     );
 
-  return walk(dir, true).pipe(Effect.map((files) => Object.freeze([...files].sort())));
+  return walk(dir, true).pipe(Effect.map((files) => [...files].sort()));
 }
 
 function isMissingPath(cause: unknown): boolean {
@@ -332,11 +338,12 @@ function collectEvalEntries(evalsDir: string, root: string): Effect.Effect<reado
                 file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "),
                 code: "discovery.duplicate-id" as const,
                 message: `Duplicate eval id ${JSON.stringify(id)}: multiple entries map to the same id.`,
-                actions: Object.freeze(["Keep either the file entry or the folder entry for this id."]),
+                actions: ["Keep either the file entry or the folder entry for this id."],
+                cause: undefined,
               },
             ],
       );
-      return duplicates.length > 0 ? Effect.fail(discoveryError(duplicates)) : Effect.succeed(Object.freeze(entries));
+      return duplicates.length > 0 ? Effect.fail(discoveryError(duplicates)) : Effect.succeed(entries);
     }),
   );
 }
@@ -364,16 +371,14 @@ function expandEvalExport(
   root: string,
 ): Effect.Effect<readonly { readonly id: string; readonly definition: AnyEvalDefinition }[], DiscoveryError> {
   if (isEvalDefinition(exported)) {
-    return Effect.succeed(Object.freeze([{ id: entry.baseId, definition: exported }]));
+    return Effect.succeed([{ id: entry.baseId, definition: exported }]);
   }
   if (isEvalDefinitionArray(exported)) {
     return Effect.succeed(
-      Object.freeze(
-        exported.map((definition, index) => ({
-          id: `${entry.baseId}/${pad4(index)}`,
-          definition,
-        })),
-      ),
+      exported.map((definition, index) => ({
+        id: `${entry.baseId}/${pad4(index)}`,
+        definition,
+      })),
     );
   }
   if (isDatasetDefinition(exported)) {
@@ -416,7 +421,7 @@ function expandEvalExport(
         },
         catch: datasetError,
       });
-    }).pipe(Effect.map((items) => Object.freeze(items)));
+    });
   }
   // `Array.isArray` does not narrow readonly arrays; the array branch above has already returned.
   const dataset = exported;
@@ -428,22 +433,19 @@ function expandEvalExport(
           file: relative(root, entry.file),
           code: "discovery.invalid-dataset-key" as const,
           message: `Invalid keyed eval dataset key ${JSON.stringify(key)}.`,
-          actions: Object.freeze([
-            "Use a non-empty path segment without slash, backslash, dot segments, or control characters.",
-          ]),
+          actions: ["Use a non-empty path segment without slash, backslash, dot segments, or control characters."],
+          cause: undefined,
         })),
       ),
     );
   }
   return Effect.succeed(
-    Object.freeze(
-      Object.keys(dataset)
-        .sort()
-        .map((key) => ({
-          id: `${entry.baseId}/${key}`,
-          definition: dataset[key]!,
-        })),
-    ),
+    Object.keys(dataset)
+      .sort()
+      .map((key) => ({
+        id: `${entry.baseId}/${key}`,
+        definition: dataset[key]!,
+      })),
   );
 }
 
@@ -462,7 +464,19 @@ function leakGateHintsForLayer(
       leakGate.context._tag === "Url"
         ? fileURLToPath(leakGate.context.value)
         : resolve(baseDir, leakGate.context.value);
-    return Effect.succeed(Option.some({ buildContexts: [{ contextDir, label: "dockerfile" }] }));
+    return Effect.succeed(
+      Option.some({
+        buildContexts: [
+          {
+            contextDir,
+            dockerignorePath: undefined,
+            extraIgnoreRules: undefined,
+            label: "dockerfile",
+          },
+        ],
+        bindMounts: [],
+      }),
+    );
   }
   const composeFile = leakGate.file._tag === "Url" ? new URL(leakGate.file.value) : leakGate.file.value;
   return Effect.tryPromise({
@@ -498,10 +512,10 @@ function runLeakGate(
     readonly privatePaths: readonly string[];
   },
 ): Effect.Effect<void, DiscoveryError> {
-  const hidden: readonly HiddenInput[] = Object.freeze([
+  const hidden: readonly HiddenInput[] = [
     ...input.criteriaPaths.map((path) => ({ path, kind: "verifier" as const })),
     ...input.privatePaths.map((path) => ({ path, kind: "private" as const })),
-  ]);
+  ];
   if (hidden.length === 0) return Effect.void;
   return leakGateHintsForLayer(definition.sandbox, input.baseDir, input.file).pipe(
     Effect.flatMap(
@@ -511,7 +525,7 @@ function runLeakGate(
           assertNoHiddenInputLeaks({
             hidden,
             buildContexts: hints.buildContexts,
-            ...(hints.bindMounts === undefined ? {} : { bindMounts: hints.bindMounts }),
+            bindMounts: hints.bindMounts,
             evalId: input.evalId,
           }).pipe(
             Effect.mapError((cause) =>
@@ -563,29 +577,29 @@ function discoverEvalEntry(
           "Make the eval source file readable.",
         ]),
     });
-    const loaderDataPaths = Object.freeze([...captured.paths]);
-    const criteriaPaths = Object.freeze([...captured.criteriaPaths]);
-    const privatePaths = Object.freeze([...captured.privatePaths]);
+    const loaderDataPaths = captured.paths;
+    const criteriaPaths = captured.criteriaPaths;
+    const privatePaths = captured.privatePaths;
     const baseDir = dirname(entry.file);
-    return Object.freeze({
+    return {
       sourcePath: entry.file,
-      evals: Object.freeze(
-        expanded.map(({ id, definition }) =>
-          discoverEval(definition, {
-            id,
-            baseDir,
-            sourcePath: entry.file,
-            source,
-            loaderDataPaths,
-            criteriaPaths,
-            privatePaths,
-            definition,
-          }),
-        ),
+      evals: expanded.map(({ id, definition }) =>
+        discoverEval(definition, {
+          id,
+          baseDir,
+          sourcePath: entry.file,
+          source,
+          loaderDataPaths,
+          criteriaPaths,
+          privatePaths,
+          definition,
+
+          evalGroup: undefined,
+        }),
       ),
       origins: captured.origins,
       unattributed: captured.unattributed,
-    });
+    };
   });
 }
 
@@ -620,10 +634,12 @@ function withLoaderProvenance(evalDef: DiscoveredEval, paths: LoaderPathBuckets)
     baseDir: evalDef.baseDir,
     sourcePath: evalDef.sourcePath,
     source: evalDef.source,
-    loaderDataPaths: Object.freeze([...paths.data].sort()),
-    criteriaPaths: Object.freeze([...paths.criteria].sort()),
-    privatePaths: Object.freeze([...paths.private].sort()),
+    loaderDataPaths: [...paths.data].sort(),
+    criteriaPaths: [...paths.criteria].sort(),
+    privatePaths: [...paths.private].sort(),
     definition: evalDef.definition,
+
+    evalGroup: undefined,
   });
 }
 
@@ -676,7 +692,7 @@ function propagateLoaderProvenance(
         }
         evals.push(...entry.evals.map((evalDef) => attachEvalModules(withLoaderProvenance(evalDef, buckets), closure)));
       }
-      return Object.freeze(evals);
+      return evals;
     },
     catch: (cause) =>
       issue(relative(root, join(root, "evals")) || "evals", "discovery.source-capture-failed", causeMessage(cause), [
@@ -819,7 +835,10 @@ function normalizeEvalGroupSource(content: string): string {
 // @concord-implements docs/feature/eval-groups/library.md
 export function discoverEvals(
   root: string,
-  options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},
+  options: { freshImport: boolean | undefined; generation: FreshImportGeneration | undefined } = {
+    freshImport: undefined,
+    generation: undefined,
+  },
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
   const dir = join(root, "evals");
   const discoverWith = (
@@ -859,6 +878,8 @@ export function discoverEvals(
             code: "discovery.invalid-export",
             message: "Eval Group id must not be empty.",
             actions: ["Put eval-group.ts in a named subdirectory under evals/."],
+
+            cause: undefined,
           });
         } else if (owners.length > 1) {
           groupIdIssues.push({
@@ -866,6 +887,8 @@ export function discoverEvals(
             code: "discovery.duplicate-id",
             message: `Duplicate eval group id ${JSON.stringify(id)}: multiple entries map to the same id.`,
             actions: ["Keep one eval-group.ts for this group path."],
+
+            cause: undefined,
           });
         }
       }
@@ -896,10 +919,16 @@ export function discoverEvals(
               `pass (${evaluationKinds.pass.length}): ${evaluationKinds.pass.join(", ")}; ` +
               `score (${evaluationKinds.score.length}): ${evaluationKinds.score.join(", ")}.`,
             actions: ["Split the Eval Group into one pass Group and one score Group."],
+
+            cause: undefined,
           });
         }
         const groupProjection = yield* Effect.try({
-          try: () => graph.capture(file, { stopPaths: memberSourcePaths }),
+          try: () =>
+            graph.capture(file, {
+              stopPaths: memberSourcePaths,
+              source: undefined,
+            }),
           catch: (cause) =>
             issue(label, "discovery.source-capture-failed", causeMessage(cause), [
               "Make the Eval Group entry and its project-local helper modules readable.",
@@ -938,6 +967,8 @@ export function discoverEvals(
               code: "eval-group-member-unresolved",
               message: `Eval Group ${JSON.stringify(id)} member ${index} resolves to ${matches.length} discovered Evals.`,
               actions: ["Import the exact default definition object from an eval entry."],
+
+              cause: undefined,
             });
             return;
           }
@@ -949,6 +980,8 @@ export function discoverEvals(
               code: "eval-group-member-overlap",
               message: `Eval ${JSON.stringify(member.id)} in Eval Group ${JSON.stringify(id)} is already claimed by Eval Group ${JSON.stringify(prior)}.`,
               actions: ["List each Eval exactly once in one group."],
+
+              cause: undefined,
             });
             return;
           }
@@ -965,6 +998,8 @@ export function discoverEvals(
               actions: [
                 "Move the template and lifecycle hooks to the Experiment or Eval Group; keep only prepare commands on the Eval.",
               ],
+
+              cause: undefined,
             });
             return;
           }
@@ -974,27 +1009,27 @@ export function discoverEvals(
             attachEvalModules(
               discoverEval(definition, {
                 ...member,
-                evalGroup: Object.freeze({
+                evalGroup: {
                   id,
-                  evalIds: Object.freeze(evalIds),
+                  evalIds,
                   definitionHash,
-                  ...(module.default.sandbox === undefined ? {} : { sandbox: module.default.sandbox }),
+                  sandbox: module.default.sandbox,
                   onUnavailable: module.default.onUnavailable,
-                  plugins: Object.freeze([...(module.default.plugins ?? [])]),
+                  plugins: [...(module.default.plugins ?? [])],
                   sourcePath: file,
                   baseDir: dirname(file),
-                }),
+                },
               }),
-              Object.freeze({
+              {
                 ...evalModules(member)!,
-                unresolved: Object.freeze([...evalModules(member)!.unresolved, ...groupProjection.unresolved]),
-              }),
+                unresolved: [...evalModules(member)!.unresolved, ...groupProjection.unresolved],
+              },
             ),
           );
         });
       }
       if (issues.length > 0) return yield* Effect.fail(discoveryError(issues));
-      return Object.freeze(evals.map((item) => annotated.get(item.definition) ?? item));
+      return evals.map((item) => annotated.get(item.definition) ?? item);
     });
   if (options.generation !== undefined) return discoverWith(options.generation.import, options.generation.modules);
   return Effect.scoped(
@@ -1022,27 +1057,27 @@ function discoverExperimentFile(
   return Effect.gen(function* () {
     const imported = yield* importModule(file, root, "experiment", load);
     const module = yield* decodeExperimentModule(imported, fileLabel);
-    if (module.default === undefined) return Object.freeze([]);
-    return Object.freeze([
+    if (module.default === undefined) return [];
+    return [
       discoverExperiment(module.default, {
         id: experimentIdOfFile(file, experimentsDir),
         baseDir: dirname(file),
         sourcePath: file,
       }),
-    ]);
+    ];
   });
 }
 
 export interface ExperimentDiscoveryOptions {
-  readonly freshImport?: boolean;
-  readonly generation?: FreshImportGeneration;
+  readonly freshImport: boolean | undefined;
+  readonly generation: FreshImportGeneration | undefined;
   /**
    * Chooses the Experiments to load from every candidate id, which comes from
    * the file path alone. Unselected files are never imported, so a broken or
    * slow Experiment file cannot fail a command that targets another one.
    * Omit it to load every Experiment.
    */
-  readonly select?: (ids: readonly string[]) => readonly string[];
+  readonly select: (ids: readonly string[]) => readonly string[];
 }
 
 export interface ExperimentDiscovery {
@@ -1057,15 +1092,19 @@ export interface ExperimentDiscovery {
 // @concord-implements docs/feature/experiments/library/README.md
 export function discoverExperimentSelection(
   root: string,
-  options: ExperimentDiscoveryOptions = {},
+  options: ExperimentDiscoveryOptions = {
+    freshImport: undefined,
+    generation: undefined,
+    select: (ids) => ids,
+  },
 ): Effect.Effect<ExperimentDiscovery, DiscoveryError> {
   const dir = join(root, "experiments");
   const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<ExperimentDiscovery, DiscoveryError> =>
     walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
       Effect.flatMap((files) => {
         const ids = files.map((file) => experimentIdOfFile(file, dir));
-        const chosen = options.select === undefined ? undefined : new Set(options.select(ids));
-        const selectedFiles = chosen === undefined ? files : files.filter((_, index) => chosen.has(ids[index]!));
+        const chosen = new Set(options.select(ids));
+        const selectedFiles = files.filter((_, index) => chosen.has(ids[index]!));
         return Effect.partition(
           selectedFiles,
           (file) =>
@@ -1078,14 +1117,10 @@ export function discoverExperimentSelection(
             const notExperiments = new Set(
               loaded.filter(({ experiments }) => experiments.length === 0).map(({ file }) => file),
             );
-            return Effect.succeed(
-              Object.freeze({
-                experiments: Object.freeze(loaded.flatMap(({ experiments }) => experiments)),
-                experimentIds: Object.freeze(
-                  files.flatMap((file, index) => (notExperiments.has(file) ? [] : [ids[index]!])),
-                ),
-              }),
-            );
+            return Effect.succeed({
+              experiments: loaded.flatMap(({ experiments }) => experiments),
+              experimentIds: files.flatMap((file, index) => (notExperiments.has(file) ? [] : [ids[index]!])),
+            });
           }),
         );
       }),
@@ -1098,9 +1133,14 @@ export function discoverExperimentSelection(
 /** Loads every Experiment; use discoverExperimentSelection when a command targets only some. */
 export function discoverExperiments(
   root: string,
-  options: { freshImport?: boolean; generation?: FreshImportGeneration } = {},
+  options: { freshImport: boolean | undefined; generation: FreshImportGeneration | undefined } = {
+    freshImport: undefined,
+    generation: undefined,
+  },
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
-  return discoverExperimentSelection(root, options).pipe(Effect.map(({ experiments }) => experiments));
+  return discoverExperimentSelection(root, { ...options, select: (ids) => ids }).pipe(
+    Effect.map(({ experiments }) => experiments),
+  );
 }
 
 /** eval id 的裸字面前缀过滤；exp 与固定读取面共用 shared helper。 */

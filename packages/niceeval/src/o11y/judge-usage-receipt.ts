@@ -160,15 +160,19 @@ export function normalizeJudgeUsageResponse(
       }
     }
   }
-  fields.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  fields.sort(function comparePaths(left, right) {
+    if (left.path < right.path) return -1;
+    if (left.path > right.path) return 1;
+    return 0;
+  });
   const usageReported = fields.some((field) => field.path.startsWith("usage."));
-  const reason = invalidUsage
-    ? "invalid-usage"
-    : modelTooLarge
-      ? "response-model-too-large"
-      : usageReported
-        ? null
-        : "usage-not-reported";
+  function unavailableReason() {
+    if (invalidUsage) return "invalid-usage" as const;
+    if (modelTooLarge) return "response-model-too-large" as const;
+    if (usageReported) return null;
+    return "usage-not-reported" as const;
+  }
+  const reason = unavailableReason();
   return {
     provider,
     model,

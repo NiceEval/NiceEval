@@ -3,7 +3,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import type { Cell, TableContent } from "../components/cell.tsx";
-import { TableContentView } from "../components/TableContentView.tsx";
+import { canonicalAttemptHref, TableContentView } from "../components/TableContentView.tsx";
 import type { Locale } from "../shell/types.ts";
 import { AttemptDialog } from "../attempt/AttemptDialog.tsx";
 import type { RunPageModel } from "./model.ts";
@@ -23,47 +23,52 @@ export function RunPage({ model, locale }: { readonly model: RunPageModel; reado
   const { t } = useTranslation();
   const rows = model.members.map((member) => {
     const cells: Record<string, Cell> = {
-      experiment: { kind: "text", text: model.experimentId },
+      experiment: { kind: "text", text: model.experimentId, detail: undefined },
       adapter:
-        model.adapter === null
+        model.adapter === undefined
           ? { kind: "notApplicable" }
           : {
               kind: "text",
               text: model.adapter?.name ?? "—",
               detail: `${model.adapter.contract} · ${model.adapter.behaviorRevision ?? "—"}`,
             },
-      eval: { kind: "text", text: member.evalId },
-      attempt: { kind: "text", text: String(member.attemptOrdinal + 1) },
-      membership: { kind: "text", text: member.state },
+      eval: { kind: "text", text: member.evalId, detail: undefined },
+      attempt: { kind: "text", text: String(member.attemptOrdinal + 1), detail: undefined },
+      membership: { kind: "text", text: member.state, detail: undefined },
       outcome: textOrMissing(member.outcome),
       verdict:
-        member.verdict === null
+        member.verdict === undefined
           ? { kind: "notApplicable" }
           : {
               kind: "verdict",
+              mode: "single",
               verdict: member.verdict,
-              ...(member.verdict === "passed" && member.score?.state === "available"
-                ? { label: localizedMessage("verdict.scored") }
-                : {}),
+              label:
+                member.verdict === "passed" && member.score?.state === "available"
+                  ? localizedMessage("verdict.scored")
+                  : undefined,
+              bare: false,
             },
       locator:
-        member.locator === null
+        member.locator === undefined
           ? { kind: "notApplicable" }
           : {
               kind: "locator",
               locator: member.locator,
-              ...(member.verdict === null ? {} : { verdict: member.verdict }),
+              verdict: member.verdict ?? undefined,
             },
-      selectedRun: { kind: "text", text: model.runId },
-      slot: { kind: "text", text: member.plannedAttemptId },
+      selectedRun: { kind: "text", text: model.runId, detail: undefined },
+      slot: { kind: "text", text: member.plannedAttemptId, detail: undefined },
     };
-    return Object.freeze({
+    return {
       key: member.key,
-      cells: Object.freeze(cells),
-    });
+      cells,
+      subRows: [],
+      variant: "normal" as const,
+    };
   });
-  const table: TableContent = Object.freeze({
-    columns: Object.freeze([
+  const table: TableContent = {
+    columns: [
       { key: "experiment", header: { en: "Experiment", "zh-CN": "实验" } },
       { key: "adapter", header: { en: "Adapter", "zh-CN": "应用" } },
       { key: "eval", header: { en: "Eval", "zh-CN": "评估" } },
@@ -74,9 +79,9 @@ export function RunPage({ model, locale }: { readonly model: RunPageModel; reado
       { key: "locator", header: { en: "Attempt locator", "zh-CN": "Attempt 定位符" } },
       { key: "selectedRun", header: { en: "Selected run", "zh-CN": "所选 Run" } },
       { key: "slot", header: { en: "Planned attempt", "zh-CN": "计划 Attempt" } },
-    ]),
-    rows: Object.freeze(rows),
-  });
+    ].map((column) => ({ ...column, better: undefined })),
+    rows,
+  };
   return (
     <section className="niceeval-report niceeval-section">
       <h2 className="niceeval-section-title">
@@ -107,34 +112,38 @@ export function RunPage({ model, locale }: { readonly model: RunPageModel; reado
           })}
         </section>
       )}
-      <TableContentView data={table} searchable locale={locale} />
+      <TableContentView
+        data={table}
+        searchable
+        locale={locale}
+        hrefForLocator={canonicalAttemptHref}
+        sort={undefined}
+        className=""
+      />
     </section>
   );
 }
 
-export function RunRoute({
-  runId,
-  presentation,
-  onClose,
-}: {
-  readonly runId: string;
-  readonly presentation: "page" | "dialog";
-  readonly onClose?: () => void;
-}): ReactElement {
+export function RunRoute(
+  props: {
+    readonly runId: string;
+  } & ({ readonly presentation: "page" } | { readonly presentation: "dialog"; readonly onClose: () => void }),
+): ReactElement {
   const generation = useCurrentGeneration();
-  const { data: model } = useSuspenseQuery(runQueryOptions(generation, runId));
+  const { data: model } = useSuspenseQuery(runQueryOptions(generation, props.runId));
   const { i18n } = useTranslation();
   const locale: Locale = i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
   const page = <RunPage model={model} locale={locale} />;
-  if (presentation === "page") return page;
-  if (onClose === undefined) throw new Error("Run dialog close target is missing.");
+  if (props.presentation === "page") return page;
   return (
-    <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"} onClose={onClose}>
+    <AttemptDialog title={locale === "zh-CN" ? "运行" : "Run"} onClose={props.onClose}>
       {page}
     </AttemptDialog>
   );
 }
 
 function textOrMissing(value: unknown): Cell {
-  return typeof value === "string" && value.length > 0 ? { kind: "text", text: value } : { kind: "notApplicable" };
+  return typeof value === "string" && value.length > 0
+    ? { kind: "text", text: value, detail: undefined }
+    : { kind: "notApplicable" };
 }

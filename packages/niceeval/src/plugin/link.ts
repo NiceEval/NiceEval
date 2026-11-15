@@ -42,9 +42,9 @@ export interface LinkedPluginResourceDemand {
 }
 
 export interface PluginPairLink {
-  readonly evalLayer?: SandboxLayer;
-  readonly groupLayer?: SandboxLayer;
-  readonly experimentLayer?: SandboxLayer;
+  readonly evalLayer: SandboxLayer | undefined;
+  readonly groupLayer: SandboxLayer | undefined;
+  readonly experimentLayer: SandboxLayer | undefined;
   readonly occurrences: readonly LinkedPluginOccurrence[];
   readonly resources: readonly LinkedPluginResourceDemand[];
   readonly experimentLifecycles: readonly LinkedPluginLifecycle[];
@@ -80,13 +80,10 @@ export class PluginLinkError extends Data.TaggedError("PluginLinkError")<{
 }> {}
 
 function pluginError(issues: readonly PluginLinkIssue[]): PluginLinkError {
-  const frozen = Object.freeze(
-    issues.map((issue) => Object.freeze({ ...issue, actions: Object.freeze([...issue.actions]) })),
-  );
   return new PluginLinkError({
     code: "plugin.link-failed",
-    issues: frozen,
-    message: `Plugin link failed for ${frozen.length} occurrences. No Sandbox was created.`,
+    issues,
+    message: `Plugin link failed for ${issues.length} occurrences. No Sandbox was created.`,
   });
 }
 
@@ -101,17 +98,18 @@ function sourceLabel(path: string): string {
 function sandboxDeclaration(lifecycle: LinkedPluginLifecycle): JsonValue | undefined {
   return lifecycle.sandboxLayer === undefined
     ? undefined
-    : Object.freeze({
+    : {
         present: true,
         declaration: sandboxLayerDefinitionIdentity(lifecycle.sandboxLayer),
-      });
+      };
 }
 
 function pluginLifecycleAttachmentIdentity(lifecycle: LinkedPluginLifecycle): JsonValue {
+  const sandbox = sandboxDeclaration(lifecycle);
   return {
-    ...(pluginLifecycleIdentity(lifecycle) as object),
-    ...(sandboxDeclaration(lifecycle) === undefined ? {} : { sandbox: sandboxDeclaration(lifecycle)! }),
-  } as JsonValue;
+    ...pluginLifecycleIdentity(lifecycle),
+    ...(sandbox === undefined ? {} : { sandbox }),
+  };
 }
 function pluginOccurrenceProjection(lifecycle: LinkedPluginLifecycle): JsonValue {
   return pluginLifecycleAttachmentIdentity(lifecycle);
@@ -126,40 +124,38 @@ function occurrences(
   ownerId: string,
   sourcePath: string,
 ): readonly LinkedPluginOccurrence[] {
-  return Object.freeze(
-    lifecycles.map((lifecycle) => {
-      const provenance = Object.freeze({
-        attachment: scope,
-        owner: Object.freeze({ id: ownerId, source: sourceLabel(sourcePath), position: lifecycle.arrayPosition }),
-      });
-      const projection = pluginOccurrenceProjection(lifecycle);
-      const sandbox = sandboxDeclaration(lifecycle);
-      const contributions = [
-        ...(lifecycle.hostDeclared ? ["lifecycle"] : []),
-        ...(sandbox === undefined ? [] : ["sandbox"]),
-      ];
-      return Object.freeze({
+  return lifecycles.map((lifecycle) => {
+    const provenance = {
+      attachment: scope,
+      owner: { id: ownerId, source: sourceLabel(sourcePath), position: lifecycle.arrayPosition },
+    };
+    const projection = pluginOccurrenceProjection(lifecycle);
+    const sandbox = sandboxDeclaration(lifecycle);
+    const contributions = [
+      ...(lifecycle.hostDeclared ? ["lifecycle"] : []),
+      ...(sandbox === undefined ? [] : ["sandbox"]),
+    ];
+    return {
+      name: lifecycle.name,
+      key: lifecycle.key,
+      provenance,
+      projection,
+      audit: {
+        scope,
         name: lifecycle.name,
         key: lifecycle.key,
-        provenance,
-        projection,
-        audit: Object.freeze({
-          scope,
-          name: lifecycle.name,
-          key: lifecycle.key,
-          identity: lifecycle.identity,
-          requires: lifecycle.requires,
-          shape: lifecycle.shape,
-          arrayPosition: lifecycle.arrayPosition,
-          hasSetup: lifecycle.hasSetup,
-          hasTeardown: lifecycle.hasTeardown,
-          ...(sandbox === undefined ? {} : { sandbox }),
-          ownerSource: provenance.owner,
-          contributions,
-        }) as JsonValue,
-      });
-    }),
-  );
+        identity: lifecycle.identity,
+        requires: lifecycle.requires,
+        shape: lifecycle.shape,
+        arrayPosition: lifecycle.arrayPosition,
+        hasSetup: lifecycle.hasSetup,
+        hasTeardown: lifecycle.hasTeardown,
+        ...(sandbox === undefined ? {} : { sandbox }),
+        ownerSource: provenance.owner,
+        contributions,
+      } as JsonValue,
+    };
+  });
 }
 
 function appendPluginSandboxLayers(
@@ -183,9 +179,8 @@ async function runTeardowns(
   context: ExperimentHookContext,
 ): Promise<void> {
   for (const lifecycle of lifecycles.slice(0, activated).reverse()) {
-    if (lifecycle.teardown === undefined) continue;
     try {
-      await (lifecycle.teardown as (ctx: ExperimentHookContext) => void | Promise<void>)(context);
+      await lifecycle.teardown(context);
     } catch (error) {
       context.diagnostic({ code: "plugin-after-failed", level: "warning", message: String(error) });
     }
@@ -210,11 +205,11 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
   }
   const contributions = (run.plugins ?? []).flatMap((plugin, position) => {
     const data = pluginInstanceDataOf(plugin);
-    return data.agent === undefined
+    return data.agent.state === "absent"
       ? []
       : [
           {
-            extension: data.agent,
+            extension: data.agent.extension,
             source: `${run.experimentSourcePath}:plugins[${position}] ${data.name} (${data.key})`,
           },
         ];
@@ -254,12 +249,11 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
           if (authorSetup !== undefined) await authorSetup(context);
           for (const lifecycle of lifecycles) {
             activated += 1;
-            if (lifecycle.setup !== undefined)
-              await (lifecycle.setup as (ctx: ExperimentHookContext) => void | Promise<void>)(context);
+            await lifecycle.setup(context);
           }
         };
   const teardown =
-    authorTeardown === undefined && lifecycles.every((entry) => entry.teardown === undefined)
+    authorTeardown === undefined && lifecycles.every((entry) => !entry.hostDeclared)
       ? undefined
       : async (context: ExperimentHookContext): Promise<void> => {
           let pluginFailure: unknown;
@@ -276,21 +270,22 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
           }
           if (pluginFailure !== undefined) throw pluginFailure;
         };
-  const pluginBehavior = Object.freeze({ lifecycles: pluginAttachmentProjection(lifecycles) }) as JsonValue;
-  const effective = Object.freeze({
+  const pluginBehavior = { lifecycles: pluginAttachmentProjection(lifecycles) } as JsonValue;
+  // Merge-patch boundary: absent Plugin hooks must preserve the author's run hooks.
+  const effective = {
     ...run,
     adapter,
     ...(adapter === undefined || adapter.kind === "custom" ? {} : { agent: adapter }),
     ...(setup === undefined ? {} : { setup }),
     ...(teardown === undefined ? {} : { teardown }),
     pluginBehavior,
-  }) as AgentRun;
-  return Object.freeze({
+  } as AgentRun;
+  return {
     sourceRun: run,
     run: effective,
     experimentOccurrences: linkedOccurrences,
     experimentLifecycles: lifecycles,
-  });
+  };
 }
 
 // @concord-code
@@ -300,7 +295,7 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
     const ownEvalLifecycles = linkPluginLifecycles(evalDef.plugins as readonly PluginInstance<"eval">[], "eval");
     const ownGroupLifecycles =
       evalDef.evalGroup === undefined
-        ? (Object.freeze([]) as readonly LinkedPluginLifecycle[])
+        ? ([] as readonly LinkedPluginLifecycle[])
         : linkPluginLifecycles(evalDef.evalGroup.plugins ?? [], "group");
     const allLifecycles = [...preparedRun.experimentLifecycles, ...ownGroupLifecycles, ...ownEvalLifecycles];
     const seen = new Map<string, LinkedPluginLifecycle>();
@@ -341,26 +336,26 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
     const evalOccurrences = occurrences(ownEvalLifecycles, "eval", evalDef.id, evalDef.sourcePath);
     const groupOccurrences =
       evalDef.evalGroup === undefined
-        ? (Object.freeze([]) as readonly LinkedPluginOccurrence[])
+        ? ([] as readonly LinkedPluginOccurrence[])
         : occurrences(ownGroupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath);
-    const all = Object.freeze([...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences]);
+    const all = [...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences];
     const experimentLayer = appendPluginSandboxLayers(preparedRun.run.sandbox, preparedRun.experimentLifecycles);
     const groupLayer =
       evalDef.evalGroup === undefined
         ? undefined
         : appendPluginSandboxLayers(evalDef.evalGroup.sandbox, ownGroupLifecycles);
     const evalLayer = appendPluginSandboxLayers(evalDef.sandbox, ownEvalLifecycles);
-    const noSandboxLifecycles = Object.freeze({
-      experiment: Object.freeze([]),
-      group: Object.freeze([]),
-      eval: Object.freeze([]),
-    });
-    return Object.freeze({
-      ...(evalLayer === undefined ? {} : { evalLayer }),
-      ...(groupLayer === undefined ? {} : { groupLayer }),
-      ...(experimentLayer === undefined ? {} : { experimentLayer }),
+    const noSandboxLifecycles = {
+      experiment: [],
+      group: [],
+      eval: [],
+    };
+    return {
+      evalLayer,
+      groupLayer,
+      experimentLayer,
       occurrences: all,
-      resources: Object.freeze([]),
+      resources: [],
       experimentLifecycles: preparedRun.experimentLifecycles,
       groupLifecycles,
       evalLifecycles,
@@ -368,10 +363,10 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
       // lifecycle data path is retired. Plugin layers are already composed
       // into their actual owner layer above.
       sandboxLifecycles: noSandboxLifecycles,
-      pairProjection: Object.freeze({
+      pairProjection: {
         occurrences: all.map((entry) => entry.projection),
-      }) as JsonValue,
-    });
+      } as JsonValue,
+    };
   } catch (error) {
     if (error instanceof PluginLinkError) throw error;
     throw pluginError([
@@ -388,9 +383,7 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
 
 export function pluginBehaviorProjection(run: AgentRun): JsonValue {
   if (run.pluginBehavior !== undefined) return run.pluginBehavior;
-  const empty: JsonValue[] = [];
-  Object.freeze(empty);
-  return empty;
+  return [];
 }
 
 /** Expand host timing independently from the attachment owner. */

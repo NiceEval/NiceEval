@@ -46,10 +46,10 @@ export type MaterialCollection<T> =
   | { readonly state: "unavailable"; readonly reason: string };
 /** Bounds contextual material capture by items, UTF-8 bytes, nodes and depth; exceeding a valid budget preserves an explicit incompleteness reason. */
 export interface MaterialCaptureBudget {
-  readonly maxItems?: number;
-  readonly maxBytes?: number;
-  readonly maxNodes?: number;
-  readonly maxDepth?: number;
+  readonly maxItems?: number | undefined;
+  readonly maxBytes?: number | undefined;
+  readonly maxNodes?: number | undefined;
+  readonly maxDepth?: number | undefined;
 }
 /** Bounds capture of one aggregated context fact; item-count limits apply only to material collections. */
 export type FactCaptureBudget = Omit<MaterialCaptureBudget, "maxItems">;
@@ -102,7 +102,7 @@ const defaults = { maxItems: 256, maxBytes: 48 * 1024, maxNodes: 16384, maxDepth
 const maximum = { maxItems: 16384, maxBytes: 4 * 1024 * 1024, maxNodes: 1048576, maxDepth: 64 };
 function captureBudget(value: unknown, single: boolean): ResolvedMaterialCaptureBudget {
   const result = { ...defaults, ...(single ? { maxItems: 1 } : {}) };
-  if (value === undefined) return Object.freeze(result);
+  if (value === undefined) return result;
   if (!Predicate.isObject(value) || Array.isArray(value))
     throw new TypeError("Context Match capture budget must be an object");
   for (const key of Reflect.ownKeys(value)) {
@@ -117,7 +117,7 @@ function captureBudget(value: unknown, single: boolean): ResolvedMaterialCapture
       throw new TypeError("Capture " + field + " must be a positive integer at most " + maximum[field]);
     result[field] = count;
   }
-  return Object.freeze(result);
+  return result;
 }
 function declare(value: unknown, collection: boolean): ContextualMatch {
   if (!Predicate.isObject(value) || Array.isArray(value))
@@ -148,16 +148,13 @@ function declare(value: unknown, collection: boolean): ContextualMatch {
     if (!collection) kind = match.kind === "score" ? "context-score" : "context-boolean";
   }
   const match = Object.freeze({ kind }) as ContextualMatch;
-  definitions.set(
-    match,
-    Object.freeze({
-      name: spec.name,
-      read: spec.read as ContextMatchDefinition["read"],
-      match: spec.match,
-      kind,
-      capture: captureBudget(spec.capture, !collection),
-    }),
-  );
+  definitions.set(match, {
+    name: spec.name,
+    read: spec.read as ContextMatchDefinition["read"],
+    match: spec.match,
+    kind,
+    capture: captureBudget(spec.capture, !collection),
+  });
   return match;
 }
 /** Defines a synchronous context collection reader and item selector. Preserve collection completeness and unique item IDs instead of silently discarding unknown items. */

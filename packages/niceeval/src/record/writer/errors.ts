@@ -1,4 +1,5 @@
 import type { NonEmptyRecordAttachmentIssues, RecordAttachmentPayloadInvalid } from "../attachment/errors.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 
 /** A scoped write session or a draft escaped after its owning Scope closed. */
 export interface RecordWriterClosed {
@@ -47,7 +48,7 @@ export interface RecordAttachmentSchemaIssue {
 /** A synchronous session builder callback threw before any physical write. */
 export interface RecordAttachmentCallbackFailed {
   readonly code: "record-attachment-callback-failed";
-  readonly cause: unknown;
+  readonly cause: ExternalCause;
 }
 
 /** A writer was paired with a definition for the other owner kind. */

@@ -365,12 +365,12 @@ const successSchema = (
   entry: (typeof inspectionProtocolRegistry)[InspectionOperationId],
 ): Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded> => {
   const fields = Schema.fieldsAssign({ operation: Schema.Literal(id), links: LinksSchema, ...entry.result });
-  const schema =
-    id === "run.list"
-      ? RunsListSuccessMetadataSchema.pipe(fields)
-      : id === "runs.compare"
-        ? CompareSuccessMetadataSchema.pipe(fields)
-        : SuccessMetadataSchema.pipe(fields);
+  function metadataSchema() {
+    if (id === "run.list") return RunsListSuccessMetadataSchema.pipe(fields);
+    if (id === "runs.compare") return CompareSuccessMetadataSchema.pipe(fields);
+    return SuccessMetadataSchema.pipe(fields);
+  }
+  const schema = metadataSchema();
   // Object.entries erases the ID/result correlation established by the registry.
   return schema as unknown as Schema.Codec<InspectionSuccessDocument, InspectionSuccessEncoded>;
 };

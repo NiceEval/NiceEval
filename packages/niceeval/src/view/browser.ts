@@ -12,10 +12,21 @@ export interface ViewBrowserService {
 
 export class ViewBrowser extends Context.Service<ViewBrowser, ViewBrowserService>()("@niceeval/view/ViewBrowser") {}
 
+function browserCommand(): string {
+  switch (process.platform) {
+    case "darwin":
+      return "open";
+    case "win32":
+      return "cmd";
+    default:
+      return "xdg-open";
+  }
+}
+
 export const NodeViewBrowserLive = Layer.succeed(ViewBrowser, {
   open: (url) =>
     Effect.callback<boolean, ViewBrowserError>((resume) => {
-      const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+      const command = browserCommand();
       const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
       let settled = false;
       const finish = (opened: boolean): void => {

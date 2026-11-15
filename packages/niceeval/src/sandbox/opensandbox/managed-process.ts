@@ -198,7 +198,7 @@ export async function startOpenSandboxProcess(input: {
           case "error":
             throw new Error(`OpenSandbox managed process failed: ${frame.message}`);
           case "exit":
-            result = { exitCode: frame.exitCode, ...(frame.signal === undefined ? {} : { signal: frame.signal }) };
+            result = { exitCode: frame.exitCode, signal: frame.signal };
             break;
         }
       }

@@ -67,18 +67,18 @@ for (const event of await transcript.readSessionTranscriptEvents(target)) {
 
 export interface OpenClawConfig {
   /** 模型 API key。省略时读 OPENCLAW_API_KEY,再回落 ANTHROPIC_API_KEY。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容端点。省略时读 OPENCLAW_BASE_URL。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** 固定安装的 openclaw npm 版本(如 "1.2.3");省略时用内置默认。 */
-  version?: string;
+  version?: string | undefined;
   /**
    * 装进沙箱的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
-  skills?: SkillSpec[];
+  skills?: SkillSpec[] | undefined;
   /** Native OpenClaw plugins as exact npm package@version declarations. */
-  plugins?: readonly string[];
+  plugins?: readonly string[] | undefined;
 }
 
 function openClawPluginLayer(
@@ -375,6 +375,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
           catch: (cause) => cause,
         });
       }),
+    after: () => Effect.void,
   });
 }
 

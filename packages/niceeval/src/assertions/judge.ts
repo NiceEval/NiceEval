@@ -25,9 +25,9 @@ export interface JudgeAnchor {
 /** Defines a reusable rubric and resource budgets; explicit anchors must increase strictly and include both 0 and 1. */
 export interface JudgeOptions {
   readonly rubric: string;
-  readonly anchors?: readonly JudgeAnchor[];
-  readonly maxMaterialBytes?: number;
-  readonly maxCalls?: number;
+  readonly anchors?: readonly JudgeAnchor[] | undefined;
+  readonly maxMaterialBytes?: number | undefined;
+  readonly maxCalls?: number | undefined;
 }
 /** A reusable rubric-backed ScoreMatch; gate thresholds and point contributions belong on its assertion handle. */
 export type JudgeDefinition = ScoreMatch<unknown>;
@@ -66,8 +66,8 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     name: "rubric-judge",
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
-      ...(maxMaterialBytes === undefined ? {} : { maxMaterialBytes }),
-      ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
+      maxMaterialBytes,
+      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls", 16),
     },
     score: (material, context) =>
       context.llm
@@ -91,8 +91,8 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
       scores: { satisfied: 1, "not-satisfied": 0 },
     },
     llm: {
-      ...(maxMaterialBytes === undefined ? {} : { maxMaterialBytes }),
-      ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
+      maxMaterialBytes,
+      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls", 16),
     },
     score: (material, context) =>
       context.llm.classify({ rubric: binaryJudgeRubric(rubric), choices, material: material as JudgeMaterial }).pipe(

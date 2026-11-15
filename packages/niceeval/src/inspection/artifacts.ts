@@ -93,7 +93,7 @@ export function projectAttemptArtifact(
         physical.ownerAttemptId === resolved.attempt.attemptId &&
         physical.family === attemptArtifactsRecordAttachment.family,
     );
-    if (attachments.length === 0) return Result.succeed(Object.freeze({ state: "not-found", artifactId }));
+    if (attachments.length === 0) return Result.succeed({ state: "not-found", artifactId });
     if (attachments.length !== 1) throw new Error("Artifact owner has duplicate attachments.");
     const attachment = attachments[0]!;
     if (
@@ -144,22 +144,20 @@ export function projectAttemptArtifact(
       }
     }
     const artifact = hydrated.success.artifacts.find((item) => item.artifactId === artifactId);
-    if (artifact === undefined) return Result.succeed(Object.freeze({ state: "not-found", artifactId }));
+    if (artifact === undefined) return Result.succeed({ state: "not-found", artifactId });
     if (offset > artifact.byteLength) return requestInvalid("Artifact offset exceeds its byte length.");
     const bytes = readVerifiedRange(resolved.origin.source, bound.get(artifact.content)!, offset, limit);
-    return Result.succeed(
-      Object.freeze({
-        state: "available",
-        artifactId,
-        name: artifact.label,
-        mediaType: artifact.mediaType,
-        byteLength: artifact.byteLength,
-        sha256: artifact.sha256,
-        offset,
-        base64: encodeBase64Bytes(bytes),
-        nextOffset: offset + bytes.byteLength < artifact.byteLength ? offset + bytes.byteLength : null,
-      }),
-    );
+    return Result.succeed({
+      state: "available",
+      artifactId,
+      name: artifact.label,
+      mediaType: artifact.mediaType,
+      byteLength: artifact.byteLength,
+      sha256: artifact.sha256,
+      offset,
+      base64: encodeBase64Bytes(bytes),
+      nextOffset: offset + bytes.byteLength < artifact.byteLength ? offset + bytes.byteLength : null,
+    });
   } catch (cause) {
     return Result.fail(
       new InspectionArtifactError({
@@ -231,27 +229,25 @@ function hydrateArtifactDescriptors(resolved: ResolvedInspectionAttempt): readon
   if (Result.isFailure(hydrated) || used.size !== attachment.physical.contents.length) {
     throw new Error("Artifact content closure is invalid.");
   }
-  return Object.freeze(
-    hydrated.success.artifacts.map((descriptor) => {
-      const metadata = bound.get(descriptor.content);
-      if (
-        metadata === undefined ||
-        metadata.byteLength !== descriptor.byteLength ||
-        metadata.digest !== descriptor.sha256 ||
-        descriptor.byteLength < 0
-      ) {
-        throw new Error("Artifact descriptor does not match sealed content metadata.");
-      }
-      return Object.freeze({
-        artifactId: descriptor.artifactId,
-        name: descriptor.label,
-        mediaType: descriptor.mediaType,
-        byteLength: descriptor.byteLength,
-        sha256: descriptor.sha256,
-        content: metadata,
-      });
-    }),
-  );
+  return hydrated.success.artifacts.map((descriptor) => {
+    const metadata = bound.get(descriptor.content);
+    if (
+      metadata === undefined ||
+      metadata.byteLength !== descriptor.byteLength ||
+      metadata.digest !== descriptor.sha256 ||
+      descriptor.byteLength < 0
+    ) {
+      throw new Error("Artifact descriptor does not match sealed content metadata.");
+    }
+    return {
+      artifactId: descriptor.artifactId,
+      name: descriptor.label,
+      mediaType: descriptor.mediaType,
+      byteLength: descriptor.byteLength,
+      sha256: descriptor.sha256,
+      content: metadata,
+    };
+  });
 }
 
 /** Internal fixed-family closure reader. It verifies the whole sealed artifact. */
@@ -265,16 +261,14 @@ export function readInspectionArtifactBytes(
     const artifact = hydrateArtifactDescriptors(resolved).find((entry) => entry.artifactId === artifactId);
     if (artifact === undefined) return Result.succeed(undefined);
     if (artifact.byteLength > maximumBytes) return requestInvalid("Artifact exceeds the evidence parsing budget.");
-    return Result.succeed(
-      Object.freeze({
-        artifactId,
-        name: artifact.name,
-        mediaType: artifact.mediaType,
-        byteLength: artifact.byteLength,
-        sha256: artifact.sha256,
-        bytes: readVerifiedRange(resolved.origin.source, artifact.content, 0, artifact.byteLength),
-      }),
-    );
+    return Result.succeed({
+      artifactId,
+      name: artifact.name,
+      mediaType: artifact.mediaType,
+      byteLength: artifact.byteLength,
+      sha256: artifact.sha256,
+      bytes: readVerifiedRange(resolved.origin.source, artifact.content, 0, artifact.byteLength),
+    });
   } catch (cause) {
     return Result.fail(
       new InspectionArtifactError({
@@ -310,12 +304,12 @@ export function readInspectionArtifactDescriptors(
           (artifact) =>
             [
               artifact.artifactId,
-              Object.freeze({
+              {
                 artifactId: artifact.artifactId,
                 mediaType: artifact.mediaType,
                 byteLength: artifact.byteLength,
                 sha256: artifact.sha256,
-              }),
+              },
             ] as const,
         ),
       ),

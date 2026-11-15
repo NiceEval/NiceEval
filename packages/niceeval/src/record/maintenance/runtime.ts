@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import type { SQLOutputValue } from "node:sqlite";
 import { Effect, Result, Schema } from "effect";
 import { RecordCoordination } from "../../coordination/record-leases.ts";
 import { RunIdSchema } from "../codec/identifiers.ts";
@@ -24,11 +23,11 @@ import {
 } from "./types.ts";
 
 function canonicalRunIds(runIds: readonly RunId[]): readonly RunId[] {
-  return Object.freeze([...new Set(runIds)].sort(compareCanonicalIdentity));
+  return [...new Set(runIds)].sort(compareCanonicalIdentity);
 }
 
 function incompleteRun(runId: RunId): RecordIncompleteRun {
-  return Object.freeze({ runId });
+  return { runId };
 }
 
 function sqliteFailure(operation: string, cause: unknown): SqliteRecordError {
@@ -57,13 +56,13 @@ function maintenancePath(root: Parameters<InspectIncompleteRuns>[0]["root"]): st
 }
 
 function readIncomplete(path: string): readonly RecordIncompleteRun[] {
-  if (!existsSync(path)) return Object.freeze([]);
+  if (!existsSync(path)) return [];
   const connection = openRecordMaintenance(path);
   try {
     validateExactSchema(connection);
     const rows = connection.db
       .prepare("SELECT run_id FROM ne19_runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?")
-      .all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1) as unknown as readonly Record<string, SQLOutputValue>[];
+      .all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1);
     if (rows.length > RECORD_MAINTENANCE_MAXIMUM_RUNS) {
       throw new SqliteRecordError(
         "record-resource-limit-exceeded",
@@ -78,14 +77,14 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
         throw new SqliteRecordError("record-database-invalid", "inspect-incomplete", "runs.run_id is invalid");
       result.push(incompleteRun(decoded.success));
     }
-    return Object.freeze(result);
+    return result;
   } finally {
     closeRecordDatabase(connection);
   }
 }
 
 function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
-  if (!existsSync(path)) return Object.freeze({ deleted: Object.freeze([]), skipped: Object.freeze([...runIds]) });
+  if (!existsSync(path)) return { deleted: [], skipped: [...runIds] };
   const connection = openRecordMaintenance(path);
   try {
     validateExactSchema(connection);
@@ -107,20 +106,20 @@ function cleanRows(path: string, runIds: readonly RunId[]): RecordCleanReceipt {
       connection.db.exec("ROLLBACK");
       throw cause;
     }
-    return Object.freeze({ deleted: Object.freeze(deleted), skipped: Object.freeze(skipped) });
+    return { deleted, skipped };
   } finally {
     closeRecordDatabase(connection);
   }
 }
 
 function incompleteRunWarning(runId: RunId): RecordIncompleteRunWarning {
-  return Object.freeze({ code: "incomplete-run", runId, cleanupCommand: "niceeval clean" });
+  return { code: "incomplete-run", runId, cleanupCommand: "niceeval clean" };
 }
 
 export function incompleteRunWarnings(
   incompleteRuns: readonly RecordIncompleteRun[],
 ): readonly RecordIncompleteRunWarning[] {
-  return Object.freeze(canonicalRunIds(incompleteRuns.map(({ runId }) => runId)).map(incompleteRunWarning));
+  return canonicalRunIds(incompleteRuns.map(({ runId }) => runId)).map(incompleteRunWarning);
 }
 
 export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
@@ -130,7 +129,7 @@ export const inspectIncompleteRuns: InspectIncompleteRuns = ({ root }) =>
         try: () => maintenancePath(root),
         catch: (cause) => sqliteFailure("inspect-incomplete", cause),
       });
-      if (path === undefined) return Object.freeze([]);
+      if (path === undefined) return [];
       const coordination = yield* RecordCoordination;
       yield* coordination.enterRecordMaintenance(root);
       return yield* Effect.try({
@@ -151,7 +150,7 @@ export const cleanIncompleteRuns: CleanIncompleteRuns = ({ root, runIds }) =>
         catch: (cause) => sqliteFailure("clean-incomplete", cause),
       });
       if (path === undefined) {
-        return Object.freeze({ deleted: Object.freeze([]), skipped: canonicalRunIds(runIds) });
+        return { deleted: [], skipped: canonicalRunIds(runIds) };
       }
       const coordination = yield* RecordCoordination;
       yield* coordination.enterRecordMaintenance(root);

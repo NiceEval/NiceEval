@@ -27,21 +27,21 @@ import { reportActivity } from "../feedback/sink.ts";
 /** Selects the Braintrust project, experiment and optional comparison baseline; omitted credentials are resolved by the SDK from BRAINTRUST_API_KEY. */
 export interface BraintrustConfig {
   /** Braintrust 项目名;省略时用 "niceeval"。 */
-  project?: string;
+  project?: string | undefined;
   /** Braintrust 项目 id;与 project 给一个即可。 */
-  projectId?: string;
+  projectId?: string | undefined;
   /** 实验名;省略时由 Braintrust 自动命名。 */
-  experiment?: string;
+  experiment?: string | undefined;
   /** 作为对比基线(diff base)的既有实验名。 */
-  baseExperiment?: string;
+  baseExperiment?: string | undefined;
   /** 作为对比基线(diff base)的既有实验 id。 */
-  baseExperimentId?: string;
+  baseExperimentId?: string | undefined;
   /** true = 更新同名既有实验,而不是新建一个。 */
-  update?: boolean;
+  update?: boolean | undefined;
   /** 实验级附加 metadata;与 niceeval 自动写入的字段合并,同名以这里为准。 */
-  metadata?: globalThis.Record<string, JsonValue>;
+  metadata?: globalThis.Record<string, JsonValue> | undefined;
   /** API key;省略时 SDK 读 BRAINTRUST_API_KEY 环境变量。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
 }
 
 /**
@@ -90,7 +90,7 @@ export type BraintrustAssessment =
       /** Exact Report-style public projections, including every data state. */
       readonly assertions: AttemptSlotProjectedEntry<AssertionsProjection<unknown>>;
       readonly verdict: AttemptSlotProjectedEntry<Verdict>;
-      readonly score?: AttemptSlotProjectedEntry<ScoreProjection>;
+      readonly score: AttemptSlotProjectedEntry<ScoreProjection> | undefined;
     }
   | {
       readonly state: "not-projected";

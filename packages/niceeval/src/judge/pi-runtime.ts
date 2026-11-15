@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { PiFailure, piDefect, piUsageFailure } from "./pi-failure.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 type CodingSdk = typeof import("@earendil-works/pi-coding-agent");
 
@@ -15,9 +16,9 @@ export async function createManagedPiSession(input: {
   readonly profile: ResolvedJudgeConfig;
   readonly apiKey: string;
   readonly systemPrompt: string;
-  readonly cwd?: string;
+  readonly cwd: string;
   readonly tools: readonly string[];
-  readonly retry?: { readonly maxRetries: number };
+  readonly retry: { readonly maxRetries: number } | undefined;
   readonly customTools: (sdk: CodingSdk) => ToolDefinition[];
 }) {
   let sdk: CodingSdk;
@@ -26,12 +27,16 @@ export async function createManagedPiSession(input: {
     sdk = (await import(pathToFileURL(input.paths.coding).href)) as CodingSdk;
     ai = (await import(pathToFileURL(input.paths.ai).href)) as typeof ai;
   } catch (cause) {
-    throw new PiFailure({ kind: "dependency", message: "pi dependency could not be loaded", cause });
+    throw new PiFailure({
+      kind: "dependency",
+      message: "pi dependency could not be loaded",
+      cause: normalizeExternalCause(cause),
+    });
   }
   try {
     const profile = input.profile;
     if (profile.protocol.kind !== "chat-completions") throw new TypeError("pi requires a chat-completions provider");
-    const cwd = input.cwd ?? "/";
+    const cwd = input.cwd;
     const contextWindow = profile.contextWindow ?? builtinContextWindow(profile.model) ?? Number.MAX_SAFE_INTEGER;
     const settingsManager = sdk.SettingsManager.inMemory(
       input.retry === undefined
@@ -107,7 +112,7 @@ export async function createManagedPiSession(input: {
     throw new PiFailure({
       kind: "session-init",
       message: cause instanceof Error ? cause.message : "pi session initialization failed",
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
 }
@@ -138,34 +143,46 @@ async function promptPiSession(
         failure ??= new PiFailure({
           kind: "context-overflow",
           message: event.errorMessage ?? "pi could not compact the context",
-          cause: event,
+          cause: normalizeExternalCause(event),
         });
       if (event.type === "agent_settled") settle();
     });
     if (signal.aborted)
-      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
+      throw new PiFailure({
+        kind: "cancelled",
+        message: "pi operation cancelled",
+        cause: normalizeExternalCause(signal.reason),
+      });
     await session.prompt(text);
     await settled;
     if (signal.aborted)
-      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason });
+      throw new PiFailure({
+        kind: "cancelled",
+        message: "pi operation cancelled",
+        cause: normalizeExternalCause(signal.reason),
+      });
     if (failure !== undefined) throw failure;
     if (last !== undefined) {
       if (isContextOverflow(last, contextWindow))
         throw new PiFailure({
           kind: "context-overflow",
           message: last.errorMessage ?? "pi context window exceeded",
-          cause: last,
+          cause: normalizeExternalCause(last),
         });
       if (last.stopReason === "error" || last.stopReason === "aborted")
         throw new PiFailure({
           kind: "model-request",
           message: last.errorMessage ?? "pi model request failed",
-          cause: last,
+          cause: normalizeExternalCause(last),
         });
     }
   } catch (cause) {
     if (signal.aborted)
-      throw new PiFailure({ kind: "cancelled", message: "pi operation cancelled", cause: signal.reason ?? cause });
+      throw new PiFailure({
+        kind: "cancelled",
+        message: "pi operation cancelled",
+        cause: normalizeExternalCause(signal.reason ?? cause),
+      });
     throw piDefect(cause);
   } finally {
     unsubscribe();

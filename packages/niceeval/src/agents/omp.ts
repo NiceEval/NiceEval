@@ -25,13 +25,13 @@ const OMP_EVIDENCE_COVERAGE: EvidenceCoverage = {
 
 export interface OmpConfig {
   /** OpenAI-compatible API key. Defaults to OMP_API_KEY, then OPENAI_API_KEY. */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI-compatible endpoint. Defaults to OMP_BASE_URL, then OPENAI_BASE_URL. */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** Exact npm version of `@oh-my-pi/pi-coding-agent`. */
-  version?: string;
+  version?: string | undefined;
   /** Exact Bun runtime version used by the fallback installer. */
-  bunVersion?: string;
+  bunVersion?: string | undefined;
 }
 
 function resolveApiKey(config?: OmpConfig): string {
@@ -206,17 +206,18 @@ export function ompAgent(config?: OmpConfig): Agent {
                   ? shared.diagnoseFailure(res, events, res.stdout)
                   : `OMP produced ${terminal.length} valid terminal agent_end events; expected exactly one.`,
               events,
-              ...(stream.usage === undefined ? {} : { usage: stream.usage }),
+              usage: stream.usage,
               process: res,
             }),
           );
         }
         return {
           events,
-          ...(stream.usage === undefined ? {} : { usage: stream.usage }),
+          usage: stream.usage,
           status: stream.failed ? ("failed" as const) : ("completed" as const),
         };
       }),
+    after: () => Effect.void,
   });
 }
 

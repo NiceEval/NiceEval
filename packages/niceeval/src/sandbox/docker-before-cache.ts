@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import Docker from "dockerode";
@@ -35,7 +36,7 @@ const LEASE_TTL_MS = 60 * 1000;
 const LEASE_RECONCILE_GRACE_MS = 30 * 1000;
 const PROVIDER_CLEANUP_TIMEOUT_MS = 30 * 1000;
 
-const LABEL = Object.freeze({
+const LABEL = {
   kind: "io.niceeval.cache.kind",
   domainId: "io.niceeval.cache.domain-id",
   entryId: "io.niceeval.cache.before-cache.entry-id",
@@ -47,7 +48,7 @@ const LABEL = Object.freeze({
   metadataDigest: "io.niceeval.cache.before-cache.metadata-digest",
   cacheFormat: "io.niceeval.cache.before-cache.format",
   dependency: "io.niceeval.cache.before-cache.dependency",
-});
+} as const;
 
 type BeforeCacheEntryState =
   | "reserved"
@@ -430,7 +431,7 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
 }
 
 function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): Readonly<Record<string, string>> {
-  return Object.freeze({
+  return {
     [LABEL.kind]: CACHE_KIND,
     [LABEL.domainId]: domain.domainId,
     [LABEL.entryId]: row.entry_id,
@@ -442,7 +443,7 @@ function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): R
     [LABEL.metadataDigest]: row.metadata_digest,
     [LABEL.cacheFormat]: row.cache_format,
     [LABEL.dependency]: row.dependency,
-  });
+  };
 }
 
 function exactImageId(imageId: string): boolean {
@@ -598,7 +599,7 @@ class BeforeCacheLease {
         reason: errorMessage(failure),
         beforeCacheKey: this.row.before_cache_key,
         domainId: this.domain.domainId,
-        cause: failure,
+        cause: normalizeExternalCause(failure),
       });
     }
   }
@@ -676,7 +677,7 @@ async function releaseDurableHold(input: {
       reason: errorMessage(cause),
       beforeCacheKey: input.beforeCacheKey,
       domainId: input.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
   await reclaimSupersededDockerImages();
@@ -696,6 +697,7 @@ async function restoreLeaseIntoTarget(
       reason: "the indexed generation has no exact Docker image id",
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
+      cause: undefined,
     });
   }
   try {
@@ -710,7 +712,7 @@ async function restoreLeaseIntoTarget(
         reason: "exact-image validation failed and the generation could not be removed from the hit index",
         beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
-        cause: new AggregateError([cause, cleanupCause]),
+        cause: normalizeExternalCause(new AggregateError([cause, cleanupCause])),
       });
     }
     throw new BeforeCacheValidationError({
@@ -718,7 +720,7 @@ async function restoreLeaseIntoTarget(
       reason: errorMessage(cause),
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
 
@@ -810,7 +812,7 @@ async function restoreLeaseIntoTarget(
         reason: "restore failed and its partial provider/registry resources could not be fully retired",
         beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
-        cause: new AggregateError([cause, ...cleanupFailures]),
+        cause: normalizeExternalCause(new AggregateError([cause, ...cleanupFailures])),
       });
     }
     throw new BeforeCacheRestoreError({
@@ -818,7 +820,7 @@ async function restoreLeaseIntoTarget(
       reason: errorMessage(cause),
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
 }
@@ -844,13 +846,15 @@ async function lookupAndRestore(
       operation: "validate before-cache lookup",
       reason: errorMessage(cause),
       beforeCacheKey: input.declaration.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
   let lease: BeforeCacheLease | undefined;
   try {
     lease = await acquireIndexedLease(input, manifest);
-    if (lease === undefined) return { _tag: "Miss", beforeCacheKey: manifest.value.beforeCacheKey } as const;
+    if (lease === undefined)
+      return { _tag: "Miss", beforeCacheKey: manifest.value.beforeCacheKey, recovery: undefined } as const;
     signal.throwIfAborted();
     const restored = await restoreLeaseIntoTarget(target, lease, input, signal);
     return {
@@ -868,7 +872,8 @@ async function lookupAndRestore(
       operation: `lookup and restore before cache:${safeFailureClass(cause)}`,
       reason: errorMessage(cause),
       beforeCacheKey: manifest.value.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   } finally {
     await lease?.release();
@@ -1024,7 +1029,8 @@ async function capture(
       operation: "validate before-cache capture",
       reason: errorMessage(cause),
       beforeCacheKey: input.declaration.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
 
@@ -1038,7 +1044,7 @@ async function capture(
     reservation = reserved.lease;
     reservedRow = reservation.row;
     const labels = labelsFor(reservation.domain, reservedRow);
-    imageId = await target.captureExactImage(labels, input.knownSensitiveValues ?? [], signal);
+    imageId = await target.captureExactImage(labels, input.knownSensitiveValues, signal);
     signal.throwIfAborted();
     const inspection = await inspectExactImage(imageId, signal);
     validateImageLabels(inspection, imageId, labels);
@@ -1102,7 +1108,8 @@ async function capture(
         operation: "clean failed before-cache capture",
         reason: "capture failed and its unindexed image/registry claim could not be fully retired",
         beforeCacheKey: manifest.value.beforeCacheKey,
-        cause: new AggregateError([cause, ...cleanupFailures]),
+        domainId: undefined,
+        cause: normalizeExternalCause(new AggregateError([cause, ...cleanupFailures])),
       });
     }
     if (isBeforeCacheError(cause)) throw cause;
@@ -1110,7 +1117,8 @@ async function capture(
       operation: "capture and publish before-cache image",
       reason: errorMessage(cause),
       beforeCacheKey: manifest.value.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
 }
@@ -1149,7 +1157,7 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
         ),
     );
 
-  return Object.freeze({
+  return {
     eligibility: target.eligibility,
     lookupAndRestore: (input: BeforeCacheStep) =>
       scopedOperation(
@@ -1161,7 +1169,8 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
                 operation: "lookup and restore before cache",
                 reason: errorMessage(cause),
                 beforeCacheKey: input.declaration.beforeCacheKey,
-                cause,
+                domainId: undefined,
+                cause: normalizeExternalCause(cause),
               }),
       ),
     capture: (input: BeforeCacheStep) =>
@@ -1174,7 +1183,8 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
                 operation: "capture and publish before cache",
                 reason: errorMessage(cause),
                 beforeCacheKey: input.declaration.beforeCacheKey,
-                cause,
+                domainId: undefined,
+                cause: normalizeExternalCause(cause),
               }),
       ),
     fallBackToBase: () =>
@@ -1193,8 +1203,10 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
             : new BeforeCacheRestoreError({
                 operation: "recover a clean exact Base",
                 reason: errorMessage(cause),
-                cause,
+                beforeCacheKey: undefined,
+                domainId: undefined,
+                cause: normalizeExternalCause(cause),
               }),
       ),
-  });
+  };
 }

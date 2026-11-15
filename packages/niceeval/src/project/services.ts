@@ -1,4 +1,5 @@
 import { Context, Data, type Effect } from "effect";
+import type { ExternalCause } from "../shared/external-cause.ts";
 
 /** Paths owned or inspected by init; guidance paths are relative to the repository root. */
 export type ProjectManagedPath =
@@ -24,11 +25,11 @@ export class ProjectPlatformError extends Data.TaggedError("ProjectPlatformError
     | "write-file"
     | "inspect-package-manifest";
   readonly resource: string;
-  readonly cause: unknown;
-  readonly message?: string;
+  readonly cause: ExternalCause;
+  readonly message: string;
 }> {}
 
-/** Supply filesystem operations for init; readText returns null only for missing files. */
+/** Supply filesystem operations for init; readText returns undefined only for missing files. */
 export interface ProjectFileSystemService {
   readonly pathKind: (input: {
     readonly root: string;
@@ -41,7 +42,7 @@ export interface ProjectFileSystemService {
   readonly readText: (input: {
     readonly root: string;
     readonly path: Exclude<ProjectManagedPath, "evals">;
-  }) => Effect.Effect<string | null, ProjectPlatformError>;
+  }) => Effect.Effect<string | undefined, ProjectPlatformError>;
   readonly writeText: (input: {
     readonly root: string;
     readonly path: Exclude<ProjectManagedPath, "evals">;

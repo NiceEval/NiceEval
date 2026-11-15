@@ -37,7 +37,7 @@ interface RefreshSource {
 
 interface ServerState {
   current: ViewGeneration;
-  candidate?: ViewGeneration;
+  candidate: ViewGeneration | undefined;
   stale: boolean;
   readonly leases: Map<string, number>;
   readonly retired: Set<string>;
@@ -52,10 +52,9 @@ interface ServerResources {
   readonly session: string;
   readonly state: ServerState;
   readonly refreshEnabled: boolean;
-  readonly refreshSource?: RefreshSource;
-  preparing?: Promise<ViewGeneration>;
-  authority?: string;
-  origin?: string;
+  readonly refreshSource: RefreshSource | undefined;
+  preparing: Promise<ViewGeneration> | undefined;
+  authority: string | undefined;
   credentialConsumed: boolean;
   closed: boolean;
   activeRequests: number;
@@ -83,10 +82,10 @@ export function openViewServer(input: {
   readonly runtime: ViewApplicationRuntimeService;
   readonly initial: ViewGeneration;
   readonly port: number;
-  readonly refreshEnabled?: boolean;
-  readonly refreshSource?: RefreshSource;
+  readonly refreshEnabled: boolean | undefined;
+  readonly refreshSource: RefreshSource | undefined;
   readonly initialRunIds: readonly string[];
-  readonly initialPath?: string;
+  readonly initialPath: string | undefined;
 }): Effect.Effect<ViewServer, ViewServerError, Scope.Scope> {
   return Effect.gen(function* () {
     const resources = yield* Effect.acquireRelease(
@@ -97,12 +96,12 @@ export function openViewServer(input: {
     );
     const port = yield* listen(resources.server, input.port);
     resources.authority = `127.0.0.1:${port}`;
-    resources.origin = `http://${resources.authority}`;
-    return Object.freeze({
-      origin: resources.origin,
-      readyUrl: viewEntryUrl(resources.origin, resources.credential, input.initialRunIds, input.initialPath),
+    const origin = `http://${resources.authority}`;
+    return {
+      origin,
+      readyUrl: viewEntryUrl(origin, resources.credential, input.initialRunIds, input.initialPath),
       close: closeResources(resources),
-    });
+    };
   });
 }
 
@@ -121,22 +120,7 @@ function makeResources(
   refreshSource?: RefreshSource,
 ): ServerResources {
   const sockets = new Set<Socket>();
-  const resources: ServerResources = {
-    runtime,
-    server: undefined as unknown as Server,
-    sockets,
-    credential: randomBytes(32).toString("base64url"),
-    sessionCookie: `${SESSION_COOKIE_PREFIX}${randomBytes(16).toString("hex")}`,
-    session: randomBytes(32).toString("base64url"),
-    state: { current: initial, stale: false, leases: new Map([[initial.generationId, 0]]), retired: new Set() },
-    refreshEnabled,
-    ...(refreshSource === undefined ? {} : { refreshSource }),
-    credentialConsumed: false,
-    closed: false,
-    activeRequests: 0,
-    drained: new Set(),
-  };
-  resources.server = createServer((request, response) => {
+  const server = createServer((request, response) => {
     resources.activeRequests += 1;
     response.once("close", () => {
       resources.activeRequests -= 1;
@@ -147,6 +131,29 @@ function makeResources(
     });
     serveRequest(resources, request, response);
   });
+  const resources: ServerResources = {
+    runtime,
+    server,
+    sockets,
+    credential: randomBytes(32).toString("base64url"),
+    sessionCookie: `${SESSION_COOKIE_PREFIX}${randomBytes(16).toString("hex")}`,
+    session: randomBytes(32).toString("base64url"),
+    state: {
+      current: initial,
+      stale: false,
+      leases: new Map([[initial.generationId, 0]]),
+      retired: new Set(),
+      candidate: undefined,
+    },
+    refreshEnabled,
+    refreshSource,
+    credentialConsumed: false,
+    closed: false,
+    activeRequests: 0,
+    drained: new Set(),
+    preparing: undefined,
+    authority: undefined,
+  };
   resources.server.on("connection", (socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
@@ -155,7 +162,7 @@ function makeResources(
 }
 
 function serveRequest(resources: ServerResources, request: IncomingMessage, response: ServerResponse): void {
-  if (resources.closed || resources.authority === undefined || resources.origin === undefined) {
+  if (resources.closed || resources.authority === undefined) {
     sendText(response, 503, "view is not ready");
     return;
   }
@@ -241,15 +248,11 @@ async function serveGeneration(resources: ServerResources, response: ServerRespo
     }
   } catch {
     if (refresh) resources.state.stale = true;
-    sendJson(
-      response,
-      500,
-      Object.freeze({
-        code: "view-inspection-failed",
-        reason: "The View generation could not be refreshed.",
-        correction: "retry",
-      } satisfies ViewHttpErrorDocument),
-    );
+    sendJson(response, 500, {
+      code: "view-inspection-failed",
+      reason: "The View generation could not be refreshed.",
+      correction: "retry",
+    } satisfies ViewHttpErrorDocument);
   }
 }
 
@@ -272,14 +275,14 @@ function prepareGeneration(resources: ServerResources): Promise<ViewGeneration> 
   resources.preparing = preparing;
   void preparing
     .finally(() => {
-      delete resources.preparing;
+      resources.preparing = undefined;
     })
     .catch(() => undefined);
   return preparing;
 }
 
 function descriptor(resources: ServerResources, generation: ViewGeneration): ViewGenerationDescriptor {
-  return Object.freeze({
+  return {
     generationId: generation.generationId,
     sourceCutoffIdentity: generation.sourceCutoffIdentity,
     targetMode: generation.target.kind,
@@ -289,7 +292,7 @@ function descriptor(resources: ServerResources, generation: ViewGeneration): Vie
     stale:
       generation.generationId === resources.state.current.generationId &&
       (resources.state.candidate !== undefined || resources.state.stale),
-  });
+  };
 }
 
 async function serveCommit(
@@ -311,7 +314,7 @@ async function serveCommit(
   }
   const retired = resources.state.current;
   resources.state.current = candidate;
-  delete resources.state.candidate;
+  resources.state.candidate = undefined;
   resources.state.stale = false;
   resources.state.leases.set(candidate.generationId, resources.state.leases.get(candidate.generationId) ?? 0);
   retireIfDrained(resources, retired);
@@ -339,15 +342,11 @@ async function serveInspection(
     const document = await resources.runtime.run(inspectViewGeneration(generation, decoded.success.request));
     sendJson(response, 200, document);
   } catch {
-    sendJson(
-      response,
-      500,
-      Object.freeze({
-        code: "view-inspection-failed",
-        reason: "Inspection could not be completed for this generation.",
-        correction: "retry",
-      } satisfies ViewHttpErrorDocument),
-    );
+    sendJson(response, 500, {
+      code: "view-inspection-failed",
+      reason: "Inspection could not be completed for this generation.",
+      correction: "retry",
+    } satisfies ViewHttpErrorDocument);
   } finally {
     releaseLease(resources, generation);
   }
@@ -415,7 +414,7 @@ async function regularAsset(
   if (!path.startsWith(`${root}${sep}`)) return undefined;
   try {
     const metadata = await lstat(path);
-    return metadata.isFile() && !metadata.isSymbolicLink() ? Object.freeze({ path, size: metadata.size }) : undefined;
+    return metadata.isFile() && !metadata.isSymbolicLink() ? { path, size: metadata.size } : undefined;
   } catch (cause) {
     if (typeof cause === "object" && cause !== null && Reflect.get(cause, "code") === "ENOENT") return undefined;
     throw cause;
@@ -473,7 +472,7 @@ function authorizedSession(resources: ServerResources, request: IncomingMessage)
 
 function sameOrigin(resources: ServerResources, request: IncomingMessage, required = false): boolean {
   const origin = request.headers.origin;
-  if (origin !== undefined) return origin === resources.origin;
+  if (origin !== undefined) return resources.authority !== undefined && origin === `http://${resources.authority}`;
   if (required) return false;
   const fetchSite = request.headers["sec-fetch-site"];
   return fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "none";
@@ -660,14 +659,14 @@ function readJsonBody(request: IncomingMessage): Promise<JsonBody> {
 }
 
 function requestInvalid(reason: string): ViewHttpErrorDocument {
-  return Object.freeze({ code: "view-request-invalid", reason: sanitizeReason(reason), correction: "fix-request" });
+  return { code: "view-request-invalid", reason: sanitizeReason(reason), correction: "fix-request" };
 }
 
 function generationError(
   code: "view-generation-not-found" | "view-generation-stale",
   reason: string,
 ): ViewHttpErrorDocument {
-  return Object.freeze({ code, reason, correction: "refresh-generation" });
+  return { code, reason, correction: "refresh-generation" };
 }
 
 function sanitizeReason(reason: string): string {
@@ -740,5 +739,5 @@ function mediaType(path: string): string {
 }
 
 function viewError(operation: ViewServerError["operation"], reason: string): ViewServerError {
-  return Object.freeze({ code: "view-server-failed" as const, operation, reason });
+  return { code: "view-server-failed" as const, operation, reason };
 }

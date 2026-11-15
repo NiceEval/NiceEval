@@ -19,12 +19,12 @@ describe("codexAgent headers and Cloudflare Access support", () => {
   });
 
   function createMockSandbox() {
-    const shellCalls: { script: string; options?: CommandOptions }[] = [];
+    const shellCalls: { script: string; options: CommandOptions | undefined }[] = [];
     const sandbox = {
       sandboxId: "mock-sb",
       workdir: "/workspace",
       runShell: vi.fn(async (script: string, options?: CommandOptions) => {
-        shellCalls.push({ script, ...(options === undefined ? {} : { options: options }) });
+        shellCalls.push({ script, options });
         return { exitCode: 0, stdout: "", stderr: "" };
       }),
       runCommand: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),

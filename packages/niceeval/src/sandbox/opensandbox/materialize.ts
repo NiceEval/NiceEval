@@ -2,7 +2,7 @@ import { sandboxCreationLabels } from "../creation-labels.ts";
 import { cloudLifetimeMs } from "../cloud-lifetime.ts";
 import { Effect } from "effect";
 import { providerBoundaryEffect } from "../backend.ts";
-import type { OpenSandboxOptions } from "../opensandbox.ts";
+import type { OpenSandboxProviderPlan } from "../opensandbox.ts";
 import {
   SandboxRuntimeMaterializationError,
   wrapSingleSandbox,
@@ -11,7 +11,7 @@ import {
 import { OpenSandboxBackend } from "./sandbox.ts";
 
 export function materializeOpenSandbox(
-  plan: OpenSandboxOptions,
+  plan: OpenSandboxProviderPlan,
   context: SandboxRuntimeMaterializeContext,
   snapshotId?: string,
 ) {

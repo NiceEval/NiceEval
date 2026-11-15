@@ -19,15 +19,17 @@ export interface SendFailure {
   /** 只有协议能证明输入未被受理时才可写 rejected。 */
   readonly acceptance: SendAcceptance;
   readonly message: string;
-  readonly cause?: ExternalCause;
-  readonly events?: readonly StreamEvent[];
-  readonly usage?: Usage;
-  readonly process?: {
-    readonly exitCode?: number;
-    readonly signal?: string;
-    readonly stdout?: string;
-    readonly stderr?: string;
-  };
+  readonly cause?: ExternalCause | undefined;
+  readonly events?: readonly StreamEvent[] | undefined;
+  readonly usage?: Usage | undefined;
+  readonly process?:
+    | {
+        readonly exitCode?: number | undefined;
+        readonly signal?: string | undefined;
+        readonly stdout?: string | undefined;
+        readonly stderr?: string | undefined;
+      }
+    | undefined;
 }
 
 /** Classifies a captured send failure, or returns undefined to defer classification; it must not turn cancellation into an ordinary application failure. */
@@ -112,7 +114,7 @@ export function classifySendFailure(failure: SendFailure): FailureClass {
 }
 
 export interface SendFailureClassifiers {
-  adapter?: SendFailureClassifier;
+  adapter?: SendFailureClassifier | undefined;
 }
 
 /** 分类链：声明 → Adapter → 保守回退 → acceptance 门。 */

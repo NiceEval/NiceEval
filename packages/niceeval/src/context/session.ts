@@ -1,4 +1,5 @@
 import type { ExperimentFlags } from "../shared/types.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
@@ -57,9 +58,14 @@ import { agentSendEffect, authorCallbackEffect } from "../agents/agent-effects.t
 
 interface PhysicalSendResult {
   readonly turn: Turn;
-  readonly traceId?: string;
-  readonly attribution?: "traceparent" | "window" | "none";
-  readonly window?: TurnSpans["window"];
+  readonly otel:
+    | { readonly state: "disabled" }
+    | {
+        readonly state: "captured";
+        readonly traceId: string;
+        readonly attribution: "traceparent" | "window" | "none";
+        readonly window: TurnSpans["window"];
+      };
 }
 
 interface ObservedTurnState {
@@ -103,7 +109,8 @@ export function createAgentSession(): AgentSession {
     },
     get<T>(slot: SessionKey<T>): T | undefined {
       const stored = slots.get(slot.key);
-      return stored === undefined ? undefined : valueFromStoredSlot<T>(stored);
+      if (stored === undefined) return undefined;
+      return valueFromStoredSlot<T>(stored);
     },
     set<T>(slot: SessionKey<T>, value: T): void {
       slots.set(slot.key, new StoredSessionKeyValueOf(value));
@@ -133,11 +140,11 @@ export class RunSession implements AgentSession {
 
   /** Immutable snapshots sealed for this Session so far. */
   observedSnapshot(): ObservedSessionSnapshot {
-    return Object.freeze({
+    return {
       sessionId: this.sessionScopeId,
       throughSessionSequence: this.throughSequence,
-      turns: Object.freeze([...this.observedTurnsValue]),
-    });
+      turns: [...this.observedTurnsValue],
+    };
   }
 
   /** @internal Only SessionManager may append a sealed physical-send cut. */
@@ -171,105 +178,109 @@ export class RunSession implements AgentSession {
   readonly pendingInputRequests: InputRequest[] = [];
   readonly usage: Usage = {};
   /** 本会话累计的证据覆盖(初值 = Agent 级默认,逐轮按 Turn.evidenceCoverage 降级折叠)。 */
-  evidenceCoverage!: ResolvedEvidenceCoverage;
+  evidenceCoverage: ResolvedEvidenceCoverage;
   /** 本会话内的轮次计数(turn 时间树 / 展示标签 turn<N> 用)。 */
   turnCount = 0;
+
+  constructor(evidenceCoverage: ResolvedEvidenceCoverage) {
+    this.evidenceCoverage = evidenceCoverage;
+  }
 }
 
 export interface SessionDeps {
   agent: Agent;
   sandbox: Sandbox;
   /** 当前 Attempt 的 Eval 身份；Runner 路径必填，测试/第三方直构可省略。 */
-  evalId?: string;
+  evalId?: string | undefined;
   /** 当前 Attempt 引用；与 setup/teardown 拿到的 AgentContext 保持同一身份。 */
-  attempt?: AgentContext["attempt"];
+  attempt?: AgentContext["attempt"] | undefined;
   /** 当前 Eval Group 身份；未分组 Eval 省略。 */
-  evalGroup?: AgentContext["evalGroup"];
-  model?: string;
-  reasoningEffort?: string;
+  evalGroup?: AgentContext["evalGroup"] | undefined;
+  model?: string | undefined;
+  reasoningEffort?: string | undefined;
   flags: ExperimentFlags;
   signal: AbortSignal;
   /**
    * The only Promise facade for the active Assert-first author surface. It
    * executes this SessionManager's Effect graph in the owning Attempt Scope.
    */
-  requestEffect?: <Value, Error>(effect: Effect.Effect<Value, Error, never>) => Promise<Value>;
+  requestEffect?: (<Value, Error>(effect: Effect.Effect<Value, Error, never>) => Promise<Value>) | undefined;
   log(msg: string): void;
   /** runner 绑定的作用域反馈(adapter ctx.progress/diagnostic);省略时 progress 退回 log。 */
-  feedback?: import("../types.ts").ScopedFeedback;
+  feedback?: import("../types.ts").ScopedFeedback | undefined;
   /** adapter send 在飞时通知 runner(errored 归因到嵌套的 `agent.run` 阶段用)。 */
-  onSendActive?: (active: boolean) => void;
+  onSendActive?: ((active: boolean) => void) | undefined;
   /**
    * 变更分类账的 send 窗口钩子(仅沙箱型 agent):`beforeSend` 在 adapter send 前落 eval 归因
    * commit,`afterSend` 在返回后落 agent 归因 commit;label 是 `turn<N>` 或
    * `session<K>/turn<N>` 窗口标签。
    * 提供钩子时 send 自动串行(同一 workdir 上重叠的 send 是写入竞争,窗口不重叠)。
    */
-  ledgerHooks?: {
-    beforeSend(label: string): Promise<void>;
-    afterSend(label: string): Promise<void>;
-  };
+  ledgerHooks?:
+    | {
+        beforeSend(label: string): Promise<void>;
+        afterSend(label: string): Promise<void>;
+      }
+    | undefined;
   /** attempt 单调时钟域的当前 offset；runner 注入，测试直调缺省使用 performance.now()。 */
-  timingNow?: () => number;
+  timingNow?: (() => number) | undefined;
   /**
    * 每轮 send 结束后回报单调时钟包络(runner 挂成 eval.run 下的 turn 时间树节点)。`usage` 是该轮
    * `Turn.usage` 落盘原样(有记录才传;`--execution`/`--timing` 的 turn 头行读 TimingNode.usage)。
    */
-  onTurn?: ((info: {
-    turnId: TurnId;
-    sessionIndex: number;
-    turnIndex: number;
-    /** Exact terminal label allocated by this SessionManager. */
-    label: string;
-    /** One physical public send is sealed with this exact terminal outcome. */
-    outcome: "completed" | "failed" | "interrupted";
-    /** The interpreted terminal Adapter events for this physical send only. */
-    events: readonly StreamEvent[];
-    /** Exact source-owner snapshot consumed by Assertions and persistence. */
-    observed: ObservedTurnSnapshot;
-    /** Present only when the Adapter returned a terminal Turn. */
-    adapterStatus?: Turn["status"];
-    /** Resolved Adapter-default plus Turn-local evidence coverage. */
-    evidenceCoverage?: ResolvedEvidenceCoverage;
-    startOffsetMs: number;
-    durationMs: number;
-    failed?: boolean;
-    /** The real user-event source location, when stack capture succeeded. */
-    loc?: ReturnType<typeof captureLoc>;
-    /** Shared author-fact order; absent when there is no durable source site. */
-    sourceOrder?: number;
-    traceId?: string;
-    traceAttribution?: "traceparent" | "window" | "none";
-    otelWindow?: TurnSpans["window"];
-    usage?: Usage;
-  }) => TimingActivity | undefined) & {
-    /** Runs synchronously before ledger hooks or Adapter invocation. */
-    readonly onStart?: (info: {
-      readonly turnId: TurnId;
-      readonly sessionScopeId: RunSession["sessionScopeId"];
-      readonly sessionIndex: number;
-      readonly turnIndex: number;
-      readonly loc?: ReturnType<typeof captureLoc>;
-      readonly sourceOrder?: number;
-    }) => void;
-    /** Attempt-local secret replacement used before observed rows are sealed. */
-    readonly normalizeObservedText?: (value: string) => string;
-  };
+  onTurn?:
+    | (((info: {
+        turnId: TurnId;
+        sessionIndex: number;
+        turnIndex: number;
+        /** Exact terminal label allocated by this SessionManager. */
+        label: string;
+        /** One physical public send is sealed with this exact terminal outcome. */
+        outcome: "completed" | "failed" | "interrupted";
+        /** The interpreted terminal Adapter events for this physical send only. */
+        events: readonly StreamEvent[];
+        /** Exact source-owner snapshot consumed by Assertions and persistence. */
+        observed: ObservedTurnSnapshot;
+        /** Present only when the Adapter returned a terminal Turn. */
+        adapterStatus: Turn["status"] | undefined;
+        /** Resolved Adapter-default plus Turn-local evidence coverage. */
+        evidenceCoverage: ResolvedEvidenceCoverage;
+        startOffsetMs: number;
+        durationMs: number;
+        trace:
+          | { readonly attribution: "none" }
+          | { readonly attribution: "traceparent" | "window"; readonly traceId: string };
+        usage: Usage | undefined;
+      }) => TimingActivity | undefined) & {
+        /** Runs synchronously before ledger hooks or Adapter invocation. */
+        readonly onStart: (info: {
+          readonly turnId: TurnId;
+          readonly sessionScopeId: RunSession["sessionScopeId"];
+          readonly sessionIndex: number;
+          readonly turnIndex: number;
+          readonly sourceSite:
+            | { readonly location: NonNullable<ReturnType<typeof captureLoc>>; readonly sourceOrder: number }
+            | undefined;
+        }) => void;
+        /** Attempt-local secret replacement used before observed rows are sealed. */
+        readonly normalizeObservedText: (value: string) => string;
+      })
+    | undefined;
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
-  experimentId?: string;
+  experimentId?: string | undefined;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
-  telemetry?: Telemetry;
+  telemetry?: Telemetry | undefined;
   /** 非沙箱 tracing agent 的共享 OTLP 通道(runner 从 run 级池取,经它做逐轮 span 归属)。 */
-  otel?: AgentOtelChannel;
+  otel?: AgentOtelChannel | undefined;
   /**
    * turn 级重试退避期间释放/收回的全局并发槽位(见 docs/feature/error-classification/
    * architecture.md「退避与槽位」)。省略时退避不释放槽位(测试 / 无并发闸场景)。
    */
-  concurrencySlot?: ConcurrencySlot;
+  concurrencySlot?: ConcurrencySlot | undefined;
   /** 与 Fact collector 共用的 attempt 级源码事实序号分配器。 */
-  nextSourceOrder?: () => number;
+  nextSourceOrder?: (() => number) | undefined;
   /** Attempt-owned source snapshot registry; Runner injects it explicitly. */
-  sourceRegistry?: SourceRegistry;
+  sourceRegistry?: SourceRegistry | undefined;
   resources: import("../types.ts").AttemptResourceRegistry;
 }
 
@@ -277,7 +288,7 @@ export interface SessionDeps {
 export interface LedgerCaptureFailure {
   readonly state: "capture-failed";
   readonly label: string;
-  readonly error: unknown;
+  readonly error: ExternalCause;
 }
 
 export class SessionManager {
@@ -293,17 +304,10 @@ export class SessionManager {
   readonly retryAttempts: RetryAttemptRecord[] = [];
   private readonly usageContributions: AgentUsageContribution[] = [];
 
-  /** A frozen call-time copy; terminal replacement never changes an earlier pending cut. */
+  /** A call-time copy; terminal replacement never changes an earlier pending cut. */
   usageContributionsSnapshot(): readonly AgentUsageContribution[] {
-    return Object.freeze(
-      this.usageContributions.map((contribution) =>
-        Object.freeze({
-          ...contribution,
-          usage: contribution.usage === null ? null : Object.freeze({ ...contribution.usage }),
-          coverage: Object.freeze({ ...contribution.coverage }),
-        }),
-      ),
-    );
+    // recordSendUsageEffect replaces entries as sends finish and appends later sends.
+    return this.usageContributions.slice();
   }
 
   /** 归属到本 attempt 的 span(逐轮攒;attempt 末尾连同 sweep 的迟到 span 一起挂 trace)。 */
@@ -312,7 +316,7 @@ export class SessionManager {
   readonly otelTraceIds = new Set<string>();
   private readonly otelTurnRecords: Array<{
     window: TurnSpans["window"];
-    activity?: TimingActivity;
+    activity: TimingActivity | undefined;
     hasSpans: boolean;
   }> = [];
 
@@ -343,7 +347,7 @@ export class SessionManager {
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.observedIngestion = new ObservedEventIngestionCorrelator({
-      ...(deps.onTurn?.normalizeObservedText === undefined ? {} : { normalizeText: deps.onTurn.normalizeObservedText }),
+      normalizeText: deps.onTurn?.normalizeObservedText,
     });
     this.primary = this.newSession();
   }
@@ -353,9 +357,9 @@ export class SessionManager {
     return this.observedIngestion.attemptCut();
   }
 
-  /** A frozen call-time cut of all sealed sends, including failed sends without a Turn. */
+  /** A call-time cut of all sealed sends, including failed sends without a Turn. */
   observedSessionSnapshots(): readonly ObservedSessionSnapshot[] {
-    return Object.freeze(this.sessions.map((session) => session.observedSnapshot()));
+    return this.sessions.map((session) => session.observedSnapshot());
   }
 
   observedTurnState(snapshot: ObservedTurnSnapshot): ObservedTurnState | undefined {
@@ -381,20 +385,10 @@ export class SessionManager {
     outcome: ObservedTurnState["outcome"],
     coverage: ResolvedEvidenceCoverage,
   ): void {
-    this.observedTurnStates.set(
-      snapshot,
-      Object.freeze({
-        outcome,
-        coverage: Object.freeze({
-          events: Object.freeze({ ...coverage.events }),
-          messages: Object.freeze({ ...coverage.messages }),
-          actions: Object.freeze({ ...coverage.actions }),
-          status: Object.freeze({ ...coverage.status }),
-          usage: Object.freeze({ ...coverage.usage }),
-          data: Object.freeze({ ...coverage.data }),
-        }),
-      }),
-    );
+    this.observedTurnStates.set(snapshot, {
+      outcome,
+      coverage,
+    });
   }
 
   private mintPhysicalTurnId(): TurnId {
@@ -409,9 +403,8 @@ export class SessionManager {
   }
 
   newSession(): RunSession {
-    const s = new RunSession();
+    const s = new RunSession(this.agentEvidenceCoverage);
     s.index = ++this.sessionCount;
-    s.evidenceCoverage = this.agentEvidenceCoverage;
     this.observedIngestion.registerSession(s.sessionScopeId);
     this.sessions.push(s);
     return s;
@@ -449,7 +442,7 @@ export class SessionManager {
     const send = this.sendSerializedEffect(
       session,
       text,
-      loc ?? captureLoc({ ...(this.deps.sourceRegistry === undefined ? {} : { registry: this.deps.sourceRegistry }) }),
+      loc ?? captureLoc({ registry: this.deps.sourceRegistry }),
       files,
       responses,
     );
@@ -476,13 +469,13 @@ export class SessionManager {
       // A source order belongs only to a user event that can become an
       // Attempt source-site. Do not consume the shared sequence for a failed
       // stack capture.
-      const sourceOrder = loc === undefined ? undefined : this.nextSourceOrder();
+      const sourceSite = loc === undefined ? undefined : { location: loc, sourceOrder: this.nextSourceOrder() };
       const userEvent: StreamEvent = {
         type: "message",
         role: "user",
         text,
-        ...(loc === undefined ? {} : { loc }),
-        ...(sourceOrder === undefined ? {} : { sourceOrder }),
+        loc,
+        sourceOrder: sourceSite?.sourceOrder,
       };
       this.allEvents.push(userEvent);
       session.events.push(userEvent);
@@ -495,28 +488,27 @@ export class SessionManager {
         turnId,
         userEvent,
       });
-      this.deps.onTurn?.onStart?.({
+      this.deps.onTurn?.onStart({
         turnId,
         sessionScopeId: session.sessionScopeId,
         sessionIndex: session.index,
         turnIndex,
-        ...(loc === undefined ? {} : { loc }),
-        ...(sourceOrder === undefined ? {} : { sourceOrder }),
+        sourceSite,
       });
       const ctx: AgentSendContext = bindAttemptResources(
         {
           sandbox: this.deps.sandbox,
           turnId,
           signal: this.deps.signal,
-          ...(this.deps.evalId === undefined ? {} : { evalId: this.deps.evalId }),
-          ...(this.deps.attempt === undefined ? {} : { attempt: this.deps.attempt }),
-          ...(this.deps.evalGroup === undefined ? {} : { evalGroup: this.deps.evalGroup }),
-          ...(this.deps.model === undefined ? {} : { model: this.deps.model }),
-          ...(this.deps.reasoningEffort === undefined ? {} : { reasoningEffort: this.deps.reasoningEffort }),
+          evalId: this.deps.evalId,
+          attempt: this.deps.attempt,
+          evalGroup: this.deps.evalGroup,
+          model: this.deps.model,
+          reasoningEffort: this.deps.reasoningEffort,
           flags: this.deps.flags,
-          ...(this.deps.experimentId === undefined ? {} : { experimentId: this.deps.experimentId }),
+          experimentId: this.deps.experimentId,
           session,
-          ...(this.deps.telemetry === undefined ? {} : { telemetry: this.deps.telemetry }),
+          telemetry: this.deps.telemetry,
           // Progress is intentionally transient. A direct SessionManager without
           // an ACTIVE feedback sink drops it instead of turning it into a durable
           // timeout breadcrumb through `log`.
@@ -546,11 +538,11 @@ export class SessionManager {
                   // the author, but retain the failed checkpoint so freeze cannot
                   // turn an incomplete capture into a convincing empty document.
                   if (this.ledgerCaptureFailureValue === undefined) {
-                    this.ledgerCaptureFailureValue = Object.freeze({
+                    this.ledgerCaptureFailureValue = {
                       state: "capture-failed" as const,
                       label: windowLabel,
-                      error,
-                    });
+                      error: normalizeExternalCause(error),
+                    };
                   }
                 }),
               ),
@@ -566,21 +558,12 @@ export class SessionManager {
           sendAttempt: sendAttempt++,
         }));
       const sendOnce: Effect.Effect<PhysicalSendResult, unknown> = this.deps.otel
-        ? this.sendWithOtelEffect(
-            this.deps.otel,
-            { text, ...(files === undefined ? {} : { files }), ...(responses === undefined ? {} : { responses }) },
-            ctx,
-            observeUsage,
-          )
-        : this.sendAgentEffect(
-            { text, ...(files === undefined ? {} : { files }), ...(responses === undefined ? {} : { responses }) },
-            ctx,
-            observeUsage,
-          ).pipe(Effect.map((turn) => ({ turn })));
+        ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx, observeUsage)
+        : this.sendAgentEffect({ text, files, responses }, ctx, observeUsage).pipe(
+            Effect.map((turn): PhysicalSendResult => ({ turn, otel: { state: "disabled" } })),
+          );
       const retryDeps: SendRetryDeps = {
-        ...(this.deps.agent.classifySendFailure === undefined
-          ? {}
-          : { classifier: this.deps.agent.classifySendFailure }),
+        classifier: this.deps.agent.classifySendFailure,
         onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
           const process = failure.process;
           this.retryAttempts.push({
@@ -616,7 +599,7 @@ export class SessionManager {
           }
         },
         budget: this.retryBudget,
-        ...(this.deps.concurrencySlot === undefined ? {} : { slot: this.deps.concurrencySlot }),
+        slot: this.deps.concurrencySlot,
         reportRetry: (message: string) => ctx.progress({ message }),
         signal: ctx.signal,
       };
@@ -626,37 +609,35 @@ export class SessionManager {
             Effect.sync(() => {
               const durationMs = Math.max(0, timingNow() - startOffsetMs);
               if (Exit.isSuccess(exit)) {
-                const { turn, traceId, attribution, window } = exit.value;
+                const { turn, otel } = exit.value;
                 const observed = this.observedIngestion.finishTurn(observedDraft, turn.events);
                 session.appendObservedTurn(observed);
                 const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
                 this.recordObservedTurnState(observed, turn.status, turnEvidenceCoverage);
                 bindObservedSnapshotToTurn(turn, observed);
-                const traceAttribution = attribution ?? "none";
+                const traceAttribution = otel.state === "captured" ? otel.attribution : "none";
                 const timingActivity = this.deps.onTurn?.({
                   turnId,
                   sessionIndex: session.index,
                   turnIndex,
                   label: windowLabel,
                   outcome: turn.status === "failed" ? "failed" : "completed",
-                  events: Object.freeze([...turn.events]),
+                  events: turn.events,
                   observed,
                   adapterStatus: turn.status,
                   evidenceCoverage: turnEvidenceCoverage,
                   startOffsetMs,
                   durationMs,
-                  ...(turn.status === "failed" ? { failed: true } : {}),
-                  ...(loc === undefined ? {} : { loc }),
-                  ...(sourceOrder === undefined ? {} : { sourceOrder }),
-                  ...(traceAttribution !== "none" && traceId !== undefined ? { traceId } : {}),
-                  traceAttribution,
-                  ...(window === undefined ? {} : { otelWindow: window }),
-                  ...(turn.usage === undefined ? {} : { usage: turn.usage }),
+                  trace:
+                    otel.state === "captured" && otel.attribution !== "none"
+                      ? { attribution: otel.attribution, traceId: otel.traceId }
+                      : { attribution: "none" },
+                  usage: turn.usage,
                 });
-                if (window !== undefined) {
+                if (otel.state === "captured") {
                   this.otelTurnRecords.push({
-                    window,
-                    ...(timingActivity === undefined ? {} : { activity: timingActivity }),
+                    window: otel.window,
+                    activity: timingActivity,
                     hasSpans: traceAttribution !== "none",
                   });
                 }
@@ -694,15 +675,14 @@ export class SessionManager {
                 turnIndex,
                 label: windowLabel,
                 outcome: interrupted ? "interrupted" : "failed",
-                events: Object.freeze([userEvent, ...(sendFailure?.events ?? [])]),
+                events: [userEvent, ...(sendFailure?.events ?? [])],
                 observed,
                 evidenceCoverage: turnEvidenceCoverage,
                 startOffsetMs,
                 durationMs,
-                failed: true,
-                ...(loc === undefined ? {} : { loc }),
-                ...(sourceOrder === undefined ? {} : { sourceOrder }),
-                ...(sendFailure?.usage !== undefined ? { usage: sendFailure.usage } : {}),
+                usage: sendFailure?.usage,
+                adapterStatus: undefined,
+                trace: { attribution: "none" },
               });
             }),
             () => (Exit.isSuccess(exit) ? Effect.succeed(exit.value) : Effect.failCause(exit.cause)),
@@ -792,50 +772,51 @@ export class SessionManager {
     return Effect.uninterruptibleMask((restore) =>
       Effect.suspend(() => {
         const index = this.usageContributions.length;
-        const pending: AgentUsageContribution = Object.freeze({
+        const pending: AgentUsageContribution = {
           ...identity(),
           state: "pending",
-          outcome: null,
-          model: this.deps.model ?? null,
-          usage: null,
-          coverage: Object.freeze({ status: "unavailable", reason: "agent-send-pending" }),
-        });
+          model: this.deps.model,
+          coverage: { status: "unavailable", reason: "agent-send-pending" },
+        };
         this.usageContributions.push(pending);
         return restore(callOnce).pipe(
-          Effect.onExit((exit) =>
-            Effect.sync(() => {
+          Effect.onExit((exit) => {
+            function terminalOutcome(): Extract<AgentUsageContribution, { readonly state: "terminal" }>["outcome"] {
+              if (Exit.isSuccess(exit)) return exit.value.status === "failed" ? "failed" : "completed";
+              return Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failed";
+            }
+            function reportedUsage(): Usage | undefined {
               const failure = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined;
-              const usage = Exit.isSuccess(exit)
-                ? exit.value.usage
-                : failure !== undefined && isSendFailure(failure)
-                  ? failure.usage
-                  : undefined;
-              let coverage: AgentUsageContribution["coverage"] =
-                usage === undefined
-                  ? { status: "unavailable", reason: "agent-send-usage-not-reported" }
-                  : this.agentEvidenceCoverage.usage;
-              try {
-                if (Exit.isSuccess(exit)) {
-                  coverage = { status: "unavailable", reason: "agent-send-invalid-coverage" };
-                  coverage = this.resolveTurnEvidenceCoverage(exit.value).usage;
-                }
-              } finally {
-                this.usageContributions[index] = Object.freeze({
-                  ...pending,
-                  state: "terminal",
-                  outcome: Exit.isSuccess(exit)
-                    ? exit.value.status === "failed"
-                      ? "failed"
-                      : "completed"
-                    : Cause.hasInterruptsOnly(exit.cause)
-                      ? "interrupted"
-                      : "failed",
-                  usage: usage === undefined ? null : Object.freeze({ ...usage }),
-                  coverage: Object.freeze({ ...coverage }),
-                });
-              }
-            }),
-          ),
+              if (Exit.isSuccess(exit)) return exit.value.usage;
+              if (failure !== undefined && isSendFailure(failure)) return failure.usage;
+              return undefined;
+            }
+            const outcome = terminalOutcome();
+            const usage = reportedUsage();
+            const resolveCoverage = (): Effect.Effect<AgentUsageContribution["coverage"]> => {
+              if (Exit.isSuccess(exit)) return Effect.sync(() => this.resolveTurnEvidenceCoverage(exit.value).usage);
+              if (usage === undefined)
+                return Effect.succeed({ status: "unavailable", reason: "agent-send-usage-not-reported" });
+              return Effect.succeed(this.agentEvidenceCoverage.usage);
+            };
+            const coverage = resolveCoverage();
+            return coverage.pipe(
+              Effect.onExit((resolved) =>
+                Effect.sync(() => {
+                  const terminalCoverage: AgentUsageContribution["coverage"] = Exit.isSuccess(resolved)
+                    ? resolved.value
+                    : { status: "unavailable", reason: "agent-send-invalid-coverage" };
+                  this.usageContributions[index] = {
+                    ...pending,
+                    state: "terminal",
+                    outcome,
+                    usage,
+                    coverage: terminalCoverage,
+                  };
+                }),
+              ),
+            );
+          }),
         );
       }),
     );
@@ -848,7 +829,7 @@ export class SessionManager {
    */
   private sendWithOtelEffect(
     otel: AgentOtelChannel,
-    input: { text: string; files?: readonly InputFile[]; responses?: readonly InputResponse[] },
+    input: { text: string; files: readonly InputFile[] | undefined; responses: readonly InputResponse[] | undefined },
     ctx: AgentSendContext,
     observeUsage: ObserveSendUsage,
   ): Effect.Effect<PhysicalSendResult, ReturnType<typeof normalizeSendFailure>> {
@@ -876,9 +857,12 @@ export class SessionManager {
           }
           return {
             turn: result.result,
-            traceId: result.traceId,
-            attribution: result.spans.length === 0 ? "none" : result.attribution,
-            window: result.window,
+            otel: {
+              state: "captured" as const,
+              traceId: result.traceId,
+              attribution: result.spans.length === 0 ? ("none" as const) : result.attribution,
+              window: result.window,
+            },
           };
         }),
       );

@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Effect, Result, Schema, type Scope } from "effect";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
 import { UserDatabaseInvalid, type UserDatabaseFailure } from "../../user-database/errors.ts";
 import { userDatabaseHost, type UserDatabase, type UserDatabaseOpenOptions } from "../../user-database/index.ts";
 import { incusError, type IncusProviderError } from "./errors.ts";
@@ -30,7 +31,7 @@ import {
 
 export const INCUS_REPOSITORY = "incus" as const;
 
-const INCUS_ALLOCATION_STATE = Object.freeze({
+const INCUS_ALLOCATION_STATE = {
   reserved: "reserved",
   creating: "creating",
   ready: "ready",
@@ -38,8 +39,8 @@ const INCUS_ALLOCATION_STATE = Object.freeze({
   destroyRequested: "destroy-requested",
   destroyed: "destroyed",
   lost: "lost",
-} as const);
-const INCUS_PREPARED_ARTIFACT_STATE = Object.freeze({
+} as const;
+const INCUS_PREPARED_ARTIFACT_STATE = {
   reserved: "reserved",
   preparing: "preparing",
   publishing: "publishing",
@@ -48,7 +49,7 @@ const INCUS_PREPARED_ARTIFACT_STATE = Object.freeze({
   quarantined: "quarantined",
   retiring: "retiring",
   released: "released",
-} as const);
+} as const;
 export const ALLOCATION_STATES = Object.freeze(Object.values(INCUS_ALLOCATION_STATE));
 export const ARTIFACT_STATES = Object.freeze(Object.values(INCUS_PREPARED_ARTIFACT_STATE));
 export type AllocationState = FiniteValue<typeof ALLOCATION_STATES>;
@@ -81,16 +82,18 @@ export interface AllocationIntent {
   readonly state: AllocationState;
 }
 
-export interface IncusArtifactLocator {
-  readonly artifactId: string;
-  readonly generation: number;
-  readonly project: string;
-  readonly instance: string;
-  readonly dockerDataVolume: string;
-  readonly beforeCacheKey: string;
-  readonly manifestDigest: string;
-  readonly consumerHoldId?: string;
-}
+export const IncusArtifactLocatorSchema = Schema.Struct({
+  artifactId: Schema.String,
+  generation: Schema.Number,
+  project: Schema.String,
+  instance: Schema.String,
+  dockerDataVolume: Schema.String,
+  beforeCacheKey: Schema.String,
+  manifestDigest: Schema.String,
+  // Provider locator JSON: absence of a consumer hold must preserve the wire keys.
+  consumerHoldId: Schema.optionalKey(Schema.String),
+});
+export type IncusArtifactLocator = typeof IncusArtifactLocatorSchema.Type;
 
 export interface ArtifactIntent extends IncusArtifactLocator {
   readonly state: ArtifactState;
@@ -328,7 +331,7 @@ export type IncusRepositoryResultFor<Request extends IncusRepositoryRequest> = E
   { readonly operation: Request["operation"] }
 >;
 
-const ParseOptions = Object.freeze({ errors: "all" as const, exact: true, onExcessProperty: "error" as const });
+const ParseOptions = { errors: "all" as const, exact: true, onExcessProperty: "error" as const };
 const OwnerSchema = Schema.Struct({ host: Schema.String, pid: Schema.Number, startedAt: Schema.String });
 const AllocationIntentSchema = Schema.Struct({
   allocationId: Schema.String,
@@ -400,7 +403,12 @@ type SchemaRow = {
 };
 
 function invalid(message: string, cause?: unknown): UserDatabaseInvalid {
-  return new UserDatabaseInvalid({ code: "user-database-invalid", message, repository: INCUS_REPOSITORY, cause });
+  return new UserDatabaseInvalid({
+    code: "user-database-invalid",
+    message,
+    repository: INCUS_REPOSITORY,
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
+  });
 }
 
 function exactSql(sql: string): string {
@@ -434,14 +442,14 @@ function freezeAllocation(value: unknown): AllocationIntent {
   ) {
     throw invalid("Incus allocation contains an invalid integer field");
   }
-  return Object.freeze({
+  return {
     ...decoded,
-    owner: Object.freeze({ ...decoded.owner }),
-    ...(decoded.providerLocator === undefined ? {} : { providerLocator: decoded.providerLocator }),
-    ...(decoded.dockerDataVolume === undefined ? {} : { dockerDataVolume: decoded.dockerDataVolume }),
+    owner: decoded.owner,
+    providerLocator: decoded.providerLocator,
+    dockerDataVolume: decoded.dockerDataVolume,
     ...(decoded.quarantined === true ? { quarantined: true } : {}),
-    ...(decoded.acceptanceUnknown === undefined ? {} : { acceptanceUnknown: decoded.acceptanceUnknown }),
-  });
+    acceptanceUnknown: decoded.acceptanceUnknown,
+  };
 }
 
 function freezeArtifact(value: unknown): ArtifactIntent {
@@ -449,7 +457,7 @@ function freezeArtifact(value: unknown): ArtifactIntent {
   if (!Number.isSafeInteger(decoded.generation) || decoded.generation < 1) {
     throw invalid("Incus artifact generation must be a positive safe integer");
   }
-  return Object.freeze({ ...decoded });
+  return decoded;
 }
 
 function decodeAllocationRow(row: unknown): AllocationIntent {
@@ -495,12 +503,12 @@ function decodeLeaseRow(row: unknown): IncusAdmissionLease {
   ) {
     throw invalid("Incus admission row contains invalid typed fields");
   }
-  return Object.freeze({
+  return {
     lockId,
     fencingToken: Number(fencingToken),
-    owner: Object.freeze({ host, pid: Number(pid), startedAt }),
+    owner: { host, pid: Number(pid), startedAt },
     acquiredAt,
-  });
+  };
 }
 
 function transaction<A>(database: DatabaseSync, work: () => A): A {
@@ -564,7 +572,7 @@ function sameArtifactIdentity(left: ArtifactIntent, right: ArtifactIntent): bool
   );
 }
 
-const AllocationTransitions: Readonly<Record<AllocationState, ReadonlySet<AllocationState>>> = Object.freeze({
+const AllocationTransitions: Readonly<Record<AllocationState, ReadonlySet<AllocationState>>> = {
   reserved: new Set<AllocationState>(["reserved", "creating", "destroy-requested", "destroyed"]),
   creating: new Set<AllocationState>(["creating", "ready", "destroy-requested", "destroyed", "lost"]),
   ready: new Set<AllocationState>(["ready", "handed-off", "destroy-requested", "lost"]),
@@ -572,8 +580,8 @@ const AllocationTransitions: Readonly<Record<AllocationState, ReadonlySet<Alloca
   "destroy-requested": new Set<AllocationState>(["destroy-requested", "destroyed", "lost"]),
   destroyed: new Set<AllocationState>(["destroyed"]),
   lost: new Set<AllocationState>(["lost", "destroy-requested", "destroyed"]),
-});
-const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactState>>> = Object.freeze({
+};
+const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactState>>> = {
   reserved: new Set<ArtifactState>(["reserved", "preparing", "publishing", "invalid", "quarantined", "released"]),
   preparing: new Set<ArtifactState>(["preparing", "publishing", "invalid", "quarantined", "released"]),
   publishing: new Set<ArtifactState>(["publishing", "committed", "invalid", "quarantined", "released"]),
@@ -582,7 +590,7 @@ const ArtifactTransitions: Readonly<Record<ArtifactState, ReadonlySet<ArtifactSt
   quarantined: new Set<ArtifactState>(["quarantined", "released"]),
   retiring: new Set<ArtifactState>(["retiring", "quarantined", "released"]),
   released: new Set<ArtifactState>(["released"]),
-});
+};
 
 function assertCurrentSchema(database: DatabaseSync): void {
   const rows = database
@@ -715,26 +723,26 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           JSON.stringify(intent),
         );
       if (receipt.changes !== 1) throw invalid("Incus allocation reservation did not insert exactly one row");
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, intent };
     });
   }
   if (request.operation === "allocation.get") {
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
       intent: getAllocation(database, request.allocationId),
-    });
+    };
   }
   if (request.operation === "allocation.list") {
     const intents = database
       .prepare(`SELECT generation, state, payload FROM ${AllocationTable} ORDER BY allocation_id`)
       .all()
       .map(decodeAllocationRow);
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
-      intents: Object.freeze(intents),
-    });
+      intents,
+    };
   }
   if (request.operation === "allocation.transition") {
     const next = freezeAllocation(request.intent);
@@ -759,7 +767,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         .run(next.state, JSON.stringify(next), request.allocationId, request.expectedGeneration, request.expectedState);
       if (receipt.changes !== 1)
         throw invalid(`Incus allocation ${request.allocationId} transition failed its compare-and-swap`);
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent: next });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, intent: next };
     });
   }
   if (request.operation === "artifact.reserve") {
@@ -797,26 +805,26 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           JSON.stringify(intent),
         );
       if (receipt.changes !== 1) throw invalid("Incus artifact reservation did not insert exactly one row");
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, intent };
     });
   }
   if (request.operation === "artifact.get") {
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
       intent: getArtifact(database, request.artifactId),
-    });
+    };
   }
   if (request.operation === "artifact.list") {
     const intents = database
       .prepare(`SELECT generation, state, payload FROM ${ArtifactTable} ORDER BY artifact_id`)
       .all()
       .map(decodeArtifactRow);
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
-      intents: Object.freeze(intents),
-    });
+      intents,
+    };
   }
   if (request.operation === "artifact.transition") {
     let next = freezeArtifact(request.intent);
@@ -856,7 +864,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         .run(next.state, JSON.stringify(next), request.artifactId, request.expectedGeneration, request.expectedState);
       if (receipt.changes !== 1)
         throw invalid(`Incus artifact ${request.artifactId} transition failed its compare-and-swap`);
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent: next });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, intent: next };
     });
   }
   if (request.operation === "artifact.head.replace") {
@@ -887,7 +895,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           `INSERT INTO ${ArtifactHeadTable}(replacement_scope_digest, artifact_id, generation) VALUES (?, ?, ?) ON CONFLICT(replacement_scope_digest) DO UPDATE SET artifact_id = excluded.artifact_id, generation = excluded.generation`,
         )
         .run(request.replacementScopeDigest, intent.artifactId, intent.generation);
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent, previous });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, intent, previous };
     });
   }
   if (request.operation === "artifact.head.get") {
@@ -906,7 +914,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
     ) {
       throw invalid("Incus replacement head disagrees with its prepared artifact generation or scope");
     }
-    return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, intent });
+    return { repository: INCUS_REPOSITORY, operation: request.operation, intent };
   }
   if (request.operation === "artifact.hold.acquire") {
     return transaction(database, () => {
@@ -945,25 +953,25 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       database
         .prepare(`UPDATE ${ArtifactTable} SET payload = ? WHERE artifact_id = ? AND generation = ?`)
         .run(JSON.stringify(touched), intent.artifactId, intent.generation);
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, hold });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, hold };
     });
   }
   if (request.operation === "artifact.hold.release") {
     const receipt = database
       .prepare(`DELETE FROM ${ArtifactHoldTable} WHERE hold_id = ? AND artifact_id = ? AND generation = ?`)
       .run(request.holdId, request.artifactId, request.generation);
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
       released: receipt.changes === 1,
-    });
+    };
   }
   if (request.operation === "artifact.hold.count") {
     const row = database
       .prepare(`SELECT COUNT(*) AS count FROM ${ArtifactHoldTable} WHERE artifact_id = ? AND generation = ?`)
       .get(request.artifactId, request.generation) as { readonly count?: unknown } | undefined;
     if (row === undefined || !Number.isSafeInteger(row.count)) throw invalid("Incus consumer hold count is invalid");
-    return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, count: Number(row.count) });
+    return { repository: INCUS_REPOSITORY, operation: request.operation, count: Number(row.count) };
   }
   if (request.operation === "artifact.release.request") {
     return transaction(database, () => {
@@ -1032,13 +1040,13 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         | { readonly instance_absent?: unknown; readonly custom_storage_volume_absent?: unknown }
         | undefined;
       if (receipt === undefined) throw invalid("Incus prepared artifact absence receipt is missing");
-      return Object.freeze({
+      return {
         repository: INCUS_REPOSITORY,
         operation: request.operation,
         intent,
         instanceAbsent: receipt.instance_absent === 1,
         customStorageVolumeAbsent: receipt.custom_storage_volume_absent === 1,
-      });
+      };
     });
   }
   if (request.operation === "artifact.release.observe") {
@@ -1083,13 +1091,13 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           .prepare(`DELETE FROM ${ArtifactHeadTable} WHERE artifact_id = ? AND generation = ?`)
           .run(intent.artifactId, intent.generation);
       }
-      return Object.freeze({
+      return {
         repository: INCUS_REPOSITORY,
         operation: request.operation,
         intent,
         instanceAbsent,
         customStorageVolumeAbsent,
-      });
+      };
     });
   }
   if (request.operation === "admission.acquire") {
@@ -1102,12 +1110,12 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         )
         .get(request.lockId);
       if (row === undefined) {
-        const lease = Object.freeze({
+        const lease: IncusAdmissionLease = {
           lockId: request.lockId,
           fencingToken: 1,
-          owner: Object.freeze({ ...owner }),
+          owner,
           acquiredAt: request.acquiredAt,
-        });
+        };
         database
           .prepare(
             `INSERT INTO ${AdmissionTable}(lock_id, fencing_token, owner_host, owner_pid, owner_started_at, acquired_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -1120,26 +1128,26 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
             lease.owner.startedAt,
             lease.acquiredAt,
           );
-        return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, acquired: true, lease });
+        return { repository: INCUS_REPOSITORY, operation: request.operation, acquired: true, lease };
       }
       const current = decodeLeaseRow(row);
       if (request.expected === undefined || !sameLease(current, request.expected)) {
-        return Object.freeze({
+        return {
           repository: INCUS_REPOSITORY,
           operation: request.operation,
           acquired: false,
           lease: current,
-        });
+        };
       }
       if (current.fencingToken >= Number.MAX_SAFE_INTEGER) {
         throw invalid(`Incus admission ${request.lockId} exhausted its safe fencing-token range`);
       }
-      const lease = Object.freeze({
+      const lease: IncusAdmissionLease = {
         lockId: request.lockId,
         fencingToken: current.fencingToken + 1,
-        owner: Object.freeze({ ...owner }),
+        owner,
         acquiredAt: request.acquiredAt,
-      });
+      };
       const receipt = database
         .prepare(
           `UPDATE ${AdmissionTable} SET fencing_token = ?, owner_host = ?, owner_pid = ?, owner_started_at = ?, acquired_at = ? WHERE lock_id = ? AND fencing_token = ? AND owner_host = ? AND owner_pid = ? AND owner_started_at = ?`,
@@ -1158,7 +1166,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         );
       if (receipt.changes !== 1)
         throw invalid(`Incus admission ${request.lockId} takeover failed its compare-and-swap`);
-      return Object.freeze({ repository: INCUS_REPOSITORY, operation: request.operation, acquired: true, lease });
+      return { repository: INCUS_REPOSITORY, operation: request.operation, acquired: true, lease };
     });
   }
   return transaction(database, () => {
@@ -1167,11 +1175,11 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         `DELETE FROM ${AdmissionTable} WHERE lock_id = ? AND fencing_token = ? AND owner_host = ? AND owner_pid = ? AND owner_started_at = ?`,
       )
       .run(request.lockId, request.fencingToken, request.owner.host, request.owner.pid, request.owner.startedAt);
-    return Object.freeze({
+    return {
       repository: INCUS_REPOSITORY,
       operation: request.operation,
       released: receipt.changes === 1,
-    });
+    };
   });
 }
 
@@ -1469,7 +1477,7 @@ export function isIncusRepositoryResult(value: unknown): value is IncusRepositor
 export interface IncusRepository {
   readonly ownerId: string;
   readonly saveGcPlan: (plan: GcPlan) => Promise<void>;
-  readonly getGcPlan: (planId: string) => Promise<StoredGcPlan | null>;
+  readonly getGcPlan: (planId: string) => Promise<StoredGcPlan | undefined>;
   readonly appendGcOutcome: (planId: string, item: GcItemOutcome) => Promise<void>;
   readonly finishGcPlan: (planId: string, envelope: string) => Promise<void>;
   readonly claimGcArtifact: (
@@ -1538,7 +1546,8 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
         digest: gcDigest(plan),
       });
     },
-    getGcPlan: async (planId) => (await call({ repository: INCUS_REPOSITORY, operation: "gc.get", planId })).stored,
+    getGcPlan: async (planId) =>
+      (await call({ repository: INCUS_REPOSITORY, operation: "gc.get", planId })).stored ?? undefined,
     appendGcOutcome: async (planId, item) => {
       await call({ repository: INCUS_REPOSITORY, operation: "gc.append", planId, payload: JSON.stringify(item) });
     },
@@ -1588,10 +1597,10 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
         artifactId: intent.artifactId,
         generation: intent.generation,
       });
-      return Object.freeze({
+      return {
         intent: result.intent,
         ...(result.previous === null ? {} : { previous: result.previous }),
-      });
+      };
     },
     getArtifactHead: async (replacementScopeDigest: string) =>
       (await call({ repository: INCUS_REPOSITORY, operation: "artifact.head.get", replacementScopeDigest })).intent ??
@@ -1639,7 +1648,7 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
         acquiredAt: new Date().toISOString(),
         ...(expected === undefined ? {} : { expected }),
       });
-      return Object.freeze({ acquired: result.acquired, lease: result.lease });
+      return { acquired: result.acquired, lease: result.lease };
     },
     releaseAdmission: async (lease: IncusAdmissionLease) =>
       (
@@ -1652,12 +1661,12 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
         })
       ).released,
   };
-  return Object.freeze(facade);
+  return facade;
 }
 
 function legacyDirs(env: NodeJS.ProcessEnv): readonly string[] {
   const state = env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
-  return Object.freeze([join(state, "niceeval", "sandbox-allocations"), join(state, "niceeval", "incus-artifacts")]);
+  return [join(state, "niceeval", "sandbox-allocations"), join(state, "niceeval", "incus-artifacts")];
 }
 
 async function assertNoLegacyIncusLedger(env: NodeJS.ProcessEnv): Promise<void> {

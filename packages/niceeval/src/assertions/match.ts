@@ -11,6 +11,7 @@ import { isQuantity, type Quantity, type Unit, formatNumericUnit } from "./quant
 
 import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
 import * as Effect from "effect/Effect";
+import { isObject as isRecord } from "../shared/objects.ts";
 
 import type { CommandProjection, LogicalToolOccurrence } from "../o11y/types.ts";
 import { matchesJson } from "../shared/json-match.ts";
@@ -31,27 +32,30 @@ export interface MatchDiagnostic {
   readonly message: string;
   /** 相对当前 matcher 的路径；组合节点的 child index 也由 children 明确给出。 */
   readonly path: readonly MatchPathSegment[];
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
-  readonly locator?:
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
+  readonly locator:
     | { readonly kind: "json-pointer"; readonly pointer: string }
-    | { readonly kind: "tool-occurrence"; readonly id: string };
-  readonly children?: readonly MatchDiagnosticChild[];
+    | { readonly kind: "tool-occurrence"; readonly id: string }
+    | undefined;
+  readonly children: readonly MatchDiagnosticChild[] | undefined;
   /** Collection matchers retain only a bounded, representative candidate set. */
-  readonly truncation?: {
-    readonly code: "diagnostic-truncated";
-    readonly reason: "sampled";
-    readonly captured: number;
-    readonly knownTotal: number;
-  };
+  readonly truncation:
+    | {
+        readonly code: "diagnostic-truncated";
+        readonly reason: "sampled";
+        readonly captured: number;
+        readonly knownTotal: number;
+      }
+    | undefined;
 }
 
 export interface MatchDiagnosticChild {
   readonly index: number;
-  readonly label?: string;
+  readonly label: string | undefined;
   readonly state: MatchEvaluationState;
-  readonly diagnostic?: MatchDiagnostic;
+  readonly diagnostic: MatchDiagnostic | undefined;
 }
 
 export type MatchEvaluationState = "matched" | "mismatched" | "unavailable";
@@ -73,19 +77,19 @@ export type BooleanMatchEvaluation<R> =
       readonly state: "matched";
       /** 永远是传入 candidate 本身，只是在类型层收窄。 */
       readonly value: R;
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: CollectionEvaluationReceipt;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: CollectionEvaluationReceipt | undefined;
     }
   | {
       readonly state: "mismatched";
       readonly diagnostic: MatchDiagnostic;
-      readonly receipt?: CollectionEvaluationReceipt;
+      readonly receipt: CollectionEvaluationReceipt | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: string;
       readonly diagnostic: MatchDiagnostic;
-      readonly receipt?: CollectionEvaluationReceipt;
+      readonly receipt: CollectionEvaluationReceipt | undefined;
     };
 
 // 这些 symbol 不导出。外部作者无法构造看似可消费的 Match；输入 variance 与 refinement
@@ -104,22 +108,25 @@ const numericComparisons = new WeakMap<object, NumericComparison>();
 export const NUMERIC_COMPARATORS = ["less-than", "at-most", "greater-than", "at-least", "between"] as const;
 export type NumericComparator = (typeof NUMERIC_COMPARATORS)[number];
 
-export interface NumericComparison {
-  readonly comparator: NumericComparator;
+export type NumericComparison = {
   readonly threshold: number;
-  readonly upperThreshold?: number;
-  readonly unit?: Unit;
-}
+  readonly unit: Unit | undefined;
+} & (
+  | { readonly comparator: "between"; readonly upperThreshold: number }
+  | { readonly comparator: Exclude<NumericComparator, "between"> }
+);
 
 /** Carries an exact number, a known lower bound or an unavailable reason; a lower bound must not be treated as an exact count. */
 export type NumericMaterial<U extends Unit | undefined = undefined> = {
-  readonly unit?: U;
-  readonly provenance?: {
-    readonly source: string;
-    readonly scope: string;
-    readonly unit: string;
-    readonly cut: string;
-  };
+  readonly unit: U | undefined;
+  readonly provenance:
+    | {
+        readonly source: string;
+        readonly scope: string;
+        readonly unit: string;
+        readonly cut: string;
+      }
+    | undefined;
 } & (
   | {
       readonly state: "exact";
@@ -175,14 +182,14 @@ export type ScoreMatchResult =
   | {
       readonly state: "measured";
       readonly measurement: number;
-      readonly rationale?: string;
-      readonly citations?: readonly string[];
+      readonly rationale?: string | undefined;
+      readonly citations?: readonly string[] | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: string;
-      readonly rationale?: string;
-      readonly citations?: readonly string[];
+      readonly rationale?: string | undefined;
+      readonly citations?: readonly string[] | undefined;
     }
   | { readonly state: "errored"; readonly code: string; readonly message: string };
 /** Provides managed LLM scoring, classification and extraction within one assertion; calls share its budgets, cancellation and audit. */
@@ -196,7 +203,7 @@ export interface ScoreMatchContext {
     classify(input: {
       readonly rubric: string;
       readonly choices: readonly string[];
-      readonly evidenceIds?: readonly string[];
+      readonly evidenceIds?: readonly string[] | undefined;
       readonly material: JudgeMaterial;
     }): Effect.Effect<
       { readonly choice: string; readonly rationale: string; readonly citations?: readonly string[] },
@@ -227,8 +234,8 @@ export interface ManagedScoreMatchOptions<T, E = ScoreMatchLlmFailure> {
   readonly version: string;
   readonly config: JsonValue;
   readonly llm: {
-    readonly maxCalls?: number;
-    readonly maxMaterialBytes?: number;
+    readonly maxCalls?: number | undefined;
+    readonly maxMaterialBytes?: number | undefined;
   };
   readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
 }
@@ -241,7 +248,7 @@ export interface ManagedScoreMatchDefinition<T = unknown, E = unknown> {
   readonly canonicalConfig: string;
   readonly llm: {
     readonly maxCalls: number;
-    readonly maxMaterialBytes?: number;
+    readonly maxMaterialBytes: number | undefined;
   };
   readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
 }
@@ -300,7 +307,7 @@ export type EventOccurrenceView =
   | {
       readonly type: "operation.finished";
       readonly tool: { readonly name: string };
-      readonly status: "completed" | "failed" | "rejected";
+      readonly status: "completed" | "failed" | "rejected" | "cancelled";
     };
 
 export type AssertionEvent =
@@ -322,7 +329,7 @@ export type AssertionEvent =
       readonly position: AssertionEventPosition;
       readonly type: "operation.finished";
       readonly tool: AssertionToolReference;
-      readonly status: "completed" | "failed" | "rejected";
+      readonly status: "completed" | "failed" | "rejected" | "cancelled";
     };
 
 export type MatchableEvent = AssertionEvent;
@@ -355,45 +362,67 @@ interface InternalMatch {
   readonly name: string;
   readonly kind: "boolean" | "score";
   readonly [matchEvaluatorBrand]: (candidate: unknown) => Promise<unknown>;
+  /** Key-enumeration boundary: the private witness capability is observed by presence. */
   readonly [positiveWitnessBrand]?: true;
 }
 
 interface CreateBooleanMatchOptions {
-  readonly positiveWitness?: true;
+  readonly positiveWitness: boolean;
 }
 
-function isRecord(value: unknown): value is globalThis.Record<PropertyKey, unknown> {
-  return value !== null && typeof value === "object";
+function diagnostic(code: string, message: string): MatchDiagnostic {
+  return createMatchDiagnostic(code, message);
 }
 
-function diagnostic(
+/** Normalize independently retained diagnostic facts at their construction boundary. */
+export function createMatchDiagnostic(
   code: string,
   message: string,
-  options: Omit<MatchDiagnostic, "code" | "message" | "path"> & { readonly path?: readonly MatchPathSegment[] } = {},
+  path: readonly MatchPathSegment[] = [],
+  expected?: string,
+  received?: string,
+  reason?: string,
+  locator?: MatchDiagnostic["locator"],
+  children?: readonly MatchDiagnosticChild[],
+  truncation?: MatchDiagnostic["truncation"],
 ): MatchDiagnostic {
-  return Object.freeze({
+  return {
     code,
     message,
-    path: Object.freeze([...(options.path ?? [])]),
-    ...(options.expected === undefined ? {} : { expected: options.expected }),
-    ...(options.received === undefined ? {} : { received: options.received }),
-    ...(options.reason === undefined ? {} : { reason: options.reason }),
-    ...(options.locator === undefined ? {} : { locator: options.locator }),
-    ...(options.children === undefined ? {} : { children: Object.freeze([...options.children]) }),
-    ...(options.truncation === undefined ? {} : { truncation: Object.freeze({ ...options.truncation }) }),
-  });
+    path,
+    expected,
+    received,
+    reason,
+    locator,
+    children,
+    truncation,
+  };
 }
 
 function matched<R>(value: R, detail?: MatchDiagnostic): BooleanMatchEvaluation<R> {
-  return Object.freeze({ state: "matched" as const, value, ...(detail === undefined ? {} : { diagnostic: detail }) });
+  return {
+    state: "matched" as const,
+    value,
+    diagnostic: detail,
+    receipt: undefined,
+  };
 }
 
 function mismatched<R = never>(detail: MatchDiagnostic): BooleanMatchEvaluation<R> {
-  return Object.freeze({ state: "mismatched" as const, diagnostic: detail });
+  return {
+    state: "mismatched" as const,
+    diagnostic: detail,
+    receipt: undefined,
+  };
 }
 
 function unavailable<R = never>(reason: string, detail: MatchDiagnostic): BooleanMatchEvaluation<R> {
-  return Object.freeze({ state: "unavailable" as const, reason, diagnostic: detail });
+  return {
+    state: "unavailable" as const,
+    reason,
+    diagnostic: detail,
+    receipt: undefined,
+  };
 }
 
 function assertDiagnostic(value: unknown, label: string): asserts value is MatchDiagnostic {
@@ -497,7 +526,7 @@ function createBooleanMatch<T, R extends T, D extends MatchDomain>(
   domain: D,
   name: string,
   evaluate: (candidate: T) => BooleanMatchEvaluation<R> | Promise<BooleanMatchEvaluation<R>>,
-  options: CreateBooleanMatchOptions = {},
+  options: CreateBooleanMatchOptions = { positiveWitness: false },
 ): BooleanMatchForDomain<T, R, D> {
   let match: BooleanMatchForDomain<T, R, D>;
   const result = {
@@ -534,11 +563,14 @@ function numericDiagnostic(
   code: string,
   message: string,
 ): MatchDiagnostic {
-  return diagnostic(code, message, {
-    expected: `${comparison.comparator} ${formatNumericUnit(comparison.threshold, comparison.unit)}${comparison.upperThreshold === undefined ? "" : ` … ${formatNumericUnit(comparison.upperThreshold, comparison.unit)}`}`,
-    received: material.state === "unavailable" ? material.reason : formatNumericUnit(material.value, material.unit),
-    ...(material.state === "unavailable" ? { reason: material.reason } : {}),
-  });
+  return createMatchDiagnostic(
+    code,
+    message,
+    [],
+    `${comparison.comparator} ${formatNumericUnit(comparison.threshold, comparison.unit)}${comparison.comparator === "between" ? ` … ${formatNumericUnit(comparison.upperThreshold, comparison.unit)}` : ""}`,
+    material.state === "unavailable" ? material.reason : formatNumericUnit(material.value, material.unit),
+    material.state === "unavailable" ? material.reason : undefined,
+  );
 }
 
 function compareExact(value: number, comparison: NumericComparison): boolean {
@@ -552,7 +584,7 @@ function compareExact(value: number, comparison: NumericComparison): boolean {
     case "at-least":
       return value >= comparison.threshold;
     case "between":
-      return value >= comparison.threshold && value <= comparison.upperThreshold!;
+      return value >= comparison.threshold && value <= comparison.upperThreshold;
   }
 }
 
@@ -582,10 +614,12 @@ export function evaluateNumericComparison(
     );
   }
   if (!Number.isFinite(material.value)) {
-    const unavailableMaterial = Object.freeze({
+    const unavailableMaterial = {
       state: "unavailable" as const,
       reason: "non-finite-number",
-    });
+      unit: undefined,
+      provenance: undefined,
+    };
     return unavailable(
       unavailableMaterial.reason,
       numericDiagnostic(comparison, unavailableMaterial, "numeric-value-non-finite", "the numeric value is not finite"),
@@ -599,26 +633,28 @@ export function evaluateNumericComparison(
         );
   }
 
-  const decided =
-    comparison.comparator === "between"
-      ? material.value > comparison.upperThreshold!
-        ? "mismatched"
-        : undefined
-      : comparison.comparator === "at-most"
-        ? material.value > comparison.threshold
-          ? "mismatched"
-          : undefined
-        : comparison.comparator === "less-than"
-          ? material.value >= comparison.threshold
-            ? "mismatched"
-            : undefined
-          : comparison.comparator === "at-least"
-            ? material.value >= comparison.threshold
-              ? "matched"
-              : undefined
-            : material.value > comparison.threshold
-              ? "matched"
-              : undefined;
+  function lowerBoundDecision(value: number): "matched" | "mismatched" | undefined {
+    switch (comparison.comparator) {
+      case "between":
+        if (value > comparison.upperThreshold) return "mismatched";
+        return undefined;
+      case "at-most":
+        if (value > comparison.threshold) return "mismatched";
+        return undefined;
+      case "less-than":
+        if (value >= comparison.threshold) return "mismatched";
+        return undefined;
+      case "at-least":
+        if (value >= comparison.threshold) return "matched";
+        return undefined;
+      case "greater-than":
+        if (value > comparison.threshold) return "matched";
+        return undefined;
+    }
+    const exhaustive: never = comparison;
+    return exhaustive;
+  }
+  const decided = lowerBoundDecision(material.value);
   if (decided === "matched") return matched(material.value);
   if (decided === "mismatched") {
     return mismatched(
@@ -652,31 +688,44 @@ function numericMatch<U extends Unit | undefined>(
     throw new TypeError(`${comparator} threshold must be a finite number`);
   }
   const upperThreshold = isQuantity(upper) ? upper.value : upper;
+  let comparison: NumericComparison;
   if (comparator === "between") {
     if ((isQuantity(upper) ? upper.unit : undefined) !== unit)
       throw new TypeError("between() bounds must have the same unit.");
     if (typeof upperThreshold !== "number" || !Number.isFinite(upperThreshold) || upperThreshold < threshold) {
       throw new RangeError("between() requires finite, ordered inclusive bounds.");
     }
+    comparison = { comparator, threshold, upperThreshold, unit };
+  } else {
+    comparison = { comparator, threshold, unit };
   }
-  const comparison = Object.freeze({
-    comparator,
-    threshold,
-    ...(upperThreshold === undefined ? {} : { upperThreshold }),
-    ...(unit === undefined ? {} : { unit }),
-  });
   const match = createBooleanMatch<number | Quantity, number | Quantity, "value">(
     "value",
     `${comparator}(${formatNumericUnit(threshold, unit)}${upperThreshold === undefined ? "" : `, ${formatNumericUnit(upperThreshold, unit)}`})`,
     (candidate) => {
-      const result = evaluateNumericComparison(
-        isQuantity(candidate)
-          ? Object.freeze({ state: "exact" as const, value: candidate.value, unit: candidate.unit })
-          : typeof candidate === "number" && Number.isFinite(candidate)
-            ? Object.freeze({ state: "exact" as const, value: candidate })
-            : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" }),
-        comparison,
-      );
+      function candidateMaterial(): NumericMaterial<Unit | undefined> {
+        if (isQuantity(candidate))
+          return {
+            state: "exact" as const,
+            value: candidate.value,
+            unit: candidate.unit,
+            provenance: undefined,
+          };
+        if (typeof candidate === "number" && Number.isFinite(candidate))
+          return {
+            state: "exact",
+            value: candidate,
+            unit: undefined,
+            provenance: undefined,
+          };
+        return {
+          state: "unavailable" as const,
+          reason: "non-finite-number",
+          unit: undefined,
+          provenance: undefined,
+        };
+      }
+      const result = evaluateNumericComparison(candidateMaterial(), comparison);
       return result.state === "matched" ? matched(candidate) : result;
     },
   ) as unknown as NumericComparisonMatch<U>;
@@ -750,36 +799,16 @@ function freezeEventPosition(turnOrdinal: number, eventOrdinal: number): Asserti
   return Object.freeze({ turnOrdinal, eventOrdinal }) as AssertionEventPosition;
 }
 
-function assertionEventId(
-  session: string,
-  turn: string,
-  turnOrdinal: number,
-  eventOrdinal: number,
-): AssertionEventIdentity {
-  return JSON.stringify([
-    "niceeval.assertion-event/1",
-    session,
-    turn,
-    turnOrdinal,
-    eventOrdinal,
-  ]) as AssertionEventIdentity;
-}
-
 /** @internal Project a raw message into the closed assertion-event surface. */
 export function makeAssertionMessageEvent(input: {
-  readonly eventId?: string;
-  readonly session: string;
-  readonly turn: string;
+  readonly eventId: string;
   readonly turnOrdinal: number;
   readonly eventOrdinal: number;
   readonly role: "assistant" | "user";
   readonly text: string;
 }): Extract<AssertionEvent, { readonly type: "message" }> {
   return Object.freeze({
-    id:
-      input.eventId === undefined
-        ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
-        : (input.eventId as AssertionEventIdentity),
+    id: input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     type: "message" as const,
     role: input.role,
@@ -788,25 +817,23 @@ export function makeAssertionMessageEvent(input: {
 }
 
 /** @internal Project a correlated tool lifecycle row without exposing raw adapter fields. */
-export function makeAssertionToolEvent(input: {
-  readonly eventId?: string;
-  readonly toolOccurrenceId?: string;
-  readonly session: string;
-  readonly turn: string;
-  readonly turnOrdinal: number;
-  readonly eventOrdinal: number;
-  readonly type: "operation.started" | "operation.finished";
-  readonly occurrence: LogicalToolOccurrence;
-  readonly status?: "completed" | "failed" | "rejected";
-}): Extract<AssertionEvent, { readonly type: "operation.started" | "operation.finished" }> {
+export function makeAssertionToolEvent(
+  input: {
+    readonly eventId: string;
+    readonly toolOccurrenceId: string;
+    readonly turnOrdinal: number;
+    readonly eventOrdinal: number;
+    readonly occurrence: LogicalToolOccurrence;
+  } & (
+    | { readonly type: "operation.started" }
+    | { readonly type: "operation.finished"; readonly status: "completed" | "failed" | "rejected" | "cancelled" }
+  ),
+): Extract<AssertionEvent, { readonly type: "operation.started" | "operation.finished" }> {
   const base = {
-    id:
-      input.eventId === undefined
-        ? assertionEventId(input.session, input.turn, input.turnOrdinal, input.eventOrdinal)
-        : (input.eventId as AssertionEventIdentity),
+    id: input.eventId as AssertionEventIdentity,
     position: freezeEventPosition(input.turnOrdinal, input.eventOrdinal),
     tool: Object.freeze({
-      id: (input.toolOccurrenceId ?? input.occurrence.id) as ToolOccurrenceIdentity,
+      id: input.toolOccurrenceId as ToolOccurrenceIdentity,
       name: input.occurrence.name.canonical ?? input.occurrence.name.original,
     }),
   };
@@ -816,11 +843,7 @@ export function makeAssertionToolEvent(input: {
       : Object.freeze({
           ...base,
           type: "operation.finished" as const,
-          status:
-            input.status ??
-            (() => {
-              throw new TypeError("operation.finished assertion event requires status");
-            })(),
+          status: input.status,
         });
   assertionEventOccurrences.set(event, input.occurrence);
   return event;
@@ -892,12 +915,12 @@ function jsonPreview(value: JsonValue): string {
 }
 
 function resultChild(result: BooleanMatchEvaluation<unknown>, index: number, label?: string): MatchDiagnosticChild {
-  return Object.freeze({
+  return {
     index,
-    ...(label === undefined ? {} : { label }),
+    label,
     state: result.state,
-    ...(result.diagnostic === undefined ? {} : { diagnostic: result.diagnostic }),
-  });
+    diagnostic: result.diagnostic,
+  };
 }
 
 function combineConjunction<T, R extends T>(
@@ -909,10 +932,16 @@ function combineConjunction<T, R extends T>(
   const mismatch = fields.find((field) => field.result.state === "mismatched");
   if (mismatch !== undefined) {
     return mismatched(
-      diagnostic("all-of-mismatch", `${name} had a definite mismatch`, {
-        expected: "all matcher fields matched",
+      createMatchDiagnostic(
+        "all-of-mismatch",
+        `${name} had a definite mismatch`,
+        [],
+        "all matcher fields matched",
+        undefined,
+        undefined,
+        undefined,
         children,
-      }),
+      ),
     );
   }
 
@@ -922,15 +951,32 @@ function combineConjunction<T, R extends T>(
       .reason;
     return unavailable(
       reason,
-      diagnostic("all-of-unavailable", `${name} could not be decided from available evidence`, {
-        expected: "all matcher fields matched",
+      createMatchDiagnostic(
+        "all-of-unavailable",
+        `${name} could not be decided from available evidence`,
+        [],
+        "all matcher fields matched",
+        undefined,
         reason,
+        undefined,
         children,
-      }),
+      ),
     );
   }
 
-  return matched(candidate as R, diagnostic("all-of-match", `${name} matched all fields`, { children }));
+  return matched(
+    candidate as R,
+    createMatchDiagnostic(
+      "all-of-match",
+      `${name} matched all fields`,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      children,
+    ),
+  );
 }
 
 async function evaluateFields(
@@ -1031,7 +1077,19 @@ export function or(
     );
     const children = fields.map((field, index) => resultChild(field.result, index, field.label));
     if (fields.some((field) => field.result.state === "matched")) {
-      return matched(candidate, diagnostic("any-of-match", `${name} matched at least one child`, { children }));
+      return matched(
+        candidate,
+        createMatchDiagnostic(
+          "any-of-match",
+          `${name} matched at least one child`,
+          [],
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          children,
+        ),
+      );
     }
 
     const missing = fields.find((field) => field.result.state === "unavailable");
@@ -1040,19 +1098,30 @@ export function or(
         .reason;
       return unavailable(
         reason,
-        diagnostic("any-of-unavailable", `${name} had no definite match and incomplete evidence`, {
-          expected: "at least one matcher matched",
+        createMatchDiagnostic(
+          "any-of-unavailable",
+          `${name} had no definite match and incomplete evidence`,
+          [],
+          "at least one matcher matched",
+          undefined,
           reason,
+          undefined,
           children,
-        }),
+        ),
       );
     }
 
     return mismatched(
-      diagnostic("any-of-mismatch", `${name} had no matching child`, {
-        expected: "at least one matcher matched",
+      createMatchDiagnostic(
+        "any-of-mismatch",
+        `${name} had no matching child`,
+        [],
+        "at least one matcher matched",
+        undefined,
+        undefined,
+        undefined,
         children,
-      }),
+      ),
     );
   });
 }
@@ -1064,34 +1133,52 @@ export function not<T, R extends T>(match: BooleanMatch<T, R, "value">): Boolean
     const result = await evaluateBooleanMatch(match, candidate);
     if (result.state === "matched") {
       return mismatched(
-        diagnostic("not-mismatch", `not(${match.name}) failed because its child matched`, {
-          expected: `not ${match.name}`,
-          children: [resultChild(result, 0, match.name)],
-        }),
+        createMatchDiagnostic(
+          "not-mismatch",
+          `not(${match.name}) failed because its child matched`,
+          [],
+          `not ${match.name}`,
+          undefined,
+          undefined,
+          undefined,
+          [resultChild(result, 0, match.name)],
+        ),
       );
     }
     if (result.state === "mismatched") {
       return matched(
         candidate,
-        diagnostic("not-match", `not(${match.name}) matched`, {
-          children: [resultChild(result, 0, match.name)],
-        }),
+        createMatchDiagnostic(
+          "not-match",
+          `not(${match.name}) matched`,
+          [],
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          [resultChild(result, 0, match.name)],
+        ),
       );
     }
     return unavailable(
       result.reason,
-      diagnostic("not-unavailable", `not(${match.name}) could not decide its child`, {
-        expected: `not ${match.name}`,
-        reason: result.reason,
-        children: [resultChild(result, 0, match.name)],
-      }),
+      createMatchDiagnostic(
+        "not-unavailable",
+        `not(${match.name}) could not decide its child`,
+        [],
+        `not ${match.name}`,
+        undefined,
+        result.reason,
+        undefined,
+        [resultChild(result, 0, match.name)],
+      ),
     );
   });
 }
 
 /** Controls text normalization before matching; comment stripping is opt-in and changes the text being compared. */
 export interface TextMatchOptions {
-  readonly stripComments?: boolean;
+  readonly stripComments?: boolean | undefined;
 }
 
 function normalizeTextOptions(value: unknown, label: string): Readonly<TextMatchOptions> {
@@ -1099,7 +1186,7 @@ function normalizeTextOptions(value: unknown, label: string): Readonly<TextMatch
   if (options.stripComments !== undefined && typeof options.stripComments !== "boolean") {
     throw new TypeError(`${label}.stripComments must be a boolean`);
   }
-  return Object.freeze(options as TextMatchOptions);
+  return options as TextMatchOptions;
 }
 
 function textCandidate(value: unknown, options: TextMatchOptions): string | undefined {
@@ -1120,17 +1207,17 @@ export function includes(text: string, options?: TextMatchOptions): BooleanMatch
     const candidate = textCandidate(value, normalizedOptions);
     if (candidate === undefined) {
       return mismatched(
-        diagnostic("text-candidate-type", `${name} only accepts string candidates`, { expected: "string" }),
+        createMatchDiagnostic("text-candidate-type", `${name} only accepts string candidates`, [], "string"),
       );
     }
     if (candidate.includes(text)) {
       return matched(
         value,
-        diagnostic("text-includes-match", `${name} found the literal text`, { expected: quoted(text) }),
+        createMatchDiagnostic("text-includes-match", `${name} found the literal text`, [], quoted(text)),
       );
     }
     return mismatched(
-      diagnostic("text-includes-mismatch", `${name} did not find the literal text`, { expected: quoted(text) }),
+      createMatchDiagnostic("text-includes-mismatch", `${name} did not find the literal text`, [], quoted(text)),
     );
   });
 }
@@ -1144,17 +1231,17 @@ export function excludes(text: string, options?: TextMatchOptions): BooleanMatch
     const candidate = textCandidate(value, normalizedOptions);
     if (candidate === undefined) {
       return mismatched(
-        diagnostic("text-candidate-type", `${name} only accepts string candidates`, { expected: "string" }),
+        createMatchDiagnostic("text-candidate-type", `${name} only accepts string candidates`, [], "string"),
       );
     }
     if (!candidate.includes(text)) {
       return matched(
         value,
-        diagnostic("text-excludes-match", `${name} did not find the literal text`, { expected: quoted(text) }),
+        createMatchDiagnostic("text-excludes-match", `${name} did not find the literal text`, [], quoted(text)),
       );
     }
     return mismatched(
-      diagnostic("text-excludes-mismatch", `${name} found excluded literal text`, { expected: quoted(text) }),
+      createMatchDiagnostic("text-excludes-mismatch", `${name} found excluded literal text`, [], quoted(text)),
     );
   });
 }
@@ -1168,7 +1255,7 @@ export function pattern(expression: RegExp, options?: TextMatchOptions): Boolean
     const candidate = textCandidate(value, normalizedOptions);
     if (candidate === undefined) {
       return mismatched(
-        diagnostic("text-candidate-type", `${name} only accepts string candidates`, { expected: "string" }),
+        createMatchDiagnostic("text-candidate-type", `${name} only accepts string candidates`, [], "string"),
       );
     }
 
@@ -1176,9 +1263,9 @@ export function pattern(expression: RegExp, options?: TextMatchOptions): Boolean
     const isolatedExpression = new RegExp(expression.source, expression.flags);
     isolatedExpression.lastIndex = 0;
     if (isolatedExpression.test(candidate)) {
-      return matched(value, diagnostic("pattern-match", `${name} matched`, { expected: expression.toString() }));
+      return matched(value, createMatchDiagnostic("pattern-match", `${name} matched`, [], expression.toString()));
     }
-    return mismatched(diagnostic("pattern-mismatch", `${name} did not match`, { expected: expression.toString() }));
+    return mismatched(createMatchDiagnostic("pattern-mismatch", `${name} did not match`, [], expression.toString()));
   });
 }
 
@@ -1217,18 +1304,18 @@ export function includesUrl(min = 1): BooleanMatch<string, string> {
   return createBooleanMatch("value", name, (value) => {
     if (typeof value !== "string") {
       return mismatched(
-        diagnostic("text-candidate-type", `${name} only accepts string candidates`, { expected: "string" }),
+        createMatchDiagnostic("text-candidate-type", `${name} only accepts string candidates`, [], "string"),
       );
     }
     const urls = new Set(value.match(/https?:\/\/[^\s<>()"'\x60]+/g) ?? []);
     if (urls.size >= min) {
       return matched(
         value,
-        diagnostic("url-count-match", `${name} found enough distinct URLs`, { expected: `>= ${min}` }),
+        createMatchDiagnostic("url-count-match", `${name} found enough distinct URLs`, [], `>= ${min}`),
       );
     }
     return mismatched(
-      diagnostic("url-count-mismatch", `${name} did not find enough distinct URLs`, { expected: `>= ${min}` }),
+      createMatchDiagnostic("url-count-mismatch", `${name} did not find enough distinct URLs`, [], `>= ${min}`),
     );
   });
 }
@@ -1239,18 +1326,18 @@ export function hasSections(min = 2): BooleanMatch<string, string> {
   return createBooleanMatch("value", name, (value) => {
     if (typeof value !== "string") {
       return mismatched(
-        diagnostic("text-candidate-type", `${name} only accepts string candidates`, { expected: "string" }),
+        createMatchDiagnostic("text-candidate-type", `${name} only accepts string candidates`, [], "string"),
       );
     }
     const count = (value.match(/^#{1,6}\s+\S/gm) ?? []).length;
     if (count >= min) {
       return matched(
         value,
-        diagnostic("heading-count-match", `${name} found enough headings`, { expected: `>= ${min}` }),
+        createMatchDiagnostic("heading-count-match", `${name} found enough headings`, [], `>= ${min}`),
       );
     }
     return mismatched(
-      diagnostic("heading-count-mismatch", `${name} did not find enough headings`, { expected: `>= ${min}` }),
+      createMatchDiagnostic("heading-count-mismatch", `${name} did not find enough headings`, [], `>= ${min}`),
     );
   });
 }
@@ -1269,10 +1356,10 @@ export function isDefined<T = unknown>(label?: string): BooleanMatch<T, Exclude<
     if (value !== null && value !== undefined) {
       return matched(
         value as Exclude<T, null | undefined>,
-        diagnostic("defined-match", `${name} matched`, { expected: "defined" }),
+        createMatchDiagnostic("defined-match", `${name} matched`, [], "defined"),
       );
     }
-    return mismatched(diagnostic("defined-mismatch", `${name} did not match`, { expected: "defined" }));
+    return mismatched(createMatchDiagnostic("defined-mismatch", `${name} did not match`, [], "defined"));
   });
 }
 
@@ -1281,8 +1368,8 @@ export function isTrue<T = unknown>(label?: string): BooleanMatch<T, T & true> {
   const name = optionalLabel(label, "isTrue");
   return createBooleanMatch("value", name, (value) => {
     if (value === true)
-      return matched(value as T & true, diagnostic("true-match", `${name} matched`, { expected: "true" }));
-    return mismatched(diagnostic("true-mismatch", `${name} did not match`, { expected: "true" }));
+      return matched(value as T & true, createMatchDiagnostic("true-match", `${name} matched`, [], "true"));
+    return mismatched(createMatchDiagnostic("true-mismatch", `${name} did not match`, [], "true"));
   });
 }
 
@@ -1291,8 +1378,8 @@ export function isFalse<T = unknown>(label?: string): BooleanMatch<T, T & false>
   const name = optionalLabel(label, "isFalse");
   return createBooleanMatch("value", name, (value) => {
     if (value === false)
-      return matched(value as T & false, diagnostic("false-match", `${name} matched`, { expected: "false" }));
-    return mismatched(diagnostic("false-mismatch", `${name} did not match`, { expected: "false" }));
+      return matched(value as T & false, createMatchDiagnostic("false-match", `${name} matched`, [], "false"));
+    return mismatched(createMatchDiagnostic("false-mismatch", `${name} did not match`, [], "false"));
   });
 }
 
@@ -1303,10 +1390,10 @@ export function commandSucceeded<T = unknown>(): BooleanMatch<T, T & { readonly 
     if (value !== null && typeof value === "object" && (value as { readonly exitCode?: unknown }).exitCode === 0) {
       return matched(
         value as T & { readonly exitCode: 0 },
-        diagnostic("command-succeeded", `${name} matched`, { expected: "exit 0" }),
+        createMatchDiagnostic("command-succeeded", `${name} matched`, [], "exit 0"),
       );
     }
-    return mismatched(diagnostic("command-failed", `${name} did not match`, { expected: "exit 0" }));
+    return mismatched(createMatchDiagnostic("command-failed", `${name} did not match`, [], "exit 0"));
   });
 }
 
@@ -1400,17 +1487,24 @@ export function matches<S extends StandardSchema>(
         throw new TypeError(`${name} schema returned an invalid issue`);
       }
       const path = standardIssuePath(issue.path, name);
-      return Object.freeze({
+      return {
         index,
         state: "mismatched" as const,
-        diagnostic: diagnostic("schema-issue", issue.message, { path }),
-      });
+        label: undefined,
+        diagnostic: createMatchDiagnostic("schema-issue", issue.message, path),
+      };
     });
     return mismatched(
-      diagnostic("schema-mismatch", `${name} rejected the candidate`, {
-        expected: "Standard Schema validation success",
+      createMatchDiagnostic(
+        "schema-mismatch",
+        `${name} rejected the candidate`,
+        [],
+        "Standard Schema validation success",
+        undefined,
+        undefined,
+        undefined,
         children,
-      }),
+      ),
     );
   });
 }
@@ -1528,14 +1622,14 @@ export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(
     if (!Object.hasOwn(input, "config")) throw new TypeError("defineScoreMatch() managed spec requires config");
     const config = snapshotScoreMatchJson(input.config, "defineScoreMatch() spec.config");
     const llm = exactLlmOptions(input.llm);
-    const definition: ManagedScoreMatchDefinition<unknown, unknown> = Object.freeze({
+    const definition: ManagedScoreMatchDefinition<unknown, unknown> = {
       name: input.name,
       version: input.version,
       config,
       canonicalConfig: canonicalScoreMatchJson(config),
       llm,
       score: input.score as ManagedScoreMatchDefinition<unknown, unknown>["score"],
-    });
+    };
     managedScoreMatches.set(match, definition);
   }
   return match;
@@ -1565,7 +1659,7 @@ function exactScoreMatchOptions(value: unknown): Readonly<Record<string, unknown
   ) {
     throw new TypeError("defineScoreMatch() managed spec requires version, config, and llm");
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function boundedPositiveInteger(value: unknown, fallback: number, maximum: number, label: string): number {
@@ -1589,19 +1683,18 @@ export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["ll
       throw new TypeError(`defineScoreMatch() spec.llm.${key} must be an enumerable data property`);
     output[key] = descriptor.value;
   }
-  return Object.freeze({
+  return {
     maxCalls: boundedPositiveInteger(output.maxCalls, 4, 16, "defineScoreMatch() spec.llm.maxCalls"),
-    ...(output.maxMaterialBytes === undefined
-      ? {}
-      : {
-          maxMaterialBytes: boundedPositiveInteger(
+    maxMaterialBytes:
+      output.maxMaterialBytes === undefined
+        ? undefined
+        : boundedPositiveInteger(
             output.maxMaterialBytes,
             1,
             4 * 1024 * 1024,
             "defineScoreMatch() spec.llm.maxMaterialBytes",
           ),
-        }),
-  });
+  };
 }
 
 function snapshotScoreMatchJson(
@@ -1656,7 +1749,13 @@ function snapshotScoreMatchJson(
       entries.push([key, snapshotScoreMatchJson(descriptor.value, `${label}.${key}`, state, ancestors, depth + 1)]);
     }
     return Object.freeze(
-      Object.fromEntries(entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
+      Object.fromEntries(
+        entries.sort(function compareKeys([left], [right]) {
+          if (left < right) return -1;
+          if (left > right) return 1;
+          return 0;
+        }),
+      ),
     ) as JsonValue;
   } finally {
     ancestors.delete(value);
@@ -1691,7 +1790,7 @@ function normalizeReferencePath(value: unknown, label: string): readonly string[
     );
   const components = value.split(/[\\/]+/u).filter((component) => component.length > 0 && component !== ".");
   if (components.length === 0) throw new TypeError(`${label} normalizes to an empty path`);
-  return Object.freeze(components);
+  return components;
 }
 
 function pathPattern(components: readonly string[], ignoreCase = false): RegExp {
@@ -1727,9 +1826,9 @@ function normalizeReferencePatterns(
     }
     seen.add(identity);
     seenComponents.push(components);
-    return Object.freeze({ original: path, components, matcher: pathPattern(components, ignoreCase) });
+    return { original: path, components, matcher: pathPattern(components, ignoreCase) };
   });
-  return Object.freeze(patterns);
+  return patterns;
 }
 
 interface PathWitness {
@@ -1839,16 +1938,24 @@ export function referencesAnyPath(
       if (witness !== undefined) {
         return matched(
           candidate,
-          diagnostic("path-reference-match", `${name} found a referenced path`, {
-            expected: witness.pattern.components.join("/"),
-            locator: { kind: "json-pointer", pointer: witness.pointer },
-          }),
+          createMatchDiagnostic(
+            "path-reference-match",
+            `${name} found a referenced path`,
+            [],
+            witness.pattern.components.join("/"),
+            undefined,
+            undefined,
+            { kind: "json-pointer", pointer: witness.pointer },
+          ),
         );
       }
       return mismatched(
-        diagnostic("path-reference-mismatch", `${name} found no referenced path`, {
-          expected: patterns.map((pattern) => pattern.components.join("/")).join(" | "),
-        }),
+        createMatchDiagnostic(
+          "path-reference-mismatch",
+          `${name} found no referenced path`,
+          [],
+          patterns.map((pattern) => pattern.components.join("/")).join(" | "),
+        ),
       );
     },
     { positiveWitness: true },
@@ -1860,16 +1967,16 @@ export type ToolStatus = Extract<LogicalToolOccurrence["lifecycle"], { readonly 
 
 /** Constrains parsed command tokens and lifecycle status; argsStart matches an argument prefix and excludes lists forbidden tokens. */
 export interface CommandMatchOptions {
-  readonly argsStart?: readonly string[];
-  readonly excludes?: readonly string[];
-  readonly status?: ToolStatus;
+  readonly argsStart?: readonly string[] | undefined;
+  readonly excludes?: readonly string[] | undefined;
+  readonly status?: ToolStatus | undefined;
 }
 
 /** Filters a tool's JSON input, output and lifecycle status; input and output filters must be Boolean value Matches. */
 export interface ToolMatchOptions {
-  readonly input?: BooleanMatch<JsonValue, JsonValue, "value">;
-  readonly output?: BooleanMatch<JsonValue, JsonValue, "value">;
-  readonly status?: ToolStatus;
+  readonly input?: BooleanMatch<JsonValue, JsonValue, "value"> | undefined;
+  readonly output?: BooleanMatch<JsonValue, JsonValue, "value"> | undefined;
+  readonly status?: ToolStatus | undefined;
 }
 
 /**
@@ -1885,10 +1992,13 @@ export function jsonMatch(expected: JsonMatch): BooleanMatch<JsonValue, JsonValu
       return matched(candidate, diagnostic("json-match", `${name} matched`));
     }
     return mismatched(
-      diagnostic("json-mismatch", `${name} did not match`, {
-        expected: "the supplied JsonMatch pattern",
-        received: "the candidate JSON value",
-      }),
+      createMatchDiagnostic(
+        "json-mismatch",
+        `${name} did not match`,
+        [],
+        "the supplied JsonMatch pattern",
+        "the candidate JSON value",
+      ),
     );
   });
 }
@@ -1907,7 +2017,7 @@ function normalizeJsonMatch(value: unknown, label: string, active = new WeakSet<
   active.add(value);
   try {
     if (Array.isArray(value)) {
-      return Object.freeze(value.map((item, index) => normalizeJsonMatch(item, `${label}[${index}]`, active)));
+      return value.map((item, index) => normalizeJsonMatch(item, `${label}[${index}]`, active));
     }
     if (!isPlainJsonObject(value)) throw new TypeError(`${label} must use a plain object`);
     const entries: [string, JsonMatch][] = [];
@@ -1918,7 +2028,7 @@ function normalizeJsonMatch(value: unknown, label: string, active = new WeakSet<
       }
       entries.push([key, normalizeJsonMatch(descriptor.value, `${label}.${key}`, active)]);
     }
-    return Object.freeze(Object.fromEntries(entries));
+    return Object.fromEntries(entries);
   } finally {
     active.delete(value);
   }
@@ -1939,7 +2049,7 @@ function normalizeTokens(value: unknown, label: string, unique: boolean): readon
   });
   if (unique && new Set(tokens).size !== tokens.length)
     throw new TypeError(`${label} must not contain duplicate tokens`);
-  return Object.freeze(tokens);
+  return tokens;
 }
 
 function lifecycleResult(
@@ -1956,38 +2066,55 @@ function lifecycleResult(
     }
     return unavailable(
       lifecycle.reason,
-      diagnostic("tool-lifecycle-unavailable", "tool lifecycle is not fully observed", {
-        ...(expected === undefined ? {} : { expected: expected }),
-        reason: lifecycle.reason,
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "tool-lifecycle-unavailable",
+        "tool lifecycle is not fully observed",
+        [],
+        expected,
+        undefined,
+        lifecycle.reason,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   if (expected === undefined) {
     return matched(
       occurrence,
-      diagnostic("lifecycle-unrestricted", "lifecycle is unrestricted", {
-        received: lifecycle.status,
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "lifecycle-unrestricted",
+        "lifecycle is unrestricted",
+        [],
+        undefined,
+        lifecycle.status,
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   if (lifecycle.status !== expected) {
     return mismatched(
-      diagnostic("tool-status-mismatch", "tool lifecycle status did not match", {
+      createMatchDiagnostic(
+        "tool-status-mismatch",
+        "tool lifecycle status did not match",
+        [],
         expected,
-        ...(typeof lifecycle.status === "string" ? { received: lifecycle.status } : {}),
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+        typeof lifecycle.status === "string" ? lifecycle.status : undefined,
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   return matched(
     occurrence,
-    diagnostic("tool-status-match", "tool lifecycle status matched", {
+    createMatchDiagnostic(
+      "tool-status-match",
+      "tool lifecycle status matched",
+      [],
       expected,
-      received: lifecycle.status,
-      locator: { kind: "tool-occurrence", id: occurrence.id },
-    }),
+      lifecycle.status,
+      undefined,
+      { kind: "tool-occurrence", id: occurrence.id },
+    ),
   );
 }
 
@@ -2004,20 +2131,28 @@ function occurrenceNameResult(occurrence: LogicalToolOccurrence, expected: strin
       : occurrence.name.canonical;
   if (observed !== expected) {
     return mismatched(
-      diagnostic("tool-name-mismatch", "tool name did not match", {
-        expected: quoted(expected),
-        received: quoted(observed),
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "tool-name-mismatch",
+        "tool name did not match",
+        [],
+        quoted(expected),
+        quoted(observed),
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   return matched(
     occurrence,
-    diagnostic("tool-name-match", "tool name matched exactly", {
-      expected: quoted(expected),
-      received: quoted(observed),
-      locator: { kind: "tool-occurrence", id: occurrence.id },
-    }),
+    createMatchDiagnostic(
+      "tool-name-match",
+      "tool name matched exactly",
+      [],
+      quoted(expected),
+      quoted(observed),
+      undefined,
+      { kind: "tool-occurrence", id: occurrence.id },
+    ),
   );
 }
 
@@ -2039,31 +2174,34 @@ async function toolEvidenceResult(
     }
     return unavailable(
       evidence.reason,
-      diagnostic(`tool-${field}-unavailable`, `tool ${field} is unavailable`, {
-        reason: evidence.reason,
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        `tool-${field}-unavailable`,
+        `tool ${field} is unavailable`,
+        [],
+        undefined,
+        undefined,
+        evidence.reason,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
 
   const result = await evaluateBooleanMatch(match, evidence.value);
   const base = result.diagnostic;
-  const observedResult = Object.freeze({
+  const observedResult = {
     ...result,
-    diagnostic: diagnostic(
+    diagnostic: createMatchDiagnostic(
       base?.code ?? `tool-${field}-${result.state}`,
       base?.message ?? `tool ${field} ${result.state}`,
-      {
-        ...(base?.path === undefined ? {} : { path: base?.path }),
-        expected: base?.expected ?? match.name,
-        received: jsonPreview(evidence.value),
-        ...(base?.reason === undefined ? {} : { reason: base?.reason }),
-        locator: base?.locator ?? { kind: "tool-occurrence", id: occurrence.id },
-        ...(base?.children === undefined ? {} : { children: base?.children }),
-        ...(base?.truncation === undefined ? {} : { truncation: base?.truncation }),
-      },
+      base?.path,
+      base?.expected ?? match.name,
+      jsonPreview(evidence.value),
+      base?.reason,
+      base?.locator ?? { kind: "tool-occurrence", id: occurrence.id },
+      base?.children,
+      base?.truncation,
     ),
-  }) as BooleanMatchEvaluation<unknown>;
+  } as BooleanMatchEvaluation<unknown>;
   if (evidence.state === "complete") return observedResult;
 
   // partial input can only produce a positive result when the matcher itself carries the narrowed witness
@@ -2074,11 +2212,15 @@ async function toolEvidenceResult(
 
   return unavailable(
     `tool-${field}-coverage-partial`,
-    diagnostic(`tool-${field}-coverage-partial`, `tool ${field} is partial without a decisive positive witness`, {
-      reason: `tool-${field}-coverage-partial`,
-      locator: { kind: "tool-occurrence", id: occurrence.id },
-      ...(Array.isArray(evidence.opaquePointers) ? { received: evidence.opaquePointers.join(",") } : {}),
-    }),
+    createMatchDiagnostic(
+      `tool-${field}-coverage-partial`,
+      `tool ${field} is partial without a decisive positive witness`,
+      [],
+      undefined,
+      Array.isArray(evidence.opaquePointers) ? evidence.opaquePointers.join(",") : undefined,
+      `tool-${field}-coverage-partial`,
+      { kind: "tool-occurrence", id: occurrence.id },
+    ),
   );
 }
 
@@ -2122,18 +2264,16 @@ export function toolMatch(nameOrOptions: string | ToolMatchOptions, options?: To
 
   const unconstrained =
     expectedName === undefined && input === undefined && output === undefined && status === undefined;
-  const name =
-    expectedName === undefined
-      ? unconstrained
-        ? "toolMatch({})"
-        : `toolMatch(${[
-            input === undefined ? undefined : `input=${input.name}`,
-            output === undefined ? undefined : `output=${output.name}`,
-            status === undefined ? undefined : `status=${status}`,
-          ]
-            .filter((part): part is string => part !== undefined)
-            .join(", ")})`
-      : `toolMatch(${quoted(expectedName)})`;
+  function toolMatchName(): string {
+    if (expectedName !== undefined) return `toolMatch(${quoted(expectedName)})`;
+    if (unconstrained) return "toolMatch({})";
+    const fields: string[] = [];
+    if (input !== undefined) fields.push(`input=${input.name}`);
+    if (output !== undefined) fields.push(`output=${output.name}`);
+    if (status !== undefined) fields.push(`status=${status}`);
+    return `toolMatch(${fields.join(", ")})`;
+  }
+  const name = toolMatchName();
   if (unconstrained) {
     return createBooleanMatch("tool", name, (occurrence) => matched(occurrence));
   }
@@ -2196,10 +2336,15 @@ function commandResult(
   if (projection === undefined) {
     return unavailable(
       "logical-command-unavailable",
-      diagnostic("logical-command-unavailable", "tool occurrence has no durable command projection", {
-        reason: "logical-command-unavailable",
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "logical-command-unavailable",
+        "tool occurrence has no durable command projection",
+        [],
+        undefined,
+        undefined,
+        "logical-command-unavailable",
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   if (!isRecord(projection) || (projection.kind !== "command" && projection.kind !== "not-command")) {
@@ -2207,10 +2352,15 @@ function commandResult(
   }
   if (projection.kind === "not-command") {
     return mismatched(
-      diagnostic("not-command", "tool occurrence is not a command", {
-        expected: quoted(executable),
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "not-command",
+        "tool occurrence is not a command",
+        [],
+        quoted(executable),
+        undefined,
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
 
@@ -2227,10 +2377,15 @@ function commandResult(
     }
     return unavailable(
       `logical-command-opaque:${logical.reason}`,
-      diagnostic("logical-command-opaque", "logical command is opaque", {
-        reason: logical.reason,
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "logical-command-opaque",
+        "logical command is opaque",
+        [],
+        undefined,
+        undefined,
+        logical.reason,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
 
@@ -2243,35 +2398,54 @@ function commandResult(
   }
   if (logical.executable !== executable) {
     return mismatched(
-      diagnostic("logical-executable-mismatch", "logical executable did not match exactly", {
-        expected: quoted(executable),
-        received: quoted(logical.executable),
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "logical-executable-mismatch",
+        "logical executable did not match exactly",
+        [],
+        quoted(executable),
+        quoted(logical.executable),
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   if (argsStart !== undefined && !argsStart.every((token, index) => logical.args[index] === token)) {
     return mismatched(
-      diagnostic("logical-args-prefix-mismatch", "logical argv did not start with the expected exact tokens", {
-        expected: argsStart.map(quoted).join(" "),
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "logical-args-prefix-mismatch",
+        "logical argv did not start with the expected exact tokens",
+        [],
+        argsStart.map(quoted).join(" "),
+        undefined,
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   if (excludes !== undefined && excludes.some((token) => logical.args.includes(token))) {
     return mismatched(
-      diagnostic("logical-args-excluded-token", "logical argv contained an excluded exact token", {
-        expected: `without ${excludes.map(quoted).join(", ")}`,
-        locator: { kind: "tool-occurrence", id: occurrence.id },
-      }),
+      createMatchDiagnostic(
+        "logical-args-excluded-token",
+        "logical argv contained an excluded exact token",
+        [],
+        `without ${excludes.map(quoted).join(", ")}`,
+        undefined,
+        undefined,
+        { kind: "tool-occurrence", id: occurrence.id },
+      ),
     );
   }
   return matched(
     occurrence,
-    diagnostic("logical-command-match", "logical command matched exact executable and token rules", {
-      expected: quoted(executable),
-      locator: { kind: "tool-occurrence", id: occurrence.id },
-    }),
+    createMatchDiagnostic(
+      "logical-command-match",
+      "logical command matched exact executable and token rules",
+      [],
+      quoted(executable),
+      undefined,
+      undefined,
+      { kind: "tool-occurrence", id: occurrence.id },
+    ),
   );
 }
 
@@ -2303,11 +2477,11 @@ export function commandMatch(executable: string, options?: CommandMatchOptions):
 /** Defines filters for supported message and operation events; message text filters are value Matches, while operation filters are tool Matches. */
 export interface EventOptionsByType {
   readonly message: {
-    readonly role?: "assistant" | "user";
-    readonly text?: BooleanMatch<string, string, "value">;
+    readonly role?: "assistant" | "user" | undefined;
+    readonly text?: BooleanMatch<string, string, "value"> | undefined;
   };
-  readonly "operation.started": { readonly tool?: ToolMatch };
-  readonly "operation.finished": { readonly tool?: ToolMatch };
+  readonly "operation.started": { readonly tool?: ToolMatch | undefined };
+  readonly "operation.finished": { readonly tool?: ToolMatch | undefined };
 }
 
 type MatchableEventType = keyof EventOptionsByType;
@@ -2329,12 +2503,9 @@ function messageEventResult(
             label: "role",
             evaluate: async () =>
               event.role === role
-                ? matched(event, diagnostic("message-role-match", "message role matched", { expected: role }))
+                ? matched(event, createMatchDiagnostic("message-role-match", "message role matched", [], role))
                 : mismatched(
-                    diagnostic("message-role-mismatch", "message role did not match", {
-                      expected: role,
-                      received: event.role,
-                    }),
+                    createMatchDiagnostic("message-role-mismatch", "message role did not match", [], role, event.role),
                   ),
           },
         ]),
@@ -2351,9 +2522,14 @@ async function toolEventResult(
   if (occurrence === undefined) {
     return unavailable(
       "event-tool-occurrence-unavailable",
-      diagnostic("event-tool-occurrence-unavailable", "operation event has no associated logical tool occurrence", {
-        reason: "event-tool-occurrence-unavailable",
-      }),
+      createMatchDiagnostic(
+        "event-tool-occurrence-unavailable",
+        "operation event has no associated logical tool occurrence",
+        [],
+        undefined,
+        undefined,
+        "event-tool-occurrence-unavailable",
+      ),
     );
   }
   return evaluateBooleanMatch(match, occurrence);
@@ -2377,7 +2553,7 @@ export function eventMatch<K extends keyof EventOptionsByType>(
     const name = "eventMatch(message)";
     return createBooleanMatch("event", name, async (event) => {
       if (event.type !== "message") {
-        return mismatched(diagnostic("event-type-mismatch", "event type did not match", { expected: "message" }));
+        return mismatched(createMatchDiagnostic("event-type-mismatch", "event type did not match", [], "message"));
       }
       return messageEventResult(
         event,
@@ -2393,7 +2569,7 @@ export function eventMatch<K extends keyof EventOptionsByType>(
   const name = `eventMatch(${type})`;
   return createBooleanMatch("event", name, async (event) => {
     if (event.type !== type) {
-      return mismatched(diagnostic("event-type-mismatch", "event type did not match", { expected: type }));
+      return mismatched(createMatchDiagnostic("event-type-mismatch", "event type did not match", [], type));
     }
     const fields = await evaluateFields([
       { label: "tool", evaluate: () => toolEventResult(event, tool as ToolMatch | undefined) },
@@ -2419,11 +2595,11 @@ export interface CollectionMatch<in T> {
   readonly [collectionInputBrand]: (candidate: T) => void;
 }
 
-/** Exposes captured tool name, input, output and status to readers; omitted fields mean evidence is missing rather than empty. */
+/** Enumerable snapshot boundary: missing tool evidence must remain absent from captured facts. */
 export interface ToolOccurrenceView {
   readonly name: string;
-  readonly input?: unknown;
-  readonly output?: unknown;
+  readonly input?: JsonValue;
+  readonly output?: JsonValue;
   readonly status?: "pending" | "completed" | "failed" | "rejected";
 }
 
@@ -2496,16 +2672,21 @@ function quantifiedOccurrenceMatch(
   kind: Exclude<ToolMatchQuantifier["kind"], "absent">,
   count: number,
 ): ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch {
-  const method =
-    kind === "at-least"
-      ? "atLeast"
-      : kind === "less-than"
-        ? "lessThan"
-        : kind === "at-most"
-          ? "atMost"
-          : kind === "greater-than"
-            ? "greaterThan"
-            : "exactly";
+  function quantifierMethod(): string {
+    switch (kind) {
+      case "at-least":
+        return "atLeast";
+      case "less-than":
+        return "lessThan";
+      case "at-most":
+        return "atMost";
+      case "greater-than":
+        return "greaterThan";
+      default:
+        return "exactly";
+    }
+  }
+  const method = quantifierMethod();
   const domain = internalMatchOf(
     item,
     `${item.domain === "event" ? "EventMatch" : "ToolMatch"}.${method}() item`,
@@ -2522,8 +2703,7 @@ function quantifiedOccurrenceMatch(
       kind: "occurrence",
       domain,
       item: match,
-      quantifier:
-        kind === "exact" && count === 0 ? Object.freeze({ kind: "absent" as const }) : Object.freeze({ kind, count }),
+      quantifier: kind === "exact" && count === 0 ? { kind: "absent" as const } : { kind, count },
     },
     `${domain}-${upperBound ? "upper-bound" : "positive"}`,
   ) as ToolOccurrenceMatch | ToolUpperBoundOccurrenceMatch | EventOccurrenceMatch | EventUpperBoundOccurrenceMatch;
@@ -2553,7 +2733,7 @@ export function inOrder(
       assertBooleanMatch(match, `inOrder() match ${index + 1}`, "value");
       return match as BooleanMatch<unknown, unknown>;
     });
-    return valueSequenceMatch(Object.freeze(steps));
+    return valueSequenceMatch(steps);
   }
   const domain = first.domain;
   const normalized = matches.map((match, index) =>
@@ -2565,7 +2745,7 @@ export function inOrder(
     {
       kind: "in-order",
       domain,
-      matches: Object.freeze(normalized),
+      matches: normalized,
     },
     `${domain}-sequence`,
   ) as ToolSequenceMatch | EventSequenceMatch;
@@ -2602,13 +2782,15 @@ function valueSequenceMatch(
           resultChild(
             {
               ...result,
-              diagnostic: diagnostic(
+              diagnostic: createMatchDiagnostic(
                 "composition-order-item",
                 `${name} evaluated original item ${index}, step ${step}`,
-                {
-                  path: ["items", index],
-                  children: [resultChild(result, step, steps[step].name)],
-                },
+                ["items", index],
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                [resultChild(result, step, steps[step].name)],
               ),
             },
             index,
@@ -2664,10 +2846,14 @@ function compositionUnknown(value: unknown): boolean {
 function compositionMissing(name: string, path: readonly MatchPathSegment[] = []): BooleanMatchEvaluation<never> {
   return unavailable(
     "unknown-composition-value",
-    diagnostic("composition-value-unavailable", `${name} requires a known, finite value`, {
+    createMatchDiagnostic(
+      "composition-value-unavailable",
+      `${name} requires a known, finite value`,
       path,
-      reason: "unknown-composition-value",
-    }),
+      undefined,
+      undefined,
+      "unknown-composition-value",
+    ),
   );
 }
 
@@ -2689,10 +2875,16 @@ function compositionResult<T>(
   children: readonly MatchDiagnosticChild[],
   result: BooleanMatchEvaluation<unknown>,
 ): BooleanMatchEvaluation<T> {
-  const detail = diagnostic(`composition-${result.state}`, `${name} ${result.state}`, {
+  const detail = createMatchDiagnostic(
+    `composition-${result.state}`,
+    `${name} ${result.state}`,
+    [],
+    undefined,
+    undefined,
+    result.state === "unavailable" ? result.reason : undefined,
+    undefined,
     children,
-    ...(result.state === "unavailable" ? { reason: result.reason } : {}),
-  });
+  );
   if (result.state === "unavailable") return unavailable(result.reason, detail);
   if (result.state === "mismatched") return mismatched(detail);
   return matched(subject, detail);
@@ -2702,9 +2894,19 @@ function compositionCollection<T>(
   subject: CollectionValue<T>,
   name: string,
 ):
-  | { readonly state: "complete"; readonly values: readonly T[]; readonly items?: readonly MaterialItem<T>[] }
+  | {
+      readonly state: "complete";
+      readonly values: readonly T[];
+      readonly items: readonly MaterialItem<T>[] | undefined;
+    }
   | Extract<BooleanMatchEvaluation<never>, { readonly state: "unavailable" }> {
-  if (Array.isArray(subject)) return { state: "complete", values: subject };
+  if (Array.isArray(subject)) {
+    return {
+      state: "complete",
+      values: subject,
+      items: undefined,
+    };
+  }
   if (!isRecord(subject) || !["complete", "partial", "unavailable"].includes(String(subject.state))) {
     throw new TypeError(`${name} subject must be an array or MaterialCollection`);
   }
@@ -2714,9 +2916,14 @@ function compositionCollection<T>(
     }
     return unavailable(
       subject.reason,
-      diagnostic("composition-collection-unavailable", `${name} requires a complete collection`, {
-        reason: subject.reason,
-      }),
+      createMatchDiagnostic(
+        "composition-collection-unavailable",
+        `${name} requires a complete collection`,
+        [],
+        undefined,
+        undefined,
+        subject.reason,
+      ),
     ) as Extract<BooleanMatchEvaluation<never>, { readonly state: "unavailable" }>;
   }
   if (!Array.isArray(subject.items)) throw new TypeError(`${name} material items must be an array`);
@@ -2744,10 +2951,16 @@ function compositionItemChild(
   return resultChild(
     {
       ...result,
-      diagnostic: diagnostic("composition-item", `${label} evaluated original item ${index}`, {
-        path: ["items", index],
-        children: [resultChild(result, 0, label)],
-      }),
+      diagnostic: createMatchDiagnostic(
+        "composition-item",
+        `${label} evaluated original item ${index}`,
+        ["items", index],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [resultChild(result, 0, label)],
+      ),
     },
     index,
     id === undefined ? label : id,
@@ -2759,18 +2972,14 @@ function compositionSubset<T>(
   indices: readonly number[],
   items?: readonly MaterialItem<unknown>[],
 ): CollectionValue<T> {
-  if (items === undefined) return Object.freeze([...values]);
-  return Object.freeze({
+  if (items === undefined) return values;
+  return {
     state: "complete",
-    items: Object.freeze(
-      values.map((value, index) =>
-        Object.freeze({
-          id: items[indices[index]].id,
-          value,
-        }),
-      ),
-    ),
-  });
+    items: values.map((value, index) => ({
+      id: items[indices[index]].id,
+      value,
+    })),
+  };
 }
 
 /** Project a single value without replacing the original subject's refinement. */

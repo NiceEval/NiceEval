@@ -138,6 +138,7 @@ export const snapshotLedgerRequest = Effect.fn("snapshotLedgerRequest")(function
       code: "user-database-invalid",
       repository: BEFORE_CACHE_SNAPSHOTS_REPOSITORY,
       message: "Before cache snapshot worker returned an invalid result",
+      cause: undefined,
     });
   return result.value;
 });

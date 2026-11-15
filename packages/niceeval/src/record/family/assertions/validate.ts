@@ -9,7 +9,8 @@ function startsAfterEnd(site: AssertionsAttachment["sourceSites"][number]): bool
 function encodedBytes(value: unknown): number | undefined {
   try {
     const encoded = JSON.stringify(value);
-    return encoded === undefined ? undefined : new TextEncoder().encode(encoded).byteLength;
+    if (encoded === undefined) return undefined;
+    return new TextEncoder().encode(encoded).byteLength;
   } catch {
     return undefined;
   }

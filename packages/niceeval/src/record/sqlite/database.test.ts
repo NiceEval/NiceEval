@@ -109,14 +109,26 @@ describe("ProjectDatabase source barriers", () => {
       seedLegacy("legacy-a", expected);
       seedLegacy("legacy-z", expected);
       expect(
-        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0),
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0, excludeRunId: undefined },
+          0,
+        ),
       ).toEqual({ runId: "legacy-z", createdRevision: 0 });
       seedLegacy("legacy-zz", Buffer.from("{"));
       expect(
-        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0 }, 0)?.runId,
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "legacy", evalId: "eval", attemptOrdinal: 0, excludeRunId: undefined },
+          0,
+        )?.runId,
       ).toBe("legacy-zz");
       expect(
-        findSourceBarrierCandidate(writer, { experimentId: "legacy", evalId: "other", attemptOrdinal: 1 }, 0)?.runId,
+        findSourceBarrierCandidate(
+          writer,
+          { experimentId: "legacy", evalId: "other", attemptOrdinal: 1, excludeRunId: undefined },
+          0,
+        )?.runId,
       ).toBe("legacy-zz");
     } finally {
       closeRecordDatabase(writer);
@@ -169,21 +181,21 @@ describe("ProjectDatabase source barriers", () => {
       expect(
         findSourceBarrierCandidate(
           writer,
-          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 },
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0, excludeRunId: undefined },
           before.revision,
         )?.runId,
       ).toBe("run-z");
       expect(
         findSourceBarrierCandidate(
           writer,
-          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0 },
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 0, excludeRunId: undefined },
           now.revision,
         )?.runId,
       ).toBe("run-a");
       expect(
         findSourceBarrierCandidate(
           writer,
-          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 1 },
+          { experimentId: "experiment", evalId: "eval", attemptOrdinal: 1, excludeRunId: undefined },
           now.revision,
         )?.runId,
       ).toBe("run-z");
@@ -197,7 +209,7 @@ describe("ProjectDatabase source barriers", () => {
       expect(
         findSourceBarrierCandidate(
           writer,
-          { experimentId: "experiment", evalId: "missing", attemptOrdinal: 0 },
+          { experimentId: "experiment", evalId: "missing", attemptOrdinal: 0, excludeRunId: undefined },
           now.revision,
         ),
       ).toBeUndefined();

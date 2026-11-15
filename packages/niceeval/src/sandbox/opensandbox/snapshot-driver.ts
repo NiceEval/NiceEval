@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import type { SandboxManager } from "@alibaba-group/opensandbox";
-import type { OpenSandboxOptions } from "../opensandbox.ts";
+import type { OpenSandboxProviderPlan } from "../opensandbox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
 
 const fail = (operation: string) =>
@@ -36,7 +36,7 @@ const withManager = <A>(operation: string, run: (manager: SandboxManager) => Pro
     catch: () => fail(operation),
   });
 
-export const openSandboxSnapshotDriver: BeforeCacheSnapshotDriver<OpenSandboxOptions> = {
+export const openSandboxSnapshotDriver: BeforeCacheSnapshotDriver<OpenSandboxProviderPlan> = {
   preserves: { disks: ["/"], memory: false },
   sourceUsableAfterSnapshot: false,
   snapshotSettleMs,

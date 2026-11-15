@@ -22,8 +22,8 @@ export function captureRunnerCommandStart(input: {
   readonly phase: LifecyclePhase;
   readonly invocationKind: "argv" | "shell";
   readonly command: string;
-  readonly args?: readonly string[];
-  readonly options?: unknown;
+  readonly args: readonly string[] | undefined;
+  readonly options: unknown | undefined;
 }): RunnerCommandCaptureHandle | undefined {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined) return undefined;
@@ -62,6 +62,8 @@ export function captureRunnerCommandStart(input: {
     registered,
     sequence: requiredPositive(runtime.commands.length + 1),
     manifest,
+
+    result: undefined,
   };
   runtime.commands.push(command);
   return makeCommandHandle(runtime, command);

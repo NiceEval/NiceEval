@@ -2,7 +2,9 @@
 // @concord-implements docs/feature/eval/README.md
 import { Effect } from "effect";
 import { CliArguments, CliInvocationFacts, CliOutput, type CliOptionDefinition } from "../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure } from "../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import { ProjectConfiguration } from "../../cli/project-configuration.ts";
 import { evalHost } from "../host/index.ts";
 
@@ -25,9 +27,14 @@ Usage:
 `;
 
 const failure = (operation: string, cause: unknown, exitCode = 1) =>
-  new CliFeatureError({ feature: "eval", operation, cause, exitCode });
+  externalCliFailure(cause, {
+    feature: "eval",
+    operation,
+    exitCode,
+    display: undefined,
+  });
 
-function write(text: string): Effect.Effect<void, CliFeatureError, CliOutput> {
+function write(text: string): Effect.Effect<void, CliFeatureError<ExternalCause>, CliOutput> {
   return Effect.flatMap(CliOutput, (output) => output.writeStdout(text)).pipe(
     Effect.mapError((cause) => failure("write eval catalog", cause)),
   );
@@ -35,7 +42,7 @@ function write(text: string): Effect.Effect<void, CliFeatureError, CliOutput> {
 
 export const evalCatalogCliCommand: CliCommandContribution<
   CliArguments | CliInvocationFacts | CliOutput | ProjectConfiguration,
-  CliFeatureError
+  CliFeatureError<ExternalCause>
 > = Object.freeze({
   name: "list",
   summary: "list discovered evals",

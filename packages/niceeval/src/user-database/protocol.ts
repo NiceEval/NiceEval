@@ -89,17 +89,24 @@ export interface UserDatabaseWorkerData {
   readonly busyTimeoutMs: number;
 }
 
-export interface UserDatabaseWorkerFailure {
-  readonly code:
-    | "user-database-invalid"
-    | "user-database-busy"
-    | "user-database-unsupported"
-    | "user-database-legacy-found";
-  readonly message: string;
-  readonly repository?: string;
-  readonly legacyPath?: string;
-  readonly databasePath?: string;
-}
+export type UserDatabaseWorkerFailure =
+  | {
+      readonly code: "user-database-invalid" | "user-database-busy";
+      readonly message: string;
+      readonly repository: string | undefined;
+    }
+  | {
+      readonly code: "user-database-unsupported";
+      readonly message: string;
+      readonly repository: string;
+      readonly databasePath: string;
+    }
+  | {
+      readonly code: "user-database-legacy-found";
+      readonly message: string;
+      readonly legacyPath: string;
+      readonly databasePath: string;
+    };
 
 export type UserDatabaseWorkerStartup =
   | { readonly state: "ready" }

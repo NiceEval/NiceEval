@@ -36,15 +36,10 @@ export function makeRecordAttachmentCatalog(
   persistences: readonly AnyRecordAttachmentPersistence[],
 ): Result.Result<RecordAttachmentCatalog, RecordAttachmentSpiFailure> {
   const ordered = [...persistences].sort((left, right) => {
-    const owner =
-      left.attachment.owner === right.attachment.owner ? 0 : left.attachment.owner < right.attachment.owner ? -1 : 1;
-    return owner === 0
-      ? left.attachment.family === right.attachment.family
-        ? 0
-        : left.attachment.family < right.attachment.family
-          ? -1
-          : 1
-      : owner;
+    if (left.attachment.owner !== right.attachment.owner)
+      return left.attachment.owner < right.attachment.owner ? -1 : 1;
+    if (left.attachment.family === right.attachment.family) return 0;
+    return left.attachment.family < right.attachment.family ? -1 : 1;
   });
   const byIdentity = new Map<string, AnyRecordAttachmentPersistence>();
   const byDefinition = new WeakMap<object, AnyRecordAttachmentPersistence>();

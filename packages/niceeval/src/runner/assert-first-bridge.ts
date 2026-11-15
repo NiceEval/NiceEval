@@ -27,7 +27,7 @@ export interface AssertionSealRequest {
   readonly runtime: AssertionsRuntime<"pass" | "score">;
   readonly options: AssertionSealOptions;
   /** Frozen post-run evidence shared by evaluators and the Record adapter. */
-  readonly workspaceDiff?: AgentWorkspaceDiff;
+  readonly workspaceDiff: AgentWorkspaceDiff | undefined;
 }
 
 type AttemptEffectRequestKind = "assertion" | "operation";
@@ -412,6 +412,6 @@ export function makeAssertFirstAttemptBridge<Context>(): Effect.Effect<
           : closeReason();
       return closeEffectRequests(reason).pipe(Effect.andThen(closeCleanupRequests(reason)));
     });
-    return Object.freeze(bridge);
+    return bridge;
   });
 }

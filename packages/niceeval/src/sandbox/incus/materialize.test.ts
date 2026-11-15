@@ -7,6 +7,7 @@ import { PassThrough } from "node:stream";
 import { Effect } from "effect";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { prepareBeforeCaches } from "../../runner/before-cache-preparation.ts";
+import { ArtifactPrepareCoordinator } from "../../agents/provisioner.ts";
 import type { Attempt } from "../../runner/types.ts";
 import { shell } from "../commands.ts";
 import { defineSandboxTemplate, sandboxProviderPlan } from "../layer.ts";
@@ -144,7 +145,8 @@ function runtimePlan(): IncusRuntimePlan {
     workdir: INCUS_WORKDIR,
     user: INCUS_USER,
     hostGateway: "10.0.0.1",
-    resources: {},
+    targetAppProxyPort: undefined,
+    resources: { cpus: undefined, memoryBytes: undefined },
     allocatedDockerDataBytes: 1024,
     acceptDevelopmentDomain: true,
     executionDomain: "development",
@@ -173,6 +175,8 @@ async function attempts(plan: IncusRuntimePlan, actionFails: boolean): Promise<A
     },
     module: incusProviderModule(undefined),
     runtimePlan: plan,
+    interruptibleAcquisition: false,
+    identityMarker: undefined,
     build: {
       _tag: "None",
       caseKey: computeCaseKey({ caseKind: "prebuilt", materializerRevision: "test", buildKeys: [], caseParams: {} }),
@@ -192,7 +196,12 @@ async function attempts(plan: IncusRuntimePlan, actionFails: boolean): Promise<A
   }).before(shell({ id: "prepare", command: actionFails ? "exit 27" : "true" }));
   const pairs = await Effect.runPromise(
     linkSandboxLayers([
-      { eval: { id: "one" }, experiment: { id: "cloud", layer }, agent: { kind: "sandbox", name: "probe" } },
+      {
+        eval: { id: "one", layer: undefined, declaredAt: undefined },
+        group: undefined,
+        experiment: { id: "cloud", layer, declaredAt: undefined },
+        agent: { kind: "sandbox", name: "probe", sandbox: undefined },
+      },
     ]),
   );
   const planned = await Effect.runPromise(
@@ -223,7 +232,14 @@ test("Incus preparation degrades cache failures, preserves uncertain objects, an
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
-            const result = yield* prepareBeforeCaches(input, { runIds: new Map([["cloud", randomUUID()]]) });
+            const result = yield* prepareBeforeCaches(input, {
+              runIds: new Map([["cloud", randomUUID()]]),
+              onWarning: () => {},
+              onActivity: () => {},
+              signal: undefined,
+              maxConcurrency: 2,
+              artifactPrepare: new ArtifactPrepareCoordinator(),
+            });
             expect(
               result.summary,
               `${mode}: ${[...result.failuresByPair.values()].map(String).join("; ")}`,

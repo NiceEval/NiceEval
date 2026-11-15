@@ -26,7 +26,6 @@ import {
   formatDurationMs,
   formatInstant,
   formatPoints,
-  formatUSD,
   type ReportLocale,
 } from "../../components/primitives/shared.ts";
 import type { AttemptPageModel } from "../model/page.ts";
@@ -79,10 +78,10 @@ export function AttemptSummary({
   // assessment too; the canonical Verdict remains unchanged in the model.
   const scored = data.verdict === "passed" && data.totalScore !== undefined;
   const adapter =
-    data.adapter === null
+    data.adapter === undefined
       ? "—"
       : `${data.adapter.name} · ${data.adapter.contract} · ${
-          data.adapter.behaviorRevision === null
+          data.adapter.behaviorRevision === undefined
             ? t("attempt.adapterRevisionNotDeclared")
             : data.adapter.behaviorRevision
         }`;
@@ -112,9 +111,6 @@ export function AttemptSummary({
           label={t("attempt.duration")}
           value={data.durationMs.state === "available" ? formatDurationMs(data.durationMs.value) : "—"}
         />
-        {data.observedCostUSD === undefined ? null : (
-          <Kpi label={t("attempt.cost")} value={formatUSD(data.observedCostUSD)} />
-        )}
       </div>
     </div>
   );
@@ -126,8 +122,8 @@ function operation<Kind extends InspectionOperationId>(kind: Kind, input: unknow
   return decoded as InspectionOperationFor<Kind>;
 }
 
-function AttemptUsage({ data }: { readonly data: UsageTableData | null }): ReactElement | null {
-  if (data === null) return null;
+function AttemptUsage({ data }: { readonly data: UsageTableData | undefined }): ReactElement | null {
+  if (data === undefined) return null;
   const rows: Array<readonly [string, string]> = [];
   if (data.turns !== undefined) rows.push(["turns", String(data.turns)]);
   if (data.toolCalls !== undefined) rows.push(["tool calls", String(data.toolCalls)]);
@@ -136,7 +132,6 @@ function AttemptUsage({ data }: { readonly data: UsageTableData | null }): React
     else if (item.kind === "request") rows.push([`${item.provider} ${item.requestKind}`, "1"]);
     else rows.push([`${item.provider} cost`, `${item.amount} ${item.currency}`]);
   }
-  if (data.observedCostUSD !== undefined) rows.push(["observed cost", `$${data.observedCostUSD.toFixed(4)}`]);
   if (rows.length === 0) return null;
   return (
     <Grid className="niceeval-usage-table">
@@ -224,22 +219,68 @@ function ExternalUsage({
 }): ReactElement {
   const { t } = useTranslation();
   const configured = usage.configuredModels;
-  const defaultBinding =
-    configured.state === "available" &&
-    configured.bindings.length === 1 &&
-    configured.bindings[0].modelRole === "default"
-      ? configured.bindings[0]
-      : null;
   const groups = usage.modelGroups;
   const costs = usage.totals.costs;
   const judgeTotals = "totals" in usage.judgeUsage ? usage.judgeUsage.totals : undefined;
   const jsonStyle = { maxHeight: "24rem", overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" } as const;
   const tokenValue = (metric: { readonly value: number | null; readonly state: string }): string =>
     `${metric.value ?? "—"} (${metric.state})`;
-  const costSource = (source: "reported" | "estimated" | "mixed"): string =>
-    t(source === "reported" ? "cell.costReported" : source === "estimated" ? "cell.costEstimated" : "cell.costMixed");
-  const recordedCalls = (count: number | null): string =>
-    count === null ? "—" : count === 0 ? `0 (${t("usage.noRecordedCalls")})` : String(count);
+  const costSource = (source: "reported" | "estimated" | "mixed"): string => {
+    switch (source) {
+      case "reported":
+        return t("cell.costReported");
+      case "estimated":
+        return t("cell.costEstimated");
+      default:
+        return t("cell.costMixed");
+    }
+  };
+  const recordedCalls = (count: number | null): string => {
+    if (count === null) return "—";
+    if (count === 0) return `0 (${t("usage.noRecordedCalls")})`;
+    return String(count);
+  };
+  function configuredModels(): ReactElement {
+    if (configured.state !== "available") return <p>{t("usage.notRecorded")}</p>;
+    if (configured.bindings.length === 1 && configured.bindings[0].modelRole === "default") {
+      const defaultBinding = configured.bindings[0];
+      return (
+        <Grid className="">
+          <Kpi label={`${t("usage.configuredModel")} (default)`} value={defaultBinding.model ?? "—"} />
+          {defaultBinding.reasoningEffort === null ? null : (
+            <Kpi label={t("usage.effort")} value={defaultBinding.reasoningEffort} />
+          )}
+          <Kpi label={t("usage.recordedCalls")} value={recordedCalls(defaultBinding.recordedCalls)} />
+        </Grid>
+      );
+    }
+    if (configured.bindings.length === 0) return <p>{t("usage.configuredRoleCount", { count: 0 })}</p>;
+    return (
+      <div className="niceeval-table-wrap" style={{ overflowX: "auto" }}>
+        <table aria-label={t("usage.configuredModels")}>
+          <thead>
+            <tr>
+              {(["usage.role", "usage.configuredModel", "usage.effort", "usage.recordedCalls"] as const).map((key) => (
+                <th key={key} scope="col">
+                  {t(key)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {configured.bindings.map((binding) => (
+              <tr key={binding.modelRole}>
+                <th scope="row">{binding.modelRole}</th>
+                <td>{binding.model ?? "—"}</td>
+                <td>{binding.reasoningEffort ?? "—"}</td>
+                <td>{recordedCalls(binding.recordedCalls)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   return (
     <section aria-label={t("usage.external")}>
       <h3>{t(usage.totalCosts.state === "complete" ? "usage.totalCosts" : "usage.totalKnownSubtotal")}</h3>
@@ -262,45 +303,7 @@ function ExternalUsage({
         </p>
         <CacheReadUsage report={usage.cacheRead} />
         <h4>{t("usage.configuredModels")}</h4>
-        {configured.state !== "available" ? (
-          <p>{t("usage.notRecorded")}</p>
-        ) : defaultBinding !== null ? (
-          <Grid>
-            <Kpi label={`${t("usage.configuredModel")} (default)`} value={defaultBinding.model ?? "—"} />
-            {defaultBinding.reasoningEffort === null ? null : (
-              <Kpi label={t("usage.effort")} value={defaultBinding.reasoningEffort} />
-            )}
-            <Kpi label={t("usage.recordedCalls")} value={recordedCalls(defaultBinding.recordedCalls)} />
-          </Grid>
-        ) : configured.bindings.length === 0 ? (
-          <p>{t("usage.configuredRoleCount", { count: 0 })}</p>
-        ) : (
-          <div className="niceeval-table-wrap" style={{ overflowX: "auto" }}>
-            <table aria-label={t("usage.configuredModels")}>
-              <thead>
-                <tr>
-                  {(["usage.role", "usage.configuredModel", "usage.effort", "usage.recordedCalls"] as const).map(
-                    (key) => (
-                      <th key={key} scope="col">
-                        {t(key)}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {configured.bindings.map((binding) => (
-                  <tr key={binding.modelRole}>
-                    <th scope="row">{binding.modelRole}</th>
-                    <td>{binding.model ?? "—"}</td>
-                    <td>{binding.reasoningEffort ?? "—"}</td>
-                    <td>{recordedCalls(binding.recordedCalls)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {configuredModels()}
         <h4>{t("usage.actualModels")}</h4>
         <p>
           {groups.state} · {groups.basis} ·{" "}
@@ -396,7 +399,7 @@ function ExternalUsage({
         {usage.source === "adapter" ? (
           <>
             <h4>{t("usage.applicationCost")}</h4>
-            <Grid>
+            <Grid className="">
               {(
                 [
                   ["usage.input", usage.totals.inputTokens],
@@ -448,9 +451,9 @@ export function AttemptDetails({
 }: {
   readonly model: AttemptPageModel;
   readonly locale: ReportLocale;
-  readonly className?: string;
-  readonly aspect?: string;
-  readonly selectedId?: string;
+  readonly className: string | undefined;
+  readonly aspect: string | undefined;
+  readonly selectedId: string | undefined;
 }): ReactElement {
   const { t } = useTranslation();
   const generation = useCurrentGeneration();
@@ -561,6 +564,18 @@ export function AttemptDetails({
     ...evidenceSliceCallouts("Diagnostics", diagnostics),
     ...evidenceSliceCallouts("File changes", diffQuery.data!),
   ];
+  function sourceEvidence(): ReactElement | null {
+    if (aspect !== undefined && aspect !== "source" && aspect !== "assertions") return null;
+    if (embedded.source !== null) return <SourceView data={embedded.source} locale={locale} className="" />;
+    return <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} className="" />;
+  }
+  function conversationEvidence(): ReactElement | null {
+    if (aspect !== undefined && aspect !== "execution") return null;
+    if (embedded.conversation !== null) return <TurnTrace data={embedded.conversation} locale={locale} className="" />;
+    if (sliceData(conversation) === null && trace.trace.execution.state === "not-recorded")
+      return <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} className="" />;
+    return null;
+  }
   return (
     <Col className={cx("niceeval-report", className)}>
       <AttemptSummary locator={model.locator} data={model.summary} locale={locale} />
@@ -611,30 +626,25 @@ export function AttemptDetails({
         );
       })}
       {aspect === undefined || aspect === "usage" ? <ExternalUsage usage={usageQuery.data!.usage} /> : null}
-      <Callouts items={notices} locale={locale} />
-      {aspect === undefined || aspect === "source" || aspect === "assertions" ? (
-        embedded.source !== null ? (
-          <SourceView data={embedded.source} locale={locale} />
-        ) : (
-          <TableContentView data={attemptAssertionsContent(sliceData(assertions))} locale={locale} />
-        )
-      ) : null}
+      <Callouts items={notices} locale={locale} className="" />
+      {sourceEvidence()}
       {aspect === undefined ? (
         <section aria-label={t("attempt.notes")}>
           <h3>{t("attempt.notes")}</h3>
           <dl>
-            {notesQuery.data!.attempt.notes.map((note) => (
-              <div key={note.sequence}>
-                <dt>{note.label}</dt>
-                <dd style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>
-                  {note.value === null
-                    ? t("cell.metricUnavailable")
-                    : typeof note.value === "number"
-                      ? formatNumericUnit(note.value, note.unit)
-                      : JSON.stringify(note.value)}
-                </dd>
-              </div>
-            ))}
+            {notesQuery.data!.attempt.notes.map(function noteEntry(note) {
+              function noteValue() {
+                if (note.value === null) return t("cell.metricUnavailable");
+                if (typeof note.value === "number") return formatNumericUnit(note.value, note.unit);
+                return JSON.stringify(note.value);
+              }
+              return (
+                <div key={note.sequence}>
+                  <dt>{note.label}</dt>
+                  <dd style={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{noteValue()}</dd>
+                </div>
+              );
+            })}
           </dl>
         </section>
       ) : null}
@@ -643,6 +653,7 @@ export function AttemptDetails({
           nodes={sliceData(timingQuery.data!)}
           title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
           locale={locale}
+          className=""
         />
       ) : null}
       {aspect === undefined || aspect === "usage" ? (
@@ -653,30 +664,28 @@ export function AttemptDetails({
           key={model.locator}
           locator={model.locator}
           initial={trace.trace.execution}
-          {...(selectedId === undefined ? {} : { selectedId: selectedId })}
+          selectedId={selectedId}
         />
       ) : null}
+      {conversationEvidence()}
       {aspect === undefined || aspect === "execution" ? (
-        embedded.conversation !== null ? (
-          <TurnTrace data={embedded.conversation} locale={locale} />
-        ) : sliceData(conversation) === null && trace.trace.execution.state === "not-recorded" ? (
-          <Callouts items={executionEvidenceUnavailableCallouts} locale={locale} />
-        ) : null
-      ) : null}
-      {aspect === undefined || aspect === "execution" ? (
-        <CommandEvidence data={sliceData(commands)} locale={locale} />
+        <CommandEvidence data={sliceData(commands)} locale={locale} className="" />
       ) : null}
       {aspect === undefined || aspect === "diff" ? (
-        <DiffView files={sliceData(diffQuery.data!)} locale={locale} />
+        <DiffView files={sliceData(diffQuery.data!)} locale={locale} className="" drillCommand={undefined} />
       ) : null}
-      {aspect === "artifacts" ? (
-        <Artifacts locator={model.locator} {...(selectedId === undefined ? {} : { selectedId: selectedId })} />
-      ) : null}
+      {aspect === "artifacts" ? <Artifacts locator={model.locator} selectedId={selectedId} /> : null}
     </Col>
   );
 }
 
-function Artifacts({ locator, selectedId }: { readonly locator: string; readonly selectedId?: string }): ReactElement {
+function Artifacts({
+  locator,
+  selectedId,
+}: {
+  readonly locator: string;
+  readonly selectedId: string | undefined;
+}): ReactElement {
   const { t } = useTranslation();
   const [offset, setOffset] = useState(0);
   const query = useInspectionQuery(

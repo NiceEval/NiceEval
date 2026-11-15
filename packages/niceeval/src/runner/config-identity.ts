@@ -81,65 +81,58 @@ export type ConfigFieldDelta =
     };
 
 export function addedConfigField(selector: string, to: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Added", selector, to });
+  return { _tag: "Added", selector, to };
 }
 
 export function removedConfigField(selector: string, from: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Removed", selector, from });
+  return { _tag: "Removed", selector, from };
 }
 
 export function changedConfigField(selector: string, from: string, to: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Changed", selector, from, to });
+  return { _tag: "Changed", selector, from, to };
 }
 
-function freezeJson<Value extends JsonValue>(value: Value): Value {
+// Identity outlives author callbacks; retain its input snapshot without freezing internal values.
+function copyJson<Value extends JsonValue>(value: Value): Value {
   if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map((entry) => freezeJson(entry))) as Value;
-  }
-  return Object.freeze(
-    Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)])),
-  ) as Value;
+  if (Array.isArray(value)) return value.map((entry) => copyJson(entry)) as Value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, copyJson(entry)])) as Value;
 }
 
-function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
+function orderedConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   const { sharedState, ...withoutSharedState } = identity;
-  return Object.freeze({
+  return {
     ...withoutSharedState,
-    adapter: identity.adapter === null ? null : Object.freeze({ ...identity.adapter }),
+    adapter: identity.adapter === null ? null : { ...identity.adapter },
     ...(identity.models === undefined
       ? {}
       : {
-          models: Object.freeze({
-            slots: Object.freeze(
-              Object.fromEntries(
-                Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]),
-              ),
-            ),
-          }),
+          models: {
+            slots: Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, { ...value }])),
+          },
         }),
-    model: Object.freeze(identity.model),
-    reasoningEffort: Object.freeze(identity.reasoningEffort),
-    flags: freezeJson({ ...identity.flags }),
-    plugins: freezeJson(identity.plugins),
+    model: identity.model,
+    reasoningEffort: identity.reasoningEffort,
+    flags: copyJson(identity.flags),
+    plugins: copyJson(identity.plugins),
     ...(sharedState === undefined ? {} : { sharedState }),
-    sandboxLayer: freezeJson(identity.sandboxLayer),
+    sandboxLayer: copyJson(identity.sandboxLayer),
     judgeRuntime:
       identity.judgeRuntime._tag === "Unconfigured"
-        ? Object.freeze({ _tag: "Unconfigured" as const })
-        : Object.freeze({
+        ? { _tag: "Unconfigured" as const }
+        : {
             _tag: "Configured" as const,
             provider: identity.judgeRuntime.provider,
             model: identity.judgeRuntime.model,
             baseUrl: identity.judgeRuntime.baseUrl,
-            credential: Object.freeze({ ...identity.judgeRuntime.credential }),
-            timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
-            maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
+            credential: { ...identity.judgeRuntime.credential },
+            timeoutMs: identity.judgeRuntime.timeoutMs,
+            maxResponseBytes: identity.judgeRuntime.maxResponseBytes,
             ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
-            protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
-          }),
-    agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
-  });
+            protocol: { ...identity.judgeRuntime.protocol },
+          },
+    agentInstalls: identity.agentInstalls.map((entry) => copyJson(entry)),
+  };
 }
 
 function sameAgentIdentity(left: AgentIdentity, right: AgentIdentity): boolean {
@@ -163,26 +156,22 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
 
 /** 计划期一次性冻结全部 install/installer 配对；运行事实与 staged digest 不反写配置身份。 */
 export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
-  if (run.adapter === undefined || run.adapter.kind === "custom") return Object.freeze([]);
+  if (run.adapter === undefined || run.adapter.kind === "custom") return [];
   const agent = run.agent;
   if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
-  if (agent.kind === "direct") return Object.freeze([]);
-  return Object.freeze(
-    agent.install.map((declaration, index) =>
-      freezeJson({
-        order: index,
-        // Frozen identity encoding; author spelling is normalized before this boundary.
-        ensure: {
-          agent: declaration.identity.agent,
-          version: declaration.identity.version,
-          revision: declaration.identity.revision,
-        },
-        installer: installerIdentity(
-          agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
-        ),
-      }),
+  if (agent.kind === "direct") return [];
+  return agent.install.map((declaration, index) => ({
+    order: index,
+    // Frozen identity encoding; author spelling is normalized before this boundary.
+    ensure: {
+      agent: declaration.identity.agent,
+      version: declaration.identity.version,
+      revision: declaration.identity.revision,
+    },
+    installer: installerIdentity(
+      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
     ),
-  );
+  }));
 }
 
 function declaredString(value: string | undefined): DeclaredConfigValue<string> {
@@ -210,9 +199,9 @@ export function configIdentityForRun(
   plan: LinkedRunPlan,
   judge: ResolvedJudgeConfig | undefined = undefined,
 ): ConfigIdentity {
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter: adapterIdentity(run.adapter),
-    ...(run.adapter?.kind === "custom" ? { models: { slots: run.models ?? Object.freeze({}) } } : {}),
+    ...(run.adapter?.kind === "custom" ? { models: { slots: run.models ?? {} } } : {}),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -232,7 +221,7 @@ export function configIdentityForRun(
 export function configIdentityFromResult(result: EvalResult): ConfigIdentity | undefined {
   const exp = result.experiment;
   if (exp === undefined) return undefined;
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter: result.adapter,
     ...(exp.models === undefined ? {} : { models: { slots: exp.models } }),
     model: declaredString(result.model),
@@ -263,7 +252,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   } else {
     put("adapter.name", identity.adapter.name);
     put("adapter.contract", identity.adapter.contract);
-    put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
+    put("adapter.behaviorRevision", identity.adapter.behaviorRevision ?? null);
     if (identity.adapter.cleanupTimeoutMs !== undefined)
       put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
   }
@@ -388,7 +377,7 @@ export function counterfactualConfigIdentity(
     else agentInstalls = historical.agentInstalls;
   }
   const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter,
     ...(models === undefined ? {} : { models }),
     model: accepted.has("config:model") ? historical.model : current.model,

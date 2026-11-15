@@ -9,7 +9,7 @@ export const readIdentityExplanation = Effect.fn("readIdentityExplanation")(func
   readonly reader: RecordReadSession;
   readonly historical: ReadableRun;
   readonly evalId: string;
-  readonly current?: IdentityManifestEntry;
+  readonly current: IdentityManifestEntry | undefined;
 }) {
   const manifest = yield* input.reader.read(input.historical.owner, NiceEvalRecordAttachments.identityManifests);
   const entry =
@@ -20,15 +20,15 @@ export const readIdentityExplanation = Effect.fn("readIdentityExplanation")(func
     if (sources.state === "available")
       source = Object.fromEntries(sources.value.items.map((item) => [item.path, item.sha256]));
   }
-  return Object.freeze({
+  return {
     historical: entry,
     explanation: explainIdentityMismatch({
-      ...(entry === undefined ? {} : { historical: entry }),
-      ...(input.current === undefined ? {} : { current: input.current }),
+      historical: entry,
+      current: input.current,
       context: input.historical.document.context,
-      ...(source === undefined ? {} : { source }),
+      source,
     }),
-  });
+  };
 });
 export interface HistoricalIdentityComparison {
   readonly historical: IdentityManifestEntry | undefined;

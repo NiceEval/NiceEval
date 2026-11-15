@@ -23,7 +23,7 @@ interface ScatterSeries {
 interface PointShapeProps {
   readonly cx?: number | undefined;
   readonly cy?: number | undefined;
-  readonly payload?: unknown;
+  readonly payload?: unknown | undefined;
   readonly fill?: string | undefined;
   readonly stroke?: string | undefined;
 }
@@ -57,14 +57,14 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
           {
             experimentId: item.experimentId,
             points: [
-              Object.freeze({
+              {
                 experimentId: item.experimentId,
                 cost,
                 quality,
                 partial: qualityMetric.state !== "available" || costMetric.state !== "available",
                 coverage: `${costMetric.samples}/${costMetric.total}; ${qualityMetric.samples}/${qualityMetric.total}`,
                 href: item.href,
-              }),
+              },
             ],
           },
         ];
@@ -142,7 +142,7 @@ export default function QualityCostScatter({ items, kind, locale }: QualityCostS
               labelStyle={{ color: "var(--text)", fontWeight: 650 }}
               labelFormatter={(_label, tooltipPayload) => {
                 const point = scatterPoint(tooltipPayload[0]?.payload);
-                return point === null ? "" : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
+                return point === undefined ? "" : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
               }}
               formatter={(value, name) => [
                 name === "cost" ? formatter.format(Number(value)) : qualityText(Number(value)),
@@ -195,7 +195,7 @@ function ExperimentPoint({
   openLabel,
 }: PointShapeProps & { readonly label: string; readonly openLabel: string }) {
   const point = scatterPoint(payload);
-  if (point === null || cx === undefined || cy === undefined) return <g />;
+  if (point === undefined || cx === undefined || cy === undefined) return <g />;
   const activate = () => {
     window.location.hash = point.href.startsWith("#") ? point.href.slice(1) : point.href;
   };
@@ -230,8 +230,8 @@ function ExperimentPoint({
   );
 }
 
-function scatterPoint(value: unknown): ScatterPoint | null {
-  if (typeof value !== "object" || value === null) return null;
+function scatterPoint(value: unknown): ScatterPoint | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
   const point = value as Partial<ScatterPoint>;
   return typeof point.experimentId === "string" &&
     typeof point.cost === "number" &&
@@ -240,7 +240,7 @@ function scatterPoint(value: unknown): ScatterPoint | null {
     typeof point.coverage === "string" &&
     typeof point.href === "string"
     ? (point as ScatterPoint)
-    : null;
+    : undefined;
 }
 
 function adaptiveCostFractionDigits(maxCost: number): number {

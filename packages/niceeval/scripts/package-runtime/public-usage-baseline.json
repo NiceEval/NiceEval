@@ -34,7 +34,6 @@
     "agents/sdk-streams.d.ts#CodexThreadStream",
     "agents/sdk-streams.d.ts#PiAgentEventLike",
     "agents/sdk-streams.d.ts#PiAgentStream",
-    "agents/sdk-streams.d.ts#SseFrameCursor",
     "agents/shared.d.ts#Shared",
     "agents/streaming.d.ts#DeltaStreamSpec",
     "agents/types.d.ts#AgentAfter",

@@ -23,8 +23,10 @@ type Pending = {
 type ClaudeState = {
   readonly driver: ManagedJsonlDriver;
   cursor: number;
-  pending?: Pending;
-  sessionId?: string;
+  session:
+    | { readonly state: "uncaptured" }
+    | { readonly state: "ready"; readonly id: string }
+    | { readonly state: "waiting"; readonly id: string; readonly pending: Pending };
   readonly reported: Set<string>;
   readonly reportedToolProgress: Set<string>;
 };
@@ -74,11 +76,11 @@ function parseFrames(
     resultUsage === undefined
       ? parsed.usage
       : {
-          ...(inputTokens === undefined ? {} : { inputTokens }),
-          ...(outputTokens === undefined ? {} : { outputTokens }),
-          ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
-          ...(cacheCreationTokens === undefined ? {} : { cacheCreationTokens }),
-          ...(requests === undefined ? {} : { requests }),
+          inputTokens,
+          outputTokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+          requests,
         };
   return {
     usage,
@@ -112,10 +114,10 @@ function coverage(frames: readonly unknown[], parsed: ReturnType<typeof parseFra
 function captureSession(state: ClaudeState, frame: RecordValue, ctx: SandboxAgentContext): void {
   const id = frame.session_id;
   if (typeof id !== "string" || id === "") return;
-  if (state.sessionId !== undefined && state.sessionId !== id) {
-    throw new Error(`Claude Code changed native session identity from ${state.sessionId} to ${id}`);
+  if (state.session.state !== "uncaptured" && state.session.id !== id) {
+    throw new Error(`Claude Code changed native session identity from ${state.session.id} to ${id}`);
   }
-  state.sessionId = id;
+  if (state.session.state === "uncaptured") state.session = { state: "ready", id };
   ctx.session.capture(id);
 }
 
@@ -218,7 +220,13 @@ async function createState(
   if (response?.subtype !== "success") {
     throw new Error(`Claude Code initialization failed: ${String(response?.error ?? "invalid control response")}`);
   }
-  return { driver, cursor: initialized.cursor, reported: new Set(), reportedToolProgress: new Set() };
+  return {
+    driver,
+    cursor: initialized.cursor,
+    session: { state: "uncaptured" },
+    reported: new Set(),
+    reportedToolProgress: new Set(),
+  };
 }
 
 function pendingFrom(frame: RecordValue, sessionId: string): Pending | undefined {
@@ -268,11 +276,11 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
     }
     if (frame.type === "control_request") {
       const request = record(frame.request);
-      if (state.sessionId === undefined)
+      if (state.session.state === "uncaptured")
         throw new Error("Claude Code control request arrived before native session identity");
-      const pending = pendingFrom(frame, state.sessionId);
+      const pending = pendingFrom(frame, state.session.id);
       if (pending) {
-        state.pending = pending;
+        state.session = { state: "waiting", id: state.session.id, pending };
         const frames = state.driver.framesSince(from).slice(0, receipt.cursor - from);
         const parsed = parseFrames(frames, state.reported);
         return {
@@ -333,7 +341,7 @@ async function drive(state: ClaudeState, from: number, ctx: SandboxAgentContext)
 }
 
 export async function sendClaudeCodeNative(
-  input: { readonly text: string; readonly responses?: readonly InputResponse[] },
+  input: { readonly text: string; readonly responses?: readonly InputResponse[] | undefined },
   ctx: SandboxAgentContext,
   args: readonly string[],
   env: Readonly<Record<string, string>>,
@@ -353,13 +361,13 @@ export async function sendClaudeCodeNative(
   try {
     if (state.driver.framesSince(state.cursor).length !== 0) {
       throw makeSendFailure({
-        acceptance: state.pending === undefined ? "rejected" : "started",
+        acceptance: state.session.state === "waiting" ? "started" : "rejected",
         message: "Claude Code produced frames after the prior result/control barrier; refusing an ambiguous send",
         process: state.driver.processReceipt(),
       });
     }
-    if (state.pending) {
-      const pending = state.pending;
+    if (state.session.state === "waiting") {
+      const pending = state.session.pending;
       const answers = validate(pending, input.responses);
       await state.driver.write({
         type: "control_response",
@@ -369,13 +377,13 @@ export async function sendClaudeCodeNative(
           response: { behavior: "allow", updatedInput: { ...pending.input, answers } },
         },
       });
-      delete state.pending;
+      state.session = { state: "ready", id: state.session.id };
     } else {
       if (input.responses?.length)
         throw new Error("Claude Code received responses while no native request was pending");
       await state.driver.write({
         type: "user",
-        session_id: state.sessionId ?? "",
+        session_id: state.session.state === "uncaptured" ? "" : state.session.id,
         message: { role: "user", content: [{ type: "text", text: input.text }] },
         parent_tool_use_id: null,
       });
@@ -387,7 +395,7 @@ export async function sendClaudeCodeNative(
     if (typeof cause === "object" && cause !== null && (cause as { type?: unknown }).type === "agent-send-failed")
       throw cause;
     throw makeSendFailure({
-      acceptance: state.pending ? "started" : "unknown",
+      acceptance: state.session.state === "waiting" ? "started" : "unknown",
       message: `Claude Code structured transport failed: ${cause instanceof Error ? cause.message : String(cause)} (frames=${state.driver.frameKinds() || "none"})`,
       cause: normalizeExternalCause(cause),
       process: state.driver.processReceipt(),

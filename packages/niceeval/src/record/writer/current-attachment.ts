@@ -1,4 +1,5 @@
 import { Effect, Result, Schema, Stream } from "effect";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
 
 import {
   encodeRecordAttachmentCurrent,
@@ -130,7 +131,7 @@ export const RECORD_ATTACHMENT_MAXIMUM_CONTENTS = 100_000;
 export const RECORD_ATTACHMENT_MAXIMUM_CONTENT_BYTES = 64 * 1024 * 1024;
 export const RECORD_ATTACHMENT_MAXIMUM_TOTAL_CONTENT_BYTES = 128 * 1024 * 1024;
 
-const jsonLimits = Object.freeze({
+const jsonLimits = {
   maximumJsonBytes: RECORD_JSON_MAXIMUM_BYTES,
   maximumDepth: 64,
   maximumNodes: 100_000,
@@ -138,10 +139,10 @@ const jsonLimits = Object.freeze({
   maximumArrayItems: 100_000,
   maximumKeyUtf8Bytes: 16_384,
   maximumStringUtf8Bytes: 1_048_576,
-});
+} as const;
 
 function callbackFailed(cause: unknown): RecordAttachmentCallbackFailed {
-  return Object.freeze({ code: "record-attachment-callback-failed", cause });
+  return { code: "record-attachment-callback-failed", cause: normalizeExternalCause(cause) };
 }
 
 function closureFailed(): ReturnType<typeof recordAttachmentClosureInvalid> {
@@ -164,12 +165,10 @@ function encodeFailed(
           )),
     ]),
     family,
-    schemaIssues.map((issue) =>
-      Object.freeze({
-        path: Object.freeze(issue.path.map((segment) => (typeof segment === "number" ? segment : String(segment)))),
-        message: issue.message,
-      }),
-    ),
+    schemaIssues.map((issue) => ({
+      path: issue.path.map((segment) => (typeof segment === "number" ? segment : String(segment))),
+      message: issue.message,
+    })),
   );
 }
 
@@ -179,13 +178,10 @@ function makeBuilder(sources: Map<object, CapturedSource>): RecordAttachmentSess
     stream: Stream.Stream<Uint8Array, E, R>,
   ): AttachedRecordContent<RecordContentHandle, E, R> => {
     const handle = mintRecordContentHandle(kind);
-    sources.set(
-      handle,
-      Object.freeze({
-        kind,
-        stream: stream as Stream.Stream<Uint8Array, unknown, unknown>,
-      }),
-    );
+    sources.set(handle, {
+      kind,
+      stream: stream as Stream.Stream<Uint8Array, unknown, unknown>,
+    });
     return handle as AttachedRecordContent<RecordContentHandle, E, R>;
   };
   return Object.freeze({
@@ -321,7 +317,12 @@ export function prepareCurrentRecordAttachment<
       catch: callbackFailed,
     });
     if (Result.isFailure(encoded))
-      return yield* Effect.fail(encodeFailed(input.definition.family, encoded.failure.schemaIssues ?? []));
+      return yield* Effect.fail(
+        encodeFailed(
+          input.definition.family,
+          encoded.failure.code === "exact-encode-failed" ? (encoded.failure.schemaIssues ?? []) : [],
+        ),
+      );
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
@@ -373,8 +374,8 @@ export function prepareCurrentRecordAttachment<
       }
       const key = contentKey(index);
       if (key === undefined) return yield* Effect.fail(closureFailed());
-      replacements.set(entry.value, Object.freeze({ "$niceeval.record.content": key }));
-      contents.push(Object.freeze({ key, sha256: input.digest(bytes), bytes }));
+      replacements.set(entry.value, { "$niceeval.record.content": key });
+      contents.push({ key, sha256: input.digest(bytes), bytes });
     }
     if (sources.size !== contentEntries.length) return yield* Effect.fail(closureFailed());
 
@@ -395,29 +396,23 @@ export function prepareCurrentRecordAttachment<
       }
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
       if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed(input.definition.family));
-      replacements.set(
-        entry.value,
-        Object.freeze({
-          "$niceeval.record.reference": Object.freeze({
-            owner: wire.owner,
-            family: wire.family,
-            value: referenceValue.success,
-          }),
-        }),
-      );
+      replacements.set(entry.value, {
+        "$niceeval.record.reference": {
+          owner: wire.owner,
+          family: wire.family,
+          value: referenceValue.success,
+        },
+      });
       const identity = `${wire.owner}\u0000${wire.family}`;
       const existing = referenceIdentities.get(identity);
       if (existing !== undefined && existing.definition !== referenceDefinition) {
         return yield* Effect.fail(closureFailed());
       }
-      referenceIdentities.set(
-        identity,
-        Object.freeze({
-          owner: wire.owner,
-          family: wire.family,
-          definition: referenceDefinition,
-        }),
-      );
+      referenceIdentities.set(identity, {
+        owner: wire.owner,
+        family: wire.family,
+        definition: referenceDefinition,
+      });
     }
 
     const replaced = yield* Effect.try({
@@ -432,12 +427,12 @@ export function prepareCurrentRecordAttachment<
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`),
     );
-    return Object.freeze({
+    return {
       payloadBytes,
-      contents: Object.freeze(contents),
-      references: Object.freeze(orderedReferences.map(({ owner, family }) => Object.freeze({ owner, family }))),
-      referenceDefinitions: Object.freeze(orderedReferences.map(({ definition }) => definition)),
-    });
+      contents,
+      references: orderedReferences.map(({ owner, family }) => ({ owner, family })),
+      referenceDefinitions: orderedReferences.map(({ definition }) => definition),
+    };
   }).pipe(Effect.catchDefect((cause) => Effect.fail(callbackFailed(cause)))) as Effect.Effect<
     PreparedCurrentAttachment,
     RecordWriteError | AttachedContentError<Value>,
@@ -474,7 +469,12 @@ export function prepareStreamingRecordAttachment<
       catch: callbackFailed,
     });
     if (Result.isFailure(encoded))
-      return yield* Effect.fail(encodeFailed(input.definition.family, encoded.failure.schemaIssues ?? []));
+      return yield* Effect.fail(
+        encodeFailed(
+          input.definition.family,
+          encoded.failure.code === "exact-encode-failed" ? (encoded.failure.schemaIssues ?? []) : [],
+        ),
+      );
     const inspected = yield* Effect.try({
       try: () => inspectRecordAttachmentOpaqueClosure(input.definition, value),
       catch: callbackFailed,
@@ -497,16 +497,14 @@ export function prepareStreamingRecordAttachment<
       }
       const key = contentKey(index);
       if (key === undefined) return yield* Effect.fail(closureFailed());
-      replacements.set(entry.value, Object.freeze({ "$niceeval.record.content": key }));
-      contents.push(
-        Object.freeze({
-          key,
-          logicalHandle: key,
-          kind: source.kind,
-          maximumBytes: declaration.maximumBytes,
-          stream: source.stream,
-        }),
-      );
+      replacements.set(entry.value, { "$niceeval.record.content": key });
+      contents.push({
+        key,
+        logicalHandle: key,
+        kind: source.kind,
+        maximumBytes: declaration.maximumBytes,
+        stream: source.stream,
+      });
     }
     if (sources.size !== contentEntries.length) return yield* Effect.fail(closureFailed());
 
@@ -525,29 +523,23 @@ export function prepareStreamingRecordAttachment<
       if (wire === undefined || referenceDefinition === undefined) return yield* Effect.fail(closureFailed());
       const referenceValue = canonicalizeRecordJson(wire.value, jsonLimits);
       if (Result.isFailure(referenceValue)) return yield* Effect.fail(encodeFailed(input.definition.family));
-      replacements.set(
-        entry.value,
-        Object.freeze({
-          "$niceeval.record.reference": Object.freeze({
-            owner: wire.owner,
-            family: wire.family,
-            value: referenceValue.success,
-          }),
-        }),
-      );
+      replacements.set(entry.value, {
+        "$niceeval.record.reference": {
+          owner: wire.owner,
+          family: wire.family,
+          value: referenceValue.success,
+        },
+      });
       const identity = `${wire.owner}\u0000${wire.family}`;
       const existing = referenceIdentities.get(identity);
       if (existing !== undefined && existing.definition !== referenceDefinition) {
         return yield* Effect.fail(closureFailed());
       }
-      referenceIdentities.set(
-        identity,
-        Object.freeze({
-          owner: wire.owner,
-          family: wire.family,
-          definition: referenceDefinition,
-        }),
-      );
+      referenceIdentities.set(identity, {
+        owner: wire.owner,
+        family: wire.family,
+        definition: referenceDefinition,
+      });
     }
 
     const replaced = yield* Effect.try({
@@ -562,12 +554,12 @@ export function prepareStreamingRecordAttachment<
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`),
     );
-    return Object.freeze({
+    return {
       payloadBytes,
-      contents: Object.freeze(contents),
-      references: Object.freeze(orderedReferences.map(({ owner, family }) => Object.freeze({ owner, family }))),
-      referenceDefinitions: Object.freeze(orderedReferences.map(({ definition }) => definition)),
-    });
+      contents,
+      references: orderedReferences.map(({ owner, family }) => ({ owner, family })),
+      referenceDefinitions: orderedReferences.map(({ definition }) => definition),
+    };
   }).pipe(Effect.catchDefect((cause) => Effect.fail(callbackFailed(cause)))) as Effect.Effect<
     PreparedStreamingRecordAttachment<AttachedContentError<Value>, AttachedContentRequirements<Value>>,
     RecordWriteError | AttachedContentError<Value>,

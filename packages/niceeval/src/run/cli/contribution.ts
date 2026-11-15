@@ -12,10 +12,12 @@ import {
   type CliParsedTokens,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import { cliFailureDisplay } from "../../cli/feature-failure.ts";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { canonicalJsonValue } from "../../inspection/canonical.ts";
 import { rawRunHost } from "../host/runtime.ts";
 import { RunStateSchema, type RunListDocument, type RunRecoverOrphanedDocument, type RunState } from "../protocol.ts";
-import type { RunDeleteError, RunReadError, RunRecoverError } from "../host/index.ts";
+import { RunDeleteError, RunReadError, RunRecoverError } from "../host/index.ts";
 
 const help = (summary: string) => Object.freeze({ summary, visibility: "public" as const });
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
@@ -54,33 +56,46 @@ export const RUN_CLI_OPTIONS = Object.freeze({
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 type Requirements = CliArguments | CliConfirmation | CliInvocationFacts | CliOutput | ProjectStateDatabase;
-type Error = CliFeatureError;
 type HostFailure = RunReadError | RunDeleteError | RunRecoverError;
+type RunCliCause = HostFailure | SqliteRecordError | ExternalCause;
+type Error = CliFeatureError<RunCliCause>;
 
 function failure(operation: string, cause: unknown): Error {
-  const hostFailure = isHostFailure(cause)
-    ? cause
-    : cause instanceof SqliteRecordError
-      ? {
-          code: cause.cause instanceof Error && cause.cause.name.startsWith("run-") ? cause.cause.name : cause.code,
-          message: cause.message,
-        }
-      : undefined;
+  const normalized = normalizeRunCliCause(cause);
   return new CliFeatureError({
     feature: "run",
     operation,
-    cause,
+    cause: normalized,
     exitCode: 1,
-    ...(hostFailure === undefined ? {} : { display: `${hostFailure.code}: ${hostFailure.message}\n` }),
+    display: cliFailureDisplay(cause, { feature: "run", operation, display: runFailureDisplay(normalized) }),
   });
 }
 
-function isHostFailure(value: unknown): value is HostFailure {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    ["RunReadError", "RunDeleteError", "RunRecoverError"].includes(String(Reflect.get(value, "_tag")))
-  );
+function normalizeRunCliCause(cause: unknown): RunCliCause {
+  if (cause instanceof RunReadError || cause instanceof RunDeleteError || cause instanceof RunRecoverError)
+    return cause;
+  if (cause instanceof SqliteRecordError) return cause;
+  return normalizeExternalCause(cause);
+}
+
+function runFailureDisplay(cause: RunCliCause): string | undefined {
+  switch (cause._tag) {
+    case "RunReadError":
+    case "RunDeleteError":
+    case "RunRecoverError":
+      return `${cause.code}: ${cause.message}\n`;
+    case "SqliteRecordError": {
+      const remote = normalizeExternalCause(cause.cause);
+      const code = remote._tag === "Error" && remote.name.startsWith("run-") ? remote.name : cause.code;
+      return `${code}: ${cause.message}\n`;
+    }
+    case "Error":
+    case "Object":
+    case "ThrownValue":
+      return undefined;
+    default:
+      return cause satisfies never;
+  }
 }
 
 function write(channel: "stdout" | "stderr", text: string) {
@@ -226,14 +241,12 @@ Usage:
         })
         .pipe(Effect.mapError((cause) => failure("list", cause)));
       if (json) {
-        yield* writeJson(
-          Object.freeze({
-            operation: "run.list",
-            runs: listed.runs,
-            omitted: listed.omitted,
-            ...(listed.continuation === undefined ? {} : { continuation: listed.continuation }),
-          }) satisfies RunListDocument,
-        );
+        yield* writeJson({
+          operation: "run.list",
+          runs: listed.runs,
+          omitted: listed.omitted,
+          ...(listed.continuation === undefined ? {} : { continuation: listed.continuation }),
+        } satisfies RunListDocument);
         return 0;
       }
       if (listed.runs.length === 0) {
@@ -268,7 +281,11 @@ Usage:
       // This one pinned read freezes exact IDs before any confirmation. Each
       // mutation then enters the same actor as single-Run recovery.
       const listed = yield* rawRunHost
-        .list({ cwd: facts.cwd, states: ["active", "recovering"] })
+        .list({
+          cwd: facts.cwd,
+          states: ["active", "recovering"],
+          record: undefined,
+        })
         .pipe(Effect.mapError((cause) => failure("list orphaned", cause)));
       const selected = listed.runs.filter((run) => run.owner?.state === "gone");
       if (json && parsed.values.yes !== true)
@@ -335,13 +352,11 @@ Usage:
         }
       }
       if (json) {
-        yield* writeJson(
-          Object.freeze({
-            operation: `run.${action}`,
-            outcome: "confirmation-required",
-            runId,
-          }),
-        );
+        yield* writeJson({
+          operation: `run.${action}`,
+          outcome: "confirmation-required",
+          runId,
+        });
       } else {
         yield* write(
           "stderr",
@@ -355,7 +370,7 @@ Usage:
       const receipt = yield* rawRunHost
         .delete({ cwd: facts.cwd, runId })
         .pipe(Effect.mapError((cause) => failure("delete", cause)));
-      if (json) yield* writeJson(Object.freeze({ operation: "run.delete", ...receipt }));
+      if (json) yield* writeJson({ operation: "run.delete", ...receipt });
       else
         yield* write(
           "stdout",
@@ -367,7 +382,7 @@ Usage:
     const receipt = yield* rawRunHost
       .recover({ cwd: facts.cwd, runId })
       .pipe(Effect.mapError((cause) => failure("recover", cause)));
-    if (json) yield* writeJson(Object.freeze({ operation: "run.recover", ...receipt }));
+    if (json) yield* writeJson({ operation: "run.recover", ...receipt });
     else
       yield* write(
         "stdout",

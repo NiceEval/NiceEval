@@ -32,7 +32,8 @@ function judgeInput(signal?: AbortSignal, timeoutMs = 5_000) {
     options: managedScoreMatchOf(match)!,
     material: { question: "question", answer: "answer" },
     judge: testJudge(timeoutMs),
-    ...(signal === undefined ? {} : { signal }),
+    signal,
+    usage: undefined,
   });
 }
 function testJudge(timeoutMs = 5_000) {
@@ -345,6 +346,8 @@ describe("Judge Effect lifecycle", () => {
       options: managedScoreMatchOf(match)!,
       material: null,
       judge: testJudge(),
+      signal: undefined,
+      usage: undefined,
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({ state: "unavailable" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -398,6 +401,8 @@ describe("Judge Effect lifecycle", () => {
       options: managedScoreMatchOf(match)!,
       material: null,
       judge: testJudge(),
+      signal: undefined,
+      usage: undefined,
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({
       state: "errored",
@@ -447,6 +452,8 @@ describe("Judge Effect lifecycle", () => {
       options: managedScoreMatchOf(match)!,
       material: null,
       judge: testJudge(),
+      signal: undefined,
+      usage: undefined,
     });
     expect(await Effect.runPromise(registration.evaluate())).toMatchObject({
       state: "unavailable",
@@ -473,6 +480,9 @@ describe("Judge Effect lifecycle", () => {
         body: "{}",
         maxBytes: 32,
         signal: new AbortController().signal,
+        headers: undefined,
+        usage: undefined,
+        deadlineAt: undefined,
       }),
     ).rejects.toThrow("byte cap");
   });

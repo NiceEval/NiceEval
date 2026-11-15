@@ -14,7 +14,9 @@ function utf8Bytes(value: string): number {
   return UTF8.encode(value).byteLength;
 }
 function compareCodeUnits(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 export interface CapturedImageReference {
@@ -29,9 +31,9 @@ export interface CapturedImageReference {
 interface SnapshotState {
   nodes: number;
   readonly ancestors: WeakSet<object>;
-  readonly images?: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>;
-  imageBytes?: number;
-  imageReferences?: number;
+  readonly images: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }> | undefined;
+  imageBytes: number;
+  imageReferences: number;
 }
 function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path = ""): unknown {
   const conversation = conversationMaterialOf(value);
@@ -42,8 +44,8 @@ function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path 
   if (isJudgeImage(value)) {
     if (state.images === undefined) throw new TypeError("Judge image is only valid in material");
     const image = readJudgeImage(value);
-    state.imageReferences = (state.imageReferences ?? 0) + 1;
-    state.imageBytes = (state.imageBytes ?? 0) + image.byteLength;
+    state.imageReferences += 1;
+    state.imageBytes += image.byteLength;
     if (state.imageReferences > 4 || state.imageBytes > 8 * 1024 * 1024)
       throw new TypeError("Judge material image budget exceeded");
     const existing = state.images.get(value);
@@ -149,7 +151,13 @@ function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path 
 }
 /** @internal Shared strict call-time capture for all managed Match material. */
 export function snapshotScoreMatchMaterial(value: unknown): JsonValue {
-  return snapshotMaterial(value, { nodes: 0, ancestors: new WeakSet() }) as JsonValue;
+  return snapshotMaterial(value, {
+    nodes: 0,
+    ancestors: new WeakSet(),
+    images: undefined,
+    imageBytes: 0,
+    imageReferences: 0,
+  }) as JsonValue;
 }
 
 export function snapshotJudgeMaterial(
@@ -169,19 +177,18 @@ export function snapshotJudgeMaterial(
   };
   const untrimmed = snapshotMaterial(value, state) as JudgeMaterial;
   const images = [...state.images!.entries()].map(
-    ([image, identity]): CapturedImageReference =>
-      Object.freeze({
-        image,
-        ...identity,
-        ...(({ mediaType, byteLength, sha256 }) => ({ mediaType, byteLength, sha256 }))(readJudgeImage(image)),
-        paths: Object.freeze([...identity.paths]),
-      }),
+    ([image, identity]): CapturedImageReference => ({
+      image,
+      ...identity,
+      ...(({ mediaType, byteLength, sha256 }) => ({ mediaType, byteLength, sha256 }))(readJudgeImage(image)),
+      paths: identity.paths,
+    }),
   );
   const imageByValue = new Map(images.map((item) => [item.image, item]));
   const material = trimConversationMaterial(untrimmed, maximumBytes, (item) =>
     JSON.stringify(projectJudgeMaterial(item, imageByValue).json),
   );
-  return Object.freeze({ material, images: Object.freeze(images), imageByValue });
+  return { material, images: images, imageByValue };
 }
 
 export function projectJudgeMaterial(
@@ -222,5 +229,5 @@ export function chunkUtf8(value: string): readonly string[] {
     bytes += size;
   }
   if (current !== "" || value === "") chunks.push(current);
-  return Object.freeze(chunks);
+  return chunks;
 }

@@ -21,7 +21,7 @@ export interface ModuleEdge {
   readonly specifier: string;
   readonly kind: "import" | "export" | "import-call" | "require" | "module-require" | "import-equals";
   readonly timing: "static" | "runtime";
-  readonly path?: string;
+  readonly path: string | undefined;
 }
 export interface UnresolvedModule {
   readonly file: string;
@@ -33,7 +33,7 @@ export interface ModuleFact {
   readonly source: string;
   readonly normalized: string;
   readonly identity: string;
-  readonly sourceType?: string;
+  readonly sourceType: string | undefined;
   readonly edges: readonly ModuleEdge[];
   readonly unresolved: readonly UnresolvedModule[];
 }
@@ -102,12 +102,19 @@ function moduleDependencies(
   const edges: ModuleEdge[] = [],
     unresolved: UnresolvedModule[] = [];
   const uncertain = (node: SyntaxNode): void => {
-    unresolved.push(Object.freeze({ file, ...sourcePosition(source, node.start) }));
+    unresolved.push({ file, ...sourcePosition(source, node.start) });
   };
   const edge = (node: SyntaxNode, specifier: unknown, kind: ModuleEdge["kind"], timing: ModuleEdge["timing"]): void => {
     const value = literal(specifier);
     if (value === undefined) uncertain(node);
-    else edges.push({ specifier: value, kind, timing });
+    else
+      edges.push({
+        specifier: value,
+        kind,
+        timing,
+
+        path: undefined,
+      });
   };
   const visit = (node: SyntaxNode, parent: SyntaxNode | undefined, shadows: ReadonlySet<string>): void => {
     const isScope =
@@ -230,16 +237,16 @@ export class ProjectModuleGraph {
       parsed === undefined ? { edges: [], unresolved: [] } : moduleDependencies(path, source, parsed.program);
     const resolver = createJiti(path, this.loader.options);
     const edges = dependencies.edges.map((edge) => {
-      if (isBuiltin(edge.specifier)) return Object.freeze(edge);
+      if (isBuiltin(edge.specifier)) return edge;
       let url: string;
       try {
         url = resolver.esmResolve(edge.specifier, pathToFileURL(path).href);
       } catch (cause) {
         if (edge.specifier.startsWith(".") || edge.specifier.startsWith("/") || edge.specifier.startsWith("#"))
           throw cause;
-        return Object.freeze(edge);
+        return edge;
       }
-      if (!url.startsWith("file:")) return Object.freeze(edge);
+      if (!url.startsWith("file:")) return edge;
       const target = realpathSync(fileURLToPath(url));
       const ownerRelative = relative(this.root, target);
       const insideOwner = ownerRelative !== ".." && !ownerRelative.startsWith(`..${sep}`) && !isAbsolute(ownerRelative);
@@ -249,23 +256,26 @@ export class ProjectModuleGraph {
         );
       }
       const local = insideOwner && !target.includes(`${sep}node_modules${sep}`);
-      return Object.freeze({ ...edge, ...(local ? { path: target } : {}) });
+      return { ...edge, ...(local ? { path: target } : {}) };
     });
-    const fact: ModuleFact = Object.freeze({
+    const fact: ModuleFact = {
       path,
       source,
       normalized,
       identity: parsed === undefined ? sourceIdentity(path, bytes) : normalizedIdentity(normalized),
-      ...(parsed === undefined ? {} : { sourceType: String(parsed.program.sourceType) }),
-      edges: Object.freeze(edges),
-      unresolved: Object.freeze(dependencies.unresolved),
-    });
+      sourceType: parsed === undefined ? undefined : String(parsed.program.sourceType),
+      edges,
+      unresolved: dependencies.unresolved,
+    };
     this.facts.set(path, fact);
     return fact;
   }
   capture(
     entry: string,
-    options: { readonly stopPaths?: ReadonlySet<string>; readonly source?: string } = {},
+    options: { readonly stopPaths: ReadonlySet<string> | undefined; readonly source: string | undefined } = {
+      stopPaths: undefined,
+      source: undefined,
+    },
   ): EvalModuleProjection {
     const modules: ModuleFact[] = [],
       seen = new Set<string>();
@@ -281,15 +291,13 @@ export class ProjectModuleGraph {
     };
     visit(entry, true);
     modules.sort((a, b) => a.path.localeCompare(b.path));
-    return Object.freeze({
+    return {
       root: this.root,
-      modules: Object.freeze(modules),
-      unresolved: Object.freeze(
-        modules
-          .flatMap((fact) => fact.unresolved)
-          .map((fact) => Object.freeze({ ...fact, file: relative(this.root, fact.file) })),
-      ),
-    });
+      modules,
+      unresolved: modules
+        .flatMap((fact) => fact.unresolved)
+        .map((fact) => ({ ...fact, file: relative(this.root, fact.file) })),
+    };
   }
 }
 /** Inspect transformed imports with the same parser, without a second regex scanner. */
@@ -304,17 +312,18 @@ export function transformedImportSpecifiers(file: string, source: string): Reado
   return specs;
 }
 
-export function moduleReuseEligibility(evalDef: DiscoveredEval): {
-  readonly reuseEligibility?: "dynamic-module-unresolved";
-  readonly reuseEligibilityFacts?: readonly UnresolvedModule[];
-} {
+export type ModuleReuseEligibility =
+  | { readonly kind: "eligible" }
+  | { readonly kind: "dynamic-module-unresolved"; readonly facts: readonly UnresolvedModule[] };
+
+export function moduleReuseEligibility(evalDef: DiscoveredEval): ModuleReuseEligibility {
   const facts = dynamicModuleFacts(evalDef);
   return facts.length === 0
-    ? {}
-    : Object.freeze({
-        reuseEligibility: "dynamic-module-unresolved",
-        reuseEligibilityFacts: Object.freeze(
-          facts.slice(0, 20).map((fact) => Object.freeze({ ...fact, file: fact.file.slice(0, 1024) })),
-        ),
-      });
+    ? {
+        kind: "eligible",
+      }
+    : {
+        kind: "dynamic-module-unresolved",
+        facts: facts.slice(0, 20).map((fact) => ({ ...fact, file: fact.file.slice(0, 1024) })),
+      };
 }

@@ -32,7 +32,7 @@ export interface LoadNativeConfigOptions {
   /** 用户配置的路径(必须是项目根内的相对路径)。 */
   path: string;
   /** 解析根;省略用跑 niceeval 的项目根(process.cwd()),与 SkillSpec 本地路径同一口径。 */
-  projectRoot?: string;
+  projectRoot?: string | undefined;
 }
 
 /**
@@ -151,7 +151,7 @@ export function assertJsonNativeConfig(cfg: LoadedNativeConfig, opts: NativeConf
  */
 export function assertTomlNativeConfig(cfg: LoadedNativeConfig, opts: NativeConfigValidationOptions): void {
   const scan = scanTomlTopLevel(cfg.bytes.toString("utf8"));
-  if (scan.error) throw invalidSyntax(cfg, opts, "TOML", scan.error);
+  if (scan.state === "invalid") throw invalidSyntax(cfg, opts, "TOML", scan.error);
   const hit = opts.reservedKeys.filter((k) => scan.rootKeys.has(k));
   if (hit.length) throw reservedKeys(cfg, opts, hit);
 }
@@ -181,9 +181,13 @@ type StrMode = "none" | "basic" | "literal";
  * 是原始字节,解析结果只用于验收,不值得为它引入解析依赖;多行字符串(""" / ''')与
  * 多行数组的跨行状态有覆盖,足以对官方 config.toml 做保留键判定。
  */
-export function scanTomlTopLevel(text: string): { rootKeys: Set<string>; error?: string } {
+export function scanTomlTopLevel(
+  text: string,
+):
+  | { readonly state: "valid"; readonly rootKeys: ReadonlySet<string> }
+  | { readonly state: "invalid"; readonly error: string } {
   const rootKeys = new Set<string>();
-  let currentTable: string | null = null;
+  let inTable = false;
   let mode: StrMode = "none";
   let depth = 0;
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
@@ -203,21 +207,24 @@ export function scanTomlTopLevel(text: string): { rootKeys: Set<string>; error?:
     if (!trimmed || trimmed.startsWith("#")) continue;
     if (trimmed.startsWith("[")) {
       const header = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(?:#.*)?$/.exec(trimmed);
-      if (!header) return { rootKeys, error: `line ${n + 1}: invalid table header: ${trimmed}` };
-      currentTable = firstKeySegment(header[1]!);
-      rootKeys.add(currentTable);
+      if (!header) return { state: "invalid", error: `line ${n + 1}: invalid table header: ${trimmed}` };
+      inTable = true;
+      rootKeys.add(firstKeySegment(header[1]!));
       continue;
     }
     const assign = /^((?:"[^"]*"|'[^']*'|[\w-]+)(?:\s*\.\s*(?:"[^"]*"|'[^']*'|[\w-]+))*)\s*=(.*)$/.exec(trimmed);
     if (!assign) {
-      return { rootKeys, error: `line ${n + 1}: expected a key assignment or table header, got: ${trimmed}` };
+      return { state: "invalid", error: `line ${n + 1}: expected a key assignment or table header, got: ${trimmed}` };
     }
-    if (currentTable === null) rootKeys.add(firstKeySegment(assign[1]!));
+    if (!inTable) rootKeys.add(firstKeySegment(assign[1]!));
     ({ mode, depth } = scanValue(assign[2]!, depth));
   }
-  if (mode !== "none") return { rootKeys, error: "unterminated multi-line string" };
-  if (depth > 0) return { rootKeys, error: "unbalanced array brackets" };
-  return { rootKeys };
+  if (mode !== "none") return { state: "invalid", error: "unterminated multi-line string" };
+  if (depth > 0) return { state: "invalid", error: "unbalanced array brackets" };
+  return {
+    state: "valid",
+    rootKeys,
+  };
 }
 
 /** 扫过一段 value 文本,返回跨行状态(未闭合的多行字符串 / 未配平的数组括号)。 */

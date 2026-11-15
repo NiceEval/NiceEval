@@ -27,27 +27,27 @@ export type { CalloutGroup, CalloutItem, CalloutLevel };
 export interface CalloutsProps {
   items: readonly CalloutGroup[];
   locale: ReportLocale;
-  className?: string;
+  className: string | undefined;
 }
 
-function validateCalloutItem(value: unknown, path: string): string | null {
+function validateCalloutItem(value: unknown, path: string): string | undefined {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (value.level !== "error" && value.level !== "warning" && value.level !== "info") {
     return `"${path}.level" must be error | warning | info`;
   }
   if (!isLocalizedText(value.message)) return `"${path}.message" must be a LocalizedText`;
-  return null;
+  return undefined;
 }
 
-function validateCalloutGroup(value: unknown, path: string): string | null {
+function validateCalloutGroup(value: unknown, path: string): string | undefined {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (!isLocalizedText(value.title)) return `"${path}.title" must be a LocalizedText`;
   if (!Array.isArray(value.items)) return `"${path}.items" must be an array`;
   for (let i = 0; i < value.items.length; i++) {
     const problem = validateCalloutItem(value.items[i], `${path}.items[${i}]`);
-    if (problem !== null) return problem;
+    if (problem !== undefined) return problem;
   }
-  return null;
+  return undefined;
 }
 
 function assertCalloutsItems(data: unknown): readonly CalloutGroup[] {
@@ -56,7 +56,7 @@ function assertCalloutsItems(data: unknown): readonly CalloutGroup[] {
   }
   for (let i = 0; i < data.length; i++) {
     const problem = validateCalloutGroup(data[i], `items[${i}]`);
-    if (problem !== null) throw dataShapeError("Callouts", "toSampleNotices", "CalloutGroup[]", problem);
+    if (problem !== undefined) throw dataShapeError("Callouts", "toSampleNotices", "CalloutGroup[]", problem);
   }
   return data as readonly CalloutGroup[];
 }
@@ -89,7 +89,7 @@ function CalloutGroupWeb({
             {resolveLocalizedText(badge, locale)}
           </span>
         ))}
-        {headCommand !== null ? <CommandBlock command={headCommand} /> : null}
+        {headCommand !== undefined ? <CommandBlock command={headCommand} /> : null}
       </div>
       {group.items.length > 0 ? (
         <details className="niceeval-callout-details" open={detailsOpen || undefined}>

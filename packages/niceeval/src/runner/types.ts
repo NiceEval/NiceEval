@@ -506,7 +506,7 @@ export interface EvalResult {
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `adapter`/`model`——一次 Invocation 可能横跨多个 `(adapter, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.adapter`/`.model` 去重派生。 */
 export interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
-  name?: LocalizedText;
+  name: LocalizedText | undefined;
   startedAt: string;
   completedAt: string;
   passed: number;
@@ -517,9 +517,9 @@ export interface InvocationSummary {
   errored: number;
   durationMs: number;
   /** 本次 Invocation fresh 结果的 token 汇总(只折叠 input/outputTokens);observed costUSD 不在这里汇总,逐条留在 `results[].usage.costUSD`。 */
-  usage?: Usage;
+  usage: Usage | undefined;
   /** 本次 Invocation fresh 结果的 `estimatedCostUSD` 累计(价目表估算口径,见 EvalResult.estimatedCostUSD);observed cost 不进入本字段。 */
-  estimatedCostUSD?: number;
+  estimatedCostUSD: number | undefined;
   /** Current Record readbacks adopted by this invocation; these are never recreated EvalResults. */
   reusedAttempts: readonly CurrentReusedAttemptReadback[];
   results: EvalResult[];
@@ -537,7 +537,7 @@ export interface InvocationReceipt {
   readonly createdRunIds: readonly string[];
   readonly publicationCutoff: string;
   readonly startedAt: string;
-  readonly completedAt?: string;
+  readonly completedAt: string | undefined;
   readonly completion: "completed" | "interrupted" | "failed";
 }
 
@@ -556,7 +556,7 @@ export interface InvocationShape {
    * 调度前由 Record v1 draft 分配的真实持久化 Run 身份。其它 reporter 可用它关联
    * plan 期的 attempt locator 与最终 Run，但不能替换或重新生成它。
    */
-  runIds?: ReadonlyMap<string, string>;
+  runIds: ReadonlyMap<string, string> | undefined;
 }
 
 /** Receives Invocation and Eval lifecycle notifications for exporting results; reporting callbacks do not own evaluation policy or durable publication. */
@@ -588,7 +588,7 @@ export interface ReporterRegistration {
   reporter: Reporter;
   name: string;
   required: boolean;
-  target?: string;
+  target: string | undefined;
 }
 
 /** Describes one live reporting event; progress and summary notifications are separate from durable Attempt evidence. */
@@ -598,12 +598,12 @@ export type ReporterEvent =
       type: "eval:start";
       eval: { id: string };
       adapter: import("../record/model/run-context.ts").AdapterIdentity;
-      model?: string;
+      model: string | undefined;
       attempt: number;
-      experimentId?: string;
+      experimentId: string | undefined;
     }
   | { type: "eval:complete"; result: EvalResult }
-  | { type: "invocation:earlyExit"; evalId: string; experimentId?: string }
+  | { type: "invocation:earlyExit"; evalId: string; experimentId: string | undefined }
   | { type: "invocation:budgetExceeded"; budget: number; spent: number }
   | { type: "invocation:saved"; summary: InvocationSummary }
   | { type: "invocation:summary"; summary: InvocationSummary }
@@ -618,11 +618,11 @@ export type ReporterEvent =
       /** 该 Experiment 域产生的全部诊断;空集合传空数组,不省略字段。 */
       diagnostics: readonly DiagnosticRecord[];
       /** Run 级共享工作时间树;与 completedAt 同批封口。省略 = 本 Run 没有共享 activity。 */
-      timings?: readonly TimingActivity[];
+      timings: readonly TimingActivity[] | undefined;
       /** 共享构建 provenance;与 timings 经 timingNodeId 关联。省略 = 本 Run 没有查询或构建过 BuildKey。 */
-      sandboxBuilds?: readonly SandboxBuildRecord[];
+      sandboxBuilds: readonly SandboxBuildRecord[] | undefined;
       /** 项目名(来自 config.name),整次 Invocation 内所有 Experiment 共享同一个值。 */
-      name?: LocalizedText;
+      name: LocalizedText | undefined;
     };
 
 // ───────────────────────── eval / experiment / config 定义 ─────────────────────────
@@ -668,29 +668,29 @@ type ExperimentIdComesFromFilePath = {
 /** Eval 作者自行选择的字段；不包含路径、factory 和规划期事实。 */
 export interface EvalAuthorFields {
   /** 一句话描述,展示在 `niceeval list` 和 view 里;纯说明,不影响调度或打分。 */
-  description?: string;
+  description?: string | undefined;
   /** 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。 */
-  tags?: string[];
+  tags?: string[] | undefined;
   /**
    * 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
    * 每个实际评估用例 × Experiment 配对必须恰好一方提供 template-bearing layer。
    */
-  sandbox?: SandboxLayer;
+  sandbox?: SandboxLayer | undefined;
   /** 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。 */
-  plugins?: readonly PluginInstance<"eval">[];
+  plugins?: readonly PluginInstance<"eval">[] | undefined;
   /** 模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。 */
-  judge?: JudgeSelection;
+  judge?: JudgeSelection | undefined;
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
-  timeoutMs?: number;
+  timeoutMs?: number | undefined;
   /** 任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。 */
-  metadata?: globalThis.Record<string, JsonValue>;
+  metadata?: globalThis.Record<string, JsonValue> | undefined;
   /**
    * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
    * gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产物/包管理器缓存;
    * `ignore` 在默认清单上追加排除;`include` 优先级最高,把匹配路径显式加回。
    * 合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结。
    */
-  diff?: { include?: string[]; ignore?: string[] };
+  diff?: { include?: string[] | undefined; ignore?: string[] | undefined } | undefined;
 }
 
 /** Authors may return an Effect; Runner executes it in the Attempt's owning fiber. */
@@ -701,10 +701,10 @@ export type EvalInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | 
   EvalAuthorFields,
   "sandbox"
 > & {
-  sandbox?: Sandbox;
-  id?: IdComesFromFilePath;
-  evaluationKind?: EvaluationKindComesFromFactory;
-  configHash?: ConfigHashComesFromPlanning;
+  sandbox?: Sandbox | undefined;
+  id?: IdComesFromFilePath | undefined;
+  evaluationKind?: EvaluationKindComesFromFactory | undefined;
+  configHash?: ConfigHashComesFromPlanning | undefined;
   test(t: TestContext): EvalTestReturn;
 };
 
@@ -713,26 +713,26 @@ export type ScoreEvalInput<Sandbox extends SandboxLayer | undefined = SandboxLay
   EvalAuthorFields,
   "sandbox"
 > & {
-  sandbox?: Sandbox;
-  id?: IdComesFromFilePath;
-  evaluationKind?: EvaluationKindComesFromFactory;
-  configHash?: ConfigHashComesFromPlanning;
+  sandbox?: Sandbox | undefined;
+  id?: IdComesFromFilePath | undefined;
+  evaluationKind?: EvaluationKindComesFromFactory | undefined;
+  configHash?: ConfigHashComesFromPlanning | undefined;
   test(t: ScoreTestContext): EvalTestReturn;
 };
 
 /** Factory 完成默认归一后的 Eval 字段；Definition 不再复用作者输入的 optional 半状态。 */
 export interface EvalDefinitionFields<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
-  readonly requiredModelRoles?: readonly string[];
-  readonly description?: string;
+  readonly requiredModelRoles: readonly string[];
+  readonly description: string | undefined;
   readonly tags: readonly string[];
   /**
    * 保留“作者省略”和“作者显式声明空 layer”的来源差异：Direct Agent 只允许前者，
    * Sandbox link 则把省略侧视为 command-only。不能在 factory 阶段补成 sandboxLayer()。
    */
-  readonly sandbox?: Sandbox;
+  readonly sandbox: Sandbox | undefined;
   readonly plugins: readonly PluginInstance<"eval">[];
-  readonly judge?: JudgeSelection;
-  readonly timeoutMs?: number;
+  readonly judge: JudgeSelection | undefined;
+  readonly timeoutMs: number | undefined;
   readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
   readonly diff: {
     readonly include: readonly string[];
@@ -769,10 +769,10 @@ export type EvalGroupMember =
 /** Groups a nonempty sequence of Evals into one Sandbox lane; explicitly select the physical-instance policy for unavailability. */
 export interface EvalGroupInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | undefined> {
   readonly evals: readonly [EvalGroupMember, ...EvalGroupMember[]];
-  readonly sandbox?: Sandbox;
+  readonly sandbox?: Sandbox | undefined;
   /** Required physical-instance policy when a grouped Sandbox becomes unavailable. */
   readonly onUnavailable: PluginOnUnavailable;
-  readonly plugins?: readonly PluginInstance<"group">[];
+  readonly plugins?: readonly PluginInstance<"group">[] | undefined;
 }
 /** A defined ordered Eval Group sharing a physical Sandbox lane; it is distinct from the directory-derived Experiment comparison group. */
 export interface EvalGroupDefinition extends EvalGroupInput {
@@ -794,12 +794,12 @@ const DATASET_DEFINITION: unique symbol = Symbol("niceeval.datasetDefinition");
 
 /** Defines data rows and a test that runs for each row; evaluationKind selects Pass or Score semantics rather than being inferred from returned values. */
 export interface DatasetInput<TRow = unknown, Kind extends EvaluationKind = "pass"> {
-  readonly description?: string;
-  readonly tags?: readonly string[];
-  readonly timeoutMs?: number;
-  readonly evaluationKind?: Kind;
+  readonly description?: string | undefined;
+  readonly tags?: readonly string[] | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly evaluationKind?: Kind | undefined;
   readonly data: readonly TRow[] | (() => Promise<readonly TRow[]> | readonly TRow[]);
-  readonly key?: (row: TRow, index: number) => string;
+  readonly key?: ((row: TRow, index: number) => string) | undefined;
   test(t: Kind extends "score" ? ScoreTestContext : TestContext, row: TRow): EvalTestReturn;
 }
 
@@ -859,16 +859,18 @@ export interface DiscoveredEvalFacts {
   /** @internal Original factory object, used only for Eval Group identity resolution. */
   readonly definition: AnyEvalDefinition;
   /** Eval Group planning facts, present only for discovered group members. */
-  readonly evalGroup?: {
-    readonly id: string;
-    readonly evalIds: readonly string[];
-    readonly definitionHash: string;
-    readonly sandbox?: SandboxLayer;
-    readonly onUnavailable: PluginOnUnavailable;
-    readonly plugins: readonly PluginInstance<"group">[];
-    readonly sourcePath: string;
-    readonly baseDir: string;
-  };
+  readonly evalGroup:
+    | {
+        readonly id: string;
+        readonly evalIds: readonly string[];
+        readonly definitionHash: string;
+        readonly sandbox: SandboxLayer | undefined;
+        readonly onUnavailable: PluginOnUnavailable;
+        readonly plugins: readonly PluginInstance<"group">[];
+        readonly sourcePath: string;
+        readonly baseDir: string;
+      }
+    | undefined;
 }
 
 /** discovery 保留 factory 的 evaluationKind 判别、私有品牌与对应 test context。 */
@@ -923,7 +925,7 @@ export type SandboxBeforeCache = "use" | "bypass";
 
 /** Configures before-action caching; this is separate from reusing already published evaluation results. */
 export interface SandboxCacheConfig {
-  readonly before?: SandboxBeforeCache;
+  readonly before?: SandboxBeforeCache | undefined;
 }
 
 /**
@@ -941,25 +943,25 @@ export function resolveSandboxBeforeCache(
 /** Experiment 作者自行选择的字段；不包含路径 id 与 factory 品牌。 */
 export interface ExperimentAuthorFields {
   /** 为自定义 Adapter 的各个模型用途选择模型；不能与单模型简写同时使用。 */
-  models?: Readonly<Record<string, ModelRoleSelection>>;
+  models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
   /** 一句话描述,展示在 view / CLI 里;纯说明,不影响调度或打分。 */
-  description?: string;
+  description?: string | undefined;
   /** 本实验使用的 Adapter 实现。 */
-  adapter?: Adapter;
+  adapter?: Adapter | undefined;
   /** 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。 */
-  model?: string;
+  model?: string | undefined;
   /** 模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。 */
-  reasoningEffort?: string;
+  reasoningEffort?: string | undefined;
   /**
    * 本实验的 Judge 执行配置。只覆盖 model / endpoint / credential selector / 调用预算，
    * rubric 由 Match 拥有，材料与消费阈值由 Assertion 提供。各字段按
    * Experiment → Eval → Config → 内置默认值解析。
    */
-  judge?: JudgeSelection;
+  judge?: JudgeSelection | undefined;
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是扁平标量对象
    *  (仅字符串、有限数字或布尔值，defineExperiment 解析时校验),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
-  flags?: globalThis.Record<string, FlagValue>;
+  flags?: globalThis.Record<string, FlagValue> | undefined;
   /**
    * 报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
    * 值域 string | number(解析时校验)。与 `flags` 的分界是「会不会改变 attempt 里发生的事」:
@@ -968,12 +970,12 @@ export interface ExperimentAuthorFields {
    * 分组。`line` 键被默认报告识别:组内任一实验声明了它,散点按线归类并连线。
    * 见 docs/feature/experiments/library/README.md「labels」。
    */
-  labels?: globalThis.Record<string, string | number>;
+  labels?: globalThis.Record<string, string | number> | undefined;
   /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--attempts` 覆盖时默认 1。 */
-  attempts?: number;
+  attempts?: number | undefined;
   /** 一次重复(attempts > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`attempts` 跑满、测完整通过率),
    *  显式打开用于「只想知道能不能过」的省钱场景。 */
-  earlyExit?: boolean;
+  earlyExit?: boolean | undefined;
   /**
    * 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的
    * 只读 `EvalDescriptor`,不暴露路径 / 执行字段);省略等价于 `"*"`。谓词对本次 invocation 的
@@ -981,36 +983,36 @@ export interface ExperimentAuthorFields {
    * (见 docs/feature/eval/library/README.md「EvalDescriptor」、docs/feature/experiments/library/README.md
    * 「evals:遍历发现结果,自定义选择」)。
    */
-  evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
+  evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean) | undefined;
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这个实验生效。 */
-  timeoutMs?: number;
+  timeoutMs?: number | undefined;
   /**
    * 本实验贡献的 Sandbox 声明层。它与每条选中 Eval 的同名字段逐配对链接；
    * 每个配对恰好一方提供 template-bearing layer。
    */
-  sandbox?: SandboxLayer;
+  sandbox?: SandboxLayer | undefined;
   /** Host 的执行缓存策略；与 Sandbox 声明层不同，此字段不参与身份计算。 */
-  sandboxCache?: SandboxCacheConfig;
+  sandboxCache?: SandboxCacheConfig | undefined;
   /** 只向 Provider 写 Run 级标签，省略创建实例的 Attempt 与评估用例标签；不影响运行身份。 */
-  sandboxLabels?: "run-only";
+  sandboxLabels?: "run-only" | undefined;
   /** 本实验显式声明的 Plugin 实例列表，由 `defineExperiment()` 规范化。 */
-  plugins?: readonly PluginInstance<"experiment">[];
+  plugins?: readonly PluginInstance<"experiment">[] | undefined;
   /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
-  sandboxReuse?: boolean;
+  sandboxReuse?: boolean | undefined;
   /**
    * 声明本 Experiment 需要独占的共享外部状态。相同 key 的 Invocation 在同一项目
    * Coordination 域内从 Experiment/Sandbox before 前一直互斥到 Sandbox after、
    * provider finalizer 与 Experiment after 全部完成；等待者不会先创建 Sandbox，
    * 取得租约后继续自己的 plan。它不是状态存储、事务或跨机器锁。
    */
-  sharedState?: SharedStateConfig;
+  sharedState?: SharedStateConfig | undefined;
   /**
    * 本实验的估算花费上限(USD)。调度器累计已完成 attempt 的 `estimatedCostUSD`；该值由
    * model、token usage 与 runtime/config pricing table 计算，与 Provider / Adapter 回报的
    * observed `usage.costUSD` 独立，后者不驱动 budget。估算到顶后跳过这个实验剩下未起飞的
    * attempt 并上报一次 `run:budgetExceeded`（已在飞的 attempt 仍会跑完）。
    */
-  budget?: number;
+  budget?: number | undefined;
   /**
    * 本 Invocation 内本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
    * 仍按全局并发(CLI / env / config / 沙箱默认)跑。用于串行化有共享状态的实验
@@ -1020,7 +1022,7 @@ export interface ExperimentAuthorFields {
    * `maxConcurrency: 1` 因此是严格的临界区,不会被同实验的下一个 attempt 提前闯入。
    * 它不跨 Invocation；跨 Invocation 的共享外部状态请声明 `sharedState`。
    */
-  maxConcurrency?: number;
+  maxConcurrency?: number | undefined;
   /**
    * 实验级生命周期钩子对的 before 侧:整场至多一次、宿主机侧,管「每实验一份、所有 attempt
    * 共享」的宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的
@@ -1031,14 +1033,14 @@ export interface ExperimentAuthorFields {
    * 函数体不进 fingerprint,改了钩子逻辑用 `--rerun all` 明确全部重跑。
    * 见 docs/feature/experiments/architecture/README.md「实验级生命周期」。
    */
-  before?: ExperimentHook;
+  before?: ExperimentHook | undefined;
   /**
    * 实验级生命周期钩子对的 after 侧:本实验全部 attempt 收尾后执行(运行被中断也执行),
    * 当且仅当 before 时点走到过——before 抛错不豁免(半初始化现场同样要扫尾,after 对可能
    * 未赋值的闭包变量做防御),未声明 before 不影响触发;一个 attempt 都不派发则跳过。
    * 抛错或超 30s 清理上限只记运行级 diagnostic(`experiment-teardown-failed`),不改判定。
    */
-  after?: ExperimentHook;
+  after?: ExperimentHook | undefined;
 }
 
 /** 作者输入：id 只能由发现阶段从文件路径推导。 */
@@ -1047,10 +1049,10 @@ type ExperimentFlagsParser<A extends Adapter> = A extends { readonly parseFlags:
   ? S
   : undefined;
 type ExperimentFlagsFields<A extends Adapter> = {
-  readonly flags?: NoInfer<AdapterFlagsValue<ExperimentFlagsParser<A>>>;
+  readonly flags?: NoInfer<AdapterFlagsValue<ExperimentFlagsParser<A>>> | undefined;
 };
 
-type ExperimentAdapterSelection<A extends Adapter> = { readonly adapter?: A };
+type ExperimentAdapterSelection<A extends Adapter> = { readonly adapter?: A | undefined };
 
 type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "custom" }
   ?
@@ -1059,8 +1061,8 @@ type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "cust
           readonly model?: never;
           readonly reasoningEffort?: never;
         }
-      | { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string }
-  : { readonly models?: never; readonly model?: string; readonly reasoningEffort?: string };
+      | { readonly models?: never; readonly model?: string | undefined; readonly reasoningEffort?: string | undefined }
+  : { readonly models?: never; readonly model?: string | undefined; readonly reasoningEffort?: string | undefined };
 
 /** Defines execution conditions for selected Evals; the Experiment ID comes from its file path rather than an authored id field. */
 export type ExperimentInput<A extends Adapter = Adapter> = Omit<
@@ -1070,34 +1072,34 @@ export type ExperimentInput<A extends Adapter = Adapter> = Omit<
   ExperimentModelFields<A> &
   ExperimentAdapterSelection<A> &
   ExperimentFlagsFields<NoInfer<A>> & {
-    id?: ExperimentIdComesFromFilePath;
+    id?: ExperimentIdComesFromFilePath | undefined;
   };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
 export interface ExperimentDefinition<A extends Adapter = Adapter> {
-  readonly models?: ResolvedModelRoles;
-  readonly description?: string;
-  readonly adapter?: A;
-  readonly model?: string;
-  readonly reasoningEffort?: string;
-  readonly judge?: JudgeSelection;
+  readonly models: ResolvedModelRoles | undefined;
+  readonly description: string | undefined;
+  readonly adapter: A | undefined;
+  readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
+  readonly judge: JudgeSelection | undefined;
   readonly flags: AdapterFlagsOutput<ExperimentFlagsParser<A>> & ExperimentFlags;
   readonly labels: Readonly<globalThis.Record<string, string | number>>;
   readonly attempts: number;
   readonly earlyExit: boolean;
   readonly evals: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
-  readonly timeoutMs?: number;
+  readonly timeoutMs: number | undefined;
   /** 省略本身是 link 阶段需要的来源事实，不能在 Definition 中归一成显式空 layer。 */
-  readonly sandbox?: SandboxLayer;
-  readonly sandboxCache?: SandboxCacheConfig;
-  readonly sandboxLabels?: "run-only";
+  readonly sandbox: SandboxLayer | undefined;
+  readonly sandboxCache: SandboxCacheConfig | undefined;
+  readonly sandboxLabels: "run-only" | undefined;
   readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
-  readonly sharedState?: SharedStateConfig;
-  readonly budget?: number;
-  readonly maxConcurrency?: number;
-  readonly before?: ExperimentHook;
-  readonly after?: ExperimentHook;
+  readonly sharedState: SharedStateConfig | undefined;
+  readonly budget: number | undefined;
+  readonly maxConcurrency: number | undefined;
+  readonly before: ExperimentHook | undefined;
+  readonly after: ExperimentHook | undefined;
   readonly [EXPERIMENT_DEFINITION]: true;
 }
 
@@ -1144,7 +1146,7 @@ export interface DiscoveredExperiment extends ExperimentDefinition {
  */
 export interface EvalDescriptor {
   readonly id: string;
-  readonly description?: string;
+  readonly description: string | undefined;
   readonly tags: readonly string[];
   /**
    * 计分粒度题型,`defineEval` → `"pass"`,`defineScoreEval` → `"score"`。定义期事实,
@@ -1152,7 +1154,7 @@ export interface EvalDescriptor {
    * docs/feature/experiments/library/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
   readonly evaluationKind: EvaluationKind;
-  readonly metadata?: Readonly<globalThis.Record<string, JsonValue>>;
+  readonly metadata: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
 /** Defines project defaults for execution, reporting and Judge selection; higher-priority invocation and Experiment settings may override these defaults. */
@@ -1161,27 +1163,27 @@ export interface Config {
    * 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
    */
-  name?: LocalizedText;
+  name?: LocalizedText | undefined;
   /** 项目级默认 Judge Provider；Eval 与 Experiment 可替换模型或整个 Provider。 */
-  judgeProvider?: JudgeProvider;
+  judgeProvider?: JudgeProvider | undefined;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果)。 */
-  reporters?: Reporter[];
+  reporters?: Reporter[] | undefined;
   /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
-  maxConcurrency?: number;
+  maxConcurrency?: number | undefined;
   /** Run 级 Sandbox 镜像准备并发；与 attempt 并发独立，省略时安全默认 2。 */
-  maxBuildConcurrency?: number;
+  maxBuildConcurrency?: number | undefined;
   /** Run 级 Before cache DAG 准备并发；与 build / attempt 并发独立。 */
-  maxBeforeCacheConcurrency?: number;
+  maxBeforeCacheConcurrency?: number | undefined;
   /** 项目级 before cache 默认；Experiment 与显式 CLI flag 可覆盖。 */
-  sandboxCache?: SandboxCacheConfig;
+  sandboxCache?: SandboxCacheConfig | undefined;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
-  timeoutMs?: number;
+  timeoutMs?: number | undefined;
   /**
    * 失败时挂起 Attempt 供原生 CLI 排查。
    * 支持布尔值（如 `pauseOnFailure: !process.env.CI`）。
    * CLI `--pause-on-failure` / `--no-pause` 具有更高优先级。
    */
-  pauseOnFailure?: boolean;
+  pauseOnFailure?: boolean | undefined;
   /**
    * OTLP 接收配置,niceeval 项目内唯一入口(不读 NICEEVAL_OTLP_* 环境变量)。
    * `port` 钉住接收端口(固定端口模式:长驻服务把 OTEL_EXPORTER_OTLP_ENDPOINT 一次性指到
@@ -1192,7 +1194,7 @@ export interface Config {
    * "127.0.0.1"。只有作者已经提供受控 tunnel / 可达路由时才在这里覆盖；Docker Sandbox
    * 默认把 receiver 放在 Sandbox 内，不依赖隐式宿主 gateway。
    */
-  telemetry?: { host?: string; port?: number };
+  telemetry?: { host?: string | undefined; port?: number | undefined } | undefined;
   /**
    * 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
@@ -1200,7 +1202,7 @@ export interface Config {
    * collector 只在 reported cost 缺席时，把命中的显式 fixed profile 封存为 call-bound estimate proof。
    * Inspection 只读已封存 proof，不把 mutable config 作为 operation 输入，也不按 endpoint 倒填历史调用。
    */
-  pricing?: globalThis.Record<string, PriceOverride>;
+  pricing?: globalThis.Record<string, PriceOverride> | undefined;
 }
 
 /** 每百万 token 的配置价格；Runner 预算保持既有 USD 语义，Inspection 不读取该预算结果。 */
@@ -1213,21 +1215,23 @@ export interface PriceOverride {
    * cache 命中（读）token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
    * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
    */
-  cacheReadPerMTok?: number;
+  cacheReadPerMTok?: number | undefined;
   /**
    * cache 写入 token 单价。封存 physical-call estimate 时，省略表示该桶价格未知，不会改用 input rate。
    * 独立的 Runner `maxCost` 执行前预算为保持既有行为，仍会在它自己的计算中使用 input rate fallback。
    */
-  cacheWritePerMTok?: number;
+  cacheWritePerMTok?: number | undefined;
   /** Inspection call-price receipt 的依据；省略时按兼容配置解释为 catalog reference。 */
-  basis?: "catalog-reference";
+  basis?: "catalog-reference" | undefined;
   /** 配置价格当前只接受 USD；reported cost 仍可报告其它货币。 */
-  currency?: "USD";
-  /** 非秘密价格来源身份；省略时使用 niceeval.config.pricing，未知时间保留 null。 */
-  source?: {
-    readonly id: string;
-    readonly asOf?: number | null;
-  };
+  currency?: "USD" | undefined;
+  /** 非秘密价格来源身份；省略时使用 niceeval.config.pricing，未知时间省略。 */
+  source?:
+    | {
+        readonly id: string;
+        readonly asOf?: number | undefined;
+      }
+    | undefined;
 }
 
 // ───────────────────────── 调度编排 ─────────────────────────
@@ -1246,55 +1250,59 @@ export interface PriceOverride {
  * 之类的展示字段附着,不参与去重或查找 —— 把展示 label 错当成 identity key 曾经是 live 表格
  * 两个真实 bug 的根因(另见 memory 的 live-rows-fold-experiment-variants)。
  */
-export function runWho(run: { agentName: string; model?: string; experimentId?: string }): string {
+export function runWho(run: {
+  agentName: string;
+  model: string | undefined;
+  experimentId: string | undefined;
+}): string {
   if (run.experimentId) return run.experimentId.split("/").pop()!;
   return run.model ? `${run.agentName}/${run.model}` : run.agentName;
 }
 
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AdapterRun {
-  readonly models?: ResolvedModelRoles;
-  readonly adapter?: Adapter;
+  readonly models: ResolvedModelRoles | undefined;
+  readonly adapter: Adapter | undefined;
   /** Present exactly when `adapter` is an Agent implementation. */
-  readonly agent?: Agent;
-  readonly model?: string;
-  readonly reasoningEffort?: string;
+  readonly agent: Agent | undefined;
+  readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
   readonly flags: ExperimentFlags;
   readonly attempts: number;
   readonly earlyExit: boolean;
   /** 本次 Invocation 已按 CLI → Experiment → Config → default 归一的 Host cache 策略。 */
   readonly sandboxBeforeCache: SandboxBeforeCache;
   /** Experiment 的作者 layer；省略在 link 输入归一为 command-only。 */
-  readonly sandbox?: SandboxLayer;
+  readonly sandbox: SandboxLayer | undefined;
   /** Experiment Plugin occurrences carried into zero-resource pair link. */
-  readonly plugins?: readonly PluginInstance<"experiment">[];
+  readonly plugins: readonly PluginInstance<"experiment">[];
   /** Canonical, credential-free Experiment Plugin behavior projection. */
-  readonly pluginBehavior?: JsonValue;
-  readonly sandboxReuse?: boolean;
-  readonly sandboxLabels?: "run-only";
+  readonly pluginBehavior: JsonValue | undefined;
+  readonly sandboxReuse: boolean;
+  readonly sandboxLabels: "run-only" | undefined;
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
-  readonly sharedState?: SharedStateConfig;
+  readonly sharedState: SharedStateConfig | undefined;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
-  readonly judge?: JudgeSelection;
+  readonly judge: JudgeSelection | undefined;
   /**
    * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
    * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
    * `resolveAttemptTimeout` 在派发时接上,提前物化会让 eval 自己声明的上限永久短路
    * (见 timeout.ts 与 memory/multi-source-field-resolution-order.md)。
    */
-  readonly timeoutMs?: number;
+  readonly timeoutMs: number | undefined;
   /** `timeoutMs` 那个值来自哪一层,供超时消息标注出处;省略按 `experiment` 读。 */
-  readonly timeoutSource?: "flag" | "experiment";
-  readonly budget?: number;
+  readonly timeoutSource: "flag" | "experiment" | undefined;
+  readonly budget: number | undefined;
   readonly experimentId: string;
   /** Experiment 定义文件目录；只用于解析 template 中的相对宿主路径。 */
   readonly experimentBaseDir: string;
   /** Experiment 定义文件路径；link 诊断来源。 */
   readonly experimentSourcePath: string;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
-  readonly description?: string;
+  readonly description: string | undefined;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
-  readonly labels?: Readonly<globalThis.Record<string, string | number>>;
+  readonly labels: Readonly<globalThis.Record<string, string | number>>;
   /**
    * 本次 invocation 解析后实际选中的 eval id 全集——CLI 在构造 AgentRun 时对候选 eval 各求值
    * 一次算好(见 `eval-selection.ts` 的 `resolveExperimentEvals()`),下游(dry-run、sandbox 查表、
@@ -1304,12 +1312,12 @@ export interface AdapterRun {
   readonly selectedEvalIds: readonly string[];
   /** 本配置自己的并发上限(来自 ExperimentDef.maxConcurrency):调度器为它单建信号量,
    *  attempt 先过这道闸再占全局并发位;省略则只受全局并发约束。 */
-  readonly maxConcurrency?: number;
+  readonly maxConcurrency: number | undefined;
   /** 实验级生命周期钩子对(来自 ExperimentDef.before / .after):before 整场至多一次,
    *  调度器 memoize 执行;after 在全部 attempt 收尾后执行,当且仅当 before 时点走到过
    *  (语义见 ExperimentDef 对应字段)。 */
-  readonly setup?: ExperimentHook;
-  readonly teardown?: ExperimentHook;
+  readonly setup: ExperimentHook | undefined;
+  readonly teardown: ExperimentHook | undefined;
 }
 
 /** @internal Transitional name while Agent-only execution seams are narrowed. */
@@ -1324,37 +1332,39 @@ export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
    * 省略 = 全部销毁(留存永远是显式选择)。留存决策在 verdict 定稿的收尾点按档位提交,
    * 见 docs/feature/sandbox/architecture/README.md「留存(keep)与注册表」。
    */
-  keepSandbox?: "failed" | "all";
+  keepSandbox: "failed" | "all" | undefined;
   /** Invocation override for Config.pauseOnFailure. */
-  pauseOnFailure?: boolean;
+  pauseOnFailure: boolean | undefined;
   /** --rerun 的本次调用携带口径。 */
-  rerun?: "failed" | "all";
+  rerun: "failed" | "all" | undefined;
   /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
-  accept?: readonly string[];
+  accept?: readonly string[] | undefined;
   /**
    * 本地旧 registry 根（默认 `cwd/.niceeval`）。仅供尚未迁移的 after / Sandbox
    * 生命周期消费者；Session 与 execution lock 固定使用 `recordRoot` 的 ProjectDatabase。
    */
-  coordinationRoot?: string;
+  coordinationRoot: string | undefined;
   /**
    * 已签发的实际 portable Record root。其协调身份由 canonical ProjectDatabase
    * 持有，不能由 Runner 的执行协调目录代替。
    */
   recordRoot: RecordRoot;
   /** CLI 为 `niceeval exp` 提供的 ProjectDatabase durable Session projection。 */
-  session?: import("./session.ts").SessionTracker;
+  session: import("./session.ts").SessionTracker | undefined;
   /**
    * The current Record coordinator calls this after its frozen-view readback
    * has established the exact reusable attempts. The CLI uses this one-way
    * Effect hand-off to emit the invocation plan; callers cannot provide or
    * alter Record reuse authority through it.
    */
-  onCurrentRecordReusePlan?: (input: {
-    readonly reused: number;
-    readonly reusedFailures: readonly FailureDetail[];
-    /** Draft identities become Human-visible only if the final receipt confirms publication. */
-    readonly runIds: ReadonlyMap<string, string>;
-  }) => Effect.Effect<void, never>;
+  onCurrentRecordReusePlan:
+    | ((input: {
+        readonly reused: number;
+        readonly reusedFailures: readonly FailureDetail[];
+        /** Draft identities become Human-visible only if the final receipt confirms publication. */
+        readonly runIds: ReadonlyMap<string, string>;
+      }) => Effect.Effect<void, never>)
+    | undefined;
   /**
    * 已注册的 reporter,携带 name/required 元数据(见 `ReporterRegistration`)。这是内部编排
    * 通道——调用方(今天只有 `cli.ts`)按来源(显式 --junit / 用户 `Config.reporters`)把裸
@@ -1363,43 +1373,54 @@ export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
   reporters: ReporterRegistration[];
   maxConcurrency: number;
   /** Run 级 Sandbox 镜像 lookup/build 并发；省略时安全默认 2。 */
-  maxBuildConcurrency?: number;
+  maxBuildConcurrency: number | undefined;
   /** Run 级 Before cache DAG 并发；省略时安全默认 2。 */
-  maxBeforeCacheConcurrency?: number;
-  signal?: AbortSignal;
+  maxBeforeCacheConcurrency: number | undefined;
+  signal: AbortSignal | undefined;
   /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;
    * 每个 agent 一个 receiver,attempt 之间共享 —— 被测应用是长驻进程,端点不能随 attempt 换)。
    */
-  otelPool?: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool;
+  otelPool?: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool | undefined;
   /**
    * Run 级共享构建准备。只含携带规划后仍需 fresh 执行的 BuildKey;
    * 省略时 runEvals 从 pair-owned ProviderPlan 自动收集
    * (Compose works 默认接 dockerComposeBuildProvider)。测试可显式注入假 provider。
    * 共享构建不占 attempt 并发位,不计入 executionMs。
    */
-  buildPreparation?: {
-    readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
-    readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
-    /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
-    readonly pairBuildKeys: Readonly<
-      globalThis.Record<string, readonly import("../sandbox/build-coordinator.ts").SandboxBuildRef[]>
-    >;
-    readonly maxConcurrency?: number;
-    readonly buildTimeoutMs?: number;
-    readonly prepareBudgetMs?: number;
-  };
+  buildPreparation?:
+    | {
+        readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
+        readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
+        /** `${experimentId}|${evalId}` → 该 pair 的 fresh attempt 依赖的 BuildKey。 */
+        readonly pairBuildKeys: Readonly<
+          globalThis.Record<string, readonly import("../sandbox/build-coordinator.ts").SandboxBuildRef[]>
+        >;
+        readonly maxConcurrency?: number | undefined;
+        readonly buildTimeoutMs?: number | undefined;
+        readonly prepareBudgetMs?: number | undefined;
+      }
+    | undefined;
   /**
    * Run 级 Agent artifact prepare 协调器。省略时 runEvals 为有 staged installer 的
    * sandbox agent 新建并接真 Run timing recorder;测试可注入。
    */
-  artifactPrepare?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
+  artifactPrepare?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator | undefined;
 }
+
+/** Invocation-owned resources are acquired once before dispatching Attempts. */
+export type RunRuntimeOptions<RecordError = never, RecordRequirements = never> = RunOptions<
+  RecordError,
+  RecordRequirements
+> & {
+  readonly otelPool: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool;
+  readonly artifactPrepare: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
+};
 
 /** 调度器内部的一次尝试:eval × run × 第几轮。 */
 export interface Attempt {
   /** Durable Record reservation UUID, allocated before physical materialization. */
-  attemptId?: string;
+  attemptId: string | undefined;
   readonly evalDef: DiscoveredEval;
   readonly run: AgentRun;
   readonly attempt: number;
@@ -1418,7 +1439,7 @@ export interface Attempt {
    * 预分配 runId 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与
    * result.json 从第一次写入起就用同一个值。裸 run(无 experimentId)不产出。
    */
-  locator?: AttemptLocator;
+  locator: AttemptLocator | undefined;
 }
 
 // ───────────────────────── 反馈 profile / 事件 / reducer 状态 ─────────────────────────
@@ -1447,7 +1468,7 @@ export type OutputProfile = "human" | "json";
  */
 export interface AttemptRef {
   /** 未挂靠 experiment 时为 undefined(直接指定 agent/model 跑,不经过 experiment);不用空字符串占位。 */
-  experimentId?: string;
+  experimentId: string | undefined;
   evalId: string;
   /** 0-indexed,与 `EvalResult.attempt` / `AttemptLocator` 的 attempt 同一口径。 */
   attempt: number;
@@ -1480,7 +1501,7 @@ export interface ActiveAttempt {
    * `timing.phases` 完整落盘,live 面板要回答的是「这条还活着吗、跑了多久、正在干什么」。
    */
   startedAt: number;
-  detail?: string;
+  detail: string | undefined;
 }
 
 /** Stable reason vocabulary for an Attempt that remains in the queued count. */
@@ -1520,9 +1541,9 @@ export interface ActiveExperimentHook {
   hook: ExperimentHookName;
   /** 钩子开始的墙钟时间(epoch ms),用于渲染运行级行的耗时。 */
   startedAt: number;
-  detail?: string;
+  detail: string | undefined;
   /** 强杀后启动自愈补执行的 after(见 `DurableFeedbackEvent` 的 "experiment-hook" 变体)。 */
-  recovery?: boolean;
+  recovery: boolean | undefined;
 }
 
 /**
@@ -1535,7 +1556,7 @@ export interface ActiveLockWait {
   /** 当前仍在等待的 evalId → 该用例开始等待的时间与持有方身份。`size` 就是运行级行要展示的
    *  等待条数;为空表示这个实验当前没有在等的用例(条目仍保留在 map 里,供非 TTY 聚合文案
    *  读取下面两个累计字段,直到下一次 "started" 事件开启新窗口时清零)。 */
-  waiting: ReadonlyMap<string, { startedAt: number; holderPid?: number; holderHost?: string }>;
+  waiting: ReadonlyMap<string, { startedAt: number; holderPid: number | undefined; holderHost: string | undefined }>;
   /** 本次「有等待用例」窗口内,累计已经 resolved 且携入 reused 的 attempt 数——供非 TTY 聚合
    *  收尾行(如 `lock wait resolved · compare/codex (2 carried · 1 to run, 1m 34s)`)读取。 */
   resolvedCarried: number;
@@ -1573,14 +1594,14 @@ export interface FailureDetail {
   /** 一层可行动摘要(gate 断言名、error 消息……),不是完整 stack/transcript;详情走 `niceeval view`。 */
   reason: string;
   /** failed / unavailable 时的结构化主 Fact/use 摘要。 */
-  fact?: PrimaryFactSummary;
+  fact: PrimaryFactSummary | undefined;
   /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
-  phase?: LifecyclePhase;
+  phase: LifecyclePhase | undefined;
   /** 仅 errored 且没有结构化主断言摘要（真正的执行错误，而非 assertion-unavailable）时携带：
    *  `AttemptError.code` 原样透出,human 单行事实行拼成 `errored · <phase> · <code>`。 */
-  code?: string;
+  code: string | undefined;
   /** 完整时间归属；attempt 形态同时投影上面的 phase，run 形态保留共享 timing node。 */
-  origin?: TimingOrigin;
+  origin: TimingOrigin | undefined;
 }
 
 /** 带发生时间的失败通知；复用失败以 FailureDetail 静态进入 plan，不伪装成刚发生的事件。 */
@@ -1609,13 +1630,13 @@ export interface DiagnosticNotice {
   key: string;
   /** 对外的稳定词法(`--json` 的 notice/warning `code`、human 通知行标题);省略 = 与 `key` 相同。
    *  `key` 可以把折叠身份(experimentId / evalId)编进去,`code` 恒是干净字面量。 */
-  code?: string;
+  code: string | undefined;
   severity: DiagnosticSeverity;
   message: string;
   /** 相同 key 累计出现的次数,由 reducer 去重时递增。 */
   count: number;
-  identity?: AttemptRef;
-  data?: Readonly<globalThis.Record<string, JsonValue>>;
+  identity: AttemptRef | undefined;
+  data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
 }
 
 /** 运行完整性结论,独立于 verdict 计数。CI 退出码不能只看 failed/errored ——
@@ -1684,9 +1705,9 @@ export interface RunFeedbackState {
   earlyExitByEval: ReadonlyMap<string, number>;
   elapsedMs: number;
   /** 仅本次实际派发 attempt 的 token；carry 结果的历史 usage 不进入这里。 */
-  newTokenCount?: number;
+  newTokenCount: number | undefined;
   /** 仅本次实际派发 attempt 的 `estimatedCostUSD` 累计(价目表估算口径,与 newTokenCount 同口径);observed cost 不进入这里。 */
-  estimatedCostUSD?: number;
+  estimatedCostUSD: number | undefined;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
   /** Provider-capacity waiters remain queued but expose a stable reason and identity. */
   queuedAttempts: ReadonlyMap<AttemptKey, QueuedAttempt>;
@@ -1694,7 +1715,7 @@ export interface RunFeedbackState {
    *  `done` 清空。预检发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何 attempt,
    *  也不参与五项恒等式计数——预检期间 attempt 保持 `queued`,
    *  这行就是「为什么它们还在排队」的解释。undefined = 当前没有在飞的预检。 */
-  activePrecheck?: ActivePrecheck;
+  activePrecheck: ActivePrecheck | undefined;
   /** 在飞的实验级钩子(experimentId → 运行级行状态),由 "experiment-hook" 事件增删、
    *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli/README.md「实验级 Hook 的显示」)。 */
   experimentHooks: ReadonlyMap<string, ActiveExperimentHook>;
@@ -1721,7 +1742,7 @@ export interface KeptNotice {
   verdict: Verdict;
   provider: string;
   sandboxId: string;
-  enter?: string;
+  enter: string | undefined;
 }
 
 /** 一次 run 的初始计划。复用只暴露数量；失败明细仅用于静态初始化终局清单。 */
@@ -1733,11 +1754,11 @@ export interface RunFeedbackPlan {
    * 出现空对象,human `PLAN` 行也不加附注(见 docs/feature/experiments/cli/README.md
    * 「运行中的 live 面板」的 `concurrency` 附注段)。
    */
-  experimentConcurrency?: Readonly<globalThis.Record<string, number>>;
+  experimentConcurrency: Readonly<globalThis.Record<string, number>> | undefined;
   /** 携入(carry)结果数,直接计入 `RunFeedbackState.reused`,不需要重新调度。 */
   reused: number;
   /** 复用结果中的失败；plan 时静态注入，不产生“刚发生”的失败事件。 */
-  reusedFailures?: readonly FailureDetail[];
+  reusedFailures: readonly FailureDetail[];
 }
 
 /**
@@ -1749,7 +1770,13 @@ export interface RunFeedbackPlan {
 export type AttemptLifecycleEvent =
   | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string; reason: AttemptQueueReason }
   | { type: "attempt:start"; at: number; identity: AttemptRef; who: string; phase: LifecyclePhase }
-  | { type: "attempt:sandbox"; at: number; identity: AttemptRef; provider: string; nativeInstanceId: string | null }
+  | {
+      type: "attempt:sandbox";
+      at: number;
+      identity: AttemptRef;
+      provider: string;
+      nativeInstanceId: string | undefined;
+    }
   | { type: "attempt:phase"; at: number; identity: AttemptRef; phase: LifecyclePhase }
   | { type: "attempt:progress"; at: number; identity: AttemptRef; detail: string }
   | {
@@ -1759,9 +1786,9 @@ export type AttemptLifecycleEvent =
       who: string;
       verdict: Verdict;
       /** 本次 attempt 的输入 + 输出 token；缺失表示 provider 未报告。 */
-      tokenCount?: number;
+      tokenCount: number | undefined;
       /** 本次 attempt 的价目表估算成本(`EvalResult.estimatedCostUSD` 口径);observed cost 不携带。 */
-      estimatedCostUSD?: number;
+      estimatedCostUSD: number | undefined;
     }
   | { type: "attempt:early-exit"; at: number; identity: AttemptRef; who: string };
 
@@ -1803,24 +1830,24 @@ export type DurableFeedbackEvent =
       who: string;
       verdict: "failed" | "errored";
       reason: string;
-      fact?: PrimaryFactSummary;
-      phase?: LifecyclePhase;
-      code?: string;
-      origin?: TimingOrigin;
+      fact: PrimaryFactSummary | undefined;
+      phase: LifecyclePhase | undefined;
+      code: string | undefined;
+      origin: TimingOrigin | undefined;
     }
   | {
       type: "diagnostic";
       at: number;
       key: string;
       /** 对外稳定词法(见 `DiagnosticNotice.code`);省略 = 与 `key` 相同。 */
-      code?: string;
+      code: string | undefined;
       severity: DiagnosticSeverity;
       message: string;
       /** attempt 级诊断的归属身份。运行级诊断(实验闸 / eval 闸这类不属于任何单条 attempt 的
        *  事实)不许伪造 identity——它们的 experimentId / evalId 走 `data` 的同名字段,
        *  `--json` 的 `warning` 事件两处都读、identity 优先。 */
-      identity?: AttemptRef;
-      data?: Readonly<globalThis.Record<string, JsonValue>>;
+      identity: AttemptRef | undefined;
+      data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
     }
   /**
    * emitter 对每一个因 budget 到顶而不派发的 attempt 各发一次(与 `attempt:early-exit` 同构,
@@ -1839,7 +1866,7 @@ export type DurableFeedbackEvent =
       verdict: Verdict;
       provider: string;
       sandboxId: string;
-      enter?: string;
+      enter: string | undefined;
     }
   /**
    * 实验级钩子(`ExperimentDef.before` / 它返回的 after)的起止,由 runner 在钩子真正
@@ -1854,13 +1881,13 @@ export type DurableFeedbackEvent =
       hook: ExperimentHookName;
       status: "started" | "done" | "failed";
       /** 只在 done / failed 上出现:钩子从开始到结束的耗时。 */
-      durationMs?: number;
+      durationMs: number | undefined;
       /**
        * 只在 `hook: "after"` 的 `status: "started"` 上可能出现:标注这是强杀后的启动自愈
        * 补执行(见 docs/feature/experiments/architecture/README.md「强杀后的收尾兜底」),不是本次 run
        * 正常触发的收尾。省略 = 正常路径。
        */
-      recovery?: boolean;
+      recovery: boolean | undefined;
     }
   /**
    * judge 配置预检的起止,由 runner 在探测真正开始/结束时各发一次(见 docs/feature/experiments/
@@ -1870,7 +1897,7 @@ export type DurableFeedbackEvent =
    * `failed` 只标记预检本身的结局(与 `done` 一样清掉运行级行);受影响 eval 每条 attempt 的
    * `errored`(`judge-precheck-failed`)仍由 "failure" 事件逐条给出。
    */
-  | { type: "precheck"; at: number; status: "started" | "done" | "failed"; durationMs?: number }
+  | { type: "precheck"; at: number; status: "started" | "done" | "failed"; durationMs: number | undefined }
   /**
    * 用例锁等待的起止(见 docs/feature/experiments/cli/README.md「等待并发 run 的显示」)。粒度是单个
    * `(experimentId, evalId)`——同一 eval 的全部 attempt 作为一个整体一起等、一起解决,不按
@@ -1889,17 +1916,17 @@ export type DurableFeedbackEvent =
       status: "started" | "resolved";
       /** status 为 "started" 时给出:锁持有方身份,以及这次撞锁进入 elsewhere 等待的 attempt 数
        *  (该 eval 本轮需要真实派发、被这把锁挡住的 attempt 数;省略按 1 处理)。 */
-      holderPid?: number;
-      holderHost?: string;
-      attempts?: number;
+      holderPid: number | undefined;
+      holderHost: string | undefined;
+      attempts: number | undefined;
       /** status 为 "resolved" 时给出:锁释放后重查携带,分别有多少 attempt 从 elsewhere 迁入
        *  reused(carried)、多少迁入 queued 转为自跑(dispatched)——`attempts` 下可能两者都非零
        *  (部分携入部分补跑)。`--json` 的 `lock_wait` 事件把两者折成单一 `resolution` 字段:
        *  `dispatched > 0` 记 "dispatched"(这个用例仍需要真实派发,等待没有让它完全免于执行),
        *  否则记 "carried"(全部由携带满足,零新成本)。 */
-      carried?: number;
-      dispatched?: number;
-      waitedMs?: number;
+      carried: number | undefined;
+      dispatched: number | undefined;
+      waitedMs: number | undefined;
     }
   /**
    * Run 级开放 activity 的起止(共享构建、制品准备等)。`key` / `label` 原样来自 producer:
@@ -1915,7 +1942,7 @@ export type DurableFeedbackEvent =
       label: string;
       status: "started" | "progress" | "done" | "failed";
       /** 只在 done / failed 上出现。 */
-      durationMs?: number;
+      durationMs: number | undefined;
     }
   | { type: "interrupted"; at: number }
   | { type: "reporter-error"; at: number; reporter: string; required: boolean; message: string }

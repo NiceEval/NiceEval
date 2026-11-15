@@ -66,11 +66,11 @@ export interface AttemptExecutionTimingFacts {
  */
 export function readAttemptExecutionDuration(activities: AttemptExecutionTimingFacts): AttemptExecutionDurationRead {
   if (activities.collection.state !== "complete") {
-    return Object.freeze({ state: "unavailable" as const, reason: "timing-partial" as const });
+    return { state: "unavailable" as const, reason: "timing-partial" as const };
   }
   const roots = activities.segments.filter((activity) => activity.parentActivityId === null);
   if (roots.length === 0) {
-    return Object.freeze({ state: "unavailable" as const, reason: "timing-empty" as const });
+    return { state: "unavailable" as const, reason: "timing-empty" as const };
   }
   const sortedRoots = [...roots].sort((left, right) => left.startOffsetMs - right.startOffsetMs);
   let coveredEnd = 0;
@@ -84,18 +84,18 @@ export function readAttemptExecutionDuration(activities: AttemptExecutionTimingF
       !Number.isSafeInteger(end) ||
       activity.startOffsetMs > coveredEnd
     ) {
-      return Object.freeze({
+      return {
         state: "unavailable" as const,
         reason: "timing-window-incomplete" as const,
-      });
+      };
     }
     coveredEnd = Math.max(coveredEnd, end);
   }
-  return Object.freeze({
+  return {
     state: "available" as const,
-    duration: Object.freeze({
+    duration: {
       domain: EXECUTION_DURATION_DOMAIN,
       milliseconds: coveredEnd,
-    }),
-  });
+    },
+  };
 }

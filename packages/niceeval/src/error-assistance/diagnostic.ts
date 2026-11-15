@@ -28,18 +28,18 @@ function makeData(
   sourceLocationsOmitted = 0,
   affectedObjectsOmitted = 0,
 ): Readonly<Record<string, JsonValue>> & ErrorAssistanceData {
-  const data = Object.freeze({
+  const data = {
     __niceevalErrorAssistance: 1 as const,
     owner: input.owner,
     repairTarget: input.repairTarget,
     nextStep: input.nextStep,
     ...(input.service !== undefined ? { service: input.service } : {}),
     ...(input.guideId !== undefined ? { guideId: input.guideId } : {}),
-    sources: Object.freeze([...sources]) as JsonValue[],
-    affected: Object.freeze([...affected]) as JsonValue[],
+    sources,
+    affected,
     sourceLocationsOmitted,
     affectedObjectsOmitted,
-  }) as Readonly<Record<string, JsonValue>> & ErrorAssistanceData;
+  } as Readonly<Record<string, JsonValue>> & ErrorAssistanceData;
   assistanceData.add(data);
   return data;
 }
@@ -53,13 +53,13 @@ export function errorDiagnosticGroupKey(input: ErrorDiagnostic): string {
 }
 
 export function toFeedbackDiagnostic(input: ErrorDiagnostic): ErrorFeedbackDiagnostic {
-  return Object.freeze({
+  return {
     key: errorDiagnosticGroupKey(input),
     code: input.code,
     severity: "error" as const,
     message: input.summary,
     data: makeData(input, [sourceJson(input.source)], [input.affectedObject]),
-  });
+  };
 }
 
 export function readErrorAssistanceData(

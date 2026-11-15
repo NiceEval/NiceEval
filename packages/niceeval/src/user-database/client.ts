@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
 import { Effect, type Scope } from "effect";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { isDockerCacheRepositoryResult } from "../sandbox/docker-cache-repository.ts";
 import { isIncusRepositoryResult } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryResult } from "../sandbox/remote-snapshot/ledger.ts";
@@ -23,12 +24,12 @@ import {
   type UserDatabaseWorkerStartup,
 } from "./protocol.ts";
 
-const WorkerLimits = Object.freeze({
+const WorkerLimits = {
   maxOldGenerationSizeMb: 256,
   maxYoungGenerationSizeMb: 32,
   codeRangeSizeMb: 32,
   stackSizeMb: 4,
-});
+} as const;
 const StartupMaximumMs = 120_000;
 
 function workerExecArgv(): string[] {
@@ -57,9 +58,21 @@ function localFailure(cause: unknown): UserDatabaseFailure {
   )
     return cause;
   const message = cause instanceof Error ? cause.message : String(cause);
-  return /SQLITE_BUSY|database is locked/iu.test(message)
-    ? new UserDatabaseBusy({ code: "user-database-busy", message, cause })
-    : new UserDatabaseInvalid({ code: "user-database-invalid", message, cause });
+  const normalizedCause = normalizeExternalCause(cause);
+  if (/SQLITE_BUSY|database is locked/iu.test(message)) {
+    return new UserDatabaseBusy({
+      code: "user-database-busy",
+      message,
+      repository: undefined,
+      cause: normalizedCause,
+    });
+  }
+  return new UserDatabaseInvalid({
+    code: "user-database-invalid",
+    message,
+    repository: undefined,
+    cause: normalizedCause,
+  });
 }
 
 function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure {
@@ -67,31 +80,32 @@ function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure 
     return new UserDatabaseLegacyFound({
       code: failure.code,
       message: failure.message,
-      legacyPath: failure.legacyPath ?? "unknown",
-      databasePath: failure.databasePath ?? "unknown",
+      legacyPath: failure.legacyPath,
+      databasePath: failure.databasePath,
     });
   }
   if (failure.code === "user-database-unsupported") {
     return new UserDatabaseUnsupported({
       code: failure.code,
       message: failure.message,
-      repository: failure.repository ?? "unknown",
-      databasePath: failure.databasePath ?? "unknown",
+      repository: failure.repository,
+      databasePath: failure.databasePath,
+      cause: undefined,
     });
   }
   if (failure.code === "user-database-busy") {
     return new UserDatabaseBusy({
       code: failure.code,
       message: failure.message,
-      ...(failure.repository === undefined ? {} : { repository: failure.repository }),
-      cause: new Error(failure.message),
+      repository: failure.repository,
+      cause: normalizeExternalCause(new Error(failure.message)),
     });
   }
   return new UserDatabaseInvalid({
     code: failure.code,
     message: failure.message,
-    ...(failure.repository === undefined ? {} : { repository: failure.repository }),
-    cause: new Error(failure.message),
+    repository: failure.repository,
+    cause: normalizeExternalCause(new Error(failure.message)),
   });
 }
 
@@ -282,8 +296,8 @@ export interface UserDatabase {
 }
 
 export interface UserDatabaseOpenOptions {
-  readonly home?: string;
-  readonly busyTimeoutMs?: number;
+  readonly home?: string | undefined;
+  readonly busyTimeoutMs?: number | undefined;
 }
 
 class UserDatabaseRuntime implements UserDatabase {
@@ -318,10 +332,12 @@ export const userDatabaseHost = Object.freeze({
         new UserDatabaseInvalid({
           code: "user-database-invalid",
           message: "UserDatabase busy timeout must be an integer from 1 to 120000ms",
+          repository: undefined,
+          cause: undefined,
         }),
       );
     }
-    const paths = userDatabasePaths({ ...(options.home === undefined ? {} : { home: options.home }) });
+    const paths = userDatabasePaths({ home: options.home });
     return Effect.acquireRelease(
       Effect.tryPromise({
         try: async () =>

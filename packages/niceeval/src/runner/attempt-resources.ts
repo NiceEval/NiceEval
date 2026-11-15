@@ -170,20 +170,20 @@ export class AdapterAttemptResources {
       if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
       stopWaiting?.();
     }
-    return Object.freeze({ failures: Object.freeze(failures), timedOut });
+    return { failures, timedOut };
   }
 }
 
 type Entry = {
   shutdown(signal: AbortSignal): Promise<void>;
   release(signal: AbortSignal): Promise<void>;
-  shutdownReceipt?: Promise<void>;
+  shutdownReceipt: Promise<void> | undefined;
 };
 
 export class ManagedAttemptResources implements AttemptResourceRegistry {
   private readonly entries: Entry[] = [];
   private closing = false;
-  private releaseReceipt?: Promise<void>;
+  private releaseReceipt: Promise<void> | undefined;
 
   async acquire<T>(
     acquire: () => Promise<T>,
@@ -199,6 +199,8 @@ export class ManagedAttemptResources implements AttemptResourceRegistry {
       this.entries.push({
         shutdown: (signal) => lifecycle.shutdown(resource, signal),
         release: (signal) => lifecycle.release(resource, signal),
+
+        shutdownReceipt: undefined,
       });
       return resource;
     } catch (error) {

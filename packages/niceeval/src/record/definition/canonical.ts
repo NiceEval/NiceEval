@@ -39,7 +39,7 @@ export interface RecordCanonicalizationFailure {
 
 export interface RecordCanonicalizationOptions<Blob extends object = never> {
   /** Only the Attachment leaf supplies this package-owned opaque-ref guard. */
-  readonly isBlobRef?: (value: object) => value is Blob;
+  readonly isBlobRef?: ((value: object) => value is Blob) | undefined;
 }
 
 export type CanonicalRecordValue<Blob extends object = never> = RecordJsonWithBlobRefs<Blob>;
@@ -52,9 +52,9 @@ const encoder = new TextEncoder();
  * budget; the low-level Attachment writer still verifies its actual envelope
  * bytes before persistence.
  */
-const blobBudgetProjection: RecordJsonObject = Object.freeze({
+const blobBudgetProjection: RecordJsonObject = {
   "$niceeval.record.blob-ref": true,
-});
+};
 
 interface CanonicalizationState {
   nodes: number;
@@ -72,10 +72,10 @@ function failure(
   path: readonly string[],
 ): undefined {
   if (state.failure === undefined) {
-    state.failure = Object.freeze({
+    state.failure = {
       code,
-      path: Object.freeze([...path]),
-    });
+      path,
+    };
   }
   return undefined;
 }
@@ -117,13 +117,13 @@ function enumerableDataProperty(value: object, key: string | symbol): DataProper
   if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true) {
     return undefined;
   }
-  return Object.freeze({ value: descriptor.value });
+  return { value: descriptor.value };
 }
 
 function dataProperty(value: object, key: string | symbol): DataProperty | undefined {
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
   if (descriptor === undefined || !("value" in descriptor)) return undefined;
-  return Object.freeze({ value: descriptor.value });
+  return { value: descriptor.value };
 }
 
 function enter(
@@ -177,10 +177,10 @@ function sortedObjectKeys(
       return failure(state, "record-json-limit-exceeded", [...path, key]);
     }
   }
-  return Object.freeze([...textKeys].sort(compareUtf8));
+  return textKeys.sort(compareUtf8);
 }
 
-function frozenObject<Blob extends object>(
+function canonicalEntries<Blob extends object>(
   entries: readonly (readonly [string, RecordJsonWithBlobRefs<Blob>])[],
 ): RecordJsonWithBlobRefsObject<Blob> {
   const output: Record<string, RecordJsonWithBlobRefs<Blob>> = Object.create(null) as Record<
@@ -188,14 +188,9 @@ function frozenObject<Blob extends object>(
     RecordJsonWithBlobRefs<Blob>
   >;
   for (const [key, value] of entries) {
-    Object.defineProperty(output, key, {
-      configurable: false,
-      enumerable: true,
-      value,
-      writable: false,
-    });
+    output[key] = value;
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function canonicalArray<Blob extends object>(
@@ -229,7 +224,7 @@ function canonicalArray<Blob extends object>(
     if (item === undefined) return undefined;
     output.push(item);
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function canonicalObject<Blob extends object>(
@@ -252,7 +247,7 @@ function canonicalObject<Blob extends object>(
     if (child === undefined) return undefined;
     entries.push([key, child]);
   }
-  return frozenObject(entries);
+  return canonicalEntries(entries);
 }
 
 function canonicalizeValue<Blob extends object>(
@@ -303,7 +298,7 @@ function projectBlobRefsForBudget<Blob extends object>(
       if (projected === undefined) return undefined;
       items.push(projected);
     }
-    return Object.freeze(items);
+    return items;
   }
   if (!isPlainRecord(value)) return undefined;
   const entries: Array<readonly [string, RecordJson]> = [];
@@ -312,12 +307,13 @@ function projectBlobRefsForBudget<Blob extends object>(
     if (projected === undefined) return undefined;
     entries.push([key, projected]);
   }
-  return frozenObject(entries) as RecordJsonObject;
+  return canonicalEntries(entries) as RecordJsonObject;
 }
 
 function jsonBytes(value: RecordJson): number | undefined {
   const text = JSON.stringify(value);
-  return text === undefined ? undefined : encoder.encode(text).byteLength;
+  if (text === undefined) return undefined;
+  return encoder.encode(text).byteLength;
 }
 
 /**
@@ -337,14 +333,13 @@ export function canonicalizeRecordValue<Blob extends object = never>(
   };
   const value = canonicalizeValue(input, 0, [], limits, options, state);
   if (value === undefined) {
-    return Result.fail(
-      state.failure ?? Object.freeze({ code: "record-json-invalid" as const, path: Object.freeze([]) }),
-    );
+    return Result.fail(state.failure ?? { code: "record-json-invalid" as const, path: [] });
   }
   const projected = projectBlobRefsForBudget(value, options);
-  const bytes = projected === undefined ? undefined : jsonBytes(projected);
+  if (projected === undefined) return Result.fail({ code: "record-json-limit-exceeded" as const, path: [] });
+  const bytes = jsonBytes(projected);
   if (bytes === undefined || bytes > limits.maximumJsonBytes) {
-    return Result.fail(Object.freeze({ code: "record-json-limit-exceeded" as const, path: Object.freeze([]) }));
+    return Result.fail({ code: "record-json-limit-exceeded" as const, path: [] });
   }
   return Result.succeed(value);
 }

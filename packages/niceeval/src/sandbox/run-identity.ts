@@ -7,19 +7,22 @@ import { sandboxCreationMetadata } from "./cloud-lifetime.ts";
 import { hostname } from "node:os";
 import { execFileSync } from "node:child_process";
 
-export interface RunIdentity {
-  runId?: string;
-  creationLabels?: Readonly<Record<string, string>>;
+export interface RunOwnerIdentity {
   host: string;
   pid: number;
   startedAt: string;
 }
 
+export interface RunIdentity extends RunOwnerIdentity {
+  runId: string | undefined;
+  creationLabels: Readonly<Record<string, string>>;
+}
+
 /** 创建沙箱时快照一次当前 runner 进程的运行标识。 */
 export function currentRunIdentity(runId?: string, creationLabels?: Readonly<Record<string, string>>): RunIdentity {
   return {
-    ...(runId === undefined ? {} : { runId: runId }),
-    ...(creationLabels === undefined ? {} : { creationLabels: creationLabels }),
+    runId,
+    creationLabels: creationLabels ?? {},
     host: hostname(),
     pid: process.pid,
     startedAt: new Date().toISOString(),
@@ -58,13 +61,17 @@ export function e2bRunIdentityMetadata(identity: RunIdentity): globalThis.Record
 }
 
 /** 从 docker label 集合解出运行标识;缺任何一个字段视为没有标识(非 niceeval 容器)。 */
-export function parseDockerRunIdentity(labels: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
+export function parseDockerRunIdentity(
+  labels: globalThis.Record<string, string> | undefined,
+): RunOwnerIdentity | undefined {
   if (!labels) return undefined;
   return parseRunIdentityFields(labels[DOCKER_HOST_LABEL], labels[DOCKER_PID_LABEL], labels[DOCKER_STARTED_AT_LABEL]);
 }
 
 /** 从 e2b SDK 返回的 metadata 解出运行标识;缺任何一个字段视为没有标识。 */
-export function parseE2BRunIdentity(metadata: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
+export function parseE2BRunIdentity(
+  metadata: globalThis.Record<string, string> | undefined,
+): RunOwnerIdentity | undefined {
   if (!metadata) return undefined;
   return parseRunIdentityFields(
     metadata[E2B_HOST_METADATA],
@@ -77,7 +84,7 @@ function parseRunIdentityFields(
   host: string | undefined,
   pidRaw: string | undefined,
   startedAt: string | undefined,
-): RunIdentity | undefined {
+): RunOwnerIdentity | undefined {
   if (host === undefined || pidRaw === undefined || startedAt === undefined) return undefined;
   const pid = Number(pidRaw);
   if (!Number.isFinite(pid)) return undefined;
@@ -121,7 +128,7 @@ export function pidStartedAt(pid: number): string | undefined {
  * unverified,也不错误地当活实例处理。
  */
 export function classifyRunIdentity(
-  identity: RunIdentity,
+  identity: RunOwnerIdentity,
   readPidStartedAt: (pid: number) => string | undefined = pidStartedAt,
 ): "alive" | OrphanState {
   if (identity.host !== hostname()) return "unverified";

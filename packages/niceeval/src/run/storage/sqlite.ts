@@ -7,9 +7,10 @@ import { createHash, randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
 import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
-import { recordStatement, type RecordDatabase } from "../../record/sqlite/database.ts";
+import { recordStatement, requiredRecordRow, type RecordDatabase } from "../../record/sqlite/database.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
 import { RunStorageError, type RunStorageErrorCode } from "./errors.ts";
@@ -127,7 +128,7 @@ function currentRevision(connection: RecordDatabase): number {
 }
 
 function cutoffAt(connection: RecordDatabase, revision: number): PublicationCutoff {
-  return Object.freeze({ storeGeneration: metadataGeneration(connection), revision });
+  return { storeGeneration: metadataGeneration(connection), revision };
 }
 
 function nextRevision(connection: RecordDatabase): number {
@@ -153,15 +154,15 @@ function requireCutoff(connection: RecordDatabase, requested?: PublicationCutoff
       "PublicationCutoff cannot be continued in the current store generation",
     );
   }
-  return Object.freeze({ ...requested });
+  return requested;
 }
 
 interface RunHeader {
   readonly runId: string;
   readonly writerGeneration: string;
-  readonly terminalState?: RunTerminalState;
+  readonly terminalState: RunTerminalState | undefined;
   readonly createdRevision: number;
-  readonly closeRevision?: number;
+  readonly closeRevision: number | undefined;
 }
 
 function runHeader(connection: RecordDatabase, runId: string): RunHeader | undefined {
@@ -173,13 +174,13 @@ function runHeader(connection: RecordDatabase, runId: string): RunHeader | undef
   if (row === undefined) return undefined;
   const terminalState = optionalText(row, "terminal_state");
   if (terminalState !== undefined) requireTerminalState(terminalState);
-  return Object.freeze({
+  return {
     runId: text(row, "run_id"),
     writerGeneration: text(row, "current_writer_generation"),
-    ...(terminalState === undefined ? {} : { terminalState }),
+    terminalState,
     createdRevision: integer(row, "created_revision"),
-    ...(row.close_revision === null ? {} : { closeRevision: integer(row, "close_revision") }),
-  });
+    closeRevision: row.close_revision === null ? undefined : integer(row, "close_revision"),
+  };
 }
 
 function requireActiveWriter(connection: RecordDatabase, runId: string, writerGeneration: string): RunHeader {
@@ -296,7 +297,7 @@ export function createRunResourceOnConnection(
     input.expectedSlots.forEach((slot, ordinal) =>
       insertSlot.run(input.runId, slot.slotId, ordinal, slot.evalId, slot.attemptOrdinal, slot.executionIdentityDigest),
     );
-    return Object.freeze({ runId: input.runId, cutoff: cutoffAt(connection, revision) });
+    return { runId: input.runId, cutoff: cutoffAt(connection, revision) };
   });
 }
 
@@ -335,7 +336,7 @@ export function publishOriginAttemptOnConnection(
       JOIN ne19_attempts a ON a.origin_run_id=r.run_id AND a.attempt_id=?
       JOIN ne19_members m ON m.target_run_id=r.run_id AND m.slot_id=? AND m.origin_run_id=r.run_id AND m.attempt_id=a.attempt_id
       WHERE r.run_id=?`,
-    ).get(input.attemptId, input.slotId, input.runId) as unknown as Row | undefined;
+    ).get(input.attemptId, input.slotId, input.runId);
     if (
       aggregate === undefined ||
       text(aggregate, "writer_generation") !== input.writerGeneration ||
@@ -347,15 +348,17 @@ export function publishOriginAttemptOnConnection(
     ) {
       throw new RunStorageError("run-storage-invalid", "Attempt aggregate is not complete at its publication fence");
     }
-    const incomplete = recordStatement(
-      connection,
-      `SELECT count(*) AS count FROM ne19_attachments a
+    const incomplete = requiredRecordRow(
+      recordStatement(
+        connection,
+        `SELECT count(*) AS count FROM ne19_attachments a
       LEFT JOIN ne19_contents c ON c.attachment_id=a.attachment_id
       WHERE a.owner_run_id=? AND a.owner_attempt_id=? AND
         (a.logical_identity IS NULL OR a.canonical_payload IS NULL OR a.canonical_digest IS NULL OR
          a.logical_inventory IS NULL OR a.inventory_digest IS NULL OR
          (c.content_id IS NOT NULL AND (c.byte_length IS NULL OR c.overall_digest IS NULL OR c.chunk_count IS NULL)))`,
-    ).get(input.runId, input.attemptId) as unknown as Row;
+      ).get(input.runId, input.attemptId),
+    );
     if (integer(incomplete, "count") !== 0) {
       throw new RunStorageError(
         "run-storage-invalid",
@@ -388,7 +391,7 @@ export function publishOriginAttemptOnConnection(
       `INSERT INTO ne19_run_slot_bindings(target_run_id,slot_id,attempt_id,origin_run_id,
       origin_slot_id,attempt_publication_revision,action,binding_revision) VALUES (?,?,?,?,?,?,'executed',?)`,
     ).run(input.runId, input.slotId, input.attemptId, input.runId, input.slotId, revision, revision);
-    const publicationIdentity = Object.freeze({ originRunId: input.runId, attemptId: input.attemptId, revision });
+    const publicationIdentity = { originRunId: input.runId, attemptId: input.attemptId, revision };
     const frozen = recordStatement(
       connection,
       `UPDATE ne19_attempts SET publication_state='published'
@@ -397,12 +400,12 @@ export function publishOriginAttemptOnConnection(
     if (Number(frozen.changes) !== 1) {
       throw new RunStorageError("run-storage-invalid", "Attempt publication fence changed before freeze");
     }
-    return Object.freeze({
+    return {
       runId: input.runId,
       slotId: input.slotId,
       publicationIdentity,
       cutoff: cutoffAt(connection, revision),
-    });
+    };
   });
 }
 
@@ -461,12 +464,12 @@ export function bindAttemptReferenceOnConnection(
       input.action,
       revision,
     );
-    return Object.freeze({
+    return {
       runId: input.runId,
       slotId: input.slotId,
-      publicationIdentity: Object.freeze({ ...input.publicationIdentity }),
+      publicationIdentity: input.publicationIdentity,
       cutoff: cutoffAt(connection, revision),
-    });
+    };
   });
 }
 
@@ -477,7 +480,7 @@ function pendingSlotIds(connection: RecordDatabase, runId: string): readonly str
     LEFT JOIN ne19_run_slot_bindings b ON b.target_run_id=s.run_id AND b.slot_id=s.slot_id
     WHERE s.run_id=? AND b.slot_id IS NULL ORDER BY s.ordinal`,
   ).all(runId) as readonly Row[];
-  return Object.freeze(rows.map((row) => text(row, "slot_id")));
+  return rows.map((row) => text(row, "slot_id"));
 }
 
 function validateAbsenceClosure(
@@ -531,7 +534,7 @@ export function closeRunResourceOnConnection(
     validateAbsenceClosure(connection, input.runId, input.absences);
     const aggregate = recordStatement(connection, "SELECT status,writer_generation FROM ne19_runs WHERE run_id=?").get(
       input.runId,
-    ) as unknown as Row | undefined;
+    );
     if (
       aggregate === undefined ||
       text(aggregate, "status") !== "sealed" ||
@@ -555,7 +558,7 @@ export function closeRunResourceOnConnection(
     ).run(input.state, input.completedAt, revision, input.runId, input.writerGeneration);
     if (Number(changed.changes) !== 1)
       throw new RunStorageError("run-not-active", `Run ${input.runId} changed before close`);
-    return Object.freeze({ runId: input.runId, cutoff: cutoffAt(connection, revision) });
+    return { runId: input.runId, cutoff: cutoffAt(connection, revision) };
   });
 }
 
@@ -630,12 +633,10 @@ export function recoverRunResourceOnConnection(
     ) {
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
     }
-    const absences = pendingSlotIds(connection, input.runId).map((slotId) =>
-      Object.freeze({
-        slotId,
-        reason: "interrupted-before-publication" as const,
-      }),
-    );
+    const absences = pendingSlotIds(connection, input.runId).map((slotId) => ({
+      slotId,
+      reason: "interrupted-before-publication" as const,
+    }));
     const revision = nextRevision(connection);
     insertAbsences(connection, input.runId, revision, absences);
     const changed = recordStatement(
@@ -661,13 +662,13 @@ export function recoverRunResourceOnConnection(
       `DELETE FROM ne19_attempts WHERE origin_run_id=? AND
       attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`,
     ).run(input.runId, input.runId);
-    return Object.freeze({
+    return {
       runId: input.runId,
       previousWriterGeneration: input.expectedWriterGeneration,
       writerGeneration: input.recoveryWriterGeneration,
       state: "interrupted",
       cutoff: cutoffAt(connection, revision),
-    });
+    };
   });
 }
 
@@ -683,16 +684,12 @@ function incomingReferences(connection: RecordDatabase, originRunId: string): re
   if (rows.length > RECORD_SQLITE_MAX_ROW_BYTES / 256) {
     throw invalid(`Run ${originRunId} incoming reference inventory exceeds its bounded delete receipt`);
   }
-  return Object.freeze(
-    rows.map((row) =>
-      Object.freeze({
-        dependentRunId: text(row, "target_run_id"),
-        dependentSlotId: text(row, "slot_id"),
-        attemptId: text(row, "attempt_id"),
-        attemptLocator: text(row, "attempt_locator"),
-      }),
-    ),
-  );
+  return rows.map((row) => ({
+    dependentRunId: text(row, "target_run_id"),
+    dependentSlotId: text(row, "slot_id"),
+    attemptId: text(row, "attempt_id"),
+    attemptLocator: text(row, "attempt_locator"),
+  }));
 }
 
 // @concord-code
@@ -739,7 +736,7 @@ export function deleteRunResourceOnConnection(
     ).get(input.runId) as Row | undefined;
     if (tombstone !== undefined) {
       const revision = integer(tombstone, "deletion_revision");
-      return Object.freeze({ runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) });
+      return { runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) };
     }
     const dependencies = incomingReferences(connection, input.runId);
     if (dependencies.length > 0) {
@@ -755,16 +752,16 @@ export function deleteRunResourceOnConnection(
       `INSERT INTO ne19_run_deletion_tombstones(run_id,terminal_state,deleted_at,deletion_revision)
       VALUES (?,?,?,?)`,
     ).run(input.runId, input.expectedState, input.deletedAt, revision);
-    return Object.freeze({ runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) });
+    return { runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) };
   });
 }
 
 function publicationIdentity(row: Row): AttemptPublicationIdentity {
-  return Object.freeze({
+  return {
     originRunId: text(row, "origin_run_id"),
     attemptId: text(row, "attempt_id"),
     revision: integer(row, "attempt_publication_revision"),
-  });
+  };
 }
 
 function readSlotPublication(
@@ -785,7 +782,7 @@ function readSlotPublication(
     if (action !== "executed" && action !== "carried" && action !== "accepted") {
       throw invalid(`Run ${runId} slot ${slotId} has an invalid binding action`);
     }
-    return Object.freeze({
+    return {
       state: "published",
       action,
       attemptId: text(binding, "attempt_id"),
@@ -794,7 +791,7 @@ function readSlotPublication(
       originSlotId: text(binding, "origin_slot_id"),
       publicationIdentity: publicationIdentity(binding),
       bindingRevision: integer(binding, "binding_revision"),
-    });
+    };
   }
   const absence = recordStatement(
     connection,
@@ -804,9 +801,9 @@ function readSlotPublication(
   if (absence !== undefined) {
     const reason = text(absence, "reason");
     requireAbsenceReason(reason);
-    return Object.freeze({ state: "absent", reason, absenceRevision: integer(absence, "absence_revision") });
+    return { state: "absent", reason, absenceRevision: integer(absence, "absence_revision") };
   }
-  return Object.freeze({ state: "pending" });
+  return { state: "pending" };
 }
 
 function readRunAtCutoff(
@@ -837,14 +834,14 @@ function readRunAtCutoff(
     runId,
   ) as Row | undefined;
   const recovering = recovery !== undefined && integer(recovery, "recovery_revision") <= cutoff.revision;
-  const state: RunState = closeVisible
-    ? (terminalState ??
-      (() => {
-        throw invalid(`Run ${runId} close revision lacks terminal state`);
-      })())
-    : recovering
-      ? "recovering"
-      : "active";
+  const visibleRunState = (): RunState => {
+    if (closeVisible) {
+      if (terminalState === undefined) throw invalid(`Run ${runId} close revision lacks terminal state`);
+      return terminalState;
+    }
+    return recovering ? "recovering" : "active";
+  };
+  const state = visibleRunState();
   const slotRows = recordStatement(
     connection,
     `SELECT slot_id,eval_id,attempt_ordinal,execution_identity_digest
@@ -853,31 +850,29 @@ function readRunAtCutoff(
   if (slotRows.length > RECORD_SQLITE_MAX_ROW_BYTES / 256) {
     throw invalid(`Run ${runId} expected slot inventory exceeds its bounded read`);
   }
-  const slots = slotRows.map((slot): ReadableRunResource["slots"][number] =>
-    Object.freeze({
-      slotId: text(slot, "slot_id"),
-      evalId: text(slot, "eval_id"),
-      attemptOrdinal: integer(slot, "attempt_ordinal"),
-      executionIdentityDigest: text(slot, "execution_identity_digest"),
-      publication: readSlotPublication(connection, runId, text(slot, "slot_id"), cutoff),
-    }),
-  );
+  const slots = slotRows.map((slot): ReadableRunResource["slots"][number] => ({
+    slotId: text(slot, "slot_id"),
+    evalId: text(slot, "eval_id"),
+    attemptOrdinal: integer(slot, "attempt_ordinal"),
+    executionIdentityDigest: text(slot, "execution_identity_digest"),
+    publication: readSlotPublication(connection, runId, text(slot, "slot_id"), cutoff),
+  }));
   const published = slots.filter((slot) => slot.publication.state === "published").length;
-  return Object.freeze({
+  const base = {
     runId: text(row, "run_id"),
     invocationId: text(row, "invocation_id"),
     experimentId: text(row, "experiment_id"),
     startedAt: text(row, "started_at"),
-    ...(closeVisible ? { completedAt: text(row, "completed_at") } : {}),
-    state,
     writerGeneration: text(row, closeVisible || recovering ? "current_writer_generation" : "initial_writer_generation"),
     createdRevision: integer(row, "created_revision"),
-    ...(closeVisible && closeRevision !== undefined ? { closeRevision } : {}),
     expected: slots.length,
     published,
     missing: slots.length - published,
-    slots: Object.freeze(slots),
-  });
+    slots,
+  };
+  return state === "active" || state === "recovering"
+    ? { ...base, state }
+    : { ...base, state, completedAt: text(row, "completed_at"), closeRevision: integer(row, "close_revision") };
 }
 
 export function readRunResourceOnConnection(
@@ -892,10 +887,10 @@ export function readRunResourceOnConnection(
 export function listRunResourcesOnConnection(
   connection: RecordDatabase,
   input: {
-    readonly cutoff?: PublicationCutoff;
-    readonly invocationId?: string;
-    readonly afterRunId?: string;
-    readonly pageSize?: number;
+    readonly cutoff?: PublicationCutoff | undefined;
+    readonly invocationId?: string | undefined;
+    readonly afterRunId?: string | undefined;
+    readonly pageSize?: number | undefined;
   } = {},
 ): RunResourcePage {
   const cutoff = requireCutoff(connection, input.cutoff);
@@ -925,11 +920,11 @@ export function listRunResourcesOnConnection(
   const runs = selected
     .map((row) => readRunAtCutoff(connection, text(row, "run_id"), cutoff))
     .filter((run): run is ReadableRunResource => run !== undefined);
-  return Object.freeze({
+  return {
     cutoff,
-    runs: Object.freeze(runs),
+    runs,
     nextAfterRunId: rows.length > pageSize && selected.length > 0 ? text(selected.at(-1)!, "run_id") : null,
-  });
+  };
 }
 
 export function readPublishedAttemptOnConnection(
@@ -956,15 +951,15 @@ export function readPublishedAttemptOnConnection(
   }
   const revision = integer(row, "published_revision");
   const originRunId = text(row, "origin_run_id");
-  return Object.freeze({
+  return {
     attemptId: text(row, "attempt_id"),
     attemptLocator: text(row, "attempt_locator"),
     originRunId,
     originSlotId: text(row, "origin_slot_id"),
-    publicationIdentity: Object.freeze({ originRunId, attemptId: text(row, "attempt_id"), revision }),
+    publicationIdentity: { originRunId, attemptId: text(row, "attempt_id"), revision },
     closureBytes: bytes(row, "closure_payload"),
     closureDigest: text(row, "closure_digest"),
-  });
+  };
 }
 
 const runStorageErrorCodes = new Set<RunStorageErrorCode>([
@@ -984,12 +979,12 @@ const runStorageErrorCodes = new Set<RunStorageErrorCode>([
   "run-storage-invalid",
 ]);
 
-function decodeWorkerRunError(cause: unknown): unknown {
-  if (
-    !(cause instanceof SqliteRecordError) ||
-    !(cause.cause instanceof Error) ||
-    !runStorageErrorCodes.has(cause.cause.name as RunStorageErrorCode)
-  )
+export type RunStorageCommandError = RunStorageError | SqliteRecordError | ExternalCause;
+
+function decodeWorkerRunError(cause: unknown): RunStorageCommandError {
+  if (cause instanceof RunStorageError) return cause;
+  if (!(cause instanceof SqliteRecordError)) return normalizeExternalCause(cause);
+  if (!(cause.cause instanceof Error) || !runStorageErrorCodes.has(cause.cause.name as RunStorageErrorCode))
     return cause;
   const details = Reflect.get(cause.cause, "details");
   return new RunStorageError(
@@ -1002,7 +997,7 @@ function decodeWorkerRunError(cause: unknown): unknown {
 function runCommand<A extends import("../../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
   recordStorageRoot: string,
   command: import("../../record/sqlite/worker-protocol.ts").RunCommand,
-): Effect.Effect<A, unknown, ProjectStateDatabase> {
+): Effect.Effect<A, RunStorageCommandError, ProjectStateDatabase> {
   return Effect.flatMap(ProjectStateDatabase, (database) =>
     Effect.flatMap(database.bind(recordStorageRoot), (facets) =>
       Effect.tryPromise({ try: () => facets.run.execute<A>(command), catch: decodeWorkerRunError }),
@@ -1036,7 +1031,7 @@ export function readRunResource(recordStorageRoot: string, runId: string, cutoff
   return runCommand<ReadableRunResource | undefined>(recordStorageRoot, {
     _tag: "run-read",
     runId,
-    ...(cutoff === undefined ? {} : { cutoff }),
+    cutoff,
   });
 }
 
@@ -1046,7 +1041,7 @@ export function listRunResources(
 ) {
   return runCommand<RunResourcePage>(recordStorageRoot, {
     _tag: "run-list",
-    ...(input === undefined ? {} : { input }),
+    input,
   });
 }
 
@@ -1054,7 +1049,7 @@ export function readPublishedAttempt(recordStorageRoot: string, attemptId: strin
   return runCommand<PublishedAttempt | undefined>(recordStorageRoot, {
     _tag: "run-read-attempt",
     attemptId,
-    ...(cutoff === undefined ? {} : { cutoff }),
+    cutoff,
   });
 }
 

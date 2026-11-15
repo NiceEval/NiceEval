@@ -261,7 +261,12 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
             offset += bytes.length;
             pending = Buffer.concat([pending, bytes]);
             const end = pending.lastIndexOf(10);
-            const consumed = end < 0 ? (bytes.length < chunkBytes ? pending.length : 0) : end + 1;
+            function consumedBytes(): number {
+              if (end >= 0) return end + 1;
+              if (bytes.length < chunkBytes) return pending.length;
+              return 0;
+            }
+            const consumed = consumedBytes();
             if (consumed > 0) {
               yield* activity(
                 "telemetry.decode",

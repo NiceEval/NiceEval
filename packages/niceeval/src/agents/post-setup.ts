@@ -40,8 +40,8 @@ export function registerAgentLifecycleHookCommands<T extends SandboxAgent>(
   preTeardown: readonly SandboxCommand[] | undefined,
 ): T {
   lifecycleHookCommands.set(agent, {
-    postSetup: Object.freeze([...(postSetup ?? [])]),
-    preTeardown: Object.freeze([...(preTeardown ?? [])]),
+    postSetup: [...(postSetup ?? [])],
+    preTeardown: [...(preTeardown ?? [])],
   });
   return agent;
 }
@@ -67,7 +67,7 @@ function commandContext(
 ): SandboxCommandContext {
   return {
     phase,
-    ...(ctx.evalGroup === undefined ? {} : { evalGroup: ctx.evalGroup }),
+    evalGroup: ctx.evalGroup,
     owner: { kind: "agent", id: agentName },
     attempt: ctx.attempt ?? { id: ctx.evalId ?? "unknown", index: 0 },
     signal: ctx.signal,
@@ -118,7 +118,7 @@ export async function runPreTeardownHooks(
   const hookCtx = commandContext(ctx, agentName, "agent.after", (cleanup) => nestedCleanups.push(cleanup));
   const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
     phase: "agent.after",
-    ...(hookCtx.evalGroup === undefined ? {} : { evalGroup: hookCtx.evalGroup }),
+    evalGroup: hookCtx.evalGroup,
     owner: { kind: "agent", id: agentName },
     attempt: hookCtx.attempt,
     signal: hookCtx.signal,

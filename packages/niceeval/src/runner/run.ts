@@ -38,6 +38,7 @@ import type {
   InvocationReceipt,
   AttemptRef,
   RunOptions,
+  RunRuntimeOptions,
 } from "./types.ts";
 import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runOrigin } from "./timing.ts";
 import { buildFailureOrigin, startSandboxBuildsEffect } from "../sandbox/build-coordinator.ts";
@@ -109,11 +110,11 @@ function beforeCacheActivityLabel(event: BeforeCachePreparationActivityEvent): s
   if (event.status === "started")
     return `checking sandbox before cache · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   if (event.status === "done") {
-    return event.outcome === "hit"
-      ? `sandbox before cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
-      : event.outcome === "degraded"
-        ? `sandbox before cache degraded · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`
-        : `sandbox before cache prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+    if (event.outcome === "hit")
+      return `sandbox before cache hit · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+    if (event.outcome === "degraded")
+      return `sandbox before cache degraded · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
+    return `sandbox before cache prepared · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
   }
   if (event.status === "failed")
     return `sandbox before cache failed · ${scope} · ${event.provider} · ${event.actionCount} actions · ${event.attempts} attempts`;
@@ -139,7 +140,7 @@ function feedbackIdentity(a: Attempt): AttemptRef {
 function feedbackWho(a: Attempt): string {
   return runWho({
     agentName: a.run.adapter?.name ?? "",
-    ...(a.run.model === undefined ? {} : { model: a.run.model }),
+    model: a.run.model,
     experimentId: a.run.experimentId,
   });
 }
@@ -214,10 +215,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               selectedEvalsForRun(opts.evals, run)
                 .filter((evalDef) => evalDef.evalGroup !== undefined)
                 .map((evalDef) => {
-                  const value = Object.freeze({
+                  const value = {
                     experimentId: run.experimentId,
                     evalGroupId: evalDef.evalGroup!.id,
-                  });
+                  };
                   return [JSON.stringify([value.experimentId, value.evalGroupId]), value] as const;
                 }),
             ),
@@ -236,8 +237,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         if (conflictingExperiments.length > 0 || conflictingEvalGroups.length > 0) {
           throw new RunModeConflictError({
             keepSandbox: opts.keepSandbox,
-            conflictingExperimentIds: Object.freeze(conflictingExperiments),
-            conflictingEvalGroups: Object.freeze(conflictingEvalGroups),
+            conflictingExperimentIds: conflictingExperiments,
+            conflictingEvalGroups,
             message:
               `--keep-sandbox cannot be combined with reusable Sandbox ownership` +
               `${
@@ -264,8 +265,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // only this projection and its own frozen view; no historic result facade
       // participates in dispatch or display.
       const targetPlan = yield* planProjectTarget(opts.evals, opts.agentRuns, opts.config.timeoutMs, {
-        ...(opts.config.judgeProvider === undefined ? {} : { configJudge: opts.config.judgeProvider }),
-        ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
+        configJudge: opts.config.judgeProvider,
+        keepSandbox: opts.keepSandbox,
       });
       const {
         preparedPairsByKey,
@@ -287,9 +288,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         }
         effectiveRunBySource.set(prepared.sourceRun, prepared.run);
       }
-      const effectiveAgentRuns = Object.freeze(
-        opts.agentRuns.map((sourceRun) => effectiveRunBySource.get(sourceRun) ?? sourceRun),
-      );
+      const effectiveAgentRuns = opts.agentRuns.map((sourceRun) => effectiveRunBySource.get(sourceRun) ?? sourceRun);
       opts = { ...opts, agentRuns: effectiveAgentRuns };
 
       const reuse = yield* prepareRunnerRecordReuse({
@@ -301,8 +300,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         plannedFingerprints,
         renameFingerprintsByKey,
         plannedConfigHashes,
-        ...(opts.rerun === undefined ? {} : { rerun: opts.rerun }),
-        ...(opts.keepSandbox === undefined ? {} : { keepSandbox: opts.keepSandbox }),
+        rerun: opts.rerun,
+        keepSandbox: opts.keepSandbox,
       });
 
       // Coordinator creates draft Runs first, then uses their real `draft.runId`
@@ -313,7 +312,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         evals: opts.evals,
         runs: opts.agentRuns,
         reuse,
-        ...(opts.session === undefined ? {} : { session: opts.session }),
+        session: opts.session,
       });
       // The draft is the only authority for a Run identity. Session, shape and
       // reporters all observe this same mapping; no caller can replace it with a
@@ -335,12 +334,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // Readback is the sole authority for the externally visible carry count.
       // In particular, the CLI must not guess this before the frozen current view
       // has rejected every non-reusable source.
-      const reusedFailures = Object.freeze(
-        reusedAttempts.flatMap((readback) => {
-          const failure = failureDetailFromCurrentReusedAttempt(readback, runForReusedAttempt(readback));
-          return failure === undefined ? [] : [failure];
-        }),
-      );
+      const reusedFailures = reusedAttempts.flatMap((readback) => {
+        const failure = failureDetailFromCurrentReusedAttempt(readback, runForReusedAttempt(readback));
+        return failure === undefined ? [] : [failure];
+      });
       if (opts.onCurrentRecordReusePlan !== undefined) {
         yield* opts.onCurrentRecordReusePlan({ reused: reusedAttempts.length, reusedFailures, runIds });
       } else {
@@ -468,6 +465,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           judge: resolvedJudgesByKey.get(carryKey)!,
           plan: prepared.plan,
           sandboxPlansByEval,
+
+          attemptId: undefined,
+          locator: undefined,
         };
         attempts.push(attempt);
         dispatchWaveNumbers.set(attempt, wave);
@@ -530,12 +530,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           code: "before-cache-replacement-conflict",
           severity: "warning",
           message: warning.message,
+
+          identity: undefined,
+          data: undefined,
         });
       }
       const beforeCachePreparation = yield* prepareBeforeCaches(attempts, {
         runIds,
         artifactPrepare,
-        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        signal: opts.signal,
         onWarning: (warning) => {
           replacementWarnings.push(warning);
           reportDiagnostic({
@@ -543,6 +546,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             code: "before-cache-replacement-conflict",
             severity: "warning",
             message: warning.message,
+
+            identity: undefined,
+            data: undefined,
           });
         },
         maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
@@ -552,7 +558,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             key: event.key,
             label: beforeCacheActivityLabel(event),
             status: event.status,
-            ...(event.status === "done" || event.status === "failed" ? { durationMs: event.durationMs } : {}),
+            durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
           });
         },
       });
@@ -568,6 +574,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           ? yield* collectBuildPreparation({
               preparedPairs: [...preparedPairsByKey.values()],
               carriedAttemptsByKey,
+
+              provider: undefined,
             })
           : Option.none();
       const buildPreparation =
@@ -598,22 +606,25 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               onActivity: (event) => {
                 const dependents = buildDependents.get(event.ref) ?? 0;
                 const shared = `${dependents} attempts`;
-                const action =
-                  event.status === "started"
-                    ? "checking build cache"
-                    : event.outcome === "hit"
-                      ? "build cache hit"
-                      : event.outcome === "built"
-                        ? "built once"
-                        : event.outcome === "cancelled"
-                          ? "build cancelled"
-                          : "build failed";
+                function actionLabel(): string {
+                  if (event.status === "started") return "checking build cache";
+                  switch (event.outcome) {
+                    case "hit":
+                      return "build cache hit";
+                    case "built":
+                      return "built once";
+                    case "cancelled":
+                      return "build cancelled";
+                    default:
+                      return "build failed";
+                  }
+                }
                 reportRunActivity({
                   id: event.id,
                   key: event.key,
-                  label: `${action} · ${event.label} · ${shared}`,
+                  label: `${actionLabel()} · ${event.label} · ${shared}`,
                   status: event.status,
-                  ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
+                  durationMs: "durationMs" in event ? event.durationMs : undefined,
                 });
               },
             })
@@ -685,7 +696,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
       // Runtime dependencies are added to a fresh snapshot; caller-owned planning
       // inputs remain immutable for the duration of this invocation.
-      const attemptOptions: RunOptions<AttachmentError, AttachmentRequirements> = {
+      const attemptOptions: RunRuntimeOptions<AttachmentError, AttachmentRequirements> = {
         ...opts,
         coordinationRoot,
         artifactPrepare,
@@ -795,7 +806,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const physical = sandboxReusePoolDescriptor({
           run: a.run,
           evalId: a.evalDef.id,
-          ...(a.evalDef.evalGroup === undefined ? {} : { evalGroupId: a.evalDef.evalGroup.id }),
+          evalGroupId: a.evalDef.evalGroup?.id,
           plan: a.plan,
         })?.key;
         if (physical === undefined) return undefined;
@@ -843,14 +854,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           const experimentContext = makeExperimentHookContext(a.run, "sandbox.create");
           const setupContext = {
             ...experimentContext,
-            ...(a.evalDef.evalGroup === undefined
-              ? {}
-              : {
-                  evalGroup: {
+            evalGroup:
+              a.evalDef.evalGroup === undefined
+                ? undefined
+                : {
                     id: a.evalDef.evalGroup.id,
                     definitionHash: a.evalDef.evalGroup.definitionHash,
                   },
-                }),
           };
           const capacity =
             a.evalDef.evalGroup === undefined
@@ -998,6 +1008,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               `  · [sandbox] the "${plan.providerPlan.provider}" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency ${opts.maxConcurrency}
 `.trimEnd(),
             data: { provider: plan.providerPlan.provider, concurrency: opts.maxConcurrency },
+
+            identity: undefined,
           });
         }
         return sem;
@@ -1055,7 +1067,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
          * until the Experiment makes its one lease-release decision.
          */
         readonly sandboxCleanupFailures: SandboxCleanupFailure[];
-        sharedStateClaim?: SharedStateLeaseEffectClaim;
+        sharedStateClaim: SharedStateLeaseEffectClaim | undefined;
       }
       const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
       for (const a of attempts) {
@@ -1069,6 +1081,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             state: { _tag: "Dormant", pendingAttempts: new Set([a]) },
             mutex: yield* Semaphore.make(1),
             sandboxCleanupFailures: [],
+
+            sharedStateClaim: undefined,
           });
         }
       }
@@ -1095,10 +1109,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         level: "warning" | "error";
         message: string;
         phase: LifecyclePhase;
-        data?: Readonly<globalThis.Record<string, JsonValue>>;
-        command?: string;
-        dedupeKey?: string;
-        affectedSlotIds?: DiagnosticRecord["affectedSlotIds"];
+        data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
+        command: string | undefined;
+        dedupeKey: string | undefined;
+        affectedSlotIds: DiagnosticRecord["affectedSlotIds"] | undefined;
       }): void => {
         if (!input.experimentId) return;
         const dedupeIndex = experimentDedupeIndex.get(input.experimentId) ?? new Map<string, DiagnosticRecord>();
@@ -1151,6 +1165,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             message: warning.message,
             phase: "sandbox.prepare",
             dedupeKey: warning.key,
+
+            data: undefined,
+            command: undefined,
+            affectedSlotIds: undefined,
           });
       }
 
@@ -1182,10 +1200,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           phase,
           dedupeKey: key,
           affectedSlotIds: [slotId],
+
+          data: undefined,
+          command: undefined,
         });
         if (!emittedPreDispatchFailures.has(key)) {
           emittedPreDispatchFailures.add(key);
-          reportDiagnostic({ key, code, severity: "error", message, data: { experimentId, phase, preAttempt: true } });
+          reportDiagnostic({
+            key,
+            code,
+            severity: "error",
+            message,
+            data: { experimentId, phase, preAttempt: true },
+
+            identity: undefined,
+          });
         }
       };
 
@@ -1221,6 +1250,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               severity: "warning",
               message,
               data: { experimentId },
+
+              identity: undefined,
             });
             recordExperimentDiagnostic({
               experimentId: attempt.run.experimentId,
@@ -1229,6 +1260,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               message,
               phase: "experiment.teardown",
               dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
+
+              data: undefined,
+              command: undefined,
+              affectedSlotIds: undefined,
             });
           }),
         );
@@ -1259,6 +1294,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             sharedStateKey: key,
             reason: input.reason,
           },
+
+          identity: undefined,
         });
         recordExperimentDiagnostic({
           experimentId: input.run.experimentId,
@@ -1267,6 +1304,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           message,
           phase: input.phase,
           data: { sharedStateKey: key, reason: input.reason },
+
+          command: undefined,
+          dedupeKey: undefined,
+          affectedSlotIds: undefined,
         });
       };
       /**
@@ -1295,7 +1336,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               processIdentity,
             },
             {
-              ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+              signal: opts.signal,
               onWaitStart: () => {
                 const message =
                   `waiting for sharedState key ${sharedState.key} to be released; this Invocation will not take it over automatically.
@@ -1306,8 +1347,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   severity: "info",
                   message,
                   data: { experimentId, sharedStateKey: sharedState.key },
+
+                  identity: undefined,
                 });
               },
+
+              pollIntervalMs: undefined,
+              heartbeatIntervalMs: undefined,
             },
           );
           return acquired.claim;
@@ -1340,6 +1386,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               severity: input.level,
               message: input.message,
               data: { experimentId, ...(input.data ?? {}) },
+
+              identity: undefined,
             });
             recordExperimentDiagnostic({
               experimentId: run.experimentId,
@@ -1347,8 +1395,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               level: input.level,
               message: input.message,
               phase,
-              ...(input.data !== undefined ? { data: input.data } : {}),
-              ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
+              data: input.data,
+              dedupeKey: input.dedupeKey,
+
+              command: undefined,
+              affectedSlotIds: undefined,
             });
           },
         };
@@ -1393,7 +1444,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // A retained lease is a durable recovery obligation, not a reason
                 // to leave a daemon heartbeat/timer behind after this Invocation.
                 // `abandon` cannot delete or rewrite the record.
-                delete cell.sharedStateClaim;
+                cell.sharedStateClaim = undefined;
                 return claim.abandon.pipe(
                   Effect.catch(() => Effect.void),
                   Effect.andThen(recoveryRequired("cleanup-failed")),
@@ -1402,7 +1453,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // Once release starts its heartbeat is interrupted. Do not retain a
               // stale in-memory claim after a failed compare-owner mutation; its
               // durable record is deliberately left for explicit recovery.
-              delete cell.sharedStateClaim;
+              cell.sharedStateClaim = undefined;
               return claim.release.pipe(Effect.catch(() => recoveryRequired("release-failed")));
             }),
           );
@@ -1457,6 +1508,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       severity: "warning",
                       message,
                       data: { experimentId },
+
+                      identity: undefined,
                     });
                     recordExperimentDiagnostic({
                       experimentId: run.experimentId,
@@ -1465,6 +1518,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       message,
                       phase: "experiment.teardown",
                       dedupeKey: `sandbox-reuse-cleanup-failed:${experimentId}`,
+
+                      data: undefined,
+                      command: undefined,
+                      affectedSlotIds: undefined,
                     });
                   }
 
@@ -1484,6 +1541,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       severity: "warning",
                       message,
                       data: { experimentId, failureCount: cell.sandboxCleanupFailures.length },
+
+                      identity: undefined,
                     });
                     recordExperimentDiagnostic({
                       experimentId: run.experimentId,
@@ -1491,11 +1550,23 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       level: "warning",
                       message,
                       phase: "experiment.teardown",
+
+                      data: undefined,
+                      command: undefined,
+                      dedupeKey: undefined,
+                      affectedSlotIds: undefined,
                     });
                   }
 
                   if (run.teardown) {
-                    reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
+                    reportExperimentHook({
+                      experimentId,
+                      hook: "teardown",
+                      status: "started",
+
+                      durationMs: undefined,
+                      recovery: undefined,
+                    });
                     const startedAt = Date.now();
                     const ctx = makeExperimentHookContext(run, "experiment.teardown");
                     yield* cleanupCallback(() => run.teardown!(ctx)).pipe(
@@ -1507,6 +1578,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               hook: "teardown",
                               status: "done",
                               durationMs: Date.now() - startedAt,
+
+                              recovery: undefined,
                             });
                           }),
                         onFailure: (error) =>
@@ -1517,6 +1590,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               hook: "teardown",
                               status: "failed",
                               durationMs: Date.now() - startedAt,
+
+                              recovery: undefined,
                             });
                             // Teardown failure never skips subsequent release handling, but
                             // it makes automatic lease release unsafe.
@@ -1529,6 +1604,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               severity: "warning",
                               message,
                               data: { experimentId },
+
+                              identity: undefined,
                             });
                             recordExperimentDiagnostic({
                               experimentId: run.experimentId,
@@ -1536,6 +1613,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               level: "warning",
                               message,
                               phase: "experiment.teardown",
+
+                              data: undefined,
+                              command: undefined,
+                              dedupeKey: undefined,
+                              affectedSlotIds: undefined,
                             });
                           }),
                       }),
@@ -1627,7 +1709,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 Effect.catch(() => Effect.succeed(false)),
               );
               if (!claimed) continue; // 已被另一个进程抢先删除，义务已被别处接手。
-              reportExperimentHook({ experimentId, hook: "teardown", status: "started", recovery: true });
+              reportExperimentHook({
+                experimentId,
+                hook: "teardown",
+                status: "started",
+                recovery: true,
+
+                durationMs: undefined,
+              });
               const startedAt = Date.now();
               const recoveryCtx: ExperimentHookContext = {
                 experimentId,
@@ -1644,6 +1733,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     severity: input.level,
                     message: input.message,
                     data: { experimentId, ...(input.data ?? {}) },
+
+                    identity: undefined,
                   });
                   recordExperimentDiagnostic({
                     experimentId: run.experimentId,
@@ -1651,8 +1742,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     level: input.level,
                     message: input.message,
                     phase: "experiment.teardown",
-                    ...(input.data !== undefined ? { data: input.data } : {}),
-                    ...(input.dedupeKey !== undefined ? { dedupeKey: input.dedupeKey } : {}),
+                    data: input.data,
+                    dedupeKey: input.dedupeKey,
+
+                    command: undefined,
+                    affectedSlotIds: undefined,
                   });
                 },
               };
@@ -1686,6 +1780,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         severity: "warning",
                         message,
                         data: { experimentId },
+
+                        identity: undefined,
                       });
                       recordExperimentDiagnostic({
                         experimentId: run.experimentId,
@@ -1693,6 +1789,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         level: "warning",
                         message,
                         phase: "experiment.teardown",
+
+                        data: undefined,
+                        command: undefined,
+                        dedupeKey: undefined,
+                        affectedSlotIds: undefined,
                       });
                     }),
                 }),
@@ -1767,6 +1868,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                                 severity: "warning",
                                 message,
                                 data: { experimentId },
+
+                                identity: undefined,
                               });
                               recordExperimentDiagnostic({
                                 experimentId: run.experimentId,
@@ -1774,6 +1877,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                                 level: "warning",
                                 message,
                                 phase: "experiment.setup",
+
+                                data: undefined,
+                                command: undefined,
+                                dedupeKey: undefined,
+                                affectedSlotIds: undefined,
                               });
                             }),
                           ),
@@ -1781,7 +1889,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       }
                       if (!run.setup) return;
                       setupStartedAt = Date.now();
-                      reportExperimentHook({ experimentId, hook: "setup", status: "started" });
+                      reportExperimentHook({
+                        experimentId,
+                        hook: "setup",
+                        status: "started",
+
+                        durationMs: undefined,
+                        recovery: undefined,
+                      });
                       const ctx = makeExperimentHookContext(run, "experiment.setup");
                       const value = yield* Effect.tryPromise({
                         try: () => Promise.resolve().then(() => run.setup!(ctx)),
@@ -1803,6 +1918,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         hook: "setup",
                         status: "done",
                         durationMs: Date.now() - (setupStartedAt ?? Date.now()),
+
+                        recovery: undefined,
                       });
                     });
                     const setupWorker = setupBody.pipe(
@@ -1815,6 +1932,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               hook: "setup",
                               status: "failed",
                               durationMs: Date.now() - (setupStartedAt ?? Date.now()),
+
+                              recovery: undefined,
                             });
                           }).pipe(
                             Effect.andThen(
@@ -2076,6 +2195,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             phase: gate.phase,
             unstarted: gate.unstarted,
           },
+
+          identity: undefined,
         });
       };
 
@@ -2100,6 +2221,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           phase: declaration.phase,
           dedupeKey: gate.dedupeKey,
           data: { scope, ...(gate.evalId !== undefined ? { evalId: gate.evalId } : {}) },
+
+          command: undefined,
+          affectedSlotIds: undefined,
         });
         if (!gate.halted) {
           gate.message = message;
@@ -2134,6 +2258,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               terminal: failure.terminal,
               diagnosticCommand: failure.diagnosticCommand,
             },
+
+            command: undefined,
+            affectedSlotIds: undefined,
           });
           if (!gate.halted) {
             gate.message = message;
@@ -2229,6 +2356,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           severity: "error",
           message,
           data,
+
+          identity: undefined,
         });
         recordExperimentDiagnostic({
           experimentId: gate.experimentId,
@@ -2238,6 +2367,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           phase: gate.phase,
           data,
           dedupeKey: gate.dedupeKey,
+
+          command: undefined,
+          affectedSlotIds: undefined,
         });
       };
       /**
@@ -2269,6 +2401,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               phase,
               onUnavailable: gate.onUnavailable,
             },
+
+            identity: undefined,
           });
           return;
         }
@@ -2310,11 +2444,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         /** 还没收尾的 attempt 序号——`lock_wait` 的计数与「锁还留不留」都读它。 */
         pending: Set<number>;
         /** 本进程此刻持有的锁;undefined = 没持有(还没试 / 撞锁挂起中)。 */
-        claim?: CaseLockEffectClaim;
+        claim: CaseLockEffectClaim | undefined;
         /** 同组兄弟只允许一条 fiber 做磁盘试锁；后到者在临界区内重读 claim / suspension。 */
         acquireMutex: Semaphore.Semaphore;
         /** 在飞的挂起窗口:撞锁的兄弟全体等同一个 Deferred。 */
-        suspension?: Effect.Effect<void>;
+        suspension: Effect.Effect<void> | undefined;
         /** 已经用 `lock_wait started` 报进 `elsewhere`、还没被 `resolved` 报出来的 attempt 数。
          *  五项恒等式要求「报进去多少条就要报出来多少条」:收尾时不能拿当下的 `pending.size`
          *  当迁移数——等待期间被中断而提前 settle 的 attempt 会让 `pending` 缩水,差额就永远
@@ -2335,6 +2469,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             pending: new Set<number>(),
             acquireMutex: yield* Semaphore.make(1),
             inElsewhere: 0,
+            claim: undefined,
+            suspension: undefined,
           };
           caseLocks.set(key, st);
         }
@@ -2367,6 +2503,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           carried: 0,
           dispatched: inElsewhere,
           waitedMs: Date.now() - waitStartedAt,
+
+          holderPid: undefined,
+          holderHost: undefined,
+          attempts: undefined,
         });
       };
 
@@ -2396,6 +2536,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               holderPid: holder.pid,
               holderHost: holder.host,
               attempts: st.inElsewhere,
+
+              carried: undefined,
+              dispatched: undefined,
+              waitedMs: undefined,
             });
 
             const poll = Effect.gen(function* () {
@@ -2417,7 +2561,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               Effect.provideService(ProjectStateDatabase, projectStateDatabase),
               Effect.ensuring(
                 Effect.sync(() => {
-                  if (st.suspension === window) delete st.suspension;
+                  if (st.suspension === window) st.suspension = undefined;
                 }),
               ),
             );
@@ -2456,6 +2600,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       busyWith = holder;
                       giveUp.abort(); // 撞上新鲜锁 = 这次尝试到此为止,不进入 acquireCaseLockEffect 自己的轮询
                     },
+
+                    pollIntervalMs: undefined,
+                    heartbeatIntervalMs: undefined,
                   }),
                 ).pipe(
                   Effect.matchEffect({
@@ -2489,6 +2636,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                                 ? { previousPid: priorHolder.pid, previousHost: priorHolder.host }
                                 : {}),
                             },
+
+                            identity: undefined,
                           });
                         }
                         // V1 does not convert late legacy rows into carried Members. The frozen writer view is
@@ -2510,7 +2659,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           st.pending.delete(attempt);
           if (st.pending.size > 0) return undefined;
           const claim = st.claim;
-          delete st.claim;
+          st.claim = undefined;
           return claim;
         }).pipe(
           Effect.tap((claim) =>
@@ -2533,10 +2682,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         readonly release: Effect.Effect<void>;
         readonly reacquire: Effect.Effect<void>;
       }
-      const detachedSlotHold: GlobalSlotHold = Object.freeze({
+      const detachedSlotHold: GlobalSlotHold = {
         release: Effect.void,
         reacquire: Effect.void,
-      });
+      };
 
       const withGlobalSlot = <E, R>(
         haltSignal: Effect.Effect<void>,
@@ -2768,12 +2917,18 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   ? Option.none<AttemptError>()
                   : (() => {
                       const state = expLc.state;
-                      const outcome =
-                        state._tag === "Active" || state._tag === "TearingDown"
-                          ? setupOutcomeOf(state.setup)
-                          : state._tag === "TornDown"
-                            ? state.setup
-                            : undefined;
+                      function setupOutcome() {
+                        switch (state._tag) {
+                          case "Active":
+                          case "TearingDown":
+                            return setupOutcomeOf(state.setup);
+                          case "TornDown":
+                            return state.setup;
+                          default:
+                            return undefined;
+                        }
+                      }
+                      const outcome = setupOutcome();
                       if (outcome === undefined) {
                         throw new Error(`Experiment setup has no outcome in lifecycle state ${state._tag}.`);
                       }
@@ -2829,12 +2984,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // A scheduler-admitted Attempt owns a durable identity before any
               // attempt-owned sandbox, Agent, or Eval work begins. Reservation
               // failure is invocation-fatal at the Record publish gate.
-              const initialPhase: LifecyclePhase =
-                a.run.adapter?.kind === "custom"
-                  ? "attempt.setup"
-                  : a.run.adapter?.kind === "sandbox"
-                    ? "sandbox.queue"
-                    : "eval.run";
+              function initialLifecyclePhase(): LifecyclePhase {
+                switch (a.run.adapter?.kind) {
+                  case "custom":
+                    return "attempt.setup";
+                  case "sandbox":
+                    return "sandbox.queue";
+                  default:
+                    return "eval.run";
+                }
+              }
+              const initialPhase = initialLifecyclePhase();
               const reservationAttempted = blockedError === undefined;
               let reservedRecordAttempt: RunnerRecordAttempt | undefined;
               if (reservationAttempted) {
@@ -2866,7 +3026,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                           type: "eval:start",
                           eval: { id: a.evalDef.id },
                           adapter: adapterIdentity(a.run.adapter),
-                          ...(a.run.model === undefined ? {} : { model: a.run.model }),
+                          model: a.run.model,
                           attempt: a.attempt,
                           experimentId: a.run.experimentId,
                         }),
@@ -2925,9 +3085,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               buildLocators,
                               providerAdmission,
                               {
-                                ...(a.attemptId === undefined ? {} : { attemptId: a.attemptId }),
+                                attemptId: a.attemptId,
                                 evalId: a.evalDef.id,
-                                ...(a.run.sandboxLabels === undefined ? {} : { sandboxLabels: a.run.sandboxLabels }),
+                                sandboxLabels: a.run.sandboxLabels,
                               },
                             ),
                           ),
@@ -2988,44 +3148,33 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         error: failedBeforeDispatch,
                       } satisfies EvalResult)
                     : yield* runAttemptEffect(recordedAttempt, attemptOptions, sandboxSem, {
-                        ...(runId === undefined ? {} : { runId }),
+                        onPhase: () => {},
+                        runId,
                         attachmentScope: invocationScope,
                         buildLocators,
-                        ...(beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)) === undefined
-                          ? {}
-                          : {
-                              preparedBeforeCache: beforeCachePreparation.preparedByPair.get(
-                                cacheKey(a.run, a.evalDef.id),
-                              )!,
-                            }),
+                        preparedBeforeCache: beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)),
                         runTiming,
                         parentSignal: attemptSignal,
-                        ...(opts.signal === undefined ? {} : { invocationSignal: opts.signal }),
+                        invocationSignal: opts.signal,
                         concurrencySlot,
                         providerAdmission,
-                        ...(lease
+                        reusedSandbox: lease
                           ? {
-                              reusedSandbox: {
-                                resourceSandbox: lease.resourceSandbox,
-                                sandbox: lease.sandbox,
-                                reuseSandbox: lease.reuseSandbox,
-                                reuseOrdinal: lease.reuseOrdinal,
-                                materializedCase: lease.materializedCase,
-                              },
+                              resourceSandbox: lease.resourceSandbox,
+                              sandbox: lease.sandbox,
+                              reuseSandbox: lease.reuseSandbox,
+                              reuseOrdinal: lease.reuseOrdinal,
+                              materializedCase: lease.materializedCase,
                             }
-                          : {}),
+                          : undefined,
                         // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
                         // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                         // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                         onFailureClass: (declaration) => closeHaltGate(a, declaration),
                         onEnvironmentIncomplete: haltInvocationForEnvironment,
-                        ...(a.run.sharedState !== undefined
-                          ? {
-                              onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {
-                                recordSandboxCleanupFailure(a.run, failure);
-                              },
-                            }
-                          : {}),
+                        onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {
+                          if (a.run.sharedState !== undefined) recordSandboxCleanupFailure(a.run, failure);
+                        },
                         onSealedEvaluation: (sealed) =>
                           Effect.sync(() => {
                             sealedEvaluation = sealed;
@@ -3048,6 +3197,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                               identity: feedbackIdentity(a),
                               who: feedbackWho(a),
                               verdict: result.verdict,
+                              tokenCount: undefined,
+                              estimatedCostUSD: undefined,
                             });
                           }),
                       });
@@ -3063,9 +3214,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                     const mustRetire = reuseResultRequiresRetirement(evaluated);
                     yield* lease.commit(mustRetire ? { _tag: "Retire" } : { _tag: "Reset" });
                   }
-                  return Object.freeze({
+                  return {
                     result: evaluated,
-                  });
+                  };
                 }),
               );
               // Reset/finalizer failures belong to the physical Group instance and
@@ -3101,12 +3252,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 identity: feedbackIdentity(a),
                 who: feedbackWho(a),
                 verdict: result.verdict,
-                ...(result.usage === undefined
-                  ? {}
-                  : {
-                      tokenCount: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-                    }),
-                ...(result.estimatedCostUSD === undefined ? {} : { estimatedCostUSD: result.estimatedCostUSD }),
+                tokenCount:
+                  result.usage === undefined
+                    ? undefined
+                    : (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+                estimatedCostUSD: result.estimatedCostUSD,
               });
               if (a.run.budget !== undefined) {
                 const s = budgetState(budgetKey);
@@ -3133,6 +3283,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         severity: "warning",
                         message,
                         data: { budgetKey },
+
+                        identity: undefined,
                       });
                       recordExperimentDiagnostic({
                         experimentId: a.run.experimentId,
@@ -3141,6 +3293,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         message,
                         phase: "eval.run",
                         data: { budgetKey },
+
+                        command: undefined,
+                        dedupeKey: undefined,
+                        affectedSlotIds: undefined,
                       });
                     }
                   }
@@ -3229,7 +3385,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   const outcome = yield* tryAcquireCase(caseState);
                   if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
                   const allowsAutomaticCarry =
-                    a.run.adapter?.kind !== "custom" || a.run.adapter.behaviorRevision !== null;
+                    a.run.adapter?.kind !== "custom" || a.run.adapter.behaviorRevision !== undefined;
                   if (
                     !a.run.sharedState &&
                     allowsAutomaticCarry &&
@@ -3395,6 +3551,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             toOrdinal: notice.toOrdinal,
             count: notice.count,
           },
+
+          identity: undefined,
         });
       }
 
@@ -3438,6 +3596,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         severity: "warning",
                         message,
                         data: { experimentId, remaining: action.remaining },
+
+                        identity: undefined,
                       });
                       recordExperimentDiagnostic({
                         experimentId: run.experimentId,
@@ -3446,6 +3606,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         message,
                         phase: "experiment.teardown",
                         data: { remaining: action.remaining },
+
+                        command: undefined,
+                        dedupeKey: undefined,
+                        affectedSlotIds: undefined,
                       });
                     }).pipe(Effect.andThen(runExperimentTeardown(run, cell)));
                   }
@@ -3499,14 +3663,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           const receiptCompletedAtMs = Date.now();
           yield* recordCoordinator.publish(receiptCompletedAtMs, interrupted ? "interrupted" : "normal");
           const publicationCutoff = yield* recordCoordinator.publicationCutoff();
-          return Object.freeze({
+          return {
             invocationId: recordCoordinator.reusePlan.target.invocationId,
-            createdRunIds: Object.freeze([...recordCoordinator.runIdsByExperiment.values()]),
+            createdRunIds: [...recordCoordinator.runIdsByExperiment.values()],
             publicationCutoff: JSON.stringify(publicationCutoff),
             startedAt,
             completedAt: new Date(receiptCompletedAtMs).toISOString(),
             completion: interrupted ? "interrupted" : "completed",
-          } satisfies InvocationReceipt);
+          } satisfies InvocationReceipt;
         }),
       ).pipe(
         Effect.ensuring(
@@ -3535,9 +3699,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           reusedAttempts: reusedAttempts.filter((attempt) => attempt.target.experimentId === experimentId),
           diagnostics: experimentDiagnostics.get(experimentId) ?? [],
           // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
-          ...(runTimings !== undefined ? { timings: runTimings } : {}),
-          ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
-          ...(opts.config.name === undefined ? {} : { name: opts.config.name }),
+          timings: runTimings,
+          sandboxBuilds: sandboxBuildRecords.length > 0 ? sandboxBuildRecords : undefined,
+          name: opts.config.name,
         });
       }
 

@@ -6,6 +6,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect, Result, Schema } from "effect";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
 
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
@@ -51,7 +52,7 @@ function readFailure(operation: "list" | "get", cause: unknown): RunReadError {
     operation,
     code: "run-read-failed",
     message,
-    cause,
+    cause: normalizeExternalCause(cause),
   });
 }
 
@@ -65,7 +66,7 @@ function recordDatabaseExists(cwd: string): boolean {
 
 interface RawRunHost {
   readonly list: (
-    request: RunListRequest & { readonly record?: string },
+    request: RunListRequest & { readonly record?: string | undefined },
   ) => Effect.Effect<RunListResult, RunReadError, ProjectStateDatabase>;
   readonly get: (request: RunGetRequest) => Effect.Effect<RunResult, RunReadError, ProjectStateDatabase>;
   readonly delete: (request: RunDeleteRequest) => Effect.Effect<RunDeleteReceipt, RunDeleteError, ProjectStateDatabase>;
@@ -75,66 +76,63 @@ interface RawRunHost {
 }
 
 function publicCutoff(cutoff: PublicationCutoff) {
-  return Object.freeze({
+  return {
     identity: publicationCutoffIdentity(cutoff),
     revision: cutoff.revision,
-  });
+  };
 }
 
 function projectSummary(run: ReadableRunResource, observedAt: string, portable = false): RunSummary {
-  let owner: RunOwnerObservation | undefined;
-  if (run.state === "active" || run.state === "recovering") {
+  function observedOwner(): RunOwnerObservation | undefined {
+    if (run.state !== "active" && run.state !== "recovering") return undefined;
     const observation = portable ? undefined : observeRunWriterTermination(run.writerGeneration);
-    owner =
-      observation === undefined
-        ? { state: "unknown", reason: "portable-record", observedAt }
-        : observation.state === "unproven"
-          ? { state: "unknown", reason: observation.reason, observedAt }
-          : { state: observation.state === "active" ? "alive" : "gone", observedAt };
+    if (observation === undefined) return { state: "unknown", reason: "portable-record", observedAt };
+    if (observation.state === "unproven") return { state: "unknown", reason: observation.reason, observedAt };
+    return { state: observation.state === "active" ? "alive" : "gone", observedAt };
   }
-  return Object.freeze({
+  const owner = observedOwner();
+  return {
     runId: run.runId,
     invocationId: run.invocationId,
     experimentId: run.experimentId,
     state: run.state,
     startedAt: run.startedAt,
-    ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
-    coverage: Object.freeze({
+    ...("completedAt" in run ? { completedAt: run.completedAt } : {}),
+    coverage: {
       published: run.published,
       expected: run.expected,
       missing: run.missing,
-    }),
-    ...(owner === undefined ? {} : { owner: Object.freeze(owner) }),
-  });
+    },
+    ...(owner === undefined ? {} : { owner }),
+  };
 }
 
 function projectDetail(run: ReadableRunResource, observedAt: string): RunDetail {
-  return Object.freeze({
+  return {
     ...projectSummary(run, observedAt),
-    slots: Object.freeze(
-      run.slots.map((slot) =>
-        Object.freeze({
-          slotId: slot.slotId,
-          evalId: slot.evalId,
-          attemptOrdinal: slot.attemptOrdinal,
-          executionIdentityDigest: slot.executionIdentityDigest,
-          publication:
-            slot.publication.state === "published"
-              ? Object.freeze({
-                  state: "published" as const,
-                  action: slot.publication.action,
-                  attemptId: slot.publication.attemptId,
-                  attemptLocator: slot.publication.attemptLocator,
-                  originRunId: slot.publication.originRunId,
-                  originSlotId: slot.publication.originSlotId,
-                })
-              : slot.publication.state === "absent"
-                ? Object.freeze({ state: "absent" as const, reason: slot.publication.reason })
-                : Object.freeze({ state: "pending" as const }),
-        }),
-      ),
-    ),
-  });
+    slots: run.slots.map(function projectSlot(slot) {
+      function slotPublication() {
+        if (slot.publication.state === "published")
+          return {
+            state: "published" as const,
+            action: slot.publication.action,
+            attemptId: slot.publication.attemptId,
+            attemptLocator: slot.publication.attemptLocator,
+            originRunId: slot.publication.originRunId,
+            originSlotId: slot.publication.originSlotId,
+          };
+        if (slot.publication.state === "absent") return { state: "absent" as const, reason: slot.publication.reason };
+        return { state: "pending" as const };
+      }
+      return {
+        slotId: slot.slotId,
+        evalId: slot.evalId,
+        attemptOrdinal: slot.attemptOrdinal,
+        executionIdentityDigest: slot.executionIdentityDigest,
+        publication: slotPublication(),
+      };
+    }),
+  };
 }
 
 function decodeContinuation(
@@ -157,17 +155,17 @@ function decodeContinuation(
       ) {
         throw new Error("Run continuation binding is invalid.");
       }
-      return Object.freeze({
-        cutoff: Object.freeze({ storeGeneration: value[1], revision: Number(value[2]) }),
+      return {
+        cutoff: { storeGeneration: value[1], revision: Number(value[2]) },
         afterRunId: value[3],
-      });
+      };
     },
     catch: (cause) =>
       new RunReadError({
         operation: "list",
         code: "run-continuation-invalid",
         message: "Run continuation is invalid or belongs to a different filter; restart run.list without continuation.",
-        cause,
+        cause: normalizeExternalCause(cause),
       }),
   });
 }
@@ -193,6 +191,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
           operation: "list",
           code: "run-filter-invalid",
           message: "Run states must be a nonempty selection of known states and limit must be a positive safe integer.",
+          cause: undefined,
         }),
       );
     if (request.record === undefined && !recordDatabaseExists(request.cwd)) {
@@ -202,16 +201,16 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
             operation: "list",
             code: "run-continuation-invalid",
             message: "Run continuation has no matching Record store; restart run.list without continuation.",
+            cause: undefined,
           }),
         );
-      return Effect.succeed(
-        Object.freeze({
-          operation: "run.list" as const,
-          publicationCutoff: EMPTY_CUTOFF,
-          runs: Object.freeze([]),
-          omitted: 0,
-        }),
-      );
+      return Effect.succeed({
+        operation: "run.list" as const,
+        publicationCutoff: EMPTY_CUTOFF,
+        runs: [],
+        omitted: 0,
+        continuation: undefined,
+      });
     }
     return Effect.gen(function* () {
       const continuation =
@@ -251,8 +250,8 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
           try: () =>
             session.listRunResources({
               cutoff,
-              ...(afterRunId === undefined ? {} : { afterRunId }),
-              ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
+              afterRunId,
+              invocationId: request.invocationId,
             }),
           catch: (cause) => cause,
         });
@@ -267,18 +266,22 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
               run.experimentId === request.experimentIdPrefix ||
               run.experimentId.startsWith(`${request.experimentIdPrefix}/`)),
         )
-        .sort(
-          (a, b) =>
-            Date.parse(b.startedAt) - Date.parse(a.startedAt) || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0),
-        );
+        .sort(function compareRuns(a, b) {
+          const startedAt = Date.parse(b.startedAt) - Date.parse(a.startedAt);
+          if (startedAt) return startedAt;
+          if (a.runId < b.runId) return -1;
+          if (a.runId > b.runId) return 1;
+          return 0;
+        });
       const selected = request.limit === undefined ? matching : matching.slice(0, request.limit);
       const observedAt = DateTime.formatIso(yield* DateTime.now);
-      return Object.freeze({
+      return {
         operation: "run.list" as const,
         publicationCutoff: publicCutoff(cutoff),
-        runs: Object.freeze(selected.map((run) => projectSummary(run, observedAt, request.record !== undefined))),
+        runs: selected.map((run) => projectSummary(run, observedAt, request.record !== undefined)),
         omitted: matching.length - selected.length,
-      });
+        continuation: undefined,
+      };
     }).pipe(
       Effect.scoped,
       Effect.mapError((cause) => (cause instanceof RunReadError ? cause : readFailure("list", cause))),
@@ -293,6 +296,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
           operation: "get",
           code: "run-id-invalid",
           message: runId.failure,
+          cause: undefined,
         }),
       );
     }
@@ -302,6 +306,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
           operation: "get",
           code: "run-not-found",
           message: `Run ${runId.success} was not found.`,
+          cause: undefined,
         }),
       );
     }
@@ -316,14 +321,15 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
             operation: "get",
             code: "run-not-found",
             message: `Run ${runId.success} was not found.`,
+            cause: undefined,
           }),
         );
       }
-      return Object.freeze({
+      return {
         operation: "run.get" as const,
         publicationCutoff: publicCutoff(cutoff),
         run: projectDetail(run, DateTime.formatIso(yield* DateTime.now)),
-      });
+      };
     }).pipe(
       Effect.scoped,
       Effect.mapError((cause) => (cause instanceof RunReadError ? cause : readFailure("get", cause))),
@@ -338,6 +344,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
             operation: "delete",
             code: "run-id-invalid",
             message: runId.failure,
+            cause: undefined,
           }),
         )
       : lifecycle.delete({ cwd: request.cwd, runId: runId.success });
@@ -351,6 +358,7 @@ function makeRunHost(lifecycle: RunLifecycleAdapter): RawRunHost {
             operation: "recover",
             code: "run-id-invalid",
             message: runId.failure,
+            cause: undefined,
           }),
         )
       : lifecycle.recover({ cwd: request.cwd, runId: runId.success });

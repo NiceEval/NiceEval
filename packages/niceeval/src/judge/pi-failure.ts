@@ -4,6 +4,7 @@ import { Data, Schema } from "effect";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import { resolveJudgeCredential } from "./provider.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 
 /** Provenance at the SDK boundary; messages are evidence, never classifiers. */
 export type PiFailureKind =
@@ -19,7 +20,7 @@ export type PiFailureKind =
 export class PiFailure extends Data.TaggedError("PiFailure")<{
   readonly kind: PiFailureKind;
   readonly message: string;
-  readonly cause?: unknown;
+  readonly cause: ExternalCause | undefined;
 }> {}
 
 export function piDefect(cause: unknown): PiFailure {
@@ -28,14 +29,24 @@ export function piDefect(cause: unknown): PiFailure {
     : new PiFailure({
         kind: "defect",
         message: cause instanceof Error ? cause.message : "Unexpected pi failure",
-        cause,
+        cause: normalizeExternalCause(cause),
       });
 }
 
 export function managedPiCredential(profile: ResolvedJudgeConfig | undefined): string {
-  if (profile === undefined) throw new PiFailure({ kind: "provider", message: "Judge Provider is not configured" });
+  if (profile === undefined)
+    throw new PiFailure({
+      kind: "provider",
+      message: "Judge Provider is not configured",
+      cause: undefined,
+    });
   const credential = resolveJudgeCredential(profile);
-  if (!credential) throw new PiFailure({ kind: "credential", message: "Judge Provider credential is unresolved" });
+  if (!credential)
+    throw new PiFailure({
+      kind: "credential",
+      message: "Judge Provider credential is unresolved",
+      cause: undefined,
+    });
   return credential;
 }
 
@@ -54,7 +65,11 @@ export function piUsageFailure(usage: Usage): PiFailure | undefined {
     Schema.decodeUnknownSync(UsageSchema)(usage);
     return undefined;
   } catch (cause) {
-    return new PiFailure({ kind: "defect", message: "pi returned invalid usage", cause });
+    return new PiFailure({
+      kind: "defect",
+      message: "pi returned invalid usage",
+      cause: normalizeExternalCause(cause),
+    });
   }
 }
 

@@ -33,7 +33,7 @@ export default defineEval({
 #### `description`
 
 ```ts
-description?: string;
+description?: string | undefined;
 ```
 
 一句话描述,展示在 `niceeval list` 和 view 里;纯说明,不影响调度或打分。
@@ -41,7 +41,7 @@ description?: string;
 #### `tags`
 
 ```ts
-tags?: string[];
+tags?: string[] | undefined;
 ```
 
 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。
@@ -49,7 +49,7 @@ tags?: string[];
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer;
+sandbox?: SandboxLayer | undefined;
 ```
 
 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
@@ -58,7 +58,7 @@ sandbox?: SandboxLayer;
 #### `plugins`
 
 ```ts
-plugins?: readonly PluginInstance<"eval">[];
+plugins?: readonly PluginInstance<"eval">[] | undefined;
 ```
 
 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。
@@ -66,7 +66,7 @@ plugins?: readonly PluginInstance<"eval">[];
 #### `judge`
 
 ```ts
-judge?: JudgeSelection;
+judge?: JudgeSelection | undefined;
 ```
 
 模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。
@@ -74,7 +74,7 @@ judge?: JudgeSelection;
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。
@@ -82,7 +82,7 @@ timeoutMs?: number;
 #### `metadata`
 
 ```ts
-metadata?: globalThis.Record<string, JsonValue>;
+metadata?: globalThis.Record<string, JsonValue> | undefined;
 ```
 
 任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。
@@ -90,7 +90,7 @@ metadata?: globalThis.Record<string, JsonValue>;
 #### `diff`
 
 ```ts
-diff?: { include?: string[]; ignore?: string[] };
+diff?: { include?: string[] | undefined; ignore?: string[] | undefined } | undefined;
 ```
 
 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
@@ -160,7 +160,7 @@ readonly evaluationKind: Kind;
 
 ```ts
 send(
-  input: string | { readonly text: string; readonly files?: readonly InputFile[] },
+  input: string | { readonly text: string; readonly files?: readonly InputFile[] | undefined },
 ): Promise<TurnHandle<Kind>>;
 ```
 
@@ -227,13 +227,13 @@ readonly signal: AbortSignal;
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model: string | undefined;
 ```
 
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort: string | undefined;
 ```
 
 #### `flags`
@@ -593,7 +593,7 @@ readonly reply: string;
 #### `data`
 
 ```ts
-readonly data?: JsonValue;
+readonly data: JsonValue | undefined;
 ```
 
 #### `usage`

@@ -2,7 +2,7 @@
 // @concord-implements docs/feature/sandbox/architecture/remote-snapshot-cache.md#instabox
 import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
-import type { InstaboxSandboxOptions } from "../instabox.ts";
+import type { InstaboxProviderPlan } from "../instabox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
 import { InstaboxApi, InstaboxApiError } from "./api.ts";
 
@@ -23,14 +23,14 @@ const api = () => {
 const boundary = <A>(operation: string, run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: () => fail(operation) });
 
-export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOptions> = {
+export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderPlan> = {
   preserves: { disks: ["/", "/data"], memory: false },
   sourceUsableAfterSnapshot: false,
   snapshotSettleMs,
   resolveBase: Effect.fn("instaboxSnapshotDriver.resolveBase")(function* (plan) {
     const key = process.env.INSTABOX_API_KEY;
     if (!key) return yield* fail("resolve-base");
-    const snapshotId = plan.snapshotId;
+    const snapshotId = plan.source._tag === "Snapshot" ? plan.source.id : undefined;
     if (snapshotId !== undefined) {
       const snapshot = yield* boundary("resolve-base", (signal) =>
         api().json(Snapshot, `/snapshots/${encodeURIComponent(snapshotId)}`, { signal }),
@@ -42,8 +42,7 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
           reason: "Instabox Base snapshot is not ready",
         };
     }
-    const templateId = plan.templateId ?? plan.template ?? "universal";
-    const baseIdentity = snapshotId ?? `template:${templateId}`;
+    const baseIdentity = plan.source._tag === "Snapshot" ? plan.source.id : `template:${plan.source.id}`;
     const credentialHash = createHash("sha256").update(key).digest("hex");
     const executionDomainId = createHash("sha256")
       .update(JSON.stringify(["https://api.instabox.sh", credentialHash]))
@@ -52,7 +51,7 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
       _tag: "Resolved" as const,
       executionDomainId,
       baseIdentity,
-      baseReference: snapshotId ?? templateId,
+      baseReference: plan.source.id,
       keyScope: {
         cacheFormat: "niceeval-instabox-cache/current",
         semanticIdentity: { executionDomainId, platform: "linux-x64-gnu" },
@@ -61,7 +60,9 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxSandboxOp
   }),
   createFromSnapshot: (plan, snapshotId, context) =>
     boundary("restore", () => import("./materialize.ts")).pipe(
-      Effect.flatMap((module) => module.materializeInstabox({ ...plan, snapshotId }, context)),
+      Effect.flatMap((module) =>
+        module.materializeInstabox({ ...plan, source: { _tag: "Snapshot", id: snapshotId } }, context),
+      ),
       Effect.mapError(() => fail("restore")),
     ),
   createSnapshot: Effect.fn("instaboxSnapshotDriver.createSnapshot")(

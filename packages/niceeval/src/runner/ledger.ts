@@ -47,7 +47,8 @@ const MAX_POLICY_ENTRY_UTF8_BYTES = 4096;
 const policyEncoder = new TextEncoder();
 
 function compareAscii(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 /** Reject an unrecordable policy before the collector starts, then freeze its canonical evidence form. */
@@ -63,7 +64,7 @@ function canonicalPolicyEntries(entries: readonly string[], name: "include" | "i
       throw new Error(`defineEval({ diff }).${name}[${index}] exceeds ${MAX_POLICY_ENTRY_UTF8_BYTES} UTF-8 bytes`);
     }
   }
-  return Object.freeze([...new Set(entries)].sort(compareAscii));
+  return [...new Set(entries)].sort(compareAscii);
 }
 
 /**
@@ -188,8 +189,8 @@ export interface ChangeLedger {
 
 interface LedgerOptions {
   /** defineEval({ diff }) 的归因调整:ignore 追加排除,include 打洞加回(优先级最高)。 */
-  include?: string[];
-  ignore?: string[];
+  include: string[] | undefined;
+  ignore: string[] | undefined;
 }
 
 /** 每条 git 命令都带上私有 GIT_DIR + workdir work-tree;项目/全局 gitignore 一律不参与。 */
@@ -314,7 +315,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   const rootCommands = sandboxSupportsRootCommands(sandbox);
   // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown
   // workdir，Agent 命令仍沿标准非 root 身份；不支持提权的 provider 保持既有用户态路径。
-  const commandOptions = rootCommands ? { env, user: "root" as const } : { env };
+  const commandOptions = { env, user: rootCommands ? ("root" as const) : undefined };
   const captureMetadata = rootCommands ? ` && ${captureBaselineMetadataScript()}` : "";
   const lockPrivateLedger = rootCommands ? ' && chmod go-rwx "$GIT_DIR"' : "";
   let ordinaryUid: string | undefined;
@@ -361,13 +362,13 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
   return {
     rootExecutionIdentity: ordinaryUid === "0",
-    attribution: Object.freeze({
+    attribution: {
       defaultPolicy: createHash("sha256")
         .update(JSON.stringify([...DEFAULT_EXCLUDES].sort()))
         .digest("hex"),
       include: includes,
       ignore: ignored,
-    }),
+    },
     async commitEvalWindow(label: string): Promise<void> {
       // 有未记录变化才落这一笔;干净时不产生空的 eval 归因 commit。
       const result = await sandbox.runShell(
@@ -411,7 +412,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 
 async function exportAgentWindows(
   sandbox: Sandbox,
-  commandOptions: { readonly env: globalThis.Record<string, string>; readonly user?: "root" },
+  commandOptions: { readonly env: globalThis.Record<string, string>; readonly user: "root" | undefined },
   exportDir: string,
   rootCommands: boolean,
 ): Promise<DiffArtifact> {
@@ -496,12 +497,12 @@ function parseExportManifest(text: string): ExportManifest {
       throw new Error(`niceeval ledger export: invalid length for part ${suffix}`);
     }
     retainedBytes += bytes;
-    parts.push(Object.freeze({ suffix, bytes, oid: match[3]! }));
+    parts.push({ suffix, bytes, oid: match[3]! });
   }
   if (retainedBytes !== totalBytes) {
     throw new Error("niceeval ledger export: manifest total length mismatch");
   }
-  return Object.freeze({ totalBytes, parts: Object.freeze(parts) });
+  return { totalBytes, parts };
 }
 
 function ensureCommandSucceeded(
@@ -613,7 +614,12 @@ function parseDiffTree(section: Buffer, label: string): DiffTreeEntry[] {
       throw new Error(`export window ${label}: malformed git diff-tree output`);
     }
     const code = fields[4]!;
-    const status = code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified";
+    function changeStatus(): DiffTreeEntry["status"] {
+      if (code.startsWith("A")) return "added";
+      if (code.startsWith("D")) return "deleted";
+      return "modified";
+    }
+    const status = changeStatus();
     entries.push({ path, status, beforeSha: fields[2]!, afterSha: fields[3]! });
   }
   return entries;

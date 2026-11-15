@@ -3,6 +3,7 @@
 // 与内置 provider 的 detached 能力;provider 名的路由发生在 CLI / 注册表边界(sandbox/ 域内)。
 
 import { Cause, Data, Effect } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import {
   destroyDetached,
@@ -59,7 +60,11 @@ const LEASE_TTL_MS = 60 * 60 * 1000;
 /** detached provider / command 边界的可恢复失败；注册表 I/O 错误保留自己的领域类型。 */
 export class SandboxCommandOperationError extends Data.TaggedError("SandboxCommandOperationError")<{
   readonly operation: string;
-  readonly cause: unknown;
+  readonly cause: ExternalCause | SandboxCommandAccessError;
+}> {}
+
+class SandboxCommandAccessError extends Data.TaggedError("SandboxCommandAccessError")<{
+  readonly message: string;
 }> {}
 
 type SandboxCommandFailure = KeptSandboxRegistryError | SandboxCommandOperationError;
@@ -69,13 +74,12 @@ export type SandboxCommandEffect<A> = Effect.Effect<A, SandboxCommandFailure, Pr
 function providerEffect<A>(operation: string, run: (signal: AbortSignal) => Promise<A>): SandboxCommandEffect<A> {
   return Effect.tryPromise({
     try: run,
-    catch: (cause) => new SandboxCommandOperationError({ operation, cause }),
+    catch: (cause) => new SandboxCommandOperationError({ operation, cause: normalizeExternalCause(cause) }),
   });
 }
 
 function errorText(error: SandboxCommandFailure): string {
-  const cause = error.cause;
-  return cause instanceof Error ? cause.message : String(cause);
+  return error.cause.message;
 }
 
 /**
@@ -107,9 +111,8 @@ function ensuringWithTypedFinalizer<A, E, R, E2, R2>(
  * `expiresAt: undefined` 带进逐条目 JSON；后者既不是 JSON 值，也会被共享持久层拒绝。
  */
 function refreshedEntryState(entry: KeptSandboxEntry, state: KeptSandboxEntry["state"], now: string): KeptSandboxEntry {
-  const { expiresAt: _previousExpiresAt, ...withoutExpiresAt } = entry;
   const expiresAt = computeExpiresAt(entry.provider, now);
-  return expiresAt === undefined ? { ...withoutExpiresAt, state } : { ...withoutExpiresAt, state, expiresAt };
+  return { ...entry, state, expiresAt };
 }
 
 /** `list`/`history` 一次性面板的传输能力:是 TTY 且没有要求朴素输出时才画框
@@ -118,7 +121,7 @@ function refreshedEntryState(entry: KeptSandboxEntry, state: KeptSandboxEntry["s
 function panelCapabilityForFacts(facts: SandboxCommandFacts): { mode: PanelMode; width: number } {
   return panelCapabilityOf({
     isTTY: facts.stdout.isTTY,
-    ...(facts.noColor === undefined ? {} : { noColor: facts.noColor }),
+    noColor: facts.noColor,
     width: facts.stdout.columns,
   });
 }
@@ -334,9 +337,11 @@ function listCommandEffect(
     const lines = renderPanel({
       title: "SANDBOXES",
       meta: `${entries.length} kept`,
+      footerCommand: undefined,
       rows,
       width: panel.width,
       mode: panel.mode,
+      capWidth: true,
     });
     io.out(`${lines.join("\n")}\n`);
     return 0;
@@ -540,7 +545,10 @@ function execInKeptEffect(entry: KeptSandboxEntry, script: string): SandboxComma
   const gap = detachedCapabilityGap(entry.provider);
   if (gap)
     return Effect.fail(
-      new SandboxCommandOperationError({ operation: "execute in kept sandbox", cause: new Error(gap) }),
+      new SandboxCommandOperationError({
+        operation: "execute in kept sandbox",
+        cause: new SandboxCommandAccessError({ message: gap }),
+      }),
     );
   return providerEffect("execute in kept sandbox", () =>
     execInDetached(entry.provider, entry.sandboxId, entry.workdir, script),
@@ -559,7 +567,7 @@ function withWokenSandboxEffect<T>(
     return Effect.fail(
       new SandboxCommandOperationError({
         operation: "access kept sandbox",
-        cause: new Error(`${entry.sandboxId}: ${gap}`),
+        cause: new SandboxCommandAccessError({ message: `${entry.sandboxId}: ${gap}` }),
       }),
     );
   return providerEffect("inspect kept sandbox", () => inspectDetached(entry.provider, entry.sandboxId)).pipe(
@@ -568,9 +576,9 @@ function withWokenSandboxEffect<T>(
         return Effect.fail(
           new SandboxCommandOperationError({
             operation: "access kept sandbox",
-            cause: new Error(
-              `${entry.sandboxId} (${entry.provider}) is gone; the in-sandbox ledger died with it (artifacts are unaffected). Clean up with: niceeval sandbox stop ${id}`,
-            ),
+            cause: new SandboxCommandAccessError({
+              message: `${entry.sandboxId} (${entry.provider}) is gone; the in-sandbox ledger died with it (artifacts are unaffected). Clean up with: niceeval sandbox stop ${id}`,
+            }),
           }),
         );
       }
@@ -578,9 +586,9 @@ function withWokenSandboxEffect<T>(
         return Effect.fail(
           new SandboxCommandOperationError({
             operation: "inspect kept sandbox",
-            cause: new Error(
-              `${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.`,
-            ),
+            cause: new SandboxCommandAccessError({
+              message: `${entry.sandboxId} (${entry.provider}) could not be inspected — check credentials or retry later.`,
+            }),
           }),
         );
       }
@@ -708,11 +716,12 @@ function historyCommandEffect(
               : `niceeval sandbox diff ${entry.sandboxId}`;
           const lines = renderPanel({
             title: `HISTORY · ${entry.sandboxId}`,
-            ...(meta === undefined ? {} : { meta: meta }),
+            meta,
             footerCommand,
             rows,
             width: panel.width,
             mode: panel.mode,
+            capWidth: true,
           });
           io.out(`${lines.join("\n")}\n`);
           return 0;

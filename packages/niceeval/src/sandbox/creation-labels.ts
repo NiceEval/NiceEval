@@ -1,8 +1,8 @@
 /** Creation provenance is runtime metadata, never a provider plan or cache input. */
 export interface SandboxCreationProvenance {
-  readonly attemptId?: string;
-  readonly evalId?: string;
-  readonly sandboxLabels?: "run-only";
+  readonly attemptId: string | undefined;
+  readonly evalId: string | undefined;
+  readonly sandboxLabels: "run-only" | undefined;
 }
 
 export function sandboxCreationLabels(provenance: SandboxCreationProvenance): Record<string, string> {
