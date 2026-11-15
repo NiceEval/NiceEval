@@ -40,13 +40,21 @@
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "3189bf97f6d78c23bcc0192d2a9c8afaea82fca9"
+      "baseTree": "3189bf97f6d78c23bcc0192d2a9c8afaea82fca9",
+      "pending": {
+        "upstreamTree": "2acff231c0ddc38ddc7890ea3453f2bc30086a94",
+        "needsInstall": false
+      }
     },
     {
       "from": "examples/zh/tier1/langgraph",
       "to": "examples/zh/tier2/langgraph",
       "contract": "overlay",
-      "baseTree": "b2e368f597794e4b59979f6be656e70e8a1845ea"
+      "baseTree": "b2e368f597794e4b59979f6be656e70e8a1845ea",
+      "pending": {
+        "upstreamTree": "92ca833a1c7dc064960a4fcd5c7cbe37f15a58f9",
+        "needsInstall": false
+      }
     },
     {
       "from": "examples/zh/tier2/ai-sdk-v7",
@@ -70,13 +78,21 @@
       "from": "examples/zh/tier1/claude-sdk",
       "to": "examples/zh/tier3/claude-sdk",
       "contract": "overlay",
-      "baseTree": "abbcfdae15c57cc91075692939ecb1e4154ca089"
+      "baseTree": "abbcfdae15c57cc91075692939ecb1e4154ca089",
+      "pending": {
+        "upstreamTree": "0f3952f5e116d4e71ed6fb949a02ad557168a4ac",
+        "needsInstall": false
+      }
     },
     {
       "from": "examples/zh/tier1/pi-sdk",
       "to": "examples/zh/tier3/pi-sdk",
       "contract": "overlay",
-      "baseTree": "298eac27a05aff09065a43aa5e4a1ed1a34c2ca3"
+      "baseTree": "298eac27a05aff09065a43aa5e4a1ed1a34c2ca3",
+      "pending": {
+        "upstreamTree": "ddcd3c7a1f1e5b59cf628210d02a4063bd1850da",
+        "needsInstall": false
+      }
     }
   ]
 }

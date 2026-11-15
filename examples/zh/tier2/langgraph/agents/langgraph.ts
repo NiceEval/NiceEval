@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Schema } from "effect";
 // langgraph 的 adapter:无侵入对接 ../src/backend/server.py —— 自定义 JSON 帧 over SSE
 // (server.py 不透传 LangGraph 原生 stream 事件,自己翻译成一套小协议,见其头注释)。
 //
@@ -15,9 +15,9 @@ import { Effect } from "effect";
 // OTel 只管 `niceeval view` 的瀑布图:LangSmith OTel 导出的 span 发到钉住的接收端口
 // (环境变量在启动应用时给,见 README「跑起来」)——span 不喂断言,断言与 Tier 1 完全相同,
 // 埋点缺一块也只影响瀑布图。
-import { createSessionKey, defineAgent, sseJsonFrames } from "niceeval/adapter";
+import { createSessionKey, defineAgent, openSseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, EvidenceCoverage, SseFrameCursor } from "niceeval/adapter";
-import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
+import type { StreamEvent, Turn, TurnInput } from "niceeval";
 
 // 被测应用由你自己按它的方式启动(python server.py / 部署在哪都行),eval 不代管进程、
 // 不另开端口。LangSmith OTel 导出的环境变量在启动应用时给,见 README「跑起来」。
@@ -44,15 +44,27 @@ async function appFetch(
   }
 }
 
-type LanggraphFrame =
-  | { type: "session"; sessionId: string }
-  | { type: "text-delta"; delta: string }
-  | { type: "tool-input"; toolCallId: string; name: string; input: unknown }
-  | { type: "tool-output"; toolCallId: string; output: unknown; isError?: boolean }
-  | { type: "tool-approval-request"; toolCallId: string }
-  | { type: "tool-output-denied"; toolCallId: string }
-  | { type: "error"; message: string }
-  | { type: "finish" };
+const LanggraphFrameSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literals(["session"]), sessionId: Schema.String }),
+  Schema.Struct({ type: Schema.Literals(["text-delta"]), delta: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literals(["tool-input"]),
+    toolCallId: Schema.String,
+    name: Schema.String,
+    input: Schema.MutableJson,
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["tool-output"]),
+    toolCallId: Schema.String,
+    output: Schema.MutableJson,
+    isError: Schema.optional(Schema.Boolean),
+  }),
+  Schema.Struct({ type: Schema.Literals(["tool-approval-request"]), toolCallId: Schema.String }),
+  Schema.Struct({ type: Schema.Literals(["tool-output-denied"]), toolCallId: Schema.String }),
+  Schema.Struct({ type: Schema.Literals(["error"]), message: Schema.String }),
+  Schema.Struct({ type: Schema.Literals(["finish"]) }),
+]);
+type LanggraphFrame = Schema.Schema.Type<typeof LanggraphFrameSchema>;
 
 type SseCursor = SseFrameCursor<LanggraphFrame>;
 
@@ -83,6 +95,12 @@ const OTEL_FLUSH_GRACE_MS = 600;
 
 async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> {
   const events: StreamEvent[] = [];
+  let paused = false;
+  let bodyFailed = false;
+  const close = () => {
+    void cursor.return().catch(() => {});
+  };
+  ctx.signal.addEventListener("abort", close, { once: true });
   let status: "completed" | "failed" = "completed";
   let messageText = "";
   // 本次 drain 里见过的 tool-input,按 operationId 记名字——tool-approval-request 帧不带工具名,
@@ -95,75 +113,102 @@ async function drainStream(cursor: SseCursor, ctx: AgentContext): Promise<Turn> 
     return { status, events };
   };
 
-  for (;;) {
-    const frame = await cursor.next();
-    if (frame === null) break;
+  try {
+    for (;;) {
+      ctx.signal.throwIfAborted();
+      const result = await cursor.next();
+      ctx.signal.throwIfAborted();
+      if (result.done) break;
+      const frame = result.value;
 
-    switch (frame.type) {
-      case "session": {
-        // 会话续接走「服务端记历史」范式:session 帧回传的 id 用 ctx.session.capture 写回。
-        ctx.session.capture(frame.sessionId);
-        break;
+      switch (frame.type) {
+        case "session": {
+          // 会话续接走「服务端记历史」范式:session 帧回传的 id 用 ctx.session.capture 写回。
+          ctx.session.capture(frame.sessionId);
+          break;
+        }
+        case "text-delta": {
+          messageText += frame.delta;
+          break;
+        }
+        case "tool-input": {
+          toolNames.set(frame.toolCallId, frame.name);
+          events.push({
+            type: "operation.started",
+            operationId: frame.toolCallId,
+            operation: { kind: "tool", name: frame.name, input: frame.input },
+          });
+          break;
+        }
+        case "tool-output": {
+          events.push({
+            type: "operation.finished",
+            operationId: frame.toolCallId,
+            kind: "tool",
+            output: frame.output,
+            status: frame.isError === true ? "failed" : "completed",
+          });
+          break;
+        }
+        case "tool-approval-request": {
+          // 停轮:流不关,现场 hold 住;回答轮 take 回来接着读同一条流,不重新发起请求。
+          // 中断前模型可能已经吐了一段前言(比如"好的,我来算一下"),一并收进这一轮——
+          // 不套 finalize() 的 flush grace:图还停在中断点,没有"这一轮的 otel 导出"这回事。
+          ctx.session.set(heldKey, { cursor, toolCallId: frame.toolCallId });
+          if (messageText) events.push({ type: "message", role: "assistant", text: messageText });
+          events.push({
+            type: "input.requested",
+            request: {
+              id: frame.toolCallId,
+              action: toolNames.get(frame.toolCallId) ?? "tool",
+              options: [{ id: "approve" }, { id: "deny" }],
+            },
+          });
+          ctx.signal.throwIfAborted();
+          paused = true;
+          return { status: "waiting", events };
+        }
+        case "tool-output-denied": {
+          // 被拒绝的调用不执行:operation.started 在 tool-input 帧(上一轮)已落,这里只补
+          // rejected 的 operation.finished——同一个 operationId,跨轮配对。
+          events.push({ type: "operation.finished", operationId: frame.toolCallId, kind: "tool", status: "rejected" });
+          break;
+        }
+        case "error": {
+          status = "failed";
+          events.push({ type: "error", message: frame.message });
+          break;
+        }
+        case "finish": {
+          ctx.signal.throwIfAborted();
+          return await finalize();
+        }
+        default:
+          break;
       }
-      case "text-delta": {
-        messageText += frame.delta;
-        break;
+    }
+
+    ctx.signal.throwIfAborted();
+    return await finalize();
+  } catch (error) {
+    bodyFailed = true;
+    throw error;
+  } finally {
+    ctx.signal.removeEventListener("abort", close);
+    if (!paused) {
+      try {
+        await cursor.return();
+        if (!bodyFailed) ctx.signal.throwIfAborted();
+      } catch (error) {
+        if (!bodyFailed) throw error;
+        try {
+          ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." });
+        } catch {
+          // Keep the stream failure primary.
+        }
       }
-      case "tool-input": {
-        toolNames.set(frame.toolCallId, frame.name);
-        events.push({
-          type: "operation.started",
-          operationId: frame.toolCallId,
-          operation: { kind: "tool", name: frame.name, input: frame.input as JsonValue },
-        });
-        break;
-      }
-      case "tool-output": {
-        events.push({
-          type: "operation.finished",
-          operationId: frame.toolCallId,
-          kind: "tool",
-          output: frame.output as JsonValue,
-          status: frame.isError === true ? "failed" : "completed",
-        });
-        break;
-      }
-      case "tool-approval-request": {
-        // 停轮:流不关,现场 hold 住;回答轮 take 回来接着读同一条流,不重新发起请求。
-        // 中断前模型可能已经吐了一段前言(比如"好的,我来算一下"),一并收进这一轮——
-        // 不套 finalize() 的 flush grace:图还停在中断点,没有"这一轮的 otel 导出"这回事。
-        ctx.session.set(heldKey, { cursor, toolCallId: frame.toolCallId });
-        if (messageText) events.push({ type: "message", role: "assistant", text: messageText });
-        events.push({
-          type: "input.requested",
-          request: {
-            id: frame.toolCallId,
-            action: toolNames.get(frame.toolCallId) ?? "tool",
-            options: [{ id: "approve" }, { id: "deny" }],
-          },
-        });
-        return { status: "waiting", events };
-      }
-      case "tool-output-denied": {
-        // 被拒绝的调用不执行:operation.started 在 tool-input 帧(上一轮)已落,这里只补
-        // rejected 的 operation.finished——同一个 operationId,跨轮配对。
-        events.push({ type: "operation.finished", operationId: frame.toolCallId, kind: "tool", status: "rejected" });
-        break;
-      }
-      case "error": {
-        status = "failed";
-        events.push({ type: "error", message: frame.message });
-        break;
-      }
-      case "finish": {
-        return finalize();
-      }
-      default:
-        break;
     }
   }
-
-  return finalize();
 }
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
@@ -173,13 +218,22 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     // 按 requestId(挂起的 toolCallId)从 input.responses 里对位取裁决,不从 text 猜;
     // 这里每次只挂一条审批,取第一条即可——多请求并停时按 requestId 对位。
     const approved = input.responses?.[0]?.optionId === "approve";
-    const approveRes = await appFetch(
-      "/api/chat/approve",
-      { toolCallId: pending.toolCallId, approved },
-      ctx.signal,
-    );
-    if (!approveRes.ok) {
-      throw new Error(`POST /api/chat/approve 失败: ${approveRes.status} ${await approveRes.text()}`);
+    try {
+      const approveRes = await appFetch("/api/chat/approve", { toolCallId: pending.toolCallId, approved }, ctx.signal);
+      if (!approveRes.ok) {
+        throw new Error(`POST /api/chat/approve 失败: ${approveRes.status} ${await approveRes.text()}`);
+      }
+    } catch (error) {
+      try {
+        await pending.cursor.return();
+      } catch {
+        try {
+          ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." });
+        } catch {
+          // Keep the approval failure primary.
+        }
+      }
+      throw error;
     }
     return drainStream(pending.cursor, ctx);
   }
@@ -188,20 +242,27 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   // ——不过 server.py 的 http.server 没接 OTel 服务端埋点,不会读这个头,实际上仍然会
   // 走时间窗口兜底、自动串行(见 docs/origin-integration.md「并发须知」),这里传只是
   // 面向未来:应用哪天接了 context 传播就免费生效。
-  const res = await appFetch(
-    "/api/chat",
-    { message: input.text, sessionId: ctx.session.id },
-    ctx.signal,
-    ctx.telemetry?.headers,
+  const cursor = await openSseJsonFrames(
+    ctx,
+    async (signal) => {
+      const res = await appFetch(
+        "/api/chat",
+        { message: input.text, sessionId: ctx.session.id },
+        signal,
+        ctx.telemetry?.headers,
+      );
+      if (!res.ok || !res.body) {
+        throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
+      }
+      return res.body;
+    },
+    LanggraphFrameSchema,
   );
-  if (!res.ok || !res.body) {
-    throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
-  }
-  return drainStream(sseJsonFrames<LanggraphFrame>(res.body), ctx);
+  return drainStream(cursor, ctx);
 }
 
 export default defineAgent({
   name: "langgraph",
   evidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
+  send,
 });
