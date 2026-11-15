@@ -77,13 +77,11 @@ function sourceItems(input: SourcesAttachmentInput): readonly SourceItemAttachme
   if (input.items !== undefined) return input.items;
   if (input.packages === undefined) return undefined;
   return input.packages.flatMap((sourcePackage) =>
-    sourcePackage.files.map((file) =>
-      Object.freeze({
-        sourceItemId: file.fileItemId,
-        path: file.path,
-        text: file.text,
-      }),
-    ),
+    sourcePackage.files.map((file) => ({
+      sourceItemId: file.fileItemId,
+      path: file.path,
+      text: file.text,
+    })),
   );
 }
 
@@ -98,13 +96,13 @@ function canonicalSourceItem(input: SourceItemAttachmentInput): SourcesAttachmen
   if (byteLength > SourcesLimits.maximumContentBytes) return undefined;
   const sha256 = Schema.decodeUnknownResult(Sha256DigestSchema)(createHash("sha256").update(bytes).digest("hex"));
   if (Result.isFailure(sha256)) return undefined;
-  return Object.freeze({
+  return {
     sourceItemId: sourceItemId.success,
     path: path.success,
     text,
     byteLength,
     sha256: sha256.success,
-  });
+  };
 }
 
 /**
@@ -131,35 +129,29 @@ export function createSourcesAttachment(
   ) {
     return Result.fail(sourcesInputInvalid);
   }
-  const frozen = Object.freeze([...canonical]);
-  return Result.succeed(
-    Object.freeze({
-      value: (build: RecordAttachmentSessionBuilder) => {
-        const candidate = Object.freeze({
-          items: Object.freeze(
-            frozen.map((item) =>
-              Object.freeze({
-                sourceItemId: item.sourceItemId,
-                path: item.path,
-                byteLength: item.byteLength,
-                sha256: item.sha256,
-                content: build.content.text(item.text),
-              }),
-            ),
-          ),
-        });
-        const decoded = Schema.decodeUnknownResult(
-          Schema.toType(SourcesAttachmentSchema),
-          RecordExactParseOptions,
-        )(candidate);
-        if (Result.isFailure(decoded)) {
-          throw new Error("Sources capture violated its current schema");
-        }
-        return decoded.success;
-      },
-      items: frozen,
-    }),
-  );
+  const captured = canonical;
+  return Result.succeed({
+    value: (build: RecordAttachmentSessionBuilder) => {
+      const candidate = {
+        items: captured.map((item) => ({
+          sourceItemId: item.sourceItemId,
+          path: item.path,
+          byteLength: item.byteLength,
+          sha256: item.sha256,
+          content: build.content.text(item.text),
+        })),
+      };
+      const decoded = Schema.decodeUnknownResult(
+        Schema.toType(SourcesAttachmentSchema),
+        RecordExactParseOptions,
+      )(candidate);
+      if (Result.isFailure(decoded)) {
+        throw new Error("Sources capture violated its current schema");
+      }
+      return decoded.success;
+    },
+    items: captured,
+  });
 }
 
 interface PendingAssertionSourceSite {
@@ -196,21 +188,19 @@ export function deriveAssertionSourceSites(
       for (const occurrence of site.occurrences) {
         if (orders.has(occurrence.sourceOrder)) return Result.fail(sourceSitesInputInvalid);
         orders.add(occurrence.sourceOrder);
-        const coordinate = Object.freeze({
+        const coordinate = {
           line: leaf.coordinate.line,
           column: leaf.coordinate.column,
+        };
+        rows.push({
+          entryId: entry.entryId,
+          sourceOrder: occurrence.sourceOrder,
+          role: occurrence.role,
+          sourceItemId: sourceItemId.success,
+          sha256: sha256.success,
+          start: coordinate,
+          end: coordinate,
         });
-        rows.push(
-          Object.freeze({
-            entryId: entry.entryId,
-            sourceOrder: occurrence.sourceOrder,
-            role: occurrence.role,
-            sourceItemId: sourceItemId.success,
-            sha256: sha256.success,
-            start: coordinate,
-            end: coordinate,
-          }),
-        );
       }
     }
   }
@@ -218,23 +208,19 @@ export function deriveAssertionSourceSites(
     const byEntry = left.entryId.localeCompare(right.entryId);
     return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
   });
-  const frozen = Object.freeze([...rows]);
+  const captured = rows;
   return Result.succeed((build) => {
-    const candidate = Object.freeze(
-      frozen.map((row) =>
-        Object.freeze({
-          entryId: row.entryId,
-          sourceOrder: row.sourceOrder,
-          role: row.role,
-          source: build.reference.to(sourcesRecordAttachment, {
-            sourceItemId: row.sourceItemId,
-            sha256: row.sha256,
-          }),
-          start: row.start,
-          end: row.end,
-        }),
-      ),
-    );
+    const candidate = captured.map((row) => ({
+      entryId: row.entryId,
+      sourceOrder: row.sourceOrder,
+      role: row.role,
+      source: build.reference.to(sourcesRecordAttachment, {
+        sourceItemId: row.sourceItemId,
+        sha256: row.sha256,
+      }),
+      start: row.start,
+      end: row.end,
+    }));
     const decoded = Schema.decodeUnknownResult(
       Schema.toType(Schema.Array(AssertionSourceSiteSchema)),
       RecordExactParseOptions,
@@ -242,7 +228,7 @@ export function deriveAssertionSourceSites(
     if (Result.isFailure(decoded)) {
       throw new Error("Assertion source capture violated its current schema");
     }
-    return Object.freeze(decoded.success);
+    return decoded.success;
   });
 }
 

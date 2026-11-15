@@ -35,7 +35,7 @@ export function typeSafeProbabilities(value: unknown, labels: readonly string[])
   const total = entries.reduce((sum, [, probability]) => sum + probability, 0);
   if (Math.abs(total - 1) > probabilityTolerance || total === 0)
     throw new TypeError("TypeSafe probabilities must sum to 1");
-  return Object.freeze(Object.fromEntries(entries.map(([label, probability]) => [label, probability / total])));
+  return Object.fromEntries(entries.map(([label, probability]) => [label, probability / total]));
 }
 
 export function typeSafeScoreProjection(
@@ -51,8 +51,8 @@ export function typeSafeScoreProjection(
 }
 
 export function typeSafeChoiceProjection(choice: string): { readonly choice: string; readonly rationale: string } {
-  return Object.freeze({
+  return {
     choice,
     rationale: `${typesafeRationalePrefix} selected ${JSON.stringify(choice)} from the returned probability distribution.`,
-  });
+  };
 }

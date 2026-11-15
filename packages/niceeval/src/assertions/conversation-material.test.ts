@@ -26,6 +26,7 @@ test("conversation budgets preserve protected Unicode records and account for ev
     ]),
   );
   const first = snapshotJudgeMaterial({ nested: [handle] }, 900).material;
+  expect(Object.isFrozen(first)).toBe(true);
   expect(first).toEqual(snapshotJudgeMaterial({ nested: [handle] }, 900).material);
   expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThanOrEqual(900);
   const text = JSON.stringify(first);

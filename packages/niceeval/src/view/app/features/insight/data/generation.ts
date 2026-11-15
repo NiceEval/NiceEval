@@ -61,7 +61,7 @@ export class ViewGeneration<Snapshot = unknown> {
   ) {
     this.identity = repository.generationId as ViewGenerationIdentity;
     const generation = this;
-    this.binding = Object.freeze({
+    this.binding = {
       identity: this.identity,
       queryClient: this.queryClient,
       get snapshot() {
@@ -70,7 +70,7 @@ export class ViewGeneration<Snapshot = unknown> {
       inspectRepository<Kind extends InspectionOperationId>(operation: InspectionOperationFor<Kind>) {
         return generation.inspectRepository(operation);
       },
-    });
+    };
   }
   get status(): "preparing" | "current" | "retiring" | "closed" {
     return this.#state;

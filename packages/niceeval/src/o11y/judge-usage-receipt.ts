@@ -25,7 +25,7 @@ const ProviderSchema = JudgeUsageModelSchema.check(
 const JsonResponseSchema = Schema.fromJsonString(Schema.Unknown);
 
 function unavailable(reason: JudgeUsageCall["receipt"]["reason"], responseDigest: string | null): NormalizedResponse {
-  return Object.freeze({
+  return {
     provider: null,
     model: null,
     inputTokens: null,
@@ -34,8 +34,8 @@ function unavailable(reason: JudgeUsageCall["receipt"]["reason"], responseDigest
     cacheReadTokens: null,
     cacheWriteTokens: null,
     cost: null,
-    receipt: Object.freeze({ state: "unavailable", reason, responseDigest, fields: Object.freeze([]) }),
-  });
+    receipt: { state: "unavailable", reason, responseDigest, fields: [] },
+  };
 }
 
 /** Retains only protocol facts, independently of status and QA/body interpretation. */
@@ -150,11 +150,11 @@ export function normalizeJudgeUsageResponse(
       if (Result.isFailure(parsed)) invalidUsage = true;
       else {
         const currency = Schema.decodeUnknownSync(CurrencyCodeSchema)("USD");
-        cost = Object.freeze({
+        cost = {
           amount: parsed.success,
           currency,
-          source: Object.freeze({ kind: "reported", id: "openrouter.usage.cost" }),
-        });
+          source: { kind: "reported", id: "openrouter.usage.cost" },
+        };
         if (typeof raw === "string" || typeof raw === "number")
           fields.push({ path: "usage.cost", value: raw === 0 ? 0 : raw });
       }
@@ -169,7 +169,7 @@ export function normalizeJudgeUsageResponse(
       : usageReported
         ? null
         : "usage-not-reported";
-  return Object.freeze({
+  return {
     provider,
     model,
     inputTokens,
@@ -178,11 +178,11 @@ export function normalizeJudgeUsageResponse(
     cacheReadTokens,
     cacheWriteTokens,
     cost,
-    receipt: Object.freeze({
+    receipt: {
       state: fields.length > 0 ? "available" : "unavailable",
       reason,
       responseDigest,
-      fields: Object.freeze(fields.map((field) => Object.freeze(field))),
-    }),
-  });
+      fields,
+    },
+  };
 }

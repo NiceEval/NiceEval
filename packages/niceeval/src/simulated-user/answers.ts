@@ -32,12 +32,12 @@ export function parseSimulatedUserAnswer(
         if (!("optionId" in answer) || !request.options.some((option) => option.id === answer.optionId))
           throw new Error("invalid optionId");
       } else if (!("text" in answer)) throw new Error("text required");
-      return Object.freeze(answer);
+      return answer;
     });
-    return Object.freeze({
-      responses: Object.freeze(responses),
+    return {
+      responses,
       text: responses.map((answer) => ("text" in answer ? answer.text : answer.optionId)).join("\n"),
-    });
+    };
   } catch {
     throw new SimulatedUserError("simulated-user-failed", "invalid-answer");
   }
