@@ -32,7 +32,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   };
   private stopped = false;
   private remoteRetired = false;
-  private stopping?: Promise<void>;
+  private stopping: Promise<void> | undefined;
   private readonly identities = new Map<string, Promise<ExecutionIdentity>>();
 
   private constructor(
@@ -63,7 +63,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
       throw new Error("OPEN_SANDBOX_DOMAIN must be an HTTP(S) URL without credentials, query or fragment");
     const connectionConfig = {
       domain,
-      apiKey: process.env.OPEN_SANDBOX_API_KEY,
+      ...(process.env.OPEN_SANDBOX_API_KEY === undefined ? {} : { apiKey: process.env.OPEN_SANDBOX_API_KEY }),
       useServerProxy: true,
       disableMetrics: true,
     };
@@ -197,7 +197,7 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
     options: CommandOptions = {},
   ): Promise<CommandResult> {
     if (this.stopped || this.stopping) throw new Error("OpenSandbox is stopped");
-    const limit = commandLimit(options, { deadlineAt: this.deadlineAt });
+    const limit = commandLimit(options, { ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }) });
     const controller = new AbortController();
     let interrupted!: () => void;
     const interruption = new Promise<never>((_resolve, reject) => {
@@ -294,8 +294,12 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   }
   async writeBytes(path: string, content: Uint8Array): Promise<void> {
     const absolute = resolveSandboxPath(this.workdir, path);
-    await this.remote.files.createDirectories([{ path: dirname(absolute), mode: 755, owner: this.options.user }]);
-    await this.remote.files.writeFiles([{ path: absolute, data: content, owner: this.options.user }]);
+    await this.remote.files.createDirectories([
+      { path: dirname(absolute), mode: 755, ...(this.options.user === undefined ? {} : { owner: this.options.user }) },
+    ]);
+    await this.remote.files.writeFiles([
+      { path: absolute, data: content, ...(this.options.user === undefined ? {} : { owner: this.options.user }) },
+    ]);
   }
   writeText(path: string, content: string): Promise<void> {
     return this.writeBytes(path, new TextEncoder().encode(content));

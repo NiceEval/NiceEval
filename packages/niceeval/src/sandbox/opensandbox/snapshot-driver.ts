@@ -17,7 +17,7 @@ function connection() {
     throw fail("resolve-domain");
   return {
     domain: url.toString().replace(/\/+$/u, ""),
-    apiKey: process.env.OPEN_SANDBOX_API_KEY,
+    ...(process.env.OPEN_SANDBOX_API_KEY === undefined ? {} : { apiKey: process.env.OPEN_SANDBOX_API_KEY }),
     useServerProxy: true,
     disableMetrics: true,
   };
