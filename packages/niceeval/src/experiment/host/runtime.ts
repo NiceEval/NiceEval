@@ -18,6 +18,7 @@ import {
   catalog,
   check,
   listInvocationStatus,
+  operationError,
   planInvocation,
   planRename,
   planRunAccept,
@@ -25,7 +26,7 @@ import {
   showInvocationStatus,
 } from "./operations.ts";
 import { inspectTeardown, runTeardown } from "./teardown.ts";
-import { ExperimentHostError, normalizeExperimentHostCause } from "./types.ts";
+import { ExperimentHostError } from "./types.ts";
 
 /** One discovered Experiment after its author selector and CLI prefixes close. */
 interface ExperimentHostSelection {
@@ -254,21 +255,7 @@ function debug(
       commandPlan,
       beforeCachePlan: beforeCachePlanOf(commandPlan),
     };
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new ExperimentHostError({
-          operation: "debug",
-          code:
-            typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-              ? String(Reflect.get(cause, "code"))
-              : "experiment-host-operation-failed",
-          message: cause instanceof Error ? cause.message : String(cause),
-          cause: normalizeExperimentHostCause(cause),
-          comparisons: undefined,
-        }),
-    ),
-  );
+  }).pipe(Effect.mapError((cause) => operationError("debug", cause)));
 }
 
 /** Internal operations retain their service requirements for the CLI composition. */

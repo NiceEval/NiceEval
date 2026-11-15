@@ -167,6 +167,7 @@ export default defineExperiment({
 ```
 
 求值后的 labels、配置 manifest 和 identity 属于这次 Run 的不可变配置上下文。历史 Run 不随源码改变；再次运行会保存当前值。
+labels 按原值类型保存字符串或有限数值；数值 `0` 与字符串 `"0"` 是不同坐标，JSON 读取保留各自类型。
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 

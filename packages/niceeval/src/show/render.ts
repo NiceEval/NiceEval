@@ -646,6 +646,18 @@ export function renderExperiment(value: ExperimentView): string {
       kind: "panel",
       title: `Experiment ${value.experimentId}`,
       blocks: [
+        {
+          kind: "keyValue",
+          entries: [
+            {
+              key: "labels",
+              value:
+                Object.entries(value.labels)
+                  .map(([key, label]) => `${key}=${label.state === "available" ? label.value : label.state}`)
+                  .join(", ") || "—",
+            },
+          ],
+        },
         { kind: "divider", title: "Plugins" },
         {
           kind: "table",

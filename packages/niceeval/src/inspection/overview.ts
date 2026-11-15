@@ -113,8 +113,8 @@ export interface InspectionOverviewExperiment extends InspectionOverviewAggregat
   readonly groups: readonly InspectionOverviewGroup[];
 }
 
-export type InspectionExecutionValue =
-  | { readonly state: "available"; readonly value: string }
+export type InspectionExecutionValue<Value = string> =
+  | { readonly state: "available"; readonly value: Value }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
 
@@ -122,7 +122,7 @@ export type InspectionAdapterValue =
   | { readonly state: "available"; readonly value: AdapterIdentity }
   | { readonly state: "mixed" };
 
-export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue>>;
+export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue<string | number>>>;
 
 export interface InspectionOverview {
   readonly totals: InspectionOverviewAggregate;
@@ -136,7 +136,7 @@ interface SelectedSlot {
   readonly attemptOrdinal: number;
   readonly adapter: AdapterIdentity;
   readonly model: string | null;
-  readonly labels: Readonly<Record<string, string>>;
+  readonly labels: Readonly<Record<string, string | number>>;
   readonly recorded:
     | {
         readonly target: LoadedInspectionRun;
@@ -230,7 +230,7 @@ export interface InspectionCurrentSlotInput {
   readonly evaluationKind: "pass" | "score";
   readonly adapter: AdapterIdentity;
   readonly model: string | null;
-  readonly labels: Readonly<Record<string, string>>;
+  readonly labels: Readonly<Record<string, string | number>>;
   readonly recorded:
     | {
         readonly target: LoadedInspectionRun;
@@ -694,7 +694,9 @@ function memberMetrics(selected: AnalyzedMember) {
   });
 }
 
-function executionValue(values: readonly (string | null)[]): InspectionExecutionValue {
+function executionValue<Value extends string | number>(
+  values: readonly (Value | null)[],
+): InspectionExecutionValue<Value> {
   const distinct = new Set(values);
   if (distinct.size !== 1) return { state: "mixed" as const };
   const value = values[0];

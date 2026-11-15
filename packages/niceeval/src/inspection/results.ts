@@ -197,7 +197,17 @@ const InspectionExecutionValueSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("mixed") }),
   Schema.Struct({ state: Schema.Literal("unavailable") }),
 ]);
-const InspectionLabelsSchema = Schema.Record(Schema.String, InspectionExecutionValueSchema);
+const InspectionLabelsSchema = Schema.Record(
+  Schema.String,
+  Schema.Union([
+    Schema.Struct({
+      state: Schema.Literal("available"),
+      value: Schema.Union([Schema.String, Schema.Number.check(Schema.isFinite())]),
+    }),
+    Schema.Struct({ state: Schema.Literal("mixed") }),
+    Schema.Struct({ state: Schema.Literal("unavailable") }),
+  ]),
+);
 const OverviewMemberSchema = Schema.Struct({
   ...PlannedAttemptMemberSchema.fields,
   runId: Schema.String,

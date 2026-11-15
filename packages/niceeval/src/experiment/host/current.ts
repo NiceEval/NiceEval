@@ -31,7 +31,7 @@ export interface FrozenCurrentTarget {
     readonly experimentId: string;
     readonly adapter: ReturnType<typeof adapterIdentity>;
     readonly model: string | undefined;
-    readonly labels: Readonly<Record<string, string>>;
+    readonly labels: Readonly<Record<string, string | number>>;
   }[];
   readonly slots: readonly CurrentTargetSlot[];
 }
@@ -115,7 +115,7 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
         experimentId: run.experimentId,
         adapter: adapterIdentity(run.adapter),
         model: run.model,
-        labels: Object.fromEntries(Object.entries(run.labels ?? {}).map(([key, value]) => [key, String(value)])),
+        labels: { ...(run.labels ?? {}) },
       }))
       .sort((left, right) => compare(left.experimentId, right.experimentId));
     const identity = createHash("sha256")

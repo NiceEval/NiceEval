@@ -70,7 +70,7 @@ export interface RunExecutionContext {
 export interface RunContext {
   readonly experimentId: ExperimentId;
   readonly execution: RunExecutionContext;
-  readonly labels: Readonly<Record<string, string>>;
+  readonly labels: Readonly<Record<string, string | number>>;
 }
 
 /**
@@ -132,7 +132,10 @@ const RunExecutionContextSchema: Schema.Codec<RunExecutionContext> = Schema.Stru
   ),
 );
 
-const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string>>> = Schema.Record(Schema.String, Schema.String);
+const RunLabelsSchema: Schema.Codec<Readonly<Record<string, string | number>>> = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.String, Schema.Number.check(Schema.isFinite())]),
+);
 
 const RunContextCurrentSchema = Schema.Struct({
   experimentId: ExperimentIdSchema,

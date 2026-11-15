@@ -70,7 +70,7 @@ import type {
   ExperimentHostSelectionProblem,
 } from "./types.ts";
 
-function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
+export function operationError(operation: ExperimentHostOperation, cause: unknown): ExperimentHostError {
   if (cause instanceof ExperimentHostError) return cause;
   const code =
     typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
@@ -108,6 +108,9 @@ function closedFailureMessage(cause: unknown): string {
 function closedRecordDiagnostic(cause: unknown): unknown | undefined {
   if (typeof cause !== "object" || cause === null) return undefined;
   const code = Reflect.get(cause, "code");
+  if (code === "runner-record-target-identity-invalid") {
+    return { code, kind: Reflect.get(cause, "kind"), value: Reflect.get(cause, "value") };
+  }
   if (code === "runner-record-attempt-publication-failed") {
     const locator = Reflect.get(cause, "locator");
     const rawCause = Reflect.get(cause, "cause");

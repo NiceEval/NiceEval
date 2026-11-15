@@ -110,6 +110,7 @@ export interface OverviewView {
   }[];
 }
 export interface ExperimentView {
+  readonly labels: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["experiment"]["labels"];
   readonly plugins: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["experiment"]["plugins"];
   readonly notes: InspectionSuccessDocumentFor<"experiment.get">["experiment"]["notes"];
   readonly experimentId: string;
@@ -322,6 +323,7 @@ export function projectOverview(document: InspectionSuccessDocumentFor<"overview
 }
 export function projectExperiment(document: InspectionSuccessDocumentFor<"experiment.get">): ExperimentView {
   return {
+    labels: document.experiment.experiment.labels,
     experimentId: document.experiment.experiment.experimentId,
     notes: document.experiment.notes,
     plugins: document.experiment.experiment.plugins,

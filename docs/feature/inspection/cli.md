@@ -336,6 +336,8 @@ interface PlannedAttemptMember {
 `publication.attemptLocator` 出现一次，member 上不再另放 `locator`。`run.get` 在同一 member 上追加
 `relation`、`outcome`、`coverage`、`usage` 与 `limitations`；`experiment.get` 追加 `runId` 与 `labels`。
 追加字段只增不改共享字段的位置。
+labels 的 available 值保留字符串或有限数值类型；数值 `0` 与字符串 `"0"` 不合并。
+Experiment 人读摘要直接显示坐标值，例如 `labels: rank=0`。
 
 decoder 只接受这一形状；缺少必填字段或带未知字段的 document 明确解码失败，而不是在旧路径上静默得到 `undefined`。
 
