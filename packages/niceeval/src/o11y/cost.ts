@@ -49,7 +49,12 @@ export type PricingEstimateResult =
 const PRICES = builtinModelCatalog.prices;
 
 function toPrice(o: PriceOverride): Price {
-  return { in: o.inputPerMTok, out: o.outputPerMTok, cacheRead: o.cacheReadPerMTok, cacheWrite: o.cacheWritePerMTok };
+  return {
+    in: o.inputPerMTok,
+    out: o.outputPerMTok,
+    ...(o.cacheReadPerMTok === undefined ? {} : { cacheRead: o.cacheReadPerMTok }),
+    ...(o.cacheWritePerMTok === undefined ? {} : { cacheWrite: o.cacheWritePerMTok }),
+  };
 }
 
 /**

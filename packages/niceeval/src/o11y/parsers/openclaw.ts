@@ -149,7 +149,8 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
 
       if (entryType === "compaction" || entryType === "compact" || get(entry, "kind") === "compaction") {
         compactions += 1;
-        events.push({ type: "compaction", reason: str(get(entry, "reason")) });
+        const reason = str(get(entry, "reason"));
+        events.push({ type: "compaction", ...(reason === undefined ? {} : { reason }) });
         continue;
       }
       if (entryType === "error" && role === undefined) {

@@ -178,7 +178,13 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
     output: JsonValue | undefined,
     status: "completed" | "failed" | "rejected",
   ): void => {
-    events.push({ type: "operation.finished", operationId: callId, kind: "tool", output, status });
+    events.push({
+      type: "operation.finished",
+      operationId: callId,
+      kind: "tool",
+      ...(output === undefined ? {} : { output }),
+      status,
+    });
   };
 
   // 处理 item.started / item.completed 里的 item。

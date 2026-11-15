@@ -251,7 +251,12 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         break;
 
       case "context.injected":
-        nodes.push({ id: nextId("context-injected"), kind: "context.injected", text: ev.text, source: ev.source });
+        nodes.push({
+          id: nextId("context-injected"),
+          kind: "context.injected",
+          text: ev.text,
+          ...(ev.source === undefined ? {} : { source: ev.source }),
+        });
         break;
 
       case "skill.loaded": {
@@ -259,7 +264,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
           id: nextId("skill"),
           kind: "skill.loaded",
           skill: ev.skill,
-          operationId: ev.operationId,
+          ...(ev.operationId === undefined ? {} : { operationId: ev.operationId }),
         };
         if (ev.operationId) addCorrelatable(ev.operationId, node);
         nodes.push(node);
@@ -273,7 +278,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
             kind: "action",
             operationId: ev.operationId,
             name: ev.operation.name,
-            tool: ev.operation.tool,
+            ...(ev.operation.tool === undefined ? {} : { tool: ev.operation.tool }),
             input: ev.operation.input,
             status: "pending",
           };
@@ -286,7 +291,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
             kind: "subagent",
             operationId: ev.operationId,
             name: ev.operation.name,
-            remoteUrl: ev.operation.remoteUrl,
+            ...(ev.operation.remoteUrl === undefined ? {} : { remoteUrl: ev.operation.remoteUrl }),
             status: "pending",
           };
           openSubagentById.set(ev.operationId, node);
@@ -300,7 +305,8 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         if (ev.kind === "tool") {
           const existing = openActionById.get(ev.operationId);
           if (existing) {
-            existing.output = ev.output;
+            if (ev.output === undefined) delete existing.output;
+            else existing.output = ev.output;
             existing.status = ev.status;
             openActionById.delete(ev.operationId);
           } else {
@@ -310,7 +316,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
               operationId: ev.operationId,
               name: "unknown",
               input: null,
-              output: ev.output,
+              ...(ev.output === undefined ? {} : { output: ev.output }),
               status: ev.status,
             };
             addCorrelatable(ev.operationId, node);
@@ -319,7 +325,8 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         } else {
           const existing = openSubagentById.get(ev.operationId);
           if (existing) {
-            existing.output = ev.output;
+            if (ev.output === undefined) delete existing.output;
+            else existing.output = ev.output;
             existing.status = ev.status;
             openSubagentById.delete(ev.operationId);
           } else {
@@ -328,7 +335,7 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
               kind: "subagent",
               operationId: ev.operationId,
               name: "unknown",
-              output: ev.output,
+              ...(ev.output === undefined ? {} : { output: ev.output }),
               status: ev.status,
             };
             addCorrelatable(ev.operationId, node);
@@ -343,7 +350,11 @@ export function buildExecutionTree(events: readonly StreamEvent[], spans: readon
         break;
 
       case "compaction":
-        nodes.push({ id: nextId("compaction"), kind: "compaction", reason: ev.reason });
+        nodes.push({
+          id: nextId("compaction"),
+          kind: "compaction",
+          ...(ev.reason === undefined ? {} : { reason: ev.reason }),
+        });
         break;
 
       case "error":

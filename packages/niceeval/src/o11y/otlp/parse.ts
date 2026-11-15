@@ -94,10 +94,13 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
     }
   }
   const status = isRecord(span.status) ? span.status : undefined;
+  const parsedStatus = statusFromCode(
+    typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined,
+  );
   return {
     traceId: span.traceId,
     spanId: span.spanId,
-    parentSpanId: typeof span.parentSpanId === "string" && span.parentSpanId ? span.parentSpanId : undefined,
+    ...(typeof span.parentSpanId === "string" && span.parentSpanId ? { parentSpanId: span.parentSpanId } : {}),
     name: typeof span.name === "string" ? span.name : "span",
     startMs: nanoToMs(
       typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number"
@@ -109,10 +112,8 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
         ? span.endTimeUnixNano
         : undefined,
     ),
-    status: statusFromCode(
-      typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined,
-    ),
-    attributes: Object.keys(attributes).length ? attributes : undefined,
+    ...(parsedStatus === undefined ? {} : { status: parsedStatus }),
+    ...(Object.keys(attributes).length ? { attributes } : {}),
   };
 }
 
@@ -254,12 +255,12 @@ function protoSpan(buf: Buffer): TraceSpan {
   return {
     traceId,
     spanId,
-    parentSpanId: parentSpanId || undefined,
+    ...(parentSpanId ? { parentSpanId } : {}),
     name,
     startMs: nanoToMs(startNano),
     endMs: nanoToMs(endNano),
     status,
-    attributes: Object.keys(attributes).length ? attributes : undefined,
+    ...(Object.keys(attributes).length ? { attributes } : {}),
   };
 }
 
@@ -282,7 +283,7 @@ function protoKeyValue(buf: Buffer): { key?: string; value: JsonValue } {
     else if (field === 2 && wire === 2) value = protoAnyValue(r.bytes());
     else r.skip(wire);
   });
-  return { key, value };
+  return { ...(key === undefined ? {} : { key }), value };
 }
 
 function protoAnyValue(buf: Buffer): JsonValue {

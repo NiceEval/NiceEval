@@ -286,7 +286,7 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
           subagentCalls.push({
             operationId: ev.operationId,
             name: ev.operation.name,
-            remoteUrl: ev.operation.remoteUrl,
+            ...(ev.operation.remoteUrl === undefined ? {} : { remoteUrl: ev.operation.remoteUrl }),
             status: "pending",
           });
         }
@@ -297,7 +297,8 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
         if (ev.kind === "tool") {
           const idx = openToolByOperationId.get(ev.operationId);
           if (idx !== undefined) {
-            toolCalls[idx].output = ev.output;
+            if (ev.output === undefined) delete toolCalls[idx].output;
+            else toolCalls[idx].output = ev.output;
             toolCalls[idx].status = ev.status;
             openToolByOperationId.delete(ev.operationId);
           } else {
@@ -305,21 +306,22 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
               operationId: ev.operationId,
               name: "unknown",
               input: null,
-              output: ev.output,
+              ...(ev.output === undefined ? {} : { output: ev.output }),
               status: ev.status,
             });
           }
         } else {
           const idx = openSubagentByOperationId.get(ev.operationId);
           if (idx !== undefined) {
-            subagentCalls[idx].output = ev.output;
+            if (ev.output === undefined) delete subagentCalls[idx].output;
+            else subagentCalls[idx].output = ev.output;
             subagentCalls[idx].status = ev.status;
             openSubagentByOperationId.delete(ev.operationId);
           } else {
             subagentCalls.push({
               operationId: ev.operationId,
               name: "unknown",
-              output: ev.output,
+              ...(ev.output === undefined ? {} : { output: ev.output }),
               status: ev.status,
             });
           }
