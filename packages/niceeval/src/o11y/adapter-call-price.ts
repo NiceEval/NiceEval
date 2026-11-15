@@ -45,12 +45,13 @@ export function configuredProfile(
 ): SelectedProfile | undefined {
   if (overrides === undefined) return undefined;
   const wildcard = model.includes("/") ? `${model.slice(0, model.indexOf("/"))}/*` : undefined;
-  const selector =
-    overrides[model] !== undefined
-      ? model
-      : wildcard !== undefined && overrides[wildcard] !== undefined
-        ? wildcard
-        : undefined;
+  function configuredSelector(): string | undefined {
+    if (overrides === undefined) return undefined;
+    if (overrides[model] !== undefined) return model;
+    if (wildcard !== undefined && overrides[wildcard] !== undefined) return wildcard;
+    return undefined;
+  }
+  const selector = configuredSelector();
   if (selector === undefined) return undefined;
   const value = overrides[selector]!;
   if (
@@ -71,22 +72,22 @@ export function configuredProfile(
     (asOf !== null && (!Number.isSafeInteger(asOf) || asOf <= 0))
   )
     return undefined;
-  return Object.freeze({
+  return {
     basis: "catalog-reference",
     currency: "USD",
-    source: Object.freeze({ kind: "configured-profile", id: sourceId, asOf }),
+    source: { kind: "configured-profile", id: sourceId, asOf },
     requestModel: model,
     selector,
     match: selector === model ? "exact" : "provider-wildcard",
-    ratesPerMTok: Object.freeze({
+    ratesPerMTok: {
       input,
       output,
       cacheRead:
         value.cacheReadPerMTok === undefined ? null : (canonicalDecimalFromNumber(value.cacheReadPerMTok) ?? null),
       cacheWrite:
         value.cacheWritePerMTok === undefined ? null : (canonicalDecimalFromNumber(value.cacheWritePerMTok) ?? null),
-    }),
-  });
+    },
+  };
 }
 
 function tokensFor(call: AdapterUsageCall, bucket: (typeof AdapterCallPriceBuckets)[number]): number | null {
@@ -133,33 +134,31 @@ function receiptFor(
     match: selected.match,
     ratesPerMTok: selected.ratesPerMTok,
   };
-  const pricing = Object.freeze({
+  const pricing = {
     ...digestInput,
-    source: Object.freeze({
+    source: {
       ...selected.source,
       profileDigest: adapterCallPricingProfileDigest(digestInput),
-    }),
-  });
+    },
+  };
   const charges: Array<Record<string, unknown>> = [];
   const missing: Array<Record<string, unknown>> = [];
   for (const bucket of AdapterCallPriceBuckets) {
     const tokens = tokensFor(call, bucket);
     const rate = rateFor(selected, bucket);
     if (tokens === null) {
-      missing.push(Object.freeze({ bucket, reason: "tokens-unknown" }));
+      missing.push({ bucket, reason: "tokens-unknown" });
     } else if (tokens === 0) {
-      charges.push(Object.freeze({ bucket, tokens, ratePerMTok: rate, amount: "0" }));
+      charges.push({ bucket, tokens, ratePerMTok: rate, amount: "0" });
     } else if (rate === null) {
-      missing.push(Object.freeze({ bucket, reason: "rate-unknown" }));
+      missing.push({ bucket, reason: "rate-unknown" });
     } else {
-      charges.push(
-        Object.freeze({
-          bucket,
-          tokens,
-          ratePerMTok: rate,
-          amount: multiplyCanonicalDecimalPerMillion(rate, tokens),
-        }),
-      );
+      charges.push({
+        bucket,
+        tokens,
+        ratePerMTok: rate,
+        amount: multiplyCanonicalDecimalPerMillion(rate, tokens),
+      });
     }
   }
   if (charges.length === 0) return undefined;
@@ -172,25 +171,23 @@ function receiptFor(
     state: missing.length === 0 ? "complete" : "partial",
     amount: addCanonicalDecimals(charges.map((charge) => String(charge.amount))),
     currency: "USD",
-    source: Object.freeze({ kind: "estimated", id: selected.source.id }),
+    source: { kind: "estimated", id: selected.source.id },
     pricing,
-    charges: Object.freeze(charges),
-    missing: Object.freeze(missing),
+    charges: charges,
+    missing: missing,
   });
   if (Result.isFailure(receipt)) {
     throw new Error("Generated Adapter call price receipt is invalid");
   }
-  return Object.freeze(receipt.success);
+  return receipt.success;
 }
 
 export function createAdapterCallPriceReceipts(
   calls: readonly AdapterUsageCall[],
   overrides: Readonly<Record<string, PriceOverride>> | undefined,
 ): readonly AdapterCallPriceReceipt[] {
-  return Object.freeze(
-    calls.flatMap((call) => {
-      const receipt = receiptFor(call, overrides);
-      return receipt === undefined ? [] : [receipt];
-    }),
-  );
+  return calls.flatMap((call) => {
+    const receipt = receiptFor(call, overrides);
+    return receipt === undefined ? [] : [receipt];
+  });
 }

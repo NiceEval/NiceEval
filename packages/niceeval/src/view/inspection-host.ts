@@ -22,7 +22,7 @@ export function inspectViewGeneration(generation: ViewGeneration, input: unknown
         const opened = yield* openHostOwnedInspectionSource(generation.recordPath);
         const facts =
           decoded.success.operation.kind === "project.get" && generation.target.kind === "current"
-            ? Object.freeze({ ...opened, kind: "project-record" as const })
+            ? { ...opened, kind: "project-record" as const }
             : opened;
         const cutoff = facts.cutoff();
         if (cutoff.identity !== generation.sourceCutoffIdentity) {
@@ -53,24 +53,22 @@ export function inspectViewGeneration(generation: ViewGeneration, input: unknown
       }),
     ).pipe(
       Effect.catch((cause) =>
-        Effect.succeed(
-          Object.freeze({
-            outcome: "failure" as const,
-            operation: decoded.success.operation.kind,
-            failure:
-              cause instanceof InspectionOperationError && cause.code === "inspection-read-deadline-exceeded"
-                ? Object.freeze({
-                    code: cause.code,
-                    reason: cause.reason,
-                    correction: cause.correction ?? "upgrade-or-report",
-                  })
-                : Object.freeze({
-                    code: "inspection-operation-failed" as const,
-                    reason: "Inspection could not be completed for this generation.",
-                    correction: "retry" as const,
-                  }),
-          }) satisfies InspectionDocument,
-        ),
+        Effect.succeed({
+          outcome: "failure" as const,
+          operation: decoded.success.operation.kind,
+          failure:
+            cause instanceof InspectionOperationError && cause.code === "inspection-read-deadline-exceeded"
+              ? {
+                  code: cause.code,
+                  reason: cause.reason,
+                  correction: cause.correction ?? "upgrade-or-report",
+                }
+              : {
+                  code: "inspection-operation-failed" as const,
+                  reason: "Inspection could not be completed for this generation.",
+                  correction: "retry" as const,
+                },
+        } satisfies InspectionDocument),
       ),
     );
   });
