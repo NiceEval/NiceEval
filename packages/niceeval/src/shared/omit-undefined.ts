@@ -1,9 +1,9 @@
 /**
  * 宽可选值到精确可选类型的边界转换。
  *
- * NiceEval 自有类型的可选属性默认写 `x?: T | undefined`,值为 `undefined` 与键缺失等价。
- * 只有键是否存在会被观察的边界(Record JSON、身份摘要材料、覆盖默认值的合并补丁、
- * 第三方精确可选类型)才要求键缺失。规则见 `docs/engineering/code-style/README.md#可选属性`。
+ * 内部值以必需键 `x: T | undefined` 表达可能不存在的事实。
+ * 进入键是否存在会被观察的边界(Record JSON、身份摘要材料、覆盖默认值的合并补丁、
+ * 第三方精确可选类型)时,用它把值为 `undefined` 的键去掉。规则见 `docs/engineering/code-style/README.md#可选属性`。
  */
 export type OmitUndefined<T extends object> = {
   [K in keyof T as undefined extends T[K] ? never : K]: T[K];

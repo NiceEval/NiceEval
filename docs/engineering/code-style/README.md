@@ -33,31 +33,41 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
 ### 可选属性
 
 `niceeval` 包打开 `exactOptionalPropertyTypes`。
-这个开关区分可选属性的两种含义：值可以未提供，或者键不得出现。
-只有键是否存在会被观察时，两者才有行为差异；规则按这条边界写类型，不在调用点逐个迁就编译器。
+目标是减少 `undefined`，让类型约束生产者：一个值越晚出现「可能没有」，下游越少分支。
+可选属性只留给外部作者省略字段的场景；内部值在入口归一化后不再有可选属性。
 
-键的存在会被观察的边界只有这几类：
+按值由谁构造，类型分三层：
 
-1. Record JSON：`RecordJson` 不含 `undefined`，canonicalizer 遇到 `undefined` 拒绝写入，`Schema.optionalKey` 编码同样拒绝。
-2. 身份与摘要材料：自写的 canonical 序列化（例如 Judge material）按键枚举，`undefined` 会改变结果或直接失败。
-3. 合并补丁：以 `{ ...base, ...patch }` 覆盖默认值的对象，`patch.x = undefined` 会抹掉默认值。
-4. 按键枚举有语义的对象：`Object.keys`、`Object.entries`、`in` 或 `Object.hasOwn` 的结果参与行为或输出。
-5. 第三方声明为精确可选的类型。
+1. **外部输入**：由用户、adapter 作者或第三方构造的值，例如 config 与 experiment 选项、`defineAgent` 选项、`Turn`、`Usage`、`CommandOptions`、`AgentContext`。
+   可选属性写 `readonly x?: T | undefined`，同时接受省略与 `undefined`。
+   这些值在进入 NiceEval 的第一个函数里归一化一次，之后流转的是第 2 层的内部类型。
+2. **内部值**：只由 NiceEval 自己构造的值，包括归一化后的配置与上下文、NiceEval 传给用户回调的参数、函数返回值、可变状态与中间结果。
+   这些类型不写可选属性：
+   - 归一化后一定有值的字段是必需的且不含 `undefined`，默认值在入口补齐，下游不再用 `??` 重复补默认值。
+   - 互斥的状态用判别联合，不用几个可选字段组合表达。
+   - 只有事实本身可能不存在时（例如实验没有指定 `model`、协议没有上报某个 token 桶），才写必需键 `readonly x: T | undefined`；生产者必须显式给出每个字段，漏写由编译器拦下。
+   - 可变状态清空时赋 `undefined`，不用 `delete`。
+3. **键存在会被观察的边界**：键是否出现会改变行为或输出的地方，类型写精确的 `x?: T`，并在声明旁用一句注释写明属于下面哪一类：
+   - Record JSON：`RecordJson` 不含 `undefined`，canonicalizer 与 `Schema.optionalKey` 编码遇到 `undefined` 拒绝写入；
+   - 身份与摘要材料：自写的 canonical 序列化按键枚举，`undefined` 会改变结果或直接失败；
+   - 合并补丁：以 `{ ...base, ...patch }` 覆盖默认值的对象，`patch.x = undefined` 会抹掉默认值；
+   - 按键枚举有语义的对象：`Object.keys`、`Object.entries`、`in` 或 `Object.hasOwn` 的结果参与行为或输出；
+   - 第三方声明为精确可选的类型。
 
-类型按下面的规则写：
+转换只在层与层之间发生一次：
 
-- 默认写 `readonly x?: T | undefined`。
-  公开 API 的输入与输出、Agent 与 Sandbox 的上下文、选项包、`Turn`、`Usage` 等领域值、测试辅助都属于默认情况。
-  生产者直接写 `{ model: ctx.model }`；消费者用 `!== undefined` 或 `??` 判断，不用 `in`。
-- 只有落在上述边界上的自有类型写精确的 `x?: T`，并在类型声明旁用一句注释写明属于哪类边界。
-- 宽值进入精确类型只在边界上转换一次：优先用该边界已有的 Schema 编码或构造函数；字段多于两个时用 `shared/omit-undefined.ts` 的 `omitUndefined`；一两个字段可以写条件展开。
-  流水线中段的函数参数与返回值不做这种转换。
-- 可变状态里表示暂时没有值的字段写成必需键 `x: T | undefined`，清空时赋 `undefined`，不用 `delete`。
+- 外部输入到内部值，由入口的归一化函数补齐默认值、产出判别联合或显式写出 `undefined`。
+- 内部值到边界，优先用该边界已有的 Schema 编码或构造函数；字段多于两个时用 `shared/omit-undefined.ts` 的 `omitUndefined`；一两个字段可以写条件展开 `x === undefined ? {} : { x }`。
+- 条件展开只出现在进入边界的这一处，不出现在内部值之间的传递里。
+
+其它约束：
+
 - 不用非空断言 `!` 或 `as` 绕过可选属性检查。
-- 手写类型与对应 Schema 保持一致：`Schema.optional` 对应 `?: T | undefined`，`Schema.optionalKey` 只用于上述边界。
+- 手写类型与对应 Schema 保持一致：`Schema.optional` 对应 `?: T | undefined`，`Schema.optionalKey` 只用于第 3 层边界。
+- 公开类型只在构造方全部位于 NiceEval 内部时才按第 2 层收紧；使用方读到的仍是 `T | undefined`，外部构造方不受影响。
 
-放宽类型不改变身份：基于 `JSON.stringify` 的摘要本来就省略值为 `undefined` 的键；按键枚举的 canonical 材料属于第 2 类边界，保持精确类型。
-放宽公开类型会改变生成的参考页，改完从仓库根运行 `pnpm run repo docs reference`。
+调整类型不改变身份：基于 `JSON.stringify` 的摘要本来就省略值为 `undefined` 的键；按键枚举的 canonical 材料属于第 3 层，保持精确类型。
+公开类型变化会改变生成的参考页，改完从仓库根运行 `pnpm run repo docs reference`。
 
 ### 格式化与身份
 
@@ -75,6 +85,6 @@ Judge 与模拟用户的 prompt 字节会影响行为，格式化不改变字符
 
 - `pnpm format` 之后 `git diff` 为空时，`pnpm lint` 的格式检查通过；手动改乱一个文件的缩进，`pnpm lint` 失败并列出该文件。
 - 在任一源码文件留下未使用的 import，`pnpm typecheck` 失败并指出位置。
-- 默认情况下的自有类型可选属性都写成 `?: T | undefined`；条件展开 `x === undefined ? {} : { x }` 只出现在上述边界的转换处；状态字段不用 `delete` 清空。
+- 内部值类型没有可选属性；外部输入类型的可选属性写成 `?: T | undefined`；条件展开 `x === undefined ? {} : { x }` 只出现在进入边界的转换处；状态字段不用 `delete` 清空。
 - 首次格式化提交前后，`pnpm test`、`pnpm run build:package` 结果相同；固定消费样例的身份摘要不变。
 - Judge 与模拟用户 prompt 的 UTF-8 字节在格式化前后相同。
