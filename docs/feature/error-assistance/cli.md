@@ -41,6 +41,9 @@ Subject: defineConfig.judgeProvider
 后续同组失败不重复长说明，但仍保留事实并计入数量。
 终局摘要按组列出 count、最多 32 个 affected objects 和 32 个 source locations，以及各自未展开的数量。
 
+同组错误的摘要以英文原因和计数开头，例如 `Judge credential is unavailable for openai. ×2`。
+内部错误 code、repair target 和 guide ID 不作为人读标题或标签；机器字段保持完整。
+
 同一 guide ID 在这个交付范围内只输出一次完整 Markdown。
 即使该 guide 出现在多个 repair target 或多个分组中，也只重用已显示的指南并在摘要中关联各组。
 未知错误不仅因 message 相同就合并；它们各自显示有界安全摘要。

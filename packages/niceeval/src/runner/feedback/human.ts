@@ -539,7 +539,6 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
     if (count > 1) return [];
     return [
       `${sym} error: ${event.message}`,
-      `  Code: ${code}`,
       ...renderAssistedDiagnosticDetails(assistance).map((line) => `  ${line}`),
     ];
   }
@@ -865,29 +864,31 @@ function buildWarningsPanelRows(diagnostics: readonly DiagnosticNotice[]): Panel
   }
   const entries = [...byCode.entries()];
   if (entries.length === 0) return undefined;
-  const labelWidth = Math.max(0, ...entries.map(([, value]) => stringWidth(warningCodeLabel(value.code, value.count))));
+  const labelWidth = Math.max(
+    0,
+    ...entries
+      .filter(([, value]) => value.assistance === undefined)
+      .map(([, value]) => stringWidth(warningCodeLabel(value.code, value.count))),
+  );
   return entries.flatMap(([, value]): PanelRow[] => {
+    if (value.assistance !== undefined) {
+      return [
+        {
+          kind: "line",
+          text: `${value.severity === "error" ? "✗" : "!"} ${value.message}${value.count > 1 ? ` ×${value.count}` : ""}`,
+        },
+        ...renderAssistedDiagnosticDetails(value.assistance)
+          .filter((line) => line.startsWith("Source") || line.startsWith("Affected"))
+          .map((line): PanelRow => ({ kind: "line", text: `  ${line}` })),
+        { kind: "line", text: `  ${value.assistance.nextStep}` },
+      ];
+    }
     const rows: PanelRow[] = [
       {
         kind: "line",
         text: `${value.severity === "error" ? "✗" : "!"} ${padDisplay(warningCodeLabel(value.code, value.count), labelWidth)}  ${value.message}`,
       },
     ];
-    if (value.assistance === undefined) return rows;
-    const service = value.assistance.service === undefined ? "" : ` · ${value.assistance.service}`;
-    rows.push({
-      kind: "line",
-      text: `  owner ${value.assistance.owner}${service} · repair ${value.assistance.repairTarget}`,
-    });
-    rows.push(
-      ...renderAssistedDiagnosticDetails(value.assistance)
-        .filter((line) => line.startsWith("Source") || line.startsWith("Affected"))
-        .map((line): PanelRow => ({ kind: "line", text: `  ${line}` })),
-    );
-    rows.push({ kind: "line", text: `  ${value.assistance.nextStep}` });
-    if (value.assistance.guideId !== undefined) {
-      rows.push({ kind: "line", text: `  Guide: ${value.assistance.guideId}` });
-    }
     return rows;
   });
 }

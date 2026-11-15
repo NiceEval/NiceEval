@@ -29,8 +29,10 @@ export function renderMigrationRequiredError(
   loadGuide: (guideId: string) => MigrationGuideLoadResult = loadMigrationGuide,
 ): string {
   const guideIds = [...new Set(error.occurrences.map((occurrence) => occurrence.guideId))];
-  const lines = ["error: This Judge configuration requires migration.", "Code: migration-required"];
-  for (const guideId of guideIds) lines.push(`Guide: ${guideId}`);
+  const lines = [
+    "error: This Judge configuration requires migration.",
+    `Migration locations: ${error.occurrences.length}`,
+  ];
   lines.push(...migrationOccurrenceLines(error));
   for (const guideId of guideIds) {
     const loaded = loadGuide(guideId);
@@ -80,6 +82,5 @@ export function renderAssistedDiagnosticDetails(data: ErrorAssistanceData): read
   if (data.affectedObjectsOmitted > 0) lines.push(`Affected objects omitted: ${data.affectedObjectsOmitted}`);
   if (data.sourceLocationsOmitted > 0) lines.push(`Source locations omitted: ${data.sourceLocationsOmitted}`);
   lines.push(data.nextStep);
-  if (data.guideId !== undefined) lines.push(`Guide: ${data.guideId}`);
   return lines;
 }

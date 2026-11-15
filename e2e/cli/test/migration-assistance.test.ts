@@ -22,6 +22,9 @@ test.concurrent("旧 Judge 配置在执行前给出源码位置与离线英文�
     expect(result.stderr).toMatch(/niceeval\.config\.ts:\d+:\d+/u);
     expect(result.stderr).toContain('from "niceeval/judge"');
     expect(result.stderr).toContain("OpenAIProvider");
+    expect(result.stderr).not.toContain("Code: migration-required");
+    expect(result.stderr).not.toContain("Guide: judge-provider");
+    expect(result.stderr).toContain("Migration locations: 1");
     expect(result.stderr.match(/# Use an explicit Judge provider/gu)).toHaveLength(1);
     expect(result.stderr).toContain("OPENAI_API_KEY");
     expect(result.stderr).not.toContain("OLD_JUDGE_KEY=");
@@ -48,7 +51,7 @@ test.concurrent("旧 Judge 配置在执行前给出源码位置与离线英文�
     expect(result.stderr).toContain("OpenAIProvider");
     expect(result.stderr).not.toContain("Code: migration-required");
     expect(result.stderr).not.toContain("Guide: judge-provider");
-    expect(result.stderr).toContain("Migration needed at 2 locations:");
+    expect(result.stderr).toContain("Migration locations: 2");
     expect(result.stderr.match(/# Use an explicit Judge provider/gu)).toHaveLength(1);
     expect(result.stderr).not.toContain("BODY_MUST_NOT_RUN");
     await expect(stat(join(projectRoot, ".niceeval"))).rejects.toMatchObject({ code: "ENOENT" });

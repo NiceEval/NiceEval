@@ -182,9 +182,10 @@ test.concurrent("已配置模型缺少 Judge 凭据时不发送请求", async ()
       });
       expect(human.exitCode, human.diagnostic()).toBe(1);
       const output = human.stdout + human.stderr;
-      expect(output).toContain("judge-key-unresolved");
+      expect(output).not.toContain("judge-key-unresolved");
       expect(output).toContain("NICEEVAL_E2E_JUDGE_KEY");
-      expect(output).toMatch(/judge-key-unresolved\s*[×x(]\s*2/u);
+      expect(output).toMatch(/Judge credential is unavailable for openai\.\s*×2/u);
+      expect(output).not.toContain("repair openai:env:");
       expect(requests).toEqual([]);
     });
   } finally {
