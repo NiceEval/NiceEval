@@ -492,10 +492,10 @@ export function materializeDockerComposeProviderPlan(
           },
           ...deadlineOptions(context.deadline),
           feedback: context.feedback,
-          provisionSlot: boundProvisionSlot(context),
-          runId: context.runId,
+          ...(context.provisionSlot._tag === "Detached" ? {} : { provisionSlot: context.provisionSlot.value }),
+          ...(context.runId === undefined ? {} : { runId: context.runId }),
           creationLabels: sandboxCreationLabels({ ...context, evalId: context.creationEvalId ?? context.evalId }),
-          lifetimeMs: configuredLifetime(plan.lifetime),
+          ...lifetimeOptions(plan.lifetime),
         },
       ).pipe(Effect.map((materialized) => normalizeMaterialized(materialized, context))),
     ),
@@ -556,7 +556,7 @@ export function materializeDockerfileProviderPlan(
                         ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
                         resources: plan.resources,
                         ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-                        lifetimeMs: configuredLifetime(plan.lifetime),
+                        ...lifetimeOptions(plan.lifetime),
                         pathPrepend: plan.pathPrepend,
                         feedback: context.feedback,
                         provisionToken,
@@ -571,7 +571,7 @@ export function materializeDockerfileProviderPlan(
                               ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
                                 ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
                                 : {}),
-                              managedLabels: managed?.labels,
+                              ...(managed === undefined ? {} : { managedLabels: managed.labels }),
                               rootlessAttestation: {
                                 daemonId: plan.profileBinding.daemonId,
                                 dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
@@ -581,7 +581,7 @@ export function materializeDockerfileProviderPlan(
                                 currentReservation: () => managed!.reservation,
                                 replaceReservation: managed!.replaceReservation,
                               },
-                              afterStop: managed?.finish,
+                              ...(managed === undefined ? {} : { afterStop: managed.finish }),
                             }),
                       };
                       const backend = yield* withProvisionRetry(
@@ -787,7 +787,7 @@ export function materializeDockerImageProviderPlan(
           ...(plan.dockerAccess === undefined ? {} : { dockerAccess: plan.dockerAccess }),
           resources: plan.resources,
           ...(plan.readiness === undefined ? {} : { readiness: plan.readiness }),
-          lifetimeMs: configuredLifetime(plan.lifetime),
+          ...lifetimeOptions(plan.lifetime),
           pathPrepend: plan.pathPrepend,
           feedback: context.feedback,
           provisionToken,
@@ -802,7 +802,7 @@ export function materializeDockerImageProviderPlan(
                 ...(plan.profileBinding.profile.policy.level === "managed-rootless/v1"
                   ? { dns: plan.profileBinding.profile.policy.network.dns.servers }
                   : {}),
-                managedLabels: managed?.labels,
+                ...(managed === undefined ? {} : { managedLabels: managed.labels }),
                 rootlessAttestation: {
                   daemonId: plan.profileBinding.daemonId,
                   dataRoot: plan.profileBinding.profile.backend.filesystem.dockerRootDir,
@@ -812,7 +812,7 @@ export function materializeDockerImageProviderPlan(
                   currentReservation: () => managed!.reservation,
                   replaceReservation: managed!.replaceReservation,
                 },
-                afterStop: managed?.finish,
+                ...(managed === undefined ? {} : { afterStop: managed.finish }),
               }),
         };
         const backend = yield* withProvisionRetry(
@@ -872,7 +872,7 @@ export function materializeE2BProviderPlan(
             lifetime,
             pathPrepend: plan.pathPrepend,
             provisionToken,
-            runId: context.runId,
+            ...(context.runId === undefined ? {} : { runId: context.runId }),
             runIdentity,
           }),
         ),
@@ -901,7 +901,7 @@ export function materializeVercelProviderPlan(
             ...deadlineOptions(context.deadline),
             runtime: "node24",
             snapshotId: plan.snapshotId,
-            lifetimeMs: configuredLifetime(plan.lifetime),
+            ...lifetimeOptions(plan.lifetime),
             pathPrepend: plan.pathPrepend,
             feedback: context.feedback,
           }),
@@ -1448,10 +1448,10 @@ export function acquireSandboxRunPlan(
   input: SandboxRuntimeMaterializeInput,
 ): Effect.Effect<MaterializedSandboxCase, SandboxRuntimeMaterializationError, Scope.Scope> {
   const context: SandboxRuntimeMaterializeContext = {
-    runId: input.runId,
-    attemptId: input.attemptId,
-    creationEvalId: input.creationEvalId,
-    sandboxLabels: input.sandboxLabels,
+    ...(input.runId === undefined ? {} : { runId: input.runId }),
+    ...(input.attemptId === undefined ? {} : { attemptId: input.attemptId }),
+    ...(input.creationEvalId === undefined ? {} : { creationEvalId: input.creationEvalId }),
+    ...(input.sandboxLabels === undefined ? {} : { sandboxLabels: input.sandboxLabels }),
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1531,10 +1531,10 @@ export function prepareMaterializedSandboxRunPlan(
   owned: MaterializedSandboxCase,
 ): Effect.Effect<void, SandboxRuntimeMaterializationError> {
   const context: SandboxRuntimeMaterializeContext = {
-    runId: input.runId,
-    attemptId: input.attemptId,
-    creationEvalId: input.creationEvalId,
-    sandboxLabels: input.sandboxLabels,
+    ...(input.runId === undefined ? {} : { runId: input.runId }),
+    ...(input.attemptId === undefined ? {} : { attemptId: input.attemptId }),
+    ...(input.creationEvalId === undefined ? {} : { creationEvalId: input.creationEvalId }),
+    ...(input.sandboxLabels === undefined ? {} : { sandboxLabels: input.sandboxLabels }),
     plan: input.plan,
     evalId: input.evalId,
     deadline: input.deadline,
@@ -1587,4 +1587,9 @@ export function sandboxRuntimeCapabilities(
     beforeCache: capabilities.beforeCache,
     sessionLimit: capabilities.sessionLimit,
   });
+}
+
+function lifetimeOptions(lifetime: Parameters<typeof configuredLifetime>[0]): { lifetimeMs?: number } {
+  const lifetimeMs = configuredLifetime(lifetime);
+  return lifetimeMs === undefined ? {} : { lifetimeMs };
 }

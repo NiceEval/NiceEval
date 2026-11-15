@@ -118,7 +118,7 @@ function refreshedEntryState(entry: KeptSandboxEntry, state: KeptSandboxEntry["s
 function panelCapabilityForFacts(facts: SandboxCommandFacts): { mode: PanelMode; width: number } {
   return panelCapabilityOf({
     isTTY: facts.stdout.isTTY,
-    noColor: facts.noColor,
+    ...(facts.noColor === undefined ? {} : { noColor: facts.noColor }),
     width: facts.stdout.columns,
   });
 }
@@ -708,7 +708,7 @@ function historyCommandEffect(
               : `niceeval sandbox diff ${entry.sandboxId}`;
           const lines = renderPanel({
             title: `HISTORY · ${entry.sandboxId}`,
-            meta,
+            ...(meta === undefined ? {} : { meta: meta }),
             footerCommand,
             rows,
             width: panel.width,

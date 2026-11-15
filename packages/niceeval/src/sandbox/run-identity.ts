@@ -17,7 +17,13 @@ export interface RunIdentity {
 
 /** 创建沙箱时快照一次当前 runner 进程的运行标识。 */
 export function currentRunIdentity(runId?: string, creationLabels?: Readonly<Record<string, string>>): RunIdentity {
-  return { runId, creationLabels, host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
+  return {
+    ...(runId === undefined ? {} : { runId: runId }),
+    ...(creationLabels === undefined ? {} : { creationLabels: creationLabels }),
+    host: hostname(),
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
 }
 
 export const DOCKER_HOST_LABEL = "niceeval.host";

@@ -68,7 +68,7 @@ export type SandboxCapability = string;
 export interface SandboxChangeFrequency {
   readonly value: number;
   readonly source: "explicit" | "defaulted";
-  readonly preset?: keyof typeof changeFrequency;
+  readonly preset?: keyof typeof changeFrequency | undefined;
 }
 
 /** Names and schedules a before action; lower changeFrequency wins only among dependency-ready actions, and label affects display rather than identity. */
@@ -178,12 +178,12 @@ export type SandboxStepPlan =
       readonly kind: "exec";
       readonly executable: string;
       readonly args: readonly string[];
-      readonly cwd?: string;
-      readonly user?: string;
-      readonly timeoutMs?: number;
-      readonly envKeys?: readonly string[];
-      readonly stdinDigest?: string;
-      readonly stdinBytes?: number;
+      readonly cwd?: string | undefined;
+      readonly user?: string | undefined;
+      readonly timeoutMs?: number | undefined;
+      readonly envKeys?: readonly string[] | undefined;
+      readonly stdinDigest?: string | undefined;
+      readonly stdinBytes?: number | undefined;
     }
   | { readonly kind: "putText"; readonly path: string; readonly digest: string; readonly bytes: number }
   | { readonly kind: "putBytes"; readonly path: string; readonly digest: string; readonly bytes: number }
@@ -197,10 +197,12 @@ export type SandboxStepPlan =
       readonly repository: string;
       readonly ref: string;
       readonly to: string;
-      readonly sparse?: {
-        readonly include: readonly string[];
-        readonly exclude: readonly string[];
-      };
+      readonly sparse?:
+        | {
+            readonly include: readonly string[];
+            readonly exclude: readonly string[];
+          }
+        | undefined;
     };
 
 interface SandboxStepData {
@@ -255,7 +257,7 @@ export interface SandboxActionFingerprintPlan {
 /** Describes normalized action input, steps and fingerprints for planning; it is not a mutable live execution handle. */
 export interface SandboxActionPlan {
   readonly id: string;
-  readonly label?: string;
+  readonly label?: string | undefined;
   readonly family: string;
   readonly state: SandboxActionState;
   readonly input: JsonValue;

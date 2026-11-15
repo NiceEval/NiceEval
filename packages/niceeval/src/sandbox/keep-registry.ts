@@ -65,15 +65,15 @@ export interface KeptSandboxEntry {
   provider: string;
   evalId: string;
   attempt: number;
-  experimentId?: string;
+  experimentId?: string | undefined;
   locator: string;
   verdict: Verdict;
   keptAt: string;
   workdir: string;
   /** provider 原生的进入命令(直连与审计用);日常入口是 `niceeval sandbox enter`。 */
-  enter?: string;
+  enter?: string | undefined;
   /** 现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。 */
-  expiresAt?: string;
+  expiresAt?: string | undefined;
   /** alive = 实例在跑;dormant = 可唤醒;expired = 确认不存在;unknown = 探测失败。 */
   state: "alive" | "dormant" | "expired" | "unknown";
 }

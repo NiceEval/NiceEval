@@ -84,7 +84,9 @@ export async function inspectDetached(provider: string, sandboxId: string): Prom
     case "e2b": {
       try {
         const { Sandbox: E2BSdkSandbox } = await import("e2b");
-        const paginator = E2BSdkSandbox.list({ apiKey: process.env.E2B_API_KEY });
+        const paginator = E2BSdkSandbox.list({
+          ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+        });
         let hit: { sandboxId: string; state?: string } | undefined;
         while (paginator.hasNext && !hit) {
           hit = (await paginator.nextItems()).find(
@@ -146,7 +148,9 @@ export async function destroyDetached(provider: string, sandboxId: string): Prom
         }
       ).kill;
       if (typeof kill !== "function") throw new Error("this e2b SDK version has no detached kill capability");
-      const killed = await kill(sandboxId, { apiKey: process.env.E2B_API_KEY });
+      const killed = await kill(sandboxId, {
+        ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+      });
       return killed ? "stopped" : "already-gone";
     }
     case "vercel": {
@@ -202,11 +206,15 @@ export async function wakeDetached(provider: string, sandboxId: string): Promise
         connect?: (id: string, opts?: globalThis.Record<string, unknown>) => Promise<unknown>;
       };
       if (typeof resume.resume === "function") {
-        await resume.resume(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await resume.resume(sandboxId, {
+          ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+        });
         return;
       }
       if (typeof resume.connect === "function") {
-        await resume.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await resume.connect(sandboxId, {
+          ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+        });
         return;
       }
       throw new Error("this e2b SDK version has no resume capability");
@@ -369,7 +377,9 @@ export async function suspendDetached(provider: string, sandboxId: string): Prom
         }
       ).pause;
       if (typeof pause === "function") {
-        await pause(sandboxId, { apiKey: process.env.E2B_API_KEY });
+        await pause(sandboxId, {
+          ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+        });
         return;
       }
       throw new Error("this e2b SDK version has no detached pause capability");
@@ -451,7 +461,9 @@ export async function execInDetached(
       return execInDockerLedger(sandboxId, workdir, script);
     case "e2b": {
       const { Sandbox: E2BSdkSandbox } = await import("e2b");
-      const sbx = await E2BSdkSandbox.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+      const sbx = await E2BSdkSandbox.connect(sandboxId, {
+        ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+      });
       const res = await sbx.commands.run(script, {
         cwd: workdir,
         envs: { GIT_DIR: DEFAULT_LEDGER_GIT_DIR, GIT_WORK_TREE: workdir, HOME: "/tmp" },

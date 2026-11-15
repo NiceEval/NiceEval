@@ -217,7 +217,7 @@ export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(fu
     sources,
     records,
     failures,
-    onActivity: opts.onActivity,
+    ...(opts.onActivity === undefined ? {} : { onActivity: opts.onActivity }),
     buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
     buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
   };
@@ -323,7 +323,7 @@ export function startSandboxBuilds(
     sources,
     records,
     failures,
-    onActivity: opts.onActivity,
+    ...(opts.onActivity === undefined ? {} : { onActivity: opts.onActivity }),
     buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
     buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
   };

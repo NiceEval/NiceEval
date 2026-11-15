@@ -94,7 +94,7 @@ export interface SandboxDeclarationOrder {
 export interface SandboxBeforeDependencyProjection {
   readonly id: string;
   readonly source: "explicit" | "capability" | "same-layer";
-  readonly capability?: string;
+  readonly capability?: string | undefined;
 }
 
 export type SandboxCommandFingerprint =
@@ -577,7 +577,7 @@ function beforeFromDeclaration(
     return Object.freeze({
       kind: "action" as const,
       owner,
-      ...(pluginSourceOf(declaration) === undefined ? {} : { pluginSource: pluginSourceOf(declaration) }),
+      ...pluginSourceField(declaration),
       ordinal,
       id: data.metadata.id,
       metadata: data.metadata,
@@ -590,7 +590,7 @@ function beforeFromDeclaration(
     return Object.freeze({
       kind: "hook" as const,
       owner,
-      ...(pluginSourceOf(declaration) === undefined ? {} : { pluginSource: pluginSourceOf(declaration) }),
+      ...pluginSourceField(declaration),
       ordinal,
       id,
       metadata: normalizeSandboxBeforeMetadata({ id }),
@@ -608,7 +608,7 @@ function beforeFromDeclaration(
   return Object.freeze({
     kind: "command" as const,
     owner,
-    ...(pluginSourceOf(declaration) === undefined ? {} : { pluginSource: pluginSourceOf(declaration) }),
+    ...pluginSourceField(declaration),
     ordinal,
     id,
     metadata,
@@ -686,7 +686,10 @@ function normalizeContribution(
 
 /** Stable identity of one author-owned layer, before it is linked with the other owners. */
 export function sandboxLayerDefinitionIdentity(layer: SandboxLayer | undefined): JsonValue {
-  const contribution = normalizeContribution("eval-group", { id: "<definition>", layer });
+  const contribution = normalizeContribution("eval-group", {
+    id: "<definition>",
+    ...(layer === undefined ? {} : { layer: layer }),
+  });
   const commands: JsonValue[] = contribution.view.commands.map(
     (command): JsonValue =>
       command.kind === "stable"
@@ -1003,7 +1006,7 @@ function linkedAfter(contributions: readonly NormalizedScheduleContribution[]): 
                 kind: "action" as const,
                 owner: contribution.owner,
                 ordinal,
-                ...(pluginSourceOf(declaration) === undefined ? {} : { pluginSource: pluginSourceOf(declaration) }),
+                ...pluginSourceField(declaration),
                 data: sandboxAfterActionDataOf(declaration.action),
                 fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
               })
@@ -1011,7 +1014,7 @@ function linkedAfter(contributions: readonly NormalizedScheduleContribution[]): 
                 kind: "command" as const,
                 owner: contribution.owner,
                 ordinal,
-                ...(pluginSourceOf(declaration) === undefined ? {} : { pluginSource: pluginSourceOf(declaration) }),
+                ...pluginSourceField(declaration),
                 declaration,
                 fingerprint: afterDeclarationFingerprint(contribution.owner, ordinal, declaration),
               }),
@@ -1240,4 +1243,9 @@ export function linkSandboxLayers(
         : Effect.map(Effect.all(linked), (values) => Object.freeze(values));
     },
   );
+}
+
+function pluginSourceField(declaration: Parameters<typeof pluginSourceOf>[0]): { pluginSource?: string } {
+  const pluginSource = pluginSourceOf(declaration);
+  return pluginSource === undefined ? {} : { pluginSource };
 }

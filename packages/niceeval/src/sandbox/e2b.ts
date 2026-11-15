@@ -318,12 +318,15 @@ export async function reconcileProvision(token: string): Promise<void> {
   // Sandbox.list() 是同步方法,返回分页器(SandboxPaginator),不是 Promise<数组>——用
   // hasNext/nextItems() 翻页,不能直接 for...of。metadata 过滤走服务端 query,一次 token
   // 命中的实例数极少,通常一页打完。
-  const paginator = E2BSdkSandbox.list({ apiKey, query: { metadata: { "niceeval-provision-token": token } } });
+  const paginator = E2BSdkSandbox.list({
+    ...(apiKey === undefined ? {} : { apiKey: apiKey }),
+    query: { metadata: { "niceeval-provision-token": token } },
+  });
   while (paginator.hasNext) {
     const sandboxes = await fetchNextItemsWithRetry(paginator);
     for (const info of sandboxes) {
       try {
-        await E2BSdkSandbox.kill(info.sandboxId, { apiKey });
+        await E2BSdkSandbox.kill(info.sandboxId, { ...(apiKey === undefined ? {} : { apiKey: apiKey }) });
       } catch (e) {
         if (!(e instanceof NotFoundError)) throw e;
       }
@@ -381,14 +384,14 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   readonly workdir = E2B_WORKDIR;
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
-  private commandTimeoutMs?: number;
+  private commandTimeoutMs: number | undefined;
   /** A VM retirement is idempotent across abort, transport failure, and the scope finalizer. */
-  private retirement?: Promise<void>;
+  private retirement: Promise<void> | undefined;
   private retired = false;
   /** 已实际请求的实例寿命;复用下续期一律续到这个值(滑动窗口)。 */
   private lifetime: E2BSandboxLifetime;
   /** 起点覆盖(factory `user`);省略 = 沿用 template 的默认用户。 */
-  private readonly userOverride?: string;
+  private readonly userOverride: string | undefined;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   get nativeInstanceId(): string {
@@ -396,7 +399,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
   }
   sandboxId: string;
 
-  private deadlineAt?: number;
+  private deadlineAt: number | undefined;
   readonly capabilities = {
     rootCommands: supportedBackendCapability(true as const),
     appendLog: unsupportedBackendCapability,
@@ -481,7 +484,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     };
     // Always send a finite server-side timeout, including unlimited Attempts.
     const sdkOpts = {
-      apiKey,
+      ...(apiKey === undefined ? {} : { apiKey: apiKey }),
       timeoutMs: lifetime.milliseconds,
       ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
@@ -537,7 +540,10 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
     // e2b commands.run 直接透传同名 user 参数;省略时沿用 Sandbox 默认身份(factory `user`
     // 覆盖后的身份,否则 template 默认用户)—— 跨 provider 语义一致
     // (见 docs/feature/sandbox/library/README.md「执行身份」)。
-    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+    const limit = commandLimit(opts, {
+      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
+      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+    });
     // pathPrepend 是受管 PATH,在脚本自己的 shell 里对 `$PATH` 前置——env 走的是 SDK 的
     // envs 参数(可能被 opts.env.PATH 覆盖),而这一行在它之后执行,始终生效
     // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
@@ -603,10 +609,11 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       if (signal.aborted) onAbort!();
     }
     try {
+      const user = opts.user ?? this.userOverride;
       const commandOptions = {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
-        envs: opts.env,
-        user: opts.user ?? this.userOverride,
+        ...(opts.env === undefined ? {} : { envs: opts.env }),
+        ...(user === undefined ? {} : { user }),
         ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
         onStdout: completion.onStdout,
         onStderr: completion.onStderr,

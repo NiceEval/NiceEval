@@ -410,51 +410,50 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private container: Docker.Container | null = null;
   private network: Docker.Network | null = null;
   private _containerId = "";
-  private timeout?: number;
-  private deadlineAt?: number;
-  private lifetimeMs?: number;
+  private timeout: number | undefined;
+  private deadlineAt: number | undefined;
+  private lifetimeMs: number | undefined;
   /** 容器 PID1 的 dead-man TTL 到期时刻(initialize 里烧进 `timeout` 那一刻定死)。 */
-  private expiresAtMs?: number;
+  private expiresAtMs: number | undefined;
   private runtime: string;
-  private image?: string;
+  private image: string | undefined;
   /** Exact pristine source image captured during the first initialization; never advances with prefix rebases. */
-  private baseIdentity?: string;
+  private baseIdentity: string | undefined;
   /** Dynamic package-manager mutation can never become a shared BeforeCache baseline for this instance. */
   private runnerToolsInstalledDynamically = false;
-  private feedback?: import("../types.ts").ScopedFeedback;
-  private provisionToken?: string;
-  private runIdentity?: RunIdentity;
+  private feedback: import("../types.ts").ScopedFeedback | undefined;
+  private provisionToken: string | undefined;
+  private runIdentity: RunIdentity | undefined;
   private releaseMode: DockerSandboxReleaseMode = "destroy";
   /** 起点覆盖(factory `user`);省略 = 沿用镜像/Compose 声明的默认身份。 */
-  private readonly userOverride?: string;
+  private readonly userOverride: string | undefined;
   private readonly privileged: "disabled" | "raw" | "rootless";
-  private readonly dockerAccess?: Readonly<DockerSandboxAccess>;
+  private readonly dockerAccess: Readonly<DockerSandboxAccess> | undefined;
   private readonly resources: Readonly<DockerSandboxResources>;
-  private readonly readiness?: Readonly<DockerSandboxReadiness>;
-  private readonly dockerSocketPath?: string;
+  private readonly readiness: Readonly<DockerSandboxReadiness> | undefined;
+  private readonly dockerSocketPath: string | undefined;
   private readonly dns: readonly string[];
   private readonly managedLabels: Readonly<Record<string, string>>;
-  private containerName?: string;
-  private readonly rootlessAttestation?: { readonly daemonId: string; readonly dataRoot: string };
-  private readonly profileBeforeCache?: DockerProfileBeforeCacheSession;
-  private controlledCreate?: (
-    spec: DockerControlCreateSpec,
-    signal?: AbortSignal,
-  ) => Promise<DockerControlCreateResult>;
-  private controlledCreateSpec?: DockerControlCreateSpec;
-  private readonly afterStop?: () => Promise<void>;
+  private containerName: string | undefined;
+  private readonly rootlessAttestation: { readonly daemonId: string; readonly dataRoot: string } | undefined;
+  private readonly profileBeforeCache: DockerProfileBeforeCacheSession | undefined;
+  private controlledCreate:
+    | ((spec: DockerControlCreateSpec, signal?: AbortSignal) => Promise<DockerControlCreateResult>)
+    | undefined;
+  private controlledCreateSpec: DockerControlCreateSpec | undefined;
+  private readonly afterStop: (() => Promise<void>) | undefined;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   /** DinD 覆盖容器 User 为 root 后，仍用镜像 USER 作为 Agent 默认身份。 */
-  private imageDefaultUser?: string;
+  private imageDefaultUser: string | undefined;
   /** 下面三项由 `resolveDefaultIdentity()` 探测得出,构造期先给出安全占位值。 */
   private defaultHome = "/root";
   private defaultUserName = "root";
   private defaultIsRoot = true;
   private npmGlobalDir = "/root/.npm-global";
   private sandboxPath: string;
-  private beforeCacheHold?: DockerBeforeCacheHoldOwnership;
-  private beforeCacheMountReason?: string;
+  private beforeCacheHold: DockerBeforeCacheHoldOwnership | undefined;
+  private beforeCacheMountReason: string | undefined;
   readonly capabilities: SandboxBackendCapabilities;
 
   private async startManagedProcess(input: ManagedProcessStart): Promise<ManagedProcess> {
@@ -1323,15 +1322,25 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     await this.resolveDefaultIdentity(operationSignal);
 
     // 工作目录交给默认执行身份。
-    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], { signal: operationSignal });
-    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], { signal: operationSignal });
+    await this.runCommandAsRoot("mkdir", ["-p", this.workdir], {
+      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+    });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.workdir], {
+      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+    });
 
     // 为非 root 全局安装准备 npm 目录;root 身份下这一步是无害的自有目录。
-    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], { signal: operationSignal });
-    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], { signal: operationSignal });
+    await this.runCommandAsRoot("mkdir", ["-p", this.npmGlobalDir], {
+      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+    });
+    await this.runCommandAsRoot("chown", ["-R", this.chownTarget(), this.npmGlobalDir], {
+      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+    });
 
     // 让 npm 用这个目录当全局前缀(配置落在默认身份的家目录,供 agent 全局装 CLI 用)。
-    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], { signal: operationSignal });
+    await this.runCommand("npm", ["config", "set", "prefix", this.npmGlobalDir], {
+      ...(operationSignal === undefined ? {} : { signal: operationSignal }),
+    });
   }
 
   /** Docker start 只代表 PID 1 存活；Docker access 先证明默认端点，再跑作者 readiness。 */
@@ -1354,7 +1363,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           deadline,
           phase: "Docker access compatibility",
           timeoutMs: readiness.timeoutMs,
-          signal,
+          ...(signal === undefined ? {} : { signal: signal }),
         });
       }
       yield* this.waitForReadinessProbeEffect({
@@ -1364,7 +1373,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         deadline,
         phase: "Docker sandbox readiness",
         timeoutMs: readiness.timeoutMs,
-        signal,
+        ...(signal === undefined ? {} : { signal: signal }),
       });
     });
   }
@@ -1403,10 +1412,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         Effect.tryPromise({
           try: () =>
             this.execCommand(command, args, {
-              user: input.user,
+              ...(input.user === undefined ? {} : { user: input.user }),
               timeoutMs: Math.max(1, input.deadline - probeNow),
               timeoutRetirement: "stop",
-              signal: input.signal,
+              ...(input.signal === undefined ? {} : { signal: input.signal }),
             }),
           catch: (error) => error,
         }),
@@ -1443,12 +1452,13 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * `/etc/passwd` 解析,不在 runner 侧维护一张 UID → 家目录的映射表。
    */
   private async resolveDefaultIdentity(signal?: AbortSignal): Promise<void> {
+    const user = this.userOverride ?? (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined);
     const probe = await this.execCommand(
       "sh",
       ["-c", 'printf "%s\\n%s\\n%s" "$(id -u)" "$(id -un 2>/dev/null || true)" "$HOME"'],
       {
-        user: this.userOverride ?? (this.dockerAccess?.mode === "dind" ? this.imageDefaultUser : undefined),
-        signal,
+        ...(user === undefined ? {} : { user }),
+        ...(signal === undefined ? {} : { signal: signal }),
       },
     );
     const [rawUid = "", rawName = "", rawHome = ""] = probe.stdout.split("\n");
@@ -1505,7 +1515,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
    * 明确报错，不把 `git: command not found` 延后到 workspace.baseline。
    */
   async ensureRunnerTools(signal?: AbortSignal): Promise<void> {
-    const probe = await this.runCommandAsRoot("sh", ["-c", "command -v git >/dev/null 2>&1"], { signal });
+    const probe = await this.runCommandAsRoot("sh", ["-c", "command -v git >/dev/null 2>&1"], {
+      ...(signal === undefined ? {} : { signal: signal }),
+    });
     if (probe.exitCode === 0) return;
     this.runnerToolsInstalledDynamically = true;
     const script = [
@@ -1527,7 +1539,9 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       "fi",
       'command -v git >/dev/null 2>&1 || { printf "%s\\n" "niceeval Docker runtime could not install git for its private change ledger" >&2; exit 127; }',
     ].join("\n");
-    const result = await this.runCommandAsRoot("sh", ["-c", script], { signal });
+    const result = await this.runCommandAsRoot("sh", ["-c", script], {
+      ...(signal === undefined ? {} : { signal: signal }),
+    });
     if (result.exitCode === 0) return;
     const detail = result.stderr.trim().split("\n").at(-1);
     throw new Error(`prepare Docker runner tools failed (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`);
@@ -1577,14 +1591,14 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (opts.stream) {
       const joined = [cmd, ...args].map(shellQuote).join(" ");
       return this.runShell(joined, {
-        env: opts.env,
-        cwd: opts.cwd,
+        ...(opts.env === undefined ? {} : { env: opts.env }),
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
         stream: true,
-        user: opts.user,
+        ...(opts.user === undefined ? {} : { user: opts.user }),
         ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-        signal: opts.signal,
-        onStdout: opts.onStdout,
-        onStderr: opts.onStderr,
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
+        ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
       });
     }
 
@@ -1604,27 +1618,28 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ...(isRootUser ? { npm_config_unsafe_perm: "true" } : {}),
     };
 
+    const user = opts.user ?? this.userOverride;
     return this.execCommand(cmd, [...args], {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      user: opts.user ?? this.userOverride,
+      ...(user === undefined ? {} : { user }),
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-      onStdout: opts.onStdout,
-      onStderr: opts.onStderr,
-      signal: opts.signal,
+      ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
+      ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
   }
 
   /** 以 root 跑命令(provider 内部用:容器初始化、属主收敛)。 */
   private async runCommandAsRoot(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     return this.execCommand(cmd, args, {
-      env: opts.env,
+      ...(opts.env === undefined ? {} : { env: opts.env }),
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: ROOT_USER,
       ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-      signal: opts.signal,
-      onStdout: opts.onStdout,
-      onStderr: opts.onStderr,
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+      ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
+      ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
     });
   }
 
@@ -1692,7 +1707,10 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
       // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
       // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
-      const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
+      const limit = commandLimit(opts, {
+        ...(this.timeout === undefined ? {} : { commandTimeoutMs: this.timeout }),
+        ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+      });
       let settled = false;
       let drainTimer: ReturnType<typeof setTimeout> | undefined;
       let completionPoll: ReturnType<typeof setInterval> | undefined;
@@ -1792,13 +1810,13 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       // 只 tee stdout 到容器主日志:保留 stderr 分离(解析器要)+ pipefail 保留命令退出码。
       const wrapped = `set -o pipefail; { ${script} ; } | tee -a ${CONTAINER_LOG}`;
       return this.runCommand("bash", ["-c", wrapped], {
-        env: opts.env,
-        cwd: opts.cwd,
-        user: opts.user,
+        ...(opts.env === undefined ? {} : { env: opts.env }),
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
+        ...(opts.user === undefined ? {} : { user: opts.user }),
         ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
-        signal: opts.signal,
-        onStdout: opts.onStdout,
-        onStderr: opts.onStderr,
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
+        ...(opts.onStdout === undefined ? {} : { onStdout: opts.onStdout }),
+        ...(opts.onStderr === undefined ? {} : { onStderr: opts.onStderr }),
       });
     }
     return this.runCommand("bash", ["-c", script], opts);

@@ -226,7 +226,7 @@ export interface SandboxBackendCapabilities {
 export interface SandboxProviderBackend extends Omit<SandboxTransferOperations, "upload"> {
   readonly workdir: string;
   readonly sandboxId: string;
-  readonly nativeInstanceId?: string;
+  readonly nativeInstanceId?: string | undefined;
   readonly otlpHost: string | null;
   readonly capabilities: SandboxBackendCapabilities;
   runCommand(command: string, args?: readonly string[], options?: CommandOptions): Promise<CommandResult>;

@@ -1262,7 +1262,11 @@ function dockerAccessConfiguration(
     }
     if (access.mode === "socket") return Object.freeze({ access, privileged: "disabled" });
     if (access.isolation === "raw-privileged") {
-      return Object.freeze({ access, profile: access.storageProfile, privileged: "raw" });
+      return Object.freeze({
+        access,
+        ...(access.storageProfile === undefined ? {} : { profile: access.storageProfile }),
+        privileged: "raw",
+      });
     }
     return Object.freeze({ access, profile: access.profile, privileged: "rootless" });
   }
@@ -2355,7 +2359,9 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                   identityInput,
                   caseIdentity,
                 },
-                identityMarker: collection.providerIdentityMarker,
+                ...(collection.providerIdentityMarker === undefined
+                  ? {}
+                  : { identityMarker: collection.providerIdentityMarker }),
               });
             }),
           ),
@@ -2578,7 +2584,7 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                       }),
                   lifetime: plannedLifetime,
                 },
-                identityMarker: build.providerIdentityMarker,
+                ...(build.providerIdentityMarker === undefined ? {} : { identityMarker: build.providerIdentityMarker }),
               });
             }),
           ),
@@ -2732,12 +2738,14 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
                 lifetime: plannedLifetime,
                 ...pathPrependIdentityField(pathPrepend),
               },
-              identityMarker: looksLikeDigestRef(image)
-                ? undefined
-                : unresolvedProviderFingerprintMarker(
-                    "sandbox.image-unresolved",
-                    "Docker image is not pinned to a sha256 digest.",
-                  ),
+              ...(looksLikeDigestRef(image)
+                ? {}
+                : {
+                    identityMarker: unresolvedProviderFingerprintMarker(
+                      "sandbox.image-unresolved",
+                      "Docker image is not pinned to a sha256 digest.",
+                    ),
+                  }),
             });
           }),
       });

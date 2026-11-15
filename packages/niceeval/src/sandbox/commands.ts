@@ -187,18 +187,18 @@ export type SandboxCommandPlanCommand =
       readonly kind: "argv";
       readonly executable: string;
       readonly args: readonly string[];
-      readonly cwd?: string;
-      readonly user?: string;
-      readonly timeoutMs?: number;
-      readonly envKeys?: readonly string[];
+      readonly cwd?: string | undefined;
+      readonly user?: string | undefined;
+      readonly timeoutMs?: number | undefined;
+      readonly envKeys?: readonly string[] | undefined;
     }
   | {
       readonly kind: "shell";
       readonly script: string;
-      readonly cwd?: string;
-      readonly user?: string;
-      readonly timeoutMs?: number;
-      readonly envKeys?: readonly string[];
+      readonly cwd?: string | undefined;
+      readonly user?: string | undefined;
+      readonly timeoutMs?: number | undefined;
+      readonly envKeys?: readonly string[] | undefined;
     };
 
 export interface SandboxCommandPlanCondition {
@@ -651,6 +651,7 @@ function normalizeInlineOptions(
     },
     path,
   );
+  const cache = value.cache as SandboxActionInstanceOptions["cache"];
   const scheduling: SandboxActionInstanceOptions = Object.freeze({
     id,
     ...(value.label === undefined ? {} : { label: value.label as string }),
@@ -658,7 +659,7 @@ function normalizeInlineOptions(
     ...(value.dependsOn === undefined ? {} : { dependsOn: value.dependsOn as readonly SandboxActionRef[] }),
     ...(value.requires === undefined ? {} : { requires: value.requires as readonly SandboxCapability[] }),
     ...(value.provides === undefined ? {} : { provides: value.provides as readonly SandboxCapability[] }),
-    ...(value.cache === undefined ? {} : { cache: value.cache as SandboxActionInstanceOptions["cache"] }),
+    ...(cache === undefined ? {} : { cache }),
   });
   return Object.freeze({ id, exec, scheduling });
 }

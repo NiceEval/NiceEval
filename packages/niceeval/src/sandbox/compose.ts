@@ -646,9 +646,6 @@ export function leakGateHintsFromInspection(
       buildContexts.push({
         contextDir,
         label: `compose service ${svc.name}`,
-        ...(svc.build.dockerfile !== undefined && isAbsolute(svc.build.dockerfile)
-          ? { dockerignorePath: undefined }
-          : {}),
       });
     }
     for (const vol of svc.volumes) {
@@ -798,7 +795,7 @@ function collectComposeBuildsInternal(
   return Effect.gen(function* () {
     const { hints, inspection, composePath } = yield* leakGateHintsFromComposeFile(opts.file, {
       mainService: opts.mainService,
-      baseDir: opts.baseDir,
+      ...(opts.baseDir === undefined ? {} : { baseDir: opts.baseDir }),
     });
     // physical planning 安全门:合成声明 + 双哨兵有效模型,早于 BuildKey 收集与任何携带决策。
     const raw = yield* Effect.tryPromise({
@@ -813,8 +810,8 @@ function collectComposeBuildsInternal(
       try: () =>
         assertComposeEffectiveModelSecurity({
           composePath,
-          env: opts.env,
-          runComposeConfig,
+          ...(opts.env === undefined ? {} : { env: opts.env }),
+          ...(runComposeConfig === undefined ? {} : { runComposeConfig: runComposeConfig }),
         }),
       catch: (cause) => composeCollectionError("security", cause),
     });
@@ -1042,7 +1039,7 @@ export function dockerComposeBuildProvider(opts?: {
       const buildEnv = platform !== undefined ? { ...composeEnv, [DOCKER_PLATFORM_ENV]: platform } : composeEnv;
       await runCompose(["-f", composeFile, "build", "--build-arg", `NICEEVAL_BUILD_KEY=${work.buildKey}`, service], {
         cwd,
-        env: buildEnv,
+        ...(buildEnv === undefined ? {} : { env: buildEnv }),
         signal: ctx.signal,
         timing: ctx,
       });
@@ -1387,9 +1384,9 @@ export function materializeDockerComposeProviderCase(
         opts._testHooks?.attachMain ??
         ((id: string) =>
           DockerSandbox.attach(id, {
-            timeout: opts.timeout,
-            lifetimeMs: opts.lifetimeMs,
-            feedback: opts.feedback,
+            ...(opts.timeout === undefined ? {} : { timeout: opts.timeout }),
+            ...(opts.lifetimeMs === undefined ? {} : { lifetimeMs: opts.lifetimeMs }),
+            ...(opts.feedback === undefined ? {} : { feedback: opts.feedback }),
             releaseMode: "detach",
             ...(plan.user !== undefined ? { user: plan.user } : {}),
             ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),

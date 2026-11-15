@@ -167,7 +167,9 @@ async function e2bOrphanCandidates(
   const out: OrphanCandidate[] = [];
   try {
     const { Sandbox: E2BSdkSandbox } = await import("e2b");
-    const paginator = E2BSdkSandbox.list({ apiKey: process.env.E2B_API_KEY });
+    const paginator = E2BSdkSandbox.list({
+      ...(process.env.E2B_API_KEY === undefined ? {} : { apiKey: process.env.E2B_API_KEY }),
+    });
     while (paginator.hasNext) {
       const items = await paginator.nextItems();
       for (const info of items) {

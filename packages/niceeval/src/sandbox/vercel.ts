@@ -58,9 +58,9 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   readonly workdir = VERCEL_WORKDIR;
   readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
-  private commandTimeoutMs?: number;
-  private deadlineAt?: number;
-  private lifetimeMs?: number;
+  private commandTimeoutMs: number | undefined;
+  private deadlineAt: number | undefined;
+  private lifetimeMs: number | undefined;
   private sessionCreatedAt: number;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
@@ -265,7 +265,10 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         `the Vercel Sandbox provider only supports { user: "root" } (mapped to sudo: true) at the command level, got { user: "${opts.user}" }. Use a container provider (docker / e2b) for other identities.`,
       );
     }
-    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+    const limit = commandLimit(opts, {
+      ...(this.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: this.commandTimeoutMs }),
+      ...(this.deadlineAt === undefined ? {} : { deadlineAt: this.deadlineAt }),
+    });
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
     // 普通 provider 调用或显式的单命令 timeout 只是这条命令的执行上限，不能为此读取
     // currentSession()/轮换实例；前者在留存、文件传输等常规操作中甚至未必可用。
@@ -274,12 +277,12 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       cmd,
       args: [...args],
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      env: opts.env,
+      ...(opts.env === undefined ? {} : { env: opts.env }),
       sudo: opts.user === "root",
       // per-command 上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值);
       // 没有 deadline 就不设,provider 层不发明一条自己的线。
       ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
-      signal: opts.signal,
+      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
     });
     const stdout = await finished.stdout();
     const stderr = await finished.stderr();
