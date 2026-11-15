@@ -454,7 +454,12 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   当当前目标因配置或身份变更产生缺口，且存在对应历史 Attempt 时，当前状态仍忠实显示缺口，不将旧结果计入当前分数（[T-11](../../../taste.md#t-11)）。
   但在缺口明细下方，总览呈现独立的 `Reference results` 摘要，汇总对应历史 Attempt 的判定分布与参考得分。
   调用方亦可使用 `niceeval show --reference` 聚焦并展开这批历史已发布参照结果。
-  有缺口时末尾给出 `Next: niceeval exp <experimentId> --dry`，每个有缺口的 Experiment 一行；没有缺口时省略 `Next`。
+
+  默认 `show` 是概览，不逐个列出缺口：每个有缺口的 Experiment 只写一行 `<experimentId>  <K> gaps · <原因摘要>`。
+  原因摘要列出该 Experiment 缺口里出现的变化项 selector（最多三个，按出现的缺口数降序，其余合成 `+N more`），不写 from/to。
+
+  逐个缺口的 `Changed` 明细与 `Previous result` 只在 `show exp:<id>` 与 `exp <id> --dry` 中出现；已覆盖的 Attempt 在默认概览中也不展开。
+  `Next` 最多三行：有缺口时优先给出 `niceeval exp <experimentId> --dry`（缺口数最多的 Experiment 在前），其余用 `+N more: niceeval show exp:<id>` 合并；没有缺口时省略 `Next`。
   完整形态见下文[当前 Results 示例](#当前-results-示例)。
 - `Reference results` 摘要汇总每个带有历史 Attempt 的缺口，并写出 `Previous attempts N of K gaps`；没有历史 Attempt 的缺口不计入摘要。
   `Verdicts` 行总是出现。参照 Attempt 含 pass 制时显示 `Pass rate`，含 score 制时显示 `Score earned/possible`，两者都有时并排显示。
@@ -701,6 +706,8 @@ Open: niceeval view
 同一个 Experiment 的全部缺口说明相同时，说明只在 `Attempts · <experiment>` 标题下写一次并注明 `all N gaps`，各缺口不再重复。
 说明相同指 delta 的数量、顺序、`selector`、`kind`、`from` 与 `to` 全部相等。
 `from` 与 `to` 沿用差异说明的有界摘要；内容哈希显示前 8 位。其余 reason 没有说明行，它们的 reason code 已经写明原因。
+结构化值（如 `plan:physical`）不展开原始 JSON：说明行写出发生变化的字段路径，例如 `Changed  plan:physical (template.publishable.spec, commands[0].inputs)`，最多三个路径，其余合成 `+N more`。
+判断「说明相同」时比较这一路径形态，不比较 Eval 自己的 ID 等每格必然不同的字段，因此只因候选版本或共享准备变化而产生的缺口能合并成 `all N gaps`。
 
 ### 全缺口与参照结果示例
 
