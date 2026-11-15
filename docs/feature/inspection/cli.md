@@ -524,6 +524,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   `niceeval show @<locator> <commandId>`，其余入口合并为 `+N more`；展开后显示该命令完整保留的 stdout 与 stderr。
   错误摘要里的命令输出只是截断后的尾部，读者不必猜完整输出在哪（[T-31](../../taste.md#t-31)）。
 - `@<locator> timing` 调用 `attempt.timing`，显示 activity 层级、phase、offset、duration、outcome、limitations 与 omitted count。
+  activity 超过单页上限时，result 带 `continuation`，`niceeval show @<locator> timing --continuation <token>` 读下一页，规则与 `execution` 的分页相同；不能只报 omitted count 而不给翻页入口。人读输出的 `Next` 给出下一页命令。各层 activity 的 label 由 owner 定义，Judge 的区间见 [Judge · Timing 区间](../judge/architecture.md#timing-区间)。
 - `@<locator> usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
 - `@<locator> diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。

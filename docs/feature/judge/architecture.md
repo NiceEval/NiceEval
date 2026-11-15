@@ -55,6 +55,28 @@ callback 捕获失败并返回数值不能清除锁存状态。
 关闭后泄漏的原语句柄不能发送或修改审计；封口从同一关闭状态产生一次不可变快照。
 高级 callback 不得派生脱离该作用域的模型工作。
 
+## Timing 区间
+
+`assertions.evaluate` 不能是一整段黑箱：判分常常和被测 agent 的执行一样久，读者要能看出时间花在哪条判据、哪次模型请求或哪条取证命令上。Judge owner 为自己的执行写入 owner-monotonic timing interval，都挂在本 Attempt 的 `assertions.evaluate` 之下，经 `attempt.timing` 读出：
+
+| interval label | 父 | 范围 |
+| --- | --- | --- |
+| `judge.entry` | `assertions.evaluate` | 一个受管 Judge entry 从准入到封口（含全部原语调用、重试与等待） |
+| `agent-judge.session` | `assertions.evaluate` | 一个评审会话从创建到最后一道题结算 |
+| `agent-judge.prompt` | `agent-judge.session` | 会话里的一道 `chat`、`judge` 或 `grade`，从发出到它结算 |
+| `judge.request` | `judge.entry` 或 `agent-judge.prompt` | 一次实际模型传输尝试，含失败与被取消的尝试 |
+| `sandbox.command` | `agent-judge.prompt` | 评审的一次取证工具执行（bash、read、write、edit） |
+| `agent-judge.compaction` | `agent-judge.prompt` | pi 的一次上下文压缩 |
+
+- `judge.entry`、`agent-judge.prompt` 的 interval 带 Assertion 的 label 与 entry ID，读者能从 timing 直接对到 `show @<locator> ae_<id>`；同一会话的多道题由同一个 `agent-judge.session` 串起来。
+- `judge.request` 记 outcome（completed、failed、cancelled）与传输尝试序号，不记请求正文、凭据或 endpoint 配置。
+- 区间时间取自 owner 的单调时钟，和其它 interval 同一套投影；并发执行的 entry 区间可以重叠，读侧不得假设兄弟区间首尾相接。
+- 这些区间属于 Judge producer，不进入被测 agent 的事件、工具计数、usage 或归因断言，也不进入 `execution` 的被测应用轨迹。
+- 写入失败只让 timing 证据不完整（limitation），不改变 entry 的 measurement、Verdict 或 settlement。
+- 模拟用户的一次 `reply` 同样写一个 `simulated-user.reply` interval，挂在它所在的 `eval.run` 下，范围是回答生成（不含随后驱动的下一轮 `agent.send`）。
+
+验收：一条带普通 Judge 与 Agent Judge（两道题）的 Eval 跑完后，`show @<locator> timing --json` 在 `assertions.evaluate` 下列出每个 `judge.entry`、`agent-judge.session` 及其两个 `agent-judge.prompt`，每道题下有 `judge.request` 与 `sandbox.command`，label 能对上 Assertion；失败的模型尝试也有 interval。只模拟模型 HTTP 边界，不伪造 interval。
+
 ## 完整审计材料
 
 初始输入和动态审计分别进入 Assertion 的受管 Content。
