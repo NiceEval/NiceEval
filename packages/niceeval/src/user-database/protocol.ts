@@ -1,3 +1,6 @@
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { isExternalCause } from "../shared/external-cause.ts";
 import type {
   DockerCacheRepositoryRequest,
   DockerCacheRepositoryResult,
@@ -89,24 +92,48 @@ export interface UserDatabaseWorkerData {
   readonly busyTimeoutMs: number;
 }
 
-export type UserDatabaseWorkerFailure =
-  | {
-      readonly code: "user-database-invalid" | "user-database-busy";
-      readonly message: string;
-      readonly repository: string | undefined;
-    }
-  | {
-      readonly code: "user-database-unsupported";
-      readonly message: string;
-      readonly repository: string;
-      readonly databasePath: string;
-    }
-  | {
-      readonly code: "user-database-legacy-found";
-      readonly message: string;
-      readonly legacyPath: string;
-      readonly databasePath: string;
-    };
+const ExternalCauseSchema = Schema.declare(isExternalCause);
+const FailureCauseSchema = Schema.UndefinedOr(ExternalCauseSchema);
+const RepositoryFailureFields = {
+  scope: Schema.Literal("repository"),
+  repository: Schema.String,
+  message: Schema.String,
+  cause: FailureCauseSchema,
+};
+const HostFailureFields = {
+  scope: Schema.Literal("host"),
+  message: Schema.String,
+  cause: FailureCauseSchema,
+};
+
+/** Host failures have no repository fact; repository failures always carry the real owner. */
+export const UserDatabaseWorkerFailureSchema = Schema.Union([
+  Schema.Struct({ ...RepositoryFailureFields, code: Schema.Literal("user-database-invalid") }),
+  Schema.Struct({ ...RepositoryFailureFields, code: Schema.Literal("user-database-busy") }),
+  Schema.Struct({ ...HostFailureFields, code: Schema.Literal("user-database-invalid") }),
+  Schema.Struct({ ...HostFailureFields, code: Schema.Literal("user-database-busy") }),
+  Schema.Struct({
+    code: Schema.Literal("user-database-unsupported"),
+    message: Schema.String,
+    repository: Schema.String,
+    databasePath: Schema.String,
+    cause: FailureCauseSchema,
+  }),
+  Schema.Struct({
+    code: Schema.Literal("user-database-legacy-found"),
+    message: Schema.String,
+    legacyPath: Schema.String,
+    databasePath: Schema.String,
+  }),
+]);
+
+export type UserDatabaseWorkerFailure = typeof UserDatabaseWorkerFailureSchema.Type;
+const decodeUserDatabaseWorkerFailure = Schema.decodeUnknownOption(UserDatabaseWorkerFailureSchema, {
+  onExcessProperty: "error",
+});
+export function isUserDatabaseWorkerFailure(value: unknown): value is UserDatabaseWorkerFailure {
+  return Option.isSome(decodeUserDatabaseWorkerFailure(value));
+}
 
 export type UserDatabaseWorkerStartup =
   | { readonly state: "ready" }

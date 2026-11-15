@@ -11,6 +11,7 @@ import {
   UserDatabaseUnsupported,
   type UserDatabaseFailure,
 } from "./errors.ts";
+import { decodeUserDatabaseFailure } from "./failure-wire.ts";
 import { userDatabasePaths } from "./path.ts";
 import {
   DURABLE_STATE_REPOSITORY,
@@ -18,7 +19,7 @@ import {
   type UserDatabaseRepositoryRequest,
   type UserDatabaseRepositoryResult,
   type UserDatabaseResultFor,
-  type UserDatabaseWorkerFailure,
+  isUserDatabaseWorkerFailure,
   type UserDatabaseWorkerRequestWithoutId,
   type UserDatabaseWorkerResponse,
   type UserDatabaseWorkerStartup,
@@ -57,66 +58,13 @@ function localFailure(cause: unknown): UserDatabaseFailure {
     cause instanceof UserDatabaseLegacyFound
   )
     return cause;
-  const message = cause instanceof Error ? cause.message : String(cause);
   const normalizedCause = normalizeExternalCause(cause);
-  if (/SQLITE_BUSY|database is locked/iu.test(message)) {
-    return new UserDatabaseBusy({
-      code: "user-database-busy",
-      message,
-      repository: undefined,
-      cause: normalizedCause,
-    });
-  }
   return new UserDatabaseInvalid({
     code: "user-database-invalid",
-    message,
+    message: normalizedCause.message,
     repository: undefined,
     cause: normalizedCause,
   });
-}
-
-function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure {
-  if (failure.code === "user-database-legacy-found") {
-    return new UserDatabaseLegacyFound({
-      code: failure.code,
-      message: failure.message,
-      legacyPath: failure.legacyPath,
-      databasePath: failure.databasePath,
-    });
-  }
-  if (failure.code === "user-database-unsupported") {
-    return new UserDatabaseUnsupported({
-      code: failure.code,
-      message: failure.message,
-      repository: failure.repository,
-      databasePath: failure.databasePath,
-      cause: undefined,
-    });
-  }
-  if (failure.code === "user-database-busy") {
-    return new UserDatabaseBusy({
-      code: failure.code,
-      message: failure.message,
-      repository: failure.repository,
-      cause: normalizeExternalCause(new Error(failure.message)),
-    });
-  }
-  return new UserDatabaseInvalid({
-    code: failure.code,
-    message: failure.message,
-    repository: failure.repository,
-    cause: normalizeExternalCause(new Error(failure.message)),
-  });
-}
-
-function isFailure(value: unknown): value is UserDatabaseWorkerFailure {
-  if (typeof value !== "object" || value === null || typeof Reflect.get(value, "message") !== "string") return false;
-  return [
-    "user-database-invalid",
-    "user-database-busy",
-    "user-database-unsupported",
-    "user-database-legacy-found",
-  ].includes(String(Reflect.get(value, "code")));
 }
 
 function isEntry(value: unknown): value is DurableStateEntry {
@@ -154,7 +102,7 @@ function isStartup(value: unknown): value is UserDatabaseWorkerStartup {
     typeof value === "object" &&
     value !== null &&
     (Reflect.get(value, "state") === "ready" ||
-      (Reflect.get(value, "state") === "startup-failure" && isFailure(Reflect.get(value, "error"))))
+      (Reflect.get(value, "state") === "startup-failure" && isUserDatabaseWorkerFailure(Reflect.get(value, "error"))))
   );
 }
 
@@ -164,7 +112,7 @@ function isResponse(value: unknown): value is UserDatabaseWorkerResponse {
     value !== null &&
     Number.isSafeInteger(Reflect.get(value, "id")) &&
     ((Reflect.get(value, "state") === "success" && isResult(Reflect.get(value, "result"))) ||
-      (Reflect.get(value, "state") === "failure" && isFailure(Reflect.get(value, "error"))))
+      (Reflect.get(value, "state") === "failure" && isUserDatabaseWorkerFailure(Reflect.get(value, "error"))))
   );
 }
 
@@ -187,7 +135,7 @@ class UserDatabaseWorkerClient {
       if (pending === undefined) return;
       this.#pending.delete(value.id);
       if (value.state === "success") pending.resolve(value.result);
-      else pending.reject(workerFailure(value.error));
+      else pending.reject(decodeUserDatabaseFailure(value.error));
     });
     worker.on("error", (cause) => this.rejectAll(localFailure(cause)));
     worker.on("exit", (code) => {
@@ -236,7 +184,7 @@ class UserDatabaseWorkerClient {
       const onMessage = (value: unknown): void => {
         if (!isStartup(value)) return;
         if (value.state === "ready") finish(() => resolve(new UserDatabaseWorkerClient(worker)));
-        else finish(() => reject(workerFailure(value.error)), true);
+        else finish(() => reject(decodeUserDatabaseFailure(value.error)), true);
       };
       const onError = (cause: unknown): void => finish(() => reject(localFailure(cause)), true);
       const onExit = (code: number): void =>

@@ -8,13 +8,19 @@ import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { isDockerCacheRepositoryRequest } from "../sandbox/docker-cache-repository.ts";
 import { isIncusRepositoryRequest } from "../sandbox/incus/repository.ts";
 import { isBeforeCacheSnapshotRepositoryRequest } from "../sandbox/remote-snapshot/ledger.ts";
-import { UserDatabaseInvalid, UserDatabaseLegacyFound, UserDatabaseUnsupported } from "./errors.ts";
+import {
+  UserDatabaseBusy,
+  UserDatabaseInvalid,
+  UserDatabaseLegacyFound,
+  UserDatabaseUnsupported,
+  type UserDatabaseFailure,
+} from "./errors.ts";
+import { encodeUserDatabaseFailure } from "./failure-wire.ts";
 import {
   DURABLE_STATE_REPOSITORY,
   type DurableStateRequest,
   type UserDatabaseRepositoryRequest,
   type UserDatabaseWorkerData,
-  type UserDatabaseWorkerFailure,
   type UserDatabaseWorkerRequest,
   type UserDatabaseWorkerResponse,
 } from "./protocol.ts";
@@ -373,35 +379,34 @@ class UserDatabaseStorage {
   }
 }
 
-function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
-  const object = typeof cause === "object" && cause !== null ? cause : undefined;
-  const rawMessage = cause instanceof Error ? cause.message : String(cause);
-  const message = rawMessage.length === 0 ? "UserDatabase operation failed" : rawMessage;
-  const code = object === undefined ? undefined : Reflect.get(object, "code");
-  const repository =
-    typeof Reflect.get(object ?? {}, "repository") === "string"
-      ? String(Reflect.get(object!, "repository"))
-      : undefined;
-  if (code === "user-database-legacy-found") {
-    return {
-      code,
-      message,
-      legacyPath: String(Reflect.get(object!, "legacyPath")),
-      databasePath: String(Reflect.get(object!, "databasePath")),
-    };
+/** SQLite and Node throwables are classified once at the storage operation boundary. */
+function storageFailure(cause: unknown, repository: string | undefined): UserDatabaseFailure {
+  if (
+    cause instanceof UserDatabaseInvalid ||
+    cause instanceof UserDatabaseBusy ||
+    cause instanceof UserDatabaseUnsupported ||
+    cause instanceof UserDatabaseLegacyFound
+  )
+    return cause;
+  const external = normalizeExternalCause(cause);
+  // node:sqlite reports extended SQLite result codes in errcode, not in message text.
+  if (typeof cause === "object" && cause !== null && "errcode" in cause && typeof cause.errcode === "number") {
+    const primaryCode = cause.errcode & 0xff;
+    if (primaryCode === 5 || primaryCode === 6) {
+      return new UserDatabaseBusy({
+        code: "user-database-busy",
+        message: external.message,
+        repository,
+        cause: external,
+      });
+    }
   }
-  if (code === "user-database-unsupported") {
-    return {
-      code,
-      message,
-      repository: repository ?? "unknown",
-      databasePath: String(Reflect.get(object!, "databasePath")),
-    };
-  }
-  if (code === "user-database-busy" || /SQLITE_BUSY|database is locked/iu.test(message)) {
-    return { code: "user-database-busy", message, repository };
-  }
-  return { code: "user-database-invalid", message, repository };
+  return new UserDatabaseInvalid({
+    code: "user-database-invalid",
+    message: external.message,
+    repository,
+    cause: external,
+  });
 }
 
 if (!isMainThread && parentPort !== null) {
@@ -409,7 +414,10 @@ if (!isMainThread && parentPort !== null) {
   try {
     data = decodeWorkerData(workerData);
   } catch (cause) {
-    parentPort.postMessage({ state: "startup-failure", error: serializeFailure(cause) });
+    parentPort.postMessage({
+      state: "startup-failure",
+      error: encodeUserDatabaseFailure(storageFailure(cause, undefined)),
+    });
     parentPort.close();
   }
   if (data !== undefined) {
@@ -429,7 +437,13 @@ if (!isMainThread && parentPort !== null) {
                   : (storage.close(), { kind: "void" as const });
               response = { id: request.id, state: "success", result };
             } catch (cause) {
-              response = { id: request.id, state: "failure", error: serializeFailure(cause) };
+              response = {
+                id: request.id,
+                state: "failure",
+                error: encodeUserDatabaseFailure(
+                  storageFailure(cause, request.kind === "repository" ? request.request.repository : undefined),
+                ),
+              };
             }
             parentPort!.postMessage(response);
             if (request.kind === "close") parentPort!.close();
@@ -437,7 +451,10 @@ if (!isMainThread && parentPort !== null) {
         });
       },
       (cause) => {
-        parentPort!.postMessage({ state: "startup-failure", error: serializeFailure(cause) });
+        parentPort!.postMessage({
+          state: "startup-failure",
+          error: encodeUserDatabaseFailure(storageFailure(cause, undefined)),
+        });
         parentPort!.close();
       },
     );
