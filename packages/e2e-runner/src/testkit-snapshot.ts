@@ -21,6 +21,7 @@ export interface TestkitPackage {
 }
 export interface TestkitBuildDependencies {
   readonly sourceCandidate?: boolean;
+  readonly candidate?: import("./injection.ts").CandidateTarball;
   readonly buildTestkit?: (
     sourceDir: string,
     stagingDir: string,
@@ -134,19 +135,92 @@ export const buildTestkitPackage = (
     yield* fs("build", (service) => service.makeDirectory(staging, { recursive: true }));
     yield* fs("build", (service) => service.copyFile(packagePath, join(staging, "package.json")));
     yield* fs("build", (service) => service.copyFile(join(source, "README.md"), join(staging, "README.md")));
+    const sourceCandidate = dependencies.sourceCandidate || dependencies.candidate?.form === "source";
+    const configs = { esm: join(source, "tsconfig.esm.json"), cjs: join(source, "tsconfig.cjs.json") };
+    if (!sourceCandidate && dependencies.buildTestkit === undefined) {
+      const candidate = dependencies.candidate;
+      const typesRoot = join(staging, "candidate-types");
+      yield* fs("build", (service) => service.makeDirectory(typesRoot, { recursive: true }));
+      let productRoot = candidate?.path;
+      let declarations: string;
+      if (candidate !== undefined && candidate.form !== "built" && candidate.form !== "source") {
+        const extracted = yield* runOwnedProcess(["tar", "-xzf", candidate.path, "-C", typesRoot], {
+          cwd: repoRoot,
+          env: process.env,
+          output: "inherit",
+          timeoutMs: 60_000,
+        }).pipe(Effect.mapError((cause) => error("build", cause)));
+        if (!hasSuccessfulOwnedProcessResult(extracted))
+          return yield* Effect.fail(error("build", "candidate type extraction failed"));
+        productRoot = join(typesRoot, "package");
+      }
+      if (productRoot !== undefined) declarations = join(productRoot, "dist");
+      else {
+        productRoot = join(repoRoot, "packages/niceeval");
+        declarations = join(typesRoot, "declarations");
+        const emitted = yield* runOwnedProcess(
+          [
+            "pnpm",
+            "exec",
+            "tsc6",
+            "-p",
+            join(productRoot, "tsconfig.package-types.json"),
+            "--outDir",
+            declarations,
+            "--noEmitOnError",
+          ],
+          { cwd: repoRoot, env: process.env, output: "inherit", timeoutMs: 30 * 60_000 },
+        ).pipe(Effect.mapError((cause) => error("build", cause)));
+        if (!hasSuccessfulOwnedProcessResult(emitted))
+          return yield* Effect.fail(error("build", "product declaration build failed"));
+      }
+      const manifest = JSON.parse(yield* fileText("build", join(productRoot, "package.json"))) as {
+        name: string;
+        exports: Record<string, { types: string }>;
+      };
+      const paths: Record<string, string[]> = { "@niceeval/*": [join(declarations, "*")] };
+      for (const [entry, target] of Object.entries(manifest.exports))
+        paths[entry === "." ? manifest.name : `${manifest.name}${entry.slice(1)}`] = [
+          join(declarations, target.types.replace(/^\.\/dist\//, "")),
+        ];
+      // Candidate declarations need the same dependencies as the product, never
+      // the shared checkout's generated declaration files.
+      yield* fs("build", (service) => service.writeFileString(join(typesRoot, "package.json"), '{"type":"module"}\n'));
+      yield* fs("build", (service) =>
+        service.symlink(join(repoRoot, "packages/niceeval/node_modules"), join(typesRoot, "node_modules")),
+      );
+      for (const format of ["esm", "cjs"] as const) {
+        const config = join(staging, `tsconfig.${format}.json`);
+        yield* fs("build", (service) =>
+          service.writeFileString(
+            config,
+            JSON.stringify({
+              extends: configs[format],
+              compilerOptions: {
+                paths,
+                typeRoots: [join(source, "node_modules/@types"), join(repoRoot, "node_modules/@types")],
+              },
+            }),
+          ),
+        );
+        configs[format] = config;
+      }
+    }
     const commands = [
-      ["pnpm", "exec", "tsc6", "-p", join(source, "tsconfig.esm.json"), "--outDir", join(staging, "dist", "esm")],
-      ["pnpm", "exec", "tsc6", "-p", join(source, "tsconfig.cjs.json"), "--outDir", join(staging, "dist", "cjs")],
+      ["pnpm", "exec", "tsc6", "-p", configs.esm, "--outDir", join(staging, "dist", "esm")],
+      ["pnpm", "exec", "tsc6", "-p", configs.cjs, "--outDir", join(staging, "dist", "cjs")],
     ] as const;
     const exit =
       dependencies.buildTestkit === undefined
         ? yield* Effect.forEach(
             commands,
             (command) =>
-              runOwnedProcess(
-                dependencies.sourceCandidate ? ([...command, "--noCheck"] as [string, ...string[]]) : command,
-                { cwd: source, env: process.env, output: "inherit", timeoutMs: 30 * 60_000 },
-              ).pipe(
+              runOwnedProcess(sourceCandidate ? ([...command, "--noCheck"] as [string, ...string[]]) : command, {
+                cwd: source,
+                env: process.env,
+                output: "inherit",
+                timeoutMs: 30 * 60_000,
+              }).pipe(
                 Effect.mapError((cause) => error("build", cause)),
                 Effect.map((result) => (hasSuccessfulOwnedProcessResult(result) ? 0 : 1)),
               ),
@@ -157,6 +231,9 @@ export const buildTestkitPackage = (
       return yield* Effect.fail(
         new TestkitSnapshotError({ operation: "build", detail: `Testkit snapshot build failed from ${source}` }),
       );
+    yield* fs("build", (service) => service.remove(join(staging, "candidate-types"), { recursive: true, force: true }));
+    for (const format of ["esm", "cjs"])
+      yield* fs("build", (service) => service.remove(join(staging, `tsconfig.${format}.json`), { force: true }));
     yield* fs("build", (service) => service.makeDirectory(join(staging, "dist", "cjs"), { recursive: true }));
     yield* fs("build", (service) =>
       service.writeFileString(join(staging, "dist", "cjs", "package.json"), '{"type":"commonjs"}\n'),

@@ -525,7 +525,7 @@ export const runTakeover = (
           );
         checkout = { root, commit, dirty: status.length > 0, sourceSnapshot };
         if (repo.manifest.harness?.testkit === true)
-          testkit = yield* buildTestkitPackage(root, scratchRoot).pipe(
+          testkit = yield* buildTestkitPackage(root, scratchRoot, { candidate }).pipe(
             Effect.mapError((cause) => operationError("snapshot", cause)),
           );
         const allSecretNames = new Set(discovered.repos.flatMap((entry) => entry.manifest.secrets));

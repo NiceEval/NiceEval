@@ -21,6 +21,7 @@ import { Effect } from "effect";
 import { acquireCandidatePackLock } from "./candidate-pack-lock.ts";
 import { CandidatePackError, readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.ts";
+import { regenerateBundledIndex } from "../../repo-tools/src/docs/reference-compiler.ts";
 
 export type CandidateForm = "source" | "built" | "tarball";
 const failure = (cause: unknown) =>
@@ -190,7 +191,7 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
     Effect.gen(function* () {
       yield* acquireCandidatePackLock(root).pipe(Effect.mapError(failure));
       const inputDigest = yield* candidateInputDigest(root);
-      const cache = join(tmpdir(), "niceeval-e2e-candidates", hash(root), "v2", inputDigest);
+      const cache = join(tmpdir(), "niceeval-e2e-candidates", hash(root), "v3", inputDigest);
       const built = join(cache, "package");
       const tarball = join(cache, "candidate.tgz");
       const complete = yield* io(() => {
@@ -203,10 +204,45 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
       });
       if (!complete) {
         console.error(`[e2e] candidate ${form} cache miss input=${inputDigest}; build:package`);
-        yield* command(root, ["pnpm", "run", "build:package"], options.quiet);
-        // Built consumers include bundled documentation; these do not rebuild JS.
-        yield* command(root, ["pnpm", "run", "build:index"], options.quiet);
-        yield* command(join(root, "packages/niceeval"), ["pnpm", "run", "stage:docs"], options.quiet);
+        // The package build owns its package-root dist. Give it a private input
+        // workspace rather than ever consulting or replacing checkout output.
+        const workspace = join(cache, `workspace-${randomUUID()}`);
+        const packageRoot = join(workspace, "packages/niceeval");
+        yield* Effect.addFinalizer(() =>
+          io(() => rmSync(workspace, { recursive: true, force: true })).pipe(Effect.ignore),
+        );
+        yield* io(() => {
+          mkdirSync(packageRoot, { recursive: true });
+          cpSync(join(root, "packages/niceeval"), packageRoot, {
+            recursive: true,
+            filter: (path) => {
+              const name = path.slice(join(root, "packages/niceeval").length + 1).split("/")[0];
+              return (
+                !["node_modules", "dist", ".niceeval", "docs-site", "INDEX.md"].includes(name!) &&
+                !name?.startsWith(".niceeval-package-runtime-")
+              );
+            },
+          });
+          for (const path of ["package.json", "pnpm-workspace.yaml", ".npmrc", "tsconfig.json", "INIT.md"])
+            if (existsSync(join(root, path))) cpSync(join(root, path), join(workspace, path));
+          for (const path of ["apps/docs-site/zh", "apps/docs-site/images"])
+            cpSync(join(root, path), join(workspace, path), { recursive: true });
+          symlinkSync(join(root, "node_modules"), join(workspace, "node_modules"), "dir");
+          symlinkSync(join(root, "packages/niceeval/node_modules"), join(packageRoot, "node_modules"), "dir");
+          // stage:docs only reads Git identity to pin documentation links.
+          symlinkSync(join(root, ".git"), join(workspace, ".git"));
+          const pagesRoot = join(workspace, "apps/docs-site/zh");
+          const pages = readdirSync(pagesRoot, { recursive: true })
+            .filter((path): path is string => typeof path === "string" && path.endsWith(".mdx"))
+            .sort()
+            .map((path) => ({ path: `docs-site/zh/${path}`, content: readFileSync(join(pagesRoot, path), "utf8") }));
+          writeFileSync(
+            join(packageRoot, "INDEX.md"),
+            regenerateBundledIndex(readFileSync(join(packageRoot, "docs-source/INDEX.template.md"), "utf8"), pages),
+          );
+        });
+        yield* command(packageRoot, ["pnpm", "run", "build:package"], options.quiet);
+        yield* command(packageRoot, ["pnpm", "run", "stage:docs"], options.quiet);
         const after = yield* candidateInputDigest(root);
         if (after !== inputDigest)
           return yield* failure("candidate inputs changed during build; retry with stable inputs");
@@ -216,7 +252,7 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
           try {
             mkdirSync(staging);
             for (const path of ["dist", "bin", "package.json", "INDEX.md", "docs-site"])
-              cpSync(join(root, "packages/niceeval", path), join(staging, path), { recursive: true });
+              cpSync(join(packageRoot, path), join(staging, path), { recursive: true });
             const manifest = JSON.parse(readFileSync(join(staging, "package.json"), "utf8"));
             writeFileSync(
               join(staging, "package.json"),
@@ -235,9 +271,6 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
         });
       } else {
         console.error(`[e2e] candidate ${form} build cache hit input=${inputDigest}; skipping build:package`);
-        // Testkit compiles against workspace declarations even when its consumer
-        // uses a cached build. Restore those declarations after a fresh checkout.
-        yield* io(() => cpSync(join(built, "dist"), join(root, "packages/niceeval/dist"), { recursive: true }));
       }
       const pkg = yield* io(
         () => JSON.parse(readFileSync(join(built, "package.json"), "utf8")) as { name: string; version: string },

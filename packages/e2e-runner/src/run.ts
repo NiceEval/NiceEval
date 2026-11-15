@@ -263,7 +263,10 @@ export const runEffect = (
         candidates.set(form, { ...candidate, path: yield* materializeCandidateArtifact(durableRoot, candidate) });
     }
     const sharedTestkit: TestkitPackage | undefined = selected.some((repo) => repo.manifest.harness?.testkit === true)
-      ? yield* buildTestkitPackage(repoRootDir(), scratch, { sourceCandidate: candidates.has("source") })
+      ? yield* buildTestkitPackage(repoRootDir(), scratch, {
+          sourceCandidate: candidates.has("source"),
+          candidate: candidates.get("built") ?? candidates.get("tarball") ?? candidates.values().next().value!,
+        })
       : undefined;
     if (sharedTestkit !== undefined) yield* verifyTestkitSnapshot(sharedTestkit).pipe(Effect.mapError(rootError));
     const secretNames = new Set<string>();
