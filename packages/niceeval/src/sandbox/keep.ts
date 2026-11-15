@@ -243,8 +243,10 @@ interface DockerInfoContainer {
 
 type DockerInfoExecution = Awaited<ReturnType<DockerInfoContainer["exec"]>>;
 
+type DockerInfoExitCode = number | "unknown";
+
 type DockerInfoProbeOutcome =
-  | { readonly _tag: "completed"; readonly exitCode: number | null | undefined }
+  | { readonly _tag: "completed"; readonly exitCode: DockerInfoExitCode | undefined }
   | { readonly _tag: "timed-out" }
   | { readonly _tag: "failed" };
 
@@ -261,13 +263,13 @@ function waitForDetachedDockerReadinessEffect(
   container: DockerInfoContainer,
   user: string,
 ): Effect.Effect<void, Error> {
-  const readinessError = (lastExit: number | null | undefined): Error =>
+  const readinessError = (lastExit: DockerInfoExitCode | undefined): Error =>
     new Error(
       `Docker DinD sandbox did not become ready after wake as user ${JSON.stringify(user)}` +
-        (lastExit === undefined ? "" : ` (docker info exit ${lastExit ?? "unknown"})`),
+        (lastExit === undefined ? "" : ` (docker info exit ${lastExit})`),
     );
 
-  const pollAgain = (deadline: number, lastExit: number | null | undefined): Effect.Effect<void, Error> =>
+  const pollAgain = (deadline: number, lastExit: DockerInfoExitCode | undefined): Effect.Effect<void, Error> =>
     Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => {
         const remaining = deadline - now;
@@ -276,7 +278,7 @@ function waitForDetachedDockerReadinessEffect(
       }),
     );
 
-  const attempt = (deadline: number, lastExit: number | null | undefined): Effect.Effect<void, Error> =>
+  const attempt = (deadline: number, lastExit: DockerInfoExitCode | undefined): Effect.Effect<void, Error> =>
     Clock.currentTimeMillis.pipe(
       Effect.flatMap((now) => {
         if (now > deadline) return Effect.fail(readinessError(lastExit));
@@ -348,7 +350,10 @@ function dockerInfoProbe(
           try: () => execution.inspect(),
           catch: (cause) => cause,
         }).pipe(
-          Effect.map((info) => ({ _tag: "completed" as const, exitCode: info.ExitCode })),
+          Effect.map((info) => ({
+            _tag: "completed" as const,
+            exitCode: info.ExitCode === null ? ("unknown" as const) : info.ExitCode,
+          })),
           Effect.catch(() => Effect.succeed({ _tag: "failed" } as const)),
         );
       }),
