@@ -23,8 +23,10 @@ export const ExpKeptEventSchema = Schema.Struct({
   expiresAt: Schema.optionalKey(Schema.String),
 });
 
+/** Reports one retained Sandbox with the provider-native commands to enter and destroy it; NiceEval keeps no registry for it. */
 export type ExpKeptEvent = Schema.Schema.Type<typeof ExpKeptEventSchema>;
 
+/** Strictly decode one `kept` event written by `niceeval exp --json`; extra keys are rejected. */
 export function decodeExpKeptEvent(input: unknown): ExpKeptEvent {
   return Schema.decodeUnknownSync(ExpKeptEventSchema, {
     errors: "all",
