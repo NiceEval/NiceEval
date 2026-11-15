@@ -28,7 +28,6 @@ import {
   sandboxActionStateCovers,
   type SandboxActionState,
   type SandboxActionPlan,
-  type SandboxChangeFrequency,
 } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import type { JsonValue } from "../shared/types.ts";
@@ -83,7 +82,7 @@ export interface CommandPlanStep {
         readonly occurrencePath: readonly string[];
       }
     | undefined;
-  readonly changeFrequency?: SandboxChangeFrequency | undefined;
+  readonly changeFrequency?: ReturnType<typeof beforeCacheAttribution>["changeFrequency"] | undefined;
   readonly schedulingReason?: string | undefined;
   readonly dependencies?: readonly SandboxBeforeDependencyProjection[] | undefined;
   readonly occurrence?: { readonly kind: "attempt" } | undefined;
@@ -555,10 +554,10 @@ function linkedBeforeCacheActionIdentity(
   entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>,
   cumulativeState: SandboxActionState,
 ): string {
-  const identity = {
+  const identity: JsonValue = {
     parentIdentity,
     ...beforeCacheActionDeclaration(entry, cumulativeState),
-  } as unknown as JsonValue;
+  };
   return `linked-prefix:${digestOf(identity)}`;
 }
 

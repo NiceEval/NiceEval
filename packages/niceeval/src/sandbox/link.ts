@@ -8,6 +8,8 @@ import {
   type SandboxCommand,
   type SandboxCommandDeclaration,
 } from "./commands.ts";
+import { decodeJsonValue } from "../shared/json-value.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import {
   normalizeSandboxBeforeMetadata,
   sandboxActionDataOf,
@@ -15,6 +17,7 @@ import {
   type NormalizedSandboxBeforeMetadata,
   type SandboxActionData,
   type SandboxChangeFrequency,
+  type SandboxStepPlan,
 } from "./action.ts";
 import {
   sandboxLayer,
@@ -30,7 +33,7 @@ import {
 } from "./layer.ts";
 import type { JsonValue } from "../shared/types.ts";
 import type { SandboxHook } from "./types.ts";
-import { Data, Effect } from "effect";
+import { Data, Effect, Schema } from "effect";
 import {
   pluginSourceOf,
   pluginLifecycleIdentity,
@@ -514,15 +517,31 @@ function fingerprintCommand(
   index: number,
   declaration: SandboxCommandDeclaration,
 ): SandboxCommandFingerprint {
-  if (declaration.kind === "opaque") return Object.freeze({ kind: "opaque", owner, index });
-  return Object.freeze({
+  if (declaration.kind === "opaque") return { kind: "opaque", owner, index };
+  return {
     kind: "stable",
     owner,
     index,
     id: declaration.identity.id,
     revision: declaration.identity.revision,
     inputs: sandboxCommandIdentityJson(declaration.identity.inputs),
-  });
+  };
+}
+
+const decodeFingerprintJson = Schema.decodeUnknownSync(Schema.MutableJson);
+
+/** Identity material boundary: absent facts must remain absent keys in canonical JSON. */
+function actionStepFingerprint(step: SandboxStepPlan): JsonValue {
+  switch (step.kind) {
+    case "exec":
+    case "checkoutGit":
+      return decodeFingerprintJson(omitUndefined(step));
+    case "putText":
+    case "putBytes":
+    case "transferFile":
+    case "transferDirectory":
+      return decodeFingerprintJson(step);
+  }
 }
 
 function actionFingerprint(
@@ -530,26 +549,26 @@ function actionFingerprint(
   index: number,
   data: SandboxActionData,
 ): SandboxCommandFingerprint {
-  return Object.freeze({
+  return {
     kind: "stable" as const,
     owner,
     index,
     id: data.metadata.id,
-    revision: digestOf(JSON.parse(JSON.stringify(data.plan)) as JsonValue),
-    inputs: {
+    revision: digestOf(decodeJsonValue(JSON.stringify(data.plan))),
+    inputs: decodeFingerprintJson({
       family: data.plan.family,
       state: data.plan.state,
       input: data.plan.input,
-      steps: data.plan.steps,
+      steps: data.plan.steps.map(actionStepFingerprint),
       fingerprint: data.plan.fingerprint,
       scheduling: {
         changeFrequency: data.metadata.changeFrequency.value,
         dependsOn: data.metadata.dependsOn.map((reference) => reference.id),
-        requires: [...data.metadata.requires],
-        provides: [...data.metadata.provides],
+        requires: data.metadata.requires,
+        provides: data.metadata.provides,
       },
-    } as unknown as JsonValue,
-  });
+    }),
+  };
 }
 
 function afterDeclarationFingerprint(

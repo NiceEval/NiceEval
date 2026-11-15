@@ -44,9 +44,12 @@ interface E2BCommandOutputState {
   pending: string;
   output: string;
   markerStarted: boolean;
-  complete: boolean;
-  exitCode?: number;
-  invalidMarkerPayload?: string;
+  completion:
+    | {
+        readonly _tag: "Streaming";
+        readonly marker: { readonly _tag: "Clean" } | { readonly _tag: "Invalid"; readonly payload: string };
+      }
+    | { readonly _tag: "Completed"; readonly exitCode: number };
 }
 
 /** SDK/event Promises stay at the provider boundary; this only chooses the first settled SDK outcome. */
@@ -88,12 +91,20 @@ class E2BCommandCompletion {
   private readonly prefix: string;
   private readonly suffix: string;
   private readonly states: globalThis.Record<E2BCommandOutputChannel, E2BCommandOutputState> = {
-    stdout: { pending: "", output: "", markerStarted: false, complete: false },
-    stderr: { pending: "", output: "", markerStarted: false, complete: false },
+    stdout: {
+      pending: "",
+      output: "",
+      markerStarted: false,
+      completion: { _tag: "Streaming", marker: { _tag: "Clean" } },
+    },
+    stderr: {
+      pending: "",
+      output: "",
+      markerStarted: false,
+      completion: { _tag: "Streaming", marker: { _tag: "Clean" } },
+    },
   };
-  private readonly callbacks: Partial<
-    globalThis.Record<E2BCommandOutputChannel, (chunk: string) => void | Promise<void>>
-  >;
+  private readonly callbacks: globalThis.Record<E2BCommandOutputChannel, (chunk: string) => void | Promise<void>>;
   private readonly resolveCompletion: (exitCode: number) => void;
   private readonly rejectCompletion: (error: Error) => void;
 
@@ -102,8 +113,8 @@ class E2BCommandCompletion {
     this.prefix = `__niceeval_e2b_command_${id}_exit_`;
     this.suffix = `__niceeval_e2b_command_${id}_end__`;
     this.callbacks = {
-      ...(opts.onStdout ? { stdout: opts.onStdout } : {}),
-      ...(opts.onStderr ? { stderr: opts.onStderr } : {}),
+      stdout: opts.onStdout ?? (() => {}),
+      stderr: opts.onStderr ?? (() => {}),
     };
     let resolveCompletion!: (exitCode: number) => void;
     let rejectCompletion!: (error: Error) => void;
@@ -152,20 +163,20 @@ class E2BCommandCompletion {
   async finish(): Promise<void> {
     for (const channel of ["stdout", "stderr"] as const) {
       const state = this.states[channel];
-      if (!state.complete && !state.markerStarted && state.pending.length > 0) {
+      if (state.completion._tag === "Streaming" && !state.markerStarted && state.pending.length > 0) {
         const pending = state.pending;
         state.pending = "";
         await this.emit(channel, pending);
       }
     }
 
-    const invalid = (["stdout", "stderr"] as const)
-      .map((channel) => ({ channel, state: this.states[channel] }))
-      .find(({ state }) => !state.complete && state.invalidMarkerPayload !== undefined);
-    if (invalid !== undefined) {
-      throw new Error(
-        `e2b command completion marker carried an invalid exit code: ${JSON.stringify(invalid.state.invalidMarkerPayload)}`,
-      );
+    for (const channel of ["stdout", "stderr"] as const) {
+      const completion = this.states[channel].completion;
+      if (completion._tag === "Streaming" && completion.marker._tag === "Invalid") {
+        throw new Error(
+          `e2b command completion marker carried an invalid exit code: ${JSON.stringify(completion.marker.payload)}`,
+        );
+      }
     }
 
     const mismatch = this.exitCodeMismatch();
@@ -173,12 +184,14 @@ class E2BCommandCompletion {
 
     const partial = (["stdout", "stderr"] as const).filter((channel) => {
       const state = this.states[channel];
-      return state.markerStarted && !state.complete;
+      return state.markerStarted && state.completion._tag === "Streaming";
     });
     if (partial.length > 0) {
       throw new Error(`e2b command completion marker was truncated on ${partial.join(" and ")}`);
     }
-    const completed = (["stdout", "stderr"] as const).filter((channel) => this.states[channel].complete);
+    const completed = (["stdout", "stderr"] as const).filter(
+      (channel) => this.states[channel].completion._tag === "Completed",
+    );
     if (completed.length === 1) {
       throw new Error(`e2b command completion marker was received only on ${completed[0]}`);
     }
@@ -187,10 +200,10 @@ class E2BCommandCompletion {
   private async consume(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
     const state = this.states[channel];
     // 直接 shell 已结束后的输出只能来自它留下的后台服务；command transport 到这里已经封口。
-    if (state.complete) return;
+    if (state.completion._tag === "Completed") return;
     state.pending += chunk;
 
-    while (!state.complete) {
+    while (state.completion._tag === "Streaming") {
       if (!state.markerStarted) {
         const markerAt = state.pending.indexOf(this.prefix);
         if (markerAt < 0) {
@@ -217,15 +230,20 @@ class E2BCommandCompletion {
           // wrapper 源码、bash -x 和 SDK 转义诊断都可能带 marker 字面量。它们不是完成帧，
           // 作为普通输出保留，并继续寻找后面的真实帧；只有 stream 结束仍没有真实帧时，
           // finish() 才把这条协议错误交给调用方。
-          state.invalidMarkerPayload ??= encodedExitCode;
+          state.completion = {
+            _tag: "Streaming",
+            marker:
+              state.completion.marker._tag === "Invalid"
+                ? state.completion.marker
+                : { _tag: "Invalid", payload: encodedExitCode },
+          };
           const invalid = state.pending.slice(0, this.prefix.length + markerEnd + this.suffix.length);
           state.pending = encoded.slice(markerEnd + this.suffix.length);
           state.markerStarted = false;
           await this.emit(channel, invalid);
           continue;
         }
-        state.exitCode = Number(encodedExitCode);
-        state.complete = true;
+        state.completion = { _tag: "Completed", exitCode: Number(encodedExitCode) };
         // suffix 后同一个 chunk 里的字节来自后台服务；它们不属于已经 settle 的直接命令。
         state.pending = "";
         this.maybeComplete();
@@ -245,27 +263,28 @@ class E2BCommandCompletion {
   private async emit(channel: E2BCommandOutputChannel, chunk: string): Promise<void> {
     if (chunk.length === 0) return;
     this.states[channel].output += chunk;
-    await this.callbacks[channel]?.(chunk);
+    await this.callbacks[channel](chunk);
   }
 
   private maybeComplete(): void {
-    const stdoutExit = this.states.stdout.exitCode;
-    const stderrExit = this.states.stderr.exitCode;
-    if (stdoutExit === undefined || stderrExit === undefined) return;
+    const stdout = this.states.stdout.completion;
+    const stderr = this.states.stderr.completion;
+    if (stdout._tag !== "Completed" || stderr._tag !== "Completed") return;
     const mismatch = this.exitCodeMismatch();
     if (mismatch !== undefined) {
       this.rejectCompletion(mismatch);
       return;
     }
-    this.resolveCompletion(stdoutExit);
+    this.resolveCompletion(stdout.exitCode);
   }
 
   private exitCodeMismatch(): Error | undefined {
-    const stdoutExit = this.states.stdout.exitCode;
-    const stderrExit = this.states.stderr.exitCode;
-    if (stdoutExit === undefined || stderrExit === undefined || stdoutExit === stderrExit) return undefined;
+    const stdout = this.states.stdout.completion;
+    const stderr = this.states.stderr.completion;
+    if (stdout._tag !== "Completed" || stderr._tag !== "Completed" || stdout.exitCode === stderr.exitCode)
+      return undefined;
     return new Error(
-      `e2b command completion markers disagreed on exit code: stdout=${stdoutExit}, stderr=${stderrExit}`,
+      `e2b command completion markers disagreed on exit code: stdout=${stdout.exitCode}, stderr=${stderr.exitCode}`,
     );
   }
 }

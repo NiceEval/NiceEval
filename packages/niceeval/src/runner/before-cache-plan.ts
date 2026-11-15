@@ -1,33 +1,45 @@
 import { randomUUID } from "node:crypto";
+import { Schema } from "effect";
 import type { JsonValue } from "../shared/types.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import { type BeforeCacheEligibility, type BeforeCacheDeclaration, type BeforeCacheStep } from "../sandbox/backend.ts";
-import { mergeSandboxActionState, type SandboxActionState } from "../sandbox/action.ts";
+import { changeFrequency, mergeSandboxActionState, type SandboxActionState } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 
 /** Consumer attribution is never part of an artifact's content identity. */
 export function beforeCacheAttribution(entry: ScheduledSandboxBefore) {
-  const owner = Object.freeze({ kind: entry.owner.kind, id: entry.owner.id });
-  return Object.freeze({
+  const owner = { kind: entry.owner.kind, id: entry.owner.id };
+  function presetFor(value: number): keyof typeof changeFrequency | undefined {
+    if (value === changeFrequency.rare) return "rare";
+    if (value === changeFrequency.normal) return "normal";
+    if (value === changeFrequency.frequent) return "frequent";
+    return undefined;
+  }
+  return {
     owner,
-    declarationOrder: Object.freeze({ owner, ordinal: entry.ordinal }),
+    declarationOrder: { owner, ordinal: entry.ordinal },
     executionOrder: entry.executionOrder,
-    changeFrequency: entry.metadata.changeFrequency,
+    changeFrequency: { ...entry.metadata.changeFrequency, preset: presetFor(entry.metadata.changeFrequency.value) },
     schedulingReason: entry.schedulingReason,
     dependencies: entry.dependencies,
-  });
+  };
 }
 
 /** The ordered capture facts shared by runtime identity and the dry/debug plan. */
+const decodeActionDeclaration = Schema.decodeUnknownSync(
+  Schema.Struct({ capabilities: Schema.MutableJson, action: Schema.MutableJson }),
+);
+
 export function beforeCacheActionDeclaration(
   entry: Extract<ScheduledSandboxBefore, { readonly kind: "action" }>,
   cumulativeState: SandboxActionState,
 ) {
-  return Object.freeze({
+  return decodeActionDeclaration({
     capabilities: {
-      requires: [...entry.metadata.requires],
-      provides: [...entry.metadata.provides],
+      requires: entry.metadata.requires,
+      provides: entry.metadata.provides,
     },
     action: {
       id: entry.data.plan.id,
@@ -35,20 +47,21 @@ export function beforeCacheActionDeclaration(
       declaredState: entry.data.plan.state,
       cumulativeState,
       input: entry.data.plan.input,
-      fingerprint: { ...entry.data.plan.fingerprint },
+      fingerprint: entry.data.plan.fingerprint,
       steps: entry.data.plan.steps.map((step) => {
         if (step.kind === "exec") {
           const { args, envKeys, cwd, user, timeoutMs, stdinDigest, stdinBytes, ...fields } = step;
-          return {
+          // Identity material: omit absent execution facts once before canonicalization.
+          return omitUndefined({
             ...fields,
-            args: [...args],
-            ...(envKeys === undefined ? {} : { envKeys: [...envKeys] }),
-            ...(cwd === undefined ? {} : { cwd }),
-            ...(user === undefined ? {} : { user }),
-            ...(timeoutMs === undefined ? {} : { timeoutMs }),
-            ...(stdinDigest === undefined ? {} : { stdinDigest }),
-            ...(stdinBytes === undefined ? {} : { stdinBytes }),
-          };
+            args,
+            envKeys,
+            cwd,
+            user,
+            timeoutMs,
+            stdinDigest,
+            stdinBytes,
+          });
         }
         if (step.kind === "checkoutGit") {
           const { sparse, ...fields } = step;
@@ -57,11 +70,11 @@ export function beforeCacheActionDeclaration(
             ...(sparse === undefined
               ? {}
               : {
-                  sparse: { include: [...sparse.include], exclude: [...sparse.exclude] },
+                  sparse,
                 }),
           };
         }
-        return { ...step };
+        return step;
       }),
     },
   });
@@ -95,9 +108,9 @@ export function plannedBeforeCacheActions(
     source: provider.target.source,
     platform: { ...provider.target.platform },
   };
-  const revisions = Object.freeze({
+  const revisions = {
     format: keyScope.cacheFormat,
-  });
+  };
   let parentKey = `base:${digestOf({
     domain: "niceeval.before-cache-key",
     baseIdentity,
@@ -119,7 +132,7 @@ export function plannedBeforeCacheActions(
     actionDeclarations.push(beforeCacheActionDeclaration(entry, cumulativeState));
     attributions.push(beforeCacheAttribution(entry));
     positions.push(entry.data.plan.id);
-    const declarationMetadata: JsonValue = Object.freeze({
+    const declarationMetadata: JsonValue = {
       parentKey,
       baseIdentity,
       provider: {
@@ -131,9 +144,9 @@ export function plannedBeforeCacheActions(
       target: targetIdentity,
       revisions,
       preparationIdentity: keyScopeIdentity,
-    });
+    };
     const key = `prefix:${digestOf(declarationMetadata)}`;
-    const declaration: BeforeCacheDeclaration = Object.freeze({
+    const declaration: BeforeCacheDeclaration = {
       baseIdentity,
       beforeCacheKey: key,
       declarationDigest: `sha256:${digestOf(declarationMetadata)}`,
@@ -141,33 +154,29 @@ export function plannedBeforeCacheActions(
       cacheFormat: keyScope.cacheFormat,
       changeFrequency: entry.metadata.changeFrequency.value,
       declarationMetadata,
+    };
+    planned.push({
+      entry,
+      key,
+      declaration,
+      positions: [...positions],
+      declaringOwner: `${entry.owner.kind}:${entry.owner.id}`,
+      attributions: [...attributions],
     });
-    planned.push(
-      Object.freeze({
-        entry,
-        key,
-        declaration,
-        positions: Object.freeze([...positions]),
-        declaringOwner: `${entry.owner.kind}:${entry.owner.id}`,
-        attributions: Object.freeze([...attributions]),
-      }),
-    );
     parentKey = key;
   }
-  return Object.freeze(planned);
+  return planned;
 }
 
 export function beforeCacheStep(
   planned: Pick<PlannedBeforeCacheAction, "declaration" | "positions" | "declaringOwner">,
-  knownSensitiveValues?: readonly string[],
+  knownSensitiveValues: readonly string[] = [],
 ): BeforeCacheStep {
-  return Object.freeze({
+  return {
     operationId: `before-cache-${randomUUID()}`,
     declaration: planned.declaration,
     positions: planned.positions,
     declaringOwner: planned.declaringOwner,
-    ...(knownSensitiveValues === undefined || knownSensitiveValues.length === 0
-      ? {}
-      : { knownSensitiveValues: Object.freeze([...knownSensitiveValues]) }),
-  });
+    knownSensitiveValues,
+  };
 }
