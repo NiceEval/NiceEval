@@ -49,6 +49,7 @@ pnpm typecheck       # 未使用的局部变量、参数与 import 报错
    3. 判别联合：几个字段同时出现或同时缺席、或者某个字段只在某种状态下有意义时，合成一个带标签的联合。
       例如 `{ reuseEligibility: "dynamic-module-unresolved" | undefined; reuseEligibilityFacts: Facts | undefined }` 应写成 `{ kind: "eligible" } | { kind: "dynamic-module-unresolved"; facts: Facts }`。
    4. 必需键 `readonly x: T | undefined`：只留给与其它字段无关、且事实本身可能不存在的单个值，例如实验没有指定 `model`、协议没有上报某个 token 桶；生产者必须显式给出每个字段，漏写由编译器拦下。
+   - 必需字段要求生产者说出事实，不能用占位值敷衍：生产者并不知道的值，不填 `{}`、`[]`、`0` 或 `""` 冒充“空”或“零”；要么生产者真正算出它，要么类型能表达“未知”（判别联合或第 4 种单值），见 [T-9](../../taste.md#t-9)。
    - 可变状态清空时赋 `undefined`，不用 `delete`。
 3. **键存在会被观察的边界**：键是否出现会改变行为或输出的地方，类型写精确的 `x?: T`，并在声明旁用一句注释写明属于下面哪一类：
    - Record JSON：`RecordJson` 不含 `undefined`，canonicalizer 与 `Schema.optionalKey` 编码遇到 `undefined` 拒绝写入；
