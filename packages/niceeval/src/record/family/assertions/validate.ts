@@ -46,5 +46,5 @@ export function validateAssertionsAttachment(value: AssertionsAttachment): reado
   if (size === undefined || size > MAX_ASSERTION_DOCUMENT_BYTES) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", []));
   }
-  return Object.freeze(issues);
+  return issues;
 }

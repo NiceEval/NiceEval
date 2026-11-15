@@ -31,7 +31,7 @@ export function makeReaderLifecycle<Error>(input: { readonly closed: () => Error
     assertLive: (): Result.Result<void, Error> => (closed ? Result.fail(input.closed()) : Result.succeed(undefined)),
   };
 
-  return Object.freeze(lifecycle);
+  return lifecycle;
 }
 
 /**
@@ -63,5 +63,5 @@ export function makeExactHandleRegistry<Handle extends object, Contents, Error>(
     },
   };
 
-  return Object.freeze(registry);
+  return registry;
 }

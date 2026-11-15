@@ -296,5 +296,5 @@ export function validateFileChangesAttachment(value: FileChangesAttachment): rea
       changeIds.add(change.changeId);
     }
   }
-  return Object.freeze(issues);
+  return issues;
 }

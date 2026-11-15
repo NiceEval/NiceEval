@@ -52,7 +52,7 @@ export function validateExpectedSlots(expectedSlots: readonly RecordSlotIdentity
     previous = slot.slotId;
   }
 
-  return Object.freeze(issues);
+  return issues;
 }
 
 /** Validates invariants entirely contained by the durable `run.json`. */
@@ -68,7 +68,7 @@ export function validateRunDocument(run: RunDocument): readonly RecordIssue[] {
     issues.push(recordIssue("record-run-context-experiment-mismatch", ["context", "experimentId"]));
   }
   appendIssues(issues, [], validateExpectedSlots(run.expectedSlots));
-  return Object.freeze(issues);
+  return issues;
 }
 
 /** Validates the action/reference coupling in one durable Member document. */
@@ -78,13 +78,13 @@ export function validateMemberDocument(member: {
 }): readonly RecordIssue[] {
   const requiresAttempt = member.action === "executed" || member.action === "carried" || member.action === "accepted";
   return requiresAttempt === (member.attempt !== null)
-    ? Object.freeze([])
-    : Object.freeze([recordIssue("record-member-action-invalid", ["attempt"])]);
+    ? []
+    : [recordIssue("record-member-action-invalid", ["attempt"])];
 }
 
 /** Attempt-local shape is fully captured by its exact schema. */
 export function validateAttemptDocument(_attempt: AttemptDocument): readonly RecordIssue[] {
-  return Object.freeze([]);
+  return [];
 }
 
 interface AttemptLocation {
@@ -286,7 +286,7 @@ export function validateRecordCore(core: RecordCore): readonly RecordIssue[] {
     }
   }
 
-  return Object.freeze(issues);
+  return issues;
 }
 
 /** Converts validator output to the non-empty form carried by invalid read states. */

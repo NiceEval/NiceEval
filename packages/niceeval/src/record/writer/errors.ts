@@ -129,7 +129,7 @@ export function recordAppendCommandInvalid(): RecordAppendCommandInvalid {
 }
 
 export function recordCollectionNotClosed(family: string): RecordCollectionNotClosed {
-  return Object.freeze({ code: "record-collection-not-closed", family });
+  return { code: "record-collection-not-closed", family };
 }
 
 export function recordDraftStateError(input: {
@@ -137,7 +137,7 @@ export function recordDraftStateError(input: {
   readonly operation: RecordDraftOperation;
   readonly state: RecordDraftLifecycleState;
 }): RecordDraftStateError {
-  return Object.freeze({ ...input });
+  return input;
 }
 
 export function recordAttachmentEncodeError(
@@ -145,31 +145,24 @@ export function recordAttachmentEncodeError(
   family: string,
   schemaIssues: readonly RecordAttachmentSchemaIssue[] = [],
 ): RecordAttachmentEncodeError {
-  return Object.freeze({
+  return {
     code: "record-attachment-encode-error",
     family,
     issues: source.issues,
-    schemaIssues: Object.freeze(
-      schemaIssues.map((issue) =>
-        Object.freeze({
-          path: Object.freeze([...issue.path]),
-          message: issue.message,
-        }),
-      ),
-    ),
-  });
+    schemaIssues,
+  };
 }
 
 export function recordOwnerDefinitionMismatch(input: {
   readonly expected: "run" | "attempt";
   readonly actual: "run" | "attempt";
 }): RecordOwnerDefinitionMismatch {
-  return Object.freeze({ code: "record-owner-definition-mismatch", ...input });
+  return { code: "record-owner-definition-mismatch", ...input };
 }
 
 export function recordAlreadyWritten(input: {
   readonly owner: "run" | "attempt";
   readonly family: string;
 }): RecordAlreadyWritten {
-  return Object.freeze({ code: "record-already-written", ...input });
+  return { code: "record-already-written", ...input };
 }

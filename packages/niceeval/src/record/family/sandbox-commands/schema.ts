@@ -120,5 +120,5 @@ export function validateSandboxCommandsAttachment(value: SandboxCommandsAttachme
   ) {
     issues.push(invalid(["collection", "limitations"]));
   }
-  return Object.freeze(issues);
+  return issues;
 }

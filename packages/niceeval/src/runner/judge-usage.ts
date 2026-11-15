@@ -12,14 +12,12 @@ export function judgeUsageForResult(
 ): JudgeUsageAttachment | undefined {
   const value = captures.get(result);
   if (value === undefined) return undefined;
-  return Object.freeze({
+  return {
     ...value,
-    calls: Object.freeze(
-      value.calls.map((call) => {
-        const entryId = entryIds[call.entryIndex];
-        if (entryId === undefined) throw new Error("Judge usage references an unsealed Assertion entry");
-        return Object.freeze({ ...call, entryId });
-      }),
-    ),
-  });
+    calls: value.calls.map((call) => {
+      const entryId = entryIds[call.entryIndex];
+      if (entryId === undefined) throw new Error("Judge usage references an unsealed Assertion entry");
+      return { ...call, entryId };
+    }),
+  };
 }

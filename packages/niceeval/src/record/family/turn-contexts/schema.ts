@@ -109,5 +109,5 @@ export function validateTurnContextsAttachment(value: TurnContextsAttachment): r
       );
     }
   });
-  return Object.freeze(issues);
+  return issues;
 }

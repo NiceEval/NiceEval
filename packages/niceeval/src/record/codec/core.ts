@@ -79,7 +79,7 @@ const decodeClosure = Schema.decodeUnknownResult(AttemptPublicationClosureSchema
 export function attemptPublicationClosure(originRun: EncodedRunDocument): {
   readonly originRun: EncodedRunDocument;
 } {
-  return Object.freeze({ originRun });
+  return { originRun };
 }
 
 export function decodeAttemptPublicationClosure(input: unknown): Result.Result<AttemptPublicationClosure, unknown> {

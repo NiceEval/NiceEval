@@ -62,5 +62,5 @@ export function validateArtifactsAttachment(value: ArtifactsAttachment): readonl
       issues.push(invalid(["artifacts", String(index), "byteLength"]));
     }
   }
-  return Object.freeze(issues);
+  return issues;
 }

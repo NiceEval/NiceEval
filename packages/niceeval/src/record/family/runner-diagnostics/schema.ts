@@ -102,7 +102,7 @@ function validateRunnerDiagnostics(input: {
       );
     }
   });
-  return Object.freeze(issues);
+  return issues;
 }
 
 export const AttemptRunnerDiagnosticsAttachmentSchema = Schema.Struct({
@@ -120,29 +120,27 @@ export type RunRunnerDiagnosticsAttachment = Schema.Schema.Type<typeof RunRunner
 export type RunnerDiagnosticsAttachment = AttemptRunnerDiagnosticsAttachment | RunRunnerDiagnosticsAttachment;
 
 function validateSourceFrames(payload: RunnerDiagnosticsAttachment): readonly RecordAttachmentIssue[] {
-  return Object.freeze(
-    payload.segments.flatMap((diagnostic, index) => {
-      const frame = diagnostic.sourceFrame?.value;
-      if (frame === undefined) return [];
-      if (
-        frame.start.line > frame.end.line ||
-        (frame.start.line === frame.end.line && frame.start.column > frame.end.column)
-      ) {
-        return [recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "sourceFrame"])];
-      }
-      return [];
-    }),
-  );
+  return payload.segments.flatMap((diagnostic, index) => {
+    const frame = diagnostic.sourceFrame?.value;
+    if (frame === undefined) return [];
+    if (
+      frame.start.line > frame.end.line ||
+      (frame.start.line === frame.end.line && frame.start.column > frame.end.column)
+    ) {
+      return [recordAttachmentIssue("record-attachment-schema-invalid", ["segments", String(index), "sourceFrame"])];
+    }
+    return [];
+  });
 }
 
 export function validateAttemptRunnerDiagnosticsAttachment(
   value: AttemptRunnerDiagnosticsAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([...validateRunnerDiagnostics(value), ...validateSourceFrames(value)]);
+  return [...validateRunnerDiagnostics(value), ...validateSourceFrames(value)];
 }
 
 export function validateRunRunnerDiagnosticsAttachment(
   value: RunRunnerDiagnosticsAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([...validateRunnerDiagnostics(value), ...validateSourceFrames(value)]);
+  return [...validateRunnerDiagnostics(value), ...validateSourceFrames(value)];
 }

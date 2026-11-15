@@ -231,5 +231,5 @@ export function validateAgentTurnsAttachment(value: AgentTurnsAttachment): reado
   if (projectObservedSourceEvents(value.segments).state !== "available") {
     issues.push(invalid(["segments"]));
   }
-  return Object.freeze(issues);
+  return issues;
 }

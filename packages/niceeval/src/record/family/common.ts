@@ -132,6 +132,6 @@ export function decodeFixedFamilyPayload<A, I>(
 ): Result.Result<A, { readonly code: "record-family-payload-invalid" }> {
   const decoded = Schema.decodeUnknownResult(schema, RecordExactParseOptions)(input);
   return Result.isFailure(decoded)
-    ? Result.fail(Object.freeze({ code: "record-family-payload-invalid" as const }))
+    ? Result.fail({ code: "record-family-payload-invalid" as const })
     : Result.succeed(decoded.success);
 }

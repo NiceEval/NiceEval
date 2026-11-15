@@ -48,9 +48,9 @@ function contentDeclaration<Handle extends RecordContentHandle>(
     (value): value is Handle => isRecordContentHandle(value) && handles.get(value)?.kind === kind,
     { identifier: kind === "text" ? "RecordTextContent" : "RecordBytesContent" },
   );
-  contentDeclarations.set(schema, Object.freeze({ kind, maximumBytes }));
-  contentDeclarations.set(schema.ast, Object.freeze({ kind, maximumBytes }));
-  contentDeclarationRuns.set(schema.ast.run, Object.freeze({ kind, maximumBytes }));
+  contentDeclarations.set(schema, { kind, maximumBytes });
+  contentDeclarations.set(schema.ast, { kind, maximumBytes });
+  contentDeclarationRuns.set(schema.ast.run, { kind, maximumBytes });
   return schema;
 }
 
@@ -80,7 +80,7 @@ export function recordContentDeclarationMetadata(
   schema: object,
 ): (RecordContentDeclarationMetadata & { readonly category: "content" }) | undefined {
   const metadata = mintedDeclarationMetadata(schema);
-  return metadata === undefined ? undefined : Object.freeze({ ...metadata, category: "content" });
+  return metadata === undefined ? undefined : { ...metadata, category: "content" };
 }
 
 export function isRecordContentHandle(value: unknown): value is RecordContentHandle {
@@ -99,6 +99,6 @@ export function mintRecordContentHandle<Kind extends "text" | "bytes">(
   const handle = Object.freeze(
     kind === "text" ? { [textHandleTypeId]: textHandleTypeId } : { [bytesHandleTypeId]: bytesHandleTypeId },
   ) as Kind extends "text" ? RecordTextContentHandle : RecordBytesContentHandle;
-  handles.set(handle, Object.freeze({ kind }));
+  handles.set(handle, { kind });
   return handle;
 }

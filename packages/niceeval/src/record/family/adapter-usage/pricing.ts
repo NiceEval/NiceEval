@@ -11,7 +11,7 @@ interface DecimalParts {
 
 function decimalParts(value: string): DecimalParts {
   const [integer, fraction = ""] = value.split(".");
-  return Object.freeze({ digits: BigInt(`${integer}${fraction}`), scale: fraction.length });
+  return { digits: BigInt(`${integer}${fraction}`), scale: fraction.length };
 }
 
 function canonicalDecimal(parts: DecimalParts): string {

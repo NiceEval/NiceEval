@@ -58,5 +58,5 @@ export function validateIdentityManifestsAttachment(
       }
     }
   }
-  return Object.freeze(issues);
+  return issues;
 }

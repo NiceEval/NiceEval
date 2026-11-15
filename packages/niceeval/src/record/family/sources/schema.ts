@@ -63,5 +63,5 @@ export function validateSourcesAttachment(value: SourcesAttachment): readonly Re
       issues.push(invalid(["items", String(index), "byteLength"]));
     }
   }
-  return Object.freeze(issues);
+  return issues;
 }

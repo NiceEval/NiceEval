@@ -51,18 +51,16 @@ export function makeRecordAttachmentCatalog(
 
   for (const persistence of ordered) {
     if (!isRecordAttachmentPersistence(persistence) || !isRecordAttachmentDefinition(persistence.attachment)) {
-      return Result.fail(Object.freeze({ code: "invalid-family-definition" }));
+      return Result.fail({ code: "invalid-family-definition" });
     }
     const definition = persistence.attachment;
     const key = identity(definition.owner, definition.family);
     if (byIdentity.has(key) || byDefinition.has(definition)) {
-      return Result.fail(
-        Object.freeze({
-          code: "duplicate-family",
-          owner: definition.owner,
-          family: definition.family,
-        }),
-      );
+      return Result.fail({
+        code: "duplicate-family",
+        owner: definition.owner,
+        family: definition.family,
+      });
     }
     byIdentity.set(key, persistence);
     byDefinition.set(definition, persistence);

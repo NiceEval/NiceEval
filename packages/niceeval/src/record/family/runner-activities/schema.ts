@@ -116,7 +116,7 @@ function validateRunnerActivities(input: {
   if (input.collection.state === "complete" && input.segments.some((activity) => activity.outcome === "unknown")) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["collection"]));
   }
-  return Object.freeze(issues);
+  return issues;
 }
 
 function validateSourceLimitations(value: {
@@ -128,16 +128,14 @@ function validateSourceLimitations(value: {
     }[];
   };
 }): readonly RecordAttachmentIssue[] {
-  return Object.freeze(
-    value.collection.limitations.flatMap((limitation, index) =>
-      (limitation.stage === undefined ||
-        limitation.stage === "runner-clock" ||
-        limitation.stage === "attempt-finalizer" ||
-        limitation.stage === "run-teardown") &&
-      (limitation.target === "activity" || limitation.target === "value-byte")
-        ? []
-        : [recordAttachmentIssue("record-attachment-schema-invalid", ["collection", "limitations", String(index)])],
-    ),
+  return value.collection.limitations.flatMap((limitation, index) =>
+    (limitation.stage === undefined ||
+      limitation.stage === "runner-clock" ||
+      limitation.stage === "attempt-finalizer" ||
+      limitation.stage === "run-teardown") &&
+    (limitation.target === "activity" || limitation.target === "value-byte")
+      ? []
+      : [recordAttachmentIssue("record-attachment-schema-invalid", ["collection", "limitations", String(index)])],
   );
 }
 
@@ -157,11 +155,11 @@ export type RunRunnerActivitiesAttachment = Schema.Schema.Type<typeof RunRunnerA
 export function validateAttemptRunnerActivitiesAttachment(
   value: AttemptRunnerActivitiesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([...validateRunnerActivities(value), ...validateSourceLimitations(value)]);
+  return [...validateRunnerActivities(value), ...validateSourceLimitations(value)];
 }
 
 export function validateRunRunnerActivitiesAttachment(
   value: RunRunnerActivitiesAttachment,
 ): readonly RecordAttachmentIssue[] {
-  return Object.freeze([...validateRunnerActivities(value), ...validateSourceLimitations(value)]);
+  return [...validateRunnerActivities(value), ...validateSourceLimitations(value)];
 }

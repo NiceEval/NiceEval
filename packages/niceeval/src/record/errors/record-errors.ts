@@ -47,7 +47,7 @@ export type NonEmptyRecordIssues = readonly [RecordIssue, ...RecordIssue[]];
 export const NonEmptyRecordIssuesSchema: Schema.Codec<NonEmptyRecordIssues> = Schema.NonEmptyArray(RecordIssueSchema);
 
 export function recordIssue(code: RecordIssueCode, path: readonly string[] = []): RecordIssue {
-  return Object.freeze({ code, path: Object.freeze([...path]) });
+  return { code, path };
 }
 
 export function nonEmptyRecordIssues(issues: readonly RecordIssue[]): NonEmptyRecordIssues | undefined {
@@ -56,7 +56,7 @@ export function nonEmptyRecordIssues(issues: readonly RecordIssue[]): NonEmptyRe
     return undefined;
   }
   const tuple: [RecordIssue, ...RecordIssue[]] = [first, ...rest];
-  return Object.freeze(tuple);
+  return tuple;
 }
 
 export const RecordCodecDocumentSchema = Schema.Literals([

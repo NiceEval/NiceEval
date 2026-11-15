@@ -53,6 +53,6 @@ export type AttemptCostAttachment = Schema.Schema.Type<typeof AttemptCostAttachm
 
 export function validateAttemptCostAttachment(value: AttemptCostAttachment): readonly RecordAttachmentIssue[] {
   return value.estimated === undefined || value.estimated.charges.length > 0
-    ? Object.freeze([])
-    : Object.freeze([recordAttachmentIssue("record-attachment-schema-invalid", ["estimated", "charges"])]);
+    ? []
+    : [recordAttachmentIssue("record-attachment-schema-invalid", ["estimated", "charges"])];
 }
