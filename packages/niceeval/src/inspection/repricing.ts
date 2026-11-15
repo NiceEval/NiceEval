@@ -85,7 +85,7 @@ function summarize(
     estimates.length > 0 || complete
       ? decimal(addCanonicalDecimals(estimates.map((estimate) => estimate.amount)))
       : null;
-  return Object.freeze({
+  return {
     state: complete ? "complete" : amount === null ? "unavailable" : "partial",
     currency: "USD",
     amount,
@@ -93,7 +93,7 @@ function summarize(
     callCount: calls?.length ?? null,
     estimates,
     missingCallIds,
-  });
+  };
 }
 
 /** Hypothetical prices are projections; original reported amounts and receipts are never changed. */
@@ -127,10 +127,10 @@ export function repriceRecordedUsage(input: {
     createJudgeCallPriceReceipts(input.judge?.calls.map((call) => ({ ...call, cost: null })) ?? [], pricing),
   );
   const known = [application.amount, judge.amount].filter((amount) => amount !== null);
-  return Object.freeze({
+  return {
     application,
     judge,
-    total: Object.freeze({
+    total: {
       state:
         application.state === "complete" && judge.state === "complete"
           ? "complete"
@@ -139,6 +139,6 @@ export function repriceRecordedUsage(input: {
             : "unavailable",
       currency: "USD",
       amount: known.length > 0 ? decimal(addCanonicalDecimals(known)) : null,
-    }),
-  });
+    },
+  };
 }

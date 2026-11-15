@@ -77,14 +77,14 @@ export function projectArtifactsListing(
       return Result.fail({ reason: "Artifact descriptor does not match sealed content metadata." });
     }
   }
-  return Result.succeed(
-    Object.freeze({
-      collection: hydrated.success.collection,
-      artifacts: Object.freeze(
-        hydrated.success.artifacts.map(({ artifactId, label, mediaType, byteLength, sha256 }) =>
-          Object.freeze({ artifactId, label, mediaType, byteLength, sha256 }),
-        ),
-      ),
-    }),
-  );
+  return Result.succeed({
+    collection: hydrated.success.collection,
+    artifacts: hydrated.success.artifacts.map(({ artifactId, label, mediaType, byteLength, sha256 }) => ({
+      artifactId,
+      label,
+      mediaType,
+      byteLength,
+      sha256,
+    })),
+  });
 }

@@ -298,13 +298,13 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
         Number.isFinite(pid) && pid > 0
           ? sandboxPromise(() => sandbox.runShell(`kill ${pid} 2>/dev/null || true`)).pipe(Effect.ignore)
           : Effect.void;
-      return Object.freeze({
+      return {
         endpoint: (_host: string) => `http://127.0.0.1:${port}/v1/traces`,
         collect: () => cached.slice(),
         settle,
         drain,
         close,
-      });
+      };
     }),
   );
 }

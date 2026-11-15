@@ -40,7 +40,7 @@ function sha256(value: string): string {
 export function readJudgeMaterial(value: unknown, expectedName?: string): JudgeMaterialReadResult {
   try {
     const outer = exact(value, ["manifest", "content"]);
-    if (outer === undefined || !Array.isArray(outer.content)) return Object.freeze({ state: "invalid" });
+    if (outer === undefined || !Array.isArray(outer.content)) return { state: "invalid" };
     const manifest = exact(outer.manifest, [
       "judgeName",
       "maxMaterialBytes",
@@ -72,7 +72,7 @@ export function readJudgeMaterial(value: unknown, expectedName?: string): JudgeM
       manifest.chunkByteLengths.length !== outer.content.length ||
       outer.content.length === 0
     ) {
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     }
     const chunks: string[] = [];
     for (const [index, chunk] of outer.content.entries()) {
@@ -85,19 +85,19 @@ export function readJudgeMaterial(value: unknown, expectedName?: string): JudgeM
         expectedBytes > 4 * 1024 ||
         utf8ByteLength(chunk) !== expectedBytes
       )
-        return Object.freeze({ state: "invalid" });
+        return { state: "invalid" };
       chunks.push(chunk);
     }
     const request = chunks.join("");
     if (utf8ByteLength(request) !== manifest.requestBytes || sha256(request) !== manifest.requestDigest)
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const { digest: _digest, ...base } = manifest;
-    if (sha256(canonical(base)) !== manifest.digest) return Object.freeze({ state: "invalid" });
+    if (sha256(canonical(base)) !== manifest.digest) return { state: "invalid" };
     const parsed = JSON.parse(request) as unknown;
-    if (canonical(parsed) !== request) return Object.freeze({ state: "invalid" });
+    if (canonical(parsed) !== request) return { state: "invalid" };
     const requestObject = exact(parsed, ["messages"]);
     if (requestObject === undefined || !Array.isArray(requestObject.messages) || requestObject.messages.length !== 2)
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const systemMessage = exact(requestObject.messages[0], ["role", "content"]);
     const userMessage = exact(requestObject.messages[1], ["role", "content"]);
     if (
@@ -106,7 +106,7 @@ export function readJudgeMaterial(value: unknown, expectedName?: string): JudgeM
       typeof systemMessage.content !== "string" ||
       typeof userMessage.content !== "string"
     )
-      return Object.freeze({ state: "invalid" });
+      return { state: "invalid" };
     const system = exact(JSON.parse(systemMessage.content), [
       "anchors",
 
@@ -130,10 +130,10 @@ export function readJudgeMaterial(value: unknown, expectedName?: string): JudgeM
       utf8ByteLength(canonical(user.material)) > manifest.maxMaterialBytes ||
       !validMaterialBounds(user.material)
     )
-      return Object.freeze({ state: "invalid" });
-    return Object.freeze({ state: "available", request });
+      return { state: "invalid" };
+    return { state: "available", request };
   } catch {
-    return Object.freeze({ state: "invalid" });
+    return { state: "invalid" };
   }
 }
 

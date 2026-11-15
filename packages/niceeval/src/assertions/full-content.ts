@@ -94,11 +94,11 @@ export function captureFullAssertionSnapshot(
   const content = parts.join("");
   const { material } = captureAssertionSnapshot(JSON.parse(content));
   contentByMaterial.set(material, content);
-  return Object.freeze({
+  return {
     material,
-    coverage: Object.freeze({ state: "complete" as const }),
-    limitations: Object.freeze([]),
-  });
+    coverage: { state: "complete" as const },
+    limitations: [],
+  };
 }
 
 export function transferFullAssertionContent(from: AssertionMaterial, to: AssertionMaterial): void {

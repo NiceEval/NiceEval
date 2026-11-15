@@ -34,7 +34,7 @@ interface InboxClosed {
   readonly code: "otlp-receiver-inbox-closed";
 }
 
-const inboxClosed: InboxClosed = Object.freeze({ code: "otlp-receiver-inbox-closed" });
+const inboxClosed: InboxClosed = { code: "otlp-receiver-inbox-closed" };
 const HTTP_REQUEST_QUEUE_MAX = 128;
 const SETTLE_POLL_MS = 50;
 const SERVER_CLOSE_TIMEOUT_MS = 2_000;
@@ -128,13 +128,13 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
     const close = closeResources(resources, processor);
     const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => settleReceiver(resources, quietMs, maxMs);
 
-    return Object.freeze({
+    return {
       endpoint: (host: string) => `http://${host}:${boundPort}/v1/traces`,
       collect: () => resources.spans.slice(),
       receivedBytes: () => resources.receivedBytes,
       settle,
       close,
-    });
+    };
   });
 }
 
@@ -142,7 +142,7 @@ function makeResources(): ReceiverResources {
   const requests = new Inbox<HttpRequest>(HTTP_REQUEST_QUEUE_MAX);
   const sockets = new Set<Socket>();
   const server = createServer((request, response) => {
-    if (!requests.offer(Object.freeze({ request, response }))) {
+    if (!requests.offer({ request, response })) {
       respond(response, 503);
     }
   });

@@ -138,11 +138,11 @@ export function acquireFreshImportGeneration(
       }
       return unwrapDefault(await loader.evalModule(source, { filename: absPath, async: true, forceTranspile: true }));
     };
-    return Object.freeze({
+    return {
       modules,
       // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
       import: (absPath: string) => withSandboxScriptRoot(projectRoot, () => importFresh(absPath)),
-    });
+    };
   });
 }
 
