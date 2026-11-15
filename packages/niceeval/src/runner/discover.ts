@@ -14,6 +14,7 @@ import { Data, Effect, Option, Schema } from "effect";
 import { pad4 } from "../util.ts";
 import { assertNoHiddenInputLeaks, folderEntryBaseId, type HiddenInput, type LeakGateHints } from "./eval-source.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {
   captureLoadedFiles,
   enterLoaderDiscoveryHost,
@@ -75,6 +76,12 @@ export interface DiscoveryIssue {
 export class DiscoveryError extends Data.TaggedError("DiscoveryError")<{
   readonly message: string;
   readonly issues: readonly DiscoveryIssue[];
+}> {}
+
+class DiscoveryDirectoryReadError extends Data.TaggedError("DiscoveryDirectoryReadError")<{
+  readonly missing: boolean;
+  readonly message: string;
+  readonly cause: import("../shared/external-cause.ts").ExternalCause;
 }> {}
 
 interface EvalEntry {
@@ -233,19 +240,24 @@ function walkFiles(
 ): Effect.Effect<readonly string[], DiscoveryError> {
   const readDirectory = (current: string, allowAbsent: boolean) =>
     Effect.tryPromise({
-      try: async () => {
-        try {
-          return await readdir(current, { withFileTypes: true });
-        } catch (cause) {
-          if (allowAbsent && isMissingPath(cause)) return undefined;
-          throw cause;
-        }
-      },
+      try: () => readdir(current, { withFileTypes: true }),
       catch: (cause) =>
-        issue(relative(root, current) || ".", "discovery.filesystem", causeMessage(cause), [
-          "Check that the discovery directory is readable.",
-        ]),
-    });
+        new DiscoveryDirectoryReadError({
+          missing: isMissingPath(cause),
+          message: causeMessage(cause),
+          cause: normalizeExternalCause(cause),
+        }),
+    }).pipe(
+      Effect.catch((error) =>
+        allowAbsent && error.missing
+          ? Effect.succeed(undefined)
+          : Effect.fail(
+              issue(relative(root, current) || ".", "discovery.filesystem", error.message, [
+                "Check that the discovery directory is readable.",
+              ]),
+            ),
+      ),
+    );
 
   const walk = (current: string, allowAbsent: boolean): Effect.Effect<readonly string[], DiscoveryError> =>
     Effect.suspend(() =>
@@ -365,38 +377,45 @@ function expandEvalExport(
     );
   }
   if (isDatasetDefinition(exported)) {
-    return Effect.tryPromise({
-      try: async () => {
-        const rows = typeof exported.data === "function" ? await exported.data() : exported.data;
-        if (!Array.isArray(rows)) {
-          throw new TypeError("Dataset data must evaluate to an array.");
-        }
-        return rows.map((row, index) => {
-          const key = exported.key ? exported.key(row, index) : pad4(index);
-          if (!validDatasetKey(key)) {
-            throw new Error(`Invalid dataset key ${JSON.stringify(key)}.`);
+    const datasetError = (cause: unknown) =>
+      issue(
+        relative(root, entry.file),
+        "discovery.invalid-dataset-key",
+        causeMessage(cause),
+        ["Check that dataset data and keys are valid."],
+        cause,
+      );
+    return Effect.gen(function* () {
+      const data = exported.data;
+      const rows =
+        typeof data === "function"
+          ? yield* Effect.tryPromise({ try: () => Promise.resolve(data()), catch: datasetError })
+          : data;
+      return yield* Effect.try({
+        try: () => {
+          if (!Array.isArray(rows)) {
+            throw new TypeError("Dataset data must evaluate to an array.");
           }
-          const kind = exported.evaluationKind ?? "pass";
-          const definition = defineEvalForContext(kind, {
-            ...(exported.description === undefined ? {} : { description: exported.description }),
-            ...(exported.tags === undefined ? {} : { tags: [...exported.tags] }),
-            ...(exported.timeoutMs === undefined ? {} : { timeoutMs: exported.timeoutMs }),
-            test: (t) => exported.test(t as never, row),
+          return rows.map((row, index) => {
+            const key = exported.key ? exported.key(row, index) : pad4(index);
+            if (!validDatasetKey(key)) {
+              throw new Error(`Invalid dataset key ${JSON.stringify(key)}.`);
+            }
+            const kind = exported.evaluationKind ?? "pass";
+            const definition = defineEvalForContext(kind, {
+              ...(exported.description === undefined ? {} : { description: exported.description }),
+              ...(exported.tags === undefined ? {} : { tags: [...exported.tags] }),
+              ...(exported.timeoutMs === undefined ? {} : { timeoutMs: exported.timeoutMs }),
+              test: (t) => exported.test(t as never, row),
+            });
+            return {
+              id: `${entry.baseId}/${key}`,
+              definition,
+            };
           });
-          return {
-            id: `${entry.baseId}/${key}`,
-            definition,
-          };
-        });
-      },
-      catch: (cause) =>
-        issue(
-          relative(root, entry.file),
-          "discovery.invalid-dataset-key",
-          causeMessage(cause),
-          ["Check that dataset data and keys are valid."],
-          cause,
-        ),
+        },
+        catch: datasetError,
+      });
     }).pipe(Effect.map((items) => Object.freeze(items)));
   }
   // `Array.isArray` does not narrow readonly arrays; the array branch above has already returned.
@@ -534,8 +553,8 @@ function discoverEvalEntry(
     });
     const module = yield* decodeEvalModule(captured.value, fileLabel);
     const expanded = yield* expandEvalExport(module.default, entry, root);
-    const source = yield* Effect.tryPromise({
-      try: async () => {
+    const source = yield* Effect.try({
+      try: () => {
         const content = normalizeEvalSource(graph.module(entry.file).source);
         return { path: fileLabel, content, sha256: hashEvalSource(content) };
       },
@@ -619,8 +638,8 @@ function propagateLoaderProvenance(
   root: string,
   graph: ProjectModuleGraph,
 ): Effect.Effect<readonly DiscoveredEval[], DiscoveryError> {
-  return Effect.tryPromise({
-    try: async () => {
+  return Effect.try({
+    try: () => {
       const originPaths = new Map<string, LoaderPathBuckets>();
       const conservative = emptyLoaderPathBuckets();
       for (const entry of entries) {
@@ -886,8 +905,8 @@ export function discoverEvals(
               "Make the Eval Group entry and its project-local helper modules readable.",
             ]),
         });
-        const groupSources = yield* Effect.tryPromise({
-          try: async () =>
+        const groupSources = yield* Effect.try({
+          try: () =>
             groupProjection.modules.map(
               (fact) =>
                 [

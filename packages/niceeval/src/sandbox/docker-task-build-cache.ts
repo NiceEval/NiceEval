@@ -588,10 +588,6 @@ export async function listDockerCacheDomains(): Promise<readonly CacheDomainDesc
   }));
 }
 
-export async function dockerTaskBuildAuthorityFingerprint(): Promise<string> {
-  return Effect.runPromise(dockerTaskBuildAuthorityFingerprintEffect);
-}
-
 export const dockerTaskBuildAuthorityFingerprintEffect = Effect.scoped(
   Effect.map(openDockerCacheDomainEffect(), (domain) => domain.domainId),
 );

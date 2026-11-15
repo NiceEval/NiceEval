@@ -4,7 +4,7 @@
 // 契约单源:docs/feature/sandbox/architecture/case.md「Run 级构建协调」;
 // 落盘形状:docs/feature/record/architecture.md「sandboxBuilds」。
 // 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Effect.sleep、
-// 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。
+// 并发闸用 Semaphore;协调句柄与 worker fiber 都由调用方的 Scope 持有。
 
 import { createHash, randomUUID } from "node:crypto";
 import { Deferred, Duration, Effect, Exit, Fiber, Random, Semaphore } from "effect";
@@ -151,21 +151,9 @@ export interface SandboxBuildPreparation {
   readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
 }
 
-/** 进行中的 Run 级共享准备:逐 BuildKey 放行,依赖者只等自己引用的那几个 key。 */
-export interface RunningSandboxBuilds {
-  /** 已结算 key 的实时视图(随构建推进增补,不等整批收工)。 */
-  readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
-  /** 已失败 / 已取消 key 的实时视图。 */
-  readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
-  /** 等某个 BuildKey 结算;不在本次协调范围内的 key 立即返回。 */
-  settled(ref: SandboxBuildRef): Promise<void>;
-  /** 全部 key 结算后的汇总(provenance 在这里齐全)。 */
-  readonly done: Promise<SandboxBuildPreparation>;
-}
-
 /**
- * Runner-internal build coordination. Unlike the compatibility Promise facade,
- * this handle and every worker fiber belong to the caller's Scope.
+ * Runner-internal build coordination. This handle and every worker fiber belong
+ * to the caller's Scope.
  */
 export interface SandboxBuildCoordinator {
   readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
@@ -265,100 +253,6 @@ export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(fu
     done: Deferred.await(completion),
   };
 });
-
-/**
- * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
- * 调用方负责先做携带规划、只传入未携带 attempt 引用的 key;本函数不为「查看旧结果」造假 provenance。
- */
-export async function prepareSandboxBuilds(
-  works: readonly SandboxBuildWork[],
-  opts: PrepareSandboxBuildsOptions,
-): Promise<SandboxBuildPreparation> {
-  return startSandboxBuilds(works, opts).done;
-}
-
-/**
- * 启动 Run 级共享准备并立刻返回句柄:调用方按 BuildKey 逐个等待,
- * 只依赖已就绪 key 的 attempt 不被同批最慢的那个构建挡住(见 case.md「Run 级构建协调」第 4 条)。
- */
-export function startSandboxBuilds(
-  works: readonly SandboxBuildWork[],
-  opts: PrepareSandboxBuildsOptions,
-): RunningSandboxBuilds {
-  const unique = dedupeWorks(works);
-  if (unique.length === 0) {
-    const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
-    return {
-      sources: empty.sources,
-      failures: empty.failures,
-      async settled() {},
-      done: Promise.resolve(empty),
-    };
-  }
-
-  const maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
-  const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
-  const records: SandboxBuildRecord[] = [];
-  const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
-
-  const prepareSignal = combineSignals([
-    opts.signal,
-    opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
-  ]);
-
-  // 逐 key 的结算 Deferred:key 一结算就 settle,依赖它的 attempt 当场放行,
-  // 不等同批其它 key(single-flight 仍靠这张表,同 key 的第二个 work 复用同一条)。
-  // 在方法边界同步创建,settled() 在任意时刻调用都拿到同一结果;
-  // Deferred 结算后状态保持,迟到等待方同样立即放行。
-  const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void, never>>();
-  for (const work of unique) {
-    perKey.set(work.ref, Deferred.makeUnsafe<void>());
-  }
-
-  const ctx = {
-    timing: opts.timing,
-    provider: opts.provider,
-    buildTimeoutMs: opts.buildTimeoutMs,
-    signal: prepareSignal,
-    sources,
-    records,
-    failures,
-    ...(opts.onActivity === undefined ? {} : { onActivity: opts.onActivity }),
-    buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
-    buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
-  };
-
-  // 整段准备是一个 Effect 程序:每 key 一条 gate 保护的 fiber,结算挂在 ensuring 上
-  // (失败/中断同样放行等待方);收尾逐 fiber 观察 exit,先到先报缺陷——与 Promise.all
-  // 的失败传播一致,且观察不打断兄弟 fiber,一条出事后其余 key 照常结算。
-  const coordination = Effect.gen(function* () {
-    const gate = yield* Semaphore.make(maxConcurrency);
-    const fibers = yield* Effect.forEach(unique, (work) =>
-      Effect.forkChild(
-        gate
-          .withPermits(1)(prepareOne(work, ctx))
-          .pipe(Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined)))),
-      ),
-    );
-    const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
-    const failed = exits.find(Exit.isFailure);
-    if (failed !== undefined && Exit.isFailure(failed)) return yield* Effect.failCause(failed.cause);
-    return { sources, records, failures } satisfies SandboxBuildPreparation;
-  });
-  // 边界:唯一一次把 Effect 驱动进公开 Promise ABI。
-  const done = Effect.runPromise(coordination);
-
-  return {
-    sources,
-    failures,
-    async settled(ref) {
-      const deferred = perKey.get(ref);
-      if (deferred === undefined) return;
-      await Effect.runPromise(Deferred.await(deferred));
-    },
-    done,
-  };
-}
 
 /**
  * 从 fresh attempt 依赖表扇出构建失败 → AttemptError 形状所需字段。
