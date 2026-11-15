@@ -1,4 +1,4 @@
-export const RECORD_SQLITE_FORMAT = "niceeval.record.current";
+export const RECORD_SQLITE_FORMAT = "niceeval.record.2";
 export const RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 export const RECORD_SQLITE_MAX_PUBLISH_ROWS = 4_096;
 export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;

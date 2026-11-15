@@ -17,24 +17,29 @@ const e2e = createE2EContext({
 });
 
 // @feature docs/feature/run/README.md
-test.concurrent("旧 Record 明确拒绝且保留原件", async () => {
-  await e2e.case("old-record-rejected", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
-    const fixture = join(projectRoot, "fixtures", "record-migration", "predecessors", "0.18", "record.sqlite");
-    const root = join(projectRoot, ".niceeval");
-    await mkdir(root, { recursive: true });
-    const record = join(root, "record.sqlite");
-    await copyFile(fixture, record);
-    const original = await readFile(record);
-    for (const argv of [
-      ["show", "runs", "--json"],
-      ["exp", "migration-agent", "--dry", "--json"],
-    ]) {
-      const result = await niceeval.run(argv);
-      expect(result.exitCode, result.diagnostic()).not.toBe(0);
-      expect(result.stdout + result.stderr, result.diagnostic()).toMatch(/old(er)? version|previous version/i);
-      expect(result.stdout + result.stderr, result.diagnostic()).toMatch(/rerun|re-run/i);
-      expect(await readFile(record)).toEqual(original);
-    }
-    expect((await readdir(root)).sort()).toEqual(["record.sqlite"]);
-  });
+test.concurrent.each(["0.18", "record-1"])("旧 Record 明确拒绝且保留原件（%s）", async (predecessor) => {
+  await e2e.case(
+    `old-record-rejected-${predecessor.replaceAll(".", "-")}`,
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      const fixture = join(projectRoot, "fixtures", "record-migration", "predecessors", predecessor, "record.sqlite");
+      const root = join(projectRoot, ".niceeval");
+      await mkdir(root, { recursive: true });
+      const record = join(root, "record.sqlite");
+      await copyFile(fixture, record);
+      const original = await readFile(record);
+      for (const argv of [
+        ["show", "runs", "--json"],
+        ["exp", "migration-agent", "--dry", "--json"],
+        ["exp", "migration-agent", "--json"],
+      ]) {
+        const result = await niceeval.run(argv);
+        expect(result.exitCode, result.diagnostic()).not.toBe(0);
+        expect(result.stdout + result.stderr, result.diagnostic()).toMatch(/old(er)? version|previous version/i);
+        expect(result.stdout + result.stderr, result.diagnostic()).toMatch(/rerun|re-run/i);
+        expect(result.stdout + result.stderr, result.diagnostic()).toContain("remove this Record storage");
+        expect((await readFile(record)).equals(original)).toBe(true);
+      }
+      expect((await readdir(root)).sort()).toEqual(["record.sqlite"]);
+    },
+  );
 });

@@ -58,40 +58,6 @@ export type RegistryCommand =
       readonly generation: number;
       readonly ownerToken: string;
       readonly heartbeatAt: string;
-    }
-  | {
-      readonly _tag: "keep-put";
-      readonly id: string;
-      readonly provider: string;
-      readonly sandboxId: string;
-      readonly keptAt: string;
-      readonly payload: Uint8Array;
-    }
-  | { readonly _tag: "keep-get"; readonly id: string }
-  | { readonly _tag: "keep-list" }
-  | { readonly _tag: "keep-update"; readonly id: string; readonly payload: Uint8Array }
-  | { readonly _tag: "keep-delete"; readonly id: string }
-  | { readonly _tag: "keep-lease-get"; readonly id: string }
-  | {
-      readonly _tag: "keep-lease-acquire";
-      readonly id: string;
-      readonly token: string;
-      readonly holder: string;
-      readonly operation: string;
-      readonly acquiredAt: string;
-      readonly ttlMs: number;
-      readonly ownerPid: number;
-      readonly ownerHost: string;
-      readonly ownerProcessIdentity: string;
-    }
-  | {
-      readonly _tag: "keep-lease-release";
-      readonly id: string;
-      readonly generation: number;
-      readonly token: string;
-      readonly ownerPid: number;
-      readonly ownerHost: string;
-      readonly ownerProcessIdentity: string;
     };
 
 export type CaseCoordinationCommand =

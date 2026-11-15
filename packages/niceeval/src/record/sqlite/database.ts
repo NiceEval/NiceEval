@@ -760,8 +760,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM ne19_invocation_sessions WHERE state IN ('active','recovering'))+
       (SELECT count(*) FROM ne19_case_locks)+
       (SELECT count(*) FROM ne19_teardown_obligations)+
-      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key))+
-      (SELECT count(*) FROM ne19_kept_sandbox_operation_leases) AS count`,
+      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
       currentStatement(
@@ -897,8 +896,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       connection.db,
       `SELECT
       (SELECT count(*) FROM ne19_teardown_obligations)+
-      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key))+
-      (SELECT count(*) FROM ne19_kept_sandbox_operation_leases) AS count`,
+      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const coordination = currentStatement(
       connection.db,

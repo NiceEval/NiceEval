@@ -179,6 +179,8 @@ source adapter 只以文件只读方式捕获到私有目录，不让 SQLite 打
 ## 格式准入
 
 整个 Record 只有存储本身的一个格式标记。reader、writer 与 maintenance 在读取事实或执行写入前核对它。
+标记形如 `niceeval.record.<n>`，`<n>` 是递增整数；当前 schema 的任何对象、列或约束变化都必须递增它，使旧存储在格式核对处被拒绝，而不是落到 schema allowlist 的不匹配错误。
+表名前缀是固定的命名空间，不表示格式版本，也不随标记改变。
 标记不符时明确说明数据由旧版 NiceEval 写入，需要重跑或删除该存储；原文件保持不变。
 不存在的路径通过原子 bootstrap transaction 初始化；并发创建者只能接受完整提交的当前 schema。
 

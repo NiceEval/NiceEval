@@ -1,4 +1,5 @@
 // cases: docs/engineering/testing/architecture/unit/record.md
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,6 +23,9 @@ import {
 } from "../../run/storage/sqlite.ts";
 import { currentProcessOwnerIdentity } from "../../coordination/platform/node-process-identity.ts";
 
+import { RECORD_SQLITE_BASELINE_SQL } from "./current-schema.ts";
+import { RECORD_SQLITE_FORMAT } from "./types.ts";
+
 const roots: string[] = [];
 
 async function databasePath(): Promise<string> {
@@ -35,6 +39,19 @@ afterEach(async () => {
 });
 
 describe("ProjectDatabase bootstrap baseline", () => {
+  // This repository guard checks a developer policy that public E2E cannot observe:
+  // a new database alone cannot reveal that its schema reused a predecessor's format.
+  // @feature docs/feature/run/README.md
+  it("pairs the current schema fingerprint with its storage format", () => {
+    expect({
+      format: RECORD_SQLITE_FORMAT,
+      schemaSha256: createHash("sha256").update(RECORD_SQLITE_BASELINE_SQL).digest("hex"),
+    }).toEqual({
+      format: "niceeval.record.2",
+      schemaSha256: "818a13908ae0e37fed569952bd587976d600e27a7cb9257bddc461ceb060da76",
+    });
+  });
+
   it("classifies the sole 0.17 metadata namespace as unsupported and rejects mixed namespaces", async () => {
     const path = await databasePath();
     await copyFile(resolve("e2e/record/fixtures/record-migration/predecessors/0.17/record.sqlite"), path);

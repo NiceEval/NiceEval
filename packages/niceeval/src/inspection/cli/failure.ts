@@ -153,7 +153,7 @@ export function inspectionSourceFailureDetail(cause: InspectionSourceError): Ins
       return detail(
         "inspection-source-invalid",
         "fix-record-source",
-        "This Record was written by an older version of NiceEval. Rerun the experiment and keep the original Record storage.",
+        "This Record was written by an older version of NiceEval. Rerun the experiment or remove this Record storage.",
       );
     case "record-database-invalid":
     case "record-command-conflict":

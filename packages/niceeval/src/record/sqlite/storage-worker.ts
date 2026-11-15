@@ -37,20 +37,12 @@ import {
 import type { StorageWorkerRequest, StorageWorkerResponse, StorageWorkerResult } from "./worker-protocol.ts";
 import { withImmediateTransaction } from "./transaction.ts";
 import {
-  acquireKeptSandboxLease,
   appendSharedStateGeneration,
   claimTeardownObligation,
-  deleteKeptSandbox,
-  getKeptSandbox,
-  getKeptSandboxLease,
   getTeardownObligation,
-  listKeptSandboxes,
   listSharedStateGenerations,
   listTeardownObligations,
-  putKeptSandbox,
   putTeardownObligation,
-  releaseKeptSandboxLease,
-  updateKeptSandbox,
   updateSharedStateHeartbeat,
 } from "./registry-repository.ts";
 import type { RegistryCommand } from "./worker-protocol.ts";
@@ -83,19 +75,11 @@ function isRegistryMutation(command: RegistryCommand): boolean {
     case "teardown-get":
     case "teardown-list":
     case "shared-list":
-    case "keep-get":
-    case "keep-list":
-    case "keep-lease-get":
       return false;
     case "teardown-put":
     case "teardown-claim":
     case "shared-append":
     case "shared-heartbeat":
-    case "keep-put":
-    case "keep-update":
-    case "keep-delete":
-    case "keep-lease-acquire":
-    case "keep-lease-release":
       return true;
   }
 }
@@ -197,24 +181,6 @@ function executeRegistry(connection: RecordDatabase, command: RegistryCommand): 
       return appendSharedStateGeneration({ connection, ...command });
     case "shared-heartbeat":
       return updateSharedStateHeartbeat({ connection, ...command });
-    case "keep-put":
-      putKeptSandbox({ connection, ...command });
-      return undefined;
-    case "keep-get":
-      return getKeptSandbox(connection, command.id);
-    case "keep-list":
-      return listKeptSandboxes(connection);
-    case "keep-update":
-      return updateKeptSandbox(connection, command.id, command.payload);
-    case "keep-delete":
-      deleteKeptSandbox(connection, command.id);
-      return undefined;
-    case "keep-lease-get":
-      return getKeptSandboxLease(connection, command.id);
-    case "keep-lease-acquire":
-      return acquireKeptSandboxLease({ connection, ...command });
-    case "keep-lease-release":
-      return releaseKeptSandboxLease({ connection, ...command });
   }
 }
 

@@ -1,7 +1,7 @@
 /**
- * Exact current ProjectDatabase 0.19 schema, independent of frozen historical
- * baselines. Keep these bytes stable within this format: they own its fingerprint.
- * The disjoint namespace fences writers prepared against the 0.18 tables.
+ * Exact current ProjectDatabase schema. Schema changes require incrementing
+ * RECORD_SQLITE_FORMAT and updating its paired schema fingerprint guard.
+ * The ne19_ prefix is a fixed namespace, independent of the format number.
  */
 export const RECORD_SQLITE_BASELINE_SQL = `
 CREATE TABLE ne19_record_metadata (
@@ -405,30 +405,8 @@ CREATE TABLE ne19_shared_state_generations (
   PRIMARY KEY (state_key, generation),
   CHECK (parent_generation = generation - 1)
 ) STRICT;
-CREATE TABLE ne19_kept_sandboxes (
-  entry_id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  sandbox_id TEXT NOT NULL,
-  kept_at TEXT NOT NULL,
-  operation_generation INTEGER NOT NULL DEFAULT 0 CHECK (operation_generation >= 0),
-  payload BLOB NOT NULL,
-  UNIQUE (provider, sandbox_id)
-) STRICT;
-CREATE TABLE ne19_kept_sandbox_operation_leases (
-  entry_id TEXT PRIMARY KEY REFERENCES ne19_kept_sandboxes(entry_id) ON DELETE CASCADE,
-  generation INTEGER NOT NULL CHECK (generation > 0),
-  token TEXT NOT NULL,
-  holder TEXT NOT NULL,
-  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
-  owner_host TEXT NOT NULL,
-  owner_process_identity TEXT NOT NULL,
-  operation TEXT NOT NULL,
-  acquired_at TEXT NOT NULL,
-  ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)
-) STRICT;
 CREATE INDEX ne19_teardown_obligations_experiment ON ne19_teardown_obligations(experiment_id, owner_pid);
 CREATE INDEX ne19_shared_state_generations_head ON ne19_shared_state_generations(state_key, generation DESC);
-CREATE INDEX ne19_kept_sandboxes_kept_at ON ne19_kept_sandboxes(kept_at, entry_id);
 
 
 `;

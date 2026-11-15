@@ -31,6 +31,12 @@ publication 算法。
 - checkpoint 被真实读锁阻止时保留已提交事实，释放读锁后可重试完成。
   此类顺序无法由公开 CLI 稳定控制时，在真实 SQLite 上作最小 Unit 例外；格式拒绝与引用保留由安装后的公开 E2E 验收。
 
+## 格式标记与 schema 成对守护
+
+[格式准入](../../../../feature/run/architecture/README.md#格式准入)要求当前 schema 的任何变化都递增格式标记。
+从新建的数据库观察不到开发者是否复用了上一版标记，所以这是一条仓库策略守护，不是产品行为：
+Unit 断言当前 schema SQL 的指纹与格式标记成对出现，schema 变化而标记未递增时失败。不保留历史 SQL baseline。
+
 ## 不这样测
 
 - 不恢复旧持久 API、通用 definition/writer、portable snapshot 或 maintenance 流程；

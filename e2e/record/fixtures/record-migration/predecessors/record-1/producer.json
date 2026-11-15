@@ -1,0 +1,36 @@
+{
+  "sourceFormat": "niceeval.record.current",
+  "checkout": "/home/ctrdh/Code/NiceEval/NiceEval",
+  "head": "2419f796a79be3f6c710e1df77ea5c4fcb360bb6",
+  "candidate": "source",
+  "sourceSchemaSha256": "2c6a8f6108899f4081c4b0dc3ba971e52f7b92d0e710785a771df1b8d89c94e3",
+  "recordSha256": "f2714f9dc46f0faa4c361debe0d4754fffb29859f9558bdba09a389c17c5bf92",
+  "commands": [
+    [
+      "node",
+      "--experimental-transform-types",
+      "--conditions=niceeval-source",
+      "/home/ctrdh/Code/NiceEval/NiceEval/packages/niceeval/bin/niceeval.js",
+      "exp",
+      "migration-agent",
+      "--rerun",
+      "all",
+      "--json"
+    ],
+    [
+      "node",
+      "--experimental-transform-types",
+      "--conditions=niceeval-source",
+      "/home/ctrdh/Code/NiceEval/NiceEval/packages/niceeval/bin/niceeval.js",
+      "show",
+      "runs",
+      "--json"
+    ]
+  ],
+  "receipts": [
+    {
+      "stdout": "{\"event\":\"start\",\"total\":1,\"configs\":1,\"concurrency\":1,\"reused\":0}\n{\"event\":\"eval\",\"locator\":\"@10EEYD7N56PTF\",\"evalId\":\"migration-agent\",\"experimentId\":\"migration-agent\",\"verdict\":\"passed\",\"attempts\":1,\"passed\":1}\n{\"type\":\"receipt\",\"receipt\":{\"invocationId\":\"s_75f333d1-cef2-4bdf-912d-52ee4f21e99e\",\"createdRunIds\":[\"a714df95-d8f3-488f-8c1f-0ea189aa1a13\"],\"publicationCutoff\":\"{\\\"storeGeneration\\\":\\\"9df2aa06-5eb8-4aed-936c-2d7c1b0411e1\\\",\\\"revision\\\":3}\",\"startedAt\":\"2026-11-15T06:40:56.093Z\",\"completedAt\":\"2026-11-15T06:40:56.702Z\",\"completion\":\"completed\"},\"summary\":{\"startedAt\":\"2026-11-15T06:40:56.093Z\",\"completedAt\":\"2026-11-15T06:40:56.776Z\",\"passed\":1,\"failed\":0,\"skipped\":0,\"errored\":0,\"durationMs\":683,\"inputTokens\":1,\"outputTokens\":1,\"beforeCaches\":{\"total\":0,\"hit\":0,\"prepared\":0,\"degraded\":0,\"failed\":0}}}\n",
+      "stderr": "(node:1451841) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    }
+  ]
+}

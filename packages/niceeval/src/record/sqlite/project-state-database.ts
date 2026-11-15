@@ -2,12 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { SqliteRecordError } from "./errors.ts";
 import { makeStorageWorkerClient, type StorageWorkerClient } from "./client.ts";
 import { finalizeInvocationPortable, recordSqlitePath } from "./database.ts";
-import type {
-  KeptSandboxLeaseRow,
-  KeptSandboxRow,
-  SharedStateGenerationRow,
-  TeardownObligationRow,
-} from "./registry-repository.ts";
+import type { SharedStateGenerationRow, TeardownObligationRow } from "./registry-repository.ts";
 
 const OPERATION_DEADLINE_MS = 5_000;
 
@@ -59,58 +54,6 @@ export interface SharedStateFacet {
   ) => Promise<boolean>;
 }
 
-export interface KeepFacet {
-  readonly put: (
-    input: CommandInput<
-      "keep-put",
-      {
-        readonly id: string;
-        readonly provider: string;
-        readonly sandboxId: string;
-        readonly keptAt: string;
-        readonly payload: Uint8Array;
-      }
-    >,
-  ) => Promise<void>;
-  readonly get: (id: string) => Promise<KeptSandboxRow | undefined>;
-  readonly list: () => Promise<readonly KeptSandboxRow[]>;
-  readonly update: (id: string, payload: Uint8Array) => Promise<boolean>;
-  readonly delete: (id: string) => Promise<void>;
-  readonly getLease: (id: string) => Promise<KeptSandboxLeaseRow | undefined>;
-  readonly acquireLease: (
-    input: CommandInput<
-      "keep-lease-acquire",
-      {
-        readonly id: string;
-        readonly token: string;
-        readonly holder: string;
-        readonly operation: string;
-        readonly acquiredAt: string;
-        readonly ttlMs: number;
-        readonly ownerPid: number;
-        readonly ownerHost: string;
-        readonly ownerProcessIdentity: string;
-      }
-    >,
-  ) => Promise<
-    | { readonly acquired: true; readonly generation: number }
-    | { readonly acquired: false; readonly lease: KeptSandboxLeaseRow }
-  >;
-  readonly releaseLease: (
-    input: CommandInput<
-      "keep-lease-release",
-      {
-        readonly id: string;
-        readonly generation: number;
-        readonly token: string;
-        readonly ownerPid: number;
-        readonly ownerHost: string;
-        readonly ownerProcessIdentity: string;
-      }
-    >,
-  ) => Promise<boolean>;
-}
-
 export interface CaseCoordinationFacet {
   readonly execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
     command: import("./worker-protocol.ts").CaseCoordinationCommand,
@@ -139,7 +82,6 @@ export interface ProjectStateFacets {
   readonly record: StorageWorkerClient;
   readonly teardown: TeardownFacet;
   readonly sharedState: SharedStateFacet;
-  readonly keep: KeepFacet;
   readonly caseCoordination: CaseCoordinationFacet;
   readonly invocation: InvocationFacet;
   readonly run: RunFacet;
@@ -199,20 +141,6 @@ function makeProjectStateResource(): ProjectStateResource {
         append: (input: Parameters<SharedStateFacet["append"]>[0]) => execute<boolean>(input),
         heartbeat: (input: Parameters<SharedStateFacet["heartbeat"]>[0]) => execute<boolean>(input),
       };
-      const keep: KeepFacet = {
-        put: (input: Parameters<KeepFacet["put"]>[0]) => execute<undefined>(input),
-        get: (id: string) => execute<KeptSandboxRow | undefined>({ _tag: "keep-get", id }),
-        list: () => execute<readonly KeptSandboxRow[]>({ _tag: "keep-list" }),
-        update: (id: string, payload: Uint8Array) => execute<boolean>({ _tag: "keep-update", id, payload }),
-        delete: (id: string) => execute<undefined>({ _tag: "keep-delete", id }),
-        getLease: (id: string) => execute<KeptSandboxLeaseRow | undefined>({ _tag: "keep-lease-get", id }),
-        acquireLease: (input: Parameters<KeepFacet["acquireLease"]>[0]) =>
-          execute<
-            | { readonly acquired: true; readonly generation: number }
-            | { readonly acquired: false; readonly lease: KeptSandboxLeaseRow }
-          >(input),
-        releaseLease: (input: Parameters<KeepFacet["releaseLease"]>[0]) => execute<boolean>(input),
-      };
       const caseCoordination: CaseCoordinationFacet = {
         execute: <A extends import("./worker-protocol.ts").StorageWorkerResult>(
           command: import("./worker-protocol.ts").CaseCoordinationCommand,
@@ -237,7 +165,6 @@ function makeProjectStateResource(): ProjectStateResource {
         record: client,
         teardown,
         sharedState,
-        keep,
         caseCoordination,
         invocation,
         run,

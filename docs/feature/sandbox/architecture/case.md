@@ -66,7 +66,7 @@ interface DetachedSandboxRetention {
 ```
 
 Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制时检查 `services` 能力,普通单 Sandbox eval 完全不接触这层。
-`retention` 是 SandboxRetention 句柄，负责本进程把运行中的主实例及伴随资源提交为留存现场；`DetachedSandboxRetention` 是 CLI 跨进程 inspect / wake / suspend / destroy 的 provider 通道。`wake` 表示从任意 provider 的 dormant 状态恢复成活动实例，不暗示原进程对象可原地 `resume()`。
+`retention` 是 SandboxRetention 句柄，负责本进程把运行中的主实例及伴随资源提交为留存现场，并给出 Provider 原生的进入与销毁命令。留存之后的查看、唤醒与销毁都由 Provider 原生 CLI 完成，NiceEval 不提供跨进程的 detached 通道。
 以后 GPU、动态网络策略或整组 checkpoint 也按独立能力扩展,不合并成一个「高级 Sandbox」布尔值，更不挂 `sandbox.suspend?` 这类隐藏成员。
 
 ## 声明形态:template factory 一次到位
