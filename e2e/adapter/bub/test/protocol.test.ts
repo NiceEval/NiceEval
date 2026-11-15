@@ -52,7 +52,7 @@ test.concurrent("Bub 固定版本样本保留文本和用量并汇总未知事�
         expect(queried.exitCode, queried.diagnostic()).toBe(0);
         const usageReceipt = await (async () => niceeval.run(["show", outcome.locator, "usage", "--json"]))();
         expect(usageReceipt.exitCode, usageReceipt.diagnostic()).toBe(0);
-        expect(usageReceipt.attemptUsage().usage.totals.requests).toMatchObject({ state: "available", value: 2 });
+        expect(usageReceipt.attemptUsage().usage.totals.requests).toMatchObject({ state: "unavailable", value: null });
         const trace = queried.attemptTrace().trace;
         const warnings = trace.diagnostics.items.filter((item) => item.code === "agent-event-unrecognized");
         expect(warnings).toHaveLength(faults ? 1 : 0);

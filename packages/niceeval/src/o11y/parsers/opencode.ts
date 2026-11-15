@@ -1,11 +1,12 @@
-// OpenCode `run --format json` / `opencode export` 解析器。方言只住这里,不进 core
-// (契约见 docs/feature/adapters/library/sdk/opencode/README.md)。
-
+// OpenCode 1.18.5 JSONL and whole-session export protocol boundary.
+import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
-import { normalizeJsonValue } from "../../shared/json-value.ts";
 import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
+import { assertNever, field, jsonField, lineDecoder, nonEmptyString, unrecognized, UnknownPart } from "./shared.ts";
+import { addUsage, normalizeUsage, TokenUsage, transcriptUsage } from "./usage.ts";
 
 export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -14,7 +15,6 @@ export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   create: "file_write",
   edit: "file_edit",
   patch: "file_edit",
-  // OpenCode 写文件主路径是 apply_patch;Add File 在下方按 patch 内容升成 file_write。
   apply_patch: "file_edit",
   bash: "shell",
   shell: "shell",
@@ -22,28 +22,55 @@ export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   websearch: "web_search",
 };
 
-/** 从 apply_patch 的 patchText 抠 path,并把 Add File 升成 file_write。 */
-function enrichApplyPatchInput(input: JsonValue): { input: JsonValue; tool: ToolName } {
-  const obj =
-    input && typeof input === "object" && !Array.isArray(input)
-      ? { ...(input as globalThis.Record<string, unknown>) }
-      : ({ patchText: input } as globalThis.Record<string, unknown>);
-  const patchText = typeof obj.patchText === "string" ? obj.patchText : "";
-  const add = patchText.match(/\*\*\*\s*Add File:\s*(.+)/);
-  const update = patchText.match(/\*\*\*\s*(?:Update|Delete) File:\s*(.+)/);
-  const path = (add?.[1] ?? update?.[1] ?? "").trim();
-  if (path) obj.path = path;
-  return {
-    input: obj as JsonValue,
-    tool: add ? "file_write" : "file_edit",
-  };
-}
+const string = nonEmptyString;
+const json = field(Schema.MutableJson);
+const TextPart = Schema.Struct({ text: string });
+const ToolPart = Schema.Struct({
+  tool: Schema.NonEmptyString,
+  callID: Schema.NonEmptyString,
+  state: Schema.Struct({
+    status: Schema.Literals(["pending", "running", "completed", "error"]),
+    input: jsonField,
+    output: json,
+    error: json,
+    metadata: field(Schema.Struct({ exit: field(Schema.Finite) })),
+  }),
+});
+const FinishPart = Schema.Struct({ tokens: field(TokenUsage) });
+const Part = Schema.Union([
+  Schema.Struct({ type: Schema.Literals(["text", "reasoning"]), ...TextPart.fields }),
+  Schema.Struct({ type: Schema.Literal("tool"), ...ToolPart.fields }),
+  Schema.Struct({ type: Schema.Literal("step-start") }),
+  Schema.Struct({ type: Schema.Literal("step-finish"), ...FinishPart.fields }),
+  UnknownPart,
+]);
+const Session = Schema.Struct({
+  info: Schema.Struct({ id: string }),
+  messages: Schema.Array(
+    Schema.Struct({ info: Schema.Struct({ role: Schema.NonEmptyString }), parts: Schema.Array(Part) }),
+  ),
+});
+const ExportEvent = Schema.Struct({ type: Schema.Literal("export"), session: Schema.toType(Session) });
+const sessionID = string;
+const OpenCodeEvent = Schema.Union([
+  Session.pipe(
+    Schema.decodeTo(ExportEvent, {
+      decode: SchemaGetter.transform((session) => ({ type: "export" as const, session })),
+      encode: SchemaGetter.transform((event) => event.session),
+    }),
+  ),
+  Schema.Struct({ type: Schema.Literals(["text", "reasoning"]), sessionID, part: TextPart }),
+  Schema.Struct({ type: Schema.Literal("tool_use"), sessionID, part: ToolPart }),
+  Schema.Struct({ type: Schema.Literal("step_start"), sessionID }),
+  Schema.Struct({ type: Schema.Literal("step_finish"), sessionID, part: FinishPart }),
+  Schema.Struct({
+    type: Schema.Literal("error"),
+    sessionID,
+    error: Schema.Struct({ name: string, data: field(Schema.Struct({ message: string })) }),
+  }),
+]);
+const decodeLine = lineDecoder(OpenCodeEvent);
 
-function normalizeToolName(name: string): ToolName {
-  return normalizeShared(name, OPENCODE_TOOL_ALIASES);
-}
-
-/** OpenCode 的 shell action 只保留 source/input，不把它误拆成 argv。 */
 function commandProjectionForOpenCodeTool(name: string) {
   switch (name.toLowerCase()) {
     case "bash":
@@ -55,110 +82,67 @@ function commandProjectionForOpenCodeTool(name: string) {
   }
 }
 
-function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
-}
-
-function str(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
-}
-
-function num(obj: unknown, ...keys: string[]): number {
-  for (const k of keys) {
-    const v = get(obj, k);
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-  }
-  return 0;
+function enrichApplyPatchInput(input: JsonValue): { readonly input: JsonValue; readonly tool: ToolName } {
+  const object: Record<string, JsonValue> =
+    input !== null && typeof input === "object" && !Array.isArray(input) ? { ...input } : { patchText: input };
+  const patchText = typeof object.patchText === "string" ? object.patchText : "";
+  const add = patchText.match(/\*\*\*\s*Add File:\s*(.+)/);
+  const update = patchText.match(/\*\*\*\s*(?:Update|Delete) File:\s*(.+)/);
+  const path = (add?.[1] ?? update?.[1] ?? "").trim();
+  if (path) object.path = path;
+  return { input: object, tool: add ? "file_write" : "file_edit" };
 }
 
 function loadedSkillName(input: JsonValue): string | undefined {
-  return input && typeof input === "object" && !Array.isArray(input)
-    ? str((input as globalThis.Record<string, unknown>)["name"])
-    : undefined;
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const name = input.name;
+  return typeof name === "string" && name ? name : undefined;
 }
 
-/**
- * 从 stdout / export 的 JSONL(或夹杂日志的文本)里抽出 JSON 对象行。
- */
 export function extractOpenCodeJsonl(raw: string | undefined): string | undefined {
   if (!raw?.trim()) return undefined;
   const lines = raw.split("\n").filter((line) => {
-    const t = line.trim();
-    return t.startsWith("{") && t.endsWith("}");
+    const value = line.trim();
+    return value.startsWith("{") && value.endsWith("}");
   });
   return lines.length ? lines.join("\n") : undefined;
 }
 
-/** Decode only OpenCode's fixed JSONL event and whole export shapes. */
-function transcriptEntries(raw: string): unknown[] {
-  try {
-    return [JSON.parse(raw)];
-  } catch {
-    return (extractOpenCodeJsonl(raw) ?? raw)
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => {
-        try {
-          return JSON.parse(line) as unknown;
-        } catch {
-          return undefined;
-        }
-      });
-  }
+function transcriptEntries(raw: string): ReturnType<typeof decodeLine>[] {
+  if (!raw.trim()) return [];
+  const document = decodeLine(raw);
+  if (document.kind !== "invalid-json" || !raw.includes("\n")) return [document];
+  return (extractOpenCodeJsonl(raw) ?? raw)
+    .split("\n")
+    .filter((line) => line.trim())
+    .map(decodeLine);
 }
 
-/** `sessionID` on JSONL events; `info.id` on a session export. */
 export function sessionIdFromOpenCodeTranscript(raw: string | undefined): string | undefined {
-  if (!raw?.trim()) return undefined;
-  for (const entry of transcriptEntries(raw)) {
-    const id =
-      str(get(entry, "sessionID")) ??
-      (Array.isArray(get(entry, "messages")) ? str(get(get(entry, "info"), "id")) : undefined);
-    if (id) return id;
+  for (const decoded of transcriptEntries(raw ?? "")) {
+    if (decoded.kind !== "decoded") continue;
+    const event = decoded.value;
+    const id = event.type === "export" ? event.session.info.id : event.sessionID;
+    if (id !== undefined) return id;
   }
   return undefined;
 }
 
-/** OpenCode 1.18.5 JSONL / export → normalized events and observed usage. */
 export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscript {
   const events: StreamEvent[] = [];
+  const usage: Usage = {};
   const unrecognizedEvents: Record<string, number> = Object.create(null);
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheCreationTokens = 0;
-  let requests = 0;
   let parseSuccess = true;
-  const unrecognized = (type: string): void => {
-    unrecognizedEvents[type] = (unrecognizedEvents[type] ?? 0) + 1;
-  };
-  const addUsage = (tokens: unknown): void => {
-    if (!tokens || typeof tokens !== "object") return;
-    // OpenCode's input is already exclusive of cache buckets. Its cost is an
-    // estimate from model metadata, not observed billing.
-    inputTokens += num(tokens, "input");
-    outputTokens += num(tokens, "output");
-    cacheReadTokens += num(get(tokens, "cache"), "read");
-    cacheCreationTokens += num(get(tokens, "cache"), "write");
-    requests += 1;
-  };
-  const toolPart = (part: unknown): void => {
-    const name = str(get(part, "tool"));
-    const callId = str(get(part, "callID"));
-    const state = get(part, "state");
-    const status = str(get(state, "status"));
-    if (!name || !callId || !["pending", "running", "completed", "error"].includes(status ?? "")) {
-      parseSuccess = false;
-      return;
-    }
-    let input = normalizeJsonValue(get(state, "input"), {});
-    let tool = normalizeToolName(name);
+  const toolPart = (part: typeof ToolPart.Type): void => {
+    const { tool: name, callID: callId, state } = part;
+    let input: JsonValue = state.input === undefined ? {} : state.input;
+    let tool = normalizeShared(name, OPENCODE_TOOL_ALIASES);
     if (name === "apply_patch") {
       const enriched = enrichApplyPatchInput(input);
       input = enriched.input;
       tool = enriched.tool;
     }
-    const skill = name === "skill" && status === "completed" ? loadedSkillName(input) : undefined;
+    const skill = name === "skill" && state.status === "completed" ? loadedSkillName(input) : undefined;
     if (skill !== undefined) {
       events.push({ type: "skill.loaded", skill, operationId: callId });
       return;
@@ -168,89 +152,89 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
       operationId: callId,
       operation: { kind: "tool", name, input, tool, command: commandProjectionForOpenCodeTool(name) },
     });
-    if (status === "completed" || status === "error") {
-      const exit = get(get(state, "metadata"), "exit");
-      events.push({
-        type: "operation.finished",
-        operationId: callId,
-        kind: "tool",
-        output: normalizeJsonValue(get(state, status === "error" ? "error" : "output"), null),
-        status:
-          status === "error" || (name === "bash" && typeof exit === "number" && exit !== 0) ? "failed" : "completed",
-      });
+    switch (state.status) {
+      case "pending":
+      case "running":
+        return;
+      case "completed":
+      case "error":
+        events.push({
+          type: "operation.finished",
+          operationId: callId,
+          kind: "tool",
+          output: (state.status === "error" ? state.error : state.output) ?? null,
+          status:
+            state.status === "error" ||
+            (name === "bash" && state.metadata?.exit !== undefined && state.metadata.exit !== 0)
+              ? "failed"
+              : "completed",
+        });
+        return;
+      default:
+        assertNever(state.status);
     }
   };
-  const partEvent = (type: string, part: unknown, role: string): void => {
-    switch (type) {
-      case "text": {
-        const text = str(get(part, "text"));
-        if (text && role === "assistant") events.push({ type: "message", role, text });
+  const partEvent = (part: typeof Part.Type, role: string): void => {
+    switch (part.type) {
+      case "text":
+        if (part.text && role === "assistant") events.push({ type: "message", role, text: part.text });
         break;
-      }
-      case "reasoning": {
-        const text = str(get(part, "text"));
-        if (text && role === "assistant") events.push({ type: "thinking", text });
+      case "reasoning":
+        if (part.text && role === "assistant") events.push({ type: "thinking", text: part.text });
         break;
-      }
       case "tool":
         toolPart(part);
         break;
       case "step-start":
         break;
       case "step-finish":
-        addUsage(get(part, "tokens"));
+        if (part.tokens !== undefined) addUsage(usage, normalizeUsage("opencode", part.tokens));
+        break;
+      case "<unrecognized>":
+        unrecognized(unrecognizedEvents, `part:${part.originalType ?? "<missing-type>"}`);
         break;
       default:
-        unrecognized(`part:${type}`);
+        assertNever(part);
     }
   };
-  for (const entry of transcriptEntries(raw ?? "")) {
-    if (entry === undefined) {
+  for (const decoded of transcriptEntries(raw ?? "")) {
+    if (decoded.kind === "invalid-json") {
       parseSuccess = false;
+      unrecognized(unrecognizedEvents, "<missing-kind>");
       continue;
     }
-    const messages = get(entry, "messages");
-    if (Array.isArray(messages) && get(entry, "info")) {
-      for (const message of messages) {
-        const role = str(get(get(message, "info"), "role"));
-        const parts = get(message, "parts");
-        if (!role || !Array.isArray(parts)) {
-          parseSuccess = false;
-          continue;
-        }
-        for (const part of parts) partEvent(str(get(part, "type")) ?? "<missing-type>", part, role);
-      }
+    if (decoded.kind === "unrecognized") {
+      unrecognized(unrecognizedEvents, decoded.type);
+      if (decoded.type === "tool_use" || decoded.type === "error") parseSuccess = false;
       continue;
     }
-    const type = str(get(entry, "type"));
-    const part = get(entry, "part");
-    switch (type) {
+    const event = decoded.value;
+    switch (event.type) {
+      case "export":
+        for (const message of event.session.messages)
+          for (const part of message.parts) partEvent(part, message.info.role);
+        break;
       case "text":
       case "reasoning":
-        partEvent(type, part, "assistant");
+        partEvent({ type: event.type, text: event.part.text }, "assistant");
         break;
       case "tool_use":
-        toolPart(part);
+        toolPart(event.part);
         break;
       case "step_start":
         break;
       case "step_finish":
-        addUsage(get(part, "tokens"));
+        if (event.part.tokens !== undefined) addUsage(usage, normalizeUsage("opencode", event.part.tokens));
         break;
       case "error": {
-        // NamedError is the fixed protocol: some variants only carry a name.
-        const error = get(entry, "error");
-        const message = str(get(get(error, "data"), "message")) ?? str(get(error, "name"));
+        const message = event.error.data?.message ?? event.error.name;
         if (message) events.push({ type: "error", message });
         else parseSuccess = false;
         break;
       }
       default:
-        unrecognized(type ?? "<missing-type>");
+        assertNever(event);
     }
   }
-  const usage: Usage = requests > 0 ? { inputTokens, outputTokens, requests } : {};
-  if (cacheReadTokens) usage.cacheReadTokens = cacheReadTokens;
-  if (cacheCreationTokens) usage.cacheCreationTokens = cacheCreationTokens;
-  return { events, usage, compactions: 0, parseSuccess, unrecognizedEvents };
+  return { events, usage: transcriptUsage("opencode", usage), compactions: 0, parseSuccess, unrecognizedEvents };
 }

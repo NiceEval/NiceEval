@@ -1,11 +1,12 @@
-// Hermes sessions export / state.db 消息行解析器。方言只住这里,不进 core
-// (契约见 docs/feature/adapters/library/sdk/hermes/README.md)。
-
+// Hermes export/state.db protocols have structural session/message tags on wire.
+import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
-import { normalizeJsonValue } from "../../shared/json-value.ts";
 import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
+import { assertNever, coerceArgs, field, lineDecoder, nonEmptyString, unrecognized } from "./shared.ts";
+import { addUsage, normalizeUsage, TokenUsage, transcriptUsage } from "./usage.ts";
 
 export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -16,226 +17,178 @@ export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   web_extract: "web_fetch",
 };
 
-function normalizeToolName(name: string): ToolName {
-  return normalizeShared(name, HERMES_TOOL_ALIASES);
+const string = nonEmptyString;
+const json = field(Schema.MutableJson);
+const ToolCall = Schema.Struct({
+  id: string,
+  name: string,
+  arguments: json,
+  input: json,
+  function: field(Schema.Struct({ name: string, arguments: json })),
+});
+const Calls = Schema.Union([Schema.Array(ToolCall), Schema.fromJsonString(Schema.Array(ToolCall))]);
+const messageFields = {
+  role: string,
+  content: string,
+  tool_call_id: string,
+  toolCallId: string,
+  is_error: field(Schema.Boolean),
+  isError: field(Schema.Boolean),
+  output: json,
+  tool_calls: field(Calls),
+  toolCalls: field(Calls),
+  tool_name: string,
+  reasoning: string,
+  reasoning_content: string,
+  session_id: string,
+  sessionId: string,
+};
+const Message = Schema.Struct(messageFields);
+const MessageRow = Schema.Union([
+  Schema.Struct({ ...messageFields, role: Schema.NonEmptyString }),
+  Schema.Struct({ ...messageFields, session_id: Schema.NonEmptyString }),
+  Schema.Struct({ ...messageFields, sessionId: Schema.NonEmptyString }),
+]);
+const Session = Schema.Struct({ ...TokenUsage.fields, messages: Schema.Array(Message) });
+const Metadata = TokenUsage.check(
+  Schema.makeFilter((value) => Object.values(value).some((item) => item !== undefined)),
+);
+const SessionEvent = Schema.Struct({ type: Schema.Literal("session"), session: Schema.toType(Session) });
+const MessageEvent = Schema.Struct({ type: Schema.Literal("message"), message: Schema.toType(Message) });
+const MetadataEvent = Schema.Struct({ type: Schema.Literal("metadata"), usage: Schema.toType(TokenUsage) });
+const HermesEvent = Schema.Union([
+  Session.pipe(
+    Schema.decodeTo(SessionEvent, {
+      decode: SchemaGetter.transform((session) => ({ type: "session" as const, session })),
+      encode: SchemaGetter.transform((event) => event.session),
+    }),
+  ),
+  MessageRow.pipe(
+    Schema.decodeTo(MessageEvent, {
+      decode: SchemaGetter.transform((message) => ({ type: "message" as const, message })),
+      encode: SchemaGetter.forbiddenEncoding,
+    }),
+  ),
+  Metadata.pipe(
+    Schema.decodeTo(MetadataEvent, {
+      decode: SchemaGetter.transform((usage) => ({ type: "metadata" as const, usage })),
+      encode: SchemaGetter.transform((event) => event.usage),
+    }),
+  ),
+]);
+const decodeLine = lineDecoder(HermesEvent);
+
+function skillName(name: string, input: JsonValue): string | undefined {
+  if (name.toLowerCase() !== "skill_view" || input === null || typeof input !== "object" || Array.isArray(input))
+    return undefined;
+  const skill = input.name;
+  return typeof skill === "string" && skill ? skill : undefined;
 }
 
-/** Hermes 的 terminal tool 给的是工具 arguments，不是可验证的 native argv。 */
-function commandProjectionForHermesTool(name: string) {
-  return name.toLowerCase() === "terminal" ? opaqueCommandProjection("unsupported-protocol") : notCommandProjection();
-}
-
-function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
-}
-
-function str(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
-}
-
-/**
- * Hermes 以 `skill_view({ name })` 表示实际加载了一个已安装 Skill。它不是普通
- * 文件读取：对应的标准事件是 `skill.loaded`，这样判分和 execution 读面都无需猜工具文本。
- */
-function skillNameFromToolCall(name: string, input: JsonValue): string | undefined {
-  if (name.toLowerCase() !== "skill_view") return undefined;
-  return str(get(input, "name"));
-}
-
-function num(obj: unknown, ...keys: string[]): number {
-  for (const k of keys) {
-    const v = get(obj, k);
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-  }
-  return 0;
-}
-
-function optionalNum(obj: unknown, ...keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = get(obj, key);
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return undefined;
-}
-
-function coerceArgs(value: unknown): JsonValue {
-  if (typeof value === "string") {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return normalizeJsonValue(parsed, value);
-    } catch {
-      return value;
-    }
-  }
-  return normalizeJsonValue(value, {});
-}
-
-function parseJsonField(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-/**
- * Hermes sessions export JSONL(一行一 session,或一行一 message)→ 标准事件 + usage。
- */
 export function parseHermesTranscript(raw: string | undefined): ParsedTranscript {
   const events: StreamEvent[] = [];
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheCreationTokens = 0;
-  let observedCostUSD = 0;
-  let hasObservedCostUSD = false;
-  let requests = 0;
+  const usage: Usage = {};
+  const unrecognizedEvents: Record<string, number> = Object.create(null);
   let parseSuccess = true;
   let synth = 0;
-  // `skill_view` 已转成 skill.loaded 后，其 tool result 不再重发成孤立 action 节点。
   const skillCallIds = new Set<string>();
   const nextSynthId = (): string => `hm_${++synth}`;
-
-  if (!raw?.trim()) {
-    return { events, usage: {}, compactions: 0, parseSuccess: true };
-  }
-
-  const ingestSessionMeta = (obj: globalThis.Record<string, unknown>): void => {
-    inputTokens += num(obj, "input_tokens", "inputTokens");
-    outputTokens += num(obj, "output_tokens", "outputTokens");
-    cacheReadTokens += num(obj, "cache_read_tokens", "cacheReadTokens");
-    cacheCreationTokens += num(obj, "cache_write_tokens", "cacheWriteTokens", "cacheCreationTokens");
-    // estimated_cost_usd is an estimate owned by Hermes and is deliberately
-    // not relabeled as provider-observed Usage.costUSD.
-    const actual = optionalNum(obj, "actual_cost_usd", "actualCostUsd");
-    if (actual !== undefined) {
-      observedCostUSD += actual;
-      hasObservedCostUSD = true;
-    }
-    const apiCalls = num(obj, "api_call_count", "apiCallCount");
-    if (apiCalls) requests += apiCalls;
-  };
-
-  const ingestMessage = (msg: globalThis.Record<string, unknown>): void => {
-    const role = str(msg.role) ?? "assistant";
-    const content = str(msg.content);
-
-    if (role === "tool" || str(msg.tool_call_id) || str(msg.toolCallId)) {
-      const callId = str(msg.tool_call_id) ?? str(msg.toolCallId) ?? nextSynthId();
+  const ingestMessage = (message: typeof Message.Type): void => {
+    const role = message.role ?? "assistant";
+    const content = message.content;
+    if (role === "tool" || message.tool_call_id || message.toolCallId) {
+      const callId = message.tool_call_id ?? message.toolCallId ?? nextSynthId();
       if (skillCallIds.has(callId)) return;
-      const success = msg.is_error !== true && msg.isError !== true;
       events.push({
         type: "operation.finished",
         operationId: callId,
         kind: "tool",
-        output: (content ?? get(msg, "output") ?? null) as JsonValue,
-        status: success ? "completed" : "failed",
+        output: content ?? message.output ?? null,
+        status: message.is_error === true || message.isError === true ? "failed" : "completed",
       });
       return;
     }
-
-    const toolCallsRaw = parseJsonField(msg.tool_calls ?? msg.toolCalls);
-    if (Array.isArray(toolCallsRaw)) {
-      for (const call of toolCallsRaw) {
-        const fn = get(call, "function") as globalThis.Record<string, unknown> | undefined;
-        const name = str(get(fn, "name")) ?? str(get(call, "name")) ?? str(msg.tool_name) ?? "unknown";
-        const callId = str(get(call, "id")) ?? nextSynthId();
-        const args = coerceArgs(get(fn, "arguments") ?? get(call, "arguments") ?? get(call, "input"));
-        const skill = skillNameFromToolCall(name, args);
-        if (skill !== undefined) {
-          events.push({ type: "skill.loaded", skill, operationId: callId });
-          skillCallIds.add(callId);
-          continue;
-        }
-        events.push({
-          type: "operation.started",
-          operationId: callId,
-          operation: {
-            kind: "tool",
-            name,
-            input: args,
-            tool: normalizeToolName(name),
-            command: commandProjectionForHermesTool(name),
-          },
-        });
+    for (const call of message.tool_calls ?? message.toolCalls ?? []) {
+      const name = call.function?.name ?? call.name ?? message.tool_name ?? "unknown";
+      const callId = call.id ?? nextSynthId();
+      const input = coerceArgs(call.function?.arguments ?? call.arguments ?? call.input);
+      const skill = skillName(name, input);
+      if (skill !== undefined) {
+        events.push({ type: "skill.loaded", skill, operationId: callId });
+        skillCallIds.add(callId);
+        continue;
       }
+      events.push({
+        type: "operation.started",
+        operationId: callId,
+        operation: {
+          kind: "tool",
+          name,
+          input,
+          tool: normalizeShared(name, HERMES_TOOL_ALIASES),
+          command:
+            name.toLowerCase() === "terminal"
+              ? opaqueCommandProjection("unsupported-protocol")
+              : notCommandProjection(),
+        },
+      });
     }
-
-    if (content?.trim() && role !== "user" && role !== "system") {
+    if (content?.trim() && role !== "user" && role !== "system")
       events.push({ type: "message", role: "assistant", text: content });
-    } else if (content?.trim() && role === "user" && !Array.isArray(toolCallsRaw)) {
-      // 用户消息不进行为断言主路径；保留会污染显式 message 值断言。跳过。
-    }
-
-    const reasoning = str(msg.reasoning) ?? str(msg.reasoning_content);
+    const reasoning = message.reasoning ?? message.reasoning_content;
     if (reasoning?.trim()) events.push({ type: "thinking", text: reasoning });
   };
-
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let obj: globalThis.Record<string, unknown>;
-    try {
-      obj = JSON.parse(trimmed) as globalThis.Record<string, unknown>;
-    } catch {
+  for (const line of (raw ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    const decoded = decodeLine(line);
+    if (decoded.kind === "invalid-json") {
       parseSuccess = false;
+      unrecognized(unrecognizedEvents, "<missing-kind>");
       continue;
     }
-
-    try {
-      // 整 session 导出:带 messages[]
-      if (Array.isArray(obj.messages)) {
-        ingestSessionMeta(obj);
-        for (const m of obj.messages) {
-          if (m && typeof m === "object") ingestMessage(m as globalThis.Record<string, unknown>);
-        }
-        continue;
-      }
-      // 单行 message
-      if (str(obj.role)) {
-        ingestMessage(obj);
-        continue;
-      }
-      // sqlite dump 行:{session_id, role, content, tool_calls, ...}
-      if (str(obj.session_id) || str(obj.sessionId)) {
-        ingestMessage(obj);
-        continue;
-      }
-      ingestSessionMeta(obj);
-    } catch {
-      parseSuccess = false;
+    if (decoded.kind === "unrecognized") {
+      unrecognized(unrecognizedEvents, decoded.type);
+      continue;
+    }
+    const event = decoded.value;
+    switch (event.type) {
+      case "session":
+        addUsage(usage, normalizeUsage("hermes", event.session));
+        for (const message of event.session.messages) ingestMessage(message);
+        break;
+      case "message":
+        ingestMessage(event.message);
+        break;
+      case "metadata":
+        addUsage(usage, normalizeUsage("hermes", event.usage));
+        break;
+      default:
+        assertNever(event);
     }
   }
-
-  const usage: Usage = {};
-  if (inputTokens) usage.inputTokens = inputTokens;
-  if (outputTokens) usage.outputTokens = outputTokens;
-  if (cacheReadTokens) usage.cacheReadTokens = cacheReadTokens;
-  if (cacheCreationTokens) usage.cacheCreationTokens = cacheCreationTokens;
-  if (hasObservedCostUSD) usage.costUSD = observedCostUSD;
-  if (requests) usage.requests = requests;
-
-  return { events, usage, compactions: 0, parseSuccess };
+  return { events, usage: transcriptUsage("hermes", usage), compactions: 0, parseSuccess, unrecognizedEvents };
 }
 
-/** 从 export / stdout 文本里抠 session id。 */
+const SessionIdentity = Schema.Struct({
+  id: string,
+  session_id: string,
+  sessionId: string,
+  messages: field(Schema.Array(Schema.MutableJson)),
+  source: string,
+});
+const decodeIdentity = lineDecoder(SessionIdentity);
+
 export function sessionIdFromHermesOutput(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  for (const line of raw.split("\n")) {
+  for (const line of (raw ?? "").split("\n")) {
     const resume = line.match(/hermes\s+(?:chat\s+)?(?:--resume|-r)\s+(\S+)/i);
     if (resume?.[1]) return resume[1].replace(/["'`]/g, "");
     const labeled = line.match(/Session:\s*([A-Za-z0-9_-]+)/i);
     if (labeled?.[1]) return labeled[1];
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("{")) continue;
-    try {
-      const obj = JSON.parse(trimmed) as globalThis.Record<string, unknown>;
-      const id = str(obj.id) ?? str(obj.session_id) ?? str(obj.sessionId);
-      if (id && (Array.isArray(obj.messages) || str(obj.source))) return id;
-    } catch {
-      // skip
-    }
+    const decoded = decodeIdentity(line);
+    if (decoded.kind !== "decoded") continue;
+    const value = decoded.value;
+    const id = value.id ?? value.session_id ?? value.sessionId;
+    if (id && (value.messages !== undefined || value.source !== undefined)) return id;
   }
   return undefined;
 }

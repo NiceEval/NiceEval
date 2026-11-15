@@ -38,7 +38,7 @@ export const TokenUsage = Schema.Struct({
   completion_tokens_details: field(reasoning),
   cache_creation: field(Schema.Struct({ ephemeral_5m_input_tokens: token, ephemeral_1h_input_tokens: token })),
   cache: field(Schema.Struct({ read: token, write: token })),
-  cost: token,
+  cost: field(Schema.Union([Schema.Finite, Schema.Struct({ total: token })])),
   actual_cost_usd: token,
   actualCostUsd: token,
   api_call_count: token,
@@ -100,7 +100,7 @@ export function normalizeUsage(protocol: Protocol, value: Tokens): Usage {
       input = value.prompt_tokens;
       output = value.completion_tokens;
       cacheRead = value.prompt_tokens_details?.cached_tokens;
-      cost = value.cost;
+      if (typeof value.cost === "number") cost = value.cost;
       break;
     case "hermes":
       input = value.input_tokens ?? value.inputTokens;
@@ -126,8 +126,9 @@ export function normalizeUsage(protocol: Protocol, value: Tokens): Usage {
   }
   // An absent cache measurement does not supply another bucket; a reported
   // subset is subtracted only when the enclosing input measurement exists.
-  if ((protocol === "codex" || protocol === "bub") && input !== undefined && cacheRead !== undefined) {
-    input = Math.max(0, input - cacheRead);
+  if ((protocol === "codex" || protocol === "bub") && input !== undefined) {
+    const uncached = cacheRead === undefined ? input : input - cacheRead;
+    input = Math.max(0, uncached);
   }
   if (input !== undefined) usage.inputTokens = input;
   if (output !== undefined) usage.outputTokens = output;
@@ -153,4 +154,33 @@ export function addUsage(total: Usage, next: Usage): void {
     const value = next[key];
     if (value !== undefined) total[key] = (total[key] ?? 0) + value;
   }
+}
+
+/** Stable output key order belongs to the transcript boundary, not arrival order. */
+export function transcriptUsage(protocol: Protocol, total: Usage): Usage {
+  const usage: Usage = {};
+  let keys: readonly (keyof Usage)[];
+  switch (protocol) {
+    case "hermes":
+      keys = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens", "costUSD", "requests"];
+      break;
+    case "opencode":
+      keys = ["inputTokens", "outputTokens", "requests", "cacheReadTokens", "cacheCreationTokens"];
+      break;
+    default:
+      keys = [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheCreationTokens",
+        "reasoningTokens",
+        "requests",
+        "costUSD",
+      ];
+  }
+  for (const key of keys) {
+    const value = total[key];
+    if (value !== undefined) usage[key] = value;
+  }
+  return usage;
 }

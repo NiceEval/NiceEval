@@ -1,11 +1,12 @@
 // Codex exec JSONL and session rollout share this single protocol boundary.
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import type { CommandProjection, StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
 import { assertNever, coerceArgs, field, lineDecoder, unrecognized } from "./shared.ts";
-import { addUsage, normalizeUsage, TokenUsage } from "./usage.ts";
+import { addUsage, normalizeUsage, TokenUsage, transcriptUsage } from "./usage.ts";
 
 export const CODEX_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
@@ -46,7 +47,15 @@ const itemFields = {
   kind: string,
   usage: field(TokenUsage),
 };
+const CompactionItem = Schema.Struct({ type: Schema.Literal("compaction"), ...itemFields });
+const compactionTag = Schema.String.check(Schema.isPattern(/compact|context_truncat/i));
 const Item = Schema.Union([
+  Schema.Struct({ type: compactionTag, ...itemFields }).pipe(
+    Schema.decodeTo(Schema.toType(CompactionItem), {
+      decode: SchemaGetter.transform((item) => ({ ...item, type: "compaction" as const })),
+      encode: SchemaGetter.transform((item) => item),
+    }),
+  ),
   Schema.Struct({ type: Schema.Literals(["reasoning", "thinking"]), ...itemFields }),
   Schema.Struct({ type: Schema.Literals(["agent_message", "assistant_message", "message"]), ...itemFields }),
   Schema.Struct({ type: Schema.Literals(["command_execution", "local_shell_call"]), ...itemFields }),
@@ -84,7 +93,20 @@ const eventFields = {
   success: field(Schema.Boolean),
   status: string,
 };
+const CompactionEvent = Schema.Struct({ type: Schema.Literal("compaction"), ...eventFields });
 const CodexEvent = Schema.Union([
+  Schema.Struct({ type: compactionTag, ...eventFields }).pipe(
+    Schema.decodeTo(Schema.toType(CompactionEvent), {
+      decode: SchemaGetter.transform((event) => ({ ...event, type: "compaction" as const })),
+      encode: SchemaGetter.transform((event) => event),
+    }),
+  ),
+  Schema.Struct({ type: Schema.String, ...eventFields, subtype: compactionTag }).pipe(
+    Schema.decodeTo(Schema.toType(CompactionEvent), {
+      decode: SchemaGetter.transform((event) => ({ ...event, type: "compaction" as const })),
+      encode: SchemaGetter.forbiddenEncoding,
+    }),
+  ),
   Schema.Struct({
     type: Schema.Literals([
       "thread.started",
@@ -300,6 +322,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         events.push({ type: "error", message: String(item.message ?? item.text ?? "error") });
         return;
       case "todo_list":
+      case "compaction":
         return;
       default:
         return assertNever(item);
@@ -311,6 +334,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
     const decoded = decodeLine(line);
     if (decoded.kind === "invalid-json") {
       parseSuccess = false;
+      unrecognized(unrecognizedEvents, "<missing-kind>");
       continue;
     }
     if (decoded.kind === "unrecognized") {
@@ -418,7 +442,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
         assertNever(data);
     }
   }
-  return { events, usage, compactions, parseSuccess, unrecognizedEvents };
+  return { events, usage: transcriptUsage("codex", usage), compactions, parseSuccess, unrecognizedEvents };
 }
 
 export function parseCodex(raw: string | undefined): StreamEvent[] {
