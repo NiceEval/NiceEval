@@ -308,11 +308,12 @@ export default defineExperiment({
         env: baseEnv,
       });
       expect(doctor.exitCode, doctor.diagnostic()).toBe(1);
-      expect(doctor.stdout).toContain("status: FAIL (fail closed)");
+      expect(doctor.stdout).toContain("status: FAIL");
       expect(doctor.stdout).toContain("4 free of 4");
-      expect(doctor.stdout).toContain("artifact-inventory: FAIL [sandbox-artifact-unverified]");
-      expect(doctor.stdout).toContain(`project=${artifactProject} instance=${orphanArtifact}`);
-      expect(doctor.stdout).toContain("artifact-capacity: FAIL");
+      expect(doctor.stdout).toContain("Saved caches: FAIL");
+      expect(doctor.stdout).toContain("1 unregistered resources");
+      expect(doctor.stdout).not.toContain("sandbox-artifact-unverified");
+      expect(doctor.stdout).toContain("Cache capacity: FAIL");
 
       delete providerState.instances[artifactProject]![orphanArtifact];
       await writeFile(state, `${JSON.stringify(providerState)}\n`, "utf8");

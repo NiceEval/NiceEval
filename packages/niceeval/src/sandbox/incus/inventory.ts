@@ -122,24 +122,44 @@ export function inventoryDocument(domain: IncusDomainDescriptor, inventory: Arti
   };
 }
 export function renderArtifactInventory(domain: IncusDomainDescriptor, inventory: ArtifactInventory): string {
+  const states: Readonly<Record<ArtifactIntent["state"], string>> = {
+    reserved: "waiting to prepare",
+    preparing: "preparing",
+    publishing: "saving",
+    committed: "ready",
+    invalid: "unavailable",
+    quarantined: "blocked for safety",
+    retiring: "removing",
+    released: "removed",
+  };
+  const verification: Readonly<Record<ArtifactVerification, string>> = {
+    verified: "verified",
+    dangling: "resources missing",
+    "metadata-drift": "resource ownership changed",
+  };
   const lines = [
-    `Incus artifacts · ${domain.name} · ${domain.executionDomainId}`,
+    `Incus saved caches · ${domain.name} · ${domain.executionDomainId}`,
     `${inventory.entries.length} entries · project=${domain.artifactProject} pool=${domain.storagePool}`,
   ];
   for (const entry of inventory.entries) {
     const a = entry.intent;
     lines.push(
-      `${a.artifactId.slice(0, 12)} · revision=${a.executionDomainId} · ${a.state} · generation=${a.generation} · head=${entry.currentHead} · holds=${entry.consumerHolds} · ${entry.verification}`,
+      `${a.artifactId.slice(0, 12)} · environment ${a.executionDomainId} · ${states[a.state]} · generation ${a.generation} · ${entry.currentHead ? "current" : "earlier"} · ${entry.consumerHolds} consumers · ${verification[entry.verification]}`,
     );
-    lines.push(`  created=${a.createdAt} · lastSuccessfulHoldAt=${a.lastSuccessfulHoldAt ?? "never"}`);
+    lines.push(`  created ${a.createdAt} · last used ${a.lastSuccessfulHoldAt ?? "never"}`);
     lines.push(`  ${a.estimatedArtifactBytes ?? "unknown"} bytes estimate · not additive`);
   }
-  for (const orphan of inventory.orphans) lines.push(`orphan ${orphan.kind} ${orphan.name} · not eligible for GC`);
+  for (const kind of ["instance", "custom-storage-volume"] as const) {
+    const names = inventory.orphans.filter((entry) => entry.kind === kind).map((entry) => entry.name);
+    if (names.length > 0)
+      lines.push(`unregistered ${kind === "instance" ? "VMs" : "volumes"} ×${names.length}: ${names.join(", ")}`);
+  }
   lines.push(
     inventory.pool === undefined
       ? "pool bytes unknown"
       : `pool bytes: total=${inventory.pool.total} used=${inventory.pool.used} free=${inventory.pool.free}`,
   );
-  lines.push("Artifact size estimates are not additive; exact marginal reclaim is unknown.");
+  lines.push("Cache size estimates are not additive; exact reclaimed space is unknown.");
+  if (inventory.orphans.length > 0) lines.push("Unregistered resources cannot be removed by NiceEval.");
   return `${lines.join("\n")}\n`;
 }

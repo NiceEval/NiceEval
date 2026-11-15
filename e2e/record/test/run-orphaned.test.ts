@@ -52,7 +52,7 @@ test.concurrent("集合恢复只收口已证明终止的 owner，并保留已发
         }),
       ]);
       const human = await niceeval.run(["run", "list", "--state", "active"]);
-      expect(human.stdout).toContain("owner gone");
+      expect(human.stdout).toContain("owner stopped");
       expect(human.stdout).toContain("Next: niceeval run recover --orphaned");
       const unconfirmed = await niceeval.run(["run", "recover", "--orphaned", "--json"]);
       expect(unconfirmed.exitCode, unconfirmed.diagnostic()).not.toBe(0);
@@ -93,6 +93,18 @@ test.concurrent("集合恢复只收口已证明终止的 owner，并保留已发
         expect(unknown.exitCode, unknown.diagnostic()).toBe(0);
         const unknownRun = only(unknown.runListDocument().runs, () => true, unknown.diagnostic());
         expect(unknownRun.owner).toMatchObject({ state: "unknown", reason: "probe-failed" });
+        const unknownHuman = await niceeval.run(["run", "list", "--state", "active"], {
+          env: { NODE_OPTIONS: `--require=${faults}`, NICEEVAL_RUN_OS_FAULT: "identity-unavailable" },
+        });
+        expect(unknownHuman.exitCode, unknownHuman.diagnostic()).toBe(0);
+        expect(unknownHuman.stdout).toContain("owner unknown (process check failed)");
+        expect(unknownHuman.stdout).not.toContain("probe-failed");
+        const skippedHuman = await niceeval.run(["run", "recover", "--orphaned", "--yes"], {
+          env: { NODE_OPTIONS: `--require=${faults}`, NICEEVAL_RUN_OS_FAULT: "identity-unavailable" },
+        });
+        expect(skippedHuman.exitCode, skippedHuman.diagnostic()).toBe(0);
+        expect(skippedHuman.stdout).toContain("skipped ×1 (process check failed)");
+        expect(skippedHuman.stdout).not.toContain("unknown:probe-failed");
         const skippedUnknown = await niceeval.run(["run", "recover", "--orphaned", "--yes", "--json"], {
           env: { NODE_OPTIONS: `--require=${faults}`, NICEEVAL_RUN_OS_FAULT: "identity-unavailable" },
         });

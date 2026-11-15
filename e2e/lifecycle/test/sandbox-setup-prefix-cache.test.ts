@@ -315,8 +315,9 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
 
   const human = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId], { cwd: root, env });
   expect(human.exitCode, human.diagnostic()).toBe(0);
-  expect(human.stdout).toContain("sandbox-before-cache · indexed");
-  expect(human.stdout).toContain("0 leases (0 live, 0 unverified) · 0 holds (0 live, 0 unverified)");
+  expect(human.stdout).toContain("prepared Sandbox · ready");
+  expect(human.stdout).toContain("0 users (0 running, 0 unverified) · 0 protected uses (0 running, 0 unverified)");
+  expect(human.stdout).not.toMatch(/sandbox-before-cache|task-build|active-leased|cold-reusable|indexed|leases|holds/);
   expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
 
   const preview = await niceeval.run(["docker", "cache", "gc", "--domain", domain.domainId, "--json"], {

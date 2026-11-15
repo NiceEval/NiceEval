@@ -42,7 +42,7 @@ class MaintenanceFailure extends Error {
   constructor(
     readonly exitCode: 2 | 3 | 4,
     readonly reason: string,
-    detail: string,
+    readonly detail: string,
   ) {
     super(`${reason}: ${detail}`);
   }
@@ -536,12 +536,24 @@ export function runIncusMaintenance(options: IncusMaintenanceOptions): Effect.Ef
           }
           if (options.apply === undefined) {
             const { document, estimates } = await preview(repository, control, domain, facts, unusedFor);
+            const rules: Readonly<Record<GcCandidate["ruleId"], string>> = {
+              "dangling-intent": "resources already absent",
+              "superseded-domain-revision": "earlier execution environment",
+              "superseded-generation": "replaced by a newer cache",
+              unused: "unused",
+            };
+            const counts = new Map<string, number>();
+            for (const item of document.plan.candidates) {
+              const label = rules[item.ruleId];
+              counts.set(label, (counts.get(label) ?? 0) + 1);
+            }
+            const knownEstimates = estimates.flatMap((entry) => (entry.bytes === null ? [] : [entry.bytes]));
             const lines = [
               `GC preview ${document.plan.planId} · domain ${domain.executionDomainId} · expires in 15m`,
               `${document.summary.candidateCount} candidates · exact reclaim unknown`,
-              ...document.plan.candidates.map((item) => `  ${item.entryId.slice(0, 12)} · ${item.ruleId}`),
-              `Reclaim estimates (not additive): ${estimates.map((entry) => `${entry.entryId.slice(0, 12)} ${entry.bytes ?? "unknown"} bytes estimate`).join(", ") || "none"}`,
-              `Apply with: niceeval sandbox provider gc incus${domain.name === "development" ? " --development" : ""} --apply ${document.plan.planId}`,
+              ...[...counts].map(([label, count]) => `  ${label} ×${count}`),
+              `Reclaim estimates (not additive): ${knownEstimates.length} known, ${estimates.length - knownEstimates.length} unknown${knownEstimates.length === 0 ? "" : `; ${Math.min(...knownEstimates)}–${Math.max(...knownEstimates)} bytes per cache`}`,
+              `Next: niceeval sandbox provider gc incus${domain.name === "development" ? " --development" : ""} --apply ${document.plan.planId}`,
             ];
             return {
               exitCode: 0,
@@ -552,12 +564,36 @@ export function runIncusMaintenance(options: IncusMaintenanceOptions): Effect.Ef
           const envelope = await apply(repository, control, domain, facts, options.apply);
           const document = envelope.document;
           const summary = document.summary;
+          const reasons: Readonly<Record<GcItemOutcome["reasonCode"], string>> = {
+            deleted: "removed",
+            "already-absent": "resources already absent",
+            "hold-acquired": "cache acquired by a consumer",
+            "hold-present": "cache still in use",
+            "provider-reference": "resources still referenced by Incus",
+            "entry-state-changed": "cache state changed",
+            "manifest-changed": "cache contents changed",
+            "resource-changed": "resource ownership changed",
+            unverified: "resource ownership could not be verified",
+            "delete-conflict": "another removal is in progress",
+            "delete-failed": "could not remove resources",
+            "domain-stopped": "Incus connection or cleanup permission changed",
+          };
+          const counts = new Map<string, number>();
+          for (const item of document.outcomes) {
+            const status =
+              item.status === "already-absent"
+                ? "already absent"
+                : item.status === "not-attempted"
+                  ? "not attempted"
+                  : item.status;
+            const label = `${status}: ${reasons[item.reasonCode]}`;
+            counts.set(label, (counts.get(label) ?? 0) + 1);
+          }
           const lines = [
-            `GC outcome ${document.planId} · ${summary.deleted} deleted · ${summary.alreadyAbsent} already-absent · ${summary.skipped} skipped · ${summary.failed} failed · ${summary.notAttempted} not-attempted`,
-            ...document.outcomes.map(
-              (item) => `  ${item.status} ${item.entryId.slice(0, 12)} · ${item.reasonCode} · ${item.message}`,
-            ),
+            `GC outcome ${document.planId} · ${summary.deleted} deleted · ${summary.alreadyAbsent} already absent · ${summary.skipped} skipped · ${summary.failed} failed · ${summary.notAttempted} not attempted`,
+            ...[...counts].map(([label, count]) => `  ${label} ×${count}`),
             `pool free bytes: before=${envelope.before ?? "unknown"} after=${envelope.after ?? "unknown"}; exact marginal reclaim unknown`,
+            `Next: niceeval sandbox provider inventory incus${domain.name === "development" ? " --development" : ""} --json`,
           ];
           return {
             exitCode: summary.skipped + summary.failed + summary.notAttempted === 0 ? 0 : 1,
@@ -573,7 +609,7 @@ export function runIncusMaintenance(options: IncusMaintenanceOptions): Effect.Ef
       Effect.succeed({
         exitCode: cause instanceof MaintenanceFailure ? cause.exitCode : 4,
         stdout: "",
-        stderr: `${cause instanceof Error ? cause.message : String(cause)}\n`,
+        stderr: `${!options.json && cause instanceof MaintenanceFailure ? cause.detail : cause instanceof Error ? cause.message : String(cause)}\n`,
       }),
     ),
   );

@@ -104,14 +104,26 @@ function humanSize(value: number | null): string {
 type CacheInventory = DockerCacheDomainInventory;
 
 function humanInventoryEntry(entry: DockerCacheInventoryEntry): string {
+  const states: Readonly<Record<DockerCacheInventoryEntry["state"], string>> = {
+    "active-leased": "in use",
+    "cold-reusable": "ready",
+    unverified: "ownership unverified",
+    reserved: "waiting to prepare",
+    building: "preparing",
+    published: "saving",
+    indexed: "ready",
+    invalidated: "unavailable",
+    deleting: "removing",
+    tombstoned: "removed",
+  };
   const identity =
     entry.kind === "task-build"
       ? `${entry.identity.buildKey.slice(0, 12)} · ${entry.identity.tag} · ${entry.identity.imageId}`
       : `${entry.identity.entryId} · ${entry.identity.beforeCacheKey.slice(0, 12)} · ${entry.identity.imageId ?? "image pending"}`;
   return (
-    `  ${entry.kind} · ${entry.state} · ${identity}\n` +
-    `    ${entry.leaseCount} leases (${entry.liveLeaseCount} live, ${entry.unverifiedLeaseCount} unverified) · ` +
-    `${entry.holdCount} holds (${entry.liveHoldCount} live, ${entry.unverifiedHoldCount} unverified) · ` +
+    `  ${entry.kind === "task-build" ? "build image" : "prepared Sandbox"} · ${states[entry.state]} · ${identity}\n` +
+    `    ${entry.leaseCount} users (${entry.liveLeaseCount} running, ${entry.unverifiedLeaseCount} unverified) · ` +
+    `${entry.holdCount} protected uses (${entry.liveHoldCount} running, ${entry.unverifiedHoldCount} unverified) · ` +
     `created ${entry.createdAt} · last used ${entry.lastSuccessfulUseAt ?? "never"} · protected until ${entry.protectedUntil}\n`
   );
 }

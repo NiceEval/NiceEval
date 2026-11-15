@@ -71,6 +71,10 @@ test.concurrent("Incus artifact maintenance diagnoses missing pairs and reclaims
         const empty = await cli.run(["sandbox", "provider", "inventory", "incus", "--development"], { cwd: root, env });
         expect(empty.exitCode, empty.diagnostic()).toBe(0);
         expect(empty.stdout).toContain("0 entries");
+        const unavailable = await cli.run(["sandbox", "provider", "doctor", "incus"], { cwd: root, env });
+        expect(unavailable.exitCode, unavailable.diagnostic()).toBe(1);
+        expect(unavailable.stdout).toContain("9 checks not run: fix the failed check first.");
+        expect(unavailable.stdout).not.toMatch(/PREREQUISITE_FAILED|incus-undeployed/);
 
         await writeFile(
           join(root, "experiments/incus-maintenance.ts"),
@@ -91,8 +95,8 @@ export default defineExperiment({ adapter: quickAgent,
         );
         const healthy = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: root, env });
         expect(healthy.exitCode, `${cold.diagnostic()}\n${healthy.diagnostic()}`).toBe(0);
-        expect(healthy.stdout).toContain("1 committed intents, 1 verified object pairs");
-        expect(healthy.stdout).toContain("artifact-storage: PASS");
+        expect(healthy.stdout).toContain("1 saved caches, 1 verified VM and volume pairs");
+        expect(healthy.stdout).toContain("Cache storage: PASS");
 
         // Only the external provider's state is fault-injected. NiceEval's durable
         // intents are created and observed exclusively through installed CLI calls.
@@ -102,7 +106,12 @@ export default defineExperiment({ adapter: quickAgent,
         await writeFile(state, JSON.stringify(provider));
         const partial = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: root, env });
         expect(partial.exitCode, partial.diagnostic()).toBe(1);
-        expect(partial.stdout).toContain("dangling");
+        expect(partial.stdout).toContain("1 caches with missing or changed resources");
+        expect(partial.stdout.match(/Next:/gu)).toHaveLength(1);
+        expect(partial.stdout).not.toMatch(/sandbox-artifact-unverified|artifact-inventory/);
+        expect(partial.stdout.trimEnd()).toMatch(
+          /Next:.*inventory incus --development\n {2}.*gc incus --development$/u,
+        );
         const excluded = await cli.run(["sandbox", "provider", "gc", "incus", "--development", "--unused-for", "1ms"], {
           cwd: root,
           env,
@@ -138,13 +147,15 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(missing.exitCode, missing.diagnostic()).toBe(0);
-        expect(missing.stdout).toContain("dangling");
+        expect(missing.stdout).toContain("resources missing");
+        expect(missing.stdout).not.toMatch(/lastSuccessfulHoldAt|metadata-drift|head=|holds=/);
         const absentPreview = await cli.run(["sandbox", "provider", "gc", "incus", "--development"], {
           cwd: root,
           env,
         });
         expect(absentPreview.exitCode, absentPreview.diagnostic()).toBe(0);
-        expect(absentPreview.stdout).toContain("dangling-intent");
+        expect(absentPreview.stdout).toContain("resources already absent ×1");
+        expect(absentPreview.stdout).not.toContain("dangling-intent");
         const absentPlan = /GC preview ([a-f0-9-]+)/u.exec(absentPreview.stdout)?.[1];
         expect(absentPlan).toBeTruthy();
         const beforeApply = await readFile(journal, "utf8");
@@ -153,7 +164,8 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(applied.exitCode, applied.diagnostic()).toBe(0);
-        expect(applied.stdout).toContain("already-absent");
+        expect(applied.stdout).toContain("already absent");
+        expect(applied.stdout).not.toContain("already-absent");
         const afterApply = (await readFile(journal, "utf8")).slice(beforeApply.length);
         expect(afterApply).not.toContain('"method":"DELETE"');
         const repeated = await cli.run(
@@ -167,7 +179,7 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(released.exitCode, released.diagnostic()).toBe(0);
-        expect(released.stdout).toContain("released");
+        expect(released.stdout).toContain("removed");
         const finalDoctor = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], {
           cwd: root,
           env,
@@ -190,7 +202,7 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(driftInventory.exitCode, driftInventory.diagnostic()).toBe(0);
-        expect(driftInventory.stdout).toContain("metadata-drift");
+        expect(driftInventory.stdout).toContain("resource ownership changed");
         const driftPreview = await cli.run(
           ["sandbox", "provider", "gc", "incus", "--development", "--unused-for", "1ms"],
           { cwd: root, env },
@@ -281,8 +293,8 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(afterDeleteInventory.exitCode, afterDeleteInventory.diagnostic()).toBe(0);
-        expect(afterDeleteInventory.stdout).toContain("released");
-        expect(afterDeleteInventory.stdout).not.toContain(" · committed · ");
+        expect(afterDeleteInventory.stdout).toContain("removed");
+        expect(afterDeleteInventory.stdout).not.toContain(" · ready · ");
         const beforeReplay = await readFile(journal, "utf8");
         const oldReplay = await cli.run(
           ["sandbox", "provider", "gc", "incus", "--development", "--apply", deletePlan!],

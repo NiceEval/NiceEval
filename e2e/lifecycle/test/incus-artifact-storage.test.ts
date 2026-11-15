@@ -90,8 +90,9 @@ export default defineExperiment({ adapter: quickAgent,
         await writeFile(descriptor, JSON.stringify(configured));
         const low = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: root, env });
         expect(low.exitCode, low.diagnostic()).toBe(1);
-        expect(low.stdout).toContain("artifact-storage: FAIL");
-        expect(low.stdout).toContain("storage-bytes");
+        expect(low.stdout).toContain("Cache storage: FAIL");
+        expect(low.stdout).toContain("not enough free storage");
+        expect(low.stdout).not.toContain("storage-bytes");
         expect(low.stdout).toContain("4 free of 4");
         const refused = await cli.run(["exp", "incus-storage", "probe", "--rerun=all", "--json"], { cwd: root, env });
         expect(refused.exitCode, refused.diagnostic()).not.toBe(0);
@@ -114,7 +115,7 @@ export default defineExperiment({ adapter: quickAgent,
         await writeFile(state, JSON.stringify(provider));
         const unknown = await cli.run(["sandbox", "provider", "doctor", "incus", "--development"], { cwd: root, env });
         expect(unknown.exitCode, unknown.diagnostic()).toBe(1);
-        expect(unknown.stdout).toContain("artifact-storage: FAIL");
+        expect(unknown.stdout).toContain("Cache storage: FAIL");
         expect(unknown.stdout).toContain("unknown");
 
         delete provider.storageResources;
@@ -125,7 +126,7 @@ export default defineExperiment({ adapter: quickAgent,
           env,
         });
         expect(inventory.exitCode, `${recovered.diagnostic()}\n${inventory.diagnostic()}`).toBe(0);
-        expect(inventory.stdout).toContain("committed");
+        expect(inventory.stdout).toContain("ready");
         expect(inventory.stdout).toContain("4096 bytes estimate");
         expect(inventory.stdout).toContain("verified");
       });

@@ -180,4 +180,7 @@ NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中�
 
 `niceeval docker cache inventory` 只读展示同一 `verified-managed` Docker images Domain 中由 NiceEval 登记的两类 entry：`task-build` 与 `sandbox-before-cache`。JSON 的 `entries` 是以 `kind` 判别的联合；每项稳定显示自身 identity、当前 state、lease 与 hold 数、创建时间、最后成功使用时间与保护截止时间。Domain 摘要另按两种 kind 给出计数。Human 输出逐项显示同一组安全字段，不输出声明正文、holder identity、operation id 或其它内部恢复资料。
 
+Human 使用普通英文：两类缓存写成 `build image` 与 `prepared Sandbox`，可复用状态写成 `ready`，
+正在使用写成 `in use`；lease 与 hold 数分别写成 `users` 与 `protected uses`。原始 kind 和 state 只留在 JSON。
+
 Before cache 进入 inventory 只授予可见性，不把它纳入 `docker cache gc`：现有 preview/apply 仍只产生和回收 `task-build` 候选。共享 BuildKit 仍是独立的 `unverified` Provider observation。

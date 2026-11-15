@@ -127,7 +127,7 @@ async function doctorIncusProviderWithRepository(
     check(
       "domain",
       "PASS",
-      `${domain.name} executionDomainId=${domain.executionDomainId} project=${domain.project} pool=${domain.storagePool} storage=${domain.storage} quota=${domain.quota}`,
+      `${domain.name} · ${domain.executionDomainId} · project ${domain.project} · pool ${domain.storagePool} · ${domain.name === "development" ? "capacity not verified for reference comparisons" : "dedicated storage with verified capacity"}`,
     ),
   );
 
@@ -176,7 +176,7 @@ async function doctorIncusProviderWithRepository(
       );
     } else {
       const storage = await control.attestDevelopmentStorage(domain.project, domain.storagePool);
-      checks.push(check("storage-pool", "PASS", `development-dir pool ${storage.name} source=${storage.source}`));
+      checks.push(check("storage-pool", "PASS", `development directory pool ${storage.name} at ${storage.source}`));
     }
   } catch (cause) {
     checks.push(check("storage-pool", "FAIL", errorDetail(cause), errorCode(cause)));
@@ -261,21 +261,11 @@ async function doctorIncusProviderWithRepository(
       (entry) => entry.verification !== "verified" || entry.intent.state !== "committed",
     );
     if (inventory.orphans.length !== 0 || drifted.length !== 0) {
-      const details = [
-        ...drifted.map(
-          (entry) =>
-            `${entry.intent.artifactId.slice(0, 12)} ${entry.intent.state !== "committed" ? entry.intent.state : entry.verification}`,
-        ),
-        ...inventory.orphans.map(
-          (entry) =>
-            `orphan project=${domain.artifactProject} ${entry.kind === "instance" ? `instance=${entry.name}` : `pool=${domain.storagePool} volume=${entry.name}`}`,
-        ),
-      ];
       checks.push(
         check(
           "artifact-inventory",
           "FAIL",
-          `${details.join("; ")}. Inspect with niceeval sandbox provider inventory incus; preview exact reclamation with niceeval sandbox provider gc incus.`,
+          `${drifted.length} caches with missing or changed resources; ${inventory.orphans.length} unregistered resources`,
           "sandbox-artifact-unverified",
         ),
       );
@@ -284,7 +274,7 @@ async function doctorIncusProviderWithRepository(
         check(
           "artifact-inventory",
           "PASS",
-          `${committed.length} committed intents, ${committed.filter((entry) => entry.verification === "verified").length} verified object pairs; project=${domain.artifactProject} pool=${domain.storagePool}`,
+          `${committed.length} saved caches, ${committed.filter((entry) => entry.verification === "verified").length} verified VM and volume pairs; project=${domain.artifactProject} pool=${domain.storagePool}`,
         ),
       );
     }
@@ -294,7 +284,7 @@ async function doctorIncusProviderWithRepository(
         check(
           "artifact-capacity",
           "FAIL",
-          `no free prepared artifact slots (${artifacts.length}/${domain.artifactMaxInstances}); inspect niceeval sandbox provider inventory incus and preview niceeval sandbox provider gc incus --unused-for <duration>`,
+          `no free cache slots (${artifacts.length}/${domain.artifactMaxInstances})`,
           "sandbox-capacity-unavailable",
         ),
       );
@@ -322,18 +312,11 @@ async function doctorIncusProviderWithRepository(
       check(
         "artifact-storage",
         "PASS",
-        `pool=${domain.storagePool} free=${storage.free} required=${storage.required} inFlightReservedBytes=${storage.inFlightReservedBytes}; ${storage.estimatedArtifactBytes} bytes estimate, not additive`,
+        `pool ${domain.storagePool}: free ${storage.free} bytes, required ${storage.required} bytes, reserved for builds ${storage.inFlightReservedBytes} bytes; ${storage.estimatedArtifactBytes} bytes estimate, not additive`,
       ),
     );
   } catch (cause) {
-    checks.push(
-      check(
-        "artifact-storage",
-        "FAIL",
-        `${errorDetail(cause)} Inspect niceeval sandbox provider inventory incus and niceeval sandbox provider gc incus --unused-for <duration>.`,
-        errorCode(cause),
-      ),
-    );
+    checks.push(check("artifact-storage", "FAIL", errorDetail(cause), errorCode(cause)));
   }
 
   const failed = checks.some((entry) => entry.status === "FAIL");
@@ -370,15 +353,40 @@ export function doctorIncusProviderEffect(options: IncusDoctorOptions = {}): Eff
 }
 
 export function renderIncusDoctorReport(report: IncusDoctorReport): string {
+  const names: Readonly<Record<IncusDoctorCheckId, string>> = {
+    descriptor: "Configuration",
+    control: "Incus connection",
+    project: "Project",
+    "storage-pool": "Storage pool",
+    domain: "Execution environment",
+    "trusted-image": "Trusted image",
+    capacity: "VM capacity",
+    "artifact-inventory": "Saved caches",
+    "artifact-capacity": "Cache capacity",
+    "artifact-storage": "Cache storage",
+  };
   const lines = [
     `niceeval sandbox provider doctor incus`,
     `domain: ${report.domain}`,
     `descriptor: ${report.descriptorPath}`,
-    `status: ${report.status} (fail closed)`,
+    `status: ${report.status}`,
   ];
   for (const entry of report.checks) {
-    const code = entry.code === undefined ? "" : ` [${entry.code}]`;
-    lines.push(`- ${entry.id}: ${entry.status}${code} ${entry.detail}`);
+    if (entry.code === "PREREQUISITE_FAILED") continue;
+    lines.push(`- ${names[entry.id]}: ${entry.status} ${entry.detail}`);
+  }
+  const notRun = report.checks.filter((entry) => entry.code === "PREREQUISITE_FAILED").length;
+  if (notRun > 0) lines.push(`${notRun} checks not run: fix the failed check first.`);
+  if (
+    report.checks.some(
+      (entry) => entry.status === "FAIL" && entry.code !== "PREREQUISITE_FAILED" && entry.id.startsWith("artifact-"),
+    )
+  ) {
+    const domain = report.domain === "development" ? " --development" : "";
+    lines.push(
+      `Next: niceeval sandbox provider inventory incus${domain}`,
+      `  niceeval sandbox provider gc incus${domain}`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }

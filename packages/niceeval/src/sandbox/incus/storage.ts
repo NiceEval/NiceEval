@@ -60,7 +60,7 @@ function capacityError(
   return new IncusProviderError({
     code: "sandbox-capacity-unavailable",
     reason: "storage-bytes",
-    summary: `Incus artifact storage-bytes admission refused: pool=${pool} free=${free ?? "unknown"} required=${required ?? "unknown"} inFlightReservedBytes=${inFlight}.`,
+    summary: `Incus cache: not enough free storage, or available capacity is unknown. Pool ${pool}: free ${free ?? "unknown"} bytes, required ${required ?? "unknown"} bytes, reserved for builds ${inFlight} bytes.`,
     actions: [
       "Inspect niceeval sandbox provider inventory incus (add --development for that domain).",
       "Preview niceeval sandbox provider gc incus --unused-for <duration>; apply only a reviewed plan.",
