@@ -46,6 +46,9 @@ test.concurrent("旧 Judge 配置在执行前给出源码位置与离线英文�
     expect(result.stderr).toContain("old-a.eval.ts");
     expect(result.stderr).toContain("old-b.eval.ts");
     expect(result.stderr).toContain("OpenAIProvider");
+    expect(result.stderr).not.toContain("Code: migration-required");
+    expect(result.stderr).not.toContain("Guide: judge-provider");
+    expect(result.stderr).toContain("Migration needed at 2 locations:");
     expect(result.stderr.match(/# Use an explicit Judge provider/gu)).toHaveLength(1);
     expect(result.stderr).not.toContain("BODY_MUST_NOT_RUN");
     await expect(stat(join(projectRoot, ".niceeval"))).rejects.toMatchObject({ code: "ENOENT" });
