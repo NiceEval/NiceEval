@@ -920,11 +920,12 @@ function toolOrderHandle<Kind extends RuntimeKind>(input: {
 }
 
 function managedToolCalls(scope: AssertionScope, snapshot: ToolScopeSnapshot, check: object): ManagedToolCalls {
+  const incompleteReason = toolScopeCoverageReason(snapshot);
   const collection = freezeManagedToolCalls({
     scope,
     sourceSnapshot: snapshot.sourceSnapshot,
     rows: snapshot.rows,
-    incompleteReason: toolScopeCoverageReason(snapshot),
+    ...(incompleteReason === undefined ? {} : { incompleteReason }),
     actionsCoverage: snapshot.coverage.actions,
     orphanFinishCount: snapshot.orphanFinishes.length,
     snapshot: snapshot.snapshot,
@@ -1106,7 +1107,7 @@ function projectEventScope(input: {
       if (occurrence !== undefined) {
         value = makeAssertionToolEvent({
           eventId: row.eventId,
-          toolOccurrenceId,
+          ...(toolOccurrenceId === undefined ? {} : { toolOccurrenceId }),
           session: row.sessionId,
           turn: row.turnId,
           turnOrdinal: (turnOrdinal ?? 0) + 1,
@@ -1900,33 +1901,33 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
   const manager = new SessionManager({
     agent: deps.agent,
     sandbox: deps.sandbox,
-    evalId: deps.evalId,
+    ...(deps.evalId === undefined ? {} : { evalId: deps.evalId }),
     attempt: deps.attempt,
     evalGroup: deps.evalGroup,
-    model: deps.model,
-    reasoningEffort: deps.reasoningEffort,
+    ...(deps.model === undefined ? {} : { model: deps.model }),
+    ...(deps.reasoningEffort === undefined ? {} : { reasoningEffort: deps.reasoningEffort }),
     flags: deps.flags,
-    experimentId: deps.experimentId,
+    ...(deps.experimentId === undefined ? {} : { experimentId: deps.experimentId }),
     signal: deps.signal,
     requestEffect: deps.requestEffect,
     log: deps.log,
-    telemetry: deps.telemetry,
-    otel: deps.otel,
-    feedback: deps.feedback,
-    onSendActive: deps.onSendActive,
-    timingNow: deps.timingNow,
-    onTurn: deps.onTurn,
-    ledgerHooks: deps.ledgerHooks,
-    concurrencySlot: deps.concurrencySlot,
-    nextSourceOrder: deps.nextSourceOrder,
-    sourceRegistry: deps.sourceRegistry,
+    ...(deps.telemetry === undefined ? {} : { telemetry: deps.telemetry }),
+    ...(deps.otel === undefined ? {} : { otel: deps.otel }),
+    ...(deps.feedback === undefined ? {} : { feedback: deps.feedback }),
+    ...(deps.onSendActive === undefined ? {} : { onSendActive: deps.onSendActive }),
+    ...(deps.timingNow === undefined ? {} : { timingNow: deps.timingNow }),
+    ...(deps.onTurn === undefined ? {} : { onTurn: deps.onTurn }),
+    ...(deps.ledgerHooks === undefined ? {} : { ledgerHooks: deps.ledgerHooks }),
+    ...(deps.concurrencySlot === undefined ? {} : { concurrencySlot: deps.concurrencySlot }),
+    ...(deps.nextSourceOrder === undefined ? {} : { nextSourceOrder: deps.nextSourceOrder }),
+    ...(deps.sourceRegistry === undefined ? {} : { sourceRegistry: deps.sourceRegistry }),
     resources: deps.resources,
   });
   const readAttemptUsage = () =>
     projectAgentEvalUsage({
       contributions: manager.usageContributionsSnapshot(),
       scope: "attempt",
-      pricing: deps.pricing,
+      ...(deps.pricing === undefined ? {} : { pricing: deps.pricing }),
     });
   const core = createAssertFirstCoreContext({ ...deps, readUsage: readAttemptUsage });
   const runtime = core.state.assertions;
@@ -2163,8 +2164,8 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
     return cut;
   };
   const releaseHistoryFrame = (frame: AgentHistoryFrame): void => {
-    frame.cut = undefined;
-    frame.read = undefined;
+    delete frame.cut;
+    delete frame.read;
   };
 
   const attemptStatus = (): ScopeStatus => {
@@ -2341,7 +2342,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
       return projectAgentEvalUsage({
         contributions: manager.usageContributionsSnapshot().filter((call) => call.turnId === observed.turnId),
         scope: "turn",
-        pricing: deps.pricing,
+        ...(deps.pricing === undefined ? {} : { pricing: deps.pricing }),
       });
     };
     const frame = historyFrame();
@@ -2489,7 +2490,8 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
     responses?: readonly InputResponse[],
     loc?: ReturnType<typeof captureLoc>,
   ): Effect.Effect<AssertFirstTurnHandle<Kind>, unknown> => {
-    const capturedLoc = loc ?? captureLoc({ registry: deps.sourceRegistry });
+    const capturedLoc =
+      loc ?? captureLoc({ ...(deps.sourceRegistry === undefined ? {} : { registry: deps.sourceRegistry }) });
     return Effect.suspend(() => {
       scope.started = true;
       scope.inFlight += 1;
@@ -2517,7 +2519,15 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
   ): Promise<AssertFirstTurnHandle<Kind>> => {
     scope.queuedDrives = (scope.queuedDrives ?? 0) + 1;
     return deps
-      .requestEffect(sendEffect<Kind>(scope, text, files, responses, captureLoc({ registry: deps.sourceRegistry })))
+      .requestEffect(
+        sendEffect<Kind>(
+          scope,
+          text,
+          files,
+          responses,
+          captureLoc({ ...(deps.sourceRegistry === undefined ? {} : { registry: deps.sourceRegistry }) }),
+        ),
+      )
       .finally(() => {
         scope.queuedDrives!--;
       });
@@ -2536,7 +2546,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
           .usageContributionsSnapshot()
           .filter((call) => call.sessionScopeId === session.sessionScopeId),
         scope: "session",
-        pricing: deps.pricing,
+        ...(deps.pricing === undefined ? {} : { pricing: deps.pricing }),
       });
     };
     const frame = historyFrame();
@@ -2671,7 +2681,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
           return send<Kind>(scope, text, files);
         },
         sendFile: (path: string, text?: string) => {
-          const loc = captureLoc({ registry: deps.sourceRegistry });
+          const loc = captureLoc({ ...(deps.sourceRegistry === undefined ? {} : { registry: deps.sourceRegistry }) });
           scope.queuedDrives = (scope.queuedDrives ?? 0) + 1;
           return deps
             .requestEffect(

@@ -106,7 +106,7 @@ export function sendWithTurnRetry<T>(
             const monotonicEndedAt = yield* Clock.currentTimeNanos;
             const durationMs = Math.max(0, Number(monotonicEndedAt - monotonicStartedAt) / 1_000_000);
             const cls = resolveSendFailureClass(failure, {
-              adapter: deps.classifier,
+              ...(deps.classifier === undefined ? {} : { adapter: deps.classifier }),
             });
             if (!cls.retryable) return yield* Effect.fail(attachFailureClass(failure, cls));
             if (sendAttempt + 1 >= SEND_MAX_ATTEMPTS) {

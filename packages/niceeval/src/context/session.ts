@@ -449,7 +449,7 @@ export class SessionManager {
     const send = this.sendSerializedEffect(
       session,
       text,
-      loc ?? captureLoc({ registry: this.deps.sourceRegistry }),
+      loc ?? captureLoc({ ...(this.deps.sourceRegistry === undefined ? {} : { registry: this.deps.sourceRegistry }) }),
       files,
       responses,
     );
@@ -481,7 +481,7 @@ export class SessionManager {
         type: "message",
         role: "user",
         text,
-        loc,
+        ...(loc === undefined ? {} : { loc }),
         ...(sourceOrder === undefined ? {} : { sourceOrder }),
       };
       this.allEvents.push(userEvent);
@@ -508,15 +508,15 @@ export class SessionManager {
           sandbox: this.deps.sandbox,
           turnId,
           signal: this.deps.signal,
-          evalId: this.deps.evalId,
-          attempt: this.deps.attempt,
-          evalGroup: this.deps.evalGroup,
-          model: this.deps.model,
-          reasoningEffort: this.deps.reasoningEffort,
+          ...(this.deps.evalId === undefined ? {} : { evalId: this.deps.evalId }),
+          ...(this.deps.attempt === undefined ? {} : { attempt: this.deps.attempt }),
+          ...(this.deps.evalGroup === undefined ? {} : { evalGroup: this.deps.evalGroup }),
+          ...(this.deps.model === undefined ? {} : { model: this.deps.model }),
+          ...(this.deps.reasoningEffort === undefined ? {} : { reasoningEffort: this.deps.reasoningEffort }),
           flags: this.deps.flags,
-          experimentId: this.deps.experimentId,
+          ...(this.deps.experimentId === undefined ? {} : { experimentId: this.deps.experimentId }),
           session,
-          telemetry: this.deps.telemetry,
+          ...(this.deps.telemetry === undefined ? {} : { telemetry: this.deps.telemetry }),
           // Progress is intentionally transient. A direct SessionManager without
           // an ACTIVE feedback sink drops it instead of turning it into a durable
           // timeout breadcrumb through `log`.
@@ -566,10 +566,21 @@ export class SessionManager {
           sendAttempt: sendAttempt++,
         }));
       const sendOnce: Effect.Effect<PhysicalSendResult, unknown> = this.deps.otel
-        ? this.sendWithOtelEffect(this.deps.otel, { text, files, responses }, ctx, observeUsage)
-        : this.sendAgentEffect({ text, files, responses }, ctx, observeUsage).pipe(Effect.map((turn) => ({ turn })));
+        ? this.sendWithOtelEffect(
+            this.deps.otel,
+            { text, ...(files === undefined ? {} : { files }), ...(responses === undefined ? {} : { responses }) },
+            ctx,
+            observeUsage,
+          )
+        : this.sendAgentEffect(
+            { text, ...(files === undefined ? {} : { files }), ...(responses === undefined ? {} : { responses }) },
+            ctx,
+            observeUsage,
+          ).pipe(Effect.map((turn) => ({ turn })));
       const retryDeps: SendRetryDeps = {
-        classifier: this.deps.agent.classifySendFailure,
+        ...(this.deps.agent.classifySendFailure === undefined
+          ? {}
+          : { classifier: this.deps.agent.classifySendFailure }),
         onRetryAttempt: ({ sendAttempt, startedAt, durationMs, failure, classification }) => {
           const process = failure.process;
           this.retryAttempts.push({
@@ -605,7 +616,7 @@ export class SessionManager {
           }
         },
         budget: this.retryBudget,
-        slot: this.deps.concurrencySlot,
+        ...(this.deps.concurrencySlot === undefined ? {} : { slot: this.deps.concurrencySlot }),
         reportRetry: (message: string) => ctx.progress({ message }),
         signal: ctx.signal,
       };
@@ -634,18 +645,18 @@ export class SessionManager {
                   evidenceCoverage: turnEvidenceCoverage,
                   startOffsetMs,
                   durationMs,
-                  failed: turn.status === "failed" ? true : undefined,
+                  ...(turn.status === "failed" ? { failed: true } : {}),
                   ...(loc === undefined ? {} : { loc }),
                   ...(sourceOrder === undefined ? {} : { sourceOrder }),
                   ...(traceAttribution !== "none" && traceId !== undefined ? { traceId } : {}),
                   traceAttribution,
-                  otelWindow: window,
-                  usage: turn.usage,
+                  ...(window === undefined ? {} : { otelWindow: window }),
+                  ...(turn.usage === undefined ? {} : { usage: turn.usage }),
                 });
                 if (window !== undefined) {
                   this.otelTurnRecords.push({
                     window,
-                    activity: timingActivity,
+                    ...(timingActivity === undefined ? {} : { activity: timingActivity }),
                     hasSpans: traceAttribution !== "none",
                   });
                 }
