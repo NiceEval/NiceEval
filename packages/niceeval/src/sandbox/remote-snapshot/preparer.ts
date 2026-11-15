@@ -5,6 +5,7 @@ import { Clock, Deferred, Effect, Exit, Result, Schema, Scope } from "effect";
 import { userDatabaseHost, type UserDatabase } from "../../user-database/index.ts";
 import { BeforeCacheLookupError, type BeforeCacheError, type BeforeCacheStep } from "../backend.ts";
 import type { MaterializedSandboxCase } from "../case-types.ts";
+import { beforeCacheFailureDetail } from "./failure.ts";
 import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import type {
   BeforeCacheArtifact,
@@ -42,15 +43,37 @@ const Declaration = Schema.Struct({
 });
 const decodeDeclaration = Schema.decodeUnknownSync(Declaration, { onExcessProperty: "error" });
 const degraded = (reason: BeforeCacheDegradedReason, detail: string) => ({ _tag: "Degraded" as const, reason, detail });
-const ledgerError = () =>
+const ledgerError = (cause: BeforeCacheLookupError["cause"], domainId: string | undefined) =>
   new BeforeCacheLookupError({
     operation: "ledger",
     reason: "ledger-unavailable",
     beforeCacheKey: undefined,
+    domainId,
+    cause,
+  });
+const stagingError = () =>
+  new BeforeCacheLookupError({
+    operation: "staging",
+    reason: "staging-failed",
+    beforeCacheKey: undefined,
     domainId: undefined,
     cause: undefined,
   });
-const io = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({ try: run, catch: () => ledgerError() });
+const io = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({ try: run, catch: stagingError });
+
+function failureResult(error: BeforeCacheError, fallback: string) {
+  if (error._tag !== "BeforeCacheLookupError") return degraded("staging-failed", fallback);
+  switch (error.operation) {
+    case "ledger":
+      return degraded("ledger-unavailable", beforeCacheFailureDetail(error.cause, fallback));
+    case "eligibility":
+      return degraded("eligibility-failed", fallback);
+    case "snapshot":
+      return degraded("snapshot-uncertain", fallback);
+    default:
+      return degraded("staging-failed", fallback);
+  }
+}
 
 interface Reservation {
   readonly entry: SnapshotLedgerEntry;
@@ -96,7 +119,7 @@ const readMounts = Effect.fn("remoteSnapshot.readMounts")(function* (sandbox: Ma
   const result = yield* io((signal) =>
     sandbox.authorBackend.runCommand("cat", ["/proc/self/mountinfo"], { user: "root", signal }),
   );
-  if (result.exitCode !== 0 || result.stdout.trim() === "") return yield* ledgerError();
+  if (result.exitCode !== 0 || result.stdout.trim() === "") return yield* stagingError();
   return writableMounts(result.stdout);
 });
 
@@ -126,7 +149,7 @@ visit('/').then(found => { process.stdout.write(found ? 'found' : 'clean'); }, (
 export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<Plan>): BeforeCachePreparer<Plan> {
   const runs = new Map<string, Deferred.Deferred<RunState<Plan>, BeforeCacheError>>();
   const targets = new Map<string, Map<Plan, BeforeCacheSnapshotTarget>>();
-  const disabledDomains = new Set<string>();
+  const disabledDomains = new Map<string, BeforeCacheLookupError>();
   const stagingProofs = new WeakMap<MaterializedSandboxCase, StagingProof>();
   const runKey = (context: BeforeCachePreparationContext, target: BeforeCacheSnapshotTarget) =>
     JSON.stringify([context.runId, context.providerId, target.executionDomainId]);
@@ -134,13 +157,13 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
 
   const request = Effect.fn("remoteSnapshot.ledger")(function* (state: RunState<Plan>, input: SnapshotLedgerRequest) {
     return yield* snapshotLedgerRequest(state.database, input).pipe(
-      Effect.tapError(() =>
+      Effect.tapError((cause) =>
         Effect.sync(() => {
           state.disabled = true;
-          disabledDomains.add(state.key);
+          disabledDomains.set(state.key, ledgerError(cause, state.domain.executionDomainId));
         }),
       ),
-      Effect.mapError(() => ledgerError()),
+      Effect.mapError((cause) => ledgerError(cause, state.domain.executionDomainId)),
     );
   });
   const timedRequest = Effect.fn("remoteSnapshot.timedLedger")(function* (
@@ -156,6 +179,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
   });
 
   const cleanup = Effect.fn("remoteSnapshot.cleanup")(function* (state: RunState<Plan>) {
+    if (state.disabled) return;
     // Abandon only leases still owned by this process. Expired owners touch no row.
     for (const reservation of state.reservations.values()) {
       if (!reservation.lost)
@@ -167,7 +191,6 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     }
     yield* timedRequest(state, { operation: "release-run-holds", holdIds: [...state.holds.values()] });
     state.holds.clear();
-    if (state.disabled) return;
     const visited = new Set<string>();
     while (true) {
       const token = randomUUID();
@@ -245,9 +268,10 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     );
     const create = Effect.gen(function* () {
       const database = yield* userDatabaseHost.open().pipe(
-        Effect.mapError(() => {
-          disabledDomains.add(key);
-          return ledgerError();
+        Effect.mapError((cause) => {
+          const error = ledgerError(cause, target.executionDomainId);
+          disabledDomains.set(key, error);
+          return error;
         }),
       );
       const state: RunState<Plan> = {
@@ -320,7 +344,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
   const resolve = Effect.fn("remoteSnapshot.resolve")(function* (plan: Plan, context: BeforeCachePreparationContext) {
     const key = contextKey(context);
     const known = targets.get(key)?.get(plan);
-    if (known !== undefined && disabledDomains.has(runKey(context, known))) return yield* ledgerError();
+    const disabled = known === undefined ? undefined : disabledDomains.get(runKey(context, known));
+    if (disabled !== undefined) return yield* disabled;
     const target = yield* driver.resolveBase(plan).pipe(
       Effect.mapError(
         () =>
@@ -353,7 +378,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       const target = yield* resolve(plan, context);
       if (target._tag !== "Resolved") return degraded("base-image-unverified", target.reason);
       const state = yield* stateFor(plan, context, target);
-      if (state.disabled) return degraded("ledger-unavailable", "Snapshot ledger is unavailable for this Run");
+      if (state.disabled)
+        return yield* disabledDomains.get(state.key) ?? ledgerError(undefined, state.domain.executionDomainId);
       for (const step of steps) {
         if (target.baseIdentity !== step.declaration.baseIdentity)
           return degraded("base-image-unverified", "Base identity changed after planning");
@@ -362,7 +388,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
           beforeCacheKey: step.declaration.beforeCacheKey,
           baseIdentity: target.baseIdentity,
           declarationJson: JSON.stringify(
-            yield* Effect.try({ try: () => decodeDeclaration(step.declaration), catch: () => ledgerError() }),
+            yield* Effect.try({ try: () => decodeDeclaration(step.declaration), catch: stagingError }),
           ),
           replacementScope: beforeCacheReplacementScope(
             {
@@ -435,16 +461,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     },
     Effect.catch(
       (error): Effect.Effect<BeforeCacheLookup> =>
-        Effect.succeed(
-          degraded(
-            error instanceof BeforeCacheLookupError && error.reason === "eligibility-failed"
-              ? "eligibility-failed"
-              : error instanceof BeforeCacheLookupError && error.reason === "snapshot-uncertain"
-                ? "snapshot-uncertain"
-                : "ledger-unavailable",
-            "Snapshot lookup is unavailable; before actions will execute normally",
-          ),
-        ),
+        Effect.succeed(failureResult(error, "Snapshot lookup is unavailable; before actions will execute normally")),
     ),
   );
 
@@ -484,7 +501,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       sandbox,
       Result.isSuccess(mounts)
         ? { _tag: "Verified", target, mounts: mounts.success }
-        : { _tag: "Rejected", reason: "mounted-state", detail: "Staging writable mounts could not be recorded" },
+        : { _tag: "Rejected", reason: "staging-failed", detail: "Staging writable mounts could not be recorded" },
     );
   });
 
@@ -499,7 +516,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       const base = Effect.fn("remoteSnapshot.materializeBase")(function* (reason?: string) {
         const sandbox = yield* context.materializeBase(materialize);
         // Proof failure disables capture, not an otherwise valid Base instance.
-        yield* rememberStaging(plan, context, sandbox);
+        if (purpose === "staging") yield* rememberStaging(plan, context, sandbox);
         const proof = stagingProofs.get(sandbox);
         if (purpose === "staging" && proof?._tag === "Rejected") {
           yield* io(() => sandbox.group.stop());
@@ -513,7 +530,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       });
       if (source._tag === "Base") return yield* base();
       const parsed = yield* Effect.result(
-        Effect.try({ try: () => decodeLocator(source.artifact.locator), catch: () => ledgerError() }),
+        Effect.try({ try: () => decodeLocator(source.artifact.locator), catch: stagingError }),
       );
       if (Result.isFailure(parsed)) return yield* base("artifact-missing");
       const target = yield* Effect.result(resolve(plan, context));
@@ -576,7 +593,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       const verified = yield* Effect.result(
         io(async (signal) => {
           const result = await sandbox!.authorBackend.runCommand("cat", [ArtifactMarkerPath], { user: "root", signal });
-          if (result.exitCode !== 0) return false;
+          if (result.exitCode !== 0) throw stagingError();
           try {
             const marker = decodeMarker(JSON.parse(result.stdout));
             const declaration = decodeDeclaration(JSON.parse(row.declaration_json));
@@ -610,6 +627,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
               }),
           ),
         );
+        if (purpose === "staging" && Result.isFailure(verified))
+          return degraded("staging-failed", "Staging artifact marker could not be read");
         return yield* base(
           Result.isFailure(bound)
             ? "ledger-disabled"
@@ -618,7 +637,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
               : "marker-mismatch",
         );
       }
-      yield* rememberStaging(plan, context, sandbox);
+      if (purpose === "staging") yield* rememberStaging(plan, context, sandbox);
       const proof = stagingProofs.get(sandbox);
       if (purpose === "staging" && proof?._tag === "Rejected") {
         yield* close();
@@ -660,7 +679,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       const target = yield* resolve(plan, context);
       if (target._tag !== "Resolved") return degraded("base-image-unverified", target.reason);
       const state = yield* stateFor(plan, context, target);
-      if (state.disabled) return degraded("ledger-unavailable", "Snapshot ledger is unavailable for this Run");
+      if (state.disabled)
+        return yield* disabledDomains.get(state.key) ?? ledgerError(undefined, state.domain.executionDomainId);
       const reservation = state.reservations.get(step.declaration.beforeCacheKey);
       if (reservation === undefined || reservation.lost)
         return degraded("lease-lost", "Snapshot publication lease was lost");
@@ -683,7 +703,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       )
         return degraded("base-image-unverified", "Staging Base differs from the planned Base");
       const mounts = yield* Effect.result(readMounts(staging));
-      if (Result.isFailure(mounts)) return degraded("mounted-state", "Staging writable mounts could not be verified");
+      if (Result.isFailure(mounts)) return degraded("staging-failed", "Staging writable mounts could not be verified");
       for (const mount of mounts.success) {
         if (!proof.mounts.has(mount) && !driver.preserves.disks.includes(mount.split("\0")[1]!))
           return degraded("mounted-state", "New writable mount is outside the snapshot disks");
@@ -764,14 +784,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     },
     Effect.catch(
       (error): Effect.Effect<BeforeCacheCapture> =>
-        Effect.succeed(
-          degraded(
-            error instanceof BeforeCacheLookupError && error.operation === "eligibility"
-              ? "eligibility-failed"
-              : "ledger-unavailable",
-            "Snapshot capture is unavailable; before actions will execute normally",
-          ),
-        ),
+        Effect.succeed(failureResult(error, "Snapshot capture is unavailable; before actions will execute normally")),
     ),
   );
 

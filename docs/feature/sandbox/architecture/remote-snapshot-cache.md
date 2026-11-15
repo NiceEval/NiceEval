@@ -204,6 +204,11 @@ type BeforeCacheStart =
 | `lease-lost` | 失去 `preparing` 行的 lease |
 | `agent-install-failed` | [Agent 派生节点](#agent-派生节点)的安装或复检失败 |
 
+每条 `degraded` 诊断在原因之后带上安全的失败摘要，并按原因归类真实来源：
+`ledger-unavailable` 只用于账本读写本身失败，诊断写出已分类的 UserDatabase 失败消息（例如由旧版 NiceEval 写入、需要停用后删除重跑的提示），不只给原因代码。
+读取 staging 实例状态（挂载信息、标记文件）失败属于 `staging-failed`，不能记为账本不可用。
+同一 Run 内账本失败只需修复一次，结束页与 `exp --json` 对同一 `(provider, execution_domain_id)` 的账本失败聚合为一条 Run 级诊断，后代节点仍记 `parent-unavailable`。
+
 只有 author action 失败才让配对失败：同一 action 在 Attempt 内也会以同样方式失败，提前结算省掉一批注定失败的实例（[T-5](../../../taste.md#t-5)）。其余原因都只说明缓存这次帮不上忙；Provider 若真的不可用，Attempt 会在创建自己的实例时以自己的错误失败。
 
 目标配对按自己的链结算：

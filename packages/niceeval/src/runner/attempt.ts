@@ -1,6 +1,7 @@
 import { modelRolesToWire } from "../model-roles.ts";
 import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
 import { randomUUID } from "node:crypto";
+import { beforeCacheFailureDetail } from "../sandbox/remote-snapshot/failure.ts";
 import { pauseOnFailure } from "./pause-on-failure.ts";
 import { retainAttemptNotes } from "./attempt-notes.ts";
 import type { AttemptNotesCollector } from "../context/notes.ts";
@@ -616,6 +617,9 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         };
         if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
         diagnostics.push(record);
+        // Preparation already reported this ledger failure once for its domain.
+        // Keep each node's durable evidence without repeating it in the Run stream.
+        if (input.code === "cache-degraded" && typeof context?.beforeCacheDiagnosticKey === "string") return;
         // 同时进运行级永久事件流(human 撤下 dashboard 后追加、JSON stdout 追加 warning,去重按 key)。
         // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
         // 编进去);对外稳定词法始终单独给 `code`,不让消费方从 key 反推(见 sink.ts 的
@@ -3105,6 +3109,7 @@ async function runAttemptBody(
                 actionId: entry.id,
                 owner: `${entry.owner.kind}:${entry.owner.id}`,
                 reason: degraded.reason,
+                detail: "detail" in degraded ? degraded.detail : "Prepared snapshot could not be restored",
               }));
         for (const node of nodes) {
           // Persist the named reason and node in the existing diagnostic summary:
@@ -3113,7 +3118,9 @@ async function runAttemptBody(
             code: "cache-degraded",
             level: "warning",
             message:
-              `Before cache degraded: ${node.reason}; Before ${node.owner} / ${node.actionId}` +
+              `Before cache degraded: ${node.reason}` +
+              `; ${node.detail}` +
+              `; Before ${node.owner} / ${node.actionId}` +
               ("key" in node ? `; node ${node.key}` : "") +
               ". The remaining before actions will run on the usable sandbox state.",
             data: {
@@ -3121,6 +3128,9 @@ async function runAttemptBody(
               operationId: degraded.operationId,
               reason: node.reason,
               actionId: node.actionId,
+              ...(start?._tag !== "FellBackToBase" && preparedBeforeCache.degraded?.diagnosticKey !== undefined
+                ? { beforeCacheDiagnosticKey: preparedBeforeCache.degraded.diagnosticKey }
+                : {}),
             },
           });
         }
@@ -3233,10 +3243,13 @@ async function runAttemptBody(
           "Before cache lookup failed after an Action succeeded; clean-Base replay is forbidden.",
         );
       }
+      const classifiedDetail =
+        failure._tag === "BeforeCacheLookupError" ? beforeCacheFailureDetail(failure.cause, "") : "";
       feedback.diagnostic({
         code: "cache-degraded",
         level: "warning",
         message:
+          (classifiedDetail === "" ? "" : `${classifiedDetail} `) +
           `Sandbox before-cache lookup failed for action ${JSON.stringify(entry.id)}; ` +
           `recovering the clean Base once and replaying every before action ` +
           `(${failure._tag}/${failure.operation}: ${failure.reason}).`,

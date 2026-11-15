@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { beforeCacheFailureCause, beforeCacheFailureDetail } from "./remote-snapshot/failure.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -870,10 +871,10 @@ async function lookupAndRestore(
     if (isBeforeCacheError(cause)) throw cause;
     throw new BeforeCacheLookupError({
       operation: `lookup and restore before cache:${safeFailureClass(cause)}`,
-      reason: errorMessage(cause),
+      reason: beforeCacheFailureDetail(beforeCacheFailureCause(cause), errorMessage(cause)),
       beforeCacheKey: manifest.value.beforeCacheKey,
       domainId: undefined,
-      cause: normalizeExternalCause(cause),
+      cause: beforeCacheFailureCause(cause),
     });
   } finally {
     await lease?.release();
@@ -1167,10 +1168,10 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
             ? cause
             : new BeforeCacheLookupError({
                 operation: "lookup and restore before cache",
-                reason: errorMessage(cause),
+                reason: beforeCacheFailureDetail(beforeCacheFailureCause(cause), errorMessage(cause)),
                 beforeCacheKey: input.declaration.beforeCacheKey,
                 domainId: undefined,
-                cause: normalizeExternalCause(cause),
+                cause: beforeCacheFailureCause(cause),
               }),
       ),
     capture: (input: BeforeCacheStep) =>

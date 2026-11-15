@@ -563,6 +563,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         },
       });
 
+      for (const diagnostic of beforeCachePreparation.diagnostics) {
+        reportDiagnostic({
+          key: diagnostic.key,
+          code: "cache-degraded",
+          severity: "warning",
+          message: diagnostic.message,
+          identity: undefined,
+          data: { phase: "sandbox.prepare" },
+        });
+      }
+
       // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
       // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
       // 显式 buildPreparation 优先(测试注入);否则从 pair-owned ProviderPlan 自动收集。
@@ -1166,6 +1177,21 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             phase: "sandbox.prepare",
             dedupeKey: warning.key,
 
+            data: undefined,
+            command: undefined,
+            affectedSlotIds: undefined,
+          });
+      }
+
+      for (const diagnostic of beforeCachePreparation.diagnostics) {
+        for (const experimentId of diagnostic.experimentIds)
+          recordExperimentDiagnostic({
+            experimentId,
+            code: "cache-degraded",
+            level: "warning",
+            message: diagnostic.message,
+            phase: "sandbox.prepare",
+            dedupeKey: diagnostic.key,
             data: undefined,
             command: undefined,
             affectedSlotIds: undefined,

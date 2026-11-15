@@ -1,3 +1,4 @@
+import { beforeCacheFailureCause, beforeCacheFailureDetail } from "../remote-snapshot/failure.ts";
 import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import { sandboxCreationLabels } from "../creation-labels.ts";
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
@@ -9,6 +10,7 @@ import { digestOf } from "../identity.ts";
 import {
   decodeBeforeCacheKeyScope,
   BeforeCacheRegistryError,
+  BeforeCacheLookupError,
   providerBoundaryEffect,
   type BeforeCacheStep,
   type SandboxProviderBackend,
@@ -192,6 +194,16 @@ function preparationFailure(cause: unknown): BeforeCacheRegistryError {
     beforeCacheKey: undefined,
     domainId: undefined,
     cause: normalizeExternalCause(cause),
+  });
+}
+
+function preparationLedgerFailure(cause: unknown, domainId: string | undefined): BeforeCacheLookupError {
+  return new BeforeCacheLookupError({
+    operation: "ledger",
+    reason: "ledger-unavailable",
+    beforeCacheKey: undefined,
+    domainId,
+    cause: beforeCacheFailureCause(cause),
   });
 }
 
@@ -483,7 +495,7 @@ const holdRunArtifact = Effect.fn("holdRunIncusBeforeCacheArtifact")(function* (
           owner: currentOwner(),
           acquiredAt: new Date().toISOString(),
         }),
-      catch: preparationFailure,
+      catch: (cause) => preparationLedgerFailure(cause, undefined),
     }),
     (hold) => providerBoundaryEffect(() => releaseIncusArtifactHold(repository, hold)).pipe(Effect.orDie),
   );
@@ -576,7 +588,9 @@ export function incusProviderModule(
           operationsDeepestFirst: readonly BeforeCacheStep[],
         ) =>
           Effect.gen(function* () {
-            const repository = yield* incusRepositoryHost.open().pipe(Effect.mapError(preparationFailure));
+            const repository = yield* incusRepositoryHost
+              .open()
+              .pipe(Effect.mapError((cause) => preparationLedgerFailure(cause, plan.executionDomainId)));
             const lookup = yield* Effect.tryPromise({
               try: async () => {
                 const found = await lookupCommittedIncusArtifactForPrefixes(
@@ -598,16 +612,19 @@ export function incusProviderModule(
                       },
                     };
               },
-              catch: preparationFailure,
+              catch: (cause) => preparationLedgerFailure(cause, plan.executionDomainId),
             });
             if (lookup._tag === "Hit") yield* holdRunArtifact(repository, lookup.artifact);
             return lookup;
           }).pipe(
-            Effect.catch(() =>
+            Effect.catch((error) =>
               Effect.succeed({
                 _tag: "Degraded" as const,
                 reason: "ledger-unavailable" as const,
-                detail: "Incus artifact lookup is unavailable; before actions will run normally",
+                detail: beforeCacheFailureDetail(
+                  error.cause,
+                  "Incus artifact lookup is unavailable; before actions will run normally",
+                ),
               }),
             ),
           ),
@@ -623,7 +640,10 @@ export function incusProviderModule(
               return {
                 _tag: "Degraded" as const,
                 reason: "ledger-unavailable" as const,
-                detail: "Incus artifact repository is unavailable; before actions will run normally",
+                detail: beforeCacheFailureDetail(
+                  beforeCacheFailureCause(opened.failure),
+                  "Incus artifact repository is unavailable; before actions will run normally",
+                ),
               };
             const repository = opened.success;
             const artifact = yield* Effect.tryPromise({

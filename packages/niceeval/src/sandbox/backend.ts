@@ -4,6 +4,7 @@ import { Data, Effect, Schema } from "effect";
 import { isJsonValue } from "../shared/json-value.ts";
 import type { JsonValue } from "../shared/types.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
+import type { UserDatabaseFailure } from "../user-database/errors.ts";
 import type { SandboxActionState } from "./action.ts";
 import type { BeforeCacheDegradedReason } from "./layer.ts";
 import type {
@@ -106,7 +107,9 @@ interface BeforeCacheErrorFields {
 
 export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<BeforeCacheErrorFields> {}
 
-export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<BeforeCacheErrorFields> {}
+export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<
+  Omit<BeforeCacheErrorFields, "cause"> & { readonly cause: UserDatabaseFailure | ExternalCause | undefined }
+> {}
 
 export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<BeforeCacheErrorFields> {}
 

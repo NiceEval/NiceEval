@@ -1,6 +1,7 @@
 // cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -220,11 +221,17 @@ test("Incus preparation degrades cache failures, preserves uncertain objects, an
   timeout: 30_000,
 }, async () => {
   // These cases deliberately share the process environment and static API connection seam.
-  for (const mode of ["staging", "ledger", "capture", "action"] as const) {
-    const api = new IncusApi(mode);
+  for (const mode of ["staging", "ledger", "unsupported-ledger", "capture", "action"] as const) {
+    const api = new IncusApi(mode === "unsupported-ledger" ? "ledger" : mode);
     const connect = vi.spyOn(IncusControl, "connectMutation").mockResolvedValue(api as unknown as IncusControl);
     const localHome = join(home, mode);
     if (mode === "ledger") await writeFile(localHome, "unavailable database directory");
+    if (mode === "unsupported-ledger") {
+      await mkdir(localHome);
+      const database = new DatabaseSync(join(localHome, "niceeval.sqlite"));
+      database.exec("CREATE TABLE old_format (value TEXT)");
+      database.close();
+    }
     vi.stubEnv("NICEEVAL_HOME", localHome);
     try {
       const plan = runtimePlan();
@@ -245,10 +252,18 @@ test("Incus preparation degrades cache failures, preserves uncertain objects, an
               `${mode}: ${[...result.failuresByPair.values()].map(String).join("; ")}`,
             ).toMatchObject(mode === "action" ? { failed: 1, degraded: 0 } : { failed: 0, degraded: 1 });
             expect(result.failuresByPair.size).toBe(mode === "action" ? 1 : 0);
-            if (mode !== "action")
-              expect([...result.preparedByPair.values()][0]?.degraded?.reason).toBe(
-                mode === "staging" ? "staging-failed" : mode === "ledger" ? "ledger-unavailable" : "snapshot-uncertain",
+            if (mode !== "action") {
+              let reason = "ledger-unavailable";
+              if (mode === "staging") reason = "staging-failed";
+              if (mode === "capture") reason = "snapshot-uncertain";
+              expect([...result.preparedByPair.values()][0]?.degraded?.reason).toBe(reason);
+            }
+            if (mode === "unsupported-ledger") {
+              expect([...result.preparedByPair.values()][0]?.degraded?.nodes[0]?.detail).toContain(
+                "user-database-unsupported",
               );
+              expect([...result.preparedByPair.values()][0]?.degraded?.nodes[0]?.detail).toContain("then remove");
+            }
             if (mode === "capture") {
               const repository = yield* incusRepositoryHost.open();
               const artifacts = yield* Effect.promise(() => repository.listArtifacts());
@@ -260,7 +275,7 @@ test("Incus preparation degrades cache failures, preserves uncertain objects, an
           }),
         ),
       );
-      if (mode === "ledger") expect(connect).not.toHaveBeenCalled();
+      if (mode === "ledger" || mode === "unsupported-ledger") expect(connect).not.toHaveBeenCalled();
       if (mode === "action") expect(api.instances.size).toBe(0);
     } finally {
       connect.mockRestore();

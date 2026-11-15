@@ -48,6 +48,8 @@ export class Sandbox {
   async setTimeout() {}
   commands = {
     run: async (script, options = {}) => {
+      if (process.env.NICEEVAL_SNAPSHOT_FIXTURE_FAIL_MOUNTS && script.includes('/proc/self/mountinfo'))
+        throw new Error('fixture staging transport unavailable; private-token-must-not-leak');
       const args = ['exec', ...Object.entries(options.envs ?? {}).flatMap(([key, value]) => ['-e', `${key}=${value}`]), ...(options.cwd ? ['-w', options.cwd] : []), this.sandboxId, 'bash', '-c', script];
       const child = spawn('docker', args);
       let stdout = '', stderr = '';

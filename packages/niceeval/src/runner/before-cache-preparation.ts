@@ -35,12 +35,15 @@ export interface PreparedBeforeCacheUse {
   readonly degraded:
     | {
         readonly reason: string;
+        readonly detail: string;
         readonly operationId: string;
+        readonly diagnosticKey: string | undefined;
         readonly nodes: readonly {
           readonly key: string;
           readonly actionId: string;
           readonly owner: string;
           readonly reason: string;
+          readonly detail: string;
         }[];
       }
     | undefined;
@@ -50,6 +53,13 @@ export interface BeforeCachePreparationResult {
   readonly preparedByPair: ReadonlyMap<string, PreparedBeforeCacheUse>;
   readonly failuresByPair: ReadonlyMap<string, Error>;
   readonly summary: BeforeCachePreparationSummary;
+  readonly diagnostics: readonly BeforeCachePreparationDiagnostic[];
+}
+
+export interface BeforeCachePreparationDiagnostic {
+  readonly key: string;
+  readonly message: string;
+  readonly experimentIds: readonly string[];
 }
 
 export interface BeforeCachePreparationSummary {
@@ -114,6 +124,7 @@ interface PreparationNode {
   readonly context: BeforeCachePreparationContext;
   readonly planned: PlannedBeforeCacheAction | PlannedAgentDerivedNode;
   readonly actionIndex: number;
+  readonly executionDomainId: string | undefined;
   readonly laneKey: string;
   readonly laneLimit: number;
 }
@@ -125,7 +136,7 @@ interface PreparationTarget {
 
 type PreparationWorkResult =
   | { readonly outcome: "hit" | "prepared"; readonly artifact: BeforeCacheArtifact }
-  | { readonly outcome: "degraded"; readonly reason: string; readonly operationId: string };
+  | { readonly outcome: "degraded"; readonly reason: string; readonly detail: string; readonly operationId: string };
 
 function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(String(cause));
@@ -191,6 +202,7 @@ function lookupPreparationNode(
       return {
         outcome: "degraded" as const,
         reason: lookup.reason,
+        detail: lookup.detail,
         operationId: `before-cache-${randomUUID()}`,
       };
     const artifact = lookup.artifact;
@@ -284,6 +296,7 @@ function materializePreparationNode(
             return {
               outcome: "degraded" as const,
               reason: created.reason,
+              detail: created.detail,
               operationId: `before-cache-${randomUUID()}`,
             };
           const owned = created.sandbox;
@@ -293,6 +306,7 @@ function materializePreparationNode(
             return {
               outcome: "degraded" as const,
               reason: "parent-unavailable",
+              detail: "Staging fell back to Base without its parent prefix",
               operationId: `before-cache-${randomUUID()}`,
             };
           }
@@ -322,6 +336,7 @@ function materializePreparationNode(
               return {
                 outcome: "degraded" as const,
                 reason: "agent-install-failed",
+                detail: "Agent installation or verification failed",
                 operationId: `before-cache-${randomUUID()}`,
               };
           }
@@ -334,6 +349,7 @@ function materializePreparationNode(
             return {
               outcome: "degraded" as const,
               reason: capture.reason,
+              detail: capture.detail,
               operationId: step.operationId,
             };
           const result = { outcome: "prepared" as const, artifact: capture.artifact };
@@ -424,7 +440,13 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           satisfiedActionCount: 0,
           artifact: undefined,
           agentDerived: false,
-          degraded: { reason: eligibility.reason, operationId: `before-cache-${randomUUID()}`, nodes: [] },
+          degraded: {
+            reason: eligibility.reason,
+            detail: eligibility.detail,
+            operationId: `before-cache-${randomUUID()}`,
+            diagnosticKey: undefined,
+            nodes: [],
+          },
         });
         continue;
       }
@@ -452,6 +474,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           context,
           planned: candidate,
           actionIndex: Math.min(index + 1, planned.length),
+          executionDomainId: eligibility.replacementScope?.executionDomainId,
           laneKey: attempt.plan.providerPlan.scheduling.lane.key,
           laneLimit: attempt.plan.providerPlan.scheduling.lane.limit,
         };
@@ -576,6 +599,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
               Result.succeed({
                 outcome: "degraded",
                 reason: "parent-unavailable",
+                detail: "Parent before-cache node is unavailable",
                 operationId: parentResult.success.operationId,
               }),
             );
@@ -637,6 +661,32 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       ),
     );
 
+    const ledgerDiagnostics = new Map<string, { key: string; message: string; experimentIds: string[] }>();
+    const diagnosticKeys = new Map<string, string>();
+    for (const node of nodes.values()) {
+      const result = terminal.get(node.key)!;
+      if (
+        Result.isFailure(result) ||
+        result.success.outcome !== "degraded" ||
+        result.success.reason !== "ledger-unavailable"
+      )
+        continue;
+      const key = `before-cache-ledger:${JSON.stringify([node.context.providerId, node.executionDomainId ?? node.key])}`;
+      diagnosticKeys.set(result.success.operationId, key);
+      let diagnostic = ledgerDiagnostics.get(key);
+      if (diagnostic === undefined) {
+        diagnostic = {
+          key,
+          message: `Before cache degraded: ledger-unavailable; ${result.success.detail}`,
+          experimentIds: [],
+        };
+        ledgerDiagnostics.set(key, diagnostic);
+      }
+      for (const consumer of dependents.get(node.key)!.values()) {
+        if (!diagnostic.experimentIds.includes(consumer.experimentId))
+          diagnostic.experimentIds.push(consumer.experimentId);
+      }
+    }
     for (const target of targets.values()) {
       const result = terminal.get(target.finalKey)!;
       if (Result.isFailure(result)) {
@@ -670,6 +720,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
             actionId: "entry" in planned ? planned.entry.id : "niceeval.agent-install",
             owner: "entry" in planned ? `${planned.entry.owner.kind}:${planned.entry.owner.id}` : "agent",
             reason: ancestor.success.reason,
+            detail: ancestor.success.detail,
           });
         }
         cursor = cursor.parentKey === undefined ? undefined : nodes.get(cursor.parentKey);
@@ -679,7 +730,9 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           ...use,
           degraded: {
             reason: result.success.reason,
+            detail: result.success.detail,
             operationId: result.success.operationId,
+            diagnosticKey: diagnosticKeys.get(result.success.operationId),
             nodes: degradedNodes.reverse(),
           },
         };
@@ -690,6 +743,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       preparedByPair,
       failuresByPair,
       summary: summary(),
+      diagnostics: [...ledgerDiagnostics.values()],
     };
   });
   // Successful preparation holds remain owned by the Run through dispatch.
@@ -705,7 +759,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         Effect.gen(function* () {
           yield* Scope.close(preparationScope, Exit.failCause(cause));
           if (options.signal?.aborted === true && Cause.hasInterruptsOnly(cause)) {
-            return { preparedByPair: new Map(), failuresByPair: new Map(), summary: summary() };
+            return { preparedByPair: new Map(), failuresByPair: new Map(), summary: summary(), diagnostics: [] };
           }
           return yield* Effect.failCause(cause);
         }),
