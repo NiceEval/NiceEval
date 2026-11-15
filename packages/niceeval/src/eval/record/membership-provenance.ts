@@ -143,10 +143,10 @@ export function validateMembershipProvenancePayload(
   const issues: MembershipProvenancePayloadIssue[] = [];
   for (const action of payload.actions) {
     if (seen.has(action.slotId))
-      issues.push(Object.freeze({ code: "membership-provenance-slot-duplicate" as const, slotId: action.slotId }));
+      issues.push({ code: "membership-provenance-slot-duplicate" as const, slotId: action.slotId });
     seen.add(action.slotId);
   }
-  return Object.freeze(issues);
+  return issues;
 }
 
 export function buildMembershipProvenancePayload(
@@ -156,8 +156,7 @@ export function buildMembershipProvenancePayload(
     Schema.toType(MembershipProvenancePayloadSchema),
     ExactEvaluationParseOptions,
   )(input);
-  if (Result.isFailure(decoded))
-    return Result.fail(Object.freeze({ code: "membership-provenance-payload-schema-invalid" as const }));
+  if (Result.isFailure(decoded)) return Result.fail({ code: "membership-provenance-payload-schema-invalid" as const });
   return Result.succeed(decoded.success);
 }
 

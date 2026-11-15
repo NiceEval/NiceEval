@@ -95,19 +95,15 @@ function constructorName(value: object): string | undefined {
 }
 
 function scalarFact(value: unknown): ExternalCauseFact<ExternalCauseScalar> {
-  return typeof value === "string" || typeof value === "number"
-    ? Object.freeze({ _tag: "Present" as const, value })
-    : ABSENT;
+  return typeof value === "string" || typeof value === "number" ? { _tag: "Present" as const, value } : ABSENT;
 }
 
 function numberFact(value: unknown): ExternalCauseFact<number> {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Object.freeze({ _tag: "Present" as const, value })
-    : ABSENT;
+  return typeof value === "number" && Number.isFinite(value) ? { _tag: "Present" as const, value } : ABSENT;
 }
 
 function stringFact(value: unknown): ExternalCauseFact<string> {
-  return typeof value === "string" && value !== "" ? Object.freeze({ _tag: "Present" as const, value }) : ABSENT;
+  return typeof value === "string" && value !== "" ? { _tag: "Present" as const, value } : ABSENT;
 }
 
 function failureClassFact(value: object): ExternalCauseFact<FailureClass> {
@@ -122,14 +118,14 @@ function failureClassFact(value: object): ExternalCauseFact<FailureClass> {
   if (retryable && typeof reason !== "string") return ABSENT;
   if (reason !== undefined && typeof reason !== "string") return ABSENT;
   if (scope !== undefined && scope !== "attempt" && scope !== "eval" && scope !== "experiment") return ABSENT;
-  return Object.freeze({
+  return {
     _tag: "Present" as const,
-    value: Object.freeze({
+    value: {
       retryable,
       ...(reason !== undefined ? { reason } : {}),
       ...(scope !== undefined ? { scope } : {}),
-    }) as FailureClass,
-  });
+    } as FailureClass,
+  };
 }
 
 /** 已归一化快照再次跨模块边界时，也只接受完整 ADT；绝不原样保留调用者对象。 */
@@ -142,7 +138,7 @@ function snapshotFact<Value>(
   if (tag === "Absent") return ABSENT;
   const candidate = field(value, "value");
   if (tag !== "Present" || !accepts(candidate)) return undefined;
-  return Object.freeze({ _tag: "Present" as const, value: candidate });
+  return { _tag: "Present" as const, value: candidate };
 }
 
 function isExternalCauseScalar(value: unknown): value is ExternalCauseScalar {
@@ -173,14 +169,14 @@ function isFailureClassSnapshot(value: unknown): value is FailureClass {
 function snapshotFailureClass(value: unknown): ExternalCauseFact<FailureClass> | undefined {
   const fact = snapshotFact(value, isFailureClassSnapshot);
   if (fact === undefined || fact._tag !== "Present") return fact;
-  return Object.freeze({
+  return {
     _tag: "Present" as const,
-    value: Object.freeze({
+    value: {
       retryable: fact.value.retryable,
       ...(fact.value.reason !== undefined ? { reason: fact.value.reason } : {}),
       ...(fact.value.scope !== undefined ? { scope: fact.value.scope } : {}),
-    }) as FailureClass,
-  });
+    } as FailureClass,
+  };
 }
 
 function snapshotLink(value: unknown, depth: number, ancestors: ReadonlySet<object>): ExternalCauseLink | undefined {
@@ -189,7 +185,7 @@ function snapshotLink(value: unknown, depth: number, ancestors: ReadonlySet<obje
   if (tag === "Absent") return ABSENT;
   if (tag === "Truncated") {
     const reason = field(value, "reason");
-    return reason === "cycle" || reason === "depth" ? Object.freeze({ _tag: "Truncated" as const, reason }) : undefined;
+    return reason === "cycle" || reason === "depth" ? { _tag: "Truncated" as const, reason } : undefined;
   }
   if (tag !== "Cause" || depth + 1 >= MAX_CAUSE_DEPTH) return undefined;
   const nested = field(value, "value");
@@ -197,10 +193,10 @@ function snapshotLink(value: unknown, depth: number, ancestors: ReadonlySet<obje
   const nextAncestors = new Set(ancestors);
   nextAncestors.add(value);
   const normalized = snapshotCause(nested, depth + 1, nextAncestors);
-  return normalized === undefined ? undefined : Object.freeze({ _tag: "Cause" as const, value: normalized });
+  return normalized === undefined ? undefined : { _tag: "Cause" as const, value: normalized };
 }
 
-/** 对已归一化快照做完整结构解码、复制和冻结；undefined 表示走普通 throwable 归一。 */
+/** 对已归一化快照做完整结构解码和复制；undefined 表示走普通 throwable 归一。 */
 function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<object>): ExternalCause | undefined {
   const tag = field(value, "_tag");
   if (tag === "ThrownValue") {
@@ -210,7 +206,7 @@ function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<obje
     if (!isExternalCauseValueType(valueType) || typeof message !== "string" || cause?._tag !== "Absent") {
       return undefined;
     }
-    return Object.freeze({ _tag: "ThrownValue" as const, valueType, message, cause: ABSENT });
+    return { _tag: "ThrownValue" as const, valueType, message, cause: ABSENT };
   }
   if (tag !== "Error" && tag !== "Object") return undefined;
   const name = field(value, "name");
@@ -231,7 +227,7 @@ function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<obje
     cause === undefined
   )
     return undefined;
-  return Object.freeze({ _tag: tag, name, message, code, status, stack, failureClass, cause });
+  return { _tag: tag, name, message, code, status, stack, failureClass, cause };
 }
 
 function isError(value: object): boolean {
@@ -260,7 +256,7 @@ function normalizeObject(value: object, depth: number, ancestors: ReadonlySet<ob
       cause = { _tag: "Cause", value: normalizeCause(rawCause, depth + 1, nextAncestors) };
     }
   }
-  return Object.freeze({
+  return {
     _tag: isError(value) ? ("Error" as const) : ("Object" as const),
     name,
     message,
@@ -269,20 +265,20 @@ function normalizeObject(value: object, depth: number, ancestors: ReadonlySet<ob
     stack: stringFact(field(value, "stack")),
     failureClass: failureClassFact(value),
     cause,
-  });
+  };
 }
 
 function normalizeCause(value: unknown, depth: number, ancestors: ReadonlySet<object>): ExternalCause {
   if (typeof value === "object" && value !== null) {
-    // 已经是快照也必须重新解码并深冻结，避免跨 package / JSON 往返的可变伪对象进入状态。
+    // 已经是快照也必须重新解码和复制，避免跨 package / JSON 往返的可变伪对象进入状态。
     return snapshotCause(value, depth, ancestors) ?? normalizeObject(value, depth, ancestors);
   }
-  return Object.freeze({
+  return {
     _tag: "ThrownValue" as const,
     valueType: value === null ? ("null" as const) : typeof value,
     message: safeString(value),
     cause: ABSENT,
-  });
+  };
 }
 
 /** 动态 throwable 进入内部状态的唯一正规化边界。 */

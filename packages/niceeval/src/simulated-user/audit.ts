@@ -38,7 +38,7 @@ export function retainSimulatedUserActivities(
   result: import("../runner/types.ts").EvalResult,
   activities: readonly SimulatedUserActivity[],
 ): void {
-  if (activities.length > 0) retainedActivities.set(result, Object.freeze([...activities]));
+  if (activities.length > 0) retainedActivities.set(result, [...activities]);
 }
 export function simulatedUserActivitiesForResult(
   result: import("../runner/types.ts").EvalResult,

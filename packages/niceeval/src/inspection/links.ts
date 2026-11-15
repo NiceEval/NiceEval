@@ -16,7 +16,7 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
       links.pop();
     }
     seen.add(command);
-    links.push(Object.freeze({ rel, command }));
+    links.push({ rel, command });
   };
   const locator = "locator" in operation ? operation.locator : undefined;
   if (locator !== undefined && operation.kind === "attempt.get") {
@@ -96,5 +96,5 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
       add("next-page", [locator, id, "--continuation", token]);
     }
   }
-  return Object.freeze(links);
+  return links;
 }

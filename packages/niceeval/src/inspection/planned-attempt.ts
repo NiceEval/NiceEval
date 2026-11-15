@@ -66,14 +66,14 @@ export function projectPlannedAttempt({
   readonly attemptOrdinal: number;
   readonly executionIdentityDigest: string;
 }) {
-  return Object.freeze(Schema.decodeUnknownSync(PlannedAttemptSchema)({ ...position, plannedAttemptId: slotId }));
+  return Schema.decodeUnknownSync(PlannedAttemptSchema)({ ...position, plannedAttemptId: slotId });
 }
 export function projectAttemptCore({ slotId, ...attempt }: AttemptDocument) {
-  return Object.freeze({ ...attempt, plannedAttemptId: slotId });
+  return { ...attempt, plannedAttemptId: slotId };
 }
 export function projectRunCore({ expectedSlots, ...run }: RunDocument) {
-  return Object.freeze({ ...run, plannedAttempts: Object.freeze(expectedSlots.map(projectPlannedAttempt)) });
+  return { ...run, plannedAttempts: expectedSlots.map(projectPlannedAttempt) };
 }
 export function projectMember({ slotId, ...member }: MemberDocument) {
-  return Object.freeze({ ...member, plannedAttemptId: slotId });
+  return { ...member, plannedAttemptId: slotId };
 }

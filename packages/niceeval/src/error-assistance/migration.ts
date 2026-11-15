@@ -3,9 +3,9 @@ import type { ErrorSource, MigrationGuide, MigrationOccurrence } from "./types.t
 
 const MAX_GUIDE_BYTES = 32 * 1024;
 const MAX_PACKAGE_METADATA_BYTES = 64 * 1024;
-const GUIDE_ASSETS = Object.freeze({
+const GUIDE_ASSETS = {
   "judge-provider": new URL("../migrations/judge-provider.md", import.meta.url),
-});
+};
 const PACKAGE_METADATA_ASSET = new URL("../../package.json", import.meta.url);
 
 function readBoundedAsset(asset: URL, maximumBytes: number): string | undefined {
@@ -35,15 +35,15 @@ function readBoundedAsset(asset: URL, maximumBytes: number): string | undefined 
   }
 }
 
-function freezeSource(source: ErrorSource): ErrorSource {
+function copySource(source: ErrorSource): ErrorSource {
   return source.state === "located"
-    ? Object.freeze({
+    ? {
         state: "located" as const,
         file: source.file,
         line: source.line,
         column: source.column,
-      })
-    : Object.freeze({ state: "unavailable" as const, reason: source.reason });
+      }
+    : { state: "unavailable" as const, reason: source.reason };
 }
 
 /** Rejects configuration that needs an explicit migration and carries located occurrences; use the matching guide rather than silently adapting old shapes. */
@@ -54,15 +54,11 @@ export class MigrationRequiredError extends Error {
 
   constructor(input: { readonly occurrences: readonly MigrationOccurrence[] }) {
     super("This configuration requires migration.");
-    this.occurrences = Object.freeze(
-      input.occurrences.map((occurrence) =>
-        Object.freeze({
-          guideId: occurrence.guideId,
-          subject: occurrence.subject,
-          source: freezeSource(occurrence.source),
-        }),
-      ),
-    );
+    this.occurrences = input.occurrences.map((occurrence) => ({
+      guideId: occurrence.guideId,
+      subject: occurrence.subject,
+      source: copySource(occurrence.source),
+    }));
   }
 }
 
@@ -132,7 +128,7 @@ export function collectMigrationRequiredErrors(value: unknown): readonly Migrati
   };
 
   visit(value, 0);
-  return Object.freeze(found);
+  return found;
 }
 
 export function collectMigrationOccurrences(value: unknown): readonly MigrationOccurrence[] {
@@ -150,7 +146,7 @@ export function collectMigrationOccurrences(value: unknown): readonly MigrationO
       occurrences.push(occurrence);
     }
   }
-  return Object.freeze(occurrences);
+  return occurrences;
 }
 
 export type MigrationGuideLoadResult =
@@ -165,7 +161,7 @@ export function loadMigrationGuide(guideId: string): MigrationGuideLoadResult {
     if (content === undefined || content.trim() === "") return { state: "asset-unavailable" };
     return {
       state: "available",
-      guide: Object.freeze({ id: guideId, language: "en", format: "markdown", content }),
+      guide: { id: guideId, language: "en", format: "markdown", content },
     };
   } catch {
     return { state: "asset-unavailable" };

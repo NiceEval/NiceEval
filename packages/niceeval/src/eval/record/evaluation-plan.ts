@@ -15,17 +15,17 @@ export interface EvaluationPlanView {
 
 export function projectEvaluationPlan(payload: EvaluationsPayload): EvaluationPlanView {
   const projection = projectEvaluationsPayload(payload);
-  return Object.freeze({
+  return {
     coordinateForSlot: (slotId: SlotId) => {
       const value = projection.evaluationForSlot(slotId);
       return value === undefined
         ? undefined
-        : Object.freeze({
+        : {
             slotId: value.slotId,
             evalId: value.evalId,
             evaluationKind: value.evaluationKind,
             attempt: value.attempt,
-          });
+          };
     },
-  });
+  };
 }

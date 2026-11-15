@@ -41,11 +41,11 @@ export type AttemptLocatorParseResult =
 /** Strict parser: no trimming, case folding, fuzzy Crockford characters, or legacy @UUID. */
 export function parseAttemptLocator(input: string): AttemptLocatorParseResult {
   return ATTEMPT_LOCATOR_PATTERN.test(input)
-    ? Object.freeze({ valid: true as const, locator: input as AttemptLocator })
-    : Object.freeze({
+    ? { valid: true as const, locator: input as AttemptLocator }
+    : {
         valid: false as const,
-        error: Object.freeze({ code: "attempt-locator-malformed" as const, input }),
-      });
+        error: { code: "attempt-locator-malformed" as const, input },
+      };
 }
 
 /**

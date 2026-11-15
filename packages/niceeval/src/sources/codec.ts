@@ -234,7 +234,7 @@ export function createSourcesDocumentSchemas<Content, ContentEncoded>(
     }),
   );
 
-  return Object.freeze({ file, sourcePackage, document });
+  return { file, sourcePackage, document };
 }
 
 export type SourcesCodecError = { readonly code: "sources-document-invalid" };
