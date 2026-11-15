@@ -74,8 +74,8 @@ const PAIRS: DiffPair[] = [
     intro: [
       "对比对象：",
       "",
-      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) —— 独立的 `@earendil-works/pi-agent-core` HTTP 服务，还没接任何评估用例。",
-      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "- **before**：[origin/pi-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/pi-sdk) —— 独立的 `@earendil-works/pi-agent-core` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[tier1/pi-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/pi-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       '**接入方式**：`createPiAgentEventStream`（从 `"niceeval/adapter"` 导出）把 pi 原生 `AgentEvent` 转成 NiceEval 的标准事件。',
       "",
@@ -113,8 +113,8 @@ const PAIRS: DiffPair[] = [
     intro: [
       "对比对象：",
       "",
-      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk) —— 独立的 `@anthropic-ai/claude-agent-sdk` HTTP 服务，还没接任何评估用例。",
-      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "- **before**：[origin/claude-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/claude-sdk) —— 独立的 `@anthropic-ai/claude-agent-sdk` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[tier1/claude-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/claude-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       '**接入方式**：`createClaudeSdkEventStream`（从 `"niceeval/adapter"` 导出）把 Claude Agent SDK 的 `SDKMessage` 转成 NiceEval 的标准事件。',
       "",
@@ -151,8 +151,8 @@ const PAIRS: DiffPair[] = [
     intro: [
       "对比对象：",
       "",
-      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) —— 独立的 `@openai/codex-sdk` HTTP 服务，还没接任何评估用例。",
-      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
+      "- **before**：[origin/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/codex-sdk) —— 独立的 `@openai/codex-sdk` HTTP 服务，还没接任何评估用例。",
+      "- **after**：[tier1/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/codex-sdk) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       '**接入方式**：`createCodexThreadEventStream`（从 `"niceeval/adapter"` 导出）把 Codex SDK 的 `ThreadEvent` 转成 NiceEval 的标准事件。',
       "消息文本直接来自事件流。转换器会把 `command_execution`、`mcp_tool_call` 和 `file_change` 配对成 `operation.started` 与 `operation.finished`。",
@@ -193,8 +193,8 @@ const PAIRS: DiffPair[] = [
     intro: [
       "对比对象：",
       "",
-      "- **before**：[`origin/langgraph`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。",
-      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。",
+      "- **before**：[`origin/langgraph`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/langgraph) —— 纯 Python 的 `create_agent`（LangChain 1.x / LangGraph）HTTP 服务，还没接任何评估用例。",
+      "- **after**：[tier1/langgraph](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/langgraph) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       "**接入方式**：这个应用使用自定义 JSON 帧，因此 Adapter 需要自行把每一帧转成 NiceEval 的标准事件。",
       "`tool-input` 映射为 `operation.started`，`tool-output` 映射为 `operation.finished`，`text-delta` 累积成 `message`。",
@@ -241,8 +241,8 @@ const PAIRS: DiffPair[] = [
     intro: [
       "对比对象：",
       "",
-      "- **before**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。",
-      "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。",
+      "- **before**：[origin/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/ai-sdk-v7) —— 普通的 AI SDK v7 聊天应用（HTTP 服务器 + React 聊天 UI），还没接任何评估用例。",
+      "- **after**：[tier1/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       "**接入方式**：内置的 `uiMessageStreamAgent` 可以直接连接 AI SDK UI Message Stream，也就是 `useChat` 后端使用的标准 SSE 协议。",
       "Adapter 只需填写接口地址，并说明如何把 `model` 放进请求体。NiceEval 会处理会话重放、HITL 审批，以及工具和消息事件。",
@@ -304,8 +304,8 @@ const ENGLISH_PAIRS: DiffPair[] = [
     intro: [
       "Comparison targets:",
       "",
-      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/pi-sdk) -- a standalone `@earendil-works/pi-agent-core` HTTP service, before any eval integration.",
-      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) -- the same app after integrating NiceEval.",
+      "- **before**: [origin/pi-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/pi-sdk) -- a standalone `@earendil-works/pi-agent-core` HTTP service, before any eval integration.",
+      "- **after**: [tier1/pi-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/pi-sdk) -- the same app after integrating NiceEval.",
       "",
       '**Integration path**: official converter -- mapping pi native `AgentEvent` events into standard events is handled by `createPiAgentEventStream` (exported from `"niceeval/adapter"`). The adapter only keeps transport glue: which URL the app uses and which endpoint handles approvals (`calculate` goes through HITL approval). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.',
     ].join("\n"),
@@ -332,8 +332,8 @@ const ENGLISH_PAIRS: DiffPair[] = [
     intro: [
       "Comparison targets:",
       "",
-      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/claude-sdk) -- a standalone `@anthropic-ai/claude-agent-sdk` HTTP service, before any eval integration.",
-      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) -- the same app after integrating NiceEval.",
+      "- **before**: [origin/claude-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/claude-sdk) -- a standalone `@anthropic-ai/claude-agent-sdk` HTTP service, before any eval integration.",
+      "- **after**: [tier1/claude-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/claude-sdk) -- the same app after integrating NiceEval.",
       "",
       '**Integration path**: official converter -- mapping Claude Agent SDK native `SDKMessage` events into standard events is handled by `createClaudeSdkEventStream` (exported from `"niceeval/adapter"`). The adapter only keeps transport glue and HITL stop-turn detection (`calculate` is gated through the official `canUseTool` callback). You start the app yourself in its normal way (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged.',
     ].join("\n"),
@@ -360,8 +360,8 @@ const ENGLISH_PAIRS: DiffPair[] = [
     intro: [
       "Comparison targets:",
       "",
-      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/codex-sdk) -- a standalone `@openai/codex-sdk` HTTP service, before any eval integration.",
-      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/codex-sdk) -- the same app after integrating NiceEval.",
+      "- **before**: [origin/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/codex-sdk) -- a standalone `@openai/codex-sdk` HTTP service, before any eval integration.",
+      "- **after**: [tier1/codex-sdk](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/codex-sdk) -- the same app after integrating NiceEval.",
       "",
       '**Integration path**: official converter -- mapping Codex native `ThreadEvent` events into standard events is handled by `createCodexThreadEventStream` (exported from `"niceeval/adapter"`). Message text, tool items (`command_execution` / `mcp_tool_call` / `file_change` -> paired `operation.started` / `operation.finished` events), and `turn.completed` usage all come from this stream, leaving only transport glue in the adapter. There is no HITL because Codex SDK does not support it. The evals run real coding tasks (writing files and running commands in a working directory), and assertions read the disk directly. You start the app yourself (`pnpm start`); evals do not manage the process. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.',
     ].join("\n"),
@@ -388,8 +388,8 @@ const ENGLISH_PAIRS: DiffPair[] = [
     intro: [
       "Comparison targets:",
       "",
-      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/langgraph) -- a pure Python `create_agent` (LangChain 1.x / LangGraph) HTTP service, before any eval integration.",
-      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/langgraph) -- the same app after integrating NiceEval.",
+      "- **before**: [origin/langgraph](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/langgraph) -- a pure Python `create_agent` (LangChain 1.x / LangGraph) HTTP service, before any eval integration.",
+      "- **after**: [tier1/langgraph](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/langgraph) -- the same app after integrating NiceEval.",
       "",
       "**Integration path**: handwritten frame mapping -- custom JSON frames from `server.py` are translated one by one into standard events (`tool-input` -> `operation.started`, `tool-output` -> `operation.finished`, accumulated `text-delta` -> `message`, `tool-approval-request` -> stop turn + `input.requested`). HITL stop-turn state is stored through a typed `ctx.session` slot. The subject app is Python, while the eval side is a separate TypeScript project. App-side `src/backend/*.py` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
     ].join("\n"),
@@ -422,8 +422,8 @@ const ENGLISH_PAIRS: DiffPair[] = [
     intro: [
       "Comparison targets:",
       "",
-      "- **before**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin/ai-sdk-v7) -- a regular AI SDK v7 chat app (HTTP server + React chat UI), before any eval integration.",
-      "- **after**: [https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) -- the same app after integrating NiceEval.",
+      "- **before**: [origin/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/origin/ai-sdk-v7) -- a regular AI SDK v7 chat app (HTTP server + React chat UI), before any eval integration.",
+      "- **after**: [tier1/ai-sdk-v7](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/ai-sdk-v7) -- the same app after integrating NiceEval.",
       "",
       "**Integration path**: built-in **`uiMessageStreamAgent`** -- the official non-invasive adapter for the AI SDK UI Message Stream protocol (the standard SSE backend used by `useChat`). The adapter file only declares where the endpoint lives and how to pass `model` in the request body. Session replay, HITL approval (rewriting and resending `needsApproval` tool parts), and tool/message events built directly from protocol frames are all handled by the factory. The protocol frames do not include usage data, so this example does not assert usage. App-side `src/backend/*` files are byte-for-byte unchanged. Use `tier2/` for OTel waterfalls and `tier3/` for feature A/B.",
     ].join("\n"),
@@ -444,6 +444,7 @@ const ENGLISH_PAIRS: DiffPair[] = [
 // 与学习无关的目录/文件，不进 diff
 const EXCLUDES = [
   /(^|\/)node_modules(\/|$)/,
+  /(^|\/)dist(\/|$)/,
   /(^|\/)\.venv(\/|$)/,
   /(^|\/)__pycache__(\/|$)/,
   /(^|\/)\.niceeval(\/|$)/,
