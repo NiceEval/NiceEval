@@ -169,9 +169,9 @@ async function ruleFor(
   if (
     a.state === "committed" &&
     unusedFor !== undefined &&
-    Date.parse(a.lastSuccessfulHoldAt ?? a.createdAt) + unusedFor < observed
+    Date.parse(a.lastSuccessfulHold?.at ?? a.createdAt) + unusedFor < observed
   )
-    return rule("unused", new Date(Date.parse(a.lastSuccessfulHoldAt ?? a.createdAt) + unusedFor).toISOString());
+    return rule("unused", new Date(Date.parse(a.lastSuccessfulHold?.at ?? a.createdAt) + unusedFor).toISOString());
   return undefined;
 }
 
@@ -198,7 +198,7 @@ async function preview(
       evidenceDigest: artifactEvidenceDigest(a),
       evidence: {
         createdAt: a.createdAt,
-        lastSuccessfulUseAt: a.lastSuccessfulHoldAt ?? null,
+        lastSuccessfulUseAt: a.lastSuccessfulHold?.at ?? null,
         protectedUntil,
         capacity: null,
       },
@@ -222,12 +222,13 @@ async function preview(
   await repository.saveGcPlan(plan);
   return {
     document: { plan, summary: { candidateCount: candidates.length, exactReclaimBytes: null } },
-    estimates: candidates.map((candidate) => ({
-      entryId: candidate.entryId,
-      bytes:
-        inventory.entries.find((entry) => entry.intent.artifactId === candidate.entryId)?.intent
-          .estimatedArtifactBytes ?? null,
-    })),
+    estimates: candidates.map((candidate) => {
+      const artifact = inventory.entries.find((entry) => entry.intent.artifactId === candidate.entryId)?.intent;
+      return {
+        entryId: candidate.entryId,
+        bytes: artifact?.capture.kind === "measured" ? artifact.capture.estimatedArtifactBytes : null,
+      };
+    }),
   };
 }
 

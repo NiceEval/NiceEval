@@ -185,6 +185,45 @@ generation 不同的旧 client 即使仍持有 locator，也不能执行 command
 V1 没有 `SandboxRetention`。
 allocation 的期望终态只有 DestroyOnly：destroyed 或 lost 后的 detached destroy。
 
+## 账本 intent 的内部形状与持久 payload
+
+`AllocationIntent` 与 `ArtifactIntent` 在 UserDatabase 中以扁平 JSON payload 持久化，可选事实以缺键表示。
+内存里的领域值按 state 判别，相关事实成组出现，不以一组相互独立的可选字段表达。两者之间只有 Incus repository 的一对 codec。
+payload 的键名、state 字面量、值类型与缺键语义由这对 codec 精确保持，不设格式标记变化，也不迁移。
+
+Allocation 的领域值是公共字段加 `phase`：
+
+| `phase.state` | 携带的事实 |
+|---|---|
+| `reserved`、`destroyed` | 无 Provider 资源名 |
+| `creating`、`ready`、`handed-off`、`lost` | `resources: { providerLocator, dockerDataVolume }`，两者成对 |
+| `destroy-requested` | `resources` 或 `undefined`（从 reserved 直接请求销毁时尚无资源名）；`acceptance: { kind: "settled" } \| { kind: "unknown"; stage: "volume-create" \| "instance-create" }` |
+
+payload 中的 `quarantined: true` 与 `acceptanceUnknown` 只是 `acceptance.kind === "unknown"` 的编码，二者成对写入、成对缺席。
+解码把缺键或 `quarantined: false` 读成 `settled`；其余组合（例如有 stage 无 quarantine、ready 缺资源名、资源名只有一半）
+以 `user-database-invalid` 拒绝，不猜测缺失的事实。
+
+Artifact 的领域值不继承 Provider locator，因此不带 `consumerHoldId`。consumer hold 只出现在消费 locator 上，由 locator 投影函数加上。
+其余可选事实按以下规则收敛：
+
+| 事实 | 领域形状 | 理由 |
+|---|---|---|
+| `lastSuccessfulHoldAt` 与 `lastSuccessfulHoldId` | `lastSuccessfulHold: { at, holdId } \| undefined` | 同一次成功 hold 写入的一对；只表示历史，不表示当前有 hold |
+| `capturePoolUsedBefore`、`capturePoolUsedAfter`、`estimatedArtifactBytes` | `capture: { kind: "none" } \| { kind: "started"; poolUsedBefore } \| { kind: "measured"; poolUsedBefore; poolUsedAfter; estimatedArtifactBytes }` | publishing 写 before，committed 补齐 after 与 estimate；终态保留此前阶段，未知不归零 |
+| `replacementScopeDigest` | `string \| undefined` | 不可变身份；旧 committed artifact 可以缺失 |
+| `retirementPlanId` | `string \| undefined` | 有值是 GC plan 持有删除权；retiring 缺失表示自动 superseded 回收 |
+
+历史版本若写过上表之外的 capture 组合，由实现者用 git 历史证明，并为它增加一个具名 `kind`，不放宽成独立可选字段。
+
+边界规则：
+
+- SQLite payload 与 UserDatabase worker 消息都使用持久 payload 形状，用 `Schema.optionalKey` 精确表达缺键，不接受显式 `undefined`。worker 两侧各自经同一 codec 得到领域值，structured clone 与 JSON 的 `undefined` 差异因此消失。
+- 当前生产路径能写出的 payload 满足 `encode(decode(payload))` 与原 payload 语义相等（键集合与值相同，键序不作要求）。历史上的 `quarantined: false` 读时兼容，再次写入时归一为缺键。GC `artifactEvidenceDigest` 与 resource identity 从编码后的 payload 计算，已有 preview 的 digest 不变。
+- Provider metadata（`user.niceeval.*`）、inventory JSON（缺值输出 `null`）与 GC plan/outcome 文本不变。
+
+验收：既有 Incus lifecycle E2E（ledger、artifact storage、artifact maintenance）与 `materialize.test.ts` 通过；
+对当前生产路径能写出的每种 payload 形状，codec 往返相等且 evidence digest 不变。
+
 ## 局部 quarantine
 
 quarantine key 是 exact allocationId、artifactDigest 或 Provider object locator，不是 profile 名。

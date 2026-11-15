@@ -118,7 +118,7 @@ export function unionActiveAllocationIds(
   const ids = new Set<string>();
   for (const intent of intents) {
     if (
-      OCCUPYING_STATES.has(intent.state) &&
+      OCCUPYING_STATES.has(intent.phase.state) &&
       intent.executionDomainId === scope.executionDomainId &&
       intent.project === scope.project
     ) {
@@ -224,7 +224,7 @@ export async function reconcileDomain(
       next.push(intent);
       continue;
     }
-    if (RELEASED_STATES.has(intent.state)) {
+    if (RELEASED_STATES.has(intent.phase.state)) {
       next.push(intent);
       continue;
     }
@@ -232,11 +232,11 @@ export async function reconcileDomain(
     const volume = volumes.find((candidate) => volumeMetadataMatchesIntent(candidate, intent));
     const ownerAlive = !ownerProvenDead(intent.owner);
     if (instance === undefined && volume === undefined) {
-      if (intent.quarantined === true) {
+      if (intent.phase.state === "destroy-requested" && intent.phase.acceptance.kind === "unknown") {
         next.push(intent);
         continue;
       }
-      if (ownerAlive && (intent.state === "reserved" || intent.state === "creating")) {
+      if (ownerAlive && (intent.phase.state === "reserved" || intent.phase.state === "creating")) {
         next.push(intent);
         continue;
       }
@@ -252,9 +252,12 @@ export async function reconcileDomain(
       next.push(await destroyAllocation(repository, control, intent, scope.project));
       continue;
     }
-    if (intent.state === "destroy-requested") {
-      const awaitedObject = intent.acceptanceUnknown === "volume-create" ? volume : instance;
-      if (intent.quarantined === true && awaitedObject === undefined) {
+    if (intent.phase.state === "destroy-requested") {
+      const awaitedObject =
+        intent.phase.acceptance.kind === "unknown" && intent.phase.acceptance.stage === "volume-create"
+          ? volume
+          : instance;
+      if (intent.phase.acceptance.kind === "unknown" && awaitedObject === undefined) {
         next.push(intent);
         continue;
       }
@@ -306,7 +309,7 @@ export async function reconcileDomain(
         if (
           observed.executionDomainId !== scope.executionDomainId ||
           observed.project !== scope.project ||
-          (observed.state !== "reserved" && observed.state !== "creating")
+          (observed.phase.state !== "reserved" && observed.phase.state !== "creating")
         )
           continue;
         // Inventory requests are separate snapshots: a copy can appear after
@@ -320,15 +323,16 @@ export async function reconcileDomain(
           current.executionDomainId !== scope.executionDomainId ||
           current.project !== scope.project ||
           current.storagePool !== scope.storagePool ||
-          current.dockerDataVolume !== volume.name ||
-          current.providerLocator === undefined
+          !("resources" in current.phase) ||
+          current.phase.resources === undefined ||
+          current.phase.resources.dockerDataVolume !== volume.name
         )
           continue;
-        if (current.state === "creating") {
-          const instance = await control.getInstance(scope.project, current.providerLocator);
+        if (current.phase.state === "creating") {
+          const instance = await control.getInstance(scope.project, current.phase.resources.providerLocator);
           owned =
             instance !== undefined &&
-            instance.name === current.providerLocator &&
+            instance.name === current.phase.resources.providerLocator &&
             volumeIsDependentOnExactInstance(instance, volume, current);
         } else if (isActiveIntent(current)) {
           // A completed PATCH may also have overtaken the volume snapshot.
@@ -383,15 +387,28 @@ export async function destroyAllocation(
     );
   }
   const requested =
-    current.state === "destroy-requested"
+    current.phase.state === "destroy-requested"
       ? current
-      : await transitionAllocationIntent(repository, current, { ...current, state: "destroy-requested" });
+      : await transitionAllocationIntent(repository, current, {
+          ...current,
+          phase: {
+            state: "destroy-requested",
+            resources: "resources" in current.phase ? current.phase.resources : undefined,
+            acceptance: { kind: "settled" },
+          },
+        });
   const instances = await control.listInstances(project);
   const volumes = await control.listVolumes(project, requested.storagePool);
   const matchingInstance = instances.find((candidate) => metadataMatchesIntent(candidate, requested));
   const matchingVolume = volumes.find((candidate) => volumeMetadataMatchesIntent(candidate, requested));
-  const instanceName = matchingInstance?.name ?? requested.providerLocator ?? instanceNameFor(requested.allocationId);
-  const volumeName = matchingVolume?.name ?? requested.dockerDataVolume ?? volumeNameFor(requested.allocationId);
+  const instanceName =
+    matchingInstance?.name ??
+    ("resources" in requested.phase ? requested.phase.resources?.providerLocator : undefined) ??
+    instanceNameFor(requested.allocationId);
+  const volumeName =
+    matchingVolume?.name ??
+    ("resources" in requested.phase ? requested.phase.resources?.dockerDataVolume : undefined) ??
+    volumeNameFor(requested.allocationId);
   const namedInstance = matchingInstance ?? instances.find((candidate) => candidate.name === instanceName);
   const namedVolume = matchingVolume ?? volumes.find((candidate) => candidate.name === volumeName);
   if (namedInstance !== undefined && !metadataMatchesIntent(namedInstance, requested)) {
@@ -412,8 +429,8 @@ export async function destroyAllocation(
       ["Inspect the volume identity; NiceEval only destroys the exact allocation generation it owns."],
     );
   }
-  if (requested.quarantined === true) {
-    const awaitedObject = requested.acceptanceUnknown === "volume-create" ? namedVolume : namedInstance;
+  if (requested.phase.state === "destroy-requested" && requested.phase.acceptance.kind === "unknown") {
+    const awaitedObject = requested.phase.acceptance.stage === "volume-create" ? namedVolume : namedInstance;
     if (awaitedObject === undefined) {
       throw incusError(
         "sandbox-destroy-incomplete",
@@ -453,11 +470,7 @@ export async function destroyAllocation(
   }
   return transitionAllocationIntent(repository, requested, {
     ...requested,
-    state: "destroyed",
-    providerLocator: undefined,
-    dockerDataVolume: undefined,
-    quarantined: undefined,
-    acceptanceUnknown: undefined,
+    phase: { state: "destroyed" },
   });
 }
 
@@ -466,7 +479,7 @@ export function nextGeneration(existing: AllocationIntent | undefined): number {
 }
 
 export function isActiveIntent(intent: AllocationIntent): boolean {
-  return OCCUPYING_STATES.has(intent.state);
+  return OCCUPYING_STATES.has(intent.phase.state);
 }
 
 export interface AdmissionLock {

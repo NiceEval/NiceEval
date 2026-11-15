@@ -66,10 +66,14 @@ import {
   incusArtifactPreparationIdentity,
   lookupCommittedIncusArtifactForPrefixes,
   publishOrReuseIncusArtifact,
-  type IncusArtifactLocator,
 } from "./artifact.ts";
 import { INCUS_GUEST_INIT_BLOCK_DOCKER_DATA } from "./image.ts";
-import { IncusArtifactLocatorSchema, incusRepositoryHost, type IncusRepository } from "./repository.ts";
+import {
+  artifactLocator,
+  IncusArtifactLocatorSchema,
+  incusRepositoryHost,
+  type IncusRepository,
+} from "./repository.ts";
 
 export const INCUS_PLANNER_REVISION = "incus-vm-1";
 export const INCUS_MODULE_ID = "niceeval/incus-vm";
@@ -266,7 +270,7 @@ async function createReadySandbox(
         provisionToken,
         owner: currentOwner(),
         expectedTerminal: "destroyed",
-        state: "reserved",
+        phase: { state: "reserved" },
       });
     } finally {
       await lock.release();
@@ -281,9 +285,7 @@ async function createReadySandbox(
     const volumeName = volumeNameFor(reserved.allocationId);
     const creating = await transitionAllocationIntent(repository, reserved, {
       ...reserved,
-      state: "creating",
-      providerLocator: name,
-      dockerDataVolume: volumeName,
+      phase: { state: "creating", resources: { providerLocator: name, dockerDataVolume: volumeName } },
     });
     const cpus = plan.resources.cpus;
     const memoryBytes = plan.resources.memoryBytes;
@@ -363,15 +365,16 @@ async function createReadySandbox(
       await control.startInstance(plan.project, name);
       const located = await transitionAllocationIntent(repository, creating, {
         ...creating,
-        providerLocator: name,
-        dockerDataVolume: volumeName,
-        state: "creating",
+        phase: { state: "creating", resources: { providerLocator: name, dockerDataVolume: volumeName } },
       });
       const readyTimeout = cappedReadinessTimeoutMs(
         context.deadline._tag === "Unlimited" ? undefined : context.deadline.deadlineAt,
       );
       await waitForReadiness(control, plan, name, located, readyTimeout, signal);
-      const ready = await transitionAllocationIntent(repository, located, { ...located, state: "ready" });
+      const ready = await transitionAllocationIntent(repository, located, {
+        ...located,
+        phase: { state: "ready", resources: { providerLocator: name, dockerDataVolume: volumeName } },
+      });
       return new IncusSandbox(
         repository,
         control,
@@ -387,11 +390,11 @@ async function createReadySandbox(
         if (createStage !== "known") {
           await transitionAllocationIntent(repository, toDestroy, {
             ...toDestroy,
-            state: "destroy-requested",
-            quarantined: true,
-            acceptanceUnknown: createStage,
-            providerLocator: name,
-            dockerDataVolume: volumeName,
+            phase: {
+              state: "destroy-requested",
+              resources: { providerLocator: name, dockerDataVolume: volumeName },
+              acceptance: { kind: "unknown", stage: createStage },
+            },
           });
           throw cause;
         }
@@ -444,15 +447,20 @@ export function materializeIncusProviderPlan(
       }),
     ).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
     return yield* Effect.try({
-      try: () =>
-        wrapBackend(backend, context, {
+      try: () => {
+        if (backend.allocation.phase.state !== "ready")
+          throw incusError("sandbox-artifact-unverified", "Incus allocation is not ready.", [
+            "Reconcile the allocation before materialization.",
+          ]);
+        return wrapBackend(backend, context, {
           instance: backend.sandboxId,
-          dockerDataVolume: backend.allocation.dockerDataVolume ?? volumeNameFor(backend.allocation.allocationId),
+          dockerDataVolume: backend.allocation.phase.resources.dockerDataVolume,
           project: plan.project,
           storagePool: plan.storagePool,
           executionDomainId: plan.executionDomainId,
           imageFingerprint: plan.imageFingerprint,
-        }),
+        });
+      },
       catch: (cause) => runtimeFailure(context, cause),
     }).pipe(Effect.tapError(() => providerBoundaryEffect(() => backend.stop()).pipe(Effect.ignore)));
   }).pipe(Effect.mapError((cause) => runtimeFailure(context, cause)));
@@ -627,14 +635,15 @@ export function incusProviderModule(
                     ["Capture only the provider-owned prepare VM."],
                   );
                 }
-                const dockerDataVolume = owned.authorBackend.allocation.dockerDataVolume;
-                if (dockerDataVolume === undefined) {
+                const phase = owned.authorBackend.allocation.phase;
+                if (phase.state !== "ready") {
                   throw incusError(
                     "sandbox-artifact-unverified",
                     "Incus prepare allocation has no Docker data volume locator.",
                     ["Reconcile the prepare allocation before capture."],
                   );
                 }
+                const dockerDataVolume = phase.resources.dockerDataVolume;
                 const identity = incusArtifactPreparationIdentity(plan, {
                   beforeCacheKey: operation.declaration.beforeCacheKey,
                   manifestDigest: operation.declaration.declarationDigest,
@@ -663,15 +672,7 @@ export function incusProviderModule(
                   },
                   identity,
                 );
-                const locator: IncusArtifactLocator = {
-                  artifactId: committed.artifactId,
-                  generation: committed.generation,
-                  project: committed.project,
-                  instance: committed.instance,
-                  dockerDataVolume: committed.dockerDataVolume,
-                  beforeCacheKey: committed.beforeCacheKey,
-                  manifestDigest: committed.manifestDigest,
-                };
+                const locator = artifactLocator(committed, undefined);
                 return {
                   locator,
                   beforeCacheKey: locator.beforeCacheKey,

@@ -23,7 +23,7 @@ import type { IncusControl, IncusInstance } from "./control.ts";
 import { INCUS_METADATA, parseIncusSizeBytes } from "./control.ts";
 import { incusError } from "./errors.ts";
 import type { AllocationIntent } from "./ledger.ts";
-import { destroyAllocation, metadataMatchesIntent, volumeMetadataMatchesIntent, volumeNameFor } from "./ledger.ts";
+import { destroyAllocation, metadataMatchesIntent, volumeMetadataMatchesIntent } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import type { IncusRepository } from "./repository.ts";
 
@@ -603,7 +603,11 @@ async function assertReferenceReadiness(
       ["Destroy the instance and retry; do not adopt an object with mismatched generation."],
     );
   }
-  const expectedVolume = intent.dockerDataVolume ?? volumeNameFor(intent.allocationId);
+  if (intent.phase.state !== "creating" && intent.phase.state !== "ready")
+    throw incusError("sandbox-readiness-failed", "Incus allocation is not creating or ready.", [
+      "Reconcile the allocation before readiness.",
+    ]);
+  const expectedVolume = intent.phase.resources.dockerDataVolume;
   const device = instance.expandedDevices?.dockerdata;
   if (
     device === undefined ||

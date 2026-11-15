@@ -41,9 +41,11 @@ export function artifactByteEstimate(
   // observed copy peak when selecting an estimate for a future capture.
   let sample: number | undefined;
   for (const artifact of artifacts) {
-    if (artifact.estimatedArtifactBytes !== undefined)
+    if (artifact.capture.kind === "measured")
       sample =
-        sample === undefined ? artifact.estimatedArtifactBytes : Math.max(sample, artifact.estimatedArtifactBytes);
+        sample === undefined
+          ? artifact.capture.estimatedArtifactBytes
+          : Math.max(sample, artifact.capture.estimatedArtifactBytes);
   }
   return sample ?? fallback;
 }

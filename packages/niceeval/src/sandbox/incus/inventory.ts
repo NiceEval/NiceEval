@@ -113,9 +113,9 @@ export function inventoryDocument(domain: IncusDomainDescriptor, inventory: Arti
       currentHead,
       consumerHolds,
       createdAt: intent.createdAt,
-      lastSuccessfulHoldAt: intent.lastSuccessfulHoldAt ?? null,
+      lastSuccessfulHoldAt: intent.lastSuccessfulHold?.at ?? null,
       verification,
-      estimatedArtifactBytes: intent.estimatedArtifactBytes ?? null,
+      estimatedArtifactBytes: intent.capture.kind === "measured" ? intent.capture.estimatedArtifactBytes : null,
       sizeKind: "estimate",
       additive: false,
     })),
@@ -146,8 +146,10 @@ export function renderArtifactInventory(domain: IncusDomainDescriptor, inventory
     lines.push(
       `${a.artifactId.slice(0, 12)} · environment ${a.executionDomainId} · ${states[a.state]} · generation ${a.generation} · ${entry.currentHead ? "current" : "earlier"} · ${entry.consumerHolds} consumers · ${verification[entry.verification]}`,
     );
-    lines.push(`  created ${a.createdAt} · last used ${a.lastSuccessfulHoldAt ?? "never"}`);
-    lines.push(`  ${a.estimatedArtifactBytes ?? "unknown"} bytes estimate · not additive`);
+    lines.push(`  created ${a.createdAt} · last used ${a.lastSuccessfulHold?.at ?? "never"}`);
+    lines.push(
+      `  ${a.capture.kind === "measured" ? a.capture.estimatedArtifactBytes : "unknown"} bytes estimate · not additive`,
+    );
   }
   for (const kind of ["instance", "custom-storage-volume"] as const) {
     const names = inventory.orphans.filter((entry) => entry.kind === kind).map((entry) => entry.name);

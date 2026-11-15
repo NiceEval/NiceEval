@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Schema } from "effect";
-import type { ArtifactIntent } from "./repository.ts";
+import { encodeArtifactPayload, type ArtifactIntent } from "./repository.ts";
 
 const integer = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const timestamp = Schema.String.check(
@@ -90,18 +90,20 @@ function canonical(value: unknown): string {
   throw new TypeError("GC canonical evidence must contain JSON values");
 }
 export const gcDigest = (value: unknown): string => createHash("sha256").update(canonical(value)).digest("hex");
-export const artifactResourceIdentity = (intent: ArtifactIntent): string =>
-  gcDigest({
-    artifactId: intent.artifactId,
-    generation: intent.generation,
-    project: intent.project,
-    pool: intent.pool,
-    instance: intent.instance,
-    volume: intent.dockerDataVolume,
+export const artifactResourceIdentity = (intent: ArtifactIntent): string => {
+  const payload = encodeArtifactPayload(intent);
+  return gcDigest({
+    artifactId: payload.artifactId,
+    generation: payload.generation,
+    project: payload.project,
+    pool: payload.pool,
+    instance: payload.instance,
+    volume: payload.dockerDataVolume,
   });
+};
 export function artifactEvidenceDigest(intent: ArtifactIntent): string {
   // Ownership is evidence: a stale preview must not reclaim an intent after
   // another plan took over the same interrupted retirement state.
-  const { updatedAt: _updatedAt, ...evidence } = intent;
+  const { updatedAt: _updatedAt, ...evidence } = encodeArtifactPayload(intent);
   return gcDigest(evidence);
 }

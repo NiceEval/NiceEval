@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Effect, Result, Schema, type Scope } from "effect";
+import { omitUndefined } from "../../shared/omit-undefined.ts";
 import { normalizeExternalCause } from "../../shared/external-cause.ts";
 import { UserDatabaseInvalid, type UserDatabaseFailure } from "../../user-database/errors.ts";
 import { userDatabaseHost, type UserDatabase, type UserDatabaseOpenOptions } from "../../user-database/index.ts";
@@ -61,26 +62,26 @@ export interface AllocationOwner {
   readonly startedAt: string;
 }
 
-export interface AllocationIntent {
-  readonly allocationId: string;
-  readonly executionId: string;
-  readonly provider: "incus";
-  readonly generation: number;
-  readonly requirementDigest: string;
-  readonly artifactDigest: string;
-  readonly requestedDockerDataBytes: number;
-  readonly executionDomainId: string;
-  readonly project: string;
-  readonly storagePool: string;
-  readonly provisionToken: string;
-  readonly owner: AllocationOwner;
-  readonly providerLocator?: string | undefined;
-  readonly dockerDataVolume?: string | undefined;
-  readonly quarantined?: boolean | undefined;
-  readonly acceptanceUnknown?: "volume-create" | "instance-create" | undefined;
-  readonly expectedTerminal: "destroyed";
-  readonly state: AllocationState;
+export interface AllocationResources {
+  readonly providerLocator: string;
+  readonly dockerDataVolume: string;
 }
+export type AllocationPhase =
+  | { readonly state: "reserved" | "destroyed" }
+  | { readonly state: "creating" | "ready" | "handed-off" | "lost"; readonly resources: AllocationResources }
+  | {
+      readonly state: "destroy-requested";
+      readonly resources: AllocationResources | undefined;
+      readonly acceptance:
+        | { readonly kind: "settled" }
+        | { readonly kind: "unknown"; readonly stage: "volume-create" | "instance-create" };
+    };
+export type AllocationIntent = Omit<
+  AllocationPayload,
+  "state" | "providerLocator" | "dockerDataVolume" | "quarantined" | "acceptanceUnknown"
+> & {
+  readonly phase: AllocationPhase;
+};
 
 export const IncusArtifactLocatorSchema = Schema.Struct({
   artifactId: Schema.String,
@@ -95,27 +96,43 @@ export const IncusArtifactLocatorSchema = Schema.Struct({
 });
 export type IncusArtifactLocator = typeof IncusArtifactLocatorSchema.Type;
 
-export interface ArtifactIntent extends IncusArtifactLocator {
-  readonly state: ArtifactState;
-  readonly executionDomainId: string;
-  readonly runtimeProject: string;
-  readonly pool: string;
-  readonly baseFingerprint: string;
-  readonly providerRevision: string;
-  readonly guestInitRevision: string;
-  readonly cacheFormat: string;
-  readonly coverage: string;
-  readonly resourcesDigest: string;
-  readonly replacementScopeDigest?: string | undefined;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-  readonly lastSuccessfulHoldAt?: string | undefined;
-  readonly lastSuccessfulHoldId?: string | undefined;
-  readonly retirementPlanId?: string | undefined;
-  readonly estimatedArtifactBytes?: number | undefined;
-  readonly capturePoolUsedBefore?: number | undefined;
-  readonly capturePoolUsedAfter?: number | undefined;
+export function artifactLocator(intent: ArtifactIntent, consumerHoldId: string | undefined): IncusArtifactLocator {
+  return {
+    artifactId: intent.artifactId,
+    generation: intent.generation,
+    project: intent.project,
+    instance: intent.instance,
+    dockerDataVolume: intent.dockerDataVolume,
+    beforeCacheKey: intent.beforeCacheKey,
+    manifestDigest: intent.manifestDigest,
+    ...(consumerHoldId === undefined ? {} : { consumerHoldId }),
+  };
 }
+
+export type ArtifactCapture =
+  | { readonly kind: "none" }
+  | { readonly kind: "started"; readonly poolUsedBefore: number }
+  | {
+      readonly kind: "measured";
+      readonly poolUsedBefore: number;
+      readonly poolUsedAfter: number;
+      readonly estimatedArtifactBytes: number;
+    };
+export type ArtifactIntent = Omit<
+  ArtifactPayload,
+  | "replacementScopeDigest"
+  | "lastSuccessfulHoldAt"
+  | "lastSuccessfulHoldId"
+  | "retirementPlanId"
+  | "estimatedArtifactBytes"
+  | "capturePoolUsedBefore"
+  | "capturePoolUsedAfter"
+> & {
+  readonly replacementScopeDigest: string | undefined;
+  readonly lastSuccessfulHold: { readonly at: string; readonly holdId: string } | undefined;
+  readonly retirementPlanId: string | undefined;
+  readonly capture: ArtifactCapture;
+};
 
 export interface IncusAdmissionLease {
   readonly lockId: string;
@@ -143,7 +160,7 @@ export type IncusRepositoryRequest =
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "allocation.reserve";
-      readonly intent: AllocationIntent;
+      readonly intent: AllocationPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
@@ -157,12 +174,12 @@ export type IncusRepositoryRequest =
       readonly allocationId: string;
       readonly expectedGeneration: number;
       readonly expectedState: AllocationState;
-      readonly intent: AllocationIntent;
+      readonly intent: AllocationPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.reserve";
-      readonly intent: ArtifactIntent;
+      readonly intent: ArtifactPayload;
       readonly maximumActive: number;
     }
   | { readonly repository: typeof INCUS_REPOSITORY; readonly operation: "artifact.get"; readonly artifactId: string }
@@ -173,7 +190,7 @@ export type IncusRepositoryRequest =
       readonly artifactId: string;
       readonly expectedGeneration: number;
       readonly expectedState: ArtifactState;
-      readonly intent: ArtifactIntent;
+      readonly intent: ArtifactPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
@@ -243,58 +260,58 @@ export type IncusRepositoryResult =
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "gc.claim";
       readonly status: "claimed" | "hold-acquired" | "entry-state-changed";
-      readonly intent: ArtifactIntent | null;
+      readonly intent: ArtifactPayload | null;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "allocation.reserve";
-      readonly intent: AllocationIntent;
+      readonly intent: AllocationPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "allocation.get";
-      readonly intent: AllocationIntent | null;
+      readonly intent: AllocationPayload | null;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "allocation.list";
-      readonly intents: readonly AllocationIntent[];
+      readonly intents: readonly AllocationPayload[];
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "allocation.transition";
-      readonly intent: AllocationIntent;
+      readonly intent: AllocationPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.reserve";
-      readonly intent: ArtifactIntent;
+      readonly intent: ArtifactPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.get";
-      readonly intent: ArtifactIntent | null;
+      readonly intent: ArtifactPayload | null;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.list";
-      readonly intents: readonly ArtifactIntent[];
+      readonly intents: readonly ArtifactPayload[];
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.transition";
-      readonly intent: ArtifactIntent;
+      readonly intent: ArtifactPayload;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.head.replace";
-      readonly intent: ArtifactIntent;
-      readonly previous: ArtifactIntent | null;
+      readonly intent: ArtifactPayload;
+      readonly previous: ArtifactPayload | null;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.head.get";
-      readonly intent: ArtifactIntent | null;
+      readonly intent: ArtifactPayload | null;
     }
   | {
       readonly repository: typeof INCUS_REPOSITORY;
@@ -310,7 +327,7 @@ export type IncusRepositoryResult =
   | {
       readonly repository: typeof INCUS_REPOSITORY;
       readonly operation: "artifact.release.request" | "artifact.release.observe";
-      readonly intent: ArtifactIntent;
+      readonly intent: ArtifactPayload;
       readonly instanceAbsent: boolean;
       readonly customStorageVolumeAbsent: boolean;
     }
@@ -333,7 +350,8 @@ export type IncusRepositoryResultFor<Request extends IncusRepositoryRequest> = E
 
 const ParseOptions = { errors: "all" as const, exact: true, onExcessProperty: "error" as const };
 const OwnerSchema = Schema.Struct({ host: Schema.String, pid: Schema.Number, startedAt: Schema.String });
-const AllocationIntentSchema = Schema.Struct({
+// SQLite and worker payloads: missing keys are durable identity/evidence facts.
+export const AllocationPayloadSchema = Schema.Struct({
   allocationId: Schema.String,
   executionId: Schema.String,
   provider: Schema.Literal("incus"),
@@ -346,14 +364,15 @@ const AllocationIntentSchema = Schema.Struct({
   storagePool: Schema.String,
   provisionToken: Schema.String,
   owner: OwnerSchema,
-  providerLocator: Schema.optional(Schema.String),
-  dockerDataVolume: Schema.optional(Schema.String),
-  quarantined: Schema.optional(Schema.Boolean),
-  acceptanceUnknown: Schema.optional(Schema.Literals(["volume-create", "instance-create"])),
+  providerLocator: Schema.optionalKey(Schema.String),
+  dockerDataVolume: Schema.optionalKey(Schema.String),
+  quarantined: Schema.optionalKey(Schema.Boolean),
+  acceptanceUnknown: Schema.optionalKey(Schema.Literals(["volume-create", "instance-create"])),
   expectedTerminal: Schema.Literal("destroyed"),
   state: Schema.Literals(ALLOCATION_STATES),
 });
-const ArtifactIntentSchema = Schema.Struct({
+// SQLite and worker payloads preserve exact omission for GC evidence.
+export const ArtifactPayloadSchema = Schema.Struct({
   artifactId: Schema.String,
   generation: Schema.Number,
   project: Schema.String,
@@ -371,16 +390,19 @@ const ArtifactIntentSchema = Schema.Struct({
   cacheFormat: Schema.String,
   coverage: Schema.String,
   resourcesDigest: Schema.String,
-  replacementScopeDigest: Schema.optional(Schema.String),
+  replacementScopeDigest: Schema.optionalKey(Schema.String),
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  lastSuccessfulHoldAt: Schema.optional(Schema.String),
-  lastSuccessfulHoldId: Schema.optional(Schema.String),
-  retirementPlanId: Schema.optional(Schema.String),
-  estimatedArtifactBytes: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  capturePoolUsedBefore: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-  capturePoolUsedAfter: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  lastSuccessfulHoldAt: Schema.optionalKey(Schema.String),
+  lastSuccessfulHoldId: Schema.optionalKey(Schema.String),
+  retirementPlanId: Schema.optionalKey(Schema.String),
+  estimatedArtifactBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  capturePoolUsedBefore: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  capturePoolUsedAfter: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
+
+export type AllocationPayload = typeof AllocationPayloadSchema.Type;
+export type ArtifactPayload = typeof ArtifactPayloadSchema.Type;
 
 const AllocationTable = "incus_allocation_intents";
 const ArtifactTable = "incus_artifact_intents";
@@ -430,8 +452,8 @@ function parsePayload(text: unknown, label: string): unknown {
   }
 }
 
-function freezeAllocation(value: unknown): AllocationIntent {
-  const decoded = decodeWith(AllocationIntentSchema, value, "Incus allocation");
+export function decodeAllocationPayload(value: unknown): AllocationIntent {
+  const decoded = decodeWith(AllocationPayloadSchema, value, "Incus allocation");
   if (
     !Number.isSafeInteger(decoded.generation) ||
     decoded.generation < 1 ||
@@ -442,22 +464,119 @@ function freezeAllocation(value: unknown): AllocationIntent {
   ) {
     throw invalid("Incus allocation contains an invalid integer field");
   }
+  const { state, providerLocator, dockerDataVolume, quarantined, acceptanceUnknown, ...common } = decoded;
+  if ((providerLocator === undefined) !== (dockerDataVolume === undefined))
+    throw invalid("Incus allocation resource names must be paired");
+  const resources =
+    providerLocator === undefined || dockerDataVolume === undefined ? undefined : { providerLocator, dockerDataVolume };
+  const unknown = quarantined === true;
+  if (unknown !== (acceptanceUnknown !== undefined) || (unknown && state !== "destroy-requested"))
+    throw invalid("Incus allocation acceptance must be paired with quarantine in destroy-requested");
+  let phase: AllocationPhase;
+  switch (state) {
+    case "reserved":
+    case "destroyed":
+      if (resources !== undefined) throw invalid("Incus allocation terminal/reserved phase cannot contain resources");
+      phase = { state };
+      break;
+    case "destroy-requested":
+      phase = {
+        state,
+        resources,
+        acceptance:
+          acceptanceUnknown === undefined ? { kind: "settled" } : { kind: "unknown", stage: acceptanceUnknown },
+      };
+      break;
+    default:
+      if (resources === undefined) throw invalid("Incus allocation phase requires resource names");
+      phase = { state, resources };
+  }
+  return { ...common, phase };
+}
+
+export function encodeAllocationPayload(intent: AllocationIntent): AllocationPayload {
+  const { phase, ...common } = intent;
+  const resources = "resources" in phase ? phase.resources : undefined;
+  const acceptance = phase.state === "destroy-requested" ? phase.acceptance : undefined;
+  return decodeWith(
+    AllocationPayloadSchema,
+    omitUndefined({
+      ...common,
+      state: phase.state,
+      providerLocator: resources?.providerLocator,
+      dockerDataVolume: resources?.dockerDataVolume,
+      quarantined: acceptance?.kind === "unknown" ? true : undefined,
+      acceptanceUnknown: acceptance?.kind === "unknown" ? acceptance.stage : undefined,
+    }),
+    "Incus allocation",
+  );
+}
+
+export function decodeArtifactPayload(value: unknown): ArtifactIntent {
+  const decoded = decodeWith(ArtifactPayloadSchema, value, "Incus artifact");
+  if (!Number.isSafeInteger(decoded.generation) || decoded.generation < 1)
+    throw invalid("Incus artifact generation must be a positive safe integer");
+  const {
+    lastSuccessfulHoldAt,
+    lastSuccessfulHoldId,
+    capturePoolUsedBefore,
+    capturePoolUsedAfter,
+    estimatedArtifactBytes,
+    replacementScopeDigest,
+    retirementPlanId,
+    ...common
+  } = decoded;
+  if ((lastSuccessfulHoldAt === undefined) !== (lastSuccessfulHoldId === undefined))
+    throw invalid("Incus artifact successful hold history must be paired");
+  let capture: ArtifactCapture;
+  if (capturePoolUsedBefore === undefined && capturePoolUsedAfter === undefined && estimatedArtifactBytes === undefined)
+    capture = { kind: "none" };
+  else if (
+    capturePoolUsedBefore !== undefined &&
+    capturePoolUsedAfter === undefined &&
+    estimatedArtifactBytes === undefined
+  )
+    capture = { kind: "started", poolUsedBefore: capturePoolUsedBefore };
+  else if (
+    capturePoolUsedBefore !== undefined &&
+    capturePoolUsedAfter !== undefined &&
+    estimatedArtifactBytes !== undefined
+  )
+    capture = {
+      kind: "measured",
+      poolUsedBefore: capturePoolUsedBefore,
+      poolUsedAfter: capturePoolUsedAfter,
+      estimatedArtifactBytes,
+    };
+  else throw invalid("Incus artifact capture fields do not describe a supported sample");
   return {
-    ...decoded,
-    owner: decoded.owner,
-    providerLocator: decoded.providerLocator,
-    dockerDataVolume: decoded.dockerDataVolume,
-    ...(decoded.quarantined === true ? { quarantined: true } : {}),
-    acceptanceUnknown: decoded.acceptanceUnknown,
+    ...common,
+    replacementScopeDigest,
+    retirementPlanId,
+    capture,
+    lastSuccessfulHold:
+      lastSuccessfulHoldAt === undefined || lastSuccessfulHoldId === undefined
+        ? undefined
+        : { at: lastSuccessfulHoldAt, holdId: lastSuccessfulHoldId },
   };
 }
 
-function freezeArtifact(value: unknown): ArtifactIntent {
-  const decoded = decodeWith(ArtifactIntentSchema, value, "Incus artifact");
-  if (!Number.isSafeInteger(decoded.generation) || decoded.generation < 1) {
-    throw invalid("Incus artifact generation must be a positive safe integer");
-  }
-  return decoded;
+export function encodeArtifactPayload(intent: ArtifactIntent): ArtifactPayload {
+  const { lastSuccessfulHold, capture, replacementScopeDigest, retirementPlanId, ...common } = intent;
+  return decodeWith(
+    ArtifactPayloadSchema,
+    omitUndefined({
+      ...common,
+      replacementScopeDigest,
+      retirementPlanId,
+      lastSuccessfulHoldAt: lastSuccessfulHold?.at,
+      lastSuccessfulHoldId: lastSuccessfulHold?.holdId,
+      capturePoolUsedBefore: capture.kind === "none" ? undefined : capture.poolUsedBefore,
+      capturePoolUsedAfter: capture.kind === "measured" ? capture.poolUsedAfter : undefined,
+      estimatedArtifactBytes: capture.kind === "measured" ? capture.estimatedArtifactBytes : undefined,
+    }),
+    "Incus artifact",
+  );
 }
 
 function decodeAllocationRow(row: unknown): AllocationIntent {
@@ -465,8 +584,8 @@ function decodeAllocationRow(row: unknown): AllocationIntent {
     throw invalid("Incus allocation query returned a non-object row");
   const generation = Reflect.get(row, "generation");
   const state = Reflect.get(row, "state");
-  const intent = freezeAllocation(parsePayload(Reflect.get(row, "payload"), "Incus allocation"));
-  if (generation !== intent.generation || state !== intent.state)
+  const intent = decodeAllocationPayload(parsePayload(Reflect.get(row, "payload"), "Incus allocation"));
+  if (generation !== intent.generation || state !== intent.phase.state)
     throw invalid("Incus allocation indexed fields disagree with its typed payload");
   return intent;
 }
@@ -476,7 +595,7 @@ function decodeArtifactRow(row: unknown): ArtifactIntent {
     throw invalid("Incus artifact query returned a non-object row");
   const generation = Reflect.get(row, "generation");
   const state = Reflect.get(row, "state");
-  const intent = freezeArtifact(parsePayload(Reflect.get(row, "payload"), "Incus artifact"));
+  const intent = decodeArtifactPayload(parsePayload(Reflect.get(row, "payload"), "Incus artifact"));
   if (generation !== intent.generation || state !== intent.state)
     throw invalid("Incus artifact indexed fields disagree with its typed payload");
   return intent;
@@ -656,6 +775,85 @@ function getArtifact(database: DatabaseSync, artifactId: string): ArtifactIntent
 }
 
 function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): IncusRepositoryResult {
+  const result = dispatchDomain(database, request);
+  switch (result.operation) {
+    case "allocation.reserve":
+    case "allocation.transition":
+      return { ...result, intent: encodeAllocationPayload(result.intent) };
+    case "allocation.get":
+      return { ...result, intent: result.intent === null ? null : encodeAllocationPayload(result.intent) };
+    case "allocation.list":
+      return { ...result, intents: result.intents.map(encodeAllocationPayload) };
+    case "artifact.reserve":
+    case "artifact.transition":
+    case "artifact.release.request":
+    case "artifact.release.observe":
+      return { ...result, intent: encodeArtifactPayload(result.intent) };
+    case "artifact.get":
+    case "artifact.head.get":
+    case "gc.claim":
+      return { ...result, intent: result.intent === null ? null : encodeArtifactPayload(result.intent) };
+    case "artifact.head.replace":
+      return {
+        ...result,
+        intent: encodeArtifactPayload(result.intent),
+        previous: result.previous === null ? null : encodeArtifactPayload(result.previous),
+      };
+    case "artifact.list":
+      return { ...result, intents: result.intents.map(encodeArtifactPayload) };
+    default:
+      return result;
+  }
+}
+
+function decodeRepositoryResult(result: IncusRepositoryResult): DomainResult {
+  switch (result.operation) {
+    case "allocation.reserve":
+    case "allocation.transition":
+      return { ...result, intent: decodeAllocationPayload(result.intent) };
+    case "allocation.get":
+      return { ...result, intent: result.intent === null ? null : decodeAllocationPayload(result.intent) };
+    case "allocation.list":
+      return { ...result, intents: result.intents.map(decodeAllocationPayload) };
+    case "artifact.reserve":
+    case "artifact.transition":
+    case "artifact.release.request":
+    case "artifact.release.observe":
+      return { ...result, intent: decodeArtifactPayload(result.intent) };
+    case "artifact.get":
+    case "artifact.head.get":
+    case "gc.claim":
+      return { ...result, intent: result.intent === null ? null : decodeArtifactPayload(result.intent) };
+    case "artifact.head.replace":
+      return {
+        ...result,
+        intent: decodeArtifactPayload(result.intent),
+        previous: result.previous === null ? null : decodeArtifactPayload(result.previous),
+      };
+    case "artifact.list":
+      return { ...result, intents: result.intents.map(decodeArtifactPayload) };
+    default:
+      return result;
+  }
+}
+
+type DomainIntent<Value> = Value extends AllocationPayload
+  ? AllocationIntent
+  : Value extends ArtifactPayload
+    ? ArtifactIntent
+    : Value;
+type DomainResult<Result = IncusRepositoryResult> = Result extends IncusRepositoryResult
+  ? {
+      readonly [Key in keyof Result]: Key extends "intent" | "previous"
+        ? DomainIntent<Result[Key]>
+        : Key extends "intents"
+          ? Result[Key] extends readonly (infer Intent)[]
+            ? readonly DomainIntent<Intent>[]
+            : never
+          : Result[Key];
+    }
+  : never;
+function dispatchDomain(database: DatabaseSync, request: IncusRepositoryRequest): DomainResult {
   if (isGcStoreRequest(request)) return transaction(database, () => dispatchGcStore(database, request));
   if (request.operation === "gc.claim") {
     return transaction(database, () => {
@@ -669,7 +867,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       const result = (
         status: "claimed" | "hold-acquired" | "entry-state-changed",
         intent: ArtifactIntent | null = current,
-      ): IncusRepositoryResult => ({ repository: INCUS_REPOSITORY, operation: "gc.claim", status, intent });
+      ): DomainResult => ({ repository: INCUS_REPOSITORY, operation: "gc.claim", status, intent });
       if (
         candidate === undefined ||
         current === null ||
@@ -692,23 +890,29 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         return result("entry-state-changed");
       // The evidence digest binds the former retirement owner. Replacing it is
       // atomic with the lease check, and existing absence receipts stay intact.
-      const next = freezeArtifact({
+      const next: ArtifactIntent = {
         ...current,
         state: current.state === "retiring" ? "retiring" : "invalid",
         retirementPlanId: plan.planId,
         updatedAt: new Date().toISOString(),
-      });
+      };
       database
         .prepare(
           `UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = ?`,
         )
-        .run(next.state, JSON.stringify(next), current.artifactId, current.generation, current.state);
+        .run(
+          next.state,
+          JSON.stringify(encodeArtifactPayload(next)),
+          current.artifactId,
+          current.generation,
+          current.state,
+        );
       return result("claimed", next);
     });
   }
   if (request.operation === "allocation.reserve") {
-    const intent = freezeAllocation(request.intent);
-    if (intent.state !== "reserved") throw invalid("Incus allocation reservation must begin in reserved state");
+    const intent = decodeAllocationPayload(request.intent);
+    if (intent.phase.state !== "reserved") throw invalid("Incus allocation reservation must begin in reserved state");
     return transaction(database, () => {
       const receipt = database
         .prepare(
@@ -717,10 +921,10 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         .run(
           intent.allocationId,
           intent.generation,
-          intent.state,
+          intent.phase.state,
           intent.executionDomainId,
           intent.project,
-          JSON.stringify(intent),
+          JSON.stringify(encodeAllocationPayload(intent)),
         );
       if (receipt.changes !== 1) throw invalid("Incus allocation reservation did not insert exactly one row");
       return { repository: INCUS_REPOSITORY, operation: request.operation, intent };
@@ -745,33 +949,39 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
     };
   }
   if (request.operation === "allocation.transition") {
-    const next = freezeAllocation(request.intent);
+    const next = decodeAllocationPayload(request.intent);
     return transaction(database, () => {
       const current = getAllocation(database, request.allocationId);
       if (
         current === null ||
         current.generation !== request.expectedGeneration ||
-        current.state !== request.expectedState
+        current.phase.state !== request.expectedState
       ) {
         throw invalid(`Incus allocation ${request.allocationId} transition lost its generation/state fence`);
       }
-      if (!sameAllocationIdentity(current, next) || !AllocationTransitions[current.state].has(next.state)) {
+      if (!sameAllocationIdentity(current, next) || !AllocationTransitions[current.phase.state].has(next.phase.state)) {
         throw invalid(
-          `Incus allocation ${request.allocationId} attempted an invalid ${current.state} -> ${next.state} transition`,
+          `Incus allocation ${request.allocationId} attempted an invalid ${current.phase.state} -> ${next.phase.state} transition`,
         );
       }
       const receipt = database
         .prepare(
           `UPDATE ${AllocationTable} SET state = ?, payload = ? WHERE allocation_id = ? AND generation = ? AND state = ?`,
         )
-        .run(next.state, JSON.stringify(next), request.allocationId, request.expectedGeneration, request.expectedState);
+        .run(
+          next.phase.state,
+          JSON.stringify(encodeAllocationPayload(next)),
+          request.allocationId,
+          request.expectedGeneration,
+          request.expectedState,
+        );
       if (receipt.changes !== 1)
         throw invalid(`Incus allocation ${request.allocationId} transition failed its compare-and-swap`);
       return { repository: INCUS_REPOSITORY, operation: request.operation, intent: next };
     });
   }
   if (request.operation === "artifact.reserve") {
-    const intent = freezeArtifact(request.intent);
+    const intent = decodeArtifactPayload(request.intent);
     if (intent.state !== "reserved" || !Number.isSafeInteger(request.maximumActive) || request.maximumActive < 1) {
       throw invalid("Incus artifact reservation has invalid initial state or capacity");
     }
@@ -802,7 +1012,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           intent.project,
           intent.beforeCacheKey,
           intent.manifestDigest,
-          JSON.stringify(intent),
+          JSON.stringify(encodeArtifactPayload(intent)),
         );
       if (receipt.changes !== 1) throw invalid("Incus artifact reservation did not insert exactly one row");
       return { repository: INCUS_REPOSITORY, operation: request.operation, intent };
@@ -827,7 +1037,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
     };
   }
   if (request.operation === "artifact.transition") {
-    let next = freezeArtifact(request.intent);
+    let next = decodeArtifactPayload(request.intent);
     return transaction(database, () => {
       const current = getArtifact(database, request.artifactId);
       if (
@@ -842,10 +1052,7 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           `Incus artifact ${request.artifactId} attempted an invalid ${current.state} -> ${next.state} transition`,
         );
       }
-      if (current.lastSuccessfulHoldAt !== undefined)
-        next = freezeArtifact({ ...next, lastSuccessfulHoldAt: current.lastSuccessfulHoldAt });
-      if (current.lastSuccessfulHoldId !== undefined)
-        next = freezeArtifact({ ...next, lastSuccessfulHoldId: current.lastSuccessfulHoldId });
+      if (current.lastSuccessfulHold !== undefined) next = { ...next, lastSuccessfulHold: current.lastSuccessfulHold };
       if (next.retirementPlanId !== current.retirementPlanId)
         throw invalid("Incus GC ownership can only change through a fenced plan claim");
       if (next.state === "committed") {
@@ -861,7 +1068,13 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         .prepare(
           `UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = ?`,
         )
-        .run(next.state, JSON.stringify(next), request.artifactId, request.expectedGeneration, request.expectedState);
+        .run(
+          next.state,
+          JSON.stringify(encodeArtifactPayload(next)),
+          request.artifactId,
+          request.expectedGeneration,
+          request.expectedState,
+        );
       if (receipt.changes !== 1)
         throw invalid(`Incus artifact ${request.artifactId} transition failed its compare-and-swap`);
       return { repository: INCUS_REPOSITORY, operation: request.operation, intent: next };
@@ -945,14 +1158,13 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
           hold.acquiredAt,
         );
       if (receipt.changes !== 1) throw invalid("Incus consumer hold was not inserted");
-      const touched = freezeArtifact({
+      const touched: ArtifactIntent = {
         ...intent,
-        lastSuccessfulHoldAt: hold.acquiredAt,
-        lastSuccessfulHoldId: hold.holdId,
-      });
+        lastSuccessfulHold: { at: hold.acquiredAt, holdId: hold.holdId },
+      };
       database
         .prepare(`UPDATE ${ArtifactTable} SET payload = ? WHERE artifact_id = ? AND generation = ?`)
-        .run(JSON.stringify(touched), intent.artifactId, intent.generation);
+        .run(JSON.stringify(encodeArtifactPayload(touched)), intent.artifactId, intent.generation);
       return { repository: INCUS_REPOSITORY, operation: request.operation, hold };
     });
   }
@@ -1014,16 +1226,20 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
         .get(current.artifactId, current.generation) as { readonly count?: unknown } | undefined;
       if (holds === undefined || holds.count !== 0)
         throw invalid("Incus prepared artifact release is blocked by a consumer hold");
-      const intent =
-        current.state === "retiring"
-          ? current
-          : freezeArtifact({ ...current, state: "retiring", updatedAt: request.updatedAt });
+      const intent: ArtifactIntent =
+        current.state === "retiring" ? current : { ...current, state: "retiring", updatedAt: request.updatedAt };
       if (current.state !== "retiring") {
         const transition = database
           .prepare(
             `UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = ?`,
           )
-          .run(intent.state, JSON.stringify(intent), intent.artifactId, intent.generation, current.state);
+          .run(
+            intent.state,
+            JSON.stringify(encodeArtifactPayload(intent)),
+            intent.artifactId,
+            intent.generation,
+            current.state,
+          );
         if (transition.changes !== 1)
           throw invalid("Incus prepared artifact release request failed its compare-and-swap");
       }
@@ -1076,16 +1292,16 @@ function dispatch(database: DatabaseSync, request: IncusRepositoryRequest): Incu
       };
       const instanceAbsent = observed.instance_absent === 1;
       const customStorageVolumeAbsent = observed.custom_storage_volume_absent === 1;
-      const intent =
+      const intent: ArtifactIntent =
         instanceAbsent && customStorageVolumeAbsent
-          ? freezeArtifact({ ...current, state: "released", updatedAt: request.updatedAt })
+          ? { ...current, state: "released", updatedAt: request.updatedAt }
           : current;
       if (intent.state === "released") {
         const transition = database
           .prepare(
             `UPDATE ${ArtifactTable} SET state = ?, payload = ? WHERE artifact_id = ? AND generation = ? AND state = 'retiring'`,
           )
-          .run(intent.state, JSON.stringify(intent), intent.artifactId, intent.generation);
+          .run(intent.state, JSON.stringify(encodeArtifactPayload(intent)), intent.artifactId, intent.generation);
         if (transition.changes !== 1) throw invalid("Incus artifact release failed its compare-and-swap");
         database
           .prepare(`DELETE FROM ${ArtifactHeadTable} WHERE artifact_id = ? AND generation = ?`)
@@ -1211,20 +1427,20 @@ function isOwner(value: unknown): value is AllocationOwner {
   );
 }
 
-function isAllocationIntent(value: unknown): value is AllocationIntent {
+function isAllocationPayload(value: unknown): value is AllocationPayload {
   if (!record(value)) return false;
   try {
-    freezeAllocation(value);
+    decodeAllocationPayload(value);
     return true;
   } catch {
     return false;
   }
 }
 
-function isArtifactIntent(value: unknown): value is ArtifactIntent {
+function isArtifactPayload(value: unknown): value is ArtifactPayload {
   if (!record(value)) return false;
   try {
-    freezeArtifact(value);
+    decodeArtifactPayload(value);
     return true;
   } catch {
     return false;
@@ -1276,12 +1492,12 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
     return keysAre(value, ["repository", "operation", "artifactId"]) && typeof value.artifactId === "string";
   }
   if (value.operation === "allocation.reserve") {
-    return keysAre(value, ["repository", "operation", "intent"]) && isAllocationIntent(value.intent);
+    return keysAre(value, ["repository", "operation", "intent"]) && isAllocationPayload(value.intent);
   }
   if (value.operation === "artifact.reserve") {
     return (
       keysAre(value, ["repository", "operation", "intent", "maximumActive"]) &&
-      isArtifactIntent(value.intent) &&
+      isArtifactPayload(value.intent) &&
       Number.isSafeInteger(value.maximumActive) &&
       Number(value.maximumActive) > 0
     );
@@ -1294,7 +1510,7 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
       Number(value.expectedGeneration) > 0 &&
       typeof value.expectedState === "string" &&
       isFiniteValue(ALLOCATION_STATES, value.expectedState) &&
-      isAllocationIntent(value.intent)
+      isAllocationPayload(value.intent)
     );
   }
   if (value.operation === "artifact.transition") {
@@ -1305,7 +1521,7 @@ export function isIncusRepositoryRequest(value: unknown): value is IncusReposito
       Number(value.expectedGeneration) > 0 &&
       typeof value.expectedState === "string" &&
       isFiniteValue(ARTIFACT_STATES, value.expectedState) &&
-      isArtifactIntent(value.intent)
+      isArtifactPayload(value.intent)
     );
   }
   if (value.operation === "artifact.head.replace") {
@@ -1394,49 +1610,51 @@ export function isIncusRepositoryResult(value: unknown): value is IncusRepositor
     return (
       keysAre(value, ["repository", "operation", "status", "intent"]) &&
       ["claimed", "hold-acquired", "entry-state-changed"].includes(String(value.status)) &&
-      (value.intent === null || isArtifactIntent(value.intent))
+      (value.intent === null || isArtifactPayload(value.intent))
     );
   if (value.operation === "allocation.reserve" || value.operation === "allocation.transition") {
-    return keysAre(value, ["repository", "operation", "intent"]) && isAllocationIntent(value.intent);
+    return keysAre(value, ["repository", "operation", "intent"]) && isAllocationPayload(value.intent);
   }
   if (value.operation === "allocation.get") {
     return (
       keysAre(value, ["repository", "operation", "intent"]) &&
-      (value.intent === null || isAllocationIntent(value.intent))
+      (value.intent === null || isAllocationPayload(value.intent))
     );
   }
   if (value.operation === "allocation.list") {
     return (
       keysAre(value, ["repository", "operation", "intents"]) &&
       Array.isArray(value.intents) &&
-      value.intents.every(isAllocationIntent)
+      value.intents.every(isAllocationPayload)
     );
   }
   if (value.operation === "artifact.reserve" || value.operation === "artifact.transition") {
-    return keysAre(value, ["repository", "operation", "intent"]) && isArtifactIntent(value.intent);
+    return keysAre(value, ["repository", "operation", "intent"]) && isArtifactPayload(value.intent);
   }
   if (value.operation === "artifact.get") {
     return (
-      keysAre(value, ["repository", "operation", "intent"]) && (value.intent === null || isArtifactIntent(value.intent))
+      keysAre(value, ["repository", "operation", "intent"]) &&
+      (value.intent === null || isArtifactPayload(value.intent))
     );
   }
   if (value.operation === "artifact.list") {
     return (
       keysAre(value, ["repository", "operation", "intents"]) &&
       Array.isArray(value.intents) &&
-      value.intents.every(isArtifactIntent)
+      value.intents.every(isArtifactPayload)
     );
   }
   if (value.operation === "artifact.head.replace") {
     return (
       keysAre(value, ["repository", "operation", "intent", "previous"]) &&
-      isArtifactIntent(value.intent) &&
-      (value.previous === null || isArtifactIntent(value.previous))
+      isArtifactPayload(value.intent) &&
+      (value.previous === null || isArtifactPayload(value.previous))
     );
   }
   if (value.operation === "artifact.head.get") {
     return (
-      keysAre(value, ["repository", "operation", "intent"]) && (value.intent === null || isArtifactIntent(value.intent))
+      keysAre(value, ["repository", "operation", "intent"]) &&
+      (value.intent === null || isArtifactPayload(value.intent))
     );
   }
   if (value.operation === "artifact.hold.acquire") {
@@ -1455,7 +1673,7 @@ export function isIncusRepositoryResult(value: unknown): value is IncusRepositor
   if (value.operation === "artifact.release.request" || value.operation === "artifact.release.observe") {
     return (
       keysAre(value, ["repository", "operation", "intent", "instanceAbsent", "customStorageVolumeAbsent"]) &&
-      isArtifactIntent(value.intent) &&
+      isArtifactPayload(value.intent) &&
       typeof value.instanceAbsent === "boolean" &&
       typeof value.customStorageVolumeAbsent === "boolean"
     );
@@ -1483,7 +1701,7 @@ export interface IncusRepository {
   readonly claimGcArtifact: (
     planId: string,
     artifactId: string,
-  ) => Promise<Extract<IncusRepositoryResult, { readonly operation: "gc.claim" }>>;
+  ) => Promise<Extract<DomainResult, { readonly operation: "gc.claim" }>>;
   readonly reserveAllocation: (intent: AllocationIntent) => Promise<AllocationIntent>;
   readonly getAllocation: (allocationId: string) => Promise<AllocationIntent | undefined>;
   readonly listAllocations: () => Promise<readonly AllocationIntent[]>;
@@ -1529,12 +1747,12 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
   const centralDispatch = database.dispatch as unknown as CentralDispatch;
   const call = async <Request extends IncusRepositoryRequest>(
     request: Request,
-  ): Promise<IncusRepositoryResultFor<Request>> => {
+  ): Promise<Extract<DomainResult, { readonly operation: Request["operation"] }>> => {
     const result = await run(centralDispatch(request));
     if (!isIncusRepositoryResult(result) || result.operation !== request.operation) {
       throw invalid(`Incus repository worker returned the wrong result for ${request.operation}`);
     }
-    return result as IncusRepositoryResultFor<Request>;
+    return decodeRepositoryResult(result) as Extract<DomainResult, { readonly operation: Request["operation"] }>;
   };
   const facade: IncusRepository = {
     ownerId: gcDigest({ path: database.path, uid: process.getuid?.() ?? null }),
@@ -1557,7 +1775,13 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
     claimGcArtifact: async (planId, artifactId) =>
       call({ repository: INCUS_REPOSITORY, operation: "gc.claim", planId, artifactId }),
     reserveAllocation: async (intent: AllocationIntent) =>
-      (await call({ repository: INCUS_REPOSITORY, operation: "allocation.reserve", intent })).intent,
+      (
+        await call({
+          repository: INCUS_REPOSITORY,
+          operation: "allocation.reserve",
+          intent: encodeAllocationPayload(intent),
+        })
+      ).intent,
     getAllocation: async (allocationId: string) =>
       (await call({ repository: INCUS_REPOSITORY, operation: "allocation.get", allocationId })).intent ?? undefined,
     listAllocations: async () => (await call({ repository: INCUS_REPOSITORY, operation: "allocation.list" })).intents,
@@ -1568,12 +1792,19 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
           operation: "allocation.transition",
           allocationId: current.allocationId,
           expectedGeneration: current.generation,
-          expectedState: current.state,
-          intent,
+          expectedState: current.phase.state,
+          intent: encodeAllocationPayload(intent),
         })
       ).intent,
     reserveArtifact: async (intent: ArtifactIntent, maximumActive: number) =>
-      (await call({ repository: INCUS_REPOSITORY, operation: "artifact.reserve", intent, maximumActive })).intent,
+      (
+        await call({
+          repository: INCUS_REPOSITORY,
+          operation: "artifact.reserve",
+          intent: encodeArtifactPayload(intent),
+          maximumActive,
+        })
+      ).intent,
     getArtifact: async (artifactId: string) =>
       (await call({ repository: INCUS_REPOSITORY, operation: "artifact.get", artifactId })).intent ?? undefined,
     listArtifacts: async () => (await call({ repository: INCUS_REPOSITORY, operation: "artifact.list" })).intents,
@@ -1585,7 +1816,7 @@ function makeIncusRepository(database: UserDatabase, run: RunRepositoryEffect): 
           artifactId: current.artifactId,
           expectedGeneration: current.generation,
           expectedState: current.state,
-          intent,
+          intent: encodeArtifactPayload(intent),
         })
       ).intent,
     replaceArtifactHead: async (intent: ArtifactIntent) => {

@@ -11,7 +11,12 @@ import {
 } from "./artifact-ledger.ts";
 import { acquireDomainAdmissionLock, currentOwner } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
-import type { IncusArtifactLocator, IncusArtifactConsumerHold, IncusRepository } from "./repository.ts";
+import {
+  artifactLocator,
+  type IncusArtifactLocator,
+  type IncusArtifactConsumerHold,
+  type IncusRepository,
+} from "./repository.ts";
 import { loadIncusDescriptor, matchDomain } from "./descriptor.ts";
 import { artifactByteEstimate, reserveArtifactStorage, unknownArtifactCaptureSample } from "./storage.ts";
 
@@ -28,16 +33,7 @@ export async function acquireCommittedIncusArtifactHold(
     owner: currentOwner(),
     acquiredAt: new Date().toISOString(),
   });
-  return {
-    artifactId: artifact.artifactId,
-    generation: artifact.generation,
-    project: artifact.project,
-    instance: artifact.instance,
-    dockerDataVolume: artifact.dockerDataVolume,
-    beforeCacheKey: artifact.beforeCacheKey,
-    manifestDigest: artifact.manifestDigest,
-    consumerHoldId: hold.holdId,
-  };
+  return artifactLocator(artifact, hold.holdId);
 }
 
 export interface ArtifactIdentity {
@@ -226,6 +222,9 @@ export async function reserveIncusArtifact(
         replacementScopeDigest: identity.replacementScopeDigest,
         createdAt: now,
         updatedAt: now,
+        lastSuccessfulHold: undefined,
+        retirementPlanId: undefined,
+        capture: { kind: "none" },
       },
       identity.artifactMaxInstances + (occupying.length >= identity.artifactMaxInstances ? 1 : 0),
     );
@@ -255,15 +254,7 @@ export async function lookupCommittedIncusArtifactForPrefixes(
         ...found,
         updatedAt: new Date().toISOString(),
       });
-      return {
-        artifactId: touched.artifactId,
-        generation: touched.generation,
-        project: touched.project,
-        instance: touched.instance,
-        dockerDataVolume: touched.dockerDataVolume,
-        beforeCacheKey: touched.beforeCacheKey,
-        manifestDigest: touched.manifestDigest,
-      };
+      return artifactLocator(touched, undefined);
     }
   }
   return undefined;
@@ -303,7 +294,7 @@ async function publishIncusArtifact(
   const publishing = await transitionArtifactIntent(repository, current, {
     ...current,
     state: "publishing",
-    capturePoolUsedBefore: storage.usedBefore,
+    capture: { kind: "started", poolUsedBefore: storage.usedBefore },
     updatedAt: new Date().toISOString(),
   });
   // Incus copies the dependent device with the instance. Pre-creating the
@@ -347,8 +338,12 @@ async function publishIncusArtifact(
   return transitionArtifactIntent(repository, publishing, {
     ...publishing,
     state: "committed",
-    capturePoolUsedAfter: after.used,
-    estimatedArtifactBytes: after.used - storage.usedBefore,
+    capture: {
+      kind: "measured",
+      poolUsedBefore: storage.usedBefore,
+      poolUsedAfter: after.used,
+      estimatedArtifactBytes: after.used - storage.usedBefore,
+    },
     updatedAt: new Date().toISOString(),
   });
 }
@@ -686,7 +681,7 @@ export async function cloneIncusArtifactConsumer(
       target.project,
       target.pool,
       policy.artifactStorageReserveBytes,
-      source.estimatedArtifactBytes,
+      source.capture.kind === "measured" ? source.capture.estimatedArtifactBytes : undefined,
     );
     try {
       // Incus owns the dependent-volume copy as part of the instance operation.
@@ -757,13 +752,17 @@ export async function reconcileIncusArtifact(
   }
   if (artifact.state === "publishing" && exactVm && exactVolume && vm.status.toLowerCase() === "stopped") {
     const observation = await control.getStoragePoolResources(artifact.project, artifact.pool);
-    if (artifact.capturePoolUsedBefore === undefined || observation.used < artifact.capturePoolUsedBefore)
+    if (artifact.capture.kind === "none" || observation.used < artifact.capture.poolUsedBefore)
       throw unknownArtifactCaptureSample(artifact.pool);
     return transitionArtifactIntent(repository, artifact, {
       ...artifact,
       state: "committed",
-      capturePoolUsedAfter: observation.used,
-      estimatedArtifactBytes: observation.used - artifact.capturePoolUsedBefore,
+      capture: {
+        kind: "measured",
+        poolUsedBefore: artifact.capture.poolUsedBefore,
+        poolUsedAfter: observation.used,
+        estimatedArtifactBytes: observation.used - artifact.capture.poolUsedBefore,
+      },
       updatedAt: new Date().toISOString(),
     });
   }
