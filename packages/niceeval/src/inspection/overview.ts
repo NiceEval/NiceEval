@@ -21,7 +21,12 @@ import {
   type ResolvedInspectionAttempt,
 } from "./facts.ts";
 import type { InspectionFactSource } from "./source.ts";
-import { projectAdapterUsageTokens, projectAttemptTiming, projectAttemptUsage } from "./trace.ts";
+import {
+  type AttemptTraceAttachments,
+  projectAdapterUsageTokens,
+  projectAttemptTiming,
+  projectAttemptUsage,
+} from "./trace.ts";
 
 export type InspectionMetricState = "available" | "partial" | "unavailable" | "empty" | "unsupported" | "failed";
 
@@ -392,7 +397,17 @@ function analyzeAttempt(
         groupPath: Object.freeze([...entry.display.groupPath]),
         state: entry.materials.coverage.state,
         ...(entry.materials.coverage.state === "complete" ? {} : { reason: entry.materials.coverage.reason }),
-        limitations: Object.freeze([...entry.materials.limitations]),
+        limitations: Object.freeze(
+          entry.materials.limitations.map((limitation) =>
+            limitation.kind === "sampled"
+              ? {
+                  kind: limitation.kind,
+                  captured: limitation.captured,
+                  ...(limitation.knownTotal === undefined ? {} : { knownTotal: limitation.knownTotal }),
+                }
+              : limitation,
+          ),
+        ),
       }),
     );
   }
@@ -531,9 +546,10 @@ function aggregate(slots: readonly SelectedSlot[], score: InspectionMetricValue)
 function attemptOperationalMetrics(
   resolved: ResolvedInspectionAttempt,
 ): Pick<AttemptAnalysis, "durationMs" | "tokens"> {
+  const runnerActivities = attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family);
   const timing = projectAttemptTiming(
-    Object.freeze({
-      runnerActivities: attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family),
+    Object.freeze<AttemptTraceAttachments>({
+      ...(runnerActivities === undefined ? {} : { runnerActivities }),
     }),
   );
   const durationMs = timing.activities.reduce<number | null>((maximum, activity) => {
@@ -541,10 +557,13 @@ function attemptOperationalMetrics(
     return Math.max(maximum ?? 0, end);
   }, null);
   const adapterUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family);
+  const agentTurns = attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family);
   const usage = projectAttemptUsage(
-    Object.freeze({
-      models: resolved.origin.run.context.execution.models,
-      agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+    Object.freeze<AttemptTraceAttachments>({
+      ...(resolved.origin.run.context.execution.models === undefined
+        ? {}
+        : { models: resolved.origin.run.context.execution.models }),
+      ...(agentTurns === undefined ? {} : { agentTurns }),
       ...(adapterUsage === undefined ? {} : { adapterUsage }),
     }),
   );
@@ -683,7 +702,12 @@ function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUS
   const adapterUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family);
   if (adapterUsage !== undefined) {
     const usage = projectAttemptUsage(
-      Object.freeze({ adapterUsage, models: resolved.origin.run.context.execution.models }),
+      Object.freeze<AttemptTraceAttachments>({
+        adapterUsage,
+        ...(resolved.origin.run.context.execution.models === undefined
+          ? {}
+          : { models: resolved.origin.run.context.execution.models }),
+      }),
     );
     const costs = usage.totals.costs;
     const usd = costs?.values.find((value) => value.currency === "USD");

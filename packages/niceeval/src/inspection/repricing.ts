@@ -104,18 +104,27 @@ export function repriceRecordedUsage(input: {
   readonly judgeCollection: RepricedSource["collection"];
   readonly pricing: InspectionRepricingInput;
 }): InspectionRepricingResult {
+  const pricing = Object.fromEntries(
+    Object.entries(input.pricing).map(([model, price]) => [
+      model,
+      {
+        inputPerMTok: price.inputPerMTok,
+        outputPerMTok: price.outputPerMTok,
+        ...(price.cacheReadPerMTok === undefined ? {} : { cacheReadPerMTok: price.cacheReadPerMTok }),
+        ...(price.cacheWritePerMTok === undefined ? {} : { cacheWritePerMTok: price.cacheWritePerMTok }),
+        source: { id: price.source.id, ...(price.source.asOf === undefined ? {} : { asOf: price.source.asOf }) },
+      },
+    ]),
+  );
   const application = summarize(
     input.application?.calls,
     input.applicationCollection,
-    createAdapterCallPriceReceipts(
-      input.application?.calls.map((call) => ({ ...call, cost: null })) ?? [],
-      input.pricing,
-    ),
+    createAdapterCallPriceReceipts(input.application?.calls.map((call) => ({ ...call, cost: null })) ?? [], pricing),
   );
   const judge = summarize(
     input.judge?.calls,
     input.judgeCollection,
-    createJudgeCallPriceReceipts(input.judge?.calls.map((call) => ({ ...call, cost: null })) ?? [], input.pricing),
+    createJudgeCallPriceReceipts(input.judge?.calls.map((call) => ({ ...call, cost: null })) ?? [], pricing),
   );
   const known = [application.amount, judge.amount].filter((amount) => amount !== null);
   return Object.freeze({

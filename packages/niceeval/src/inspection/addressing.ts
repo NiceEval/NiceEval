@@ -80,13 +80,13 @@ export function parseInspectionAddress(tokens: readonly string[]): InspectionAdd
   if (runIds.some((id) => id.length === 0) || experimentIds.some((id) => id.length === 0))
     invalid("Object IDs must not be empty.");
   return {
-    locator,
+    ...(locator === undefined ? {} : { locator: locator }),
     runIds: [...new Set(runIds)],
     experimentIds: [...new Set(experimentIds)],
     runs,
-    aspect,
+    ...(aspect === undefined ? {} : { aspect: aspect }),
     id,
-    imageId,
+    ...(imageId === undefined ? {} : { imageId: imageId }),
   };
 }
 /** Quote one argv value for a pasteable POSIX shell command. */

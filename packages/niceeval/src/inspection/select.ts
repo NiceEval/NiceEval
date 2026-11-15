@@ -514,19 +514,24 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "attempt.trace.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const assertionContent =
+      const selector =
         operation.selector.kind === "execution-evidence"
-          ? projectAssertionContentDetail(
-              resolved.origin.source,
-              readInspectionAssertions(resolved),
-              operation.selector,
-            )
+          ? {
+              kind: operation.selector.kind,
+              evidenceId: operation.selector.evidenceId,
+              ...(operation.selector.offset === undefined ? {} : { offset: operation.selector.offset }),
+              ...(operation.selector.limit === undefined ? {} : { limit: operation.selector.limit }),
+            }
+          : operation.selector;
+      const assertionContent =
+        selector.kind === "execution-evidence"
+          ? projectAssertionContentDetail(resolved.origin.source, readInspectionAssertions(resolved), selector)
           : undefined;
       let detail =
         assertionContent ??
-        (operation.selector.kind === "execution-event" || operation.selector.kind === "execution-evidence"
-          ? projectExecutionTraceDetail(resolved, operation.selector)
-          : projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), operation.selector));
+        (selector.kind === "execution-event" || selector.kind === "execution-evidence"
+          ? projectExecutionTraceDetail(resolved, selector)
+          : projectAttemptTraceDetail(resolved.origin.source, traceAttachments(resolved), selector));
       if (
         detail === undefined &&
         operation.selector.kind === "execution-event" &&
@@ -1081,16 +1086,25 @@ function attemptRuns(resolved: ResolvedInspectionAttempt): readonly LoadedInspec
 }
 
 function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAttachments {
-  return Object.freeze({
-    attemptCost: attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family),
-    models: resolved.origin.run.context.execution.models,
-    adapterUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family),
-    judgeUsage: attemptAttachment(resolved, NiceEvalRecordAttachments.judgeUsage.family),
-    agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
-    turnContexts: attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family),
-    sandboxCommands: attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family),
-    runnerActivities: attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family),
-    runnerDiagnostics: attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family),
+  const attemptCost = attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family);
+  const models = resolved.origin.run.context.execution.models;
+  const adapterUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family);
+  const judgeUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.judgeUsage.family);
+  const agentTurns = attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family);
+  const turnContexts = attemptAttachment(resolved, NiceEvalRecordAttachments.turnContexts.family);
+  const sandboxCommands = attemptAttachment(resolved, NiceEvalRecordAttachments.sandboxCommands.family);
+  const runnerActivities = attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family);
+  const runnerDiagnostics = attemptAttachment(resolved, NiceEvalRecordAttachments.runnerDiagnostics.attempt.family);
+  return Object.freeze<AttemptTraceAttachments>({
+    ...(attemptCost === undefined ? {} : { attemptCost }),
+    ...(models === undefined ? {} : { models }),
+    ...(adapterUsage === undefined ? {} : { adapterUsage }),
+    ...(judgeUsage === undefined ? {} : { judgeUsage }),
+    ...(agentTurns === undefined ? {} : { agentTurns }),
+    ...(turnContexts === undefined ? {} : { turnContexts }),
+    ...(sandboxCommands === undefined ? {} : { sandboxCommands }),
+    ...(runnerActivities === undefined ? {} : { runnerActivities }),
+    ...(runnerDiagnostics === undefined ? {} : { runnerDiagnostics }),
   });
 }
 

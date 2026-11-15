@@ -202,7 +202,7 @@ function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["
     session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity);
   return Object.freeze({
     kind,
-    beginOperation: session.beginOperation,
+    ...(session.beginOperation === undefined ? {} : { beginOperation: session.beginOperation }),
     cutoff: () => cutoff,
     findExperimentRunIds: session.findExperimentRunIds,
     readRunResource: (runId: string) => session.readRunResource(runId),

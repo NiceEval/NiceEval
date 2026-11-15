@@ -49,7 +49,7 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
     const cutoff = Object.freeze({ ...publication, identity: publicationCutoffIdentity(publication) });
     source = Object.freeze({
       kind: "project-record" as const,
-      beginOperation: session.beginOperation,
+      ...(session.beginOperation === undefined ? {} : { beginOperation: session.beginOperation }),
       cutoff: () => cutoff,
       findExperimentRunIds: session.findExperimentRunIds,
       readRunResource: session.readRunResource,
@@ -95,21 +95,24 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
     const physicalBySlot = new Map(run.physical.members.map((row) => [row.slotId, row]));
     const slots = slotsByRunId.get(run.run.runId);
     return {
-      createdRevision: run.physical.createdRevision,
+      ...(run.physical.createdRevision === undefined ? {} : { createdRevision: run.physical.createdRevision }),
       document: run.run,
-      members: run.members.map((member) => ({
-        document: member,
-        bindingRevision: physicalBySlot.get(member.slotId)?.bindingRevision,
-        attempt:
-          member.attempt === null
-            ? null
-            : {
-                resolved: resolveInspectionMemberAttempt(runs, run, member),
-                sourceRunId: run.run.runId,
-                action: member.action as "executed" | "carried" | "accepted",
-                publication: published(slots?.get(member.slotId)?.publication),
-              },
-      })),
+      members: run.members.map((member) => {
+        const bindingRevision = physicalBySlot.get(member.slotId)?.bindingRevision;
+        return {
+          document: member,
+          ...(bindingRevision === undefined ? {} : { bindingRevision }),
+          attempt:
+            member.attempt === null
+              ? null
+              : {
+                  resolved: resolveInspectionMemberAttempt(runs, run, member),
+                  sourceRunId: run.run.runId,
+                  action: member.action as "executed" | "carried" | "accepted",
+                  publication: published(slots?.get(member.slotId)?.publication),
+                },
+        };
+      }),
     };
   });
   const lifecycleRuns = yield* mergeCurrentAssessmentRuns(assessmentRuns, resources);
