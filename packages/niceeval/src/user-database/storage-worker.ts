@@ -112,7 +112,12 @@ function exactSql(sql: string): string {
 }
 
 function invalid(message: string, repository?: string, cause?: unknown): UserDatabaseInvalid {
-  return new UserDatabaseInvalid({ code: "user-database-invalid", message, repository, cause });
+  return new UserDatabaseInvalid({
+    code: "user-database-invalid",
+    message,
+    ...(repository === undefined ? {} : { repository }),
+    cause,
+  });
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -393,9 +398,9 @@ function serializeFailure(cause: unknown): UserDatabaseWorkerFailure {
     });
   }
   if (code === "user-database-busy" || /SQLITE_BUSY|database is locked/iu.test(message)) {
-    return Object.freeze({ code: "user-database-busy", message, repository });
+    return Object.freeze({ code: "user-database-busy", message, ...(repository === undefined ? {} : { repository }) });
   }
-  return Object.freeze({ code: "user-database-invalid", message, repository });
+  return Object.freeze({ code: "user-database-invalid", message, ...(repository === undefined ? {} : { repository }) });
 }
 
 if (!isMainThread && parentPort !== null) {

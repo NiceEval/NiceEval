@@ -83,14 +83,14 @@ function workerFailure(failure: UserDatabaseWorkerFailure): UserDatabaseFailure 
     return new UserDatabaseBusy({
       code: failure.code,
       message: failure.message,
-      repository: failure.repository,
+      ...(failure.repository === undefined ? {} : { repository: failure.repository }),
       cause: new Error(failure.message),
     });
   }
   return new UserDatabaseInvalid({
     code: failure.code,
     message: failure.message,
-    repository: failure.repository,
+    ...(failure.repository === undefined ? {} : { repository: failure.repository }),
     cause: new Error(failure.message),
   });
 }
@@ -321,7 +321,7 @@ export const userDatabaseHost = Object.freeze({
         }),
       );
     }
-    const paths = userDatabasePaths({ home: options.home });
+    const paths = userDatabasePaths({ ...(options.home === undefined ? {} : { home: options.home }) });
     return Effect.acquireRelease(
       Effect.tryPromise({
         try: async () =>
