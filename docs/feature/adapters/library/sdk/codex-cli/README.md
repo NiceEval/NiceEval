@@ -108,7 +108,7 @@ NiceEval 先全量校验同一 native batch 的 request ID、缺失项、重复�
 ## 执行信任姿态
 
 app-server 在外层 Sandbox 中以 `approval_policy="never"`、`sandbox_mode="danger-full-access"` 运行，thread/turn 同样声明 never 与 danger-full-access。
-锁定的 Codex CLI 0.144.1 还显式启用其原生 `default_mode_request_user_input` feature；该版本默认关闭这项工具。
+Adapter 还显式启用 Codex 原生的 `default_mode_request_user_input` feature；锁定版本默认关闭这项工具，不启用时 Agent 无法发起 HITL。
 
 hook 信任 bypass 与审批 bypass 属同一信任层级。沙箱运行是 headless 的，codex 对非 managed 出处的 hook 的交互式信任确认永远无人应答。
 
