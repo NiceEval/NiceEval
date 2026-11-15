@@ -6,7 +6,6 @@ import { test } from "vitest";
 import { cliE2E } from "./context.ts";
 
 // @feature docs/feature/experiments/README.md
-// @issue docs/issues/20260823230837-friction.md
 test.concurrent("数值标签经过规划、运行与公开读取后保留原类型", async ({ expect }) => {
   await cliE2E.case("experiment-numeric-labels", async ({ commands: { niceeval }, paths }) => {
     // Human Show prepares the complete current target; this journey owns only its local Agent.
