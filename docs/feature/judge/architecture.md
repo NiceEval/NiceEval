@@ -72,6 +72,7 @@ callback 捕获失败并返回数值不能清除锁存状态。
 - `judge.request` 记 outcome（completed、failed、cancelled）与传输尝试序号，不记请求正文、凭据或 endpoint 配置。
 - 区间时间取自 owner 的单调时钟，和其它 interval 同一套投影；并发执行的 entry 区间可以重叠，读侧不得假设兄弟区间首尾相接。
 - 这些区间属于 Judge producer，不进入被测 agent 的事件、工具计数、usage 或归因断言，也不进入 `execution` 的被测应用轨迹。
+- 持久形状：这些 interval 的 phase 一律是既有的 `assertion.evaluate`，用 label 区分层级，不新增 phase 枚举值。Runner activity 增加两个可选字段：`entryId`（`judge.entry`、`agent-judge.prompt` 及其下的 `judge.request` 填所属 Assertion entry 的稳定 ID）与 `transmissionOrdinal`（`judge.request` 填从 1 开始的传输尝试序号）。Assertion label 不重复持久化，`attempt.timing` 按 entryId 关联后投影。字段在 Record 格式 `niceeval.record.2` 内新增且可选：record.2 尚未发布，已写出的 record.2 数据保持合法，不升格式版本；source receipt 的 timing 投影不得丢弃这两个字段。
 - 写入失败只让 timing 证据不完整（limitation），不改变 entry 的 measurement、Verdict 或 settlement。
 - 模拟用户的一次 `reply` 同样写一个 `simulated-user.reply` interval，挂在它所在的 `eval.run` 下，范围是回答生成（不含随后驱动的下一轮 `agent.send`）。
 
