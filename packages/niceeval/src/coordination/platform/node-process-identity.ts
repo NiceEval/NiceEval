@@ -75,7 +75,7 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
       runtime.platform === "linux" ? runtime.linuxBootId() : validatedDarwinBootId(runtime.darwinBootSessionUuid);
     const processStart =
       runtime.platform === "linux" ? runtime.linuxProcessStartOf(runtime.pid) : runtime.processSessionId;
-    return Object.freeze({ ownerId, host: runtime.host(), pid: runtime.pid, bootId, processStart });
+    return { ownerId, host: runtime.host(), pid: runtime.pid, bootId, processStart };
   };
 
   const exactState = (owner: ProcessOwnerIdentity): ExactProcessState => {
@@ -120,7 +120,7 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
     }
   };
 
-  return Object.freeze({ current, exactState });
+  return { current, exactState };
 }
 
 const liveProcessIdentity = makeProcessIdentity({

@@ -146,7 +146,7 @@ function nonAvailableRead<Value>(
 }
 
 function invalid(reason: CurrentReuseReadbackPlanInvalid["reason"]): CurrentReuseReadbackPlanInvalid {
-  return Object.freeze({ code: "current-reuse-readback-plan-invalid", reason });
+  return { code: "current-reuse-readback-plan-invalid", reason };
 }
 
 function readSourceAttempt(input: {
@@ -178,13 +178,13 @@ function detailsFor(input: {
     const assertions = yield* input.reader.read(input.attempt.owner, NiceEvalRecordAttachments.assertions);
     const assertionRead: CurrentRecordRead<Verdict> =
       assertions.state === "available"
-        ? Object.freeze({
+        ? {
             state: "available" as const,
             value: foldRecordedAttemptVerdict({
               outcome: input.attempt.document.outcome,
               assertions: assertions.value,
             }) as Verdict,
-          })
+          }
         : nonAvailableRead(assertions);
     const diagnostics = yield* input.reader.read(
       input.attempt.owner,
@@ -192,29 +192,21 @@ function detailsFor(input: {
     );
     const executionErrors: CurrentRecordRead<readonly CurrentReusedExecutionError[]> =
       diagnostics.state === "available"
-        ? Object.freeze({
+        ? {
             state: "available" as const,
-            value: Object.freeze(
-              diagnostics.value.segments
-                .filter((diagnostic) => diagnostic.kind === "execution-error")
-                .map((diagnostic) =>
-                  Object.freeze({
-                    kind: "execution-error" as const,
-                    code: diagnostic.code,
-                    phase: diagnostic.phase,
-                    summary: diagnostic.summary,
-                    causes: Object.freeze(
-                      diagnostic.causes.map((cause) =>
-                        Object.freeze({
-                          code: cause.code,
-                          summary: cause.summary,
-                        }),
-                      ),
-                    ),
-                  }),
-                ),
-            ),
-          })
+            value: diagnostics.value.segments
+              .filter((diagnostic) => diagnostic.kind === "execution-error")
+              .map((diagnostic) => ({
+                kind: "execution-error" as const,
+                code: diagnostic.code,
+                phase: diagnostic.phase,
+                summary: diagnostic.summary,
+                causes: diagnostic.causes.map((cause) => ({
+                  code: cause.code,
+                  summary: cause.summary,
+                })),
+              })),
+          }
         : nonAvailableRead(diagnostics);
     let scoreAttachment: CurrentRecordRead<ScorePayload>;
     if (assertions.state === "available") {
@@ -223,15 +215,15 @@ function detailsFor(input: {
         assertions: assertions.value,
       });
       if (Result.isFailure(folded)) return yield* Effect.fail(invalid(folded.failure.code));
-      scoreAttachment = Object.freeze({ state: "available" as const, value: folded.success });
+      scoreAttachment = { state: "available" as const, value: folded.success };
     } else {
       scoreAttachment = nonAvailableRead(assertions);
     }
     const score: CurrentReusedAttemptScore =
       input.evaluationKind === "score"
-        ? Object.freeze({ state: "applicable" as const, attachment: scoreAttachment })
-        : Object.freeze({ state: "not-applicable" as const });
-    return Object.freeze({ assertions: assertionRead, score, executionErrors });
+        ? { state: "applicable" as const, attachment: scoreAttachment }
+        : { state: "not-applicable" as const };
+    return { assertions: assertionRead, score, executionErrors };
   });
 }
 
@@ -252,14 +244,14 @@ export function readCurrentReusedAttempt(input: {
     if (details.assertions.value !== "passed" && details.assertions.value !== "failed") {
       return yield* Effect.fail(invalid("source-verdict-ineligible"));
     }
-    return Object.freeze({
+    return {
       state: "reused" as const,
       target: targetOf(input.slot),
       source: sourceOf(input.slot.source),
       verdict: details.assertions.value,
       score: details.score,
       executionErrors: details.executionErrors,
-    });
+    };
   });
 }
 
@@ -274,7 +266,7 @@ export function readCurrentReuseCandidate(input: {
       const attempt = yield* readSourceAttempt({ reader: input.reader, source });
       const details = yield* detailsFor({ reader: input.reader, attempt, evaluationKind: source.evaluationKind });
       const sourceFiles = yield* readCurrentReuseSourceFiles({ reader: input.reader, source });
-      return Object.freeze({
+      return {
         state: "prior" as const,
         target: targetOf(input.slot),
         source: sourceOf(source),
@@ -282,7 +274,7 @@ export function readCurrentReuseCandidate(input: {
         score: details.score,
         executionErrors: details.executionErrors,
         sourceFiles,
-      });
+      };
     });
   });
 }
@@ -300,7 +292,7 @@ export function readCurrentExecutionReusePlanReadbacks(input: {
           )
         : readCurrentReuseCandidate({ reader: input.reader, slot }),
     { concurrency: 1 },
-  ).pipe(Effect.map((values) => Object.freeze(values.flatMap((value) => (value === undefined ? [] : [value])))));
+  ).pipe(Effect.map((values) => values.flatMap((value) => (value === undefined ? [] : [value]))));
 }
 
 export function readCurrentExecutionReusePlanResults(input: {
@@ -309,7 +301,7 @@ export function readCurrentExecutionReusePlanResults(input: {
 }): Effect.Effect<readonly CurrentReusedAttemptReadback[], RecordReaderReadError | CurrentReuseReadbackPlanInvalid> {
   return Effect.forEach(input.plan.reuse, (slot) => readCurrentReusedAttempt({ reader: input.reader, slot }), {
     concurrency: 1,
-  }).pipe(Effect.map((values) => Object.freeze(values)));
+  });
 }
 
 function readCurrentReuseSourceFiles(input: {
@@ -318,9 +310,9 @@ function readCurrentReuseSourceFiles(input: {
 }): Effect.Effect<CurrentReuseSourceFiles, RecordReaderReadError> {
   return Effect.gen(function* () {
     const origin = yield* input.reader.readRun(input.source.originRun);
-    if (origin.state === "missing") return Object.freeze({ state: "origin-run-missing" as const });
+    if (origin.state === "missing") return { state: "origin-run-missing" as const };
     if (origin.state === "core-invalid") {
-      return Object.freeze({ state: "origin-run-invalid" as const, issues: Object.freeze([...origin.issues]) });
+      return { state: "origin-run-invalid" as const, issues: origin.issues };
     }
     const sources = yield* input.reader.read(origin.value.owner, NiceEvalRecordAttachments.sources);
     if (sources.state !== "available") return nonAvailableRead(sources);
@@ -330,22 +322,18 @@ function readCurrentReuseSourceFiles(input: {
         case "source-blob-unavailable":
         case "source-blob-utf8-invalid":
         case "source-blob-digest-mismatch":
-          return Object.freeze({ state: "projection-invalid" as const });
+          return { state: "projection-invalid" as const };
         default:
           return yield* Effect.fail(projection.failure);
       }
     }
-    return Object.freeze({
+    return {
       state: "available" as const,
-      value: Object.freeze(
-        projection.success.items.map((item) =>
-          Object.freeze({
-            path: item.path,
-            sha256: item.sha256,
-          }),
-        ),
-      ),
-    });
+      value: projection.success.items.map((item) => ({
+        path: item.path,
+        sha256: item.sha256,
+      })),
+    };
   });
 }
 
@@ -358,20 +346,20 @@ export function projectCurrentReuseReadback(readback: CurrentReuseReadback): Cur
 export function projectCurrentReusedAttemptReadback(
   readback: CurrentReusedAttemptReadback,
 ): CurrentReusedAttemptSnapshot {
-  return Object.freeze({
+  return {
     state: "reused" as const,
     target: targetSnapshotOf(readback.target),
     source: sourceSnapshotOf(readback.source),
     verdict: readback.verdict,
     score: readback.score,
     executionErrors: readback.executionErrors,
-  });
+  };
 }
 
 export function projectCurrentReuseCandidateReadback(
   readback: CurrentReuseCandidateReadback,
 ): CurrentReuseCandidateSnapshot {
-  return Object.freeze({
+  return {
     state: "prior" as const,
     target: targetSnapshotOf(readback.target),
     source: sourceSnapshotOf(readback.source),
@@ -379,48 +367,48 @@ export function projectCurrentReuseCandidateReadback(
     score: readback.score,
     executionErrors: readback.executionErrors,
     sourceFiles: readback.sourceFiles,
-  });
+  };
 }
 
 function targetOf(slot: TargetSlot): CurrentReusedAttemptTarget {
-  return Object.freeze({
+  return {
     runId: slot.runId,
     slotId: slot.slotId,
     experimentId: slot.experimentId,
     evalId: slot.evalId,
     attempt: slot.attempt,
-  });
+  };
 }
 
 function sourceOf(source: ExecutionReusePlanSource): CurrentReusedAttemptSource {
-  return Object.freeze({
+  return {
     attempt: source.attempt,
     attemptId: source.attemptId,
     origin: source.origin,
     sourceBarrier: source.sourceBarrier,
     evaluationKind: source.evaluationKind,
-  });
+  };
 }
 
 function targetSnapshotOf(target: CurrentReusedAttemptTarget): CurrentReusedAttemptTargetSnapshot {
-  return Object.freeze({
+  return {
     runId: String(target.runId),
     slotId: String(target.slotId),
     experimentId: target.experimentId,
     evalId: target.evalId,
     attempt: target.attempt,
-  });
+  };
 }
 
 function sourceSnapshotOf(source: CurrentReusedAttemptSource): CurrentReusedAttemptSourceSnapshot {
-  return Object.freeze({
+  return {
     attemptId: String(source.attemptId),
     locator: encodeAttemptLocator(source.attemptId),
-    origin: Object.freeze({ runId: String(source.origin.runId), slotId: String(source.origin.slotId) }),
-    sourceBarrier: Object.freeze({
+    origin: { runId: String(source.origin.runId), slotId: String(source.origin.slotId) },
+    sourceBarrier: {
       runId: String(source.sourceBarrier.runId),
       startedAt: source.sourceBarrier.startedAt,
-    }),
+    },
     evaluationKind: source.evaluationKind,
-  });
+  };
 }

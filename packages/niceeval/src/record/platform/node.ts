@@ -526,7 +526,7 @@ async function readDirectoryBounded(
     });
   }
   entries.sort((left, right) => (left.name === right.name ? 0 : left.name < right.name ? -1 : 1));
-  return Object.freeze(entries);
+  return entries;
 }
 
 function directoryEntriesAt(
@@ -593,7 +593,7 @@ const nodeFileSystem: RecordFileSystemService = {
       const path = yield* resolvePortablePath(input.directory, false);
       yield* validateLimit("directory-entries", input.maximumEntries);
       const kind = yield* pathKindAt(path);
-      if (kind === "missing") return Object.freeze([]) as readonly RecordDirectoryEntry[];
+      if (kind === "missing") return [] as readonly RecordDirectoryEntry[];
       if (kind !== "directory") {
         return yield* Effect.fail(
           new RecordPathTypeInvalid({

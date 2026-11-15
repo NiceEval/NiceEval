@@ -35,12 +35,9 @@ function makeRoot(portableRoot: string): RecordRoot {
   };
   const root = Object.freeze(issued);
 
-  roots.set(
-    root,
-    Object.freeze({
-      portableRoot,
-    }),
-  );
+  roots.set(root, {
+    portableRoot,
+  });
 
   return root;
 }

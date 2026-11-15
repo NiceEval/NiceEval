@@ -19,5 +19,5 @@ export function defineRecordCore<
     schema: input.schema,
     limits: input.limits,
   });
-  return Object.freeze({ ...codec, kind: "core" as const });
+  return { ...codec, kind: "core" as const };
 }
