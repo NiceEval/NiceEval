@@ -197,6 +197,12 @@ const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (
             ? node.expression.tag
             : node.expression;
         const name = expression.getText(tree);
+        // Curried registration factories receive data/conditions first, not a
+        // test title. Only their outer call declares the collected subject.
+        const registration =
+          !/\.(?:each|skipIf|runIf)$/u.test(name) ||
+          ts.isCallExpression(node.expression) ||
+          ts.isTaggedTemplateExpression(node.expression);
         const titleNode = node.arguments[0];
         const title =
           titleNode && ts.isStringLiteralLike(titleNode)
@@ -204,13 +210,15 @@ const declarationsInCopy = Effect.fn("declarationsInCopy")(function* (
             : titleNode && ts.isTemplateExpression(titleNode)
               ? titleNode.head.text + titleNode.templateSpans.map((span) => `%s${span.literal.text}`).join("")
               : undefined;
-        if (/^(?:test\.)?describe(?:\.(?:concurrent|skip|only|sequential))*$/u.test(name) && title !== undefined)
+        if (
+          registration &&
+          /^(?:test\.)?describe(?:\.(?:concurrent|skip|only|sequential|skipIf|runIf))*$/u.test(name) &&
+          title !== undefined
+        )
           descendants = [...parents, title];
         if (
-          (!name.endsWith(".each") ||
-            ts.isCallExpression(node.expression) ||
-            ts.isTaggedTemplateExpression(node.expression)) &&
-          /^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential|each))*$/u.test(name) &&
+          registration &&
+          /^(?:test|it)(?:\.(?:concurrent|skip|only|todo|fails|sequential|each|skipIf|runIf))*$/u.test(name) &&
           title !== undefined
         ) {
           const startLine = tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;

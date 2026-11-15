@@ -417,9 +417,14 @@ export const runTakeover = (
         return yield* Effect.fail(
           operationError("discovery", `takeover requested unknown repo ${JSON.stringify(options.repoId)}`),
         );
+      const candidate = yield* readCandidateTarball(options.candidatePath).pipe(
+        Effect.mapError((cause) => operationError("candidate", cause)),
+      );
       const collection = yield* collectRepoCaseInventory(
         options.repoId,
         yield* gitText(repoRootDir(), ["rev-parse", "HEAD"]),
+        undefined,
+        candidate,
       ).pipe(Effect.mapError((cause) => operationError("evidence", cause)));
       const inventories = collection.repos
         .flatMap((entry) => entry.receipts)
@@ -460,9 +465,6 @@ export const runTakeover = (
         ...defaultNativeArgs,
         ...exactCaseNativeArgs(inventory.executor.name, runnerCasePath, selectedCase.titlePath),
       ];
-      const candidate = yield* readCandidateTarball(options.candidatePath).pipe(
-        Effect.mapError((cause) => operationError("candidate", cause)),
-      );
       const root = repoRootDir();
       const declaredArtifactRoot =
         options.artifactRoot ??

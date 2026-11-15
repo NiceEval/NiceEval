@@ -18,6 +18,7 @@ import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-proces
 import { signPrivateArtifact, governanceSuiteForFile } from "./repository-evidence.ts";
 import { InventorySchema, WorkspaceInventorySchema } from "./bridge-wire.ts";
 import { packCandidate } from "./pack.js";
+import type { CandidateTarball } from "./injection.ts";
 import { copyRepoIsolated, pointAtCandidateTarball } from "./run-repo.js";
 import { buildTestkitPackage, injectTestkitDirectory, type TestkitPackage } from "./testkit-snapshot.js";
 
@@ -290,6 +291,7 @@ const prepareRepo = Effect.fn("prepareWorkspaceInventoryRepo")(function* (
 const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function* (
   spec: WorkspaceCollectionSpec,
   repoId?: string,
+  suppliedCandidate?: CandidateTarball,
 ) {
   const root = repoRootDir();
   const fs = yield* FileSystem.FileSystem;
@@ -304,9 +306,11 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   const scratch = yield* fs
     .realPath(declaredScratch)
     .pipe(Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.message })));
-  const candidate = yield* packCandidate(root, join(scratch, "candidate.tgz")).pipe(
-    Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail })),
-  );
+  const candidate =
+    suppliedCandidate ??
+    (yield* packCandidate(root, join(scratch, "candidate.tgz")).pipe(
+      Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail })),
+    ));
   const discovered = yield* discoverAllRepos(e2eRootDir()).pipe(
     Effect.mapError((cause) => new WorkspaceInventoryError({ detail: detail(cause) })),
   );
@@ -316,7 +320,7 @@ const collectWorkspacePrepared = Effect.fn("collectWorkspacePrepared")(function*
   if (repos.length === 0)
     return yield* new WorkspaceInventoryError({ detail: `unknown E2E repo ${JSON.stringify(repoId)}` });
   const testkit = repos.some((repo) => repo.manifest.harness?.testkit === true)
-    ? yield* buildTestkitPackage(root, scratch).pipe(
+    ? yield* buildTestkitPackage(root, scratch, { candidate }).pipe(
         Effect.mapError((cause) => new WorkspaceInventoryError({ detail: cause.detail })),
       )
     : undefined;
@@ -330,10 +334,12 @@ const finishInventory = Effect.fn("finishWorkspaceCaseInventory")(function* (
   checkout: string,
   repoId?: string,
   requestedFiles?: readonly string[],
+  candidate?: CandidateTarball,
 ) {
   const prepared = yield* collectWorkspacePrepared(
     { checkout, ...(requestedFiles === undefined ? {} : { files: requestedFiles }) },
     repoId,
+    candidate,
   );
   const subjects = yield* collapseSourceWitnesses(prepared.flatMap((repo) => repo.subjects).sort(compareSubject));
   const byCaseId = new Map<string, CollectedSubject[]>();
@@ -366,6 +372,7 @@ export const collectRepoCaseInventory = Effect.fn("collectRepoCaseInventory")(fu
   repoId: string,
   checkout: string,
   files?: readonly string[],
+  candidate?: CandidateTarball,
 ) {
-  return yield* finishInventory(checkout, repoId, files);
+  return yield* finishInventory(checkout, repoId, files, candidate);
 });

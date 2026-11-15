@@ -651,7 +651,10 @@ export const runRepoEffect = (
                           problem(
                             id,
                             "run",
-                            `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases`,
+                            `CaseSelectionMismatch: expected ${expected.only ? "only " : ""}${expected.caseId}, collected ${inventory.cases.length} cases` +
+                              (inventory.unassignedCases.length === 0
+                                ? ""
+                                : `; unassigned cases: ${inventory.unassignedCases.map((entry) => `${entry.file}: ${JSON.stringify(entry.titlePath)}`).join("; ")}`),
                           ),
                         );
                       }
