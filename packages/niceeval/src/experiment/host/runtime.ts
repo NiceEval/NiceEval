@@ -61,7 +61,9 @@ function discoverSelection(input: {
         ? discoveredEvals
         : discoveredEvals.filter((evalDefinition) => evalDefinition.tags?.includes(input.tag!));
     const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-      select: input.selector === undefined ? undefined : (ids) => matchExperimentSelector(ids, input.selector!),
+      ...(input.selector === undefined
+        ? {}
+        : { select: (ids: readonly string[]) => matchExperimentSelector(ids, input.selector!) }),
     });
     const selectedIds =
       input.selector === undefined ? undefined : new Set(matchExperimentSelector(experimentIds, input.selector));
@@ -70,8 +72,8 @@ function discoverSelection(input: {
       .map((experiment): ExperimentHostSelection => {
         const selected = resolveExperimentEvals({
           experimentId: experiment.id,
-          models: experiment.models,
-          tag: input.tag,
+          ...(experiment.models === undefined ? {} : { models: experiment.models }),
+          ...(input.tag === undefined ? {} : { tag: input.tag }),
           selector: experiment.evals,
           cliPatterns: input.evalPatterns ?? [],
           evals: discoveredEvals,
@@ -149,32 +151,32 @@ function uniqueExactOrPrefix<T>(
 
 function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config: Config): AgentRun {
   return {
-    adapter: experiment.adapter,
+    ...(experiment.adapter === undefined ? {} : { adapter: experiment.adapter }),
     ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    model: experiment.model,
-    reasoningEffort: experiment.reasoningEffort,
+    ...(experiment.model === undefined ? {} : { model: experiment.model }),
+    ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
     flags: experiment.flags ?? {},
     plugins: experiment.plugins,
     attempts: experiment.attempts ?? 1,
     earlyExit: experiment.earlyExit ?? false,
     sandboxBeforeCache: resolveSandboxBeforeCache(undefined, experiment.sandboxCache, config.sandboxCache),
-    sandbox: experiment.sandbox,
+    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
     sandboxReuse: experiment.sandboxReuse,
     ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    judge: experiment.judge,
+    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
-    budget: experiment.budget,
+    ...(experiment.budget === undefined ? {} : { budget: experiment.budget }),
     selectedEvalIds: [evalId],
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    description: experiment.description,
+    ...(experiment.description === undefined ? {} : { description: experiment.description }),
     labels: experiment.labels,
-    maxConcurrency: experiment.maxConcurrency,
-    setup: experiment.before,
-    teardown: experiment.after,
+    ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
+    ...(experiment.before === undefined ? {} : { setup: experiment.before }),
+    ...(experiment.after === undefined ? {} : { teardown: experiment.after }),
   };
 }
 
@@ -240,7 +242,7 @@ function debug(
 
     const runs = selectedEvals.map((evalDef) => debugAgentRun(experiment, evalDef.id, input.config));
     const target = yield* planProjectTarget(listed.evals, runs, input.config.timeoutMs, {
-      configJudge: input.config.judgeProvider,
+      ...(input.config.judgeProvider === undefined ? {} : { configJudge: input.config.judgeProvider }),
     });
     const commandPlan = assembleCommandPlan({
       rows: selectedEvals.map((evalDef) => {

@@ -82,10 +82,9 @@ function selectTeardowns(input: {
   return Effect.gen(function* () {
     const evals = yield* discoverEvals(input.cwd);
     const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-      select:
-        input.experimentSelector === undefined
-          ? undefined
-          : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
+      ...(input.experimentSelector === undefined
+        ? {}
+        : { select: (ids: readonly string[]) => matchExperimentSelector(ids, input.experimentSelector!) }),
     });
     const matched =
       input.experimentSelector === undefined

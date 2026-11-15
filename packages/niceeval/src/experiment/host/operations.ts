@@ -271,17 +271,20 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
           new TypeError("experimentIds must be non-empty and cannot be combined with experimentSelector"),
         );
       }
-      const discovered = yield* discoverEvals(input.cwd, { generation });
+      const discovered = yield* discoverEvals(input.cwd, { ...(generation === undefined ? {} : { generation }) });
       const evals =
         input.tag === undefined ? discovered : discovered.filter((definition) => definition.tags?.includes(input.tag!));
+      const selectedIdsInput = input.experimentIds;
+      const selectorInput = input.experimentSelector;
+      const select =
+        selectedIdsInput !== undefined
+          ? () => selectedIdsInput
+          : selectorInput === undefined
+            ? undefined
+            : (ids: readonly string[]) => matchExperimentSelector(ids, selectorInput);
       const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
-        generation,
-        select:
-          input.experimentIds !== undefined
-            ? () => input.experimentIds!
-            : input.experimentSelector === undefined
-              ? undefined
-              : (ids) => matchExperimentSelector(ids, input.experimentSelector!),
+        ...(generation === undefined ? {} : { generation }),
+        ...(select === undefined ? {} : { select }),
       });
       const selectedIds =
         input.experimentIds !== undefined
@@ -294,8 +297,8 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
         .map((experiment) => {
           const selection = resolveExperimentEvals({
             experimentId: experiment.id,
-            models: experiment.models,
-            tag: input.tag,
+            ...(experiment.models === undefined ? {} : { models: experiment.models }),
+            ...(input.tag === undefined ? {} : { tag: input.tag }),
             selector: experiment.evals,
             cliPatterns: input.evalSelectors ?? [],
             evals: discovered,
@@ -373,11 +376,11 @@ function agentRunFromExperiment(
   sandboxBeforeCacheOverride: SandboxBeforeCache | undefined,
 ): AgentRun {
   return Object.freeze({
-    adapter: experiment.adapter,
+    ...(experiment.adapter === undefined ? {} : { adapter: experiment.adapter }),
     ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
     ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    model: experiment.model,
-    reasoningEffort: experiment.reasoningEffort,
+    ...(experiment.model === undefined ? {} : { model: experiment.model }),
+    ...(experiment.reasoningEffort === undefined ? {} : { reasoningEffort: experiment.reasoningEffort }),
     flags: experiment.flags ?? {},
     plugins: experiment.plugins,
     attempts: overrides.attempts ?? experiment.attempts ?? 1,
@@ -387,22 +390,22 @@ function agentRunFromExperiment(
       experiment.sandboxCache,
       config.sandboxCache,
     ),
-    sandbox: experiment.sandbox,
-    sandboxReuse: experiment.sandboxReuse,
+    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
+    ...(experiment.sandboxReuse === undefined ? {} : { sandboxReuse: experiment.sandboxReuse }),
     ...(experiment.sandboxLabels === undefined ? {} : { sandboxLabels: experiment.sandboxLabels }),
     ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    judge: experiment.judge,
+    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
     ...resolveRunTimeout(overrides.timeoutMs, experiment.timeoutMs),
-    budget: overrides.budget ?? experiment.budget,
+    ...((overrides.budget ?? experiment.budget) === undefined ? {} : { budget: overrides.budget ?? experiment.budget }),
     selectedEvalIds: freezeArray(selectedEvalIds),
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    description: experiment.description,
+    ...(experiment.description === undefined ? {} : { description: experiment.description }),
     labels: experiment.labels,
-    maxConcurrency: experiment.maxConcurrency,
-    setup: experiment.before,
-    teardown: experiment.after,
+    ...(experiment.maxConcurrency === undefined ? {} : { maxConcurrency: experiment.maxConcurrency }),
+    ...(experiment.before === undefined ? {} : { setup: experiment.before }),
+    ...(experiment.after === undefined ? {} : { teardown: experiment.after }),
   });
 }
 
@@ -608,7 +611,7 @@ export function planInvocation(
       });
       const overrides = Object.freeze({ ...(input.overrides ?? {}) });
       const target = yield* planProjectTarget(prepared.selected.evals, prepared.runs, config.timeoutMs, {
-        configJudge: config.judgeProvider,
+        ...(config.judgeProvider === undefined ? {} : { configJudge: config.judgeProvider }),
         ...(overrides.keepSandbox === undefined ? {} : { keepSandbox: overrides.keepSandbox }),
       });
       const maxConcurrency =
@@ -657,7 +660,7 @@ export function planInvocation(
         preparedPairsByKey: target.preparedPairsByKey,
         evals: prepared.selected.evals,
         runs: prepared.runs,
-        config: { timeoutMs: config.timeoutMs },
+        config: { ...(config.timeoutMs === undefined ? {} : { timeoutMs: config.timeoutMs }) },
         plannedFingerprints: target.plannedFingerprints,
         renameFingerprintsByKey: target.renameFingerprintsByKey,
         plannedConfigHashes: target.plannedConfigHashes,

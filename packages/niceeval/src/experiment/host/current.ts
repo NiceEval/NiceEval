@@ -42,10 +42,13 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
   readonly freshImport?: boolean;
 }): Effect.fn.Return<FrozenCurrentTarget, CurrentTargetUnavailable> {
   const candidate = yield* Effect.gen(function* () {
-    const prepared = yield* prepareRuns(input, { allowEmptySelection: true, freshImport: input.freshImport });
+    const prepared = yield* prepareRuns(input, {
+      allowEmptySelection: true,
+      ...(input.freshImport === undefined ? {} : { freshImport: input.freshImport }),
+    });
     if (prepared.status !== "ready") return yield* Effect.fail(new Error(JSON.stringify(prepared.problem)));
     const planned = yield* planProjectTarget(prepared.selected.evals, prepared.runs, input.config.timeoutMs, {
-      configJudge: input.config.judgeProvider,
+      ...(input.config.judgeProvider === undefined ? {} : { configJudge: input.config.judgeProvider }),
     });
     const reuse = yield* prepareRunnerRecordReuse({
       manifestsByKey: planned.manifestsByKey,
@@ -90,7 +93,9 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
     }
     // Re-read identity inputs without re-evaluating declarations or resources.
     const verified = yield* planPreparedProjectTarget([...planned.preparedPairsByKey.values()], {
-      configJudge: input.config.judgeProvider,
+      ...(input.config.judgeProvider === undefined
+        ? {}
+        : { ...(input.config.judgeProvider === undefined ? {} : { configJudge: input.config.judgeProvider }) }),
     });
     if ([...planned.plannedFingerprints].some(([key, value]) => verified.plannedFingerprints.get(key) !== value)) {
       return yield* Effect.fail(new Error("Current project inputs changed during evaluation; retry the request."));

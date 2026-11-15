@@ -558,8 +558,8 @@ function dryRows(plan: {
       comparisons: slot.comparisons,
       ...(slot.state === "gap"
         ? {
-            reason: slot.reason,
-            scope: slot.scope,
+            ...(slot.reason === undefined ? {} : { reason: slot.reason }),
+            ...(slot.scope === undefined ? {} : { scope: slot.scope }),
             ...(slot.reason === "dynamic-module-unresolved" ? { issues: slot.issues ?? [] } : {}),
           }
         : {}),
@@ -1215,8 +1215,8 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
                   result.commandPlan,
                   {
                     isTTY: invocation.stdout.isTTY,
-                    noColor: invocation.noColor,
-                    width: invocation.stdout.columns,
+                    ...(invocation.noColor === undefined ? {} : { noColor: invocation.noColor }),
+                    ...(invocation.stdout.columns === undefined ? {} : { width: invocation.stdout.columns }),
                   },
                 )}`,
           );
