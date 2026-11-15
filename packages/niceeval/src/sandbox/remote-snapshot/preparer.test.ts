@@ -315,8 +315,8 @@ async function agentAttempts(
       pairs.map((pair) => ({ pair, authorBaseDirs: { eval: "/tmp", experiment: "/tmp" }, requirements: [] })),
     ),
   );
-  const installer =
-    options.safe === false ? { ...agent.installer, [AGENT_DOCKERFILE_CACHE_SAFE]: undefined } : agent.installer;
+  const installer = { ...agent.installer };
+  if (options.safe === false) delete installer[AGENT_DOCKERFILE_CACHE_SAFE];
   const adapter = defineSandboxAgent({
     name: "recording-agent",
     evidenceCoverage: completeEvidenceCoverage,
