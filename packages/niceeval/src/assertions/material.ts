@@ -801,13 +801,13 @@ export function materialQARegistration(
               state: "unavailable" as const,
               reason: "insufficient-evidence",
               rationale: resultClassified.rationale,
-              citations: resultClassified.citations,
+              ...(resultClassified.citations === undefined ? {} : { citations: resultClassified.citations }),
             }
           : {
               state: "measured" as const,
               measurement: resultClassified.choice === "satisfied" ? 1 : 0,
               rationale: resultClassified.rationale,
-              citations: resultClassified.citations,
+              ...(resultClassified.citations === undefined ? {} : { citations: resultClassified.citations }),
             };
       }),
   });

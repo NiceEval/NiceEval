@@ -118,8 +118,8 @@ export function bindAssertionContext(
   if (receiver === undefined || receiver.read !== undefined)
     throw new TypeError("Assertion context must bind exactly once to its owning receiver");
   receiver.read = read;
-  receiver.cut = cut;
-  receiver.release = release;
+  if (cut !== undefined) receiver.cut = cut;
+  if (release !== undefined) receiver.release = release;
 }
 /** @internal A scope owns its ctx and observation cut while sharing the Attempt runtime. */
 export function createScopedAssertionCheck<Kind extends import("./api.ts").AssertionCheckKind, C>(
@@ -134,7 +134,12 @@ export function createScopedAssertionCheck<Kind extends import("./api.ts").Asser
     throw new TypeError("Scoped checks require an Assertion runtime");
   runtime.assertAuthoringOpen();
   const scoped = (...args: readonly unknown[]) => runtime.checkFor(scoped, args);
-  const scopedReceiver: AssertionContextReceiver = { owner: receiver.owner, read, cut, release };
+  const scopedReceiver: AssertionContextReceiver = {
+    owner: receiver.owner,
+    read,
+    cut,
+    ...(release === undefined ? {} : { release: release }),
+  };
   runtimeByCheck.set(scoped, runtime);
   contextByCheck.set(scoped, scopedReceiver);
   runtime.trackContextReceiver(scopedReceiver);
@@ -788,7 +793,8 @@ class AssertionsRuntimeImplementation {
   private agentJudgeShared = false;
   private readonly agentJudgeReviews: Array<{ session: AgentJudgeSession; entries: AssertionEntry[] }> = [];
   attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
-    this.agentJudgeSandbox = sandbox;
+    if (sandbox === undefined) delete this.agentJudgeSandbox;
+    else this.agentJudgeSandbox = sandbox;
     this.agentJudgeShared = shared;
   }
   private readonly contextReceivers = new Set<AssertionContextReceiver>();
@@ -1097,11 +1103,13 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
-      retainedBytes: definition.retainedBytes,
-      terminalReceipt: definition.terminalReceipt,
-      terminalCriterion: definition.terminalCriterion,
-      terminalEvidence: definition.terminalEvidence,
-      interruptedMatcherArtifact: definition.interruptedMatcherArtifact,
+      ...(definition.retainedBytes === undefined ? {} : { retainedBytes: definition.retainedBytes }),
+      ...(definition.terminalReceipt === undefined ? {} : { terminalReceipt: definition.terminalReceipt }),
+      ...(definition.terminalCriterion === undefined ? {} : { terminalCriterion: definition.terminalCriterion }),
+      ...(definition.terminalEvidence === undefined ? {} : { terminalEvidence: definition.terminalEvidence }),
+      ...(definition.interruptedMatcherArtifact === undefined
+        ? {}
+        : { interruptedMatcherArtifact: definition.interruptedMatcherArtifact }),
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
@@ -1121,12 +1129,12 @@ class AssertionsRuntimeImplementation {
       evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
       coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
       limitations: cloneLimitations(definition.limitations ?? []),
-      retainedBytes: definition.retainedBytes,
-      retainedImageBytes: definition.retainedImageBytes,
-      terminalReceipt: definition.terminalReceipt,
-      terminalCriterion: definition.terminalCriterion,
-      terminalDetail: definition.terminalDetail,
-      terminalEvidence: definition.terminalEvidence,
+      ...(definition.retainedBytes === undefined ? {} : { retainedBytes: definition.retainedBytes }),
+      ...(definition.retainedImageBytes === undefined ? {} : { retainedImageBytes: definition.retainedImageBytes }),
+      ...(definition.terminalReceipt === undefined ? {} : { terminalReceipt: definition.terminalReceipt }),
+      ...(definition.terminalCriterion === undefined ? {} : { terminalCriterion: definition.terminalCriterion }),
+      ...(definition.terminalDetail === undefined ? {} : { terminalDetail: definition.terminalDetail }),
+      ...(definition.terminalEvidence === undefined ? {} : { terminalEvidence: definition.terminalEvidence }),
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
@@ -1442,9 +1450,9 @@ class AssertionsRuntimeImplementation {
     this.closing = true;
     for (const receiver of this.contextReceivers) {
       const release = receiver.release;
-      receiver.read = undefined;
-      receiver.cut = undefined;
-      receiver.release = undefined;
+      delete receiver.read;
+      delete receiver.cut;
+      delete receiver.release;
       release?.();
     }
     this.contextReceivers.clear();

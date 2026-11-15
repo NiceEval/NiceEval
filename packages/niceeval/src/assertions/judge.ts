@@ -61,13 +61,12 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     "maxCalls",
   ]);
   const { rubric, anchors } = judgeRubricAndAnchors(input.rubric, input.anchors);
+  const maxMaterialBytes = judgeMaterialBudget(input.maxMaterialBytes);
   const definition = defineBuiltinScoreMatch<unknown>({
     name: "rubric-judge",
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
-      ...(input.maxMaterialBytes === undefined
-        ? {}
-        : { maxMaterialBytes: judgeMaterialBudget(input.maxMaterialBytes) }),
+      ...(maxMaterialBytes === undefined ? {} : { maxMaterialBytes }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
     },
     score: (material, context) =>
@@ -81,6 +80,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
 export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
   const input = exactDataObject(options, "binaryJudge() options", ["rubric", "maxMaterialBytes", "maxCalls"]);
   const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
+  const maxMaterialBytes = judgeMaterialBudget(input.maxMaterialBytes);
   const choices = ["satisfied", "not-satisfied"] as const;
   return defineBuiltinScoreMatch<unknown>({
     name: "binary-judge",
@@ -91,9 +91,7 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
       scores: { satisfied: 1, "not-satisfied": 0 },
     },
     llm: {
-      ...(input.maxMaterialBytes === undefined
-        ? {}
-        : { maxMaterialBytes: judgeMaterialBudget(input.maxMaterialBytes) }),
+      ...(maxMaterialBytes === undefined ? {} : { maxMaterialBytes }),
       ...(input.maxCalls === undefined ? {} : { maxCalls: positiveInteger(input.maxCalls, "Judge maxCalls", 16) }),
     },
     score: (material, context) =>

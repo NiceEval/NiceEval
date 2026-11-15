@@ -1957,7 +1957,7 @@ function lifecycleResult(
     return unavailable(
       lifecycle.reason,
       diagnostic("tool-lifecycle-unavailable", "tool lifecycle is not fully observed", {
-        expected,
+        ...(expected === undefined ? {} : { expected: expected }),
         reason: lifecycle.reason,
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
@@ -1976,7 +1976,7 @@ function lifecycleResult(
     return mismatched(
       diagnostic("tool-status-mismatch", "tool lifecycle status did not match", {
         expected,
-        received: typeof lifecycle.status === "string" ? lifecycle.status : undefined,
+        ...(typeof lifecycle.status === "string" ? { received: lifecycle.status } : {}),
         locator: { kind: "tool-occurrence", id: occurrence.id },
       }),
     );
@@ -2054,13 +2054,13 @@ async function toolEvidenceResult(
       base?.code ?? `tool-${field}-${result.state}`,
       base?.message ?? `tool ${field} ${result.state}`,
       {
-        path: base?.path,
+        ...(base?.path === undefined ? {} : { path: base?.path }),
         expected: base?.expected ?? match.name,
         received: jsonPreview(evidence.value),
-        reason: base?.reason,
+        ...(base?.reason === undefined ? {} : { reason: base?.reason }),
         locator: base?.locator ?? { kind: "tool-occurrence", id: occurrence.id },
-        children: base?.children,
-        truncation: base?.truncation,
+        ...(base?.children === undefined ? {} : { children: base?.children }),
+        ...(base?.truncation === undefined ? {} : { truncation: base?.truncation }),
       },
     ),
   }) as BooleanMatchEvaluation<unknown>;

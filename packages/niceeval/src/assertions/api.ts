@@ -231,7 +231,7 @@ export type MatcherSourceLocator =
   | {
       readonly kind: "event";
       readonly eventId: string;
-      readonly toolOccurrenceId?: string;
+      readonly toolOccurrenceId?: string | undefined;
       readonly relation: MatcherRelationStatus;
     };
 

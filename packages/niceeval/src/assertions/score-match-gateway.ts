@@ -712,7 +712,7 @@ export function prepareManagedScoreMatch(input: {
                 baseUrl: profile.baseUrl,
                 endpoint: profile.protocol.kind === "chat-completions" ? "chat/completions" : "systemone",
                 apiKey,
-                headers: profile.headers,
+                ...(profile.headers === undefined ? {} : { headers: profile.headers }),
                 body: prepared.request,
                 maxBytes: responseCap,
                 signal,

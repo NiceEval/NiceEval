@@ -16,8 +16,9 @@ export interface BoundedJsonObject {
 /** JSON-only material bounded before it enters a Record content source. */
 export type BoundedJsonValue = BoundedJsonPrimitive | readonly BoundedJsonValue[] | BoundedJsonObject;
 
+/** Optional codec fields also retain explicitly supplied undefined values. */
 export interface AssertionDisplay {
-  readonly label?: string;
+  readonly label?: string | undefined;
   readonly groupPath: readonly string[];
 }
 
@@ -82,8 +83,8 @@ export type BuiltInCriterion =
       readonly data: {
         readonly comparator: "less-than" | "at-most" | "greater-than" | "at-least" | "between";
         readonly threshold: number;
-        readonly upperThreshold?: number;
-        readonly unit?: import("../quantity.ts").Unit;
+        readonly upperThreshold?: number | undefined;
+        readonly unit?: import("../quantity.ts").Unit | undefined;
         readonly subject:
           | { readonly kind: "explicit-value" }
           | {
@@ -121,13 +122,14 @@ export type BuiltInCriterion =
         readonly occurrence: "tool" | "skill" | "event";
         readonly assertion: "present" | "absent" | "count" | "order";
         /** Tool assertions retain the single managed matcher identity. */
-        readonly matcher?: string;
+        readonly matcher?: string | undefined;
         readonly quantifier?:
           | { readonly kind: "absent" }
           | {
               readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
               readonly count: number;
-            };
+            }
+          | undefined;
       };
     }
   | {
@@ -193,10 +195,10 @@ export type BuiltInCriterion =
       readonly data: {
         readonly operation: "file-changed";
         readonly path: string;
-        readonly status?: "added" | "modified" | "deleted";
+        readonly status?: "added" | "modified" | "deleted" | undefined;
         /** Persisted display identity only; evaluators retain the managed Match. */
-        readonly before?: string;
-        readonly after?: string;
+        readonly before?: string | undefined;
+        readonly after?: string | undefined;
       };
     }
   | {
@@ -261,7 +263,7 @@ export type AssertionLimitation =
   | {
       readonly kind: "sampled";
       readonly captured: number;
-      readonly knownTotal?: number;
+      readonly knownTotal?: number | undefined;
     }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" }
@@ -311,7 +313,7 @@ export type MatcherOverlayResult = "matched" | "mismatched" | "unavailable" | "n
 export interface MatcherRetainedRow {
   readonly locator: MatcherSourceLocator;
   readonly result: MatcherOverlayResult;
-  readonly difference?: AssertionFactValue;
+  readonly difference?: AssertionFactValue | undefined;
 }
 
 export interface MatcherQueryStep {
@@ -423,40 +425,40 @@ export type SealedAssertionResult =
       readonly gate: "not-gate" | "satisfied";
       readonly score: NoScoreContribution | EarnedScoreContribution;
       /** Bounded evaluator diagnostics, including ToolMatch evidence paths. */
-      readonly diagnostic?: BoundedJsonObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic?: BoundedJsonObject | undefined;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
       readonly score: NoScoreContribution | EarnedScoreContribution;
-      readonly diagnostic?: BoundedJsonObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic?: BoundedJsonObject | undefined;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic?: BoundedJsonObject | undefined;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic?: BoundedJsonObject | undefined;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
       readonly score: NoScoreContribution | UnavailableScoreContribution;
-      readonly diagnostic?: BoundedJsonObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic?: BoundedJsonObject | undefined;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     };
 
 export type AssertionCriterionRecord =
@@ -478,14 +480,14 @@ export type AssertionEvaluation =
   | {
       readonly kind: "ordinary";
       readonly observed: AssertionFactValue;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly receipt?: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly kind: "matcher-current";
       readonly observed: AssertionFactValue;
       readonly artifact: MatcherQueryArtifact;
       /** Current matcher receipts live only inside `artifact`. */
-      readonly receipt?: never;
+      readonly receipt?: undefined;
     };
 
 export interface AssertionDecision {

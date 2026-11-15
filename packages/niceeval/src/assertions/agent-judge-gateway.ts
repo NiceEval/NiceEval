@@ -62,7 +62,7 @@ export class AgentJudgeSession {
   private currentFailure?: AgentJudgeFailure;
   private currentStep = 0;
   entryIndex = -1;
-  private usage?: JudgeUsageEntry;
+  private usage: JudgeUsageEntry | undefined;
   private readonly submissions = new Map<string, Submitted>();
   private sessionEntries: unknown[] = [];
   private piSystemPrompt = "";
@@ -441,7 +441,7 @@ export class AgentJudgeSession {
       this.piSystemPrompt = agent.systemPrompt;
       const opening = fitJudgeContext({
         model: profile.model,
-        contextWindow: profile.contextWindow,
+        ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
         maxOutputTokens: profile.protocol.maxOutputTokens,
         material: this.snapshot.material,
         encodeRequest: (material) =>
@@ -598,9 +598,10 @@ export class AgentJudgeSession {
       for (const [index, step] of this.steps.entries()) {
         if (index > lastQuestion || signal.aborted || this.closed || this.problem !== undefined) break;
         this.currentStep = index + 1;
-        this.currentKey = step.key ?? undefined;
+        if (step.key === null) delete this.currentKey;
+        else this.currentKey = step.key;
         this.currentTurns = 0;
-        this.currentFailure = undefined;
+        delete this.currentFailure;
         const submitTool = agent.agent.state.tools.find((tool) => tool.name === "submit_evaluation");
         // pi retains this tool object in its registry and restores it before each prompt.
         if (submitTool !== undefined)
