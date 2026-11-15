@@ -194,7 +194,7 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
       if (evalGroup) evalGroup.push(member);
       else byEval.set(member.evalId, [member]);
     }
-    for (const [evalId, attempts] of byEval) {
+    for (const [evalId, attempts] of [...byEval].slice(0, HUMAN_RESULTS_EXPERIMENT_CAP)) {
       if (attempts.some((attempt) => attempt.evaluationKind === "score")) {
         const complete = attempts.filter(
           (attempt): attempt is HumanResultItem & { readonly earned: number } =>
@@ -206,26 +206,51 @@ function buildResultsPanelRows(items: readonly HumanResultItem[]): PanelRow[] {
         );
         const partial = attempts.filter((attempt) => attempt.scoreState === "partial" && attempt.earned !== undefined);
         function scoreReading(): string {
-          if (complete.length > 0)
+          if (complete.length > 0) {
             return `${complete.reduce((sum, attempt) => sum + attempt.earned, 0) / complete.length} score · ${complete.length}/${attempts.length} ranked`;
-          if (partial.length > 0) return `≥${partial.map((attempt) => attempt.earned).join(", ≥")} score · partial`;
+          }
+          if (partial.length > 0) {
+            const bounds = new Map<number, number>();
+            for (const attempt of partial) {
+              if (attempt.earned !== undefined) bounds.set(attempt.earned, (bounds.get(attempt.earned) ?? 0) + 1);
+            }
+            const readings = [...bounds]
+              .slice(0, HUMAN_RESULTS_EXPERIMENT_CAP)
+              .map(([earned, count]) => `≥${earned}${count > 1 ? ` ×${count}` : ""}`)
+              .join(", ");
+            return `${readings} score · partial${bounds.size > HUMAN_RESULTS_EXPERIMENT_CAP ? ` · +${bounds.size - HUMAN_RESULTS_EXPERIMENT_CAP} more readings — see NEXT` : ""}`;
+          }
           if (unranked.length > 0) return `0/${attempts.length} ranked`;
           return "score unavailable";
         }
         rows.push({ kind: "line", text: `  ${evalId}  ${scoreReading()}` });
+        const readings = new Map<string, number>();
         for (const attempt of unranked) {
-          rows.push({ kind: "line", text: `    ${attempt.earned} score · ${attempt.verdict} · unranked` });
+          const reading = `${attempt.earned} score · ${attempt.verdict} · unranked`;
+          readings.set(reading, (readings.get(reading) ?? 0) + 1);
+        }
+        for (const [reading, count] of [...readings].slice(0, HUMAN_RESULTS_EXPERIMENT_CAP)) {
+          rows.push({ kind: "line", text: `    ${reading}${count > 1 ? ` ×${count}` : ""}` });
+        }
+        if (readings.size > HUMAN_RESULTS_EXPERIMENT_CAP) {
+          rows.push({
+            kind: "line",
+            text: `    +${readings.size - HUMAN_RESULTS_EXPERIMENT_CAP} more readings — see NEXT`,
+          });
         }
       } else {
         const passed = attempts.filter((attempt) => attempt.verdict === "passed").length;
         rows.push({ kind: "line", text: `  ${evalId}  ${passed}/${attempts.length} passed` });
       }
     }
+    if (byEval.size > HUMAN_RESULTS_EXPERIMENT_CAP) {
+      rows.push({ kind: "line", text: `  +${byEval.size - HUMAN_RESULTS_EXPERIMENT_CAP} more evals — see NEXT` });
+    }
   }
   if (groups.length > HUMAN_RESULTS_EXPERIMENT_CAP) {
     rows.push({
       kind: "line",
-      text: `… ${groups.length - HUMAN_RESULTS_EXPERIMENT_CAP} more`,
+      text: `+${groups.length - HUMAN_RESULTS_EXPERIMENT_CAP} more experiments — see NEXT`,
     });
   }
   return rows;
@@ -958,21 +983,23 @@ function buildReceiptLines(
   panel: { mode: PanelMode; width: number },
 ): string[] {
   const rows: PanelRow[] = [];
-  const contentWidth = panelContentWidth(panel.width, panel.mode);
   const published = new Set(event.receipt.createdRunIds);
-  const emitted = new Set<string>();
-  const appendCommands = (runId: string): void => {
-    rows.push(...labelledWrappedRows("show", `niceeval show run:${runId}`, contentWidth));
-    rows.push(...labelledWrappedRows("view", `niceeval view run:${runId}`, contentWidth));
-  };
-  for (const [experimentId, runId] of state.runIdsByExperiment) {
-    if (!published.has(runId)) continue;
-    rows.push({ kind: "line", text: experimentId });
-    appendCommands(runId);
-    emitted.add(runId);
-  }
-  for (const runId of event.receipt.createdRunIds) {
-    if (!emitted.has(runId)) appendCommands(runId);
+  const runs = [
+    ...new Set([
+      ...[...state.runIdsByExperiment.values()].filter((runId) => published.has(runId)),
+      ...event.receipt.createdRunIds,
+    ]),
+  ];
+  const first = runs[0];
+  if (first !== undefined) {
+    rows.push({ kind: "line", text: `show: niceeval show run:${first}` });
+    rows.push({ kind: "line", text: `view: niceeval view run:${first}` });
+    if (runs.length > 1) {
+      rows.push({
+        kind: "line",
+        text: `+${runs.length - 1} more — niceeval run list --invocation ${event.receipt.invocationId}`,
+      });
+    }
   }
   if (rows.length === 0) {
     rows.push({ kind: "line", text: "No Runs were created for this invocation." });
@@ -981,10 +1008,12 @@ function buildReceiptLines(
     title: `NEXT`,
     meta: undefined,
     footerCommand: undefined,
-    capWidth: true,
     rows,
     width: panel.width,
-    mode: panel.mode,
+    mode: rows.some((row) => row.kind === "line" && stringWidth(row.text) > panelContentWidth(panel.width, panel.mode))
+      ? "plain"
+      : panel.mode,
+    capWidth: true,
   });
 }
 
@@ -1637,7 +1666,68 @@ function commandPlanOwner(step: CommandPlanStep): string | undefined {
   return `owner: ${step.owner.kind}:${step.owner.id}${step.owner.index === undefined ? "" : `#${step.owner.index}`}`;
 }
 
+function commandPlanPhase(phase: string): string {
+  switch (phase) {
+    case "sandbox.create":
+      return "Create Sandbox";
+    case "sandbox.before":
+    case "sandbox.prepare":
+      return "Prepare Sandbox";
+    case "sandbox.after":
+      return "Sandbox after";
+    case "sandbox.cleanup":
+      return "Clean up Sandbox";
+    case "sandbox.finalize":
+      return "Release Sandbox";
+    case "sandbox.baseline":
+    case "sandbox.baseline-anchor":
+      return "Save workspace baseline";
+    case "sandbox.reuse-ready":
+      return "Check shared Sandbox";
+    case "sandbox.reset-or-retire":
+      return "Reset or release Sandbox";
+    case "adapter.create":
+      return "Create Agent session";
+    case "adapter.cleanup":
+      return "Close Agent session";
+    case "agent.install":
+      return "Prepare Agent";
+    case "agent.before":
+    case "agent.setup":
+      return "Agent before";
+    case "agent.after":
+    case "agent.teardown":
+      return "Agent after";
+    case "agent.after.cleanup":
+      return "Clean up Agent";
+    case "eval.test":
+      return "Run Eval";
+    case "experiment.setup":
+      return "Experiment before";
+    case "experiment.teardown":
+      return "Experiment after";
+    default:
+      return phase.replace(/[.-]/gu, " ");
+  }
+}
+
 /** Render argv as a copyable shell command; preserve argument boundaries. */
+function commandPlanArgument(value: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function commandPlanCacheState(value: "all" | "dockerData" | "opaque" | "unsupported"): string {
+  switch (value) {
+    case "all":
+      return "all Sandbox state";
+    case "dockerData":
+      return "Docker data";
+    case "opaque":
+      return "unknown callback effects";
+    case "unsupported":
+      return "not supported";
+  }
+}
 
 function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
   const action = "action" in step ? step.action : undefined;
@@ -1652,18 +1742,22 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
   function dependencyReason(dependency: (typeof dependencies)[number]): string {
     switch (dependency.source) {
       case "explicit":
-        return "explicit";
+        return "declared dependency";
       case "same-layer":
-        return "same-layer";
+        return "earlier action in this layer";
       case "capability":
-        return `capability${dependency.capability === undefined ? "" : `:${dependency.capability}`}`;
+        return `required capability${dependency.capability === undefined ? "" : `: ${dependency.capability}`}`;
     }
   }
   function cacheSupport(capability: CommandPlanCache["capability"]): string {
-    return capability;
+    if (capability === "run-prepared") return "prepared before attempts";
+    if (capability === "attempt-captured") return "saved after an attempt";
+    return "not supported by this provider";
   }
   function cacheBarrier(barrier: CommandPlanCache["state"]["barrier"]): string {
-    return barrier;
+    if (barrier === "opaque-action" || barrier === "opaque-ancestor") return "callback effects cannot be inspected";
+    if (barrier === "provider-unsupported") return "provider cannot save this preparation";
+    return "provider cannot save all required state";
   }
 
   return [
@@ -1672,16 +1766,18 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
       ? []
       : [`script file: ${JSON.stringify(scriptSource.path)} · ${scriptSource.digest} · ${scriptSource.bytes} bytes`]),
     ...(family === undefined ? [] : [`family: ${family}`]),
-    ...(order === undefined
-      ? []
-      : [`execution order: #${order.topologicalOrdinal} · ${order.occurrencePath.join(" > ")}`]),
+    ...(order === undefined ? [] : [`execution order: #${order.topologicalOrdinal + 1} within this lifecycle`]),
     ...(frequency === undefined
       ? []
       : [
           `change frequency: ${frequency.value} · ${frequency.source}` +
             `${frequency.preset === undefined ? "" : ` · ${frequency.preset}`}`,
         ]),
-    ...(!("schedulingReason" in step) ? [] : [`scheduled by: ${step.schedulingReason}`]),
+    ...(!("schedulingReason" in step)
+      ? []
+      : [
+          `scheduled by: ${dependencies.length === 0 ? "lowest change frequency among ready actions" : "dependencies first, then lowest change frequency"}`,
+        ]),
     ...(dependencies.length === 0
       ? []
       : [
@@ -1689,16 +1785,19 @@ function commandPlanActionLines(step: CommandPlanStep): readonly string[] {
             .map((dependency) => `${dependency.id} (${dependencyReason(dependency)})`)
             .join(", ")}`,
         ]),
-    ...(!("occurrence" in step) ? [] : [`occurrence: ${step.occurrence.kind}`]),
+    ...("occurrence" in step ? [`occurrence: ${step.occurrence.kind}`] : []),
     ...(cache === undefined
       ? []
       : [
-          `cache: ${cache.lookup} · ${cacheSupport(cache.capability)} · runtime ${cache.runtime.status} · final key ${cache.runtime.finalKey}`,
-          ...(cache.prefixIdentity === undefined ? [] : [`prefix identity: ${cache.prefixIdentity}`]),
-          `cache state: declared ${cache.state.declared} · cumulative ${cache.state.cumulative} · ` +
-            `provider coverage ${cache.state.providerCoverage} · barrier ${cacheBarrier(cache.state.barrier)}` +
-            `${cache.state.barrierActionId === undefined ? "" : ` (${cache.state.barrierActionId})`}`,
-          ...(cache.capabilityReason === undefined ? [] : [`cache unsupported reason: ${cache.capabilityReason}`]),
+          "cache lookup: not checked",
+          `cache support: ${cacheSupport(cache.capability)}`,
+          `cache state: ${commandPlanCacheState(cache.state.declared)} · with earlier actions: ${commandPlanCacheState(cache.state.cumulative)}`,
+          `provider can save: ${commandPlanCacheState(cache.state.providerCoverage)}`,
+          ...(cache.state.barrier === "none"
+            ? []
+            : [
+                `cache blocked: ${cacheBarrier(cache.state.barrier)}${cache.state.barrierActionId === undefined ? "" : ` (${cache.state.barrierActionId})`}`,
+              ]),
         ]),
   ];
 }
@@ -1737,9 +1836,9 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
             if (actionStep.args[1]!.includes("\n")) {
               return [`${prefix}: shell script`, ...actionStep.args[1]!.split("\n").map((line) => `  │ ${line}`)];
             }
-            return [`${prefix}: shell ${JSON.stringify(actionStep.args[1])}`];
+            return [`${prefix}: shell ${actionStep.args[1]}`];
           }
-          return [`${prefix}: argv ${JSON.stringify([actionStep.executable, ...actionStep.args])}`];
+          return [`${prefix}: ${[actionStep.executable, ...actionStep.args].map(commandPlanArgument).join(" ")}`];
         }
         return [
           ...executionLines(actionStep, "family" in action && action.family === "niceeval.sandbox.shell"),
@@ -1748,7 +1847,7 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
           ...(actionStep.timeoutMs === undefined ? [] : [`${prefix} timeout: ${actionStep.timeoutMs}ms`]),
           ...(actionStep.envKeys === undefined
             ? []
-            : [`${prefix} environment keys: ${JSON.stringify(actionStep.envKeys)}`]),
+            : [`${prefix} environment keys: ${actionStep.envKeys.join(", ") || "none"}`]),
           ...(actionStep.stdinDigest === undefined
             ? []
             : [`${prefix} stdin: ${actionStep.stdinDigest} · ${actionStep.stdinBytes ?? 0} bytes`]),
@@ -1757,18 +1856,20 @@ function commandPlanActionStepLines(step: CommandPlanStep): readonly string[] {
       case "putText":
       case "putBytes":
         return [
-          `${prefix}: ${actionStep.kind} ${JSON.stringify(actionStep.path)} · ${actionStep.digest} · ${actionStep.bytes} bytes`,
+          `${prefix}: ${actionStep.kind === "putText" ? "write text" : "write bytes"} ${commandPlanArgument(actionStep.path)} · ${actionStep.digest} · ${actionStep.bytes} bytes`,
         ];
       case "transferFile":
       case "transferDirectory":
-        return [`${prefix}: ${actionStep.kind} ${actionStep.source.digest} -> ${JSON.stringify(actionStep.to)}`];
+        return [
+          `${prefix}: upload ${actionStep.kind === "transferFile" ? "file" : "directory"} ${actionStep.source.digest} -> ${commandPlanArgument(actionStep.to)}`,
+        ];
       case "checkoutGit":
         return [
-          `${prefix}: checkoutGit ${JSON.stringify(actionStep.repository)} @ ${actionStep.ref} -> ${JSON.stringify(actionStep.to)}`,
+          `${prefix}: checkout Git ${commandPlanArgument(actionStep.repository)} @ ${actionStep.ref} -> ${commandPlanArgument(actionStep.to)}`,
           ...(actionStep.sparse === undefined
             ? []
             : [
-                `${prefix} sparse: include=${JSON.stringify(actionStep.sparse.include)} · exclude=${JSON.stringify(actionStep.sparse.exclude)}`,
+                `${prefix} sparse: include ${actionStep.sparse.include.join(", ") || "none"} · exclude ${actionStep.sparse.exclude.join(", ") || "none"}`,
               ]),
         ];
     }
@@ -1783,7 +1884,7 @@ function commandPlanExact(step: CommandPlanStep): readonly string[] {
   }
   function operationLines(command: SandboxCommandPlanCommand): readonly string[] {
     if (command.kind === "argv") {
-      return [`command: argv ${JSON.stringify([command.executable, ...command.args])}`];
+      return [`command: ${[command.executable, ...command.args].map(commandPlanArgument).join(" ")}`];
     }
     if (command.script.includes("\n")) {
       return [
@@ -1791,13 +1892,13 @@ function commandPlanExact(step: CommandPlanStep): readonly string[] {
         ...command.script.split("\n").map((line) => (line === "" ? "  │" : `  │ ${line}`)),
       ];
     }
-    return [`command: shell ${JSON.stringify(command.script)}`];
+    return [`command: shell ${command.script}`];
   }
   const options: string[] = [];
   if (command.cwd !== undefined) options.push(`cwd: ${JSON.stringify(command.cwd)}`);
   if (command.user !== undefined) options.push(`user: ${JSON.stringify(command.user)}`);
   if (command.timeoutMs !== undefined) options.push(`timeout: ${command.timeoutMs}ms`);
-  if (command.envKeys !== undefined) options.push(`environment keys: ${JSON.stringify(command.envKeys)}`);
+  if (command.envKeys !== undefined) options.push(`environment keys: ${command.envKeys.join(", ") || "none"}`);
   return [
     ...actionSteps,
     ...operationLines(command),
@@ -1812,9 +1913,11 @@ function commandPlanTemplate(step: CommandPlanStep): readonly string[] {
   const owner = `${template.owner.kind}:${template.owner.id}`;
   const prefix = [`template: ${template.provider}:${template.kind}`, `template owner: ${owner}`];
   if (template.locator._tag === "Opaque") {
-    return [...prefix, `configured locator: opaque — ${template.locator.reason.summary}`];
+    return [...prefix, `configured locator: cannot be inspected — ${template.locator.reason.summary}`];
   }
-  const fields = template.locator.fields.map((field) => `${field.name}=${JSON.stringify(field.value)}`).join(" · ");
+  const fields = template.locator.fields
+    .map((field) => `${field.name}=${commandPlanArgument(String(field.value))}`)
+    .join(" · ");
   if (template.locator._tag === "Exact") return [...prefix, `configured locator: exact · ${fields}`];
   const redacted = template.locator.redactions.map((entry) => `${entry.field}:${entry.parts.join("+")}`).join(",");
   return [...prefix, `configured locator: redacted · ${fields}`, `locator redacted: ${redacted}`];
@@ -1827,7 +1930,7 @@ function commandPlanStepMeta(step: CommandPlanStep): string {
     case "conditional":
       return "CONDITIONAL";
     case "opaque":
-      return "OPAQUE";
+      return "RUNTIME ONLY";
     case "known-no-command":
       return "NO COMMANDS";
   }
@@ -1921,10 +2024,15 @@ function renderCommandPlanSteps(
 ): void {
   for (const step of steps) {
     target.push(
-      renderCommandPlanPanel(step.phase, commandPlanStepMeta(step), commandPlanStepLines(step, position), capability),
+      renderCommandPlanPanel(
+        commandPlanPhase(step.phase),
+        commandPlanStepMeta(step),
+        commandPlanStepLines(step, position),
+        capability,
+      ),
     );
     if (step.truth === "conditional" && step.children.length > 0) {
-      const childPosition = `${position} > ${step.phase}${step.label === undefined ? "" : ` (${step.label})`}`;
+      const childPosition = `${position} > ${commandPlanPhase(step.phase)}${step.label === undefined ? "" : ` (${step.label})`}`;
       renderCommandPlanSteps(target, step.children, childPosition, capability);
     }
   }
@@ -1934,10 +2042,11 @@ function commandPlanLaneLabel(lane: CommandPlanLane): string {
   const ordering =
     lane.ordering === "serial-normalized-eval-id"
       ? "serial · normalized Eval ID, then attempt"
-      : "no guaranteed slot order";
-  if (lane.kind !== "sandbox-reuse") return `lane ${lane.kind}:${lane.id} · ${ordering}`;
-  const scope = lane.scope.kind === "shared" ? "shared" : `eval:${lane.scope.evalId}`;
-  return `lane sandbox-reuse:${scope}@${lane.id.slice(-12)} · ${ordering}`;
+      : "attempts may run concurrently";
+  if (lane.kind !== "sandbox-reuse")
+    return `${lane.kind === "eval-group" ? "Eval group" : "Eval"} ${lane.id} · ${ordering}`;
+  const scope = lane.scope.kind === "shared" ? "selected Evals" : lane.scope.evalId;
+  return `Shared Sandbox for ${scope} · ${ordering}`;
 }
 
 /**
@@ -1954,13 +2063,13 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
   const meta =
     plan.completeness === "complete"
       ? "COMPLETE"
-      : `PARTIAL · ${plan.opaqueCount} opaque · ${plan.redactedCount} redacted`;
+      : `PARTIAL · ${plan.opaqueCount} runtime-only steps · ${plan.redactedCount} redacted`;
   panels.push(
     renderCommandPlanPanel(
       "COMMAND PLAN",
       meta,
       [
-        "Guaranteed order is per lane. Different experiments and lanes may interleave at runtime; conditional dispatches may never start.",
+        "Order is guaranteed within each Eval group. Other experiments and groups may run concurrently; conditional attempts may never start.",
       ],
       capability,
     ),
@@ -1970,14 +2079,14 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
       renderCommandPlanPanel(
         `EXPERIMENT ${experiment.experimentId}`,
         experiment.activation.toUpperCase(),
-        ["Contains the lifecycle blocks surrounding every selected lane."],
+        ["Lifecycle steps for all selected Evals."],
         capability,
       ),
     );
     renderCommandPlanSteps(
       panels,
       experiment.beforeLanes,
-      `experiment ${experiment.experimentId} · before lanes`,
+      `experiment ${experiment.experimentId} · before Evals`,
       capability,
     );
     for (const lane of experiment.lanes) {
@@ -1986,34 +2095,24 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
         renderCommandPlanPanel(
           laneLabel,
           lane.ordering === "serial-normalized-eval-id" ? "SERIAL" : "INDEPENDENT",
-          ["Contains the lifecycle blocks for this lane."],
+          ["Lifecycle steps for this Eval group."],
           capability,
         ),
       );
       if (lane.kind === "eval-group" && lane.beforeSlots.length > 0) {
-        renderCommandPlanSteps(
-          panels,
-          lane.beforeSlots,
-          `lane ${lane.kind}:${lane.id} · group lifecycle before slots`,
-          capability,
-        );
+        renderCommandPlanSteps(panels, lane.beforeSlots, `${laneLabel} · before attempts`, capability);
       }
       const physical = lane.physicalLifecycleTemplate;
       if (physical !== undefined) {
-        renderCommandPlanSteps(
-          panels,
-          physical.enter,
-          `lane ${lane.kind}:${lane.id} · physical lifecycle template enter · each physical instance`,
-          capability,
-        );
+        renderCommandPlanSteps(panels, physical.enter, `${laneLabel} · before each Sandbox is used`, capability);
       }
       for (const slot of lane.slots) {
         if (slot.action === "carried") {
           panels.push(
             renderCommandPlanPanel(
-              `SLOT ${slot.evalId} #${slot.attempt}`,
-              "CARRIED",
-              ["No lifecycle commands run for this slot."],
+              `ATTEMPT ${slot.evalId} #${slot.attempt + 1}`,
+              "USING EARLIER RESULT",
+              ["No lifecycle commands run for this attempt."],
               capability,
             ),
           );
@@ -2021,40 +2120,25 @@ export function renderHumanCommandPlan(plan: CommandPlan, options: HumanCommandP
         }
         panels.push(
           renderCommandPlanPanel(
-            `SLOT ${slot.evalId} #${slot.attempt}`,
-            "DISPATCH",
+            `ATTEMPT ${slot.evalId} #${slot.attempt + 1}`,
+            "WILL RUN",
             [`if: ${slot.activation?.summary ?? "admitted"}`],
             capability,
           ),
         );
-        renderCommandPlanSteps(
-          panels,
-          slot.steps,
-          `lane ${lane.kind}:${lane.id} · slot ${slot.evalId} #${slot.attempt}`,
-          capability,
-        );
+        renderCommandPlanSteps(panels, slot.steps, `${slot.evalId} · Attempt #${slot.attempt + 1}`, capability);
       }
       if (physical !== undefined) {
-        renderCommandPlanSteps(
-          panels,
-          physical.exit,
-          `lane ${lane.kind}:${lane.id} · physical lifecycle template exit · each physical instance`,
-          capability,
-        );
+        renderCommandPlanSteps(panels, physical.exit, `${laneLabel} · after each Sandbox is used`, capability);
       }
       if (lane.kind === "eval-group" && lane.afterSlots.length > 0) {
-        renderCommandPlanSteps(
-          panels,
-          lane.afterSlots,
-          `lane ${lane.kind}:${lane.id} · group lifecycle after slots`,
-          capability,
-        );
+        renderCommandPlanSteps(panels, lane.afterSlots, `${laneLabel} · after attempts`, capability);
       }
     }
     renderCommandPlanSteps(
       panels,
       experiment.afterLanes,
-      `experiment ${experiment.experimentId} · after lanes`,
+      `experiment ${experiment.experimentId} · after Evals`,
       capability,
     );
   }

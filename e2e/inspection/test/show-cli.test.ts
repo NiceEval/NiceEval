@@ -13,6 +13,19 @@ function expectHumanText(stdout: string): void {
   expect(() => JSON.parse(stdout)).toThrow();
 }
 
+function expectHumanSummary(text: string, summaryText = text): void {
+  expect.soft(summaryText).not.toMatch(/"[\w-]+"\s*:/u);
+  expect.soft(summaryText).not.toMatch(/\b(?:source-unavailable|not-applicable|not-recorded|agent-turns)\b/u);
+  const sections = text.split(/\nNext\n/u);
+  expect.soft(sections.length).toBeLessThanOrEqual(2);
+  if (sections.length === 2) {
+    const lines = sections[1]!.trim().split("\n");
+    expect.soft(lines.length).toBeLessThanOrEqual(3);
+    expect.soft(lines.every((line) => /^\s*(?:niceeval |\+\d+ more: niceeval )/u.test(line))).toBe(true);
+  }
+  expect.soft(text).not.toMatch(/^[ \t]+Next[ \t]*$/mu);
+}
+
 function expectInOrder(stdout: string, values: readonly string[]): void {
   let cursor = 0;
   for (const value of values) {
@@ -248,11 +261,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(attemptOverview.stdout).toMatch(/assertions\s+(?:available|partial)\s+·\s+5 entries/u);
       expect(attemptOverview.stdout).toMatch(/coverage\s+.+/u);
       expect(attemptOverview.stdout).toMatch(/limitations\s+.+/u);
-      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} source`);
+      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} assertions`);
       expect(attemptOverview.stdout).toContain(`niceeval show ${locator} execution`);
-      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} timing`);
-      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} usage`);
-      expect(attemptOverview.stdout).toContain(`niceeval show ${locator} diff`);
+      expect(attemptOverview.stdout).toContain(`+4 more: niceeval show ${locator} --json`);
+      expectHumanSummary(attemptOverview.stdout);
 
       const source = await niceeval.run(["show", locator, "source"]);
       expect(source.exitCode, source.diagnostic()).toBe(0);
@@ -384,6 +396,33 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(assertionsText.stdout).toMatch(/NOTE met\s+\S+ · Collection evidence remains bounded/u);
       expect(assertionsText.stdout).toContain("Next");
 
+      for (const output of [
+        run,
+        runs,
+        mainExperiment,
+        experiments,
+        itemDetail,
+        toolDetail,
+        commandDetail,
+        timing,
+        usage,
+        diff,
+        assertionsText,
+      ])
+        expectHumanSummary(output.stdout);
+      // Generic event envelopes preserve source/trace IDs and recorded summaries.
+      // The structured conversation projection still uses human summaries.
+      const conversationStart = execution.stdout.indexOf("Conversation ·");
+      expect(conversationStart).toBeGreaterThanOrEqual(0);
+      expectHumanSummary(execution.stdout, execution.stdout.slice(conversationStart));
+      expect(mainExperiment.stdout).not.toMatch(/^\s+Usage @/mu);
+      const firstAssertion = attemptQuery.inspectionSuccess("attempt.get").attempt.assertions.entries[0]!;
+      const assertionDetail = await niceeval.run(["show", locator, firstAssertion.entryId]);
+      expect(assertionDetail.exitCode, assertionDetail.diagnostic()).toBe(0);
+      expectHumanSummary(assertionDetail.stdout);
+      for (const other of attemptQuery.inspectionSuccess("attempt.get").attempt.assertions.entries.slice(1))
+        expect(assertionDetail.stdout.split("\nNext\n")[1] ?? "").not.toContain(other.entryId);
+
       const usageErrors: readonly {
         readonly argv: readonly string[];
         readonly stderr: readonly string[];
@@ -414,10 +453,9 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
 
       const changedPlan = await niceeval.run(["exp", mainExperimentId, "--dry"]);
       expect(changedPlan.exitCode, changedPlan.diagnostic()).toBe(0);
-      expect(changedPlan.stdout).toContain("identity-mismatch");
+      expect(changedPlan.stdout).toContain("Needs rerun:");
       expect(changedPlan.stdout).toContain("source:evals/inspection.eval.ts changed");
-      expect(changedPlan.stdout).toContain(`source ${locator}`);
-      expect(changedPlan.stdout).toContain("verdict passed");
+      expect(changedPlan.stdout).toContain(`earlier result ${locator} · passed`);
       expect(changedPlan.stdout).not.toContain("niceeval accept");
 
       const historicalOverview = await niceeval.run([
@@ -455,6 +493,65 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
         ),
       );
       expect(historicalOverview.stdout).not.toContain("Observed   0/0");
+    },
+  );
+  await inspectionE2E.case(
+    "show-human-summary",
+    { artifacts: inspectionCaseArtifacts() },
+    async ({ paths: { projectRoot }, commands: { niceeval } }) => {
+      writeFileSync(
+        join(projectRoot, "evals/inspection.eval.ts"),
+        `import { defineScoreEval } from "niceeval";
+import { equals } from "niceeval/expect";
+export default defineScoreEval({ async test(t) {
+  await t.send("produce deterministic inspection evidence");
+  t.note("metadata", { ready: true, count: 24 });
+  for (let index = 0; index < 24; index++)
+    t.check("value", equals("value")).score(1).label("Entry " + index);
+} });
+`,
+      );
+      const produced = await niceeval.run(["exp", "main", "--rerun", "all", "--json"]);
+      expect(produced.exitCode, produced.diagnostic()).toBe(0);
+      const locator = only(produced.expEvalEvents(), (event) => event.evalId === "inspection").locator;
+      const runId = only(produced.expReceipt().createdRunIds, () => true);
+      const outline = await niceeval.run(["show", locator, "--json"]);
+      const attempt = outline.inspectionSuccess("attempt.get").attempt;
+      expect(attempt.assertions.entries).toHaveLength(24);
+      const entryId = attempt.assertions.entries[0]!.entryId;
+
+      for (const args of [
+        [locator],
+        [locator, "assertions"],
+        [locator, entryId],
+        [`exp:main`],
+        [`run:${runId}`],
+        [locator, "source"],
+        [locator, "execution"],
+        [locator, "timing"],
+        [locator, "usage"],
+        [locator, "diff"],
+      ]) {
+        const shown = await niceeval.run(["show", ...args]);
+        expect(shown.exitCode, shown.diagnostic()).toBe(0);
+        if (args[1] === "execution") {
+          const conversationStart = shown.stdout.indexOf("Conversation ·");
+          expect(conversationStart).toBeGreaterThanOrEqual(0);
+          expectHumanSummary(shown.stdout, shown.stdout.slice(conversationStart));
+        } else expectHumanSummary(shown.stdout);
+        if (args.length === 1 && args[0] === locator) {
+          expect.soft(shown.stdout).toContain("24 entries");
+          expect.soft(shown.stdout).toContain("metadata");
+        }
+        if (args[0] === "exp:main") {
+          expect.soft(shown.stdout).not.toMatch(/^\s+Usage @/mu);
+          expect.soft(shown.stdout).toContain("Models and usage");
+        }
+        if (args[1] === entryId) {
+          const next = shown.stdout.split("\nNext\n")[1] ?? "";
+          for (const other of attempt.assertions.entries.slice(1)) expect.soft(next).not.toContain(other.entryId);
+        }
+      }
     },
   );
   // This journey starts dozens of public CLI processes. CI's successful run took
@@ -515,9 +612,9 @@ export default defineEval({ async test(t) {
 
       const beforeRun = await niceeval.run(["show"]);
       expect(beforeRun.exitCode, beforeRun.diagnostic()).toBe(0);
-      expect(beforeRun.stdout).toMatch(/Covered\s+0\/3/u);
-      expect(beforeRun.stdout).toMatch(/Gaps\s+3/u);
-      expect(beforeRun.stdout).toContain("Gap no-result");
+      expect(beforeRun.stdout).toMatch(/Up to date\s+0\/3/u);
+      expect(beforeRun.stdout).toMatch(/Need a run\s+3/u);
+      expect(beforeRun.stdout).toContain("Not run yet");
       expect(existsSync(join(projectRoot, ".niceeval", "record.sqlite"))).toBe(false);
       expect(existsSync(join(projectRoot, "agent-calls.txt"))).toBe(false);
       expect(existsSync(join(projectRoot, "hook-calls.txt"))).toBe(false);
@@ -552,8 +649,8 @@ export default defineEval({ async test(t) {
 
       const complete = await niceeval.run(["show"]);
       expect(complete.exitCode, complete.diagnostic()).toBe(0);
-      expect(complete.stdout).toMatch(/Covered\s+3\/3/u);
-      expect(complete.stdout).toMatch(/Gaps\s+0/u);
+      expect(complete.stdout).toMatch(/Up to date\s+3\/3/u);
+      expect(complete.stdout).toMatch(/Need a run\s+0/u);
       expect(complete.stdout).not.toContain("Next:");
 
       const changedPath = join(projectRoot, "evals", "current", "changed.eval.ts");
@@ -576,18 +673,13 @@ export default defineEval({ test(t) { t.check("accepted", equals("accepted")); }
       expectHumanText(current.stdout);
       expectInOrder(current.stdout, [
         "Current results",
-        "Covered",
+        "Up to date",
         "2/4",
-        "Gaps",
+        "Need a run",
         "2",
         "Experiments",
-        "Attempts · current",
-        "Gap identity-mismatch",
-        `Previous result ${changedLocator}`,
-        "Gap no-result",
-        failedLocator,
-        "1 passed Attempts hidden",
-        "Next: niceeval exp current --dry",
+        "current  2 need a run",
+        "niceeval exp current --dry",
       ]);
       expect(current.stdout).toMatch(/Verdicts\s+1 passed; 1 failed; 0 errored; 0 skipped/u);
       expect(current.stdout).toMatch(/Pass rate\s+50% \(partial\)/u);
@@ -686,8 +778,8 @@ export default defineEval({ test(t) { t.check("accepted", equals("accepted")); }
       rmSync(experimentPath);
       const historyOnly = await niceeval.run(["show"]);
       expect(historyOnly.exitCode, historyOnly.diagnostic()).toBe(0);
-      expect(historyOnly.stdout).toMatch(/Covered\s+0\/0/u);
-      expect(historyOnly.stdout).toMatch(/Gaps\s+0/u);
+      expect(historyOnly.stdout).toMatch(/Up to date\s+0\/0/u);
+      expect(historyOnly.stdout).toMatch(/Need a run\s+0/u);
       expect(historyOnly.stdout).toContain("History");
       expect(historyOnly.stdout).toContain(changedLocator);
       const history = await niceeval.run(["show", "--json"]);
@@ -796,10 +888,10 @@ export default defineScoreEval({ test(t) { t.score(4); } });
       );
       const shown = await niceeval.run(["show"]);
       expect(shown.exitCode, shown.diagnostic()).toBe(0);
-      expect(shown.stdout).toMatch(/Covered\s+1\/4/u);
-      expect(shown.stdout).toMatch(/Gaps\s+3/u);
+      expect(shown.stdout).toMatch(/Up to date\s+1\/4/u);
+      expect(shown.stdout).toMatch(/Need a run\s+3/u);
       expect(shown.stdout).toMatch(/Score\s+0\s+\(partial\)/u);
-      expect(shown.stdout).toContain("Gap outcome-ineligible");
+      expect(shown.stdout).toContain("Needs rerun: last attempt errored");
       expect(shown.stdout).not.toContain("Pass rate");
       const dry = await niceeval.run(["exp", "current", "--dry", "--json"]);
       expect(dry.exitCode, dry.diagnostic()).toBe(0);
@@ -911,8 +1003,8 @@ export default defineEval({ async test(t) {
         ]);
         const shown = await niceeval.run(["show"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout).toMatch(/Covered\s+1\/2/u);
-        expect(shown.stdout).toContain("Gap pending");
+        expect(shown.stdout).toMatch(/Up to date\s+1\/2/u);
+        expect(shown.stdout).toContain("Running");
         const dry = await niceeval.run(["exp", "current", "--dry", "--json"]);
         expect(dry.exitCode, dry.diagnostic()).toBe(0);
         const pendingPlan = decodeExpPlanDocument(JSON.parse(dry.stdout));
@@ -1067,7 +1159,7 @@ export default defineEval({ async test(t) { const turn = await t.send("current r
         });
         const shown = await niceeval.run(["show"]);
         expect(shown.exitCode, shown.diagnostic()).toBe(0);
-        expect(shown.stdout).toMatch(/Covered\s+1\/1/u);
+        expect(shown.stdout).toMatch(/Up to date\s+1\/1/u);
         expect(shown.stdout).not.toContain("Next:");
       } finally {
         writeFileSync(join(projectRoot, "release-agent"), "release", "utf8");

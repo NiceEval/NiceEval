@@ -74,7 +74,9 @@ test.concurrent("compact assertions keep decisions and rationales without readin
   expect(text).toContain("GATE fail  SCORE 0/1");
   expect(text).toContain("0/1");
   expect(text).toContain("Expected answer was absent.");
-  expect(text).toContain("Next");
+  // The CLI appends one bounded Next after the complete command output.
+  expect(text).not.toContain("Next");
+  expect(text).toContain("condition not met");
   const full = projectAttemptAssertionDetail(source, input, turns, entryId)!;
   expect(reads).toBe(1);
   expect(full).toMatchObject({ entry: { materials: { source: { content: { base64: bytes.toString("base64") } } } } });

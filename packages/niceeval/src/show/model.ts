@@ -179,8 +179,8 @@ export interface AttemptView {
       readonly groupPath: readonly string[];
     }[];
   };
-  readonly evidenceCoverage: readonly string[];
-  readonly limitations: readonly string[];
+  readonly evidenceCoverage: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["evidenceCoverage"];
+  readonly limitations: InspectionSuccessDocumentFor<"attempt.get">["attempt"]["limitations"];
 }
 export interface SourcesView {
   readonly locator: string;
@@ -406,8 +406,8 @@ export function projectAttempt(
         label: entry.display.label,
       })),
     },
-    evidenceCoverage: value.evidenceCoverage.map((entry) => JSON.stringify(entry)),
-    limitations: value.limitations.map((entry) => JSON.stringify(entry)),
+    evidenceCoverage: value.evidenceCoverage,
+    limitations: value.limitations,
   };
 }
 export function projectSources(

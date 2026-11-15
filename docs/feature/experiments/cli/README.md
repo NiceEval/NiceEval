@@ -91,7 +91,7 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 
 Human 的 lane 顺序固定为 Group before actions → physical enter → Planned attempts → physical exit → Group after actions。Physical after 与 Provider finalizer 因而始终列在使用该实例的 Planned attempt 工作之后。
 
-可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
+可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `RUNTIME ONLY`。每个 action 使用独立圆角框，显示 owner、阶段、执行时机与推导依据。
 
 同一框用普通短语显示声明顺序、依赖与执行顺序；`--json` 保留 `declarationOrder`、`dependencies` 与 `executionOrder` 的完整结构。
 ordinal 只属于当前 occurrence，不是运行时全局序号；Human 说明顺序只在本生命周期内保证，以及其它 Eval 组能否并发。
@@ -100,7 +100,7 @@ before action 还显示求值后的 `changeFrequency`、声明来源、排序理
 Human 将能力写成 `prepared before attempts`、`saved after an attempt` 或 `not supported by this provider`，对应机器值 `run-prepared | attempt-captured | unsupported`。
 缓存查询写成 `cache lookup: not checked`，不因计划阶段评估库存；机器字段仍为 `not-probed`。
 
-数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 说明排序不适用。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
 每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
@@ -305,6 +305,8 @@ Pass 未通过、Score gate 失败、execution error、结果缺口、中断和�
 `RESULTS` 以 run configuration 为一个有界 row/block，按 plan 稳定排序。Pass Eval 显示通过读数；Score Eval
 按 Eval 分 cell 或续行，显示 `passed + complete` Attempts 的 earned mean 与 `ranked / published`。`failed + complete`
 保留审计数值但不进入成功均值；partial 只显示已知下界，unavailable 不制造数字。
+最多显示五个 Experiment，每个最多五个 Eval；相同的未排名读数与部分得分下界按 `×N` 聚合，最多显示五种。
+其余以 `+N more` 指向末尾 `NEXT` 的完整结果入口。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
 合并。每个单条目显示这一条 Attempt 自己的断言摘要或安全有界的 `error:`，并紧跟可复制的

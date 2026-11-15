@@ -49,7 +49,7 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
       const adopted = await niceeval.run(["exp", "rename", "renamed", "--run", sourceRunId]);
       expect(adopted.exitCode, adopted.diagnostic()).toBe(0);
       expect(adopted.stdout).toContain(sourceLocator);
-      const adoptedRunId = adopted.stdout.match(/Accepted into new Run ([0-9a-f-]{36})\./)?.[1];
+      const adoptedRunId = adopted.stdout.match(/Accepted 1 attempts into new Run ([0-9a-f-]{36})\./)?.[1];
       expect(adoptedRunId, adopted.diagnostic()).toBeDefined();
       const next = await niceeval.run(["exp", "renamed", "--dry", "--json"]);
       expect(next.exitCode, next.diagnostic()).toBe(0);
@@ -86,7 +86,8 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
       await writeFile(targetPath, definition.replace("defineExperiment({", "defineExperiment({ attempts: 2,"));
       const wider = await niceeval.run(["exp", "rename", "renamed", "--run", sourceRunId]);
       expect(wider.exitCode, wider.diagnostic()).not.toBe(0);
-      expect(`${wider.stdout}${wider.stderr}`).toContain("rename-run-not-closed");
+      expect(`${wider.stdout}${wider.stderr}`).toContain("Source Run and current target must contain the same");
+      expect(`${wider.stdout}${wider.stderr}`).not.toContain("rename-run-not-closed");
       await writeFile(
         targetPath,
         definition.replace("defineExperiment({", "defineExperiment({ flags: { changed: true },"),
@@ -121,8 +122,8 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
             expect.objectContaining({
               selector: "plan:physical",
               kind: "changed",
-              from: expect.stringContaining('"experimentId":"history"'),
-              to: expect.stringContaining('"experimentId":"renamed"'),
+              from: expect.stringMatching(/experimentId.*history/u),
+              to: expect.stringMatching(/experimentId.*renamed/u),
             }),
           ]),
         },
@@ -137,7 +138,7 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
         "utf8",
       );
       expect(humanUnproven.exitCode, humanUnproven.diagnostic()).toBe(0);
-      expect(humanUnproven.stdout).toContain("gap 0:adoption-unproven: plan:physical");
+      expect(humanUnproven.stdout).toContain("Needs review: earlier result not proven equivalent");
       expect(humanUnproven.stdout).not.toMatch(/"comparisons"|"explanation"|\n\s*[{[]/u);
 
       const current = await niceeval.run(["show", "--json"]);
@@ -169,7 +170,9 @@ test.concurrent("删除旧实验后明确采用指定 Run，保留来源并持�
       await rename(targetPath, join(paths.projectRoot, "experiments", "hook-free.ts"));
       const removedHook = await niceeval.run(["exp", "rename", "hook-free", "--run", hookedRunId]);
       expect(removedHook.exitCode, removedHook.diagnostic()).not.toBe(0);
-      expect(`${removedHook.stdout}${removedHook.stderr}`).toContain("rename-behavior-unproven");
+      expect(`${removedHook.stdout}${removedHook.stderr}`).toContain(
+        "opaque or unknown Experiment hook declarations; pure rename cannot be proven",
+      );
     },
   );
 });

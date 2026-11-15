@@ -5,11 +5,11 @@
 以下为预期人读排版，动态值已规范化。JSON 示例保留机器字段与枚举值。
 
 ```text
-╭─ COMMAND PLAN ───────────────────── PARTIAL · 8 opaque · 2 redacted ─╮
-│ Guaranteed order is per lane.                                        │
+╭─ COMMAND PLAN ───────────────────── PARTIAL · 8 runtime-only steps · 2 redacted ─╮
+│ Order is guaranteed within each Eval group.                                        │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.create ──────────────────────────────────────────── OPAQUE ─╮
+╭─ Create Sandbox ──────────────────────────────────────────── RUNTIME ONLY ─╮
 │ position: Eval group group · before Sandbox use                      │
 │ owner: provider:docker                                               │
 │ template: docker:image                                               │
@@ -18,7 +18,7 @@
 │ reason: provider create is a runtime operation                       │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.before ───────────────────────────────────────────── EXACT ─╮
+╭─ Prepare Sandbox ───────────────────────────────────────────── EXACT ─╮
 │ owner: experiment:suite/one                                          │
 │ phase: before                                                        │
 │ occurrence: once per Sandbox · fixed inputs and Eval group           │
@@ -35,21 +35,21 @@
 │ command: shell ./import-runtimes.sh                                  │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.before ───────────────────────────────────────────── EXACT ─╮
+╭─ Prepare Sandbox ───────────────────────────────────────────── EXACT ─╮
 │ owner: experiment:suite/one                                          │
 │ action family: @acme/niceeval-tools/install                          │
 │ action id: install-tool                                              │
 │ action fingerprint: sha256:849c... · automatic                       │
 │ supplemental fingerprint: none                                       │
 │ steps: 2                                                             │
-│ step 1: exec tool install 1.4.0                                      │
-│ step 2: putText .tool-version · sha256:35b4... · 5 bytes             │
+│ step #0: tool install 1.4.0                                      │
+│ step #1: write text .tool-version · sha256:35b4... · 5 bytes             │
 │ redaction: content projected as digest and size                      │
 │ cache support: saved after an attempt                                │
 │ cache lookup: not checked                                            │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.before ───────────────────────────────────────────── EXACT ─╮
+╭─ Prepare Sandbox ───────────────────────────────────────────── EXACT ─╮
 │ owner: eval:group/first                                              │
 │ phase: before                                                        │
 │ occurrence: attempt · required by fixture input                      │
@@ -66,7 +66,7 @@
 │ command: shell printf fixture-ready                                  │
 ╰──────────────────────────────────────────────────────────────────────╯
 
-╭─ sandbox.before ───────────────────────────────────────────── OPAQUE ─╮
+╭─ Prepare Sandbox ───────────────────────────────────────────── RUNTIME ONLY ─╮
 │ owner: adapter:codex                                                  │
 │ phase: before                                                         │
 │ occurrence: attempt · Agent default                                   │
@@ -86,7 +86,7 @@
 
 standalone after 的静态节点显示 `condition: this lifecycle has started`、`registration: when this lifecycle starts` 与 `cache: not saved`。动态 cleanup 后登记，因此先按 LIFO 执行；standalone after 随后按逆登记顺序执行，Provider finalizer 最后运行。
 
-内置与第三方 `SandboxAction` 都在同一种 Action 框内展开规范化 steps。可规范化 steps 标为 `EXACT`；bytes、本地内容和大文本只投影 digest/size，字段脱敏与 exact 正交。只有 callback 与 `defineSandboxCommand()` 标为 `OPAQUE`，family 不能提供自定义 formatter 隐藏真实 steps。
+内置与第三方 `SandboxAction` 都在同一种 Action 框内展开规范化 steps。可规范化 steps 标为 `EXACT`；bytes、本地内容和大文本只投影 digest/size，字段脱敏与 exact 正交。只有 callback 与 `defineSandboxCommand()` 标为 `RUNTIME ONLY`，family 不能提供自定义 formatter 隐藏真实 steps。
 
 Human 框与 JSON `commandPlan` 投影同一棵结构化树和同一组字段；框中的标签只是 JSON 字段的人读投影：
 

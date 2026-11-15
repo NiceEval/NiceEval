@@ -130,6 +130,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
   let startedAtMs = 0;
   let tickHandle: FeedbackTimerHandle | undefined;
   let deactivate: (() => void) | undefined;
+  let skippedPauses = 0;
   const queue = new SerialQueue();
 
   function guardWritable(): boolean {
@@ -414,6 +415,15 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
   }): Promise<void> {
     if (phase === "finished") return; // 幂等
     await stopDynamic();
+    if (skippedPauses > 0) {
+      const count = skippedPauses;
+      skippedPauses = 0;
+      queue.push(() => {
+        io.stdout.write(
+          `Pause on failure needs an interactive single-attempt terminal; ${count} attempts cleaned up without pausing. Use --keep-sandbox to retain Sandboxes.\n`,
+        );
+      });
+    }
     emit({ type: "summary", at: io.clock.now(), summary: input.summary, completion: input.completion });
     emit({ type: "receipt", at: io.clock.now(), receipt: input.receipt });
     await queue.drain();
@@ -436,6 +446,10 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     emit,
     forceRedraw,
     pausePrompt: (text) => {
+      if (profile === "human" && text.startsWith("Pause on failure needs an interactive single-attempt terminal;")) {
+        skippedPauses += 1;
+        return;
+      }
       queue.push(async () => {
         await renderer.clearDynamic?.();
         io.stderr.write(`${text}\n`);

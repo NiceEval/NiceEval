@@ -6,6 +6,7 @@ import type { JsonValue } from "../types.ts";
 import type { RunContext } from "../record/model/run-context.ts";
 import { IdentityJsonSchema, type IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
 import type { IdentityDelta, IdentityDiagnosticFact, IdentityExplanation } from "./identity-explanation-schema.ts";
+import { summarizeStructuredIdentityChange } from "./identity-summary.ts";
 
 export type { EvalManifest } from "../record/manifest.ts";
 export {
@@ -44,6 +45,7 @@ function faceDeltas<T extends JsonValue>(
     const hasFrom = Object.hasOwn(from, key),
       hasTo = Object.hasOwn(to, key);
     if (hasFrom && hasTo && canonical(from[key]!) === canonical(to[key]!)) return [];
+    const structured = prefix === "plan" ? summarizeStructuredIdentityChange(from[key], to[key]) : undefined;
     function deltaKind(): IdentityDelta["kind"] {
       if (!hasFrom) return "added";
       if (!hasTo) return "removed";
@@ -53,8 +55,8 @@ function faceDeltas<T extends JsonValue>(
       {
         selector: `${prefix}:${key}`,
         kind: deltaKind(),
-        ...(hasFrom ? { from: render(from[key]!) } : {}),
-        ...(hasTo ? { to: render(to[key]!) } : {}),
+        ...(hasFrom ? { from: structured?.from ?? render(from[key]!) } : {}),
+        ...(hasTo ? { to: structured?.to ?? render(to[key]!) } : {}),
       },
     ];
   });

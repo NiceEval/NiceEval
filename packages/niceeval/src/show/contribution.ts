@@ -41,6 +41,8 @@ import {
   renderDiff,
   renderExperiment,
   renderOverview,
+  renderCurrentExperimentNeedsRun,
+  currentProjectNextCommands,
   renderRun,
   renderSources,
   renderTiming,
@@ -284,22 +286,25 @@ function runShow(
           runIds.length === 0 &&
           experimentIds.length === 0 &&
           typeof parsed.values.record !== "string";
-        const prepare = current
-          ? Effect.gen(function* () {
-              const project = yield* ProjectConfiguration;
-              const config = yield* project.load(facts.cwd).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new CurrentTargetUnavailable({
-                      code: "current-target-unavailable",
-                      reason: String(cause),
-                      cause: normalizeExperimentHostCause(cause),
-                    }),
-                ),
-              );
-              return yield* openCurrentProjectSource({ cwd: facts.cwd, config });
-            })
-          : openInspectionSource(inspectionSource);
+        const currentExperimentRead =
+          experimentIds.length > 0 && !json && !explain && !matrix && typeof parsed.values.record !== "string";
+        const prepare =
+          current || currentExperimentRead
+            ? Effect.gen(function* () {
+                const project = yield* ProjectConfiguration;
+                const config = yield* project.load(facts.cwd).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new CurrentTargetUnavailable({
+                        code: "current-target-unavailable",
+                        reason: String(cause),
+                        cause: normalizeExperimentHostCause(cause),
+                      }),
+                  ),
+                );
+                return yield* openCurrentProjectSource({ cwd: facts.cwd, config });
+              })
+            : openInspectionSource(inspectionSource);
         const opened = yield* prepare.pipe(Effect.mapError((cause) => failure("open Record source", cause)));
         const selectedDocuments: InspectionDocument[] = [];
         const select = <A>(operation: InspectionOperationId, evaluate: () => A): Effect.Effect<A, Error, CliOutput> =>
@@ -345,17 +350,77 @@ function runShow(
             : write("stdout", encoded.success);
         };
         const writeText = (text: string) => {
-          const links = selectedDocuments.flatMap((document) =>
-            document.outcome === "success" ? (withRecord(document) as typeof document).links : [],
+          const homepage = locator !== undefined && address.aspect === undefined;
+          function documentsForLinks() {
+            if (assertions && locator !== undefined)
+              return selectedDocuments.filter((document) => document.operation === "attempt.assertion.detail");
+            if (homepage) return selectedDocuments.filter((document) => document.operation === "attempt.get");
+            return selectedDocuments;
+          }
+          const documents = documentsForLinks();
+          const links = documents.flatMap((document) =>
+            document.outcome === "success"
+              ? (withRecord(document) as typeof document).links.filter(
+                  (link) => !homepage || ["execution", "diff", "source", "timing", "usage"].includes(link.rel),
+                )
+              : [],
           );
-          const commands = [...new Set(links.map((link) => link.command))];
-          const next = commands.length === 0 ? "" : `\nNext\n${commands.map((command) => `  ${command}`).join("\n")}\n`;
+          const recordFlag =
+            typeof parsed.values.record === "string" ? ` --record ${inspectionShellWord(parsed.values.record)}` : "";
+          const preferred: string[] = [];
+          const attempt = selectedDocuments.find(
+            (document) => document.outcome === "success" && document.operation === "attempt.get",
+          );
+          if (homepage && attempt?.outcome === "success" && attempt.operation === "attempt.get") {
+            const cause = attempt.attempt.verdictCauses?.items[0];
+            if (cause !== undefined) preferred.push(`niceeval show ${locator} ${cause.entryId} --full${recordFlag}`);
+            preferred.push(
+              `niceeval show ${locator} assertions${recordFlag}`,
+              `niceeval show ${locator} execution${recordFlag}`,
+            );
+          }
+          const trace = selectedDocuments.find(
+            (document) => document.outcome === "success" && document.operation === "attempt.trace",
+          );
+          if (trace?.outcome === "success" && trace.operation === "attempt.trace")
+            for (const command of trace.trace.commands.items)
+              if (!(command.outcome.kind === "exited" && command.outcome.exitCode === 0))
+                preferred.push(`niceeval show ${locator} ${command.commandId}${recordFlag}`);
+          const orderedLinks = [...links].sort((left, right) => {
+            function rank(rel: string): number {
+              if (rel === "next-page") return 0;
+              return rel === "assertion" || rel === "file-change" ? 1 : 2;
+            }
+            return rank(left.rel) - rank(right.rel);
+          });
+          const commands = [...new Set([...preferred, ...orderedLinks.map((link) => link.command)])];
           const viewAddress = imageId === undefined ? parsed.positionals : [locator!, entryId!];
+          const flags = ["actor", "type", "continuation", "reprice", "eval"].flatMap((flag) => {
+            const value = parsed.values[flag];
+            return typeof value === "string" ? [`--${flag}`, value] : [];
+          });
+          if (full) flags.push("--full");
+          if (comparison !== undefined) flags.push("--mode", mode);
+          const readAddress =
+            comparison === undefined
+              ? viewAddress
+              : [
+                  ...comparison.leftRunIds.map((id) => `run:${id}`),
+                  "--",
+                  ...comparison.rightRunIds.map((id) => `run:${id}`),
+                ];
+          const current = `niceeval ${comparison === undefined ? "show" : "compare"}${readAddress.length === 0 ? "" : " " + readAddress.map(inspectionShellWord).join(" ")}${flags.length === 0 ? "" : " " + flags.map(inspectionShellWord).join(" ")}${recordFlag}`;
+          const nextLines =
+            commands.length <= 3
+              ? commands
+              : [...commands.slice(0, 2), `+${commands.length - 2} more: ${current} --json`];
+          const next =
+            nextLines.length === 0 ? "" : `\nNext\n${nextLines.map((command) => `  ${command}`).join("\n")}\n`;
           const open =
             comparison !== undefined || typeof parsed.values.record === "string"
               ? ""
               : `\nOpen: niceeval view${viewAddress.length === 0 ? "" : " " + viewAddress.map(inspectionShellWord).join(" ")}\n`;
-          return write("stdout", text + next + open);
+          return write("stdout", text + open + next);
         };
         const byteOffset =
           continuation === undefined || (expand === undefined && !artifacts)
@@ -745,8 +810,13 @@ function runShow(
             const view = yield* project("project.get", () =>
               projectOverview({ ...document, operation: "overview.get", overview: document.project }),
             );
-            yield* writeText(
-              renderOverview(view, { all, source: { kind: "current", project: document.project, references } }),
+            const next = currentProjectNextCommands(document.project);
+            const navigation = next.length === 0 ? "" : `\nNext\n${next.map((command) => `  ${command}`).join("\n")}\n`;
+            yield* write(
+              "stdout",
+              renderOverview(view, { all, source: { kind: "current", project: document.project, references } }) +
+                "\nOpen: niceeval view\n" +
+                navigation,
             );
             return 0;
           }
@@ -785,6 +855,21 @@ function runShow(
               }),
             );
             rendered.push(renderExperiment(yield* project("experiment.get", () => projectExperiment(document))));
+          }
+          if (currentExperimentRead) {
+            const document = yield* select("project.get", () =>
+              selectInspectionOperation(opened, { kind: "project.get", experimentIds }),
+            );
+            const references = new Map<string, InspectionSuccessDocumentFor<"attempt.get">["attempt"]>();
+            for (const slot of document.project.plannedAttempts) {
+              if (slot.state !== "gap" || slot.previous === null || references.has(slot.previous.locator)) continue;
+              const locator = slot.previous.locator;
+              const attempt = yield* select("attempt.get", () =>
+                selectInspectionOperation(opened, { kind: "attempt.get", locator }),
+              );
+              references.set(locator, attempt.attempt);
+            }
+            rendered.push(renderCurrentExperimentNeedsRun(document.project, references));
           }
           yield* writeText(rendered.join(""));
           return 0;

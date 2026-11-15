@@ -118,8 +118,8 @@ State 位置在 `project.get` 中是 `gap`，reason 为 `stateful-input`；没�
 Score 显示已有贡献及 `partial` 和样本分母；缺口不计零分，也不外推完整总分。没有贡献时不生成数字。
 当前已完成但失败的 Pass Eval 可以 covered；它仍以 failed 贡献通过率。Coverage 不等于成功率。
 
-四条计分题各一次，只有一条完整零分、一条 partial score 与两条没有结果时，必须显示 `Covered 1/4`、
-`Gaps 3`、`Score 0 (partial)`。partial Attempt 的已知下界只在详情显示，不加入当前总分。
+四条计分题各一次，只有一条完整零分、一条 partial score 与两条没有结果时，必须显示 `Up to date 1/4`、
+`Need a run 3`、`Score 0 (partial)`。partial Attempt 的已知下界只在详情显示，不加入当前总分。
 题内仍按完整 Attempt 取均值，跨题对已有贡献求和；不虚构四题的总满分。
 early exit 或预算导致的执行完成度从 Run/Invocation 读取，不能由 coverage 推断。
 
@@ -467,20 +467,20 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   membership action 与 origin/reference relation
   仍由具名 operation 保留，可在 Run/Attempt 下钻中查看。
 
-  标题为 `Current results`，先显示 `Covered N/M` 与 `Gaps K`。
+  标题为 `Current results`，先显示 `Up to date N/M` 与 `Need a run K`。
   分母来自当前目标；缺口显示具名原因、可用的旧 locator 与下一步。已删除的 Experiment 只出现在 `History`，不计当前分数。
   不用 `Observed` 把历史发布数量暗示成当前结果可用性；目标求值失败显示错误与历史读取命令。
   当当前目标因配置或身份变更产生缺口，且存在对应历史 Attempt 时，当前状态仍忠实显示缺口，不将旧结果计入当前分数（[T-11](../../../taste.md#t-11)）。
-  但在缺口明细下方，总览呈现独立的 `Reference results` 摘要，汇总对应历史 Attempt 的判定分布与参考得分。
+  总览另呈现独立的 `Earlier results for these` 摘要，汇总对应历史 Attempt 的判定分布与参考得分。
   调用方亦可使用 `niceeval show --reference` 聚焦并展开这批历史已发布参照结果。
 
-  默认 `show` 是概览，不逐个列出缺口：每个有缺口的 Experiment 只写一行 `<experimentId>  <K> gaps · <原因摘要>`。
+  默认 `show` 是概览，不逐个列出缺口：每个有缺口的 Experiment 只写一行 `<experimentId>  <K> need a run · <原因摘要>`。
   原因摘要列出该 Experiment 缺口里出现的变化项 selector（最多三个，按出现的缺口数降序，其余合成 `+N more`），不写 from/to。
 
   逐个缺口的 `Changed` 明细与 `Previous result` 只在 `show exp:<id>` 与 `exp <id> --dry` 中出现；已覆盖的 Attempt 在默认概览中也不展开。
   `Next` 最多三行：有缺口时优先给出 `niceeval exp <experimentId> --dry`（缺口数最多的 Experiment 在前），其余用 `+N more: niceeval show exp:<id>` 合并；没有缺口时省略 `Next`。
   完整形态见下文[当前 Results 示例](#当前-results-示例)。
-- `Reference results` 摘要汇总每个带有历史 Attempt 的缺口，并写出 `Previous attempts N of K gaps`；没有历史 Attempt 的缺口不计入摘要。
+- `Earlier results for these` 摘要汇总每个带有历史 Attempt 的缺口，并写出 `Previous attempts N of K needing a run`；没有历史 Attempt 的缺口不计入摘要。
   `Verdicts` 行总是出现。参照 Attempt 含 pass 制时显示 `Pass rate`，含 score 制时显示 `Score earned/possible`，两者都有时并排显示。
   缺口明细里的每条 `Previous result` 在 locator 后写出该 Attempt 的 Verdict；score 制再写出它的得分。
 - 一个或多个 `exp:<id>` 逐个读取 exact `experiment.get`；任一 ID 未命中时整次失败。
@@ -672,40 +672,30 @@ result 有界：行数或格数超过上限时 `state` 为 `partial`，并给出
 
 ### 当前 Results 示例
 
-默认 `show` 的 Experiment summary 显示 `Covered` 与 `Gaps` 列；Attempt 明细先列 gap，再列 `failed`、`errored`、
-`skipped` 与 pending，`passed` 默认折叠：
+默认 `show` 的 Experiment summary 显示 `Up to date` 与 `Need a run` 列；下方每个需要运行的 Experiment 只写一行变化摘要，不展开 Attempt：
 
 ```text
 $ niceeval show
 Current results
   Totals
 
-  Covered    11/12
-  Gaps       1
-  Verdicts   8 passed; 3 failed; 0 errored; 0 skipped
-  Pass rate  72.73% (partial)
+  Up to date  11/12
+  Need a run  1
+  Verdicts    8 passed; 3 failed; 0 errored; 0 skipped
+  Pass rate   72.73% (partial)
 
 Experiments
-  Experiment  Covered  Gaps  Pass rate
-  ----------  -------  ----  -----------------
-  my-agent    11/12    1     72.73% (partial)
+  Experiment  Up to date  Need a run  Pass rate
+  ----------  ----------  ----------  -----------------
+  my-agent    11/12       1           72.73% (partial)
 
-Attempts · my-agent
-  Eval refund-policy
-  Gap identity-mismatch
-  Changed  source:evals/refund-policy.eval.ts (3f9a1c20 → b71e04d5)
-  Previous result @1K1P0VJAPVJ12 (passed)
+Need a run
+  my-agent  1 need a run · Needs rerun: source:evals/refund-policy.eval.ts
 
-  Eval weather-tool
-  Attempt         Verdict  Duration
-  --------------  -------  --------
-  @1MEMY3VCQ6B5B  failed   12.40 s
-
-  8 passed Attempts hidden
-  See more  niceeval show exp:my-agent
-
-Next: niceeval exp my-agent --dry
 Open: niceeval view
+
+Next
+  niceeval exp my-agent --dry
 ```
 
 `Verdicts` 与 `Pass rate` 只统计 covered 位置，缺口不计 failed；有缺口时 Pass rate 的 state 是 `partial`，人读输出保留该标记。纯计分制范围显示 `Score` 而不显示 `Pass rate`，
@@ -722,15 +712,15 @@ Open: niceeval view
 | `unexplained` | `Unexplained  <diagnostic.summary>` |
 
 一个缺口最多显示三条 delta，其余合成一行 `+N more`；完整列表由 `Next` 行的 `exp <id> --dry` 给出。
-同一个 Experiment 的全部缺口说明相同时，说明只在 `Attempts · <experiment>` 标题下写一次并注明 `all N gaps`，各缺口不再重复。
-说明相同指 delta 的数量、顺序、`selector`、`kind`、`from` 与 `to` 全部相等。
-`from` 与 `to` 沿用差异说明的有界摘要；内容哈希显示前 8 位。其余 reason 没有说明行，它们的 reason code 已经写明原因。
+同一个 Experiment 的全部缺口说明相同时，说明只在 `Attempts · <experiment>` 标题下写一次并注明 `all N attempts`，各缺口不再重复。
+标量值的说明相同指 delta 的数量、顺序、`selector`、`kind`、`from` 与 `to` 全部相等。
+`from` 与 `to` 沿用差异说明的有界摘要；内容哈希显示前 8 位。其余 reason 没有说明行，它们的人读短语已经写明原因。
 结构化值（如 `plan:physical`）不展开原始 JSON：说明行写出发生变化的字段路径，例如 `Changed  plan:physical (template.publishable.spec, commands[0].inputs)`，最多三个路径，其余合成 `+N more`。
-判断「说明相同」时比较这一路径形态，不比较 Eval 自己的 ID 等每格必然不同的字段，因此只因候选版本或共享准备变化而产生的缺口能合并成 `all N gaps`。
+判断「说明相同」时比较这一路径形态，不比较 Eval 自己的 ID 等每格必然不同的字段，因此只因候选版本或共享准备变化而产生的缺口能合并成 `all N attempts`。
 
 ### 全缺口与参照结果示例
 
-当前目标因配置变动导致全部成员产生缺口，且存在可用历史 Attempt 时，总览呈现独立的 `Reference results` 参照区，并在末尾给出补跑规划指引。
+当前目标因配置变动导致全部成员产生缺口，且存在可用历史 Attempt 时，总览呈现独立的 `Earlier results for these` 参照区，并在末尾给出补跑规划指引。
 score 制的参照 Attempt 写成 `Previous result @1FH9Y2RVQFPWN (failed, 34/72)`，参照区相应显示 `Score 61/144`：
 
 ```text
@@ -738,30 +728,42 @@ $ niceeval show
 Current results
   Totals
 
-  Covered    0/14
-  Gaps       14
-  Verdicts   0 passed; 0 failed; 0 errored; 0 skipped
-  Pass rate  unavailable
+  Up to date  0/14
+  Need a run  14
+  Verdicts    0 passed; 0 failed; 0 errored; 0 skipped
+  Pass rate   unavailable
 
-Reference results (from previous recorded attempts)
-  Previous attempts  14 of 14 gaps
+Earlier results for these
+  Previous attempts  14 of 14 needing a run
   Verdicts           12 passed; 2 failed; 0 errored; 0 skipped
   Pass rate          85.71%
   Notice             Prior configuration; rerun required to update target
 
+Need a run
+  classic/baseline  12 need a run · Needs rerun: config:flags.candidateVersion
+  install/canary  2 need a run · Needs rerun: config:agentInstalls
+
+Open: niceeval view
+
+Next
+  niceeval exp classic/baseline --dry
+  niceeval exp install/canary --dry
+```
+
+查看单个 Experiment 才展开变化说明和旧结果：
+
+```text
+$ niceeval show exp:install/canary
 Attempts · install/canary
-  Changed  config:agentInstalls (codex 0.144.1 → codex 0.167.2) · all 2 gaps
+  Changed  config:agentInstalls (codex 0.144.1 → codex 0.167.2) · all 2 attempts
 
   Eval db-gpt
-  Gap identity-mismatch
+  Needs rerun: config:agentInstalls
   Previous result @1Z2NDWH8SWVYJ (passed)
 
   Eval gpt-researcher
-  Gap identity-mismatch
+  Needs rerun: config:agentInstalls
   Previous result @1EM9AT9SZYR96 (passed)
-
-Next: niceeval exp install/canary --dry
-Open: niceeval view
 ```
 
 ### 固定 Record 的历史 Results 示例

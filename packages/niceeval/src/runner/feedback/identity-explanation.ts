@@ -1,6 +1,7 @@
 import type { IdentityExplanation, IdentityDiagnostic } from "../manifest.ts";
 import { stripControl } from "../../assertions/display.ts";
 import { createHash } from "node:crypto";
+import { structuredIdentityPaths } from "../identity-summary.ts";
 
 const DELTA_COMMON_PREFIX_CAP = 24;
 const DELTA_DIFF_WINDOW = 56;
@@ -117,6 +118,8 @@ function summaryHash(value: string): string {
 }
 
 function formatHumanDelta(delta: DisplayDelta): string {
+  const paths = structuredIdentityPaths(delta);
+  if (paths !== undefined) return `${delta.selector} changed (${paths})`;
   if (delta.selector === "config:agentInstalls" && delta.from !== undefined && delta.to !== undefined) {
     const installs = agentInstallDifference(delta.from, delta.to);
     if (installs !== undefined) return `${delta.selector} changed (${installs})`;

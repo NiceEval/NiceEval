@@ -137,8 +137,8 @@ test.concurrent("375 次调用的已知小计保留 19 次费用缺口并公开�
         shown.stdout.slice(shown.stdout.indexOf("Known subtotal"), shown.stdout.indexOf("Application usage")),
       ).toContain("Incomplete");
       expect(shown.stdout).toContain("No Judge calls");
-      expect(shown.stdout).toContain("no-pricing-profile");
-      expect(shown.stdout).toContain("Next: add prices for fixture/unpriced to defineConfig({ pricing })");
+      expect(shown.stdout).toContain("No configured prices for recorded model token usage");
+      expect(shown.stdout).toContain("Pricing: add prices for fixture/unpriced to defineConfig({ pricing })");
       expect(shown.stdout).toContain("https://niceeval.dev/reference/define-config#pricing");
     },
   );

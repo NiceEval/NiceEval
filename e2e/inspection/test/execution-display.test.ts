@@ -88,11 +88,10 @@ test.concurrent("读者从事件展示块读懂应用结果并展开外部轨迹
       const visible = show.stdout.replace(/\s+/gu, " ");
       for (const text of [
         "Generic execution traces",
-        "Conversation · not-recorded",
-        "Commands · not-recorded",
+        "Conversation · not recorded",
+        "Commands · not recorded",
         "Diagnostics · complete",
         "partial",
-        "external-trace",
         "Full trace is stored by the RPG server.",
         "Guard: Halt! Who goes there?",
         "[image] Guard blocks the gate at dusk",
@@ -122,7 +121,9 @@ test.concurrent("读者从事件展示块读懂应用结果并展开外部轨迹
       const expanded = await niceeval.run(["show", locator, external.eventId]);
       expect(expanded.exitCode, expanded.diagnostic()).toBe(0);
       expect(expanded.stdout.split("\n")).toContain("rpg-cli trace show run_8f2c");
-      expect(expanded.stdout.indexOf("rpg-cli trace show run_8f2c")).toBeLessThan(expanded.stdout.indexOf('"payload"'));
+      expect(expanded.stdout.indexOf("rpg-cli trace show run_8f2c")).toBeLessThan(expanded.stdout.indexOf("Payload"));
+      expect(expanded.stdout).not.toMatch(/"[\w-]+"\s*:/u);
+      expect(show.stdout).not.toContain("external-trace");
 
       const full = await niceeval.run(["show", locator, long.eventId]);
       expect(full.exitCode, full.diagnostic()).toBe(0);

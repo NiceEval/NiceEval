@@ -308,7 +308,11 @@ function catalogText(catalog: {
           experiment.model ?? "—",
           `attempts=${experiment.attempts}`,
           `evals=${experiment.evalIds.length}`,
-          `labels=${JSON.stringify(experiment.labels)}`,
+          `labels: ${
+            Object.entries(experiment.labels)
+              .map(([key, value]) => `${key}=${value}`)
+              .join(", ") || "none"
+          }`,
         ].join("\t"),
       )
       .join("\n") + (catalog.experiments.length === 0 ? "" : "\n")
@@ -397,6 +401,7 @@ function acceptText(
 function identityExplanationLines(comparisons: readonly ExperimentHostDryComparison[]): string[] {
   return comparisons.flatMap(function comparisonExplanation(comparison) {
     if (comparison.recordedClaim !== "execution-identity" || comparison.explanation === undefined) return [];
+    if (comparison.explanation.kind === "unexplained") return [comparison.explanation.diagnostic.summary];
     return formatIdentityExplanation(comparison.explanation);
   });
 }
@@ -585,41 +590,42 @@ function dryText(
   const rows = dryRows(plan);
   const reused = plan.slots.filter((slot) => slot.state === "reuse").length;
   const lines = [
-    `plan: ${shape.totalAttempts} attempts · ${shape.evals} evals × ${shape.configurations} configs · runs ${shape.attempts}`,
-    ...(reused === 0 ? [] : [`reuse: ${reused}/${shape.totalAttempts} exact current Record attempts`]),
-    `plugins: ${pluginCount} lifecycle occurrences`,
+    `plan: ${shape.totalAttempts} attempts · ${shape.evals} evals × ${shape.configurations} experiments · attempts ${shape.attempts}`,
+    ...(reused === 0 ? [] : [`using earlier results: ${reused}/${shape.totalAttempts}`]),
+    `plugins: ${pluginCount} lifecycle hooks`,
   ];
   for (const row of rows) {
     const slots = row.slots;
     const reusedAttempts = slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
     const gaps = slots.filter((slot) => slot.state === "gap");
     const explanations = new Map(slots.map((slot) => [slot.attempt, identityExplanationLines(slot.comparisons)]));
-    const reusedParts = reusedAttempts.some((attempt) => explanations.get(attempt)?.length)
-      ? reusedAttempts.map((attempt) => {
-          const summary = explanations.get(attempt)?.[0];
-          return `reused ${attempt}${summary === undefined ? "" : ` ${summary}`}`;
-        })
-      : reusedAttempts.length === 0
-        ? []
-        : [`reused ${reusedAttempts.join(",")}`];
+    const reasons = new Map<string, number>();
+    for (const slot of gaps) {
+      const readback = row.readbacks.find((item) => item.target.attempt === slot.attempt);
+      function previousVerdict() {
+        if (readback?.state === "reused") return readback.verdict;
+        if (readback?.verdict.state === "available") return readback.verdict.value;
+        return undefined;
+      }
+      const reason = dryReasonText(slot.reason, explanations.get(slot.attempt)?.[0], previousVerdict());
+      reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    }
     const parts = [
-      ...(row.locked ? ["locked"] : []),
-      ...reusedParts,
-      ...gaps.map((slot) => {
-        const summary =
-          slot.reason === "identity-mismatch" || slot.reason === "adoption-unproven"
-            ? explanations.get(slot.attempt)?.[0]
-            : undefined;
-        return `gap ${slot.attempt}:${slot.reason ?? "unknown"}${summary === undefined ? "" : `: ${summary}`}${slot.reason === "dynamic-module-unresolved" ? `: ${JSON.stringify(slot.issues)}` : ""}`;
-      }),
+      ...(row.locked ? ["running in another invocation"] : []),
+      ...(reusedAttempts.length === 0 ? [] : [`using earlier results ×${reusedAttempts.length}`]),
+      ...[...reasons].map(([reason, count]) => (count === 1 ? reason : `${reason} ×${count}`)),
     ];
-    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no slots"}`);
+    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no attempts selected"}`);
+    const shownDetails = new Set<string>();
     for (const slot of gaps) {
       if (slot.reason !== "identity-mismatch" && slot.reason !== "adoption-unproven") continue;
       const details = explanations.get(slot.attempt)?.slice(1) ?? [];
       if (details.length > 0) {
-        if (slots.length > 1) lines.push(`  attempt ${slot.attempt}:`);
-        lines.push(...details.map((line) => `  ${line}`));
+        for (const detail of details) {
+          if (shownDetails.has(detail)) continue;
+          shownDetails.add(detail);
+          lines.push(`  ${detail}`);
+        }
       }
     }
     for (const readback of row.readbacks) {
@@ -628,10 +634,40 @@ function dryText(
         if (readback.verdict.state === "available") return readback.verdict.value;
         return readback.verdict.state;
       }
-      lines.push(`  source ${readback.source.locator} · ${readback.state} · verdict ${readbackVerdict()}`);
+      lines.push(`  earlier result ${readback.source.locator} · ${readbackVerdict()}`);
     }
   }
   return `${lines.join("\n")}\n`;
+}
+
+function dryReasonText(reason: string | undefined, summary: string | undefined, verdict: string | undefined): string {
+  switch (reason) {
+    case "no-source-run":
+    case "no-result":
+      return "Not run yet";
+    case "pending":
+      return "Running";
+    case "not-published":
+      return "Run did not finish";
+    case "identity-mismatch":
+      return `Needs rerun: ${summary ?? "configuration changed"}`;
+    case "outcome-ineligible":
+      return `Needs rerun: last attempt ${verdict ?? "did not complete successfully"}`;
+    case "score-incomplete":
+      return "Needs rerun: score incomplete";
+    case "evidence-unavailable":
+      return "Needs rerun: evidence missing";
+    case "timeout-exceeded":
+      return "Needs rerun: timed out";
+    case "adoption-unproven":
+      return "Needs review: earlier result not proven equivalent";
+    case "stateful-input":
+      return "Reruns every time: uses state";
+    case "dynamic-module-unresolved":
+      return "Cannot plan: an imported module could not be resolved";
+    default:
+      return "Needs rerun: earlier result is not usable";
+  }
 }
 
 function dryJson(
@@ -657,11 +693,11 @@ function dryJson(
 
 function renameText(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
   const heading = `Source Run ${result.sourceRunId}\n${result.oldId ?? "Unknown source Experiment"} -> ${result.newId}\n`;
-  if (result.status === "rejected") return `${heading}error: ${result.reason}: ${result.detail}\n`;
+  if (result.status === "rejected") return `${heading}error: ${result.detail}\n`;
   if (result.status === "done")
-    return `${heading}Accepted into new Run ${result.runId}. New members participate in current result selection; earlier Runs remain readable.\n${result.migrated.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}  accepted`).join("\n")}\n`;
-  if (result.blocked !== undefined) return `${heading}error: ${result.blocked.reason}: ${result.blocked.detail}\n`;
-  return `${heading}${result.migrations.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}`).join("\n")}\n${result.migrations.length} members eligible. Applying publishes new current members; earlier Runs remain readable.\nApply: niceeval exp rename ${result.newId} --run ${result.sourceRunId}\n`;
+    return `${heading}Accepted ${result.migrated.length} attempts into new Run ${result.runId}. Earlier Runs remain readable.${result.migrated[0] === undefined ? "" : `\n  source example: ${result.migrated[0].sourceLocator}`}\nNEXT\n  show: niceeval show run:${result.runId}\n  view: niceeval view run:${result.runId}\n`;
+  if (result.blocked !== undefined) return `${heading}error: ${result.blocked.detail}\n`;
+  return `${heading}${result.migrations.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}`).join("\n")}\n${result.migrations.length} attempts can be used. Applying publishes a new Run; earlier Runs remain readable.\nNEXT\n  niceeval exp rename ${result.newId} --run ${result.sourceRunId}\n`;
 }
 
 function renameJson(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
@@ -1197,7 +1233,7 @@ const debugCommand: CliCommandContribution<ExperimentCliRequirements, Experiment
                   beforeCachePlan: result.beforeCachePlan,
                   commandPlan: result.commandPlan,
                 })
-              : `Before-cache plan: ${result.beforeCachePlan.nodes.length} unique nodes · cache lookup not-probed\n${renderHumanCommandPlan(
+              : `Sandbox preparation: ${result.beforeCachePlan.nodes.length} reusable steps · cache lookup: not checked\n${renderHumanCommandPlan(
                   result.commandPlan,
                   {
                     isTTY: invocation.stdout.isTTY,

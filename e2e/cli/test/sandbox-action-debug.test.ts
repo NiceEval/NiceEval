@@ -340,16 +340,14 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
     expect(human.exitCode, human.diagnostic()).toBe(0);
     expect(human.stderr).toBe("");
     expect(human.stdout).toContain("COMMAND PLAN");
-    expect(human.stdout).toContain("agent.install");
+    expect(human.stdout).toContain("Prepare Agent");
     expect(human.stdout).toContain("action: frequency-low");
     expect(human.stdout).toContain("change frequency: 10 · explicit · rare");
     expect(human.stdout).toContain("action: dag-fast-dependent");
     expect(human.stdout).toContain("change frequency: 1 · explicit");
     expect(human.stdout).toContain("execution order: #");
-    expect(human.stdout).toContain("cache: not-probed · unsupported · runtime pending · final key not-probed");
-    expect(human.stdout.replace(/\s+/gu, "")).toContain(
-      `cache unsupported reason: ${EPHEMERAL_BEFORE_CACHE_REASON}`.replace(/\s+/gu, ""),
-    );
+    expect(human.stdout).toContain("cache lookup: not checked");
+    expect(human.stdout).toContain("cache support: not supported by this provider");
     expect(human.stdout).not.toContain(" · eligible");
     expect(human.stdout).not.toContain(" · ineligible:");
     expect(human.stdout.indexOf("action: frequency-low")).toBeLessThan(human.stdout.indexOf("action: frequency-high"));
@@ -376,9 +374,9 @@ test("debug 交付统一且无副作用的 Sandbox action 计划", async () => {
         ],
       ].sort((left, right) => left - right),
     );
-    expect(human.stdout).toContain("step #0: argv");
-    expect(human.stdout).toContain("step #1: putText");
-    expect(human.stdout).toContain(`environment keys: [${JSON.stringify(PRIVATE_ENV_KEY)}`);
+    expect(human.stdout).toContain("step #0: printf");
+    expect(human.stdout).toContain("step #1: write text");
+    expect(human.stdout).toContain(`environment keys: ${PRIVATE_ENV_KEY}`);
     expect(human.stdout).toContain("stdin: sha256:");
     expect(human.stdout).not.toContain(PRIVATE_ENV_VALUE);
     expect(human.stdout).not.toContain(PRIVATE_STDIN.trim());
