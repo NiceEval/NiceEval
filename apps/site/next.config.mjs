@@ -1,4 +1,5 @@
 import { networkInterfaces } from "node:os";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 const localDevOrigins = [
   "127.0.0.1",
@@ -9,8 +10,16 @@ const localDevOrigins = [
   ),
 ];
 
+const release = process.env.SENTRY_RELEASE || (process.env.VERCEL_GIT_COMMIT_SHA ? `site@${process.env.VERCEL_GIT_COMMIT_SHA}` : "");
+const environment = process.env.SENTRY_ENVIRONMENT || process.env.VERCEL_ENV || "production";
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  env: {
+    SENTRY_RELEASE: release,
+    NEXT_PUBLIC_SENTRY_RELEASE: release,
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: environment,
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "",
+  },
   reactStrictMode: true,
   // dev server 监听 0.0.0.0 时，浏览器实际使用回环或网卡 IP；只放行本机
   // 拥有的地址，避免 Next 把 hydration / HMR chunk 当成跨站请求拦成 403。
@@ -38,4 +47,12 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: "instaai",
+  project: "niceeval-landing",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  telemetry: false,
+  silent: !process.env.CI,
+  release: { name: release, create: !!process.env.SENTRY_AUTH_TOKEN },
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN, deleteSourcemapsAfterUpload: true },
+});
