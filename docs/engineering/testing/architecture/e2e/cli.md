@@ -93,11 +93,10 @@ callback 与 legacy command 是 opaque barrier，后续 action 标记 `opaque-an
 
 #### cli-sandbox-project-preflight
 
-`niceeval sandbox list` 在语法检查成功后准备当前项目的 `.env` 凭据，因此凭据文件不可读时会在调用
-Sandbox Provider 前失败；它不加载或求值 `niceeval.config.*`，空留存表仍输出
-`No kept sandboxes.`。这个单边界 owner 使用本机空注册表，不连接 Docker、E2B、Vercel 或其它
-Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox list --json` 在凭据准备和配置
-求值之前以 unknown option 拒绝，不继承或静默吞掉其它命令的 `--json`。
+`niceeval sandbox provider doctor incus` 不加载或求值 `niceeval.config.*`，项目 `.env` 不可读时也照常输出诊断；
+缺失的 provider descriptor 只让 Configuration 检查失败，其余检查明确标为未运行。命令路由先完成用法检查：
+维护 flag 用错位置时在凭据准备与配置求值之前以英语用法错误拒绝，`--help` 在任意位置都由全局 CLI 处理。
+这个单边界 owner 不连接 Incus、Docker 或其它 Sandbox Provider。
 
 ### 缓存
 
@@ -112,7 +111,7 @@ Sandbox Provider。Sandbox 只接受自己声明的 option；例如 `sandbox lis
 对人读文本与 `--json` 两种输出形态各跑一次真实进程，在真实 stdout/stderr 上断言[Experiments CLI](../../../../feature/experiments/cli/README.md) 声明的反馈契约。`--json` 每行是一个可 `JSON.parse` 的事件对象，永不出现 ANSI 控制字符，正常事件全部落在 stdout，只有 run 建立前的错误落 stderr。非 TTY 人读文本是零 ANSI 的单一 stdout 追加流。真实 PTY smoke 证明运行期确实选择 dashboard renderer、产生光标控制与框面，并与另外两种形态给出一致的完成态判定和退出码。
 TTY 的精确宽度、行高降级、折叠和逐帧顺序由[Runner](../unit/experiments-runner.md)对可控 IO 的纯 renderer 输出证明；E2E 不实现第二个终端模拟器，也不逐秒断言心跳节奏。
 
-公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。`exp` 上已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 只属于 `niceeval show @<locator>` 的 Attempt 读取，`exp` 的命令 schema 必须把它们当未知 flag 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
+公开命令与 flag 的进程级失败面同样在本仓库验收。未采纳的 `watch` 是未知命令，必须在装载项目之前以明确用法错误退出。`exp` 上已删除的 `--output` 与不存在的 `--quiet` 是未知 flag；`--execution`、`--timing`、`--source` 不是任何命令的 flag（Attempt 的这些方面写作 `niceeval show @<locator> execution` 等），`exp` 与 `show` 的命令 schema 都必须把它们当未知 flag 拒绝。`--dry` 的人读/JSON 两面都不写请求的 JUnit 文件，`--dry --json` 只输出一个计划文档而不是事件流。
 flag 组合的完整语义矩阵仍由 unit 的纯 parse 与错误对象证明，本域只保留每类公开进程边界的一条区分力代表。
 
 #### cli-live-pty
@@ -126,13 +125,13 @@ scrollback 倒推「运行中」状态。
 
 flag 组合、错误文案与选择器的语义广度归[单元测试](../unit/README.md)；本仓库证明的是这些行为在真实模型、真实进程退出码下端到端成立。
 
-固定 query 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有的是运行侧 CLI 行为——选择、退出码、缓存。
+固定 Inspection 读面在每个仓库验收链尾以各自真实数据验证；本仓库拥有运行侧 CLI 的选择、退出码与缓存。
 ## 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。 {#cli-sandbox-step-activity}
 
 安装后 CLI 在真实 TTY 中显示声明式 Sandbox step 的安全具体动作，并隐藏 wrapper、正文、source path 与 env values。
-## init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。 {#cli-init-inspection-guidance}
+## init 生成与安装版本一致的 show、show --json 与 view 指引。 {#cli-init-inspection-guidance}
 
-init 生成与安装版本一致的 query、show 与 view 指引，用户可从对应 CLI 帮助确认选择语法。
+init 指引通过对象地址读取结果，JSON 的 links 与人读 Next 使用同一规则；用户可从 CLI 帮助确认选择语法。
 ## 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。 {#cli-legacy-record-recovery}
 
 旧项目状态阻塞写入时，CLI 保留原始数据并给出不依赖迁移命令的恢复路径；随包指南说明相同的数据保留边界。

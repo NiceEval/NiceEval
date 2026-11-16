@@ -10,20 +10,24 @@ const failure = (cause: unknown) => new Error(cause instanceof Error ? cause.mes
 
 export const DockerCacheAdministrationLive = Layer.succeed(DockerCacheAdministration, {
   listDomains: () => Effect.scoped(listDockerCacheDomainsEffect()).pipe(Effect.mapError(failure)),
-  observeBuildKitCapacity: () => observeDockerBuildKitCapacityEffect.pipe(
-    Effect.map((capacity) => [capacity]),
-    Effect.mapError(failure),
-  ),
-  openDomain: (descriptor: DockerCacheDomainDescriptor) => Effect.succeed({
-    descriptor,
-    inventory: () => Effect.tryPromise({ try: () => liveTaskBuildCacheAdminService.inventory(), catch: failure }),
-    planGc: () => Effect.tryPromise({
-      try: () => liveTaskBuildCacheAdminService.planGc(descriptor.domainId),
-      catch: failure,
+  observeBuildKitCapacity: () =>
+    observeDockerBuildKitCapacityEffect.pipe(
+      Effect.map((capacity) => [capacity]),
+      Effect.mapError(failure),
+    ),
+  openDomain: (descriptor: DockerCacheDomainDescriptor) =>
+    Effect.succeed({
+      descriptor,
+      inventory: () => Effect.tryPromise({ try: () => liveTaskBuildCacheAdminService.inventory(), catch: failure }),
+      planGc: () =>
+        Effect.tryPromise({
+          try: () => liveTaskBuildCacheAdminService.planGc(descriptor.domainId),
+          catch: failure,
+        }),
+      applyGc: (planId: string) =>
+        Effect.tryPromise({
+          try: () => liveTaskBuildCacheAdminService.applyGc(descriptor.domainId, planId),
+          catch: failure,
+        }),
     }),
-    applyGc: (planId: string) => Effect.tryPromise({
-      try: () => liveTaskBuildCacheAdminService.applyGc(descriptor.domainId, planId),
-      catch: failure,
-    }),
-  }),
 });

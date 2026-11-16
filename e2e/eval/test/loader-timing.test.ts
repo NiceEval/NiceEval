@@ -14,22 +14,33 @@ test.concurrent("无宿主读取后同进程发现仍登记共享文件，发现
     }
     await writeFile(join(projectRoot, "input.txt"), "first");
     await writeFile(join(projectRoot, "input.json"), '{"ok":true}');
-    await writeFile(join(projectRoot, "input.yaml"), 'ok: true\n');
-    await writeFile(join(projectRoot, "shared.mjs"), `import { loadText } from "niceeval/loaders";\nexport const text = await loadText(new URL("./input.txt", import.meta.url));\n`);
+    await writeFile(join(projectRoot, "input.yaml"), "ok: true\n");
+    await writeFile(
+      join(projectRoot, "shared.mjs"),
+      `import { loadText } from "niceeval/loaders";\nexport const text = await loadText(new URL("./input.txt", import.meta.url));\n`,
+    );
     for (const id of ["a", "b"]) {
-      await writeFile(join(projectRoot, `evals/${id}.eval.ts`), `
+      await writeFile(
+        join(projectRoot, `evals/${id}.eval.ts`),
+        `
 import { defineEval } from "niceeval";
 import { equals } from "niceeval/expect";
 import { text } from "../shared.mjs";
 export default defineEval({ test(t) { t.check(text, equals("first")); } });
-`);
+`,
+      );
     }
-    await writeFile(join(projectRoot, "experiments/loaders.ts"), `
+    await writeFile(
+      join(projectRoot, "experiments/loaders.ts"),
+      `
 import { defineExperiment } from "niceeval";
 import { defineAgent, completeEvidenceCoverage } from "niceeval/adapter";
 export default defineExperiment({ evals: ["a", "b"], adapter: defineAgent({ name: "loaders", evidenceCoverage: completeEvidenceCoverage, send: async () => ({ status: "completed", events: [] }) }) });
-`);
-    await writeFile(join(projectRoot, "loader-consumer.mjs"), `
+`,
+    );
+    await writeFile(
+      join(projectRoot, "loader-consumer.mjs"),
+      `
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { Effect } from "effect";
@@ -61,7 +72,8 @@ await writeFile("input.txt", "second");
 const second = await plan();
 for (const slot of first) assert.notEqual(second.find(next => next.id === slot.id).digest, slot.digest, slot.id + " must register its shared loader input");
 console.log("loader timing and shared fingerprints verified");
-`);
+`,
+    );
     const result = await command([process.execPath]).run(["loader-consumer.mjs"], { cwd: projectRoot });
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.stdout).toContain("loader timing and shared fingerprints verified");

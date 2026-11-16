@@ -6,7 +6,9 @@ export default defineExperiment({
   adapter: flagsAdapter,
   flags: JSON.parse(process.env.NICEEVAL_E2E_FLAGS_INPUT ?? "{}"),
   evals: ["parsed-flags"],
-  before() { appendFileSync("flags-lifecycle.txt", "setup\n"); },
+  before() {
+    appendFileSync("flags-lifecycle.txt", "setup\n");
+  },
 });
 
 // A validator may retain its result; the experiment must own an independent copy.

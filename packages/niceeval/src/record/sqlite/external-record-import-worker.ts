@@ -3,13 +3,9 @@ import { open } from "node:fs/promises";
 import { backup } from "node:sqlite";
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { closeRecordDatabase, openRecordReader, validateExactSchema, type RecordDatabase } from "./database.ts";
+import { encodeStorageWorkerFailure } from "./worker-protocol.ts";
 import { sqliteError } from "./errors.ts";
-import { capturedRecordSchemaKind, migrateHostOwnedProjectDatabase } from "./migration.ts";
-import {
-  captureSingleFileRecord,
-  projectRecordReadMode,
-  validatePortableRecordDatabase,
-} from "./portable-capture.ts";
+import { captureSingleFileRecord, projectRecordReadMode, validatePortableRecordDatabase } from "./portable-capture.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
 import type { RecordImportSourceKind } from "./external-record-import.ts";
 
@@ -21,26 +17,35 @@ interface ExternalRecordImportInput {
 }
 
 function decodeInput(value: unknown): ExternalRecordImportInput {
-  if (typeof value !== "object" || value === null ||
-    typeof Reflect.get(value, "sourcePath") !== "string" || Reflect.get(value, "sourcePath") === "" ||
-    typeof Reflect.get(value, "generationPath") !== "string" || Reflect.get(value, "generationPath") === "" ||
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof Reflect.get(value, "sourcePath") !== "string" ||
+    Reflect.get(value, "sourcePath") === "" ||
+    typeof Reflect.get(value, "generationPath") !== "string" ||
+    Reflect.get(value, "generationPath") === "" ||
     !Number.isSafeInteger(Reflect.get(value, "deadlineEpochMs")) ||
     (Reflect.get(value, "sourceKind") !== "external-record" &&
       Reflect.get(value, "sourceKind") !== "project-record" &&
-      Reflect.get(value, "sourceKind") !== "captured-project-record")) {
+      Reflect.get(value, "sourceKind") !== "captured-project-record")
+  ) {
     throw sqliteError("record-database-invalid", "import-record", "Record import worker input is invalid");
   }
-  return Object.freeze({
+  return {
     sourcePath: String(Reflect.get(value, "sourcePath")),
     generationPath: String(Reflect.get(value, "generationPath")),
     deadlineEpochMs: Number(Reflect.get(value, "deadlineEpochMs")),
     sourceKind: Reflect.get(value, "sourceKind") as RecordImportSourceKind,
-  });
+  };
 }
 
 function deadline(input: ExternalRecordImportInput, phase: string): void {
   if (Date.now() >= input.deadlineEpochMs) {
-    throw sqliteError("record-resource-limit-exceeded", "import-record", `Record import ${phase} exceeded its deadline`);
+    throw sqliteError(
+      "record-resource-limit-exceeded",
+      "import-record",
+      `Record import ${phase} exceeded its deadline`,
+    );
   }
 }
 
@@ -89,14 +94,6 @@ async function importOperationalProjectRecord(input: ExternalRecordImportInput):
 async function importCapturedRecord(input: ExternalRecordImportInput, rejectAnySidecar: boolean): Promise<number> {
   await captureSingleFileRecord(input.sourcePath, input.generationPath, input.deadlineEpochMs, rejectAnySidecar);
   deadline(input, "capture");
-  const kind = capturedRecordSchemaKind(input.generationPath);
-  if (kind === "legacy") {
-    await migrateHostOwnedProjectDatabase(input.generationPath, 0, "private-portable", input.deadlineEpochMs);
-  }
-  deadline(input, "migration");
-  // A current project capture preserves operational read semantics. Only
-  // external input promises portable state; historical migration already
-  // proves it before and after converting the private copy.
   return validateGeneration(input, input.sourceKind === "external-record");
 }
 
@@ -129,17 +126,9 @@ async function importRecord(input: ExternalRecordImportInput): Promise<number> {
 if (!isMainThread && parentPort !== null) {
   const port = parentPort;
   void importRecord(decodeInput(workerData)).then(
-    (sealedRunCount) => port.postMessage(Object.freeze({ state: "success", sealedRunCount })),
+    (sealedRunCount) => port.postMessage({ state: "success", sealedRunCount }),
     (cause: unknown) => {
-      const error = cause instanceof Error ? cause : new Error(String(cause));
-      port.postMessage(Object.freeze({
-        state: "failure",
-        error: Object.freeze({
-          code: typeof Reflect.get(error, "code") === "string" ? String(Reflect.get(error, "code")) : "record-sqlite-error",
-          operation: typeof Reflect.get(error, "operation") === "string" ? String(Reflect.get(error, "operation")) : "import-record",
-          message: error.message,
-        }),
-      }));
+      port.postMessage({ state: "failure", error: encodeStorageWorkerFailure(cause, "import-record") });
     },
   );
 }

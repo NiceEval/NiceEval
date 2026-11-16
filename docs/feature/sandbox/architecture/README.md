@@ -10,7 +10,7 @@
  Sandbox Case create / build / start / ready
   → reset                                     # 复用时每 Attempt 都执行
   → attempt before                            # 四类 owner 的 DAG 按依赖与 changeFrequency 排队
-  → agent.ensure 循环                      # agent.ensure:probe、缺失时配对安装层 install、复检
+  → agent.install 循环                      # agent.install:probe、缺失时配对安装层 install、复检
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → Agent runtime setup                    # agent.setup:本 Attempt 的连接与运行配置
   → test(t)                                # ← 驱动 Agent 与读取结果:
@@ -79,7 +79,7 @@ export default defineEval({
 });
 ```
 
-- **三类 commit 时点。** baseline 一笔（`workspace.baseline` 阶段，各 owner 的 before 与 `agent.ensure` 循环之后）。
+- **三类 commit 时点。** baseline 一笔（`workspace.baseline` 阶段，各 owner 的 before 与 `agent.install` 循环之后）。
   每次 `t.send()` 进入前,workdir 有尚未入账的变化就落一笔 **eval 归因**(`test(t)` 里 send 前的 fixture 写入与 `runCommand` 副作用都在这类)。
   `t.send()` 返回后落一笔 **agent 归因**。
   `agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 区间之外,不需要 exclude 一类补丁。
@@ -98,6 +98,8 @@ export default defineEval({
 - **路径与区间上限。** 导出阶段单个 send 区间最多扫描 100,000 个路径；File Changes 最多保留 256 个 send 区间。v1 decoder 继续接受每个区间与整份 Attachment 最多 10,000 个 changes；新 producer 每个区间与整份 Attachment 只保留 1,000 个 changes。超过 producer 保留上限但未超过扫描上限时，collector 保存确定性前缀并写 `collection-cap-reached`，不能把 partial 证据报告为 diff unavailable。1,000 条只是不让 durable 文件变化轨迹膨胀，不承诺大文本最坏情况也满足空文件的性能门。
 - **内容与 policy 上限。** 导出阶段单个 send 区间最多扫描 256 MiB 去重文本；File Changes 最多保留 20,000 个 blobs、128 MiB blob bytes 和 16 MiB payload JSON。完整 text revision 与单个 blob 最多 1 MiB。超过保留上限但未超过扫描上限时由 collector 省略后续 content 并写 partial limitation。归因 policy 的 `include` 与 `ignore` 各最多 256 项，每项最多 4,096 UTF-8 bytes。
 - **固定截断顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序处理。达到任一采集上限时，它停止在第一个放不下的候选，不跳过该项去采后面的项。已捕获的安全前缀连同 `collection-cap-reached` limitation 写成 `partial`。
+- **归因排除身份。** File Changes 的 `defaultPolicy` 保存默认排除集合的 SHA-256 摘要；实际默认规则变化使该身份变化。
+
 - **内容形态不偷换。** 二进制或超过 1 MiB 的 text revision 写为 `elided`，带 `binary` 或 `oversized-text` 原因与 byteLength；这本身是完整采集。content blob 碰到 collection cap 时，text content 写为 `omitted(collection-cap)` 并形成 partial。尺寸在传输前核算。内容被省略时，路径与状态断言仍可确定，依赖文本的断言如实成为 `unavailable`。
 
 File Changes collector 对 Sandbox Attempt 适用时必须封口一个 Attachment。完整空轨迹写
@@ -117,7 +119,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readText` / `runCom
 
 这条链上每个实际执行的环节都被计时并封入 Attempt-owned Observability 的 timing collection：排队与创建分列、各 owner 的 before 逐条形成时间树，收尾段（Agent 收尾 / cleanup / `stop`）在判定口径之外单独计时。
 
-Sandbox 创建成功后，core 只包装一次返回的中性 `Sandbox`。所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase、command 或 turn 下。`sandbox.before.<owner>` 的依赖安装、`agent.ensure` 的 CLI 安装、Adapter runtime、workspace baseline/diff 与 callback after 的回存命令，都能继续展开到真实 shell。Provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次，不重复计时。
+Sandbox 创建成功后，core 只包装一次返回的中性 `Sandbox`。所有经四个公开 `run*()` 方法发出的调用自动挂到当时的 phase、command 或 turn 下。`sandbox.before.<owner>` 的依赖安装、`agent.install` 的 CLI 安装、Adapter runtime、workspace baseline/diff 与 callback after 的回存命令，都能继续展开到真实 shell。Provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次，不重复计时。
 
 runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点。例如 `workspace.diff` 落一次 `export workspace diff` operation,其下是一条涵盖全部区间的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
@@ -135,9 +137,9 @@ operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer �
 
 这样「沙箱起了多久、before 哪条命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。
 
-阶段与时间树口径见 [Phase Timings](../../../engineering/benchmark/README.md)。machine query 与 [Insight](../../insight/README.md) 都通过 [Inspection](../../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
+阶段与时间树口径见 [Phase Timings](../../../engineering/benchmark/README.md)。`show --json` 与 [Insight](../../insight/README.md) 都通过 [Inspection](../../inspection/README.md) 的固定 operation 读取闭合 Observability facts。
 
-核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.ensure 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../../eval/use-case/sandbox-coding.md)。
+核心固定的是这条调用链本身:Case 就绪后先按 occurrence schedule 满足 action 与 agent.install 循环,再打分类账 baseline；`test(t)` 中的普通上传、turn 和判分命令按源码顺序执行。agent diff 只保留 `send` 区间轨迹，区间外写入属于 Eval 归因。完整路径见 [Eval 用例 · 沙箱 coding 任务](../../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
@@ -180,7 +182,7 @@ Docker 的正常 finalizer 不停止容器。`setsid --wait` 把 Docker exec rec
 write、close、terminate 与 wait 都共享幂等 receipt；stdin 一进入 closing 就拒绝晚写。
 output poll 在 exit、stream error、terminate fallback 与 Scope cleanup 路径清除。
 
-## 留存(keep)与注册表
+## 留存(keep)
 
 [`--keep-sandbox`](../cli.md) 的留存决策发生在 attempt 收尾链的最后一步。
 Verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored` Verdict 对应的现场，包括被硬超时打断后形成的 `errored` Verdict；`all` 档提交全部 Verdict 对应现场。
@@ -195,14 +197,12 @@ attempt 的最终 `locator` 在调度前已经由当前 `RecordWriteSession` 分
 
 留存提交严格按以下顺序,不能调换:
 
-1. 把完整登记项原子写入持久注册表。一条 = `{ sandboxId, provider, evalId, attempt, experimentId?, locator, verdict, keptAt, workdir, enter?, expiresAt?, state, lease? }`,`state` 初值 `"alive"`(实例此刻还在跑);`lease` 是事后命令的互斥凭据(语义见 [CLI · 条目级 lease](../cli.md#niceeval-sandbox查看与销毁留存的沙箱))。
-2. 写入成功后,才把 disposition 改成 `keep` 并从本次 run 的内存收尾集合移除。
-3. 写入失败时保持 `stop`,写入 diagnostic,让 Scope finalizer 正常销毁;Attempt 不会伪造已留存的 Record 状态。
-4. disposition 为 `keep` 时,Scope release 阶段执行 provider **suspend**(`sandbox.suspend` phase,其边界由 Observability timing 节点表达——e2b pause 的耗时随内存增长,不许藏在计时外)。成功后把登记项 `state` 更新为 `"dormant"`;失败时保持 `"alive"` 并追加 Observability diagnostic。现场仍被注册表管理、仍可 enter,只是没省下资源,**不销毁、不冒充 dormant**。suspend 与任何收尾步骤一样不反改 Verdict。
+1. Agent teardown、已登记 cleanup 与 lifecycle teardown 先完成。
+2. Scope release 阶段执行 provider **suspend**(`sandbox.suspend` phase,其边界由 Observability timing 节点表达——e2b pause 的耗时随内存增长,不许藏在计时外)。
+3. 随后把 disposition 改成 `keep`,从本次 run 的内存收尾集合移除,并发出 `kept` 反馈(`nativeCommand`、`cleanCommand`,以及 provider 声明保留期限时的 `expiresAt`)。
+4. suspend 失败时追加 Observability diagnostic;现场仍留存、不销毁,但不冒充已休眠。suspend 与任何收尾步骤一样不反改 Verdict。
 
-持久注册表是 `.niceeval/sandboxes/` 下的**逐条目文件**,不是多个 attempt 竞争改写的一份 JSON。
-
-entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时文件、`fsync` 文件后 `rename` 成 `<entry-id>.json`,再 `fsync` 目录;不同 attempt 与不同 niceeval 进程不会互相改写。
+NiceEval 不为留存现场维护私有注册表、条目状态或事后命令 lease。留存只产生两类事实:本次 Invocation 的 `kept` 反馈,以及创建期写入实例的 Provider 原生标签;实例 id 与留存状态不成为可携带 Record 事实。之后的状态查看、进入与销毁都以 Provider 原生 CLI 为准。
 
 留存实例的排查与销毁全面委托给原生成熟 Provider 工具（Docker CLI、Instabox CLI 等），自研管理命令已下线。
 
@@ -212,14 +212,14 @@ entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时�
 
 各 provider 的留存语义——suspend 把现场转入该 provider **最持久的低成本形态(休眠)**,「留下」不等于「继续跑」:
 
-- **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价。容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩已登记的 kept 容器。强杀留下的未登记候选由[孤儿核对](#孤儿核对强杀路径的实例面回退)按运行标识收回。
+- **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价。容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩 kept 容器。停驻容器不能直接 exec,因此 `nativeCommand` 是 `docker start <id> && docker exec -it <id> /bin/bash`,`cleanCommand` 是 `docker rm -f <id>`;强杀留下的候选按[运行标识](#孤儿核对强杀路径的实例面回退)用原生命令收回。
 - 停驻的容器不会自己消失,仍是唯一需要用户主动 stop 的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
 - **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次 Run 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上 Run 的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从 Run 最后一次使用起算),niceeval 不改写这个参数,默认值就是留存现场实际的保留期限。
 - **Incus nested Docker** —— DestroyOnly，不参与留存。`--keep-sandbox` 与 `incusSandbox()` 组合在创建资源前报错。
-- **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
+- **`defineSandbox` 自定义 provider** —— 不参与留存。NiceEval 无法为任意自定义实例给出可在新进程中执行的原生进入与销毁命令,留下后会成为无人能可靠回收的资源。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
-`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻、何时过期或收尾成功与否只留在注册表，`phases` 无 `sandbox.stop` 条目。
+`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。是否已停驻由 `sandbox.suspend` timing 与 diagnostic 表达，`phases` 无 `sandbox.stop` 条目。
 
 ## Sandbox 的可携带事实只用九个固定运行事实 family
 
@@ -239,19 +239,19 @@ Sandbox 不定义自己的可携带 schema。创建、before、复用和留存�
 | 超出有界命令摘要的大型具类型对象 | Attempt 或 Run 的 Artifacts |
 
 provider 实例 id、复用池编号、承接序号、live / dormant 状态、workdir、URL、credentials 与 detached cleanup locator
-都只属于运行期 Case 或留存注册表。它们不进入 portable Record，不能因读取历史 Attempt 而重建，也不能在恢复现场后补写。
+都只属于运行期 Case 与留存反馈。它们不进入 portable Record，不能因读取历史 Attempt 而重建，也不能在恢复现场后补写。
 
 读取一个已知 current family 只会得到 `available`、`not-recorded` 或 `invalid`。这三态描述已发布 closure
 的可读性；unknown/future durable bytes 在 reader session 形成前返回 `unsupported-format`，I/O 与 permission
-failure 仍是值形成前的 typed Record read error。schema 演进和 migration 只由
-Record maintenance 安排，Sandbox 不建立 converter、group 或读取侧 fallback。
+failure 仍是值形成前的 typed Record read error。旧格式不迁移；保留原存储后重新运行。
+Sandbox 不建立 converter、group 或读取侧 fallback。
 
 公开读取经过固定 Inspection operation 的闭合 result，而不是 Sandbox 直接暴露存储能力：
 
 ```sh
-# 使用 discover 返回的 schema 形成 `attempt.diff`、`attempt.trace` 等固定 request。
-niceeval query discover
-niceeval query run --request attempt-diff.request.json
+# `diff` 调用 `attempt.diff`，`execution` 调用 `attempt.trace`。
+niceeval show @<locator> diff --json
+niceeval show @<locator> execution --json
 ```
 
 `history` 从 Observability 闭合 Sandbox 的命令、timing 与 diagnostics；`changes` 从 FileChanges 闭合归因文件事实。
@@ -263,9 +263,8 @@ handle 或可再次写盘的回调。
 进程内的收尾集合与 Scope finalizer 顾及不到 `SIGKILL` / 宿主断电——没有任何代码来得及执行,正在跑的沙箱就地变成 provider 侧的无主实例。这条路径的回退不追求「杀不掉的进程也能收尾」(做不到),而是把「事后认领」做成可靠的机器动作:创建时把归属写进实例元数据,事后按归属核对与收回。
 
 - **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(Run 时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的回退是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
-- **孤儿的判定是三条「与」**:带 niceeval 运行标识、不在留存注册表、且属主 run 已被证实死亡(标识里的 `host` 等于当前宿主机名,且 `pid` 探测不存活)。三条缺一不可:注册表里的 kept 沙箱是被管理的现场,不是孤儿;属主 run 还活着的实例属于并发运行中的另一次 run,绝不能收;`host` 不匹配或 pid 无法核对的实例标 `unverified`,列出但不自动销毁——误杀一台活实例的代价高于多留一台待人工确认,判定必须偏保守。
-- **核对与收回依托 Provider 原生管理工具**:用户使用 Provider 原生命令（如 `docker ps -a` 查看状态，`docker rm -f` / `docker container prune` 销毁已核实孤儿）进行维护，不通过自建注册表伪造管理层。两个通道均走各 provider 的原生链路。
-- **核对与收回按 case 的实例及伴随资源整体进行**:单 Sandbox 实例只有主实例;Compose 实例的运行标识写在 project label 上,伴随容器与网络随主实例整组列出、整组销毁。prune 是强杀与中断后唯一的官方收尾手段,case 新增资源种类(sidecar 容器、网络、volume、云端资源)时,把它接入孤儿核对词表是该 case 契约的一部分,不允许有 prune 看不见的残留。
+- **NiceEval 不自建孤儿轮询或收回命令。** 运行标识让用户与 Coding Agent 能用 Provider 原生过滤(如 `docker ps -a --filter "label=niceeval"`)区分实例归属:同宿主且 `pid` 已不存活的实例是孤儿;属主进程仍存活的实例属于另一次运行;`host` 不匹配的实例需要人工确认。
+- **收回按 case 的实例及伴随资源整体进行**:单 Sandbox 实例只有主实例;Compose 实例的运行标识写在 project label 上,伴随容器、网络与 volume 随 project 整组销毁。case 新增资源种类(sidecar 容器、网络、volume、云端资源)时,必须让它带上同一运行标识,不允许有原生过滤看不见的残留。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,回退在实验面,机制见 [Experiments · 强杀后的收尾回退](../../experiments/architecture/README.md#强杀后的收尾回退收尾登记与启动自愈)。
 
 ## Docker provider(本地,零云依赖)
@@ -355,13 +354,30 @@ OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 At
 
 HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
 
-SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每个执行连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
+SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每台 Machine 只持有一条 SSH 连接，命令与受管进程各占其中一个 channel；连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。连接在第一次需要时建立，随 Machine 的 Scope 关闭。一条命令的固定开销是一次 channel 往返，不含握手：同一台 Machine 上连续 20 条 `true` 的总耗时不得超过单条耗时加 20 次往返，验收按这个关系断言，不写死毫秒数。
 
-普通命令的前台进程结束后关闭自身管道并提交退出码，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。双向进程通过 SSH channel 写 stdin 与发送 EOF。连接异常、退出码缺失、命令超时或取消均退休并删除整台 Machine，等待确认后再 settle。正常退出只关闭连接。外层 Scope 最终删除实例，包含其余后代进程。
+Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
 
-文件使用原生 HTTP bytes 接口，目录传输复用既有收集和下载能力。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力；Before cache 见 [远端 snapshot Before cache · Instabox](remote-snapshot-cache.md#instabox)。
+supervisor 不依赖 SSH 会话存活。它为每个进程在 Machine 上建一个只属于该进程的 spool 目录，把 stdout、stderr 按原始字节追加写入各自的文件，进程结束后原子写入退出文件（退出码或信号）。channel 只是这些文件的读取端：客户端保存每个流已经交付的字节偏移，读到退出文件之后进程才算结束。
 
-验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。
+stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 stdin 字节数持久化在 spool 里，EOF 是否已送达也在其中；客户端保留尚未被确认的字节，收到确认后才丢弃。Agent 驱动进程这类全程开着 stdin 的双向进程靠这一条跨过断线：它运行时间最长，丢一次就是整个 Attempt。普通命令的前台进程结束后写入退出文件，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。
+
+连接断开不等于进程丢失。连接或 channel 异常时，Provider 在 60 秒内最多重连 3 次，重连成功后从已交付的偏移继续读取同一个 spool，并向 supervisor 取回已接收的 stdin 字节数，从该偏移补发未确认的字节与 EOF。调用方看到的输出不重复、不缺失，目标进程收到的 stdin 不重复、不缺失，命令事实只有一条。同一台 Machine 上的全部进程共用这一次重连。重连期间命令自己的时限照常计时。以下情况才退休并删除整台 Machine，等待确认后再 settle：
+
+- 重连次数或时限用完；
+- 重连后 spool 目录或 supervisor 不存在；
+- 命令超时或取消。
+
+退休时抛出的错误写明触发原因（keepalive 超时、连接被对端关闭、channel 错误、握手失败等 ssh 层给出的原因）、重连次数、进程已运行时长和已交付的字节数，随 Attempt 的 failure diagnostic 保存。错误文本不含 token。成功重连写一条 `sandbox-transport-reconnected` Observability diagnostic，带同样的原因与次数，不改变命令结果与 Verdict。Machine 因传输失败退休之后，对同一个 Sandbox 的后续命令与文件操作都以这次退休的原因失败，不把服务端返回的 404 当作首要错误交给调用方。正常退出只归还 channel。外层 Scope 最终删除实例，包含其余后代进程。
+
+文件使用原生 HTTP bytes 接口。目录上传把整棵目录打成一个归档，经一次 HTTP 写入送达，再用一条命令展开并一次设好全部权限位；命令条数与目录里的文件数、目录数无关。目录下载同样是一条归档命令加一次 HTTP 读取。归档展开失败按命令失败处理，不留下只展开了一部分却报告成功的目录。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力；Before cache 见 [远端 snapshot Before cache · Instabox](remote-snapshot-cache.md#instabox)。
+
+验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。连接复用、断线续读与目录传输另有四条验收：
+
+- 同一台 Machine 上连续命令的耗时关系。
+- 命令运行中由测试从客户端一侧强行断开 SSH 连接，命令仍以原退出码结束、输出逐字节完整，并留下 `sandbox-transport-reconnected`。
+- 一个持续读写 stdin 的双向进程在两次写入之间被断开，重连后对端收到的字节序列与发送的完全一致，EOF 只送达一次。
+- 上传一棵含多层目录与可执行文件的目录后，Record 里只有一条展开命令，权限位读回一致。
 
 ## Provisioning 失败与重试
 
@@ -374,7 +390,7 @@ SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fing
 - **拒绝类**(请求确定没被受理):限流响应、连接建立失败(DNS 查询失败、连接被拒、TLS 握手失败)。
 - **歧义类**(请求可能已被受理、只是响应丢了):响应中途的连接重置(`fetch failed`、`other side closed`)、请求超时、5xx。
 
-这个分类描述的是**单个请求**,而被重试的单元是 provider 的整个 `create()`——它通常不止一个请求:SDK 创建调用之后还有初始化步骤(E2B 备工作区目录;Docker 启动容器、补装基础工具、修工作区属主)。一个被归入拒绝类的 429 完全可能来自实例已创建成功之后的初始化请求,「拒绝类 ⇒ 远端没有实例」对闭包整体不成立。盲目重试会在远端积累没有任何一方持有 id 的实例——泄漏计费资源,也打破[「不留无主沙箱」](#留存keep与注册表)的不变量。防泄漏因此是两道独立的防线:
+这个分类描述的是**单个请求**,而被重试的单元是 provider 的整个 `create()`——它通常不止一个请求:SDK 创建调用之后还有初始化步骤(E2B 备工作区目录;Docker 启动容器、补装基础工具、修工作区属主)。一个被归入拒绝类的 429 完全可能来自实例已创建成功之后的初始化请求,「拒绝类 ⇒ 远端没有实例」对闭包整体不成立。盲目重试会在远端积累没有任何一方持有 id 的实例——泄漏计费资源,也打破[「不留无主沙箱」](#留存keep)的不变量。防泄漏因此是两道独立的防线:
 
 - **kill-on-failure(provider 义务)**:`create()` 内部一旦拿到实例句柄,后续任何失败都先尽力销毁实例再抛出原始错误(销毁本身失败不掩盖原始错误)。这条与分类、与是否重试都无关——句柄在手,销毁就是 `create()` 自己的责任,不可重试的失败同样适用。
 - **重试前对账(重试层义务)**:每次 create 请求把一次性 provision token 写进 provider 原生元数据;有检索通道的 provider,**任何重试之前都按 token 检索远端**,查到的实例先销毁再重建,不区分拒绝类还是歧义类。分类器看不出错误落在闭包内哪个请求上,一次检索的成本远低于一台漏杀实例的计费。不做断线收养,重建比重连语义干净,冷启动成本本来就要付。对账排在退避睡眠**之后**:限流场景下紧跟失败发出的检索大概率同样被限流,睡醒再查;这也给刚受理的实例出现在列表里留了时间。**对账失败即放弃重试**,抛回原始 create 错误并留 diagnostic——对账是重试的硬前置,查不到账就重试与盲重试无异。
@@ -427,7 +443,7 @@ Provisioning 的分类只涵盖"创建沙箱"这一步。沙箱创建成功后�
 
 **核心定义接口，Provider 各自实现**，两条路都不改 core 其余部分。Sandbox 抽象只保留 run、文本/字节读写、stop 与宿主传输，让新 Provider 的接入面保持有限。
 
-内置 provider 除接口外还要交付两个故事:预制实例(factory 消费的构建输出参数、构建归原生工具、共享/过期语义如实文档化,义务清单见 [Library · 新 provider 的预制实例义务](../library/prebuilt-environments.md#新-provider-的预制实例义务))与留存(detached 销毁能力,见[留存与注册表](#留存keep与注册表))。
+内置 provider 除接口外还要交付两个故事:预制实例(factory 消费的构建输出参数、构建归原生工具、共享/过期语义如实文档化,义务清单见 [Library · 新 provider 的预制实例义务](../library/prebuilt-environments.md#新-provider-的预制实例义务))与留存(detached 销毁能力,见[留存](#留存keep))。
 
 ## 实现纪律
 
@@ -453,7 +469,7 @@ Before cache 的身份、Provider 能力矩阵、降级规则与运行事实归�
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
-  Case create / ready 每个实际实例满足一次；before、agent.ensure 循环与 Agent runtime 每 Attempt 满足一次。before 缓存命中 restore verified state，miss 或 unsupported 才调用 action。
+  Case create / ready 每个实际实例满足一次；before、agent.install 循环与 Agent runtime 每 Attempt 满足一次。before 缓存命中 restore verified state，miss 或 unsupported 才调用 action。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
   完整契约见 [Sandbox 复用](../library/reuse.md)。
 

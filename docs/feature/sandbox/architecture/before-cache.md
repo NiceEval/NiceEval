@@ -45,7 +45,7 @@ Provider API   template、image、snapshot、实例
 
 Provider 按能力而非名称进入准备路径。三种能力按“谁负责准备”区分：
 
-- `RunPrepared`：Run 负责准备。派发任何 Attempt 前，Run 按完整 BeforeCacheKey 建立准备图，相同 key 在一个 Run 内只准备一次；每个 consumer 从不可变 artifact 创建独立 writable state。
+- `RunPrepared`：Invocation 负责准备。派发任何 Attempt 前，按完整 BeforeCacheKey 为整个 Invocation 建立一张准备图，各 Experiment 的 Record Run 共用它，相同 key 只准备一次。每个 consumer 从不可变 artifact 创建独立 writable state。
 - `AttemptCaptured`：每个 Attempt 在自己的实例里 restore 或 capture，artifact 跨 Invocation 持久。同一 Run 内相同 key 的并发 Attempt 不合并，没拿到 publication 的 Attempt 继续 uncached。
 - `Unsupported`：真实执行。
 
@@ -144,8 +144,10 @@ type BeforeCacheSource =
 interface BeforeCacheStep {
   readonly operationId: string;
   readonly declaration: BeforeCacheDeclaration;
-  /** Base 之后到本节点每一层的 action id，按顺序排列；只用于远端 snapshot 的 replacement scope。 */
+  /** Base 之后到本节点每一层的 action id，按顺序排列；只用于 replacement scope，不进入 BeforeCacheKey。 */
   readonly positions: readonly string[];
+  /** 声明这一层 action 的 layer owner（如 `eval:<id>`）；只用于 replacement scope，不进入 BeforeCacheKey。 */
+  readonly declaringOwner: string;
   /** 纵深防御用；只在发布前比较，从不持久化。 */
   readonly knownSensitiveValues?: readonly string[];
 }
@@ -208,7 +210,7 @@ BeforeCacheKey[i] = hash(
   canonical steps digest + immutable input identities,
   typed capability edges (requires / provides),
   target platform + execution user,
-  preparation identity + format revisions
+  preparation identity + cacheFormat
 )
 ```
 
@@ -240,19 +242,23 @@ Run 级节点遵守同一原则（[T-5](../../../taste.md#t-5)）：只有 autho
 
 opaque callback、`defineSandboxCommand()`、runtime secret overlay、租约、外部会话与当前 Attempt locator 都是 barrier。barrier 之前的最长 verified prefix 仍可命中；barrier 之后的 action 真实执行，但不能发布共享前缀。
 
-每个 Before cache artifact 还保存 replacement scope：除 parent key 与 revision 之外的完整累计声明。不同 canonical input、fingerprint、steps、依赖、能力或顺序形成不同 replacement scope，对应 artifact 可同时命中。
+Before cache key 按实际 Base、Provider 身份与有序 action 声明求摘要。编码包装不带版本；不可由内容表达的解释行为由 Provider 的行为声明负责。
+
+每个 Before cache artifact 还保存 replacement scope：provider、execution domain、Base 引用、每层的 action id 链与这一层的声明方，不含 action 内容（定义与理由见[替换按声明方与位置](remote-snapshot-cache.md#发布与竞争)）。同一声明方在同一位置换了内容，新 generation 取代旧的；不同声明方互不取代，内容相同时仍按 BeforeCacheKey 共享 artifact。
+
+同一个声明方在一次 Invocation 里落在同一 replacement scope 却有不同 BeforeCacheKey 时，它们会互相取代、每次运行都重新准备。planning 对此发出 warning，指出冲突的 action id 与声明方，并建议给各自的 action 取不同的 id。
 
 同一 replacement scope 的新 generation 发布后，NiceEval 才淘汰已被替代的 Docker image 或远端 snapshot。仍被 private clone、hold、lease 或未完成 capture 使用的旧 generation 不会删除。最后一个 hold 释放后再次尝试淘汰。
 
 generation 是 cache repository 内全局递增的整数，含义保持「已分配的最大值 + 1」。分配与 reserve 在同一个 immediate 写事务中完成。
 repository schema 为 generation 建立索引，分配只读索引端点，成本不随已保留或已 tombstone 的 entry 数增长。
-索引随 UserDatabase 的应用级相邻迁移进入，不在已存在的库上临时创建。
+索引随 UserDatabase 新库原子初始化建立；已有库先验证当前格式，不临时补表或迁移。
 
 删除失败保留登记并重试，不按年龄、名称或“不在当前 Run”猜测垃圾。用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。作者可见的运行开关只有 `sandboxCache.before: "use" | "bypass"` 和对应 CLI flag。
 
 ## 运行事实归属
 
-`RunPrepared` 的准备图按完整 `BeforeCacheKey` 合并节点，每个节点在一个 Run 内只准备一次。相同 key 的多个 Eval×Experiment 配对共享这次准备；节点的 activity、staging、publication 与 Scope 归 Run，不归任何 Attempt。
+`RunPrepared` 的准备图按完整 `BeforeCacheKey` 跨 Experiment 合并节点，每个节点在一个 Invocation 内只准备一次。相同 key 的多个 Eval×Experiment 配对共享这次准备，即使它们属于不同的 Record Run；staging、publication、hold 与 Scope 归 Invocation 的共享准备，不按 Record Run 拆分，也不归任何 Attempt。节点的 activity 与 diagnostic 按配对所在的 Run 呈现。归属细则见[一次 Invocation 一份准备](remote-snapshot-cache.md#一次-invocation-一份准备)。
 
 不同 key 可在 `maxBeforeCacheConcurrency ∩ provider scheduling.lane.limit` 内并行。相同 `(executionDomainId, BeforeCacheKey)` 仍通过跨进程 publication lease 串行发布，等待者消费同一 committed `ArtifactIntent`。
 
@@ -260,7 +266,7 @@ Run 保留全局 pre-dispatch barrier：准备图的所有节点结算后才派�
 
 `AttemptCaptured` 与 `Unsupported` 的 lookup、restore、replay、satisfaction 与 cleanup 归各自 Attempt，不因 key 相同共享 activity、locator 或可写状态。
 
-无论能力类别，持久 artifact receipt 都只保存 provider-neutral artifact id、BeforeCacheKey、声明、execution domain 与必要的验证 revision。它不保存本地 image/container/snapshot locator、credential value、secret bytes 或 Attempt locator。
+无论能力类别，持久 artifact receipt 都只保存 provider-neutral artifact id、BeforeCacheKey、声明、execution domain 与当前 `cacheFormat`。它不保存本地 image/container/snapshot locator、credential value、secret bytes 或 Attempt locator。
 
 Attempt locator 只在全局 barrier 后实际 dispatch 时由当前 `RecordWriteSession` 分配；从调度、收尾反馈到 Record 提交始终使用同一个值。未派发 Planned attempt、queued prefix node 与 Run activity 都不制造 locator。
 
@@ -275,5 +281,5 @@ nested Docker 的 artifact、domain 与 fail-closed 边界见 [Nested Docker Arc
 
 这些内容只决定缓存能否命中。它们变化时，已有 Before cache 全部 miss，下次运行时重新准备一次。
 
-Provider plan 的 execution identity 不包含 `beforeCache` 能力：缓存只让运行变快，不改变结果（[T-5](../../../taste.md#t-5)），换一种准备路径不应让已有结果失效。把它移出 identity 改变了 digest，按 [NiceEval 身份域变更](../../experiments/architecture/cache.md#niceeval-身份域变更) 登记为 `encoding-only`，下游无需重跑。
+Provider plan 的 execution identity 不包含 `beforeCache` 能力：缓存只让运行变快，不改变结果（[T-5](../../../taste.md#t-5)），换一种准备路径不应让已有结果失效。计算规则变化导致的摘要不匹配按 [NiceEval 身份变化](../../experiments/architecture/cache.md#niceeval-身份域变更)重新执行。
 

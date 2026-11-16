@@ -1,12 +1,7 @@
 import { Effect } from "effect";
 import { encodeAttemptLocator, type AttemptLocator } from "./attempt-locator.ts";
 import type { RecordReaderReadError } from "./record/reader/errors.ts";
-import type {
-  RecordReadSession,
-  RecordSelection,
-  SelectedAttemptRef,
-  SelectedRunRef,
-} from "./record/host/types.ts";
+import type { RecordReadSession, RecordSelection, SelectedAttemptRef, SelectedRunRef } from "./record/host/types.ts";
 import type { SlotId } from "./record/model/identifiers.ts";
 
 export type AttemptLocatorResolution =
@@ -45,24 +40,22 @@ export function resolveAttemptLocator(input: {
       const read = yield* input.reader.readRun(runRef);
       if (read.state !== "available") continue;
       for (const member of read.value.members) {
-        // The two null representations are intentionally separate Record
-        // states, but neither admits an exact Attempt capability.
-        if (member.document.attempt === null || member.attempt === null) continue;
+        // The document's JSON null and an absent read capability are separate
+        // Record states, but neither admits an exact Attempt capability.
+        if (member.document.attempt === null || member.attempt === undefined) continue;
         if (encodeAttemptLocator(member.attempt.attemptId) !== input.locator) continue;
-        const current: LocatorMatch = Object.freeze({
+        const current: LocatorMatch = {
           run: runRef,
           slotId: member.document.slotId,
           attempt: member.attempt,
-        });
+        };
         if (first === undefined) {
           first = current;
         } else if (!sameReference(first.attempt, current.attempt)) {
-          return Object.freeze({ kind: "ambiguous" as const });
+          return { kind: "ambiguous" as const };
         }
       }
     }
-    return first === undefined
-      ? Object.freeze({ kind: "not-found" as const })
-      : Object.freeze({ kind: "found" as const, ...first });
+    return first === undefined ? { kind: "not-found" as const } : { kind: "found" as const, ...first };
   });
 }

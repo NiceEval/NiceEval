@@ -27,10 +27,7 @@ function errorCode(error: unknown): string | undefined {
  * result before accepting it. Return undefined when procfs cannot prove the
  * membership safely.
  */
-function linuxProcessGroupHasRunningMember(
-  groupId: number,
-  onSnapshot?: () => void,
-): boolean | undefined {
+function linuxProcessGroupHasRunningMember(groupId: number, onSnapshot?: () => void): boolean | undefined {
   if (process.platform !== "linux") return undefined;
 
   let entries: Dirent<string>[];
@@ -60,7 +57,10 @@ function linuxProcessGroupHasRunningMember(
 
     const commandEnd = stat.lastIndexOf(")");
     if (commandEnd < 0 || stat[commandEnd + 1] !== " ") return undefined;
-    const fields = stat.slice(commandEnd + 2).trim().split(/\s+/);
+    const fields = stat
+      .slice(commandEnd + 2)
+      .trim()
+      .split(/\s+/);
     if (fields.length < 3) return undefined;
 
     const state = fields[0];
@@ -245,9 +245,7 @@ export class ProcessHandle {
     }
   }
 
-  private async waitForOwnedGroupExit(
-    timeoutMs: number,
-  ): Promise<boolean> {
+  private async waitForOwnedGroupExit(timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + Math.max(0, timeoutMs);
     let terminalProbePending = false;
     for (;;) {
@@ -286,9 +284,7 @@ export class ProcessHandle {
     if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
       this.sendTermination("SIGKILL");
       if (!(await this.waitForOwnedGroupExit(this.graceMs))) {
-        throw new Error(
-          `process group ${this.pid} still exists after SIGTERM and SIGKILL`,
-        );
+        throw new Error(`process group ${this.pid} still exists after SIGTERM and SIGKILL`);
       }
     }
     await this.done;
@@ -322,11 +318,7 @@ export class ProcessHandle {
     }
     this.disposed = true;
     if (this.child.pid === undefined) {
-      throw new ProcessStartError(
-        this.argv,
-        this.cwd,
-        new Error("process never started; cannot dispose it"),
-      );
+      throw new ProcessStartError(this.argv, this.cwd, new Error("process never started; cannot dispose it"));
     }
     if (this.settled && !this.processGroup) {
       return;
@@ -337,17 +329,16 @@ export class ProcessHandle {
 
 export function startProcess(argv: Argv, options: StartOptions = {}): ProcessHandle {
   if (options.processGroup === true && process.platform === "win32") {
-    throw new Error(
-      "processGroup: true requires POSIX process-group signals and is unsupported on win32",
-    );
+    throw new Error("processGroup: true requires POSIX process-group signals and is unsupported on win32");
   }
   const child = spawn(argv[0], argv.slice(1), {
     cwd: options.cwd ?? process.cwd(),
-    env: options.envMode === "replace"
-      ? options.env ?? {}
-      : options.env === undefined
-        ? process.env
-        : { ...process.env, ...options.env },
+    env:
+      options.envMode === "replace"
+        ? (options.env ?? {})
+        : options.env === undefined
+          ? process.env
+          : { ...process.env, ...options.env },
     stdio: ["ignore", "pipe", "pipe"],
     detached: options.processGroup === true,
   });
@@ -355,10 +346,7 @@ export function startProcess(argv: Argv, options: StartOptions = {}): ProcessHan
 }
 
 /** Run a process to completion while retaining startProcess's owned cleanup boundary. */
-export async function runManagedProcess(
-  argv: Argv,
-  options: ManagedProcessOptions = {},
-): Promise<ProcessReceipt> {
+export async function runManagedProcess(argv: Argv, options: ManagedProcessOptions = {}): Promise<ProcessReceipt> {
   const { signal, onStdout, onStderr, ...startOptions } = options;
   const handle = startProcess(argv, startOptions);
   // A spawn failure can settle before the listeners and cleanup path below do.
@@ -384,10 +372,7 @@ export async function runManagedProcess(
   };
 
   let callbacks = Promise.resolve();
-  const enqueueCallback = (
-    callback: (chunk: string) => void | Promise<void>,
-    chunk: Buffer,
-  ): void => {
+  const enqueueCallback = (callback: (chunk: string) => void | Promise<void>, chunk: Buffer): void => {
     callbacks = callbacks.then(async () => {
       if (interrupted) return;
       try {
@@ -461,7 +446,7 @@ export function waitForOutput(
     return Promise.reject(new Error(`${options.label}: ${stream} is not piped`));
   }
 
-  const read = () => stream === "stdout" ? handle.bufferedStdout : handle.bufferedStderr;
+  const read = () => (stream === "stdout" ? handle.bufferedStdout : handle.bufferedStderr);
   const matches = (text: string) => {
     pattern.lastIndex = 0;
     return pattern.test(text);
@@ -497,9 +482,7 @@ export function waitForOutput(
         inspect();
         if (!finished) {
           finish({
-            error: new Error(
-              `${options.label}: process exited before producing ${pattern}\n\n${receipt.diagnostic()}`,
-            ),
+            error: new Error(`${options.label}: process exited before producing ${pattern}\n\n${receipt.diagnostic()}`),
           });
         }
       },
@@ -535,10 +518,7 @@ export async function withProcess<T>(
   }
 
   if (bodyFailed && cleanupError !== undefined) {
-    const aggregate = new AggregateError(
-      [bodyError, cleanupError],
-      "withProcess: body and cleanup both failed",
-    );
+    const aggregate = new AggregateError([bodyError, cleanupError], "withProcess: body and cleanup both failed");
     aggregate.cause = bodyError;
     throw aggregate;
   }
@@ -552,7 +532,11 @@ export async function withProcess<T>(
 }
 
 /** Wait for a fixture marker under the owning process deadline; close the watcher on every outcome. */
-export async function waitForPathOrProcessExit(path: string, done: Promise<ProcessReceipt>, label: string): Promise<void> {
+export async function waitForPathOrProcessExit(
+  path: string,
+  done: Promise<ProcessReceipt>,
+  label: string,
+): Promise<void> {
   try {
     await access(path);
     return;

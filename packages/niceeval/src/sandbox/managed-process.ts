@@ -3,7 +3,7 @@ import type { ManagedProcessChunk } from "./types.ts";
 /** Small single-consumer async queue used by provider-native process streams. */
 export class ManagedProcessOutput implements AsyncIterable<ManagedProcessChunk> {
   private readonly queued: ManagedProcessChunk[] = [];
-  private waiter?: (value: IteratorResult<ManagedProcessChunk>) => void;
+  private waiter: ((value: IteratorResult<ManagedProcessChunk>) => void) | undefined;
   private ended = false;
   private consumed = false;
 
@@ -36,7 +36,9 @@ export class ManagedProcessOutput implements AsyncIterable<ManagedProcessChunk> 
         const value = this.queued.shift();
         if (value !== undefined) return Promise.resolve({ done: false, value });
         if (this.ended) return Promise.resolve({ done: true, value: undefined });
-        return new Promise((resolve) => { this.waiter = resolve; });
+        return new Promise((resolve) => {
+          this.waiter = resolve;
+        });
       },
     };
   }

@@ -117,7 +117,7 @@ pnpm exec niceeval exp prompts/v2 refund-policy
 两个配置都跑完后，在终端分别查看：
 
 ```bash
-pnpm exec niceeval show --experiment prompts/v1 --experiment prompts/v2
+pnpm exec niceeval show exp:prompts/v1 exp:prompts/v2
 ```
 
 每个 Experiment 的 `Summary` 里会列出这几项：
@@ -215,4 +215,4 @@ Adapter 从 `ctx.models` 读取这份配置交给应用，每次请求模型时�
 
 `models` 不能和 `model`、`reasoningEffort` 同时写。Agent 类的 Adapter 只用单个 `model`。
 
-运行后用 `niceeval show @<locator> --usage` 查看一次运行里各个模型的用量和费用。Judge 的用量没有上报时会显示为不可用，总费用只给出已知部分。
+运行后用 `niceeval show @<locator> usage` 查看一次运行里各个模型的用量和费用。Judge 的用量没有上报时会显示为不可用，总费用只给出已知部分。

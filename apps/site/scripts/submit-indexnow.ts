@@ -17,9 +17,7 @@ async function main() {
     return;
   }
 
-  const urlList = getSitemapUrls(getAllBlogPosts(SITE_ROOT)).map(({ path: urlPath }) =>
-    absoluteUrl(urlPath),
-  );
+  const urlList = getSitemapUrls(getAllBlogPosts(SITE_ROOT)).map(({ path: urlPath }) => absoluteUrl(urlPath));
   if (urlList.length === 0) {
     console.warn("[indexnow] skip: generated sitemap has no URLs");
     return;

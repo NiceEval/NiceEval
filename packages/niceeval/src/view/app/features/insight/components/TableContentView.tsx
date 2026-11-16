@@ -12,12 +12,7 @@ import {
   type TableContent,
   type TableContentRow,
 } from "./cell.tsx";
-import {
-  formatMetricScalar,
-  metricStateText,
-  missingText,
-  verdictMark,
-} from "./format.ts";
+import { formatMetricScalar, metricStateText, missingText, verdictMark } from "./format.ts";
 import {
   countText,
   DEFAULT_REPORT_LOCALE,
@@ -38,28 +33,28 @@ const MISSING_MARK = "—";
 export interface TableColumn {
   readonly key: string;
   readonly header: LocalizedText;
-  readonly align?: "left" | "right";
-  readonly better?: "higher" | "lower";
+  readonly align: "left" | "right";
+  readonly better: "higher" | "lower" | undefined;
 }
 
 export interface TablePresentation {
-  readonly sort?: string;
-  readonly searchable?: boolean;
-  readonly locale?: ReportLocale;
-  readonly className?: string;
+  readonly sort: string | undefined;
+  readonly searchable: boolean;
+  readonly locale: ReportLocale;
+  readonly className: string;
 }
 
 /** 旧表的唯一普通 React props；不接受 Dataset、Sample 或 authoring context。 */
 export type TableContentViewProps = {
   readonly data: TableContent;
   /** 省略时使用当前 Insight 的固定 hash route。 */
-  readonly hrefForLocator?: (locator: AttemptLocator) => string | undefined;
+  readonly hrefForLocator: (locator: AttemptLocator) => string | undefined;
 } & TablePresentation;
 
 export interface TableWebContext {
   readonly href: (locator: AttemptLocator) => string | undefined;
   readonly locale: ReportLocale;
-  readonly showMeasureRefs?: boolean;
+  readonly showMeasureRefs: boolean;
 }
 
 /** 当前 Insight 的 canonical Attempt route；不读取 router。 */
@@ -110,16 +105,12 @@ function validateRowShapes(rows: readonly TableContentRow[], columnKeys: Readonl
   for (const row of rows) {
     for (const cellKey of Object.keys(row.cells)) {
       if (!columnKeys.has(cellKey)) {
-        throw new Error(
-          `Table row "${row.key}" has a cell for "${cellKey}", which is not a declared column.`,
-        );
+        throw new Error(`Table row "${row.key}" has a cell for "${cellKey}", which is not a declared column.`);
       }
     }
     for (const columnKey of columnKeys) {
       if (!(columnKey in row.cells)) {
-        throw new Error(
-          `Table row "${row.key}" has no cell for column "${columnKey}".`,
-        );
+        throw new Error(`Table row "${row.key}" has no cell for column "${columnKey}".`);
       }
     }
     if (row.subRows?.length) validateRowShapes(row.subRows, columnKeys);
@@ -139,17 +130,15 @@ function validateSiblingRowKeys(rows: readonly TableContentRow[]): void {
 
 /** closed refs 里能变成下钻目标的 attempt locator。 */
 function refLocatorsOf(cell: Extract<Cell, { readonly kind: "metric" }>["metric"]): AttemptLocator[] {
-  return cell.refs.flatMap((ref) =>
-    ref.identity.kind === "attempt" ? [ref.identity.locator] : []
-  );
+  return cell.refs.flatMap((ref) => (ref.identity.kind === "attempt" ? [ref.identity.locator] : []));
 }
 
 export interface MetricCellViewProps {
   readonly cell: Extract<Cell, { readonly kind: "metric" }>["metric"];
-  readonly href?: (locator: AttemptLocator) => string | undefined;
-  readonly locale?: ReportLocale;
-  readonly showCoverage?: boolean;
-  readonly coverageDetail?: boolean;
+  readonly href: (locator: AttemptLocator) => string | undefined;
+  readonly locale: ReportLocale;
+  readonly showCoverage: boolean;
+  readonly coverageDetail: boolean;
 }
 
 export function MetricCellView({
@@ -162,25 +151,22 @@ export function MetricCellView({
   const loc = locale ?? DEFAULT_REPORT_LOCALE;
   const projection = costProjectionOf(cell);
   if (projection !== undefined) {
-    const costText = projection.combined === null
-      ? metricStateText(cell.state, loc)
-      : `$${projection.combined.amount}`;
+    const costText =
+      projection.combined === undefined ? metricStateText(cell.state, loc) : `$${projection.combined.amount}`;
     return (
       <span className="niceeval-cell">
         <span className="niceeval-value">{costText}</span>
       </span>
     );
   }
-  const text = cell.value === null
-    ? metricStateText(cell.state, loc)
-    : `${cell.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.value, cell.unit, cell.format, loc)}`;
-  if (cell.value === null) {
+  const text =
+    cell.value === undefined
+      ? metricStateText(cell.state, loc)
+      : `${cell.source === "estimated" ? "~" : ""}${formatMetricScalar(cell.value, cell.unit, undefined, loc)}`;
+  if (cell.value === undefined) {
     return (
       <span className="niceeval-cell niceeval-cell-missing">
-        <span
-          className="niceeval-missing"
-          title={localeText(loc, "cell.noneMeasurableTitle", { total: cell.total })}
-        >
+        <span className="niceeval-missing" title={localeText(loc, "cell.noneMeasurableTitle", { total: cell.total })}>
           {text}
         </span>
       </span>
@@ -195,6 +181,16 @@ export function MetricCellView({
   const partialText = hasCoverageGap
     ? localeText(loc, "cell.coverageDetail", { samples: cell.samples, total: cell.total })
     : localeText(loc, "cell.partialDetail");
+  function costSourceText(): string {
+    switch (cell.source) {
+      case "reported":
+        return localeText(loc, "cell.costReported");
+      case "estimated":
+        return localeText(loc, "cell.costEstimated");
+      default:
+        return localeText(loc, "cell.costMixed");
+    }
+  }
   return (
     <span className={cx("niceeval-cell", hasPartialCoverage && coverageDetail && "niceeval-cell-text")}>
       <span
@@ -203,24 +199,17 @@ export function MetricCellView({
       >
         {text}
       </span>
-      {hasPartialCoverage && (coverageDetail ? (
-        <small
-          className="niceeval-cell-detail"
-          title={partialTitle}
-        >
-          {partialText}
-        </small>
-      ) : (
-        <sup
-          className="niceeval-coverage"
-          title={partialTitle}
-        >
-          {hasCoverageGap ? `${cell.samples}/${cell.total}` : localeText(loc, "cell.partialDetail")}
-        </sup>
-      ))}
-      {cell.source == null ? null : <small className="niceeval-cost-source">{localeText(loc,
-        cell.source === "reported" ? "cell.costReported" : cell.source === "estimated" ? "cell.costEstimated" : "cell.costMixed",
-      )}</small>}
+      {hasPartialCoverage &&
+        (coverageDetail ? (
+          <small className="niceeval-cell-detail" title={partialTitle}>
+            {partialText}
+          </small>
+        ) : (
+          <sup className="niceeval-coverage" title={partialTitle}>
+            {hasCoverageGap ? `${cell.samples}/${cell.total}` : localeText(loc, "cell.partialDetail")}
+          </sup>
+        ))}
+      {cell.source === undefined ? null : <small className="niceeval-cost-source">{costSourceText()}</small>}
       {href && refLocators.length === 1 && href(refLocators[0]!) !== undefined && (
         <span className="niceeval-refs">
           <a className="niceeval-ref" href={href(refLocators[0]!)}>
@@ -230,9 +219,7 @@ export function MetricCellView({
       )}
       {href && refLocators.length > 1 && (
         <details className="niceeval-refs">
-          <summary className="niceeval-refs-summary">
-            {countText(loc, "cell.evidence", refLocators.length)}
-          </summary>
+          <summary className="niceeval-refs-summary">{countText(loc, "cell.evidence", refLocators.length)}</summary>
           <span className="niceeval-refs-list">
             {refLocators.map((locator, index) =>
               href(locator) !== undefined ? (
@@ -243,7 +230,7 @@ export function MetricCellView({
                 <span key={locator} className="niceeval-ref-text">
                   #{index + 1}
                 </span>
-              )
+              ),
             )}
           </span>
         </details>
@@ -252,11 +239,7 @@ export function MetricCellView({
   );
 }
 
-function renderCellWeb(
-  cell: Cell | undefined,
-  ctx: TableWebContext,
-  coverageDetail = false,
-): ReactNode {
+function renderCellWeb(cell: Cell | undefined, ctx: TableWebContext, coverageDetail = false): ReactNode {
   if (!cell) return <span className="niceeval-missing">{MISSING_MARK}</span>;
   switch (cell.kind) {
     case "stack":
@@ -288,15 +271,13 @@ function renderCellWeb(
     case "locator": {
       // 判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意。
       const verdict = cell.verdict;
-      const className = cx(
-        "niceeval-locator",
-        verdict !== undefined && `niceeval-verdict-${verdict}`,
-      );
-      const mark = verdict === undefined ? null : (
-        <span className="niceeval-locator-mark" aria-hidden="true">
-          {verdictMark(verdict)}
-        </span>
-      );
+      const className = cx("niceeval-locator", verdict !== undefined && `niceeval-verdict-${verdict}`);
+      const mark =
+        verdict === undefined ? null : (
+          <span className="niceeval-locator-mark" aria-hidden="true">
+            {verdictMark(verdict)}
+          </span>
+        );
       const href = ctx.href(cell.locator);
       return href !== undefined ? (
         <a className={className} href={href}>
@@ -314,14 +295,14 @@ function renderCellWeb(
     case "score":
       return formatCellText(cell, ctx.locale);
     case "verdict": {
-      if (cell.counts) {
-        const parts = (["passed", "failed", "errored", "skipped"] as const)
-          .filter((kind) => cell.counts![kind] > 0);
+      if (cell.mode === "counts") {
+        const counts = cell.counts;
+        const parts = (["passed", "failed", "errored", "skipped"] as const).filter((kind) => counts[kind] > 0);
         return (
           <span className="niceeval-verdict-tally">
             {parts.map((kind) => (
               <span className={`niceeval-verdict-${kind}`} key={kind}>
-                {cell.counts![kind]} {localeText(ctx.locale, `verdict.${kind}`)}
+                {counts[kind]} {localeText(ctx.locale, `verdict.${kind}`)}
               </span>
             ))}
             {parts.length === 0 ? <span className="niceeval-missing">{MISSING_MARK}</span> : null}
@@ -332,7 +313,14 @@ function renderCellWeb(
       return (
         <span className={cx("niceeval-verdict", `niceeval-verdict-${verdict}`)}>
           {verdictMark(verdict)}
-          {!cell.bare ? <> {cell.label === undefined ? localeText(ctx.locale, `verdict.${verdict}`) : resolveLocalizedText(cell.label, ctx.locale)}</> : null}
+          {!cell.bare ? (
+            <>
+              {" "}
+              {cell.label === undefined
+                ? localeText(ctx.locale, `verdict.${verdict}`)
+                : resolveLocalizedText(cell.label, ctx.locale)}
+            </>
+          ) : null}
         </span>
       );
     }
@@ -340,7 +328,7 @@ function renderCellWeb(
       return (
         <MetricCellView
           cell={cell.metric}
-          href={ctx.showMeasureRefs === false ? undefined : ctx.href}
+          href={ctx.showMeasureRefs ? ctx.href : () => undefined}
           locale={ctx.locale}
           showCoverage={cell.showCoverage !== false}
           coverageDetail={coverageDetail}
@@ -356,7 +344,7 @@ function cellSortValue(cell: Cell | undefined): string | number {
   if (cell.kind === "score") return cell.earned;
   if (cell.kind === "text") return cell.text;
   if (cell.kind === "locator") return cell.locator;
-  if (cell.kind === "verdict" && cell.counts) return cell.counts.passed;
+  if (cell.kind === "verdict" && cell.mode === "counts") return cell.counts.passed;
   return formatCellText(cell);
 }
 
@@ -369,10 +357,7 @@ export function renderHierarchyRowsWeb(
   return rows.map((row) => {
     const cells = columns.map((column) => (
       <span
-        className={cx(
-          "niceeval-table-hierarchy-cell",
-          column.align === "right" && "niceeval-align-right",
-        )}
+        className={cx("niceeval-table-hierarchy-cell", column.align === "right" && "niceeval-align-right")}
         data-sort-value={cellSortValue(row.cells[column.key])}
         key={column.key}
       >
@@ -433,24 +418,36 @@ export function TableContentView(props: TableContentViewProps): ReactNode {
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
   const { columns, content } = tableContentOf(props.data);
   const [query, setQuery] = useState("");
-  const [sorting, setSorting] = useState<{ key: string; direction: "asc" | "desc" } | null>(
-    props.sort === undefined ? null : { key: props.sort, direction: "asc" },
-  );
+  const [sorting, setSorting] = useState<
+    { kind: "source" } | { kind: "column"; key: string; direction: "asc" | "desc" }
+  >(props.sort === undefined ? { kind: "source" } : { kind: "column", key: props.sort, direction: "asc" });
   const rows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    const filter = (row: TableContentRow): TableContentRow | null => {
-      const subRows = row.subRows?.map(filter).filter((item): item is TableContentRow => item !== null);
-      const matches = needle === "" || Object.values(row.cells).some((cell) => formatCellText(cell, locale).toLocaleLowerCase().includes(needle));
-      return matches || (subRows?.length ?? 0) > 0 ? { ...row, ...(subRows === undefined ? {} : { subRows }) } : null;
+    const filter = (row: TableContentRow): readonly TableContentRow[] => {
+      const subRows = row.subRows.flatMap(filter);
+      const matches =
+        needle === "" ||
+        Object.values(row.cells).some((cell) => formatCellText(cell, locale).toLocaleLowerCase().includes(needle));
+      return matches || subRows.length > 0 ? [{ ...row, subRows }] : [];
     };
-    const filtered = content.rows.map(filter).filter((row): row is TableContentRow => row !== null);
-    if (sorting === null) return filtered;
+    const filtered = content.rows.flatMap(filter);
+    if (sorting.kind === "source") return filtered;
     const direction = sorting.direction === "asc" ? 1 : -1;
-    return [...filtered].sort((left, right) => formatCellText(left.cells[sorting.key], locale)
-      .localeCompare(formatCellText(right.cells[sorting.key], locale), locale, { numeric: true }) * direction);
+    return [...filtered].sort(
+      (left, right) =>
+        formatCellText(left.cells[sorting.key], locale).localeCompare(
+          formatCellText(right.cells[sorting.key], locale),
+          locale,
+          { numeric: true },
+        ) * direction,
+    );
   }, [content.rows, locale, query, sorting]);
   const href = props.hrefForLocator ?? canonicalAttemptHref;
   const hierarchical = content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
+  function columnSortClass(key: string): string | undefined {
+    if (sorting.kind !== "column" || sorting.key !== key) return undefined;
+    return sorting.direction === "asc" ? "niceeval-sort-asc" : "niceeval-sort-desc";
+  }
   const table = (
     <table
       className={cx(
@@ -467,20 +464,28 @@ export function TableContentView(props: TableContentViewProps): ReactNode {
             <th
               key={column.key}
               scope="col"
-              className={cx(
-                column.align === "right" && "niceeval-align-right",
-                sorting?.key === column.key
-                  ? sorting.direction === "asc" ? "niceeval-sort-asc" : "niceeval-sort-desc"
-                  : undefined,
-              )}
-              onClick={column.better === undefined ? undefined : () => setSorting((current) => ({
-                key: column.key,
-                direction: current?.key === column.key && current.direction === "asc" ? "desc" : "asc",
-              }))}
+              className={cx(column.align === "right" && "niceeval-align-right", columnSortClass(column.key))}
+              onClick={
+                column.better === undefined
+                  ? undefined
+                  : () =>
+                      setSorting((current) => ({
+                        kind: "column",
+                        key: column.key,
+                        direction:
+                          current.kind === "column" && current.key === column.key && current.direction === "asc"
+                            ? "desc"
+                            : "asc",
+                      }))
+              }
               tabIndex={column.better === undefined ? undefined : 0}
-              onKeyDown={column.better === undefined ? undefined : (event) => {
-                if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
-              }}
+              onKeyDown={
+                column.better === undefined
+                  ? undefined
+                  : (event) => {
+                      if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                    }
+              }
             >
               {resolveLocalizedText(column.header, locale)}
             </th>
@@ -500,7 +505,7 @@ export function TableContentView(props: TableContentViewProps): ReactNode {
           </tr>
         </tbody>
       ) : (
-        <tbody>{renderFlatContentRowsWeb(rows, columns, { href, locale })}</tbody>
+        <tbody>{renderFlatContentRowsWeb(rows, columns, { href, locale, showMeasureRefs: true })}</tbody>
       )}
     </table>
   );
@@ -514,9 +519,7 @@ export function TableContentView(props: TableContentViewProps): ReactNode {
         onChange={(event) => setQuery(event.target.value)}
         placeholder={localeText(
           locale,
-          columns[0].key === "entity"
-            ? "experimentList.filterPlaceholder"
-            : "table.filterPlaceholder",
+          columns[0].key === "entity" ? "experimentList.filterPlaceholder" : "table.filterPlaceholder",
         )}
       />
       {table}

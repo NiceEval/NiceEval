@@ -7,5 +7,5 @@ if (runtime === undefined) throw new Error("Execution trace collection definitio
 
 export const executionTracesRecordAttachmentPersistence = runtime.persistence as RecordAttachmentPersistence<
   typeof runtime.attachment,
-  1
+  undefined
 >;

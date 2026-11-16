@@ -12,30 +12,32 @@ describe("Sandbox provisioning retry", () => {
     let slotHeld = true;
     const original = new Error("ambiguous create");
 
-    const program = Effect.gen(function*() {
-      const fiber = yield* Effect.forkChild(withProvisionRetry(
-        Effect.sync(() => {
-          creates += 1;
-          events.push(`create:${creates}`);
-          if (creates === 1) return original;
-          return "sandbox-id";
-        }).pipe(Effect.flatMap((value) => value instanceof Error ? Effect.fail(value) : Effect.succeed(value))),
-        () => "ambiguous",
-        {
-          release: Effect.sync(() => {
-            slotHeld = false;
-            events.push("release");
+    const program = Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(
+        withProvisionRetry(
+          Effect.sync(() => {
+            creates += 1;
+            events.push(`create:${creates}`);
+            if (creates === 1) return original;
+            return "sandbox-id";
+          }).pipe(Effect.flatMap((value) => (value instanceof Error ? Effect.fail(value) : Effect.succeed(value)))),
+          () => "ambiguous",
+          {
+            release: Effect.sync(() => {
+              slotHeld = false;
+              events.push("release");
+            }),
+            reacquire: Effect.sync(() => {
+              slotHeld = true;
+              events.push("reacquire");
+            }),
+          },
+          { progress: () => {}, diagnostic: () => {} },
+          Effect.sync(() => {
+            events.push("reconcile");
           }),
-          reacquire: Effect.sync(() => {
-            slotHeld = true;
-            events.push("reacquire");
-          }),
-        },
-        { progress: () => {}, diagnostic: () => {} },
-        Effect.sync(() => {
-          events.push("reconcile");
-        }),
-      ).pipe(withRandomFixed([0])));
+        ).pipe(withRandomFixed([0])),
+      );
 
       yield* Effect.yieldNow;
       expect(slotHeld).toBe(false);

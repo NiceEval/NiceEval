@@ -31,7 +31,7 @@
 
 - 测试 owner 选择、允许路径、E2E TDD、Unit 例外、诊断与验收完全服从 [Testing skill](.agents/skills/testing/SKILL.md) 和它指向的正式测试契约。
 - Bug 修复必须从安装后候选的公开 Library、CLI、HTTP、浏览器或真实 adapter 入口取得 E2E 红灯，再修生产根因；不得用源码调用、私有产物、核心实现 mock 或 Unit 替代。
-- 正式 NiceEval E2E 是当前共享工作区的独占重量级资源。同一时刻只能由父 agent 或一个明确指定的执行 worker 运行；其他 worker 可并行做不启动正式 E2E 的独立实现或只读定位，不得各自 pack、安装或执行 E2E。开始新运行前必须确认本轮没有仍在运行或待回收的 E2E 进程树；完整矩阵交给 CI。
+- 本地 E2E 只跑最小集：Bug 的公开红灯与修复后的定向绿灯，或新 owner 的一次定向单文件绿灯；本地候选默认直接从源码运行，不构建、不打包；需要构建输出的场景 Repo 声明 `candidate: built`，按打包输入摘要复用；tarball 打包与包边界检查归 CI。不同 E2E 项目的定向单文件运行可以并行（项目副本、端口与 Sandbox 各自隔离，资源冲突重试一次后上报）；不在本地跑接管门禁或完整矩阵，二者由 CI 负责。开始新运行前确认本轮没有待回收的 E2E 进程树。
 
 ## 全仓约束
 
@@ -47,7 +47,7 @@
 ## 下游验证
 
 按 [Downstream Link skill](.agents/skills/downstream-link/SKILL.md) 选择真实下游，确认实际路径、局部规则和消费的 NiceEval 来源；不要假定当前 checkout 的相邻目录存在。多仓库父目录没有统一安装、测试或格式化入口。
-使用最小、能证明契约的实验切片，保留既有结果；读取运行结果只走下游规定的公开 Query 或 View 入口。具体项目职责、安装候选和跨仓库验收规则由该 skill 拥有。
+使用最小、能证明契约的实验切片，保留既有结果；读取运行结果只走下游安装版本公开的 Show、结构化输出或 View 入口。具体项目职责、安装候选和跨仓库验收规则由该 skill 拥有。
 
 跨设备下游由消费者发起拉取，并显式选择 `main` 或一个 Herdr worktree；不得因为命令从 main checkout 启动就默认消费 main，也不得把 worktree 名解释成分支名后另行 checkout。候选使用当前 checkout 的 `pnpm e2e pack --out <tgz>` 生成，交接收据必须绑定实际 checkout 路径、branch、HEAD 与 tarball SHA-256。临时传输不构成 npm 发布。
 

@@ -24,17 +24,20 @@ function renderReferenceReceipt(receipt: CommandReceipt, json: boolean): string 
 }
 
 function makeReferenceCommand(deliver: TerminalDeliverySink) {
-  return Command.make("reference", {
-    dryRun: dryRunOption,
-    json: jsonOption,
-  }, ({ dryRun, json }) => deliverDomainResult(
-    generateReference(dryRun),
-    json,
-    { success: renderReferenceReceipt, failure: renderDocsDomainFailure },
-    deliver,
-  )).pipe(Command.withDescription(
-    "Generate public reference regions with per-output atomic replacement.",
-  ));
+  return Command.make(
+    "reference",
+    {
+      dryRun: dryRunOption,
+      json: jsonOption,
+    },
+    ({ dryRun, json }) =>
+      deliverDomainResult(
+        generateReference(dryRun),
+        json,
+        { success: renderReferenceReceipt, failure: renderDocsDomainFailure },
+        deliver,
+      ),
+  ).pipe(Command.withDescription("Generate public reference regions with per-output atomic replacement."));
 }
 
 export const referenceCommandContribution = defineDocsCommandContribution({

@@ -29,6 +29,22 @@ Agent 通过 env、配置文件或请求 headers 将 OTLP span 发给运行器�
 
 没有原生 trace 的 CLI 可以从带时间戳的完整 transcript 合成 span，或者跳过时间轨。
 
+### Attempt 收尾时的收集预算
+
+Attempt 的断言完成后，`telemetry.collect` 收集这个 Attempt 的全部 span。它分成四个子活动，各自记入 Timing：
+
+| 子活动 | 做什么 | 同时记录 |
+| --- | --- | --- |
+| `telemetry.settle` | 等待 span 输出静默 | 等待时长 |
+| `telemetry.read` | 从接收器或 Sandbox 取回 span | 字节数 |
+| `telemetry.decode` | 解码 OTLP | span 数 |
+| `telemetry.map` | 方言映射、筛选与补全输入输出 | 保留的 span 数 |
+
+整个 `telemetry.collect` 有一个总预算，默认 30 秒。到期时停止仍在进行的子活动，保留已经取回并解码的 span，trace 收集记一条 `telemetry-budget-exceeded` limitation，同时写入同名诊断与已知字节数、span 数。
+预算到期不改变已定的 Verdict，接收器与远端连接照常释放。
+预算约束 `telemetry.settle`、`telemetry.read` 与 `telemetry.decode`。`telemetry.map` 调用 Agent 的同步 `spanMapper`，无法中途打断，只对预算到期前已解码的 span 运行一次；它的耗时照常记入 Timing。
+Sandbox 接收器分块取回 span 文件，每块取回后即解码，预算到期时已解码的部分照常保留。筛选与映射只在宿主进行：Sandbox 里不一定有 Node 或其它运行时，不能假设能在里面执行筛选程序。
+
 ## 接入决策树
 
 ```text

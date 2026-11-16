@@ -4,13 +4,13 @@
 // 的纯证据解析:exact touched-path set、noChanges 同源、同一 change entry 的 before/after 候选。
 // 这里只做证据解析与候选分类,不消费 BooleanMatch——matcher 应用留在接线层,避免复制 Match 内核。
 
-import type { DiffArtifact, DiffData, DiffFileSummary, DiffWindow, WindowChange } from "./types.ts";
+import type { DiffArtifact, DiffData, DiffFileSummary, WindowChange } from "./types.ts";
 
 /** 从窗口序列派生 DiffData:files 摘要(net / 触及窗口)+ get(最后触及窗口的终态)。 */
 export function deriveDiffData(windows: DiffArtifact): DiffData {
   const touched = new Map<
     string,
-    { first: WindowChange; last: WindowChange; windows: string[]; elided?: DiffFileSummary["elided"] }
+    { first: WindowChange; last: WindowChange; windows: string[]; elided: DiffFileSummary["elided"] | undefined }
   >();
   for (const window of windows) {
     for (const [path, change] of Object.entries(window.changes)) {
@@ -23,7 +23,12 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
         // 一个文件不会因为某一窗口恰好小于阈值就变回可内联的文本。
         if (reason !== undefined && (entry.elided === undefined || reason === "binary")) entry.elided = reason;
       } else {
-        touched.set(path, { first: change, last: change, windows: [window.window], ...(reason ? { elided: reason } : {}) });
+        touched.set(path, {
+          first: change,
+          last: change,
+          windows: [window.window],
+          elided: reason,
+        });
       }
     }
   }
@@ -33,7 +38,7 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
     files[path] = {
       net: computeNet(entry.first, entry.last),
       windows: entry.windows,
-      ...(entry.elided ? { elided: entry.elided } : {}),
+      elided: entry.elided,
     };
   }
 
@@ -108,10 +113,9 @@ export function elidedContentPaths(diff: DiffData): string[] {
 
 /** 内容被省略的条目怎么向人交代:reason + 已知字节数。 */
 export function describeElided(elided: NonNullable<WindowChange["elided"]>): string {
-  const bytes = [
-    elided.beforeBytes === undefined ? undefined : `before ${elided.beforeBytes} bytes`,
-    elided.afterBytes === undefined ? undefined : `after ${elided.afterBytes} bytes`,
-  ].filter((part) => part !== undefined);
+  const bytes: string[] = [];
+  if (elided.beforeBytes !== undefined) bytes.push(`before ${elided.beforeBytes} bytes`);
+  if (elided.afterBytes !== undefined) bytes.push(`after ${elided.afterBytes} bytes`);
   return bytes.length > 0 ? `${elided.reason} (${bytes.join(", ")})` : elided.reason;
 }
 
@@ -134,24 +138,19 @@ export function emptyDiffData(): DiffData {
 /** Canonical Sandbox workdir-relative path shared by registration and storage. */
 export function isCanonicalWorkspaceRelativePath(value: unknown): value is string {
   if (
-    typeof value !== "string"
-    || value.length === 0
-    || value.includes("\u0000")
-    || value.includes("\\")
-    || value.startsWith("/")
-    || /^[A-Za-z]:\//.test(value)
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.includes("\u0000") ||
+    value.includes("\\") ||
+    value.startsWith("/") ||
+    /^[A-Za-z]:\//.test(value)
   ) {
     return false;
   }
-  return value.split("/").every((segment) =>
-    segment.length > 0 && segment !== "." && segment !== ".."
-  );
+  return value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
-export function assertCanonicalWorkspaceRelativePath(
-  value: unknown,
-  owner: string,
-): asserts value is string {
+export function assertCanonicalWorkspaceRelativePath(value: unknown, owner: string): asserts value is string {
   if (!isCanonicalWorkspaceRelativePath(value)) {
     throw new TypeError(
       `${owner} must be a canonical portable workspace-relative path without absolute, ., .., empty, NUL, or backslash segments`,
@@ -228,10 +227,7 @@ export function evaluateTouchedPaths(
 }
 
 /** `noChanges()` 的纯求值:expected 固定为空集,与 changedPaths([]) 同一能力。 */
-export function evaluateNoChanges(
-  diff: DiffData,
-  complete = true,
-): TouchedPathsOutcome {
+export function evaluateNoChanges(diff: DiffData, complete = true): TouchedPathsOutcome {
   return evaluateTouchedPaths(diff, [], complete);
 }
 
@@ -246,7 +242,7 @@ export type ChangeContentState =
       /** 内容被省略(binary / oversized-text),字节数只知部分时省略 bytes。 */
       readonly state: "elided";
       readonly reason: "binary" | "oversized-text";
-      readonly bytes?: number;
+      readonly bytes: number | undefined;
     }
   | {
       /** 内容证据不在(如 provider 不支持内容导出);与「缺失」相反,不能确定该侧不成立。 */
@@ -268,7 +264,7 @@ function contentStateOf(change: WindowChange, side: "before" | "after"): ChangeC
   const elided = change.elided;
   if (elided) {
     const bytes = side === "before" ? elided.beforeBytes : elided.afterBytes;
-    return { state: "elided", reason: elided.reason, ...(bytes !== undefined ? { bytes } : {}) };
+    return { state: "elided", reason: elided.reason, bytes };
   }
   const text = side === "before" ? change.before : change.after;
   if (text === undefined) return { state: "unavailable", reason: "content-evidence-missing" };

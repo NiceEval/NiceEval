@@ -51,7 +51,7 @@ When an Attempt finishes, its result is saved together with the conversation, to
 
 Keeping results serves two purposes. One is investigation: go back to a failure and see what the system under test actually did. The other is reuse: on the next run, results unaffected by your change are reused and only the affected part runs again. See [Rerun and reuse](/tutorials/rerun-and-cache).
 
-There are three ways to read results. `show` drills down in the terminal, and both you and Coding Agents use it to investigate. `view` lets you browse conversations and timing in a browser. `query` outputs JSON for scripts and CI. All three reach the same conclusions. See [How run results flow](/explanation/results-flow).
+There are three ways to read results. `show` drills down in the terminal, and both you and Coding Agents use it to investigate. `view` lets you browse conversations and timing in a browser. `show --json` outputs JSON for scripts and CI. All three reach the same conclusions. See [How run results flow](/explanation/results-flow).
 
 ## Next steps
 

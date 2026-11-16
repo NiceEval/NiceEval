@@ -20,7 +20,7 @@ Bug 修复统一按 [E2E TDD](#bug-修复的-e2e-tdd) 从公开入口的红灯�
 
 真实场景 Repo 是表现和运行手段，不是新的测试语义。它就是一个普通用户项目，含自己的
 `package.json`、lockfile、NiceEval 依赖、config、Eval、Experiment、Report、服务和测试。
-测试仍然要明确执行 `pnpm exec niceeval exp`，再以 `query discover / explain / run` 或 `view` 断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
+测试仍然要明确执行 `pnpm exec niceeval exp`，再以 `show`（`--json`、`--explain`）或 `view` 断言过程与结果，不能用“这个 repo 跑过了”代替测试命题。
 
 功能测试与 Adapter 测试使用两组不同 Repo。CLI、Runner、Report、Package 与 Lifecycle 使用自己的确定性消费项目；
 `adapter/` 是协议 collection。AI SDK、Codex CLI、Claude Code、OpenCode、Bub 与确定性 UI Message Stream fixture 都是独立叶子 Repo，
@@ -110,7 +110,7 @@ PR 审查直接从 base diff 列出所有新增、删除、重命名或实质改
 
 ## 可靠性：重复运行
 
-新增、接管或实质修改确定性自动化 owner 时，必须通过固定接管门：
+新增、接管或实质修改确定性自动化 owner 时，必须通过固定接管门。接管门由 CI 对本次 push 或 PR 中新增、实质修改的确定性 owner 自动运行（`pnpm e2e takeover`），不由本地开发逐个执行；本地只跑 Bug 的公开红灯与修复后的定向绿灯，或新 owner 的一次定向单文件绿灯。门禁未通过即 CI 失败：
 
 - 在三个彼此隔离的 Repo 副本中各运行一次；
 - 在同一副本中连续运行两次，证明没有上轮状态漂移；
@@ -209,7 +209,7 @@ Unit 总量是退化护栏，不是行命中率目标。`pnpm test` 报告的 Te
 
 ## 目标闭包
 
-- 根 runner 生成并核对唯一待测 tarball；每个场景 Repo 在隔离副本安装同一 artifact，并保留原始进程收据和单文件重跑入口。
+- 根 runner 按[候选形态](architecture/e2e/execution.md#候选形态)准备并核对 source、built 或 tarball；每个场景 Repo 在隔离副本消费所选候选，并保留原始进程收据和单文件重跑入口。
 - Testkit 跟随 checkout 测试并按 runner invocation clean-build 一次；场景 Repo 只在隔离副本安装该目录依赖，不产生第二份 tarball 信任链。
 - 每个自动化测试文件只有一个稳定 owner；Journey 不把独立结果压进同一个 `test()`。
 - JSON pipe、CommonJS package 与 Adapter 工具身份各有能杀死对应旧错误的 owner。

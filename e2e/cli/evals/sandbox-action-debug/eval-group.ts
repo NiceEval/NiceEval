@@ -1,8 +1,6 @@
 import { defineEvalGroup } from "niceeval";
 import { sandboxLayer } from "niceeval/sandbox";
-import {
-  plannedDebugAction,
-} from "../../src/sandbox-action-debug.ts";
+import { plannedDebugAction } from "../../src/sandbox-action-debug.ts";
 import plan from "./plan.eval.ts";
 import secondary from "./secondary.eval.ts";
 

@@ -13,14 +13,21 @@ test.concurrent("无 Sandbox 的中断反馈不虚构容器清理", async () => 
       { cwd: paths.projectRoot, processGroup: true, timeoutMs: 30_000 },
       async (controlled) => {
         await Promise.race([
-          pollUntil(async () => {
-            try {
-              return await readFile(join(paths.projectRoot, "interrupt-feedback-ready"), "utf8") === "ready" ? true : undefined;
-            } catch {
-              return undefined;
-            }
-          }, { timeoutMs: 15_000, intervalMs: 50, label: "direct Eval ready for interruption" }),
-          controlled.done.then((receipt) => { throw new Error(receipt.diagnostic()); }),
+          pollUntil(
+            async () => {
+              try {
+                return (await readFile(join(paths.projectRoot, "interrupt-feedback-ready"), "utf8")) === "ready"
+                  ? true
+                  : undefined;
+              } catch {
+                return undefined;
+              }
+            },
+            { timeoutMs: 15_000, intervalMs: 50, label: "direct Eval ready for interruption" },
+          ),
+          controlled.done.then((receipt) => {
+            throw new Error(receipt.diagnostic());
+          }),
         ]);
         expect(controlled.signal("SIGINT")).toBe(true);
         const receipt = await controlled.done;

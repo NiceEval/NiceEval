@@ -39,7 +39,7 @@ export interface AiSdkToolCallLike {
 /** 一次工具结果(v5+ 用 `output`,v4 用 `result`)。 */
 export interface AiSdkToolResultLike {
   toolCallId: string;
-  toolName?: string;
+  toolName?: string | undefined;
   output?: unknown;
   result?: unknown;
 }
@@ -61,36 +61,40 @@ export interface AiSdkContentPartLike {
   /** v7 tool approval:`tool-approval-request` part 的请求 id 与被拦下的调用。 */
   approvalId?: unknown;
   isAutomatic?: unknown;
-  toolCall?: {
-    toolCallId?: unknown;
-    toolName?: unknown;
-    input?: unknown;
-    args?: unknown;
-  };
+  toolCall?:
+    | {
+        toolCallId?: unknown;
+        toolName?: unknown;
+        input?: unknown;
+        args?: unknown;
+      }
+    | undefined;
 }
 
 /** 一个 step = 一次模型调用(工具循环里的一圈)。 */
 export interface AiSdkStepLike {
-  content?: readonly AiSdkContentPartLike[];
-  text?: string;
-  reasoningText?: string;
-  toolCalls?: readonly AiSdkToolCallLike[];
-  toolResults?: readonly AiSdkToolResultLike[];
+  content?: readonly AiSdkContentPartLike[] | undefined;
+  text?: string | undefined;
+  reasoningText?: string | undefined;
+  toolCalls?: readonly AiSdkToolCallLike[] | undefined;
+  toolResults?: readonly AiSdkToolResultLike[] | undefined;
 }
 
 export interface AiSdkUsageLike {
-  inputTokens?: number;
-  outputTokens?: number;
-  promptTokens?: number;
-  completionTokens?: number;
-  cachedInputTokens?: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  promptTokens?: number | undefined;
+  completionTokens?: number | undefined;
+  cachedInputTokens?: number | undefined;
   /** LanguageModelUsage(v5+)对推理模型(o-series 等)带回的思考 token,已计入 outputTokens。 */
-  reasoningTokens?: number;
+  reasoningTokens?: number | undefined;
   /** v7:cache 细分挪进了 inputTokenDetails。 */
-  inputTokenDetails?: {
-    cacheReadTokens?: number;
-    cacheWriteTokens?: number;
-  };
+  inputTokenDetails?:
+    | {
+        cacheReadTokens?: number | undefined;
+        cacheWriteTokens?: number | undefined;
+      }
+    | undefined;
 }
 
 /** result.responseMessages 的一条(只认 tool 消息里的 tool-result part,其余略过)。 */
@@ -101,30 +105,30 @@ export interface AiSdkResponseMessageLike {
 
 /** generateText / streamText 完整结果的形状子集。没有 steps 的老结果退回顶层字段。 */
 export interface AiSdkResultLike {
-  text?: string;
-  steps?: readonly AiSdkStepLike[];
+  text?: string | undefined;
+  steps?: readonly AiSdkStepLike[] | undefined;
   /** v7:跨全部 step 聚合的 content parts(approval 请求也在里面)。 */
-  content?: readonly AiSdkContentPartLike[];
-  toolCalls?: readonly AiSdkToolCallLike[];
-  toolResults?: readonly AiSdkToolResultLike[];
+  content?: readonly AiSdkContentPartLike[] | undefined;
+  toolCalls?: readonly AiSdkToolCallLike[] | undefined;
+  toolResults?: readonly AiSdkToolResultLike[] | undefined;
   /** v5/v6 聚合全部 step 的用量;优先于 usage(v6 的 usage 只是最后一个 step,v7 起也是聚合)。 */
-  totalUsage?: AiSdkUsageLike;
-  usage?: AiSdkUsageLike;
+  totalUsage?: AiSdkUsageLike | undefined;
+  usage?: AiSdkUsageLike | undefined;
   /**
    * 本次调用新产生的消息(v7)。tool approval 批准 / 拒绝后,被拦工具的执行结果只出现在
    * 这里的 tool 消息里(不进 steps),turnFromAiSdk 从中补齐 `operation.finished`。
    */
-  responseMessages?: readonly AiSdkResponseMessageLike[];
+  responseMessages?: readonly AiSdkResponseMessageLike[] | undefined;
 }
 
 /** turnFromAiSdk 的返回:铺进 `Turn` 即可(data 仍归调用方 —— 结构化输出是应用自己的语义)。 */
 export interface AiSdkTurn {
   events: StreamEvent[];
-  usage?: Usage;
+  usage: Usage | undefined;
   /** 有待人批准的工具调用(非 automatic 的 tool-approval-request)→ "waiting",否则 "completed"。 */
   status: "completed" | "waiting";
   /** 通用 AI SDK tool call 没有原生 command 分类时，随有工具调用的 Turn 降级 actions。 */
-  evidenceCoverage?: { readonly actions: { readonly status: "partial"; readonly reason: string } };
+  evidenceCoverage: { readonly actions: { readonly status: "partial"; readonly reason: string } } | undefined;
 }
 
 // ───────────────────────── 转换 ─────────────────────────
@@ -152,7 +156,13 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const steps: readonly AiSdkStepLike[] =
     result.steps && result.steps.length > 0
       ? result.steps
-      : [{ text: result.text, toolCalls: result.toolCalls, toolResults: result.toolResults }];
+      : [
+          {
+            text: result.text,
+            toolCalls: result.toolCalls,
+            toolResults: result.toolResults,
+          },
+        ];
 
   const seen = { called: new Set<string>(), resolved: new Set<string>() };
   for (const step of steps) {
@@ -170,11 +180,12 @@ export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const events = [...minedEvents, ...stepEvents];
   const waiting = events.some((e) => e.type === "input.requested");
   const evidenceCoverage = unclassifiedToolActionsCoverage(events);
+  const usage = readUsage(result, steps.length);
   return {
     events,
-    usage: readUsage(result, steps.length),
+    usage,
     status: waiting ? "waiting" : "completed",
-    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
+    evidenceCoverage,
   };
 }
 
@@ -184,11 +195,7 @@ interface SeenCallIds {
 }
 
 /** v5+ 路径:content parts 自带真实顺序,逐个翻译。 */
-function pushContentParts(
-  events: StreamEvent[],
-  parts: readonly AiSdkContentPartLike[],
-  seen: SeenCallIds,
-): void {
+function pushContentParts(events: StreamEvent[], parts: readonly AiSdkContentPartLike[], seen: SeenCallIds): void {
   for (const part of parts) {
     switch (part.type) {
       case "text": {
@@ -244,10 +251,12 @@ function pushContentParts(
           });
         }
         if (part.isAutomatic === true) break; // SDK 自动裁决,不用等人
+        const id = str(part.approvalId);
+        const action = call ? str(call.toolName) : undefined;
         const request: InputRequest = {
-          id: str(part.approvalId),
-          action: call ? str(call.toolName) : undefined,
-          input: call ? asJson(call.input ?? call.args) : undefined,
+          id,
+          action,
+          ...(call ? { input: asJson(call.input ?? call.args) } : {}),
           options: [{ id: "approve" }, { id: "deny" }],
         };
         events.push({ type: "input.requested", request });
@@ -320,7 +329,10 @@ function mineResponseMessages(
   return events;
 }
 
-function unwrapToolOutput(output: unknown): { output?: JsonValue; status: "completed" | "failed" | "rejected" } {
+function unwrapToolOutput(output: unknown): {
+  output: JsonValue | undefined;
+  status: "completed" | "failed" | "rejected";
+} {
   if (output && typeof output === "object" && !Array.isArray(output)) {
     const wrapped = output as { type?: unknown; value?: unknown; reason?: unknown };
     switch (wrapped.type) {
@@ -328,11 +340,13 @@ function unwrapToolOutput(output: unknown): { output?: JsonValue; status: "compl
       case "text":
       case "content":
         return { output: asJson(wrapped.value), status: "completed" };
-      case "execution-denied":
+      case "execution-denied": {
+        const reason = str(wrapped.reason);
         return {
-          output: str(wrapped.reason) ? { reason: str(wrapped.reason)! } : undefined,
+          output: reason ? { reason } : undefined,
           status: "rejected",
         };
+      }
       case "error-text":
       case "error-json":
         return { output: { error: asJson(wrapped.value) }, status: "failed" };
@@ -391,9 +405,9 @@ function num(value: unknown): number | undefined {
 export interface AiSdkGenerateContext<M = JsonValue, Integration extends object = object> {
   readonly messages: M[];
   /** 实验钉的 model(ctx.model);省略 → 用应用自己的默认。 */
-  readonly model?: string;
+  readonly model: string | undefined;
   /** 实验钉的推理努力程度(ctx.reasoningEffort);省略 → 用应用自己的默认。应用自己决定怎么塞进 providerOptions(如 OpenAI 的 reasoningEffort)。 */
-  readonly reasoningEffort?: string;
+  readonly reasoningEffort: string | undefined;
   readonly signal: AbortSignal;
   readonly flags: ExperimentFlags;
   /**
@@ -401,7 +415,7 @@ export interface AiSdkGenerateContext<M = JsonValue, Integration extends object 
    * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,
    * 应用侧原样透传即可。
    */
-  readonly telemetry?: AiSdkTelemetrySettings<Integration>;
+  readonly telemetry: AiSdkTelemetrySettings<Integration> | undefined;
 }
 
 /**
@@ -433,7 +447,7 @@ export interface AiSdkTracing<Integration extends object = object> {
 
 export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = object> {
   /** agent 名(报告 / 结果聚合的身份)。默认 "ai-sdk"。 */
-  name?: string;
+  name?: string | undefined;
   /**
    * 开 OTel 管线(拿 `niceeval view` 的瀑布图):传 `niceeval/adapter/otel` 的
    * `aiSdkOtel()`。设了运行器就为这个 agent 开 per-attempt OTLP 接收器,工厂每轮用
@@ -446,7 +460,7 @@ export interface AiSdkAgentOptions<M = JsonValue, Integration extends object = o
    * aiSdkAgent({ tracing: aiSdkOtel(), generate });
    * ```
    */
-  tracing?: AiSdkTracing<Integration>;
+  tracing?: AiSdkTracing<Integration> | undefined;
   /**
    * 每轮一召:拿会话历史跑一次 generateText / streamText(await 完整结果)并原样返回。
    * model / tools / system prompt / stopWhen 都在这里配 —— 那是应用的事,工厂不掺和。
@@ -504,71 +518,76 @@ export function aiSdkAgent<M = JsonValue, Integration extends object = object>(
     evidenceCoverage: completeEvidenceCoverage,
     // tracing 开了才让运行器为这个 agent 起 OTLP 接收器(ctx.telemetry 才会出现);
     // AgentTracing 的其余字段(env/configure/scope)这里都用不上,空对象即可。
-    tracing: options.tracing ? {} : undefined,
+    ...(options.tracing ? { tracing: {} } : {}),
 
-    send: (input, ctx) => Effect.tryPromise({
-      try: async () => {
-        // 会话续接:ctx.session.id 未记录时开新会话并 capture 回写;否则按 id 续接同一份历史。
-        const id = ctx.session.id ?? `ai-sdk-${randomUUID()}`;
-        ctx.session.capture(id);
-        let state = sessions.get(id);
-        if (!state) {
-          state = { messages: [], pendingApprovals: [] };
-          sessions.set(id, state);
-        }
+    send: (input, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          // 会话续接:ctx.session.id 未记录时开新会话并 capture 回写;否则按 id 续接同一份历史。
+          const id = ctx.session.id ?? `ai-sdk-${randomUUID()}`;
+          ctx.session.capture(id);
+          let state = sessions.get(id);
+          if (!state) {
+            state = { messages: [], pendingApprovals: [] };
+            sessions.set(id, state);
+          }
 
-        if (state.pendingApprovals.length > 0) {
-          // HITL:t.respond 的回答到 adapter 就是一次普通的带 responses 的 send,按
-          // requestId(= approvalId)对位取裁决;没答到的请求直接报错,不从文本猜。
-          const content = state.pendingApprovals.map((approvalId) => ({
-            type: "tool-approval-response" as const,
-            approvalId,
-            approved: approvalDecision(input.responses, approvalId),
-          }));
-          state.pendingApprovals = [];
-          state.messages.push({ role: "tool", content } as M);
-        } else {
-          state.messages.push(userMessage(input.text, input.files) as M);
-        }
+          if (state.pendingApprovals.length > 0) {
+            // HITL:t.respond 的回答到 adapter 就是一次普通的带 responses 的 send,按
+            // requestId(= approvalId)对位取裁决;没答到的请求直接报错,不从文本猜。
+            const content = state.pendingApprovals.map((approvalId) => ({
+              type: "tool-approval-response" as const,
+              approvalId,
+              approved: approvalDecision(input.responses, approvalId),
+            }));
+            state.pendingApprovals = [];
+            state.messages.push({ role: "tool", content } as M);
+          } else {
+            state.messages.push(userMessage(input.text, input.files) as M);
+          }
 
-        // tracing 管线由调用方显式传入(niceeval/adapter/otel 的 aiSdkOtel()),工厂只管
-        // 每轮把 per-attempt 端点交给它、轮末 flush。
-        const otel = ctx.telemetry && options.tracing ? options.tracing.telemetryForEndpoint(ctx.telemetry.endpoint) : undefined;
+          // tracing 管线由调用方显式传入(niceeval/adapter/otel 的 aiSdkOtel()),工厂只管
+          // 每轮把 per-attempt 端点交给它、轮末 flush。
+          const otel =
+            ctx.telemetry && options.tracing ? options.tracing.telemetryForEndpoint(ctx.telemetry.endpoint) : undefined;
 
-        let result: AiSdkResultLike;
-        try {
-          result = await options.generate({
-            messages: state.messages,
-            model: ctx.model,
-            reasoningEffort: ctx.reasoningEffort,
-            signal: ctx.signal,
-            flags: ctx.flags,
-            telemetry: otel?.settings,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          throw makeSendFailure({ acceptance: "unknown", message, cause: normalizeExternalCause(error) });
-        } finally {
-          // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
-          await otel?.flush();
-        }
+          let result: AiSdkResultLike;
+          try {
+            result = await options.generate({
+              messages: state.messages,
+              model: ctx.model,
+              reasoningEffort: ctx.reasoningEffort,
+              signal: ctx.signal,
+              flags: ctx.flags,
+              telemetry: otel?.settings,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw makeSendFailure({ acceptance: "unknown", message, cause: normalizeExternalCause(error) });
+          } finally {
+            // 轮次归属靠时间窗口:本轮 span 必须在 send 返回前送到接收器,不能等 batch。
+            await otel?.flush();
+          }
 
-        // resume 的另一半义务:本次调用新产生的消息(含 approval 执行结果)进历史。
-        state.messages.push(...((result.responseMessages ?? []) as M[]));
-        state.pendingApprovals = collectPendingApprovals(result);
+          // resume 的另一半义务:本次调用新产生的消息(含 approval 执行结果)进历史。
+          state.messages.push(...((result.responseMessages ?? []) as M[]));
+          state.pendingApprovals = collectPendingApprovals(result);
 
-        const turn = turnFromAiSdk(result);
-        // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
-        if (turn.events.length === 0) {
-          throw makeSendFailure({
-            acceptance: "unknown",
-            message: "AI SDK returned an empty result (no text, no tool calls)",
-          });
-        }
-        return { ...turn, data: options.data?.(result, turn) };
-      },
-      catch: (cause) => cause,
-    }),
+          const turn = turnFromAiSdk(result);
+          // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
+          if (turn.events.length === 0) {
+            throw makeSendFailure({
+              acceptance: "unknown",
+              message: "AI SDK returned an empty result (no text, no tool calls)",
+            });
+          }
+          const data = options.data?.(result, turn);
+          return { ...turn, data };
+        },
+        catch: (cause) => cause,
+      }),
+    before: () => Effect.void,
+    after: () => Effect.void,
   });
 }
 

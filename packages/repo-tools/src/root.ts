@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 
 class RepositoryProfileError extends Error {
-  constructor(readonly code: "RepositoryRootInvalid", message: string) {
+  constructor(
+    readonly code: "RepositoryRootInvalid",
+    message: string,
+  ) {
     super(message);
     this.name = code;
   }

@@ -14,9 +14,7 @@ Judge 用独立裁判模型评估事实一致性、摘要忠实度和说明质�
 ```ts
 import { defineJudge } from "niceeval/expect";
 
-const explainsRisk = defineJudge({
-  name: "explains-risk",
-  rubric: "根据 change 评价 explanation 是否说明兼容性、回滚方式和数据风险。",
+const explainsRisk = defineJudge({ rubric: "根据 change 评价 explanation 是否说明兼容性、回滚方式和数据风险。",
   anchors: [
     { measurement: 0, description: "没有说明具体风险或回滚方式" },
     { measurement: 0.5, description: "说明部分风险，但遗漏一项关键内容" },
@@ -124,6 +122,8 @@ export default defineEval({
 ```
 
 这里继续使用全局 Provider 的端点、凭据来源和执行限制，只替换 `model`。
+
+同一个 Attempt 里，相邻的普通 Judge 检查会并发请求，最多同时 `maxConcurrency` 个（默认 4，写在 Provider 工厂上）；网关容易限流时调小，写 1 就逐个请求。它只限制一个 Attempt 内的并发，同时运行的 Attempt 越多，网关看到的请求越多。改它不会让已有结果失效。
 Eval 和 Experiment 也能提供完整 Provider；这会整体替换服务、默认模型和限制。
 没有按 hostname、模型前缀或已存在的 key 猜测服务的规则。
 

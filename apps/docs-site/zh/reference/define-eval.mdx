@@ -33,7 +33,7 @@ export default defineEval({
 #### `description`
 
 ```ts
-description?: string;
+description?: string | undefined;
 ```
 
 一句话描述,展示在 `niceeval list` 和 view 里;纯说明,不影响调度或打分。
@@ -41,7 +41,7 @@ description?: string;
 #### `tags`
 
 ```ts
-tags?: string[];
+tags?: string[] | undefined;
 ```
 
 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。
@@ -49,7 +49,7 @@ tags?: string[];
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer;
+sandbox?: SandboxLayer | undefined;
 ```
 
 这道题贡献的 Sandbox 声明层。省略等价于空 command-only layer，不提供隐式 template。
@@ -58,7 +58,7 @@ sandbox?: SandboxLayer;
 #### `plugins`
 
 ```ts
-plugins?: readonly PluginInstance<"eval">[];
+plugins?: readonly PluginInstance<"eval">[] | undefined;
 ```
 
 显式且不可变的评估用例 Plugin occurrence；不存在目录继承。
@@ -66,7 +66,7 @@ plugins?: readonly PluginInstance<"eval">[];
 #### `judge`
 
 ```ts
-judge?: JudgeSelection;
+judge?: JudgeSelection | undefined;
 ```
 
 模型字符串只替换项目 Judge Provider 的模型；Provider 实例整体替换。Experiment 设置优先。
@@ -74,7 +74,7 @@ judge?: JudgeSelection;
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。
@@ -82,7 +82,7 @@ timeoutMs?: number;
 #### `metadata`
 
 ```ts
-metadata?: globalThis.Record<string, JsonValue>;
+metadata?: globalThis.Record<string, JsonValue> | undefined;
 ```
 
 任意附加元数据,作为 Attempt Provenance 保存,不参与调度或打分;供自定义 reporter 消费。
@@ -90,7 +90,7 @@ metadata?: globalThis.Record<string, JsonValue>;
 #### `diff`
 
 ```ts
-diff?: { include?: string[]; ignore?: string[] };
+diff?: { include?: string[] | undefined; ignore?: string[] | undefined } | undefined;
 ```
 
 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
@@ -111,8 +111,8 @@ test(t: TestContext): EvalTestReturn;
 `t.note(label, value)` 记录供结果审阅使用的 JSON 值或 Quantity，例如 `t.note("延迟", ms(512))`。
 它不登记 Assertion，不影响 Verdict、score 或 coverage。`null` 显示为 unavailable。
 同一 Attempt 的 label 必须唯一，最多 64 项，每项 JSON 不超过 64 KiB；违规时抛出 `TypeError`。
-`show @<locator>` 和 View 在 Assertions 后展示 Notes；JSON 与 Query 的 Attempt 结果包含 `notes`。
-`show --exp <experiment-id>` 按 label 和单位聚合数值，展示 count、min、median、p90、max。
+`show @<locator>` 和 View 在 Assertions 后展示 Notes；`show --json` 的 Attempt 结果包含 `notes`。
+`show exp:<experiment-id>` 按 label 和单位聚合数值，展示 count、min、median、p90、max。
 
 `t`（`TestContext`）是评估用例作者在 `test(t)` 里拿到的上下文。每调用一次检查方法，就登记一条断言。
 
@@ -136,6 +136,12 @@ root、Session 和 Turn 上的 `judge` 都要求显式传入材料。官方提�
 
 {/* 本区块由 pnpm run repo docs reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 packages/repo-tools/src/docs/reference-compiler.ts) */}
 
+#### `simulatedUser`
+
+```ts
+simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
+```
+
 #### `note`
 
 ```ts
@@ -153,7 +159,9 @@ readonly evaluationKind: Kind;
 #### `send`
 
 ```ts
-send(input: string | { readonly text: string; readonly files?: readonly InputFile[] }): Promise<TurnHandle<Kind>>;
+send(
+  input: string | { readonly text: string; readonly files?: readonly InputFile[] | undefined },
+): Promise<TurnHandle<Kind>>;
 ```
 
 #### `sendFile`
@@ -219,13 +227,13 @@ readonly signal: AbortSignal;
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model: string | undefined;
 ```
 
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort: string | undefined;
 ```
 
 #### `flags`
@@ -261,16 +269,19 @@ skip(reason: string): never;
 #### `group`
 
 ```ts
-group<Value>(
-  title: string,
-  body: () => Value | PromiseLike<Value>,
-): Promise<Awaited<Value>>;
+group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
 ```
 
 #### `check`
 
 ```ts
 check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"attempt">>;
+```
+
+#### `agentJudge`
+
+```ts
+agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
 ```
 
 #### `judge`
@@ -378,13 +389,21 @@ closeQA(question: string, options?: JudgePresetOptions): MeasurementAssertionHan
 #### `closeQA`
 
 ```ts
-closeQA(selector: ToolMatch | EventMatch, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA(
+  selector: ToolMatch | EventMatch,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 #### `closeQA`
 
 ```ts
-closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA<T>(
+  selector: MaterialMatch<Context, T>,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 {/* GENERATED:END test-context */}
@@ -394,9 +413,7 @@ closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: Judg
 先用 `defineJudge` 声明评分标准，再直接交给 `t.check` 或 `t.judge`：
 
 ```ts
-const factualSummary = defineJudge({
-  name: "factual-summary",
-  rubric: "根据 source 评价 summary 是否忠实保留事实，没有编造。",
+const factualSummary = defineJudge({ rubric: "根据 source 评价 summary 是否忠实保留事实，没有编造。",
 });
 
 const turn = await t.send("总结需求。");
@@ -418,17 +435,15 @@ Judge 用哪个模型按顺序决定：先取项目配置的 `judgeProvider`，�
 ```ts
 import { binaryJudge } from "niceeval/expect";
 
-const namesEntry = binaryJudge({
-  name: "names-entry",
-  rubric: "满足当且仅当回复明确写出了 verified.entry。",
+const namesEntry = binaryJudge({ rubric: "回复明确写出了 verified.entry。",
 });
 t.judge({ reply: turn.reply, verified }, namesEntry).gate(1).score(2);
 ```
 
 `binaryJudge(options: BinaryJudgeOptions)` 返回普通 `ScoreMatch`。`BinaryJudgeOptions` 是不含 `anchors` 的 `JudgeOptions`：
-`name`、`rubric` 必填，`maxCalls`、`maxMaterialBytes` 与 `maxAuditBytes` 可选，校验和预算与 `defineJudge` 相同。
+`rubric` 必填，`maxCalls` 与 `maxMaterialBytes` 可选，校验和预算与 `defineJudge` 相同。
 它只分类为 `satisfied` 或 `not-satisfied`，分别得到 `1` 或 `0`。`.score(n)` 因而只给满分或零分；必须满足时使用 `.gate(1)`。
-非法输出、预算不足或服务故障保留错误或不可用状态，不计作零分。审计保留类别、理由和映射结果，供 `show @<locator> --assertions` 查看。
+非法输出、预算不足或服务故障保留错误或不可用状态，不计作零分。审计保留类别、理由和映射结果，供 `show @<locator> assertions` 查看。
 
 ### 图片材料
 
@@ -578,7 +593,7 @@ readonly reply: string;
 #### `data`
 
 ```ts
-readonly data?: JsonValue;
+readonly data: JsonValue | undefined;
 ```
 
 #### `usage`
@@ -591,6 +606,12 @@ readonly usage: EvalUsage;
 
 ```ts
 check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<"turn">>;
+```
+
+#### `agentJudge`
+
+```ts
+agentJudge: import("../assertions/api.ts").AgentJudgeFunction<Kind>;
 ```
 
 #### `judge`
@@ -674,13 +695,21 @@ closeQA(question: string, options?: JudgePresetOptions): MeasurementAssertionHan
 #### `closeQA`
 
 ```ts
-closeQA(selector: ToolMatch | EventMatch, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA(
+  selector: ToolMatch | EventMatch,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 #### `closeQA`
 
 ```ts
-closeQA<T>(selector: MaterialMatch<Context, T>, question: string, options?: JudgePresetOptions): MeasurementAssertionHandle<Kind>;
+closeQA<T>(
+  selector: MaterialMatch<Context, T>,
+  question: string,
+  options?: JudgePresetOptions,
+): MeasurementAssertionHandle<Kind>;
 ```
 
 {/* GENERATED:END turn-handle */}
@@ -734,13 +763,15 @@ Agent 场景的 `read` 从 `AgentMatchContext<Scope>` 读取 NiceEval 整理好�
 | `t.sandbox.unchangedWithin(paths)` | 保护列出的文件和目录，任何变化路径落入范围都不满足；零变化也满足。 |
 | `t.sandbox.fileChanged(path, options?)` | 同一次发送窗口内，该路径发生变化且同时满足 `status`、`before`、`after`；内容条件使用字符串 Match。 |
 | `t.sandbox.fileDeleted(path)` | 找到该路径的删除变化；不要求它在整个 Attempt 结束时仍不存在。 |
-| `t.sandbox.notInDiff(pattern, options?)` | 正则表达式未命中变化路径及变化行；`content` 选 `added`、`removed` 或默认的 `both`，不扫描未变化上下文。 |
+| `t.sandbox.notInDiff(pattern, options?)` | 正则表达式未命中变化路径及变化行；`content` 选 `added`、`removed`、默认的 `both`，或只比较路径的 `none`；不扫描未变化上下文。 |
 | `t.sandbox.inDiff(pattern, options?)` | 正则表达式命中变化路径或所选变化行即满足；`content` 的取值与默认值同 `notInDiff`。 |
 
 `changedPaths(["src/a.ts"])` 要求恰好修改这个文件；`changedOnlyWithin(["src"])` 允许不改文件，也允许只改 `src` 内的部分文件。后者按路径组件匹配，`agents` 不覆盖 `agents-old`；至少提供一个范围，空数组请改用 `noChanges()`。
 路径含 `*` 或 `?` 时抛出 `TypeError`：不支持 glob，目录前缀直接写目录名。
 
 `unchangedWithin(["agents", "niceeval.config.ts"])` 保护运行配置，允许修改其余文件；它与 `changedOnlyWithin` 不是逻辑取反。路径组件、glob 和空数组的拒绝规则与允许范围检查相同。
+
+只关心文件路径时，两种检查都使用 `{ content: "none" }`。它只拿正则表达式与 agent 变化路径比较，不读取变化行。binary 或 oversized 内容省略不影响结果；归因材料采集失败或不完整时仍为 unavailable。默认的 `both` 会同时扫描变化行，所选内容被省略时可能无法判定。
 
 `inDiff` 不扫描未变化上下文。没有命中且所选内容被省略时，结果为 unavailable；路径或已知变化行命中时仍可确定满足。匹配的证据保留首个命中路径与有界预览。只想匹配内容时，pattern 应避免命中路径。
 

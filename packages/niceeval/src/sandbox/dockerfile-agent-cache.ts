@@ -4,7 +4,7 @@
 import { Deferred, Effect, Exit } from "effect";
 import { digestOf, type BuildKey } from "./identity.ts";
 import { AGENT_DOCKERFILE_CACHE_SAFE, type DockerfileAgentCacheSafeInstaller } from "../agents/cache-marker.ts";
-import type { AgentEnsure, AgentIdentity, AgentInstaller } from "../agents/types.ts";
+import type { AgentInstall, AgentIdentity, AgentInstaller } from "../agents/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
 
 export const DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION = "dockerfile-agent-1";
@@ -12,7 +12,7 @@ export const DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION = "dockerfile-agent-
 export interface DockerfileAgentCacheRequest {
   readonly taskLocator: string;
   readonly platform: string;
-  readonly ensure: AgentEnsure;
+  readonly install: AgentInstall;
   readonly installer: AgentInstaller;
 }
 
@@ -21,7 +21,7 @@ export interface DockerfileAgentDerivedImageBuildInput {
   readonly derivedLocator: string;
   readonly derivedKey: BuildKey;
   readonly platform: string;
-  readonly ensureIdentity: AgentIdentity;
+  readonly installIdentity: AgentIdentity;
   readonly installerIdentity: AgentIdentity;
   readonly installMode: "staged";
 }
@@ -55,10 +55,11 @@ export function dockerfileAgentDerivedKey(input: DockerfileAgentCacheRequest): B
     materializerRevision: DOCKERFILE_AGENT_DERIVED_MATERIALIZER_REVISION,
     taskLocator: input.taskLocator,
     platform: input.platform,
+    // Frozen cache-key encoding: keep the historical key to preserve the digest.
     ensure: {
-      agent: input.ensure.identity.agent,
-      version: input.ensure.identity.version,
-      revision: input.ensure.identity.revision,
+      agent: input.install.identity.agent,
+      version: input.install.identity.version,
+      revision: input.install.identity.revision,
     },
     installer: {
       agent: input.installer.identity.agent,
@@ -74,10 +75,7 @@ export function dockerfileAgentDerivedLocator(derivedKey: BuildKey): string {
 }
 
 export class DockerfileAgentImageCoordinator {
-  private readonly inflight = new Map<
-    BuildKey,
-    Deferred.Deferred<DockerfileAgentCacheResolution, Error>
-  >();
+  private readonly inflight = new Map<BuildKey, Deferred.Deferred<DockerfileAgentCacheResolution, Error>>();
 
   constructor(private readonly hooks: DockerfileAgentCacheHooks) {}
 
@@ -119,22 +117,27 @@ export class DockerfileAgentImageCoordinator {
           timing,
           "sandbox.build.agent",
           `agent image build ${derivedLocator}`,
-          build({
-            taskLocator: input.taskLocator,
-            derivedLocator,
-            derivedKey,
-            platform: input.platform,
-            ensureIdentity: input.ensure.identity,
-            installerIdentity: input.installer.identity,
-            installMode: "staged",
-          }, signal),
+          build(
+            {
+              taskLocator: input.taskLocator,
+              derivedLocator,
+              derivedKey,
+              platform: input.platform,
+              installIdentity: input.install.identity,
+              installerIdentity: input.installer.identity,
+              installMode: "staged",
+            },
+            signal,
+          ),
         );
         return { status: "built" as const, locator: derivedLocator, derivedKey };
       });
       yield* Deferred.complete(flight.deferred, run).pipe(
-        Effect.ensuring(Effect.sync(() => {
-          if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
-        })),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.inflight.get(derivedKey) === flight.deferred) this.inflight.delete(derivedKey);
+          }),
+        ),
       );
       return yield* Deferred.await(flight.deferred);
     });
@@ -150,14 +153,18 @@ function timedCacheActivity<T>(
   if (timing === undefined) return run;
   return Effect.suspend(() => {
     const startOffsetMs = timing.offsetNow();
-    return run.pipe(Effect.onExit((exit) => Effect.sync(() => {
-      timing.child({
-        key,
-        label,
-        startOffsetMs,
-        durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
-        ...(Exit.isSuccess(exit) ? {} : { failed: true }),
-      });
-    })));
+    return run.pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          timing.child({
+            key,
+            label,
+            startOffsetMs,
+            durationMs: Math.max(0, timing.offsetNow() - startOffsetMs),
+            ...(Exit.isSuccess(exit) ? {} : { failed: true }),
+          });
+        }),
+      ),
+    );
   });
 }

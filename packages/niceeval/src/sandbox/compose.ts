@@ -11,10 +11,14 @@ import { dirname, isAbsolute, join, relative as relativePath, resolve as resolve
 import { fileURLToPath } from "node:url";
 import { Data, Effect, type Scope } from "effect";
 import { parseDocument } from "yaml";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import type { JsonValue } from "../shared/types.ts";
 import {
-  attachLeakGateHints,
   buildContextIdentityContribution,
+  LeakGateFileError,
+  HiddenInputLeakError,
+  LeakGatePathError,
+  type LeakGateError,
   pathContentDigest,
   type BindMountSpec,
   type BuildContextSpec,
@@ -42,9 +46,9 @@ import {
 } from "./identity.ts";
 import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
-import type { CommandResult, Sandbox } from "./types.ts";
+import type { Sandbox } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
-import { customSandboxBackend, type SandboxProviderBackend } from "./backend.ts";
+import { customSandboxBackend } from "./backend.ts";
 import type { DockerSandbox } from "./docker.ts";
 import { dockerfileBaseIdentity } from "./dockerfile-identity.ts";
 
@@ -69,6 +73,7 @@ const COMPOSE_STOP_TIMEOUT_MS = 6_500;
 const COMPOSE_ABORT_KILL_GRACE_MS = 1_000;
 
 export class ComposeBuildCollectionError extends Data.TaggedError("ComposeBuildCollectionError")<{
+  readonly cause: LeakGateError | ExternalCause | undefined;
   readonly stage: "read" | "configuration" | "security" | "identity";
   readonly message: string;
 }> {}
@@ -79,6 +84,10 @@ function composeCollectionError(
 ): ComposeBuildCollectionError {
   return new ComposeBuildCollectionError({
     stage,
+    cause:
+      cause instanceof LeakGateFileError || cause instanceof HiddenInputLeakError || cause instanceof LeakGatePathError
+        ? cause
+        : normalizeExternalCause(cause),
     message: cause instanceof Error ? cause.message : String(cause),
   });
 }
@@ -95,13 +104,12 @@ export function normalizeBuildPlatform(value: string): string {
   const [rawOs, rawArch] = value.trim().toLowerCase().split("/");
   const os = rawOs && rawArch ? rawOs : "linux";
   const arch = rawArch ?? rawOs ?? "";
-  const normalizedArch =
-    arch === "x86_64" || arch === "x64" || arch === "amd64"
-      ? "amd64"
-      : arch === "aarch64" || arch === "arm64"
-        ? "arm64"
-        : arch;
-  return `${os}/${normalizedArch}`;
+  function normalizedArch(): string {
+    if (arch === "x86_64" || arch === "x64" || arch === "amd64") return "amd64";
+    if (arch === "aarch64" || arch === "arm64") return "arm64";
+    return arch;
+  }
+  return `${os}/${normalizedArch()}`;
 }
 
 let dockerPlatformProbe: Promise<string> | undefined;
@@ -156,22 +164,22 @@ function probeDockerServerPlatform(): Promise<string | undefined> {
 
 export interface ComposeBuildDecl {
   readonly context: string;
-  readonly dockerfile?: string;
-  readonly args?: Readonly<globalThis.Record<string, string>>;
-  readonly target?: string;
+  readonly dockerfile: string | undefined;
+  readonly args: Readonly<globalThis.Record<string, string>> | undefined;
+  readonly target: string | undefined;
   /** Compose `build.platforms` 原样保留;进 BuildKey 前由收集器裁决(多元素拒绝)。 */
-  readonly platforms?: readonly string[];
+  readonly platforms: readonly string[] | undefined;
 }
 
 /** Describes one inspected Compose service; its platform overrides the default build platform when explicitly set. */
 export interface ComposeServiceInspection {
   readonly name: string;
-  readonly build?: ComposeBuildDecl;
+  readonly build: ComposeBuildDecl | undefined;
   /** service 级 `platform`:Compose 用它决定构建与运行平台,压过 DOCKER_DEFAULT_PLATFORM。 */
-  readonly platform?: string;
-  readonly image?: string;
-  readonly networkMode?: string;
-  readonly workingDir?: string;
+  readonly platform: string | undefined;
+  readonly image: string | undefined;
+  readonly networkMode: string | undefined;
+  readonly workingDir: string | undefined;
   /** 原始 volume 条目(短语法字符串或长语法摘要)。 */
   readonly volumes: readonly string[];
 }
@@ -199,14 +207,27 @@ export interface ComposeLocalFileRef {
 export function inspectComposeYaml(raw: string): ComposeInspection {
   const doc = parseYamlMapping(raw);
   const servicesNode = doc.services;
-  if (servicesNode === undefined || servicesNode === null || typeof servicesNode !== "object" || Array.isArray(servicesNode)) {
+  if (
+    servicesNode === undefined ||
+    servicesNode === null ||
+    typeof servicesNode !== "object" ||
+    Array.isArray(servicesNode)
+  ) {
     return { services: [], networkNames: [], raw, localFiles: topLevelLocalFiles(doc) };
   }
   const services: ComposeServiceInspection[] = [];
   const localFiles: ComposeLocalFileRef[] = topLevelLocalFiles(doc);
   for (const [name, value] of Object.entries(servicesNode as globalThis.Record<string, unknown>)) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      services.push({ name, volumes: [] });
+      services.push({
+        name,
+        build: undefined,
+        platform: undefined,
+        image: undefined,
+        networkMode: undefined,
+        workingDir: undefined,
+        volumes: [],
+      });
       continue;
     }
     const svc = value as globalThis.Record<string, unknown>;
@@ -215,19 +236,11 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
     }
     services.push({
       name,
-      ...(parseBuild(svc.build) !== undefined ? { build: parseBuild(svc.build)! } : {}),
-      ...(typeof svc.platform === "string" ? { platform: svc.platform } : {}),
-      ...(typeof svc.image === "string" ? { image: svc.image } : {}),
-      ...(typeof svc.network_mode === "string"
-        ? { networkMode: svc.network_mode }
-        : typeof svc.networkMode === "string"
-          ? { networkMode: svc.networkMode }
-          : {}),
-      ...(typeof svc.working_dir === "string"
-        ? { workingDir: svc.working_dir }
-        : typeof svc.workingDir === "string"
-          ? { workingDir: svc.workingDir }
-          : {}),
+      build: parseBuild(svc.build),
+      platform: typeof svc.platform === "string" ? svc.platform : undefined,
+      image: typeof svc.image === "string" ? svc.image : undefined,
+      networkMode: composeStringValue(svc.network_mode, svc.networkMode),
+      workingDir: composeStringValue(svc.working_dir, svc.workingDir),
       volumes: volumeStrings(svc.volumes),
     });
   }
@@ -295,12 +308,20 @@ function managedNetworkNames(
   }
   const managed = [...used].filter((n) => !external.has(n));
   // 没有服务显式声明网络时,Compose 建的是 project 的 default 网络。
-  return managed.length > 0 ? managed : used.size > 0 ? [] : ["default"];
+  if (managed.length > 0) return managed;
+  if (used.size > 0) return [];
+  return ["default"];
+}
+
+function composeStringValue(primary: unknown, alternate: unknown): string | undefined {
+  if (typeof primary === "string") return primary;
+  if (typeof alternate === "string") return alternate;
+  return undefined;
 }
 
 function parseBuild(value: unknown): ComposeBuildDecl | undefined {
   if (typeof value === "string") {
-    return { context: value };
+    return { context: value, dockerfile: undefined, args: undefined, target: undefined, platforms: undefined };
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const b = value as globalThis.Record<string, unknown>;
@@ -312,16 +333,14 @@ function parseBuild(value: unknown): ComposeBuildDecl | undefined {
     : undefined;
   const args =
     b.args !== undefined && b.args !== null && typeof b.args === "object" && !Array.isArray(b.args)
-      ? Object.fromEntries(
-          Object.entries(b.args as globalThis.Record<string, unknown>).map(([k, v]) => [k, String(v)]),
-        )
+      ? Object.fromEntries(Object.entries(b.args as globalThis.Record<string, unknown>).map(([k, v]) => [k, String(v)]))
       : undefined;
   return {
     context,
-    ...(dockerfile !== undefined ? { dockerfile } : {}),
-    ...(args !== undefined ? { args } : {}),
-    ...(target !== undefined ? { target } : {}),
-    ...(platforms !== undefined && platforms.length > 0 ? { platforms } : {}),
+    dockerfile,
+    args,
+    target,
+    platforms: platforms !== undefined && platforms.length > 0 ? platforms : undefined,
   };
 }
 
@@ -335,8 +354,8 @@ function volumeStrings(value: unknown): string[] {
     }
     if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
       const v = entry as globalThis.Record<string, unknown>;
-      const source = typeof v.source === "string" ? v.source : typeof v.Source === "string" ? v.Source : "";
-      const target = typeof v.target === "string" ? v.target : typeof v.Target === "string" ? v.Target : "";
+      const source = composeStringValue(v.source, v.Source) ?? "";
+      const target = composeStringValue(v.target, v.Target) ?? "";
       const type = typeof v.type === "string" ? v.type : "";
       out.push([type, source, target].filter(Boolean).join(":"));
     }
@@ -412,10 +431,7 @@ export function assertComposeBlacklist(
   const findings = findComposeBlacklistViolations(inspection, opts);
   if (findings.length === 0) return;
   const body = findings
-    .map(
-      (f, i) =>
-        `  ${i + 1}. services.${f.service}.${f.field}=${JSON.stringify(f.value)}\n     ${f.reason}`,
-    )
+    .map((f, i) => `  ${i + 1}. services.${f.service}.${f.field}=${JSON.stringify(f.value)}\n     ${f.reason}`)
     .join("\n");
   throw new Error(
     `Compose blacklist rejected ${findings.length} field(s) that break NiceEval core invariants:\n${body}`,
@@ -511,14 +527,11 @@ function composeConfigRunner(
   env?: Readonly<globalThis.Record<string, string>>,
 ): (projectName: string) => Promise<ComposeCommandResult> {
   return (projectName) =>
-    runDockerCompose(
-      ["-p", projectName, "-f", composePath, "config", "--format", "json"],
-      {
-        cwd: dirname(composePath),
-        env: { ...env, COMPOSE_PROJECT_NAME: projectName },
-        allowNonZero: true,
-      },
-    );
+    runDockerCompose(["-p", projectName, "-f", composePath, "config", "--format", "json"], {
+      cwd: dirname(composePath),
+      env: { ...env, COMPOSE_PROJECT_NAME: projectName },
+      allowNonZero: true,
+    });
 }
 
 /**
@@ -531,11 +544,9 @@ function composeConfigRunner(
  * 模型只在内存解码;config 失败只报安全阶段与 exit code,绝不带 stdout/stderr/模型原文。
  */
 async function assertComposeEffectiveModelSecurity(opts: {
-  readonly composePath: string;
-  readonly env?: Readonly<globalThis.Record<string, string>>;
-  readonly runComposeConfig?: (projectName: string) => Promise<ComposeCommandResult>;
+  readonly runComposeConfig: (projectName: string) => Promise<ComposeCommandResult>;
 }): Promise<void> {
-  const runConfig = opts.runComposeConfig ?? composeConfigRunner(opts.composePath, opts.env);
+  const runConfig = opts.runComposeConfig;
   const models = new Map<string, ComposeEffectiveModel>();
   for (const project of COMPOSE_PLAN_SENTINEL_PROJECTS) {
     let result: ComposeCommandResult;
@@ -650,9 +661,9 @@ export function leakGateHintsFromInspection(
       buildContexts.push({
         contextDir,
         label: `compose service ${svc.name}`,
-        ...(svc.build.dockerfile !== undefined && isAbsolute(svc.build.dockerfile)
-          ? { dockerignorePath: undefined }
-          : {}),
+
+        dockerignorePath: undefined,
+        extraIgnoreRules: undefined,
       });
     }
     for (const vol of svc.volumes) {
@@ -669,14 +680,14 @@ export function leakGateHintsFromInspection(
   }
   return {
     buildContexts,
-    ...(bindMounts.length > 0 ? { bindMounts } : {}),
+    bindMounts,
   };
 }
 
 /** 读 Compose 文件并产出泄题门 hints(供 discover / prepare 挂 attachLeakGateHints)。 */
 export function leakGateHintsFromComposeFile(
   file: string | URL,
-  opts: { readonly mainService: string; readonly baseDir?: string },
+  opts: { readonly mainService: string; readonly baseDir: string | undefined },
 ): Effect.Effect<
   { hints: LeakGateHints; inspection: ComposeInspection; composePath: string },
   ComposeBuildCollectionError
@@ -692,10 +703,13 @@ export function leakGateHintsFromComposeFile(
       catch: (cause) => composeCollectionError("configuration", cause),
     });
     if (!inspection.services.some((service) => service.name === opts.mainService)) {
-      return yield* Effect.fail(new ComposeBuildCollectionError({
-        stage: "configuration",
-        message: `Compose file ${composePath} has no service ${JSON.stringify(opts.mainService)} (mainService)`,
-      }));
+      return yield* Effect.fail(
+        new ComposeBuildCollectionError({
+          cause: undefined,
+          stage: "configuration",
+          message: `Compose file ${composePath} has no service ${JSON.stringify(opts.mainService)} (mainService)`,
+        }),
+      );
     }
     const hints = yield* Effect.try({
       try: () => {
@@ -751,7 +765,7 @@ export interface ComposeBuildCollection {
   /** 本次进 BuildKey 的目标平台;构建执行拿同一个值。 */
   readonly platform: string;
   /** 兼容旧 provider identity 的 inert fingerprint marker；不参与 carry gate。 */
-  readonly providerIdentityMarker?: JsonValue;
+  readonly providerIdentityMarker: JsonValue | undefined;
   readonly bindMountDigests: Readonly<globalThis.Record<string, string>>;
   readonly configContents: Readonly<globalThis.Record<string, string>>;
 }
@@ -812,11 +826,10 @@ function collectComposeBuildsInternal(
       catch: (cause) => composeCollectionError("security", cause),
     });
     yield* Effect.tryPromise({
-      try: () => assertComposeEffectiveModelSecurity({
-        composePath,
-        env: opts.env,
-        runComposeConfig,
-      }),
+      try: () =>
+        assertComposeEffectiveModelSecurity({
+          runComposeConfig: runComposeConfig ?? composeConfigRunner(composePath, opts.env),
+        }),
       catch: (cause) => composeCollectionError("security", cause),
     });
     const composeBytes = inspection.raw;
@@ -826,9 +839,7 @@ function collectComposeBuildsInternal(
     const platform = opts.platform
       ? normalizeBuildPlatform(opts.platform)
       : yield* Effect.tryPromise({
-          try: () => detectDockerBuildPlatform(
-            opts.platformProbe ? { probe: opts.platformProbe } : undefined,
-          ),
+          try: () => detectDockerBuildPlatform(opts.platformProbe ? { probe: opts.platformProbe } : undefined),
           catch: (cause) => composeCollectionError("identity", cause),
         });
     const works: SandboxBuildWork[] = [];
@@ -838,14 +849,17 @@ function collectComposeBuildsInternal(
     const bindMountDigests: globalThis.Record<string, string> = {};
     yield* Effect.forEach(
       hints.bindMounts ?? [],
-      (mount) => pathContentDigest(mount.source).pipe(
-        Effect.mapError((cause) => composeCollectionError("identity", cause)),
-        Effect.tap((digest) => Effect.sync(() => {
-          const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
-          bindMountDigests[key] = digest;
-        })),
-        Effect.asVoid,
-      ),
+      (mount) =>
+        pathContentDigest(mount.source).pipe(
+          Effect.mapError((cause) => composeCollectionError("identity", cause)),
+          Effect.tap((digest) =>
+            Effect.sync(() => {
+              const key = `${mount.label ?? "bind mount"}:${relativeIdentityPath(composeDir, mount.source)}`;
+              bindMountDigests[key] = digest;
+            }),
+          ),
+          Effect.asVoid,
+        ),
       { concurrency: 1, discard: true },
     );
     const configContents: globalThis.Record<string, string> = {};
@@ -855,10 +869,12 @@ function collectComposeBuildsInternal(
         const absolute = resolvePath(composeDir, ref.path);
         return pathContentDigest(absolute).pipe(
           Effect.mapError((cause) => composeCollectionError("identity", cause)),
-          Effect.tap((digest) => Effect.sync(() => {
-            const key = `${ref.kind}:${ref.label}:${relativeIdentityPath(composeDir, absolute)}`;
-            configContents[key] = digest;
-          })),
+          Effect.tap((digest) =>
+            Effect.sync(() => {
+              const key = `${ref.kind}:${ref.label}:${relativeIdentityPath(composeDir, absolute)}`;
+              configContents[key] = digest;
+            }),
+          ),
           Effect.asVoid,
         );
       },
@@ -867,104 +883,111 @@ function collectComposeBuildsInternal(
 
     yield* Effect.forEach(
       inspection.services,
-      (service) => Effect.gen(function* () {
-        if (service.image !== undefined && service.build === undefined) {
+      (service) =>
+        Effect.gen(function* () {
+          if (service.image !== undefined && service.build === undefined) {
+            yield* Effect.sync(() => {
+              imageRefs[service.name] = service.image!;
+              if (!looksLikeDigestRef(service.image!)) {
+                providerIdentityMarker = unresolvedProviderFingerprintMarker(
+                  "sandbox.image-unresolved",
+                  "Compose references an image or FROM base that is not pinned to a sha256 digest.",
+                );
+              }
+            });
+            return;
+          }
+          const build = service.build;
+          if (build === undefined) return;
+
+          const contextDir = resolvePath(composeDir, build.context);
+          const dockerfilePath = resolvePath(contextDir, build.dockerfile ?? "Dockerfile");
+          const dockerfile = yield* Effect.tryPromise({
+            try: () => readFile(dockerfilePath, "utf-8"),
+            catch: (cause) =>
+              new ComposeBuildCollectionError({
+                cause: normalizeExternalCause(cause),
+                stage: "read",
+                message: `Compose service ${JSON.stringify(service.name)} build Dockerfile not found at ${dockerfilePath}`,
+              }),
+          });
+          // Compose 声明的平台压过探测默认值:service `platform` 或单元素 `build.platforms` 是
+          // 显式构建目标,必须逐服务进各自 BuildKey,否则声明不同平台的两个 case 会共用同一身份。
+          const declaredPlatforms = build.platforms;
+          if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
+            return yield* Effect.fail(
+              new ComposeBuildCollectionError({
+                cause: undefined,
+                stage: "configuration",
+                message:
+                  `Compose service ${JSON.stringify(service.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +
+                  `NiceEval builds exactly one platform per BuildKey — keep a single entry (or the service-level platform) ` +
+                  `and do multi-platform publishing outside the task Compose`,
+              }),
+            );
+          }
+          const declaredPlatform = declaredPlatforms?.[0] ?? service.platform;
+          const workPlatform = declaredPlatform !== undefined ? normalizeBuildPlatform(declaredPlatform) : platform;
+          const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
+            contextDir,
+            label: `compose service ${service.name}`,
+
+            dockerignorePath: undefined,
+            extraIgnoreRules: undefined,
+          }).pipe(Effect.mapError((cause) => composeCollectionError("identity", cause)));
+          const collected = yield* Effect.try({
+            try: () => {
+              const base = dockerfileBaseIdentity(dockerfile, build.target);
+              const buildKey = computeBuildKey({
+                builderKind: BUILDER_KIND,
+                builderRevision: COMPOSE_MATERIALIZER_REVISION,
+                platform: workPlatform,
+                dockerfile,
+                contextDigest,
+                fromDigest: base.fromDigest,
+                contextFilterRules,
+                ...(build.args !== undefined ? { buildArgs: build.args } : {}),
+                ...(build.target !== undefined ? { target: build.target } : {}),
+              });
+              return { buildKey, base };
+            },
+            catch: (cause) => composeCollectionError("identity", cause),
+          });
           yield* Effect.sync(() => {
-            imageRefs[service.name] = service.image!;
-            if (!looksLikeDigestRef(service.image!)) {
+            if (collected.base.providerIdentityMarker !== undefined) {
               providerIdentityMarker = unresolvedProviderFingerprintMarker(
                 "sandbox.image-unresolved",
                 "Compose references an image or FROM base that is not pinned to a sha256 digest.",
               );
             }
-          });
-          return;
-        }
-        const build = service.build;
-        if (build === undefined) return;
-
-        const contextDir = resolvePath(composeDir, build.context);
-        const dockerfilePath = resolvePath(contextDir, build.dockerfile ?? "Dockerfile");
-        const dockerfile = yield* Effect.tryPromise({
-          try: () => readFile(dockerfilePath, "utf-8"),
-          catch: () => new ComposeBuildCollectionError({
-            stage: "read",
-            message: `Compose service ${JSON.stringify(service.name)} build Dockerfile not found at ${dockerfilePath}`,
-          }),
-        });
-        // Compose 声明的平台压过探测默认值:service `platform` 或单元素 `build.platforms` 是
-        // 显式构建目标,必须逐服务进各自 BuildKey,否则声明不同平台的两个 case 会共用同一身份。
-        const declaredPlatforms = build.platforms;
-        if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
-          return yield* Effect.fail(new ComposeBuildCollectionError({
-            stage: "configuration",
-            message:
-              `Compose service ${JSON.stringify(service.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +
-              `NiceEval builds exactly one platform per BuildKey — keep a single entry (or the service-level platform) ` +
-              `and do multi-platform publishing outside the task Compose`,
-          }));
-        }
-        const declaredPlatform = declaredPlatforms?.[0] ?? service.platform;
-        const workPlatform = declaredPlatform !== undefined ? normalizeBuildPlatform(declaredPlatform) : platform;
-        const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
-          contextDir,
-          label: `compose service ${service.name}`,
-        }).pipe(Effect.mapError((cause) => composeCollectionError("identity", cause)));
-        const collected = yield* Effect.try({
-          try: () => {
-            const base = dockerfileBaseIdentity(dockerfile, build.target);
-            const buildKey = computeBuildKey({
-              builderKind: BUILDER_KIND,
-              builderRevision: COMPOSE_MATERIALIZER_REVISION,
-              platform: workPlatform,
-              dockerfile,
-              contextDigest,
-              fromDigest: base.fromDigest,
-              contextFilterRules,
-              ...(build.args !== undefined ? { buildArgs: build.args } : {}),
-              ...(build.target !== undefined ? { target: build.target } : {}),
+            buildKeys.push(collected.buildKey);
+            const scopeId = materializationScopeId({
+              providerFamily: "docker",
+              authorityFingerprint: JSON.stringify(providerIdentityMarker ?? ["docker", "default"]),
+              materializationProtocolVersion: 1,
             });
-            return { buildKey, base };
-          },
-          catch: (cause) => composeCollectionError("identity", cause),
-        });
-        yield* Effect.sync(() => {
-          if (collected.base.providerIdentityMarker !== undefined) {
-            providerIdentityMarker = unresolvedProviderFingerprintMarker(
-              "sandbox.image-unresolved",
-              "Compose references an image or FROM base that is not pinned to a sha256 digest.",
-            );
-          }
-          buildKeys.push(collected.buildKey);
-          const scopeId = materializationScopeId({
-            providerFamily: "docker",
-            authorityFingerprint: JSON.stringify(providerIdentityMarker ?? ["docker", "default"]),
-            materializationProtocolVersion: 1,
+            works.push({
+              ref: sandboxBuildRef(scopeId, collected.buildKey),
+              scopeId,
+              buildKey: collected.buildKey,
+              provider: "docker",
+              label: `compose:${service.name}`,
+              inputs: {
+                service: service.name,
+                composeFile: composePath,
+                // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
+                platform: workPlatform,
+                context: build.context,
+                ...(build.dockerfile !== undefined ? { dockerfile: build.dockerfile } : {}),
+                ...(build.args !== undefined ? { args: build.args } : {}),
+                ...(build.target !== undefined ? { target: build.target } : {}),
+                // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
+                ...(opts.env !== undefined ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() } : {}),
+                contextFilterRules,
+              },
+            });
           });
-          works.push({
-            ref: sandboxBuildRef(scopeId, collected.buildKey),
-            scopeId,
-            buildKey: collected.buildKey,
-            provider: "docker",
-            label: `compose:${service.name}`,
-            inputs: {
-              service: service.name,
-              composeFile: composePath,
-              // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
-              platform: workPlatform,
-              context: build.context,
-              ...(build.dockerfile !== undefined ? { dockerfile: build.dockerfile } : {}),
-              ...(build.args !== undefined ? { args: build.args } : {}),
-              ...(build.target !== undefined ? { target: build.target } : {}),
-              // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
-              ...(opts.env !== undefined
-                ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() }
-                : {}),
-              contextFilterRules,
-            },
-          });
-        });
-      }),
+        }),
       { concurrency: 1, discard: true },
     );
 
@@ -977,7 +1000,7 @@ function collectComposeBuildsInternal(
       inspection,
       imageRefs,
       platform,
-      ...(providerIdentityMarker === undefined ? {} : { providerIdentityMarker }),
+      providerIdentityMarker,
       bindMountDigests,
       configContents,
     };
@@ -1005,12 +1028,15 @@ export function dockerComposeBuildProvider(opts?: {
       const tag = composeBuildTag(work.buildKey);
       const hit = await dockerImageExists(tag);
       return hit
-        ? { _tag: "Hit", source: {
-            locator: tag,
-            source: "cache",
-            acquireUse: async () => ({ locator: tag, release() {} }),
-            release() {},
-          } }
+        ? {
+            _tag: "Hit",
+            source: {
+              locator: tag,
+              source: "cache",
+              acquireUse: async () => ({ locator: tag, release() {} }),
+              release() {},
+            },
+          }
         : { _tag: "Miss" };
     },
     async build(work, ctx) {
@@ -1032,17 +1058,13 @@ export function dockerComposeBuildProvider(opts?: {
       const tag = composeBuildTag(work.buildKey);
       // 平台传给 builder:BuildKey 里写的架构就是这次真正构出来的架构。
       const platform = typeof inputs.platform === "string" ? inputs.platform : undefined;
-      const buildEnv =
-        platform !== undefined ? { ...composeEnv, [DOCKER_PLATFORM_ENV]: platform } : composeEnv;
-      await runCompose(
-        ["-f", composeFile, "build", "--build-arg", `NICEEVAL_BUILD_KEY=${work.buildKey}`, service],
-        {
-          cwd,
-          env: buildEnv,
-          signal: ctx.signal,
-          timing: ctx,
-        },
-      );
+      const buildEnv = platform !== undefined ? { ...composeEnv, [DOCKER_PLATFORM_ENV]: platform } : composeEnv;
+      await runCompose(["-f", composeFile, "build", "--build-arg", `NICEEVAL_BUILD_KEY=${work.buildKey}`, service], {
+        cwd,
+        ...(buildEnv === undefined ? {} : { env: buildEnv }),
+        signal: ctx.signal,
+        timing: ctx,
+      });
       // 构建产物以 service 镜像为准;再打 BuildKey tag 便于 lookup。
       const imageId = await composeServiceImageId(composeFile, service, cwd, composeEnv, runCompose);
       if (imageId) await dockerTag(imageId, tag);
@@ -1064,11 +1086,10 @@ function composeBuildTag(buildKey: BuildKey): string {
 // Overlay + materialize
 // ---------------------------------------------------------------------------
 
-/** Carries the generated Compose overlay and project identity; its optional path is a host-side materialization detail. */
+/** Carries the generated Compose overlay and project identity. */
 export interface ComposeOverlay {
   readonly yaml: string;
   readonly projectName: string;
-  readonly overlayPath?: string;
 }
 
 /** 生成受管 overlay:labels / 可选 project 名。不改 dns、extra_hosts、volumes、depends_on。 */
@@ -1080,9 +1101,7 @@ export function buildComposeOverlay(opts: {
   readonly serviceNames: readonly string[];
   readonly managedWorkdir?: string;
 }): ComposeOverlay {
-  const projectName =
-    opts.projectName ??
-    `ne-${slug(opts.evalId).slice(0, 24)}-${randomBytes(3).toString("hex")}`;
+  const projectName = opts.projectName ?? `ne-${slug(opts.evalId).slice(0, 24)}-${randomBytes(3).toString("hex")}`;
   const lines: string[] = ["services:"];
   for (const name of opts.serviceNames) {
     lines.push(`  ${name}:`);
@@ -1115,8 +1134,7 @@ export function buildComposeIdentityOverlay(opts: {
   readonly networkNames: readonly string[];
 }): string {
   const labels = dockerRunIdentityLabels(opts.identity);
-  const labelLines = (indent: string) =>
-    Object.entries(labels).map(([k, v]) => `${indent}${k}: ${JSON.stringify(v)}`);
+  const labelLines = (indent: string) => Object.entries(labels).map(([k, v]) => `${indent}${k}: ${JSON.stringify(v)}`);
   const lines: string[] = [];
   if (opts.serviceNames.length > 0) {
     lines.push("services:");
@@ -1135,16 +1153,17 @@ export function buildComposeIdentityOverlay(opts: {
 
 /** Supplies prepared case context and resource-lifetime controls for Compose materialization; lifetimeMs caps the physical resource group, not just one command. */
 export interface MaterializeComposeOpts {
-  readonly runId?: string;
+  readonly runId?: string | undefined;
+  readonly creationLabels?: Readonly<Record<string, string>> | undefined;
   readonly ctx: SandboxMaterializeContext;
-  readonly timeout?: number;
-  readonly feedback?: ScopedFeedback;
-  readonly baseDir?: string;
-  readonly platform?: string;
+  readonly timeout?: number | undefined;
+  readonly feedback?: ScopedFeedback | undefined;
+  readonly baseDir?: string | undefined;
+  readonly platform?: string | undefined;
   /** Runner 持有的 provisioning 并发槽；退避期间临时归还，避免网络抖动拖住整批并发。 */
-  readonly provisionSlot?: ProvisionSlot;
+  readonly provisionSlot?: ProvisionSlot | undefined;
   /** Compose 资源组的最长物理寿命；附着的主 Sandbox 用同一完成态做复用确认。 */
-  readonly lifetimeMs?: number;
+  readonly lifetimeMs?: number | undefined;
   /** 测试可注入:跳过真实 docker compose,直接返回已构造的主 Sandbox。 */
   readonly _testHooks?: {
     readonly runCompose?: typeof runDockerCompose;
@@ -1158,10 +1177,10 @@ export interface DockerComposeProviderMaterializationPlan {
   readonly evalId: string;
   readonly profile: string;
   readonly mainService: string;
-  readonly user?: string;
+  readonly user: string | undefined;
   readonly env: Readonly<Record<string, string>>;
-  readonly pathPrepend?: readonly string[];
-  readonly projectName?: string;
+  readonly pathPrepend: readonly string[];
+  readonly projectName: string | undefined;
   readonly collection: ComposeBuildCollection;
   readonly caseKey: import("./identity.ts").CaseKey;
   readonly identity: JsonValue;
@@ -1211,7 +1230,7 @@ export function materializeDockerComposeProviderCase(
     });
 
     const identityYaml = buildComposeIdentityOverlay({
-      identity: currentRunIdentity(opts.runId),
+      identity: currentRunIdentity(opts.runId, opts.creationLabels),
       serviceNames: collection.inspection.services.map((s) => s.name),
       networkNames: collection.inspection.networkNames,
     });
@@ -1239,19 +1258,20 @@ export function materializeDockerComposeProviderCase(
     // signal；复用 opts.ctx.signal 会让 runDockerCompose 在真正执行 down 前立刻抛错，整组资源
     // 原地变孤儿。--timeout 给服务 5s 优雅退出，剩余 1.5s 留给 CLI 与网络/volume 删除；
     // runDockerCompose 再给 TERM 1s KILL grace，总上界 7.5s，严格短于 runner 的 8s 看门狗。
-    const composeDown = () => runCompose(
-      [
-        "-p",
-        overlay.projectName,
-        ...composeFileArgs(composeFiles),
-        "down",
-        "--timeout",
-        "5",
-        "--volumes",
-        "--remove-orphans",
-      ],
-      { cwd, env, signal: AbortSignal.timeout(COMPOSE_STOP_TIMEOUT_MS) },
-    );
+    const composeDown = () =>
+      runCompose(
+        [
+          "-p",
+          overlay.projectName,
+          ...composeFileArgs(composeFiles),
+          "down",
+          "--timeout",
+          "5",
+          "--volumes",
+          "--remove-orphans",
+        ],
+        { cwd, env, signal: AbortSignal.timeout(COMPOSE_STOP_TIMEOUT_MS) },
+      );
 
     let finalized = false;
     let finalizing: Promise<void> | undefined;
@@ -1275,22 +1295,26 @@ export function materializeDockerComposeProviderCase(
     const finalizerEffect = Effect.tryPromise({
       try: () => finalizer(),
       catch: (cause) => cause,
-    }).pipe(Effect.catch((cleanupError) => Effect.sync(() => {
-      opts.feedback?.diagnostic({
-        code: "sandbox-stop-failed",
-        level: "warning",
-        message:
-          `Compose project ${overlay.projectName} cleanup failed after materialization error: ` +
-          `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}. ` +
-          "Inspect with `niceeval sandbox list --orphans`; remove with `niceeval sandbox prune`.",
-        data: {
-          provider: "docker",
-          projectName: overlay.projectName,
-          sandboxId: overlay.projectName,
-        },
-        dedupeKey: `sandbox-stop-failed:${overlay.projectName}`,
-      });
-    })));
+    }).pipe(
+      Effect.catch((cleanupError) =>
+        Effect.sync(() => {
+          opts.feedback?.diagnostic({
+            code: "sandbox-stop-failed",
+            level: "warning",
+            message:
+              `Compose project ${overlay.projectName} cleanup failed after materialization error: ` +
+              `${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}. ` +
+              `Inspect with \`docker ps -a --filter label=com.docker.compose.project=${overlay.projectName}\`; remove the project resources with Docker CLI.`,
+            data: {
+              provider: "docker",
+              projectName: overlay.projectName,
+              sandboxId: overlay.projectName,
+            },
+            dedupeKey: `sandbox-stop-failed:${overlay.projectName}`,
+          });
+        }),
+      ),
+    );
 
     // 重试前对账先清半启动组:down 失败只诊断、继续重试,不覆盖原始 create 错误
     // (cleanup 失败不升格为 Cause;withProvisionRetry 的 reconcile 通道是 never 错误)。
@@ -1307,16 +1331,18 @@ export function materializeDockerComposeProviderCase(
       Effect.tryPromise({
         try: () => enrichComposeError(cause, overlay.projectName, composeFiles, cwd, env, runCompose),
         catch: (enrichCause) => enrichCause,
-      }).pipe(Effect.matchEffect({
-        onFailure: (enrichCause) => Effect.fail(composeMaterializationError(overlay.projectName, enrichCause)),
-        onSuccess: (enriched) => Effect.fail(composeMaterializationError(overlay.projectName, enriched)),
-      }));
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (enrichCause) => Effect.fail(composeMaterializationError(overlay.projectName, enrichCause)),
+          onSuccess: (enriched) => Effect.fail(composeMaterializationError(overlay.projectName, enriched)),
+        }),
+      );
 
     return yield* Effect.gen(function* () {
       if (opts.ctx.signal?.aborted) return yield* Effect.interrupt;
 
       // dockerode 是 optional peer：compose 实现在 materialize 热路径才加载 docker.ts。
-      const { classifyProvisionError, DockerSandbox } = yield* Effect.tryPromise({
+      const { classifyProvisionError, DockerSandbox, defaultDockerSandboxOptions } = yield* Effect.tryPromise({
         try: () => import("./docker.ts"),
         catch: (cause) => cause,
       });
@@ -1327,11 +1353,12 @@ export function materializeDockerComposeProviderCase(
       if (buildServices.length > 0) {
         yield* withProvisionRetry(
           Effect.tryPromise({
-            try: () => runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
-              cwd,
-              env,
-              signal: opts.ctx.signal,
-            }),
+            try: () =>
+              runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
+                cwd,
+                env,
+                signal: opts.ctx.signal,
+              }),
             catch: (cause) => cause,
           }),
           classifyProvisionError,
@@ -1344,10 +1371,19 @@ export function materializeDockerComposeProviderCase(
 
       yield* withProvisionRetry(
         Effect.tryPromise({
-          try: () => runCompose(
-            ["-p", overlay.projectName, ...composeFileArgs(composeFiles), "up", "--detach", "--wait", "--remove-orphans"],
-            { cwd, env, signal: opts.ctx.signal },
-          ),
+          try: () =>
+            runCompose(
+              [
+                "-p",
+                overlay.projectName,
+                ...composeFileArgs(composeFiles),
+                "up",
+                "--detach",
+                "--wait",
+                "--remove-orphans",
+              ],
+              { cwd, env, signal: opts.ctx.signal },
+            ),
           catch: (cause) => cause,
         }),
         classifyProvisionError,
@@ -1369,12 +1405,13 @@ export function materializeDockerComposeProviderCase(
         opts._testHooks?.attachMain ??
         ((id: string) =>
           DockerSandbox.attach(id, {
+            ...defaultDockerSandboxOptions,
             timeout: opts.timeout,
             lifetimeMs: opts.lifetimeMs,
             feedback: opts.feedback,
             releaseMode: "detach",
-            ...(plan.user !== undefined ? { user: plan.user } : {}),
-            ...(plan.pathPrepend !== undefined ? { pathPrepend: plan.pathPrepend } : {}),
+            user: plan.user,
+            pathPrepend: plan.pathPrepend,
           }));
       const attached = yield* Effect.tryPromise({
         try: () => attach(containerId),
@@ -1402,17 +1439,6 @@ export function materializeDockerComposeProviderCase(
           mainService: plan.mainService,
         },
         stop: finalizer,
-        entry: {
-          provider: "docker",
-          profile: plan.profile,
-          primary: { sandboxId: sandbox.sandboxId, provider: "docker" },
-          resources: {
-            kind: "docker-compose",
-            projectName: overlay.projectName,
-            mainService: plan.mainService,
-          },
-          state: "alive",
-        },
       };
 
       // 主 Sandbox.stop 走 detach;真正回收挂在 group.stop(= finalizer)。
@@ -1424,13 +1450,15 @@ export function materializeDockerComposeProviderCase(
 
       const materialized: MaterializedSandboxCase = {
         sandbox,
+        beforeCache: { _tag: "None" },
         // 生产路径 attach 返回 raw DockerSandbox(自带 provider backend capabilities),直接作为
         // author backend;测试 hook 注入的普通 Sandbox 走 customSandboxBackend 显式适配,不回读
         // provider 私有成员。
-        authorBackend: opts._testHooks?.attachMain === undefined
-          ? (attached as unknown as DockerSandbox)
-          : customSandboxBackend(sandbox),
-        services,
+        authorBackend:
+          opts._testHooks?.attachMain === undefined
+            ? (attached as unknown as DockerSandbox)
+            : customSandboxBackend(sandbox),
+        services: { _tag: "Available", value: services },
         group,
         caseKind: "compose",
         caseKey: plan.caseKey,
@@ -1446,11 +1474,13 @@ export function materializeDockerComposeProviderCase(
       };
       return materialized;
     }).pipe(
-      Effect.catch((cause) => Effect.gen(function* () {
-        yield* finalizerEffect;
-        if (isAbortError(cause) || opts.ctx.signal?.aborted) return yield* Effect.interrupt;
-        return yield* failEnriched(cause);
-      })),
+      Effect.catch((cause) =>
+        Effect.gen(function* () {
+          yield* finalizerEffect;
+          if (isAbortError(cause) || opts.ctx.signal?.aborted) return yield* Effect.interrupt;
+          return yield* failEnriched(cause);
+        }),
+      ),
     );
   });
 }
@@ -1504,11 +1534,14 @@ async function enrichComposeError(
       env,
       allowNonZero: true,
     });
-    const logs = await runCompose(["-p", projectName, ...composeFileArgs(composeFiles), "logs", "--no-color", "--tail", "80"], {
-      cwd,
-      env,
-      allowNonZero: true,
-    });
+    const logs = await runCompose(
+      ["-p", projectName, ...composeFileArgs(composeFiles), "logs", "--no-color", "--tail", "80"],
+      {
+        cwd,
+        env,
+        allowNonZero: true,
+      },
+    );
     evidence =
       `\n--- compose ps ---\n${ps.stdout || ps.stderr}` +
       `\n--- compose logs (tail) ---\n${logs.stdout || logs.stderr}`;
@@ -1598,9 +1631,7 @@ export async function runDockerCompose(
       const exitCode = code ?? 1;
       if (exitCode !== 0 && !opts.allowNonZero) {
         rejectOnce(
-          new Error(
-            `docker compose ${args.join(" ")} failed (exit ${exitCode}):\n${stderr || stdout}`.trimEnd(),
-          ),
+          new Error(`docker compose ${args.join(" ")} failed (exit ${exitCode}):\n${stderr || stdout}`.trimEnd()),
         );
         return;
       }
@@ -1666,7 +1697,12 @@ async function dockerTag(imageId: string, tag: string): Promise<void> {
 }
 
 function slug(s: string): string {
-  return s.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "eval";
+  return (
+    s
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase() || "eval"
+  );
 }
 
 function abortError(signal?: AbortSignal, cause?: unknown): Error {
@@ -1761,10 +1797,7 @@ function parseYamlMapping(text: string): globalThis.Record<string, YamlNode> {
   return root;
 }
 
-function peekNextContent(
-  lines: string[],
-  from: number,
-): { indent: number; trimmed: string } | undefined {
+function peekNextContent(lines: string[], from: number): { indent: number; trimmed: string } | undefined {
   for (let i = from; i < lines.length; i++) {
     const line = lines[i]!;
     if (/^\s*(#|$)/.test(line)) continue;
@@ -1779,10 +1812,7 @@ function parseScalar(text: string): YamlNode {
   if (text === "true") return true;
   if (text === "false") return false;
   if (/^-?\d+(\.\d+)?$/.test(text)) return Number(text);
-  if (
-    (text.startsWith('"') && text.endsWith('"')) ||
-    (text.startsWith("'") && text.endsWith("'"))
-  ) {
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
     return text.slice(1, -1);
   }
   // 内联序列: [ "a", "b" ]

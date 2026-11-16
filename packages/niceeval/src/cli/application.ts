@@ -11,10 +11,10 @@ export interface CliInvocation {
   readonly hostname: string;
   /** Process identity exposed by the Node adapter for feature-owned lease coordination. */
   readonly pid: number;
-  readonly noColor?: string;
+  readonly noColor: string | undefined;
   readonly platform: "darwin" | "win32" | "linux" | string;
-  readonly stdout: { readonly isTTY: boolean; readonly columns?: number };
-  readonly stderr: { readonly isTTY: boolean; readonly columns?: number };
+  readonly stdout: { readonly isTTY: boolean; readonly columns: number | undefined };
+  readonly stderr: { readonly isTTY: boolean; readonly columns: number | undefined };
 }
 
 /** Immutable display metadata owned with an option, rather than reconstructed by a central CLI registry. */
@@ -29,20 +29,21 @@ export interface CliOptionalOptionValue {
   /** Value produced by a bare option. Boolean `true` preserves ordinary flag semantics. */
   readonly default: string | true;
   /** Accept one following token as the value. Inline `--name=value` is always accepted. */
-  readonly separated?: true;
+  readonly separated?: true | undefined;
   /** Closed value vocabulary. Omit for an arbitrary non-empty string. */
-  readonly values?: readonly string[];
+  readonly values?: readonly string[] | undefined;
 }
 
 export type CliOptionDefinition = Readonly<{
   readonly type: "string" | "boolean";
-  readonly multiple?: true;
-  readonly short?: string;
+  readonly multiple?: true | undefined;
+  readonly short?: string | undefined;
   /** Generic boolean|string union syntax owned by this option, not by the root router. */
-  readonly optionalValue?: CliOptionalOptionValue;
-  readonly help?: CliOptionHelp;
+  readonly optionalValue?: CliOptionalOptionValue | undefined;
+  readonly help?: CliOptionHelp | undefined;
 }>;
 
+/** Third-party exact boundary: preserves Node parseArgs token key presence. */
 export type CliParsedToken =
   | Readonly<{
       readonly kind: "option";
@@ -119,9 +120,12 @@ export interface CliOutputService {
 export class CliOutput extends Context.Service<CliOutput, CliOutputService>()("niceeval/cli/CliOutput") {}
 
 /** Request one terminal confirmation; noninteractive input declines without reading stdin. */
-export class CliConfirmation extends Context.Service<CliConfirmation, {
-  readonly confirm: (message: string) => Effect.Effect<boolean, CliInvocationError>;
-}>()("niceeval/cli/CliConfirmation") {}
+export class CliConfirmation extends Context.Service<
+  CliConfirmation,
+  {
+    readonly confirm: (message: string) => Effect.Effect<boolean, CliInvocationError>;
+  }
+>()("niceeval/cli/CliConfirmation") {}
 
 export interface PackageMetadataService {
   readonly version: Effect.Effect<string, CliInvocationError>;

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import * as Schema from "effect/Schema";
+import { decodeJsonRecord } from "../../shared/json-value.ts";
 import { basename, dirname, resolve } from "node:path";
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import type {
@@ -8,11 +10,7 @@ import type {
   ManagedProcessStart,
   SuccessfulCommandResult,
 } from "../../types.ts";
-import {
-  noSandboxBackendCapabilities,
-  supportedBackendCapability,
-  type SandboxProviderBackend,
-} from "../backend.ts";
+import { noSandboxBackendCapabilities, supportedBackendCapability, type SandboxProviderBackend } from "../backend.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
 import { downloadDirectoryByList } from "../download-directory.ts";
 import { collectLocalFiles } from "../local-files.ts";
@@ -25,12 +23,7 @@ import type { IncusControl, IncusInstance } from "./control.ts";
 import { INCUS_METADATA, parseIncusSizeBytes } from "./control.ts";
 import { incusError } from "./errors.ts";
 import type { AllocationIntent } from "./ledger.ts";
-import {
-  destroyAllocation,
-  metadataMatchesIntent,
-  volumeMetadataMatchesIntent,
-  volumeNameFor,
-} from "./ledger.ts";
+import { destroyAllocation, metadataMatchesIntent, volumeMetadataMatchesIntent } from "./ledger.ts";
 import type { IncusRuntimePlan } from "./plan.ts";
 import type { IncusRepository } from "./repository.ts";
 
@@ -63,7 +56,9 @@ function commandLabel(argv: readonly string[]): string {
 export class IncusSandbox implements SandboxProviderBackend {
   readonly workdir = INCUS_WORKDIR;
   readonly sandboxId: string;
-  get nativeInstanceId(): string { return this.instanceName; }
+  get nativeInstanceId(): string {
+    return this.instanceName;
+  }
   readonly otlpHost = INCUS_OTLP_HOST;
   readonly capabilities = {
     ...noSandboxBackendCapabilities,
@@ -73,7 +68,7 @@ export class IncusSandbox implements SandboxProviderBackend {
 
   private retired = false;
   private retirement: Promise<void> | undefined;
-  private deadlineAt?: number;
+  private deadlineAt: number | undefined;
 
   constructor(
     private readonly repository: IncusRepository,
@@ -101,7 +96,7 @@ export class IncusSandbox implements SandboxProviderBackend {
     const result = await this.control.exec(
       this.plan.project,
       this.instanceName,
-      ["sh", "-c", "kill -KILL \"$1\"", "sh", `-${pgid}`],
+      ["sh", "-c", 'kill -KILL "$1"', "sh", `-${pgid}`],
       { user: 0, group: 0, timeoutMs: 10_000 },
     );
     return result.exitCode === 0;
@@ -111,11 +106,11 @@ export class IncusSandbox implements SandboxProviderBackend {
     await this.retire();
   }
 
-  private async execArgv(
-    argv: readonly [string, ...string[]],
-    opts: CommandOptions = {},
-  ): Promise<CommandResult> {
-    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
+  private async execArgv(argv: readonly [string, ...string[]], opts: CommandOptions = {}): Promise<CommandResult> {
+    const limit = commandLimit(opts, {
+      commandTimeoutMs: this.commandTimeoutMs,
+      deadlineAt: this.deadlineAt,
+    });
     const mapped = this.mapUser(opts.user);
     const marker = `__niceeval_incus_pgid_${randomUUID().replaceAll("-", "")}__`;
     const wrapped = [
@@ -219,9 +214,11 @@ export class IncusSandbox implements SandboxProviderBackend {
         })();
       };
       const onAbort = (): void => {
-        settleErr(opts.signal?.reason instanceof Error
-          ? opts.signal.reason
-          : new DOMException("sandbox command aborted", "AbortError"));
+        settleErr(
+          opts.signal?.reason instanceof Error
+            ? opts.signal.reason
+            : new DOMException("sandbox command aborted", "AbortError"),
+        );
       };
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       if (opts.signal?.aborted) {
@@ -231,11 +228,13 @@ export class IncusSandbox implements SandboxProviderBackend {
       const timeoutMs = limit.timeoutMs;
       if (timeoutMs !== undefined) {
         timeout = setTimeout(() => {
-          settleErr(new SandboxCommandTimeoutError(
-            `Incus ${commandLabel(argv)} timed out after ${timeoutMs}ms`,
-            timeoutMs,
-            limit.explicit,
-          ));
+          settleErr(
+            new SandboxCommandTimeoutError(
+              `Incus ${commandLabel(argv)} timed out after ${timeoutMs}ms`,
+              timeoutMs,
+              limit.explicit,
+            ),
+          );
         }, timeoutMs);
       }
       void spawned.wait().then(settleOk, settleErr);
@@ -293,50 +292,56 @@ export class IncusSandbox implements SandboxProviderBackend {
       output.push({ _tag: "Stderr", bytes: new Uint8Array(stderrPrefix) });
       stderrPrefix = Buffer.alloc(0);
     };
-    const exit = spawned.wait().then((exitCode) => {
-      flushStderrPrefix();
-      output.end();
-      return { exitCode } as const;
-    }, async (error: unknown) => {
-      flushStderrPrefix();
-      output.end();
-      throw error;
-    });
+    const exit = spawned.wait().then(
+      (exitCode) => {
+        flushStderrPrefix();
+        output.end();
+        return { exitCode, signal: undefined } as const;
+      },
+      async (error: unknown) => {
+        flushStderrPrefix();
+        output.end();
+        throw error;
+      },
+    );
     let closeReceipt: Promise<void> | undefined;
     let terminateReceipt: Promise<void> | undefined;
     let stdinState: "open" | "closing" | "closed" = "open";
     return {
       output,
-      writeStdin: (bytes) => new Promise<void>((resolve, reject) => {
-        if (stdinState !== "open") {
-          reject(new Error("managed process stdin is closed"));
-          return;
-        }
-        spawned.stdin.write(Buffer.from(bytes), (error?: Error | null) => error ? reject(error) : resolve());
-      }),
-      closeStdin: () => closeReceipt ??= new Promise<void>((resolve) => {
-        stdinState = "closing";
-        spawned.stdin.end(() => {
-          stdinState = "closed";
-          resolve();
-        });
-      }),
+      writeStdin: (bytes) =>
+        new Promise<void>((resolve, reject) => {
+          if (stdinState !== "open") {
+            reject(new Error("managed process stdin is closed"));
+            return;
+          }
+          spawned.stdin.write(Buffer.from(bytes), (error?: Error | null) => (error ? reject(error) : resolve()));
+        }),
+      closeStdin: () =>
+        (closeReceipt ??= new Promise<void>((resolve) => {
+          stdinState = "closing";
+          spawned.stdin.end(() => {
+            stdinState = "closed";
+            resolve();
+          });
+        })),
       wait: () => exit,
-      terminate: () => terminateReceipt ??= (async () => {
-        stdinState = "closing";
-        if (pgid === undefined) {
+      terminate: () =>
+        (terminateReceipt ??= (async () => {
+          stdinState = "closing";
+          if (pgid === undefined) {
+            spawned.killHost();
+            await this.retireProven();
+            throw new Error("Incus managed process did not disclose its process-group identity; the VM was destroyed");
+          }
+          const proven = await this.killProcessGroup(pgid);
           spawned.killHost();
-          await this.retireProven();
-          throw new Error("Incus managed process did not disclose its process-group identity; the VM was destroyed");
-        }
-        const proven = await this.killProcessGroup(pgid);
-        spawned.killHost();
-        if (!proven) {
-          await this.retireProven();
-          throw new Error(`Incus could not prove process group ${pgid} terminated; the VM was destroyed`);
-        }
-        await exit.catch(() => undefined);
-      })(),
+          if (!proven) {
+            await this.retireProven();
+            throw new Error(`Incus could not prove process group ${pgid} terminated; the VM was destroyed`);
+          }
+          await exit.catch(() => undefined);
+        })()),
     };
   }
 
@@ -413,9 +418,10 @@ export class IncusSandbox implements SandboxProviderBackend {
         throw new Error(`downloadFile refuses existing symlink ${JSON.stringify(destination)}`);
       }
     } catch (cause) {
-      const code = cause !== null && typeof cause === "object" && "code" in cause
-        ? String((cause as { readonly code?: unknown }).code)
-        : "";
+      const code =
+        cause !== null && typeof cause === "object" && "code" in cause
+          ? String((cause as { readonly code?: unknown }).code)
+          : "";
       if (code !== "ENOENT") throw cause;
     }
     const parentReal = await realpath(parent);
@@ -503,7 +509,7 @@ export async function waitForReadiness(
       plan.project,
       instanceName,
       ["systemctl", "start", "niceeval-docker-data.service"],
-      { user: 0, group: 0, timeoutMs: 60_000, signal },
+      { user: 0, group: 0, timeoutMs: 60_000, ...(signal === undefined ? {} : { signal: signal }) },
     );
     if (guestInit.exitCode !== 0) {
       last = guestInit.stderr.trim() || guestInit.stdout.trim() || "Docker data guest-init failed";
@@ -513,20 +519,25 @@ export async function waitForReadiness(
     const workspace = await control.exec(
       plan.project,
       instanceName,
-      ["bash", "-lc", `mkdir -p ${shellQuote(INCUS_WORKDIR)} && chown ${INCUS_UID}:${INCUS_UID} ${shellQuote(INCUS_WORKDIR)}`],
-      { user: 0, group: 0, timeoutMs: 15_000, signal },
+      [
+        "bash",
+        "-lc",
+        `mkdir -p ${shellQuote(INCUS_WORKDIR)} && chown ${INCUS_UID}:${INCUS_UID} ${shellQuote(INCUS_WORKDIR)}`,
+      ],
+      { user: 0, group: 0, timeoutMs: 15_000, ...(signal === undefined ? {} : { signal: signal }) },
     );
     if (workspace.exitCode !== 0) {
       last = workspace.stderr.trim() || workspace.stdout.trim() || "workspace mkdir failed";
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
     }
-    const identity = await control.exec(
-      plan.project,
-      instanceName,
-      ["id", "-u"],
-      { cwd: INCUS_WORKDIR, user: INCUS_UID, group: INCUS_UID, timeoutMs: 10_000, signal },
-    );
+    const identity = await control.exec(plan.project, instanceName, ["id", "-u"], {
+      cwd: INCUS_WORKDIR,
+      user: INCUS_UID,
+      group: INCUS_UID,
+      timeoutMs: 10_000,
+      ...(signal === undefined ? {} : { signal: signal }),
+    });
     if (identity.exitCode !== 0 || parseUid(identity.stdout) !== INCUS_UID) {
       last = `guest user is not uid ${INCUS_UID}`;
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -536,7 +547,13 @@ export async function waitForReadiness(
       plan.project,
       instanceName,
       ["bash", "-lc", "printf 'HOST=%s\\n' \"${DOCKER_HOST:-}\"; docker info; docker compose version"],
-      { cwd: INCUS_WORKDIR, user: INCUS_UID, group: INCUS_UID, timeoutMs: 30_000, signal },
+      {
+        cwd: INCUS_WORKDIR,
+        user: INCUS_UID,
+        group: INCUS_UID,
+        timeoutMs: 30_000,
+        ...(signal === undefined ? {} : { signal: signal }),
+      },
     );
     if (info.exitCode !== 0) {
       last = info.stderr.trim() || info.stdout.trim() || "docker info failed";
@@ -545,36 +562,31 @@ export async function waitForReadiness(
     }
     const host = /^HOST=(.*)$/m.exec(info.stdout)?.[1] ?? "";
     if (host !== "" && host !== "unix:///var/run/docker.sock") {
-      throw incusError(
-        "sandbox-readiness-failed",
-        "Guest Docker is not sandbox-private.",
-        ["Use a trusted Incus image whose dockerd listens on the guest Unix socket only."],
-      );
+      throw incusError("sandbox-readiness-failed", "Guest Docker is not sandbox-private.", [
+        "Use a trusted Incus image whose dockerd listens on the guest Unix socket only.",
+      ]);
     }
     if (!/Server Version:/i.test(info.stdout) && !/server version/i.test(info.stdout)) {
       last = "docker info did not report a server version";
       await new Promise((resolve) => setTimeout(resolve, 1000));
       continue;
     }
-    if (!/Docker Compose version v?2/i.test(info.stdout + info.stderr)
-      && !/compose version v?2/i.test(info.stdout + info.stderr)
+    if (
+      !/Docker Compose version v?2/i.test(info.stdout + info.stderr) &&
+      !/compose version v?2/i.test(info.stdout + info.stderr)
     ) {
-      throw incusError(
-        "sandbox-readiness-failed",
-        "Guest docker compose version is not v2.",
-        ["Publish a trusted image that includes Docker Compose v2."],
-      );
+      throw incusError("sandbox-readiness-failed", "Guest docker compose version is not v2.", [
+        "Publish a trusted image that includes Docker Compose v2.",
+      ]);
     }
     if (plan.executionDomain === "reference") {
       await assertReferenceReadiness(control, plan, instanceName, intent, instance);
     }
     return;
   }
-  throw incusError(
-    "sandbox-readiness-failed",
-    `Incus guest did not become ready before timeout: ${last}`,
-    ["Inspect the VM console via Incus; NiceEval will destroy the allocation."],
-  );
+  throw incusError("sandbox-readiness-failed", `Incus guest did not become ready before timeout: ${last}`, [
+    "Inspect the VM console via Incus; NiceEval will destroy the allocation.",
+  ]);
 }
 
 async function assertReferenceReadiness(
@@ -591,13 +603,17 @@ async function assertReferenceReadiness(
       ["Destroy the instance and retry; do not adopt an object with mismatched generation."],
     );
   }
-  const expectedVolume = intent.dockerDataVolume ?? volumeNameFor(intent.allocationId);
+  if (intent.phase.state !== "creating" && intent.phase.state !== "ready")
+    throw incusError("sandbox-readiness-failed", "Incus allocation is not creating or ready.", [
+      "Reconcile the allocation before readiness.",
+    ]);
+  const expectedVolume = intent.phase.resources.dockerDataVolume;
   const device = instance.expandedDevices?.dockerdata;
   if (
-    device === undefined
-    || device.type !== "disk"
-    || device.pool !== plan.storagePool
-    || device.source !== expectedVolume
+    device === undefined ||
+    device.type !== "disk" ||
+    device.pool !== plan.storagePool ||
+    device.source !== expectedVolume
   ) {
     throw incusError(
       "sandbox-readiness-failed",
@@ -613,11 +629,9 @@ async function assertReferenceReadiness(
     );
   }
   if (plan.storage !== "dedicated-block" && device.path !== "/var/lib/docker") {
-    throw incusError(
-      "sandbox-readiness-failed",
-      "Filesystem Docker data volume must be attached at /var/lib/docker.",
-      ["Attach the custom filesystem volume with path=/var/lib/docker."],
-    );
+    throw incusError("sandbox-readiness-failed", "Filesystem Docker data volume must be attached at /var/lib/docker.", [
+      "Attach the custom filesystem volume with path=/var/lib/docker.",
+    ]);
   }
   const volume = await control.getVolume(plan.project, plan.storagePool, expectedVolume);
   if (volume === undefined || !volumeMetadataMatchesIntent(volume, intent)) {
@@ -643,7 +657,7 @@ async function assertReferenceReadiness(
       "-lc",
       [
         `test "$(stat -c %u ${shellQuote(INCUS_WORKDIR)})" = ${INCUS_UID}`,
-        "python3 -c 'import os, json; st = os.statvfs(\"/var/lib/docker\"); print(json.dumps({\"blocks\": st.f_blocks, \"frsize\": st.f_frsize, \"total\": st.f_blocks * st.f_frsize, \"bavail\": st.f_bavail}))'",
+        'python3 -c \'import os, json; st = os.statvfs("/var/lib/docker"); print(json.dumps({"blocks": st.f_blocks, "frsize": st.f_frsize, "total": st.f_blocks * st.f_frsize, "bavail": st.f_bavail}))\'',
         "docker ps -aq | awk 'END{exit (NR==0)?0:1}'",
         "docker volume ls -q | awk 'END{exit (NR==0)?0:1}'",
       ].join(" && "),
@@ -657,19 +671,18 @@ async function assertReferenceReadiness(
       ["Inspect guest docker and the dedicated data disk; NiceEval will not mark the sandbox ready."],
     );
   }
-  let parsed: { total?: number };
+  let parsed: ReturnType<typeof decodeJsonRecord>;
   try {
-    parsed = JSON.parse(proof.stdout.trim().split("\n").at(-1) ?? "") as { total?: number };
+    parsed = decodeJsonRecord(proof.stdout.trim().split("\n").at(-1) ?? "");
   } catch {
-    throw incusError(
-      "sandbox-readiness-failed",
-      "Reference readiness could not parse guest statfs proof.",
-      ["The trusted image must provide python3 for capacity attestation."],
-    );
+    throw incusError("sandbox-readiness-failed", "Reference readiness could not parse guest statfs proof.", [
+      "The trusted image must provide python3 for capacity attestation.",
+    ]);
   }
   const allocated = plan.allocatedDockerDataBytes;
   const overhead = Math.max(FILESYSTEM_FORMAT_OVERHEAD_MIN, Math.floor(allocated * FILESYSTEM_FORMAT_OVERHEAD_RATIO));
-  if (typeof parsed.total !== "number" || parsed.total > allocated || parsed.total + overhead < allocated) {
+  const total = Schema.decodeUnknownOption(Schema.Number)(parsed.total);
+  if (total._tag === "None" || total.value > allocated || total.value + overhead < allocated) {
     throw incusError(
       "sandbox-readiness-failed",
       "Guest statfs total size does not prove the allocated Docker data disk (formatting overhead excluded from available space).",
@@ -679,10 +692,8 @@ async function assertReferenceReadiness(
   const gen = instance.config[INCUS_METADATA.generation];
   const allocationId = instance.config[INCUS_METADATA.allocationId];
   if (gen !== String(intent.generation) || allocationId !== intent.allocationId) {
-    throw incusError(
-      "sandbox-readiness-failed",
-      "Guest allocation/generation metadata is missing at readiness.",
-      ["Round-trip allocation metadata before handing the sandbox to the Agent."],
-    );
+    throw incusError("sandbox-readiness-failed", "Guest allocation/generation metadata is missing at readiness.", [
+      "Round-trip allocation metadata before handing the sandbox to the Agent.",
+    ]);
   }
 }

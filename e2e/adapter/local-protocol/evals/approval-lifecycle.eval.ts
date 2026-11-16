@@ -3,8 +3,7 @@ import { defineEval } from "niceeval";
 import { equals, includes, satisfies } from "niceeval/expect";
 const CALL_ID = "local-approval-call";
 export default defineEval({
-  description:
-    "approval-requested 先产生 pending operation，approve / deny 再结束同一 call id",
+  description: "approval-requested 先产生 pending operation，approve / deny 再结束同一 call id",
   async test(t) {
     const draft = await t.send("request the deterministic approval fixture");
     t.check(draft.status, equals("waiting"));
@@ -25,11 +24,7 @@ export default defineEval({
               !Array.isArray(event.operation.input) &&
               event.operation.input["expression"] === "(23+19)*3",
           ).length === 1 &&
-          !events.some(
-            (event) =>
-              event.type === "operation.finished" &&
-              event.operationId === CALL_ID,
-          ),
+          !events.some((event) => event.type === "operation.finished" && event.operationId === CALL_ID),
       ),
     );
     const approved = await t.respond("approve");
@@ -50,14 +45,11 @@ export default defineEval({
               !Array.isArray(event.output) &&
               event.output["value"] === 126 &&
               event.output["marker"] === "local-approval-output",
-          ).length === 1 &&
-          !events.some((event) => event.type === "operation.started"),
+          ).length === 1 && !events.some((event) => event.type === "operation.started"),
       ),
     );
     const denied = t.newSession();
-    const deniedDraft = await denied.send(
-      "request the deterministic approval fixture",
-    );
+    const deniedDraft = await denied.send("request the deterministic approval fixture");
     t.check(deniedDraft.status, equals("waiting"));
     denied.requireInputRequest({ action: "calculate" });
     const rejected = await denied.respond("deny");
@@ -81,15 +73,11 @@ export default defineEval({
           ).length === 1 &&
           events.filter(
             (event) =>
-              event.type === "operation.finished" &&
-              event.operationId === CALL_ID &&
-              event.status === "rejected",
+              event.type === "operation.finished" && event.operationId === CALL_ID && event.status === "rejected",
           ).length === 1 &&
           !events.some(
             (event) =>
-              event.type === "operation.finished" &&
-              event.operationId === CALL_ID &&
-              event.status === "completed",
+              event.type === "operation.finished" && event.operationId === CALL_ID && event.status === "completed",
           ),
       ),
     );

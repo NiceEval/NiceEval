@@ -14,6 +14,8 @@ test.concurrent("路径匹配显式忽略 Unicode 简单大小写并保持默认
   await evalE2E.case("reference-path-options", async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "reference-path-options", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
-    expect(only(run.expEvalEvents(), (event) => event.evalId === "reference-path-options", run.diagnostic()).verdict).toBe("passed");
+    expect(
+      only(run.expEvalEvents(), (event) => event.evalId === "reference-path-options", run.diagnostic()).verdict,
+    ).toBe("passed");
   });
 });

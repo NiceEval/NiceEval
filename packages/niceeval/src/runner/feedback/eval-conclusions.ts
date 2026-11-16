@@ -20,25 +20,24 @@ import type { DiagnosticNotice, EvalResult } from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 
 /** `earlyExitByEval` 与结论行分组共用的同一把 key——两处必须同源,不能各写一份拼法。 */
-export function evalConclusionKey(ref: { experimentId?: string; evalId: string }): string {
+export function evalConclusionKey(ref: { experimentId: string | undefined; evalId: string }): string {
   return `${ref.experimentId ?? ""}|${ref.evalId}`;
 }
 
-export interface EvalConclusionRow {
-  experimentId?: string;
+interface EvalConclusionBase {
+  experimentId: string | undefined;
   evalId: string;
   /** 代表 attempt 的 locator;第三方 harness 落盘的结果可能没有,原样透出 undefined。 */
   locator: string | undefined;
   verdict: Verdict;
   attempts: number;
-  /** earlyExit 触发(该 eval 确有省略)时给出;跑满时省略。 */
-  planned?: number;
-  unstarted?: number;
-  reason?: "early_exit";
-  /** 跑满(该 eval 没有省略)时给出;earlyExit 触发时省略。 */
-  passed?: number;
-  rate?: number;
 }
+
+export type EvalConclusionRow = EvalConclusionBase &
+  (
+    | { reason: "early_exit"; planned: number; unstarted: number }
+    | { reason: "completed"; passed: number; rate: number }
+  );
 
 /** `diagnostics` 里 fail-fast 记录按 (experiment, eval) 求和的未派发次数;没有 `identity`
  *  的记录(理论上不应出现——fail-fast 诊断恒带 identity,见 run.ts)不计入任何 key。
@@ -71,7 +70,10 @@ export function evalConclusionRows(
   const order: string[] = [];
   const groups = new Map<string, EvalResult[]>();
   for (const r of results) {
-    const key = evalConclusionKey({ experimentId: r.experimentId, evalId: r.id });
+    const key = evalConclusionKey({
+      experimentId: r.experimentId,
+      evalId: r.id,
+    });
     let group = groups.get(key);
     if (!group) {
       group = [];
@@ -108,6 +110,7 @@ export function evalConclusionRows(
       locator: last.locator,
       verdict: last.verdict,
       attempts,
+      reason: "completed" as const,
       passed,
       rate: Math.round((passed / attempts) * 1000) / 1000,
     };

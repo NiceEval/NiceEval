@@ -1,6 +1,6 @@
 # State —— CLI
 
-Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`show` 与 `query` 读取 Run 事实。下列输出均为预期输出。
+Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`show` 读取 Run 事实。下列输出均为预期输出。
 
 ## 状态反馈
 
@@ -11,12 +11,12 @@ Sandbox State 不增加独立命令。`niceeval exp` 报告恢复与保存，`sh
 | `restored` | `state mempal · codex / react-hook-form restored sha256:… (1.4 MB)` |
 | `initialized` | `state mempal · codex / react-hook-form initialized` |
 | `empty` | `state mempal · codex / react-hook-form empty` |
-| `restore-failed` | `state mempal · codex / react-hook-form restore failed: layout-mismatch` |
+| `restore-failed` | `state mempal · codex / react-hook-form restore failed: saved paths do not match` |
 | `saved` | `state mempal · codex / react-hook-form saved sha256:… (1.4 MB)` |
 | `save-skipped` | `state mempal · codex / react-hook-form save skipped: interrupted` |
-| `save-conflict` | `state mempal · codex / react-hook-form save rejected: lineage changed` |
-| `save-failed` | `state mempal · codex / react-hook-form save failed: capture-failed` |
-| `save-unknown` | `state mempal · codex / react-hook-form save unknown: storage-failed` |
+| `save-conflict` | `state mempal · codex / react-hook-form save rejected: checkpoint changed since restore` |
+| `save-failed` | `state mempal · codex / react-hook-form save failed: could not capture state` |
+| `save-unknown` | `state mempal · codex / react-hook-form save unknown: could not confirm storage write` |
 
 失败使用 `state-<event>` diagnostic；save-skipped/no-attempts 仅为 info。其余失败产生 execution error 并非零退出，不改写 Attempt Verdict。
 中断按现有中断退出规则；Assertion failed 仍可保存，但不会因此变成成功。
@@ -44,7 +44,7 @@ type StateEvent = StateEventIdentity & (
 );
 ```
 
-saved 事件只在全部 binding 提交后发送，每个 binding 一条。NDJSON 是进度，不是持久回执；进程在 commit 后退出可能尚未输出，query 仍能读到已提交事实。
+saved 事件只在全部 binding 提交后发送，每个 binding 一条。NDJSON 是进度，不是持久回执；进程在 commit 后退出可能尚未输出，`show` 仍能读到已提交事实。
 一项恢复失败时对失败项发 restore-failed，整个集合发 save-skipped；其它项不能输出 saved。
 
 ## `--dry`

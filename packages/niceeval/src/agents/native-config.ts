@@ -32,7 +32,7 @@ export interface LoadNativeConfigOptions {
   /** 用户配置的路径(必须是项目根内的相对路径)。 */
   path: string;
   /** 解析根;省略用跑 niceeval 的项目根(process.cwd()),与 SkillSpec 本地路径同一口径。 */
-  projectRoot?: string;
+  projectRoot?: string | undefined;
 }
 
 /**
@@ -54,7 +54,10 @@ function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
   abs: string;
 } {
   const { agent, field, path } = opts;
-  const rejectPath = () => new Error(`${agent} ${field} only accepts relative paths inside the project root, got "${path}". Absolute paths, \`..\` segments and \`~\` paths are rejected; copy configs from outside the project into it first.`);
+  const rejectPath = () =>
+    new Error(
+      `${agent} ${field} only accepts relative paths inside the project root, got "${path}". Absolute paths, \`..\` segments and \`~\` paths are rejected; copy configs from outside the project into it first.`,
+    );
   if (!path || path.startsWith("~") || isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) throw rejectPath();
   if (path.split(/[\\/]/).includes("..")) throw rejectPath();
 
@@ -66,9 +69,7 @@ function resolveNativeConfigPath(opts: LoadNativeConfigOptions): {
  * Effect main chain: validation is a synchronous boundary, while stat, realpath, and the raw
  * byte read are all named Node Promise boundaries. Agent setup composes this effect into its outer runtime.
  */
-export function loadNativeConfigFileEffect(
-  opts: LoadNativeConfigOptions,
-): Effect.Effect<LoadedNativeConfig, unknown> {
+export function loadNativeConfigFileEffect(opts: LoadNativeConfigOptions): Effect.Effect<LoadedNativeConfig, unknown> {
   return Effect.scoped(
     Effect.gen(function* () {
       const resolved = yield* Effect.try({
@@ -81,12 +82,16 @@ export function loadNativeConfigFileEffect(
       );
       if (!info) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} points to a missing file: "${resolved.path}" (resolved to ${resolved.abs}). Paths resolve from the project root you run niceeval in (the directory containing niceeval.config.ts), not from eval / experiment source files.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} points to a missing file: "${resolved.path}" (resolved to ${resolved.abs}). Paths resolve from the project root you run niceeval in (the directory containing niceeval.config.ts), not from eval / experiment source files.`,
+          ),
         );
       }
       if (!info.isFile()) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" is not a regular file. Point it at a complete official config file.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} "${resolved.path}" is not a regular file. Point it at a complete official config file.`,
+          ),
         );
       }
 
@@ -95,7 +100,9 @@ export function loadNativeConfigFileEffect(
       const realRoot = yield* nodeIo(() => realpath(resolved.root));
       if (!realFile.startsWith(realRoot + sep)) {
         return yield* Effect.fail(
-          new Error(`${resolved.agent} ${resolved.field} "${resolved.path}" resolves through a symlink to outside the project root (${realFile}). The config file must physically live inside the project root.`),
+          new Error(
+            `${resolved.agent} ${resolved.field} "${resolved.path}" resolves through a symlink to outside the project root (${realFile}). The config file must physically live inside the project root.`,
+          ),
         );
       }
 
@@ -144,7 +151,7 @@ export function assertJsonNativeConfig(cfg: LoadedNativeConfig, opts: NativeConf
  */
 export function assertTomlNativeConfig(cfg: LoadedNativeConfig, opts: NativeConfigValidationOptions): void {
   const scan = scanTomlTopLevel(cfg.bytes.toString("utf8"));
-  if (scan.error) throw invalidSyntax(cfg, opts, "TOML", scan.error);
+  if (scan.state === "invalid") throw invalidSyntax(cfg, opts, "TOML", scan.error);
   const hit = opts.reservedKeys.filter((k) => scan.rootKeys.has(k));
   if (hit.length) throw reservedKeys(cfg, opts, hit);
 }
@@ -155,9 +162,7 @@ function invalidSyntax(
   format: string,
   detail: string,
 ): Error {
-  return new Error(
-    `${opts.agent} ${opts.field} "${cfg.path}" is not valid ${format}: ${detail}`,
-  );
+  return new Error(`${opts.agent} ${opts.field} "${cfg.path}" is not valid ${format}: ${detail}`);
 }
 
 function reservedKeys(cfg: LoadedNativeConfig, opts: NativeConfigValidationOptions, keys: string[]): Error {
@@ -176,9 +181,13 @@ type StrMode = "none" | "basic" | "literal";
  * 是原始字节,解析结果只用于验收,不值得为它引入解析依赖;多行字符串(""" / ''')与
  * 多行数组的跨行状态有覆盖,足以对官方 config.toml 做保留键判定。
  */
-export function scanTomlTopLevel(text: string): { rootKeys: Set<string>; error?: string } {
+export function scanTomlTopLevel(
+  text: string,
+):
+  | { readonly state: "valid"; readonly rootKeys: ReadonlySet<string> }
+  | { readonly state: "invalid"; readonly error: string } {
   const rootKeys = new Set<string>();
-  let currentTable: string | null = null;
+  let inTable = false;
   let mode: StrMode = "none";
   let depth = 0;
   const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
@@ -198,21 +207,24 @@ export function scanTomlTopLevel(text: string): { rootKeys: Set<string>; error?:
     if (!trimmed || trimmed.startsWith("#")) continue;
     if (trimmed.startsWith("[")) {
       const header = /^\[\[?\s*([^\]]+?)\s*\]\]?\s*(?:#.*)?$/.exec(trimmed);
-      if (!header) return { rootKeys, error: `line ${n + 1}: invalid table header: ${trimmed}` };
-      currentTable = firstKeySegment(header[1]!);
-      rootKeys.add(currentTable);
+      if (!header) return { state: "invalid", error: `line ${n + 1}: invalid table header: ${trimmed}` };
+      inTable = true;
+      rootKeys.add(firstKeySegment(header[1]!));
       continue;
     }
     const assign = /^((?:"[^"]*"|'[^']*'|[\w-]+)(?:\s*\.\s*(?:"[^"]*"|'[^']*'|[\w-]+))*)\s*=(.*)$/.exec(trimmed);
     if (!assign) {
-      return { rootKeys, error: `line ${n + 1}: expected a key assignment or table header, got: ${trimmed}` };
+      return { state: "invalid", error: `line ${n + 1}: expected a key assignment or table header, got: ${trimmed}` };
     }
-    if (currentTable === null) rootKeys.add(firstKeySegment(assign[1]!));
+    if (!inTable) rootKeys.add(firstKeySegment(assign[1]!));
     ({ mode, depth } = scanValue(assign[2]!, depth));
   }
-  if (mode !== "none") return { rootKeys, error: "unterminated multi-line string" };
-  if (depth > 0) return { rootKeys, error: "unbalanced array brackets" };
-  return { rootKeys };
+  if (mode !== "none") return { state: "invalid", error: "unterminated multi-line string" };
+  if (depth > 0) return { state: "invalid", error: "unbalanced array brackets" };
+  return {
+    state: "valid",
+    rootKeys,
+  };
 }
 
 /** 扫过一段 value 文本,返回跨行状态(未闭合的多行字符串 / 未配平的数组括号)。 */
@@ -285,10 +297,7 @@ function withTemporaryUpload<Value>(
   use: (tmp: string) => Effect.Effect<Value, unknown>,
 ): Effect.Effect<Value, unknown> {
   return Effect.scoped(
-    Effect.acquireRelease(
-      Effect.sync(tmpUploadPath),
-      (tmp) => cleanupTemporaryUpload(sb, tmp),
-    ).pipe(
+    Effect.acquireRelease(Effect.sync(tmpUploadPath), (tmp) => cleanupTemporaryUpload(sb, tmp)).pipe(
       Effect.tap((tmp) => sandboxIo(() => sb.writeBytes(tmp, cfg.bytes))),
       Effect.flatMap(use),
     ),
@@ -307,13 +316,16 @@ export function uploadNativeConfigFileEffect(
 ): Effect.Effect<void, unknown> {
   return withTemporaryUpload(sb, cfg, (tmp) =>
     sandboxIo((signal) => sb.runShell(`mkdir -p $(dirname ${destPath}) && mv ${tmp} ${destPath}`, { signal })).pipe(
-      Effect.flatMap((res) => res.exitCode === 0
-        ? Effect.void
-        : Effect.fail(
-            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+      Effect.flatMap((res) =>
+        res.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
 ${outputTail(res)}`),
-          )),
-    ));
+            ),
+      ),
+    ),
+  );
 }
 
 /**
@@ -328,18 +340,20 @@ export function appendNativeConfigFileEffect(
 ): Effect.Effect<void, unknown> {
   return withTemporaryUpload(sb, cfg, (tmp) =>
     sandboxIo((signal) =>
-      sb.runShell(
-        `printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath}`,
-        { signal },
-      )
+      sb.runShell(`printf '\\n' >> ${destPath} && cat ${tmp} >> ${destPath} && printf '\\n' >> ${destPath}`, {
+        signal,
+      }),
     ).pipe(
-      Effect.flatMap((res) => res.exitCode === 0
-        ? Effect.void
-        : Effect.fail(
-            new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
+      Effect.flatMap((res) =>
+        res.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new Error(`Could not upload native config file "${cfg.path}" into the sandbox (${destPath}):
 ${outputTail(res)}`),
-          )),
-    ));
+            ),
+      ),
+    ),
+  );
 }
 
 /**

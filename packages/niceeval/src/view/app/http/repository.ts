@@ -4,7 +4,6 @@ import {
   decodeInspectionDocument,
   decodeInspectionOperation,
   narrowInspectionSuccess,
-  QUERY_PROTOCOL,
   type InspectionOperationFor,
   type InspectionOperationId,
   type InspectionQuery,
@@ -67,7 +66,7 @@ export class HttpInspectionRepository implements InspectionQuery {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         generationId: this.descriptor.generationId,
-        request: { protocol: QUERY_PROTOCOL, operation: decodedOperation.success },
+        request: { operation: decodedOperation.success },
       }),
     });
     const body = await responseBody(response);
@@ -129,7 +128,9 @@ async function responseBody(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch (cause) {
-    throw new ViewHttpError(response.status, "view-response-invalid", "retry", "View HTTP response is not JSON.", { cause });
+    throw new ViewHttpError(response.status, "view-response-invalid", "retry", "View HTTP response is not JSON.", {
+      cause,
+    });
   }
 }
 

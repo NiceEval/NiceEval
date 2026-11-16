@@ -18,10 +18,18 @@ export const artifactAdapter = defineAdapter({
         bytes.fill(0);
         const first = await accepted;
         const second = await ctx.attach({ name: "same-label", mediaType: "text/plain", body: "附件 snapshot\n" });
-        const empty = await ctx.attach({ name: "empty", mediaType: "application/octet-stream", body: new Uint8Array() });
+        const empty = await ctx.attach({
+          name: "empty",
+          mediaType: "application/octet-stream",
+          body: new Uint8Array(),
+        });
         const ids = [first.artifactId, second.artifactId, empty.artifactId];
         for (let index = 0; index < 12; index += 1) {
-          const extra = await ctx.attach({ name: "L".repeat(16 * 1024), mediaType: "application/octet-stream", body: new Uint8Array() });
+          const extra = await ctx.attach({
+            name: "L".repeat(16 * 1024),
+            mediaType: "application/octet-stream",
+            body: new Uint8Array(),
+          });
           ids.push(extra.artifactId);
         }
         await writeFile("artifact-selectors.txt", ids.join("\n"));
@@ -54,7 +62,10 @@ export const artifactAdapter = defineAdapter({
           });
           return false;
         } catch (cause) {
-          await writeFile("attachment-rejection.txt", cause instanceof Error ? String(Reflect.get(cause, "code")) : "non-error");
+          await writeFile(
+            "attachment-rejection.txt",
+            cause instanceof Error ? String(Reflect.get(cause, "code")) : "non-error",
+          );
           return true;
         }
       },

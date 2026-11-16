@@ -1,5 +1,4 @@
-export const RECORD_SQLITE_FORMAT = "niceeval.project-database/0.19";
-export const RECORD_SQLITE_STORAGE_REVISION = 1;
+export const RECORD_SQLITE_FORMAT = "niceeval.record.2";
 export const RECORD_SQLITE_CHUNK_BYTES = 256 * 1024;
 export const RECORD_SQLITE_MAX_PUBLISH_ROWS = 4_096;
 export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;
@@ -37,28 +36,43 @@ export interface PersistedAttempt {
   readonly attemptLocator: string;
   readonly coreBytes: Uint8Array;
   readonly coreDigest: string;
-  readonly publicationIdentity?: {
-    readonly originRunId: string;
-    readonly attemptId: string;
-    readonly revision: number;
-  };
+  readonly publicationIdentity:
+    | {
+        readonly originRunId: string;
+        readonly attemptId: string;
+        readonly revision: number;
+      }
+    | undefined;
 }
 
-export interface PersistedMember {
-  /** Internal publication order; absent for legacy facts without a binding revision. */
-  readonly bindingRevision?: number;
+interface PersistedMemberBase {
   readonly slotId: string;
-  readonly originRunId?: string;
-  readonly attemptId?: string;
-  readonly action: "executed" | "carried" | "accepted" | "not-dispatched" | "interrupted";
   readonly coreBytes: Uint8Array;
   readonly coreDigest: string;
-  readonly publicationIdentity?: {
-    readonly originRunId: string;
-    readonly attemptId: string;
-    readonly revision: number;
-  };
 }
+
+export type PersistedMember = PersistedMemberBase &
+  (
+    | { readonly action: "not-dispatched" | "interrupted" }
+    | {
+        readonly action: "executed" | "carried" | "accepted";
+        readonly attempt: {
+          readonly originRunId: string;
+          readonly attemptId: string;
+          /** Legacy sealed facts have no publication or binding revision. */
+          readonly publication:
+            | {
+                readonly identity: {
+                  readonly originRunId: string;
+                  readonly attemptId: string;
+                  readonly revision: number;
+                };
+                readonly bindingRevision: number;
+              }
+            | undefined;
+        };
+      }
+  );
 
 export interface PersistedAttachmentReference {
   readonly ordinal: number;
@@ -93,9 +107,9 @@ export interface PersistedAttachment {
   readonly attachmentId: string;
   readonly ownerKind: RecordOwnerKind;
   readonly ownerRunId: string;
-  readonly ownerAttemptId?: string;
+  readonly ownerAttemptId: string | undefined;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;
   readonly canonicalBytes: Uint8Array;
   readonly canonicalDigest: string;
@@ -117,7 +131,7 @@ export interface PersistSealedRunInput {
   /** Canonical RunDocument bytes only; never an aggregate Record envelope. */
   readonly runCoreBytes: Uint8Array;
   readonly runCoreDigest: string;
-  readonly expectedLogicalSealIdentity?: string;
+  readonly expectedLogicalSealIdentity: string | undefined;
   readonly slots: readonly PersistedSlot[];
   readonly attempts: readonly PersistedAttempt[];
   readonly members: readonly PersistedMember[];
@@ -178,7 +192,7 @@ export interface SourceBarrierRequest {
   readonly experimentId: string;
   readonly evalId: string;
   readonly attemptOrdinal: number;
-  readonly excludeRunId?: string;
+  readonly excludeRunId: string | undefined;
 }
 
 export interface SourceBarrierCandidate {
@@ -254,9 +268,9 @@ export interface AdmitAttachmentInput {
   readonly attachmentId: string;
   readonly ownerKind: RecordOwnerKind;
   readonly ownerRunId: string;
-  readonly ownerAttemptId?: string;
+  readonly ownerAttemptId: string | undefined;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly deadlineEpochMs: number;
 }
 
@@ -282,9 +296,9 @@ export interface FinalizedAttachmentMetadata {
 export interface FinalizedAttachmentClosure extends FinalizedAttachmentMetadata {
   readonly ownerKind: RecordOwnerKind;
   readonly ownerRunId: string;
-  readonly ownerAttemptId?: string;
+  readonly ownerAttemptId: string | undefined;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
 }
 
 export interface RunFinalization {
@@ -369,9 +383,9 @@ export interface SealedAttachmentDocument {
   readonly attachmentId: string;
   readonly ownerKind: RecordOwnerKind;
   readonly ownerRunId: string;
-  readonly ownerAttemptId?: string;
+  readonly ownerAttemptId: string | undefined;
   readonly family: string;
-  readonly familyRevision: number;
+  readonly familyRevision: number | undefined;
   readonly logicalIdentity: string;
   readonly canonicalBytes: Uint8Array;
   readonly canonicalDigest: string;
@@ -388,12 +402,11 @@ export interface SealedAttachmentMetadata extends Omit<SealedAttachmentDocument,
 }
 
 export interface SealedRunCore {
-  readonly createdRevision?: number;
+  readonly createdRevision: number | undefined;
   readonly runId: string;
   readonly writerGeneration: string;
   readonly startedAt: string;
   readonly logicalSealIdentity: string;
-  readonly publicationManaged?: boolean;
   readonly recordCoreBytes: Uint8Array;
   readonly recordCoreDigest: string;
   readonly runCoreBytes: Uint8Array;

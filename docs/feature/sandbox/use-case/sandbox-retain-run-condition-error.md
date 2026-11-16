@@ -11,7 +11,7 @@
 1. 启动评测并指定失败时暂停或保留现场：
 
    ```bash
-   niceeval exp local onboarding/tool-first --pause-on-failure
+   niceeval exp local onboarding/tool-first --pause-on-failure --max-concurrency 1
    ```
 
 2. 发生错误时，NiceEval 阻断自动销毁流程，终端显示原生调试指引：
@@ -55,6 +55,8 @@
 7. 重新发起评测，验证准备动作全部顺利通过。
 
 ## 边界
+
+- 失败挂起仅在单任务交互 TTY 中生效；非 TTY 或并发上限大于 1 时照常回收，并按 [Sandbox CLI](../cli.md) 输出清理提示。自动化排查需要显式使用 `--keep-sandbox`。
 
 - 挂起与留存仅保留现场供人工排障或 Coding Agent 非交互排查，不提供现场续跑或自动修补机制。
 - 若使用 `--keep-sandbox` 进行离线排查，排障结束后直接运行 `docker rm -f <sandboxId>` 或 `instabox rm <sandboxId>` 销毁。

@@ -1,20 +1,13 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-export const RUN_PROTOCOL = "niceeval.run/v1" as const;
-export const EMPTY_PUBLICATION_CUTOFF_IDENTITY = "niceeval.empty-publication-cutoff/v1" as const;
+export const EMPTY_PUBLICATION_CUTOFF_IDENTITY = "niceeval.empty-publication-cutoff" as const;
 
 const NonNegativeIntegerSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
 );
 
-export const RunStateSchema = Schema.Literals([
-  "active",
-  "recovering",
-  "completed",
-  "interrupted",
-  "failed",
-]);
+export const RunStateSchema = Schema.Literals(["active", "recovering", "completed", "interrupted", "failed"]);
 
 export const RUN_ABSENCE_REASONS = [
   "early-exit-satisfied",
@@ -28,17 +21,17 @@ export const RunAbsenceReasonSchema = Schema.Literals(RUN_ABSENCE_REASONS);
 
 export const RunPendingPublicationSchema = Schema.Struct({ state: Schema.Literal("pending") });
 export const RunPublishedPublicationSchema = Schema.Struct({
-    state: Schema.Literal("published"),
-    action: Schema.Literals(["executed", "carried", "accepted"]),
-    attemptId: Schema.String,
-    attemptLocator: Schema.String,
-    originRunId: Schema.String,
-    originSlotId: Schema.String,
-  });
+  state: Schema.Literal("published"),
+  action: Schema.Literals(["executed", "carried", "accepted"]),
+  attemptId: Schema.String,
+  attemptLocator: Schema.String,
+  originRunId: Schema.String,
+  originSlotId: Schema.String,
+});
 export const RunAbsentPublicationSchema = Schema.Struct({
-    state: Schema.Literal("absent"),
-    reason: RunAbsenceReasonSchema,
-  });
+  state: Schema.Literal("absent"),
+  reason: RunAbsenceReasonSchema,
+});
 
 export const RunSlotPublicationSchema = Schema.Union([
   RunPendingPublicationSchema,
@@ -82,9 +75,11 @@ export const RunSummarySchema = Schema.Struct({
   owner: Schema.optional(RunOwnerObservationSchema),
 });
 
-export const RunDetailSchema = RunSummarySchema.pipe(Schema.fieldsAssign({
-  slots: Schema.Array(RunSlotSchema),
-}));
+export const RunDetailSchema = RunSummarySchema.pipe(
+  Schema.fieldsAssign({
+    slots: Schema.Array(RunSlotSchema),
+  }),
+);
 
 export const PublicationCutoffSchema = Schema.Struct({
   identity: Schema.String,
@@ -92,7 +87,6 @@ export const PublicationCutoffSchema = Schema.Struct({
 });
 
 export const RunListDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.list"),
   runs: Schema.Array(RunSummarySchema),
   /** Count matching Runs excluded by the requested limit at the same cutoff. */
@@ -101,20 +95,17 @@ export const RunListDocumentSchema = Schema.Struct({
 });
 
 export const RunGetDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.get"),
   run: RunDetailSchema,
 });
 
 export const RunImportDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.import"),
   outcome: Schema.Literals(["imported", "already-present"]),
   imported: Schema.Array(Schema.String),
   alreadyPresent: Schema.Array(Schema.String),
 });
 export const RunExportDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.export"),
   outcome: Schema.Literal("exported"),
   runIds: Schema.Array(Schema.String),
@@ -122,13 +113,14 @@ export const RunExportDocumentSchema = Schema.Struct({
 
 /** Decode the independent outcomes returned by `run recover --orphaned --yes --json`. */
 export const RunRecoverOrphanedDocumentSchema = Schema.Struct({
-  protocol: Schema.Literal(RUN_PROTOCOL),
   operation: Schema.Literal("run.recover-orphaned"),
-  items: Schema.Array(Schema.Struct({
-    runId: Schema.String,
-    outcome: Schema.Literals(["recovered", "skipped", "failed"]),
-    reason: Schema.optional(Schema.String),
-  })),
+  items: Schema.Array(
+    Schema.Struct({
+      runId: Schema.String,
+      outcome: Schema.Literals(["recovered", "skipped", "failed"]),
+      reason: Schema.optional(Schema.String),
+    }),
+  ),
 });
 
 export const RunDocumentSchema = Schema.Union([
@@ -161,7 +153,7 @@ export type RunOwnerObservation = Schema.Schema.Type<typeof RunOwnerObservationS
 export type RunRecoverOrphanedDocument = Schema.Schema.Type<typeof RunRecoverOrphanedDocumentSchema>;
 /** Carries exact Run detail in the machine protocol; it is a readonly value rather than a live lifecycle handle. */
 export type RunGetDocument = Schema.Schema.Type<typeof RunGetDocumentSchema>;
-/** A versioned Run protocol envelope; inspect operation before consuming operation-specific data. */
+/** A Run machine document; inspect operation before consuming operation-specific data. */
 export type RunDocument = Schema.Schema.Type<typeof RunDocumentSchema>;
 
 /** Returns a validated Run document or rejection reason; successful protocol decoding does not imply successful evaluation quality. */
@@ -169,7 +161,7 @@ export type RunProtocolDecodeResult<Value extends RunDocument = RunDocument> =
   | { readonly success: true; readonly value: Value }
   | { readonly success: false; readonly reason: string };
 
-/** Strictly decode one public `niceeval.run/v1` document. */
+/** Strictly decode one public Run machine document. */
 export function decodeRunDocument(input: unknown): RunProtocolDecodeResult {
   const decoded = Schema.decodeUnknownResult(RunDocumentSchema, {
     errors: "all",

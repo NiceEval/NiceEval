@@ -19,34 +19,42 @@ export function runProcess(
   cwd: string,
 ): Effect.Effect<ProcessResult, DownstreamCommandError, ChildProcessSpawner.ChildProcessSpawner> {
   const configured = ChildProcess.make(command, args, { cwd });
-  return Effect.scoped(Effect.gen(function*() {
-    const child = yield* configured;
-    const [stdout, stderr, exitCode] = yield* Effect.all([
-      Stream.runCollect(child.stdout),
-      Stream.runCollect(child.stderr),
-      child.exitCode,
-    ], { concurrency: "unbounded" });
-    return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
-  })).pipe(
-    Effect.mapError((error) => new DownstreamCommandError({
-      command,
-      args,
-      cwd,
-      message: String(error),
-    })),
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* configured;
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [Stream.runCollect(child.stdout), Stream.runCollect(child.stderr), child.exitCode],
+        { concurrency: "unbounded" },
+      );
+      return { stdout: decode(stdout), stderr: decode(stderr), exitCode: Number(exitCode) };
+    }),
+  ).pipe(
+    Effect.mapError(
+      (error) =>
+        new DownstreamCommandError({
+          command,
+          args,
+          cwd,
+          message: String(error),
+        }),
+    ),
   );
 }
 
 export function requireSuccess(command: string, args: readonly string[], cwd: string) {
   return runProcess(command, args, cwd).pipe(
-    Effect.flatMap((result) => result.exitCode === 0
-      ? Effect.succeed(result)
-      : Effect.fail(new DownstreamCommandError({
-        command,
-        args,
-        cwd,
-        exitCode: result.exitCode,
-        message: result.stderr.trim() || result.stdout.trim() || "command failed",
-      }))),
+    Effect.flatMap((result) =>
+      result.exitCode === 0
+        ? Effect.succeed(result)
+        : Effect.fail(
+            new DownstreamCommandError({
+              command,
+              args,
+              cwd,
+              exitCode: result.exitCode,
+              message: result.stderr.trim() || result.stdout.trim() || "command failed",
+            }),
+          ),
+    ),
   );
 }

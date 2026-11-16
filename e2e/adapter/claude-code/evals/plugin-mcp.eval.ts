@@ -4,8 +4,7 @@ import { defineEval } from "niceeval";
 import { jsonMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "Plugins:安装后的 Plugin MCP 能以正确入参被调用并返回结果",
+  description: "Plugins:安装后的 Plugin MCP 能以正确入参被调用并返回结果",
   async test(t) {
     const turn = await t.send(
       "调用名字严格为 mcp__plugin_e2e_fixture__get-sum 的 MCP 工具，参数 a=517、b=926。" +

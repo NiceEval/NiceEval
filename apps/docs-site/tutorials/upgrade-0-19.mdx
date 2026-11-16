@@ -14,7 +14,7 @@ Model purposes now use **role**. Replace these names together:
 | group `modelSlot` | group `modelRole` |
 | `slot-has-no-calls` | `role-has-no-calls` |
 
-`models`, `requires.models`, `ctx.models`, and `t.usage.cacheRead.rate(role?)` keep their behavior. Apply the same field replacements to consumers of `show --json`, Query and View data. Old API names have no forwarding aliases.
+`models`, `requires.models`, `ctx.models`, and `t.usage.cacheRead.rate(role?)` keep their behavior. Apply the same field replacements to consumers of `show --json` and View data. Old API names have no forwarding aliases.
 
 ## Replace removed fields
 
@@ -23,7 +23,7 @@ Model purposes now use **role**. Replace these names together:
 | `Config.workspace` | Run from the project directory |
 | `Eval.reporters` | `Config.reporters` |
 | `Experiment.classifyFailure` | Built-in classification, `ExperimentFatalError`, or `EvalFatalError` |
-| `run show <run-id>` | `show --run <run-id>` |
+| `run show <run-id>` | `show run:<run-id>` |
 
 Removed fields fail at definition loading, including fields explicitly set to `undefined`. Codex and Claude Code native plugins remain Adapter configuration. Config reporters, Eval `diff` and `metadata`, both build/preparation concurrency controls, and Agent/Adapter implementations remain supported.
 
@@ -51,8 +51,8 @@ t.note("First decision latency", ms(result.firstDecisionMs));
 ```
 
 Labels must be unique within an Attempt. The limits are 64 notes and 64 KiB of JSON per note; violations throw `TypeError`.
-`show @<locator>` and View display Notes after Assertions. JSON and Query Attempt results include `notes`.
-`show --exp <experiment-id>` groups numeric notes by label and unit, displaying count, min, median, p90, and max.
+`show @<locator>` and View display Notes after Assertions. `show --json` Attempt results include `notes`.
+`show exp:<experiment-id>` groups numeric notes by label and unit, displaying count, min, median, p90, and max.
 Historical results without notes return an empty list.
 
 ## 数值单位
@@ -72,7 +72,6 @@ t.check(t.usage.cacheRead.rate(), atLeast(ratio(0.6)));
 ## Planned attempt
 
 A Run's planned execution position is now called a Planned attempt. An Attempt remains a published execution fact.
-Use `niceeval.query/v2` for queries; the `/inspection` decoder no longer accepts v1.
 Replace `slotId`, `expectedSlots`, and `originSlotId` with `plannedAttemptId`, `plannedAttempts`, and `originPlannedAttemptId`.
 The Run and current-result `slots` collections are now `plannedAttempts`. Show reports Planned / Recorded / Missing attempts.
 Existing Records need no rewrite: persistent fields are mapped at the query boundary.

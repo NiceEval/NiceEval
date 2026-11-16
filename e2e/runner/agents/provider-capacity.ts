@@ -12,9 +12,7 @@ const CAPACITY_EVAL_PREFIX = "provider-capacity-capacity/";
 const GROUP_CAPACITY_EVAL_PREFIX = "provider-capacity-group-";
 
 function aborted(signal: AbortSignal): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new Error("provider-capacity fixture aborted");
+  return signal.reason instanceof Error ? signal.reason : new Error("provider-capacity fixture aborted");
 }
 
 async function waitForFile(path: string, signal: AbortSignal): Promise<void> {
@@ -45,7 +43,7 @@ export const providerCapacityAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-provider-capacity", version: "1", revision: "1" },
     probe: shell("node --version >/dev/null"),
   },

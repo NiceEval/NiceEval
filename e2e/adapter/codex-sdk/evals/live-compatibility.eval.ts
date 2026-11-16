@@ -4,16 +4,13 @@ import { greaterThan, includes, isDefined, jsonMatch, satisfies, toolMatch } fro
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.length === 0) {
-    throw new Error(
-      `${name} must be injected by the native Codex SDK E2E test`,
-    );
+    throw new Error(`${name} must be injected by the native Codex SDK E2E test`);
   }
   return value;
 }
 
 export default defineEval({
-  description:
-    "Codex SDK raw ThreadEvent 经公共 converter 保留 shell 配对、usage 与 thread resume",
+  description: "Codex SDK raw ThreadEvent 经公共 converter 保留 shell 配对、usage 与 thread resume",
   async test(t) {
     const marker = requiredEnv("CODEX_SDK_E2E_MARKER");
     const sentinel = requiredEnv("CODEX_SDK_E2E_SENTINEL");
@@ -40,30 +37,13 @@ export default defineEval({
     );
     t.check(
       first.events,
-      satisfies<typeof first.events>(
-        "no failed tool or subagent actions",
-        (events) =>
-          events.every(
-            (event) =>
-              event.type !== "operation.finished" ||
-              event.status !== "failed",
-          ),
+      satisfies<typeof first.events>("no failed tool or subagent actions", (events) =>
+        events.every((event) => event.type !== "operation.finished" || event.status !== "failed"),
       ),
     );
-    t.check(
-      first.usage.inputTotalTokens,
-      greaterThan(0),
-    );
-    t.check(
-      first.usage.outputTokens,
-      greaterThan(0),
-    );
-    t.check(
-      t.sessionId,
-      isDefined<string | undefined>(
-        "thread.started must be captured as the session id",
-      ),
-    );
+    t.check(first.usage.inputTotalTokens, greaterThan(0));
+    t.check(first.usage.outputTokens, greaterThan(0));
+    t.check(t.sessionId, isDefined<string | undefined>("thread.started must be captured as the session id"));
 
     const resumed = await t.send(
       `Continue this same thread without running a command. Acknowledge this resume probe: ${sentinel}.`,

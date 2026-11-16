@@ -32,16 +32,16 @@ Attempt 总超时或取消时，当前打开阶段在中断时刻封口为 faile
 详情，例如：
 
 ```sh
-niceeval view --run <run-id>
+niceeval view run:<run-id>
 ```
 
-跨 Run 比较使用固定 `runs.compare` request，并按稳定阶段名读取结果：
+跨 Run 比较使用固定 `runs.compare`，并按稳定阶段名读取结果：
 
 ```sh
-niceeval query run --request ./timing-comparison.request.json
+niceeval compare <run-id> -- <run-id> --json
 ```
 
-query 与 View 只得到 operation result 和其分母。它们看不到 RecordReader、文件路径或 Content 路径，也不能在读取后重新打开 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；固定 operation 可以按 correlation identity 组合已请求的事实，但不把其中一项改成另一项的持久真源。
+`show`、`compare` 与 View 只得到 operation result 和其分母。它们看不到 RecordReader、文件路径或 Content 路径，也不能在读取后重新打开 Attachment。OTel span 仍由 telemetry RecordAttachment 拥有；固定 operation 可以按 correlation identity 组合已请求的事实，但不把其中一项改成另一项的持久真源。
 
 ## `bench/` 本地工具
 

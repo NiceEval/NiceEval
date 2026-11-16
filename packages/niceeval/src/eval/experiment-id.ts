@@ -6,13 +6,10 @@ import { Schema } from "effect";
  * it remains an implementation detail of the Evaluation producer.
  */
 export const ExperimentIdSchema = Schema.String.pipe(
-  Schema.refine(
-    (value): value is string => value.length > 0 && !value.includes("\u0000"),
-    {
-      identifier: "ExperimentId",
-      description: "a non-empty Experiment identity string without NUL",
-    },
-  ),
+  Schema.refine((value): value is string => value.length > 0 && !value.includes("\u0000"), {
+    identifier: "ExperimentId",
+    description: "a non-empty Experiment identity string without NUL",
+  }),
 );
 
 export type ExperimentId = Schema.toType<typeof ExperimentIdSchema>["Type"];

@@ -240,7 +240,6 @@ export function createSupportReview(
       // Assess all speech; do not filter by delivery or model origin.
       t.closeQA(speechMaterial(actorMatch("agent")), "Is every utterance natural, complete, and clear?", {
         maxMaterialBytes: 256 * 1024,
-        maxAuditBytes: 1024 * 1024,
       }).score(45).label("Expression quality");
 
       // Keep the formula visible; unknown retains its weight and is not a zero for non-completion.

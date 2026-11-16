@@ -6,13 +6,10 @@ const SKILL_PATH = `.claude/skills/${SKILL_NAME}/SKILL.md`;
 const EXPECTED_COMMAND = "ebook-convert novel.epub novel.azw3";
 
 export default defineEval({
-  description:
-    "Repo Skill:钉定 Git 来源安装后被 Claude 原生加载，并采用远程 Skill 的命令约定",
+  description: "Repo Skill:钉定 Git 来源安装后被 Claude 原生加载，并采用远程 Skill 的命令约定",
   async test(t) {
     await t.group("远程 Skill 文件进入 Claude 项目级发现目录", async () => {
-      const installed = await t.sandbox.runShell(
-        `test -f ${SKILL_PATH} && grep -F 'ebook-convert' ${SKILL_PATH}`,
-      );
+      const installed = await t.sandbox.runShell(`test -f ${SKILL_PATH} && grep -F 'ebook-convert' ${SKILL_PATH}`);
       t.check(installed.exitCode, equals(0));
       t.check(installed.stdout, includes("ebook-convert"));
     });
@@ -24,12 +21,8 @@ export default defineEval({
     await turn.succeeded().orStop();
     t.check(
       turn.events,
-      satisfies<typeof turn.events>(
-        `loaded skill ${SKILL_NAME}`,
-        (events) =>
-          events.some(
-            (event) => event.type === "skill.loaded" && event.skill === SKILL_NAME,
-          ),
+      satisfies<typeof turn.events>(`loaded skill ${SKILL_NAME}`, (events) =>
+        events.some((event) => event.type === "skill.loaded" && event.skill === SKILL_NAME),
       ),
     );
     t.check(turn.reply, includes(EXPECTED_COMMAND));
@@ -37,11 +30,7 @@ export default defineEval({
       t.events,
       satisfies<typeof t.events>(
         "no failed tool or subagent actions",
-        (events) =>
-          !events.some(
-            (event) =>
-              event.type === "operation.finished" && event.status === "failed",
-          ),
+        (events) => !events.some((event) => event.type === "operation.finished" && event.status === "failed"),
       ),
     );
   },

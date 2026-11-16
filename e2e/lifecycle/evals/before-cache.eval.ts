@@ -13,19 +13,21 @@ if (!/^PUBLIC_MODE=[a-z]+\n$/u.test(publicEnv)) {
 
 export default defineEval({
   description: "BeforeCache restores preparation while the current Eval still runs",
-  sandbox: sandboxLayer().before(shell({
-    id: "env-execution-probe",
-    command: [
-      "set -eu",
-      ...beforeCacheResumeGate(2),
-      `printf '%s\\n' '${publicEnv.trim()}' > .env`,
-      "grep -q '^PUBLIC_MODE=[a-z][a-z]*$' .env",
-      "mkdir -p .before-cache",
-      "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .before-cache/env-token",
-    ].join("\n"),
-    changeFrequency: changeFrequency.frequent + 10,
-    dependsOn: [actionRef("middle-execution-probe")],
-  })),
+  sandbox: sandboxLayer().before(
+    shell({
+      id: "env-execution-probe",
+      command: [
+        "set -eu",
+        ...beforeCacheResumeGate(2),
+        `printf '%s\\n' '${publicEnv.trim()}' > .env`,
+        "grep -q '^PUBLIC_MODE=[a-z][a-z]*$' .env",
+        "mkdir -p .before-cache",
+        "node -e 'process.stdout.write(require(\"node:crypto\").randomUUID())' > .before-cache/env-token",
+      ].join("\n"),
+      changeFrequency: changeFrequency.frequent + 10,
+      dependsOn: [actionRef("middle-execution-probe")],
+    }),
+  ),
   async test(t) {
     const turn = await t.send(`before-cache-demand:${DEMAND}`);
     await turn.succeeded().orStop();

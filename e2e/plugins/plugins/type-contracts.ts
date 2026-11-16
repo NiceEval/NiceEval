@@ -8,8 +8,11 @@ void anyAttachment;
 const standaloneSandboxOwner: PluginOwner = "sandbox";
 void standaloneSandboxOwner;
 const groupAndSandbox = definePlugin(({ marker }: { readonly marker: string }) => ({
-  name: "e2e.types.group-and-sandbox", key: marker, identity: { marker },
-  group: { before() {} }, sandbox: { before() {} },
+  name: "e2e.types.group-and-sandbox",
+  key: marker,
+  identity: { marker },
+  group: { before() {} },
+  sandbox: { before() {} },
 }));
 const groupAttachment: PluginInstance<"group"> = groupAndSandbox({ marker: "group" });
 const experimentAttachment: PluginInstance<"experiment"> = groupAndSandbox({ marker: "group" });

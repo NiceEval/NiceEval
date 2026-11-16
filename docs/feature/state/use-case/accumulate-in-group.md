@@ -57,7 +57,7 @@
 
    ```sh
    niceeval show @ATTEMPT-FOUR
-   niceeval query run --request-json '{"protocol":"niceeval.query/v3","operation":{"kind":"attempt.get","locator":"@ATTEMPT-FOUR"}}'
+   niceeval show @ATTEMPT-FOUR --json
    ```
 
    ```text

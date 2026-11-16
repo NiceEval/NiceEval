@@ -90,7 +90,7 @@ writer 验证 Attachment 的 `experimentId` 与同一 Run Core 完全相等。
 
 因此 terminal JSON receipt 缺少 Experiment presentation 不是例外或缺字段。它的 `createdRunIds` 是身份集合，
 `publicationCutoff` 固定读取边界。两者都不复制 Attempt、Verdict、Usage、cost、Inspection 摘要或展示名称。
-需要名称映射的机器表面是 exp plan/progress/result 与 Run-owned Attachment；query 与 View 则从所选 Run 的快照产生 summary。
+需要名称映射的机器表面是 exp plan/progress/result 与 Run-owned Attachment；`show` 与 View 则从所选 Run 的快照产生 summary。
 
 ## 旧 Run、迁移与生产入口验收
 

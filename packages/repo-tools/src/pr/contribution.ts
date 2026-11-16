@@ -19,9 +19,7 @@ export interface PrBodyCommandContribution {
   readonly family: "body";
   readonly input: typeof PrBodyInputSchema;
   readonly operations: readonly PrBodyOperationContribution[];
-  readonly run: (
-    input: unknown,
-  ) => Effect.Effect<PrBodyOutcome, PrBodyError, PrBodyRequirements>;
+  readonly run: (input: unknown) => Effect.Effect<PrBodyOutcome, PrBodyError, PrBodyRequirements>;
   readonly renderOutcome: (outcome: PrBodyOutcome) => string;
   readonly renderError: (error: PrBodyError) => string;
 }

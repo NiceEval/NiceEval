@@ -37,9 +37,12 @@ export function makeSandboxRequestExecutor(): Effect.Effect<SandboxRequestExecut
     const inFlight = new Set<Fiber.Fiber<unknown, unknown>>();
     let closed = false;
 
-    yield* Scope.addFinalizer(scope, Effect.sync(() => {
-      closed = true;
-    }));
+    yield* Scope.addFinalizer(
+      scope,
+      Effect.sync(() => {
+        closed = true;
+      }),
+    );
 
     const run = <A, E>(operation: Effect.Effect<A, E>): Promise<A> => {
       if (closed) return Promise.reject(new SandboxRequestExecutorClosedError());

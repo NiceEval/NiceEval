@@ -1,4 +1,5 @@
-const DIND_SUPERVISOR_REVISION = "niceeval-dind-supervisor-v2";
+import { createHash } from "node:crypto";
+
 const DIND_LOG_PATH = "/tmp/dockerd.log";
 const DIND_LOG_LIMIT_BYTES = 256 * 1024;
 const DIND_CONTROL_DIRECTORY = "/run/niceeval";
@@ -130,20 +131,10 @@ export function dindContainerCommand(
   logPath: string,
 ): { readonly Entrypoint: readonly string[]; readonly Cmd: readonly string[] } {
   const keeperSeconds = Math.max(1, ttlSeconds - DIND_SHUTDOWN_GRACE_SECONDS);
-  return Object.freeze({
-    Entrypoint: Object.freeze(["sh", "-c"]),
-    Cmd: Object.freeze([
-      DIND_BOOTSTRAP_SOURCE,
-      DIND_SUPERVISOR_REVISION,
-      DIND_SUPERVISOR_SOURCE,
-      String(keeperSeconds),
-      logPath,
-    ]),
-  });
-}
-
-export function dindSupervisorRevision(): string {
-  return DIND_SUPERVISOR_REVISION;
+  return {
+    Entrypoint: ["sh", "-c"],
+    Cmd: [DIND_BOOTSTRAP_SOURCE, "niceeval-dind-supervisor", DIND_SUPERVISOR_SOURCE, String(keeperSeconds), logPath],
+  };
 }
 
 /** Gracefully stop inner containers/containerd/dockerd while keeping the outer container alive for ordered capture. */
@@ -160,3 +151,9 @@ while test ! -f ${DIND_CAPTURE_QUIESCE_ACK_PATH}; do
 done
 test ! -S /var/run/docker.sock || ! docker --host=unix:///var/run/docker.sock info >/dev/null 2>&1`,
 ] as const);
+
+export function dindRuntimeDigest(): string {
+  return createHash("sha256")
+    .update(JSON.stringify([DIND_BOOTSTRAP_SOURCE, DIND_SUPERVISOR_SOURCE, DIND_CAPTURE_QUIESCE_COMMAND]))
+    .digest("hex");
+}

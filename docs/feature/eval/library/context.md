@@ -22,6 +22,7 @@ const otherTurn = await other.send("查旧金山天气");
 | `await t.respond(...responses)` | 回答指定请求，并作为同一 session 的下一轮发送 |
 | `await t.respondAll(optionId)` | 用一个 option 回答当前 session 的全部待处理请求 |
 | `t.newSession()` | 创建独立 session；它的事件仍进入 `t.*` 的 attempt 聚合 |
+| `t.simulatedUser(definition)` | 让一个扮演用户的 agent 读被测 agent 的提问并回答，见 [模拟用户](simulated-user.md) |
 
 session 上的同名 API 只读写该 session，不影响主 session 的 resume 状态。
 Turn 不继续驱动会话；下一轮仍从 `t` 或对应 session 调用。

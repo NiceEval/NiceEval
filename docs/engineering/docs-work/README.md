@@ -30,11 +30,14 @@ pnpm run repo docs work prepare
 └── receipts/<item-id>.json
 ```
 
+整个 run 只在 `run.json` 保存一个格式标记 `niceeval-docs-work/current`。
+item 与检查收据不附格式名或版本；读取先核对 run，再严格校验当前字段。旧状态明确拒绝，需要重新 prepare，不能迁移。
+show、finalize 与生成命令的即时收据不新增格式包装；文本呈现由已选命令决定，不靠伪版本分派。
+
 这些文件是当次协作收据，不是设计、实施计划或第二套文档索引。`prepare` 从已经存在的 docs 边界、显式 scope 和 Git base 推导 work item；它不能让一份本地 run file 成为后续实现的目标 owner。
 
 ```ts
-interface DocsWorkItemV1 {
-  format: "niceeval.docs-work-item/v1";
+interface DocsWorkItem {
   runId: string;
   id: string;
   goal: string;
@@ -102,8 +105,7 @@ worker 只能运行 `check --report` 并产生 `reported` receipt。父 Agent �
 ## 收据与重试
 
 ```ts
-interface DocsWorkReceiptV1 {
-  format: "niceeval.docs-work-receipt/v1";
+interface DocsWorkReceipt {
   runId: string;
   itemId: string;
   baseCommit: string;

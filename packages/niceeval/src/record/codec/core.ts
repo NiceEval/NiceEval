@@ -1,10 +1,6 @@
-import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import {
-  type RecordJson,
-  type RecordJsonObject,
-} from "../definition/canonical.ts";
+import { type RecordJson, type RecordJsonObject } from "../definition/canonical.ts";
 import {
   RecordSchemaParseOptions,
   type RecordSchemaCodec,
@@ -39,25 +35,12 @@ import type {
   AttemptDocument,
   MemberDocument,
   MembershipAction,
-  RecordAttachmentEnvelope,
-  RecordAttemptRef,
   RecordCore,
   RecordDocument,
-  RecordSlotIdentity,
-  RunCore,
   RunDocument,
 } from "../model/core.ts";
-import {
-  MEMBERSHIP_ACTIONS,
-  RECORD_ATTACHMENT_ENVELOPE_FORMAT,
-  RECORD_ATTACHMENT_OWNERS,
-} from "../model/core.ts";
+import { MEMBERSHIP_ACTIONS } from "../model/core.ts";
 import { RunContextSchema } from "../model/run-context.ts";
-import { isRecordAttachmentName } from "../model/identifiers.ts";
-import {
-  RecordBlobKeySchema,
-  Sha256DigestSchema,
-} from "./identifiers.ts";
 
 /** Kept as the one exact Schema options object for nearby non-Core codecs. */
 export const RecordExactParseOptions = RecordSchemaParseOptions;
@@ -71,20 +54,6 @@ export type AttemptDocumentEncoded = RecordJsonObject;
 export type RunCoreEncoded = RecordJsonObject;
 export type RecordCoreEncoded = RecordJsonObject;
 
-export interface RecordAttachmentEnvelopeEncoded {
-  readonly format: typeof RECORD_ATTACHMENT_ENVELOPE_FORMAT;
-  readonly ownerKind: RecordAttachmentEnvelope["ownerKind"];
-  readonly family: string;
-  readonly schemaVersion: number;
-  readonly payload: { readonly sha256: string; readonly byteLength: number };
-  readonly contents: readonly {
-    readonly key: string;
-    readonly sha256: string;
-    readonly byteLength: number;
-  }[];
-  readonly references: readonly { readonly owner: RecordAttachmentEnvelope["ownerKind"]; readonly family: string }[];
-}
-
 /** Keep each source Schema's exact encoded side (notably branded IDs -> string). */
 export const RecordAttemptRefSchema = CurrentRecordAttemptRefSchema;
 export const RecordDocumentSchema = CurrentRecordDocumentSchema;
@@ -96,16 +65,10 @@ export const RunCoreSchema = CurrentRunCoreSchema;
 export const RecordCoreSchema = CurrentRecordCoreSchema;
 export const RunContextCurrentSchema = RunContextSchema;
 
-export const ATTEMPT_PUBLICATION_CLOSURE_FORMAT = "niceeval.attempt-publication-closure/v1" as const;
 const CurrentAttemptPublicationClosureSchema = Schema.Struct({
-  format: Schema.Literal(ATTEMPT_PUBLICATION_CLOSURE_FORMAT),
   originRun: RunDocumentSchema,
 });
-const LegacyAttemptPublicationClosureSchema = Schema.Struct({ originRun: RunDocumentSchema });
-export const AttemptPublicationClosureSchema = Schema.Union([
-  CurrentAttemptPublicationClosureSchema,
-  LegacyAttemptPublicationClosureSchema,
-]);
+export const AttemptPublicationClosureSchema = CurrentAttemptPublicationClosureSchema;
 export type AttemptPublicationClosure = Schema.Schema.Type<typeof AttemptPublicationClosureSchema>;
 type EncodedRunDocument = Schema.Codec.Encoded<typeof RunDocumentSchema>;
 const decodeClosure = Schema.decodeUnknownResult(AttemptPublicationClosureSchema, {
@@ -114,10 +77,9 @@ const decodeClosure = Schema.decodeUnknownResult(AttemptPublicationClosureSchema
 });
 
 export function attemptPublicationClosure(originRun: EncodedRunDocument): {
-  readonly format: typeof ATTEMPT_PUBLICATION_CLOSURE_FORMAT;
   readonly originRun: EncodedRunDocument;
 } {
-  return Object.freeze({ format: ATTEMPT_PUBLICATION_CLOSURE_FORMAT, originRun });
+  return { originRun };
 }
 
 export function decodeAttemptPublicationClosure(input: unknown): Result.Result<AttemptPublicationClosure, unknown> {
@@ -128,58 +90,6 @@ export function decodeAttemptPublicationClosure(input: unknown): Result.Result<A
 export const AttemptOutcomeSchema = CurrentAttemptOutcomeSchema;
 export const MembershipActionSchema: Schema.Schema<MembershipAction> = Schema.Literals(MEMBERSHIP_ACTIONS);
 
-const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
-);
-
-const PositiveSafeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
-);
-
-const RecordAttachmentBytePointerSchema = Schema.Struct({
-  sha256: Sha256DigestSchema,
-  byteLength: NonNegativeSafeIntegerSchema,
-});
-
-const RecordAttachmentContentPointerSchema = Schema.Struct({
-  key: RecordBlobKeySchema,
-  sha256: Sha256DigestSchema,
-  byteLength: NonNegativeSafeIntegerSchema,
-});
-
-const RecordAttachmentReferenceSchema = Schema.Struct({
-  owner: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
-  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
-});
-
-function canonicalEnvelopeCollections(value: RecordAttachmentEnvelope): boolean {
-  let previousContent: string | undefined;
-  for (const content of value.contents) {
-    if (previousContent !== undefined && previousContent >= content.key) return false;
-    previousContent = content.key;
-  }
-  let previousReference: string | undefined;
-  for (const reference of value.references) {
-    const key = `${reference.owner}\u0000${reference.family}`;
-    if (previousReference !== undefined && previousReference >= key) return false;
-    previousReference = key;
-  }
-  return true;
-}
-
-export const RecordAttachmentEnvelopeSchema: Schema.Codec<
-  RecordAttachmentEnvelope,
-  RecordAttachmentEnvelopeEncoded
-> = Schema.Struct({
-  format: Schema.Literals([RECORD_ATTACHMENT_ENVELOPE_FORMAT]),
-  ownerKind: Schema.Literals(RECORD_ATTACHMENT_OWNERS),
-  family: Schema.String.pipe(Schema.check(Schema.makeFilter(isRecordAttachmentName))),
-  schemaVersion: PositiveSafeIntegerSchema,
-  payload: RecordAttachmentBytePointerSchema,
-  contents: Schema.Array(RecordAttachmentContentPointerSchema),
-  references: Schema.Array(RecordAttachmentReferenceSchema),
-}).pipe(Schema.check(Schema.makeFilter(canonicalEnvelopeCollections)));
-
 function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   return recordCodecError({
     code: "record-schema-invalid",
@@ -188,10 +98,7 @@ function schemaFailure(document: RecordCodecDocument): RecordCodecError {
   });
 }
 
-function invariantFailure(
-  document: RecordCodecDocument,
-  issues: readonly RecordIssue[],
-): RecordCodecError {
+function invariantFailure(document: RecordCodecDocument, issues: readonly RecordIssue[]): RecordCodecError {
   const nonEmpty = nonEmptyRecordIssues(issues);
   if (nonEmpty === undefined) {
     throw new Error("Record codec invariant failure requires at least one issue");
@@ -203,10 +110,7 @@ function invariantFailure(
   });
 }
 
-function failureFromSchemaCodec(
-  document: RecordCodecDocument,
-  failure: RecordSchemaFailure,
-): RecordCodecError {
+function failureFromSchemaCodec(document: RecordCodecDocument, failure: RecordSchemaFailure): RecordCodecError {
   if (failure.kind === "schema") {
     const isIssueCode = Schema.is(RecordIssueCodeSchema);
     const issues = failure.issues.flatMap((issue): readonly RecordIssue[] => {
@@ -246,9 +150,7 @@ function encodeDefinition<Value>(
 ): Result.Result<RecordJsonObject, RecordCodecError> {
   const encoded = definition.encode(value);
   if (Result.isFailure(encoded)) return Result.fail(failureFromSchemaCodec(document, encoded.failure));
-  return isRecordJsonObject(encoded.success)
-    ? Result.succeed(encoded.success)
-    : Result.fail(schemaFailure(document));
+  return isRecordJsonObject(encoded.success) ? Result.succeed(encoded.success) : Result.fail(schemaFailure(document));
 }
 
 /** Current Core codecs are thin adapters over the current definition declarations. */
@@ -256,9 +158,7 @@ export function decodeRecordDocument(input: unknown): Result.Result<RecordDocume
   return decodeDefinition("record", RecordDocumentDefinition, input);
 }
 
-export function encodeRecordDocument(
-  value: RecordDocument,
-): Result.Result<RecordDocumentEncoded, RecordCodecError> {
+export function encodeRecordDocument(value: RecordDocument): Result.Result<RecordDocumentEncoded, RecordCodecError> {
   return encodeDefinition("record", RecordDocumentDefinition, value);
 }
 
@@ -266,22 +166,15 @@ export function decodeRunDocument(input: unknown): Result.Result<RunDocument, Re
   return decodeDefinition("run", RunDocumentDefinition, input);
 }
 
-export function encodeRunDocument(
-  value: RunDocument,
-): Result.Result<RunDocumentEncoded, RecordCodecError> {
+export function encodeRunDocument(value: RunDocument): Result.Result<RunDocumentEncoded, RecordCodecError> {
   return encodeDefinition("run", RunDocumentDefinition, value);
 }
 
 export function decodeMemberDocument(input: unknown): Result.Result<MemberDocument, RecordCodecError> {
-  return Result.map(
-    decodeDefinition("member", MemberDocumentDefinition, input),
-    (value) => value as MemberDocument,
-  );
+  return Result.map(decodeDefinition("member", MemberDocumentDefinition, input), (value) => value as MemberDocument);
 }
 
-export function encodeMemberDocument(
-  value: MemberDocument,
-): Result.Result<MemberDocumentEncoded, RecordCodecError> {
+export function encodeMemberDocument(value: MemberDocument): Result.Result<MemberDocumentEncoded, RecordCodecError> {
   return encodeDefinition("member", MemberDocumentDefinition, value);
 }
 
@@ -289,9 +182,7 @@ export function decodeAttemptDocument(input: unknown): Result.Result<AttemptDocu
   return decodeDefinition("attempt", AttemptDocumentDefinition, input);
 }
 
-export function encodeAttemptDocument(
-  value: AttemptDocument,
-): Result.Result<AttemptDocumentEncoded, RecordCodecError> {
+export function encodeAttemptDocument(value: AttemptDocument): Result.Result<AttemptDocumentEncoded, RecordCodecError> {
   return encodeDefinition("attempt", AttemptDocumentDefinition, value);
 }
 
@@ -301,29 +192,4 @@ export function decodeRecordCore(input: unknown): Result.Result<RecordCore, Reco
 
 export function encodeRecordCore(value: RecordCore): Result.Result<RecordCoreEncoded, RecordCodecError> {
   return encodeDefinition("record-core", RecordCoreDefinition, value);
-}
-
-/** Fixed-family migration is intentionally outside this current-Core implementation turn. */
-export function decodeRecordAttachmentEnvelope(
-  input: unknown,
-): Result.Result<RecordAttachmentEnvelope, RecordCodecError> {
-  const decoded = Schema.decodeUnknownExit(
-    RecordAttachmentEnvelopeSchema,
-    RecordExactParseOptions,
-  )(input);
-  return Exit.isFailure(decoded)
-    ? Result.fail(schemaFailure("attachment-envelope"))
-    : Result.succeed(decoded.value);
-}
-
-export function encodeRecordAttachmentEnvelope(
-  value: RecordAttachmentEnvelope,
-): Result.Result<RecordAttachmentEnvelopeEncoded, RecordCodecError> {
-  const encoded = Schema.encodeUnknownExit(
-    RecordAttachmentEnvelopeSchema,
-    RecordExactParseOptions,
-  )(value);
-  return Exit.isFailure(encoded)
-    ? Result.fail(schemaFailure("attachment-envelope"))
-    : Result.succeed(encoded.value);
 }

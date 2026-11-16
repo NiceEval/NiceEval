@@ -6,15 +6,9 @@
 // docs/feature/experiments/architecture/cache.md「差异说明」与「NiceEval 身份域变更」。
 
 import type { JsonValue } from "../types.ts";
-import { CURRENT_IDENTITY_DOMAINS } from "../runner/identity-domains.ts";
 
 /** Run 记录根下清单文件的文件名。 */
 export const MANIFESTS_FILE = "manifests.json";
-
-/** 指纹算法与清单覆盖面的持久化版本；旧清单缺字段时按 legacy 0 读取。 */
-export const LEGACY_FINGERPRINT_VERSION = 0;
-export const FINGERPRINT_ALGORITHM_VERSION = CURRENT_IDENTITY_DOMAINS.fingerprintAlgorithm;
-export const FINGERPRINT_COVERAGE_VERSION = CURRENT_IDENTITY_DOMAINS.fingerprintCoverage;
 
 /**
  * 一条 eval 的指纹输入清单。三块与指纹输入一一对应:
@@ -25,11 +19,9 @@ export const FINGERPRINT_COVERAGE_VERSION = CURRENT_IDENTITY_DOMAINS.fingerprint
  * - `data` —— loader 登记文件(`loadYaml` / `loadJson` / `loadText` 读入,`loadCriteria` 登记)
  *   的同口径清单。
  */
+/** Record JSON and identity material: omitted plan/plugin keys remain absent in canonical manifests. */
 export interface EvalManifest {
-  /** 哈希 payload 与稳定编码的口径版本。 */
-  algorithmVersion: number;
-  /** manifest 覆盖的 fingerprint 输入集合版本。 */
-  coverageVersion: number;
+  niceeval: globalThis.Record<string, JsonValue>;
   config: globalThis.Record<string, JsonValue>;
   /**
    * pair-owned link + provider physical plan 的完整身份；新写入恒存在。
@@ -57,22 +49,21 @@ export function parseRunManifests(raw: unknown): RunManifests {
     const entry = value as Partial<EvalManifest>;
     if (typeof entry.config !== "object" || entry.config === null) continue;
     out[evalId] = {
-      algorithmVersion: manifestVersion(entry.algorithmVersion),
-      coverageVersion: manifestVersion(entry.coverageVersion),
+      niceeval: entry.niceeval ?? {},
       config: entry.config as globalThis.Record<string, JsonValue>,
       ...(entry.plan === undefined ? {} : { plan: entry.plan }),
       ...(typeof entry.plugins === "object" && entry.plugins !== null && !Array.isArray(entry.plugins)
         ? { plugins: entry.plugins as globalThis.Record<string, JsonValue> }
         : {}),
-      source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<string, string>,
-      data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<string, string>,
+      source: (typeof entry.source === "object" && entry.source !== null ? entry.source : {}) as globalThis.Record<
+        string,
+        string
+      >,
+      data: (typeof entry.data === "object" && entry.data !== null ? entry.data : {}) as globalThis.Record<
+        string,
+        string
+      >,
     };
   }
   return out;
-}
-
-function manifestVersion(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : LEGACY_FINGERPRINT_VERSION;
 }

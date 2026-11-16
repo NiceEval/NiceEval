@@ -2,6 +2,9 @@
 
 import { Data, Effect, Schema } from "effect";
 import { isJsonValue } from "../shared/json-value.ts";
+import type { JsonValue } from "../shared/types.ts";
+import type { ExternalCause } from "../shared/external-cause.ts";
+import type { UserDatabaseFailure } from "../user-database/errors.ts";
 import type { SandboxActionState } from "./action.ts";
 import type { BeforeCacheDegradedReason } from "./layer.ts";
 import type {
@@ -32,19 +35,16 @@ export type BeforeCacheUnsupportedCode =
   | "profile-backed-dind";
 
 const BeforeCacheKeyScopeSchema = Schema.Struct({
-  protocol: Schema.String,
-  storageSchemaRevision: Schema.String,
-  artifactFormatRevision: Schema.String,
+  cacheFormat: Schema.String,
   semanticIdentity: Schema.Json.pipe(Schema.refine(isJsonValue)),
 });
 
 export type BeforeCacheKeyScope = Schema.Schema.Type<typeof BeforeCacheKeyScopeSchema>;
 
 /** Provider boundary: a completed cache plan never relies on core defaults. */
-export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(
-  BeforeCacheKeyScopeSchema,
-  { onExcessProperty: "error" },
-);
+export const decodeBeforeCacheKeyScope = Schema.decodeUnknownSync(BeforeCacheKeyScopeSchema, {
+  onExcessProperty: "error",
+});
 
 export type BeforeCacheEligibility =
   | { readonly _tag: "Degraded"; readonly reason: BeforeCacheDegradedReason; readonly detail: string }
@@ -58,6 +58,14 @@ export type BeforeCacheEligibility =
       readonly baseIdentity: string;
       /** Complete provider-owned identity, decoded before entering core planning. */
       readonly keyScope: BeforeCacheKeyScope;
+      /** Resolved positional replacement identity; does not change content keys. */
+      readonly replacementScope:
+        | {
+            readonly provider: string;
+            readonly executionDomainId: string;
+            readonly baseReference: string;
+          }
+        | undefined;
     }
   | {
       readonly _tag: "Unsupported";
@@ -73,67 +81,60 @@ export interface BeforeCacheDeclaration {
   readonly declarationDigest: string;
   /** Cumulative state required by this exact logical prefix. */
   readonly requiredState: SandboxActionState;
-  readonly storageSchemaRevision: string;
-  readonly artifactFormatRevision: string;
+  readonly cacheFormat: string;
   readonly changeFrequency: number;
   /** Frozen, non-sensitive declaration metadata used for bidirectional registry validation. */
-  readonly declarationMetadata: unknown;
+  readonly declarationMetadata: JsonValue;
 }
 
 export interface BeforeCacheStep {
   readonly operationId: string;
   readonly declaration: BeforeCacheDeclaration;
   readonly positions: readonly string[];
+  /** Layer declaring this action; excluded from the content-addressed declaration. */
+  readonly declaringOwner: string;
   /** Defense-in-depth only; values are checked before an image is published and are never persisted. */
-  readonly knownSensitiveValues?: readonly string[];
+  readonly knownSensitiveValues: readonly string[];
 }
 
 interface BeforeCacheErrorFields {
   readonly operation: string;
   readonly reason: string;
-  readonly beforeCacheKey?: string;
-  readonly domainId?: string;
-  readonly cause?: unknown;
+  readonly beforeCacheKey: string | undefined;
+  readonly domainId: string | undefined;
+  readonly cause: ExternalCause | undefined;
 }
 
-export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<
-  BeforeCacheErrorFields
-> {}
+export class BeforeCacheRegistryError extends Data.TaggedError("BeforeCacheRegistryError")<BeforeCacheErrorFields> {}
 
 export class BeforeCacheLookupError extends Data.TaggedError("BeforeCacheLookupError")<
-  BeforeCacheErrorFields
+  Omit<BeforeCacheErrorFields, "cause"> & { readonly cause: UserDatabaseFailure | ExternalCause | undefined }
 > {}
 
-export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<
-  BeforeCacheErrorFields
+export class BeforeCacheCaptureError extends Data.TaggedError("BeforeCacheCaptureError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheRestoreError extends Data.TaggedError("BeforeCacheRestoreError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheValidationError extends Data.TaggedError(
+  "BeforeCacheValidationError",
+)<BeforeCacheErrorFields> {}
+
+export class BeforeCacheCleanupError extends Data.TaggedError("BeforeCacheCleanupError")<BeforeCacheErrorFields> {}
+
+export class BeforeCacheAmbiguityError extends Data.TaggedError("BeforeCacheAmbiguityError")<
+  BeforeCacheErrorFields & {
+    readonly operationId: string;
+    readonly terminal: "unresolved";
+    readonly diagnosticCommand: string;
+  }
 > {}
 
-export class BeforeCacheRestoreError extends Data.TaggedError("BeforeCacheRestoreError")<
-  BeforeCacheErrorFields
+export class BeforeCacheCancellationError extends Data.TaggedError("BeforeCacheCancellationError")<
+  BeforeCacheErrorFields & {
+    readonly operationId: string;
+    readonly terminal: "cancel-fenced";
+  }
 > {}
-
-export class BeforeCacheValidationError extends Data.TaggedError("BeforeCacheValidationError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheCleanupError extends Data.TaggedError("BeforeCacheCleanupError")<
-  BeforeCacheErrorFields
-> {}
-
-export class BeforeCacheAmbiguityError extends Data.TaggedError(
-  "BeforeCacheAmbiguityError",
-)<BeforeCacheErrorFields & {
-  readonly operationId: string;
-  readonly terminal: "unresolved";
-  readonly diagnosticCommand: string;
-}> {}
-
-export class BeforeCacheCancellationError extends Data.TaggedError(
-  "BeforeCacheCancellationError",
-)<BeforeCacheErrorFields & {
-  readonly operationId: string;
-  readonly terminal: "cancel-fenced";
-}> {}
 
 export type BeforeCacheError =
   | BeforeCacheRegistryError
@@ -151,7 +152,7 @@ export type AttemptBeforeCacheLookup =
       readonly _tag: "Miss";
       readonly beforeCacheKey: string;
       /** A failed hit was scrubbed in the same private slot before this clean miss receipt. */
-      readonly recovery?: "restore-failed-replayed";
+      readonly recovery: "restore-failed-replayed" | undefined;
     }
   | {
       readonly _tag: "Restored";
@@ -161,7 +162,7 @@ export type AttemptBeforeCacheLookup =
       /** Provider-neutral immutable artifact identity. */
       readonly artifactId: string;
       /** Present only when the provider artifact is an exact Docker image. */
-      readonly imageId?: string;
+      readonly imageId: string | undefined;
       readonly sandboxId: string;
     };
 
@@ -191,7 +192,7 @@ export type AttemptBeforeCacheCapture =
       /** Provider-neutral immutable artifact identity. */
       readonly artifactId: string;
       /** Present only when the provider artifact is an exact Docker image. */
-      readonly imageId?: string;
+      readonly imageId: string | undefined;
       readonly sandboxId: string;
     };
 
@@ -205,12 +206,8 @@ export type AttemptBeforeCacheFallback =
 
 export interface AttemptBeforeCache {
   eligibility(): BeforeCacheEligibility;
-  lookupAndRestore(
-    input: BeforeCacheStep,
-  ): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
-  capture(
-    input: BeforeCacheStep,
-  ): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
+  lookupAndRestore(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
+  capture(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
   /**
    * One-shot degraded-path seam, only valid before any Action has succeeded in
    * the current Attempt. The provider DestroyOnly-retires a failed lookup
@@ -236,7 +233,7 @@ export interface SandboxBackendCapabilities {
 export interface SandboxProviderBackend extends Omit<SandboxTransferOperations, "upload"> {
   readonly workdir: string;
   readonly sandboxId: string;
-  readonly nativeInstanceId?: string;
+  readonly nativeInstanceId?: string | undefined;
   readonly otlpHost: string | null;
   readonly capabilities: SandboxBackendCapabilities;
   runCommand(command: string, args?: readonly string[], options?: CommandOptions): Promise<CommandResult>;
@@ -255,7 +252,7 @@ export const unsupportedBackendCapability: SandboxBackendSupport<never> = Object
 });
 
 export function unsupportedBackendCapabilityBecause(reason: string): SandboxBackendSupport<never> {
-  return Object.freeze({ _tag: "Unsupported", reason });
+  return { _tag: "Unsupported", reason };
 }
 
 export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.freeze({
@@ -268,7 +265,7 @@ export const noSandboxBackendCapabilities: SandboxBackendCapabilities = Object.f
 });
 
 export function supportedBackendCapability<T>(value: T): SandboxBackendSupport<T> {
-  return Object.freeze({ _tag: "Supported", value });
+  return { _tag: "Supported", value };
 }
 
 function providerBoundaryError(cause: unknown): Error {
@@ -276,9 +273,7 @@ function providerBoundaryError(cause: unknown): Error {
 }
 
 /** Promise provider SDK 在这一处 lift 成 typed-error Effect；Error 实例原样保留给现有归因逻辑。 */
-export function providerBoundaryEffect<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-): Effect.Effect<T, Error> {
+export function providerBoundaryEffect<T>(operation: (signal: AbortSignal) => Promise<T>): Effect.Effect<T, Error> {
   return Effect.tryPromise({
     // 保留 Effect 运行时的取消信号，供真正支持 AbortSignal 的 SDK adapter 接入；不把中断
     // 编码成 Error，也不在这里启动嵌套 runtime。
@@ -308,13 +303,17 @@ export function customSandboxBackend(sandbox: CustomProviderSandbox): SandboxPro
   // 作者直接返回的普通 Sandbox 没有登记项，仍严格退回 Unsupported，不能靠鸭子类型猜能力。
   const registered = SANDBOX_CAPABILITIES.get(sandbox) ?? {
     ...noSandboxBackendCapabilities,
-    managedProcess: unsupportedBackendCapabilityBecause("custom Sandbox facades do not declare the internal managed-process capability"),
+    managedProcess: unsupportedBackendCapabilityBecause(
+      "custom Sandbox facades do not declare the internal managed-process capability",
+    ),
   };
   return {
     get workdir() {
       return sandbox.workdir;
     },
-    get nativeInstanceId() { return sandbox.nativeInstanceId; },
+    get nativeInstanceId() {
+      return sandbox.nativeInstanceId;
+    },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -323,9 +322,10 @@ export function customSandboxBackend(sandbox: CustomProviderSandbox): SandboxPro
     },
     capabilities: {
       ...registered,
-      appendLog: appendLog === undefined
-        ? unsupportedBackendCapability
-        : supportedBackendCapability((line) => appendLog.call(sandbox, line)),
+      appendLog:
+        appendLog === undefined
+          ? unsupportedBackendCapability
+          : supportedBackendCapability((line) => appendLog.call(sandbox, line)),
     },
     runCommand: (command, args, options) => sandbox.runCommand(command, args, options),
     runShell: (script, options) => sandbox.runShell(script, options),
@@ -369,8 +369,14 @@ export function sandboxSupportsRootCommands(sandbox: Sandbox): boolean {
 
 export class SandboxManagedProcessCapabilityError extends Error {
   readonly name = "SandboxManagedProcessCapabilityError";
-  constructor(readonly agent: string, readonly sandboxId: string, readonly reason: string) {
-    super(`Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`);
+  constructor(
+    readonly agent: string,
+    readonly sandboxId: string,
+    readonly reason: string,
+  ) {
+    super(
+      `Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`,
+    );
   }
 }
 

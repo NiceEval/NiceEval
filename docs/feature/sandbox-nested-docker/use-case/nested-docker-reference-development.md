@@ -99,5 +99,5 @@ incusSandbox({
 
 ## 替代
 
-只想看留存现场或孤儿实例时，使用既有 `niceeval sandbox list` / `prune`。
-那组命令不替代 provider doctor，也不能证明 `docker/v1`。
+只想看留存现场或孤儿实例时，使用 Provider 原生 CLI，见 [Sandbox CLI](../../sandbox/cli.md#原生-cli-现场接入与资源管理)。
+原生 CLI 不替代 provider doctor，也不能证明 `docker/v1`。

@@ -7,11 +7,7 @@
 // 阶段,由 runner 的 teardown 段按 teardown-failed 诊断收束。
 
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
-import type {
-  SandboxCleanupCommand,
-  SandboxCommand,
-  SandboxCommandContext,
-} from "../sandbox/commands.ts";
+import type { SandboxCleanupCommand, SandboxCommand, SandboxCommandContext } from "../sandbox/commands.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import type { Agent, AgentContext, SandboxAgent } from "./types.ts";
 
@@ -27,7 +23,10 @@ const lifecycleHookCommands = new WeakMap<Agent, AgentLifecycleHookCommands>();
 /** Reject removed author vocabulary even when an old field is explicitly undefined. */
 export function assertAgentLifecycleNames(config: object | undefined, factory: string): void {
   if (config === undefined) return;
-  for (const [previous, current] of [["postSetup", "before"], ["preTeardown", "after"]] as const) {
+  for (const [previous, current] of [
+    ["postSetup", "before"],
+    ["preTeardown", "after"],
+  ] as const) {
     if (Object.hasOwn(config, previous)) {
       throw new TypeError(`${factory} ${previous} is no longer supported; use ${current}.`);
     }
@@ -41,8 +40,8 @@ export function registerAgentLifecycleHookCommands<T extends SandboxAgent>(
   preTeardown: readonly SandboxCommand[] | undefined,
 ): T {
   lifecycleHookCommands.set(agent, {
-    postSetup: Object.freeze([...(postSetup ?? [])]),
-    preTeardown: Object.freeze([...(preTeardown ?? [])]),
+    postSetup: [...(postSetup ?? [])],
+    preTeardown: [...(preTeardown ?? [])],
   });
   return agent;
 }
@@ -68,7 +67,7 @@ function commandContext(
 ): SandboxCommandContext {
   return {
     phase,
-    ...(ctx.evalGroup === undefined ? {} : { evalGroup: ctx.evalGroup }),
+    evalGroup: ctx.evalGroup,
     owner: { kind: "agent", id: agentName },
     attempt: ctx.attempt ?? { id: ctx.evalId ?? "unknown", index: 0 },
     signal: ctx.signal,
@@ -119,7 +118,7 @@ export async function runPreTeardownHooks(
   const hookCtx = commandContext(ctx, agentName, "agent.after", (cleanup) => nestedCleanups.push(cleanup));
   const cleanupContext: Omit<SandboxCommandContext, "onCleanup"> = {
     phase: "agent.after",
-    ...(hookCtx.evalGroup === undefined ? {} : { evalGroup: hookCtx.evalGroup }),
+    evalGroup: hookCtx.evalGroup,
     owner: { kind: "agent", id: agentName },
     attempt: hookCtx.attempt,
     signal: hookCtx.signal,

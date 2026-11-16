@@ -65,59 +65,60 @@ export function classicMemoryAgent() {
   return defineAgent({
     name: "classic-memory",
     evidenceCoverage: completeEvidenceCoverage,
-    send: (_input, ctx) => Effect.sync(() => {
-      if (ctx.signal.aborted) throw new Error("classic fixture aborted");
-      const memory = classicMemoryOf(ctx.flags);
-      const evalId = ctx.evalId ?? "unknown";
-      ctx.session.capture(`classic:${memory}:${evalId}`);
-      const recalled = PASSES[memory].has(evalId);
-      const usage = USAGE[memory];
-      const operationId = "classic-note-1";
-      return {
-        status: "completed" as const,
-        usage: {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          requests: 1,
-        },
-        events: [
-          {
-            type: "thinking" as const,
-            text: "Private reasoning is intentionally not retained as a conversation item.",
+    send: (_input, ctx) =>
+      Effect.sync(() => {
+        if (ctx.signal.aborted) throw new Error("classic fixture aborted");
+        const memory = classicMemoryOf(ctx.flags);
+        const evalId = ctx.evalId ?? "unknown";
+        ctx.session.capture(`classic:${memory}:${evalId}`);
+        const recalled = PASSES[memory].has(evalId);
+        const usage = USAGE[memory];
+        const operationId = "classic-note-1";
+        return {
+          status: "completed" as const,
+          usage: {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            requests: 1,
           },
-          {
-            type: "operation.started" as const,
-            operationId,
-            operation: {
-              kind: "tool" as const,
-              name: "command_execution",
-              input: {
-                command: `printf '${evalId}: recalled=${recalled}\\n' > memory-note.txt`,
-                cwd: ".",
+          events: [
+            {
+              type: "thinking" as const,
+              text: "Private reasoning is intentionally not retained as a conversation item.",
+            },
+            {
+              type: "operation.started" as const,
+              operationId,
+              operation: {
+                kind: "tool" as const,
+                name: "command_execution",
+                input: {
+                  command: `printf '${evalId}: recalled=${recalled}\\n' > memory-note.txt`,
+                  cwd: ".",
+                },
               },
             },
-          },
-          {
-            type: "operation.finished" as const,
-            operationId,
-            kind: "tool" as const,
-            output: {
-              output: `wrote memory-note.txt\n${evalId}: recalled=${recalled}\n`,
-              exit_code: 0,
-              written: true,
-              recalled,
+            {
+              type: "operation.finished" as const,
+              operationId,
+              kind: "tool" as const,
+              output: {
+                output: `wrote memory-note.txt\n${evalId}: recalled=${recalled}\n`,
+                exit_code: 0,
+                written: true,
+                recalled,
+              },
+              status: "completed" as const,
             },
-            status: "completed" as const,
-          },
-          {
-            type: "message" as const,
-            role: "assistant" as const,
-            text: recalled
-              ? `I remember this. RECALL_OK for ${evalId}.`
-              : `I do not remember this. RECALL_MISS for ${evalId}.`,
-          },
-        ],
-      };
-    }),
+            {
+              type: "message" as const,
+              role: "assistant" as const,
+              text: recalled
+                ? `I remember this. RECALL_OK for ${evalId}.`
+                : `I do not remember this. RECALL_MISS for ${evalId}.`,
+            },
+          ],
+        };
+      }),
   });
 }

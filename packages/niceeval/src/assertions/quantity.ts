@@ -12,8 +12,12 @@ const units: ReadonlySet<string> = new Set(["ms", "seconds", "tokens", "usd", "r
 export function isQuantity(value: unknown): value is Quantity {
   if (value === null || typeof value !== "object") return false;
   const candidate = value as { value?: unknown; unit?: unknown };
-  return typeof candidate.unit === "string" && units.has(candidate.unit) &&
-    typeof candidate.value === "number" && Number.isFinite(candidate.value);
+  return (
+    typeof candidate.unit === "string" &&
+    units.has(candidate.unit) &&
+    typeof candidate.value === "number" &&
+    Number.isFinite(candidate.value)
+  );
 }
 function quantity<U extends Unit>(value: number, unit: U): Quantity<U> {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new RangeError(`${unit}() requires a finite number.`);

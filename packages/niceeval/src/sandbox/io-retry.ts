@@ -3,21 +3,19 @@
 
 import { Effect, Random } from "effect";
 
-import {
-  classifySandboxIoError,
-  isRetryableSandboxIoError,
-  type SandboxIoErrorKind,
-} from "./errors.ts";
+import { classifySandboxIoError, isRetryableSandboxIoError, type SandboxIoErrorKind } from "./errors.ts";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 
 export interface SandboxIoRetryOptions {
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  classify?: (error: unknown) => SandboxIoErrorKind;
+  maxAttempts?: number | undefined;
+  baseDelayMs?: number | undefined;
+  classify?: ((error: unknown) => SandboxIoErrorKind) | undefined;
   /** 内部可观察挂点；runner feedback 接入后由统一包装层注入。 */
-  onRetry?: (event: { attempt: number; delayMs: number; kind: SandboxIoErrorKind; error: unknown }) => void;
+  onRetry?:
+    | ((event: { attempt: number; delayMs: number; kind: SandboxIoErrorKind; error: unknown }) => void)
+    | undefined;
 }
 
 /**
@@ -36,15 +34,17 @@ export function withSandboxIoRetry<T>(
   const retry = (attempt: number): Effect.Effect<T, unknown> =>
     Effect.gen(function* () {
       return yield* operation.pipe(
-        Effect.catch((error) => Effect.gen(function* () {
-          const kind = classify(error);
-          if (!isRetryableSandboxIoError(kind) || attempt >= maxAttempts) return yield* Effect.fail(error);
-          const jitter = yield* Random.next;
-          const delayMs = baseDelayMs * 2 ** (attempt - 1) * (0.5 + jitter);
-          yield* Effect.sync(() => options.onRetry?.({ attempt, delayMs, kind, error }));
-          yield* Effect.sleep(delayMs);
-          return yield* retry(attempt + 1);
-        })),
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            const kind = classify(error);
+            if (!isRetryableSandboxIoError(kind) || attempt >= maxAttempts) return yield* Effect.fail(error);
+            const jitter = yield* Random.next;
+            const delayMs = baseDelayMs * 2 ** (attempt - 1) * (0.5 + jitter);
+            yield* Effect.sync(() => options.onRetry?.({ attempt, delayMs, kind, error }));
+            yield* Effect.sleep(delayMs);
+            return yield* retry(attempt + 1);
+          }),
+        ),
       );
     });
 

@@ -31,5 +31,5 @@ Repo ID 是 `adapter/bub`；manifest 声明 `areas: ["adapter", "sandbox"]`、li
 - coding Eval 的提示词复用本仓库 `evals/shared.ts` 的 `SKIP_BUILD_NOTE` / `REPLY_DIRECTIVE` 免责声明。bub 的系统提示自带 Next.js build 指引与 channel 应答策略，不声明这两条会污染协议断言。
 - `ci` Experiment 选中本仓库的 coding、Skill、plugin / before、会话和 usage Eval；原生验收脚本列全协议 Eval ID，防止少发现/少运行后假绿。
 - **Eval 结果**：原生验收核对固定版本的通过数、未通过数；工具、Skill 与 plugin 细节由 Eval 判分。
-- **Inspection readback**：独立 `query run --request <request>` test 只读回 coding Eval 的代表性工具证据。
+- **Inspection readback**：独立 `show @<locator> --json` test 只读回 coding Eval 的代表性工具证据。
 - **Timing / OTel 边界**：通用 Runner timing 由 [`runner-generic-timing`](../runner.md#runner-generic-timing) 唯一读回。当前公开读面不能归因 Bub 的 mapper-specific OTel，本 Repo 不用通用 timing 或日志冒充该证据。

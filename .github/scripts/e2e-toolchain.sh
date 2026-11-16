@@ -42,7 +42,8 @@ fs.writeFileSync(process.argv[2], JSON.stringify({
 }) + '\n');
 NODE
     mkdir -p "$(dirname "$archive")"
-    tar -czf "$archive" -C "$stage" bin concord versions.json
+    # Active service markers belong to the producer, not the transported tools.
+    tar --exclude=concord/.in-use -czf "$archive" -C "$stage" bin concord versions.json
     digest="$(shasum -a 256 "$archive" | awk '{print $1}')"
     echo "sha256=$digest" >> "$GITHUB_OUTPUT"
     echo "[e2e] captured toolchain sha256=$digest"
@@ -54,7 +55,8 @@ NODE
     [[ "$actual" == "$expected" ]] || { echo 'Toolchain digest mismatch' >&2; exit 1; }
     stage="$(mktemp -d "${RUNNER_TEMP}/e2e-tools.XXXXXX")"
     trap 'rm -rf "$stage"' EXIT
-    tar -xzf "$archive" -C "$stage"
+    # A root container must own its restored files instead of retaining the producer UID.
+    tar --no-same-owner -xzf "$archive" -C "$stage"
     export PATH="$stage/bin:$PATH"
     # pnpm/setup normally disables runtime shims after selecting Node. Keep
     # the transported Node authoritative instead of installing another one.

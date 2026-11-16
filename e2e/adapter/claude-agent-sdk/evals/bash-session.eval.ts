@@ -10,9 +10,7 @@ import { greaterThan, includes, isDefined, jsonMatch, toolMatch } from "niceeval
 function requiredInjectedValue(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(
-      `[configuration] ${name} must be injected by the native live test`,
-    );
+    throw new Error(`[configuration] ${name} must be injected by the native live test`);
   }
   return value;
 }
@@ -21,8 +19,7 @@ const marker = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_MARKER");
 const sentinel = requiredInjectedValue("NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL");
 const command = `printf '%s\\n' '${marker}'`;
 export default defineEval({
-  description:
-    "Claude SDK 原生 Bash 的配对、usage 与 resume 会话在真实 provider 下可读",
+  description: "Claude SDK 原生 Bash 的配对、usage 与 resume 会话在真实 provider 下可读",
   async test(t) {
     const first = await t.send(
       [
@@ -34,42 +31,30 @@ export default defineEval({
     );
     await first.succeeded().orStop();
     first
-      .check(first.toolCalls, toolMatch("shell", {
+      .check(
+        first.toolCalls,
+        toolMatch("shell", {
           input: jsonMatch({ command }),
           status: "completed",
-        }).exactly(1))
+        }).exactly(1),
+      )
       .label("shell command");
-    t.check(
-      first.usage.inputTotalTokens,
-      greaterThan(0),
-    );
+    t.check(first.usage.inputTotalTokens, greaterThan(0));
     t.check(first.usage.outputTokens, greaterThan(0));
     t.check(
       t.sessionId,
-      isDefined<string | undefined>(
-        "Claude Agent SDK system/init session_id captured before the first result",
-      ),
+      isDefined<string | undefined>("Claude Agent SDK system/init session_id captured before the first result"),
     );
 
-    const resumed = await t.send(
-      `只回复上一轮要求你记住的会话哨兵。不要调用任何工具，不要读取或写入文件。`,
-    );
+    const resumed = await t.send(`只回复上一轮要求你记住的会话哨兵。不要调用任何工具，不要读取或写入文件。`);
     await resumed.succeeded().orStop();
     t.check(resumed.reply, includes(sentinel));
     resumed.notCalledTool("shell");
-    t.check(
-      resumed.usage.inputTotalTokens,
-      greaterThan(0),
-    );
-    t.check(
-      resumed.usage.outputTokens,
-      greaterThan(0),
-    );
+    t.check(resumed.usage.inputTotalTokens, greaterThan(0));
+    t.check(resumed.usage.outputTokens, greaterThan(0));
     t.check(
       t.sessionId,
-      isDefined<string | undefined>(
-        "Claude Agent SDK session_id remains captured at the resumed result terminal",
-      ),
+      isDefined<string | undefined>("Claude Agent SDK session_id remains captured at the resumed result terminal"),
     );
   },
 });

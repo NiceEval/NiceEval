@@ -4,10 +4,21 @@
 // @concord-implements docs/feature/assertions/library/scoped-assertions.md
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/verdict/README.md
-import { validateMaterialQAInputs, captureContextualMatch, captureUnavailableContextualMatch, materialExistenceRegistration, materialQARegistration, contextBooleanRegistration, contextScoreRegistration } from "./material.ts";
-import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch, type MaterialMatch } from "./context-match.ts";
+import { judgeMaxConcurrency } from "../judge/provider.ts";
+import { CurrentJudgeTiming, JudgeTimingSpan } from "../judge/timing.ts";
+import {
+  validateMaterialQAInputs,
+  captureContextualMatch,
+  captureUnavailableContextualMatch,
+  materialExistenceRegistration,
+  materialQARegistration,
+  contextBooleanRegistration,
+  contextScoreRegistration,
+} from "./material.ts";
+import { isContextualMatch, contextMatchDefinitionOf, type ContextualMatch } from "./context-match.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import { Cause, Deferred, Effect, Schema } from "effect";
+import { isRecord } from "../shared/objects.ts";
 
 import type { SourceLoc } from "../shared/types.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
@@ -70,10 +81,13 @@ import {
   type ToolMatch,
 } from "./match.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
+import { agentJudgeDefinitionOf, type AgentJudge, type AgentJudgeReview } from "./agent-judge-definition.ts";
+import { AgentJudgeSession } from "./agent-judge-gateway.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
 import { numericBooleanRegistration } from "./numeric.ts";
 import { isQuantity, type Unit } from "./quantity.ts";
 import { transferFullAssertionContent } from "./full-content.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 
 const unitRatio = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 const weightedScoreInput = Schema.Struct({
@@ -89,23 +103,50 @@ const weightedScoreInput = Schema.Struct({
 const UTF8 = new TextEncoder();
 
 const runtimeByCheck = new WeakMap<object, AssertionsRuntimeImplementation>();
-interface AssertionContextReceiver { readonly owner: object; read?: () => unknown; cut?: () => import("./api.ts").MatcherSourceSnapshot; release?: () => void }
+interface AssertionContextReceiver {
+  readonly owner: object;
+  binding:
+    | { readonly state: "unbound" | "closed" }
+    | {
+        readonly state: "bound";
+        readonly read: () => unknown;
+        readonly cut: () => import("./api.ts").MatcherSourceSnapshot | undefined;
+        readonly release: () => void;
+      };
+}
 const contextByCheck = new WeakMap<object, AssertionContextReceiver>();
 /** @internal Binding is Attempt-local and happens only after app assembly. */
-export function bindAssertionContext(check: object, read: () => unknown, cut?: () => import("./api.ts").MatcherSourceSnapshot, release?: () => void): void {
+export function bindAssertionContext(
+  check: object,
+  read: () => unknown,
+  cut?: () => import("./api.ts").MatcherSourceSnapshot,
+  release?: () => void,
+): void {
   runtimeByCheck.get(check)?.assertAuthoringOpen();
   const receiver = contextByCheck.get(check);
-  if (receiver === undefined || receiver.read !== undefined) throw new TypeError("Assertion context must bind exactly once to its owning receiver");
-  receiver.read = read; receiver.cut = cut; receiver.release = release;
+  if (receiver === undefined || receiver.binding.state !== "unbound")
+    throw new TypeError("Assertion context must bind exactly once to its owning receiver");
+  receiver.binding = { state: "bound", read, cut: cut ?? (() => undefined), release: release ?? (() => {}) };
 }
 /** @internal A scope owns its ctx and observation cut while sharing the Attempt runtime. */
-export function createScopedAssertionCheck<Kind extends import("./api.ts").AssertionCheckKind, C>(root: object, read: () => unknown, cut: () => import("./api.ts").MatcherSourceSnapshot, release?: () => void): import("./api.ts").AssertionCheck<Kind, C> {
-  const runtime = runtimeByCheck.get(root); const receiver = contextByCheck.get(root);
-  if (runtime === undefined || receiver === undefined) throw new TypeError("Scoped checks require an Assertion runtime");
+export function createScopedAssertionCheck<Kind extends import("./api.ts").AssertionCheckKind, C>(
+  root: object,
+  read: () => unknown,
+  cut: () => import("./api.ts").MatcherSourceSnapshot,
+  release?: () => void,
+): import("./api.ts").AssertionCheck<Kind, C> {
+  const runtime = runtimeByCheck.get(root);
+  const receiver = contextByCheck.get(root);
+  if (runtime === undefined || receiver === undefined)
+    throw new TypeError("Scoped checks require an Assertion runtime");
   runtime.assertAuthoringOpen();
   const scoped = (...args: readonly unknown[]) => runtime.checkFor(scoped, args);
-  const scopedReceiver: AssertionContextReceiver = { owner: receiver.owner, read, cut, release };
-  runtimeByCheck.set(scoped, runtime); contextByCheck.set(scoped, scopedReceiver);
+  const scopedReceiver: AssertionContextReceiver = {
+    owner: receiver.owner,
+    binding: { state: "bound", read, cut, release: release ?? (() => {}) },
+  };
+  runtimeByCheck.set(scoped, runtime);
+  contextByCheck.set(scoped, scopedReceiver);
   runtime.trackContextReceiver(scopedReceiver);
   return scoped as unknown as import("./api.ts").AssertionCheck<Kind, C>;
 }
@@ -121,10 +162,15 @@ export function assertAssertionSubject(value: unknown, operation: "check" | "jud
 type EntryKind = "boolean" | "measurement" | "direct-score";
 
 interface SettlementDiagnostic {
-  readonly diagnostic?: MatchDiagnostic;
-  readonly explanation?: AssertionSnapshotObject;
-  readonly receipt?: AssertionCollectionReceipt;
-  readonly matcherArtifact?: MatcherQueryArtifact;
+  readonly receipt: AssertionCollectionReceipt | undefined;
+  readonly evidence:
+    | { readonly kind: "none" }
+    | {
+        readonly kind: "matcher";
+        readonly diagnostic: MatchDiagnostic | undefined;
+        readonly artifact: MatcherQueryArtifact | undefined;
+      }
+    | { readonly kind: "measurement"; readonly detail: AssertionSnapshotObject | undefined };
 }
 
 type AvailableResult =
@@ -136,10 +182,7 @@ type EntrySettlement =
   | AvailableResult
   | ({
       readonly state: "unavailable";
-      readonly reason:
-        | "evidence-unavailable"
-        | "source-unavailable"
-        | "redacted";
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
     } & SettlementDiagnostic)
   | ({ readonly state: "not-applicable" } & SettlementDiagnostic)
   | ({ readonly state: "errored" } & SettlementDiagnostic)
@@ -155,26 +198,31 @@ interface AssertionEntry {
   readonly initialLimitations: readonly AssertionLimitation[];
   readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
   readonly display: {
-    key: string | undefined;
     label: string | undefined;
     groupPath: string[];
   };
-  readonly directScorePoints: number | undefined;
   readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
-  readonly terminalReceipt: (() => import("./api.ts").AssertionCollectionReceipt) | undefined;
-  readonly terminalDetail: (() => AssertionSnapshotObject) | undefined;
-  readonly terminalEvidence: (() => readonly AssertionMaterial[]) | undefined;
-  readonly terminalCriterion: (() => AssertionCriterion) | undefined;
+  readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
+  readonly terminalDetail: () => AssertionSnapshotObject | undefined;
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
+  readonly terminalCriterion: () => AssertionCriterion;
   optionalConfigured: boolean;
   gateConfigured: boolean;
   conditionMinimum: number | undefined;
   scorePoints: number | undefined;
   configurationClosed: boolean;
   stopConfigured: boolean;
+  control: "none" | "continued" | "stopped";
   stopPromise: Promise<unknown> | undefined;
-  settled: EntrySettlement | undefined;
-  pending: Deferred.Deferred<EntrySettlement> | undefined;
+  evaluation:
+    | { readonly state: "unstarted" }
+    | { readonly state: "pending"; readonly deferred: Deferred.Deferred<EntrySettlement> }
+    | { readonly state: "settled"; readonly value: EntrySettlement };
   sealedEvidence: readonly AssertionMaterial[] | undefined;
+}
+
+function settledValueOf(entry: AssertionEntry): EntrySettlement | undefined {
+  return entry.evaluation.state === "settled" ? entry.evaluation.value : undefined;
 }
 
 /**
@@ -182,13 +230,7 @@ interface AssertionEntry {
  * intentionally package-internal: neither the author-facing handle nor the
  * sealed Assertion value acquires a source field or durable identity.
  */
-export type AssertionRuntimeSourceRole =
-  | "declaration"
-  | "threshold"
-  | "score"
-  | "gate"
-  | "optional"
-  | "stop";
+export type AssertionRuntimeSourceRole = "declaration" | "threshold" | "score" | "gate" | "optional" | "stop";
 
 export interface AssertionRuntimeSourceSite {
   readonly location: SourceLoc;
@@ -197,8 +239,8 @@ export interface AssertionRuntimeSourceSite {
 
 export interface AssertionRuntimeSourceOccurrence {
   readonly role: AssertionRuntimeSourceRole;
-  readonly site?: AssertionRuntimeSourceSite;
-  readonly outcome?: "continued" | "stopped" | "interrupted";
+  readonly site: AssertionRuntimeSourceSite | undefined;
+  readonly outcome: "continued" | "stopped" | "interrupted" | undefined;
 }
 
 export interface AssertionsRuntimeSourceCaptureSnapshot {
@@ -209,8 +251,8 @@ export interface AssertionsRuntimeSourceCaptureSnapshot {
 
 interface MutableAssertionRuntimeSourceOccurrence {
   readonly role: AssertionRuntimeSourceRole;
-  readonly site?: AssertionRuntimeSourceSite;
-  outcome?: "continued" | "stopped" | "interrupted";
+  readonly site: AssertionRuntimeSourceSite | undefined;
+  outcome: "continued" | "stopped" | "interrupted" | undefined;
 }
 
 interface AssertionRuntimeSourceEntry {
@@ -231,26 +273,26 @@ interface SnapshotState {
   readonly seen: WeakSet<object>;
 }
 
-type AvailableScoreContribution = Extract<
-  AssertionScoreContribution,
-  { readonly state: "not-scored" | "earned" }
->;
+type AvailableScoreContribution = Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
 
 type IncompleteScoreContribution = Extract<
   AssertionScoreContribution,
   { readonly state: "not-scored" | "unavailable" }
 >;
 
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Sandbox result criteria read the Attempt-owned workspace diff, which is frozen
  * only after the author phase settles. They are never evaluated by a stop barrier.
  */
 function isPostRunSandboxCriterion(criterion: AssertionCriterion): boolean {
-  return criterion.kind === "sandbox-result" || criterion.kind === "sandbox-change-scope" || criterion.kind === "sandbox-unchanged-within" || criterion.kind === "sandbox-in-diff";
+  return (
+    criterion.kind === "sandbox-diff-paths" ||
+    criterion.kind === "agent-judge-measurement" ||
+    criterion.kind === "sandbox-result" ||
+    criterion.kind === "sandbox-change-scope" ||
+    criterion.kind === "sandbox-unchanged-within" ||
+    criterion.kind === "sandbox-in-diff"
+  );
 }
 
 function isAssertionStop(value: unknown): value is AssertionStopError {
@@ -281,9 +323,7 @@ function assertDisplayText(value: unknown, owner: string): asserts value is stri
     throw new TypeError(`${owner} must not contain control characters`);
   }
   if (Array.from(value).length > assertionRuntimeLimits.displayCodePoints) {
-    throw new TypeError(
-      `${owner} must be at most ${assertionRuntimeLimits.displayCodePoints} code points`,
-    );
+    throw new TypeError(`${owner} must be at most ${assertionRuntimeLimits.displayCodePoints} code points`);
   }
 }
 
@@ -316,12 +356,7 @@ function boundedSnapshotString(value: string, state: SnapshotState): string {
   return value.slice(0, retainedEnd);
 }
 
-function boundedSnapshotKey(
-  key: string,
-  index: number,
-  existing: ReadonlySet<string>,
-  state: SnapshotState,
-): string {
+function boundedSnapshotKey(key: string, index: number, existing: ReadonlySet<string>, state: SnapshotState): string {
   if (omittedBytes(key) <= assertionRuntimeLimits.stringBytes) return key;
 
   markTruncated(state, omittedBytes(key));
@@ -339,11 +374,7 @@ function boundedSnapshotKey(
  * consumed by a Match. Non-JSON runtime objects remain visible only as a
  * tagged placeholder and make the entry's material explicitly partial.
  */
-function boundedSnapshotValue(
-  value: unknown,
-  depth: number,
-  state: SnapshotState,
-): AssertionSnapshotValue {
+function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotState): AssertionSnapshotValue {
   if (value === null || typeof value === "boolean") return value;
 
   if (typeof value === "number") {
@@ -436,10 +467,7 @@ function boundedSnapshotValue(
         markTruncated(state);
         entries.push([capturedKey, marker("accessor-property")]);
       } else {
-        entries.push([
-          capturedKey,
-          boundedSnapshotValue(descriptor.value, depth + 1, state),
-        ]);
+        entries.push([capturedKey, boundedSnapshotValue(descriptor.value, depth + 1, state)]);
       }
     } catch {
       markTruncated(state);
@@ -461,22 +489,22 @@ export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnaps
     value: snapshot,
   });
   if (!state.truncated) {
-    return Object.freeze({
+    return {
       material,
-      coverage: Object.freeze({ state: "complete" as const }),
-      limitations: Object.freeze([]),
-    });
+      coverage: { state: "complete" as const },
+      limitations: [],
+    };
   }
-  return Object.freeze({
+  return {
     material,
-    coverage: Object.freeze({ state: "partial" as const, reason: "truncated" as const }),
-    limitations: Object.freeze([
-      Object.freeze({
+    coverage: { state: "partial" as const, reason: "truncated" as const },
+    limitations: [
+      {
         kind: "truncated" as const,
         omittedBytes: Math.max(1, state.omittedBytes),
-      }),
-    ]),
-  });
+      },
+    ],
+  };
 }
 
 /**
@@ -492,21 +520,22 @@ function captureMatchDiagnostic(
 ): AssertionSnapshotObject | undefined {
   if (value === undefined) return undefined;
   if (budget.remainingNodes <= 0) {
-    return Object.freeze({
+    return {
       code: "diagnostic-truncated",
       message: "matcher diagnostic exceeded the persisted node limit",
-      path: Object.freeze([]),
-    });
+      path: [],
+    };
   }
   budget.remainingNodes -= 1;
   if (depth >= assertionRuntimeLimits.diagnosticDepth || seen.has(value)) {
-    return Object.freeze({
+    return {
       code: "diagnostic-truncated",
-      message: depth >= assertionRuntimeLimits.diagnosticDepth
-        ? "matcher diagnostic exceeded the persisted depth limit"
-        : "matcher diagnostic contained a cycle",
-      path: Object.freeze([]),
-    });
+      message:
+        depth >= assertionRuntimeLimits.diagnosticDepth
+          ? "matcher diagnostic exceeded the persisted depth limit"
+          : "matcher diagnostic contained a cycle",
+      path: [],
+    };
   }
   seen.add(value);
   try {
@@ -517,18 +546,19 @@ function captureMatchDiagnostic(
     const output: globalThis.Record<string, AssertionSnapshotValue> = {
       code: text(value.code),
       message: text(value.message),
-      path: Object.freeze(value.path.map((segment) => typeof segment === "string" ? text(segment) : segment)),
+      path: value.path.map((segment) => (typeof segment === "string" ? text(segment) : segment)),
     };
     if (value.expected !== undefined) output.expected = text(value.expected);
     if (value.received !== undefined) output.received = text(value.received);
     if (value.reason !== undefined) output.reason = text(value.reason);
     if (value.locator !== undefined) {
-      output.locator = value.locator.kind === "json-pointer"
-        ? Object.freeze({ kind: "json-pointer", pointer: text(value.locator.pointer) })
-        : Object.freeze({ kind: "tool-occurrence", id: text(value.locator.id) });
+      output.locator =
+        value.locator.kind === "json-pointer"
+          ? { kind: "json-pointer", pointer: text(value.locator.pointer) }
+          : { kind: "tool-occurrence", id: text(value.locator.id) };
     }
     if (value.truncation !== undefined) {
-      output.truncation = Object.freeze({ ...value.truncation });
+      output.truncation = value.truncation;
     }
     if (value.children !== undefined) {
       const children: AssertionSnapshotValue[] = [];
@@ -541,45 +571,43 @@ function captureMatchDiagnostic(
         if (child.label !== undefined) entry.label = text(child.label);
         const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen, budget);
         if (diagnostic !== undefined) entry.diagnostic = diagnostic;
-        children.push(Object.freeze(entry));
+        children.push(entry);
       }
-      output.children = Object.freeze(children);
+      output.children = children;
       if (children.length < value.children.length && output.truncation === undefined) {
-        output.truncation = Object.freeze({
+        output.truncation = {
           code: "diagnostic-truncated",
           reason: "sampled",
           captured: children.length,
           knownTotal: value.children.length,
-        });
+        };
       }
     }
-    const captured = Object.freeze(output);
+    const captured = output;
     const serialized = JSON.stringify(captured);
     const originalBytes = UTF8.encode(serialized).byteLength;
     if (originalBytes <= assertionRuntimeLimits.diagnosticBytes) return captured;
-    return Object.freeze({
+    return {
       code: output.code,
       message: output.message,
       path: output.path,
-      ...(output.expected === undefined ? {} : { expected: output.expected }),
-      ...(output.received === undefined ? {} : { received: output.received }),
-      ...(output.reason === undefined ? {} : { reason: output.reason }),
-      ...(output.locator === undefined ? {} : { locator: output.locator }),
-      truncation: Object.freeze({
+      expected: output.expected,
+      received: output.received,
+      reason: output.reason,
+      locator: output.locator,
+      truncation: {
         code: "diagnostic-truncated",
         reason: "byte-limit",
         limitBytes: assertionRuntimeLimits.diagnosticBytes,
         originalBytes,
-      }),
-    });
+      },
+    };
   } finally {
     seen.delete(value);
   }
 }
 
-function freezeAssertionMaterial(
-  material: AssertionMaterial,
-): AssertionMaterial {
+function freezeAssertionMaterial(material: AssertionMaterial): AssertionMaterial {
   if (material.kind === "snapshot") {
     const frozen = Object.freeze({ kind: "snapshot" as const, value: material.value });
     transferFullAssertionContent(material, frozen);
@@ -599,31 +627,29 @@ function freezeAssertionMaterial(
 }
 
 function cloneCoverage(coverage: AssertionCoverage): AssertionCoverage {
-  return Object.freeze({ ...coverage });
+  return { ...coverage };
 }
 
-function cloneLimitations(
-  limitations: readonly AssertionLimitation[],
-): readonly AssertionLimitation[] {
-  return Object.freeze(limitations.map((limitation) => Object.freeze({ ...limitation })));
+function cloneLimitations(limitations: readonly AssertionLimitation[]): readonly AssertionLimitation[] {
+  return limitations.map((limitation) => ({ ...limitation }));
 }
 
 function noScore(): Extract<AssertionScoreContribution, { readonly state: "not-scored" }> {
-  return Object.freeze({ state: "not-scored" as const });
+  return { state: "not-scored" as const };
 }
 
 function earnedScore(
   points: number,
   earned: number,
 ): Extract<AssertionScoreContribution, { readonly state: "earned" }> {
-  return Object.freeze({ state: "earned" as const, points, earned });
+  return { state: "earned" as const, points, earned };
 }
 
 function unavailableScore(
   points: number,
   reason: Extract<AssertionScoreContribution, { readonly state: "unavailable" }>["reason"],
 ): Extract<AssertionScoreContribution, { readonly state: "unavailable" }> {
-  return Object.freeze({ state: "unavailable" as const, points, reason });
+  return { state: "unavailable" as const, points, reason };
 }
 
 class HandleBase {
@@ -634,11 +660,6 @@ class HandleBase {
     protected readonly entry: AssertionEntry,
   ) {
     assertionHandleRegistry.add(this);
-  }
-
-  key(value: string): this {
-    this.runtime.configureKey(this.entry, value);
-    return this;
   }
 
   label(value: string): this {
@@ -678,9 +699,7 @@ class BooleanHandle extends HandleBase {
 }
 
 function isScoreBooleanAssertionHandle<Refined>(
-  handle:
-    | PassBooleanAssertionHandle<Refined>
-    | ScoreBooleanAssertionHandle<Refined>,
+  handle: PassBooleanAssertionHandle<Refined> | ScoreBooleanAssertionHandle<Refined>,
 ): handle is ScoreBooleanAssertionHandle<Refined> {
   return "score" in handle && typeof handle.score === "function";
 }
@@ -691,10 +710,7 @@ function isScoreBooleanAssertionHandle<Refined>(
  * JavaScript boundary too: a cast must not recover `orStop()` and force a
  * deferred producer to evaluate before its Attempt has frozen its evidence.
  */
-export function postRunBooleanAssertionHandle<
-  Kind extends AssertionEvaluationKind,
-  Refined,
->(
+export function postRunBooleanAssertionHandle<Kind extends AssertionEvaluationKind, Refined>(
   handle: BooleanAssertionHandle<Kind, Refined>,
   evaluationKind: Kind,
 ): PostRunBooleanAssertionHandle<Kind, Refined> {
@@ -713,10 +729,6 @@ export function postRunBooleanAssertionHandle<
       configurable: false,
     },
     kind: descriptor("boolean"),
-    key: descriptor((value: string) => {
-      handle.key(value);
-      return view;
-    }),
     label: descriptor((value: string) => {
       handle.label(value);
       return view;
@@ -788,10 +800,22 @@ class DirectScoreHandle extends HandleBase {
 }
 
 class AssertionsRuntimeImplementation {
+  private agentJudgeSandbox: import("../sandbox/types.ts").Sandbox | undefined;
+  private agentJudgeShared = false;
+  private readonly agentJudgeReviews: Array<{
+    session: AgentJudgeSession;
+    entries: AssertionEntry[];
+    concurrent: boolean;
+  }> = [];
+  attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
+    this.agentJudgeSandbox = sandbox;
+    this.agentJudgeShared = shared;
+  }
   private readonly contextReceivers = new Set<AssertionContextReceiver>();
   private readingContext = false;
   readonly t: AssertionsContext<AssertionEvaluationKind>;
   private readonly entries: AssertionEntry[] = [];
+  private readonly managedJudgeEntryIndexes = new Set<number>();
   private readonly groupStack: string[] = [];
   private stopped: AssertionStopError | undefined;
   private closing = false;
@@ -799,7 +823,10 @@ class AssertionsRuntimeImplementation {
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
   private retainedProducerBytes = 0;
-  private readonly retentionByEntry = new WeakMap<AssertionEntry, { reserved: number; actual: () => number; settled: boolean }>();
+  private readonly retentionByEntry = new WeakMap<
+    AssertionEntry,
+    { reserved: number; actual: () => number; settled: boolean }
+  >();
   private retainedImageBytes = 0;
 
   constructor(
@@ -808,22 +835,68 @@ class AssertionsRuntimeImplementation {
     private readonly judge: ResolvedJudgeConfig | undefined,
     private readonly signal: AbortSignal | undefined,
     private readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
+    private readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder,
   ) {
     const check = (...args: readonly unknown[]) => this.checkFor(check, args);
     const base = {
       evaluationKind,
       check,
+      agentJudge: this.openAgentJudge.bind(this),
       group: this.withGroup.bind(this),
     };
     runtimeByCheck.set(base.check, this);
-    const receiver: AssertionContextReceiver = { owner: base.check };
+    const receiver: AssertionContextReceiver = {
+      owner: base.check,
+      binding: { state: "unbound" },
+    };
     contextByCheck.set(base.check, receiver);
     this.trackContextReceiver(receiver);
     this.t = Object.freeze(
-      evaluationKind === "score"
-        ? { ...base, score: this.directScore.bind(this) }
-        : base,
+      evaluationKind === "score" ? { ...base, score: this.directScore.bind(this) } : base,
     ) as unknown as AssertionsContext<AssertionEvaluationKind>;
+  }
+
+  private openAgentJudge(
+    reviewer: AgentJudge,
+    material: import("../judge/image.ts").JudgeMaterial,
+  ): AgentJudgeReview<AssertionEvaluationKind> {
+    this.assertCanRegister();
+    const definition = agentJudgeDefinitionOf(reviewer);
+    if (this.agentJudgeSandbox === undefined)
+      throw new TypeError("judge.agent-requires-sandbox: Agent Judge requires the Attempt's main Sandbox");
+    if (this.agentJudgeShared)
+      throw new TypeError("judge.agent-shared-sandbox: Agent Judge requires an exclusive Sandbox");
+    const session = new AgentJudgeSession(
+      definition,
+      material,
+      this.agentJudgeSandbox,
+      this.judge,
+      this.signal,
+      (index) => this.judgeUsage?.forEntry(index),
+      this.judgeTiming,
+    );
+    const owner = { session, entries: [] as AssertionEntry[], concurrent: definition.concurrent };
+    this.agentJudgeReviews.push(owner);
+    return Object.freeze({
+      chat: (message: string) => {
+        this.assertCanRegister();
+        session.chat(message);
+      },
+      judge: (prompt: string) => {
+        this.assertCanRegister();
+        const index = this.entries.length;
+        const handle = this.registerMeasurement(session.register("judge", String(index), prompt, undefined, index));
+        owner.entries.push(this.entries[index]!);
+        return handle;
+      },
+      grade: (prompt: string, options: { readonly anchors: readonly import("./judge.ts").JudgeAnchor[] }) => {
+        this.assertCanRegister();
+        const index = this.entries.length;
+        const handle = this.registerMeasurement(session.register("grade", String(index), prompt, options, index));
+        owner.entries.push(this.entries[index]!);
+        return handle;
+      },
+    }) as unknown as AgentJudgeReview<AssertionEvaluationKind>;
   }
 
   private recordSourceOccurrence(
@@ -841,20 +914,26 @@ class AssertionsRuntimeImplementation {
     }
     const occurrence: MutableAssertionRuntimeSourceOccurrence = {
       role,
-      ...(site === undefined ? {} : { site }),
+      site,
+      outcome: undefined,
     };
     capturedEntry.occurrences.push(occurrence);
     return occurrence;
   }
 
-  private contextualRegistration(check: object, match: ContextualMatch, qa?: { question: string; options?: JudgePresetOptions }): BooleanHandle | MeasurementHandle {
+  private contextualRegistration(
+    check: object,
+    match: ContextualMatch,
+    qa?: { question: string; options: JudgePresetOptions | undefined },
+  ): BooleanHandle | MeasurementHandle {
     this.assertCanRegister();
     const receiver = contextByCheck.get(check);
-    if (receiver?.read === undefined) throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
+    const binding = receiver?.binding;
+    if (receiver === undefined || binding === undefined || binding.state !== "bound")
+      throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
     const definition = contextMatchDefinitionOf(match);
-    const managed = definition.kind === "context-score" ? managedScoreMatchOf(definition.match as ScoreMatch<unknown>) : undefined;
-    const auditBytes = qa === undefined ? managed?.llm.maxAuditBytes ?? 0 : exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm).maxAuditBytes;
-    const reservation = definition.capture.maxBytes + auditBytes + 64 * 1024;
+    if (qa !== undefined) exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm);
+    const reservation = definition.capture.maxBytes + 64 * 1024;
     const admitted = this.retainedProducerBytes + reservation <= 64 * 1024 * 1024;
     if (admitted) this.retainedProducerBytes += reservation;
     let reserved = admitted ? reservation : 0;
@@ -862,22 +941,58 @@ class AssertionsRuntimeImplementation {
       this.readingContext = true;
       let prepared: ReturnType<typeof captureContextualMatch>;
       try {
-        const cut = admitted ? receiver.cut?.() : undefined;
-        prepared = admitted ? captureContextualMatch(definition, receiver.read(), { owner: receiver.owner, ...(cut === undefined ? {} : { cut }) }) : captureUnavailableContextualMatch(definition, "assertion-retention-budget");
-      } finally { this.readingContext = false; }
-      const registration = qa !== undefined && prepared.kind === "material" ? materialQARegistration(prepared, qa.question, qa.options, this.judge, this.signal, this.judgeUsage?.forEntry(this.entries.length))
-        : prepared.kind === "material" ? materialExistenceRegistration(prepared)
-        : prepared.kind === "context-boolean" ? contextBooleanRegistration(prepared)
-        : contextScoreRegistration(prepared, this.judge, this.signal, this.judgeUsage?.forEntry(this.entries.length));
-      const actual = "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function" ? registration.actualRetainedBytes : () => prepared.sourceBytes;
+        const cut = admitted ? binding.cut() : undefined;
+        prepared = admitted
+          ? captureContextualMatch(definition, binding.read(), {
+              owner: receiver.owner,
+              cut,
+            })
+          : captureUnavailableContextualMatch(definition, "assertion-retention-budget");
+      } finally {
+        this.readingContext = false;
+      }
+      const contextualRegistration = () => {
+        if (prepared.kind === "material") {
+          if (qa !== undefined)
+            return materialQARegistration(
+              prepared,
+              qa.question,
+              qa.options,
+              this.judge,
+              this.signal,
+              this.judgeUsage?.forEntry(this.entries.length),
+            );
+          return materialExistenceRegistration(prepared);
+        }
+        if (prepared.kind === "context-boolean") return contextBooleanRegistration(prepared);
+        return contextScoreRegistration(
+          prepared,
+          this.judge,
+          this.signal,
+          this.judgeUsage?.forEntry(this.entries.length),
+        );
+      };
+      const registration = contextualRegistration();
+      if (qa !== undefined) this.managedJudgeEntryIndexes.add(this.entries.length);
+      const actual =
+        "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function"
+          ? registration.actualRetainedBytes
+          : () => prepared.sourceBytes;
       const retainedBytes = (registration.retainedBytes ?? prepared.sourceBytes) + 64 * 1024;
-      this.retainedProducerBytes -= reserved; reserved = 0;
+      this.retainedProducerBytes -= reserved;
+      reserved = 0;
       const entryIndex = this.entries.length;
-      const handle = qa !== undefined || prepared.kind === "context-score" ? this.registerMeasurement({ ...registration, retainedBytes } as MeasurementAssertionRegistration) : this.registerBoolean({ ...registration, retainedBytes } as BooleanAssertionRegistration<void>);
+      const handle =
+        qa !== undefined || prepared.kind === "context-score"
+          ? this.registerMeasurement({ ...registration, retainedBytes } as MeasurementAssertionRegistration)
+          : this.registerBoolean({ ...registration, retainedBytes } as BooleanAssertionRegistration<void>);
       const entry = this.entries[entryIndex]!;
       this.retentionByEntry.set(entry, { reserved: retainedBytes, actual, settled: false });
       return handle;
-    } catch (error) { this.retainedProducerBytes -= reserved; throw error; }
+    } catch (error) {
+      this.retainedProducerBytes -= reserved;
+      throw error;
+    }
   }
 
   checkFor(receiver: object, args: readonly unknown[]): BooleanHandle | MeasurementHandle {
@@ -928,77 +1043,128 @@ class AssertionsRuntimeImplementation {
     const managed = assertManagedValueMatch(match, "t.check() match");
     if (managed.kind === "boolean") {
       if (isNumericComparisonMatch(managed)) {
-        const isMaterial = typeof value === "object" && value !== null &&
-          ["exact", "lower-bound", "unavailable"].includes(String((value as { state?: unknown }).state));
-        const material: NumericMaterial<Unit | undefined> = isMaterial
-          ? value as NumericMaterial<Unit | undefined>
-          : isQuantity(value)
-          ? Object.freeze({ state: "exact" as const, value: value.value, unit: value.unit })
-          : typeof value === "number" && Number.isFinite(value)
-          ? Object.freeze({ state: "exact" as const, value })
-          : Object.freeze({ state: "unavailable" as const, reason: "non-finite-number" });
-        const captured = captureAssertionSnapshot(Object.freeze({
-          ...material,
-          cut: Object.freeze({ kind: "call-time" as const }),
-          coverage: Object.freeze({ state: "complete" as const }),
-          derivation: Object.freeze({ kind: "explicit-value" as const }),
-        }));
-        return this.registerBoolean(numericBooleanRegistration({
-          match: managed,
-          criterionSubject: Object.freeze({ kind: "explicit-value" as const }),
-          material,
-          captured,
-          matchedValue: (numericValue) => !isMaterial && isQuantity(value) ? value : numericValue,
-        }));
+        const isMaterial =
+          typeof value === "object" &&
+          value !== null &&
+          ["exact", "lower-bound", "unavailable"].includes(String((value as { state: unknown }).state));
+        function numericMaterial(): NumericMaterial<Unit | undefined> {
+          if (isMaterial) return value as NumericMaterial<Unit | undefined>;
+          if (isQuantity(value))
+            return {
+              state: "exact" as const,
+              value: value.value,
+              unit: value.unit,
+              provenance: undefined,
+            };
+          if (typeof value === "number" && Number.isFinite(value))
+            return {
+              state: "exact" as const,
+              value,
+              unit: undefined,
+              provenance: undefined,
+            };
+          return {
+            state: "unavailable" as const,
+            reason: "non-finite-number",
+            unit: undefined,
+            provenance: undefined,
+          };
+        }
+        const material = numericMaterial();
+        const captured = captureAssertionSnapshot({
+          ...omitUndefined(material),
+          cut: { kind: "call-time" as const },
+          coverage: { state: "complete" as const },
+          derivation: { kind: "explicit-value" as const },
+        });
+        return this.registerBoolean(
+          numericBooleanRegistration({
+            match: managed,
+            criterionSubject: { kind: "explicit-value" as const },
+            material,
+            captured,
+            matchedValue: (numericValue) => (!isMaterial && isQuantity(value) ? value : numericValue),
+          }),
+        );
       }
       const captured = captureAssertionSnapshot(value);
       const entry = this.createEntry({
         kind: "boolean",
-        criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
+        criterion: {
+          kind: "value-match" as const,
+          subject: "explicit-value" as const,
+          matcher: { state: "declared" as const, name: managed.name },
+        },
         subject: captured.material,
-        evidence: Object.freeze([]),
+        evidence: [],
         coverage: captured.coverage,
         limitations: captured.limitations,
         evaluate: () => this.evaluateBooleanMatch(managed, value),
+        terminalReceipt: () => undefined,
+        terminalDetail: () => undefined,
+        terminalEvidence: () => [],
+        terminalCriterion: () => ({
+          kind: "value-match",
+          subject: "explicit-value",
+          matcher: { state: "declared", name: managed.name },
+        }),
+        interruptedMatcherArtifact: undefined,
+        retainedBytes: 0,
+        retainedImageBytes: 0,
       });
       return new BooleanHandle(this, entry);
     }
     const managedScore = managedScoreMatchOf(managed);
     if (managedScore !== undefined) {
-      return this.registerMeasurement(prepareManagedScoreMatch({
-        match: managed,
-        options: managedScore,
-        material: value,
-        judge: this.judge,
-        ...(this.judgeUsage === undefined ? {} : { usage: this.judgeUsage.forEntry(this.entries.length) }),
-        ...(this.signal === undefined ? {} : { signal: this.signal }),
-      }));
+      return this.registerMeasurement(
+        prepareManagedScoreMatch({
+          match: managed,
+          options: managedScore,
+          material: value,
+          judge: this.judge,
+          usage: this.judgeUsage === undefined ? undefined : this.judgeUsage.forEntry(this.entries.length),
+          signal: this.signal,
+        }),
+      );
     }
     const captured = captureAssertionSnapshot(value);
     const entry = this.createEntry({
       kind: "measurement",
-      criterion: Object.freeze({ kind: "value-match" as const, subject: "explicit-value" as const, matcher: Object.freeze({ state: "declared" as const, name: managed.name }) }),
+      criterion: {
+        kind: "value-match" as const,
+        subject: "explicit-value" as const,
+        matcher: { state: "declared" as const, name: managed.name },
+      },
       subject: captured.material,
-      evidence: Object.freeze([]),
+      evidence: [],
       coverage: captured.coverage,
       limitations: captured.limitations,
       evaluate: () => this.evaluateScoreMatch(managed, value),
+      terminalReceipt: () => undefined,
+      terminalDetail: () => undefined,
+      terminalEvidence: () => [],
+      terminalCriterion: () => ({
+        kind: "value-match",
+        subject: "explicit-value",
+        matcher: { state: "declared", name: managed.name },
+      }),
+      interruptedMatcherArtifact: undefined,
+      retainedBytes: 0,
+      retainedImageBytes: 0,
     });
     return new MeasurementHandle(this, entry);
   }
 
-  registerBoolean<Refined>(
-    definition: BooleanAssertionRegistration<Refined>,
-  ): BooleanHandle {
+  registerBoolean<Refined>(definition: BooleanAssertionRegistration<Refined>): BooleanHandle {
     this.assertCanRegister();
     this.assertRegistration(definition, "registerBoolean()");
     const entry = this.createEntry({
       kind: "boolean",
       criterion: definition.criterion,
       subject: freezeAssertionMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
-      coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
-      limitations: cloneLimitations(definition.limitations ?? []),
+      evidence: definition.evidence.map(freezeAssertionMaterial),
+      coverage: cloneCoverage(definition.coverage),
+      limitations: cloneLimitations(definition.limitations),
       retainedBytes: definition.retainedBytes,
       terminalReceipt: definition.terminalReceipt,
       terminalCriterion: definition.terminalCriterion,
@@ -1009,22 +1175,22 @@ class AssertionsRuntimeImplementation {
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
           this.captureEvaluationFailure(definition.interruptedMatcherArtifact),
         ),
+      retainedImageBytes: 0,
+      terminalDetail: () => undefined,
     });
     return new BooleanHandle(this, entry);
   }
 
-  registerMeasurement(
-    definition: MeasurementAssertionRegistration,
-  ): MeasurementHandle {
+  registerMeasurement(definition: MeasurementAssertionRegistration): MeasurementHandle {
     this.assertCanRegister();
     this.assertRegistration(definition, "registerMeasurement()");
     const entry = this.createEntry({
       kind: "measurement",
       criterion: definition.criterion,
       subject: freezeAssertionMaterial(definition.subject),
-      evidence: Object.freeze((definition.evidence ?? []).map(freezeAssertionMaterial)),
-      coverage: cloneCoverage(definition.coverage ?? { state: "complete" }),
-      limitations: cloneLimitations(definition.limitations ?? []),
+      evidence: definition.evidence.map(freezeAssertionMaterial),
+      coverage: cloneCoverage(definition.coverage),
+      limitations: cloneLimitations(definition.limitations),
       retainedBytes: definition.retainedBytes,
       retainedImageBytes: definition.retainedImageBytes,
       terminalReceipt: definition.terminalReceipt,
@@ -1035,13 +1201,18 @@ class AssertionsRuntimeImplementation {
         Effect.suspend(definition.evaluate).pipe(
           Effect.map((evaluation): EntrySettlement => this.measurementSettlement(evaluation)),
         ),
+      interruptedMatcherArtifact: undefined,
     });
     return new MeasurementHandle(this, entry);
   }
 
   directScore(points: number): DirectScoreHandle;
   directScore(ratio: number | NumericMaterial, options: { readonly weight: number }): MeasurementHandle;
-  directScore(points: number | NumericMaterial, options?: { readonly weight: number }, ...extra: readonly unknown[]): DirectScoreHandle | MeasurementHandle {
+  directScore(
+    points: number | NumericMaterial,
+    options?: { readonly weight: number },
+    ...extra: readonly unknown[]
+  ): DirectScoreHandle | MeasurementHandle {
     this.assertCanRegister();
     if (this.evaluationKind !== "score") {
       throw new TypeError("t.score() is available only in a Score Eval");
@@ -1050,22 +1221,62 @@ class AssertionsRuntimeImplementation {
     if (options !== undefined) {
       let decoded: typeof weightedScoreInput.Type;
       try {
-        const weight = Schema.decodeUnknownSync(Schema.Struct({ weight: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)) }), { onExcessProperty: "error" })(options).weight;
+        const weight = Schema.decodeUnknownSync(
+          Schema.Struct({ weight: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)) }),
+          { onExcessProperty: "error" },
+        )(options).weight;
         decoded = Schema.decodeUnknownSync(weightedScoreInput)({ ratio: points, weight });
       } catch (cause) {
         throw new TypeError("t.score() requires a finite ratio in [0, 1] and a finite non-negative weight", { cause });
       }
-      const ratio = typeof decoded.ratio === "number" ? decoded.ratio
-        : decoded.ratio.state === "exact" ? decoded.ratio.value : undefined;
+      function exactRatio(): number | undefined {
+        if (typeof decoded.ratio === "number") return decoded.ratio;
+        if (decoded.ratio.state === "exact") return decoded.ratio.value;
+        return undefined;
+      }
+      const ratio = exactRatio();
       const captured = captureAssertionSnapshot({ ratio: points, weight: decoded.weight });
       const handle = this.registerMeasurement({
-        criterion: Object.freeze({ kind: "value-match", subject: "explicit-value", matcher: Object.freeze({ state: "declared", name: "author-weighted-score" }) }),
+        criterion: {
+          kind: "value-match",
+          subject: "explicit-value",
+          matcher: { state: "declared", name: "author-weighted-score" },
+        },
         subject: captured.material,
         coverage: captured.coverage,
         limitations: captured.limitations,
-        evaluate: () => Effect.succeed(ratio === undefined
-          ? { state: "unavailable", reason: "source-unavailable", detail: { reason: typeof decoded.ratio !== "number" && decoded.ratio.state === "unavailable" ? decoded.ratio.reason : "ratio-is-only-a-lower-bound" } }
-          : { state: "measured", value: ratio }),
+        evaluate: () =>
+          Effect.succeed(
+            ratio === undefined
+              ? {
+                  state: "unavailable",
+                  reason: "source-unavailable",
+                  detail: {
+                    reason:
+                      typeof decoded.ratio !== "number" && decoded.ratio.state === "unavailable"
+                        ? decoded.ratio.reason
+                        : "ratio-is-only-a-lower-bound",
+                  },
+                  receipt: undefined,
+                }
+              : {
+                  state: "measured",
+                  value: ratio,
+                  detail: undefined,
+                  receipt: undefined,
+                },
+          ),
+        terminalCriterion: () => ({
+          kind: "value-match",
+          subject: "explicit-value",
+          matcher: { state: "declared", name: "author-weighted-score" },
+        }),
+        terminalReceipt: () => undefined,
+        terminalDetail: () => undefined,
+        terminalEvidence: () => [],
+        evidence: [],
+        retainedBytes: 0,
+        retainedImageBytes: 0,
       });
       handle.score(decoded.weight);
       return handle;
@@ -1074,44 +1285,45 @@ class AssertionsRuntimeImplementation {
     const captured = captureAssertionSnapshot(points);
     const entry = this.createEntry({
       kind: "direct-score",
-      criterion: Object.freeze({ kind: "direct-score" as const, source: "author" as const }),
+      criterion: { kind: "direct-score" as const, source: "author" as const },
       subject: captured.material,
-      evidence: Object.freeze([]),
+      evidence: [],
       coverage: captured.coverage,
       limitations: captured.limitations,
       directScorePoints: points,
-      evaluate: () => Effect.succeed({ state: "matched", value: points }),
+      evaluate: () =>
+        Effect.succeed({
+          state: "matched",
+          value: points,
+          receipt: undefined,
+          evidence: { kind: "none" },
+        }),
+      interruptedMatcherArtifact: undefined,
+      retainedBytes: 0,
+      retainedImageBytes: 0,
+      terminalReceipt: () => undefined,
+      terminalDetail: () => undefined,
+      terminalEvidence: () => [],
+      terminalCriterion: () => ({ kind: "direct-score", source: "author" }),
     });
     return new DirectScoreHandle(this, entry);
   }
 
-  async withGroup<Value>(
-    title: string,
-    body: () => Value | PromiseLike<Value>,
-  ): Promise<Awaited<Value>> {
+  async withGroup<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>> {
     this.assertCanRegister();
     assertDisplayText(title, "t.group() title");
     if (this.groupStack.length >= assertionRuntimeLimits.groupDepth) {
-      throw new Error(
-        `Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`,
-      );
+      throw new Error(`Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`);
     }
     this.groupStack.push(title);
     try {
-      return await body() as Awaited<Value>;
+      return (await body()) as Awaited<Value>;
     } finally {
       const popped = this.groupStack.pop();
       if (popped !== title) {
         throw new Error("Assertion group stack lost nesting order");
       }
     }
-  }
-
-  configureKey(entry: AssertionEntry, value: string): void {
-    this.assertMutable(entry, "key()");
-    assertDisplayText(value, "key() value");
-    if (entry.display.key !== undefined) throw new Error("An Assertion key is already configured");
-    entry.display.key = value;
   }
 
   configureLabel(entry: AssertionEntry, value: string): void {
@@ -1128,9 +1340,7 @@ class AssertionsRuntimeImplementation {
       throw new Error("An Assertion group is already configured");
     }
     if (entry.display.groupPath.length >= assertionRuntimeLimits.groupDepth) {
-      throw new Error(
-        `Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`,
-      );
+      throw new Error(`Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`);
     }
     entry.display.groupPath.push(title);
   }
@@ -1159,7 +1369,8 @@ class AssertionsRuntimeImplementation {
     if (entry.kind !== "measurement") throw new TypeError("gate(minimum) is available only on a measurement Assertion");
     assertUnitInterval(minimum, "gate() minimum");
     if (entry.gateConfigured) throw new Error("An Assertion gate policy is already configured");
-    if (entry.conditionMinimum !== undefined) throw new Error("An Assertion measurement condition is already configured");
+    if (entry.conditionMinimum !== undefined)
+      throw new Error("An Assertion measurement condition is already configured");
     entry.conditionMinimum = minimum;
     entry.gateConfigured = true;
     this.recordSourceOccurrence(entry, "gate");
@@ -1170,7 +1381,8 @@ class AssertionsRuntimeImplementation {
     if (this.evaluationKind !== "score") {
       throw new TypeError("handle.score() is available only in a Score Eval");
     }
-    if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion already has its score contribution");
+    if (entry.kind === "direct-score")
+      throw new TypeError("A direct-score Assertion already has its score contribution");
     assertFiniteNonNegative(points, "score() points");
     if (entry.scorePoints !== undefined) throw new Error("An Assertion score contribution is already configured");
     entry.scorePoints = points;
@@ -1186,7 +1398,8 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopMeasurement(entry: AssertionEntry, args: readonly unknown[]): Promise<number> {
-    if (args.length > 1) throw new TypeError("orStop() accepts zero arguments after gate(minimum), or exactly one minimum");
+    if (args.length > 1)
+      throw new TypeError("orStop() accepts zero arguments after gate(minimum), or exactly one minimum");
     const suppliedMinimum = args.length === 1;
     if (suppliedMinimum) assertUnitInterval(args[0], "orStop() minimum");
     if (entry.stopPromise !== undefined) {
@@ -1196,7 +1409,7 @@ class AssertionsRuntimeImplementation {
     if (!suppliedMinimum && entry.conditionMinimum === undefined) {
       throw new TypeError("orStop() requires a minimum unless gate(minimum) already configured the condition");
     }
-    this.prepareStop(entry, suppliedMinimum ? args[0] as number : undefined);
+    this.prepareStop(entry, suppliedMinimum ? (args[0] as number) : undefined);
     const result = this.observeStop(entry, this.requestStop(this.stopMeasurement(entry)));
     entry.stopPromise = result;
     return result;
@@ -1204,29 +1417,31 @@ class AssertionsRuntimeImplementation {
 
   private prepareStop(entry: AssertionEntry, minimum: number | undefined): void {
     this.assertMutable(entry, "orStop()");
+    if (entry.criterion.kind === "agent-judge-measurement")
+      throw new TypeError("judge.agent-stop-unsupported: Agent Judge cannot stop author control flow");
     if (entry.kind === "direct-score") throw new TypeError("A direct-score Assertion cannot stop author control flow");
     if (minimum !== undefined) {
       if (entry.kind !== "measurement") throw new TypeError("Only a measurement Assertion accepts orStop(minimum)");
-      if (entry.conditionMinimum !== undefined) throw new Error("An Assertion measurement condition is already configured");
+      if (entry.conditionMinimum !== undefined)
+        throw new Error("An Assertion measurement condition is already configured");
       entry.conditionMinimum = minimum;
     }
     entry.stopConfigured = true;
     entry.configurationClosed = true;
   }
 
-  private observeStop<Value>(
-    entry: AssertionEntry,
-    result: Promise<Value>,
-  ): Promise<Value> {
+  private observeStop<Value>(entry: AssertionEntry, result: Promise<Value>): Promise<Value> {
     const occurrence = this.recordSourceOccurrence(entry, "stop");
     return result.then(
       (value) => {
+        entry.control = "continued";
         if (occurrence !== undefined && occurrence.outcome === undefined) {
           occurrence.outcome = "continued";
         }
         return value;
       },
       (error: unknown) => {
+        if (isAssertionStop(error)) entry.control = "stopped";
         if (occurrence !== undefined && occurrence.outcome === undefined) {
           if (isAssertionStop(error)) occurrence.outcome = "stopped";
           else if (isInterruptedAuthoringClosure(error)) occurrence.outcome = "interrupted";
@@ -1236,9 +1451,7 @@ class AssertionsRuntimeImplementation {
     );
   }
 
-  private requestStop<Value>(
-    effect: Effect.Effect<Value, AssertionStopError, never>,
-  ): Promise<Value> {
+  private requestStop<Value>(effect: Effect.Effect<Value, AssertionStopError, never>): Promise<Value> {
     if (this.stopped !== undefined) return Promise.reject(this.stopped);
     if (this.sealed !== undefined) {
       return Promise.reject(new AssertionAuthoringClosedError("attempt-sealed"));
@@ -1266,9 +1479,9 @@ class AssertionsRuntimeImplementation {
     return this.settleThrough(entry).pipe(
       Effect.flatMap((settlement) => {
         if (
-          settlement.state === "measured"
-          && entry.conditionMinimum !== undefined
-          && settlement.value >= entry.conditionMinimum
+          settlement.state === "measured" &&
+          entry.conditionMinimum !== undefined &&
+          settlement.value >= entry.conditionMinimum
         ) {
           return Effect.succeed(settlement.value);
         }
@@ -1278,35 +1491,46 @@ class AssertionsRuntimeImplementation {
   }
 
   seal(
-    options: AssertionSealOptions = {},
+    options: AssertionSealOptions = { execution: "completed", explicitlySkipped: false, interrupted: false },
   ): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never> {
     return Effect.suspend(() => {
       if (this.sealed !== undefined) return Effect.succeed(this.sealed);
       if (options.interrupted) {
         this.closeAuthoring("attempt-interrupted");
         for (const entry of this.entries) {
-          if (entry.settled === undefined) {
-            entry.settled = Object.freeze({
-              state: "interrupted" as const,
-              ...(entry.interruptedMatcherArtifact === undefined
-                ? {}
-                : { matcherArtifact: entry.interruptedMatcherArtifact }),
-            });
+          if (entry.evaluation.state !== "settled") {
+            entry.evaluation = {
+              state: "settled",
+              value: {
+                state: "interrupted" as const,
+                evidence: {
+                  kind: "matcher",
+                  artifact: entry.interruptedMatcherArtifact,
+                  diagnostic: undefined,
+                },
+                receipt: undefined,
+              },
+            };
           }
         }
-        return Effect.sync(() => this.finishSeal({
-          ...options,
-          execution: "errored",
-        }));
+        return Effect.sync(() =>
+          this.finishSeal({
+            ...options,
+            execution: "errored",
+          }),
+        );
       }
       if (this.sealStarted) throw new Error("Assertions are already sealing");
       this.closeAuthoring("attempt-sealing");
       this.sealStarted = true;
-      return Effect.forEach(this.entries, (entry) => this.settle(entry)).pipe(
+      return this.settleOrdinary(this.entries).pipe(
+        Effect.andThen(this.settleAgentReviews()),
         Effect.andThen(Effect.sync(() => this.finishSeal(options))),
-        Effect.onInterrupt(() => Effect.sync(() => {
-          this.sealStarted = false;
-        })),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            this.sealStarted = false;
+          }),
+        ),
       );
     });
   }
@@ -1320,9 +1544,9 @@ class AssertionsRuntimeImplementation {
     if (this.closingReason !== "attempt-interrupted") this.closingReason = reason;
     this.closing = true;
     for (const receiver of this.contextReceivers) {
-      const release = receiver.release;
-      receiver.read = undefined; receiver.cut = undefined; receiver.release = undefined;
-      release?.();
+      const binding = receiver.binding;
+      receiver.binding = { state: "closed" };
+      if (binding.state === "bound") binding.release();
     }
     this.contextReceivers.clear();
   }
@@ -1331,37 +1555,42 @@ class AssertionsRuntimeImplementation {
     this.assertCanRegister(false);
   }
 
-  private createEntry(input: {
-    readonly kind: EntryKind;
-    readonly criterion: AssertionCriterion;
-    readonly subject: AssertionMaterial;
-    readonly evidence: readonly AssertionMaterial[];
-    readonly coverage: AssertionCoverage;
-    readonly limitations: readonly AssertionLimitation[];
-    readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
-    readonly directScorePoints?: number;
-    readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
-    readonly retainedBytes?: number;
-    readonly retainedImageBytes?: number;
-    readonly terminalReceipt?: () => import("./api.ts").AssertionCollectionReceipt;
-    readonly terminalDetail?: () => AssertionSnapshotObject;
-    readonly terminalEvidence?: () => readonly AssertionMaterial[];
-    readonly terminalCriterion?: () => AssertionCriterion;
-  }): AssertionEntry {
+  private createEntry(
+    input: {
+      readonly criterion: AssertionCriterion;
+      readonly subject: AssertionMaterial;
+      readonly evidence: readonly AssertionMaterial[];
+      readonly coverage: AssertionCoverage;
+      readonly limitations: readonly AssertionLimitation[];
+      readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
+      readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+      readonly retainedBytes: number;
+      readonly retainedImageBytes: number;
+      readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
+      readonly terminalDetail: () => AssertionSnapshotObject | undefined;
+      readonly terminalEvidence: () => readonly AssertionMaterial[];
+      readonly terminalCriterion: () => AssertionCriterion;
+    } & (
+      | { readonly kind: "direct-score"; readonly directScorePoints: number }
+      | { readonly kind: "boolean" | "measurement" }
+    ),
+  ): AssertionEntry {
     if (this.entries.length >= assertionRuntimeLimits.entries) {
-      throw new Error(
-        `An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`,
-      );
+      throw new Error(`An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`);
     }
-    const retainedBytes = input.retainedBytes ?? 0;
-    const retainedImageBytes = input.retainedImageBytes ?? 0;
+    const retainedBytes = input.retainedBytes;
+    const retainedImageBytes = input.retainedImageBytes;
     if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
       throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
     }
     if (this.retainedProducerBytes + retainedBytes > 64 * 1024 * 1024) {
       throw new Error("Attempt Assertion retention cannot exceed 64 MiB");
     }
-    if (!Number.isSafeInteger(retainedImageBytes) || retainedImageBytes < 0 || this.retainedImageBytes + retainedImageBytes > 32 * 1024 * 1024) {
+    if (
+      !Number.isSafeInteger(retainedImageBytes) ||
+      retainedImageBytes < 0 ||
+      this.retainedImageBytes + retainedImageBytes > 32 * 1024 * 1024
+    ) {
       throw new Error("Attempt managed image retention cannot exceed 32 MiB");
     }
     const entry: AssertionEntry = {
@@ -1373,8 +1602,7 @@ class AssertionsRuntimeImplementation {
       initialCoverage: input.coverage,
       initialLimitations: input.limitations,
       evaluate: input.evaluate,
-      display: { key: undefined, label: undefined, groupPath: [...this.groupStack] },
-      directScorePoints: input.directScorePoints,
+      display: { label: undefined, groupPath: [...this.groupStack] },
       interruptedMatcherArtifact: input.interruptedMatcherArtifact,
       terminalReceipt: input.terminalReceipt,
       terminalDetail: input.terminalDetail,
@@ -1383,12 +1611,12 @@ class AssertionsRuntimeImplementation {
       optionalConfigured: false,
       gateConfigured: false,
       conditionMinimum: undefined,
-      scorePoints: input.directScorePoints,
+      scorePoints: input.kind === "direct-score" ? input.directScorePoints : undefined,
       configurationClosed: false,
       stopConfigured: false,
+      control: "none",
       stopPromise: undefined,
-      settled: undefined,
-      pending: undefined,
+      evaluation: { state: "unstarted" },
       sealedEvidence: undefined,
     };
     this.entries.push(entry);
@@ -1412,26 +1640,25 @@ class AssertionsRuntimeImplementation {
       throw new TypeError(`${owner} requires an Effect evaluation function`);
     }
     if (
-      !isRecord(definition.subject)
-      || (definition.subject.kind !== "snapshot" && definition.subject.kind !== "record-attachment")
+      !isRecord(definition.subject) ||
+      (definition.subject.kind !== "snapshot" && definition.subject.kind !== "record-attachment")
     ) {
       throw new TypeError(`${owner} requires snapshot or same-owner record-attachment subject material`);
     }
-    if (
-      definition.subject.kind === "record-attachment"
-      && typeof definition.subject.preview !== "string"
-    ) {
+    if (definition.subject.kind === "record-attachment" && typeof definition.subject.preview !== "string") {
       throw new TypeError(`${owner} requires a record-attachment preview`);
     }
     if (
-      definition.evidence !== undefined
-      && (!Array.isArray(definition.evidence)
-        || definition.evidence.some((material) =>
-          !isRecord(material)
-          || (material.kind !== "snapshot" && material.kind !== "record-attachment" && material.kind !== "judge-image")
-          || (material.kind === "record-attachment"
-            && typeof material.preview !== "string")
-          || (material.kind === "judge-image" && !isJudgeImage(material.image)),
+      definition.evidence !== undefined &&
+      (!Array.isArray(definition.evidence) ||
+        definition.evidence.some(
+          (material) =>
+            !isRecord(material) ||
+            (material.kind !== "snapshot" &&
+              material.kind !== "record-attachment" &&
+              material.kind !== "judge-image") ||
+            (material.kind === "record-attachment" && typeof material.preview !== "string") ||
+            (material.kind === "judge-image" && !isJudgeImage(material.image)),
         ))
     ) {
       throw new TypeError(`${owner} evidence must use snapshot, record-attachment, or judge-image material`);
@@ -1446,27 +1673,38 @@ class AssertionsRuntimeImplementation {
       try: () => evaluateBooleanMatch(match, value),
       catch: () => undefined,
     }).pipe(
-      Effect.map((evaluation): EntrySettlement =>
-        evaluation.state === "unavailable"
-          ? Object.freeze({
-              state: "unavailable" as const,
-              reason: "source-unavailable" as const,
-              ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-            })
-          : this.booleanSettlement(evaluation),
+      Effect.map(
+        (evaluation): EntrySettlement =>
+          evaluation.state === "unavailable"
+            ? {
+                state: "unavailable" as const,
+                reason: "source-unavailable" as const,
+                evidence: {
+                  kind: "matcher",
+                  diagnostic: evaluation.diagnostic,
+                  artifact: undefined,
+                },
+                receipt: evaluation.receipt,
+              }
+            : this.booleanSettlement({
+                ...evaluation,
+                matcherArtifact: undefined,
+              }),
       ),
       this.captureEvaluationFailure(),
     );
   }
 
-  private evaluateScoreMatch(
-    match: ScoreMatch<unknown>,
-    value: unknown,
-  ): Effect.Effect<EntrySettlement> {
+  private evaluateScoreMatch(match: ScoreMatch<unknown>, value: unknown): Effect.Effect<EntrySettlement> {
     return evaluateScoreMatch(match, value).pipe(
       Effect.map((value): EntrySettlement => {
         assertUnitInterval(value, "measurement Match result");
-        return Object.freeze({ state: "measured" as const, value });
+        return {
+          state: "measured" as const,
+          value,
+          receipt: undefined,
+          evidence: { kind: "none" },
+        };
       }),
       this.captureEvaluationFailure(),
     );
@@ -1474,108 +1712,191 @@ class AssertionsRuntimeImplementation {
 
   private captureEvaluationFailure(
     matcherArtifact?: MatcherQueryArtifact,
-  ): <Value>(
-    effect: Effect.Effect<Value, unknown, never>,
-  ) => Effect.Effect<Value | EntrySettlement, never, never> {
-    return (effect) => effect.pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.succeed(Object.freeze({
-              state: "errored" as const,
-              ...(matcherArtifact === undefined ? {} : { matcherArtifact }),
-            })),
-      ),
-    );
+  ): <Value>(effect: Effect.Effect<Value, unknown, never>) => Effect.Effect<Value | EntrySettlement, never, never> {
+    return (effect) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.succeed<EntrySettlement>({
+                state: "errored" as const,
+                evidence: {
+                  kind: "matcher",
+                  diagnostic: undefined,
+                  artifact: matcherArtifact,
+                },
+                receipt: undefined,
+              }),
+        ),
+      );
   }
 
-  private booleanSettlement(
-    evaluation: BooleanAssertionEvaluation<unknown>,
-  ): EntrySettlement {
+  private booleanSettlement(evaluation: BooleanAssertionEvaluation<unknown>): EntrySettlement {
     switch (evaluation.state) {
       case "matched":
-        return Object.freeze({
+        return {
           state: "matched" as const,
           value: evaluation.value,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "mismatched":
-        return Object.freeze({
+        return {
           state: "mismatched" as const,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "unavailable":
-        return Object.freeze({
+        return {
           state: "unavailable" as const,
           reason: evaluation.reason,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          receipt: evaluation.receipt,
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+        };
       case "not-applicable":
-        return Object.freeze({
+        return {
           state: "not-applicable" as const,
-          ...(evaluation.diagnostic === undefined ? {} : { diagnostic: evaluation.diagnostic }),
-          ...(evaluation.matcherArtifact === undefined ? {} : { matcherArtifact: evaluation.matcherArtifact }),
-        });
+          evidence: { kind: "matcher", diagnostic: evaluation.diagnostic, artifact: evaluation.matcherArtifact },
+          receipt: undefined,
+        };
     }
   }
 
-  private measurementSettlement(
-    evaluation: MeasurementAssertionEvaluation,
-  ): EntrySettlement {
+  private measurementSettlement(evaluation: MeasurementAssertionEvaluation): EntrySettlement {
     switch (evaluation.state) {
       case "measured":
         assertUnitInterval(evaluation.value, "measurement Assertion result");
-        return Object.freeze({
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+        return {
+          receipt: evaluation.receipt,
           state: "measured" as const,
           value: evaluation.value,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+        };
       case "unavailable":
-        return Object.freeze({
-          ...(evaluation.receipt === undefined ? {} : { receipt: evaluation.receipt }),
+        return {
+          receipt: evaluation.receipt,
           state: "unavailable" as const,
           reason: evaluation.reason,
-          ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }),
-        });
+          evidence: { kind: "measurement", detail: evaluation.detail },
+        };
       case "not-applicable":
-        return Object.freeze({ state: "not-applicable" as const, ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }) });
+        return {
+          state: "not-applicable" as const,
+          evidence: { kind: "measurement", detail: evaluation.detail },
+          receipt: undefined,
+        };
       case "errored":
-        return Object.freeze({ state: "errored" as const, ...(evaluation.detail === undefined ? {} : { explanation: evaluation.detail }) });
+        return {
+          state: "errored" as const,
+          evidence: { kind: "measurement", detail: evaluation.detail },
+          receipt: undefined,
+        };
     }
+  }
+
+  private isManagedJudge(entry: AssertionEntry): boolean {
+    return entry.criterion.kind === "managed-score-measurement" || this.managedJudgeEntryIndexes.has(entry.index);
+  }
+
+  /** Author callbacks form ordering boundaries; only adjacent managed entries overlap. */
+  private settleOrdinary(entries: readonly AssertionEntry[]): Effect.Effect<void> {
+    const batches: AssertionEntry[][] = [];
+    let managed: AssertionEntry[] | undefined;
+    for (const entry of entries) {
+      if (entry.criterion.kind === "agent-judge-measurement") continue;
+      if (this.isManagedJudge(entry)) {
+        if (managed === undefined) batches.push((managed = []));
+        managed.push(entry);
+      } else {
+        managed = undefined;
+        batches.push([entry]);
+      }
+    }
+    return Effect.forEach(
+      batches,
+      (batch) =>
+        Effect.forEach(batch, (entry) => this.settle(entry), {
+          concurrency: judgeMaxConcurrency(this.judge),
+          discard: true,
+        }),
+      { discard: true },
+    );
+  }
+
+  /** A session owns one slot through its final entry; never flatten its questions into concurrent work. */
+  private settleAgentReviews(): Effect.Effect<void> {
+    const batches: (typeof this.agentJudgeReviews)[] = [];
+    let concurrent: typeof this.agentJudgeReviews | undefined;
+    for (const review of this.agentJudgeReviews) {
+      if (review.concurrent) {
+        if (concurrent === undefined) batches.push((concurrent = []));
+        concurrent.push(review);
+      } else {
+        concurrent = undefined;
+        batches.push([review]);
+      }
+    }
+    return Effect.forEach(
+      batches,
+      (batch) =>
+        Effect.forEach(
+          batch,
+          (review) => Effect.forEach(review.entries, (entry) => this.settle(entry), { discard: true }),
+          { concurrency: judgeMaxConcurrency(this.judge), discard: true },
+        ),
+      { discard: true },
+    );
   }
 
   /** Evaluates an entry at most once even when multiple Effect fibers await it. */
   private settle(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
+    const timing = this.judgeTiming;
+    const managed = this.isManagedJudge(entry);
     return Effect.suspend(() => {
-      if (entry.settled !== undefined) return Effect.succeed(entry.settled);
-      if (entry.pending !== undefined) return Deferred.await(entry.pending);
+      if (entry.evaluation.state === "settled") return Effect.succeed(entry.evaluation.value);
+      if (entry.evaluation.state === "pending") return Deferred.await(entry.evaluation.deferred);
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          if (entry.settled !== undefined) return entry.settled;
-          if (entry.pending !== undefined) return yield* Deferred.await(entry.pending);
+          if (entry.evaluation.state === "settled") return entry.evaluation.value;
+          if (entry.evaluation.state === "pending") return yield* Deferred.await(entry.evaluation.deferred);
           const deferred = yield* Deferred.make<EntrySettlement>();
-          entry.pending = deferred;
+          entry.evaluation = { state: "pending", deferred };
+          const span = managed ? JudgeTimingSpan.start(timing, "judge.entry", undefined, entry.index) : undefined;
           const settled = yield* restore(
             Effect.suspend(entry.evaluate).pipe(
+              Effect.provideService(CurrentJudgeTiming, span),
+              Effect.onExit((exit) =>
+                Effect.sync(() =>
+                  span?.end(
+                    exit._tag === "Success"
+                      ? exit.value.state === "unavailable" || exit.value.state === "errored"
+                        ? "failed"
+                        : "completed"
+                      : Cause.hasInterruptsOnly(exit.cause)
+                        ? "cancelled"
+                        : "failed",
+                  ),
+                ),
+              ),
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.interrupt
-                  : Effect.succeed(Object.freeze({ state: "errored" as const })),
+                  : Effect.succeed({
+                      state: "errored" as const,
+                      receipt: undefined,
+                      evidence: { kind: "none" as const },
+                    }),
               ),
             ),
           ).pipe(
             Effect.onInterrupt(() =>
               Deferred.interrupt(deferred).pipe(
-                Effect.andThen(Effect.sync(() => {
-                  if (entry.pending === deferred) entry.pending = undefined;
-                })),
+                Effect.andThen(
+                  Effect.sync(() => {
+                    if (entry.evaluation.state === "pending" && entry.evaluation.deferred === deferred)
+                      entry.evaluation = { state: "unstarted" };
+                  }),
+                ),
               ),
             ),
           );
@@ -1583,8 +1904,8 @@ class AssertionsRuntimeImplementation {
           // this entry while its evaluator was unwinding. Preserve that
           // producer-interrupted terminal fact rather than resurrecting a
           // late evaluator result.
-          const terminal = entry.settled ?? settled;
-          entry.settled = terminal;
+          const terminal = settledValueOf(entry) ?? settled;
+          entry.evaluation = { state: "settled", value: terminal };
           yield* Deferred.succeed(deferred, terminal);
           return terminal;
         }),
@@ -1599,36 +1920,31 @@ class AssertionsRuntimeImplementation {
    * `settle()` memoizes the eligible work for the normal seal.
    */
   private settleThrough(entry: AssertionEntry): Effect.Effect<EntrySettlement> {
-    return Effect.forEach(
-      this.entries.slice(0, entry.index + 1)
-        .filter((candidate) => !isPostRunSandboxCriterion(candidate.criterion)),
-      (candidate) => this.settle(candidate),
-    ).pipe(
-      Effect.map((settlements) => {
-        const settlement = settlements.at(-1);
-        if (settlement === undefined) throw new Error("Assertion stop entry was not registered");
-        return settlement;
-      }),
-    );
+    return this.settleOrdinary(
+      this.entries.slice(0, entry.index + 1).filter((candidate) => !isPostRunSandboxCriterion(candidate.criterion)),
+    ).pipe(Effect.andThen(this.settle(entry)));
   }
 
-  private latchStop(
-    entry: AssertionEntry,
-    settlement: EntrySettlement,
-  ): AssertionStopError {
+  private latchStop(entry: AssertionEntry, settlement: EntrySettlement): AssertionStopError {
     if (this.stopped !== undefined) return this.stopped;
-    const reason = settlement.state === "mismatched" || settlement.state === "measured"
-      ? "condition-not-met" as const
-      : settlement.state === "unavailable"
-        ? "source-unavailable" as const
-        : settlement.state === "not-applicable"
-          ? "not-applicable" as const
-          : "evaluator-failed" as const;
-    this.stopped = Object.freeze({
+    function stopReason(): AssertionStopError["reason"] {
+      switch (settlement.state) {
+        case "mismatched":
+        case "measured":
+          return "condition-not-met";
+        case "unavailable":
+          return "source-unavailable";
+        case "not-applicable":
+          return "not-applicable";
+        default:
+          return "evaluator-failed";
+      }
+    }
+    this.stopped = {
       _tag: "AssertionStopError" as const,
       entryIndex: entry.index,
-      reason,
-    });
+      reason: stopReason(),
+    };
     return this.stopped;
   }
 
@@ -1639,99 +1955,110 @@ class AssertionsRuntimeImplementation {
     for (const entry of this.entries) {
       const sealedEntry = this.toSealedEntry(entry);
       entries.push(sealedEntry);
-      assertions.push(Object.freeze({
+      assertions.push({
         required: this.isRequired(entry),
         result: sealedEntry.result,
-      }));
+      });
     }
-    const evaluation: SealedAssertionEvaluation = Object.freeze({
-      execution: options.execution ?? "completed",
-      explicitlySkipped: options.explicitlySkipped ?? false,
-      assertions: Object.freeze(assertions),
-    });
-    this.sealed = Object.freeze({
-      entries: Object.freeze(entries),
+    const evaluation: SealedAssertionEvaluation = {
+      execution: options.execution,
+      explicitlySkipped: options.explicitlySkipped,
+      assertions,
+    };
+    this.sealed = {
+      entries,
       evaluation,
-    });
+    };
     return this.sealed;
   }
 
-  private toSealedEntry(
-    entry: AssertionEntry,
-  ): SealedAssertionEntry {
-    const settlement = entry.settled;
-    if (settlement === undefined) throw new Error("Attempted to seal an unsettled Assertion entry");
-    const display: AssertionDisplay = Object.freeze({
-      ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
-      ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
-      groupPath: Object.freeze([...entry.display.groupPath]),
-    });
+  private toSealedEntry(entry: AssertionEntry): SealedAssertionEntry {
+    if (entry.evaluation.state !== "settled") throw new Error("Attempted to seal an unsettled Assertion entry");
+    const settlement = entry.evaluation.value;
+    const display: AssertionDisplay = {
+      label: entry.display.label,
+      groupPath: entry.display.groupPath,
+    };
     const material = this.materialFor(entry, settlement);
-    return Object.freeze({
+    function observedResult(settlement: EntrySettlement): SealedAssertionEntry["observed"] {
+      if (entry.kind === "boolean") {
+        return {
+          kind: "boolean" as const,
+          outcome:
+            settlement.state === "measured" || settlement.state === "interrupted"
+              ? ("errored" as const)
+              : settlement.state,
+        };
+      }
+      if (entry.kind === "measurement") {
+        if (settlement.state === "measured") {
+          return { kind: "measurement" as const, state: "available" as const, value: settlement.value };
+        }
+        return { kind: "measurement" as const, state: "unavailable" as const };
+      }
+      if (settlement.state === "measured") {
+        return { kind: "direct-score" as const, state: "available" as const, value: settlement.value };
+      }
+      return { kind: "direct-score" as const, state: "unavailable" as const };
+    }
+    return {
       display,
-      criterion: entry.terminalCriterion?.() ?? entry.criterion,
+      criterion: entry.terminalCriterion(),
       subject: entry.subject,
       evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
       result: this.resultFor(entry, settlement),
-      policy: Object.freeze({
-        requirement: this.isRequired(entry) ? "required" as const : "optional" as const,
+      policy: {
+        requirement: this.isRequired(entry) ? ("required" as const) : ("optional" as const),
         condition: this.conditionFor(entry),
-      }),
-      observed: entry.kind === "boolean"
-        ? Object.freeze({
-            kind: "boolean" as const,
-            outcome: settlement.state === "measured" || settlement.state === "interrupted"
-              ? "errored" as const
-              : settlement.state,
-          })
-        : entry.kind === "measurement"
-          ? settlement.state === "measured"
-            ? Object.freeze({ kind: "measurement" as const, state: "available" as const, value: settlement.value })
-            : Object.freeze({ kind: "measurement" as const, state: "unavailable" as const })
-          : settlement.state === "measured"
-            ? Object.freeze({ kind: "direct-score" as const, state: "available" as const, value: settlement.value })
-            : Object.freeze({ kind: "direct-score" as const, state: "unavailable" as const }),
-      ...(settlement.matcherArtifact === undefined
-        ? {}
-        : { matcherArtifact: settlement.matcherArtifact }),
-    });
+      },
+      control: { state: "available" as const, value: entry.control },
+      observed: observedResult(settlement),
+      matcherArtifact: settlement.evidence.kind === "matcher" ? settlement.evidence.artifact : undefined,
+    };
   }
 
-  private materialFor(entry: AssertionEntry, settlement: EntrySettlement): {
+  private materialFor(
+    entry: AssertionEntry,
+    settlement: EntrySettlement,
+  ): {
     readonly coverage: AssertionCoverage;
     readonly limitations: readonly AssertionLimitation[];
   } {
-    if (settlement.state === "unavailable" && this.retentionByEntry.has(entry) && entry.initialCoverage.state === "partial") return Object.freeze({ coverage: entry.initialCoverage, limitations: entry.initialLimitations });
+    if (
+      settlement.state === "unavailable" &&
+      this.retentionByEntry.has(entry) &&
+      entry.initialCoverage.state === "partial"
+    )
+      return { coverage: entry.initialCoverage, limitations: entry.initialLimitations };
     if (settlement.state === "unavailable") {
-      return Object.freeze({
-        coverage: Object.freeze({ state: "unavailable" as const, reason: "source-unavailable" as const }),
-        limitations: Object.freeze([]),
-      });
+      return {
+        coverage: { state: "unavailable" as const, reason: "source-unavailable" as const },
+        limitations: [],
+      };
     }
     if (settlement.state === "not-applicable") {
-      return Object.freeze({
-        coverage: Object.freeze({ state: "not-applicable" as const, reason: "optional-material" as const }),
-        limitations: Object.freeze([]),
-      });
+      return {
+        coverage: { state: "not-applicable" as const, reason: "optional-material" as const },
+        limitations: [],
+      };
     }
-    return Object.freeze({
+    return {
       coverage: entry.initialCoverage,
       limitations: entry.initialLimitations,
-    });
+    };
   }
 
   private evidenceFor(entry: AssertionEntry): readonly AssertionMaterial[] {
     if (entry.sealedEvidence !== undefined) return entry.sealedEvidence;
-    const terminal = entry.terminalEvidence?.() ?? [];
-    entry.sealedEvidence = Object.freeze([
-      ...entry.evidence,
-      ...terminal.map(freezeAssertionMaterial),
-    ]);
+    const terminal = entry.terminalEvidence();
+    entry.sealedEvidence = [...entry.evidence, ...terminal.map(freezeAssertionMaterial)];
     const retention = this.retentionByEntry.get(entry);
     if (retention !== undefined && !retention.settled) {
-      const diagnosticBytes = UTF8.encode(JSON.stringify(entry.settled === undefined ? {} : this.resultFor(entry, entry.settled))).byteLength;
+      const diagnosticBytes = UTF8.encode(
+        JSON.stringify(entry.evaluation.state === "settled" ? this.resultFor(entry, entry.evaluation.value) : {}),
+      ).byteLength;
       const actual = retention.actual() + diagnosticBytes;
       this.retainedProducerBytes += actual - retention.reserved;
       retention.settled = true;
@@ -1740,87 +2067,96 @@ class AssertionsRuntimeImplementation {
   }
 
   private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
-    const terminalDetail = entry.terminalDetail?.();
-    const baseDiagnostic = settlement.explanation ?? captureMatchDiagnostic(settlement.diagnostic);
-    const capturedDiagnostic = terminalDetail === undefined
-      ? baseDiagnostic
-      : Object.freeze({ ...(baseDiagnostic ?? {}), ...terminalDetail });
-    const diagnostic = capturedDiagnostic === undefined ? {} : { diagnostic: capturedDiagnostic };
-    const terminalReceipt = entry.terminalReceipt?.() ?? settlement.receipt;
-    const receipt = terminalReceipt === undefined ? {} : { receipt: terminalReceipt };
+    const terminalDetail = entry.terminalDetail();
+    const evidence = settlement.evidence;
+    function evidenceDiagnostic() {
+      switch (evidence.kind) {
+        case "measurement":
+          return evidence.detail;
+        case "matcher":
+          return captureMatchDiagnostic(evidence.diagnostic);
+        default:
+          return undefined;
+      }
+    }
+    const baseDiagnostic = evidenceDiagnostic();
+    const capturedDiagnostic =
+      terminalDetail === undefined ? baseDiagnostic : { ...(baseDiagnostic ?? {}), ...terminalDetail };
+    const diagnostic = capturedDiagnostic;
+    const receipt = entry.terminalReceipt() ?? settlement.receipt;
     switch (settlement.state) {
       case "matched":
-        return Object.freeze({
+        return {
           state: "matched" as const,
           gate: this.gateForMatched(entry),
           score: this.availableScoreFor(entry, 1),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "mismatched":
-        return Object.freeze({
+        return {
           state: "mismatched" as const,
           reason: "condition-not-met" as const,
           gate: this.gateForMismatched(entry),
           score: this.availableScoreFor(entry, 0),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "measured": {
         const matched = entry.conditionMinimum === undefined || settlement.value >= entry.conditionMinimum;
         return matched
-          ? Object.freeze({
+          ? {
               state: "matched" as const,
               gate: this.gateForMatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
-              ...diagnostic,
-              ...receipt,
-            })
-          : Object.freeze({
+              diagnostic,
+              receipt,
+            }
+          : {
               state: "mismatched" as const,
               reason: "condition-not-met" as const,
               gate: this.gateForMismatched(entry),
               score: this.availableScoreFor(entry, settlement.value),
-              ...diagnostic,
-              ...receipt,
-            });
+              diagnostic,
+              receipt,
+            };
       }
       case "unavailable":
-        return Object.freeze({
+        return {
           state: "unavailable" as const,
           reason: settlement.reason,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "source-unavailable"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "not-applicable":
-        return Object.freeze({
+        return {
           state: "not-applicable" as const,
           reason: "coverage-not-applicable" as const,
           gate: this.gateForNotApplicable(entry),
           score: this.incompleteScoreFor(entry, "not-applicable"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "errored":
-        return Object.freeze({
+        return {
           state: "errored" as const,
           reason: "evaluator-failed" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
       case "interrupted":
-        return Object.freeze({
+        return {
           state: "errored" as const,
           reason: "producer-interrupted" as const,
           gate: this.gateForUnavailable(entry),
           score: this.incompleteScoreFor(entry, "evaluation-errored"),
-          ...diagnostic,
-          ...receipt,
-        });
+          diagnostic,
+          receipt,
+        };
     }
   }
 
@@ -1837,15 +2173,18 @@ class AssertionsRuntimeImplementation {
 
   private conditionFor(entry: AssertionEntry): SealedAssertionEntry["policy"]["condition"] {
     if (entry.kind === "measurement" && entry.conditionMinimum !== undefined) {
-      return Object.freeze({ kind: "at-least" as const, threshold: entry.conditionMinimum });
+      return { kind: "at-least" as const, threshold: entry.conditionMinimum };
     }
     if (
-      entry.kind === "boolean"
-      && (this.evaluationKind === "pass" || entry.gateConfigured || entry.scorePoints !== undefined || entry.stopConfigured)
+      entry.kind === "boolean" &&
+      (this.evaluationKind === "pass" ||
+        entry.gateConfigured ||
+        entry.scorePoints !== undefined ||
+        entry.stopConfigured)
     ) {
-      return Object.freeze({ kind: "boolean" as const, expected: true as const });
+      return { kind: "boolean" as const, expected: true as const };
     }
-    return Object.freeze({ kind: "record-only" as const });
+    return { kind: "record-only" as const };
   }
 
   private gateForMatched(entry: AssertionEntry): "not-gate" | "satisfied" {
@@ -1864,10 +2203,7 @@ class AssertionsRuntimeImplementation {
     return this.isGate(entry) ? "not-applicable" : "not-gate";
   }
 
-  private availableScoreFor(
-    entry: AssertionEntry,
-    normalized: number,
-  ): AvailableScoreContribution {
+  private availableScoreFor(entry: AssertionEntry, normalized: number): AvailableScoreContribution {
     const points = entry.scorePoints;
     if (points === undefined) return noScore();
     return earnedScore(points, points * normalized);
@@ -1899,7 +2235,7 @@ class AssertionsRuntimeImplementation {
     if (entry.configurationClosed) {
       throw new Error(`Cannot configure an Assertion after orStop() closed its configuration`);
     }
-    if (entry.settled !== undefined || entry.pending !== undefined) {
+    if (entry.evaluation.state !== "unstarted") {
       throw new Error(`Cannot configure an Assertion after ${method} has begun evaluation`);
     }
   }
@@ -1909,6 +2245,17 @@ function sourceCaptureRuntime(
   runtime: AssertionsRuntime<"pass" | "score">,
 ): AssertionsRuntimeImplementation | undefined {
   return runtime instanceof AssertionsRuntimeImplementation ? runtime : undefined;
+}
+
+/** @internal Grants only the Attempt's unobserved Sandbox after Context construction. */
+export function attachAssertionsAgentJudgeSandbox(
+  runtime: AssertionsRuntime<"pass" | "score">,
+  sandbox: import("../sandbox/types.ts").Sandbox | undefined,
+  shared = false,
+): void {
+  const implementation = sourceCaptureRuntime(runtime);
+  if (implementation === undefined) throw new TypeError("Agent Judge requires a NiceEval AssertionsRuntime");
+  implementation.attachAgentJudgeSandbox(sandbox, shared);
 }
 
 /** @internal Runner-only source observation hook; it never changes the public runtime value. */
@@ -1935,25 +2282,25 @@ export function assertionsRuntimeSourceCaptureSnapshot(
   runtime: AssertionsRuntime<"pass" | "score">,
 ): AssertionsRuntimeSourceCaptureSnapshot | undefined {
   const implementation = sourceCaptureRuntime(runtime);
-  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (implementation === undefined) return undefined;
+  const capture = sourceCaptureByRuntime.get(implementation);
   if (capture === undefined) return undefined;
-  return Object.freeze({
-    entries: Object.freeze(capture.entries.map((entry) => Object.freeze({
-      occurrences: Object.freeze(entry.occurrences.map((occurrence) => Object.freeze({
+  return {
+    entries: capture.entries.map((entry) => ({
+      occurrences: entry.occurrences.map((occurrence) => ({
         role: occurrence.role,
-        ...(occurrence.site === undefined ? {} : { site: occurrence.site }),
-        ...(occurrence.outcome === undefined ? {} : { outcome: occurrence.outcome }),
-      }))),
-    }))),
-  });
+        site: occurrence.site,
+        outcome: occurrence.outcome,
+      })),
+    })),
+  };
 }
 
 /** @internal Attempt interruption gives pending real stop calls their terminal disposition. */
-export function markAssertionsRuntimeSourceCaptureInterrupted(
-  runtime: AssertionsRuntime<"pass" | "score">,
-): void {
+export function markAssertionsRuntimeSourceCaptureInterrupted(runtime: AssertionsRuntime<"pass" | "score">): void {
   const implementation = sourceCaptureRuntime(runtime);
-  const capture = implementation === undefined ? undefined : sourceCaptureByRuntime.get(implementation);
+  if (implementation === undefined) return;
+  const capture = sourceCaptureByRuntime.get(implementation);
   if (capture === undefined) return;
   for (const entry of capture.entries) {
     for (const occurrence of entry.occurrences) {
@@ -1967,49 +2314,59 @@ export function markAssertionsRuntimeSourceCaptureInterrupted(
 /** Creates one Attempt-local assert-first authoring runtime. */
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "pass";
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
-  readonly executeStop?: AssertionStopExecutor;
-  readonly judge?: ResolvedJudgeConfig;
-  readonly signal?: AbortSignal;
-  readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector;
+  readonly executeStop: AssertionStopExecutor;
+  readonly judge: ResolvedJudgeConfig | undefined;
+  readonly signal: AbortSignal | undefined;
+  readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
-    throw new TypeError("Assertions runtime evaluationKind must be \"pass\" or \"score\"");
+    throw new TypeError('Assertions runtime evaluationKind must be "pass" or "score"');
   }
-  const executeStop = input.executeStop ?? (() =>
-    Promise.reject(new AssertionAuthoringClosedError("runtime-unattached"))
-  );
   const runtime = new AssertionsRuntimeImplementation(
     input.evaluationKind,
-    executeStop,
+    input.executeStop,
     input.judge,
     input.signal,
     input.judgeUsage,
+    input.judgeTiming,
   );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }
 
 /** @internal Core preset dispatch shares the exact owning runtime. */
-const compiledMaterialQA = new WeakMap<object, { readonly selector: ContextualMatch; readonly question: string; readonly options?: JudgePresetOptions }>();
-export function registerMaterialQA(check: object, selector: ContextualMatch, question: string, options?: JudgePresetOptions): unknown {
+const compiledMaterialQA = new WeakMap<
+  object,
+  { readonly selector: ContextualMatch; readonly question: string; readonly options: JudgePresetOptions | undefined }
+>();
+export function registerMaterialQA(
+  check: object,
+  selector: ContextualMatch,
+  question: string,
+  options?: JudgePresetOptions,
+): unknown {
   const runtime = runtimeByCheck.get(check);
   if (runtime === undefined) throw new TypeError("closeQA requires an Assertion runtime");
-  if (!isContextualMatch(selector) || selector.kind !== "material") throw new TypeError("closeQA requires a MaterialMatch");
+  if (!isContextualMatch(selector) || selector.kind !== "material")
+    throw new TypeError("closeQA requires a MaterialMatch");
   validateMaterialQAInputs(question, options);
-  const compiled = Object.freeze({});
-  compiledMaterialQA.set(compiled, Object.freeze({ selector, question, ...(options === undefined ? {} : { options }) }));
+  const compiled = {};
+  compiledMaterialQA.set(compiled, { selector, question, options });
   return Reflect.apply(check as (...args: readonly unknown[]) => unknown, undefined, [compiled]);
 }

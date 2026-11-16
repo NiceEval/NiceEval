@@ -4,8 +4,7 @@ import { includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 const WRITE_MARKER = "niceeval-hermes-tool-input-914";
 
 export default defineEval({
-  description:
-    "coding 任务工具轨:带可区分入参的写文件 + shell 读回,归一进标准事件流",
+  description: "coding 任务工具轨:带可区分入参的写文件 + shell 读回,归一进标准事件流",
   async test(t) {
     const turn = await t.send(
       "请分两个独立的工具调用完成,不要合并成一条命令:\n" +
@@ -28,21 +27,15 @@ export default defineEval({
       );
       t.check(
         turn.toolCalls,
-        satisfies(
-          "file_write 先于 shell",
-          (calls) => {
-            const write = calls.findIndex((call) => call.name === "file_write");
-            const shell = calls.findIndex((call) => call.name === "shell");
-            return write !== -1 && shell !== -1 && write < shell;
-          },
-        ),
+        satisfies("file_write 先于 shell", (calls) => {
+          const write = calls.findIndex((call) => call.name === "file_write");
+          const shell = calls.findIndex((call) => call.name === "shell");
+          return write !== -1 && shell !== -1 && write < shell;
+        }),
       );
       t.check(
         turn.toolCalls,
-        satisfies(
-          "no failed actions",
-          (calls) => calls.every((call) => call.status !== "failed"),
-        ),
+        satisfies("no failed actions", (calls) => calls.every((call) => call.status !== "failed")),
       );
     });
     t.check(turn.reply, includes(WRITE_MARKER));

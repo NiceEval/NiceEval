@@ -25,7 +25,7 @@ export default defineExperiment({
 - workdir 在 Attempt 之间回到复用 Sandbox 的题间重置点；
 - 题间 reset 只恢复 workdir，workdir 外的状态可能继续存在；
 - before 与 after 固定为 attempt occurrence，每条 Attempt 各自满足；
-- agent.ensure 循环与 Agent runtime 每 Attempt 执行；
+- agent.install 循环与 Agent runtime 每 Attempt 执行；
 - `maxConcurrency > 1` 时，不保证哪些 Attempt 共用同一个 Sandbox。
 
 如果结果依赖严格的跨 Attempt 顺序或累积状态，必须同时声明 `maxConcurrency: 1`。
@@ -68,7 +68,7 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 | Experiment `setup` / `teardown` | 每 Invocation 成对一次 |
 | `createSandbox` / `stop` | 每个 Sandbox 成对一次 |
 | `before` / `after` | 每 Attempt occurrence 成对一次 |
-| agent.ensure 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
+| agent.install 循环(探测、缺失才 install、复检) | 每 Attempt 一次,命中快速返回 |
 | Agent runtime `setup` / `teardown` | 每 Attempt 成对一次 |
 | `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
 
@@ -80,14 +80,14 @@ Sandbox 复用池归属单条 Invocation，不跨进程借用 Provider Case 或 
 Runner 不按 API 名猜次数；当前 planning 固定编译 attempt occurrence。physical promotion 属于后续性能工作。
 稳定 Agent CLI 应进入预制实例；其余准备写成所属 owner 的 `before()`，由 before 缓存控制重复成本。
 
-Agent CLI 先由 ensure 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
+Agent CLI 先由 install 重新 探测；缺失或 identity 不符时由配对 Installer 安装并复检。
 随后 runtime setup 的扩展步骤按声明收敛，不假设 Sandbox 空白：同名 marketplace 注册与 Plugin 安装被替换成按声明出处与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
 「可重复执行」的作者义务只涉及作者自己写的代码:layer action 与 Agent factory 的 `postSetup`。
 
 ## 复用池按物理身份分组
 
 一个 Experiment 的混合批次里,不同 Eval 的 template 可以各不相同。
-Runner 按 Provider plan identity 与 Agent ensure identity 分组。不同 Eval 的 before 可以在同一物理 cohort 展开，但每条 action 仍在自己的 Attempt occurrence 内满足。
+Runner 按 Provider plan identity 与 Agent install identity 分组。不同 Eval 的 before 可以在同一物理 cohort 展开，但每条 action 仍在自己的 Attempt occurrence 内满足。
 
 - 同一个 Sandbox 只承接同键 Attempt；
 - 每组建立自己的题间重置点；
@@ -106,7 +106,7 @@ Case 就绪后,Runner 在分类账上建立 **复用 Sandbox 的题间重置点*
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
 3. 按 occurrence schedule 满足本次 Attempt 的 before action；
-4. 重新执行 agent.ensure 循环与 Agent runtime,再建立本 Attempt 的归因区间;`test(t)` 重新准备本 Attempt 的 Fixture。
+4. 重新执行 agent.install 循环与 Agent runtime,再建立本 Attempt 的归因区间;`test(t)` 重新准备本 Attempt 的 Fixture。
 
 题间 reset 不是整台 Sandbox 归零。
 Runner 只按分类账恢复 `workdir`;`/opt`、`$HOME`、`/tmp` 等 workdir 外路径的文件,全局安装、包管理器缓存、build/cache 和后台进程都会保留,Provider 或作者显式清除的状态除外。
@@ -158,6 +158,13 @@ Provider 可以限制最大值，但不能静默压短。
 
 创建标签 `niceeval.run_id` 使用当前 Record Run ID，`niceeval.created_at` 使用本次物理创建请求的 UTC ISO 时间。重试同一分配请求保留同一标签，恢复快照创建新实例重新标注。标签不进入缓存身份。无 Record Run 的独立内部创建不伪造 Run ID。
 
+为 Attempt 创建的实例另带 `niceeval.created_for_attempt`：发起这次创建的 Attempt 的 UUID 与 `niceeval.created_for_eval`：它的 Eval ID。
+它们只记录最初为谁创建，不表示当前占用者：复用池里的实例会依次承接其它 Attempt，Before cache 的 staging 实例没有对应 Attempt，不写这两个标签。
+
+Eval ID 可能包含项目或业务名称，云端标签对同一账号的其它成员可见；Experiment 配置 `sandboxLabels: "run-only"` 时只写 Run 级标签；这个选项与标签本身都不进入身份。
+标签值不含 prompt、源码、宿主路径、用户名、endpoint 或凭据，只有 Attempt UUID 与 Eval ID，NiceEval 不另设长度上限。
+运行期间对应关系以 `niceeval invocation show` 为准，标签只服务于从 Provider 控制台反查。
+
 E2B、Instabox 与 OpenSandbox 使用原生 metadata，Docker 与 Compose 使用 labels，Incus 使用 `user.niceeval.run_id` 与 `user.niceeval.created_at`。当前 Vercel SDK 不接受自定义标签，因此只注入服务端寿命。Docker、Compose、Incus 与自定义 Provider 没有统一的服务端自动销毁参数，不宣称具备云端硬超时；本地 timer 不能替代该保证。
 
 ## 派发前确认
@@ -200,7 +207,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - 真实派发的 Attempt 仍完整封入 before、命令、计时与诊断的 Observability。Sandbox 编号、承接序号与
-  租借状态是调度和留存注册表数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
+  租借状态是运行期调度数据，不成为 portable Record family；它们不会因 Attempt 提前终结而伪造一份状态值。
 
 ## 复用失败的可观察性
 

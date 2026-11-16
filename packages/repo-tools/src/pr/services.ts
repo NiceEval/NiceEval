@@ -31,17 +31,17 @@ export interface PrGitHubService {
   readonly repository: () => Effect.Effect<string, PrGitHubFailure>;
   readonly view: (pr: number, repository?: string) => Effect.Effect<GitHubPullRequest, PrGitHubFailure>;
   readonly edit: (pr: number, bodyFile: string, repository: string) => Effect.Effect<void, PrGitHubFailure>;
-  readonly create: (input: Readonly<{
-    readonly base: string;
-    readonly head: string;
-    readonly title: string;
-    readonly bodyFile: string;
-    readonly repository: string;
-  }>) => Effect.Effect<string, PrGitHubFailure>;
+  readonly create: (
+    input: Readonly<{
+      readonly base: string;
+      readonly head: string;
+      readonly title: string;
+      readonly bodyFile: string;
+      readonly repository: string;
+    }>,
+  ) => Effect.Effect<string, PrGitHubFailure>;
 }
 
-export class PrGitHub extends Context.Service<PrGitHub, PrGitHubService>()(
-  "@niceeval/repo-tools/pr/GitHub",
-) {}
+export class PrGitHub extends Context.Service<PrGitHub, PrGitHubService>()("@niceeval/repo-tools/pr/GitHub") {}
 
 export type PrBodyRequirements = PrFileSystem | PrGit | PrGitHub | ChildProcessSpawner.ChildProcessSpawner;

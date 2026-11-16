@@ -57,7 +57,7 @@ export interface InputGuardOptions {
    *  这个模块不重新实现一遍清理/退出逻辑。 */
   onInterrupt: () => void;
   /** 可选:注入进程信号面,省略时使用全局 `process`。 */
-  process?: InputGuardProcess;
+  process: InputGuardProcess | undefined;
 }
 
 export interface InputGuard {

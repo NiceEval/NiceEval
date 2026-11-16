@@ -22,8 +22,19 @@ describe("Judge Provider headers and Cloudflare Access", () => {
     vi.restoreAllMocks();
   });
 
+  test("context windows are explicit identity inputs and reject invalid or TypeSafe settings", () => {
+    const ordinary = resolveJudgeProvider(OpenAIProvider({ model: "gpt-4o", apiKey: "test-key" }));
+    expect(ordinary).not.toHaveProperty("contextWindow");
+    expect(
+      resolveJudgeProvider(OpenAIProvider({ model: "gpt-4o", apiKey: "test-key", contextWindow: 32768 })).contextWindow,
+    ).toBe(32768);
+    for (const contextWindow of [0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1])
+      expect(() => OpenAIProvider({ model: "gpt-4o", contextWindow })).toThrow("contextWindow");
+    expect(() => TypesafeProvider({ model: "system-one", contextWindow: 32768 } as never)).toThrow("contextWindow");
+  });
+
   describe("exactOptions and headers validation", () => {
-    test("rejects non-object headers", () => {
+    test("rejects header containers outside the enumerable data-property contract", () => {
       expect(() =>
         OpenAIProvider({
           model: "gpt-4o",
@@ -39,9 +50,6 @@ describe("Judge Provider headers and Cloudflare Access", () => {
           headers: ["a", "b"] as never,
         }),
       ).toThrow("headers must be an object");
-    });
-
-    test("rejects headers with accessors or non-enumerable properties", () => {
       const accessorHeaders = {};
       Object.defineProperty(accessorHeaders, "X-Custom", {
         get: () => "val",
@@ -67,9 +75,6 @@ describe("Judge Provider headers and Cloudflare Access", () => {
           headers: nonEnumerableHeaders as never,
         }),
       ).toThrow("must be an enumerable data property");
-    });
-
-    test("rejects empty or control-character keys", () => {
       expect(() =>
         OpenAIProvider({
           model: "gpt-4o",
@@ -226,6 +231,8 @@ describe("Judge Provider headers and Cloudflare Access", () => {
         body: JSON.stringify({ model: "gpt-4o" }),
         maxBytes: 16_384,
         signal: controller.signal,
+        usage: undefined,
+        deadlineAt: undefined,
       });
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);

@@ -1,9 +1,6 @@
 import type { AssertionEvidenceContent } from "../../components/primitives/assertion-evidence.tsx";
-import type {
-  ClosedAssertionFactValue,
-  ClosedJsonValue,
-} from "../../components/primitives/shared.ts";
-import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
+import type { ClosedAssertionFactValue, ClosedJsonValue } from "../../components/primitives/shared.ts";
+import type { ClosedAdapterIdentity } from "../../data/adapter-identity.ts";
 
 export interface EvidenceLimitation {
   readonly code: string;
@@ -43,31 +40,25 @@ export type AvailableValue<Value> =
   | { readonly state: "unavailable" };
 
 export function availableValue<Value>(value: Value): AvailableValue<Value> {
-  return Object.freeze({ state: "available", value });
+  return { state: "available", value };
 }
 
 export function unavailableValue<Value>(): AvailableValue<Value> {
-  return Object.freeze({ state: "unavailable" });
+  return { state: "unavailable" };
 }
 
 export interface AttemptSummaryData {
   readonly experimentId: string;
-  readonly adapter: AdapterIdentity;
+  readonly adapter: ClosedAdapterIdentity | undefined;
   readonly identity: AttemptIdentityView;
   readonly verdict: import("../../../../../../shared/types.ts").ProjectedVerdict;
-  readonly startedAt?: string;
+  readonly startedAt: string | undefined;
   readonly durationMs: AvailableValue<number>;
-  readonly observedCostUSD?: number;
   readonly capabilities: AttemptCapabilitiesView;
-  readonly totalScore?: number;
+  readonly totalScore: number | undefined;
 }
 
-export type AssertionDecisionState =
-  | "matched"
-  | "mismatched"
-  | "unavailable"
-  | "errored"
-  | "not-applicable";
+export type AssertionDecisionState = "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
 
 /** Source site exactly as retained by Inspection assertion detail. */
 export interface AttemptInspectionAssertionSourceSite {
@@ -94,7 +85,7 @@ export interface AttemptAssertionDiagnosticNode {
   readonly state: string;
   readonly expected: ClosedJsonValue;
   readonly observed: ClosedJsonValue;
-  readonly reason: string | null;
+  readonly reason: string | undefined;
   readonly anchor: ClosedJsonValue;
   readonly children: readonly AttemptAssertionDiagnosticNode[];
 }
@@ -106,7 +97,7 @@ export interface AttemptMatcherTarget {
     | { readonly kind: "event"; readonly eventId: string };
   readonly difference: ClosedJsonValue;
   /** Anchor string shared with the trace DOM, supplied by the page assembler. */
-  readonly conversationAnchor?: string;
+  readonly conversationAnchor: string | undefined;
 }
 
 export type AttemptCommandMatch =
@@ -115,7 +106,7 @@ export type AttemptCommandMatch =
 
 export interface AttemptMatcherDetail {
   readonly state: "ordinary" | "legacy" | "available" | "missing";
-  readonly sourceState: string | null;
+  readonly sourceState: string | undefined;
   readonly comparator: ClosedJsonValue;
   readonly sourceLedger: ClosedJsonValue;
   readonly receipt: ClosedJsonValue;
@@ -123,14 +114,13 @@ export interface AttemptMatcherDetail {
   readonly targets: readonly AttemptMatcherTarget[];
   readonly sandboxCommandJoin: AttemptCommandMatch;
   readonly commandMatch: AttemptCommandMatch;
-  readonly reason?: string;
+  readonly reason: string | undefined;
 }
 
 export interface AttemptClosedAssertionEntry {
   readonly entryId: string;
   readonly display: {
-    readonly key?: string;
-    readonly label?: string;
+    readonly label: string | undefined;
     readonly groupPath: readonly string[];
   };
   readonly entry: ClosedJsonValue;
@@ -144,7 +134,7 @@ export interface AttemptAssertionDecision {
   readonly observed: ClosedAssertionFactValue;
   readonly expected: ClosedAssertionFactValue;
   readonly diagnosticTree: ClosedAssertionFactValue;
-  readonly reason?: string;
+  readonly reason: string | undefined;
 }
 
 export interface AttemptAssertionDisplay {
@@ -155,11 +145,9 @@ export interface AttemptAssertionDisplay {
   readonly detail: string;
 }
 
-export interface AttemptScoreView {
-  readonly state: "earned" | "unavailable";
-  readonly points: number;
-  readonly earned?: number;
-}
+export type AttemptScoreView =
+  | { readonly state: "earned"; readonly points: number; readonly earned: number }
+  | { readonly state: "unavailable"; readonly points: number };
 
 /**
  * Full closed assertion entry. The renderer keeps the original check,
@@ -174,9 +162,7 @@ export interface AttemptAssertionView {
   readonly check: ClosedAssertionFactValue;
   readonly decision: AttemptAssertionDecision;
   readonly evidence: AssertionEvidenceContent;
-  readonly score?: AttemptScoreView;
-  /** Additional current Inspection fields retained without interpretation. */
-  readonly retained?: Readonly<Record<string, ClosedJsonValue>>;
+  readonly score: AttemptScoreView | undefined;
 }
 
 export interface AttemptAssertionsData {
@@ -185,8 +171,6 @@ export interface AttemptAssertionsData {
     readonly group: string;
     readonly items: readonly AttemptAssertionView[];
   }[];
-  readonly scorePointsEarned?: { readonly earned: number; readonly total: number };
-  readonly totalScore?: number;
   readonly evaluationKind: "pass" | "points";
 }
 
@@ -198,10 +182,8 @@ export interface AttemptDiagnosticView {
   readonly summary: string;
   readonly level: "warning" | "error";
   readonly causes: readonly { readonly code: string; readonly summary: string }[];
-  readonly redaction:
-    | { readonly state: "none" }
-    | { readonly state: "applied"; readonly replacements: number };
-  readonly sourceFrame?: ClosedJsonValue;
+  readonly redaction: { readonly state: "none" } | { readonly state: "applied"; readonly replacements: number };
+  readonly sourceFrame: ClosedJsonValue | undefined;
 }
 
 export interface AttemptDiagnosticsData {
@@ -237,8 +219,7 @@ export type AttemptUsageObservation =
     };
 
 export interface UsageTableData {
-  readonly turns?: number;
-  readonly toolCalls?: number;
+  readonly turns: number | undefined;
+  readonly toolCalls: number | undefined;
   readonly observations: readonly AttemptUsageObservation[];
-  readonly observedCostUSD?: number;
 }

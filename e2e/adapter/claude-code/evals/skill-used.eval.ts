@@ -11,12 +11,9 @@ import type { StreamEvent } from "niceeval";
 const TOPIC = "niceeval-e2e-skill-topic-926";
 const OTHER_SKILLS = ["e2e-checklist", "e2e-decoy"] as const;
 const loadedSkill = (events: readonly StreamEvent[], skill: string): boolean =>
-  events.some(
-    (event) => event.type === "skill.loaded" && event.skill === skill,
-  );
+  events.some((event) => event.type === "skill.loaded" && event.skill === skill);
 export default defineEval({
-  description:
-    "Skills:挂载的本地 Skill 产生 skill.loaded 事件,其内容会影响回答",
+  description: "Skills:挂载的本地 Skill 产生 skill.loaded 事件,其内容会影响回答",
   async test(t) {
     const session1 = t.newSession();
     const turn1 = await session1.send(
@@ -26,42 +23,27 @@ export default defineEval({
     await t.group("原生 Skill 工具被调用,归一为 skill.loaded", () => {
       t.check(
         turn1.events,
-        satisfies<typeof turn1.events>("loaded skill e2e-marker", (events) =>
-          loadedSkill(events, "e2e-marker"),
-        ),
+        satisfies<typeof turn1.events>("loaded skill e2e-marker", (events) => loadedSkill(events, "e2e-marker")),
       );
       t.check(
         turn1.events,
-        satisfies<typeof turn1.events>(
-          "assistant 回复提及 fixture marker",
-          (events) =>
-            events.some(
-              (event) =>
-                event.type === "message" &&
-                event.role === "assistant" &&
-                event.text.includes("926"),
-            ),
+        satisfies<typeof turn1.events>("assistant 回复提及 fixture marker", (events) =>
+          events.some((event) => event.type === "message" && event.role === "assistant" && event.text.includes("926")),
         ),
       );
       t.check(
         turn1.events,
         satisfies<typeof turn1.events>(
           "skill.loaded event count",
-          (events) =>
-            events.filter((event) => event.type === "skill.loaded").length ===
-            1,
+          (events) => events.filter((event) => event.type === "skill.loaded").length === 1,
         ),
       );
       t.check(
         turn1.events,
-        satisfies<typeof turn1.events>(
-          "marker 题没有误加载其它 Skill",
-          (events) =>
-            events.every(
-              (event) =>
-                event.type !== "skill.loaded" ||
-                !OTHER_SKILLS.some((skill) => skill === event.skill),
-            ),
+        satisfies<typeof turn1.events>("marker 题没有误加载其它 Skill", (events) =>
+          events.every(
+            (event) => event.type !== "skill.loaded" || !OTHER_SKILLS.some((skill) => skill === event.skill),
+          ),
         ),
       );
     });

@@ -39,9 +39,7 @@ export function commandProjection(original: OriginalCommandInvocation): CommandP
 }
 
 /** 原生协议只给 shell source、已脱敏或已截断时的 command 分类快捷入口。 */
-export function opaqueCommandProjection(
-  reason: OriginalCommandOpaqueReason,
-): CommandProjection {
+export function opaqueCommandProjection(reason: OriginalCommandOpaqueReason): CommandProjection {
   return commandProjection({ state: "opaque", reason });
 }
 
@@ -53,7 +51,8 @@ export function unclassifiedToolActionsCoverage(
   events: readonly StreamEvent[],
 ): { readonly actions: { readonly status: "partial"; readonly reason: string } } | undefined {
   const unclassified = events.some(
-    (event) => event.type === "operation.started" && event.operation.kind === "tool" && event.operation.command === undefined,
+    (event) =>
+      event.type === "operation.started" && event.operation.kind === "tool" && event.operation.command === undefined,
   );
   return unclassified
     ? {

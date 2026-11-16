@@ -1,21 +1,10 @@
 // owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#turnfromaisdk-deterministic
 import { defineEval } from "niceeval";
-import {
-  atLeast,
-  atMost,
-  equals,
-  includes,
-  jsonMatch,
-  satisfies,
-  toolMatch,
-} from "niceeval/expect";
+import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
-  description:
-    "AI SDK generateText seam 经 turnFromAiSdk 保留 call/result 配对、HITL 与互斥 usage 桶",
+  description: "AI SDK generateText seam 经 turnFromAiSdk 保留 call/result 配对、HITL 与互斥 usage 桶",
   async test(t) {
-    const draft = await t.send(
-      "produce deterministic AI SDK tool calls and wait for approval",
-    );
+    const draft = await t.send("produce deterministic AI SDK tool calls and wait for approval");
     t.check(draft.status, equals("waiting"));
     // AI SDK 的工具操作没有 command/not-command 分类，actions 通道如实降级为 partial；
     // partial 通道上精确计数不可判定(可能有隐藏候选)，存在性断言(at-least)是能给出的
@@ -58,11 +47,7 @@ export default defineEval({
               !Array.isArray(event.operation.input) &&
               event.operation.input["change"] === "apply-fixture-change",
           ) &&
-          !events.some(
-            (event) =>
-              event.type === "operation.finished" &&
-              event.operationId === "ai-sdk-approval-call",
-          ),
+          !events.some((event) => event.type === "operation.finished" && event.operationId === "ai-sdk-approval-call"),
       ),
     );
     t.requireInputRequest({ action: "approval_tool" });
@@ -97,9 +82,7 @@ export default defineEval({
       ),
     );
     const denied = t.newSession();
-    const deniedDraft = await denied.send(
-      "produce deterministic AI SDK tool calls and wait for approval",
-    );
+    const deniedDraft = await denied.send("produce deterministic AI SDK tool calls and wait for approval");
     t.check(deniedDraft.status, equals("waiting"));
     denied.requireInputRequest({ action: "approval_tool" });
     const rejection = await denied.respond("deny");

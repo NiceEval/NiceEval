@@ -17,10 +17,14 @@ export default defineEval({
     const branch = t.newSession();
     await branch.send("context/branch");
     t.toolOrder([second, toolMatch("context_branch")]).label("no cross session tools");
-    t.eventOrder([secondMessage, eventMatch("message", { text: includes("context-branch-only") })]).label("no cross session events");
+    t.eventOrder([secondMessage, eventMatch("message", { text: includes("context-branch-only") })]).label(
+      "no cross session events",
+    );
     const partial = t.newSession();
     await partial.send("assertion/scopes-branch");
     t.toolOrder([first, second]).label("matched beats unavailable");
-    t.toolOrder([toolMatch("never"), toolMatch("never")]).optional().label("unavailable beats mismatch");
+    t.toolOrder([toolMatch("never"), toolMatch("never")])
+      .optional()
+      .label("unavailable beats mismatch");
   },
 });

@@ -471,7 +471,7 @@ Runner 不从命令文本、路径、包管理器或 Provider 名推导依赖,�
 
 - action 只能依赖同一 occurrence 中显式可见的 action 或 capability;
 - owner 不自动产生依赖边，Eval Group 的低频 action 可以排在 Experiment 高频 action 前;
-- Agent ensure 与 runtime 只在全部 attempt before 满足后开始;
+- Agent install 与 runtime 只在全部 attempt before 满足后开始;
 - 前层不能依赖后层尚未产生的结果,重试等待后层出现也不是合法解决方案。
 
 发现反向依赖时按下面顺序修正:
@@ -832,7 +832,7 @@ Provider 的声明 identity、BuildKey 或 opaque marker 直接进入 fingerprin
 
 Runner 对已成功登记的 cleanup 只按实际登记栈 LIFO 执行；未执行或取得失败的命令不会产生虚假 cleanup。cleanup 保留登记时的 phase、owner 与反馈归因，只把 signal 替换成独立有界 cleanup signal。
 
-单项失败追加 `teardown-failed` diagnostic 后继续收尾。动态 cleanup 先于入口登记的 standalone after，Provider finalizer 最后运行。
+单项失败追加 `teardown-failed` diagnostic 后继续收尾；同一段收尾里多个资源各自失败时，diagnostic 按顺序列出每个失败的类型、code 与消息，服从既有的有界摘要与截断标记，不只留一句总标题。动态 cleanup 先于入口登记的 standalone after，Provider finalizer 最后运行。
 绑定完整 Case 的资源由 Provider finalizer 回收。跨 Run checkpoint 由 callback before 恢复，并在成功取得 handle 后用 `onCleanup()` 登记回存。无条件收尾使用已登记的 after；这些入口不建立第二套生命周期 API。
 
 公开入口的生命周期验收涉及以下最小矩阵：
@@ -849,12 +849,12 @@ Runner 对已成功登记的 cleanup 只按实际登记栈 LIFO 执行；未执�
 
 ## Agent layer
 
-每个 Sandbox Agent Adapter 声明自己的 ensure(目标 identity 加只读 探测);官方 Agent 安装层按 identity 配对,Runner 也可附带 command-only 的 Agent before layer。
-Agent-owned before action 与其它 owner 进入同一个 DAG，数值更小时可以先执行。ensure 循环(探测 → 缺失才 install → 复检)仍是整个 before DAG 之后的屏障；它保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
+每个 Sandbox Agent Adapter 声明自己的 install(目标 identity 加只读 探测);官方 Agent 安装层按 identity 配对,Runner 也可附带 command-only 的 Agent before layer。
+Agent-owned before action 与其它 owner 进入同一个 DAG，数值更小时可以先执行。install 循环(探测 → 缺失才 install → 复检)仍是整个 before DAG 之后的屏障；它保留宿主侧 payload prepare、目标平台探测、安装模式与安装事实,不降格成普通 `SandboxCommand`。
 
 Agent layer 由 Runner 组装,没有作者可导入的组装 API;Adapter 与 Eval / Experiment 作者都不手工排列安装组件。
 Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eval 或 Experiment 必须显式提供兼容 template,link 与 physical planning 用 Adapter 声明的 capability requirement 检查它。
-完整协议见 [Agent Ensure](../../adapters/architecture/agent-ensure.md)。
+完整协议见 [Agent Install](../../adapters/architecture/agent-install.md)。
 
 ## 相关阅读
 
@@ -863,4 +863,4 @@ Adapter 不能提供 template 或 Provider;Agent 需要特殊系统起点时,Eva
 - [Nested Docker](../../sandbox-nested-docker/README.md) —— `sandboxRequirements()` 与 `incusSandbox()`。
 - [Library](README.md) —— 运行中 Sandbox 的路径、执行身份、超时与自定义 Provider。
 - [Sandbox 复用](reuse.md) —— `sandboxReuse` 下的重新执行、reset 与寿命确认。
-- [Agent Ensure](../../adapters/architecture/agent-ensure.md) —— Agent layer 的安装协议与事实。
+- [Agent Install](../../adapters/architecture/agent-install.md) —— Agent layer 的安装协议与事实。

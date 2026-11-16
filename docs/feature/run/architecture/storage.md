@@ -2,7 +2,7 @@
 
 本页定义内部 SQLite adapter 的物理策略，不增加公共 Record writer 或 SQL API。
 数据库归属见[持久化与 Repository 边界](../../../architecture.md#持久化与-repository-边界)。
-Run 状态、Attempt publication、portable gate 与迁移继续由 [Run 架构](README.md) 定义。
+Run 状态、Attempt publication、portable gate 与格式准入由 [Run 架构](README.md) 定义。
 
 ## 逻辑事实与物理行
 
@@ -12,7 +12,7 @@ family 不拥有 table；Host 按通用字段保存未知 family 的原始 bytes
 
 Content metadata 保存逻辑 identity、byte length、整体 digest 与 chunk count。
 chunk rows 按 Content identity 与 ordinal 唯一排列，单行受内部结构上限保护。
-输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family revision。
+输入 Stream 的 chunk 不决定持久 ordinal、row size 或事务边界；物理分块不改变逻辑 bytes、digest 或 family 事实。
 作者不选择 path、table、index、pragma、transaction 或 chunk size。
 
 Host 在接纳前验证并冻结 command identity、canonical bytes 与 digest。
@@ -48,7 +48,7 @@ portable gate 仍按 [Run 架构](README.md#portable-gate-与不可信输入) �
 
 ## 按需读取与验证
 
-短生命周期 query/show 直接打开 read-only connection，完成固定查询后关闭，不启动 storage worker。
+短生命周期 `show`/`compare` 直接打开 read-only connection，完成固定查询后关闭，不启动 storage worker。
 持续 Inspection session 也不长期持有 read transaction；固定 cutoff 后只读所需的 immutable facts。
 family 查询使用 owner/family index，只有消费 Content 时才按 ordinal 增量读取 chunk，并在交付后释放临时 buffer。
 整体 bytes/text 读取在分配前执行 admission；拒绝整体读取不能把有效 Content 判为 corruption。

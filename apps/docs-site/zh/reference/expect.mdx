@@ -195,7 +195,12 @@ Wraps a named synchronous or asynchronous Boolean predicate as a value Match. Th
 ```ts
 export function defineValueMatch<T, R extends T = T>(spec: {
   readonly name: string;
-  readonly evaluate: (value: T) => boolean | { readonly state: "unavailable"; readonly reason: string } | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
+  readonly evaluate: (
+    value: T,
+  ) =>
+    | boolean
+    | { readonly state: "unavailable"; readonly reason: string }
+    | Promise<boolean | { readonly state: "unavailable"; readonly reason: string }>;
 }): BooleanMatch<T, R> | BooleanMatch<T, T> { ... }
 ```
 
@@ -204,10 +209,14 @@ Defines a reusable Boolean value comparison with optional refinement. Report unk
 #### `defineScoreMatch`
 
 ```ts
-export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(spec: ManagedScoreMatchOptions<T, E> | {
-  readonly name: string;
-  readonly score: (value: T) => number | Promise<number>;
-}): ScoreMatch<T> { ... }
+export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(
+  spec:
+    | ManagedScoreMatchOptions<T, E>
+    | {
+        readonly name: string;
+        readonly score: (value: T) => number | Promise<number>;
+      },
+): ScoreMatch<T> { ... }
 ```
 
 Defines a reusable finite [0,1] measurement, optionally using managed LLM primitives. Apply thresholds through the assertion handle, not inside Match configuration.
@@ -227,7 +236,9 @@ Matches a supported message or operation event. Use event-specific filters; tool
 
 ```ts
 export function mapValue<T, U>(
-  label: string, project: (value: T) => U, match: Match<NoInfer<U>, "value"> & { readonly kind: "boolean" },
+  label: string,
+  project: (value: T) => U,
+  match: Match<NoInfer<U>, "value"> & { readonly kind: "boolean" },
 ): BooleanMatch<T, T> { ... }
 ```
 
@@ -248,7 +259,8 @@ Project each complete item, retaining its material identity and order.
 
 ```ts
 export function filterWhere<T, R extends T, Subject extends CollectionValue<T>>(
-  selector: BooleanMatch<T, R>, aggregate: BooleanMatch<CollectionValue<R>, CollectionValue<R>>,
+  selector: BooleanMatch<T, R>,
+  aggregate: BooleanMatch<CollectionValue<R>, CollectionValue<R>>,
 ): BooleanMatch<Subject, Subject> { ... }
 ```
 
@@ -258,7 +270,8 @@ Select only definite matches; an unknown selector makes the aggregate unavailabl
 
 ```ts
 export function countWhere<T, Subject extends CollectionValue<T>>(
-  item: BooleanMatch<T, NoInfer<T>>, count: Match<number, "value"> & { readonly kind: "boolean" },
+  item: BooleanMatch<T, NoInfer<T>>,
+  count: Match<number, "value"> & { readonly kind: "boolean" },
 ): BooleanMatch<Subject, Subject> { ... }
 ```
 

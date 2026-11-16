@@ -4,14 +4,10 @@ import { inventoryOwnerCounts, taskBuildInventoryState } from "./docker-task-bui
 
 describe("Docker cache inventory ownership projection", () => {
   it("keeps crashed owner claims protected without reporting them active", () => {
-    const counts = inventoryOwnerCounts(
-      [{ holder: "live" }, { holder: "crashed" }],
-      ({ holder }) => holder === "live",
-    );
+    const counts = inventoryOwnerCounts([{ holder: "live" }, { holder: "crashed" }], ({ holder }) => holder === "live");
 
     expect(counts).toEqual({ total: 2, live: 1, unverified: 1 });
-    expect(taskBuildInventoryState("sha256:image", "sha256:image", counts.live, counts.unverified))
-      .toBe("unverified");
+    expect(taskBuildInventoryState("sha256:image", "sha256:image", counts.live, counts.unverified)).toBe("unverified");
   });
 
   it("reports active only from a verified image and verified-live lease", () => {

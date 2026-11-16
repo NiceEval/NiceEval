@@ -3,13 +3,11 @@
 // @concord-implements docs/feature/inspection/architecture.md
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 import { Result, Schema } from "effect";
+import * as Data from "effect/Data";
 import { attachmentValueContents, readAttachmentPayload } from "../record/sqlite/attachment-payload.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
-import {
-  mintRecordContentHandle,
-  type RecordContentHandle,
-} from "../record/attachment/content.ts";
+import { mintRecordContentHandle, type RecordContentHandle } from "../record/attachment/content.ts";
 import {
   enumerateRecordAttachmentClosure,
   hydrateRecordAttachmentCurrent,
@@ -24,30 +22,28 @@ import {
   RecordExactParseOptions,
   RecordSlotIdentitySchema,
 } from "../record/codec/core.ts";
-import {
-  NiceEvalCurrentRecordAttachments,
-  NiceEvalRecordAttachments,
-} from "../record/family/current.ts";
+import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
 import type { AssertionsAttachment } from "../record/family/assertions/definition.ts";
-import type {
-  AttemptDocument,
-  MemberDocument,
-  RunDocument,
-} from "../record/model/core.ts";
+import type { AttemptDocument, MemberDocument, RunDocument } from "../record/model/core.ts";
 import type {
   PersistedContentMetadata,
   SealedAttachmentMetadata,
   SealedRunCore,
   SealedRunSummary,
 } from "../record/sqlite/types.ts";
-import {
-  closeInspectionJson,
-  isInspectionCodecError,
-  type InspectionJson,
-} from "./codec.ts";
+import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import type { InspectionFactSource } from "./source.ts";
 import { InspectionSha256 } from "./bytes.ts";
 import type { ReadableRunResource } from "../run/storage/types.ts";
+
+export class InspectionUnsupportedFormatError extends Data.TaggedError("InspectionUnsupportedFormatError")<{}> {
+  readonly code = "unsupported-format";
+  constructor(message: string) {
+    super();
+    this.name = "Error";
+    this.message = message;
+  }
+}
 
 export interface DecodedInspectionAttachment {
   readonly physical: SealedAttachmentMetadata;
@@ -70,7 +66,7 @@ export interface LoadedInspectionRunResource {
   readonly resource: ReadableRunResource;
   readonly members: readonly MemberDocument[];
   readonly supporting: readonly LoadedInspectionRun[];
-  readonly published?: LoadedInspectionRun;
+  readonly published: LoadedInspectionRun | undefined;
 }
 
 export interface InspectionAttemptTarget {
@@ -96,7 +92,7 @@ export type InspectionAssertionsRead =
     }
   | {
       readonly state: "not-recorded" | "unsupported" | "failed";
-      readonly attachment?: DecodedInspectionAttachment;
+      readonly attachment: DecodedInspectionAttachment | undefined;
       readonly issues: readonly InspectionJson[];
     };
 
@@ -104,10 +100,11 @@ const RUN_PAGE_SIZE = 100;
 const ATTEMPT_CANDIDATE_RUN_LIMIT = 64;
 const ATTEMPT_TARGET_MEMBER_LIMIT = 256;
 const decodedRuns = new WeakMap<InspectionFactSource, Map<string, LoadedInspectionRun>>();
+const decodedAssertions = new WeakMap<DecodedInspectionAttachment, InspectionAssertionsRead>();
 
 function readInspectionRun(source: InspectionFactSource, runId: string): LoadedInspectionRun | undefined {
   let cache = decodedRuns.get(source);
-  if (cache === undefined) decodedRuns.set(source, cache = new Map());
+  if (cache === undefined) decodedRuns.set(source, (cache = new Map()));
   const cached = cache.get(runId);
   if (cached !== undefined) return cached;
   const physical = source.readSealedRunCore(runId);
@@ -124,9 +121,7 @@ function readInspectionRun(source: InspectionFactSource, runId: string): LoadedI
 // @concord-code
 // @concord-implements docs/feature/inspection/architecture.md
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
-export function loadInspectionRuns(
-  source: InspectionFactSource,
-): readonly LoadedInspectionRun[] {
+export function loadInspectionRuns(source: InspectionFactSource): readonly LoadedInspectionRun[] {
   const cutoff = source.cutoff();
   const summaries: SealedRunSummary[] = [];
   const seen = new Set<string>();
@@ -134,13 +129,11 @@ export function loadInspectionRuns(
   let afterRunId = "";
 
   for (;;) {
-    const page = source.readSealedRunSummaryPage(
-      afterRunId,
-      RUN_PAGE_SIZE,
-      cutoff.identity,
-    );
-    if (page.cutoff.identity !== cutoff.identity ||
-        expectedRunCount !== undefined && page.cutoff.runCount !== expectedRunCount) {
+    const page = source.readSealedRunSummaryPage(afterRunId, RUN_PAGE_SIZE, cutoff.identity);
+    if (
+      page.cutoff.identity !== cutoff.identity ||
+      (expectedRunCount !== undefined && page.cutoff.runCount !== expectedRunCount)
+    ) {
       throw factsError("Run inventory changed its pinned cutoff or count");
     }
     expectedRunCount ??= page.cutoff.runCount;
@@ -170,13 +163,13 @@ export function loadInspectionRuns(
   if (summaries.length !== expectedRunCount) {
     throw factsError("Run pagination did not close the pinned sealed cutoff");
   }
-  return Object.freeze(summaries.map((summary) => {
+  return summaries.map((summary) => {
     const run = readInspectionRun(source, summary.runId);
     if (run === undefined) {
       throw factsError(`Sealed Run ${summary.runId} disappeared from the pinned cutoff`);
     }
     return run;
-  }));
+  });
 }
 
 /** Reads a bounded, explicit Run selection without changing its caller order. */
@@ -191,7 +184,7 @@ export function loadSelectedInspectionRuns(
     if (run !== undefined) loaded.push(run);
   }
   requireCutoff(source.cutoff(), cutoff);
-  return Object.freeze(loaded);
+  return loaded;
 }
 
 /** Reads Run create/close facts even when no Attempt Core has been published. */
@@ -205,30 +198,40 @@ export function loadInspectionRunResource(
   const published = readInspectionRun(source, runId);
   if (published !== undefined) validateRunResourceCore(resource, published);
   const originIds = resource.slots.flatMap(({ publication }) =>
-    publication.state === "published" ? [publication.originRunId] : []);
-  const supporting = loadSelectedInspectionRuns(source, [
-    ...(published === undefined ? [] : [runId]), ...originIds,
-  ]);
+    publication.state === "published" ? [publication.originRunId] : [],
+  );
+  const supporting = loadSelectedInspectionRuns(source, [...(published === undefined ? [] : [runId]), ...originIds]);
   const index = memberIndex(supporting);
-  const publications = new Map<string, SealedRunCore["attempts"][number]>(supporting.flatMap((origin) =>
-    origin.physical.attempts.map((attempt) => [
-      `${origin.run.runId}\u0000${attempt.attemptId}`, attempt,
-    ] as const)));
-  const members = resource.slots.flatMap(({ slotId, publication }): readonly MemberDocument[] => {
-    if (publication.state === "pending") return [];
-    if (publication.state === "absent") {
-      return [decodedRight(decodeMemberDocument({
-        slotId,
-        action: publication.reason === "interrupted-before-publication" || publication.reason === "dispatch-failed"
-          ? "interrupted" : "not-dispatched",
-        attempt: null,
-        absenceReason: publication.reason,
-      }), "Run resource absence is invalid")];
-    }
-    const origin = index.origins.get(publication.originRunId);
-    const attempt = origin?.attempts.get(publication.attemptId);
-    const stored = publications.get(`${publication.originRunId}\u0000${publication.attemptId}`);
-    if (attempt === undefined || stored === undefined ||
+  const publications = new Map<string, SealedRunCore["attempts"][number]>(
+    supporting.flatMap((origin) =>
+      origin.physical.attempts.map((attempt) => [`${origin.run.runId}\u0000${attempt.attemptId}`, attempt] as const),
+    ),
+  );
+  const members = resource.slots
+    .flatMap(({ slotId, publication }): readonly MemberDocument[] => {
+      if (publication.state === "pending") return [];
+      if (publication.state === "absent") {
+        return [
+          decodedRight(
+            decodeMemberDocument({
+              slotId,
+              action:
+                publication.reason === "interrupted-before-publication" || publication.reason === "dispatch-failed"
+                  ? "interrupted"
+                  : "not-dispatched",
+              attempt: null,
+              absenceReason: publication.reason,
+            }),
+            "Run resource absence is invalid",
+          ),
+        ];
+      }
+      const origin = index.origins.get(publication.originRunId);
+      const attempt = origin?.attempts.get(publication.attemptId);
+      const stored = publications.get(`${publication.originRunId}\u0000${publication.attemptId}`);
+      if (
+        attempt === undefined ||
+        stored === undefined ||
         attempt.slotId !== publication.originSlotId ||
         stored.attemptLocator !== publication.attemptLocator ||
         stored.publicationIdentity?.originRunId !== publication.publicationIdentity.originRunId ||
@@ -236,25 +239,33 @@ export function loadInspectionRunResource(
         stored.publicationIdentity?.revision !== publication.publicationIdentity.revision ||
         publication.publicationIdentity.originRunId !== publication.originRunId ||
         publication.publicationIdentity.attemptId !== publication.attemptId ||
-        publication.action === "executed" && publication.originRunId !== runId) {
-      throw factsError(`Run ${runId} Slot ${slotId} does not bind a matching published origin Attempt`);
-    }
-    return [decodedRight(decodeMemberDocument({
-      slotId, action: publication.action,
-      attempt: { originRunId: publication.originRunId, attemptId: publication.attemptId },
-    }), "Run resource binding is invalid")];
-  }).sort((left, right) => compareText(left.slotId, right.slotId));
+        (publication.action === "executed" && publication.originRunId !== runId)
+      ) {
+        throw factsError(`Run ${runId} Slot ${slotId} does not bind a matching published origin Attempt`);
+      }
+      return [
+        decodedRight(
+          decodeMemberDocument({
+            slotId,
+            action: publication.action,
+            attempt: { originRunId: publication.originRunId, attemptId: publication.attemptId },
+          }),
+          "Run resource binding is invalid",
+        ),
+      ];
+    })
+    .sort((left, right) => compareText(left.slotId, right.slotId));
   requireCutoff(source.cutoff(), cutoff);
-  return Object.freeze({
-    source, resource, members: Object.freeze(members), supporting,
-    ...(published === undefined ? {} : { published }),
-  });
+  return {
+    source,
+    resource,
+    members: members,
+    supporting,
+    published,
+  };
 }
 
-function validateRunResourceCore(
-  resource: ReadableRunResource,
-  published: LoadedInspectionRun,
-): void {
+function validateRunResourceCore(resource: ReadableRunResource, published: LoadedInspectionRun): void {
   const run = published.run;
   if (
     run.runId !== resource.runId ||
@@ -279,10 +290,7 @@ function validateRunResourceCore(
 }
 
 /** Strictly decodes Core, then decodes each Attachment only on first use. */
-export function decodeInspectionRun(
-  source: InspectionFactSource,
-  physical: SealedRunCore,
-): LoadedInspectionRun {
+export function decodeInspectionRun(source: InspectionFactSource, physical: SealedRunCore): LoadedInspectionRun {
   const run = decodedRight(
     decodeRunDocument(parseVerifiedJson(physical.runCoreBytes, physical.runCoreDigest, "Run Core")),
     "Run Core is invalid",
@@ -319,11 +327,15 @@ export function decodeInspectionRun(
       decodeMemberDocument(parseVerifiedJson(stored.coreBytes, stored.coreDigest, "Member Core")),
       "Member Core is invalid",
     );
+    const storedAttempt =
+      stored.action === "executed" || stored.action === "carried" || stored.action === "accepted"
+        ? stored.attempt
+        : undefined;
     if (
       member.slotId !== stored.slotId ||
       member.action !== stored.action ||
-      (member.attempt?.originRunId ?? undefined) !== stored.originRunId ||
-      (member.attempt?.attemptId ?? undefined) !== stored.attemptId
+      member.attempt?.originRunId !== storedAttempt?.originRunId ||
+      member.attempt?.attemptId !== storedAttempt?.attemptId
     ) {
       throw factsError("Member Core does not match its sealed row");
     }
@@ -343,28 +355,28 @@ export function decodeInspectionRun(
     }
     return attempt;
   });
-  validateCoreRelations(run, members, attempts, physical.publicationManaged === true);
+  validateCoreRelations(run, members, attempts, physical.createdRevision !== undefined);
 
-  const localAttemptIds = new Set<string>(
-    attempts.map(({ attemptId }) => attemptId),
-  );
+  const localAttemptIds = new Set<string>(attempts.map(({ attemptId }) => attemptId));
   const attachments = physical.attachments.map((attachment): DecodedInspectionAttachment => {
     if (
       attachment.ownerRunId !== run.runId ||
-      attachment.ownerKind === "run" && attachment.ownerAttemptId !== undefined ||
-      attachment.ownerKind === "attempt" &&
-        (attachment.ownerAttemptId === undefined ||
-          !localAttemptIds.has(attachment.ownerAttemptId))
+      (attachment.ownerKind === "run" && attachment.ownerAttemptId !== undefined) ||
+      (attachment.ownerKind === "attempt" &&
+        (attachment.ownerAttemptId === undefined || !localAttemptIds.has(attachment.ownerAttemptId)))
     ) {
       throw factsError("Attachment ownership does not match its sealed Run");
     }
     let value: InspectionJson | undefined;
     let decoded = false;
-    return Object.freeze({
-      physical: Object.freeze(Object.defineProperties({}, {
-        ...Object.getOwnPropertyDescriptors(attachment),
-        contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
-      })) as typeof attachment,
+    return {
+      physical: Object.defineProperties(
+        {},
+        {
+          ...Object.getOwnPropertyDescriptors(attachment),
+          contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
+        },
+      ) as typeof attachment,
       get value(): InspectionJson {
         if (!decoded) {
           verifyDigest(attachment.canonicalBytes, attachment.canonicalDigest, "Attachment");
@@ -374,17 +386,17 @@ export function decodeInspectionRun(
         }
         return value!;
       },
-    });
+    };
   });
 
-  return Object.freeze({
+  return {
     source,
     physical,
     run,
-    members: Object.freeze(members),
-    attempts: Object.freeze(attempts),
-    attachments: Object.freeze(attachments),
-  });
+    members: members,
+    attempts: attempts,
+    attachments: attachments,
+  };
 }
 
 /** Resolves a public locator through the source's bounded exact index. */
@@ -394,10 +406,7 @@ export function resolveInspectionAttempt(
   source: InspectionFactSource,
   locator: string,
 ): ResolvedInspectionAttempt | undefined {
-  const projection = source.findAttemptLocatorCandidates(
-    locator,
-    ATTEMPT_CANDIDATE_RUN_LIMIT,
-  );
+  const projection = source.findAttemptLocatorCandidates(locator, ATTEMPT_CANDIDATE_RUN_LIMIT);
   if (projection.candidates.length === 0) return undefined;
   if (projection.ambiguous) return undefined;
   const origins = projection.candidates.filter(({ relation }) => relation === "origin");
@@ -409,28 +418,31 @@ export function resolveInspectionAttempt(
     source,
     projection.candidates.map(({ runId }) => runId),
   );
-  const byRunId = new Map<string, LoadedInspectionRun>(
-    runs.map((run) => [run.run.runId, run] as const),
-  );
+  const byRunId = new Map<string, LoadedInspectionRun>(runs.map((run) => [run.run.runId, run] as const));
   const origin = byRunId.get(identity.originRunId);
   if (origin === undefined) {
     throw factsError(`Attempt ${locator} origin is not a sealed Run`);
   }
-  const attempt = origin.attempts.find((candidate) =>
-    candidate.attemptId === identity.attemptId &&
-    candidate.originRunId === identity.originRunId &&
-    encodeAttemptLocator(candidate.attemptId) === locator);
+  const attempt = origin.attempts.find(
+    (candidate) =>
+      candidate.attemptId === identity.attemptId &&
+      candidate.originRunId === identity.originRunId &&
+      encodeAttemptLocator(candidate.attemptId) === locator,
+  );
   if (attempt === undefined) {
     throw factsError(`Attempt ${locator} origin Core is invalid`);
   }
 
   const targets: InspectionAttemptTarget[] = [];
-  const targetRunIds = new Set(projection.candidates.flatMap((candidate) =>
-    candidate.relation === "target" &&
+  const targetRunIds = new Set(
+    projection.candidates.flatMap((candidate) =>
+      candidate.relation === "target" &&
       candidate.originRunId === identity.originRunId &&
       candidate.attemptId === identity.attemptId
-      ? [candidate.runId]
-      : []));
+        ? [candidate.runId]
+        : [],
+    ),
+  );
   for (const runId of targetRunIds) {
     const run = byRunId.get(runId);
     if (run === undefined) {
@@ -443,18 +455,25 @@ export function resolveInspectionAttempt(
     if (targets.length + members.length > ATTEMPT_TARGET_MEMBER_LIMIT) {
       throw factsError(`Attempt ${locator} exceeds its fixed target member limit`);
     }
-    targets.push(...members.map((member) => Object.freeze({ run, member })));
+    targets.push(...members.map((member) => ({ run, member })));
   }
-  return Object.freeze({
+  return {
     attempt,
     origin,
     locator,
-    targets: Object.freeze(targets),
-  });
+    targets: targets,
+  };
 }
 
 interface InspectionMemberIndex {
-  readonly origins: ReadonlyMap<string, { readonly run: LoadedInspectionRun; readonly attempts: ReadonlyMap<string, AttemptDocument>; readonly members: ReadonlyMap<string, MemberDocument> }>;
+  readonly origins: ReadonlyMap<
+    string,
+    {
+      readonly run: LoadedInspectionRun;
+      readonly attempts: ReadonlyMap<string, AttemptDocument>;
+      readonly members: ReadonlyMap<string, MemberDocument>;
+    }
+  >;
   readonly targets: ReadonlyMap<string, ReadonlyMap<string, readonly InspectionAttemptTarget[]>>;
 }
 const memberIndexes = new WeakMap<readonly LoadedInspectionRun[], InspectionMemberIndex>();
@@ -462,21 +481,27 @@ const memberIndexes = new WeakMap<readonly LoadedInspectionRun[], InspectionMemb
 function memberIndex(runs: readonly LoadedInspectionRun[]): InspectionMemberIndex {
   const cached = memberIndexes.get(runs);
   if (cached !== undefined) return cached;
-  const origins = new Map(runs.map((run) => [run.run.runId, {
-    run, attempts: new Map(run.attempts.map((attempt) => [attempt.attemptId, attempt])),
-    members: new Map(run.members.map((member) => [member.slotId, member])),
-  }]));
+  const origins = new Map(
+    runs.map((run) => [
+      run.run.runId,
+      {
+        run,
+        attempts: new Map(run.attempts.map((attempt) => [attempt.attemptId, attempt])),
+        members: new Map(run.members.map((member) => [member.slotId, member])),
+      },
+    ]),
+  );
   const targets = new Map<string, Map<string, InspectionAttemptTarget[]>>();
-  for (const run of runs) for (const member of run.members) {
-    if (member.attempt === null) continue;
-    const { originRunId, attemptId } = member.attempt;
-    let byAttempt = targets.get(originRunId);
-    if (byAttempt === undefined) targets.set(originRunId, byAttempt = new Map());
-    let members = byAttempt.get(attemptId);
-    if (members === undefined) byAttempt.set(attemptId, members = []);
-    members.push(Object.freeze({ run, member }));
-  }
-  for (const byAttempt of targets.values()) for (const members of byAttempt.values()) Object.freeze(members);
+  for (const run of runs)
+    for (const member of run.members) {
+      if (member.attempt === null) continue;
+      const { originRunId, attemptId } = member.attempt;
+      let byAttempt = targets.get(originRunId);
+      if (byAttempt === undefined) targets.set(originRunId, (byAttempt = new Map()));
+      let members = byAttempt.get(attemptId);
+      if (members === undefined) byAttempt.set(attemptId, (members = []));
+      members.push({ run, member });
+    }
   const index = { origins, targets };
   memberIndexes.set(runs, index);
   return index;
@@ -492,11 +517,16 @@ export function resolveInspectionMemberAttempt(
   const index = memberIndex(runs);
   const origin = index.origins.get(member.attempt.originRunId);
   const attempt = origin?.attempts.get(member.attempt.attemptId);
-  if (origin === undefined || attempt === undefined || attempt.originRunId !== member.attempt.originRunId) return undefined;
+  if (origin === undefined || attempt === undefined || attempt.originRunId !== member.attempt.originRunId)
+    return undefined;
   const targets = index.targets.get(attempt.originRunId)?.get(attempt.attemptId) ?? [];
   const targetMember = index.origins.get(target.run.runId)?.members.get(member.slotId);
-  if (targetMember?.attempt?.originRunId !== attempt.originRunId || targetMember.attempt.attemptId !== attempt.attemptId) return undefined;
-  return Object.freeze({ attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets });
+  if (
+    targetMember?.attempt?.originRunId !== attempt.originRunId ||
+    targetMember.attempt.attemptId !== attempt.attemptId
+  )
+    return undefined;
+  return { attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets };
 }
 
 /** A target binding does not require the target to have published its own Run Core. */
@@ -510,91 +540,79 @@ export function resolveInspectionResourceMemberAttempt(
   const attempt = origin?.attempts.get(member.attempt.attemptId);
   if (origin === undefined || attempt === undefined) return undefined;
   const targets = index.targets.get(attempt.originRunId)?.get(attempt.attemptId) ?? [];
-  return Object.freeze({ attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets });
+  return { attempt, origin: origin.run, locator: encodeAttemptLocator(attempt.attemptId), targets };
 }
 
 export function attemptAttachment(
   resolved: ResolvedInspectionAttempt,
   family: string,
 ): DecodedInspectionAttachment | undefined {
-  return resolved.origin.attachments.find(({ physical }) =>
-    physical.ownerKind === "attempt" &&
-    physical.ownerAttemptId === resolved.attempt.attemptId &&
-    physical.family === family);
+  return resolved.origin.attachments.find(
+    ({ physical }) =>
+      physical.ownerKind === "attempt" &&
+      physical.ownerAttemptId === resolved.attempt.attemptId &&
+      physical.family === family,
+  );
 }
 
-export function runAttachment(
-  run: LoadedInspectionRun,
-  family: string,
-): DecodedInspectionAttachment | undefined {
-  return run.attachments.find(({ physical }) =>
-    physical.ownerKind === "run" && physical.family === family);
+export function runAttachment(run: LoadedInspectionRun, family: string): DecodedInspectionAttachment | undefined {
+  return run.attachments.find(({ physical }) => physical.ownerKind === "run" && physical.family === family);
 }
 
 /** Reads only the current logical Assertions family, preserving failure state. */
 // @concord-code
 // @concord-implements docs/feature/assertions/README.md
 // @concord-implements docs/feature/inspection/README.md
-export function readInspectionAssertions(
-  resolved: ResolvedInspectionAttempt,
-): InspectionAssertionsRead {
-  const attachment = attemptAttachment(
-    resolved,
-    NiceEvalRecordAttachments.assertions.family,
-  );
+export function readInspectionAssertions(resolved: ResolvedInspectionAttempt): InspectionAssertionsRead {
+  const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.assertions.family);
   if (attachment === undefined) {
-    return Object.freeze({
+    return {
       state: "not-recorded" as const,
-      issues: Object.freeze([issue("assertions-not-recorded", resolved.locator)]),
-    });
+      issues: [issue("assertions-not-recorded", resolved.locator)],
+      attachment: undefined,
+    };
   }
-  if (
-    attachment.physical.familyRevision !==
-      NiceEvalCurrentRecordAttachments.assertions.revision
-  ) {
-    return Object.freeze({
-      state: "unsupported" as const,
-      attachment,
-      issues: Object.freeze([issue("assertions-revision-unsupported", resolved.locator)]),
-    });
+  if (attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.assertions.revision) {
+    throw new InspectionUnsupportedFormatError(
+      "unsupported-format: This Record was written by an older NiceEval version. Rerun the Experiment with the current version.",
+    );
   }
+  const cached = decodedAssertions.get(attachment);
+  if (cached !== undefined) return cached;
   const decoded = decodeCurrentAssertions(attachment);
   if (decoded === undefined) {
-    return Object.freeze({
+    return {
       state: "failed" as const,
       attachment,
-      issues: Object.freeze([issue("assertions-current-invalid", resolved.locator)]),
-    });
+      issues: [issue("assertions-current-invalid", resolved.locator)],
+    };
   }
-  return Object.freeze({
+  const result = {
     state: "available" as const,
     attachment,
     value: decoded.value,
     contents: decoded.contents,
-    issues: Object.freeze([]),
-  });
+    issues: [],
+  };
+  decodedAssertions.set(attachment, result);
+  return result;
 }
 
-function decodeCurrentAssertions(
-  attachment: DecodedInspectionAttachment,
-): {
-  readonly value: AssertionsAttachment;
-  readonly contents: WeakMap<object, PersistedContentMetadata>;
-} | undefined {
+function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
+  | {
+      readonly value: AssertionsAttachment;
+      readonly contents: WeakMap<object, PersistedContentMetadata>;
+    }
+  | undefined {
   const definition = NiceEvalRecordAttachments.assertions;
-  const byHandle = new Map(
-    attachment.physical.contents.map((content) => [content.logicalHandle, content]),
-  );
+  const byHandle = new Map(attachment.physical.contents.map((content) => [content.logicalHandle, content]));
   const handles = new Map<string, RecordContentHandle>();
   const contents = new WeakMap<object, PersistedContentMetadata>();
   const usedContent = new Set<string>();
   const hydrated = hydrateRecordAttachmentCurrent(definition, attachment.value, {
     content: (token, declaration) => {
       const logicalHandle = exactMarker(token, "$niceeval.record.content");
-      if (
-        logicalHandle === undefined &&
-        !hasOwnMarker(token, "$niceeval.record.content")
-      ) {
+      if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
         return Result.succeed(undefined);
       }
       if (typeof logicalHandle !== "string") {
@@ -603,8 +621,7 @@ function decodeCurrentAssertions(
       const metadata = byHandle.get(logicalHandle);
       if (
         metadata === undefined ||
-        declaration.maximumBytes !== undefined &&
-          metadata.byteLength > declaration.maximumBytes
+        (declaration.maximumBytes !== undefined && metadata.byteLength > declaration.maximumBytes)
       ) {
         return Result.fail({ code: "current-content-bind-failed" as const });
       }
@@ -619,10 +636,7 @@ function decodeCurrentAssertions(
     },
     reference: (token, declaration) => {
       const marker = exactMarker(token, "$niceeval.record.reference");
-      if (
-        marker === undefined &&
-        !hasOwnMarker(token, "$niceeval.record.reference")
-      ) {
+      if (marker === undefined && !hasOwnMarker(token, "$niceeval.record.reference")) {
         return Result.succeed(undefined);
       }
       if (typeof marker !== "object" || marker === null || Array.isArray(marker)) {
@@ -637,19 +651,15 @@ function decodeCurrentAssertions(
       ) {
         return Result.fail({ code: "current-reference-bind-failed" as const });
       }
-      return Result.succeed(mintRecordAttachmentReference(
-        RecordAttachmentReference.to(
-          declaration.definition,
-          declaration.valueSchema,
+      return Result.succeed(
+        mintRecordAttachmentReference(
+          RecordAttachmentReference.to(declaration.definition, declaration.valueSchema),
+          value.value,
         ),
-        value.value,
-      ));
+      );
     },
   });
-  if (
-    Result.isFailure(hydrated) ||
-    usedContent.size !== attachment.physical.contents.length
-  ) {
+  if (Result.isFailure(hydrated) || usedContent.size !== attachment.physical.contents.length) {
     return undefined;
   }
 
@@ -659,26 +669,20 @@ function decodeCurrentAssertions(
   for (const reference of closure.success.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return undefined;
-    references.set(
-      `${wire.owner}\u0000${wire.family}`,
-      Object.freeze({ owner: wire.owner, family: wire.family }),
-    );
+    references.set(`${wire.owner}\u0000${wire.family}`, { owner: wire.owner, family: wire.family });
   }
-  const ordered = [...references.values()].sort((left, right) =>
-    compareText(left.owner, right.owner) || compareText(left.family, right.family));
+  const ordered = [...references.values()].sort(
+    (left, right) => compareText(left.owner, right.owner) || compareText(left.family, right.family),
+  );
   if (ordered.length !== attachment.physical.references.length) return undefined;
   for (let ordinal = 0; ordinal < ordered.length; ordinal += 1) {
     const logical = ordered[ordinal]!;
     const physical = attachment.physical.references[ordinal]!;
-    if (
-      physical.ordinal !== ordinal ||
-      physical.owner !== logical.owner ||
-      physical.family !== logical.family
-    ) {
+    if (physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family) {
       return undefined;
     }
   }
-  return Object.freeze({ value: hydrated.success, contents });
+  return { value: hydrated.success, contents };
 }
 
 function validateCoreRelations(
@@ -688,7 +692,11 @@ function validateCoreRelations(
   allowPendingSlots = false,
 ): void {
   const slots = new Map(run.expectedSlots.map((slot) => [slot.slotId, slot] as const));
-  if (slots.size !== run.expectedSlots.length || (!allowPendingSlots && members.length !== slots.size) || members.length > slots.size) {
+  if (
+    slots.size !== run.expectedSlots.length ||
+    (!allowPendingSlots && members.length !== slots.size) ||
+    members.length > slots.size
+  ) {
     throw factsError("Run Core does not close its expected Slot membership");
   }
   const memberSlots = new Set<string>();
@@ -714,33 +722,27 @@ function validateCoreRelations(
   for (const member of members) {
     if (
       member.action === "executed" &&
-      (member.attempt === null ||
-        member.attempt.originRunId !== run.runId ||
-        !attemptIds.has(member.attempt.attemptId))
+      (member.attempt === null || member.attempt.originRunId !== run.runId || !attemptIds.has(member.attempt.attemptId))
     ) {
       throw factsError("Executed Member does not name a local origin Attempt");
     }
   }
 }
 
-function targetMembers(
-  run: LoadedInspectionRun,
-  attempt: AttemptDocument,
-): readonly MemberDocument[] {
-  return run.members.filter((member) =>
-    member.attempt !== null &&
-    member.attempt.originRunId === attempt.originRunId &&
-    member.attempt.attemptId === attempt.attemptId);
+function targetMembers(run: LoadedInspectionRun, attempt: AttemptDocument): readonly MemberDocument[] {
+  return run.members.filter(
+    (member) =>
+      member.attempt !== null &&
+      member.attempt.originRunId === attempt.originRunId &&
+      member.attempt.attemptId === attempt.attemptId,
+  );
 }
 
 function requireCutoff(
   actual: ReturnType<InspectionFactSource["cutoff"]>,
   expected: ReturnType<InspectionFactSource["cutoff"]>,
 ): void {
-  if (
-    actual.storeGeneration !== expected.storeGeneration ||
-    actual.revision !== expected.revision
-  ) {
+  if (actual.storeGeneration !== expected.storeGeneration || actual.revision !== expected.revision) {
     throw factsError("Inspection source changed its pinned sealed cutoff");
   }
 }
@@ -753,10 +755,7 @@ function parseJson(bytes: Uint8Array, owner: string): unknown {
   }
 }
 
-function parseInspectionJson(
-  bytes: Uint8Array,
-  owner: string,
-): InspectionJson {
+function parseInspectionJson(bytes: Uint8Array, owner: string): InspectionJson {
   const closed = closeInspectionJson(parseJson(bytes, owner));
   if (isInspectionCodecError(closed)) {
     throw factsError(`${owner} is invalid: ${closed.reason}`);
@@ -764,10 +763,7 @@ function parseInspectionJson(
   return closed;
 }
 
-function decodedRight<A>(
-  decoded: Result.Result<A, unknown>,
-  reason: string,
-): A {
+function decodedRight<A>(decoded: Result.Result<A, unknown>, reason: string): A {
   if (Result.isFailure(decoded)) throw factsError(reason, decoded.failure);
   return decoded.success;
 }
@@ -779,18 +775,20 @@ function exactMarker(value: unknown, key: string): unknown | undefined {
   const keys = Reflect.ownKeys(value);
   if (keys.length !== 1 || keys[0] !== key) return undefined;
   const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor?.enumerable === true && "value" in descriptor
-    ? descriptor.value
-    : undefined;
+  return descriptor?.enumerable === true && "value" in descriptor ? descriptor.value : undefined;
 }
 
 function hasOwnMarker(value: unknown, key: string): boolean {
-  return typeof value === "object" && value !== null && !Array.isArray(value) &&
-    Object.prototype.hasOwnProperty.call(value, key);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.hasOwnProperty.call(value, key)
+  );
 }
 
 function issue(code: string, locator: string): InspectionJson {
-  return Object.freeze({ code, locator });
+  return { code, locator };
 }
 
 function factsError(reason: string, cause?: unknown): Error {
@@ -798,7 +796,9 @@ function factsError(reason: string, cause?: unknown): Error {
 }
 
 function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function verifyDigest(bytes: Uint8Array, digest: string, label: string): void {

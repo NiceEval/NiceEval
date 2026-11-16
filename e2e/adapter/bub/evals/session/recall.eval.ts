@@ -10,8 +10,7 @@ export default defineEval({
 
   async test(t) {
     const first = await t.send(
-      `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}我最喜欢的数字是 47。只需确认你会记住它——` +
-        `不要写任何文件。`,
+      `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}我最喜欢的数字是 47。只需确认你会记住它——` + `不要写任何文件。`,
     );
     await first.succeeded().orStop();
     t.check(first.usage.totalTokens, greaterThan(0));

@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-// NiceEval 自身始终执行发布包里的 canonical CJS runtime。用户的 TypeScript 配置、Eval、
-// Experiment 与项目内依赖由 runtime 的受管 loader 装载；bin 不注册全局 hook。
-const cliUrl = new URL("../dist/cli/bootstrap.cjs", import.meta.url);
-await import(cliUrl.href);
+// Local source candidates opt into TypeScript through the package condition.
+// Published consumers load the same ESM graph through Node require(esm).
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const fromSource = import.meta.resolve("niceeval").endsWith("/src/index.ts");
+if (fromSource) {
+  // The source runner keeps Node require(esm) and dynamic import on one graph.
+  // A CommonJS TypeScript transform hook would split their definition identity.
+  require("../src/cli/bootstrap.ts");
+} else {
+  require("../dist/cli/bootstrap.js");
+}

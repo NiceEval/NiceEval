@@ -1,11 +1,6 @@
 import { RecordSha256 } from "../../definition/digest.ts";
 
-export const AdapterCallPriceBuckets = Object.freeze([
-  "input",
-  "output",
-  "cache-read",
-  "cache-write",
-] as const);
+export const AdapterCallPriceBuckets = Object.freeze(["input", "output", "cache-read", "cache-write"] as const);
 
 export type AdapterCallPriceBucket = (typeof AdapterCallPriceBuckets)[number];
 
@@ -16,7 +11,7 @@ interface DecimalParts {
 
 function decimalParts(value: string): DecimalParts {
   const [integer, fraction = ""] = value.split(".");
-  return Object.freeze({ digits: BigInt(`${integer}${fraction}`), scale: fraction.length });
+  return { digits: BigInt(`${integer}${fraction}`), scale: fraction.length };
 }
 
 function canonicalDecimal(parts: DecimalParts): string {
@@ -54,8 +49,7 @@ export function addCanonicalDecimals(values: readonly string[]): string {
   const parts = values.map(decimalParts);
   const scale = Math.max(...parts.map((value) => value.scale));
   return canonicalDecimal({
-    digits: parts.reduce((sum, value) =>
-      sum + value.digits * 10n ** BigInt(scale - value.scale), 0n),
+    digits: parts.reduce((sum, value) => sum + value.digits * 10n ** BigInt(scale - value.scale), 0n),
     scale,
   });
 }

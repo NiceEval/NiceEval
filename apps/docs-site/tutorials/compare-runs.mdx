@@ -11,27 +11,17 @@ Before comparing, pin which run each side is. "The latest results" change with t
 ## View them side by side in the browser
 
 ```sh
-pnpm exec niceeval view --run <baseline-run-id> --run <candidate-run-id>
+pnpm exec niceeval view run:<baseline-run-id> run:<candidate-run-id>
 ```
 
 View opens both Runs at once. You can compare pass/fail, scores, duration, and cost eval by eval, then click into a specific run to see the conversation and tool calls.
 
 ## Let scripts and CI read the comparison
 
-When an automated flow needs a structured comparison, use a `runs.compare` request:
+When an automated flow needs a structured comparison, use `compare --json`:
 
 ```sh
-pnpm --silent exec niceeval query run --request - <<'JSON'
-{
-  "protocol": "niceeval.query/v2",
-  "operation": {
-    "kind": "runs.compare",
-    "mode": "paired",
-    "leftRunIds": ["<baseline-run-id>"],
-    "rightRunIds": ["<candidate-run-id>"]
-  }
-}
-JSON
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --mode paired --json
 ```
 
 `mode` decides how the two sides line up:
@@ -44,10 +34,10 @@ JSON
 
 The comparison honestly reports each side's denominator, plus unpaired evals, excluded evals, and missing results. Missing results are not treated as zero or failure. When the conditions are not met, you get a named error explaining why, not a number that looks normal.
 
-First check that the request is valid with `query explain`, then run it for real:
+Choose the alignment with `--mode` and add `--json` to read comparison results:
 
 ```sh
-pnpm --silent exec niceeval query explain --request compare.json
+pnpm --silent exec niceeval compare <baseline-run-id> -- <candidate-run-id> --json
 ```
 
 ## When a comparison can be trusted

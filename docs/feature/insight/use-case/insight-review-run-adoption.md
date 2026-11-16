@@ -4,15 +4,15 @@
 在一个 `PublicationCutoff` 下同时展示已发布 Attempt、active pending 或 terminal absence。
 
 ```sh
-niceeval view --run <run-id>
+niceeval view run:<run-id>
 ```
 
 ## 选择要审阅的 Run
 
-重复 `--run` 预选多个 exact Run；它不改变 Human ready 输出：
+重复 `run:` 对象预选多个 exact Run；它不改变 Human ready 输出：
 
 ```text
-$ niceeval view --run run_01J8KQ --run run_01J8KS --no-open
+$ niceeval view run:run_01J8KQ run:run_01J8KS --no-open
 niceeval view — open in a browser:
 http://127.0.0.1:43173/#<one-time-credential>
 ```

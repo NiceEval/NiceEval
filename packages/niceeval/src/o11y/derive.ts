@@ -32,10 +32,7 @@ import type {
   ToolOccurrenceId,
   TurnId,
 } from "../record/family/source-receipt/model.ts";
-import type {
-  ObservedSourceEvent,
-  ToolOccurrenceRelation,
-} from "./observed.ts";
+import type { ObservedSourceEvent, ToolOccurrenceRelation } from "./observed.ts";
 
 export interface ObservedSourceProjectionSegment {
   readonly sessionId: SessionScopeId;
@@ -59,12 +56,14 @@ export interface ObservedToolOccurrenceLedgerRow {
   readonly homeTurnId: TurnId;
   readonly startEventId: EventId;
   readonly startSessionSequence: PositiveSafeInteger;
-  readonly finish: null | {
-    readonly eventId: EventId;
-    /** The finish retains its actual physical Turn. */
-    readonly turnId: TurnId;
-    readonly sessionSequence: PositiveSafeInteger;
-  };
+  readonly finish:
+    | undefined
+    | {
+        readonly eventId: EventId;
+        /** The finish retains its actual physical Turn. */
+        readonly turnId: TurnId;
+        readonly sessionSequence: PositiveSafeInteger;
+      };
 }
 
 export type ObservedSourceProjectionIssue =
@@ -128,21 +127,21 @@ export function projectObservedSourceEvents(
       itemIds.add(event.itemId);
       sessionSequences.add(event.sessionSequence);
       previousSequence = event.sessionSequence;
-      events.push(Object.freeze({
+      events.push({
         eventId: event.eventId,
         itemId: event.itemId,
         sessionId: segment.sessionId,
         turnId: segment.turnId,
         sessionSequence: event.sessionSequence,
         event,
-      }));
+      });
     }
   }
 
-  const orderedEvents = [...events].sort((left, right) =>
-    (sessionOrder.get(left.sessionId) ?? Number.MAX_SAFE_INTEGER) -
-      (sessionOrder.get(right.sessionId) ?? Number.MAX_SAFE_INTEGER) ||
-    left.sessionSequence - right.sessionSequence
+  const orderedEvents = [...events].sort(
+    (left, right) =>
+      (sessionOrder.get(left.sessionId) ?? Number.MAX_SAFE_INTEGER) -
+        (sessionOrder.get(right.sessionId) ?? Number.MAX_SAFE_INTEGER) || left.sessionSequence - right.sessionSequence,
   );
   const occurrences = new Map<ToolOccurrenceId, MutableObservedToolOccurrence>();
   for (const row of orderedEvents) {
@@ -157,7 +156,7 @@ export function projectObservedSourceEvents(
         homeTurnId: row.turnId,
         startEventId: row.eventId,
         startSessionSequence: row.sessionSequence,
-        finish: null,
+        finish: undefined,
       });
       continue;
     }
@@ -166,14 +165,13 @@ export function projectObservedSourceEvents(
   }
 
   if (issues.size > 0) {
-    return Object.freeze({ state: "invalid" as const, issues: Object.freeze([...issues].sort()) });
+    return { state: "invalid" as const, issues: [...issues].sort() };
   }
-  return Object.freeze({
+  return {
     state: "available" as const,
-    events: Object.freeze(orderedEvents),
-    toolOccurrences: Object.freeze([...occurrences.values()]
-      .map((occurrence) => Object.freeze({ ...occurrence }))),
-  });
+    events: orderedEvents,
+    toolOccurrences: [...occurrences.values()],
+  };
 }
 
 function applyExactFinish(
@@ -195,15 +193,15 @@ function applyExactFinish(
     issues.add("non-later-tool-finish");
     return;
   }
-  if (occurrence.finish !== null) {
+  if (occurrence.finish !== undefined) {
     issues.add("duplicate-exact-tool-finish");
     return;
   }
-  occurrence.finish = Object.freeze({
+  occurrence.finish = {
     eventId: row.eventId,
     turnId: row.turnId,
     sessionSequence: row.sessionSequence,
-  });
+  };
 }
 
 // ───────────────────────── 小工具 ─────────────────────────
@@ -282,6 +280,7 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
             originalName: ev.operation.name,
             input: ev.operation.input,
             status: "pending",
+            output: undefined,
           });
         } else {
           openSubagentByOperationId.set(ev.operationId, subagentCalls.length);
@@ -290,6 +289,7 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
             name: ev.operation.name,
             remoteUrl: ev.operation.remoteUrl,
             status: "pending",
+            output: undefined,
           });
         }
         break;
@@ -309,6 +309,7 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
               input: null,
               output: ev.output,
               status: ev.status,
+              originalName: undefined,
             });
           }
         } else {
@@ -323,6 +324,7 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
               name: "unknown",
               output: ev.output,
               status: ev.status,
+              remoteUrl: undefined,
             });
           }
         }
@@ -366,9 +368,9 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
 
 interface PendingLogicalToolOccurrence {
   readonly occurrence: Omit<LogicalToolOccurrence, "lifecycle">;
-  finished?: ToolOperationFinish;
+  finished: ToolOperationFinish | undefined;
   /** 同一 operationId 在前一笔未结束时再次 started，无法可靠把后续 finish 交给任一笔。 */
-  ambiguous?: boolean;
+  ambiguous: boolean;
 }
 
 interface ToolOperationFinish {
@@ -408,14 +410,14 @@ export function deriveLogicalToolOccurrences(
           id: logicalOccurrenceId(options, position),
           session: options.session,
           turn: options.turn,
-          name: event.operation.tool === undefined
-            ? { original: event.operation.name }
-            : { original: event.operation.name, canonical: event.operation.tool },
+          name: { original: event.operation.name, canonical: event.operation.tool },
           input: evidenceForEventValue(event, "input", event.operation.input),
           output: { state: "unavailable", reason: "tool-output-not-finished" },
-          ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
+          command: event.operation.command,
           start: position,
         },
+        finished: undefined,
+        ambiguous: false,
       };
 
       const alreadyOpen = openByOperationId.get(event.operationId);
@@ -439,9 +441,10 @@ export function deriveLogicalToolOccurrences(
       const finished: ToolOperationFinish = {
         status: event.status,
         position,
-        output: event.output === undefined
-          ? { state: "unavailable", reason: "tool-output-absent" }
-          : evidenceForEventValue(event, "output", event.output),
+        output:
+          event.output === undefined
+            ? { state: "unavailable", reason: "tool-output-absent" }
+            : evidenceForEventValue(event, "output", event.output),
       };
       const started = openByOperationId.get(event.operationId);
       if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
@@ -469,30 +472,29 @@ export function deriveLogicalToolOccurrences(
   };
 }
 
-function evidenceForEventValue(
-  event: StreamEvent,
-  field: string,
-  value: JsonValue,
-): LogicalToolOccurrence["input"] {
+function evidenceForEventValue(event: StreamEvent, field: string, value: JsonValue): LogicalToolOccurrence["input"] {
   const redacted = opaquePointersFor(event.redacted, field);
   if (redacted.length > 0) {
-    return Object.freeze({
+    return {
       state: "partial" as const,
       value,
       opaquePointers: redacted,
       reason: "redacted" as const,
-    });
+    };
   }
-  const truncated = opaquePointersFor(event.truncated?.map((entry) => entry.path), field);
+  const truncated = opaquePointersFor(
+    event.truncated?.map((entry) => entry.path),
+    field,
+  );
   if (truncated.length > 0) {
-    return Object.freeze({
+    return {
       state: "partial" as const,
       value,
       opaquePointers: truncated,
       reason: "truncated" as const,
-    });
+    };
   }
-  return Object.freeze({ state: "complete" as const, value });
+  return { state: "complete" as const, value };
 }
 
 /**
@@ -502,20 +504,24 @@ function evidenceForEventValue(
  * pointer-shaped producer path makes redaction declarations equally precise.
  */
 function opaquePointersFor(paths: readonly string[] | undefined, field: string): readonly string[] {
-  if (paths === undefined || paths.length === 0) return Object.freeze([]);
+  if (paths === undefined || paths.length === 0) return [];
   const pointers = new Set<string>();
   for (const path of paths) {
     const pointer = fieldRelativePointer(path, field);
     if (pointer !== undefined) pointers.add(pointer);
   }
-  return Object.freeze([...pointers]);
+  return [...pointers];
 }
 
 function fieldRelativePointer(path: string, field: string): string | undefined {
   const dotPath = path.startsWith("operation.") ? path.slice("operation.".length) : path;
   if (dotPath === field) return "/";
   if (dotPath.startsWith(`${field}.`)) {
-    return `/${dotPath.slice(field.length + 1).split(".").map(escapeJsonPointer).join("/")}`;
+    return `/${dotPath
+      .slice(field.length + 1)
+      .split(".")
+      .map(escapeJsonPointer)
+      .join("/")}`;
   }
   if (!path.startsWith("/")) return undefined;
   const segments = path.slice(1).split("/");
@@ -533,9 +539,9 @@ function outputFor(
 ): LogicalToolOccurrence["output"] {
   if (occurrence.finished !== undefined && !occurrence.ambiguous) return occurrence.finished.output;
   if (outcome !== undefined && !occurrence.ambiguous) {
-    return Object.freeze({ state: "unavailable" as const, reason: "tool-output-pending" });
+    return { state: "unavailable" as const, reason: "tool-output-pending" };
   }
-  return Object.freeze({ state: "unavailable" as const, reason: "tool-output-missing-lifecycle-evidence" });
+  return { state: "unavailable" as const, reason: "tool-output-missing-lifecycle-evidence" };
 }
 
 function lifecycleFor(
@@ -578,12 +584,15 @@ function eventPosition(turnOrdinal: number, eventOrdinal: number): EventPosition
   return { turnOrdinal, eventOrdinal };
 }
 
-function logicalOccurrenceId(
-  options: LogicalToolOccurrenceDeriveOptions,
-  start: EventPosition,
-): string {
+function logicalOccurrenceId(options: LogicalToolOccurrenceDeriveOptions, start: EventPosition): string {
   // JSON array encoding avoids delimiter collision when adapter-provided session / turn IDs contain punctuation.
-  return JSON.stringify(["niceeval.logical-tool-occurrence/1", options.session, options.turn, start.turnOrdinal, start.eventOrdinal]);
+  return JSON.stringify([
+    "niceeval.logical-tool-occurrence/1",
+    options.session,
+    options.turn,
+    start.turnOrdinal,
+    start.eventOrdinal,
+  ]);
 }
 
 /**
@@ -623,15 +632,15 @@ export function deriveScopedLogicalToolOccurrences(
               id: logicalOccurrenceId(turn, position),
               session: turn.session,
               turn: turn.turn,
-              name: event.operation.tool === undefined
-                ? { original: event.operation.name }
-                : { original: event.operation.name, canonical: event.operation.tool },
+              name: { original: event.operation.name, canonical: event.operation.tool },
               input: evidenceForEventValue(event, "input", event.operation.input),
               output: { state: "unavailable", reason: "tool-output-not-finished" },
-              ...(event.operation.command === undefined ? {} : { command: event.operation.command }),
+              command: event.operation.command,
               start: position,
             },
             lastOutcome: turn.outcome,
+            finished: undefined,
+            ambiguous: false,
           };
           const alreadyOpen = openByOperationId.get(event.operationId);
           if (ambiguousOperationIds.has(event.operationId)) {
@@ -651,9 +660,10 @@ export function deriveScopedLogicalToolOccurrences(
           const finished: ToolOperationFinish = {
             status: event.status,
             position,
-            output: event.output === undefined
-              ? { state: "unavailable", reason: "tool-output-absent" }
-              : evidenceForEventValue(event, "output", event.output),
+            output:
+              event.output === undefined
+                ? { state: "unavailable", reason: "tool-output-absent" }
+                : evidenceForEventValue(event, "output", event.output),
           };
           const started = openByOperationId.get(event.operationId);
           if (started === undefined || ambiguousOperationIds.has(event.operationId)) {
@@ -674,17 +684,17 @@ export function deriveScopedLogicalToolOccurrences(
     }
 
     for (const item of pending) {
-      occurrences.push(Object.freeze({
+      occurrences.push({
         ...item.occurrence,
         output: outputFor(item, item.lastOutcome),
         lifecycle: lifecycleFor(item, item.lastOutcome),
-      }));
+      });
     }
   }
-  return Object.freeze({
-    occurrences: Object.freeze(occurrences),
-    orphanFinishes: Object.freeze(orphanFinishes),
-  });
+  return {
+    occurrences: occurrences,
+    orphanFinishes: orphanFinishes,
+  };
 }
 
 interface PendingScopedOccurrence extends PendingLogicalToolOccurrence {

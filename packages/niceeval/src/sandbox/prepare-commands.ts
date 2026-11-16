@@ -28,7 +28,7 @@ export interface CheckoutOptions {
   /** commit SHA 或 tag 等 Git revision。 */
   readonly ref: string;
   /** 相对 workdir 的目标目录；省略或 `.` 就是 workdir 根。 */
-  readonly into?: string;
+  readonly into?: string | undefined;
 }
 
 /** Declares a named tool's identity, probe and installer; zero probe exit means present, and installation runs only after a nonzero probe. */
@@ -55,11 +55,7 @@ function assertPlainRecord(value: unknown, path: string): asserts value is globa
   }
 }
 
-function assertOnlyKeys(
-  value: globalThis.Record<string, unknown>,
-  allowed: ReadonlySet<string>,
-  path: string,
-): void {
+function assertOnlyKeys(value: globalThis.Record<string, unknown>, allowed: ReadonlySet<string>, path: string): void {
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new TypeError(`${path}.${key} is not supported`);
   }
@@ -79,7 +75,7 @@ function normalizeRepo(value: unknown): string {
   const repo = nonEmptyString(value, "checkout options.repo");
   try {
     const url = new URL(repo);
-    if (url.password || (url.protocol === "http:" || url.protocol === "https:") && url.username) {
+    if (url.password || ((url.protocol === "http:" || url.protocol === "https:") && url.username)) {
       throw new TypeError(
         "checkout options.repo must not embed credentials; configure Git credentials in the host or Sandbox instead",
       );
@@ -111,11 +107,11 @@ function normalizeInto(value: unknown): string {
 function normalizeCheckoutOptions(value: unknown): Readonly<{ repo: string; ref: string; into: string }> {
   assertPlainRecord(value, "checkout options");
   assertOnlyKeys(value, new Set(["repo", "ref", "into"]), "checkout options");
-  return Object.freeze({
+  return {
     repo: normalizeRepo(value.repo),
     ref: nonEmptyString(value.ref, "checkout options.ref"),
     into: normalizeInto(value.into),
-  });
+  };
 }
 
 function normalizeInstallToolOptions(value: unknown): Readonly<{
@@ -130,29 +126,31 @@ function normalizeInstallToolOptions(value: unknown): Readonly<{
   assertOnlyKeys(value, new Set(["tool", "identity", "probe", "install"]), "installTool options");
   const probe = value.probe;
   const install = value.install;
-  const probeIdentity = typeof probe === "function"
-    ? sandboxCommandIdentityOf(probe as StableSandboxCommand)
-    : undefined;
-  const installIdentity = typeof install === "function"
-    ? sandboxCommandIdentityOf(install as StableSandboxCommand)
-    : undefined;
+  const probeIdentity =
+    typeof probe === "function" ? sandboxCommandIdentityOf(probe as StableSandboxCommand) : undefined;
+  const installIdentity =
+    typeof install === "function" ? sandboxCommandIdentityOf(install as StableSandboxCommand) : undefined;
   if (!probeIdentity) {
-    throw new TypeError("installTool options.probe must be a StableSandboxCommand from command(), shell(), or defineSandboxCommand()");
+    throw new TypeError(
+      "installTool options.probe must be a StableSandboxCommand from command(), shell(), or defineSandboxCommand()",
+    );
   }
   if (!installIdentity) {
-    throw new TypeError("installTool options.install must be a StableSandboxCommand from command(), shell(), or defineSandboxCommand()");
+    throw new TypeError(
+      "installTool options.install must be a StableSandboxCommand from command(), shell(), or defineSandboxCommand()",
+    );
   }
 
-  // defineSandboxCommand owns the recursive JSON-content validation and frozen snapshot. Keeping
+  // defineSandboxCommand owns the recursive JSON-content validation. Keeping
   // this raw value here prevents a second, subtly different identity grammar at this public edge.
-  return Object.freeze({
+  return {
     tool: nonEmptyString(value.tool, "installTool options.tool"),
     identity: value.identity as SandboxCommandIdentityValue,
     probe: probe as StableSandboxCommand,
     install: install as StableSandboxCommand,
     probeIdentity,
     installIdentity,
-  });
+  };
 }
 
 function sha256(value: string): string {
@@ -174,9 +172,10 @@ function checkoutCachePath(repo: string, ref: string): string {
 function targetPath(workdir: string, into: string): string {
   const normalizedWorkdir = posix.resolve(workdir);
   const target = posix.resolve(normalizedWorkdir, into);
-  const isWithinWorkdir = normalizedWorkdir === "/"
-    ? target.startsWith("/")
-    : target === normalizedWorkdir || target.startsWith(`${normalizedWorkdir}/`);
+  const isWithinWorkdir =
+    normalizedWorkdir === "/"
+      ? target.startsWith("/")
+      : target === normalizedWorkdir || target.startsWith(`${normalizedWorkdir}/`);
   if (!isWithinWorkdir) {
     throw new Error("checkout resolved outside of the Sandbox workdir");
   }
@@ -188,18 +187,11 @@ function validCommitSha(value: string): string | undefined {
   return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(candidate) ? candidate.toLowerCase() : undefined;
 }
 
-async function commandResult(
-  sandbox: SandboxCommandTarget,
-  args: readonly string[],
-): Promise<CommandResult> {
+async function commandResult(sandbox: SandboxCommandTarget, args: readonly string[]): Promise<CommandResult> {
   return sandbox.runCommand("git", args);
 }
 
-async function resolvedCommit(
-  sandbox: SandboxCommandTarget,
-  mirror: string,
-  ref: string,
-): Promise<string | undefined> {
+async function resolvedCommit(sandbox: SandboxCommandTarget, mirror: string, ref: string): Promise<string | undefined> {
   const result = await commandResult(sandbox, [
     `--git-dir=${mirror}`,
     "rev-parse",
@@ -256,7 +248,15 @@ async function materializeCheckout(
   await sandbox.runCommand("git", ["-C", destination, "remote", "remove", "niceeval-mirror"]);
   await sandbox.runCommandOrThrow("git", ["-C", destination, "remote", "add", "niceeval-mirror", mirror]);
   await sandbox.runCommandOrThrow("git", ["-C", destination, "clean", "-ffdqx"]);
-  await sandbox.runCommandOrThrow("git", ["-C", destination, "fetch", "--quiet", "--no-tags", "niceeval-mirror", commit]);
+  await sandbox.runCommandOrThrow("git", [
+    "-C",
+    destination,
+    "fetch",
+    "--quiet",
+    "--no-tags",
+    "niceeval-mirror",
+    commit,
+  ]);
   await sandbox.runCommandOrThrow("git", ["-C", destination, "checkout", "--quiet", "--force", "--detach", commit]);
 }
 
@@ -276,7 +276,7 @@ export function checkout(options: CheckoutOptions): StableSandboxCommand {
     async (sandbox, context) => {
       context.progress({ message: `Preparing checkout ${normalized.ref}` });
       const cachedCommit = await mirrorMatches(sandbox, cachePath, normalized.repo, normalized.ref);
-      const commit = cachedCommit ?? await recreateMirror(sandbox, cachePath, normalized.repo, normalized.ref);
+      const commit = cachedCommit ?? (await recreateMirror(sandbox, cachePath, normalized.repo, normalized.ref));
       await materializeCheckout(sandbox, cachePath, targetPath(sandbox.workdir, normalized.into), commit);
     },
   );
@@ -316,6 +316,8 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
   const normalized = normalizeInstallToolOptions(options);
   const probePlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.probe) ?? {
     truth: "opaque",
+    label: undefined,
+    condition: undefined,
     reason: {
       code: "custom-stable-command",
       summary: "custom probe callback; commands are only known when it runs",
@@ -323,15 +325,17 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
   };
   const installPlan: SandboxCommandPlanNode = sandboxCommandPlanOf(normalized.install) ?? {
     truth: "opaque",
+    label: undefined,
+    condition: undefined,
     reason: {
       code: "custom-stable-command",
       summary: "custom installer callback; commands are only known when it runs",
     },
   };
-  const probeMiss = Object.freeze({
+  const probeMiss = {
     code: "probe-miss",
     summary: `${normalized.tool} probe exits non-zero`,
-  });
+  };
   return definePlannedSandboxCommand(
     {
       id: "niceeval.sandbox.install-tool",
@@ -345,19 +349,20 @@ export function installTool(options: InstallToolOptions): StableSandboxCommand {
     },
     async (sandbox, context) => {
       context.progress({ message: `Checking ${normalized.tool}` });
-      if (await probeTool(normalized.probe, sandbox, context) === "hit") return;
+      if ((await probeTool(normalized.probe, sandbox, context)) === "hit") return;
 
       context.progress({ message: `Installing ${normalized.tool}` });
       await normalized.install(sandbox, context);
 
       context.progress({ message: `Verifying ${normalized.tool}` });
-      if (await probeTool(normalized.probe, sandbox, context) === "miss") {
+      if ((await probeTool(normalized.probe, sandbox, context)) === "miss") {
         throw new InstallToolRecheckError(normalized.tool);
       }
     },
     {
       truth: "conditional",
       label: `installTool(${JSON.stringify(normalized.tool)})`,
+      condition: undefined,
       children: [
         { ...probePlan, label: "probe" },
         { ...installPlan, label: "install", condition: probeMiss },

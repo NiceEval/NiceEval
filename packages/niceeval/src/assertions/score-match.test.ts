@@ -20,13 +20,17 @@ describe("defineScoreMatch", () => {
     expect(definition.canonicalConfig).toBe('{"labels":["yes","no"],"weights":{"correctness":1}}');
     expect(Object.isFrozen(definition.config)).toBe(true);
     expect(Object.isFrozen((definition.config as { weights: object }).weights)).toBe(true);
-    expect(definition.llm).toEqual({ maxCalls: 4, maxMaterialBytes: 32 * 1024, maxAuditBytes: 96 * 1024 });
+    expect(definition.llm).toEqual({ maxCalls: 4 });
   });
 
   it("rejects ambiguous, accessor, and out-of-range managed options", () => {
-    expect(() => defineScoreMatch({ name: "x", version: "1", config: {}, llm: { maxCalls: 17 }, score: () => Effect.succeed(1) })).toThrow("at most 16");
+    expect(() =>
+      defineScoreMatch({ name: "x", version: "1", config: {}, llm: { maxCalls: 17 }, score: () => Effect.succeed(1) }),
+    ).toThrow("at most 16");
     expect(() => defineScoreMatch({ name: "x", score: () => 1, extra: true } as never)).toThrow("unknown option");
     const config = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 });
-    expect(() => defineScoreMatch({ name: "x", version: "1", config, llm: {}, score: () => Effect.succeed(1) })).toThrow("data property");
+    expect(() =>
+      defineScoreMatch({ name: "x", version: "1", config, llm: {}, score: () => Effect.succeed(1) }),
+    ).toThrow("data property");
   });
 });

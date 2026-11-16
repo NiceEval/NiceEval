@@ -10,7 +10,9 @@ export const ConfigLayers = ({ locale = "zh" }) => (
   <div className="ne-w ne-cfg">
     <div className="ne-hd">
       {locale === "en" ? "Where timeoutMs is set" : "timeoutMs 写在哪一层"}
-      <span className="ne-hd-hint">{locale === "en" ? "Choose a configuration to see which value takes effect" : "选一种写法，看最终生效的是谁"}</span>
+      <span className="ne-hd-hint">
+        {locale === "en" ? "Choose a configuration to see which value takes effect" : "选一种写法，看最终生效的是谁"}
+      </span>
     </div>
 
     <input className="ne-pick-in" type="radio" name="ne-cfg-layers" id="ne-cfg-0" defaultChecked />
@@ -65,7 +67,11 @@ export const ConfigLayers = ({ locale = "zh" }) => (
           <span className="ne-cfg-val">{locale === "en" ? "No limit" : "无上限"}</span>
           <span className="ne-cfg-mark">{locale === "en" ? "Overridden" : "被上层盖住"}</span>
         </div>
-        <p className="ne-why">{locale === "en" ? "Set project-wide defaults here. Each eval uses them unless another layer declares a value." : "整个项目共享的值写这里，没有别的层声明时每道题都按它跑。"}</p>
+        <p className="ne-why">
+          {locale === "en"
+            ? "Set project-wide defaults here. Each eval uses them unless another layer declares a value."
+            : "整个项目共享的值写这里，没有别的层声明时每道题都按它跑。"}
+        </p>
       </div>
 
       <div className="ne-panel ne-cfg-panel">
@@ -100,7 +106,9 @@ export const ConfigLayers = ({ locale = "zh" }) => (
           <span className="ne-cfg-mark">{locale === "en" ? "Overridden" : "被上层盖住"}</span>
         </div>
         <p className="ne-why">
-          {locale === "en" ? "Config provides defaults, not overrides. An eval that needs 35 minutes to prepare its environment keeps its declared limit even if the project default is 5 minutes." : "config 是默认来源，不是覆盖层：一道要装 35 分钟环境的题自己声明了上限，在写着 5 分钟的项目里仍按 35 分钟跑。"}
+          {locale === "en"
+            ? "Config provides defaults, not overrides. An eval that needs 35 minutes to prepare its environment keeps its declared limit even if the project default is 5 minutes."
+            : "config 是默认来源，不是覆盖层：一道要装 35 分钟环境的题自己声明了上限，在写着 5 分钟的项目里仍按 35 分钟跑。"}
         </p>
       </div>
 
@@ -136,7 +144,9 @@ export const ConfigLayers = ({ locale = "zh" }) => (
           <span className="ne-cfg-mark">{locale === "en" ? "Overridden" : "被上层盖住"}</span>
         </div>
         <p className="ne-why">
-          {locale === "en" ? "To shorten the limit for the whole batch, set it explicitly in the experiment. Only an explicit override takes precedence over the eval; a config default does not." : "要整批压短，用 experiment 显式写一个值——只有显式声明能压过题目自己的声明，config 的默认值不行。"}
+          {locale === "en"
+            ? "To shorten the limit for the whole batch, set it explicitly in the experiment. Only an explicit override takes precedence over the eval; a config default does not."
+            : "要整批压短，用 experiment 显式写一个值——只有显式声明能压过题目自己的声明，config 的默认值不行。"}
         </p>
       </div>
 
@@ -171,13 +181,23 @@ export const ConfigLayers = ({ locale = "zh" }) => (
           <span className="ne-cfg-val">{locale === "en" ? "No limit" : "无上限"}</span>
           <span className="ne-cfg-mark">{locale === "en" ? "Overridden" : "被上层盖住"}</span>
         </div>
-        <p className="ne-why">{locale === "en" ? "Set a CLI flag to change only this run. Omit it next time to return to the experiment value." : "只想这一次不一样就写在命令上，下一次不带它就回到 experiment 的值。"}</p>
+        <p className="ne-why">
+          {locale === "en"
+            ? "Set a CLI flag to change only this run. Omit it next time to return to the experiment value."
+            : "只想这一次不一样就写在命令上，下一次不带它就回到 experiment 的值。"}
+        </p>
       </div>
     </div>
 
     <div className="ne-ft">
-      {locale === "en" ? "Fixed precedence: CLI flag → experiment → eval → config → built-in default. The first value wins." : "顺序固定：CLI flag → experiment → eval → config → 内置默认，前面有值就不看后面。"}
-      <code>agent</code>{locale === "en" ? ", " : "、"}<code>model</code>{locale === "en" ? ", " : "、"}<code>flags</code> {locale === "en" ? "are set only in the experiment." : "只有 experiment 那一层。"}
+      {locale === "en"
+        ? "Fixed precedence: CLI flag → experiment → eval → config → built-in default. The first value wins."
+        : "顺序固定：CLI flag → experiment → eval → config → 内置默认，前面有值就不看后面。"}
+      <code>agent</code>
+      {locale === "en" ? ", " : "、"}
+      <code>model</code>
+      {locale === "en" ? ", " : "、"}
+      <code>flags</code> {locale === "en" ? "are set only in the experiment." : "只有 experiment 那一层。"}
     </div>
   </div>
 );

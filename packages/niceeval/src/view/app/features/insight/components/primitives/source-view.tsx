@@ -12,23 +12,20 @@ import {
   type ReportLocale,
   type ValueProps,
 } from "./shared.ts";
-import {
-  AssertionEvidence,
-  type AssertionEvidenceContent,
-} from "./assertion-evidence.tsx";
+import { AssertionEvidence, type AssertionEvidenceContent } from "./assertion-evidence.tsx";
 import { TurnTrace } from "./turn-trace.tsx";
 import type { ConversationContent } from "./conversation.tsx";
 
 export type SourceLineTone = "send" | "passed" | "gate-fail" | "soft-fail" | "unavailable";
 
 export type SourceLineDetail =
-  | { readonly kind: "text"; readonly text: string; readonly className?: string }
+  | { readonly kind: "text"; readonly text: string; readonly className: string | undefined }
   | {
       readonly kind: "assertion";
       readonly entryId: string;
       readonly content: AssertionEvidenceContent;
-      readonly label?: string;
-      readonly state?: "matched" | "mismatched" | "unavailable";
+      readonly label: string | undefined;
+      readonly state: "matched" | "mismatched" | "unavailable" | undefined;
     }
   | { readonly kind: "turn-trace"; readonly data: ConversationContent };
 
@@ -36,14 +33,14 @@ export interface SourceLine {
   number: number;
   text: string;
   /** A recorded interaction belongs to this line independently of assertion tone. */
-  interaction?: "send";
+  interaction: "send" | undefined;
   /** Exact closed navigation identities consumed by the Attempt composition. */
-  turnIds?: readonly string[];
-  tone?: SourceLineTone;
-  pill?: LocalizedText;
-  aborted?: boolean;
-  details?: readonly SourceLineDetail[];
-  calls?: readonly SourceCallContent[];
+  turnIds: readonly string[];
+  tone: SourceLineTone | undefined;
+  pill: LocalizedText | undefined;
+  aborted: boolean;
+  details: readonly SourceLineDetail[];
+  calls: readonly SourceCallContent[];
 }
 
 export interface SourceBlockContent {
@@ -56,23 +53,23 @@ export interface SourceBlockContent {
 
 export interface SourceCallContent {
   summary: LocalizedText;
-  tone?: "passed" | "gate-fail" | "soft-fail" | "unavailable";
+  tone: "passed" | "gate-fail" | "soft-fail" | "unavailable" | undefined;
   open: boolean;
   target:
     | { kind: "source"; block: SourceBlockContent }
-    | { kind: "opaque"; label: LocalizedText; calls?: readonly SourceCallContent[] };
+    | { kind: "opaque"; label: LocalizedText; calls: readonly SourceCallContent[] | undefined };
 }
 
 export interface SourceContent {
   spine: SourceBlockContent;
   detached: readonly SourceBlockContent[];
-  unmapped?: readonly SourceLineDetail[];
-  locator?: string;
+  unmapped: readonly SourceLineDetail[] | undefined;
+  locator: string | undefined;
 }
 
 export type SourceViewProps = ValueProps<
-  SourceContent | null,
-  { locale: ReportLocale; className?: string }
+  SourceContent | undefined,
+  { locale: ReportLocale; className: string | undefined }
 >;
 
 // Keep the lightweight v0.12 source presentation. Source snapshots are display
@@ -80,6 +77,14 @@ export type SourceViewProps = ValueProps<
 // source to infer navigation or evidence.
 const TS_HL_RE =
   /(\/\/[^\n]*)|(\/\*[^]*?\*\/)|(`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|\b(import|from|export|default|const|let|var|async|await|function|return|if|else|for|of|in|new|class|extends|typeof|void|true|false|null|undefined)\b|\b(\d[\d_.]*)\b|([A-Za-z_$][\w$]*)(?=\s*\()/g;
+
+function sourceTokenClass(match: RegExpExecArray): string {
+  if (match[1] || match[2]) return "tok-comment";
+  if (match[3]) return "tok-str";
+  if (match[4]) return "tok-kw";
+  if (match[5]) return "tok-num";
+  return "tok-fn";
+}
 
 function highlightTs(line: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -89,18 +94,8 @@ function highlightTs(line: string): ReactNode[] {
   TS_HL_RE.lastIndex = 0;
   while ((match = TS_HL_RE.exec(line))) {
     if (match.index > last) out.push(line.slice(last, match.index));
-    const tokenClass =
-      match[1] || match[2]
-        ? "tok-comment"
-        : match[3]
-          ? "tok-str"
-          : match[4]
-            ? "tok-kw"
-            : match[5]
-              ? "tok-num"
-              : "tok-fn";
     out.push(
-      <span key={index++} className={tokenClass}>
+      <span key={index++} className={sourceTokenClass(match)}>
         {match[0]}
       </span>,
     );
@@ -115,11 +110,11 @@ function renderSourceDetail(node: SourceLineDetail, locale: ReportLocale): React
   if (node.kind === "assertion") {
     return <AssertionEvidence content={node.content} label={node.label} state={node.state} locale={locale} />;
   }
-  if (node.kind === "turn-trace") return <TurnTrace data={node.data} locale={locale} />;
+  if (node.kind === "turn-trace") return <TurnTrace data={node.data} locale={locale} className="" />;
   return <div className={cx("niceeval-report", "niceeval-text", node.className)}>{node.text}</div>;
 }
 
-function validateBlock(value: unknown, path: string): string | null {
+function validateBlock(value: unknown, path: string): string | undefined {
   if (!isObject(value)) return `"${path}" must be an object`;
   if (typeof value.sourceItemId !== "string") return `"${path}.sourceItemId" must be a string`;
   if (typeof value.sha256 !== "string") return `"${path}.sha256" must be a string`;
@@ -143,22 +138,22 @@ function validateBlock(value: unknown, path: string): string | null {
       return `"${path}.lines[${i}].pill" must be a LocalizedText`;
     }
   }
-  return null;
+  return undefined;
 }
 
-function assertSourceContent(data: unknown): SourceContent | null {
-  if (data === null || data === undefined) return null;
+function assertSourceContent(data: unknown): SourceContent | undefined {
+  if (data === null || data === undefined) return undefined;
   if (!isObject(data)) {
     throw dataShapeError("SourceView", "sourceViewData", "SourceContent", '"data" must be an object or null');
   }
   const spineProblem = validateBlock(data.spine, "data.spine");
-  if (spineProblem !== null) throw dataShapeError("SourceView", "sourceViewData", "SourceContent", spineProblem);
+  if (spineProblem !== undefined) throw dataShapeError("SourceView", "sourceViewData", "SourceContent", spineProblem);
   if (!Array.isArray(data.detached)) {
     throw dataShapeError("SourceView", "sourceViewData", "SourceContent", '"data.detached" must be an array');
   }
   for (let i = 0; i < data.detached.length; i++) {
     const problem = validateBlock(data.detached[i], `data.detached[${i}]`);
-    if (problem !== null) throw dataShapeError("SourceView", "sourceViewData", "SourceContent", problem);
+    if (problem !== undefined) throw dataShapeError("SourceView", "sourceViewData", "SourceContent", problem);
   }
   return data as unknown as SourceContent;
 }
@@ -262,7 +257,11 @@ function CallTree({
   return (
     <div className="niceeval-source-calls">
       {calls.map((call, i) => (
-        <details key={i} className={cx("niceeval-source-call", call.tone && `niceeval-source-call--${call.tone}`)} open={call.open}>
+        <details
+          key={i}
+          className={cx("niceeval-source-call", call.tone && `niceeval-source-call--${call.tone}`)}
+          open={call.open}
+        >
           <summary>{resolveLocalizedText(call.summary, locale)}</summary>
           {call.target.kind === "opaque" ? (
             <div className="niceeval-source-opaque">
@@ -289,7 +288,7 @@ function SourceBlock({
   block: SourceBlockContent;
   locale: ReportLocale;
   renderChild: (node: SourceLineDetail) => ReactNode;
-  nested?: boolean;
+  nested: boolean;
 }): ReactElement {
   const firstAttention = block.lines.find(
     (line) => line.tone === "gate-fail" || line.tone === "soft-fail" || line.tone === "unavailable",
@@ -347,8 +346,9 @@ export function sourceViewText(data: SourceContent, locale: ReportLocale): strin
     for (const line of block.lines) {
       if (!line.interaction && !line.tone && !line.aborted) continue;
       const pill = line.pill !== undefined ? ` ${resolveLocalizedText(line.pill, locale)}` : "";
-      const states = [line.interaction, line.tone, line.aborted ? "aborted" : undefined]
-        .filter((state): state is string => state !== undefined);
+      const states = [line.interaction, line.tone, line.aborted ? "aborted" : undefined].filter(
+        (state): state is string => state !== undefined,
+      );
       lines.push(`${block.path}:${line.number} [${states.join("+")}]${pill}`);
     }
   };
@@ -361,14 +361,14 @@ export function sourceViewText(data: SourceContent, locale: ReportLocale): strin
 }
 
 export function SourceView({ data: input, locale, className }: SourceViewProps): ReactElement | null {
-  const data = assertSourceContent(input ?? null);
-  if (data === null) return null;
+  const data = assertSourceContent(input);
+  if (data === undefined) return null;
   const renderChild = (node: SourceLineDetail): ReactNode => renderSourceDetail(node, locale);
   return (
     <div className={cx("niceeval-report", "niceeval-source-view", className)}>
-      <SourceBlock block={data.spine} locale={locale} renderChild={renderChild} />
+      <SourceBlock block={data.spine} locale={locale} renderChild={renderChild} nested={false} />
       {data.detached.map((block) => (
-        <SourceBlock key={block.path} block={block} locale={locale} renderChild={renderChild} />
+        <SourceBlock key={block.path} block={block} locale={locale} renderChild={renderChild} nested={false} />
       ))}
       {data.unmapped && data.unmapped.length > 0 ? (
         <div className="niceeval-source-unmapped">

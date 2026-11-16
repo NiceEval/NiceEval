@@ -16,7 +16,6 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { withInspectionRequest } from "@niceeval/testkit";
 
 const EXPECTED_OUTCOMES = [
   // coding-task：文件写入、编辑与 shell 调用都须完成；单次基线 Attempt 全部断言成立才是 passed/1。
@@ -58,14 +57,9 @@ function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: E
   // families. Eval selectors intentionally use bare prefixes, so only the
   // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
-    .filter(
-      (event) =>
-        event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId),
-    )
+    .filter((event) => event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId))
     .map((event) => event.evalId);
-  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([
-    failed.evalId,
-  ]);
+  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([failed.evalId]);
 }
 
 function representativeAttempt(): ExpEvalEvent {
@@ -79,10 +73,7 @@ function representativeAttempt(): ExpEvalEvent {
 beforeAll(async () => {
   rmSync(".niceeval", { recursive: true, force: true });
 
-  run = await niceeval.run(
-    ["exp", "--rerun", "all", "--json"],
-    { timeoutMs: 50 * 60_000 },
-  );
+  run = await niceeval.run(["exp", "--rerun", "all", "--json"], { timeoutMs: 50 * 60_000 });
   const inv = run.expReceipt();
   const firstEvents = run.expEvalEvents();
   // plugin-reuse 是八条 Attempt 的 Sandbox 复用 owner，不能用二次运行替换它的首次并发结果。
@@ -95,14 +86,10 @@ beforeAll(async () => {
       !(event.experimentId === "hitl-content" && event.evalId === "hitl-options"),
   );
   expect(
-    firstEvents.filter(
-      (event) => event.verdict === "errored" || event.verdict === "skipped",
-    ),
+    firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
     run.diagnostic(),
   ).toHaveLength(0);
-  expect(run.exitCode, run.diagnostic()).toBe(
-    firstEvents.some((event) => event.verdict === "failed") ? 1 : 0,
-  );
+  expect(run.exitCode, run.diagnostic()).toBe(firstEvents.some((event) => event.verdict === "failed") ? 1 : 0);
   expect(inv.completion, run.diagnostic()).toBe("completed");
   for (const event of retryableFailed) assertExactRetryEvalSelector(firstEvents, event);
 
@@ -112,10 +99,7 @@ beforeAll(async () => {
     events: firstEvents,
     targets: retryableFailed,
     runRetry: (event) =>
-      niceeval.run(
-        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-        { timeoutMs: 50 * 60_000 },
-      ),
+      niceeval.run(["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"], { timeoutMs: 50 * 60_000 }),
   });
   if (retried.retries.length > 0) {
     process.stderr.write(
@@ -137,13 +121,10 @@ it("真实 Claude Code adapter 的全部专用 Eval 得到预期 verdict", () =>
 
 it("attempt.trace 读回 Claude Code 的代表性工具证据", async () => {
   const attempt = representativeAttempt();
-  const queried = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: attempt.locator,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", attempt.locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(trace).toContain("notes.txt");
   expect(trace).toContain("niceeval-e2e-marker-alpha-926");

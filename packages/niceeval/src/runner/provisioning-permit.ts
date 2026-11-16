@@ -11,31 +11,45 @@ export interface ProvisioningPermitOwner {
   readonly reacquire: Effect.Effect<void>;
 }
 
-export function makeProvisioningPermitOwner(
-  semaphore: Semaphore.Semaphore,
-): ProvisioningPermitOwner {
+export function makeProvisioningPermitOwner(semaphore: Semaphore.Semaphore): ProvisioningPermitOwner {
   let held = false;
 
   const acquire = Effect.uninterruptibleMask((restore) =>
     restore(semaphore.take(1)).pipe(
-      Effect.tap(() => Effect.sync(() => { held = true; })),
-    )
+      Effect.tap(() =>
+        Effect.sync(() => {
+          held = true;
+        }),
+      ),
+    ),
   );
 
   const release = Effect.uninterruptible(
-    Effect.suspend(() => held
-      ? semaphore.release(1).pipe(Effect.tap(() => Effect.sync(() => { held = false; })))
-      : Effect.void
+    Effect.suspend(() =>
+      held
+        ? semaphore.release(1).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                held = false;
+              }),
+            ),
+          )
+        : Effect.void,
     ),
   );
 
   const reacquire = Effect.uninterruptibleMask((restore) =>
-    Effect.suspend(() => held
-      ? Effect.void
-      : restore(semaphore.take(1)).pipe(
-          Effect.tap(() => Effect.sync(() => { held = true; })),
-        )
-    )
+    Effect.suspend(() =>
+      held
+        ? Effect.void
+        : restore(semaphore.take(1)).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                held = true;
+              }),
+            ),
+          ),
+    ),
   );
 
   return { acquire, release, reacquire };

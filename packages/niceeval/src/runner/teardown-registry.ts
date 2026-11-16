@@ -13,18 +13,30 @@ import {
 import { hashEntryId } from "../shared/entry-file-store.ts";
 import { processIdentityForPidEffect } from "./shared-state-lease.ts";
 
-function registryEffect<A>(root: string, operation: (facets: ProjectStateFacets) => Promise<A>): Effect.Effect<A, unknown, ProjectStateDatabase> {
-  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(root), (facets) =>
-    Effect.tryPromise({ try: () => operation(facets), catch: (cause) => cause })));
+function registryEffect<A>(
+  root: string,
+  operation: (facets: ProjectStateFacets) => Promise<A>,
+): Effect.Effect<A, unknown, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) =>
+    Effect.flatMap(database.bind(root), (facets) =>
+      Effect.tryPromise({ try: () => operation(facets), catch: (cause) => cause }),
+    ),
+  );
 }
 
 function putTeardownObligation(input: Omit<Parameters<TeardownFacet["put"]>[0], "_tag"> & { readonly root: string }) {
   const { root, ...command } = input;
   return registryEffect(root, (facets) => facets.teardown.put({ _tag: "teardown-put", ...command }));
 }
-function getTeardownObligation(root: string, id: string) { return registryEffect<TeardownObligationRow | undefined>(root, (facets) => facets.teardown.get(id)); }
-function listTeardownObligations(root: string) { return registryEffect<readonly TeardownObligationRow[]>(root, (facets) => facets.teardown.list()); }
-function claimTeardownObligation(root: string, id: string) { return registryEffect<boolean>(root, (facets) => facets.teardown.claim(id)); }
+function getTeardownObligation(root: string, id: string) {
+  return registryEffect<TeardownObligationRow | undefined>(root, (facets) => facets.teardown.get(id));
+}
+function listTeardownObligations(root: string) {
+  return registryEffect<readonly TeardownObligationRow[]>(root, (facets) => facets.teardown.list());
+}
+function claimTeardownObligation(root: string, id: string) {
+  return registryEffect<boolean>(root, (facets) => facets.teardown.claim(id));
+}
 type ProjectDatabaseRequirement = ProjectStateDatabase;
 
 /** 一条收尾登记项的持久 payload 形状。 */
@@ -36,9 +48,15 @@ export interface TeardownRegistration {
   startedAt: string;
 }
 
-const PositiveSafeIntegerSchema = Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier: "PositiveSafeInteger" })));
+const PositiveSafeIntegerSchema = Schema.Number.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier: "PositiveSafeInteger" }),
+  ),
+);
 
-const TimestampSchema = Schema.String.pipe(Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })));
+const TimestampSchema = Schema.String.pipe(
+  Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)), { identifier: "Timestamp" })),
+);
 
 const TeardownRegistrationSchema = Schema.Struct({
   experimentId: Schema.String,
@@ -120,22 +138,26 @@ export function readExactTeardownRegistrationEffect(
 ): Effect.Effect<TeardownRegistration | undefined, unknown, ProjectDatabaseRequirement> {
   const id = teardownEntryId(experimentId, pid);
   return getTeardownObligation(niceevalRoot, id).pipe(
-    Effect.flatMap((row) => row === undefined ? Effect.succeed(undefined) : Effect.try({
-      try: () => {
-        let value: unknown;
-        try {
-          value = JSON.parse(Buffer.from(row.payload).toString("utf8"));
-        } catch (cause) {
-          throw new Error(`teardown registration ${JSON.stringify(id)} is not valid JSON`, { cause });
-        }
-        const registration = decodeTeardownRegistration(value, { experimentId, pid });
-        if (registration === undefined) {
-          throw new Error(`teardown registration ${JSON.stringify(id)} has an invalid identity or shape`);
-        }
-        return registration;
-      },
-      catch: (cause) => cause,
-    })),
+    Effect.flatMap((row) =>
+      row === undefined
+        ? Effect.succeed(undefined)
+        : Effect.try({
+            try: () => {
+              let value: unknown;
+              try {
+                value = JSON.parse(Buffer.from(row.payload).toString("utf8"));
+              } catch (cause) {
+                throw new Error(`teardown registration ${JSON.stringify(id)} is not valid JSON`, { cause });
+              }
+              const registration = decodeTeardownRegistration(value, { experimentId, pid });
+              if (registration === undefined) {
+                throw new Error(`teardown registration ${JSON.stringify(id)} has an invalid identity or shape`);
+              }
+              return registration;
+            },
+            catch: (cause) => cause,
+          }),
+    ),
   );
 }
 
@@ -165,14 +187,11 @@ export function isExactTeardownRegistrationOwnerTerminatedEffect(input: {
     registration.pid !== owner.pid ||
     registration.host !== owner.host
   ) {
-    return Effect.fail(new Error(
-      "teardown registration does not match the immutable sharedState owner identity",
-    ));
+    return Effect.fail(new Error("teardown registration does not match the immutable sharedState owner identity"));
   }
   if (owner.host !== currentHost) return Effect.succeed(true);
   return processIdentityForPidEffect(owner.pid).pipe(
-    Effect.map((currentIdentity) =>
-      currentIdentity === undefined || currentIdentity !== owner.processIdentity),
+    Effect.map((currentIdentity) => currentIdentity === undefined || currentIdentity !== owner.processIdentity),
   );
 }
 
@@ -181,14 +200,16 @@ export function readTeardownRegistrationsEffect(
   niceevalRoot: string,
 ): Effect.Effect<{ id: string; entry: TeardownRegistration }[], unknown, ProjectDatabaseRequirement> {
   return listTeardownObligations(niceevalRoot).pipe(
-    Effect.map((rows) => rows.flatMap((row) => {
-      try {
-        const entry = decodeTeardownRegistration(JSON.parse(Buffer.from(row.payload).toString("utf8")));
-        return entry === undefined ? [] : [{ id: row.id, entry }];
-      } catch {
-        return [];
-      }
-    })),
+    Effect.map((rows) =>
+      rows.flatMap((row) => {
+        try {
+          const entry = decodeTeardownRegistration(JSON.parse(Buffer.from(row.payload).toString("utf8")));
+          return entry === undefined ? [] : [{ id: row.id, entry }];
+        } catch {
+          return [];
+        }
+      }),
+    ),
   );
 }
 
@@ -216,7 +237,10 @@ function isPidTerminal(pid: number): boolean {
       const raw = readFileSync(`/proc/${pid}/stat`, "utf8");
       const closing = raw.lastIndexOf(")");
       if (closing < 0 || raw[closing + 1] !== " ") return false;
-      const state = raw.slice(closing + 2).trim().split(/\s+/u)[0];
+      const state = raw
+        .slice(closing + 2)
+        .trim()
+        .split(/\s+/u)[0];
       return state === "Z" || state === "X" || state === "x";
     } catch (cause) {
       return errnoCode(cause) === "ENOENT";

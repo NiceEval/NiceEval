@@ -15,13 +15,15 @@ export default defineExperiment({
   sandbox: dockerSandbox({
     source: { type: "image", image: profileImage ?? NODE_IMAGE },
     user: profile === undefined ? "node" : "root",
-    ...(profile === undefined ? {} : {
-      dockerAccess: {
-        mode: "dind" as const,
-        isolation: "raw-privileged" as const,
-        storageProfile: profile,
-      },
-    }),
+    ...(profile === undefined
+      ? {}
+      : {
+          dockerAccess: {
+            mode: "dind" as const,
+            isolation: "raw-privileged" as const,
+            storageProfile: profile,
+          },
+        }),
     resources: {
       cpus: 1,
       memoryBytes: 1024 * MiB,

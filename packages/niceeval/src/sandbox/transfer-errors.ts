@@ -18,13 +18,13 @@ export interface TransferTarget {
   /** 中性操作名,与 `Sandbox` 接口的方法同名(用户就是照这个名字调的)。 */
   operation: string;
   /** provider 名(超时报错要点名是谁的 SDK 在超时);拿不到时按 `sandbox` 说。 */
-  provider?: string;
+  provider: string | undefined;
   /** 沙箱侧路径(已解析成绝对路径)。 */
   path: string;
   /** 本地侧来源路径(上传类操作有)。 */
-  localPath?: string;
+  localPath: string | undefined;
   /** 传输字节数;算不出来就不写——不猜也不填 0。 */
-  bytes?: number;
+  bytes: number | undefined;
 }
 
 /** 超时形态判定:沿 cause 链找 SDK / HTTP / socket 各家的超时词法与错误码。 */
@@ -36,7 +36,9 @@ export function isTransferTimeout(error: unknown): boolean {
     const code = record && typeof record.code === "string" ? record.code : "";
     const message = current instanceof Error ? current.message : String(current);
     if (/TimeoutError|HeadersTimeoutError|BodyTimeoutError|ConnectTimeoutError/i.test(name)) return true;
-    if (/^(ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/i.test(code)) {
+    if (
+      /^(ETIMEDOUT|ESOCKETTIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/i.test(code)
+    ) {
       return true;
     }
     if (/aborted due to timeout|timed? ?out|timeout exceeded|deadline exceeded/i.test(message)) return true;
@@ -55,7 +57,7 @@ export async function withTransferErrors<T>(target: TransferTarget, operation: (
   } catch (error) {
     if (!isTransferTimeout(error)) throw error;
     const bytes = target.bytes ?? (target.localPath ? await measureLocalBytes(target.localPath) : undefined);
-    throw transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error);
+    throw transferTimeoutError({ ...target, bytes }, error);
   }
 }
 
@@ -91,12 +93,14 @@ export function enrichTransferErrors<A, E>(
   target: TransferTarget,
 ): (self: Effect.Effect<A, E>) => Effect.Effect<A, E | Error> {
   return (self) =>
-    Effect.catch(self, (error): Effect.Effect<never, E | Error> =>
-      isTransferTimeout(error)
-        ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
-          Effect.fail(transferTimeoutError({ ...target, ...(bytes !== undefined ? { bytes } : {}) }, error)),
-        )
-        : Effect.fail<E>(error),
+    Effect.catch(
+      self,
+      (error): Effect.Effect<never, E | Error> =>
+        isTransferTimeout(error)
+          ? Effect.flatMap(measureTransferBytes(target), (bytes) =>
+              Effect.fail(transferTimeoutError({ ...target, bytes }, error)),
+            )
+          : Effect.fail<E>(error),
     );
 }
 

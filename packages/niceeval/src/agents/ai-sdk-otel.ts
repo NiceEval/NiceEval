@@ -18,7 +18,7 @@ export interface AiSdkOtelOptions {
    * 可选双发:span 除发给 niceeval 的接收器外,同一批也发到你自己的 OTLP 后端
    * (Langfuse / SigNoz / 生产 collector)。
    */
-  backendUrl?: string;
+  backendUrl?: string | undefined;
 }
 
 /**

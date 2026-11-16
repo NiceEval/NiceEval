@@ -1,5 +1,3 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { evalE2E } from "./context.ts";
@@ -13,11 +11,10 @@ test.concurrent("单模型简写使用冻结 default 选择及其别名", async 
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(paths.projectRoot, "selection.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
     expect(usage.calls).toEqual([
       expect.objectContaining({ callId: "unattributed", modelRole: null }),
@@ -35,11 +32,10 @@ test.concurrent("显式 default 使用冻结选择及相同别名", async () => 
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(paths.projectRoot, "selection.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
     expect(usage.calls).toEqual([
       expect.objectContaining({ callId: "unattributed", modelRole: null }),
@@ -57,11 +53,10 @@ test.concurrent("仅推理强度保留 null 模型与冻结 default 别名", asy
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(paths.projectRoot, "selection.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
     expect(usage.calls).toEqual([
       expect.objectContaining({ callId: "unattributed", modelRole: null }),
@@ -79,11 +74,31 @@ test.concurrent("省略模型配置保留冻结空映射及空别名", async () 
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
     expect(event.verdict).toBe("passed");
-    const request = join(paths.projectRoot, "selection.request.json");
-    await writeFile(request, JSON.stringify({ protocol: "niceeval.query/v3", operation: { kind: "attempt.usage", locator: event.locator } }));
-    const read = await niceeval.run(["query", "run", "--request", request]);
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
     expect(read.exitCode, read.diagnostic()).toBe(0);
-    const usage = read.querySuccess("attempt.usage").usage;
+    const usage = read.inspectionSuccess("attempt.usage").usage;
+    expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
+    expect(usage.calls).toEqual([
+      expect.objectContaining({ callId: "unattributed", modelRole: null }),
+      expect.objectContaining({ callId: "explicit-null", modelRole: null }),
+    ]);
+  });
+});
+
+// @feature docs/feature/adapters/README.md
+test.concurrent("仅模型配置将缺失强度交给回调并在读回保留 null", async () => {
+  const experimentId = "model-only";
+  const bindings = [{ modelRole: "default", model: "fixture/default", reasoningEffort: null, recordedCalls: 0 }];
+  await evalE2E.case(experimentId, async ({ paths, commands: { niceeval } }) => {
+    const run = await niceeval.run(["exp", experimentId, "--rerun", "all", "--json"]);
+    expect(run.exitCode, run.diagnostic()).toBe(0);
+    const event = only(run.expEvalEvents(), (entry) => entry.evalId === "model-role-selection", run.diagnostic());
+    expect(event.verdict).toBe("passed");
+
+    const read = await niceeval.run(["show", event.locator, "usage", "--json"]);
+    expect(read.exitCode, read.diagnostic()).toBe(0);
+    const usage = read.inspectionSuccess("attempt.usage").usage;
     expect(usage).toMatchObject({ configuredModels: { state: "available", bindings } });
     expect(usage.calls).toEqual([
       expect.objectContaining({ callId: "unattributed", modelRole: null }),

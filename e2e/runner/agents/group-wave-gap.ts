@@ -45,7 +45,7 @@ export const groupWaveAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic fixture" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-group-wave-gap", version: "1", revision: "1" },
     probe: shell("true"),
   },

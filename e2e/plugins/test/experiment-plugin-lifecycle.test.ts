@@ -1,4 +1,3 @@
-
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
 import { e2e, lifecycleEvents } from "./helpers.ts";
@@ -11,10 +10,13 @@ test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.expEvents().filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
-    expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual(["passed", "passed"]);
+    const evalEvents = run
+      .expEvents()
+      .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+    expect(
+      evalEvents.map((event) => event.verdict),
+      run.diagnostic(),
+    ).toEqual(["passed", "passed"]);
 
     const events = lifecycleEvents(paths.projectRoot);
     expect(events.map((event) => event.kind)).toEqual([
@@ -35,19 +37,33 @@ test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
       "experiment.plugin.teardown",
       "experiment.author.teardown",
     ]);
-    expect(events.filter((event) => event.kind === "experiment.plugin.setup").map((event) => event.marker)).toEqual(["experiment-a", "experiment-b"]);
-    expect(events.filter((event) => event.kind === "experiment.plugin.teardown").map((event) => event.marker)).toEqual(["experiment-b", "experiment-a"]);
+    expect(events.filter((event) => event.kind === "experiment.plugin.setup").map((event) => event.marker)).toEqual([
+      "experiment-a",
+      "experiment-b",
+    ]);
+    expect(events.filter((event) => event.kind === "experiment.plugin.teardown").map((event) => event.marker)).toEqual([
+      "experiment-b",
+      "experiment-a",
+    ]);
     expect(events.filter((event) => event.kind === "agent.send").map((event) => event.evalId)).toEqual([
       "experiment-plugin/01-first",
       "experiment-plugin/02-second",
     ]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => [event.marker, event.declaredMarker])).toEqual([
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.before")
+        .map((event) => [event.marker, event.declaredMarker]),
+    ).toEqual([
       ["experiment-a", "experiment-a"],
       ["experiment-b", "experiment-b"],
       ["experiment-a", "experiment-a"],
       ["experiment-b", "experiment-b"],
     ]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => [event.marker, event.ownerKind, event.ownerId])).toEqual([
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.after")
+        .map((event) => [event.marker, event.ownerKind, event.ownerId]),
+    ).toEqual([
       ["experiment-b", "experiment", "experiment-plugin"],
       ["experiment-a", "experiment", "experiment-plugin"],
       ["experiment-b", "experiment", "experiment-plugin"],
@@ -56,6 +72,8 @@ test("Experiment Plugin 生命周期只包围一次整场实验", async () => {
     expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => event.physicalId)).toEqual(
       events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId),
     );
-    expect(new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size).toBe(2);
+    expect(
+      new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size,
+    ).toBe(2);
   });
 });

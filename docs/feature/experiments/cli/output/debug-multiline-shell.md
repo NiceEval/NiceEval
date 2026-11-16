@@ -3,8 +3,8 @@
 多行 Shell 使用固定 gutter，不把脚本压成带 `\n` 的单行字符串：
 
 ```text
-╭─ sandbox.prepare ──────────────────────────────────────────────────── EXACT ─╮
-│ position: lane eval:group/first · plannedAttempt group/first #0                        │
+╭─ Prepare Sandbox ──────────────────────────────────────────────────── EXACT ─╮
+│ position: Eval group/first · Attempt #1                        │
 │ owner: eval:group/first                                                      │
 │ command: shell · 5 lines                                                     │
 │   │ set -eu                                                                  │

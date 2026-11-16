@@ -1,11 +1,7 @@
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
-const READY_EVALS = new Set([
-  "group-stop-alpha/next",
-  "group-stop-beta/next",
-  "group-stop-gamma/hold",
-]);
+const READY_EVALS = new Set(["group-stop-alpha/next", "group-stop-beta/next", "group-stop-gamma/hold"]);
 const arrivals = new Set<string>();
 let releaseArrivals: () => void = () => undefined;
 const allArrived = new Promise<void>((resolve) => {
@@ -38,7 +34,7 @@ export const orStopParallelSandbox = dockerSandbox({
 export const orStopParallelAgent = defineSandboxAgent({
   name: "runner-or-stop-parallel",
   evidenceCoverage: { ...completeEvidenceCoverage, usage: { status: "unavailable", reason: "deterministic fixture" } },
-  ensure: {
+  install: {
     identity: { agent: "runner-or-stop-parallel", version: "1", revision: "1" },
     probe: shell("true"),
   },

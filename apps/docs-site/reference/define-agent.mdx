@@ -152,7 +152,9 @@ Frozen application model selections for this Attempt.
 #### `recordUsage`
 
 ```ts
-recordUsage(input: Omit<import("./adapter-usage.ts").AdapterUsageInput, "modelRole"> & { readonly modelRole?: Roles | null }): void;
+recordUsage(
+  input: Omit<import("./adapter-usage.ts").AdapterUsageInput, "modelRole"> & { readonly modelRole?: Roles | null },
+): void;
 ```
 
 #### `sealUsage`
@@ -166,7 +168,9 @@ Close application usage admission and declare whether the recorded collection is
 #### `attach`
 
 ```ts
-attach(input: import("./adapter-attachments.ts").AdapterAttachmentInput): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
+attach(
+  input: import("./adapter-attachments.ts").AdapterAttachmentInput,
+): Promise<import("./adapter-attachments.ts").AdapterAttachmentReceipt>;
 ```
 
 #### `recordTrace`
@@ -212,7 +216,7 @@ The Attempt execution signal; its reason distinguishes timeout from cancelled, a
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model: string | undefined;
 ```
 
 The model selected by the Experiment.
@@ -220,7 +224,7 @@ The model selected by the Experiment.
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort: string | undefined;
 ```
 
 The reasoning effort selected by the Experiment.
@@ -287,7 +291,7 @@ This Adapter's normal evidence coverage declaration; use `completeEvidenceCovera
 #### `before`
 
 ```ts
-before?: DirectAgentBefore;
+before?: DirectAgentBefore | undefined;
 ```
 
 Once per attempt. A Direct Agent does not receive a Sandbox; commonly used for one-time preparation such as opening connections and authentication.
@@ -295,7 +299,7 @@ Once per attempt. A Direct Agent does not receive a Sandbox; commonly used for o
 #### `tracing`
 
 ```ts
-tracing?: Omit<AgentTracing, "configure">;
+tracing?: Omit<AgentTracing, "configure"> | undefined;
 ```
 
 OTLP export configuration: how the system under test sends traces to the endpoint (env-based injection).
@@ -303,7 +307,7 @@ OTLP export configuration: how the system under test sends traces to the endpoin
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 A thin mapper from native spans → canonical; omitted uses the generic heuristic. Affects only the waterfall.
@@ -319,7 +323,7 @@ Once per turn: sends one turn's prompt directly to a function, SDK, or service e
 #### `classifySendFailure`
 
 ```ts
-classifySendFailure?: SendFailureClassifier;
+classifySendFailure?: SendFailureClassifier | undefined;
 ```
 
 Optional send execution failure classifier: see `Agent.classifySendFailure`.
@@ -327,7 +331,7 @@ Optional send execution failure classifier: see `Agent.classifySendFailure`.
 #### `after`
 
 ```ts
-after?: DirectAgentAfter;
+after?: DirectAgentAfter | undefined;
 ```
 
 Cleanup before the run ends, executed if and only if this attempt reached the `before` point (a `before` throw does not exempt it),
@@ -354,15 +358,15 @@ This Adapter's normal evidence coverage declaration; use `completeEvidenceCovera
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer<"command-only">;
+sandbox?: SandboxLayer<"command-only"> | undefined;
 ```
 
 The Adapter's own Sandbox actions; an Agent cannot choose or contribute a template.
 
-#### `ensure`
+#### `install`
 
 ```ts
-ensure: AgentEnsure | readonly AgentEnsure[];
+readonly install: AgentInstall | readonly AgentInstall[];
 ```
 
 A single entry or an array is normalized into Agent layers in declaration order.
@@ -370,26 +374,26 @@ A single entry or an array is normalized into Agent layers in declaration order.
 #### `installers`
 
 ```ts
-installers?: readonly AgentInstaller[];
+installers?: readonly AgentInstaller[] | undefined;
 ```
 
 Paired installation layers; omitted means this adapter provides only the probe protocol, and on a miss the Runner
-names the exact missing identity at `agent.ensure`. The factory normalizes an omission into an empty array.
+names the exact missing identity at `agent.install`. The factory normalizes an omission into an empty array.
 
 #### `before`
 
 ```ts
-before?: AgentBefore;
+before?: AgentBefore | undefined;
 ```
 
 Once per Attempt (not once per send): writes config.toml / authentication configuration (model/base/auth and other
-runtime configuration that does not change within this Attempt). Probing, installing, and rechecking the CLI belong to `agent.ensure`. The runner calls it once after the Sandbox
-is ready (after layer prepare/ensure/baseline) and before the first send; it returns no value.
+runtime configuration that does not change within this Attempt). Probing, installing, and rechecking the CLI belong to `agent.install`. The runner calls it once after the Sandbox
+is ready (after layer prepare/install/baseline) and before the first send; it returns no value.
 
 #### `tracing`
 
 ```ts
-tracing?: AgentTracing;
+tracing?: AgentTracing | undefined;
 ```
 
 OTLP export configuration: how to make the CLI in the Sandbox send traces to the endpoint (env / config file), split out of before.
@@ -397,7 +401,7 @@ OTLP export configuration: how to make the CLI in the Sandbox send traces to the
 #### `spanMapper`
 
 ```ts
-spanMapper?: SpanMapper;
+spanMapper?: SpanMapper | undefined;
 ```
 
 A thin mapper from native spans → canonical; omitted uses the generic heuristic. Affects only the waterfall.
@@ -413,7 +417,7 @@ Once per turn: runs the prompt (fresh / resume) and parses it into events. The a
 #### `classifySendFailure`
 
 ```ts
-classifySendFailure?: SendFailureClassifier;
+classifySendFailure?: SendFailureClassifier | undefined;
 ```
 
 Optional send execution failure classifier: see `Agent.classifySendFailure`.
@@ -421,7 +425,7 @@ Optional send execution failure classifier: see `Agent.classifySendFailure`.
 #### `after`
 
 ```ts
-after?: AgentAfter;
+after?: AgentAfter | undefined;
 ```
 
 Cleanup before the Sandbox is destroyed, executed if and only if this attempt reached the `before` point (a `before` throw does not exempt it),
@@ -443,7 +447,7 @@ gracefully early, but it is not the only hard boundary: even if the adapter igno
 #### `model`
 
 ```ts
-readonly model?: string;
+readonly model?: string | undefined;
 ```
 
 The model name used by this attempt, passed through from the Experiment's `model` field. Sandbox agents usually write it into configuration in before; direct agents usually use it in send to select the model.
@@ -451,7 +455,7 @@ The model name used by this attempt, passed through from the Experiment's `model
 #### `reasoningEffort`
 
 ```ts
-readonly reasoningEffort?: string;
+readonly reasoningEffort?: string | undefined;
 ```
 
 The model's reasoning effort; owned the same way as model: the Experiment decides it, and when omitted the agent's native default is not overridden.
@@ -470,7 +474,7 @@ the framework itself neither interprets nor validates the content. The name deli
 #### `experimentId`
 
 ```ts
-readonly experimentId?: string;
+readonly experimentId?: string | undefined;
 ```
 
 The Experiment id derived from the path (the same source as result attribution `runWho` / `AgentRun.experimentId`); undefined when not running
@@ -482,7 +486,7 @@ values of Experiment conditions): this is only a stable identifier of "which Exp
 #### `evalId`
 
 ```ts
-readonly evalId?: string;
+readonly evalId?: string | undefined;
 ```
 
 The eval ID of the current Attempt. The NiceEval Runner always fills it from the Eval identity after discovery;
@@ -492,10 +496,12 @@ but must not use it to bypass the Sandbox's hidden-criteria isolation.
 #### `evalGroup`
 
 ```ts
-readonly evalGroup?: {
-  readonly id: string;
-  readonly definitionHash: string;
-};
+readonly evalGroup?:
+| {
+    readonly id: string;
+    readonly definitionHash: string;
+  }
+| undefined;
 ```
 
 The eval group of the current Attempt; omitted for ungrouped Evals.
@@ -503,7 +509,7 @@ The eval group of the current Attempt; omitted for ungrouped Evals.
 #### `attempt`
 
 ```ts
-readonly attempt?: AttemptRef;
+readonly attempt?: AttemptRef | undefined;
 ```
 
 The current Attempt reference filled in by the Runner; third parties constructing the context directly can omit it.
@@ -517,7 +523,7 @@ readonly session: AgentSession;
 #### `telemetry`
 
 ```ts
-readonly telemetry?: Telemetry;
+readonly telemetry?: Telemetry | undefined;
 ```
 
 Present only when OTel integration is configured (the agent's `tracing` block / the config's telemetry exists):
@@ -607,11 +613,7 @@ Use it when you need to chain several commands or branch on conditions.
 #### `runCommandOrThrow`
 
 ```ts
-runCommandOrThrow(
-  cmd: string,
-  args?: readonly string[],
-  opts?: CommandOptions,
-): Promise<SuccessfulCommandResult>;
+runCommandOrThrow(cmd: string, args?: readonly string[], opts?: CommandOptions): Promise<SuccessfulCommandResult>;
 ```
 
 Runs a single command like `runCommand`, but throws `SandboxCommandExitError` on a non-zero exit. The error message includes
@@ -730,7 +732,7 @@ This Sandbox's stable identifier (each provider's native ID, such as a Docker co
 #### `nativeInstanceId`
 
 ```ts
-readonly nativeInstanceId?: string;
+readonly nativeInstanceId?: string | undefined;
 ```
 
 Provider-native instance selector for read-only diagnostics; absent when unavailable.
@@ -761,7 +763,7 @@ the Logs tab of the Docker UI shows the agent's turn-by-turn activity live. Impl
 #### `sensitiveValues`
 
 ```ts
-readonly sensitiveValues?: readonly string[];
+readonly sensitiveValues?: readonly string[] | undefined;
 ```
 
 Sensitive plaintext this command is known to handle (such as API keys, tokens, HTTP header values). The Runner still hands the
@@ -774,7 +776,7 @@ first, also register the encoded form that will actually appear in the command/o
 #### `env`
 
 ```ts
-readonly env?: Readonly<globalThis.Record<string, string>>;
+readonly env?: Readonly<globalThis.Record<string, string>> | undefined;
 ```
 
 Adds/overrides environment variables for this command (layered on the Sandbox default environment without clearing defaults). `PATH` is a Sandbox
@@ -785,7 +787,7 @@ pathPrepend").
 #### `cwd`
 
 ```ts
-readonly cwd?: string;
+readonly cwd?: string | undefined;
 ```
 
 This command's working directory; omitted lands on `Sandbox.workdir`. Relative paths resolve against the workdir, and absolute paths are used as is.
@@ -793,7 +795,7 @@ This command's working directory; omitted lands on `Sandbox.workdir`. Relative p
 #### `stream`
 
 ```ts
-readonly stream?: boolean;
+readonly stream?: boolean | undefined;
 ```
 
 Also sends this command's output into the Sandbox's "native log stream" (so `docker logs` / the Logs tab of the Docker UI
@@ -804,7 +806,7 @@ unsupported providers ignore it); how the log surfaces is the provider's busines
 #### `onStdout`
 
 ```ts
-readonly onStdout?: (chunk: string) => void | Promise<void>;
+readonly onStdout?: ((chunk: string) => void | Promise<void>) | undefined;
 ```
 
 Called once for each stdout chunk of the command. The callback is only for short-lived feedback while running; the full stdout still appears verbatim
@@ -814,7 +816,7 @@ stdout after the command ends; it must not drop it silently.
 #### `onStderr`
 
 ```ts
-readonly onStderr?: (chunk: string) => void | Promise<void>;
+readonly onStderr?: ((chunk: string) => void | Promise<void>) | undefined;
 ```
 
 The stderr counterpart of `onStdout`; the full stderr is still kept in `CommandResult`.
@@ -822,7 +824,7 @@ The stderr counterpart of `onStdout`; the full stderr is still kept in `CommandR
 #### `user`
 
 ```ts
-readonly user?: string;
+readonly user?: string | undefined;
 ```
 
 Overrides the execution identity of this command; omitted = the Sandbox default identity (the identity the environment declares itself: the Docker image `USER`,
@@ -837,7 +839,7 @@ explicit values stay consistent** and do not vary by provider.
 #### `timeoutMs`
 
 ```ts
-readonly timeoutMs?: number;
+readonly timeoutMs?: number | undefined;
 ```
 
 This command's own limit (milliseconds). **Omitting it is the norm**: when omitted, the limit = the remaining attempt deadline
@@ -847,7 +849,7 @@ Passing a shorter value explicitly is an intentional declaration and takes effec
 #### `signal`
 
 ```ts
-readonly signal?: AbortSignal;
+readonly signal?: AbortSignal | undefined;
 ```
 
 Cancels this managed command tree. The provider must confirm the command tree has terminated before the Promise settles; when it cannot terminate

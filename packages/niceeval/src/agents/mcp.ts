@@ -13,7 +13,9 @@ export function isHttpMcp(server: McpServer): server is McpHttpServer {
 export function assertMcpServers(servers: readonly McpServer[]): void {
   for (const server of servers) {
     if ("command" in server && "url" in server) {
-      throw new Error(`MCP server "${server.name}" specifies both "command" and "url" — pick one transport: "command" for a local stdio server, "url" for a remote Streamable HTTP endpoint.`);
+      throw new Error(
+        `MCP server "${server.name}" specifies both "command" and "url" — pick one transport: "command" for a local stdio server, "url" for a remote Streamable HTTP endpoint.`,
+      );
     }
   }
 }

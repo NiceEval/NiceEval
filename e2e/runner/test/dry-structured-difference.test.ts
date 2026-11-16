@@ -14,13 +14,19 @@ test.concurrent("预览区分不完整的结构摘要并明确无法比较的原
     await writeFile(path, source.replace('aRevision: "before"', 'aRevision: "after"'));
     const changed = await niceeval.run(["exp", "dry-structured", "--dry"]);
     expect(changed.exitCode, changed.diagnostic()).toBe(0);
-    expect(changed.stdout, changed.diagnostic()).toMatch(/config:plugins changed \(summary sha256:[a-f0-9]{12} → summary sha256:[a-f0-9]{12}; structured summaries incomplete\)/u);
+    expect(changed.stdout, changed.diagnostic()).toMatch(
+      /config:plugins changed \(summary sha256:[a-f0-9]{12} → summary sha256:[a-f0-9]{12}; structured summaries incomplete\)/u,
+    );
     const hashes = [...changed.stdout.matchAll(/summary sha256:([a-f0-9]{12})/gu)].map((match) => match[1]);
     expect(new Set(hashes).size).toBeGreaterThanOrEqual(2);
     await writeFile(path, source.replace('"revision":"before"', '"revision":"after"'));
     const unavailable = await niceeval.run(["exp", "dry-structured", "--dry"]);
     expect(unavailable.exitCode, unavailable.diagnostic()).toBe(0);
-    expect(unavailable.stdout).toContain("config:flags.payload changed (comparison unavailable: recorded structured summaries are incomplete and identical)");
-    expect(unavailable.stdout).not.toContain("structured value (summary incomplete) → structured value (summary incomplete)");
+    expect(unavailable.stdout).toContain(
+      "config:flags.payload changed (comparison unavailable: recorded structured summaries are incomplete and identical)",
+    );
+    expect(unavailable.stdout).not.toContain(
+      "structured value (summary incomplete) → structured value (summary incomplete)",
+    );
   });
 });

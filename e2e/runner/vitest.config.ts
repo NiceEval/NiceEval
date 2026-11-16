@@ -21,6 +21,15 @@ class RunnerSequencer extends BaseSequencer {
 }
 
 export default defineConfig({
+  plugins: [
+    {
+      name: "niceeval-source-condition",
+      configEnvironment(_name, config) {
+        if (!process.env.NODE_OPTIONS?.includes("--conditions=niceeval-source")) return;
+        return { resolve: { conditions: ["niceeval-source", ...(config.resolve?.conditions ?? [])] } };
+      },
+    },
+  ],
   test: {
     include: ["test/**/*.test.ts"],
     // Start long child-process journeys first; independently owned cases

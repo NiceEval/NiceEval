@@ -2,9 +2,7 @@ import { Effect } from "effect";
 
 import type { EvalResult, PhaseTiming, TimingActivity } from "../types.ts";
 import { formatTurnLabel } from "../../shared/turn-label.ts";
-import {
-  MAX_TIMING_INTERVALS,
-} from "../../record/family/source-receipt/limits.ts";
+import { MAX_TIMING_INTERVALS } from "../../record/family/source-receipt/limits.ts";
 import {
   compareObservabilityText,
   makeNonNegativeSafeInteger,
@@ -16,15 +14,8 @@ import {
   type StableLabel,
   type TurnId,
 } from "../../record/family/source-receipt/model.ts";
-import type {
-  AttemptTimingAttachment,
-  AttemptTimingInterval,
-} from "./model.ts";
-import {
-  RunnerCollectionLimitations,
-  requiredNonNegative,
-  type RunnerObservabilityProducerError,
-} from "./support.ts";
+import type { AttemptTimingAttachment, AttemptTimingInterval } from "./model.ts";
+import { RunnerCollectionLimitations, requiredNonNegative, type RunnerObservabilityProducerError } from "./support.ts";
 
 type AttemptEntityMinter = <Kind extends ObservabilityEntityKind>(
   kind: Kind,
@@ -49,7 +40,7 @@ type AttemptTimingProjection =
 
 function attemptTimingProjection(phase: string): AttemptTimingProjection {
   const label = stableLabel(phase);
-  if (label === undefined) return Object.freeze({ kind: "unsupported" as const });
+  if (label === undefined) return { kind: "unsupported" as const };
   switch (phase) {
     case "attempt.setup":
     case "sandbox.create":
@@ -57,18 +48,18 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "agent.setup":
     case "telemetry.configure":
     case "sandbox.queue":
-      return Object.freeze({ kind: "attempt" as const, phase: "attempt.setup" as const, label });
+      return { kind: "attempt" as const, phase: "attempt.setup" as const, label };
     case "sandbox.prepare":
     case "sandbox.prepare.eval":
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
-      return Object.freeze({ kind: "attempt" as const, phase: "sandbox.prepare" as const, label });
-    case "agent.ensure":
-      return Object.freeze({ kind: "attempt" as const, phase: "agent.ensure" as const, label });
+      return { kind: "attempt" as const, phase: "sandbox.prepare" as const, label };
+    case "agent.install":
+      return { kind: "attempt" as const, phase: "agent.install" as const, label };
     case "eval.run":
-      return Object.freeze({ kind: "attempt" as const, phase: "eval.run" as const, label });
+      return { kind: "attempt" as const, phase: "eval.run" as const, label };
     case "assertions.evaluate":
-      return Object.freeze({ kind: "attempt" as const, phase: "assertion.evaluate" as const, label });
+      return { kind: "attempt" as const, phase: "assertion.evaluate" as const, label };
     case "agent.teardown":
     case "attempt.teardown":
     case "sandbox.cleanup":
@@ -76,14 +67,14 @@ function attemptTimingProjection(phase: string): AttemptTimingProjection {
     case "sandbox.stop":
     case "workspace.diff":
     case "telemetry.collect":
-      return Object.freeze({ kind: "attempt" as const, phase: "attempt.teardown" as const, label });
+      return { kind: "attempt" as const, phase: "attempt.teardown" as const, label };
     case "judge.precheck":
     case "experiment.setup":
     case "experiment.teardown":
     case "agent.run":
-      return Object.freeze({ kind: "outside-attempt-domain" as const });
+      return { kind: "outside-attempt-domain" as const };
     default:
-      return Object.freeze({ kind: "unsupported" as const });
+      return { kind: "unsupported" as const };
   }
 }
 
@@ -95,24 +86,38 @@ function validPhaseStartOffset(value: PhaseTiming): NonNegativeSafeInteger | und
   return makeNonNegativeSafeInteger(value.startOffsetMs);
 }
 
-function timingActivityProjection(
-  activity: TimingActivity,
-): {
-  readonly phase: AttemptTimingInterval["phase"];
-  readonly label: StableLabel | ReturnType<typeof formatTurnLabel>;
-} | undefined {
+function timingActivityProjection(activity: TimingActivity):
+  | {
+      readonly phase: AttemptTimingInterval["phase"];
+      readonly label: StableLabel | ReturnType<typeof formatTurnLabel>;
+    }
+  | undefined {
   const phase = (() => {
+    if (activity.judgeOwned) return "assertion.evaluate" as const;
     switch (activity.key) {
-    case "agent.turn":
-      return "agent.send" as const;
-    case "sandbox.command":
-      return "sandbox.command" as const;
-    case "sandbox.prepare":
-      return "sandbox.prepare" as const;
-    case "workspace.diff.export":
-      return "attempt.teardown" as const;
-    default:
-      return undefined;
+      case "judge.entry":
+      case "agent-judge.session":
+      case "agent-judge.prompt":
+      case "judge.request":
+      case "agent-judge.compaction":
+        return "assertion.evaluate" as const;
+      case "simulated-user.reply":
+        return "eval.run" as const;
+      case "agent.turn":
+        return "agent.send" as const;
+      case "sandbox.command":
+        return "sandbox.command" as const;
+      case "sandbox.prepare":
+        return "sandbox.prepare" as const;
+      case "telemetry.settle":
+      case "telemetry.read":
+      case "telemetry.decode":
+      case "telemetry.map":
+        return "attempt.teardown" as const;
+      case "workspace.diff.export":
+        return "attempt.teardown" as const;
+      default:
+        return undefined;
     }
   })();
   if (phase === undefined) return undefined;
@@ -121,13 +126,12 @@ function timingActivityProjection(
   // display label cannot cross the durable boundary. Native agent turns keep
   // their canonical slash coordinate so the Record writer never invents a
   // dot-encoded historical label.
-  const label = activity.key === "agent.turn"
-      && activity.sessionIndex !== undefined
-      && activity.turnIndex !== undefined
-    ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
-    : stableLabel(activity.label) ?? stableLabel(activity.key);
+  const label =
+    activity.key === "agent.turn" && activity.sessionIndex !== undefined && activity.turnIndex !== undefined
+      ? formatTurnLabel(activity.sessionIndex, activity.turnIndex)
+      : (stableLabel(activity.label) ?? stableLabel(activity.key));
   if (label === undefined) return undefined;
-  return Object.freeze({ phase, label });
+  return { phase, label };
 }
 
 function validTimingActivityStart(activity: TimingActivity): NonNegativeSafeInteger | undefined {
@@ -157,6 +161,7 @@ function timingSpanContains(input: {
 interface NormalizedAttemptTimingWithTurnIntervals {
   readonly timing: AttemptTimingAttachment;
   readonly intervalByTurnId: ReadonlyMap<TurnId, IntervalId>;
+  readonly entryIndexByIntervalId: ReadonlyMap<IntervalId, number>;
 }
 
 export function normalizeAttemptTiming(input: {
@@ -166,110 +171,124 @@ export function normalizeAttemptTiming(input: {
 }): Effect.Effect<NormalizedAttemptTimingWithTurnIntervals, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const limitations = new RunnerCollectionLimitations();
-    const turnsById = new Map<string, TimingConversationTurn>(
-      input.turns.map((turn) => [turn.turnId, turn] as const),
-    );
+    const turnsById = new Map<string, TimingConversationTurn>(input.turns.map((turn) => [turn.turnId, turn] as const));
     const intervalByTurnId = new Map<TurnId, IntervalId>();
     const ambiguousTurnIntervals = new Set<TurnId>();
     const phases = input.result.phases;
     if (phases === undefined) {
       limitations.addCaptureFailed("timing-capture", "timing-interval");
-      return Object.freeze({
-        timing: Object.freeze({ collection: limitations.collection(), intervals: Object.freeze([]) }),
+      return {
+        timing: { collection: limitations.collection(), intervals: [] },
         intervalByTurnId: new Map(),
-      });
+        entryIndexByIntervalId: new Map(),
+      };
     }
 
     const intervals: AttemptTimingInterval[] = [];
+    const entryIndexByIntervalId = new Map<IntervalId, number>();
     const appendActivities = (
       activities: readonly TimingActivity[] | undefined,
-      parent: {
-        readonly intervalId: IntervalId;
-        readonly startOffsetMs: NonNegativeSafeInteger;
-        /** Offset in the Runner's unfiltered phase clock. */
-        readonly sourceStartOffsetMs: NonNegativeSafeInteger;
-        readonly durationMs: NonNegativeSafeInteger;
-      } | undefined,
+      parent:
+        | {
+            readonly intervalId: IntervalId;
+            readonly startOffsetMs: NonNegativeSafeInteger;
+            /** Offset in the Runner's unfiltered phase clock. */
+            readonly sourceStartOffsetMs: NonNegativeSafeInteger;
+            readonly durationMs: NonNegativeSafeInteger;
+          }
+        | undefined,
       ancestors: ReadonlySet<TimingActivity>,
-    ): Effect.Effect<void, RunnerObservabilityProducerError> => Effect.gen(function* () {
-      for (const activity of activities ?? []) {
-        if (ancestors.has(activity)) {
-          limitations.addUnsupported("timing-interval");
-          continue;
-        }
-        const projection = timingActivityProjection(activity);
-        const sourceStartOffsetMs = validTimingActivityStart(activity);
-        const durationMs = validTimingActivityDuration(activity);
-        const relativeStartOffsetMs = parent === undefined || sourceStartOffsetMs === undefined
-          ? sourceStartOffsetMs
-          : makeNonNegativeSafeInteger(sourceStartOffsetMs - parent.sourceStartOffsetMs);
-        const translatedStartOffsetMs = parent === undefined || relativeStartOffsetMs === undefined
-          ? relativeStartOffsetMs
-          : makeNonNegativeSafeInteger(parent.startOffsetMs + relativeStartOffsetMs);
-        // A known activity with safe source-clock values remains a fact even
-        // when this parent-relative conversion cannot be proven. Persist its
-        // original interval as a root rather than turning a missing causal
-        // edge into an unsupported-input limitation.
-        const startOffsetMs = translatedStartOffsetMs ?? sourceStartOffsetMs;
-        if (
-          projection === undefined
-          || sourceStartOffsetMs === undefined
-          || startOffsetMs === undefined
-          || durationMs === undefined
-        ) {
-          limitations.addUnsupported("timing-interval");
-          continue;
-        }
-        if (intervals.length >= MAX_TIMING_INTERVALS) {
-          limitations.addCap("timing-interval", intervals.length);
-          continue;
-        }
-        const intervalId = yield* input.mint("interval");
-        const parentIntervalId = parent === undefined || translatedStartOffsetMs === undefined
-          ? null
-          : timingSpanContains({
-              parentStartOffsetMs: parent.startOffsetMs,
-              parentDurationMs: parent.durationMs,
-              childStartOffsetMs: startOffsetMs,
-              childDurationMs: durationMs,
-            })
-            ? parent.intervalId
-            : null;
-        intervals.push(Object.freeze({
-          intervalId,
-          phase: projection.phase,
-          label: projection.label,
-          startOffsetMs,
-          durationMs,
-          parentIntervalId,
-          outcome: activity.failed ? "failed" as const : "completed" as const,
-          refs: Object.freeze([]),
-        }));
-        if (activity.key === "agent.turn" && activity.turnId !== undefined) {
-          const turnId = turnsById.get(activity.turnId)?.turnId;
-          if (turnId !== undefined) {
-            if (intervalByTurnId.has(turnId) || ambiguousTurnIntervals.has(turnId)) {
-              intervalByTurnId.delete(turnId);
-              ambiguousTurnIntervals.add(turnId);
-            } else {
-              intervalByTurnId.set(turnId, intervalId);
+    ): Effect.Effect<void, RunnerObservabilityProducerError> =>
+      Effect.gen(function* () {
+        for (const activity of activities ?? []) {
+          if (ancestors.has(activity)) {
+            limitations.addUnsupported("timing-interval");
+            continue;
+          }
+          const projection = timingActivityProjection(activity);
+          const sourceStartOffsetMs = validTimingActivityStart(activity);
+          const durationMs = validTimingActivityDuration(activity);
+          const relativeStartOffsetMs =
+            parent === undefined || sourceStartOffsetMs === undefined
+              ? sourceStartOffsetMs
+              : makeNonNegativeSafeInteger(sourceStartOffsetMs - parent.sourceStartOffsetMs);
+          const translatedStartOffsetMs =
+            parent === undefined || relativeStartOffsetMs === undefined
+              ? relativeStartOffsetMs
+              : makeNonNegativeSafeInteger(parent.startOffsetMs + relativeStartOffsetMs);
+          // A known activity with safe source-clock values remains a fact even
+          // when this parent-relative conversion cannot be proven. Persist its
+          // original interval as a root rather than turning a missing causal
+          // edge into an unsupported-input limitation.
+          const startOffsetMs = translatedStartOffsetMs ?? sourceStartOffsetMs;
+          if (
+            projection === undefined ||
+            sourceStartOffsetMs === undefined ||
+            startOffsetMs === undefined ||
+            durationMs === undefined
+          ) {
+            limitations.addUnsupported("timing-interval");
+            continue;
+          }
+          if (intervals.length >= MAX_TIMING_INTERVALS) {
+            limitations.addCap("timing-interval", intervals.length);
+            continue;
+          }
+          const intervalId = yield* input.mint("interval");
+          function containingParentInterval(startOffsetMs: NonNegativeSafeInteger, durationMs: NonNegativeSafeInteger) {
+            if (parent === undefined || translatedStartOffsetMs === undefined) return null;
+            if (
+              timingSpanContains({
+                parentStartOffsetMs: parent.startOffsetMs,
+                parentDurationMs: parent.durationMs,
+                childStartOffsetMs: startOffsetMs,
+                childDurationMs: durationMs,
+              })
+            )
+              return parent.intervalId;
+            return null;
+          }
+          const parentIntervalId = containingParentInterval(startOffsetMs, durationMs);
+          if (activity.assertionEntryIndex !== undefined)
+            entryIndexByIntervalId.set(intervalId, activity.assertionEntryIndex);
+          intervals.push({
+            intervalId,
+            phase: projection.phase,
+            label: projection.label,
+            startOffsetMs,
+            durationMs,
+            parentIntervalId,
+            outcome: activity.outcome ?? (activity.failed ? ("failed" as const) : ("completed" as const)),
+            ...(activity.transmissionOrdinal === undefined
+              ? {}
+              : { transmissionOrdinal: activity.transmissionOrdinal }),
+            refs: [],
+          });
+          if (activity.key === "agent.turn" && activity.turnId !== undefined) {
+            const turnId = turnsById.get(activity.turnId)?.turnId;
+            if (turnId !== undefined) {
+              if (intervalByTurnId.has(turnId) || ambiguousTurnIntervals.has(turnId)) {
+                intervalByTurnId.delete(turnId);
+                ambiguousTurnIntervals.add(turnId);
+              } else {
+                intervalByTurnId.set(turnId, intervalId);
+              }
             }
           }
+          const nextAncestors = new Set(ancestors);
+          nextAncestors.add(activity);
+          yield* appendActivities(
+            activity.children,
+            {
+              intervalId,
+              startOffsetMs,
+              sourceStartOffsetMs,
+              durationMs,
+            },
+            nextAncestors,
+          );
         }
-        const nextAncestors = new Set(ancestors);
-        nextAncestors.add(activity);
-        yield* appendActivities(
-          activity.children,
-          Object.freeze({
-            intervalId,
-            startOffsetMs,
-            sourceStartOffsetMs,
-            durationMs,
-          }),
-          nextAncestors,
-        );
-      }
-    });
+      });
     // `phases` also carries a few known Run-owned anchors for first-dispatched
     // work. Keep their raw clock for child translation, but do not let them
     // create gaps in the Attempt execution-duration clock.
@@ -279,42 +298,38 @@ export function normalizeAttemptTiming(input: {
       const sourceStartOffsetMs = validPhaseStartOffset(source);
       const projection = attemptTimingProjection(source.name);
       if (
-        duration === undefined
-        || sourceStartOffsetMs === undefined
-        || projection.kind === "unsupported"
-        || attemptOffset === undefined
+        duration === undefined ||
+        sourceStartOffsetMs === undefined ||
+        projection.kind === "unsupported" ||
+        attemptOffset === undefined
       ) {
         limitations.addUnsupported("timing-interval");
       } else if (projection.kind === "attempt" && intervals.length >= MAX_TIMING_INTERVALS) {
         limitations.addCap("timing-interval", intervals.length);
       } else if (projection.kind === "attempt") {
         const intervalId = yield* input.mint("interval");
-        intervals.push(Object.freeze({
+        intervals.push({
           intervalId,
           phase: projection.phase,
           label: projection.label,
           startOffsetMs: attemptOffset,
           durationMs: duration,
           parentIntervalId: null,
-          outcome: source.failed ? "failed" as const : "completed" as const,
-          refs: Object.freeze([]),
-        }));
+          outcome: source.failed ? ("failed" as const) : ("completed" as const),
+          refs: [],
+        });
         yield* appendActivities(
           source.children,
-          Object.freeze({
+          {
             intervalId,
             startOffsetMs: attemptOffset,
             sourceStartOffsetMs,
             durationMs: duration,
-          }),
+          },
           new Set(),
         );
       }
-      if (
-        duration === undefined
-        || sourceStartOffsetMs === undefined
-        || attemptOffset === undefined
-      ) {
+      if (duration === undefined || sourceStartOffsetMs === undefined || attemptOffset === undefined) {
         attemptOffset = undefined;
       } else {
         if (projection.kind !== "outside-attempt-domain") {
@@ -322,18 +337,15 @@ export function normalizeAttemptTiming(input: {
         }
       }
     }
-    return Object.freeze({
-      timing: Object.freeze({
+    return {
+      timing: {
         collection: limitations.collection(),
         // The durable timing family canonically orders by opaque entity id; the
         // offsets retain the Runner's actual lifecycle order.
-        intervals: Object.freeze(
-          [...intervals].sort((left, right) =>
-            compareObservabilityText(left.intervalId, right.intervalId),
-          ),
-        ),
-      }),
-      intervalByTurnId: new Map(intervalByTurnId),
-    });
+        intervals: intervals.sort((left, right) => compareObservabilityText(left.intervalId, right.intervalId)),
+      },
+      intervalByTurnId,
+      entryIndexByIntervalId,
+    };
   });
 }

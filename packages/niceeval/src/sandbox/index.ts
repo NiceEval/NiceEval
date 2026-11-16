@@ -4,6 +4,14 @@
 
 export { defineSandbox } from "../define.ts";
 export {
+  decodeDockerCacheInventoryDocument,
+  decodeDockerCacheGcPreviewDocument,
+  decodeDockerCacheGcOutcomeDocument,
+  type DockerCacheInventoryDocument,
+  type DockerCacheGcPreviewDocument,
+  type DockerCacheGcOutcomeDocument,
+} from "../docker/cache-protocol.ts";
+export {
   CustomSandboxMaterializationError,
   sandboxLayer,
   sandboxRequirements,
@@ -16,7 +24,12 @@ export {
 export { incusSandbox } from "./incus.ts";
 export { openSandbox } from "./opensandbox.ts";
 export { instaboxSandbox, INSTABOX_MACHINE_SPECS } from "./instabox.ts";
-export type { InstaboxSandboxOptions, InstaboxMachineSpec, InstaboxOfficialTemplateId, InstaboxTemplateId } from "./instabox.ts";
+export type {
+  InstaboxSandboxOptions,
+  InstaboxMachineSpec,
+  InstaboxOfficialTemplateId,
+  InstaboxTemplateId,
+} from "./instabox.ts";
 export type { OpenSandboxOptions } from "./opensandbox.ts";
 export { command, shell, defineSandboxCommand } from "./commands.ts";
 export {
@@ -39,9 +52,7 @@ export {
   dockerComposeBuildProvider,
   inspectComposeYaml,
 } from "./compose.ts";
-export {
-  resolveFloatingImageTag,
-} from "./identity.ts";
+export { resolveFloatingImageTag } from "./identity.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";
 export {
   NICEEVAL_BUB_DOCKER_IMAGE,
@@ -170,7 +181,6 @@ export type {
   SandboxCaseKind,
   ServiceController,
   MaterializedSandboxCase,
-  SandboxGroupEntry,
   SandboxResourceGroup,
   SandboxMaterializeContext,
 } from "./case-types.ts";
@@ -206,7 +216,6 @@ export type {
   SandboxBuildFailure,
   PrepareSandboxBuildsOptions,
 } from "./build-coordinator.ts";
-
 
 export {
   DockerProfileError,

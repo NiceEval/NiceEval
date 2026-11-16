@@ -24,7 +24,7 @@
 
    ```sh
    pnpm exec niceeval run list
-   pnpm exec niceeval show --run <run-id>
+   pnpm exec niceeval show run:<run-id>
    ```
 
    预期结果：agent 找到那次 Run，并从结果里取得失败 Attempt 的 locator。
@@ -32,12 +32,12 @@
 3. agent 逐层读公开证据。 {#evidence}
 
    ```sh
-   pnpm exec niceeval show @<locator> --assertions
-   pnpm exec niceeval show @<locator> --execution
+   pnpm exec niceeval show @<locator> assertions
+   pnpm exec niceeval show @<locator> execution
    ```
 
    预期结果：断言明细指出哪一条决定了 Verdict；执行轨迹给出 agent 当时实际调用的工具与命令。
-   需要稳定的机器数据时，agent 改用 `niceeval query discover` 与固定请求。
+   需要稳定的机器数据时，agent 在同一条命令后加 `--json`，顺着 document 的 `links` 下钻到失败断言、相关命令输出与改动文件 diff。
 
 4. agent 给出归因。 {#attribute}
 

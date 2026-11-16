@@ -1,6 +1,6 @@
 # Agent 安装进入 before 缓存
 
-本方向让云 Sandbox 上的一批 Attempt 只安装一次 Agent CLI。它还没有被采用为当前契约：下面五个问题定下之前，实现仍以 [Agent Ensure](../../feature/adapters/architecture/agent-ensure.md) 为准，安装在每条 Attempt 的 `agent.ensure` 相位执行。
+本方向让云 Sandbox 上的一批 Attempt 只安装一次 Agent CLI。它还没有被采用为当前契约：下面五个问题定下之前，实现仍以 [Agent Ensure](../../feature/adapters/architecture/agent-install.md) 为准，安装在每条 Attempt 的 `agent.ensure` 相位执行。
 
 ## 要解决的问题
 

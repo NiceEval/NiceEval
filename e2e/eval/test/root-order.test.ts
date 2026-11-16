@@ -7,16 +7,21 @@ import { assertionEntry, inspectAssertionEntries, inspectAttempt } from "./inspe
 test.concurrent("根顺序断言冻结各会话前缀且只在单一会话内寻找见证", async () => {
   await evalE2E.case("root-order", async ({ paths: { projectRoot }, commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "root-order", "--rerun", "all", "--json"]);
-    const event = only(run.expEvalEvents(), event => event.evalId === "root-order", run.diagnostic());
+    const event = only(run.expEvalEvents(), (event) => event.evalId === "root-order", run.diagnostic());
     expect(event.verdict, run.diagnostic()).not.toBe("errored");
     const locator = event.locator!;
     const attempt = await inspectAttempt(niceeval, projectRoot, locator, "attempt.get");
     const entries = attempt.document.attempt.assertions.entries;
     expect(entries).toHaveLength(8);
     const expected: Record<string, string> = {
-      empty: "mismatched", "frozen before second": "mismatched", "main across turns": "matched",
-      "main events across turns": "matched", "no cross session tools": "mismatched",
-      "no cross session events": "mismatched", "matched beats unavailable": "matched", "unavailable beats mismatch": "unavailable",
+      empty: "mismatched",
+      "frozen before second": "mismatched",
+      "main across turns": "matched",
+      "main events across turns": "matched",
+      "no cross session tools": "mismatched",
+      "no cross session events": "mismatched",
+      "matched beats unavailable": "matched",
+      "unavailable beats mismatch": "unavailable",
     };
     for (const detail of await inspectAssertionEntries(niceeval, projectRoot, locator, entries)) {
       const entry = assertionEntry(detail.document, detail.receipt.diagnostic());

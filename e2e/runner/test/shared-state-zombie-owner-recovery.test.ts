@@ -56,7 +56,10 @@ async function linuxProcessState(pid: number): Promise<string> {
   if (closing < 0 || stat[closing + 1] !== " ") {
     throw new Error(`cannot parse /proc/${pid}/stat`);
   }
-  const state = stat.slice(closing + 2).trim().split(/\s+/u)[0];
+  const state = stat
+    .slice(closing + 2)
+    .trim()
+    .split(/\s+/u)[0];
   if (state === undefined || state.length !== 1) {
     throw new Error(`cannot parse process state from /proc/${pid}/stat`);
   }
@@ -87,7 +90,11 @@ test.skipIf(process.platform !== "linux")(
               join(paths.projectRoot, "fixtures", "shared-state-zombie-owner.py"),
               statusPath,
               join(paths.projectRoot, "node_modules", ".bin", "niceeval"),
-              "exp", "shared-state-zombie-owner-recovery", "--rerun", "all", "--json",
+              "exp",
+              "shared-state-zombie-owner-recovery",
+              "--rerun",
+              "all",
+              "--json",
             ],
             { env, timeoutMs: 90_000 },
           );
@@ -108,18 +115,20 @@ test.skipIf(process.platform !== "linux")(
           expect(await exists(join(barrierRoot, "zombie-owner-external-state"))).toBe(true);
 
           const inspectionArgs = [
-            "exp", "shared-state-zombie-owner-recovery", "--after",
-            "--recover-shared-state", "runner/shared-state-zombie-owner",
+            "exp",
+            "shared-state-zombie-owner-recovery",
+            "--after",
+            "--recover-shared-state",
+            "runner/shared-state-zombie-owner",
           ];
           const inspection = await niceeval.run(inspectionArgs, { env });
           expect(inspection.exitCode, inspection.diagnostic()).toBe(1);
           const ownerToken = ownerTokenFromInspection(inspection.stderr);
 
-          const recovered = await niceeval.run([
-            ...inspectionArgs,
-            "--owner-token", ownerToken,
-            "--confirm-owner-terminated", "--confirm-remote-quiesced",
-          ], { env });
+          const recovered = await niceeval.run(
+            [...inspectionArgs, "--owner-token", ownerToken, "--confirm-owner-terminated", "--confirm-remote-quiesced"],
+            { env },
+          );
           expect(recovered.exitCode, recovered.diagnostic()).toBe(0);
           expect(recovered.stderr).toContain("explicitly recovered sharedState key runner/shared-state-zombie-owner");
           expect(await exists(join(barrierRoot, "zombie-owner-recovery-teardown-complete"))).toBe(true);

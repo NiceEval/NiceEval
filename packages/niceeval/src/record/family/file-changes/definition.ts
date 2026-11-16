@@ -1,11 +1,5 @@
-import {
-  defineRecordAttachment,
-  RecordOwner,
-} from "../../attachment/index.ts";
-import {
-  FileChangesAttachmentSchema,
-  validateFileChangesAttachment,
-} from "./schema.ts";
+import { defineRecordAttachment, RecordOwner } from "../../attachment/index.ts";
+import { FileChangesAttachmentSchema, validateFileChangesAttachment } from "./schema.ts";
 
 /** Current File Changes fact only; durable history is separate. */
 export const fileChangesRecordAttachment = defineRecordAttachment({

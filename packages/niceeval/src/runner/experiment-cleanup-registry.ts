@@ -24,10 +24,7 @@ function settleTeardown(run: ExperimentTeardown): Effect.Effect<void> {
 }
 
 /** Effect-native registration for an explicit lifecycle coordinator. */
-export function registerExperimentTeardown(
-  experimentId: string,
-  run: ExperimentTeardown,
-): Effect.Effect<void> {
+export function registerExperimentTeardown(experimentId: string, run: ExperimentTeardown): Effect.Effect<void> {
   return Effect.sync(() => {
     pending.set(experimentId, run);
   });
@@ -47,15 +44,18 @@ export function registerExperimentTeardownScoped(
       pending.set(experimentId, run);
       return run;
     }),
-    (registered) => Effect.suspend(() =>
-      pending.get(experimentId) === registered
-        ? settleTeardown(registered).pipe(
-            Effect.ensuring(Effect.sync(() => {
-              if (pending.get(experimentId) === registered) pending.delete(experimentId);
-            })),
-          )
-        : Effect.void,
-    ),
+    (registered) =>
+      Effect.suspend(() =>
+        pending.get(experimentId) === registered
+          ? settleTeardown(registered).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (pending.get(experimentId) === registered) pending.delete(experimentId);
+                }),
+              ),
+            )
+          : Effect.void,
+      ),
   ).pipe(Effect.asVoid);
 }
 

@@ -1,14 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  open,
-  opendir,
-  rename,
-  rmdir,
-  unlink,
-  type FileHandle,
-} from "node:fs/promises";
+import { lstat, mkdir, open, opendir, rename, rmdir, unlink, type FileHandle } from "node:fs/promises";
 import { constants, type Dir } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { Effect, Layer, Stream } from "effect";
@@ -33,7 +24,6 @@ import { recordRootPaths } from "./root.ts";
 import {
   RecordEntropy,
   RecordFileSystem,
-  recordPortablePath,
   type RecordDirectoryEntry,
   type RecordFileSystemService,
   type RecordPortablePath,
@@ -144,11 +134,13 @@ function resolvePortablePath(
 ): Effect.Effect<string, PathResolutionError> {
   const candidate: unknown = path;
   if (typeof candidate !== "object" || candidate === null) {
-    return Effect.fail(new RecordPathInvalid({
-      code: "record-path-invalid",
-      reason: "segment-invalid",
-      segments: [],
-    }));
+    return Effect.fail(
+      new RecordPathInvalid({
+        code: "record-path-invalid",
+        reason: "segment-invalid",
+        segments: [],
+      }),
+    );
   }
 
   const root = Reflect.get(candidate, "root");
@@ -159,31 +151,37 @@ function resolvePortablePath(
 
   const rawSegments = Reflect.get(candidate, "segments");
   if (!Array.isArray(rawSegments)) {
-    return Effect.fail(new RecordPathInvalid({
-      code: "record-path-invalid",
-      reason: "segment-invalid",
-      segments: [],
-    }));
+    return Effect.fail(
+      new RecordPathInvalid({
+        code: "record-path-invalid",
+        reason: "segment-invalid",
+        segments: [],
+      }),
+    );
   }
 
   const segments: string[] = [];
   for (const segment of rawSegments) {
     if (typeof segment !== "string" || !isPortableSegment(segment)) {
-      return Effect.fail(new RecordPathInvalid({
-        code: "record-path-invalid",
-        reason: "segment-invalid",
-        segments,
-      }));
+      return Effect.fail(
+        new RecordPathInvalid({
+          code: "record-path-invalid",
+          reason: "segment-invalid",
+          segments,
+        }),
+      );
     }
     segments.push(segment);
   }
 
   if (requireFilePath && segments.length === 0) {
-    return Effect.fail(new RecordPathInvalid({
-      code: "record-path-invalid",
-      reason: "file-path-empty",
-      segments,
-    }));
+    return Effect.fail(
+      new RecordPathInvalid({
+        code: "record-path-invalid",
+        reason: "file-path-empty",
+        segments,
+      }),
+    );
   }
 
   return Effect.succeed(join(paths.portableRoot, ...segments));
@@ -221,17 +219,11 @@ function ensureDirectoryAt(path: string): Effect.Effect<void, RecordIoError | Re
     catch: (cause) => fileSystemError("create-directory", path, cause),
   }).pipe(
     Effect.andThen(syncDirectoryAt(path)),
-    Effect.andThen(
-      dirname(path) === path ? Effect.void : syncDirectoryAt(dirname(path)),
-    ),
+    Effect.andThen(dirname(path) === path ? Effect.void : syncDirectoryAt(dirname(path))),
   );
 }
 
-function closeHandle(
-  handle: FileHandle,
-  operation: RecordPlatformOperation,
-  path: string,
-): Effect.Effect<void> {
+function closeHandle(handle: FileHandle, operation: RecordPlatformOperation, path: string): Effect.Effect<void> {
   return Effect.tryPromise({
     try: () => handle.close(),
     catch: (cause) => fileSystemError(operation, path, cause),
@@ -258,9 +250,7 @@ function syncDirectoryAt(path: string): Effect.Effect<void, RecordIoError | Reco
   });
 
   return Effect.scoped(
-    Effect.acquireRelease(acquire, (handle) =>
-      closeHandle(handle, "sync-directory", path),
-    ).pipe(
+    Effect.acquireRelease(acquire, (handle) => closeHandle(handle, "sync-directory", path)).pipe(
       Effect.flatMap((handle) => syncHandle(handle, "sync-directory", path)),
     ),
   );
@@ -340,10 +330,7 @@ function openForWrite(
       const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
       try {
         const actual = await handle.stat();
-        if (
-          !actual.isFile() || actual.nlink !== 1 ||
-          actual.dev !== expected.dev || actual.ino !== expected.ino
-        ) {
+        if (!actual.isFile() || actual.nlink !== 1 || actual.dev !== expected.dev || actual.ino !== expected.ino) {
           throw new Error("record replace target identity changed before write");
         }
         await handle.truncate(0);
@@ -357,11 +344,11 @@ function openForWrite(
       isFileSystemError(cause)
         ? cause
         : mode === "exclusive" && isAlreadyExistsError(cause)
-        ? new RecordPathAlreadyExists({
-            code: "record-path-already-exists",
-            path,
-          })
-        : fileSystemError("write-file", path, cause),
+          ? new RecordPathAlreadyExists({
+              code: "record-path-already-exists",
+              path,
+            })
+          : fileSystemError("write-file", path, cause),
   });
 }
 
@@ -375,22 +362,14 @@ function writeBytesAt(input: {
   return Effect.gen(function* () {
     yield* validateLimit("file-bytes", input.maximumBytes);
     if (input.bytes.byteLength > input.maximumBytes) {
-      return yield* Effect.fail(
-        limitExceeded(
-          "file-bytes",
-          input.maximumBytes,
-          input.bytes.byteLength,
-          input.path,
-        ),
-      );
+      return yield* Effect.fail(limitExceeded("file-bytes", input.maximumBytes, input.bytes.byteLength, input.path));
     }
 
     const parent = dirname(input.path);
     yield* ensureDirectoryAt(parent);
     yield* Effect.scoped(
-      Effect.acquireRelease(
-        openForWrite(input.path, input.mode, input.portableRoot),
-        (handle) => closeHandle(handle, "write-file", input.path),
+      Effect.acquireRelease(openForWrite(input.path, input.mode, input.portableRoot), (handle) =>
+        closeHandle(handle, "write-file", input.path),
       ).pipe(
         Effect.flatMap((handle) =>
           writeFileHandle(handle, input.bytes, input.path).pipe(
@@ -415,12 +394,14 @@ function replaceBytesAtomicallyAt(input: {
     Effect.gen(function* () {
       const target = yield* pathKindAt(input.path);
       if (target !== "file") {
-        return yield* Effect.fail(new RecordPathTypeInvalid({
-          code: "record-path-type-invalid",
-          path: input.path,
-          expected: "file",
-          actual: target,
-        }));
+        return yield* Effect.fail(
+          new RecordPathTypeInvalid({
+            code: "record-path-type-invalid",
+            path: input.path,
+            expected: "file",
+            actual: target,
+          }),
+        );
       }
       yield* writeBytesAt({
         path: temporary,
@@ -434,9 +415,7 @@ function replaceBytesAtomicallyAt(input: {
         catch: (cause) => fileSystemError("write-file", input.path, cause),
       });
       yield* syncDirectoryAt(parent);
-    }).pipe(
-      Effect.ensuring(removeFileIfPresentAt(temporary, "remove-path").pipe(Effect.orDie)),
-    ),
+    }).pipe(Effect.ensuring(removeFileIfPresentAt(temporary, "remove-path").pipe(Effect.orDie))),
   );
 }
 
@@ -471,9 +450,7 @@ async function* readChunks(
   for (;;) {
     // A one-byte probe after the cap distinguishes exact-size data from an
     // over-limit file without materializing its remainder.
-    const capacity = observed < maximumBytes
-      ? Math.min(chunkBytes, maximumBytes - observed + 1)
-      : 1;
+    const capacity = observed < maximumBytes ? Math.min(chunkBytes, maximumBytes - observed + 1) : 1;
     const chunk = new Uint8Array(capacity);
     const result = await handle.read(chunk, 0, chunk.byteLength, null);
     if (result.bytesRead === 0) return;
@@ -498,16 +475,10 @@ function readStreamAt(
 
   return Stream.unwrap(
     Effect.map(
-      Effect.acquireRelease(acquire, (handle) =>
-        closeHandle(handle, "read-file", path),
-      ),
+      Effect.acquireRelease(acquire, (handle) => closeHandle(handle, "read-file", path)),
       (handle) =>
-        Stream.fromAsyncIterable(
-          readChunks(handle, path, maximumBytes, chunkBytes),
-          (cause) =>
-            isFileSystemError(cause)
-              ? cause
-              : fileSystemError("read-file", path, cause),
+        Stream.fromAsyncIterable(readChunks(handle, path, maximumBytes, chunkBytes), (cause) =>
+          isFileSystemError(cause) ? cause : fileSystemError("read-file", path, cause),
         ),
     ),
   );
@@ -547,26 +518,15 @@ async function readDirectoryBounded(
     const entry = await directory.read();
     if (entry === null) break;
     if (entries.length === maximumEntries) {
-      throw limitExceeded(
-        "directory-entries",
-        maximumEntries,
-        maximumEntries + 1,
-        path,
-      );
+      throw limitExceeded("directory-entries", maximumEntries, maximumEntries + 1, path);
     }
     entries.push({
       name: entry.name,
-      kind: entry.isFile()
-        ? "file"
-        : entry.isDirectory()
-          ? "directory"
-          : "other",
+      kind: entry.isFile() ? "file" : entry.isDirectory() ? "directory" : "other",
     });
   }
-  entries.sort((left, right) =>
-    left.name === right.name ? 0 : left.name < right.name ? -1 : 1,
-  );
-  return Object.freeze(entries);
+  entries.sort((left, right) => (left.name === right.name ? 0 : left.name < right.name ? -1 : 1));
+  return entries;
 }
 
 function directoryEntriesAt(
@@ -583,10 +543,7 @@ function directoryEntriesAt(
       Effect.flatMap((directory) =>
         Effect.tryPromise({
           try: () => readDirectoryBounded(directory, maximumEntries, path),
-          catch: (cause) =>
-            isFileSystemError(cause)
-              ? cause
-              : fileSystemError("list-directory", path, cause),
+          catch: (cause) => (isFileSystemError(cause) ? cause : fileSystemError("list-directory", path, cause)),
         }),
       ),
     ),
@@ -609,9 +566,7 @@ function removeFileIfPresentAt(
   }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
-function removeEmptyDirectoryIfPresentAt(
-  path: string,
-): Effect.Effect<void, RecordIoError | RecordPermissionError> {
+function removeEmptyDirectoryIfPresentAt(path: string): Effect.Effect<void, RecordIoError | RecordPermissionError> {
   return Effect.tryPromise({
     try: async () => {
       try {
@@ -624,99 +579,21 @@ function removeEmptyDirectoryIfPresentAt(
   }).pipe(Effect.andThen(syncDirectoryAt(dirname(path))));
 }
 
-function readBytesIfFileAt(
-  path: string,
-  maximumBytes: number,
-): Effect.Effect<Uint8Array | undefined, RecordFileSystemError> {
-  return Effect.gen(function* () {
-    yield* validateLimit("file-bytes", maximumBytes);
-    const kind = yield* pathKindAt(path);
-    if (kind === "missing") return undefined;
-    if (kind !== "file") {
-      return yield* Effect.fail(new RecordPathTypeInvalid({
-        code: "record-path-type-invalid",
-        path,
-        expected: "file",
-        actual: kind,
-      }));
-    }
-    const chunks = yield* Stream.runFold(
-      readStreamAt(path, maximumBytes, DEFAULT_STREAM_CHUNK_BYTES),
-      () => [] as readonly Uint8Array[],
-      (all, chunk) => [...all, chunk],
-    );
-    return concatChunks(chunks);
-  });
-}
-
-function writeStreamAt<E, R>(input: {
-  readonly path: string;
-  readonly rootPath: string;
-  readonly stream: Stream.Stream<Uint8Array, E, R>;
-  readonly maximumBytes: number;
-  readonly mode: "exclusive" | "replace" | "replace-no-follow";
-}): Effect.Effect<void, RecordFileSystemError | E, R> {
-  return Effect.gen(function* () {
-    yield* validateLimit("file-bytes", input.maximumBytes);
-    const parent = dirname(input.path);
-    yield* ensureDirectoryAt(parent);
-    let written = 0;
-
-    yield* Effect.scoped(
-      Effect.acquireRelease(
-        openForWrite(input.path, input.mode, input.rootPath),
-        (handle) => closeHandle(handle, "write-file", input.path),
-      ).pipe(
-        Effect.flatMap((handle) => {
-          const writeOne = (
-            chunk: Uint8Array,
-          ): Effect.Effect<void, RecordFileSystemError> => {
-            const observedAtLeast = written + chunk.byteLength;
-            if (observedAtLeast > input.maximumBytes) {
-              return Effect.fail(limitExceeded(
-                "file-bytes",
-                input.maximumBytes,
-                observedAtLeast,
-                input.path,
-              ));
-            }
-            return writeChunk(handle, chunk, input.path).pipe(
-              Effect.tap(() => Effect.sync(() => {
-                written = observedAtLeast;
-              })),
-            );
-          };
-
-          return Stream.runForEach(input.stream, writeOne).pipe(
-            Effect.andThen(syncHandle(handle, "sync-file", input.path)),
-          );
-        }),
-      ),
-    );
-    yield* syncDirectoryAt(parent);
-  });
-}
-
 const nodeFileSystem: RecordFileSystemService = {
-  pathKind: (path) =>
-    Effect.flatMap(resolvePortablePath(path, false), (resolved) => pathKindAt(resolved)),
+  pathKind: (path) => Effect.flatMap(resolvePortablePath(path, false), (resolved) => pathKindAt(resolved)),
 
   ensureDirectory: (directory) =>
-    Effect.flatMap(resolvePortablePath(directory, false), (resolved) =>
-      ensureDirectoryAt(resolved),
-    ),
+    Effect.flatMap(resolvePortablePath(directory, false), (resolved) => ensureDirectoryAt(resolved)),
 
   createDirectory: (directory) =>
-    Effect.flatMap(resolvePortablePath(directory, true), (resolved) =>
-      createDirectoryAt(resolved),
-    ),
+    Effect.flatMap(resolvePortablePath(directory, true), (resolved) => createDirectoryAt(resolved)),
 
   listDirectory: (input) =>
     Effect.gen(function* () {
       const path = yield* resolvePortablePath(input.directory, false);
       yield* validateLimit("directory-entries", input.maximumEntries);
       const kind = yield* pathKindAt(path);
-      if (kind === "missing") return Object.freeze([]) as readonly RecordDirectoryEntry[];
+      if (kind === "missing") return [] as readonly RecordDirectoryEntry[];
       if (kind !== "directory") {
         return yield* Effect.fail(
           new RecordPathTypeInvalid({
@@ -817,9 +694,7 @@ const nodeFileSystem: RecordFileSystemService = {
       });
     }),
 
-  writeFileStream: <E, R>(
-    input: RecordWriteFileStreamInput<E, R>,
-  ): Effect.Effect<void, RecordFileSystemError | E, R> =>
+  writeFileStream: <E, R>(input: RecordWriteFileStreamInput<E, R>): Effect.Effect<void, RecordFileSystemError | E, R> =>
     Effect.flatMap(resolvePortablePath(input.file, true), (path) =>
       Effect.gen(function* () {
         const paths = recordRootPaths(input.file.root);
@@ -832,24 +707,14 @@ const nodeFileSystem: RecordFileSystemService = {
         let written = 0;
 
         yield* Effect.scoped(
-          Effect.acquireRelease(
-            openForWrite(path, input.mode, paths.portableRoot),
-            (handle) => closeHandle(handle, "write-file", path),
+          Effect.acquireRelease(openForWrite(path, input.mode, paths.portableRoot), (handle) =>
+            closeHandle(handle, "write-file", path),
           ).pipe(
             Effect.flatMap((handle) => {
-              const writeOne = (
-                chunk: Uint8Array,
-              ): Effect.Effect<void, RecordFileSystemError> => {
+              const writeOne = (chunk: Uint8Array): Effect.Effect<void, RecordFileSystemError> => {
                 const observedAtLeast = written + chunk.byteLength;
                 if (observedAtLeast > input.maximumBytes) {
-                  return Effect.fail(
-                    limitExceeded(
-                      "file-bytes",
-                      input.maximumBytes,
-                      observedAtLeast,
-                      path,
-                    ),
-                  );
+                  return Effect.fail(limitExceeded("file-bytes", input.maximumBytes, observedAtLeast, path));
                 }
                 return writeChunk(handle, chunk, path).pipe(
                   Effect.tap(() =>
@@ -870,25 +735,16 @@ const nodeFileSystem: RecordFileSystemService = {
       }),
     ),
 
-  syncDirectory: (directory) =>
-    Effect.flatMap(resolvePortablePath(directory, false), (path) =>
-      syncDirectoryAt(path),
-    ),
+  syncDirectory: (directory) => Effect.flatMap(resolvePortablePath(directory, false), (path) => syncDirectoryAt(path)),
 
   removeFile: (file) =>
-    Effect.flatMap(resolvePortablePath(file, true), (path) =>
-      removeFileIfPresentAt(path, "remove-path"),
-    ),
+    Effect.flatMap(resolvePortablePath(file, true), (path) => removeFileIfPresentAt(path, "remove-path")),
 
   removeEmptyDirectory: (directory) =>
     Effect.flatMap(resolvePortablePath(directory, true), removeEmptyDirectoryIfPresentAt),
-
 };
 
-export const NodeRecordFileSystemLive = Layer.succeed(
-  RecordFileSystem,
-  nodeFileSystem,
-);
+export const NodeRecordFileSystemLive = Layer.succeed(RecordFileSystem, nodeFileSystem);
 
 export const NodeRecordEntropyLive = Layer.succeed(RecordEntropy, {
   uuid: Effect.sync(randomUUID),

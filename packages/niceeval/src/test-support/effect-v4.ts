@@ -12,22 +12,27 @@ function trackingTestClock(base: EffectTestClock.TestClock): TrackingTestClock {
   return {
     ...base,
     [ScheduledSleeps]: scheduled,
-    sleep: (duration: Duration.Duration) => Effect.suspend(() => {
-      const token = {};
-      scheduled.set(token, base.currentTimeMillisUnsafe() + Duration.toMillis(duration));
-      return base.sleep(duration).pipe(
-        Effect.ensuring(Effect.sync(() => {
-          scheduled.delete(token);
-        })),
-      );
-    }),
+    sleep: (duration: Duration.Duration) =>
+      Effect.suspend(() => {
+        const token = {};
+        scheduled.set(token, base.currentTimeMillisUnsafe() + Duration.toMillis(duration));
+        return base.sleep(duration).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              scheduled.delete(token);
+            }),
+          ),
+        );
+      }),
   };
 }
 
-const sleeps = EffectTestClock.testClockWith((clock) => Effect.sync(() => {
-  const scheduled = (clock as TrackingTestClock)[ScheduledSleeps];
-  return Chunk.fromIterable([...scheduled.values()].sort((left, right) => left - right));
-}));
+const sleeps = EffectTestClock.testClockWith((clock) =>
+  Effect.sync(() => {
+    const scheduled = (clock as TrackingTestClock)[ScheduledSleeps];
+    return Chunk.fromIterable([...scheduled.values()].sort((left, right) => left - right));
+  }),
+);
 
 /** v4 test-clock facade that preserves the existing scheduled-boundary receipts. */
 export const TestClock = {
@@ -37,14 +42,20 @@ export const TestClock = {
 } as const;
 
 export function runWithTestClock<A, E>(effect: Effect.Effect<A, E>): Promise<A> {
-  return Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    const clock = trackingTestClock(yield* EffectTestClock.make());
-    return yield* Effect.provideService(effect, Clock.Clock, clock);
-  })));
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const clock = trackingTestClock(yield* EffectTestClock.make());
+        return yield* Effect.provideService(effect, Clock.Clock, clock);
+      }),
+    ),
+  );
 }
 
 /** Effect v4 exposes immediate polling on the Fiber handle. */
-export function pollFiber<A, E>(fiber: Fiber.Fiber<A, E>): Effect.Effect<Option.Option<import("effect").Exit.Exit<A, E>>> {
+export function pollFiber<A, E>(
+  fiber: Fiber.Fiber<A, E>,
+): Effect.Effect<Option.Option<import("effect").Exit.Exit<A, E>>> {
   return Effect.sync(() => Option.fromUndefinedOr(fiber.pollUnsafe()));
 }
 

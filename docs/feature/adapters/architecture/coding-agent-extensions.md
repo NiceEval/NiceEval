@@ -60,7 +60,7 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 4. 查找 Plugin ref 对应的完整 commit，满足可恢复的 checkout、安装与声明式安装后 action；无法验证 provenance 时真实收敛。
 5. 写公开 Agent 配置与安装 manifest。
 6. 注入 secret、cohort 与本 Attempt 配置，按序运行动态 `before` Hook。
-7. 通过 `agent.ensure` 屏障后启动 Agent。
+7. 通过 `agent.install` 屏障后启动 Agent。
 
 每个 attempt 只执行一次。
 多轮 `send` 不重复安装。
@@ -111,7 +111,7 @@ Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 at
 
 ## 失败语义
 
-下列失败都在 `agent.ensure` 相位形成结构化执行错误通道事件 与该 Attempt 的 `errored` Verdict：路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根,以及原生配置语法错误或含保留键。Attempt lifecycle 不使用 verdict token。
+下列失败都在 `agent.install` 相位形成结构化执行错误通道事件 与该 Attempt 的 `errored` Verdict：路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根,以及原生配置语法错误或含保留键。Attempt lifecycle 不使用 verdict token。
 仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `before` Hook 抛错,同样归这一相位。
 只有 Agent 已开始执行任务后的行为失败才进入 Turn status。
 

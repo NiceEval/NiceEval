@@ -23,11 +23,11 @@ export function parseIncusImageLocator(value: unknown, path: string): IncusImage
       ["Pin the Incus image to an exact sha256 digest before planning."],
     );
   }
-  return Object.freeze({
+  return {
     name: match[1],
     digest: match[2],
     locator: `${match[1]}@sha256:${match[2]}`,
-  });
+  };
 }
 
 export function parseTrustedImageLocator(value: string, path: string): IncusImageLocator | IncusProviderError {
@@ -35,7 +35,7 @@ export function parseTrustedImageLocator(value: string, path: string): IncusImag
     return parseIncusImageLocator(value, path);
   } catch (cause) {
     return cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
+      ? (cause as IncusProviderError)
       : incusError(
           "sandbox-artifact-unverified",
           `${path} ${JSON.stringify(value)} is not a digest-pinned locator.`,

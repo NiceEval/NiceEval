@@ -7,41 +7,56 @@ const scored = defineScoreEval({
   description: "计分制 Assertion 把前置、按检查计分与直接给分写入真实结果",
   async test(t) {
     const turn = await t.send("assertion/score");
-    turn.succeeded()
-      .score(1)
-      .label("turn completed");
+    turn.succeeded().score(1).label("turn completed");
 
     await t.group("计分断言", () => {
       const marker = t.check(turn.reply, includes("assertion-score-marker"));
-      const result = t.check(
-        turn.data,
-        equals({ fixture: "assertion-score", ok: true }),
-      );
+      const result = t.check(turn.data, equals({ fixture: "assertion-score", ok: true }));
 
       marker.score(2).label("reply marker");
       result.score(3).label("fixture data");
-      t.check(turn.reply, includes("deliberately-absent"))
-        .score(5)
-        .label("mismatch contributes zero without failing");
+      t.check(turn.reply, includes("deliberately-absent")).score(5).label("mismatch contributes zero without failing");
       t.score(4).label("deterministic manual points");
       const completionSeconds = 60;
       t.score(60 / (60 + completionSeconds), { weight: 50 }).label("weighted author formula");
       t.score(0, { weight: 10 }).label("weighted author zero");
       t.score(1, { weight: 0 }).label("weighted zero weight");
-      for (const invalidRatio of [-.1, 1.1, NaN, Infinity]) {
+      for (const invalidRatio of [-0.1, 1.1, NaN, Infinity]) {
         let rejected = false;
-        try { t.score(invalidRatio, { weight: 50 }); } catch (error) { rejected = error instanceof TypeError; }
+        try {
+          t.score(invalidRatio, { weight: 50 });
+        } catch (error) {
+          rejected = error instanceof TypeError;
+        }
         if (!rejected) throw new Error("Invalid weighted ratio was admitted");
       }
       for (const invalidWeight of [-1, NaN, Infinity]) {
         let rejected = false;
-        try { t.score(.5, { weight: invalidWeight }); } catch (error) { rejected = error instanceof TypeError; }
+        try {
+          t.score(0.5, { weight: invalidWeight });
+        } catch (error) {
+          rejected = error instanceof TypeError;
+        }
         if (!rejected) throw new Error("Invalid weight was admitted");
       }
-      t.check(0, defineScoreMatch({ name: "record-only measurement", score: () => { throw new Error("Measurement unavailable in this fixture"); } }))
-        .label("unavailable measurement is only recorded");
-      t.check(0, defineValueMatch({ name: "record-only condition", evaluate: () => { throw new Error("Condition unavailable in this fixture"); } }))
-        .label("unavailable condition is only recorded");
+      t.check(
+        0,
+        defineScoreMatch({
+          name: "record-only measurement",
+          score: () => {
+            throw new Error("Measurement unavailable in this fixture");
+          },
+        }),
+      ).label("unavailable measurement is only recorded");
+      t.check(
+        0,
+        defineValueMatch({
+          name: "record-only condition",
+          evaluate: () => {
+            throw new Error("Condition unavailable in this fixture");
+          },
+        }),
+      ).label("unavailable condition is only recorded");
     });
   },
 });
@@ -74,21 +89,30 @@ const gated = defineScoreEval({
     const accepted = t.check(0.75, completion).score(20).gate(0.7).label("quality accepted");
     for (const args of [[undefined], [NaN], [0.7, 0.8]]) {
       let invalidStopRejected = false;
-      try { Reflect.apply(accepted.orStop, accepted, args); }
-      catch (error) { invalidStopRejected = error instanceof TypeError; }
+      try {
+        Reflect.apply(accepted.orStop, accepted, args);
+      } catch (error) {
+        invalidStopRejected = error instanceof TypeError;
+      }
       if (!invalidStopRejected) throw new Error("Invalid stop arguments must be rejected before configuring stop");
     }
     const ready = accepted.orStop();
     if (accepted.orStop() !== ready) throw new Error("Repeated waiting must reuse the same stop Promise");
     let lateLabelRejected = false;
-    try { accepted.label("late label must not replace quality accepted"); }
-    catch { lateLabelRejected = true; }
+    try {
+      accepted.label("late label must not replace quality accepted");
+    } catch {
+      lateLabelRejected = true;
+    }
     if (!lateLabelRejected) throw new Error("orStop must synchronously close the entry configuration window");
     await ready;
     const fact = t.check("actual", equals("expected"));
     let booleanMinimumRejected = false;
-    try { Reflect.apply(fact.orStop, fact, [0.7]); }
-    catch (error) { booleanMinimumRejected = error instanceof TypeError; }
+    try {
+      Reflect.apply(fact.orStop, fact, [0.7]);
+    } catch (error) {
+      booleanMinimumRejected = error instanceof TypeError;
+    }
     if (!booleanMinimumRejected) throw new Error("Boolean stop must reject a measurement minimum");
     fact.gate().score(3).label("required fact failed");
     await t.check(0.75, completion).gate(0.8).score(20).label("quality below minimum").orStop();
@@ -100,10 +124,21 @@ const unavailableGate = defineScoreEval({
   description: "无法评估必要条件时保留已有分数并报告错误",
   test(t) {
     t.score(2).label("score before unavailable gate");
-    t.score({ state: "unavailable", reason: "completion-boundary-missing" }, { weight: 50 }).label("weighted unavailable");
-    t.score({ state: "lower-bound", value: .2 }, { weight: 10 }).label("weighted incomplete");
-    t.check(0, defineValueMatch({ name: "required condition", evaluate: () => { throw new Error("Required condition cannot be evaluated"); } }))
-      .gate().label("required condition unavailable");
+    t.score({ state: "unavailable", reason: "completion-boundary-missing" }, { weight: 50 }).label(
+      "weighted unavailable",
+    );
+    t.score({ state: "lower-bound", value: 0.2 }, { weight: 10 }).label("weighted incomplete");
+    t.check(
+      0,
+      defineValueMatch({
+        name: "required condition",
+        evaluate: () => {
+          throw new Error("Required condition cannot be evaluated");
+        },
+      }),
+    )
+      .gate()
+      .label("required condition unavailable");
   },
 });
 

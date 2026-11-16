@@ -8,7 +8,8 @@ export const TurnRoundtrip = ({ locale = "zh" }) => (
     <div className="ne-hd">
       {locale === "en" ? "A complete t.send round trip" : "一次 t.send 的完整往返"}
       <span className="ne-hd-hint">
-        <span className="ne-mono">▸</span> {locale === "en" ? "Outbound ·" : "去程 ·"} <span className="ne-mono">◂</span> {locale === "en" ? "Inbound" : "回程"}
+        <span className="ne-mono">▸</span> {locale === "en" ? "Outbound ·" : "去程 ·"}{" "}
+        <span className="ne-mono">◂</span> {locale === "en" ? "Inbound" : "回程"}
       </span>
     </div>
     <div className="ne-rt-scroll">
@@ -83,7 +84,11 @@ export const TurnRoundtrip = ({ locale = "zh" }) => (
       <span className="ne-pill">t.send</span>
       <span className="ne-pill">t.sendFile</span>
       <span className="ne-pill">t.respond</span>
-      <span className="ne-rt-pillnote">{locale === "en" ? "These are unified event entry points on the runner side; the Adapter only implements send." : "都是运行器侧的统一事件入口；adapter 只实现 send。"}</span>
+      <span className="ne-rt-pillnote">
+        {locale === "en"
+          ? "These are unified event entry points on the runner side; the Adapter only implements send."
+          : "都是运行器侧的统一事件入口；adapter 只实现 send。"}
+      </span>
     </div>
   </div>
 );

@@ -36,7 +36,10 @@ export interface CapturedEvalSource {
  * 与 collectSources() 运行后"读不到就跳过"的降级语义不同:那时源码可能已经在沙箱里、
  * 已被清理;这里读的是刚刚 import 成功的同一个文件,读不到是需要暴露的异常。
  */
-export async function captureEvalSource(filePath: string, opts?: { root?: string }): Promise<CapturedEvalSource> {
+export async function captureEvalSource(
+  filePath: string,
+  opts?: { root: string | undefined },
+): Promise<CapturedEvalSource> {
   const root = opts?.root ?? process.cwd();
   const raw = await readFile(filePath, "utf-8");
   const content = normalizeEvalSource(raw);
@@ -49,7 +52,11 @@ export async function captureEvalSource(filePath: string, opts?: { root?: string
  * 非扇出时它就是 eval id；扇出条目（数组 / keyed record）在它后面追加扇出后缀。
  */
 export function folderEntryBaseId(evalsRelativeDir: string): string {
-  const id = evalsRelativeDir.split(sep).join("/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+  const id = evalsRelativeDir
+    .split(sep)
+    .join("/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/+$/, "");
   if (!id || id === ".") {
     throw new Error(
       `Folder eval entry under evals/ itself is not allowed: put eval.ts inside a named directory ` +

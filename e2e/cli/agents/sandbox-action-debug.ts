@@ -21,7 +21,7 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
   sandbox: sandboxLayer()
     .before(plannedDebugAction("agent-frequency-first", 5))
     .before(plannedDebugAction("tie-agent", 100)),
-  ensure: {
+  install: {
     identity: {
       agent: "cli-sandbox-action-debug",
       version: "1",
@@ -29,17 +29,20 @@ export const sandboxActionDebugAgent = defineSandboxAgent({
     },
     probe: sandboxActionDebugAgentProbe,
   },
-  before: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-setup");
-  }),
-  send: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-send");
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
-    };
-  }),
-  after: () => Effect.sync(() => {
-    recordSandboxActionDebugSideEffect("agent-teardown");
-  }),
+  before: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-setup");
+    }),
+  send: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-send");
+      return {
+        status: "completed",
+        events: [{ type: "message", role: "assistant", text: "debug fixture must not run" }],
+      };
+    }),
+  after: () =>
+    Effect.sync(() => {
+      recordSandboxActionDebugSideEffect("agent-teardown");
+    }),
 });

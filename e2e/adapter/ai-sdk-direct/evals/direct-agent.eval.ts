@@ -10,26 +10,26 @@ import { greaterThan, includes, isDefined, jsonMatch, toolMatch } from "niceeval
 export const DIRECT_MARKER = "AI_SDK_DIRECT_E2E_7F31";
 
 export default defineEval({
-  description:
-    "aiSdkAgent 用真实 generateText 保留工具配对、usage 与同会话历史",
+  description: "aiSdkAgent 用真实 generateText 保留工具配对、usage 与同会话历史",
   async test(t) {
     const first = await t.send(
       `请记住哨兵 ${DIRECT_MARKER}，并且必须调用 remember_marker 工具，marker 参数必须逐字等于这个哨兵。`,
     );
     await first.succeeded().orStop();
     first
-      .check(first.toolCalls, toolMatch("remember_marker", {
+      .check(
+        first.toolCalls,
+        toolMatch("remember_marker", {
           input: jsonMatch({ marker: DIRECT_MARKER }),
           status: "completed",
-        }).exactly(1))
+        }).exactly(1),
+      )
       .label('"remember_marker" input');
     t.check(first.usage.inputTotalTokens, greaterThan(0));
     t.check(first.usage.outputTokens, greaterThan(0));
     t.check(t.sessionId, isDefined<string | undefined>("aiSdkAgent 应捕获自己的会话 id"));
 
-    const recall = await t.send(
-      "只回复我上一轮要求你记住的哨兵，不要调用任何工具。",
-    );
+    const recall = await t.send("只回复我上一轮要求你记住的哨兵，不要调用任何工具。");
     await recall.succeeded().orStop();
     t.check(recall.reply, includes(DIRECT_MARKER));
     t.check(recall.usage.inputTotalTokens, greaterThan(0));

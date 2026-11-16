@@ -11,11 +11,14 @@ export default defineExperiment({
   sandbox: defineSandbox({
     name: "e2b-feedback-fixture",
     targetPlatform: { _tag: "Linux", os: "linux", arch: "amd64", libc: "gnu" },
-    create: () => Effect.fail(new CustomSandboxMaterializationError({
-      code: "provider-request-failed",
-      message,
-      cause: new Error("e2b-cause-secret-must-not-reach-human"),
-    })),
+    create: () =>
+      Effect.fail(
+        new CustomSandboxMaterializationError({
+          code: "provider-request-failed",
+          message,
+          cause: new Error("e2b-cause-secret-must-not-reach-human"),
+        }),
+      ),
   }),
   evals: ["greet/hello"],
 });

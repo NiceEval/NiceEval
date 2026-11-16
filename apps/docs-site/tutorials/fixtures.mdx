@@ -61,7 +61,7 @@ export default defineEval({
 
 The path is relative to the eval file. Uploaded files go under the Sandbox's working directory, and the Agent can see them from the start. When only one or two files are missing, write them directly with `t.sandbox.writeText()`, which suits small tasks or safety check scripts.
 
-When `fileChanged` fails, first use `pnpm exec niceeval show @<locator> --diff` to see which files the Agent actually changed.
+When `fileChanged` fails, first use `pnpm exec niceeval show @<locator> diff` to see which files the Agent actually changed.
 
 ## Write the task prompt
 
@@ -151,7 +151,7 @@ A typical A/B comparison:
 - `experiments/with-skill.ts`: the same Agent, writing `CLAUDE.md` with a lifecycle Hook or a [Plugin](/tutorials/plugins).
 - Both groups use the same evals, the same model, the same `attempts`, and the same budget.
 
-After both groups run, compare them in the terminal with `pnpm exec niceeval show --experiment baseline --experiment with-skill`, or view them in the browser with `pnpm exec niceeval view`. When the two groups score almost the same, first confirm that `CLAUDE.md` really exists in the `with-skill` Sandbox.
+After both groups run, compare them in the terminal with `pnpm exec niceeval show exp:baseline exp:with-skill`, or view them in the browser with `pnpm exec niceeval view`. When the two groups score almost the same, first confirm that `CLAUDE.md` really exists in the `with-skill` Sandbox.
 
 ## When to use a Fixture
 

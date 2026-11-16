@@ -23,22 +23,18 @@ export interface SandboxReusePoolDescriptor {
 }
 
 export interface SandboxReusePoolIdentity {
-  readonly version: 2;
   readonly providerPlan: JsonValue;
   readonly agentInstalls: JsonValue[];
   readonly physicalLifecycle: JsonValue;
   readonly scope: SandboxReusePoolScope;
 }
 
-export type SandboxReusePoolIdentityFacet =
-  | "provider plan"
-  | "agent install"
-  | "physical lifecycle";
+export type SandboxReusePoolIdentityFacet = "provider plan" | "agent install" | "physical lifecycle";
 
 export interface SandboxReusePoolDescriptorInput {
   readonly run: AgentRun;
   readonly evalId: string;
-  readonly evalGroupId?: string;
+  readonly evalGroupId: string | undefined;
   readonly plan: LinkedRunPlan;
 }
 
@@ -52,33 +48,27 @@ export interface SandboxReusePoolDescriptorInput {
 export function sandboxReusePoolDescriptor(
   input: SandboxReusePoolDescriptorInput,
 ): SandboxReusePoolDescriptor | undefined {
-  if (
-    input.run.adapter?.kind !== "sandbox" ||
-    input.run.agent?.kind !== "sandbox" ||
-    input.plan._tag !== "Sandbox"
-  ) return undefined;
+  if (input.run.adapter?.kind !== "sandbox" || input.run.agent?.kind !== "sandbox" || input.plan._tag !== "Sandbox")
+    return undefined;
   let scope: SandboxReusePoolScope;
   if (input.evalGroupId !== undefined) {
     scope = { kind: "eval-group", evalGroupId: input.evalGroupId };
   } else {
     if (input.run.sandboxReuse !== true) return undefined;
-    scope = input.plan.pair.hasEvalPhysicalLifecycle
-      ? { kind: "eval", evalId: input.evalId }
-      : { kind: "shared" };
+    scope = input.plan.pair.hasEvalPhysicalLifecycle ? { kind: "eval", evalId: input.evalId } : { kind: "shared" };
   }
-  const identity = Object.freeze({
-    version: 2 as const,
+  const identity = {
     providerPlan: input.plan.providerPlan.identity,
     agentInstalls: [...agentInstallPlansForRun(input.run)],
     physicalLifecycle: sandboxPhysicalLifecycleIdentity(input.plan.pair),
-    scope: Object.freeze(scope),
-  });
+    scope,
+  };
   const digest = digestOf(identity);
-  return Object.freeze({
-    key: `sandbox-reuse-pool:v2:${digest}`,
+  return {
+    key: `sandbox-reuse-pool:${digest}`,
     scope: identity.scope,
     identity,
-  });
+  };
 }
 
 /** Explain a failed cohort comparison without duplicating lifecycle projection logic. */
@@ -90,5 +80,5 @@ export function sandboxReusePoolIdentityDifferences(
   if (digestOf(left.providerPlan) !== digestOf(right.providerPlan)) differences.push("provider plan");
   if (digestOf(left.agentInstalls) !== digestOf(right.agentInstalls)) differences.push("agent install");
   if (digestOf(left.physicalLifecycle) !== digestOf(right.physicalLifecycle)) differences.push("physical lifecycle");
-  return Object.freeze(differences);
+  return differences;
 }

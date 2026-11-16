@@ -31,12 +31,14 @@ function run(input: {
       },
       startedAt: input.completedAt - 1,
       completedAt: input.completedAt,
-      expectedSlots: [{
-        slotId: `slot-${input.runId}`,
-        evalId: input.evalId,
-        attemptOrdinal: 0,
-        executionIdentityDigest: "execution",
-      }],
+      expectedSlots: [
+        {
+          slotId: `slot-${input.runId}`,
+          evalId: input.evalId,
+          attemptOrdinal: 0,
+          executionIdentityDigest: "execution",
+        },
+      ],
     },
     members: [],
     attempts: [],
@@ -78,9 +80,7 @@ describe("Inspection Overview sealed labels", () => {
       shared: { state: "available", value: "same" },
     });
 
-    const firstRun = overview.cells
-      .flatMap(({ members }) => members)
-      .find(({ runId }) => runId === "run-a1");
+    const firstRun = overview.cells.flatMap(({ members }) => members).find(({ runId }) => runId === "run-a1");
     expect(firstRun?.labels).toEqual({
       firstOnly: { state: "available", value: "present" },
       memory: { state: "available", value: "semantic" },

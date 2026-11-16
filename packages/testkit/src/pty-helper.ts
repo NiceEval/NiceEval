@@ -3,9 +3,22 @@ import { procIdentity } from "./pty-process.js";
 import { createConnection } from "node:net";
 
 type ControlMessage =
-  | { readonly type: "status"; readonly phase: "configured"; readonly helperPid: number; readonly helperGroupId: number; readonly helperSessionId?: number; readonly columns: number; readonly rows: number }
+  | {
+      readonly type: "status";
+      readonly phase: "configured";
+      readonly helperPid: number;
+      readonly helperGroupId: number;
+      readonly helperSessionId?: number;
+      readonly columns: number;
+      readonly rows: number;
+    }
   | { readonly type: "status"; readonly phase: "candidate"; readonly pid: number; readonly processGroupId: number }
-  | { readonly type: "status"; readonly phase: "exit"; readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }
+  | {
+      readonly type: "status";
+      readonly phase: "exit";
+      readonly exitCode: number | null;
+      readonly signal: NodeJS.Signals | null;
+    }
   | { readonly type: "status"; readonly phase: "error"; readonly message: string };
 
 interface InitMessage {
@@ -18,7 +31,7 @@ const MAX_ARGV_BYTES = 64 * 1024;
 
 async function send(socket: ReturnType<typeof createConnection>, message: ControlMessage): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    socket.write(`${JSON.stringify(message)}\n`, (error) => error == null ? resolve() : reject(error));
+    socket.write(`${JSON.stringify(message)}\n`, (error) => (error == null ? resolve() : reject(error)));
   });
 }
 
@@ -58,7 +71,8 @@ async function receiveInit(socket: ReturnType<typeof createConnection>): Promise
       }
       try {
         const message = JSON.parse(pending.slice(0, newline)) as Partial<InitMessage>;
-        if (message.type !== "init" || !Object.hasOwn(message, "argv")) throw new Error("PTY control expected an init frame");
+        if (message.type !== "init" || !Object.hasOwn(message, "argv"))
+          throw new Error("PTY control expected an init frame");
         resolve(validArgv(message.argv));
       } catch (error) {
         reject(error);
@@ -75,8 +89,10 @@ async function main(): Promise<void> {
   const rows = Number(rowsText);
   if (
     socketPath === undefined ||
-    !Number.isSafeInteger(columns) || columns <= 0 ||
-    !Number.isSafeInteger(rows) || rows <= 0
+    !Number.isSafeInteger(columns) ||
+    columns <= 0 ||
+    !Number.isSafeInteger(rows) ||
+    rows <= 0
   ) {
     throw new Error("pty helper requires socket path and positive dimensions");
   }
@@ -121,16 +137,27 @@ async function main(): Promise<void> {
     if (candidateIdentity.processGroupId !== candidate.pid) {
       throw new Error(`candidate ${candidate.pid} was not made its own process group`);
     }
-    await send(socket, { type: "status", phase: "candidate", pid: candidate.pid, processGroupId: candidateIdentity.processGroupId });
-
-    const exited = await new Promise<{ readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }>((resolve) => {
-      candidate.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
+    await send(socket, {
+      type: "status",
+      phase: "candidate",
+      pid: candidate.pid,
+      processGroupId: candidateIdentity.processGroupId,
     });
+
+    const exited = await new Promise<{ readonly exitCode: number | null; readonly signal: NodeJS.Signals | null }>(
+      (resolve) => {
+        candidate.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
+      },
+    );
     await send(socket, { type: "status", phase: "exit", ...exited });
     await close(socket);
     process.exitCode = exited.exitCode ?? 1;
   } catch (error) {
-    await send(socket, { type: "status", phase: "error", message: error instanceof Error ? error.message : String(error) }).catch(() => {});
+    await send(socket, {
+      type: "status",
+      phase: "error",
+      message: error instanceof Error ? error.message : String(error),
+    }).catch(() => {});
     await close(socket).catch(() => {});
     throw error;
   }

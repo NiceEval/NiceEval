@@ -59,7 +59,7 @@ describe("pause on failure", () => {
     { name: "non-TTY stdin", isTTY: false, nonInteractive: false },
     { name: "piped stdin without a TTY flag", isTTY: undefined, nonInteractive: false },
     { name: "explicit nonInteractive mode on a TTY", isTTY: true, nonInteractive: true },
-  ])("prints debug instructions and completes without reading $name", async ({ isTTY, nonInteractive }) => {
+  ])("reports cleanup and completes without reading $name", async ({ isTTY, nonInteractive }) => {
     input.isTTY = isTTY;
     const resume = vi.spyOn(input, "resume");
     const on = vi.spyOn(input, "on");
@@ -68,8 +68,9 @@ describe("pause on failure", () => {
 
     // An event-loop checkpoint, not a wall-clock race; no input/EOF/abort is sent.
     await setImmediate();
-    expect(output).toContain("Sandbox retained for debugging");
-    expect(output).toContain(nativeCommand);
+    expect(output).toContain("cleaning up (no sandbox). Use --keep-sandbox to retain it.");
+    expect(output).not.toContain("retained");
+    expect(output).not.toContain(nativeCommand);
     expect(output).not.toContain("Press [Enter]");
     expect(completed).toBe(true);
     expect(resume).not.toHaveBeenCalled();

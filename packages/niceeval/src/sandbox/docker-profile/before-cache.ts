@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { normalizeExternalCause } from "../../shared/external-cause.ts";
 import {
   BeforeCacheAmbiguityError,
   BeforeCacheCaptureError,
@@ -11,9 +12,8 @@ import {
 } from "../backend.ts";
 import {
   captureDockerProfileBeforeCache,
-  DockerProfileControlError,
-  DockerProfileControlAmbiguityError,
-  DockerProfileControlCancellationError,
+  dockerProfileRequestError,
+  type DockerProfileRequestError,
   restoreDockerProfileBeforeCache,
   type DockerProfileLease,
   type DockerProfileReservation,
@@ -41,25 +41,27 @@ export interface DockerProfileBeforeCacheTarget {
   resumeStopped(signal: AbortSignal): Promise<string>;
 }
 
-function reasonOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
+function reasonOf(cause: DockerProfileRequestError): string {
+  return cause.message;
 }
 
-function promiseEffect<A>(operation: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, Error> {
+function promiseEffect<A>(operation: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, DockerProfileRequestError> {
   return Effect.tryPromise({
     try: operation,
-    catch: (cause) => cause instanceof Error ? cause : new Error(String(cause)),
+    catch: dockerProfileRequestError,
   });
 }
 
-function freshReservation(target: DockerProfileBeforeCacheTarget): Effect.Effect<DockerProfileReservation, Error> {
+function freshReservation(
+  target: DockerProfileBeforeCacheTarget,
+): Effect.Effect<DockerProfileReservation, DockerProfileRequestError> {
   return Effect.andThen(
     Effect.sync(() => target.retireStopped()),
     target.session.replaceReservation,
-  );
+  ).pipe(Effect.mapError(dockerProfileRequestError));
 }
 
-function createCurrent(target: DockerProfileBeforeCacheTarget): Effect.Effect<string, Error> {
+function createCurrent(target: DockerProfileBeforeCacheTarget): Effect.Effect<string, DockerProfileRequestError> {
   return promiseEffect((signal) => target.createFromCurrent(signal));
 }
 
@@ -69,33 +71,54 @@ function restoreArtifact(
   input: BeforeCacheStep,
   expected?: DockerProfileBeforeCacheArtifactIdentityV1,
 ) {
-  return promiseEffect((signal) => restoreDockerProfileBeforeCache(
+  return restoreDockerProfileBeforeCache(
     target.session.lease,
     reservation,
     input,
     expected,
-    signal,
+    undefined,
     target.session.controlTimeoutMs,
-  ));
+  );
 }
 
-function isArtifactMiss(cause: Error): boolean {
-  return cause instanceof DockerProfileControlError && cause.code === "before-cache-miss";
+function isArtifactMiss(cause: DockerProfileRequestError): boolean {
+  switch (cause._tag) {
+    case "DockerProfileControlError": {
+      const reason = cause.reason;
+      switch (reason._tag) {
+        case "ArtifactMiss":
+          return true;
+        case "OperationCancelled":
+        case "OperationCancelFenced":
+        case "ControlRejected":
+          return false;
+        default:
+          return reason satisfies never;
+      }
+    }
+    case "DockerProfileControlAmbiguityError":
+    case "DockerProfileControlCancellationError":
+    case "DockerProfileTransportError":
+      return false;
+    default:
+      return cause satisfies never;
+  }
 }
 
 function artifactReceipt(
   artifact: DockerProfileBeforeCacheArtifactIdentityV1,
   reservation: DockerProfileReservation,
-): { readonly entryId: string; readonly generation: number; readonly artifactId: string } {
+): { readonly entryId: string; readonly generation: number; readonly artifactId: string; readonly imageId: undefined } {
   return {
     entryId: artifact.artifactId,
     generation: reservation.slotGeneration ?? 0,
     artifactId: artifact.artifactId,
+    imageId: undefined,
   };
 }
 
 function captureFailure(
-  cause: Error,
+  cause: DockerProfileRequestError,
   target: DockerProfileBeforeCacheTarget,
   input: BeforeCacheStep,
 ) {
@@ -104,29 +127,39 @@ function captureFailure(
     beforeCacheKey: input.declaration.beforeCacheKey,
     domainId: target.session.lease.binding.profile.profileId,
     operationId: input.operationId,
+    cause: normalizeExternalCause(cause),
   } as const;
-  if (cause instanceof DockerProfileControlCancellationError ||
-      (cause instanceof DockerProfileControlAmbiguityError && cause.terminal === "cancel-fenced")) {
+  const cancellation = () => {
     return new BeforeCacheCancellationError({
       ...common,
       terminal: "cancel-fenced",
       reason: "the Host fenced the operation and proved its unpublished state was scrubbed",
     });
-  }
-  if (cause instanceof DockerProfileControlAmbiguityError) {
-    return new BeforeCacheAmbiguityError({
-      ...common,
-      terminal: "unresolved",
-      reason: "the Host could not prove whether before-cache publication completed",
-      diagnosticCommand: `niceeval docker profile doctor ${target.session.lease.binding.alias}`,
-    });
+  };
+  switch (cause._tag) {
+    case "DockerProfileControlCancellationError":
+      return cancellation();
+    case "DockerProfileControlAmbiguityError": {
+      if (cause.terminal === "cancel-fenced") return cancellation();
+      return new BeforeCacheAmbiguityError({
+        ...common,
+        terminal: "unresolved",
+        reason: "the Host could not prove whether before-cache publication completed",
+        diagnosticCommand: `niceeval docker profile doctor ${target.session.lease.binding.alias}`,
+      });
+    }
+    case "DockerProfileControlError":
+    case "DockerProfileTransportError":
+      break;
+    default:
+      return cause satisfies never;
   }
   return new BeforeCacheCaptureError({
     operation: "capture Docker profile before-cache and restore a private continuation",
     reason: reasonOf(cause),
     beforeCacheKey: input.declaration.beforeCacheKey,
     domainId: target.session.lease.binding.profile.profileId,
-    cause,
+    cause: normalizeExternalCause(cause),
   });
 }
 
@@ -136,112 +169,128 @@ function captureFailure(
  * and then replays the exact original container.create spec. This module never
  * enters the ordinary local-Docker image/index cache path.
  */
-export function makeDockerProfileBeforeCacheCapability(
-  target: DockerProfileBeforeCacheTarget,
-): AttemptBeforeCache {
-  return Object.freeze({
+export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBeforeCacheTarget): AttemptBeforeCache {
+  return {
     eligibility: () => target.eligibility(),
 
-    lookupAndRestore: (input: BeforeCacheStep) => Effect.gen(function* () {
-      yield* promiseEffect((signal) => target.quiesceAndStop(signal));
-      let reservation = yield* freshReservation(target);
-      const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
-      if (restored._tag === "Success") {
-        const sandboxId = yield* createCurrent(target);
+    lookupAndRestore: (input: BeforeCacheStep) =>
+      Effect.gen(function* () {
+        yield* promiseEffect((signal) => target.quiesceAndStop(signal));
+        let reservation = yield* freshReservation(target);
+        const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
+        if (restored._tag === "Success") {
+          const sandboxId = yield* createCurrent(target);
+          return {
+            _tag: "Restored" as const,
+            beforeCacheKey: input.declaration.beforeCacheKey,
+            ...artifactReceipt(restored.success.artifact, reservation),
+            sandboxId,
+          };
+        }
+        if (isArtifactMiss(restored.failure)) {
+          yield* createCurrent(target);
+          return {
+            _tag: "Miss" as const,
+            beforeCacheKey: input.declaration.beforeCacheKey,
+            recovery: undefined,
+          };
+        }
+
+        // A corrupt/interrupted restore may quarantine or partially populate its
+        // target. Release proves scrub, then continue from a different clean slot
+        // so the runner can try a shorter verified prefix.
+        reservation = yield* freshReservation(target);
+        yield* createCurrent(target);
         return {
-          _tag: "Restored" as const,
+          _tag: "Miss" as const,
           beforeCacheKey: input.declaration.beforeCacheKey,
-          ...artifactReceipt(restored.success.artifact, reservation),
+          recovery: "restore-failed-replayed" as const,
+        };
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BeforeCacheLookupError({
+              operation: "restore Docker profile before-cache artifact into a new private slot",
+              reason: reasonOf(cause),
+              beforeCacheKey: input.declaration.beforeCacheKey,
+              domainId: target.session.lease.binding.profile.profileId,
+              cause: normalizeExternalCause(cause),
+            }),
+        ),
+      ),
+
+    capture: (input: BeforeCacheStep) =>
+      Effect.gen(function* () {
+        if (input.knownSensitiveValues.some((value) => value.length > 0)) {
+          return {
+            _tag: "Unsupported" as const,
+            code: "sensitive-state" as const,
+            reason: "Docker Profile before-cache capture refuses actions with framework-known sensitive values",
+          };
+        }
+        yield* promiseEffect((signal) => target.quiesceAndStop(signal));
+        // A transport error, client timeout, decoder rejection, or interruption
+        // cannot prove whether the Host is still copying with the source slot
+        // unmounted. V1 therefore fails the Attempt and lets the existing Scope
+        // owner perform reservation release/reconciliation; it never restarts the
+        // old outer container from this ambiguous boundary.
+        const captured = yield* captureDockerProfileBeforeCache(
+          target.session.lease,
+          target.session.currentReservation(),
+          input,
+          undefined,
+          target.session.controlTimeoutMs,
+        );
+
+        let reservation = yield* freshReservation(target);
+        let restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+        if (restored._tag === "Failure") {
+          // The action has already succeeded, so Base/shorter-prefix replay is
+          // forbidden. Scrub and retry the just-verified artifact once in another
+          // fresh slot; a second failure terminates the Attempt.
+          reservation = yield* freshReservation(target);
+          restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+          if (restored._tag === "Failure") return yield* Effect.fail(restored.failure);
+        }
+        const sandboxId = yield* createCurrent(target);
+        if (captured.state === "already-published") {
+          return {
+            _tag: "Contended" as const,
+            beforeCacheKey: input.declaration.beforeCacheKey,
+            reason: "indexed-generation" as const,
+          };
+        }
+        return {
+          _tag: "Captured" as const,
+          beforeCacheKey: input.declaration.beforeCacheKey,
+          ...artifactReceipt(captured.artifact, reservation),
           sandboxId,
         };
-      }
-      if (isArtifactMiss(restored.failure)) {
-        yield* createCurrent(target);
-        return { _tag: "Miss" as const, beforeCacheKey: input.declaration.beforeCacheKey };
-      }
+      }).pipe(Effect.mapError((cause) => captureFailure(cause, target, input))),
 
-      // A corrupt/interrupted restore may quarantine or partially populate its
-      // target. Release proves scrub, then continue from a different clean slot
-      // so the runner can try a shorter verified prefix.
-      reservation = yield* freshReservation(target);
-      yield* createCurrent(target);
-      return {
-        _tag: "Miss" as const,
-        beforeCacheKey: input.declaration.beforeCacheKey,
-        recovery: "restore-failed-replayed" as const,
-      };
-    }).pipe(Effect.mapError((cause) => new BeforeCacheLookupError({
-      operation: "restore Docker profile before-cache artifact into a new private slot",
-      reason: reasonOf(cause),
-      beforeCacheKey: input.declaration.beforeCacheKey,
-      domainId: target.session.lease.binding.profile.profileId,
-      cause,
-    }))),
-
-    capture: (input: BeforeCacheStep) => Effect.gen(function* () {
-      if ((input.knownSensitiveValues?.filter((value) => value.length > 0).length ?? 0) > 0) {
+    fallBackToBase: () =>
+      Effect.gen(function* () {
+        yield* promiseEffect((signal) => target.quiesceAndStop(signal));
+        yield* freshReservation(target);
+        const sandboxId = yield* createCurrent(target);
+        const eligibility = target.eligibility();
+        if (eligibility._tag !== "Eligible") return eligibility;
         return {
-          _tag: "Unsupported" as const,
-          code: "sensitive-state" as const,
-          reason: "Docker Profile before-cache capture refuses actions with framework-known sensitive values",
+          _tag: "FellBackToBase" as const,
+          baseIdentity: eligibility.baseIdentity,
+          sandboxId,
         };
-      }
-      yield* promiseEffect((signal) => target.quiesceAndStop(signal));
-      // A transport error, client timeout, decoder rejection, or interruption
-      // cannot prove whether the Host is still copying with the source slot
-      // unmounted. V1 therefore fails the Attempt and lets the existing Scope
-      // owner perform reservation release/reconciliation; it never restarts the
-      // old outer container from this ambiguous boundary.
-      const captured = yield* promiseEffect((signal) => captureDockerProfileBeforeCache(
-        target.session.lease,
-        target.session.currentReservation(),
-        input,
-        signal,
-        target.session.controlTimeoutMs,
-      ));
-
-      let reservation = yield* freshReservation(target);
-      let restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
-      if (restored._tag === "Failure") {
-        // The action has already succeeded, so Base/shorter-prefix replay is
-        // forbidden. Scrub and retry the just-verified artifact once in another
-        // fresh slot; a second failure terminates the Attempt.
-        reservation = yield* freshReservation(target);
-        restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
-        if (restored._tag === "Failure") return yield* Effect.fail(restored.failure);
-      }
-      const sandboxId = yield* createCurrent(target);
-      if (captured.state === "already-published") {
-        return {
-          _tag: "Contended" as const,
-          beforeCacheKey: input.declaration.beforeCacheKey,
-          reason: "indexed-generation" as const,
-        };
-      }
-      return {
-        _tag: "Captured" as const,
-        beforeCacheKey: input.declaration.beforeCacheKey,
-        ...artifactReceipt(captured.artifact, reservation),
-        sandboxId,
-      };
-    }).pipe(Effect.mapError((cause) => captureFailure(cause, target, input))),
-
-    fallBackToBase: () => Effect.gen(function* () {
-      yield* promiseEffect((signal) => target.quiesceAndStop(signal));
-      yield* freshReservation(target);
-      const sandboxId = yield* createCurrent(target);
-      const eligibility = target.eligibility();
-      if (eligibility._tag !== "Eligible") return eligibility;
-      return {
-        _tag: "FellBackToBase" as const,
-        baseIdentity: eligibility.baseIdentity,
-        sandboxId,
-      };
-    }).pipe(Effect.mapError((cause) => new BeforeCacheRestoreError({
-      operation: "scrub Docker profile private slot and restore clean Base",
-      reason: reasonOf(cause),
-      domainId: target.session.lease.binding.profile.profileId,
-      cause,
-    }))),
-  });
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BeforeCacheRestoreError({
+              operation: "scrub Docker profile private slot and restore clean Base",
+              reason: reasonOf(cause),
+              domainId: target.session.lease.binding.profile.profileId,
+              beforeCacheKey: undefined,
+              cause: normalizeExternalCause(cause),
+            }),
+        ),
+      ),
+  };
 }

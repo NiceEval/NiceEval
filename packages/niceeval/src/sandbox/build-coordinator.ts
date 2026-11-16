@@ -4,7 +4,7 @@
 // 契约单源:docs/feature/sandbox/architecture/case.md「Run 级构建协调」;
 // 落盘形状:docs/feature/record/architecture.md「sandboxBuilds」。
 // 内部是 Effect 协调:逐 key 结算用 Deferred、整批收工用 Fiber 观察、退避用 Effect.sleep、
-// 并发闸用 Semaphore;公开 RunningSandboxBuilds 保持 Promise ABI,只在方法边界 runPromise。
+// 并发闸用 Semaphore;协调句柄与 worker fiber 都由调用方的 Scope 持有。
 
 import { createHash, randomUUID } from "node:crypto";
 import { Deferred, Duration, Effect, Exit, Fiber, Random, Semaphore } from "effect";
@@ -29,11 +29,9 @@ export function materializationScopeId(input: {
   readonly authorityFingerprint: string;
   readonly materializationProtocolVersion: number;
 }): MaterializationScopeId {
-  return createHash("sha256").update(JSON.stringify([
-    input.providerFamily,
-    input.authorityFingerprint,
-    input.materializationProtocolVersion,
-  ])).digest("hex") as MaterializationScopeId;
+  return createHash("sha256")
+    .update(JSON.stringify([input.providerFamily, input.authorityFingerprint, input.materializationProtocolVersion]))
+    .digest("hex") as MaterializationScopeId;
 }
 
 export function sandboxBuildRef(scopeId: MaterializationScopeId, buildKey: BuildKey): SandboxBuildRef {
@@ -49,7 +47,7 @@ export interface SandboxBuildWork {
   /** 解析后的构建输入投影;不含凭据值。 */
   readonly inputs: JsonValue;
   /** 有界人读标签;省略时用 BuildKey 短前缀。 */
-  readonly label?: string;
+  readonly label?: string | undefined;
 }
 
 /** Holds one use of a prepared artifact; release it after materialization so the artifact is not retained indefinitely. */
@@ -95,22 +93,22 @@ export interface PrepareSandboxBuildsOptions {
   readonly timing: RunTimingRecorder;
   readonly provider: SandboxBuildProvider;
   /** 同时 in-flight 的不同 BuildKey 上限;默认 2。不占 attempt 并发位。 */
-  readonly maxConcurrency?: number;
+  readonly maxConcurrency?: number | undefined;
   /** 逐 BuildKey 的 timeout(ms);省略 = 无逐 key 上限。 */
-  readonly buildTimeoutMs?: number;
+  readonly buildTimeoutMs?: number | undefined;
   /** 整段准备的全局墙钟上限(ms);省略 = 无全局上限。 */
-  readonly prepareBudgetMs?: number;
+  readonly prepareBudgetMs?: number | undefined;
   /** Invocation abort(Ctrl+C)。 */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
   /**
    * 每个 BuildKey 真正开始 / 结束时回调一次(有界起止事件)。
    * 供 live feedback 投影为运行级 active 行 / 非 TTY 永久事件;不改变协调语义。
    */
-  readonly onActivity?: (event: SandboxBuildActivityEvent) => void;
+  readonly onActivity?: ((event: SandboxBuildActivityEvent) => void) | undefined;
   /** 瞬时构建失败的退避重试上限(含首次尝试);默认 3。 */
-  readonly buildAttempts?: number;
+  readonly buildAttempts?: number | undefined;
   /** 退避基数(ms),第 n 次重试睡 base × 2^n × 抖动;默认 1000。 */
-  readonly buildRetryBaseMs?: number;
+  readonly buildRetryBaseMs?: number | undefined;
 }
 
 /** 构建协调器对外的有界 activity 事件(与 Run feedback 的 run-activity 字段对齐)。 */
@@ -153,21 +151,9 @@ export interface SandboxBuildPreparation {
   readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
 }
 
-/** 进行中的 Run 级共享准备:逐 BuildKey 放行,依赖者只等自己引用的那几个 key。 */
-export interface RunningSandboxBuilds {
-  /** 已结算 key 的实时视图(随构建推进增补,不等整批收工)。 */
-  readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
-  /** 已失败 / 已取消 key 的实时视图。 */
-  readonly failures: ReadonlyMap<SandboxBuildRef, SandboxBuildFailure>;
-  /** 等某个 BuildKey 结算;不在本次协调范围内的 key 立即返回。 */
-  settled(ref: SandboxBuildRef): Promise<void>;
-  /** 全部 key 结算后的汇总(provenance 在这里齐全)。 */
-  readonly done: Promise<SandboxBuildPreparation>;
-}
-
 /**
- * Runner-internal build coordination. Unlike the compatibility Promise facade,
- * this handle and every worker fiber belong to the caller's Scope.
+ * Runner-internal build coordination. This handle and every worker fiber belong
+ * to the caller's Scope.
  */
 export interface SandboxBuildCoordinator {
   readonly sources: ReadonlyMap<SandboxBuildRef, SandboxBuildArtifactSource>;
@@ -183,135 +169,34 @@ export interface SandboxBuildCoordinator {
  * queued and running workers, while their `ensuring` clauses settle every key
  * Deferred so no consumer remains parked behind a cancelled coordinator.
  */
-export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(
-  function* (
-    works: readonly SandboxBuildWork[],
-    opts: PrepareSandboxBuildsOptions,
-  ): Effect.fn.Return<SandboxBuildCoordinator, never, import("effect").Scope.Scope> {
-    const unique = dedupeWorks(works);
-    if (unique.length === 0) {
-      const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
-      return {
-        sources: empty.sources,
-        failures: empty.failures,
-        settled: () => Effect.void,
-        done: Effect.succeed(empty),
-      };
-    }
-
-    const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
-    const records: SandboxBuildRecord[] = [];
-    const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
-    const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void>>();
-    for (const work of unique) perKey.set(work.ref, yield* Deferred.make<void>());
-    const completion = yield* Deferred.make<SandboxBuildPreparation, unknown>();
-    const scopeAbort = new AbortController();
-    yield* Effect.addFinalizer(() => Effect.sync(() => scopeAbort.abort(new Error("Sandbox build Scope closed."))));
-    const prepareSignal = combineSignals([
-      opts.signal,
-      scopeAbort.signal,
-      opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
-    ]);
-    const ctx = {
-      timing: opts.timing,
-      provider: opts.provider,
-      buildTimeoutMs: opts.buildTimeoutMs,
-      signal: prepareSignal,
-      sources,
-      records,
-      failures,
-      onActivity: opts.onActivity,
-      buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
-      buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
-    };
-    const coordination = Effect.gen(function* () {
-      const gate = yield* Semaphore.make(Math.max(1, opts.maxConcurrency ?? 2));
-      const fibers = yield* Effect.forEach(unique, (work) =>
-        Effect.forkChild(
-          gate.withPermits(1)(prepareOne(work, ctx)).pipe(
-            // `tryPromise` interruption does not make a provider's own AbortSignal
-            // fire unless we explicitly couple it to this Scope. The finalizer
-            // above aborts the shared signal; this hook asks providers with a
-            // separate remote cancellation API to drain as well.
-            Effect.onInterrupt(() => Effect.tryPromise({
-              try: async () => { await ctx.provider.cancel?.(work); },
-              catch: () => undefined,
-            }).pipe(Effect.ignore)),
-            // This runs for success, failure, and Scope interruption alike.
-            Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
-          ),
-        ));
-      const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
-      const failed = exits.find(Exit.isFailure);
-      if (failed !== undefined) return yield* Effect.failCause(failed.cause);
-      return { sources, records, failures } satisfies SandboxBuildPreparation;
-    }).pipe(
-      Effect.exit,
-      Effect.flatMap((exit) => Deferred.done(completion, exit)),
-      Effect.asVoid,
-    );
-    yield* coordination.pipe(Effect.forkScoped);
-    return {
-      sources,
-      failures,
-      settled(ref) {
-        const deferred = perKey.get(ref);
-        return deferred === undefined ? Effect.void : Deferred.await(deferred);
-      },
-      done: Deferred.await(completion),
-    };
-  },
-);
-
-/**
- * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
- * 调用方负责先做携带规划、只传入未携带 attempt 引用的 key;本函数不为「查看旧结果」造假 provenance。
- */
-export async function prepareSandboxBuilds(
+export const startSandboxBuildsEffect = Effect.fn("startSandboxBuildsEffect")(function* (
   works: readonly SandboxBuildWork[],
   opts: PrepareSandboxBuildsOptions,
-): Promise<SandboxBuildPreparation> {
-  return startSandboxBuilds(works, opts).done;
-}
-
-/**
- * 启动 Run 级共享准备并立刻返回句柄:调用方按 BuildKey 逐个等待,
- * 只依赖已就绪 key 的 attempt 不被同批最慢的那个构建挡住(见 case.md「Run 级构建协调」第 4 条)。
- */
-export function startSandboxBuilds(
-  works: readonly SandboxBuildWork[],
-  opts: PrepareSandboxBuildsOptions,
-): RunningSandboxBuilds {
+): Effect.fn.Return<SandboxBuildCoordinator, never, import("effect").Scope.Scope> {
   const unique = dedupeWorks(works);
   if (unique.length === 0) {
     const empty: SandboxBuildPreparation = { sources: new Map(), records: [], failures: new Map() };
     return {
       sources: empty.sources,
       failures: empty.failures,
-      async settled() {},
-      done: Promise.resolve(empty),
+      settled: () => Effect.void,
+      done: Effect.succeed(empty),
     };
   }
 
-  const maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
   const sources = new Map<SandboxBuildRef, SandboxBuildArtifactSource>();
   const records: SandboxBuildRecord[] = [];
   const failures = new Map<SandboxBuildRef, SandboxBuildFailure>();
-
+  const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void>>();
+  for (const work of unique) perKey.set(work.ref, yield* Deferred.make<void>());
+  const completion = yield* Deferred.make<SandboxBuildPreparation, unknown>();
+  const scopeAbort = new AbortController();
+  yield* Effect.addFinalizer(() => Effect.sync(() => scopeAbort.abort(new Error("Sandbox build Scope closed."))));
   const prepareSignal = combineSignals([
     opts.signal,
+    scopeAbort.signal,
     opts.prepareBudgetMs !== undefined ? AbortSignal.timeout(opts.prepareBudgetMs) : undefined,
   ]);
-
-  // 逐 key 的结算 Deferred:key 一结算就 settle,依赖它的 attempt 当场放行,
-  // 不等同批其它 key(single-flight 仍靠这张表,同 key 的第二个 work 复用同一条)。
-  // 在方法边界同步创建,settled() 在任意时刻调用都拿到同一结果;
-  // Deferred 结算后状态保持,迟到等待方同样立即放行。
-  const perKey = new Map<SandboxBuildRef, Deferred.Deferred<void, never>>();
-  for (const work of unique) {
-    perKey.set(work.ref, Deferred.makeUnsafe<void>());
-  }
-
   const ctx = {
     timing: opts.timing,
     provider: opts.provider,
@@ -320,54 +205,70 @@ export function startSandboxBuilds(
     sources,
     records,
     failures,
-    onActivity: opts.onActivity,
+    onActivity: opts.onActivity ?? (() => {}),
     buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
     buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
   };
-
-  // 整段准备是一个 Effect 程序:每 key 一条 gate 保护的 fiber,结算挂在 ensuring 上
-  // (失败/中断同样放行等待方);收尾逐 fiber 观察 exit,先到先报缺陷——与 Promise.all
-  // 的失败传播一致,且观察不打断兄弟 fiber,一条出事后其余 key 照常结算。
   const coordination = Effect.gen(function* () {
-    const gate = yield* Semaphore.make(maxConcurrency);
+    const gate = yield* Semaphore.make(Math.max(1, opts.maxConcurrency ?? 2));
     const fibers = yield* Effect.forEach(unique, (work) =>
       Effect.forkChild(
-        gate.withPermits(1)(prepareOne(work, ctx)).pipe(
-          Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
-        ),
-      ));
+        gate
+          .withPermits(1)(prepareOne(work, ctx))
+          .pipe(
+            // `tryPromise` interruption does not make a provider's own AbortSignal
+            // fire unless we explicitly couple it to this Scope. The finalizer
+            // above aborts the shared signal; this hook asks providers with a
+            // separate remote cancellation API to drain as well.
+            Effect.onInterrupt(() =>
+              Effect.tryPromise({
+                try: async () => {
+                  await ctx.provider.cancel?.(work);
+                },
+                catch: () => undefined,
+              }).pipe(Effect.ignore),
+            ),
+            // This runs for success, failure, and Scope interruption alike.
+            Effect.ensuring(Effect.asVoid(Deferred.succeed(perKey.get(work.ref)!, undefined))),
+          ),
+      ),
+    );
     const exits = yield* Effect.forEach(fibers, Fiber.await, { concurrency: "unbounded" });
     const failed = exits.find(Exit.isFailure);
-    if (failed !== undefined && Exit.isFailure(failed)) return yield* Effect.failCause(failed.cause);
+    if (failed !== undefined) return yield* Effect.failCause(failed.cause);
     return { sources, records, failures } satisfies SandboxBuildPreparation;
-  });
-  // 边界:唯一一次把 Effect 驱动进公开 Promise ABI。
-  const done = Effect.runPromise(coordination);
-
+  }).pipe(
+    Effect.exit,
+    Effect.flatMap((exit) => Deferred.done(completion, exit)),
+    Effect.asVoid,
+  );
+  yield* coordination.pipe(Effect.forkScoped);
   return {
     sources,
     failures,
-    async settled(ref) {
+    settled(ref) {
       const deferred = perKey.get(ref);
-      if (deferred === undefined) return;
-      await Effect.runPromise(Deferred.await(deferred));
+      return deferred === undefined ? Effect.void : Deferred.await(deferred);
     },
-    done,
+    done: Deferred.await(completion),
   };
-}
+});
 
 /**
  * 从 fresh attempt 依赖表扇出构建失败 → AttemptError 形状所需字段。
  * 同一 BuildKey 的所有依赖者共用同一个 timingNodeId。
  */
-export function buildFailureOrigin(
-  failure: SandboxBuildFailure,
-): { code: string; message: string; timingNodeId: string; cause?: SandboxBuildFailure["error"]["cause"] } {
+export function buildFailureOrigin(failure: SandboxBuildFailure): {
+  code: string;
+  message: string;
+  timingNodeId: string;
+  cause?: SandboxBuildFailure["error"]["cause"];
+} {
   return {
     code: failure.error.code,
     message: failure.error.message,
     timingNodeId: failure.timingNodeId,
-    ...(failure.error.cause !== undefined ? { cause: failure.error.cause } : {}),
+    cause: failure.error.cause,
   };
 }
 
@@ -389,7 +290,7 @@ function prepareOne(
     sources: Map<SandboxBuildRef, SandboxBuildArtifactSource>;
     records: SandboxBuildRecord[];
     failures: Map<SandboxBuildRef, SandboxBuildFailure>;
-    onActivity?: (event: SandboxBuildActivityEvent) => void;
+    onActivity: (event: SandboxBuildActivityEvent) => void;
     buildAttempts: number;
     buildRetryBaseMs: number;
   },
@@ -405,7 +306,7 @@ function prepareOne(
       startOffsetMs,
       durationMs: 0,
     });
-    ctx.onActivity?.({
+    ctx.onActivity({
       status: "started",
       ref: work.ref,
       buildKey: work.buildKey,
@@ -419,7 +320,11 @@ function prepareOne(
       ctx.buildTimeoutMs !== undefined ? AbortSignal.timeout(ctx.buildTimeoutMs) : undefined,
     ]);
 
-    const finish = (status: SandboxBuildRecord["status"], source?: SandboxBuildArtifactSource, error?: SandboxBuildRecord["error"]) => {
+    const finish = (
+      status: SandboxBuildRecord["status"],
+      source?: SandboxBuildArtifactSource,
+      error?: SandboxBuildRecord["error"],
+    ) => {
       parent.durationMs = Math.max(0, ctx.timing.offsetNow() - startOffsetMs);
       if (status === "failed" || status === "cancelled") parent.failed = true;
       const record: SandboxBuildRecord = {
@@ -444,7 +349,7 @@ function prepareOne(
           error,
         });
       }
-      ctx.onActivity?.({
+      ctx.onActivity({
         status: status === "failed" || status === "cancelled" ? "failed" : "done",
         ref: work.ref,
         outcome: status,
@@ -461,25 +366,28 @@ function prepareOne(
       return;
     }
 
-    const finishFailure = (e: unknown): Effect.Effect<void> => Effect.gen(function* () {
-      if (keySignal.aborted || isAbortError(e)) {
-        const cancel = ctx.provider.cancel;
-        if (cancel !== undefined) {
-          yield* Effect.tryPromise({
-            try: () => cancel(work),
-            catch: () => undefined,
-          }).pipe(Effect.ignore);
+    const finishFailure = (e: unknown): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (keySignal.aborted || isAbortError(e)) {
+          const cancel = ctx.provider.cancel;
+          if (cancel !== undefined) {
+            yield* Effect.tryPromise({
+              try: () => cancel(work),
+              catch: () => undefined,
+            }).pipe(Effect.ignore);
+          }
+          finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
+          return;
         }
-        finish("cancelled", undefined, abortError(keySignal, work.buildKey, e));
-        return;
-      }
-      finish("failed", undefined, failedError(work.buildKey, e));
-    });
+        finish("failed", undefined, failedError(work.buildKey, e));
+      });
 
-    const lookup = yield* Effect.result(Effect.tryPromise({
-      try: () => ctx.provider.lookup(work, keySignal),
-      catch: (error) => error,
-    }));
+    const lookup = yield* Effect.result(
+      Effect.tryPromise({
+        try: () => ctx.provider.lookup(work, keySignal),
+        catch: (error) => error,
+      }),
+    );
     if (lookup._tag === "Failure") return yield* finishFailure(lookup.failure);
     if (lookup.success._tag === "Hit") {
       finish("hit", lookup.success.source);
@@ -491,24 +399,27 @@ function prepareOne(
     const operationId = randomUUID();
     const build = (attempt: number): Effect.Effect<SandboxBuildArtifactSource, unknown> =>
       Effect.tryPromise({
-        try: () => ctx.provider.build(work, {
-          operationId,
-          signal: keySignal,
-          timing: ctx.timing,
-          parent,
-        }),
+        try: () =>
+          ctx.provider.build(work, {
+            operationId,
+            signal: keySignal,
+            timing: ctx.timing,
+            parent,
+          }),
         catch: (error) => error,
-      }).pipe(Effect.catch((error) => {
-        const last = attempt >= ctx.buildAttempts - 1;
-        if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
-          return Effect.fail(error);
-        }
-        return Random.next.pipe(
-          Effect.map((jitter) => backoffDelay(ctx.buildRetryBaseMs, attempt, jitter)),
-          Effect.flatMap((delayMs) => sleep(delayMs, keySignal)),
-          Effect.flatMap(() => keySignal.aborted ? Effect.fail(error) : build(attempt + 1)),
-        );
-      }));
+      }).pipe(
+        Effect.catch((error) => {
+          const last = attempt >= ctx.buildAttempts - 1;
+          if (last || keySignal.aborted || isAbortError(error) || !isTransientBuildError(error)) {
+            return Effect.fail(error);
+          }
+          return Random.next.pipe(
+            Effect.map((jitter) => backoffDelay(ctx.buildRetryBaseMs, attempt, jitter)),
+            Effect.flatMap((delayMs) => sleep(delayMs, keySignal)),
+            Effect.flatMap(() => (keySignal.aborted ? Effect.fail(error) : build(attempt + 1))),
+          );
+        }),
+      );
     const built = yield* Effect.result(build(0));
     if (built._tag === "Failure") return yield* finishFailure(built.failure);
     finish("built", built.success);
@@ -554,7 +465,11 @@ function isTransientBuildError(e: unknown): boolean {
   );
 }
 
-function abortError(signal: AbortSignal, buildKey: BuildKey, cause?: unknown): NonNullable<SandboxBuildRecord["error"]> {
+function abortError(
+  signal: AbortSignal,
+  buildKey: BuildKey,
+  cause?: unknown,
+): NonNullable<SandboxBuildRecord["error"]> {
   const timedOut = isTimeoutReason(signal.reason);
   const code = timedOut ? "sandbox-build-timeout" : "sandbox-build-cancelled";
   const message = timedOut

@@ -17,6 +17,8 @@
 
 使用最小、能证明契约的实验切片，保留既有结果，只补跑受影响场景。付费模型调用、全量 benchmark、整批作废或全量重跑需要用户明确授权。
 
-读取或诊断下游运行结果时，只使用其规则指定的 `pnpm exec niceeval query` 或 `pnpm exec niceeval view` 公开入口，不直接读取 `.niceeval/` 产物或用相邻源码反推某次运行。固定 Query operation 无法呈现所需信息时，记录 NiceEval 呈现缺口。
+读取或诊断下游运行结果时，先读实际安装包的 `INDEX.md`，使用其公开 `show --json` 与 `view` 入口。
+从对象地址开始，沿 JSON 的 links 或文本 Next 继续读取；不直接读取 `.niceeval/` 产物，也不用相邻源码反推某次运行。
+公开入口无法呈现所需事实时，记录 NiceEval 呈现缺口。
 
 通用契约与核心行为的根因在 NiceEval 修复；题目、benchmark、实验和报告特定策略留在下游。跨仓库修改分别验证和提交，不把其它仓库的工作带入 NiceEval 提交。

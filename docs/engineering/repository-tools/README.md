@@ -23,7 +23,7 @@ pnpm run repo
   → explicit domain contribution：命令、options、help、JSON、receipt、errors、renderer
 ```
 
-Repository root 只负责进程机制。它用 `effect/unstable/cli` 解码顶层 selector，组装 `Context.Service` 所需的 Layer，并把唯一根 Effect 交给 `@effect/platform-node` 的 `NodeRuntime.runMain`。
+Repository root 只负责进程机制。它用 `effect/cli` 解码顶层 selector，组装 `Context.Service` 所需的 Layer，并把唯一根 Effect 交给 `@effect/platform-node` 的 `NodeRuntime.runMain`。
 它把最终 renderer 的输出交给终端，不拥有文档 verb、option、help、JSON shape、receipt、错误或文本 renderer。
 
 Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解释领域输入或归一化领域结果。每个领域自行定义自己的 verbs、options、`--help`、机器结果、receipt、错误和人读 renderer；不同领域可以有不同的输入与输出形状。
@@ -133,10 +133,14 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 YAML、Netlify 配置和 hooks 只决定平台何时调用正式命令、传入哪些可信参数，以及如何保存 artifact。选择、校验、生成、重试、领域 receipt 与错误呈现都属于 domain contribution。平台文件不得复制文件列表、状态机或成功判定。
 
 官方 Preview 的平台入口是 `pnpm preview:build`。Preview contribution 固定下游编排器，并构建当前 exact package artifact。
-它通过候选包的同一 Record 导入入口验证和迁移下游的历史 portable 数据，不重跑评估或改写下游原件。
+它通过候选包的同一 Record 导入入口验证当前格式的 portable 数据，不改写下游原件。
+旧格式明确拒绝；下游保留原存储并重新运行后，再提供新的 portable 数据。
 Function 的 Record、cutoff 和摘要来自同一已验证私有 generation；staging 完成前持有该 generation，并核对实际打包字节。
 
 同一 contribution 关闭 Netlify context identity，形成发布 closure 与 build receipt。`netlify.toml` 只调用入口并声明 publish directory 与 response headers。部署后的只读验收从 `pnpm preview:accept --input <file>` 进入，不把 Netlify token 或 GitHub token 交给领域命令。
+
+Preview 的 build receipt 保留一个完整 artifact 的格式标记。静态闭包只允许经过 Concord 正式验证的
+`concord/changes.json`，其它 JSON 一律拒绝；不保留旧 `view-page` 子格式的读取分支。
 
 PR 的文档与源码审阅由 [Concord 变更预览](architecture.md)提供。Preview contribution 取得实际目标分支与提交身份，将只读页面纳入同一发布目录；产品页读取 Record，差异页读取 Git 提交。
 

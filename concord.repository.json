@@ -82,10 +82,6 @@
       "root": "e2e/lifecycle"
     },
     {
-      "id": "migrate",
-      "root": "e2e/migrate"
-    },
-    {
       "id": "package",
       "root": "e2e/package"
     },
@@ -100,6 +96,10 @@
     {
       "id": "runner",
       "root": "e2e/runner"
+    },
+    {
+      "id": "agent-judge",
+      "root": "e2e/agent-judge"
     }
   ],
   "historyPath": "e2e/concord-history.ts",
@@ -245,12 +245,6 @@
       "e2e/lifecycle/project.json",
       "e2e/lifecycle/tsconfig.json",
       "e2e/lifecycle/vitest.config.ts",
-      "e2e/migrate/package.json",
-      "e2e/migrate/pnpm-lock.yaml",
-      "e2e/migrate/pnpm-workspace.yaml",
-      "e2e/migrate/project.json",
-      "e2e/migrate/tsconfig.json",
-      "e2e/migrate/vitest.config.ts",
       "e2e/package/package.json",
       "e2e/package/pnpm-lock.yaml",
       "e2e/package/pnpm-workspace.yaml",

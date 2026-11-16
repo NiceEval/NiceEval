@@ -23,6 +23,7 @@ function wrongResult(operation: DockerCacheRepositoryRequest["operation"]): User
     code: "user-database-invalid",
     message: `docker-cache worker returned the wrong result for ${operation}`,
     repository: DOCKER_CACHE_REPOSITORY,
+    cause: undefined,
   });
 }
 
@@ -31,10 +32,13 @@ export const requestDockerCacheRepositoryEffect = <Request extends DockerCacheRe
 ): Effect.Effect<DockerCacheResultFor<Request>, UserDatabaseFailure, import("effect").Scope.Scope> =>
   Effect.flatMap(userDatabaseHost.open(), (database) =>
     dispatchFrom(database)(request).pipe(
-      Effect.flatMap((value) => isDockerCacheRepositoryResult(value) && value.operation === request.operation
-        ? Effect.succeed(value as DockerCacheResultFor<Request>)
-        : Effect.fail(wrongResult(request.operation))),
-    ));
+      Effect.flatMap((value) =>
+        isDockerCacheRepositoryResult(value) && value.operation === request.operation
+          ? Effect.succeed(value as DockerCacheResultFor<Request>)
+          : Effect.fail(wrongResult(request.operation)),
+      ),
+    ),
+  );
 
 /** Main-thread facade. It exposes only the Docker feature vocabulary; SQL and connections stay in UserDatabase. */
 export const dockerCacheRepository = Object.freeze({

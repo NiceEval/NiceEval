@@ -1,11 +1,5 @@
 import { defineEval } from "niceeval";
-import {
-  commandSucceeded,
-  includes,
-  jsonMatch,
-  satisfies,
-  toolMatch,
-} from "niceeval/expect";
+import { commandSucceeded, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 import { REPLY_DIRECTIVE, SKIP_BUILD_NOTE } from "../shared.ts";
 const POSTSETUP_ORDER_LOG = "/tmp/niceeval-bub-postsetup-order.log";
 // pythonPlugins + postSetup(docs/engineering/testing/architecture/e2e/adapter/bub.md):
@@ -17,8 +11,7 @@ const POSTSETUP_ORDER_LOG = "/tmp/niceeval-bub-postsetup-order.log";
 const VENV_PYTHON = "$HOME/.local/share/uv/tools/bub/bin/python";
 const PLUGIN_CHECK_CMD = `${VENV_PYTHON} -c "import cowsay; print(cowsay.get_output_string('cow', 'PLUGIN_OK'))"`;
 export default defineEval({
-  description:
-    "pythonPlugins 声明的包在 bub 自己的 tool venv 里可导入;postSetup 钩子按声明顺序执行",
+  description: "pythonPlugins 声明的包在 bub 自己的 tool venv 里可导入;postSetup 钩子按声明顺序执行",
   async test(t) {
     const order = await t.sandbox.readText(POSTSETUP_ORDER_LOG);
     t.check(order, includes("first\nsecond"));
@@ -40,15 +33,13 @@ export default defineEval({
     );
     t.check(
       turn.events,
-      satisfies<typeof turn.events>(
-        "shell output contains PLUGIN_OK",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.finished" &&
-              event.kind === "tool" &&
-              /PLUGIN_OK/.test(JSON.stringify(event.output) ?? ""),
-          ),
+      satisfies<typeof turn.events>("shell output contains PLUGIN_OK", (events) =>
+        events.some(
+          (event) =>
+            event.type === "operation.finished" &&
+            event.kind === "tool" &&
+            /PLUGIN_OK/.test(JSON.stringify(event.output) ?? ""),
+        ),
       ),
     );
   },

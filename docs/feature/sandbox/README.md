@@ -35,7 +35,7 @@ Attachment envelope 的 `revision` 由对应 persistence 拥有：
 | diff Assertion 的 result、coverage 与 Evidence refs | origin Attempt 的 `niceeval.assertions` |
 | 需要保留的大型、具类型对象 | Attempt 或 Run 的 `niceeval.artifacts` |
 
-provider 的实例 id、池内承接序号、live / dormant 状态与 detached cleanup locator 只服务本次运行或留存注册表。
+provider 的实例 id、池内承接序号、live / dormant 状态与 detached cleanup locator 只服务本次运行与 `kept` 反馈。
 它们不成为可携带 Record 事实。销毁现场不会影响已经封口的九项 fixed catalog closure；恢复现场也不会把新的事实补写回旧 Attempt。
 
 conversation、usage、commands、timing 与 diagnostics 只在 reader side 从上述 source 投影。source navigation

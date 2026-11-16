@@ -1,6 +1,21 @@
 import type { IdentityExplanation } from "../../runner/manifest.ts";
 import type { ResolvedModelRoles } from "../../model-roles.ts";
 import { Data, type Effect } from "effect";
+import { isExternalCause, normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
+import { MigrationRequiredError } from "../../error-assistance/migration.ts";
+import { DiscoveryError } from "../../runner/discover.ts";
+import { FingerprintFileError, FingerprintPlanningError } from "../../runner/fingerprint.ts";
+import { AcceptError } from "../../runner/accept.ts";
+import { ExplicitAdoptionError } from "../../runner/adoption.ts";
+import { ExperimentRenameError } from "../../runner/rename-experiment.ts";
+import { SandboxLayerLinkError, SandboxBeforePlanningError } from "../../sandbox/link.ts";
+import { SandboxRunPlanningInvariantError, SandboxRunPairDuplicateError } from "../../runner/sandbox-selection.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
+import { ConfigModuleLoadError } from "../../cli/project-configuration.ts";
+import type { RunnerRecordOpenError, RunnerRecordWriteError } from "../../runner/record.ts";
+import { RunStorageError } from "../../run/storage/errors.ts";
+import type { RunStorageCommandError } from "../../run/storage/index.ts";
+import { SharedStateLeaseError } from "../../runner/shared-state-lease.ts";
 
 import type { Config } from "../../types.ts";
 import type { FeedbackCoordinator } from "../../runner/feedback/coordinator.ts";
@@ -8,6 +23,7 @@ import type { InvocationCompletion } from "../../runner/types.ts";
 import type { SessionListDocument, SessionShowDocument } from "../../runner/session.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../runner/reuse-readback.ts";
 import type { BeforeCachePreparationSummary } from "../../runner/before-cache-preparation.ts";
+import type { ExecutionPolicyIdentity } from "../../runner/reuse-plan.ts";
 
 /** Restricts Host protocol data to JSON values; functions, undefined and live service instances cannot cross this boundary. */
 export type ExperimentHostJsonValue =
@@ -33,47 +49,161 @@ export type ExperimentHostOperation =
   | "teardown-inspect"
   | "teardown-run";
 
+/** Rejects an Experiment that combines Pass and Score Evals, identifying both sets for correction. */
+export class ExperimentEvaluationKindAdmissionError extends Data.TaggedError("ExperimentEvaluationKindAdmissionError")<{
+  readonly code: "experiment-evaluation-kind-mixed";
+  readonly message: string;
+  readonly issues: readonly {
+    readonly experimentId: string;
+    readonly passEvalIds: readonly string[];
+    readonly scoreEvalIds: readonly string[];
+  }[];
+}> {}
+
+/** Keeps classified planning and migration failures available to the calling Host. */
+export type ExperimentHostCause =
+  | ExperimentEvaluationKindAdmissionError
+  | DiscoveryError
+  | MigrationRequiredError
+  | FingerprintFileError
+  | FingerprintPlanningError
+  | AcceptError
+  | ExplicitAdoptionError
+  | ExperimentRenameError
+  | SandboxLayerLinkError
+  | SandboxBeforePlanningError
+  | SandboxRunPlanningInvariantError
+  | SandboxRunPairDuplicateError
+  | SqliteRecordError
+  | ConfigModuleLoadError
+  | SharedStateLeaseError
+  | RunnerRecordOpenError
+  | RunnerRecordWriteError
+  | RunStorageCommandError
+  | ExternalCause;
+
+/** Recognizes the closed discriminants emitted by the in-process Record boundary. */
+function isRunnerRecordCause(cause: unknown): cause is RunnerRecordOpenError | RunnerRecordWriteError {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return false;
+  switch (cause.code) {
+    case "runner-record-attempt-invalid":
+    case "runner-record-attempt-unsealed":
+    case "runner-record-membership-state-invalid":
+    case "runner-record-attempt-publication-failed":
+    case "runner-record-publish-state-invalid":
+    case "runner-record-target-identity-invalid":
+    case "runner-record-assertions-invalid":
+    case "runner-record-observability-invalid":
+    case "runner-record-sources-invalid":
+    case "runner-record-artifacts-invalid":
+    case "runner-record-target-input-missing":
+    case "runner-session-open-failed":
+    case "project-target-reuse-plan-invalid":
+    case "record-root-invalid":
+    case "record-path-invalid":
+    case "record-path-type-invalid":
+    case "record-path-already-exists":
+    case "record-resource-limit-invalid":
+    case "record-resource-limit-exceeded":
+    case "record-io-error":
+    case "record-permission-denied":
+    case "record-maintenance-busy":
+    case "record-coordination-deadline-invalid":
+    case "record-coordination-timed-out":
+    case "record-coordination-canceled":
+    case "record-coordination-state-invalid":
+    case "record-bootstrap-invalid":
+    case "record-format-unsupported":
+    case "record-reader-closed":
+    case "record-handle-invalid":
+    case "record-integrity-failure":
+    case "family-definition-required":
+    case "record-writer-closed":
+    case "record-draft-state-invalid":
+    case "record-draft-write-failed":
+    case "record-reference-invalid":
+    case "record-core-invalid":
+    case "record-attachment-encode-error":
+    case "record-attachment-callback-failed":
+    case "record-attachment-closure-invalid":
+    case "record-owner-definition-mismatch":
+    case "record-already-written":
+    case "record-collection-definition-invalid":
+    case "record-append-command-invalid":
+    case "record-collection-not-closed":
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** Preserves known Host failures and their recovery information while classifying external thrown values. */
+export function normalizeExperimentHostCause(cause: unknown): ExperimentHostCause {
+  if (
+    cause instanceof ExperimentEvaluationKindAdmissionError ||
+    cause instanceof DiscoveryError ||
+    cause instanceof MigrationRequiredError ||
+    cause instanceof FingerprintFileError ||
+    cause instanceof FingerprintPlanningError ||
+    cause instanceof AcceptError ||
+    cause instanceof ExplicitAdoptionError ||
+    cause instanceof ExperimentRenameError ||
+    cause instanceof SandboxLayerLinkError ||
+    cause instanceof SandboxBeforePlanningError ||
+    cause instanceof SandboxRunPlanningInvariantError ||
+    cause instanceof SandboxRunPairDuplicateError ||
+    cause instanceof SqliteRecordError ||
+    cause instanceof ConfigModuleLoadError ||
+    cause instanceof SharedStateLeaseError ||
+    cause instanceof RunStorageError ||
+    isExternalCause(cause) ||
+    isRunnerRecordCause(cause)
+  )
+    return cause;
+  return normalizeExternalCause(cause);
+}
+
 /** Stable typed failure boundary; defects and interruption remain separate. */
 export class ExperimentHostError extends Data.TaggedError("ExperimentHostError")<{
   readonly operation: ExperimentHostOperation;
   readonly code: string;
   readonly message: string;
   /** Structured typed failure retained for application/CLI attribution. */
-  readonly cause?: unknown;
-  readonly comparisons?: readonly import("../../runner/reuse-plan.ts").ExecutionComparison[];
+  readonly cause: ExperimentHostCause;
+  readonly comparisons: readonly import("../../runner/reuse-plan.ts").ExecutionComparison[] | undefined;
 }> {}
 
 /** Inputs shared by discovery, link checking, and invocation planning. */
 export interface ExperimentHostSelectionInput {
   readonly cwd: string;
-  readonly experimentSelector?: string;
+  readonly experimentSelector?: string | undefined;
   /** Non-empty exact Experiment ID set; mutually exclusive with experimentSelector. */
-  readonly experimentIds?: readonly string[];
-  readonly evalSelectors?: readonly string[];
-  readonly tag?: string;
+  readonly experimentIds?: readonly string[] | undefined;
+  readonly evalSelectors?: readonly string[] | undefined;
+  readonly tag?: string | undefined;
 }
 
 /** Describes a discovered Eval's identity, tags and evaluation kind; Score and Pass results require different quality interpretations. */
 export interface ExperimentHostEvalSummary {
   readonly id: string;
-  readonly description?: string;
+  readonly description: string | undefined;
   readonly tags: readonly string[];
   readonly evaluationKind: "pass" | "score";
 }
 
 /** Summarizes discovered execution settings and Eval membership; hasBefore and hasAfter describe declared lifecycle hooks rather than completed work. */
 export interface ExperimentHostExperimentSummary {
-  readonly models?: ResolvedModelRoles;
+  readonly models: ResolvedModelRoles | undefined;
   readonly id: string;
-  readonly description?: string;
+  readonly description: string | undefined;
   readonly adapter: string | null;
-  readonly model?: string;
+  readonly model: string | undefined;
   readonly attempts: number;
   readonly evalIds: readonly string[];
   readonly labels: Readonly<Record<string, string | number>>;
   readonly hasBefore: boolean;
   readonly hasAfter: boolean;
-  readonly sharedStateKey?: string;
+  readonly sharedStateKey: string | undefined;
 }
 
 /** Lists discovered Evals and Experiments without executing them; catalog membership does not prove that the selected pairs can link. */
@@ -105,22 +235,22 @@ export type ExperimentHostSelectionProblem =
 
 /** Supplies per-invocation execution overrides; timeoutMs uses milliseconds, and rerun policy does not change historical reuse eligibility. */
 export interface ExperimentHostRunOverrides {
-  readonly attempts?: number;
-  readonly earlyExit?: boolean;
-  readonly timeoutMs?: number;
-  readonly budget?: number;
-  readonly rerun?: "failed" | "all";
-  readonly keepSandbox?: "failed" | "all";
-  readonly pauseOnFailure?: boolean;
-  readonly maxConcurrency?: number;
-  readonly maxBuildConcurrency?: number;
-  readonly maxBeforeCacheConcurrency?: number;
+  readonly attempts?: number | undefined;
+  readonly earlyExit?: boolean | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly budget?: number | undefined;
+  readonly rerun?: "failed" | "all" | undefined;
+  readonly keepSandbox?: "failed" | "all" | undefined;
+  readonly pauseOnFailure?: boolean | undefined;
+  readonly maxConcurrency?: number | undefined;
+  readonly maxBuildConcurrency?: number | undefined;
+  readonly maxBeforeCacheConcurrency?: number | undefined;
 }
 
 /** Validates Experiment and Eval linking with explicit Config and optional execution overrides; checking does not run Attempts. */
 export interface ExperimentHostCheckRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
-  readonly overrides?: ExperimentHostRunOverrides;
+  readonly overrides?: ExperimentHostRunOverrides | undefined;
 }
 
 /** Reports linked pairs or a selection problem; handle non-linked statuses instead of assuming an empty selection succeeded. */
@@ -164,14 +294,13 @@ export interface ExperimentHostDrySlotTarget {
   readonly experimentId: string;
   readonly evalId: string;
   readonly executionIdentityDigest: string;
-  readonly evalGroupId?: string;
-  readonly evalGroupIndex?: number;
+  readonly evalGroup: { readonly id: string; readonly index: number } | undefined;
   readonly attempt: number;
 }
 
 /** Explains one recorded identity claim's reuse comparison; display strings are diagnostic summaries rather than executable comparison rules. */
 export interface ExperimentHostDryComparison {
-  readonly explanation?: IdentityExplanation;
+  readonly explanation: IdentityExplanation | undefined;
   readonly attachment: string;
   readonly recordedClaim: string;
   readonly sourceState: string;
@@ -203,10 +332,11 @@ export type ExperimentHostDrySlot =
 
 /** Describes current target reuse and gaps with pinned readbacks; it is a preview of applicability rather than a new Run result. */
 export interface ExperimentHostDryPlan {
-  readonly policy: { readonly name: "project-target"; readonly version: 1 };
+  readonly policy: ExecutionPolicyIdentity;
   readonly slots: readonly ExperimentHostDrySlot[];
   readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
   readonly lockedPairs: readonly string[];
+  readonly recoverablePairs: readonly string[];
 }
 
 /** Returns a ready executable plan or an explicit selection problem; only a ready result may be passed to invocation execution. */
@@ -221,16 +351,16 @@ export type ExperimentHostInvocationPlanResult =
       readonly pluginAudit: {
         readonly occurrences: readonly ExperimentHostJsonValue[];
       };
-      readonly dry?: ExperimentHostDryPlan;
+      readonly dry: ExperimentHostDryPlan | undefined;
     };
 
 /** Plans selected targets with explicit Config, overrides and optional dry preview; coordinationRoot is a host path rather than a result locator. */
 export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelectionInput {
   readonly config: Config;
   /** Host path to process coordination state; defaults to cwd/.niceeval. */
-  readonly coordinationRoot?: string;
-  readonly overrides?: ExperimentHostRunOverrides;
-  readonly preview?: boolean;
+  readonly coordinationRoot?: string | undefined;
+  readonly overrides?: ExperimentHostRunOverrides | undefined;
+  readonly preview?: boolean | undefined;
 }
 
 /** Lossless Experiment presentation owned by the calling Host surface. */
@@ -241,10 +371,10 @@ export interface ExperimentHostInvocationFeedback {
 /** Executes an already prepared Host plan with optional cancellation and feedback; do not reconstruct the opaque plan from display output. */
 export interface ExperimentHostInvocationRunRequest {
   readonly plan: ExperimentHostInvocationPlan;
-  readonly signal?: AbortSignal;
-  readonly feedback?: ExperimentHostInvocationFeedback;
+  readonly signal?: AbortSignal | undefined;
+  readonly feedback?: ExperimentHostInvocationFeedback | undefined;
   /** Optional required JUnit reporter target, owned and invoked inside Host. */
-  readonly junitPath?: string;
+  readonly junitPath?: string | undefined;
 }
 
 /**
@@ -253,8 +383,8 @@ export interface ExperimentHostInvocationRunRequest {
  */
 export interface ExperimentHostInvocationStatusListRequest {
   readonly cwd: string;
-  readonly all?: boolean;
-  readonly experimentSelector?: string;
+  readonly all?: boolean | undefined;
+  readonly experimentSelector?: string | undefined;
 }
 
 /** Selects an Invocation Session relative to an explicit project cwd; the selector targets an Invocation rather than an Attempt locator. */
@@ -275,7 +405,7 @@ export interface ExperimentHostInvocationReceipt {
   readonly createdRunIds: readonly string[];
   readonly publicationCutoff: string;
   readonly startedAt: string;
-  readonly completedAt?: string;
+  readonly completedAt: string | undefined;
   readonly completion: "completed" | "interrupted" | "failed";
 }
 
@@ -287,9 +417,9 @@ export interface ExperimentHostInvocationSummary {
   readonly skipped: number;
   readonly errored: number;
   readonly durationMs: number;
-  readonly inputTokens?: number;
-  readonly outputTokens?: number;
-  readonly estimatedCostUSD?: number;
+  readonly inputTokens: number | undefined;
+  readonly outputTokens: number | undefined;
+  readonly estimatedCostUSD: number | undefined;
   readonly beforeCaches: BeforeCachePreparationSummary;
 }
 
@@ -298,10 +428,13 @@ export interface ExperimentHostInvocationResult {
   readonly status: "finished";
   readonly receipt: ExperimentHostInvocationReceipt;
   readonly summary: ExperimentHostInvocationSummary;
-  /** Present when the caller supplied the one feedback reducer/presentation. */
-  readonly completion?: InvocationCompletion;
-  /** Exact CLI exit fold for the supplied presentation. */
-  readonly exitCode?: number;
+  readonly feedback:
+    | { readonly kind: "not-requested" }
+    | {
+        readonly kind: "completed";
+        readonly completion: InvocationCompletion;
+        readonly exitCode: number;
+      };
 }
 
 /** Adopt one exact historical Run into one current Experiment. */
@@ -309,8 +442,8 @@ export interface ExperimentHostRenameRequest {
   readonly cwd: string;
   readonly sourceRunId: string;
   readonly newId: string;
-  readonly config?: Config;
-  readonly operatorReason?: string;
+  readonly config?: Config | undefined;
+  readonly operatorReason?: string | undefined;
 }
 /** Names a failed explicit-adoption eligibility check; a rename must not bypass it by rewriting historical Attempt identities. */
 export type ExperimentHostRenameReason = import("../../runner/adoption.ts").ExplicitAdoptionFailureCode;
@@ -327,7 +460,7 @@ export interface ExperimentHostRenamePlan {
     readonly targetExperimentId: string;
     readonly fingerprint: string;
   }[];
-  readonly blocked?: { readonly reason: ExperimentHostRenameReason; readonly detail: string };
+  readonly blocked: { readonly reason: ExperimentHostRenameReason; readonly detail: string } | undefined;
 }
 /** Reports a rejected rename or a newly published adoption Run; successful migration references source Attempts without rerunning them. */
 export type ExperimentHostRenameResult =
@@ -360,8 +493,8 @@ export type ExperimentHostRenameResult =
 export interface ExperimentHostAcceptRequest {
   readonly cwd: string;
   readonly locators: readonly string[];
-  readonly config?: Config;
-  readonly operatorReason?: string;
+  readonly config?: Config | undefined;
+  readonly operatorReason?: string | undefined;
 }
 
 /** Identifies the new reference member and its unchanged source Attempt locator; adoption preserves the original execution evidence. */
@@ -406,10 +539,10 @@ export interface ExperimentHostSharedStateEvidence {
 /** Selects shared Experiment lifecycle evidence for teardown inspection; currentHost identifies the caller rather than proving a remote owner has stopped. */
 export interface ExperimentHostAfterInspectRequest {
   readonly cwd: string;
-  readonly experimentSelector?: string;
-  readonly coordinationRoot?: string;
+  readonly experimentSelector?: string | undefined;
+  readonly coordinationRoot?: string | undefined;
   readonly currentHost: string;
-  readonly recoveryKey?: string;
+  readonly recoveryKey?: string | undefined;
 }
 
 /** Reports whether teardown evidence is absent, ambiguous, mismatched or ready; inspect status before attempting cleanup. */
@@ -435,16 +568,16 @@ export type ExperimentHostAfterInspection =
       readonly status: "ready";
       readonly experimentIds: readonly string[];
       readonly orphanedRegistrations: number;
-      readonly evidence?: ExperimentHostSharedStateEvidence;
+      readonly evidence: ExperimentHostSharedStateEvidence | undefined;
     };
 
 /** Requests teardown or recovery with optional cancellation and ownership confirmations; confirm termination or remote quiescence only from real evidence. */
 export interface ExperimentHostAfterRequest extends ExperimentHostAfterInspectRequest {
-  readonly observer?: ExperimentHostAfterObserver;
-  readonly signal?: AbortSignal;
-  readonly ownerToken?: string;
-  readonly confirmOwnerTerminated?: boolean;
-  readonly confirmRemoteQuiesced?: boolean;
+  readonly observer?: ExperimentHostAfterObserver | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly ownerToken?: string | undefined;
+  readonly confirmOwnerTerminated?: boolean | undefined;
+  readonly confirmRemoteQuiesced?: boolean | undefined;
 }
 
 /** Reports teardown progress, diagnostics and hook completion; these events do not replace the final recovery result. */
@@ -459,33 +592,32 @@ export type ExperimentHostAfterEvent =
       readonly code: string;
       readonly level: "info" | "warning" | "error";
       readonly message: string;
-      readonly data?: Readonly<Record<string, ExperimentHostJsonValue>>;
+      readonly data: Readonly<Record<string, ExperimentHostJsonValue>> | undefined;
     }
-  | {
+  | ({
       readonly type: "experiment-hook";
       readonly experimentId: string;
       readonly hook: "teardown";
-      readonly status: "started" | "done" | "failed";
-      readonly durationMs?: number;
-      readonly recovery?: true;
-    };
+      readonly recovery: boolean;
+    } & ({ readonly status: "started" } | { readonly status: "done" | "failed"; readonly durationMs: number }));
 
 /** Receives structured teardown events for presentation; it must not reinterpret them as authorization to recover an owner. */
 export interface ExperimentHostAfterObserver {
   readonly observe: (event: ExperimentHostAfterEvent) => void;
 }
 
-/** Reports teardown or recovery status and any required confirmation; a completed operation may still contain failed experiment teardown outcomes. */
+/** Reports one Experiment's teardown outcome and execution count; only a failed outcome carries an error. */
+export type ExperimentHostAfterExperimentResult = {
+  readonly experimentId: string;
+  readonly executions: number;
+} & ({ readonly outcome: "succeeded" | "not-configured" } | { readonly outcome: "failed"; readonly error: string });
+
+/** Reports teardown or recovery status and any required confirmation; completed operations can contain failed Experiment outcomes. */
 export type ExperimentHostAfterResult =
   | ExperimentHostAfterInspection
   | {
       readonly status: "completed";
-      readonly experiments: readonly {
-        readonly experimentId: string;
-        readonly executions: number;
-        readonly outcome: "succeeded" | "failed" | "not-configured";
-        readonly error?: string;
-      }[];
+      readonly experiments: readonly ExperimentHostAfterExperimentResult[];
     }
   | {
       readonly status: "recovered" | "already-released";
@@ -505,12 +637,8 @@ export type ExperimentHostAfterResult =
 
 /** Provides supported catalog, planning, execution, adoption and recovery operations; effects must be run by the integrating host. */
 export interface ExperimentHostHighLevelSDK {
-  readonly catalog: (
-    input: ExperimentHostSelectionInput,
-  ) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError>;
-  readonly check: (
-    input: ExperimentHostCheckRequest,
-  ) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError>;
+  readonly catalog: (input: ExperimentHostSelectionInput) => Effect.Effect<ExperimentHostCatalog, ExperimentHostError>;
+  readonly check: (input: ExperimentHostCheckRequest) => Effect.Effect<ExperimentHostCheckResult, ExperimentHostError>;
   readonly invocation: {
     readonly plan: (
       input: ExperimentHostInvocationPlanRequest,
@@ -528,9 +656,7 @@ export interface ExperimentHostHighLevelSDK {
     ) => Effect.Effect<ExperimentHostInvocationStatusShow, ExperimentHostError>;
   };
   readonly rename: {
-    readonly plan: (
-      input: ExperimentHostRenameRequest,
-    ) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError>;
+    readonly plan: (input: ExperimentHostRenameRequest) => Effect.Effect<ExperimentHostRenamePlan, ExperimentHostError>;
     readonly apply: (
       input: ExperimentHostRenameRequest,
     ) => Effect.Effect<ExperimentHostRenameResult, ExperimentHostError>;
@@ -539,15 +665,17 @@ export interface ExperimentHostHighLevelSDK {
     readonly inspect: (
       input: ExperimentHostAfterInspectRequest,
     ) => Effect.Effect<ExperimentHostAfterInspection, ExperimentHostError>;
-    readonly run: (
-      input: ExperimentHostAfterRequest,
-    ) => Effect.Effect<ExperimentHostAfterResult, ExperimentHostError>;
+    readonly run: (input: ExperimentHostAfterRequest) => Effect.Effect<ExperimentHostAfterResult, ExperimentHostError>;
   };
   readonly accept: (
     input: ExperimentHostAcceptRequest,
   ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   readonly acceptRun: {
-    readonly plan: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError>;
-    readonly apply: (input: ExperimentHostAcceptRunRequest) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
+    readonly plan: (
+      input: ExperimentHostAcceptRunRequest,
+    ) => Effect.Effect<ExperimentHostAcceptRunPlan, ExperimentHostError>;
+    readonly apply: (
+      input: ExperimentHostAcceptRunRequest,
+    ) => Effect.Effect<readonly ExperimentHostAcceptedAttempt[], ExperimentHostError>;
   };
 }

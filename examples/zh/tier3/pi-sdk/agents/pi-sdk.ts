@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Schema } from "effect";
 // pi-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,pi 的原生
 // `AgentEvent` 原样透传成 SSE,外加三种自定义传输帧:session / approval_request /
 // server_error,见 server.ts 头注释)。
@@ -18,20 +18,31 @@ import { Effect } from "effect";
 // 返回 `{ pause }`时用 heldKey 记住"读了一半的 SSE 流"(连同转换器状态);下一次 send
 // (即 t.respond)先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。`take(heldKey)`
 // 取到即清除,一次消费。
-import { completeEvidenceCoverage, createSessionKey, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import {
+  completeEvidenceCoverage,
+  createSessionKey,
+  defineAgent,
+  openSseJsonFrames,
+  createPiAgentEventStream,
+  driveFrameStream,
+} from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
-import type { JsonValue, Turn, TurnInput } from "niceeval";
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { Turn, TurnInput } from "niceeval";
 
 // 被测应用由你自己按它的方式启动(pnpm start / 部署在哪都行),eval 不代管进程、不另开端口。
 const BASE_URL = process.env.PI_SDK_URL ?? "http://127.0.0.1:33001";
 
-type TransportFrame =
-  | { type: "session"; sessionId: string }
-  | { type: "approval_request"; toolCallId: string; toolName: string; args: unknown }
-  | { type: "server_error"; message: string };
-
-type PiFrame = AgentEvent | TransportFrame;
+const PiFrameSchema = Schema.StructWithRest(Schema.Struct({ type: Schema.String }), [
+  Schema.Record(Schema.String, Schema.MutableJson),
+]);
+type PiFrame = Schema.Schema.Type<typeof PiFrameSchema>;
+const SessionFrameSchema = Schema.Struct({ sessionId: Schema.String });
+const ApprovalFrameSchema = Schema.Struct({
+  toolCallId: Schema.String,
+  toolName: Schema.String,
+  args: Schema.MutableJson,
+});
+const ErrorFrameSchema = Schema.Struct({ message: Schema.String });
 
 async function appFetch(path: string, body: unknown, signal: AbortSignal): Promise<Response> {
   try {
@@ -57,20 +68,26 @@ interface Pending {
 const heldKey = createSessionKey<Pending>("pi-sdk/held-stream");
 
 function readStream(cursor: SseFrameCursor<PiFrame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
-  return driveFrameStream(cursor, stream, ctx, (frame) => {
+  return driveFrameStream<PiFrame>(cursor, stream, ctx, (frame) => {
     if (frame.type === "session") {
       // 会话续接走「服务端记历史」范式:回传的 sessionId 用 ctx.session.capture 写回,
       // 只在还没记过时落地(first-writer-wins)。
-      ctx.session.capture(frame.sessionId);
+      ctx.session.capture(Schema.decodeUnknownSync(SessionFrameSchema)(frame).sessionId);
       return;
     }
     if (frame.type === "approval_request") {
-      ctx.session.set(heldKey, { cursor, stream, toolCallId: frame.toolCallId });
+      const approval = Schema.decodeUnknownSync(ApprovalFrameSchema)(frame);
+      ctx.session.set(heldKey, { cursor, stream, toolCallId: approval.toolCallId });
       return {
-        pause: { id: frame.toolCallId, action: frame.toolName, input: frame.args as JsonValue, options: [{ id: "approve" }, { id: "deny" }] },
+        pause: {
+          id: approval.toolCallId,
+          action: approval.toolName,
+          input: approval.args,
+          options: [{ id: "approve" }, { id: "deny" }],
+        },
       };
     }
-    if (frame.type === "server_error") return { fail: frame.message };
+    if (frame.type === "server_error") return { fail: Schema.decodeUnknownSync(ErrorFrameSchema)(frame).message };
   });
 }
 
@@ -80,32 +97,52 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     // 按 requestId(挂起的 toolCallId)从 input.responses 里对位取裁决,不从 text 猜;
     // 这里每次只挂一条审批,取第一条即可——多请求并停时按 requestId 对位。
     const approved = input.responses?.[0]?.optionId === "approve";
-    if (!approved) pending.stream.markRejected(pending.toolCallId);
-    const approveRes = await appFetch("/api/chat/approve", { toolUseId: pending.toolCallId, approved }, ctx.signal);
-    if (!approveRes.ok) {
-      throw new Error(`POST /api/chat/approve 失败: ${approveRes.status} ${await approveRes.text()}`);
+    try {
+      if (!approved) pending.stream.markRejected(pending.toolCallId);
+      const approveRes = await appFetch("/api/chat/approve", { toolUseId: pending.toolCallId, approved }, ctx.signal);
+      if (!approveRes.ok) {
+        throw new Error(`POST /api/chat/approve 失败: ${approveRes.status} ${await approveRes.text()}`);
+      }
+    } catch (error) {
+      try {
+        await pending.cursor.return();
+      } catch {
+        try {
+          ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." });
+        } catch {
+          // Keep the approval failure primary.
+        }
+      }
+      throw error;
     }
     return readStream(pending.cursor, ctx, pending.stream);
   }
 
-  const res = await appFetch(
-    "/api/chat",
-    {
-      message: input.text,
-      sessionId: ctx.session.id,
-      // Tier 3:experiment 的 flags 经 ctx.flags 透传给应用(见 experiments/compare-prompts/)。
-      systemPrompt: ctx.flags.systemPrompt,
+  const cursor = await openSseJsonFrames(
+    ctx,
+    async (signal) => {
+      const res = await appFetch(
+        "/api/chat",
+        {
+          message: input.text,
+          sessionId: ctx.session.id,
+          // Tier 3:experiment 的 flags 经 ctx.flags 透传给应用(见 experiments/compare-prompts/)。
+          systemPrompt: ctx.flags.systemPrompt,
+        },
+        signal,
+      );
+      if (!res.ok || !res.body) {
+        throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
+      }
+      return res.body;
     },
-    ctx.signal,
+    PiFrameSchema,
   );
-  if (!res.ok || !res.body) {
-    throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
-  }
-  return readStream(sseJsonFrames<PiFrame>(res.body), ctx, createPiAgentEventStream());
+  return readStream(cursor, ctx, createPiAgentEventStream());
 }
 
 export default defineAgent({
   name: "pi-sdk",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
+  send,
 });

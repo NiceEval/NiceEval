@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import type { JsonValue } from "../shared/types.ts";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import { computeCaseKey } from "./identity.ts";
 import {
   defineSandboxTemplate,
@@ -12,7 +13,7 @@ import { displayIncusOrigin, parseIncusImageLocator, type IncusImageLocator } fr
 import {
   planIncusSandboxEffect,
   type IncusSandboxOptions,
-  type IncusSandboxResources,
+  type NormalizedIncusSandboxResources,
   type NormalizedIncusSandboxOptions,
 } from "./incus/plan.ts";
 
@@ -54,21 +55,15 @@ function optionalPositiveInteger(value: unknown, path: string): number | undefin
   return value;
 }
 
-function resourcesOf(value: unknown): IncusSandboxResources {
-  if (value === undefined) return Object.freeze({});
-  assertRecord(value, "incusSandbox options.resources");
-  assertOnlyKeys(value, ["cpus", "memoryBytes", "dockerDataBytes"], "incusSandbox options.resources");
-  return Object.freeze({
-    ...(optionalPositiveInteger(value.cpus, "incusSandbox options.resources.cpus") === undefined
-      ? {}
-      : { cpus: value.cpus as number }),
-    ...(optionalPositiveInteger(value.memoryBytes, "incusSandbox options.resources.memoryBytes") === undefined
-      ? {}
-      : { memoryBytes: value.memoryBytes as number }),
-    ...(optionalPositiveInteger(value.dockerDataBytes, "incusSandbox options.resources.dockerDataBytes") === undefined
-      ? {}
-      : { dockerDataBytes: value.dockerDataBytes as number }),
-  });
+function resourcesOf(value: unknown): NormalizedIncusSandboxResources {
+  const input = value === undefined ? {} : value;
+  assertRecord(input, "incusSandbox options.resources");
+  assertOnlyKeys(input, ["cpus", "memoryBytes", "dockerDataBytes"], "incusSandbox options.resources");
+  return {
+    cpus: optionalPositiveInteger(input.cpus, "incusSandbox options.resources.cpus"),
+    memoryBytes: optionalPositiveInteger(input.memoryBytes, "incusSandbox options.resources.memoryBytes"),
+    dockerDataBytes: optionalPositiveInteger(input.dockerDataBytes, "incusSandbox options.resources.dockerDataBytes"),
+  };
 }
 
 function imageOf(value: unknown): IncusImageLocator {
@@ -89,19 +84,18 @@ export function normalizeIncusSandboxOptions(options: IncusSandboxOptions): Norm
     ["image", "project", "storagePool", "resources", "acceptDevelopmentDomain"],
     "incusSandbox options",
   );
-  const acceptDevelopmentDomain = options.acceptDevelopmentDomain === undefined
-    ? false
-    : options.acceptDevelopmentDomain === true;
+  const acceptDevelopmentDomain =
+    options.acceptDevelopmentDomain === undefined ? false : options.acceptDevelopmentDomain === true;
   if (options.acceptDevelopmentDomain !== undefined && typeof options.acceptDevelopmentDomain !== "boolean") {
     throw new TypeError("incusSandbox options.acceptDevelopmentDomain must be a boolean");
   }
-  return Object.freeze({
+  return {
     image: imageOf(options.image),
     project: nonEmptyString(options.project, "incusSandbox options.project"),
     storagePool: nonEmptyString(options.storagePool, "incusSandbox options.storagePool"),
     resources: resourcesOf(options.resources),
     acceptDevelopmentDomain,
-  });
+  };
 }
 
 function planningError(failure: ReturnType<typeof toPlanningError>): SandboxProviderPlanningError {
@@ -109,16 +103,14 @@ function planningError(failure: ReturnType<typeof toPlanningError>): SandboxProv
     code: failure.code,
     provider: "incus",
     summary: failure.summary,
-    actions: Object.freeze([...failure.actions]),
+    actions: failure.actions,
+    cause: failure,
   });
 }
 
-function resourcesJson(resources: IncusSandboxResources): JsonValue {
-  return {
-    ...(resources.cpus === undefined ? {} : { cpus: resources.cpus }),
-    ...(resources.memoryBytes === undefined ? {} : { memoryBytes: resources.memoryBytes }),
-    ...(resources.dockerDataBytes === undefined ? {} : { dockerDataBytes: resources.dockerDataBytes }),
-  };
+function resourcesJson(resources: NormalizedIncusSandboxResources): JsonValue {
+  // Identity material boundary: omitted resource overrides remain absent keys.
+  return omitUndefined(resources);
 }
 
 // @concord-code
@@ -161,60 +153,71 @@ export function incusSandbox(options: IncusSandboxOptions): SandboxLayer<"templa
       fields: [{ name: "image", value: normalized.image.locator }],
     },
     leakGate: { _tag: "None" },
-    plan: () => planIncusSandboxEffect(normalized).pipe(
-      Effect.map((planned) => sandboxProviderPlan({
-        provider: "incus",
-        plannerRevision: INCUS_PLANNER_REVISION,
-        caseKind: "prebuilt",
-        target: Object.freeze({
-          platform: Object.freeze({ _tag: "Linux" as const, os: "linux" as const, arch: "x64", libc: "gnu" as const }),
-          source: "provider-standard" as const,
-        }),
-        scheduling: Object.freeze({
-          recommendedConcurrency: planned.domain.maxInstances,
-          lane: Object.freeze({
-            key: `incus:${planned.domain.project}:${planned.domain.storagePool}`,
-            limit: planned.domain.maxInstances,
-          }),
-          admission: Object.freeze({ _tag: "Shared" as const }),
-        }),
-        module: incusProviderModule(planned.dockerExecution),
-        runtimePlan: planned.runtime,
-        build: Object.freeze({
-          _tag: "None" as const,
-          caseKey: computeCaseKey({
+    plan: () =>
+      planIncusSandboxEffect(normalized).pipe(
+        Effect.map((planned) =>
+          sandboxProviderPlan({
+            provider: "incus",
+            plannerRevision: INCUS_PLANNER_REVISION,
             caseKind: "prebuilt",
-            materializerRevision: INCUS_PLANNER_REVISION,
-            buildKeys: [],
-            caseParams: privateIdentity,
+            target: {
+              platform: {
+                _tag: "Linux" as const,
+                os: "linux" as const,
+                arch: "x64",
+                libc: "gnu" as const,
+              },
+              source: "provider-standard" as const,
+            },
+            scheduling: {
+              recommendedConcurrency: planned.domain.maxInstances,
+              lane: {
+                key: `incus:${planned.domain.project}:${planned.domain.storagePool}`,
+                limit: planned.domain.maxInstances,
+              },
+              admission: { _tag: "Shared" as const },
+            },
+            module: incusProviderModule(planned.dockerExecution),
+            runtimePlan: planned.runtime,
+            build: {
+              _tag: "None" as const,
+              caseKey: computeCaseKey({
+                caseKind: "prebuilt",
+                materializerRevision: INCUS_PLANNER_REVISION,
+                buildKeys: [],
+                caseParams: privateIdentity,
+              }),
+              buildKeys: [] as const,
+            },
+            publishableIdentity: {
+              kind: "vm",
+              image: normalized.image.locator,
+              project: normalized.project,
+              storagePool: normalized.storagePool,
+              acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
+              resources: resourcesJson(normalized.resources),
+              executionDomain: planned.dockerExecution.executionDomain,
+              executionDomainId: planned.dockerExecution.executionDomainId,
+              origin,
+            },
+            privateFingerprintIdentity: {
+              provider: "incus",
+              kind: "vm",
+              image: normalized.image.locator,
+              project: normalized.project,
+              storagePool: normalized.storagePool,
+              resources: resourcesJson(normalized.resources),
+              acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
+              executionDomainId: planned.dockerExecution.executionDomainId,
+              imageFingerprint: planned.image.fingerprint,
+              origin,
+            },
+
+            interruptibleAcquisition: false,
+            identityMarker: undefined,
           }),
-          buildKeys: [] as const,
-        }),
-        publishableIdentity: {
-          kind: "vm",
-          image: normalized.image.locator,
-          project: normalized.project,
-          storagePool: normalized.storagePool,
-          acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
-          resources: resourcesJson(normalized.resources),
-          executionDomain: planned.dockerExecution.executionDomain,
-          executionDomainId: planned.dockerExecution.executionDomainId,
-          origin,
-        },
-        privateFingerprintIdentity: {
-          provider: "incus",
-          kind: "vm",
-          image: normalized.image.locator,
-          project: normalized.project,
-          storagePool: normalized.storagePool,
-          resources: resourcesJson(normalized.resources),
-          acceptDevelopmentDomain: normalized.acceptDevelopmentDomain,
-          executionDomainId: planned.dockerExecution.executionDomainId,
-          imageFingerprint: planned.image.fingerprint,
-          origin,
-        },
-      })),
-      Effect.mapError((cause) => planningError(toPlanningError(cause))),
-    ),
+        ),
+        Effect.mapError((cause) => planningError(toPlanningError(cause))),
+      ),
   });
 }

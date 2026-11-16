@@ -14,7 +14,7 @@ description: "替换模型用途名称，迁移撤销的作者配置。"
 | 分组字段 `modelSlot` | 分组字段 `modelRole` |
 | `slot-has-no-calls` | `role-has-no-calls` |
 
-`models`、`requires.models`、`ctx.models` 和 `t.usage.cacheRead.rate(role?)` 的行为不变。消费 `show --json`、Query 与 View 数据的代码也要同步替换字段。旧 API 名称不保留转发别名。
+`models`、`requires.models`、`ctx.models` 和 `t.usage.cacheRead.rate(role?)` 的行为不变。消费 `show --json` 与 View 数据的代码也要同步替换字段。旧 API 名称不保留转发别名。
 
 ## 替换撤销字段
 
@@ -23,7 +23,7 @@ description: "替换模型用途名称，迁移撤销的作者配置。"
 | `Config.workspace` | 从项目目录运行 |
 | `Eval.reporters` | `Config.reporters` |
 | `Experiment.classifyFailure` | 内建分类、`ExperimentFatalError` 或 `EvalFatalError` |
-| `run show <run-id>` | `show --run <run-id>` |
+| `run show <run-id>` | `show run:<run-id>` |
 
 撤销字段在定义加载时立即报错，显式写成 `undefined` 也会被拒绝。Codex 与 Claude Code 原生插件仍属于 Adapter 配置。Config reporters、Eval 的 `diff` 与 `metadata`、构建与准备并发控制，以及 Agent/Adapter 实现继续保留。
 
@@ -51,8 +51,8 @@ t.note("首个决策延迟", ms(result.firstDecisionMs));
 ```
 
 同一 Attempt 的 label 必须唯一，最多 64 项，每项 JSON 不超过 64 KiB；违规时抛出 `TypeError`。
-`show @<locator>` 与 View 在 Assertions 后显示 Notes，JSON 与 Query 的 Attempt 结果新增 `notes`。
-`show --exp <experiment-id>` 按 label 和单位聚合数值 Note，列出 count、min、median、p90、max。
+`show @<locator>` 与 View 在 Assertions 后显示 Notes，`show --json` 的 Attempt 结果新增 `notes`。
+`show exp:<experiment-id>` 按 label 和单位聚合数值 Note，列出 count、min、median、p90、max。
 历史结果没有 Note 时返回空列表。
 
 ## 数值单位
@@ -72,7 +72,6 @@ t.check(t.usage.cacheRead.rate(), atLeast(ratio(0.6)));
 ## Planned attempt
 
 Run 的计划执行位置现在称为 Planned attempt；已发布的执行事实仍称为 Attempt。
-`query` 使用 `niceeval.query/v3`，`/inspection` decoder 不再接受 v1。
 将 `slotId`、`expectedSlots` 和 `originSlotId` 分别替换为 `plannedAttemptId`、`plannedAttempts` 和 `originPlannedAttemptId`。
 Run 和当前结果的 `slots` 集合改为 `plannedAttempts`。Show 完整度统计显示 Planned / Recorded / Missing attempts。
 已有 Record 无需重写；持久字段在查询投影边界转换。
@@ -80,29 +79,13 @@ Run 和当前结果的 `slots` 集合改为 `plannedAttempts`。Show 完整度�
 Adapter 的 `createSessionSlot` / `SessionSlot` 改为 `createSessionKey` / `SessionKey`；
 并发等待文案改为 `waiting for capacity`。
 
-## Query operation 与 Run 响应
+## 读取 Run
 
-迁移时同时替换 operation 名称，不能只改 protocol：
-
-| 旧 operation | 替代 operation |
-| --- | --- |
-| `runs.list` | `run.list` |
-| `run.summary` | `run.get` |
-
-先运行 `niceeval query discover` 核对安装版本的协议与 operation。0.19.0 使用 `niceeval.query/v2`；下面示例使用当前 `niceeval.query/v3`，不要把当前协议字符串直接发送给旧安装。
+用对象地址读取 Run 列表，再从结果中的 links 继续：
 
 ```sh
-pnpm exec niceeval query run --request - <<'JSON'
-{"protocol":"niceeval.query/v3","operation":{"kind":"run.list"}}
-JSON
-```
-
-从列表选择 exact Run ID，再读取该 Run：
-
-```sh
-pnpm exec niceeval query run --request - <<'JSON'
-{"protocol":"niceeval.query/v3","operation":{"kind":"run.get","runId":"<run-id>"}}
-JSON
+pnpm --silent exec niceeval show runs --json
+pnpm --silent exec niceeval show run:<run-id> --json
 ```
 
 成功响应中的 `run` 是完整结果对象。使用 `run.value` 读取 Run 身份与状态，使用 `run.plannedAttempts` 读取计划成员及其 publication。

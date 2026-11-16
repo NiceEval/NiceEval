@@ -43,7 +43,7 @@ Judge 与其它 measurement Assertion 没有特殊计分分支：
 
 ```typescript
 t.judge({ task, notes }, notesQuality)
-  .score(20).key("notes-quality").label("说明质量");
+  .score(20).label("说明质量");
 ```
 
 measurement 为 `.8` 且 `.score(20)` 时贡献 `+16`。同一个 Judge evaluator 只运行一次，写一条

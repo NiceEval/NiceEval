@@ -17,13 +17,7 @@ export interface ExactEvalIdentity {
   readonly evalId: string;
 }
 
-type ComparableField =
-  | "verdict"
-  | "attempts"
-  | "passed"
-  | "reason"
-  | "planned"
-  | "unstarted";
+type ComparableField = "verdict" | "attempts" | "passed" | "reason" | "planned" | "unstarted";
 
 const COMPARABLE_FIELDS = [
   "verdict",
@@ -50,9 +44,7 @@ function indexUnique<T extends Pick<ExpEvalEvent, "experimentId" | "evalId">>(
   for (const value of values) {
     const identity = identityOf(value);
     if (indexed.has(identity)) {
-      throw new Error(
-        `assertExpEvalOutcomes(): duplicate ${source} Eval identity ${labelOf(value)}`,
-      );
+      throw new Error(`assertExpEvalOutcomes(): duplicate ${source} Eval identity ${labelOf(value)}`);
     }
     indexed.set(identity, value);
   }
@@ -80,16 +72,11 @@ function actualField(event: ExpEvalEvent, field: ComparableField): unknown {
   }
 }
 
-function expectedField(
-  expectation: ExpEvalOutcomeExpectation,
-  field: ComparableField,
-): unknown {
+function expectedField(expectation: ExpEvalOutcomeExpectation, field: ComparableField): unknown {
   return expectation[field];
 }
 
-function renderDiagnostic(
-  diagnostic: string | (() => string) | undefined,
-): string {
+function renderDiagnostic(diagnostic: string | (() => string) | undefined): string {
   if (diagnostic === undefined) return "";
   const rendered = typeof diagnostic === "function" ? diagnostic() : diagnostic;
   return `\n\n${rendered}`;
@@ -107,13 +94,10 @@ export function exactEval<T extends ExpEvalEvent>(
   diagnostic?: string | (() => string),
 ): T {
   const matches = events.filter(
-    (event) =>
-      event.experimentId === identity.experimentId && event.evalId === identity.evalId,
+    (event) => event.experimentId === identity.experimentId && event.evalId === identity.evalId,
   );
   if (matches.length !== 1) {
-    const candidates = events.length === 0
-      ? "(none)"
-      : events.map((event) => labelOf(event)).join(", ");
+    const candidates = events.length === 0 ? "(none)" : events.map((event) => labelOf(event)).join(", ");
     throw new Error(
       `exactEval(): expected exactly one Eval conclusion for ${labelOf(identity)}, got ${matches.length}; candidates: ${candidates}${renderDiagnostic(diagnostic)}`,
     );

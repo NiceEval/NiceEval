@@ -14,6 +14,7 @@
 
 import type { AgentContext, InputRequest, JsonValue, StreamEvent, Turn, Usage } from "../types.ts";
 import type { SseFrameCursor } from "./sdk-streams.ts";
+import { decodeJsonValue } from "../shared/json-value.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 
 // ───────────────────────── driveFrameStream:通用逐帧驱动循环 ─────────────────────────
@@ -21,8 +22,8 @@ import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 /** sdk-streams.ts 里 ClaudeSdkStream / PiAgentStream / CodexThreadStream 共享的最小形状。 */
 export interface FrameReducer<Frame> {
   add(frame: Frame): StreamEvent[];
-  readonly usage?: Usage;
-  readonly failed?: boolean;
+  readonly usage?: Usage | undefined;
+  readonly failed?: boolean | undefined;
 }
 
 /**
@@ -42,51 +43,95 @@ export type FrameHook<Frame> = (
  * 暂停时不关闭 cursor——调用方用自己的 typed slot 存住它,回答轮经
  * `ctx.session.take(slot)` 取回,下一轮直接接着读同一条流,不重新发起请求。
  *
- * reducer 的帧类型(`RFrame`)允许只覆盖流(`Frame`)的一个子集:adapter 常在 SDK 原生帧之外
- * 混入自己的传输帧(session / server_error…),这些由 `onFrame` 处理,reducer 对认不出的帧
- * 本来就返回 `[]`——所以两个类型参数独立推导,不强求 cursor 和 reducer 同型。
+ * reducer 接受 cursor 的完整帧类型；SDK 转换器在入口解码原生事件，
+ * 不认识的应用传输帧返回 `[]`，交给 `onFrame` 处理。
  */
-export async function driveFrameStream<Frame, RFrame = Frame>(
+export async function driveFrameStream<Frame>(
   cursor: SseFrameCursor<Frame>,
-  reducer: FrameReducer<RFrame>,
+  reducer: FrameReducer<Frame>,
   ctx: AgentContext,
   onFrame?: FrameHook<Frame>,
 ): Promise<Turn> {
   const events: StreamEvent[] = [];
   let transportFailed = false;
-
-  for (;;) {
-    const frame = await cursor.next();
-    if (frame === null) break;
-
-    // 契约:reducer 对不认识的帧返回 [](传输帧走 onFrame),所以这里按 RFrame 喂是安全的。
-    const derived = reducer.add(frame as unknown as RFrame);
-    events.push(...derived);
-
-    const verdict = onFrame?.(frame, derived, ctx);
-    if (verdict && "pause" in verdict) {
-      events.push({ type: "input.requested", request: verdict.pause });
-      const evidenceCoverage = unclassifiedToolActionsCoverage(events);
-      return {
-        status: "waiting",
-        events,
-        usage: reducer.usage,
-        ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
-      };
+  let paused = false;
+  let bodyFailed = false;
+  let closeReceipt: Promise<IteratorResult<Frame, void>> | undefined;
+  function close() {
+    if (closeReceipt === undefined) {
+      try {
+        closeReceipt = cursor.return();
+      } catch (error) {
+        closeReceipt = Promise.reject(error);
+      }
+      void closeReceipt.catch(() => {});
     }
-    if (verdict && "fail" in verdict) {
-      transportFailed = true;
-      events.push({ type: "error", message: verdict.fail });
+    return closeReceipt;
+  }
+  const abort = () => {
+    void close();
+  };
+  ctx.signal.addEventListener("abort", abort, { once: true });
+  try {
+    for (;;) {
+      ctx.signal.throwIfAborted();
+      const frame = await cursor.next();
+      ctx.signal.throwIfAborted();
+      if (frame.done) break;
+
+      const derived = reducer.add(frame.value);
+      events.push(...derived);
+
+      const verdict = onFrame?.(frame.value, derived, ctx);
+      if (verdict && "pause" in verdict) {
+        events.push({ type: "input.requested", request: verdict.pause });
+        const turn: Turn = {
+          status: "waiting",
+          events,
+          usage: reducer.usage,
+          evidenceCoverage: unclassifiedToolActionsCoverage(events),
+        };
+        ctx.signal.throwIfAborted();
+        paused = true;
+        return turn;
+      }
+      if (verdict && "fail" in verdict) {
+        transportFailed = true;
+        events.push({ type: "error", message: verdict.fail });
+      }
+    }
+
+    const turn: Turn = {
+      status: transportFailed || reducer.failed ? "failed" : "completed",
+      events,
+      usage: reducer.usage,
+      evidenceCoverage: unclassifiedToolActionsCoverage(events),
+    };
+    ctx.signal.throwIfAborted();
+    return turn;
+  } catch (error) {
+    bodyFailed = true;
+    throw error;
+  } finally {
+    ctx.signal.removeEventListener("abort", abort);
+    if (!paused) {
+      try {
+        await close();
+        if (!bodyFailed) ctx.signal.throwIfAborted();
+      } catch (error) {
+        if (!bodyFailed) throw error;
+        try {
+          ctx.diagnostic({
+            code: "stream-cleanup-failed",
+            level: "warning",
+            message: "Closing the frame stream failed after its operation failed.",
+          });
+        } catch {
+          // A diagnostic callback must not replace the original stream failure.
+        }
+      }
     }
   }
-
-  const evidenceCoverage = unclassifiedToolActionsCoverage(events);
-  return {
-    status: transportFailed || reducer.failed ? "failed" : "completed",
-    events,
-    usage: reducer.usage,
-    ...(evidenceCoverage === undefined ? {} : { evidenceCoverage }),
-  };
 }
 
 // 会话续接与 HITL 停轮现场不再是这里的可选「拼装件」。adapter 定义
@@ -109,7 +154,12 @@ export type DeltaOp =
   /** 该调用的参数已经拼完,落地成 `operation.started`(此时通常还没有结果——纯补全式流
    *  一般由调用方在流外真正执行工具;流内也执行的后端随后再喂一条 "tool-result"）。 */
   | { readonly kind: "tool-call-end"; readonly operationId: string }
-  | { readonly kind: "tool-result"; readonly operationId: string; readonly output?: JsonValue; readonly status?: "completed" | "failed" | "rejected" }
+  | {
+      readonly kind: "tool-result";
+      readonly operationId: string;
+      readonly output?: JsonValue | undefined;
+      readonly status?: "completed" | "failed" | "rejected" | undefined;
+    }
   | { readonly kind: "usage"; readonly usage: Usage }
   | { readonly kind: "error"; readonly message: string };
 
@@ -179,7 +229,7 @@ export function deltaStream<Frame>(spec: DeltaStreamSpec<Frame>): FrameReducer<F
             let input: JsonValue = null;
             if (buf?.args) {
               try {
-                input = JSON.parse(buf.args) as JsonValue;
+                input = decodeJsonValue(buf.args);
               } catch {
                 input = buf.args; // 拼不出合法 JSON 也别吞掉,原样交给断言/人去看
               }

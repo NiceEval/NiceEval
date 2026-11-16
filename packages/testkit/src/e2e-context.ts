@@ -8,6 +8,7 @@ import type { Argv, ProcessReceipt, RunProcessOptions } from "./process.js";
 import { runProcess } from "./process.js";
 import type { StartOptions } from "./process-lifecycle.js";
 import { ProcessHandle, startProcess } from "./process-lifecycle.js";
+import { Schema } from "effect";
 
 const INVOCATION_ID_ENV = "NICEEVAL_E2E_INVOCATION_ID";
 const STAGING_ROOT_ENV = "NICEEVAL_E2E_ARTIFACT_STAGING_ROOT";
@@ -52,19 +53,12 @@ export interface E2EContext<Commands extends Record<string, Argv>> {
     artifactStagingRoot: string;
     formalInvocation: boolean;
   }>;
-  case<T>(
-    caseId: string,
-    options: E2ECaseOptions,
-    body: (context: E2ECaseContext<Commands>) => Promise<T>,
-  ): Promise<T>;
+  case<T>(caseId: string, options: E2ECaseOptions, body: (context: E2ECaseContext<Commands>) => Promise<T>): Promise<T>;
   case<T>(caseId: string, body: (context: E2ECaseContext<Commands>) => Promise<T>): Promise<T>;
 }
 
 function safeSegment(value: string, label: string): string {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) ||
-    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)
-  ) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value)) {
     throw new Error(`${label} must be one safe path segment`);
   }
   return value;
@@ -80,12 +74,7 @@ function relativeCaseTarget(value: string): string {
     throw new Error("artifact target must be a non-empty canonical relative path");
   }
   const canonical = normalize(value);
-  if (
-    canonical !== value ||
-    canonical === "." ||
-    canonical === ".." ||
-    canonical.startsWith(`..${sep}`)
-  ) {
+  if (canonical !== value || canonical === "." || canonical === ".." || canonical.startsWith(`..${sep}`)) {
     throw new Error("artifact target must stay within the case namespace");
   }
   return canonical;
@@ -141,6 +130,13 @@ function append(prefix: Argv, args: readonly string[]): Argv {
   return [...prefix, ...args] as Argv;
 }
 
+function withDockerCandidate(argv: Argv): Argv {
+  const injected = process.env.NICEEVAL_E2E_DOCKER_CANDIDATE_ARGS;
+  if (argv[0] !== "docker" || argv[1] !== "run" || injected === undefined) return argv;
+  const args = Schema.decodeUnknownSync(Schema.Array(Schema.String))(JSON.parse(injected));
+  return [argv[0], "run", ...args, ...argv.slice(2)];
+}
+
 export function createE2EContext<const Commands extends Record<string, Argv>>(
   options: E2EContextOptions<Commands>,
 ): E2EContext<Commands> {
@@ -167,15 +163,16 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
       ...entry,
       target: join(invocation.invocationId, caseId, relativeCaseTarget(entry.target)),
     }));
-    const staging: ProjectCopyStagingOptions | undefined = entries.length === 0
-      ? undefined
-      : {
-          stageArtifacts: {
-            destinationRoot: invocation.stagingRoot,
-            entries,
-            collision: "error",
-          },
-        };
+    const staging: ProjectCopyStagingOptions | undefined =
+      entries.length === 0
+        ? undefined
+        : {
+            stageArtifacts: {
+              destinationRoot: invocation.stagingRoot,
+              entries,
+              collision: "error",
+            },
+          };
 
     try {
       return await withProjectCopy(
@@ -186,7 +183,7 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
             NICEEVAL_HOME: join(projectRoot, ".niceeval-user"),
           };
           const start = (argv: Argv, startOptions: BoundStartOptions = {}): ProcessHandle => {
-            const handle = startProcess(argv, {
+            const handle = startProcess(withDockerCandidate(argv), {
               ...startOptions,
               env: { ...caseEnvironment, ...startOptions.env },
               cwd: projectRoot,
@@ -201,7 +198,7 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
               name,
               {
                 run: (args: readonly string[], runOptions?: BoundRunOptions) =>
-                  runProcess(append(prefix, args), {
+                  runProcess(withDockerCandidate(append(prefix, args)), {
                     ...runOptions,
                     env: { ...caseEnvironment, ...runOptions?.env },
                     cwd: projectRoot,
@@ -214,11 +211,12 @@ export function createE2EContext<const Commands extends Record<string, Argv>>(
           const context: E2ECaseContext<Commands> = {
             paths: Object.freeze({ sourceRoot, projectRoot, artifactRoot }),
             commands,
-            run: (argv, runOptions) => runProcess(argv, {
-              ...runOptions,
-              env: { ...caseEnvironment, ...runOptions?.env },
-              cwd: projectRoot,
-            }),
+            run: (argv, runOptions) =>
+              runProcess(withDockerCandidate(argv), {
+                ...runOptions,
+                env: { ...caseEnvironment, ...runOptions?.env },
+                cwd: projectRoot,
+              }),
             start,
           };
 

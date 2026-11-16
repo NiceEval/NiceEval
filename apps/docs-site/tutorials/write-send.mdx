@@ -164,7 +164,7 @@ Budgets and `t.maxCost()` use a separate value: the runner calculates `estimated
 
 If the model has no price in the table, the runner cannot estimate its cost and `t.maxCost()` returns `unavailable`, not zero. If an explicitly configured zero rate produces `estimatedCostUSD: 0`, that zero is a valid estimate and is compared with the limit.
 
-**This step supports** `t.maxTokens()` / `t.maxCost()` and usage in `niceeval show --usage` and `niceeval view`. If `show` has no usage, check whether the API response includes it and whether `send` returned it.
+**This step supports** `t.maxTokens()` / `t.maxCost()` and usage in `niceeval show @<locator> usage` and `niceeval view`. If `show` has no usage, check whether the API response includes it and whether `send` returned it.
 
 ## Step 4: parse tools into events
 
@@ -247,7 +247,7 @@ After normalization, the events you emit determine the assertion families Eval a
 
 A Chat Completions response **does not guarantee a complete process record**. An application can finish its tool loop server-side and return only a final answer. Therefore, `turnFromChatCompletion` returns no completeness proof. Positive assertions such as `calledTool` work, while negative assertions such as `notCalledTool` report incomplete evidence. The Responses protocol requires the `output` array to record the complete process, so `turnFromResponses` carries a completeness proof and negative assertions are trustworthy. The difference in trustworthiness comes from the interface contract.
 
-**This step supports** `turn.calledTool()`, `turn.toolOrder()`, `turn.maxToolCalls()`, and `turn.noFailedActions()`. For ordering across Turns, use `session` instead of `turn`. After the run, inspect tools with `pnpm exec niceeval show @<locator> --execution`. If a tool is missing, check the response's tool fields and your mapping.
+**This step supports** `turn.calledTool()`, `turn.toolOrder()`, `turn.maxToolCalls()`, and `turn.noFailedActions()`. For ordering across Turns, use `session` instead of `turn`. After the run, inspect tools with `pnpm exec niceeval show @<locator> execution`. If a tool is missing, check the response's tool fields and your mapping.
 
 ## Step 5: HITL
 
@@ -256,15 +256,24 @@ When an application stops mid-Turn to wait for a person—for tool approval or m
 - **The pausing Turn** returns `status: "waiting"` and emits an `input.requested` event with a stable `id` for every pending question. `t.check(turn.status, equals("waiting"))` and `t.requireInputRequest()` read them, and answers match by this `id`.
 - **The answer Turn** reaches the Adapter from an Eval's `t.respond(...)` as **another ordinary `send`** on the same session line with the same state. A human decision arrives structurally through `input.responses`; each entry carries `requestId`, `optionId`, or `text`. See [Inputs for the Different Answers](/explanation/adapter#inputs-for-the-different-answers) for the shapes. The Adapter gives that decision back to the application, then continues fetching the result. For a call a human rejects, set the tool `operation.finished` event's `status` to `"rejected"`, not `"failed"`: rejection is a human decision, not a tool failure, so `noFailedActions()` does not misfire.
 
-Store unfinished work, such as a partly read SSE stream, in `ctx.session` too. Declare private state with `createSessionKey<Pending>()`, save it with `ctx.session.set(...)` when waiting, and retrieve it with `ctx.session.take(...)` at the start of the answering turn. Taking clears the value, so it can be consumed only once.
+Store the paused cursor and reducer in `ctx.session`. Declare private state with `createSessionKey<Pending>()`, save it with `ctx.session.set(...)` when waiting, and retrieve it with `ctx.session.take(...)` at the start of the answering turn. Taking clears the slot.
+
+`openSseJsonFrames` keeps the HTTP request owned by the Attempt across callbacks and closes it if the Eval stops while waiting.
 
 HITL almost always occurs on a streaming interface because the pause happens in the middle of a stream. This example therefore switches to an application that passes native events through SSE. It exercises every preceding step together; see the complete runnable version in the [tier1 example](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1):
 
 ```ts
 // agents/my-app.ts
-import { completeEvidenceCoverage, createSessionKey, defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionKey, defineAgent, openSseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
+import { Schema } from "effect";
+
+const FrameSchema = Schema.StructWithRest(Schema.Struct({ type: Schema.String }), [Schema.Record(Schema.String, Schema.MutableJson)]);
+type Frame = Schema.Schema.Type<typeof FrameSchema>;
+const SessionFrameSchema = Schema.Struct({ sessionId: Schema.String });
+const ApprovalFrameSchema = Schema.Struct({ toolCallId: Schema.String, toolName: Schema.String });
+const ErrorFrameSchema = Schema.Struct({ message: Schema.String });
 
 const BASE_URL = "http://localhost:5299";               // The application's own port; evals do not manage its process.
 
@@ -272,45 +281,59 @@ interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId
 const pendingKey = createSessionKey<Pending>("my-app/pending");
 
 function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
-  return driveFrameStream(cursor, stream, ctx, (frame) => {
+  return driveFrameStream<Frame>(cursor, stream, ctx, (frame) => {
     if (frame.type === "session") {
-      ctx.session.capture(frame.sessionId);             // ← Step two: write the returned id back so the next Turn continues.
+      ctx.session.capture(Schema.decodeUnknownSync(SessionFrameSchema)(frame).sessionId); // ← Step two: capture the returned id.
       return;
     }
     if (frame.type === "approval_request") {            // ← This step: the application pauses for approval, so retain the scene.
-      ctx.session.set(pendingKey, { cursor, stream, callId: frame.toolCallId });
-      return { pause: { id: frame.toolCallId, action: frame.toolName,
+      const approval = Schema.decodeUnknownSync(ApprovalFrameSchema)(frame);
+      ctx.session.set(pendingKey, { cursor, stream, callId: approval.toolCallId });
+      return { pause: { id: approval.toolCallId, action: approval.toolName,
                         options: [{ id: "approve" }, { id: "deny" }] } };
       // On pause, driveFrameStream adds input.requested, sets status to "waiting", and stops reading the stream.
     }
-    if (frame.type === "server_error") return { fail: frame.message };
+    if (frame.type === "server_error") return { fail: Schema.decodeUnknownSync(ErrorFrameSchema)(frame).message };
   });
 }
 
-export default defineAgent({
-  name: "my-app",
-  evidenceCoverage: completeEvidenceCoverage,
-  async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-    const held = ctx.session.take(pendingKey);
-    if (held) {                                         // ← t.respond("approve"): an ordinary send; deliver the decision first.
-      const approved = input.responses?.[0]?.optionId === "approve";  // Match by requestId when several requests are pending.
+async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+  const held = ctx.session.take(pendingKey);
+  if (held) {                                           // ← t.respond("approve"): an ordinary send; deliver the decision first.
+    const approved = input.responses?.[0]?.optionId === "approve";  // Match by requestId when several requests are pending.
+    try {
       if (!approved) held.stream.markRejected(held.callId);
-      await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
+      const approval = await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
         body: JSON.stringify({ toolUseId: held.callId, approved }) });
-      return readStream(held.cursor, ctx, held.stream); // Then keep reading the same stream; do not send a new request.
+      if (!approval.ok) throw new Error(`Approval failed: ${approval.status}`);
+    } catch (error) {
+      try { await held.cursor.return(); }
+      catch { ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." }); }
+      throw error;
     }
+    return readStream(held.cursor, ctx, held.stream);     // Keep reading the same stream; do not send a new request.
+  }
 
-    const res = await fetch(`${BASE_URL}/api/chat`, {   // ← Transport: the only part you truly hand-write.
+  const cursor = await openSseJsonFrames(ctx, async (signal) => {
+    const res = await fetch(`${BASE_URL}/api/chat`, {      // ← Transport: the only part you truly hand-write.
       method: "POST",
       body: JSON.stringify({
         message: input.text,                            // ← Step one: send the message.
         model: ctx.model,                               // ← Step one: forward experiment.model.
         sessionId: ctx.session.id,                      // ← Step two: naturally absent on the first send and present afterward.
       }),
-      signal: ctx.signal,
+      signal,                                          // The Attempt owns this request across sends.
     });
-    return readStream(sseJsonFrames<Frame>(res.body!), ctx, createPiAgentEventStream());  // ← Step four: official converter with no mapping.
-  },
+    if (!res.ok || !res.body) throw new Error(`Chat failed: ${res.status}`);
+    return res.body;
+  }, FrameSchema);
+  return readStream(cursor, ctx, createPiAgentEventStream()); // ← Step four: official converter.
+}
+
+export default defineAgent({
+  name: "my-app",
+  evidenceCoverage: completeEvidenceCoverage,
+  send,
 });
 ```
 
@@ -377,7 +400,7 @@ export default defineExperiment({
 
 Declare `flags` in two Experiment files and run the same evals with `pnpm exec niceeval exp` to compare them. This is Tier 3 integration because the application must expose the switches. See [Tier](/explanation/tier) for effort and benefits, and [Write experiments](/tutorials/write-experiment) for `flags`, `model`, `attempts`, and other fields.
 
-**This step supports** comparing the same evals across variants. After both runs finish, compare them with `pnpm exec niceeval show --experiment <id> --experiment <id>` or `pnpm exec niceeval view`. If the scores are almost identical, first confirm the application actually reads the request's `flags`.
+**This step supports** comparing the same evals across variants. After both runs finish, compare them with `pnpm exec niceeval show exp:<id> exp:<id>` or `pnpm exec niceeval view`. If the scores are almost identical, first confirm the application actually reads the request's `flags`.
 
 ## Reference: the five t APIs as send sees them
 

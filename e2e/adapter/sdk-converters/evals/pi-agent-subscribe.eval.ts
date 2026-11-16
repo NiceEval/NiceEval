@@ -1,35 +1,25 @@
 // owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#pi-agent-subscribe-deterministic
 import { defineEval } from "niceeval";
-import {
-  atLeast,
-  atMost,
-  equals,
-  includes,
-  jsonMatch,
-  satisfies,
-  toolMatch,
-} from "niceeval/expect";
+import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
-  description:
-    "真实 Pi Agent prompt/subscribe 生命周期直入 converter，覆盖成功、工具配对、usage 与 terminal failure",
+  description: "真实 Pi Agent prompt/subscribe 生命周期直入 converter，覆盖成功、工具配对、usage 与 terminal failure",
   async test(t) {
     const completed = await t.send("pi agent completed fixture");
     await completed.succeeded().orStop();
     t.check(completed.reply, includes("pi-agent-subscribe-success-marker"));
-    completed.check(completed.toolCalls, toolMatch("inventory_lookup", {
+    completed.check(
+      completed.toolCalls,
+      toolMatch("inventory_lookup", {
         input: jsonMatch({ sku: "pi-001" }),
         status: "completed",
-      }).exactly(1));
+      }).exactly(1),
+    );
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
         "Pi Agent preserves its native toolCallId across subscribe start/result callbacks",
         (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.started" &&
-              event.operationId === "pi-inventory-call",
-          ) &&
+          events.some((event) => event.type === "operation.started" && event.operationId === "pi-inventory-call") &&
           events.some(
             (event) =>
               event.type === "operation.finished" &&
@@ -50,8 +40,7 @@ export default defineEval({
               !Array.isArray(event.output["details"]) &&
               event.output["details"]["toolCallId"] === "pi-inventory-call" &&
               event.output["details"]["sku"] === "pi-001" &&
-              event.output["details"]["marker"] ===
-                "pi-agent-tool-result-marker",
+              event.output["details"]["marker"] === "pi-agent-tool-result-marker",
           ),
       ),
     );
@@ -65,28 +54,19 @@ export default defineEval({
     t.check(completed.usage.cacheWriteTokens, atLeast(2));
     t.check(completed.usage.cacheWriteTokens, atMost(2));
     const failedSession = t.newSession();
-    const failed = await failedSession.send(
-      "pi agent terminal failure fixture",
-    );
+    const failed = await failedSession.send("pi agent terminal failure fixture");
     t.check(failed.status, equals("failed"));
     t.check(
       failed.events,
       satisfies<typeof failed.events>(
         "error event count",
-        (events) =>
-          events.filter((event) => event.type === "error").length === 1,
+        (events) => events.filter((event) => event.type === "error").length === 1,
       ),
     );
     t.check(
       failed.events,
-      satisfies<typeof failed.events>(
-        "Pi Agent terminal provider error remains observable",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "error" &&
-              event.message === "pi-agent-terminal-failure-marker",
-          ),
+      satisfies<typeof failed.events>("Pi Agent terminal provider error remains observable", (events) =>
+        events.some((event) => event.type === "error" && event.message === "pi-agent-terminal-failure-marker"),
       ),
     );
     t.check(failedSession.sessionId, equals("pi-agent-failed-session"));

@@ -7,15 +7,17 @@ import {
   type ProcessIdentityRuntime,
 } from "./node-process-identity.ts";
 
-const darwinRuntime = (
-  overrides: Partial<ProcessIdentityRuntime> = {},
-): ProcessIdentityRuntime => ({
+const darwinRuntime = (overrides: Partial<ProcessIdentityRuntime> = {}): ProcessIdentityRuntime => ({
   platform: "darwin",
   pid: 41,
   processSessionId: "session-current",
   host: () => "mac.example",
-  linuxBootId: () => { throw new Error("unexpected Linux boot read"); },
-  linuxProcessStartOf: () => { throw new Error("unexpected Linux process read"); },
+  linuxBootId: () => {
+    throw new Error("unexpected Linux boot read");
+  },
+  linuxProcessStartOf: () => {
+    throw new Error("unexpected Linux process read");
+  },
   darwinBootSessionUuid: () => "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE\n",
   signalZero: () => undefined,
   ...overrides,
@@ -43,18 +45,28 @@ describe("exact process identity", () => {
     expect(processIdentity.exactState({ ...current, processStart: "prior-session" })).toBe("unknown");
     expect(processIdentity.exactState({ ...current, pid: 42 })).toBe("unknown");
 
-    const absent = makeProcessIdentity(darwinRuntime({
-      signalZero: () => { throw Object.assign(new Error("missing"), { code: "ESRCH" }); },
-    }));
+    const absent = makeProcessIdentity(
+      darwinRuntime({
+        signalZero: () => {
+          throw Object.assign(new Error("missing"), { code: "ESRCH" });
+        },
+      }),
+    );
     expect(absent.exactState({ ...current, pid: 42 })).toBe("dead");
 
-    const denied = makeProcessIdentity(darwinRuntime({
-      signalZero: () => { throw Object.assign(new Error("denied"), { code: "EPERM" }); },
-    }));
+    const denied = makeProcessIdentity(
+      darwinRuntime({
+        signalZero: () => {
+          throw Object.assign(new Error("denied"), { code: "EPERM" });
+        },
+      }),
+    );
     expect(denied.exactState({ ...current, pid: 42 })).toBe("unknown");
 
     for (const darwinBootSessionUuid of [
-      () => { throw new Error("sysctl unavailable"); },
+      () => {
+        throw new Error("sysctl unavailable");
+      },
       () => " \n",
       () => "not-a-uuid\n",
     ]) {
@@ -63,10 +75,14 @@ describe("exact process identity", () => {
       expect(unreadableBoot.exactState(current)).toBe("unknown");
     }
 
-    const rebooted = makeProcessIdentity(darwinRuntime({
-      darwinBootSessionUuid: () => "11111111-2222-4333-8444-555555555555\n",
-      signalZero: () => { throw new Error("must not inspect a PID from another boot"); },
-    }));
+    const rebooted = makeProcessIdentity(
+      darwinRuntime({
+        darwinBootSessionUuid: () => "11111111-2222-4333-8444-555555555555\n",
+        signalZero: () => {
+          throw new Error("must not inspect a PID from another boot");
+        },
+      }),
+    );
     expect(rebooted.exactState({ ...current, pid: 42 })).toBe("dead");
   });
 });

@@ -150,7 +150,7 @@ The terminal shows only a one-line error summary. For the full error message, st
 
 - `fetch` throws directly, for example connection refused: the application is not running, or the URL is wrong. First send one request to the same interface with `curl` to confirm.
 - `t.succeeded()` fails: the request went out, but the Adapter returned `failed`. Check how the application's error response is mapped to `status`.
-- Only content assertions fail: the integration works. Use `niceeval show @<locator> --execution` to see what the application actually returned, then decide whether to change the assertion or the application.
+- Only content assertions fail: the integration works. Use `niceeval show @<locator> execution` to see what the application actually returned, then decide whether to change the assertion or the application.
 
 ## Add more capabilities as needed
 

@@ -27,4 +27,4 @@ Plugin sandbox 字段转换为 command-only layer，并追加到 Experiment、Ev
 激活前缀在 before 调用前推进。宿主 after 按逆序逐项执行，每项使用独立 cleanup signal 与预算；失败写入 warning。
 Agent 扩展沿工厂已有 before / after 执行，因此失败会影响 Attempt，剩余 after 与 finalizer 继续运行。
 
-`show`、`query` 与 `view` 展示 name、key、identity；`debug` 展开声明、实际 Action 顺序与配置声明位置。身份值不自动写入 flags。
+`show` 与 `view` 展示 name、key、identity；`debug` 展开声明、实际 Action 顺序与配置声明位置。身份值不自动写入 flags。

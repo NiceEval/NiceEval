@@ -1,7 +1,4 @@
-import {
-  dockerSandbox,
-  NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE,
-} from "niceeval/sandbox";
+import { dockerSandbox, NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE } from "niceeval/sandbox";
 
 export const sandbox = dockerSandbox({
   source: { type: "image", image: NICEEVAL_DEEPSEEK_HARNESS_DOCKER_IMAGE },

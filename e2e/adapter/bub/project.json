@@ -24,7 +24,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "batch": "docker-5",
           "areas": [
             "adapter",

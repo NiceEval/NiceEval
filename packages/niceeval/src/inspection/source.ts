@@ -8,6 +8,8 @@ import { Data, Effect } from "effect";
 import type * as Scope from "effect/Scope";
 
 import { RecordIntegrityFailure } from "../record/reader/errors.ts";
+import { SqliteRecordError } from "../record/sqlite/errors.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { EMPTY_PUBLICATION_CUTOFF_IDENTITY } from "../run/protocol.ts";
 
 import {
@@ -38,7 +40,7 @@ export type InspectionSource =
 export class InspectionSourceError extends Data.TaggedError("InspectionSourceError")<{
   readonly code: "inspection-source-invalid";
   readonly reason: string;
-  readonly cause?: unknown;
+  readonly cause: SqliteRecordError | ExternalCause | undefined;
 }> {}
 
 /** Safe Inspection identity for a Record publication that is not closed. */
@@ -50,6 +52,7 @@ export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegr
 /** Browser-neutral fixed reader capability backed by one pinned Record generation. */
 export interface InspectionFactSource {
   readonly kind: InspectionSource["kind"];
+  readonly beginOperation: (deadlineEpochMs: number) => void;
   readonly cutoff: () => PublicationCutoff & { readonly identity: string };
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
   readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
@@ -59,36 +62,25 @@ export interface InspectionFactSource {
     pageSize?: number,
     expectedCutoffIdentity?: string,
   ) => SealedRunSummaryPage;
-  readonly findAttemptLocatorCandidates: (
-    locator: string,
-    maximumCandidateRuns: number,
-  ) => AttemptLocatorCandidates;
+  readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => AttemptLocatorCandidates;
   readonly readSealedRunCore: (runId: string) => SealedRunCore | undefined;
-  readonly readContentPage: (
-    contentId: string,
-    afterOrdinal: number,
-    pageSize: number,
-  ) => ContentChunkPage;
-  readonly readCollectionPage: (
-    attachmentId: string,
-    afterOrdinal: number,
-    pageSize: number,
-  ) => CollectionItemPage;
+  readonly readContentPage: (contentId: string, afterOrdinal: number, pageSize: number) => ContentChunkPage;
+  readonly readCollectionPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => CollectionItemPage;
 }
 
 /** Pure source selection; opening and validation happen only inside a Scope. */
 export function operationalInspectionSource(cwd: string): InspectionSource {
-  return Object.freeze({
+  return {
     kind: "project-record" as const,
     databasePath: resolve(cwd, ".niceeval/record.sqlite"),
-  });
+  };
 }
 
 export function externalInspectionSource(cwd: string, pathname: string): InspectionSource {
-  return Object.freeze({
+  return {
     kind: "external-record" as const,
     recordPath: resolve(cwd, pathname),
-  });
+  };
 }
 
 /**
@@ -103,13 +95,15 @@ export function openInspectionSource(
     let session: PinnedRecordReadSession;
     if (source.kind === "project-record") {
       if (!existsSync(source.databasePath)) return emptyOperationalFacts();
-      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath)).pipe(Effect.mapError(sourceError));
+      session = yield* acquireProjectRecordReadSession(dirname(source.databasePath), { operationScoped: true }).pipe(
+        Effect.mapError(inspectionSourceError),
+      );
     } else {
       const importDeadline = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
       const importer = yield* Effect.acquireRelease(
         Effect.try({
           try: () => startExternalRecordImport(source.recordPath, importDeadline),
-          catch: (cause) => sourceError(cause),
+          catch: inspectionSourceError,
         }),
         (handle) => Effect.promise(() => handle.close().catch(() => undefined)),
       );
@@ -117,12 +111,12 @@ export function openInspectionSource(
         // Declaring the AbortSignal keeps this await interruptible. Scope then
         // terminates the Worker and removes its private generation.
         try: (_signal) => importer.result,
-        catch: (cause) => sourceError(cause),
+        catch: inspectionSourceError,
       });
       session = yield* Effect.acquireRelease(
         Effect.try({
-          try: () => openHostOwnedRecordReadSession(generation.path),
-          catch: (cause) => sourceError(cause),
+          try: () => openHostOwnedRecordReadSession(generation.path, undefined, true),
+          catch: inspectionSourceError,
         }),
         (opened) => Effect.sync(() => opened.close()),
       );
@@ -138,8 +132,8 @@ export function openHostOwnedInspectionSource(
   return Effect.gen(function* () {
     const session = yield* Effect.acquireRelease(
       Effect.try({
-        try: () => openHostOwnedRecordReadSession(recordPath),
-        catch: (cause) => sourceError(cause),
+        try: () => openHostOwnedRecordReadSession(recordPath, undefined, true),
+        catch: inspectionSourceError,
       }),
       (opened) => Effect.sync(() => opened.close()),
     );
@@ -147,21 +141,21 @@ export function openHostOwnedInspectionSource(
   });
 }
 
-const EMPTY_OPERATIONAL_CUTOFF = Object.freeze({
+const EMPTY_OPERATIONAL_CUTOFF = {
   identity: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   storeGeneration: EMPTY_PUBLICATION_CUTOFF_IDENTITY,
   revision: 0,
-});
+};
 
 function emptyOperationalFacts(): InspectionFactSource {
-  return Object.freeze({
+  return {
     kind: "project-record" as const,
     cutoff: () => EMPTY_OPERATIONAL_CUTOFF,
-    findExperimentRunIds: () => Object.freeze([]),
+    findExperimentRunIds: () => [],
     readRunResource: () => undefined,
-    readRunResourcePage: () => Object.freeze({
-      cutoff: Object.freeze({ storeGeneration: EMPTY_PUBLICATION_CUTOFF_IDENTITY, revision: 0 }),
-      runs: Object.freeze([]),
+    readRunResourcePage: () => ({
+      cutoff: { storeGeneration: EMPTY_PUBLICATION_CUTOFF_IDENTITY, revision: 0 },
+      runs: [],
       nextAfterRunId: null,
     }),
     readSealedRunSummaryPage: (afterRunId = "", _pageSize = 100, expectedCutoffIdentity?: string) => {
@@ -169,55 +163,56 @@ function emptyOperationalFacts(): InspectionFactSource {
         throw new InspectionSourceError({
           code: "inspection-source-invalid",
           reason: "The empty operational publication cutoff changed; restart pagination.",
+          cause: undefined,
         });
       }
-      return Object.freeze({
-        cutoff: Object.freeze({ identity: EMPTY_OPERATIONAL_CUTOFF.identity, runCount: 0 }),
+      return {
+        cutoff: { identity: EMPTY_OPERATIONAL_CUTOFF.identity, runCount: 0 },
         afterRunId,
-        summaries: Object.freeze([]),
+        summaries: [],
         nextAfterRunId: null,
-      });
+      };
     },
-    findAttemptLocatorCandidates: (locator: string) => Object.freeze({
+    findAttemptLocatorCandidates: (locator: string) => ({
       locator,
       ambiguous: false,
-      candidates: Object.freeze([]),
+      candidates: [],
     }),
     readSealedRunCore: () => undefined,
-    readContentPage: (contentId: string, afterOrdinal: number) => Object.freeze({
+    readContentPage: (contentId: string, afterOrdinal: number) => ({
       contentId,
       afterOrdinal,
-      chunks: Object.freeze([]),
+      chunks: [],
       nextOrdinal: null,
     }),
-    readCollectionPage: (attachmentId: string, afterOrdinal: number) => Object.freeze({
+    readCollectionPage: (attachmentId: string, afterOrdinal: number) => ({
       attachmentId,
       afterOrdinal,
-      items: Object.freeze([]),
+      items: [],
       nextOrdinal: null,
     }),
-  });
+    beginOperation: () => {},
+  };
 }
 
-function sessionFacts(
-  session: PinnedRecordReadSession,
-  kind: InspectionSource["kind"],
-): InspectionFactSource {
+function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["kind"]): InspectionFactSource {
   const publication = session.publicationCutoff();
-  const cutoff = Object.freeze({ ...publication, identity: publicationCutoffIdentity(publication) });
-  const readPage = (
-    afterRunId = "",
-    pageSize = 100,
-    expectedCutoffIdentity?: string,
-  ): SealedRunSummaryPage => session.readSealedRunSummaryPage(
-    afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity,
-  );
-  return Object.freeze({
+  const cutoff = { ...publication, identity: publicationCutoffIdentity(publication) };
+  const readPage = (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string): SealedRunSummaryPage =>
+    session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity ?? cutoff.identity);
+  return {
     kind,
+    beginOperation: session.beginOperation ?? (() => {}),
     cutoff: () => cutoff,
     findExperimentRunIds: session.findExperimentRunIds,
     readRunResource: (runId: string) => session.readRunResource(runId),
-    readRunResourcePage: (afterRunId = "", pageSize = 100) => session.listRunResources({ afterRunId, pageSize }),
+    readRunResourcePage: (afterRunId = "", pageSize = 100) =>
+      session.listRunResources({
+        afterRunId,
+        pageSize,
+        cutoff: undefined,
+        invocationId: undefined,
+      }),
     readSealedRunSummaryPage: readPage,
     findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) =>
       session.findAttemptLocatorCandidates(locator, maximumCandidateRuns),
@@ -226,10 +221,11 @@ function sessionFacts(
       session.readContentChunkPage(contentId, afterOrdinal, pageSize),
     readCollectionPage: (attachmentId: string, afterOrdinal: number, pageSize: number) =>
       session.readCollectionItemPage(attachmentId, afterOrdinal, pageSize),
-  });
+  };
 }
 
-function sourceError(cause: unknown): InspectionSourceError | InspectionIntegrityError {
+export function inspectionSourceError(cause: unknown): InspectionSourceError | InspectionIntegrityError {
+  if (cause instanceof InspectionSourceError || cause instanceof InspectionIntegrityError) return cause;
   if (cause instanceof RecordIntegrityFailure) {
     return new InspectionIntegrityError({
       code: "inspection-record-integrity-failure",
@@ -239,6 +235,6 @@ function sourceError(cause: unknown): InspectionSourceError | InspectionIntegrit
   return new InspectionSourceError({
     code: "inspection-source-invalid",
     reason: cause instanceof Error ? cause.message : "Record source validation failed",
-    cause,
+    cause: cause instanceof SqliteRecordError ? cause : normalizeExternalCause(cause),
   });
 }

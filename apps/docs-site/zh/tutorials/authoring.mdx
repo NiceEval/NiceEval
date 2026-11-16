@@ -84,17 +84,57 @@ export default defineEval({
   async test(t) {
     const draft = await t.send("帮我起草一封跟进邮件。");
     draft.succeeded();
-    t.check(draft.reply, includes("此致"));
+    draft.notCalledTool("send_email");
 
-    await t.send("可以，发出去吧。");
-    t.calledTool("send_email");
+    const sent = await t.send("可以，发出去吧。");
+    sent.calledTool("send_email");
   },
 });
 ```
 
-同一个 `t` 上连续 `send`，就是同一段对话。`draft.succeeded()` 只检查第一轮；`t.calledTool` 检查整个用例里有没有调用过。需要两段互不相干的对话，例如模拟两个用户，用 `t.newSession()` 开一个新会话。
+同一个 `t` 上连续 `send`，就是同一段对话。Turn 上的断言只检查这一轮：第一轮起草时还不能发出，第二轮用户确认后才发出。需要两段互不相干的对话，例如模拟两个用户，用 `t.newSession()` 开一个新会话。
+
+多轮用例检查的是每一轮做了什么、状态有没有接上，不是回复里有没有某个固定的词。Agent 每次的措辞都不一样，用户换一种说法确认也应该通过；把「此致」「已确认」这类字样当判据，正确的对话也会变红。确实要看文字时，用覆盖等价说法的 `pattern`，或者交给 Judge。
 
 多轮对话要 Adapter 把上一轮的上下文带给应用，见[编写 Send](/zh/tutorials/write-send#第二步：接上之前的消息)。
+
+## 让模拟用户回答 Agent 的提问
+
+Agent 中途停下来提问时，回答内容取决于它怎么问。一律回固定的一段话会答非所问，按关键词拼答案又会在它换个问法时失效。这时用模拟用户：写下这位用户是谁、知道什么、已经决定了什么，由一个模型读 Agent 实际的提问，按这些事实作答。
+
+```ts
+import { defineEval, defineSimulatedUser } from "niceeval";
+import { greaterThan } from "niceeval/expect";
+
+const owner = defineSimulatedUser({
+  instructions:
+    "你是这个仓库的维护者。已经决定：首跑最多 2 个 Attempt，Judge 用 gpt-5.4-mini。" +
+    "只回答被问到的事；没决定过的，让它依据仓库自己判断。",
+});
+
+export default defineEval({
+  description: "接入前先问清预算",
+  async test(t) {
+    const user = t.simulatedUser(owner);
+    let turn = await t.send("把 NiceEval 接进这个仓库。");
+    let answered = 0;
+    while (turn.status === "waiting" && answered < 5) {
+      turn = await user.reply(turn);
+      answered += 1;
+    }
+    t.check(answered, greaterThan(0));
+  },
+});
+```
+
+- `user.reply(turn)` 只接受这段对话最新的 Turn。Turn 在等待输入（`waiting`）时，它为每个提问各给一条回答，有选项的提问选其中一项；Turn 没有在等待时，它读回复，再发一条消息。
+- 多轮问答由你自己写循环，NiceEval 不内置自动对话轮次。上面只在 `waiting` 时回答：Agent 没有正式提问，就不替用户多说话。给循环设上限，防止对话失控。
+- 模拟用户用的是这条评估生效的 Judge Provider 和模型，没有单独的模型配置。没有配置 Judge 时，`reply` 报执行错误，Attempt 记为 `errored`。
+- 它看不到 Sandbox 现场，只读 Agent 的提问；instructions 里没写的事实它不会编造。
+- 能写成固定一句话的续轮（例如「继续」）直接 `t.send`。模拟用户有随机性，换模型回答会变。
+- 模拟用户发出的内容就是这一轮的用户消息，`show @<locator> execution` 会显示它的回答和用量，费用单独记在 `simulated-user` 类别下。
+
+哪些内置 Agent 会进入 `waiting`，见[内置 Agent 参考](/zh/reference/builtin-agents)。
 
 ## 开放式的回答交给 Judge
 
@@ -104,9 +144,7 @@ export default defineEval({
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const grounded = defineJudge({
-  name: "grounded-answer",
-  rubric: "根据 question 评价 answer 是否基于事实作答，而不是编造或含糊其辞。",
+const grounded = defineJudge({ rubric: "根据 question 评价 answer 是否基于事实作答，而不是编造或含糊其辞。",
 });
 
 export default defineEval({
@@ -229,7 +267,7 @@ export default defineEval({
 <Lifecycle
   title="一次 Attempt 从排队到收尾"
   hint="悬停暂停"
-  note={<>收尾阶段不计入这次 Attempt 的耗时。用 <code>niceeval show @&lt;attempt-locator&gt; --timing</code> 查看每一步实际花了多久。</>}
+  note={<>收尾阶段不计入这次 Attempt 的耗时。用 <code>niceeval show @&lt;attempt-locator&gt; timing</code> 查看每一步实际花了多久。</>}
   phases={[
     { name: "experiment.setup", what: "启动实验共享服务", times: "整个实验一次" },
     { name: "sandbox.queue", what: "等一个并发名额", times: "每次 Attempt" },

@@ -14,14 +14,8 @@ export default defineEval({
       ["续轮", second],
     ] as const) {
       await t.group(`${label} usage 可读且为正`, () => {
-        t.check(
-          turn.usage.inputTotalTokens,
-          greaterThan(0),
-        );
-        t.check(
-          turn.usage.outputTokens,
-          greaterThan(0),
-        );
+        t.check(turn.usage.inputTotalTokens, greaterThan(0));
+        t.check(turn.usage.outputTokens, greaterThan(0));
       });
     }
   },

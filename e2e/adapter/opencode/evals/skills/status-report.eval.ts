@@ -1,10 +1,5 @@
 import { defineEval } from "niceeval";
-import {
-  equals,
-  excludes,
-  includes,
-  satisfies,
-} from "niceeval/expect";
+import { equals, excludes, includes, satisfies } from "niceeval/expect";
 const SKILL_DIR = ".agents/skills";
 const STATUS_SKILL = "niceeval-opencode-status-report";
 const DECOY_SKILL = "niceeval-opencode-decoy";
@@ -28,36 +23,21 @@ export default defineEval({
     await turn.succeeded().orStop();
     t.check(
       t.events,
-      satisfies<typeof t.events>(
-        "no failed tool or subagent actions",
-        (events) =>
-          events.every(
-            (event) =>
-              event.type !== "operation.finished" ||
-              event.status !== "failed",
-          ),
+      satisfies<typeof t.events>("no failed tool or subagent actions", (events) =>
+        events.every((event) => event.type !== "operation.finished" || event.status !== "failed"),
       ),
     );
     await t.group("OpenCode 原生 skill 工具归一为目标 skill.loaded，且没有加载 decoy", () => {
       t.check(
         turn.events,
-        satisfies<typeof turn.events>(
-          `loaded ${STATUS_SKILL}`,
-          (events) =>
-            events.some(
-              (event) => event.type === "skill.loaded" && event.skill === STATUS_SKILL,
-            ),
+        satisfies<typeof turn.events>(`loaded ${STATUS_SKILL}`, (events) =>
+          events.some((event) => event.type === "skill.loaded" && event.skill === STATUS_SKILL),
         ),
       );
       t.check(
         turn.events,
-        satisfies<typeof turn.events>(
-          `did not load ${DECOY_SKILL}`,
-          (events) =>
-            events.every(
-              (event) =>
-                event.type !== "skill.loaded" || event.skill !== DECOY_SKILL,
-            ),
+        satisfies<typeof turn.events>(`did not load ${DECOY_SKILL}`, (events) =>
+          events.every((event) => event.type !== "skill.loaded" || event.skill !== DECOY_SKILL),
         ),
       );
     });

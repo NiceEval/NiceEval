@@ -5,7 +5,11 @@ import { evalE2E } from "./context.ts";
 // @feature docs/feature/experiments/README.md
 test.concurrent("作者定义拒绝撤销字段并提供替代方式", async () => {
   await evalE2E.case("retired-author-fields", async ({ paths }) => {
-    const result = await command([process.execPath]).run(["--input-type=module", "--eval", `
+    const result = await command([process.execPath]).run(
+      [
+        "--input-type=module",
+        "--eval",
+        `
       import assert from "node:assert/strict";
       import { createRequire } from "node:module";
       import * as api from "niceeval";
@@ -27,7 +31,10 @@ test.concurrent("作者定义拒绝撤销字段并提供替代方式", async () 
         assert.throws(() => defineConfig({ workspace: value }), /workspace.*project/);
         assert.throws(() => defineExperiment({ adapter, classifyFailure: value }), /classifyFailure.*ExperimentFatalError.*EvalFatalError/);
       }
-    `], { cwd: paths.projectRoot });
+    `,
+      ],
+      { cwd: paths.projectRoot },
+    );
     expect(result.exitCode, result.diagnostic()).toBe(0);
   });
 });

@@ -2,11 +2,7 @@
 
 import type { ReactNode } from "react";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "./shared.ts";
-import {
-  dataShapeError,
-  isLocalizedText,
-  isObject,
-} from "./shared.ts";
+import { dataShapeError, isLocalizedText, isObject } from "./shared.ts";
 import { CopyButton } from "../CopyButton.tsx";
 
 export interface CopyBlockContent {
@@ -14,36 +10,38 @@ export interface CopyBlockContent {
   title: LocalizedText;
 }
 
-export type CopyBlockProps = {
-  title: LocalizedText;
-  text: string;
-  locale: ReportLocale;
-  className?: string;
-} | {
-  /** 无可复制文本时传 null，两面零输出。 */
-  content: CopyBlockContent | null;
-  title?: never;
-  text?: never;
-  locale: ReportLocale;
-  className?: string;
-};
+export type CopyBlockProps =
+  | {
+      title: LocalizedText;
+      text: string;
+      locale: ReportLocale;
+      className: string | undefined;
+    }
+  | {
+      /** 无可复制文本时传 undefined，两面零输出。 */
+      content: CopyBlockContent | undefined;
+      title?: never;
+      text?: never;
+      locale: ReportLocale;
+      className: string | undefined;
+    };
 
 function cx(...parts: (string | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-function validateCopyBlockContent(data: unknown): string | null {
-  if (data === null) return null;
+function validateCopyBlockContent(data: unknown): string | undefined {
+  if (data === undefined) return undefined;
   if (!isObject(data)) return '"content" must be a CopyBlockContent object or null';
   if (!isLocalizedText(data.title)) return '"content.title" must be a LocalizedText';
   if (typeof data.text !== "string") return '"content.text" must be a string';
-  return null;
+  return undefined;
 }
 
-function resolveCopyBlock(props: CopyBlockProps): CopyBlockContent | null {
+function resolveCopyBlock(props: CopyBlockProps): CopyBlockContent | undefined {
   if ("content" in props) {
     const problem = validateCopyBlockContent(props.content);
-    if (problem !== null) throw dataShapeError("CopyBlock", "toSampleFixPrompt", "CopyBlockContent", problem);
+    if (problem !== undefined) throw dataShapeError("CopyBlock", "toSampleFixPrompt", "CopyBlockContent", problem);
     return props.content;
   }
   if (!isLocalizedText(props.title)) {
@@ -55,11 +53,7 @@ function resolveCopyBlock(props: CopyBlockProps): CopyBlockContent | null {
   return { title: props.title, text: props.text };
 }
 
-function copyBlockWeb(
-  data: CopyBlockContent,
-  locale: ReportLocale,
-  className?: string,
-): ReactNode {
+function copyBlockWeb(data: CopyBlockContent, locale: ReportLocale, className?: string): ReactNode {
   return (
     <details className={cx("niceeval-report", "niceeval-copy-block", className)}>
       <summary className="niceeval-copy-block-summary">{resolveLocalizedText(data.title, locale)}</summary>
@@ -73,6 +67,6 @@ function copyBlockWeb(
 
 export function CopyBlock(props: CopyBlockProps): ReactNode {
   const data = resolveCopyBlock(props);
-  if (data === null) return null;
+  if (data === undefined) return null;
   return copyBlockWeb(data, props.locale, props.className);
 }

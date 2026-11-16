@@ -12,9 +12,29 @@ case 与契约的关联服从 [case 关系契约](case-relations.md)。diagnose 
 根 CLI 只有七个显式命令：高阶本地入口是 `test`；本地诊断入口是带 `test` / `exec` 模式的 `diagnose`；低阶生命周期命令是
 `plan`、`pack`、`run`、`takeover` 与 `verify-release`。无子命令的 `pnpm e2e` 只显示 Effect CLI help，不选择、打包或运行任何场景。
 
-`test` 严格执行一次 plan → 对合法非空计划打包一次 candidate → 运行该 plan 的精确 Repo 集；合法空计划在 pack 之前成功短路。
+`test` 严格执行一次 plan → 对合法非空计划准备一次 candidate（本地默认 `source`，声明 `candidate: built` 的 Repo 用 `built`，`--candidate tarball` 或 CI 用 tarball，见[候选形态](#候选形态)）→ 运行该 plan 的精确 Repo 集；合法空计划在准备候选之前成功短路。
 CI 与 `run --plan` 消费同一份当前 checkout 生成的 plan，不会在 run 阶段重新选择。
 `diagnose` 不参与这条正式生命周期；它只消费一次带 `--keep-workdir` 的正式本地运行所留下的 retained 场景。
+
+## 候选形态
+
+E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用途选，本地内循环不付构建与打包的成本：
+
+| 形态 | 用在哪里 | 场景副本里的 NiceEval | 证明什么 |
+|---|---|---|---|
+| `source` | 本地默认：Bug 红绿、新 owner 的定向运行 | link 到 `packages/niceeval`；runner 启用 `niceeval-source` 条件、Node TypeScript 转换与 `tsx/esm`，package exports 指向 `src/*.ts`，CLI 同样从源码启动 | 公开入口行为；改完源码立即生效，不构建、不打包 |
+| `built` | 场景 Repo 依赖构建输出时：`niceeval view` 的 Web 界面、随包文档（INDEX 与 docs-site）、拿 `.d.ts` 做 typecheck | link 到 `pnpm run build:package` 构建出的包目录 | 再加上构建期门禁（公开导出文档、类型声明文件）与构建输出 |
+| `tarball` | CI 全部 lane、接管门禁、push 前的打包冒烟、跨设备交接 | 安装 `pnpm e2e pack` 产出的 tarball | 再加上包边界：`files` 清单、exports 映射、bin、可选依赖从使用方项目完成路径 resolution、安装脚本 |
+
+- 场景 Repo 在 project metadata 里声明 `candidate: built` 才会拿到构建输出；未声明的 Repo 在本地按 `source` 运行。
+- `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
+- `built` 与 `tarball` 只写入候选缓存自己的目录，任何形态都不读取、删除或写入共享 checkout 的 `packages/niceeval/dist`。下游通过 link 消费的正是这份 dist，E2E 不能悄悄替换它；需要更新它时由作者显式运行 `pnpm run build:package`。
+- `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
+- `source` 与 `built` 的候选进入 Docker driver 时，Testkit 按 runner 注入的参数把候选真实目录与工作区依赖以同一路径只读挂载进容器，并传递候选的源码装载选项；`tarball` 已安装在场景副本内，不追加本地挂载。
+- 形态与摘要写入每次运行的收据，结果可追溯到具体候选。
+
+source 进程的 `require(esm)` 与动态 `import()` 必须加载同一份框架模块。tsx 只注册 ESM 装载支持，
+不同时注册把 require 目标改写为 CommonJS 的转换器；否则框架内部的能力登记会分成两份。
 
 ## 高阶本地入口
 
@@ -55,7 +75,7 @@ pnpm e2e run --candidate artifacts/niceeval-candidate.tgz \
 pnpm e2e diagnose test --from artifacts/e2e/insight/summary.json --repo insight \
   --timeout-seconds 15 -- --run test/view-snapshot.browser.spec.ts -t "打开"
 pnpm e2e diagnose exec --from artifacts/e2e/insight/summary.json --repo insight \
-  --timeout-seconds 15 -- pnpm exec niceeval query discover
+  --timeout-seconds 15 -- pnpm exec niceeval show runs --json
 
 # Owner 接管可靠性证书：case_selector 是 <file>#<Concord case id>，从 concord test list 取得；-- 后只补充其它原生参数
 pnpm e2e takeover --candidate artifacts/niceeval-candidate.tgz --repo insight \
@@ -68,11 +88,13 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 ```
 
 - `plan --json` 输出 selection mode / reason、base / head、精确 Repo、host executor、能力和分片，不包含产品断言；
-- `test` 的本地默认顺序是 plan → pack NiceEval candidate → run；
+- `test` 的本地默认顺序是 plan → 准备 source candidate → run；声明 built 的 Repo 按输入摘要复用构建，tarball 形态才打包；
 - `test` 只生成一次 plan，并把该 plan 的精确 Repo ID 集传给 run；隐式 dirty diff 也不会在 run 时扩大选择；
 - `run` 在选中 Testkit consumer 时构建当前 workspace Testkit 的 invocation-local scratch snapshot 一次；
 - 合法 affected 空计划不 pack、不 build；project / metadata 非法时以 `invalid` 红灯退出；
 - CI 的 prepare job 先 plan，只在选中 Repo 后测试 Testkit 并 pack 一次 candidate；
+- push / PR 的 takeover job 复用计划与 candidate，对实质变化的确定性 owner 文件逐项验收；共享输入变化重验所属 Repo，排除 live Repo，无 owner 时跳过，失败阻断 gate，并上传 takeover-summary 与资源终结收据；
+- gate job 在 GitHub step summary 中逐个列出失败的 matrix cell 与 takeover 项：分类（`regression`、`infra`、`configuration`、`invalid`、`cancelled`）、首条诊断与 receipt 路径。读者不打开 job 日志就能区分代码回归与环境阻塞；分类不改变 gate 的通过条件。
 - prepare 安装并验证 Node、pnpm 与 Concord 后，将可执行文件和 Concord 生产依赖封装为同一次 workflow 的工具 artifact。
   matrix 在安装场景依赖前校验 prepare output 中的 SHA-256、平台和工具版本，并检查 Git 根与 Concord engine 入口；
   校验失败立即停止，不回退到重新下载或其它版本。工具 artifact 不属于测试证据，不能替代 candidate、receipt 或 certificate。
@@ -89,7 +111,7 @@ pnpm e2e verify-release --plan artifacts/release-plan.json \
 takeover / 最终收据。CI 的 affected lane 与 main / nightly 负责执行最终线上完整矩阵，不用作逐步试探测试标题、DOM、时序、fixture
 或公开命令的交互式调试器。
 
-同一个 candidate 的正式本地流程只做一次 plan、一次 pack / install，并按需 build 一次 Testkit。能独立推进且不共享写入或重复这套
+同一个 candidate 的正式本地流程只做一次 plan、一次候选准备与安装，并按需 build 一次 Testkit；source 不构建或打包，built 与 tarball 按输入摘要复用。能独立推进且不共享写入或重复这套
 昂贵准备的证据线立即并行；共享 retained 场景的可变动作则串行。完整运行出现红灯并需要定位时，先让该次 `test` / `run` 通过
 `--keep-workdir` 产出正式 summary，再使用：
 
@@ -121,7 +143,7 @@ pnpm e2e diagnose exec --from <summary.json> --repo <id> [--timeout-seconds 15] 
 它从 tarball 的 `package/package.json` 核对 `niceeval`、版本与精确 `v<version>` tag。
 该命令不重新 pack、不发布，也不把判断放进 workflow。
 
-Candidate 就是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。NiceEval 不能改用 workspace link：link 会绕过
+CI 的 tarball candidate 是当前 checkout 当场生成的待发布字节，不是 registry 上另一个版本。tarball 验收不能改用 workspace link：link 会绕过
 `files`、打包生命周期、bin / exports 完整性和仓库外 dependency resolution，可能让源码树能跑而实际安装包失败。Testkit 没有这些发布承诺，
 所以采用本次 scratch 中由 checkout 源码构建的目录 snapshot。
 
@@ -133,6 +155,21 @@ candidate、receipt 与 summary 在读写前拒绝 root 内的 symlink。
 隔离副本路径与依赖校验均使用物理目录；macOS 的 `/var`、`/tmp` 父目录别名与 Linux 普通路径走相同校验。
 调用方不需要设置 `TMPDIR`；副本内的 `node_modules/.pnpm` 目录链仍拒绝 symlink。
 `verify-release` 读取保留 tarball 时也做同一目录链核验。
+
+## 参数化用例的身份
+
+Concord 的用例 ID 标在一条声明上。`test.each`、`test.concurrent.each`、`it.each` 及 Playwright 的循环声明在运行时展开成多条原生用例，
+它们共用这一条声明的 ID：一个 ID 选中的是该声明展开出的全部用例，不存在只选其中一条的身份。
+`concord test run/verify`、`concord issue close --fixed` 与 `pnpm e2e takeover --selector` 都按这条规则选择。
+
+- **匹配。** 声明的标题是模板（含 `%s`、`%i`、`%d`、`%j`、`%o`、`%#`、`%%` 或 `$name`）时，原生报告里标题符合该模板、且位于同一文件与同一 describe 路径下的用例都属于它。
+  模板里的占位符匹配任意文本，其余字符逐字匹配。没有占位符的标题仍然要求恰好一条。
+- **结果。** 展开出的用例全部通过才是 passed，任一失败就是 failed；`caseCount` 是展开条数，报告逐条列出原生标题与各自结果。
+- **不成立的情形。** 展开为零条、任一条被跳过、重试过，或运行了不属于该声明的用例，都是 invalid，不计为 red 或 green。
+  同一文件里两个声明的模板能匹配到同一条原生用例时，收集阶段就以具名错误拒绝，要求改标题。
+- **单项运行。** 原生命令用能选中整组展开的过滤条件（Vitest 的 `-t` 取模板里最长的一段字面文本，再由报告按模板精确筛选），不为每条展开各起一个进程。
+
+接管的五类运行、收集与默认负载阶段对参数化声明使用同一条规则，不跳过它们，也不放松完整矩阵检查。
 
 ## Owner 接管运行
 
@@ -283,6 +320,7 @@ Repo project metadata 声明了白名单外的名称时，在注入前失败，�
 入网前为完整模型地址、origin、hostname 和密钥注册日志掩码。官方 action 入网后立即用
 `tailscale set --accept-routes=false` 关闭子网路由，再执行探针；不能在 action args 重复它自带的参数。
 不设置 exit node、不修改 DNS。非收费连通性探针只报告受控结果，不打印 URL、响应或原始异常。
+探针在约 3 分钟内退避重试，覆盖模型网关的短暂中断；仍不可达时该格记为 `infra`（原因 `model-endpoint-unreachable`），不运行场景测试，也不记为 regression。
 结束时显式检查 logout，官方 action post 终止 daemon；强制终止时依赖临时节点后续回收。
 宿主探针不能代替 Docker 沙箱中的实际 adapter 验收。
 
@@ -447,3 +485,13 @@ PR、main 与 nightly 的 E2E 继续在独立 workflow 运行。`release` lane �
 - Adapter 与 Insight Repo 按 owner 拆成原生测试文件，再按文件和标题分片；不把多个命题压进线性脚本或同一文件。
 - CLI、Runner、Report、Package 与 live Adapter 共用根 runner 的 pack → plan → run → artifact 链；workflow 不复制选择或注入逻辑。
 - 共用 runner 不等于共用 Repo；同 batch 的功能与 Adapter 可以混装，但仍保留各自的依赖安装、secret 白名单、结果根、receipt 与 cleanup。
+
+## 工具证据的格式边界
+
+完整 case receipt 与 reliability certificate 各自保留一个持久边界标记。
+嵌套 source 与 projection 不再携带 `format` 或 `algorithm` 编码版本；严格 decoder、内容摘要、
+selector、candidate、cleanup 与签名闭包全部保留。实现闭包继续由 binding 的 implementationDigest 绑定。
+
+候选输入摘要使用无版本域分隔 `niceeval-candidate-inputs`，并纳入当前 checkout 的
+`packages/e2e-runner/src/candidate-cache.ts` 实际字节；投影规则改变会使构建缓存失效。
+不因 HEAD、无关提交或生成输出变化重建，既有输入路径、依赖闭包与 mode 仍参与摘要。

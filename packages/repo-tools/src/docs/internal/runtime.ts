@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { Effect, Schema, SchemaIssue } from "effect";
@@ -16,21 +26,24 @@ export function absolutePath(path: string): string {
 
 export function decodeUnknown<A>(source: string, schema: Schema.ConstraintDecoder<A, never>, input: unknown) {
   return Schema.decodeUnknownEffect(schema, { errors: "all" })(input).pipe(
-    Effect.mapError((error) => new DocsDecodeError({
-      source,
-      message: SchemaIssue.makeFormatterDefault()(error.issue),
-    })),
+    Effect.mapError(
+      (error) =>
+        new DocsDecodeError({
+          source,
+          message: SchemaIssue.makeFormatterDefault()(error.issue),
+        }),
+    ),
   );
 }
 
-const readText = Effect.fn("docs.readText")(function*(path: string) {
+const readText = Effect.fn("docs.readText")(function* (path: string) {
   return yield* Effect.try({
     try: () => readFileSync(absolutePath(path), "utf8"),
     catch: (error) => new DocsFileError({ operation: "read", path, message: errorMessage(error) }),
   });
 });
 
-export const readJson = Effect.fn("docs.readJson")(function*<A>(
+export const readJson = Effect.fn("docs.readJson")(function* <A>(
   path: string,
   schema: Schema.ConstraintDecoder<A, never>,
 ) {
@@ -50,17 +63,14 @@ function removeIgnoringFailure(path: string): void {
   }
 }
 
-export const atomicWriteText = Effect.fn("docs.atomicWriteText")(function*(
+export const atomicWriteText = Effect.fn("docs.atomicWriteText")(function* (
   path: string,
   content: string,
   expected?: string,
 ) {
   const target = absolutePath(path);
   const temporary = `${target}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
-  yield* Effect.acquireRelease(
-    Effect.succeed(temporary),
-    (file) => Effect.sync(() => removeIgnoringFailure(file)),
-  );
+  yield* Effect.acquireRelease(Effect.succeed(temporary), (file) => Effect.sync(() => removeIgnoringFailure(file)));
   yield* Effect.try({
     try: () => {
       mkdirSync(dirname(target), { recursive: true });
@@ -84,7 +94,7 @@ export function atomicWriteJson(path: string, value: unknown) {
   return atomicWriteText(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export const withFileLock = Effect.fn("docs.withFileLock")(function*<A, E, R>(
+export const withFileLock = Effect.fn("docs.withFileLock")(function* <A, E, R>(
   path: string,
   effect: Effect.Effect<A, E, R>,
 ) {
@@ -97,18 +107,19 @@ export const withFileLock = Effect.fn("docs.withFileLock")(function*<A, E, R>(
       },
       catch: (error) => new DocsFileError({ operation: "acquire lock", path, message: errorMessage(error) }),
     }),
-    (descriptor) => Effect.sync(() => {
-      try {
-        closeSync(descriptor);
-      } finally {
-        removeIgnoringFailure(target);
-      }
-    }),
+    (descriptor) =>
+      Effect.sync(() => {
+        try {
+          closeSync(descriptor);
+        } finally {
+          removeIgnoringFailure(target);
+        }
+      }),
   );
   return yield* effect;
 }, Effect.scoped);
 
-export const runCommand = Effect.fn("docs.runCommand")(function*(
+export const runCommand = Effect.fn("docs.runCommand")(function* (
   name: string,
   args: readonly string[],
   options: { readonly inherit?: boolean } = {},
@@ -120,15 +131,18 @@ export const runCommand = Effect.fn("docs.runCommand")(function*(
   return yield* command.pipe(
     Effect.flatMap((child) => child.exitCode),
     Effect.map(Number),
-    Effect.mapError((error) => new DocsProcessError({
-      command: [name, ...args].join(" "),
-      message: errorMessage(error),
-    })),
+    Effect.mapError(
+      (error) =>
+        new DocsProcessError({
+          command: [name, ...args].join(" "),
+          message: errorMessage(error),
+        }),
+    ),
     Effect.scoped,
   );
 });
 
-export const runSuccessfulCommand = Effect.fn("docs.runSuccessfulCommand")(function*(
+export const runSuccessfulCommand = Effect.fn("docs.runSuccessfulCommand")(function* (
   name: string,
   args: readonly string[],
   options: { readonly inherit?: boolean } = {},

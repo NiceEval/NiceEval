@@ -9,15 +9,15 @@ import type { JudgeProviderIdentity } from "../judge/provider.ts";
 export interface FactResultBase {
   readonly factId: string;
   readonly name: string;
-  readonly groupPath?: readonly string[];
-  readonly producerLoc?: SourceLoc;
+  readonly groupPath: readonly string[] | undefined;
+  readonly producerLoc: SourceLoc | undefined;
   readonly sourceOrder: number;
   readonly dependencyFactIds: readonly string[];
-  readonly expected?: string;
-  readonly received?: string;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
   /** Evaluator-supplied explanation, distinct from the scored material. */
-  readonly explanation?: string;
-  readonly evidence?: string;
+  readonly explanation: string | undefined;
+  readonly evidence: string | undefined;
 }
 
 /** A terminal Attempt issue as seen by Fact folding; Fact evaluator errors narrow this further. */
@@ -58,15 +58,15 @@ export type EvaluationFactResult =
     });
 
 export interface FactUseBase {
-  readonly key?: string;
-  readonly consumerLoc?: SourceLoc;
+  readonly key: string | undefined;
+  readonly consumerLoc: SourceLoc | undefined;
   readonly sourceOrder: number;
 }
 
 export type VerdictFactUseResult = FactUseBase & {
   readonly useKind: "verdict";
   readonly method: "check" | "require" | "checkIfCovered";
-  readonly label?: string;
+  readonly label: string | undefined;
   readonly target:
     | { readonly kind: "boolean"; readonly factId: string }
     | { readonly kind: "score"; readonly factId: string; readonly atLeast: number };
@@ -88,27 +88,26 @@ export type ScoreFactUseResult = FactUseBase & {
       }
     | ({
         readonly input: { readonly kind: "fact"; readonly factId: string; readonly max: number };
-      } &
-        (
-          | { readonly outcome: "scored"; readonly earned: number }
-          | { readonly outcome: "unavailable"; readonly reason: string }
-          | { readonly outcome: "errored"; readonly error: EvaluationFactError }
-          | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
-        ))
+      } & (
+        | { readonly outcome: "scored"; readonly earned: number }
+        | { readonly outcome: "unavailable"; readonly reason: string }
+        | { readonly outcome: "errored"; readonly error: EvaluationFactError }
+        | { readonly outcome: "notReachedByControl" | "notReachedByError"; readonly reason: string }
+      ))
   );
 
 export interface UnavailableAttemptIssue {
   readonly kind: "unavailable";
   readonly reason: string;
-  readonly factId?: string;
-  readonly useSourceOrder?: number;
+  readonly factId: string | undefined;
+  readonly useSourceOrder: number | undefined;
 }
 
 export interface ErrorAttemptIssue {
   readonly kind: "error";
   readonly error: AttemptFactError;
-  readonly factId?: string;
-  readonly useSourceOrder?: number;
+  readonly factId: string | undefined;
+  readonly useSourceOrder: number | undefined;
 }
 
 export type AttemptFactIssue = UnavailableAttemptIssue | ErrorAttemptIssue;
@@ -150,21 +149,19 @@ export type {
   ResolvedEvidenceCoverageStatus,
 } from "./coverage.ts";
 
-
 /** A structured one-line projection of the primary causal Fact/use. */
 export interface PrimaryFactSummary {
   /** Fact use label, falling back to its Fact name or stable id. */
   title: string;
   /** Distinct producer name, when the use label names a different check. */
-  matcher?: string;
-  expected?: string;
-  received?: string;
+  matcher: string | undefined;
+  expected: string | undefined;
+  received: string | undefined;
   /** Structured unavailable/evaluator reason. */
-  reason?: string;
+  reason: string | undefined;
   /** Further causal Fact/use rows after this primary entry. */
   additionalFailures: number;
 }
-
 
 /** Reports script success and captured output for an assertion; nonempty output alone does not establish success. */
 export interface ScriptResult {
@@ -185,6 +182,7 @@ export interface DiffWindow {
   changes: globalThis.Record<string, WindowChange>;
 }
 
+/** Record JSON boundary: omitted before/after/elision keys are part of the persisted diff format. */
 export interface WindowChange {
   status: "added" | "modified" | "deleted";
   /** 窗口开始时的内容;added 无此字段;内容被省略(elided)时也缺席。 */
@@ -205,7 +203,7 @@ export interface DiffFileSummary {
   /** 触及该文件的窗口标签,按时序。 */
   windows: string[];
   /** 内容被省略的文件带省略原因;省略语义单源在 WindowChange.elided。 */
-  elided?: "binary" | "oversized-text";
+  elided: "binary" | "oversized-text" | undefined;
 }
 
 /** agent 归因 diff 的消费视图:窗口序列(落盘事实)+ 派生的文件级摘要与终态读取。 */

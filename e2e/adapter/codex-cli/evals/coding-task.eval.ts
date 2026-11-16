@@ -23,8 +23,7 @@ const cmdMarker = "niceeval-e2e-run-914";
 const seed = `alpha\n${oldMarker}\nomega\n`;
 
 export default defineEval({
-  description:
-    "coding 任务工具轨:文件变更(改既有文件)与 shell 调用都归一进标准事件流,调用与结果配对成立",
+  description: "coding 任务工具轨:文件变更(改既有文件)与 shell 调用都归一进标准事件流,调用与结果配对成立",
   async test(t) {
     await t.sandbox.writeText(relPath, seed);
 
@@ -47,9 +46,7 @@ export default defineEval({
               input !== null &&
               !Array.isArray(input) &&
               (typeof (input as Record<string, unknown>)["path"] === "string"
-                ? new RegExp(relPath).test(
-                    (input as Record<string, unknown>)["path"] as string,
-                  )
+                ? new RegExp(relPath).test((input as Record<string, unknown>)["path"] as string)
                 : new RegExp(relPath).test(JSON.stringify(input) ?? "")),
           ),
           status: "completed",
@@ -66,9 +63,7 @@ export default defineEval({
               input !== null &&
               !Array.isArray(input) &&
               (typeof (input as Record<string, unknown>)["command"] === "string"
-                ? new RegExp(cmdMarker).test(
-                    (input as Record<string, unknown>)["command"] as string,
-                  )
+                ? new RegExp(cmdMarker).test((input as Record<string, unknown>)["command"] as string)
                 : new RegExp(cmdMarker).test(JSON.stringify(input) ?? "")),
           ),
           status: "completed",

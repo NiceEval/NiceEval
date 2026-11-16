@@ -4,16 +4,8 @@ import type { AgentRun, DiagnosticRecord } from "../../types.ts";
 import { makeRunObservabilityCaptureIdentity } from "../capture-identity.ts";
 import { normalizeRunDiagnostics } from "../diagnostics.ts";
 import { RunRunnerDiagnosticsAttachmentSchema } from "../../../record/family/runner-diagnostics/definition.ts";
-import {
-  producerEntityIdInvalid,
-  sourceCollection,
-  type RunnerObservabilityProducerError,
-} from "../support.ts";
-import {
-  decodeReceipt,
-  receiptDiagnosticRedaction,
-  segmentIds,
-} from "./receipt-helpers.ts";
+import { producerEntityIdInvalid, sourceCollection, type RunnerObservabilityProducerError } from "../support.ts";
+import { decodeReceipt, receiptDiagnosticRedaction, segmentIds } from "./receipt-helpers.ts";
 import { makeRunEntityMinter, storeRunCapture } from "./state.ts";
 
 /**
@@ -33,17 +25,13 @@ export function bindRunnerRunObservabilityDiagnostics(input: {
       diagnostics: input.diagnostics,
       mint: minter.mint,
     });
-    const segmentIdByDiagnosticId = segmentIds(
-      normalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId),
-    );
+    const segmentIdByDiagnosticId = segmentIds(normalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId));
     if (segmentIdByDiagnosticId === undefined) {
       return yield* Effect.fail(producerEntityIdInvalid("diagnostic"));
     }
-    const candidate = Object.freeze({
-      collection: sourceCollection([
-        { collection: normalization.collection, stage: "runner-diagnostic-sink" },
-      ]),
-      segments: Object.freeze(normalization.diagnostics.map((diagnostic, index) => Object.freeze({
+    const candidate = {
+      collection: sourceCollection([{ collection: normalization.collection, stage: "runner-diagnostic-sink" }]),
+      segments: normalization.diagnostics.map((diagnostic, index) => ({
         ...(diagnostic.affectedSlotIds === undefined ? {} : { affectedSlotIds: diagnostic.affectedSlotIds }),
         segmentId: segmentIdByDiagnosticId.get(diagnostic.diagnosticId),
         diagnosticId: diagnostic.diagnosticId,
@@ -53,19 +41,15 @@ export function bindRunnerRunObservabilityDiagnostics(input: {
         phase: diagnostic.phase === "collection" ? "run.teardown" : diagnostic.phase,
         turnId: null,
         summary: diagnostic.summary,
-        causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+        causes: diagnostic.causes.map((cause) => ({ code: cause.code, summary: cause.summary })),
         redaction: receiptDiagnosticRedaction(diagnostic.redaction),
         sourceFrame: diagnostic.sourceFrame,
-      }))),
-    });
-    const runnerDiagnostics = yield* decodeReceipt(
-      RunRunnerDiagnosticsAttachmentSchema,
-      candidate,
-      "run",
-    );
-    storeRunCapture(input.run, Object.freeze({
+      })),
+    };
+    const runnerDiagnostics = yield* decodeReceipt(RunRunnerDiagnosticsAttachmentSchema, candidate, "run");
+    storeRunCapture(input.run, {
       capture,
-      snapshot: Object.freeze({ runnerDiagnostics }),
-    }));
+      snapshot: { runnerActivities: undefined, runnerDiagnostics },
+    });
   });
 }

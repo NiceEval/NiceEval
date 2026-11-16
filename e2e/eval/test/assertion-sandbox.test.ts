@@ -17,27 +17,18 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(run.exitCode, run.diagnostic()).toBe(0);
       expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
       const evaluations = run.expEvalEvents();
-      const evaluation = only(
-        evaluations,
-        (event) => event.evalId === "assertion-sandbox",
-        run.diagnostic(),
-      );
+      const evaluation = only(evaluations, (event) => event.evalId === "assertion-sandbox", run.diagnostic());
       expect(evaluation).toMatchObject({
         event: "eval",
         evalId: "assertion-sandbox",
         verdict: "passed",
       });
       expect(`${run.stdout}\n${run.stderr}`).not.toContain("workspace-diff-unavailable");
-      const bulkEvaluation = only(
-        evaluations,
-        (event) => event.evalId === "workspace-diff-cap",
-        run.diagnostic(),
-      );
+      const bulkEvaluation = only(evaluations, (event) => event.evalId === "workspace-diff-cap", run.diagnostic());
       expect(bulkEvaluation).toMatchObject({ verdict: "passed" });
       const diff = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.diff");
       expect(diff.receipt.exitCode, diff.receipt.diagnostic()).toBe(0);
       expect(diff.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.diff",
         issues: [],
         diff: { state: "partial" },
@@ -72,7 +63,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       );
       expect(assertionDetail.receipt.exitCode, assertionDetail.receipt.diagnostic()).toBe(0);
       expect(assertionDetail.document).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.assertion.detail",
         issues: [],
         assertion: { entryId: lastWitness.entryId, check: { state: "matched" } },
@@ -84,7 +74,6 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(timing.receipt.exitCode, timing.receipt.diagnostic()).toBe(0);
       const timingDocument = timing.receipt.attemptTiming();
       expect(timingDocument).toMatchObject({
-        protocol: "niceeval.query/v3",
         operation: "attempt.timing",
         issues: [],
         timing: { state: "complete" },

@@ -26,7 +26,15 @@ test.concurrent("JSON 心跳标识当前 Eval、Attempt 和执行阶段", async 
         expect(heartbeats[0]).toMatchObject({
           running: 1,
           activeOmitted: 0,
-          active: [{ experimentId: "pipe-progress", evalId: "pipe/progress", attempt: 0, phase: "eval.run", elapsedMs: expect.any(Number) }],
+          active: [
+            {
+              experimentId: "pipe-progress",
+              evalId: "pipe/progress",
+              attempt: 0,
+              phase: "eval.run",
+              elapsedMs: expect.any(Number),
+            },
+          ],
         });
       },
     );

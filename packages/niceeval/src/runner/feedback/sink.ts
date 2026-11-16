@@ -15,7 +15,13 @@
 // 同一条消息。
 
 import { writeStderrLine } from "../../tty-line.ts";
-import type { AttemptLifecycleEvent, AttemptRef, DiagnosticSeverity, ExperimentHookName, FailureDetail } from "../types.ts";
+import type {
+  AttemptLifecycleEvent,
+  AttemptRef,
+  DiagnosticSeverity,
+  ExperimentHookName,
+  FailureDetail,
+} from "../types.ts";
 import type { Verdict } from "../../shared/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { AttemptLocator } from "../../attempt-locator.ts";
@@ -31,12 +37,12 @@ export interface DiagnosticInput {
   /** 对外的稳定词法:`--json` 的 notice/warning `code`、human 通知行的标题都读它(见 cli.md)。
    *  省略 = 与 `key` 相同——
    *  折叠身份不进 key 的那些诊断天生就是干净字面量,不必重复写一遍。 */
-  code?: string;
+  code: string | undefined;
   severity: DiagnosticSeverity;
   /** 一句话人类可读摘要;renderer 的 appendDurable 直接展示,不需要再解析。 */
   message: string;
-  identity?: AttemptRef;
-  data?: Readonly<globalThis.Record<string, JsonValue>>;
+  identity: AttemptRef | undefined;
+  data: Readonly<globalThis.Record<string, JsonValue>> | undefined;
 }
 
 /** `sink.failure()` 的输入 —— 与 `DurableFeedbackEvent` 的 "failure" 变体字段一致,只省略
@@ -62,9 +68,9 @@ export interface ExperimentHookInput {
   experimentId: string;
   hook: ExperimentHookName;
   status: "started" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
   /** 强杀后启动自愈的补执行(只在 teardown 的 started 上有意义);省略 = 正常路径。 */
-  recovery?: boolean;
+  recovery: boolean | undefined;
 }
 
 /** `sink.experimentProgress()` 的输入 —— 实验级 `ctx.progress` 压好的单行文本。 */
@@ -78,7 +84,7 @@ export interface ExperimentProgressInput {
  *  `durationMs` 在 done 与 failed 上给。 */
 export interface PrecheckInput {
   status: "started" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
 }
 
 /** `sink.lockWait()` 的输入 —— 与 `DurableFeedbackEvent` 的 "lock-wait" 变体字段一致,省略
@@ -89,12 +95,12 @@ export interface LockWaitInput {
   experimentId: string;
   evalId: string;
   status: "started" | "resolved";
-  holderPid?: number;
-  holderHost?: string;
-  attempts?: number;
-  carried?: number;
-  dispatched?: number;
-  waitedMs?: number;
+  holderPid: number | undefined;
+  holderHost: string | undefined;
+  attempts: number | undefined;
+  carried: number | undefined;
+  dispatched: number | undefined;
+  waitedMs: number | undefined;
 }
 
 /** `sink.runActivity()` 的输入 —— 与 `DurableFeedbackEvent` 的 "run-activity" 变体字段一致,
@@ -106,7 +112,7 @@ export interface RunActivityInput {
   key: string;
   label: string;
   status: "started" | "progress" | "done" | "failed";
-  durationMs?: number;
+  durationMs: number | undefined;
 }
 
 /** `sink.kept()` 的输入 —— 与 `DurableFeedbackEvent` 的 "kept" 变体字段一致,省略 type/at。 */
@@ -117,7 +123,9 @@ export interface KeptInput {
   verdict: Verdict;
   provider: string;
   sandboxId: string;
-  enter?: string;
+  nativeCommand: string;
+  cleanCommand: string;
+  expiresAt: string | undefined;
 }
 
 /** `sink.ts` façade 函数实际转发到的最小接口 —— `FeedbackCoordinator`(coordinator.ts)实现它。
@@ -238,7 +246,9 @@ export function reportKept(input: KeptInput): void {
     sink.kept(input);
     return;
   }
-  writeStderrLine(`kept sandbox ${input.sandboxId} (${input.provider}) — ${input.identity.evalId} #${input.identity.attempt} ${input.verdict}\n`);
+  writeStderrLine(
+    `kept sandbox ${input.sandboxId} (${input.provider}) — ${input.identity.evalId} #${input.identity.attempt} ${input.verdict}\n`,
+  );
 }
 
 /** 实验级钩子的起止(见 `ExperimentHookInput`)。没有活跃 coordinator 时退回一行 stderr ——
@@ -268,11 +278,8 @@ export function reportPrecheck(input: PrecheckInput): void {
     return;
   }
   const duration = input.durationMs !== undefined ? ` (${Math.round(input.durationMs / 1000)}s)` : "";
-  const word =
-    input.status === "done" ? `judge config ok` : `judge precheck failed`;
-  writeStderrLine(
-    input.status === "started" ? `${`prechecking judge config`}\n` : `${word}${duration}\n`,
-  );
+  const word = input.status === "done" ? `judge config ok` : `judge precheck failed`;
+  writeStderrLine(input.status === "started" ? `${`prechecking judge config`}\n` : `${word}${duration}\n`);
 }
 
 /** 用例锁等待的起止(见 `LockWaitInput`)。没有活跃 coordinator 时退回一行 stderr ——

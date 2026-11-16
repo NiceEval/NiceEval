@@ -6,19 +6,19 @@ import type { ErrorSource } from "./types.ts";
  * identified. `captureLoc` removes NiceEval's own frames; failure to find a
  * project frame remains explicit instead of pointing at the rejection helper.
  */
-export function captureMigrationSource(options: { readonly root?: string } = {}): ErrorSource {
+export function captureMigrationSource(options: { readonly root?: string | undefined } = {}): ErrorSource {
   try {
-    const location = captureLoc(options.root === undefined ? {} : { root: options.root });
+    const location = captureLoc({ root: options.root });
     if (location === undefined || location.column === undefined) {
-      return Object.freeze({ state: "unavailable" as const, reason: "unresolvable" as const });
+      return { state: "unavailable" as const, reason: "unresolvable" as const };
     }
-    return Object.freeze({
+    return {
       state: "located" as const,
       file: location.file,
       line: location.line,
       column: location.column,
-    });
+    };
   } catch {
-    return Object.freeze({ state: "unavailable" as const, reason: "unresolvable" as const });
+    return { state: "unavailable" as const, reason: "unresolvable" as const };
   }
 }

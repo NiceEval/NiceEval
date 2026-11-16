@@ -1,22 +1,8 @@
 import type { LifecyclePhase } from "../../types.ts";
-import {
-  recordRegisteredCommandResult,
-  registerCommandCapture,
-  registeredCommandId,
-} from "../capture-identity.ts";
-import {
-  MAX_COMMANDS,
-} from "../../../record/family/source-receipt/limits.ts";
-import {
-  commandManifest,
-  commandStream,
-  emptyCommandStream,
-} from "../event-projection.ts";
-import {
-  producerCommandRegistrationInvalid,
-  producerEntityIdInvalid,
-  requiredPositive,
-} from "../support.ts";
+import { recordRegisteredCommandResult, registerCommandCapture, registeredCommandId } from "../capture-identity.ts";
+import { MAX_COMMANDS } from "../../../record/family/source-receipt/limits.ts";
+import { commandManifest, commandStream, emptyCommandStream } from "../event-projection.ts";
+import { producerCommandRegistrationInvalid, producerEntityIdInvalid, requiredPositive } from "../support.ts";
 import { sourceSegmentId } from "./receipt-helpers.ts";
 import {
   commandHandleState,
@@ -36,8 +22,8 @@ export function captureRunnerCommandStart(input: {
   readonly phase: LifecyclePhase;
   readonly invocationKind: "argv" | "shell";
   readonly command: string;
-  readonly args?: readonly string[];
-  readonly options?: unknown;
+  readonly args: readonly string[] | undefined;
+  readonly options: unknown | undefined;
 }): RunnerCommandCaptureHandle | undefined {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined) return undefined;
@@ -59,20 +45,25 @@ export function captureRunnerCommandStart(input: {
     markRuntimeFailure(runtime, producerCommandRegistrationInvalid());
     return undefined;
   }
-  const manifest = commandManifest({
-    commandId,
-    phase: input.phase,
-    invocationKind: input.invocationKind,
-    command: input.command,
-    args: input.args,
-    options: input.options,
-  }, runtime);
+  const manifest = commandManifest(
+    {
+      commandId,
+      phase: input.phase,
+      invocationKind: input.invocationKind,
+      command: input.command,
+      args: input.args,
+      options: input.options,
+    },
+    runtime,
+  );
   const command: CapturedCommandRuntime = {
     segmentId,
     commandId,
     registered,
     sequence: requiredPositive(runtime.commands.length + 1),
     manifest,
+
+    result: undefined,
   };
   runtime.commands.push(command);
   return makeCommandHandle(runtime, command);
@@ -83,10 +74,7 @@ function acceptRegisteredCommandResult(state: {
   readonly command: CapturedCommandRuntime;
 }): boolean {
   if (state.runtime.snapshot !== undefined) return false;
-  const registration = recordRegisteredCommandResult(
-    state.runtime.capture,
-    state.command.registered,
-  );
+  const registration = recordRegisteredCommandResult(state.runtime.capture, state.command.registered);
   if (registration.state !== "recorded") {
     markRuntimeFailure(state.runtime, producerCommandRegistrationInvalid());
     return false;
@@ -102,11 +90,11 @@ export function recordTerminalCommandResult(
   outcome: Exclude<CapturedCommandResult["outcome"], { readonly kind: "exited" }>,
 ): void {
   if (!acceptRegisteredCommandResult(state)) return;
-  state.command.result = Object.freeze({
-    outcome: Object.freeze(outcome),
+  state.command.result = {
+    outcome,
     stdout: emptyCommandStream(),
     stderr: emptyCommandStream(),
-  });
+  };
 }
 
 /** Records a real returned/CommandExitError result against its prior manifest. */
@@ -125,19 +113,21 @@ export function captureRunnerCommandResult(input: {
     state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
     state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
     state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
-    state.command.result = Object.freeze({
-      outcome: Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
+    state.command.result = {
+      outcome: { kind: "terminated" as const, reason: "transport-lost" as const },
       stdout: emptyCommandStream(),
       stderr: emptyCommandStream(),
-    });
+    };
     return;
   }
   const stdout = typeof input.stdout === "string" ? input.stdout : "";
   const stderr = typeof input.stderr === "string" ? input.stderr : "";
-  if (typeof input.stdout !== "string") state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
-  if (typeof input.stderr !== "string") state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
-  state.command.result = Object.freeze({
-    outcome: Object.freeze({ kind: "exited" as const, exitCode: input.exitCode }),
+  if (typeof input.stdout !== "string")
+    state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
+  if (typeof input.stderr !== "string")
+    state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
+  state.command.result = {
+    outcome: { kind: "exited" as const, exitCode: input.exitCode },
     stdout: commandStream({
       commandId: state.command.commandId,
       stream: "stdout",
@@ -150,36 +140,32 @@ export function captureRunnerCommandResult(input: {
       value: stderr,
       runtime: state.runtime,
     }),
-  });
+  };
 }
 
 /** A command timeout is a real terminal fact, unlike external interruption. */
-export function captureRunnerCommandTimeout(
-  handle: RunnerCommandCaptureHandle | undefined,
-): void {
+export function captureRunnerCommandTimeout(handle: RunnerCommandCaptureHandle | undefined): void {
   const state = commandHandleState(handle);
   if (state === undefined) return;
   state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stdout");
   state.runtime.commandLimitations.addCaptureFailed("command-capture", "command-stderr");
-  recordTerminalCommandResult(state, Object.freeze({
+  recordTerminalCommandResult(state, {
     kind: "terminated" as const,
     reason: "timeout" as const,
-  }));
+  });
 }
 
 /** A command call interrupted after registration is durably terminal/cancelled. */
-export function captureRunnerCommandInterrupted(
-  handle: RunnerCommandCaptureHandle | undefined,
-): void {
+export function captureRunnerCommandInterrupted(handle: RunnerCommandCaptureHandle | undefined): void {
   const state = commandHandleState(handle);
   if (state === undefined) return;
   state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-manifest");
   state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stdout");
   state.runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stderr");
-  recordTerminalCommandResult(state, Object.freeze({
+  recordTerminalCommandResult(state, {
     kind: "terminated" as const,
     reason: "cancelled" as const,
-  }));
+  });
 }
 
 /** Retains a registered command when the provider cannot return a normal result. */
@@ -195,7 +181,7 @@ export function captureRunnerCommandCaptureFailed(
   recordTerminalCommandResult(
     state,
     reason === "spawn-failed"
-      ? Object.freeze({ kind: "not-started" as const, reason: "spawn-failed" as const })
-      : Object.freeze({ kind: "terminated" as const, reason: "transport-lost" as const }),
+      ? { kind: "not-started" as const, reason: "spawn-failed" as const }
+      : { kind: "terminated" as const, reason: "transport-lost" as const },
   );
 }

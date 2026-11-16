@@ -15,7 +15,6 @@ import {
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
-import { withInspectionRequest } from "@niceeval/testkit";
 
 // 每条 Eval 的首轮只有一个 Attempt；只有结构化 verdict=failed 才由本测试另起一次 Invocation。
 const EXPECTED_OUTCOMES = [
@@ -56,14 +55,9 @@ function assertExactRetryEvalSelector(events: readonly ExpEvalEvent[], failed: E
   // families. Eval selectors intentionally use bare prefixes, so only the
   // Eval selector needs a preflight ambiguity check before spending a retry.
   const evals = events
-    .filter(
-      (event) =>
-        event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId),
-    )
+    .filter((event) => event.experimentId === failed.experimentId && event.evalId.startsWith(failed.evalId))
     .map((event) => event.evalId);
-  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([
-    failed.evalId,
-  ]);
+  expect(evals, `ambiguous Eval retry selector ${failed.experimentId}/${failed.evalId}`).toEqual([failed.evalId]);
 }
 
 beforeAll(async () => {
@@ -91,9 +85,7 @@ beforeAll(async () => {
     firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
     run.diagnostic(),
   ).toHaveLength(0);
-  expect(run.exitCode, run.diagnostic()).toBe(
-    firstEvents.some((event) => event.verdict === "failed") ? 1 : 0,
-  );
+  expect(run.exitCode, run.diagnostic()).toBe(firstEvents.some((event) => event.verdict === "failed") ? 1 : 0);
   for (const event of retryableFailed) assertExactRetryEvalSelector(firstEvents, event);
 
   // 这些 Invocation 继续写同一个保留证据的 Record；Record 是单写者，多个 CLI 进程
@@ -102,10 +94,7 @@ beforeAll(async () => {
     events: firstEvents,
     targets: retryableFailed,
     runRetry: (event) =>
-      niceeval.run(
-        ["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"],
-        { timeoutMs: 44 * 60_000 },
-      ),
+      niceeval.run(["exp", event.experimentId, event.evalId, "--rerun", "all", "--json"], { timeoutMs: 44 * 60_000 }),
   });
   if (retried.retries.length > 0) {
     process.stderr.write(
@@ -136,13 +125,10 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   // outcome：trace 是适配器收到的公开投影。工具身份保留原始未归一化名
   //（command_execution / file_change），canonical 名 shell / file_edit 也可能出现；
   // 工具身份、入参和完成结果必须穿过归一化、持久化与机器读回。
-  const queried = await withInspectionRequest({
-    kind: "attempt.trace",
-    locator: codingTaskLocator,
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", codingTaskLocator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(
     trace.includes("file_edit") || trace.includes("file_change"),
@@ -154,8 +140,8 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
   ).toBe(true);
   expect(trace).toContain("niceeval-e2e-run-914");
 
-  const markerResult = document.trace.conversation.items.find((item) =>
-    item.kind === "tool-result" && item.output.includes("niceeval-e2e-run-914")
+  const markerResult = document.trace.conversation.items.find(
+    (item) => item.kind === "tool-result" && item.output.includes("niceeval-e2e-run-914"),
   );
   expect(markerResult).toMatchObject({
     kind: "tool-result",
@@ -169,14 +155,11 @@ it("attempt.trace 读回 Codex CLI 的代表性工具证据", async () => {
 it("attempt.usage 计入同一轮内全部模型请求", async () => {
   // coding-task 在同一轮里先 apply_patch 再运行命令，模型拿到工具结果后才能回复，
   // 所以这一轮至少有两次模型请求；只记最后一次请求的用量会把它报成 1。
-  const queried = await withInspectionRequest({
-    kind: "attempt.usage",
-    locator: locatorFor("coding-task"),
-  }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+  const queried = await niceeval.run(["show", locatorFor("coding-task"), "usage", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const { usage } = queried.attemptUsage();
-  const requests = usage.observations.filter((observation) =>
-    observation.kind === "request" && observation.requestKind === "model"
+  const requests = usage.observations.filter(
+    (observation) => observation.kind === "request" && observation.requestKind === "model",
   );
   expect(requests.length, JSON.stringify(usage.observations)).toBeGreaterThanOrEqual(2);
 });

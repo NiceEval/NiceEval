@@ -14,7 +14,7 @@
 
 按当前意图（运行与复验、只读诊断、编写评估、首次接入）扫描下方页面的标题与自述，选择最相关的一至三页。
 操作步骤由所选页面拥有；需要精确签名时再补读相应 reference。保留用户给出的范围与授权。
-读取结果只走公开 `show`、`query` 与 `view`。公开命令缺少所需证据时报告产品缺口，不读取私有结果文件或实现源码绕过。
+读取结果只走公开 `show`（脚本与 agent 加 `--json`）与 `view`。公开命令缺少所需证据时报告产品缺口，不读取私有结果文件或实现源码绕过。
 
 <!-- GENERATED:BEGIN bundled-docs-tree -->
 <!-- GENERATED:END bundled-docs-tree -->
@@ -24,3 +24,5 @@
 - 安装后只从本索引进入包内文档。官网适合安装前了解产品，不是安装版本的 API 事实源。
 - 升级 `niceeval` 后重新运行 `niceeval init`，刷新项目里的托管指引。
 - 如果某个路径不存在，先重新读取本文件。不要自行推测替代文件名或旧 API。
+
+先运行 `niceeval show --json`，再按 document 的 `links` 执行完整 `command`。续读结构化结果时添加 `--json`；用 `niceeval show <address> --explain` 查看读取范围。

@@ -20,15 +20,21 @@ export interface ViewGenerationBinding<Snapshot = unknown> {
   readonly identity: ViewGenerationIdentity;
   readonly queryClient: QueryClient;
   readonly snapshot: Snapshot;
-  inspectRepository<Kind extends InspectionOperationId>(operation: InspectionOperationFor<Kind>): Promise<InspectionSuccessDocumentFor<Kind>>;
+  inspectRepository<Kind extends InspectionOperationId>(
+    operation: InspectionOperationFor<Kind>,
+  ): Promise<InspectionSuccessDocumentFor<Kind>>;
 }
 
 export class GenerationLease<Snapshot = unknown> {
   #released = false;
   constructor(readonly generation: ViewGeneration<Snapshot>) {}
-  get identity(): ViewGenerationIdentity { return this.generation.identity; }
+  get identity(): ViewGenerationIdentity {
+    return this.generation.identity;
+  }
 
-  inspect<Kind extends InspectionOperationId>(operation: InspectionOperationFor<Kind>): Promise<InspectionSuccessDocumentFor<Kind>> {
+  inspect<Kind extends InspectionOperationId>(
+    operation: InspectionOperationFor<Kind>,
+  ): Promise<InspectionSuccessDocumentFor<Kind>> {
     if (this.#released) return Promise.reject(new Error("Generation lease is released."));
     return this.generation.queryClient.fetchQuery(inspectionQueryOptions(this.generation, operation));
   }
@@ -55,16 +61,20 @@ export class ViewGeneration<Snapshot = unknown> {
   ) {
     this.identity = repository.generationId as ViewGenerationIdentity;
     const generation = this;
-    this.binding = Object.freeze({
+    this.binding = {
       identity: this.identity,
       queryClient: this.queryClient,
-      get snapshot() { return generation.snapshot; },
+      get snapshot() {
+        return generation.snapshot;
+      },
       inspectRepository<Kind extends InspectionOperationId>(operation: InspectionOperationFor<Kind>) {
         return generation.inspectRepository(operation);
       },
-    });
+    };
   }
-  get status(): "preparing" | "current" | "retiring" | "closed" { return this.#state; }
+  get status(): "preparing" | "current" | "retiring" | "closed" {
+    return this.#state;
+  }
   get snapshot(): Snapshot {
     if (this.#snapshot === undefined) throw new Error("View generation snapshot is not ready.");
     return this.#snapshot;
@@ -83,7 +93,9 @@ export class ViewGeneration<Snapshot = unknown> {
     return new GenerationLease(this);
   }
 
-  inspectRepository<Kind extends InspectionOperationId>(operation: InspectionOperationFor<Kind>): Promise<InspectionSuccessDocumentFor<Kind>> {
+  inspectRepository<Kind extends InspectionOperationId>(
+    operation: InspectionOperationFor<Kind>,
+  ): Promise<InspectionSuccessDocumentFor<Kind>> {
     if (this.#state === "retiring" || this.#state === "closed") {
       return Promise.reject(new Error(`View generation is ${this.#state}.`));
     }
@@ -110,7 +122,10 @@ export class ViewGeneration<Snapshot = unknown> {
     this.#closeWhenIdle();
   }
 
-  close(): void { this.#leases = 0; this.#close(); }
+  close(): void {
+    this.#leases = 0;
+    this.#close();
+  }
   releaseLease(): void {
     if (this.#leases > 0) this.#leases -= 1;
     this.#closeWhenIdle();

@@ -3,7 +3,11 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { isSqliteRecordErrorCode, SqliteRecordError, sqliteError } from "./errors.ts";
+import { sqliteError } from "./errors.ts";
+
+import { decodeStorageWorkerFailure, isStorageWorkerFailure, type StorageWorkerFailure } from "./worker-protocol.ts";
+import type { SqliteRecordError } from "./errors.ts";
+import type { RunStorageError } from "../../run/storage/errors.ts";
 
 export { projectRecordReadMode } from "./portable-capture.ts";
 export type { ProjectRecordReadMode } from "./portable-capture.ts";
@@ -17,11 +21,7 @@ interface ExternalRecordImportSuccess {
 
 interface ExternalRecordImportFailure {
   readonly state: "failure";
-  readonly error: {
-    readonly code: string;
-    readonly operation: string;
-    readonly message: string;
-  };
+  readonly error: StorageWorkerFailure;
 }
 
 type ExternalRecordImportResponse = ExternalRecordImportSuccess | ExternalRecordImportFailure;
@@ -42,10 +42,15 @@ export interface ExternalRecordImportHandle {
 }
 
 function workerExecArgv(): string[] {
-  return process.execArgv.filter((argument) =>
-    !argument.startsWith("--input-type") && argument !== "--expose-gc" &&
-    !argument.startsWith("--max-old-space-size") && !argument.startsWith("--max_old_space_size") &&
-    !argument.startsWith("--max-semi-space-size") && !argument.startsWith("--max_semi_space_size"));
+  return process.execArgv.filter(
+    (argument) =>
+      !argument.startsWith("--input-type") &&
+      argument !== "--expose-gc" &&
+      !argument.startsWith("--max-old-space-size") &&
+      !argument.startsWith("--max_old_space_size") &&
+      !argument.startsWith("--max-semi-space-size") &&
+      !argument.startsWith("--max_semi_space_size"),
+  );
 }
 
 function isResponse(value: unknown): value is ExternalRecordImportResponse {
@@ -53,19 +58,11 @@ function isResponse(value: unknown): value is ExternalRecordImportResponse {
   const state = Reflect.get(value, "state");
   if (state === "success") return Number.isSafeInteger(Reflect.get(value, "sealedRunCount"));
   if (state !== "failure") return false;
-  const error = Reflect.get(value, "error");
-  return typeof error === "object" && error !== null &&
-    typeof Reflect.get(error, "code") === "string" &&
-    typeof Reflect.get(error, "operation") === "string" &&
-    typeof Reflect.get(error, "message") === "string";
+  return isStorageWorkerFailure(Reflect.get(value, "error"));
 }
 
-function workerFailure(response: ExternalRecordImportFailure): SqliteRecordError {
-  return new SqliteRecordError(
-    isSqliteRecordErrorCode(response.error.code) ? response.error.code : "record-sqlite-error",
-    response.error.operation,
-    response.error.message,
-  );
+function workerFailure(response: ExternalRecordImportFailure): SqliteRecordError | RunStorageError {
+  return decodeStorageWorkerFailure(response.error);
 }
 
 /**
@@ -78,9 +75,17 @@ export function startExternalRecordImport(
   deadlineEpochMs: number,
   sourceKind: RecordImportSourceKind = "external-record",
 ): ExternalRecordImportHandle {
-  if (sourcePath.length === 0 || !Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now() ||
-    (sourceKind !== "external-record" && sourceKind !== "project-record" && sourceKind !== "captured-project-record")) {
-    throw sqliteError("record-resource-limit-exceeded", "import-record", "Record import requires a non-empty path and future deadline");
+  if (
+    sourcePath.length === 0 ||
+    !Number.isSafeInteger(deadlineEpochMs) ||
+    deadlineEpochMs <= Date.now() ||
+    (sourceKind !== "external-record" && sourceKind !== "project-record" && sourceKind !== "captured-project-record")
+  ) {
+    throw sqliteError(
+      "record-resource-limit-exceeded",
+      "import-record",
+      "Record import requires a non-empty path and future deadline",
+    );
   }
   const temporaryRoot = mkdtempSync(join(tmpdir(), "niceeval-record-import-"));
   chmodSync(temporaryRoot, 0o700);
@@ -121,26 +126,29 @@ export function startExternalRecordImport(
     };
     const onMessage = (value: unknown): void => {
       if (!isResponse(value)) {
-        stopAndReject(sqliteError("record-database-invalid", "import-record", "Record import worker returned an invalid response"));
+        stopAndReject(
+          sqliteError("record-database-invalid", "import-record", "Record import worker returned an invalid response"),
+        );
         return;
       }
       if (value.state === "failure") {
         stopAndReject(workerFailure(value));
         return;
       }
-      finish(() => resolve(Object.freeze({ path: generationPath, sealedRunCount: value.sealedRunCount })));
+      finish(() => resolve({ path: generationPath, sealedRunCount: value.sealedRunCount }));
     };
-    const onError = (cause: unknown): void => stopAndReject(sqliteError(
-      "record-database-invalid",
-      "import-record",
-      "Record import worker failed",
-      cause,
-    ));
-    const onExit = (code: number): void => finish(() => reject(sqliteError(
-      "record-database-invalid",
-      "import-record",
-      `Record import worker exited before producing a generation (code ${code})`,
-    )));
+    const onError = (cause: unknown): void =>
+      stopAndReject(sqliteError("record-database-invalid", "import-record", "Record import worker failed", cause));
+    const onExit = (code: number): void =>
+      finish(() =>
+        reject(
+          sqliteError(
+            "record-database-invalid",
+            "import-record",
+            `Record import worker exited before producing a generation (code ${code})`,
+          ),
+        ),
+      );
     detach = (): void => {
       worker.off("message", onMessage);
       worker.off("error", onError);
@@ -150,22 +158,32 @@ export function startExternalRecordImport(
     worker.once("error", onError);
     worker.once("exit", onExit);
     const remaining = Math.max(1, deadlineEpochMs - Date.now());
-    timer = setTimeout(() => stopAndReject(sqliteError(
-      "record-resource-limit-exceeded",
-      "import-record",
-      "Record import worker exceeded its hard deadline",
-    )), remaining);
+    timer = setTimeout(
+      () =>
+        stopAndReject(
+          sqliteError(
+            "record-resource-limit-exceeded",
+            "import-record",
+            "Record import worker exceeded its hard deadline",
+          ),
+        ),
+      remaining,
+    );
   });
 
-  return Object.freeze({
+  return {
     result,
     close: () => {
       if (closePromise !== undefined) return closePromise;
       clearTimeout(timer);
-      closePromise = worker.terminate()
-        .then(() => undefined, () => undefined)
+      closePromise = worker
+        .terminate()
+        .then(
+          () => undefined,
+          () => undefined,
+        )
         .then(() => rm(temporaryRoot, { recursive: true, force: true }));
       return closePromise;
     },
-  });
+  };
 }

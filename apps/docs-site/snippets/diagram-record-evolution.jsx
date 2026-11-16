@@ -29,9 +29,7 @@ export const RecordEvolution = () => (
             Record 磁盘不变
           </div>
         </div>
-        <p className="ne-why">
-          只要已保存事实的语义不变，作者调用方式和计算算法可以独立演进。
-        </p>
+        <p className="ne-why">只要已保存事实的语义不变，作者调用方式和计算算法可以独立演进。</p>
       </section>
 
       <section className="ne-ev-case">
@@ -55,9 +53,7 @@ export const RecordEvolution = () => (
             attachment/v3
           </span>
         </div>
-        <p className="ne-why">
-          payload 的 shape 或语义改变时，每条边只连接相邻版本。不能无损迁移的边如实报告不可用。
-        </p>
+        <p className="ne-why">payload 的 shape 或语义改变时，每条边只连接相邻版本。不能无损迁移的边如实报告不可用。</p>
       </section>
 
       <section className="ne-ev-case">
@@ -81,9 +77,7 @@ export const RecordEvolution = () => (
             record/v3
           </span>
         </div>
-        <p className="ne-why">
-          只有 owner、引用、目录、完成判断或 Core shape 改变时，才提升 Core major。
-        </p>
+        <p className="ne-why">只有 owner、引用、目录、完成判断或 Core shape 改变时，才提升 Core major。</p>
       </section>
     </div>
 

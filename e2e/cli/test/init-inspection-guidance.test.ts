@@ -23,7 +23,8 @@ test.concurrent("init 刷新全部项目指引并保留用户内容", async () =
     expect(codexSkill).toContain("name: niceeval");
     expect(codexSkill).toContain("node_modules/niceeval/INDEX.md");
     expect(codexSkill).toContain("niceeval show");
-    expect(codexSkill).toContain("niceeval query");
+    expect(codexSkill).toContain("--json");
+    expect(codexSkill).not.toContain("niceeval query");
     expect(codexSkill).toContain("niceeval view");
     const refreshed = await niceeval.run(["init"]);
     expect(refreshed.exitCode, refreshed.diagnostic()).toBe(0);
@@ -38,7 +39,10 @@ test.concurrent.each([
   ["missing end", "<!-- BEGIN:niceeval-agent-rules -->\n"],
   ["missing begin", "<!-- END:niceeval-agent-rules -->\n"],
   ["reversed", "<!-- END:niceeval-agent-rules -->\n<!-- BEGIN:niceeval-agent-rules -->\n"],
-  ["duplicate", "<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n"],
+  [
+    "duplicate",
+    "<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n<!-- BEGIN:niceeval-agent-rules -->\n<!-- END:niceeval-agent-rules -->\n",
+  ],
 ])("init 在写入前拒绝损坏的规则标记 %s", async (_kind, markers) => {
   await e2e.case("init-invalid-markers", async ({ paths, commands: { niceeval } }) => {
     const agents = `User rules\n${markers}`;
@@ -78,7 +82,10 @@ test.concurrent("子包 init 在 Git 根写入可读取的索引路径与命令"
     const packageRoot = join(paths.projectRoot, "tools/evals");
     await mkdir(packageRoot, { recursive: true });
     await symlink(join(paths.projectRoot, "node_modules"), join(packageRoot, "node_modules"), "dir");
-    await writeFile(join(packageRoot, "package.json"), JSON.stringify({ type: "module", packageManager: "pnpm@11.18.0" }));
+    await writeFile(
+      join(packageRoot, "package.json"),
+      JSON.stringify({ type: "module", packageManager: "pnpm@11.18.0" }),
+    );
     const result = await runProcess([...cliBinary, "init"], { cwd: packageRoot });
     expect(result.exitCode, result.diagnostic()).toBe(0);
     const agents = await readFile(join(paths.projectRoot, "AGENTS.md"), "utf8");

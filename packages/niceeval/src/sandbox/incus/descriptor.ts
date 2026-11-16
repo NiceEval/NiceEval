@@ -15,17 +15,31 @@ export const INCUS_WORKDIR = "/home/sandbox/workspace";
 export const INCUS_USER = "node";
 export const INCUS_UID = 1000;
 
-const ParseOptions = Object.freeze({
+const ParseOptions = {
   errors: "all" as const,
   exact: true,
   onExcessProperty: "error" as const,
-});
+};
 
 const nonEmptyString = (identifier: string) =>
-  Schema.String.pipe(Schema.check(Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), { identifier, description: "a non-empty string without NUL" })));
+  Schema.String.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => value.trim() !== "" && !value.includes("\0"), {
+        identifier,
+        description: "a non-empty string without NUL",
+      }),
+    ),
+  );
 
 const positiveSafeInteger = (identifier: string) =>
-  Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, { identifier, description: "a positive safe integer" })));
+  Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
+        identifier,
+        description: "a positive safe integer",
+      }),
+    ),
+  );
 
 const DomainSchema = Schema.Struct({
   name: Schema.Literals(["reference", "development"]),
@@ -40,7 +54,13 @@ const DomainSchema = Schema.Struct({
   maxInstances: positiveSafeInteger("IncusMaxInstances"),
   artifactProject: nonEmptyString("IncusArtifactProject"),
   artifactMaxInstances: positiveSafeInteger("IncusArtifactMaxInstances"),
-  artifactStorageReserveBytes: Schema.Number.pipe(Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, { description: "a non-negative safe integer" }))),
+  artifactStorageReserveBytes: Schema.Number.pipe(
+    Schema.check(
+      Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0, {
+        description: "a non-negative safe integer",
+      }),
+    ),
+  ),
   artifactEstimatedBytes: Schema.optional(positiveSafeInteger("IncusArtifactEstimatedBytes")),
   dockerDataBytes: Schema.optional(positiveSafeInteger("IncusDockerDataBytes")),
   workdir: Schema.Literal(INCUS_WORKDIR),
@@ -65,7 +85,7 @@ export type IncusQuota = "attested" | "unattested";
 export interface IncusDomainDescriptor {
   readonly name: IncusDomainName;
   readonly status: IncusDomainStatus;
-  readonly reason?: string;
+  readonly reason: string | undefined;
   readonly executionDomainId: string;
   readonly project: string;
   readonly storagePool: string;
@@ -76,14 +96,14 @@ export interface IncusDomainDescriptor {
   readonly artifactProject: string;
   readonly artifactMaxInstances: number;
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
-  readonly dockerDataBytes?: number;
+  readonly artifactEstimatedBytes: number | undefined;
+  readonly dockerDataBytes: number | undefined;
   readonly workdir: typeof INCUS_WORKDIR;
   readonly user: typeof INCUS_USER;
   readonly hostGateway: string;
-  readonly targetAppProxyPort?: number;
-  readonly source?: string;
-  readonly backingDevice?: string;
+  readonly targetAppProxyPort: number | undefined;
+  readonly source: string | undefined;
+  readonly backingDevice: string | undefined;
   /** Only digest-pinned base VMs may enter the artifact graph. */
   readonly trustedBaseImages: readonly string[];
 }
@@ -94,11 +114,11 @@ export interface IncusProviderDescriptor {
   readonly path: string;
 }
 
-function freezeDomain(domain: IncusDomainDescriptor): IncusDomainDescriptor {
-  return Object.freeze({
+function normalizeDomain(domain: typeof DomainSchema.Type): IncusDomainDescriptor {
+  return {
     name: domain.name,
     status: domain.status,
-    ...(domain.reason === undefined ? {} : { reason: domain.reason }),
+    reason: domain.reason,
     executionDomainId: domain.executionDomainId,
     project: domain.project,
     storagePool: domain.storagePool,
@@ -109,16 +129,16 @@ function freezeDomain(domain: IncusDomainDescriptor): IncusDomainDescriptor {
     artifactProject: domain.artifactProject,
     artifactMaxInstances: domain.artifactMaxInstances,
     artifactStorageReserveBytes: domain.artifactStorageReserveBytes,
-    ...(domain.artifactEstimatedBytes === undefined ? {} : { artifactEstimatedBytes: domain.artifactEstimatedBytes }),
-    ...(domain.dockerDataBytes === undefined ? {} : { dockerDataBytes: domain.dockerDataBytes }),
+    artifactEstimatedBytes: domain.artifactEstimatedBytes,
+    dockerDataBytes: domain.dockerDataBytes,
     workdir: INCUS_WORKDIR,
     user: INCUS_USER,
     hostGateway: domain.hostGateway,
-    ...(domain.targetAppProxyPort === undefined ? {} : { targetAppProxyPort: domain.targetAppProxyPort }),
-    ...(domain.source === undefined ? {} : { source: domain.source }),
-    ...(domain.backingDevice === undefined ? {} : { backingDevice: domain.backingDevice }),
-    trustedBaseImages: Object.freeze([...domain.trustedBaseImages]),
-  });
+    targetAppProxyPort: domain.targetAppProxyPort,
+    source: domain.source,
+    backingDevice: domain.backingDevice,
+    trustedBaseImages: domain.trustedBaseImages,
+  };
 }
 
 function semanticError(domain: IncusDomainDescriptor, path: string, message: string): IncusProviderError {
@@ -212,23 +232,21 @@ function decodeDescriptor(value: unknown, path: string): IncusProviderDescriptor
       );
     }
     names.add(domain.name);
-    const frozen = freezeDomain(domain);
+    const frozen = normalizeDomain(domain);
     const invalid = validateDomain(frozen);
     if (invalid !== undefined) throw invalid;
     domains.push(frozen);
   }
   if (domains.length === 0) {
-    throw incusError(
-      "incus-descriptor-invalid",
-      `Incus descriptor ${JSON.stringify(path)} has no domains.`,
-      ["Declare a reference domain and optionally a development domain."],
-    );
+    throw incusError("incus-descriptor-invalid", `Incus descriptor ${JSON.stringify(path)} has no domains.`, [
+      "Declare a reference domain and optionally a development domain.",
+    ]);
   }
-  return Object.freeze({
+  return {
     schemaVersion: INCUS_DESCRIPTOR_SCHEMA_VERSION,
-    domains: Object.freeze(domains),
+    domains,
     path,
-  });
+  };
 }
 
 export function incusDescriptorPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -242,9 +260,10 @@ export async function loadIncusDescriptor(env: NodeJS.ProcessEnv = process.env):
   try {
     text = await readFile(path, "utf8");
   } catch (cause) {
-    const code = cause !== null && typeof cause === "object" && "code" in cause
-      ? String((cause as { readonly code?: unknown }).code)
-      : "";
+    const code =
+      cause !== null && typeof cause === "object" && "code" in cause
+        ? String((cause as { readonly code?: unknown }).code)
+        : "";
     if (code === "ENOENT") {
       throw incusError(
         "incus-undeployed",

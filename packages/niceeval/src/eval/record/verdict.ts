@@ -27,9 +27,7 @@ export const VerdictPayloadSchema = Schema.Struct({
 });
 
 export type VerdictPayload = Schema.toType<typeof VerdictPayloadSchema>["Type"];
-export type VerdictPayloadEncoded = Schema.Codec.Encoded<
-  typeof VerdictPayloadSchema
->;
+export type VerdictPayloadEncoded = Schema.Codec.Encoded<typeof VerdictPayloadSchema>;
 
 export type VerdictFoldInput = EvaluationAttemptFacts;
 export const VerdictFoldInputSchema = EvaluationAttemptFactsSchema;
@@ -38,10 +36,7 @@ export const VerdictFoldInputSchema = EvaluationAttemptFactsSchema;
 // @concord-implements docs/feature/verdict/architecture.md
 // @concord-implements docs/feature/verdict/use-case/strict-quality-gate.md
 export function foldVerdict(input: VerdictFoldInput): VerdictState {
-  if (
-    input.execution === "errored"
-    || input.assertions.some(isRequiredAssertionUnavailableOrErrored)
-  ) {
+  if (input.execution === "errored" || input.assertions.some(isRequiredAssertionUnavailableOrErrored)) {
     return "errored";
   }
   if (input.assertions.some(isGateFailed)) return "failed";
@@ -60,10 +55,8 @@ export function foldRecordedAttemptVerdict(input: {
   return foldVerdict(recordedAttemptFacts(input));
 }
 
-export function buildVerdictPayload(
-  input: VerdictFoldInput,
-): VerdictPayload {
-  return Object.freeze({ state: foldVerdict(input) });
+export function buildVerdictPayload(input: VerdictFoldInput): VerdictPayload {
+  return { state: foldVerdict(input) };
 }
 
 export type VerdictCoherenceIssue = {
@@ -78,14 +71,14 @@ export function validateVerdictCoherence(input: {
 }): readonly VerdictCoherenceIssue[] {
   const expected = foldVerdict(input.fold);
   return input.payload.state === expected
-    ? Object.freeze([])
-    : Object.freeze([
-        Object.freeze({
+    ? []
+    : [
+        {
           code: "verdict-fold-mismatch" as const,
           expected,
           actual: input.payload.state,
-        }),
-      ]);
+        },
+      ];
 }
 
 /** Plain domain projection for callers that need NiceEval's public verdict. */

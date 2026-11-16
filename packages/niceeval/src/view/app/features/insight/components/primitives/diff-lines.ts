@@ -6,10 +6,14 @@ import { normalizeTurnLabel } from "./shared.ts";
 
 function renderAlignedRows(rows: readonly (readonly string[])[]): string {
   const widths = rows.reduce<number[]>((out, row) => {
-    row.forEach((cell, index) => { out[index] = Math.max(out[index] ?? 0, cell.length); });
+    row.forEach((cell, index) => {
+      out[index] = Math.max(out[index] ?? 0, cell.length);
+    });
     return out;
   }, []);
-  return rows.map((row) => row.map((cell, index) => index === row.length - 1 ? cell : cell.padEnd(widths[index])).join("  ")).join("\n");
+  return rows
+    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]))).join("  "))
+    .join("\n");
 }
 
 export type DiffChange = "added" | "modified" | "deleted";
@@ -17,7 +21,7 @@ export type DiffChange = "added" | "modified" | "deleted";
 /** 一个 send 窗口内这个文件的改动;`patch` 省略即这一段没有内联内容。 */
 export interface DiffFileWindow {
   window: string;
-  patch?: string;
+  patch: string | undefined;
 }
 
 export interface DiffFile {
@@ -28,7 +32,9 @@ export interface DiffFile {
   added: number;
   removed: number;
   /** 内容被省略的文件只报字节数与原因(二进制 / 超过单文件阈值的文本),`windows` 里不带 patch。 */
-  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
+  elided:
+    | { reason: "binary" | "oversized-text"; beforeBytes: number | undefined; afterBytes: number | undefined }
+    | undefined;
   /** 触碰过该文件的窗口,按时序,至少一条。 */
   windows: readonly DiffFileWindow[];
 }
@@ -37,7 +43,14 @@ export type DiffContent = readonly DiffFile[];
 
 /** 与 diff.json 的 net 同一套词:两面都打印 A / M / D。 */
 export function diffChangeLetter(change: DiffChange): string {
-  return change === "added" ? "A" : change === "deleted" ? "D" : "M";
+  switch (change) {
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    default:
+      return "M";
+  }
 }
 
 export function diffWindowLabels(file: DiffFile): string {
@@ -68,7 +81,10 @@ export function sortDiffFiles(files: DiffContent): DiffFile[] {
  */
 export function diffSummaryText(
   files: DiffContent,
-  opts: { drillDown?: string; singleFileHint?: boolean } = {},
+  opts: { drillDown: string | undefined; singleFileHint: boolean | undefined } = {
+    drillDown: undefined,
+    singleFileHint: undefined,
+  },
 ): string {
   if (files.length === 0) return "";
   const sorted = sortDiffFiles(files);
@@ -199,9 +215,7 @@ function finalize(node: MutableNode): DiffTreeNode {
     const only = [...current.dirs.values()][0]!;
     current = { name: `${current.name}/${only.name}`, path: only.path, dirs: only.dirs, files: only.files };
   }
-  const dirs = [...current.dirs.values()]
-    .map(finalize)
-    .sort((a, b) => a.path.localeCompare(b.path));
+  const dirs = [...current.dirs.values()].map(finalize).sort((a, b) => a.path.localeCompare(b.path));
   const files = current.files;
   let fileCount = files.length;
   let added = 0;

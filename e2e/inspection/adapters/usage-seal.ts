@@ -7,13 +7,24 @@ export const usageSealAdapter = defineAdapter({
     return {
       recordKnownCost() {
         ctx.recordUsage({
-          callId: "accepted", provider: "offline-application", model: "application-model", status: "succeeded",
-          inputTokens: 4, inputTotalTokens: 4, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0,
+          callId: "accepted",
+          provider: "offline-application",
+          model: "application-model",
+          status: "succeeded",
+          inputTokens: 4,
+          inputTotalTokens: 4,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
           cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "offline.response" } },
         });
       },
-      finishComplete() { ctx.sealUsage({ state: "complete" }); },
-      finishPartial() { ctx.sealUsage({ state: "partial", reason: "journal-not-sealed" }); },
+      finishComplete() {
+        ctx.sealUsage({ state: "complete" });
+      },
+      finishPartial() {
+        ctx.sealUsage({ state: "partial", reason: "journal-not-sealed" });
+      },
       catchInvalidReason() {
         try {
           ctx.sealUsage({ state: "partial", reason: "AI event stream incomplete" });
@@ -25,8 +36,15 @@ export const usageSealAdapter = defineAdapter({
       catchWriteAfterSeal() {
         try {
           ctx.recordUsage({
-            callId: "after-seal", provider: "offline-application", model: "application-model", status: "succeeded",
-            inputTokens: 8, inputTotalTokens: 8, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0,
+            callId: "after-seal",
+            provider: "offline-application",
+            model: "application-model",
+            status: "succeeded",
+            inputTokens: 8,
+            inputTotalTokens: 8,
+            outputTokens: 2,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
             cost: { amount: "0.875", currency: "USD", source: { kind: "reported", id: "offline.response" } },
           });
           return false;

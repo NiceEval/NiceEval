@@ -21,16 +21,18 @@ const partial = defineScoreEval({
   description: "Known contribution remains partial when another score source is unavailable",
   test(t) {
     t.score(9).label("Known partial contribution");
-    t.score({ state: "unavailable", reason: "fixture-score-source-missing" }, { weight: 20 })
-      .label("Unavailable remaining contribution");
+    t.score({ state: "unavailable", reason: "fixture-score-source-missing" }, { weight: 20 }).label(
+      "Unavailable remaining contribution",
+    );
   },
 });
 
 const unavailable = defineScoreEval({
   description: "Unavailable score source does not manufacture zero",
   test(t) {
-    t.score({ state: "unavailable", reason: "fixture-score-source-missing" }, { weight: 20 })
-      .label("Unavailable contribution");
+    t.score({ state: "unavailable", reason: "fixture-score-source-missing" }, { weight: 20 }).label(
+      "Unavailable contribution",
+    );
   },
 });
 

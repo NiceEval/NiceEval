@@ -2,14 +2,7 @@
 // Experiment 层级在这里从闭合 ExperimentListItem + 组读数投影成 TableContent.subRows;
 // 组件本体是中立 Table 原语,不知道 experiment / Eval / Attempt 的存储来源。
 
-import type {
-  Cell,
-  ColumnSpec,
-  MetricValue,
-  TableContent,
-  TableContentRow,
-  Verdict,
-} from "../../components/cell.tsx";
+import type { Cell, ColumnSpec, MetricValue, TableContent, TableContentRow } from "../../components/cell.tsx";
 import { localizedMessage } from "../../components/locale.ts";
 import {
   experimentEvalLayout,
@@ -79,21 +72,21 @@ function tallyVerdicts(attempts: readonly AttemptListItem[]): {
 } {
   const counts = { passed: 0, failed: 0, errored: 0, skipped: 0 };
   for (const attempt of attempts) {
-    if (attempt.verdict === null) continue;
+    if (attempt.verdict === undefined) continue;
     counts[attempt.verdict] += 1;
   }
   return counts;
 }
 
 function verdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
-  return { kind: "verdict", counts: tallyVerdicts(attempts) };
+  return { kind: "verdict", mode: "counts", counts: tallyVerdicts(attempts) };
 }
 
 /** Score 行不重复必然的 passed，只保留会改变用户判断的异常计数。 */
 function exceptionalVerdictCountsCell(attempts: readonly AttemptListItem[]): Cell {
   const counts = tallyVerdicts(attempts);
   if (counts.failed + counts.errored + counts.skipped === 0) return { kind: "notApplicable" };
-  return { kind: "verdict", counts: { ...counts, passed: 0 } };
+  return { kind: "verdict", mode: "counts", counts: { ...counts, passed: 0 } };
 }
 
 function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
@@ -103,29 +96,36 @@ function evalVerdictCell(attempts: readonly AttemptListItem[]): Cell {
 
 function verdictCell(attempt: AttemptListItem): Cell {
   const { verdict } = attempt;
-  if (verdict === null) return { kind: "notApplicable" };
-  const scored = verdict === "passed" && attempt.evaluationKind === "points" &&
-    attempt.score?.state === "available" && attempt.score.value !== null;
-  return { kind: "verdict", verdict, ...(scored ? { label: localizedMessage("verdict.scored") } : {}) };
+  if (verdict === undefined) return { kind: "notApplicable" };
+  const scored =
+    verdict === "passed" &&
+    attempt.evaluationKind === "points" &&
+    attempt.score?.state === "available" &&
+    attempt.score.value !== undefined;
+  return {
+    kind: "verdict",
+    mode: "single",
+    verdict,
+    label: scored ? localizedMessage("verdict.scored") : undefined,
+    bare: false,
+  };
 }
 
 function locatorCell(attempt: AttemptListItem): Cell {
   return {
     kind: "locator",
     locator: attempt.locator,
-    ...(attempt.verdict === null ? {} : { verdict: attempt.verdict }),
+    verdict: attempt.verdict ?? undefined,
   };
 }
 
 function textCell(text: string, detail?: string): Cell {
-  return detail ? { kind: "text", text, detail } : { kind: "text", text };
+  return { kind: "text", text, detail };
 }
 
 /** 失败摘要格:closed 摘录缺失时如实显示 "—",不发明文案。 */
 function resultCell(attempt: AttemptListItem): Cell {
-  return attempt.failureSummary === null
-    ? { kind: "text", text: "—" }
-    : { kind: "summary", text: attempt.failureSummary };
+  return attempt.failureSummary === undefined ? textCell("—") : { kind: "summary", text: attempt.failureSummary };
 }
 
 /**
@@ -140,17 +140,15 @@ export function attemptCells(attempt: AttemptListItem): CellBag {
     // locator 已携带这次判定；层级 Result 不重复同一个状态。
     ...(attempt.durationMs === undefined ? {} : { durationMs: measureCell(attempt.durationMs) }),
     ...(attempt.tokens === undefined ? {} : { tokens: measureCell(attempt.tokens) }),
-    ...(attempt.score === undefined
-      ? {}
-      : { totalScore: measureCell(attempt.score) }),
+    ...(attempt.score === undefined ? {} : { totalScore: measureCell(attempt.score) }),
     ...(attempt.costUSD === undefined ? {} : { costUSD: measureCell(attempt.costUSD) }),
   };
 }
 
 const HIERARCHY_COLUMNS_PREFIX: readonly ColumnSpec[] = [
-  { key: "entity", header: HEADER.entity },
-  { key: "model", header: HEADER.model },
-  { key: "adapter", header: HEADER.adapter },
+  { key: "entity", header: HEADER.entity, better: undefined },
+  { key: "model", header: HEADER.model, better: undefined },
+  { key: "adapter", header: HEADER.adapter, better: undefined },
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
 ];
 
@@ -167,9 +165,9 @@ const COST_COLUMN: ColumnSpec = { key: "costUSD", better: "lower", header: HEADE
 
 /** Attempt 平铺表的列集(AttemptList / FailureList 同一份)。 */
 const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
-  { key: "entity", header: HEADER.entity },
-  { key: "verdict", header: HEADER.verdict },
-  { key: "result", header: HEADER.result },
+  { key: "entity", header: HEADER.entity, better: undefined },
+  { key: "verdict", header: HEADER.verdict, better: undefined },
+  { key: "result", header: HEADER.result, better: undefined },
   { key: "durationMs", better: "lower", header: HEADER.durationMs },
 ];
 
@@ -215,6 +213,7 @@ function placeholderRow(
     key: `${experimentId}:${evalId}:missing`,
     variant: "placeholder",
     cells: projectCells(bag, columns),
+    subRows: [],
   };
 }
 
@@ -228,46 +227,40 @@ function attemptRow(attempt: AttemptListItem, columns: readonly ColumnSpec[]): T
   return {
     key: attempt.locator,
     cells: projectCells(attemptCells(attempt), columns),
+    subRows: [],
+    variant: "normal",
   };
 }
 
-export function evalRow(
-  row: ExperimentListEvalRow,
-  label: string,
-  view: HierarchyView,
-): TableContentRow {
+export function evalRow(row: ExperimentListEvalRow, label: string, view: HierarchyView): TableContentRow {
+  function evaluationSummary(): TableContentRow["cells"][string] {
+    if (row.evaluationKind !== "pass")
+      return stackCell(
+        row.score === undefined ? { kind: "notApplicable" } : measureCell(row.score),
+        exceptionalVerdictCountsCell(row.attempts),
+      );
+    if (row.attempts.length === 1) return evalVerdictCell(row.attempts);
+    return stackCell(
+      row.endToEndPassRate === undefined ? { kind: "notApplicable" } : measureCell(row.endToEndPassRate),
+      verdictCountsCell(row.attempts),
+    );
+  }
   const bag: CellBag = {
     entity: textCell(label),
     ...(row.durationMs === undefined ? {} : { durationMs: measureCell(row.durationMs) }),
     ...(row.tokens === undefined ? {} : { tokens: measureCell(row.tokens) }),
-    summary: row.evaluationKind === "pass"
-      ? (row.attempts.length === 1
-          ? evalVerdictCell(row.attempts)
-          : stackCell(
-              row.endToEndPassRate === undefined
-                ? { kind: "notApplicable" }
-                : measureCell(row.endToEndPassRate),
-              verdictCountsCell(row.attempts),
-            ))
-      : stackCell(
-          row.score === undefined
-            ? { kind: "notApplicable" }
-            : measureCell(row.score),
-          exceptionalVerdictCountsCell(row.attempts),
-        ),
+    summary: evaluationSummary(),
     ...(row.costUSD === undefined ? {} : { costUSD: measureCell(row.costUSD) }),
   };
   return {
     key: row.evalId,
     cells: projectCells(bag, view.columns),
     subRows: row.attempts.map((attempt) => attemptRow(attempt, view.columns)),
+    variant: "normal",
   };
 }
 
-function leafTableRow(
-  node: Extract<EvalLayoutNode, { readonly kind: "leaf" }>,
-  view: HierarchyView,
-): TableContentRow {
+function leafTableRow(node: Extract<EvalLayoutNode, { readonly kind: "leaf" }>, view: HierarchyView): TableContentRow {
   const label = relativeEvalLabel(node.evalId, view.labelPrefix);
   const row = view.item.evalRows.find((candidate) => candidate.evalId === node.evalId);
   return row === undefined
@@ -276,10 +269,7 @@ function leafTableRow(
 }
 
 /** 组行的成员 attempt 列表(用于判定计票)。 */
-function attemptsUnder(
-  node: EvalLayoutNode,
-  evalRows: readonly ExperimentListEvalRow[],
-): readonly AttemptListItem[] {
+function attemptsUnder(node: EvalLayoutNode, evalRows: readonly ExperimentListEvalRow[]): readonly AttemptListItem[] {
   const members = new Set<string>();
   const collect = (list: readonly EvalLayoutNode[]): void => {
     for (const entry of list) {
@@ -288,9 +278,7 @@ function attemptsUnder(
     }
   };
   collect([node]);
-  return evalRows
-    .filter((row) => members.has(row.evalId))
-    .flatMap((row) => row.attempts);
+  return evalRows.filter((row) => members.has(row.evalId)).flatMap((row) => row.attempts);
 }
 
 export function groupRow(
@@ -311,25 +299,17 @@ export function groupRow(
   const evals = evalRows.length;
   const metrics = item.groupMetrics.get(node.prefix);
   const attempts = attemptsUnder(node, item.evalRows);
-  const verdicts = evals === 0
-    ? { kind: "missing", code: GROUP_NO_SAMPLES } as const
-    : verdictCountsCell(attempts);
+  const verdicts: Cell =
+    evals === 0 ? { kind: "missing", code: GROUP_NO_SAMPLES, detail: undefined } : verdictCountsCell(attempts);
   const onlyPass = evalRows.every((row) => row.evaluationKind === "pass");
-  const primary = onlyPass
-    ? groupMetricValue(metrics, "passRate")
-    : groupMetricValue(metrics, "score");
+  const primary = onlyPass ? groupMetricValue(metrics, "passRate") : groupMetricValue(metrics, "score");
 
   const bag: CellBag = {
     entity: identityCell(node.segment, groupEntityDetail(evals, knownEvals)),
     durationMs: groupMetricValue(metrics, "durationMs"),
     tokens: groupMetricValue(metrics, "tokens"),
     ...(metrics?.costUSD === undefined ? {} : { costUSD: measureCell(metrics.costUSD) }),
-    summary: stackCell(
-      primary,
-      onlyPass
-        ? verdicts
-        : exceptionalVerdictCountsCell(attempts),
-    ),
+    summary: stackCell(primary, onlyPass ? verdicts : exceptionalVerdictCountsCell(attempts)),
   };
   return {
     key: `group:${node.prefix}`,
@@ -340,59 +320,56 @@ export function groupRow(
 }
 
 /** 同一层的组行按主读数降序(缺数据沉底,同值按段名收口),叶子恒在组行之后。 */
-function groupChildren(
-  nodes: readonly EvalLayoutNode[],
-  view: HierarchyView,
-): TableContentRow[] {
+function groupChildren(nodes: readonly EvalLayoutNode[], view: HierarchyView): TableContentRow[] {
   const groups = nodes
     .filter((node): node is Extract<EvalLayoutNode, { readonly kind: "group" }> => node.kind === "group")
     .slice()
     .sort((left, right) => {
       const leftPrimary = groupPrimaryValue(left, view.item);
       const rightPrimary = groupPrimaryValue(right, view.item);
-      if (leftPrimary === null && rightPrimary === null) return left.segment.localeCompare(right.segment);
-      if (leftPrimary === null) return 1;
-      if (rightPrimary === null) return -1;
+      if (leftPrimary === undefined && rightPrimary === undefined) return left.segment.localeCompare(right.segment);
+      if (leftPrimary === undefined) return 1;
+      if (rightPrimary === undefined) return -1;
       return rightPrimary - leftPrimary || left.segment.localeCompare(right.segment);
     });
-  const leaves = nodes.filter((node): node is Extract<EvalLayoutNode, { readonly kind: "leaf" }> =>
-    node.kind === "leaf"
+  const leaves = nodes.filter(
+    (node): node is Extract<EvalLayoutNode, { readonly kind: "leaf" }> => node.kind === "leaf",
   );
-  return [
-    ...groups.map((node) => groupRow(node, view.item, view)),
-    ...leaves.map((node) => leafTableRow(node, view)),
-  ];
+  return [...groups.map((node) => groupRow(node, view.item, view)), ...leaves.map((node) => leafTableRow(node, view))];
 }
 
 function groupPrimaryValue(
   node: Extract<EvalLayoutNode, { readonly kind: "group" }>,
   item: ExperimentListItem,
-): number | null {
+): number | undefined {
   const prefix = `${node.prefix}/`;
-  const hasPoints = item.evalRows.some((row) =>
-    row.evalId.startsWith(prefix) && row.evaluationKind !== "pass");
+  const hasPoints = item.evalRows.some((row) => row.evalId.startsWith(prefix) && row.evaluationKind !== "pass");
   const metrics = item.groupMetrics.get(node.prefix);
-  return (hasPoints ? metrics?.score : metrics?.passRate)?.value ?? null;
+  return (hasPoints ? metrics?.score : metrics?.passRate)?.value;
 }
 
 export function experimentRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
   const evalIds = new Set(item.evalRows.map((row) => row.evalId));
-  const members: readonly EvalLayoutNode[] = experimentEvalLayout([
-    ...new Set([...evalIds, ...item.missingEvalIds]),
-  ]);
+  const members: readonly EvalLayoutNode[] = experimentEvalLayout([...new Set([...evalIds, ...item.missingEvalIds])]);
   const attempts = item.evalRows.flatMap((row) => row.attempts);
-  const primary = item.evaluationKind === "pass"
-    ? item.endToEndPassRate === undefined
-    ? { kind: "notApplicable" } as const
-    : measureCell(item.endToEndPassRate, false)
-    : item.score === undefined
-    ? { kind: "notApplicable" } as const
-    : measureCell(item.score);
+  function primaryValue() {
+    if (item.evaluationKind === "pass") {
+      if (item.endToEndPassRate === undefined) return { kind: "notApplicable" } as const;
+      return measureCell(item.endToEndPassRate, false);
+    }
+    if (item.score === undefined) return { kind: "notApplicable" } as const;
+    return measureCell(item.score);
+  }
+  const primary = primaryValue();
   const coveredEvalCount = item.evalRows.length;
   const totalEvalCount = coveredEvalCount + item.missingEvalIds.length;
   const bag: CellBag = {
-    entity: stackCell(identityCell(item.experimentId, `${coveredEvalCount}/${totalEvalCount}`),
-      ...(item.plugins ?? []).map((plugin) => textCell(`${plugin.name} (${plugin.key})`, JSON.stringify(plugin.identity)))),
+    entity: stackCell(
+      identityCell(item.experimentId, `${coveredEvalCount}/${totalEvalCount}`),
+      ...(item.plugins ?? []).map((plugin) =>
+        textCell(`${plugin.name} (${plugin.key})`, JSON.stringify(plugin.identity)),
+      ),
+    ),
     model: executionCell(item.model),
     adapter: adapterCell(item.adapter),
     ...(item.durationMs === undefined ? {} : { durationMs: measureCell(item.durationMs, false) }),
@@ -400,37 +377,36 @@ export function experimentRow(item: ExperimentListItem, view: HierarchyView): Ta
     ...(item.costUSD === undefined ? {} : { costUSD: measureCell(item.costUSD, false) }),
     summary: stackCell(
       primary,
-      item.evaluationKind === "pass"
-        ? verdictCountsCell(attempts)
-        : exceptionalVerdictCountsCell(attempts),
+      item.evaluationKind === "pass" ? verdictCountsCell(attempts) : exceptionalVerdictCountsCell(attempts),
     ),
   };
   return {
     key: item.experimentId,
     cells: projectCells(bag, view.columns),
     subRows: members.length > 0 ? groupChildren(members, view) : [],
+    variant: "normal",
   };
 }
 
 function executionCell(value: ExperimentListItem["model"]): Cell {
   if (value.state === "available") return textCell(value.value);
   return value.state === "mixed"
-    ? { kind: "missing", code: "mixedExecution" }
+    ? { kind: "missing", code: "mixedExecution", detail: undefined }
     : { kind: "notApplicable" };
 }
 
 function adapterCell(value: ExperimentListItem["adapter"]): Cell {
-  if (value.state === "mixed") return { kind: "missing", code: "mixedExecution" };
+  if (value.state === "mixed") return { kind: "missing", code: "mixedExecution", detail: undefined };
+  if (value.state === "none") return { kind: "notApplicable" };
   const identity = value.value;
-  if (identity === null) return { kind: "notApplicable" };
-  return textCell(
-    identity.name,
-    `${identity.contract} · ${identity.behaviorRevision ?? "—"}`,
-  );
+  return textCell(identity.name, `${identity.contract} · ${identity.behaviorRevision ?? "—"}`);
 }
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
-  const columns = columnsWithCost(hierarchyColumns(), items.some((item) => item.costUSD !== undefined));
+  const columns = columnsWithCost(
+    hierarchyColumns(),
+    items.some((item) => item.costUSD !== undefined),
+  );
   return {
     columns,
     rows: items.map((item) => experimentRow(item, { columns, item, labelPrefix: "" })),
@@ -438,7 +414,10 @@ export function experimentListContent(items: readonly ExperimentListItem[]): Tab
 }
 
 export function attemptListContent(items: readonly AttemptListItem[]): TableContent {
-  const columns = columnsWithCost(FLAT_ENTITY_COLUMNS, items.some((item) => item.costUSD !== undefined));
+  const columns = columnsWithCost(
+    FLAT_ENTITY_COLUMNS,
+    items.some((item) => item.costUSD !== undefined),
+  );
   return {
     columns,
     // 与层级表里的 attempt 行同一份格子原料,只是裁到平铺列集。

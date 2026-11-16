@@ -1,37 +1,28 @@
-import {
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { MAX_ASSERTION_DOCUMENT_BYTES } from "../../../assertions/record/codec.ts";
 import type { AssertionsAttachment } from "./schema.ts";
 
 function startsAfterEnd(site: AssertionsAttachment["sourceSites"][number]): boolean {
-  return site.start.line > site.end.line ||
-    (site.start.line === site.end.line && site.start.column > site.end.column);
+  return site.start.line > site.end.line || (site.start.line === site.end.line && site.start.column > site.end.column);
 }
 
 function encodedBytes(value: unknown): number | undefined {
   try {
     const encoded = JSON.stringify(value);
-    return encoded === undefined ? undefined : new TextEncoder().encode(encoded).byteLength;
+    if (encoded === undefined) return undefined;
+    return new TextEncoder().encode(encoded).byteLength;
   } catch {
     return undefined;
   }
 }
 
 /** Named, deterministic current-fact invariants. */
-export function validateAssertionsAttachment(
-  value: AssertionsAttachment,
-): readonly RecordAttachmentIssue[] {
+export function validateAssertionsAttachment(value: AssertionsAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
   const entryIds = new Set<string>();
   for (const [index, entry] of value.entries.entries()) {
     if (entryIds.has(entry.entryId)) {
-      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", [
-        "entries",
-        String(index),
-        "entryId",
-      ]));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["entries", String(index), "entryId"]));
     }
     entryIds.add(entry.entryId);
   }
@@ -44,12 +35,9 @@ export function validateAssertionsAttachment(
       !entryIds.has(site.entryId) ||
       sourceOrders.has(site.sourceOrder) ||
       startsAfterEnd(site) ||
-      previous !== undefined && previous >= key
+      (previous !== undefined && previous >= key)
     ) {
-      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", [
-        "sourceSites",
-        String(index),
-      ]));
+      issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["sourceSites", String(index)]));
     }
     sourceOrders.add(site.sourceOrder);
     previous = key;
@@ -59,5 +47,5 @@ export function validateAssertionsAttachment(
   if (size === undefined || size > MAX_ASSERTION_DOCUMENT_BYTES) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", []));
   }
-  return Object.freeze(issues);
+  return issues;
 }

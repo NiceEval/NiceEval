@@ -24,10 +24,7 @@ export interface StagedCommandStream {
 
 type DurableSandboxCommandReceipt = SandboxCommandsAttachment["segments"][number];
 
-export type CommandManifest = Pick<
-  DurableSandboxCommandReceipt,
-  "phase" | "invocation" | "workingDirectory"
->;
+export type CommandManifest = Pick<DurableSandboxCommandReceipt, "phase" | "invocation" | "workingDirectory">;
 
 export interface StagedSandboxCommandReceipt {
   readonly segmentId: DurableSandboxCommandReceipt["segmentId"];
@@ -49,15 +46,16 @@ export interface StagedSandboxCommandsAttachment {
 
 /** Immutable source-local snapshots produced before the seal path starts. */
 export interface RunnerAttemptSourceReceiptsCapture {
-  readonly agentTurns?: AgentTurnsAttachment;
-  readonly sandboxCommands?: StagedSandboxCommandsAttachment;
+  readonly timingEntryIndexes?: ReadonlyMap<string, number>;
+  readonly agentTurns: AgentTurnsAttachment | undefined;
+  readonly sandboxCommands: StagedSandboxCommandsAttachment | undefined;
   readonly runnerActivities: AttemptRunnerActivitiesAttachment;
   readonly runnerDiagnostics: AttemptRunnerDiagnosticsAttachment;
 }
 
 export interface RunnerRunSourceReceiptsCapture {
-  readonly runnerActivities?: RunRunnerActivitiesAttachment;
-  readonly runnerDiagnostics?: RunRunnerDiagnosticsAttachment;
+  readonly runnerActivities: RunRunnerActivitiesAttachment | undefined;
+  readonly runnerDiagnostics: RunRunnerDiagnosticsAttachment | undefined;
 }
 
 export type NormalizedAgentTurnTerminal = AgentTurnsAttachment["segments"][number]["terminal"];

@@ -19,13 +19,7 @@ type AttemptSlotProjectedEntry<Value> =
       readonly state: "attachment-result";
       readonly attachment:
         | { readonly state: "available"; readonly value: Value }
-        | { readonly state: "unavailable" | "unsupported" | "invalid" }
-        | {
-            readonly state: "migration-required";
-            readonly from: string;
-            readonly to: string;
-            readonly command?: string;
-          };
+        | { readonly state: "unavailable" | "unsupported" | "invalid" };
     };
 import type { Verdict } from "../../shared/types.ts";
 import { reportActivity } from "../feedback/sink.ts";
@@ -33,21 +27,21 @@ import { reportActivity } from "../feedback/sink.ts";
 /** Selects the Braintrust project, experiment and optional comparison baseline; omitted credentials are resolved by the SDK from BRAINTRUST_API_KEY. */
 export interface BraintrustConfig {
   /** Braintrust 项目名;省略时用 "niceeval"。 */
-  project?: string;
+  project?: string | undefined;
   /** Braintrust 项目 id;与 project 给一个即可。 */
-  projectId?: string;
+  projectId?: string | undefined;
   /** 实验名;省略时由 Braintrust 自动命名。 */
-  experiment?: string;
+  experiment?: string | undefined;
   /** 作为对比基线(diff base)的既有实验名。 */
-  baseExperiment?: string;
+  baseExperiment?: string | undefined;
   /** 作为对比基线(diff base)的既有实验 id。 */
-  baseExperimentId?: string;
+  baseExperimentId?: string | undefined;
   /** true = 更新同名既有实验,而不是新建一个。 */
-  update?: boolean;
+  update?: boolean | undefined;
   /** 实验级附加 metadata;与 niceeval 自动写入的字段合并,同名以这里为准。 */
-  metadata?: globalThis.Record<string, JsonValue>;
+  metadata?: globalThis.Record<string, JsonValue> | undefined;
   /** API key;省略时 SDK 读 BRAINTRUST_API_KEY 环境变量。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
 }
 
 /**
@@ -96,7 +90,7 @@ export type BraintrustAssessment =
       /** Exact Report-style public projections, including every data state. */
       readonly assertions: AttemptSlotProjectedEntry<AssertionsProjection<unknown>>;
       readonly verdict: AttemptSlotProjectedEntry<Verdict>;
-      readonly score?: AttemptSlotProjectedEntry<ScoreProjection>;
+      readonly score: AttemptSlotProjectedEntry<ScoreProjection> | undefined;
     }
   | {
       readonly state: "not-projected";
@@ -120,13 +114,13 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
     async onInvocationStart(evals) {
       sdk = await loadBraintrustSdk();
       experiment = await sdk.init({
-        project: config.projectId ? undefined : (config.project ?? "niceeval"),
-        projectId: config.projectId,
-        experiment: config.experiment,
-        baseExperiment: config.baseExperiment,
-        baseExperimentId: config.baseExperimentId,
-        update: config.update,
-        apiKey: config.apiKey,
+        ...(config.projectId ? {} : { project: config.project ?? "niceeval" }),
+        ...(config.projectId === undefined ? {} : { projectId: config.projectId }),
+        ...(config.experiment === undefined ? {} : { experiment: config.experiment }),
+        ...(config.baseExperiment === undefined ? {} : { baseExperiment: config.baseExperiment }),
+        ...(config.baseExperimentId === undefined ? {} : { baseExperimentId: config.baseExperimentId }),
+        ...(config.update === undefined ? {} : { update: config.update }),
+        ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
         // 不再写顶层单一 adapter:一次 Invocation 可能横跨多个 (adapter, model, flags) 配置,
         // 启动时还没有任何结果,写一个必然只代表其中一份配置的值就是撒谎(见
         // docs/runner.md「Reporter 与运行器事件」)。每行自己的 adapter 身份仍在
@@ -171,9 +165,7 @@ export function toBraintrustEvent(
   result: EvalResult,
   assessment: BraintrustAssessment = NOT_PROJECTED_ASSESSMENT,
 ): BraintrustLogEvent {
-  const projectedVerdict = assessment.state === "projected"
-    ? availableProjectionValue(assessment.verdict)
-    : undefined;
+  const projectedVerdict = assessment.state === "projected" ? availableProjectionValue(assessment.verdict) : undefined;
   const verdict = projectedVerdict ?? result.verdict;
 
   const metrics: globalThis.Record<string, number> = {};
@@ -210,14 +202,10 @@ export function toBraintrustEvent(
   };
   const scores: globalThis.Record<string, number> = {};
   if (assessment.state === "projected") {
-    metadata.assertions = projectionMetadata(
-      assessment.assertions,
-      (assertions) => ({ entries: assertionMetadata(assertions.entries) }),
-    );
-    metadata.verdictProjection = projectionMetadata(
-      assessment.verdict,
-      (value) => ({ value }),
-    );
+    metadata.assertions = projectionMetadata(assessment.assertions, (assertions) => ({
+      entries: assertionMetadata(assertions.entries),
+    }));
+    metadata.verdictProjection = projectionMetadata(assessment.verdict, (value) => ({ value }));
     if (assessment.score !== undefined) {
       metadata.score = projectionMetadata(assessment.score, scoreMetadata);
       const score = availableProjectionValue(assessment.score);
@@ -241,20 +229,19 @@ export function toBraintrustEvent(
     `a${result.attempt}`,
   ].join("|");
 
+  const output = lastAssistantText(result.events);
   return {
     id,
     input: result.description ?? result.id,
-    output: lastAssistantText(result.events),
-    error: result.error,
+    ...(output === undefined ? {} : { output }),
+    ...(result.error === undefined ? {} : { error: result.error }),
     metadata,
     metrics,
     ...(Object.keys(scores).length > 0 ? { scores } : {}),
   };
 }
 
-function availableProjectionValue<Value>(
-  entry: AttemptSlotProjectedEntry<Value>,
-): Value | undefined {
+function availableProjectionValue<Value>(entry: AttemptSlotProjectedEntry<Value>): Value | undefined {
   return entry.state === "attachment-result" && entry.attachment.state === "available"
     ? entry.attachment.value
     : undefined;
@@ -272,13 +259,6 @@ function projectionMetadata<Value>(
       return { state: "available", ...available(entry.attachment.value) };
     case "unavailable":
       return { state: "unavailable" };
-    case "migration-required":
-      return {
-        state: "migration-required",
-        from: entry.attachment.from,
-        to: entry.attachment.to,
-        ...(entry.attachment.command === undefined ? {} : { command: entry.attachment.command }),
-      };
     case "unsupported":
     case "invalid":
       return { state: entry.attachment.state };
@@ -299,7 +279,6 @@ function assertionMetadata(entries: readonly AssertionEntryRead<unknown>[]): Jso
       scoreContribution: scoreContributionMetadata(entry.entry.contribution),
     };
     if (display.label !== undefined) item.label = display.label;
-    if (display.key !== undefined) item.key = display.key;
     const reason = assertionReason(entry);
     if (reason !== undefined) item.reason = reason;
     metadata.push(item);
@@ -320,17 +299,13 @@ function assertionReason(entry: AssertionEntryRead<unknown>): string | undefined
   }
 }
 
-function coverageMetadata(
-  coverage: AssertionCoverage,
-): globalThis.Record<string, JsonValue> {
+function coverageMetadata(coverage: AssertionCoverage): globalThis.Record<string, JsonValue> {
   const metadata: globalThis.Record<string, JsonValue> = { state: coverage.state };
   if (coverage.state !== "complete") metadata.reason = coverage.reason;
   return metadata;
 }
 
-function limitationMetadata(
-  limitation: AssertionLimitation,
-): globalThis.Record<string, JsonValue> {
+function limitationMetadata(limitation: AssertionLimitation): globalThis.Record<string, JsonValue> {
   switch (limitation.kind) {
     case "redacted":
       return { kind: limitation.kind, fieldCount: limitation.fieldCount };
@@ -349,9 +324,7 @@ function limitationMetadata(
   }
 }
 
-function scoreContributionMetadata(
-  contribution: ScoreContribution,
-): globalThis.Record<string, JsonValue> {
+function scoreContributionMetadata(contribution: ScoreContribution): globalThis.Record<string, JsonValue> {
   switch (contribution.state) {
     case "not-scored":
       return { state: contribution.state };

@@ -110,15 +110,24 @@ export const Verdict = ({ locale = "zh", title, hint, note, rows = [] }) => (
       <span className="ne-lead ne-vd-failed ne-neg">
         <span className="ne-sym">✗</span>failed
       </span>
-      <p className="ne-why ne-vd-say ne-vd-say-ok">{locale === "en" ? "All gate and soft thresholds pass." : "全部 gate 通过，soft 也都达标。"}</p>
+      <p className="ne-why ne-vd-say ne-vd-say-ok">
+        {locale === "en" ? "All gate and soft thresholds pass." : "全部 gate 通过，soft 也都达标。"}
+      </p>
       <p className="ne-why ne-vd-say ne-vd-say-gate">
-        {locale === "en" ? "A gate failed. Gates are requirements: one failure makes the whole Attempt failed." : "有 gate 没通过。gate 是硬要求，一条不过整条 Attempt 就是 failed。"}
+        {locale === "en"
+          ? "A gate failed. Gates are requirements: one failure makes the whole Attempt failed."
+          : "有 gate 没通过。gate 是硬要求，一条不过整条 Attempt 就是 failed。"}
       </p>
       <p className="ne-why ne-vd-say ne-vd-say-soft">
-        {locale === "en" ? "The soft threshold was not met and is recorded as such, but the verdict is unchanged. A low quality score does not mean the task failed." : "soft 那条没到线，如实记了一条不达标的断言，但判定不受影响——质量分低不等于任务失败。"}
+        {locale === "en"
+          ? "The soft threshold was not met and is recorded as such, but the verdict is unchanged. A low quality score does not mean the task failed."
+          : "soft 那条没到线，如实记了一条不达标的断言，但判定不受影响——质量分低不等于任务失败。"}
       </p>
       <p className="ne-why ne-vd-say ne-vd-say-strict">
-        {locale === "en" ? "A soft threshold under" : "带线的 soft 在"} <code>--strict</code> {locale === "en" ? "has the same weight as a gate, so the verdict becomes failed. Scores are still recorded and do not change under strict mode." : "下和 gate 同权，所以判定翻成 failed。分数照记，不因为 strict 改变。"}
+        {locale === "en" ? "A soft threshold under" : "带线的 soft 在"} <code>--strict</code>{" "}
+        {locale === "en"
+          ? "has the same weight as a gate, so the verdict becomes failed. Scores are still recorded and do not change under strict mode."
+          : "下和 gate 同权，所以判定翻成 failed。分数照记，不因为 strict 改变。"}
       </p>
     </div>
     {note ? <div className="ne-ft">{note}</div> : null}

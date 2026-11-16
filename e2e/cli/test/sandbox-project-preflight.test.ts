@@ -14,11 +14,7 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
       'throw new Error("sandbox config must stay unloaded");\nexport default {};\n',
       "utf8",
     );
-    await writeFile(
-      join(paths.projectRoot, ".env"),
-      "NICEEVAL_E2E_SANDBOX_CREDENTIAL=delivered\n",
-      "utf8",
-    );
+    await writeFile(join(paths.projectRoot, ".env"), "NICEEVAL_E2E_SANDBOX_CREDENTIAL=delivered\n", "utf8");
 
     const descriptor = join(paths.projectRoot, "missing-incus-provider.json");
     const receipt = await niceeval.run(["sandbox", "provider", "doctor", "incus"], {
@@ -32,9 +28,15 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
     expect(receipt.stdout).toContain("niceeval sandbox provider doctor incus");
     expect(receipt.stdout).toContain("domain: reference");
     expect(receipt.stdout).toContain(`descriptor: ${descriptor}`);
-    expect(receipt.stdout).toContain("status: FAIL (fail closed)");
-    expect(receipt.stdout).toContain("descriptor: FAIL [incus-undeployed]");
+    expect(receipt.stdout).toContain("status: FAIL");
+    expect(receipt.stdout).toContain("Configuration: FAIL");
+    expect(receipt.stdout).toContain("9 checks not run: fix the failed check first.");
+    expect(receipt.stdout).not.toMatch(/incus-undeployed|PREREQUISITE_FAILED/);
     expect(receipt.stderr).toBe("");
+    const duration = await niceeval.run(["sandbox", "provider", "gc", "incus", "--unused-for", "invalid"]);
+    expect(duration.exitCode, duration.diagnostic()).toBe(2);
+    expect(duration.stderr).toContain("--unused-for requires a positive duration");
+    expect(duration.stderr).not.toContain("invalid-duration");
   });
 
   await cliE2E.case("sandbox-with-unreadable-project-credentials", async ({ commands: { niceeval }, paths }) => {
@@ -56,7 +58,9 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
 
     expect(receipt.exitCode, receipt.diagnostic()).toBe(1);
     expect(receipt.stdout).toContain(`descriptor: ${descriptor}`);
-    expect(receipt.stdout).toContain("descriptor: FAIL [incus-undeployed]");
+    expect(receipt.stdout).toContain("Configuration: FAIL");
+    expect(receipt.stdout).toContain("9 checks not run: fix the failed check first.");
+    expect(receipt.stdout).not.toMatch(/incus-undeployed|PREREQUISITE_FAILED/);
     expect(receipt.stderr).toBe("");
   });
 
@@ -98,7 +102,7 @@ test("Sandbox Provider 诊断独立于项目配置和凭据，命令路由先完
       { argv: ["sandbox", "provider", "doctor", "incus", "--help"], expected: "niceeval sandbox provider doctor —" },
       { argv: ["docker", "--help"], expected: "niceeval docker —" },
       { argv: ["exp", "--help"], expected: "niceeval exp" },
-      { argv: ["query", "--help"], expected: "niceeval query" },
+      { argv: ["show", "--help"], expected: "niceeval show" },
       { argv: ["run", "--help"], expected: "niceeval run" },
       { argv: ["init", "--help"], expected: "niceeval init —" },
     ] as const;

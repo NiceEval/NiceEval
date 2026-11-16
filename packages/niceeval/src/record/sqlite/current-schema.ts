@@ -1,15 +1,13 @@
 /**
- * Exact current ProjectDatabase 0.19 schema, independent of frozen historical
- * baselines. Keep these bytes stable within this format: they own its fingerprint.
- * The disjoint namespace fences writers prepared against the 0.18 tables.
+ * Exact current ProjectDatabase schema. Schema changes require incrementing
+ * RECORD_SQLITE_FORMAT and updating its paired schema fingerprint guard.
+ * The ne19_ prefix is a fixed namespace, independent of the format number.
  */
 export const RECORD_SQLITE_BASELINE_SQL = `
 CREATE TABLE ne19_record_metadata (
   singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
   format TEXT NOT NULL,
-  storage_revision INTEGER NOT NULL CHECK (storage_revision > 0),
   storage_generation TEXT NOT NULL,
-  schema_fingerprint TEXT NOT NULL CHECK (length(schema_fingerprint) = 64),
   created_at TEXT NOT NULL,
   barrier_state TEXT NOT NULL CHECK (barrier_state IN ('open','draining','portable')),
   portable_generation TEXT,
@@ -146,7 +144,7 @@ CREATE TABLE ne19_attachments (
   owner_run_id TEXT NOT NULL REFERENCES ne19_runs(run_id) ON DELETE CASCADE,
   owner_attempt_id TEXT,
   family TEXT NOT NULL,
-  family_revision INTEGER NOT NULL CHECK (family_revision > 0),
+  family_revision INTEGER CHECK (family_revision IS NULL OR family_revision > 0),
   logical_identity TEXT,
   canonical_payload BLOB,
   canonical_digest TEXT CHECK (canonical_digest IS NULL OR length(canonical_digest) = 64),
@@ -407,37 +405,8 @@ CREATE TABLE ne19_shared_state_generations (
   PRIMARY KEY (state_key, generation),
   CHECK (parent_generation = generation - 1)
 ) STRICT;
-CREATE TABLE ne19_kept_sandboxes (
-  entry_id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  sandbox_id TEXT NOT NULL,
-  kept_at TEXT NOT NULL,
-  operation_generation INTEGER NOT NULL DEFAULT 0 CHECK (operation_generation >= 0),
-  payload BLOB NOT NULL,
-  UNIQUE (provider, sandbox_id)
-) STRICT;
-CREATE TABLE ne19_kept_sandbox_operation_leases (
-  entry_id TEXT PRIMARY KEY REFERENCES ne19_kept_sandboxes(entry_id) ON DELETE CASCADE,
-  generation INTEGER NOT NULL CHECK (generation > 0),
-  token TEXT NOT NULL,
-  holder TEXT NOT NULL,
-  owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
-  owner_host TEXT NOT NULL,
-  owner_process_identity TEXT NOT NULL,
-  operation TEXT NOT NULL,
-  acquired_at TEXT NOT NULL,
-  ttl_ms INTEGER NOT NULL CHECK (ttl_ms > 0)
-) STRICT;
 CREATE INDEX ne19_teardown_obligations_experiment ON ne19_teardown_obligations(experiment_id, owner_pid);
 CREATE INDEX ne19_shared_state_generations_head ON ne19_shared_state_generations(state_key, generation DESC);
-CREATE INDEX ne19_kept_sandboxes_kept_at ON ne19_kept_sandboxes(kept_at, entry_id);
 
 
-CREATE TABLE ne19_migration_state (
-  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  state TEXT NOT NULL CHECK (state IN ('committed','ready')),
-  source_format TEXT,
-  source_digest TEXT CHECK (source_digest IS NULL OR length(source_digest) = 64),
-  CHECK ((source_format IS NULL) = (source_digest IS NULL)),
-  CHECK (state != 'committed' OR source_format IS NOT NULL)
-) STRICT;`;
+`;

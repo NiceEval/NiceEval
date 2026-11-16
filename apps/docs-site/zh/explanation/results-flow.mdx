@@ -1,7 +1,7 @@
 ---
 title: "NiceEval 的运行后数据流"
 sidebarTitle: "运行结果的数据流"
-description: "理解运行结果保存在哪里，以及 query、show 和 view 三个查看入口各管什么。"
+description: "理解运行结果保存在哪里，以及 show 和 view 三个查看入口各管什么。"
 ---
 
 一次运行结束后，你可能在终端看结果，也可能在浏览器里翻对话，或者让 CI 脚本读 JSON。三种方式看到的是同一份结果，只是排版不同。这一页说明结果保存在哪里、怎样被读出来，以及三个查看入口各管什么。
@@ -18,7 +18,7 @@ query（JSON） | show（终端） | view（浏览器）
 
 每个项目的运行结果都保存在 `.niceeval/record.sqlite`，这就是 Record。`niceeval exp` 开始时创建 Run，并记下这次计划要跑的所有 Attempt。每个 Attempt 跑完就单独发布，马上可以读到，不必等整个 Run 结束。已发布的 Attempt 和已结束的 Run 都不会再被修改。
 
-运行完整结束后，这个文件本身就可以复制或归档。要读别人交给你的副本时，给 `query` 或 `show` 加 `--record <file>`；NiceEval 会先完整校验这个文件，再只读打开。
+运行完整结束后，这个文件本身就可以复制或归档。要读别人交给你的副本时，给 `show` 加 `--record <file>`；NiceEval 会先完整校验这个文件，再只读打开。
 
 ## 读取规则由 NiceEval 固定
 
@@ -29,7 +29,7 @@ query（JSON） | show（终端） | view（浏览器）
 ## 三个查看入口
 
 - `niceeval show` 在终端里先看总览，再逐层查看某个 Attempt 的对话、耗时和改动。你和 Coding Agent 都用它排查问题。
-- `niceeval query` 输出结构化 JSON，给脚本和 CI 读取，Agent 需要精确字段时也用它。
+- `niceeval show --json` 输出结构化 JSON，给脚本和 CI 读取，Agent 需要精确字段时也用它。
 - `niceeval view` 给人在浏览器用，打开只监听本机地址、受访问保护的 Insight 界面。
 
 三个入口读到的是同一份查询结果。它们只负责各自的排版：JSON、终端文字或浏览器页面。它们不会各自挑选结果，也不会重新计算通过率或分数，所以同一个 Run 在三处看到的结论一致。

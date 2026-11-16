@@ -3,11 +3,20 @@ import { judgeImage } from "niceeval/judge";
 import { screenshotBytes } from "../fixtures/judge-image.ts";
 import { markerApplication } from "./assertion-judge-fake.eval.ts";
 
-const pendingQuality = defineJudge({ name: "pending-quality", rubric: "The post contains the marker." });
+const pendingQuality = defineJudge({ rubric: "The post contains the marker." });
 
 export default markerApplication.defineScoreEval({
   description: "Attempt 取消保留 Judge 请求尝试事实与完整材料",
   async test(t) {
-    t.check({ post: t.post(), criterion: "pending-marker", screenshot: judgeImage({ body: screenshotBytes(), mediaType: "image/png" }) }, pendingQuality).score(10).label("Pending Judge");
+    t.check(
+      {
+        post: t.post(),
+        criterion: "pending-marker",
+        screenshot: judgeImage({ body: screenshotBytes(), mediaType: "image/png" }),
+      },
+      pendingQuality,
+    )
+      .score(10)
+      .label("Pending Judge");
   },
 });

@@ -2,8 +2,7 @@
 import { defineEval } from "niceeval";
 import { equals, includes, satisfies } from "niceeval/expect";
 export default defineEval({
-  description:
-    "LangGraph interrupt/Command 使用每 official run 新 converter，由 session 累计跨 Turn call 配对",
+  description: "LangGraph interrupt/Command 使用每 official run 新 converter，由 session 累计跨 Turn call 配对",
   async test(t) {
     const draft = await t.send("langgraph hitl approve fixture");
     t.check(draft.status, equals("waiting"));
@@ -22,15 +21,11 @@ export default defineEval({
               event.operation.input !== null &&
               !Array.isArray(event.operation.input) &&
               event.operation.input["target"] === "langgraph-fixture",
-          ).length === 1 &&
-          !events.some((event) => event.type === "operation.finished"),
+          ).length === 1 && !events.some((event) => event.type === "operation.finished"),
       ),
     );
     t.requireInputRequest({ action: "approve_change" });
-    t.check(
-      draft.reply,
-      includes("langgraph-hitl-runtime-initial:lifecycle"),
-    );
+    t.check(draft.reply, includes("langgraph-hitl-runtime-initial:lifecycle"));
     const approved = await t.respond("accept");
     await approved.succeeded().orStop();
     t.check(approved.reply, includes("langgraph-hitl-approved-marker"));
@@ -52,9 +47,7 @@ export default defineEval({
       ),
     );
     const rejectedSession = t.newSession();
-    const rejectedDraft = await rejectedSession.send(
-      "langgraph hitl reject fixture",
-    );
+    const rejectedDraft = await rejectedSession.send("langgraph hitl reject fixture");
     t.check(rejectedDraft.status, equals("waiting"));
     rejectedSession.requireInputRequest({ action: "approve_change" });
     const rejected = await rejectedSession.respond("ignore");

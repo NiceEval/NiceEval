@@ -1,16 +1,11 @@
 import { Schema } from "effect";
 
-import {
-  RecordBytesContentSchema,
-  recordContent,
-} from "../../attachment/index.ts";
+import { RecordBytesContentSchema } from "../../attachment/index.ts";
 import type { AssertionMaterial } from "../../../assertions/record/model.ts";
 import { NonNegativeSafeIntegerSchema } from "../common.ts";
 
 /** Assertions material is always an Attachment-private sealed content value. */
-export const AssertionsMaterialContentSchema = RecordBytesContentSchema.pipe(
-  recordContent.maximumBytes(16 * 1024 * 1024),
-);
+export const AssertionsMaterialContentSchema = RecordBytesContentSchema;
 
 export type AssertionsMaterialContent = typeof AssertionsMaterialContentSchema.Type;
 
@@ -19,9 +14,7 @@ const AssertionMaterialPreviewSchema = Schema.String.pipe(
 );
 
 /** Current material has one storage-neutral content branch. */
-export const AssertionMaterialSchema: Schema.Codec<
-  AssertionMaterial<AssertionsMaterialContent>
-> = Schema.Union([
+export const AssertionMaterialSchema: Schema.Codec<AssertionMaterial<AssertionsMaterialContent>> = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("unavailable"),
     reason: Schema.Literal("not-recorded"),

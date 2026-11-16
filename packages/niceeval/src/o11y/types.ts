@@ -13,17 +13,17 @@ import type { JsonValue, SourceLoc } from "../shared/types.ts";
  */
 export interface Usage {
   /** 未命中缓存、按全价计费的输入 token;与两个 cache 桶互斥。 */
-  inputTokens?: number;
+  inputTokens?: number | undefined;
   /** 输出(completion)token 数。 */
-  outputTokens?: number;
+  outputTokens?: number | undefined;
   /** 从提示缓存命中的输入 token;独立计价桶,不包含在 inputTokens 里(省略表示该 agent 不上报此项)。 */
-  cacheReadTokens?: number;
+  cacheReadTokens?: number | undefined;
   /** 写入提示缓存的输入 token;独立计价桶,不包含在 inputTokens 里(省略表示该 agent 不上报此项)。 */
-  cacheCreationTokens?: number;
+  cacheCreationTokens?: number | undefined;
   /** 推理(thinking)token 数,outputTokens 的已含明细,单列展示用;只在协议真实提供时存在。 */
-  reasoningTokens?: number;
+  reasoningTokens?: number | undefined;
   /** 真实发生的模型请求数。协议不提供请求计数就省略,绝不写 1 凑数。 */
-  requests?: number;
+  requests?: number | undefined;
   /**
    * 网关/adapter 实测的真实美元成本(只能由 `Turn.usage.costUSD` 显式带回,从不从
    * token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表估算)是两个
@@ -31,7 +31,7 @@ export interface Usage {
    * `estimateCost(model, usage, pricing)` 的估算,即使 observed 存在也照常独立计算——
    * 两者互不覆盖、互不兜底；observed 值从不替代或触发 estimate。
    */
-  costUSD?: number;
+  costUSD?: number | undefined;
 }
 
 /** 跨 agent 归一化后的规范工具名。 */
@@ -143,7 +143,7 @@ export interface LogicalToolOccurrence {
   readonly turn: string;
   readonly name: {
     readonly original: string;
-    readonly canonical?: ToolName;
+    readonly canonical: ToolName | undefined;
   };
   readonly input: LogicalToolEvidence;
   /**
@@ -155,7 +155,7 @@ export interface LogicalToolOccurrence {
    * 旧 Adapter 尚未升级时允许缺失，调用方必须把它视作 command evidence unavailable，
    * 不能回退为 not-command。新 Adapter 对每笔 tool operation 都必须提供分类。
    */
-  readonly command?: CommandProjection;
+  readonly command: CommandProjection | undefined;
   readonly start: EventPosition;
   readonly lifecycle: LogicalToolLifecycle;
 }
@@ -175,9 +175,9 @@ export interface LogicalToolOccurrenceDeriveOptions {
   readonly turn: string;
   readonly turnOrdinal: number;
   /** events[0] 对应的 event ordinal；完整 Turn.events 默认从 core user message 的 0 开始。 */
-  readonly firstEventOrdinal?: number;
+  readonly firstEventOrdinal?: number | undefined;
   /** 没有可信 Outcome 时保持省略，未关闭 operation 因而只能是 partial-stream。 */
-  readonly outcome?: "completed" | "failed" | "waiting";
+  readonly outcome?: "completed" | "failed" | "waiting" | undefined;
 }
 
 /** One immutable Turn segment in a scope projection. */
@@ -187,8 +187,8 @@ export interface LogicalToolOccurrenceScopeTurn {
   readonly turnOrdinal: number;
   readonly events: readonly StreamEvent[];
   /** The scope's latest Turn controls whether an unclosed call is pending. */
-  readonly outcome?: "completed" | "failed" | "waiting";
-  readonly firstEventOrdinal?: number;
+  readonly outcome?: "completed" | "failed" | "waiting" | undefined;
+  readonly firstEventOrdinal?: number | undefined;
 }
 
 /** occurrence 投影与其不能成为匹配候选的 orphan finished。 */
@@ -200,17 +200,17 @@ export interface LogicalToolOccurrenceDerivation {
 /** HITL 停轮请求的结构化描述,供 `t.requireInputRequest(filter)` / `t.respondAll` 按条件匹配。 */
 export interface InputRequest {
   /** 请求的唯一标识;多个请求并停时,`InputResponse.requestId` 靠它对位。 */
-  readonly id?: string;
+  readonly id?: string | undefined;
   /** 模型提出的原始问题/文本(用于 `stringMatches` 过滤)。 */
-  readonly prompt?: string;
+  readonly prompt?: string | undefined;
   /** adapter 自定义的人类可读展示文案,与 `prompt` 二选一或并存,用于 UI/日志展示及过滤匹配。 */
-  readonly display?: string;
+  readonly display?: string | undefined;
   /** 请求关联的动作类型(如某个待批准的工具调用名),供过滤用。 */
-  readonly action?: string;
+  readonly action?: string | undefined;
   /** 请求携带的结构化输入(如待批准命令的参数)。 */
-  readonly input?: JsonValue;
+  readonly input?: JsonValue | undefined;
   /** 若请求提供了预设选项(如批准/拒绝),逐项列出;`id` 对应 `InputResponse.optionId`。 */
-  readonly options?: readonly { id: string; label?: string }[];
+  readonly options?: readonly { id: string; label?: string | undefined }[] | undefined;
 }
 
 /**
@@ -229,22 +229,21 @@ export interface Truncation {
  * `truncated` 只由 results writer 在落盘时刻写入(运行时全量,落盘截断);adapter 不产出它。
  */
 export type StreamEvent = {
-  truncated?: Truncation[];
+  truncated?: Truncation[] | undefined;
   /**
    * Field paths intentionally withheld by the producing boundary.  Runtime
    * matching sees the original event shape plus this evidence limitation;
    * persistence can retain the same signal without replacing values with a
    * magic string.
    */
-  redacted?: readonly string[];
-} & (
-  /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */
-  | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
+  redacted?: readonly string[] | undefined;
+} /** assistant 回复；它不是 eval 源码上的作者事实，不参与 sourceOrder 序列。 */ & (
+  | { type: "message"; role: "assistant"; text: string; loc?: SourceLoc | undefined }
   /**
    * eval 作者发出的用户输入；`loc` 把消息叠回源码，`sourceOrder` 与断言、直接给分共用同一条
    * attempt 级序列。历史事件可省略，当前 SessionManager 产出的 user message 必写。
    */
-  | { type: "message"; role: "user"; text: string; loc?: SourceLoc; sourceOrder?: number }
+  | { type: "message"; role: "user"; text: string; loc?: SourceLoc | undefined; sourceOrder?: number | undefined }
   /** 发起一次工具或子 agent 操作；嵌套 `kind` 让两种 started 形状保持闭合。 */
   | {
       type: "operation.started";
@@ -254,21 +253,21 @@ export type StreamEvent = {
             kind: "tool";
             name: string;
             input: JsonValue;
-            tool?: ToolName;
+            tool?: ToolName | undefined;
             /**
              * Adapter 对 command / not-command 的协议级分类。暂时可选以兼容尚未迁移的
              * 第三方 Adapter；缺失不得在 core 侧由 name、input 或 shell text 补造。
              */
-            command?: CommandProjection;
+            command?: CommandProjection | undefined;
           }
-        | { kind: "subagent"; name: string; remoteUrl?: string };
+        | { kind: "subagent"; name: string; remoteUrl?: string | undefined };
     }
   /** 工具操作完成；人工拒绝只属于工具操作。 */
   | {
       type: "operation.finished";
       operationId: string;
       kind: "tool";
-      output?: JsonValue;
+      output?: JsonValue | undefined;
       status: "completed" | "failed" | "rejected";
     }
   /** 子 agent 操作完成；子 agent 没有人工拒绝状态。 */
@@ -276,14 +275,14 @@ export type StreamEvent = {
       type: "operation.finished";
       operationId: string;
       kind: "subagent";
-      output?: JsonValue;
+      output?: JsonValue | undefined;
       status: "completed" | "failed";
     }
   /**
    * 一次 Skill 加载:一等事件,由 adapter 从原生协议里识别出「这是加载 Skill」并直接产出,
    * 不靠 renderer 按工具名/文本猜。`operationId` 仅当原生协议把 Skill 加载表达成可关联的工具调用时才有。
    */
-  | { type: "skill.loaded"; skill: string; operationId?: string }
+  | { type: "skill.loaded"; skill: string; operationId?: string | undefined }
   /** 模型停下来向人请求输入(HITL);具体请求内容见 InputRequest。 */
   | { type: "input.requested"; request: InputRequest }
   /** 模型的思考/推理文本(非最终回复)。 */
@@ -293,9 +292,9 @@ export type StreamEvent = {
    * UserPromptSubmit hook 在下一轮开始前前置进模型上下文的文本)。只承载带实际文本内容的注入;
    * `source` 是可选的原始来源标记(如 hook 名),adapter 按各自协议原样透传,不强行归一到封闭枚举。
    */
-  | { type: "context.injected"; text: string; source?: string }
+  | { type: "context.injected"; text: string; source?: string | undefined }
   /** 上下文被压缩/摘要(如超长会话截断历史);`reason` 是可选的压缩原因说明。 */
-  | { type: "compaction"; reason?: string }
+  | { type: "compaction"; reason?: string | undefined }
   /** 运行中出现的错误。 */
   | { type: "error"; message: string }
 );
@@ -308,17 +307,17 @@ export type StreamEvent = {
 export interface ToolCall {
   operationId: string;
   name: ToolName;
-  originalName?: string;
+  originalName: string | undefined;
   input: JsonValue;
-  output?: JsonValue;
+  output: JsonValue | undefined;
   status: "pending" | "completed" | "failed" | "rejected";
 }
 
 export interface SubagentCall {
   operationId: string;
   name: string;
-  remoteUrl?: string;
-  output?: JsonValue;
+  remoteUrl: string | undefined;
+  output: JsonValue | undefined;
   /** 子 agent 委派没有 rejected 状态(operation.finished 只报 completed / failed)。 */
   status: "pending" | "completed" | "failed";
 }
@@ -353,21 +352,21 @@ export type SpanKind = "turn" | "model" | "tool" | "agent" | "other";
 export interface TraceSpan {
   traceId: string;
   spanId: string;
-  parentSpanId?: string;
+  parentSpanId?: string | undefined;
   name: string;
   /** span 起点 / 终点(epoch 毫秒)。 */
   startMs: number;
   endMs: number;
-  status?: "ok" | "error" | "unset";
+  status?: "ok" | "error" | "unset" | undefined;
   /**
    * 归一后的语义角色(每-agent mapper 据 canonical GenAI semconv 定;view/select 只认它)。
    * 未经 mapper 或未识别时为 undefined / "other"。
    */
-  kind?: SpanKind;
+  kind?: SpanKind | undefined;
   /** OTLP span 属性(gen_ai.* / tool 名 / token 等),按 key 摊平。raw 属性始终保留供下钻。 */
-  attributes?: globalThis.Record<string, JsonValue>;
+  attributes?: globalThis.Record<string, JsonValue> | undefined;
   /** 落盘截断标记(只由 results writer 在序列化时写入,运行时全量;见 Truncation)。 */
-  truncated?: Truncation[];
+  truncated?: Truncation[] | undefined;
 }
 
 /**

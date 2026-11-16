@@ -1,6 +1,9 @@
 export type FiniteValue<Values extends readonly string[]> = Values[number];
 
-export function isFiniteValue<const Values extends readonly string[]>(values: Values, value: string): value is FiniteValue<Values> {
+export function isFiniteValue<const Values extends readonly string[]>(
+  values: Values,
+  value: string,
+): value is FiniteValue<Values> {
   return (values as readonly string[]).includes(value);
 }
 

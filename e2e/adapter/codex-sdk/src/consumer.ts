@@ -53,9 +53,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     approvalPolicy: "never" as const,
     model: ctx.model ?? "gpt-6-luna",
   };
-  const thread = ctx.session.id === undefined
-    ? codex.startThread(threadOptions)
-    : codex.resumeThread(ctx.session.id, threadOptions);
+  const thread =
+    ctx.session.id === undefined ? codex.startThread(threadOptions) : codex.resumeThread(ctx.session.id, threadOptions);
 
   // Pass the runner's exact signal through to the SDK. On iterator failure or
   // cancellation, return() is awaited; a return() failure remains observable.

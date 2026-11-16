@@ -1,13 +1,6 @@
 import { cp, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stageArtifacts, type ArtifactStageEntry } from "./artifact-staging.js";
 
 export type ProjectLink = {

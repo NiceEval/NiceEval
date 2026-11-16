@@ -7,10 +7,7 @@ import type {
   SourceLineDetail,
   SourceLineTone,
 } from "../../components/primitives/source-view.tsx";
-import type {
-  TableContent,
-  TableContentRow,
-} from "../../components/primitives/index.tsx";
+import type { TableContent, TableContentRow } from "../../components/primitives/index.tsx";
 import type {
   AttemptAssertionView,
   AttemptAssertionsData,
@@ -22,21 +19,31 @@ import type {
 export function assertionDetailOf(assertion: AttemptAssertionView): SourceLineDetail[] {
   const display = assertion.display;
   const score = assertion.score;
-  const earned = score?.state === "earned" ? score.earned ?? 0 : undefined;
-  const scoreText = score === undefined
-    ? ""
-    : ` · weight ${score.points} ${score.points === 1 ? "pt" : "pts"} · earned ${earned === undefined ? "unavailable" : `${earned} ${earned === 1 ? "pt" : "pts"}`}`;
-  const tone = assertion.decision.result === "matched"
-    ? "niceeval-tone-good"
-    : assertion.decision.result === "mismatched" && display.severity === "gate"
-      ? "niceeval-tone-bad"
-      : assertion.decision.result === "mismatched"
-        ? "niceeval-tone-warn"
-        : "niceeval-tone-na";
+  const earned = score?.state === "earned" ? (score.earned ?? 0) : undefined;
+  const scoreText =
+    score === undefined
+      ? ""
+      : ` · weight ${score.points} ${score.points === 1 ? "pt" : "pts"} · earned ${earned === undefined ? "unavailable" : `${earned} ${earned === 1 ? "pt" : "pts"}`}`;
+  function assertionTone(): string {
+    if (assertion.decision.result === "matched") return "niceeval-tone-good";
+    if (assertion.decision.result === "mismatched")
+      return display.severity === "gate" ? "niceeval-tone-bad" : "niceeval-tone-warn";
+    return "niceeval-tone-na";
+  }
+  function evidenceState() {
+    switch (assertion.decision.result) {
+      case "matched":
+        return "matched" as const;
+      case "mismatched":
+        return "mismatched" as const;
+      default:
+        return "unavailable" as const;
+    }
+  }
   return [
     {
       kind: "text",
-      className: `niceeval-source-assertion ${tone}`,
+      className: `niceeval-source-assertion ${assertionTone()}`,
       text: `${display.name} · ${display.severity} ${display.outcome}${scoreText}`,
     },
     {
@@ -44,17 +51,13 @@ export function assertionDetailOf(assertion: AttemptAssertionView): SourceLineDe
       entryId: assertion.entryId,
       content: assertion.evidence,
       label: display.name,
-      state: assertion.decision.result === "matched"
-        ? "matched"
-        : assertion.decision.result === "mismatched"
-          ? "mismatched"
-          : "unavailable",
+      state: evidenceState(),
     },
   ];
 }
 
-export function attemptAssertionsContent(data: AttemptAssertionsData | null): TableContent | null {
-  if (data === null || (data.attention.length === 0 && data.passedGroups.length === 0)) return null;
+export function attemptAssertionsContent(data: AttemptAssertionsData | undefined): TableContent | undefined {
+  if (data === undefined || (data.attention.length === 0 && data.passedGroups.length === 0)) return undefined;
   const rows: TableContentRow[] = data.attention.map((assertion) => ({
     key: assertion.entryId,
     cells: {
@@ -64,9 +67,10 @@ export function attemptAssertionsContent(data: AttemptAssertionsData | null): Ta
         kind: "verdict",
         verdict: assertion.display.outcome === "unavailable" ? "skipped" : assertion.display.outcome,
       },
-      detail: assertion.display.detail.length > 0
-        ? { kind: "text", text: assertion.display.detail }
-        : { kind: "notApplicable" },
+      detail:
+        assertion.display.detail.length > 0
+          ? { kind: "text", text: assertion.display.detail }
+          : { kind: "notApplicable" },
     },
   }));
   return {
@@ -81,17 +85,28 @@ export function attemptAssertionsContent(data: AttemptAssertionsData | null): Ta
 }
 
 function assertionLineTone(assertions: readonly AttemptAssertionView[]): SourceLineTone | undefined {
-  if (assertions.some((assertion) => assertion.decision.result === "mismatched" && assertion.display.severity === "gate")) return "gate-fail";
+  if (
+    assertions.some((assertion) => assertion.decision.result === "mismatched" && assertion.display.severity === "gate")
+  )
+    return "gate-fail";
   if (assertions.some((assertion) => assertion.decision.result === "mismatched")) return "soft-fail";
-  if (assertions.some((assertion) =>
-    assertion.decision.result === "unavailable" ||
-    assertion.decision.result === "errored" ||
-    assertion.decision.result === "not-applicable")) return "unavailable";
+  if (
+    assertions.some(
+      (assertion) =>
+        assertion.decision.result === "unavailable" ||
+        assertion.decision.result === "errored" ||
+        assertion.decision.result === "not-applicable",
+    )
+  )
+    return "unavailable";
   if (assertions.some((assertion) => assertion.decision.result === "matched")) return "passed";
   return undefined;
 }
 
-function strongerTone(current: SourceLineTone | undefined, incoming: SourceLineTone | undefined): SourceLineTone | undefined {
+function strongerTone(
+  current: SourceLineTone | undefined,
+  incoming: SourceLineTone | undefined,
+): SourceLineTone | undefined {
   const rank: Record<SourceLineTone, number> = {
     send: 0,
     passed: 1,
@@ -106,14 +121,11 @@ function strongerTone(current: SourceLineTone | undefined, incoming: SourceLineT
 
 /** Join full assertion entries to sealed source only through sourceItemId + sha256 + line range. */
 export function attachAssertionsToSource(
-  source: SourceContent | null,
-  assertions: AttemptAssertionsData | null,
-): SourceContent | null {
-  if (source === null || assertions === null) return source;
-  const entries = [
-    ...assertions.attention,
-    ...assertions.passedGroups.flatMap((group) => group.items),
-  ];
+  source: SourceContent | undefined,
+  assertions: AttemptAssertionsData | undefined,
+): SourceContent | undefined {
+  if (source === undefined || assertions === undefined) return source;
+  const entries = [...assertions.attention, ...assertions.passedGroups.flatMap((group) => group.items)];
   const blocks = [source.spine, ...source.detached];
   const blockIdentities = new Set(blocks.map((block) => `${block.sourceItemId}\u0000${block.sha256}`));
   const mappedEntries = new Set<string>();
@@ -121,40 +133,42 @@ export function attachAssertionsToSource(
   const cloneBlock = (block: SourceBlockContent): SourceBlockContent => ({
     ...block,
     lines: block.lines.map((line) => {
-      const bound = entries.flatMap((entry) => entry.sourceSites
-        .filter((site) =>
-          site.target.state === "exact" &&
-          site.target.sourceItemId === block.sourceItemId &&
-          site.target.sha256 === block.sha256 &&
-          line.number >= site.start.line &&
-          line.number <= site.end.line)
-        .map((site) => ({ entry, site })));
+      const bound = entries.flatMap((entry) =>
+        entry.sourceSites
+          .filter(
+            (site) =>
+              site.target.state === "exact" &&
+              site.target.sourceItemId === block.sourceItemId &&
+              site.target.sha256 === block.sha256 &&
+              line.number >= site.start.line &&
+              line.number <= site.end.line,
+          )
+          .map((site) => ({ entry, site })),
+      );
       for (const { entry } of bound) mappedEntries.add(entry.entryId);
-      const assertionEntries = bound
-        .filter(({ site }) => site.role !== "score")
-        .map(({ entry }) => entry);
+      const assertionEntries = bound.filter(({ site }) => site.role !== "score").map(({ entry }) => entry);
       const startEntries = bound
         .filter(({ site }) => site.role !== "score" && site.start.line === line.number)
         .map(({ entry }) => entry);
       const existingAssertionIds = new Set(
-        (line.details ?? []).flatMap((detail) => detail.kind === "assertion" ? [detail.entryId] : []),
+        (line.details ?? []).flatMap((detail) => (detail.kind === "assertion" ? [detail.entryId] : [])),
       );
       const details = [
         ...(line.details ?? []),
-        ...startEntries
-          .filter((entry) => !existingAssertionIds.has(entry.entryId))
-          .flatMap(assertionDetailOf),
+        ...startEntries.filter((entry) => !existingAssertionIds.has(entry.entryId)).flatMap(assertionDetailOf),
       ];
       const scoreEntries = bound.filter(({ site, entry }) => site.role === "score" && entry.score !== undefined);
-      const score = scoreEntries.reduce((sum, { entry }) =>
-        sum + (entry.score?.state === "earned" ? entry.score.earned ?? 0 : 0), 0);
+      const score = scoreEntries.reduce(
+        (sum, { entry }) => sum + (entry.score?.state === "earned" ? (entry.score.earned ?? 0) : 0),
+        0,
+      );
       const pill = scoreEntries.length === 0 ? line.pill : `${score} ${score === 1 ? "pt" : "pts"}`;
       const tone = strongerTone(line.tone, assertionLineTone(assertionEntries));
       return {
         ...line,
-        ...(tone === undefined ? {} : { tone }),
-        ...(pill === undefined ? {} : { pill }),
-        ...(details.length === 0 ? {} : { details }),
+        tone,
+        pill,
+        details,
       };
     }),
   });
@@ -163,9 +177,10 @@ export function attachAssertionsToSource(
   const detached = source.detached.map(cloneBlock);
   // Assertions with no exact retained source target remain visible below the source.
   for (const entry of entries) {
-    const hasKnownSite = entry.sourceSites.some((site) =>
-      site.target.state === "exact" &&
-      blockIdentities.has(`${site.target.sourceItemId}\u0000${site.target.sha256}`));
+    const hasKnownSite = entry.sourceSites.some(
+      (site) =>
+        site.target.state === "exact" && blockIdentities.has(`${site.target.sourceItemId}\u0000${site.target.sha256}`),
+    );
     if (!hasKnownSite) mappedEntries.delete(entry.entryId);
   }
   const unmapped = [
@@ -180,36 +195,61 @@ export function attachAssertionsToSource(
   };
 }
 
-export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [{
-  title: { en: "Execution evidence unavailable", "zh-CN": "执行证据不可用" },
-  items: [{
-    level: "warning",
-    message: {
-      en: "The events artifact is missing or was not published.",
-      "zh-CN": "事件证据缺失或未发布。",
-    },
-  }],
-}];
+export const executionEvidenceUnavailableCallouts: readonly CalloutGroup[] = [
+  {
+    title: { en: "Execution evidence unavailable", "zh-CN": "执行证据不可用" },
+    items: [
+      {
+        level: "warning",
+        message: {
+          en: "The events artifact is missing or was not published.",
+          "zh-CN": "事件证据缺失或未发布。",
+        },
+        command: undefined,
+        count: 1,
+      },
+    ],
+    command: undefined,
+    badges: [],
+    groups: [],
+  },
+];
 
-export const adapterConversationNotRecordedCallouts: readonly CalloutGroup[] = [{
-  title: { en: "Conversation not recorded", "zh-CN": "未记录会话" },
-  items: [{
-    level: "warning",
-    message: {
-      en: "This Adapter is evaluated through its native interface and has no Agent session or turns.",
-      "zh-CN": "此应用通过原生接口接受评测，没有 Agent 会话或 Turn。",
-    },
-  }],
-}];
+export const adapterConversationNotRecordedCallouts: readonly CalloutGroup[] = [
+  {
+    title: { en: "Conversation not recorded", "zh-CN": "未记录会话" },
+    items: [
+      {
+        level: "warning",
+        message: {
+          en: "This Adapter is evaluated through its native interface and has no Agent session or turns.",
+          "zh-CN": "此应用通过原生接口接受评测，没有 Agent 会话或 Turn。",
+        },
+        command: undefined,
+        count: 1,
+      },
+    ],
+    command: undefined,
+    badges: [],
+    groups: [],
+  },
+];
 
-export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): readonly CalloutGroup[] {
-  if (data === null) return [];
+export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | undefined): readonly CalloutGroup[] {
+  if (data === undefined) return [];
   return data.groups.map((group) => ({
     title: group.phase,
-    items: group.items.map((diagnostic): CalloutItem => ({
-      level: diagnostic.level,
-      message: `${diagnostic.code}: ${diagnostic.summary}`,
-    })),
+    items: group.items.map(
+      (diagnostic): CalloutItem => ({
+        level: diagnostic.level,
+        message: `${diagnostic.code}: ${diagnostic.summary}`,
+        command: undefined,
+        count: 1,
+      }),
+    ),
+    command: undefined,
+    badges: [],
+    groups: [],
   }));
 }
 
@@ -217,23 +257,30 @@ function limitationItems(limitations: readonly EvidenceLimitation[]): readonly C
   return limitations.map((limitation) => ({
     level: "warning" as const,
     message: `${limitation.code}: ${limitation.summary}`,
+    command: undefined,
+    count: 1,
   }));
 }
 
-export function evidenceSliceCallouts(
-  label: string,
-  slice: ClosedEvidenceSlice<unknown>,
-): readonly CalloutGroup[] {
+export function evidenceSliceCallouts(label: string, slice: ClosedEvidenceSlice<unknown>): readonly CalloutGroup[] {
   if (slice.state === "available") return [];
   const items = limitationItems(slice.limitations);
-  return [{
-    title: label,
-    items: items.length > 0 ? items : [{ level: "warning", message: `Evidence state: ${slice.state}.` }],
-  }];
+  return [
+    {
+      title: label,
+      items:
+        items.length > 0
+          ? items
+          : [{ level: "warning", message: `Evidence state: ${slice.state}.`, command: undefined, count: 1 }],
+      command: undefined,
+      badges: [],
+      groups: [],
+    },
+  ];
 }
 
-export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | null {
-  return slice.state === "available" || slice.state === "partial" ? slice.data : null;
+export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | undefined {
+  return slice.state === "available" || slice.state === "partial" ? slice.data : undefined;
 }
 
 /**
@@ -241,40 +288,46 @@ export function sliceData<Data>(slice: ClosedEvidenceSlice<Data>): Data | null {
  * label, source order, text, or ordinal fallback participates in this join.
  */
 export function embedConversationInSource(
-  source: SourceContent | null,
-  conversation: ConversationContent | null,
-): { readonly source: SourceContent | null; readonly conversation: ConversationContent | null } {
+  source: SourceContent | undefined,
+  conversation: ConversationContent | undefined,
+): { readonly source: SourceContent | undefined; readonly conversation: ConversationContent | undefined } {
   const turns = conversation?.turns ?? [];
   const turnById = new Map(turns.map((turn) => [turn.key, turn] as const));
   const mappedTurnIds = new Set<string>();
 
   const cloneLine = (line: SourceLine): SourceLine => {
-    const lineTurns = (line.turnIds ?? []).flatMap((turnId) => {
+    const lineTurns = line.turnIds.flatMap((turnId) => {
       const turn = turnById.get(turnId);
       if (turn === undefined) return [];
       mappedTurnIds.add(turnId);
       return [turn];
     });
-    const details = line.details === undefined && lineTurns.length === 0
-      ? undefined
-      : [
-          ...(line.details ?? []),
-          ...(lineTurns.length === 0
-            ? []
-            : [{ kind: "turn-trace" as const, data: { turns: lineTurns, locator: conversation?.locator } }]),
-        ];
-    return { ...line, ...(details === undefined ? {} : { details }) };
+    const details = [
+      ...line.details,
+      ...(lineTurns.length === 0
+        ? []
+        : [
+            {
+              kind: "turn-trace" as const,
+              data: {
+                turns: lineTurns,
+                locator: conversation?.locator,
+              },
+            },
+          ]),
+    ];
+    return { ...line, details };
   };
   const cloneBlock = (block: SourceBlockContent): SourceBlockContent => ({
     ...block,
     lines: block.lines.map(cloneLine),
   });
-  const embeddedSource = source === null
-    ? null
-    : { ...source, spine: cloneBlock(source.spine), detached: source.detached.map(cloneBlock) };
+  const embeddedSource =
+    source === undefined
+      ? undefined
+      : { ...source, spine: cloneBlock(source.spine), detached: source.detached.map(cloneBlock) };
   const remainingTurns = turns.filter((turn) => !mappedTurnIds.has(turn.key));
-  const remainingConversation = conversation === null || remainingTurns.length === 0
-    ? null
-    : { ...conversation, turns: remainingTurns };
+  const remainingConversation =
+    conversation === undefined || remainingTurns.length === 0 ? undefined : { ...conversation, turns: remainingTurns };
   return { source: embeddedSource, conversation: remainingConversation };
 }

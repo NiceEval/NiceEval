@@ -21,22 +21,26 @@ export function marketplaceNamesFromList(stdout: string): string[] | undefined {
   } catch {
     return undefined;
   }
-  const arr = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === "object"
-      ? (raw as { marketplaces?: unknown }).marketplaces
-      : undefined;
+  function marketplaceEntries(): unknown {
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === "object") return (raw as { marketplaces?: unknown }).marketplaces;
+    return undefined;
+  }
+  const arr = marketplaceEntries();
   if (!Array.isArray(arr)) return undefined;
   const names: string[] = [];
   for (const item of arr) {
-    const name =
-      typeof item === "string"
-        ? item
-        : item && typeof item === "object"
-          ? ((item as { name?: unknown }).name ??
-            (item as { marketplaceName?: unknown }).marketplaceName ??
-            (item as { id?: unknown }).id)
-          : undefined;
+    function marketplaceName(): unknown {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object")
+        return (
+          (item as { name?: unknown }).name ??
+          (item as { marketplaceName?: unknown }).marketplaceName ??
+          (item as { id?: unknown }).id
+        );
+      return undefined;
+    }
+    const name = marketplaceName();
     if (typeof name === "string" && name) names.push(name);
   }
   return names;
@@ -46,10 +50,15 @@ export function marketplaceNamesFromList(stdout: string): string[] | undefined {
 async function readMarketplaceNames(
   sb: Sandbox,
   listCommand: string,
-): Promise<{ names?: string[]; tail: string }> {
+): Promise<
+  | { readonly state: "parsed"; readonly names: readonly string[] }
+  | { readonly state: "unavailable"; readonly tail: string }
+> {
   const res = await sb.runShell(listCommand);
+  const names = res.exitCode === 0 ? marketplaceNamesFromList(res.stdout) : undefined;
+  if (names !== undefined) return { state: "parsed", names };
   return {
-    names: res.exitCode === 0 ? marketplaceNamesFromList(res.stdout) : undefined,
+    state: "unavailable",
     tail: (res.stdout + res.stderr).trim().split("\n").slice(-12).join("\n"),
   };
 }
@@ -71,13 +80,14 @@ export interface VerifyMarketplaceNameOptions {
  * errored —— 不把失败拖延到 `plugin install`。
  */
 export async function verifyMarketplaceName(sb: Sandbox, opts: VerifyMarketplaceNameOptions): Promise<void> {
-  const { names, tail } = await readMarketplaceNames(sb, opts.listCommand);
-  if (names === undefined) {
+  const result = await readMarketplaceNames(sb, opts.listCommand);
+  if (result.state === "unavailable") {
     throw new Error(
       `Could not read back the registered marketplace list after adding ${opts.agent} marketplace "${opts.marketplace.name}" (${opts.listCommand}):
-${tail}`,
+${result.tail}`,
     );
   }
+  const { names } = result;
   if (names.includes(opts.marketplace.name)) return;
   const actual = names.filter((n) => !opts.knownNames.has(n));
   throw new Error(

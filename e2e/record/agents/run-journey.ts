@@ -23,7 +23,7 @@ export const runJourneyAgent = defineAgent({
           signal: ctx.signal,
         });
         if (!response.ok) throw new Error(`Run Journey backend returned HTTP ${response.status}`);
-        return await response.json() as {
+        return (await response.json()) as {
           readonly status: "completed";
           readonly events: readonly [{ readonly type: "message"; readonly role: "assistant"; readonly text: string }];
         };

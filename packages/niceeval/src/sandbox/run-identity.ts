@@ -7,26 +7,31 @@ import { sandboxCreationMetadata } from "./cloud-lifetime.ts";
 import { hostname } from "node:os";
 import { execFileSync } from "node:child_process";
 
-export interface RunIdentity {
-  runId?: string;
+export interface RunOwnerIdentity {
   host: string;
   pid: number;
   startedAt: string;
 }
 
+export interface RunIdentity extends RunOwnerIdentity {
+  runId: string | undefined;
+  creationLabels: Readonly<Record<string, string>>;
+}
+
 /** 创建沙箱时快照一次当前 runner 进程的运行标识。 */
-export function currentRunIdentity(runId?: string): RunIdentity {
-  return { runId, host: hostname(), pid: process.pid, startedAt: new Date().toISOString() };
+export function currentRunIdentity(runId?: string, creationLabels?: Readonly<Record<string, string>>): RunIdentity {
+  return {
+    runId,
+    creationLabels: creationLabels ?? {},
+    host: hostname(),
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
 }
 
 export const DOCKER_HOST_LABEL = "niceeval.host";
 export const DOCKER_PID_LABEL = "niceeval.pid";
 export const DOCKER_STARTED_AT_LABEL = "niceeval.started-at";
-
-/** Compose 自己给组内容器与网络打的 project label——孤儿核对靠它把一组资源拼回来。 */
-export const DOCKER_COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
-/** 受管 overlay 打在 mainService 上的标记:资源组里哪一台是主实例。 */
-export const DOCKER_MAIN_SERVICE_LABEL = "niceeval.main-service";
 
 export const E2B_HOST_METADATA = "niceeval-host";
 export const E2B_PID_METADATA = "niceeval-pid";
@@ -35,6 +40,7 @@ export const E2B_STARTED_AT_METADATA = "niceeval-started-at";
 export function dockerRunIdentityLabels(identity: RunIdentity): globalThis.Record<string, string> {
   return {
     ...sandboxCreationMetadata(identity.runId, identity.startedAt),
+    ...identity.creationLabels,
     [DOCKER_HOST_LABEL]: identity.host,
     [DOCKER_PID_LABEL]: String(identity.pid),
     [DOCKER_STARTED_AT_LABEL]: identity.startedAt,
@@ -47,33 +53,6 @@ export function e2bRunIdentityMetadata(identity: RunIdentity): globalThis.Record
     [E2B_PID_METADATA]: String(identity.pid),
     [E2B_STARTED_AT_METADATA]: identity.startedAt,
   };
-}
-
-/** 从 docker label 集合解出运行标识;缺任何一个字段视为没有标识(非 niceeval 容器)。 */
-export function parseDockerRunIdentity(labels: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
-  if (!labels) return undefined;
-  return parseRunIdentityFields(labels[DOCKER_HOST_LABEL], labels[DOCKER_PID_LABEL], labels[DOCKER_STARTED_AT_LABEL]);
-}
-
-/** 从 e2b SDK 返回的 metadata 解出运行标识;缺任何一个字段视为没有标识。 */
-export function parseE2BRunIdentity(metadata: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
-  if (!metadata) return undefined;
-  return parseRunIdentityFields(
-    metadata[E2B_HOST_METADATA],
-    metadata[E2B_PID_METADATA],
-    metadata[E2B_STARTED_AT_METADATA],
-  );
-}
-
-function parseRunIdentityFields(
-  host: string | undefined,
-  pidRaw: string | undefined,
-  startedAt: string | undefined,
-): RunIdentity | undefined {
-  if (host === undefined || pidRaw === undefined || startedAt === undefined) return undefined;
-  const pid = Number(pidRaw);
-  if (!Number.isFinite(pid)) return undefined;
-  return { host, pid, startedAt };
 }
 
 /**
@@ -95,7 +74,10 @@ export type OrphanState = "orphan" | "unverified";
 export function pidStartedAt(pid: number): string | undefined {
   try {
     // macOS 与常见 Linux 均支持 lstart；避免 /proc 专有格式和时钟 tick 换算。
-    const raw = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const raw = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
     const timestamp = Date.parse(raw);
     return Number.isNaN(timestamp) ? undefined : new Date(timestamp).toISOString();
   } catch {
@@ -110,7 +92,7 @@ export function pidStartedAt(pid: number): string | undefined {
  * unverified,也不错误地当活实例处理。
  */
 export function classifyRunIdentity(
-  identity: RunIdentity,
+  identity: RunOwnerIdentity,
   readPidStartedAt: (pid: number) => string | undefined = pidStartedAt,
 ): "alive" | OrphanState {
   if (identity.host !== hostname()) return "unverified";

@@ -11,18 +11,11 @@ import {
   type AssertionsAttachmentCapture,
   type AssertionSourceSiteInput,
 } from "../../assertions/record/attachment.ts";
-import {
-  createFileChangesCaptureAttachment,
-  type FileChangesAttachmentBuild,
-} from "../../assertions/record/diff.ts";
+import { createFileChangesCaptureAttachment, type FileChangesAttachmentBuild } from "../../assertions/record/diff.ts";
 import type { AssertionsProducerError } from "../../assertions/record/producer.ts";
 import type { AssertionEntryId } from "../../assertions/identity.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import {
-  ArtifactsAttachmentSchema,
-  ArtifactsLimits,
-  type ArtifactsAttachment,
-} from "../../record/family/artifacts.ts";
+import { ArtifactsAttachmentSchema, ArtifactsLimits, type ArtifactsAttachment } from "../../record/family/artifacts.ts";
 import type { AssertionSourceSite } from "../../record/family/assertions/definition.ts";
 import type { RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import { runnerAttemptFileChangesCaptureForResult } from "../sandbox-record-producer.ts";
@@ -63,14 +56,14 @@ export interface PreparedAssertionsAttachment {
 }
 
 function assertionsInvalid(issue: AssertionsProducerError): RunnerAssertionsAttachmentInvalid {
-  return Object.freeze({ code: "runner-record-assertions-invalid" as const, issue });
+  return { code: "runner-record-assertions-invalid" as const, issue };
 }
 
 function buildAssertionsCapture(
   sealed: SealedAttemptAssertions,
   input: {
-    readonly entryIds?: readonly AssertionEntryId[];
-    readonly sourceSites?: readonly AssertionSourceSiteInput[];
+    readonly entryIds: readonly AssertionEntryId[] | undefined;
+    readonly sourceSites: readonly AssertionSourceSiteInput[] | undefined;
   },
 ): Result.Result<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
   let entryIndex = 0;
@@ -85,19 +78,17 @@ function buildAssertionsCapture(
     if (Result.isFailure(appended)) return Result.fail(assertionsInvalid(appended.failure));
     entryIds.push(appended.success);
   }
-  const attachment = producer.seal({ sourceSites: input.sourceSites });
+  const attachment = producer.seal({ sourceSites: input.sourceSites ?? [] });
   return Result.isFailure(attachment)
     ? Result.fail(assertionsInvalid(attachment.failure))
-    : Result.succeed(Object.freeze({
+    : Result.succeed({
         attachment: attachment.success,
-        entryIds: Object.freeze(entryIds),
-      }));
+        entryIds,
+      });
 }
 
-function sourceSiteInputs(
-  sites: readonly AssertionSourceSite[],
-): readonly AssertionSourceSiteInput[] {
-  return Object.freeze(sites.map((site) => Object.freeze({
+function sourceSiteInputs(sites: readonly AssertionSourceSite[]): readonly AssertionSourceSiteInput[] {
+  return sites.map((site) => ({
     entryId: site.entryId,
     sourceOrder: site.sourceOrder,
     role: site.role,
@@ -105,7 +96,7 @@ function sourceSiteInputs(
     sha256: site.source.value.sha256,
     start: site.start,
     end: site.end,
-  })));
+  }));
 }
 
 /**
@@ -115,11 +106,18 @@ function sourceSiteInputs(
 export function createRunnerAssertionsAttachment(
   sealed: SealedAttemptAssertions,
   input: {
-    readonly entryIds?: readonly AssertionEntryId[];
-    readonly sourceSites?: RunnerAssertionSourceSitesBuild;
-  } = {},
+    readonly entryIds: readonly AssertionEntryId[] | undefined;
+    readonly sourceSites: RunnerAssertionSourceSitesBuild | undefined;
+  } = {
+    entryIds: undefined,
+    sourceSites: undefined,
+  },
 ): Result.Result<PreparedAssertionsAttachment, RunnerAssertionsAttachmentInvalid> {
-  const preflight = buildAssertionsCapture(sealed, { entryIds: input.entryIds });
+  const preflight = buildAssertionsCapture(sealed, {
+    entryIds: input.entryIds,
+
+    sourceSites: undefined,
+  });
   if (Result.isFailure(preflight)) return preflight;
   const buildSourceSites = input.sourceSites;
   if (buildSourceSites === undefined) return preflight;
@@ -134,111 +132,140 @@ export function createRunnerAssertionsAttachment(
     }
     return built.success.attachment(build);
   };
-  return Result.succeed(Object.freeze({
+  return Result.succeed({
     attachment,
     entryIds: preflight.success.entryIds,
-  }));
+  });
 }
 
 interface ArtifactCaptureMetadata {
-  readonly artifactId?: string;
+  readonly artifactId: string | undefined;
   readonly mediaType: string;
   readonly label: string;
 }
-type ArtifactCapture = ArtifactCaptureMetadata & (
-  | { readonly bytes: Uint8Array; readonly filePath?: never }
-  | { readonly filePath: string; readonly byteLength: number; readonly sha256: string; readonly bytes?: never }
-);
+type ArtifactCapture = ArtifactCaptureMetadata &
+  (
+    | { readonly bytes: Uint8Array; readonly filePath?: never }
+    | { readonly filePath: string; readonly byteLength: number; readonly sha256: string; readonly bytes?: never }
+  );
 
-export type ArtifactsAttachmentBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => ArtifactsAttachment;
+export type ArtifactsAttachmentBuild = (build: RecordAttachmentSessionBuilder) => ArtifactsAttachment;
 
 /** The stream scope is the publication read lease; it closes before staging disposal. */
-function archivedContentStream(artifact: { readonly filePath: string; readonly byteLength: number; readonly sha256: string }) {
-  return Stream.unwrap(Effect.gen(function* () {
-    const readable = yield* Effect.acquireRelease(
-      Effect.sync(() => createReadStream(artifact.filePath, { highWaterMark: 64 * 1024 })),
-      (source) => Effect.promise(async () => {
-        if (source.closed) return;
-        const closed = new Promise<void>((resolve) => source.once("close", resolve));
-        source.destroy();
-        await closed;
-      }),
-    );
-    const hash = createHash("sha256");
-    let byteLength = 0;
-    const bytes = NodeStream.fromReadable<Uint8Array, Error>({
-      evaluate: () => readable,
-      onError: (cause) => new Error("Archived attachment could not be read", { cause }),
-    }).pipe(Stream.mapEffect((chunk) => Effect.try({
-      try: () => {
-        byteLength += chunk.byteLength;
-        if (byteLength > artifact.byteLength) throw new Error("Archived attachment length changed");
-        hash.update(chunk);
-        return chunk;
-      },
-      catch: (cause) => new Error("Archived attachment integrity check failed", { cause }),
-    })));
-    return Stream.concat(bytes, Stream.drain(Stream.fromEffect(Effect.try({
-      try: () => {
-        if (byteLength !== artifact.byteLength || hash.digest("hex") !== artifact.sha256) {
-          throw new Error("Archived attachment integrity check failed");
-        }
-      },
-      catch: (cause) => new Error("Archived attachment integrity check failed", { cause }),
-    }))));
-  }));
+function archivedContentStream(artifact: {
+  readonly filePath: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}) {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const readable = yield* Effect.acquireRelease(
+        Effect.sync(() => createReadStream(artifact.filePath, { highWaterMark: 64 * 1024 })),
+        (source) =>
+          Effect.promise(async () => {
+            if (source.closed) return;
+            const closed = new Promise<void>((resolve) => source.once("close", resolve));
+            source.destroy();
+            await closed;
+          }),
+      );
+      const hash = createHash("sha256");
+      let byteLength = 0;
+      const bytes = NodeStream.fromReadable<Uint8Array, Error>({
+        evaluate: () => readable,
+        onError: (cause) => new Error("Archived attachment could not be read", { cause }),
+      }).pipe(
+        Stream.mapEffect((chunk) =>
+          Effect.try({
+            try: () => {
+              byteLength += chunk.byteLength;
+              if (byteLength > artifact.byteLength) throw new Error("Archived attachment length changed");
+              hash.update(chunk);
+              return chunk;
+            },
+            catch: (cause) => new Error("Archived attachment integrity check failed", { cause }),
+          }),
+        ),
+      );
+      return Stream.concat(
+        bytes,
+        Stream.drain(
+          Stream.fromEffect(
+            Effect.try({
+              try: () => {
+                if (byteLength !== artifact.byteLength || hash.digest("hex") !== artifact.sha256) {
+                  throw new Error("Archived attachment integrity check failed");
+                }
+              },
+              catch: (cause) => new Error("Archived attachment integrity check failed", { cause }),
+            }),
+          ),
+        ),
+      );
+    }),
+  );
 }
 
 function artifactsAttachment(input: {
   readonly artifacts: readonly ArtifactCapture[];
-  readonly omittedAtLeast?: number;
-  readonly captureFailed?: boolean;
+  readonly omittedAtLeast: number | undefined;
+  readonly captureFailed: boolean | undefined;
 }): ArtifactsAttachmentBuild {
-  const captures = Object.freeze(input.artifacts.map((artifact) => {
-    if (artifact.filePath !== undefined) return Object.freeze({ ...artifact, artifactId: artifact.artifactId ?? `art_${randomBytes(10).toString("hex")}` });
-    const bytes = artifact.artifactId === undefined ? new Uint8Array(artifact.bytes) : artifact.bytes;
-    return Object.freeze({
-      artifactId: artifact.artifactId ?? `art_${randomBytes(10).toString("hex")}`,
-      mediaType: artifact.mediaType,
-      label: artifact.label,
-      bytes,
-      filePath: undefined,
-      byteLength: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    });
-  }).sort((left, right) => left.artifactId.localeCompare(right.artifactId)));
+  const captures = input.artifacts
+    .map((artifact) => {
+      if (artifact.filePath !== undefined)
+        return {
+          ...artifact,
+          artifactId: artifact.artifactId ?? `art_${randomBytes(10).toString("hex")}`,
+        };
+      const bytes = artifact.artifactId === undefined ? new Uint8Array(artifact.bytes) : artifact.bytes;
+      return {
+        artifactId: artifact.artifactId ?? `art_${randomBytes(10).toString("hex")}`,
+        mediaType: artifact.mediaType,
+        label: artifact.label,
+        bytes,
+        filePath: undefined,
+        byteLength: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      };
+    })
+    .sort((left, right) => left.artifactId.localeCompare(right.artifactId));
 
   return (build) => {
-    const collection = input.captureFailed === true
-      ? Object.freeze({ state: "partial" as const, limitations: [Object.freeze({
-          code: "capture-failed" as const,
-          stage: "adapter-attachment",
-        })] as const })
-      : input.omittedAtLeast === undefined
-      ? Object.freeze({ state: "complete" as const, limitations: [] as const })
-      : (() => {
-          const first = Object.freeze({
-            code: "unsupported-input" as const,
-            omittedAtLeast: input.omittedAtLeast,
-          });
-          const limitations = [first] as const;
-          return Object.freeze({ state: "partial" as const, limitations });
-        })();
-    const candidate = Object.freeze({
+    function captureCollection() {
+      if (input.captureFailed === true)
+        return {
+          state: "partial" as const,
+          limitations: [
+            {
+              code: "capture-failed" as const,
+              stage: "adapter-attachment",
+            },
+          ] as const,
+        };
+      if (input.omittedAtLeast === undefined) return { state: "complete" as const, limitations: [] as const };
+      const first = {
+        code: "unsupported-input" as const,
+        omittedAtLeast: input.omittedAtLeast,
+      };
+      const limitations = [first] as const;
+      return { state: "partial" as const, limitations };
+    }
+    const collection = captureCollection();
+    const candidate = {
       collection,
-      artifacts: Object.freeze(captures.map((artifact) => Object.freeze({
+      artifacts: captures.map((artifact) => ({
         artifactId: artifact.artifactId,
         mediaType: artifact.mediaType,
         label: artifact.label,
         byteLength: artifact.byteLength,
         sha256: artifact.sha256,
-        content: artifact.filePath === undefined
-          ? build.content.bytes(artifact.bytes)
-          : build.content.stream(archivedContentStream(artifact)),
-      }))),
-    });
+        content:
+          artifact.filePath === undefined
+            ? build.content.bytes(artifact.bytes)
+            : build.content.stream(archivedContentStream(artifact)),
+      })),
+    };
     const decoded = Schema.decodeUnknownResult(
       Schema.toType(ArtifactsAttachmentSchema),
       RecordExactParseOptions,
@@ -284,29 +311,35 @@ export function createAttemptArtifactsAttachment(
       omittedAtLeast += 1;
       return;
     }
-    captures.push(Object.freeze({ mediaType: "application/json", label, bytes }));
+    captures.push({ artifactId: undefined, mediaType: "application/json", label, bytes });
   };
 
   if (result.agentInstallation !== undefined) appendJson("agent-setup.json", result.agentInstallation);
   if (captures.length === 0 && omittedAtLeast === 0 && snapshot?.failure === undefined) return undefined;
   return artifactsAttachment({
-    artifacts: Object.freeze(captures),
+    artifacts: captures,
     captureFailed: snapshot?.failure !== undefined,
-    ...(omittedAtLeast === 0 ? {} : { omittedAtLeast }),
+    omittedAtLeast: omittedAtLeast === 0 ? undefined : omittedAtLeast,
   });
 }
 
 export function createRunArtifactsAttachment(): ArtifactsAttachmentBuild {
-  return artifactsAttachment({ artifacts: Object.freeze([]) });
+  return artifactsAttachment({
+    artifacts: [],
+
+    omittedAtLeast: undefined,
+    captureFailed: undefined,
+  });
 }
 
 export function createAttemptObservabilityAttachments(input: {
+  readonly entryIds?: readonly AssertionEntryId[];
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
 }): Effect.Effect<AttemptSourceReceiptAttachments, RunnerObservabilityAttachmentInvalid> {
   return Effect.gen(function* () {
     const capture = yield* createRunnerAttemptSourceReceiptsCapture(input).pipe(
-      Effect.mapError(() => Object.freeze({
+      Effect.mapError(() => ({
         code: "runner-record-observability-invalid" as const,
         owner: "attempt" as const,
         stage: "capture" as const,
@@ -314,11 +347,11 @@ export function createAttemptObservabilityAttachments(input: {
     );
     const attachments = createAttemptSourceReceiptAttachments(capture);
     if (Result.isFailure(attachments)) {
-      return yield* Effect.fail(Object.freeze({
+      return yield* Effect.fail({
         code: "runner-record-observability-invalid" as const,
         owner: "attempt" as const,
         stage: "attachment" as const,
-      }));
+      });
     }
     return attachments.success;
   });
@@ -329,7 +362,7 @@ export function createRunObservabilityAttachments(
 ): Effect.Effect<RunSourceReceiptAttachments, RunnerObservabilityAttachmentInvalid> {
   return Effect.gen(function* () {
     const capture = yield* createRunnerRunSourceReceiptsCapture({ run }).pipe(
-      Effect.mapError(() => Object.freeze({
+      Effect.mapError(() => ({
         code: "runner-record-observability-invalid" as const,
         owner: "run" as const,
         stage: "capture" as const,
@@ -337,26 +370,22 @@ export function createRunObservabilityAttachments(
     );
     const attachments = createRunSourceReceiptAttachments(capture);
     if (Result.isFailure(attachments)) {
-      return yield* Effect.fail(Object.freeze({
+      return yield* Effect.fail({
         code: "runner-record-observability-invalid" as const,
         owner: "run" as const,
         stage: "attachment" as const,
-      }));
+      });
     }
     return attachments.success;
   });
 }
 
-export function createAttemptFileChangesAttachment(
-  result: EvalResult,
-): FileChangesAttachmentBuild | undefined {
+export function createAttemptFileChangesAttachment(result: EvalResult): FileChangesAttachmentBuild | undefined {
   const capture = runnerAttemptFileChangesCaptureForResult(result);
   return capture === undefined ? undefined : createFileChangesCaptureAttachment(capture);
 }
 
-export function recordAttemptOutcome(
-  result: EvalResult,
-): "completed" | "errored" | "cancelled" {
+export function recordAttemptOutcome(result: EvalResult): "completed" | "errored" | "cancelled" {
   switch (result.verdict) {
     case "passed":
     case "failed":

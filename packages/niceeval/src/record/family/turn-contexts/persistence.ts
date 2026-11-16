@@ -1,7 +1,6 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { turnContextsRecordAttachment } from "./definition.ts";
 
-export const turnContextsRecordAttachmentPersistence = defineRecordAttachmentPersistence({
+export const turnContextsRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
   attachment: turnContextsRecordAttachment,
-  revision: 2,
 });

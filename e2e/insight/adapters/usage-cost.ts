@@ -6,7 +6,9 @@ export const usageCost = defineAdapter({
   create(ctx) {
     return {
       record: (usage: AdapterUsageInput) => ctx.recordUsage(usage),
-      finishUsage() { ctx.sealUsage({ state: "complete" }); },
+      finishUsage() {
+        ctx.sealUsage({ state: "complete" });
+      },
     };
   },
 });

@@ -14,4 +14,4 @@ Pass 或 Score 的差异只在 Grading Claim projection。Thresholded measuremen
 
 Batch 中 transport failure 可以使全批 unavailable；单项 response parse failure 只使该项 errored。Batch composition 和 protocol version 进入每项 Judge Evaluation identity；batch 不承诺 Decision 在统计上独立。
 
-query 与 view 从 sealed AssertionResult 离线读取，不重新发送模型请求。
+`show` 与 `view` 从 sealed AssertionResult 离线读取，不重新发送模型请求。

@@ -5,6 +5,7 @@
 // span 的语义(span 名、属性约定)各 agent 不同,这里不解释,原样带给 view。
 
 import type { JsonValue, TraceSpan } from "../../types.ts";
+import { isRecord } from "../../shared/objects.ts";
 
 /** 按 Content-Type 选编码,失败一律回空数组(导出端不该因我们解析挂而报错)。 */
 export function parseOtlpTraces(body: Buffer, contentType: string): TraceSpan[] {
@@ -35,10 +36,6 @@ function statusFromCode(code: number | string | undefined): TraceSpan["status"] 
 }
 
 // ───────────────────────── OTLP/JSON ─────────────────────────
-
-function isRecord(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function jsonAnyValue(value: unknown): JsonValue {
   if (!isRecord(value)) return null;
@@ -94,15 +91,26 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
     }
   }
   const status = isRecord(span.status) ? span.status : undefined;
+  const parsedStatus = statusFromCode(
+    typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined,
+  );
   return {
     traceId: span.traceId,
     spanId: span.spanId,
-    parentSpanId: typeof span.parentSpanId === "string" && span.parentSpanId ? span.parentSpanId : undefined,
+    ...(typeof span.parentSpanId === "string" && span.parentSpanId ? { parentSpanId: span.parentSpanId } : {}),
     name: typeof span.name === "string" ? span.name : "span",
-    startMs: nanoToMs(typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number" ? span.startTimeUnixNano : undefined),
-    endMs: nanoToMs(typeof span.endTimeUnixNano === "string" || typeof span.endTimeUnixNano === "number" ? span.endTimeUnixNano : undefined),
-    status: statusFromCode(typeof status?.code === "number" || typeof status?.code === "string" ? status.code : undefined),
-    attributes: Object.keys(attributes).length ? attributes : undefined,
+    startMs: nanoToMs(
+      typeof span.startTimeUnixNano === "string" || typeof span.startTimeUnixNano === "number"
+        ? span.startTimeUnixNano
+        : undefined,
+    ),
+    endMs: nanoToMs(
+      typeof span.endTimeUnixNano === "string" || typeof span.endTimeUnixNano === "number"
+        ? span.endTimeUnixNano
+        : undefined,
+    ),
+    status: parsedStatus,
+    ...(Object.keys(attributes).length ? { attributes } : {}),
   };
 }
 
@@ -244,12 +252,12 @@ function protoSpan(buf: Buffer): TraceSpan {
   return {
     traceId,
     spanId,
-    parentSpanId: parentSpanId || undefined,
+    ...(parentSpanId ? { parentSpanId } : {}),
     name,
     startMs: nanoToMs(startNano),
     endMs: nanoToMs(endNano),
     status,
-    attributes: Object.keys(attributes).length ? attributes : undefined,
+    ...(Object.keys(attributes).length ? { attributes } : {}),
   };
 }
 
@@ -263,7 +271,7 @@ function protoStatus(buf: Buffer): TraceSpan["status"] {
   return statusFromCode(code);
 }
 
-function protoKeyValue(buf: Buffer): { key?: string; value: JsonValue } {
+function protoKeyValue(buf: Buffer): { key: string | undefined; value: JsonValue } {
   let key: string | undefined;
   let value: JsonValue = null;
   // KeyValue { 1:key 2:AnyValue }

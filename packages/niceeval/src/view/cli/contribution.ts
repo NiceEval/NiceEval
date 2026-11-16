@@ -1,6 +1,11 @@
 // @concord-file
 // @concord-implements docs/feature/insight/README.md
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
+import { parseInspectionAddress } from "../../inspection/addressing.ts";
+import { showOperations, selectTraceDetailByStableId } from "../../show/contribution.ts";
+import { openHostOwnedInspectionSource } from "../../inspection/source.ts";
+import { selectInspectionOperation } from "../../inspection/select.ts";
+import { ExperimentIdSchema, ArtifactIdSchema } from "../../record/codec/identifiers.ts";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { Effect, Result, Schema, Scope } from "effect";
@@ -13,19 +18,19 @@ import {
   type CliOptionDefinition,
 } from "../../cli/application.ts";
 import { CliFeatureError, type CliCommandContribution } from "../../cli/contribution.ts";
+import { externalCliFailure, cliFailureDisplay } from "../../cli/feature-failure.ts";
+import { CurrentTargetUnavailable } from "../../experiment/host/current.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 import { RunIdSchema } from "../../record/codec/identifiers.ts";
 import type { RunId } from "../../record/model/identifiers.ts";
-import {
-  openHostOwnedRecordReadSession,
-  acquireProjectRecordReadSession,
-} from "../../record/sqlite/index.ts";
+import { openHostOwnedRecordReadSession, acquireProjectRecordReadSession } from "../../record/sqlite/index.ts";
 import { publicationCutoffIdentity } from "../../run/storage/cutoff.ts";
 import { startExternalRecordImport } from "../../record/sqlite/external-record-import.ts";
 import { ProjectConfiguration, type ProjectConfigurationService } from "../../cli/project-configuration.ts";
 import { openCurrentProjectSource } from "../../inspection/project-source.ts";
 import { projectInput } from "../../inspection/project-input.ts";
 import { ViewBrowser } from "../browser.ts";
-import { renderViewLifecycleEvent, VIEW_LIFECYCLE_PROTOCOL } from "../protocol.ts";
+import { renderViewLifecycleEvent } from "../protocol.ts";
 import { buildViewGeneration } from "../render.ts";
 import type { ViewGeneration, ViewTarget } from "../revision.ts";
 import { openViewServer } from "../server.ts";
@@ -35,7 +40,6 @@ const help = (summary: string) => Object.freeze({ summary, visibility: "public" 
 const option = (value: CliOptionDefinition): CliOptionDefinition => Object.freeze(value);
 
 export const VIEW_CLI_OPTIONS = Object.freeze({
-  run: option({ type: "string", multiple: true, help: help("Select one sealed Run; repeat to select more.") }),
   "no-open": option({ type: "boolean", help: help("Do not request the OS browser.") }),
   port: option({ type: "string", help: help("Listen on this loopback port; 0 chooses one.") }),
   json: option({ type: "boolean", help: help("Write View lifecycle events as NDJSON.") }),
@@ -45,32 +49,69 @@ export const VIEW_CLI_OPTIONS = Object.freeze({
 const VIEW_HELP = `niceeval view — open the first-party human View
 
 Usage:
-  niceeval view [--run <run-id>...] [--no-open] [--port <port>] [--json]
+  niceeval view [@<locator> | exp:<id>... | run:<id>...] [<aspect>] [<ID>] [--no-open] [--port <port>] [--json]
 `;
 
-type Requirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ViewBrowser | ViewApplicationRuntime | ProjectConfiguration | Scope.Scope;
-type Error = CliFeatureError;
+type Requirements =
+  | CliArguments
+  | CliInterruption
+  | CliInvocationFacts
+  | CliOutput
+  | ViewBrowser
+  | ViewApplicationRuntime
+  | ProjectConfiguration
+  | Scope.Scope;
+type ViewCliCause = CurrentTargetUnavailable | ExternalCause;
+type Error = CliFeatureError<ViewCliCause>;
 const VIEW_RUN_SELECTION_LIMIT = 64;
 const RECORD_IMPORT_DEADLINE_MS = 30_000;
 
 function failure(operation: string, cause: unknown): Error {
-  return new CliFeatureError({ feature: "view", operation, cause, exitCode: 1 });
+  if (cause instanceof CurrentTargetUnavailable) {
+    return new CliFeatureError({
+      feature: "view",
+      operation,
+      cause,
+      exitCode: 1,
+      display: cliFailureDisplay(cause, {
+        feature: "view",
+        operation,
+        display: undefined,
+      }),
+    });
+  }
+  return externalCliFailure(cause, {
+    feature: "view",
+    operation,
+    exitCode: 1,
+    display: undefined,
+  });
 }
 
-function targetFailureReason(cause: unknown): string {
-  const underlying = cause instanceof CliFeatureError ? cause.cause : cause;
-  const reason = typeof underlying === "object" && underlying !== null && "reason" in underlying &&
-      typeof underlying.reason === "string"
-    ? underlying.reason
-    : underlying instanceof Error ? underlying.message : String(underlying);
-  return `${typeof underlying === "object" && underlying !== null && "code" in underlying &&
-    typeof underlying.code === "string" ? underlying.code : "prepare-current-target"}: ${reason}`.slice(0, 2000);
+function targetFailureReason(failure: Error): string {
+  const cause = failure.cause;
+  switch (cause._tag) {
+    case "CurrentTargetUnavailable":
+      return `${cause.code}: ${cause.reason}`.slice(0, 2000);
+    case "Error":
+    case "Object": {
+      const code =
+        cause.code._tag === "Present" && typeof cause.code.value === "string"
+          ? cause.code.value
+          : "prepare-current-target";
+      return `${code}: ${cause.message}`.slice(0, 2000);
+    }
+    case "ThrownValue":
+      return `prepare-current-target: ${cause.message}`.slice(0, 2000);
+    default:
+      return cause satisfies never;
+  }
 }
 
 function write(channel: "stdout" | "stderr", text: string) {
-  return Effect.flatMap(CliOutput, (output) => channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text)).pipe(
-    Effect.mapError((cause) => failure(`write ${channel}`, cause)),
-  );
+  return Effect.flatMap(CliOutput, (output) =>
+    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text),
+  ).pipe(Effect.mapError((cause) => failure(`write ${channel}`, cause)));
 }
 
 function usage(message: string) {
@@ -84,9 +125,17 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       try: () => parser.parse(argv, VIEW_CLI_OPTIONS),
       catch: (cause) => failure("parse arguments", cause),
     });
-    if (parsed.values.help === true) { yield* write("stdout", VIEW_HELP); return 0; }
-    if (parsed.positionals.length !== 0) return yield* usage("niceeval view does not accept positional arguments.");
-    const runIds = parseRunIds(parsed.values.run);
+    if (parsed.values.help === true) {
+      yield* write("stdout", VIEW_HELP);
+      return 0;
+    }
+    const address = yield* Effect.try({
+      try: () => parseInspectionAddress(parsed.positionals),
+      catch: (cause) => failure("parse address", cause),
+    });
+    if (address.imageId !== undefined)
+      return yield* usage("View accepts an Attempt, Experiment, Run, or current results address.");
+    const runIds = parseRunIds([...address.runIds]);
     if (typeof runIds === "string") return yield* usage(runIds);
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
@@ -94,28 +143,118 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     const execute = Effect.gen(function* () {
       const json = parsed.values.json === true;
       const sourcePath = resolve(facts.cwd, ".niceeval/record.sqlite");
-      const currentCapable = existsSync(resolve(facts.cwd, "niceeval.config.ts"));
+      const currentCapable = parsed.positionals.length === 0 && existsSync(resolve(facts.cwd, "niceeval.config.ts"));
       const project = yield* ProjectConfiguration;
       const built = yield* buildRecordGeneration(sourcePath, facts.cwd, project, currentCapable, false);
       const initial = built.generation;
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const source = yield* openHostOwnedInspectionSource(initial.recordPath);
+          const experimentIds = address.experimentIds.map((id) => Schema.decodeUnknownSync(ExperimentIdSchema)(id));
+          if (address.id !== undefined && address.aspect === "execution") {
+            yield* Effect.try({
+              try: () => selectTraceDetailByStableId(source, address.locator!, address.id!),
+              catch: (cause) => failure("validate address", cause),
+            });
+          } else {
+            const selectedOperations = () => {
+              if (address.aspect === "artifacts")
+                return [
+                  address.id === undefined
+                    ? { kind: "attempt.artifacts" as const, locator: address.locator! }
+                    : {
+                        kind: "attempt.artifact" as const,
+                        locator: address.locator!,
+                        artifactId: Schema.decodeUnknownSync(ArtifactIdSchema)(address.id),
+                      },
+                ];
+              if (runIds.length > 0) return showOperations({ kind: "runs", runIds });
+              if (experimentIds.length > 0)
+                return showOperations(
+                  address.aspect === "assertions"
+                    ? {
+                        kind: "assertion-matrix",
+                        experimentIds,
+                        evalIdPrefix: undefined,
+                      }
+                    : { kind: "experiments", experimentIds },
+                );
+              if (address.locator === undefined) return showOperations({ kind: "overview", current: false });
+              if (address.aspect === "assertions")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "assertions",
+                  entryIds: address.id === undefined ? [] : [address.id],
+                  projection: "compact",
+                });
+              if (address.aspect === "execution")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "execution",
+                  actorId: undefined,
+                  eventType: undefined,
+                  continuation: undefined,
+                });
+              if (address.aspect === "diff")
+                return showOperations({
+                  kind: "attempt",
+                  locator: address.locator,
+                  slice: "diff",
+                  changeId: address.id,
+                });
+              return showOperations({ kind: "attempt", locator: address.locator, slice: address.aspect ?? "summary" });
+            };
+            const operations = selectedOperations();
+            if (parsed.positionals.length > 0)
+              for (const operation of operations)
+                yield* Effect.try({
+                  try: () => selectInspectionOperation(source, operation),
+                  catch: (cause) => failure("validate address", cause),
+                });
+          }
+        }),
+      ).pipe(
+        Effect.mapError((cause) => (cause instanceof CliFeatureError ? cause : failure("validate selection", cause))),
+      );
+      function selectedEntryPath(): string {
+        if (address.locator !== undefined) return `/attempt/${encodeURIComponent(address.locator.slice(1))}`;
+        const [experimentId] = address.experimentIds;
+        if (address.experimentIds.length === 1 && experimentId !== undefined)
+          return `/experiment/${encodeURIComponent(experimentId)}`;
+        return "/";
+      }
+      const entryPath = selectedEntryPath();
+      const selection = new URLSearchParams();
+      if (address.aspect !== undefined) selection.set("aspect", address.aspect);
+      if (address.id !== undefined) selection.set("id", address.id);
+      for (const id of address.experimentIds) selection.append("experiment", id);
+
       const scope = yield* Effect.scope;
       const runtime = yield* ViewApplicationRuntime;
       const server = yield* openViewServer({
         runtime,
-        initial, port, refreshEnabled: true, initialRunIds: runIds,
+        initial,
+        port,
+        refreshEnabled: true,
+        initialRunIds: runIds,
+        initialPath: entryPath + (selection.size === 0 ? "" : `?${selection}`),
         refreshSource: {
           cutoffIdentity: () => operationalCutoffAt(facts.cwd).pipe(Effect.map((cutoff) => cutoff.identity)),
-          build: () => buildRecordGeneration(sourcePath, facts.cwd, project, currentCapable, true).pipe(
-            Effect.provideService(Scope.Scope, scope),
-            Effect.map((next) => next.generation),
-          ),
+          build: () =>
+            buildRecordGeneration(sourcePath, facts.cwd, project, currentCapable, true).pipe(
+              Effect.provideService(Scope.Scope, scope),
+              Effect.map((next) => next.generation),
+            ),
         },
-      }).pipe(
-        Effect.mapError((cause) => failure("open loopback View", cause)),
+      }).pipe(Effect.mapError((cause) => failure("open loopback View", cause)));
+      yield* write(
+        "stdout",
+        json
+          ? renderViewLifecycleEvent({ event: "ready", url: server.readyUrl })
+          : `niceeval view — open in a browser:\n${server.readyUrl}\n`,
       );
-      yield* write("stdout", json
-        ? renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "ready", url: server.readyUrl })
-        : `niceeval view — open in a browser:\n${server.readyUrl}\n`);
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
         yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
@@ -124,13 +263,13 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
       yield* awaitAbort(interruption.invocationSignal);
       yield* server.close;
-      if (json) yield* write("stdout", renderViewLifecycleEvent({ protocol: VIEW_LIFECYCLE_PROTOCOL, event: "closed" }));
+      if (json) yield* write("stdout", renderViewLifecycleEvent({ event: "closed" }));
       return 0;
     });
 
-    return yield* execute.pipe(Effect.catch((cause) =>
-      Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause))
-    ));
+    return yield* execute.pipe(
+      Effect.catch((cause) => Effect.fail(cause instanceof CliFeatureError ? cause : failure("run View", cause))),
+    );
   });
 }
 
@@ -161,42 +300,53 @@ function buildRecordGeneration(
         await importer.close();
       };
       const cutoff = yield* importedCutoffAt(imported.path);
-      const prepareTarget = Effect.scoped(Effect.gen(function* () {
-        const config = yield* (refresh ? project.rebuild(cwd) : project.load(cwd));
-        const source = yield* openCurrentProjectSource({ cwd, config, recordPath: imported.path, freshImport: true });
-        const frozen = projectInput(source);
-        if (frozen === undefined || frozen.cutoffIdentity !== cutoff.identity) {
-          return yield* Effect.fail(new Error("Current target and imported Record cutoff differ."));
-        }
-        return Object.freeze({ kind: "current" as const, identity: frozen.target.identity, input: frozen });
-      })).pipe(Effect.mapError((cause) => failure("prepare current target", cause)));
+      const prepareTarget = Effect.scoped(
+        Effect.gen(function* () {
+          const config = yield* refresh ? project.rebuild(cwd) : project.load(cwd);
+          const source = yield* openCurrentProjectSource({ cwd, config, recordPath: imported.path, freshImport: true });
+          const frozen = projectInput(source);
+          if (frozen === undefined || frozen.cutoffIdentity !== cutoff.identity) {
+            return yield* Effect.fail(new Error("Current target and imported Record cutoff differ."));
+          }
+          return { kind: "current" as const, identity: frozen.target.identity, input: frozen };
+        }),
+      ).pipe(Effect.mapError((cause) => failure("prepare current target", cause)));
       const target: ViewTarget = !currentCapable
         ? { kind: "history" }
-        : yield* (refresh ? prepareTarget : prepareTarget.pipe(Effect.catch((cause) =>
-          Effect.succeed({ kind: "unavailable" as const, reason: targetFailureReason(cause) }))));
+        : yield* refresh
+            ? prepareTarget
+            : prepareTarget.pipe(
+                Effect.catch((cause) =>
+                  Effect.succeed({ kind: "unavailable" as const, reason: targetFailureReason(cause) }),
+                ),
+              );
       const generation = yield* buildViewGeneration({
         recordPath: imported.path,
         sourceCutoffIdentity: cutoff.identity,
         target,
         retire,
       }).pipe(Effect.mapError((cause) => failure("build View revision", cause)));
-      return Object.freeze({ generation, cutoffIdentity: cutoff.identity });
-    }).pipe(Effect.catchCause((cause) =>
-      Effect.promise(() => importer.close().catch(() => undefined)).pipe(Effect.andThen(Effect.failCause(cause)))
-    ));
+      return { generation, cutoffIdentity: cutoff.identity };
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.promise(() => importer.close().catch(() => undefined)).pipe(Effect.andThen(Effect.failCause(cause))),
+      ),
+    );
   });
 }
 
 function operationalCutoffAt(cwd: string) {
-  return Effect.scoped(Effect.gen(function* () {
-    const session = yield* acquireProjectRecordReadSession(resolve(cwd, ".niceeval")).pipe(
-      Effect.mapError((cause) => failure("open operational sealed cutoff", cause)),
-    );
-    return yield* Effect.try({
-      try: () => ({ identity: publicationCutoffIdentity(session.publicationCutoff()) }),
-      catch: (cause) => failure("read operational sealed cutoff", cause),
-    });
-  }));
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const session = yield* acquireProjectRecordReadSession(resolve(cwd, ".niceeval")).pipe(
+        Effect.mapError((cause) => failure("open operational sealed cutoff", cause)),
+      );
+      return yield* Effect.try({
+        try: () => ({ identity: publicationCutoffIdentity(session.publicationCutoff()) }),
+        catch: (cause) => failure("read operational sealed cutoff", cause),
+      });
+    }),
+  );
 }
 
 function importedCutoffAt(recordPath: string) {
@@ -215,10 +365,11 @@ function withRecordSession(
 ) {
   return Effect.acquireUseRelease(
     acquire,
-    (session) => Effect.try({
-      try: () => session.sealedCutoff(),
-      catch: (cause) => failure(operation, cause),
-    }),
+    (session) =>
+      Effect.try({
+        try: () => session.sealedCutoff(),
+        catch: (cause) => failure(operation, cause),
+      }),
     (session) => Effect.sync(() => session.close()),
   );
 }
@@ -230,15 +381,21 @@ function invocationFacts() {
 }
 
 function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
-  const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
-  if (values.length > VIEW_RUN_SELECTION_LIMIT) return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} --run selections.`;
+  function selectedValues(): readonly string[] {
+    if (typeof value === "string") return [value];
+    if (Array.isArray(value)) return value;
+    return [];
+  }
+  const values = selectedValues();
+  if (values.length > VIEW_RUN_SELECTION_LIMIT)
+    return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} run: selections.`;
   const output: RunId[] = [];
   for (const candidate of [...new Set(values)]) {
     const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
-    if (Result.isFailure(decoded)) return `Invalid --run value ${JSON.stringify(candidate)}.`;
+    if (Result.isFailure(decoded)) return `Invalid run: ID ${JSON.stringify(candidate)}.`;
     output.push(decoded.success);
   }
-  return Object.freeze(output);
+  return output;
 }
 
 function parsePort(value: string | boolean | string[] | undefined): number | string {

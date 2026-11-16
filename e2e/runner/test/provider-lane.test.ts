@@ -30,21 +30,23 @@ test.concurrent("等待 sharedState 不占用同一 exclusive provider lane，�
         let setupError: unknown;
 
         try {
-          await pollUntil(
-            async () => (await exists(join(barrierRoot, "lease-holder-agent-started"))) || undefined,
-            { timeoutMs: 60_000, intervalMs: 10, label: "sharedState holder reaches its Agent" },
-          );
-
-          contenders = niceeval.start(["exp", "shared-state-lane", "--rerun", "all", "--max-concurrency", "2", "--json"], {
-            env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
-            timeoutMs: 120_000,
+          await pollUntil(async () => (await exists(join(barrierRoot, "lease-holder-agent-started"))) || undefined, {
+            timeoutMs: 60_000,
+            intervalMs: 10,
+            label: "sharedState holder reaches its Agent",
           });
-          await waitForOutput(
-            contenders,
-            "stdout",
-            /"code":"state-lease-waiting"/u,
-            { timeoutMs: 30_000, label: "contender reaches the held sharedState lease" },
+
+          contenders = niceeval.start(
+            ["exp", "shared-state-lane", "--rerun", "all", "--max-concurrency", "2", "--json"],
+            {
+              env: { NICEEVAL_SHARED_STATE_BARRIER: barrierRoot },
+              timeoutMs: 120_000,
+            },
           );
+          await waitForOutput(contenders, "stdout", /"code":"state-lease-waiting"/u, {
+            timeoutMs: 30_000,
+            label: "contender reaches the held sharedState lease",
+          });
           expect(await exists(join(barrierRoot, "lane-waiter-setup-attempted"))).toBe(false);
           await pollUntil(
             async () => (await exists(join(barrierRoot, "lane-independent-agent-started"))) || undefined,

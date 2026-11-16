@@ -4,7 +4,11 @@ export default defineEval({
   async test(t) {
     for (const paths of [[], ["secrets/**"], ["secrets/?"]]) {
       let rejected = false;
-      try { t.sandbox.unchangedWithin(paths as never); } catch (error) { rejected = error instanceof TypeError; }
+      try {
+        t.sandbox.unchangedWithin(paths as never);
+      } catch (error) {
+        rejected = error instanceof TypeError;
+      }
       if (!rejected) throw new Error(`Expected construction TypeError: ${JSON.stringify(paths)}`);
     }
     t.sandbox.unchangedWithin(["agents"]).label("protected subtree").optional();

@@ -1,11 +1,9 @@
 import { Result, Schema, Stream } from "effect";
+import { omitUndefined } from "../../shared/omit-undefined.ts";
 import { readJudgeImage } from "../../judge/image.ts";
 import { fullAssertionContentOf } from "../full-content.ts";
 import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
-import type {
-  AttachedRecordContent,
-  RecordAttachmentSessionBuilder,
-} from "../../record/writer/current-attachment.ts";
+import type { AttachedRecordContent, RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import type {
   AssertionSourceAnchor,
   AssertionSourceSite,
@@ -13,10 +11,7 @@ import type {
 } from "../../record/family/assertions/definition.ts";
 import { assertionsRecordAttachment } from "../../record/family/assertions/definition.ts";
 import { sourcesRecordAttachment } from "../../record/family/sources/definition.ts";
-import type {
-  Sha256Digest,
-  SourceItemId,
-} from "../../record/model/identifiers.ts";
+import type { Sha256Digest, SourceItemId } from "../../record/model/identifiers.ts";
 import type {
   AssertionCoverage,
   AssertionCriterion,
@@ -26,11 +21,9 @@ import type {
   AssertionSnapshotObject,
   AssertionSnapshotValue,
   MatcherQueryArtifact as RuntimeMatcherQueryArtifact,
-  MatcherOrderPathNode as RuntimeMatcherOrderPathNode,
   SealedAssertionEntry,
 } from "../api.ts";
 import {
-  AssertionEntryIdSchema,
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
   MAX_ASSERTION_DOCUMENT_BYTES,
@@ -49,6 +42,7 @@ import {
 import type {
   AssertionEntryId,
   AssertionFactValue,
+  AssertionLimitation as RecordAssertionLimitation,
   MatcherQueryArtifact as RecordMatcherQueryArtifact,
   AssertionEntry,
   AssertionEntryOuter,
@@ -68,9 +62,7 @@ interface AssertionsProvisionalContent {
   readonly kind: "assertions-provisional-content";
 }
 
-const AssertionsProvisionalContentSchema: Schema.Schema<
-  AssertionsProvisionalContent
-> = Schema.Struct({
+const AssertionsProvisionalContentSchema: Schema.Schema<AssertionsProvisionalContent> = Schema.Struct({
   kind: Schema.Literal("assertions-provisional-content"),
 });
 
@@ -83,18 +75,14 @@ const AssertionsProvisionalMaterialSchema = Schema.Union([
     kind: Schema.Literal("content"),
     content: Schema.toType(AssertionsProvisionalContentSchema),
     encoding: Schema.Literals(["json", "utf-8", "binary"]),
-    byteLength: Schema.Finite.check(
-      Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0),
+    byteLength: Schema.Finite.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
+    preview: Schema.NullOr(
+      Schema.String.check(Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024)),
     ),
-    preview: Schema.NullOr(Schema.String.check(
-      Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 8 * 1024),
-    )),
   }),
 ]);
 
-const assertionsProducerSchemas = createAssertionsRecordSchemas(
-  AssertionsProvisionalMaterialSchema,
-);
+const assertionsProducerSchemas = createAssertionsRecordSchemas(AssertionsProvisionalMaterialSchema);
 
 export type AssertionMaterialInput<E, R> =
   | {
@@ -121,6 +109,7 @@ export interface AssertionsAttachmentEntryInput<E, R> {
   readonly evaluation: AssertionEntryInput<AssertionsProvisionalContent>["evaluation"];
   readonly decision: AssertionEntryInput<AssertionsProvisionalContent>["decision"];
   readonly policy: AssertionEntryInput<AssertionsProvisionalContent>["policy"];
+  readonly control: AssertionEntryInput<AssertionsProvisionalContent>["control"];
   readonly contribution: AssertionEntryInput<AssertionsProvisionalContent>["contribution"];
   readonly explanationRetention: AssertionEntryInput<AssertionsProvisionalContent>["explanationRetention"];
 }
@@ -130,13 +119,13 @@ function encodeSnapshotValue(value: AssertionSnapshotValue): BoundedJsonValue {
     return value;
   }
   if (Array.isArray(value)) {
-    return Object.freeze(value.map(encodeSnapshotValue));
+    return value.map(encodeSnapshotValue);
   }
   const encoded: globalThis.Record<string, BoundedJsonValue> = {};
   for (const [key, nested] of Object.entries(value)) {
     encoded[key] = encodeSnapshotValue(nested);
   }
-  return Object.freeze(encoded);
+  return encoded;
 }
 
 function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject {
@@ -144,7 +133,7 @@ function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject
   for (const [key, nested] of Object.entries(value)) {
     encoded[key] = encodeSnapshotValue(nested);
   }
-  return Object.freeze(encoded);
+  return encoded;
 }
 
 // AssertionFactValue adds an object/array envelope at every source nesting
@@ -158,140 +147,134 @@ function explanationValue(
   depth = 0,
   maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
 ): AssertionFactValue {
-  if (value === null || typeof value === "boolean" || typeof value === "string" ||
-    (typeof value === "number" && Number.isFinite(value))) {
-    return Object.freeze({ kind: "value" as const, value });
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return { kind: "value" as const, value };
   }
   if (depth >= maximumSourceDepth) {
-    return Object.freeze({
+    return {
       kind: "text" as const,
       text: "Nested matcher detail was omitted at the retained fact depth limit.",
-    });
+    };
   }
   if (Array.isArray(value)) {
-    return Object.freeze({
+    return {
       kind: "list" as const,
-      items: Object.freeze(value.map((item) =>
-        explanationValue(item, depth + 1, maximumSourceDepth)
-      )),
-    });
+      items: value.map((item) => explanationValue(item, depth + 1, maximumSourceDepth)),
+    };
   }
   if (typeof value === "object" && value !== null) {
-    return Object.freeze({
+    return {
       kind: "fields" as const,
-      fields: Object.freeze(Object.entries(value).map(([label, nested]) => Object.freeze({
+      fields: Object.entries(value).map(([label, nested]) => ({
         label,
         value: explanationValue(nested, depth + 1, maximumSourceDepth),
-      }))),
-    });
+      })),
+    };
   }
-  return Object.freeze({ kind: "unavailable" as const, reason: "source-unavailable" as const });
+  return { kind: "unavailable" as const, reason: "source-unavailable" as const };
 }
 
 function encodeRetainedRows(
   rows: RuntimeMatcherQueryArtifact["retainedRows"],
   maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
 ): RecordMatcherQueryArtifact["retainedRows"] {
-  return Object.freeze(rows.map((row) => Object.freeze({
+  return rows.map((row) => ({
     locator: row.locator,
     result: row.result,
-    ...(row.difference === undefined
-      ? {}
-      : { difference: explanationValue(row.difference, 0, maximumSourceDepth) }),
-  })));
+    ...(row.difference === undefined ? {} : { difference: explanationValue(row.difference, 0, maximumSourceDepth) }),
+  }));
 }
 
-function encodeMatcherArtifact(
-  artifact: RuntimeMatcherQueryArtifact,
-): RecordMatcherQueryArtifact {
+function encodeMatcherArtifact(artifact: RuntimeMatcherQueryArtifact): RecordMatcherQueryArtifact {
   if (artifact.kind === "collection-filter") {
-    return Object.freeze({
+    return {
       kind: "collection-filter" as const,
       sourceSnapshot: artifact.sourceSnapshot,
-      query: Object.freeze({
+      query: {
         step: artifact.query.step,
         summary: explanationValue(artifact.query.summary),
-      }),
+      },
       receipt: artifact.receipt,
       retainedRows: encodeRetainedRows(artifact.retainedRows),
-    });
+    };
   }
-  const path = (nodes: readonly RuntimeMatcherOrderPathNode[]) =>
-    Object.freeze(nodes.map((node) => Object.freeze({ ...node })));
-  const result: Extract<RecordMatcherQueryArtifact, { readonly kind: "ordered-sequence" }>["result"] =
-    artifact.result.state === "matched"
-      ? Object.freeze({
-          state: "matched" as const,
-          witnessPath: path(artifact.result.witnessPath),
-        })
-      : artifact.result.state === "mismatched"
-      ? Object.freeze({
-          state: "mismatched" as const,
-          failureFrontier: Object.freeze({
-            longestDefinitePrefix: path(artifact.result.failureFrontier.longestDefinitePrefix),
-            longestPossiblePrefix: path(artifact.result.failureFrontier.longestPossiblePrefix),
-            firstBlockingStep: artifact.result.failureFrontier.firstBlockingStep,
-            suffixChecked: artifact.result.failureFrontier.suffixChecked,
-            representatives: encodeRetainedRows(
-              artifact.result.failureFrontier.representatives,
-              5,
-            ),
-          }),
-        })
-      : Object.freeze({
-          state: "unavailable" as const,
-          reason: artifact.result.reason,
-        });
-  return Object.freeze({
+  const artifactResult = artifact.result;
+  function recordedSequenceResult(): Extract<
+    RecordMatcherQueryArtifact,
+    { readonly kind: "ordered-sequence" }
+  >["result"] {
+    if (artifactResult.state === "matched")
+      return {
+        state: "matched" as const,
+        witnessPath: artifactResult.witnessPath,
+      };
+    if (artifactResult.state === "mismatched")
+      return {
+        state: "mismatched" as const,
+        failureFrontier: {
+          longestDefinitePrefix: artifactResult.failureFrontier.longestDefinitePrefix,
+          longestPossiblePrefix: artifactResult.failureFrontier.longestPossiblePrefix,
+          firstBlockingStep: artifactResult.failureFrontier.firstBlockingStep,
+          suffixChecked: artifactResult.failureFrontier.suffixChecked,
+          representatives: encodeRetainedRows(artifactResult.failureFrontier.representatives, 5),
+        },
+      };
+    return {
+      state: "unavailable" as const,
+      reason: artifactResult.reason,
+    };
+  }
+  const result = recordedSequenceResult();
+  return {
     kind: "ordered-sequence" as const,
     sourceSnapshot: artifact.sourceSnapshot,
-    querySteps: Object.freeze(artifact.querySteps.map((step) => Object.freeze({
+    querySteps: artifact.querySteps.map((step) => ({
       step: step.step,
       summary: explanationValue(step.summary),
-    }))),
-    receipt: Object.freeze({
-      ...artifact.receipt,
-      stepReceipts: Object.freeze(artifact.receipt.stepReceipts.map((step) =>
-        Object.freeze({ ...step })
-      )),
-    }),
+    })),
+    receipt: artifact.receipt,
     result,
     retainedRows: encodeRetainedRows(artifact.retainedRows),
-  });
+  };
 }
 
 function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelope {
   switch (criterion.kind) {
     case "value-match":
       if ("numeric" in criterion) {
-        return Object.freeze({
+        return {
           kind: "builtin" as const,
-          id: "numeric-comparison/v1" as const,
-          data: Object.freeze({
+          id: "numeric-comparison" as const,
+          data: {
             comparator: criterion.numeric.comparator,
             threshold: criterion.numeric.threshold,
-            ...(criterion.numeric.upperThreshold === undefined ? {} : { upperThreshold: criterion.numeric.upperThreshold }),
+            ...(criterion.numeric.comparator === "between" ? { upperThreshold: criterion.numeric.upperThreshold } : {}),
             ...(criterion.numeric.unit === undefined ? {} : { unit: criterion.numeric.unit }),
             subject: criterion.numeric.subject,
-          }),
-        });
+          },
+        };
       }
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "value-match/v1" as const,
-        data: Object.freeze({ subject: criterion.subject, matcher: criterion.matcher }),
-      });
+        id: "value-match" as const,
+        data: { subject: criterion.subject, matcher: criterion.matcher },
+      };
     case "scope-status":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "scope-status/v1" as const,
-        data: Object.freeze({ scope: criterion.scope, assertion: criterion.assertion }),
-      });
+        id: "scope-status" as const,
+        data: { scope: criterion.scope, assertion: criterion.assertion },
+      };
     case "occurrence":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "occurrence/v2" as const,
-        data: Object.freeze({
+        id: "occurrence" as const,
+        data: {
           scope: criterion.scope,
           occurrence: criterion.occurrence,
           assertion: criterion.assertion,
@@ -299,128 +282,146 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
           ...(criterion.quantifier === undefined
             ? {}
             : {
-                quantifier: criterion.quantifier.kind === "absent"
-                  ? Object.freeze({ kind: "absent" as const })
-                  : Object.freeze({ kind: criterion.quantifier.kind, count: criterion.quantifier.count }),
+                quantifier:
+                  criterion.quantifier.kind === "absent"
+                    ? { kind: "absent" as const }
+                    : { kind: criterion.quantifier.kind, count: criterion.quantifier.count },
               }),
-        }),
-      });
+        },
+      };
     case "judge-measurement":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "judge-measurement/v2" as const,
-        data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
-      });
+        id: "judge-measurement" as const,
+        data: { name: criterion.name, scale: criterion.scale },
+      };
     case "managed-score-measurement":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "llm-measurement/v1" as const,
-        data: Object.freeze({ name: criterion.name, scale: criterion.scale }),
-      });
+        id: "llm-measurement" as const,
+        data: { name: criterion.name, scale: criterion.scale },
+      };
+    case "agent-judge-measurement":
+      return {
+        kind: "builtin" as const,
+        id: "agent-judge-measurement" as const,
+        data: { name: criterion.name, scale: criterion.scale },
+      };
     case "sandbox-change-scope":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "sandbox-change-scope/v1" as const,
-        data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
-      });
+        id: "sandbox-change-scope" as const,
+        data: { paths: criterion.paths },
+      };
     case "sandbox-unchanged-within":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "sandbox-unchanged-within/v1" as const,
-        data: Object.freeze({ paths: Object.freeze([...criterion.paths]) }),
-      });
+        id: "sandbox-unchanged-within" as const,
+        data: { paths: criterion.paths },
+      };
+    case "sandbox-diff-paths":
+      return {
+        kind: "builtin" as const,
+        id: "sandbox-diff-paths" as const,
+        data: { operation: criterion.operation, pattern: criterion.pattern, flags: criterion.flags },
+      };
     case "sandbox-in-diff":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "sandbox-in-diff/v1" as const,
-        data: Object.freeze({ pattern: criterion.pattern, flags: criterion.flags, content: criterion.content }),
-      });
+        id: "sandbox-in-diff" as const,
+        data: { pattern: criterion.pattern, flags: criterion.flags, content: criterion.content },
+      };
     case "sandbox-result": {
       switch (criterion.operation) {
         case "changed-paths":
-          return Object.freeze({
+          return {
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
-            data: Object.freeze({ operation: "changed-paths" as const, paths: Object.freeze([...criterion.paths]) }),
-          });
+            id: "sandbox-result" as const,
+            data: { operation: "changed-paths" as const, paths: criterion.paths },
+          };
         case "no-changes":
-          return Object.freeze({
+          return {
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
-            data: Object.freeze({ operation: "no-changes" as const }),
-          });
+            id: "sandbox-result" as const,
+            data: { operation: "no-changes" as const },
+          };
         case "file-changed":
-          return Object.freeze({
+          return {
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
-            data: Object.freeze({
+            id: "sandbox-result" as const,
+            data: omitUndefined({
               operation: "file-changed" as const,
               path: criterion.path,
-              ...(criterion.status === undefined ? {} : { status: criterion.status }),
-              ...(criterion.before === undefined ? {} : { before: criterion.before }),
-              ...(criterion.after === undefined ? {} : { after: criterion.after }),
+              status: criterion.status,
+              before: criterion.before,
+              after: criterion.after,
             }),
-          });
+          };
         case "file-deleted":
-          return Object.freeze({
+          return {
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
-            data: Object.freeze({ operation: "file-deleted" as const, path: criterion.path }),
-          });
+            id: "sandbox-result" as const,
+            data: { operation: "file-deleted" as const, path: criterion.path },
+          };
         case "not-in-diff":
-          return Object.freeze({
+          return {
             kind: "builtin" as const,
-            id: "sandbox-result/v1" as const,
-            data: Object.freeze({
+            id: "sandbox-result" as const,
+            data: {
               operation: "not-in-diff" as const,
               pattern: criterion.pattern,
               flags: criterion.flags,
               content: criterion.content,
-            }),
-          });
+            },
+          };
       }
     }
     case "direct-score":
-      return Object.freeze({
+      return {
         kind: "builtin" as const,
-        id: "direct-score/v1" as const,
-        data: Object.freeze({ source: criterion.source }),
-      });
+        id: "direct-score" as const,
+        data: { source: criterion.source },
+      };
     case "third-party":
-      return Object.freeze({
+      return {
         name: criterion.name,
         schemaId: criterion.schemaId,
         data: encodeSnapshotValue(criterion.data),
-      });
+      };
   }
 }
 
-function encodeMaterial(
-  material: AssertionMaterial,
-): AssertionMaterialInput<never, never> {
+function encodeMaterial(material: AssertionMaterial): AssertionMaterialInput<never, never> {
   switch (material.kind) {
     case "judge-image": {
       const body = readJudgeImage(material.image).body;
-      return Object.freeze({ kind: "content" as const, source: Stream.succeed(body), encoding: "binary" as const,
-        byteLength: body.byteLength, preview: null });
+      return {
+        kind: "content" as const,
+        source: Stream.succeed(body),
+        encoding: "binary" as const,
+        byteLength: body.byteLength,
+        preview: null,
+      };
     }
     case "snapshot": {
       const content = fullAssertionContentOf(material) ?? JSON.stringify(encodeSnapshotValue(material.value));
       const bytes = new TextEncoder().encode(content);
-      return Object.freeze({
+      return {
         kind: "content" as const,
         source: Stream.succeed(bytes),
         encoding: "json" as const,
         byteLength: bytes.byteLength,
         preview: null,
-      });
+      };
     }
     case "record-attachment": {
-      const bytes = new TextEncoder().encode(JSON.stringify({
-        kind: "file-changes",
-        preview: material.preview,
-      }));
-      return Object.freeze({
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({
+          kind: "file-changes",
+          preview: material.preview,
+        }),
+      );
+      return {
         // Keep only the already-safe display fact. The source Attachment
         // capability never crosses into the Assertions closure.
         kind: "content" as const,
@@ -428,7 +429,7 @@ function encodeMaterial(
         encoding: "json" as const,
         byteLength: bytes.byteLength,
         preview: material.preview,
-      });
+      };
     }
   }
 }
@@ -436,152 +437,154 @@ function encodeMaterial(
 function encodeCoverage(coverage: AssertionCoverage): AssertionCoverage {
   switch (coverage.state) {
     case "complete":
-      return Object.freeze({ state: "complete" as const });
+      return { state: "complete" as const };
     case "partial":
-      return Object.freeze({ state: "partial" as const, reason: coverage.reason });
+      return { state: "partial" as const, reason: coverage.reason };
     case "unavailable":
-      return Object.freeze({ state: "unavailable" as const, reason: coverage.reason });
+      return { state: "unavailable" as const, reason: coverage.reason };
     case "not-applicable":
-      return Object.freeze({ state: "not-applicable" as const, reason: coverage.reason });
+      return { state: "not-applicable" as const, reason: coverage.reason };
   }
 }
 
-function encodeLimitations(
-  limitations: readonly AssertionLimitation[],
-): readonly AssertionLimitation[] {
-  return Object.freeze(limitations.map((limitation): AssertionLimitation => {
+function encodeLimitations(limitations: readonly AssertionLimitation[]): readonly RecordAssertionLimitation[] {
+  return limitations.map((limitation): RecordAssertionLimitation => {
     switch (limitation.kind) {
       case "redacted":
-        return Object.freeze({ kind: "redacted" as const, fieldCount: limitation.fieldCount });
+        return { kind: "redacted" as const, fieldCount: limitation.fieldCount };
       case "sampled":
-        return Object.freeze({
+        return {
           kind: "sampled" as const,
           captured: limitation.captured,
           ...(limitation.knownTotal === undefined ? {} : { knownTotal: limitation.knownTotal }),
-        });
+        };
       case "truncated":
-        return Object.freeze({ kind: "truncated" as const, omittedBytes: limitation.omittedBytes });
+        return { kind: "truncated" as const, omittedBytes: limitation.omittedBytes };
       case "provider-limited":
-        return Object.freeze({ kind: "provider-limited" as const });
+        return { kind: "provider-limited" as const };
       case "capacity-limited":
-        return Object.freeze({ ...limitation });
+        return limitation;
     }
-  }));
+  });
 }
 
 export function encodeAssertionResult(result: AssertionResult): SealedAssertionResult {
-  const diagnostic = result.diagnostic === undefined
-    ? {}
-    : { diagnostic: encodeSnapshotObject(result.diagnostic) };
-  const receipt = result.receipt === undefined ? {} : { receipt: Object.freeze({ ...result.receipt }) };
+  const diagnostic = result.diagnostic === undefined ? {} : { diagnostic: encodeSnapshotObject(result.diagnostic) };
+  const receipt = result.receipt === undefined ? {} : { receipt: result.receipt };
   switch (result.state) {
     case "matched":
-      return Object.freeze({
+      return {
         state: "matched" as const,
         gate: result.gate,
-        score: result.score.state === "earned"
-          ? Object.freeze({ state: "earned" as const, points: result.score.points, earned: result.score.earned })
-          : Object.freeze({ state: "not-scored" as const }),
+        score:
+          result.score.state === "earned"
+            ? { state: "earned" as const, points: result.score.points, earned: result.score.earned }
+            : { state: "not-scored" as const },
         ...diagnostic,
         ...receipt,
-      });
+      };
     case "mismatched":
-      return Object.freeze({
+      return {
         state: "mismatched" as const,
         reason: result.reason,
         gate: result.gate,
-        score: result.score.state === "earned"
-          ? Object.freeze({ state: "earned" as const, points: result.score.points, earned: result.score.earned })
-          : Object.freeze({ state: "not-scored" as const }),
+        score:
+          result.score.state === "earned"
+            ? { state: "earned" as const, points: result.score.points, earned: result.score.earned }
+            : { state: "not-scored" as const },
         ...diagnostic,
         ...receipt,
-      });
+      };
     case "unavailable":
-      return Object.freeze({
+      return {
         state: "unavailable" as const,
         reason: result.reason,
         gate: result.gate,
-        score: result.score.state === "unavailable"
-          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
-          : Object.freeze({ state: "not-scored" as const }),
+        score:
+          result.score.state === "unavailable"
+            ? { state: "unavailable" as const, points: result.score.points, reason: result.score.reason }
+            : { state: "not-scored" as const },
         ...diagnostic,
         ...receipt,
-      });
+      };
     case "errored":
-      return Object.freeze({
+      return {
         state: "errored" as const,
         reason: result.reason,
         gate: result.gate,
-        score: result.score.state === "unavailable"
-          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
-          : Object.freeze({ state: "not-scored" as const }),
+        score:
+          result.score.state === "unavailable"
+            ? { state: "unavailable" as const, points: result.score.points, reason: result.score.reason }
+            : { state: "not-scored" as const },
         ...diagnostic,
         ...receipt,
-      });
+      };
     case "not-applicable":
-      return Object.freeze({
+      return {
         state: "not-applicable" as const,
         reason: result.reason,
         gate: result.gate,
-        score: result.score.state === "unavailable"
-          ? Object.freeze({ state: "unavailable" as const, points: result.score.points, reason: result.score.reason })
-          : Object.freeze({ state: "not-scored" as const }),
+        score:
+          result.score.state === "unavailable"
+            ? { state: "unavailable" as const, points: result.score.points, reason: result.score.reason }
+            : { state: "not-scored" as const },
         ...diagnostic,
         ...receipt,
-      });
+      };
   }
 }
 
 /** Private Runtime → durable Assertions codec bridge. */
-export function encodeSealedAssertionEntry(
-  entry: SealedAssertionEntry,
-): AssertionsAttachmentEntryInput<never, never> {
+export function encodeSealedAssertionEntry(entry: SealedAssertionEntry): AssertionsAttachmentEntryInput<never, never> {
   const criterion = encodeCriterion(entry.criterion);
   const subject = encodeMaterial(entry.subject);
   const result = encodeAssertionResult(entry.result);
-  return Object.freeze({
-    display: Object.freeze({
-      ...(entry.display.key === undefined ? {} : { key: entry.display.key }),
+  function explanationRetention(): AssertionsAttachmentEntryInput<never, never>["explanationRetention"] {
+    if (entry.matcherArtifact !== undefined) return { state: "unavailable", reason: "not-recorded" };
+    if (result.diagnostic === undefined)
+      return {
+        state: "retained",
+        value: { kind: "unavailable", reason: "not-declared" },
+      };
+    return { state: "retained", value: explanationValue(result.diagnostic) };
+  }
+  return {
+    display: {
       ...(entry.display.label === undefined ? {} : { label: entry.display.label }),
-      groupPath: Object.freeze([...entry.display.groupPath]),
-    }),
-    criterion: Object.freeze({ state: "available" as const, value: criterion }),
-    materials: Object.freeze({
+      groupPath: entry.display.groupPath,
+    },
+    criterion: { state: "available" as const, value: criterion },
+    materials: {
       source: subject,
-      evidence: Object.freeze(entry.evidence.map(encodeMaterial)),
+      evidence: entry.evidence.map(encodeMaterial),
       coverage: encodeCoverage(entry.coverage),
       limitations: encodeLimitations(entry.limitations),
-    }),
-    evaluation: entry.matcherArtifact === undefined
-      ? Object.freeze({
-          kind: "ordinary" as const,
-          observed: explanationValue(entry.observed),
-          ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
-        })
-      : Object.freeze({
-          kind: "matcher-current" as const,
-          observed: explanationValue(entry.observed),
-          artifact: encodeMatcherArtifact(entry.matcherArtifact),
-        }),
-    decision: Object.freeze({
+    },
+    evaluation:
+      entry.matcherArtifact === undefined
+        ? {
+            kind: "ordinary" as const,
+            observed: explanationValue(entry.observed),
+            ...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+          }
+        : {
+            kind: "matcher-current" as const,
+            observed: explanationValue(entry.observed),
+            artifact: encodeMatcherArtifact(entry.matcherArtifact),
+          },
+    decision: {
       result: result.state,
       reason: "reason" in result ? result.reason : null,
       gate: result.gate,
-    }),
-    policy: Object.freeze({
-      requirement: Object.freeze({ state: "available" as const, value: entry.policy.requirement }),
-      condition: Object.freeze({ state: "available" as const, value: entry.policy.condition }),
-    }),
+    },
+    policy: {
+      requirement: { state: "available" as const, value: entry.policy.requirement },
+      condition: { state: "available" as const, value: entry.policy.condition },
+    },
+    control: entry.control,
     contribution: result.score,
-    explanationRetention: entry.matcherArtifact !== undefined
-      ? Object.freeze({ state: "unavailable" as const, reason: "not-recorded" as const })
-      : result.diagnostic === undefined
-      ? Object.freeze({ state: "retained" as const, value: Object.freeze({
-          kind: "unavailable" as const,
-          reason: "not-declared" as const,
-        }) })
-      : Object.freeze({ state: "retained" as const, value: explanationValue(result.diagnostic) }),
-  });
+    explanationRetention: explanationRetention(),
+  };
 }
 
 export interface AssertionSourceSiteInput {
@@ -596,14 +599,10 @@ export interface AssertionSourceSiteInput {
 
 export interface AssertionsAttachmentSealInput {
   /** Semantic joins to origin-Run Sources, embedded in this fixed family. */
-  readonly sourceSites?: readonly AssertionSourceSiteInput[];
+  readonly sourceSites: readonly AssertionSourceSiteInput[];
 }
 
-type AssertionsAttachedContent<E, R> = AttachedRecordContent<
-  RecordBytesContentHandle,
-  E,
-  R
->;
+type AssertionsAttachedContent<E, R> = AttachedRecordContent<RecordBytesContentHandle, E, R>;
 
 export interface AssertionsAttachmentDraft<E, R> {
   readonly entries: readonly AssertionEntryOuter<AssertionsAttachedContent<E, R>>[];
@@ -618,14 +617,13 @@ export interface AssertionsAttachmentProducer<E, R> {
   readonly append: (
     entry: AssertionsAttachmentEntryInput<E, R>,
   ) => Result.Result<AssertionEntryId, AssertionsProducerError>;
-  readonly seal: (input?: AssertionsAttachmentSealInput) => Result.Result<
-    AssertionsAttachmentCapture<E, R>,
-    AssertionsProducerError
-  >;
+  readonly seal: (
+    input?: AssertionsAttachmentSealInput,
+  ) => Result.Result<AssertionsAttachmentCapture<E, R>, AssertionsProducerError>;
 }
 
 function makeProvisionalContent(): AssertionsProvisionalContent {
-  return Object.freeze({ kind: "assertions-provisional-content" });
+  return { kind: "assertions-provisional-content" };
 }
 
 function provisionalMaterial<E, R>(
@@ -633,33 +631,34 @@ function provisionalMaterial<E, R>(
 ): RecordAssertionMaterial<AssertionsProvisionalContent> {
   return material.kind === "unavailable"
     ? material
-    : Object.freeze({
+    : {
         kind: "content" as const,
         content: makeProvisionalContent(),
         encoding: material.encoding,
         byteLength: material.byteLength,
         preview: material.preview,
-      });
+      };
 }
 
 function provisionalEntry<E, R>(
   entry: AssertionsAttachmentEntryInput<E, R>,
 ): AssertionEntryInput<AssertionsProvisionalContent> {
-  return Object.freeze({
+  return {
     display: entry.display,
     criterion: entry.criterion,
-    materials: Object.freeze({
+    materials: {
       source: provisionalMaterial(entry.materials.source),
-      evidence: Object.freeze(entry.materials.evidence.map(provisionalMaterial)),
+      evidence: entry.materials.evidence.map(provisionalMaterial),
       coverage: entry.materials.coverage,
       limitations: entry.materials.limitations,
-    }),
+    },
     evaluation: entry.evaluation,
     decision: entry.decision,
     policy: entry.policy,
+    control: entry.control,
     contribution: entry.contribution,
     explanationRetention: entry.explanationRetention,
-  });
+  };
 }
 
 interface AssertionsAttachmentEntrySources<E, R> {
@@ -670,10 +669,10 @@ interface AssertionsAttachmentEntrySources<E, R> {
 function captureEntrySources<E, R>(
   entry: AssertionsAttachmentEntryInput<E, R>,
 ): AssertionsAttachmentEntrySources<E, R> {
-  return Object.freeze({
+  return {
     source: entry.materials.source,
-    evidence: Object.freeze([...entry.materials.evidence]),
-  });
+    evidence: [...entry.materials.evidence],
+  };
 }
 
 function materializeMaterial<E, R>(
@@ -690,13 +689,13 @@ function materializeMaterial<E, R>(
   if (source.kind !== "content") {
     throw new Error("Assertions producer changed a sealed material kind");
   }
-  return Object.freeze({
+  return {
     kind: "content",
     content: build.content.stream(source.source),
     encoding: material.encoding,
     byteLength: material.byteLength,
     preview: material.preview,
-  });
+  };
 }
 
 function outerCriterion<Content>(
@@ -713,7 +712,7 @@ function outerCriterion<Content>(
   if (Result.isFailure(decoded)) {
     throw new Error("An Assertions writer criterion must be bounded JSON");
   }
-  return Object.freeze({ state: "available" as const, value: decoded.success });
+  return { state: "available" as const, value: decoded.success };
 }
 
 function materializeDocument<E, R>(
@@ -731,65 +730,61 @@ function materializeDocument<E, R>(
     if (captured.evidence.length !== sealed.materials.evidence.length) {
       throw new Error("Assertions producer changed sealed evidence cardinality");
     }
-    entries.push(Object.freeze({
+    entries.push({
       entryId: sealed.entryId,
       display: sealed.display,
       criterion: outerCriterion(sealed.criterion),
-      materials: Object.freeze({
+      materials: {
         source: materializeMaterial(sealed.materials.source, captured.source, build),
-        evidence: Object.freeze(
-          sealed.materials.evidence.map((material, evidenceIndex) => {
-            const evidenceSource = captured.evidence[evidenceIndex];
-            if (evidenceSource === undefined) {
-              throw new Error("Assertions producer lost a sealed evidence source");
-            }
-            return materializeMaterial(material, evidenceSource, build);
-          }),
-        ),
+        evidence: sealed.materials.evidence.map((material, evidenceIndex) => {
+          const evidenceSource = captured.evidence[evidenceIndex];
+          if (evidenceSource === undefined) {
+            throw new Error("Assertions producer lost a sealed evidence source");
+          }
+          return materializeMaterial(material, evidenceSource, build);
+        }),
         coverage: sealed.materials.coverage,
         limitations: sealed.materials.limitations,
-      }),
+      },
       evaluation: sealed.evaluation,
       decision: sealed.decision,
       policy: sealed.policy,
+      control: sealed.control,
       contribution: sealed.contribution,
       explanationRetention: sealed.explanationRetention,
-    }));
+    });
   }
 
   const sites = sourceSites.map((site): AssertionSourceSite => {
-    const anchor: AssertionSourceAnchor = Object.freeze({
+    const anchor: AssertionSourceAnchor = {
       sourceItemId: site.sourceItemId,
       sha256: site.sha256,
-    });
-    return Object.freeze({
+    };
+    return {
       entryId: site.entryId,
       sourceOrder: site.sourceOrder,
       role: site.role,
       source: build.reference.to(sourcesRecordAttachment, anchor),
       start: site.start,
       end: site.end,
-    });
+    };
   });
-  return Object.freeze({
-    entries: Object.freeze(entries),
-    sourceSites: Object.freeze(sites),
-  });
+  return {
+    entries: entries,
+    sourceSites: sites,
+  };
 }
 
 /** Collects facts, then returns the exact session callback that mints closure tokens. */
 export function createAssertionsAttachmentProducer<E, R>(config: {
   readonly entryIds: AssertionsEntryIdSource;
 }): AssertionsAttachmentProducer<E, R> {
-  const documentBuilder: AssertionsDocumentBuilder<AssertionsProvisionalContent> =
-    createAssertionsDocumentBuilder({
-      documentSchema: assertionsProducerSchemas.document,
-      entryIds: config.entryIds,
-    });
+  const documentBuilder: AssertionsDocumentBuilder<AssertionsProvisionalContent> = createAssertionsDocumentBuilder({
+    documentSchema: assertionsProducerSchemas.document,
+    entryIds: config.entryIds,
+  });
   const sources: AssertionsAttachmentEntrySources<E, R>[] = [];
-  let sealed:
-    | Result.Result<AssertionsAttachmentCapture<E, R>, AssertionsProducerError>
-    | undefined;
+  let sealed: Result.Result<AssertionsAttachmentCapture<E, R>, AssertionsProducerError> | undefined;
 
   const producer: AssertionsAttachmentProducer<E, R> = {
     append(entry) {
@@ -797,27 +792,30 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
       if (Result.isSuccess(appended)) sources.push(captureEntrySources(entry));
       return appended;
     },
-    seal(sealInput: AssertionsAttachmentSealInput = {}) {
+    seal(sealInput: AssertionsAttachmentSealInput = { sourceSites: [] }) {
       if (sealed !== undefined) return sealed;
-      const sourceSites = Object.freeze([...(sealInput.sourceSites ?? [])]);
-      const sourceSiteWireShape = sourceSites.map((site) => Object.freeze({
+      const sourceSites = [...sealInput.sourceSites];
+      const sourceSiteWireShape = sourceSites.map((site) => ({
         entryId: site.entryId,
         sourceOrder: site.sourceOrder,
         role: site.role,
-        source: Object.freeze({
-          value: Object.freeze({
+        source: {
+          value: {
             sourceItemId: site.sourceItemId,
             sha256: site.sha256,
-          }),
-        }),
+          },
+        },
         start: site.start,
         end: site.end,
       }));
       const emptyEntriesBytes = new TextEncoder().encode(JSON.stringify({ entries: [] })).byteLength;
-      const sourceSitesFramingBytes = new TextEncoder().encode(JSON.stringify({
-        entries: [],
-        sourceSites: sourceSiteWireShape,
-      })).byteLength - emptyEntriesBytes;
+      const sourceSitesFramingBytes =
+        new TextEncoder().encode(
+          JSON.stringify({
+            entries: [],
+            sourceSites: sourceSiteWireShape,
+          }),
+        ).byteLength - emptyEntriesBytes;
       const document = documentBuilder.seal({
         maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
       });
@@ -825,33 +823,24 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
         sealed = Result.fail(document.failure);
         return sealed;
       }
-      sealed = Result.succeed((build) => materializeDocument(
-        sources,
-        document.success.entries,
-        sourceSites,
-        build,
-      ));
+      sealed = Result.succeed((build) => materializeDocument(sources, document.success.entries, sourceSites, build));
       return sealed;
     },
   };
-  return Object.freeze(producer);
+  return producer;
 }
 
 export interface AssertionsProjectorDefinition {
   readonly definition: typeof assertionsRecordAttachment;
-  readonly project: (
-    value: AssertionsAttachment,
-  ) => AssertionsProjection<RecordBytesContentHandle>;
+  readonly project: (value: AssertionsAttachment) => AssertionsProjection<RecordBytesContentHandle>;
 }
 
 /** Typed, synchronous projection over one already-validated logical value. */
-export function defineAssertionsProjector(
-  registry: ThirdPartyCriterionRegistry,
-): AssertionsProjectorDefinition {
-  return Object.freeze({
+export function defineAssertionsProjector(registry: ThirdPartyCriterionRegistry): AssertionsProjectorDefinition {
+  return {
     definition: assertionsRecordAttachment,
     project(value: AssertionsAttachment) {
       return projectAssertionsDocument(value, registry);
     },
-  });
+  };
 }

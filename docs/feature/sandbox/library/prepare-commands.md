@@ -10,7 +10,7 @@ before action 面向题目或实验自己的运行依赖：安装系统工具、
 选择 `codexAgent()`、`claudeCodeAgent()` 等内置 Sandbox Agent 时，CLI 的检查与安装由对应 Adapter 自动完成；作者不需要复制官方安装脚本，也不应把它写进题目 fixture。
 
 Adapter 知道目标 CLI 的精确版本、官方发行物、目标平台与复检方式。这些信息进入 Agent 身份和结果可比性；把安装降成普通 Sandbox action 会丢失该绑定，并让用户手工维护两份版本声明。
-需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `shell()` 或第三方 `defineSandboxAction()` family。完整分工见 [Adapter · Agent Ensure](../../adapters/architecture/agent-ensure.md)。
+需要安装的不是被测 Agent，而是实验自身的工具时，才使用本页的 `shell()` 或第三方 `defineSandboxAction()` family。完整分工见 [Adapter · Agent Install](../../adapters/architecture/agent-install.md)。
 
 ## 导出入口
 
@@ -92,12 +92,14 @@ export default defineExperiment({
 
 ```typescript
 shell({
-  id: "prepare-runtimes",
-  label: "准备 Node 与 inner runtime 镜像",
-  script: new URL("./prepare-runtimes.sh", import.meta.url),
+  id: "inner-python-runtime",
+  label: "组装带 Node 的 Python runtime 镜像",
+  script: new URL("./inner-python-runtime.sh", import.meta.url),
   user: "root",
 })
 ```
+
+脚本文件仍只承担一步。装 Node、装 pnpm、拉镜像各是一步，就写成链上相邻的几个 `.before()`，不要合进一个文件（[T-36](../../../taste.md#t-36)）；这样进度、失败归因与缓存前缀都落在实际的步骤上。
 
 - `script` 接受 Eval 或 Experiment 模块相对的 `file:` URL，与 `command` 二选一；两者都给或都不给在 planning 失败。
 - planning 根据 URL 定位文件并读取一次，严格按 UTF-8 解码，不改写换行。URL 不接受 query 或 fragment；不存在、不可读、非文本或 realpath 穿出项目根时 planning 失败并写出路径，symlink 不能绕过边界。
@@ -107,7 +109,7 @@ shell({
 
 Human 进度行只写 `label`，省略时写 `id`，不写命令文本。
 `label` 提供时须非空、不含控制字符，最多 256 Unicode code points；它只用于显示，不参与动作或结果身份。
-`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；静态完整命令由 `niceeval debug` 提供，实际执行命令由 `show @<locator> --execution` 提供。`--timing` 只提供阶段归因与耗时。
+`shell()`、`gitCheckout()`、`uploadDirectory()` 与第三方 family 的实例都遵守这条规则；静态完整命令由 `niceeval debug` 提供，实际执行命令由 `show @<locator> execution` 提供。`timing` 只提供阶段归因与耗时。
 
 template 预装只是让版本检查首测即成功的一种手段。
 声明照常保留；预装缺失或漂移时命令现场补齐。
@@ -123,7 +125,7 @@ template 预装只是让版本检查首测即成功的一种手段。
 
 ## `niceeval debug` 的可证明边界
 
-`niceeval debug <experiment> <eval>` 按配置的每条 Attempt 展示 before。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个候选 dispatch Planned attempt 都列出自己的 before 与 agent.ensure。debug 不读取 carry 或 cache，固定显示 `cacheLookup: "not-probed"`。
+`niceeval debug <experiment> <eval>` 按配置的每条 Attempt 展示 before。复用 lane 另带每台实际实例各自套用的 physical lifecycle template；每个候选 dispatch Planned attempt 都列出自己的 before 与 agent.install。debug 不读取 carry 或 cache，固定显示 `cacheLookup: "not-probed"`。
 
 命令工厂把执行闭包已经消费的同一份规范化数据私绑到计划：
 

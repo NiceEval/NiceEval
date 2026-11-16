@@ -29,7 +29,7 @@ Sysbox 的[官方 DinD 指南](https://github.com/nestybox/sysbox/blob/master/do
 |---|---|---|---|---|
 | OCI catalog / mirror | digest-pinned runtime image 与 pull-through blob | 受信任发布流程 | 每个 daemon 只读 pull | 凭据和私有仓库按 trust domain 分开 |
 | BuildKit external cache | 内容寻址 build result | 受信任 publisher；普通 Attempt 只写私有 namespace | `--cache-from` 导入 | 不把未审查 Attempt 输出提升为共享输入 |
-| Provider artifact | guest root、工具与确定性 SetupPrefix 的 provider-native snapshot | 专用 prepare worker | clone 成私有 VM 与磁盘 | artifact immutable，每个 consumer 独立 writable |
+| Provider artifact | guest root、工具与确定性 `SetupPrefix` 的 provider-native snapshot | 专用 prepare worker | clone 成私有 VM 与磁盘 | artifact immutable，每个 consumer 独立 writable |
 
 Docker 的[registry mirror 文档](https://docs.docker.com/docker-hub/image-library/mirror/)
 把多 daemon 的重复 pull 作为标准场景。mirror 第一次从上游拉取，之后从本地存储提供相同内容。
@@ -45,10 +45,10 @@ namespace，不能让不可信 Attempt 共同写一个 tag。
 NiceEval 已用 `SandboxTemplate` 表示作者选择 Provider 和完整 Sandbox origin 的声明，
 用 `SetupPrefix` 表示确定性 before action 的内容前缀。新执行模型不创建同名概念。
 
-Provider 在 exact SetupPrefix 上捕获的 VM image、volume snapshot 或远端 snapshot ID 都叫
+Provider 在 exact `SetupPrefix` 上捕获的 VM image、volume snapshot 或远端 snapshot ID 都叫
 `Provider artifact`。其 identity 至少包含：
 
-- Sandbox template identity、SetupPrefixKey 与 Provider protocol revision；
+- Sandbox template identity、`SetupPrefixKey` 与 Provider protocol revision；
 - guest image digest、kernel/architecture 与 Docker/Compose version；
 - Docker data virtual disk 的逻辑容量和 filesystem identity；
 - OCI catalog、BuildKit cache 与准备步骤的非敏感输入 identity；

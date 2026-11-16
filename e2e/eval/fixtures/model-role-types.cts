@@ -1,17 +1,19 @@
 import { isTrue } from "niceeval/expect";
-import { defineAdapter, defineExperiment, defineScoreEval, defineModelRoles, type AdapterCreateContext, type AdapterUsageInput } from "niceeval";
+import { defineAdapter, defineExperiment, defineScoreEval, defineModelRoles, type AdapterCreateContext, type AdapterUsageInput, type ResolvedModelRole } from "niceeval";
 import { deterministicAgent } from "../agents/deterministic.ts";
 
 function readSelection(ctx: AdapterCreateContext) {
-  const model: string | null = ctx.models.planner.model;
-  const effort: string | null = ctx.models.planner.reasoningEffort;
-  // @ts-expect-error An unspecified configured model may be null.
+  const model: string | undefined = ctx.models.planner.model;
+  const effort: string | undefined = ctx.models.planner.reasoningEffort;
+  // @ts-expect-error An unspecified configured model may be undefined.
   const required: string = ctx.models.planner.model;
+  // @ts-expect-error Callback selections cannot be received as nullable wire values.
+  const nullable: string | null = ctx.models.planner.model;
   // @ts-expect-error The canonical map is read-only.
-  ctx.models.planner = { model: "other", reasoningEffort: null };
+  ctx.models.planner = { model: "other", reasoningEffort: undefined };
   // @ts-expect-error Canonical selections are deeply read-only.
   ctx.models.planner.model = "other";
-  return [model, effort, required];
+  return [model, effort, required, nullable];
 }
 
 const adapter = defineAdapter({ name: "slot-types", create: (ctx) => ({ read: () => readSelection(ctx) }) });
@@ -41,7 +43,7 @@ const requiredAdapter = defineAdapter({
   name: "required-slot-types",
   requires: { models: purposes },
   create(ctx) {
-    const model: string | null = ctx.models.mind.model;
+    const model: string | undefined = ctx.models.mind.model;
     // @ts-expect-error Only declared purposes can be read.
     ctx.models.mimd;
     ctx.recordUsage({ ...linked, modelRole: "mind" });
@@ -61,7 +63,7 @@ purposes.mind.model = "fixture/mutated";
 requiredAdapter.defineScoreEval({
   requires: { models: purposes },
   test(t) {
-    const configured: string | null = t.configuredModel();
+    const configured: string | undefined = t.configuredModel();
     t.usage.cacheRead.rate();
     t.usage.cacheRead.rate("mind");
     // @ts-expect-error Bound Score Eval must reject a misspelled purpose.
@@ -124,3 +126,13 @@ import type { ModelSlotSelection } from "niceeval";
 // @ts-expect-error Old usage property is not accepted.
 const oldUsage: AdapterUsageInput = { ...linked, modelSlot: "mind" };
 void oldUsage;
+
+const internalSelection: ResolvedModelRole = { model: undefined, reasoningEffort: undefined };
+const adapterSelection: import("niceeval/adapter").ResolvedModelRole = internalSelection;
+// @ts-expect-error Internal selection cannot contain wire null.
+const nullSelection: ResolvedModelRole = { model: null, reasoningEffort: undefined };
+// @ts-expect-error Both callback keys must be present.
+const missingModel: ResolvedModelRole = { reasoningEffort: undefined };
+// @ts-expect-error Both callback keys must be present.
+const missingEffort: ResolvedModelRole = { model: undefined };
+void [adapterSelection, nullSelection, missingModel, missingEffort];

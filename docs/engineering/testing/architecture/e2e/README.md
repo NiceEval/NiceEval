@@ -14,7 +14,7 @@ E2E 是 Bug 修复的开工门：先按[测试总纲的 E2E TDD](../../README.md
 每个叶子目录是一个能被复制到仓库外使用的 NiceEval 项目：
 
 - 自己的 `package.json` 与签入 lockfile；
-- NiceEval dependency，由根 runner 在副本中替换成候选 tarball；
+- NiceEval dependency，由根 runner 在副本中替换成候选：本地默认从源码运行，需要构建输出的 Repo 用构建结果，CI 安装 tarball（见[候选形态](execution.md#候选形态)）；
 - `project.json` 中 `targets.e2e.metadata.niceeval.harness.testkit: true` 声明消费意图。根 runner 把当前 checkout 的
   Testkit 直接编译到 invocation-local scratch snapshot，并只在副本中注入该目录依赖；
 - `niceeval.config.ts`、`evals/`、`experiments/`、需要时的 agent、服务或 Docker Compose；
@@ -30,7 +30,7 @@ Vitest / Playwright 的 case 与契约关联另见 [E2E case 关系](case-relati
 
 - CLI、Runner、Package、Adapter 与 Lifecycle Repo 使用 Vitest 的选择、超时、hook、断言和报告能力；
 - Insight 与包含浏览器的 Journey E2E 使用 Playwright Test 的 `page` fixture、web-first assertion、trace、截图与 browser cleanup；
-- 根 `pnpm e2e test` 只实现 NiceEval 特有的候选 tarball、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
+- 根 `pnpm e2e test` 只实现 NiceEval 特有的候选准备（source、built 或 tarball）、checkout-local Testkit 注入、Repo 隔离安装、lane / capability 选择、artifact 与资源收据；
 - 独立 [Testkit](../../library.md) 只补跨 Repo 稳定的进程收据、严格数据解码、等待与 cleanup；Repo 策略仍留在调用点；
 - 完整 `niceeval` argv、readiness 条件与领域 expected 留在测试正文。
 
@@ -81,7 +81,7 @@ Testkit 只能薄转接候选 decoder 并转出正式产品类型；候选缺 de
 不得在 Testkit 或场景 support 复制 Schema。`json<unknown>()` 只负责取得 unknown 输入，再立即交给公开 decoder。
 
 测试正文继续拥有完整 argv、按顺序发生的用户动作、字面 expected 与最终断言。support 只隐藏端口分配、spawn、poll、readiness、
-进程组、临时路径与 cleanup 等机械细节；它不得隐藏 `exp`、`run`、`query`、`view` 等产品动作，也不得读取候选结果生成 expected。
+进程组、临时路径与 cleanup 等机械细节；它不得隐藏 `exp`、`run`、`show`、`view` 等产品动作，也不得读取候选结果生成 expected。
 
 Review 与接管验收必须搜索改动范围内的本地 harness interface，以及 `json<T>()`、`ndjson<T>()` 后自行解释产品字段的泛型 parser。
 `typecheck` 证明 Testkit canonical types 接线；安装同一候选的目标 E2E 证明实际 package export、严格 decoder 与公开观察同时成立。
@@ -92,7 +92,7 @@ Review 与接管验收必须搜索改动范围内的本地 harness interface，�
 Journey E2E 证明只有跨域组合才会出现的断裂，不复制每个域的完整矩阵。它连续执行真实用户命令，并在最近接缝立即检查：
 
 ```text
-init → exp --dry → exp → query discover → query run --request <request> → view → 浏览器打开
+init → exp --dry → exp → show --json → 顺着 links 下钻 → view → 浏览器打开
 ```
 
 只看最终导出站会把前面错误都折叠成“页面没开”；只检查每条短命令又无法证明 locator 和结果能跨域传递。
@@ -107,7 +107,7 @@ Journey E2E 使用独立项目副本和结果根。失败后保留副本时，�
 ## 功能 Repo 自己生产证据
 
 功能 Repo 签入为本域设计的 Eval 与 Experiment，每次 Repo invocation 都先通过安装后的 `niceeval exp` 完整运行，现场生成
-`.niceeval`，再执行 `run`、`query`、`view`、`--dry` 或 `accept` 等本域动作。不得签入、下载或从其它 Repo 复制一份
+`.niceeval`，再执行 `run`、`show`、`view`、`--dry` 或 `accept` 等本域动作。不得签入、下载或从其它 Repo 复制一份
 预生成 `.niceeval` 来跳过产品运行路径；artifact 中保留 `.niceeval` 只用于本次失败诊断，不是下一次运行的输入。
 
 Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定制造某条公开分支时，Repo 可以增加更有区分力的 Eval；它只服务
@@ -123,7 +123,7 @@ Eval 数量服从 case，而不是统一矩阵。一个现有 Eval 无法稳定�
 确定性 Adapter Repo 使用公开协议的本地故障端，证明 NiceEval 官方 Adapter 自己拥有的 transport 与错误处理。
 Live Adapter Repo 使用真实 SDK、CLI 或 provider，只证明该上游入口的兼容性。
 三者可以共用 Testkit，但不共享 package graph、fixture、secret、结果根或运行 evidence。
-功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `query` / `view` 也不获得 CLI、Inspection 或 Insight 的矩阵所有权。
+功能 Journey 不放进 `adapter/ai-sdk`；Adapter Repo 调用 `exp` / `show` / `view` 也不获得 CLI、Inspection 或 Insight 的矩阵所有权。
 
 live Adapter 不承担产品可靠性。确定性 UI Message Stream counterpart 负责产品语义并通过重复运行接管门；live 断言协议身份与关系。
 公开 Assertion、Context、Report 或 Runner 契约各自由功能 Repo 完整验收；Adapter 只使用足以判定其协议事实的断言，
@@ -132,8 +132,8 @@ live Adapter 不承担产品可靠性。确定性 UI Message Stream counterpart 
 
 ## 公开读回
 
-每个 Repo 通过产品公开入口读回自己制造的结果，但只断言本 Repo 拥有的事实。功能 Repo 用固定 `query`、View HTTP 或浏览器证明
-NiceEval 自有行为；Adapter Repo 用 `exp` / `query` 确认协议身份、usage、session 与失败阶段。通用 CLI 格式、View 渲染和
+每个 Repo 通过产品公开入口读回自己制造的结果，但只断言本 Repo 拥有的事实。功能 Repo 用 `show --json`、View HTTP 或浏览器证明
+NiceEval 自有行为；Adapter Repo 用 `exp` / `show` 确认协议身份、usage、session 与失败阶段。通用 CLI 格式、View 渲染和
 Adapter 协议矩阵分别只在各自 owner 中验收，不因一次读回而复制到所有 Repo。
 
 ## Eval 与 Assertions
@@ -179,11 +179,11 @@ Adapter 的分页或事件 fixture 必须属于被测公开协议。E2B `Sandbox
 
 Inspection 与 Insight 分别用真实 Experiment 产生结果，再通过各自固定公开入口读取：
 
-- Inspection：`query discover` / `query explain` / `query run` 与 `show` 的 versioned JSON、范围、选择、大输出和终端读面；仅 Node/CLI，不安装 browser。
+- Inspection：`show` 的对象寻址、`--json` versioned document 与 `links`、`--explain`、`compare`、范围、选择、大输出和终端读面；仅 Node/CLI，不安装 browser。
 - Insight：`view` 的 loopback HTTP、operational refresh、Snapshot cutoff 与浏览器动作；独立声明 Playwright / Chromium。
 
 项目 SQLite database 不是 portable 输入，也不是公开磁盘 schema。Inspection Repo 只从安装后 CLI 产生它，
-再用 `run`、`query` 和 `view` 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
+再用 `run`、`show` 和 `view` 验收公开结果；测试不得 import reader / writer，也不得扫描物理文件来反推成功。
 损坏、不完整、迁移与删除未完成 Run，只有在 CLI 能稳定制造并返回公开诊断时才由对应 CLI Journey 接管。
 
 source、trace、diff 与 artifacts 的固定 Inspection operation 也归 Inspection Repo。需要另一种 verdict、conversation、tool、timing 或源码事实时，在对应 Repo 增加专用 Eval，不借用 Adapter 结果。
@@ -256,7 +256,7 @@ terminal-only 不能由一次非原子 procfs 快照直接接受。只要 kernel
 `e2e/lifecycle/test/eval-group-shared-sandbox.test.ts` 是 Eval Group 物理生命周期的单边界 owner。
 它用两个同时进入调度的 Group 证明：不同 Group 可以并行；同一 Group 的成员按规范化 Eval ID 串行；成员之间复用同一台
 Docker Sandbox，`$HOME` 中的 Group 状态得以保留而工作目录会重置；运行结束后两台 owned Sandbox 都已释放。
-测试只通过安装后 CLI 的 result 事件与固定 `query run --request <request>` 读回公开结果，不读取 `.niceeval/` 私有布局。
+测试只通过安装后 CLI 的 result 事件与`show <对象> --json` 读回公开结果，不读取 `.niceeval/` 私有布局。
 
 ### Docker Before cache {#sandbox-setup-prefix-cache}
 
@@ -332,7 +332,7 @@ E2E 必须由原生测试 runner 按文件与标题发现；无法按标题选�
 - [Eval](eval.md)：Eval、Context 与公开 Assertion 契约 owner；
 - [CLI](cli.md)：选择、进程出口、机器输出与缓存行为；
 - [Run](record.md)：Run create、Attempt publication 与 PublicationCutoff；
-- [OS-user Service state](migrate.md)：可替换 producer 与 candidate 的用户级状态读回边界；
+- [UserDatabase 格式与初始化](migrate.md)：安装后的公开消费拒绝旧格式，并保留原数据；
 - [Inspection](inspection.md)：固定 query、show 与终端读面。
 - [Insight](insight.md)：View HTTP、浏览器审阅与生命周期。
 

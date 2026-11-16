@@ -7,7 +7,8 @@ const binary = join(process.cwd(), "node_modules", ".bin", "niceeval");
 const e2e = createE2EContext({
   repoId: "record",
   project: {
-    from: process.cwd(), prefix: "niceeval-e2e-import-conflict-",
+    from: process.cwd(),
+    prefix: "niceeval-e2e-import-conflict-",
     omitTopLevel: [".e2e-artifacts", ".niceeval", "node_modules", "test"],
     links: [{ from: resolve("node_modules"), to: "node_modules", type: "dir" }],
   },

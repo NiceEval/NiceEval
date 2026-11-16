@@ -8,11 +8,14 @@ export interface AdapterAttachmentInput {
    * Chunks must be Uint8Array values of at most 1 MiB, stable until the next pull.
    * The producer must observe signal and release its own resources on cancellation.
    */
-  readonly body: Uint8Array | string | {
-    readonly stream: (signal: AbortSignal) => AsyncIterable<Uint8Array>;
-  };
+  readonly body:
+    | Uint8Array
+    | string
+    | {
+        readonly stream: (signal: AbortSignal) => AsyncIterable<Uint8Array>;
+      };
   /** Optional transfer cancellation. Cleanup may supply its independent signal. */
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Acceptance receipt. Durable publication happens when the Attempt is published. */

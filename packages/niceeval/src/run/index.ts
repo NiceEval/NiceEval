@@ -2,7 +2,6 @@ export {
   RunAbsentPublicationSchema,
   RunPendingPublicationSchema,
   RunPublishedPublicationSchema,
-  RUN_PROTOCOL,
   RUN_ABSENCE_REASONS,
   PublicationCutoffSchema,
   RunDetailSchema,

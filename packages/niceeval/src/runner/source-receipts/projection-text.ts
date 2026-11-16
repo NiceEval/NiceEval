@@ -10,17 +10,18 @@ import { requiredNonNegative, requiredPositive } from "./support.ts";
 export interface RetainedText {
   readonly text: SafeText;
   readonly retainedBytes: NonNegativeSafeInteger;
-  readonly omittedBytes?: PositiveSafeInteger;
+  readonly omittedBytes: PositiveSafeInteger | undefined;
 }
 
 /** Never split a Unicode scalar or retain a non-SafeText source value. */
 export function retainSafeText(value: string, maximumBytes: number): RetainedText | undefined {
   const whole = makeBoundedSafeText(value, maximumBytes);
   if (whole !== undefined) {
-    return Object.freeze({
+    return {
       text: whole,
       retainedBytes: requiredNonNegative(utf8ByteLength(value)),
-    });
+      omittedBytes: undefined,
+    };
   }
   const totalBytes = utf8ByteLength(value);
   if (totalBytes <= maximumBytes) return undefined;
@@ -36,9 +37,9 @@ export function retainSafeText(value: string, maximumBytes: number): RetainedTex
   const safe = makeBoundedSafeText(retained, maximumBytes);
   const omittedBytes = totalBytes - retainedBytes;
   if (safe === undefined || omittedBytes <= 0) return undefined;
-  return Object.freeze({
+  return {
     text: safe,
     retainedBytes: requiredNonNegative(retainedBytes),
     omittedBytes: requiredPositive(omittedBytes),
-  });
+  };
 }

@@ -1,7 +1,6 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { fileChangesRecordAttachment } from "./definition.ts";
 
-export const fileChangesRecordAttachmentPersistence = defineRecordAttachmentPersistence({
+export const fileChangesRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
   attachment: fileChangesRecordAttachment,
-  revision: 2,
 });

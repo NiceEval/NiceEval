@@ -1,8 +1,9 @@
+import { Data } from "effect";
+
 export type SqliteRecordErrorCode =
   | "record-runtime-unsupported"
   | "record-database-invalid"
   | "record-schema-unsupported"
-  | "record-schema-migration-required"
   | "record-write-busy"
   | "record-command-conflict"
   | "record-seal-incomplete"
@@ -11,15 +12,26 @@ export type SqliteRecordErrorCode =
   | "record-sqlite-error";
 
 export function isSqliteRecordErrorCode(value: unknown): value is SqliteRecordErrorCode {
-  return value === "record-runtime-unsupported" || value === "record-database-invalid" ||
-    value === "record-schema-unsupported" || value === "record-schema-migration-required" ||
+  return (
+    value === "record-runtime-unsupported" ||
+    value === "record-database-invalid" ||
+    value === "record-schema-unsupported" ||
     value === "record-write-busy" ||
-    value === "record-command-conflict" || value === "record-seal-incomplete" ||
-    value === "record-content-invalid" || value === "record-resource-limit-exceeded" ||
-    value === "record-sqlite-error";
+    value === "record-command-conflict" ||
+    value === "record-seal-incomplete" ||
+    value === "record-content-invalid" ||
+    value === "record-resource-limit-exceeded" ||
+    value === "record-sqlite-error"
+  );
 }
 
-export class SqliteRecordError extends Error {
+export type SqliteRecordFailure = {
+  readonly [Code in SqliteRecordErrorCode]: { readonly _tag: Code };
+}[SqliteRecordErrorCode];
+
+export class SqliteRecordError extends Data.TaggedError("SqliteRecordError")<{
+  readonly reason: SqliteRecordFailure;
+}> {
   readonly name = "SqliteRecordError";
 
   constructor(
@@ -28,7 +40,11 @@ export class SqliteRecordError extends Error {
     message: string,
     options?: ErrorOptions,
   ) {
-    super(message, options);
+    super({ reason: { _tag: code } });
+    this.message = message;
+    if (options !== undefined && "cause" in options) {
+      Object.defineProperty(this, "cause", { value: options.cause, configurable: true, writable: true });
+    }
   }
 }
 
@@ -49,7 +65,8 @@ export function sqliteErrorCode(cause: unknown): string | undefined {
 
 export function isSqliteBusy(cause: unknown): boolean {
   const code = sqliteErrorCode(cause);
-  return code === "ERR_SQLITE_ERROR" && /(?:database is locked|database is busy)/iu.test(
-    cause instanceof Error ? cause.message : "",
+  return (
+    code === "ERR_SQLITE_ERROR" &&
+    /(?:database is locked|database is busy)/iu.test(cause instanceof Error ? cause.message : "")
   );
 }

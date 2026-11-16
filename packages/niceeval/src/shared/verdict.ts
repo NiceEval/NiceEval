@@ -8,10 +8,12 @@ import type { EvaluationKind } from "./evaluation.ts";
 
 export interface VerdictLike {
   readonly verdict: Verdict;
-  readonly evaluationKind?: EvaluationKind;
-  readonly scoreResult?: {
-    readonly status: import("../assertions/types.ts").ScoreFactAttemptOutcome["status"];
-  };
+  readonly evaluationKind?: EvaluationKind | undefined;
+  readonly scoreResult?:
+    | {
+        readonly status: import("../assertions/types.ts").ScoreFactAttemptOutcome["status"];
+      }
+    | undefined;
 }
 
 /** Score completeness never replaces the Attempt's sealed four-state Verdict. */

@@ -1,12 +1,6 @@
-
 import type { ExpEvalEvent, ExpEvent } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import {
-  e2e,
-  lifecycleEvents,
-  typecheckInstalledPluginConsumer,
-  validateDynamicPluginConsumer,
-} from "./helpers.ts";
+import { e2e, lifecycleEvents, typecheckInstalledPluginConsumer, validateDynamicPluginConsumer } from "./helpers.ts";
 // @feature docs/feature/plugins/README.md
 
 test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周期", async () => {
@@ -31,10 +25,13 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
     });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion, run.diagnostic()).toBe("completed");
-    const evalEvents = run.expEvents().filter(
-      (event): event is ExpEvalEvent => "event" in event && event.event === "eval",
-    );
-    expect(evalEvents.map((event) => event.verdict), run.diagnostic()).toEqual(["passed", "passed"]);
+    const evalEvents = run
+      .expEvents()
+      .filter((event): event is ExpEvalEvent => "event" in event && event.event === "eval");
+    expect(
+      evalEvents.map((event) => event.verdict),
+      run.diagnostic(),
+    ).toEqual(["passed", "passed"]);
 
     const events = lifecycleEvents(paths.projectRoot);
     expect(events.map((event) => event.kind)).toEqual([
@@ -61,13 +58,31 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
       "group.plugin.teardown",
       "group.plugin.teardown",
     ]);
-    expect(events.filter((event) => event.kind === "group.plugin.setup").map((event) => event.marker)).toEqual(["first", "second"]);
-    expect(events.filter((event) => event.kind === "group.plugin.teardown").map((event) => event.marker)).toEqual(["second", "first"]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => [event.marker, event.declaredMarker])).toEqual([
-      ["stable", "stable"], ["first", "first"], ["second", "second"],
-      ["stable", "stable"], ["first", "first"], ["second", "second"],
+    expect(events.filter((event) => event.kind === "group.plugin.setup").map((event) => event.marker)).toEqual([
+      "first",
+      "second",
     ]);
-    expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => [event.marker, event.ownerKind, event.ownerId])).toEqual([
+    expect(events.filter((event) => event.kind === "group.plugin.teardown").map((event) => event.marker)).toEqual([
+      "second",
+      "first",
+    ]);
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.before")
+        .map((event) => [event.marker, event.declaredMarker]),
+    ).toEqual([
+      ["stable", "stable"],
+      ["first", "first"],
+      ["second", "second"],
+      ["stable", "stable"],
+      ["first", "first"],
+      ["second", "second"],
+    ]);
+    expect(
+      events
+        .filter((event) => event.kind === "sandbox.plugin.after")
+        .map((event) => [event.marker, event.ownerKind, event.ownerId]),
+    ).toEqual([
       ["second", "eval-group", "group-plugin"],
       ["first", "eval-group", "group-plugin"],
       ["stable", "eval-group", "group-plugin"],
@@ -78,8 +93,9 @@ test("Eval Group、Sandbox 与 Eval Plugin 各自遵守共享实例的生命周�
     expect(events.filter((event) => event.kind === "sandbox.plugin.after").map((event) => event.physicalId)).toEqual(
       events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId),
     );
-    expect(new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size).toBe(1);
+    expect(
+      new Set(events.filter((event) => event.kind === "sandbox.plugin.before").map((event) => event.physicalId)).size,
+    ).toBe(1);
     expect(events.filter((event) => event.kind === "agent.send")).toHaveLength(2);
-
   });
 });

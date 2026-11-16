@@ -9,11 +9,15 @@ export const roles = defineAdapter({
       selection() {
         return {
           models: ctx.models,
-          model: ctx.model ?? null,
-          reasoningEffort: ctx.reasoningEffort ?? null,
+          model: ctx.model,
+          reasoningEffort: ctx.reasoningEffort,
           sameSelection: ctx.models === initialModels,
           frozen: Object.isFrozen(ctx.models) && Object.values(ctx.models).every(Object.isFrozen),
           keys: Object.keys(ctx.models),
+          requiredKeys: Object.values(ctx.models).every((value) =>
+            Object.hasOwn(value, "model") && Object.hasOwn(value, "reasoningEffort")),
+          absentValues: Object.values(ctx.models).every((value) =>
+            value.model !== null && value.reasoningEffort !== null),
         };
       },
       record(usage: AdapterUsageInput) { ctx.recordUsage(usage); },

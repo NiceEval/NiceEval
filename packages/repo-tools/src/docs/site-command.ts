@@ -1,10 +1,6 @@
 import { Argument as Args, Command } from "effect/cli";
 
-import {
-  defineDocsCommandContribution,
-  deliverDomainResult,
-  type TerminalDeliverySink,
-} from "./internal/command.js";
+import { defineDocsCommandContribution, deliverDomainResult, type TerminalDeliverySink } from "./internal/command.js";
 import { renderDocsDomainFailure } from "./internal/errors.js";
 import { MINT_VERSION, runDocsSite } from "./generators.js";
 import type { CommandReceipt } from "./model.js";
@@ -16,35 +12,25 @@ function renderSiteReceipt(receipt: CommandReceipt): string {
 function makeSiteCommand(deliver: TerminalDeliverySink) {
   const present = { success: renderSiteReceipt, failure: renderDocsDomainFailure };
 
-  const prepare = Command.make("prepare", {}, () => deliverDomainResult(
-    runDocsSite("prepare"),
-    false,
-    present,
-    deliver,
-  )).pipe(Command.withDescription(`Prepare the repository-owned Mintlify ${MINT_VERSION} runtime.`));
+  const prepare = Command.make("prepare", {}, () =>
+    deliverDomainResult(runDocsSite("prepare"), false, present, deliver),
+  ).pipe(Command.withDescription(`Prepare the repository-owned Mintlify ${MINT_VERSION} runtime.`));
 
-  const dev = Command.make("dev", {
-    args: Args.String("mint-arg").pipe(Args.variadic({ min: 0 })),
-  }, ({ args }) => deliverDomainResult(
-    runDocsSite("dev", args),
-    false,
-    present,
-    deliver,
-  )).pipe(Command.withDescription("Run the scoped Mintlify development process."));
+  const dev = Command.make(
+    "dev",
+    {
+      args: Args.String("mint-arg").pipe(Args.variadic({ min: 0 })),
+    },
+    ({ args }) => deliverDomainResult(runDocsSite("dev", args), false, present, deliver),
+  ).pipe(Command.withDescription("Run the scoped Mintlify development process."));
 
-  const validate = Command.make("validate", {}, () => deliverDomainResult(
-    runDocsSite("validate"),
-    false,
-    present,
-    deliver,
-  )).pipe(Command.withDescription("Validate the public documentation site with the pinned Mintlify runtime."));
+  const validate = Command.make("validate", {}, () =>
+    deliverDomainResult(runDocsSite("validate"), false, present, deliver),
+  ).pipe(Command.withDescription("Validate the public documentation site with the pinned Mintlify runtime."));
 
-  const links = Command.make("links", {}, () => deliverDomainResult(
-    runDocsSite("links"),
-    false,
-    present,
-    deliver,
-  )).pipe(Command.withDescription("Check public documentation links, anchors, and redirects."));
+  const links = Command.make("links", {}, () =>
+    deliverDomainResult(runDocsSite("links"), false, present, deliver),
+  ).pipe(Command.withDescription("Check public documentation links, anchors, and redirects."));
 
   return Command.make("site").pipe(
     Command.withDescription("Develop and validate the public Mintlify documentation site."),

@@ -32,9 +32,10 @@ export function failureDetailFromResult(
   }
 
   const terminal = failureSummaryTerminal(result);
-  const fact = terminal === undefined
-    ? undefined
-    : primaryFactSummary(result, terminal) ?? primaryAssertionSummary(result, sealed, terminal);
+  const fact =
+    terminal === undefined
+      ? undefined
+      : (primaryFactSummary(result, terminal) ?? primaryAssertionSummary(result, sealed, terminal));
   // An errored terminal can only fall back to the runner error after every
   // evaluator-originated Fact cause has been considered.
   const fallbackError = terminal === "errored" && fact === undefined ? result.error : undefined;
@@ -46,14 +47,12 @@ export function failureDetailFromResult(
   // 不让人先读 `attempt.get` / `attempt.trace` 或 View detail 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture/README.md
   // 「时限归属」)。
   const timeout = fallbackError?.timeout;
-  const attribution = timeout
-    ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})`
-    : "";
-  const reason = fallbackError !== undefined
-    ? `${executionErrorReason(fallbackError.message)}${attribution}`
-    : fact !== undefined
-      ? compactAssertionSummary(fact)
-      : summaryText(result.verdict);
+  const attribution = timeout ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})` : "";
+  function failureReason(): string {
+    if (fallbackError !== undefined) return `${executionErrorReason(fallbackError.message)}${attribution}`;
+    if (fact !== undefined) return compactAssertionSummary(fact);
+    return summaryText(result.verdict);
+  }
   const origin = fallbackError?.origin;
   const phase = origin?.scope === "attempt" ? origin.phase : undefined;
   // 只在真正的结构化执行错误（没有主 Fact 摘要）上携带 `code`。Fact unavailable/errored
@@ -62,14 +61,22 @@ export function failureDetailFromResult(
 
   return {
     locator,
-    identity: { experimentId: result.experimentId, evalId: result.id, attempt: result.attempt },
-    who: runWho({ agentName: (result.adapter?.name ?? ""), model: result.model, experimentId: result.experimentId }),
+    identity: {
+      experimentId: result.experimentId,
+      evalId: result.id,
+      attempt: result.attempt,
+    },
+    who: runWho({
+      agentName: result.adapter?.name ?? "",
+      model: result.model,
+      experimentId: result.experimentId,
+    }),
     verdict: result.verdict,
-    reason,
-    ...(fact !== undefined ? { fact } : {}),
-    ...(phase !== undefined ? { phase } : {}),
-    ...(code !== undefined ? { code } : {}),
-    ...(origin !== undefined ? { origin } : {}),
+    reason: failureReason(),
+    fact,
+    phase,
+    code,
+    origin,
   };
 }
 
@@ -78,9 +85,7 @@ function executionErrorReason(message: string): string {
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
-  return typeof value === "object" && value !== null
-    ? value as Readonly<Record<string, unknown>>
-    : undefined;
+  return typeof value === "object" && value !== null ? (value as Readonly<Record<string, unknown>>) : undefined;
 }
 
 function criterionTitle(criterion: AssertionCriterion): string {
@@ -95,11 +100,16 @@ function criterionTitle(criterion: AssertionCriterion): string {
       return `${criterion.scope} ${criterion.occurrence} ${criterion.assertion}`;
     case "judge-measurement":
     case "managed-score-measurement":
+    case "agent-judge-measurement":
       return criterion.name;
     case "sandbox-change-scope":
       return "changes stayed within allowed paths";
     case "sandbox-unchanged-within":
       return "protected paths stayed unchanged";
+    case "sandbox-diff-paths":
+      return criterion.operation === "in-diff"
+        ? "pattern appeared in changed paths"
+        : "pattern absent from changed paths";
     case "sandbox-in-diff":
       return "pattern appeared in agent changes";
     case "sandbox-result":
@@ -112,20 +122,29 @@ function criterionTitle(criterion: AssertionCriterion): string {
 }
 
 function diagnosticFields(diagnostic: AssertionSnapshotObject | undefined): {
-  readonly matcher?: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
+  readonly matcher: string | undefined;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
 } {
   const value = record(diagnostic);
-  if (value === undefined) return {};
-  const string = (key: string): string | undefined =>
-    typeof value[key] === "string" ? value[key] : undefined;
+  if (value === undefined)
+    return {
+      matcher: undefined,
+      expected: undefined,
+      received: undefined,
+      reason: undefined,
+    };
+  const string = (key: string): string | undefined => (typeof value[key] === "string" ? value[key] : undefined);
+  const matcher = string("message");
+  const expected = string("expected");
+  const received = string("received");
+  const reason = string("reason");
   return {
-    ...(string("message") === undefined ? {} : { matcher: string("message") }),
-    ...(string("expected") === undefined ? {} : { expected: string("expected") }),
-    ...(string("received") === undefined ? {} : { received: string("received") }),
-    ...(string("reason") === undefined ? {} : { reason: string("reason") }),
+    matcher,
+    expected,
+    received,
+    reason,
   };
 }
 
@@ -133,20 +152,19 @@ function assertionCandidate(
   entry: SealedAssertionEntry,
   result: EvalResult,
 ): Omit<PrimaryFactSummary, "additionalFailures"> {
-  const diagnostic = diagnosticFields(entry.result.diagnostic);
+  const diagnostic = { ...diagnosticFields(entry.result.diagnostic) };
   const subject = entry.subject.kind === "snapshot" ? record(entry.subject.value) : undefined;
   const errorReason = [...(result.events ?? [])].reverse().find((event) => event.type === "error")?.message;
-  const scopeStatus = entry.criterion.kind === "scope-status"
-    ? {
-        expected: entry.criterion.assertion === "succeeded" ? "completed" : undefined,
-        received: typeof subject?.status === "string" ? subject.status : undefined,
-      }
-    : {};
+  if (entry.criterion.kind === "scope-status") {
+    diagnostic.expected = undefined;
+    diagnostic.received = undefined;
+    if (entry.criterion.assertion === "succeeded") diagnostic.expected = "completed";
+    if (typeof subject?.status === "string") diagnostic.received = subject.status;
+  }
   return {
-    title: entry.display.label ?? entry.display.key ?? criterionTitle(entry.criterion),
+    title: entry.display.label ?? criterionTitle(entry.criterion),
     ...diagnostic,
-    ...scopeStatus,
-    ...(errorReason === undefined ? {} : { reason: errorReason }),
+    reason: errorReason,
   };
 }
 
@@ -156,18 +174,20 @@ function primaryAssertionSummary(
   terminal: FailureSummaryTerminal,
 ): PrimaryFactSummary | undefined {
   if (sealed === undefined) return undefined;
-  const failures = sealed.entries.filter((entry) => terminal === "failed"
-    ? entry.result.gate === "failed"
-    : entry.result.state === "errored" || entry.result.gate === "unavailable");
+  const failures = sealed.entries.filter((entry) =>
+    terminal === "failed"
+      ? entry.result.gate === "failed"
+      : entry.result.state === "errored" || entry.result.gate === "unavailable",
+  );
   const primary = failures[0];
   if (primary === undefined) return undefined;
   const candidate = assertionCandidate(primary, result);
   return {
     title: summaryText(candidate.title),
-    ...(candidate.matcher === undefined ? {} : { matcher: summaryText(candidate.matcher) }),
-    ...(candidate.expected === undefined ? {} : { expected: summaryText(candidate.expected) }),
-    ...(candidate.received === undefined ? {} : { received: summaryText(candidate.received) }),
-    ...(candidate.reason === undefined ? {} : { reason: summaryText(candidate.reason) }),
+    matcher: candidate.matcher === undefined ? undefined : summaryText(candidate.matcher),
+    expected: candidate.expected === undefined ? undefined : summaryText(candidate.expected),
+    received: candidate.received === undefined ? undefined : summaryText(candidate.received),
+    reason: candidate.reason === undefined ? undefined : summaryText(candidate.reason),
     additionalFailures: failures.length - 1,
   };
 }
@@ -181,9 +201,7 @@ export function failureDetailFromCurrentReusedAttempt(
   run: Pick<AgentRun, "adapter" | "model" | "experimentId">,
 ): FailureDetail | undefined {
   if (readback.verdict !== "failed") return undefined;
-  const diagnostic = readback.executionErrors.state === "available"
-    ? readback.executionErrors.value[0]
-    : undefined;
+  const diagnostic = readback.executionErrors.state === "available" ? readback.executionErrors.value[0] : undefined;
   return {
     locator: encodeAttemptLocator(readback.source.attemptId),
     identity: {
@@ -192,14 +210,17 @@ export function failureDetailFromCurrentReusedAttempt(
       attempt: readback.target.attempt,
     },
     who: runWho({
-      agentName: (run.adapter?.name ?? ""),
+      agentName: run.adapter?.name ?? "",
       model: run.model,
       experimentId: run.experimentId,
     }),
     verdict: "failed",
-    reason: diagnostic === undefined
-      ? summaryText(readback.verdict)
-      : executionErrorReason(diagnostic.summary),
+    reason: diagnostic === undefined ? summaryText(readback.verdict) : executionErrorReason(diagnostic.summary),
+
+    fact: undefined,
+    phase: undefined,
+    code: undefined,
+    origin: undefined,
   };
 }
 
@@ -212,15 +233,10 @@ type FailureSummaryTerminal = "failed" | "errored";
 
 function failureSummaryTerminal(result: EvalResult): FailureSummaryTerminal | undefined {
   const terminal = attemptTerminalOf(result);
-  return terminal === "failed" || terminal === "errored"
-    ? terminal
-    : undefined;
+  return terminal === "failed" || terminal === "errored" ? terminal : undefined;
 }
 
-function primaryFactSummary(
-  result: EvalResult,
-  terminal: FailureSummaryTerminal,
-): PrimaryFactSummary | undefined {
+function primaryFactSummary(result: EvalResult, terminal: FailureSummaryTerminal): PrimaryFactSummary | undefined {
   const facts = new Map<string, EvaluationFactResult>(result.factResults.map((fact) => [fact.factId, fact]));
   const candidates = new Map<string, FactFailureCandidate>();
   for (const use of result.factUses) {
@@ -246,22 +262,22 @@ function primaryFactSummary(
   if (primary === undefined) return undefined;
   return {
     title: summaryText(primary.title),
-    ...(primary.matcher === undefined ? {} : { matcher: summaryText(primary.matcher) }),
-    ...(primary.expected === undefined ? {} : { expected: summaryText(primary.expected) }),
-    ...(primary.received === undefined ? {} : { received: summaryText(primary.received) }),
-    ...(primary.reason === undefined ? {} : { reason: summaryText(primary.reason) }),
+    matcher: primary.matcher === undefined ? undefined : summaryText(primary.matcher),
+    expected: primary.expected === undefined ? undefined : summaryText(primary.expected),
+    received: primary.received === undefined ? undefined : summaryText(primary.received),
+    reason: primary.reason === undefined ? undefined : summaryText(primary.reason),
     additionalFailures: ordered.length - 1,
   };
 }
 
 interface FactFailureCandidate {
   readonly sourceOrder: number;
-  readonly factId?: string;
+  readonly factId: string | undefined;
   readonly title: string;
-  readonly matcher?: string;
-  readonly expected?: string;
-  readonly received?: string;
-  readonly reason?: string;
+  readonly matcher: string | undefined;
+  readonly expected: string | undefined;
+  readonly received: string | undefined;
+  readonly reason: string | undefined;
 }
 
 function useCandidate(
@@ -269,33 +285,35 @@ function useCandidate(
   facts: ReadonlyMap<string, EvaluationFactResult>,
   terminal: FailureSummaryTerminal,
 ): FactFailureCandidate | undefined {
-  const isFailure = terminal === "failed"
-    ? use.useKind === "verdict" && use.outcome === "failed"
-    : use.outcome === "errored" || use.outcome === "unavailable";
+  const isFailure =
+    terminal === "failed"
+      ? use.useKind === "verdict" && use.outcome === "failed"
+      : use.outcome === "errored" || use.outcome === "unavailable";
   if (!isFailure) return undefined;
-  const factId = use.useKind === "verdict"
-    ? use.target.factId
-    : use.input.kind === "fact"
-      ? use.input.factId
-      : undefined;
+  function usedFactId(): string | undefined {
+    if (use.useKind === "verdict") return use.target.factId;
+    if (use.input.kind === "fact") return use.input.factId;
+    return undefined;
+  }
+  const factId = usedFactId();
   if (factId === undefined) return undefined;
   const fact = facts.get(factId);
   const label = use.label;
   const title = label ?? use.key ?? fact?.name ?? factId;
   const matcher = fact?.name === undefined || fact.name === title ? undefined : fact.name;
-  const reason = use.outcome === "unavailable"
-    ? use.reason
-    : use.outcome === "errored"
-      ? use.error.message
-      : undefined;
+  function useReason(): string | undefined {
+    if (use.outcome === "unavailable") return use.reason;
+    if (use.outcome === "errored") return use.error.message;
+    return undefined;
+  }
   return {
     sourceOrder: use.sourceOrder,
     factId,
     title,
-    ...(matcher === undefined ? {} : { matcher }),
-    ...(fact?.expected === undefined ? {} : { expected: fact.expected }),
-    ...(fact?.received === undefined ? {} : { received: fact.received }),
-    ...(reason === undefined ? {} : { reason }),
+    matcher,
+    expected: fact?.expected,
+    received: fact?.received,
+    reason: useReason(),
   };
 }
 
@@ -310,6 +328,10 @@ function factCandidate(
       factId: fact.factId,
       title: fact.name,
       reason: fact.error.message,
+
+      matcher: undefined,
+      expected: undefined,
+      received: undefined,
     };
   }
   if (fact.outcome !== "unavailable") return undefined;
@@ -324,13 +346,9 @@ function factCandidate(
     factId: fact.factId,
     title: fact.name,
     reason: fact.reason,
-  };
-}
 
-function compactFactSummary(summary: PrimaryFactSummary): string {
-  const parts = [summary.title];
-  if (summary.matcher !== undefined) parts.push(summary.matcher);
-  if (summary.reason !== undefined) parts.push(`reason ${summary.reason}`);
-  if (summary.additionalFailures > 0) parts.push(`+${summary.additionalFailures} more`);
-  return parts.join(" · ");
+    matcher: undefined,
+    expected: undefined,
+    received: undefined,
+  };
 }

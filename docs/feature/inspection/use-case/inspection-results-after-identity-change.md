@@ -20,31 +20,42 @@
 
    ```text
    Current results
-     Covered    0/24
-     Gaps       24
+     Up to date   0/24
+     Need a run   24
 
-   Reference results (from previous recorded attempts)
-     Previous attempts  24 of 24 gaps
+   Earlier results for these
+     Previous attempts  24 of 24
      Verdicts           21 passed; 3 failed; 0 errored; 0 skipped
      Score              612/768
      Notice             Prior configuration; rerun required to update target
+
+   Need a run
+     harness/canary   6 · agentInstalls
+     harness/stable  18 · agentInstalls
+
+   Next: niceeval exp harness/stable --dry
+         niceeval exp harness/canary --dry
    ```
 
-   预期结果：当前结果如实显示为缺口，旧结果不计入当前分数；参照区给出上一次的判定分布与得分。
+   预期结果：当前结果如实显示需要重跑，旧结果不计入当前分数；参照区给出上一次的判定分布与得分。
+   每个需要重跑的 Experiment 只占一行，写出数量和变化项，不逐个列出位置。
 
-2. 看每个缺口对应的旧结果。 {#gaps}
+2. 看某个 Experiment 的变化与旧结果。 {#gaps}
+
+   ```sh
+   niceeval show exp:harness/canary
+   ```
 
    ```text
-   Attempts · harness/canary
-     Changed  config:agentInstalls (codex 0.144.1 → codex 0.167.2) · all 6 gaps
+   Need a run · harness/canary
+     Needs rerun: agentInstalls changed (codex 0.144.1 → codex 0.167.2) · all 6
 
      Eval tool-guard
-     Gap identity-mismatch
      Previous result @1SXQTBZCQCNV7 (passed, 21/21)
    ```
 
-   预期结果：同一条 `show` 已经写出变的是哪一项；全部缺口原因相同时只写一次。
-   每条缺口下面有一行 `Previous result`，可以直接复制 locator 下钻。
+   预期结果：变的是哪一项、从什么变成什么，全部位置原因相同时只写一次。
+   每个位置下面有一行 `Previous result`，可以直接复制 locator 下钻。
 
 3. 看重跑的规模。 {#dry}
 
@@ -62,11 +73,11 @@
 ## 结果
 
 用户在重跑之前已经知道上一次的成绩、这次变的是哪一项，以及重跑的规模（[T-13](../../../taste.md#t-13)、[T-31](../../../taste.md#t-31)）。
-验收失败的情形：总览只显示 `0 passed`，让人以为项目从未成功运行；缺口只写身份不匹配，要另跑一条命令才知道是哪一项。
+验收失败的情形：总览只显示 `0 passed`，让人以为项目从未成功运行；只印 `identity-mismatch` 之类的内部代码，要查文档或另跑命令才知道是哪一项变了；总览把每个位置都展开，关键信息被淹没（[T-41](../../../taste.md#t-41)）。
 
 | 情形 | 用户看到的结果与下一步 |
 |---|---|
-| 只有一部分缺口有旧结果 | 参照区写 `Previous attempts 8 of 24 gaps`，其余位置从未运行 |
+| 只有一部分位置有旧结果 | 参照区写 `Previous attempts 8 of 24`，其余位置从未运行 |
 | 旧结果缺少身份清单 | 说明行写 `Unexplained` 与原因；`--dry` 列出仍能确定的变化 |
 | 只想看参照结果 | `niceeval show --reference` |
 

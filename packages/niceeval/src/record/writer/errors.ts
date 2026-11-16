@@ -1,7 +1,5 @@
-import type {
-  NonEmptyRecordAttachmentIssues,
-  RecordAttachmentPayloadInvalid,
-} from "../attachment/errors.ts";
+import type { NonEmptyRecordAttachmentIssues, RecordAttachmentPayloadInvalid } from "../attachment/errors.ts";
+import type { ExternalCause } from "../../shared/external-cause.ts";
 
 /** A scoped write session or a draft escaped after its owning Scope closed. */
 export interface RecordWriterClosed {
@@ -23,17 +21,9 @@ export interface RecordDraftHandleInvalid {
   readonly code: "record-draft-handle-invalid";
 }
 
-export type RecordDraftOperation =
-  | "record"
-  | "create-attempt"
-  | "reference"
-  | "publish";
+export type RecordDraftOperation = "record" | "create-attempt" | "reference" | "publish";
 
-export type RecordDraftLifecycleState =
-  | "open"
-  | "publishing"
-  | "published"
-  | "failed";
+export type RecordDraftLifecycleState = "open" | "publishing" | "published" | "failed";
 
 /** A draft was consumed, is publishing, or a concurrent write already failed. */
 export interface RecordDraftStateError {
@@ -58,7 +48,7 @@ export interface RecordAttachmentSchemaIssue {
 /** A synchronous session builder callback threw before any physical write. */
 export interface RecordAttachmentCallbackFailed {
   readonly code: "record-attachment-callback-failed";
-  readonly cause: unknown;
+  readonly cause: ExternalCause;
 }
 
 /** A writer was paired with a definition for the other owner kind. */
@@ -140,7 +130,7 @@ export function recordAppendCommandInvalid(): RecordAppendCommandInvalid {
 }
 
 export function recordCollectionNotClosed(family: string): RecordCollectionNotClosed {
-  return Object.freeze({ code: "record-collection-not-closed", family });
+  return { code: "record-collection-not-closed", family };
 }
 
 export function recordDraftStateError(input: {
@@ -148,7 +138,7 @@ export function recordDraftStateError(input: {
   readonly operation: RecordDraftOperation;
   readonly state: RecordDraftLifecycleState;
 }): RecordDraftStateError {
-  return Object.freeze({ ...input });
+  return input;
 }
 
 export function recordAttachmentEncodeError(
@@ -156,27 +146,24 @@ export function recordAttachmentEncodeError(
   family: string,
   schemaIssues: readonly RecordAttachmentSchemaIssue[] = [],
 ): RecordAttachmentEncodeError {
-  return Object.freeze({
+  return {
     code: "record-attachment-encode-error",
     family,
     issues: source.issues,
-    schemaIssues: Object.freeze(schemaIssues.map((issue) => Object.freeze({
-      path: Object.freeze([...issue.path]),
-      message: issue.message,
-    }))),
-  });
+    schemaIssues,
+  };
 }
 
 export function recordOwnerDefinitionMismatch(input: {
   readonly expected: "run" | "attempt";
   readonly actual: "run" | "attempt";
 }): RecordOwnerDefinitionMismatch {
-  return Object.freeze({ code: "record-owner-definition-mismatch", ...input });
+  return { code: "record-owner-definition-mismatch", ...input };
 }
 
 export function recordAlreadyWritten(input: {
   readonly owner: "run" | "attempt";
   readonly family: string;
 }): RecordAlreadyWritten {
-  return Object.freeze({ code: "record-already-written", ...input });
+  return { code: "record-already-written", ...input };
 }

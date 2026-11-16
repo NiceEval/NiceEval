@@ -33,7 +33,7 @@ atomically create Session and all Runs
   -> selected resource materialize / verified workdir baseline
   -> each selected real Attempt
        -> reset workdir / resource prepare
-       -> per-Attempt before / agent ensure / setup / test / teardown
+       -> per-Attempt before / agent install / setup / test / teardown
        -> per-Attempt cleanup and after
   -> resource release
   -> verify all writers quiescent
@@ -124,14 +124,14 @@ portable Record 是同一个 canonical 文件，包含 checkpoint 字节；只�
 只有作为项目 canonical ProjectDatabase 的写入口可以恢复执行；不新增导出、旁挂目录或第二份数据库。
 复制整个已停机项目形成独立 authority，保留 checkpoint 但不跨副本协调；移动同一项目保留状态。新建数据库从空状态开始。
 旧 checkpoint 不自动回收；Run delete 不清空它。跨项目迁移、merge、后台服务快照与独立 checkpoint 命令不在范围内。
-现有 `niceeval state migrate` 只管 UserDatabase schema，与此 Sandbox State 无关。
+UserDatabase 格式不符时拒绝打开，不提供迁移命令；清理规则见 [Sandbox 数据模型](../sandbox/data-model.md)。
 
 ## 验收
 
 真实 Docker 的两题 Group 证明累积、再次运行恢复与换 cohort。加入真实逐 Attempt before，确认其保留记忆且禁用缓存恢复。
 路径祖先、不同 State 重叠、symlink、归档越界与布局变更都必须在删除前失败，声明外 marker 不变。
 
-两个 binding 中一项失败不得推进另一项。故障实例和替代实例都能经 query 关联各自 Attempt；零 Attempt 的恢复失败仍可审计。
+两个 binding 中一项失败不得推进另一项。故障实例和替代实例都能经 `show` 关联各自 Attempt；零 Attempt 的恢复失败仍可审计。
 在事务前、commit 后 ack 前终止 writer，再走公开 recovery；HEAD 与 saved 回执必须同成同败。两个同 authority 的 Invocation 验证全取租约与取消等待。
 
 两个多 Experiment Invocation 以交叉顺序请求 x/y key，必须各自推进，不能等待成环。

@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 import {
   defineRecordAttachment,
-  defineRecordAttachmentPersistence,
+  defineOfficialRecordAttachmentPersistence,
   isRecordAttachmentSchema,
   isRecordAttachmentPersistence,
   recordAttachmentDefinitionHasOpaqueDeclarations,
@@ -10,10 +10,7 @@ import {
   type RecordAttachmentDefinition,
   type RecordAttachmentPersistence,
 } from "./attachment/protocol.ts";
-import {
-  RecordAttachmentSpiDefinitionError,
-  type RecordAttachmentIssue,
-} from "./attachment/errors.ts";
+import { RecordAttachmentSpiDefinitionError, type RecordAttachmentIssue } from "./attachment/errors.ts";
 import type { RecordAttachmentOwner } from "./model/core.ts";
 import type {
   AttachedContentError,
@@ -21,26 +18,21 @@ import type {
   RecordAttachmentSessionBuilder,
 } from "./writer/current-attachment.ts";
 
-const recordContributionTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordContribution",
-);
-const recordDefinitionTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordDefinition",
-);
-const recordWriteCommandTypeId: unique symbol = Symbol(
-  "@niceeval/record/RecordWriteCommand",
-);
+const recordContributionTypeId: unique symbol = Symbol("@niceeval/record/RecordContribution");
+const recordDefinitionTypeId: unique symbol = Symbol("@niceeval/record/RecordDefinition");
+const recordWriteCommandTypeId: unique symbol = Symbol("@niceeval/record/RecordWriteCommand");
 const attemptRecordCollectionDefinitionTypeId: unique symbol = Symbol(
   "@niceeval/record/AttemptRecordCollectionDefinition",
 );
-const attemptRecordAppendCommandTypeId: unique symbol = Symbol(
-  "@niceeval/record/AttemptRecordAppendCommand",
-);
+const attemptRecordAppendCommandTypeId: unique symbol = Symbol("@niceeval/record/AttemptRecordAppendCommand");
 
 type AnySchema = Schema.Top;
-type AnyAttachmentDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> =
-  RecordAttachmentDefinition<Owner, string, AnySchema>;
-type AnyAttachmentPersistence = RecordAttachmentPersistence<AnyAttachmentDefinition, number>;
+type AnyAttachmentDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordAttachmentDefinition<
+  Owner,
+  string,
+  AnySchema
+>;
+type AnyAttachmentPersistence = RecordAttachmentPersistence<AnyAttachmentDefinition, number | undefined>;
 
 interface RecordContributionRuntime {
   readonly attachment: AnyAttachmentDefinition;
@@ -79,12 +71,7 @@ export interface RecordContribution {
 }
 
 /** A lazy create-once write command. Constructing it performs no Effect or I/O. */
-export interface RecordWriteCommand<
-  out Owner extends RecordAttachmentOwner,
-  out Value,
-  out Error,
-  out Requirements,
-> {
+export interface RecordWriteCommand<out Owner extends RecordAttachmentOwner, out Value, out Error, out Requirements> {
   readonly [recordWriteCommandTypeId]: () => {
     readonly owner: Owner;
     readonly value: Value;
@@ -103,17 +90,15 @@ export type AttemptRecordAppendReceipt =
   | { readonly state: "retained" }
   | { readonly state: "omitted"; readonly reason: "collection-cap-reached" };
 
-export type AnyRecordDefinition<
-  Owner extends RecordAttachmentOwner = RecordAttachmentOwner,
-> = RecordDefinition<Owner, string, AnySchema>;
+export type AnyRecordDefinition<Owner extends RecordAttachmentOwner = RecordAttachmentOwner> = RecordDefinition<
+  Owner,
+  string,
+  AnySchema
+>;
 
-export type RecordDefinitionValue<Definition extends AnyRecordDefinition> =
-  Schema.Schema.Type<Definition["schema"]>;
+export type RecordDefinitionValue<Definition extends AnyRecordDefinition> = Schema.Schema.Type<Definition["schema"]>;
 
-export interface RecordWriteCommandPayload<
-  Owner extends RecordAttachmentOwner,
-  Value,
-> {
+export interface RecordWriteCommandPayload<Owner extends RecordAttachmentOwner, Value> {
   readonly definition: RecordAttachmentDefinition<Owner, string, AnySchema>;
   readonly input: Value | ((build: RecordAttachmentSessionBuilder) => Value);
 }
@@ -129,23 +114,20 @@ export interface RecordDefinition<
   readonly [recordDefinitionTypeId]: () => { readonly owner: Owner; readonly family: Family };
   <Value extends Schema.Schema.Type<ValueSchema>>(
     input: Value | ((build: RecordAttachmentSessionBuilder) => Value),
-  ): RecordWriteCommand<
-    Owner,
-    Value,
-    AttachedContentError<Value>,
-    AttachedContentRequirements<Value>
-  >;
+  ): RecordWriteCommand<Owner, Value, AttachedContentError<Value>, AttachedContentRequirements<Value>>;
 }
 
-export type AttemptRecordDefinition<
-  Family extends string,
-  ValueSchema extends AnySchema,
-> = RecordDefinition<"attempt", Family, ValueSchema>;
+export type AttemptRecordDefinition<Family extends string, ValueSchema extends AnySchema> = RecordDefinition<
+  "attempt",
+  Family,
+  ValueSchema
+>;
 
-export type RunRecordDefinition<
-  Family extends string,
-  ValueSchema extends AnySchema,
-> = RecordDefinition<"run", Family, ValueSchema>;
+export type RunRecordDefinition<Family extends string, ValueSchema extends AnySchema> = RecordDefinition<
+  "run",
+  Family,
+  ValueSchema
+>;
 
 export type AttemptRecordCollectionLimitation =
   | {
@@ -166,10 +148,7 @@ type AttemptRecordCollectionValue<Item> = {
     | { readonly state: "complete"; readonly limitations: readonly [] }
     | {
         readonly state: "partial";
-        readonly limitations: readonly [
-          AttemptRecordCollectionLimitation,
-          ...AttemptRecordCollectionLimitation[],
-        ];
+        readonly limitations: readonly [AttemptRecordCollectionLimitation, ...AttemptRecordCollectionLimitation[]];
       };
   readonly items: readonly Item[];
 };
@@ -178,10 +157,8 @@ type AttemptRecordCollectionValue<Item> = {
  * One exact Attempt-owned collection. It is callable as an append-command
  * factory while remaining a Host contribution, reader selector, and reference target.
  */
-export interface AttemptRecordCollectionDefinition<
-  out Family extends string,
-  ItemSchema extends AnySchema,
-> extends RecordContribution {
+export interface AttemptRecordCollectionDefinition<out Family extends string, ItemSchema extends AnySchema>
+  extends RecordContribution {
   readonly owner: "attempt";
   readonly family: Family;
   readonly item: ItemSchema;
@@ -194,16 +171,15 @@ export interface AttemptRecordCollectionDefinition<
     readonly family: Family;
     readonly item: Schema.Schema.Type<ItemSchema>;
   };
-  <Item extends Schema.Schema.Type<ItemSchema>>(
-    item: Item,
-  ): AttemptRecordAppendCommand<Item>;
+  <Item extends Schema.Schema.Type<ItemSchema>>(item: Item): AttemptRecordAppendCommand<Item>;
 }
 
 const PositiveSafeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter(
-    (value) => Number.isSafeInteger(value) && value > 0,
-    { identifier: "AttemptRecordCollectionPositiveSafeInteger" },
-  )),
+  Schema.check(
+    Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0, {
+      identifier: "AttemptRecordCollectionPositiveSafeInteger",
+    }),
+  ),
 );
 const EmptyCollectionLimitationsSchema = Schema.Tuple([]);
 const AttemptRecordCollectionLimitationSchema = Schema.Union([
@@ -235,17 +211,17 @@ function defineRecord<
   const Owner extends RecordAttachmentOwner,
   const Family extends string,
   const ValueSchema extends AnySchema,
->(owner: Owner, input: {
-  readonly family: Family;
-  readonly schema: ValueSchema;
-  readonly validate?: (
-    value: Schema.Schema.Type<ValueSchema>,
-  ) => readonly RecordAttachmentIssue[];
-}): RecordDefinition<Owner, Family, ValueSchema> {
+>(
+  owner: Owner,
+  input: {
+    readonly family: Family;
+    readonly schema: ValueSchema;
+    readonly validate?: ((value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[]) | undefined;
+  },
+): RecordDefinition<Owner, Family, ValueSchema> {
   const attachment = defineRecordAttachment({ owner, ...input });
-  const persistence = defineRecordAttachmentPersistence({
+  const persistence = defineOfficialRecordAttachmentPersistence({
     attachment,
-    revision: 1,
   });
   const definition = Object.assign(
     (commandInput: unknown) => {
@@ -257,11 +233,11 @@ function defineRecord<
           requirements: undefined,
         }),
       });
-      commands.set(command, Object.freeze({
+      commands.set(command, {
         definition,
         owner,
         input: commandInput,
-      }));
+      });
       return command;
     },
     {
@@ -274,44 +250,31 @@ function defineRecord<
   ) as RecordDefinition<Owner, Family, ValueSchema>;
   Object.freeze(definition);
   registerRecordAttachmentDefinitionAlias(definition, attachment);
-  contributions.set(definition, Object.freeze({
+  contributions.set(definition, {
     attachment,
     persistence,
-  }) as RecordContributionRuntime);
+  } as RecordContributionRuntime);
   return definition;
 }
 
-export function defineAttemptRecord<
-  const Family extends string,
-  const ValueSchema extends AnySchema,
->(input: {
+export function defineAttemptRecord<const Family extends string, const ValueSchema extends AnySchema>(input: {
   readonly family: Family;
   readonly schema: ValueSchema;
-  readonly validate?: (
-    value: Schema.Schema.Type<ValueSchema>,
-  ) => readonly RecordAttachmentIssue[];
+  readonly validate?: ((value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[]) | undefined;
 }): AttemptRecordDefinition<Family, ValueSchema> {
   return defineRecord("attempt", input);
 }
 
-export function defineRunRecord<
-  const Family extends string,
-  const ValueSchema extends AnySchema,
->(input: {
+export function defineRunRecord<const Family extends string, const ValueSchema extends AnySchema>(input: {
   readonly family: Family;
   readonly schema: ValueSchema;
-  readonly validate?: (
-    value: Schema.Schema.Type<ValueSchema>,
-  ) => readonly RecordAttachmentIssue[];
+  readonly validate?: ((value: Schema.Schema.Type<ValueSchema>) => readonly RecordAttachmentIssue[]) | undefined;
 }): RunRecordDefinition<Family, ValueSchema> {
   return defineRecord("run", input);
 }
 
-/** Defines one append-oriented, plain-data Attempt collection at revision 1. */
-export function defineAttemptRecordCollection<
-  const Family extends string,
-  const ItemSchema extends AnySchema,
->(input: {
+/** Defines one append-oriented, plain-data Attempt collection. */
+export function defineAttemptRecordCollection<const Family extends string, const ItemSchema extends AnySchema>(input: {
   readonly family: Family;
   readonly item: ItemSchema;
 }): AttemptRecordCollectionDefinition<Family, ItemSchema> {
@@ -336,9 +299,8 @@ export function defineAttemptRecordCollection<
     family: input.family,
     schema,
   });
-  const persistence = defineRecordAttachmentPersistence({
+  const persistence = defineOfficialRecordAttachmentPersistence({
     attachment,
-    revision: 1,
   });
   let definition: AttemptRecordCollectionDefinition<Family, ItemSchema>;
   definition = Object.assign(
@@ -346,7 +308,7 @@ export function defineAttemptRecordCollection<
       const command = Object.freeze({
         [attemptRecordAppendCommandTypeId]: () => undefined,
       });
-      attemptRecordAppendCommands.set(command, Object.freeze({ definition, item }));
+      attemptRecordAppendCommands.set(command, { definition, item });
       return command;
     },
     {
@@ -363,14 +325,14 @@ export function defineAttemptRecordCollection<
   ) as unknown as AttemptRecordCollectionDefinition<Family, ItemSchema>;
   Object.freeze(definition);
   registerRecordAttachmentDefinitionAlias(definition, attachment);
-  contributions.set(definition, Object.freeze({ attachment, persistence }));
-  attemptRecordCollections.set(definition, Object.freeze({
+  contributions.set(definition, { attachment, persistence });
+  attemptRecordCollections.set(definition, {
     definition,
     attachment,
     persistence,
     item: input.item,
     itemAttachment,
-  }));
+  });
   return definition;
 }
 
@@ -387,10 +349,8 @@ export const Record = Object.freeze({
 /** Explicitly adapts the low-level Attachment persistence SPI to Host composition. */
 export function recordContributionFromAttachmentPersistence<
   const Definition extends AnyAttachmentDefinition,
-  const Revision extends number,
->(
-  persistence: RecordAttachmentPersistence<Definition, Revision>,
-): RecordContribution {
+  const Revision extends number | undefined,
+>(persistence: RecordAttachmentPersistence<Definition, Revision>): RecordContribution {
   if (!isRecordAttachmentPersistence(persistence)) {
     throw new TypeError("Record contribution requires an exact Attachment persistence");
   }
@@ -399,79 +359,53 @@ export function recordContributionFromAttachmentPersistence<
     family: persistence.attachment.family,
     [recordContributionTypeId]: () => undefined,
   });
-  contributions.set(contribution, Object.freeze({
+  contributions.set(contribution, {
     attachment: persistence.attachment,
     persistence,
-  }) as RecordContributionRuntime);
+  } as RecordContributionRuntime);
   return contribution;
 }
 
 /** @internal Host boundary: structural lookalikes never unwrap. */
-export function recordContributionRuntime(
-  contribution: unknown,
-): RecordContributionRuntime | undefined {
-  return typeof contribution === "object" || typeof contribution === "function"
-    ? contribution !== null ? contributions.get(contribution) : undefined
-    : undefined;
+export function recordContributionRuntime(contribution: unknown): RecordContributionRuntime | undefined {
+  if (contribution === null) return undefined;
+  if (typeof contribution === "object" || typeof contribution === "function") return contributions.get(contribution);
+  return undefined;
 }
 
 /** @internal Reader boundary: returns only the private exact Attachment definition. */
-export function recordDefinitionAttachment(
-  definition: unknown,
-): AnyAttachmentDefinition | undefined {
+export function recordDefinitionAttachment(definition: unknown): AnyAttachmentDefinition | undefined {
   const runtime = recordContributionRuntime(definition);
   return typeof definition === "function" ? runtime?.attachment : undefined;
 }
 
 /** @internal Writer boundary: structural lookalikes never unwrap. */
-export function recordWriteCommandRuntime(
-  command: unknown,
-): RecordCommandRuntime | undefined {
-  return typeof command === "object" && command !== null
-    ? commands.get(command)
-    : undefined;
+export function recordWriteCommandRuntime(command: unknown): RecordCommandRuntime | undefined {
+  return typeof command === "object" && command !== null ? commands.get(command) : undefined;
 }
 
 /** @internal Attempt writer boundary: structural collection lookalikes never unwrap. */
-export function attemptRecordCollectionRuntime(
-  definition: unknown,
-): AttemptRecordCollectionRuntime | undefined {
-  return typeof definition === "function"
-    ? attemptRecordCollections.get(definition)
-    : undefined;
+export function attemptRecordCollectionRuntime(definition: unknown): AttemptRecordCollectionRuntime | undefined {
+  return typeof definition === "function" ? attemptRecordCollections.get(definition) : undefined;
 }
 
 /** @internal Attempt writer boundary: normal write commands never unwrap as appends. */
-export function attemptRecordAppendCommandRuntime(
-  command: unknown,
-): AttemptRecordAppendCommandRuntime | undefined {
-  return typeof command === "object" && command !== null
-    ? attemptRecordAppendCommands.get(command)
-    : undefined;
+export function attemptRecordAppendCommandRuntime(command: unknown): AttemptRecordAppendCommandRuntime | undefined {
+  return typeof command === "object" && command !== null ? attemptRecordAppendCommands.get(command) : undefined;
 }
 
 /** @internal Writer boundary: validates command and exact originating definition together. */
-export function recordWriteCommandPayload<
-  Owner extends RecordAttachmentOwner,
-  Value,
-  Error,
-  Requirements,
->(
+export function recordWriteCommandPayload<Owner extends RecordAttachmentOwner, Value, Error, Requirements>(
   command: RecordWriteCommand<Owner, Value, Error, Requirements>,
   expectedOwner: Owner,
 ): RecordWriteCommandPayload<Owner, Value> | undefined {
   const runtime = recordWriteCommandRuntime(command);
-  const definition = runtime === undefined
-    ? undefined
-    : recordDefinitionAttachment(runtime.definition);
-  if (
-    runtime === undefined ||
-    definition === undefined ||
-    runtime.owner !== expectedOwner ||
-    definition.owner !== expectedOwner
-  ) return undefined;
-  return Object.freeze({
+  if (runtime === undefined) return undefined;
+  const definition = recordDefinitionAttachment(runtime.definition);
+  if (definition === undefined || runtime.owner !== expectedOwner || definition.owner !== expectedOwner)
+    return undefined;
+  return {
     definition: definition as RecordAttachmentDefinition<Owner, string, AnySchema>,
     input: runtime.input as Value | ((build: RecordAttachmentSessionBuilder) => Value),
-  });
+  };
 }

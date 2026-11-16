@@ -72,6 +72,6 @@ pnpm exec niceeval exp <experiment-id> --dry
 
 ## 常见错误
 
-- **在 NiceEval 发现期的模块顶层读取。** `loadText`、`loadJson`、`loadYaml` 和 `loadCriteria` 可以放在评估文件或静态 import 的共享模块顶层，文件会登记到每条可达评估用例。进程从未进入 NiceEval 发现时，它们只读取并返回，不登记；共享模块可以被普通单元测试直接导入。同一进程随后进入发现，仍会重新求值并登记共享输入。进程一经进入发现，发现结束后的调用（包括 `test(t)` 和生命周期 Hook）会抛出 `LoaderOutsideDiscoveryError`，message 包含路径，并提示把读取移到模块顶层常量。
+- **在 NiceEval 发现期的模块顶层读取。** `loadText`、`loadJson`、`loadYaml` 和 `loadCriteria` 可以放在评估文件或静态 import 的共享模块顶层，共享模块顶层读入的文件会登记到每条可达评估用例。评估文件顶层调用共享模块导出的函数时，函数里读入的文件只登记到这条评估用例，适合把「每题读自己 fixture」的公共函数放进共享模块。进程从未进入 NiceEval 发现时，它们只读取并返回，不登记；共享模块可以被普通单元测试直接导入。同一进程随后进入发现，仍会重新求值并登记共享输入。进程一经进入发现，发现结束后的调用（包括 `test(t)` 和生命周期 Hook）会抛出 `LoaderOutsideDiscoveryError`，message 包含路径，并提示把读取移到模块顶层常量。
 - **读 Agent 改出来的文件用 `t.sandbox`，不用 `loadText`。** Sandbox 里的文件是这次运行的结果，每次都不同，不该决定要不要重跑。用 `await t.sandbox.readText(path)` 读取，再把字符串交给 `t.check`。
 - 判分标准是结构化数据（例如用例对照表）时，用 `loadYaml` / `loadJson`，见[数据驱动测试](/zh/tutorials/dataset-fanout)。

@@ -30,8 +30,7 @@ export const docsUrl: Record<Locale, string> = {
   zh: "https://niceeval.com/docs/zh/tutorials/quickstart",
 };
 
-export const initPrompt =
-  "READ https://niceeval.com/INIT.md and install niceeval for this repo.";
+export const initPrompt = "READ https://niceeval.com/INIT.md and install niceeval for this repo.";
 
 // Hero 的两套终端动画本身不做 i18n:屏幕里回放的是真实终端会话,CLI 打出来什么字面量
 // 就写什么(见 site-home-terminal.tsx / site-home-agent-terminal.tsx)。这里只留窗口外面的
@@ -75,7 +74,8 @@ export const copy = {
     ],
     setupEyebrow: "Eval examples",
     setupTitle: "eval chats, tool calls, and coding agents",
-    setupCaption: "Each card shows a defineEval file. Configure an experiment with an agent, a Judge provider where used, and the required image or sandbox before running. Click highlighted lines for replies and assertion notes.",
+    setupCaption:
+      "Each card shows a defineEval file. Configure an experiment with an agent, a Judge provider where used, and the required image or sandbox before running. Click highlighted lines for replies and assertion notes.",
     timingLabel: "Timing trace",
     loopEyebrow: "Agents are users too",
     loopTitle: "turn evals into a loop",
@@ -139,7 +139,8 @@ export const copy = {
     ],
     setupEyebrow: "Eval 示例",
     setupTitle: "Eval 对话、工具调用与 Coding Agent",
-    setupCaption: "每张卡展示一个 defineEval 文件。运行前需配置 Experiment 与 Agent，按示例准备 Judge provider、图片或沙箱。点击高亮行，展开回复和断言说明。",
+    setupCaption:
+      "每张卡展示一个 defineEval 文件。运行前需配置 Experiment 与 Agent，按示例准备 Judge provider、图片或沙箱。点击高亮行，展开回复和断言说明。",
     timingLabel: "耗时追踪",
     loopEyebrow: "Agent 也是用户",
     loopTitle: "把评估变成循环",

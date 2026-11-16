@@ -2,12 +2,7 @@ import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
-import {
-  appendProjectInstruction,
-  installSkills,
-  installedSkillNames,
-  skillDiscoveryInstruction,
-} from "./skills.ts";
+import { appendProjectInstruction, installSkills, installedSkillNames, skillDiscoveryInstruction } from "./skills.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
@@ -19,12 +14,8 @@ import type { Agent, AgentInstallationManifest, SkillSpec, StreamEvent, TurnEvid
 import { makeSendFailure, sendAcceptanceFromEvents } from "../context/send-failures.ts";
 import { shell } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { AgentEnsure, AgentInstaller } from "./types.ts";
-import {
-  exactNpmPluginRevision,
-  normalizeExactNpmPlugins,
-  type ExactNpmPlugin,
-} from "./exact-npm-plugins.ts";
+import type { AgentInstall, AgentInstaller } from "./types.ts";
+import { exactNpmPluginRevision, normalizeExactNpmPlugins, type ExactNpmPlugin } from "./exact-npm-plugins.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -43,32 +34,64 @@ const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 openclaw.json 里的 provider id。 */
 const COMPAT_PROVIDER = "compat";
 
+// Resolve the public SDK from the exact CLI selected by install, rather than
+// from NiceEval's host dependencies. Modern OpenClaw owns its SQLite schema;
+// its accessor returns the same raw events consumed by the transcript parser.
+const READ_SESSION_TRANSCRIPT = `
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+const require = createRequire(realpathSync(process.argv[1]));
+let transcriptPath;
+let runtimePath;
+try {
+  transcriptPath = require.resolve("openclaw/plugin-sdk/session-transcript-runtime");
+  runtimePath = require.resolve("openclaw/plugin-sdk/runtime-config-snapshot");
+} catch (error) {
+  if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED" || error.code === "MODULE_NOT_FOUND") process.exit(42);
+  throw error;
+}
+const transcript = await import(pathToFileURL(transcriptPath).href);
+const runtime = await import(pathToFileURL(runtimePath).href);
+if (typeof transcript.resolveSessionTranscriptIdentity !== "function" ||
+    typeof transcript.readSessionTranscriptEvents !== "function" ||
+    typeof runtime.captureRuntimeConfigAsyncReader !== "function") process.exit(42);
+await runtime.captureRuntimeConfigAsyncReader()();
+const target = await transcript.resolveSessionTranscriptIdentity({
+  agentId: "main", sessionId: process.argv[2], sessionKey: "",
+});
+for (const event of await transcript.readSessionTranscriptEvents(target)) {
+  process.stdout.write(JSON.stringify(event) + "\\n");
+}
+`;
+
 export interface OpenClawConfig {
   /** 模型 API key。省略时读 OPENCLAW_API_KEY,再回落 ANTHROPIC_API_KEY。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** OpenAI 兼容端点。省略时读 OPENCLAW_BASE_URL。 */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** 固定安装的 openclaw npm 版本(如 "1.2.3");省略时用内置默认。 */
-  version?: string;
+  version?: string | undefined;
   /**
    * 装进沙箱的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
-  skills?: SkillSpec[];
+  skills?: SkillSpec[] | undefined;
   /** Native OpenClaw plugins as exact npm package@version declarations. */
-  plugins?: readonly string[];
+  plugins?: readonly string[] | undefined;
 }
 
 function openClawPluginLayer(
   cliVersion: string,
   plugins: readonly ExactNpmPlugin[],
-): { ensure: AgentEnsure; installer: AgentInstaller } {
+): { install: AgentInstall; installer: AgentInstaller } {
   const identity = {
     agent: "openclaw-plugins",
     version: cliVersion,
     revision: `umask-022:${exactNpmPluginRevision(plugins)}`,
   };
-  const verifyFiles = `const fs=require("node:fs"),path=require("node:path");` +
+  const verifyFiles =
+    `const fs=require("node:fs"),path=require("node:path");` +
     `const expected=${JSON.stringify(plugins)},base=path.join(process.env.HOME,".openclaw");` +
     `const projects=path.join(base,"npm/projects"),found=[];` +
     `for(const dir of fs.readdirSync(projects)){const root=path.join(projects,dir),p=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));` +
@@ -79,7 +102,7 @@ function openClawPluginLayer(
     `const ordered=expected.map(e=>found.find(x=>x.name===e.name&&x.version===e.version));` +
     `for(const x of ordered){if(!x||x.pkgVersion!==x.version||!config.plugins?.entries?.[x.id]?.enabled||!/^[A-Za-z0-9._-]+$/.test(x.id))process.exit(1);}`;
   return {
-    ensure: { identity, probe: shell(`node -e ${shellQuote(verifyFiles)}`) },
+    install: { identity, probe: shell(`node -e ${shellQuote(verifyFiles)}`) },
     installer: {
       identity,
       installMode: "sandbox-network",
@@ -131,7 +154,7 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
   const plugins = normalizeExactNpmPlugins(config?.plugins, "openClawAgent plugins");
-  const { ensure, installer } = createNpmCliInstaller({
+  const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "openclaw",
       version,
@@ -150,7 +173,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
-    ensure: pluginLayer === undefined ? ensure : [ensure, pluginLayer.ensure],
+    install: pluginLayer === undefined ? install : [install, pluginLayer.install],
     installers: pluginLayer === undefined ? [installer] : [installer, pluginLayer.installer],
 
     tracing: {
@@ -162,193 +185,197 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       }),
     },
 
-    before: (sb, ctx) => Effect.tryPromise({
-      try: async () => {
-        const baseUrl = resolveBaseUrl(config);
-        if (baseUrl) {
-          const apiKey = resolveApiKey(config);
-          // OpenAI 兼容网关走自定义 provider + openai-completions;
-          // skipBootstrap 跳过首轮身份仪式,否则 agent 会先问 "Who am I"。
-          // workspace 钉沙箱工作目录,文件工具写到 eval 可见的路径。
-          let persistentConfig: globalThis.Record<string, unknown> = {};
-          try {
-            const existing = await sb.runShell('cat "$HOME/.openclaw/openclaw.json"');
-            if (existing.exitCode === 0) persistentConfig = JSON.parse(existing.stdout);
-          } catch {
-            persistentConfig = {};
-          }
-          const openclawConfig = {
-            ...persistentConfig,
-            agents: {
-              defaults: {
-                skipBootstrap: true,
-                workspace: sb.workdir,
-              },
-            },
-            models: {
-              mode: "merge",
-              providers: {
-                [COMPAT_PROVIDER]: {
-                  baseUrl,
-                  apiKey,
-                  api: "openai-completions",
-                  models: [
-                    { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
-                    { id: "gpt-6-luna", name: "gpt-6-luna" },
-                    { id: "gpt-5.4-mini", name: "gpt-5.4-mini" },
-                    { id: "gpt-5.4", name: "gpt-5.4" },
-                  ],
+    before: (sb, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          const baseUrl = resolveBaseUrl(config);
+          if (baseUrl) {
+            const apiKey = resolveApiKey(config);
+            // OpenAI 兼容网关走自定义 provider + openai-completions;
+            // skipBootstrap 跳过首轮身份仪式,否则 agent 会先问 "Who am I"。
+            // workspace 钉沙箱工作目录,文件工具写到 eval 可见的路径。
+            let persistentConfig: globalThis.Record<string, unknown> = {};
+            try {
+              const existing = await sb.runShell('cat "$HOME/.openclaw/openclaw.json"');
+              if (existing.exitCode === 0) persistentConfig = JSON.parse(existing.stdout);
+            } catch {
+              persistentConfig = {};
+            }
+            const openclawConfig = {
+              ...persistentConfig,
+              agents: {
+                defaults: {
+                  skipBootstrap: true,
+                  workspace: sb.workdir,
                 },
               },
-            },
-          };
-          await shared.writeFile(
-            sb,
-            "~/.openclaw/openclaw.json",
-            JSON.stringify(openclawConfig, null, 2),
-            { sensitiveValues: [apiKey] },
-          );
-          // 预置最小身份文件,避免缺 IDENTITY 时仍触发仪式文案。
-          await shared.writeFile(
-            sb,
-            `${sb.workdir}/IDENTITY.md`,
-            "# Identity\n\nName: niceeval\nEmoji: ✓\n",
-          );
-          await shared.writeFile(
-            sb,
-            `${sb.workdir}/USER.md`,
-            "# User\n\nEval harness operator.\n",
-          );
-          await shared.writeFile(
-            sb,
-            `${sb.workdir}/SOUL.md`,
-            "# Soul\n\nExecute the user's task directly. Do not ask who you are.\n",
-          );
-        }
-
-        const manifest: AgentInstallationManifest = { skills: [] };
-        if (config?.skills?.length) {
-          manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-          // 发现指引跟着一起写:不提示 = 白装。
-          await appendProjectInstruction(
-            sb,
-            skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-          );
-        }
-        if (manifest.skills.length) {
-          ctx.reportInstallation(manifest);
-        }
-      },
-      catch: (cause) => cause,
-    }),
-
-    send: (input, ctx) => Effect.gen(function* () {
-      const sb = ctx.sandbox;
-      const openclawBin = yield* resolveAgentBinEffect(sb, "openclaw");
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
-          // 会话契约:新会话线显式发新 session id(隔离);后续轮 resume 记录的 id。
-          const sessionId = ctx.session.id ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
-          ctx.session.capture(sessionId);
-
-          const baseUrl = resolveBaseUrl(config);
-          const args = ["agent", "--local", "--session-id", sessionId, "--message", input.text, "--json"];
-          const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
-          if (model) args.push("--model", model);
-
-          const apiKey = resolveApiKey(config);
-          const env: globalThis.Record<string, string> = {
-            OPENCLAW_API_KEY: apiKey,
-            ANTHROPIC_API_KEY: apiKey,
-            OPENAI_API_KEY: apiKey,
-            ...ctx.telemetry?.env,
-          };
-          if (baseUrl) {
-            env.OPENCLAW_BASE_URL = baseUrl;
-            env.OPENAI_BASE_URL = baseUrl;
-          }
-
-          const res = await sb.runCommand(openclawBin, args, {
-            env,
-            sensitiveValues: [apiKey],
-            stream: true,
-            signal,
-          });
-
-          const runJson = parseOpenClawRunJson(res.stdout);
-          // 封包若带回服务端分配的 session key,后续轮以它为准(capture first-writer-wins,
-          // 首轮已用自发 id 落地时不覆盖)。
-          ctx.session.capture(runJson.sessionId);
-
-          // 完整工具轨迹的唯一来源:session transcript。
-          // 优先读封包给出的 sessionFile(精确);否则在 agents 目录取最新 *.jsonl,
-          // 但排除同目录旁路产物 *.trajectory.jsonl(mtime 常更新、却不是消息轨——
-          // 误读会导致 events 为空、整轮 coverage 降成 unavailable)。
-          let raw: string | undefined;
-          if (runJson.sessionFile) {
-            try {
-              raw = await sb.readText(runJson.sessionFile);
-            } catch {
-              raw = undefined;
-            }
-          }
-          if (raw === undefined) {
-            raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
-              excludeName: /\.trajectory\.jsonl$/i,
-            });
-          }
-          const parsed = parseOpenClawTranscript(raw);
-          const events: StreamEvent[] = [...parsed.events];
-
-          // transcript 缺失 / 有解析不了的行:这一轮的工具轨迹不可信,coverage 降级说出来
-          // (负断言由此落 unavailable,而不是在空流上假通过),不从最终文本猜工具行为。
-          let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
-          if (raw === undefined || parsed.events.length === 0) {
-            const reason = "session transcript unavailable; only the --json final reply was collected";
-            turnEvidenceCoverage = {
-              events: { status: "unavailable", reason },
-              actions: { status: "unavailable", reason },
-              usage: { status: "unavailable", reason },
+              models: {
+                mode: "merge",
+                providers: {
+                  [COMPAT_PROVIDER]: {
+                    baseUrl,
+                    apiKey,
+                    api: "openai-completions",
+                    models: [
+                      { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
+                      { id: "gpt-6-luna", name: "gpt-6-luna" },
+                      { id: "gpt-5.4-mini", name: "gpt-5.4-mini" },
+                      { id: "gpt-5.4", name: "gpt-5.4" },
+                    ],
+                  },
+                },
+              },
             };
-            ctx.log("openclaw transcript unavailable: tool trace missing for this turn, negative assertions are unreliable");
-            if (runJson.text) events.push({ type: "message", role: "assistant", text: runJson.text });
-          } else if (!parsed.parseSuccess) {
-            const reason = "some transcript lines could not be parsed";
-            turnEvidenceCoverage = {
-              events: { status: "partial", reason },
-              actions: { status: "partial", reason },
-            };
-          } else {
-            turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
-          }
-
-          // 用量:transcript 逐消息累加优先;transcript 没报时用封包摘要,都没有就是空对象。
-          const usage =
-            (parsed.usage.inputTokens ?? 0) > 0 || (parsed.usage.outputTokens ?? 0) > 0
-              ? parsed.usage
-              : (runJson.usage ?? parsed.usage);
-
-          if (res.exitCode !== 0) {
-            throw makeSendFailure({
-              acceptance: sendAcceptanceFromEvents(events),
-              message: shared.diagnoseFailure(res, parsed.events, raw),
-              events,
-              usage,
-              process: res,
+            await shared.writeFile(sb, "~/.openclaw/openclaw.json", JSON.stringify(openclawConfig, null, 2), {
+              sensitiveValues: [apiKey],
             });
+            // 预置最小身份文件,避免缺 IDENTITY 时仍触发仪式文案。
+            await shared.writeFile(sb, `${sb.workdir}/IDENTITY.md`, "# Identity\n\nName: niceeval\nEmoji: ✓\n");
+            await shared.writeFile(sb, `${sb.workdir}/USER.md`, "# User\n\nEval harness operator.\n");
+            await shared.writeFile(
+              sb,
+              `${sb.workdir}/SOUL.md`,
+              "# Soul\n\nExecute the user's task directly. Do not ask who you are.\n",
+            );
           }
-          if (runJson.failed) events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
 
-          return {
-            events,
-            usage,
-            status: runJson.failed ? "failed" as const : "completed" as const,
-            ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
-          };
+          const manifest: AgentInstallationManifest = { skills: [] };
+          if (config?.skills?.length) {
+            manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+            // 发现指引跟着一起写:不提示 = 白装。
+            await appendProjectInstruction(
+              sb,
+              skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
+            );
+          }
+          if (manifest.skills.length) {
+            ctx.reportInstallation(manifest);
+          }
         },
         catch: (cause) => cause,
-      });
-    }),
+      }),
+
+    send: (input, ctx) =>
+      Effect.gen(function* () {
+        const sb = ctx.sandbox;
+        const openclawBin = yield* resolveAgentBinEffect(sb, "openclaw");
+        return yield* Effect.tryPromise({
+          try: async (signal) => {
+            // 会话契约:新会话线显式发新 session id(隔离);后续轮 resume 记录的 id。
+            const sessionId = ctx.session.id ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
+            ctx.session.capture(sessionId);
+
+            const baseUrl = resolveBaseUrl(config);
+            const args = ["agent", "--local", "--session-id", sessionId, "--message", input.text, "--json"];
+            const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
+            if (model) args.push("--model", model);
+
+            const apiKey = resolveApiKey(config);
+            const env: globalThis.Record<string, string> = {
+              OPENCLAW_API_KEY: apiKey,
+              ANTHROPIC_API_KEY: apiKey,
+              OPENAI_API_KEY: apiKey,
+              ...ctx.telemetry?.env,
+            };
+            if (baseUrl) {
+              env.OPENCLAW_BASE_URL = baseUrl;
+              env.OPENAI_BASE_URL = baseUrl;
+            }
+
+            const res = await sb.runCommand(openclawBin, args, {
+              env,
+              sensitiveValues: [apiKey],
+              stream: true,
+              signal,
+            });
+
+            const runJson = parseOpenClawRunJson(res.stdout);
+            // 封包若带回服务端分配的 session key,后续轮以它为准(capture first-writer-wins,
+            // 首轮已用自发 id 落地时不覆盖)。
+            ctx.session.capture(runJson.sessionId);
+
+            // Read the exact session through OpenClaw's public storage accessor.
+            // Only CLI versions without that export use the legacy JSONL path.
+            let raw: string | undefined;
+            const transcript = await sb.runCommand(
+              "node",
+              ["--input-type=module", "-e", READ_SESSION_TRANSCRIPT, openclawBin, runJson.sessionId ?? sessionId],
+              { signal },
+            );
+            if (transcript.exitCode === 0) {
+              raw = transcript.stdout;
+            } else if (transcript.exitCode === 42) {
+              if (runJson.sessionFile) {
+                try {
+                  raw = await sb.readText(runJson.sessionFile);
+                } catch {
+                  raw = undefined;
+                }
+              }
+              if (raw === undefined) {
+                raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
+                  excludeName: /\.trajectory\.jsonl$/i,
+                });
+              }
+            } else {
+              ctx.log("openclaw session accessor failed; tool trace was not collected");
+            }
+            const parsed = parseOpenClawTranscript(raw);
+            const events: StreamEvent[] = [...parsed.events];
+
+            // transcript 缺失 / 有解析不了的行:这一轮的工具轨迹不可信,coverage 降级说出来
+            // (负断言由此落 unavailable,而不是在空流上假通过),不从最终文本猜工具行为。
+            let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
+            if (raw === undefined || parsed.events.length === 0) {
+              const reason = "session transcript unavailable; only the --json final reply was collected";
+              turnEvidenceCoverage = {
+                events: { status: "unavailable", reason },
+                actions: { status: "unavailable", reason },
+                usage: { status: "unavailable", reason },
+              };
+              ctx.log(
+                "openclaw transcript unavailable: tool trace missing for this turn, negative assertions are unreliable",
+              );
+              if (runJson.text) events.push({ type: "message", role: "assistant", text: runJson.text });
+            } else if (!parsed.parseSuccess) {
+              const reason = "some transcript lines could not be parsed";
+              turnEvidenceCoverage = {
+                events: { status: "partial", reason },
+                actions: { status: "partial", reason },
+              };
+            } else {
+              turnEvidenceCoverage = unclassifiedToolActionsCoverage(events);
+            }
+
+            // 用量:transcript 逐消息累加优先;transcript 没报时用封包摘要,都没有就是空对象。
+            const usage =
+              (parsed.usage.inputTokens ?? 0) > 0 || (parsed.usage.outputTokens ?? 0) > 0
+                ? parsed.usage
+                : (runJson.usage ?? parsed.usage);
+
+            if (res.exitCode !== 0) {
+              throw makeSendFailure({
+                acceptance: sendAcceptanceFromEvents(events),
+                message: shared.diagnoseFailure(res, parsed.events, raw),
+                events,
+                usage,
+                process: res,
+              });
+            }
+            if (runJson.failed)
+              events.push({ type: "error", message: shared.diagnoseFailure(res, parsed.events, raw) });
+
+            return {
+              events,
+              usage,
+              status: runJson.failed ? ("failed" as const) : ("completed" as const),
+              ...(turnEvidenceCoverage ? { evidenceCoverage: turnEvidenceCoverage } : {}),
+            };
+          },
+          catch: (cause) => cause,
+        });
+      }),
+    after: () => Effect.void,
   });
 }
 

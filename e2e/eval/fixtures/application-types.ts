@@ -202,7 +202,7 @@ defineAdapter({ name: "kind-collision", create: () => ({ evaluationKind: "pass" 
 defineAdapter({ name: "prototype-collision", create: () => ({ toString: () => "adapter" }) });
 
 
-const quality = defineJudge({ name: "post-quality", rubric: "Post text is relevant to the task." });
+const quality = defineJudge({ rubric: "Post text is relevant to the task." });
 const qualityAlias: JudgeDefinition = quality;
 social.defineEval({ judge: "eval-judge", async test(t) {
   const post: Post = await t.post("hello");
@@ -232,7 +232,7 @@ defineEval({  async test(t) {
   t.judge(turn.reply, quality).gate(0.7).gate(0.8);
 } });
 // @ts-expect-error Provider configuration belongs to judgeProvider, not defineJudge.
-defineJudge({ name: "bad-provider", rubric: "quality", model: "provider-model" });
+defineJudge({ rubric: "quality", model: "provider-model" });
 // @ts-expect-error A plain object cannot forge the managed Judge brand.
 const forgedJudge: JudgeDefinition = { kind: "judge-match", name: "forged", rubric: "quality", anchors: [], maxMaterialBytes: 1 };
 // @ts-expect-error Judge configuration cannot be a definition list.

@@ -1,14 +1,12 @@
 // Sandbox 三个公开视图共用的 checked-command 与 layer target 适配。
 
-import type {
-  CommandResult,
-  Sandbox,
-  SandboxOperations,
-  SuccessfulCommandResult,
-} from "./types.ts";
+import type { CommandResult, Sandbox, SandboxOperations, SuccessfulCommandResult } from "./types.ts";
+import { createReadStream } from "node:fs";
 import {
   registeredSandboxContentSnapshotOf,
+  registeredSandboxContentFileOf,
   type RegisteredSandboxContent,
+  type RegisteredSandboxContentSnapshot,
 } from "./content.ts";
 import { redactSensitiveText } from "./redaction.ts";
 
@@ -16,6 +14,22 @@ import { redactSensitiveText } from "./redaction.ts";
 // Attempt budget. Keep each write comfortably below that boundary, then replace
 // the destination only after every part has arrived.
 const PUT_CONTENT_CHUNK_BYTES = 8 * 1024 * 1024;
+
+/** Private optional transfer specialization; content is verified before delegation. */
+export interface DirectoryContentTransfer {
+  uploadContentDirectory?(
+    snapshot: Extract<RegisteredSandboxContentSnapshot, { kind: "directory" }>,
+    targetPath: string,
+    commands: SandboxOperations,
+  ): Promise<void>;
+}
+
+const DIRECTORY_CONTENT_TRANSFER = Symbol("sandbox.provider-directory-content-transfer");
+
+/** Private facade capability, retained through command-recording Proxies. */
+export function directoryContentTransfer(transfer: DirectoryContentTransfer): object {
+  return transfer.uploadContentDirectory === undefined ? {} : { [DIRECTORY_CONTENT_TRANSFER]: transfer };
+}
 
 async function putContentBytes(
   sandbox: SandboxOperations,
@@ -28,6 +42,20 @@ async function putContentBytes(
     return;
   }
 
+  function* chunks(): Iterable<Uint8Array> {
+    for (let offset = 0; offset < bytes.byteLength; offset += PUT_CONTENT_CHUNK_BYTES) {
+      yield bytes.subarray(offset, offset + PUT_CONTENT_CHUNK_BYTES);
+    }
+  }
+  await putContentChunks(sandbox, targetPath, chunks(), digest);
+}
+
+async function putContentChunks(
+  sandbox: SandboxOperations,
+  targetPath: string,
+  chunks: AsyncIterable<Uint8Array> | Iterable<Uint8Array>,
+  digest: string,
+): Promise<void> {
   const suffix = digest.replace(/^sha256:/, "").slice(0, 16);
   const partsDir = `${targetPath}.niceeval-parts-${suffix}`;
   const mergedPath = `${targetPath}.niceeval-merge-${suffix}`;
@@ -48,18 +76,16 @@ async function putContentBytes(
 
   try {
     let index = 0;
-    for (let offset = 0; offset < bytes.byteLength; offset += PUT_CONTENT_CHUNK_BYTES) {
+    for await (const chunk of chunks) {
       const part = `${partsDir}/part-${String(index).padStart(6, "0")}`;
-      await sandbox.writeBytes(part, bytes.subarray(offset, offset + PUT_CONTENT_CHUNK_BYTES));
+      await sandbox.writeBytes(part, chunk);
       index += 1;
     }
-    await sandbox.runCommandOrThrow("sh", [
-      "-c",
-      'cat "$1"/part-* > "$2"',
-      "niceeval-put-content",
-      partsDir,
-      mergedPath,
-    ], commandOptions);
+    await sandbox.runCommandOrThrow(
+      "sh",
+      ["-c", 'cat "$1"/part-* > "$2"', "niceeval-put-content", partsDir, mergedPath],
+      commandOptions,
+    );
     try {
       await sandbox.runCommandOrThrow("mv", ["-f", mergedPath, targetPath], commandOptions);
     } catch (error) {
@@ -80,8 +106,10 @@ async function putContentBytes(
 }
 
 function isPermissionDeniedCommand(error: unknown): error is SandboxCommandExitError {
-  return error instanceof SandboxCommandExitError &&
-    /permission denied|operation not permitted/i.test(`${error.result.stdout}\n${error.result.stderr}`);
+  return (
+    error instanceof SandboxCommandExitError &&
+    /permission denied|operation not permitted/i.test(`${error.result.stdout}\n${error.result.stderr}`)
+  );
 }
 
 /** `run*OrThrow` 的非零退出错误；transport、timeout 与取消错误不会被改写成它。 */
@@ -90,9 +118,12 @@ export class SandboxCommandExitError extends Error {
   readonly result: CommandResult;
 
   constructor(result: CommandResult, sensitiveValues: readonly string[] = []) {
-    const command = redactSensitiveText(result.command
-      ? `sandbox command exited with code ${result.exitCode}: ${result.command}`
-      : `sandbox command exited with code ${result.exitCode}`, sensitiveValues);
+    const command = redactSensitiveText(
+      result.command
+        ? `sandbox command exited with code ${result.exitCode}: ${result.command}`
+        : `sandbox command exited with code ${result.exitCode}`,
+      sensitiveValues,
+    );
     const output = result.stderr.length > 0 ? result.stderr : result.stdout;
     const outputLabel = result.stderr.length > 0 ? "stderr" : "stdout";
     const tail = boundedCommandOutputTail(redactSensitiveText(output, sensitiveValues));
@@ -139,11 +170,7 @@ function modeArgument(mode: number): string {
   return mode.toString(8).padStart(3, "0");
 }
 
-async function chmodContentPath(
-  sandbox: SandboxOperations,
-  path: string,
-  mode: number,
-): Promise<void> {
+async function chmodContentPath(sandbox: SandboxOperations, path: string, mode: number): Promise<void> {
   const args = [modeArgument(mode), path] as const;
   try {
     await sandbox.runCommandOrThrow("chmod", args);
@@ -155,11 +182,7 @@ async function chmodContentPath(
   }
 }
 
-async function replaceContentSymlink(
-  sandbox: SandboxOperations,
-  path: string,
-  target: string,
-): Promise<void> {
+async function replaceContentSymlink(sandbox: SandboxOperations, path: string, target: string): Promise<void> {
   const replace = async (options?: { readonly user: "root" }): Promise<void> => {
     // Both operations use argv. The immutable manifest already rejected
     // absolute and out-of-root targets; the interpreter must not reparse or
@@ -184,7 +207,24 @@ export async function putSandboxContent(
   sandbox: SandboxOperations,
   content: RegisteredSandboxContent,
   targetPath: string,
+  directoryTransfer?: DirectoryContentTransfer,
 ): Promise<void> {
+  const file = registeredSandboxContentFileOf(content);
+  if (file !== undefined) {
+    if (file.size === 0) {
+      await sandbox.writeBytes(targetPath, new Uint8Array());
+      await chmodContentPath(sandbox, targetPath, file.mode);
+      return;
+    }
+    const stream = createReadStream(file.path, { highWaterMark: PUT_CONTENT_CHUNK_BYTES });
+    try {
+      await putContentChunks(sandbox, targetPath, stream, content.digest);
+    } finally {
+      stream.destroy();
+    }
+    await chmodContentPath(sandbox, targetPath, file.mode);
+    return;
+  }
   // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
   const snapshot = registeredSandboxContentSnapshotOf(content);
   if (snapshot.kind === "file") {
@@ -198,6 +238,15 @@ export async function putSandboxContent(
     return;
   }
 
+  const transfer =
+    directoryTransfer ??
+    (sandbox as SandboxOperations & { readonly [DIRECTORY_CONTENT_TRANSFER]?: DirectoryContentTransfer })[
+      DIRECTORY_CONTENT_TRANSFER
+    ];
+  if (transfer?.uploadContentDirectory !== undefined) {
+    await transfer.uploadContentDirectory(snapshot, targetPath, sandbox);
+    return;
+  }
   await ensureContentDirectory(sandbox, targetPath);
   const directories: Array<{ readonly path: string; readonly mode: number }> = [];
   // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。

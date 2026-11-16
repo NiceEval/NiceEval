@@ -1,4 +1,4 @@
-import type { ResolvedModelRoles } from "../model-roles.ts";
+import { modelRolesToWire, type ModelRolesWire } from "../model-roles.ts";
 // 配置身份的字段级投影:`configHash` 的哈希输入本身,加上「同一份输入怎样按字段路径比对」。
 //
 // 哈希只回答「等不等」,回答不了「哪里变了」。`--accept config:<字段路径>` 与 `--dry` 的逐条
@@ -24,7 +24,7 @@ import type { AdapterIdentity } from "../record/model/run-context.ts";
  * 无端改变基础 configHash。新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
-  readonly models?: { readonly version: 1; readonly slots: ResolvedModelRoles };
+  readonly models?: { readonly slots: ModelRolesWire };
   readonly adapter: AdapterIdentity;
   readonly model: DeclaredConfigValue<string>;
   readonly reasoningEffort: DeclaredConfigValue<string>;
@@ -81,57 +81,58 @@ export type ConfigFieldDelta =
     };
 
 export function addedConfigField(selector: string, to: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Added", selector, to });
+  return { _tag: "Added", selector, to };
 }
 
 export function removedConfigField(selector: string, from: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Removed", selector, from });
+  return { _tag: "Removed", selector, from };
 }
 
 export function changedConfigField(selector: string, from: string, to: string): ConfigFieldDelta {
-  return Object.freeze({ _tag: "Changed", selector, from, to });
+  return { _tag: "Changed", selector, from, to };
 }
 
-function freezeJson<Value extends JsonValue>(value: Value): Value {
+// Identity outlives author callbacks; retain its input snapshot without freezing internal values.
+function copyJson<Value extends JsonValue>(value: Value): Value {
   if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
-    return Object.freeze(value.map((entry) => freezeJson(entry))) as Value;
-  }
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [key, freezeJson(entry)]),
-  )) as Value;
+  if (Array.isArray(value)) return value.map((entry) => copyJson(entry)) as Value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, copyJson(entry)])) as Value;
 }
 
-function freezeConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
+function orderedConfigIdentity(identity: ConfigIdentity): ConfigIdentity {
   const { sharedState, ...withoutSharedState } = identity;
-  return Object.freeze({
+  return {
     ...withoutSharedState,
-    adapter: identity.adapter === null ? null : Object.freeze({ ...identity.adapter }),
-    ...(identity.models === undefined ? {} : { models: Object.freeze({
-      version: 1 as const,
-      slots: Object.freeze(Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, Object.freeze({ ...value })]))),
-    }) }),
-    model: Object.freeze(identity.model),
-    reasoningEffort: Object.freeze(identity.reasoningEffort),
-    flags: freezeJson({ ...identity.flags }),
-    plugins: freezeJson(identity.plugins),
-    ...(sharedState === undefined ? {} : { sharedState }),
-    sandboxLayer: freezeJson(identity.sandboxLayer),
-    judgeRuntime: identity.judgeRuntime._tag === "Unconfigured"
-      ? Object.freeze({ _tag: "Unconfigured" as const })
-      : Object.freeze({
-          _tag: "Configured" as const,
-          provider: identity.judgeRuntime.provider,
-          model: identity.judgeRuntime.model,
-          baseUrl: identity.judgeRuntime.baseUrl,
-          credential: Object.freeze({ ...identity.judgeRuntime.credential }),
-          timeoutMs: Object.freeze(identity.judgeRuntime.timeoutMs),
-          maxResponseBytes: Object.freeze(identity.judgeRuntime.maxResponseBytes),
-          ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
-          protocol: Object.freeze({ ...identity.judgeRuntime.protocol }),
+    adapter: identity.adapter === null ? null : { ...identity.adapter },
+    ...(identity.models === undefined
+      ? {}
+      : {
+          models: {
+            slots: Object.fromEntries(Object.entries(identity.models.slots).map(([key, value]) => [key, { ...value }])),
+          },
         }),
-    agentInstalls: Object.freeze(identity.agentInstalls.map((entry) => freezeJson(entry))),
-  });
+    model: identity.model,
+    reasoningEffort: identity.reasoningEffort,
+    flags: copyJson(identity.flags),
+    plugins: copyJson(identity.plugins),
+    ...(sharedState === undefined ? {} : { sharedState }),
+    sandboxLayer: copyJson(identity.sandboxLayer),
+    judgeRuntime:
+      identity.judgeRuntime._tag === "Unconfigured"
+        ? { _tag: "Unconfigured" as const }
+        : {
+            _tag: "Configured" as const,
+            provider: identity.judgeRuntime.provider,
+            model: identity.judgeRuntime.model,
+            baseUrl: identity.judgeRuntime.baseUrl,
+            credential: { ...identity.judgeRuntime.credential },
+            timeoutMs: identity.judgeRuntime.timeoutMs,
+            maxResponseBytes: identity.judgeRuntime.maxResponseBytes,
+            ...(identity.judgeRuntime.supportsImages === true ? { supportsImages: true } : {}),
+            protocol: { ...identity.judgeRuntime.protocol },
+          },
+    agentInstalls: identity.agentInstalls.map((entry) => copyJson(entry)),
+  };
 }
 
 function sameAgentIdentity(left: AgentIdentity, right: AgentIdentity): boolean {
@@ -148,29 +149,29 @@ function installerIdentity(installer: AgentInstaller | undefined): JsonValue {
       revision: installer.identity.revision,
     },
     installMode: installer.installMode,
-    platforms: installer.platforms === undefined
-      ? { _tag: "All" }
-      : { _tag: "Listed", values: [...installer.platforms] },
+    platforms:
+      installer.platforms === undefined ? { _tag: "All" } : { _tag: "Listed", values: [...installer.platforms] },
   };
 }
 
-/** 计划期一次性冻结全部 ensure/installer 配对；运行事实与 staged digest 不反写配置身份。 */
+/** 计划期一次性冻结全部 install/installer 配对；运行事实与 staged digest 不反写配置身份。 */
 export function agentInstallPlansForRun(run: AgentRun): readonly JsonValue[] {
-  if (run.adapter === undefined || run.adapter.kind === "custom") return Object.freeze([]);
+  if (run.adapter === undefined || run.adapter.kind === "custom") return [];
   const agent = run.agent;
   if (agent === undefined) throw new Error("Agent AdapterRun requires its Agent execution implementation.");
-  if (agent.kind === "direct") return Object.freeze([]);
-  return Object.freeze(agent.ensure.map((ensure, index) => freezeJson({
+  if (agent.kind === "direct") return [];
+  return agent.install.map((declaration, index) => ({
     order: index,
+    // Frozen identity encoding; author spelling is normalized before this boundary.
     ensure: {
-      agent: ensure.identity.agent,
-      version: ensure.identity.version,
-      revision: ensure.identity.revision,
+      agent: declaration.identity.agent,
+      version: declaration.identity.version,
+      revision: declaration.identity.revision,
     },
     installer: installerIdentity(
-      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, ensure.identity)),
+      agent.installers.find((candidate) => sameAgentIdentity(candidate.identity, declaration.identity)),
     ),
-  })));
+  }));
 }
 
 function declaredString(value: string | undefined): DeclaredConfigValue<string> {
@@ -198,9 +199,9 @@ export function configIdentityForRun(
   plan: LinkedRunPlan,
   judge: ResolvedJudgeConfig | undefined = undefined,
 ): ConfigIdentity {
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter: adapterIdentity(run.adapter),
-    ...(run.adapter?.kind === "custom" ? { models: { version: 1 as const, slots: run.models ?? Object.freeze({}) } } : {}),
+    ...(run.adapter?.kind === "custom" ? { models: { slots: modelRolesToWire(run.models ?? {}) } } : {}),
     model: declaredString(run.model),
     reasoningEffort: declaredString(run.reasoningEffort),
     flags: run.flags,
@@ -220,9 +221,9 @@ export function configIdentityForRun(
 export function configIdentityFromResult(result: EvalResult): ConfigIdentity | undefined {
   const exp = result.experiment;
   if (exp === undefined) return undefined;
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter: result.adapter,
-    ...(exp.models === undefined ? {} : { models: { version: 1 as const, slots: exp.models } }),
+    ...(exp.models === undefined ? {} : { models: { slots: exp.models } }),
     model: declaredString(result.model),
     reasoningEffort: declaredString(exp.reasoningEffort),
     flags: exp.flags ?? {},
@@ -240,7 +241,9 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
  */
 function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   const out = new Map<string, JsonValue>();
-  const put = (path: string, value: JsonValue): void => { out.set(path, value); };
+  const put = (path: string, value: JsonValue): void => {
+    out.set(path, value);
+  };
   const putDeclared = <Value extends JsonValue>(path: string, value: DeclaredConfigValue<Value>): void => {
     if (value._tag === "Configured") put(path, value.value);
   };
@@ -249,11 +252,11 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   } else {
     put("adapter.name", identity.adapter.name);
     put("adapter.contract", identity.adapter.contract);
-    put("adapter.behaviorRevision", identity.adapter.behaviorRevision);
-    if (identity.adapter.cleanupTimeoutMs !== undefined) put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
+    put("adapter.behaviorRevision", identity.adapter.behaviorRevision ?? null);
+    if (identity.adapter.cleanupTimeoutMs !== undefined)
+      put("adapter.cleanupTimeoutMs", identity.adapter.cleanupTimeoutMs);
   }
   if (identity.models !== undefined) {
-    put("models.version", identity.models.version);
     for (const [slot, selection] of Object.entries(identity.models.slots)) {
       put(`models.${slot}.model`, selection.model);
       put(`models.${slot}.reasoningEffort`, selection.reasoningEffort);
@@ -267,17 +270,18 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);
   if (identity.judgeRuntime._tag === "Configured") {
-  put("judgeRuntime.provider", identity.judgeRuntime.provider);
-  put("judgeRuntime.model", identity.judgeRuntime.model);
-  put("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
-  put("judgeRuntime.credential.kind", identity.judgeRuntime.credential.kind);
-  if (identity.judgeRuntime.credential.kind === "environment") put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
-  put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
-  put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
-  if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
-  put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
-  put("judgeRuntime.protocol.revision", identity.judgeRuntime.protocol.revision);
-  if (identity.judgeRuntime.protocol.kind === "chat-completions") put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
+    put("judgeRuntime.provider", identity.judgeRuntime.provider);
+    put("judgeRuntime.model", identity.judgeRuntime.model);
+    put("judgeRuntime.baseUrl", identity.judgeRuntime.baseUrl);
+    put("judgeRuntime.credential.kind", identity.judgeRuntime.credential.kind);
+    if (identity.judgeRuntime.credential.kind === "environment")
+      put("judgeRuntime.credential.name", identity.judgeRuntime.credential.name);
+    put("judgeRuntime.timeoutMs", identity.judgeRuntime.timeoutMs);
+    put("judgeRuntime.maxResponseBytes", identity.judgeRuntime.maxResponseBytes);
+    if (identity.judgeRuntime.supportsImages === true) put("judgeRuntime.supportsImages", true);
+    put("judgeRuntime.protocol.kind", identity.judgeRuntime.protocol.kind);
+    if (identity.judgeRuntime.protocol.kind === "chat-completions")
+      put("judgeRuntime.protocol.maxOutputTokens", identity.judgeRuntime.protocol.maxOutputTokens);
   }
   put("agentInstalls", [...identity.agentInstalls]);
   return out;
@@ -352,12 +356,17 @@ export function counterfactualConfigIdentity(
   let agentInstalls = current.agentInstalls;
   let adapter = current.adapter;
   let models = current.models;
-  const rollbackGroups: readonly ("adapter" | "sandboxLayer" | "plugins" | "judgeRuntime" | "agentInstalls" | "models")[] = [
-    "adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls", "models",
-  ];
+  const rollbackGroups: readonly (
+    | "adapter"
+    | "sandboxLayer"
+    | "plugins"
+    | "judgeRuntime"
+    | "agentInstalls"
+    | "models"
+  )[] = ["adapter", "sandboxLayer", "plugins", "judgeRuntime", "agentInstalls", "models"];
   for (const group of rollbackGroups) {
-    const paths = [...differing].filter((selector) =>
-      selector === `config:${group}` || selector.startsWith(`config:${group}.`)
+    const paths = [...differing].filter(
+      (selector) => selector === `config:${group}` || selector.startsWith(`config:${group}.`),
     );
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
     if (group === "adapter") adapter = historical.adapter;
@@ -368,13 +377,11 @@ export function counterfactualConfigIdentity(
     else agentInstalls = historical.agentInstalls;
   }
   const sharedState = accepted.has("config:sharedState.key") ? historical.sharedState : current.sharedState;
-  return freezeConfigIdentity({
+  return orderedConfigIdentity({
     adapter,
     ...(models === undefined ? {} : { models }),
     model: accepted.has("config:model") ? historical.model : current.model,
-    reasoningEffort: accepted.has("config:reasoningEffort")
-      ? historical.reasoningEffort
-      : current.reasoningEffort,
+    reasoningEffort: accepted.has("config:reasoningEffort") ? historical.reasoningEffort : current.reasoningEffort,
     flags,
     plugins,
     sandboxReuse: accepted.has("config:sandboxReuse") ? historical.sandboxReuse : current.sandboxReuse,

@@ -25,7 +25,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "schemaVersion": 3,
           "batch": "inspection-1",
           "areas": [
             "inspection"

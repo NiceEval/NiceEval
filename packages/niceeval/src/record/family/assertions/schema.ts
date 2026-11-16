@@ -4,9 +4,7 @@ import { createAssertionsRecordSchemas } from "../../../assertions/record/codec.
 import { AssertionMaterialSchema } from "./content.ts";
 import { AssertionSourceSiteSchema } from "./reference.ts";
 
-const assertionSchemas = createAssertionsRecordSchemas(
-  AssertionMaterialSchema,
-);
+const assertionSchemas = createAssertionsRecordSchemas(AssertionMaterialSchema);
 
 export const AssertionsEntriesSchema = assertionSchemas.entries;
 export const AssertionSourceSitesSchema = Schema.Array(AssertionSourceSiteSchema);

@@ -39,7 +39,7 @@ before cache: hit · 2/2
 
 ## 结果
 
-每个不同的 BeforeCacheKey 在一个 Run 内只准备一次；后续 Invocation 直接命中。缓存失败只让准备变慢，不改变 Eval 能否运行：
+每个不同的 BeforeCacheKey 在一次 Invocation 内只准备一次，同时运行的多个 Experiment 共享相同前缀；后续 Invocation 直接命中。缓存失败只让准备变慢，不改变 Eval 能否运行：
 
 | 情形 | 用户看到的结果 |
 | --- | --- |

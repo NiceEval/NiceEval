@@ -1,4 +1,5 @@
 import type { JsonMatch, JsonValue } from "./types.ts";
+import { isPlainObject } from "./objects.ts";
 
 /** 按 JsonMatch 递归匹配；对象为部分匹配，数组为等长逐项匹配。 */
 export function matchesJson(actual: JsonValue | undefined, expected: JsonMatch): boolean {
@@ -25,7 +26,8 @@ function matchesJsonAt(actual: JsonValue | undefined, expected: JsonMatch, root:
   if (isPlainObject(expected)) {
     if (!isPlainObject(actual)) return false;
     const actualObject = actual as globalThis.Record<string, JsonValue>;
-    return Object.entries(expected).every(([key, value]) => matchesJsonAt(actualObject[key], value, root));
+    const expectedObject = expected as globalThis.Record<string, JsonMatch>;
+    return Object.entries(expectedObject).every(([key, value]) => matchesJsonAt(actualObject[key], value, root));
   }
   return Object.is(actual, expected);
 }
@@ -33,10 +35,4 @@ function matchesJsonAt(actual: JsonValue | undefined, expected: JsonMatch, root:
 function testRegExp(re: RegExp, value: string): boolean {
   re.lastIndex = 0;
   return re.test(value);
-}
-
-function isPlainObject(value: unknown): value is globalThis.Record<string, JsonMatch> {
-  if (value === null || typeof value !== "object") return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }

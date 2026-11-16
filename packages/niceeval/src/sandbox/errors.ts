@@ -50,7 +50,11 @@ export function classifyProvisionErrorFallback(error: unknown): SandboxProvision
     // 连接中途断掉 / 超时:请求可能已被受理。
     if (/^(ECONNRESET|EPIPE|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)$/i.test(code)) return "ambiguous";
     if (/getaddrinfo|connection refused|certificate|tls handshake/i.test(message)) return "rejected";
-    if (/fetch failed|other side closed|socket hang up|connection (?:reset|closed)|timed? ?out|service unavailable|bad gateway|gateway timeout|\b50[0234]\b|\b(?:unexpected )?EOF\b/i.test(message)) {
+    if (
+      /fetch failed|other side closed|socket hang up|connection (?:reset|closed)|timed? ?out|service unavailable|bad gateway|gateway timeout|\b50[0234]\b|\b(?:unexpected )?EOF\b/i.test(
+        message,
+      )
+    ) {
       return "ambiguous";
     }
     if (/too many requests|rate.?limit|\b429\b/i.test(message)) return "rate_limit";
@@ -88,11 +92,14 @@ export function isRetryableSandboxIoError(kind: SandboxIoErrorKind): boolean {
 export function classifySandboxIoError(error: unknown): SandboxIoErrorKind {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current != null; depth += 1) {
-    const record = typeof current === "object" ? current as globalThis.Record<string, unknown> : undefined;
+    const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
     const name = record && typeof record.name === "string" ? record.name : "";
     const message = current instanceof Error ? current.message : String(current);
 
-    if (/TimeoutError|HeadersTimeoutError|BodyTimeoutError|ConnectTimeoutError/i.test(name) || /aborted due to timeout|timed? ?out|timeout exceeded|deadline exceeded/i.test(message)) {
+    if (
+      /TimeoutError|HeadersTimeoutError|BodyTimeoutError|ConnectTimeoutError/i.test(name) ||
+      /aborted due to timeout|timed? ?out|timeout exceeded|deadline exceeded/i.test(message)
+    ) {
       return "network";
     }
 
@@ -103,10 +110,18 @@ export function classifySandboxIoError(error: unknown): SandboxIoErrorKind {
     if (status !== undefined && status >= 500 && status <= 599) return "service_unavailable";
 
     const code = record && typeof record.code === "string" ? record.code : "";
-    if (/^(ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT)$/i.test(code)) {
+    if (
+      /^(ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT)$/i.test(
+        code,
+      )
+    ) {
       return "network";
     }
-    if (/fetch failed|socket hang up|network error|connection (?:reset|closed)|temporary failure|timed out while (?:fetching|uploading|downloading)/i.test(message)) {
+    if (
+      /fetch failed|socket hang up|network error|connection (?:reset|closed)|temporary failure|timed out while (?:fetching|uploading|downloading)/i.test(
+        message,
+      )
+    ) {
       return "network";
     }
     if (/too many requests|rate.?limit|\b429\b/i.test(message)) return "rate_limit";
@@ -162,7 +177,12 @@ export function classifyProvisionConfigCause(error: unknown): ProvisionConfigCau
 
     if (status === 401 || name === "AuthenticationError" || CREDENTIALS_PATTERN.test(haystack)) return "credentials";
     if (status === 403 || PERMISSION_PATTERN.test(haystack)) return "permission";
-    if (status === 404 || status === 410 || jsonErrorCode === "snapshot_not_found" || TEMPLATE_NOT_FOUND_PATTERN.test(haystack)) {
+    if (
+      status === 404 ||
+      status === 410 ||
+      jsonErrorCode === "snapshot_not_found" ||
+      TEMPLATE_NOT_FOUND_PATTERN.test(haystack)
+    ) {
       return "template_not_found";
     }
     current = record?.cause;

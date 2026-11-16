@@ -1,14 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
+import { beforeCacheFailureCause, beforeCacheFailureDetail } from "./remote-snapshot/failure.ts";
+import { normalizeExternalCause } from "../shared/external-cause.ts";
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import Docker from "dockerode";
 import { Effect } from "effect";
+import { beforeCacheReplacementScope } from "./before-cache-replacement.ts";
 import { sandboxActionStateCovers, sandboxState } from "./action.ts";
 import {
   BeforeCacheCaptureError,
   BeforeCacheCleanupError,
   BeforeCacheLookupError,
-  BeforeCacheRegistryError,
   BeforeCacheRestoreError,
   BeforeCacheValidationError,
   type AttemptBeforeCache,
@@ -19,10 +21,7 @@ import {
   type BeforeCacheDeclaration,
   type BeforeCacheStep,
 } from "./backend.ts";
-import {
-  openDockerCacheDomain,
-  type DockerCacheDomainHandle,
-} from "./docker-task-build-cache.ts";
+import { openDockerCacheDomain, type DockerCacheDomainHandle } from "./docker-task-build-cache.ts";
 import {
   type DockerHolderIdentity,
   type DockerBeforeCacheEntryRow as RepositoryBeforeCacheEntryRow,
@@ -32,16 +31,14 @@ import {
 import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
 
 const CACHE_KIND = "sandbox-before-cache";
-const CACHE_PROTOCOL_VERSION = 1;
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
 const LEASE_HEARTBEAT_MS = 10 * 1000;
 const LEASE_TTL_MS = 60 * 1000;
 const LEASE_RECONCILE_GRACE_MS = 30 * 1000;
 const PROVIDER_CLEANUP_TIMEOUT_MS = 30 * 1000;
 
-const LABEL = Object.freeze({
+const LABEL = {
   kind: "io.niceeval.cache.kind",
-  protocol: "io.niceeval.cache.protocol",
   domainId: "io.niceeval.cache.domain-id",
   entryId: "io.niceeval.cache.before-cache.entry-id",
   operationId: "io.niceeval.cache.before-cache.operation-id",
@@ -50,10 +47,9 @@ const LABEL = Object.freeze({
   baseIdentity: "io.niceeval.cache.before-cache.base-identity",
   declarationDigest: "io.niceeval.cache.before-cache.declaration-digest",
   metadataDigest: "io.niceeval.cache.before-cache.metadata-digest",
-  storageSchemaRevision: "io.niceeval.cache.before-cache.storage-schema",
-  artifactFormatRevision: "io.niceeval.cache.before-cache.artifact-format",
+  cacheFormat: "io.niceeval.cache.before-cache.format",
   dependency: "io.niceeval.cache.before-cache.dependency",
-});
+} as const;
 
 type BeforeCacheEntryState =
   | "reserved"
@@ -73,8 +69,7 @@ interface BeforeCacheEntryRow {
   readonly declaration_json: string;
   readonly metadata_digest: string;
   readonly declaration_digest: string;
-  readonly storage_schema_revision: string;
-  readonly artifact_format_revision: string;
+  readonly cache_format: string;
   readonly dependency: "parent-backed";
   readonly change_frequency: number;
   readonly generation: number;
@@ -91,14 +86,8 @@ interface ValidatedManifest {
   readonly metadataDigest: string;
 }
 
-function replacementScope(manifest: ValidatedManifest): string {
-  const metadata = manifest.value.declarationMetadata;
-  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
-    throw new TypeError("before-cache declaration metadata must be a record");
-  }
-  const scope = (metadata as { readonly replacementScope?: unknown }).replacementScope;
-  if (scope === undefined) throw new TypeError("before-cache declaration metadata has no replacement scope");
-  return canonicalJson(scope);
+function replacementScope(input: BeforeCacheStep, executionDomainId: string, baseReference: string): string {
+  return beforeCacheReplacementScope({ provider: "docker", executionDomainId, baseReference }, input);
 }
 
 interface HolderIdentity {
@@ -119,8 +108,7 @@ function repositoryManifest(manifest: ValidatedManifest): DockerBeforeCacheManif
     declarationJson: manifest.declarationJson,
     metadataDigest: manifest.metadataDigest,
     declarationDigest: manifest.value.declarationDigest,
-    storageSchemaRevision: manifest.value.storageSchemaRevision,
-    artifactFormatRevision: manifest.value.artifactFormatRevision,
+    cacheFormat: manifest.value.cacheFormat,
     changeFrequency: manifest.value.changeFrequency,
   };
 }
@@ -134,8 +122,7 @@ function localEntry(row: RepositoryBeforeCacheEntryRow): BeforeCacheEntryRow {
     declaration_json: row.declarationJson,
     metadata_digest: row.metadataDigest,
     declaration_digest: row.declarationDigest,
-    storage_schema_revision: row.storageSchemaRevision,
-    artifact_format_revision: row.artifactFormatRevision,
+    cache_format: row.cacheFormat,
     dependency: row.dependency,
     change_frequency: row.changeFrequency,
     generation: row.generation,
@@ -154,6 +141,7 @@ export interface DockerBeforeCacheHoldOwnership {
 
 /** Narrow Docker target. Registry code never reaches into DockerSandbox implementation fields. */
 export interface DockerBeforeCacheTarget {
+  readonly baseReference: string;
   readonly eligibility: () => BeforeCacheEligibility;
   readonly captureExactImage: (
     labels: Readonly<Record<string, string>>,
@@ -264,8 +252,7 @@ function validateOperation(input: BeforeCacheStep): ValidatedManifest {
   ) {
     throw new TypeError("requiredState must be sandboxState.all or sandboxState.dockerData");
   }
-  validateIdentity(input.declaration.storageSchemaRevision, "storageSchemaRevision");
-  validateIdentity(input.declaration.artifactFormatRevision, "artifactFormatRevision");
+  validateIdentity(input.declaration.cacheFormat, "cacheFormat");
   if (!Number.isFinite(input.declaration.changeFrequency) || input.declaration.changeFrequency < 0) {
     throw new TypeError("changeFrequency must be a finite non-negative number");
   }
@@ -298,13 +285,17 @@ async function reconcileBeforeCacheDomainAtStartup(domain: DockerCacheDomainHand
   });
   for (const lock of snapshot.locks) {
     if (processIdentityIsLive(lock.holderPid, lock.holderBootId, lock.holderProcessStart)) continue;
-    const entry = snapshot.entries.find((candidate) =>
-      candidate.entryId === lock.entryId && candidate.generation === lock.entryGeneration &&
-      candidate.imageId === lock.imageId && candidate.state === "deleting");
+    const entry = snapshot.entries.find(
+      (candidate) =>
+        candidate.entryId === lock.entryId &&
+        candidate.generation === lock.entryGeneration &&
+        candidate.imageId === lock.imageId &&
+        candidate.state === "deleting",
+    );
     let state: "indexed" | "tombstoned" | "unverified" = "unverified";
     if (entry !== undefined) {
       try {
-        state = await inspectExactImageOrAbsent(lock.imageId, signal) === undefined ? "tombstoned" : "indexed";
+        state = (await inspectExactImageOrAbsent(lock.imageId, signal)) === undefined ? "tombstoned" : "indexed";
       } catch {
         // Provider uncertainty cannot authorize deletion or a reusable hit.
       }
@@ -324,7 +315,10 @@ async function reconcileBeforeCacheDomainAtStartup(domain: DockerCacheDomainHand
   const unverifiableLeaseIds: string[] = [];
   for (const lease of snapshot.leases) {
     if (Date.parse(lease.expiresAt) + LEASE_RECONCILE_GRACE_MS >= now) continue;
-    if (lease.holderHostId !== hostname() || processIdentityIsLive(lease.holderPid, lease.holderBootId, lease.holderProcessStart)) {
+    if (
+      lease.holderHostId !== hostname() ||
+      processIdentityIsLive(lease.holderPid, lease.holderBootId, lease.holderProcessStart)
+    ) {
       unverifiableLeaseIds.push(lease.leaseId);
     } else {
       deleteLeaseIds.push(lease.leaseId);
@@ -340,8 +334,12 @@ async function reconcileBeforeCacheDomainAtStartup(domain: DockerCacheDomainHand
     });
   }
   const removed = new Set(deleteLeaseIds);
-  const ownedEntryIds = new Set(snapshot.leases.filter((lease) => !removed.has(lease.leaseId)).map((lease) => lease.entryId));
-  const incomplete = snapshot.entries.filter((row) => row.state === "reserved" || row.state === "building").map(localEntry);
+  const ownedEntryIds = new Set(
+    snapshot.leases.filter((lease) => !removed.has(lease.leaseId)).map((lease) => lease.entryId),
+  );
+  const incomplete = snapshot.entries
+    .filter((row) => row.state === "reserved" || row.state === "building")
+    .map(localEntry);
   for (const row of incomplete) {
     // A live or not-yet-verifiably-expired build lease owns this promotion. A
     // dead writer is isolated; any image it produced remains an unverified
@@ -434,9 +432,8 @@ function processIdentityIsLive(pid: number, bootId: string, processStart: string
 }
 
 function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): Readonly<Record<string, string>> {
-  return Object.freeze({
+  return {
     [LABEL.kind]: CACHE_KIND,
-    [LABEL.protocol]: String(CACHE_PROTOCOL_VERSION),
     [LABEL.domainId]: domain.domainId,
     [LABEL.entryId]: row.entry_id,
     [LABEL.operationId]: row.operation_id,
@@ -445,10 +442,9 @@ function labelsFor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow): R
     [LABEL.baseIdentity]: row.base_identity,
     [LABEL.declarationDigest]: row.declaration_digest,
     [LABEL.metadataDigest]: row.metadata_digest,
-    [LABEL.storageSchemaRevision]: row.storage_schema_revision,
-    [LABEL.artifactFormatRevision]: row.artifact_format_revision,
+    [LABEL.cacheFormat]: row.cache_format,
     [LABEL.dependency]: row.dependency,
-  });
+  };
 }
 
 function exactImageId(imageId: string): boolean {
@@ -480,9 +476,13 @@ function abortableDockerRead<T>(promise: Promise<T>, signal?: AbortSignal): Prom
 async function inspectExactImage(imageId: string, signal?: AbortSignal): Promise<Docker.ImageInspectInfo> {
   if (!exactImageId(imageId)) throw new Error(`registry resource identity is not an exact Docker image id: ${imageId}`);
   return abortableDockerRead(
-    new Docker().getImage(imageId).inspect(signal === undefined ? {} : { abortSignal: signal } as Docker.ImageInspectOptions & {
-      readonly abortSignal: AbortSignal;
-    }),
+    new Docker().getImage(imageId).inspect(
+      signal === undefined
+        ? {}
+        : ({ abortSignal: signal } as Docker.ImageInspectOptions & {
+            readonly abortSignal: AbortSignal;
+          }),
+    ),
     signal,
   );
 }
@@ -510,6 +510,11 @@ function validateImageLabels(
 ): void {
   if (inspection.Id !== imageId) throw new Error(`Docker inspect returned ${inspection.Id} for exact image ${imageId}`);
   const actual = inspection.Config?.Labels ?? {};
+  if (actual[LABEL.cacheFormat] !== expected[LABEL.cacheFormat]) {
+    throw new Error(
+      `Docker cache image ${imageId} was written by an older NiceEval or has an unsupported format; reconcile its consumers, clean up this image, and rerun.`,
+    );
+  }
   for (const [key, value] of Object.entries(expected)) {
     if (actual[key] !== value) throw new Error(`Docker image ${imageId} has invalid managed label ${key}`);
   }
@@ -548,19 +553,25 @@ class BeforeCacheLease {
     this.heartbeat = setInterval(() => {
       if (this.released || this.heartbeatFailure !== undefined) return;
       const now = Date.now();
-      void dockerCacheRepository.request({
-        repository: "docker-cache",
-        operation: "before-cache-heartbeat",
-        domainId: this.domain.domainId,
-        leaseId: this.leaseId,
-        heartbeatAt: new Date(now).toISOString(),
-        expiresAt: new Date(now + LEASE_TTL_MS).toISOString(),
-      }).then((updated) => {
-        if (updated.changes !== 1) this.heartbeatFailure = new Error("the durable before-cache lease disappeared during use");
-      }, (cause) => {
-        // Preserve the durable row as a GC veto; surface this failure at release.
-        this.heartbeatFailure = cause;
-      });
+      void dockerCacheRepository
+        .request({
+          repository: "docker-cache",
+          operation: "before-cache-heartbeat",
+          domainId: this.domain.domainId,
+          leaseId: this.leaseId,
+          heartbeatAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + LEASE_TTL_MS).toISOString(),
+        })
+        .then(
+          (updated) => {
+            if (updated.changes !== 1)
+              this.heartbeatFailure = new Error("the durable before-cache lease disappeared during use");
+          },
+          (cause) => {
+            // Preserve the durable row as a GC veto; surface this failure at release.
+            this.heartbeatFailure = cause;
+          },
+        );
     }, LEASE_HEARTBEAT_MS);
     this.heartbeat.unref();
   }
@@ -577,7 +588,8 @@ class BeforeCacheLease {
         domainId: this.domain.domainId,
         leaseId: this.leaseId,
       });
-      if (removed.changes !== 1) releaseFailure = new Error("the durable before-cache lease disappeared before release");
+      if (removed.changes !== 1)
+        releaseFailure = new Error("the durable before-cache lease disappeared before release");
     } catch (cause) {
       releaseFailure = cause;
     }
@@ -588,7 +600,7 @@ class BeforeCacheLease {
         reason: errorMessage(failure),
         beforeCacheKey: this.row.before_cache_key,
         domainId: this.domain.domainId,
-        cause: failure,
+        cause: normalizeExternalCause(failure),
       });
     }
   }
@@ -639,7 +651,8 @@ async function releaseDurableHold(input: {
 }): Promise<void> {
   const domain = await openBeforeCacheDomain();
   try {
-    if (domain.domainId !== input.domainId) throw new Error("Docker cache Domain authority changed while releasing a hold");
+    if (domain.domainId !== input.domainId)
+      throw new Error("Docker cache Domain authority changed while releasing a hold");
     await dockerCacheRepository.request({
       repository: "docker-cache",
       operation: "before-cache-begin-hold-release",
@@ -665,7 +678,7 @@ async function releaseDurableHold(input: {
       reason: errorMessage(cause),
       beforeCacheKey: input.beforeCacheKey,
       domainId: input.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
   await reclaimSupersededDockerImages();
@@ -685,6 +698,7 @@ async function restoreLeaseIntoTarget(
       reason: "the indexed generation has no exact Docker image id",
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
+      cause: undefined,
     });
   }
   try {
@@ -699,7 +713,7 @@ async function restoreLeaseIntoTarget(
         reason: "exact-image validation failed and the generation could not be removed from the hit index",
         beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
-        cause: new AggregateError([cause, cleanupCause]),
+        cause: normalizeExternalCause(new AggregateError([cause, cleanupCause])),
       });
     }
     throw new BeforeCacheValidationError({
@@ -707,7 +721,7 @@ async function restoreLeaseIntoTarget(
       reason: errorMessage(cause),
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
 
@@ -751,13 +765,14 @@ async function restoreLeaseIntoTarget(
     if (activated.changes !== 1) throw new Error("prepared before-cache hold could not be activated");
     target.adoptBeforeCacheHold({
       containerId: rebound.containerId,
-      release: () => releaseDurableHold({
-        domainId: lease.domain.domainId,
-        holdId,
-        entryId: row.entry_id,
-        containerId: rebound!.containerId,
-        beforeCacheKey: row.before_cache_key,
-      }),
+      release: () =>
+        releaseDurableHold({
+          domainId: lease.domain.domainId,
+          holdId,
+          entryId: row.entry_id,
+          containerId: rebound!.containerId,
+          beforeCacheKey: row.before_cache_key,
+        }),
     });
     const usedAt = new Date().toISOString();
     const updated = await dockerCacheRepository.request({
@@ -798,7 +813,7 @@ async function restoreLeaseIntoTarget(
         reason: "restore failed and its partial provider/registry resources could not be fully retired",
         beforeCacheKey: row.before_cache_key,
         domainId: lease.domain.domainId,
-        cause: new AggregateError([cause, ...cleanupFailures]),
+        cause: normalizeExternalCause(new AggregateError([cause, ...cleanupFailures])),
       });
     }
     throw new BeforeCacheRestoreError({
@@ -806,7 +821,7 @@ async function restoreLeaseIntoTarget(
       reason: errorMessage(cause),
       beforeCacheKey: row.before_cache_key,
       domainId: lease.domain.domainId,
-      cause,
+      cause: normalizeExternalCause(cause),
     });
   }
 }
@@ -832,13 +847,15 @@ async function lookupAndRestore(
       operation: "validate before-cache lookup",
       reason: errorMessage(cause),
       beforeCacheKey: input.declaration.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
   let lease: BeforeCacheLease | undefined;
   try {
     lease = await acquireIndexedLease(input, manifest);
-    if (lease === undefined) return { _tag: "Miss", beforeCacheKey: manifest.value.beforeCacheKey } as const;
+    if (lease === undefined)
+      return { _tag: "Miss", beforeCacheKey: manifest.value.beforeCacheKey, recovery: undefined } as const;
     signal.throwIfAborted();
     const restored = await restoreLeaseIntoTarget(target, lease, input, signal);
     return {
@@ -854,9 +871,10 @@ async function lookupAndRestore(
     if (isBeforeCacheError(cause)) throw cause;
     throw new BeforeCacheLookupError({
       operation: `lookup and restore before cache:${safeFailureClass(cause)}`,
-      reason: errorMessage(cause),
+      reason: beforeCacheFailureDetail(beforeCacheFailureCause(cause), errorMessage(cause)),
       beforeCacheKey: manifest.value.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: beforeCacheFailureCause(cause),
     });
   } finally {
     await lease?.release();
@@ -866,9 +884,14 @@ async function lookupAndRestore(
 async function reserveEntry(
   input: BeforeCacheStep,
   manifest: ValidatedManifest,
+  baseReference: string,
 ): Promise<
   | { readonly _tag: "Reserved"; readonly lease: BeforeCacheLease }
-  | { readonly _tag: "Contended"; readonly beforeCacheKey: string; readonly reason: "active-writer" | "indexed-generation" }
+  | {
+      readonly _tag: "Contended";
+      readonly beforeCacheKey: string;
+      readonly reason: "active-writer" | "indexed-generation";
+    }
 > {
   const domain = await openBeforeCacheDomain();
   const holder = holderIdentity();
@@ -879,7 +902,7 @@ async function reserveEntry(
     operation: "before-cache-reserve",
     domainId: domain.domainId,
     manifest: repositoryManifest(manifest),
-    replacementScope: replacementScope(manifest),
+    replacementScope: replacementScope(input, domain.domainId, baseReference),
     operationId: input.operationId,
     leaseId,
     holder: repositoryHolder(holder),
@@ -966,9 +989,9 @@ async function reclaimSupersededDockerImages(scope?: string, exceptEntryId?: str
       const inspection = await inspectExactImageOrAbsent(imageId, signal);
       if (inspection === undefined) {
         state = "tombstoned";
-      } else if (!await hasContainerReference(imageId, signal)) {
-        await new Docker().getImage(imageId).remove({ abortSignal: signal });
-        if (await inspectExactImageOrAbsent(imageId, signal) === undefined) state = "tombstoned";
+      } else if (!(await hasContainerReference(imageId, signal))) {
+        await new Docker().getImage(imageId).remove({ noprune: true, abortSignal: signal });
+        if ((await inspectExactImageOrAbsent(imageId, signal)) === undefined) state = "tombstoned";
       }
     } catch {
       // A replacement is already live. Keep the old generation indexed if its
@@ -1007,7 +1030,8 @@ async function capture(
       operation: "validate before-cache capture",
       reason: errorMessage(cause),
       beforeCacheKey: input.declaration.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
 
@@ -1016,17 +1040,20 @@ async function capture(
   let imageId: string | undefined;
   try {
     signal.throwIfAborted();
-    const reserved = await reserveEntry(input, manifest);
+    const reserved = await reserveEntry(input, manifest, target.baseReference);
     if (reserved._tag === "Contended") return reserved;
     reservation = reserved.lease;
     reservedRow = reservation.row;
     const labels = labelsFor(reservation.domain, reservedRow);
-    imageId = await target.captureExactImage(labels, input.knownSensitiveValues ?? [], signal);
+    imageId = await target.captureExactImage(labels, input.knownSensitiveValues, signal);
     signal.throwIfAborted();
     const inspection = await inspectExactImage(imageId, signal);
     validateImageLabels(inspection, imageId, labels);
     await publishEntry(reservedRow, imageId, signal);
-    await reclaimSupersededDockerImages(replacementScope(manifest), reservedRow.entry_id);
+    await reclaimSupersededDockerImages(
+      replacementScope(input, reservation.domain.domainId, target.baseReference),
+      reservedRow.entry_id,
+    );
     signal.throwIfAborted();
     const lease = await acquireIndexedLease(input, manifest, reservedRow.entry_id);
     if (lease === undefined) throw new Error("captured before-cache generation was not indexed");
@@ -1068,8 +1095,8 @@ async function capture(
       try {
         const cleanupSignal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
         if (
-          !await hasContainerReference(imageId, cleanupSignal) &&
-          await failedCaptureImageCanBeRemoved(imageId, reservedRow.entry_id)
+          !(await hasContainerReference(imageId, cleanupSignal)) &&
+          (await failedCaptureImageCanBeRemoved(imageId, reservedRow.entry_id))
         ) {
           await new Docker().getImage(imageId).remove({ abortSignal: cleanupSignal });
         }
@@ -1082,7 +1109,8 @@ async function capture(
         operation: "clean failed before-cache capture",
         reason: "capture failed and its unindexed image/registry claim could not be fully retired",
         beforeCacheKey: manifest.value.beforeCacheKey,
-        cause: new AggregateError([cause, ...cleanupFailures]),
+        domainId: undefined,
+        cause: normalizeExternalCause(new AggregateError([cause, ...cleanupFailures])),
       });
     }
     if (isBeforeCacheError(cause)) throw cause;
@@ -1090,80 +1118,96 @@ async function capture(
       operation: "capture and publish before-cache image",
       reason: errorMessage(cause),
       beforeCacheKey: manifest.value.beforeCacheKey,
-      cause,
+      domainId: undefined,
+      cause: normalizeExternalCause(cause),
     });
   }
 }
 
-export function makeDockerBeforeCacheCapability(
-  target: DockerBeforeCacheTarget,
-): AttemptBeforeCache {
+export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget): AttemptBeforeCache {
   const scopedOperation = <A>(
     run: (signal: AbortSignal) => Promise<A>,
     mapError: (cause: unknown) => BeforeCacheError,
-  ): Effect.Effect<A, BeforeCacheError> => Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const controller = new AbortController();
-      const promise = Promise.resolve().then(() => run(controller.signal));
-      return {
-        controller,
-        promise,
-        settled: promise.then(() => undefined, () => undefined),
-      };
-    }),
-    ({ controller, promise }) => Effect.tryPromise({
-      try: (signal) => {
-        const abort = (): void => controller.abort(signal.reason);
-        if (signal.aborted) abort();
-        else signal.addEventListener("abort", abort, { once: true });
-        return promise.finally(() => signal.removeEventListener("abort", abort));
-      },
-      catch: mapError,
-    }),
-    ({ controller, settled }) => Effect.sync(() => controller.abort(
-      new DOMException("before cache operation scope closed", "AbortError"),
-    )).pipe(Effect.andThen(Effect.promise(() => settled))),
-  );
+  ): Effect.Effect<A, BeforeCacheError> =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const controller = new AbortController();
+        const promise = Promise.resolve().then(() => run(controller.signal));
+        return {
+          controller,
+          promise,
+          settled: promise.then(
+            () => undefined,
+            () => undefined,
+          ),
+        };
+      }),
+      ({ controller, promise }) =>
+        Effect.tryPromise({
+          try: (signal) => {
+            const abort = (): void => controller.abort(signal.reason);
+            if (signal.aborted) abort();
+            else signal.addEventListener("abort", abort, { once: true });
+            return promise.finally(() => signal.removeEventListener("abort", abort));
+          },
+          catch: mapError,
+        }),
+      ({ controller, settled }) =>
+        Effect.sync(() => controller.abort(new DOMException("before cache operation scope closed", "AbortError"))).pipe(
+          Effect.andThen(Effect.promise(() => settled)),
+        ),
+    );
 
-  return Object.freeze({
+  return {
     eligibility: target.eligibility,
-    lookupAndRestore: (input: BeforeCacheStep) => scopedOperation(
-      (signal) => lookupAndRestore(target, input, signal),
-      (cause) => isBeforeCacheError(cause)
-        ? cause
-        : new BeforeCacheLookupError({
-            operation: "lookup and restore before cache",
-            reason: errorMessage(cause),
-            beforeCacheKey: input.declaration.beforeCacheKey,
-            cause,
-          }),
-    ),
-    capture: (input: BeforeCacheStep) => scopedOperation(
-      (signal) => capture(target, input, signal),
-      (cause) => isBeforeCacheError(cause)
-        ? cause
-        : new BeforeCacheCaptureError({
-            operation: "capture and publish before cache",
-            reason: errorMessage(cause),
-            beforeCacheKey: input.declaration.beforeCacheKey,
-            cause,
-          }),
-    ),
-    fallBackToBase: () => scopedOperation(
-      async (signal) => {
-        const eligibility = target.eligibility();
-        if (eligibility._tag !== "Eligible") return eligibility;
-        const recovered = await target.fallBackToBase(signal);
-        if (!exactImageId(recovered.baseIdentity)) throw new Error("clean Base recovery did not use an exact image id");
-        return { _tag: "FellBackToBase", ...recovered } as const;
-      },
-      (cause) => isBeforeCacheError(cause)
-        ? cause
-        : new BeforeCacheRestoreError({
-            operation: "recover a clean exact Base",
-            reason: errorMessage(cause),
-            cause,
-          }),
-    ),
-  });
+    lookupAndRestore: (input: BeforeCacheStep) =>
+      scopedOperation(
+        (signal) => lookupAndRestore(target, input, signal),
+        (cause) =>
+          isBeforeCacheError(cause)
+            ? cause
+            : new BeforeCacheLookupError({
+                operation: "lookup and restore before cache",
+                reason: beforeCacheFailureDetail(beforeCacheFailureCause(cause), errorMessage(cause)),
+                beforeCacheKey: input.declaration.beforeCacheKey,
+                domainId: undefined,
+                cause: beforeCacheFailureCause(cause),
+              }),
+      ),
+    capture: (input: BeforeCacheStep) =>
+      scopedOperation(
+        (signal) => capture(target, input, signal),
+        (cause) =>
+          isBeforeCacheError(cause)
+            ? cause
+            : new BeforeCacheCaptureError({
+                operation: "capture and publish before cache",
+                reason: errorMessage(cause),
+                beforeCacheKey: input.declaration.beforeCacheKey,
+                domainId: undefined,
+                cause: normalizeExternalCause(cause),
+              }),
+      ),
+    fallBackToBase: () =>
+      scopedOperation(
+        async (signal) => {
+          const eligibility = target.eligibility();
+          if (eligibility._tag !== "Eligible") return eligibility;
+          const recovered = await target.fallBackToBase(signal);
+          if (!exactImageId(recovered.baseIdentity))
+            throw new Error("clean Base recovery did not use an exact image id");
+          return { _tag: "FellBackToBase", ...recovered } as const;
+        },
+        (cause) =>
+          isBeforeCacheError(cause)
+            ? cause
+            : new BeforeCacheRestoreError({
+                operation: "recover a clean exact Base",
+                reason: errorMessage(cause),
+                beforeCacheKey: undefined,
+                domainId: undefined,
+                cause: normalizeExternalCause(cause),
+              }),
+      ),
+  };
 }

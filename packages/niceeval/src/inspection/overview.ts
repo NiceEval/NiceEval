@@ -2,21 +2,15 @@
 // @concord-implements docs/feature/inspection/README.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { stoppedAssertion } from "./stop.ts";
 import { PlannedAttemptMetricsSchema, type PlannedAttemptMember } from "./results.ts";
 import { attemptVerdict } from "./verdict.ts";
 import type { VerdictState } from "../eval/record/verdict.ts";
 import { Predicate, Result, Schema } from "effect";
 import type { MemberDocument, RecordSlotIdentity } from "../record/model/core.ts";
 import type { RunPluginIdentity, AdapterIdentity } from "../record/model/run-context.ts";
-import {
-  NiceEvalCurrentRecordAttachments,
-  NiceEvalRecordAttachments,
-} from "../record/family/current.ts";
-import {
-  closeInspectionJson,
-  isInspectionCodecError,
-  type InspectionJson,
-} from "./codec.ts";
+import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
+import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
 import {
   attemptAttachment,
   loadInspectionRuns,
@@ -31,15 +25,10 @@ import {
   projectAdapterUsageTokens,
   projectAttemptTiming,
   projectAttemptUsage,
+  projectApplicationUsage,
 } from "./trace.ts";
 
-export type InspectionMetricState =
-  | "available"
-  | "partial"
-  | "unavailable"
-  | "empty"
-  | "unsupported"
-  | "failed";
+export type InspectionMetricState = "available" | "partial" | "unavailable" | "empty" | "unsupported" | "failed";
 
 export interface InspectionAttemptRef {
   readonly identity: {
@@ -48,6 +37,7 @@ export interface InspectionAttemptRef {
   };
 }
 
+// Key-enumeration boundary: metric values are embedded directly in Inspection JSON.
 export interface InspectionMetricValue {
   readonly value: number | null;
   readonly state: InspectionMetricState;
@@ -123,8 +113,8 @@ export interface InspectionOverviewExperiment extends InspectionOverviewAggregat
   readonly groups: readonly InspectionOverviewGroup[];
 }
 
-export type InspectionExecutionValue =
-  | { readonly state: "available"; readonly value: string }
+export type InspectionExecutionValue<Value = string> =
+  | { readonly state: "available"; readonly value: Value }
   | { readonly state: "mixed" }
   | { readonly state: "unavailable" };
 
@@ -132,7 +122,7 @@ export type InspectionAdapterValue =
   | { readonly state: "available"; readonly value: AdapterIdentity }
   | { readonly state: "mixed" };
 
-export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue>>;
+export type InspectionLabels = Readonly<Record<string, InspectionExecutionValue<string | number>>>;
 
 export interface InspectionOverview {
   readonly totals: InspectionOverviewAggregate;
@@ -146,18 +136,28 @@ interface SelectedSlot {
   readonly attemptOrdinal: number;
   readonly adapter: AdapterIdentity;
   readonly model: string | null;
-  readonly labels: Readonly<Record<string, string>>;
-  readonly target?: LoadedInspectionRun;
-  readonly slot?: RecordSlotIdentity;
-  readonly member: MemberDocument | undefined;
-  readonly resolved: ResolvedInspectionAttempt | undefined;
+  readonly labels: Readonly<Record<string, string | number>>;
+  readonly recorded:
+    | {
+        readonly target: LoadedInspectionRun;
+        readonly slot: RecordSlotIdentity;
+        readonly membership:
+          | { readonly state: "missing" }
+          | {
+              readonly state: "member";
+              readonly member: MemberDocument;
+              readonly resolved: ResolvedInspectionAttempt | undefined;
+            };
+      }
+    | undefined;
   readonly analysis: AttemptAnalysis;
 }
 
 interface AttemptAnalysis {
   readonly assertionsState: InspectionAssertionsRead["state"] | "attempt-missing";
-  readonly evaluationKind: "pass" | "points" | null;
-  readonly verdict: VerdictState | null;
+  readonly evaluationKind: "pass" | "points" | undefined;
+  readonly verdict: VerdictState | undefined;
+  readonly stoppedAt: ReturnType<typeof stoppedAssertion> | undefined;
   readonly score: {
     readonly hasPoints: boolean;
     readonly earned: number;
@@ -165,20 +165,22 @@ interface AttemptAnalysis {
     readonly hasValue: boolean;
     readonly complete: boolean;
   };
-  readonly costUSD: {
-    readonly value: number | null;
-    readonly state: "available" | "partial" | "unavailable";
-    readonly source: "reported" | "estimated" | "mixed" | null;
-  };
+  readonly costUSD:
+    | { readonly state: "unavailable" }
+    | {
+        readonly state: "available" | "partial";
+        readonly value: number;
+        readonly source: "reported" | "estimated" | "mixed";
+      };
   readonly durationMs: OperationalMetric;
   readonly tokens: OperationalMetric;
   readonly coverage: readonly InspectionJson[];
   readonly issues: readonly InspectionJson[];
-  readonly ref: InspectionAttemptRef | null;
+  readonly ref: InspectionAttemptRef | undefined;
 }
 
 interface OperationalMetric {
-  readonly value: number | null;
+  readonly value: number | undefined;
   readonly state: "available" | "partial" | "unavailable" | "failed";
 }
 
@@ -199,20 +201,20 @@ export function selectInspectionOverview(
 }
 
 function aggregateSelectedSlots(selected: readonly SelectedSlot[]): InspectionOverview {
-  const cells = groupSelectedSlots(selected, ({ experimentId, evalId }) =>
-    `${experimentId}\u0000${evalId}`)
-    .map((slots) => makeCell(
+  const cells = groupSelectedSlots(selected, ({ experimentId, evalId }) => `${experimentId}\u0000${evalId}`).map(
+    (slots) =>
+      makeCell(
+        slots,
+        inspectionLabelKeys(selected.filter(({ experimentId }) => experimentId === slots[0]?.experimentId)),
+      ),
+  );
+  const experiments = groupSelectedSlots(selected, ({ experimentId }) => experimentId).map((slots) =>
+    makeExperiment(
       slots,
-      inspectionLabelKeys(selected.filter(({ experimentId }) =>
-        experimentId === slots[0]?.experimentId)),
-    ));
-  const experiments = groupSelectedSlots(selected, ({ experimentId }) => experimentId)
-    .map((slots) => makeExperiment(
-      slots,
-      cells.filter(({ experimentId }) =>
-        experimentId === slots[0]?.experimentId),
+      cells.filter(({ experimentId }) => experimentId === slots[0]?.experimentId),
       inspectionLabelKeys(slots),
-    ));
+    ),
+  );
 
   return closeOverview({
     totals: aggregate(selected, scoreFromCells(cells)),
@@ -228,38 +230,51 @@ export interface InspectionCurrentSlotInput {
   readonly evaluationKind: "pass" | "score";
   readonly adapter: AdapterIdentity;
   readonly model: string | null;
-  readonly labels: Readonly<Record<string, string>>;
-  readonly recorded?: {
-    readonly target: LoadedInspectionRun;
-    readonly slot: RecordSlotIdentity;
-    readonly member: MemberDocument;
-    readonly resolved: ResolvedInspectionAttempt;
-  };
+  readonly labels: Readonly<Record<string, string | number>>;
+  readonly recorded:
+    | {
+        readonly target: LoadedInspectionRun;
+        readonly slot: RecordSlotIdentity;
+        readonly member: MemberDocument;
+        readonly resolved: ResolvedInspectionAttempt;
+      }
+    | undefined;
 }
 
 /** Aggregate exactly the Host-assessed current positions; gaps add no value. */
 export function aggregateInspectionCurrentSlots(inputs: readonly InspectionCurrentSlotInput[]): InspectionOverview {
-  return aggregateSelectedSlots(inputs.map((input): SelectedSlot => {
-    const recorded = input.recorded;
-    return Object.freeze({
-      ...input,
-      ...(recorded ?? {}),
-      member: recorded?.member,
-      resolved: recorded?.resolved,
-      analysis: recorded === undefined ? Object.freeze({
-        assertionsState: "attempt-missing" as const,
-        evaluationKind: input.evaluationKind === "score" ? "points" as const : "pass" as const,
-        verdict: null,
-        score: emptyAttemptScore(),
-        costUSD: unavailableAttemptCost(),
-        durationMs: unavailableOperationalMetric(),
-        tokens: unavailableOperationalMetric(),
-        coverage: Object.freeze([]),
-        issues: Object.freeze([]),
-        ref: null,
-      }) : analyzeAttempt(recorded.resolved, recorded.target.run.runId, recorded.member, recorded.slot),
-    });
-  }));
+  return aggregateSelectedSlots(
+    inputs.map((input): SelectedSlot => {
+      const recorded = input.recorded;
+      return {
+        ...input,
+        recorded:
+          recorded === undefined
+            ? undefined
+            : {
+                target: recorded.target,
+                slot: recorded.slot,
+                membership: { state: "member", member: recorded.member, resolved: recorded.resolved },
+              },
+        analysis:
+          recorded === undefined
+            ? {
+                assertionsState: "attempt-missing" as const,
+                evaluationKind: input.evaluationKind === "score" ? ("points" as const) : ("pass" as const),
+                verdict: undefined,
+                score: emptyAttemptScore(),
+                costUSD: unavailableAttemptCost(),
+                durationMs: unavailableOperationalMetric(),
+                tokens: unavailableOperationalMetric(),
+                coverage: [],
+                issues: [],
+                ref: undefined,
+                stoppedAt: undefined,
+              }
+            : analyzeAttempt(recorded.resolved, recorded.target.run.runId, recorded.member, recorded.slot),
+      };
+    }),
+  );
 }
 
 function isLoadedInspectionRuns(
@@ -279,45 +294,46 @@ function selectLatestSlots(
       const key = `${target.run.experimentId}\u0000${slot.evalId}\u0000${slot.attemptOrdinal}`;
       const current = latest.get(key);
       if (current === undefined || compareOccurrence(target, current.target) > 0) {
-        latest.set(key, Object.freeze({ target, slot }));
+        latest.set(key, { target, slot });
       }
     }
   }
 
-  return Object.freeze([...latest.values()]
-    .sort((left, right) =>
-      compareText(left.target.run.experimentId, right.target.run.experimentId) ||
-      compareText(left.slot.evalId, right.slot.evalId) ||
-      left.slot.attemptOrdinal - right.slot.attemptOrdinal ||
-      compareText(left.target.run.runId, right.target.run.runId))
+  return [...latest.values()]
+    .sort(
+      (left, right) =>
+        compareText(left.target.run.experimentId, right.target.run.experimentId) ||
+        compareText(left.slot.evalId, right.slot.evalId) ||
+        left.slot.attemptOrdinal - right.slot.attemptOrdinal ||
+        compareText(left.target.run.runId, right.target.run.runId),
+    )
     .map(({ target, slot }): SelectedSlot => {
       const member = membersByRun.get(target)?.get(slot.slotId);
-      const resolved = member === undefined
-        ? undefined
-        : resolveInspectionMemberAttempt(resolutionRuns, target, member);
-      return Object.freeze({
+      const resolved =
+        member === undefined ? undefined : resolveInspectionMemberAttempt(resolutionRuns, target, member);
+      return {
         experimentId: target.run.experimentId,
         evalId: slot.evalId,
         attemptOrdinal: slot.attemptOrdinal,
         adapter: target.run.context.execution.adapter,
         model: target.run.context.execution.model,
         labels: target.run.context.labels,
-        target,
-        slot,
-        member,
-        resolved,
+        recorded: {
+          target,
+          slot,
+          membership: member === undefined ? { state: "missing" } : { state: "member", member, resolved },
+        },
         analysis: analyzeAttempt(resolved, target.run.runId, member, slot),
-      });
-    }));
+      };
+    });
 }
 
-function compareOccurrence(
-  left: LoadedInspectionRun,
-  right: LoadedInspectionRun,
-): number {
-  return left.run.completedAt - right.run.completedAt ||
+function compareOccurrence(left: LoadedInspectionRun, right: LoadedInspectionRun): number {
+  return (
+    left.run.completedAt - right.run.completedAt ||
     left.run.startedAt - right.run.startedAt ||
-    compareText(left.run.runId, right.run.runId);
+    compareText(left.run.runId, right.run.runId)
+  );
 }
 
 function analyzeAttempt(
@@ -328,42 +344,42 @@ function analyzeAttempt(
 ): AttemptAnalysis {
   if (resolved === undefined) {
     const hasReference = member?.attempt !== undefined && member.attempt !== null;
-    return Object.freeze({
+    return {
       assertionsState: "attempt-missing" as const,
-      evaluationKind: null,
-      verdict: null,
+      evaluationKind: undefined,
+      verdict: undefined,
       score: emptyAttemptScore(),
       costUSD: unavailableAttemptCost(),
       durationMs: unavailableOperationalMetric(),
       tokens: unavailableOperationalMetric(),
-      coverage: Object.freeze([]),
-      issues: Object.freeze([overviewIssue(
-        hasReference ? "attempt-origin-missing" : "attempt-not-observed",
-        runId,
-        slot,
-      )]),
-      ref: null,
-    });
+      coverage: [],
+      issues: [overviewIssue(hasReference ? "attempt-origin-missing" : "attempt-not-observed", runId, slot)],
+      ref: undefined,
+      stoppedAt: undefined,
+    };
   }
 
   const ref = attemptRef(resolved.locator);
   const operational = attemptOperationalMetrics(resolved);
   const assertions = readInspectionAssertions(resolved);
   if (assertions.state !== "available") {
-    return Object.freeze({
+    return {
       assertionsState: assertions.state,
-      evaluationKind: null,
+      evaluationKind: undefined,
       verdict: attemptVerdict(resolved, assertions),
       score: emptyAttemptScore(),
       costUSD: costUSDOf(resolved),
       ...operational,
-      coverage: Object.freeze([Object.freeze({
-        identity: ref.identity,
-        state: assertions.state,
-      })]),
+      coverage: [
+        {
+          identity: ref.identity,
+          state: assertions.state,
+        },
+      ],
       issues: assertions.issues,
       ref,
-    });
+      stoppedAt: undefined,
+    };
   }
 
   let earned = 0;
@@ -384,68 +400,75 @@ function analyzeAttempt(
       hasPoints = true;
       possible += contribution.points;
       unavailableContributions += 1;
-      issues.push(Object.freeze({
+      issues.push({
         code: "score-contribution-unavailable",
         locator: resolved.locator,
         entryId: entry.entryId,
         reason: contribution.reason,
-      }));
+      });
     }
-    coverage.push(Object.freeze({
+    coverage.push({
       identity: ref.identity,
       entryId: entry.entryId,
-      groupPath: Object.freeze([...entry.display.groupPath]),
+      groupPath: entry.display.groupPath,
       state: entry.materials.coverage.state,
-      ...(entry.materials.coverage.state === "complete"
-        ? {}
-        : { reason: entry.materials.coverage.reason }),
-      limitations: Object.freeze([...entry.materials.limitations]),
-    }));
+      ...(entry.materials.coverage.state === "complete" ? {} : { reason: entry.materials.coverage.reason }),
+      limitations: entry.materials.limitations.map((limitation) =>
+        limitation.kind === "sampled"
+          ? {
+              kind: limitation.kind,
+              captured: limitation.captured,
+              ...(limitation.knownTotal === undefined ? {} : { knownTotal: limitation.knownTotal }),
+            }
+          : limitation,
+      ),
+    });
   }
 
-  return Object.freeze({
+  return {
     assertionsState: "available" as const,
-    evaluationKind: hasPoints ? "points" as const : "pass" as const,
+    stoppedAt: stoppedAssertion(assertions),
+    evaluationKind: hasPoints ? ("points" as const) : ("pass" as const),
     verdict: attemptVerdict(resolved, assertions),
-    score: Object.freeze({
+    score: {
       hasPoints,
       earned,
       possible,
       hasValue: earnedContributions > 0,
       complete: hasPoints && unavailableContributions === 0,
-    }),
+    },
     costUSD: costUSDOf(resolved),
     ...operational,
-    coverage: Object.freeze(coverage),
-    issues: Object.freeze(issues),
+    coverage: coverage,
+    issues: issues,
     ref,
-  });
+  };
 }
 
-function makeCell(
-  slots: readonly SelectedSlot[],
-  labelKeys: readonly string[],
-): InspectionOverviewCell {
+function makeCell(slots: readonly SelectedSlot[], labelKeys: readonly string[]): InspectionOverviewCell {
   const first = slots[0];
   if (first === undefined) throw new Error("Overview cell cannot be empty");
-  return Object.freeze({
+  return {
     experimentId: first.experimentId,
     evalId: first.evalId,
     groupPath: groupPath(first.evalId),
     ...aggregate(slots, scoreForCell(slots)),
-    members: Object.freeze(slots.flatMap((selected): readonly InspectionOverviewMember[] => {
-      if (selected.target === undefined || selected.slot === undefined) return [];
-      return [Object.freeze({
-        runId: selected.target.run.runId,
-        plannedAttemptId: selected.slot.slotId,
-        evalId: selected.slot.evalId,
-        attemptOrdinal: selected.slot.attemptOrdinal,
-        labels: inspectionLabels([selected], labelKeys),
-        publication: overviewPublication(selected),
-        ...memberMetrics(selected),
-      })];
-    })),
-  });
+    members: slots.flatMap((selected): readonly InspectionOverviewMember[] => {
+      const recorded = selected.recorded;
+      if (recorded === undefined) return [];
+      return [
+        {
+          runId: recorded.target.run.runId,
+          plannedAttemptId: recorded.slot.slotId,
+          evalId: recorded.slot.evalId,
+          attemptOrdinal: recorded.slot.attemptOrdinal,
+          labels: inspectionLabels([selected], labelKeys),
+          publication: overviewPublication(selected),
+          ...memberMetrics(selected),
+        },
+      ];
+    }),
+  };
 }
 
 function makeExperiment(
@@ -468,116 +491,126 @@ function makeExperiment(
   }
   const groups = [...prefixes.entries()]
     .sort(([left], [right]) => compareText(left, right))
-    .map(([key, values]): InspectionOverviewGroup => Object.freeze({
-      groupPath: Object.freeze(key.split("\u0000")),
-      ...aggregate(
-        values,
-        scoreFromCells(cells.filter((cell) =>
-          hasGroupPrefix(cell.groupPath, key.split("\u0000")))),
-      ),
-    }));
-  return Object.freeze({
+    .map(
+      ([key, values]): InspectionOverviewGroup => ({
+        groupPath: key.split("\u0000"),
+        ...aggregate(
+          values,
+          scoreFromCells(cells.filter((cell) => hasGroupPrefix(cell.groupPath, key.split("\u0000")))),
+        ),
+      }),
+    );
+  return {
     experimentId: first.experimentId,
-    plugins: Object.freeze([...new Map(slots.flatMap(({ target }) => target?.run.context.execution.plugins ?? []).map((plugin) => [JSON.stringify(plugin), plugin])).values()]),
+    plugins: [
+      ...new Map(
+        slots
+          .flatMap(({ recorded }) => recorded?.target.run.context.execution.plugins ?? [])
+          .map((plugin) => [JSON.stringify(plugin), plugin]),
+      ).values(),
+    ],
     adapter: adapterValue(slots.map(({ adapter }) => adapter)),
     model: executionValue(slots.map(({ model }) => model)),
     labels: inspectionLabels(slots, labelKeys),
     ...aggregate(slots, scoreFromCells(cells)),
-    groups: Object.freeze(groups),
-  });
+    groups: groups,
+  };
 }
 
-function adapterValue(
-  values: readonly AdapterIdentity[],
-): InspectionAdapterValue {
+function adapterValue(values: readonly AdapterIdentity[]): InspectionAdapterValue {
   const first = values[0];
-  if (first === undefined || values.some((value) =>
-    value?.name !== first?.name ||
-    value?.contract !== first?.contract ||
-    value?.behaviorRevision !== first?.behaviorRevision ||
-    value?.cleanupTimeoutMs !== first?.cleanupTimeoutMs
-  )) {
-    return Object.freeze({ state: "mixed" as const });
+  if (
+    first === undefined ||
+    values.some(
+      (value) =>
+        value?.name !== first?.name ||
+        value?.contract !== first?.contract ||
+        value?.behaviorRevision !== first?.behaviorRevision ||
+        value?.cleanupTimeoutMs !== first?.cleanupTimeoutMs,
+    )
+  ) {
+    return { state: "mixed" as const };
   }
-  return Object.freeze({ state: "available" as const, value: first });
+  return { state: "available" as const, value: first };
 }
 
-function aggregate(
-  slots: readonly SelectedSlot[],
-  score: InspectionMetricValue,
-): InspectionOverviewAggregate {
+function aggregate(slots: readonly SelectedSlot[], score: InspectionMetricValue): InspectionOverviewAggregate {
   const denominator = denominatorOf(slots);
   const tally = tallyOf(slots);
   const issues = uniqueJson(slots.flatMap(({ analysis }) => analysis.issues));
-  return Object.freeze({
+  return {
     evaluationKind: evaluationKindOf(slots),
     denominator,
-    verdict: Object.freeze({
+    verdict: {
       tally,
       passRate: passRateOf(slots, denominator, tally),
-    }),
+    },
     score,
     costUSD: costForSlots(slots),
     durationMs: metricForSlots(slots, "durationMs", "ms", "average"),
     tokens: metricForSlots(slots, "tokens", "tokens", "sum"),
     coverage: uniqueJson(slots.flatMap(({ analysis }) => analysis.coverage)),
     issues,
-  });
+  };
 }
 
-function attemptOperationalMetrics(resolved: ResolvedInspectionAttempt): Pick<AttemptAnalysis, "durationMs" | "tokens"> {
-  const timing = projectAttemptTiming(Object.freeze({
-    runnerActivities: attemptAttachment(
-      resolved,
-      NiceEvalRecordAttachments.runnerActivities.attempt.family,
-    ),
-  }));
-  const durationMs = timing.activities.reduce<number | null>((maximum, activity) => {
+function attemptOperationalMetrics(
+  resolved: ResolvedInspectionAttempt,
+): Pick<AttemptAnalysis, "durationMs" | "tokens"> {
+  const runnerActivities = attemptAttachment(resolved, NiceEvalRecordAttachments.runnerActivities.attempt.family);
+  const timing = projectAttemptTiming({
+    runnerActivities,
+  });
+  const durationMs = timing.activities.reduce<number | undefined>((maximum, activity) => {
     const end = activity.startOffsetMs + activity.durationMs;
     return Math.max(maximum ?? 0, end);
-  }, null);
-  const adapterUsage = attemptAttachment(
-    resolved,
-    NiceEvalRecordAttachments.adapterUsage.family,
-  );
-  const usage = projectAttemptUsage(Object.freeze({
+  }, undefined);
+  const adapterUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family);
+  const agentTurns = attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family);
+  const usage = projectAttemptUsage({
     models: resolved.origin.run.context.execution.models,
-    agentTurns: attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
-    ...(adapterUsage === undefined ? {} : { adapterUsage }),
-  }));
+    agentTurns,
+    adapterUsage,
+    attemptCost: undefined,
+    judgeUsage: undefined,
+  });
   const input = usage.totals.inputTokens.value;
   const output = usage.totals.outputTokens.value;
   const tokenValues = [input, output].filter((value): value is number => value !== null);
-  const tokens = adapterUsage === undefined
-    ? Object.freeze({
-        value: tokenValues.length === 0 ? null : tokenValues.reduce((total, value) => total + value, 0),
-        state: usage.state === "invalid"
-          ? "failed" as const
-          : tokenValues.length === 0
-            ? "unavailable" as const
-            : usage.state === "complete" && usage.totals.inputTokens.state === "available" &&
-                usage.totals.outputTokens.state === "available"
-              ? "available" as const
-              : "partial" as const,
-      })
-    : projectAdapterUsageTokens(adapterUsage, resolved.origin.run.context.execution.models);
-  return Object.freeze({
-    durationMs: Object.freeze({
+  function tokenState(): OperationalMetric["state"] {
+    if (usage.state === "invalid") return "failed";
+    if (tokenValues.length === 0) return "unavailable";
+    if (
+      usage.state === "complete" &&
+      usage.totals.inputTokens.state === "available" &&
+      usage.totals.outputTokens.state === "available"
+    )
+      return "available";
+    return "partial";
+  }
+  function durationState(): OperationalMetric["state"] {
+    if (timing.state === "invalid") return "failed";
+    if (durationMs === undefined) return "unavailable";
+    return timing.state === "complete" && !timing.hasMore ? "available" : "partial";
+  }
+  const tokens =
+    adapterUsage === undefined
+      ? {
+          value: tokenValues.length === 0 ? undefined : tokenValues.reduce((total, value) => total + value, 0),
+          state: tokenState(),
+        }
+      : projectAdapterUsageTokens(adapterUsage, resolved.origin.run.context.execution.models);
+  return {
+    durationMs: {
       value: durationMs,
-      state: timing.state === "invalid"
-        ? "failed" as const
-        : durationMs === null
-          ? "unavailable" as const
-          : timing.state === "complete" && !timing.hasMore
-            ? "available" as const
-            : "partial" as const,
-    }),
-    tokens,
-  });
+      state: durationState(),
+    },
+    tokens: { ...tokens, value: tokens.value ?? undefined },
+  };
 }
 
 function unavailableOperationalMetric(): OperationalMetric {
-  return Object.freeze({ value: null, state: "unavailable" as const });
+  return { value: undefined, state: "unavailable" as const };
 }
 
 function metricForSlots(
@@ -586,46 +619,54 @@ function metricForSlots(
   unit: "ms" | "tokens",
   fold: "average" | "sum",
 ): InspectionMetricValue {
-  const valued = slots.filter(({ analysis }) => analysis[key].value !== null);
+  const valued = slots.filter(({ analysis }) => analysis[key].value !== undefined);
   const total = valued.reduce((sum, { analysis }) => sum + (analysis[key].value ?? 0), 0);
-  const value = valued.length === 0 ? null : fold === "average" ? total / valued.length : total;
+  function foldedValue(): number | null {
+    if (valued.length === 0) return null;
+    return fold === "average" ? total / valued.length : total;
+  }
+  const value = foldedValue();
   const failed = slots.some(({ analysis }) => analysis[key].state === "failed");
   const partial = valued.length < slots.length || slots.some(({ analysis }) => analysis[key].state === "partial");
-  return Object.freeze({
+  function metricState(): InspectionMetricState {
+    if (failed) return "failed";
+    if (valued.length === 0) return "unavailable";
+    return partial ? "partial" : "available";
+  }
+  return {
     value,
-    state: failed ? "failed" : valued.length === 0 ? "unavailable" : partial ? "partial" : "available",
+    state: metricState(),
     samples: valued.length,
     total: slots.length,
     basis: "planned-attempt",
-    issues: Object.freeze([]),
+    issues: [],
     refs: refsOf(valued),
     unit,
-    bounds: Object.freeze({ min: 0, max: Math.max(0, value ?? 0) }),
-  });
+    bounds: { min: 0, max: Math.max(0, value ?? 0) },
+  };
 }
 
-function overviewPublication(
-  selected: SelectedSlot,
-): InspectionOverviewMember["publication"] {
-  const { member, resolved } = selected;
-  if (member === undefined) return Object.freeze({ state: "pending" as const });
+function overviewPublication(selected: SelectedSlot): InspectionOverviewMember["publication"] {
+  const recorded = selected.recorded;
+  if (recorded === undefined || recorded.membership.state === "missing") return { state: "pending" as const };
+  const { member, resolved } = recorded.membership;
   if (member.attempt === null) {
-    return Object.freeze({
+    return {
       state: "absent" as const,
       reason: member.absenceReason,
-    });
+    };
   }
   if (resolved === undefined) {
-    throw new Error(`Published Slot ${selected.slot?.slotId} has no readable Attempt`);
+    throw new Error(`Published Slot ${recorded.slot.slotId} has no readable Attempt`);
   }
-  return Object.freeze({
+  return {
     state: "published" as const,
     action: member.action,
     attemptId: member.attempt.attemptId,
     attemptLocator: resolved.locator,
     originRunId: member.attempt.originRunId,
     originPlannedAttemptId: resolved.attempt.slotId,
-  });
+  };
 }
 
 /** Shared metrics for one planned position, including missing and unresolved publications. */
@@ -643,147 +684,147 @@ type AnalyzedMember = Pick<SelectedSlot, "analysis">;
 const decodeMemberMetrics = Schema.decodeUnknownSync(PlannedAttemptMetricsSchema);
 
 function memberMetrics(selected: AnalyzedMember) {
-  return Object.freeze(decodeMemberMetrics({
-    verdict: selected.analysis.verdict,
+  return decodeMemberMetrics({
+    verdict: selected.analysis.verdict ?? null,
+    stoppedAt: selected.analysis.stoppedAt ?? { state: "unavailable", reason: "not-recorded" },
     score: scoreForMember(selected),
     costUSD: costForAnalyses([selected]),
     durationMs: metricForSlots([selected], "durationMs", "ms", "average"),
     tokens: metricForSlots([selected], "tokens", "tokens", "sum"),
-  }));
+  });
 }
 
-function executionValue(
-  values: readonly (string | null)[],
-): InspectionExecutionValue {
+function executionValue<Value extends string | number>(
+  values: readonly (Value | null)[],
+): InspectionExecutionValue<Value> {
   const distinct = new Set(values);
-  if (distinct.size !== 1) return Object.freeze({ state: "mixed" as const });
+  if (distinct.size !== 1) return { state: "mixed" as const };
   const value = values[0];
   return value === null || value === undefined
-    ? Object.freeze({ state: "unavailable" as const })
-    : Object.freeze({ state: "available" as const, value });
+    ? { state: "unavailable" as const }
+    : { state: "available" as const, value };
 }
 
 function inspectionLabelKeys(slots: readonly SelectedSlot[]): readonly string[] {
-  return Object.freeze([...new Set(slots.flatMap(({ labels }) => Object.keys(labels)))].sort(compareText));
+  return [...new Set(slots.flatMap(({ labels }) => Object.keys(labels)))].sort(compareText);
 }
 
-function inspectionLabels(
-  slots: readonly SelectedSlot[],
-  keys: readonly string[],
-): InspectionLabels {
-  return Object.freeze(Object.fromEntries(keys.map((key) => [
-    key,
-    executionValue(slots.map(({ labels }) => labels[key] ?? null)),
-  ])));
+function inspectionLabels(slots: readonly SelectedSlot[], keys: readonly string[]): InspectionLabels {
+  return Object.fromEntries(keys.map((key) => [key, executionValue(slots.map(({ labels }) => labels[key] ?? null))]));
 }
 
 function costUSDOf(resolved: ResolvedInspectionAttempt): AttemptAnalysis["costUSD"] {
-  const adapterUsage = attemptAttachment(
-    resolved,
-    NiceEvalRecordAttachments.adapterUsage.family,
-  );
+  const adapterUsage = attemptAttachment(resolved, NiceEvalRecordAttachments.adapterUsage.family);
   if (adapterUsage !== undefined) {
-    const usage = projectAttemptUsage(Object.freeze({ adapterUsage, models: resolved.origin.run.context.execution.models }));
+    const usage = projectApplicationUsage(
+      {
+        adapterUsage,
+        agentTurns: undefined,
+      },
+      resolved.origin.run.context.execution.models,
+    );
     const costs = usage.totals.costs;
     const usd = costs?.values.find((value) => value.currency === "USD");
     if (costs === undefined || usd === undefined) return unavailableAttemptCost();
     const value = Number(usd.value);
     if (!Number.isFinite(value) || value < 0) return unavailableAttemptCost();
-    const complete = costs.state === "complete" && costs.values.length === 1 &&
-      usd.coveredCalls === costs.totalCalls;
-    return Object.freeze({
+    const complete = costs.state === "complete" && costs.values.length === 1 && usd.coveredCalls === costs.totalCalls;
+    return {
       value,
-      state: complete ? "available" as const : "partial" as const,
+      state: complete ? ("available" as const) : ("partial" as const),
       source: usd.source,
-    });
+    };
   }
-  const attachment = attemptAttachment(
-    resolved,
-    NiceEvalRecordAttachments.attemptCost.family,
-  );
+  const attachment = attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family);
   if (
     attachment === undefined ||
     attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.attemptCost.revision
-  ) return unavailableAttemptCost();
+  )
+    return unavailableAttemptCost();
   const raw = attachment.value;
   if (!Predicate.isObject(raw)) return unavailableAttemptCost();
-  const decode = Schema.decodeUnknownResult(
-    NiceEvalRecordAttachments.attemptCost.schema,
-    { errors: "all", onExcessProperty: "error" },
-  );
-  const observed = Reflect.has(raw, "observed")
-    ? decode({ observed: Reflect.get(raw, "observed") })
-    : undefined;
+  const decode = Schema.decodeUnknownResult(NiceEvalRecordAttachments.attemptCost.schema, {
+    errors: "all",
+    onExcessProperty: "error",
+  });
+  const observed = Reflect.has(raw, "observed") ? decode({ observed: Reflect.get(raw, "observed") }) : undefined;
   if (observed !== undefined && Result.isFailure(observed)) return unavailableAttemptCost();
-  const estimated = Reflect.has(raw, "estimated")
-    ? decode({ estimated: Reflect.get(raw, "estimated") })
-    : undefined;
+  const estimated = Reflect.has(raw, "estimated") ? decode({ estimated: Reflect.get(raw, "estimated") }) : undefined;
   if (estimated !== undefined && Result.isFailure(estimated)) return unavailableAttemptCost();
   const reportedValue = observed?.success.observed?.amountUSD;
   if (reportedValue !== undefined) {
-    return Object.freeze({ value: reportedValue, state: "available", source: "reported" });
+    return { value: reportedValue, state: "available", source: "reported" };
   }
   const estimatedValue = estimated?.success.estimated?.amountUSD;
   return estimatedValue === undefined
     ? unavailableAttemptCost()
-    : Object.freeze({ value: estimatedValue, state: "available", source: "estimated" });
+    : { value: estimatedValue, state: "available", source: "estimated" };
 }
 
 function unavailableAttemptCost(): AttemptAnalysis["costUSD"] {
-  return Object.freeze({ value: null, state: "unavailable", source: null });
+  return { state: "unavailable" };
 }
 
 function costForSlots(slots: readonly SelectedSlot[]): InspectionCostMetricValue {
   const unique = new Map<string, SelectedSlot>();
   for (const slot of slots) {
-    const key = slot.resolved?.locator ?? (slot.target === undefined ? `current:${slot.experimentId}:${slot.evalId}:${slot.attemptOrdinal}` : `slot:${slot.target.run.runId}:${slot.slot!.slotId}`);
+    const recorded = slot.recorded;
+    const resolved = recorded?.membership.state === "member" ? recorded.membership.resolved : undefined;
+    const key =
+      resolved?.locator ??
+      (recorded === undefined
+        ? `current:${slot.experimentId}:${slot.evalId}:${slot.attemptOrdinal}`
+        : `slot:${recorded.target.run.runId}:${recorded.slot.slotId}`);
     if (!unique.has(key)) unique.set(key, slot);
   }
   return costForAnalyses([...unique.values()]);
 }
 
 function costForAnalyses(subjects: readonly AnalyzedMember[]): InspectionCostMetricValue {
-  const valued = subjects.filter(({ analysis }) => analysis.costUSD.value !== null);
-  const sources = new Set(valued.flatMap(({ analysis }) =>
-    analysis.costUSD.source === null ? [] : [analysis.costUSD.source]));
+  const valued = subjects.flatMap((subject) =>
+    subject.analysis.costUSD.state === "unavailable" ? [] : [{ ...subject, cost: subject.analysis.costUSD }],
+  );
+  const sources = new Set(valued.map(({ cost }) => cost.source));
   const hasReported = sources.has("reported") || sources.has("mixed");
   const hasEstimated = sources.has("estimated") || sources.has("mixed");
-  const source = hasReported && hasEstimated ? "mixed" as const
-    : hasReported ? "reported" as const
-      : hasEstimated ? "estimated" as const
-        : null;
-  const value = valued.length === 0
-    ? null
-    : valued.reduce((sum, { analysis }) => sum + analysis.costUSD.value!, 0);
-  return Object.freeze({
+  function costSource(): InspectionCostMetricValue["source"] {
+    if (hasReported && hasEstimated) return "mixed";
+    if (hasReported) return "reported";
+    if (hasEstimated) return "estimated";
+    return null;
+  }
+  const source = costSource();
+  function costState(): InspectionMetricState {
+    if (source === null) return "unavailable";
+    if (valued.length < subjects.length || valued.some(({ cost }) => cost.state !== "available")) return "partial";
+    return "available";
+  }
+  const value = valued.length === 0 ? null : valued.reduce((sum, { cost }) => sum + cost.value, 0);
+  return {
     value,
     source,
-    state: source === null
-      ? "unavailable" as const
-      : valued.length < subjects.length || valued.some(({ analysis }) => analysis.costUSD.state !== "available")
-        ? "partial" as const
-        : "available" as const,
+    state: costState(),
     samples: valued.length,
     total: subjects.length,
     basis: "planned-attempt" as const,
-    issues: Object.freeze([]),
+    issues: [],
     refs: refsOf(valued),
     unit: "USD" as const,
-    bounds: Object.freeze({ min: 0, max: Math.max(0, value ?? 0) }),
-  });
+    bounds: { min: 0, max: Math.max(0, value ?? 0) },
+  };
 }
 
-function denominatorOf(
-  slots: readonly SelectedSlot[],
-): InspectionOverviewDenominator {
-  const observed = slots.filter(({ resolved }) => resolved !== undefined).length;
-  const classified = slots.filter(({ analysis }) => analysis.verdict !== null).length;
-  return Object.freeze({
+function denominatorOf(slots: readonly SelectedSlot[]): InspectionOverviewDenominator {
+  const observed = slots.filter(
+    ({ recorded }) => recorded?.membership.state === "member" && recorded.membership.resolved !== undefined,
+  ).length;
+  const classified = slots.filter(({ analysis }) => analysis.verdict !== undefined).length;
+  return {
     expected: slots.length,
     observed,
     classified,
     missing: slots.length - observed,
-  });
+  };
 }
 
 function tallyOf(slots: readonly SelectedSlot[]): InspectionVerdictTally {
@@ -793,14 +834,23 @@ function tallyOf(slots: readonly SelectedSlot[]): InspectionVerdictTally {
   let skipped = 0;
   for (const { analysis } of slots) {
     switch (analysis.verdict) {
-      case "passed": passed += 1; break;
-      case "failed": failed += 1; break;
-      case "errored": errored += 1; break;
-      case "skipped": skipped += 1; break;
-      case null: break;
+      case "passed":
+        passed += 1;
+        break;
+      case "failed":
+        failed += 1;
+        break;
+      case "errored":
+        errored += 1;
+        break;
+      case "skipped":
+        skipped += 1;
+        break;
+      case undefined:
+        break;
     }
   }
-  return Object.freeze({ passed, failed, errored, skipped });
+  return { passed, failed, errored, skipped };
 }
 
 function passRateOf(
@@ -808,10 +858,9 @@ function passRateOf(
   denominator: InspectionOverviewDenominator,
   tally: InspectionVerdictTally,
 ): InspectionMetricValue {
-  const classified = slots.filter(({ analysis }) => analysis.verdict !== null);
-  const issues = uniqueJson(slots.flatMap(({ analysis }) =>
-    analysis.verdict === null ? analysis.issues : []));
-  return Object.freeze({
+  const classified = slots.filter(({ analysis }) => analysis.verdict !== undefined);
+  const issues = uniqueJson(slots.flatMap(({ analysis }) => (analysis.verdict === undefined ? analysis.issues : [])));
+  return {
     value: denominator.classified === 0 ? null : tally.passed / denominator.classified,
     state: metricState({
       expected: denominator.expected,
@@ -824,101 +873,88 @@ function passRateOf(
     basis: "planned-attempt" as const,
     issues,
     refs: refsOf(classified),
-  });
+  };
 }
 
 function scoreForMember(selected: AnalyzedMember): InspectionMetricValue {
   const { analysis } = selected;
   if (analysis.evaluationKind === "pass") {
-    return Object.freeze({
+    return {
       value: null,
       state: "unsupported" as const,
       samples: 0,
       total: 0,
       basis: "planned-attempt" as const,
-      issues: Object.freeze([]),
-      refs: analysis.ref === null ? Object.freeze([]) : Object.freeze([analysis.ref]),
+      issues: [],
+      refs: analysis.ref === undefined ? [] : [analysis.ref],
       unit: "points" as const,
-      bounds: Object.freeze({ min: 0, max: 0 }),
-    });
+      bounds: { min: 0, max: 0 },
+    };
   }
 
   const hasValue = analysis.score.hasPoints && analysis.score.hasValue;
   const complete = hasValue && analysis.score.complete;
-  return Object.freeze({
+  function scoreState(): InspectionMetricState {
+    if (complete) return "available";
+    if (hasValue) return "partial";
+    return metricState({ expected: 1, samples: 0, complete: false, analyses: [analysis] });
+  }
+  return {
     value: hasValue ? analysis.score.earned : null,
-    state: complete
-      ? "available" as const
-      : hasValue
-        ? "partial" as const
-        : metricState({
-            expected: 1,
-            samples: 0,
-            complete: false,
-            analyses: [analysis],
-          }),
+    state: scoreState(),
     samples: complete ? 1 : 0,
     total: 1,
     basis: "planned-attempt" as const,
     issues: uniqueJson([
       ...analysis.issues,
-      ...(analysis.score.hasPoints && !analysis.score.complete
-        ? [scorePartialIssue(analysis)]
-        : []),
+      ...(analysis.score.hasPoints && !analysis.score.complete ? [scorePartialIssue(analysis)] : []),
     ]),
-    refs: analysis.ref === null ? Object.freeze([]) : Object.freeze([analysis.ref]),
+    refs: analysis.ref === undefined ? [] : [analysis.ref],
     unit: "points" as const,
-    bounds: Object.freeze({ min: 0, max: analysis.score.possible }),
-  });
+    bounds: { min: 0, max: analysis.score.possible },
+  };
 }
 
 /** One Experiment × Eval cell: complete point Attempts are averaged. */
 function scoreForCell(slots: readonly SelectedSlot[]): InspectionMetricValue {
-  const knownPoints = slots.filter(({ analysis }) =>
-    analysis.evaluationKind === "points");
-  const hasKnownPass = slots.some(({ analysis }) =>
-    analysis.evaluationKind === "pass");
-  const unknown = slots.filter(({ analysis }) =>
-    analysis.evaluationKind === null);
+  const knownPoints = slots.filter(({ analysis }) => analysis.evaluationKind === "points");
+  const hasKnownPass = slots.some(({ analysis }) => analysis.evaluationKind === "pass");
+  const unknown = slots.filter(({ analysis }) => analysis.evaluationKind === undefined);
 
   if (knownPoints.length === 0 && (hasKnownPass || unknown.length === 0)) {
-    return Object.freeze({
+    return {
       value: null,
-      state: slots.length === 0 ? "empty" as const : "unsupported" as const,
+      state: slots.length === 0 ? ("empty" as const) : ("unsupported" as const),
       samples: 0,
       total: 0,
       basis: "planned-attempt" as const,
-      issues: Object.freeze([]),
-      refs: Object.freeze([]),
+      issues: [],
+      refs: [],
       unit: "points" as const,
-      bounds: Object.freeze({ min: 0, max: 0 }),
-    });
+      bounds: { min: 0, max: 0 },
+    };
   }
 
   // In mixed historical data, explicit pass Attempts are not point-eligible.
   // Unknown facts remain in the denominator once the cell is known to score.
-  const eligible = knownPoints.length === 0
-    ? unknown
-    : slots.filter(({ analysis }) => analysis.evaluationKind !== "pass");
+  const eligible =
+    knownPoints.length === 0 ? unknown : slots.filter(({ analysis }) => analysis.evaluationKind !== "pass");
   // Earned-score coverage is independent of gate Verdict and ranking eligibility.
-  const complete = eligible.filter(({ analysis }) =>
-    analysis.score.hasPoints &&
-    analysis.score.hasValue &&
-    analysis.score.complete);
-  const earned = complete.reduce((sum, { analysis }) =>
-    sum + analysis.score.earned, 0);
-  const possible = complete.length === 0
-    ? 0
-    : complete.reduce((sum, { analysis }) =>
-        sum + analysis.score.possible, 0) / complete.length;
+  const complete = eligible.filter(
+    ({ analysis }) => analysis.score.hasPoints && analysis.score.hasValue && analysis.score.complete,
+  );
+  const earned = complete.reduce((sum, { analysis }) => sum + analysis.score.earned, 0);
+  const possible =
+    complete.length === 0
+      ? 0
+      : complete.reduce((sum, { analysis }) => sum + analysis.score.possible, 0) / complete.length;
   const issues = uniqueJson([
     ...eligible.flatMap(({ analysis }) => analysis.issues),
     ...eligible.flatMap(({ analysis }) =>
-      analysis.score.hasPoints && !analysis.score.complete
-        ? [scorePartialIssue(analysis)]
-        : []),
+      analysis.score.hasPoints && !analysis.score.complete ? [scorePartialIssue(analysis)] : [],
+    ),
   ]);
-  return Object.freeze({
+  return {
     value: complete.length === 0 ? null : earned / complete.length,
     state: metricState({
       expected: eligible.length,
@@ -932,66 +968,59 @@ function scoreForCell(slots: readonly SelectedSlot[]): InspectionMetricValue {
     issues,
     refs: refsOf(eligible),
     unit: "points" as const,
-    bounds: Object.freeze({ min: 0, max: possible }),
-  });
+    bounds: { min: 0, max: possible },
+  };
 }
 
 /** Experiment, path group, and total scores sum their visible cell means. */
-function scoreFromCells(
-  cells: readonly InspectionOverviewCell[],
-): InspectionMetricValue {
+function scoreFromCells(cells: readonly InspectionOverviewCell[]): InspectionMetricValue {
   if (cells.length === 0) {
-    return Object.freeze({
+    return {
       value: null,
       state: "empty" as const,
       samples: 0,
       total: 0,
       basis: "eval" as const,
-      issues: Object.freeze([]),
-      refs: Object.freeze([]),
+      issues: [],
+      refs: [],
       unit: "points" as const,
-      bounds: Object.freeze({ min: 0, max: 0 }),
-    });
+      bounds: { min: 0, max: 0 },
+    };
   }
-  const eligible = cells.filter(({ evaluationKind }) =>
-    evaluationKind !== "pass");
+  const eligible = cells.filter(({ evaluationKind }) => evaluationKind !== "pass");
   if (eligible.length === 0) {
-    return Object.freeze({
+    return {
       value: null,
       state: "unsupported" as const,
       samples: 0,
       total: 0,
       basis: "eval" as const,
-      issues: Object.freeze([]),
-      refs: Object.freeze([]),
+      issues: [],
+      refs: [],
       unit: "points" as const,
-      bounds: Object.freeze({ min: 0, max: 0 }),
-    });
+      bounds: { min: 0, max: 0 },
+    };
   }
   const valued = eligible.filter(({ score }) => score.value !== null);
-  const value = valued.length === 0
-    ? null
-    : valued.reduce((sum, { score }) => sum + (score.value ?? 0), 0);
-  const state = valued.length > 0
-    ? eligible.every(({ score }) => score.state === "available")
-      ? "available" as const
-      : "partial" as const
-    : aggregateMetricState(eligible.map(({ score }) => score.state));
-  return Object.freeze({
+  const value = valued.length === 0 ? null : valued.reduce((sum, { score }) => sum + (score.value ?? 0), 0);
+  function aggregateScoreState(): InspectionMetricState {
+    if (valued.length > 0) return eligible.every(({ score }) => score.state === "available") ? "available" : "partial";
+    return aggregateMetricState(eligible.map(({ score }) => score.state));
+  }
+  return {
     value,
-    state,
+    state: aggregateScoreState(),
     samples: valued.length,
     total: eligible.length,
     basis: "eval" as const,
     issues: uniqueJson(eligible.flatMap(({ score }) => score.issues)),
     refs: uniqueRefs(eligible.flatMap(({ score }) => score.refs)),
     unit: "points" as const,
-    bounds: Object.freeze({
+    bounds: {
       min: 0,
-      max: eligible.reduce((sum, { score }) =>
-        sum + (score.bounds?.max ?? 0), 0),
-    }),
-  });
+      max: eligible.reduce((sum, { score }) => sum + (score.bounds?.max ?? 0), 0),
+    },
+  };
 }
 
 function metricState(input: {
@@ -1006,49 +1035,39 @@ function metricState(input: {
     return "failed";
   }
   if (
-    input.analyses.some(({ assertionsState }) =>
-      assertionsState === "not-recorded" || assertionsState === "unsupported") &&
-    input.analyses.every(({ assertionsState }) =>
-      assertionsState !== "available" && assertionsState !== "attempt-missing")
+    input.analyses.some(
+      ({ assertionsState }) => assertionsState === "not-recorded" || assertionsState === "unsupported",
+    ) &&
+    input.analyses.every(
+      ({ assertionsState }) => assertionsState !== "available" && assertionsState !== "attempt-missing",
+    )
   ) {
     return "unsupported";
   }
   return "unavailable";
 }
 
-function evaluationKindOf(
-  slots: readonly SelectedSlot[],
-): InspectionEvaluationKind {
+function evaluationKindOf(slots: readonly SelectedSlot[]): InspectionEvaluationKind {
   const hasPoints = slots.some(({ analysis }) => analysis.evaluationKind === "points");
   if (!hasPoints) return "pass";
-  return slots.some(({ analysis }) => analysis.evaluationKind === "pass")
-    ? "mixed"
-    : "points";
+  return slots.some(({ analysis }) => analysis.evaluationKind === "pass") ? "mixed" : "points";
 }
 
 function refsOf(slots: readonly AnalyzedMember[]): readonly InspectionAttemptRef[] {
   const refs = new Map<string, InspectionAttemptRef>();
   for (const { analysis } of slots) {
-    if (analysis.ref !== null) refs.set(analysis.ref.identity.locator, analysis.ref);
+    if (analysis.ref !== undefined) refs.set(analysis.ref.identity.locator, analysis.ref);
   }
-  return Object.freeze([...refs.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([, ref]) => ref));
+  return [...refs.entries()].sort(([left], [right]) => compareText(left, right)).map(([, ref]) => ref);
 }
 
-function uniqueRefs(
-  values: readonly InspectionAttemptRef[],
-): readonly InspectionAttemptRef[] {
+function uniqueRefs(values: readonly InspectionAttemptRef[]): readonly InspectionAttemptRef[] {
   const refs = new Map<string, InspectionAttemptRef>();
   for (const ref of values) refs.set(ref.identity.locator, ref);
-  return Object.freeze([...refs.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([, ref]) => ref));
+  return [...refs.entries()].sort(([left], [right]) => compareText(left, right)).map(([, ref]) => ref);
 }
 
-function aggregateMetricState(
-  states: readonly InspectionMetricState[],
-): InspectionMetricState {
+function aggregateMetricState(states: readonly InspectionMetricState[]): InspectionMetricState {
   if (states.length === 0) return "empty";
   if (states.some((state) => state === "failed")) return "failed";
   if (states.every((state) => state === "unsupported")) return "unsupported";
@@ -1057,10 +1076,10 @@ function aggregateMetricState(
 }
 
 function scorePartialIssue(analysis: AttemptAnalysis): InspectionJson {
-  return Object.freeze({
+  return {
     code: "score-partial",
     locator: analysis.ref?.identity.locator ?? null,
-  });
+  };
 }
 
 function groupSelectedSlots(
@@ -1074,60 +1093,48 @@ function groupSelectedSlots(
     if (values === undefined) groups.set(key, [slot]);
     else values.push(slot);
   }
-  return Object.freeze([...groups.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([, values]) => Object.freeze(values)));
+  return [...groups.entries()].sort(([left], [right]) => compareText(left, right)).map(([, values]) => values);
 }
 
 function groupPath(evalId: string): readonly string[] {
   const segments = evalId.split("/").filter((segment) => segment.length > 0);
-  return Object.freeze(segments.slice(0, -1));
+  return segments.slice(0, -1);
 }
 
-function hasGroupPrefix(
-  path: readonly string[],
-  prefix: readonly string[],
-): boolean {
-  return prefix.length <= path.length &&
-    prefix.every((segment, index) => path[index] === segment);
+function hasGroupPrefix(path: readonly string[], prefix: readonly string[]): boolean {
+  return prefix.length <= path.length && prefix.every((segment, index) => path[index] === segment);
 }
 
 function attemptRef(locator: string): InspectionAttemptRef {
-  return Object.freeze({
-    identity: Object.freeze({ kind: "attempt" as const, locator }),
-  });
+  return {
+    identity: { kind: "attempt" as const, locator },
+  };
 }
 
 function emptyAttemptScore(): AttemptAnalysis["score"] {
-  return Object.freeze({
+  return {
     hasPoints: false,
     earned: 0,
     possible: 0,
     hasValue: false,
     complete: false,
-  });
+  };
 }
 
-function overviewIssue(
-  code: string,
-  runId: string,
-  slot: RecordSlotIdentity,
-): InspectionJson {
-  return Object.freeze({
+function overviewIssue(code: string, runId: string, slot: RecordSlotIdentity): InspectionJson {
+  return {
     code,
     runId,
     plannedAttemptId: slot.slotId,
     evalId: slot.evalId,
     attemptOrdinal: slot.attemptOrdinal,
-  });
+  };
 }
 
 function uniqueJson(values: readonly InspectionJson[]): readonly InspectionJson[] {
   const byJson = new Map<string, InspectionJson>();
   for (const value of values) byJson.set(JSON.stringify(value), value);
-  return Object.freeze([...byJson.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([, value]) => value));
+  return [...byJson.entries()].sort(([left], [right]) => compareText(left, right)).map(([, value]) => value);
 }
 
 function closeOverview(value: InspectionOverview): InspectionOverview {
@@ -1139,5 +1146,6 @@ function closeOverview(value: InspectionOverview): InspectionOverview {
 }
 
 function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
 }

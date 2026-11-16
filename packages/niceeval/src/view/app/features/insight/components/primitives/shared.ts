@@ -1,11 +1,17 @@
 /** Plain, browser-only values shared by the mechanically ported legacy primitives. */
+import { isRecord as isObject } from "../../../../../../shared/objects.ts";
+export { isObject };
+
 export type ReportLocale = "en" | "zh-CN";
 
-export type LocalizedText = string | Readonly<{
-  en?: string;
-  "zh-CN"?: string;
-  [locale: string]: string | undefined;
-}>;
+export type LocalizedText =
+  | string
+  // Key enumeration selects the fallback translation and validates supplied locale entries.
+  | Readonly<{
+      en?: string;
+      "zh-CN"?: string;
+      [locale: string]: string | undefined;
+    }>;
 
 export type ClosedAssertionFactValue =
   | { readonly kind: "text"; readonly text: string }
@@ -30,7 +36,9 @@ export type ClosedJsonValue =
 
 export function resolveLocalizedText(value: LocalizedText, locale: ReportLocale): string {
   if (typeof value === "string") return value;
-  return value[locale] ?? value.en ?? Object.values(value).find((entry): entry is string => typeof entry === "string") ?? "";
+  return (
+    value[locale] ?? value.en ?? Object.values(value).find((entry): entry is string => typeof entry === "string") ?? ""
+  );
 }
 
 export function cx(...parts: (string | undefined | false)[]): string {
@@ -38,10 +46,6 @@ export function cx(...parts: (string | undefined | false)[]): string {
 }
 
 export type ValueProps<Data, Presentation = object> = { readonly data: Data } & Presentation;
-
-export function isObject(value: unknown): value is globalThis.Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function isLocalizedText(value: unknown): value is LocalizedText {
   if (typeof value === "string") return true;

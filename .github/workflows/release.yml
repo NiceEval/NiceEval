@@ -255,7 +255,7 @@ jobs:
     needs: [prepare-release, publish]
     if: ${{ !contains(needs.prepare-release.outputs.version, '-') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: write
     concurrency:
@@ -278,8 +278,17 @@ jobs:
           EXPECTED_SHA256: ${{ needs.prepare-release.outputs.candidate_sha256 }}
         run: |
           set -euo pipefail
-          npm view "niceeval@$VERSION" dist.integrity --json > "${RUNNER_TEMP}/init-integrity.json"
-          test -s "${RUNNER_TEMP}/init-integrity.json"
+          # npm 接受发布后可能要十几分钟才能查到这个版本；等它可见再推广，最多 30 分钟。
+          for attempt in $(seq 1 60); do
+            if npm view "niceeval@$VERSION" dist.integrity --json > "${RUNNER_TEMP}/init-integrity.json" 2>/dev/null \
+              && test -s "${RUNNER_TEMP}/init-integrity.json"; then
+              exit 0
+            fi
+            echo "niceeval@$VERSION not visible on npm yet (attempt ${attempt}/60); retrying in 30s"
+            sleep 30
+          done
+          echo "::error::niceeval@$VERSION did not become visible on npm within 30 minutes"
+          exit 1
       - name: Download published candidate identity
         uses: actions/download-artifact@v8
         with:

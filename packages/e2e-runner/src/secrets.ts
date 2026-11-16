@@ -10,10 +10,13 @@
  * such as PATH, HOME, locale, proxy routing, and Node/pnpm configuration is
  * preserved unless its name itself identifies authentication material.
  */
-const SENSITIVE_NAME_SEGMENT = /(?:^|_)(?:token|key|secret|password|passwd|credential|credentials|auth|authorization|jwt)(?:_|$)/i;
+const SENSITIVE_NAME_SEGMENT =
+  /(?:^|_)(?:token|key|secret|password|passwd|credential|credentials|auth|authorization|jwt)(?:_|$)/i;
 const SENSITIVE_COMPOUND_MARKER = /(?:token|secret|password|passwd|credential|credentials|auth|authorization|jwt)/i;
-const SENSITIVE_KEY_COMPOUND = /^(?:(?:api|access|private|public|signing|encryption|client|ssh|aws|github|gh|npm|database|db)_?)?key$/i;
-const SENSITIVE_CONNECTION_SEGMENT = /(?:^|_)(?:db|database|postgres(?:ql)?|mysql|mariadb|mongodb|redis|amqp|kafka)(?:_|$)/i;
+const SENSITIVE_KEY_COMPOUND =
+  /^(?:(?:api|access|private|public|signing|encryption|client|ssh|aws|github|gh|npm|database|db)_?)?key$/i;
+const SENSITIVE_CONNECTION_SEGMENT =
+  /(?:^|_)(?:db|database|postgres(?:ql)?|mysql|mariadb|mongodb|redis|amqp|kafka)(?:_|$)/i;
 
 function normalizedSensitiveName(name: string): string {
   return name
@@ -40,10 +43,13 @@ export function isSensitiveEnvName(name: string): boolean {
 
 /** Values are derived at the process boundary and only passed to pure folds. */
 export function sensitiveEnvValues(env: NodeJS.ProcessEnv): readonly string[] {
-  return [...new Set(Object.entries(env)
-    .filter(([name, value]) => isSensitiveEnvName(name) && typeof value === "string" && value.length > 0)
-    .map(([, value]) => value!))]
-    .sort((left, right) => right.length - left.length);
+  return [
+    ...new Set(
+      Object.entries(env)
+        .filter(([name, value]) => isSensitiveEnvName(name) && typeof value === "string" && value.length > 0)
+        .map(([, value]) => value!),
+    ),
+  ].sort((left, right) => right.length - left.length);
 }
 
 /** Pure receipt/log fold: never return a secret value, including overlapping values. */
@@ -55,18 +61,23 @@ export function redactSecretStrings(values: readonly string[], secretValues: rea
   return values.map((value) => redactSecretText(value, secretValues));
 }
 
-export function redactSecretCapture<T extends {
-  stdout: string;
-  stderr: string;
-  error?: string | undefined;
-}>(capture: T, secretValues: readonly string[]): T {
+export function redactSecretCapture<
+  T extends {
+    stdout: string;
+    stderr: string;
+    error?: string | undefined;
+  },
+>(capture: T, secretValues: readonly string[]): T {
   const redacted = {
     ...capture,
     stdout: redactSecretText(capture.stdout, secretValues),
     stderr: redactSecretText(capture.stderr, secretValues),
   };
   if (!("error" in capture)) return redacted;
-  return { ...redacted, error: capture.error === undefined ? undefined : redactSecretText(capture.error, secretValues) };
+  return {
+    ...redacted,
+    error: capture.error === undefined ? undefined : redactSecretText(capture.error, secretValues),
+  };
 }
 
 /**

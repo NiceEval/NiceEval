@@ -2,15 +2,7 @@
 // Journey: the installed candidate instantiates aiSdkAgent around a real AI SDK
 // generateText call, then every observation is read back through public CLI commands.
 
-import {
-  assertExpEvalOutcomes,
-  command,
-  only,
-  type ProcessReceipt,
-  withInspectionRequest,
-  withProcess,
-  withTempDir,
-} from "@niceeval/testkit";
+import { assertExpEvalOutcomes, command, only, type ProcessReceipt, withProcess, withTempDir } from "@niceeval/testkit";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeAll, expect, it } from "vitest";
@@ -91,13 +83,10 @@ it("真实 aiSdkAgent 的 Eval 以通过 verdict 完成", () => {
 // @feature docs/feature/adapters/README.md
 
 it("attempt.trace 读回 aiSdkAgent 的代表性工具证据", async () => {
-  const queried = await withInspectionRequest(
-    { kind: "attempt.trace", locator },
-    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),
-  );
+  const queried = await niceeval.run(["show", locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   const trace = JSON.stringify(document.trace);
   expect(trace).toContain("remember_marker");
   expect(trace).toContain(DIRECT_MARKER);

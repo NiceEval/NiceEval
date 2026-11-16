@@ -54,10 +54,10 @@ adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`—�
 
 ```ts
 // agents/<name>.ts
-import { completeEvidenceCoverage, createSessionSlot, defineAgent, sseJsonFrames, driveFrameStream } from "niceeval/adapter";
+import { completeEvidenceCoverage, createSessionKey, defineAgent, openSseJsonFrames, driveFrameStream } from "niceeval/adapter";
 
 const BASE_URL = process.env.<NAME>_URL ?? "http://127.0.0.1:<port>";  // 应用自己的端口,eval 不代管进程
-const pendingSlot = createSessionSlot<Pending>("<name>/pending");
+const pendingSlot = createSessionKey<Pending>("<name>/pending");
 
 export default defineAgent({
   name: "<name>",
@@ -69,28 +69,39 @@ export default defineAgent({
     const pending = ctx.session.take(pendingSlot);
     if (pending) {
       const approved = input.responses?.[0]?.optionId === "approve";
-      await postApprove(pending.requestId, approved, ctx.signal);
+      try {
+        await postApprove(pending.requestId, approved, ctx.signal);
+      } catch (error) {
+        await pending.cursor.return().catch(() => {});
+        throw error;
+      }
       return readStream(pending.cursor, ctx, pending.stream);
     }
 
     // 正常轮:发请求。session 续接:ctx.session.id 新会话线自然是 undefined,
     // 拿到应用回的 id 后用 ctx.session.capture() 写回(只在还没记过时落地)
-    const res = await fetch(`${BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: input.text, sessionId: ctx.session.id }),
-      signal: ctx.signal,
-    });
+    const cursor = await openSseJsonFrames(ctx, async (signal) => {
+      const res = await fetch(`${BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: input.text, sessionId: ctx.session.id }),
+        signal,
+      });
+      if (!res.ok || res.body === null) throw new Error("Opening the application stream failed");
+      return res.body;
+    }, FrameSchema); // Schema 按应用实际协议声明，帧类型从这里推导。
 
     // 逐帧读 SSE,用官方转换器(有的话)或手写映射翻成 StreamEvent;
     // 碰到审批帧就 ctx.session.set(pendingSlot, pending) 存住现场、返回 waiting;
     // 流正常结束就返回 completed
-    return driveFrameStream(sseJsonFrames(res.body!), reducer, ctx, onFrame);
+    return driveFrameStream(cursor, reducer, ctx, onFrame);
   },
 });
 ```
 
-`driveFrameStream` / `sseJsonFrames` 从 `niceeval/adapter` 导出,是逐帧驱动循环的官方件,五个 adapter 共用思路(langgraph/pi 的自定义帧、claude 的 SDKMessage、codex 的 ThreadEvent 都是这一种传输)。
+`driveFrameStream` / `openSseJsonFrames` 从 `niceeval/adapter` 导出，分别负责逐帧驱动与请求的 Attempt 生命周期。
+五个 adapter 共用这个思路：HTTP 请求使用 `openSseJsonFrames` 提供的稳定 signal，waiting 回调返回不会关闭连接。
+`sseJsonFrames` 则用于调用方自行拥有与关闭 transport 的场景。
 有官方转换器的用官方转换器(`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`),没有的手写一张"帧类型 → StreamEvent"映射表。
 
 事件词汇表(`message` / `operation.started` / `operation.finished` / `input.requested` …)见 [docs-site 事件流参考](../apps/docs-site/zh/reference/events.mdx)。
@@ -104,10 +115,11 @@ export default defineAgent({
 
 adapter 要这样做:
 
-1. Adapter 在模块作用域用 `createSessionSlot<Pending>(name)` 创建自己的 slot。`send` 读到审批帧时**不要关流**——用 `ctx.session.set(slot, pending)` 保存「读了一半的流 + 待批准的 callId」,返回 `waiting` + `input.requested` 事件。slot 由 symbol 身份隔离,不需要模块级 `Map`。
+1. Adapter 在模块作用域用 `createSessionKey<Pending>(name)` 创建自己的 slot。`send` 读到审批帧时用 `ctx.session.set(slot, pending)` 保存读到一半的流与待批准的 callId，返回 `waiting` + `input.requested` 事件。slot 由 symbol 身份隔离，不需要模块级 `Map`。
 2. 下一次 `send`(就是 eval 里的 `t.respond("approve"/"deny")`)先用 `ctx.session.take(slot)` 取回停轮现场(取到即清除)。
    有,就按 `input.responses[0].optionId`(不是读 `text`)判断批准与否,`POST /api/chat/approve`(body 字段名各应用不同!claude/pi 是 `toolUseId`,langgraph 是 `toolCallId`)。
    然后**继续读原来那条流**到结束,把剩余帧作为这一轮的 events 返回。
+   审批失败时立即关闭 cursor；暂停后没有回答时，由 Attempt 最终清理关闭 transport。
 3. 拒绝(`deny`)时,把被拒工具的 `operation.finished` 的 `status` 置 `"rejected"`,不是 `"failed"`。
 
 没有审批流的应用(codex-sdk)跳过这一整节,永远不返回 `waiting`。

@@ -6,12 +6,8 @@ import type {
   BooleanAssertionRegistration,
   CapturedAssertionSnapshot,
 } from "./api.ts";
-import {
-  evaluateNumericComparison,
-  numericComparisonOf,
-  type BooleanMatch,
-  type NumericMaterial,
-} from "./match.ts";
+import { matchedAssertionEvaluation, mismatchedAssertionEvaluation, unavailableAssertionEvaluation } from "./api.ts";
+import { evaluateNumericComparison, numericComparisonOf, type BooleanMatch, type NumericMaterial } from "./match.ts";
 
 export type NumericCriterionSubject =
   | { readonly kind: "explicit-value" }
@@ -41,16 +37,13 @@ function numericCriterion(
   if (comparison === undefined) {
     throw new TypeError("numeric assertion registration requires a managed numeric matcher");
   }
-  return Object.freeze({
+  return {
     kind: "value-match" as const,
-    numeric: Object.freeze({
-      comparator: comparison.comparator,
-      threshold: comparison.threshold,
-      ...(comparison.upperThreshold === undefined ? {} : { upperThreshold: comparison.upperThreshold }),
-      ...(comparison.unit === undefined ? {} : { unit: comparison.unit }),
-      subject: Object.freeze({ ...subject }),
-    }),
-  });
+    numeric: {
+      ...comparison,
+      subject,
+    },
+  };
 }
 
 /**
@@ -68,24 +61,27 @@ export function numericBooleanRegistration<Refined>(input: {
   if (comparison === undefined) {
     throw new TypeError("numeric assertion registration requires a managed numeric matcher");
   }
-  return Object.freeze({
+  return {
     criterion: numericCriterion(input.match, input.criterionSubject),
     subject: input.captured.material,
     coverage: input.captured.coverage,
     limitations: input.captured.limitations,
-    evaluate: () => Effect.sync((): BooleanAssertionEvaluation<Refined> => {
-      const result = evaluateNumericComparison(input.material, comparison);
-      if (result.state === "matched") {
-        return Object.freeze({ state: "matched" as const, value: input.matchedValue(result.value) });
-      }
-      if (result.state === "mismatched") {
-        return Object.freeze({ state: "mismatched" as const, diagnostic: result.diagnostic });
-      }
-      return Object.freeze({
-        state: "unavailable" as const,
-        reason: "source-unavailable" as const,
-        diagnostic: result.diagnostic,
-      });
-    }),
-  });
+    evaluate: () =>
+      Effect.sync((): BooleanAssertionEvaluation<Refined> => {
+        const result = evaluateNumericComparison(input.material, comparison);
+        if (result.state === "matched") {
+          return matchedAssertionEvaluation(input.matchedValue(result.value));
+        }
+        if (result.state === "mismatched") {
+          return mismatchedAssertionEvaluation(result.diagnostic);
+        }
+        return unavailableAssertionEvaluation("source-unavailable", result.diagnostic);
+      }),
+    terminalEvidence: () => [],
+    interruptedMatcherArtifact: undefined,
+    terminalCriterion: () => numericCriterion(input.match, input.criterionSubject),
+    retainedBytes: 0,
+    terminalReceipt: () => undefined,
+    evidence: [],
+  };
 }

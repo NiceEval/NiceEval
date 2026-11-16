@@ -25,7 +25,7 @@ export default defineExperiment({
 #### `models`
 
 ```ts
-models?: Readonly<Record<string, ModelRoleSelection>>;
+models?: Readonly<Record<string, ModelRoleSelection>> | undefined;
 ```
 
 Selects a model for each named model role of a custom Adapter; cannot be combined with the single-model shorthand.
@@ -33,7 +33,7 @@ Selects a model for each named model role of a custom Adapter; cannot be combine
 #### `description`
 
 ```ts
-description?: string;
+description?: string | undefined;
 ```
 
 A one-sentence description shown in the view and CLI; purely informational, it does not affect scheduling or scoring.
@@ -41,7 +41,7 @@ A one-sentence description shown in the view and CLI; purely informational, it d
 #### `adapter`
 
 ```ts
-adapter?: Adapter;
+adapter?: Adapter | undefined;
 ```
 
 The Adapter implementation this Experiment uses.
@@ -49,7 +49,7 @@ The Adapter implementation this Experiment uses.
 #### `model`
 
 ```ts
-model?: string;
+model?: string | undefined;
 ```
 
 A single model (decided by the Experiment when the agent leaves it empty); omitted = use the agent's native default. To compare models, write several Experiment files instead of an array.
@@ -57,7 +57,7 @@ A single model (decided by the Experiment when the agent leaves it empty); omitt
 #### `reasoningEffort`
 
 ```ts
-reasoningEffort?: string;
+reasoningEffort?: string | undefined;
 ```
 
 The model's reasoning effort (such as "low"/"medium"/"high"; valid values depend on the specific model/adapter); omitted = use the agent's native default. Passed to the adapter and eval through ctx.reasoningEffort.
@@ -65,7 +65,7 @@ The model's reasoning effort (such as "low"/"medium"/"high"; valid values depend
 #### `judge`
 
 ```ts
-judge?: JudgeSelection;
+judge?: JudgeSelection | undefined;
 ```
 
 This Experiment's Judge execution configuration. It overrides only the model / endpoint / credential selector / call budget;
@@ -75,7 +75,7 @@ Experiment → Eval → Config → built-in default.
 #### `flags`
 
 ```ts
-flags?: globalThis.Record<string, FlagValue>;
+flags?: globalThis.Record<string, FlagValue> | undefined;
 ```
 
 Experiment conditions (the feature flags in an A/B), declared by the Experiment file; must be a flat scalar object
@@ -85,7 +85,7 @@ Experiment conditions (the feature flags in an A/B), declared by the Experiment 
 #### `labels`
 
 ```ts
-labels?: globalThis.Record<string, string | number>;
+labels?: globalThis.Record<string, string | number> | undefined;
 ```
 
 Report grouping labels: the Experiment's coordinates on each comparison axis (such as `{ line: "codex", memory: "mempal" }`).
@@ -98,7 +98,7 @@ See docs/feature/experiments/library/README.md "labels".
 #### `attempts`
 
 ```ts
-attempts?: number;
+attempts?: number | undefined;
 ```
 
 How many times to repeat the same eval (each result counts as one attempt); defaults to 1 when omitted or when CLI `--attempts` overrides it.
@@ -106,7 +106,7 @@ How many times to repeat the same eval (each result counts as one attempt); defa
 #### `earlyExit`
 
 ```ts
-earlyExit?: boolean;
+earlyExit?: boolean | undefined;
 ```
 
 Within a repetition (attempts &gt; 1), whether to skip the remaining repeats after one attempt passes; defaults to false when omitted (`attempts` run in full to measure the complete pass rate).
@@ -115,7 +115,7 @@ Within a repetition (attempts &gt; 1), whether to skip the remaining repeats aft
 #### `evals`
 
 ```ts
-evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean);
+evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean) | undefined;
 ```
 
 Which evals this Experiment covers: `"*"` for all, a string array matched by id prefix, or a custom predicate (which receives each discovered and fanned-out
@@ -127,7 +127,7 @@ candidate eval of this invocation, and the result becomes the in-memory `selecte
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 Overrides the project-level / CLI per-attempt timeout (milliseconds), only for this Experiment.
@@ -135,7 +135,7 @@ Overrides the project-level / CLI per-attempt timeout (milliseconds), only for t
 #### `sandbox`
 
 ```ts
-sandbox?: SandboxLayer;
+sandbox?: SandboxLayer | undefined;
 ```
 
 The Sandbox declaration layer this Experiment contributes. It is linked pairwise with the same field of each selected Eval;
@@ -144,15 +144,23 @@ in each pair, exactly one side provides a template-bearing layer.
 #### `sandboxCache`
 
 ```ts
-sandboxCache?: SandboxCacheConfig;
+sandboxCache?: SandboxCacheConfig | undefined;
 ```
 
 The Host's execution cache policy; unlike the Sandbox declaration layer, this field does not take part in identity computation.
 
+#### `sandboxLabels`
+
+```ts
+sandboxLabels?: "run-only" | undefined;
+```
+
+Emit only Run-level Provider labels, omitting the Attempt and Eval creation labels. Does not affect execution identity.
+
 #### `plugins`
 
 ```ts
-plugins?: readonly PluginInstance<"experiment">[];
+plugins?: readonly PluginInstance<"experiment">[] | undefined;
 ```
 
 The list of Plugin instances this Experiment declares explicitly, normalized by `defineExperiment()`.
@@ -160,7 +168,7 @@ The list of Plugin instances this Experiment declares explicitly, normalized by 
 #### `sandboxReuse`
 
 ```ts
-sandboxReuse?: boolean;
+sandboxReuse?: boolean | undefined;
 ```
 
 Reuse Sandboxes within the same Run; such runs are isolated from history carry in both directions.
@@ -168,7 +176,7 @@ Reuse Sandboxes within the same Run; such runs are isolated from history carry i
 #### `sharedState`
 
 ```ts
-sharedState?: SharedStateConfig;
+sharedState?: SharedStateConfig | undefined;
 ```
 
 Declares shared external state this Experiment needs exclusively. Invocations with the same key in the same project
@@ -179,7 +187,7 @@ and continue their own plan after acquiring the lease. It is not a state store, 
 #### `budget`
 
 ```ts
-budget?: number;
+budget?: number | undefined;
 ```
 
 This Experiment's estimated spend limit (USD). The scheduler accumulates the `estimatedCostUSD` of finished attempts; that value is
@@ -190,7 +198,7 @@ attempts that have not started are skipped and `run:budgetExceeded` is reported 
 #### `maxConcurrency`
 
 ```ts
-maxConcurrency?: number;
+maxConcurrency?: number | undefined;
 ```
 
 This Experiment's own concurrency limit within this Invocation: the scheduler throttles only this Experiment's attempts; other Experiments in the batch are unaffected
@@ -204,7 +212,7 @@ It does not span Invocations; for shared external state across Invocations, decl
 #### `before`
 
 ```ts
-before?: ExperimentHook;
+before?: ExperimentHook | undefined;
 ```
 
 The before side of the Experiment-level lifecycle hook pair: at most once per run, on the host side, for host resources that are "one per Experiment, shared by all attempts"
@@ -219,7 +227,7 @@ See docs/feature/experiments/architecture/README.md "Experiment-level lifecycle"
 #### `after`
 
 ```ts
-after?: ExperimentHook;
+after?: ExperimentHook | undefined;
 ```
 
 The after side of the Experiment-level lifecycle hook pair: runs after all of this Experiment's attempts finish (also when the run is interrupted),

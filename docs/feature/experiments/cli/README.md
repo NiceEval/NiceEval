@@ -26,20 +26,28 @@ niceeval invocation show <invocation-id> [--json]
 
 `exp` 的位置参数先选择 Experiment ID 或路径前缀，再用后续 Eval ID 前缀收窄。它们只能缩小 Experiment 自己的 `evals` 选择，不能把未选中的 Eval 加回计划。
 
-`--experiment` 可重复指定离散的精确 Experiment ID，不做前缀扩展。重复 ID 只执行一次；任一 ID 不存在时整次选择失败，不启动部分集合。
+`--experiment` 可重复，每个值是精确 Experiment ID，或以 `/` 结尾的目录前缀（如 `harness/`）。目录前缀选中该目录下全部 Experiment，不做其它前缀扩展。
+展开后重复的 ID 只执行一次；任一值零命中时整次选择失败，不启动部分集合。零命中报错列出可用的目录前缀与精确 ID，列出的每个值都能原样传给 `--experiment`。
 使用该选项时，全部位置参数解释为 Eval ID 前缀。选中的实验属于同一次 Invocation，共用全局 `--max-concurrency`、预算与 Record root，每个实验仍建立自己的 Run。
 
 ### `exp list`
 
 `exp list` 只做发现和配置求值，不建立 Invocation、不取锁、不启动 Sandbox，也不写 Record。每行显示 Experiment、Agent、model、attempts、已选 Eval 数和 labels；不打印凭据或完整 flags。
+labels 以 `labels: cohort=baseline, size=3` 这样的摘要显示；没有标签时显示 `labels: none`，不打印 JSON 对象。
 
 精确 Experiment ID 优先。否则目录段精确匹配，最后一段允许前缀匹配。Experiment 零命中与 Eval 零命中都是具名错误，不降级为空 Invocation。
+
+Experiment ID 由文件路径推出，选择先于加载：给了 Experiment selector 的命令只 import 命中的文件。
+未选中的文件不求值，它在加载期抛错或访问网络都不影响本次命令；选中文件的加载失败照常报错。省略 selector 时加载全部。
 
 ### `--dry`
 
 `--dry` 在固定 cutoff 运行 `project-target/v2`，展示 policy identity、effective options、
 每个目标位置的当前 reuse / gap，以及本次 reuse / execute 动作。完整人读形态见
 [dry plan 输出案例](output/dry-plan.md)。
+
+人读原因使用 [Inspection 的人读短语](../../inspection/cli.md#当前-results)；不打印 `gap` 或原因码。
+同一行的相同原因聚合为 `Not run yet ×4`，不同原因分别计数；机器计划保留逐位置的完整原因与 issues。
 
 reuse planning 先精确比较当前与历史 Core expected Planned attempt 的组合 `executionIdentityDigest`，并要求历史 Core
 Attempt outcome 为 `completed`。它从 Assertions 折叠可采用 Verdict，再从 Observability 读取完整真实 timing。
@@ -83,13 +91,16 @@ TTY 人读输出不把整棵树放入一个总框。总览、Experiment、lane�
 
 Human 的 lane 顺序固定为 Group before actions → physical enter → Planned attempts → physical exit → Group after actions。Physical after 与 Provider finalizer 因而始终列在使用该实例的 Planned attempt 工作之后。
 
-可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `opaque`。每个 action 使用独立圆角框，显示 owner、phase、occurrenceKind 与推导依据。
+可声明的 `shell()` / `command()` 展开为具体命令；不能安全检查的 callback 标为 `RUNTIME ONLY`。每个 action 使用独立圆角框，显示 owner、阶段、执行时机与推导依据。
 
-同一框显示 `declarationOrder: { owner, ordinal }`、`dependencies` 与 `executionOrder: { occurrencePath, topologicalOrdinal, guarantee }`。ordinal 只属于当前 occurrence，不是运行时全局序号；guarantee 区分 `ordered-within-occurrence` 与 `unordered-across-lanes`。
+同一框用普通短语显示声明顺序、依赖与执行顺序；`--json` 保留 `declarationOrder`、`dependencies` 与 `executionOrder` 的完整结构。
+ordinal 只属于当前 occurrence，不是运行时全局序号；Human 说明顺序只在本生命周期内保证，以及其它 Eval 组能否并发。
 
-before action 还显示求值后的 `changeFrequency`、`explicit | defaulted` 声明状态、`schedulingReason`、prefix digest、eligibility 与 Provider cache capability。capability 取 `run-prepared | attempt-captured | unsupported`，与 [Provider 能力](../../sandbox/architecture/before-cache.md#provider-能力)一一对应，让用户在运行前知道这批准备能加速到什么程度；缓存查询固定显示 `not-probed`，不因计划阶段评估库存。
+before action 还显示求值后的 `changeFrequency`、声明来源、排序理由与 Provider 缓存能力。
+Human 将能力写成 `prepared before attempts`、`saved after an attempt` 或 `not supported by this provider`，对应机器值 `run-prepared | attempt-captured | unsupported`。
+缓存查询写成 `cache lookup: not checked`，不因计划阶段评估库存；机器字段仍为 `not-probed`。
 
-数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 显示 `not-applicable`。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
+数值恰为 10、100、1000 时附对应标签；省略时显示 `100 · normal · defaulted`，非法数值在 planning 报错。after 说明排序不适用。Direct Agent 显式显示没有 Sandbox 或 template，而不是省略 Provider 起点。
 
 每个真实 `sandbox.create` 节点还显示 template owner、provider、kind 与 configured locator。`Exact` 只表示逐字复述作者配置的非秘密起点。它不保证 image tag 已固定为 digest、远端资源或 Dockerfile / Compose 内容已冻结，也不代表 BuildKey 或最终实例字节。
 
@@ -109,8 +120,10 @@ Human 的结构化字段在统一终端出口把 C0、C1、ESC 与 tab/carriage 
 该文档不带 dry matrix、reuse、carry 或 Plugin audit 顶层字段。Locator 使用 `_tag: "Exact" | "Redacted" | "Opaque"`。前两种带非空、字段名唯一的 `fields`；`Redacted` 另带只指向已有字段的 `redactions`，`Opaque` 带结构化 `reason`。
 
 真实 `exp` 结束页与机器 terminal envelope 的 `summary.beforeCaches` 从同一份稳定结算读取准备结果。它按本次 Invocation 准备图的唯一节点计数 `total / hit / prepared / degraded / failed`，与[节点终态](../../sandbox/architecture/remote-snapshot-cache.md#run-级节点结算)一一对应；多个 Eval 或 Attempt 消费同一 node 不重复计数，也不与 result reuse、`sandboxReuse` 或 task-build cache 合并。运行中的 activity 仍只是 live 反馈，不承担最终结算。
+Invocation 在准备阶段被取消时，`total` 仍是准备图的唯一节点数，四类只计取消前已实际结算的节点；取消前已完成的结算原样保留，不清零。
+取消时尚未结算的节点不归入任何一类，也不改记为 `degraded` 或 `failed`；其数量是 `total` 与四类之和的差。人读结束页在差值大于零时写出 `<n> not settled`，机器 envelope 不新增字段。
 
-`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、ensure 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
+`debug` 不执行 Experiment、Plugin、Sandbox 或 Agent 的 before、after、cleanup、test、install 或 finalizer,也不 lookup cache、不创建 Invocation、Run、持久事实、锁、Sandbox 或 build。它会加载 `.env`、求值受信任定义与 Experiment 的 `evals` predicate；Provider planner 也可以读文件、调用只读 CLI、查询 Docker control plane 或远端 API。NiceEval 保证自己不发起资源变更，但不能保证受信任模块求值或远端服务不产生自身副作用、审计日志或缓存。
 
 计划把 Experiment 配置的全部 attempts 都列成候选 dispatch Planned attempt。这不是实际运行保证：正常 `exp` 仍可能因 carry、首过即停、预算、fail-fast 或取消而阻止某个 Planned attempt 启动。`debug` 只接受 `--json`；`--help` 与 `--version` 仍由全局 CLI 处理。
 
@@ -190,7 +203,7 @@ Runner 只投影实际生命周期阶段，Adapter、Sandbox provider 与用户 
 | `sandbox.queue` | waiting for sandbox |
 | `sandbox.create` | creating sandbox |
 | `sandbox.prepare.*` | preparing sandbox |
-| `agent.ensure` | preparing agent |
+| `agent.install` | preparing agent |
 | `agent.before` | agent before |
 | `eval.run` / `agent.run` | running eval |
 | `workspace.diff` | capturing diff |
@@ -294,6 +307,8 @@ Pass 未通过、Score gate 失败、execution error、结果缺口、中断和�
 `RESULTS` 以 run configuration 为一个有界 row/block，按 plan 稳定排序。Pass Eval 显示通过读数；Score Eval
 按 Eval 分 cell 或续行，显示 `passed + complete` Attempts 的 earned mean 与 `ranked / published`。`failed + complete`
 保留审计数值但不进入成功均值；partial 只显示已知下界，unavailable 不制造数字。
+最多显示五个 Experiment，每个最多五个 Eval；相同的未排名读数与部分得分下界按 `×N` 聚合，最多显示五种。
+其余以 `+N more` 指向末尾 `NEXT` 的完整结果入口。
 
 Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；execution error 不按 phase、code 或 Provider 类型
 合并。每个单条目显示这一条 Attempt 自己的断言摘要或安全有界的 `error:`，并紧跟可复制的
@@ -309,8 +324,9 @@ Attempt 已经创建时，断言不通过仍可按稳定失败形态聚合；exe
 “真实错误”指这个不经 renderer 推测或改写的安全消息，不是未经安全处理的原始字节。完整形态见
 [Attempt 失败输出案例](output/attempt-failures.md)。
 
-Human 最多显示五个 run configuration block；其余项显示准确省略数。`NEXT` 仍为每个已进入 receipt 的 Run
-给出命令，被省略的 Run 不会因此失去下钻入口。
+Human 最多显示五个 run configuration block；其余项显示准确省略数。
+整条命令只有末尾一个 `NEXT`，最多三行。优先给出代表 Run 的 `show` 与 `view`；其它 Run 用一行
+`+N more — niceeval run list --invocation <invocation-id>` 指向完整清单。
 合法零分必须显示成 `0 score · complete`，不能省略或当成 unavailable。
 
 Attempt 创建前的共享失败另列 `ERRORS`，包括共享任务构建与[派发前 Sandbox 准备](#派发前-sandbox-准备)。Human 显示所属 run configuration、没有启动的 Attempt 数量、
@@ -319,20 +335,19 @@ Attempt 创建前的共享失败另列 `ERRORS`，包括共享任务构建与[�
 有界正文同时保留开头与结尾，中间以省略字节数相连；Provider 错误的真正原因通常在长路径之后，只保留前缀会把它截掉。
 `exp --json` 在同一时刻输出一条带 run configuration 与同一安全正文的 `diagnostic` 事件。
 
-`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show --run <runId>` 与
-`niceeval view --run <runId>` 以用户可理解的 Attempt 和错误说明呈现完整上下文。
+`not-dispatched` 仍是机器 membership，不能替代错误原因；后续 `niceeval show run:<runId>` 与
+`niceeval view run:<runId>` 以用户可理解的 Attempt 和错误说明呈现完整上下文。
 这组事实复用现有 Run-owned `niceeval.runner-diagnostics` source，在其 attachment 中追加可选的
 `affectedSlotIds` 关联，由 Inspection 投影为 `affectedPlannedAttemptIds`。历史 Run 未采集错误或关联时不补造；
 没有错误事实时继续只显示 membership。
 
 shared failure identity 只供内部关联同一次物理失败，不是错误码或用户概念。Human 不展示 `n1`、BuildKey、
 timing node、failureId 或共享机制名称。Attempt 创建前不存在 locator，不能伪造 Attempt 详情；只有 Run
-正式进入 receipt 后，`NEXT` 才按 run configuration 配对显示两行命令，不能使用尚未发布的 draft Run ID：
+正式进入 receipt 后，`NEXT` 才显示代表 Run 的两行命令，不能使用尚未发布的 draft Run ID：
 
 ```text
-<experimentId>
-  show: niceeval show --run <runId>
-  view: niceeval view --run <runId>
+show: niceeval show run:<runId>
+view: niceeval view run:<runId>
 ```
 
 没有创建任何 Run 时，`NEXT` 只显示 `No Runs were created for this invocation.`。
@@ -363,6 +378,10 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 `niceeval run list --invocation <invocationId>` 找回已创建 Run。
 
 ## `--json`
+
+运行反馈使用 NDJSON，由 `event` 或终态 `type: "receipt"` 判别。`exp list`、`--dry` 与 rename 的 JSON 各为单个文档。
+这些即时输出均不带 `protocol`、`format` 或 `schemaVersion`；同一安装候选提供严格解码器。
+`niceeval/experiment/host` 的 `decodeExpStartEvent()` 严格读取首条 `start`，其余进度与 receipt 使用各自的解码器。
 
 普通 `exp --json` 输出当前进程的 NDJSON 反馈，最后恰好一条 receipt。显式 sharedState recovery 明确拒绝
 `--json`，因为它不建立 Invocation 或 receipt，也没有 NDJSON 形状。完整形态见

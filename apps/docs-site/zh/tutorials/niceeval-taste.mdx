@@ -94,7 +94,6 @@ export default defineScoreEval({
     // 验收需要查询结果和后续建议，交给 Judge 的是完整交互历史。
     t.closeQA("最后的带伞建议是否符合工具返回的天气，且理由没有编造天气事实？", {
       maxMaterialBytes: 256 * 1024,
-      maxAuditBytes: 1024 * 1024,
     }).score(80).label("建议有依据");
 
     t.maxTokens(10_000).gate().label("用量上限");
@@ -126,9 +125,9 @@ export default defineScoreEval({
 
 评质量时不要先筛掉失败的调用、拒绝或澄清，它们本身就是表现的一部分。
 
-完整历史有采集上限，所有 Adapter 都受此限制：单项消息、工具输入或工具输出的文本最多保留 16,384 字节。超限时，`show --execution` 的 Conversation 显示 `partial`，限制原因包含 `text-truncated`。Adapter 声明事件、消息或工具调用不完整时，完整历史也会是 `partial`。
+完整历史有采集上限，所有 Adapter 都受此限制：单项消息、工具输入或工具输出的文本最多保留 16,384 字节。超限时，`show execution` 的 Conversation 显示 `partial`，限制原因包含 `text-truncated`。Adapter 声明事件、消息或工具调用不完整时，完整历史也会是 `partial`。
 
-这时 `closeQA(问题)` 的材料会显示 `partial / provider-limited`，检查为 `unavailable / source-unavailable`；这里的 `provider-limited` 不一定来自 Adapter。该检查若参与计分，计分制 Attempt 会是 `errored`。用 `query` 读取断言详情可查看原因，步骤见[查看结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
+这时 `closeQA(问题)` 的材料会显示 `partial / provider-limited`，检查为 `unavailable / source-unavailable`；这里的 `provider-limited` 不一定来自 Adapter。该检查若参与计分，计分制 Attempt 会是 `errored`。用 `show --json` 读取断言详情可查看原因，步骤见[查看结果](/zh/tutorials/viewing-results#看一条断言具体为什么得这个分)。
 
 问题只需要任务、命令输入与回复时，可以把这些事实显式交给 `t.judge`。下面的例子需要项目已配置 Judge；它检查命令调用与完成说明是否符合任务，不评价文件正文是否正确：
 
@@ -136,9 +135,7 @@ export default defineScoreEval({
 import { defineScoreEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const judge = defineJudge({
-  name: "command-and-reply",
-  rubric: "命令输入符合任务，调用状态为 completed，回复准确说明完成了什么。",
+const judge = defineJudge({ rubric: "命令输入符合任务，调用状态为 completed，回复准确说明完成了什么。",
 });
 
 export default defineScoreEval({
@@ -169,6 +166,26 @@ export default defineScoreEval({
 - `reply.includes("抱歉")`：关键词看不出拒绝是否合理，这需要 Judge 结合上下文判断。
 
 用量和耗时也有现成的检查。`t.maxTokens(n)` 和 `t.maxCost(usd)` 比较 Adapter 上报的用量，`t.elapsedMs` 是这次运行的墙钟时间，交给 `atMost` 比较即可。不要在评估里自己累计日志、维护模型价格表，也不要把缺失的 token 补成 0。Adapter 没有上报的调用不会出现在 `t.usage` 里，字段存在不代表所有外部调用都被记下了。
+
+### 要去现场找证据的，交给 Agent Judge
+
+有些判据要看的东西不在回复里，而是散在运行环境里：Agent 改了哪些文件、写的代码怎么组织、命令能不能跑通。
+不要先写脚本把这些内容收集起来、压缩到材料上限再交给 Judge，脚本漏收什么，Judge 就看不见什么。
+被测对象有 Sandbox 时，用 `defineAgentJudge` 定义一个评审者，`t.agentJudge(reviewer, material)` 开一次评审会话，
+再用 `review.judge(prompt)` 逐题打分。评审会自己读文件、跑命令，同一会话里后面的题能接着用前面看过的内容。
+能直接读到的事实仍然用确定性检查；回复这类已经在手上的材料，仍然交给普通 Judge，它更便宜、更稳定。
+
+一个会话里的题逐题处理，题多时判分会很慢，会话还可能撞上 `timeoutMs`（默认 600 秒）。互不依赖的几组题，拆成几个评审者并都写 `concurrent: true`：登记顺序上相邻的 `concurrent` 会话会一起执行。它们共用同一个 Sandbox，彼此看不到对方的结论，也不保证看到对方写入的文件；只有确实不依赖彼此现场的题才这样拆。拆开后每个会话都有自己的开场和取证，花费会多一些。
+
+```ts
+const reviewDesign = defineAgentJudge({ instructions: "评审 Experiment 与 Adapter 的设计。", concurrent: true });
+const reviewEvals = defineAgentJudge({ instructions: "评审 Eval 的输入与断言。", concurrent: true });
+```
+
+### 判据平铺写在打分的地方
+
+每一项检查按顺序写在评估正文里，问什么、给几分、叫什么名字都放在一处。
+不要先把判据装进 `[名字, 分值, 问题]` 数组，再用循环登记：读者要在数组和循环之间来回对照，才知道某一项扣什么分。几项写法相近，重复几行也没关系。
 
 ## 交付前的共同检查
 
@@ -217,6 +234,8 @@ Judge 打分这类 0 到 1 的测量值，用 `.gate(minimum)` 设最低分，�
 - Judge 拿到了完整的相关材料吗？问题能根据这些材料回答吗？
 - 缺记录、缺 token、未知费用和超出容量，都保留为不可判定，而不是零吗？
 - 不打开函数实现，能读出状态、数量、阈值和组合关系吗？
+- 每项判据的问题和分值就写在登记它的那一行吗？有没有藏进数组再用循环登记？
+- 有没有为了给 Judge 准备材料而写取证脚本？要在运行环境里找证据的判据，交给 Agent Judge 了吗？
 - 每项检查都能读成“哪个事实，用哪个 Match 比较”吗？能用现成 Match 组合的，有没有写成手算的布尔值或计数？
 - 自定义 Match 只在组合器表达不了时才出现吗？它有没有被起一个多余的业务名字？
 - 得分和门槛都能直接看到吗？前提不满足时，依赖它的后续检查停下了吗？

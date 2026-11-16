@@ -1,19 +1,20 @@
-// Agent Ensure 协议实现:probe → 缺失时按 identity 配对 installer → install → 同一 probe 复检。
-// 契约单源:docs/feature/adapters/architecture/agent-ensure.md
+// Agent Install 协议实现:probe → 缺失时按 identity 配对 installer → install → 同一 probe 复检。
+// 契约单源:docs/feature/adapters/architecture/agent-install.md
 //
-// Runner 接线(run.ts / attempt.ts)由串行合流节点完成;本模块导出可调用的 Ensure API、
+// Runner 接线(run.ts / attempt.ts)由串行合流节点完成;本模块导出可调用的 Install API、
 // Run 级 prepare single-flight 协调器,以及给 configHash 用的身份投影。
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Data, Deferred, Effect, Exit, Option, Schema } from "effect";
+import { stripVTControlCharacters } from "node:util";
+import { Data, Deferred, Effect, Exit, Option, Result, Schema } from "effect";
 import type { Sandbox, SandboxOperations } from "../sandbox/types.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
-import { isRegisteredSandboxContent } from "../sandbox/content.ts";
+import { isRegisteredSandboxContent, prepareRegisteredSandboxContentFile } from "../sandbox/content.ts";
 import type { SandboxCommandContext, SandboxCommandTarget } from "../sandbox/commands.ts";
 import type {
   AgentArtifactPlatform,
-  AgentEnsure,
+  AgentInstall,
   AgentIdentity,
   AgentInstaller,
   AgentStagedArtifact,
@@ -34,7 +35,7 @@ export interface ArtifactPrepareTimingHook {
   ): Effect.Effect<A, E, R>;
 }
 
-export interface AgentEnsureContext {
+export interface AgentInstallContext {
   /** Run 级 prepare 协调器;多 attempt 应共享同一实例。 */
   readonly coordinator: Option.Option<ArtifactPrepareCoordinator>;
   /** ProviderPlan 已经确定的目标平台；实际 uname/ldd 只负责验证它，不反向决定制品。 */
@@ -43,8 +44,14 @@ export interface AgentEnsureContext {
   progress(update: { message: string }): void;
 }
 
-export type AgentEnsureResult =
+export type AgentInstallResult =
   | { readonly outcome: "hit"; readonly identity: AgentIdentity }
+  | {
+      readonly outcome: "repaired";
+      readonly identity: AgentIdentity;
+      readonly installMode: "staged" | "sandbox-network";
+      readonly targetPlatform: AgentArtifactPlatform;
+    }
   | {
       readonly outcome: "installed";
       readonly identity: AgentIdentity;
@@ -59,7 +66,7 @@ export type AgentEnsureResult =
       readonly targetPlatform: AgentArtifactPlatform;
     };
 
-export type AgentEnsureFailureReason =
+export type AgentInstallFailureReason =
   | "coordinator-missing"
   | "probe-failed"
   | "installer-missing"
@@ -71,9 +78,9 @@ export type AgentEnsureFailureReason =
   | "install-failed"
   | "recheck-missed";
 
-/** Runner 的 agent.ensure 失败通道；attempt 层只消费这一种具名 ADT。 */
-export class AgentEnsureError extends Data.TaggedError("AgentEnsureError")<{
-  readonly reason: AgentEnsureFailureReason;
+/** Runner 的 agent.install 失败通道；attempt 层只消费这一种具名 ADT。 */
+export class AgentInstallError extends Data.TaggedError("AgentInstallError")<{
+  readonly reason: AgentInstallFailureReason;
   readonly phase: "probe" | "installer" | "install" | "recheck";
   readonly identity: AgentIdentity;
   readonly message: string;
@@ -92,20 +99,25 @@ export function verifySandboxTargetPlatform(
 ): Effect.Effect<AgentArtifactPlatform, SandboxTargetVerificationError> {
   return Effect.tryPromise({
     try: () => detectSandboxPlatform(sandbox),
-    catch: (cause) => new SandboxTargetVerificationError({
-      planned,
-      actual: { _tag: "Unreadable", detail: errorMessage(cause) },
-      message: `Cannot verify Sandbox platform against planned target ${platformKey(planned)}: ${errorMessage(cause)}`,
-    }),
-  }).pipe(Effect.flatMap((actual) =>
-    platformKey(actual) === platformKey(planned)
-      ? Effect.succeed(actual)
-      : Effect.fail(new SandboxTargetVerificationError({
-          planned,
-          actual,
-          message: `Sandbox platform ${platformKey(actual)} does not match planned target ${platformKey(planned)}.`,
-        }))
-  ));
+    catch: (cause) =>
+      new SandboxTargetVerificationError({
+        planned,
+        actual: { _tag: "Unreadable", detail: errorMessage(cause) },
+        message: `Cannot verify Sandbox platform against planned target ${platformKey(planned)}: ${errorMessage(cause)}`,
+      }),
+  }).pipe(
+    Effect.flatMap((actual) =>
+      platformKey(actual) === platformKey(planned)
+        ? Effect.succeed(actual)
+        : Effect.fail(
+            new SandboxTargetVerificationError({
+              planned,
+              actual,
+              message: `Sandbox platform ${platformKey(actual)} does not match planned target ${platformKey(planned)}.`,
+            }),
+          ),
+    ),
+  );
 }
 
 const AgentStagedArtifactShape = Schema.Struct({
@@ -139,30 +151,37 @@ function decodePreparedArtifact(
   value: unknown,
   identity: AgentIdentity,
   targetPlatform: AgentArtifactPlatform,
-): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
+): Effect.Effect<AgentStagedArtifact, AgentInstallError> {
   return Schema.decodeUnknownEffect(AgentStagedArtifactShape)(value).pipe(
-    Effect.mapError((cause) => new AgentEnsureError({
-      reason: "artifact-invalid",
-      phase: "installer",
-      identity,
-      message: String(cause),
-    })),
+    Effect.mapError(
+      (cause) =>
+        new AgentInstallError({
+          reason: "artifact-invalid",
+          phase: "installer",
+          identity,
+          message: String(cause),
+        }),
+    ),
     Effect.flatMap((decoded) => {
       if (!isRegisteredSandboxContent(decoded.content) || decoded.content.kind !== "file") {
-        return Effect.fail(new AgentEnsureError({
-          reason: "artifact-invalid",
-          phase: "installer",
-          identity,
-          message: `staged artifact is missing digest (agent=${identity.agent}).`,
-        }));
+        return Effect.fail(
+          new AgentInstallError({
+            reason: "artifact-invalid",
+            phase: "installer",
+            identity,
+            message: `staged artifact is missing digest (agent=${identity.agent}).`,
+          }),
+        );
       }
       if (platformKey(decoded.platform) !== platformKey(targetPlatform)) {
-        return Effect.fail(new AgentEnsureError({
-          reason: "artifact-invalid",
-          phase: "installer",
-          identity,
-          message: `Prepared artifact platform ${platformKey(decoded.platform)} does not match requested platform ${platformKey(targetPlatform)}.`,
-        }));
+        return Effect.fail(
+          new AgentInstallError({
+            reason: "artifact-invalid",
+            phase: "installer",
+            identity,
+            message: `Prepared artifact platform ${platformKey(decoded.platform)} does not match requested platform ${platformKey(targetPlatform)}.`,
+          }),
+        );
       }
       return Effect.succeed({
         platform: decoded.platform,
@@ -191,6 +210,7 @@ export function assertStableAgentIdentity(identity: AgentIdentity): void {
 }
 
 /** identity (+ 可选制品 digest/platform) → 指纹 / configHash 输入投影。 */
+// Identity/canonical boundary: artifact keys participate in installation fingerprints only when supplied.
 export function agentInstallIdentityInput(
   identity: AgentIdentity,
   artifact?: Pick<AgentStagedArtifact, "content" | "platform">,
@@ -222,7 +242,7 @@ export function platformKey(platform: AgentArtifactPlatform): string {
 }
 
 export function artifactCacheKey(identity: AgentIdentity, platform: AgentArtifactPlatform): string {
-  return `${identity.agent}@${identity.version}+r${identity.revision}|${platformKey(platform)}`;
+  return JSON.stringify([identity.agent, identity.version, identity.revision, platformKey(platform)]);
 }
 
 /**
@@ -241,25 +261,31 @@ export async function detectSandboxPlatform(sandbox: SandboxOperations): Promise
     ].join("\n"),
   );
   if (probe.exitCode !== 0) {
-    throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${(probe.stdout + probe.stderr).trim().slice(0, 200)}`);
+    throw new Error(
+      `Could not detect the target platform from the main Sandbox (uname / ldd): ${(probe.stdout + probe.stderr).trim().slice(0, 200)}`,
+    );
   }
   const [unameS = "", unameM = "", ldd = ""] = probe.stdout.split("\n").map((line) => line.trim());
   const os = unameS.toLowerCase();
-  const arch =
-    unameM === "x86_64" || unameM === "amd64"
-      ? "x64"
-      : unameM === "aarch64" || unameM === "arm64"
-        ? "arm64"
-        : unameM;
+  function targetArchitecture(): string {
+    if (unameM === "x86_64" || unameM === "amd64") return "x64";
+    if (unameM === "aarch64" || unameM === "arm64") return "arm64";
+    return unameM;
+  }
+  const arch = targetArchitecture();
   if (!os || !arch) {
-    throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`);
+    throw new Error(
+      `Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`,
+    );
   }
   if (os === "linux") return { _tag: "Linux", os: "linux", arch, libc: /musl/i.test(ldd) ? "musl" : "gnu" };
   if (os === "darwin") return { _tag: "Darwin", os: "darwin", arch };
   if (os === "windows" || os.startsWith("mingw") || os.startsWith("msys")) {
     return { _tag: "Windows", os: "windows", arch };
   }
-  throw new Error(`Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`);
+  throw new Error(
+    `Could not detect the target platform from the main Sandbox (uname / ldd): ${probe.stdout.trim().slice(0, 200)}`,
+  );
 }
 
 /** 默认宿主 cache 根:`~/.cache/niceeval/agent-artifacts`。 */
@@ -274,10 +300,7 @@ export function defaultArtifactCacheDir(): string {
  */
 export class ArtifactPrepareCoordinator {
   private readonly cache = new Map<string, AgentStagedArtifact>();
-  private readonly inflight = new Map<
-    string,
-    Deferred.Deferred<AgentStagedArtifact, AgentEnsureError>
-  >();
+  private readonly inflight = new Map<string, Deferred.Deferred<AgentStagedArtifact, AgentInstallError>>();
   private readonly timing: ArtifactPrepareTimingHook | undefined;
 
   constructor(timing?: ArtifactPrepareTimingHook) {
@@ -294,12 +317,12 @@ export class ArtifactPrepareCoordinator {
     installer: Extract<AgentInstaller, { installMode: "staged" }>,
     platform: AgentArtifactPlatform,
     signal: AbortSignal,
-  ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
+  ): Effect.Effect<AgentStagedArtifact, AgentInstallError> {
     const key = artifactCacheKey(installer.identity, platform);
     const coordinator = this;
     return Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
-        const fresh = yield* Deferred.make<AgentStagedArtifact, AgentEnsureError>();
+        const fresh = yield* Deferred.make<AgentStagedArtifact, AgentInstallError>();
         // Map 的读写只在同步 Effect 中做:同 key 的并发 fiber 只会选出一个 leader。
         const flight = yield* Effect.sync(() => {
           const cached = coordinator.cache.get(key);
@@ -335,175 +358,231 @@ export class ArtifactPrepareCoordinator {
     platform: AgentArtifactPlatform,
     signal: AbortSignal,
     cacheKey: string,
-  ): Effect.Effect<AgentStagedArtifact, AgentEnsureError> {
+  ): Effect.Effect<AgentStagedArtifact, AgentInstallError> {
     const prepared = Effect.tryPromise({
       // Node 24 的 AbortSignal.any 保留数组中第一个已中断 signal 的 reason。
       // 调用方 signal 排在前面，Effect runtime signal 则确保 fiber interruption 能取消 SDK Promise。
-      try: (runtimeSignal) => Promise.resolve(installer.prepareArtifact({
-        targetPlatform: platform,
-        signal: AbortSignal.any([signal, runtimeSignal]),
-      })),
-      catch: (cause) => new AgentEnsureError({
-        reason: "artifact-prepare-failed",
-        phase: "installer",
-        identity: installer.identity,
-        message: formatEnsureError({
-          identity: installer.identity,
+      try: (runtimeSignal) =>
+        Promise.resolve(
+          installer.prepareArtifact({
+            targetPlatform: platform,
+            signal: AbortSignal.any([signal, runtimeSignal]),
+          }),
+        ),
+      catch: (cause) =>
+        new AgentInstallError({
+          reason: "artifact-prepare-failed",
           phase: "installer",
-          result: { detail: errorMessage(cause) },
+          identity: installer.identity,
+          message: formatInstallError({
+            identity: installer.identity,
+            phase: "installer",
+            result: { detail: errorMessage(cause) },
+          }),
         }),
-      }),
     }).pipe(
       Effect.flatMap((artifact) => decodePreparedArtifact(artifact, installer.identity, platform)),
+      Effect.flatMap((artifact) =>
+        Effect.tryPromise({
+          try: (runtimeSignal) =>
+            prepareRegisteredSandboxContentFile(
+              artifact.content,
+              defaultArtifactCacheDir(),
+              AbortSignal.any([signal, runtimeSignal]),
+            ).then(() => artifact),
+          catch: (cause) =>
+            new AgentInstallError({
+              reason: "artifact-invalid",
+              phase: "installer",
+              identity: installer.identity,
+              message: errorMessage(cause),
+            }),
+        }),
+      ),
     );
     return this.timing === undefined
       ? prepared
       : this.timing.activity(
-        AGENT_ARTIFACT_PREPARE_ACTIVITY,
-        { identity: installer.identity, platform, cacheKey },
-        prepared,
-      );
+          AGENT_ARTIFACT_PREPARE_ACTIVITY,
+          { identity: installer.identity, platform, cacheKey },
+          prepared,
+        );
   }
 }
 
-function formatEnsureError(opts: {
+function formatInstallError(opts: {
   identity: AgentIdentity;
-  phase: "probe" | "recheck" | "verify-only" | "installer";
+  phase: "probe" | "install" | "recheck" | "verify-only" | "installer";
   result?: { detail?: string };
 }): string {
-  return `Agent Ensure failed (agent=${opts.identity.agent}, phase=${opts.phase}): expected ${opts.identity.version}, actual ${"(none)"}. ${opts.result?.detail ?? ""}
-Next: ${opts.phase === "verify-only"
-        ? "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner."
-        : opts.phase === "installer"
-          ? "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool()."
-          : "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task."}`;
+  function installationNextStep(): string {
+    if (opts.phase === "verify-only")
+      return "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner.";
+    if (opts.phase === "installer")
+      return "Use a prebuilt environment with this exact Agent identity, or install it explicitly in the Experiment layer with installTool().";
+    return "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task.";
+  }
+  return `Agent Install failed (agent=${opts.identity.agent}, phase=${opts.phase}): expected ${opts.identity.version}, actual ${"(none)"}. ${opts.result?.detail ?? ""}
+Next: ${installationNextStep()}`;
 }
 
 /**
- * Runner 唯一调用的 Ensure 循环。Adapter 只声明 probe，不能在 setup 内自行绕过。
+ * Runner 唯一调用的 Install 循环。Adapter 只声明 probe，不能在 setup 内自行绕过。
  * 不改题面网络、不按 template 名短路、三种模式失败后不静默降级。
  */
-export function runAgentEnsure(
-  ensures: readonly AgentEnsure[],
+export function runAgentInstall(
+  installs: readonly AgentInstall[],
   installers: readonly AgentInstaller[],
   sandbox: SandboxOperations & Pick<Sandbox, "sandboxId">,
-  context: AgentEnsureContext,
-): Effect.Effect<readonly AgentEnsureResult[], AgentEnsureError> {
+  context: AgentInstallContext,
+): Effect.Effect<readonly AgentInstallResult[], AgentInstallError> {
   const target = createSandboxCommandTarget(sandbox);
   return Effect.gen(function* () {
-    const results: AgentEnsureResult[] = [];
-    for (const ensure of ensures) {
+    const results: AgentInstallResult[] = [];
+    for (const install of installs) {
       yield* Effect.try({
-        try: () => assertStableAgentIdentity(ensure.identity),
-        catch: (cause) => new AgentEnsureError({
-          reason: "probe-failed",
-          phase: "probe",
-          identity: ensure.identity,
-          message: errorMessage(cause),
-        }),
+        try: () => assertStableAgentIdentity(install.identity),
+        catch: (cause) =>
+          new AgentInstallError({
+            reason: "probe-failed",
+            phase: "probe",
+            identity: install.identity,
+            message: errorMessage(cause),
+          }),
       });
-      if (ensure.progress?.checking !== undefined) {
-        context.progress({ message: ensure.progress.checking });
+      if (install.progress?.checking !== undefined) {
+        context.progress({ message: install.progress.checking });
       }
-      const hit = yield* probeMatches(ensure, target, context, "probe");
-      if (hit) {
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
-        results.push({ outcome: "hit", identity: ensure.identity });
+      const probe = yield* probeMatches(install, target, context, "probe");
+      if (probe.hit) {
+        reportInstallFact(install, context, "hit");
+        results.push({ outcome: "hit", identity: install.identity });
         continue;
       }
-      const installer = installers.find((candidate) => sameIdentity(candidate.identity, ensure.identity));
+      const probeDetail = `probe miss: ${probe.reason}`;
+      context.progress({ message: probeDetail });
+      const installer = installers.find((candidate) => sameIdentity(candidate.identity, install.identity));
       if (installer === undefined) {
-        return yield* new AgentEnsureError({
+        return yield* new AgentInstallError({
           reason: "installer-missing",
           phase: "installer",
-          identity: ensure.identity,
-          message: formatEnsureError({ identity: ensure.identity, phase: "installer" }),
+          identity: install.identity,
+          message: formatInstallError({ identity: install.identity, phase: "installer" }),
         });
       }
       if (installer.installMode === "verify-only") {
-        return yield* new AgentEnsureError({
+        return yield* new AgentInstallError({
           reason: "verify-only",
           phase: "installer",
-          identity: ensure.identity,
-          message: formatEnsureError({ identity: ensure.identity, phase: "verify-only" }),
+          identity: install.identity,
+          message: formatInstallError({ identity: install.identity, phase: "verify-only" }),
         });
       }
       const platform = context.targetPlatform;
       if (installer.platforms !== undefined && !installer.platforms.includes(platformKey(platform))) {
-        return yield* new AgentEnsureError({
+        return yield* new AgentInstallError({
           reason: "platform-unsupported",
           phase: "installer",
-          identity: ensure.identity,
-          message: `Agent installer for ${ensure.identity.agent}@${ensure.identity.version} does not support ${platformKey(platform)}.`,
+          identity: install.identity,
+          message: `Agent installer for ${install.identity.agent}@${install.identity.version} does not support ${platformKey(platform)}.`,
         });
       }
-      if (installer.installMode === "staged") {
-        if (installer.progress?.installing !== undefined) {
-          context.progress({ message: installer.progress.installing });
+      let repairFailure: string | undefined;
+      if (installer.repair !== undefined) {
+        if (context.signal.aborted) return yield* Effect.interrupt;
+        context.progress({ message: [installer.progress?.repairing, probeDetail].filter(Boolean).join("; ") });
+        const repaired = yield* Effect.result(
+          Effect.tryPromise({
+            try: (signal) =>
+              Promise.resolve(
+                installer.repair!(target, {
+                  identity: install.identity,
+                  targetPlatform: platform,
+                  signal: AbortSignal.any([context.signal, signal]),
+                  progress: context.progress,
+                }),
+              ),
+            catch: errorMessage,
+          }),
+        );
+        if (context.signal.aborted) return yield* Effect.interrupt;
+        if (Result.isSuccess(repaired)) {
+          const recheck = yield* probeMatches(install, target, context, "recheck");
+          if (recheck.hit) {
+            reportInstallFact(install, context, "repaired", probeDetail);
+            results.push({
+              outcome: "repaired",
+              identity: install.identity,
+              installMode: installer.installMode,
+              targetPlatform: platform,
+            });
+            continue;
+          }
+          repairFailure = recheck.reason;
+        } else {
+          repairFailure = boundedReason(repaired.failure) || "repair failed without a reason";
         }
+      }
+      const detail = [probeDetail, repairFailure === undefined ? undefined : `repair failed: ${repairFailure}`]
+        .filter(Boolean)
+        .join("; ");
+      context.progress({ message: [installer.progress?.installing, detail].filter(Boolean).join("; ") });
+      if (installer.installMode === "staged") {
         const coordinator = yield* Option.match(context.coordinator, {
-          onNone: () => Effect.fail(new AgentEnsureError({
-            reason: "coordinator-missing",
-            phase: "installer",
-            identity: ensure.identity,
-            message: `Run-level ArtifactPrepareCoordinator is required for ${ensure.identity.agent}.`,
-          })),
+          onNone: () =>
+            Effect.fail(
+              new AgentInstallError({
+                reason: "coordinator-missing",
+                phase: "installer",
+                identity: install.identity,
+                message: `Run-level ArtifactPrepareCoordinator is required for ${install.identity.agent}.`,
+              }),
+            ),
           onSome: Effect.succeed,
         });
         const artifact = yield* coordinator.prepare(installer, platform, context.signal);
-        yield* runInstaller(
-          installer,
-          () => installer.install(target, {
-            identity: ensure.identity,
+        yield* runInstaller(installer, () =>
+          installer.install(target, {
+            identity: install.identity,
             targetPlatform: platform,
             artifact,
             signal: context.signal,
             progress: context.progress,
           }),
         );
-        if (ensure.progress?.checking !== undefined) {
-          context.progress({ message: ensure.progress.checking });
+        if (install.progress?.checking !== undefined) {
+          context.progress({ message: install.progress.checking });
         }
-        if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
-          return yield* recheckMissed(ensure.identity);
+        if (!(yield* probeMatches(install, target, context, "recheck")).hit) {
+          return yield* recheckMissed(install.identity);
         }
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
+        reportInstallFact(install, context, "installed", detail);
         results.push({
           outcome: "installed",
-          identity: ensure.identity,
+          identity: install.identity,
           installMode: "staged",
           targetPlatform: platform,
           artifact,
         });
       } else {
-        if (installer.progress?.installing !== undefined) {
-          context.progress({ message: installer.progress.installing });
-        }
-        yield* runInstaller(
-          installer,
-          () => installer.install(target, {
-            identity: ensure.identity,
+        yield* runInstaller(installer, () =>
+          installer.install(target, {
+            identity: install.identity,
             targetPlatform: platform,
             signal: context.signal,
             progress: context.progress,
           }),
         );
-        if (ensure.progress?.checking !== undefined) {
-          context.progress({ message: ensure.progress.checking });
+        if (install.progress?.checking !== undefined) {
+          context.progress({ message: install.progress.checking });
         }
-        if (!(yield* probeMatches(ensure, target, context, "recheck"))) {
-          return yield* recheckMissed(ensure.identity);
+        if (!(yield* probeMatches(install, target, context, "recheck")).hit) {
+          return yield* recheckMissed(install.identity);
         }
-        if (ensure.progress?.ready !== undefined) {
-          context.progress({ message: ensure.progress.ready });
-        }
+        reportInstallFact(install, context, "installed", detail);
         results.push({
           outcome: "installed",
-          identity: ensure.identity,
+          identity: install.identity,
           installMode: "sandbox-network",
           targetPlatform: platform,
         });
@@ -517,63 +596,117 @@ function sameIdentity(a: AgentIdentity, b: AgentIdentity): boolean {
   return a.agent === b.agent && a.version === b.version && a.revision === b.revision;
 }
 
+function boundedReason(text: string): string {
+  const cleaned = stripVTControlCharacters(text).replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/gu, "");
+  return Array.from(
+    cleaned
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1) ?? "",
+  )
+    .slice(0, 200)
+    .join("");
+}
+
+function reportInstallFact(
+  install: AgentInstall,
+  context: AgentInstallContext,
+  outcome: "hit" | "repaired" | "installed",
+  detail?: string,
+): void {
+  context.progress({
+    message: [install.progress?.ready, `agent.install ${outcome}`, detail].filter(Boolean).join("; "),
+  });
+}
+
 function probeMatches(
-  ensure: AgentEnsure,
+  install: AgentInstall,
   sandbox: SandboxCommandTarget,
-  context: AgentEnsureContext,
+  context: AgentInstallContext,
   phase: "probe" | "recheck",
-): Effect.Effect<boolean, AgentEnsureError> {
+): Effect.Effect<{ readonly hit: true } | { readonly hit: false; readonly reason: string }, AgentInstallError> {
   return Effect.tryPromise({
-    try: () => Promise.resolve(ensure.probe(sandbox, {
-      phase: "before",
-      owner: { kind: "experiment", id: `agent.ensure/${ensure.identity.agent}` },
-      attempt: { id: "agent.ensure", index: 0 },
-      signal: context.signal,
-      progress: context.progress,
-      diagnostic: () => {},
-      onCleanup: () => {},
-    } satisfies SandboxCommandContext)).then(() => true),
+    try: () =>
+      Promise.resolve(
+        install.probe(sandbox, {
+          phase: "before",
+          owner: { kind: "experiment", id: `agent.install/${install.identity.agent}` },
+          attempt: { id: "agent.install", index: 0 },
+          signal: context.signal,
+          progress: context.progress,
+          diagnostic: () => {},
+          onCleanup: () => {},
+
+          evalGroup: undefined,
+        } satisfies SandboxCommandContext),
+      ).then(() => ({ hit: true as const })),
     catch: (cause) => cause,
   }).pipe(
-    Effect.catch((cause) => cause instanceof SandboxCommandExitError
-      ? Effect.succeed(false)
-      : Effect.fail(new AgentEnsureError({
-          reason: "probe-failed",
-          phase,
-          identity: ensure.identity,
-          message: `${formatEnsureError({ identity: ensure.identity, phase })}: ${errorMessage(cause)}`,
-        }))),
+    Effect.catch((cause) =>
+      cause instanceof SandboxCommandExitError
+        ? Effect.succeed({
+            hit: false as const,
+            reason: boundedReason(cause.result.stderr) || `probe exited ${cause.result.exitCode} without a reason`,
+          })
+        : Effect.fail(
+            new AgentInstallError({
+              reason: "probe-failed",
+              phase,
+              identity: install.identity,
+              message: `${formatInstallError({ identity: install.identity, phase })}: ${errorMessage(cause)}`,
+            }),
+          ),
+    ),
   );
 }
 
 function runInstaller(
   installer: Exclude<AgentInstaller, { installMode: "verify-only" }>,
   install: () => void | Promise<void>,
-): Effect.Effect<void, AgentEnsureError> {
+): Effect.Effect<void, AgentInstallError> {
   return Effect.tryPromise({
     try: () => Promise.resolve(install()),
-    catch: (cause) => new AgentEnsureError({
-      reason: "install-failed",
-      phase: "install",
-      identity: installer.identity,
-      message: formatEnsureError({
+    catch: (cause) =>
+      new AgentInstallError({
+        reason: "install-failed",
+        phase: "install",
         identity: installer.identity,
-        phase: "recheck",
-        result: { detail: errorMessage(cause) },
+        message: formatInstallError({
+          identity: installer.identity,
+          phase: "install",
+          result: { detail: errorMessage(cause) },
+        }),
       }),
-    }),
   });
 }
 
-function recheckMissed(identity: AgentIdentity): AgentEnsureError {
-  return new AgentEnsureError({
+function recheckMissed(identity: AgentIdentity): AgentInstallError {
+  return new AgentInstallError({
     reason: "recheck-missed",
     phase: "recheck",
     identity,
-    message: formatEnsureError({ identity, phase: "recheck" }),
+    message: formatInstallError({ identity, phase: "recheck" }),
   });
 }
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
+
+/** Compatibility name for AgentInstallContext.
+ * @deprecated Use AgentInstallContext.
+ */
+export type AgentEnsureContext = AgentInstallContext;
+/** Compatibility name for AgentInstallResult.
+ * @deprecated Use AgentInstallResult.
+ */
+export type AgentEnsureResult = AgentInstallResult;
+/** Compatibility name for AgentInstallFailureReason.
+ * @deprecated Use AgentInstallFailureReason.
+ */
+export type AgentEnsureFailureReason = AgentInstallFailureReason;
+/** Compatibility name for AgentInstallError.
+ * @deprecated Use AgentInstallError.
+ */
+export { AgentInstallError as AgentEnsureError };

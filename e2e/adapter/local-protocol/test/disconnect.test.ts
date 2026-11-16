@@ -6,7 +6,6 @@ import { expect, test } from "vitest";
 import { FIXTURE_BASE_URL_ENV } from "../src/fixture/address.ts";
 import { localProtocolE2E, localProtocolRecordArtifacts } from "./context.ts";
 import { withLocalProtocolFixture } from "./support.ts";
-import { withInspectionRequest } from "@niceeval/testkit";
 
 const CASES = [
   {
@@ -49,16 +48,15 @@ const CASES = [
 // @regression memory/ui-message-stream-error-only-loses-diagnostic.md
 
 test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", async () => {
-  await localProtocolE2E.case(
-    "disconnect",
-    localProtocolRecordArtifacts,
-    async ({ commands: { niceeval }, paths }) => {
-      for (const fault of CASES) {
-        await withLocalProtocolFixture(paths.projectRoot, async ({ baseUrl, waitForRequest }) => {
-          const run = await niceeval.run(
-            ["exp", fault.experimentId, "--rerun", "all", "--json"],
-            { env: { [FIXTURE_BASE_URL_ENV]: baseUrl }, timeoutMs: 60_000 },
-          );
+  await localProtocolE2E.case("disconnect", localProtocolRecordArtifacts, async ({ commands: { niceeval }, paths }) => {
+    for (const fault of CASES) {
+      await withLocalProtocolFixture(
+        paths.projectRoot,
+        async ({ baseUrl, waitForRequest }) => {
+          const run = await niceeval.run(["exp", fault.experimentId, "--rerun", "all", "--json"], {
+            env: { [FIXTURE_BASE_URL_ENV]: baseUrl },
+            timeoutMs: 60_000,
+          });
           await waitForRequest(fault.fixtureMode);
           const receipt = run.expReceipt();
 
@@ -67,23 +65,22 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
           expect(receipt.createdRunIds, run.diagnostic()).toHaveLength(1);
           const event = assertExpEvalOutcomes(
             run.expEvalEvents(),
-            [{
-              experimentId: fault.experimentId,
-              evalId: fault.evalId,
-              verdict: "errored",
-              attempts: 1,
-              passed: 0,
-            }],
+            [
+              {
+                experimentId: fault.experimentId,
+                evalId: fault.evalId,
+                verdict: "errored",
+                attempts: 1,
+                passed: 0,
+              },
+            ],
             () => run.diagnostic(),
           )[0]!;
 
-          const queried = await withInspectionRequest({
-            kind: "attempt.trace",
-            locator: event.locator,
-          }, async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]));
+          const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
           expect(queried.exitCode, queried.diagnostic()).toBe(0);
           const document = queried.attemptTrace();
-          expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+          expect(document).toMatchObject({ operation: "attempt.trace" });
           const trace = JSON.stringify(document.trace);
           expect(trace).toContain('"code":"agent-send-failed"');
           expect(trace).toContain('"kind":"execution-error"');
@@ -91,8 +88,9 @@ test("uiMessageStreamAgent 只接受在协议终点前完整形成的 Turn", asy
           expect(trace).toContain(fault.summary);
           expect(trace).not.toContain("SendFailure message must be a non-empty string");
           expect(trace).not.toContain("TypeError");
-        }, fault.fixtureOptions);
-      }
-    },
-  );
+        },
+        fault.fixtureOptions,
+      );
+    }
+  });
 });

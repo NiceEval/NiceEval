@@ -17,29 +17,42 @@ export function resultsQueryOptions(
   return queryOptions({
     queryKey: ["insight-results", generation.identity, targetMode, groupKind ?? null, key ?? null] as const,
     queryFn: async (): Promise<ResultsPageModel> => {
-      const group = manifest.groups.find(({ identity }) => identity.kind === groupKind &&
-        (identity.kind === "named" ? identity.groupId === key : identity.experimentId === key));
+      const group = manifest.groups.find(
+        ({ identity }) =>
+          identity.kind === groupKind &&
+          (identity.kind === "named" ? identity.groupId === key : identity.experimentId === key),
+      );
       if (group === undefined && manifest.groups.length > 0) {
         throw new SelectionMissingError("Results selection is unavailable.");
       }
       const selectedExperiments = group?.members ?? [];
       if (selectedExperiments.length === 1) {
-        return generation.queryClient.fetchQuery(experimentQueryOptions(generation, overview, targetMode, selectedExperiments[0]!));
+        return generation.queryClient.fetchQuery(
+          experimentQueryOptions(generation, overview, targetMode, selectedExperiments[0]!),
+        );
       }
-      const current = targetMode === "current"
-        ? (await generation.queryClient.fetchQuery(inspectionQueryOptions(generation,
-          selectedExperiments.length === 0 ? projectOperation() : projectOperation(selectedExperiments)))).project
-        : undefined;
-      const currentHistory = current === undefined ? undefined
-        : (await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))).project.history;
-      return Object.freeze({
+      const base = {
         overview,
         selectedExperiments,
         selectionTitle: group?.label ?? "Results",
-        targetMode,
-        ...(current === undefined ? {} : { current }),
-        ...(currentHistory === undefined ? {} : { currentHistory }),
-      });
+      };
+      if (targetMode === "current") {
+        const current = (
+          await generation.queryClient.fetchQuery(
+            inspectionQueryOptions(
+              generation,
+              selectedExperiments.length === 0 ? projectOperation() : projectOperation(selectedExperiments),
+            ),
+          )
+        ).project;
+        const currentHistory = (
+          await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))
+        ).project.history;
+        return { ...base, targetMode, current, currentHistory };
+      }
+      return targetMode === "history"
+        ? { ...base, targetMode, costSummary: { state: "not-requested" } }
+        : { ...base, targetMode };
     },
   });
 }
@@ -58,11 +71,25 @@ export function experimentQueryOptions(
       }
       const selectedExperiments = [experimentId];
       if (targetMode === "current") {
-        const current = (await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation(selectedExperiments)))).project;
-        const currentHistory = (await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))).project.history;
-        return Object.freeze({ overview, selectedExperiments, selectionTitle: experimentId, current, currentHistory, targetMode });
+        const current = (
+          await generation.queryClient.fetchQuery(
+            inspectionQueryOptions(generation, projectOperation(selectedExperiments)),
+          )
+        ).project;
+        const currentHistory = (
+          await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, projectOperation()))
+        ).project.history;
+        return {
+          overview,
+          selectedExperiments,
+          selectionTitle: experimentId,
+          current,
+          currentHistory,
+          targetMode,
+        };
       }
-      if (targetMode === "unavailable") return Object.freeze({ overview, selectedExperiments, selectionTitle: experimentId, targetMode });
+      if (targetMode === "unavailable")
+        return { overview, selectedExperiments, selectionTitle: experimentId, targetMode };
       const operation = decodeInspectionOperation({
         kind: "experiment.get",
         experimentId,
@@ -71,13 +98,13 @@ export function experimentQueryOptions(
         throw new RouteInputError("Invalid experiment route.");
       }
       const document = await generation.queryClient.fetchQuery(inspectionQueryOptions(generation, operation.success));
-      return Object.freeze({
+      return {
         overview,
-        selectedExperiments: Object.freeze(selectedExperiments),
+        selectedExperiments,
         selectionTitle: selectedExperiments[0] ?? "Results",
         targetMode,
-        costSummary: document.experiment.costSummary,
-      });
+        costSummary: { state: "available", value: document.experiment.costSummary },
+      };
     },
   });
 }

@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline/promises";
-import { Effect, Layer, Predicate } from "effect";
+import { Effect, Layer, Predicate, Schema } from "effect";
 import {
   CliArguments,
   CliConfirmation,
@@ -19,11 +19,15 @@ import {
 const failure = (operation: string, cause: unknown) => new CliInvocationError({ operation, cause });
 
 export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
-  facts: Effect.sync(() => Object.freeze({
-    cwd: process.cwd(), argv: Object.freeze(process.argv.slice(2)), hostname: hostname(), pid: process.pid, platform: process.platform,
+  facts: Effect.sync(() => ({
+    cwd: process.cwd(),
+    argv: process.argv.slice(2),
+    hostname: hostname(),
+    pid: process.pid,
+    platform: process.platform,
     noColor: process.env.NO_COLOR,
-    stdout: Object.freeze({ isTTY: process.stdout.isTTY === true, columns: process.stdout.columns }),
-    stderr: Object.freeze({ isTTY: process.stderr.isTTY === true, columns: process.stderr.columns }),
+    stdout: { isTTY: process.stdout.isTTY === true, columns: process.stdout.columns },
+    stderr: { isTTY: process.stderr.isTTY === true, columns: process.stderr.columns },
   })),
 });
 
@@ -47,27 +51,34 @@ function writeNodeOutput(stream: NodeJS.WritableStream, text: string): void {
 }
 
 export const NodeCliOutputLive = Layer.succeed(CliOutput, {
-  writeStdout: (text) => Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
-  writeStderr: (text) => Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
+  writeStdout: (text) =>
+    Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
+  writeStderr: (text) =>
+    Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
   writeStdoutSync: (text) => writeNodeOutput(process.stdout, text),
   writeStderrSync: (text) => writeNodeOutput(process.stderr, text),
 });
 
 const NodeCliConfirmationLive = Layer.succeed(CliConfirmation, {
-  confirm: (message) => Effect.suspend(() => {
-    if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
-    return Effect.acquireUseRelease(
-      Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
-      (terminal) => Effect.tryPromise({ try: (signal) => terminal.question(`${message} [y/N] `, { signal }), catch: (cause) => failure("confirm", cause) }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
-      (terminal) => Effect.sync(() => terminal.close()),
-    );
-  }),
+  confirm: (message) =>
+    Effect.suspend(() => {
+      if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
+      return Effect.acquireUseRelease(
+        Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
+        (terminal) =>
+          Effect.tryPromise({
+            try: (signal) => terminal.question(`${message} [y/N] `, { signal }),
+            catch: (cause) => failure("confirm", cause),
+          }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
+        (terminal) => Effect.sync(() => terminal.close()),
+      );
+    }),
 });
 
 interface OptionalValueOccurrence {
   readonly name: string;
   readonly value: string | true;
-  readonly inlineValue?: boolean;
+  readonly inlineValue: boolean | undefined;
 }
 
 interface NormalizedCliArgv {
@@ -77,7 +88,8 @@ interface NormalizedCliArgv {
 }
 
 function invalidOptionalValue(name: string, value: string, values: readonly string[] | undefined): TypeError {
-  const expected = values === undefined ? "a non-empty value" : values.map((candidate) => JSON.stringify(candidate)).join(" or ");
+  const expected =
+    values === undefined ? "a non-empty value" : values.map((candidate) => JSON.stringify(candidate)).join(" or ");
   const error = new TypeError(`Option '--${name}' received ${JSON.stringify(value)}; expected ${expected}`);
   Object.defineProperty(error, "code", {
     configurable: true,
@@ -87,11 +99,7 @@ function invalidOptionalValue(name: string, value: string, values: readonly stri
   return error;
 }
 
-function explicitOptionalValue(
-  name: string,
-  value: string,
-  values: readonly string[] | undefined,
-): string {
+function explicitOptionalValue(name: string, value: string, values: readonly string[] | undefined): string {
   if (value.length === 0 || (values !== undefined && !values.includes(value))) {
     throw invalidOptionalValue(name, value, values);
   }
@@ -140,7 +148,9 @@ function normalizeCliArgv(
       inlineValue = true;
     } else if (optional.separated === true) {
       const next = argv[originalIndex + 1];
-      const consumesNext = next !== undefined && !next.startsWith("-") &&
+      const consumesNext =
+        next !== undefined &&
+        !next.startsWith("-") &&
         (optional.values === undefined || optional.values.includes(next));
       if (consumesNext) {
         value = explicitOptionalValue(name, next!, optional.values);
@@ -151,28 +161,33 @@ function normalizeCliArgv(
 
     normalized.push(`--${name}`);
     originalIndexes.push(optionOriginalIndex);
-    optionalValues.set(normalizedIndex, Object.freeze({
+    optionalValues.set(normalizedIndex, {
       name,
       value,
-      ...(inlineValue === undefined ? {} : { inlineValue }),
-    }));
+      inlineValue,
+    });
   }
 
-  return Object.freeze({
-    argv: Object.freeze(normalized),
-    originalIndexes: Object.freeze(originalIndexes),
+  return {
+    argv: normalized,
+    originalIndexes: originalIndexes,
     optionalValues,
-  });
+  };
 }
 
 export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
   parse: (argv, options) => {
     const normalized = normalizeCliArgv(argv, options);
-    const parserOptions = Object.fromEntries(Object.entries(options).map(([name, option]) => [name, {
-      type: option.type,
-      ...(option.multiple === undefined ? {} : { multiple: option.multiple }),
-      ...(option.short === undefined ? {} : { short: option.short }),
-    }]));
+    const parserOptions = Object.fromEntries(
+      Object.entries(options).map(([name, option]) => [
+        name,
+        {
+          type: option.type,
+          ...(option.multiple === undefined ? {} : { multiple: option.multiple }),
+          ...(option.short === undefined ? {} : { short: option.short }),
+        },
+      ]),
+    );
     const parsed = parseArgs({
       args: [...normalized.argv],
       options: parserOptions,
@@ -185,34 +200,41 @@ export const NodeCliArgumentsLive = Layer.succeed(CliArguments, {
     const tokens = parsed.tokens.map((token): CliParsedToken => {
       const index = normalized.originalIndexes[token.index];
       if (index === undefined) throw new Error(`CLI parser returned an unmapped argv index ${token.index}`);
-      if (token.kind !== "option") return Object.freeze({ ...token, index }) as CliParsedToken;
+      if (token.kind !== "option") return { ...token, index } as CliParsedToken;
       const occurrence = normalized.optionalValues.get(token.index);
       return occurrence === undefined
-        ? Object.freeze({ ...token, index }) as CliParsedToken
-        : Object.freeze({
+        ? ({ ...token, index } as CliParsedToken)
+        : {
             kind: "option" as const,
             index,
             name: token.name,
             rawName: token.rawName,
-            ...(typeof occurrence.value === "string" ? {
-              value: occurrence.value,
-              inlineValue: occurrence.inlineValue,
-            } : {}),
-          });
+            ...(typeof occurrence.value === "string"
+              ? {
+                  value: occurrence.value,
+                  ...(occurrence.inlineValue === undefined ? {} : { inlineValue: occurrence.inlineValue }),
+                }
+              : {}),
+          };
     });
-    return Object.freeze({
-      values: Object.freeze(values),
-      positionals: Object.freeze([...parsed.positionals]),
-      tokens: Object.freeze(tokens),
-    });
+    return {
+      values: values,
+      positionals: parsed.positionals,
+      tokens: tokens,
+    };
   },
 });
 
 export const NodeCliPathLive = Layer.succeed(CliPath, { resolve, isAbsolute });
 
+const decodePackageMetadata = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
+);
+
 export const NodePackageMetadataLive = Layer.succeed(PackageMetadata, {
   version: Effect.tryPromise({
-    try: async () => JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version as string,
+    try: async () =>
+      decodePackageMetadata(await readFile(new URL("../../package.json", import.meta.url), "utf8")).version,
     catch: (cause) => failure("read-package-metadata", cause),
   }),
 });

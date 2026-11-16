@@ -9,35 +9,23 @@ import { defineEval } from "niceeval";
 import { greaterThan, equals, includes } from "niceeval/expect";
 
 export default defineEval({
-  description:
-    "usage 与实际模型:usage 逐轮非空;实际模型从 Codex session 侧写核对",
+  description: "usage 与实际模型:usage 逐轮非空;实际模型从 Codex session 侧写核对",
   async test(t) {
-    const turn = await t.send(
-      "9 乘以 7 等于多少?先说明简短的推理过程,再给出最终数字。",
-    );
+    const turn = await t.send("9 乘以 7 等于多少?先说明简短的推理过程,再给出最终数字。");
     await turn.succeeded().orStop();
 
     await t.group("usage 逐轮非空", () => {
-      t.check(
-        turn.usage.inputTotalTokens,
-        greaterThan(0),
-      );
-      t.check(
-        turn.usage.outputTokens,
-        greaterThan(0),
-      );
+      t.check(turn.usage.inputTotalTokens, greaterThan(0));
+      t.check(turn.usage.outputTokens, greaterThan(0));
     });
     t.check(turn.reply, includes("63"));
 
-    await t.group(
-      "实际模型从 Codex session 侧写核对,不只信请求参数",
-      async () => {
-        const probe = await t.sandbox.runShell(
-          `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && grep -o '"model":"[^"]*"' "$f" | sort -u`,
-        );
-        t.check(probe.exitCode, equals(0));
-        t.check(probe.stdout, includes(`"model":"${t.model}"`));
-      },
-    );
+    await t.group("实际模型从 Codex session 侧写核对,不只信请求参数", async () => {
+      const probe = await t.sandbox.runShell(
+        `f=$(find ~/.codex/sessions -name "*${t.sessionId}*.jsonl" | head -1); test -n "$f" && grep -o '"model":"[^"]*"' "$f" | sort -u`,
+      );
+      t.check(probe.exitCode, equals(0));
+      t.check(probe.stdout, includes(`"model":"${t.model}"`));
+    });
   },
 });

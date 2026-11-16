@@ -52,7 +52,7 @@ type CreatedItem = {
 
 function errorCode(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
-    ? (error as { code?: unknown }).code as string | undefined
+    ? ((error as { code?: unknown }).code as string | undefined)
     : undefined;
 }
 
@@ -151,10 +151,7 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-async function assertDestinationParentChain(
-  destinationRoot: string,
-  targetPath: string,
-): Promise<void> {
+async function assertDestinationParentChain(destinationRoot: string, targetPath: string): Promise<void> {
   const parent = dirname(targetPath);
   const parentRelative = relative(destinationRoot, parent);
   let current = destinationRoot;
@@ -228,19 +225,13 @@ function assertDistinctTargets(entries: readonly PreparedEntry[]): void {
         throw new Error(`artifact targets duplicate: ${current.entry.target}`);
       }
       if (isNestedPath(current.targetPath, other.targetPath) || isNestedPath(other.targetPath, current.targetPath)) {
-        throw new Error(
-          `artifact targets overlap: ${other.entry.target} and ${current.entry.target}`,
-        );
+        throw new Error(`artifact targets overlap: ${other.entry.target} and ${current.entry.target}`);
       }
     }
   }
 }
 
-async function recordCreatedItem(
-  path: string,
-  kind: CreatedItem["kind"],
-  createdItems: CreatedItem[],
-): Promise<void> {
+async function recordCreatedItem(path: string, kind: CreatedItem["kind"], createdItems: CreatedItem[]): Promise<void> {
   const stat = await lstat(path);
   if (stat.isSymbolicLink() || (kind === "file" ? !stat.isFile() : !stat.isDirectory())) {
     throw new Error(`artifact target changed while being committed: ${path}`);
@@ -275,10 +266,7 @@ async function copyStagedDirectoryContents(
   }
 }
 
-async function commitEntryExclusively(
-  entry: PreparedEntry,
-  createdItems: CreatedItem[],
-): Promise<void> {
+async function commitEntryExclusively(entry: PreparedEntry, createdItems: CreatedItem[]): Promise<void> {
   const stagingPath = entry.stagingPath;
   if (stagingPath === undefined || entry.kind === undefined) {
     throw new Error(`artifact entry was not staged: ${entry.entry.source}`);
@@ -425,11 +413,7 @@ export async function stageArtifacts(options: StageArtifactsOptions): Promise<St
   } catch (error) {
     const rollbackErrors = await rollbackCreated(createdItems, createdDirectories, stagingRoot);
     if (rollbackErrors.length > 0) {
-      throw new AggregateError(
-        [error, ...rollbackErrors],
-        "artifact staging and rollback failed",
-        { cause: error },
-      );
+      throw new AggregateError([error, ...rollbackErrors], "artifact staging and rollback failed", { cause: error });
     }
     throw error;
   }

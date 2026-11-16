@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "effect": "4.1.3",
     "niceeval": "link:../../../..",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"

@@ -18,10 +18,14 @@ test("Docker task build 在不同 Invocation 复用受管 image cache", async ()
       DOCKER_DEFAULT_PLATFORM: "linux/amd64",
     };
     const first = await niceeval.run(["exp", "cache-hit", "--rerun", "all"], { env });
-    expect(first.stdout.replace(/\s+/gu, " "), first.diagnostic()).toContain("built once · docker:dockerfile:greet/hello");
+    expect(first.stdout.replace(/\s+/gu, " "), first.diagnostic()).toContain(
+      "built once · docker:dockerfile:greet/hello",
+    );
 
     const second = await niceeval.run(["exp", "cache-hit", "--rerun", "all"], { env });
-    expect(second.stdout.replace(/\s+/gu, " "), second.diagnostic()).toContain("build cache hit · docker:dockerfile:greet/hello");
+    expect(second.stdout.replace(/\s+/gu, " "), second.diagnostic()).toContain(
+      "build cache hit · docker:dockerfile:greet/hello",
+    );
     expect(await readFile(join(stateRoot, "fake-cache-hit-docker/build-count"), "utf8")).toBe("1\n");
   });
 });

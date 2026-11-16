@@ -46,7 +46,7 @@ export default defineExperiment({
 Eval Compose template
   -> Experiment before(本实验为空)
   -> Eval before(本题为空)
-  -> agent.ensure(probe 命中即过,未命中由 Agent 安装层补齐)
+  -> agent.install(probe 命中即过,未命中由 Agent 安装层补齐)
   -> Agent runtime
 ```
 
@@ -66,7 +66,7 @@ export default defineExperiment({
 });
 ```
 
-Eval 命令与 Experiment 证书进入同一 occurrence schedule，按依赖与 changeFrequency 排队；`agent.ensure` 在全部 before 满足后执行。
+Eval 命令与 Experiment 证书进入同一 occurrence schedule，按依赖与 changeFrequency 排队；`agent.install` 在全部 before 满足后执行。
 证书无法装进某道离线 Compose Case 时,作者用 selector 排除该配对,或让 Eval template 指向已融合证书的 Compose Case;Experiment 不能再提供第二份 template。
 
 测试文件仍在 `send` 返回后通过普通 Sandbox API 上传。

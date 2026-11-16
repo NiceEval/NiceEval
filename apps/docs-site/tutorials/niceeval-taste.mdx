@@ -47,7 +47,6 @@ export default defineScoreEval({
     // The check needs both the query result and the advice, so Judge gets the full history.
     t.closeQA("Does the final umbrella advice match the tool's weather result, without inventing weather facts?", {
       maxMaterialBytes: 256 * 1024,
-      maxAuditBytes: 1024 * 1024,
     }).score(80).label("Grounded advice");
 
     t.check(t.usage.totalTokens, atMost(10_000)).gate().label("Usage limit");

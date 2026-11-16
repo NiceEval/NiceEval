@@ -149,7 +149,13 @@ function processGroupState(groupId: number): GroupTerminal {
       throw new Error(`cannot inspect /proc/${entry}/stat`, { cause: error });
     }
     const end = stat.lastIndexOf(")");
-    const fields = end < 0 ? [] : stat.slice(end + 2).trim().split(/\s+/);
+    const fields =
+      end < 0
+        ? []
+        : stat
+            .slice(end + 2)
+            .trim()
+            .split(/\s+/);
     const state = fields[0];
     const memberGroup = Number(fields[2]);
     if (!Number.isSafeInteger(memberGroup) || state === undefined) {
@@ -238,7 +244,8 @@ function asPattern(pattern: string | RegExp): (text: string) => boolean {
 }
 
 export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<PtyHandle> {
-  if (process.platform !== "linux" && process.platform !== "darwin") throw new Error("startPty requires Linux or macOS");
+  if (process.platform !== "linux" && process.platform !== "darwin")
+    throw new Error("startPty requires Linux or macOS");
   validateArgv(argv);
   const columns = positive(options.columns, DEFAULT_COLUMNS, "columns");
   const rows = positive(options.rows, DEFAULT_ROWS, "rows");
@@ -277,7 +284,9 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
     socket.setEncoding("utf8");
     socket.on("error", (error) => {
       if (control.candidateGroupId === undefined) {
-        rejectConfigured?.(new Error(`PTY control failed before reporting the candidate: ${error.message}`, { cause: error }));
+        rejectConfigured?.(
+          new Error(`PTY control failed before reporting the candidate: ${error.message}`, { cause: error }),
+        );
       }
     });
     socket.on("close", () => {
@@ -303,7 +312,11 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
               control.helperGroupId = Number(message.helperGroupId);
               if (message.helperSessionId === undefined) delete control.helperSessionId;
               else control.helperSessionId = Number(message.helperSessionId);
-              if (!Number.isSafeInteger(control.helperPid) || !Number.isSafeInteger(control.helperGroupId) || (process.platform === "linux" && !Number.isSafeInteger(control.helperSessionId))) {
+              if (
+                !Number.isSafeInteger(control.helperPid) ||
+                !Number.isSafeInteger(control.helperGroupId) ||
+                (process.platform === "linux" && !Number.isSafeInteger(control.helperSessionId))
+              ) {
                 throw new Error("PTY helper configured frame has invalid process identity");
               }
               const helper = procIdentity(control.helperPid);
@@ -330,7 +343,7 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
             case "exit":
               control.candidateExit = {
                 exitCode: typeof message.exitCode === "number" ? message.exitCode : null,
-                signal: typeof message.signal === "string" ? message.signal as NodeJS.Signals : null,
+                signal: typeof message.signal === "string" ? (message.signal as NodeJS.Signals) : null,
               };
               resolveCandidateExit?.();
               break;
@@ -351,7 +364,7 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
     if (controlCleanup !== undefined) return controlCleanup;
     controlCleanup = (async () => {
       await new Promise<void>((resolve, reject) => {
-        server.close((error) => error === undefined ? resolve() : reject(error));
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
       }).catch((error: unknown) => {
         // A listener can have been closed by a concurrent launcher failure;
         // it is already safe to remove its private directory in that case.
@@ -381,9 +394,10 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
       const launcherCommand = [process.execPath, helperPath(), socketPath, String(columns), String(rows)]
         .map(shellQuoteInternal)
         .join(" ");
-      const launcherArgs = process.platform === "darwin"
-        ? ["-q", "-F", "/dev/null", process.execPath, helperPath(), socketPath, String(columns), String(rows)]
-        : ["-q", "-e", "-f", "-O", "/dev/null", "--command", launcherCommand];
+      const launcherArgs =
+        process.platform === "darwin"
+          ? ["-q", "-F", "/dev/null", process.execPath, helperPath(), socketPath, String(columns), String(rows)]
+          : ["-q", "-e", "-f", "-O", "/dev/null", "--command", launcherCommand];
       return spawn("script", launcherArgs, {
         cwd,
         env: options.env === undefined ? process.env : { ...process.env, ...options.env },
@@ -439,16 +453,14 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
   const cleanupGroups = (): Promise<PtyCleanupState> => {
     if (groupsCleanup !== undefined) return groupsCleanup;
     groupsCleanup = (async () => {
-      const candidate = control.candidateGroupId === undefined
-        ? "gone"
-        : await terminateGroup(control.candidateGroupId, graceMs);
+      const candidate =
+        control.candidateGroupId === undefined ? "gone" : await terminateGroup(control.candidateGroupId, graceMs);
       // Reaping a killed child and delivering its control frame happen on the
       // helper event loop. Give that owned helper a bounded chance to publish
       // the candidate terminal state before terminating its group.
       await waitForCandidateExit();
-      const helper = control.helperGroupId === undefined
-        ? "gone"
-        : await terminateGroup(control.helperGroupId, graceMs);
+      const helper =
+        control.helperGroupId === undefined ? "gone" : await terminateGroup(control.helperGroupId, graceMs);
       const launcherState = await terminateGroup(launcherPid, graceMs);
       return { candidateGroup: candidate, helperGroup: helper, launcherGroup: launcherState };
     })();
@@ -515,7 +527,9 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
         await done;
       } catch (error) {
         if (cleanupError !== undefined) {
-          throw new AggregateError([cleanupError, error], "PTY cleanup and receipt finalization failed", { cause: cleanupError });
+          throw new AggregateError([cleanupError, error], "PTY cleanup and receipt finalization failed", {
+            cause: cleanupError,
+          });
         }
         throw error;
       }
@@ -560,7 +574,12 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
               // The /proc observation is the linearization point. The helper
               // exit frame is useful evidence but may race behind a candidate
               // that has already left its process group.
-              if (group === undefined || control.candidateExit !== undefined || receiptSealed || processGroupState(group) !== "running") {
+              if (
+                group === undefined ||
+                control.candidateExit !== undefined ||
+                receiptSealed ||
+                processGroupState(group) !== "running"
+              ) {
                 throw new Error(`PTY candidate exited before ${label} was observed while running`);
               }
             }
@@ -570,7 +589,8 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
             const receipt = await done;
             throw new Error(`PTY candidate exited before ${label}\n${receipt.diagnostic()}`);
           }
-          if (Date.now() >= deadline) throw new Error(`Timed out after ${waitOptions.timeoutMs}ms waiting for ${label}`);
+          if (Date.now() >= deadline)
+            throw new Error(`Timed out after ${waitOptions.timeoutMs}ms waiting for ${label}`);
           await delay(POLL_MS);
         }
       } catch (error) {
@@ -581,11 +601,7 @@ export async function startPty(argv: Argv, options: PtyOptions = {}): Promise<Pt
   };
 }
 
-export async function withPty<T>(
-  argv: Argv,
-  options: PtyOptions,
-  body: (pty: PtyHandle) => Promise<T>,
-): Promise<T> {
+export async function withPty<T>(argv: Argv, options: PtyOptions, body: (pty: PtyHandle) => Promise<T>): Promise<T> {
   const pty = await startPty(argv, options);
   try {
     return await body(pty);

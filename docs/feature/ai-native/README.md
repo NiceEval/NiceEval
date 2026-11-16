@@ -38,7 +38,7 @@ flowchart LR
   P --> G["项目指引<br/>AGENTS.md 托管区块与 skill"]
   G --> X["node_modules/niceeval/INDEX.md"]
   X --> D["随包页面<br/>docs-site/zh/**"]
-  D --> C["本地命令<br/>--help、show、query、view"]
+  D --> C["本地命令<br/>--help、show、view"]
 ```
 
 | 跳 | agent 在这里得到什么 | 谁保证它与安装版本一致 |

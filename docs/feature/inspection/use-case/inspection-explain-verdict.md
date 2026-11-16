@@ -14,7 +14,7 @@
 1. 打开断言明细。 {#open}
 
    ```sh
-   niceeval show @1TE2JP6T4SHNX --assertions
+   niceeval show @1TE2JP6T4SHNX assertions
    ```
 
    ```text
@@ -45,7 +45,7 @@
 3. 下钻到丢分最多的一条。 {#drill}
 
    ```sh
-   niceeval show @1TE2JP6T4SHNX --assertions --entry <entry-id> --full
+   niceeval show @1TE2JP6T4SHNX ae_<id> --full
    ```
 
    预期结果：这一条的判据、材料、裁判给出的理由与证据。条目标题使用与列表相同的标记。

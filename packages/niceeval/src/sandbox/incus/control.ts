@@ -1,4 +1,5 @@
 import { Result, Schema } from "effect";
+import { isRecord } from "../../shared/objects.ts";
 import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { request as httpRequest } from "node:http";
@@ -17,11 +18,11 @@ import {
 
 const QUERY_TIMEOUT_MS = 15_000;
 const MUTATION_TIMEOUT_MS = 120_000;
-const ParseOptions = Object.freeze({
+const ParseOptions = {
   errors: "all" as const,
   exact: true,
   onExcessProperty: "error" as const,
-});
+};
 
 export const INCUS_METADATA = Object.freeze({
   allocationId: "user.niceeval.allocationId",
@@ -39,7 +40,7 @@ export const INCUS_METADATA = Object.freeze({
   runtimeProject: "user.niceeval.runtimeProject",
   pool: "user.niceeval.pool",
   baseFingerprint: "user.niceeval.baseFingerprint",
-  captureRevision: "user.niceeval.captureRevision",
+  cacheFormat: "user.niceeval.cacheFormat",
   replacementScopeDigest: "user.niceeval.replacementScopeDigest",
 });
 
@@ -121,10 +122,6 @@ const EnvelopeSchema = Schema.Struct({
   metadata: Schema.optional(Schema.Unknown),
   operation: Schema.optional(Schema.String),
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 function asStringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
@@ -219,10 +216,7 @@ function decodeCliOutput(stdout: string, stderr: string, exitCode: number, path:
   }
   if (envelope.type === "error") {
     if (envelope.error_code === 404) return { _tag: "Absent" as const };
-    throw unreachable(
-      `Incus ${path} failed${envelope.error === undefined ? "" : `: ${envelope.error}`}.`,
-      parsed,
-    );
+    throw unreachable(`Incus ${path} failed${envelope.error === undefined ? "" : `: ${envelope.error}`}.`, parsed);
   }
   if (exitCode !== 0) throw cliFailure(path, exitCode, text, parsed);
   if (envelope.type === "async") {
@@ -252,7 +246,10 @@ async function runCli(
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    const finish = (error: unknown | undefined, result?: { stdout: Buffer; stderr: Buffer; exitCode: number }): void => {
+    const finish = (
+      error: unknown | undefined,
+      result?: { stdout: Buffer; stderr: Buffer; exitCode: number },
+    ): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -283,47 +280,52 @@ async function runCli(
 
 async function unixGet(socketPath: string, path: string, timeoutMs = QUERY_TIMEOUT_MS): Promise<unknown> {
   return await new Promise((resolve, reject) => {
-    const req = httpRequest({
-      socketPath,
-      path,
-      method: "GET",
-      headers: { Host: "incus", Accept: "application/json" },
-    }, (response) => {
-      const chunks: Buffer[] = [];
-      response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-      response.on("end", () => {
-        const text = Buffer.concat(chunks).toString("utf8");
-        if (response.statusCode === 404) {
-          resolve({ _tag: "Absent" });
-          return;
-        }
-        let parsed: unknown;
-        try {
-          parsed = text.trim() === "" ? null : JSON.parse(text);
-        } catch (cause) {
-          reject(shapeError(`GET ${path}`, cause));
-          return;
-        }
-        try {
-          const envelope = decodeEnvelope(parsed, `GET ${path}`);
-          if (envelope.type === "error") {
-            if (envelope.error_code === 404) {
-              resolve({ _tag: "Absent" });
+    const req = httpRequest(
+      {
+        socketPath,
+        path,
+        method: "GET",
+        headers: { Host: "incus", Accept: "application/json" },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          if (response.statusCode === 404) {
+            resolve({ _tag: "Absent" });
+            return;
+          }
+          let parsed: unknown;
+          try {
+            parsed = text.trim() === "" ? null : JSON.parse(text);
+          } catch (cause) {
+            reject(shapeError(`GET ${path}`, cause));
+            return;
+          }
+          try {
+            const envelope = decodeEnvelope(parsed, `GET ${path}`);
+            if (envelope.type === "error") {
+              if (envelope.error_code === 404) {
+                resolve({ _tag: "Absent" });
+                return;
+              }
+              reject(
+                unreachable(`Incus GET ${path} failed${envelope.error === undefined ? "" : `: ${envelope.error}`}.`),
+              );
               return;
             }
-            reject(unreachable(`Incus GET ${path} failed${envelope.error === undefined ? "" : `: ${envelope.error}`}.`));
-            return;
+            if (envelope.type !== "sync") {
+              reject(shapeError(`GET ${path}`));
+              return;
+            }
+            resolve(envelope.metadata ?? null);
+          } catch (cause) {
+            reject(cause);
           }
-          if (envelope.type !== "sync") {
-            reject(shapeError(`GET ${path}`));
-            return;
-          }
-          resolve(envelope.metadata ?? null);
-        } catch (cause) {
-          reject(cause);
-        }
-      });
-    });
+        });
+      },
+    );
     const timer = setTimeout(() => {
       req.destroy();
       reject(unreachable(`Incus control socket timed out for GET ${path}.`));
@@ -331,9 +333,11 @@ async function unixGet(socketPath: string, path: string, timeoutMs = QUERY_TIMEO
     req.on("error", (cause) => {
       clearTimeout(timer);
       const code = commandErrorCode(cause);
-      reject(code === "ENOENT" || code === "ECONNREFUSED" || code === "ENOTSOCK"
-        ? unreachable(`Incus control socket ${JSON.stringify(socketPath)} is unreachable.`, cause)
-        : unreachable(`Incus control socket failed: ${cause.message}`, cause));
+      reject(
+        code === "ENOENT" || code === "ECONNREFUSED" || code === "ENOTSOCK"
+          ? unreachable(`Incus control socket ${JSON.stringify(socketPath)} is unreachable.`, cause)
+          : unreachable(`Incus control socket failed: ${cause.message}`, cause),
+      );
     });
     req.on("close", () => clearTimeout(timer));
     req.end();
@@ -350,7 +354,7 @@ function candidateSockets(env: NodeJS.ProcessEnv): readonly string[] {
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   if (uid !== undefined) sockets.push(`/run/user/${uid}/incus/unix.socket`);
   sockets.push(join(homedir(), ".config/incus/unix.socket"));
-  return Object.freeze([...new Set(sockets)]);
+  return [...new Set(sockets)];
 }
 
 async function probeCli(): Promise<Transport | undefined> {
@@ -362,8 +366,12 @@ async function probeCli(): Promise<Transport | undefined> {
     decodeCliOutput(result.stdout.toString("utf8"), result.stderr.toString("utf8"), result.exitCode, "GET /1.0");
     return { _tag: "Cli", binary: "incus" };
   } catch (cause) {
-    if (cause instanceof Error && "code" in cause && (cause as IncusProviderError).code === "incus-unreachable"
-      && commandErrorCode((cause as IncusProviderError).cause) === "ENOENT") {
+    if (
+      cause instanceof Error &&
+      "code" in cause &&
+      (cause as IncusProviderError).code === "incus-unreachable" &&
+      commandErrorCode((cause as IncusProviderError).cause) === "ENOENT"
+    ) {
       return undefined;
     }
     throw cause;
@@ -400,7 +408,7 @@ export class IncusControl {
     throw unreachable("Incus control plane is unreachable: no incus CLI and no usable control socket.");
   }
 
-  static async connectMutation(env: NodeJS.ProcessEnv = process.env): Promise<IncusControl> {
+  static async connectMutation(_env: NodeJS.ProcessEnv = process.env): Promise<IncusControl> {
     const cli = await probeCli();
     if (cli !== undefined) return new IncusControl(cli);
     throw unreachable("Incus mutations require the incus CLI; Unix-socket mutation and exec are disabled.");
@@ -427,7 +435,12 @@ export class IncusControl {
       timeoutMs: QUERY_TIMEOUT_MS,
       encoding: "utf8",
     });
-    return decodeCliOutput(result.stdout.toString("utf8"), result.stderr.toString("utf8"), result.exitCode, `GET ${path}`);
+    return decodeCliOutput(
+      result.stdout.toString("utf8"),
+      result.stderr.toString("utf8"),
+      result.exitCode,
+      `GET ${path}`,
+    );
   }
 
   private async mutate(method: string, path: string, body?: unknown): Promise<unknown> {
@@ -453,9 +466,7 @@ export class IncusControl {
   }
 
   async getStoragePool(project: string, pool: string): Promise<IncusStorageAttestation | undefined> {
-    const metadata = await this.get(
-      this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}`, project),
-    );
+    const metadata = await this.get(this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}`, project));
     if (isAbsent(metadata)) return undefined;
     if (!isRecord(metadata) || typeof metadata.name !== "string" || typeof metadata.driver !== "string") {
       throw shapeError(`GET storage pool ${pool}`);
@@ -463,32 +474,57 @@ export class IncusControl {
     const config = asStringRecord(metadata.config);
     const source = config.source ?? "";
     const backingDevice = config["zfs.pool_name"] ?? config["source"] ?? config["lvm.vg_name"] ?? "";
-    return Object.freeze({
+    return {
       name: metadata.name,
       driver: metadata.driver,
       source,
       backingDevice,
-    });
+    };
   }
 
-  async getStoragePoolResources(project: string, pool: string): Promise<{ readonly total: number; readonly used: number; readonly free: number }> {
-    const metadata = await this.get(this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}/resources`, project));
+  async getStoragePoolResources(
+    project: string,
+    pool: string,
+  ): Promise<{ readonly total: number; readonly used: number; readonly free: number }> {
+    const metadata = await this.get(
+      this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}/resources`, project),
+    );
     const space = isRecord(metadata) ? metadata.space : undefined;
     const total = isRecord(space) ? space.total : undefined;
     const used = isRecord(space) ? (space.used ?? 0) : undefined;
-    if (typeof total !== "number" || typeof used !== "number" || !Number.isSafeInteger(total) || !Number.isSafeInteger(used) || total <= 0 || used < 0 || used > total) {
+    if (
+      typeof total !== "number" ||
+      typeof used !== "number" ||
+      !Number.isSafeInteger(total) ||
+      !Number.isSafeInteger(used) ||
+      total <= 0 ||
+      used < 0 ||
+      used > total
+    ) {
       throw shapeError(`GET storage pool ${pool} resources (storage bytes unknown)`);
     }
-    return Object.freeze({ total, used, free: total - used });
+    return { total, used, free: total - used };
   }
 
   async getServerIdentity(): Promise<{ readonly fingerprint: string; readonly name: string; readonly pid: number }> {
     const metadata = await this.get("/1.0");
     const environment = isRecord(metadata) ? metadata.environment : undefined;
-    if (!isRecord(environment) || typeof environment.certificate_fingerprint !== "string" || environment.certificate_fingerprint.length === 0 || typeof environment.server_name !== "string" || typeof environment.server_pid !== "number" || !Number.isSafeInteger(environment.server_pid) || environment.server_pid <= 0) {
+    if (
+      !isRecord(environment) ||
+      typeof environment.certificate_fingerprint !== "string" ||
+      environment.certificate_fingerprint.length === 0 ||
+      typeof environment.server_name !== "string" ||
+      typeof environment.server_pid !== "number" ||
+      !Number.isSafeInteger(environment.server_pid) ||
+      environment.server_pid <= 0
+    ) {
       throw shapeError("GET server identity");
     }
-    return Object.freeze({ fingerprint: environment.certificate_fingerprint, name: environment.server_name, pid: environment.server_pid });
+    return {
+      fingerprint: environment.certificate_fingerprint,
+      name: environment.server_name,
+      pid: environment.server_pid,
+    };
   }
 
   async attestReferenceStorage(
@@ -512,7 +548,11 @@ export class IncusControl {
         ["Use ZFS, Btrfs, or LVM for the reference domain; loop-backed or directory pools cannot attest."],
       );
     }
-    if (storage.source !== expected.source || storage.backingDevice !== expected.backingDevice || storage.name !== pool) {
+    if (
+      storage.source !== expected.source ||
+      storage.backingDevice !== expected.backingDevice ||
+      storage.name !== pool
+    ) {
       throw incusError(
         "sandbox-artifact-unverified",
         "Live Incus pool source/backingDevice does not match the pinned reference descriptor.",
@@ -540,11 +580,9 @@ export class IncusControl {
   async attestDevelopmentStorage(project: string, pool: string): Promise<IncusStorageAttestation> {
     const storage = await this.getStoragePool(project, pool);
     if (storage === undefined) {
-      throw incusError(
-        "incus-undeployed",
-        `Incus development pool ${JSON.stringify(pool)} is not present.`,
-        ["Create the development-dir pool at /data/niceeval-sandbox-dev."],
-      );
+      throw incusError("incus-undeployed", `Incus development pool ${JSON.stringify(pool)} is not present.`, [
+        "Create the development-dir pool at /data/niceeval-sandbox-dev.",
+      ]);
     }
     if (storage.driver !== "dir" || storage.source !== DEVELOPMENT_HOST_PATH) {
       throw incusError(
@@ -558,21 +596,23 @@ export class IncusControl {
 
   async listImages(project: string): Promise<readonly IncusImage[]> {
     const metadata = await this.get(this.projectPath("/1.0/images?recursion=1", project));
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET /1.0/images");
-    return Object.freeze(metadata.flatMap((entry) => {
+    return metadata.flatMap((entry) => {
       if (!isRecord(entry) || typeof entry.fingerprint !== "string") return [];
       if (!/^[a-f0-9]{64}$/u.test(entry.fingerprint)) return [];
       const aliases = Array.isArray(entry.aliases)
-        ? entry.aliases.flatMap((alias) => isRecord(alias) && typeof alias.name === "string" ? [alias.name] : [])
+        ? entry.aliases.flatMap((alias) => (isRecord(alias) && typeof alias.name === "string" ? [alias.name] : []))
         : [];
-      return [Object.freeze({
-        fingerprint: entry.fingerprint,
-        aliases: Object.freeze(aliases),
-        type: typeof entry.type === "string" ? entry.type : "container",
-        properties: Object.freeze(asStringRecord(entry.properties)),
-      })];
-    }));
+      return [
+        {
+          fingerprint: entry.fingerprint,
+          aliases,
+          type: typeof entry.type === "string" ? entry.type : "container",
+          properties: asStringRecord(entry.properties),
+        },
+      ];
+    });
   }
 
   async resolveTrustedImage(
@@ -586,12 +626,14 @@ export class IncusControl {
       throw incusError(
         "sandbox-artifact-unverified",
         `Image ${image.locator} is not an exact trustedBaseImages locator.`,
-        ["trustedBaseImages must list the same name@sha256:<digest>; a matching digest under another name is rejected."],
+        [
+          "trustedBaseImages must list the same name@sha256:<digest>; a matching digest under another name is rejected.",
+        ],
       );
     }
     const images = await this.listImages(project);
-    const match = images.find((candidate) =>
-      candidate.fingerprint === image.digest && candidate.aliases.includes(image.name)
+    const match = images.find(
+      (candidate) => candidate.fingerprint === image.digest && candidate.aliases.includes(image.name),
     );
     if (match === undefined) {
       throw incusError(
@@ -641,34 +683,35 @@ export class IncusControl {
 
   async listInstances(project: string): Promise<readonly IncusInstance[]> {
     const metadata = await this.get(this.projectPath("/1.0/instances?recursion=1", project));
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET /1.0/instances");
-    return Object.freeze(metadata.flatMap((entry) => this.decodeInstance(entry, "GET /1.0/instances")));
+    return metadata.flatMap((entry) => this.decodeInstance(entry, "GET /1.0/instances"));
   }
 
   private decodeInstance(entry: unknown, path: string): IncusInstance[] {
     if (!isRecord(entry) || typeof entry.name !== "string") throw shapeError(path);
     const devices = isRecord(entry.expanded_devices) ? entry.expanded_devices : undefined;
-    const expanded = devices === undefined
-      ? undefined
-      : Object.freeze(Object.fromEntries(
-        Object.entries(devices).flatMap(([key, value]) => isRecord(value)
-          ? [[key, Object.freeze(asStringRecord(value))] as const]
-          : []),
-      ));
-    return [Object.freeze({
-      name: entry.name,
-      status: typeof entry.status === "string" ? entry.status : "Unknown",
-      type: typeof entry.type === "string" ? entry.type : "container",
-      config: Object.freeze(asStringRecord(entry.config)),
-      ...(expanded === undefined ? {} : { expandedDevices: expanded }),
-    })];
+    const expanded =
+      devices === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(devices).flatMap(([key, value]) =>
+              isRecord(value) ? [[key, asStringRecord(value)] as const] : [],
+            ),
+          );
+    return [
+      {
+        name: entry.name,
+        status: typeof entry.status === "string" ? entry.status : "Unknown",
+        type: typeof entry.type === "string" ? entry.type : "container",
+        config: asStringRecord(entry.config),
+        ...(expanded === undefined ? {} : { expandedDevices: expanded }),
+      },
+    ];
   }
 
   async getInstance(project: string, name: string): Promise<IncusInstance | undefined> {
-    const metadata = await this.get(
-      this.projectPath(`/1.0/instances/${encodeURIComponent(name)}`, project),
-    );
+    const metadata = await this.get(this.projectPath(`/1.0/instances/${encodeURIComponent(name)}`, project));
     if (isAbsent(metadata)) return undefined;
     const decoded = this.decodeInstance(metadata, `GET instance ${name}`);
     return decoded[0];
@@ -678,10 +721,11 @@ export class IncusControl {
     const metadata = await this.get(
       this.projectPath(`/1.0/storage-pools/${encodeURIComponent(pool)}/volumes/custom?recursion=1`, project),
     );
-    if (metadata === null) return Object.freeze([]);
+    if (metadata === null) return [];
     if (!Array.isArray(metadata)) throw shapeError("GET storage volumes");
-    return Object.freeze(metadata.flatMap((entry) => this.decodeVolume(entry, "GET storage volumes"))
-      .filter((volume) => volume.type === "custom"));
+    return metadata
+      .flatMap((entry) => this.decodeVolume(entry, "GET storage volumes"))
+      .filter((volume) => volume.type === "custom");
   }
 
   async getVolume(project: string, pool: string, name: string): Promise<IncusVolume | undefined> {
@@ -697,15 +741,20 @@ export class IncusControl {
 
   private decodeVolume(entry: unknown, path: string): IncusVolume[] {
     if (!isRecord(entry) || typeof entry.name !== "string") throw shapeError(path);
-    const contentType = typeof entry.content_type === "string"
-      ? entry.content_type
-      : typeof entry.contentType === "string" ? entry.contentType : "";
-    return [Object.freeze({
-      name: entry.name,
-      type: typeof entry.type === "string" ? entry.type : "custom",
-      contentType,
-      config: Object.freeze(asStringRecord(entry.config)),
-    })];
+    const volumeContentType = (): string => {
+      if (typeof entry.content_type === "string") return entry.content_type;
+      if (typeof entry.contentType === "string") return entry.contentType;
+      return "";
+    };
+    const contentType = volumeContentType();
+    return [
+      {
+        name: entry.name,
+        type: typeof entry.type === "string" ? entry.type : "custom",
+        contentType,
+        config: asStringRecord(entry.config),
+      },
+    ];
   }
 
   async createVolume(spec: IncusVolumeSpec): Promise<void> {
@@ -745,7 +794,9 @@ export class IncusControl {
         throw incusError(
           "sandbox-destroy-incomplete",
           `Incus volume ${JSON.stringify(name)} in pool ${JSON.stringify(pool)} is still present after delete.`,
-          ["Inspect the custom volume with the Incus CLI; NiceEval will not mark the allocation destroyed without an absent receipt."],
+          [
+            "Inspect the custom volume with the Incus CLI; NiceEval will not mark the allocation destroyed without an absent receipt.",
+          ],
         );
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -761,11 +812,9 @@ export class IncusControl {
       );
     }
     if (spec.dockerDataContentType === "filesystem" && spec.dockerDataPath === undefined) {
-      throw incusError(
-        "sandbox-artifact-unverified",
-        "Filesystem Docker data volumes require path=/var/lib/docker.",
-        ["Attach filesystem custom volumes with an explicit guest path."],
-      );
+      throw incusError("sandbox-artifact-unverified", "Filesystem Docker data volumes require path=/var/lib/docker.", [
+        "Attach filesystem custom volumes with an explicit guest path.",
+      ]);
     }
     const dockerdata: Record<string, string> = {
       type: "disk",
@@ -790,27 +839,36 @@ export class IncusControl {
 
   /** Copy is intentionally explicit about both projects: artifacts never live in runtime. */
   async copyVolume(spec: {
-    readonly sourceProject: string; readonly sourcePool: string; readonly sourceName: string;
-    readonly targetProject: string; readonly targetPool: string; readonly targetName: string;
+    readonly sourceProject: string;
+    readonly sourcePool: string;
+    readonly sourceName: string;
+    readonly targetProject: string;
+    readonly targetPool: string;
+    readonly targetName: string;
     readonly config: Readonly<Record<string, string>>;
   }): Promise<void> {
-    await this.mutate("POST", this.projectPath(
-      `/1.0/storage-pools/${encodeURIComponent(spec.targetPool)}/volumes/custom`, spec.targetProject,
-    ), {
-      name: spec.targetName, type: "custom",
-      source: { type: "copy", project: spec.sourceProject, pool: spec.sourcePool, name: spec.sourceName },
-      config: spec.config,
-    });
+    await this.mutate(
+      "POST",
+      this.projectPath(`/1.0/storage-pools/${encodeURIComponent(spec.targetPool)}/volumes/custom`, spec.targetProject),
+      {
+        name: spec.targetName,
+        type: "custom",
+        source: { type: "copy", project: spec.sourceProject, pool: spec.sourcePool, name: spec.sourceName },
+        config: spec.config,
+      },
+    );
   }
 
   async copyInstance(spec: {
-    readonly sourceProject: string; readonly sourceName: string; readonly targetProject: string;
-    readonly targetName: string; readonly config: Readonly<Record<string, string>>;
+    readonly sourceProject: string;
+    readonly sourceName: string;
+    readonly targetProject: string;
+    readonly targetName: string;
+    readonly config: Readonly<Record<string, string>>;
     readonly devices: Readonly<Record<string, Readonly<Record<string, string>>>>;
   }): Promise<void> {
     const source = await this.getInstance(spec.sourceProject, spec.sourceName);
-    const baseImage = source?.config["volatile.base_image"] ??
-      source?.config[INCUS_METADATA.baseFingerprint];
+    const baseImage = source?.config["volatile.base_image"] ?? source?.config[INCUS_METADATA.baseFingerprint];
     if (source === undefined || baseImage === undefined || !/^[a-f0-9]{64}$/u.test(baseImage)) {
       throw incusError(
         "sandbox-artifact-unverified",
@@ -819,7 +877,8 @@ export class IncusControl {
       );
     }
     await this.mutate("POST", this.projectPath("/1.0/instances", spec.targetProject), {
-      name: spec.targetName, type: "virtual-machine",
+      name: spec.targetName,
+      type: "virtual-machine",
       // Incus needs base-image to copy a VM's root-disk delta. Omitting it can
       // produce a valid-looking target rooted at the base image and silently
       // discard the source VM's prepared root filesystem state.
@@ -829,7 +888,8 @@ export class IncusControl {
         source: spec.sourceName,
         "base-image": baseImage,
       },
-      config: spec.config, devices: spec.devices,
+      config: spec.config,
+      devices: spec.devices,
     });
   }
 
@@ -852,33 +912,39 @@ export class IncusControl {
   async stopInstance(project: string, name: string): Promise<void> {
     const instance = await this.getInstance(project, name);
     if (instance === undefined || instance.status.toLowerCase() === "stopped") return;
-    await this.mutate("PUT", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
+    await this.mutate(
+      "PUT",
+      this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
       // Artifact capture must let the guest flush its root filesystem. Forced
       // power-off is reserved for disposable allocation destruction below.
-      { action: "stop", force: false, timeout: 120 });
+      { action: "stop", force: false, timeout: 120 },
+    );
     const stopped = await this.getInstance(project, name);
     if (stopped === undefined || stopped.status.toLowerCase() !== "stopped") {
-      throw incusError("sandbox-artifact-unverified", `Incus instance ${JSON.stringify(name)} did not stop for artifact capture.`, ["Do not publish a running artifact."]);
+      throw incusError(
+        "sandbox-artifact-unverified",
+        `Incus instance ${JSON.stringify(name)} did not stop for artifact capture.`,
+        ["Do not publish a running artifact."],
+      );
     }
   }
 
   async startInstance(project: string, name: string): Promise<void> {
-    await this.mutate(
-      "PUT",
-      this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
-      { action: "start", timeout: 120 },
-    );
+    await this.mutate("PUT", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project), {
+      action: "start",
+      timeout: 120,
+    });
   }
 
   async deleteInstance(project: string, name: string): Promise<void> {
     const existing = await this.getInstance(project, name);
     if (existing === undefined) return;
     if (existing.status.toLowerCase() !== "stopped") {
-      await this.mutate(
-        "PUT",
-        this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project),
-        { action: "stop", force: true, timeout: 30 },
-      );
+      await this.mutate("PUT", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}/state`, project), {
+        action: "stop",
+        force: true,
+        timeout: 30,
+      });
     }
     await this.mutate("DELETE", this.projectPath(`/1.0/instances/${encodeURIComponent(name)}`, project));
   }
@@ -939,17 +1005,18 @@ export class IncusControl {
       stdout: child.stdout,
       stderr: child.stderr,
       pid: child.pid,
-      wait: () => new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = (error: unknown | undefined, code?: number): void => {
-          if (settled) return;
-          settled = true;
-          if (error !== undefined) reject(sanitizeSpawnError(error));
-          else resolve(code ?? 1);
-        };
-        child.once("error", (cause) => finish(cause));
-        child.once("close", (code) => finish(undefined, code ?? 1));
-      }),
+      wait: () =>
+        new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = (error: unknown | undefined, code?: number): void => {
+            if (settled) return;
+            settled = true;
+            if (error !== undefined) reject(sanitizeSpawnError(error));
+            else resolve(code ?? 1);
+          };
+          child.once("error", (cause) => finish(cause));
+          child.once("close", (code) => finish(undefined, code ?? 1));
+        }),
       killHost: () => {
         child.kill("SIGKILL");
       },
@@ -1050,7 +1117,7 @@ export function parseIncusSizeBytes(raw: string | undefined): number | undefined
   const index = "kmgtp".indexOf(unit[0] ?? "");
   if (index < 0) return undefined;
   const base = binary ? 1024 : 1000;
-  const bytes = value * (base ** (index + 1));
+  const bytes = value * base ** (index + 1);
   return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : undefined;
 }
 
@@ -1085,12 +1152,13 @@ export const connectIncusControl = (
 ): Effect.Effect<IncusControl, IncusProviderError> =>
   Effect.tryPromise({
     try: () => IncusControl.connectReadOnly(env),
-    catch: (cause) => cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
-      : unreachable(
-          `Incus control plane is unreachable: ${cause instanceof Error ? cause.message : String(cause)}`,
-          cause,
-        ),
+    catch: (cause) =>
+      cause instanceof Error && "code" in cause
+        ? (cause as IncusProviderError)
+        : unreachable(
+            `Incus control plane is unreachable: ${cause instanceof Error ? cause.message : String(cause)}`,
+            cause,
+          ),
   });
 
 export const connectIncusMutation = (
@@ -1098,10 +1166,11 @@ export const connectIncusMutation = (
 ): Effect.Effect<IncusControl, IncusProviderError> =>
   Effect.tryPromise({
     try: () => IncusControl.connectMutation(env),
-    catch: (cause) => cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
-      : unreachable(
-          `Incus mutations require the incus CLI: ${cause instanceof Error ? cause.message : String(cause)}`,
-          cause,
-        ),
+    catch: (cause) =>
+      cause instanceof Error && "code" in cause
+        ? (cause as IncusProviderError)
+        : unreachable(
+            `Incus mutations require the incus CLI: ${cause instanceof Error ? cause.message : String(cause)}`,
+            cause,
+          ),
   });

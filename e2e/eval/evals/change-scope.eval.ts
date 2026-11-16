@@ -6,7 +6,11 @@ export default defineEval({
   async test(t) {
     for (const paths of [[], ["secrets/**"], ["secrets/?"]]) {
       let rejected = false;
-      try { t.sandbox.changedOnlyWithin(paths as never); } catch (error) { rejected = error instanceof TypeError; }
+      try {
+        t.sandbox.changedOnlyWithin(paths as never);
+      } catch (error) {
+        rejected = error instanceof TypeError;
+      }
       if (!rejected) throw new Error(`Expected construction TypeError: ${JSON.stringify(paths)}`);
     }
     await t.send("change");

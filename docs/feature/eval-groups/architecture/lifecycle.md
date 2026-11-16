@@ -12,7 +12,7 @@ provider acquire
        -> Group resource prepare
        -> current Eval resource prepare
        -> occurrence DAG schedules attempt before
-       -> agent ensure / setup / test / teardown
+       -> agent install / setup / test / teardown
        -> attempt after in reverse registration order
   -> resource release in reverse order
   -> State save

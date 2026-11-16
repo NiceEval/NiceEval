@@ -93,7 +93,11 @@ async function createProviderStopSandbox(workdir = process.cwd()): Promise<Custo
     writeText: (path, content) => writeBytes(path, Buffer.from(content, "utf8")),
     readBytes,
     writeBytes,
-    pathExists: async (path) => access(pathIn(workdir, path)).then(() => true, () => false),
+    pathExists: async (path) =>
+      access(pathIn(workdir, path)).then(
+        () => true,
+        () => false,
+      ),
     uploadFile: async (source, targetPath) => writeBytes(targetPath, await readFile(source)),
     uploadDirectory: async (sourceDir, targetDir) => {
       await cp(sourceDir, pathIn(workdir, targetDir ?? "."), { recursive: true });
@@ -109,7 +113,16 @@ async function createProviderStopSandbox(workdir = process.cwd()): Promise<Custo
     stop: async () => {
       try {
         await mark("provider-group-stop-started");
-        if (failProviderStop) throw new Error("deterministic Provider group.stop failure");
+        if (failProviderStop) {
+          throw new AggregateError(
+            [
+              new Error("provider-stop fixture cleanup refused", {
+                cause: new Error("provider-stop fixture nested cause"),
+              }),
+            ],
+            "deterministic Provider group.stop failure",
+          );
+        }
         await mark("provider-group-stop-complete");
       } finally {
         await releaseHostLedgerLock();
@@ -152,7 +165,7 @@ export const sharedStateProviderStopAgent = defineSandboxAgent({
     ...completeEvidenceCoverage,
     usage: { status: "unavailable", reason: "deterministic Provider stop fixture has no token usage" },
   },
-  ensure: {
+  install: {
     identity: { agent: "runner-shared-state-provider-stop", version: "1", revision: "1" },
     probe: shell("true"),
   },

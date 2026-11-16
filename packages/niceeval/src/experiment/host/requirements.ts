@@ -6,4 +6,3 @@ export type ExperimentHostRequirements =
   | import("../../record/platform/services.ts").RecordEntropy
   | import("../../coordination/record-leases.ts").RecordCoordination
   | ProjectStateDatabase;
-

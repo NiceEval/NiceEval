@@ -1,7 +1,7 @@
 // registerSandboxContent():在 discovery / planning 前把宿主内容收敛成 digest-backed handle。
 // Handle 不公开 live path；后续 putContent() 必须先取得本模块校验后的不可变 snapshot。
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstatSync,
   readFileSync,
@@ -9,13 +9,22 @@ import {
   readlinkSync,
   realpathSync,
   statSync,
+  createReadStream,
+  createWriteStream,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { chmod, lstat, mkdir, rename, rm } from "node:fs/promises";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REGISTERED_SANDBOX_CONTENT: unique symbol = Symbol("niceeval.sandbox.content.registered");
 const REGISTERED_CONTENTS = new WeakSet<object>();
 const REGISTERED_CONTENT_LOCATORS = new WeakMap<object, { readonly path: string }>();
+const STAGED_CONTENT_FILES = new WeakMap<
+  object,
+  { readonly path: string; readonly mode: number; readonly size: number }
+>();
 
 /** Identifies a captured host file or directory by immutable content digest; constructing a similar plain object does not grant transfer capability. */
 export interface RegisteredSandboxContent {
@@ -100,12 +109,12 @@ function digestFile(bytes: Buffer, mode: number): string {
 
 function captureFile(path: string, mode: number): RegisteredSandboxContentSnapshot {
   const bytes = readFileSync(path);
-  return Object.freeze({
+  return {
     kind: "file" as const,
     digest: digestFile(bytes, mode),
     mode,
     contentBase64: bytes.toString("base64"),
-  });
+  };
 }
 
 function captureDirectory(root: string, rootMode: number): RegisteredSandboxContentSnapshot {
@@ -123,7 +132,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
       if (info.isDirectory()) {
         const mode = permissionMode(info.mode);
         hash.update(`d\0${name}\0${mode.toString(8)}\0`);
-        captured.push(Object.freeze({ kind: "directory", path: name, mode }));
+        captured.push({ kind: "directory", path: name, mode });
         visit(child, name);
       } else if (info.isFile()) {
         const bytes = readFileSync(child);
@@ -131,7 +140,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
         hash.update(`f\0${name}\0${mode.toString(8)}\0`);
         hash.update(bytes);
         hash.update("\0");
-        captured.push(Object.freeze({ kind: "file", path: name, mode, contentBase64: bytes.toString("base64") }));
+        captured.push({ kind: "file", path: name, mode, contentBase64: bytes.toString("base64") });
       } else if (info.isSymbolicLink()) {
         const target = readlinkSync(child);
         const resolvedTarget = resolve(dirname(child), target);
@@ -147,7 +156,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
           );
         }
         hash.update(`l\0${name}\0${target}\0`);
-        captured.push(Object.freeze({ kind: "symlink", path: name, target }));
+        captured.push({ kind: "symlink", path: name, target });
       } else {
         throw new Error(`registerSandboxContent does not support special filesystem entry ${child}`);
       }
@@ -155,12 +164,12 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
   };
 
   visit(root, "");
-  return Object.freeze({
+  return {
     kind: "directory" as const,
     digest: `sha256:${hash.digest("hex")}`,
     mode: rootMode,
-    entries: Object.freeze(captured),
-  });
+    entries: captured,
+  };
 }
 
 function captureSource(path: string): RegisteredSandboxContentSnapshot {
@@ -184,16 +193,13 @@ export function registerSandboxContent(source: URL): RegisteredSandboxContent;
 /** Captures a host file or directory and returns a branded content identity. Resolve relative strings against the supplied definition URL rather than process cwd. */
 export function registerSandboxContent(source: string, definitionUrl: string | URL): RegisteredSandboxContent;
 /** Captures a host file or directory and returns a branded content identity. Resolve relative strings against the supplied definition URL rather than process cwd. */
-export function registerSandboxContent(
-  source: string | URL,
-  definitionUrl?: string | URL,
-): RegisteredSandboxContent {
+export function registerSandboxContent(source: string | URL, definitionUrl?: string | URL): RegisteredSandboxContent {
   const path = resolveSource(source, definitionUrl);
   const snapshot = captureSource(path);
   const content = { kind: snapshot.kind, digest: snapshot.digest } as RegisteredSandboxContent;
   Object.defineProperty(content, REGISTERED_SANDBOX_CONTENT, { value: true });
   REGISTERED_CONTENTS.add(content);
-  REGISTERED_CONTENT_LOCATORS.set(content, Object.freeze({ path }));
+  REGISTERED_CONTENT_LOCATORS.set(content, { path });
   return Object.freeze(content);
 }
 
@@ -202,9 +208,10 @@ function registerSandboxContentKind(
   source: string | URL,
   definitionUrl?: string | URL,
 ): SandboxContent {
-  const content = source instanceof URL
-    ? registerSandboxContent(source)
-    : registerSandboxContent(source, definitionUrl as string | URL);
+  const content =
+    source instanceof URL
+      ? registerSandboxContent(source)
+      : registerSandboxContent(source, definitionUrl as string | URL);
   if (content.kind !== expected) {
     throw new TypeError(
       `sandboxContent.${expected === "file" ? "file" : "directory"}() expected ${expected} content, ` +
@@ -262,4 +269,56 @@ export function registeredSandboxContentSnapshotOf(
     );
   }
   return snapshot;
+}
+
+/** Internal staged prepare boundary: verify once and freeze one disk snapshot for all uploads. */
+export async function prepareRegisteredSandboxContentFile(
+  content: RegisteredSandboxContent,
+  cacheDir: string,
+  signal: AbortSignal,
+): Promise<void> {
+  if (!isRegisteredSandboxContent(content) || content.kind !== "file")
+    throw new TypeError("staged payload requires registered file content");
+  if (STAGED_CONTENT_FILES.has(content)) return;
+  const source = REGISTERED_CONTENT_LOCATORS.get(content);
+  if (source === undefined) throw new TypeError("staged payload has no private locator");
+  const info = await lstat(source.path);
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error("staged payload source must remain a regular file");
+  const mode = permissionMode(info.mode);
+  const hash = createHash("sha256")
+    .update("file\0")
+    .update(`${mode.toString(8)}\0`);
+  const directory = join(cacheDir, "payloads");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, `${content.digest.slice(7)}.payload`);
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  let size = 0;
+  try {
+    await pipeline(
+      createReadStream(source.path),
+      new Transform({
+        transform(chunk: Buffer, _encoding, done) {
+          hash.update(chunk);
+          size += chunk.byteLength;
+          done(null, chunk);
+        },
+      }),
+      createWriteStream(temporary, { flags: "wx", mode: 0o600 }),
+      { signal },
+    );
+    if (`sha256:${hash.digest("hex")}` !== content.digest)
+      throw new Error("registered staged payload changed before preparation");
+    await chmod(temporary, 0o444);
+    await rename(temporary, path);
+    STAGED_CONTENT_FILES.set(content, { path, mode, size });
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+/** Only handles frozen by the staged prepare boundary can use this private streaming path. */
+export function registeredSandboxContentFileOf(
+  content: RegisteredSandboxContent,
+): { readonly path: string; readonly mode: number; readonly size: number } | undefined {
+  return STAGED_CONTENT_FILES.get(content);
 }

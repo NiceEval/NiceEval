@@ -66,4 +66,25 @@ lease 过期接管、hold 与删除互斥、snapshot 请求结果不确定和父
 - capture 受理结果不确定时结算为 `degraded(snapshot-uncertain)`，对象留在 repository 中按 orphan 处理；
 - author action 在 prepare allocation 中失败时结算为 `failed`。
 
+### Incus 账本 intent codec
+
+[账本 intent 的内部形状与持久 payload](../../../../feature/sandbox-nested-docker/architecture/README.md#账本-intent-的内部形状与持久-payload) 规定 payload 字节语义不变、非法组合被拒绝。
+非法组合只能来自历史版本或损坏的数据库，公开 CLI 无法稳定制造；GC evidence digest 的稳定性也只在跨版本的 preview 与 apply 之间可见。
+
+稳定 seam 是 Incus repository 的 payload codec，输入是纯 JSON 值，不 fake 任何 NiceEval 组件。最小矩阵区分：
+
+- 当前生产路径能写出的每种 Allocation 与 Artifact payload，往返后键集合与值不变，evidence digest 不变；
+- `quarantined: false` 读成 `settled`，再次编码时省略该键；
+- 有 stage 无 quarantine、需要资源名的 state 缺资源名、资源名只有一半、文档表外的 capture 组合与带 `consumerHoldId` 的 artifact payload 以 `user-database-invalid` 拒绝。
+
+### UserDatabase 错误 wire
+
+Docker cache、Incus 与 Before cache 的 repository 共用 UserDatabase worker；worker 内部失败经 structured clone 回到调用方。
+公开 CLI 无法稳定穷举 worker 内部的诊断字段，也无法按需制造每一类仓库失败。
+
+稳定 seam 是 worker 失败 wire 的 codec，输入是纯数据，不 fake 任何 NiceEval 组件。最小矩阵区分：
+
+- 每类领域错误跨 structured clone 后错误类、真实 repository 或 host 范围、恢复字段与 ExternalCause 链保持不变；
+- 缺少恢复字段或 cause 畸形的 wire 消息被拒绝，不重建成通用错误。
+
 其它 Sandbox 行为不保留 Unit。真实运行条件能观察的结果归 E2E；无法可靠运行的 Docker-in-Docker 行为按不自动化处置。

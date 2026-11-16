@@ -13,7 +13,9 @@ export type TerminalDeliverySink = (delivery: TerminalDelivery) => Effect.Effect
 interface DocsCommandContribution<Name extends string = string> {
   readonly name: Name;
   readonly summary: string;
-  readonly makeCommand: (deliver: TerminalDeliverySink) => Command.Command<any, never, unknown, never, NodeServices.NodeServices>;
+  readonly makeCommand: (
+    deliver: TerminalDeliverySink,
+  ) => Command.Command<any, never, unknown, never, NodeServices.NodeServices>;
 }
 
 export function defineDocsCommandContribution<const Name extends string>(
@@ -51,10 +53,7 @@ class DuplicateDocsContributionError extends Error {
 }
 
 /** Preserve the explicit caller's help order, rejecting duplicates before building commands. */
-export function makeDocsCommand(
-  contributions: readonly DocsCommandContribution[],
-  deliver: TerminalDeliverySink,
-) {
+export function makeDocsCommand(contributions: readonly DocsCommandContribution[], deliver: TerminalDeliverySink) {
   const names = new Set<string>();
   for (const contribution of contributions) {
     if (names.has(contribution.name)) throw new DuplicateDocsContributionError(contribution.name);

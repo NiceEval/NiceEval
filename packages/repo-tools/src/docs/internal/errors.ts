@@ -35,7 +35,13 @@ export class DocsWorkError extends Data.TaggedError("DocsWorkError")<{
   readonly receipt?: unknown;
 }> {}
 
-export type DocsDomainError = DocsDecodeError | DocsFileError | DocsPathError | DocsConflictError | DocsProcessError | DocsWorkError;
+export type DocsDomainError =
+  | DocsDecodeError
+  | DocsFileError
+  | DocsPathError
+  | DocsConflictError
+  | DocsProcessError
+  | DocsWorkError;
 
 /** Retain the existing CLI failure envelope and single-line human feedback. */
 export function renderDocsDomainFailure(error: DocsDomainError, json: boolean): string {

@@ -1,17 +1,10 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
-import {
-  attemptRunnerActivitiesRecordAttachment,
-  runRunnerActivitiesRecordAttachment,
-} from "./definition.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
+import { attemptRunnerActivitiesRecordAttachment, runRunnerActivitiesRecordAttachment } from "./definition.ts";
 
-export const attemptRunnerActivitiesRecordAttachmentPersistence =
-  defineRecordAttachmentPersistence({
-    attachment: attemptRunnerActivitiesRecordAttachment,
-    revision: 2,
-  });
+export const attemptRunnerActivitiesRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
+  attachment: attemptRunnerActivitiesRecordAttachment,
+});
 
-export const runRunnerActivitiesRecordAttachmentPersistence =
-  defineRecordAttachmentPersistence({
-    attachment: runRunnerActivitiesRecordAttachment,
-    revision: 2,
-  });
+export const runRunnerActivitiesRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
+  attachment: runRunnerActivitiesRecordAttachment,
+});

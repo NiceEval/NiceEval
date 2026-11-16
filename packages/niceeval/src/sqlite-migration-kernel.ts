@@ -1,4 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
+import { normalizeExternalCause, type ExternalCause } from "./shared/external-cause.ts";
 
 export interface SqliteMigration {
   readonly version: number;
@@ -29,13 +30,21 @@ export type SqliteMigrationFailureReason =
 
 export class SqliteMigrationKernelFailure extends Error {
   readonly name = "SqliteMigrationKernelFailure";
+  readonly cause: ExternalCause | undefined;
+  readonly rollback: { readonly state: "not-failed" } | { readonly state: "failed"; readonly cause: ExternalCause };
   constructor(
     readonly reason: SqliteMigrationFailureReason,
     message: string,
-    readonly cause?: unknown,
-    readonly rollbackCause?: unknown,
+    cause?: unknown,
+    rollbackCause?: unknown,
   ) {
-    super(message, cause === undefined ? undefined : { cause });
+    const normalized = cause === undefined ? undefined : normalizeExternalCause(cause);
+    super(message, normalized === undefined ? undefined : { cause: normalized });
+    this.cause = normalized;
+    this.rollback =
+      reason === "rollback-failure"
+        ? { state: "failed", cause: normalizeExternalCause(rollbackCause) }
+        : { state: "not-failed" };
   }
 }
 
@@ -67,8 +76,10 @@ export function defineSqliteMigrationCatalog(
   }
   const digests = new Set<string>();
   for (const [index, migration] of migrations.entries()) {
-    if (migration.version !== index + 1) throw new TypeError("SQLite migration catalog versions must be continuous from 1");
-    if (!DigestPattern.test(migration.digest)) throw new TypeError("SQLite migration digest must be a lowercase sha256");
+    if (migration.version !== index + 1)
+      throw new TypeError("SQLite migration catalog versions must be continuous from 1");
+    if (!DigestPattern.test(migration.digest))
+      throw new TypeError("SQLite migration digest must be a lowercase sha256");
     if (digests.has(migration.digest)) throw new TypeError("SQLite migration digests must be unique");
     digests.add(migration.digest);
   }
@@ -88,17 +99,29 @@ export function inspectSqliteMigrationLedger(
   catalog: readonly SqliteMigration[],
 ): number {
   const table = quotedIdentifier(tableName);
-  const rows = database.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name = ? OR tbl_name = ? ORDER BY type, name")
-    .all(tableName, tableName) as unknown as readonly Record<string, SQLOutputValue>[];
+  const rows = database
+    .prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name = ? OR tbl_name = ? ORDER BY type, name")
+    .all(tableName, tableName);
   const schema = rows.length === 1 ? rows[0] : undefined;
-  if (schema === undefined || schema.type !== "table" || schema.name !== tableName || schema.tbl_name !== tableName ||
-    typeof schema.sql !== "string" || normalizeSql(schema.sql) !== normalizeSql(sqliteMigrationLedgerSql(tableName))) {
+  if (
+    schema === undefined ||
+    schema.type !== "table" ||
+    schema.name !== tableName ||
+    schema.tbl_name !== tableName ||
+    typeof schema.sql !== "string" ||
+    normalizeSql(schema.sql) !== normalizeSql(sqliteMigrationLedgerSql(tableName))
+  ) {
     throw new SqliteMigrationKernelFailure("ledger-schema-invalid", "SQLite migration ledger schema is invalid");
   }
-  const receipts = database.prepare(`SELECT version, migration_digest FROM ${table} ORDER BY version`).all() as unknown as readonly Record<string, SQLOutputValue>[];
-  const versions = receipts.map((receipt) => typeof receipt.version === "bigint" ? Number(receipt.version) : receipt.version);
+  const receipts = database.prepare(`SELECT version, migration_digest FROM ${table} ORDER BY version`).all();
+  const versions = receipts.map((receipt) =>
+    typeof receipt.version === "bigint" ? Number(receipt.version) : receipt.version,
+  );
   if (versions.some((version) => typeof version === "number" && version > catalog.length)) {
-    throw new SqliteMigrationKernelFailure("receipt-version-ahead", "SQLite migration receipts are ahead of this catalog");
+    throw new SqliteMigrationKernelFailure(
+      "receipt-version-ahead",
+      "SQLite migration receipts are ahead of this catalog",
+    );
   }
   for (const [index, receipt] of receipts.entries()) {
     const version = versions[index];
@@ -106,7 +129,10 @@ export function inspectSqliteMigrationLedger(
       throw new SqliteMigrationKernelFailure("receipt-discontinuous", "SQLite migration receipts are discontinuous");
     }
     if (receipt.migration_digest !== catalog[index]?.digest) {
-      throw new SqliteMigrationKernelFailure("receipt-digest-mismatch", "SQLite migration receipt digest does not match the catalog");
+      throw new SqliteMigrationKernelFailure(
+        "receipt-digest-mismatch",
+        "SQLite migration receipt digest does not match the catalog",
+      );
     }
   }
   return receipts.length;
@@ -140,14 +166,22 @@ export function migrateSqliteDatabase(input: {
   const { database, ledgerTable, catalog, expectedFromVersion } = input;
   const table = quotedIdentifier(ledgerTable);
   if (database.isTransaction) {
-    throw new SqliteMigrationKernelFailure("active-transaction", "SQLite migration cannot start inside an active transaction");
+    throw new SqliteMigrationKernelFailure(
+      "active-transaction",
+      "SQLite migration cannot start inside an active transaction",
+    );
   }
 
   if (!input.bootstrapping) {
     const currentVersion = inspectSqliteMigrationLedger(database, ledgerTable, catalog);
     if (currentVersion === catalog.length) {
       input.validateCurrent();
-      return Object.freeze({ status: "current", fromVersion: currentVersion, toVersion: currentVersion, receipts: catalogReceipts(catalog) });
+      return {
+        status: "current",
+        fromVersion: currentVersion,
+        toVersion: currentVersion,
+        receipts: catalogReceipts(catalog),
+      };
     }
   }
 
@@ -157,31 +191,40 @@ export function migrateSqliteDatabase(input: {
     throw new SqliteMigrationKernelFailure("begin-failure", "SQLite migration could not begin", cause);
   }
   try {
-    if (input.bootstrapping && !ledgerExists(database, ledgerTable)) database.exec(sqliteMigrationLedgerSql(ledgerTable));
+    if (input.bootstrapping && !ledgerExists(database, ledgerTable))
+      database.exec(sqliteMigrationLedgerSql(ledgerTable));
     const admittedVersion = inspectSqliteMigrationLedger(database, ledgerTable, catalog);
     if (admittedVersion !== expectedFromVersion) {
-      if (input.acceptConcurrentBootstrapCurrent === true && input.bootstrapping && expectedFromVersion === 0 &&
-        admittedVersion === catalog.length) {
+      if (
+        input.acceptConcurrentBootstrapCurrent === true &&
+        input.bootstrapping &&
+        expectedFromVersion === 0 &&
+        admittedVersion === catalog.length
+      ) {
         input.validateCurrent();
         try {
           database.exec("COMMIT");
         } catch (cause) {
           throw new SqliteMigrationKernelFailure("commit-failure", "SQLite migration commit failed", cause);
         }
-        return Object.freeze({
+        return {
           status: "current",
           fromVersion: admittedVersion,
           toVersion: admittedVersion,
           receipts: catalogReceipts(catalog),
-        });
+        };
       }
-      throw new SqliteMigrationKernelFailure("admission-changed", "SQLite migration admission changed after the write lock was acquired");
+      throw new SqliteMigrationKernelFailure(
+        "admission-changed",
+        "SQLite migration admission changed after the write lock was acquired",
+      );
     }
     for (const migration of catalog) {
       if (migration.version <= admittedVersion) continue;
       try {
         migration.apply(database);
-        database.prepare(`INSERT INTO ${table}(version, applied_at, migration_digest) VALUES (?, ?, ?)`)
+        database
+          .prepare(`INSERT INTO ${table}(version, applied_at, migration_digest) VALUES (?, ?, ?)`)
           .run(migration.version, input.appliedAt(), migration.digest);
       } catch (cause) {
         throw cause instanceof SqliteMigrationKernelFailure
@@ -198,14 +241,16 @@ export function migrateSqliteDatabase(input: {
   } catch (cause) {
     return rollback(database, cause);
   }
-  return Object.freeze({
+  return {
     status: input.bootstrapping ? "bootstrapped" : "migrated",
     fromVersion: expectedFromVersion,
     toVersion: catalog.length,
     receipts: catalogReceipts(catalog),
-  });
+  };
 }
 
-function catalogReceipts(catalog: readonly SqliteMigration[]): readonly { readonly version: number; readonly digest: string }[] {
-  return Object.freeze(catalog.map(({ version, digest }) => Object.freeze({ version, digest })));
+function catalogReceipts(
+  catalog: readonly SqliteMigration[],
+): readonly { readonly version: number; readonly digest: string }[] {
+  return catalog.map(({ version, digest }) => ({ version, digest }));
 }

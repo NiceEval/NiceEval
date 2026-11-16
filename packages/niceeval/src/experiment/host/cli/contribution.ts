@@ -10,7 +10,9 @@ import {
   CliOutput,
   type CliOptionDefinition,
 } from "../../../cli/application.ts";
-import { CliFeatureError, type CliCommandContribution } from "../../../cli/contribution.ts";
+import type { CliFeatureError, CliCommandContribution } from "../../../cli/contribution.ts";
+import { externalCliFailure } from "../../../cli/feature-failure.ts";
+import type { ExternalCause } from "../../../shared/external-cause.ts";
 import { ProjectConfiguration } from "../../../cli/project-configuration.ts";
 import {
   createFeedbackCoordinator,
@@ -21,14 +23,19 @@ import {
   resolveOutputForm,
 } from "../../../runner/feedback/index.ts";
 import { renderSessionListText, renderSessionShowText } from "../../../runner/session.ts";
+import { sessionListDocumentToJson, sessionShowDocumentToJson } from "./session-protocol.ts";
 import type { CurrentReuseReadbackSnapshot } from "../../../runner/reuse-readback.ts";
 import { formatIdentityExplanation } from "../../../runner/feedback/identity-explanation.ts";
-import type { ExperimentHostDryComparison, ExperimentHostError } from "../types.ts";
+import type {
+  ExperimentHostDryComparison,
+  ExperimentHostDryPlan,
+  ExperimentHostError,
+  ExperimentHostJsonValue,
+  ExperimentHostSelectionProblem,
+} from "../types.ts";
 import { browsableExperimentPaths } from "../../../shared/aggregate.ts";
 import {
-  type ExperimentHostDebugPlan,
   type ExperimentHostRenamePlan,
-  type ExperimentHostRenameReason,
   type ExperimentHostRenameResult,
   type ExperimentHostSharedStateEvidence,
   type ExperimentHostAfterEvent,
@@ -37,29 +44,33 @@ import {
 import { ExperimentCliTerminal } from "./terminal.ts";
 export { decodeExpPlanDocument, ExpPlanDocumentSchema, type ExpPlanDocument } from "./plan-protocol.ts";
 
-type ExperimentCliRequirements = CliArguments | CliInterruption | CliInvocationFacts | CliOutput | ExperimentCliTerminal | ProjectConfiguration | ExperimentHostRequirements;
-type ExperimentCliError = CliFeatureError;
+type ExperimentCliRequirements =
+  | CliArguments
+  | CliInterruption
+  | CliInvocationFacts
+  | CliOutput
+  | ExperimentCliTerminal
+  | ProjectConfiguration
+  | ExperimentHostRequirements;
+type ExperimentCliError = CliFeatureError<ExternalCause>;
 
-const option = (type: "string" | "boolean", summary: string, multiple?: true) => Object.freeze({
-  type,
-  ...(multiple === undefined ? {} : { multiple }),
-  help: Object.freeze({ summary, visibility: "public" as const }),
-});
+const option = (type: "string" | "boolean", summary: string, multiple?: true) =>
+  Object.freeze({
+    type,
+    multiple,
+    help: Object.freeze({ summary, visibility: "public" as const }),
+  });
 
-const optionalTier = (
-  summary: string,
-  defaultValue: string,
-  values: readonly string[],
-  separated = false,
-) => Object.freeze({
-  type: "boolean" as const,
-  optionalValue: Object.freeze({
-    default: defaultValue,
-    ...(separated ? { separated: true as const } : {}),
-    values: Object.freeze([...values]),
-  }),
-  help: Object.freeze({ summary, visibility: "public" as const }),
-});
+const optionalTier = (summary: string, defaultValue: string, values: readonly string[], separated = false) =>
+  Object.freeze({
+    type: "boolean" as const,
+    optionalValue: Object.freeze({
+      default: defaultValue,
+      ...(separated ? { separated: true as const } : {}),
+      values: Object.freeze([...values]),
+    }),
+    help: Object.freeze({ summary, visibility: "public" as const }),
+  });
 
 const HELP_OPTION = Object.freeze({
   type: "boolean" as const,
@@ -73,14 +84,21 @@ export const CHECK_CLI_OPTIONS = Object.freeze({
 } satisfies Readonly<Record<string, CliOptionDefinition>>);
 
 export const EXP_NORMAL_CLI_OPTIONS = Object.freeze({
-  experiment: option("string", "Select an exact Experiment ID; repeat to select a set.", true),
+  experiment: option(
+    "string",
+    "Select an exact Experiment ID or a directory ending in /; repeat to select a set.",
+    true,
+  ),
   attempts: option("string", "Run each selected Eval this many times."),
   "max-concurrency": option("string", "Limit concurrent Attempt execution."),
   "max-build-concurrency": option("string", "Limit concurrent Sandbox build preparation."),
   "max-before-cache-concurrency": option("string", "Limit concurrent Sandbox before-cache preparation."),
   "sandbox-before-cache": option("string", "Use or bypass the Sandbox before cache."),
   // Let the root parser route retired options to this owner's migration error.
-  "sandbox-setup-cache": Object.freeze({ type: "string", help: Object.freeze({ summary: "Use --sandbox-before-cache.", visibility: "hidden" }) }),
+  "sandbox-setup-cache": Object.freeze({
+    type: "string",
+    help: Object.freeze({ summary: "Use --sandbox-before-cache.", visibility: "hidden" }),
+  }),
   timeout: option("string", "Set the per-Attempt timeout in milliseconds."),
   budget: option("string", "Set the Invocation budget in USD."),
   tag: option("string", "Select only Evals with this tag."),
@@ -163,7 +181,7 @@ const EXP_HELP = `Run and maintain Experiments:
 ${SHARED_STATE_RECOVERY_USAGE}
 
 Run options:
-  --experiment <exact-id>       select an exact Experiment ID (repeatable)
+  --experiment <id-or-dir/>     select an exact ID or directory prefix (repeatable)
   --attempts <n>                 run each selected Eval this many times
   --max-concurrency <n>          limit concurrent Attempt execution
   --max-build-concurrency <n>    limit concurrent Sandbox build preparation
@@ -224,63 +242,96 @@ const EXP_COMMAND_SUMMARY = `list, plan, run, rename, or recover Experiments
       explicit sharedState recovery:
 ${SHARED_STATE_RECOVERY_USAGE}`;
 
-function failure(
-  operation: string,
-  cause: unknown,
-  exitCode = 1,
-  display?: string,
-): ExperimentCliError {
-  return new CliFeatureError({
+function failure(operation: string, cause: unknown, exitCode = 1, display?: string): ExperimentCliError {
+  return externalCliFailure(cause, {
     feature: "experiments",
     operation,
-    cause,
     exitCode,
-    ...(display === undefined ? {} : { display }),
+    display,
   });
 }
 
 function write(channel: "stdout" | "stderr", text: string): Effect.Effect<void, ExperimentCliError, CliOutput> {
-  return Effect.flatMap(CliOutput, (output) => channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text)).pipe(
-    Effect.mapError((cause) => failure(`write ${channel}`, cause)),
-  );
+  return Effect.flatMap(CliOutput, (output) =>
+    channel === "stdout" ? output.writeStdout(text) : output.writeStderr(text),
+  ).pipe(Effect.mapError((cause) => failure(`write ${channel}`, cause)));
 }
 
-function numberFlag(value: string | boolean | string[] | undefined, name: string, positive = false): number | undefined {
+function numberFlag(
+  value: string | boolean | string[] | undefined,
+  name: string,
+  positive = false,
+): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || !/^[0-9]+(?:\.[0-9]+)?$/u.test(value)) throw new Error(`${name} requires a number.`);
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || (positive && (!Number.isInteger(parsed) || parsed === 0))) {
-    throw new Error(positive ? `${name} requires a positive integer.` : `${name} requires a non-negative finite number.`);
+    throw new Error(
+      positive ? `${name} requires a positive integer.` : `${name} requires a non-negative finite number.`,
+    );
   }
   return parsed;
 }
 
-function enumFlag(value: string | boolean | string[] | undefined, name: string, values: readonly string[]): string | undefined {
+function enumFlag<const Value extends string>(
+  value: string | boolean | string[] | undefined,
+  name: string,
+  values: readonly Value[],
+): Value | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !values.includes(value)) throw new Error(`${name} accepts ${values.join(" or ")}.`);
-  return value;
+  const matched = values.find((candidate) => candidate === value);
+  if (matched === undefined) throw new Error(`${name} accepts ${values.join(" or ")}.`);
+  return matched;
 }
 
 function jsonDocument(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
 }
 
-function catalogText(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly adapter: string | null; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
-  return catalog.experiments.map((experiment) => [
-    experiment.id,
-    experiment.description ?? "—",
-    experiment.adapter,
-    experiment.model ?? "—",
-    `attempts=${experiment.attempts}`,
-    `evals=${experiment.evalIds.length}`,
-    `labels=${JSON.stringify(experiment.labels)}`,
-  ].join("\t")).join("\n") + (catalog.experiments.length === 0 ? "" : "\n");
+function catalogText(catalog: {
+  readonly experiments: readonly {
+    readonly id: string;
+    readonly description: string | undefined;
+    readonly adapter: string | null;
+    readonly model: string | undefined;
+    readonly attempts: number;
+    readonly evalIds: readonly string[];
+    readonly labels: Readonly<Record<string, string | number>>;
+  }[];
+}): string {
+  return (
+    catalog.experiments
+      .map((experiment) =>
+        [
+          experiment.id,
+          experiment.description ?? "—",
+          experiment.adapter,
+          experiment.model ?? "—",
+          `attempts=${experiment.attempts}`,
+          `evals=${experiment.evalIds.length}`,
+          `labels: ${
+            Object.entries(experiment.labels)
+              .map(([key, value]) => `${key}=${value}`)
+              .join(", ") || "none"
+          }`,
+        ].join("\t"),
+      )
+      .join("\n") + (catalog.experiments.length === 0 ? "" : "\n")
+  );
 }
 
-function catalogJson(catalog: { readonly experiments: readonly { readonly id: string; readonly description?: string; readonly adapter: string | null; readonly model?: string; readonly attempts: number; readonly evalIds: readonly string[]; readonly labels: Readonly<Record<string, string | number>> }[] }): string {
+function catalogJson(catalog: {
+  readonly experiments: readonly {
+    readonly id: string;
+    readonly description: string | undefined;
+    readonly adapter: string | null;
+    readonly model: string | undefined;
+    readonly attempts: number;
+    readonly evalIds: readonly string[];
+    readonly labels: Readonly<Record<string, string | number>>;
+  }[];
+}): string {
   return jsonDocument({
-    format: "niceeval.experiments",
-    schemaVersion: 1,
     experiments: catalog.experiments.map((experiment) => ({
       experimentId: experiment.id,
       ...(experiment.description === undefined ? {} : { description: experiment.description }),
@@ -294,16 +345,26 @@ function catalogJson(catalog: { readonly experiments: readonly { readonly id: st
   });
 }
 
-function checkText(result: { readonly status: string; readonly pairCount?: number }): string {
+function checkText(result: { readonly status: string; readonly pairCount: number | undefined }): string {
   return result.status === "linked"
     ? `Sandbox layers linked: ${result.pairCount} pairs.\n`
     : `Experiment selection: ${result.status}.\n`;
 }
 
-function selectionProblemText(result: { readonly status: string; readonly selector?: string; readonly candidates?: readonly string[]; readonly experimentIds?: readonly string[] }): string {
+function experimentOptionValues(ids: readonly string[]): readonly string[] {
+  const values = new Set(ids);
+  for (const id of ids) {
+    for (let slash = id.indexOf("/"); slash !== -1; slash = id.indexOf("/", slash + 1)) {
+      values.add(id.slice(0, slash + 1));
+    }
+  }
+  return [...values].sort();
+}
+
+function selectionProblemText(result: ExperimentHostSelectionProblem): string {
   if (result.status === "experiment-no-match") {
-    return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${browsableExperimentPaths(result.candidates ?? []).join(", ") || "(none)"}.
-Run \`niceeval exp <path> --dry\` to preview a plan.
+    return `No experiment matched: ${result.selector ?? "(all)"}. Available paths: ${experimentOptionValues(result.candidates ?? []).join(", ") || "(none)"}.
+Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
 `;
   }
   if (result.status === "eval-no-match") {
@@ -317,33 +378,71 @@ Run \`niceeval exp ${(result.experimentIds ?? []).join(", ") || "(all)"} --dry\`
 `;
 }
 
-function acceptText(results: readonly { readonly runId: string; readonly sourceLocator: string; readonly locator: string; readonly fingerprint: string }[]): string {
-  const accepted = results.map((result) =>
-    `Accepted source Attempt ${result.sourceLocator} into new Run ${result.runId}. Result locator remains ${result.locator}. Current fingerprint: ${result.fingerprint}
-`
-  ).join("");
+function acceptText(
+  results: readonly {
+    readonly runId: string;
+    readonly sourceLocator: string;
+    readonly locator: string;
+    readonly fingerprint: string;
+  }[],
+): string {
+  const accepted = results
+    .map(
+      (result) =>
+        `Accepted source Attempt ${result.sourceLocator} into new Run ${result.runId}. Result locator remains ${result.locator}. Current fingerprint: ${result.fingerprint}
+`,
+    )
+    .join("");
   const commands = [...new Set(results.map((result) => result.runId))]
-    .map((runId) => `show: niceeval show --run ${runId}\n`).join("");
+    .map((runId) => `show: niceeval show run:${runId}\n`)
+    .join("");
   return `${accepted}${commands}`;
 }
 
 function identityExplanationLines(comparisons: readonly ExperimentHostDryComparison[]): string[] {
-  return comparisons.flatMap((comparison) => comparison.recordedClaim === "execution-identity" && comparison.explanation !== undefined
-    ? formatIdentityExplanation(comparison.explanation) : []);
+  return comparisons.flatMap(function comparisonExplanation(comparison) {
+    if (comparison.recordedClaim !== "execution-identity" || comparison.explanation === undefined) return [];
+    if (comparison.explanation.kind === "unexplained") return [comparison.explanation.diagnostic.summary];
+    return formatIdentityExplanation(comparison.explanation);
+  });
 }
 
-function acceptMembersText(members: readonly { readonly locator: string; readonly evalId: string; readonly attempt: number; readonly comparisons: readonly ExperimentHostDryComparison[] }[]): string {
-  return members.map((member) => [
-    `  ${member.evalId} #${String(member.attempt)} ${member.locator} eligible`,
-    ...identityExplanationLines(member.comparisons).map((line) => `    ${line}`),
-  ].join("\n")).join("\n") + "\n";
+function acceptMembersText(
+  members: readonly {
+    readonly locator: string;
+    readonly evalId: string;
+    readonly attempt: number;
+    readonly comparisons: readonly ExperimentHostDryComparison[];
+  }[],
+): string {
+  return (
+    members
+      .map((member) =>
+        [
+          `  ${member.evalId} #${String(member.attempt)} ${member.locator} eligible`,
+          ...identityExplanationLines(member.comparisons).map((line) => `    ${line}`),
+        ].join("\n"),
+      )
+      .join("\n") + "\n"
+  );
 }
 
-function acceptRunPlanText(plan: { readonly sourceRunId: string; readonly members: Parameters<typeof acceptMembersText>[0] }): string {
+function acceptRunPlanText(plan: {
+  readonly sourceRunId: string;
+  readonly members: Parameters<typeof acceptMembersText>[0];
+}): string {
   return `Accept source Run ${plan.sourceRunId}\n${acceptMembersText(plan.members)}${String(plan.members.length)} members eligible\nApply: niceeval accept --run ${plan.sourceRunId}\n`;
 }
 
-function acceptedRunText(sourceRunId: string, results: readonly { readonly runId: string; readonly sourceLocator: string; readonly locator: string; readonly fingerprint: string }[]): string {
+function acceptedRunText(
+  sourceRunId: string,
+  results: readonly {
+    readonly runId: string;
+    readonly sourceLocator: string;
+    readonly locator: string;
+    readonly fingerprint: string;
+  }[],
+): string {
   const targetRunId = results[0]?.runId ?? "unknown";
   return `Accepted source Run ${sourceRunId} into new Run ${targetRunId}. ${String(results.length)} reference members published.\n${acceptText(results)}`;
 }
@@ -385,30 +484,25 @@ function teardownInspectionProblemText(inspection: ExperimentHostAfterResult): s
   }
 }
 
-function teardownFailure(operation: string, cause: unknown, recoveryKey?: string): ExperimentCliError {
-  const code = typeof cause === "object" && cause !== null && typeof Reflect.get(cause, "code") === "string"
-    ? String(Reflect.get(cause, "code"))
-    : undefined;
-  const message = cause instanceof Error ? cause.message : String(cause);
-  const display = code === "shared-state-recovery-registration-failed" && recoveryKey !== undefined
-    ? `error: sharedState recovery for ${recoveryKey} could not clear the exact interrupted teardown registration: ${message}. The recovery generation remains closed.
+function teardownFailure(operation: string, cause: ExperimentHostError, recoveryKey?: string): ExperimentCliError {
+  const code = cause.code;
+  const message = cause.message;
+  const display =
+    code === "shared-state-recovery-registration-failed" && recoveryKey !== undefined
+      ? `error: sharedState recovery for ${recoveryKey} could not clear the exact interrupted teardown registration: ${message}. The recovery generation remains closed.
 `
-    : code === "shared-state-recovery-already-released-registration-failed" && recoveryKey !== undefined
-      ? `error: sharedState key ${recoveryKey} was already released, but NiceEval could not clear the exact stale teardown registration: ${message}. It did not rerun teardown.
+      : code === "shared-state-recovery-already-released-registration-failed" && recoveryKey !== undefined
+        ? `error: sharedState key ${recoveryKey} was already released, but NiceEval could not clear the exact stale teardown registration: ${message}. It did not rerun teardown.
 `
-      : code === "shared-state-recovery-completion-failed"
-        ? `sharedState recovery could not release its exact owner token: ${message}\n`
-        : recoveryKey === undefined
-          ? undefined
-          : `sharedState recovery refused: ${message}\n`;
+        : code === "shared-state-recovery-completion-failed"
+          ? `sharedState recovery could not release its exact owner token: ${message}\n`
+          : recoveryKey === undefined
+            ? undefined
+            : `sharedState recovery refused: ${message}\n`;
   return failure(operation, cause, 1, display);
 }
 
-function invocationText(result: { readonly receipt: { readonly invocationId: string; readonly createdRunIds: readonly string[]; readonly completion: string }; readonly summary: { readonly passed: number; readonly failed: number; readonly skipped: number; readonly errored: number; readonly beforeCaches: { readonly total: number; readonly hit: number; readonly prepared: number; readonly degraded: number; readonly failed: number } } }): string {
-  return `Invocation ${result.receipt.invocationId} · ${result.receipt.completion}\nRuns: ${result.receipt.createdRunIds.join(", ") || "none"}\nResults: ${result.summary.passed} passed · ${result.summary.failed} failed · ${result.summary.errored} errored · ${result.summary.skipped} skipped\nBefore caches: ${result.summary.beforeCaches.hit} hit · ${result.summary.beforeCaches.prepared} prepared · ${result.summary.beforeCaches.degraded} degraded · ${result.summary.beforeCaches.failed} failed (${result.summary.beforeCaches.total} total)\n`;
-}
-
-function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "gap"; readonly target: { readonly runId: string; readonly slotId: string; readonly experimentId: string; readonly evalId: string; readonly evalGroupId?: string; readonly evalGroupIndex?: number; readonly attempt: number }; readonly comparisons: readonly ExperimentHostDryComparison[]; readonly reason?: string; readonly scope?: string }[]; readonly readbacks: readonly CurrentReuseReadbackSnapshot[]; readonly lockedPairs: readonly string[] }) {
+function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lockedPairs">) {
   type ProjectedSlot = {
     readonly runId: string;
     readonly slotId: string;
@@ -417,96 +511,177 @@ function dryRows(plan: { readonly slots: readonly { readonly state: "reuse" | "g
     readonly attempt: number;
     readonly state: "reused" | "gap";
     readonly comparisons: readonly ExperimentHostDryComparison[];
-    readonly reason?: string;
-    readonly scope?: string;
+    readonly reason: string | undefined;
+    readonly scope: string | undefined;
+    readonly issues: readonly ExperimentHostJsonValue[] | undefined;
   };
-  const rows = new Map<string, { experimentId: string; evalId: string; evalGroupId?: string; evalGroupIndex?: number; slots: ProjectedSlot[]; readbacks: CurrentReuseReadbackSnapshot[]; locked?: true }>();
+  const rows = new Map<
+    string,
+    {
+      experimentId: string;
+      evalId: string;
+      evalGroupId: string | undefined;
+      evalGroupIndex: number | undefined;
+      slots: ProjectedSlot[];
+      readbacks: CurrentReuseReadbackSnapshot[];
+      locked: true | undefined;
+    }
+  >();
   for (const slot of plan.slots) {
     const key = JSON.stringify([slot.target.experimentId, slot.target.evalId]);
     const row = rows.get(key) ?? {
       experimentId: slot.target.experimentId,
       evalId: slot.target.evalId,
-      ...(slot.target.evalGroupId === undefined ? {} : { evalGroupId: slot.target.evalGroupId, evalGroupIndex: slot.target.evalGroupIndex }),
+      evalGroupId: slot.target.evalGroup?.id,
+      evalGroupIndex: slot.target.evalGroup?.index,
       slots: [],
       readbacks: [],
+      locked: undefined,
     };
     row.slots.push({
       ...slot.target,
       state: slot.state === "reuse" ? "reused" : "gap",
       comparisons: slot.comparisons,
-      ...(slot.state === "gap" ? { reason: slot.reason, scope: slot.scope } : {}),
+      reason: slot.state === "gap" ? slot.reason : undefined,
+      scope: slot.state === "gap" ? slot.scope : undefined,
+      issues: slot.state === "gap" && slot.reason === "dynamic-module-unresolved" ? slot.issues : undefined,
     });
     if (plan.lockedPairs.includes(key)) row.locked = true;
     rows.set(key, row);
   }
   for (const readback of plan.readbacks) {
     const key = JSON.stringify([readback.target.experimentId, readback.target.evalId]);
-    const row = rows.get(key) ?? { experimentId: readback.target.experimentId, evalId: readback.target.evalId, slots: [], readbacks: [] };
+    const row = rows.get(key) ?? {
+      experimentId: readback.target.experimentId,
+      evalId: readback.target.evalId,
+      evalGroupId: undefined,
+      evalGroupIndex: undefined,
+      slots: [],
+      readbacks: [],
+      locked: undefined,
+    };
     row.readbacks.push(readback);
     if (plan.lockedPairs.includes(key)) row.locked = true;
     rows.set(key, row);
   }
-  return [...rows.values()].map((row) => ({
-    ...row,
-    slots: [...row.slots].sort((left, right) => left.attempt - right.attempt),
-    readbacks: [...row.readbacks].sort((left, right) => left.target.attempt - right.target.attempt),
-  })).sort((left, right) =>
-    left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId));
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      slots: [...row.slots].sort((left, right) => left.attempt - right.attempt),
+      readbacks: [...row.readbacks].sort((left, right) => left.target.attempt - right.target.attempt),
+    }))
+    .sort(
+      (left, right) => left.experimentId.localeCompare(right.experimentId) || left.evalId.localeCompare(right.evalId),
+    );
 }
 
-function dryText(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAttempts: number; readonly evals: number; readonly configurations: number; readonly attempts: number }, pluginCount: number): string {
+function dryText(
+  plan: Parameters<typeof dryRows>[0] & Pick<ExperimentHostDryPlan, "recoverablePairs">,
+  shape: {
+    readonly totalAttempts: number;
+    readonly evals: number;
+    readonly configurations: number;
+    readonly attempts: number;
+  },
+  pluginCount: number,
+): string {
   const rows = dryRows(plan);
   const reused = plan.slots.filter((slot) => slot.state === "reuse").length;
   const lines = [
-    `plan: ${shape.totalAttempts} attempts · ${shape.evals} evals × ${shape.configurations} configs · runs ${shape.attempts}`,
-    ...(reused === 0 ? [] : [`reuse: ${reused}/${shape.totalAttempts} exact current Record attempts`]),
-    `plugins: ${pluginCount} lifecycle occurrences`,
+    `plan: ${shape.totalAttempts} attempts · ${shape.evals} evals × ${shape.configurations} experiments · attempts ${shape.attempts}`,
+    ...(reused === 0 ? [] : [`using earlier results: ${reused}/${shape.totalAttempts}`]),
+    `plugins: ${pluginCount} lifecycle hooks`,
   ];
   for (const row of rows) {
     const slots = row.slots;
     const reusedAttempts = slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
     const gaps = slots.filter((slot) => slot.state === "gap");
     const explanations = new Map(slots.map((slot) => [slot.attempt, identityExplanationLines(slot.comparisons)]));
-    const reusedParts = reusedAttempts.some((attempt) => explanations.get(attempt)?.length)
-      ? reusedAttempts.map((attempt) => {
-        const summary = explanations.get(attempt)?.[0];
-        return `reused ${attempt}${summary === undefined ? "" : ` ${summary}`}`;
-      })
-      : reusedAttempts.length === 0 ? [] : [`reused ${reusedAttempts.join(",")}`];
+    const reasons = new Map<string, number>();
+    for (const slot of gaps) {
+      const readback = row.readbacks.find((item) => item.target.attempt === slot.attempt);
+      function previousVerdict() {
+        if (readback?.state === "reused") return readback.verdict;
+        if (readback?.verdict.state === "available") return readback.verdict.value;
+        return undefined;
+      }
+      const reason = dryReasonText(slot.reason, explanations.get(slot.attempt)?.[0], previousVerdict());
+      reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    }
     const parts = [
-      ...(row.locked ? ["locked"] : []),
-      ...reusedParts,
-      ...gaps.map((slot) => {
-        const summary = slot.reason === "identity-mismatch" || slot.reason === "adoption-unproven"
-          ? explanations.get(slot.attempt)?.[0] : undefined;
-        return `gap ${slot.attempt}:${slot.reason ?? "unknown"}${summary === undefined ? "" : `: ${summary}`}`;
-      }),
+      ...(row.locked ? ["running in another invocation"] : []),
+      ...(plan.recoverablePairs.includes(JSON.stringify([row.experimentId, row.evalId]))
+        ? ["previous run did not release this Eval; this run will take over"]
+        : []),
+      ...(reusedAttempts.length === 0 ? [] : [`using earlier results ×${reusedAttempts.length}`]),
+      ...[...reasons].map(([reason, count]) => (count === 1 ? reason : `${reason} ×${count}`)),
     ];
-    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no slots"}`);
+    lines.push(`${row.experimentId}  ${row.evalId}  ${parts.join(" · ") || "no attempts selected"}`);
+    const shownDetails = new Set<string>();
     for (const slot of gaps) {
       if (slot.reason !== "identity-mismatch" && slot.reason !== "adoption-unproven") continue;
       const details = explanations.get(slot.attempt)?.slice(1) ?? [];
       if (details.length > 0) {
-        if (slots.length > 1) lines.push(`  attempt ${slot.attempt}:`);
-        lines.push(...details.map((line) => `  ${line}`));
+        for (const detail of details) {
+          if (shownDetails.has(detail)) continue;
+          shownDetails.add(detail);
+          lines.push(`  ${detail}`);
+        }
       }
     }
     for (const readback of row.readbacks) {
-      const verdict = readback.state === "reused"
-        ? readback.verdict
-        : readback.verdict.state === "available"
-          ? readback.verdict.value
-          : readback.verdict.state;
-      lines.push(`  source ${readback.source.locator} · ${readback.state} · verdict ${verdict}`);
+      function readbackVerdict() {
+        if (readback.state === "reused") return readback.verdict;
+        if (readback.verdict.state === "available") return readback.verdict.value;
+        return readback.verdict.state;
+      }
+      lines.push(`  earlier result ${readback.source.locator} · ${readbackVerdict()}`);
     }
   }
   return `${lines.join("\n")}\n`;
 }
 
-function dryJson(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAttempts: number; readonly evals: number; readonly configurations: number; readonly attempts: number }, plugins: readonly unknown[]): string {
+function dryReasonText(reason: string | undefined, summary: string | undefined, verdict: string | undefined): string {
+  switch (reason) {
+    case "no-source-run":
+    case "no-result":
+      return "Not run yet";
+    case "pending":
+      return "Running";
+    case "not-published":
+      return "Run did not finish";
+    case "identity-mismatch":
+      return `Needs rerun: ${summary ?? "configuration changed"}`;
+    case "outcome-ineligible":
+      return `Needs rerun: last attempt ${verdict ?? "did not complete successfully"}`;
+    case "score-incomplete":
+      return "Needs rerun: score incomplete";
+    case "evidence-unavailable":
+      return "Needs rerun: evidence missing";
+    case "timeout-exceeded":
+      return "Needs rerun: timed out";
+    case "adoption-unproven":
+      return "Needs review: earlier result not proven equivalent";
+    case "stateful-input":
+      return "Reruns every time: uses state";
+    case "dynamic-module-unresolved":
+      return "Cannot plan: an imported module could not be resolved";
+    default:
+      return "Needs rerun: earlier result is not usable";
+  }
+}
+
+function dryJson(
+  plan: Parameters<typeof dryRows>[0],
+  shape: {
+    readonly totalAttempts: number;
+    readonly evals: number;
+    readonly configurations: number;
+    readonly attempts: number;
+  },
+  plugins: readonly unknown[],
+): string {
   return jsonDocument({
-    format: "niceeval.current-reuse-plan/v1",
-    schemaVersion: 1,
     total: shape.totalAttempts,
     evals: shape.evals,
     configs: shape.configurations,
@@ -519,28 +694,31 @@ function dryJson(plan: Parameters<typeof dryRows>[0], shape: { readonly totalAtt
 
 function renameText(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
   const heading = `Source Run ${result.sourceRunId}\n${result.oldId ?? "Unknown source Experiment"} -> ${result.newId}\n`;
-  if (result.status === "rejected") return `${heading}error: ${result.reason}: ${result.detail}\n`;
-  if (result.status === "done") return `${heading}Accepted into new Run ${result.runId}. New members participate in current result selection; earlier Runs remain readable.\n${result.migrated.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}  accepted`).join("\n")}\n`;
-  if (result.blocked !== undefined) return `${heading}error: ${result.blocked.reason}: ${result.blocked.detail}\n`;
-  return `${heading}${result.migrations.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}`).join("\n")}\n${result.migrations.length} members eligible. Applying publishes new current members; earlier Runs remain readable.\nApply: niceeval exp rename ${result.newId} --run ${result.sourceRunId}\n`;
+  if (result.status === "rejected") return `${heading}error: ${result.detail}\n`;
+  if (result.status === "done")
+    return `${heading}Accepted ${result.migrated.length} attempts into new Run ${result.runId}. Earlier Runs remain readable.${result.migrated[0] === undefined ? "" : `\n  source example: ${result.migrated[0].sourceLocator}`}\nNEXT\n  show: niceeval show run:${result.runId}\n  view: niceeval view run:${result.runId}\n`;
+  if (result.blocked !== undefined) return `${heading}error: ${result.blocked.detail}\n`;
+  return `${heading}${result.migrations.map((entry) => `  ${entry.evalId}  Attempt #${entry.attempt + 1}  ${entry.sourceLocator}`).join("\n")}\n${result.migrations.length} attempts can be used. Applying publishes a new Run; earlier Runs remain readable.\nNEXT\n  niceeval exp rename ${result.newId} --run ${result.sourceRunId}\n`;
 }
 
 function renameJson(result: ExperimentHostRenamePlan | ExperimentHostRenameResult): string {
-  return jsonDocument({ format: "niceeval.experimentRename", schemaVersion: 1, ...result });
+  return jsonDocument({ ...result });
 }
 
 function parsed(argv: readonly string[], options: Readonly<Record<string, CliOptionDefinition>>) {
-  return Effect.flatMap(CliArguments, (argumentsService) => Effect.try({
-    try: () => {
-      for (const [oldName, newName] of [["--sandbox-setup-cache", "--sandbox-before-cache"]]) {
-        if (argv.some((token) => token === oldName || token.startsWith(`${oldName}=`))) {
-          throw new TypeError(`${oldName} is no longer supported. Use ${newName}.`);
+  return Effect.flatMap(CliArguments, (argumentsService) =>
+    Effect.try({
+      try: () => {
+        for (const [oldName, newName] of [["--sandbox-setup-cache", "--sandbox-before-cache"]]) {
+          if (argv.some((token) => token === oldName || token.startsWith(`${oldName}=`))) {
+            throw new TypeError(`${oldName} is no longer supported. Use ${newName}.`);
+          }
         }
-      }
-      return argumentsService.parse(argv, options);
-    },
-    catch: (cause) => failure("parse command", cause),
-  }));
+        return argumentsService.parse(argv, options);
+      },
+      catch: (cause) => failure("parse command", cause),
+    }),
+  );
 }
 
 function factsAndConfig() {
@@ -549,22 +727,22 @@ function factsAndConfig() {
     const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
     const project = yield* ProjectConfiguration;
     const config = yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-    return Object.freeze({ invocation, config });
+    return { invocation, config };
   });
 }
 
 function selection(positionals: readonly string[], experimentIds?: readonly string[]) {
   if (experimentIds !== undefined) {
-    return Object.freeze({
-      experimentIds: Object.freeze([...new Set(experimentIds)]),
-      ...(positionals.length === 0 ? {} : { evalSelectors: Object.freeze([...positionals]) }),
-    });
+    return {
+      experimentIds: [...new Set(experimentIds)],
+      evalSelectors: positionals.length === 0 ? undefined : positionals,
+    };
   }
   const [experimentSelector, ...evalSelectors] = positionals;
-  return Object.freeze({
-    ...(experimentSelector === undefined ? {} : { experimentSelector }),
-    ...(evalSelectors.length === 0 ? {} : { evalSelectors: Object.freeze(evalSelectors) }),
-  });
+  return {
+    experimentSelector,
+    evalSelectors: evalSelectors.length === 0 ? undefined : evalSelectors,
+  };
 }
 
 function overrides(values: Record<string, string | boolean | string[] | undefined>) {
@@ -573,428 +751,608 @@ function overrides(values: Record<string, string | boolean | string[] | undefine
   const budget = numberFlag(values.budget, "--budget");
   const maxConcurrency = numberFlag(values["max-concurrency"], "--max-concurrency", true);
   const maxBuildConcurrency = numberFlag(values["max-build-concurrency"], "--max-build-concurrency", true);
-  const maxBeforeCacheConcurrency = numberFlag(values["max-before-cache-concurrency"], "--max-before-cache-concurrency", true);
+  const maxBeforeCacheConcurrency = numberFlag(
+    values["max-before-cache-concurrency"],
+    "--max-before-cache-concurrency",
+    true,
+  );
   const rerun = enumFlag(values.rerun, "--rerun", ["failed", "all"]);
   const keepSandbox = enumFlag(values["keep-sandbox"], "--keep-sandbox", ["failed", "all"]);
-  const sandboxBeforeCache = enumFlag(
-    values["sandbox-before-cache"],
-    "--sandbox-before-cache",
-    ["use", "bypass"],
-  );
-  return Object.freeze({
-    ...(attempts === undefined ? {} : { attempts }),
-    ...(timeoutMs === undefined ? {} : { timeoutMs }),
-    ...(budget === undefined ? {} : { budget }),
-    ...(maxConcurrency === undefined ? {} : { maxConcurrency }),
-    ...(maxBuildConcurrency === undefined ? {} : { maxBuildConcurrency }),
-    ...(maxBeforeCacheConcurrency === undefined ? {} : { maxBeforeCacheConcurrency }),
-    ...(rerun === undefined ? {} : { rerun: rerun as "failed" | "all" }),
-    ...(keepSandbox === undefined ? {} : { keepSandbox: keepSandbox as "failed" | "all" }),
-    ...(values["no-pause"] === true ? { pauseOnFailure: false } : values["pause-on-failure"] === true ? { pauseOnFailure: true } : {}),
-    ...(sandboxBeforeCache === undefined
-      ? {}
-      : { sandboxBeforeCache: sandboxBeforeCache as "use" | "bypass" }),
-    ...(values["no-early-exit"] === true ? { earlyExit: false } : values["early-exit"] === true ? { earlyExit: true } : {}),
-  });
+  const sandboxBeforeCache = enumFlag(values["sandbox-before-cache"], "--sandbox-before-cache", ["use", "bypass"]);
+  return {
+    attempts,
+    timeoutMs,
+    budget,
+    maxConcurrency,
+    maxBuildConcurrency,
+    maxBeforeCacheConcurrency,
+    rerun,
+    keepSandbox,
+    ...pauseOverride(),
+    sandboxBeforeCache,
+    ...earlyExitOverride(),
+  };
+
+  function pauseOverride() {
+    if (values["no-pause"] === true) return { pauseOnFailure: false };
+    if (values["pause-on-failure"] === true) return { pauseOnFailure: true };
+    return {};
+  }
+  function earlyExitOverride() {
+    if (values["no-early-exit"] === true) return { earlyExit: false };
+    if (values["early-exit"] === true) return { earlyExit: true };
+    return {};
+  }
 }
 
 const checkCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
   name: "check",
   summary: "check Experiment and Sandbox selection",
   options: CHECK_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const input = yield* parsed(argv, CHECK_CLI_OPTIONS);
-    if (input.values.help === true) return yield* write("stdout", CHECK_HELP).pipe(Effect.as(0));
-    const { invocation, config } = yield* factsAndConfig();
-    const result = yield* experimentHost.check({ cwd: invocation.cwd, config, ...selection(input.positionals) }).pipe(
-      Effect.mapError((cause) => failure("check", cause)),
-    );
-    if (result.status !== "linked") {
-      yield* write("stderr", selectionProblemText(result));
-      return 1;
-    }
-    yield* write("stdout", checkText(result));
-    return 0;
-  }),
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const input = yield* parsed(argv, CHECK_CLI_OPTIONS);
+      if (input.values.help === true) return yield* write("stdout", CHECK_HELP).pipe(Effect.as(0));
+      const { invocation, config } = yield* factsAndConfig();
+      const result = yield* experimentHost
+        .check({ cwd: invocation.cwd, config, ...selection(input.positionals) })
+        .pipe(Effect.mapError((cause) => failure("check", cause)));
+      if (result.status !== "linked") {
+        yield* write("stderr", selectionProblemText(result));
+        return 1;
+      }
+      yield* write("stdout", checkText(result));
+      return 0;
+    }),
 });
 
 const expCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
   name: "exp",
   summary: EXP_COMMAND_SUMMARY,
   options: EXP_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    // First parse only determines the family branch. The second, branch-owned
-    // schema rejects irrelevant flags before facts, config, or .env are read.
-    if (argv.some((arg) => arg === "--teardown" || arg.startsWith("--teardown="))) {
-      return yield* write("stderr", "--teardown is no longer supported; use --after.\n").pipe(Effect.as(1));
-    }
-    const preliminary = yield* parsed(argv, EXP_CLI_OPTIONS);
-    const teardownMode = preliminary.values.after === true;
-    const preliminaryVerb = preliminary.values.experiment === undefined ? preliminary.positionals[0] : undefined;
-    if (preliminaryVerb === "help" && preliminary.positionals.length === 1) {
-      return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
-    }
-    const input = yield* parsed(
-      argv,
-      teardownMode
-        ? EXP_TEARDOWN_CLI_OPTIONS
-        : preliminaryVerb === "list"
-          ? EXP_LIST_CLI_OPTIONS
-          : preliminaryVerb === "rename"
-            ? EXP_RENAME_CLI_OPTIONS
-            : EXP_NORMAL_CLI_OPTIONS,
-    );
-    if (input.values.help === true) return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
-    const [positionalVerb, ...rest] = input.positionals;
-    const verb = input.values.experiment === undefined ? positionalVerb : undefined;
-    const facts = yield* CliInvocationFacts;
-    const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
-    if (teardownMode) {
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      // First parse only determines the family branch. The second, branch-owned
+      // schema rejects irrelevant flags before facts, config, or .env are read.
+      if (argv.some((arg) => arg === "--teardown" || arg.startsWith("--teardown="))) {
+        return yield* write("stderr", "--teardown is no longer supported; use --after.\n").pipe(Effect.as(1));
+      }
+      const preliminary = yield* parsed(argv, EXP_CLI_OPTIONS);
+      const teardownMode = preliminary.values.after === true;
+      const preliminaryVerb = preliminary.values.experiment === undefined ? preliminary.positionals[0] : undefined;
+      if (preliminaryVerb === "help" && preliminary.positionals.length === 1) {
+        return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
+      }
+      function commandOptions() {
+        if (teardownMode) return EXP_TEARDOWN_CLI_OPTIONS;
+        if (preliminaryVerb === "list") return EXP_LIST_CLI_OPTIONS;
+        if (preliminaryVerb === "rename") return EXP_RENAME_CLI_OPTIONS;
+        return EXP_NORMAL_CLI_OPTIONS;
+      }
+      const input = yield* parsed(argv, commandOptions());
+      if (input.values.help === true) return yield* write("stdout", EXP_HELP).pipe(Effect.as(0));
+      const [positionalVerb, ...rest] = input.positionals;
+      const verb = input.values.experiment === undefined ? positionalVerb : undefined;
+      const facts = yield* CliInvocationFacts;
+      const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
+      if (teardownMode) {
+        const project = yield* ProjectConfiguration;
+        yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
+        if (typeof input.values["recover-shared-state"] === "string" && input.values.json === true) {
+          yield* write(
+            "stderr",
+            `error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.
+`,
+          );
+          return 1;
+        }
+        if (input.positionals.length > 1) {
+          return yield* write("stderr", "niceeval exp --after accepts at most one Experiment selector.\n").pipe(
+            Effect.as(1),
+          );
+        }
+        const selector = input.positionals[0];
+        const recoveryKey =
+          typeof input.values["recover-shared-state"] === "string" ? input.values["recover-shared-state"] : undefined;
+        const inspection = yield* experimentHost.after
+          .inspect({
+            cwd: invocation.cwd,
+            currentHost: invocation.hostname,
+            experimentSelector: selector,
+            recoveryKey,
+          })
+          .pipe(Effect.mapError((cause) => failure("inspect teardown", cause)));
+        if (
+          inspection.status === "experiment-no-match" ||
+          inspection.status === "eval-no-match" ||
+          inspection.status === "empty-selection"
+        ) {
+          yield* write("stderr", selectionProblemText(inspection));
+          return 1;
+        }
+        const evidence = teardownInspectionEvidence(inspection);
+        if (evidence !== undefined) yield* write("stderr", sharedStateEvidenceText(evidence));
+        if (
+          inspection.status === "no-evidence" ||
+          inspection.status === "selection-not-unique" ||
+          inspection.status === "experiment-mismatch"
+        ) {
+          yield* write("stderr", teardownInspectionProblemText(inspection)!);
+          return 1;
+        }
+        // Recovery evidence is deliberately available before confirmations.  This
+        // preserves the after-kill operator flow while keeping the normal
+        // teardown path free of Record migration and Invocation construction.
+        if (
+          recoveryKey !== undefined &&
+          (typeof input.values["owner-token"] !== "string" ||
+            input.values["confirm-owner-terminated"] !== true ||
+            input.values["confirm-remote-quiesced"] !== true)
+        ) {
+          yield* write(
+            "stderr",
+            `sharedState recovery requires \`--after --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\`.
+`,
+          );
+          return 1;
+        }
+        if (inspection.status === "after-required") {
+          yield* write("stderr", teardownInspectionProblemText(inspection)!);
+          return 1;
+        }
+        const interruption = yield* CliInterruption;
+        const output = yield* CliOutput;
+        const result = yield* experimentHost.after
+          .run({
+            cwd: invocation.cwd,
+            currentHost: invocation.hostname,
+            experimentSelector: selector,
+            recoveryKey,
+            ...(typeof input.values["owner-token"] === "string" ? { ownerToken: input.values["owner-token"] } : {}),
+            ...(input.values["confirm-owner-terminated"] === true ? { confirmOwnerTerminated: true } : {}),
+            ...(input.values["confirm-remote-quiesced"] === true ? { confirmRemoteQuiesced: true } : {}),
+            signal: interruption.invocationSignal,
+            observer: {
+              observe(event: ExperimentHostAfterEvent) {
+                if (event.type === "diagnostic") output.writeStderrSync(`${event.message}\n`);
+              },
+            },
+          })
+          .pipe(Effect.mapError((cause) => teardownFailure("run teardown", cause, recoveryKey)));
+        if (result.status === "completed") {
+          for (const experiment of result.experiments) {
+            if (experiment.outcome === "succeeded") {
+              yield* write(
+                "stderr",
+                `teardown done: ${experiment.experimentId}
+`,
+              );
+            } else if (experiment.outcome === "failed") {
+              yield* write(
+                "stderr",
+                `teardown failed: ${experiment.experimentId}: ${experiment.error ?? "unknown"}
+`,
+              );
+            }
+          }
+        } else if (result.status === "recovered" || result.status === "already-released") {
+          if (result.status === "recovered") {
+            yield* write(
+              "stderr",
+              `teardown done: ${result.experimentId}
+`,
+            );
+          }
+          if (result.status === "already-released")
+            yield* write(
+              "stderr",
+              `sharedState key ${result.key} was already released after its cleanup; its immutable recovery generation is already complete.
+`,
+            );
+          yield* write(
+            "stderr",
+            `explicitly recovered sharedState key ${result.key} for experiment ${result.experimentId}.
+`,
+          );
+        } else if (result.status === "recovery-teardown-failed") {
+          yield* write(
+            "stderr",
+            `teardown failed: ${result.evidence.experimentId}: ${result.error}
+`,
+          );
+        } else {
+          const changedEvidence = teardownInspectionEvidence(result);
+          if (changedEvidence !== undefined) yield* write("stderr", sharedStateEvidenceText(changedEvidence));
+          const problem = teardownInspectionProblemText(result);
+          if (problem !== undefined) yield* write("stderr", problem);
+        }
+        return result.status === "completed" || result.status === "recovered" || result.status === "already-released"
+          ? 0
+          : 1;
+      }
+      if (verb === "list") {
+        if (rest.length > 1)
+          return yield* write("stderr", "niceeval exp list accepts at most one experiment prefix.\n").pipe(
+            Effect.as(1),
+          );
+        const project = yield* ProjectConfiguration;
+        yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
+        const result = yield* experimentHost
+          .catalog({
+            cwd: invocation.cwd,
+            ...selection(rest),
+            ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
+          })
+          .pipe(Effect.mapError((cause) => failure("list", cause)));
+        if (result.experiments.length === 0 && rest[0] !== undefined) {
+          yield* write(
+            "stderr",
+            `No experiment matched: ${rest[0]}. Available paths: ${browsableExperimentPaths(result.experimentIds).join(", ") || "(none)"}.
+Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
+`,
+          );
+          return 1;
+        }
+        yield* write("stdout", input.values.json === true ? catalogJson(result) : catalogText(result));
+        return 0;
+      }
+      if (verb === "rename") {
+        const [newId] = rest;
+        const sourceRuns = input.values.run;
+        function renameSourceRun() {
+          if (Array.isArray(sourceRuns) && sourceRuns.length === 1) return sourceRuns[0];
+          if (typeof sourceRuns === "string") return sourceRuns;
+          return undefined;
+        }
+        const sourceRunId = renameSourceRun();
+        if (newId === undefined || rest.length !== 1 || typeof sourceRunId !== "string" || sourceRunId.length === 0) {
+          return yield* write(
+            "stderr",
+            "usage: niceeval exp rename <new-id> --run <source-run-id> [--dry] [--json]\n",
+          ).pipe(Effect.as(1));
+        }
+        const project = yield* ProjectConfiguration;
+        const config = yield* project
+          .load(invocation.cwd)
+          .pipe(Effect.mapError((cause) => failure("load config", cause)));
+        const renameInput = { cwd: invocation.cwd, sourceRunId, newId, config };
+        const result =
+          input.values.dry === true
+            ? yield* experimentHost.rename
+                .plan(renameInput)
+                .pipe(Effect.mapError((cause) => failure("plan rename", cause)))
+            : yield* experimentHost.rename
+                .apply(renameInput)
+                .pipe(Effect.mapError((cause) => failure("rename", cause)));
+        yield* write("stdout", input.values.json === true ? renameJson(result) : renameText(result));
+        return result.status === "rejected" || (result.status === "plan" && result.blocked !== undefined) ? 1 : 0;
+      }
       const project = yield* ProjectConfiguration;
-      yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-      if (typeof input.values["recover-shared-state"] === "string" && input.values.json === true) {
-        yield* write("stderr", `error: explicit sharedState recovery does not support --json. Retry without --json; this recovery flow has a human-only interface.
-`);
+      const config = yield* project
+        .load(invocation.cwd)
+        .pipe(Effect.mapError((cause) => failure("load config", cause)));
+      let experimentIds = Array.isArray(input.values.experiment) ? input.values.experiment : undefined;
+      if (experimentIds?.some((value) => value.endsWith("/"))) {
+        // Catalog preserves discovery-before-import: only supplied exact IDs can
+        // load here; directory members load after expansion in invocation.plan.
+        const catalog = yield* experimentHost
+          .catalog({ cwd: invocation.cwd, experimentIds })
+          .pipe(Effect.mapError((cause) => failure("discover experiment options", cause)));
+        const expanded = new Set<string>();
+        for (const value of experimentIds) {
+          const matches = catalog.experimentIds.filter((id) =>
+            value.endsWith("/") ? id.startsWith(value) : id === value,
+          );
+          if (matches.length === 0) {
+            yield* write(
+              "stderr",
+              selectionProblemText({
+                status: "experiment-no-match",
+                selector: value,
+                candidates: catalog.experimentIds,
+              }),
+            );
+            return 1;
+          }
+          for (const id of matches) expanded.add(id);
+        }
+        experimentIds = [...expanded];
+      }
+      const plan = yield* experimentHost.invocation
+        .plan({
+          cwd: invocation.cwd,
+          config,
+          ...selection(input.positionals, experimentIds),
+          ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
+          overrides: overrides(input.values),
+          preview: input.values.dry === true,
+        })
+        .pipe(Effect.mapError((cause) => failure("plan invocation", cause)));
+      if (plan.status !== "ready") {
+        yield* write("stderr", selectionProblemText(plan));
         return 1;
       }
-      if (input.positionals.length > 1) {
-        return yield* write("stderr", "niceeval exp --after accepts at most one Experiment selector.\n").pipe(Effect.as(1));
-      }
-      const selector = input.positionals[0];
-      const recoveryKey = typeof input.values["recover-shared-state"] === "string"
-        ? input.values["recover-shared-state"]
-        : undefined;
-      const inspection = yield* experimentHost.after.inspect({
-        cwd: invocation.cwd,
-        currentHost: invocation.hostname,
-        ...(selector === undefined ? {} : { experimentSelector: selector }),
-        ...(recoveryKey === undefined ? {} : { recoveryKey }),
-      }).pipe(Effect.mapError((cause) => failure("inspect teardown", cause)));
-      if (inspection.status === "experiment-no-match" || inspection.status === "eval-no-match" || inspection.status === "empty-selection") {
-        yield* write("stderr", selectionProblemText(inspection));
-        return 1;
-      }
-      const evidence = teardownInspectionEvidence(inspection);
-      if (evidence !== undefined) yield* write("stderr", sharedStateEvidenceText(evidence));
-      if (
-        inspection.status === "no-evidence" ||
-        inspection.status === "selection-not-unique" ||
-        inspection.status === "experiment-mismatch"
-      ) {
-        yield* write("stderr", teardownInspectionProblemText(inspection)!);
-        return 1;
-      }
-      // Recovery evidence is deliberately available before confirmations.  This
-      // preserves the after-kill operator flow while keeping the normal
-      // teardown path free of Record migration and Invocation construction.
-      if (recoveryKey !== undefined && (
-        typeof input.values["owner-token"] !== "string" ||
-        input.values["confirm-owner-terminated"] !== true ||
-        input.values["confirm-remote-quiesced"] !== true
-      )) {
-        yield* write("stderr", `sharedState recovery requires \`--after --recover-shared-state <key> --owner-token <token> --confirm-owner-terminated --confirm-remote-quiesced\`.
-`);
-        return 1;
-      }
-      if (inspection.status === "after-required") {
-        yield* write("stderr", teardownInspectionProblemText(inspection)!);
-        return 1;
+      if (input.values.dry === true) {
+        if (plan.dry === undefined)
+          return yield* Effect.fail(
+            failure("preview invocation", new Error("Experiment Host did not return the requested dry plan.")),
+          );
+        yield* write(
+          "stdout",
+          input.values.json === true
+            ? dryJson(plan.dry, plan.shape, plan.pluginAudit.occurrences)
+            : dryText(plan.dry, plan.shape, plan.pluginAudit.occurrences.length),
+        );
+        return 0;
       }
       const interruption = yield* CliInterruption;
-      const output = yield* CliOutput;
-      const result = yield* experimentHost.after.run({
-        cwd: invocation.cwd,
-        currentHost: invocation.hostname,
-        ...(selector === undefined ? {} : { experimentSelector: selector }),
-        ...(recoveryKey === undefined ? {} : { recoveryKey }),
-        ...(typeof input.values["owner-token"] === "string" ? { ownerToken: input.values["owner-token"] } : {}),
-        ...(input.values["confirm-owner-terminated"] === true ? { confirmOwnerTerminated: true } : {}),
-        ...(input.values["confirm-remote-quiesced"] === true ? { confirmRemoteQuiesced: true } : {}),
-        signal: interruption.invocationSignal,
-        observer: Object.freeze({
-          observe(event: ExperimentHostAfterEvent) {
-            if (event.type === "diagnostic") output.writeStderrSync(`${event.message}\n`);
-          },
-        }),
-      }).pipe(Effect.mapError((cause) => teardownFailure("run teardown", cause, recoveryKey)));
-      if (result.status === "completed") {
-        for (const experiment of result.experiments) {
-          if (experiment.outcome === "succeeded") {
-            yield* write("stderr", `teardown done: ${experiment.experimentId}
-`);
-          } else if (experiment.outcome === "failed") {
-            yield* write("stderr", `teardown failed: ${experiment.experimentId}: ${experiment.error ?? "unknown"}
-`);
-          }
-        }
-      } else if (result.status === "recovered" || result.status === "already-released") {
-        if (result.status === "recovered") {
-          yield* write("stderr", `teardown done: ${result.experimentId}
-`);
-        }
-        if (result.status === "already-released") yield* write("stderr", `sharedState key ${result.key} was already released after its cleanup; its immutable recovery generation is already complete.
-`);
-        yield* write("stderr", `explicitly recovered sharedState key ${result.key} for experiment ${result.experimentId}.
-`);
-      } else if (result.status === "recovery-teardown-failed") {
-        yield* write("stderr", `teardown failed: ${result.evidence.experimentId}: ${result.error}
-`);
-      } else {
-        const changedEvidence = teardownInspectionEvidence(result);
-        if (changedEvidence !== undefined) yield* write("stderr", sharedStateEvidenceText(changedEvidence));
-        const problem = teardownInspectionProblemText(result);
-        if (problem !== undefined) yield* write("stderr", problem);
-      }
-      return result.status === "completed" || result.status === "recovered" || result.status === "already-released" ? 0 : 1;
-    }
-    if (verb === "list") {
-      if (rest.length > 1) return yield* write("stderr", "niceeval exp list accepts at most one experiment prefix.\n").pipe(Effect.as(1));
-      const project = yield* ProjectConfiguration;
-      yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-      const result = yield* experimentHost.catalog({ cwd: invocation.cwd, ...selection(rest), ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}) }).pipe(
-        Effect.mapError((cause) => failure("list", cause)),
-      );
-      if (result.experiments.length === 0 && rest[0] !== undefined) {
-        yield* write("stderr", `No experiment matched: ${rest[0]}. Available paths: ${browsableExperimentPaths(result.experimentIds).join(", ") || "(none)"}.
-Run \`niceeval exp <path> --dry\` to preview a plan.
-`);
-        return 1;
-      }
-      yield* write("stdout", input.values.json === true ? catalogJson(result) : catalogText(result));
-      return 0;
-    }
-    if (verb === "rename") {
-      const [newId] = rest;
-      const sourceRuns = input.values.run;
-      const sourceRunId = Array.isArray(sourceRuns) && sourceRuns.length === 1 ? sourceRuns[0] : typeof sourceRuns === "string" ? sourceRuns : undefined;
-      if (newId === undefined || rest.length !== 1 || typeof sourceRunId !== "string" || sourceRunId.length === 0) {
-        return yield* write("stderr", "usage: niceeval exp rename <new-id> --run <source-run-id> [--dry] [--json]\n").pipe(Effect.as(1));
-      }
-      const project = yield* ProjectConfiguration;
-      const config = yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-      const renameInput = { cwd: invocation.cwd, sourceRunId, newId, config };
-      const result = input.values.dry === true
-        ? yield* experimentHost.rename.plan(renameInput).pipe(Effect.mapError((cause) => failure("plan rename", cause)))
-        : yield* experimentHost.rename.apply(renameInput).pipe(Effect.mapError((cause) => failure("rename", cause)));
-      yield* write("stdout", input.values.json === true ? renameJson(result) : renameText(result));
-      return result.status === "rejected" || (result.status === "plan" && result.blocked !== undefined) ? 1 : 0;
-    }
-    const project = yield* ProjectConfiguration;
-    const config = yield* project.load(invocation.cwd).pipe(Effect.mapError((cause) => failure("load config", cause)));
-    const plan = yield* experimentHost.invocation.plan({
-      cwd: invocation.cwd,
-      config,
-      ...selection(input.positionals, Array.isArray(input.values.experiment) ? input.values.experiment : undefined),
-      ...(typeof input.values.tag === "string" ? { tag: input.values.tag } : {}),
-      overrides: overrides(input.values),
-      preview: input.values.dry === true,
-    }).pipe(Effect.mapError((cause) => failure("plan invocation", cause)));
-    if (plan.status !== "ready") {
-      yield* write("stderr", selectionProblemText(plan));
-      return 1;
-    }
-    if (input.values.dry === true) {
-      if (plan.dry === undefined) return yield* Effect.fail(failure("preview invocation", new Error("Experiment Host did not return the requested dry plan.")));
-      yield* write("stdout", input.values.json === true
-        ? dryJson(plan.dry, plan.shape, plan.pluginAudit.occurrences)
-        : dryText(plan.dry, plan.shape, plan.pluginAudit.occurrences.length));
-      return 0;
-    }
-    const interruption = yield* CliInterruption;
-    if (!(yield* Effect.sync(interruption.enterGracefulDispatch))) return yield* Effect.interrupt;
-    const terminal = yield* ExperimentCliTerminal;
-    const profile = resolveOutputForm({
-      json: input.values.json === true,
-      isTTY: invocation.stderr.isTTY,
-    });
-    const renderer = profile === "human"
-      ? createHumanRenderer({
-          io: terminal.feedback,
-          command: ["niceeval", "exp", ...(Array.isArray(input.values.experiment)
-            ? input.values.experiment.flatMap((id) => ["--experiment", id]) : []), ...input.positionals].join(" ").trim(),
-        })
-      : createJsonRenderer({ io: terminal.feedback });
-    const coordinator = createFeedbackCoordinator({
-      profile,
-      renderer,
-      io: terminal.feedback,
-      // Experiment Host installs one lossless multiplexing sink for feedback
-      // and the project-local Session observer.
-      activateSink: false,
-    });
-    const outcome = yield* Effect.result(Effect.scoped(Effect.gen(function* () {
-      yield* Effect.acquireRelease(
-        Effect.sync(() => createInputGuard({
-          stdin: terminal.stdin,
-          stderrIsTTY: terminal.feedback.stderr.isTTY,
-          coordinator,
-          onInterrupt: interruption.requestInterrupt,
-        })),
-        (guard) => Effect.sync(guard.stop),
-      );
-      return yield* experimentHost.invocation.run({
-        plan: plan.plan,
-        signal: interruption.invocationSignal,
-        feedback: Object.freeze({ coordinator }),
-        ...(typeof input.values.junit === "string" ? { junitPath: input.values.junit } : {}),
+      if (!(yield* Effect.sync(interruption.enterGracefulDispatch))) return yield* Effect.interrupt;
+      const terminal = yield* ExperimentCliTerminal;
+      const profile = resolveOutputForm({
+        json: input.values.json === true,
+        isTTY: invocation.stderr.isTTY,
       });
-    })));
-    if (Result.isFailure(outcome)) {
-      if (outcome.failure.code === "runner-record-assertions-invalid") {
-        yield* write("stderr", `error: ${outcome.failure.message}\n`);
-        return 1;
+      const renderer =
+        profile === "human"
+          ? createHumanRenderer({
+              io: terminal.feedback,
+              command: [
+                "niceeval",
+                "exp",
+                ...(Array.isArray(input.values.experiment)
+                  ? input.values.experiment.flatMap((id) => ["--experiment", id])
+                  : []),
+                ...input.positionals,
+              ]
+                .join(" ")
+                .trim(),
+            })
+          : createJsonRenderer({ io: terminal.feedback });
+      const coordinator = createFeedbackCoordinator({
+        profile,
+        renderer,
+        io: terminal.feedback,
+        // Experiment Host installs one lossless multiplexing sink for feedback
+        // and the project-local Session observer.
+        activateSink: false,
+
+        tickIntervalMs: undefined,
+        onEvent: undefined,
+      });
+      const outcome = yield* Effect.result(
+        Effect.scoped(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              Effect.sync(() =>
+                createInputGuard({
+                  stdin: terminal.stdin,
+                  stderrIsTTY: terminal.feedback.stderr.isTTY,
+                  coordinator,
+                  onInterrupt: interruption.requestInterrupt,
+
+                  process: undefined,
+                }),
+              ),
+              (guard) => Effect.sync(guard.stop),
+            );
+            return yield* experimentHost.invocation.run({
+              plan: plan.plan,
+              signal: interruption.invocationSignal,
+              feedback: { coordinator },
+              ...(typeof input.values.junit === "string" ? { junitPath: input.values.junit } : {}),
+            });
+          }),
+        ),
+      );
+      if (Result.isFailure(outcome)) {
+        if (outcome.failure.code === "runner-record-assertions-invalid") {
+          yield* write("stderr", `error: ${outcome.failure.message}\n`);
+          return 1;
+        }
+        return yield* Effect.fail(failure("run invocation", outcome.failure));
       }
-      return yield* Effect.fail(failure("run invocation", outcome.failure));
-    }
-    const result = outcome.success;
-    if (result.exitCode === undefined) {
-      return yield* Effect.fail(failure(
-        "finish invocation feedback",
-        new Error("Experiment Host returned without the requested presentation exit fold."),
-      ));
-    }
-    return result.exitCode;
-  }),
+      const result = outcome.success;
+      if (result.feedback.kind === "not-requested") {
+        return yield* Effect.fail(
+          failure(
+            "finish invocation feedback",
+            new Error("Experiment Host returned without the requested presentation exit fold."),
+          ),
+        );
+      }
+      return result.feedback.exitCode;
+    }),
 });
 
 const debugCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
   name: "debug",
   summary: "show one Experiment lifecycle plan",
   options: DEBUG_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const input = yield* parsed(argv, DEBUG_CLI_OPTIONS);
-    if (input.values.help === true) return yield* write("stdout", DEBUG_HELP).pipe(Effect.as(0));
-    const [experimentSelector, evalSelector] = input.positionals;
-    if (experimentSelector === undefined || input.positionals.length > 2) {
-      return yield* write("stderr", `error: niceeval debug expects one Experiment selector and an optional Eval selector
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const input = yield* parsed(argv, DEBUG_CLI_OPTIONS);
+      if (input.values.help === true) return yield* write("stdout", DEBUG_HELP).pipe(Effect.as(0));
+      const [experimentSelector, evalSelector] = input.positionals;
+      if (experimentSelector === undefined || input.positionals.length > 2) {
+        return yield* write(
+          "stderr",
+          `error: niceeval debug expects one Experiment selector and an optional Eval selector
   fix: niceeval debug <experiment> [eval] [--json]
-`).pipe(Effect.as(1));
-    }
-    const { invocation, config } = yield* factsAndConfig();
-    const result = yield* experimentHost.debug({
-      cwd: invocation.cwd,
-      config,
-      experimentSelector,
-      ...(evalSelector === undefined ? {} : { evalSelector }),
-    }).pipe(
-      Effect.mapError((cause) => failure("debug", cause)),
-    );
-    switch (result.status) {
-      case "experiment-no-match":
-        yield* write("stderr", `error: Experiment selector "${result.selector}" matched nothing
+`,
+        ).pipe(Effect.as(1));
+      }
+      const { invocation, config } = yield* factsAndConfig();
+      const result = yield* experimentHost
+        .debug({
+          cwd: invocation.cwd,
+          config,
+          experimentSelector,
+          evalSelector,
+        })
+        .pipe(Effect.mapError((cause) => failure("debug", cause)));
+      switch (result.status) {
+        case "experiment-no-match":
+          yield* write(
+            "stderr",
+            `error: Experiment selector "${result.selector}" matched nothing
   exact candidates: ${result.candidates.join(", ") || "(none)"}
-`);
-        return 1;
-      case "experiment-ambiguous":
-        yield* write("stderr", `error: Experiment selector "${result.selector}" is ambiguous
+`,
+          );
+          return 1;
+        case "experiment-ambiguous":
+          yield* write(
+            "stderr",
+            `error: Experiment selector "${result.selector}" is ambiguous
   exact candidates: ${result.candidates.join(", ")}
-`);
-        return 1;
-      case "eval-no-match":
-        yield* write("stderr", `error: Eval selector "${result.selector}" matched nothing in Experiment "${result.experimentId}"
+`,
+          );
+          return 1;
+        case "eval-no-match":
+          yield* write(
+            "stderr",
+            `error: Eval selector "${result.selector}" matched nothing in Experiment "${result.experimentId}"
   exact candidates: ${result.candidates.join(", ") || "(none)"}
-`);
-        return 1;
-      case "eval-ambiguous":
-        yield* write("stderr", `error: Eval selector "${result.selector}" is ambiguous in Experiment "${result.experimentId}"
+`,
+          );
+          return 1;
+        case "eval-ambiguous":
+          yield* write(
+            "stderr",
+            `error: Eval selector "${result.selector}" is ambiguous in Experiment "${result.experimentId}"
   exact candidates: ${result.candidates.join(", ")}
-`);
-        return 1;
-      case "planned":
-        yield* write("stdout", input.values.json === true
-          ? jsonDocument({
-              experimentId: result.experimentId,
-              ...(result.evalId === undefined ? {} : { evalId: result.evalId }),
-              evalIds: result.evalIds,
-              beforeCachePlan: result.beforeCachePlan,
-              commandPlan: result.commandPlan,
-            })
-          : `Before-cache plan: ${result.beforeCachePlan.nodes.length} unique nodes · cache lookup not-probed\n${renderHumanCommandPlan(result.commandPlan, {
-              isTTY: invocation.stdout.isTTY,
-              noColor: invocation.noColor,
-              width: invocation.stdout.columns,
-            })}`);
-        return 0;
-    }
-  }),
+`,
+          );
+          return 1;
+        case "planned":
+          yield* write(
+            "stdout",
+            input.values.json === true
+              ? jsonDocument({
+                  experimentId: result.experimentId,
+                  ...(result.evalId === undefined ? {} : { evalId: result.evalId }),
+                  evalIds: result.evalIds,
+                  beforeCachePlan: result.beforeCachePlan,
+                  commandPlan: result.commandPlan,
+                })
+              : `Sandbox preparation: ${result.beforeCachePlan.nodes.length} reusable steps · cache lookup: not checked\n${renderHumanCommandPlan(
+                  result.commandPlan,
+                  {
+                    isTTY: invocation.stdout.isTTY,
+                    noColor: invocation.noColor,
+                    width: invocation.stdout.columns,
+                  },
+                )}`,
+          );
+          return 0;
+      }
+    }),
 });
 
 function acceptFailure(cause: ExperimentHostError): ExperimentCliError {
   const details = identityExplanationLines(cause.comparisons ?? []).map((line) => `  ${line}`);
-  return failure("accept", cause, 1, [
-    `error: could not accept result: ${cause.code}: ${cause.message}`,
-    ...details,
-    "",
-  ].join("\n"));
+  return failure(
+    "accept",
+    cause,
+    1,
+    [`error: could not accept result: ${cause.code}: ${cause.message}`, ...details, ""].join("\n"),
+  );
 }
 
 const acceptCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
   name: "accept",
   summary: "accept exact historical Attempt locators",
   options: ACCEPT_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const input = yield* parsed(argv, ACCEPT_CLI_OPTIONS);
-    if (input.values.help === true) return yield* write("stdout", ACCEPT_HELP).pipe(Effect.as(0));
-    const sourceRunIds = Array.isArray(input.values.run) ? input.values.run : [];
-    const sourceRunId = sourceRunIds.length === 1 ? sourceRunIds[0] : undefined;
-    if (sourceRunIds.length > 1) return yield* write("stderr", "niceeval accept --run requires one exact Run ID.\n").pipe(Effect.as(1));
-    if ((sourceRunId === undefined && input.positionals.length === 0) || (sourceRunId !== undefined && input.positionals.length > 0)) {
-      return yield* write("stderr", "usage: niceeval accept @<locator>... | niceeval accept --run <exact-run-id> [--dry]\n").pipe(Effect.as(1));
-    }
-    const { invocation, config } = yield* factsAndConfig();
-    if (sourceRunId !== undefined) {
-      if (input.values.dry === true) {
-        const plan = yield* experimentHost.acceptRun.plan({ cwd: invocation.cwd, config, runId: sourceRunId }).pipe(
-          Effect.mapError(acceptFailure),
-        );
-        yield* write("stdout", acceptRunPlanText(plan));
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const input = yield* parsed(argv, ACCEPT_CLI_OPTIONS);
+      if (input.values.help === true) return yield* write("stdout", ACCEPT_HELP).pipe(Effect.as(0));
+      const sourceRunIds = Array.isArray(input.values.run) ? input.values.run : [];
+      const sourceRunId = sourceRunIds.length === 1 ? sourceRunIds[0] : undefined;
+      if (sourceRunIds.length > 1)
+        return yield* write("stderr", "niceeval accept --run requires one exact Run ID.\n").pipe(Effect.as(1));
+      if (
+        (sourceRunId === undefined && input.positionals.length === 0) ||
+        (sourceRunId !== undefined && input.positionals.length > 0)
+      ) {
+        return yield* write(
+          "stderr",
+          "usage: niceeval accept @<locator>... | niceeval accept --run <exact-run-id> [--dry]\n",
+        ).pipe(Effect.as(1));
+      }
+      const { invocation, config } = yield* factsAndConfig();
+      if (sourceRunId !== undefined) {
+        if (input.values.dry === true) {
+          const plan = yield* experimentHost.acceptRun
+            .plan({ cwd: invocation.cwd, config, runId: sourceRunId })
+            .pipe(Effect.mapError(acceptFailure));
+          yield* write("stdout", acceptRunPlanText(plan));
+          return 0;
+        }
+        const accepted = yield* experimentHost.acceptRun
+          .apply({ cwd: invocation.cwd, config, runId: sourceRunId })
+          .pipe(Effect.mapError(acceptFailure));
+        yield* write("stdout", acceptedRunText(sourceRunId, accepted));
         return 0;
       }
-      const accepted = yield* experimentHost.acceptRun.apply({ cwd: invocation.cwd, config, runId: sourceRunId }).pipe(
-        Effect.mapError(acceptFailure),
-      );
-      yield* write("stdout", acceptedRunText(sourceRunId, accepted));
+      if (input.values.dry === true) {
+        const members = yield* planLocatorAccept({
+          cwd: invocation.cwd,
+          config,
+          locators: input.positionals,
+        }).pipe(Effect.mapError(acceptFailure));
+        yield* write("stdout", `Accept preview\n${acceptMembersText(members)}`);
+        return 0;
+      }
+      const result = yield* experimentHost
+        .accept({ cwd: invocation.cwd, config, locators: input.positionals })
+        .pipe(Effect.mapError(acceptFailure));
+      yield* write("stdout", acceptText(result));
       return 0;
-    }
-    if (input.values.dry === true) {
-      const members = yield* planLocatorAccept({ cwd: invocation.cwd, config, locators: Object.freeze(input.positionals) }).pipe(Effect.mapError(acceptFailure));
-      yield* write("stdout", `Accept preview\n${acceptMembersText(members)}`);
-      return 0;
-    }
-    const result = yield* experimentHost.accept({ cwd: invocation.cwd, config, locators: Object.freeze(input.positionals) }).pipe(
-      Effect.mapError(acceptFailure),
-    );
-    yield* write("stdout", acceptText(result));
-    return 0;
-  }),
+    }),
 });
 
 const invocationCommand: CliCommandContribution<ExperimentCliRequirements, ExperimentCliError> = Object.freeze({
   name: "invocation",
   summary: "inspect project-local ephemeral Invocation status",
   options: INVOCATION_CLI_OPTIONS,
-  run: (argv: readonly string[]) => Effect.gen(function* () {
-    const input = yield* parsed(argv, INVOCATION_CLI_OPTIONS);
-    if (input.values.help === true) return yield* write("stdout", INVOCATION_HELP).pipe(Effect.as(0));
-    const [verb = "list", value] = input.positionals;
-    const facts = yield* CliInvocationFacts;
-    const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
-    if (verb === "list") {
-      const result = yield* experimentHost.invocationStatus.list({ cwd: invocation.cwd, ...(input.values.all === true ? { all: true } : {}), ...(value === undefined ? {} : { experimentSelector: value }) }).pipe(
-        Effect.mapError((cause) => failure("list invocation status", cause)),
-      );
-      yield* write("stdout", input.values.json === true ? jsonDocument(result) : renderSessionListText(result, Date.now(), input.values.all === true));
-      return 0;
-    }
-    if (verb === "show" && value !== undefined && input.positionals.length === 2) {
-      const result = yield* experimentHost.invocationStatus.show({ cwd: invocation.cwd, invocationSelector: value }).pipe(
-        Effect.mapError((cause) => failure("show invocation status", cause)),
-      );
-      yield* write("stdout", input.values.json === true ? jsonDocument(result) : renderSessionShowText(result));
-      return 0;
-    }
-    return yield* write("stderr", "usage: niceeval invocation [list [<experiment-prefix>] | show <invocation-id>]\n").pipe(Effect.as(1));
-  }),
+  run: (argv: readonly string[]) =>
+    Effect.gen(function* () {
+      const input = yield* parsed(argv, INVOCATION_CLI_OPTIONS);
+      if (input.values.help === true) return yield* write("stdout", INVOCATION_HELP).pipe(Effect.as(0));
+      const [verb = "list", value] = input.positionals;
+      const facts = yield* CliInvocationFacts;
+      const invocation = yield* facts.facts.pipe(Effect.mapError((cause) => failure("read invocation facts", cause)));
+      if (verb === "list") {
+        const result = yield* experimentHost.invocationStatus
+          .list({
+            cwd: invocation.cwd,
+            ...(input.values.all === true ? { all: true } : {}),
+            experimentSelector: value,
+          })
+          .pipe(Effect.mapError((cause) => failure("list invocation status", cause)));
+        yield* write(
+          "stdout",
+          input.values.json === true
+            ? jsonDocument(sessionListDocumentToJson(result))
+            : renderSessionListText(result, Date.now(), input.values.all === true),
+        );
+        return 0;
+      }
+      if (verb === "show" && value !== undefined && input.positionals.length === 2) {
+        const result = yield* experimentHost.invocationStatus
+          .show({ cwd: invocation.cwd, invocationSelector: value })
+          .pipe(Effect.mapError((cause) => failure("show invocation status", cause)));
+        yield* write(
+          "stdout",
+          input.values.json === true ? jsonDocument(sessionShowDocumentToJson(result)) : renderSessionShowText(result),
+        );
+        return 0;
+      }
+      return yield* write(
+        "stderr",
+        "usage: niceeval invocation [list [<experiment-prefix>] | show <invocation-id>]\n",
+      ).pipe(Effect.as(1));
+    }),
 });
 
 /** The composition root receives frozen feature values; it never registers services. */

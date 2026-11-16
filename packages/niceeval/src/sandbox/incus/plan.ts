@@ -15,16 +15,22 @@ import {
   type IncusDomainName,
   type IncusProviderDescriptor,
 } from "./descriptor.ts";
-import { incusError, type IncusProviderError } from "./errors.ts";
-import { parseIncusImageLocator, type IncusImageLocator } from "./image.ts";
+import { incusError, incusProviderCause, IncusProviderError } from "./errors.ts";
+import type { IncusImageLocator } from "./image.ts";
 import { countActiveAllocations, listAllocationIntents } from "./ledger.ts";
 import { incusRepositoryHost, type IncusRepository } from "./repository.ts";
 
 /** Bounds VM CPU, memory and Docker data capacity; memoryBytes and dockerDataBytes use bytes rather than MiB. */
 export interface IncusSandboxResources {
-  readonly cpus?: number;
-  readonly memoryBytes?: number;
-  readonly dockerDataBytes?: number;
+  readonly cpus?: number | undefined;
+  readonly memoryBytes?: number | undefined;
+  readonly dockerDataBytes?: number | undefined;
+}
+
+export interface NormalizedIncusSandboxResources {
+  readonly cpus: number | undefined;
+  readonly memoryBytes: number | undefined;
+  readonly dockerDataBytes: number | undefined;
 }
 
 /** Selects the Incus image, project, storage pool and VM resources; accepting a development domain is an explicit opt-in. */
@@ -32,15 +38,15 @@ export interface IncusSandboxOptions {
   readonly image: string;
   readonly project: string;
   readonly storagePool: string;
-  readonly resources?: IncusSandboxResources;
-  readonly acceptDevelopmentDomain?: boolean;
+  readonly resources?: IncusSandboxResources | undefined;
+  readonly acceptDevelopmentDomain?: boolean | undefined;
 }
 
 export interface NormalizedIncusSandboxOptions {
   readonly image: IncusImageLocator;
   readonly project: string;
   readonly storagePool: string;
-  readonly resources: IncusSandboxResources;
+  readonly resources: NormalizedIncusSandboxResources;
   readonly acceptDevelopmentDomain: boolean;
 }
 
@@ -53,8 +59,8 @@ export interface IncusRuntimePlan {
   readonly workdir: typeof INCUS_WORKDIR;
   readonly user: typeof INCUS_USER;
   readonly hostGateway: string;
-  readonly targetAppProxyPort?: number;
-  readonly resources: IncusSandboxResources;
+  readonly targetAppProxyPort: number | undefined;
+  readonly resources: Pick<NormalizedIncusSandboxResources, "cpus" | "memoryBytes">;
   readonly allocatedDockerDataBytes: number;
   readonly acceptDevelopmentDomain: boolean;
   readonly executionDomain: IncusDomainName;
@@ -66,7 +72,7 @@ export interface IncusRuntimePlan {
   readonly artifactProject: string;
   readonly artifactMaxInstances: number;
   readonly artifactStorageReserveBytes: number;
-  readonly artifactEstimatedBytes?: number;
+  readonly artifactEstimatedBytes: number | undefined;
 }
 
 export interface IncusPlannedSandbox {
@@ -104,32 +110,32 @@ export function dockerExecutionCapability(
   allocatedDockerDataBytes: number,
 ): DockerExecutionCapability {
   if (domain.name === "development") {
-    return Object.freeze({
+    return {
       api: "docker/v1",
       compose: "v2",
       isolation: "dedicated-kernel/v1",
       daemon: "sandbox-private",
       executionDomain: "development",
       executionDomainId: domain.executionDomainId,
-      capacity: Object.freeze({
+      capacity: {
         _tag: "Unattested" as const,
         acceptedByExperiment: acceptDevelopmentDomain,
         reason: "development Incus domain does not attest Docker data capacity",
-      }),
-    });
+      },
+    };
   }
-  return Object.freeze({
+  return {
     api: "docker/v1",
     compose: "v2",
     isolation: "dedicated-kernel/v1",
     daemon: "sandbox-private",
     executionDomain: "reference",
     executionDomainId: domain.executionDomainId,
-    capacity: Object.freeze({
+    capacity: {
       _tag: "Attested" as const,
       bytes: allocatedDockerDataBytes,
-    }),
-  });
+    },
+  };
 }
 
 export async function selectDomain(
@@ -150,9 +156,9 @@ export async function selectDomain(
   if (domain.status !== "configured") throw undeployed(domain);
   if (domain.name === "development") {
     if (
-      options.project !== DEVELOPMENT_PROJECT
-      || options.storagePool !== DEVELOPMENT_STORAGE_POOL
-      || options.acceptDevelopmentDomain !== true
+      options.project !== DEVELOPMENT_PROJECT ||
+      options.storagePool !== DEVELOPMENT_STORAGE_POOL ||
+      options.acceptDevelopmentDomain !== true
     ) {
       throw developmentRejected(domain);
     }
@@ -160,7 +166,9 @@ export async function selectDomain(
     throw incusError(
       "sandbox-capability-unsatisfied",
       "acceptDevelopmentDomain is only valid for the isolated development Incus domain.",
-      [`Omit acceptDevelopmentDomain, or select project ${DEVELOPMENT_PROJECT} and storagePool ${DEVELOPMENT_STORAGE_POOL}.`],
+      [
+        `Omit acceptDevelopmentDomain, or select project ${DEVELOPMENT_PROJECT} and storagePool ${DEVELOPMENT_STORAGE_POOL}.`,
+      ],
     );
   } else if (options.project !== REFERENCE_PROJECT || options.storagePool !== REFERENCE_STORAGE_POOL) {
     throw incusError(
@@ -208,39 +216,32 @@ async function planIncusSandboxWithRepository(
   const allocatedDockerDataBytes = allocatedBytes(options, domain);
   const control = await IncusControl.connectReadOnly(env);
   if (!(await control.projectExists(domain.project))) {
-    throw incusError(
-      "incus-undeployed",
-      `Incus project ${JSON.stringify(domain.project)} is not present.`,
-      ["Create the descriptor project in Incus before planning sandboxes."],
-    );
+    throw incusError("incus-undeployed", `Incus project ${JSON.stringify(domain.project)} is not present.`, [
+      "Create the descriptor project in Incus before planning sandboxes.",
+    ]);
   }
-  const storageAttestation = domain.name === "reference"
-    ? await (async () => {
-    if (domain.source === undefined || domain.backingDevice === undefined) {
-      throw incusError(
-        "incus-undeployed",
-        "Configured reference domain is missing pinned source/backingDevice.",
-        ["Pin source and backingDevice in the descriptor; undeployed reference may omit them and fail closed."],
-      );
-    }
-    return control.attestReferenceStorage(domain.project, domain.storagePool, domain.network, {
-      source: domain.source,
-      backingDevice: domain.backingDevice,
-    });
-      })()
-    : await control.attestDevelopmentStorage(domain.project, domain.storagePool);
+  const storageAttestation =
+    domain.name === "reference"
+      ? await (async () => {
+          if (domain.source === undefined || domain.backingDevice === undefined) {
+            throw incusError(
+              "incus-undeployed",
+              "Configured reference domain is missing pinned source/backingDevice.",
+              ["Pin source and backingDevice in the descriptor; undeployed reference may omit them and fail closed."],
+            );
+          }
+          return control.attestReferenceStorage(domain.project, domain.storagePool, domain.network, {
+            source: domain.source,
+            backingDevice: domain.backingDevice,
+          });
+        })()
+      : await control.attestDevelopmentStorage(domain.project, domain.storagePool);
   const image = await control.resolveTrustedImage(domain.project, options.image, domain.trustedBaseImages);
   await control.assertGuestInitMountsBlockDockerData(domain.project, image.fingerprint);
   const instances = await control.listInstances(domain.project);
   const volumes = await control.listVolumes(domain.project, domain.storagePool);
   const intents = await listAllocationIntents(repository);
-  const active = countActiveAllocations(
-    intents,
-    instances,
-    domain.executionDomainId,
-    domain.project,
-    volumes,
-  );
+  const active = countActiveAllocations(intents, instances, domain.executionDomainId, domain.project, volumes);
   if (active >= domain.maxInstances) {
     throw incusError(
       "sandbox-capacity-unavailable",
@@ -250,7 +251,7 @@ async function planIncusSandboxWithRepository(
     );
   }
   const dockerExecution = dockerExecutionCapability(domain, options.acceptDevelopmentDomain, allocatedDockerDataBytes);
-  const runtime: IncusRuntimePlan = Object.freeze({
+  const runtime: IncusRuntimePlan = {
     image: options.image,
     imageFingerprint: image.fingerprint,
     project: domain.project,
@@ -259,8 +260,8 @@ async function planIncusSandboxWithRepository(
     workdir: INCUS_WORKDIR,
     user: INCUS_USER,
     hostGateway: domain.hostGateway,
-    ...(domain.targetAppProxyPort === undefined ? {} : { targetAppProxyPort: domain.targetAppProxyPort }),
-    resources: Object.freeze({ ...options.resources, dockerDataBytes: allocatedDockerDataBytes }),
+    targetAppProxyPort: domain.targetAppProxyPort,
+    resources: { cpus: options.resources.cpus, memoryBytes: options.resources.memoryBytes },
     allocatedDockerDataBytes,
     acceptDevelopmentDomain: options.acceptDevelopmentDomain,
     executionDomain: domain.name,
@@ -272,40 +273,35 @@ async function planIncusSandboxWithRepository(
     artifactProject: domain.artifactProject,
     artifactMaxInstances: domain.artifactMaxInstances,
     artifactStorageReserveBytes: domain.artifactStorageReserveBytes,
-    ...(domain.artifactEstimatedBytes === undefined ? {} : { artifactEstimatedBytes: domain.artifactEstimatedBytes }),
-  });
-  return Object.freeze({ descriptor, domain, image, runtime, dockerExecution });
+    artifactEstimatedBytes: domain.artifactEstimatedBytes,
+  };
+  return { descriptor, domain, image, runtime, dockerExecution };
 }
 
 function repositoryPlanningError(cause: unknown): IncusProviderError {
-  return cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("incus-")
-    ? cause as IncusProviderError
-    : cause instanceof Error && "code" in cause && String(Reflect.get(cause, "code")).startsWith("sandbox-")
-      ? cause as IncusProviderError
-      : incusError(
-          "sandbox-artifact-unverified",
-          `IncusRepository planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-          ["Repair the named IncusRepository in the UserDatabase before admitting another allocation."],
-          cause,
-        );
+  if (cause instanceof IncusProviderError) return cause;
+  return incusError(
+    "sandbox-artifact-unverified",
+    `IncusRepository planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    ["Repair the named IncusRepository in the UserDatabase before admitting another allocation."],
+    incusProviderCause(cause),
+  );
 }
 
-function planIncusSandboxProgram(
-  options: NormalizedIncusSandboxOptions,
-  env: NodeJS.ProcessEnv,
-) {
+function planIncusSandboxProgram(options: NormalizedIncusSandboxOptions, env: NodeJS.ProcessEnv) {
   return Effect.gen(function* () {
     const repository = yield* incusRepositoryHost.open({ env }).pipe(Effect.mapError(repositoryPlanningError));
     return yield* Effect.tryPromise({
       try: () => planIncusSandboxWithRepository(repository, options, env),
-      catch: (cause) => cause instanceof Error && "code" in cause
-        ? cause as IncusProviderError
-        : incusError(
-            "incus-unreachable",
-            `Incus planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-            ["Make the Incus control plane reachable and retry planning."],
-            cause,
-          ),
+      catch: (cause) =>
+        cause instanceof IncusProviderError
+          ? cause
+          : incusError(
+              "incus-unreachable",
+              `Incus planning failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+              ["Make the Incus control plane reachable and retry planning."],
+              incusProviderCause(cause),
+            ),
     });
   });
 }
@@ -316,7 +312,6 @@ export function planIncusSandbox(
 ): Promise<IncusPlannedSandbox> {
   return Effect.runPromise(Effect.scoped(planIncusSandboxProgram(options, env)));
 }
-
 
 export function planIncusSandboxEffect(
   options: NormalizedIncusSandboxOptions,
@@ -336,21 +331,20 @@ export function loadDomainForDoctor(
       const descriptor = await loadIncusDescriptor(env);
       const domain = domainByName(descriptor, name);
       if (domain === undefined) {
-        throw incusError(
-          "incus-undeployed",
-          `Incus descriptor has no ${name} domain.`,
-          ["Add the requested domain to the Incus provider descriptor."],
-        );
+        throw incusError("incus-undeployed", `Incus descriptor has no ${name} domain.`, [
+          "Add the requested domain to the Incus provider descriptor.",
+        ]);
       }
-      return Object.freeze({ descriptor, domain });
+      return { descriptor, domain };
     },
-    catch: (cause) => cause instanceof Error && "code" in cause
-      ? cause as IncusProviderError
-      : incusError(
-          "incus-descriptor-invalid",
-          `Failed to load Incus descriptor: ${cause instanceof Error ? cause.message : String(cause)}`,
-          ["Fix the Incus provider descriptor and retry doctor."],
-          cause,
-        ),
+    catch: (cause) =>
+      cause instanceof IncusProviderError
+        ? cause
+        : incusError(
+            "incus-descriptor-invalid",
+            `Failed to load Incus descriptor: ${cause instanceof Error ? cause.message : String(cause)}`,
+            ["Fix the Incus provider descriptor and retry doctor."],
+            incusProviderCause(cause),
+          ),
   });
 }

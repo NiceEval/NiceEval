@@ -1,34 +1,36 @@
 /** Producer declaration after all obtainable final request snapshots have been recorded. */
-export type AdapterUsageSeal =
-  | { readonly state: "complete" }
-  | { readonly state: "partial"; readonly reason: string };
+export type AdapterUsageSeal = { readonly state: "complete" } | { readonly state: "partial"; readonly reason: string };
 
 /** Final observation of one physical external request, scoped to an Adapter Attempt. */
 export interface AdapterUsageInput {
   readonly callId: string;
-  readonly retryOf?: string;
+  readonly retryOf?: string | undefined;
   /** Frozen application model purpose; omission records an unknown purpose. */
-  readonly modelRole?: string | null;
+  readonly modelRole?: string | null | undefined;
   /** Upstream-proven serving provider. Transport and protocol identities belong in route. */
   readonly provider: string | null;
   readonly model: string | null;
-  readonly route?: {
-    readonly transportProvider: string | null;
-    /** Stable, non-secret endpoint identity. Never include URLs, account identifiers, or credentials. */
-    readonly endpointId: string | null;
-  };
+  readonly route?:
+    | {
+        readonly transportProvider: string | null;
+        /** Stable, non-secret endpoint identity. Never include URLs, account identifiers, or credentials. */
+        readonly endpointId: string | null;
+      }
+    | undefined;
   readonly status: "succeeded" | "failed" | "cancelled" | "unknown";
   /** Input tokens excluding the cache read and cache write buckets. */
   readonly inputTokens: number | null;
   /** Independently observed input total including cache buckets; never added to those buckets. */
-  readonly inputTotalTokens?: number | null;
+  readonly inputTotalTokens?: number | null | undefined;
   readonly outputTokens: number | null;
-  readonly cacheReadTokens?: number | null;
-  readonly cacheWriteTokens?: number | null;
+  readonly cacheReadTokens?: number | null | undefined;
+  readonly cacheWriteTokens?: number | null | undefined;
   /** One provider-reported effective cost. A reported zero remains preferred to estimates. */
-  readonly cost?: {
-    readonly amount: string;
-    readonly currency: string;
-    readonly source: { readonly kind: "reported"; readonly id: string };
-  };
+  readonly cost?:
+    | {
+        readonly amount: string;
+        readonly currency: string;
+        readonly source: { readonly kind: "reported"; readonly id: string };
+      }
+    | undefined;
 }

@@ -3,15 +3,9 @@
 // TraceWaterfall、AttemptTrace、AttemptTimeline 抽出;专用件在 1.7 前保留。
 
 import type { ReactElement, ReactNode } from "react";
-import {
-  cx,
-  formatDurationMs,
-  resolveLocalizedText,
-  type LocalizedText,
-  type ReportLocale,
-} from "./shared.ts";
+import { cx, formatDurationMs, resolveLocalizedText, type LocalizedText, type ReportLocale } from "./shared.ts";
 
-/** `null` / 测不了的时长统一显示符;不折成 0。 */
+/** 未记录 / 测不了的时长统一显示符;不折成 0。 */
 const MISSING_MARK = "—";
 
 export interface WaterfallNode {
@@ -20,35 +14,35 @@ export interface WaterfallNode {
   /** 节点类别;清单里占一列,条上决定分类色。词表由数据源给,原语不建注册表。 */
   kind: string;
   startOffsetMs: number;
-  durationMs: number | null;
-  failed?: boolean;
+  durationMs: number | undefined;
+  failed: boolean;
   /** 数据源标记的主干节点:默认展开且不参与显著性折叠(失败节点恒展开)。 */
-  open?: boolean;
-  children?: readonly WaterfallNode[];
+  open: boolean;
+  children: readonly WaterfallNode[];
 }
 
 export interface WaterfallRow {
   key: string;
   label: LocalizedText;
-  durationMs: number | null;
+  durationMs: number | undefined;
   nodes: readonly WaterfallNode[];
-  locator?: string;
+  locator: string | undefined;
   /** Explicit closed navigation href; omitted rows stay non-interactive. */
-  href?: string;
+  href: string | undefined;
 }
 
 export type WaterfallContent = readonly WaterfallRow[];
 
 export interface WaterfallProps {
   /** 多 attempt 行为 WaterfallRow[]；单树可包成一行。 */
-  nodes: WaterfallContent | null;
-  /** 区块标题;Content 为 null 或空时整块(含标题)不渲染。 */
-  title?: LocalizedText;
+  nodes: WaterfallContent | undefined;
+  /** 区块标题;Content 缺席或空时整块(含标题)不渲染。 */
+  title: LocalizedText | undefined;
   locale: ReportLocale;
-  className?: string;
+  className: string;
 }
-function formatDurationOrMissing(ms: number | null): string {
-  return ms === null ? MISSING_MARK : formatDurationMs(ms);
+function formatDurationOrMissing(ms: number | undefined): string {
+  return ms === undefined ? MISSING_MARK : formatDurationMs(ms);
 }
 
 function waterfallBarGeometry(
@@ -114,19 +108,19 @@ function isSalient(node: WaterfallNode, rowDurationMs: number): boolean {
   return (
     Boolean(node.failed) ||
     Boolean(node.open) ||
-    node.durationMs === null ||
+    node.durationMs === undefined ||
     node.durationMs >= rowDurationMs * FOLD_SHARE
   );
 }
 
 /** 短节点与重复节点两条判据共用的豁免:失败、主干与测不出时长的节点恒逐条列出。 */
 function isFoldable(node: WaterfallNode): boolean {
-  return !node.failed && !node.open && node.durationMs !== null;
+  return !node.failed && !node.open && node.durationMs !== undefined;
 }
 
 /** 显著性折叠:连续的非显著节点进一条摘要;行总时长缺失时没有占比基准,整层不折。 */
-function foldShort(nodes: readonly WaterfallNode[], rowDurationMs: number | null): WaterfallListItem[] {
-  if (rowDurationMs === null || rowDurationMs <= 0) {
+function foldShort(nodes: readonly WaterfallNode[], rowDurationMs: number | undefined): WaterfallListItem[] {
+  if (rowDurationMs === undefined || rowDurationMs <= 0) {
     return nodes.map((node) => ({ kind: "node", node }));
   }
   const items: WaterfallListItem[] = [];
@@ -149,12 +143,12 @@ function foldShort(nodes: readonly WaterfallNode[], rowDurationMs: number | null
 function foldRepeats(items: readonly WaterfallListItem[], locale: ReportLocale): WaterfallListItem[] {
   const out: WaterfallListItem[] = [];
   let run: WaterfallNode[] = [];
-  let runKey: string | null = null;
+  let runKey: string | undefined;
   const flush = (): void => {
     if (run.length >= REPEAT_MIN) out.push({ kind: "repeat", nodes: run });
     else for (const node of run) out.push({ kind: "node", node });
     run = [];
-    runKey = null;
+    runKey = undefined;
   };
   for (const item of items) {
     if (item.kind === "node" && isFoldable(item.node)) {
@@ -175,7 +169,7 @@ function foldRepeats(items: readonly WaterfallListItem[], locale: ReportLocale):
 /** 同层兄弟清单依次过两条收敛规则。 */
 function foldSiblings(
   nodes: readonly WaterfallNode[],
-  rowDurationMs: number | null,
+  rowDurationMs: number | undefined,
   locale: ReportLocale,
 ): WaterfallListItem[] {
   return foldRepeats(foldShort(nodes, rowDurationMs), locale);
@@ -193,7 +187,7 @@ function repeatFoldLabel(nodes: readonly WaterfallNode[], locale: ReportLocale):
   return `${resolveLocalizedText(nodes[0]!.label, locale)} ×${nodes.length}`;
 }
 
-/** 两种摘要共用的时长列:`合计 4m 3s`;被折节点时长恒非 null(缺失是豁免判据)。 */
+/** 两种摘要共用的时长列:`合计 4m 3s`;被折节点时长恒有记录(缺失是豁免判据)。 */
 function foldTotal(nodes: readonly WaterfallNode[], locale: ReportLocale): string {
   const totalMs = nodes.reduce((sum, node) => sum + (node.durationMs ?? 0), 0);
   return locale === "zh-CN" ? `合计 ${formatDurationMs(totalMs)}` : `total ${formatDurationMs(totalMs)}`;
@@ -213,8 +207,8 @@ function WaterfallNodeList({
 }: {
   nodes: readonly WaterfallNode[];
   locale: ReportLocale;
-  rowDurationMs: number | null;
-  className?: string;
+  rowDurationMs: number | undefined;
+  className: string | undefined;
 }): ReactElement {
   return (
     <ul className={className}>
@@ -250,7 +244,7 @@ function WaterfallNodeRow({
 }: {
   node: WaterfallNode;
   locale: ReportLocale;
-  rowDurationMs: number | null;
+  rowDurationMs: number | undefined;
 }): ReactElement {
   const label = resolveLocalizedText(node.label, locale);
   const kids = node.children ?? [];
@@ -266,14 +260,14 @@ function WaterfallNodeRow({
     </>
   );
   if (kids.length === 0) {
-    return (
-      <li className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</li>
-    );
+    return <li className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</li>;
   }
   return (
     <li>
       <details open={Boolean(node.failed) || Boolean(node.open)}>
-        <summary className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</summary>
+        <summary className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>
+          {body}
+        </summary>
         <WaterfallNodeList
           nodes={kids}
           locale={locale}
@@ -301,45 +295,40 @@ function renderWaterfallWeb(
           const totalNodes = countNodes(row.nodes);
           const failedNodes = countFailed(row.nodes);
           const leaves = leafNodes(row.nodes);
+          const durationMs = row.durationMs;
           const label = resolveLocalizedText(row.label, locale);
           // label 与 locator 同文时只画 locator 一次(waterfall.md「渲染」)。
           const labelRepeatsLocator = row.locator !== undefined && label === String(row.locator);
           return (
             <li key={row.key} className="niceeval-waterfall-row">
               <div className="niceeval-waterfall-head">
-                {row.locator !== undefined ? (
-                  (() => {
-                    return row.href !== undefined ? (
-                      <a className="niceeval-locator" href={row.href}>
-                        {row.locator}
-                      </a>
-                    ) : (
-                      <span className="niceeval-locator">{row.locator}</span>
-                    );
-                  })()
-                ) : null}
+                {row.locator !== undefined
+                  ? (() => {
+                      return row.href !== undefined ? (
+                        <a className="niceeval-locator" href={row.href}>
+                          {row.locator}
+                        </a>
+                      ) : (
+                        <span className="niceeval-locator">{row.locator}</span>
+                      );
+                    })()
+                  : null}
                 {labelRepeatsLocator ? null : <span className="niceeval-waterfall-label">{label}</span>}
                 <span className="niceeval-waterfall-duration">{formatDurationOrMissing(row.durationMs)}</span>
                 <span className="niceeval-waterfall-count">{countText(locale, "nodes", totalNodes)}</span>
                 {failedNodes > 0 ? (
-                  <span className="niceeval-waterfall-failed">
-                    ✗ {countText(locale, "failed", failedNodes)}
-                  </span>
+                  <span className="niceeval-waterfall-failed">✗ {countText(locale, "failed", failedNodes)}</span>
                 ) : null}
               </div>
-              {row.durationMs !== null && leaves.some((node) => node.durationMs !== null) ? (
+              {durationMs !== undefined && leaves.some((node) => node.durationMs !== undefined) ? (
                 <svg
                   className="niceeval-waterfall-track"
-                  viewBox={`0 0 ${Math.max(row.durationMs, 1)} 1`}
+                  viewBox={`0 0 ${Math.max(durationMs, 1)} 1`}
                   preserveAspectRatio="none"
                 >
                   {leaves.map((node) => {
-                    if (node.durationMs === null) return null;
-                    const geometry = waterfallBarGeometry(
-                      node.startOffsetMs,
-                      node.durationMs,
-                      row.durationMs!,
-                    );
+                    if (node.durationMs === undefined) return null;
+                    const geometry = waterfallBarGeometry(node.startOffsetMs, node.durationMs, durationMs);
                     return (
                       <rect
                         key={node.key}
@@ -360,7 +349,7 @@ function renderWaterfallWeb(
                 </svg>
               ) : null}
               {row.nodes.length > 0 ? (
-                <WaterfallNodeList nodes={row.nodes} locale={locale} rowDurationMs={row.durationMs} />
+                <WaterfallNodeList nodes={row.nodes} locale={locale} rowDurationMs={row.durationMs} className="" />
               ) : null}
             </li>
           );
@@ -389,7 +378,6 @@ export function waterfallText(rows: WaterfallContent, locale: ReportLocale, titl
 
 /** 时间树与瀑布:一批带起止偏移的节点,可逐层展开。 */
 export function Waterfall({ nodes, locale, title, className }: WaterfallProps): ReactNode {
-  const content = nodes ?? null;
-  if (content === null || content.length === 0) return null;
-  return renderWaterfallWeb(content, locale, title, className);
+  if (nodes === undefined || nodes.length === 0) return null;
+  return renderWaterfallWeb(nodes, locale, title, className);
 }

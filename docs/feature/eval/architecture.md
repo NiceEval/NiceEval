@@ -60,14 +60,17 @@ Node builtin、相对 import 与其它 bare package 继续从 importer 所属 pa
 相对 import、loader 文件、Sandbox build context、bind mount 与运行期上传的宿主文件逃出 owner 时失败。
 校验使用 realpath 后的跨平台祖先关系，不使用字符串前缀；不存在的目标先检查最近已存在祖先，再在创建或读取时复核。
 
-Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval runtime revision 进入身份。
+Node builtin 与 NiceEval 运行时源码不复制进源码闭包；NiceEval 的内容摘要与必要行为计数进入身份。
 静态可达 bare dependency 保存实际命中的 locator 与安装内容摘要；workspace/file/link 依赖按实际内容计算，不只信 lockfile 文本。
+源码规范化、依赖收集与 Group 的共享规则见[源码身份与冻结模块图](../experiments/architecture/source-identity.md)。
 
 ### 模块与数据投影
 
 共享模块可能只被 Node 求值一次，发现器不能依赖逐 Eval 重复求值来收集 loader 事实。
 模块 DAG 保存每个模块登记的 loader、criteria 与 private 输入，再把传递闭包投影到每条可达 Eval。
 两条 Eval import 同一模块时，都得到该模块的数据事实；仅改变该模块时，只使可达它的 Eval 重新规划。
+模块的数据事实只包含该模块顶层求值期间的读取。读取时调用栈（含 `async` 帧）上出现当前 Eval 入口，
+就只归这条 Eval，不进入执行读取的共享模块；Eval 顶层调用共享函数逐题读 fixture 时，各题指纹互不包含。
 
 路径校验和文件哈希按 package root 缓存，共享物理文件只读一次，再生成逐 Eval manifest。
 缓存使用真实路径、stat 与内容哈希，不能以 package version 作为整套题的失效键。
@@ -111,7 +114,7 @@ interface AdapterIdentity {
 
 品牌契约 token 不进入持久结果。`contract` 只是接口名称，不授予运行时配对、Agent 能力或沿用资格。
 Agent 的接口名称为 `niceeval.agent/v1`；`behaviorRevision: null` 始终表示没有显式声明行为版本。
-能力来自实际构造对象，沿用由独立 policy 校验。历史格式的已知转换由 [Run 迁移](../run/architecture/README.md#自动迁移) 拥有。
+能力来自实际构造对象，沿用由独立 policy 校验。Record 只接受当前存储格式，格式检查由 [Run 架构](../run/architecture/README.md) 拥有。
 不支持的 Sandbox、Eval Group、Sandbox reuse 与完整应用费用 budget 组合在预检拒绝。
 依赖 Agent 执行准备的生命周期 Plugin 同样在预检拒绝，不能宣称执行却跳过其资源 owner。
 
@@ -191,6 +194,31 @@ Agent scoped Assertion 按接收者绑定在 Agent 的 `t`、Session 与 Turn。
 根 `t` 读取已启动 Session 的 vector cut，Session 读取自己的前缀，Turn 读取不可变结果。
 普通应用不会获得虚假的对话成功或零工具调用判分结果。
 Sandbox 文件可见性与归因继续由 send 区间确定，规则见 [Sandbox](../sandbox/README.md)。
+
+## 模拟用户
+
+[模拟用户](library/simulated-user.md) 属于 Agent Session 的执行输入生成能力，不属于 Assertion 求值或 Adapter 实现。
+Eval owner 创建并持有每个实例的 pi coding agent 会话；Provider owner 继续拥有模型、凭据、预算、传输与用量采集。
+定义不持有运行期会话，普通应用上下文不获得隐式 Session。
+
+每次调用捕获源 Turn 与当前待处理请求，把 Turn 的回复和完整请求作为不可信消息交给 pi。
+instructions 属于可信作者输入，不把被测 Agent 的回复提升为系统规则。
+工具 schema 使用互斥的 text / optionId 分支，校验严格拒绝未知字段，并验证 requestId 集合与当前请求一一对应。
+第一个合法提交只锁定回答候选；关闭模型动作准入、收拢会话与校验审计后，再复核 Session 状态并调用原 `respond` / `send` 一次。
+
+与 [Agent Judge](../judge/architecture.md#pi-coding-agent-与受管-provider) 相同，直接使用 pi coding agent 会话：NiceEval 只追加 system prompt 并提供 `reply_to_agent`；模型请求、上下文、压缩、重试、usage 与 abort 都是 pi 的。
+每次 reply 最多 4 个 assistant 轮次，pi 的压缩与重试不占轮次。回答生成期限取定义上限与 Attempt 剩余期限的较小值。
+生成结束后解除模拟用户期限，下一轮只由原 Session / Attempt 的期限约束，保持发送失败与取消的原有归属。
+
+每次 reply 的审计完整保存 pi session，不设字节上限，经受管 Content 分块保存、由 Inspection 分页读取。会话大小不会让 reply 失败；只有存储写入本身失败才是 `simulated-user-failed`。
+
+Attempt 终止先关闭提交和新请求准入，再 abort 会话并解除订阅，按已有有界关闭规则等待释放。
+迟到事件不能驱动 Session、补写已封存用量或改变 outcome。
+同一实例的 pi 会话在 reply 间保留；Attempt 关闭后不再接受调用，不能借压缩或重建会话复活。
+
+模拟用户审计与执行活动绑定源 Session、源 Turn 和新 Turn，内部模型历史与被测 Agent history 分别归各自 owner。
+被测 Agent 只收到最终普通消息或结构化 responses；它的 history 不包含模拟用户的 instructions、内部工具调用或压缩摘要。
+模拟用户的用量随执行活动事实持久化，不进入 Judge collector；费用汇总按这些活动事实聚合出 `simulated-user` 费用类别，不把模拟用户活动冒充评分 entry。
 
 ## 观测、评分与发布
 

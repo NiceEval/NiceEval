@@ -33,18 +33,36 @@ export default defineScoreEval({
     main.closeQA("ACCEPT: both main session turns").gate(1).score(1).label("Agent QA session");
     t.closeQA("ACCEPT: all main and branch history").gate(1).score(1).label("Agent QA attempt");
     t.closeQA(eventMatch("message", { role: "assistant" }), "ACCEPT: all assistant messages")
-      .gate(1).score(1).label("Agent QA assistant events");
+      .gate(1)
+      .score(1)
+      .label("Agent QA assistant events");
     t.closeQA(toolMatch("context_branch"), "ACCEPT: all branch tool calls")
-      .gate(1).score(1).label("Agent QA branch tools");
+      .gate(1)
+      .score(1)
+      .label("Agent QA branch tools");
 
     // Later material must not drift into any already registered QA capture.
     const valuesTurn = await main.send("assertion/values");
     valuesTurn.usedNoTools().gate().label("Agent QA no tools");
-    t.check(authoringRejected(() => Reflect.apply(t.usedNoTools, t, [toolMatch("context_main")])), isTrue())
-      .gate().label("Agent QA attempt rejects usedNoTools Match");
-    main.check(authoringRejected(() => Reflect.apply(main.usedNoTools, main, [toolMatch("context_main")])), isTrue())
-      .gate().label("Agent QA session rejects usedNoTools Match");
-    valuesTurn.check(authoringRejected(() => Reflect.apply(valuesTurn.usedNoTools, valuesTurn, [toolMatch("context_main")])), isTrue())
-      .gate().label("Agent QA turn rejects usedNoTools Match");
+    t.check(
+      authoringRejected(() => Reflect.apply(t.usedNoTools, t, [toolMatch("context_main")])),
+      isTrue(),
+    )
+      .gate()
+      .label("Agent QA attempt rejects usedNoTools Match");
+    main
+      .check(
+        authoringRejected(() => Reflect.apply(main.usedNoTools, main, [toolMatch("context_main")])),
+        isTrue(),
+      )
+      .gate()
+      .label("Agent QA session rejects usedNoTools Match");
+    valuesTurn
+      .check(
+        authoringRejected(() => Reflect.apply(valuesTurn.usedNoTools, valuesTurn, [toolMatch("context_main")])),
+        isTrue(),
+      )
+      .gate()
+      .label("Agent QA turn rejects usedNoTools Match");
   },
 });

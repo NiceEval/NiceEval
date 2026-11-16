@@ -1,4 +1,8 @@
 export {
+  decodeExpKeptEvent,
+  type ExpKeptEvent,
+  decodeExpStartEvent,
+  type ExpStartEvent,
   ExpDiagnosticEventSchema,
   decodeExpProgressEvent,
   type ExpProgressEvent,

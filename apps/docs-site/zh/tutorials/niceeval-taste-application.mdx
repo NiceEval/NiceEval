@@ -240,7 +240,6 @@ export function createSupportReview(
       // 全部发言参与质量判断；不按送达或模型来源筛选。
       t.closeQA(发言材料(人物("agent")), "每句发言是否自然完整、意思清楚？", {
         maxMaterialBytes: 256 * 1024,
-        maxAuditBytes: 1024 * 1024,
       }).score(45).label("表达质量");
 
       // 普通公式就在正文；未知仍占固定权重，不能当作未完成的 0。

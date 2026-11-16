@@ -8,7 +8,6 @@ root、Session 与 Turn 都要求显式材料。
 
 ```ts
 const answerQuality = defineJudge({
-  name: "answer-quality",
   rubric: "根据 question 评价 answer 是否准确、完整地回答问题。",
   anchors: [
     { measurement: 0, description: "没有回答问题" },
@@ -59,6 +58,11 @@ ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custo
 
 closeQA、defineJudge 与受管 ScoreMatch 自动登记每次实际 HTTP 传输，失败、重试和中断均保留。
 未通过发送前校验的逻辑步骤不算物理请求；取消表示本地停止等待，不证明服务端停工。
+
+可重试的传输失败先重试，再判 `unavailable`。连接错误、超时、HTTP 408、429 与 5xx 都可重试，响应明确标为不可重试的除外。
+受管传输在同一 Assertion 的 `timeoutMs` 内最多重试 2 次：指数退避，起始 2 秒；服务端给出 `retry-after` 时等待该值，单次等待上限 60 秒。
+剩余期限不够再等一次时立即结束，判 `unavailable` 并留存最后一次的失败原因。HTTP 400 等协议错误不重试，沿用 `errored`。
+每次重试都是独立的物理请求，照常登记用量与失败。普通 Judge 与受管 ScoreMatch 遵守这条规则；Agent Judge 见下文[评审 agent](#评审-agent)。
 现有 `defineConfig.pricing` 可对请求模型提供显式估价；真实报告费用（含零）优先，不在读取时重新定价。
 `t.usage` 仍只表示被测应用用量，Adapter 无需替裁判上报用量。
 
@@ -74,18 +78,16 @@ interface JudgeAnchor {
   readonly description: string;
 }
 interface JudgeOptions {
-  readonly name: string;
   readonly rubric: string;
   readonly anchors?: readonly JudgeAnchor[];
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 type JudgeDefinition = ScoreMatch<unknown>;
 declare function defineJudge(options: JudgeOptions): JudgeDefinition;
 ```
 
-name 非空，最多 128 UTF-8 bytes，不含控制字符。rubric 非空，最多 8 KiB。
+rubric 非空，最多 8 KiB。定义没有名字：判据由登记处的 groupPath 与 label 标识，审计也按 entry 读取。
 anchors 默认提供 0 与 1 的描述；显式 anchors 有 2 至 32 项，measurement 严格递增并包含 0 与 1。
 每项 description 非空，最多 1 KiB。模型可以输出 anchors 之间的连续值；它不是置信度。
 选项在定义时有界校验并冻结，未知字段和 accessor 拒绝。
@@ -101,8 +103,7 @@ anchors 默认提供 0 与 1 的描述；显式 anchors 有 2 至 32 项，measu
 import { binaryJudge } from "niceeval/expect";
 
 t.judge({ reply: turn.reply, verified }, binaryJudge({
-  name: "handoff-names-violation",
-  rubric: "Y 当且仅当回复指出了被读取的禁区路径，并且报告的结果与 verified 一致。",
+  rubric: "回复指出了被读取的禁区路径，并且报告的结果与 verified 一致。",
 })).score(2);
 ```
 
@@ -111,19 +112,17 @@ type BinaryJudgeOptions = Omit<JudgeOptions, "anchors">;
 declare function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition;
 ```
 
-`binaryJudge` 从 `niceeval/expect` 导出，选项校验、材料与审计预算和 `defineJudge` 相同，但不接受 `anchors`。
+`binaryJudge` 从 `niceeval/expect` 导出，选项校验、材料与审计预算和 `defineJudge` 相同，但不接受 `anchors`。rubric 只写判据陈述，是否的问法由 NiceEval 的分类提示负责，不必在 rubric 里写“Y 当且仅当”或“判 N”。
 它通过一次受管 `classify` 请求在 `satisfied` 与 `not-satisfied` 中选择，由代码分别映射成 `1` 与 `0`。它不调用允许连续值的 `score`，不阈值化概率或置信度。
 合法 measurement 只有 `0` 或 `1`；无效输出、预算或 Provider 失败沿用 Judge 的错误与 unavailable 规则，不映射为 `0`。
-返回值使用普通 measurement handle，以 `.gate(1)` 建立质量门，`.score(points)` 得到 `0` 或满分。recipe identity 包含二值分类算法与 revision，审计保留类别、理由和映射结果。
+返回值使用普通 measurement handle，以 `.gate(1)` 建立质量门，`.score(points)` 得到 `0` 或满分。recipe identity 包含实际判据、类别与分数映射，审计保留类别、理由和映射结果。
 
 ## 现成裁判
 
 ```ts
 interface JudgePresetOptions {
-  readonly name?: string;
   readonly maxCalls?: number;
   readonly maxMaterialBytes?: number;
-  readonly maxAuditBytes?: number;
 }
 interface FactualityMaterial {
   readonly input: string;
@@ -151,7 +150,7 @@ declare function pairwisePreference(options?: JudgePresetOptions): ScoreMatch<Pa
 ```
 
 四个工厂及其材料类型从 `niceeval` 和 `niceeval/expect` 导出。
-每个工厂返回可复用的定义实例；默认 name 分别为 factuality、faithfulness、instruction-following和 pairwise-preference。
+每个工厂返回可复用的定义实例。
 必填文本非空；instructions 是 1 至 32 项非空文本，context 数组非空。非法材料不会进入模型调用。
 
 | 裁判 | 计算方法 | 分数含义 |
@@ -190,6 +189,183 @@ check 同步验证入口和 Match，然后生成有界 canonical JSON 快照。
 审计保存实际请求、尝试、结构化输出和最终聚合；schema、预算、取消及历史读取由 [Architecture](architecture.md) 定义。
 历史材料不会被重新解释或迁移。审计能证明经框架进行的调用，不能证明作者隐藏闭包、模型判断或外部事实正确。
 
+### Turn 与 Session 作为材料
+
+评价被测 agent 这一轮做了什么时，直接把 Turn 交给 Judge，不必自己挑字段拼对象：
+
+```ts
+const first = await t.send("把 niceeval 接入这个仓库。");
+t.judge(first, binaryJudge({ rubric: "agent 动手前说清了它选用的入口与协议形状，并且读过定义这个入口的源码。" }))
+  .score(2).label("核对接入协议");
+t.judge({ turn: first, verified }, binaryJudge({ rubric: "回复报告的结果与 verified 一致。" })).score(2);
+```
+
+- Turn 与 Session 可以直接作为材料，也可以出现在材料对象的任意位置。NiceEval 把它投影成标准对话文本：用户输入、助手消息、工具调用（名称、输入、状态、输出）、待输入请求与最终回复，按发生顺序排列。Session 是其中各 Turn 的顺序拼接。
+- 适配器标为 partial 的历史照实标注缺了什么，不因此拒收材料。
+- 投影超出 `maxMaterialBytes` 时按固定优先级裁剪，而不是整条 unavailable：用户输入、待输入请求与最终回复完整保留；先把工具输出按头尾保留、中间省略并注明省略字节，从最长的开始；仍超出时再同样裁剪工具输入；最后才裁剪较早的助手消息。保留的部分仍超出预算时才是 unavailable。
+- 裁剪是确定性的，同一个 Turn 与预算得到同样的材料；审计保存每处省略的位置与字节数，模型看到的省略标记与审计一致。
+- 投影格式与裁剪规则有 revision，进入使用它的 Judge entry 身份。
+
+## Agent Judge —— 在 Sandbox 里自己取证再评分
+
+`defineJudge` 只看调用方交给它的材料。安装、重构、修复这类开放式判据，要看的东西散在被测 Sandbox 里：作者改了哪些文件、项目怎么组织、命令能不能跑。
+调用方只好先写取证脚本，收集源码、读布局、压缩到材料上限，再交给 Judge，判据的一半其实写在脚本里（[T-25](../../taste.md#t-25)、[T-33](../../taste.md#t-33)）。
+
+Agent Judge 是一个带工具的评审 agent。它在这条 Attempt 的主 Sandbox 里自己查看文件、运行命令，最后调用评分工具交出 measurement、理由与证据。
+它仍是受管 `ScoreMatch`：经 `t.check` / `t.judge` 登记，measurement 落在 `[0,1]`，`.gate()`、`.score()` 与其它 Judge 完全相同。
+
+能直接读到的事实（verdict、退出码、文件是否改动、工具调用次数）继续用确定性检查。Agent Judge 只用于需要探索和判断的开放式判据；它有随机性，换模型分数会漂移。
+
+### 定义与调用
+
+`defineAgentJudge` 定义一个评审者；题目里用 `t.agentJudge(reviewer, material)` 开一次评审会话，然后像对话一样逐道提问。
+评分题有两种，和 `binaryJudge` / `defineJudge` 一一对应：
+
+- `review.judge(criterion)` 问是或否。作者只写判据陈述，不写“Y 当且仅当”或 anchors；评审提交 `satisfied`，由代码映射为 1 或 0。
+- `review.grade(prompt, { anchors })` 打分。anchors 必填，规则同 `defineJudge`；评审提交 anchors 区间内的 measurement。
+
+两者都返回普通的 measurement handle，`.gate()`、`.score()`、`.label()` 照常使用。
+`review.chat(message)` 发一条不计分的消息，例如先让评审列出被测 agent 新增的文件。评审在同一个会话里依次回答，后面的问题能直接用前面看过的现场，不必重读。
+评分 prompt 直接写在调用处，读题的人在一处就能看到每一项问什么、给几分（[T-26](../../taste.md#t-26)）。
+
+```ts
+import { defineAgentJudge } from "niceeval/expect";
+
+const reviewer = defineAgentJudge({
+  instructions: "你在评审被测 agent 刚在这个仓库里完成的 NiceEval 接入。自己阅读文件、运行命令取证。",
+});
+
+export default defineScoreEval({
+  sandbox: /* … */,
+  async test(t) {
+    const turn = await t.send("把 niceeval 接入这个仓库。");
+    const review = t.agentJudge(reviewer, { handoff: turn.reply });
+    review.chat("先找到 niceeval.config.ts，列出 agent 写的 Adapter、Experiment 与 Eval 文件。");
+    review.judge("NiceEval 装进了适用的现有根工具项目，保留原有包管理器与锁文件归属。")
+      .score(3).label("安装融入宿主工具链");
+    review.judge("Adapter 在非 2xx、解析错误或连接中断时抛出或映射为失败。")
+      .score(2).label("错误不被吞掉");
+    review.grade("Adapter 把 DB-GPT 的流式响应还原成 NiceEval 消息的完整程度。", { anchors: [
+      { measurement: 0, description: "没有读取真实响应" },
+      { measurement: 0.5, description: "只取到最终文本，丢了分片或结束事件" },
+      { measurement: 1, description: "分片、结束与错误都正确映射" },
+    ] }).score(4).label("流式响应映射");
+  },
+});
+```
+
+```ts
+interface AgentJudgeDefinition {
+  readonly instructions?: string;             // 这位评审者看什么、从哪里开始，会话内所有问题共用
+  readonly maxTurns?: number;                 // 每道评分题的逻辑模型轮次上限，默认 40
+  readonly timeoutMs?: number;                // 整次会话的墙钟上限，默认 600_000，从会话取得调度位置时起算
+  readonly maxMaterialBytes?: number;
+  readonly concurrent?: boolean;              // 与相邻的 concurrent 会话并发执行，默认 false
+}
+
+interface AgentJudgeReview {
+  judge(criterion: string): MeasurementHandle;
+  grade(prompt: string, options: { readonly anchors: readonly JudgeAnchor[] }): MeasurementHandle;
+  chat(message: string): void;
+}
+
+declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
+// t.agentJudge(reviewer: AgentJudge, material: JudgeMaterial): AgentJudgeReview
+```
+
+- `defineAgentJudge` 与相关类型从 `niceeval/expect` 导出，`t.agentJudge` 在官方 root、custom Adapter 的 `t`、Session 与 Turn 上可用。criterion、prompt 与 anchors 沿用 `defineJudge` 的 rubric 与 anchors 校验，message 为非空文本；执行上限必须为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。
+- `t.agentJudge(reviewer, material)` 只登记会话，不立即执行；材料是会话的开场上下文，没有时传 `{}`。材料快照规则与 [Judge 材料](#材料与读回) 相同。冻结的是开场材料，Sandbox 是评审执行时的可变现场。
+- 每个 `judge` 或 `grade` 是一个独立断言 entry；`chat(message)` 不产生 entry，只出现在会话轨迹里。同一会话的评分题与 chat 按调用顺序进入会话。
+- 会话只执行到最后一道评分题为止：最后一道题之后的 `chat` 不发送；没有任何评分题的会话不执行、不发模型请求，也不报错。
+- 只能用在拥有主 Sandbox 的 Attempt：direct agent 或没有 Sandbox 的 Eval 在登记时报 `judge.agent-requires-sandbox`。
+- 开场材料预算沿用 [预算与生命周期](architecture.md#预算与生命周期) 的默认值。评审会话的审计不设字节上限，完整保存 pi 会话；会话大小已受模型上下文、`maxTurns` 与期限约束，存储大小不能变成评分结果。
+- 只能用在每条 Attempt 独占 Sandbox 的 Eval。评审有完整写权限，可能改动 State 路径或组内共享的现场，所以声明了 State、属于共享 Sandbox 的 Eval Group 或启用 `sandboxReuse` 的配对登记 Agent Judge 时，在规划阶段报 `judge.agent-shared-sandbox`。
+- Agent Judge 不能挂 `.stop()`：它在被测运行结束后才执行，不能作为提前停止的屏障，挂上时登记报错。
+- 模型使用 Eval × Experiment 生效的 Judge 配置，不增加 Match 级模型替换。身份与缓存规则见 [Agent Judge 架构](architecture.md#agent-judge)。
+
+### 评审 agent
+
+评审 agent 就是 pi coding agent：NiceEval 在宿主进程里用 `@earendil-works/pi-coding-agent` 的 SDK 创建会话（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步），只追加评审的 system prompt、把内置工具接到 Sandbox，并加一个评分工具。
+自动压缩、溢出恢复、请求重试与会话管理都用 pi coding agent 自己的行为。NiceEval 开启 pi 会话自带的重试，最多 2 次，退避与可重试判断沿用 pi 的默认行为；不另行包装模型请求，也不叠加 provider 层重试。重试仍失败时按下文规则判 `unavailable`。
+
+模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 按 Chat Completions 接入；接口兼容不保证所选模型支持工具。
+`TypesafeProvider` 在创建会话前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
+
+`maxTurns` 计每道题的 assistant 轮次，pi 的自动重试不另占轮次。第 40 轮仍可提交；需要第 41 轮才超限。
+有效期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值，到期时 abort 会话。
+
+追加的 system prompt 写明评分工具的用法与“只根据你在 Sandbox 里亲眼看到的证据评分”；每道题的 user 消息写明它是是否题还是打分题，以及判据或 anchors。材料作为不可信 user 内容进入首条消息。
+
+工具是 pi coding agent 的内置 `bash`、`read`、`write`、`edit`，通过 pi 的可插拔 operations 作用在这条 Attempt 的主 Sandbox（Sandbox 默认用户、默认 workdir），输出截断与超时沿用 pi 的默认行为；另加自定义工具 `submit_evaluation` 交出评分。
+工具不限制只读。评审在 `workspace.diff` 冻结之后执行，它的写入不计入被测 agent 的改动，也不改变已冻结的 diff 证据。
+
+`submit_evaluation` 的参数 schema 随当前题目变化：是否题提交 `satisfied`，打分题提交 `measurement`，其余字段相同。
+
+```ts
+type SubmitEvaluationInput = (
+  | { readonly satisfied: boolean }           // review.judge：映射为 1 或 0，不接受连续值
+  | { readonly measurement: number }          // review.grade：[0,1] 内的有限数
+) & {
+  readonly rationale: string;                 // 对照判据或 anchors 的理由
+  readonly evidence: readonly {               // 支撑理由的证据，至少一条
+    readonly kind: "file" | "command" | "observation";
+    readonly ref: string;                     // 文件路径、执行过的命令或观察对象
+    readonly note: string;
+  }[];
+};
+```
+
+- 会话按调用顺序处理：`chat` 作为一条 user 消息发出，评审回答后进入下一项；`judge` 或 `grade` 作为一条评分题发出，评审取证后调用 `submit_evaluation` 结束这道题，再进入下一项。
+- 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
+- 会话很长时，pi coding agent 按它的默认设置自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
+- 一道题超过 `maxTurns` 仍未提交，这道题为 `unavailable`，会话继续下一项；会话期限耗尽或传输最终失败时，当前与之后的评分题都为 `unavailable`，已提交的题保留各自的 measurement。
+- 模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
+- 同一响应中的工具按返回顺序串行执行。一道题合法提交之后不执行同批剩余工具；失败锁存与取消不能被迟到提交清除。
+- 工具本身的失败（命令非零退出、文件不存在）作为工具结果返回给评审，不终止评审；Sandbox 传输失败让断言 `unavailable`。
+
+### 执行顺序
+
+`assertions.evaluate` 分两组求值：先普通组，再 Agent Judge 组。普通断言即使登记在 Agent Judge 之后，也必须先完成；已由控制屏障求值的 entry 不重复执行。普通断言的 `.stop()` 屏障跳过 Agent Judge，不会让它提前执行。
+
+**普通组**：受管 Judge entry（`t.judge`、`defineJudge`、四个现成裁判等经受管 Provider 调用模型的 entry）之间并发求值；不受管的 Match 与作者 callback 保持既有的顺序执行语义。控制屏障照旧：屏障之前登记的 entry 全部结算后才判断屏障，屏障之后的 entry 在屏障放行前不启动。entry 的 identity、展示顺序、entryIndex、Verdict 折叠与分数分母都按登记顺序，与完成先后无关；一个 entry 的 unavailable 或 errored 是它自己的 settlement，不取消其它 entry。
+
+**Agent Judge 组**：按会话的登记顺序划分批次。默认会话各自成一批，逐个串行执行，后面的评审能看到前面评审写入的内容。登记顺序上相邻、都声明 `concurrent: true` 的会话合成一批并发执行；批与批之间仍串行。并发调度的单位是整个会话：会话内部的 `chat`、`judge`、`grade` 仍在同一个 pi 会话里逐题处理。
+
+- 同一批里的会话共享同一个主 Sandbox，相互之间没有先后，也不保证观察到彼此的写入；同时安装依赖、占端口、改文件都可能互相影响。只有确定不依赖彼此现场的会话才声明 `concurrent`。rubric 的不写文件要求只是模型指令，不提供隔离保证。
+- 会话的 `timeoutMs` 从它取得调度位置时起算，排队等待不消耗它；Attempt 的剩余期限始终覆盖排队与执行。把一个会话拆成多个并发会话会得到多份会话期限、多份开场与重复取证，成本相应增加。
+- 一个会话超时、失败或被取消只关闭它自己的模型请求与工具；控制与账本相互隔离，共享现场的文件状态不隔离。Attempt 取消时中断全部在途与排队的会话，迟到结果不能改写已封口的 measurement。
+
+**并发上限**：普通组的受管 entry 与 Agent Judge 的并发会话都受生效 Judge Provider 的 `maxConcurrency` 约束：一个普通 entry 从开始执行到结算占一个位置，一个 Agent Judge 会话从创建到最后一道题结算占一个位置。它是单个 Attempt 内的判分调度上限，不是网关的全局配额；同时运行的 Attempt 越多，网关看到的并发越高。`maxConcurrency: 1` 等同完全串行。
+
+评审命令与模型调用归属于该 Judge entry，不能进入被测 agent 的 history、工具计数、usage 或归因断言。
+评审发生在 telemetry 收口前，trace 必须能区分评审与被测应用；时间先后不能代替归属。
+
+### 审计、用量与读回
+
+- 每次模型请求按 Judge 用量登记，与其它受管 Judge 共用费用、预算与取消路径。
+- 一次会话的完整轨迹由它的各道评分题共享，每道题的审计引用同一份轨迹并保存自己的提交。轨迹包含评审实际收到的内容：每轮模型输出、工具调用参数、有限工具结果与截断标记、最终提交。截断前的原始文件和命令输出不属于完整轨迹承诺。`niceeval show @<locator> ae_<id>` 显示 measurement、理由与证据列表，`--full` 显示完整工具轨迹。
+- 理由与证据是模型的自述，不证明引用对象存在、模型实际读到或判断正确。工具轨迹留存实际观察范围，供人复核（[T-12](../../taste.md#t-12)）。
+
+### 不做什么
+
+- 不提供只读模式或工具白名单配置。rubric 不是权限边界；需要限制权限时由 Sandbox 隔离配置承担，或改用确定性检查。
+- 工具只得到当前主 Sandbox 的能力，不授予宿主文件或其它 Sandbox 的句柄。Provider 凭据留在宿主受管传输中，不注入 Sandbox。Sandbox 已有的挂载、网络与凭据权限仍由它的配置决定。
+- 不把 Agent Judge 当作 `defineJudge` 的替代：材料已经齐全的判据继续用 `defineJudge`，它更便宜、更稳定。
+
+### 验收
+
+- 安装后的 CLI 运行一条带 Sandbox 的 Eval：评审读取被测 agent 写的文件并提交，Assertion detail 显示 measurement、理由、证据与工具轨迹；Judge 用量出现在 `show @<locator> usage`。
+- 评审写入文件后，`show @<locator> diff` 仍只显示被测 agent 的改动。
+- 评审不提交、超过轮次或期限、传输失败得到 unavailable；畸形模型协议与 HTTP 400 得到 errored。非法提交可修正；合法提交后同批工具与后续请求均为零。
+- direct agent 的 Eval 登记 Agent Judge：登记时报 `judge.agent-requires-sandbox`。
+- 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对登记 Agent Judge：规划阶段报 `judge.agent-shared-sandbox`；Agent Judge 挂 `.stop()` 登记报错；普通断言的 stop 屏障不触发 Agent Judge。
+- 并发验收（本地 mock 模型，每次请求固定延迟）：4 个普通受管 Judge 的 `assertions.evaluate` 墙钟约等于一次延迟而非四次；屏障前后的结算顺序正确，`maxConcurrency: 1` 恢复串行墙钟；measurement、Verdict 与串行时逐项相同。两个 `concurrent` 会话墙钟约等于一个会话；与一个默认会话混排时，默认会话仍是批边界。一个并发会话超时只让它自己的题 unavailable，兄弟会话照常结算；Attempt 取消中断全部在途与排队任务，之后零请求、零工具调用。同一 Attempt 的 entryIndex、usage 绑定与展示顺序不随完成先后变化。
+- 一个会话的 chat、judge、judge 按调用顺序在同一个 pi 会话里处理，产生两个 entry、一份共享轨迹；某道题超轮次只有它为 unavailable，后续题照常评分。同一 Attempt 两个会话按登记顺序串行，后者能读到前者写入的文件。登记在它们之后的普通归因断言先执行，结果不含评审活动。
+- 使用本地 OpenAI 兼容 HTTP server 脚本化工具往返，运行真实 pi Agent 与真实 Sandbox 工具；只模拟模型服务，不伪造 pi 事件或 Sandbox 结果。不调用付费模型。
+- 确定性边界验收包含预算拒绝零发送、工具截断可见、模型超限不提交、TypeSafe 零发送、取消后零追加动作，以及失败与取消请求的 Judge 用量。
+- 压缩验收：本地 mock 在某轮返回 OpenAI 形式的上下文溢出错误，评审发出 pi 的摘要请求后重发，重发请求含摘要且不含被压缩的早期工具输出，评审照常提交；Judge 用量含摘要请求，`--full` 轨迹显示压缩。压缩后仍溢出时，当前与之后的题为 `unavailable`（`agent-judge-context-overflow`），之前已提交的题保留分数。
+- 身份验收包含 rubric、预算、工具协议和生效模型改变后的重规划，以及未使用 Agent Judge 的既有身份不因新增默认字段漂移。旧格式审计由 Record 准入拒绝，提示重跑或清理。
+
 ## Runtime 配置
 
 裁判 Provider 是由具名工厂构造的不透明值，拥有服务端协议、默认模型、端点、凭据声明位置与执行限制。
@@ -219,6 +395,7 @@ interface JudgeProviderSettings {
 }
 type ChatJudgeProviderOptions = JudgeProviderSettings & JudgeCredentials & {
   readonly maxOutputTokens?: number;
+  readonly contextWindow?: number;
   readonly supportsImages?: boolean;
 };
 type TypesafeProviderOptions = JudgeProviderSettings & JudgeCredentials;
@@ -260,11 +437,13 @@ interface ExperimentJudgeSettings {
 | `timeoutMs` | 正安全整数，约束整条 Assertion 的 callback、请求、重试与等待 | `180_000` |
 | `maxResponseBytes` | 正安全整数，最多 256 KiB；JSON parse 前的响应硬字节上限 | `16_384` |
 | `maxOutputTokens` | 仅聊天服务工厂接受的正安全整数，传给服务端的输出 token 上限 | `1_024` |
+| `contextWindow` | 仅聊天服务工厂接受的正安全整数，所选模型可接收的最大上下文 token 数。只供 Agent Judge 与模拟用户的 pi coding agent 会话决定何时自动压缩；普通 Judge 不使用。未写时按模型名查 NiceEval 内置模型目录（与估价同一份 models.dev + LiteLLM 快照、同一套名字归一规则）；目录也没有该模型时不按阈值主动压缩，只在模型报告溢出时由 pi 压缩后重试。只有显式写出时才进入 Provider 身份，目录取得的值写入审计 | 显式值 → 内置目录 → 仅溢出时压缩 |
 | `headers` | 随每次请求发送的额外 HTTP 头映射；键名大小写保留，值逐字发出并脱敏 | 无 |
+| `maxConcurrency` | 正安全整数，最多 32；单个 Attempt 内判分调度的并发上限（见 [执行顺序](#执行顺序)）。只影响调度，不进入 Provider 或 Eval 身份；模型字符串替换继承它，整体替换 Provider 时使用新工厂的值 | `4` |
 
 未知字段、accessor 和非法选项在构造时拒绝。TypeSafe 不接受 `maxOutputTokens`，因为它的协议没有这一限制。
 若宿主进程变量存在 `CF_ACCESS_CLIENT_ID` 与 `CF_ACCESS_CLIENT_SECRET`，Provider 在未显式声明同名头时自动追加对应 Cloudflare Access 服务头。
-响应字节限制不等价于服务端生成量或费用限制。实际响应上限还受当前 Assertion 剩余审计容量约束。
+响应字节限制不等价于服务端生成量或费用限制。
 
 ### 模型与 Provider 替换
 
@@ -354,7 +533,6 @@ import { defineJudge } from "niceeval/expect";
 import { judgeImage, VercelProvider } from "niceeval/judge";
 
 const quality = defineJudge({
-  name: "action-quality/v1",
   rubric: "Evaluate the described behavior; use the screenshot as supplementary evidence.",
 });
 const provider = VercelProvider({
@@ -381,7 +559,7 @@ PNG、JPEG 每张最多 4 MiB，像素数最多 16,777,216；每个 Assertion �
 `TypesafeProvider` 与未启用图片的聊天 Provider 在读取凭据、构造 wire body 或发送前
 返回 `judge-capability-unavailable`；不能静默丢图或改成文本评分。
 
-含图片的 Assertion 使用 v3 审计，纯 JSON 保持已有 v1/v2。公开
+审计按 chat、typed 或 images 区分请求含义，不携带格式版本。公开
 `attempt.assertion.detail` 返回图片摘要与请求模板，不内嵌大图。
 `attempt.assertion.image` 通过 `locator + entryId + imageId` 选择本 Assertion
 的封存图片，接受字节 `offset/limit`，返回原图 metadata、区间 base64 与 `nextOffset`。

@@ -7,16 +7,16 @@ export type CalloutLevel = "error" | "warning" | "info";
 export interface CalloutItem {
   level: CalloutLevel;
   message: LocalizedText;
-  command?: string;
-  count?: number;
+  command: string | undefined;
+  count: number;
 }
 
 export interface CalloutGroup {
   title: LocalizedText;
-  command?: string;
-  badges?: readonly LocalizedText[];
+  command: string | undefined;
+  badges: readonly LocalizedText[];
   items: readonly CalloutItem[];
-  groups?: readonly CalloutGroup[];
+  groups: readonly CalloutGroup[];
 }
 
 const LEVEL_RANK: Record<CalloutLevel, number> = { error: 3, warning: 2, info: 1 };
@@ -69,12 +69,12 @@ function uniqueItemCommands(items: readonly CalloutItem[]): string[] {
   return [...new Set(items.map((item) => item.command).filter((command): command is string => command !== undefined))];
 }
 
-/** 组头命令:组内去重后恰一条时归组头,否则 null(命令随明细逐条走)。 */
-export function effectiveGroupCommand(group: CalloutGroup): string | null {
+/** 组头命令:组内去重后恰一条时归组头,否则缺席(命令随明细逐条走)。 */
+export function effectiveGroupCommand(group: CalloutGroup): string | undefined {
   const itemCommands = uniqueItemCommands(group.items);
-  if (itemCommands.length > 1) return null;
-  if (itemCommands.length === 1) return itemCommands[0]!;
-  return group.command ?? null;
+  if (itemCommands.length > 1) return undefined;
+  if (itemCommands.length === 1) return itemCommands[0];
+  return group.command;
 }
 
 function severityWord(level: CalloutLevel, locale: ReportLocale): string {
@@ -110,7 +110,7 @@ export function calloutDetailsLabel(locale: ReportLocale, n: number): string {
 
 export function formatCalloutMessage(item: CalloutItem, locale: ReportLocale): string {
   const message = resolveLocalizedText(item.message, locale);
-  const count = item.count ?? 1;
+  const count = item.count;
   if (count <= 1) return message;
   if (locale === "zh-CN") return `${message} ×${count}`;
   return `${message} ×${count}`;

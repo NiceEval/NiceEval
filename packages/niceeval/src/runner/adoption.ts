@@ -3,25 +3,21 @@
 // @concord-implements docs/feature/experiments/library/README.md
 
 import { readIdentityExplanation } from "./identity-explanation-read.ts";
-import { CURRENT_IDENTITY_DOMAINS } from "./identity-domains.ts";
-import { executionDigestForManifestOrigin, classifyIdentityDomains, type IdentityExplanation } from "./manifest.ts";
+import { executionDigestForManifestOrigin, type IdentityExplanation } from "./manifest.ts";
 import type { ExecutionComparison } from "./reuse-plan.ts";
-import { captureRenameRebuildInput, identityManifestEntry } from "./identity-manifests.ts";
+import { identityManifestEntry } from "./identity-manifests.ts";
 import type { IdentityManifestEntry, IdentityManifestsAttachment } from "../record/family/identity-manifests/schema.ts";
-import type { IdentityRebuildInput } from "./identity-domains.ts";
 import { foldRecordedAttemptScore } from "../eval/record/score.ts";
 import { hasProvenNoExperimentHooks } from "./rename-identity.ts";
 import { experimentHooksForRun } from "./record/context.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { Effect, Result, Schema } from "effect";
+import { Data, Effect, Result, Schema } from "effect";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { adapterIdentity } from "../adapter.ts";
+import { modelRolesToWire } from "../model-roles.ts";
 
-import {
-  encodeAttemptLocator,
-  parseAttemptLocator,
-  type AttemptLocator,
-} from "../attempt-locator.ts";
+import { encodeAttemptLocator, parseAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
 import { resolveAttemptLocator } from "../attempt-locator-resolution.ts";
 import {
   EXECUTION_DURATION_DOMAIN,
@@ -29,17 +25,17 @@ import {
   type DurationLimit,
   type EqualityToken,
 } from "../eval/record/eligibility.ts";
-import {
-  type ComparisonProvenance,
-} from "../eval/record/membership-provenance.ts";
 import { foldRecordedAttemptVerdict, type VerdictState } from "../eval/record/verdict.ts";
 import { recordHost } from "../record/host/runtime.ts";
-import { detachPlanningReference, selectPlanningLocator, stagePlanningReference, writerGenerationForRunSession, type PlanningExactReference } from "../record/host/sqlite-host.ts";
+import {
+  detachPlanningReference,
+  selectPlanningLocator,
+  stagePlanningReference,
+  writerGenerationForRunSession,
+  type PlanningExactReference,
+} from "../record/host/sqlite-host.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
-import type {
-  RecordReadSession,
-  SelectedAttemptRef,
-} from "../record/host/types.ts";
+import type { RecordReadSession, SelectedAttemptRef } from "../record/host/types.ts";
 import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,
@@ -49,10 +45,7 @@ import {
   UtcMillisSchema,
 } from "../record/codec/identifiers.ts";
 import type { AttemptOutcome, RecordSlotIdentity } from "../record/model/core.ts";
-import {
-  canonicalizeRunContext,
-  type RunContext,
-} from "../record/model/run-context.ts";
+import { canonicalizeRunContext, type RunContext } from "../record/model/run-context.ts";
 import type {
   EvalId,
   ExperimentId,
@@ -78,30 +71,18 @@ import {
   RunStorageError,
 } from "../run/storage/index.ts";
 import type { SandboxPlanningServices } from "../sandbox/plan.ts";
-import {
-  discoverEvals,
-  discoverExperiments,
-} from "./discover.ts";
+import { discoverEvals, discoverExperiments } from "./discover.ts";
 import { resolveExperimentEvals } from "./eval-selection.ts";
 import { slotExecutionIdentityDigestHex } from "./execution-identity.ts";
-import {
-  planPreparedProjectTarget,
-} from "./fingerprint.ts";
+import { planPreparedProjectTarget } from "./fingerprint.ts";
 import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
 import { resolveAttemptTimeout, resolveRunTimeout } from "./timeout.ts";
 import { resolveSandboxBeforeCache } from "./types.ts";
-import type {
-  AgentRun,
-  Config,
-  DiscoveredEval,
-  DiscoveredExperiment,
-} from "./types.ts";
+import type { AgentRun, Config, DiscoveredEval, DiscoveredExperiment } from "./types.ts";
 
 /** Shared domains emitted by the current ProjectTarget producer. */
-export const ADOPTION_INPUT_IDENTITY_DOMAIN =
-  `niceeval.input/fingerprint-v${CURRENT_IDENTITY_DOMAINS.inputIdentity}`;
-export const ADOPTION_CONFIG_IDENTITY_DOMAIN =
-  `niceeval.config/identity-v${CURRENT_IDENTITY_DOMAINS.configIdentity}`;
+export const ADOPTION_INPUT_IDENTITY_DOMAIN = "niceeval.input/fingerprint";
+export const ADOPTION_CONFIG_IDENTITY_DOMAIN = "niceeval.config/identity";
 const ADOPTION_TARGET_SLOT_SEPARATOR = "\u0000";
 
 export type ExplicitAdoptionIntent = "accept" | "rename";
@@ -149,9 +130,7 @@ export class ExplicitAdoptionError extends Error {
   }
 }
 
-export type ExplicitAdoptionReadError =
-  | ExplicitAdoptionError
-  | RecordReaderReadError;
+export type ExplicitAdoptionReadError = ExplicitAdoptionError | RecordReaderReadError;
 
 export type ExplicitAdoptionOpenError =
   | ExplicitAdoptionError
@@ -162,10 +141,10 @@ export type ExplicitAdoptionOpenError =
 
 export interface AdoptionProjectInput {
   readonly cwd: string;
-  readonly config?: Config;
-  readonly evals?: readonly DiscoveredEval[];
-  readonly experiments?: readonly DiscoveredExperiment[];
-  readonly planningServices?: SandboxPlanningServices;
+  readonly config: Config | undefined;
+  readonly evals: readonly DiscoveredEval[] | undefined;
+  readonly experiments: readonly DiscoveredExperiment[] | undefined;
+  readonly planningServices: SandboxPlanningServices | undefined;
 }
 
 export interface AdoptionProject {
@@ -173,7 +152,7 @@ export interface AdoptionProject {
   readonly config: Config;
   readonly evals: readonly DiscoveredEval[];
   readonly experiments: readonly DiscoveredExperiment[];
-  readonly planningServices?: SandboxPlanningServices;
+  readonly planningServices: SandboxPlanningServices | undefined;
 }
 
 export interface ExplicitAttemptLocator {
@@ -204,11 +183,9 @@ export interface ResolvedAdoptionAttempt {
 }
 
 export interface CurrentAdoptionSlot {
-  readonly identityManifest?: IdentityManifestEntry;
-  readonly rebuildInput?: IdentityRebuildInput;
-  readonly renameRebuildInput?: (experimentId: string) => IdentityRebuildInput | undefined;
+  readonly identityManifest: IdentityManifestEntry | undefined;
   readonly evaluationKind: "pass" | "score";
-  readonly renameFingerprint?: (experimentId: string) => string | undefined;
+  readonly renameFingerprint: (experimentId: string) => string | undefined;
   readonly slotId: SlotId;
   readonly experimentId: string;
   readonly evalId: string;
@@ -218,11 +195,11 @@ export interface CurrentAdoptionSlot {
   readonly inputIdentity: EqualityToken;
   readonly configIdentity: EqualityToken;
   readonly executionIdentityDigest: ExecutionIdentityDigest;
-  readonly timeout?: DurationLimit;
+  readonly timeout: DurationLimit | undefined;
 }
 
 export interface CurrentAdoptionTarget {
-  readonly identityManifests?: IdentityManifestsAttachment;
+  readonly identityManifests: IdentityManifestsAttachment | undefined;
   readonly experimentId: string;
   readonly startedAt: UtcMillis;
   readonly expectedSlots: readonly RecordSlotIdentity[];
@@ -237,7 +214,7 @@ export interface ExplicitAdoptionMember {
   readonly locator: string;
   readonly verdict: "passed" | "failed";
   readonly comparisons: readonly ExecutionComparison[];
-  readonly operatorReason?: string;
+  readonly operatorReason: string | undefined;
 }
 
 export interface ExplicitAdoptionRunPlan {
@@ -261,15 +238,13 @@ export interface ExplicitAdoptionRunReceipt {
 }
 
 /** Real Host write/open failures after all domain preflight has already passed. */
-export type ExplicitAdoptionCommitError =
-  | RecordWriteError
-  | RecordReaderOpenError
-  | RunStorageError;
+export class ExplicitAdoptionCommitError extends Data.TaggedError("ExplicitAdoptionCommitError")<{
+  readonly code: "run-storage-invalid";
+  readonly message: string;
+  readonly cause: RecordWriteError | RecordReaderOpenError | ExternalCause;
+}> {}
 
-function adoptionError(
-  code: ExplicitAdoptionFailureCode,
-  message: string,
-): ExplicitAdoptionError {
+function adoptionError(code: ExplicitAdoptionFailureCode, message: string): ExplicitAdoptionError {
   return new ExplicitAdoptionError(code, message);
 }
 
@@ -308,11 +283,9 @@ function slotKey(evalId: string, attempt: number): string {
   return `${evalId}${ADOPTION_TARGET_SLOT_SEPARATOR}${String(attempt)}`;
 }
 
-function attemptLocatorFor(
-  attemptId: SelectedAttemptRef["attemptId"],
-): ExplicitAttemptLocator {
+function attemptLocatorFor(attemptId: SelectedAttemptRef["attemptId"]): ExplicitAttemptLocator {
   const locator = encodeAttemptLocator(attemptId);
-  return Object.freeze({ text: locator, locator, attemptId });
+  return { text: locator, locator, attemptId };
 }
 
 /** Strict v1 parser accepts only the current canonical short locator. */
@@ -328,7 +301,7 @@ export function parseExplicitAttemptLocator(
       ),
     );
   }
-  return Effect.succeed(Object.freeze({ text: value, locator: parsed.locator }));
+  return Effect.succeed({ text: value, locator: parsed.locator });
 }
 
 /** Adoption writes only to the discovered project's canonical Record. */
@@ -345,31 +318,32 @@ export function loadAdoptionProject(
 ): Effect.Effect<AdoptionProject, ExplicitAdoptionError> {
   return Effect.gen(function* () {
     const cwd = resolve(input.cwd);
-    const config = input.config ?? (yield* Effect.fail(adoptionError(
-      "adoption-target-invalid",
-      "An adapter host must supply the resolved project configuration.",
-    )));
-    const evals = input.evals ?? (yield* discoverEvals(cwd).pipe(
-      Effect.mapError((error) => adoptionError(
-        "adoption-target-invalid",
-        `Current Eval discovery failed: ${error.message}`,
-      )),
-    ));
-    const experiments = input.experiments ?? (yield* discoverExperiments(cwd).pipe(
-      Effect.mapError((error) => adoptionError(
-        "adoption-target-invalid",
-        `Current Experiment discovery failed: ${error.message}`,
-      )),
-    ));
-    return Object.freeze({
+    const config =
+      input.config ??
+      (yield* Effect.fail(
+        adoptionError("adoption-target-invalid", "An adapter host must supply the resolved project configuration."),
+      ));
+    const evals =
+      input.evals ??
+      (yield* discoverEvals(cwd).pipe(
+        Effect.mapError((error) =>
+          adoptionError("adoption-target-invalid", `Current Eval discovery failed: ${error.message}`),
+        ),
+      ));
+    const experiments =
+      input.experiments ??
+      (yield* discoverExperiments(cwd).pipe(
+        Effect.mapError((error) =>
+          adoptionError("adoption-target-invalid", `Current Experiment discovery failed: ${error.message}`),
+        ),
+      ));
+    return {
       cwd,
       config,
-      evals: Object.freeze([...evals]),
-      experiments: Object.freeze([...experiments]),
-      ...(input.planningServices === undefined
-        ? {}
-        : { planningServices: input.planningServices }),
-    });
+      evals,
+      experiments,
+      planningServices: input.planningServices,
+    };
   });
 }
 
@@ -378,45 +352,35 @@ function runForExperiment(
   selectedEvalIds: readonly string[],
   config: Config,
 ): AgentRun {
-  return Object.freeze({
+  return {
     adapter: experiment.adapter,
-    ...(experiment.adapter === undefined || experiment.adapter.kind === "custom" ? {} : { agent: experiment.adapter }),
-    ...(experiment.models === undefined ? {} : { models: experiment.models }),
-    ...(experiment.model === undefined ? {} : { model: experiment.model }),
-    ...(experiment.reasoningEffort === undefined
-      ? {}
-      : { reasoningEffort: experiment.reasoningEffort }),
+    agent: experiment.adapter?.kind === "custom" ? undefined : experiment.adapter,
+    models: experiment.models,
+    model: experiment.model,
+    reasoningEffort: experiment.reasoningEffort,
     flags: experiment.flags,
     plugins: experiment.plugins,
+    pluginBehavior: undefined,
     attempts: experiment.attempts,
     earlyExit: experiment.earlyExit,
-    sandboxBeforeCache: resolveSandboxBeforeCache(
-      undefined,
-      experiment.sandboxCache,
-      config.sandboxCache,
-    ),
-    ...(experiment.sandbox === undefined ? {} : { sandbox: experiment.sandbox }),
+    sandboxBeforeCache: resolveSandboxBeforeCache(undefined, experiment.sandboxCache, config.sandboxCache),
+    sandbox: experiment.sandbox,
     sandboxReuse: experiment.sandboxReuse,
-    ...(experiment.sharedState === undefined ? {} : { sharedState: experiment.sharedState }),
-    ...(experiment.judge === undefined ? {} : { judge: experiment.judge }),
+    sandboxLabels: experiment.sandboxLabels,
+    sharedState: experiment.sharedState,
+    judge: experiment.judge,
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
-    ...(experiment.budget === undefined ? {} : { budget: experiment.budget }),
+    budget: experiment.budget,
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    ...(experiment.description === undefined
-      ? {}
-      : { description: experiment.description }),
-    ...(Object.keys(experiment.labels).length === 0
-      ? {}
-      : { labels: experiment.labels }),
-    selectedEvalIds: Object.freeze([...selectedEvalIds]),
-    ...(experiment.maxConcurrency === undefined
-      ? {}
-      : { maxConcurrency: experiment.maxConcurrency }),
-    ...(experiment.before === undefined ? {} : { setup: experiment.before }),
-    ...(experiment.after === undefined ? {} : { teardown: experiment.after }),
-  });
+    description: experiment.description,
+    labels: experiment.labels,
+    selectedEvalIds,
+    maxConcurrency: experiment.maxConcurrency,
+    setup: experiment.before,
+    teardown: experiment.after,
+  };
 }
 
 function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAdoptionError> {
@@ -424,7 +388,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
     experimentId: run.experimentId,
     execution: {
       adapter: adapterIdentity(run.adapter),
-      ...(run.adapter?.kind === "custom" ? { models: run.models ?? Object.freeze({}) } : {}),
+      ...(run.adapter?.kind === "custom" ? { models: modelRolesToWire(run.models ?? {}) } : {}),
       model: run.model ?? null,
       reasoningEffort: run.reasoningEffort ?? null,
       flags: run.flags,
@@ -433,10 +397,7 @@ function adoptionRunContext(run: AgentRun): Result.Result<RunContext, ExplicitAd
     labels: run.labels ?? {},
   });
   return Result.isFailure(context)
-    ? Result.fail(adoptionError(
-        "adoption-target-invalid",
-        `Run Context for "${run.experimentId}" is invalid.`,
-      ))
+    ? Result.fail(adoptionError("adoption-target-invalid", `Run Context for "${run.experimentId}" is invalid.`))
     : Result.succeed(context.success);
 }
 
@@ -446,13 +407,16 @@ function currentTargetSlotIdentity(input: {
   readonly attempt: number;
   readonly inputIdentity: EqualityToken;
   readonly configIdentity: EqualityToken;
-  readonly timeout?: DurationLimit;
-}): Effect.Effect<{
-  readonly slotId: SlotId;
-  readonly evalId: EvalId;
-  readonly attemptOrdinal: number;
-  readonly executionIdentityDigest: ExecutionIdentityDigest;
-}, ExplicitAdoptionError> {
+  readonly timeout: DurationLimit | undefined;
+}): Effect.Effect<
+  {
+    readonly slotId: SlotId;
+    readonly evalId: EvalId;
+    readonly attemptOrdinal: number;
+    readonly executionIdentityDigest: ExecutionIdentityDigest;
+  },
+  ExplicitAdoptionError
+> {
   return Effect.gen(function* () {
     const digestValue = slotExecutionIdentityDigestHex({
       experimentId: input.experimentId,
@@ -460,9 +424,8 @@ function currentTargetSlotIdentity(input: {
       attempt: input.attempt,
       input: input.inputIdentity,
       config: input.configIdentity,
-      timeout: input.timeout === undefined
-        ? null
-        : { domain: input.timeout.domain, milliseconds: input.timeout.milliseconds },
+      timeout:
+        input.timeout === undefined ? null : { domain: input.timeout.domain, milliseconds: input.timeout.milliseconds },
     });
     const digest = yield* decodeBrandedId(
       ExecutionIdentityDigestSchema,
@@ -482,24 +445,22 @@ function currentTargetSlotIdentity(input: {
       "adoption-target-invalid",
       "Adoption target Slot",
     );
-    return Object.freeze({
+    return {
       slotId,
       evalId,
       attemptOrdinal: input.attempt,
       executionIdentityDigest: digest,
-    });
+    };
   });
 }
 
 interface CurrentTargetPair {
   readonly identityManifest: IdentityManifestEntry;
-  readonly rebuildInput?: IdentityRebuildInput;
-  readonly renameRebuildInput?: (experimentId: string) => IdentityRebuildInput | undefined;
-  readonly renameFingerprint?: (experimentId: string) => string | undefined;
+  readonly renameFingerprint: (experimentId: string) => string | undefined;
   readonly pair: PreparedRunPair;
   readonly inputIdentity: EqualityToken;
   readonly configIdentity: EqualityToken;
-  readonly timeout?: DurationLimit;
+  readonly timeout: DurationLimit | undefined;
 }
 
 /**
@@ -516,118 +477,130 @@ export function prepareCurrentAdoptionTarget(input: {
   readonly startedAt: UtcMillis;
 }): Effect.Effect<CurrentAdoptionTarget, ExplicitAdoptionError> {
   return Effect.gen(function* () {
-    const experiment = input.project.experiments.find(
-      (candidate) => candidate.id === input.experimentId,
-    );
+    const experiment = input.project.experiments.find((candidate) => candidate.id === input.experimentId);
     if (experiment === undefined) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-target-experiment-not-found",
-        `Current discovery does not contain Experiment "${input.experimentId}".`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-target-experiment-not-found",
+          `Current discovery does not contain Experiment "${input.experimentId}".`,
+        ),
+      );
     }
     const selection = yield* Effect.try({
-      try: () => resolveExperimentEvals({
-        experimentId: experiment.id,
-        models: experiment.models,
-        selector: experiment.evals,
-        cliPatterns: [],
-        evals: input.project.evals,
-      }),
-      catch: (cause) => adoptionError(
-        "adoption-target-invalid",
-        `Current Eval selection for "${experiment.id}" failed: ${safeMessage(cause)}`,
-      ),
+      try: () =>
+        resolveExperimentEvals({
+          experimentId: experiment.id,
+          models: experiment.models,
+          selector: experiment.evals,
+          cliPatterns: [],
+          evals: input.project.evals,
+
+          tag: undefined,
+          validateModelRequirements: undefined,
+        }),
+      catch: (cause) =>
+        adoptionError(
+          "adoption-target-invalid",
+          `Current Eval selection for "${experiment.id}" failed: ${safeMessage(cause)}`,
+        ),
     });
     if (selection.selectedEvals.length === 0 || experiment.attempts < 1) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-target-invalid",
-        `Current Experiment "${experiment.id}" has no selectable target Slots.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-target-invalid",
+          `Current Experiment "${experiment.id}" has no selectable target Slots.`,
+        ),
+      );
     }
 
     const run = runForExperiment(experiment, selection.selectedEvalIds, input.project.config);
-    const pairs = yield* prepareRunSandboxes(
-      selection.selectedEvals,
-      [run],
-      input.project.planningServices,
-      { configTimeoutMs: input.project.config.timeoutMs },
-    ).pipe(
-      Effect.mapError((error) => adoptionError(
-        "adoption-target-planning-failed",
-        `Current planning for "${experiment.id}" failed: ${safeMessage(error)}`,
-      )),
+    const pairs = yield* prepareRunSandboxes(selection.selectedEvals, [run], input.project.planningServices, {
+      configTimeoutMs: input.project.config.timeoutMs,
+
+      keepSandbox: undefined,
+    }).pipe(
+      Effect.mapError((error) =>
+        adoptionError(
+          "adoption-target-planning-failed",
+          `Current planning for "${experiment.id}" failed: ${safeMessage(error)}`,
+        ),
+      ),
     );
     if (pairs.length !== selection.selectedEvals.length) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-target-planning-failed",
-        `Current planning for "${experiment.id}" did not return every selected Eval.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-target-planning-failed",
+          `Current planning for "${experiment.id}" did not return every selected Eval.`,
+        ),
+      );
     }
 
     const contextResult = adoptionRunContext(pairs[0]!.run);
-    const context = Result.isFailure(contextResult)
-      ? yield* Effect.fail(contextResult.failure)
-      : contextResult.success;
+    const context = Result.isFailure(contextResult) ? yield* Effect.fail(contextResult.failure) : contextResult.success;
 
     const projectPlan = yield* planPreparedProjectTarget(pairs, {
       configJudge: input.project.config.judgeProvider,
-    }).pipe(Effect.mapError((cause) => adoptionError(
-      "adoption-target-planning-failed",
-      `Current identity planning for "${experiment.id}" failed: ${safeMessage(cause)}`,
-    )));
+
+      keepSandbox: undefined,
+      configTimeoutMs: undefined,
+    }).pipe(
+      Effect.mapError((cause) =>
+        adoptionError(
+          "adoption-target-planning-failed",
+          `Current identity planning for "${experiment.id}" failed: ${safeMessage(cause)}`,
+        ),
+      ),
+    );
     const plannedPairs: CurrentTargetPair[] = [];
     for (const pair of pairs) {
       const fingerprint = projectPlan.plannedFingerprints.get(pair.key);
       const configHash = projectPlan.plannedConfigHashes.get(pair.key);
       if (fingerprint === undefined || configHash === undefined) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-planning-failed",
-          `Current identity planning omitted Eval "${pair.evalDef.id}".`,
-        ));
+        return yield* Effect.fail(
+          adoptionError(
+            "adoption-target-planning-failed",
+            `Current identity planning omitted Eval "${pair.evalDef.id}".`,
+          ),
+        );
       }
-      const timeout = resolveAttemptTimeout(
-        run,
-        pair.evalDef,
-        input.project.config,
-      );
+      const timeout = resolveAttemptTimeout(run, pair.evalDef, input.project.config);
       if (timeout !== undefined && !Number.isFinite(timeout.timeoutMs)) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-invalid",
-          `Current timeout for "${pair.evalDef.id}" is invalid.`,
-        ));
+        return yield* Effect.fail(
+          adoptionError("adoption-target-invalid", `Current timeout for "${pair.evalDef.id}" is invalid.`),
+        );
       }
-      const renameFingerprint = projectPlan.renameFingerprintsByKey.get(pair.key);
-      plannedPairs.push(Object.freeze({
+      const renameFingerprint = projectPlan.renameFingerprintsByKey.get(pair.key) ?? (() => undefined);
+      plannedPairs.push({
         identityManifest: identityManifestEntry(pair.evalDef.id, projectPlan.manifestsByKey.get(pair.key)!),
-        ...(projectPlan.rebuildInputsByKey.get(pair.key) === undefined ? {} : { rebuildInput: projectPlan.rebuildInputsByKey.get(pair.key)!, renameRebuildInput: captureRenameRebuildInput(pair, projectPlan.rebuildInputsByKey.get(pair.key)!, renameFingerprint) }),
-        ...(renameFingerprint === undefined ? {} : { renameFingerprint }),
+        renameFingerprint,
         pair,
-        inputIdentity: Object.freeze({
+        inputIdentity: {
           domain: ADOPTION_INPUT_IDENTITY_DOMAIN,
           value: fingerprint,
-        }),
-        configIdentity: Object.freeze({
+        },
+        configIdentity: {
           domain: ADOPTION_CONFIG_IDENTITY_DOMAIN,
           value: configHash,
-        }),
-        ...(timeout === undefined
-          ? {}
-          : {
-              timeout: Object.freeze({
+        },
+        timeout:
+          timeout === undefined
+            ? undefined
+            : {
                 domain: EXECUTION_DURATION_DOMAIN,
                 milliseconds: timeout.timeoutMs,
-              }),
-            }),
-      }));
+              },
+      });
     }
 
     const pairByEval = new Map<string, CurrentTargetPair>();
     for (const planned of plannedPairs) {
       if (pairByEval.has(planned.pair.evalDef.id)) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-slot-duplicate",
-          `Current planning produced duplicate Eval "${planned.pair.evalDef.id}".`,
-        ));
+        return yield* Effect.fail(
+          adoptionError(
+            "adoption-target-slot-duplicate",
+            `Current planning produced duplicate Eval "${planned.pair.evalDef.id}".`,
+          ),
+        );
       }
       pairByEval.set(planned.pair.evalDef.id, planned);
     }
@@ -637,10 +610,9 @@ export function prepareCurrentAdoptionTarget(input: {
     for (const evalDef of selection.selectedEvals) {
       const planned = pairByEval.get(evalDef.id);
       if (planned === undefined) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-planning-failed",
-          `Current planning omitted selected Eval "${evalDef.id}".`,
-        ));
+        return yield* Effect.fail(
+          adoptionError("adoption-target-planning-failed", `Current planning omitted selected Eval "${evalDef.id}".`),
+        );
       }
       for (let attempt = 0; attempt < run.attempts; attempt += 1) {
         const identity = yield* currentTargetSlotIdentity({
@@ -649,21 +621,21 @@ export function prepareCurrentAdoptionTarget(input: {
           attempt,
           inputIdentity: planned.inputIdentity,
           configIdentity: planned.configIdentity,
-          ...(planned.timeout === undefined ? {} : { timeout: planned.timeout }),
+          timeout: planned.timeout,
         });
         if (seenSlots.has(identity.slotId)) {
-          return yield* Effect.fail(adoptionError(
-            "adoption-target-slot-duplicate",
-            `Current target produced duplicate Slot "${identity.slotId}".`,
-          ));
+          return yield* Effect.fail(
+            adoptionError(
+              "adoption-target-slot-duplicate",
+              `Current target produced duplicate Slot "${identity.slotId}".`,
+            ),
+          );
         }
         seenSlots.add(identity.slotId);
-        const targetSlot = Object.freeze({
+        const targetSlot = {
           evaluationKind: planned.pair.evalDef.evaluationKind,
           identityManifest: planned.identityManifest,
-          ...(planned.renameRebuildInput === undefined ? {} : { renameRebuildInput: planned.renameRebuildInput }),
-          ...(planned.rebuildInput === undefined ? {} : { rebuildInput: { ...planned.rebuildInput, attempt, timeout: planned.timeout ?? null } }),
-          ...(planned.renameFingerprint === undefined ? {} : { renameFingerprint: planned.renameFingerprint }),
+          renameFingerprint: planned.renameFingerprint,
           slotId: identity.slotId,
           experimentId: experiment.id,
           evalId: evalDef.id,
@@ -672,30 +644,40 @@ export function prepareCurrentAdoptionTarget(input: {
           inputIdentity: planned.inputIdentity,
           configIdentity: planned.configIdentity,
           executionIdentityDigest: identity.executionIdentityDigest,
-          ...(planned.timeout === undefined ? {} : { timeout: planned.timeout }),
-        });
+          timeout: planned.timeout,
+        };
         slots.push(targetSlot);
       }
     }
     const byKey = new Map<string, CurrentAdoptionSlot>();
     for (const slot of slots) byKey.set(slotKey(slot.evalId, slot.attemptOrdinal), slot);
-    const expectedSlots = Object.freeze([...slots]
-      .map((slot) => Object.freeze({
+    const expectedSlots = slots
+      .map((slot) => ({
         slotId: slot.slotId,
         evalId: Schema.decodeUnknownSync(EvalIdSchema)(slot.evalId),
         attemptOrdinal: slot.attemptOrdinal,
         executionIdentityDigest: slot.executionIdentityDigest,
       }))
-      .sort((left, right) => left.slotId < right.slotId ? -1 : left.slotId > right.slotId ? 1 : 0));
-    return Object.freeze({
-      identityManifests: { entries: plannedPairs.map((pair) => pair.identityManifest).sort((a, b) => a.evalId < b.evalId ? -1 : a.evalId > b.evalId ? 1 : 0) },
+      .sort(function compareSlots(left, right) {
+        if (left.slotId < right.slotId) return -1;
+        return left.slotId > right.slotId ? 1 : 0;
+      });
+    return {
+      identityManifests: {
+        entries: plannedPairs
+          .map((pair) => pair.identityManifest)
+          .sort(function compareEvalIds(a, b) {
+            if (a.evalId < b.evalId) return -1;
+            return a.evalId > b.evalId ? 1 : 0;
+          }),
+      },
       experimentId: experiment.id,
       startedAt: input.startedAt,
       context,
       expectedSlots,
-      slots: Object.freeze([...slots]),
+      slots,
       slotFor: (evalId: string, attempt: number) => byKey.get(slotKey(evalId, attempt)),
-    });
+    };
   });
 }
 
@@ -717,22 +699,26 @@ export function resolveExplicitAttemptLocator(
       locator: parsed.locator,
     });
     if (resolved.kind === "not-found") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-locator-not-found",
-        `No published current-Record Attempt matches locator "${parsed.text}".`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-locator-not-found",
+          `No published current-Record Attempt matches locator "${parsed.text}".`,
+        ),
+      );
     }
     if (resolved.kind === "ambiguous") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-locator-ambiguous",
-        `Locator "${parsed.text}" resolves to more than one immutable Attempt.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-locator-ambiguous",
+          `Locator "${parsed.text}" resolves to more than one immutable Attempt.`,
+        ),
+      );
     }
-    return yield* resolveAdoptionAttempt(reader, resolved.attempt, Object.freeze({
+    return yield* resolveAdoptionAttempt(reader, resolved.attempt, {
       text: parsed.text,
       locator: parsed.locator,
       attemptId: resolved.attempt.attemptId,
-    }));
+    });
   });
 }
 
@@ -744,61 +730,65 @@ export function resolveAdoptionAttempt(
 ): Effect.Effect<ResolvedAdoptionAttempt, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     const sourceLocator = locator ?? attemptLocatorFor(attempt.attemptId);
-    const selected = yield* reader.selectRuns({ runIds: Object.freeze([attempt.originRunId]) });
+    const selected = yield* reader.selectRuns({ runIds: [attempt.originRunId] });
     if (selected.runRefs.length !== 1) {
-      return yield* Effect.fail(sourceCoreInvalid(
-        `Source locator "${sourceLocator.text}" has no readable origin Run.`,
-      ));
+      return yield* Effect.fail(
+        sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no readable origin Run.`),
+      );
     }
     const originRun = yield* reader.readRun(selected.runRefs[0]!);
     if (originRun.state !== "available") {
-      return yield* Effect.fail(sourceCoreInvalid(
-        `Source locator "${sourceLocator.text}" has no readable origin Run.`,
-      ));
+      return yield* Effect.fail(
+        sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no readable origin Run.`),
+      );
     }
     const attemptRead = yield* reader.readAttempt(attempt);
     if (attemptRead.state !== "available") {
-      return yield* Effect.fail(sourceCoreInvalid(
-        `Locator "${sourceLocator.text}" points at a missing or invalid source Attempt.`,
-      ));
+      return yield* Effect.fail(
+        sourceCoreInvalid(`Locator "${sourceLocator.text}" points at a missing or invalid source Attempt.`),
+      );
     }
     const originSlot = originRun.value.document.expectedSlots.find(
       (slot) => slot.slotId === attemptRead.value.document.slotId,
     );
     if (originSlot === undefined) {
-      return yield* Effect.fail(sourceCoreInvalid(
-        `Source locator "${sourceLocator.text}" has no origin Member.`,
-      ));
+      return yield* Effect.fail(sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no origin Member.`));
     }
-    const matchingMembers = originRun.value.members.filter((member) =>
-      member.attempt !== null
-      && member.attempt.originRunId === attempt.originRunId
-      && member.attempt.attemptId === attempt.attemptId,
+    const matchingMembers = originRun.value.members.filter(
+      (member) =>
+        member.attempt !== undefined &&
+        member.attempt.originRunId === attempt.originRunId &&
+        member.attempt.attemptId === attempt.attemptId,
     );
     if (matchingMembers.length !== 1) {
-      return yield* Effect.fail(sourceCoreInvalid(
-        matchingMembers.length === 0
-          ? `Source locator "${sourceLocator.text}" has no origin Member.`
-          : `Source origin Run for "${sourceLocator.text}" has duplicate origin Members.`,
-      ));
+      return yield* Effect.fail(
+        sourceCoreInvalid(
+          matchingMembers.length === 0
+            ? `Source locator "${sourceLocator.text}" has no origin Member.`
+            : `Source origin Run for "${sourceLocator.text}" has duplicate origin Members.`,
+        ),
+      );
     }
     const reference = detachPlanningReference(reader, attempt);
-    if (reference === undefined) return yield* Effect.fail(sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no exact publication identity.`));
-    return Object.freeze({
+    if (reference === undefined)
+      return yield* Effect.fail(
+        sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no exact publication identity.`),
+      );
+    return {
       reference,
       locator: sourceLocator,
       attempt,
-      origin: Object.freeze({
+      origin: {
         runId: originRun.value.document.runId,
         slotId: originSlot.slotId,
         startedAt: originRun.value.document.startedAt,
-      }),
+      },
       originExperimentId: originRun.value.document.experimentId,
       originContext: originRun.value.document.context,
       originEvalId: originSlot.evalId,
       originAttempt: originSlot.attemptOrdinal,
       executionIdentityDigest: originSlot.executionIdentityDigest,
-    });
+    };
   });
 }
 
@@ -816,26 +806,25 @@ export function readAdoptionAttemptFacts(
   return Effect.gen(function* () {
     const attempt = yield* reader.readAttempt(source.attempt);
     if (attempt.state !== "available") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-verdict-unavailable",
-        "Source Attempt/Core is unavailable.",
-      ));
+      return yield* Effect.fail(
+        adoptionError("adoption-source-verdict-unavailable", "Source Attempt/Core is unavailable."),
+      );
     }
-    const assertions = yield* reader.read(
-      attempt.value.owner,
-      NiceEvalRecordAttachments.assertions,
-    );
+    const assertions = yield* reader.read(attempt.value.owner, NiceEvalRecordAttachments.assertions);
     if (assertions.state !== "available") {
       const detail = assertions.state === "invalid" ? "invalid" : assertions.state;
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-verdict-unavailable",
-        `Source Assertions is ${detail}.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError("adoption-source-verdict-unavailable", `Source Assertions is ${detail}.`),
+      );
     }
     const outcome = attempt.value.document.outcome;
     const verdict = foldRecordedAttemptVerdict({ outcome, assertions: assertions.value });
     const score = foldRecordedAttemptScore({ outcome, assertions: assertions.value });
-    return Object.freeze({ outcome, verdict, scoreComplete: Result.isSuccess(score) && score.success.state === "complete" });
+    return {
+      outcome,
+      verdict,
+      scoreComplete: Result.isSuccess(score) && score.success.state === "complete",
+    };
   });
 }
 
@@ -843,9 +832,7 @@ export function readAdoptionVerdict(
   reader: RecordReadSession,
   source: ResolvedAdoptionAttempt,
 ): Effect.Effect<VerdictState, ExplicitAdoptionReadError> {
-  return readAdoptionAttemptFacts(reader, source).pipe(
-    Effect.map((facts) => facts.verdict),
-  );
+  return readAdoptionAttemptFacts(reader, source).pipe(Effect.map((facts) => facts.verdict));
 }
 
 /**
@@ -859,28 +846,31 @@ export function readAdoptionExecutionDuration(
   return Effect.gen(function* () {
     const attempt = yield* reader.readAttempt(source.attempt);
     if (attempt.state !== "available") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-observability-unavailable",
-        `Source timing for locator "${source.locator.text}" has no readable Attempt.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-observability-unavailable",
+          `Source timing for locator "${source.locator.text}" has no readable Attempt.`,
+        ),
+      );
     }
-    const activities = yield* reader.read(
-      attempt.value.owner,
-      NiceEvalRecordAttachments.runnerActivities.attempt,
-    );
+    const activities = yield* reader.read(attempt.value.owner, NiceEvalRecordAttachments.runnerActivities.attempt);
     if (activities.state !== "available") {
       const detail = activities.state === "invalid" ? "invalid" : activities.state;
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-observability-unavailable",
-        `Source timing for locator "${source.locator.text}" is ${detail}.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-observability-unavailable",
+          `Source timing for locator "${source.locator.text}" is ${detail}.`,
+        ),
+      );
     }
     const duration = readAttemptExecutionDuration(activities.value);
     if (duration.state !== "available") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-observability-unavailable",
-        `Source timing for locator "${source.locator.text}" is ${duration.reason}.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-observability-unavailable",
+          `Source timing for locator "${source.locator.text}" is ${duration.reason}.`,
+        ),
+      );
     }
     return duration.duration;
   });
@@ -889,72 +879,74 @@ export function readAdoptionExecutionDuration(
 function executionIdentityComparison(input: {
   readonly source: ExecutionIdentityDigest;
   readonly target: ExecutionIdentityDigest;
-  readonly explanation?: IdentityExplanation;
+  readonly explanation: IdentityExplanation | undefined;
 }): ExecutionComparison {
-  const reason = input.source === input.target
-    ? "execution-identity-match"
-    : "execution-identity-mismatch";
-  return Object.freeze({
+  const reason = input.source === input.target ? "execution-identity-match" : "execution-identity-mismatch";
+  return {
     attachment: "core" as const,
     recordedClaim: "execution-identity" as const,
     sourceState: "available" as const,
-    result: input.explanation?.kind === "match" || reason.endsWith("-match") ? "match" as const : "mismatch" as const,
+    result:
+      input.explanation?.kind === "match" || reason.endsWith("-match") ? ("match" as const) : ("mismatch" as const),
     reason,
-    ...(input.explanation === undefined ? {} : { explanation: input.explanation }),
-  });
+    explanation: input.explanation,
+  };
 }
 
-function durationComparison(input: {
-  readonly source: DurationLimit;
-  readonly target?: DurationLimit;
-}): {
-  readonly comparison: ComparisonProvenance;
-  readonly failure?: "adoption-duration-domain-mismatch" | "adoption-timeout-exceeded";
+function durationComparison(input: { readonly source: DurationLimit; readonly target: DurationLimit | undefined }): {
+  readonly comparison: ExecutionComparison;
+  readonly failure: "adoption-duration-domain-mismatch" | "adoption-timeout-exceeded" | undefined;
 } {
   if (input.target === undefined) {
-    return Object.freeze({
-      comparison: Object.freeze({
+    return {
+      comparison: {
         attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "match" as const,
         reason: "timeout-unbounded",
-      }),
-    });
+        explanation: undefined,
+      },
+      failure: undefined,
+    };
   }
   if (input.source.domain !== input.target.domain) {
-    return Object.freeze({
-      comparison: Object.freeze({
+    return {
+      comparison: {
         attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "mismatch" as const,
         reason: "duration-domain-mismatch",
-      }),
+        explanation: undefined,
+      },
       failure: "adoption-duration-domain-mismatch",
-    });
+    };
   }
   if (input.source.milliseconds > input.target.milliseconds) {
-    return Object.freeze({
-      comparison: Object.freeze({
+    return {
+      comparison: {
         attachment: "niceeval.runner-activities" as const,
         recordedClaim: "execution-duration" as const,
         sourceState: "available" as const,
         result: "mismatch" as const,
         reason: "timeout-exceeded",
-      }),
+        explanation: undefined,
+      },
       failure: "adoption-timeout-exceeded",
-    });
+    };
   }
-  return Object.freeze({
-    comparison: Object.freeze({
+  return {
+    comparison: {
       attachment: "niceeval.runner-activities" as const,
       recordedClaim: "execution-duration" as const,
       sourceState: "available" as const,
       result: "match" as const,
       reason: "duration-within-timeout",
-    }),
-  });
+      explanation: undefined,
+    },
+    failure: undefined,
+  };
 }
 
 /**
@@ -969,7 +961,7 @@ export function prepareExplicitAdoptionMember(input: {
   readonly source: ResolvedAdoptionAttempt;
   readonly evalId: string;
   readonly attempt: number;
-  readonly operatorReason?: string;
+  readonly operatorReason: string | undefined;
 }): Effect.Effect<ExplicitAdoptionMember, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
     const target = input.target.slotFor(input.evalId, input.attempt);
@@ -977,100 +969,117 @@ export function prepareExplicitAdoptionMember(input: {
       const code = input.target.slots.some((slot) => slot.evalId === input.evalId)
         ? "adoption-target-attempt-not-selected"
         : "adoption-target-eval-not-selected";
-      return yield* Effect.fail(adoptionError(
-        code,
-        `Current target ${input.target.experimentId}/${input.evalId} does not contain ordinal ${String(input.attempt)}.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          code,
+          `Current target ${input.target.experimentId}/${input.evalId} does not contain ordinal ${String(input.attempt)}.`,
+        ),
+      );
     }
-    const samePosition = input.source.originEvalId === target.evalId &&
-      input.source.originAttempt === target.attempt;
+    const samePosition = input.source.originEvalId === target.evalId && input.source.originAttempt === target.attempt;
     const sameIdentity = input.source.executionIdentityDigest === target.executionIdentityDigest;
     let explanation: IdentityExplanation | undefined;
     let historicalManifest: IdentityManifestEntry | undefined;
     if (!sameIdentity) {
       const selected = yield* input.reader.selectRuns({ runIds: [input.source.origin.runId] });
       const origin = selected.runRefs[0] === undefined ? undefined : yield* input.reader.readRun(selected.runRefs[0]);
-      if (origin?.state !== "available") return yield* Effect.fail(sourceCoreInvalid("The exact origin Run is unavailable."));
-      const compared = yield* readIdentityExplanation({ reader: input.reader, historical: origin.value, evalId: target.evalId, ...(target.identityManifest === undefined ? {} : { current: target.identityManifest }) });
-      historicalManifest = compared.historical;
-      explanation = classifyIdentityDomains({
-        historical: compared.historical, current: target.identityManifest, historicalDigest: input.source.executionIdentityDigest,
-        ...(target.rebuildInput === undefined ? {} : { rebuildInput: target.rebuildInput }), explanation: compared.explanation,
+      if (origin?.state !== "available")
+        return yield* Effect.fail(sourceCoreInvalid("The exact origin Run is unavailable."));
+      const compared = yield* readIdentityExplanation({
+        reader: input.reader,
+        historical: origin.value,
+        evalId: target.evalId,
+        current: target.identityManifest,
       });
+      historicalManifest = compared.historical;
+      explanation = compared.explanation;
     }
-    const pureRename = input.source.originExperimentId !== target.experimentId &&
+    const pureRename =
+      input.source.originExperimentId !== target.experimentId &&
       hasProvenNoExperimentHooks(input.target.context) &&
       hasProvenNoExperimentHooks(input.source.originContext) &&
-      executionDigestForManifestOrigin(target, input.source.originExperimentId, historicalManifest) === input.source.executionIdentityDigest;
-    if (!samePosition || (!sameIdentity && explanation?.kind !== "match" && !pureRename)) {
-      return yield* Effect.fail(new ExplicitAdoptionError(
-        "accept-ineligible",
-        `Source locator "${input.source.locator.text}" has changed or unproven execution identity. Run the current target instead.`,
-        [executionIdentityComparison({ source: input.source.executionIdentityDigest, target: target.executionIdentityDigest, ...(explanation === undefined ? {} : { explanation }) })],
-      ));
+      executionDigestForManifestOrigin(target, input.source.originExperimentId, historicalManifest) ===
+        input.source.executionIdentityDigest;
+    if (!samePosition || (!sameIdentity && !pureRename)) {
+      return yield* Effect.fail(
+        new ExplicitAdoptionError(
+          "accept-ineligible",
+          `Source locator "${input.source.locator.text}" has changed or unproven execution identity. Run the current target instead.`,
+          [
+            executionIdentityComparison({
+              source: input.source.executionIdentityDigest,
+              target: target.executionIdentityDigest,
+              explanation,
+            }),
+          ],
+        ),
+      );
     }
     const facts = yield* readAdoptionAttemptFacts(input.reader, input.source);
     const verdict = facts.verdict;
     if (facts.outcome !== "completed") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-verdict-ineligible",
-        `Source locator "${input.source.locator.text}" has Attempt outcome "${facts.outcome}" and cannot be explicitly adopted.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-verdict-ineligible",
+          `Source locator "${input.source.locator.text}" has Attempt outcome "${facts.outcome}" and cannot be explicitly adopted.`,
+        ),
+      );
     }
     if (verdict !== "passed" && verdict !== "failed") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-verdict-ineligible",
-        `Source locator "${input.source.locator.text}" has Verdict "${verdict}" and cannot be explicitly adopted.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-verdict-ineligible",
+          `Source locator "${input.source.locator.text}" has Verdict "${verdict}" and cannot be explicitly adopted.`,
+        ),
+      );
     }
-    const executionDuration = yield* readAdoptionExecutionDuration(
-      input.reader,
-      input.source,
-    );
+    const executionDuration = yield* readAdoptionExecutionDuration(input.reader, input.source);
     const duration = durationComparison({
       source: executionDuration,
       target: target.timeout,
     });
     if (duration.failure !== undefined) {
-      return yield* Effect.fail(adoptionError(
-        duration.failure,
-        duration.failure === "adoption-timeout-exceeded"
-          ? `Source locator "${input.source.locator.text}" exceeds the current timeout.`
-          : `Source locator "${input.source.locator.text}" uses an incomparable execution-duration domain.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          duration.failure,
+          duration.failure === "adoption-timeout-exceeded"
+            ? `Source locator "${input.source.locator.text}" exceeds the current timeout.`
+            : `Source locator "${input.source.locator.text}" uses an incomparable execution-duration domain.`,
+        ),
+      );
     }
-    const comparisons = Object.freeze([
-      Object.freeze({
+    const comparisons = [
+      {
         attachment: "core" as const,
         recordedClaim: "attempt-outcome" as const,
         sourceState: "available" as const,
         result: "match" as const,
         reason: "attempt-completed",
-      }),
+        explanation: undefined,
+      },
       executionIdentityComparison({
         source: input.source.executionIdentityDigest,
         target: target.executionIdentityDigest,
-        ...(explanation === undefined ? {} : { explanation }),
+        explanation,
       }),
-      Object.freeze({
+      {
         attachment: "niceeval.assertions" as const,
         recordedClaim: "assertion-verdict" as const,
         sourceState: "available" as const,
         result: "match" as const,
         reason: "verdict-eligible",
-      }),
+        explanation: undefined,
+      },
       duration.comparison,
-    ]);
-    return Object.freeze({
+    ];
+    return {
       target,
       source: input.source,
       locator: input.source.locator.text,
       verdict,
       comparisons,
-      ...(input.operatorReason === undefined
-        ? {}
-        : { operatorReason: input.operatorReason }),
-    });
+      operatorReason: input.operatorReason,
+    };
   });
 }
 
@@ -1083,38 +1092,40 @@ function validateExplicitAdoptionMembers(input: {
     const expected = new Set<string>();
     for (const slot of input.target.expectedSlots) {
       if (expected.has(slot.slotId)) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-slot-duplicate",
-          `Current target lists Slot "${slot.slotId}" more than once.`,
-        ));
+        return yield* Effect.fail(
+          adoptionError("adoption-target-slot-duplicate", `Current target lists Slot "${slot.slotId}" more than once.`),
+        );
       }
       expected.add(slot.slotId);
     }
     const targetSlots = new Set(input.target.slots.map((slot) => String(slot.slotId)));
-    if (
-      targetSlots.size !== expected.size
-      || [...expected].some((slotId) => !targetSlots.has(slotId))
-    ) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-target-invalid",
-        "Current target Slot definitions do not exactly match its expected Slot denominator.",
-      ));
+    if (targetSlots.size !== expected.size || [...expected].some((slotId) => !targetSlots.has(slotId))) {
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-target-invalid",
+          "Current target Slot definitions do not exactly match its expected Slot denominator.",
+        ),
+      );
     }
 
     const memberBySlot = new Set<string>();
     for (const member of input.members) {
       const slotId = String(member.target.slotId);
       if (!expected.has(slotId)) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-eval-not-selected",
-          `Explicit adoption selected Slot "${slotId}" outside the current target denominator.`,
-        ));
+        return yield* Effect.fail(
+          adoptionError(
+            "adoption-target-eval-not-selected",
+            `Explicit adoption selected Slot "${slotId}" outside the current target denominator.`,
+          ),
+        );
       }
       if (memberBySlot.has(slotId)) {
-        return yield* Effect.fail(adoptionError(
-          "adoption-target-member-duplicate",
-          `More than one source attempts to occupy target Slot "${slotId}".`,
-        ));
+        return yield* Effect.fail(
+          adoptionError(
+            "adoption-target-member-duplicate",
+            `More than one source attempts to occupy target Slot "${slotId}".`,
+          ),
+        );
       }
       memberBySlot.add(slotId);
     }
@@ -1133,17 +1144,16 @@ export function buildExplicitAdoptionRunPlan(input: {
 }): Effect.Effect<ExplicitAdoptionRunPlan, ExplicitAdoptionError> {
   return Effect.gen(function* () {
     if (input.members.length === 0) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-target-invalid",
-        "Explicit adoption requires at least one reference Member.",
-      ));
+      return yield* Effect.fail(
+        adoptionError("adoption-target-invalid", "Explicit adoption requires at least one reference Member."),
+      );
     }
     yield* validateExplicitAdoptionMembers(input);
-    return Object.freeze({
+    return {
       intent: input.intent,
       target: input.target,
-      members: Object.freeze([...input.members]),
-    });
+      members: input.members,
+    };
   });
 }
 
@@ -1159,27 +1169,28 @@ export function commitExplicitAdoptionRunPlans(
   }
   return Effect.forEach(
     plans,
-    (plan) => Effect.gen(function* () {
-      const experimentId = yield* decodeBrandedId(
-        ExperimentIdSchema,
-        plan.target.experimentId,
-        "adoption-target-invalid",
-        "Adoption target Experiment",
-      );
-      const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
-      const writer = yield* recordHost.createReferenceRun({
-        root,
-        experimentId,
-        context: plan.target.context,
-        startedAt: plan.target.startedAt,
-        expectedSlots: plan.target.expectedSlots,
-        writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.target.experimentId}`),
-      });
-      const writerGeneration = writerGenerationForRunSession(writer);
-      if (writerGeneration === undefined) {
-        return yield* Effect.fail(asRunStorageError(new Error("Run writer generation is unavailable")));
-      }
-      yield* createRunResource(storageRoot, {
+    (plan) =>
+      Effect.gen(function* () {
+        const experimentId = yield* decodeBrandedId(
+          ExperimentIdSchema,
+          plan.target.experimentId,
+          "adoption-target-invalid",
+          "Adoption target Experiment",
+        );
+        const accepted = new Set(plan.members.map((member) => String(member.target.slotId)));
+        const writer = yield* recordHost.createReferenceRun({
+          root,
+          experimentId,
+          context: plan.target.context,
+          startedAt: plan.target.startedAt,
+          expectedSlots: plan.target.expectedSlots,
+          writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.target.experimentId}`),
+        });
+        const writerGeneration = writerGenerationForRunSession(writer);
+        if (writerGeneration === undefined) {
+          return yield* Effect.fail(asRunStorageError(new Error("Run writer generation is unavailable")));
+        }
+        yield* createRunResource(storageRoot, {
           runId: String(writer.runId),
           invocationId,
           experimentId: String(experimentId),
@@ -1192,33 +1203,34 @@ export function commitExplicitAdoptionRunPlans(
             executionIdentityDigest: String(slot.executionIdentityDigest),
           })),
           deadlineEpochMs: Date.now() + 30_000,
-        }).pipe(Effect.mapError(asRunStorageError));
-      if (plan.target.identityManifests !== undefined) yield* writer.attach(NiceEvalRecordAttachments.identityManifests, plan.target.identityManifests);
-      for (const member of plan.members) {
-        yield* stagePlanningReference(writer, {
-          slotId: member.target.slotId,
-          action: "accepted",
-          reference: member.source.reference,
         });
-        yield* bindAttemptReference(storageRoot, {
+        if (plan.target.identityManifests !== undefined)
+          yield* writer.attach(NiceEvalRecordAttachments.identityManifests, plan.target.identityManifests);
+        for (const member of plan.members) {
+          yield* stagePlanningReference(writer, {
+            slotId: member.target.slotId,
+            action: "accepted",
+            reference: member.source.reference,
+          });
+          yield* bindAttemptReference(storageRoot, {
             runId: String(writer.runId),
             writerGeneration,
             slotId: String(member.target.slotId),
             action: "accepted",
             publicationIdentity: member.source.reference.publicationIdentity,
             deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError(asRunStorageError));
-      }
-      for (const slot of plan.target.expectedSlots) {
-        if (accepted.has(String(slot.slotId))) continue;
-        yield* writer.recordTerminalMember({
-          slotId: slot.slotId,
-          action: "not-dispatched",
-          absenceReason: "early-exit-satisfied",
-        });
-      }
-      const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
-      yield* closeRunResource(storageRoot, {
+          });
+        }
+        for (const slot of plan.target.expectedSlots) {
+          if (accepted.has(String(slot.slotId))) continue;
+          yield* writer.recordTerminalMember({
+            slotId: slot.slotId,
+            action: "not-dispatched",
+            absenceReason: "early-exit-satisfied",
+          });
+        }
+        const sealed = yield* writer.seal({ completedAt: plan.target.startedAt });
+        yield* closeRunResource(storageRoot, {
           runId: String(writer.runId),
           writerGeneration,
           state: "completed",
@@ -1230,35 +1242,39 @@ export function commitExplicitAdoptionRunPlans(
               reason: "early-exit-satisfied" as const,
             })),
           deadlineEpochMs: Date.now() + 30_000,
-        }).pipe(Effect.mapError(asRunStorageError));
-      return receiptForPlan(plan, sealed.runId);
-    }),
+        });
+        return receiptForPlan(plan, sealed.runId);
+      }),
     { concurrency: 1 },
-  ).pipe(Effect.scoped, Effect.mapError((cause) => cause instanceof RunStorageError
-    ? cause
-    : new RunStorageError("run-storage-invalid", safeMessage(cause))));
+  ).pipe(
+    Effect.scoped,
+    Effect.mapError((cause) =>
+      cause instanceof RunStorageError
+        ? cause
+        : new ExplicitAdoptionCommitError({
+            code: "run-storage-invalid",
+            message: safeMessage(cause),
+            cause: cause instanceof ExplicitAdoptionError ? normalizeExternalCause(cause) : cause,
+          }),
+    ),
+  );
 }
 
-function receiptForPlan(
-  plan: ExplicitAdoptionRunPlan,
-  runId: RunId,
-): ExplicitAdoptionRunReceipt {
-  return Object.freeze({
+function receiptForPlan(plan: ExplicitAdoptionRunPlan, runId: RunId): ExplicitAdoptionRunReceipt {
+  return {
     experimentId: plan.target.experimentId,
     runId,
-    members: Object.freeze(plan.members.map((member) => Object.freeze({
+    members: plan.members.map((member) => ({
       slotId: member.target.slotId,
       locator: member.locator,
       sourceRunId: member.source.origin.runId,
       attemptId: member.source.attempt.attemptId,
-    }))),
-  });
+    })),
+  };
 }
 
 /** A fresh in-memory invocation identity never enters Record Core. */
-export function createExplicitAdoptionInvocationId(
-  mint: () => string = randomUUID,
-): Effect.Effect<string> {
+export function createExplicitAdoptionInvocationId(mint: () => string = randomUUID): Effect.Effect<string> {
   return Effect.sync(() => `adoption-${mint()}`);
 }
 
@@ -1274,9 +1290,7 @@ export function adoptionStartedAt(input?: () => string | number): Effect.Effect<
 /** Opens a Host read session only; dry callers must use this rather than a writer. */
 export function withAdoptionReader<A, E, R>(input: {
   readonly root: RecordRoot;
-  readonly use: (
-    reader: RecordReadSession,
-  ) => Effect.Effect<A, E, R>;
+  readonly use: (reader: RecordReadSession) => Effect.Effect<A, E, R>;
 }) {
   return Effect.scoped(
     Effect.gen(function* () {
@@ -1304,26 +1318,30 @@ export function resolveExactAdoptionSourceRun(input: {
       "adoption-source-run-not-found",
       "Adoption source Run",
     );
-    const selected = yield* input.reader.selectRuns({ runIds: Object.freeze([runId]), includePublishedActive: true });
+    const selected = yield* input.reader.selectRuns({ runIds: [runId], includePublishedActive: true });
     if (selected.runRefs.length !== 1) {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-run-not-found",
-        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-run-not-found",
+          `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+        ),
+      );
     }
     const run = yield* input.reader.readRun(selected.runRefs[0]!);
     if (run.state !== "available") {
-      return yield* Effect.fail(adoptionError(
-        "adoption-source-run-not-found",
-        `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
-      ));
+      return yield* Effect.fail(
+        adoptionError(
+          "adoption-source-run-not-found",
+          `Adoption source Run "${input.sourceRunId}" is not a published readable Run.`,
+        ),
+      );
     }
-    return Object.freeze({
+    return {
       runId: run.value.document.runId,
       experimentId: run.value.document.experimentId,
       startedAt: run.value.document.startedAt,
       expectedSlots: run.value.document.expectedSlots,
-    });
+    };
   });
 }
 
@@ -1352,57 +1370,101 @@ export function prepareWholeRunAdoptionMembers(input: {
   return Effect.gen(function* () {
     const selected = yield* input.reader.selectRuns({ runIds: [input.sourceRun.runId], includePublishedActive: true });
     const ref = selected.runRefs[0];
-    if (ref === undefined || selected.runRefs.length !== 1) return yield* Effect.fail(sourceCoreInvalid("The exact rename source Run is unavailable."));
+    if (ref === undefined || selected.runRefs.length !== 1)
+      return yield* Effect.fail(sourceCoreInvalid("The exact rename source Run is unavailable."));
     const run = yield* input.reader.readRun(ref);
-    if (run.state !== "available") return yield* Effect.fail(sourceCoreInvalid("The exact rename source Run is unreadable."));
+    if (run.state !== "available")
+      return yield* Effect.fail(sourceCoreInvalid("The exact rename source Run is unreadable."));
     const sourceSlots = input.sourceRun.expectedSlots;
     const seen = new Set<string>();
-    if (sourceSlots.length !== input.target.slots.length || sourceSlots.length === 0) return yield* Effect.fail(adoptionError(
-      input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed", "Source Run and current target must contain the same nonempty Eval/ordinal membership.",
-    ));
+    if (sourceSlots.length !== input.target.slots.length || sourceSlots.length === 0)
+      return yield* Effect.fail(
+        adoptionError(
+          input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed",
+          "Source Run and current target must contain the same nonempty Eval/ordinal membership.",
+        ),
+      );
     const members: RenameAdoptionMember[] = [];
     for (const sourceSlot of sourceSlots) {
       const key = slotKey(sourceSlot.evalId, sourceSlot.attemptOrdinal);
       const targetSlot = input.target.slotFor(sourceSlot.evalId, sourceSlot.attemptOrdinal);
-      if (targetSlot === undefined || seen.has(key)) return yield* Effect.fail(adoptionError(
-        input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed", `Source position ${sourceSlot.evalId}/${sourceSlot.attemptOrdinal} does not have one exact target.`,
-      ));
+      if (targetSlot === undefined || seen.has(key))
+        return yield* Effect.fail(
+          adoptionError(
+            input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed",
+            `Source position ${sourceSlot.evalId}/${sourceSlot.attemptOrdinal} does not have one exact target.`,
+          ),
+        );
       seen.add(key);
       const sourceMembers = run.value.members.filter((member) => member.document.slotId === sourceSlot.slotId);
       const sourceMember = sourceMembers[0];
-      if (sourceMembers.length !== 1 || sourceMember?.attempt == null) return yield* Effect.fail(adoptionError(
-        input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed", `Source position ${sourceSlot.evalId}/${sourceSlot.attemptOrdinal} has no unique published Attempt.`,
-      ));
+      if (sourceMembers.length !== 1 || sourceMember?.attempt === undefined)
+        return yield* Effect.fail(
+          adoptionError(
+            input.intent === "rename" ? "rename-run-not-closed" : "accept-run-not-closed",
+            `Source position ${sourceSlot.evalId}/${sourceSlot.attemptOrdinal} has no unique published Attempt.`,
+          ),
+        );
       const source = yield* resolveAdoptionAttempt(input.reader, sourceMember.attempt);
-      if (input.intent === "rename" && (
-        !hasProvenNoExperimentHooks(run.value.document.context) ||
-        !hasProvenNoExperimentHooks(source.originContext)
-      )) return yield* Effect.fail(adoptionError(
-        "rename-behavior-unproven",
-        `Source locator ${source.locator.text} has opaque or unknown Experiment hook declarations; pure rename cannot be proven.`,
-      ));
-      if (source.originEvalId !== sourceSlot.evalId || source.originAttempt !== sourceSlot.attemptOrdinal) return yield* Effect.fail(sourceCoreInvalid("Source Member does not retain its exact origin position."));
+      if (
+        input.intent === "rename" &&
+        (!hasProvenNoExperimentHooks(run.value.document.context) || !hasProvenNoExperimentHooks(source.originContext))
+      )
+        return yield* Effect.fail(
+          adoptionError(
+            "rename-behavior-unproven",
+            `Source locator ${source.locator.text} has opaque or unknown Experiment hook declarations; pure rename cannot be proven.`,
+          ),
+        );
+      if (source.originEvalId !== sourceSlot.evalId || source.originAttempt !== sourceSlot.attemptOrdinal)
+        return yield* Effect.fail(sourceCoreInvalid("Source Member does not retain its exact origin position."));
       if (input.intent === "rename" && targetSlot.executionIdentityDigest !== sourceSlot.executionIdentityDigest) {
-        const identity = yield* readIdentityExplanation({ reader: input.reader, historical: run.value, evalId: targetSlot.evalId, ...(targetSlot.identityManifest === undefined ? {} : { current: targetSlot.identityManifest }) });
-        if (executionDigestForManifestOrigin(targetSlot, input.sourceRun.experimentId, identity.historical) !== sourceSlot.executionIdentityDigest) {
-          const explanation = classifyIdentityDomains({
-            historical: identity.historical, current: targetSlot.identityManifest, historicalDigest: sourceSlot.executionIdentityDigest,
-            ...(targetSlot.rebuildInput === undefined ? {} : { rebuildInput: targetSlot.rebuildInput }), explanation: identity.explanation,
-          });
-          return yield* Effect.fail(new ExplicitAdoptionError(
-            "rename-identity-mismatch", `Source locator ${source.locator.text} has changed or unprovable execution identity; rename cannot adopt it.`,
-            [executionIdentityComparison({ source: sourceSlot.executionIdentityDigest, target: targetSlot.executionIdentityDigest, explanation })],
-          ));
+        const identity = yield* readIdentityExplanation({
+          reader: input.reader,
+          historical: run.value,
+          evalId: targetSlot.evalId,
+          current: targetSlot.identityManifest,
+        });
+        if (
+          executionDigestForManifestOrigin(targetSlot, input.sourceRun.experimentId, identity.historical) !==
+          sourceSlot.executionIdentityDigest
+        ) {
+          const explanation = identity.explanation;
+          return yield* Effect.fail(
+            new ExplicitAdoptionError(
+              "rename-identity-mismatch",
+              `Source locator ${source.locator.text} has changed or unprovable execution identity; rename cannot adopt it.`,
+              [
+                executionIdentityComparison({
+                  source: sourceSlot.executionIdentityDigest,
+                  target: targetSlot.executionIdentityDigest,
+                  explanation,
+                }),
+              ],
+            ),
+          );
         }
       }
       if (input.intent === "rename" && targetSlot.evaluationKind === "score") {
         const facts = yield* readAdoptionAttemptFacts(input.reader, source);
-        if (!facts.scoreComplete) return yield* Effect.fail(adoptionError("adoption-source-verdict-ineligible", `Source locator ${source.locator.text} has incomplete score.`));
+        if (!facts.scoreComplete)
+          return yield* Effect.fail(
+            adoptionError(
+              "adoption-source-verdict-ineligible",
+              `Source locator ${source.locator.text} has incomplete score.`,
+            ),
+          );
       }
-      const member = yield* prepareExplicitAdoptionMember({ reader: input.reader, target: input.target, source,
-        evalId: sourceSlot.evalId, attempt: sourceSlot.attemptOrdinal, operatorReason: input.operatorReason });
-      members.push(Object.freeze({ evalId: sourceSlot.evalId, attempt: sourceSlot.attemptOrdinal, member }));
+      const member = yield* prepareExplicitAdoptionMember({
+        reader: input.reader,
+        target: input.target,
+        source,
+        evalId: sourceSlot.evalId,
+        attempt: sourceSlot.attemptOrdinal,
+        operatorReason: input.operatorReason,
+      });
+      members.push({ evalId: sourceSlot.evalId, attempt: sourceSlot.attemptOrdinal, member });
     }
-    return Object.freeze({ sourceRun: input.sourceRun, members: Object.freeze(members) });
+    return { sourceRun: input.sourceRun, members };
   });
 }

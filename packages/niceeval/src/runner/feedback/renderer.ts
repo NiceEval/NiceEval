@@ -6,12 +6,7 @@
 //
 // human.ts / json.ts 分别实现这份接口。
 
-import type {
-  AttemptLifecycleEvent,
-  DurableFeedbackEvent,
-  FeedbackTickEvent,
-  RunFeedbackState,
-} from "../types.ts";
+import type { AttemptLifecycleEvent, DurableFeedbackEvent, FeedbackTickEvent, RunFeedbackState } from "../types.ts";
 
 /**
  * 方法命名对应 docs 里「coordinator 负责:撤下动态区域 → 永久写一行 → 在下方重建」的三步:

@@ -4,7 +4,8 @@
 // Attempt / verdict / artifact 继续由 Run 记录保存。所有写入都走逐条目原子
 // 文件原语，Session 不参与用例锁或实验级闸的判定。
 
-import { Schema } from "effect";
+import { Schema, SchemaGetter } from "effect";
+import { omitUndefined } from "../shared/omit-undefined.ts";
 import type { LifecyclePhase } from "./types.ts";
 import { projectLifecyclePhase } from "../inspection/lifecycle.ts";
 import { randomUUID } from "node:crypto";
@@ -26,6 +27,15 @@ import type {
 } from "./types.ts";
 import type { AgentRun } from "./types.ts";
 import { currentProcessOwnerIdentity } from "./node-process-identity.ts";
+import { SqliteRecordError } from "../record/sqlite/errors.ts";
+import { RunStorageError } from "../run/storage/errors.ts";
+import type { RunStorageCommandError } from "../run/storage/index.ts";
+import { isExternalCause, normalizeExternalCause } from "../shared/external-cause.ts";
+
+function sessionFailure(cause: unknown): RunStorageCommandError {
+  if (cause instanceof SqliteRecordError || cause instanceof RunStorageError || isExternalCause(cause)) return cause;
+  return normalizeExternalCause(cause);
+}
 
 export const SESSION_HEARTBEAT_INTERVAL_MS = 10_000;
 export const SESSION_EXPIRY_MS = 30_000;
@@ -33,36 +43,88 @@ export const SESSION_EXPIRY_MS = 30_000;
 export type SessionExperimentState = "setup" | "running" | "waiting" | "teardown";
 export type SessionStatus = "active" | "completed" | "incomplete" | "interrupted";
 
-export interface SessionExperimentRecord {
+interface SessionExperimentBase {
   experimentId: string;
   runId: string;
-  /** The Record v1 receipt confirmed that this draft reached a complete marker. */
-  published?: boolean;
-  state?: SessionExperimentState;
-  running?: number;
-  queued?: number;
-  elsewhere?: number;
-  /** Only currently queued Attempts with an actionable, stable reason are expanded. */
-  attempts?: SessionQueuedAttemptRecord[];
-  activeAttempts?: SessionActiveAttemptRecord[];
+  /** The publication receipt confirmed that this draft reached a complete marker. */
+  published: boolean;
 }
 
-const LifecyclePhaseSchema = Schema.Literals(["judge.precheck", "experiment.before", "experiment.after", "attempt.before", "attempt.after", "sandbox.queue", "sandbox.create", "sandbox.prepare", "sandbox.prepare.eval", "sandbox.prepare.group", "sandbox.prepare.experiment", "agent.ensure", "workspace.baseline", "agent.before", "telemetry.configure", "eval.run", "agent.run", "workspace.diff", "assertions.evaluate", "telemetry.collect", "agent.after", "sandbox.cleanup", "sandbox.suspend", "sandbox.stop"] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
+export interface ActiveSessionExperimentRecord extends SessionExperimentBase {
+  lifecycle: "active";
+  state: SessionExperimentState;
+  running: number;
+  queued: number;
+  elsewhere: number;
+  /** Only currently queued Attempts with an actionable, stable reason are expanded. */
+  attempts: SessionQueuedAttemptRecord[];
+  activeAttempts: SessionActiveAttemptRecord[];
+}
 
-export const SessionActiveAttemptsSchema = Schema.mutable(Schema.Array(Schema.Struct({
-  evalId: Schema.String, attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-  phase: LifecyclePhaseSchema, phaseEnteredAt: Schema.String,
-  sandbox: Schema.NullOr(Schema.Struct({ provider: Schema.String, nativeInstanceId: Schema.NullOr(Schema.String) })),
-  detail: Schema.NullOr(Schema.Struct({ text: Schema.String, at: Schema.String })),
-})));
+export interface TerminalSessionExperimentRecord extends SessionExperimentBase {
+  lifecycle: "terminal";
+}
+
+export type SessionExperimentRecord = ActiveSessionExperimentRecord | TerminalSessionExperimentRecord;
+
+const LifecyclePhaseSchema = Schema.Literals([
+  "judge.precheck",
+  "experiment.before",
+  "experiment.after",
+  "attempt.before",
+  "attempt.after",
+  "sandbox.queue",
+  "sandbox.create",
+  "sandbox.prepare",
+  "sandbox.prepare.eval",
+  "sandbox.prepare.group",
+  "sandbox.prepare.experiment",
+  "agent.install",
+  "workspace.baseline",
+  "agent.before",
+  "telemetry.configure",
+  "eval.run",
+  "agent.run",
+  "workspace.diff",
+  "assertions.evaluate",
+  "telemetry.collect",
+  "agent.after",
+  "sandbox.cleanup",
+  "sandbox.suspend",
+  "sandbox.stop",
+] satisfies readonly ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>[]);
+
+function sessionOptional<S extends Schema.Constraint>(schema: S) {
+  return Schema.NullOr(schema).pipe(
+    Schema.decodeTo(Schema.UndefinedOr(Schema.toType(schema)), {
+      decode: SchemaGetter.transform((value) => value ?? undefined),
+      encode: SchemaGetter.transform((value) => value ?? null),
+    }),
+  );
+}
+
+export const SessionActiveAttemptsSchema = Schema.mutable(
+  Schema.Array(
+    Schema.Struct({
+      evalId: Schema.String,
+      attemptOrdinal: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+      phase: LifecyclePhaseSchema,
+      phaseEnteredAt: Schema.String,
+      sandbox: sessionOptional(
+        Schema.Struct({ provider: Schema.String, nativeInstanceId: sessionOptional(Schema.String) }),
+      ),
+      detail: sessionOptional(Schema.Struct({ text: Schema.String, at: Schema.String })),
+    }),
+  ),
+);
 
 export interface SessionActiveAttemptRecord {
   evalId: string;
   attemptOrdinal: number;
   phase: ReturnType<typeof projectLifecyclePhase<LifecyclePhase>>;
   phaseEnteredAt: string;
-  sandbox: { provider: string; nativeInstanceId: string | null } | null;
-  detail: { text: string; at: string } | null;
+  sandbox: { provider: string; nativeInstanceId: string | undefined } | undefined;
+  detail: { text: string; at: string } | undefined;
 }
 
 export interface SessionQueuedAttemptRecord {
@@ -72,53 +134,57 @@ export interface SessionQueuedAttemptRecord {
   reason: AttemptQueueReason;
 }
 
-export interface SessionRecord {
+interface SessionRecordBase {
   sessionId: string;
   pid: number;
   startedAt: string;
-  status: SessionStatus;
-  experiments: SessionExperimentRecord[];
-  heartbeatAt?: string;
-  completedAt?: string;
-  completion?: InvocationCompletion;
 }
+
+export type SessionRecord = SessionRecordBase &
+  (
+    | { status: "active"; heartbeatAt: string | undefined; experiments: ActiveSessionExperimentRecord[] }
+    | {
+        status: "completed" | "incomplete" | "interrupted";
+        experiments: TerminalSessionExperimentRecord[];
+        completedAt: string | undefined;
+        completion: InvocationCompletion | undefined;
+      }
+  );
 
 export interface ExpiredSessionRecord {
   sessionId: string;
   pid: number;
   startedAt: string;
-  heartbeatAt?: string;
+  heartbeatAt: string | undefined;
 }
 
 export interface SessionListDocument {
-  format: "niceeval.sessions";
   sessions: SessionRecord[];
   expired: ExpiredSessionRecord[];
 }
 
 export interface SessionShowDocument {
-  format: "niceeval.session";
   session: SessionRecord | ExpiredSessionRecord;
-  expired?: boolean;
+  expired: boolean | undefined;
 }
 
 export interface SessionStartInput {
   runIds: ReadonlyMap<string, string>;
   agentRuns: readonly AgentRun[];
   /** 已规划、可携入的 attempt 数；用于创建记录时准确初始化 queued。 */
-  carriedAttemptsByKey?: ReadonlyMap<string, ReadonlySet<number>>;
-  startedAt?: string;
-  pid?: number;
+  carriedAttemptsByKey?: ReadonlyMap<string, ReadonlySet<number>> | undefined;
+  startedAt?: string | undefined;
+  pid?: number | undefined;
   /** Complete canonical Run resources created atomically with this Invocation. */
   invocationRuns: readonly InvocationRunInput[];
 }
 
 export interface SessionCloseInput {
-  status?: CompletionStatus | SessionStatus;
-  completion?: InvocationCompletion;
-  /** Only IDs in this receipt are safe targets for `niceeval show --run`. */
-  receipt?: InvocationReceipt;
-  completedAt?: string;
+  status?: CompletionStatus | SessionStatus | undefined;
+  completion?: InvocationCompletion | undefined;
+  /** Only IDs in this receipt are safe targets for `niceeval show run:<id>`. */
+  receipt?: InvocationReceipt | undefined;
+  completedAt?: string | undefined;
 }
 
 /**
@@ -130,22 +196,26 @@ export type SessionInvocationEvent =
   | Extract<RunFeedbackEvent, { type: "attempt:phase" | "attempt:progress" | "attempt:sandbox" }>
   | {
       readonly type: "attempt:queued";
-      readonly identity?: AttemptRef;
+      readonly identity: AttemptRef | undefined;
       readonly reason: AttemptQueueReason;
     }
   | {
-      readonly type: "attempt:start" | "attempt:complete" | "attempt:early-exit";
-      readonly identity?: AttemptRef;
-      readonly phase?: LifecyclePhase;
-      readonly at?: number;
+      readonly type: "attempt:start";
+      readonly identity: AttemptRef | undefined;
+      readonly phase: LifecyclePhase | undefined;
+      readonly at: number | undefined;
+    }
+  | {
+      readonly type: "attempt:complete" | "attempt:early-exit";
+      readonly identity: AttemptRef | undefined;
     }
   | {
       readonly type: "lock-wait";
       readonly experimentId: string;
       readonly status: "started" | "resolved";
-      readonly attempts?: number;
-      readonly carried?: number;
-      readonly dispatched?: number;
+      readonly attempts: number | undefined;
+      readonly carried: number | undefined;
+      readonly dispatched: number | undefined;
     }
   | {
       readonly type: "experiment-hook";
@@ -154,103 +224,99 @@ export type SessionInvocationEvent =
       readonly status: "started" | "done" | "failed";
     };
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
+const NonNegativeIntegerSchema = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const TimestampSchema = Schema.String.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value))));
+const CompletionSchema = Schema.Struct({
+  status: Schema.Literals(["complete", "incomplete", "interrupted"]),
+  unstarted: NonNegativeIntegerSchema,
+  earlyExitUnstarted: NonNegativeIntegerSchema,
+  reporterErrors: Schema.Array(
+    Schema.Struct({
+      reporter: Schema.String,
+      required: Schema.Boolean,
+      message: Schema.String,
+    }),
+  ),
+});
+const ExperimentPayloadFields = {
+  experimentId: Schema.String,
+  runId: Schema.String,
+  published: Schema.optionalKey(Schema.Boolean),
+};
+const ActiveExperimentPayloadSchema = Schema.Struct({
+  ...ExperimentPayloadFields,
+  state: Schema.Literals(["setup", "running", "waiting", "teardown"]),
+  running: NonNegativeIntegerSchema,
+  queued: NonNegativeIntegerSchema,
+  elsewhere: NonNegativeIntegerSchema,
+  attempts: Schema.mutable(
+    Schema.Array(
+      Schema.Struct({
+        evalId: Schema.String,
+        attempt: NonNegativeIntegerSchema,
+        state: Schema.Literal("queued"),
+        reason: Schema.Literal("provider-capacity"),
+      }),
+    ),
+  ),
+  activeAttempts: Schema.toEncoded(SessionActiveAttemptsSchema),
+});
+const SessionPayloadFields = {
+  sessionId: Schema.String,
+  pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+  startedAt: TimestampSchema,
+};
+/** Record JSON and CLI JSON observe omitted keys; these payloads use exact optional keys. */
+export const SessionRecordPayloadSchema = Schema.Union([
+  Schema.Struct({
+    ...SessionPayloadFields,
+    status: Schema.Literal("active"),
+    experiments: Schema.mutable(Schema.Array(ActiveExperimentPayloadSchema)),
+    heartbeatAt: Schema.optionalKey(TimestampSchema),
+  }),
+  Schema.Struct({
+    ...SessionPayloadFields,
+    status: Schema.Literals(["completed", "incomplete", "interrupted"]),
+    experiments: Schema.mutable(Schema.Array(Schema.Struct(ExperimentPayloadFields))),
+    completedAt: Schema.optionalKey(TimestampSchema),
+    completion: Schema.optionalKey(CompletionSchema),
+  }),
+]);
+export type SessionRecordPayload = typeof SessionRecordPayloadSchema.Type;
 
-function isTimestamp(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
+/** Record JSON and CLI JSON observe omission of an unavailable heartbeat. */
+export const ExpiredSessionPayloadSchema = Schema.Struct({
+  ...SessionPayloadFields,
+  heartbeatAt: Schema.optionalKey(TimestampSchema),
+});
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function decodeExperiment(value: unknown): SessionExperimentRecord | undefined {
-  const raw = asRecord(value);
-  if (raw === undefined || typeof raw.experimentId !== "string" || typeof raw.runId !== "string") return undefined;
-  if (raw.published !== undefined && typeof raw.published !== "boolean") return undefined;
-  const state = raw.state;
-  if (state !== undefined && state !== "setup" && state !== "running" && state !== "waiting" && state !== "teardown") {
-    return undefined;
-  }
-  for (const key of ["running", "queued", "elsewhere"] as const) {
-    if (raw[key] !== undefined && !isNonNegativeInteger(raw[key])) return undefined;
-  }
-  const running = raw.running;
-  const queued = raw.queued;
-  const elsewhere = raw.elsewhere;
-  const attempts = raw.attempts === undefined
-    ? undefined
-    : Array.isArray(raw.attempts)
-      ? raw.attempts.map((value): SessionQueuedAttemptRecord | undefined => {
-        const attempt = asRecord(value);
-        if (
-          attempt === undefined ||
-          typeof attempt.evalId !== "string" ||
-          !isNonNegativeInteger(attempt.attempt) ||
-          attempt.state !== "queued" ||
-          attempt.reason !== "provider-capacity"
-        ) return undefined;
-        return {
-          evalId: attempt.evalId,
-          attempt: attempt.attempt,
-          state: "queued",
-          reason: attempt.reason,
-        };
-      })
-      : undefined;
-  if (raw.attempts !== undefined && (attempts === undefined || attempts.some((item) => item === undefined))) {
-    return undefined;
-  }
-  const activeRead = raw.activeAttempts === undefined ? undefined : Schema.decodeUnknownResult(SessionActiveAttemptsSchema)(raw.activeAttempts);
-  if (activeRead?._tag === "Failure") return undefined;
-  const activeAttempts = activeRead?.success;
-  return {
-    experimentId: raw.experimentId,
-    runId: raw.runId,
-    ...(raw.published === true ? { published: true } : {}),
-    ...(state !== undefined ? { state } : {}),
-    ...(running !== undefined ? { running: running as number } : {}),
-    ...(queued !== undefined ? { queued: queued as number } : {}),
-    ...(elsewhere !== undefined ? { elsewhere: elsewhere as number } : {}),
-    ...(attempts === undefined ? {} : { attempts: attempts as SessionQueuedAttemptRecord[] }),
-    ...(activeAttempts === undefined ? {} : { activeAttempts }),
-  };
-}
-
-/** 完整读取边界：损坏/未知格式条目从查询中跳过，不拖垮整个目录。 */
+/** Reject malformed current-format projections; predecessor Records never reach this boundary. */
 export function decodeSession(value: unknown): SessionRecord | undefined {
-  const raw = asRecord(value);
-  if (
-    raw === undefined ||
-    typeof raw.sessionId !== "string" ||
-    !isPositiveInteger(raw.pid) ||
-    !isTimestamp(raw.startedAt) ||
-    (raw.status !== "active" && raw.status !== "completed" && raw.status !== "incomplete" && raw.status !== "interrupted") ||
-    !Array.isArray(raw.experiments)
-  ) return undefined;
-  if (raw.heartbeatAt !== undefined && !isTimestamp(raw.heartbeatAt)) return undefined;
-  if (raw.completedAt !== undefined && !isTimestamp(raw.completedAt)) return undefined;
-  const experiments = raw.experiments.map(decodeExperiment);
-  if (experiments.some((item) => item === undefined)) return undefined;
+  const decoded = Schema.decodeUnknownResult(SessionRecordPayloadSchema, { onExcessProperty: "error" })(value);
+  if (decoded._tag === "Failure") return undefined;
+  const payload = decoded.success;
+  if (payload.status === "active") {
+    return {
+      ...payload,
+      heartbeatAt: payload.heartbeatAt,
+      experiments: payload.experiments.map((experiment) => ({
+        ...experiment,
+        lifecycle: "active",
+        published: experiment.published === true,
+        activeAttempts: Schema.decodeUnknownSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+      })),
+    };
+  }
   return {
-    sessionId: raw.sessionId,
-    pid: raw.pid,
-    startedAt: raw.startedAt,
-    status: raw.status,
-    experiments: experiments as SessionExperimentRecord[],
-    ...(raw.heartbeatAt !== undefined ? { heartbeatAt: raw.heartbeatAt } : {}),
-    ...(raw.completedAt !== undefined ? { completedAt: raw.completedAt } : {}),
-    ...(raw.completion !== undefined && asRecord(raw.completion) !== undefined
-      ? { completion: raw.completion as InvocationCompletion }
-      : {}),
+    ...payload,
+    completedAt: payload.completedAt,
+    completion: payload.completion,
+    experiments: payload.experiments.map((experiment) => ({
+      experimentId: experiment.experimentId,
+      runId: experiment.runId,
+      lifecycle: "terminal",
+      published: experiment.published === true,
+    })),
   };
 }
 
@@ -261,32 +327,82 @@ function keyOf(experimentId: string, evalId: string): string {
     : `${experimentId}|${evalId}`;
 }
 
-function sessionStatusOf(status: CompletionStatus | SessionStatus | undefined): SessionStatus {
+function sessionStatusOf(status: CompletionStatus | SessionStatus | undefined): Exclude<SessionStatus, "active"> {
   if (status === "complete" || status === "completed" || status === undefined) return "completed";
   if (status === "interrupted") return "interrupted";
   return "incomplete";
 }
 
 function cloneRecord(record: SessionRecord): SessionRecord {
+  if (record.status === "active") {
+    return {
+      ...record,
+      experiments: record.experiments.map((experiment) => ({
+        ...experiment,
+        activeAttempts: experiment.activeAttempts.map((item) => ({
+          ...item,
+          sandbox: item.sandbox === undefined ? undefined : { ...item.sandbox },
+          detail: item.detail === undefined ? undefined : { ...item.detail },
+        })),
+        attempts: experiment.attempts.map((attempt) => ({ ...attempt })),
+      })),
+    };
+  }
   return {
     ...record,
-    experiments: record.experiments.map((experiment) => ({
-      ...experiment,
-      ...(experiment.activeAttempts === undefined ? {} : { activeAttempts: experiment.activeAttempts.map((item) => ({ ...item, sandbox: item.sandbox === null ? null : { ...item.sandbox }, detail: item.detail === null ? null : { ...item.detail } })) }),
-      ...(experiment.attempts === undefined
-        ? {}
-        : { attempts: experiment.attempts.map((attempt) => ({ ...attempt })) }),
-    })),
-    ...(record.completion ? { completion: { ...record.completion, reporterErrors: [...record.completion.reporterErrors] } } : {}),
+    experiments: record.experiments.map((experiment) => ({ ...experiment })),
+    completion: record.completion && { ...record.completion, reporterErrors: [...record.completion.reporterErrors] },
   };
 }
 
+/** Convert internal lifecycle values to the independently typed Record / CLI JSON payload. */
+export function sessionRecordToJson(record: SessionRecord): SessionRecordPayload {
+  const base = { sessionId: record.sessionId, pid: record.pid, startedAt: record.startedAt };
+  if (record.status === "active") {
+    return omitUndefined({
+      ...base,
+      status: record.status,
+      heartbeatAt: record.heartbeatAt,
+      experiments: record.experiments.map((experiment) =>
+        omitUndefined({
+          experimentId: experiment.experimentId,
+          runId: experiment.runId,
+          published: experiment.published ? true : undefined,
+          state: experiment.state,
+          running: experiment.running,
+          queued: experiment.queued,
+          elsewhere: experiment.elsewhere,
+          attempts: experiment.attempts,
+          activeAttempts: Schema.encodeSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+        }),
+      ),
+    });
+  }
+  return omitUndefined({
+    ...base,
+    status: record.status,
+    completedAt: record.completedAt,
+    completion: record.completion,
+    experiments: record.experiments.map((experiment) =>
+      omitUndefined({
+        experimentId: experiment.experimentId,
+        runId: experiment.runId,
+        published: experiment.published ? true : undefined,
+      }),
+    ),
+  });
+}
+
 function encodeSession(record: SessionRecord): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(record));
+  return new TextEncoder().encode(JSON.stringify(sessionRecordToJson(record)));
 }
 
 function decodeSessionBytes(bytes: Uint8Array): SessionRecord | undefined {
-  try { return decodeSession(JSON.parse(new TextDecoder().decode(bytes))); } catch { return undefined; }
+  try {
+    return decodeSession(JSON.parse(new TextDecoder().decode(bytes)));
+  } catch {
+    return undefined;
+  }
 }
 
 type SessionObservationWrite = { readonly _tag: "observe"; snapshot: SessionRecord };
@@ -294,15 +410,15 @@ type SessionObservationWrite = { readonly _tag: "observe"; snapshot: SessionReco
 type SessionPersistenceRequest =
   | SessionObservationWrite
   | {
-    readonly _tag: "write";
-    readonly snapshot: SessionRecord;
-    /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
-    readonly completion?: Deferred.Deferred<void, unknown>;
-  }
+      readonly _tag: "write";
+      readonly snapshot: SessionRecord;
+      /** 缺席时是反馈索引的尽力写；失败不影响 attempt 判定。 */
+      readonly completion: Deferred.Deferred<void, RunStorageCommandError> | undefined;
+    }
   | {
-    readonly _tag: "barrier";
-    readonly completion: Deferred.Deferred<void, unknown>;
-  };
+      readonly _tag: "barrier";
+      readonly completion: Deferred.Deferred<void, RunStorageCommandError>;
+    };
 
 /**
  * Session 的 Effect 资源组刻意不绑定 `start()` 调用点的 Scope：`runEvals()` 自己会
@@ -314,7 +430,7 @@ interface SessionPersistence {
   readonly scope: Scope.Closeable;
   readonly requests: Queue.Queue<SessionPersistenceRequest>;
   readonly worker: Fiber.Fiber<void, never>;
-  heartbeat?: Fiber.Fiber<never, never>;
+  heartbeat: Fiber.Fiber<never, never> | undefined;
   accepting: boolean;
   stopped: boolean;
 }
@@ -352,11 +468,13 @@ export class SessionTracker {
 
   private invocationEffect<A extends import("../record/sqlite/worker-protocol.ts").StorageWorkerResult>(
     command: import("../record/sqlite/worker-protocol.ts").InvocationCommand,
-  ): Effect.Effect<A, unknown> {
-    return Effect.flatMap(this.database.bind(this.niceevalRoot), (facets) => Effect.tryPromise({
-      try: () => facets.invocation.execute<A>(command),
-      catch: (cause) => cause,
-    }));
+  ): Effect.Effect<A, RunStorageCommandError> {
+    return Effect.flatMap(this.database.bind(this.niceevalRoot), (facets) =>
+      Effect.tryPromise({
+        try: () => facets.invocation.execute<A>(command),
+        catch: sessionFailure,
+      }),
+    );
   }
 
   get current(): SessionRecord | undefined {
@@ -367,20 +485,29 @@ export class SessionTracker {
    * Effect 主入口：先完成第一份 durable snapshot，再开始心跳。持久化 Scope 跨过
    * `runEvals()` 的内部 Scope，由 closeEffect 关闭，因而最终 receipt 不会被抢先截断。
    */
-  start(input: SessionStartInput): Effect.Effect<SessionRecord, unknown> {
+  start(input: SessionStartInput): Effect.Effect<SessionRecord, RunStorageCommandError> {
     let persistence: SessionPersistence | undefined;
     return Effect.gen({ self: this }, function* () {
-      if (this.started) return yield* Effect.fail(new Error("SessionTracker.start() called more than once."));
+      if (this.started)
+        return yield* Effect.fail(normalizeExternalCause(new Error("SessionTracker.start() called more than once.")));
       const scope = yield* Scope.make();
       const requests = yield* Queue.unbounded<SessionPersistenceRequest>();
       const worker = yield* Effect.forkIn(this.persistenceWorkerEffect(requests), scope);
-      persistence = { scope, requests, worker, accepting: true, stopped: false };
-      this.persistence = persistence;
+      const currentPersistence: SessionPersistence = {
+        scope,
+        requests,
+        worker,
+        heartbeat: undefined,
+        accepting: true,
+        stopped: false,
+      };
+      persistence = currentPersistence;
+      this.persistence = currentPersistence;
       this.started = true;
 
       const startedAt = input.startedAt ?? new Date().toISOString();
       const carried = input.carriedAttemptsByKey;
-      const experiments: SessionExperimentRecord[] = [];
+      const experiments: ActiveSessionExperimentRecord[] = [];
       for (const run of input.agentRuns) {
         if (run.experimentId === undefined) continue;
         const runId = input.runIds.get(run.experimentId);
@@ -398,6 +525,11 @@ export class SessionTracker {
           running: 0,
           queued,
           elsewhere: 0,
+
+          lifecycle: "active",
+          published: false,
+          attempts: [],
+          activeAttempts: [],
         });
       }
       const now = new Date().toISOString();
@@ -410,24 +542,30 @@ export class SessionTracker {
         experiments,
       };
       const owner = currentProcessOwnerIdentity(this.sessionId);
-      this.owner = (yield* this.invocationEffect<InvocationSessionRecord>({ _tag: "invocation-create", input: {
-        invocationId: this.sessionId,
-        owner,
-        startedAt,
-        runs: input.invocationRuns,
-        deadlineEpochMs: Date.now() + 30_000,
-      } })).owner;
+      this.owner = (yield* this.invocationEffect<InvocationSessionRecord>({
+        _tag: "invocation-create",
+        input: {
+          invocationId: this.sessionId,
+          owner,
+          startedAt,
+          runs: input.invocationRuns,
+          deadlineEpochMs: Date.now() + 30_000,
+          queuedAttempts: undefined,
+        },
+      })).owner;
       // Unlike feedback snapshots, the initial entry is a durable boundary:
       // dispatch must not start until it has either reached disk or failed.
       yield* this.flush();
-      persistence.heartbeat = yield* Effect.forkIn(this.heartbeatLoopEffect(), scope);
+      currentPersistence.heartbeat = yield* Effect.forkIn(this.heartbeatLoopEffect(), scope);
       return this.current!;
     }).pipe(
       // A failed first write must not leave the manually held Scope (or its
       // queue worker) alive. Preserve the original failure after cleanup.
-      Effect.onError((cause) => persistence === undefined
-        ? Effect.void
-        : this.stopPersistenceEffect(persistence, Exit.failCause(cause)).pipe(Effect.ignore)),
+      Effect.onError((cause) =>
+        persistence === undefined
+          ? Effect.void
+          : this.stopPersistenceEffect(persistence, Exit.failCause(cause)).pipe(Effect.ignore),
+      ),
     );
   }
 
@@ -449,13 +587,19 @@ export class SessionTracker {
   }
 
   /** Applies the frozen carry decision before dispatch without inventing lifecycle events. */
-  applyCarriedAttempts(agentRuns: readonly AgentRun[], carried: ReadonlyMap<string, ReadonlySet<number>>): Effect.Effect<void, unknown> {
+  applyCarriedAttempts(
+    agentRuns: readonly AgentRun[],
+    carried: ReadonlyMap<string, ReadonlySet<number>>,
+  ): Effect.Effect<void, RunStorageCommandError> {
     if (this.record === undefined || this.record.status !== "active") return Effect.void;
     for (const experiment of this.record.experiments) {
       const run = agentRuns.find((candidate) => candidate.experimentId === experiment.experimentId);
-      const count = run?.selectedEvalIds.reduce((total, evalId) =>
-        total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0), 0) ?? 0;
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - count);
+      const count =
+        run?.selectedEvalIds.reduce(
+          (total, evalId) => total + (carried.get(keyOf(experiment.experimentId, evalId))?.size ?? 0),
+          0,
+        ) ?? 0;
+      experiment.queued = Math.max(0, experiment.queued - count);
       this.refreshState(experiment);
     }
     return this.flush();
@@ -465,28 +609,30 @@ export class SessionTracker {
   onInvocationEvent(event: SessionInvocationEvent): void {
     if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
     const identity = "identity" in event && event.identity !== undefined ? event.identity : undefined;
-    const experimentId = identity
-      ? identity.experimentId
-      : "experimentId" in event
-        ? event.experimentId
-        : undefined;
-    const experiment = experimentId === undefined
-      ? undefined
-      : this.record.experiments.find((item) => item.experimentId === experimentId);
+    function eventExperimentId(): string | undefined {
+      if (identity) return identity.experimentId;
+      if ("experimentId" in event) return event.experimentId;
+      return undefined;
+    }
+    const experimentId = eventExperimentId();
+    const experiment =
+      experimentId === undefined
+        ? undefined
+        : this.record.experiments.find((item) => item.experimentId === experimentId);
     let changed = false;
     const removeQueuedAttempt = (): boolean => {
       if (experiment === undefined || identity?.evalId === undefined || identity.attempt === undefined) return false;
-      const attempts = experiment.attempts ?? [];
-      const index = attempts.findIndex((attempt) =>
-        attempt.evalId === identity.evalId && attempt.attempt === identity.attempt
+      const attempts = experiment.attempts;
+      const index = attempts.findIndex(
+        (attempt) => attempt.evalId === identity.evalId && attempt.attempt === identity.attempt,
       );
       if (index < 0) return false;
       attempts.splice(index, 1);
-      if (attempts.length === 0) delete experiment.attempts;
-      else experiment.attempts = attempts;
       return true;
     };
-    const active = experiment?.activeAttempts?.find((item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1);
+    const active = experiment?.activeAttempts.find(
+      (item) => item.evalId === identity?.evalId && item.attemptOrdinal === (identity?.attempt ?? -2) + 1,
+    );
     if (event.type === "attempt:phase" && active) {
       active.phase = projectLifecyclePhase(event.phase);
       active.phaseEnteredAt = new Date(event.at).toISOString();
@@ -500,41 +646,52 @@ export class SessionTracker {
     } else if (event.type === "attempt:queued" && experiment && identity) {
       removeQueuedAttempt();
       experiment.attempts = [
-        ...(experiment.attempts ?? []),
+        ...experiment.attempts,
         { evalId: identity.evalId, attempt: identity.attempt, state: "queued", reason: event.reason },
       ];
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "attempt:start" && experiment) {
       removeQueuedAttempt();
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
-      experiment.running = (experiment.running ?? 0) + 1;
+      experiment.queued = Math.max(0, experiment.queued - 1);
+      experiment.running = experiment.running + 1;
       experiment.state = "running";
-      if (identity !== undefined) experiment.activeAttempts = [...(experiment.activeAttempts ?? []), { evalId: identity.evalId, attemptOrdinal: identity.attempt + 1, phase: projectLifecyclePhase(event.phase ?? "sandbox.create"), phaseEnteredAt: new Date(event.at ?? Date.now()).toISOString(), sandbox: null, detail: null }];
+      if (identity !== undefined)
+        experiment.activeAttempts = [
+          ...experiment.activeAttempts,
+          {
+            evalId: identity.evalId,
+            attemptOrdinal: identity.attempt + 1,
+            phase: projectLifecyclePhase(event.phase ?? "sandbox.create"),
+            phaseEnteredAt: new Date(event.at ?? Date.now()).toISOString(),
+            sandbox: undefined,
+            detail: undefined,
+          },
+        ];
       changed = true;
     } else if (event.type === "attempt:complete" && experiment) {
-      experiment.activeAttempts = experiment.activeAttempts?.filter((item) => item !== active);
+      experiment.activeAttempts = experiment.activeAttempts.filter((item) => item !== active);
       const completedWhileQueued = removeQueuedAttempt();
-      if (completedWhileQueued) experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
-      else experiment.running = Math.max(0, (experiment.running ?? 0) - 1);
+      if (completedWhileQueued) experiment.queued = Math.max(0, experiment.queued - 1);
+      else experiment.running = Math.max(0, experiment.running - 1);
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "attempt:early-exit" && experiment) {
       removeQueuedAttempt();
-      experiment.queued = Math.max(0, (experiment.queued ?? 0) - 1);
+      experiment.queued = Math.max(0, experiment.queued - 1);
       this.refreshState(experiment);
       changed = true;
     } else if (event.type === "lock-wait" && experiment) {
       if (event.status === "started") {
         const attempts = event.attempts ?? 1;
-        experiment.queued = Math.max(0, (experiment.queued ?? 0) - attempts);
-        experiment.elsewhere = (experiment.elsewhere ?? 0) + attempts;
+        experiment.queued = Math.max(0, experiment.queued - attempts);
+        experiment.elsewhere = experiment.elsewhere + attempts;
         experiment.state = "waiting";
         changed = true;
       } else {
         const moved = (event.carried ?? 0) + (event.dispatched ?? 0);
-        experiment.elsewhere = Math.max(0, (experiment.elsewhere ?? 0) - moved);
-        experiment.queued = (experiment.queued ?? 0) + (event.dispatched ?? 0);
+        experiment.elsewhere = Math.max(0, experiment.elsewhere - moved);
+        experiment.queued = experiment.queued + (event.dispatched ?? 0);
         this.refreshState(experiment);
         changed = true;
       }
@@ -546,10 +703,10 @@ export class SessionTracker {
     if (changed) this.enqueuePersist();
   }
 
-  private refreshState(experiment: SessionExperimentRecord): void {
-    if ((experiment.elsewhere ?? 0) > 0 && (experiment.running ?? 0) === 0) {
+  private refreshState(experiment: ActiveSessionExperimentRecord): void {
+    if (experiment.elsewhere > 0 && experiment.running === 0) {
       experiment.state = "waiting";
-    } else if ((experiment.running ?? 0) > 0 || (experiment.queued ?? 0) > 0) {
+    } else if (experiment.running > 0 || experiment.queued > 0) {
       experiment.state = "running";
     } else {
       experiment.state = "teardown";
@@ -557,9 +714,10 @@ export class SessionTracker {
   }
 
   /** 一次可观察的 heartbeat；显式调用者会收到本次 flush 的真实 I/O failure。 */
-  heartbeat(): Effect.Effect<void, unknown> {
+  heartbeat(): Effect.Effect<void, RunStorageCommandError> {
     return Effect.suspend(() => {
-      if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return Effect.void;
+      if (!this.started || this.closed || this.record === undefined || this.record.status !== "active")
+        return Effect.void;
       this.record.heartbeatAt = new Date().toISOString();
       return this.flush();
     });
@@ -569,39 +727,39 @@ export class SessionTracker {
    * 完成最终 Session：先停止 heartbeat，再把完成 snapshot 排在所有既有反馈写之后。该收尾
    * 区域不可中断，避免 interruption 留下 active 条目或后台 Fiber。
    */
-  close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, unknown> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
-      this.closed = true;
-      const now = new Date().toISOString();
-      this.record.status = sessionStatusOf(input.status);
-      this.record.completedAt = input.completedAt ?? now;
-      delete this.record.heartbeatAt;
-      if (input.completion !== undefined) this.record.completion = input.completion;
-      const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
-      for (const experiment of this.record.experiments) {
-        if (publishedRunIds.has(experiment.runId)) experiment.published = true;
-        else delete experiment.published;
-        delete experiment.state;
-        delete experiment.running;
-        delete experiment.queued;
-        delete experiment.elsewhere;
-        delete experiment.attempts;
-        delete experiment.activeAttempts;
-      }
-      const snapshot = cloneRecord(this.record);
-      const persistence = this.persistence;
-      const persist = (persistence === undefined
-        ? Effect.void
-        : this.stopPersistenceEffect(persistence, Exit.void)).pipe(
-          Effect.andThen(this.persistTerminal(snapshot)),
-        );
-      return persist.pipe(Effect.as(this.current));
-    }));
+  close(input: SessionCloseInput = {}): Effect.Effect<SessionRecord | undefined, RunStorageCommandError> {
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (!this.started || this.record === undefined || this.closed) return Effect.succeed(this.current);
+        this.closed = true;
+        const now = new Date().toISOString();
+        const publishedRunIds = new Set(input.receipt?.createdRunIds ?? []);
+        this.record = {
+          sessionId: this.record.sessionId,
+          pid: this.record.pid,
+          startedAt: this.record.startedAt,
+          status: sessionStatusOf(input.status),
+          experiments: this.record.experiments.map((experiment) => ({
+            experimentId: experiment.experimentId,
+            runId: experiment.runId,
+            lifecycle: "terminal",
+            published: publishedRunIds.has(experiment.runId),
+          })),
+          completedAt: input.completedAt ?? now,
+          completion: input.completion,
+        };
+        const snapshot = cloneRecord(this.record);
+        const persistence = this.persistence;
+        const persist = (
+          persistence === undefined ? Effect.void : this.stopPersistenceEffect(persistence, Exit.void)
+        ).pipe(Effect.andThen(this.persistTerminal(snapshot)));
+        return persist.pipe(Effect.as(this.current));
+      }),
+    );
   }
 
   /** 按入队顺序强制写出当前 snapshot；worker 已关闭后退化为同一条 *Effect 原语的直接写。 */
-  private flush(): Effect.Effect<void, unknown> {
+  private flush(): Effect.Effect<void, RunStorageCommandError> {
     return Effect.suspend(() => {
       if (this.record === undefined) return Effect.void;
       const snapshot = cloneRecord(this.record);
@@ -614,12 +772,7 @@ export class SessionTracker {
 
   private enqueuePersist(): void {
     const persistence = this.persistence;
-    if (
-      this.record === undefined ||
-      persistence === undefined ||
-      !persistence.accepting ||
-      persistence.stopped
-    ) return;
+    if (this.record === undefined || persistence === undefined || !persistence.accepting || persistence.stopped) return;
     const snapshot = cloneRecord(this.record);
     // 反馈 API 受 coordinator 的同步 callback 契约限制，不能在这里启动 runtime。Queue 是
     // Effect worker 的同步入口；false 只会发生在 close 已关闭队列的竞态，此时最终 flush
@@ -633,9 +786,7 @@ export class SessionTracker {
     if (!Queue.offerUnsafe(persistence.requests, request)) this.pendingObservation = undefined;
   }
 
-  private persistenceWorkerEffect(
-    requests: Queue.Queue<SessionPersistenceRequest>,
-  ): Effect.Effect<void> {
+  private persistenceWorkerEffect(requests: Queue.Queue<SessionPersistenceRequest>): Effect.Effect<void> {
     const handle = (request: SessionPersistenceRequest): Effect.Effect<void> => {
       if (request._tag === "barrier") {
         return Deferred.succeed(request.completion, undefined).pipe(Effect.asVoid);
@@ -649,32 +800,56 @@ export class SessionTracker {
       // worker; a later state change is still allowed to retry the index write.
       return this.persistActive(request.snapshot).pipe(
         Effect.exit,
-        Effect.flatMap((exit) => request.completion === undefined
-          ? Effect.void
-          : Deferred.done(request.completion, exit).pipe(Effect.asVoid)),
+        Effect.flatMap((exit) =>
+          request.completion === undefined ? Effect.void : Deferred.done(request.completion, exit).pipe(Effect.asVoid),
+        ),
       );
     };
     return Effect.forever(Queue.take(requests).pipe(Effect.flatMap(handle))).pipe(
       // Queue shutdown interrupts its pending take. A different cause is a
       // broken worker invariant and stays a defect instead of being erased.
-      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause)),
+      Effect.catchCause((cause) => (Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.die(cause))),
     );
   }
 
-  private persistActive(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+  private persistActive(snapshot: SessionRecord): Effect.Effect<void, RunStorageCommandError> {
     const owner = this.owner;
-    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
-    const at = snapshot.heartbeatAt ?? new Date().toISOString();
-    return this.invocationEffect<undefined>({ _tag: "invocation-update-projection",
-      invocationId: this.sessionId, owner, at, projection: encodeSession(snapshot), deadlineEpochMs: Date.now() + 30_000 });
+    if (owner === undefined) return Effect.fail(normalizeExternalCause(new Error("Session owner is unavailable.")));
+    const at =
+      snapshot.status === "active" ? (snapshot.heartbeatAt ?? new Date().toISOString()) : new Date().toISOString();
+    return this.invocationEffect<undefined>({
+      _tag: "invocation-update-projection",
+      invocationId: this.sessionId,
+      owner,
+      at,
+      projection: encodeSession(snapshot),
+      deadlineEpochMs: Date.now() + 30_000,
+    });
   }
 
-  private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, unknown> {
+  private persistTerminal(snapshot: SessionRecord): Effect.Effect<void, RunStorageCommandError> {
     const owner = this.owner;
-    if (owner === undefined) return Effect.fail(new Error("Session owner is unavailable."));
-    const state = snapshot.status === "completed" ? "completed" : snapshot.status === "interrupted" ? "interrupted" : "failed";
-    return this.invocationEffect<undefined>({ _tag: "invocation-close", invocationId: this.sessionId,
-      owner, state, at: snapshot.completedAt ?? new Date().toISOString(), projection: encodeSession(snapshot), deadlineEpochMs: Date.now() + 30_000 });
+    if (owner === undefined) return Effect.fail(normalizeExternalCause(new Error("Session owner is unavailable.")));
+    function terminalState() {
+      switch (snapshot.status) {
+        case "completed":
+          return "completed" as const;
+        case "interrupted":
+          return "interrupted" as const;
+        default:
+          return "failed" as const;
+      }
+    }
+    const state = terminalState();
+    return this.invocationEffect<undefined>({
+      _tag: "invocation-close",
+      invocationId: this.sessionId,
+      owner,
+      state,
+      at: "completedAt" in snapshot ? (snapshot.completedAt ?? new Date().toISOString()) : new Date().toISOString(),
+      projection: encodeSession(snapshot),
+      deadlineEpochMs: Date.now() + 30_000,
+    });
   }
 
   private heartbeatLoopEffect(): Effect.Effect<never> {
@@ -690,28 +865,28 @@ export class SessionTracker {
   private offerWriteEffect(
     persistence: SessionPersistence,
     snapshot: SessionRecord,
-  ): Effect.Effect<void, unknown> {
+  ): Effect.Effect<void, RunStorageCommandError> {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
-      const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
-        persistence.requests,
-        { _tag: "write", snapshot, completion },
-      ));
-      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before flush."));
+      const completion = yield* Deferred.make<void, RunStorageCommandError>();
+      const accepted = yield* Effect.sync(() =>
+        Queue.offerUnsafe(persistence.requests, { _tag: "write", snapshot, completion }),
+      );
+      if (!accepted)
+        return yield* Effect.fail(normalizeExternalCause(new Error("Session persistence queue closed before flush.")));
       yield* Deferred.await(completion);
     });
   }
 
-  private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, unknown> {
+  private barrierEffect(persistence: SessionPersistence): Effect.Effect<void, RunStorageCommandError> {
     this.pendingObservation = undefined;
     return Effect.gen(function* () {
-      const completion = yield* Deferred.make<void, unknown>();
-      const accepted = yield* Effect.sync(() => Queue.offerUnsafe(
-        persistence.requests,
-        { _tag: "barrier", completion },
-      ));
-      if (!accepted) return yield* Effect.fail(new Error("Session persistence queue closed before drain."));
+      const completion = yield* Deferred.make<void, RunStorageCommandError>();
+      const accepted = yield* Effect.sync(() =>
+        Queue.offerUnsafe(persistence.requests, { _tag: "barrier", completion }),
+      );
+      if (!accepted)
+        return yield* Effect.fail(normalizeExternalCause(new Error("Session persistence queue closed before drain.")));
       yield* Deferred.await(completion);
     });
   }
@@ -724,37 +899,40 @@ export class SessionTracker {
     persistence: SessionPersistence,
     exit: Exit.Exit<unknown, unknown>,
     finalSnapshot?: SessionRecord,
-  ): Effect.Effect<void, unknown> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (persistence.stopped) return Effect.void;
-      persistence.accepting = false;
-      const stopHeartbeat = persistence.heartbeat === undefined
-        ? Effect.void
-        : Fiber.interrupt(persistence.heartbeat).pipe(Effect.asVoid);
-      const drain = finalSnapshot === undefined
-        ? this.barrierEffect(persistence)
-        : this.offerWriteEffect(persistence, finalSnapshot);
-      return stopHeartbeat.pipe(
-        Effect.andThen(drain),
-        Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
-      );
-    }));
+  ): Effect.Effect<void, RunStorageCommandError> {
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (persistence.stopped) return Effect.void;
+        persistence.accepting = false;
+        const stopHeartbeat =
+          persistence.heartbeat === undefined
+            ? Effect.void
+            : Fiber.interrupt(persistence.heartbeat).pipe(Effect.asVoid);
+        const drain =
+          finalSnapshot === undefined
+            ? this.barrierEffect(persistence)
+            : this.offerWriteEffect(persistence, finalSnapshot);
+        return stopHeartbeat.pipe(
+          Effect.andThen(drain),
+          Effect.ensuring(this.releasePersistenceEffect(persistence, exit)),
+        );
+      }),
+    );
   }
 
   private releasePersistenceEffect(
     persistence: SessionPersistence,
     exit: Exit.Exit<unknown, unknown>,
   ): Effect.Effect<void> {
-    return Effect.uninterruptible(Effect.suspend(() => {
-      if (persistence.stopped) return Effect.void;
-      persistence.stopped = true;
-      if (this.persistence === persistence) this.persistence = undefined;
-      return Queue.shutdown(persistence.requests).pipe(
-        Effect.andThen(Scope.close(persistence.scope, exit)),
-      );
-    }));
+    return Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (persistence.stopped) return Effect.void;
+        persistence.stopped = true;
+        if (this.persistence === persistence) this.persistence = undefined;
+        return Queue.shutdown(persistence.requests).pipe(Effect.andThen(Scope.close(persistence.scope, exit)));
+      }),
+    );
   }
-
 }
 
 export function isSessionExpired(record: SessionRecord, nowMs = Date.now()): boolean {
@@ -768,31 +946,48 @@ function expiredProjection(record: SessionRecord): ExpiredSessionRecord {
     sessionId: record.sessionId,
     pid: record.pid,
     startedAt: record.startedAt,
-    ...(record.heartbeatAt !== undefined ? { heartbeatAt: record.heartbeatAt } : {}),
+    heartbeatAt: record.status === "active" ? record.heartbeatAt : undefined,
   };
 }
 
 /** 完整读取边界跳过无法解码的 durable projections，不拖垮整个 ProjectDatabase 查询。 */
-export function readSessions(niceevalRoot: string): Effect.Effect<SessionRecord[], unknown, ProjectStateDatabase> {
-  return Effect.flatMap(ProjectStateDatabase, (database) => Effect.flatMap(database.bind(niceevalRoot), (facets) => Effect.tryPromise({
-    try: () => facets.invocation.execute<readonly InvocationSessionRecord[]>({ _tag: "invocation-list" }),
-    catch: (cause) => cause,
-  }))).pipe(Effect.map((sessions) => sessions.flatMap((session) => {
-    const bytes = session.terminalProjection ?? session.activeProjection;
-    if (bytes === undefined) return [];
-    const decoded = decodeSessionBytes(bytes);
-    return decoded === undefined ? [] : [decoded];
-  }).sort((a, b) => a.startedAt.localeCompare(b.startedAt))));
+export function readSessions(
+  niceevalRoot: string,
+): Effect.Effect<SessionRecord[], RunStorageCommandError, ProjectStateDatabase> {
+  return Effect.flatMap(ProjectStateDatabase, (database) =>
+    Effect.flatMap(database.bind(niceevalRoot), (facets) =>
+      Effect.tryPromise({
+        try: () => facets.invocation.execute<readonly InvocationSessionRecord[]>({ _tag: "invocation-list" }),
+        catch: sessionFailure,
+      }),
+    ),
+  ).pipe(
+    Effect.map((sessions) =>
+      sessions
+        .flatMap((session) => {
+          const bytes = session.projection?.bytes;
+          if (bytes === undefined) return [];
+          const decoded = decodeSessionBytes(bytes);
+          return decoded === undefined ? [] : [decoded];
+        })
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+    ),
+  );
+}
+
+export interface SessionListOptions {
+  readonly all?: boolean | undefined;
+  readonly selector?: string | undefined;
+  readonly nowMs?: number | undefined;
 }
 
 export function sessionListDocument(
   records: readonly SessionRecord[],
-  options: { all?: boolean; selector?: string; nowMs?: number } = {},
+  options: SessionListOptions = {},
 ): SessionListDocument {
   const selector = options.selector;
-  const matches = (record: SessionRecord): boolean => selector === undefined || record.experiments.some(
-    (experiment) => experiment.experimentId.startsWith(selector),
-  );
+  const matches = (record: SessionRecord): boolean =>
+    selector === undefined || record.experiments.some((experiment) => experiment.experimentId.startsWith(selector));
   const sessions: SessionRecord[] = [];
   const expired: ExpiredSessionRecord[] = [];
   for (const record of records) {
@@ -803,13 +998,13 @@ export function sessionListDocument(
       sessions.push(cloneRecord(record));
     }
   }
-  return { format: "niceeval.sessions", sessions, expired };
+  return { sessions, expired };
 }
 
 export function listSessions(
   niceevalRoot: string,
-  options: { all?: boolean; selector?: string; nowMs?: number } = {},
-): Effect.Effect<SessionListDocument, unknown, ProjectStateDatabase> {
+  options: SessionListOptions = {},
+): Effect.Effect<SessionListDocument, RunStorageCommandError, ProjectStateDatabase> {
   return readSessions(niceevalRoot).pipe(Effect.map((records) => sessionListDocument(records, options)));
 }
 
@@ -817,7 +1012,9 @@ export function resolveSessionPrefix(records: readonly SessionRecord[], prefix: 
   const matches = records.filter((record) => record.sessionId === prefix || record.sessionId.startsWith(prefix));
   if (matches.length === 0) throw new Error(`No session matched: ${prefix}`);
   if (matches.length > 1) {
-    throw new Error(`Ambiguous session prefix ${prefix}. Candidates: ${matches.map((record) => record.sessionId).join(", ")}`);
+    throw new Error(
+      `Ambiguous session prefix ${prefix}. Candidates: ${matches.map((record) => record.sessionId).join(", ")}`,
+    );
   }
   return cloneRecord(matches[0]!);
 }
@@ -826,15 +1023,14 @@ export function showSession(
   niceevalRoot: string,
   prefix: string,
   nowMs = Date.now(),
-): Effect.Effect<SessionShowDocument, unknown, ProjectStateDatabase> {
+): Effect.Effect<SessionShowDocument, RunStorageCommandError, ProjectStateDatabase> {
   return readSessions(niceevalRoot).pipe(
     Effect.map((records) => {
       const record = resolveSessionPrefix(records, prefix);
       const expired = isSessionExpired(record, nowMs);
       return {
-        format: "niceeval.session",
         session: expired ? expiredProjection(record) : record,
-        ...(expired ? { expired: true } : {}),
+        expired: expired ? true : undefined,
       };
     }),
   );
@@ -852,46 +1048,47 @@ function ageLabel(iso: string, nowMs: number): string {
   return `${Math.floor(elapsed / 3_600_000)}h ago`;
 }
 
-function renderExperimentLine(experiment: SessionExperimentRecord, published: boolean): string {
-  if (published) {
-    return `  ${experiment.experimentId}  niceeval show --run ${experiment.runId}`;
+function renderExperimentLine(experiment: SessionExperimentRecord): string {
+  if (experiment.published) {
+    return `  ${experiment.experimentId}  niceeval show run:${experiment.runId}`;
   }
+  if (experiment.lifecycle === "terminal") return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}`;
   const counters = [
     experiment.running ? `${experiment.running} running` : "",
     experiment.queued ? `${experiment.queued} queued` : "",
     experiment.elsewhere ? `${experiment.elsewhere} elsewhere` : "",
   ].filter(Boolean);
-  return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state ?? "running"}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
-}
-
-function publishedForSession(experiment: SessionExperimentRecord, status: SessionStatus): boolean {
-  // Older session entries have no receipt marker. Preserve their established
-  // completed/interrupted behavior while new entries rely on the exact receipt.
-  return experiment.published ?? (status === "completed" || status === "interrupted");
+  return `  ${experiment.experimentId}  @run:${shortRunId(experiment.runId)}  ${experiment.state}${counters.length ? ` · ${counters.join(" · ")}` : ""}`;
 }
 
 export function renderSessionListText(document: SessionListDocument, nowMs = Date.now(), all = false): string {
-  const lines: string[] = [`ACTIVE SESSIONS (${document.sessions.filter((session) => session.status === "active").length})`];
+  const lines: string[] = [
+    `ACTIVE SESSIONS (${document.sessions.filter((session) => session.status === "active").length})`,
+  ];
   const active = document.sessions.filter((session) => session.status === "active");
   if (active.length === 0) lines.push("(none)");
   for (const session of active) {
-    lines.push(`${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`);
-    lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment, false)));
+    lines.push(
+      `${session.sessionId} · pid ${session.pid} · ${ageLabel(session.startedAt, nowMs)} · heartbeat ${ageLabel(session.heartbeatAt ?? session.startedAt, nowMs)}`,
+    );
+    lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment)));
   }
   if (all) {
     const completed = document.sessions.filter((session) => session.status !== "active");
     lines.push(`COMPLETED SESSIONS (${completed.length})`);
     if (completed.length === 0) lines.push("(none)");
     for (const session of completed) {
-      lines.push(`${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`);
-      lines.push(...session.experiments.map((experiment) =>
-        renderExperimentLine(experiment, publishedForSession(experiment, session.status))
-      ));
+      lines.push(
+        `${session.sessionId} · pid ${session.pid} · ${session.status} · completed ${session.completedAt ?? "—"}`,
+      );
+      lines.push(...session.experiments.map((experiment) => renderExperimentLine(experiment)));
     }
     if (document.expired.length > 0) {
       lines.push(`EXPIRED SESSIONS (${document.expired.length})`);
       for (const expired of document.expired) {
-        lines.push(`${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${`rerun the original command`}`);
+        lines.push(
+          `${expired.sessionId} · pid ${expired.pid} · heartbeat ${expired.heartbeatAt ?? "unknown"} · ${`rerun the original command`}`,
+        );
       }
     }
   }
@@ -900,13 +1097,26 @@ export function renderSessionListText(document: SessionListDocument, nowMs = Dat
 
 export function renderSessionShowText(document: SessionShowDocument): string {
   const session = document.session;
-  const lines = [`SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`, `pid ${session.pid} · started ${session.startedAt}`];
-  if ("status" in session) lines.push(`status ${session.status}${session.completedAt ? ` · completed ${session.completedAt}` : ""}`);
+  const lines = [
+    `SESSION ${session.sessionId}${document.expired ? " · EXPIRED" : ""}`,
+    `pid ${session.pid} · started ${session.startedAt}`,
+  ];
+  if ("status" in session) {
+    const completedAt = "completedAt" in session ? session.completedAt : undefined;
+    lines.push(`status ${session.status}${completedAt ? ` · completed ${completedAt}` : ""}`);
+  }
   if ("experiments" in session) {
-    lines.push(...session.experiments.flatMap((experiment) => [
-      renderExperimentLine(experiment, publishedForSession(experiment, session.status)),
-      ...(session.status === "active" ? (experiment.activeAttempts ?? []).map((attempt) => `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === null ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === null ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`) : []),
-    ]));
+    lines.push(
+      ...session.experiments.flatMap((experiment) => [
+        renderExperimentLine(experiment),
+        ...(experiment.lifecycle === "active"
+          ? experiment.activeAttempts.map(
+              (attempt) =>
+                `    ${attempt.evalId} #${attempt.attemptOrdinal} · ${projectLifecyclePhase(attempt.phase)} since ${attempt.phaseEnteredAt} · ${attempt.sandbox === undefined ? "no Sandbox" : `${attempt.sandbox.provider} ${attempt.sandbox.nativeInstanceId ?? "no native instance identifier"}`}\n      ${attempt.detail === undefined ? "no detail" : `${attempt.detail.at} ${attempt.detail.text}`}`,
+            )
+          : []),
+      ]),
+    );
   }
   if (document.expired) lines.push(`NEXT rerun the original command`);
   return `${lines.join("\n")}\n`;

@@ -22,16 +22,21 @@ test.concurrent("Case 目录的嵌套仓库是资产，普通文件入口旁的�
       await mkdir(dirname(file), { recursive: true });
       await writeFile(file, content!);
     }
-    await writeFile(join(projectRoot, "experiments", "case-boundary.ts"), [
-      'import { defineExperiment } from "niceeval";',
-      'import { deterministicAgent } from "../agents/deterministic.ts";',
-      'export default defineExperiment({ adapter: deterministicAgent("case-discovery"), model: "deterministic", evals: ["case-boundary"] });',
-    ].join("\n"));
+    await writeFile(
+      join(projectRoot, "experiments", "case-boundary.ts"),
+      [
+        'import { defineExperiment } from "niceeval";',
+        'import { deterministicAgent } from "../agents/deterministic.ts";',
+        'export default defineExperiment({ adapter: deterministicAgent("case-discovery"), model: "deterministic", evals: ["case-boundary"] });',
+      ].join("\n"),
+    );
     const receipt = await niceeval.run(["exp", "case-boundary", "--dry", "--json"]);
     expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
     const plan = decodeExpPlanDocument(receipt.json());
     expect(plan.matrix.map(({ evalId }) => evalId).sort()).toEqual([
-      "case-boundary/plain", "case-boundary/plain/child", "case-boundary/task",
+      "case-boundary/plain",
+      "case-boundary/plain/child",
+      "case-boundary/task",
     ]);
   });
 });

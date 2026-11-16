@@ -2,21 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Result, Schema } from "effect";
 
-import {
-  CanonicalProjectRelativePathSchema,
-  SourceItemIdSchema,
-} from "../record/codec/identifiers.ts";
+import { CanonicalProjectRelativePathSchema, SourceItemIdSchema } from "../record/codec/identifiers.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import type {
-  CanonicalProjectRelativePath,
-  Sha256Digest,
-  SlotId,
-  SourceItemId,
-} from "../record/model/identifiers.ts";
-import {
-  AssertionSourceSiteSchema,
-  type AssertionSourceSite,
-} from "../record/family/assertions/definition.ts";
+import type { CanonicalProjectRelativePath, Sha256Digest, SlotId, SourceItemId } from "../record/model/identifiers.ts";
+import { AssertionSourceSiteSchema, type AssertionSourceSite } from "../record/family/assertions/definition.ts";
 import { sourcesRecordAttachment } from "../record/family/sources/definition.ts";
 import {
   TurnContextsAttachmentSchema,
@@ -42,10 +31,7 @@ import {
   type SourcesAttachmentBuild,
   type SourcesAttachmentPlan,
 } from "../sources/attachment.ts";
-import {
-  canonicalizeSourceText,
-  isStrictUnicodeText,
-} from "../sources/codec.ts";
+import { canonicalizeSourceText, isStrictUnicodeText } from "../sources/codec.ts";
 import type { EvalResult } from "./types.ts";
 
 interface CapturedSend {
@@ -53,8 +39,7 @@ interface CapturedSend {
   readonly turnId: TurnId;
   readonly sessionIndex: number;
   readonly turnIndex: number;
-  readonly sourceOrder: number | null;
-  readonly location: SourceLoc | undefined;
+  readonly sourceSite: AssertionRuntimeSourceSite | undefined;
 }
 
 /** Package-internal runtime facts retained outside the public sealed value. */
@@ -74,8 +59,7 @@ export interface RunnerAttemptSourceCapture {
     readonly turnId: TurnId;
     readonly sessionIndex: number;
     readonly turnIndex: number;
-    readonly loc?: SourceLoc;
-    readonly sourceOrder?: number;
+    readonly sourceSite: AssertionRuntimeSourceSite | undefined;
   }) => void;
   /** Called only from the Attempt interruption boundary. */
   readonly markInterrupted: () => void;
@@ -93,9 +77,7 @@ export function retainRunnerAttemptSourceCapture(
   return result;
 }
 
-function sourceCaptureForResult(
-  result: object,
-): RunnerAttemptSourceCaptureSnapshot | undefined {
+function sourceCaptureForResult(result: object): RunnerAttemptSourceCaptureSnapshot | undefined {
   return sourceCaptureByResult.get(result);
 }
 
@@ -124,7 +106,7 @@ function sourceCaptureFrom(
 ): AssertionRuntimeSourceSite | undefined {
   const location = captureLoc({ registry });
   if (location === undefined) return undefined;
-  return Object.freeze({ location: cloneLocation(location), sourceOrder: nextSourceOrder() });
+  return { location: cloneLocation(location), sourceOrder: nextSourceOrder() };
 }
 
 /**
@@ -132,34 +114,28 @@ function sourceCaptureFrom(
  * registration/modifier facts; SessionManager owns user-event locations and
  * turn terminals. No author-facing Context value is wrapped or replaced.
  */
-export function createRunnerAttemptSourceCapture(
-  registry: SourceRegistry,
-): RunnerAttemptSourceCapture {
+export function createRunnerAttemptSourceCapture(registry: SourceRegistry): RunnerAttemptSourceCapture {
   let sourceOrder = 0;
   const sends: CapturedSend[] = [];
   let captureFailed = false;
   let assertionsRuntime: AssertionsRuntime<"pass" | "score"> | undefined;
   const nextSourceOrder = (): number => ++sourceOrder;
 
-  return Object.freeze({
+  return {
     nextSourceOrder,
     attachAssertions(runtime: AssertionsRuntime<"pass" | "score">) {
       if (assertionsRuntime !== undefined && assertionsRuntime !== runtime) {
         throw new Error("Runner source capture cannot observe two Assertions runtimes");
       }
       if (assertionsRuntime === runtime) return;
-      attachAssertionsRuntimeSourceCapture(
-        runtime,
-        () => sourceCaptureFrom(registry, nextSourceOrder),
-      );
+      attachAssertionsRuntimeSourceCapture(runtime, () => sourceCaptureFrom(registry, nextSourceOrder));
       assertionsRuntime = runtime;
     },
     onTurnStart(input: {
       readonly turnId: TurnId;
       readonly sessionIndex: number;
       readonly turnIndex: number;
-      readonly loc?: SourceLoc;
-      readonly sourceOrder?: number;
+      readonly sourceSite: AssertionRuntimeSourceSite | undefined;
     }) {
       let segmentId: string | undefined;
       try {
@@ -171,14 +147,16 @@ export function createRunnerAttemptSourceCapture(
         captureFailed = true;
         return;
       }
-      sends.push(Object.freeze({
+      sends.push({
         segmentId,
         turnId: input.turnId,
         sessionIndex: input.sessionIndex,
         turnIndex: input.turnIndex,
-        sourceOrder: input.sourceOrder ?? null,
-        location: input.loc === undefined ? undefined : cloneLocation(input.loc),
-      }));
+        sourceSite:
+          input.sourceSite === undefined
+            ? undefined
+            : { sourceOrder: input.sourceSite.sourceOrder, location: cloneLocation(input.sourceSite.location) },
+      });
     },
     markInterrupted() {
       if (assertionsRuntime !== undefined) {
@@ -186,16 +164,15 @@ export function createRunnerAttemptSourceCapture(
       }
     },
     snapshot() {
-      const assertions = assertionsRuntime === undefined
-        ? undefined
-        : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
-      return Object.freeze({
-        entries: assertions?.entries ?? Object.freeze([]),
-        sends: Object.freeze(sends.map((send) => Object.freeze({ ...send }))),
+      const assertions =
+        assertionsRuntime === undefined ? undefined : assertionsRuntimeSourceCaptureSnapshot(assertionsRuntime);
+      return {
+        entries: assertions?.entries ?? [],
+        sends: [...sends],
         captureFailed,
-      });
+      };
     },
-  });
+  };
 }
 
 export interface RunnerSourceOriginInput {
@@ -211,13 +188,9 @@ export interface RunnerSourceWritePlan {
   readonly sourceSitesBySlot: ReadonlyMap<SlotId, RunnerAssertionSourceSitesBuild>;
 }
 
-export type RunnerAssertionSourceSitesBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => readonly AssertionSourceSite[];
+export type RunnerAssertionSourceSitesBuild = (build: RecordAttachmentSessionBuilder) => readonly AssertionSourceSite[];
 
-export type RunnerTurnContextsAttachmentBuild = (
-  build: RecordAttachmentSessionBuilder,
-) => TurnContextsAttachment;
+export type RunnerTurnContextsAttachmentBuild = (build: RecordAttachmentSessionBuilder) => TurnContextsAttachment;
 
 export interface RunnerSourceProducerInvalid {
   readonly code: "runner-source-producer-invalid";
@@ -229,17 +202,12 @@ export interface RunnerSourceProducerInvalid {
     | "turn-contexts-invalid";
 }
 
-function invalid(
-  reason: RunnerSourceProducerInvalid["reason"],
-): RunnerSourceProducerInvalid {
-  return Object.freeze({ code: "runner-source-producer-invalid" as const, reason });
+function invalid(reason: RunnerSourceProducerInvalid["reason"]): RunnerSourceProducerInvalid {
+  return { code: "runner-source-producer-invalid" as const, reason };
 }
 
 function canonicalPath(path: string): CanonicalProjectRelativePath | undefined {
-  const decoded = Schema.decodeUnknownResult(
-    CanonicalProjectRelativePathSchema,
-    RecordExactParseOptions,
-  )(path);
+  const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema, RecordExactParseOptions)(path);
   return Result.isSuccess(decoded) ? decoded.success : undefined;
 }
 
@@ -251,7 +219,7 @@ interface SourceSnapshot {
 function sourceSnapshot(value: SourceArtifact): SourceSnapshot | undefined {
   const path = canonicalPath(value.path);
   if (path === undefined || !isStrictUnicodeText(value.content)) return undefined;
-  return Object.freeze({ path, text: canonicalizeSourceText(value.content) });
+  return { path, text: canonicalizeSourceText(value.content) };
 }
 
 function sourceItemId(path: CanonicalProjectRelativePath, text: string): SourceItemId {
@@ -260,10 +228,7 @@ function sourceItemId(path: CanonicalProjectRelativePath, text: string): SourceI
   // for the same immutable source, independent of plan membership or ordering.
   const digest = createHash("sha256").update(path, "utf8").update("\0", "utf8").update(text, "utf8").digest("hex");
   const candidate = `src_${digest}`;
-  const decoded = Schema.decodeUnknownResult(
-    SourceItemIdSchema,
-    RecordExactParseOptions,
-  )(candidate);
+  const decoded = Schema.decodeUnknownResult(SourceItemIdSchema, RecordExactParseOptions)(candidate);
   if (Result.isFailure(decoded)) {
     throw new Error("Runner generated an invalid Sources item identity");
   }
@@ -283,7 +248,7 @@ function coordinateFor(
   const before = row.slice(0, column - 1);
   const last = before.charCodeAt(before.length - 1);
   if (last >= 0xd800 && last <= 0xdbff) return undefined;
-  return Object.freeze({ line, column: new TextEncoder().encode(before).byteLength + 1 });
+  return { line, column: new TextEncoder().encode(before).byteLength + 1 };
 }
 
 interface SourceItemLookup {
@@ -307,7 +272,7 @@ function manifestLookup(document: SourcesAttachmentPlan): SourceManifestLookup {
       text: item.text,
     });
   }
-  return Object.freeze({ files });
+  return { files };
 }
 
 interface PendingAssertionSourceSite {
@@ -337,7 +302,7 @@ function sourceSite(
   if (local === undefined || source === undefined || source.text !== local) return undefined;
   const coordinate = coordinateFor(local, input.location.line, input.location.column);
   if (coordinate === undefined) return undefined;
-  return Object.freeze({
+  return {
     entryId: input.entryId,
     sourceOrder: input.sourceOrder,
     role: input.role,
@@ -345,13 +310,10 @@ function sourceSite(
     sha256: source.sha256,
     start: coordinate,
     end: coordinate,
-  });
+  };
 }
 
-function sourceSiteOrder(
-  left: PendingAssertionSourceSite,
-  right: PendingAssertionSourceSite,
-): number {
+function sourceSiteOrder(left: PendingAssertionSourceSite, right: PendingAssertionSourceSite): number {
   const byEntry = left.entryId.localeCompare(right.entryId);
   return byEntry === 0 ? left.sourceOrder - right.sourceOrder : byEntry;
 }
@@ -363,7 +325,7 @@ function sourceSitesForOrigin(
 ): Result.Result<readonly PendingAssertionSourceSite[], RunnerSourceProducerInvalid> {
   const capture = sourceCaptureForResult(origin.result);
   if (capture === undefined || capture.entries.length !== origin.assertionEntryIds.length) {
-    return Result.succeed(Object.freeze([]));
+    return Result.succeed([]);
   }
 
   const sourceSites: PendingAssertionSourceSite[] = [];
@@ -377,17 +339,21 @@ function sourceSitesForOrigin(
         return Result.fail(invalid("source-sites-invalid"));
       }
       orders.add(occurrence.site.sourceOrder);
-      const site = sourceSite({
-        entryId,
-        sourceOrder: occurrence.site.sourceOrder,
-        role: occurrence.role,
-        location: occurrence.site.location,
-      }, localFiles, lookup);
+      const site = sourceSite(
+        {
+          entryId,
+          sourceOrder: occurrence.site.sourceOrder,
+          role: occurrence.role,
+          location: occurrence.site.location,
+        },
+        localFiles,
+        lookup,
+      );
       if (site !== undefined) sourceSites.push(site);
     }
   }
   sourceSites.sort(sourceSiteOrder);
-  return Result.succeed(Object.freeze(sourceSites));
+  return Result.succeed(sourceSites);
 }
 
 /**
@@ -416,11 +382,9 @@ export function createRunnerSourceWritePlan(
   }
 
   const sourcesAttachment = createSourcesAttachment({
-    items: Object.freeze(
-      [...textsByPath.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([path, text]) => Object.freeze({ sourceItemId: sourceItemId(path, text), path, text })),
-    ),
+    items: [...textsByPath.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([path, text]) => ({ sourceItemId: sourceItemId(path, text), path, text })),
   });
   if (Result.isFailure(sourcesAttachment)) return Result.fail(invalid("sources-write-invalid"));
 
@@ -433,7 +397,7 @@ export function createRunnerSourceWritePlan(
     const sites = sourceSitesForOrigin(origin, local, lookup);
     if (Result.isFailure(sites)) return Result.fail(sites.failure);
     sourceSitesBySlot.set(origin.slotId, (build) => {
-      const candidate = Object.freeze(sites.success.map((site) => Object.freeze({
+      const candidate = sites.success.map((site) => ({
         entryId: site.entryId,
         sourceOrder: site.sourceOrder,
         role: site.role,
@@ -443,7 +407,7 @@ export function createRunnerSourceWritePlan(
         }),
         start: site.start,
         end: site.end,
-      })));
+      }));
       const decoded = Schema.decodeResult(
         Schema.toType(Schema.Array(AssertionSourceSiteSchema)),
         RecordExactParseOptions,
@@ -451,14 +415,14 @@ export function createRunnerSourceWritePlan(
       if (Result.isFailure(decoded)) {
         throw new Error("Runner source-site capture violated its current schema");
       }
-      return Object.freeze(decoded.success);
+      return decoded.success;
     });
   }
 
-  const plan = Object.freeze({
+  const plan = {
     sources: sourcesAttachment.success.value,
     sourceSitesBySlot: new Map(sourceSitesBySlot),
-  });
+  };
   sourceManifestByPlan.set(plan, lookup);
   return Result.succeed(plan);
 }
@@ -475,10 +439,7 @@ function localSourceTexts(result: EvalResult): ReadonlyMap<CanonicalProjectRelat
 type PendingTurnContextSource =
   | {
       readonly state: "unmapped";
-      readonly reason:
-        | "location-not-captured"
-        | "source-snapshot-not-recorded"
-        | "position-unrepresentable";
+      readonly reason: "location-not-captured" | "source-snapshot-not-recorded" | "position-unrepresentable";
     }
   | {
       readonly state: "mapped";
@@ -493,29 +454,30 @@ function turnContextSource(input: {
   readonly local: ReadonlyMap<CanonicalProjectRelativePath, string>;
   readonly sources: SourceManifestLookup;
 }): PendingTurnContextSource {
-  if (input.capture.location === undefined) {
-    return Object.freeze({ state: "unmapped" as const, reason: "location-not-captured" as const });
+  const sourceSite = input.capture.sourceSite;
+  if (sourceSite === undefined) {
+    return { state: "unmapped" as const, reason: "location-not-captured" as const };
   }
-  const path = canonicalPath(input.capture.location.file);
+  const path = canonicalPath(sourceSite.location.file);
   if (path === undefined) {
-    return Object.freeze({ state: "unmapped" as const, reason: "position-unrepresentable" as const });
+    return { state: "unmapped" as const, reason: "position-unrepresentable" as const };
   }
   const text = input.local.get(path);
   const item = input.sources.files.get(path);
   if (text === undefined || item === undefined || item.text !== text) {
-    return Object.freeze({ state: "unmapped" as const, reason: "source-snapshot-not-recorded" as const });
+    return { state: "unmapped" as const, reason: "source-snapshot-not-recorded" as const };
   }
-  const position = coordinateFor(text, input.capture.location.line, input.capture.location.column);
+  const position = coordinateFor(text, sourceSite.location.line, sourceSite.location.column);
   if (position === undefined) {
-    return Object.freeze({ state: "unmapped" as const, reason: "position-unrepresentable" as const });
+    return { state: "unmapped" as const, reason: "position-unrepresentable" as const };
   }
-  return Object.freeze({
+  return {
     state: "mapped" as const,
     sourceItemId: item.sourceItemId,
     sha256: item.sha256,
     start: position,
     end: position,
-  });
+  };
 }
 
 /**
@@ -538,38 +500,39 @@ export function createRunnerTurnContextsAttachment(input: {
   const local = localSourceTexts(input.result);
   // The family is ordered by session and physical turn, while sourceOrder
   // retains author invocation order when sends interleave across sessions.
-  const segments = capture.sends.toSorted((left, right) =>
-    left.sessionIndex - right.sessionIndex || left.turnIndex - right.turnIndex,
-  ).map((captured, index) => Object.freeze({
-    segmentId: captured.segmentId,
-    sequence: index + 1,
-    turnId: captured.turnId,
-    sessionIndex: captured.sessionIndex,
-    turnIndex: captured.turnIndex,
-    sourceOrder: captured.sourceOrder,
-    source: turnContextSource({ capture: captured, local, sources }),
-  }));
+  const segments = capture.sends
+    .toSorted((left, right) => left.sessionIndex - right.sessionIndex || left.turnIndex - right.turnIndex)
+    .map((captured, index) => ({
+      segmentId: captured.segmentId,
+      sequence: index + 1,
+      turnId: captured.turnId,
+      sessionIndex: captured.sessionIndex,
+      turnIndex: captured.turnIndex,
+      sourceOrder: captured.sourceSite?.sourceOrder ?? null,
+      source: turnContextSource({ capture: captured, local, sources }),
+    }));
   const collection = capture.captureFailed
     ? (() => {
-        const first: SourceReceiptLimitation = Object.freeze({
+        const first: SourceReceiptLimitation = {
           code: "capture-failed" as const,
           stage: "session-manager" as const,
           target: "turn-context" as const,
-        });
+        };
         const limitations: readonly [SourceReceiptLimitation, ...SourceReceiptLimitation[]] = [first];
-        return Object.freeze({ state: "partial" as const, limitations });
+        return { state: "partial" as const, limitations };
       })()
-    : Object.freeze({ state: "complete" as const, limitations: [] as const });
+    : { state: "complete" as const, limitations: [] as const };
   return Result.succeed((build) => {
-    const candidate = Object.freeze({
+    const candidate = {
       collection,
-      segments: Object.freeze(segments.map((segment) => Object.freeze({
+      segments: segments.map((segment) => ({
         ...segment,
-        source: segment.source.state === "unmapped"
-          ? segment.source
-          : build.reference.to(sourcesRecordAttachment, segment.source),
-      }))),
-    });
+        source:
+          segment.source.state === "unmapped"
+            ? segment.source
+            : build.reference.to(sourcesRecordAttachment, segment.source),
+      })),
+    };
     const decoded = Schema.decodeResult(
       Schema.toType(TurnContextsAttachmentSchema),
       RecordExactParseOptions,

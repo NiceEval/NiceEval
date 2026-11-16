@@ -7,9 +7,7 @@ const node = process.execPath;
 // @feature docs/feature/sandbox/README.md
 
 test("PTY startup failure after helper configuration closes its helper and launcher groups", async () => {
-  await expect(startPty(["/definitely-not-an-e2e-executable"], { graceMs: 100 })).rejects.toThrow(
-    "pty helper",
-  );
+  await expect(startPty(["/definitely-not-an-e2e-executable"], { graceMs: 100 })).rejects.toThrow("pty helper");
 });
 // @feature docs/feature/sandbox/README.md
 
@@ -39,10 +37,9 @@ test("PTY launcher lookup failure closes the listening control server before rem
 
 test("PTY sends hostile candidate argv only through the private control frame", async () => {
   const hostile = ["two words", "*", "$(not-a-command)", "'single'\"double\"", "line\nbreak", "; echo escaped"];
-  const pty = await startPty(
-    [node, "-e", "process.stdout.write(JSON.stringify(process.argv.slice(1)))", ...hostile],
-    { timeoutMs: 5_000 },
-  );
+  const pty = await startPty([node, "-e", "process.stdout.write(JSON.stringify(process.argv.slice(1)))", ...hostile], {
+    timeoutMs: 5_000,
+  });
   const receipt = await pty.wait();
   expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
   expect(JSON.parse(receipt.clean)).toEqual(hostile);
@@ -79,7 +76,11 @@ test("PTY rejects a sentinel first checked after candidate exit when whileRunnin
 
 test("PTY timeout kills a TERM-ignoring candidate and its descendant, then proves all owned groups terminal", async () => {
   const pty = await startPty(
-    [node, "-e", "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); process.stdout.write('cleanup-ready\\n'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+    [
+      node,
+      "-e",
+      "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); process.stdout.write('cleanup-ready\\n'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)",
+    ],
     { timeoutMs: 3_000, graceMs: 200 },
   );
   await pty.waitForText("cleanup-ready", { timeoutMs: 2_000, whileRunning: true });

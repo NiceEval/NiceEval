@@ -28,13 +28,15 @@ export default defineConfig({
       cacheWritePerMTok: 0.25,
     },
   },
-  ...(judgeBaseUrl === undefined ? {} : {
-    judgeProvider: OpenAIProvider({
-      model: "judge-e2e",
-      baseUrl: judgeBaseUrl,
-      apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
-      timeoutMs: 10_000,
-      maxOutputTokens: 128,
-    }),
-  }),
+  ...(judgeBaseUrl === undefined
+    ? {}
+    : {
+        judgeProvider: OpenAIProvider({
+          model: "judge-e2e",
+          baseUrl: judgeBaseUrl,
+          apiKeyEnv: "NICEEVAL_E2E_JUDGE_KEY",
+          timeoutMs: 10_000,
+          maxOutputTokens: 128,
+        }),
+      }),
 });

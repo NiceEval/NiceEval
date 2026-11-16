@@ -1,0 +1,74 @@
+import { defineExperiment } from "niceeval";
+import { completeEvidenceCoverage, defineSandboxAgent, type AgentInstaller } from "niceeval/adapter";
+import { dockerSandbox, shell, type SandboxCommandTarget } from "niceeval/sandbox";
+import { pollUntil } from "@niceeval/testkit";
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+
+const identity = { agent: "repair-fixture", version: "1.0.0", revision: "1" };
+const scenario: string = "repaired";
+const repair = async (sandbox: SandboxCommandTarget) => {
+  console.error("install-repair-callback-entered");
+  if (scenario === "repair-throws" || scenario === "repair-detail") throw new Error("fixture repair failed");
+  if (scenario !== "repair-misses") await sandbox.runShellOrThrow("touch /tmp/install-repaired");
+};
+const installer: AgentInstaller =
+  scenario === "verify-only"
+    ? {
+        identity,
+        installMode: "verify-only",
+        repair,
+      }
+    : scenario === "repaired"
+      ? {
+          identity,
+          installMode: "staged",
+          repair,
+          prepareArtifact() {
+            throw new Error("repair must complete without preparing a payload");
+          },
+          async install() {
+            throw new Error("repair must complete without installation");
+          },
+        }
+      : {
+          identity,
+          installMode: "sandbox-network",
+          repair,
+          async install(sandbox) {
+            if (scenario === "repair-detail") {
+              await writeFile("ensure-install-entered", "ready");
+              await pollUntil(async () => (existsSync("ensure-install-release") ? true : undefined), {
+                timeoutMs: 60_000,
+                intervalMs: 50,
+                label: "installation inspection release",
+              });
+            }
+            await sandbox.runShellOrThrow("touch /tmp/install-repaired");
+          },
+        };
+export default defineExperiment({
+  adapter: defineSandboxAgent({
+    name: "repair-fixture",
+    evidenceCoverage: completeEvidenceCoverage,
+    install: {
+      identity,
+      probe: shell(
+        scenario === "repair-detail"
+          ? `test -f /tmp/install-repaired || { printf 'earlier line\\n\\033[31mmissing ${"x".repeat(191)}😀tail\\007\\033[0m\\n\\n' >&2; exit 1; }`
+          : "test -f /tmp/install-repaired || { printf 'missing fixture link\\n' >&2; exit 1; }",
+      ),
+    },
+    installers: [installer],
+    async send() {
+      return { status: "completed", events: [] };
+    },
+  }),
+  sandbox: dockerSandbox({
+    source: {
+      type: "image",
+      image: "niceeval/codex@sha256:e0b8c9b08058a30843537ca9cef7e3508e880edc0f5aba704e29636a2e7d5cd5",
+    },
+  }),
+  evals: ["install-repair"],
+});

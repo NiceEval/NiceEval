@@ -12,8 +12,7 @@ import { heuristicTag, tagSpan } from "../canonical.ts";
 
 export function mapClaudeCodeSpans(spans: TraceSpan[]): TraceSpan[] {
   return spans.map((s) => {
-    const tagged =
-      s.name === "claude_code.interaction" ? tagSpan(s, { kind: "turn" }) : tagSpan(s, heuristicTag(s));
+    const tagged = s.name === "claude_code.interaction" ? tagSpan(s, { kind: "turn" }) : tagSpan(s, heuristicTag(s));
     const tuid = tagged.attributes?.["tool_use_id"];
     if (typeof tuid === "string" && tagged.attributes?.["call_id"] === undefined) {
       const attributes: globalThis.Record<string, JsonValue> = { ...tagged.attributes, call_id: tuid };

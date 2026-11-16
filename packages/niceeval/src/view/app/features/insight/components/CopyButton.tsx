@@ -1,8 +1,12 @@
 import { useState, type ReactNode } from "react";
 
-export function CopyButton({ text, className, children }: {
+export function CopyButton({
+  text,
+  className,
+  children,
+}: {
   readonly text: string;
-  readonly className?: string;
+  readonly className: string | undefined;
   readonly children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -27,5 +31,10 @@ export function CopyButton({ text, className, children }: {
       }
     }
   };
-  return <button type="button" className={className} onClick={() => void copy()}>{children}{copied ? " ✓" : ""}</button>;
+  return (
+    <button type="button" className={className} onClick={() => void copy()}>
+      {children}
+      {copied ? " ✓" : ""}
+    </button>
+  );
 }

@@ -1,7 +1,4 @@
-import {
-  defineRecordAttachment,
-  RecordOwner,
-} from "../../attachment/index.ts";
+import { defineRecordAttachment, RecordOwner } from "../../attachment/index.ts";
 import { AssertionsAttachmentSchema } from "./schema.ts";
 import { validateAssertionsAttachment } from "./validate.ts";
 

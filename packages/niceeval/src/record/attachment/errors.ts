@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 
 /** Attachment-local data and closure failures for the closed fixed catalog. */
 export const RecordAttachmentIssueCodeSchema = Schema.Literals([
@@ -26,23 +27,20 @@ export interface RecordAttachmentIssue {
   readonly path: readonly string[];
 }
 
-export type NonEmptyRecordAttachmentIssues = readonly [
-  RecordAttachmentIssue,
-  ...RecordAttachmentIssue[],
-];
+export type NonEmptyRecordAttachmentIssues = readonly [RecordAttachmentIssue, ...RecordAttachmentIssue[]];
 
 export function recordAttachmentIssue(
   code: RecordAttachmentIssueCode,
   path: readonly string[] = [],
 ): RecordAttachmentIssue {
-  return Object.freeze({ code, path: Object.freeze([...path]) });
+  return { code, path };
 }
 
 export function nonEmptyRecordAttachmentIssues(
   issues: readonly RecordAttachmentIssue[],
 ): NonEmptyRecordAttachmentIssues | undefined {
   const [first, ...rest] = issues;
-  return first === undefined ? undefined : Object.freeze([first, ...rest]);
+  return first === undefined ? undefined : [first, ...rest];
 }
 
 function nonEmptyOrInvariant(issues: readonly RecordAttachmentIssue[]): NonEmptyRecordAttachmentIssues {
@@ -73,7 +71,6 @@ export interface RecordAttachmentClosureInvalid {
 export type RecordAttachmentSpiFailure =
   | {
       readonly code: "invalid-family-definition";
-      readonly cause?: unknown;
     }
   | {
       readonly code: "duplicate-family";
@@ -87,51 +84,33 @@ export type RecordAttachmentSpiFailure =
     }
   | {
       readonly code: "exact-decode-failed";
-      readonly cause?: unknown;
     }
   | {
       readonly code: "invariant-failed";
       readonly issues: NonEmptyRecordAttachmentIssues;
-      readonly cause?: unknown;
     }
   | {
       readonly code: "content-closure-failed";
-      readonly issues?: NonEmptyRecordAttachmentIssues;
-      readonly cause?: unknown;
+      readonly issues: NonEmptyRecordAttachmentIssues;
     }
   | {
       readonly code: "reference-closure-failed";
-      readonly cause?: unknown;
     }
   | {
       readonly code: "resource-budget-exceeded";
       readonly resource: "value" | "content" | "reference";
-      readonly cause?: unknown;
-    }
-  | {
-      readonly code: "migration-chain-invalid";
-      readonly cause?: unknown;
-    }
-  | {
-      readonly code: "migration-step-failed";
-      readonly from: number;
-      readonly to: number;
-      readonly cause: unknown;
     };
 
 /** Synchronous declaration factories fail before a catalog can gain authority. */
 export class RecordAttachmentSpiDefinitionError extends Error {
+  readonly cause: ExternalCause | undefined;
   constructor(
-    readonly code: "invalid-family-definition" | "migration-chain-invalid" =
-      "invalid-family-definition",
-    readonly cause?: unknown,
+    readonly code: "invalid-family-definition" = "invalid-family-definition",
+    cause?: unknown,
   ) {
-    super(
-      code === "migration-chain-invalid"
-        ? "Invalid Record Attachment migration chain"
-        : "Invalid Record Attachment family definition",
-      { cause },
-    );
+    const normalized = cause === undefined ? undefined : normalizeExternalCause(cause);
+    super("Invalid Record Attachment family definition", { cause: normalized });
+    this.cause = normalized;
     this.name = "RecordAttachmentSpiDefinitionError";
   }
 }
@@ -139,26 +118,26 @@ export class RecordAttachmentSpiDefinitionError extends Error {
 export function recordAttachmentDefinitionInvalid(
   issues: readonly RecordAttachmentIssue[],
 ): RecordAttachmentDefinitionError {
-  return Object.freeze({
+  return {
     code: "record-attachment-definition-invalid",
     issues: nonEmptyOrInvariant(issues),
-  });
+  };
 }
 
 export function recordAttachmentPayloadInvalid(
   issues: readonly RecordAttachmentIssue[],
 ): RecordAttachmentPayloadInvalid {
-  return Object.freeze({
+  return {
     code: "record-attachment-payload-invalid",
     issues: nonEmptyOrInvariant(issues),
-  });
+  };
 }
 
 export function recordAttachmentClosureInvalid(
   issues: readonly RecordAttachmentIssue[],
 ): RecordAttachmentClosureInvalid {
-  return Object.freeze({
+  return {
     code: "record-attachment-closure-invalid",
     issues: nonEmptyOrInvariant(issues),
-  });
+  };
 }

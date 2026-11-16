@@ -9,7 +9,13 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
+import {
+  compilePatterns,
+  enumerationBases,
+  includedByPatterns,
+  unmatchedIncludes,
+  type CompiledPattern,
+} from "./glob.ts";
 
 /**
  * 一次发现期求值的登记表:
@@ -26,6 +32,8 @@ interface LoaderCapture {
   readonly origins: Map<string, LoaderCaptureBuckets>;
   /** No usable caller frame: discovery conservatively attributes these to all entries. */
   readonly unattributed: LoaderCaptureBuckets;
+  /** The Eval entry whose evaluation this capture wraps, when discovery knows it. */
+  readonly entryPath: string | undefined;
 }
 
 interface LoaderCaptureBuckets {
@@ -65,7 +73,9 @@ export function enterLoaderDiscoveryHost(): void {
 /** Reports a loader read after discovery has closed; load data at module top level and retain it for tests and lifecycle hooks. */
 export class LoaderOutsideDiscoveryError extends Error {
   constructor(path: string) {
-    super(`Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`);
+    super(
+      `Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`,
+    );
     this.name = "LoaderOutsideDiscoveryError";
   }
 }
@@ -82,6 +92,7 @@ function assertLoaderTiming(path: string): void {
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
+  options: { readonly entryPath?: string | undefined } = {},
 ): Promise<{
   value: T;
   paths: string[];
@@ -98,6 +109,7 @@ export async function captureLoadedFiles<T>(
     private: new Set<string>(),
     origins: new Map<string, LoaderCaptureBuckets>(),
     unattributed: newBuckets(),
+    entryPath: options.entryPath === undefined ? undefined : resolve(options.entryPath),
   };
   activeCapture = capture;
   try {
@@ -107,19 +119,19 @@ export async function captureLoadedFiles<T>(
       paths: [...capture.data].sort(),
       criteriaPaths: [...capture.criteria].sort(),
       privatePaths: [...capture.private].sort(),
-      origins: Object.freeze([...capture.origins.entries()]
-        .map(([sourcePath, buckets]) => Object.freeze({
+      origins: [...capture.origins.entries()]
+        .map(([sourcePath, buckets]) => ({
           sourcePath,
-          paths: Object.freeze([...buckets.data].sort()),
-          criteriaPaths: Object.freeze([...buckets.criteria].sort()),
-          privatePaths: Object.freeze([...buckets.private].sort()),
+          paths: [...buckets.data].sort(),
+          criteriaPaths: [...buckets.criteria].sort(),
+          privatePaths: [...buckets.private].sort(),
         }))
-        .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath))),
-      unattributed: Object.freeze({
-        paths: Object.freeze([...capture.unattributed.data].sort()),
-        criteriaPaths: Object.freeze([...capture.unattributed.criteria].sort()),
-        privatePaths: Object.freeze([...capture.unattributed.private].sort()),
-      }),
+        .sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
+      unattributed: {
+        paths: [...capture.unattributed.data].sort(),
+        criteriaPaths: [...capture.unattributed.criteria].sort(),
+        privatePaths: [...capture.unattributed.private].sort(),
+      },
     };
   } finally {
     activeCapture = previous;
@@ -134,11 +146,19 @@ function newBuckets(): LoaderCaptureBuckets {
   };
 }
 
-/** Best-effort source ownership for a public loader call, without exposing it as an API. */
-function loaderCallerPath(): string | undefined {
+/**
+ * Best-effort source frames for a public loader call, innermost first and
+ * without this module. V8 keeps `async` frames, so a helper function called
+ * from an Eval's top level still shows the Eval entry after an await.
+ */
+function loaderCallerFrames(): string[] {
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = Infinity;
   const stack = new Error().stack;
-  if (stack === undefined) return undefined;
+  Error.stackTraceLimit = limit;
+  if (stack === undefined) return [];
   const self = resolve(fileURLToPath(import.meta.url));
+  const frames: string[] = [];
   for (const line of stack.split("\n").slice(1)) {
     const match = line.match(/(?:file:\/\/)?(\/.*?):\d+:\d+/);
     if (match?.[1] === undefined) continue;
@@ -149,16 +169,25 @@ function loaderCallerPath(): string | undefined {
       continue;
     }
     const absolute = resolve(candidate);
-    if (absolute !== self) return absolute;
+    if (absolute !== self) frames.push(absolute);
   }
-  return undefined;
+  return frames;
 }
 
+/**
+ * A read made while the captured Eval entry is on the stack belongs to that
+ * entry alone, even when a shared helper function performs it; the direct
+ * capture already records it. Otherwise the innermost module owns the read
+ * (a helper evaluating its own top level), and discovery copies it to every
+ * entry that imports that module.
+ */
 function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string): void {
   const capture = activeCapture;
   if (capture === undefined) return;
   capture[bucket].add(absolute);
-  const caller = loaderCallerPath();
+  const frames = loaderCallerFrames();
+  if (capture.entryPath !== undefined && frames.includes(capture.entryPath)) return;
+  const caller = frames[0];
   if (caller === undefined) {
     capture.unattributed[bucket].add(absolute);
     return;
@@ -179,7 +208,10 @@ function resolvedPath(path: string | URL): string {
 }
 
 function fromFileUrl(url: URL): string {
-  if (url.protocol !== "file:") throw new Error(`A URL passed to a loader must use the file: protocol, but got ${url.protocol} (${url.href}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.`);
+  if (url.protocol !== "file:")
+    throw new Error(
+      `A URL passed to a loader must use the file: protocol, but got ${url.protocol} (${url.href}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.`,
+    );
   return fileURLToPath(url);
 }
 
@@ -245,7 +277,13 @@ export type CriteriaPattern = string | RelativeCriteriaPattern;
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadCriteria(...patterns: CriteriaPattern[]): Promise<string[]> {
-  assertLoaderTiming(patterns.map(pattern => typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`).join(" "));
+  assertLoaderTiming(
+    patterns
+      .map((pattern) =>
+        typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`,
+      )
+      .join(" "),
+  );
   return registerGlobPatterns(patterns.map(normalizeCriteriaPattern), "criteria");
 }
 
@@ -276,10 +314,7 @@ export async function loadPrivate(...patterns: string[]): Promise<string[]> {
   return registerGlobPatterns(patterns, "private");
 }
 
-async function registerGlobPatterns(
-  patterns: string[],
-  bucket: "criteria" | "private",
-): Promise<string[]> {
+async function registerGlobPatterns(patterns: string[], bucket: "criteria" | "private"): Promise<string[]> {
   assertLoaderTiming(patterns.join(" "));
   const root = process.cwd();
   const compiled = compilePatterns(patterns);
@@ -293,16 +328,23 @@ async function registerGlobPatterns(
   const missing = unmatchedIncludes(compiled, relativePaths);
   if (missing.length > 0) {
     const patterns = missing.join(" ");
-    throw new Error(bucket === "private"
-      ? `These loadPrivate patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the private files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk; letting this pass silently would drop hidden inputs from the leak gate and the fingerprint.`
-      : `These loadCriteria patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.`);
+    throw new Error(
+      bucket === "private"
+        ? `These loadPrivate patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the private files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk; letting this pass silently would drop hidden inputs from the leak gate and the fingerprint.`
+        : `These loadCriteria patterns matched no files (or everything they matched was excluded by a later \`!\` pattern): ${patterns}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root ${root}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.`,
+    );
   }
   for (const path of relativePaths) registerCapturePath(bucket, resolve(root, path));
   return relativePaths;
 }
 
 /** 从一个枚举起点往下走,把命中 pattern 集的文件按项目根相对路径收进 out。 */
-async function collectCriteria(root: string, base: string, compiled: readonly CompiledPattern[], out: Set<string>): Promise<void> {
+async function collectCriteria(
+  root: string,
+  base: string,
+  compiled: readonly CompiledPattern[],
+  out: Set<string>,
+): Promise<void> {
   // pattern 自己就指到根外(`../`、绝对路径)时在起点上先报,不用等枚举。
   await assertInsideRoot(root, resolve(root, base), base || ".");
   // 符号链接可以指回树内,realpath 去重防环。
@@ -341,7 +383,9 @@ async function collectCriteria(root: string, base: string, compiled: readonly Co
 async function assertInsideRoot(root: string, absolute: string, shown: string): Promise<void> {
   const real = await realpath(absolute).catch(() => absolute);
   if (real !== root && !real.startsWith(`${root}${sep}`)) {
-    throw new Error(`loadCriteria matched "${shown}", which lands outside the project root (it resolves to ${real}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root ${root}, or exclude that link with a \`!\` pattern.`);
+    throw new Error(
+      `loadCriteria matched "${shown}", which lands outside the project root (it resolves to ${real}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root ${root}, or exclude that link with a \`!\` pattern.`,
+    );
   }
 }
 
@@ -360,7 +404,9 @@ export async function loadYaml<T>(path: string | URL, decode: DataDecoder<T>): P
   try {
     ({ parse } = (await import(yamlPkg)) as { parse(s: string): unknown });
   } catch {
-    throw new Error(`loadYaml("${String(path)}") needs a YAML parser: run \`pnpm add yaml\` first (or switch to loadJson with a JSON dataset).`);
+    throw new Error(
+      `loadYaml("${String(path)}") needs a YAML parser: run \`pnpm add yaml\` first (or switch to loadJson with a JSON dataset).`,
+    );
   }
   return decode(parse(raw));
 }

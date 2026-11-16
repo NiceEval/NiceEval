@@ -10,7 +10,6 @@ import type {
   CollectionMatch,
   ManagedToolCalls,
   MatchDiagnostic,
-  NumericComparator,
   NumericMaterial,
   NumericComparisonMatch,
   ScoreMatch,
@@ -42,8 +41,7 @@ export interface AssertionSnapshotObject {
 }
 
 export interface AssertionDisplay {
-  readonly key?: string;
-  readonly label?: string;
+  readonly label: string | undefined;
   readonly groupPath: readonly string[];
 }
 
@@ -64,10 +62,15 @@ export type AssertionCoverage =
 
 export type AssertionLimitation =
   | { readonly kind: "redacted"; readonly fieldCount: number }
-  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal?: number }
+  | { readonly kind: "sampled"; readonly captured: number; readonly knownTotal: number | undefined }
   | { readonly kind: "truncated"; readonly omittedBytes: number }
   | { readonly kind: "provider-limited" }
-  | { readonly kind: "capacity-limited"; readonly capturedItems: number; readonly knownTotalItems: number; readonly omittedBytes: number | null };
+  | {
+      readonly kind: "capacity-limited";
+      readonly capturedItems: number;
+      readonly knownTotalItems: number;
+      readonly omittedBytes: number | null;
+    };
 
 /**
  * Authoring material intentionally has no blob ref, attachment entry ID, or
@@ -89,13 +92,9 @@ export type AssertionCriterion =
       readonly matcher: { readonly state: "declared"; readonly name: string } | { readonly state: "unavailable" };
     }
   | {
-      /** Package-private runtime variant encoded as numeric-comparison/v1. */
+      /** Package-private runtime variant encoded as numeric-comparison. */
       readonly kind: "value-match";
-      readonly numeric: {
-        readonly comparator: NumericComparator;
-        readonly threshold: number;
-        readonly upperThreshold?: number;
-        readonly unit?: import("./quantity.ts").Unit;
+      readonly numeric: import("./match.ts").NumericComparison & {
         readonly subject:
           | { readonly kind: "explicit-value" }
           | {
@@ -127,13 +126,14 @@ export type AssertionCriterion =
       readonly scope: "turn" | "session" | "attempt";
       readonly occurrence: "tool" | "skill" | "event";
       readonly assertion: "present" | "absent" | "count" | "order";
-      readonly matcher?: string;
-      readonly quantifier?:
+      readonly matcher: string | undefined;
+      readonly quantifier:
         | { readonly kind: "absent" }
         | {
             readonly kind: "at-least" | "less-than" | "at-most" | "greater-than" | "exact";
             readonly count: number;
-          };
+          }
+        | undefined;
     }
   | {
       readonly kind: "judge-measurement";
@@ -141,7 +141,7 @@ export type AssertionCriterion =
       readonly scale: "unit-interval";
     }
   | {
-      readonly kind: "managed-score-measurement";
+      readonly kind: "managed-score-measurement" | "agent-judge-measurement";
       readonly name: string;
       readonly scale: "unit-interval";
     }
@@ -152,15 +152,27 @@ export type AssertionCriterion =
     }
   | { readonly kind: "sandbox-change-scope"; readonly paths: readonly string[] }
   | { readonly kind: "sandbox-unchanged-within"; readonly paths: readonly string[] }
-  | { readonly kind: "sandbox-in-diff"; readonly pattern: string; readonly flags: string; readonly content: "added" | "removed" | "both" }
+  /** Matches only agent-attributed changed paths; content elision does not affect the result. */
+  | {
+      readonly kind: "sandbox-diff-paths";
+      readonly operation: "not-in-diff" | "in-diff";
+      readonly pattern: string;
+      readonly flags: string;
+    }
+  | {
+      readonly kind: "sandbox-in-diff";
+      readonly pattern: string;
+      readonly flags: string;
+      readonly content: "added" | "removed" | "both";
+    }
   | { readonly kind: "sandbox-result"; readonly operation: "no-changes" }
   | {
       readonly kind: "sandbox-result";
       readonly operation: "file-changed";
       readonly path: string;
-      readonly status?: "added" | "modified" | "deleted";
-      readonly before?: string;
-      readonly after?: string;
+      readonly status: "added" | "modified" | "deleted" | undefined;
+      readonly before: string | undefined;
+      readonly after: string | undefined;
     }
   | { readonly kind: "sandbox-result"; readonly operation: "file-deleted"; readonly path: string }
   | {
@@ -203,12 +215,10 @@ export type MatcherRelationStatus =
   | { readonly state: "exact" }
   | {
       readonly state: "unavailable";
-      readonly reason:
-        | "historical-not-recorded"
-        | "source-unavailable"
-        | "ambiguous";
+      readonly reason: "historical-not-recorded" | "source-unavailable" | "ambiguous";
     };
 
+// Record JSON boundary: locators are shared with the persisted matcher artifact codec.
 export type MatcherSourceLocator =
   | {
       readonly kind: "tool-occurrence";
@@ -225,7 +235,7 @@ export type MatcherSourceLocator =
 export interface MatcherRetainedRow {
   readonly locator: MatcherSourceLocator;
   readonly result: "matched" | "mismatched" | "unavailable" | "not-evaluated";
-  readonly difference?: AssertionSnapshotValue;
+  readonly difference: AssertionSnapshotValue | undefined;
 }
 
 export interface MatcherQueryStep {
@@ -242,7 +252,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -253,7 +262,6 @@ export type MatcherSourceSnapshot =
       readonly throughSessionSequence: number;
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     }
@@ -266,7 +274,6 @@ export type MatcherSourceSnapshot =
       }[];
       readonly source: {
         readonly family: "niceeval.agent-turns";
-        readonly schemaVersion: number;
       };
       readonly collectionAtCut: "complete" | "partial" | "unavailable";
     };
@@ -317,10 +324,7 @@ export type MatcherQueryArtifact =
     }
   | {
       readonly kind: "ordered-sequence";
-      readonly sourceSnapshot: Extract<
-        MatcherSourceSnapshot,
-        { readonly scope: "turn" | "session" }
-      >;
+      readonly sourceSnapshot: Extract<MatcherSourceSnapshot, { readonly scope: "turn" | "session" }>;
       readonly querySteps: readonly MatcherQueryStep[];
       readonly receipt: OrderEvaluationReceipt;
       readonly result:
@@ -341,7 +345,10 @@ export interface AssertionPolicy {
 }
 
 export type AssertionObserved =
-  | { readonly kind: "boolean"; readonly outcome: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable" }
+  | {
+      readonly kind: "boolean";
+      readonly outcome: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
+    }
   | { readonly kind: "measurement"; readonly state: "available"; readonly value: number }
   | { readonly kind: "measurement"; readonly state: "unavailable" }
   | { readonly kind: "direct-score"; readonly state: "available"; readonly value: number }
@@ -352,40 +359,40 @@ export type AssertionResult =
       readonly state: "matched";
       readonly gate: "not-gate" | "satisfied";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "mismatched";
       readonly reason: "condition-not-met";
       readonly gate: "not-gate" | "failed";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "unavailable";
       readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "errored";
       readonly reason: "evaluator-failed" | "producer-interrupted" | "invalid-subject";
       readonly gate: "not-gate" | "unavailable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     }
   | {
       readonly state: "not-applicable";
       readonly reason: "coverage-not-applicable";
       readonly gate: "not-gate" | "not-applicable";
       readonly score: Extract<AssertionScoreContribution, { readonly state: "not-scored" | "unavailable" }>;
-      readonly diagnostic?: AssertionSnapshotObject;
-      readonly receipt?: AssertionCollectionReceipt;
+      readonly diagnostic: AssertionSnapshotObject | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
     };
 
 /** One fully formed author/runtime result, before durable attachment encoding. */
@@ -398,8 +405,9 @@ export interface SealedAssertionEntry {
   readonly limitations: readonly AssertionLimitation[];
   readonly result: AssertionResult;
   readonly policy: AssertionPolicy;
+  readonly control: import("./record/model.ts").AssertionControl;
   readonly observed: AssertionObserved;
-  readonly matcherArtifact?: MatcherQueryArtifact;
+  readonly matcherArtifact: MatcherQueryArtifact | undefined;
 }
 
 /**
@@ -407,45 +415,31 @@ export interface SealedAssertionEntry {
  * `t.check`. The symbol is public only for TypeScript's nominal boundary; the
  * runtime also keeps an unforgeable ownership registry.
  */
-export const assertionHandleBrand: unique symbol = Symbol(
-  "niceeval.assertion-handle",
-);
+export const assertionHandleBrand: unique symbol = Symbol("niceeval.assertion-handle");
 
 declare const assertionConditionStateBrand: unique symbol;
 declare const assertionGateStateBrand: unique symbol;
 declare const assertionScoreStateBrand: unique symbol;
 
-export interface AssertionHandleBase<
-  HasCondition extends boolean = boolean,
-  HasScore extends boolean = boolean,
-> {
+export interface AssertionHandleBase<HasCondition extends boolean = boolean, HasScore extends boolean = boolean> {
   readonly [assertionHandleBrand]: true;
   readonly [assertionConditionStateBrand]: HasCondition;
   readonly [assertionScoreStateBrand]: HasScore;
-  key(value: string): this;
   label(value: string): this;
   /** Adds one display-only group segment to this already registered entry. */
   group(title: string): this;
 }
 
 /** A value that is not an AssertionHandle. */
-export type AssertionSubject<Value> = Value extends AssertionHandleBase
-  ? never
-  : Value;
+export type AssertionSubject<Value> = Value extends AssertionHandleBase ? never : Value;
 
 /** Numeric cardinality deliberately excludes the managed event occurrence subject. */
-export type NumericAssertionSubject<Value> = Value extends ManagedEventOccurrences
-  ? never
-  : AssertionSubject<Value>;
+export type NumericAssertionSubject<Value> = Value extends ManagedEventOccurrences ? never : AssertionSubject<Value>;
 
 export interface AssertionStopError {
   readonly _tag: "AssertionStopError";
   readonly entryIndex: number;
-  readonly reason:
-    | "condition-not-met"
-    | "source-unavailable"
-    | "evaluator-failed"
-    | "not-applicable";
+  readonly reason: "condition-not-met" | "source-unavailable" | "evaluator-failed" | "not-applicable";
 }
 
 /**
@@ -474,54 +468,74 @@ export class AssertionAuthoringClosedError extends Error {
  * The owning Attempt executes a requested stop barrier in its existing Effect
  * scope. Handles only enqueue this request; they never create a runtime.
  */
-export type AssertionStopExecutor = <Value>(
-  effect: Effect.Effect<Value, AssertionStopError, never>,
-) => Promise<Value>;
+export type AssertionStopExecutor = <Value>(effect: Effect.Effect<Value, AssertionStopError, never>) => Promise<Value>;
 
 /** A Boolean entry is evaluated once and may retain a refinement witness. */
 export type BooleanAssertionEvaluation<Refined> =
   | {
       readonly state: "matched";
       readonly value: Refined;
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "mismatched";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "unavailable";
-      readonly reason:
-        | "evidence-unavailable"
-        | "source-unavailable"
-        | "redacted";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly receipt?: AssertionCollectionReceipt;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly receipt: AssertionCollectionReceipt | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     }
   | {
       readonly state: "not-applicable";
-      readonly diagnostic?: MatchDiagnostic;
-      readonly matcherArtifact?: MatcherQueryArtifact;
+      readonly diagnostic: MatchDiagnostic | undefined;
+      readonly matcherArtifact: MatcherQueryArtifact | undefined;
     };
 
 /** A measurement is always a finite unit-interval value when it is available. */
-export type MeasurementAssertionEvaluation = { readonly receipt?: AssertionCollectionReceipt } & (
-  | { readonly state: "measured"; readonly value: number; readonly detail?: AssertionSnapshotObject }
+export type MeasurementAssertionEvaluation = { readonly receipt: AssertionCollectionReceipt | undefined } & (
+  | { readonly state: "measured"; readonly value: number; readonly detail: AssertionSnapshotObject | undefined }
   | {
       readonly state: "unavailable";
-      readonly reason:
-        | "evidence-unavailable"
-        | "source-unavailable"
-        | "redacted";
-      readonly detail?: AssertionSnapshotObject;
+      readonly reason: "evidence-unavailable" | "source-unavailable" | "redacted";
+      readonly detail: AssertionSnapshotObject | undefined;
     }
-  | { readonly state: "not-applicable"; readonly detail?: AssertionSnapshotObject }
-  | { readonly state: "errored"; readonly detail?: AssertionSnapshotObject });
+  | { readonly state: "not-applicable"; readonly detail: AssertionSnapshotObject | undefined }
+  | { readonly state: "errored"; readonly detail: AssertionSnapshotObject | undefined }
+);
+
+/** Construct an evaluator result once; diagnostic, collection receipt and retained artifact are independent facts. */
+export function matchedAssertionEvaluation<Refined>(
+  value: Refined,
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<Refined> {
+  return { state: "matched", value, diagnostic, receipt, matcherArtifact };
+}
+
+export function mismatchedAssertionEvaluation(
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<never> {
+  return { state: "mismatched", diagnostic, receipt, matcherArtifact };
+}
+
+export function unavailableAssertionEvaluation(
+  reason: "evidence-unavailable" | "source-unavailable" | "redacted",
+  diagnostic?: MatchDiagnostic,
+  receipt?: AssertionCollectionReceipt,
+  matcherArtifact?: MatcherQueryArtifact,
+): BooleanAssertionEvaluation<never> {
+  return { state: "unavailable", reason, diagnostic, receipt, matcherArtifact };
+}
 
 export interface CapturedAssertionSnapshot {
   readonly material: Extract<AssertionMaterial, { readonly kind: "snapshot" }>;
@@ -531,14 +545,14 @@ export interface CapturedAssertionSnapshot {
 
 export interface AssertionRegistrationBase {
   /** @internal Seal the criterion for the actual local or managed evaluation path. */
-  readonly terminalCriterion?: () => AssertionCriterion;
-  readonly retainedBytes?: number;
-  readonly terminalReceipt?: () => AssertionCollectionReceipt;
+  readonly terminalCriterion: () => AssertionCriterion;
+  readonly retainedBytes: number;
+  readonly terminalReceipt: () => AssertionCollectionReceipt | undefined;
   readonly criterion: AssertionCriterion;
   readonly subject: AssertionMaterial;
-  readonly evidence?: readonly AssertionMaterial[];
-  readonly coverage?: AssertionCoverage;
-  readonly limitations?: readonly AssertionLimitation[];
+  readonly evidence: readonly AssertionMaterial[];
+  readonly coverage: AssertionCoverage;
+  readonly limitations: readonly AssertionLimitation[];
 }
 
 /**
@@ -546,46 +560,32 @@ export interface AssertionRegistrationBase {
  * They still register exactly one Assertion entry; they do not manufacture a
  * separate intermediate value for a later consumer.
  */
-export interface BooleanAssertionRegistration<Refined>
-  extends AssertionRegistrationBase {
+export interface BooleanAssertionRegistration<Refined> extends AssertionRegistrationBase {
   /** Same-owner evidence produced by the post-run evaluator and sealed once. */
-  readonly terminalEvidence?: () => readonly AssertionMaterial[];
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
   /** Sealed when Attempt interruption prevents the ordinary evaluator from running. */
-  readonly interruptedMatcherArtifact?: MatcherQueryArtifact;
-  readonly evaluate: () => Effect.Effect<
-    BooleanAssertionEvaluation<Refined>,
-    unknown,
-    never
-  >;
+  readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
+  readonly evaluate: () => Effect.Effect<BooleanAssertionEvaluation<Refined>, unknown, never>;
 }
 
-export interface MeasurementAssertionRegistration
-  extends AssertionRegistrationBase {
+export interface MeasurementAssertionRegistration extends AssertionRegistrationBase {
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
-  readonly retainedBytes?: number;
-  readonly retainedImageBytes?: number;
+  readonly retainedBytes: number;
+  readonly retainedImageBytes: number;
   /** Complete terminal Content appended exactly once by the shared sealing path. */
-  readonly terminalEvidence?: () => readonly AssertionMaterial[];
+  readonly terminalEvidence: () => readonly AssertionMaterial[];
   /** Terminal producer facts frozen by the shared Assertion sealing path. */
-  readonly terminalDetail?: () => AssertionSnapshotObject;
-  readonly evaluate: () => Effect.Effect<
-    MeasurementAssertionEvaluation,
-    unknown,
-    never
-  >;
+  readonly terminalDetail: () => AssertionSnapshotObject | undefined;
+  readonly evaluate: () => Effect.Effect<MeasurementAssertionEvaluation, unknown, never>;
 }
 
-export interface PassBooleanAssertionHandle<
-  out Refined,
-  HasGate extends boolean = false,
-> extends AssertionHandleBase<true, false> {
+export interface PassBooleanAssertionHandle<out Refined, HasGate extends boolean = false>
+  extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
   readonly [assertionGateStateBrand]: HasGate;
   /** An unavailable/errored optional entry does not independently error Verdict. */
   optional(): this;
-  gate(
-    this: PassBooleanAssertionHandle<Refined, false>,
-  ): PassBooleanAssertionHandle<Refined, true>;
+  gate(this: PassBooleanAssertionHandle<Refined, false>): PassBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
@@ -606,27 +606,16 @@ export interface ScoreBooleanAssertionHandle<
   orStop(): Promise<Refined>;
 }
 
-export interface PassMeasurementAssertionHandle<
-  HasCondition extends boolean = false,
-> extends AssertionHandleBase<HasCondition, false> {
+export interface PassMeasurementAssertionHandle<HasCondition extends boolean = false>
+  extends AssertionHandleBase<HasCondition, false> {
   readonly kind: "measurement";
-  gate(
-    this: PassMeasurementAssertionHandle<false>,
-    minimum: number,
-  ): PassMeasurementAssertionHandle<true>;
-  orStop(
-    this: PassMeasurementAssertionHandle<false>,
-    minimum: number,
-  ): Promise<number>;
-  orStop(
-    this: PassMeasurementAssertionHandle<true>,
-  ): Promise<number>;
+  gate(this: PassMeasurementAssertionHandle<false>, minimum: number): PassMeasurementAssertionHandle<true>;
+  orStop(this: PassMeasurementAssertionHandle<false>, minimum: number): Promise<number>;
+  orStop(this: PassMeasurementAssertionHandle<true>): Promise<number>;
 }
 
-export interface ScoreMeasurementAssertionHandle<
-  HasCondition extends boolean = false,
-  HasScore extends boolean = false,
-> extends AssertionHandleBase<HasCondition, HasScore> {
+export interface ScoreMeasurementAssertionHandle<HasCondition extends boolean = false, HasScore extends boolean = false>
+  extends AssertionHandleBase<HasCondition, HasScore> {
   readonly kind: "measurement";
   gate(
     this: ScoreMeasurementAssertionHandle<false, HasScore>,
@@ -636,33 +625,21 @@ export interface ScoreMeasurementAssertionHandle<
     this: ScoreMeasurementAssertionHandle<HasCondition, false>,
     points: number,
   ): ScoreMeasurementAssertionHandle<HasCondition, true>;
-  orStop(
-    this: ScoreMeasurementAssertionHandle<false, HasScore>,
-    minimum: number,
-  ): Promise<number>;
-  orStop(
-    this: ScoreMeasurementAssertionHandle<true, HasScore>,
-  ): Promise<number>;
+  orStop(this: ScoreMeasurementAssertionHandle<false, HasScore>, minimum: number): Promise<number>;
+  orStop(this: ScoreMeasurementAssertionHandle<true, HasScore>): Promise<number>;
 }
 
 /** A Boolean Assertion that intentionally has no author control-flow operation. */
-interface PostRunPassBooleanAssertionHandle<
-  Refined,
-  HasGate extends boolean = false,
-> extends AssertionHandleBase<true, false> {
+interface PostRunPassBooleanAssertionHandle<Refined, HasGate extends boolean = false>
+  extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
   readonly [assertionGateStateBrand]: HasGate;
   optional(): this;
-  gate(
-    this: PostRunPassBooleanAssertionHandle<Refined, false>,
-  ): PostRunPassBooleanAssertionHandle<Refined, true>;
+  gate(this: PostRunPassBooleanAssertionHandle<Refined, false>): PostRunPassBooleanAssertionHandle<Refined, true>;
 }
 
-interface PostRunScoreBooleanAssertionHandle<
-  Refined,
-  HasGate extends boolean = false,
-  HasScore extends boolean = false,
-> extends AssertionHandleBase<true, HasScore> {
+interface PostRunScoreBooleanAssertionHandle<Refined, HasGate extends boolean = false, HasScore extends boolean = false>
+  extends AssertionHandleBase<true, HasScore> {
   readonly kind: "boolean";
   readonly [assertionGateStateBrand]: HasGate;
   gate(
@@ -694,59 +671,46 @@ export interface DirectScoreAssertionHandle extends AssertionHandleBase<false, t
  * only operations whose meaning is identical in Pass and Score Evals; the
  * bound Eval factory replaces it with the native handle for its Kind.
  */
-export interface PolymorphicBooleanAssertionHandle<
-  out Refined,
-  HasGate extends boolean = false,
-> extends AssertionHandleBase<true, false> {
+export interface PolymorphicBooleanAssertionHandle<out Refined, HasGate extends boolean = false>
+  extends AssertionHandleBase<true, false> {
   readonly kind: "boolean";
   readonly [assertionGateStateBrand]: HasGate;
-  gate(
-    this: PolymorphicBooleanAssertionHandle<Refined, false>,
-  ): PolymorphicBooleanAssertionHandle<Refined, true>;
+  gate(this: PolymorphicBooleanAssertionHandle<Refined, false>): PolymorphicBooleanAssertionHandle<Refined, true>;
   orStop(): Promise<Refined>;
 }
 
 /** Definition-time measurement counterpart to PolymorphicBooleanAssertionHandle. */
-export interface PolymorphicMeasurementAssertionHandle<
-  HasCondition extends boolean = false,
-> extends AssertionHandleBase<HasCondition, false> {
+export interface PolymorphicMeasurementAssertionHandle<HasCondition extends boolean = false>
+  extends AssertionHandleBase<HasCondition, false> {
   readonly kind: "measurement";
   gate(
     this: PolymorphicMeasurementAssertionHandle<false>,
     minimum: number,
   ): PolymorphicMeasurementAssertionHandle<true>;
-  orStop(
-    this: PolymorphicMeasurementAssertionHandle<false>,
-    minimum: number,
-  ): Promise<number>;
-  orStop(
-    this: PolymorphicMeasurementAssertionHandle<true>,
-  ): Promise<number>;
+  orStop(this: PolymorphicMeasurementAssertionHandle<false>, minimum: number): Promise<number>;
+  orStop(this: PolymorphicMeasurementAssertionHandle<true>): Promise<number>;
 }
 
 export type AssertionCheckKind = AssertionEvaluationKind | "polymorphic";
 
-type CheckedBooleanHandle<
-  Kind extends AssertionCheckKind,
-  Refined,
-> = Kind extends AssertionEvaluationKind
+type CheckedBooleanHandle<Kind extends AssertionCheckKind, Refined> = Kind extends AssertionEvaluationKind
   ? BooleanAssertionHandle<Kind, Refined>
   : PolymorphicBooleanAssertionHandle<Refined>;
 
-type CheckedMeasurementHandle<Kind extends AssertionCheckKind> =
-  Kind extends AssertionEvaluationKind
-    ? MeasurementAssertionHandle<Kind>
-    : PolymorphicMeasurementAssertionHandle;
+type CheckedMeasurementHandle<Kind extends AssertionCheckKind> = Kind extends AssertionEvaluationKind
+  ? MeasurementAssertionHandle<Kind>
+  : PolymorphicMeasurementAssertionHandle;
 
 /** Single owner for the public check overload set, including Adapter-polymorphic factories. */
 export interface AssertionCheck<Kind extends AssertionCheckKind, Context = unknown> {
   <T>(match: import("./context-match.ts").MaterialMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
   <T>(match: import("./context-match.ts").ContextBooleanMatch<Context, T>): CheckedBooleanHandle<Kind, void>;
   <T>(match: import("./context-match.ts").ContextScoreMatch<Context, T>): CheckedMeasurementHandle<Kind>;
-  (match:
-    | import("./context-match.ts").MaterialMatch<Context, unknown>
-    | import("./context-match.ts").ContextBooleanMatch<Context, unknown>
-    | import("./context-match.ts").ContextScoreMatch<Context, unknown>
+  (
+    match:
+      | import("./context-match.ts").MaterialMatch<Context, unknown>
+      | import("./context-match.ts").ContextBooleanMatch<Context, unknown>
+      | import("./context-match.ts").ContextScoreMatch<Context, unknown>,
   ): CheckedBooleanHandle<Kind, void> | CheckedMeasurementHandle<Kind>;
   (value: import("./match.ts").NumericMaterial, match: NumericComparisonMatch): CheckedBooleanHandle<Kind, number>;
   <Value, Refined extends Value>(
@@ -765,15 +729,12 @@ export interface AssertionCheck<Kind extends AssertionCheckKind, Context = unkno
     value: AssertionSubject<ManagedEventOccurrences<S>>,
     match: EventMatch,
   ): CheckedBooleanHandle<Kind, ManagedEventOccurrences<S>>;
-  <Value>(
-    value: AssertionSubject<Value>,
-    match: CollectionMatch<NoInfer<Value>>,
-  ): CheckedBooleanHandle<Kind, Value>;
-  <Value>(
-    value: AssertionSubject<Value>,
-    match: ScoreMatch<NoInfer<Value>>,
-  ): CheckedMeasurementHandle<Kind>;
-  <U extends import("./quantity.ts").Unit>(value: import("./match.ts").NumericMaterial<U>, match: NumericComparisonMatch<NoInfer<U>>): CheckedBooleanHandle<Kind, number>;
+  <Value>(value: AssertionSubject<Value>, match: CollectionMatch<NoInfer<Value>>): CheckedBooleanHandle<Kind, Value>;
+  <Value>(value: AssertionSubject<Value>, match: ScoreMatch<NoInfer<Value>>): CheckedMeasurementHandle<Kind>;
+  <U extends import("./quantity.ts").Unit>(
+    value: import("./match.ts").NumericMaterial<U>,
+    match: NumericComparisonMatch<NoInfer<U>>,
+  ): CheckedBooleanHandle<Kind, number>;
 }
 
 export interface AssertionGroupContext {
@@ -782,13 +743,16 @@ export interface AssertionGroupContext {
    * callback remains inside the Attempt's outer Promise boundary; this facade
    * does not evaluate an Effect or create an independent runtime.
    */
-  group<Value>(
-    title: string,
-    body: () => Value | PromiseLike<Value>,
-  ): Promise<Awaited<Value>>;
+  group<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>>;
 }
 
+export type AgentJudgeFunction<Kind extends AssertionEvaluationKind> = (
+  reviewer: import("./agent-judge-definition.ts").AgentJudge,
+  material: import("../judge/image.ts").JudgeMaterial,
+) => import("./agent-judge-definition.ts").AgentJudgeReview<Kind>;
+
 export interface PassAssertionsContext extends AssertionGroupContext {
+  readonly agentJudge: AgentJudgeFunction<"pass">;
   readonly evaluationKind: "pass";
   readonly check: AssertionCheck<"pass">;
 }
@@ -800,13 +764,15 @@ export interface ScoreFunction {
 }
 
 export interface ScoreAssertionsContext extends AssertionGroupContext {
+  readonly agentJudge: AgentJudgeFunction<"score">;
   readonly evaluationKind: "score";
   readonly check: AssertionCheck<"score">;
   readonly score: ScoreFunction;
 }
 
-export type AssertionsContext<Kind extends AssertionEvaluationKind> =
-  Kind extends "pass" ? PassAssertionsContext : ScoreAssertionsContext;
+export type AssertionsContext<Kind extends AssertionEvaluationKind> = Kind extends "pass"
+  ? PassAssertionsContext
+  : ScoreAssertionsContext;
 
 export type BooleanAssertionHandle<
   Kind extends AssertionEvaluationKind,
@@ -826,14 +792,14 @@ export type MeasurementAssertionHandle<
   : ScoreMeasurementAssertionHandle<HasCondition, HasScore>;
 
 export interface AssertionSealOptions {
-  readonly execution?: "completed" | "errored";
-  readonly explicitlySkipped?: boolean;
+  readonly execution: "completed" | "errored";
+  readonly explicitlySkipped: boolean;
   /**
    * The owning Attempt was interrupted before ordinary evaluation could
    * finish. Unsettled entries are sealed as producer-interrupted instead of
    * being silently omitted or evaluated on a detached runtime.
    */
-  readonly interrupted?: boolean;
+  readonly interrupted: boolean;
 }
 
 /** Sealing has no expected authoring failure after registration-time validation. */
@@ -891,27 +857,19 @@ export type AssertionScore =
 export interface SealedAttemptAssertions {
   readonly entries: readonly SealedAssertionEntry[];
   readonly evaluation: SealedAssertionEvaluation;
-  readonly workspaceDiff?: AgentWorkspaceDiff;
+  readonly workspaceDiff: AgentWorkspaceDiff | undefined;
   readonly verdict: AssertionVerdict;
-  readonly score?: AssertionScore;
+  readonly score: AssertionScore | undefined;
 }
 
-export interface AssertionsRuntime<
-  Kind extends AssertionEvaluationKind,
-> {
+export interface AssertionsRuntime<Kind extends AssertionEvaluationKind> {
   readonly evaluationKind: Kind;
   readonly t: AssertionsContext<Kind>;
   /** @internal Reject before an adapter reads or snapshots author material. */
   assertAuthoringOpen(): void;
   /** Attempt-owned synchronous admission close; sealing still happens once through `seal`. */
   closeAuthoring(reason: "attempt-sealing" | "attempt-interrupted"): void;
-  registerBoolean<Refined>(
-    definition: BooleanAssertionRegistration<Refined>,
-  ): BooleanAssertionHandle<Kind, Refined>;
-  registerMeasurement(
-    definition: MeasurementAssertionRegistration,
-  ): MeasurementAssertionHandle<Kind>;
-  seal(
-    options?: AssertionSealOptions,
-  ): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never>;
+  registerBoolean<Refined>(definition: BooleanAssertionRegistration<Refined>): BooleanAssertionHandle<Kind, Refined>;
+  registerMeasurement(definition: MeasurementAssertionRegistration): MeasurementAssertionHandle<Kind>;
+  seal(options?: AssertionSealOptions): Effect.Effect<SealedAssertionsRuntime, AssertionSealError, never>;
 }

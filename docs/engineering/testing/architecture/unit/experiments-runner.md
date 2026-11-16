@@ -274,6 +274,11 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **`timeoutMs` 不进指纹哈希、以携带判据参与**：提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑（fixture 两个方向都要有区分力场景）。
 - **资格判据量的是 `executionMs` 不是 `durationMs`**：一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带，这一格是拿含排队的量去比时唯一会红的；`executionMs` 缺失的历史条目回落到 `durationMs`（方向是多跑，不误采信）。
 - **指纹输入的进 / 不进两侧都要有区分力场景**：`flags` 整袋进（任一键任一值不同即重跑）；`model` / `reasoningEffort` / agent 名 / sandbox 求值参数 / `judge` 的 `model` 与 `baseUrl` 进。`attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带。
+- **模型用途的身份字节等价**：内部模型用途以 `undefined` 表示未配置，配置身份把它编码为 `null`。
+  固定作者源码与其余身份输入，覆盖完全省略、仅 model、仅 effort、两者都有、显式 default 与等价简写、多用途缺 effort、不同插入顺序与历史缺 models。
+  ConfigIdentity 稳定文本与摘要、manifest paths、历史投影与 models 整组 counterfactual 都必须等于改动前在 HEAD 记录的常量。
+  fingerprint、renameFingerprint 与 Slot identity 同样等于这些常量。
+  公开 E2E 无法固定源码并隔离这些内部等价类；回调值与 wire 的可观察行为仍归既有 model-slot E2E。
 - **`niceeval accept @<locator>` 的单条重锚面**（逐条资格与留痕见下面独立条目）。
 - **携带条目合入新 Run 时按本次规划重打 `fingerprint`**，`facts`/`locator`/`artifactBase`/判定原样携带（fixture 断言携带条目的 facts 仍是产出它那一轮的值）；携带以 attempt 为粒度、未收尾 Run 是合法出处。
 - 带 `sandbox.reused` 的历史终态和当前 `sandboxReuse: true` 都按同一判据携带，复用只是实际派发时的 Sandbox 生命周期。
@@ -363,7 +368,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - bin 入口同时注册 tsx 的 ESM 与 CJS 两个 hook——两者缺一，CJS 宿主（`npm init -y` 默认）下 `init` 刚生成的 config 就装载不了（`// bug: memory/tsx-dynamic-import-require-cycle.md`）。
 - 真实 CJS 宿主的进程级验收归 [E2E · CLI](../e2e/cli.md)，init 的 ESM 建议提示行同归该处，单元层不起 CLI 进程。
 - **形态求值与 `--json` 流不变量**：`resolveOutputForm` 只有两个结果——`--json` 即机器面，否则人读文本；**不读任何 CI 进程变量**（fixture 要在设置了 `CI=true` 的运行条件下证明结果只由 flag 与 TTY 决定），TTY 只决定人读文本的版式。
-- `--json` 的事件流不变量：单一 stdout 有序流（stderr 只留启动期错误）、每行一个合法 JSON 对象且首行 `start` 事件携带 `format`/`schemaVersion`、字段名复用 Results 词表。
+- `--json` 的事件流不变量：单一 stdout 有序流（stderr 只留启动期错误）、每行一个合法 JSON 对象且首行是 `start` 事件，不携带格式名或数字版本、字段名复用 Results 词表。
 - 失败不做 suppression 逐事件给出（人读文本才有展开上限 10）；空闲 30 秒 `progress` 心跳且永久事件重置计时。
 - `result` 事件的 `junit` 字段只在传了 `--junit` 时出现；`--dry --json` 是单 JSON 文档不是流。
 - 字节级渲染归 [E2E · CLI](../e2e/cli.md)，这里以 reducer/renderer 的事件序列与状态为断言面。

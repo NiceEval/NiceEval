@@ -2,21 +2,14 @@ import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
 import type { Agent, EvidenceCoverage, StreamEvent } from "../types.ts";
-import { makeSendFailure } from "../context/send-failures.ts";
+import { makeSendFailure, normalizeSendFailure } from "../context/send-failures.ts";
 import { shared } from "./shared.ts";
 import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
 import { shell } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import type { AgentEnsure, AgentInstaller } from "./types.ts";
-import {
-  exactNpmPluginRevision,
-  normalizeExactNpmPlugins,
-  type ExactNpmPlugin,
-} from "./exact-npm-plugins.ts";
-import {
-  AGENT_BASELINE_RECIPE_REVISION,
-  DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION,
-} from "./coding-cli-versions.ts";
+import type { AgentInstall, AgentInstaller } from "./types.ts";
+import { exactNpmPluginRevision, normalizeExactNpmPlugins, type ExactNpmPlugin } from "./exact-npm-plugins.ts";
+import { AGENT_BASELINE_RECIPE_REVISION, DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION } from "./coding-cli-versions.ts";
 
 const DSH_EVIDENCE_COVERAGE: EvidenceCoverage = {
   events: { status: "unavailable", reason: "DSH headless mode exposes only the final assistant text." },
@@ -29,13 +22,13 @@ const DSH_EVIDENCE_COVERAGE: EvidenceCoverage = {
 
 export interface DeepSeekHarnessConfig {
   /** DeepSeek-compatible API key. Defaults to DSH_API_KEY, then DEEPSEEK_API_KEY. */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /** DeepSeek-compatible endpoint. Defaults to DSH_BASE_URL, then DEEPSEEK_BASE_URL. */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /** Exact npm version of `@deepseek-ai/dsh`. */
-  version?: string;
+  version?: string | undefined;
   /** Native DSH bundles as exact npm package@version declarations. */
-  plugins?: readonly string[];
+  plugins?: readonly string[] | undefined;
 }
 
 const DSH_PNPM_VERSION = "10.17.1";
@@ -43,14 +36,15 @@ const DSH_PNPM_VERSION = "10.17.1";
 function dshPluginLayer(
   cliVersion: string,
   plugins: readonly ExactNpmPlugin[],
-): { ensure: AgentEnsure; installer: AgentInstaller } {
+): { install: AgentInstall; installer: AgentInstaller } {
   const identity = {
     agent: "deepseek-harness-plugins",
     version: cliVersion,
     revision: exactNpmPluginRevision(plugins),
   };
   const expected = JSON.stringify(plugins);
-  const verify = `const fs=require("node:fs"),path=require("node:path");` +
+  const verify =
+    `const fs=require("node:fs"),path=require("node:path");` +
     `const expected=${expected},root=process.env.DSH_HOME+"/profiles/headless";` +
     `const profile=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));` +
     `const deps=profile.dependencies||{},names=Object.keys(deps);` +
@@ -63,7 +57,7 @@ function dshPluginLayer(
     `if(p.name!==x.name||p.version!==x.version||!p.dsh?.bundle)process.exit(1);}`;
   const probeScript = `DSH_HOME="$HOME/.niceeval-dsh" node -e ${shellQuote(verify)}`;
   return {
-    ensure: { identity, probe: shell(probeScript) },
+    install: { identity, probe: shell(probeScript) },
     installer: {
       identity,
       installMode: "sandbox-network",
@@ -114,70 +108,75 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
   return makeSandboxAgent({
     name: "deepseek-harness",
     evidenceCoverage: DSH_EVIDENCE_COVERAGE,
-    ensure: pluginLayer === undefined ? install.ensure : [install.ensure, pluginLayer.ensure],
-    installers: pluginLayer === undefined
-      ? [install.installer]
-      : [install.installer, pluginLayer.installer],
+    install: pluginLayer === undefined ? install.install : [install.install, pluginLayer.install],
+    installers: pluginLayer === undefined ? [install.installer] : [install.installer, pluginLayer.installer],
 
-    before: (sb, ctx) => Effect.tryPromise({
-      try: async () => {
-        const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
-        const home = homeResult.stdout.trim();
-        if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
-          throw new Error("DeepSeek Harness setup requires an absolute sandbox HOME directory");
-        }
-        const dshHome = `${home}/.niceeval-dsh`;
-        homes.set(sb.sandboxId, dshHome);
-        const settings = {
-          "agent-default-model": {
-            provider: "deepseek-official",
-            model: ctx.model ?? "deepseek-v4-flash",
-          },
-          permission: {
-            defaultPreset: "danger-full-access",
-          },
-        };
-        await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
-      },
-      catch: (cause) => cause,
-    }),
-
-    send: (input, ctx) => Effect.gen(function* () {
-      const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh");
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
-          const apiKey = resolveApiKey(config);
-          const dshHome = homes.get(ctx.sandbox.sandboxId);
-          if (!dshHome) throw new Error("DeepSeek Harness setup state is unavailable");
-          const env: globalThis.Record<string, string> = {
-            DEEPSEEK_API_KEY: apiKey,
-            DSH_HOME: dshHome,
-            ...ctx.telemetry?.env,
-          };
-          const baseUrl = resolveBaseUrl(config);
-          if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
-          const res = await ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
-            env,
-            sensitiveValues: [apiKey],
-            stream: true,
-            signal,
-          });
-          const text = res.stdout.trim();
-          if (res.exitCode !== 0 || !text) {
-            throw makeSendFailure({
-              acceptance: "unknown",
-              message: res.exitCode !== 0
-                ? shared.diagnoseFailure(res, [], undefined)
-                : "DeepSeek Harness exited successfully without a final assistant message.",
-              process: res,
-            });
+    before: (sb, ctx) =>
+      Effect.tryPromise({
+        try: async () => {
+          const homeResult = await sb.runShell('test -n "$HOME" && printf "%s" "$HOME"');
+          const home = homeResult.stdout.trim();
+          if (homeResult.exitCode !== 0 || !home.startsWith("/")) {
+            throw new Error("DeepSeek Harness setup requires an absolute sandbox HOME directory");
           }
-          const events: StreamEvent[] = [{ type: "message", role: "assistant", text }];
-          return { events, status: "completed" as const };
+          const dshHome = `${home}/.niceeval-dsh`;
+          homes.set(sb.sandboxId, dshHome);
+          const settings = {
+            "agent-default-model": {
+              provider: "deepseek-official",
+              model: ctx.model ?? "deepseek-v4-flash",
+            },
+            permission: {
+              defaultPreset: "danger-full-access",
+            },
+          };
+          await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
         },
         catch: (cause) => cause,
-      });
-    }),
+      }),
+
+    send: (input, ctx) =>
+      Effect.gen(function* () {
+        const dshBin = yield* resolveAgentBinEffect(ctx.sandbox, "dsh").pipe(Effect.mapError(normalizeSendFailure));
+        const apiKey = yield* Effect.try({ try: () => resolveApiKey(config), catch: normalizeSendFailure });
+        const dshHome = homes.get(ctx.sandbox.sandboxId);
+        if (!dshHome) {
+          return yield* Effect.fail(normalizeSendFailure(new Error("DeepSeek Harness setup state is unavailable")));
+        }
+        const env: globalThis.Record<string, string> = {
+          DEEPSEEK_API_KEY: apiKey,
+          DSH_HOME: dshHome,
+          ...ctx.telemetry?.env,
+        };
+        const baseUrl = resolveBaseUrl(config);
+        if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
+        const res = yield* Effect.tryPromise({
+          try: (signal) =>
+            ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
+              env,
+              sensitiveValues: [apiKey],
+              stream: true,
+              signal,
+            }),
+          catch: normalizeSendFailure,
+        });
+        const text = res.stdout.trim();
+        if (res.exitCode !== 0 || !text) {
+          return yield* Effect.fail(
+            makeSendFailure({
+              acceptance: "unknown",
+              message:
+                res.exitCode !== 0
+                  ? shared.diagnoseFailure(res, [], undefined)
+                  : "DeepSeek Harness exited successfully without a final assistant message.",
+              process: res,
+            }),
+          );
+        }
+        const events: StreamEvent[] = [{ type: "message", role: "assistant", text }];
+        return { events, status: "completed" as const };
+      }),
+    after: () => Effect.void,
   });
 }
 

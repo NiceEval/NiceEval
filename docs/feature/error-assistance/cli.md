@@ -10,7 +10,6 @@
 
 ```text
 error: Judge credentials are unavailable.
-Code: judge-key-unresolved
 Source: evals/quality.eval.ts:8:10
 Set TYPESAFE_API_KEY before running this evaluation.
 ```
@@ -22,8 +21,7 @@ Set TYPESAFE_API_KEY before running this evaluation.
 
 ```text
 error: This Judge configuration requires migration.
-Code: migration-required
-Guide: judge-provider
+Migration locations: 1
 Source: niceeval.config.ts:6:17
 Subject: defineConfig.judgeProvider
 
@@ -35,11 +33,16 @@ Subject: defineConfig.judgeProvider
 示例中的省略号只表示文档示意；实际反馈交付整篇随包指南。不同位置共用同一 guide 时先列全部已收集位置，
 再显示一次正文。终端可以复用现有缩进与 panel 能力，但不能静默截断迁移步骤。
 
+人读标题使用普通英文说明与位置计数，内部错误 code 和 guide ID 留在机器字段中；指南正文中的迁移标识仍照实交付。
+
 ## 同类错误的首次提示与终局摘要
 
 一次命令或 Invocation 内，每个已知组的首条失败会显示完整的原因、owner、位置与下一步。
 后续同组失败不重复长说明，但仍保留事实并计入数量。
 终局摘要按组列出 count、最多 32 个 affected objects 和 32 个 source locations，以及各自未展开的数量。
+
+同组错误的摘要以英文原因和计数开头，例如 `Judge credential is unavailable for openai. ×2`。
+内部错误 code、repair target 和 guide ID 不作为人读标题或标签；机器字段保持完整。
 
 同一 guide ID 在这个交付范围内只输出一次完整 Markdown。
 即使该 guide 出现在多个 repair target 或多个分组中，也只重用已显示的指南并在摘要中关联各组。
@@ -51,7 +54,7 @@ Subject: defineConfig.judgeProvider
 
 ## 机器输出
 
-`--json`、NDJSON、JUnit 与固定 query 继续遵守各自的公开 envelope，不在 stdout 混入 Markdown 或 ANSI。
+`--json`、NDJSON、JUnit 与 `show --json` 继续遵守各自的公开 envelope，不在 stdout 混入 Markdown 或 ANSI。
 迁移字段由对应错误 envelope 的 owner 正式声明；不能向严格 schema 临时添加字段。
 人读指南写到 stderr，Library 消费者取得结构化 code、guide ID 与 occurrence；指南读取不改变机器终态。
 

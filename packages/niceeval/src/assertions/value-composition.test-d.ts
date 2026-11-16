@@ -1,7 +1,23 @@
 // cases: docs/engineering/testing/architecture/unit/assertions.md
 // Type-only consumer contracts, checked by package typecheck and excluded from runtime Unit collection.
 import { expectTypeOf } from "vitest";
-import { countWhere, defineValueMatch, equals, filterWhere, mapEach, mapValue, inOrder, or, not, and, toolMatch, eventMatch, defineScoreMatch, type BooleanMatch, type CollectionValue } from "./match.ts";
+import {
+  countWhere,
+  defineValueMatch,
+  equals,
+  filterWhere,
+  mapEach,
+  mapValue,
+  inOrder,
+  or,
+  not,
+  and,
+  toolMatch,
+  eventMatch,
+  defineScoreMatch,
+  type BooleanMatch,
+  type CollectionValue,
+} from "./match.ts";
 import { defineContextMatch, type MaterialCollection } from "./context-match.ts";
 import type { AssertionCheck } from "./api.ts";
 
@@ -10,7 +26,10 @@ declare const check: AssertionCheck<"pass">;
 const subject = [1, 2] as readonly number[];
 const counted = check(subject, countWhere(equals(0), equals(1))).orStop();
 expectTypeOf(counted).toEqualTypeOf<Promise<readonly number[]>>();
-const mapped = check(subject, mapEach((value: number) => value, equals(subject))).orStop();
+const mapped = check(
+  subject,
+  mapEach((value: number) => value, equals(subject)),
+).orStop();
 expectTypeOf(mapped).toEqualTypeOf<Promise<readonly number[]>>();
 const filtered = check(subject, filterWhere(equals(0), equals([]))).orStop();
 expectTypeOf(filtered).toEqualTypeOf<Promise<readonly number[]>>();
@@ -22,23 +41,38 @@ type RecordedActor = { readonly kind: "actor"; readonly hp: number };
 type GameEvent = { readonly kind: "event"; readonly actorsAtEnd: CollectionValue<RecordedActor> };
 type GameMatchValue = GameEvent | RecordedActor;
 const npcMatch = defineValueMatch<GameMatchValue>({ name: "npc", evaluate: (value) => value.kind === "actor" });
-declare const hp: (selector: BooleanMatch<GameMatchValue, GameMatchValue>, inner: BooleanMatch<CollectionValue<number>, CollectionValue<number>>) => unknown;
+declare const hp: (
+  selector: BooleanMatch<GameMatchValue, GameMatchValue>,
+  inner: BooleanMatch<CollectionValue<number>, CollectionValue<number>>,
+) => unknown;
 hp(npcMatch, countWhere(equals(0), equals(3)));
 const actors: CollectionValue<RecordedActor> = [];
 const actorsCount = check(actors, countWhere(npcMatch, equals(3))).orStop();
 expectTypeOf(actorsCount).toEqualTypeOf<Promise<readonly RecordedActor[]>>();
 const selector = defineValueMatch<RecordedActor>({ name: "alive", evaluate: (value) => value.hp > 0 });
-const selected = filterWhere(selector, mapEach(actor => actor.hp, countWhere(equals(0), equals(3))));
+const selected = filterWhere(
+  selector,
+  mapEach((actor) => actor.hp, countWhere(equals(0), equals(3))),
+);
 expectTypeOf(selected).toEqualTypeOf<BooleanMatch<CollectionValue<RecordedActor>, CollectionValue<RecordedActor>>>();
-check(actors, filterWhere(selector, mapEach(actor => actor.hp, countWhere(equals(0), equals(3)))));
+check(
+  actors,
+  filterWhere(
+    selector,
+    mapEach((actor) => actor.hp, countWhere(equals(0), equals(3))),
+  ),
+);
 const end = mapValue("末态人物", (event: GameEvent) => event.actorsAtEnd, countWhere(npcMatch, equals(3)));
 expectTypeOf(end).toEqualTypeOf<BooleanMatch<GameEvent, GameEvent>>();
 
 const stringOnly = defineValueMatch<string>({ name: "string", evaluate: () => true });
 // @ts-expect-error A string-only item match cannot inspect number array subjects.
 check(subject, countWhere(stringOnly, equals(0)));
-// @ts-expect-error Contextual projection items have the actor shape, without invented fields.
-filterWhere(selector, mapEach(actor => actor.missingField, countWhere(equals(0), equals(3))));
+filterWhere(
+  selector,
+  // @ts-expect-error Contextual projection items have the actor shape, without invented fields.
+  mapEach((actor) => actor.missingField, countWhere(equals(0), equals(3))),
+);
 
 const ordered = check(subject, inOrder([equals(1), equals(2)])).orStop();
 expectTypeOf(ordered).toEqualTypeOf<Promise<readonly number[]>>();
@@ -57,17 +91,28 @@ const reused = check(subject, reusableSequence).orStop();
 expectTypeOf(reused).toEqualTypeOf<Promise<readonly number[]>>();
 
 type OrderedGameEvent = { readonly type: "heard" | "movement"; readonly actorId: string; readonly adopted: boolean };
-const heard = defineValueMatch<OrderedGameEvent>({ name: "heard", evaluate: event => event.type === "heard" });
-const adoptedMovement = defineValueMatch<OrderedGameEvent>({ name: "adopted movement", evaluate: event => event.type === "movement" && event.adopted });
+const heard = defineValueMatch<OrderedGameEvent>({ name: "heard", evaluate: (event) => event.type === "heard" });
+const adoptedMovement = defineValueMatch<OrderedGameEvent>({
+  name: "adopted movement",
+  evaluate: (event) => event.type === "movement" && event.adopted,
+});
 declare const gameEvents: readonly OrderedGameEvent[];
 declare const gameMaterials: MaterialCollection<OrderedGameEvent>;
 const eventOrder = check(gameEvents, inOrder([heard, adoptedMovement])).orStop();
 expectTypeOf(eventOrder).toEqualTypeOf<Promise<readonly OrderedGameEvent[]>>();
 const eventMaterialOrder = check(gameMaterials, inOrder([heard, adoptedMovement])).orStop();
 expectTypeOf(eventMaterialOrder).toEqualTypeOf<Promise<MaterialCollection<OrderedGameEvent>>>();
-const sequence: BooleanMatch<CollectionValue<OrderedGameEvent>, CollectionValue<OrderedGameEvent>> = inOrder([heard, adoptedMovement]);
-const contextual = defineContextMatch<{ events(): MaterialCollection<OrderedGameEvent> }, CollectionValue<OrderedGameEvent>>({
-  name: "events", read: ctx => ({ state: "available", value: ctx.events() }), match: sequence,
+const sequence: BooleanMatch<CollectionValue<OrderedGameEvent>, CollectionValue<OrderedGameEvent>> = inOrder([
+  heard,
+  adoptedMovement,
+]);
+const contextual = defineContextMatch<
+  { events(): MaterialCollection<OrderedGameEvent> },
+  CollectionValue<OrderedGameEvent>
+>({
+  name: "events",
+  read: (ctx) => ({ state: "available", value: ctx.events() }),
+  match: sequence,
 });
 // @ts-expect-error Context readers cannot be sequence steps.
 inOrder([contextual, contextual]);

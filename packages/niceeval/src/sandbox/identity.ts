@@ -7,12 +7,7 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "../shared/types.ts";
 
 /** 五类完整 case;与 case-types 同源字面量。 */
-export type SandboxCaseKind =
-  | "prebuilt"
-  | "on-demand-build"
-  | "compose"
-  | "cloud-compose"
-  | "custom";
+export type SandboxCaseKind = "prebuilt" | "on-demand-build" | "compose" | "cloud-compose" | "custom";
 
 /** 构建产物身份:同 key 应得同一构建结果。 */
 export type BuildKey = string;
@@ -30,33 +25,33 @@ export interface BuildKeyInput {
   /** `.dockerignore` 求值后的 build context 内容摘要(调用方负责求值)。 */
   readonly contextDigest: string;
   /** 非敏感、已解析的 build args。 */
-  readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  readonly buildArgs?: Readonly<globalThis.Record<string, string>> | undefined;
   /** 多阶段 Dockerfile 的目标 stage；省略表示最终 stage。 */
-  readonly target?: string;
+  readonly target?: string | undefined;
   /** FROM 解析后的 digest。 */
   readonly fromDigest: string;
   /** materializer 生成的 filtered context 规则自身进 BuildKey。 */
-  readonly contextFilterRules?: string;
+  readonly contextFilterRules?: string | undefined;
 }
 
 /** 计算 CaseKey 的纯数据输入。逐 attempt 的容器名 / 临时目录 / 随机 project name 不进。 */
 export interface CaseKeyInput {
   readonly caseKind: SandboxCaseKind;
   readonly materializerRevision: string;
-  readonly composeBytes?: string;
-  readonly overlayBytes?: string;
+  readonly composeBytes?: string | undefined;
+  readonly overlayBytes?: string | undefined;
   readonly buildKeys: readonly BuildKey[];
   /**
    * 无 build 的 Compose service 的声明 image ref(已 pin 时含 digest,未 pin 时是原始 tag 文本)。
    * 只收声明值——不得填入 `docker inspect` 等本地 daemon 解析出的实际 digest,否则并行 docker
    * 活动会让身份在两次独立规划之间漂移(见 memory/compose-case-identity-digest-flap.md)。
    */
-  readonly serviceImageRefs?: Readonly<globalThis.Record<string, string>>;
-  readonly bindMountDigests?: Readonly<globalThis.Record<string, string>>;
+  readonly serviceImageRefs?: Readonly<globalThis.Record<string, string>> | undefined;
+  readonly bindMountDigests?: Readonly<globalThis.Record<string, string>> | undefined;
   /** env_file / config / secret 的非敏感内容(或内容摘要)。 */
-  readonly configContents?: Readonly<globalThis.Record<string, string>>;
+  readonly configContents?: Readonly<globalThis.Record<string, string>> | undefined;
   /** 影响主执行空间、网络与就绪语义的规范化 case 参数。 */
-  readonly caseParams?: JsonValue;
+  readonly caseParams?: JsonValue | undefined;
 }
 
 /**
@@ -71,7 +66,7 @@ export type ImageRefResolution =
 export interface CredentialRef {
   readonly name: string;
   /** 凭据同时选择了不同租户、数据集或权限面时必须提供;secret 值本身永不进身份。 */
-  readonly revision?: string;
+  readonly revision?: string | undefined;
 }
 
 /** 键序稳定的 JSON 序列化,保证同一 payload 永远同一 digest。 */

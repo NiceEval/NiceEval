@@ -72,7 +72,7 @@ user message 与 tool input 等短命内容只能走 `progress`。
 ## Sandbox Agent
 
 被测对象是在隔离 Sandbox 中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。
-CLI 身份写在必填 `ensure` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
+CLI 身份写在必填 `install` 中，由 Runner 负责 探测、配对 Installer、安装与复检。
 `before` 只写鉴权、运行时配置和扩展；每轮执行与 transcript 采集放在 `send`：
 
 ```ts
@@ -82,7 +82,7 @@ import { shell } from "niceeval/sandbox";
 export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: {
+  install: {
     identity: { agent: "my-coding-agent", version: "1.4.2" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
@@ -290,7 +290,7 @@ complete 的 limitations 必须为空，partial 必须有原因；从未提交�
 
 ### 事件展示块
 
-事件可以带可选的 `display`：一组人读展示块，随事件一起封存。`show --execution` 与 View 按块呈现，读取时不运行 Adapter 代码。
+事件可以带可选的 `display`：一组人读展示块，随事件一起封存。`show @<locator> execution` 与 View 按块呈现，读取时不运行 Adapter 代码。
 没有 `display` 的事件以 envelope、`summary` 与 payload JSON 呈现。
 
 ```ts
@@ -576,7 +576,9 @@ elapsedMs使用runtime的Attempt单调时钟起点到调用处的墙钟毫秒，
 
 ## 读取模型用途并关联调用
 
-`AdapterCreateContext.models` 是当前 Attempt 的只读映射，每项为 `{ model: string | null; reasoningEffort: string | null }`。
+`AdapterCreateContext.models` 是当前 Attempt 的只读映射，每项为 `{ model: string | undefined; reasoningEffort: string | undefined }`，两个键总是存在，未配置的值为 `undefined`。
+Record、Inspection 与 usage 报告等外部格式仍以 `null` 表示未配置；它们使用独立的 wire 类型，内部值与 wire 之间只有一处双向转换。
+从旧版升级的 Adapter 把 `=== null` 判断改为 `=== undefined` 或 `??`；TypeScript 不会把旧判断报为错误，`null` 赋值与 `string | null` 接收类型则会被拒绝。
 配置由 [Experiment](../../experiments/library/README.md#普通-adapter-的命名模型用途) 冻结，Adapter 不另复制一份模型 flags。
 
 `recordUsage` 可带 `modelRole?: string | null`。它引用当前配置的用途键，不要求实际 model 与配置相同。
@@ -726,6 +728,6 @@ requires 的未知字段、null、数组、缺少 models、非法键或超额声
 
 ## 模型用途与历史编码
 
-作者使用 `defineModelRoles`、`ModelRoleSelection` 与 `recordUsage({ modelRole })`。Inspection 输出 `modelRole`，缓存读比例按 `cacheRead.roles` 分组。Record adapter-usage revision 与持久字段 `modelSlot` 保持不变，config identity 继续采用 `models: { version: 1, slots }`；公开投影负责字段映射。
+作者使用 `defineModelRoles`、`ModelRoleSelection` 与 `recordUsage({ modelRole })`。Inspection 输出 `modelRole`，缓存读比例按 `cacheRead.roles` 分组。Record adapter-usage revision 与持久字段 `modelSlot` 保持不变，config identity 采用 `models: { slots }`，其中未配置的值编码为 `null`；公开投影负责字段映射。
 
 缓存读取比例 `rate(role?)` 返回 `NumericMaterial<"ratio">`。阈值使用 `/expect` 的 `ratio` 包装，单位不一致时不可判定。

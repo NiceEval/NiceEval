@@ -44,7 +44,7 @@ src/
 ├─ coordination/            # coordinationHost；execution claim 与共享资源协调
 ├─ run/                     # runHost；Run lifecycle、Attempt publication 与领域读写
 ├─ record/                  # 内部 SQLite adapter；不是公开 package 或 CLI
-├─ inspection/              # 固定第一方 operations；query 与 Insight 的唯一业务语义 owner
+├─ inspection/              # 固定第一方 operations；`show` 与 Insight 的唯一业务语义 owner
 ├─ view/                    # 第一方 Insight SPA 与 loopback Host；不提供作者组件层
 ├─ project/                 # projectHost + init contribution
 ├─ docker/cli/              # Docker 专属 profile/cache/BuildKit 命令树
@@ -71,7 +71,7 @@ src/
 ## 持久化与 Repository 边界
 
 NiceEval 的 live application SQLite 分为项目级 ProjectDatabase 与 OS-user 级 UserDatabase。
-项目唯一的 `<project>/.niceeval/record.sqlite` 保存 Run 与项目协调事实；其 publication、portable gate 和迁移由 [Run 架构](feature/run/architecture/README.md) 拥有。
+项目唯一的 `<project>/.niceeval/record.sqlite` 保存 Run 与项目协调事实；其 publication、portable gate 和格式检查由 [Run 架构](feature/run/architecture/README.md) 拥有。
 `${NICEEVAL_HOME:-~/.niceeval}/niceeval.sqlite` 是跨项目 UserDatabase 的唯一权威，不进入项目 Record 的 publication closure 或 portable artifact。
 它不保存 secret，也不提供 raw portable backup。
 
@@ -79,18 +79,20 @@ UserDatabase 静态组合有限的第一方 Repository。
 它们保存 durable user state、Provider cache registry 与 Incus allocation/artifact ledger。
 user-level lease/coordination 与 credential reference 也由具名 Repository 拥有。
 
-central owner 独占路径、连接、短事务、busy deadline、maintenance lease 与 migration orchestration。
+central owner 独占路径、连接、短事务、busy deadline、maintenance lease 与原子初始化。
 Repository 就近拥有 schema、固定 operations 与 typed row decoder；领域与 Service 不取得 raw connection、SQL 或自选 table/namespace 的能力。
 
-UserDatabase 的 application schema 使用全局连续版本与相邻 migration，所有 Repository 共用同一迁移 catalog。
-这与 [UserDatabase 迁移验收](engineering/testing/architecture/e2e/migrate.md) 使用同一版本边界。
+UserDatabase 的 application schema 只保留一个存储格式标记，所有 Repository 使用同一当前格式。
+打开旧格式时保留原文件并明确拒绝，不建立 reader / writer，也不自动迁移或清空。
+初始化与拒绝行为见 [UserDatabase 格式验收](engineering/testing/architecture/e2e/migrate.md)。
+
 不建立全局 State module/SPI、lifecycle DSL、通用 SQL executor、extension、`ATTACH` 或第三方动态注册。
 cache Repository 的 cleanup 或业务错误只使其所属操作失败，不成为其它 durable Repository 的逻辑前置。
 共享文件的 corruption、disk-full、WAL recovery 与 lock 影响范围则由同一 UserDatabase 承担。
 
 内部 SQLite adapter 使用 Node 24.15.0+ 的 `node:sqlite`、仓库内 SQL、固定 prepared statements 与 typed row decoder。
 它不引入 Drizzle 或自定义 rolling pack。SQL result 经过 Schema 或具名 decoder 后才越过 Host 边界。
-单 writer、WAL/checkpoint、二进制 Git diff 与数据库级迁移影响范围是接受的代价；不据此另设领域容量上限或性能 SLO。
+单 writer、WAL/checkpoint、二进制 Git diff 与数据库级格式不兼容的影响范围是接受的代价；不据此另设领域容量上限或性能 SLO。
 增量写入与读取的内部约束见 [SQLite 存储与资源生命周期](feature/run/architecture/storage.md)。
 
 ## 程序设计边界：纯函数、完整 ADT 与 Effect
@@ -124,7 +126,7 @@ Effect-native Library API 继续返回 Effect；只有 CLI / application 入口�
 | Run Core | Run identity/state、expected Planned attempts、Attempt origin/reference、Member action、publication revision 与 absence | 领域语义只在 Run Feature 演进；physical SQLite schema 独立演进 | 精确解码、publication transaction、writer fencing 与 Scope-bound I/O |
 | Producer / behavior | 产生所属固定事实，并维护 input/config/reuse identity | Assert-first evaluator、Plugin、matcher 与 Sandbox chain 可以独立变化 | 承接执行、并发与 interruption |
 | Inspection | 固定 typed registry、穷尽 request、四态 document、分母、limits、issues、Evidence 与三种 comparison | 当前 `project.get` 消费 Experiment Host 冻结的目标输入；历史 operation 只读已发布事实；用户不能注册公式或 SQL | `niceeval/inspection` 只导出 Schema、类型与 decoder；内部 selector 关闭 document |
-| Insight | machine query codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node query 与 View Host 执行同一 registry operation；当前 generation 同时固定目标输入与 cutoff |
+| Insight | `show --json` document codec 与 runtime SPA delivery | 第一方 UI 可以变化，不形成 Page、component、theme、route 或 renderer ABI | Node `show` 与 View Host 执行同一 registry operation；当前 generation 同时固定目标输入与 cutoff |
 
 ## 公开 Host composition SDK
 
@@ -334,7 +336,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    若该 Attempt 形成 `passed` Verdict 且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 Attempt。
 12. **收尾与留存。**
     finally 里按 `SandboxAgent.teardown` → 各 owner 已登记的 after action(按实际登记栈逆序,见 [Cleanup](feature/sandbox/library/layers.md#cleanup))→ Provider finalizer 的顺序收尾。
-    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep与注册表))。
+    收尾只能追加 diagnostic event，不改已经形成的 Verdict；随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture/README.md#留存keep))。
 13. **经 Run Host 发布 Attempt、收口 Run，并返回 receipt。**
     `experimentHost` 把 ExecutionTarget、reuse intents 与 executed outcomes 交给内部 Runner。
     reuse 与 explicit adoption 形成 reference Member，实际执行形成新 Attempt 及唯一 origin
@@ -344,7 +346,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
     Attempt closure、publication identity 与 origin binding。Run close 只冻结终态与 absence，最后返回
     `InvocationReceipt`。普通 `TestContext` 没有持久写入方法。
 
-    Inspection 不参与采集或落盘。Machine `query` 与 runtime `view` 的 Host
+    Inspection 不参与采集或落盘。`show` / `compare` 与 runtime `view` 的 Host
     把 pinned facts 传给同一内部 selector；当前 `project.get` 另消费 Experiment Host 冻结的目标输入。selector 关闭 selection、分母、missing、
     Evidence 与 comparison；CLI、Web 与 Testkit 使用 `niceeval/inspection` 的同一 Schema、类型与 decoder。
     Delivery 不重新读取 Run facts 或执行统计。

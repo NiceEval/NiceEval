@@ -83,7 +83,7 @@ After the run, view the cost of one Attempt or a whole experiment in the termina
 
 ```sh
 pnpm exec niceeval show @attempt-locator
-pnpm exec niceeval show --experiment regression
+pnpm exec niceeval show exp:regression
 ```
 
 To browse in the browser, run `pnpm exec niceeval view`.
@@ -126,7 +126,7 @@ The read rate is **total cache read tokens / total input tokens including cache*
 
 Missing input, no seal, a partial seal, an unknown call state, an empty group, or a zero denominator all return `unavailable`, with the causes listed in `reasons`. Missing data is not treated as zero; only a complete record with a positive input total and no cache reads yields the number 0. An old ledger without an explicit producer completeness declaration also returns `unavailable`.
 
-Use `niceeval show <Attempt locator> --usage` or View to see the read rate, coverage, and causes; scripts read the same report from `usage.cacheRead` in `attempt.usage`. Existing `recordUsage` calls need no renaming, but they must register cache tokens and seal honestly after collection completes. Historical result files need no migration.
+Use `niceeval show <Attempt locator> usage` or View to see the read rate, coverage, and causes; scripts read the same report from `usage.cacheRead` in `attempt.usage`. Existing `recordUsage` calls need no renaming, but they must register cache tokens and seal honestly after collection completes. Historical result files need no migration.
 
 
 Slot names come from the Experiment's `models` keys, not a built-in list. The single-model `model` shorthand maps to `default`.

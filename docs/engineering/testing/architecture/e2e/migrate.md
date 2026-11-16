@@ -1,20 +1,17 @@
-## OS-user Service state
+# UserDatabase 格式与初始化
 
-`state-journey.test.ts` 是安装后 `niceeval state migrate --all` 的最小长期 owner。
-它以隔离 `NICEEVAL_HOME` 执行两次同一公开命令，证明首次返回 `bootstrapped`，重复执行明确
-返回 `current` no-op，不用同一条“migrations complete”掩盖两种结果。
-唯一形成的 user durable SQLite 文件是 `${NICEEVAL_HOME}/niceeval.sqlite`，不会形成 project Record。
+UserDatabase 只有一个存储格式标记。不存在数据库时，首次真实消费原子初始化当前格式；已有数据库必须先通过格式检查。
+格式不符时，公开命令以非零状态说明精确路径及后续处理，原文件保持不变。
 
-UserDatabase 的 migration catalog 以全局连续 version 管理完整 application schema，不按 Repository 各自推进版本。
-每个新 version 必须由上一正式发布的安装包经公开入口生成 predecessor fixture，再由当前 candidate
-通过同一 `state migrate --all` 入口证明 inspect、apply、reopen/validate 与稳定错误反馈。不手工构造
-SQLite schema 来代替 predecessor。
+`e2e/cli/test/user-database-format.test.ts` 通过安装后的缓存清单 CLI 验证旧格式拒绝。
+fixture 使用历史安装产生的数据库，测试不手工构造内部 schema，也不读取私有表来判断成功。
+`e2e/cli/test/cache-inventory.test.ts` 与各实际消费 Repository 的 lifecycle/cache owner 验证当前库的初始化、读写、并发与释放。
 
-各第一方 repository 的读写、并发、恢复与资源终结继续由真实消费它们的 lifecycle/cache E2E 拥有。
-本 owner 不导入安装包私有模块，不读取 migration ledger 或 SQLite schema，不人工改写内部中间态。
-
-重跑这个 owner：
+运行最小验收：
 
 ```sh
-pnpm e2e test --repo migrate -- --run test/state-journey.test.ts
+pnpm e2e test --repo cli -- --run test/user-database-format.test.ts test/cache-inventory.test.ts
 ```
+
+这些操作使用隔离的 `NICEEVAL_HOME`，不得触碰维护者正在使用的 UserDatabase。
+格式拒绝不能自动清空数据库、删除其中登记的外部资源或替代资源所有权检查。

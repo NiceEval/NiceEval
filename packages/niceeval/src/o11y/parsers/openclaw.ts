@@ -1,24 +1,13 @@
-// OpenClaw transcript / `agent --json` 解析器。OpenClaw 方言只住这里,不进 core
-// (契约见 docs/feature/adapters/library/sdk/openclaw/README.md:字段事实以真实 CLI 与 transcript
-// fixture 固定为准;fixture 未证明的形状这里只做防御式解析,认不出的行标 parseSuccess=false,
-// 绝不从最终文本猜测工具轨迹)。
-//
-// 行为轨两个来源(collection.md 的通道优先级):
-//   1. session transcript JSONL(~/.openclaw/agents/**/sessions/*.jsonl,pi-agent 系
-//      消息格式:role/content parts,toolCall/toolResult 按 call ID 配对)→ parseOpenClawTranscript;
-//   2. `openclaw agent --json` 的 stdout 结果封包(最终回复、session key、失败与 usage 摘要,
-//      无完整工具轨迹)→ parseOpenClawRunJson,只在 transcript 拿不到时兜底。
-
+// OpenClaw session JSONL and agent --json use separate protocol boundaries.
+import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
-import { normalizeJsonValue } from "../../shared/json-value.ts";
 import { notCommandProjection, opaqueCommandProjection } from "../command-projection.ts";
+import { assertNever, coerceArgs, field, lineDecoder, nonEmptyString, unrecognized, UnknownPart } from "./shared.ts";
+import { addUsage, normalizeUsage, TokenUsage, transcriptUsage } from "./usage.ts";
 
-/**
- * OpenClaw 特有工具别名(CLI 自己的 transcript 词汇,不会撞用户域名,裸动词可 opt-in)
- * + 通用裸动词基表。
- */
 export const OPENCLAW_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   read: "file_read",
@@ -29,319 +18,289 @@ export const OPENCLAW_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   browser: "web_fetch",
 };
 
-function normalizeToolName(name: string): ToolName {
-  return normalizeShared(name, OPENCLAW_TOOL_ALIASES);
-}
+const string = nonEmptyString;
+const json = field(Schema.MutableJson);
+const Part = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text"), text: string }),
+  Schema.Struct({
+    type: Schema.Literals(["thinking", "reasoning"]),
+    thinking: string,
+    reasoning: string,
+    text: string,
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["toolCall", "tool_call", "tool-call", "toolUse"]),
+    name: json,
+    toolName: json,
+    id: string,
+    toolCallId: string,
+    tool_call_id: string,
+    arguments: json,
+    args: json,
+    input: json,
+  }),
+  UnknownPart,
+]);
+const Content = Schema.Union([Schema.String, Schema.Array(Part)]);
+const Message = Schema.Union([
+  Schema.Struct({ role: Schema.Literal("assistant"), content: field(Content), usage: field(TokenUsage) }),
+  Schema.Struct({ role: Schema.Literal("user"), content: json, text: json }),
+  Schema.Struct({
+    role: Schema.Literals(["toolResult", "tool"]),
+    toolCallId: string,
+    tool_call_id: string,
+    id: string,
+    isError: field(Schema.Boolean),
+    is_error: field(Schema.Boolean),
+    output: json,
+    result: json,
+    content: json,
+  }),
+  Schema.Struct({ role: Schema.Literal("system") }),
+]);
+const MessageEvent = Schema.Struct({ type: Schema.Literal("message"), message: Message });
+const Compaction = Schema.Struct({ type: Schema.Literal("compaction"), reason: string });
+const OpenClawEvent = Schema.Union([
+  Schema.Struct({ type: Schema.Literals(["compaction", "compact"]), reason: string }),
+  Schema.Struct({ kind: Schema.Literal("compaction"), reason: string }).pipe(
+    Schema.decodeTo(Schema.toType(Compaction), {
+      decode: SchemaGetter.transform((event) => ({ type: "compaction" as const, reason: event.reason })),
+      encode: SchemaGetter.transform((event) => ({ kind: "compaction" as const, reason: event.reason })),
+    }),
+  ),
+  MessageEvent,
+  Message.pipe(
+    Schema.decodeTo(Schema.toType(MessageEvent), {
+      decode: SchemaGetter.transform((message) => ({ type: "message" as const, message })),
+      encode: SchemaGetter.transform((event) => event.message),
+    }),
+  ),
+  Schema.Struct({ type: Schema.Literal("error"), message: json, error: json }),
+]);
+const decodeLine = lineDecoder(OpenClawEvent);
 
-/** OpenClaw 的 exec/process parts 标识 shell action，但 transcript 不提供原生 argv。 */
-function commandProjectionForOpenClawTool(name: string) {
-  const lower = name.toLowerCase();
-  return lower === "exec" || lower === "process"
-    ? opaqueCommandProjection("unsupported-protocol")
-    : notCommandProjection();
-}
-
-function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
-}
-
-function str(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
-}
-
-function num(obj: unknown, ...keys: string[]): number {
-  for (const k of keys) {
-    const v = get(obj, k);
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-  }
-  return 0;
-}
-
-function coerceArgs(value: unknown): JsonValue {
-  if (typeof value === "string") {
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return normalizeJsonValue(parsed, value);
-    } catch {
-      return value;
-    }
-  }
-  return normalizeJsonValue(value, {});
-}
-
-/** content parts / 字符串 → 纯文本(text 类 part 拼接)。 */
-function extractText(content: unknown): string {
+/** Tool outputs are arbitrary JSON; only their documented text blocks are joined. */
+function extractText(content: JsonValue | undefined): string {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const b of content) {
-      if (typeof b === "string") parts.push(b);
-      else {
-        const t = get(b, "text") ?? get(b, "content");
-        if (typeof t === "string" && t) parts.push(t);
-      }
-    }
-    return parts.join("\n");
-  }
-  return "";
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((block) => {
+      if (typeof block === "string") return [block];
+      if (block === null || typeof block !== "object" || Array.isArray(block)) return [];
+      const text = block.text ?? block.content;
+      return typeof text === "string" && text ? [text] : [];
+    })
+    .join("\n");
 }
 
-/**
- * OpenClaw session transcript(JSONL,pi-agent 系消息格式)→ 标准事件流 + 用量 + 压缩计数。
- * assistant 消息的 text / thinking / toolCall parts → message / thinking / operation.started,
- * toolResult 消息按 toolCallId 配对成 operation.finished(isError → failed),消息级 usage 逐条
- * 累加,compaction 条目计入压缩次数。认不出 / 解析失败的行标 `parseSuccess: false` 并跳过,
- * 不猜测——transcript 不完整时负断言不可信(契约见 sdk/openclaw/README.md)。
- */
 export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscript {
   const events: StreamEvent[] = [];
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheCreationTokens = 0;
-  let requests = 0;
+  const usage: Usage = {};
+  const unrecognizedEvents: Record<string, number> = Object.create(null);
   let compactions = 0;
   let parseSuccess = true;
-
-  if (!raw || !raw.trim()) {
-    return { events, usage: {}, compactions: 0, parseSuccess: true };
-  }
-
   let synth = 0;
   const nextSynthId = (): string => `oc_${++synth}`;
-
-  const addUsage = (usage: unknown): void => {
-    if (!usage || typeof usage !== "object") return;
-    // OpenClaw's transcript cost is session-derived from a price catalog, not
-    // provider billing. Preserve its token facts but never relabel that
-    // estimate as observed Usage.costUSD.
-    // pi 系简写(input/output/cacheRead/cacheWrite)与 snake_case 变体都认。
-    const input = num(usage, "input", "input_tokens", "inputTokens", "prompt_tokens");
-    const output = num(usage, "output", "output_tokens", "outputTokens", "completion_tokens");
-    const cacheRead = num(usage, "cacheRead", "cache_read_input_tokens", "cacheReadTokens");
-    const cacheCreation = num(usage, "cacheWrite", "cache_creation_input_tokens", "cacheCreationTokens");
-    if (input === 0 && output === 0 && cacheRead === 0 && cacheCreation === 0) return;
-    inputTokens += input;
-    outputTokens += output;
-    cacheReadTokens += cacheRead;
-    cacheCreationTokens += cacheCreation;
-    requests += 1;
-  };
-
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    let entry: unknown;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
+  for (const line of (raw ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    const decoded = decodeLine(line);
+    if (decoded.kind === "invalid-json") {
       parseSuccess = false;
+      unrecognized(unrecognizedEvents, "<missing-kind>");
       continue;
     }
-
-    try {
-      // 会话条目可能带 { type: "message", message: {...} } 包装,也可能就是消息本体。
-      const wrappedMessage = get(entry, "message");
-      const entryType = get(entry, "type");
-      const msg =
-        wrappedMessage && typeof wrappedMessage === "object" ? wrappedMessage : entry;
-      const role = get(msg, "role");
-
-      if (entryType === "compaction" || entryType === "compact" || get(entry, "kind") === "compaction") {
+    if (decoded.kind === "unrecognized") {
+      unrecognized(unrecognizedEvents, decoded.type);
+      continue;
+    }
+    const event = decoded.value;
+    switch (event.type) {
+      case "compaction":
+      case "compact":
         compactions += 1;
-        events.push({ type: "compaction", reason: str(get(entry, "reason")) });
-        continue;
-      }
-      if (entryType === "error" && role === undefined) {
-        events.push({ type: "error", message: String(get(entry, "message") ?? get(entry, "error") ?? "error") });
-        continue;
-      }
-
-      if (role === "assistant") {
-        addUsage(get(msg, "usage"));
-        const content = get(msg, "content");
-        if (typeof content === "string") {
-          if (content) events.push({ type: "message", role: "assistant", text: content });
-          continue;
-        }
-        if (!Array.isArray(content)) continue;
-        for (const part of content) {
-          const partType = get(part, "type");
-          if (partType === "text") {
-            const text = str(get(part, "text"));
-            if (text) events.push({ type: "message", role: "assistant", text });
-          } else if (partType === "thinking" || partType === "reasoning") {
-            const text = str(get(part, "thinking")) ?? str(get(part, "reasoning")) ?? str(get(part, "text"));
-            if (text) events.push({ type: "thinking", text });
-          } else if (partType === "toolCall" || partType === "tool_call" || partType === "tool-call" || partType === "toolUse") {
-            const name = String(get(part, "name") ?? get(part, "toolName") ?? "unknown");
-            const callId = str(get(part, "id")) ?? str(get(part, "toolCallId")) ?? str(get(part, "tool_call_id")) ?? nextSynthId();
-            events.push({
-              type: "operation.started",
-              operationId: callId,
-              operation: {
-                kind: "tool",
-                name,
-                input: coerceArgs(get(part, "arguments") ?? get(part, "args") ?? get(part, "input")),
-                tool: normalizeToolName(name),
-                command: commandProjectionForOpenClawTool(name),
-              },
-            });
+        events.push({ type: "compaction", reason: event.reason });
+        break;
+      case "error":
+        events.push({ type: "error", message: String(event.message ?? event.error ?? "error") });
+        break;
+      case "message": {
+        const message = event.message;
+        switch (message.role) {
+          case "assistant": {
+            if (message.usage !== undefined) addUsage(usage, normalizeUsage("openclaw", message.usage));
+            if (typeof message.content === "string") {
+              if (message.content) events.push({ type: "message", role: "assistant", text: message.content });
+              break;
+            }
+            for (const part of message.content ?? []) {
+              switch (part.type) {
+                case "text":
+                  if (part.text) events.push({ type: "message", role: "assistant", text: part.text });
+                  break;
+                case "thinking":
+                case "reasoning": {
+                  const text = part.thinking ?? part.reasoning ?? part.text;
+                  if (text) events.push({ type: "thinking", text });
+                  break;
+                }
+                case "toolCall":
+                case "tool_call":
+                case "tool-call":
+                case "toolUse": {
+                  const name = String(part.name ?? part.toolName ?? "unknown");
+                  const callId = part.id ?? part.toolCallId ?? part.tool_call_id ?? nextSynthId();
+                  const lower = name.toLowerCase();
+                  events.push({
+                    type: "operation.started",
+                    operationId: callId,
+                    operation: {
+                      kind: "tool",
+                      name,
+                      input: coerceArgs(part.arguments ?? part.args ?? part.input),
+                      tool: normalizeShared(name, OPENCLAW_TOOL_ALIASES),
+                      command:
+                        lower === "exec" || lower === "process"
+                          ? opaqueCommandProjection("unsupported-protocol")
+                          : notCommandProjection(),
+                    },
+                  });
+                  break;
+                }
+                case "<unrecognized>":
+                  unrecognized(unrecognizedEvents, `part:${part.originalType ?? "<missing-kind>"}`);
+                  break;
+                default:
+                  assertNever(part);
+              }
+            }
+            break;
           }
+          case "user": {
+            const text = extractText(message.content ?? message.text);
+            if (text) events.push({ type: "message", role: "user", text });
+            break;
+          }
+          case "toolResult":
+          case "tool": {
+            const callId = message.toolCallId ?? message.tool_call_id ?? message.id ?? nextSynthId();
+            const output = message.output ?? message.result ?? message.content;
+            events.push({
+              type: "operation.finished",
+              operationId: callId,
+              kind: "tool",
+              output: typeof output === "string" ? output : extractText(output) || output,
+              status: message.isError === true || message.is_error === true ? "failed" : "completed",
+            });
+            break;
+          }
+          case "system":
+            break;
+          default:
+            assertNever(message);
         }
-        continue;
+        break;
       }
-
-      if (role === "user") {
-        const text = extractText(get(msg, "content") ?? get(msg, "text"));
-        if (text) events.push({ type: "message", role: "user", text });
-        continue;
-      }
-
-      if (role === "toolResult" || role === "tool") {
-        const callId =
-          str(get(msg, "toolCallId")) ?? str(get(msg, "tool_call_id")) ?? str(get(msg, "id")) ?? nextSynthId();
-        const isError = get(msg, "isError") === true || get(msg, "is_error") === true;
-        const output = get(msg, "output") ?? get(msg, "result") ?? get(msg, "content");
-        events.push({
-          type: "operation.finished",
-          operationId: callId,
-          kind: "tool",
-          output: (typeof output === "string" ? output : (extractText(output) || output)) as JsonValue,
-          status: isError ? "failed" : "completed",
-        });
-        continue;
-      }
-      // 其它条目(system prompt、订阅元数据等):无对应 StreamEvent。
-    } catch {
-      parseSuccess = false;
+      default:
+        assertNever(event);
     }
   }
-
-  // requests > 0 意味着至少一条消息真的带回了 usage;整份 transcript 没有任何 usage 时
-  // input/output 也不该垫成 0(见 docs/feature/record/architecture.md#usage)。
-  const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
-  if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
-  if (cacheCreationTokens > 0) usage.cacheCreationTokens = cacheCreationTokens;
-  if (requests > 0) usage.requests = requests;
-
-  return { events, usage, compactions, parseSuccess };
+  return { events, usage: transcriptUsage("openclaw", usage), compactions, parseSuccess, unrecognizedEvents };
 }
 
-/** 便捷形态:只要 StreamEvent[]。 */
 export function parseOpenClaw(raw: string | undefined): StreamEvent[] {
   return parseOpenClawTranscript(raw).events;
 }
 
-/** `openclaw agent --json` 结果封包里抠出的摘要(无完整工具轨迹,只兜底)。 */
 export interface OpenClawRunJson {
-  /** 最终回复文本(result.text / payloads[].text / reply 变体)。 */
-  text?: string;
-  /** 本次 run 的 session key(首轮 capture、后续 resume 用)。 */
-  sessionId?: string;
-  /**
-   * 本轮 session transcript 绝对路径(`meta.agentMeta.sessionFile`)。
-   * 有的话优先按路径读,避开同目录 `*.trajectory.jsonl` 抢「最新」mtime。
-   */
-  sessionFile?: string;
-  /** 封包报告的用量;没报就省略,不编造。 */
-  usage?: Usage;
-  /** 封包自报失败(error 字段 / status=error|failed / success=false)。 */
+  text: string | undefined;
+  sessionId: string | undefined;
+  sessionFile: string | undefined;
+  usage: Usage | undefined;
   failed: boolean;
 }
 
-/**
- * `openclaw agent --json` 的 stdout → 结果摘要。整段 stdout 先按单个 JSON 文档解析
- * (含 pretty-print 多行),失败再逐行扫最后一个 JSON 对象(混了日志行的场景)。
- * 完全解析不出时返回空摘要(`failed: false`)——失败判定交给调用方的 exitCode。
- */
-export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJson {
-  const doc = parseJsonDocument(stdout);
-  if (!doc) return { failed: false };
+const Payloads = Schema.Array(Schema.Struct({ text: string }));
+const resultFields = {
+  text: string,
+  payloads: field(Payloads),
+  sessionId: string,
+  session_id: string,
+  sessionFile: string,
+  usage: field(TokenUsage),
+};
+const RunDocument = Schema.Struct({
+  ...resultFields,
+  sessionKey: string,
+  reply: string,
+  message: json,
+  error: json,
+  success: field(Schema.Boolean),
+  status: string,
+  result: field(Schema.Struct(resultFields)),
+  meta: field(
+    Schema.Struct({
+      usage: field(TokenUsage),
+      agentMeta: field(
+        Schema.Struct({
+          sessionId: string,
+          session_id: string,
+          sessionFile: string,
+          usage: field(TokenUsage),
+          lastCallUsage: field(TokenUsage),
+        }),
+      ),
+    }),
+  ),
+});
+const decodeRunDocument = lineDecoder(RunDocument);
 
-  const result = get(doc, "result");
-  const textFromPayloads = (payloads: unknown): string | undefined => {
-    if (!Array.isArray(payloads)) return undefined;
-    const texts = payloads.map((p) => str(get(p, "text"))).filter((t): t is string => !!t);
-    return texts.length ? texts.join("\n") : undefined;
-  };
-  const text =
-    str(get(result, "text")) ??
-    textFromPayloads(get(result, "payloads")) ??
-    textFromPayloads(get(doc, "payloads")) ??
-    str(get(doc, "text")) ??
-    str(get(doc, "reply")) ??
-    str(get(doc, "message"));
-
-  const meta = get(doc, "meta");
-  const agentMeta = get(meta, "agentMeta");
-
-  const sessionId =
-    str(get(doc, "sessionId")) ??
-    str(get(doc, "session_id")) ??
-    str(get(doc, "sessionKey")) ??
-    str(get(result, "sessionId")) ??
-    str(get(result, "session_id")) ??
-    str(get(agentMeta, "sessionId")) ??
-    str(get(agentMeta, "session_id"));
-
-  const sessionFile =
-    str(get(agentMeta, "sessionFile")) ??
-    str(get(doc, "sessionFile")) ??
-    str(get(result, "sessionFile"));
-
-  const rawUsage =
-    get(doc, "usage") ??
-    get(result, "usage") ??
-    get(meta, "usage") ??
-    get(agentMeta, "usage") ??
-    get(agentMeta, "lastCallUsage");
-  let usage: Usage | undefined;
-  if (rawUsage && typeof rawUsage === "object") {
-    const input = num(rawUsage, "input", "input_tokens", "inputTokens", "prompt_tokens");
-    const output = num(rawUsage, "output", "output_tokens", "outputTokens", "completion_tokens");
-    if (input > 0 || output > 0) {
-      usage = { inputTokens: input, outputTokens: output };
-      const cacheRead = num(rawUsage, "cacheRead", "cache_read_input_tokens", "cacheReadTokens");
-      if (cacheRead > 0) usage.cacheReadTokens = cacheRead;
-    }
-  }
-
-  const status = get(doc, "status");
-  const failed =
-    get(doc, "error") != null ||
-    get(doc, "success") === false ||
-    (typeof status === "string" && /^(error|failed)$/i.test(status));
-
-  return {
-    ...(text !== undefined ? { text } : {}),
-    ...(sessionId !== undefined ? { sessionId } : {}),
-    ...(sessionFile !== undefined ? { sessionFile } : {}),
-    ...(usage !== undefined ? { usage } : {}),
-    failed,
-  };
+function payloadText(payloads: typeof Payloads.Type | undefined): string | undefined {
+  if (payloads === undefined) return undefined;
+  const texts = payloads.flatMap((payload) => (payload.text === undefined ? [] : [payload.text]));
+  return texts.length ? texts.join("\n") : undefined;
 }
 
-function parseJsonDocument(stdout: string | undefined): globalThis.Record<string, unknown> | undefined {
-  if (!stdout || !stdout.trim()) return undefined;
-  const trimmed = stdout.trim();
-  try {
-    const doc = JSON.parse(trimmed) as unknown;
-    if (doc && typeof doc === "object" && !Array.isArray(doc)) return doc as globalThis.Record<string, unknown>;
-  } catch {
-    // 混日志行:逐行找最后一个完整 JSON 对象
-  }
-  const lines = trimmed.split("\n").reverse();
-  for (const line of lines) {
-    const l = line.trim();
-    if (!l.startsWith("{") || !l.endsWith("}")) continue;
-    try {
-      const doc = JSON.parse(l) as unknown;
-      if (doc && typeof doc === "object") return doc as globalThis.Record<string, unknown>;
-    } catch {
-      // 继续往上找
-    }
+function parseJsonDocument(stdout: string | undefined): typeof RunDocument.Type | undefined {
+  if (!stdout?.trim()) return undefined;
+  const document = decodeRunDocument(stdout.trim());
+  if (document.kind === "decoded") return document.value;
+  for (const line of stdout.trim().split("\n").reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) continue;
+    const decoded = decodeRunDocument(trimmed);
+    if (decoded.kind === "decoded") return decoded.value;
   }
   return undefined;
+}
+
+export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJson {
+  const document = parseJsonDocument(stdout);
+  if (document === undefined)
+    return { failed: false, text: undefined, sessionId: undefined, sessionFile: undefined, usage: undefined };
+  const agent = document.meta?.agentMeta;
+  const text =
+    document.result?.text ??
+    payloadText(document.result?.payloads) ??
+    payloadText(document.payloads) ??
+    document.text ??
+    document.reply ??
+    (typeof document.message === "string" && document.message ? document.message : undefined);
+  const sessionId =
+    document.sessionId ??
+    document.session_id ??
+    document.sessionKey ??
+    document.result?.sessionId ??
+    document.result?.session_id ??
+    agent?.sessionId ??
+    agent?.session_id;
+  const sessionFile = agent?.sessionFile ?? document.sessionFile ?? document.result?.sessionFile;
+  const reported =
+    document.usage ?? document.result?.usage ?? document.meta?.usage ?? agent?.usage ?? agent?.lastCallUsage;
+  let usage: Usage | undefined;
+  if (reported !== undefined) usage = normalizeUsage("openclaw", reported);
+  const failed =
+    document.error !== undefined ||
+    document.success === false ||
+    (document.status !== undefined && /^(error|failed)$/i.test(document.status));
+  return { text, sessionId, sessionFile, usage, failed };
 }

@@ -6,13 +6,16 @@
 
 Human 输出使用 Experiment、Eval、Attempt、结果、安全错误摘要、run ID 和下一步。它不展示持久表、lease、Member、Relation、内部 selector 或数据库细节。
 
-每条已创建 Run 都可由人使用 `niceeval view --run <run-id>` 审阅。已发布的单个 Attempt 保留 locator 作为数据 identity；用户从
-该 Run 的页面 Run/Attempt 导航打开详情。自动化不读取 Human 文本，而是以 receipt 中的 `createdRunIds` 与 `publicationCutoff` 构造固定 `niceeval query` request。
+相同原因的非交互暂停提示在整次运行中聚合一次，并报告没有暂停而直接清理的 Attempt 数。
+`NEXT` 只在命令末尾出现，最多三行；超出的 Run 入口通过 `niceeval run list --invocation <invocation-id>` 列出。
 
-Attempt 创建前的失败没有 locator。Human 输出必须说明受影响的 Experiment 与未启动数量，并给出 `niceeval view --run <run-id>`；它不能伪造 Attempt 详情或以空读数代替错误。
+每条已创建 Run 都可由人使用 `niceeval view run:<run-id>` 审阅。已发布的单个 Attempt 保留 locator 作为数据 identity；用户从
+该 Run 的页面 Run/Attempt 导航打开详情。自动化不读取 Human 文本，而是以 receipt 中的 `createdRunIds` 执行 `niceeval show run:<run-id> --json`。
+
+Attempt 创建前的失败没有 locator。Human 输出必须说明受影响的 Experiment 与未启动数量，并给出 `niceeval view run:<run-id>`；它不能伪造 Attempt 详情或以空读数代替错误。
 
 ## 机器边界
 
 `exp --json` 的 receipt 只交付 Invocation completion、`createdRunIds`、opaque `publicationCutoff` 与进程级事实。Verdict、usage、cost、Attempt 详情、缺口和 Evidence 由固定 Inspection operation 在该 cutoff 下读取。
 
-终端输出与 query、View 的职责不重叠：前者描述当前进程，后两者只读取 cutoff 内的已发布事实。任何持久结果都不能由进度面板、后台 session 或第三方 renderer 重建。
+终端输出与 `show`、View 的职责不重叠：前者描述当前进程，后两者只读取 cutoff 内的已发布事实。任何持久结果都不能由进度面板、后台 session 或第三方 renderer 重建。

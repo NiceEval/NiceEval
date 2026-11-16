@@ -21,7 +21,7 @@ import {
   runPostSetupHooks,
   runPreTeardownHooks,
 } from "./post-setup.ts";
-import { createNpmCliInstaller, resolveAgentBinEffect } from "./npm-staged.ts";
+import { createNpmCliInstaller } from "./npm-staged.ts";
 import type { Agent, AgentInstallationManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { requireManagedProcessCapability } from "../sandbox/backend.ts";
@@ -60,7 +60,7 @@ export interface ClaudeCodePluginSpec {
     /** Marketplace 来源:GitHub `owner/repo`、Git URL 或路径。 */
     source: string;
     /** 固定 Marketplace 的 Tag、Commit 或 Branch;给了就先按 ref clone 下来再以本地路径连接。 */
-    ref?: string;
+    ref?: string | undefined;
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -68,35 +68,35 @@ export interface ClaudeCodePluginSpec {
 
 export interface ClaudeCodeConfig {
   /** Anthropic API key。省略时读 ANTHROPIC_API_KEY env。 */
-  apiKey?: string;
+  apiKey?: string | undefined;
   /**
    * 自定义 API base URL(代理 / 内网端点)。省略时读 ANTHROPIC_BASE_URL env;
    * 两者都没有则用 Anthropic 官方端点(claude CLI 默认行为)。
    */
-  baseUrl?: string;
+  baseUrl?: string | undefined;
   /**
    * Claude Code 进程的额外环境变量。值只保留在运行时，不进入结果沿用身份。
    * 会改变行为的非敏感值应同时写入 Experiment flags 或所属 Plugin 的身份。
    */
-  env?: Readonly<globalThis.Record<string, string>>;
+  env?: Readonly<globalThis.Record<string, string>> | undefined;
   /**
    * 最多跑几个 tool-use 轮次(→ `--max-turns`)。
    * 控制评估用例成本上限;省略时用 CLI 原生默认(无限制)。
    */
-  maxTurns?: number;
+  maxTurns?: number | undefined;
   /**
    * 额外 MCP server(每个 Sandbox before 时写进用户级 ~/.claude.json)。
    * stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 headers,
    * 逐字进请求头),落成 { "type": "http", "url": …, "headers": … } 条目。
    */
-  mcpServers?: readonly McpServer[];
+  mcpServers?: readonly McpServer[] | undefined;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
    * 落在 project 级 `.claude/skills/<name>/`,claude CLI 原生发现。
    */
-  skills?: readonly SkillSpec[];
+  skills?: readonly SkillSpec[] | undefined;
   /** Claude Code 原生 Plugin(先连 Marketplace,再从中装指定 Plugin)。 */
-  plugins?: readonly ClaudeCodePluginSpec[];
+  plugins?: readonly ClaudeCodePluginSpec[] | undefined;
   /**
    * 一份完整的 Claude Code `settings.json`(官方格式)在本地项目里的路径 —— 相对运行
    * niceeval 的项目根(含 `niceeval.config.ts` 的目录)解析,不是 Sandbox 内路径;只接受
@@ -105,14 +105,14 @@ export interface ClaudeCodeConfig {
    * (不继承宿主机配置、不拼接、不重新序列化);保留键 `model` 与 `env` 出现在文件里
    * before 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文。
    */
-  settingsFile?: string;
+  settingsFile?: string | undefined;
   /**
    * 安装后按数组顺序运行的用户 Hook(复用 SandboxCommand 的窄上下文):在写 settings、挂 MCP、
    * 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 before 脚本这类
    * 「安装产物就位后才能跑」的过程动作。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  before?: readonly SandboxCommand[];
+  before?: readonly SandboxCommand[] | undefined;
   /**
    * 与 `before` 成对的收尾 Hook:按 `before` 的逆序语义,在 agent 自己的 after 步骤
    * 之前执行(LIFO 镜像 —— `before` 跑在 agent 安装之后,`after` 就跑在 agent 收尾
@@ -120,7 +120,7 @@ export interface ClaudeCodeConfig {
    * 按 teardown-failed 诊断收束。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
-  after?: readonly SandboxCommand[];
+  after?: readonly SandboxCommand[] | undefined;
 }
 
 // @concord-code
@@ -131,8 +131,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
-  const agentEnvSensitiveValues = Object.freeze(Object.values(agentEnv));
-  const { ensure, installer } = createNpmCliInstaller({
+  const { install, installer } = createNpmCliInstaller({
     identity: {
       agent: "claude-code",
       version: DEFAULT_CLAUDE_CODE_CLI_VERSION,
@@ -142,157 +141,169 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     bin: "claude",
   });
 
-  return attachCodingAgentExtensions(registerAgentLifecycleHookCommands(makeSandboxAgent({
-    name: "claude-code",
-    // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
-    evidenceCoverage: completeEvidenceCoverage,
-    spanMapper: mapClaudeCodeSpans,
-    ensure,
-    installers: [installer],
+  return attachCodingAgentExtensions(
+    registerAgentLifecycleHookCommands(
+      makeSandboxAgent({
+        name: "claude-code",
+        // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
+        evidenceCoverage: completeEvidenceCoverage,
+        spanMapper: mapClaudeCodeSpans,
+        install,
+        installers: [installer],
 
-    // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,
-    // 需要 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA 开关。
-    tracing: {
-      protocol: "http/protobuf",
-      env: (endpoint) => ({
-        CLAUDE_CODE_ENABLE_TELEMETRY: "1",
-        CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
-        OTEL_TRACES_EXPORTER: "otlp",
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: endpoint,
-        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf",
-        // CLI 是短命进程:压短导出间隔,别让 span 死在退出前的批处理队列里。
-        OTEL_TRACES_EXPORT_INTERVAL: "1000",
-      }),
-    },
-
-    before: (sb, ctx) => Effect.gen(function* () {
-      yield* Effect.try({ try: () => requireManagedProcessCapability(sb, "claude-code"), catch: (cause) => cause });
-      // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
-      // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
-      // checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
-      let settings: LoadedNativeConfig | undefined;
-      if (config?.settingsFile !== undefined) {
-        settings = yield* loadNativeConfigFileEffect({
-          agent: "claude-code",
-          field: "settingsFile",
-          path: config.settingsFile,
-        });
-        yield* Effect.try({
-          try: () => assertJsonNativeConfig(settings!, {
-            agent: "claude-code",
-            field: "settingsFile",
-            reservedKeys: RESERVED_SETTINGS_KEYS,
+        // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,
+        // 需要 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA 开关。
+        tracing: {
+          protocol: "http/protobuf",
+          env: (endpoint) => ({
+            CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+            CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
+            OTEL_TRACES_EXPORTER: "otlp",
+            OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: endpoint,
+            OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf",
+            // CLI 是短命进程:压短导出间隔,别让 span 死在退出前的批处理队列里。
+            OTEL_TRACES_EXPORT_INTERVAL: "1000",
           }),
-          catch: (cause) => cause,
-        });
-        yield* uploadNativeConfigFileEffect(sb, settings, SETTINGS_PATH);
-      }
-
-      yield* Effect.tryPromise({
-        try: async () => {
-          if (config?.mcpServers?.length) {
-            assertMcpServers(config.mcpServers);
-            const servers: globalThis.Record<string, object> = {};
-            const sensitiveValues: string[] = [];
-            for (const s of config.mcpServers) {
-              if (isHttpMcp(s)) {
-                const headers = s.headers;
-                if (headers) sensitiveValues.push(...Object.values(headers));
-                servers[s.name] = {
-                  type: "http",
-                  url: s.url,
-                  ...(headers && Object.keys(headers).length && { headers }),
-                };
-              } else {
-                const env = s.env;
-                if (env) sensitiveValues.push(...Object.values(env));
-                servers[s.name] = {
-                  command: s.command,
-                  ...(s.args?.length && { args: s.args }),
-                  ...(env && { env }),
-                };
-              }
-            }
-            // 用户级 MCP 配置在 ~/.claude.json(顶层 mcpServers 字段),不是 ~/.claude/claude.json
-            // ——后者 claude CLI 根本不读,MCP 静默挂不上(本机 `claude mcp list` 可核对)。
-            await shared.writeFile(
-              sb,
-              "~/.claude.json",
-              JSON.stringify({ mcpServers: servers }, null, 2),
-              { sensitiveValues },
-            );
-          }
-
-          const manifest: AgentInstallationManifest = { skills: [] };
-          if (config?.skills?.length) {
-            manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-          }
-          if (config?.plugins?.length) {
-            manifest.nativePlugins = await installPlugins(sb, config.plugins);
-          }
-          if (config?.mcpServers?.length) {
-            // manifest 里只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
-            manifest.mcpServers = mcpManifestEntries(config.mcpServers);
-          }
-          if (settings) {
-            // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
-            manifest.nativeConfigFile = { agent: "claude-code", path: settings.path, sha256: settings.sha256 };
-          }
-          // 什么都没装就不写 manifest:空 artifact 不落文件(同 results 的落盘规则)。
-          if (
-            manifest.skills.length ||
-            manifest.nativePlugins?.length ||
-            manifest.mcpServers?.length ||
-            manifest.nativeConfigFile
-          ) {
-            ctx.reportInstallation(manifest);
-          }
-
-          // 安装后钩子(before):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
-          // 钩子失败不该丢掉这份证据。
-          await runPostSetupHooks(sb, ctx, "claude-code", config?.before);
         },
-        catch: (cause) => cause,
-      });
-    }),
 
-    after: (sb, ctx) => Effect.tryPromise({
-      try: async (signal) => {
-        // after 与 before 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
-        // claude-code 目前没有其它收尾步骤,这段就是整个 teardown。
-        try {
-          await runPreTeardownHooks(sb, { ...ctx, signal }, "claude-code", config?.after);
-        } finally {
-          await attemptResources(ctx)?.shutdownAll(signal);
-        }
-      },
-      catch: (cause) => cause,
-    }),
+        before: (sb, ctx) =>
+          Effect.gen(function* () {
+            yield* Effect.try({
+              try: () => requireManagedProcessCapability(sb, "claude-code"),
+              catch: (cause) => cause,
+            });
+            // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
+            // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
+            // checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
+            let settings: LoadedNativeConfig | undefined;
+            if (config?.settingsFile !== undefined) {
+              settings = yield* loadNativeConfigFileEffect({
+                agent: "claude-code",
+                field: "settingsFile",
+                path: config.settingsFile,
+              });
+              yield* Effect.try({
+                try: () =>
+                  assertJsonNativeConfig(settings!, {
+                    agent: "claude-code",
+                    field: "settingsFile",
+                    reservedKeys: RESERVED_SETTINGS_KEYS,
+                  }),
+                catch: (cause) => cause,
+              });
+              yield* uploadNativeConfigFileEffect(sb, settings, SETTINGS_PATH);
+            }
 
-    send: (input, ctx) => Effect.tryPromise({
-      try: () => {
-        const args: string[] = [];
-        if (ctx.model) args.push("--model", ctx.model);
-        if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
-        if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
+            yield* Effect.tryPromise({
+              try: async () => {
+                if (config?.mcpServers?.length) {
+                  assertMcpServers(config.mcpServers);
+                  const servers: globalThis.Record<string, object> = {};
+                  const sensitiveValues: string[] = [];
+                  for (const s of config.mcpServers) {
+                    if (isHttpMcp(s)) {
+                      const headers = s.headers;
+                      if (headers) sensitiveValues.push(...Object.values(headers));
+                      servers[s.name] = {
+                        type: "http",
+                        url: s.url,
+                        ...(headers && Object.keys(headers).length && { headers }),
+                      };
+                    } else {
+                      const env = s.env;
+                      if (env) sensitiveValues.push(...Object.values(env));
+                      servers[s.name] = {
+                        command: s.command,
+                        ...(s.args?.length && { args: s.args }),
+                        ...(env && { env }),
+                      };
+                    }
+                  }
+                  // 用户级 MCP 配置在 ~/.claude.json(顶层 mcpServers 字段),不是 ~/.claude/claude.json
+                  // ——后者 claude CLI 根本不读,MCP 静默挂不上(本机 `claude mcp list` 可核对)。
+                  await shared.writeFile(sb, "~/.claude.json", JSON.stringify({ mcpServers: servers }, null, 2), {
+                    sensitiveValues,
+                  });
+                }
 
-        const apiKey = getApiKey();
-        const env: globalThis.Record<string, string> = {
-          ...agentEnv,
-          ANTHROPIC_API_KEY: apiKey,
-          // Eval runs must not silently change CLI version after the sandbox artifact was built.
-          DISABLE_AUTOUPDATER: "1",
-          ...ctx.telemetry?.env,
-        };
-        const baseUrl = getBaseUrl();
-        if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
-        return sendClaudeCodeNative(input, ctx, args, env);
-      },
-      catch: (cause) => cause,
-    }),
-  }), config?.before, config?.after), "claudeCode", config, claudeCodeAgent);
+                const manifest: AgentInstallationManifest = { skills: [] };
+                if (config?.skills?.length) {
+                  manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
+                }
+                if (config?.plugins?.length) {
+                  manifest.nativePlugins = await installPlugins(sb, config.plugins);
+                }
+                if (config?.mcpServers?.length) {
+                  // manifest 里只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
+                  manifest.mcpServers = mcpManifestEntries(config.mcpServers);
+                }
+                if (settings) {
+                  // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
+                  manifest.nativeConfigFile = { agent: "claude-code", path: settings.path, sha256: settings.sha256 };
+                }
+                // 什么都没装就不写 manifest:空 artifact 不落文件(同 results 的落盘规则)。
+                if (
+                  manifest.skills.length ||
+                  manifest.nativePlugins?.length ||
+                  manifest.mcpServers?.length ||
+                  manifest.nativeConfigFile
+                ) {
+                  ctx.reportInstallation(manifest);
+                }
+
+                // 安装后钩子(before):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+                // 钩子失败不该丢掉这份证据。
+                await runPostSetupHooks(sb, ctx, "claude-code", config?.before);
+              },
+              catch: (cause) => cause,
+            });
+          }),
+
+        after: (sb, ctx) =>
+          Effect.tryPromise({
+            try: async (signal) => {
+              // after 与 before 成对:LIFO 镜像,先于 agent 自己的收尾步骤执行。
+              // claude-code 目前没有其它收尾步骤,这段就是整个 teardown。
+              try {
+                await runPreTeardownHooks(sb, { ...ctx, signal }, "claude-code", config?.after);
+              } finally {
+                await attemptResources(ctx)?.shutdownAll(signal);
+              }
+            },
+            catch: (cause) => cause,
+          }),
+
+        send: (input, ctx) =>
+          Effect.tryPromise({
+            try: () => {
+              const args: string[] = [];
+              if (ctx.model) args.push("--model", ctx.model);
+              if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
+              if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
+
+              const apiKey = getApiKey();
+              const env: globalThis.Record<string, string> = {
+                ...agentEnv,
+                ANTHROPIC_API_KEY: apiKey,
+                // Eval runs must not silently change CLI version after the sandbox artifact was built.
+                DISABLE_AUTOUPDATER: "1",
+                ...ctx.telemetry?.env,
+              };
+              const baseUrl = getBaseUrl();
+              if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
+              return sendClaudeCodeNative(input, ctx, args, env);
+            },
+            catch: (cause) => cause,
+          }),
+      }),
+      config?.before,
+      config?.after,
+    ),
+    "claudeCode",
+    config,
+    claudeCodeAgent,
+  );
 }
-
 
 /**
  * 先按 `marketplace.name` 建立 Marketplace 连接(同名只连一次,add 后回读注册列表校验
@@ -324,9 +335,7 @@ export async function installPlugins(
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
       await dropRegisteredMarketplace(sb, marketplace.name);
-      const source = marketplace.ref
-        ? await cloneRepo(sb, marketplace.source, marketplace.ref)
-        : marketplace.source;
+      const source = marketplace.ref ? await cloneRepo(sb, marketplace.source, marketplace.ref) : marketplace.source;
       const addCommand = `${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`;
       let add = await sb.runShell(addCommand);
       // The native CLI fetches remote marketplace metadata during add. A
@@ -382,6 +391,7 @@ ${outputTail(install)}`,
  * (真机核对 claude 2.1.220)。同一个 plugin 可以在 user / project / local 多个 scope 各有一条,
  * 卸载要带上条目自己的 scope。抠不出(非 JSON / 未知形状)返回 undefined,由调用方决定放行还是抛错。
  */
+// Third-party JSON boundary: Claude's installed-plugin output omits unavailable fields.
 interface ClaudeInstalledPlugin {
   id?: string;
   version?: string;
@@ -413,15 +423,17 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
 ${outputTail(res)}`);
   }
 
-  const targets = new Map<string, { id: string; scope?: string }>();
+  const targets = new Map<string, { id: string; scope: string | undefined }>();
   for (const entry of list) {
     const id = entry.id;
     if (!id || id.split("@")[0] !== name) continue;
-    targets.set(`${id} ${entry.scope ?? ""}`, { id, ...(entry.scope ? { scope: entry.scope } : {}) });
+    targets.set(`${id} ${entry.scope ?? ""}`, { id, scope: entry.scope });
   }
   for (const target of targets.values()) {
     const scopeFlag = target.scope ? ` --scope ${shared.shellQuote(target.scope)}` : "";
-    const remove = await sb.runShell(`${shared.agentBin("claude")} plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`);
+    const remove = await sb.runShell(
+      `${shared.agentBin("claude")} plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`,
+    );
     if (remove.exitCode !== 0) {
       throw new Error(`Could not remove the same-named installed ${"claude-code"} plugin "${target.id}":
 ${outputTail(remove)}

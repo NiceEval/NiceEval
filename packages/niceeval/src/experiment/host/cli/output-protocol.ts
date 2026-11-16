@@ -8,6 +8,53 @@ const NonNegativeNumberSchema = Schema.Number.pipe(
   Schema.check(Schema.makeFilter((value) => Number.isFinite(value) && value >= 0)),
 );
 
+/** Provider-native access and cleanup for a retained Attempt scene. */
+export const ExpKeptEventSchema = Schema.Struct({
+  event: Schema.Literal("kept"),
+  locator: Schema.String,
+  evalId: Schema.String,
+  attempt: NonNegativeIntegerSchema,
+  verdict: Schema.Literals(["passed", "failed", "errored"]),
+  provider: Schema.String,
+  sandboxId: Schema.String,
+  nativeCommand: Schema.String,
+  cleanCommand: Schema.String,
+  // JSON event keys are observable; providers without an expiry omit this key.
+  expiresAt: Schema.optionalKey(Schema.String),
+});
+
+/** Reports one retained Sandbox with the provider-native commands to enter and destroy it; NiceEval keeps no registry for it. */
+export type ExpKeptEvent = Schema.Schema.Type<typeof ExpKeptEventSchema>;
+
+/** Strictly decode one `kept` event written by `niceeval exp --json`; extra keys are rejected. */
+export function decodeExpKeptEvent(input: unknown): ExpKeptEvent {
+  return Schema.decodeUnknownSync(ExpKeptEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
+}
+
+/** The initial execution scale emitted by `niceeval exp --json`. */
+export const ExpStartEventSchema = Schema.Struct({
+  event: Schema.Literal("start"),
+  total: NonNegativeIntegerSchema,
+  configs: NonNegativeIntegerSchema,
+  concurrency: NonNegativeIntegerSchema,
+  experimentConcurrency: Schema.optional(Schema.Record(Schema.String, NonNegativeIntegerSchema)),
+  reused: NonNegativeIntegerSchema,
+});
+
+/** Carries the planned execution scale before progress or terminal events. */
+export type ExpStartEvent = Schema.Schema.Type<typeof ExpStartEventSchema>;
+
+/** Strictly decode the initial exp stream event using the candidate's Schema runtime. */
+export function decodeExpStartEvent(input: unknown): ExpStartEvent {
+  return Schema.decodeUnknownSync(ExpStartEventSchema, {
+    errors: "all",
+    onExcessProperty: "error",
+  })(input);
+}
+
 export const ExpInvocationReceiptSchema = Schema.Struct({
   invocationId: Schema.String,
   createdRunIds: Schema.Array(Schema.String),
@@ -56,16 +103,18 @@ export const ExpProgressEventSchema = Schema.Struct({
   failed: NonNegativeIntegerSchema,
   errored: NonNegativeIntegerSchema,
   skipped: NonNegativeIntegerSchema,
-  active: Schema.Array(Schema.Struct({
-    experimentId: Schema.optional(Schema.String),
-    evalId: Schema.String,
-    attempt: NonNegativeIntegerSchema,
-    phase: Schema.String,
-    elapsedMs: NonNegativeNumberSchema,
-  })).check(Schema.makeFilter((value) => value.length <= 64)),
+  active: Schema.Array(
+    Schema.Struct({
+      experimentId: Schema.optional(Schema.String),
+      evalId: Schema.String,
+      attempt: NonNegativeIntegerSchema,
+      phase: Schema.String,
+      elapsedMs: NonNegativeNumberSchema,
+    }),
+  ).check(Schema.makeFilter((value) => value.length <= 64)),
   activeOmitted: NonNegativeIntegerSchema,
 });
-/** A versioned exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
+/** An exp stream event decoded by the package-owned decoder; do not reinterpret its Schema with a different Effect runtime. */
 export type ExpProgressEvent = Schema.Schema.Type<typeof ExpProgressEventSchema>;
 
 /** Strictly decodes one exp progress event and rejects unknown properties. Use this decoder at the package boundary instead of rebuilding its Schema in another runtime. */

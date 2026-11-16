@@ -140,10 +140,22 @@ export default function AgentLoop({ t, locale }: { t: Dictionary; locale: Locale
                   }}
                 >
                   <path className="loop-arc" d={segmentPath(index)} vectorEffect="non-scaling-stroke" />
-                  <text className="loop-arc-label" x={mid.x} y={mid.y - 7} textAnchor="middle" dominantBaseline="central">
+                  <text
+                    className="loop-arc-label"
+                    x={mid.x}
+                    y={mid.y - 7}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
                     {label}
                   </text>
-                  <text className="loop-arc-cmd" x={mid.x} y={mid.y + 11} textAnchor="middle" dominantBaseline="central">
+                  <text
+                    className="loop-arc-cmd"
+                    x={mid.x}
+                    y={mid.y + 11}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
                     {cmd}
                   </text>
                 </g>

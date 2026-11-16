@@ -21,9 +21,7 @@ async function findFreePort() {
     const port = PREFERRED_PORT + i;
     if (await isPortFree(port)) return port;
   }
-  throw new Error(
-    `No free port found in range ${PREFERRED_PORT}-${PREFERRED_PORT + MAX_ATTEMPTS - 1}`,
-  );
+  throw new Error(`No free port found in range ${PREFERRED_PORT}-${PREFERRED_PORT + MAX_ATTEMPTS - 1}`);
 }
 
 const port = await findFreePort();
@@ -31,10 +29,6 @@ if (port !== PREFERRED_PORT) {
   console.log(`Port ${PREFERRED_PORT} is in use, using ${port} instead.`);
 }
 
-const child = spawn(
-  "next",
-  ["dev", "--hostname", HOSTNAME, "--port", String(port)],
-  { stdio: "inherit" },
-);
+const child = spawn("next", ["dev", "--hostname", HOSTNAME, "--port", String(port)], { stdio: "inherit" });
 
 child.on("exit", (code) => process.exit(code ?? 0));

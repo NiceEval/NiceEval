@@ -1,16 +1,16 @@
-import { Schema } from "effect";
-import type {
-  CommandPlan,
-  CommandPlanStep,
-  BeforeCachePlan,
-} from "../../../runner/command-plan.ts";
+import { Effect, Schema } from "effect";
+import type { CommandPlan, CommandPlanStep, BeforeCachePlan } from "../../../runner/command-plan.ts";
 import { isJsonValue } from "../../../shared/json-value.ts";
 import type { JsonValue } from "../../../shared/types.ts";
+
+function optionalFact<S extends Schema.Constraint>(schema: S) {
+  return Schema.UndefinedOr(schema).pipe(Schema.withDecodingDefault(Effect.succeed(undefined)));
+}
 
 const OwnerSchema = Schema.Struct({
   kind: Schema.Literals(["eval", "eval-group", "experiment", "adapter", "agent", "provider"]),
   id: Schema.String,
-  index: Schema.optional(Schema.Number),
+  index: optionalFact(Schema.Number),
 });
 const ScheduleOwnerSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literals(["eval", "eval-group", "experiment"]), id: Schema.String }),
@@ -39,10 +39,12 @@ const LocatorSchema = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Redacted"),
     fields: Schema.NonEmptyArray(LocatorFieldSchema),
-    redactions: Schema.Array(Schema.Struct({
-      field: LocatorFieldNameSchema,
-      parts: Schema.Array(Schema.Literals(["userinfo", "query", "fragment"])),
-    })),
+    redactions: Schema.Array(
+      Schema.Struct({
+        field: LocatorFieldNameSchema,
+        parts: Schema.Array(Schema.Literals(["userinfo", "query", "fragment"])),
+      }),
+    ),
   }),
   Schema.Struct({ _tag: Schema.Literal("Opaque"), reason: ReasonSchema }),
 ]);
@@ -52,33 +54,39 @@ const CommandSchema = Schema.Union([
     kind: Schema.Literal("argv"),
     executable: Schema.String,
     args: Schema.Array(Schema.String),
-    cwd: Schema.optional(Schema.String),
-    user: Schema.optional(Schema.String),
-    timeoutMs: Schema.optional(Schema.Number),
-    envKeys: Schema.optional(Schema.Array(Schema.String)),
+    cwd: optionalFact(Schema.String),
+    user: optionalFact(Schema.String),
+    timeoutMs: optionalFact(Schema.Number),
+    envKeys: optionalFact(Schema.Array(Schema.String)),
   }),
   Schema.Struct({
     kind: Schema.Literal("shell"),
     script: Schema.String,
-    cwd: Schema.optional(Schema.String),
-    user: Schema.optional(Schema.String),
-    timeoutMs: Schema.optional(Schema.Number),
-    envKeys: Schema.optional(Schema.Array(Schema.String)),
+    cwd: optionalFact(Schema.String),
+    user: optionalFact(Schema.String),
+    timeoutMs: optionalFact(Schema.Number),
+    envKeys: optionalFact(Schema.Array(Schema.String)),
   }),
 ]);
 
+const ExecStepFields = {
+  kind: Schema.Literal("exec"),
+  executable: Schema.String,
+  args: Schema.Array(Schema.String),
+  cwd: optionalFact(Schema.String),
+  user: optionalFact(Schema.String),
+  timeoutMs: optionalFact(Schema.Number),
+  envKeys: optionalFact(Schema.Array(Schema.String)),
+};
 const ActionStepSchema = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("exec"),
-    executable: Schema.String,
-    args: Schema.Array(Schema.String),
-    cwd: Schema.optional(Schema.String),
-    user: Schema.optional(Schema.String),
-    timeoutMs: Schema.optional(Schema.Number),
-    envKeys: Schema.optional(Schema.Array(Schema.String)),
-    stdinDigest: Schema.optional(Schema.String),
-    stdinBytes: Schema.optional(Schema.Number),
-  }),
+  Schema.Union([
+    Schema.Struct({
+      ...ExecStepFields,
+      stdinDigest: optionalFact(Schema.Undefined),
+      stdinBytes: optionalFact(Schema.Undefined),
+    }),
+    Schema.Struct({ ...ExecStepFields, stdinDigest: Schema.String, stdinBytes: Schema.Number }),
+  ]),
   Schema.Struct({ kind: Schema.Literal("putText"), path: Schema.String, digest: Schema.String, bytes: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("putBytes"), path: Schema.String, digest: Schema.String, bytes: Schema.Number }),
   Schema.Struct({
@@ -91,20 +99,20 @@ const ActionStepSchema = Schema.Union([
     repository: Schema.String,
     ref: Schema.String,
     to: Schema.String,
-    sparse: Schema.optional(Schema.Struct({ include: Schema.Array(Schema.String), exclude: Schema.Array(Schema.String) })),
+    sparse: optionalFact(Schema.Struct({ include: Schema.Array(Schema.String), exclude: Schema.Array(Schema.String) })),
   }),
 ]);
 
 const ActionSchema = Schema.Union([
   Schema.Struct({
     id: Schema.String,
-    label: Schema.optional(Schema.String),
+    label: optionalFact(Schema.String),
     family: Schema.String,
     state: ActionStateSchema,
     input: JsonValueSchema,
     steps: Schema.Array(ActionStepSchema),
     fingerprint: Schema.Struct({ automatic: Schema.String, supplemental: Schema.String, combined: Schema.String }),
-    kind: Schema.optional(Schema.Literals(["action", "command"])),
+    kind: Schema.Literal("action"),
   }),
   Schema.Struct({ id: Schema.String, kind: Schema.Literals(["command", "callback"]) }),
 ]);
@@ -128,8 +136,8 @@ const CacheEligibilitySchema = Schema.Union([
 const CacheSchema = Schema.Struct({
   lookup: Schema.Literal("not-probed"),
   capability: Schema.Literals(["run-prepared", "attempt-captured", "unsupported"]),
-  prefixIdentity: Schema.optional(Schema.String),
-  capabilityReason: Schema.optional(Schema.String),
+  prefixIdentity: optionalFact(Schema.String),
+  capabilityReason: optionalFact(Schema.String),
   runtime: Schema.Struct({ status: Schema.Literal("pending"), finalKey: Schema.Literal("not-probed") }),
   eligibility: CacheEligibilitySchema,
   state: Schema.Struct({
@@ -144,59 +152,80 @@ const CacheSchema = Schema.Struct({
       "unsupported-state",
       "unsupported-state-ancestor",
     ]),
-    barrierActionId: Schema.optional(Schema.String),
+    barrierActionId: optionalFact(Schema.String),
   }),
 });
 
-const CommandPlanStepSchema: Schema.Codec<CommandPlanStep> = Schema.suspend(() => Schema.Struct({
-  phase: Schema.String,
-  label: Schema.optional(Schema.String),
-  scriptSource: Schema.optional(Schema.Struct({ path: Schema.String, digest: Schema.String, bytes: Schema.Number })),
-  owner: Schema.optional(OwnerSchema),
-  truth: Schema.Literals(["exact", "conditional", "opaque", "known-no-command"]),
-  condition: Schema.optional(ConditionSchema),
-  reason: Schema.optional(ReasonSchema),
-  template: Schema.optional(Schema.Struct({
-    owner: OwnerSchema,
-    provider: Schema.String,
-    kind: Schema.String,
-    locator: LocatorSchema,
-  })),
-  redactions: Schema.optional(Schema.Array(Schema.Literals([
-    "env-values",
-    "header-values",
-    "stdin",
-    "sensitive-values",
-    "command",
-  ]))),
-  command: Schema.optional(CommandSchema),
-  children: Schema.optional(Schema.Array(CommandPlanStepSchema)),
-  action: Schema.optional(ActionSchema),
-  declarationOrder: Schema.optional(Schema.Struct({ owner: ScheduleOwnerSchema, ordinal: Schema.Number })),
-  executionOrder: Schema.optional(Schema.Struct({
-    topologicalOrdinal: Schema.Number,
-    occurrencePath: Schema.Array(Schema.String),
-  })),
-  changeFrequency: Schema.optional(Schema.Struct({
-    value: Schema.Number,
-    source: Schema.Literals(["explicit", "defaulted"]),
-    preset: Schema.optional(Schema.Literals(["rare", "normal", "frequent"])),
-  })),
-  schedulingReason: Schema.optional(Schema.String),
-  dependencies: Schema.optional(Schema.Array(Schema.Struct({
-    id: Schema.String,
-    source: Schema.Literals(["explicit", "capability", "same-layer"]),
-    capability: Schema.optional(Schema.String),
-  }))),
-  occurrence: Schema.optional(Schema.Struct({ kind: Schema.Literal("attempt") })),
-  cache: Schema.optional(CacheSchema),
-}));
+const CommandPlanStepSchema: Schema.Codec<CommandPlanStep, unknown> = Schema.suspend(() => {
+  const common = {
+    phase: Schema.String,
+    label: optionalFact(Schema.String),
+    owner: optionalFact(OwnerSchema),
+    condition: optionalFact(ConditionSchema),
+  };
+  const scheduled = {
+    action: ActionSchema,
+    declarationOrder: Schema.Struct({ owner: ScheduleOwnerSchema, ordinal: Schema.Number }),
+    executionOrder: Schema.Struct({
+      topologicalOrdinal: Schema.Number,
+      occurrencePath: Schema.Array(Schema.String),
+    }),
+    changeFrequency: Schema.Struct({
+      value: Schema.Number,
+      source: Schema.Literals(["explicit", "defaulted"]),
+      preset: optionalFact(Schema.Literals(["rare", "normal", "frequent"])),
+    }),
+    schedulingReason: Schema.String,
+    dependencies: Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        source: Schema.Literals(["explicit", "capability", "same-layer"]),
+        capability: optionalFact(Schema.String),
+      }),
+    ),
+    occurrence: Schema.Struct({ kind: Schema.Literal("attempt") }),
+    cache: CacheSchema,
+  };
+  function operation<const F extends Schema.Struct.Fields>(fields: F) {
+    return Schema.Union([
+      Schema.Struct({ ...common, ...fields }),
+      Schema.Struct({ ...common, ...fields, ...scheduled }),
+    ]);
+  }
+  return Schema.Union([
+    operation({
+      truth: Schema.Literal("exact"),
+      command: CommandSchema,
+      redactions: optionalFact(
+        Schema.Array(Schema.Literals(["env-values", "header-values", "stdin", "sensitive-values", "command"])),
+      ),
+    }),
+    operation({
+      truth: Schema.Literal("exact"),
+      action: ActionSchema,
+      scriptSource: optionalFact(Schema.Struct({ path: Schema.String, digest: Schema.String, bytes: Schema.Number })),
+    }),
+    operation({ truth: Schema.Literal("conditional"), children: Schema.Array(CommandPlanStepSchema) }),
+    operation({ truth: Schema.Literal("opaque"), reason: ReasonSchema }),
+    operation({
+      truth: Schema.Literal("opaque"),
+      reason: ReasonSchema,
+      template: Schema.Struct({
+        owner: OwnerSchema,
+        provider: Schema.String,
+        kind: Schema.String,
+        locator: LocatorSchema,
+      }),
+    }),
+    operation({ truth: Schema.Literal("known-no-command"), reason: optionalFact(ReasonSchema) }),
+  ]);
+});
 
 const SlotSchema = Schema.Struct({
   evalId: Schema.String,
   attempt: Schema.Number,
   action: Schema.Literals(["carried", "dispatch"]),
-  activation: Schema.optional(ConditionSchema),
+  activation: optionalFact(ConditionSchema),
   steps: Schema.Array(CommandPlanStepSchema),
 });
 const PhysicalLifecycleTemplateSchema = Schema.Struct({
@@ -219,7 +248,7 @@ const LaneSchema = Schema.Union([
       Schema.Struct({ kind: Schema.Literal("shared") }),
       Schema.Struct({ kind: Schema.Literal("eval"), evalId: Schema.String }),
     ]),
-    physicalLifecycleTemplate: Schema.optional(PhysicalLifecycleTemplateSchema),
+    physicalLifecycleTemplate: optionalFact(PhysicalLifecycleTemplateSchema),
     slots: Schema.Array(SlotSchema),
   }),
   Schema.Struct({
@@ -228,33 +257,37 @@ const LaneSchema = Schema.Union([
     ordering: Schema.Literal("serial-normalized-eval-id"),
     beforeSlots: Schema.Array(CommandPlanStepSchema),
     afterSlots: Schema.Array(CommandPlanStepSchema),
-    physicalLifecycleTemplate: Schema.optional(PhysicalLifecycleTemplateSchema),
+    physicalLifecycleTemplate: optionalFact(PhysicalLifecycleTemplateSchema),
     slots: Schema.Array(SlotSchema),
   }),
 ]);
 
-const CommandPlanSchema: Schema.Codec<CommandPlan> = Schema.Struct({
+const CommandPlanSchema: Schema.Codec<CommandPlan, unknown> = Schema.Struct({
   completeness: Schema.Literals(["complete", "partial"]),
   opaqueCount: Schema.Number,
   redactedCount: Schema.Number,
-  experiments: Schema.Array(Schema.Struct({
-    experimentId: Schema.String,
-    activation: Schema.Literals(["conditional", "inactive"]),
-    beforeLanes: Schema.Array(CommandPlanStepSchema),
-    lanes: Schema.Array(LaneSchema),
-    afterLanes: Schema.Array(CommandPlanStepSchema),
-  })),
+  experiments: Schema.Array(
+    Schema.Struct({
+      experimentId: Schema.String,
+      activation: Schema.Literals(["conditional", "inactive"]),
+      beforeLanes: Schema.Array(CommandPlanStepSchema),
+      lanes: Schema.Array(LaneSchema),
+      afterLanes: Schema.Array(CommandPlanStepSchema),
+    }),
+  ),
 });
 
 const BeforeCachePlanSchema: Schema.Codec<BeforeCachePlan> = Schema.Struct({
   lookup: Schema.Literal("not-probed"),
-  nodes: Schema.Array(Schema.Struct({
-    prefixIdentity: Schema.String,
-    lookup: Schema.Literal("not-probed"),
-    capability: Schema.Literals(["run-prepared", "attempt-captured", "unsupported"]),
-    eligibility: CacheEligibilitySchema,
-    consumers: Schema.Array(Schema.Struct({ experimentId: Schema.String, evalId: Schema.String })),
-  })),
+  nodes: Schema.Array(
+    Schema.Struct({
+      prefixIdentity: Schema.String,
+      lookup: Schema.Literal("not-probed"),
+      capability: Schema.Literals(["run-prepared", "attempt-captured", "unsupported"]),
+      eligibility: CacheEligibilitySchema,
+      consumers: Schema.Array(Schema.Struct({ experimentId: Schema.String, evalId: Schema.String })),
+    }),
+  ),
 });
 
 /** Current-candidate machine document emitted by `niceeval debug --json`; it intentionally has no version envelope. */

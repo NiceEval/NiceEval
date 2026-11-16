@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 // 受限的 live consumer：它只启动锁定的 Claude Agent SDK、管理 SDK 生命周期和
 // session/resume。SDKMessage 的任何字段都不在此处解释；原样交给候选包 converter。
 
@@ -9,6 +8,7 @@ import {
   defineAgent,
   driveFrameStream,
   type AgentContext,
+  type SseFrameCursor,
 } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import { isAbsolute, join } from "node:path";
@@ -26,11 +26,34 @@ function requiredAbsolutePath(name: string): string {
 }
 
 /** Adapt AsyncGenerator.next() to the public driver without changing its SDKMessage value. */
-function rawSdkMessageCursor(sdkQuery: Query) {
+function rawSdkMessageCursor(
+  sdkQuery: Query,
+  close: (interrupt: boolean) => Promise<void>,
+): SseFrameCursor<SDKMessage> {
+  let ended = false;
+  let returned: Promise<IteratorResult<SDKMessage, void>> | undefined;
   return {
-    async next(): Promise<SDKMessage | null> {
-      const frame = await sdkQuery.next();
-      return frame.done ? null : frame.value;
+    async next(): Promise<IteratorResult<SDKMessage, void>> {
+      if (ended) return { done: true, value: undefined };
+      let frame: IteratorResult<SDKMessage, void>;
+      try {
+        frame = await sdkQuery.next();
+      } catch (error) {
+        if (ended) return { done: true, value: undefined };
+        throw error;
+      }
+      if (ended || frame.done) {
+        ended = true;
+        return { done: true, value: undefined };
+      }
+      return { done: false, value: frame.value };
+    },
+    return() {
+      if (returned !== undefined) return returned;
+      const interrupt = !ended;
+      ended = true;
+      returned = close(interrupt).then(() => ({ done: true, value: undefined }));
+      return returned;
     },
   };
 }
@@ -75,7 +98,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     prompt: input.text,
     options: {
       cwd: workspace,
-      model: ctx.model,
+      ...(ctx.model === undefined ? {} : { model: ctx.model }),
       // This live leaf has exactly one native capability. There is no Read/Write
       // fallback, MCP server, permission callback, or application pause bridge.
       tools: ["Bash"],
@@ -94,24 +117,31 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   });
 
   let interruption: Promise<unknown> | undefined;
+  let closing: Promise<void> | undefined;
   const interrupt = (): void => {
     // Query.interrupt() is the locked SDK's actual abort operation. Keep its
     // rejection for finally rather than dropping a lifecycle failure.
-    if (interruption !== undefined) return;
+    if (interruption !== undefined || closing !== undefined) return;
     try {
       interruption = sdkQuery.interrupt();
     } catch (error) {
       interruption = Promise.reject(error);
     }
+    void interruption.catch(() => {});
+  };
+  const closeQuery = (shouldInterrupt: boolean): Promise<void> => {
+    if (closing !== undefined) return closing;
+    if (shouldInterrupt) interrupt();
+    closing = finishQuery(sdkQuery, interruption);
+    return closing;
   };
   if (ctx.signal.aborted) interrupt();
   else ctx.signal.addEventListener("abort", interrupt, { once: true });
 
   let bodyFailed = false;
-  let bodyError: unknown;
   try {
     const stream = createClaudeSdkEventStream();
-    const turn = await driveFrameStream(rawSdkMessageCursor(sdkQuery), stream, ctx, () => {
+    const turn = await driveFrameStream(rawSdkMessageCursor(sdkQuery, closeQuery), stream, ctx, () => {
       // system/init is handled by the converter; this is only the adapter's
       // session boundary, not a second SDK field mapping.
       ctx.session.capture(stream.sessionId);
@@ -120,22 +150,21 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     return turn;
   } catch (error) {
     bodyFailed = true;
-    bodyError = error;
     throw error;
   } finally {
     ctx.signal.removeEventListener("abort", interrupt);
     try {
-      await finishQuery(sdkQuery, interruption);
+      await closeQuery(false);
     } catch (cleanupError) {
       if (bodyFailed) {
-        const aggregate = new AggregateError(
-          [bodyError, cleanupError],
-          "Claude Agent SDK query body and cleanup both failed",
-        );
-        aggregate.cause = bodyError;
-        throw aggregate;
+        try {
+          ctx.diagnostic({ code: "stream-cleanup-failed", level: "warning", message: "Stream cleanup failed." });
+        } catch {
+          // Cleanup reporting must preserve the send failure.
+        }
+      } else {
+        throw cleanupError;
       }
-      throw cleanupError;
     }
   }
 }
@@ -143,5 +172,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "claude-agent-sdk-live-converter-consumer",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
+  send,
 });

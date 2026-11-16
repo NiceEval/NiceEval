@@ -12,7 +12,7 @@ const CLUSTER_MIN = 2;
 
 export interface ReuseFailureClusterNotice {
   /** 承接这些 Attempt 的实验;裸 run(无 experimentId)用 undefined。 */
-  experimentId?: string;
+  experimentId: string | undefined;
   /** 本次 Run 内的 Sandbox 编号。 */
   reuseSandbox: number;
   /** 集中失败所在的生命周期阶段。 */
@@ -37,14 +37,21 @@ function phaseOf(result: EvalResult): LifecyclePhase {
  * 首承接缺失或本身失败时没有成功基准，不报告后续失败聚集。
  */
 export function detectReuseFailureClusters(results: readonly EvalResult[]): ReuseFailureClusterNotice[] {
-  const byInstance = new Map<string, { experimentId?: string; reuseSandbox: number; attempts: EvalResult[] }>();
+  const byInstance = new Map<
+    string,
+    { experimentId: string | undefined; reuseSandbox: number; attempts: EvalResult[] }
+  >();
   for (const result of results) {
     const sandbox = result.sandbox;
     if (!sandbox?.reused || sandbox.reuseSandbox === undefined || sandbox.reuseOrdinal === undefined) continue;
     const key = `${result.experimentId ?? ""}#${sandbox.reuseSandbox}`;
     let group = byInstance.get(key);
     if (!group) {
-      group = { ...(result.experimentId !== undefined ? { experimentId: result.experimentId } : {}), reuseSandbox: sandbox.reuseSandbox, attempts: [] };
+      group = {
+        experimentId: result.experimentId,
+        reuseSandbox: sandbox.reuseSandbox,
+        attempts: [],
+      };
       byInstance.set(key, group);
     }
     group.attempts.push(result);
@@ -67,7 +74,7 @@ export function detectReuseFailureClusters(results: readonly EvalResult[]): Reus
       if (ordinals.length < CLUSTER_MIN) continue;
       const sorted = [...ordinals].sort((a, b) => a - b);
       notices.push({
-        ...(group.experimentId !== undefined ? { experimentId: group.experimentId } : {}),
+        experimentId: group.experimentId,
         reuseSandbox: group.reuseSandbox,
         phase,
         fromOrdinal: sorted[0]!,

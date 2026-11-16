@@ -3,13 +3,7 @@
 // src/types.ts 是聚合 facade —— 模块代码统一从那里 import,不必记住每个类型的家。
 
 /** JSON 可表达的任意值(递归定义),用于事件流 / 工具输入输出等跨进程/跨语言传递的数据。 */
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 /** One Experiment condition; numeric values must be finite at runtime. */
 export type FlagValue = string | number | boolean;
@@ -42,6 +36,7 @@ export type ProjectedVerdict = (typeof PROJECTED_VERDICTS)[number];
  * eval 源码里一次调用的位置(`t.send` / 各断言),运行期从栈回溯抠出来(见 src/source-loc.ts)。
  * view 据此把运行结果叠回真实源码行(github-diff 式代码视图)。`file` 为相对项目根的路径。
  */
+// Record JSON 边界：源码坐标与 callers 由 Record Schema.optionalKey 编码。
 export interface SourceLoc {
   file: string;
   line: number;
@@ -50,11 +45,13 @@ export interface SourceLoc {
   callers?: SourcePathFrame[];
 }
 
+// Record JSON 边界：项目帧的 column 缺席必须保持为缺席键。
 export type SourcePathFrame =
   | { kind: "project"; file: string; line: number; column?: number }
   | { kind: "package"; package: string };
 
 /** 随结果回传的一份 eval 源码(相对项目根的路径 + 文本),供 view 渲染代码视图。 */
+// Record JSON 边界：role 的缺席保留给旧来源格式的解码与编码。
 export interface SourceArtifact {
   path: string;
   content: string;
@@ -73,8 +70,8 @@ export type Cleanup = () => Promise<void> | void;
 /** `ScopedFeedback.progress` 的入参:此刻正在做什么(短命状态,可被后续更新覆盖)。 */
 export interface ProgressUpdate {
   message: string;
-  current?: number;
-  total?: number;
+  current?: number | undefined;
+  total?: number | undefined;
 }
 
 /** `ScopedFeedback.diagnostic` 的入参:运行结束后仍应保留的问题(永久事件)。 */
@@ -82,9 +79,10 @@ export interface DiagnosticInput {
   code: string;
   level: "warning" | "error";
   message: string;
-  data?: Readonly<globalThis.Record<string, JsonValue>>;
+  // Record JSON boundary: diagnostic data values must be serializable without undefined members.
+  data?: Readonly<globalThis.Record<string, JsonValue>> | undefined;
   /** 并发 attempt 产生同一问题时的去重键;相同 key 折叠成一条并累计次数。 */
-  dedupeKey?: string;
+  dedupeKey?: string | undefined;
 }
 
 /**

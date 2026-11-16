@@ -24,9 +24,15 @@ test.concurrent("旧项目状态拒绝写入并提供保留数据的恢复指引
     expect(rejected.stderr).toContain("separate project copy without .niceeval");
     expect(await readFile(legacyLock, "utf8")).toBe(legacyBytes);
 
-    const guide = await readFile(join(paths.projectRoot, "node_modules", "niceeval", "docs-site", "zh", "tutorials", "agent-feedback-loop.mdx"), "utf8");
+    const guide = await readFile(
+      join(paths.projectRoot, "node_modules", "niceeval", "docs-site", "zh", "tutorials", "agent-feedback-loop.mdx"),
+      "utf8",
+    );
     expect(guide).not.toContain("niceeval migrate");
-    const reference = await readFile(join(paths.projectRoot, "node_modules", "niceeval", "docs-site", "zh", "reference", "cli.mdx"), "utf8");
+    const reference = await readFile(
+      join(paths.projectRoot, "node_modules", "niceeval", "docs-site", "zh", "reference", "cli.mdx"),
+      "utf8",
+    );
     expect(reference).not.toContain("`niceeval migrate`");
   });
 });

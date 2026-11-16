@@ -62,9 +62,7 @@ RAG 最严重的质量问题是模型编造检索文档里不存在的信息（�
 import { defineEval } from "niceeval";
 import { defineJudge } from "niceeval/expect";
 
-const groundednessJudge = defineJudge({
-  name: "rag-groundedness",
-  rubric: "评估 answer 中的事实声明是否完全由 context 支持。如果 answer 包含 context 中没有提及的政策细节或条款，判为不通过。",
+const groundednessJudge = defineJudge({ rubric: "评估 answer 中的事实声明是否完全由 context 支持。如果 answer 包含 context 中没有提及的政策细节或条款，判为不通过。",
 });
 
 export default defineEval({

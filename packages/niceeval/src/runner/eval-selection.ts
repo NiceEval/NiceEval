@@ -9,22 +9,20 @@ import type { AgentRun, DiscoveredEval, EvalDescriptor, ExperimentAuthorFields }
 
 /** `DiscoveredEval` → 用户谓词可见的显式白名单投影;不透传内部路径/执行字段。 */
 export function evalDescriptorOf(evalDef: DiscoveredEval): EvalDescriptor {
-  return Object.freeze({
+  return {
     id: evalDef.id,
-    ...(evalDef.description !== undefined ? { description: evalDef.description } : {}),
-    tags: Object.freeze([...(evalDef.tags ?? [])]),
-    evaluationKind: evalDef.evaluationKind ?? "pass",
-    ...(Object.keys(evalDef.metadata ?? {}).length > 0
-      ? { metadata: Object.freeze({ ...evalDef.metadata }) }
-      : {}),
-  });
+    description: evalDef.description,
+    tags: [...evalDef.tags],
+    evaluationKind: evalDef.evaluationKind,
+    metadata: { ...evalDef.metadata },
+  };
 }
 
 export interface ResolveExperimentEvalsInput {
   experimentId: string;
-  models?: ResolvedModelRoles;
-  tag?: string;
-  validateModelRequirements?: boolean;
+  models: ResolvedModelRoles | undefined;
+  tag: string | undefined;
+  validateModelRequirements: boolean | undefined;
   selector: ExperimentAuthorFields["evals"];
   cliPatterns: readonly string[];
   evals: readonly DiscoveredEval[];
@@ -100,14 +98,17 @@ export function resolveExperimentEvals(input: ResolveExperimentEvalsInput): Reso
   if (input.validateModelRequirements !== false) {
     const errors = selectorEvals.flatMap((evalDef) => {
       const missing = evalDef.requiredModelRoles?.filter((key) => !Object.hasOwn(input.models ?? {}, key)) ?? [];
-      return missing.length === 0 ? [] : [`Eval "${evalDef.id}" requires undeclared model roles: ${missing.join(", ")}`];
+      return missing.length === 0
+        ? []
+        : [`Eval "${evalDef.id}" requires undeclared model roles: ${missing.join(", ")}`];
     });
     if (errors.length > 0) throw new TypeError(`Experiment "${experimentId}": ${errors.join("; ")}.`);
   }
   return {
     selectedEvals,
     selectedEvalIds: selectedEvals.map((e) => e.id),
-    selectorEvals: input.tag === undefined ? selectorEvals : selectorEvals.filter((evalDef) => evalDef.tags.includes(input.tag!)),
+    selectorEvals:
+      input.tag === undefined ? selectorEvals : selectorEvals.filter((evalDef) => evalDef.tags.includes(input.tag!)),
   };
 }
 

@@ -2,10 +2,7 @@ import { Effect } from "effect";
 
 import type { SealedAttemptAssertions } from "../../../assertions/api.ts";
 import type { AgentRun, EvalResult } from "../../types.ts";
-import {
-  sealAttemptObservabilityCaptureIdentity,
-  sealRunObservabilityCaptureIdentity,
-} from "../capture-identity.ts";
+import { sealAttemptObservabilityCaptureIdentity, sealRunObservabilityCaptureIdentity } from "../capture-identity.ts";
 import { normalizeAttemptDiagnostics } from "../diagnostics.ts";
 import { normalizeAttemptTiming } from "../timing.ts";
 import { AgentTurnsAttachmentSchema } from "../../../record/family/agent-turns/definition.ts";
@@ -26,12 +23,7 @@ import type {
   StagedSandboxCommandReceipt,
 } from "../types.ts";
 import { recordTerminalCommandResult } from "./command-lifecycle.ts";
-import {
-  agentTurnTerminal,
-  decodeReceipt,
-  receiptDiagnosticRedaction,
-  segmentIds,
-} from "./receipt-helpers.ts";
+import { agentTurnTerminal, decodeReceipt, receiptDiagnosticRedaction, segmentIds } from "./receipt-helpers.ts";
 import {
   makeAttemptEntityMinter,
   markRuntimeFailure,
@@ -50,19 +42,16 @@ function captureRunnerAttemptSourceSnapshot(
 ): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     for (const turn of runtime.conversationTurns) {
-      if (turn.outcome !== undefined) continue;
+      if (turn.completion.state !== "pending") continue;
       runtime.conversationLimitations.addCaptureInterrupted("adapter", "conversation-item");
-      turn.outcome = "interrupted";
+      turn.completion = { state: "interrupted" };
     }
     for (const command of runtime.commands) {
       if (command.result !== undefined) continue;
       runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-manifest");
       runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stdout");
       runtime.commandLimitations.addCaptureInterrupted("command-capture", "command-stderr");
-      recordTerminalCommandResult(
-        Object.freeze({ runtime, command }),
-        Object.freeze({ kind: "terminated" as const, reason: "cancelled" as const }),
-      );
+      recordTerminalCommandResult({ runtime, command }, { kind: "terminated" as const, reason: "cancelled" as const });
     }
     if (runtime.failure !== undefined) return yield* Effect.fail(runtime.failure);
 
@@ -73,9 +62,7 @@ function captureRunnerAttemptSourceSnapshot(
       turns: runtime.conversationTurns,
     });
     const diagnosticsNormalization = yield* normalizeAttemptDiagnostics({ result, mint: minter.mint });
-    const activitySegmentIds = segmentIds(
-      timingNormalization.timing.intervals.map((interval) => interval.intervalId),
-    );
+    const activitySegmentIds = segmentIds(timingNormalization.timing.intervals.map((interval) => interval.intervalId));
     const diagnosticSegmentIds = segmentIds(
       diagnosticsNormalization.diagnostics.map((diagnostic) => diagnostic.diagnosticId),
     );
@@ -83,33 +70,40 @@ function captureRunnerAttemptSourceSnapshot(
       return yield* Effect.fail(producerEntityIdInvalid("interval"));
     }
 
-    const agentTurnsCandidate = runtime.conversationTurns.length === 0
-      ? undefined
-      : Object.freeze({
-          state: "current" as const,
-          collection: sourceCollection([
-            { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
-            { collection: runtime.usageLimitations.collection(), stage: "adapter" },
-          ], runtime.conversationTurns.flatMap((turn) => turn.observed?.limitations ?? [])),
-          segments: Object.freeze(runtime.conversationTurns.map((turn) => Object.freeze({
-            segmentId: turn.segmentId,
-            sessionId: turn.sessionId,
-            turnId: turn.turnId,
-            sequence: turn.sequence,
-            outcome: turn.outcome ?? "interrupted",
-            terminal: agentTurnTerminal(turn),
-            items: Object.freeze(turn.observed?.items ?? []),
-            usage: Object.freeze(turn.usage.map(({ refs: _refs, ...usage }) => Object.freeze(usage))),
-          }))),
-        });
-    const agentTurns = agentTurnsCandidate === undefined
-      ? undefined
-      : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
+    const agentTurnsCandidate =
+      runtime.conversationTurns.length === 0
+        ? undefined
+        : {
+            state: "current" as const,
+            collection: sourceCollection(
+              [
+                { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
+                { collection: runtime.usageLimitations.collection(), stage: "adapter" },
+              ],
+              runtime.conversationTurns.flatMap((turn) =>
+                turn.completion.state === "observed" ? turn.completion.observed.limitations : [],
+              ),
+            ),
+            segments: runtime.conversationTurns.map((turn) => ({
+              segmentId: turn.segmentId,
+              sessionId: turn.sessionId,
+              turnId: turn.turnId,
+              sequence: turn.sequence,
+              outcome: turn.completion.state === "observed" ? turn.completion.outcome : "interrupted",
+              terminal: agentTurnTerminal(turn),
+              items: turn.completion.state === "observed" ? turn.completion.observed.items : [],
+              usage: turn.usage.map(({ refs: _refs, ...usage }) => usage),
+            })),
+          };
+    const agentTurns =
+      agentTurnsCandidate === undefined
+        ? undefined
+        : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
 
     const commandSegments: StagedSandboxCommandReceipt[] = [];
     for (const command of runtime.commands) {
       if (command.result === undefined) return yield* Effect.fail(producerCommandRegistrationInvalid());
-      commandSegments.push(Object.freeze({
+      commandSegments.push({
         segmentId: command.segmentId,
         commandId: command.commandId,
         sequence: command.sequence,
@@ -120,38 +114,38 @@ function captureRunnerAttemptSourceSnapshot(
         outcome: command.result.outcome,
         stdout: command.result.stdout,
         stderr: command.result.stderr,
-      }));
+      });
     }
 
-    const activitiesCandidate = Object.freeze({
-      collection: sourceCollection([
-        { collection: timingNormalization.timing.collection, stage: "runner-clock" },
-      ]),
-      segments: Object.freeze(timingNormalization.timing.intervals.map((interval, index) => Object.freeze({
+    const activitiesCandidate = {
+      collection: sourceCollection([{ collection: timingNormalization.timing.collection, stage: "runner-clock" }]),
+      segments: timingNormalization.timing.intervals.map((interval, index) => ({
         segmentId: activitySegmentIds.get(interval.intervalId),
         activityId: interval.intervalId,
         sequence: index + 1,
         phase: interval.phase,
         label: interval.label,
-        turnId: [...timingNormalization.intervalByTurnId]
-          .find(([, intervalId]) => intervalId === interval.intervalId)?.[0] ?? null,
+        turnId:
+          [...timingNormalization.intervalByTurnId].find(([, intervalId]) => intervalId === interval.intervalId)?.[0] ??
+          null,
         startOffsetMs: interval.startOffsetMs,
         durationMs: interval.durationMs,
         parentActivityId: interval.parentIntervalId,
         outcome: interval.outcome,
-      }))),
-    });
+        ...(interval.transmissionOrdinal === undefined ? {} : { transmissionOrdinal: interval.transmissionOrdinal }),
+      })),
+    };
     const runnerActivities = yield* decodeReceipt(
       AttemptRunnerActivitiesAttachmentSchema,
       activitiesCandidate,
       "attempt",
     );
 
-    const diagnosticsCandidate = Object.freeze({
+    const diagnosticsCandidate = {
       collection: sourceCollection([
         { collection: diagnosticsNormalization.collection, stage: "runner-diagnostic-sink" },
       ]),
-      segments: Object.freeze(diagnosticsNormalization.diagnostics.map((diagnostic, index) => Object.freeze({
+      segments: diagnosticsNormalization.diagnostics.map((diagnostic, index) => ({
         segmentId: diagnosticSegmentIds.get(diagnostic.diagnosticId),
         diagnosticId: diagnostic.diagnosticId,
         sequence: index + 1,
@@ -160,30 +154,32 @@ function captureRunnerAttemptSourceSnapshot(
         phase: diagnostic.phase === "collection" ? "attempt.teardown" : diagnostic.phase,
         turnId: null,
         summary: diagnostic.summary,
-        causes: Object.freeze(diagnostic.causes.map((cause) => Object.freeze({ code: cause.code, summary: cause.summary }))),
+        causes: diagnostic.causes.map((cause) => ({ code: cause.code, summary: cause.summary })),
         redaction: receiptDiagnosticRedaction(diagnostic.redaction),
         sourceFrame: diagnostic.sourceFrame,
-      }))),
-    });
+      })),
+    };
     const runnerDiagnostics = yield* decodeReceipt(
       AttemptRunnerDiagnosticsAttachmentSchema,
       diagnosticsCandidate,
       "attempt",
     );
 
-    return Object.freeze({
-      ...(agentTurns === undefined ? {} : { agentTurns }),
-      ...(commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
-        ? {}
-        : { sandboxCommands: Object.freeze({
-            collection: sourceCollection([
-              { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
-            ]),
-            segments: Object.freeze(commandSegments),
-          }) }),
+    return {
+      agentTurns,
+      sandboxCommands:
+        commandSegments.length === 0 && runtime.commandLimitations.collection().state === "complete"
+          ? undefined
+          : {
+              collection: sourceCollection([
+                { collection: runtime.commandLimitations.collection(), stage: "sandbox-wrapper" },
+              ]),
+              segments: commandSegments,
+            },
       runnerActivities,
+      timingEntryIndexes: timingNormalization.entryIndexByIntervalId,
       runnerDiagnostics,
-    });
+    };
   });
 }
 
@@ -203,10 +199,12 @@ export function bindRunnerAttemptObservabilityCapture(
     return Effect.fail(state.failure ?? producerCaptureSealInvalid("attempt"));
   }
   return captureRunnerAttemptSourceSnapshot(result, state).pipe(
-    Effect.tap((snapshot) => Effect.sync(() => {
-      state.snapshot = snapshot;
-      storeResultRuntimeState(result, state);
-    })),
+    Effect.tap((snapshot) =>
+      Effect.sync(() => {
+        state.snapshot = snapshot;
+        storeResultRuntimeState(result, state);
+      }),
+    ),
     Effect.asVoid,
   );
 }
@@ -214,10 +212,8 @@ export function bindRunnerAttemptObservabilityCapture(
 export function createRunnerAttemptSourceReceiptsCapture(input: {
   readonly result: EvalResult;
   readonly sealed: SealedAttemptAssertions;
-}): Effect.Effect<
-  RunnerAttemptSourceReceiptsCapture,
-  RunnerObservabilityProducerError
-> {
+  readonly entryIds?: readonly import("../../../assertions/identity.ts").AssertionEntryId[];
+}): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   const capture = Effect.gen(function* () {
     const runtime = resultRuntimeState(input.result);
     if (runtime === undefined) return yield* Effect.fail(producerCaptureMissing());
@@ -226,13 +222,21 @@ export function createRunnerAttemptSourceReceiptsCapture(input: {
     if (!sealAttemptObservabilityCaptureIdentity(runtime.capture)) {
       return yield* Effect.fail(producerCaptureSealInvalid("attempt"));
     }
-    return runtime.snapshot;
+    const snapshot = runtime.snapshot;
+    return {
+      ...snapshot,
+      runnerActivities: {
+        ...snapshot.runnerActivities,
+        segments: snapshot.runnerActivities.segments.map((activity) => {
+          const index = snapshot.timingEntryIndexes?.get(activity.activityId);
+          const entryId = index === undefined ? undefined : input.entryIds?.[index];
+          return activity.phase === "agent.send" || entryId === undefined ? activity : { ...activity, entryId };
+        }),
+      },
+    };
   });
   return capture.pipe(
-    Effect.catch((error) =>
-      isRunnerObservabilityProducerError(error)
-        ? Effect.fail(error)
-        : Effect.die(error)),
+    Effect.catch((error) => (isRunnerObservabilityProducerError(error) ? Effect.fail(error) : Effect.die(error))),
   );
 }
 
@@ -248,7 +252,7 @@ export function createRunnerRunSourceReceiptsCapture(input: {
 }): Effect.Effect<RunnerRunSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
     const captured = runCapture(input.run);
-    if (captured === undefined) return Object.freeze({});
+    if (captured === undefined) return { runnerActivities: undefined, runnerDiagnostics: undefined };
     if (!sealRunObservabilityCaptureIdentity(captured.capture)) {
       return yield* Effect.fail(producerCaptureSealInvalid("run"));
     }

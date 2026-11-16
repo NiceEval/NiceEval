@@ -41,13 +41,13 @@
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
 - **Inspection**：固定 operation 在读取结束前关闭 source、selector、sealed cutoff、partial、missing、issues、Evidence 与 comparison。它不提供 SQL、JSON path、公式或作者 callback。
-- **query**：AI、脚本和 CI 使用的 versioned `niceeval.query/v2` JSON operation protocol。先用 `discover` 取得 catalog，再以 `explain` / `run` 处理完整 request。
+- **show --json**：AI、脚本和 CI 使用的结构化 Inspection 入口。使用对象地址选择结果，再沿 links 继续读取。
 - **View**：`niceeval view` 提供给人的固定第一方本地界面。它只消费 Inspection result，不装载项目 Report、Page、组件、主题或 renderer。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
-- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `query` 先发现可用问题，再发送完整 request」，不写内部代号。
+- **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「证据室」「出厂填充」「接线」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「运行 `show --json`，再沿 links 读取具体结果」，不写内部代号。
 - **不写内部演进**：读者不知道旧设计，也不需要知道。「不再」「改成」「新版」这类相对旧稿的叙述不出现；设计迭代的来龙去脉住在仓库根 `docs/` 与 `memory/`。
 - 具名英语术语使用本文术语表与仓库根目录 `docs/concepts.md` 裁决的大小写。命令、路径、flag、文件名、包名和代码标识保持原样。
 - 只在 @apps/docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
@@ -58,8 +58,8 @@
 - `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm run repo docs reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取各 Feature/Host contribution 自有 option schema 的 help metadata；region 与源码的映射见 `packages/repo-tools/src/docs/reference-compiler.ts`）。要改这些文案，改 owner 源码后从仓库根跑 `pnpm run repo docs reference`；手改会被 `pnpm lint` 的漂移 lint 拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
 - 机器规则只是最低门槛，通过 lint 不等于文案已经好读。提交前逐段朗读；遇到「传输粘合」「停轮判定」这类内部名词串，改写成明确的主语、动作和结果，例如「Adapter 请求应用接口」「当前 Turn 等待用户选择」。
-- `apps/docs-site/zh/` 与 `docs/` 共用 `docs/writing-rules.json` 的可读性上限：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
-- 公开站禁词也从同一份 JSON 的 `siteBannedTerms` 与 `siteOnlyBannedTerms` 取值，不在这里另护一份清单。frontmatter 元数据、代码、JSX 实现与明确的生成区块不按正文计数。
+- `apps/docs-site/zh/` 与 `docs/` 的可读性上限由 `docs/writing.md` 声明：单句最多 140 字，一段最多 320 字。超长句拆成两句或列表，长段落按想法拆开。
+- 公开站禁词由 `docs/writing.md` 的“不用的词”表及其作用范围管理，不在这里另护一份清单。frontmatter 元数据、代码、JSX 实现与明确的生成区块不按正文计数。
 - 教程正文和标题使用陈述句或祈使句，不用设问带出内容。Eval 输入、Judge 标准、终端输出等需要展示真实问句的示例不受此限制。
 - 写作指南: apps/docs-site/docs-ref/00-index.md
 

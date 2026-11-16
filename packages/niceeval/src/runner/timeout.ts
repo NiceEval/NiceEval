@@ -15,20 +15,22 @@
 /** 有效超时上限来自哪一层;进人读消息,不另立结构化字段。 */
 export type TimeoutSource = "flag" | "experiment" | "eval" | "config";
 
-/** 运行侧(CLI flag + experiment 字段)求值结果;两层都没有时是空对象,下游继续往 eval / config 落。 */
-export interface RunTimeout {
-  timeoutMs?: number;
-  timeoutSource?: "flag" | "experiment";
-}
+/** 运行侧上限与出处同时确定；无运行侧声明时继续往 eval / config 落。 */
+export type RunTimeout =
+  | { readonly timeoutMs: number; readonly timeoutSource: "flag" | "experiment" }
+  | { readonly timeoutMs: undefined; readonly timeoutSource: undefined };
 
 /**
  * 运行侧的两层:`--timeout` 压过 experiment 字段。**不带 config 兜底**——config 是解析链的
  * 缺省底,由 resolveAttemptTimeout 承接;在这里 `?? config.timeoutMs` 会让 eval 层永久短路。
  */
-export function resolveRunTimeout(flagTimeoutMs: number | undefined, experimentTimeoutMs: number | undefined): RunTimeout {
+export function resolveRunTimeout(
+  flagTimeoutMs: number | undefined,
+  experimentTimeoutMs: number | undefined,
+): RunTimeout {
   if (flagTimeoutMs !== undefined) return { timeoutMs: flagTimeoutMs, timeoutSource: "flag" };
   if (experimentTimeoutMs !== undefined) return { timeoutMs: experimentTimeoutMs, timeoutSource: "experiment" };
-  return {};
+  return { timeoutMs: undefined, timeoutSource: undefined };
 }
 
 export interface ResolvedAttemptTimeout {
@@ -43,9 +45,9 @@ export interface ResolvedAttemptTimeout {
  * 标注——run 配置本身就是实验层的投影。
  */
 export function resolveAttemptTimeout(
-  run: { timeoutMs?: number; timeoutSource?: "flag" | "experiment" },
-  evalDef: { timeoutMs?: number },
-  config: { timeoutMs?: number },
+  run: { readonly timeoutMs: number | undefined; readonly timeoutSource: "flag" | "experiment" | undefined },
+  evalDef: { readonly timeoutMs: number | undefined },
+  config: { readonly timeoutMs?: number | undefined },
 ): ResolvedAttemptTimeout | undefined {
   if (run.timeoutMs !== undefined) return { timeoutMs: run.timeoutMs, source: run.timeoutSource ?? "experiment" };
   if (evalDef.timeoutMs !== undefined) return { timeoutMs: evalDef.timeoutMs, source: "eval" };

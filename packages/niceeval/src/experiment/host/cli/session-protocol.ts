@@ -1,86 +1,47 @@
-import { SessionActiveAttemptsSchema } from "../../../runner/session.ts";
 import { Schema } from "effect";
-import type {
-  ExpiredSessionRecord,
-  SessionExperimentRecord,
-  SessionListDocument,
-  SessionQueuedAttemptRecord,
-  SessionRecord,
-  SessionShowDocument,
+import {
+  ExpiredSessionPayloadSchema,
+  SessionRecordPayloadSchema,
+  sessionRecordToJson,
+  type SessionListDocument as InternalSessionListDocument,
+  type SessionShowDocument as InternalSessionShowDocument,
 } from "../../../runner/session.ts";
-import type { InvocationCompletion } from "../../../runner/types.ts";
+import { omitUndefined } from "../../../shared/omit-undefined.ts";
 
-const NonNegativeIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value >= 0)),
-);
-const PositiveIntegerSchema = Schema.Number.pipe(
-  Schema.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
-);
-const TimestampSchema = Schema.String.pipe(
-  Schema.check(Schema.makeFilter((value) => Number.isFinite(Date.parse(value)))),
-);
-
-const InvocationCompletionSchema: Schema.Codec<InvocationCompletion> = Schema.Struct({
-  status: Schema.Literals(["complete", "incomplete", "interrupted"]),
-  unstarted: NonNegativeIntegerSchema,
-  earlyExitUnstarted: NonNegativeIntegerSchema,
-  reporterErrors: Schema.mutable(Schema.Array(Schema.Struct({
-    reporter: Schema.String,
-    required: Schema.Boolean,
-    message: Schema.String,
-  }))),
+/** CLI JSON observes key omission, independently of the internal Session values. */
+export const SessionListDocumentSchema = Schema.Struct({
+  sessions: Schema.mutable(Schema.Array(SessionRecordPayloadSchema)),
+  expired: Schema.mutable(Schema.Array(ExpiredSessionPayloadSchema)),
 });
 
-const SessionQueuedAttemptSchema: Schema.Codec<SessionQueuedAttemptRecord> = Schema.Struct({
-  evalId: Schema.String,
-  attempt: NonNegativeIntegerSchema,
-  state: Schema.Literal("queued"),
-  reason: Schema.Literal("provider-capacity"),
+/** The `niceeval invocation list --json` payload. */
+export type SessionListDocument = typeof SessionListDocumentSchema.Type;
+
+/** CLI JSON omits expired unless the selected Session has expired. */
+export const SessionShowDocumentSchema = Schema.Struct({
+  session: Schema.Union([SessionRecordPayloadSchema, ExpiredSessionPayloadSchema]),
+  expired: Schema.optionalKey(Schema.Boolean),
 });
 
-const SessionExperimentSchema: Schema.Codec<SessionExperimentRecord> = Schema.Struct({
-  experimentId: Schema.String,
-  runId: Schema.String,
-  published: Schema.optional(Schema.Boolean),
-  state: Schema.optional(Schema.Literals(["setup", "running", "waiting", "teardown"])),
-  running: Schema.optional(NonNegativeIntegerSchema),
-  queued: Schema.optional(NonNegativeIntegerSchema),
-  elsewhere: Schema.optional(NonNegativeIntegerSchema),
-  activeAttempts: Schema.optional(SessionActiveAttemptsSchema),
-  attempts: Schema.optional(Schema.mutable(Schema.Array(SessionQueuedAttemptSchema))),
-});
+/** The `niceeval invocation show --json` payload. */
+export type SessionShowDocument = typeof SessionShowDocumentSchema.Type;
 
-const SessionRecordSchema: Schema.Codec<SessionRecord> = Schema.Struct({
-  sessionId: Schema.String,
-  pid: PositiveIntegerSchema,
-  startedAt: TimestampSchema,
-  status: Schema.Literals(["active", "completed", "incomplete", "interrupted"]),
-  experiments: Schema.mutable(Schema.Array(SessionExperimentSchema)),
-  heartbeatAt: Schema.optional(TimestampSchema),
-  completedAt: Schema.optional(TimestampSchema),
-  completion: Schema.optional(InvocationCompletionSchema),
-});
+/** Encode the internal list at the CLI JSON boundary. */
+export function sessionListDocumentToJson(document: InternalSessionListDocument): SessionListDocument {
+  return {
+    sessions: document.sessions.map(sessionRecordToJson),
+    expired: document.expired.map((session) => omitUndefined(session)),
+  };
+}
 
-const ExpiredSessionRecordSchema: Schema.Codec<ExpiredSessionRecord> = Schema.Struct({
-  sessionId: Schema.String,
-  pid: PositiveIntegerSchema,
-  startedAt: TimestampSchema,
-  heartbeatAt: Schema.optional(TimestampSchema),
-});
-
-/** The existing, unversioned `niceeval session list --json` document. */
-export const SessionListDocumentSchema: Schema.Codec<SessionListDocument> = Schema.Struct({
-  format: Schema.Literal("niceeval.sessions"),
-  sessions: Schema.mutable(Schema.Array(SessionRecordSchema)),
-  expired: Schema.mutable(Schema.Array(ExpiredSessionRecordSchema)),
-});
-
-/** The existing, unversioned `niceeval session show --json` document. */
-export const SessionShowDocumentSchema: Schema.Codec<SessionShowDocument> = Schema.Struct({
-  format: Schema.Literal("niceeval.session"),
-  session: Schema.Union([SessionRecordSchema, ExpiredSessionRecordSchema]),
-  expired: Schema.optional(Schema.Boolean),
-});
+/** Encode the internal selection without leaking internal lifecycle tags or undefined keys. */
+export function sessionShowDocumentToJson(document: InternalSessionShowDocument): SessionShowDocument {
+  return omitUndefined({
+    session:
+      "experiments" in document.session ? sessionRecordToJson(document.session) : omitUndefined(document.session),
+    expired: document.expired,
+  });
+}
 
 /** Strictly decode the sole document written by `niceeval session list --json`. */
 export function decodeSessionListDocument(input: unknown): SessionListDocument {

@@ -33,14 +33,15 @@ interface InspectedAssertion {
   readonly explanationRetention: unknown;
 }
 
-
 function criterionId(entry: InspectedAssertion): string | undefined {
   return entry.criterion.state === "available" ? entry.criterion.value?.id : undefined;
 }
 
 function criterionData(entry: InspectedAssertion): Record<string, unknown> | undefined {
   const value = entry.criterion.state === "available" ? entry.criterion.value?.data : undefined;
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function dataString(entry: InspectedAssertion, path: readonly string[]): string | undefined {
@@ -61,7 +62,7 @@ function labeled(assertions: readonly InspectedAssertion[], label: string, diagn
 }
 
 function expectNumeric(entry: InspectedAssertion, result: "matched" | "unavailable"): void {
-  expect(criterionId(entry)).toBe("numeric-comparison/v1");
+  expect(criterionId(entry)).toBe("numeric-comparison");
   expect(entry.decision.result).toBe(result);
   expect(entry.evaluation.kind).toBe("ordinary");
   expect(entry.evaluation.artifact).toBeUndefined();
@@ -73,7 +74,7 @@ function expectOccurrence(
   assertion: "present" | "absent" | "count" | "order",
   quantifierKind?: string,
 ): void {
-  expect(criterionId(entry)).toBe("occurrence/v2");
+  expect(criterionId(entry)).toBe("occurrence");
   expect(entry.decision.result).toBe(result);
   expect(entry.evaluation.kind).toBe("matcher-current");
   expect(dataString(entry, ["assertion"])).toBe(assertion);
@@ -118,19 +119,30 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       const assertions = details.map((detail) => {
         expect(detail.receipt.exitCode, detail.receipt.diagnostic()).toBe(0);
         expect(detail.document).toMatchObject({
-          protocol: "niceeval.query/v3",
           operation: "attempt.assertion.detail",
           assertion: { entryId: detail.entry.entryId, display: detail.entry.display },
         });
 
         return assertionEntry(detail.document, detail.receipt.diagnostic());
       });
-      expect(labeled(assertions, "managed tool selection", inspected.receipt.diagnostic()).decision.result).toBe("matched");
-      for (const label of ["usage snapshot isolated", "turn usage owner", "session usage owner", "attempt usage owner", "attempt runtime elapsed", "attempt context selection", "session context selection"]) {
+      expect(labeled(assertions, "managed tool selection", inspected.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
+      for (const label of [
+        "usage snapshot isolated",
+        "turn usage owner",
+        "session usage owner",
+        "attempt usage owner",
+        "attempt runtime elapsed",
+        "attempt context selection",
+        "session context selection",
+      ]) {
         expect(labeled(assertions, label, inspected.receipt.diagnostic()).decision.result).toBe("matched");
       }
 
-      expect(labeled(assertions, "managed event selection", inspected.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "managed event selection", inspected.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
       for (const assertion of assertions) {
         expect(assertion.criterion.state).toBeTruthy();
         expect(assertion.materials).toBeTruthy();
@@ -165,7 +177,8 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       });
       const terminalWitness = only(
         assertions,
-        (entry) => JSON.stringify(entry.criterion).includes("argsStart") && JSON.stringify(entry.criterion).includes("query"),
+        (entry) =>
+          JSON.stringify(entry.criterion).includes("argsStart") && JSON.stringify(entry.criterion).includes("show"),
         inspected.receipt.diagnostic(),
       );
       expect(receiptOf(terminalWitness)).toMatchObject({
@@ -207,7 +220,11 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
 
       const turnMatching = labeled(assertions, "turn explicit occurrence", inspected.receipt.diagnostic());
       const turnCalled = labeled(assertions, "turn calledTool", inspected.receipt.diagnostic());
-      const unusedExplicit = labeled(assertions, "unused session explicit occurrence zero", inspected.receipt.diagnostic());
+      const unusedExplicit = labeled(
+        assertions,
+        "unused session explicit occurrence zero",
+        inspected.receipt.diagnostic(),
+      );
       const unusedSugar = labeled(assertions, "unused session usedNoTools", inspected.receipt.diagnostic());
       for (const entry of [turnMatching, turnCalled]) {
         expectOccurrence(entry, "matched", "present", "at-least");
@@ -246,7 +263,11 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       expectOccurrence(partialOccurrenceUpperBound, "unavailable", "count", "at-most");
 
       const compositeSugar = labeled(assertions, "attempt calledTool composite", inspected.receipt.diagnostic());
-      const compositeExplicit = labeled(assertions, "attempt explicit composite occurrence", inspected.receipt.diagnostic());
+      const compositeExplicit = labeled(
+        assertions,
+        "attempt explicit composite occurrence",
+        inspected.receipt.diagnostic(),
+      );
       expectOccurrence(compositeExplicit, "matched", "present", "at-least");
       expectOccurrence(compositeSugar, "matched", "present");
       expect(criterionData(compositeExplicit)).toEqual(criterionData(compositeSugar));
@@ -259,12 +280,24 @@ test("大量真实工具事件的 scope Assertion 仍以 passed 终态发布", a
       }
       expect(criterionData(sessionOrder)).toEqual(criterionData(sessionOrderSugar));
 
-      expect(labeled(assertions, "spread occurrence rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "spread inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "root inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
-      expect(labeled(assertions, "quantified inOrder step rejected", inspected.receipt.diagnostic()).decision.result).toBe("matched");
+      expect(labeled(assertions, "spread occurrence rejected", inspected.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
+      expect(labeled(assertions, "spread inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
+      expect(labeled(assertions, "root inOrder rejected", inspected.receipt.diagnostic()).decision.result).toBe(
+        "matched",
+      );
+      expect(
+        labeled(assertions, "quantified inOrder step rejected", inspected.receipt.diagnostic()).decision.result,
+      ).toBe("matched");
 
-      const partialCount = labeled(assertions, "partial source cardinality remains unavailable", inspected.receipt.diagnostic());
+      const partialCount = labeled(
+        assertions,
+        "partial source cardinality remains unavailable",
+        inspected.receipt.diagnostic(),
+      );
       expectNumeric(partialCount, "unavailable");
       expect(dataString(partialCount, ["subject", "kind"])).toBe("collection-cardinality");
     },

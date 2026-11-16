@@ -2,10 +2,7 @@ import { defineEval } from "niceeval";
 import { and, commandSucceeded, eventMatch, includes, or, toolMatch } from "niceeval/expect";
 
 function recallMatch() {
-  return and(
-    includes("RECALL_OK"),
-    or(includes("RECALL_OK"), includes("NEVER_PRESENT")),
-  );
+  return and(includes("RECALL_OK"), or(includes("RECALL_OK"), includes("NEVER_PRESENT")));
 }
 
 function recallEval(topic: string, prompt: string) {
@@ -34,17 +31,25 @@ export default {
       await turn.succeeded().orStop();
       turn.notCalledTool("forbidden_state_tool").label("Forbidden state tool absence");
       turn.check(turn.toolCalls, toolMatch("write_note").exactly(1));
-      turn.check(turn.eventOccurrences, eventMatch("message", {
-        role: "assistant",
-        text: includes("RECALL_OK"),
-      }).exactly(1)).label("Assistant message event");
+      turn
+        .check(
+          turn.eventOccurrences,
+          eventMatch("message", {
+            role: "assistant",
+            text: includes("RECALL_OK"),
+          }).exactly(1),
+        )
+        .label("Assistant message event");
       t.check(t.reply, recallMatch());
-      t.check({
-        command: "pnpm test",
-        exitCode: 0,
-        stdout: "",
-        stderr: "PASS src/example.test.ts",
-      }, commandSucceeded());
+      t.check(
+        {
+          command: "pnpm test",
+          exitCode: 0,
+          stdout: "",
+          stderr: "PASS src/example.test.ts",
+        },
+        commandSucceeded(),
+      );
     },
   }),
 };

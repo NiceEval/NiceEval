@@ -30,7 +30,9 @@ test.concurrent("非 TTY 在运行中显示有归属且合并去重的进度", a
         expect(receipt.exitCode, receipt.diagnostic()).toBe(0);
         expect(receipt.stderr).toBe("");
         expect(receipt.stdout).not.toMatch(/[\x1b\x08\r]/u);
-        const progress = receipt.stdout.split("\n").filter((line) => /pipe-progress-(ready|burst-\d+|latest)/u.test(line));
+        const progress = receipt.stdout
+          .split("\n")
+          .filter((line) => /pipe-progress-(ready|burst-\d+|latest)/u.test(line));
         expect(progress.filter((line) => line.includes("pipe-progress-ready"))).toHaveLength(1);
         expect(progress.filter((line) => line.includes("pipe-progress-latest"))).toHaveLength(1);
         expect(progress.filter((line) => line.includes("pipe-progress-burst-")).length).toBeLessThanOrEqual(1);

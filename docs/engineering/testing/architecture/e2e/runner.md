@@ -3,7 +3,7 @@
 本域回答一个问题：**确定性 Runner 项目在真实候选包上是否正确计划、携带与去重历史 attempt，并公开读回通用执行 timing。**
 它由 `e2e/runner/` 功能 Repo 承担；manifest 的 `areas` 包含 `runner`，并进入无密钥 PR lane。
 
-仓库使用签入的确定性 Agent fixture，不依赖真实 provider、网络或凭据。每条会修改 Eval 或结果的 case 都在自己的项目副本中运行；公开观察只通过安装后的 `niceeval exp` 与固定 `niceeval query` 完成。
+仓库使用签入的确定性 Agent fixture，不依赖真实 provider、网络或凭据。每条会修改 Eval 或结果的 case 都在自己的项目副本中运行；公开观察只通过安装后的 `niceeval exp` 与 `niceeval show --json` 完成。
 
 ## Owner 表
 
@@ -47,7 +47,7 @@ Application 未声明 `behaviorRevision` 时，dry plan 与实际派发都不能
 ### runner-generic-timing
 
 确定性 Direct Agent 真实执行 setup、send 与 teardown。owner 从安装后 CLI 运行 `timing` Experiment，
-再对其唯一 Attempt 通过显式 request 执行 `niceeval query run` 的 `attempt.timing` operation。
+再对其唯一 Attempt 执行 `niceeval show @<locator> timing --json`，读取 `attempt.timing` operation。
 返回 document 必须只以该 locator 的闭合 trace 交付 timing；不能从额外 entry 中宽松挑一项继续断言。
 
 公开 receipt 必须各有一个 completed 的 `eval.run` / `eval.run`、`attempt.setup` / `agent.setup` 与

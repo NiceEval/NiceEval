@@ -9,7 +9,6 @@ export const imageApplication = defineAdapter({
 });
 
 const quality = defineJudge({
-  name: "niceeval.e2e.image-quality/v1",
   rubric: "Use the supplied screenshot only as supplementary evidence for the described action.",
 });
 

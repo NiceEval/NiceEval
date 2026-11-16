@@ -8,7 +8,7 @@ Core 表达身份、引用与 action。
 本页定义 `defineExperiment` 作者 API。执行 Host 使用公开、受支持的 `niceeval/experiment/host` 与
 `experimentHost.catalog()`、`invocation.plan()`、`invocation.run()`、`accept()` 组合 CLI 或深度应用集成。这个 Host entry 不开放
 Runner、selector、Record family 或 migration registration；普通 Experiment 作者通常不导入它。运行后的固定
-query 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
+`show` 与 View 由 Inspection 和 Delivery 的 owner 组合，不从 Experiment Host 取得通用 selection API。
 
 此具名 Host entry 面向 Node：所有 operation 返回 requirement 为 `never` 的惰性 Effect，可直接交给
 `Effect.runPromise` 或 `Effect.runFork`，无需提供私有 Record Layer。每次执行独立拥有资源 Scope；
@@ -76,8 +76,8 @@ console.log(plan.experimentId, plan.evalIds);
 
 同一 `niceeval/experiment/host` 入口导出 `decodeSessionListDocument()` 与 `decodeSessionShowDocument()`。
 对应的 Schema 是 `SessionListDocumentSchema` 与 `SessionShowDocumentSchema`。
-它们严格读取当前候选的 `niceeval invocation list --json` 与 `session show --json` 文档，保留既有
-`niceeval.sessions` / `niceeval.session` discriminator，拒绝额外字段。
+它们严格读取当前候选的 `niceeval invocation list --json` 与 `session show --json` 文档。
+命令决定文档形状；输出不带 `format` 或 `schemaVersion`，解码器拒绝额外字段。
 
 调用方沿 `session.experiments` 的 `experimentId` 定位 Experiment，再沿 `attempts` 的
 `evalId` 与 `attempt` 定位排队事实；过期 Session 只含身份与时间，不假装拥有活跃 Attempt 状态。
@@ -167,10 +167,12 @@ export default defineExperiment({
 ```
 
 求值后的 labels、配置 manifest 和 identity 属于这次 Run 的不可变配置上下文。历史 Run 不随源码改变；再次运行会保存当前值。
+labels 按原值类型保存字符串或有限数值；数值 `0` 与字符串 `"0"` 是不同坐标，JSON 读取保留各自类型。
 
 隧道 URL、临时服务地址和实际服务版本在运行时才知道，因此不写进 `flags` 或 `labels`。Hook 可以通过闭包把它交给后续的 Agent factory 或 Sandbox command；这不授予 Hook 通用 Record writer。
 
-运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能由 Record、query 或 View 读取；需要成为产品事实时，先进入 NiceEval 的领域设计与 persistence revision 治理。
+运行时观测只有语义正好落入 NiceEval 已发布 typed collector 或 Adapter 能力时，才会进入九个固定 family 中对应的 Assertions、source receipt、File Changes、Sources 或 Artifacts。每个 collector 的 owner、payload 与 blob closure 都由 NiceEval 定义。
+第三方任意 JSON、URL 或版本值没有已发布 collector 时，不会自动持久化，也不能由 Record、`show` 或 View 读取；需要成为产品事实时，先明确领域设计与 Record 格式约束。
 
 | 值 | 何时决定 | 入口 | 结果 |
 |---|---|---|---|
@@ -249,7 +251,8 @@ interface ScopedFeedback {
 Agent 的 `ctx.log(message)` 另行表示 timeout breadcrumb。它也更新 Human active 行，但最近若干条可能进入 timeout error。
 只应在运行中显示的 user message 与 tool input 必须使用 `progress()`，不能使用 `log()`。
 
-需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。新增不可恢复事实须由 NiceEval 定义 payload、读面与版本迁移，而不是由 Experiment callback 扩展。
+需要持久化的运行时事实只能调用 NiceEval 已发布的 typed collector 或 Adapter 能力；它们只写入 Record catalog 中与其 owner 匹配的 fixed family。没有匹配 collector 的第三方值保留在本进程或外部系统，不自动进入 Record。
+新增不可恢复事实须由 NiceEval 定义 payload、读面与格式准入，不能由 Experiment callback 扩展。
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 
@@ -302,7 +305,8 @@ interface ExperimentHostRenameRequest {
 它与顶层 model、reasoningEffort 互斥，Agent Experiment 不接受 models。
 用途键匹配 `[A-Za-z][A-Za-z0-9_-]{0,63}`，非空映射最多 64 项，每项 model 非空。路由仍属于应用 flags。
 
-框架将单模型简写归一到固定 default 用途；仅 effort 时 default.model 为 null，完全省略时为空映射。
-具名 default 与相同单模型简写具有相同配置身份；新普通 Adapter 的配置身份包含 models version 1，历史未登记配置保持原身份域。
+框架将单模型简写归一到固定 default 用途；仅 effort 时 default.model 为 `undefined`，完全省略时为空映射。
+配置身份与 Run Context 把未配置的值编码为 `null`，所以这一内部表示不改变任何已有配置身份。
+具名 default 与相同单模型简写具有相同配置身份；普通 Adapter 的配置身份包含 `models: { slots }`，完全省略时为空映射。
 映射按键排序并深度冻结。Adapter 的 ctx.model、ctx.reasoningEffort 只派生自 default，缺席时为 undefined。
 Adapter 使用 ctx.models 执行选择，不支持的 effort 在应用启动前拒绝，实际模型回退仍可按真实调用上报。

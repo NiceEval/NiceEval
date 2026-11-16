@@ -10,10 +10,7 @@ import {
 } from "../../../record/family/source-receipt/model.ts";
 import type { AttemptDiagnostic, ConversationItem } from "../model.ts";
 import type { NormalizedAgentTurnTerminal } from "../types.ts";
-import {
-  producerCaptureSealInvalid,
-  type RunnerObservabilityProducerError,
-} from "../support.ts";
+import { producerCaptureSealInvalid, type RunnerObservabilityProducerError } from "../support.ts";
 import type { CapturedConversationTurn } from "./state.ts";
 
 export function sourceSegmentId(): SafeIdentifier | undefined {
@@ -24,34 +21,34 @@ export function sourceSegmentId(): SafeIdentifier | undefined {
   }
 }
 
-export function agentTurnTerminal(
-  turn: CapturedConversationTurn,
-): NormalizedAgentTurnTerminal {
-  if (turn.adapterStatus !== undefined && turn.evidenceCoverage !== undefined) {
-    return Object.freeze({
+export function agentTurnTerminal(turn: CapturedConversationTurn): NormalizedAgentTurnTerminal {
+  const completion = turn.completion;
+  if (completion.state === "observed" && completion.adapter.state === "recorded") {
+    const adapter = completion.adapter;
+    return {
       state: "recorded" as const,
-      status: turn.adapterStatus,
-      evidenceCoverage: Object.freeze({
-        events: Object.freeze({ ...turn.evidenceCoverage.events }),
-        actions: Object.freeze({ ...turn.evidenceCoverage.actions }),
-        messages: Object.freeze({ ...turn.evidenceCoverage.messages }),
-        usage: Object.freeze({ ...turn.evidenceCoverage.usage }),
-        status: Object.freeze({ ...turn.evidenceCoverage.status }),
-        data: Object.freeze({ ...turn.evidenceCoverage.data }),
-      }),
-    });
+      status: adapter.status,
+      // Adapter-owned entries can retain mutable aliases beyond this receipt.
+      evidenceCoverage: {
+        events: { ...adapter.evidenceCoverage.events },
+        actions: { ...adapter.evidenceCoverage.actions },
+        messages: { ...adapter.evidenceCoverage.messages },
+        usage: { ...adapter.evidenceCoverage.usage },
+        status: { ...adapter.evidenceCoverage.status },
+        data: { ...adapter.evidenceCoverage.data },
+      },
+    };
   }
-  return Object.freeze({
+  return {
     state: "unavailable" as const,
-    reason: turn.outcome === "interrupted"
-      ? "send-interrupted" as const
-      : "send-failed" as const,
-  });
+    reason:
+      completion.state === "interrupted" || (completion.state === "observed" && completion.outcome === "interrupted")
+        ? "send-interrupted"
+        : "send-failed",
+  };
 }
 
-export function segmentIds<Id extends string>(
-  ids: readonly Id[],
-): Map<Id, SafeIdentifier> | undefined {
+export function segmentIds<Id extends string>(ids: readonly Id[]): Map<Id, SafeIdentifier> | undefined {
   const result = new Map<Id, SafeIdentifier>();
   for (const id of ids) {
     const segmentId = sourceSegmentId();
@@ -64,35 +61,61 @@ export function segmentIds<Id extends string>(
 export function receiptConversationItem(item: ConversationItem): object {
   const base = { itemId: item.itemId, sequence: item.sequence };
   switch (item.kind) {
-    case "message": return Object.freeze({ ...base, kind: item.kind, role: item.role, text: item.text });
-    case "tool-call": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, tool: item.tool, inputSummary: item.inputSummary });
-    case "tool-result": return Object.freeze({ ...base, kind: item.kind, callId: item.callId, outcome: item.outcome, outputSummary: item.outputSummary });
-    case "thinking-summary": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
-    case "subagent": return Object.freeze({ ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary });
-    case "input-request": return Object.freeze({ ...base, kind: item.kind, state: item.state, promptSummary: item.promptSummary, responseSummary: item.responseSummary });
-    case "skill-load": return Object.freeze({
-      ...base,
-      kind: item.kind,
-      code: item.skill,
-      summary: makeBoundedSafeText(
-        item.outcome === "loaded" ? "Skill loaded." : "Skill load failed.",
-        MAX_CONVERSATION_TEXT_BYTES,
-      )!,
-    });
-    case "context-injection": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
-    case "compaction": return Object.freeze({ ...base, kind: item.kind, summary: item.summary });
-    case "conversation-error": return Object.freeze({ ...base, kind: item.kind, code: item.code, summary: item.summary });
+    case "message":
+      return { ...base, kind: item.kind, role: item.role, text: item.text };
+    case "tool-call":
+      return {
+        ...base,
+        kind: item.kind,
+        callId: item.callId,
+        tool: item.tool,
+        inputSummary: item.inputSummary,
+      };
+    case "tool-result":
+      return {
+        ...base,
+        kind: item.kind,
+        callId: item.callId,
+        outcome: item.outcome,
+        outputSummary: item.outputSummary,
+      };
+    case "thinking-summary":
+      return { ...base, kind: item.kind, summary: item.summary };
+    case "subagent":
+      return { ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary };
+    case "input-request":
+      return {
+        ...base,
+        kind: item.kind,
+        state: item.state,
+        promptSummary: item.promptSummary,
+        responseSummary: item.responseSummary,
+      };
+    case "skill-load":
+      return {
+        ...base,
+        kind: item.kind,
+        code: item.skill,
+        summary: makeBoundedSafeText(
+          item.outcome === "loaded" ? "Skill loaded." : "Skill load failed.",
+          MAX_CONVERSATION_TEXT_BYTES,
+        )!,
+      };
+    case "context-injection":
+      return { ...base, kind: item.kind, summary: item.summary };
+    case "compaction":
+      return { ...base, kind: item.kind, summary: item.summary };
+    case "conversation-error":
+      return { ...base, kind: item.kind, code: item.code, summary: item.summary };
   }
 }
 
-export function receiptDiagnosticRedaction(
-  redaction: AttemptDiagnostic["redaction"],
-): object {
-  if (redaction.state === "none") return Object.freeze({ state: "none" as const });
-  return Object.freeze({
+export function receiptDiagnosticRedaction(redaction: AttemptDiagnostic["redaction"]): object {
+  if (redaction.state === "none") return { state: "none" as const };
+  return {
     state: "applied" as const,
     replacements: redaction.summaryReplacements + redaction.causeReplacements + redaction.contextReplacements,
-  });
+  };
 }
 
 export function decodeReceipt<Value, Encoded>(
@@ -101,7 +124,5 @@ export function decodeReceipt<Value, Encoded>(
   owner: "attempt" | "run",
 ): Effect.Effect<Value, RunnerObservabilityProducerError> {
   const decoded = Schema.decodeUnknownResult(Schema.toType(schema))(candidate);
-  return Result.isFailure(decoded)
-    ? Effect.fail(producerCaptureSealInvalid(owner))
-    : Effect.succeed(decoded.success);
+  return Result.isFailure(decoded) ? Effect.fail(producerCaptureSealInvalid(owner)) : Effect.succeed(decoded.success);
 }

@@ -1,7 +1,6 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { sandboxCommandsRecordAttachment } from "./definition.ts";
 
-export const sandboxCommandsRecordAttachmentPersistence = defineRecordAttachmentPersistence({
+export const sandboxCommandsRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
   attachment: sandboxCommandsRecordAttachment,
-  revision: 2,
 });

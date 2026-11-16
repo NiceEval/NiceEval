@@ -14,10 +14,10 @@ description: "进程被 kill -9、CI 超时或断电中断后，保留已经跑�
 
 ```bash
 pnpm exec niceeval run list --invocation <invocation-id>
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-也可以在浏览器里看：`pnpm exec niceeval view --run <run-id>`。
+也可以在浏览器里看：`pnpm exec niceeval view run:<run-id>`。
 
 被强杀的 Run 状态仍是 `active`。它会显示已经跑完的 Attempt，还没跑的显示为 `pending`。不要根据运行时长、PID 过期或心跳停止就认定它可以被接管。
 

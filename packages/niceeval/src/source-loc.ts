@@ -62,7 +62,9 @@ export function withSourceRegistry<T>(registry: SourceRegistry, run: () => T): T
  * 将 root/registry 显式由 attempt 注入；调用方不再以 cwd 猜测项目边界。
  * registry 在同步栈采集期间立即冻结源码，读取失败只留下路径，供投影输出 unavailable。
  */
-export function captureLoc(options: { root?: string; registry?: SourceRegistry } = {}): SourceLoc | undefined {
+export function captureLoc(
+  options: { root?: string | undefined; registry?: SourceRegistry | undefined } = {},
+): SourceLoc | undefined {
   const oldLimit = Error.stackTraceLimit;
   Error.stackTraceLimit = 64;
   const stack = new Error().stack;
@@ -90,7 +92,12 @@ export function captureLoc(options: { root?: string; registry?: SourceRegistry }
     const lineNo = Number(m[2]);
     const column = Number(m[3]);
     if (inside(root, absolute)) {
-      const project = { kind: "project" as const, file: relative(root, absolute).split(sep).join("/"), line: lineNo, column };
+      const project = {
+        kind: "project" as const,
+        file: relative(root, absolute).split(sep).join("/"),
+        line: lineNo,
+        column,
+      };
       registry?.capture(project.file);
       if (!declaration) declaration = project;
       else frames.push(project);

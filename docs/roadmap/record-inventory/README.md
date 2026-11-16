@@ -158,11 +158,11 @@ entries 与 problems 都不按时间排序，也不截断。
 它也显示全部 `core-invalid` entry 与全部局部问题；没有 `candidateRunId` 时明确写成“Run ID 不可用”。
 
 只有 `published` entry 的 Run ID 组成可复制的下一步命令。
-命令只重复 `--run`，不含任何 selector、`--latest` 或时间条件：
+命令只重复 `run:` 对象，不含任何 selector、`--latest` 或时间条件：
 
 ```text
-niceeval query run --request <runs-request.json>
-niceeval view --run 01H... --run 01J...
+niceeval show run:01H... run:01J... --json
+niceeval view run:01H... run:01J...
 ```
 
 | 退出码 | 条件 |

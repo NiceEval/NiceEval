@@ -4,11 +4,7 @@
 import { Effect, Option } from "effect";
 import type { SandboxBuildProvider, SandboxBuildRef, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
 import { routeBuildProviders } from "../sandbox/dockerfile-build.ts";
-import type { BuildKey } from "../sandbox/identity.ts";
-import {
-  collectSandboxRuntimeBuildPreparation,
-  SandboxRuntimeMaterializationError,
-} from "../sandbox/runtime.ts";
+import { collectSandboxRuntimeBuildPreparation, SandboxRuntimeMaterializationError } from "../sandbox/runtime.ts";
 import type { PreparedRunPair } from "./sandbox-selection.ts";
 import type { RunOptions } from "./types.ts";
 
@@ -26,11 +22,8 @@ export function collectBuildPreparation(opts: {
   readonly preparedPairs: readonly PreparedRunPair[];
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
   /** 测试可注入单一 provider；生产默认按每条 BuildKey 的 ProviderModule 路由。 */
-  readonly provider?: SandboxBuildProvider;
-}): Effect.Effect<
-  Option.Option<CollectedBuildPreparation>,
-  SandboxRuntimeMaterializationError
-> {
+  readonly provider: SandboxBuildProvider | undefined;
+}): Effect.Effect<Option.Option<CollectedBuildPreparation>, SandboxRuntimeMaterializationError> {
   return Effect.gen(function* () {
     const worksByKey = new Map<SandboxBuildRef, SandboxBuildWork>();
     const providerByKey = new Map<SandboxBuildRef, SandboxBuildProvider>();
@@ -64,7 +57,10 @@ export function collectBuildPreparation(opts: {
       const collected = collection.value;
       const plannedKeys = pair.plan.providerPlan.build.buildKeys;
       const collectedKeys = collected.works.map((work) => work.buildKey).sort();
-      if (plannedKeys.length !== collectedKeys.length || [...plannedKeys].sort().some((key, i) => key !== collectedKeys[i])) {
+      if (
+        plannedKeys.length !== collectedKeys.length ||
+        [...plannedKeys].sort().some((key, i) => key !== collectedKeys[i])
+      ) {
         return yield* new SandboxRuntimeMaterializationError({
           code: "sandbox.build-input-drift",
           provider: pair.plan.providerPlan.provider,
@@ -83,11 +79,11 @@ export function collectBuildPreparation(opts: {
 
     if (worksByKey.size === 0) return Option.none();
     const provider = opts.provider ?? routeBuildProviders(providerByKey);
-    return Option.some(Object.freeze({
-      works: Object.freeze([...worksByKey.values()]),
-      pairBuildKeys: Object.freeze(Object.fromEntries(pairBuildKeys)),
+    return Option.some({
+      works: [...worksByKey.values()],
+      pairBuildKeys: Object.fromEntries(pairBuildKeys),
       provider,
-    }));
+    });
   });
 }
 
@@ -100,5 +96,8 @@ export function toBuildPreparation(
     works: collected.works,
     pairBuildKeys: collected.pairBuildKeys,
     provider: collected.provider,
+    maxConcurrency: 2,
+    buildTimeoutMs: undefined,
+    prepareBudgetMs: undefined,
   });
 }

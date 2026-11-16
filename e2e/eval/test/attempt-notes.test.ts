@@ -9,7 +9,9 @@ import { inspectAttempt } from "./inspection.ts";
 // @feature docs/feature/eval/README.md
 test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verdict", async () => {
   await evalE2E.case("attempt-notes", async ({ paths, commands: { niceeval } }) => {
-    await writeFile(join(paths.projectRoot, "fixtures", "notes.ts"), `
+    await writeFile(
+      join(paths.projectRoot, "fixtures", "notes.ts"),
+      `
       import { defineAdapter } from "niceeval";
       import assert from "node:assert/strict";
       export const adapter = defineAdapter({ name: "notes", create(ctx) {
@@ -17,13 +19,19 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
         ctx.onCleanup(() => assert.throws(() => note!("late", 1), { name: "AssertionAuthoringClosedError" }));
         return { rememberNote: (value: typeof note) => { note = value; } };
       }});
-    `);
-    await writeFile(join(paths.projectRoot, "experiments", "notes.ts"), `
+    `,
+    );
+    await writeFile(
+      join(paths.projectRoot, "experiments", "notes.ts"),
+      `
       import { defineExperiment } from "niceeval";
       import { adapter } from "../fixtures/notes.ts";
       export default defineExperiment({ adapter });
-    `);
-    await writeFile(join(paths.projectRoot, "evals", "notes.eval.ts"), `
+    `,
+    );
+    await writeFile(
+      join(paths.projectRoot, "evals", "notes.eval.ts"),
+      `
       import assert from "node:assert/strict";
       import { adapter } from "../fixtures/notes.ts";
       import { equals, ms, ratio, usd } from "niceeval/expect";
@@ -43,7 +51,8 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
         t.rememberNote(t.note);
         t.check(1, equals(1));
       }});
-    `);
+    `,
+    );
     const run = await niceeval.run(["exp", "notes", "notes", "--rerun", "all", "--json"]);
     expect(run.exitCode, run.diagnostic()).toBe(0);
     const event = only(run.expEvalEvents(), (entry) => entry.evalId === "notes", run.diagnostic());
@@ -74,7 +83,10 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
       if (!decoded.success) throw new Error(`${decoded.reason}\n\n${json.diagnostic()}`);
       return decoded.value;
     });
-    expect(documents.map((entry) => "operation" in entry ? entry.operation : undefined)).toEqual(["attempt.get", "attempt.usage"]);
+    expect(documents.map((entry) => ("operation" in entry ? entry.operation : undefined))).toEqual([
+      "attempt.get",
+      "attempt.usage",
+    ]);
     const attempt = narrowInspectionSuccess(documents[0]!, "attempt.get");
     if (!attempt.success) throw new Error(`${attempt.reason}\n\n${json.diagnostic()}`);
     const usage = narrowInspectionSuccess(documents[1]!, "attempt.usage");

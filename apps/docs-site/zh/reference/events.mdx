@@ -28,7 +28,7 @@ interface Turn {
 #### `inputTokens`
 
 ```ts
-inputTokens?: number;
+inputTokens?: number | undefined;
 ```
 
 未命中缓存、按全价计费的输入 token;与两个 cache 桶互斥。
@@ -36,7 +36,7 @@ inputTokens?: number;
 #### `outputTokens`
 
 ```ts
-outputTokens?: number;
+outputTokens?: number | undefined;
 ```
 
 输出(completion)token 数。
@@ -44,7 +44,7 @@ outputTokens?: number;
 #### `cacheReadTokens`
 
 ```ts
-cacheReadTokens?: number;
+cacheReadTokens?: number | undefined;
 ```
 
 从提示缓存命中的输入 token;独立计价桶,不包含在 inputTokens 里(省略表示该 agent 不上报此项)。
@@ -52,7 +52,7 @@ cacheReadTokens?: number;
 #### `cacheCreationTokens`
 
 ```ts
-cacheCreationTokens?: number;
+cacheCreationTokens?: number | undefined;
 ```
 
 写入提示缓存的输入 token;独立计价桶,不包含在 inputTokens 里(省略表示该 agent 不上报此项)。
@@ -60,7 +60,7 @@ cacheCreationTokens?: number;
 #### `reasoningTokens`
 
 ```ts
-reasoningTokens?: number;
+reasoningTokens?: number | undefined;
 ```
 
 推理(thinking)token 数,outputTokens 的已含明细,单列展示用;只在协议真实提供时存在。
@@ -68,7 +68,7 @@ reasoningTokens?: number;
 #### `requests`
 
 ```ts
-requests?: number;
+requests?: number | undefined;
 ```
 
 真实发生的模型请求数。协议不提供请求计数就省略,绝不写 1 凑数。
@@ -76,7 +76,7 @@ requests?: number;
 #### `costUSD`
 
 ```ts
-costUSD?: number;
+costUSD?: number | undefined;
 ```
 
 网关/adapter 实测的真实美元成本(只能由 `Turn.usage.costUSD` 显式带回,从不从
@@ -102,13 +102,13 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 #### `message`
 
 ```ts
-{ type: "message"; role: "assistant"; text: string; loc?: SourceLoc }
+{ type: "message"; role: "assistant"; text: string; loc?: SourceLoc | undefined }
 ```
 
 #### `message`
 
 ```ts
-{ type: "message"; role: "user"; text: string; loc?: SourceLoc; sourceOrder?: number }
+{ type: "message"; role: "user"; text: string; loc?: SourceLoc | undefined; sourceOrder?: number | undefined }
 ```
 
 #### `operation.started`
@@ -122,14 +122,14 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
         kind: "tool";
         name: string;
         input: JsonValue;
-        tool?: ToolName;
+        tool?: ToolName | undefined;
         /**
          * Adapter 对 command / not-command 的协议级分类。暂时可选以兼容尚未迁移的
          * 第三方 Adapter；缺失不得在 core 侧由 name、input 或 shell text 补造。
          */
-        command?: CommandProjection;
+        command?: CommandProjection | undefined;
       }
-    | { kind: "subagent"; name: string; remoteUrl?: string };
+    | { kind: "subagent"; name: string; remoteUrl?: string | undefined };
 }
 ```
 
@@ -140,7 +140,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
   type: "operation.finished";
   operationId: string;
   kind: "tool";
-  output?: JsonValue;
+  output?: JsonValue | undefined;
   status: "completed" | "failed" | "rejected";
 }
 ```
@@ -152,7 +152,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
   type: "operation.finished";
   operationId: string;
   kind: "subagent";
-  output?: JsonValue;
+  output?: JsonValue | undefined;
   status: "completed" | "failed";
 }
 ```
@@ -160,7 +160,7 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 #### `skill.loaded`
 
 ```ts
-{ type: "skill.loaded"; skill: string; operationId?: string }
+{ type: "skill.loaded"; skill: string; operationId?: string | undefined }
 ```
 
 #### `input.requested`
@@ -178,13 +178,13 @@ token 用量或 OTel span 反推得到)。与顶层 `estimatedCostUSD`(价目表
 #### `context.injected`
 
 ```ts
-{ type: "context.injected"; text: string; source?: string }
+{ type: "context.injected"; text: string; source?: string | undefined }
 ```
 
 #### `compaction`
 
 ```ts
-{ type: "compaction"; reason?: string }
+{ type: "compaction"; reason?: string | undefined }
 ```
 
 #### `error`

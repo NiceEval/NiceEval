@@ -5,25 +5,22 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Data, Effect } from "effect";
-import { buildContextIdentityContribution } from "../runner/leak-gate.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+import { buildContextIdentityContribution, type LeakGateError } from "../runner/leak-gate.ts";
 import type { JsonValue } from "../shared/types.ts";
-import {
-  computeBuildKey,
-  unresolvedProviderFingerprintMarker,
-  type BuildKey,
-} from "./identity.ts";
+import { computeBuildKey, unresolvedProviderFingerprintMarker, type BuildKey } from "./identity.ts";
 
 export const DOCKERFILE_MATERIALIZER_REVISION = "dockerfile-2";
 
 export interface DockerfileBuildIdentityInput {
   readonly provider: "docker" | "e2b";
   readonly context: string | URL;
-  readonly dockerfile?: string;
-  readonly buildArgs?: Readonly<Record<string, string>>;
-  readonly target?: string;
+  readonly dockerfile: string;
+  readonly buildArgs: Readonly<Record<string, string>>;
+  readonly target: string | undefined;
   readonly platform: string;
-  readonly baseDir?: string;
-  readonly label?: string;
+  readonly baseDir: string;
+  readonly label: string;
 }
 
 export interface DockerfileBuildIdentity {
@@ -32,20 +29,19 @@ export interface DockerfileBuildIdentity {
   readonly dockerfilePath: string;
   readonly dockerfile: string;
   readonly contextFilterRules: string;
-  readonly providerIdentityMarker?: JsonValue;
+  readonly providerIdentityMarker: JsonValue | undefined;
 }
 
 export class DockerfileBuildIdentityError extends Data.TaggedError("DockerfileBuildIdentityError")<{
+  readonly cause: LeakGateError | ExternalCause;
   readonly stage: "dockerfile" | "context" | "identity";
   readonly message: string;
 }> {}
 
-function identityError(
-  stage: DockerfileBuildIdentityError["stage"],
-  cause: unknown,
-): DockerfileBuildIdentityError {
+function identityError(stage: DockerfileBuildIdentityError["stage"], cause: unknown): DockerfileBuildIdentityError {
   return new DockerfileBuildIdentityError({
     stage,
+    cause: normalizeExternalCause(cause),
     message: cause instanceof Error ? cause.message : String(cause),
   });
 }
@@ -55,21 +51,26 @@ export function resolveDockerfileBuildIdentity(
 ): Effect.Effect<DockerfileBuildIdentity, DockerfileBuildIdentityError> {
   return Effect.gen(function* () {
     const rawContext = input.context instanceof URL ? fileURLToPath(input.context) : input.context;
-    const contextDir = isAbsolute(rawContext)
-      ? rawContext
-      : resolvePath(input.baseDir ?? process.cwd(), rawContext);
-    const dockerfilePath = resolvePath(contextDir, input.dockerfile ?? "Dockerfile");
+    const contextDir = isAbsolute(rawContext) ? rawContext : resolvePath(input.baseDir, rawContext);
+    const dockerfilePath = resolvePath(contextDir, input.dockerfile);
     const dockerfile = yield* Effect.tryPromise({
       try: () => readFile(dockerfilePath, "utf8"),
-      catch: () => new DockerfileBuildIdentityError({
-        stage: "dockerfile",
-        message: `Dockerfile not found at ${dockerfilePath}`,
-      }),
+      catch: (cause) =>
+        new DockerfileBuildIdentityError({
+          cause: normalizeExternalCause(cause),
+          stage: "dockerfile",
+          message: `Dockerfile not found at ${dockerfilePath}`,
+        }),
     });
     const { contextDigest, contextFilterRules } = yield* buildContextIdentityContribution({
       contextDir,
-      label: input.label ?? "Dockerfile sandbox",
-    }).pipe(Effect.mapError((cause) => identityError("context", cause)));
+      label: input.label,
+
+      dockerignorePath: undefined,
+      extraIgnoreRules: undefined,
+    }).pipe(
+      Effect.mapError((cause) => new DockerfileBuildIdentityError({ stage: "context", message: cause.message, cause })),
+    );
     return yield* Effect.try({
       try: () => {
         const base = dockerfileBaseIdentity(dockerfile, input.target);
@@ -81,17 +82,17 @@ export function resolveDockerfileBuildIdentity(
           contextDigest,
           fromDigest: base.fromDigest,
           contextFilterRules,
-          ...(input.buildArgs !== undefined ? { buildArgs: input.buildArgs } : {}),
-          ...(input.target !== undefined ? { target: input.target } : {}),
+          buildArgs: input.buildArgs,
+          target: input.target,
         });
-        return Object.freeze({
+        return {
           buildKey,
           contextDir,
           dockerfilePath,
           dockerfile,
           contextFilterRules,
-          ...(base.providerIdentityMarker === undefined ? {} : { providerIdentityMarker: base.providerIdentityMarker }),
-        });
+          providerIdentityMarker: base.providerIdentityMarker,
+        };
       },
       catch: (cause) => identityError("identity", cause),
     });
@@ -102,17 +103,18 @@ export function resolveDockerfileBuildIdentity(
 export function dockerfileBaseIdentity(
   dockerfile: string,
   target?: string,
-): { readonly fromDigest: string; readonly providerIdentityMarker?: JsonValue } {
-  const stages: Array<{ ref: string; name?: string }> = [];
+): { readonly fromDigest: string; readonly providerIdentityMarker: JsonValue | undefined } {
+  const stages: Array<{ ref: string; name: string | undefined }> = [];
   for (const line of dockerfile.split(/\r?\n/)) {
     const match = line.match(/^\s*FROM\s+(?:(?:--\S+)\s+)*(\S+)(?:\s+AS\s+(\S+))?/i);
     if (match?.[1] !== undefined) {
-      stages.push({ ref: match[1], ...(match[2] !== undefined ? { name: match[2] } : {}) });
+      stages.push({ ref: match[1], name: match[2] });
     }
   }
-  const targetIndex = target === undefined
-    ? stages.length - 1
-    : stages.findIndex(({ name }) => name?.toLowerCase() === target.toLowerCase());
+  const targetIndex =
+    target === undefined
+      ? stages.length - 1
+      : stages.findIndex(({ name }) => name?.toLowerCase() === target.toLowerCase());
   const included = stages.slice(0, targetIndex >= 0 ? targetIndex + 1 : stages.length);
   const aliases = new Set<string>();
   const bases: string[] = [];
@@ -134,17 +136,15 @@ export function dockerfileBaseIdentity(
     }
     if (stage.name !== undefined) aliases.add(stage.name.toLowerCase());
   }
-  return Object.freeze({
+  return {
     fromDigest: JSON.stringify(bases),
-    ...(hasUnresolvedBase
-      ? {
-          providerIdentityMarker: unresolvedProviderFingerprintMarker(
-            "sandbox.base-image-unresolved",
-            "Dockerfile FROM is not pinned to a sha256 digest.",
-          ),
-        }
-      : {}),
-  });
+    providerIdentityMarker: hasUnresolvedBase
+      ? unresolvedProviderFingerprintMarker(
+          "sandbox.base-image-unresolved",
+          "Dockerfile FROM is not pinned to a sha256 digest.",
+        )
+      : undefined,
+  };
 }
 
 function digestFromReference(ref: string | undefined): string | undefined {

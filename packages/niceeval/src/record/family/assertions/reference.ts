@@ -2,10 +2,7 @@ import { Schema } from "effect";
 
 import { AssertionEntryIdSchema } from "../../../assertions/record/codec.ts";
 import { RecordAttachmentReference } from "../../attachment/index.ts";
-import {
-  Sha256DigestSchema,
-  SourceItemIdSchema,
-} from "../../codec/identifiers.ts";
+import { Sha256DigestSchema, SourceItemIdSchema } from "../../codec/identifiers.ts";
 import { PositiveSafeIntegerSchema } from "../common.ts";
 import { sourcesRecordAttachment } from "../sources/definition.ts";
 

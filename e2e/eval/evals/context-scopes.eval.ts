@@ -1,11 +1,5 @@
 import { defineEval } from "niceeval";
-import {
-  equals,
-  excludes,
-  includes,
-  eventMatch,
-  toolMatch,
-} from "niceeval/expect";
+import { equals, excludes, includes, eventMatch, toolMatch } from "niceeval/expect";
 
 export default defineEval({
   description: "主会话、多轮与 newSession 的真实事件、usage 与输出边界彼此隔离",
@@ -21,14 +15,8 @@ export default defineEval({
     await branchTurn.succeeded().orStop();
 
     await t.group("turn 输出只属于本轮", () => {
-      t.check(
-        mainFirst.data,
-        equals({ fixture: "context-main-first", ok: true }),
-      );
-      t.check(
-        mainSecond.data,
-        equals({ fixture: "context-main-second", ok: true }),
-      );
+      t.check(mainFirst.data, equals({ fixture: "context-main-first", ok: true }));
+      t.check(mainSecond.data, equals({ fixture: "context-main-second", ok: true }));
       t.check(branchTurn.data, equals({ fixture: "context-branch", ok: true }));
       t.check(mainFirst.reply, includes("context-main-first"));
       t.check(mainSecond.reply, includes("context-main-second"));

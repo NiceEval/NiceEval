@@ -15,7 +15,7 @@ export function normalizeExactNpmPlugins(
   label: string,
 ): readonly ExactNpmPlugin[] {
   const seen = new Set<string>();
-  return Object.freeze((input ?? []).map((raw, index) => {
+  return (input ?? []).map((raw, index) => {
     const spec = raw.trim();
     const match = EXACT_NPM_SPEC.exec(spec);
     if (match === null) {
@@ -26,8 +26,8 @@ export function normalizeExactNpmPlugins(
     const [, name, version] = match;
     if (seen.has(name)) throw new TypeError(`${label} contains duplicate package ${name}.`);
     seen.add(name);
-    return Object.freeze({ name, version, spec });
-  }));
+    return { name, version, spec };
+  });
 }
 
 /** Readable identity: the normalized declaration itself is persisted in agentInstalls/config identity. */

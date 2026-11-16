@@ -2,10 +2,7 @@ import { Schema } from "effect";
 import { SlotIdSchema } from "../../../record/codec/identifiers.ts";
 import { ATTEMPT_DIAGNOSTIC_PHASES, RUN_DIAGNOSTIC_PHASES } from "../../../record/family/protocol-values.ts";
 
-import {
-  Sha256DigestSchema,
-  SourceFileItemIdSchema,
-} from "../../../sources/codec.ts";
+import { Sha256DigestSchema, SourceFileItemIdSchema } from "../../../sources/codec.ts";
 import {
   AttemptDiagnosticsReferencesSchema,
   AttemptReferenceTargetSchema,
@@ -30,11 +27,7 @@ import type {
   AttemptDiagnosticsReferences,
   RunDiagnosticsReferences,
 } from "../../../record/family/source-receipt/model.ts";
-import {
-  isAllowedCollection,
-  isStrictlyOrderedById,
-  payloadFits,
-} from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
 
 export const AttemptDiagnosticPhaseSchema = Schema.Literals(ATTEMPT_DIAGNOSTIC_PHASES);
 
@@ -57,16 +50,26 @@ const SafeDiagnosticCauseSchema = Schema.Struct({
   summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES),
 });
 
-const DiagnosticRedactionSchema = Schema.Union([Schema.Struct({ state: Schema.Literal("none") }), Schema.Struct({
+const DiagnosticRedactionSchema = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("none") }),
+  Schema.Struct({
     state: Schema.Literal("applied"),
     summaryReplacements: NonNegativeSafeIntegerSchema,
     causeReplacements: NonNegativeSafeIntegerSchema,
     contextReplacements: NonNegativeSafeIntegerSchema,
-  })]);
+  }),
+]);
 
 const DiagnosticLimitContextSchema = Schema.Struct({
   kind: Schema.Literal("limit"),
-  limit: Schema.Literals(["conversation-items", "commands", "usage-observations", "timing-intervals", "diagnostics", "command-stream-bytes"]),
+  limit: Schema.Literals([
+    "conversation-items",
+    "commands",
+    "usage-observations",
+    "timing-intervals",
+    "diagnostics",
+    "command-stream-bytes",
+  ]),
   maximum: NonNegativeSafeIntegerSchema,
   observedAtLeast: NonNegativeSafeIntegerSchema,
 });
@@ -84,22 +87,28 @@ const DiagnosticProviderContextSchema = Schema.Struct({
 const AttemptDiagnosticEntityContextSchema = Schema.Struct({
   kind: Schema.Literal("entity"),
   target: AttemptReferenceTargetSchema.pipe(
-    Schema.check(Schema.makeFilter((target): target is AttemptDiagnosticsReferences =>
-      target.kind !== "diagnostic")),
+    Schema.check(Schema.makeFilter((target): target is AttemptDiagnosticsReferences => target.kind !== "diagnostic")),
   ),
 });
 
 const RunDiagnosticEntityContextSchema = Schema.Struct({
   kind: Schema.Literal("entity"),
   target: RunReferenceTargetSchema.pipe(
-    Schema.check(Schema.makeFilter((target): target is RunDiagnosticsReferences =>
-      target.kind !== "diagnostic")),
+    Schema.check(Schema.makeFilter((target): target is RunDiagnosticsReferences => target.kind !== "diagnostic")),
   ),
 });
 
-const AttemptDiagnosticContextExactSchema = Schema.Union([AttemptDiagnosticEntityContextSchema, DiagnosticLimitContextSchema, DiagnosticProviderContextSchema]);
+const AttemptDiagnosticContextExactSchema = Schema.Union([
+  AttemptDiagnosticEntityContextSchema,
+  DiagnosticLimitContextSchema,
+  DiagnosticProviderContextSchema,
+]);
 
-const RunDiagnosticContextExactSchema = Schema.Union([RunDiagnosticEntityContextSchema, DiagnosticLimitContextSchema, DiagnosticProviderContextSchema]);
+const RunDiagnosticContextExactSchema = Schema.Union([
+  RunDiagnosticEntityContextSchema,
+  DiagnosticLimitContextSchema,
+  DiagnosticProviderContextSchema,
+]);
 
 export const AttemptDiagnosticSchema = Schema.Struct({
   diagnosticId: DiagnosticIdSchema,
@@ -135,25 +144,17 @@ export type DiagnosticRedaction = Schema.Schema.Type<typeof DiagnosticRedactionS
 export type AttemptDiagnostic = Schema.Schema.Type<typeof AttemptDiagnosticSchema>;
 export type RunDiagnostic = Schema.Schema.Type<typeof RunDiagnosticSchema>;
 
-function sourcePositionBeforeOrEqual(
-  left: SourcePosition,
-  right: SourcePosition,
-): boolean {
+function sourcePositionBeforeOrEqual(left: SourcePosition, right: SourcePosition): boolean {
   return left.line < right.line || (left.line === right.line && left.column <= right.column);
 }
 
-function hasValidDiagnosticShape(
-  diagnostic: {
-    readonly causes: readonly SafeDiagnosticCause[];
-    readonly context: readonly unknown[];
-    readonly redaction: DiagnosticRedaction;
-    readonly sourceFrame: SourceFrame | null;
-  },
-): boolean {
-  if (
-    diagnostic.causes.length > MAX_DIAGNOSTIC_CAUSES ||
-    diagnostic.context.length > MAX_DIAGNOSTIC_CONTEXT_ITEMS
-  ) {
+function hasValidDiagnosticShape(diagnostic: {
+  readonly causes: readonly SafeDiagnosticCause[];
+  readonly context: readonly unknown[];
+  readonly redaction: DiagnosticRedaction;
+  readonly sourceFrame: SourceFrame | null;
+}): boolean {
+  if (diagnostic.causes.length > MAX_DIAGNOSTIC_CAUSES || diagnostic.context.length > MAX_DIAGNOSTIC_CONTEXT_ITEMS) {
     return false;
   }
   if (
@@ -187,17 +188,16 @@ function isCanonicalAttemptDiagnosticsAttachment(
   );
 }
 
-export const AttemptDiagnosticsAttachmentSchema =
-  AttemptDiagnosticsAttachmentStructuralSchema.pipe(
-    Schema.check(Schema.makeFilter(isCanonicalAttemptDiagnosticsAttachment, {
+export const AttemptDiagnosticsAttachmentSchema = AttemptDiagnosticsAttachmentStructuralSchema.pipe(
+  Schema.check(
+    Schema.makeFilter(isCanonicalAttemptDiagnosticsAttachment, {
       identifier: "ObservabilityAttemptDiagnosticsAttachment",
       description: "a canonical, bounded attempt diagnostics attachment",
-    })),
-  );
+    }),
+  ),
+);
 
-export type AttemptDiagnosticsAttachment = Schema.Schema.Type<
-  typeof AttemptDiagnosticsAttachmentSchema
->;
+export type AttemptDiagnosticsAttachment = Schema.Schema.Type<typeof AttemptDiagnosticsAttachmentSchema>;
 
 const RunDiagnosticsAttachmentStructuralSchema = Schema.Struct({
   collection: CollectionSchema,
@@ -217,12 +217,12 @@ function isCanonicalRunDiagnosticsAttachment(
 }
 
 export const RunDiagnosticsAttachmentSchema = RunDiagnosticsAttachmentStructuralSchema.pipe(
-  Schema.check(Schema.makeFilter(isCanonicalRunDiagnosticsAttachment, {
-    identifier: "ObservabilityRunDiagnosticsAttachment",
-    description: "a canonical, bounded run diagnostics attachment",
-  })),
+  Schema.check(
+    Schema.makeFilter(isCanonicalRunDiagnosticsAttachment, {
+      identifier: "ObservabilityRunDiagnosticsAttachment",
+      description: "a canonical, bounded run diagnostics attachment",
+    }),
+  ),
 );
 
-export type RunDiagnosticsAttachment = Schema.Schema.Type<
-  typeof RunDiagnosticsAttachmentSchema
->;
+export type RunDiagnosticsAttachment = Schema.Schema.Type<typeof RunDiagnosticsAttachmentSchema>;

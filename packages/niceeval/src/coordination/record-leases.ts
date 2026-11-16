@@ -1,8 +1,6 @@
 import { Context, Effect } from "effect";
-import type {
-  RecordFileSystemError,
-  RecordMaintenanceBusy,
-} from "../record/platform/errors.ts";
+import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
+import type { RecordFileSystemError, RecordMaintenanceBusy } from "../record/platform/errors.ts";
 import type { RecordRoot } from "../record/platform/root.ts";
 
 export type RecordLeaseKind = "read" | "append" | "maintenance";
@@ -13,12 +11,10 @@ export type RecordCoordinationWaitKind = "write-batch" | "write-freeze";
 export interface RecordCoordinationWaitRequest {
   readonly root: RecordRoot;
   readonly deadlineEpochMs: number;
-  readonly signal?: AbortSignal;
+  readonly signal?: AbortSignal | undefined;
 }
 
-const recordLeaseTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordLease",
-);
+const recordLeaseTypeId: unique symbol = Symbol("@niceeval/coordination/RecordLease");
 
 /** A local, Scope-owned proof that one named Record operation remains active. */
 export interface RecordLease {
@@ -26,9 +22,7 @@ export interface RecordLease {
   readonly [recordLeaseTypeId]: typeof recordLeaseTypeId;
 }
 
-const recordWriteBatchAdmissionTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordWriteBatchAdmission",
-);
+const recordWriteBatchAdmissionTypeId: unique symbol = Symbol("@niceeval/coordination/RecordWriteBatchAdmission");
 
 /** Scope-owned permission for exactly one bounded SQLite write transaction. */
 export interface RecordWriteBatchAdmission {
@@ -36,9 +30,7 @@ export interface RecordWriteBatchAdmission {
   readonly [recordWriteBatchAdmissionTypeId]: typeof recordWriteBatchAdmissionTypeId;
 }
 
-const recordWriteFreezeTypeId: unique symbol = Symbol(
-  "@niceeval/coordination/RecordWriteFreeze",
-);
+const recordWriteFreezeTypeId: unique symbol = Symbol("@niceeval/coordination/RecordWriteFreeze");
 
 /** Scope-owned barrier that blocks new writes while a stable read point is captured. */
 export interface RecordWriteFreeze {
@@ -69,7 +61,7 @@ export interface RecordCoordinationCanceled {
 /** Malformed local authority is never guessed at or overwritten. */
 export interface RecordCoordinationStateInvalid {
   readonly code: "record-coordination-state-invalid";
-  readonly cause?: unknown;
+  readonly cause: ExternalCause | undefined;
 }
 
 /** Describes filesystem, maintenance or coordination failures when accessing a Record; inspect the discriminant before retrying. */
@@ -100,21 +92,12 @@ export interface RecordCoordinationService {
   /** FIFO admission for one bounded BEGIN IMMEDIATE transaction or batch. */
   readonly enterRecordWriteBatch: (
     request: RecordCoordinationWaitRequest,
-  ) => Effect.Effect<
-    RecordWriteBatchAdmission,
-    RecordCoordinationError,
-    import("effect").Scope.Scope
-  >;
+  ) => Effect.Effect<RecordWriteBatchAdmission, RecordCoordinationError, import("effect").Scope.Scope>;
 
   /** Blocks new write admission and drains the already admitted transaction. */
   readonly enterRecordWriteFreeze: (
     request: RecordCoordinationWaitRequest,
-  ) => Effect.Effect<
-    RecordWriteFreeze,
-    RecordCoordinationError,
-    import("effect").Scope.Scope
-  >;
-
+  ) => Effect.Effect<RecordWriteFreeze, RecordCoordinationError, import("effect").Scope.Scope>;
 }
 
 export class RecordCoordination extends Context.Service<RecordCoordination, RecordCoordinationService>()(
@@ -127,7 +110,7 @@ export function issueRecordLease(kind: RecordLeaseKind): RecordLease {
     kind,
     [recordLeaseTypeId]: recordLeaseTypeId,
   };
-  return Object.freeze(lease);
+  return lease;
 }
 
 /** @internal The Node platform is the only issuer of concrete admission handles. */
@@ -136,7 +119,7 @@ export function issueRecordWriteBatchAdmission(): RecordWriteBatchAdmission {
     kind: "write-batch",
     [recordWriteBatchAdmissionTypeId]: recordWriteBatchAdmissionTypeId,
   };
-  return Object.freeze(admission);
+  return admission;
 }
 
 /** @internal The Node platform is the only issuer of concrete barrier handles. */
@@ -145,36 +128,34 @@ export function issueRecordWriteFreeze(): RecordWriteFreeze {
     kind: "write-freeze",
     [recordWriteFreezeTypeId]: recordWriteFreezeTypeId,
   };
-  return Object.freeze(barrier);
+  return barrier;
 }
 
 export function recordCoordinationDeadlineInvalid(
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
 ): RecordCoordinationDeadlineInvalid {
-  return Object.freeze({
+  return {
     code: "record-coordination-deadline-invalid",
     operation,
     deadlineEpochMs,
-  });
+  };
 }
 
 export function recordCoordinationTimedOut(
   operation: RecordCoordinationWaitKind,
   deadlineEpochMs: number,
 ): RecordCoordinationTimedOut {
-  return Object.freeze({ code: "record-coordination-timed-out", operation, deadlineEpochMs });
+  return { code: "record-coordination-timed-out", operation, deadlineEpochMs };
 }
 
-export function recordCoordinationCanceled(
-  operation: RecordCoordinationWaitKind,
-): RecordCoordinationCanceled {
-  return Object.freeze({ code: "record-coordination-canceled", operation });
+export function recordCoordinationCanceled(operation: RecordCoordinationWaitKind): RecordCoordinationCanceled {
+  return { code: "record-coordination-canceled", operation };
 }
 
 export function recordCoordinationStateInvalid(cause?: unknown): RecordCoordinationStateInvalid {
-  return Object.freeze({
+  return {
     code: "record-coordination-state-invalid",
-    ...(cause === undefined ? {} : { cause }),
-  });
+    cause: cause === undefined ? undefined : normalizeExternalCause(cause),
+  };
 }

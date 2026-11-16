@@ -14,14 +14,16 @@ export class ViewRuntime<Snapshot = unknown> {
   readonly #listeners = new Set<() => void>();
   #disposed = false;
   readonly queryClient = new QueryClient({
-    defaultOptions: { queries: {
-      gcTime: 5 * 60_000,
-      retry: 1,
-      staleTime: Infinity,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
-      refetchOnWindowFocus: false,
-    } },
+    defaultOptions: {
+      queries: {
+        gcTime: 5 * 60_000,
+        retry: 1,
+        staleTime: Infinity,
+        refetchOnMount: false,
+        refetchOnReconnect: false,
+        refetchOnWindowFocus: false,
+      },
+    },
   });
 
   get current(): ViewGeneration<Snapshot> | undefined {
@@ -68,7 +70,10 @@ export class ViewRuntime<Snapshot = unknown> {
 
   attachSnapshot(candidate: PreparedGeneration<Snapshot>, snapshot: Snapshot): void {
     this.#requireActive();
-    if (!this.#prepared.has(candidate.generation) || this.#owners.get(candidate.generation.identity) !== candidate.generation) {
+    if (
+      !this.#prepared.has(candidate.generation) ||
+      this.#owners.get(candidate.generation.identity) !== candidate.generation
+    ) {
       throw new Error("Only a prepared View generation can receive a snapshot.");
     }
     candidate.generation.attachSnapshot(snapshot);
@@ -96,7 +101,11 @@ export class ViewRuntime<Snapshot = unknown> {
   }
 
   retire(generation: ViewGeneration<Snapshot> | undefined): void {
-    if (generation !== undefined && generation !== this.#current && this.#owners.get(generation.identity) === generation) {
+    if (
+      generation !== undefined &&
+      generation !== this.#current &&
+      this.#owners.get(generation.identity) === generation
+    ) {
       generation.drain();
     }
   }
@@ -106,7 +115,8 @@ export class ViewRuntime<Snapshot = unknown> {
       !this.#prepared.has(candidate.generation) ||
       this.#owners.get(candidate.generation.identity) !== candidate.generation ||
       candidate.generation.status !== "preparing"
-    ) return;
+    )
+      return;
     this.#prepared.delete(candidate.generation);
     candidate.lease.release();
     candidate.generation.close();

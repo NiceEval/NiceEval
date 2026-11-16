@@ -43,10 +43,7 @@ import {
   listRunResourcesOnConnection,
 } from "../../run/storage/sqlite.ts";
 import { publicationCutoffIdentity } from "../../run/storage/cutoff.ts";
-import type {
-  PublicationCutoff,
-  ReadableRunResource,
-} from "../../run/storage/types.ts";
+import type { PublicationCutoff, ReadableRunResource } from "../../run/storage/types.ts";
 
 export { makeStorageWorkerClient, openStorageWorker, type StorageWorkerClient } from "./client.ts";
 export {
@@ -67,7 +64,6 @@ export {
   RECORD_SQLITE_MAX_VALIDATION_ROWS,
   RECORD_SQLITE_MAX_VALIDATION_RUNS,
   RECORD_SQLITE_VALIDATION_DEADLINE_MS,
-  RECORD_SQLITE_STORAGE_REVISION,
   type AdmitAttachmentInput,
   type AdmitAttemptInput,
   type AdmitContentInput,
@@ -117,16 +113,30 @@ export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, 
 export interface PinnedRecordReadSession {
   readonly kind: "canonical" | "private-generation";
   readonly deadlineEpochMs: number;
+  /** Opt-in operation deadlines keep the same transaction and publication. */
+  readonly beginOperation: (deadlineEpochMs: number) => void;
   readonly publicationCutoff: () => PublicationCutoff;
   readonly sealedCutoff: () => SealedRunCutoff;
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
   readonly findSourceBarrierCandidate: (request: SourceBarrierRequest) => SourceBarrierCandidate | undefined;
-  readonly findAcceptedAttemptRunIds: (request: Parameters<typeof findAcceptedAttemptRunIdsOnConnection>[1]) => readonly string[];
+  readonly findAcceptedAttemptRunIds: (
+    request: Parameters<typeof findAcceptedAttemptRunIdsOnConnection>[1],
+  ) => readonly string[];
   readonly readRunResource: (runId: string) => ReadableRunResource | undefined;
-  readonly listRunResources: (input?: Parameters<typeof listRunResourcesOnConnection>[1]) => ReturnType<typeof listRunResourcesOnConnection>;
+  readonly listRunResources: (
+    input?: Parameters<typeof listRunResourcesOnConnection>[1],
+  ) => ReturnType<typeof listRunResourcesOnConnection>;
   readonly readSealedRunSummary: (runId: string) => SealedRunSummary | undefined;
-  readonly readSealedRunSummaryPage: (afterRunId?: string, pageSize?: number, expectedCutoffIdentity?: string) => SealedRunSummaryPage;
-  readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number, includeTargets?: boolean) => AttemptLocatorCandidates;
+  readonly readSealedRunSummaryPage: (
+    afterRunId?: string,
+    pageSize?: number,
+    expectedCutoffIdentity?: string,
+  ) => SealedRunSummaryPage;
+  readonly findAttemptLocatorCandidates: (
+    locator: string,
+    maximumCandidateRuns: number,
+    includeTargets?: boolean,
+  ) => AttemptLocatorCandidates;
   readonly readSealedRunDocument: (runId: string) => SealedRunDocument | undefined;
   readonly readSealedRunCore: (runId: string, lazyAttachments?: boolean) => SealedRunCore | undefined;
   readonly readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => ContentChunkPage;
@@ -138,9 +148,14 @@ function openPinnedRecordReadSession(
   path: string,
   kind: "canonical" | "private-generation",
   deadlineEpochMs: number,
+  operationScoped = false,
 ): PinnedRecordReadSession {
   if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs <= Date.now()) {
-    throw sqliteError("record-resource-limit-exceeded", "open-read-session", "pinned read deadline must be a future safe integer");
+    throw sqliteError(
+      "record-resource-limit-exceeded",
+      "open-read-session",
+      "pinned read deadline must be a future safe integer",
+    );
   }
   const connection = openImmutableRecordReader(path);
   let closed = false;
@@ -157,7 +172,11 @@ function openPinnedRecordReadSession(
     if (closed) throw sqliteError("record-database-invalid", operation, "pinned read session is closed");
     if (Date.now() >= deadlineEpochMs) {
       close();
-      throw sqliteError("record-resource-limit-exceeded", operation, "pinned read session exceeded its deadline and was closed");
+      throw sqliteError(
+        "record-resource-limit-exceeded",
+        operation,
+        "pinned read session exceeded its deadline and was closed",
+      );
     }
   };
   const readBounded = <A>(operation: string, read: () => A): A => {
@@ -178,48 +197,94 @@ function openPinnedRecordReadSession(
     // Both sources have an admission owner: the project writer or the hostile
     // importer. Re-check selected facts, not every historical Seal, on reads.
     let sealedCutoff: SealedRunCutoff | undefined;
-    const readCutoff = () => sealedCutoff ??= readBounded("read-sealed-cutoff", () =>
-      readSealedRunCutoffOnConnection(connection, cutoffIdentity));
+    const readCutoff = () =>
+      (sealedCutoff ??= readBounded("read-sealed-cutoff", () =>
+        readSealedRunCutoffOnConnection(connection, cutoffIdentity),
+      ));
     assertUsable("open-read-session");
-    return Object.freeze({
+    return {
       kind,
-      deadlineEpochMs,
+      get deadlineEpochMs() {
+        return deadlineEpochMs;
+      },
+      beginOperation: (nextDeadline: number) => {
+        if (!operationScoped) return;
+        if (closed)
+          throw sqliteError("record-database-invalid", "begin-read-operation", "pinned read session is closed");
+        if (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now())
+          throw sqliteError(
+            "record-resource-limit-exceeded",
+            "begin-read-operation",
+            "operation deadline must be a future safe integer",
+          );
+        deadlineEpochMs = nextDeadline;
+      },
       publicationCutoff: () => publicationCutoff,
       sealedCutoff: readCutoff,
-      findExperimentRunIds: (experimentId: string) => readBounded("find-experiment-runs", () =>
-        findExperimentRunIdsOnConnection(connection, experimentId)),
-      readRunResource: (runId: string) => readBounded("read-run-resource", () =>
-        readRunResourceOnConnection(connection, runId, publicationCutoff)),
-      listRunResources: (input: Parameters<typeof listRunResourcesOnConnection>[1]) => readBounded("list-run-resources", () =>
-        listRunResourcesOnConnection(connection, { ...input, cutoff: input?.cutoff ?? publicationCutoff })),
-      readSealedRunSummary: (runId: string) => readBounded("read-sealed-run-summary", () => readSealedRunSummaryOnConnection(connection, runId)),
-      readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) => readBounded("page-sealed-runs", () => {
-        if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoffIdentity) {
-          throw sqliteError("record-command-conflict", "page-sealed-runs", "publication cutoff changed; restart pagination");
-        }
-        const page = readSealedRunSummaryPageOnConnection(connection, afterRunId, pageSize, undefined, deadlineEpochMs, readCutoff());
-        return Object.freeze({
-          ...page,
-          cutoff: Object.freeze({ ...page.cutoff, identity: cutoffIdentity }),
-        });
-      }),
-      findSourceBarrierCandidate: (request: SourceBarrierRequest) => readBounded("find-source-barrier", () =>
-        findSourceBarrierCandidateOnConnection(connection, request, publicationCutoff.revision)),
-      findAcceptedAttemptRunIds: (request: Parameters<typeof findAcceptedAttemptRunIdsOnConnection>[1]) => readBounded("find-accepted-attempt-runs", () =>
-        findAcceptedAttemptRunIdsOnConnection(connection, request, publicationCutoff.revision)),
-      findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number, includeTargets = true) => readBounded("find-attempt-locator", () =>
-        findAttemptLocatorCandidatesOnConnection(connection, locator, maximumCandidateRuns, includeTargets)),
-      readSealedRunDocument: (runId: string) => readBounded("read-sealed-run-document", () => readSealedRunDocumentOnConnection(connection, runId)),
-      readSealedRunCore: (runId: string, lazyAttachments = false) => readBounded("read-sealed-run-core", () =>
-        readSealedRunCoreOnConnection(connection, runId, lazyAttachments
-          ? (read) => readBounded("read-sealed-attachment", read)
-          : undefined)),
-      readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) => readBounded("read-content-page", () =>
-        readContentChunkPageOnConnection(connection, contentId, afterOrdinal, pageSize)),
-      readCollectionItemPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => readBounded("read-collection-page", () =>
-        readCollectionItemPageOnConnection(connection, attachmentId, afterOrdinal, pageSize)),
+      findExperimentRunIds: (experimentId: string) =>
+        readBounded("find-experiment-runs", () => findExperimentRunIdsOnConnection(connection, experimentId)),
+      readRunResource: (runId: string) =>
+        readBounded("read-run-resource", () => readRunResourceOnConnection(connection, runId, publicationCutoff)),
+      listRunResources: (input: Parameters<typeof listRunResourcesOnConnection>[1]) =>
+        readBounded("list-run-resources", () =>
+          listRunResourcesOnConnection(connection, { ...input, cutoff: input?.cutoff ?? publicationCutoff }),
+        ),
+      readSealedRunSummary: (runId: string) =>
+        readBounded("read-sealed-run-summary", () => readSealedRunSummaryOnConnection(connection, runId)),
+      readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) =>
+        readBounded("page-sealed-runs", () => {
+          if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoffIdentity) {
+            throw sqliteError(
+              "record-command-conflict",
+              "page-sealed-runs",
+              "publication cutoff changed; restart pagination",
+            );
+          }
+          const page = readSealedRunSummaryPageOnConnection(
+            connection,
+            afterRunId,
+            pageSize,
+            undefined,
+            deadlineEpochMs,
+            readCutoff(),
+          );
+          return {
+            ...page,
+            cutoff: { ...page.cutoff, identity: cutoffIdentity },
+          };
+        }),
+      findSourceBarrierCandidate: (request: SourceBarrierRequest) =>
+        readBounded("find-source-barrier", () =>
+          findSourceBarrierCandidateOnConnection(connection, request, publicationCutoff.revision),
+        ),
+      findAcceptedAttemptRunIds: (request: Parameters<typeof findAcceptedAttemptRunIdsOnConnection>[1]) =>
+        readBounded("find-accepted-attempt-runs", () =>
+          findAcceptedAttemptRunIdsOnConnection(connection, request, publicationCutoff.revision),
+        ),
+      findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number, includeTargets = true) =>
+        readBounded("find-attempt-locator", () =>
+          findAttemptLocatorCandidatesOnConnection(connection, locator, maximumCandidateRuns, includeTargets),
+        ),
+      readSealedRunDocument: (runId: string) =>
+        readBounded("read-sealed-run-document", () => readSealedRunDocumentOnConnection(connection, runId)),
+      readSealedRunCore: (runId: string, lazyAttachments = false) =>
+        readBounded("read-sealed-run-core", () =>
+          readSealedRunCoreOnConnection(
+            connection,
+            runId,
+            lazyAttachments ? (read) => readBounded("read-sealed-attachment", read) : undefined,
+          ),
+        ),
+      readContentChunkPage: (contentId: string, afterOrdinal: number, pageSize: number) =>
+        readBounded("read-content-page", () =>
+          readContentChunkPageOnConnection(connection, contentId, afterOrdinal, pageSize),
+        ),
+      readCollectionItemPage: (attachmentId: string, afterOrdinal: number, pageSize: number) =>
+        readBounded("read-collection-page", () =>
+          readCollectionItemPageOnConnection(connection, attachmentId, afterOrdinal, pageSize),
+        ),
       close,
-    });
+    };
   } catch (cause) {
     close();
     throw cause;
@@ -229,42 +294,57 @@ function openPinnedRecordReadSession(
 export function openOperationalRecordReadSession(
   recordStorageRoot: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
+  operationScoped = false,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(recordSqlitePath(recordStorageRoot), "canonical", deadlineEpochMs);
+  return openPinnedRecordReadSession(
+    recordSqlitePath(recordStorageRoot),
+    "canonical",
+    deadlineEpochMs,
+    operationScoped,
+  );
 }
 
 /** Read admission never binds a project writer or mutates historical input. */
-export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordReadSession")(
-  function* (recordStorageRoot: string) {
-    const path = recordSqlitePath(recordStorageRoot);
-    const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });
-    if (mode === "operational") {
-      return yield* Effect.acquireRelease(
-        Effect.try({ try: () => openOperationalRecordReadSession(recordStorageRoot), catch: (cause) => cause }),
-        (session) => Effect.sync(() => session.close()),
-      );
-    }
-    const importer = yield* Effect.acquireRelease(
+export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordReadSession")(function* (
+  recordStorageRoot: string,
+  options: { readonly operationScoped: boolean | undefined } = { operationScoped: undefined },
+) {
+  const path = recordSqlitePath(recordStorageRoot);
+  const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });
+  if (mode === "operational") {
+    return yield* Effect.acquireRelease(
       Effect.try({
-        try: () => startExternalRecordImport(path, Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS, "captured-project-record"),
+        try: () => openOperationalRecordReadSession(recordStorageRoot, undefined, options.operationScoped),
         catch: (cause) => cause,
       }),
-      (handle) => Effect.promise(() => handle.close()),
-    );
-    const generation = yield* Effect.tryPromise({ try: (_signal) => importer.result, catch: (cause) => cause });
-    return yield* Effect.acquireRelease(
-      Effect.try({ try: () => openHostOwnedRecordReadSession(generation.path), catch: (cause) => cause }),
       (session) => Effect.sync(() => session.close()),
     );
-  },
-);
+  }
+  const importer = yield* Effect.acquireRelease(
+    Effect.try({
+      try: () =>
+        startExternalRecordImport(path, Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS, "captured-project-record"),
+      catch: (cause) => cause,
+    }),
+    (handle) => Effect.promise(() => handle.close()),
+  );
+  const generation = yield* Effect.tryPromise({ try: (_signal) => importer.result, catch: (cause) => cause });
+  return yield* Effect.acquireRelease(
+    Effect.try({
+      try: () => openHostOwnedRecordReadSession(generation.path, undefined, options.operationScoped),
+      catch: (cause) => cause,
+    }),
+    (session) => Effect.sync(() => session.close()),
+  );
+});
 
 /** Opens only a private generation already admitted by the hostile importer. */
 export function openHostOwnedRecordReadSession(
   generationPath: string,
   deadlineEpochMs = Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS,
+  operationScoped = false,
 ): PinnedRecordReadSession {
-  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs);
+  return openPinnedRecordReadSession(generationPath, "private-generation", deadlineEpochMs, operationScoped);
 }
 
 function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedRecordReadSession) => A): A {
@@ -276,7 +356,9 @@ function withSession<A>(session: PinnedRecordReadSession, use: (session: PinnedR
 }
 
 export function readSealedRunSummary(recordStorageRoot: string, runId: string): SealedRunSummary | undefined {
-  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) => session.readSealedRunSummary(runId));
+  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
+    session.readSealedRunSummary(runId),
+  );
 }
 
 export function listSealedRunSummaries(
@@ -284,8 +366,10 @@ export function listSealedRunSummaries(
   afterRunId = "",
   pageSize = 100,
 ): readonly SealedRunSummary[] {
-  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
-    session.readSealedRunSummaryPage(afterRunId, pageSize).summaries);
+  return withSession(
+    openOperationalRecordReadSession(recordStorageRoot),
+    (session) => session.readSealedRunSummaryPage(afterRunId, pageSize).summaries,
+  );
 }
 
 export function readSealedRunSummaryPage(
@@ -295,7 +379,8 @@ export function readSealedRunSummaryPage(
   expectedCutoffIdentity?: string,
 ): SealedRunSummaryPage {
   return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
-    session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity));
+    session.readSealedRunSummaryPage(afterRunId, pageSize, expectedCutoffIdentity),
+  );
 }
 
 export function findAttemptLocatorCandidates(
@@ -304,7 +389,8 @@ export function findAttemptLocatorCandidates(
   maximumCandidateRuns: number,
 ): AttemptLocatorCandidates {
   return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
-    session.findAttemptLocatorCandidates(locator, maximumCandidateRuns));
+    session.findAttemptLocatorCandidates(locator, maximumCandidateRuns),
+  );
 }
 
 export function readCollectionItemPage(
@@ -314,15 +400,20 @@ export function readCollectionItemPage(
   pageSize: number,
 ): CollectionItemPage {
   return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
-    session.readCollectionItemPage(attachmentId, afterOrdinal, pageSize));
+    session.readCollectionItemPage(attachmentId, afterOrdinal, pageSize),
+  );
 }
 
 export function readSealedRunDocument(recordStorageRoot: string, runId: string): SealedRunDocument | undefined {
-  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) => session.readSealedRunDocument(runId));
+  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
+    session.readSealedRunDocument(runId),
+  );
 }
 
 export function readSealedRunCore(recordStorageRoot: string, runId: string): SealedRunCore | undefined {
-  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) => session.readSealedRunCore(runId));
+  return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
+    session.readSealedRunCore(runId),
+  );
 }
 
 export function readContentChunkPage(
@@ -332,7 +423,8 @@ export function readContentChunkPage(
   pageSize: number,
 ): ContentChunkPage {
   return withSession(openOperationalRecordReadSession(recordStorageRoot), (session) =>
-    session.readContentChunkPage(contentId, afterOrdinal, pageSize));
+    session.readContentChunkPage(contentId, afterOrdinal, pageSize),
+  );
 }
 
 export function validateRecordDatabase(recordStorageRoot: string, sealedOnly = false): number {

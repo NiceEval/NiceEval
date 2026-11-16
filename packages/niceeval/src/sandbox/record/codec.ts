@@ -1,8 +1,5 @@
 import { Schema } from "effect";
-import {
-  PositiveSafeIntegerSchema,
-  SafeIdentifierSchema,
-} from "../../record/family/source-receipt/codec.ts";
+import { PositiveSafeIntegerSchema, SafeIdentifierSchema } from "../../record/family/source-receipt/codec.ts";
 import {
   isSourceNativeSandboxId,
   type SandboxAssignedPayload,
@@ -20,14 +17,13 @@ export const SandboxAttachmentExactParseOptions = Object.freeze({
   onExcessProperty: "error" as const,
 });
 
-export const SourceNativeSandboxIdSchema: Schema.Codec<
-  SourceNativeSandboxId,
-  string
-> = Schema.String.pipe(
-  Schema.check(Schema.makeFilter(isSourceNativeSandboxId, {
-    identifier: "SourceNativeSandboxId",
-    description: "a non-empty source-native safe UTF-8 sandbox id no longer than 256 bytes",
-  })),
+export const SourceNativeSandboxIdSchema: Schema.Codec<SourceNativeSandboxId, string> = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(isSourceNativeSandboxId, {
+      identifier: "SourceNativeSandboxId",
+      description: "a non-empty source-native safe UTF-8 sandbox id no longer than 256 bytes",
+    }),
+  ),
   Schema.brand("@niceeval/sandbox/SourceNativeSandboxId"),
 );
 
@@ -41,9 +37,7 @@ type SandboxPooledReuseEncoded = {
   readonly ordinal: number;
 };
 
-type SandboxReuseEncoded =
-  | SandboxFreshReuseEncoded
-  | SandboxPooledReuseEncoded;
+type SandboxReuseEncoded = SandboxFreshReuseEncoded | SandboxPooledReuseEncoded;
 
 type SandboxNotUsedPayloadEncoded = {
   readonly state: "not-used";
@@ -56,48 +50,36 @@ type SandboxAssignedPayloadEncoded = {
   readonly reuse: SandboxReuseEncoded;
 };
 
-type SandboxAttachmentPayloadEncoded =
-  | SandboxNotUsedPayloadEncoded
-  | SandboxAssignedPayloadEncoded;
+type SandboxAttachmentPayloadEncoded = SandboxNotUsedPayloadEncoded | SandboxAssignedPayloadEncoded;
 
-const SandboxFreshReuseSchema: Schema.Codec<
-  SandboxFreshReuse,
-  SandboxFreshReuseEncoded
-> = Schema.Struct({
+const SandboxFreshReuseSchema: Schema.Codec<SandboxFreshReuse, SandboxFreshReuseEncoded> = Schema.Struct({
   kind: Schema.Literal("fresh"),
 });
 
-const SandboxPooledReuseSchema: Schema.Codec<
-  SandboxPooledReuse,
-  SandboxPooledReuseEncoded
-> = Schema.Struct({
+const SandboxPooledReuseSchema: Schema.Codec<SandboxPooledReuse, SandboxPooledReuseEncoded> = Schema.Struct({
   kind: Schema.Literal("pooled"),
   sandbox: PositiveSafeIntegerSchema,
   ordinal: PositiveSafeIntegerSchema,
 });
 
-const SandboxReuseSchema: Schema.Codec<SandboxReuse, SandboxReuseEncoded> =
-  Schema.Union([SandboxFreshReuseSchema, SandboxPooledReuseSchema]);
+const SandboxReuseSchema: Schema.Codec<SandboxReuse, SandboxReuseEncoded> = Schema.Union([
+  SandboxFreshReuseSchema,
+  SandboxPooledReuseSchema,
+]);
 
-const SandboxNotUsedPayloadSchema: Schema.Codec<
-  SandboxNotUsedPayload,
-  SandboxNotUsedPayloadEncoded
-> = Schema.Struct({
+const SandboxNotUsedPayloadSchema: Schema.Codec<SandboxNotUsedPayload, SandboxNotUsedPayloadEncoded> = Schema.Struct({
   state: Schema.Literal("not-used"),
 });
 
-const SandboxAssignedPayloadSchema: Schema.Codec<
-  SandboxAssignedPayload,
-  SandboxAssignedPayloadEncoded
-> = Schema.Struct({
-  state: Schema.Literal("assigned"),
-  provider: SafeIdentifierSchema,
-  sandboxId: SourceNativeSandboxIdSchema,
-  reuse: SandboxReuseSchema,
-});
+const SandboxAssignedPayloadSchema: Schema.Codec<SandboxAssignedPayload, SandboxAssignedPayloadEncoded> = Schema.Struct(
+  {
+    state: Schema.Literal("assigned"),
+    provider: SafeIdentifierSchema,
+    sandboxId: SourceNativeSandboxIdSchema,
+    reuse: SandboxReuseSchema,
+  },
+);
 
 /** Exact transient capture schema; it is never a Record Attachment payload. */
-export const SandboxAttachmentPayloadSchema: Schema.Codec<
-  SandboxAttachmentPayload,
-  SandboxAttachmentPayloadEncoded
-> = Schema.Union([SandboxNotUsedPayloadSchema, SandboxAssignedPayloadSchema]);
+export const SandboxAttachmentPayloadSchema: Schema.Codec<SandboxAttachmentPayload, SandboxAttachmentPayloadEncoded> =
+  Schema.Union([SandboxNotUsedPayloadSchema, SandboxAssignedPayloadSchema]);

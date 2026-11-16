@@ -12,7 +12,6 @@ import {
   retryFailedExpEvalsOnce,
   type ExpEvalEvent,
   type ProcessReceipt,
-  withInspectionRequest,
   withProcess,
   withTempDir,
 } from "@niceeval/testkit";
@@ -56,16 +55,16 @@ beforeAll(async () => {
       withProcess(
         [niceevalBin, "exp", ...args],
         {
-        processGroup: true,
-        timeoutMs: 13 * 60_000,
-        env: {
-          HOME: privateHome,
-          CLAUDE_CONFIG_DIR: join(privateHome, ".claude"),
-          NICEEVAL_CLAUDE_AGENT_SDK_HOME: privateHome,
-          NICEEVAL_CLAUDE_AGENT_SDK_WORKSPACE: workspace,
-          NICEEVAL_CLAUDE_AGENT_SDK_MARKER: marker,
-          NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
-        },
+          processGroup: true,
+          timeoutMs: 13 * 60_000,
+          env: {
+            HOME: privateHome,
+            CLAUDE_CONFIG_DIR: join(privateHome, ".claude"),
+            NICEEVAL_CLAUDE_AGENT_SDK_HOME: privateHome,
+            NICEEVAL_CLAUDE_AGENT_SDK_WORKSPACE: workspace,
+            NICEEVAL_CLAUDE_AGENT_SDK_MARKER: marker,
+            NICEEVAL_CLAUDE_AGENT_SDK_SENTINEL: sentinel,
+          },
         },
         async (handle) => await handle.done,
       );
@@ -74,9 +73,7 @@ beforeAll(async () => {
     const firstEvents = runReceipt.expEvalEvents();
     const failed = firstEvents.filter((event) => event.verdict === "failed");
     expect(
-      firstEvents.filter(
-        (event) => event.verdict === "errored" || event.verdict === "skipped",
-      ),
+      firstEvents.filter((event) => event.verdict === "errored" || event.verdict === "skipped"),
       runReceipt.diagnostic(),
     ).toHaveLength(0);
     expect(runReceipt.exitCode, runReceipt.diagnostic()).toBe(failed.length > 0 ? 1 : 0);
@@ -84,8 +81,7 @@ beforeAll(async () => {
     const retried = await retryFailedExpEvalsOnce({
       events: firstEvents,
       targets: failed,
-      runRetry: (event) =>
-        runExp(["ci", event.evalId, "--rerun", "all", "--json"]),
+      runRetry: (event) => runExp(["ci", event.evalId, "--rerun", "all", "--json"]),
     });
     if (retried.retries.length > 0) {
       process.stderr.write(
@@ -129,13 +125,10 @@ it("真实 Claude Agent SDK converter 的 Eval 以通过 verdict 完成", () => 
 // @feature docs/feature/adapters/README.md
 
 it("attempt.trace 读回 Claude Agent SDK converter 的代表性证据", async () => {
-  const queried = await withInspectionRequest(
-    { kind: "attempt.trace", locator },
-    async (requestPath) => await niceeval.run(["query", "run", "--request", requestPath]),
-  );
+  const queried = await niceeval.run(["show", locator, "execution", "--json"]);
   expect(queried.exitCode, queried.diagnostic()).toBe(0);
   const document = queried.attemptTrace();
-  expect(document).toMatchObject({ protocol: "niceeval.query/v3", operation: "attempt.trace" });
+  expect(document).toMatchObject({ operation: "attempt.trace" });
   // Trace keeps the source-native tool, its unmodified input marker,
   // completed result, and resumed assistant response in the public machine view.
   const trace = JSON.stringify(document.trace);

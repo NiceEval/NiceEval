@@ -14,19 +14,13 @@ import {
   MAX_COMMAND_SHELL_BYTES,
   MAX_COMMAND_STREAM_BYTES,
 } from "../../record/family/source-receipt/limits.ts";
-import {
-  makeBoundedSafeText,
-  type CommandId,
-  type SafeText,
-} from "../../record/family/source-receipt/model.ts";
+import { makeBoundedSafeText, type CommandId, type SafeText } from "../../record/family/source-receipt/model.ts";
 import type { CommandProjectionRuntime } from "./projection-runtime.ts";
 import { retainSafeText } from "./projection-text.ts";
 import type { CommandManifest, StagedCommandStream } from "./types.ts";
 import { requiredNonNegative } from "./support.ts";
 
-function commandManifestPhase(
-  phase: LifecyclePhase,
-): CommandManifest["phase"] {
+function commandManifestPhase(phase: LifecyclePhase): CommandManifest["phase"] {
   switch (phase) {
     case "attempt.setup":
     case "sandbox.create":
@@ -39,8 +33,8 @@ function commandManifestPhase(
     case "sandbox.prepare.group":
     case "sandbox.prepare.experiment":
       return "sandbox.prepare";
-    case "agent.ensure":
-      return "agent.ensure";
+    case "agent.install":
+      return "agent.install";
     case "eval.run":
       return "eval.run";
     case "agent.run":
@@ -108,21 +102,21 @@ function commandWorkingDirectory(
 ): CommandManifest["workingDirectory"] {
   const candidate = options as Partial<Pick<CommandOptions, "cwd">> | undefined;
   const cwd = candidate?.cwd;
-  if (cwd === undefined || cwd === ".") return Object.freeze({ kind: "sandbox-default" as const });
+  if (cwd === undefined || cwd === ".") return { kind: "sandbox-default" as const };
   if (typeof cwd !== "string") {
     runtime.commandLimitations.addUnsupported("command-manifest");
-    return Object.freeze({ kind: "redacted" as const });
+    return { kind: "redacted" as const };
   }
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
   if (isProjectRelativeCommandPath(redacted)) {
     const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema)(redacted);
     if (Result.isSuccess(decoded)) {
-      return Object.freeze({ kind: "project-relative" as const, path: decoded.success });
+      return { kind: "project-relative" as const, path: decoded.success };
     }
   }
   runtime.commandLimitations.addRedacted("command-manifest");
-  return Object.freeze({ kind: "redacted" as const });
+  return { kind: "redacted" as const };
 }
 
 export function commandManifest(
@@ -146,11 +140,11 @@ export function commandManifest(
       target: "command-manifest",
       runtime,
     });
-    return Object.freeze({
+    return {
       phase,
-      invocation: Object.freeze({ kind: "shell" as const, command: script }),
+      invocation: { kind: "shell" as const, command: script },
       workingDirectory,
-    });
+    };
   }
   const sourceArguments = command.args ?? [];
   if (sourceArguments.length > MAX_COMMAND_ARGUMENTS) {
@@ -165,23 +159,25 @@ export function commandManifest(
   });
   const arguments_: SafeText[] = [];
   for (const raw of sourceArguments.slice(0, MAX_COMMAND_ARGUMENTS)) {
-    arguments_.push(commandSafeText({
-      commandId: command.commandId,
-      value: raw,
-      maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
-      target: "command-manifest",
-      runtime,
-    }));
+    arguments_.push(
+      commandSafeText({
+        commandId: command.commandId,
+        value: raw,
+        maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
+        target: "command-manifest",
+        runtime,
+      }),
+    );
   }
-  return Object.freeze({
+  return {
     phase,
-    invocation: Object.freeze({
+    invocation: {
       kind: "argv" as const,
       executable,
-      arguments: Object.freeze([...arguments_]),
-    }),
+      arguments: arguments_,
+    },
     workingDirectory,
-  });
+  };
 }
 
 function stripUnsafeCommandControls(value: string): { readonly text: string; readonly count: number } {
@@ -189,27 +185,24 @@ function stripUnsafeCommandControls(value: string): { readonly text: string; rea
   let count = 0;
   for (const scalar of value) {
     const code = scalar.codePointAt(0);
-    if (
-      code !== undefined &&
-      ((code >= 0 && code <= 0x1f && code !== 0x0a) || (code >= 0x7f && code <= 0x9f))
-    ) {
+    if (code !== undefined && ((code >= 0 && code <= 0x1f && code !== 0x0a) || (code >= 0x7f && code <= 0x9f))) {
       count += 1;
       continue;
     }
     text += scalar;
   }
-  return Object.freeze({ text, count });
+  return { text, count };
 }
 
 export function emptyCommandStream(): StagedCommandStream {
   const text = makeBoundedSafeText("", MAX_COMMAND_STREAM_BYTES);
   if (text === undefined) throw new Error("An empty command stream must be SafeText");
-  return Object.freeze({
+  return {
     text,
     retainedBytes: requiredNonNegative(0),
     totalSafeUtf8Bytes: requiredNonNegative(0),
     sha256: createHash("sha256").update(new Uint8Array()).digest("hex"),
-  });
+  };
 }
 
 export function commandStream(input: {
@@ -218,16 +211,12 @@ export function commandStream(input: {
   readonly value: string;
   readonly runtime: CommandProjectionRuntime;
 }): StagedCommandStream {
-  const target = input.stream === "stdout" ? "command-stdout" as const : "command-stderr" as const;
+  const target = input.stream === "stdout" ? ("command-stdout" as const) : ("command-stderr" as const);
   const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
   if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(target);
   const stripped = stripUnsafeCommandControls(redacted);
   if (stripped.count > 0) {
-    input.runtime.commandLimitations.addUnsafeCommandControlStripped(
-      input.commandId,
-      input.stream,
-      stripped.count,
-    );
+    input.runtime.commandLimitations.addUnsafeCommandControlStripped(input.commandId, input.stream, stripped.count);
   }
   const retained = retainSafeText(stripped.text, MAX_COMMAND_STREAM_BYTES);
   if (retained === undefined) {
@@ -242,13 +231,14 @@ export function commandStream(input: {
       retained.omittedBytes,
     );
   }
-  const totalSafeUtf8Bytes = retained.omittedBytes === undefined
-    ? retained.retainedBytes
-    : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
-  return Object.freeze({
+  const totalSafeUtf8Bytes =
+    retained.omittedBytes === undefined
+      ? retained.retainedBytes
+      : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
+  return {
     text: retained.text,
     retainedBytes: retained.retainedBytes,
     totalSafeUtf8Bytes,
     sha256: createHash("sha256").update(new TextEncoder().encode(retained.text)).digest("hex"),
-  });
+  };
 }

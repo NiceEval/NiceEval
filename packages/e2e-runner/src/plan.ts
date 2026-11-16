@@ -20,7 +20,12 @@ import {
 } from "./contracts.ts";
 import { discoverAllRepos, e2eRootDir, repoRootDir, type DiscoveredRepo, type DiscoveryIoError } from "./discovery.ts";
 import { type RepoRequires } from "./manifest.ts";
-import { hasSuccessfulOwnedProcessResult, runOwnedProcess, type OwnedProcess, type OwnedProcessResult } from "./owned-process.ts";
+import {
+  hasSuccessfulOwnedProcessResult,
+  runOwnedProcess,
+  type OwnedProcess,
+  type OwnedProcessResult,
+} from "./owned-process.ts";
 import { changedLockImporters, rootManifestAffectsProduct } from "./dependency-selection.ts";
 
 const NxProjectNameListSchema = Schema.Array(Schema.String);
@@ -83,8 +88,10 @@ export class PlanJsonError extends Data.TaggedError("PlanJsonError")<{
 }> {}
 
 const executionErrorDetail = (cause: unknown): string => {
-  if (typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string") return cause.detail;
-  if (typeof cause === "object" && cause !== null && "stderr" in cause && typeof cause.stderr === "string") return cause.stderr.trim();
+  if (typeof cause === "object" && cause !== null && "detail" in cause && typeof cause.detail === "string")
+    return cause.detail;
+  if (typeof cause === "object" && cause !== null && "stderr" in cause && typeof cause.stderr === "string")
+    return cause.stderr.trim();
   return cause instanceof Error ? cause.message : String(cause);
 };
 
@@ -102,7 +109,7 @@ const processDetail = (result: OwnedProcessResult): string =>
       : !hasSuccessfulOwnedProcessResult(result)
         ? result.groupCleanup.gone !== true
           ? result.groupCleanup.detail
-          : result.error ?? result.signal ?? `command exited ${result.exitCode}`
+          : (result.error ?? result.signal ?? `command exited ${result.exitCode}`)
         : "command completed";
 
 const runCommand = (
@@ -119,12 +126,26 @@ const runCommand = (
     timeoutMs: 60_000,
   }).pipe(
     Effect.mapError((cause) => new PlanProcessError({ command, args, cwd, stderr: "", detail: cause.detail, cause })),
-    Effect.flatMap((result) => hasSuccessfulOwnedProcessResult(result)
-      ? Effect.succeed(Buffer.from(result.stdout))
-      : Effect.fail(new PlanProcessError({ command, args, cwd, stderr: result.stderr, detail: processDetail(result), cause: result }))),
+    Effect.flatMap((result) =>
+      hasSuccessfulOwnedProcessResult(result)
+        ? Effect.succeed(Buffer.from(result.stdout))
+        : Effect.fail(
+            new PlanProcessError({
+              command,
+              args,
+              cwd,
+              stderr: result.stderr,
+              detail: processDetail(result),
+              cause: result,
+            }),
+          ),
+    ),
   );
 
-const runGit = (args: readonly string[], cwd: string): Effect.Effect<string, PlanProcessError, OwnedProcess | Scope.Scope> =>
+const runGit = (
+  args: readonly string[],
+  cwd: string,
+): Effect.Effect<string, PlanProcessError, OwnedProcess | Scope.Scope> =>
   Effect.map(runCommand("git", args, cwd), (stdout) => stdout.toString("utf8").trim());
 
 const decodeNulPaths = (source: string, stdout: Buffer): Effect.Effect<readonly string[], PlanJsonError> => {
@@ -135,17 +156,26 @@ const decodeNulPaths = (source: string, stdout: Buffer): Effect.Effect<readonly 
 };
 
 /** `git diff` accepts rename and name-only controls; `ls-files` does not. */
-const gitDiffPaths = (args: readonly string[], cwd: string): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
+const gitDiffPaths = (
+  args: readonly string[],
+  cwd: string,
+): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
   Effect.flatMap(runCommand("git", [...args, "--name-only", "-z", "--no-renames"], cwd), (stdout) =>
-    decodeNulPaths(`git ${args.join(" ")}`, stdout));
+    decodeNulPaths(`git ${args.join(" ")}`, stdout),
+  );
 
 /** Untracked files are already names; only request their NUL-delimited output. */
-const gitUntrackedPaths = (cwd: string): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
+const gitUntrackedPaths = (
+  cwd: string,
+): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
   Effect.flatMap(runCommand("git", ["ls-files", "--others", "--exclude-standard", "-z"], cwd), (stdout) =>
-    decodeNulPaths("git ls-files --others --exclude-standard -z", stdout));
+    decodeNulPaths("git ls-files --others --exclude-standard -z", stdout),
+  );
 
-const localChangedPaths = (cwd: string): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
-  Effect.gen(function*() {
+const localChangedPaths = (
+  cwd: string,
+): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError, OwnedProcess | Scope.Scope> =>
+  Effect.gen(function* () {
     const paths = [
       ...(yield* gitDiffPaths(["diff"], cwd)),
       ...(yield* gitDiffPaths(["diff", "--cached"], cwd)),
@@ -165,24 +195,51 @@ const nxProjects = (
   cwd: string,
   dataDirectory: string,
   withE2ETarget: boolean,
-): Effect.Effect<readonly string[], PlanProcessError | PlanJsonError | ContractDecodeError, OwnedProcess | Scope.Scope> =>
-  Effect.gen(function*() {
-    const stdout = yield* runCommand("pnpm", ["exec", "nx", "show", "projects", "--affected", ...(withE2ETarget ? ["--with-target", "e2e"] : []), "--json", ...args], cwd, nxEnvironment(dataDirectory));
+): Effect.Effect<
+  readonly string[],
+  PlanProcessError | PlanJsonError | ContractDecodeError,
+  OwnedProcess | Scope.Scope
+> =>
+  Effect.gen(function* () {
+    const stdout = yield* runCommand(
+      "pnpm",
+      [
+        "exec",
+        "nx",
+        "show",
+        "projects",
+        "--affected",
+        ...(withE2ETarget ? ["--with-target", "e2e"] : []),
+        "--json",
+        ...args,
+      ],
+      cwd,
+      nxEnvironment(dataDirectory),
+    );
     const raw = yield* parseJson("Nx affected selection", stdout.toString("utf8"));
     const decoded = decodeExternal(NxProjectNameListSchema, "NxProjectNames")(raw);
     const names = yield* eitherEffect(decoded);
     return [...new Set(names)].sort();
   });
 
-const readNxGraph = (cwd: string, dataDirectory: string): Effect.Effect<
+const readNxGraph = (
+  cwd: string,
+  dataDirectory: string,
+): Effect.Effect<
   import("./contracts.ts").NxGraph,
   PlanProcessError | PlanJsonError | ContractDecodeError,
   OwnedProcess | Scope.Scope
-> => Effect.gen(function*() {
-  const stdout = yield* runCommand("pnpm", ["exec", "nx", "graph", "--file=stdout"], cwd, nxEnvironment(dataDirectory));
-  const raw = yield* parseJson("Nx graph", stdout.toString("utf8"));
-  return yield* eitherEffect(decodeNxGraph(raw));
-});
+> =>
+  Effect.gen(function* () {
+    const stdout = yield* runCommand(
+      "pnpm",
+      ["exec", "nx", "graph", "--file=stdout"],
+      cwd,
+      nxEnvironment(dataDirectory),
+    );
+    const raw = yield* parseJson("Nx graph", stdout.toString("utf8"));
+    return yield* eitherEffect(decodeNxGraph(raw));
+  });
 
 const planFileSystem = <A, R>(
   operation: PlanFilesystemError["operation"],
@@ -196,8 +253,11 @@ const planFileSystem = <A, R>(
 const fileExists = (path: string): Effect.Effect<boolean, PlanFilesystemError, FileSystem.FileSystem> =>
   planFileSystem("exists", path, (service) => service.exists(path));
 
-const nxIgnoredPaths = (paths: readonly string[], cwd: string): Effect.Effect<Set<string>, PlanFilesystemError, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
+const nxIgnoredPaths = (
+  paths: readonly string[],
+  cwd: string,
+): Effect.Effect<Set<string>, PlanFilesystemError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
     const matcher = ignore();
     for (const filename of [".gitignore", ".nxignore"]) {
       const path = join(cwd, filename);
@@ -212,7 +272,10 @@ const nxIgnoredPaths = (paths: readonly string[], cwd: string): Effect.Effect<Se
 const owningProject = (path: string, graph: import("./contracts.ts").NxGraph): string | undefined => {
   const normalized = path.replaceAll("\\", "/");
   return Object.entries(graph.graph.nodes)
-    .filter(([, node]) => node.data.root === "." || normalized === node.data.root || normalized.startsWith(`${node.data.root}/`))
+    .filter(
+      ([, node]) =>
+        node.data.root === "." || normalized === node.data.root || normalized.startsWith(`${node.data.root}/`),
+    )
     .sort(([, left], [, right]) => right.data.root.length - left.data.root.length)[0]?.[0];
 };
 
@@ -229,7 +292,11 @@ const downstreamE2E = (project: string, graph: import("./contracts.ts").NxGraph)
     if (current === undefined) continue;
     const node = graph.graph.nodes[current];
     if (node?.data.targets?.e2e !== undefined && node.data.tags?.includes("kind:e2e")) selected.add(current);
-    for (const dependent of reverse.get(current) ?? []) if (!seen.has(dependent)) { seen.add(dependent); queue.push(dependent); }
+    for (const dependent of reverse.get(current) ?? [])
+      if (!seen.has(dependent)) {
+        seen.add(dependent);
+        queue.push(dependent);
+      }
   }
   return [...selected].sort();
 };
@@ -244,27 +311,45 @@ const selectAffected = (
   PlanSelectionError | PlanProcessError | PlanFilesystemError | PlanJsonError | ContractDecodeError,
   FileSystem.FileSystem | OwnedProcess | Scope.Scope
 > =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     if (changedPaths.some((path) => /[\r\n,]/.test(path))) {
-      return yield* Effect.fail(new PlanSelectionError({ reason: "unrepresentable-path", detail: "changed paths contain comma or newline characters that Nx --files cannot represent losslessly" }));
+      return yield* Effect.fail(
+        new PlanSelectionError({
+          reason: "unrepresentable-path",
+          detail: "changed paths contain comma or newline characters that Nx --files cannot represent losslessly",
+        }),
+      );
     }
     const graph = yield* readNxGraph(cwd, dataDirectory);
     const selectionPaths = new Set(changedPaths);
     for (const path of changedPaths.filter((path) => path === "pnpm-lock.yaml" || path === "package.json")) {
       const before = yield* runGit(["show", `${base}:${path}`], cwd);
-      const after = yield* planFileSystem("read-file", join(cwd, path), (service) => service.readFileString(join(cwd, path)));
+      const after = yield* planFileSystem("read-file", join(cwd, path), (service) =>
+        service.readFileString(join(cwd, path)),
+      );
       // Explicit --diff-path remains conservative when there is no content diff.
       if (before.trim() === after.trim()) continue;
       const roots = yield* Effect.try({
-        try: () => path === "pnpm-lock.yaml" ? changedLockImporters(before, after) : rootManifestAffectsProduct(before, after) ? ["."] : ["apps/site"],
-        catch: (cause) => new PlanSelectionError({ reason: "dependency-selection", detail: `${path}: ${executionErrorDetail(cause)}` }),
+        try: () =>
+          path === "pnpm-lock.yaml"
+            ? changedLockImporters(before, after)
+            : rootManifestAffectsProduct(before, after)
+              ? ["."]
+              : ["apps/site"],
+        catch: (cause) =>
+          new PlanSelectionError({ reason: "dependency-selection", detail: `${path}: ${executionErrorDetail(cause)}` }),
       });
       selectionPaths.delete(path);
       for (const root of roots) {
         const manifestPath = root === "." ? "package.json" : `${root}/package.json`;
         const owner = owningProject(manifestPath, graph);
         if (owner === undefined || graph.graph.nodes[owner]?.data.root !== root) {
-          return yield* Effect.fail(new PlanSelectionError({ reason: "dependency-owner", detail: `dependency importer has no exact Nx owner: ${root}` }));
+          return yield* Effect.fail(
+            new PlanSelectionError({
+              reason: "dependency-owner",
+              detail: `dependency importer has no exact Nx owner: ${root}`,
+            }),
+          );
         }
         // Use a neutral owned path: root package/lockfile locators deliberately
         // over-select, while their semantic changes have already been resolved.
@@ -273,182 +358,345 @@ const selectAffected = (
     }
     const paths = [...selectionPaths].sort();
     if (paths.some((path) => /[\r\n,]/.test(path))) {
-      return yield* Effect.fail(new PlanSelectionError({ reason: "unrepresentable-path", detail: "dependency owner paths contain characters that Nx --files cannot represent losslessly" }));
+      return yield* Effect.fail(
+        new PlanSelectionError({
+          reason: "unrepresentable-path",
+          detail: "dependency owner paths contain characters that Nx --files cannot represent losslessly",
+        }),
+      );
     }
     const nxArgs = paths.flatMap((path) => ["--files", path]);
-    const [all, e2e] = paths.length === 0 ? [[], []] : yield* Effect.all([nxProjects(nxArgs, cwd, dataDirectory, false), nxProjects(nxArgs, cwd, dataDirectory, true)]);
+    const [all, e2e] =
+      paths.length === 0
+        ? [[], []]
+        : yield* Effect.all([
+            nxProjects(nxArgs, cwd, dataDirectory, false),
+            nxProjects(nxArgs, cwd, dataDirectory, true),
+          ]);
     const ignoredPaths = yield* nxIgnoredPaths(paths, cwd);
     const expected = new Set<string>();
     for (const path of paths) {
       if (ignoredPaths.has(path)) continue;
       const owner = owningProject(path, graph);
-      if (owner === undefined) return yield* Effect.fail(new PlanSelectionError({ reason: "unowned-path", detail: `changed path has no Nx owner: ${path}` }));
+      if (owner === undefined)
+        return yield* Effect.fail(
+          new PlanSelectionError({ reason: "unowned-path", detail: `changed path has no Nx owner: ${path}` }),
+        );
       const downstream = downstreamE2E(owner, graph);
       const tags = graph.graph.nodes[owner]?.data.tags ?? [];
       if (downstream.length === 0 && !tags.includes("e2e:none")) {
-        return yield* Effect.fail(new PlanSelectionError({ reason: "missing-e2e-owner", detail: `changed path ${path} belongs to ${owner}, which has neither E2E downstream nor e2e:none` }));
+        return yield* Effect.fail(
+          new PlanSelectionError({
+            reason: "missing-e2e-owner",
+            detail: `changed path ${path} belongs to ${owner}, which has neither E2E downstream nor e2e:none`,
+          }),
+        );
       }
       downstream.forEach((project) => expected.add(project));
     }
     if (JSON.stringify([...expected].sort()) !== JSON.stringify(e2e)) {
-      return yield* Effect.fail(new PlanSelectionError({ reason: "nx-graph-disagreement", detail: `Nx affected selection disagrees with graph downstream closure: expected=${[...expected].sort().join(",")} actual=${e2e.join(",")}` }));
+      return yield* Effect.fail(
+        new PlanSelectionError({
+          reason: "nx-graph-disagreement",
+          detail: `Nx affected selection disagrees with graph downstream closure: expected=${[...expected].sort().join(",")} actual=${e2e.join(",")}`,
+        }),
+      );
     }
     return { all, e2e };
   });
 
-const validateRange = (base: string, head: string, cwd: string): Effect.Effect<PlanRange, PlanProcessError | PlanSelectionError, OwnedProcess | Scope.Scope> =>
-  Effect.gen(function*() {
+const validateRange = (
+  base: string,
+  head: string,
+  cwd: string,
+): Effect.Effect<PlanRange, PlanProcessError | PlanSelectionError, OwnedProcess | Scope.Scope> =>
+  Effect.gen(function* () {
     const actualHead = yield* runGit(["rev-parse", "HEAD"], cwd);
     const resolvedHead = yield* runGit(["rev-parse", `${head}^{commit}`], cwd);
     const resolvedBase = yield* runGit(["rev-parse", `${base}^{commit}`], cwd);
     if (resolvedHead !== actualHead) {
-      return yield* Effect.fail(new PlanSelectionError({ reason: "head-mismatch", detail: `--head must resolve to actual checkout HEAD ${actualHead}, got ${resolvedHead}` }));
+      return yield* Effect.fail(
+        new PlanSelectionError({
+          reason: "head-mismatch",
+          detail: `--head must resolve to actual checkout HEAD ${actualHead}, got ${resolvedHead}`,
+        }),
+      );
     }
     yield* runGit(["merge-base", "--is-ancestor", resolvedBase, resolvedHead], cwd);
     return { base: resolvedBase, head: resolvedHead };
   });
 
-const collectRepoIds = (repoIds: readonly string[]): readonly string[] => [...new Set(repoIds)].filter((id) => id.length > 0);
+const collectRepoIds = (repoIds: readonly string[]): readonly string[] =>
+  [...new Set(repoIds)].filter((id) => id.length > 0);
 
 /** Pure selection: explicit selection always retains its validation semantics. */
-export const selectRepos = (all: readonly DiscoveredRepo[], options: SelectionOptions): Result.Result<readonly DiscoveredRepo[], PlanSelectionError> => {
+export const selectRepos = (
+  all: readonly DiscoveredRepo[],
+  options: SelectionOptions,
+): Result.Result<readonly DiscoveredRepo[], PlanSelectionError> => {
   const repoIds = collectRepoIds(options.repoIds ?? []);
   const knownIds = new Set(all.map((repo) => repo.manifest.id));
   const missing = repoIds.filter((id) => !knownIds.has(id));
-  if (missing.length > 0) return Result.fail(new PlanSelectionError({ reason: "unknown-repo", detail: `--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${[...knownIds].join(", ")}` }));
+  if (missing.length > 0)
+    return Result.fail(
+      new PlanSelectionError({
+        reason: "unknown-repo",
+        detail: `--repo requested unknown id(s): ${missing.join(", ")}. Known ids: ${[...knownIds].join(", ")}`,
+      }),
+    );
   const requested = repoIds.length > 0 ? new Set(repoIds) : undefined;
   const affected = options.affectedProjectNames === undefined ? undefined : new Set(options.affectedProjectNames);
   const explicitlyRequested = requested === undefined ? [] : all.filter((repo) => requested.has(repo.manifest.id));
   const lane = options.lane;
   if (lane !== undefined) {
     const unavailable = explicitlyRequested.filter((repo) => !repo.manifest.lanes.includes(lane));
-    if (unavailable.length > 0) return Result.fail(new PlanSelectionError({ reason: "unavailable-lane", detail: `--repo selection is unavailable in lane ${JSON.stringify(options.lane)} for: ${unavailable.map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`).join("; ")}` }));
+    if (unavailable.length > 0)
+      return Result.fail(
+        new PlanSelectionError({
+          reason: "unavailable-lane",
+          detail: `--repo selection is unavailable in lane ${JSON.stringify(options.lane)} for: ${unavailable.map((repo) => `${repo.manifest.id}: ${repo.manifest.lanes.join(", ")}`).join("; ")}`,
+        }),
+      );
   }
-  if (options.excludeExternalNetwork && explicitlyRequested.some((repo) => repo.manifest.requires?.externalNetwork === true)) {
-    return Result.fail(new PlanSelectionError({ reason: "external-network", detail: `--repo selection requires external network but --exclude-external-network was set: ${explicitlyRequested.filter((repo) => repo.manifest.requires?.externalNetwork === true).map((repo) => repo.manifest.id).join(", ")}` }));
+  if (
+    options.excludeExternalNetwork &&
+    explicitlyRequested.some((repo) => repo.manifest.requires?.externalNetwork === true)
+  ) {
+    return Result.fail(
+      new PlanSelectionError({
+        reason: "external-network",
+        detail: `--repo selection requires external network but --exclude-external-network was set: ${explicitlyRequested
+          .filter((repo) => repo.manifest.requires?.externalNetwork === true)
+          .map((repo) => repo.manifest.id)
+          .join(", ")}`,
+      }),
+    );
   }
-  return Result.succeed(all.filter((repo) => {
-    if (lane !== undefined && !repo.manifest.lanes.includes(lane)) return false;
-    if (requested !== undefined && !requested.has(repo.manifest.id)) return false;
-    if (options.capability !== undefined && !repo.manifest.areas.some((area) => area === options.capability)) return false;
-    if (options.excludeExternalNetwork && repo.manifest.requires?.externalNetwork === true) return false;
-    return !(requested === undefined && affected !== undefined && !affected.has(repo.projectName));
-  }));
+  return Result.succeed(
+    all.filter((repo) => {
+      if (lane !== undefined && !repo.manifest.lanes.includes(lane)) return false;
+      if (requested !== undefined && !requested.has(repo.manifest.id)) return false;
+      if (options.capability !== undefined && !repo.manifest.areas.some((area) => area === options.capability))
+        return false;
+      if (options.excludeExternalNetwork && repo.manifest.requires?.externalNetwork === true) return false;
+      return !(requested === undefined && affected !== undefined && !affected.has(repo.projectName));
+    }),
+  );
 };
 
 const singletonEntry = (repo: DiscoveredRepo, root: string): PlanEntry => {
   const dir = relative(root, repo.dir).replaceAll("\\", "/");
-  return { id: repo.manifest.id, repoIds: [repo.manifest.id], batch: repo.manifest.batch, dir, dirs: [dir], executor: repo.manifest.executor, capabilities: [...repo.manifest.areas], shard: repo.manifest.id, ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }) };
+  return {
+    id: repo.manifest.id,
+    repoIds: [repo.manifest.id],
+    batch: repo.manifest.batch,
+    dir,
+    dirs: [dir],
+    executor: repo.manifest.executor,
+    capabilities: [...repo.manifest.areas],
+    shard: repo.manifest.id,
+    ...(repo.manifest.requires === undefined ? {} : { requires: repo.manifest.requires }),
+  };
 };
 
 const mergedRequires = (entries: readonly PlanEntry[]): Result.Result<RepoRequires | undefined, PlanSelectionError> => {
-  const requirements = entries.flatMap((entry) => entry.requires === undefined ? [] : [entry.requires]);
+  const requirements = entries.flatMap((entry) => (entry.requires === undefined ? [] : [entry.requires]));
   if (requirements.length === 0) return Result.succeed(undefined);
   const runtimes = [...new Set(requirements.flatMap((requirement) => requirement.runtimes ?? []))];
   const browsers = [...new Set(requirements.flatMap((requirement) => requirement.browsers ?? []))];
   const hostCapabilities = [...new Set(requirements.flatMap((requirement) => requirement.hostCapabilities ?? []))];
-  const sets = requirements.flatMap((requirement) => requirement.platforms === undefined ? [] : [new Set(requirement.platforms)]);
-  const platforms = sets.length === 0 ? [] : [...sets[0]!].filter((platform) => sets.slice(1).every((set) => set.has(platform)));
-  if (sets.length > 0 && platforms.length === 0) return Result.fail(new PlanSelectionError({ reason: "batch-platform-conflict", detail: "E2E batch has no host platform accepted by every Repo" }));
-  return Result.succeed({ ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}), ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}), ...(platforms.length ? { platforms } : {}), ...(runtimes.length ? { runtimes } : {}), ...(browsers.length ? { browsers } : {}), ...(hostCapabilities.length ? { hostCapabilities } : {}) });
+  const sets = requirements.flatMap((requirement) =>
+    requirement.platforms === undefined ? [] : [new Set(requirement.platforms)],
+  );
+  const platforms =
+    sets.length === 0 ? [] : [...sets[0]!].filter((platform) => sets.slice(1).every((set) => set.has(platform)));
+  if (sets.length > 0 && platforms.length === 0)
+    return Result.fail(
+      new PlanSelectionError({
+        reason: "batch-platform-conflict",
+        detail: "E2E batch has no host platform accepted by every Repo",
+      }),
+    );
+  return Result.succeed({
+    ...(requirements.some((requirement) => requirement.docker) ? { docker: true } : {}),
+    ...(requirements.some((requirement) => requirement.externalNetwork) ? { externalNetwork: true } : {}),
+    ...(platforms.length ? { platforms } : {}),
+    ...(runtimes.length ? { runtimes } : {}),
+    ...(browsers.length ? { browsers } : {}),
+    ...(hostCapabilities.length ? { hostCapabilities } : {}),
+  });
 };
 
 const repoBatch = (entries: readonly PlanEntry[]): Result.Result<PlanEntry, PlanSelectionError> => {
   const first = entries[0];
-  if (!first || new Set(entries.map((entry) => JSON.stringify(entry.executor))).size !== 1) return Result.fail(new PlanSelectionError({ reason: "batch-executor", detail: "E2E batch requires one shared executor" }));
-  if (new Set(entries.map((entry) => entry.batch)).size !== 1) return Result.fail(new PlanSelectionError({ reason: "batch-placement", detail: "E2E batch contains multiple placement ids" }));
+  if (!first || new Set(entries.map((entry) => JSON.stringify(entry.executor))).size !== 1)
+    return Result.fail(
+      new PlanSelectionError({ reason: "batch-executor", detail: "E2E batch requires one shared executor" }),
+    );
+  if (new Set(entries.map((entry) => entry.batch)).size !== 1)
+    return Result.fail(
+      new PlanSelectionError({ reason: "batch-placement", detail: "E2E batch contains multiple placement ids" }),
+    );
   const repoIds = [first.repoIds[0], ...entries.flatMap((entry) => entry.repoIds).slice(1)] as const;
   const dirs = [first.dirs[0], ...entries.flatMap((entry) => entry.dirs).slice(1)] as const;
   const allCapabilities = [...new Set(entries.flatMap((entry) => entry.capabilities))];
-  const capabilities = [first.capabilities[0], ...allCapabilities.filter((capability) => capability !== first.capabilities[0])] as const;
-  return Result.map(mergedRequires(entries), (requires) => ({ id: `repo-batch-${first.batch}`, repoIds, batch: first.batch, dirs, executor: first.executor, capabilities, shard: `repo-batch-${first.batch}`, ...(requires === undefined ? {} : { requires }) }));
+  const capabilities = [
+    first.capabilities[0],
+    ...allCapabilities.filter((capability) => capability !== first.capabilities[0]),
+  ] as const;
+  return Result.map(mergedRequires(entries), (requires) => ({
+    id: `repo-batch-${first.batch}`,
+    repoIds,
+    batch: first.batch,
+    dirs,
+    executor: first.executor,
+    capabilities,
+    shard: `repo-batch-${first.batch}`,
+    ...(requires === undefined ? {} : { requires }),
+  }));
 };
 
 /** Pure batching preserves exactly the selected repo-id set. */
-export const batchEntries = (entries: readonly PlanEntry[]): Result.Result<readonly PlanEntry[], PlanSelectionError> => {
+export const batchEntries = (
+  entries: readonly PlanEntry[],
+): Result.Result<readonly PlanEntry[], PlanSelectionError> => {
   const groups = new Map<string, PlanEntry[]>();
   for (const entry of entries) groups.set(entry.batch, [...(groups.get(entry.batch) ?? []), entry]);
-  const result = Result.all([...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, group]) => repoBatch(group)));
+  const result = Result.all(
+    [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, group]) => repoBatch(group)),
+  );
   return Result.flatMap(result, (batches) => {
     const before = entries.flatMap((entry) => entry.repoIds).sort();
     const after = batches.flatMap((entry) => entry.repoIds).sort();
     return new Set(after).size !== after.length || JSON.stringify(before) !== JSON.stringify(after)
-      ? Result.fail(new PlanSelectionError({ reason: "batch-set-changed", detail: "batching changed the selected E2E repo-id set" }))
+      ? Result.fail(
+          new PlanSelectionError({
+            reason: "batch-set-changed",
+            detail: "batching changed the selected E2E repo-id set",
+          }),
+        )
       : Result.succeed(batches);
   });
 };
 
-const eitherEffect = <A, E>(value: Result.Result<A, E>): Effect.Effect<A, E> => Result.isFailure(value) ? Effect.fail(value.failure) : Effect.succeed(value.success);
+const eitherEffect = <A, E>(value: Result.Result<A, E>): Effect.Effect<A, E> =>
+  Result.isFailure(value) ? Effect.fail(value.failure) : Effect.succeed(value.success);
 
-type PlanFailure = DiscoveryIoError | PlanSelectionError | PlanProcessError | PlanFilesystemError | PlanJsonError | ContractDecodeError;
+type PlanFailure =
+  | DiscoveryIoError
+  | PlanSelectionError
+  | PlanProcessError
+  | PlanFilesystemError
+  | PlanJsonError
+  | ContractDecodeError;
 
 /**
  * Effect-native planning composition. The command layer parses argv and owns
  * output/runtime closing; this function owns discovery, Git/Nx I/O and plan
  * construction only.
  */
-export const resolvePlan = (cli: PlanCli): Effect.Effect<ResolvedPlan, PlanFailure, FileSystem.FileSystem | OwnedProcess> => {
+export const resolvePlan = (
+  cli: PlanCli,
+): Effect.Effect<ResolvedPlan, PlanFailure, FileSystem.FileSystem | OwnedProcess> => {
   const root = repoRootDir();
-  return Effect.scoped(Effect.gen(function*() {
-    const dataDirectory = yield* planFileSystem(
-      "temporary-directory",
-      tmpdir(),
-      (service) => service.makeTempDirectoryScoped({ directory: tmpdir(), prefix: "niceeval-nx-plan-" }),
-    );
-    const discovery = yield* discoverAllRepos(e2eRootDir());
-    if (discovery.errors.length > 0) return yield* Effect.fail(new PlanSelectionError({ reason: "discovery", detail: `repo discovery found ${discovery.errors.length} problem(s): ${discovery.errors.join("; ")}` }));
-    const full = cli.repoIds.length === 0 && (cli.noDiff || (cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined));
-    let mode: PlanDocument["mode"] = full ? "full" : "affected";
-    let reason = cli.repoIds.length ? "explicit-repo" : cli.noDiff ? "explicit-full" : cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined ? `full-lane-${cli.lane}` : "nx-affected";
-    let detail: string | undefined;
-    let changedPaths: readonly string[] = [];
-    let affectedNames: readonly string[] | undefined;
-    let allAffectedNames: readonly string[] = [];
-    let range: PlanRange | undefined;
-    if (!full && cli.repoIds.length === 0) {
-      const selected = yield* Effect.result(Effect.gen(function*() {
-        if (cli.base !== undefined && cli.head !== undefined) {
-          const resolvedRange = yield* validateRange(cli.base, cli.head, root);
-          const paths = (yield* gitDiffPaths(["diff", `${resolvedRange.base}...${resolvedRange.head}`], root)).map((path) => path.replaceAll("\\", "/")).sort();
-          const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths, root, dataDirectory, resolvedRange.base);
-          return { range: resolvedRange, changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const dataDirectory = yield* planFileSystem("temporary-directory", tmpdir(), (service) =>
+        service.makeTempDirectoryScoped({ directory: tmpdir(), prefix: "niceeval-nx-plan-" }),
+      );
+      const discovery = yield* discoverAllRepos(e2eRootDir());
+      if (discovery.errors.length > 0)
+        return yield* Effect.fail(
+          new PlanSelectionError({
+            reason: "discovery",
+            detail: `repo discovery found ${discovery.errors.length} problem(s): ${discovery.errors.join("; ")}`,
+          }),
+        );
+      const full =
+        cli.repoIds.length === 0 &&
+        (cli.noDiff || (cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined));
+      let mode: PlanDocument["mode"] = full ? "full" : "affected";
+      let reason = cli.repoIds.length
+        ? "explicit-repo"
+        : cli.noDiff
+          ? "explicit-full"
+          : cli.lane !== "pr" && cli.base === undefined && cli.diffPaths === undefined
+            ? `full-lane-${cli.lane}`
+            : "nx-affected";
+      let detail: string | undefined;
+      let changedPaths: readonly string[] = [];
+      let affectedNames: readonly string[] | undefined;
+      let allAffectedNames: readonly string[] = [];
+      let range: PlanRange | undefined;
+      if (!full && cli.repoIds.length === 0) {
+        const selected = yield* Effect.result(
+          Effect.gen(function* () {
+            if (cli.base !== undefined && cli.head !== undefined) {
+              const resolvedRange = yield* validateRange(cli.base, cli.head, root);
+              const paths = (yield* gitDiffPaths(["diff", `${resolvedRange.base}...${resolvedRange.head}`], root))
+                .map((path) => path.replaceAll("\\", "/"))
+                .sort();
+              const selection =
+                paths.length === 0
+                  ? { all: [], e2e: [] }
+                  : yield* selectAffected(paths, root, dataDirectory, resolvedRange.base);
+              return {
+                range: resolvedRange,
+                changedPaths: paths,
+                affectedNames: selection.e2e,
+                allAffectedNames: selection.all,
+              };
+            }
+            const paths =
+              cli.diffPaths === undefined ? yield* localChangedPaths(root) : [...new Set(cli.diffPaths)].sort();
+            const selection =
+              paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths, root, dataDirectory);
+            return { changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
+          }),
+        );
+        if (Result.isFailure(selected)) {
+          mode = "fail-open-full";
+          reason = "nx-selection-failed";
+          detail = "detail" in selected.failure ? selected.failure.detail : executionErrorDetail(selected.failure);
+        } else {
+          ({ range, changedPaths, affectedNames, allAffectedNames } = selected.success);
+          if (changedPaths.length === 0) reason = "clean-working-tree";
         }
-        const paths = cli.diffPaths === undefined ? yield* localChangedPaths(root) : [...new Set(cli.diffPaths)].sort();
-        const selection = paths.length === 0 ? { all: [], e2e: [] } : yield* selectAffected(paths, root, dataDirectory);
-        return { changedPaths: paths, affectedNames: selection.e2e, allAffectedNames: selection.all };
-      }));
-      if (Result.isFailure(selected)) {
-        mode = "fail-open-full";
-        reason = "nx-selection-failed";
-        detail = "detail" in selected.failure ? selected.failure.detail : executionErrorDetail(selected.failure);
-      } else {
-        ({ range, changedPaths, affectedNames, allAffectedNames } = selected.success);
-        if (changedPaths.length === 0) reason = "clean-working-tree";
       }
-    }
-    const selected = yield* eitherEffect(selectRepos(discovery.repos, {
-      lane: cli.lane,
-      repoIds: cli.repoIds,
-      ...(mode === "fail-open-full" || cli.capability === undefined ? {} : { capability: cli.capability }),
-      excludeExternalNetwork: cli.excludeExternalNetwork,
-      ...(affectedNames === undefined ? {} : { affectedProjectNames: affectedNames }),
-    }));
-    const singleton = selected.map((repo) => singletonEntry(repo, e2eRootDir())).sort((left, right) => left.id.localeCompare(right.id));
-    const entries = cli.batch ? yield* eitherEffect(batchEntries(singleton)) : singleton;
-    const projectNames = discovery.repos.map((repo) => repo.projectName).sort();
-    const document: PlanDocument = {
-      mode,
-      reason,
-      ...(detail === undefined ? {} : { detail }),
-      lane: cli.lane,
-      ...(range === undefined ? {} : { range }),
-      changedPaths: [...changedPaths],
-      projectIds: selected.map((repo) => repo.manifest.id).sort(),
-      cells: [...entries],
-      graph: { selector: "nx show projects --affected --with-target e2e", nxVersion: "23.1.1", affectedProjectNames: affectedNames === undefined ? projectNames : [...allAffectedNames], selectedE2EProjectNames: affectedNames === undefined ? projectNames : [...affectedNames], e2eProjectNames: projectNames },
-    };
-    return { cli, entries, document };
-  }));
+      const selected = yield* eitherEffect(
+        selectRepos(discovery.repos, {
+          lane: cli.lane,
+          repoIds: cli.repoIds,
+          ...(mode === "fail-open-full" || cli.capability === undefined ? {} : { capability: cli.capability }),
+          excludeExternalNetwork: cli.excludeExternalNetwork,
+          ...(affectedNames === undefined ? {} : { affectedProjectNames: affectedNames }),
+        }),
+      );
+      const singleton = selected
+        .map((repo) => singletonEntry(repo, e2eRootDir()))
+        .sort((left, right) => left.id.localeCompare(right.id));
+      const entries = cli.batch ? yield* eitherEffect(batchEntries(singleton)) : singleton;
+      const projectNames = discovery.repos.map((repo) => repo.projectName).sort();
+      const document: PlanDocument = {
+        mode,
+        reason,
+        ...(detail === undefined ? {} : { detail }),
+        lane: cli.lane,
+        ...(range === undefined ? {} : { range }),
+        changedPaths: [...changedPaths],
+        projectIds: selected.map((repo) => repo.manifest.id).sort(),
+        cells: [...entries],
+        graph: {
+          selector: "nx show projects --affected --with-target e2e",
+          nxVersion: "23.1.1",
+          affectedProjectNames: affectedNames === undefined ? projectNames : [...allAffectedNames],
+          selectedE2EProjectNames: affectedNames === undefined ? projectNames : [...affectedNames],
+          e2eProjectNames: projectNames,
+        },
+      };
+      return { cli, entries, document };
+    }),
+  );
 };
 
 export const invalidPlanOutput = (detail: string): InvalidPlanOutput => ({

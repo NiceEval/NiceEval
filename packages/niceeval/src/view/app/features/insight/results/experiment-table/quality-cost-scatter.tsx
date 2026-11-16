@@ -1,15 +1,7 @@
 // Experiment aggregate 的质量 × 成本散点图。Recharts 负责坐标、交互和可访问性；
 // 本组件只把已闭合的 ExperimentListItem aggregate 投影为图表数据。
 
-import {
-  CartesianGrid,
-  ResponsiveContainer,
-  Scatter,
-  ScatterChart,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from "recharts";
 import { useTranslation } from "react-i18next";
 import type { ReportLocale } from "../../components/locale.ts";
 import type { ExperimentListItem } from "./compute.ts";
@@ -29,11 +21,11 @@ interface ScatterSeries {
 }
 
 interface PointShapeProps {
-  readonly cx?: number;
-  readonly cy?: number;
-  readonly payload?: unknown;
-  readonly fill?: string;
-  readonly stroke?: string;
+  readonly cx?: number | undefined;
+  readonly cy?: number | undefined;
+  readonly payload?: unknown | undefined;
+  readonly fill?: string | undefined;
+  readonly stroke?: string | undefined;
 }
 
 export interface QualityCostScatterProps {
@@ -42,11 +34,7 @@ export interface QualityCostScatterProps {
   readonly locale: ReportLocale;
 }
 
-export default function QualityCostScatter({
-  items,
-  kind,
-  locale,
-}: QualityCostScatterProps) {
+export default function QualityCostScatter({ items, kind, locale }: QualityCostScatterProps) {
   const { t } = useTranslation();
   const series: ScatterSeries[] = items.flatMap((item) => {
     if (kind === "pass" && item.evaluationKind !== "pass") return [];
@@ -55,21 +43,31 @@ export default function QualityCostScatter({
     const costMetric = item.costUSD;
     const quality = qualityMetric?.value;
     const cost = costMetric?.value;
-    return qualityMetric === undefined || costMetric === undefined ||
-        quality === null || quality === undefined || cost === null || cost === undefined ||
-        costMetric.state !== "available" || costMetric.source === null || costMetric.source === undefined
+    return qualityMetric === undefined ||
+      costMetric === undefined ||
+      quality === null ||
+      quality === undefined ||
+      cost === null ||
+      cost === undefined ||
+      costMetric.state !== "available" ||
+      costMetric.source === null ||
+      costMetric.source === undefined
       ? []
-      : [{
-          experimentId: item.experimentId,
-          points: [Object.freeze({
+      : [
+          {
             experimentId: item.experimentId,
-            cost,
-            quality,
-            partial: qualityMetric.state !== "available" || costMetric.state !== "available",
-            coverage: `${costMetric.samples}/${costMetric.total}; ${qualityMetric.samples}/${qualityMetric.total}`,
-            href: item.href,
-          })],
-        }];
+            points: [
+              {
+                experimentId: item.experimentId,
+                cost,
+                quality,
+                partial: qualityMetric.state !== "available" || costMetric.state !== "available",
+                coverage: `${costMetric.samples}/${costMetric.total}; ${qualityMetric.samples}/${qualityMetric.total}`,
+                href: item.href,
+              },
+            ],
+          },
+        ];
   });
   const points = series.flatMap(({ points: values }) => values);
   const pointLabels = uniqueExperimentLabels(series.map(({ experimentId }) => experimentId));
@@ -87,9 +85,7 @@ export default function QualityCostScatter({
 
   const observedMaxCost = Math.max(...points.map(({ cost }) => cost));
   const maxCost = observedMaxCost > 0 ? observedMaxCost * 1.12 : 1;
-  const maxQuality = kind === "pass"
-    ? 1.05
-    : Math.max(...points.map(({ quality }) => quality), 1) * 1.1;
+  const maxQuality = kind === "pass" ? 1.05 : Math.max(...points.map(({ quality }) => quality), 1) * 1.1;
   const partialLabel = t("insight.chart.partial");
   const costFractionDigits = adaptiveCostFractionDigits(observedMaxCost);
   const formatter = new Intl.NumberFormat(locale === "zh-CN" ? "zh-CN" : "en", {
@@ -98,9 +94,10 @@ export default function QualityCostScatter({
     minimumFractionDigits: Math.min(2, costFractionDigits),
     maximumFractionDigits: costFractionDigits,
   });
-  const qualityText = (value: number): string => kind === "pass"
-    ? `${Math.round(value * 100)}%`
-    : value.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en", { maximumFractionDigits: 2 });
+  const qualityText = (value: number): string =>
+    kind === "pass"
+      ? `${Math.round(value * 100)}%`
+      : value.toLocaleString(locale === "zh-CN" ? "zh-CN" : "en", { maximumFractionDigits: 2 });
 
   return (
     <figure className="niceeval-chart niceeval-chart--scatter">
@@ -125,8 +122,7 @@ export default function QualityCostScatter({
               type="number"
               dataKey="quality"
               domain={[0, maxQuality]}
-              ticks={kind === "pass" ? [0, 0.25, 0.5, 0.75, 1] : undefined}
-              tickCount={kind === "pass" ? undefined : 5}
+              {...(kind === "pass" ? { ticks: [0, 0.25, 0.5, 0.75, 1] } : { tickCount: 5 })}
               tickFormatter={qualityText}
               name={qualityLabel}
               label={{ value: qualityLabel, angle: -90, position: "insideLeft" }}
@@ -146,9 +142,7 @@ export default function QualityCostScatter({
               labelStyle={{ color: "var(--text)", fontWeight: 650 }}
               labelFormatter={(_label, tooltipPayload) => {
                 const point = scatterPoint(tooltipPayload[0]?.payload);
-                return point === null
-                  ? ""
-                  : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
+                return point === undefined ? "" : `${point.experimentId}${point.partial ? ` · ${partialLabel}` : ""}`;
               }}
               formatter={(value, name) => [
                 name === "cost" ? formatter.format(Number(value)) : qualityText(Number(value)),
@@ -164,7 +158,7 @@ export default function QualityCostScatter({
                 fill="var(--series)"
                 stroke={entry.points[0]?.partial ? "var(--warn)" : "var(--panel)"}
                 strokeWidth={2}
-                strokeDasharray={entry.points[0]?.partial ? "2 2" : undefined}
+                {...(entry.points[0]?.partial ? { strokeDasharray: "2 2" } : {})}
                 shape={(shapeProps: PointShapeProps) => (
                   <ExperimentPoint
                     {...shapeProps}
@@ -201,7 +195,7 @@ function ExperimentPoint({
   openLabel,
 }: PointShapeProps & { readonly label: string; readonly openLabel: string }) {
   const point = scatterPoint(payload);
-  if (point === null || cx === undefined || cy === undefined) return <g />;
+  if (point === undefined || cx === undefined || cy === undefined) return <g />;
   const activate = () => {
     window.location.hash = point.href.startsWith("#") ? point.href.slice(1) : point.href;
   };
@@ -229,20 +223,24 @@ function ExperimentPoint({
         stroke={stroke}
         aria-hidden="true"
       />
-      <text className="niceeval-scatter-point-label" x={cx + 10} y={cy - 9}>{label}</text>
+      <text className="niceeval-scatter-point-label" x={cx + 10} y={cy - 9}>
+        {label}
+      </text>
     </g>
   );
 }
 
-function scatterPoint(value: unknown): ScatterPoint | null {
-  if (typeof value !== "object" || value === null) return null;
+function scatterPoint(value: unknown): ScatterPoint | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
   const point = value as Partial<ScatterPoint>;
   return typeof point.experimentId === "string" &&
-      typeof point.cost === "number" &&
-      typeof point.quality === "number" && typeof point.partial === "boolean" &&
-      typeof point.coverage === "string" && typeof point.href === "string"
-    ? point as ScatterPoint
-    : null;
+    typeof point.cost === "number" &&
+    typeof point.quality === "number" &&
+    typeof point.partial === "boolean" &&
+    typeof point.coverage === "string" &&
+    typeof point.href === "string"
+    ? (point as ScatterPoint)
+    : undefined;
 }
 
 function adaptiveCostFractionDigits(maxCost: number): number {

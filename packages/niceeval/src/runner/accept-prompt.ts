@@ -7,12 +7,11 @@
 
 import { createInterface } from "node:readline/promises";
 
-
 /** 一条可被授权的差异,连同它在本次计划里的影响面。 */
 export interface AcceptChoice {
   selector: string;
-  from?: string;
-  to?: string;
+  from: string | undefined;
+  to: string | undefined;
   /** 本次计划里被这条差异拦下的 eval 数。 */
   evals: number;
 }
@@ -36,9 +35,10 @@ export async function promptAcceptSelections(
 ): Promise<string[]> {
   const chosen: string[] = [];
   for (const choice of choices) {
-    const change = choice.from !== undefined || choice.to !== undefined
-      ? `  ${choice.from ?? ""} → ${choice.to ?? ""}`.trimEnd()
-      : "";
+    const change =
+      choice.from !== undefined || choice.to !== undefined
+        ? `  ${choice.from ?? ""} → ${choice.to ?? ""}`.trimEnd()
+        : "";
     write(`previous-result  ${choice.selector}${change}  (${choice.evals} evals)
 `);
     // 读不到答案(管道 EOF、Ctrl+D)按「不采信」处理:交互被打断时的默认方向必须是多花一次钱,

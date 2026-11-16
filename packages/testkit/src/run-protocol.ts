@@ -1,5 +1,4 @@
 export {
-  RUN_PROTOCOL,
   decodeRunDocument,
   type RunDocument,
   type RunGetDocument,

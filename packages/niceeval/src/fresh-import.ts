@@ -5,16 +5,35 @@
 
 import { Effect, Semaphore, type Scope } from "effect";
 import { createJiti, type Jiti } from "jiti";
-import { dirname, extname, isAbsolute, resolve, sep } from "node:path";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { ProjectModuleGraph, transformedImportSpecifiers } from "./runner/module-graph.ts";
+import { isCodeSource } from "./runner/source-normalization.ts";
 import { withSandboxScriptRoot } from "./sandbox/script.ts";
 
 const generationGate = Semaphore.makeUnsafe(1);
+const nativeRequire = createRequire(import.meta.url);
+
+function sourceRuntimeModules(): Record<string, unknown> | undefined {
+  if (import.meta.resolve("niceeval") !== new URL("./index.ts", import.meta.url).href) return undefined;
+  const manifest = nativeRequire("../package.json") as { exports: Record<string, unknown> };
+  const modules: Record<string, unknown> = Object.create(null);
+  for (const entry of Object.keys(manifest.exports)) {
+    const specifier = entry === "." ? "niceeval" : `niceeval${entry.slice(1)}`;
+    // Jiti does not inherit Node's custom export conditions. Keep each public entry
+    // lazy, but let Node select and cache the same runtime used by the source CLI.
+    Object.defineProperty(modules, specifier, { enumerable: true, get: () => nativeRequire(specifier) });
+  }
+  return modules;
+}
+
+const virtualModules = sourceRuntimeModules();
+// Third-party exact optional boundary: Jiti observes which loader options are supplied.
 const loaderOptions = Object.freeze({
   interopDefault: false,
   moduleCache: true,
   tsconfigPaths: true,
+  ...(virtualModules === undefined ? {} : { virtualModules }),
 });
 const cachedLoader = createJiti(import.meta.url, loaderOptions);
 
@@ -23,10 +42,12 @@ function unwrapDefault(imported: unknown): { default?: unknown } {
   const module = imported as { default?: unknown; __esModule?: unknown };
   const wrapped = module.default;
   if (
-    typeof wrapped === "object" && wrapped !== null &&
+    typeof wrapped === "object" &&
+    wrapped !== null &&
     Object.hasOwn(wrapped, "default") &&
     (wrapped as { __esModule?: unknown }).__esModule === true
-  ) return wrapped as { default?: unknown };
+  )
+    return wrapped as { default?: unknown };
   return module;
 }
 
@@ -43,14 +64,18 @@ function clearProjectModules(loader: Jiti, projectRoot: string): void {
   const root = resolve(projectRoot);
   const prefix = `${root}${sep}`;
   for (const filename of Object.keys(loader.cache)) {
-    if (isAbsolute(filename) && !filename.includes(`${sep}node_modules${sep}`) &&
-      (filename === root || filename.startsWith(prefix))) {
+    if (
+      isAbsolute(filename) &&
+      !filename.includes(`${sep}node_modules${sep}`) &&
+      (filename === root || filename.startsWith(prefix))
+    ) {
       delete loader.cache[filename];
     }
   }
 }
 
 export interface FreshImportGeneration {
+  readonly modules: ProjectModuleGraph;
   /** Import an entry into this generation's one shared project module graph. */
   import(absPath: string): Promise<{ default?: unknown }>;
 }
@@ -63,12 +88,13 @@ export interface FreshImportGeneration {
 export function acquireFreshImportGeneration(
   projectRoot = process.cwd(),
 ): Effect.Effect<FreshImportGeneration, never, Scope.Scope> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     // Register this finalizer before constructing the loader: Jiti setup or cache eviction
     // may throw, but neither may strand the generation permit.
     yield* Effect.acquireRelease(generationGate.take(1), () => generationGate.release(1));
     const loader = createJiti(import.meta.url, { ...loaderOptions, tryNative: false });
     clearProjectModules(loader, projectRoot);
+    const modules = new ProjectModuleGraph(projectRoot, loader);
     const evaluated = new Map<string, Promise<{ default?: unknown }>>();
     const importFresh = (absPath: string): Promise<{ default?: unknown }> => {
       const existing = evaluated.get(absPath);
@@ -78,20 +104,32 @@ export function acquireFreshImportGeneration(
       return pending;
     };
     const evaluate = async (absPath: string, ancestors: ReadonlySet<string>): Promise<{ default?: unknown }> => {
-      const source = await readFile(absPath, "utf8");
+      const fact = modules.module(absPath);
+      const source = fact.source;
+      modules.capture(absPath);
+      if (/\.cjs$/u.test(absPath) || (/\.js$/u.test(absPath) && fact.sourceType === "commonjs"))
+        return importWith(loader, absPath);
       const visiting = new Set([...ancestors, absPath]);
       // Native ESM imports bypass Jiti's evictable cache, even with tryNative:false.
       // Evaluate the static project closure through Jiti before importing its parent.
       // Package dependencies retain their canonical runtime and are never re-evaluated.
-      const transformed = loader.transform({ filename: absPath, source, async: true, ts: /\.[cm]?tsx?$/.test(absPath) });
-      const runtimeImports = new Set([...transformed.matchAll(/\bjitiImport\(["']([^"']+)["']/g)].map(match => match[1]));
-      for (const match of source.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)) {
-        const specifier = match[1];
-        if (specifier === undefined || !runtimeImports.has(specifier) || (!specifier.startsWith(".") && !specifier.startsWith("/"))) continue;
-        const url = loader.esmResolve(specifier, pathToFileURL(absPath).href);
-        if (!url.startsWith("file:")) continue;
-        const dependency = fileURLToPath(url);
-        if (!dependency.startsWith(`${resolve(projectRoot)}${sep}`) || dependency.includes(`${sep}node_modules${sep}`) || !/\.[cm]?[jt]sx?$/.test(extname(dependency)) || visiting.has(dependency)) continue;
+      const transformed = loader.transform({
+        filename: absPath,
+        source,
+        async: true,
+        ts: /\.[cm]?tsx?$/.test(absPath),
+      });
+      const runtimeImports = transformedImportSpecifiers(absPath, transformed);
+      for (const edge of fact.edges) {
+        const dependency = edge.path;
+        if (
+          edge.timing !== "static" ||
+          !runtimeImports.has(edge.specifier) ||
+          dependency === undefined ||
+          !isCodeSource(dependency) ||
+          visiting.has(dependency)
+        )
+          continue;
         let pending = evaluated.get(dependency);
         if (pending === undefined) {
           pending = evaluate(dependency, visiting);
@@ -101,10 +139,11 @@ export function acquireFreshImportGeneration(
       }
       return unwrapDefault(await loader.evalModule(source, { filename: absPath, async: true, forceTranspile: true }));
     };
-    return Object.freeze({
+    return {
+      modules,
       // Jiti's dynamic import ABI is Promise-based; adaptation remains at this I/O leaf.
       import: (absPath: string) => withSandboxScriptRoot(projectRoot, () => importFresh(absPath)),
-    });
+    };
   });
 }
 

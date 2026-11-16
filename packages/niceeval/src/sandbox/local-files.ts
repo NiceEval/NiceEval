@@ -11,13 +11,21 @@ export interface CollectedLocalFile {
 
 function assertInsideRoot(root: string, candidate: string, label: string): void {
   const relativePath = relative(root, candidate);
-  if (relativePath === "" || relativePath.startsWith(`..${sep}`) || relativePath === ".." || relativePath.startsWith("..")) {
+  if (
+    relativePath === "" ||
+    relativePath.startsWith(`..${sep}`) ||
+    relativePath === ".." ||
+    relativePath.startsWith("..")
+  ) {
     throw new Error(`${label} ${JSON.stringify(candidate)} is outside ${JSON.stringify(root)}`);
   }
 }
 
 /** 递归收集本地目录下的全部文件;路径统一转成 POSIX 分隔的相对路径,供上传沙箱用。 */
-export async function collectLocalFiles(localDir: string, ignore: readonly string[] = []): Promise<CollectedLocalFile[]> {
+export async function collectLocalFiles(
+  localDir: string,
+  ignore: readonly string[] = [],
+): Promise<CollectedLocalFile[]> {
   const ignored = new Set(ignore);
   const given = await lstat(localDir);
   if (given.isSymbolicLink()) {

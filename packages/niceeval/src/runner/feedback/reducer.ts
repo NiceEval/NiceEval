@@ -57,6 +57,10 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     freshFailureCount: 0,
     diagnostics: [],
     kept: [],
+
+    newTokenCount: undefined,
+    estimatedCostUSD: undefined,
+    activePrecheck: undefined,
   };
 }
 
@@ -69,6 +73,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 多次 run 也不会把上一次的残留状态带进新 run(正常用法下 plan 本来就应是第一个事件)。
       return {
         ...state,
+        activePrecheck: undefined,
         runIdsByExperiment: new Map(event.plan.shape.runIds ?? []),
         total,
         reused,
@@ -85,7 +90,6 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         skipped: 0,
         active: new Map(),
         queuedAttempts: new Map(),
-        activePrecheck: undefined,
         experimentHooks: new Map(),
         lockWaits: new Map(),
         runActivities: new Map(),
@@ -126,6 +130,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         // active 行时间列的基准只在这里写一次:一条 attempt 的时间从派发起算,之后的阶段推进
         // 只换标签不重置时钟(见 ActiveAttempt.startedAt 与下面的 attempt:phase 分支)。
         startedAt: event.at,
+
+        detail: undefined,
       });
       return {
         ...state,
@@ -144,7 +150,13 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // 进入新 phase 清空旧 detail —— 次要文本是绑定到具体 phase 的(如 running 阶段的
       // "tool: shell"),不该原样带进下一个 phase 显示。`startedAt` 原样带过去(spread 保留):
       // 阶段边界换的是「正在干什么」,不是「这条跑了多久」。
-      active.set(key, { ...existing, phase: event.phase, detail: undefined });
+      const { detail: _detail, ...attempt } = existing;
+      active.set(key, {
+        ...attempt,
+        phase: event.phase,
+
+        detail: undefined,
+      });
       return { ...state, active };
     }
 
@@ -167,16 +179,14 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       // duplicate/unknown completions instead of stealing another Attempt's
       // aggregate slot and making queued/running negative.
       if (!completedWhileRunning && !completedWhileQueued) return state;
-      const estimatedCostUSD =
-        event.estimatedCostUSD === undefined
-          ? state.estimatedCostUSD
-          : state.estimatedCostUSD === undefined
-            ? event.estimatedCostUSD
-            : state.estimatedCostUSD + event.estimatedCostUSD;
+      function completedCost(amount: number | undefined): number | undefined {
+        if (amount === undefined) return state.estimatedCostUSD;
+        if (state.estimatedCostUSD === undefined) return amount;
+        return state.estimatedCostUSD + amount;
+      }
+      const estimatedCostUSD = completedCost(event.estimatedCostUSD);
       const newTokenCount =
-        event.tokenCount === undefined
-          ? state.newTokenCount
-          : (state.newTokenCount ?? 0) + event.tokenCount;
+        event.tokenCount === undefined ? state.newTokenCount : (state.newTokenCount ?? 0) + event.tokenCount;
       // 落项完全由事件携带的 verdict 决定 —— reducer 不自己判断成败(那是断言求值的事),
       // 也不留一个「已完成但未归类」的兜底项:Verdict 是四值闭集,穷尽覆盖。
       return {
@@ -186,8 +196,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         [event.verdict]: state[event.verdict] + 1,
         active,
         queuedAttempts,
-        newTokenCount,
-        estimatedCostUSD,
+        newTokenCount: newTokenCount,
+        estimatedCostUSD: estimatedCostUSD,
       };
     }
 
@@ -198,8 +208,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
       if (event.status === "started") {
         return { ...state, activePrecheck: { startedAt: event.at } };
       }
-      const { activePrecheck: _cleared, ...rest } = state;
-      return rest;
+      return { ...state, activePrecheck: undefined };
     }
 
     case "experiment-hook": {
@@ -211,7 +220,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           experimentId: event.experimentId,
           hook: event.hook,
           startedAt: event.at,
-          ...(event.recovery !== undefined ? { recovery: event.recovery } : {}),
+          recovery: event.recovery,
+
+          detail: undefined,
         });
       } else {
         experimentHooks.delete(event.experimentId);
@@ -242,8 +253,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         const waiting = new Map(priorWindowClosed ? [] : existing!.waiting);
         waiting.set(event.evalId, {
           startedAt: event.at,
-          ...(event.holderPid !== undefined ? { holderPid: event.holderPid } : {}),
-          ...(event.holderHost !== undefined ? { holderHost: event.holderHost } : {}),
+          holderPid: event.holderPid,
+          holderHost: event.holderHost,
         });
         lockWaits.set(event.experimentId, {
           experimentId: event.experimentId,
@@ -334,10 +345,10 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           who: event.who,
           verdict: event.verdict,
           reason: event.reason,
-          ...(event.fact !== undefined ? { fact: event.fact } : {}),
-          ...(event.phase !== undefined ? { phase: event.phase } : {}),
-          ...(event.code !== undefined ? { code: event.code } : {}),
-          ...(event.origin !== undefined ? { origin: event.origin } : {}),
+          fact: event.fact,
+          phase: event.phase,
+          code: event.code,
+          origin: event.origin,
         }),
         freshFailureCount: state.freshFailureCount + (isFresh ? 1 : 0),
       };
@@ -349,7 +360,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         diagnostics: upsertDiagnostic(state.diagnostics, {
           at: event.at,
           key: event.key,
-          ...(event.code !== undefined ? { code: event.code } : {}),
+          code: event.code,
           severity: event.severity,
           message: event.message,
           identity: event.identity,
@@ -374,6 +385,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           severity: "warning",
           message: `budget exhausted for ${event.experimentId}`,
           data: { experimentId: event.experimentId, spent: event.spent, unstarted: event.unstarted },
+
+          code: undefined,
+          identity: undefined,
         }),
       };
 
@@ -391,7 +405,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
             verdict: event.verdict,
             provider: event.provider,
             sandboxId: event.sandboxId,
-            ...(event.enter !== undefined ? { enter: event.enter } : {}),
+            nativeCommand: event.nativeCommand,
+            cleanCommand: event.cleanCommand,
+            expiresAt: event.expiresAt,
           },
         ],
       };
@@ -404,6 +420,10 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           key: "interrupted",
           severity: "warning",
           message: "run interrupted",
+
+          code: undefined,
+          identity: undefined,
+          data: undefined,
         }),
       };
 
@@ -416,6 +436,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           severity: event.required ? "error" : "warning",
           message: `reporter "${event.reporter}" failed: ${event.message}`,
           data: { reporter: event.reporter, required: event.required },
+
+          code: undefined,
+          identity: undefined,
         }),
       };
 
@@ -450,9 +473,10 @@ function upsertDiagnostic(
   diagnostics: readonly DiagnosticNotice[],
   input: Omit<DiagnosticNotice, "count">,
 ): readonly DiagnosticNotice[] {
+  const affectedData = appendErrorAssistanceAffected(input.data, input.identity);
   const normalizedInput = {
     ...input,
-    data: appendErrorAssistanceAffected(input.data, input.identity),
+    data: affectedData,
   };
   const idx = diagnostics.findIndex((d) => d.key === input.key);
   if (idx === -1) {
@@ -464,26 +488,38 @@ function upsertDiagnostic(
       if (groupCount >= MAX_ERROR_ASSISTANCE_GROUPS) {
         const overflowIndex = diagnostics.findIndex((diagnostic) => diagnostic.key === ERROR_ASSISTANCE_OVERFLOW_KEY);
         if (overflowIndex === -1) {
-          return [...diagnostics, {
-            at: normalizedInput.at,
-            key: ERROR_ASSISTANCE_OVERFLOW_KEY,
-            code: "error-assistance-overflow",
-            severity: "warning",
-            message: "Additional error groups were omitted after the diagnostic limit was reached.",
-            count: 1,
-          }];
+          return [
+            ...diagnostics,
+            {
+              at: normalizedInput.at,
+              key: ERROR_ASSISTANCE_OVERFLOW_KEY,
+              code: "error-assistance-overflow",
+              severity: "warning",
+              message: "Additional error groups were omitted after the diagnostic limit was reached.",
+              count: 1,
+
+              identity: undefined,
+              data: undefined,
+            },
+          ];
         }
         const overflow = diagnostics.slice();
-        overflow[overflowIndex] = { ...overflow[overflowIndex]!, at: normalizedInput.at, count: overflow[overflowIndex]!.count + 1 };
+        overflow[overflowIndex] = {
+          ...overflow[overflowIndex]!,
+          at: normalizedInput.at,
+          count: overflow[overflowIndex]!.count + 1,
+        };
         return overflow;
       }
     }
     return [...diagnostics, { ...normalizedInput, count: 1 }];
   }
   const next = diagnostics.slice();
+  const data = mergeErrorAssistanceData(next[idx].data, normalizedInput.data);
+  const { data: _data, ...notice } = normalizedInput;
   next[idx] = {
-    ...normalizedInput,
-    data: mergeErrorAssistanceData(next[idx].data, normalizedInput.data),
+    ...notice,
+    data,
     count: next[idx].count + 1,
   };
   return next;

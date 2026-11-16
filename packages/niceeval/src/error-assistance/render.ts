@@ -31,15 +31,16 @@ export function renderMigrationRequiredError(
   const guideIds = [...new Set(error.occurrences.map((occurrence) => occurrence.guideId))];
   const lines = [
     "error: This Judge configuration requires migration.",
-    "Code: migration-required",
+    `Migration locations: ${error.occurrences.length}`,
   ];
-  for (const guideId of guideIds) lines.push(`Guide: ${guideId}`);
   lines.push(...migrationOccurrenceLines(error));
   for (const guideId of guideIds) {
     const loaded = loadGuide(guideId);
-    lines.push(loaded.state === "available"
-      ? loaded.guide.content.trimEnd()
-      : `Migration guide asset unavailable: ${guideId} (niceeval ${loadInstalledPackageVersion()})`);
+    lines.push(
+      loaded.state === "available"
+        ? loaded.guide.content.trimEnd()
+        : `Migration guide asset unavailable: ${guideId} (niceeval ${loadInstalledPackageVersion()})`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
@@ -61,8 +62,12 @@ export function renderAssistedDiagnosticDetails(data: ErrorAssistanceData): read
   const lines = [`Owner: ${data.owner}`];
   for (const source of data.sources) {
     if (typeof source !== "object" || source === null || Array.isArray(source)) continue;
-    if (source.state === "located" && typeof source.file === "string" &&
-      typeof source.line === "number" && typeof source.column === "number") {
+    if (
+      source.state === "located" &&
+      typeof source.file === "string" &&
+      typeof source.line === "number" &&
+      typeof source.column === "number"
+    ) {
       lines.push(`Source: ${source.file}:${source.line}:${source.column}`);
       continue;
     }
@@ -77,6 +82,5 @@ export function renderAssistedDiagnosticDetails(data: ErrorAssistanceData): read
   if (data.affectedObjectsOmitted > 0) lines.push(`Affected objects omitted: ${data.affectedObjectsOmitted}`);
   if (data.sourceLocationsOmitted > 0) lines.push(`Source locations omitted: ${data.sourceLocationsOmitted}`);
   lines.push(data.nextStep);
-  if (data.guideId !== undefined) lines.push(`Guide: ${data.guideId}`);
   return lines;
 }

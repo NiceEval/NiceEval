@@ -11,10 +11,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 
 import type { ChildProcessSpawner } from "effect/process";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   DocsConflictError,
@@ -39,8 +39,6 @@ import {
 import {
   absolutePath,
   atomicWriteJson,
-  decodeUnknown,
-  pathExists,
   readJson,
   REPOSITORY_ROOT,
   runCommand,
@@ -50,32 +48,32 @@ import {
 } from "./internal/runtime.js";
 
 const RUNS_ROOT = ".repo-tools/docs-runs";
-const SHARED_FINALIZER_PATHS = [
-  "docs/README.md",
-  "docs/concepts.md",
-  "docs/writing.md",
-] as const;
+const SHARED_FINALIZER_PATHS = ["docs/README.md", "docs/concepts.md", "docs/writing.md"] as const;
 
 function validateWorkId(kind: "run" | "item", value: string): Effect.Effect<string, DocsPathError> {
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value)
     ? Effect.succeed(value)
-    : Effect.fail(new DocsPathError({
-      path: value,
-      reason: `${kind} ID must contain only letters, numbers, underscore, and hyphen`,
-    }));
+    : Effect.fail(
+        new DocsPathError({
+          path: value,
+          reason: `${kind} ID must contain only letters, numbers, underscore, and hyphen`,
+        }),
+      );
 }
 
 function git(args: readonly string[]): Effect.Effect<string, DocsProcessError> {
   return Effect.try({
-    try: () => execFileSync("git", args, {
-      cwd: REPOSITORY_ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim(),
-    catch: (error) => new DocsProcessError({
-      command: ["git", ...args].join(" "),
-      message: errorMessage(error),
-    }),
+    try: () =>
+      execFileSync("git", args, {
+        cwd: REPOSITORY_ROOT,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim(),
+    catch: (error) =>
+      new DocsProcessError({
+        command: ["git", ...args].join(" "),
+        message: errorMessage(error),
+      }),
   });
 }
 
@@ -117,7 +115,11 @@ function checkForScope(path: string): DocsCheck | undefined {
 }
 
 function itemId(path: string, seen: Set<string>): string {
-  const stem = basename(path).replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "-").toLowerCase() || "docs";
+  const stem =
+    basename(path)
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .toLowerCase() || "docs";
   let candidate = `${stem}-${sha256(path).slice(0, 8)}`;
   let suffix = 2;
   while (seen.has(candidate)) candidate = `${stem}-${sha256(path).slice(0, 8)}-${suffix++}`;
@@ -149,90 +151,97 @@ export function planDocsWorkItems(
     return Effect.fail(new DocsConflictError({ operation: "prepare docs work", conflicts }));
   }
   const ids = new Set<string>();
-  return Effect.succeed(scopes.map((path) => ({
-    format: "niceeval.docs-work-item/v1" as const,
-    runId,
-    id: itemId(path, ids),
-    goal: `Update ${path}`,
-    baseCommit,
-    read: ["docs/README.md"],
-    write: [path],
-    blockedBy: [],
-    checks: [checkForScope(path)!],
-    finalizerOnly: [...SHARED_FINALIZER_PATHS],
-  })));
+  return Effect.succeed(
+    scopes.map((path) => ({
+      runId,
+      id: itemId(path, ids),
+      goal: `Update ${path}`,
+      baseCommit,
+      read: ["docs/README.md"],
+      write: [path],
+      blockedBy: [],
+      checks: [checkForScope(path)!],
+      finalizerOnly: [...SHARED_FINALIZER_PATHS],
+    })),
+  );
 }
 
-function writePreparedRun(
-  run: DocsWorkRun,
-  items: readonly DocsWorkItem[],
-): Effect.Effect<void, DocsFileError> {
+function writePreparedRun(run: DocsWorkRun, items: readonly DocsWorkItem[]): Effect.Effect<void, DocsFileError> {
   const runs = absolutePath(RUNS_ROOT);
   const target = join(runs, run.runId);
-  return Effect.scoped(Effect.gen(function*() {
-    const temporary = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => {
-          mkdirSync(runs, { recursive: true });
-          return mkdtempSync(join(runs, `.${run.runId}.`));
-        },
-        catch: (error) => new DocsFileError({
-          operation: "create staged docs run",
-          path: RUNS_ROOT,
-          message: errorMessage(error),
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const temporary = yield* Effect.acquireRelease(
+        Effect.try({
+          try: () => {
+            mkdirSync(runs, { recursive: true });
+            return mkdtempSync(join(runs, `.${run.runId}.`));
+          },
+          catch: (error) =>
+            new DocsFileError({
+              operation: "create staged docs run",
+              path: RUNS_ROOT,
+              message: errorMessage(error),
+            }),
         }),
-      }),
-      (path) => Effect.sync(() => {
-        try {
-          rmSync(path, { recursive: true, force: true });
-        } catch {
-          // Preserve the primary result.
-        }
-      }),
-    );
-    yield* Effect.try({
-      try: () => {
-        if (existsSync(target)) throw new Error(`run ${run.runId} already exists`);
-        mkdirSync(join(temporary, "items"), { recursive: true });
-        mkdirSync(join(temporary, "receipts"), { recursive: true });
-        writeFileSync(join(temporary, "run.json"), `${JSON.stringify(run, null, 2)}\n`, "utf8");
-        for (const item of items) {
-          writeFileSync(join(temporary, "items", `${item.id}.json`), `${JSON.stringify(item, null, 2)}\n`, "utf8");
-        }
-        renameSync(temporary, target);
-      },
-      catch: (error) => new DocsFileError({
-        operation: "commit docs run",
-        path: `${RUNS_ROOT}/${run.runId}`,
-        message: errorMessage(error),
-      }),
-    });
-  }));
+        (path) =>
+          Effect.sync(() => {
+            try {
+              rmSync(path, { recursive: true, force: true });
+            } catch {
+              // Preserve the primary result.
+            }
+          }),
+      );
+      yield* Effect.try({
+        try: () => {
+          if (existsSync(target)) throw new Error(`run ${run.runId} already exists`);
+          mkdirSync(join(temporary, "items"), { recursive: true });
+          mkdirSync(join(temporary, "receipts"), { recursive: true });
+          writeFileSync(join(temporary, "run.json"), `${JSON.stringify(run, null, 2)}\n`, "utf8");
+          for (const item of items) {
+            writeFileSync(join(temporary, "items", `${item.id}.json`), `${JSON.stringify(item, null, 2)}\n`, "utf8");
+          }
+          renameSync(temporary, target);
+        },
+        catch: (error) =>
+          new DocsFileError({
+            operation: "commit docs run",
+            path: `${RUNS_ROOT}/${run.runId}`,
+            message: errorMessage(error),
+          }),
+      });
+    }),
+  );
 }
 
 export function prepareDocsWork(
   rawScopes: readonly string[],
   requestedBase: string | undefined,
 ): Effect.Effect<DocsWorkRun, DocsDomainError> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     if (rawScopes.length === 0) {
       return yield* new DocsWorkError({ operation: "prepare", reasons: ["at least one --scope is required"] });
     }
     const scopes = yield* Effect.forEach(rawScopes, normalizeOwnedPath);
     const baseCommit = yield* git(["rev-parse", "--verify", `${requestedBase ?? "HEAD"}^{commit}`]);
-    const runId = `docs-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${sha256(`${baseCommit}\0${scopes.join("\0")}`).slice(0, 8)}`;
+    const runId = `docs-${new Date()
+      .toISOString()
+      .replace(/[-:TZ.]/g, "")
+      .slice(0, 14)}-${sha256(`${baseCommit}\0${scopes.join("\0")}`).slice(0, 8)}`;
     const items = yield* planDocsWorkItems(runId, baseCommit, scopes);
     const dirty = yield* uncommittedPaths();
     const reasons = items.flatMap((item) => {
       const owned = [...item.read, ...item.write, ...item.finalizerOnly];
-      return dirty.filter((path) => owned.some((owner) => within(path, owner)))
+      return dirty
+        .filter((path) => owned.some((owner) => within(path, owner)))
         .map((path) => `${item.id}: uncommitted path ${path}; commit this input before preparing the run`);
     });
     if (reasons.length > 0) {
       return yield* new DocsWorkError({ operation: "prepare", reasons });
     }
     const run: DocsWorkRun = {
-      format: "niceeval.docs-work-run/v1",
+      format: "niceeval-docs-work/current",
       runId,
       baseCommit,
       createdAt: new Date().toISOString(),
@@ -247,27 +256,55 @@ function runPath(runId: string, suffix: string): string {
   return `${RUNS_ROOT}/${runId}/${suffix}`;
 }
 
-function loadRun(runId: string): Effect.Effect<DocsWorkRun, DocsDomainError> {
-  return validateWorkId("run", runId).pipe(
-    Effect.flatMap((safeRunId) => readJson(runPath(safeRunId, "run.json"), DocsWorkRunSchema)),
+function readWorkState<A>(path: string, schema: Schema.ConstraintDecoder<A, never>) {
+  return readJson(path, Schema.Unknown).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(schema, { errors: "all", onExcessProperty: "error" })),
+    Effect.mapError(
+      (error) =>
+        new DocsWorkError({
+          operation: "read state",
+          reasons: [`${path}: invalid current docs work state; run prepare again. ${errorMessage(error)}`],
+        }),
+    ),
   );
 }
 
-function loadItem(runId: string, itemId: string): Effect.Effect<DocsWorkItem, DocsDomainError> {
+function loadRun(runId: string): Effect.Effect<DocsWorkRun, DocsDomainError> {
+  return validateWorkId("run", runId).pipe(
+    Effect.flatMap((safeRunId) =>
+      readWorkState(runPath(safeRunId, "run.json"), DocsWorkRunSchema).pipe(
+        Effect.flatMap((run) =>
+          run.runId === safeRunId
+            ? Effect.succeed(run)
+            : Effect.fail(
+                new DocsWorkError({
+                  operation: "read state",
+                  runId: safeRunId,
+                  reasons: ["run.json ID does not match its owning directory; run prepare again"],
+                }),
+              ),
+        ),
+      ),
+    ),
+  );
+}
+
+function loadItem(run: DocsWorkRun, itemId: string): Effect.Effect<DocsWorkItem, DocsDomainError> {
   return Effect.all({
-    runId: validateWorkId("run", runId),
+    runId: validateWorkId("run", run.runId),
     itemId: validateWorkId("item", itemId),
   }).pipe(
     Effect.flatMap(({ itemId: safeItemId, runId: safeRunId }) =>
-      readJson(runPath(safeRunId, `items/${safeItemId}.json`), DocsWorkItemSchema)),
+      readWorkState(runPath(safeRunId, `items/${safeItemId}.json`), DocsWorkItemSchema),
+    ),
   );
 }
 
 export function showDocsWork(runId: string): Effect.Effect<DocsWorkShowReceipt, DocsDomainError> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const items = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
-    return { format: "niceeval.docs-work-show/v1", run, items };
+    const items = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
+    return { run, items };
   });
 }
 
@@ -290,16 +327,20 @@ export function digestPaths(paths: readonly string[]): Effect.Effect<string, Doc
       const entries = [...new Set(paths.flatMap(walkFiles))].sort();
       return sha256(entries.map((path) => `${path}\0${sha256(readFileSync(absolutePath(path)))}\n`).join(""));
     },
-    catch: (error) => new DocsFileError({
-      operation: "digest docs paths",
-      path: paths.join(","),
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsFileError({
+        operation: "digest docs paths",
+        path: paths.join(","),
+        message: errorMessage(error),
+      }),
   });
 }
 
 function nulPaths(value: Buffer): readonly string[] {
-  return value.toString("utf8").split("\0").filter((path) => path !== "");
+  return value
+    .toString("utf8")
+    .split("\0")
+    .filter((path) => path !== "");
 }
 
 function uncommittedPaths(): Effect.Effect<readonly string[], DocsProcessError> {
@@ -310,16 +351,25 @@ function uncommittedPaths(): Effect.Effect<readonly string[], DocsProcessError> 
         ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
         ["ls-files", "--others", "--exclude-standard", "-z"],
       ];
-      return [...new Set(commands.flatMap((args) => nulPaths(execFileSync("git", args, {
-        cwd: REPOSITORY_ROOT,
-        encoding: "buffer",
-        stdio: ["ignore", "pipe", "pipe"],
-      }))))].sort();
+      return [
+        ...new Set(
+          commands.flatMap((args) =>
+            nulPaths(
+              execFileSync("git", args, {
+                cwd: REPOSITORY_ROOT,
+                encoding: "buffer",
+                stdio: ["ignore", "pipe", "pipe"],
+              }),
+            ),
+          ),
+        ),
+      ].sort();
     },
-    catch: (error) => new DocsProcessError({
-      command: "git diff / git diff --cached / git ls-files --others",
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsProcessError({
+        command: "git diff / git diff --cached / git ls-files --others",
+        message: errorMessage(error),
+      }),
   });
 }
 
@@ -336,26 +386,31 @@ function changedSince(base: string): Effect.Effect<readonly string[], DocsProces
       });
       return [...new Set([...nulPaths(tracked), ...nulPaths(untracked)])].sort();
     },
-    catch: (error) => new DocsProcessError({
-      command: `git diff --name-only ${base}`,
-      message: errorMessage(error),
-    }),
+    catch: (error) =>
+      new DocsProcessError({
+        command: `git diff --name-only ${base}`,
+        message: errorMessage(error),
+      }),
   });
 }
 
-function runOneCheck(check: DocsCheck): Effect.Effect<DocsWorkReceipt["checks"][number], DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
-  const invocation = check.kind === "docs-lint"
-    ? ["exec", "concord", "check"]
-    : check.kind === "docs-site-lint"
-    ? ["run", "lint:docs-site"]
-    : ["run", check.script, "--", ...check.args];
+function runOneCheck(
+  check: DocsCheck,
+): Effect.Effect<DocsWorkReceipt["checks"][number], DocsProcessError, ChildProcessSpawner.ChildProcessSpawner> {
+  const invocation =
+    check.kind === "docs-lint"
+      ? ["exec", "concord", "check"]
+      : check.kind === "docs-site-lint"
+        ? ["run", "lint:docs-site"]
+        : ["run", check.script, "--", ...check.args];
   return runCommand("pnpm", invocation, { inherit: true }).pipe(
     Effect.map((exitCode) => ({
       kind: check.kind,
-      status: exitCode === 0 ? "passed" as const : "failed" as const,
-      summary: exitCode === 0
-        ? `pnpm ${invocation.join(" ")} passed`
-        : `pnpm ${invocation.join(" ")} exited with status ${exitCode}`,
+      status: exitCode === 0 ? ("passed" as const) : ("failed" as const),
+      summary:
+        exitCode === 0
+          ? `pnpm ${invocation.join(" ")} passed`
+          : `pnpm ${invocation.join(" ")} exited with status ${exitCode}`,
     })),
   );
 }
@@ -365,15 +420,19 @@ function receiptPath(runId: string, itemId: string): string {
 }
 
 function readVerifiedDependency(runId: string, itemId: string): Effect.Effect<DocsWorkReceipt, DocsDomainError> {
-  return readJson(receiptPath(runId, itemId), DocsWorkReceiptSchema).pipe(
-    Effect.flatMap((receipt) => receipt.status === "verified"
-      ? Effect.succeed(receipt)
-      : Effect.fail(new DocsWorkError({
-        operation: "check dependency",
-        runId,
-        itemId,
-        reasons: ["dependency receipt is not verified"],
-      }))),
+  return readWorkState(receiptPath(runId, itemId), DocsWorkReceiptSchema).pipe(
+    Effect.flatMap((receipt) =>
+      receipt.status === "verified"
+        ? Effect.succeed(receipt)
+        : Effect.fail(
+            new DocsWorkError({
+              operation: "check dependency",
+              runId,
+              itemId,
+              reasons: ["dependency receipt is not verified"],
+            }),
+          ),
+    ),
   );
 }
 
@@ -382,9 +441,9 @@ export function checkDocsWork(
   itemId: string,
   mode: { readonly _tag: "report" } | { readonly _tag: "verify"; readonly receipt: string },
 ): Effect.Effect<DocsWorkReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const item = yield* loadItem(runId, itemId);
+    const item = yield* loadItem(run, itemId);
     if (item.runId !== run.runId || item.baseCommit !== run.baseCommit) {
       return yield* new DocsWorkError({
         operation: "check",
@@ -394,12 +453,14 @@ export function checkDocsWork(
       });
     }
     yield* Effect.forEach(item.blockedBy, (dependency) => readVerifiedDependency(runId, dependency));
-    const allItems = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
+    const allItems = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
     const changed = yield* changedSince(run.baseCommit);
     const allowedRunPaths = allItems.flatMap(({ write, finalizerOnly }) => [...write, ...finalizerOnly]);
-    const outOfRun = changed.filter((path) =>
-      (within(path, "docs") || within(path, "apps/docs-site")) &&
-      !allowedRunPaths.some((owner) => within(path, owner)));
+    const outOfRun = changed.filter(
+      (path) =>
+        (within(path, "docs") || within(path, "apps/docs-site")) &&
+        !allowedRunPaths.some((owner) => within(path, owner)),
+    );
     const changedRead = changed.filter((path) => item.read.some((owner) => within(path, owner)));
     const reasons = [
       ...outOfRun.map((path) => `out-of-run documentation change: ${path}`),
@@ -415,7 +476,7 @@ export function checkDocsWork(
     let reportedReceipt: string | undefined;
     if (mode._tag === "verify") {
       const normalizedReceipt = yield* normalizeOwnedPath(mode.receipt);
-      const prior = yield* readJson(normalizedReceipt, DocsWorkReceiptSchema);
+      const prior = yield* readWorkState(normalizedReceipt, DocsWorkReceiptSchema);
       const mismatches = [
         ...(prior.status !== "reported" ? ["receipt is not reported"] : []),
         ...(prior.runId !== runId ? ["receipt run ID differs"] : []),
@@ -432,7 +493,6 @@ export function checkDocsWork(
 
     const checks = yield* Effect.forEach(item.checks, runOneCheck, { concurrency: 1 });
     const receipt: DocsWorkReceipt = {
-      format: "niceeval.docs-work-receipt/v1",
       runId,
       itemId,
       baseCommit: run.baseCommit,
@@ -454,10 +514,7 @@ export function checkDocsWork(
         receipt,
       });
     }
-    yield* withFileLock(
-      runPath(runId, `.locks/${itemId}.lock`),
-      atomicWriteJson(receiptPath(runId, itemId), receipt),
-    );
+    yield* withFileLock(runPath(runId, `.locks/${itemId}.lock`), atomicWriteJson(receiptPath(runId, itemId), receipt));
     return receipt;
   });
 }
@@ -465,18 +522,22 @@ export function checkDocsWork(
 export function finalizeDocsWork(
   runId: string,
 ): Effect.Effect<DocsFinalizeReceipt, DocsDomainError, ChildProcessSpawner.ChildProcessSpawner> {
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const run = yield* loadRun(runId);
-    const items = yield* Effect.forEach(run.items, (id) => loadItem(runId, id));
-    const receipts = yield* Effect.forEach(items, (item) => readJson(
-      receiptPath(runId, item.id),
-      DocsWorkReceiptSchema,
-    ).pipe(Effect.mapError(() => new DocsWorkError({
-      operation: "finalize",
-      runId,
-      itemId: item.id,
-      reasons: ["verified receipt is missing or invalid"],
-    }))));
+    const items = yield* Effect.forEach(run.items, (id) => loadItem(run, id));
+    const receipts = yield* Effect.forEach(items, (item) =>
+      readWorkState(receiptPath(runId, item.id), DocsWorkReceiptSchema).pipe(
+        Effect.mapError(
+          () =>
+            new DocsWorkError({
+              operation: "finalize",
+              runId,
+              itemId: item.id,
+              reasons: ["verified receipt is missing or invalid; run prepare again for invalid current state"],
+            }),
+        ),
+      ),
+    );
     const blockers: string[] = [];
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
@@ -490,21 +551,24 @@ export function finalizeDocsWork(
       if (receipt.writeDigest !== writeDigest) blockers.push(`${item.id}: write digest is stale`);
       for (const dependency of item.blockedBy) {
         const dependencyReceipt = receipts.find(({ itemId }) => itemId === dependency);
-        if (dependencyReceipt?.status !== "verified") blockers.push(`${item.id}: dependency ${dependency} is not verified`);
+        if (dependencyReceipt?.status !== "verified")
+          blockers.push(`${item.id}: dependency ${dependency} is not verified`);
       }
     }
     if (blockers.length > 0) {
       return yield* new DocsWorkError({ operation: "finalize", runId, reasons: blockers });
     }
     yield* runSuccessfulCommand("pnpm", ["lint"], { inherit: true }).pipe(
-      Effect.mapError((error) => new DocsWorkError({
-        operation: "finalize lint",
-        runId,
-        reasons: [error.message],
-      })),
+      Effect.mapError(
+        (error) =>
+          new DocsWorkError({
+            operation: "finalize lint",
+            runId,
+            reasons: [error.message],
+          }),
+      ),
     );
     return {
-      format: "niceeval.docs-work-finalize/v1",
       runId,
       status: "finalized",
       receipts: receipts.map((receipt) => receiptPath(runId, receipt.itemId)),

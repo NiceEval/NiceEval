@@ -14,10 +14,10 @@ List the Runs this run created. If you got the `invocationId` from `--json` outp
 
 ```bash
 pnpm exec niceeval run list --invocation <invocation-id>
-pnpm exec niceeval show --run <run-id>
+pnpm exec niceeval show run:<run-id>
 ```
 
-You can also look in the browser: `pnpm exec niceeval view --run <run-id>`.
+You can also look in the browser: `pnpm exec niceeval view run:<run-id>`.
 
 A Run that was force-killed is still `active`. It shows the Attempts that already finished, and unfinished ones appear as `pending`. Do not decide it can be taken over based on how long it has run, an expired PID, or a stopped heartbeat.
 

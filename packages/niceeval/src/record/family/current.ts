@@ -4,10 +4,7 @@ import { judgeUsageRecordAttachment } from "./judge-usage/definition.ts";
 import { agentTurnsRecordAttachment } from "./agent-turns/definition.ts";
 import { adapterUsageRecordAttachment } from "./adapter-usage/definition.ts";
 import { attemptCostRecordAttachment } from "./attempt-cost/definition.ts";
-import {
-  attemptArtifactsRecordAttachment,
-  runArtifactsRecordAttachment,
-} from "./artifacts/definition.ts";
+import { attemptArtifactsRecordAttachment, runArtifactsRecordAttachment } from "./artifacts/definition.ts";
 import { assertionsRecordAttachment } from "./assertions/definition.ts";
 import { fileChangesRecordAttachment } from "./file-changes/definition.ts";
 import { executionTracesRecordCollection } from "./execution-traces/definition.ts";
@@ -51,33 +48,32 @@ export const NiceEvalRecordAttachments = Object.freeze({
   }),
 });
 
-const current = <Attachment, Revision extends number>(attachment: Attachment, revision: Revision) =>
-  Object.freeze({ attachment, revision });
+const current = <Attachment>(attachment: Attachment) => Object.freeze({ attachment, revision: undefined });
 
-/** Current revisions without importing historical Node-only migration code. */
+/** Official readers use the enclosing Record format rather than family revisions. */
 export const NiceEvalCurrentRecordAttachments = Object.freeze({
-  attemptNotes: current(attemptNotesRecordAttachment, 1),
-  adapterUsage: current(adapterUsageRecordAttachment, 4),
-  judgeUsage: current(judgeUsageRecordAttachment, 1),
-  assertions: current(assertionsRecordAttachment, 4),
-  attemptCost: current(attemptCostRecordAttachment, 1),
-  agentTurns: current(agentTurnsRecordAttachment, 4),
-  turnContexts: current(turnContextsRecordAttachment, 2),
-  sandboxCommands: current(sandboxCommandsRecordAttachment, 2),
+  attemptNotes: current(attemptNotesRecordAttachment),
+  adapterUsage: current(adapterUsageRecordAttachment),
+  judgeUsage: current(judgeUsageRecordAttachment),
+  assertions: current(assertionsRecordAttachment),
+  attemptCost: current(attemptCostRecordAttachment),
+  agentTurns: current(agentTurnsRecordAttachment),
+  turnContexts: current(turnContextsRecordAttachment),
+  sandboxCommands: current(sandboxCommandsRecordAttachment),
   runnerActivities: Object.freeze({
-    attempt: current(attemptRunnerActivitiesRecordAttachment, 2),
-    run: current(runRunnerActivitiesRecordAttachment, 2),
+    attempt: current(attemptRunnerActivitiesRecordAttachment),
+    run: current(runRunnerActivitiesRecordAttachment),
   }),
   runnerDiagnostics: Object.freeze({
-    attempt: current(attemptRunnerDiagnosticsRecordAttachment, 2),
-    run: current(runRunnerDiagnosticsRecordAttachment, 2),
+    attempt: current(attemptRunnerDiagnosticsRecordAttachment),
+    run: current(runRunnerDiagnosticsRecordAttachment),
   }),
-  fileChanges: current(fileChangesRecordAttachment, 2),
-  executionTraces: current(executionTracesRecordCollection, 1),
-  identityManifests: current(identityManifestsRecordAttachment, 1),
-  sources: current(sourcesRecordAttachment, 2),
+  fileChanges: current(fileChangesRecordAttachment),
+  executionTraces: current(executionTracesRecordCollection),
+  identityManifests: current(identityManifestsRecordAttachment),
+  sources: current(sourcesRecordAttachment),
   artifacts: Object.freeze({
-    attempt: current(attemptArtifactsRecordAttachment, 2),
-    run: current(runArtifactsRecordAttachment, 2),
+    attempt: current(attemptArtifactsRecordAttachment),
+    run: current(runArtifactsRecordAttachment),
   }),
 });

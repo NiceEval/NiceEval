@@ -53,14 +53,15 @@ describe("Docker Compose provider real cleanup", () => {
     let projectName: string | undefined;
     const materializationScope = await Effect.runPromise(Scope.make());
     try {
-      const collection = await Effect.runPromise(
-        collectComposeBuilds({ file: composePath, mainService: "client" }),
-      );
+      const collection = await Effect.runPromise(collectComposeBuilds({ file: composePath, mainService: "client" }));
       const identity = { provider: "docker", kind: "compose", file: composePath, mainService: "client" } as const;
       const plan = {
         evalId: `docker/abort-cleanup-${suffix}`,
         profile: `docker-abort-cleanup-${suffix}`,
         mainService: "client",
+        user: undefined,
+        pathPrepend: [],
+        projectName: undefined,
         env: {},
         collection,
         caseKey: computeCaseKey({
@@ -73,19 +74,28 @@ describe("Docker Compose provider real cleanup", () => {
         identity,
       };
       const attempt = new AbortController();
-      const materialized = await Effect.runPromise(Scope.provide(materializeDockerComposeProviderCase(plan, {
-        ctx: {
-          evalId: plan.evalId,
-          profile: plan.profile,
-          signal: attempt.signal,
-          buildLocators: new Map(),
-        },
-      }), materializationScope));
+      const materialized = await Effect.runPromise(
+        Scope.provide(
+          materializeDockerComposeProviderCase(plan, {
+            ctx: {
+              evalId: plan.evalId,
+              profile: plan.profile,
+              signal: attempt.signal,
+              buildLocators: new Map(),
+            },
+          }),
+          materializationScope,
+        ),
+      );
       projectName = (materialized.facts as { projectName: string }).projectName;
-      const container = docker.getContainer((await docker.listContainers({
-        all: true,
-        filters: { label: [`com.docker.compose.project=${projectName}`] },
-      }))[0]!.Id);
+      const container = docker.getContainer(
+        (
+          await docker.listContainers({
+            all: true,
+            filters: { label: [`com.docker.compose.project=${projectName}`] },
+          })
+        )[0]!.Id,
+      );
       const mounts = (await container.inspect()).Mounts ?? [];
       const anonymous = mounts.find((mount) => mount.Destination === "/anonymous")?.Name;
       const owned = mounts.find((mount) => mount.Destination === "/owned")?.Name;
@@ -115,7 +125,10 @@ describe("Docker Compose provider real cleanup", () => {
           allowNonZero: true,
         }).catch(() => {});
       }
-      await docker.getVolume(externalVolume).remove({ force: true }).catch(() => {});
+      await docker
+        .getVolume(externalVolume)
+        .remove({ force: true })
+        .catch(() => {});
       await rm(root, { recursive: true, force: true });
     }
   }, 120_000);

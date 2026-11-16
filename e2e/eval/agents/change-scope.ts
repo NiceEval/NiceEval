@@ -4,7 +4,7 @@ import { shell } from "niceeval/sandbox";
 export const changeScopeAgent = defineSandboxAgent({
   name: "change-scope-fixture",
   evidenceCoverage: completeEvidenceCoverage,
-  ensure: { identity: { agent: "change-scope-fixture", version: "1", revision: "1" }, probe: shell("true") },
+  install: { identity: { agent: "change-scope-fixture", version: "1", revision: "1" }, probe: shell("true") },
   async send(input, ctx) {
     if (input.text === "change") {
       await ctx.sandbox.writeText("agents/a.ts", "allowed\n");
@@ -12,6 +12,9 @@ export const changeScopeAgent = defineSandboxAgent({
       await ctx.sandbox.writeText("agents-old/outside.ts", "outside\n");
       await ctx.sandbox.writeText("ignored.txt", "ignored\n");
     }
-    return { status: "completed" as const, events: [{ type: "message" as const, role: "assistant" as const, text: "done" }] };
+    return {
+      status: "completed" as const,
+      events: [{ type: "message" as const, role: "assistant" as const, text: "done" }],
+    };
   },
 });

@@ -5,8 +5,8 @@
 ## 要回答的问题
 
 1. **查得到吗**：能否找出落后的 Experiment、失败的 Eval 和关键执行事实；不存在的信息是否明确说查不到。
-2. **走的路对吗**：是否先用 `query discover` 再发送固定 versioned request，或在人类深读时使用 `view`，而不是递归翻 `.niceeval/record` 私有文件。
-3. **文档起作用了吗**：是否从随包索引进入当前 Record、Inspection、query/View 和 CLI 契约，而不是凭旧版 Results 记忆猜 history/locator 命令。
+2. **走的路对吗**：是否从 `show --json` 开始并顺着 document 的 `links` 下钻，或在人类深读时使用 `view`，而不是递归翻 `.niceeval/record` 私有文件。
+3. **文档起作用了吗**：是否从随包索引进入当前 Record、Inspection、`show`/View 和 CLI 契约，而不是凭旧版 Results 记忆猜 history/locator 命令。
 
 ## Fixture
 
@@ -23,18 +23,18 @@ fixture 还应含有有区分度的 usage、timing、conversation、tool 与 dia
 
 | 题型 | 例 | 公开链路 |
 |---|---|---|
-| 总览 | 哪些 Experiment 需要补跑 | `query discover` → `run.summary` request |
-| 横向比较 | 两个方案的通过率与成本谁更好 | `runs.compare` request |
-| 多跳定位 | 某 Eval 失败的直接断言是什么 | `run.get` → `attempt.get` request |
-| 深挖 | 失败 Attempt 使用了哪些工具、何时换方案 | `attempt.trace` request 或固定 View detail |
+| 总览 | 哪些 Experiment 需要补跑 | `show --json` → `project.get` |
+| 横向比较 | 两个方案的通过率与成本谁更好 | `compare <run>... -- <run>...` → `runs.compare` |
+| 多跳定位 | 某 Eval 失败的直接断言是什么 | `show run:<id>` → `links` 中的 `attempt` → `assertion` |
+| 深挖 | 失败 Attempt 使用了哪些工具、何时换方案 | `show @<locator> execution` 或固定 View detail |
 | 边界 | 询问 fixture 未采集的信息 | result 显示 `not-recorded` / `unsupported`，而不是编造 |
 
 示例命令：
 
 ```sh
-niceeval query discover
-niceeval query explain --record ./fixture.record.sqlite --request request.json
-niceeval query run --record ./fixture.record.sqlite --request request.json
+niceeval show --record ./fixture.record.sqlite --json
+niceeval show run:<run-id> --record ./fixture.record.sqlite --explain
+niceeval show run:<run-id> --record ./fixture.record.sqlite --json
 niceeval view --record ./fixture.record.sqlite
 ```
 

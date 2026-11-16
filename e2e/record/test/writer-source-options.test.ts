@@ -23,7 +23,10 @@ test.concurrent("评估与采用命令拒绝选择其它可写 Record", async ()
       niceeval.run(["exp", "migration-agent", "--dry", "--json", "--record", "another-record"]),
       niceeval.run(["accept", "--run", sourceRunId, "--dry", "--record", "another-record"]),
     ]);
-    expect(receipts.every((receipt) => receipt.exitCode !== 0), receipts.map((receipt) => receipt.diagnostic()).join("\n")).toBe(true);
+    expect(
+      receipts.every((receipt) => receipt.exitCode !== 0),
+      receipts.map((receipt) => receipt.diagnostic()).join("\n"),
+    ).toBe(true);
     for (const receipt of receipts) {
       expect(receipt.stdout, receipt.diagnostic()).toBe("");
       expect(receipt.stderr, receipt.diagnostic()).toContain("Unknown option '--record'");

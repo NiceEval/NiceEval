@@ -1,5 +1,4 @@
 export {
-  VIEW_LIFECYCLE_PROTOCOL,
   ViewClosedLifecycleEventSchema,
   ViewLifecycleEventSchema,
   ViewReadyLifecycleEventSchema,

@@ -1,7 +1,7 @@
 # Sandbox —— CLI：准备缓存、留存现场与销毁
 
 跑完的 Sandbox 默认销毁，debug 证据写入 Attempt-owned Observability 的 command、timing 与 diagnostics。
-受管命令（各 owner 的 before、after/cleanup、`ensure` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
+受管命令（各 owner 的 before、after/cleanup、`install` / `install`）经四个公开 `Sandbox.run*()` 方法发出的每一次调用，无论成功还是非零退出，都写成 command 事件。
 `niceeval view` 打开固定 Inspection operation 已关闭的详情；用户从页面的 Run/Attempt 导航选择 locator 对应的
 Attempt，并按 timing 顺序阅读。
 因此「准备链装了什么、成功命令实际输出了什么」不再要求留住活现场。
@@ -53,8 +53,8 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - 留存只跳过销毁这一步：Agent teardown 与已登记 cleanup 照常执行，留下的现场是收尾完成后的状态。
   对应地，timing decoding 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目。
   留存提交后现场转入 provider 的休眠形态（docker 停驻容器、e2b pause、vercel stop 后可恢复），不白烧资源。
-  suspend 失败时现场保持运行并写入诊断通道，仍被注册表管理。
-  语义见 [Architecture · 各 provider 的留存语义](architecture/README.md#留存keep与注册表)。
+  suspend 失败时现场保持运行并写入诊断通道，仍按留存处理，不销毁。
+  语义见 [Architecture · 各 provider 的留存语义](architecture/README.md#留存keep)。
 - 被中断的 Run 不留存:留存授予发生在 Verdict 与 receipt 收敛的收尾点,Ctrl+C 时还没有 Verdict 的 Attempt 走正常销毁;此前已完成并授予留存的 Sandbox 不被中断收回。
 - 留存与 [project-target policy](../experiments/architecture/cache.md#复用资格) 不相容：带 carried action 的 reference Member 没有本次 Sandbox，无从留存。
   因此 `--keep-sandbox` 运行里，满足当前留存档的已有 Attempt 不参与携带，照常派发重跑拿现场。
@@ -76,18 +76,18 @@ Human 面板直接展示底层 Provider 的原生接入与销毁命令模板：
 ```text
 ╭─ KEPT SANDBOXES ─────────────────────────────────────────────────── 1 kept ─╮
 │ @1VE05BR7061YN  onboarding/tool-first #1  errored  docker · a3f9c2d1        │
-│            debug: docker exec -it a3f9c2d1 /bin/bash                       │
-│            clean: docker rm -f a3f9c2d1                                    │
+│  debug: docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash        │
+│  clean: docker rm -f a3f9c2d1                                              │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-`niceeval exp --json` 在事件流追加 `kept` 事件，直接包含底层 Provider 的原生直连命令字段 `nativeCommand` 与销毁命令 `cleanCommand`：
+`niceeval exp --json` 在事件流追加 `kept` 事件，直接包含底层 Provider 的原生直连命令字段 `nativeCommand` 与销毁命令 `cleanCommand`；Provider 声明保留期限时另带 `expiresAt`。同一安装候选的调用方用 `niceeval/experiment/host` 的 `decodeExpKeptEvent()` 严格解码：
 
 ```json
-{"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","nativeCommand":"docker exec -it a3f9c2d1 /bin/bash","cleanCommand":"docker rm -f a3f9c2d1"}
+{"event":"kept","locator":"@1VE05BR7061YN","evalId":"onboarding/tool-first","attempt":1,"verdict":"errored","provider":"docker","sandboxId":"a3f9c2d1","nativeCommand":"docker start a3f9c2d1 && docker exec -it a3f9c2d1 /bin/bash","cleanCommand":"docker rm -f a3f9c2d1"}
 ```
 
-面向人类终端给出开箱即用的直连命令；面向 Coding Agent 给出可直接执行的单次非交互命令。
+留存的 Docker 容器已停驻，所以进入命令先 `docker start`。面向人类终端给出开箱即用的直连命令；面向 Coding Agent 给出可直接执行的单次非交互命令。
 
 ## 原生 CLI 现场接入与资源管理
 
@@ -103,6 +103,12 @@ NiceEval 不自建中间终端代理、伪终端（PTY）隧道或 WebShell 反�
 - **Instabox Sandbox**：
   - 开发者交互调试：`instabox ssh <sandboxId>`；
   - Coding Agent 非交互排查：`instabox exec <sandboxId> -- <command>`。
+- **E2B Sandbox**（留存为 pause）：
+  - 进入：`e2b sandbox connect <sandboxId>`；
+  - 销毁：`e2b sandbox kill <sandboxId>`。
+- **Vercel Sandbox**（留存为 stop 后持久，按 sandbox name 寻址）：
+  - 进入：`sandbox connect <name>`；
+  - 永久删除：`sandbox remove <name>`；`sandbox stop` 只停驻，不是销毁。
 - **Kubernetes / 微 VM**：
   - 直接调用 `kubectl exec -it <pod> -- /bin/sh` 或对应 Provider 的原生客户端。
 
@@ -112,7 +118,7 @@ NiceEval 不自建私有的变更历史回放命令：
 
 - **现场工作区比对**：在通过原生 CLI 接入现场后，直接在工作区目录执行标准 **`git status`** 与 **`git diff`**，利用 Git 工业级 diff 能力查看代码与文件修改；
 - **排查工作区之外的状态**：直接通过原生 shell 运行标准检查命令（如 `cat ~/.npmrc` 查看全局配置，`npm ls -g --depth=0` 查看全局安装，`ps aux` 查看残留后台进程）；
-- **已发布结构化历史**：利用 NiceEval 已落盘的 Attempt 事实，通过 `niceeval show --run <id>`、`niceeval show attempt.trace` 或 `niceeval view` 查看已被封口的事实闭包。
+- **已发布结构化历史**：利用 NiceEval 已落盘的 Attempt 事实，通过 `niceeval show run:<id>`、`niceeval show @<locator> execution` 或 `niceeval view` 查看已被封口的事实闭包。
 
 ### 3. 沙箱状态查看、批量销毁与孤儿回收（用 Provider 原生管理命令）
 
@@ -147,7 +153,8 @@ NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中�
 
 为支持精确定位准备或执行异常，NiceEval 提供运行期断点与失败暂停能力：
 
-- `--pause-on-failure`（等价于 `--breakpoint=failure`）：当受管动作失败或发生意外错误时，挂起当前 Attempt。沙箱不触发自动销毁并展示原生直连指引。挂起属于 Attempt 隔离状态，立即释放并发调度许可；非 TTY（Agent、CI 与自动化管道）或并发执行（`maxConcurrency > 1`）场景下自动退化为非阻塞现场保留，不阻塞标准输入。仅在单任务交互 TTY 终端下等待用户回车后继续收尾。
+- `--pause-on-failure`（等价于 `--breakpoint=failure`）：当受管动作失败或发生意外错误时，挂起当前 Attempt。沙箱不触发自动销毁并展示原生直连指引。挂起属于 Attempt 隔离状态，立即释放并发调度许可。仅在单任务交互 TTY 终端下挂起并等待用户回车后继续收尾。
+非 TTY（Agent、CI 与自动化管道）或并发执行（`maxConcurrency > 1`）时没有人能按回车，挂起不生效，Sandbox 照常回收，不留下需要事后手动删除的付费实例。此时每个失败的 Attempt 写一行 stderr：`Pause on failure needs an interactive single-attempt terminal; cleaning up <实例名>. Use --keep-sandbox to retain it.` 不写 `retained`。需要在自动化场景保留现场时显式使用 `--keep-sandbox`。
 - `--no-pause`：显式关闭失败挂起，优先级高于项目配置。
 - `--breakpoint=before-agent`：在初始化与全部 Before 动作完成、被测 Agent 正式接管前暂停，便于检查初始工作区与依赖状态。
 
@@ -171,12 +178,14 @@ NiceEval 不自建中间终端代理或伪终端转发服务，保持 core 中�
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
 - [Nested Docker CLI](../sandbox-nested-docker/cli.md) —— `doctor incus`、`--development` 与 `--dry` identity。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [Architecture](architecture/README.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Record · Architecture](../run/architecture/README.md) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Architecture](architecture/README.md) —— 留存决策在 attempt 收尾链里的位置与各 provider 的留存语义。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。
 
 ## Docker image cache inventory
 
 `niceeval docker cache inventory` 只读展示同一 `verified-managed` Docker images Domain 中由 NiceEval 登记的两类 entry：`task-build` 与 `sandbox-before-cache`。JSON 的 `entries` 是以 `kind` 判别的联合；每项稳定显示自身 identity、当前 state、lease 与 hold 数、创建时间、最后成功使用时间与保护截止时间。Domain 摘要另按两种 kind 给出计数。Human 输出逐项显示同一组安全字段，不输出声明正文、holder identity、operation id 或其它内部恢复资料。
+
+Human 使用普通英文：两类缓存写成 `build image` 与 `prepared Sandbox`，可复用状态写成 `ready`，
+正在使用写成 `in use`；lease 与 hold 数分别写成 `users` 与 `protected uses`。原始 kind 和 state 只留在 JSON。
 
 Before cache 进入 inventory 只授予可见性，不把它纳入 `docker cache gc`：现有 preview/apply 仍只产生和回收 `task-build` 候选。共享 BuildKit 仍是独立的 `unverified` Provider observation。

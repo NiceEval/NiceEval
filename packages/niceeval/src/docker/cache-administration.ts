@@ -2,7 +2,6 @@ import { Context, Effect } from "effect";
 
 export interface DockerCacheDomainDescriptor {
   readonly providerFamily: "docker";
-  readonly adminProtocolVersion: number;
   readonly domainId: string;
   readonly backendKind: string;
   readonly state: "verified-managed" | "verified-read-only" | "unverified" | "unavailable";
@@ -36,8 +35,21 @@ export interface DockerTaskBuildInventoryEntry {
 
 export interface DockerBeforeCacheInventoryEntry {
   readonly kind: "sandbox-before-cache";
-  readonly state: "reserved" | "building" | "published" | "indexed" | "invalidated" | "deleting" | "tombstoned" | "unverified";
-  readonly identity: { readonly entryId: string; readonly beforeCacheKey: string; readonly imageId: string | null; readonly baseIdentity: string };
+  readonly state:
+    | "reserved"
+    | "building"
+    | "published"
+    | "indexed"
+    | "invalidated"
+    | "deleting"
+    | "tombstoned"
+    | "unverified";
+  readonly identity: {
+    readonly entryId: string;
+    readonly beforeCacheKey: string;
+    readonly imageId: string | null;
+    readonly baseIdentity: string;
+  };
   readonly leaseCount: number;
   readonly holdCount: number;
   readonly liveLeaseCount: number;
@@ -72,6 +84,7 @@ export interface DockerCacheAdministrationService {
   openDomain(descriptor: DockerCacheDomainDescriptor): Effect.Effect<DockerCacheDomainAdministration, Error>;
 }
 
-export class DockerCacheAdministration extends Context.Service<DockerCacheAdministration, DockerCacheAdministrationService>()(
-  "niceeval/docker/DockerCacheAdministration",
-) {}
+export class DockerCacheAdministration extends Context.Service<
+  DockerCacheAdministration,
+  DockerCacheAdministrationService
+>()("niceeval/docker/DockerCacheAdministration") {}

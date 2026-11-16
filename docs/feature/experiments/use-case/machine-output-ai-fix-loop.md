@@ -29,10 +29,10 @@ coding agent 不需要解读 TTY 重绘。
    {"type":"receipt","summary":{"startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","passed":2,"failed":0,"errored":0,"skipped":0,"durationMs":60000,"beforeCaches":{"total":0,"hit":0,"prepared":0,"degraded":0,"failed":0}},"receipt":{"invocationId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","createdRunIds":["8f3d6f62-1d34-4cf3-99c7-84ba3c483706"],"publicationCutoff":"opaque-cutoff","startedAt":"2026-08-09T10:00:00.000Z","completedAt":"2026-08-09T10:01:00.000Z","completion":"completed"}}
    ```
 
-3. 只用规范 locator 构造固定 request，并展开必要证据：
+3. 只用规范 locator 读取 Attempt，并顺着 document 的 `links` 展开必要证据：
 
    ```sh
-   niceeval query run --request <attempt-request.json>
+   niceeval show @1K1P0VJAPVJ12 --json
    ```
 
 4. 修改后重新运行受影响选择。
@@ -43,7 +43,7 @@ coding agent 不需要解读 TTY 重绘。
 
 ## 边界
 
-- 运行流不是第二套结果格式。业务事实由 receipt 的 `createdRunIds` 与 `publicationCutoff` 固定，再由 query 或 View 读取。
+- 运行流不是第二套结果格式。业务事实由 receipt 的 `createdRunIds` 与 `publicationCutoff` 固定，再由 `show` 或 View 读取。
 - progress 只是当前进程状态，不能当作 Run 或 Attempt 事实。
 - failure 的完整 assertion、conversation、diff 与 usage 按需经固定 Inspection request 读取，不把整段执行内容塞回 NDJSON。
 - 受控 `SIGINT` 仍以最后一条 receipt 结束；它的 `completion` 为 `interrupted`，`createdRunIds` 仍穷尽列出已提交 create transaction 的 Run，并在 cutoff 下保留已发布 Attempt。argv、配置发现或 selector 失败则没有 NDJSON receipt，直接以非零 `error:` 结束。

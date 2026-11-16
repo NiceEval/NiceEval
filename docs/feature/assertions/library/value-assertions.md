@@ -43,7 +43,7 @@ generic numeric matcher 允许负 threshold 与负 candidate。非负约束只�
 这里的 `atLeast(0.95)` 是 numeric Boolean Match，负责比较 `t.check` 提供的 number subject。连续 `ScoreMatch<T>`
 没有 `.atLeast()`；作者在登记后的 measurement handle 上用 `.gate(minimum)` 或 `.orStop(minimum)` 建立唯一的 `[0,1]` condition。
 
-五个 matcher 都登记 `numeric-comparison/v1` criterion，其中带单位的阈值保存 `unit`，区间额外保存 `upperThreshold`。`value-match/v1` 只表示没有可解释数值运算的旧值比较；reader 不从 matcher 名、observed number 或展示文本推断升级它。
+五个 matcher 都登记 `numeric-comparison` criterion，其中带单位的阈值保存 `unit`，区间额外保存 `upperThreshold`。`value-match` 只表示没有可解释数值运算的旧值比较；reader 不从 matcher 名、observed number 或展示文本推断升级它。
 
 ## 值与集合组合
 

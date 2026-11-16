@@ -1,7 +1,4 @@
-function resolveDiagnostic(
-  diagnostic: string | (() => string) | undefined,
-  fallback: string,
-): string {
+function resolveDiagnostic(diagnostic: string | (() => string) | undefined, fallback: string): string {
   if (diagnostic === undefined) {
     return fallback;
   }
@@ -19,12 +16,7 @@ export function only<T>(
 ): T {
   const matches = values.filter(predicate);
   if (matches.length !== 1) {
-    throw new Error(
-      resolveDiagnostic(
-        diagnostic,
-        `expected exactly one match, got ${matches.length}`,
-      ),
-    );
+    throw new Error(resolveDiagnostic(diagnostic, `expected exactly one match, got ${matches.length}`));
   }
   return matches[0] as T;
 }
@@ -32,14 +24,9 @@ export function only<T>(
 /**
  * Narrow `value` to a defined `T`. Throws when value is null or undefined.
  */
-export function defined<T>(
-  value: T | null | undefined,
-  diagnostic?: string | (() => string),
-): T {
+export function defined<T>(value: T | null | undefined, diagnostic?: string | (() => string)): T {
   if (value === null || value === undefined) {
-    throw new Error(
-      resolveDiagnostic(diagnostic, "expected a defined value"),
-    );
+    throw new Error(resolveDiagnostic(diagnostic, "expected a defined value"));
   }
   return value;
 }

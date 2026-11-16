@@ -1,7 +1,6 @@
-import { defineRecordAttachmentPersistence } from "../../attachment/index.ts";
+import { defineOfficialRecordAttachmentPersistence } from "../../attachment/protocol.ts";
 import { agentTurnsRecordAttachment } from "./definition.ts";
 
-export const agentTurnsRecordAttachmentPersistence = defineRecordAttachmentPersistence({
+export const agentTurnsRecordAttachmentPersistence = defineOfficialRecordAttachmentPersistence({
   attachment: agentTurnsRecordAttachment,
-  revision: 4,
 });

@@ -4,16 +4,12 @@ import { includes, satisfies } from "niceeval/expect";
 import type { StreamEvent } from "niceeval";
 const MARKER = "CLAUDE_SKILL_UNUSED_604";
 const noToolCalls = (events: readonly StreamEvent[]): boolean =>
-  !events.some(
-    (event) => event.type === "operation.started" && event.operation.kind === "tool",
-  );
+  !events.some((event) => event.type === "operation.started" && event.operation.kind === "tool");
 export default defineEval({
   description: "Skills 反例:普通对话不加载任何已安装 Skill",
   async test(t) {
     const session1 = t.newSession();
-    const turn1 = await session1.send(
-      `这是普通对话。不要使用任何工具或 Skill，只回复 ${MARKER}`,
-    );
+    const turn1 = await session1.send(`这是普通对话。不要使用任何工具或 Skill，只回复 ${MARKER}`);
     await turn1.succeeded().orStop();
     t.check(turn1.reply, includes(MARKER));
     t.check(

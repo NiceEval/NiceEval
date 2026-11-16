@@ -1,9 +1,4 @@
-import type {
-  CommandId,
-  DiagnosticId,
-  IntervalId,
-  ObservabilityOwner,
-} from "./model.ts";
+import type { CommandId, DiagnosticId, IntervalId, ObservabilityOwner } from "./model.ts";
 
 /**
  * Producer-safe failures. The union intentionally carries only stable codes,
@@ -28,34 +23,26 @@ export type ObservabilityCaptureError =
       readonly field: "text" | "manifest" | "diagnostic";
     };
 
-export function observabilityCaptureSealedError(
-  owner: ObservabilityOwner,
-): ObservabilityCaptureError {
-  return Object.freeze({ code: "observability-capture-sealed" as const, owner });
+export function observabilityCaptureSealedError(owner: ObservabilityOwner): ObservabilityCaptureError {
+  return { code: "observability-capture-sealed" as const, owner };
 }
 
-export function observabilityCommandNotRegisteredError(
-  commandId: CommandId,
-): ObservabilityCaptureError {
-  return Object.freeze({
+export function observabilityCommandNotRegisteredError(commandId: CommandId): ObservabilityCaptureError {
+  return {
     code: "observability-command-not-registered" as const,
     commandId,
-  });
+  };
 }
 
-export function observabilityCommandResultAlreadyRecordedError(
-  commandId: CommandId,
-): ObservabilityCaptureError {
-  return Object.freeze({
+export function observabilityCommandResultAlreadyRecordedError(commandId: CommandId): ObservabilityCaptureError {
+  return {
     code: "observability-command-result-already-recorded" as const,
     commandId,
-  });
+  };
 }
 
-export function observabilityInputNotSafeError(
-  field: "text" | "manifest" | "diagnostic",
-): ObservabilityCaptureError {
-  return Object.freeze({ code: "observability-input-not-safe" as const, field });
+export function observabilityInputNotSafeError(field: "text" | "manifest" | "diagnostic"): ObservabilityCaptureError {
+  return { code: "observability-input-not-safe" as const, field };
 }
 
 /** Aggregate-only failures. Each value is safe to retain in a run diagnostic. */
@@ -93,60 +80,53 @@ export function observabilityRequiredAttachmentMissingError(
   owner: ObservabilityOwner,
   schemaId: string,
 ): ObservabilityRecordContractError {
-  return Object.freeze({
+  return {
     code: "observability-required-attachment-missing" as const,
     owner,
     schemaId,
-  });
+  };
 }
 
 export function observabilityOwnerOrSchemaInvalidError(
   owner: ObservabilityOwner,
   schemaId: string,
 ): ObservabilityRecordContractError {
-  return Object.freeze({
+  return {
     code: "observability-owner-or-schema-invalid" as const,
     owner,
     schemaId,
-  });
+  };
 }
 
-export function observabilityIdentityInvalidError(
-  schemaId: string,
-  entity: string,
-): ObservabilityRecordContractError {
-  return Object.freeze({
+export function observabilityIdentityInvalidError(schemaId: string, entity: string): ObservabilityRecordContractError {
+  return {
     code: "observability-identity-invalid" as const,
     schemaId,
     entity,
-  });
+  };
 }
 
 export function observabilityCrossReferenceInvalidError(
   schemaId: string,
   sourceId: string,
 ): ObservabilityRecordContractError {
-  return Object.freeze({
+  return {
     code: "observability-cross-reference-invalid" as const,
     schemaId,
     sourceId,
-  });
+  };
 }
 
-export function observabilityTimingTreeInvalidError(
-  intervalId: IntervalId,
-): ObservabilityRecordContractError {
-  return Object.freeze({
+export function observabilityTimingTreeInvalidError(intervalId: IntervalId): ObservabilityRecordContractError {
+  return {
     code: "observability-timing-tree-invalid" as const,
     intervalId,
-  });
+  };
 }
 
-export function observabilitySourceFrameInvalidError(
-  diagnosticId: DiagnosticId,
-): ObservabilityRecordContractError {
-  return Object.freeze({
+export function observabilitySourceFrameInvalidError(diagnosticId: DiagnosticId): ObservabilityRecordContractError {
+  return {
     code: "observability-source-frame-invalid" as const,
     diagnosticId,
-  });
+  };
 }

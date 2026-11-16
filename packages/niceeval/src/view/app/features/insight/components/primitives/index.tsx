@@ -10,13 +10,23 @@ import { Waterfall } from "./waterfall.tsx";
 import { cx, resolveLocalizedText, type LocalizedText, type ReportLocale } from "./shared.ts";
 
 export { AssertionEvidence } from "./assertion-evidence.tsx";
-export { Callouts, CommandEvidence, Conversation, ConversationEntries, CopyBlock, DiffView, SourceView, TurnTrace, Waterfall };
+export {
+  Callouts,
+  CommandEvidence,
+  Conversation,
+  ConversationEntries,
+  CopyBlock,
+  DiffView,
+  SourceView,
+  TurnTrace,
+  Waterfall,
+};
 export { MatcherFilterDebugger } from "./matcher-filter-debugger.tsx";
 export { ToolEvidence } from "./tool-evidence.tsx";
 
 export interface LayoutProps {
-  readonly children?: ReactNode;
-  readonly className?: string;
+  readonly children: ReactNode | undefined;
+  readonly className: string | undefined;
 }
 
 export function Col({ children, className }: LayoutProps): ReactElement {
@@ -28,7 +38,11 @@ export function Grid({ children, className }: LayoutProps): ReactElement {
   return (
     <div className="niceeval-report niceeval-grid-fit">
       <div className={cx("niceeval-report", "niceeval-grid", className)} data-cells={cells.length}>
-        {cells.map((cell, index) => <div className="niceeval-grid-cell" key={index}>{cell}</div>)}
+        {cells.map((cell, index) => (
+          <div className="niceeval-grid-cell" key={index}>
+            {cell}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -66,17 +80,33 @@ export function TableContentView({
   locale,
   className,
 }: {
-  readonly data: TableContent | null;
+  readonly data: TableContent | undefined;
   readonly locale: ReportLocale;
-  readonly className?: string;
+  readonly className: string | undefined;
 }): ReactElement | null {
-  if (data === null || data.rows.length === 0 || data.columns.length === 0) return null;
+  if (data === undefined || data.rows.length === 0 || data.columns.length === 0) return null;
   return (
     <table className={cx("niceeval-report", "niceeval-table", className)}>
-      <thead><tr>{data.columns.map((column) => <th key={column.key} scope="col">{resolveLocalizedText(column.header, locale)}</th>)}</tr></thead>
-      <tbody>{data.rows.map((row) => (
-        <tr key={row.key}>{data.columns.map((column) => <td key={column.key}><CellValue cell={row.cells[column.key]} /></td>)}</tr>
-      ))}</tbody>
+      <thead>
+        <tr>
+          {data.columns.map((column) => (
+            <th key={column.key} scope="col">
+              {resolveLocalizedText(column.header, locale)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {data.rows.map((row) => (
+          <tr key={row.key}>
+            {data.columns.map((column) => (
+              <td key={column.key}>
+                <CellValue cell={row.cells[column.key]} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
     </table>
   );
 }

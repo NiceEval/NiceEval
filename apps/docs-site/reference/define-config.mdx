@@ -27,7 +27,7 @@ export default defineConfig({
 #### `name`
 
 ```ts
-name?: LocalizedText;
+name?: LocalizedText | undefined;
 ```
 
 The project name, shown in the hero (`<h1>`) at the top of `niceeval view`; it falls back to a generic title when omitted.
@@ -36,7 +36,7 @@ It can be a string, or text in multiple locales (such as `{ en: "...", "zh-CN": 
 #### `judgeProvider`
 
 ```ts
-judgeProvider?: JudgeProvider;
+judgeProvider?: JudgeProvider | undefined;
 ```
 
 The project-level default Judge Provider; an Eval or Experiment can replace the model or the whole Provider.
@@ -44,7 +44,7 @@ The project-level default Judge Provider; an Eval or Experiment can replace the 
 #### `reporters`
 
 ```ts
-reporters?: Reporter[];
+reporters?: Reporter[] | undefined;
 ```
 
 The project-level Reporter list, for example for persisting or uploading results.
@@ -52,7 +52,7 @@ The project-level Reporter list, for example for persisting or uploading results
 #### `maxConcurrency`
 
 ```ts
-maxConcurrency?: number;
+maxConcurrency?: number | undefined;
 ```
 
 The project-level default concurrency limit; the CLI flag or Experiment setting with the same name has higher priority (there is no environment-variable layer).
@@ -60,7 +60,7 @@ The project-level default concurrency limit; the CLI flag or Experiment setting 
 #### `maxBuildConcurrency`
 
 ```ts
-maxBuildConcurrency?: number;
+maxBuildConcurrency?: number | undefined;
 ```
 
 Run-level concurrency for preparing Sandbox images; independent of Attempt concurrency, with a safe default of 2 when omitted.
@@ -68,7 +68,7 @@ Run-level concurrency for preparing Sandbox images; independent of Attempt concu
 #### `maxBeforeCacheConcurrency`
 
 ```ts
-maxBeforeCacheConcurrency?: number;
+maxBeforeCacheConcurrency?: number | undefined;
 ```
 
 Run-level concurrency for preparing the PreparedArtifact prefix DAG; independent of build and Attempt concurrency.
@@ -76,7 +76,7 @@ Run-level concurrency for preparing the PreparedArtifact prefix DAG; independent
 #### `sandboxCache`
 
 ```ts
-sandboxCache?: SandboxCacheConfig;
+sandboxCache?: SandboxCacheConfig | undefined;
 ```
 
 The project-level before cache default; an Experiment or an explicit CLI flag can override it.
@@ -84,7 +84,7 @@ The project-level before cache default; an Experiment or an explicit CLI flag ca
 #### `timeoutMs`
 
 ```ts
-timeoutMs?: number;
+timeoutMs?: number | undefined;
 ```
 
 The project-level default timeout for one Attempt (milliseconds); the CLI flag, Experiment, or `EvalDef` setting with the same name has higher priority.
@@ -92,7 +92,7 @@ The project-level default timeout for one Attempt (milliseconds); the CLI flag, 
 #### `pauseOnFailure`
 
 ```ts
-pauseOnFailure?: boolean;
+pauseOnFailure?: boolean | undefined;
 ```
 
 Suspend the Attempt and retain the Sandbox when an error or failure occurs, displaying native direct connect commands for debugging before cleanup.
@@ -100,7 +100,7 @@ Suspend the Attempt and retain the Sandbox when an error or failure occurs, disp
 #### `telemetry`
 
 ```ts
-telemetry?: { host?: string; port?: number };
+telemetry?: { host?: string | undefined; port?: number | undefined } | undefined;
 ```
 
 OTLP receiver configuration, the only entry point inside a niceeval project (it does not read `NICEEVAL_OTLP_*` environment variables).
@@ -115,7 +115,7 @@ puts the receiver inside the Sandbox by default and does not rely on an implicit
 #### `pricing`
 
 ```ts
-pricing?: globalThis.Record<string, PriceOverride>;
+pricing?: globalThis.Record<string, PriceOverride> | undefined;
 ```
 
 User overrides or additions on top of the built-in price table (`o11y/prices.json`), looked up by model (see Observability

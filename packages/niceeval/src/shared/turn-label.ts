@@ -16,9 +16,7 @@ export function isCanonicalTurnLabel(label: string): boolean {
   if (additional === null) return false;
   const sessionIndex = Number(additional[1]);
   const turnIndex = Number(additional[2]);
-  return sessionIndex >= 2 &&
-    Number.isSafeInteger(sessionIndex) &&
-    Number.isSafeInteger(turnIndex);
+  return sessionIndex >= 2 && Number.isSafeInteger(sessionIndex) && Number.isSafeInteger(turnIndex);
 }
 
 /** 把旧 artifact 的坐标标签归一成当前展示格式；其它 opaque label 原样保留。 */

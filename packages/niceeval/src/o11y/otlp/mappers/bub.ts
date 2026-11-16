@@ -6,7 +6,15 @@
 // 其余直接按名映到标准操作;不认得的回落通用 heuristic。
 
 import type { TraceSpan } from "../../../types.ts";
-import { OP_CHAT, OP_CREATE_AGENT, OP_EXECUTE_TOOL, OP_INVOKE_AGENT, heuristicTag, tagSpan, type SpanTag } from "../canonical.ts";
+import {
+  OP_CHAT,
+  OP_CREATE_AGENT,
+  OP_EXECUTE_TOOL,
+  OP_INVOKE_AGENT,
+  heuristicTag,
+  tagSpan,
+  type SpanTag,
+} from "../canonical.ts";
 
 function bubTag(span: TraceSpan): SpanTag {
   switch (span.name.toLowerCase()) {

@@ -1,11 +1,5 @@
-import {
-  defineRecordAttachment,
-  RecordOwner,
-} from "../../attachment/index.ts";
-import {
-  SandboxCommandsAttachmentSchema,
-  validateSandboxCommandsAttachment,
-} from "./schema.ts";
+import { defineRecordAttachment, RecordOwner } from "../../attachment/index.ts";
+import { SandboxCommandsAttachmentSchema, validateSandboxCommandsAttachment } from "./schema.ts";
 
 export * from "./schema.ts";
 

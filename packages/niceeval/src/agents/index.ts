@@ -124,7 +124,15 @@ export type {
 } from "./openai-compat.ts";
 
 // SDK 原生事件流 → 标准事件的官方转换器(无侵入 adapter 只剩传输粘合)+ 通用 SSE 读帧器。
-export { sseJsonFrames, createClaudeSdkEventStream, createPiAgentEventStream, createCodexThreadEventStream } from "./sdk-streams.ts";
+export {
+  sseJsonFrames,
+  openSseJsonFrames,
+  SseFrameDecodeError,
+  SseFrameDecoderError,
+  createClaudeSdkEventStream,
+  createPiAgentEventStream,
+  createCodexThreadEventStream,
+} from "./sdk-streams.ts";
 export type {
   SseFrameCursor,
   ClaudeSdkMessageLike,
@@ -188,8 +196,11 @@ export type {
   AgentInstallMode,
   AgentArtifactPlatform,
   AgentStagedArtifact,
+  AgentInstallOutcome,
   AgentEnsureOutcome,
   AgentEnsure,
+  AgentEnsureContext,
+  AgentInstall,
   AgentInstaller,
   AgentArtifactContext,
   AgentInstallContext,
@@ -217,3 +228,5 @@ export type {
 } from "../types.ts";
 
 export type { ModelRoleSelection, ResolvedModelRole, ResolvedModelRoles } from "../model-roles.ts";
+
+export { AgentInstallError, AgentEnsureError } from "./provisioner.ts";

@@ -66,8 +66,8 @@ Eval modules retain their source-closure rules. Plugin identity does not populat
 
 ```bash
 pnpm exec niceeval debug compare/codex memory/smoke
-pnpm exec niceeval show --exp compare/codex
-pnpm exec niceeval show --exp compare/codex --json
+pnpm exec niceeval show exp:compare/codex
+pnpm exec niceeval show exp:compare/codex --json
 ```
 
 `debug` shows expanded steps, actual Action order, and Plugin sources. Experiment information in `show` and `view` lists Plugin name, key, and identity.

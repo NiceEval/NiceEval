@@ -4,7 +4,9 @@ import { resolveEvalLocalPath } from "../sandbox/paths.ts";
 import type { Sandbox } from "../types.ts";
 
 function directAgentUnavailable<T>(method: keyof Sandbox): Promise<T> {
-  return Promise.reject(new Error(`Direct Agents do not have sandbox.${method}; use a Sandbox Agent or remove workspace assertions.`));
+  return Promise.reject(
+    new Error(`Direct Agents do not have sandbox.${method}; use a Sandbox Agent or remove workspace assertions.`),
+  );
 }
 
 /** Direct Agent 没有运行中 Sandbox；除固定清理 stop 外，首次调用即点名具体 API。 */
@@ -39,7 +41,9 @@ export function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
     get workdir() {
       return sandbox.workdir;
     },
-    get nativeInstanceId() { return sandbox.nativeInstanceId; },
+    get nativeInstanceId() {
+      return sandbox.nativeInstanceId;
+    },
     get sandboxId() {
       return sandbox.sandboxId;
     },
@@ -56,12 +60,10 @@ export function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
     writeBytes: (path, content) => sandbox.writeBytes(path, content),
     pathExists: (path) => sandbox.pathExists(path),
     upload: (content, targetPath) => sandbox.upload(content, targetPath),
-    uploadFile: (source, targetPath) =>
-      sandbox.uploadFile(resolveEvalLocalPath(baseDir, source), targetPath),
+    uploadFile: (source, targetPath) => sandbox.uploadFile(resolveEvalLocalPath(baseDir, source), targetPath),
     uploadDirectory: (sourceDir, targetDir, options) =>
       sandbox.uploadDirectory(resolveEvalLocalPath(baseDir, sourceDir), targetDir, options),
-    downloadFile: (sourcePath, target) =>
-      sandbox.downloadFile(sourcePath, resolveEvalLocalPath(baseDir, target)),
+    downloadFile: (sourcePath, target) => sandbox.downloadFile(sourcePath, resolveEvalLocalPath(baseDir, target)),
     downloadDirectory: (sourceDir, targetDir, options) =>
       sandbox.downloadDirectory(sourceDir, resolveEvalLocalPath(baseDir, targetDir), options),
     stop: () => sandbox.stop(),

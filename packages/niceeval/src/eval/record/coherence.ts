@@ -6,24 +6,16 @@ import {
   type EvaluationsPayload,
   validateEvaluationsPayload,
 } from "./evaluation.ts";
-import {
-  type ScoreCoherenceIssue,
-  type ScorePayload,
-  validateScoreCoherence,
-} from "./score.ts";
+import { type ScoreCoherenceIssue, type ScorePayload, validateScoreCoherence } from "./score.ts";
 import type { EvaluationAttemptFacts } from "./sealed-assertion.ts";
-import {
-  type VerdictCoherenceIssue,
-  type VerdictPayload,
-  validateVerdictCoherence,
-} from "./verdict.ts";
+import { type VerdictCoherenceIssue, type VerdictPayload, validateVerdictCoherence } from "./verdict.ts";
 
 /** One origin Attempt's facts before Record's generic writer owns the writes. */
 export interface EvaluationRecordAttempt {
   readonly slotId: SlotId;
   readonly facts: EvaluationAttemptFacts;
   readonly verdict: VerdictPayload;
-  readonly score?: ScorePayload;
+  readonly score: ScorePayload | undefined;
 }
 
 /**
@@ -80,9 +72,7 @@ export type EvaluationRecordCoherenceIssue =
       readonly issue: ScoreCoherenceIssue;
     };
 
-function evaluationBySlot(
-  evaluations: EvaluationsPayload,
-): ReadonlyMap<string, EvaluationSlotProjection> {
+function evaluationBySlot(evaluations: EvaluationsPayload): ReadonlyMap<string, EvaluationSlotProjection> {
   const projection = projectEvaluationsPayload(evaluations);
   const bySlot = new Map<string, EvaluationSlotProjection>();
   for (const definition of evaluations.evaluations) {
@@ -108,45 +98,37 @@ export function validateEvaluationRecordCoherence(
 
   for (const slotId of input.expectedSlots) {
     if (expectedSlots.has(slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-expected-slot-duplicate" as const,
-          slotId,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-expected-slot-duplicate" as const,
+        slotId,
+      });
     }
     expectedSlots.add(slotId);
   }
 
   for (const issue of validateEvaluationsPayload(input.evaluations)) {
-    issues.push(
-      Object.freeze({
-        code: "evaluation-record-evaluations-invalid" as const,
-        issue,
-      }),
-    );
+    issues.push({
+      code: "evaluation-record-evaluations-invalid" as const,
+      issue,
+    });
   }
 
   const bySlot = evaluationBySlot(input.evaluations);
   for (const slotId of input.expectedSlots) {
     if (!bySlot.has(slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-evaluation-slot-missing" as const,
-          slotId,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-evaluation-slot-missing" as const,
+        slotId,
+      });
     }
   }
   for (const definition of input.evaluations.evaluations) {
     for (const slot of definition.slots) {
       if (!expectedSlots.has(slot.slotId)) {
-        issues.push(
-          Object.freeze({
-            code: "evaluation-record-evaluation-slot-unexpected" as const,
-            slotId: slot.slotId,
-          }),
-        );
+        issues.push({
+          code: "evaluation-record-evaluation-slot-unexpected" as const,
+          slotId: slot.slotId,
+        });
       }
     }
   }
@@ -154,23 +136,19 @@ export function validateEvaluationRecordCoherence(
   const attemptedSlots = new Set<string>();
   for (const attempt of input.attempts) {
     if (attemptedSlots.has(attempt.slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-attempt-slot-duplicate" as const,
-          slotId: attempt.slotId,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-attempt-slot-duplicate" as const,
+        slotId: attempt.slotId,
+      });
     }
     attemptedSlots.add(attempt.slotId);
 
     const evaluation = bySlot.get(attempt.slotId);
     if (evaluation === undefined || !expectedSlots.has(attempt.slotId)) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-attempt-slot-unexpected" as const,
-          slotId: attempt.slotId,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-attempt-slot-unexpected" as const,
+        slotId: attempt.slotId,
+      });
       continue;
     }
 
@@ -178,34 +156,28 @@ export function validateEvaluationRecordCoherence(
       payload: attempt.verdict,
       fold: attempt.facts,
     })) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-verdict-invalid" as const,
-          slotId: attempt.slotId,
-          issue,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-verdict-invalid" as const,
+        slotId: attempt.slotId,
+        issue,
+      });
     }
 
     if (evaluation.evaluationKind === "pass") {
       if (attempt.score !== undefined) {
-        issues.push(
-          Object.freeze({
-            code: "evaluation-record-score-unexpected" as const,
-            slotId: attempt.slotId,
-          }),
-        );
+        issues.push({
+          code: "evaluation-record-score-unexpected" as const,
+          slotId: attempt.slotId,
+        });
       }
       continue;
     }
 
     if (attempt.score === undefined) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-score-missing" as const,
-          slotId: attempt.slotId,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-score-missing" as const,
+        slotId: attempt.slotId,
+      });
       continue;
     }
 
@@ -213,15 +185,13 @@ export function validateEvaluationRecordCoherence(
       payload: attempt.score,
       fold: attempt.facts,
     })) {
-      issues.push(
-        Object.freeze({
-          code: "evaluation-record-score-invalid" as const,
-          slotId: attempt.slotId,
-          issue,
-        }),
-      );
+      issues.push({
+        code: "evaluation-record-score-invalid" as const,
+        slotId: attempt.slotId,
+        issue,
+      });
     }
   }
 
-  return Object.freeze(issues);
+  return issues;
 }

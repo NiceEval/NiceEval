@@ -301,25 +301,25 @@ agent 等待人工输入;`waiting` + `input.requested` 构成能力证据
 
 其它写法：`人工介入`、`human-in-the-loop`。
 
-## Agent Ensure {#agent-ensure}
+## Agent Install {#agent-install}
 
-Runner 在 `agent.ensure` 相位执行的 ensure 循环:Adapter 的 探测 未命中时由 Agent 安装层 install,装后复检
+Runner 在 `agent.install` 相位执行的 install 循环:Adapter 的 探测 未命中时由 Agent 安装层安装,装后复检
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-install.md)
 
-## AgentEnsure {#agent-ensure-declaration}
+## AgentInstall {#agent-install-declaration}
 
 Adapter 对自己 CLI 的目标 identity 与只读 探测;纯适配器在 Sandbox 内只保留这一份声明
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-install.md)
 
-其它写法：`Adapter 的 ensure 声明`。
+其它写法：`Adapter 的 install 声明`。
 
 ## Agent 安装层 {#agent-installer}
 
-官方按 ensure identity 配对的安装实现;拥有 staged payload、平台探测与安装模式
+官方按 install identity 配对的安装实现;拥有 staged payload、平台探测与安装模式
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-install.md)
 
 其它写法：`AgentInstaller`。
 
@@ -327,7 +327,7 @@ Adapter 对自己 CLI 的目标 identity 与只读 探测;纯适配器在 Sandbo
 
 题面网络之外准备、经主 Sandbox 文件 API 送入的一组版本锁定安装文件;归 Agent 安装层
 
-契约：[Agent Ensure](feature/adapters/architecture/agent-ensure.md)
+契约：[Agent Install](feature/adapters/architecture/agent-install.md)
 
 ## Sandbox {#sandbox}
 
@@ -451,7 +451,7 @@ parent 前缀、规范化 steps、immutable inputs 与 Provider 捕获协议的�
 
 ## 准备图 {#before-cache-preparation-graph}
 
-`RunPrepared` Provider 在派发 Attempt 前，按完整 BeforeCacheKey 合并全部 eligible before action 得到的 Run 级节点图；每个节点在一个 Run 内只准备一次
+`RunPrepared` Provider 在派发 Attempt 前，按完整 BeforeCacheKey 合并全部 eligible before action 得到的 Invocation 级节点图；同一 Invocation 内各 Experiment 的 Record Run 共用，每个节点只准备一次
 
 契约：[Sandbox · before 缓存](feature/sandbox/architecture/before-cache.md#provider-能力)
 
@@ -513,7 +513,7 @@ Roadmap 候选：对一个 Cache Domain 的不可变回收授权预览；apply �
 
 Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，跨进程由 detached provider inspect / wake / destroy
 
-契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#收尾留存与注册表)
+契约：[Sandbox 实例与伴随资源](feature/sandbox/architecture/case.md#收尾与留存)
 
 其它写法：`Sandbox 留存能力`。
 
@@ -557,9 +557,9 @@ Provider 返回的独立能力句柄；主实例与伴随资源同时 suspend，
 
 契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
-## ensure {#ensure}
+## install 循环 {#install-loop}
 
-「探测 → 缺失才 install → 复检」的循环语义;`installTool` 是工具版,`agent.ensure` 相位是 Agent 版
+「探测 → 缺失才安装 → 复检」的循环语义;`installTool` 是工具版,`agent.install` 相位是 Agent 版
 
 契约：[内置 prepare 命令](feature/sandbox/library/prepare-commands.md)
 
@@ -1071,7 +1071,7 @@ NiceEval 自己维护、供用户审阅 Run、Attempt 与证据的本机 SPA；�
 
 ## 预置准备 {#preparation}
 
-跑 agent 前的准备逻辑,按职责分层:layer 的 `before()`、Agent Ensure、`test(t)` 普通代码与外部编排；`SandboxAgent.before` 只连 runtime / 鉴权
+跑 agent 前的准备逻辑,按职责分层:layer 的 `before()`、Agent Install、`test(t)` 普通代码与外部编排；`SandboxAgent.before` 只连 runtime / 鉴权
 
 契约：[Sandbox library](feature/sandbox/library/README.md)
 

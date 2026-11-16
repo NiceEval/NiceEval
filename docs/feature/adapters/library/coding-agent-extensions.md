@@ -188,7 +188,7 @@ export default defineExperiment({
 });
 ```
 
-两个文件的路径只形成 experiment id。运行完成后，用 receipt 中的 Run ID 构造 `runs.compare` query request，明确选择两组已封口结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
+两个文件的路径只形成 experiment id。运行完成后，用 receipt 中的 Run ID 执行 `niceeval compare <run-id> -- <run-id>`，明确选择两组已封口结果。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
 
 model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容属于 Agent 变体。`attempts` 默认跑满、给出完整通过率分布,两组 A/B 天然可比。
 

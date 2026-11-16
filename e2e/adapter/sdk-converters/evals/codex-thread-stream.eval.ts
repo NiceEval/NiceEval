@@ -1,14 +1,6 @@
 // owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#codex-thread-stream-deterministic
 import { defineEval } from "niceeval";
-import {
-  atLeast,
-  atMost,
-  equals,
-  includes,
-  jsonMatch,
-  satisfies,
-  toolMatch,
-} from "niceeval/expect";
+import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
   description:
     "Codex ThreadEvent raw frames 经 converter 保留 command/file canonical、call ID、usage/thread 与 terminal failure",
@@ -16,28 +8,34 @@ export default defineEval({
     const completed = await t.send("codex completed fixture");
     await completed.succeeded().orStop();
     t.check(completed.reply, includes("codex-sdk-message-marker"));
-    t.check(completed.events, satisfies<typeof completed.events>(
-      "non-fatal Codex item remains observable without failing a completed turn",
-      (events) => events.some((event) => event.type === "error" && event.message === "codex-sdk-nonfatal-diagnostic-marker"),
-    ));
-    completed.check(completed.toolCalls, toolMatch("shell", {
+    t.check(
+      completed.events,
+      satisfies<typeof completed.events>(
+        "non-fatal Codex item remains observable without failing a completed turn",
+        (events) =>
+          events.some((event) => event.type === "error" && event.message === "codex-sdk-nonfatal-diagnostic-marker"),
+      ),
+    );
+    completed.check(
+      completed.toolCalls,
+      toolMatch("shell", {
         input: jsonMatch({ command: "printf codex-sdk-command-marker" }),
         status: "completed",
-      }).exactly(1));
-    completed.check(completed.toolCalls, toolMatch("file_edit", {
+      }).exactly(1),
+    );
+    completed.check(
+      completed.toolCalls,
+      toolMatch("file_edit", {
         input: jsonMatch({ path: "src/fixture.ts", kind: "update" }),
         status: "completed",
-      }).exactly(1));
+      }).exactly(1),
+    );
     t.check(
       completed.events,
       satisfies<typeof completed.events>(
         "Codex command_execution preserves its item id across start and result",
         (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.started" &&
-              event.operationId === "codex-command-call",
-          ) &&
+          events.some((event) => event.type === "operation.started" && event.operationId === "codex-command-call") &&
           events.some(
             (event) =>
               event.type === "operation.finished" &&
@@ -75,41 +73,35 @@ export default defineEval({
       terminal.events,
       satisfies<typeof terminal.events>(
         "error event count",
-        (events) =>
-          events.filter((event) => event.type === "error").length === 1,
+        (events) => events.filter((event) => event.type === "error").length === 1,
       ),
     );
     t.check(
       terminal.events,
-      satisfies<typeof terminal.events>(
-        "terminal ThreadEvent failure message remains observable",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "error" &&
-              event.message === "codex-sdk-terminal-failure-marker",
-          ),
+      satisfies<typeof terminal.events>("terminal ThreadEvent failure message remains observable", (events) =>
+        events.some((event) => event.type === "error" && event.message === "codex-sdk-terminal-failure-marker"),
       ),
     );
-    terminal.check(terminal.toolCalls, toolMatch("shell", {
+    terminal.check(
+      terminal.toolCalls,
+      toolMatch("shell", {
         input: jsonMatch({ command: "printf codex-sdk-terminal-marker" }),
         status: "completed",
-      }).exactly(1));
+      }).exactly(1),
+    );
     t.check(
       terminal.events,
-      satisfies<typeof terminal.events>(
-        "Codex terminal command output",
-        (events) =>
-          events.some(
-            (event) =>
-              event.type === "operation.finished" &&
-              event.operationId === "codex-failed-command-call" &&
-              typeof event.output === "object" &&
-              event.output !== null &&
-              !Array.isArray(event.output) &&
-              event.output.output === "codex-sdk-terminal-output-marker" &&
-              event.output.exit_code === 0,
-          ),
+      satisfies<typeof terminal.events>("Codex terminal command output", (events) =>
+        events.some(
+          (event) =>
+            event.type === "operation.finished" &&
+            event.operationId === "codex-failed-command-call" &&
+            typeof event.output === "object" &&
+            event.output !== null &&
+            !Array.isArray(event.output) &&
+            event.output.output === "codex-sdk-terminal-output-marker" &&
+            event.output.exit_code === 0,
+        ),
       ),
     );
     t.check(terminalSession.sessionId, equals("codex-sdk-failed-thread"));

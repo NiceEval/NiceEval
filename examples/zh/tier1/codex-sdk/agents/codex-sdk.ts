@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Schema } from "effect";
 // codex-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `ThreadEvent` 流原样透传成 SSE,外加一个和 `ThreadErrorEvent` 同形状的 `{type:"error"}`
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
@@ -10,43 +10,58 @@ import { Effect } from "effect";
 //
 // 这是 Tier 1(只接 send):要 `niceeval view` 的调用瀑布图时升 Tier 2,见
 // ../../tier2/codex-sdk/——同一个文件加一行 spanMapper、config 加一行 telemetry,其它不变。
-import { completeEvidenceCoverage, defineAgent, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
+import {
+  completeEvidenceCoverage,
+  defineAgent,
+  openSseJsonFrames,
+  createCodexThreadEventStream,
+  driveFrameStream,
+} from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
-import type { ThreadEvent } from "@openai/codex-sdk";
 
 // 被测应用由你自己按它的方式启动(pnpm start / 部署在哪都行),eval 不代管进程、不另开端口。
 const BASE_URL = process.env.CODEX_SDK_URL ?? "http://127.0.0.1:31001";
 
-type TransportFrame = { type: "error"; message: string };
-type CodexFrame = ThreadEvent | TransportFrame;
+const CodexFrameSchema = Schema.StructWithRest(Schema.Struct({ type: Schema.String }), [
+  Schema.Record(Schema.String, Schema.MutableJson),
+]);
+type CodexFrame = Schema.Schema.Type<typeof CodexFrameSchema>;
+const ErrorFrameSchema = Schema.Struct({ type: Schema.Literals(["error"]), message: Schema.String });
 
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        message: input.text,
-        threadId: ctx.session.id,
-      }),
-      signal: ctx.signal,
-    });
-  } catch (err) {
-    if (ctx.signal.aborted) throw err;
-    throw new Error(
-      `连不上 ${BASE_URL}/api/chat。被测应用在跑吗?先起它:cd examples/zh/tier1/codex-sdk && pnpm start(或设 CODEX_SDK_URL 指向已部署实例)。`,
-    );
-  }
-  if (!res.ok || !res.body) {
-    throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
-  }
+  const cursor = await openSseJsonFrames(
+    ctx,
+    async (signal) => {
+      let res: Response;
+      try {
+        res = await fetch(`${BASE_URL}/api/chat`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            message: input.text,
+            threadId: ctx.session.id,
+          }),
+          signal,
+        });
+      } catch (err) {
+        if (signal.aborted) throw err;
+        throw new Error(
+          `连不上 ${BASE_URL}/api/chat。被测应用在跑吗?先起它:cd examples/zh/tier1/codex-sdk && pnpm start(或设 CODEX_SDK_URL 指向已部署实例)。`,
+        );
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
+      }
+      return res.body;
+    },
+    CodexFrameSchema,
+  );
 
   const stream = createCodexThreadEventStream();
-  return driveFrameStream(sseJsonFrames<CodexFrame>(res.body), stream, ctx, (frame) => {
+  return driveFrameStream<CodexFrame>(cursor, stream, ctx, (frame) => {
     // 应用自定义传输帧(query() 之外的失败,比如 spawn 失败),不属于 ThreadEvent。
-    if (frame.type === "error") return { fail: (frame as TransportFrame).message };
+    if (frame.type === "error") return { fail: Schema.decodeUnknownSync(ErrorFrameSchema)(frame).message };
     // 会话续接走「服务端记历史」范式:thread.started 帧回传的 id 用 ctx.session.capture 写回,
     // 只在还没记过时落地(first-writer-wins)。
     ctx.session.capture(stream.threadId);
@@ -56,5 +71,5 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 export default defineAgent({
   name: "codex-sdk",
   evidenceCoverage: completeEvidenceCoverage,
-  send: (input, ctx) => Effect.tryPromise({ try: () => send(input, ctx), catch: (cause) => cause }),
+  send,
 });

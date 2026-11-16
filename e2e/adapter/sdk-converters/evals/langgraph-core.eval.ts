@@ -2,25 +2,25 @@
 import { defineEval } from "niceeval";
 import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({
-  description:
-    "LangGraph v3 real GraphRunStream envelope plus official message/tool protocol frames",
+  description: "LangGraph v3 real GraphRunStream envelope plus official message/tool protocol frames",
   async test(t) {
     const turn = await t.send("langgraph core fixture");
     await turn.succeeded().orStop();
     t.check(turn.reply, includes("langgraph-runtime-methods:lifecycle"));
-    turn.check(turn.toolCalls, toolMatch("graph_lookup", {
+    turn.check(
+      turn.toolCalls,
+      toolMatch("graph_lookup", {
         input: jsonMatch({ query: "fixture" }),
         status: "completed",
-      }).exactly(1));
+      }).exactly(1),
+    );
     t.check(
       turn.events,
       satisfies<typeof turn.events>(
         "LangGraph official tool_call id pairs messages and tools channels",
         (events) =>
           events.filter(
-            (event) =>
-              event.type === "operation.started" &&
-              event.operationId === "langgraph-core-tool-call",
+            (event) => event.type === "operation.started" && event.operationId === "langgraph-core-tool-call",
           ).length === 1 &&
           events.some(
             (event) =>
@@ -41,8 +41,7 @@ export default defineEval({
         (events) =>
           !events.some(
             (event) =>
-              (event.type === "operation.started" ||
-                event.type === "operation.finished") &&
+              (event.type === "operation.started" || event.type === "operation.finished") &&
               event.operationId.startsWith("ignored-state"),
           ),
       ),

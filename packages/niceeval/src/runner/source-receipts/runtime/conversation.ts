@@ -7,11 +7,7 @@ import type {
   TurnId,
 } from "../../../record/family/source-receipt/model.ts";
 import type { ConversationTurn } from "../model.ts";
-import {
-  producerCaptureSealInvalid,
-  producerEntityIdInvalid,
-  requiredPositive,
-} from "../support.ts";
+import { producerCaptureSealInvalid, producerEntityIdInvalid, requiredPositive } from "../support.ts";
 import { sourceSegmentId } from "./receipt-helpers.ts";
 import {
   markRuntimeFailure,
@@ -26,31 +22,32 @@ export function captureRunnerPhysicalConversationTurn(input: {
   readonly turnId: TurnId;
   readonly outcome: ConversationTurn["outcome"];
   readonly observed: ObservedTurnSnapshot;
-  readonly adapterStatus?: "completed" | "failed" | "waiting";
-  readonly evidenceCoverage?: ResolvedEvidenceCoverage;
+  readonly adapterStatus: "completed" | "failed" | "waiting" | undefined;
+  readonly evidenceCoverage: ResolvedEvidenceCoverage | undefined;
 }): void {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
   const captured = runtime.conversationTurns.find((turn) => turn.turnId === input.turnId);
   if (captured === undefined && runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) return;
-  if (captured === undefined || captured.outcome !== undefined) {
+  if (captured === undefined || captured.completion.state !== "pending") {
     markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
     return;
   }
-  captured.outcome = input.outcome;
-  if (
-    input.observed.turnId !== input.turnId ||
-    input.observed.sessionId !== captured.sessionId ||
-    captured.observed !== undefined
-  ) {
+  if (input.observed.turnId !== input.turnId || input.observed.sessionId !== captured.sessionId) {
     markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
     return;
   }
-  captured.observed = input.observed;
+  captured.completion = {
+    state: "observed",
+    outcome: input.outcome,
+    observed: input.observed,
+    adapter:
+      input.adapterStatus !== undefined && input.evidenceCoverage !== undefined
+        ? { state: "recorded", status: input.adapterStatus, evidenceCoverage: input.evidenceCoverage }
+        : { state: "unavailable" },
+  };
   registerObservedTurn(runtime, input.observed);
   if (input.adapterStatus !== undefined && input.evidenceCoverage !== undefined) {
-    captured.adapterStatus = input.adapterStatus;
-    captured.evidenceCoverage = input.evidenceCoverage;
     if (input.evidenceCoverage.usage.status === "unavailable") {
       runtime.usageLimitations.addUnsupported("usage-observation");
     } else if (input.evidenceCoverage.usage.status === "partial") {
@@ -71,10 +68,7 @@ export function beginRunnerPhysicalConversationTurn(
   const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return false;
   if (runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) {
-    runtime.conversationLimitations.addCap(
-      "conversation-item",
-      runtime.conversationTurns.length,
-    );
+    runtime.conversationLimitations.addCap("conversation-item", runtime.conversationTurns.length);
     return false;
   }
   if (!registerRuntimeEntity(runtime, "turn", turnId)) return false;
@@ -93,14 +87,13 @@ export function beginRunnerPhysicalConversationTurn(
     segmentId,
     sequence: requiredPositive(runtime.conversationTurns.length + 1),
     usage: [],
+
+    completion: { state: "pending" },
   });
   return true;
 }
 
-function registerObservedTurn(
-  runtime: RunnerAttemptObservabilityRuntimeState,
-  observed: ObservedTurnSnapshot,
-): void {
+function registerObservedTurn(runtime: RunnerAttemptObservabilityRuntimeState, observed: ObservedTurnSnapshot): void {
   const register = <Kind extends "item" | "event" | "tool-occurrence" | "session-scope">(
     kind: Kind,
     id: ObservabilityEntityIdForKind<Kind>,

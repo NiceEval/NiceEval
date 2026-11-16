@@ -17,23 +17,19 @@ export default defineEval({
       // marker 同时必须在两个工具输入中出现，能杀死「只留工具名/路径、丢掉实际参数」的归一。
       t.calledTool(
         toolMatch("file_write", {
-          input: satisfies(
-            "file_write 入参包含 TOOL_PAYLOAD",
-            (input) =>
-              typeof input === "string"
-                ? new RegExp(TOOL_PAYLOAD).test(input)
-                : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
+          input: satisfies("file_write 入参包含 TOOL_PAYLOAD", (input) =>
+            typeof input === "string"
+              ? new RegExp(TOOL_PAYLOAD).test(input)
+              : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
           ),
         }),
       );
       t.calledTool(
         toolMatch("shell", {
-          input: satisfies(
-            "shell 入参包含 TOOL_PAYLOAD",
-            (input) =>
-              typeof input === "string"
-                ? new RegExp(TOOL_PAYLOAD).test(input)
-                : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
+          input: satisfies("shell 入参包含 TOOL_PAYLOAD", (input) =>
+            typeof input === "string"
+              ? new RegExp(TOOL_PAYLOAD).test(input)
+              : new RegExp(TOOL_PAYLOAD).test(JSON.stringify(input) ?? ""),
           ),
         }),
       );
@@ -43,10 +39,7 @@ export default defineEval({
         satisfies<typeof turn.events>("file_write 调用先于 shell 调用", (events) => {
           const names: string[] = [];
           for (const event of events) {
-            if (
-              event.type === "operation.started" &&
-              event.operation.kind === "tool"
-            ) {
+            if (event.type === "operation.started" && event.operation.kind === "tool") {
               names.push(event.operation.tool ?? event.operation.name);
             }
           }
@@ -57,14 +50,8 @@ export default defineEval({
       );
       t.check(
         t.events,
-        satisfies<typeof t.events>(
-          "no failed tool or subagent actions",
-          (events) =>
-            events.every(
-              (event) =>
-                event.type !== "operation.finished" ||
-                event.status !== "failed",
-            ),
+        satisfies<typeof t.events>("no failed tool or subagent actions", (events) =>
+          events.every((event) => event.type !== "operation.finished" || event.status !== "failed"),
         ),
       );
     });

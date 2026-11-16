@@ -83,7 +83,7 @@ pnpm exec niceeval exp regression --max-concurrency 4
 
 ```sh
 pnpm exec niceeval show @attempt-locator
-pnpm exec niceeval show --experiment regression
+pnpm exec niceeval show exp:regression
 ```
 
 想在浏览器里翻看，运行 `pnpm exec niceeval view`。
@@ -126,7 +126,7 @@ t.check(t.usage.cacheRead.rate(), atLeast(ratio(0.6))).gate();
 
 缺失输入、未 seal、partial seal、unknown 调用状态、空组或零分母均返回 `unavailable`，`reasons` 列出原因。缺失不按零处理；完整且有正输入总量的零缓存读取率才是数值 0。旧账本没有明确的生产者完整性声明时，也返回不可判定。
 
-使用 `niceeval show <Attempt locator> --usage` 或 View 查看读取率、覆盖情况与原因；脚本通过 `attempt.usage` 的 `usage.cacheRead` 读取相同报告。已有 `recordUsage` 调用无需改名，但必须登记缓存 token，并在采集完成后诚实 seal。无需迁移历史结果文件。
+使用 `niceeval show <Attempt locator> usage` 或 View 查看读取率、覆盖情况与原因；脚本通过 `attempt.usage` 的 `usage.cacheRead` 读取相同报告。已有 `recordUsage` 调用无需改名，但必须登记缓存 token，并在采集完成后诚实 seal。无需迁移历史结果文件。
 
 
 角色名来自 Experiment 的 `models` 键，不是框架内置名单。`model` 单模型简写对应 `default`。

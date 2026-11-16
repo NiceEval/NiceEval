@@ -7,16 +7,19 @@ import type { AgentContext } from "./types.ts";
 export function withAgentCallbackContext<Context extends AgentContext, Value, Error>(
   context: Context,
   callback: (context: Context) => Effect.Effect<Value, Error, never>,
-  options?: { readonly inheritAttemptSignal?: boolean },
+  options?: { readonly inheritAttemptSignal?: boolean | undefined },
 ): Effect.Effect<Value, Error, never> {
-  return Effect.scoped(Effect.gen(function* () {
-    const fiberSignal = yield* Effect.abortSignal;
-    const signal = options?.inheritAttemptSignal === false || context.signal === fiberSignal
-      ? fiberSignal
-      : AbortSignal.any([context.signal, fiberSignal]);
-    const callbackContext = { ...context, signal };
-    const resources = attemptResources(context);
-    if (resources !== undefined) bindAttemptResources(callbackContext, resources);
-    return yield* Effect.suspend(() => callback(callbackContext));
-  }));
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const fiberSignal = yield* Effect.abortSignal;
+      const signal =
+        options?.inheritAttemptSignal === false || context.signal === fiberSignal
+          ? fiberSignal
+          : AbortSignal.any([context.signal, fiberSignal]);
+      const callbackContext = { ...context, signal };
+      const resources = attemptResources(context);
+      if (resources !== undefined) bindAttemptResources(callbackContext, resources);
+      return yield* Effect.suspend(() => callback(callbackContext));
+    }),
+  );
 }

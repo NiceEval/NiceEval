@@ -44,8 +44,8 @@ Testkit 与根 E2E harness 统一使用 Node 24，不维护独立的 Node 兼容
 metadata/exports，并在 install 前、install 后和副本 cleanup 后核对 snapshot
 SHA-256。这个 digest 只证明本次临时目录没有被改写，不是发布或 replay 身份。
 
-Testkit 不依赖根 runner 或 scenario，保持 bootstrap 无环。唯一产品运行时依赖是安装候选
-`niceeval/run` 的纯 decoder；它不加载 CLI、SQLite、writer 或 Host。
+Testkit 不依赖根 runner 或 scenario，保持 bootstrap 无环。产品运行时依赖限于安装候选公开入口提供的纯 decoder；
+它不加载 CLI、SQLite、writer 或 Host 执行逻辑。
 `niceeval` peer dependency 保证场景实际安装的候选仍是 authority。
 
 ## 准入边界
@@ -106,7 +106,7 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 |---|---|
 | `process.ts` | `Argv`、`RunProcessOptions`、`DiagnosticTruncation`、`ProcessReceipt`、`ProcessStartError`、`runProcess`、`command`、`DIAGNOSTIC_LIMIT`；`ExpEvent` / `ExpStartEvent` / `ExpEvalEvent` / `ExpErrorEvent` 及对应 Schema |
 | `exp-protocol.ts` | 转出 `niceeval/experiment/host` 的 `ExpTerminalEvent`、`ExpTerminalSummary`、`InvocationReceipt` 与 `decodeExpTerminalEvent` |
-| `query-protocol.ts` | 转出 `niceeval/inspection` 的 `QUERY_PROTOCOL`、`INSPECTION_OPERATION_IDS`、`decodeInspectionDocument`、`narrowInspectionSuccess`、`narrowInspectionExplanation` 与 Query 文档类型 |
+| `query-protocol.ts` | 转出 `niceeval/inspection` 的 `INSPECTION_OPERATION_IDS`、`decodeInspectionDocument`、`narrowInspectionSuccess`、`narrowInspectionExplanation` 与 Inspection document 类型 |
 | `inspection-request.ts` | `withInspectionRequest` |
 | `run-protocol.ts` | 转出 `niceeval/run` 的 `RUN_PROTOCOL`、`decodeRunDocument`、`RunListDocument`、`RunGetDocument` 等 |
 | `view-lifecycle.ts` | 转出 `niceeval/view` 的 `VIEW_LIFECYCLE_PROTOCOL`、`decodeViewLifecycle` 与 lifecycle 事件类型 |
@@ -124,8 +124,8 @@ candidate 退出后才检查到的旧文本必须拒绝。超时、退出前未�
 
 - 通用：`diagnostic()`、`json()`、`ndjson()`；
 - `niceeval.exp`：`expTerminal()`、`expReceipt()`、`expEvents()`、`expEvalEvents()`、`expErrorEvents()`；
-- `niceeval.query`：`queryDiscovery()`、`querySuccess(operation)`、`queryExplanation(operation)`、`queryFailure()`；
-- `niceeval.query` 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
+- Inspection：`inspectionSuccess(operation)`、`inspectionExplanation(operation)`、`inspectionFailure()`，读取 `show --json` 与 `show --explain` 的 document；
+- Inspection 快捷方法：`overview()`、`run()`、`runsList()`、`attempt()`、`attemptTrace()`、`attemptDiff()` 等，每个对应一个 operation；
 - `niceeval.run`：`runListDocument()`、`runGetDocument()`。
 
 
@@ -139,8 +139,8 @@ argv 仍以数组出现在调用点，收据保存完整 argv。`diagnostic()` �
 `niceeval.run/v1` 是例外的具名产品协议 parser：`runListDocument()` 与 `runGetDocument()` 直接调用安装候选的
 `niceeval/run` 唯一严格 decoder，并分别返回正式 `RunListDocument` 与 `RunGetDocument`。Testkit 只转出这些
 候选包类型，不维护第二套 Run Schema；错误 protocol、operation、多余字段或非法闭合集取值都由产品 decoder 拒绝，
-错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者保持读取
-`niceeval.query/v1`。
+错误再附上同一 `ProcessReceipt` diagnostic。它们不替代 inspection 的 `runsList()` / `run()`，后两者读取
+`show --json` 的 document。
 
 ### E2E 正文准入门
 
@@ -203,11 +203,11 @@ const evalEvents = assertExpEvalOutcomes(
 ```
 
 expected 数组属于调用方 owner；Testkit 只比较公开原始字段。
-CLI 退出码、`InvocationReceipt.completion`、Run 数与后续固定 `query` 或 `view` 读回仍在测试正文分别断言。
+CLI 退出码、`InvocationReceipt.completion`、Run 数与后续 `show --json` 或 `view` 读回仍在测试正文分别断言。
 
 `exactEval(events, { experimentId, evalId }, diagnostic?)` 只按这两个公开字段选取一个终局 Eval event。
 它严格拒绝零个或多个匹配，并在错误中列出全部候选复合身份和调用方提供的诊断。`locator` 是选中 event
-的输出，不参与选择；Testkit 不为 `query`、领域 expected 或 retry 增加另一层 DSL。
+的输出，不参与选择；Testkit 不为 `show`、领域 expected 或 retry 增加另一层 DSL。
 
 非零 exit 与 signal 会返回收据，`timedOut` 区分 Testkit timeout 与被测进程自行退出。spawn 本身失败时抛
 `ProcessStartError`，错误携带完整 argv、cwd 与原始 cause；调用方不用猜是产品 exit 还是命令没有启动。
@@ -442,7 +442,9 @@ Node 没有可移植的“目录 `rename` 且禁止替换”原语，因此提�
 
 ## 构建与采用门禁
 
-1. `pnpm --filter @niceeval/testkit typecheck` 不使用 NiceEval；根 frozen install 必须能直接运行，Testkit 不设独立 Unit 命令。
+1. 根 frozen install 后必须能直接运行 `pnpm --filter @niceeval/testkit typecheck`，不要求预先构建 NiceEval。
+   该命令按产品声明配置在系统临时目录生成正式类型声明，再按 package exports 的类型入口检查 Testkit。
+   Testkit 保持自己的严格检查选项，不复制产品类型，不读写共享 dist，结束时删除临时声明；不设独立 Unit 命令。
 2. 每次根 runner invocation 只在确有 `harness.testkit: true` 消费者时，把当前 Testkit 编译成 scratch snapshot 一次；不 pack、不上传。
 3. runner 只在隔离副本中加入指向该 scratch snapshot 的绝对 `file:` 目录依赖。真实 `pnpm install` 必须产生唯一 directory
    resolution，安装后的包名与版本正确，realpath 位于副本自己的 virtual store，而不是 checkout 源目录。

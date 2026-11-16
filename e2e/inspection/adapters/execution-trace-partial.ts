@@ -11,7 +11,9 @@ export const partialExecutionTraceAdapter = defineAdapter({
           schema: { id: "example.telemetry" },
           collection: {
             state: "partial",
-            limitations: [{ code: "producer-stream-interrupted", message: "Upstream journal ended before final acknowledgement." }],
+            limitations: [
+              { code: "producer-stream-interrupted", message: "Upstream journal ended before final acknowledgement." },
+            ],
           },
           scopes: [],
           events: Array.from({ length: eventCount }, (_, index) => ({

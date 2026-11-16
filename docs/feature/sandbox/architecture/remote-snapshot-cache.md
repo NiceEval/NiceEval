@@ -20,6 +20,17 @@ BeforeCacheKey、能力分类与降级的通用规则在 [Before cache](before-c
 
 三个 Provider 都满足 `RunPrepared` 的条件：snapshot 一经 Ready 即不随源实例变化；staging 可以从 exact Base 或父 snapshot 创建；每个 consumer 从 snapshot 创建独立实例，不共享可写状态。
 
+### 一次 Invocation 一份准备
+
+一次 Invocation 常常同时运行多个 Experiment，每个 Experiment 落成自己的 Record Run。这些 Run 共用同一份准备状态：
+
+- 准备图按完整 BeforeCacheKey 跨 Experiment 合并，相同 key 在整个 Invocation 里只准备一次。
+- 账本视图、`run` hold、lease 与节点结算都归这份共享准备，不按 Record Run 拆分。任一 Run 的配对都能消费共享准备持有的 artifact。
+- `run` hold 在依赖它的全部配对（不论属于哪个 Run）完成交接后释放；Invocation 结束或取消时一并释放。
+- 节点的 activity 与 diagnostic 仍按每个配对所在的 Run 呈现，读者在自己的 Run 里看得到它等了谁、命中了什么。
+
+不同 Invocation 之间仍是普通的竞争，按[发布与竞争](#发布与竞争)处理。
+
 ## 协议归 core，Provider 只交原语
 
 账本、lease 与接管、artifact 标记的写入与校验、挂载与敏感字节检查、quiesce、consumer 回退和回收对三个 Provider 完全相同，由 core 实现一次（[T-6](../../../taste.md#t-6)）。Provider 只交出 `BeforeCacheSnapshotDriver`。driver 不声明自己是谁：账本的 `provider` 列取 core 传入的 `BeforeCachePreparationContext.providerId`，即 Provider module 的 `id`；账本像其它 Provider 账本一样经 `userDatabaseHost` 打开，新增一个远端 Provider 不需要改 core 的类型或账本 schema（[T-3](../../../taste.md#t-3)）。core 用 `remoteSnapshotPreparer(driver)` 把它变成（`continuesStaging` 取 driver 的 `sourceUsableAfterSnapshot`） [`BeforeCachePreparer`](before-cache.md#provider-能力)：
@@ -153,6 +164,20 @@ type BeforeCacheStart =
 ```
 
 - consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before，eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。
+- `FellBackToBase.reason` 是具名原因，不能把几种情况合成一句。消费前的检查各有自己的原因：
+
+| 原因 | 说明 |
+|---|---|
+| `ledger-disabled` | 本次准备已对该 domain 停用账本 |
+| `artifact-unavailable` | 本次准备已把该 artifact 标为不可用 |
+| `artifact-missing` | 账本没有这一行，或行里没有 snapshot ID |
+| `hold-missing` | 共享准备没有持有该 artifact 的 `run` hold |
+| `domain-mismatch` | artifact 的 execution domain 与当前不同 |
+| `key-mismatch` | 账本行的 BeforeCacheKey 与要消费的不同 |
+| `snapshot-gone` | snapshot 已不存在或实例不能 Ready |
+| `marker-mismatch` | 实例上的 artifact 标记与账本不一致 |
+
+`hold-missing` 出现时说明准备与消费的归属不一致，是缺陷而不是正常降级。
 - 子节点的 staging 收到 `FellBackToBase` 时，干净实例缺少父前缀的结果，core 不执行当前 action、不发布，删除该 staging，节点结算为 `degraded`。
 
 ## Run 级节点结算
@@ -177,6 +202,12 @@ type BeforeCacheStart =
 | `snapshot-rejected` | 服务在受理前拒绝 |
 | `snapshot-uncertain` | snapshot 请求可能已被受理但没有得到 Ready |
 | `lease-lost` | 失去 `preparing` 行的 lease |
+| `agent-install-failed` | [Agent 派生节点](#agent-派生节点)的安装或复检失败 |
+
+每条 `degraded` 诊断在原因之后带上安全的失败摘要，并按原因归类真实来源：
+`ledger-unavailable` 只用于账本读写本身失败，诊断写出已分类的 UserDatabase 失败消息（例如由旧版 NiceEval 写入、需要停用后删除重跑的提示），不只给原因代码。
+读取 staging 实例状态（挂载信息、标记文件）失败属于 `staging-failed`，不能记为账本不可用。
+同一 Run 内账本失败只需修复一次，结束页与 `exp --json` 对同一 `(provider, execution_domain_id)` 的账本失败聚合为一条 Run 级诊断，后代节点仍记 `parent-unavailable`。
 
 只有 author action 失败才让配对失败：同一 action 在 Attempt 内也会以同样方式失败，提前结算省掉一批注定失败的实例（[T-5](../../../taste.md#t-5)）。其余原因都只说明缓存这次帮不上忙；Provider 若真的不可用，Attempt 会在创建自己的实例时以自己的错误失败。
 
@@ -187,6 +218,19 @@ type BeforeCacheStart =
 - 降级配对不在 Attempt 内做 lookup 或 capture，避免变成 N 个 Attempt 各自竞争。
 
 `resolveBase` 返回 `Ineligible` 的配对不进入准备图，Attempt 按 `unsupported` 真实执行。
+
+## Agent 派生节点
+
+内置 coding Agent 的 staged payload 上百 MB。Agent install 排在全部 before 之后，不在 before 前缀里；没有派生节点时，每条 Attempt 都要重新上传、解压一次，作者只好在 before 里手工预装同一版 CLI，维护第二份版本声明（[T-33](../../../taste.md#t-33)、[T-36](../../../taste.md#t-36)）。
+派生节点是[Agent install](../../adapters/architecture/agent-install.md#构建期与运行时的关系)允许的“带 Agent identity 的派生 cache”，与 [Dockerfile 派生镜像](case.md) 同一条规则：它只让 探测 首测命中，不改变安装循环、Attempt 身份或结果。
+
+- **位置**：配对的准备链（[core 的捕获步骤](#core-的捕获步骤)）之后追加一个节点，父节点是链上最后一个 eligible 节点；链为空时父节点是 Base。链在第一个 opaque action 处截断，派生节点接在截断点之前，不接在 opaque action 之后。
+- **条件**：配对的每条 install 声明都配到 installer，installer 是 `staged` 模式并带内部 cache-safe 标记；其中任一条不满足时不追加派生节点，配对照常在 Attempt 内安装。第三方 installer 与 `verify-only` 模式不参与。
+- **身份**：`AgentDerivedKey = hash(父节点 BeforeCacheKey 或 Base 身份, 计划 target platform/libc, 按声明顺序的 install identity 与 installer identity/revision/installMode, 当前缓存格式)`。它不读取 before 之后的 opaque action、credential value 或 Agent runtime before；它不进入任何 Attempt、config 或 input identity。
+- **准备**：在父节点的 staging 上（可连续推进时沿用，否则从父 snapshot 新建）按声明顺序执行与 `agent.install` 相同的 install 循环：探测、未命中时用 Run 级已准备的 staged payload 安装、复检。复检通过后照常写 artifact 标记、做挂载与敏感字节检查、quiesce 并发布 `niceeval-<artifactId>`。
+- **结算**：派生节点没有 author action，安装或复检失败都只结算为 `degraded`，原因 `agent-install-failed`，配对消费父节点，Attempt 内的安装循环按原样报告真实失败。不会因派生节点失败而让配对在派发前失败。
+- **消费**：目标配对消费派生节点时，opaque action 及其后的 before 照常在 Attempt 内真实执行；`agent.install` 仍执行完整循环，探测命中，`niceeval.agent-install` 写入的安装事件注明命中来自派生节点（[T-31](../../../taste.md#t-31)）。opaque action 改动了 Agent 目录时，探测不命中，循环照常安装。
+- **复用与回收**：派生节点与链上节点共用同一账本、hold、lease 与回收规则；`satisfiedActionCount` 不计入派生节点。
 
 ## Sandbox 复用
 
@@ -202,7 +246,7 @@ lookup 与 reserve 在同一个写事务中完成，结果有三种：
 - 可以写入：分配 generation 并插入 `preparing` 行。
 - 同一 `(provider, execution_domain_id, before_cache_key)` 已被其它进程以活跃 lease 持有：返回 busy。
 
-busy 的节点等待对方结算，不在等待期间创建 staging；对方发布后按 `hit` 消费，对方放弃或 lease 过期后重新 reserve。等待受 Run 取消约束；期间 Run 反馈显示该节点正在等待其它运行。
+busy 的节点等待对方结算，不在等待期间创建 staging。对方发布后，等待方重新执行同一个 lookup 与 reserve 写事务：读到 ready 时插入自己这份准备的 `run` hold，再按 `hit` 结算；不能沿用对方的结算结果而不持有 hold。对方放弃或 lease 过期后重新 reserve。等待受 Run 取消约束；期间 Run 反馈显示该节点正在等待其它运行。
 
 **lease。** `preparing` 行的 lease 单次有效 2 分钟，持有者每 30 秒续期。续期以 `artifact_id`、`lease_token`、`state = 'preparing'` 与 `lease_until >= now` 为条件；条件不满足即失去 lease。失去 lease 的进程只删除自己的 staging，不发布、不删除 snapshot，也不再操作该行，节点结算为 `degraded(lease-lost)`。
 
@@ -212,14 +256,19 @@ busy 的节点等待对方结算，不在等待期间创建 staging；对方发�
 - `Pending`：续期并等待它结束。
 - `Absent`：把该行改为 `deleting`（`snapshot_id` 为空），再重新 reserve。
 
-**替换按声明位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id 与 Base 引用：
+**替换按声明方与位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id、Base 引用，以及这一层的声明方：
 
 ```text
 replacement scope = hash(provider, execution domain, baseReference,
-                         step.positions)
+                         step.positions, declaringOwner)
 ```
 
-与 BeforeCacheKey 一样，声明方不进入 scope，不同 Experiment 共用的准备层共用一条替换线。修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。代价：两个 Experiment 在同一位置（相同的 action id 链）使用不同内容时会互相取代、交替重新准备一次。需要并存时，作者给 action 取不同的 id。
+`declaringOwner` 是这一层 action 所在的 layer owner（`experiment:<id>`、`eval-group:<id>`、`eval:<id>` 或 `agent:<id>`）。同一个声明方修改某一步的命令、输入或 fingerprint 后，同一位置发布的新 artifact 取代旧的，旧的及其所有后代层都进入删除；template 以同名重建时同样取代旧 build 上的 snapshot。不同声明方即使用了同名 action、内容又不同，也各在自己的替换线上，互不取代。
+
+BeforeCacheKey 不含声明方，内容相同的层仍共享同一份 artifact。共享 artifact 登记在首个发布它的声明方的替换线上：该声明方改了内容时会取代它，另一方下一次运行按 key 未命中，重新准备一次并登记在自己的线上，之后各自独立。声明方改名或删除后，它的旧替换线不再被取代，对应 snapshot 会留在账号里；这是为了不按年龄或名称猜测垃圾而接受的代价。
+
+replacement scope 使用声明位置与声明方的实际内容摘要，不附算法编码版本。
+账本只接受当前缓存格式；旧格式在 lookup 或发布之前明确拒绝，不尝试解释旧替换线。
 
 **发布。** publish 要求同一 artifact、当前 lease token、lease 未过期且 snapshot ID 已确认，并在同一事务插入 `run` hold。同一 replacement scope 已有更大 generation 发布时，较小 generation 改为 `deleting`，不发布。新 generation 发布时，同 scope 中较小的 ready 改为 `deleting`；scope 由声明位置决定，旧 artifact 的后代层也在各自位置被新链取代。lookup 只返回 ready。
 
@@ -262,7 +311,7 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 
 - **driver**：`preserves = { disks: ["/"], memory: false }`；`sourceUsableAfterSnapshot = false`。不保存进程、卷或 tmpfs。
 - **Base 身份**：必须是 digest-pinned image，否则 `Ineligible(base-image-unverified)`。
-- **execution domain**：规范化服务 URL 与凭据的不可逆摘要；URL 路径、目标平台与 Provider format revision 进入 key scope。
+- **execution domain**：规范化服务 URL 与凭据的不可逆摘要；URL 路径、目标平台与 Provider 的 `cacheFormat` 进入 key scope。
 - **createSnapshot / findSnapshot / deleteSnapshot**：公开 Snapshot API，按 `name` 创建与精确查询。
 - **createFromSnapshot**：从 snapshotId 创建实例；remote handle 原子替换 backend，清空用户身份与 PATH 等实例缓存后重新执行宿主初始化，不保留旧实例引用。
 - **回收边界**：Snapshot 删除不保证回收 Kubernetes registry blobs。registry retention 与容量监控属于部署方，NiceEval 不持有 registry 写凭据。
@@ -288,8 +337,14 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 - author action 失败：节点与后代 `failed`，依赖它的配对在派发前失败，其它分支照常。
 - 复用池：第二条 Attempt 在同一实例上执行 before，并看见第一条在 workdir 外写下的标记与仍在运行的服务。
 - 两个 Invocation 同时冷启动同一 key：只发出一次 snapshot 请求，后者以 `hit` 消费。
+- 两个 Eval 用同名 action 声明不同内容：各自发布、互不取代，下一次运行都命中；同一 Eval 改内容仍取代自己的旧 artifact。
+- 同一 Invocation 的两个 Experiment 共享前缀、之后分叉：共享节点只准备一次；两个 Run 的配对都从共享 artifact `Restored`，不出现 `hold-missing`；E2B、Instabox 与 OpenSandbox 三个 driver 各验一次。
+- busy 等待后对方发布：等待方持有自己的 `run` hold 并以 `hit` 消费。
+- 每种消费回退各给出对应的具名原因。
 - 旧持有者暂停超过 lease、接管者发布后旧持有者恢复：旧持有者不发布、不删除，节点 `degraded(lease-lost)`。
 - 删除领取与消费互斥：有 `sandbox` hold 或未过期 `run` hold 时不调用删除。
 - 新增不在 `preserves.disks` 内的可写挂载：`degraded(mounted-state)`；Instabox `/data` 中的 action 结果正常恢复。
 - 换 domain：不命中，也不删除另一 domain 的 artifact。
+- Agent 派生节点：第一次运行发布派生 snapshot，同批其它 Attempt 与下一次 Invocation 的 `agent.install` 探测命中、不上传 payload。
+  改 before 链上任一 eligible action，只重建该节点、其后代与派生节点；链中有 opaque callback 时，派生节点仍接在它之前并命中。
 - 取消：保留已发布的祖先，不留活跃 staging、自有 `preparing` lease 或 `run` hold。

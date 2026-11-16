@@ -31,16 +31,12 @@ export function resolveLocalizedText(text: LocalizedText, locale: ReportLocale):
     const value = text[key];
     if (value !== undefined && value !== "") return value;
   }
-  throw new Error(
-    "LocalizedText object has no non-empty value. Provide at least one locale entry, e.g. { en: \"…\" }.",
-  );
+  throw new Error('LocalizedText object has no non-empty value. Provide at least one locale entry, e.g. { en: "…" }.');
 }
 
-export type ReportMessageKey = Extract<TranslationKey,
-  | `verdict.${string}`
-  | `cell.${string}`
-  | `table.${string}`
-  | `experimentList.${string}`
+export type ReportMessageKey = Extract<
+  TranslationKey,
+  `verdict.${string}` | `cell.${string}` | `table.${string}` | `experimentList.${string}`
 >;
 
 /** 通过唯一的 i18next Web catalog 读取指定 locale 的组件文案。 */

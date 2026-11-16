@@ -2,12 +2,8 @@
 // 旧源中的 Sample / Analysis 读取、aggregate、证据折叠和 detail target wrappers 已删除；
 // 当前文件只接受 integrator 已经闭合的 old-shape ExperimentListItem[]。
 
-import type {
-  AttemptLocator,
-  MetricValue,
-  Verdict,
-} from "../../components/cell.tsx";
-import type { AdapterIdentity } from "@niceeval/record/model/run-context.ts";
+import type { AttemptLocator, MetricValue, Verdict } from "../../components/cell.tsx";
+import type { ClosedAdapterIdentity } from "../../data/adapter-identity.ts";
 
 export type EvaluationKindComposition = "pass" | "points" | "mixed";
 
@@ -17,24 +13,19 @@ export type ExecutionValue =
   | { readonly state: "unavailable" };
 
 export type AdapterValue =
-  | { readonly state: "available"; readonly value: AdapterIdentity }
-  | { readonly state: "mixed" };
+  | { readonly state: "available"; readonly value: ClosedAdapterIdentity }
+  | { readonly state: "mixed" }
+  | { readonly state: "none" };
 
-export type JsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue };
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
 /** 一个层级共用的四枚闭合读数。 */
 export interface ExperimentMetrics {
-  readonly passRate?: MetricValue<number>;
-  readonly score?: MetricValue<number>;
-  readonly durationMs?: MetricValue<number>;
-  readonly costUSD?: MetricValue<number>;
-  readonly tokens?: MetricValue<number>;
+  readonly passRate: MetricValue<number> | undefined;
+  readonly score: MetricValue<number> | undefined;
+  readonly durationMs: MetricValue<number> | undefined;
+  readonly costUSD: MetricValue<number> | undefined;
+  readonly tokens: MetricValue<number> | undefined;
 }
 
 /** 一次 attempt 的闭合行。 */
@@ -43,18 +34,18 @@ export interface AttemptListItem {
   readonly experimentId: string;
   readonly evalId: string;
   readonly attemptOrdinal: number;
-  /** 证据读取失败时为 null(不伪造判定)。 */
-  readonly verdict: Verdict | null;
-  /** closed 数据没有可读摘录时为 null(渲染成 "—",不发明文案)。 */
-  readonly failureSummary: string | null;
+  /** 证据读取失败时缺席(不伪造判定)。 */
+  readonly verdict: Verdict | undefined;
+  /** closed 数据没有可读摘录时缺席(渲染成 "—",不发明文案)。 */
+  readonly failureSummary: string | undefined;
   readonly evaluationKind: "pass" | "points";
-  readonly score?: MetricValue<number>;
-  readonly passRate?: MetricValue<number>;
-  readonly durationMs?: MetricValue<number>;
-  readonly costUSD?: MetricValue<number>;
-  readonly tokens?: MetricValue<number>;
+  readonly score: MetricValue<number> | undefined;
+  readonly passRate: MetricValue<number> | undefined;
+  readonly durationMs: MetricValue<number> | undefined;
+  readonly costUSD: MetricValue<number> | undefined;
+  readonly tokens: MetricValue<number> | undefined;
   /** 所属 selected Run 的 startedAt；只用于旧 FailureList 排序语义。 */
-  readonly startedAt: number | null;
+  readonly startedAt: number | undefined;
   /** 闭合详情 href；presentation 按当前固定 hash route 从 locator 建链。 */
   readonly href: string;
 }
@@ -63,27 +54,33 @@ export interface AttemptListItem {
 export interface ExperimentListEvalRow {
   readonly evalId: string;
   readonly evaluationKind: "pass" | "points";
-  readonly score?: MetricValue<number>;
-  readonly endToEndPassRate?: MetricValue<number>;
-  readonly durationMs?: MetricValue<number>;
-  readonly costUSD?: MetricValue<number>;
-  readonly tokens?: MetricValue<number>;
+  readonly score: MetricValue<number> | undefined;
+  readonly endToEndPassRate: MetricValue<number> | undefined;
+  readonly durationMs: MetricValue<number> | undefined;
+  readonly costUSD: MetricValue<number> | undefined;
+  readonly tokens: MetricValue<number> | undefined;
   readonly attempts: readonly AttemptListItem[];
 }
 
 /** 一个 experiment 的闭合行。 */
 export interface ExperimentListItem {
-  readonly plugins?: readonly { readonly name: string; readonly key: string; readonly identity: Readonly<globalThis.Record<string, JsonValue>> }[];
+  readonly plugins:
+    | readonly {
+        readonly name: string;
+        readonly key: string;
+        readonly identity: Readonly<globalThis.Record<string, JsonValue>>;
+      }[]
+    | undefined;
   readonly experimentId: string;
   readonly adapter: AdapterValue;
   readonly model: ExecutionValue;
-  readonly flags: Readonly<globalThis.Record<string, JsonValue>> | null;
+  readonly flags: Readonly<globalThis.Record<string, JsonValue>> | undefined;
   readonly evaluationKind: EvaluationKindComposition;
-  readonly score?: MetricValue<number>;
-  readonly endToEndPassRate?: MetricValue<number>;
-  readonly durationMs?: MetricValue<number>;
-  readonly costUSD?: MetricValue<number>;
-  readonly tokens?: MetricValue<number>;
+  readonly score: MetricValue<number> | undefined;
+  readonly endToEndPassRate: MetricValue<number> | undefined;
+  readonly durationMs: MetricValue<number> | undefined;
+  readonly costUSD: MetricValue<number> | undefined;
+  readonly tokens: MetricValue<number> | undefined;
   readonly missingEvalIds: readonly string[];
   /** key 是完整组前缀(如 "downshift/basic")。 */
   readonly groupMetrics: ReadonlyMap<string, ExperimentMetrics>;
@@ -176,26 +173,24 @@ export function experimentListEvaluationKindComposition(
  * 旧列表初始排序：纯通过制按 endToEndPassRate；含分数制时按 Inspection score 降序。
  * 缺数据沉底，同值按 experimentId 字典序收口。输入数组不原地修改。
  */
-export function sortExperimentListItems(
-  items: readonly ExperimentListItem[],
-): readonly ExperimentListItem[] {
+export function sortExperimentListItems(items: readonly ExperimentListItem[]): readonly ExperimentListItem[] {
   const composition = experimentListEvaluationKindComposition(items);
-  return [...items].sort(byMetricDescThenId((item) =>
-    composition !== "pass" ? item.score?.value ?? null : item.endToEndPassRate?.value ?? null
-  ));
+  return [...items].sort(
+    byMetricDescThenId((item) => (composition !== "pass" ? item.score?.value : item.endToEndPassRate?.value)),
+  );
 }
 
 function byMetricDescThenId(
-  valueOf: (item: ExperimentListItem) => number | null,
+  valueOf: (item: ExperimentListItem) => number | undefined,
 ): (left: ExperimentListItem, right: ExperimentListItem) => number {
   return (left, right) => {
     const leftValue = valueOf(left);
     const rightValue = valueOf(right);
-    if (leftValue === null && rightValue === null) {
+    if (leftValue === undefined && rightValue === undefined) {
       return left.experimentId.localeCompare(right.experimentId);
     }
-    if (leftValue === null) return 1;
-    if (rightValue === null) return -1;
+    if (leftValue === undefined) return 1;
+    if (rightValue === undefined) return -1;
     return rightValue - leftValue || left.experimentId.localeCompare(right.experimentId);
   };
 }

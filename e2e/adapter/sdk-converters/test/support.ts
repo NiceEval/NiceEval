@@ -1,7 +1,5 @@
 import { join, resolve } from "node:path";
-import {
-  createE2EContext,
-} from "@niceeval/testkit";
+import { createE2EContext } from "@niceeval/testkit";
 
 /**
  * Tests run concurrently by default. Every case gets a disposable project and
