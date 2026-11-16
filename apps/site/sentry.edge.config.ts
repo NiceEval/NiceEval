@@ -5,5 +5,7 @@ if (productionEnabled(process.env.NODE_ENV, process.env.VERCEL_ENV) && !Sentry.g
   try {
     Sentry.init(sentryOptions(SITE_SENTRY_DSN, process.env.SENTRY_ENVIRONMENT, process.env.SENTRY_RELEASE));
     installEnvelopePrivacy(Sentry.getClient(), process.env.SENTRY_ENVIRONMENT, process.env.SENTRY_RELEASE);
-  } catch { /* Monitoring must not prevent serving requests. */ }
+  } catch {
+    /* Monitoring must not prevent serving requests. */
+  }
 }

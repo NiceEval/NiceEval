@@ -42,17 +42,30 @@ if (mode === "off") {
   }, 100);
 }
 `;
-const result = await build({ stdin: { contents: entry, resolveDir, loader: "ts" }, bundle: true, platform: "browser", write: false, alias: { "@sentry/react": require.resolve("@sentry/react", { paths: [realpathSync(resolveDir + "/node_modules/@sentry/nextjs")] }) }, define: {
-  "process.env.NODE_ENV": '"production"',
-  "process.env.NEXT_PUBLIC_SENTRY_DSN": '""',
-  "process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT": '""',
-  "process.env.NEXT_PUBLIC_SENTRY_RELEASE": '""',
-} });
+const result = await build({
+  stdin: { contents: entry, resolveDir, loader: "ts" },
+  bundle: true,
+  platform: "browser",
+  write: false,
+  alias: {
+    "@sentry/react": require.resolve("@sentry/react", {
+      paths: [realpathSync(resolveDir + "/node_modules/@sentry/nextjs")],
+    }),
+  },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    "process.env.NEXT_PUBLIC_SENTRY_DSN": '""',
+    "process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT": '""',
+    "process.env.NEXT_PUBLIC_SENTRY_RELEASE": '""',
+  },
+});
 const server = createServer((req, res) => {
   if (req.url === "/bundle.js") {
-    res.setHeader("Content-Type", "text/javascript"); res.end(result.outputFiles[0].contents);
+    res.setHeader("Content-Type", "text/javascript");
+    res.end(result.outputFiles[0].contents);
   } else {
-    res.setHeader("Content-Type", "text/html"); res.end('<!doctype html><html><body>RUNNING<script src="/bundle.js"></script></body></html>');
+    res.setHeader("Content-Type", "text/html");
+    res.end('<!doctype html><html><body>RUNNING<script src="/bundle.js"></script></body></html>');
   }
 });
 server.listen(0, "127.0.0.1", () => console.log(`READY http://127.0.0.1:${server.address().port}`));
