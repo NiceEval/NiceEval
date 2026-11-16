@@ -1,6 +1,11 @@
 import { networkInterfaces } from "node:os";
 import { withSentryConfig } from "@sentry/nextjs/config";
 
+if (process.env.VERCEL_ENV === "production" && !process.env.SENTRY_AUTH_TOKEN) {
+  throw new Error("Production deployment requires SENTRY_AUTH_TOKEN for sourcemap upload");
+}
+
+
 const localDevOrigins = [
   "127.0.0.1",
   ...Object.values(networkInterfaces()).flatMap((addresses) =>
