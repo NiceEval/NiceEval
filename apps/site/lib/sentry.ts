@@ -238,6 +238,28 @@ export function installEnvelopePrivacy(
   client?.on("beforeEnvelope", (envelope) => {
     const headers = envelope[0];
     const trace = headers.trace as Record<string, unknown> | undefined;
+    let spanTraceId: unknown;
+    for (let index = envelope[1].length - 1; index >= 0; index--) {
+      const item = envelope[1][index],
+        payload = item[1];
+      if (
+        item[0].type === "span" &&
+        payload &&
+        typeof payload === "object" &&
+        "items" in payload &&
+        Array.isArray(payload.items)
+      ) {
+        const first: unknown = payload.items[0];
+        if (first && typeof first === "object" && "trace_id" in first) spanTraceId = first.trace_id;
+        item[0] = {
+          type: "span",
+          content_type: "application/vnd.sentry.items.span.v2+json",
+          item_count: payload.items.length,
+        };
+      } else if (item[0].type === "event") item[0] = { type: "event" };
+      else envelope[1].splice(index, 1);
+    }
+    const traceId = spanTraceId ?? trace?.trace_id;
     envelope[0] = {
       sent_at: new Date().toISOString(),
       sdk: { name: "sentry.javascript.nextjs", version: "11.12.0" },
@@ -245,20 +267,15 @@ export function installEnvelopePrivacy(
         ? { event_id: headers.event_id }
         : {}),
     };
-    for (let index = envelope[1].length - 1; index >= 0; index--) {
-      const type = envelope[1][index][0].type;
-      if (type !== "event" && type !== "span") envelope[1].splice(index, 1);
-    }
-    if (trace) {
+    if (typeof traceId === "string" && /^[a-f0-9]{32}$/.test(traceId)) {
       envelope[0].trace = {
-        trace_id:
-          typeof trace.trace_id === "string" && /^[a-f0-9]{32}$/.test(trace.trace_id) ? trace.trace_id : undefined,
+        trace_id: traceId,
         public_key: client.getDsn()?.publicKey,
         sample_rate:
-          typeof trace.sample_rate === "string" && /^(0(\.\d+)?|1(\.0+)?)$/.test(trace.sample_rate)
+          typeof trace?.sample_rate === "string" && /^(0(\.\d+)?|1(\.0+)?)$/.test(trace.sample_rate)
             ? trace.sample_rate
             : undefined,
-        sampled: trace.sampled === "true" || trace.sampled === "false" ? trace.sampled : undefined,
+        sampled: trace?.sampled === "true" || trace?.sampled === "false" ? trace.sampled : undefined,
         environment: configText(environment) || "production",
         release: configText(release),
       };

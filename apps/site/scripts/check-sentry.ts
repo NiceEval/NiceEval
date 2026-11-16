@@ -149,6 +149,13 @@ try {
       );
     },
   );
+  await Sentry.continueTrace(
+    { sentryTrace: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-1", baggage: undefined },
+    () =>
+      Sentry.startSpan({ name: "request", op: "http.server" }, () => {
+        Sentry.startSpan({ name: "child", op: "function" }, () => {});
+      }),
+  );
   // A valid unsampled parent must stay unsampled even with the test's local rate of 1.
   await Sentry.continueTrace(
     { baggage: undefined, sentryTrace: "12345678901234567890123456789012-1234567890123456-0" },
@@ -171,6 +178,19 @@ try {
   }
   assert.ok(!output.includes(sentinel), "sensitive sentinel escaped the final SDK transport");
   const items = (envelopes as any[]).flatMap((envelope) => envelope[1]);
+  for (const [header, entries] of envelopes as any[]) {
+    for (const [item, body] of entries) {
+      if (item.type !== "span") continue;
+      assert.deepEqual(item, {
+        type: "span",
+        content_type: "application/vnd.sentry.items.span.v2+json",
+        item_count: body.items.length,
+      });
+      assert.equal(body.version, 2);
+      assert.equal(header.trace?.public_key, "public");
+      assert.ok(body.items.every((span: any) => span.trace_id === header.trace?.trace_id));
+    }
+  }
   assert.ok(
     items.every(([header]: any) => header.type === "event" || header.type === "span"),
     "out-of-scope envelope item escaped",
