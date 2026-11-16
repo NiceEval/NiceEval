@@ -33,6 +33,7 @@ allowBuilds:
   sharp: true
   ssh2: false
   '@google/genai': false
+  '@sentry/node-cpu-profiler': false
 
 minimumReleaseAgeExclude:
   - '@next/env@16.2.10 || 16.4.6'
