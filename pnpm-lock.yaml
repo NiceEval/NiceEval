@@ -15,6 +15,10 @@ overrides:
   undici@>=7.0.0 <7.30.1: 7.30.1
   openai@7>undici: 8.12.4
 
+patchedDependencies:
+  '@sentry/bundler-plugins@11.12.0': 33b5e15d7584524615dc7d261f5cb11800edcbc9805f7f4ce880b0c3ab55a407
+  sentry@0.49.0: d4894ffb0aeeae597a769c4727d6f7aef1230c3056261a2b75453b6537480c87
+
 importers:
 
   .:
@@ -7191,14 +7195,14 @@ snapshots:
       '@sentry/replay': 11.12.0
       '@sentry/replay-canvas': 11.12.0
 
-  '@sentry/bundler-plugins@11.12.0(rollup@4.68.3)':
+  '@sentry/bundler-plugins@11.12.0(patch_hash=33b5e15d7584524615dc7d261f5cb11800edcbc9805f7f4ce880b0c3ab55a407)(rollup@4.68.3)':
     dependencies:
       '@sentry/core': 11.12.0
       dotenv: 17.4.2
       glob: 14.0.6
       magic-string: 1.4.5
       oxc-parser: 0.152.0
-      sentry: 0.49.0
+      sentry: 0.49.0(patch_hash=d4894ffb0aeeae597a769c4727d6f7aef1230c3056261a2b75453b6537480c87)
     optionalDependencies:
       rollup: 4.68.3
 
@@ -7228,7 +7232,7 @@ snapshots:
       '@opentelemetry/api': 1.10.0
       '@rollup/plugin-commonjs': 28.0.1(rollup@4.68.3)
       '@sentry/browser-utils': 11.12.0
-      '@sentry/bundler-plugins': 11.12.0(rollup@4.68.3)
+      '@sentry/bundler-plugins': 11.12.0(patch_hash=33b5e15d7584524615dc7d261f5cb11800edcbc9805f7f4ce880b0c3ab55a407)(rollup@4.68.3)
       '@sentry/cloudflare': 11.12.0(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       '@sentry/conventions': 0.32.0
       '@sentry/core': 11.12.0
@@ -7257,7 +7261,7 @@ snapshots:
   '@sentry/node@11.12.0(rollup@4.68.3)':
     dependencies:
       '@opentelemetry/api': 1.10.0
-      '@sentry/bundler-plugins': 11.12.0(rollup@4.68.3)
+      '@sentry/bundler-plugins': 11.12.0(patch_hash=33b5e15d7584524615dc7d261f5cb11800edcbc9805f7f4ce880b0c3ab55a407)(rollup@4.68.3)
       '@sentry/conventions': 0.32.0
       '@sentry/core': 11.12.0
       '@sentry/opentelemetry': 11.12.0(@opentelemetry/api@1.10.0)
@@ -9970,7 +9974,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  sentry@0.49.0: {}
+  sentry@0.49.0(patch_hash=d4894ffb0aeeae597a769c4727d6f7aef1230c3056261a2b75453b6537480c87): {}
 
   serve-static@2.2.1(supports-color@10.2.2):
     dependencies:
