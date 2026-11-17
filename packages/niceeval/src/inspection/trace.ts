@@ -720,11 +720,11 @@ function projectTraceItemDetail(
 ): Extract<InspectionTraceDetailResult, { readonly kind: "item" }> | undefined {
   if (agentTurns.state !== "available") return undefined;
   for (const turn of agentTurns.value.segments) {
-    const item = turn.items.find((candidate) => candidate.itemId === itemId);
+    const item = turn.items.find((candidate) => candidate.itemId === itemId || candidate.eventId === itemId);
     if (item === undefined) continue;
     return {
       kind: "item",
-      itemId,
+      itemId: item.itemId,
       item: projectFullConversationItem(item, turn),
     };
   }
@@ -841,6 +841,7 @@ function projectFullConversationItem(
     readonly sessionId: string | undefined;
   },
 ): Extract<InspectionTraceDetailResult, { readonly kind: "item" }>["item"] {
+  const truncation = (field: string) => item.textTruncations?.[field];
   const base = {
     itemId: item.itemId,
     turnId: turn.turnId,
@@ -858,6 +859,7 @@ function projectFullConversationItem(
         toolOccurrenceId: item.toolOccurrenceId,
         tool: item.tool,
         input: item.inputSummary,
+        ...(truncation("inputSummary") === undefined ? {} : { inputTruncation: truncation("inputSummary") }),
       };
     case "tool-finish":
       return {
@@ -868,26 +870,53 @@ function projectFullConversationItem(
         ...(item.occurrence.state === "exact" ? { toolOccurrenceId: item.occurrence.toolOccurrenceId } : {}),
         outcome: item.outcome,
         output: item.outputSummary,
+        ...(truncation("outputSummary") === undefined ? {} : { outputTruncation: truncation("outputSummary") }),
       };
     case "message":
-      return { ...base, kind: item.kind, role: item.role, text: item.text };
+      return {
+        ...base,
+        kind: item.kind,
+        role: item.role,
+        text: item.text,
+        ...(truncation("text") === undefined ? {} : { textTruncation: truncation("text") }),
+      };
     case "thinking-summary":
     case "compaction":
     case "context-injection":
-      return { ...base, kind: item.kind, summary: item.summary };
+      return {
+        ...base,
+        kind: item.kind,
+        summary: item.summary,
+        ...(truncation("summary") === undefined ? {} : { summaryTruncation: truncation("summary") }),
+      };
     case "subagent":
-      return { ...base, kind: item.kind, state: item.state, label: item.label, summary: item.summary };
+      return {
+        ...base,
+        kind: item.kind,
+        state: item.state,
+        label: item.label,
+        summary: item.summary,
+        ...(truncation("summary") === undefined ? {} : { summaryTruncation: truncation("summary") }),
+      };
     case "input-request":
       return {
         ...base,
         kind: item.kind,
         state: item.state,
         prompt: item.promptSummary,
+        ...(truncation("promptSummary") === undefined ? {} : { promptTruncation: truncation("promptSummary") }),
         response: item.responseSummary,
+        ...(truncation("responseSummary") === undefined ? {} : { responseTruncation: truncation("responseSummary") }),
       };
     case "skill-load":
     case "conversation-error":
-      return { ...base, kind: item.kind, code: item.code, summary: item.summary };
+      return {
+        ...base,
+        kind: item.kind,
+        code: item.code,
+        summary: item.summary,
+        ...(truncation("summary") === undefined ? {} : { summaryTruncation: truncation("summary") }),
+      };
   }
 }
 

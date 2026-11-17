@@ -33,7 +33,14 @@ export type ToolOccurrenceRelation =
       readonly reason: "orphan-finish" | "ambiguous-operation";
     };
 
+export interface ObservedTextTruncation {
+  readonly state: "truncated";
+  readonly retainedBytes: number;
+  readonly originalBytes?: number | undefined;
+}
+
 export interface ObservedSourceEventBase {
+  readonly textTruncations?: Readonly<Record<string, ObservedTextTruncation>> | undefined;
   readonly itemId: ItemId;
   readonly eventId: EventId;
   readonly sessionSequence: PositiveSafeInteger;
@@ -308,6 +315,26 @@ export class ObservedEventIngestionCorrelator {
     }
     const unavailableText = unavailableTextValue();
 
+    const textTruncations: Record<string, ObservedTextTruncation> = {};
+    const field = (name: string, read: () => SafeText): SafeText => {
+      const start = draft.limitations.length;
+      const value = read();
+      const omitted = draft.limitations
+        .slice(start)
+        .reduce(
+          (sum, limitation) => sum + (limitation.code === "text-truncated" ? limitation.replacementOrOmittedCount : 0),
+          0,
+        );
+      if (omitted > 0 || hasTruncation) {
+        const retainedBytes = utf8ByteLength(value);
+        textTruncations[name] = {
+          state: "truncated",
+          retainedBytes,
+          ...(hasTruncation ? {} : { originalBytes: retainedBytes + omitted }),
+        };
+      }
+      return value;
+    };
     let observed: ObservedSourceEvent;
     switch (event.type) {
       case "message":
@@ -315,11 +342,12 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "message" as const,
           role: event.role,
-          text: this.text(unavailableText ?? event.text, draft),
+          text: field("text", () => this.text(unavailableText ?? event.text, draft)),
         };
         break;
       case "operation.started":
         if (event.operation.kind === "tool") {
+          const operation = event.operation;
           const toolOccurrenceId = mintEntity("tool-occurrence");
           const prior = session.openByOperationId.get(event.operationId);
           session.finishedOperationIds.delete(event.operationId);
@@ -337,10 +365,9 @@ export class ObservedEventIngestionCorrelator {
             kind: "tool-start" as const,
             toolOccurrenceId,
             tool: this.toolName(event.operation.name, draft),
-            inputSummary:
-              unavailableText === undefined
-                ? this.json(event.operation.input, draft)
-                : this.text(unavailableText, draft),
+            inputSummary: field("inputSummary", () =>
+              unavailableText === undefined ? this.json(operation.input, draft) : this.text(unavailableText, draft),
+            ),
           };
         } else {
           const label = this.identifier(event.operation.name, draft);
@@ -350,7 +377,7 @@ export class ObservedEventIngestionCorrelator {
             kind: "subagent" as const,
             state: "started" as const,
             label,
-            summary: this.text(unavailableText ?? "Subagent started.", draft),
+            summary: field("summary", () => this.text(unavailableText ?? "Subagent started.", draft)),
           };
         }
         break;
@@ -379,7 +406,7 @@ export class ObservedEventIngestionCorrelator {
             kind: "tool-finish" as const,
             occurrence,
             outcome: event.status,
-            outputSummary: outputSummary(),
+            outputSummary: field("outputSummary", outputSummary),
           };
         } else {
           const label = session.openSubagentLabels.get(event.operationId) ?? this.identifier(event.operationId, draft);
@@ -394,7 +421,7 @@ export class ObservedEventIngestionCorrelator {
             kind: "subagent" as const,
             state: event.status,
             label,
-            summary: outputSummary(),
+            summary: field("summary", outputSummary),
           };
         }
         break;
@@ -402,21 +429,21 @@ export class ObservedEventIngestionCorrelator {
         observed = {
           ...base,
           kind: "thinking-summary" as const,
-          summary: this.text(unavailableText ?? event.text, draft),
+          summary: field("summary", () => this.text(unavailableText ?? event.text, draft)),
         };
         break;
       case "compaction":
         observed = {
           ...base,
           kind: "compaction" as const,
-          summary: this.text(unavailableText ?? event.reason ?? "Context compacted.", draft),
+          summary: field("summary", () => this.text(unavailableText ?? event.reason ?? "Context compacted.", draft)),
         };
         break;
       case "context.injected":
         observed = {
           ...base,
           kind: "context-injection" as const,
-          summary: this.text(unavailableText ?? event.text, draft),
+          summary: field("summary", () => this.text(unavailableText ?? event.text, draft)),
         };
         break;
       case "skill.loaded":
@@ -424,7 +451,7 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "skill-load" as const,
           code: this.identifier(event.skill, draft),
-          summary: this.text(unavailableText ?? "Skill loaded.", draft),
+          summary: field("summary", () => this.text(unavailableText ?? "Skill loaded.", draft)),
         };
         break;
       case "input.requested": {
@@ -439,7 +466,7 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "input-request" as const,
           state: "requested" as const,
-          promptSummary: promptSummary(),
+          promptSummary: field("promptSummary", promptSummary),
           responseSummary: null,
         };
         break;
@@ -449,10 +476,11 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "conversation-error" as const,
           code: requiredIdentifier("stream-error"),
-          summary: this.text(unavailableText ?? event.message, draft),
+          summary: field("summary", () => this.text(unavailableText ?? event.message, draft)),
         };
         break;
     }
+    if (Object.keys(textTruncations).length > 0) observed = { ...observed, textTruncations };
     draft.evaluationItems.push(observed);
     draft.evaluationEvents.push(this.evaluationEvent(event));
     if (!retainInRecord) {

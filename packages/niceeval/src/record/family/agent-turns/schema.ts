@@ -28,6 +28,16 @@ import {
 import { PositiveSafeIntegerSchema } from "../common.ts";
 
 const CurrentAgentTurnItemBase = {
+  textTruncations: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        state: Schema.Literal("truncated"),
+        retainedBytes: Schema.Number,
+        originalBytes: Schema.optional(Schema.Number),
+      }),
+    ),
+  ),
   itemId: ItemIdSchema,
   eventId: EventIdSchema,
   sessionSequence: ObservabilityPositiveSafeIntegerSchema,

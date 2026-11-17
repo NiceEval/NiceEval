@@ -816,12 +816,18 @@ const FullTraceItemBase = {
   eventId: Schema.optional(Schema.String),
   sequence: Schema.optional(Schema.Number),
 } as const;
+const TraceTextTruncationSchema = Schema.Struct({
+  state: Schema.Literal("truncated"),
+  retainedBytes: Schema.Number,
+  originalBytes: Schema.optional(Schema.Number),
+});
 export const InspectionTraceDetailItemSchema = Schema.Union([
   Schema.Struct({
     ...FullTraceItemBase,
     kind: Schema.Literal("message"),
     role: Schema.Literals(["user", "assistant"]),
     text: Schema.String,
+    textTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
@@ -829,6 +835,7 @@ export const InspectionTraceDetailItemSchema = Schema.Union([
     toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
     tool: Schema.String,
     input: Schema.String,
+    inputTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
@@ -836,11 +843,13 @@ export const InspectionTraceDetailItemSchema = Schema.Union([
     toolOccurrenceId: Schema.optional(ToolOccurrenceIdSchema),
     outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
     output: Schema.String,
+    outputTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
     kind: Schema.Literals(["thinking-summary", "compaction", "context-injection"]),
     summary: Schema.String,
+    summaryTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
@@ -848,19 +857,23 @@ export const InspectionTraceDetailItemSchema = Schema.Union([
     state: Schema.Literals(["started", "completed", "failed"]),
     label: Schema.String,
     summary: Schema.String,
+    summaryTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
     kind: Schema.Literal("input-request"),
     state: Schema.Literals(["requested", "answered", "cancelled"]),
     prompt: Schema.String,
+    promptTruncation: Schema.optional(TraceTextTruncationSchema),
     response: Schema.NullOr(Schema.String),
+    responseTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
   Schema.Struct({
     ...FullTraceItemBase,
     kind: Schema.Literals(["skill-load", "conversation-error"]),
     code: Schema.String,
     summary: Schema.String,
+    summaryTruncation: Schema.optional(TraceTextTruncationSchema),
   }),
 ]);
 const TraceTurnIdentitySchema = Schema.Struct({

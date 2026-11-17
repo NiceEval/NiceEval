@@ -75,7 +75,9 @@ test.concurrent("machine consumer follows show links from current results to a f
       expect(toolLink).toBeDefined();
       const tool = await niceeval.run([...toolLink!.command.slice("niceeval ".length).split(" "), "--json"]);
       expect(tool.exitCode, tool.diagnostic()).toBe(0);
-      for (const link of tool.inspectionSuccess("attempt.trace.detail").links.filter((link) => link.rel === "execution-item")) {
+      for (const link of tool
+        .inspectionSuccess("attempt.trace.detail")
+        .links.filter((link) => link.rel === "execution-item")) {
         const linked = await niceeval.run([...link.command.slice("niceeval ".length).split(" "), "--json"]);
         expect(linked.exitCode, linked.diagnostic()).toBe(0);
       }
@@ -112,7 +114,9 @@ test.concurrent("machine consumer follows show links from current results to a f
       expect(JSON.stringify(toolDetail.inspectionSuccess("attempt.assertion.detail"))).toContain("output-tail");
       const human = await niceeval.run(["show", locator]);
       expect(human.exitCode, human.diagnostic()).toBe(0);
-      for (const link of outline.links) expect(human.stdout).toContain(link.command);
+      expect(human.stdout).toContain(`niceeval show ${locator} execution`);
+      expect(human.stdout).toContain(`niceeval show ${locator} assertions`);
+      expect(human.stdout).toContain(`more: niceeval show ${locator} --json`);
       expect(human.stdout).toContain(`Open: niceeval view ${locator}`);
       const explained = await niceeval.run(["show", `run:${runId}`, "--explain", "--json"]);
       expect(explained.exitCode, explained.diagnostic()).toBe(0);

@@ -2101,6 +2101,20 @@ function traceDetailItemBlocks(item: TraceDetailItem, title = `Item ${item.itemI
       value: item.sequence === undefined ? "not recorded" : String(item.sequence),
     },
   ];
+  for (const [field, value] of Object.entries(item)) {
+    if (
+      field.endsWith("Truncation") &&
+      value !== undefined &&
+      value !== null &&
+      typeof value === "object" &&
+      "retainedBytes" in value
+    ) {
+      entries.push({
+        key: field.slice(0, -"Truncation".length),
+        value: `Truncated; ${value.retainedBytes} retained bytes${"originalBytes" in value ? `; ${value.originalBytes} original bytes` : "; original bytes unknown"}`,
+      });
+    }
+  }
   let content: string | undefined;
   switch (item.kind) {
     case "message":
