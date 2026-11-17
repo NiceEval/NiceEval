@@ -4,9 +4,15 @@ import { createServer } from "node:http";
 import * as Sentry from "@sentry/nextjs";
 import { productionEnabled, installEnvelopePrivacy, sentryOptions } from "../lib/sentry";
 import { onRequestError } from "../instrumentation";
+import { loadNodeProfiling } from "../lib/sentry-node";
 
 const dsn = "https://public@example.invalid/1";
 const sentinel = "SENTRY_PRIVATE_SENTINEL";
+const fallback = process.env.SENTRY_PROFILER_BINARY_PATH ? await loadNodeProfiling("site@acceptance") : undefined;
+if (fallback) {
+  assert.equal(fallback.policy.enabled, false);
+  assert.deepEqual(fallback.integrations, []);
+}
 assert.notEqual(process.env.NODE_ENV, "production", "Run acceptance in development/test with explicit local transport");
 await import("../sentry.server.config");
 await import("../sentry.edge.config");
@@ -82,7 +88,8 @@ const address = server.address();
 assert.ok(address && typeof address !== "string");
 try {
   Sentry.init({
-    ...sentryOptions(dsn, "test", "site@acceptance"),
+    ...sentryOptions(dsn, "test", "site@acceptance", fallback?.policy),
+    integrations: fallback?.integrations,
     tracesSampleRate: 1,
     transport: () => ({
       send: async (envelope: Parameters<ReturnType<NonNullable<Sentry.BrowserOptions["transport"]>>["send"]>[0]) => {
@@ -192,7 +199,7 @@ try {
     }
   }
   assert.ok(
-    items.every(([header]: any) => header.type === "event" || header.type === "span"),
+    items.every(([header]: any) => ["event", "span", "client_report"].includes(header.type)),
     "out-of-scope envelope item escaped",
   );
   const events = items.filter(([header]: any) => header.type === "event").map(([, payload]: any) => payload);

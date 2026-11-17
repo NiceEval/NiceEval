@@ -17,6 +17,13 @@ const release =
 const environment = process.env.SENTRY_ENVIRONMENT || process.env.VERCEL_ENV || "production";
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ["@sentry/profiling-node", "@sentry/node-cpu-profiler"],
+  outputFileTracingIncludes: {
+    "/*": [
+      "./node_modules/@sentry/profiling-node/**/*",
+      "../../node_modules/.pnpm/@sentry+node-cpu-profiler@*/node_modules/@sentry/node-cpu-profiler/lib/**/*",
+    ],
+  },
   env: {
     SENTRY_RELEASE: release,
     NEXT_PUBLIC_SENTRY_RELEASE: release,
@@ -24,6 +31,9 @@ const nextConfig = {
     NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV || "",
   },
   reactStrictMode: true,
+  async headers() {
+    return [{ source: "/:path*", headers: [{ key: "Document-Policy", value: "js-profiling" }] }];
+  },
   // dev server 监听 0.0.0.0 时，浏览器实际使用回环或网卡 IP；只放行本机
   // 拥有的地址，避免 Next 把 hydration / HMR chunk 当成跨站请求拦成 403。
   allowedDevOrigins: [...new Set(localDevOrigins)],

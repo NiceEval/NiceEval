@@ -1,5 +1,6 @@
 "use client";
 
+import { siteOperation } from "../lib/sentry-operation";
 import Link from "next/link";
 import { githubUrl, otherLocale, withLocale, type Dictionary, type Locale } from "../lib/content";
 import { track } from "../src/analytics";
@@ -57,7 +58,12 @@ export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; ro
             {t.blog}
           </Link>
         )}
-        <a href={headerDocsUrl[locale]} onClick={() => track("Click Docs Link", { location: "header", locale })}>
+        <a
+          href={headerDocsUrl[locale]}
+          onClick={() =>
+            siteOperation("site.docs.open", () => track("Click Docs Link", { location: "header", locale }))
+          }
+        >
           {t.docs}
         </a>
         <a href={githubUrl} onClick={() => track("Click GitHub Link", { location: "header" })}>

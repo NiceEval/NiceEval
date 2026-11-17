@@ -1,5 +1,6 @@
 "use client";
 
+import { siteOperation } from "../lib/sentry-operation";
 import { useEffect, useState } from "react";
 import { BookOpen, Clipboard, GitFork } from "lucide-react";
 import { initAnalytics, track } from "../src/analytics";
@@ -51,7 +52,7 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
   const humanMode = t.modes.humans;
   const copyCommand = async () => {
     try {
-      await navigator.clipboard?.writeText(agentMode.command);
+      await siteOperation("site.install_guide.copy", () => navigator.clipboard?.writeText(agentMode.command));
     } catch {
       // Some browsers block clipboard access outside secure contexts.
     }
@@ -85,7 +86,9 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
             href={docsUrl[locale]}
             target="_blank"
             rel="noreferrer"
-            onClick={() => track("Click Docs Link", { location: "hero", locale })}
+            onClick={() =>
+              siteOperation("site.docs.open", () => track("Click Docs Link", { location: "hero", locale }))
+            }
           >
             <BookOpen size={16} />
             {humanMode.cta}

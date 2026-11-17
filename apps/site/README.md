@@ -35,31 +35,92 @@ pnpm run site:dev
 
 ## 异常监控
 
-产品站使用 Sentry Project `niceeval-landing`，组件为 `site`。客户端、Node 和
-Edge 共用发送前白名单；错误正文、请求内容和自由文本 span 属性不发送。
-自营产品站的公开 DSN 固定在源码中。正式构建（`NODE_ENV=production`）默认初始化，不需要额外启用变量。
-Vercel 使用现有 `VERCEL_ENV` 排除 preview/development；开发和测试默认不发送，
-不以域名判断部署归属。
+产品站使用 Sentry Project `niceeval-landing`，组件为 `site`。自营公开 DSN 固定在源码，
+仅正式运行环境初始化，Vercel preview/development 保持关闭，不增加 enable 变量。
+CLI、eval 和模型运行时不在此接入范围。SDK 与 Node profiler 固定同版 `11.12.0`。
 
-事件环境默认 `production`，可用 `SENTRY_ENVIRONMENT` 覆盖标签，覆盖不影响启用。
-构建使用
-`SENTRY_RELEASE=site@<git-sha>`；Vercel 未显式提供时从
-`VERCEL_GIT_COMMIT_SHA` 生成。浏览器发布与环境由构建配置同步，避免与
-服务端和 sourcemap 使用不同标识。显式发布变量默认空。
+根 trace 采样率为 `0.1`，保留合法父采样。浏览器自动 pageload/navigation 分别使用
+`site.page.load`、`site.navigation`；真实文档点击与复制 handler 使用 `site.docs.open`、
+`site.install_guide.copy`，复制覆盖 clipboard promise，保留成功、失败、取消 outcome。
+文档点击仅表示本地点击处理，不声明外站加载完成。没有下载操作时不制造 download span。
+产品站没有业务跨服务 API：所有运行时传播 targets 为空，Browser `traceXHR: false`，
+既有外部 tracker、文档跳转、下载/CDN 不增加 trace header；空集合不安装 fetch guard。
 
-`SENTRY_AUTH_TOKEN` 只用于部署构建，组织固定 `instaai`。有 token 才上传
-sourcemap，并在上传后删除；无 token 的本地构建不上传。上传与生产投递需要
-部署后分别验收，构建成功不代表已投递。回滚需回退本轮提交。
+Browser 使用 trace lifecycle profiling，session rate 为 `0.1`，仅支持实际提供 Profiler
+能力的 Chromium。Node 主线程使用 trace lifecycle、session rate `1`，由采样 trace
+控制运行窗口；Edge 保持 trace-only。Node-only 动态加载失败仅关闭 profiler，并输出
+固定本地诊断，error/tracing 保持初始化。实际 HTML 响应带 `Document-Policy: js-profiling`。
+浏览器首次生产开启前必须完成项目 IP scrub 与接收数据核验；本地 transport 通过不代替此门槛。
 
-本地验收不向 Sentry 发送数据：
+最终 transport 独立重建 error、span v2、`profile_chunk` v2、固定 log/trace_metric、匿名
+Browser session 和 client_report；拒绝 Replay、Cron/check_in、sessions 聚合、legacy profile
+及未知 item。profile 只保留合法索引、样本时间、
+线程与关联标识；frame 等长清理，不移动索引，不复制动态函数名、业务路径或任意 metadata。
+span 保留 SDK 真实 profiler ID、主线程 ID 和时间区间，不给 chunk 伪造单个 trace ID。
+
+构建从实际 `.next/static` 与 `.next/server` JavaScript 解析 AST Identifier 清单，
+不采集字符串字面值或源码。浏览器清单为同 origin `/sentry-profile-assets.json`，Node 清单
+留在 server 产物并进入 Next NFT。文件精确命中且函数属于该文件符号集合才保留；
+缺失、未到达或 release 不匹配时未知 frame 原位 redact，不推迟 error/tracing 初始化。
+
+发布与清单均使用 `site@<Git SHA>`，Vercel 从 `VERCEL_GIT_COMMIT_SHA` 生成。
+正式构建缺少 `SENTRY_AUTH_TOKEN` 失败；上传组织固定 `instaai`，token 只存在于构建环境。
+上传后移除公开 sourcemap，官方 CI 缺失或无效 release/manifest/native binding 阻止发布。
+本地无 token 不上传。构建、上传、部署同份产物以及生产接收/关联分别验收。
+
+Node native gate 检查最终 NFT 包含 binding 与清单，再将 NFT 文件复制到临时隔离快照加载
+binding 并取得真实样本，随后使用真实 SDK 生成 trace lifecycle chunk。构建平台结果不能替代
+部署目标的 Node major/ABI、架构与 libc 检查。主线程以外不声明 CPU profiling 支持。
+
+本地隔离验收（不向生产发送）：
 
 ```sh
 pnpm --filter @niceeval/site exec tsx scripts/check-sentry.ts
-pnpm --filter @niceeval/site exec tsc6 --noEmit
-pnpm --filter @niceeval/site run build
+pnpm --filter @niceeval/site exec tsc6 --noEmit --incremental false
+SENTRY_RELEASE=site@<Git SHA> pnpm --filter @niceeval/site run build
+pnpm --filter @niceeval/site exec tsx scripts/check-sentry-profile.ts
 ```
 
-浏览器过滤验收可启动 `node apps/site/scripts/check-sentry-browser.mjs`，在真实
-浏览器打开输出地址的 `?mode=off` 与 `?mode=capture`；后者使用真实 React SDK
-与本地 transport，覆盖全局异常、嵌套字段和根/子 span。它不替代 Next.js 官方
-部署的浏览器、Edge 和 sourcemap 验收。
+`check-sentry-native.mjs` 是构建 gate，`--runtime-only` 仅做当前运行时 native/真实 chunk
+检查，不能代替最终产物 gate。Browser 原有 `check-sentry-browser.mjs` 保留 error/trace
+检查；`check-sentry-browser-profile.mjs <local Next origin>` 在本地代理真实构建页面，阻断
+第三方 tracker，注入真实 SDK 与隔离 transport，并用官方构建工具注入测试 artifact debug ID。
+仅 clipboard 外部边界替换，不修改真实页面 handler。测试用 session rate `1` 只用于隔离验收。
+`?mode=unsampled` 验证 session 不采样，缺 Profiler 时维持 error/tracing。
+浏览器最后 chunk 异步到达，等待实际 transport；不调用 manual stop 或私有 profiler。
+源码映射、frames/stacks 索引、真实复制 span、外部 receiver 302/307 与 XHR 无 header 均分别检查。
+
+### 日志、指标与匿名健康
+
+固定业务 wrapper 的顶层 `site.docs.open` / `site.install_guide.copy` 每次结束记录
+`app.operation.count=1` 与 `app.operation.duration` distribution（millisecond），包括
+success/error/cancelled，子阶段不重复计数。指标独立于 trace 采样。自动 pageload/navigation
+span 仍表示页面性能，不从采样 span 推算全量操作数；产品站没有 scheduler，不造 tick 或 Cron。
+
+仅允许固定日志 `operation.failed`（error）、`operation.degraded`（warn）、
+`service.started` / `service.stopped`（info）。业务错误在 wrapper 捕获位置记录，取消不记成
+服务故障。Node 初始化记录真实启动与 native 不可用降级；没有真实 shutdown owner 时不制造
+stopped 日志。原有 console/analytics/logger 不自动转发，不收任意参数或异常正文。
+
+beforeSendLog / beforeSendMetric 先清理，最终 transport 在 SDK 合并 scope 后再按 typed
+attributes 重建。log/trace_metric 均保留 v2 数字 version、官方 content_type、实际 item_count，
+Browser infer_ip/infer_user_agent 为 never。过滤同步完成，不创建第二个待 flush 队列；委托
+底层有界 flush，发送失败不替换业务结果，不递归报告自身发送错误。
+
+Browser 显式使用 page lifecycle 的 browserSessionIntegration，不调用 setUser、不跨 tab
+持久化身份。保留 SDK 随机 sid、init、ISO 时间和累计 errors/status，仅保留安全
+release/environment；删除 did、IP、UA 与未知属性。仅承诺 session 健康率，不承诺用户去重。
+Node/Edge 不制造浏览器健康会话。client_report 仅接受本版 SDK 的有限 reason/category
+与正整数 quantity，支持客户端过滤/限流/队列损耗观察。生产持久数据及统计另行验收。
+
+小型真实 SDK 验收不下载依赖、不构建或访问生产：
+
+```sh
+pnpm --filter @niceeval/site exec tsx scripts/check-sentry-quality.ts
+pnpm --filter @niceeval/site exec node scripts/check-sentry-browser-quality.mjs
+```
+
+前者使用 SDK Node transport 向 loopback HTTP receiver 发送真实序列化 wire；后者启动
+独立浏览器 fixture，检查健康页、handled/unhandled error、同 sid 更新与真实 Browser fetch
+transport。真实浏览器隐藏页面触发 SDK client_report，不调用私有发送器。`?off` 不初始化
+客户端。测试替换 ingestion 边界，不把本地 fixture 注册为产品路由。

@@ -1,5 +1,11 @@
 import type { BrowserOptions, ErrorEvent } from "@sentry/nextjs";
+import { cleanProfileChunk, telemetryId, type ProfileManifest } from "./sentry-profile";
+import { siteOperations } from "./sentry-operations";
+import { cleanLog, cleanMetric, cleanSession, cleanClientReport } from "./sentry-quality";
 type StreamedSpanJSON = Parameters<NonNullable<BrowserOptions["beforeSendSpan"]>>[0];
+
+export { siteOperations } from "./sentry-operations";
+export type ProfilePolicy = { enabled: boolean; threadId?: number; manifest?: ProfileManifest };
 
 // This landing is operated by NiceEval; the DSN is a public ingestion identifier.
 export const SITE_SENTRY_DSN =
@@ -15,6 +21,7 @@ const operations = new Set([
   "ui.react.render",
   "function",
   "middleware",
+  "ui.action",
 ]);
 const origins = new Set([
   "manual",
@@ -95,7 +102,7 @@ function staticCodeLocation(value: string | undefined) {
   return location && /\.(?:[cm]?js|[jt]sx?|wasm)$/i.test(location) ? location : undefined;
 }
 
-export function sentryOptions(dsn: string, environment?: string, release?: string) {
+export function sentryOptions(dsn: string, environment?: string, release?: string, profile?: ProfilePolicy) {
   const safeEnvironment = configText(environment) || "production";
   const safeRelease = configText(release);
   return {
@@ -105,9 +112,15 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
     traceLifecycle: "stream" as const,
     tracesSampleRate: 0.1,
     tracePropagationTargets: [] as (string | RegExp)[],
-    enableLogs: false,
-    enableMetrics: false,
-    sendClientReports: false,
+    enableLogs: true,
+    enableMetrics: true,
+    sendClientReports: true,
+    beforeSendLog(log: Parameters<NonNullable<BrowserOptions["beforeSendLog"]>>[0]) {
+      return (cleanLog(log, safeEnvironment, safeRelease, false) as typeof log | undefined) ?? null;
+    },
+    beforeSendMetric(metric: Parameters<NonNullable<BrowserOptions["beforeSendMetric"]>>[0]) {
+      return (cleanMetric(metric, safeEnvironment, safeRelease, false) as typeof metric | undefined) ?? null;
+    },
     dataCollection: {
       userInfo: false,
       cookies: false,
@@ -196,16 +209,31 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
         typeof span.attributes["sentry.op"] === "string" && operations.has(span.attributes["sentry.op"])
           ? span.attributes["sentry.op"]
           : "function";
+      const name = siteOperations.has(span.name)
+        ? span.name
+        : op === "pageload"
+          ? "site.page.load"
+          : op === "navigation"
+            ? "site.navigation"
+            : op;
       const attributes: StreamedSpanJSON["attributes"] = {
         component: "site",
         "sentry.op": op,
         "sentry.release": safeRelease,
         "sentry.environment": safeEnvironment,
-        "sentry.segment.name": op,
+        "sentry.segment.name": name,
         "sentry.sdk.name": "sentry.javascript.nextjs",
         "sentry.sdk.version": "11.12.0",
       };
       const sdkOrigin = span.attributes["sentry.origin"];
+      if (["success", "error", "cancelled"].includes(String(span.attributes.outcome)))
+        attributes.outcome = span.attributes.outcome;
+      if (profile?.enabled && telemetryId(span.attributes["sentry.profiler_id"])) {
+        attributes["sentry.profiler_id"] = span.attributes["sentry.profiler_id"];
+        const threadId = profile.threadId ?? span.attributes["thread.id"];
+        if (typeof threadId === "number" && Number.isSafeInteger(threadId) && threadId >= 0)
+          attributes["thread.id"] = threadId;
+      }
       if (typeof sdkOrigin === "string" && origins.has(sdkOrigin)) attributes["sentry.origin"] = sdkOrigin;
       const segmentId = span.attributes["sentry.segment.id"];
       if (typeof segmentId === "string" && /^[a-f0-9]{16}$/.test(segmentId))
@@ -222,63 +250,214 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
         end_timestamp: span.end_timestamp,
         status: span.status,
         is_segment: span.is_segment,
-        name: op,
+        name,
         attributes,
       };
     },
   };
 }
 
-// Dynamic sampling context is envelope metadata and bypasses beforeSend/Span.
+// Used at the transport as well as the client hook: sendEnvelope bypasses beforeSend.
+type Envelope = Parameters<ReturnType<NonNullable<BrowserOptions["transport"]>>["send"]>[0];
+export function sanitizeEnvelope(
+  envelope: Envelope,
+  dsn: string,
+  environment?: string,
+  release?: string,
+  profile?: ProfilePolicy,
+): Envelope {
+  const options = sentryOptions(dsn, environment, release, profile);
+  const result: Envelope[1] = [];
+  let spanTraceId: unknown;
+  for (const [header, raw] of envelope[1]) {
+    try {
+      if (
+        (header.type === "log" || header.type === "trace_metric") &&
+        raw &&
+        typeof raw === "object" &&
+        "version" in raw &&
+        raw.version === 2 &&
+        "items" in raw &&
+        Array.isArray(raw.items)
+      ) {
+        const items = raw.items.flatMap((item: unknown) => {
+          const clean =
+            header.type === "log"
+              ? cleanLog(item, options.environment, options.release)
+              : cleanMetric(item, options.environment, options.release);
+          return clean ? [clean] : [];
+        });
+        if (items.length)
+          result.push([
+            {
+              type: header.type,
+              content_type:
+                header.type === "log"
+                  ? "application/vnd.sentry.items.log+json"
+                  : "application/vnd.sentry.items.trace-metric+json",
+              item_count: items.length,
+            },
+            {
+              version: 2,
+              ...(typeof window !== "undefined"
+                ? { ingest_settings: { infer_ip: "never", infer_user_agent: "never" } }
+                : {}),
+              items,
+            },
+          ] as never);
+      } else if (header.type === "session" && typeof window !== "undefined") {
+        const session = cleanSession(raw, options.environment, options.release);
+        if (session) result.push([{ type: "session" }, session] as never);
+      } else if (header.type === "client_report") {
+        const report = cleanClientReport(raw);
+        if (report) result.push([{ type: "client_report" }, report] as never);
+      } else if (header.type === "profile_chunk" && profile?.enabled) {
+        const chunk = cleanProfileChunk(raw, options.environment, options.release, profile.manifest);
+        if (chunk && header.platform === chunk.platform)
+          result.push([{ type: "profile_chunk", platform: chunk.platform }, chunk] as never);
+      } else if (header.type === "event" && raw && typeof raw === "object") {
+        result.push([{ type: "event" }, options.beforeSend(raw as ErrorEvent)] as never);
+      } else if (
+        header.type === "span" &&
+        raw &&
+        typeof raw === "object" &&
+        "items" in raw &&
+        "version" in raw &&
+        raw.version === 2 &&
+        Array.isArray(raw.items)
+      ) {
+        const items = raw.items.flatMap((value: any) => {
+          if (
+            !value ||
+            !telemetryId(value.trace_id) ||
+            !telemetryId(value.span_id, 16) ||
+            (value.parent_span_id !== undefined && !telemetryId(value.parent_span_id, 16)) ||
+            !Number.isFinite(value.start_timestamp) ||
+            !Number.isFinite(value.end_timestamp) ||
+            value.end_timestamp < value.start_timestamp
+          )
+            return [];
+          const attributes = Object.fromEntries(
+            Object.entries(value.attributes ?? {}).map(([key, attr]: any) => [key, attr?.value]),
+          );
+          const clean = options.beforeSendSpan({ ...value, attributes });
+          // Do not refill a missing wire thread from the hook's runtime fallback.
+          const threadId = attributes["thread.id"];
+          if (
+            profile?.enabled &&
+            telemetryId(clean.attributes["sentry.profiler_id"]) &&
+            typeof threadId === "number" &&
+            Number.isSafeInteger(threadId) &&
+            threadId >= 0
+          ) {
+            clean.attributes["thread.id"] = threadId;
+            clean.attributes["sentry.thread.id"] = String(threadId);
+          } else {
+            delete clean.attributes["sentry.profiler_id"];
+            delete clean.attributes["thread.id"];
+          }
+          const typed = Object.fromEntries(
+            Object.entries(clean.attributes).map(([key, val]) => [
+              key,
+              {
+                type: typeof val === "number" ? (Number.isInteger(val) ? "integer" : "double") : typeof val,
+                value: val,
+              },
+            ]),
+          );
+          return [{ ...clean, attributes: typed }];
+        });
+        if (!items.length || !items.every((span: any) => span.trace_id === items[0].trace_id)) continue;
+        spanTraceId = items[0].trace_id;
+        result.push([
+          { type: "span", content_type: "application/vnd.sentry.items.span.v2+json", item_count: items.length },
+          { version: 2, ingest_settings: { infer_ip: "never", infer_user_agent: "never" }, items },
+        ] as never);
+      }
+    } catch {
+      /* Drop only the invalid item; other telemetry remains independent. */
+    }
+  }
+  const headers = envelope[0];
+  const trace = headers.trace as Record<string, unknown> | undefined;
+  const traceId = spanTraceId ?? trace?.trace_id;
+  let publicKey: string | undefined;
+  try {
+    publicKey = new URL(dsn).username;
+  } catch {
+    /* Invalid DSN is never propagated. */
+  }
+  return [
+    {
+      sent_at: new Date().toISOString(),
+      sdk: { name: "sentry.javascript.nextjs", version: "11.12.0" },
+      ...(telemetryId(headers.event_id) ? { event_id: headers.event_id } : {}),
+      ...(telemetryId(traceId) && publicKey
+        ? {
+            trace: {
+              trace_id: traceId,
+              public_key: publicKey,
+              ...(typeof trace?.sample_rate === "string" && /^(0(\.\d+)?|1(\.0+)?)$/.test(trace.sample_rate)
+                ? { sample_rate: trace.sample_rate }
+                : {}),
+              ...(trace?.sampled === "true" || trace?.sampled === "false" ? { sampled: trace.sampled } : {}),
+              environment: options.environment,
+              release: options.release,
+            },
+          }
+        : {}),
+    },
+    result,
+  ] as Envelope;
+}
+
+export function privacyTransport(
+  factory: NonNullable<BrowserOptions["transport"]>,
+  dsn: string,
+  environment?: string,
+  release?: string,
+  profile?: ProfilePolicy,
+): NonNullable<BrowserOptions["transport"]> {
+  return (transportOptions) => {
+    const transport = factory(transportOptions);
+    return {
+      ...transport,
+      send: (envelope) => {
+        try {
+          const safe = sanitizeEnvelope(envelope, dsn, environment, release, profile);
+          return safe[1].length
+            ? Promise.resolve(transport.send(safe)).catch(() => ({ statusCode: 0 }))
+            : Promise.resolve({ statusCode: 200 });
+        } catch {
+          return Promise.resolve({ statusCode: 200 });
+        }
+      },
+      flush: (timeout) => {
+        // Cleaning is synchronous: no second queue can outlive SDK flush.
+        try {
+          return Promise.resolve(transport.flush(timeout)).catch(() => false);
+        } catch {
+          return Promise.resolve(false);
+        }
+      },
+    };
+  };
+}
+
 export function installEnvelopePrivacy(
   client: ReturnType<typeof import("@sentry/nextjs").init>,
   environment?: string,
   release?: string,
+  profile?: ProfilePolicy,
 ) {
   client?.on("beforeEnvelope", (envelope) => {
-    const headers = envelope[0];
-    const trace = headers.trace as Record<string, unknown> | undefined;
-    let spanTraceId: unknown;
-    for (let index = envelope[1].length - 1; index >= 0; index--) {
-      const item = envelope[1][index],
-        payload = item[1];
-      if (
-        item[0].type === "span" &&
-        payload &&
-        typeof payload === "object" &&
-        "items" in payload &&
-        Array.isArray(payload.items)
-      ) {
-        const first: unknown = payload.items[0];
-        if (first && typeof first === "object" && "trace_id" in first) spanTraceId = first.trace_id;
-        item[0] = {
-          type: "span",
-          content_type: "application/vnd.sentry.items.span.v2+json",
-          item_count: payload.items.length,
-        };
-      } else if (item[0].type === "event") item[0] = { type: "event" };
-      else envelope[1].splice(index, 1);
-    }
-    const traceId = spanTraceId ?? trace?.trace_id;
-    envelope[0] = {
-      sent_at: new Date().toISOString(),
-      sdk: { name: "sentry.javascript.nextjs", version: "11.12.0" },
-      ...(typeof headers.event_id === "string" && /^[a-f0-9]{32}$/.test(headers.event_id)
-        ? { event_id: headers.event_id }
-        : {}),
-    };
-    if (typeof traceId === "string" && /^[a-f0-9]{32}$/.test(traceId)) {
-      envelope[0].trace = {
-        trace_id: traceId,
-        public_key: client.getDsn()?.publicKey,
-        sample_rate:
-          typeof trace?.sample_rate === "string" && /^(0(\.\d+)?|1(\.0+)?)$/.test(trace.sample_rate)
-            ? trace.sample_rate
-            : undefined,
-        sampled: trace?.sampled === "true" || trace?.sampled === "false" ? trace.sampled : undefined,
-        environment: configText(environment) || "production",
-        release: configText(release),
-      };
+    try {
+      const options = client.getOptions();
+      const safe = sanitizeEnvelope(envelope, options.dsn ?? "", environment, release, profile);
+      envelope[0] = safe[0];
+      envelope[1] = safe[1];
+    } catch {
+      envelope[1] = [];
     }
   });
 }

@@ -31,3 +31,6 @@ _*.sh
 .vercel
 # tiers:sync 每次同步自动再生的阅读产物,不是事实源(见 docs/tier-sync.md)
 examples/zh/diffs/
+
+# Generated from the same site build as the deployed JavaScript.
+/apps/site/public/sentry-profile-assets.json
