@@ -102,7 +102,9 @@ export const ExpPrepareEventSchema = Schema.Struct({
   outcome: Schema.optionalKey(Schema.Literals(["hit", "published", "continued", "degraded", "failed"])),
   reason: Schema.optionalKey(Schema.String),
 });
+/** One `exp --json` line for a pre-dispatch before-cache preparation node: start, phase change or settlement. */
 export type ExpPrepareEvent = Schema.Schema.Type<typeof ExpPrepareEventSchema>;
+/** Strictly decodes one `prepare` NDJSON event from `exp --json`; throws when the shape does not match. */
 export function decodeExpPrepareEvent(input: unknown): ExpPrepareEvent {
   return Schema.decodeUnknownSync(ExpPrepareEventSchema, { errors: "all", onExcessProperty: "error" })(input);
 }
