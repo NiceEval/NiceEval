@@ -254,7 +254,13 @@ export async function startInstaboxProcess(input: {
             ...(initial ? { supervisor: spoolSupervisor } : {}),
           }),
         ).toString("base64");
-        const command = `${input.root ? "sudo -n -- " : ""}node -e ${shellQuote(spoolReader)} ${shellQuote(config)}`;
+        // New channels on a shared SSH connection inherit its original groups.
+        // Re-enter the current account through sudo so each command receives
+        // today's primary/supplementary groups, including before-action edits.
+        // Keep the SSH environment; command env/cwd/argv are applied by the
+        // supervisor. Recovery still attaches to the existing target spool.
+        const identity = input.root ? "" : '-E -u "$(id -un)" ';
+        const command = `sudo -n ${identity}-- node -e ${shellQuote(spoolReader)} ${shellQuote(config)}`;
         client.exec(command, { pty: false }, (error, opened) => {
           if (!active || terminal) {
             opened?.destroy();
