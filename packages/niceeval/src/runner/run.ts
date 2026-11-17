@@ -2323,7 +2323,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
        * 「记账」);退出码由观察到失败的那条 `errored` attempt 判红。
        */
       const accountDispatchHalted = (a: Attempt, gate: HaltGate): void => {
-        recordCoordinator.markNotDispatched(a);
+        recordCoordinator.markNotDispatched(a, "stopped-by-failure");
         gate.unstarted += 1;
         reportAttemptLifecycle({
           type: "attempt:early-exit",
@@ -2852,7 +2852,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             // architecture.md「调度接口」)。
             if (a.evalDef.evaluationKind === "pass" && a.run.earlyExit && passedKeys.has(a.key)) {
               cancelReuseAttempt(a);
-              recordCoordinator.markNotDispatched(a);
+              recordCoordinator.markNotDispatched(a, "early-exit-satisfied");
               yield* reportMutex.withPermits(1)(
                 emitReporterEvent(reporters, {
                   type: "invocation:earlyExit",
@@ -2874,7 +2874,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
               cancelReuseAttempt(a);
-              recordCoordinator.markNotDispatched(a);
+              recordCoordinator.markNotDispatched(a, "stopped-by-failure");
               failFast.skipped += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
@@ -2906,7 +2906,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               const s = budgetState(budgetKey);
               if (s.spent >= budget) {
                 cancelReuseAttempt(a);
-                recordCoordinator.markNotDispatched(a);
+                recordCoordinator.markNotDispatched(a, "budget-exhausted");
                 if (!budgetReported.has(budgetKey)) {
                   budgetReported.add(budgetKey);
                   yield* reportMutex.withPermits(1)(
@@ -3286,7 +3286,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   result.locator = locator;
                 }
               } else if (!reservationAttempted) {
-                recordCoordinator.markNotDispatched(a);
+                recordCoordinator.markNotDispatched(a, "stopped-by-failure");
               }
               // 唯一出口覆盖每一个真正执行过的 Attempt。正常路径与 attempt:start 配对；provider
               // reservation 在 grant 前终结时则直接 queued→verdict，不能伪造瞬时 running。

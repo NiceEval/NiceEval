@@ -115,6 +115,7 @@ interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly sourceOrigins: Map<SlotId, RunnerSourceOriginInput>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
+  readonly absenceReasons: Map<SlotId, RunAbsenceReason>;
   readonly writerGeneration: string;
 }
 
@@ -275,7 +276,7 @@ export interface RunnerRecordCoordinator {
     attempt: Attempt,
     result: EvalResult,
   ) => Effect.Effect<RunnerRecordAttempt | undefined, never, ProjectStateDatabase>;
-  readonly markNotDispatched: (attempt: Attempt) => void;
+  readonly markNotDispatched: (attempt: Attempt, reason: RunAbsenceReason) => void;
   readonly publish: (
     completedAt: number,
     mode: "normal" | "interrupted",
@@ -524,6 +525,7 @@ export function openRunnerRecordCoordinator(input: {
         sourceOrigins: new Map(),
         planSlots: new Map(),
         gapActions: new Map(),
+        absenceReasons: new Map(),
         writerGeneration,
       };
       byRun.set(plan.run, recordRun);
@@ -975,7 +977,7 @@ export function openRunnerRecordCoordinator(input: {
           ),
           Effect.ensuring(Effect.promise(() => releaseAdapterAttachments(result))),
         ),
-      markNotDispatched: (attempt: Attempt) => {
+      markNotDispatched: (attempt: Attempt, reason: RunAbsenceReason) => {
         const targetSlot = targetForAttempt(attempt);
         if (
           targetSlot !== undefined &&
@@ -983,6 +985,7 @@ export function openRunnerRecordCoordinator(input: {
           targetSlot.recordRun.gapActions.get(targetSlot.slotId) === "pending"
         ) {
           targetSlot.recordRun.gapActions.set(targetSlot.slotId, "not-dispatched");
+          targetSlot.recordRun.absenceReasons.set(targetSlot.slotId, reason);
         }
       },
       publish: (completedAt: number, mode: "normal" | "interrupted") =>
@@ -1045,21 +1048,21 @@ export function openRunnerRecordCoordinator(input: {
           ): Effect.Effect<RecordSealReceipt, RunnerRecordWriteError, ProjectStateDatabase> =>
             Effect.gen(function* () {
               yield* attachRunFacts(recordRun, mode);
-              function gapAbsenceReason(state: string): RunAbsenceReason {
+              function gapAbsenceReason(slotId: SlotId, state: GapActionState): RunAbsenceReason {
                 if (mode === "interrupted") return "interrupted-before-publication";
-                if (state === "not-dispatched") return "early-exit-satisfied";
+                if (state === "not-dispatched") return recordRun.absenceReasons.get(slotId) ?? "dispatch-failed";
                 return "dispatch-failed";
               }
               for (const [slotId, state] of recordRun.gapActions) {
                 if (state === "not-dispatched" || state === "interrupted") {
-                  const absenceReason = gapAbsenceReason(state);
+                  const absenceReason = gapAbsenceReason(slotId, state);
                   yield* recordRun.session.recordTerminalMember({ slotId, action: state, absenceReason });
                 }
               }
               const sealed = yield* recordRun.session.seal({ completedAt: completion.success });
               const absences = [...recordRun.gapActions].flatMap(([slotId, state]) => {
                 if (state === "executed") return [];
-                const reason = gapAbsenceReason(state);
+                const reason = gapAbsenceReason(slotId, state);
                 return [{ slotId: String(slotId), reason }];
               });
               yield* closeRunResource(rootPath, {
