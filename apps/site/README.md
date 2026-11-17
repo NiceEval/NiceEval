@@ -39,12 +39,22 @@ pnpm run site:dev
 仅正式运行环境初始化，Vercel preview/development 保持关闭，不增加 enable 变量。
 CLI、eval 和模型运行时不在此接入范围。SDK 与 Node profiler 固定同版 `11.12.0`。
 
-根 trace 采样率为 `0.1`，保留合法父采样。浏览器自动 pageload/navigation 分别使用
-`site.page.load`、`site.navigation`；真实文档点击与复制 handler 使用 `site.docs.open`、
-`site.install_guide.copy`，复制覆盖 clipboard promise，保留成功、失败、取消 outcome。
+根 trace 采样率为 `0.1`，保留合法父采样。Browser 显式设置 `parentSpanIsAlwaysRootSpan: false`，
+确保 `pageload` 下 `site.docs.open` / `site.install_guide.copy` 的子级 `http.client` span 保留操作父级。
+浏览器自动 pageload/navigation 分别使用 `site.page.load`、`site.navigation`；
+真实文档点击与复制 handler 使用 `site.docs.open`、`site.install_guide.copy`，
+复制覆盖 clipboard promise，保留成功、失败、取消 outcome。
 文档点击仅表示本地点击处理，不声明外站加载完成。没有下载操作时不制造 download span。
+`http.server` 与 `http.client` 仅按有限静态站点路由映射 `site.page.load` / `site.docs.open`，
+不传原始 URL 或 query，未知路径回退固定 `http.server` / `http.client`。
+错误 `contexts.trace.op` 按既有有限 op 集合与当前活动 span 保留，不硬编码 `http.server`；
+Next.js OTel 保持启用，无可安全辨识名的自动 `function` span 保持通用 `function` 以保留完整父子链。
 产品站没有业务跨服务 API：所有运行时传播 targets 为空，Browser `traceXHR: false`，
-既有外部 tracker、文档跳转、下载/CDN 不增加 trace header；空集合不安装 fetch guard。
+既有外部 tracker、文档跳转、下载/CDN 与同源 RSC 不增加 trace header；空集合不安装 fetch guard。
+生产有效页面与 `.rsc` 均为构建期预渲染静态响应，无请求期 SSR/DB 执行及 HTML trace metadata 续接，
+不为此改变 Next.js 重定向语义或制造后端。
+
+浏览器业务操作使用独立 inactive span，仅在同步调用边界激活 scope；回调 `await` 后的请求用 `context.run` 显式归属，避免同页交错操作互借父级。Node 保留原异步 provider。`check-sentry-browser.mjs --verify` 包含真实 pageload 下两个操作反序完成、逐级 parent ID 与四次独立指标计数验收。
 
 Browser 使用 trace lifecycle profiling，session rate 为 `0.1`，仅支持实际提供 Profiler
 能力的 Chromium。Node 主线程使用 trace lifecycle、session rate `1`，由采样 trace
@@ -91,7 +101,7 @@ pnpm --filter @niceeval/site exec tsx scripts/check-sentry-profile.ts
 
 `check-sentry-native.mjs` 是构建 gate，`--runtime-only` 仅做当前运行时 native/真实 chunk
 检查，不能代替最终产物 gate。Browser 原有 `check-sentry-browser.mjs` 保留 error/trace
-检查；`check-sentry-browser-profile.mjs <local Next origin>` 在本地代理真实构建页面，阻断
+检查，支持 `--verify` 运行无头 Chromium 端到端校验；`check-sentry-browser-profile.mjs <local Next origin>` 在本地代理真实构建页面，阻断
 第三方 tracker，注入真实 SDK 与隔离 transport，并用官方构建工具注入测试 artifact debug ID。
 验收先从真实 Next 静态入口读取清单并比对最终构建文件，随后才允许代理补入测试 artifact。
 本地 `next start` 不能证明 Vercel 已收集文件。provider 验收使用实际 Vercel adapter 的

@@ -1,10 +1,10 @@
-import type { BrowserOptions, ErrorEvent } from "@sentry/nextjs";
+import { getActiveSpan, spanToJSON, type BrowserOptions, type ErrorEvent } from "@sentry/nextjs";
 import { cleanProfileChunk, telemetryId, type ProfileManifest } from "./sentry-profile";
-import { siteOperations } from "./sentry-operations";
+import { siteOperations, siteRouteOperations } from "./sentry-operations";
 import { cleanLog, cleanMetric, cleanSession, cleanClientReport } from "./sentry-quality";
 type StreamedSpanJSON = Parameters<NonNullable<BrowserOptions["beforeSendSpan"]>>[0];
 
-export { siteOperations } from "./sentry-operations";
+export { siteOperations, siteRouteOperations } from "./sentry-operations";
 export type ProfilePolicy = { enabled: boolean; threadId?: number; manifest?: ProfileManifest };
 
 // This landing is operated by NiceEval; the DSN is a public ingestion identifier.
@@ -25,14 +25,69 @@ const operations = new Set([
 ]);
 const origins = new Set([
   "manual",
+  "auto",
   "auto.http.browser",
   "auto.http.otel",
   "auto.http.nextjs",
+  "auto.navigation.browser",
+  "auto.navigation.browser.bfcache",
   "auto.navigation.nextjs",
+  "auto.navigation.nextjs.app_router_instrumentation",
+  "auto.pageload.browser",
   "auto.pageload.nextjs",
+  "auto.pageload.nextjs.app_router_instrumentation",
   "auto.resource.browser",
+  "auto.resource.browser.metrics",
+  "auto.ui.browser.metrics",
   "auto.ui.react",
 ]);
+const readMethods = new Set(["GET", "HEAD"]);
+const siteOrigin = "https://niceeval.com";
+
+function normalizePathname(pathname: string): string {
+  return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+}
+
+function resolveRouteTarget(raw: string, allowParameterized: boolean): string | undefined {
+  if (raw.startsWith("//")) return undefined;
+  let pathname: string;
+  if (raw.startsWith("/")) {
+    pathname = raw.split(/[?#]/, 1)[0];
+  } else {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.username || parsed.password || (parsed.protocol !== "https:" && parsed.protocol !== "http:")) {
+        return undefined;
+      }
+      const allowedOrigin =
+        parsed.origin === siteOrigin || (typeof location !== "undefined" && parsed.origin === location.origin);
+      if (!allowedOrigin) return undefined;
+      pathname = parsed.pathname;
+    } catch {
+      return undefined;
+    }
+  }
+  const normalized = normalizePathname(pathname);
+  if (!allowParameterized && normalized.includes("[")) return undefined;
+  return Object.hasOwn(siteRouteOperations, normalized) ? siteRouteOperations[normalized] : undefined;
+}
+
+function staticRouteOperation(span: StreamedSpanJSON, op: string): string | undefined {
+  if (op !== "http.server" && op !== "http.client") return undefined;
+  const nameMatch = /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)\s+(.+)$/.exec(span.name);
+  const rawMethod = span.attributes["http.request.method"] ?? span.attributes["http.method"] ?? nameMatch?.[1];
+  if (typeof rawMethod === "string" && !readMethods.has(rawMethod.toUpperCase())) return undefined;
+  if (op === "http.server") {
+    const route = span.attributes["http.route"] ?? span.attributes["next.route"];
+    if (typeof route === "string") {
+      return Object.hasOwn(siteRouteOperations, route) ? siteRouteOperations[route] : undefined;
+    }
+    const rawPath = span.attributes["url.path"] ?? nameMatch?.[2];
+    return typeof rawPath === "string" ? resolveRouteTarget(rawPath, true) : undefined;
+  }
+  const rawTarget = span.attributes["url.full"] ?? span.attributes["url.path"] ?? nameMatch?.[2];
+  return typeof rawTarget === "string" ? resolveRouteTarget(rawTarget, false) : undefined;
+}
 
 const mechanismTypes = new Set([
   "generic",
@@ -111,6 +166,7 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
     release: safeRelease,
     traceLifecycle: "stream" as const,
     tracesSampleRate: 0.1,
+    parentSpanIsAlwaysRootSpan: false,
     tracePropagationTargets: [] as (string | RegExp)[],
     enableLogs: true,
     enableMetrics: true,
@@ -138,6 +194,23 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
     initialScope: { tags: { component: "site" } },
     beforeSend(event: ErrorEvent): ErrorEvent {
       const trace = event.contexts?.trace;
+      const activeSpan = getActiveSpan();
+      const spanJson =
+        activeSpan && activeSpan.spanContext().spanId === trace?.span_id
+          ? (spanToJSON(activeSpan) as {
+              op?: unknown;
+              data?: Record<string, unknown>;
+              attributes?: Record<string, unknown>;
+            })
+          : undefined;
+      const activeSpanOp = spanJson?.op ?? spanJson?.attributes?.["sentry.op"] ?? spanJson?.data?.["sentry.op"];
+      const rawTraceOp = trace?.op ?? activeSpanOp;
+      const safeTraceOp =
+        typeof rawTraceOp === "string" && operations.has(rawTraceOp)
+          ? rawTraceOp
+          : rawTraceOp !== undefined
+            ? "function"
+            : undefined;
       return {
         type: undefined,
         event_id: event.event_id,
@@ -155,16 +228,17 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
           }),
         },
         ...(event.request?.url && origin(event.request.url) ? { request: { url: origin(event.request.url) } } : {}),
-        contexts: trace
-          ? {
-              trace: {
-                trace_id: trace.trace_id,
-                span_id: trace.span_id,
-                parent_span_id: trace.parent_span_id,
-                op: "http.server",
-              },
-            }
-          : {},
+        contexts:
+          trace && telemetryId(trace.trace_id) && telemetryId(trace.span_id, 16)
+            ? {
+                trace: {
+                  trace_id: trace.trace_id,
+                  span_id: trace.span_id,
+                  ...(telemetryId(trace.parent_span_id, 16) ? { parent_span_id: trace.parent_span_id } : {}),
+                  ...(safeTraceOp ? { op: safeTraceOp } : {}),
+                },
+              }
+            : {},
         exception: {
           values: event.exception?.values?.map((exception) => ({
             type:
@@ -215,7 +289,7 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
           ? "site.page.load"
           : op === "navigation"
             ? "site.navigation"
-            : op;
+            : (staticRouteOperation(span, op) ?? op);
       const attributes: StreamedSpanJSON["attributes"] = {
         component: "site",
         "sentry.op": op,
