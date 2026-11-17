@@ -366,7 +366,9 @@ stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 st
 
 - 重连次数或时限用完；
 - 重连后 spool 目录或 supervisor 不存在；
-- 命令超时或取消。
+- 命令超时或取消后，supervisor 未能在有界时限内终止目标进程组并写入退出文件。
+
+命令超时或取消本身不退休 Machine：supervisor 向该命令的整个进程组发送终止信号，确认退出文件写入（即进程组已静止）后，命令以 cancelled 或 timeout 结算，Machine 与同一连接上的其它进程继续使用。一台 Machine 往往同时承载 Agent 驱动进程、遥测收集与并发的 Agent Judge 命令，取消其中一条不能连带删除其余进程依赖的环境。
 
 退休时抛出的错误写明触发原因（keepalive 超时、连接被对端关闭、channel 错误、握手失败等 ssh 层给出的原因）、重连次数、进程已运行时长和已交付的字节数，随 Attempt 的 failure diagnostic 保存。错误文本不含 token。成功重连写一条 `sandbox-transport-reconnected` Observability diagnostic，带同样的原因与次数，不改变命令结果与 Verdict。Machine 因传输失败退休之后，对同一个 Sandbox 的后续命令与文件操作都以这次退休的原因失败，不把服务端返回的 404 当作首要错误交给调用方。正常退出只归还 channel。外层 Scope 最终删除实例，包含其余后代进程。
 
