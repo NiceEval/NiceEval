@@ -1,5 +1,6 @@
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { openAsBlob } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -465,42 +466,103 @@ export class InstaboxBackend implements SandboxProviderBackend {
   }
 
   private async deleteMachine(): Promise<void> {
-    const signal = AbortSignal.timeout(25_000);
+    // Cloud teardown has its own budget, independent of the Attempt's deadline
+    // and cancellation. A DELETE acknowledgment is not confirmation of deletion.
+    const started = performance.now();
+    const signal = AbortSignal.timeout(180_000);
+    let operation: Operation | undefined;
+    let deletionAccepted = false;
+    let machineState = "unknown";
+    let operationState = "unknown";
+    let operationId = "unknown";
+    let shouldDelete = true;
     try {
       while (true) {
         signal.throwIfAborted();
-        try {
-          const operation = await this.api.json(Operation, this.path, {
-            method: "DELETE",
-            signal,
-            headers: { "Idempotency-Key": this.deleteKey, "X-Confirm-Delete": this.sandboxId },
-          });
-          await this.api.wait(operation, signal);
-          break;
-        } catch (cause) {
-          const failure = instaboxRequestError(cause);
-          switch (recoveryForRequest(failure)) {
-            case "not-found":
-              return;
-            case "other":
-              throw failure;
-            case "operation-conflict":
-              break;
-          }
-          const machine = await this.api.json(Machine, this.path, { signal });
-          if (machine.operationId !== null) {
-            const operation = await this.api.json(Operation, `/operations/${encodeURIComponent(machine.operationId)}`, {
+        if (shouldDelete) {
+          try {
+            operation = await this.api.json(Operation, this.path, {
+              method: "DELETE",
               signal,
+              headers: { "Idempotency-Key": this.deleteKey, "X-Confirm-Delete": this.sandboxId },
             });
-            // A failed create still leaves a Machine requiring deletion.
-            try {
-              await this.api.wait(operation, signal);
-            } catch {
-              signal.throwIfAborted();
+            deletionAccepted = true;
+            operationId = operation.id;
+            operationState = operation.state;
+          } catch (cause) {
+            const failure = instaboxRequestError(cause);
+            switch (recoveryForRequest(failure)) {
+              case "not-found":
+                return;
+              case "other":
+                throw failure;
+              case "operation-conflict":
+                operationState = "operation-conflict";
+                break;
             }
           }
+          shouldDelete = false;
         }
+
+        let machine: typeof Machine.Type;
+        try {
+          machine = await this.api.json(Machine, this.path, { signal });
+        } catch (cause) {
+          const failure = instaboxRequestError(cause);
+          if (recoveryForRequest(failure) === "not-found") return;
+          throw failure;
+        }
+        machineState = machine.state;
+        if (!deletionAccepted && !operation && machine.operationId !== null) {
+          // A conflict can belong to an earlier create/start operation. Its
+          // success alone must never be mistaken for successful deletion.
+          operationId = machine.operationId;
+          try {
+            operation = await this.api.json(Operation, `/operations/${encodeURIComponent(machine.operationId)}`, {
+              signal,
+            });
+            operationState = operation.state;
+          } catch (cause) {
+            const failure = instaboxRequestError(cause);
+            if (recoveryForRequest(failure) !== "not-found") throw failure;
+            operationState = "not-found";
+          }
+        }
+        if (operation) {
+          if (operation.state === "queued" || operation.state === "running") {
+            try {
+              operation = await this.api.json(Operation, `/operations/${encodeURIComponent(operation.id)}?wait=1s`, {
+                signal,
+              });
+              operationState = operation.state;
+            } catch (cause) {
+              const failure = instaboxRequestError(cause);
+              // Operation retention and Machine existence are separate facts.
+              // Only a Machine 404 confirms that the resource is absent.
+              if (recoveryForRequest(failure) !== "not-found") throw failure;
+              operationState = "not-found";
+              operation = undefined;
+            }
+          }
+          if (operation?.state === "succeeded" && deletionAccepted) return;
+          if (operation?.state === "failed" && deletionAccepted)
+            throw new Error(`Instabox deletion operation failed (${operation.error?.code ?? "unknown"})`);
+          if (operation?.state === "succeeded" || operation?.state === "failed") {
+            operation = undefined;
+            shouldDelete = machineState !== "deleting";
+          }
+        } else if (!deletionAccepted && machineState !== "deleting") {
+          shouldDelete = true;
+        }
+        await delay(1_000, undefined, { signal });
       }
+    } catch (cause) {
+      const waitedMs = Math.round(performance.now() - started);
+      const reason = signal.aborted ? "confirmation timed out" : "confirmation failed";
+      throw new Error(
+        `Instabox deletion ${reason}: machineId=${this.sandboxId}, machineState=${machineState}, operationId=${operationId}, operationState=${operationState}, waitedMs=${waitedMs}`,
+        { cause: instaboxRequestError(cause) },
+      );
     } finally {
       this.connection?.close();
     }

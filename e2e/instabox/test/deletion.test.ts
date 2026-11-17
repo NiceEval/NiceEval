@@ -23,6 +23,12 @@ test.concurrent.each(["delayed", "absent", "conflict"])(
       await verifyMachinesAbsent(machines);
       expect(result.exitCode, result.diagnostic()).toBe(0);
       expect(result.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
+      const locator = result.expEvalEvents()[0]!.locator!;
+      const execution = await niceeval.run(["show", locator, "execution", "--json"]);
+      expect(execution.exitCode, execution.diagnostic()).toBe(0);
+      expect(
+        execution.attemptTrace().trace.diagnostics.items.filter((item) => item.code === "sandbox-stop-failed"),
+      ).toEqual([]);
       const observations = await readFile(receipt, "utf8");
       expect(observations).toContain("delete-accepted\n");
       expect(observations).toContain("operation-running\n");
