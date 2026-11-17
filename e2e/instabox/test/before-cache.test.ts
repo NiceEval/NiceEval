@@ -16,11 +16,11 @@ import { instaboxSandbox, shell } from "niceeval/sandbox";
 export default defineExperiment({
   sandboxCache: { before: "use" },
   adapter: defineSandboxAgent({ name: "prepare-fixture", evidenceCoverage: completeEvidenceCoverage,
-    install: { identity: { agent: "prepare-fixture", version: "1", revision: "1" }, probe: shell("true") },
+    ensure: { identity: { agent: "prepare-fixture", version: "1", revision: "1" }, probe: shell("true") },
     send: async () => ({ status: "completed", events: [] }) }),
   sandbox: instaboxSandbox({ template: "minimal", lifetimeMs: 600000 }).before(
-    shell({ id: "first", changeFrequency: 10, command: "printf first > niceeval-first" })).before(
-    shell({ id: "second", changeFrequency: 20, command: "test $(cat niceeval-first) = first; printf second > niceeval-second" })),
+    shell({ id: "first", changeFrequency: 10, command: "sudo groupadd niceeval-access && sudo usermod -aG niceeval-access $(id -un) && printf first | sudo tee niceeval-first >/dev/null && sudo chown root:niceeval-access niceeval-first && sudo chmod 640 niceeval-first" })).before(
+    shell({ id: "second", changeFrequency: 20, command: "id; id $(id -un); test $(cat niceeval-first) = first && printf second > niceeval-second" })),
   evals: ["before-cache"],
 });`,
     );
