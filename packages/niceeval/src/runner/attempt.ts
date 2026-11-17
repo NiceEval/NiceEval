@@ -1,4 +1,5 @@
 import { modelRolesToWire } from "../model-roles.ts";
+import { registerCommandAssertionSnapshot } from "../assertions/command-evidence.ts";
 import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
 import { randomUUID } from "node:crypto";
 import { beforeCacheFailureDetail } from "../sandbox/remote-snapshot/failure.ts";
@@ -4371,6 +4372,21 @@ function withCommandTiming(
   observabilityRuntime: RunnerAttemptObservabilityRuntime,
   attemptSignal: AbortSignal,
 ): Sandbox {
+  const retainAssertionEvidence = <T extends CommandResult>(result: T, display: string): T => {
+    const exposed = { ...result, command: display };
+    const tail = (value: string): string =>
+      Buffer.from(redactSensitiveText(value, sensitiveValues), "utf8").subarray(-4_096).toString("utf8");
+    registerCommandAssertionSnapshot(exposed, {
+      command: display,
+      exitCode: result.exitCode,
+      ...(result.startError === undefined ? {} : { startError: tail(result.startError) }),
+      stdout: tail(result.stdout),
+      stderr: tail(result.stderr),
+      stdoutOmittedBytes: Math.max(0, Buffer.byteLength(redactSensitiveText(result.stdout, sensitiveValues)) - 4_096),
+      stderrOmittedBytes: Math.max(0, Buffer.byteLength(redactSensitiveText(result.stderr, sensitiveValues)) - 4_096),
+    });
+    return exposed;
+  };
   const recordCommandExit = (
     node: TimingActivity | undefined,
     display: string,
@@ -4448,7 +4464,7 @@ function withCommandTiming(
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
       // 不能让它从 CommandResult → assertion/error 旁路带出未脱敏文本。
       if (result !== null && typeof result === "object") {
-        return { ...result, command: display };
+        return retainAssertionEvidence(result, display);
       }
       return result;
     } catch (e) {
@@ -4493,6 +4509,17 @@ function withCommandTiming(
         captureRunnerCommandCaptureFailed(
           observabilityCommand,
           isCommandSpawnFailure(e) ? "spawn-failed" : "transport-lost",
+        );
+      }
+      if (!checked && isCommandSpawnFailure(e) && !attemptSignal.aborted && !opts?.signal?.aborted) {
+        return retainAssertionEvidence(
+          {
+            stdout: "",
+            stderr: "",
+            exitCode: -1,
+            startError: redactSensitiveText(e instanceof Error ? e.message : String(e), sensitiveValues),
+          } as T,
+          display,
         );
       }
       throw e;

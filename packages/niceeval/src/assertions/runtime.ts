@@ -5,6 +5,7 @@
 // @concord-implements docs/feature/assertions/library/score-points.md
 // @concord-implements docs/feature/verdict/README.md
 import { judgeMaxConcurrency } from "../judge/provider.ts";
+import { commandAssertionSnapshot } from "./command-evidence.ts";
 import { CurrentJudgeTiming, JudgeTimingSpan } from "../judge/timing.ts";
 import {
   validateMaterialQAInputs,
@@ -478,12 +479,13 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
 }
 
 export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnapshot {
+  const command = commandAssertionSnapshot(value);
   const state: SnapshotState = {
-    truncated: false,
-    omittedBytes: 0,
+    truncated: command !== undefined && Number(command.stdoutOmittedBytes) + Number(command.stderrOmittedBytes) > 0,
+    omittedBytes: command === undefined ? 0 : Number(command.stdoutOmittedBytes) + Number(command.stderrOmittedBytes),
     seen: new WeakSet<object>(),
   };
-  const snapshot = boundedSnapshotValue(value, 0, state);
+  const snapshot = boundedSnapshotValue(command ?? value, 0, state);
   const material: Extract<AssertionMaterial, { readonly kind: "snapshot" }> = Object.freeze({
     kind: "snapshot",
     value: snapshot,
@@ -1982,8 +1984,19 @@ class AssertionsRuntimeImplementation {
     const material = this.materialFor(entry, settlement);
     function observedResult(settlement: EntrySettlement): SealedAssertionEntry["observed"] {
       if (entry.kind === "boolean") {
+        const snapshot = entry.subject.kind === "snapshot" ? entry.subject.value : undefined;
+        const commandResult =
+          settlement.state === "mismatched" &&
+          isRecord(snapshot) &&
+          typeof snapshot.command === "string" &&
+          typeof snapshot.exitCode === "number" &&
+          typeof snapshot.stdout === "string" &&
+          typeof snapshot.stderr === "string"
+            ? (snapshot as AssertionSnapshotObject)
+            : undefined;
         return {
           kind: "boolean" as const,
+          ...(commandResult === undefined ? {} : { commandResult }),
           outcome:
             settlement.state === "measured" || settlement.state === "interrupted"
               ? ("errored" as const)

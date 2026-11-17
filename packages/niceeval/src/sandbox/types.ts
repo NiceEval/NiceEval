@@ -9,6 +9,8 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /** Process launch failed; exitCode is -1 because no process exit was observed. */
+  startError?: string | undefined;
   /**
    * 这次执行的命令摘要(有界、已脱敏,与时间树 command 节点同一份文案)。由执行面在最外层
    * 公开调用处附加;直接从 provider 拿到的裸结果可能没有。断言失败时用作 evidence

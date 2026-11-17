@@ -348,6 +348,7 @@ export type AssertionObserved =
   | {
       readonly kind: "boolean";
       readonly outcome: "matched" | "mismatched" | "unavailable" | "errored" | "not-applicable";
+      readonly commandResult?: AssertionSnapshotObject;
     }
   | { readonly kind: "measurement"; readonly state: "available"; readonly value: number }
   | { readonly kind: "measurement"; readonly state: "unavailable" }

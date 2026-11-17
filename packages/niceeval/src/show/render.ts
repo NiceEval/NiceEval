@@ -3078,6 +3078,7 @@ export function renderAssertions(
       entries: [
         ...(entry.decision.reason === null ? [] : [{ key: "Reason", value: factPhrase(entry.decision.reason) }]),
         ...[...new Set(reasons)].map((value) => ({ key: "Rationale", value })),
+        ...commandAssertionFields(entry.evaluation.observed),
       ],
     });
     if (!("criterion" in entry)) continue;
@@ -3265,6 +3266,15 @@ export function renderAssertions(
       blocks,
     },
   ]);
+}
+
+function commandAssertionFields(value: AssertionFactValue): { key: string; value: string }[] {
+  if (value.kind !== "fields") return [];
+  const command = value.fields.find((field) => field.label === "commandResult")?.value;
+  if (command?.kind !== "fields") return [];
+  return command.fields.flatMap((field) =>
+    field.value.kind === "value" ? [{ key: field.label, value: String(field.value.value) }] : [],
+  );
 }
 
 function assertionReasons(value: AssertionFactValue): string[] {
