@@ -1,5 +1,6 @@
 import { networkInterfaces } from "node:os";
 import { withSentryConfig } from "@sentry/nextjs/config";
+import { writeProfileManifests } from "./scripts/sentry-profile-assets.mjs";
 
 if (process.env.VERCEL_ENV === "production" && !process.env.SENTRY_AUTH_TOKEN) {
   throw new Error("Production deployment requires SENTRY_AUTH_TOKEN for sourcemap upload");
@@ -17,6 +18,11 @@ const release =
 const environment = process.env.SENTRY_ENVIRONMENT || process.env.VERCEL_ENV || "production";
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  compiler: {
+    async runAfterProductionCompile({ distDir }) {
+      await writeProfileManifests(distDir, release);
+    },
+  },
   serverExternalPackages: ["@sentry/profiling-node", "@sentry/node-cpu-profiler"],
   outputFileTracingIncludes: {
     "/*": [

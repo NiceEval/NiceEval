@@ -59,10 +59,17 @@ Browser session 和 client_report；拒绝 Replay、Cron/check_in、sessions 聚
 span 保留 SDK 真实 profiler ID、主线程 ID 和时间区间，不给 chunk 伪造单个 trace ID。
 
 构建从实际 `.next/static` 与 `.next/server` JavaScript 解析 AST Identifier 清单，
-不采集字符串字面值或源码。浏览器清单为同 origin `/_next/static/sentry-profile-assets.json`，Node 清单
-留在 server 产物并进入 Next NFT。浏览器清单在 `next build` 后写入
-`.next/static/sentry-profile-assets.json`，随 Next 静态产物提供，不依赖构建后新增的 `public` 文件。文件精确命中且函数属于该文件符号集合才保留；
-缺失、未到达或 release 不匹配时未知 frame 原位 redact，不推迟 error/tracing 初始化。
+不采集字符串字面值或源码。浏览器清单路径为
+`/_next/static/sentry-profile-assets/<Git SHA>.json`，文件在
+`.next/static/sentry-profile-assets/<Git SHA>.json`。完整 release SHA 使不同发布使用不同 URL，
+不让 Next 静态资源的 immutable 缓存复用旧清单；运行时仍严格校验清单 release。
+本地无正式 release 的构建仅写 `local.json`，浏览器不请求该清单。
+
+`compiler.runAfterProductionCompile` 在 provider 收集资产前生成清单；不能在整个
+`next build` 退出后才追加文件。Node 清单继续留在 `.next/server/sentry-profile-assets.json`，
+同一 hook 补入编译时已产生的 NFT，进入 provider 的私有 function 文件映射。
+文件精确命中且函数属于该文件符号集合才保留；缺失、未到达或 release 不匹配时未知
+frame 原位 redact，不推迟 error/tracing 初始化。
 
 发布与清单均使用 `site@<Git SHA>`，Vercel 从 `VERCEL_GIT_COMMIT_SHA` 生成。
 正式构建缺少 `SENTRY_AUTH_TOKEN` 失败；上传组织固定 `instaai`，token 只存在于构建环境。
@@ -87,6 +94,10 @@ pnpm --filter @niceeval/site exec tsx scripts/check-sentry-profile.ts
 检查；`check-sentry-browser-profile.mjs <local Next origin>` 在本地代理真实构建页面，阻断
 第三方 tracker，注入真实 SDK 与隔离 transport，并用官方构建工具注入测试 artifact debug ID。
 验收先从真实 Next 静态入口读取清单并比对最终构建文件，随后才允许代理补入测试 artifact。
+本地 `next start` 不能证明 Vercel 已收集文件。provider 验收使用实际 Vercel adapter 的
+`NEXT_ADAPTER_PATH` 构建后，运行 `node scripts/check-sentry-profile-provider.mjs`：检查
+`.next/output` Build Output API v3 中的 release 唯一路径、清单与公开 JS 的 AST 一致，
+并核对 Node function `filePathMap` 的私有清单引用。此 gate 不部署、不代替部署后的 HTTP 验收。
 仅 clipboard 外部边界替换，不修改真实页面 handler。测试用 session rate `1` 只用于隔离验收。
 `?mode=unsampled` 验证 session 不采样，缺 Profiler 时维持 error/tracing。
 浏览器最后 chunk 异步到达，等待实际 transport；不调用 manual stop 或私有 profiler。
