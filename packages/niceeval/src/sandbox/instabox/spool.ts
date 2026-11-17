@@ -12,16 +12,33 @@ const out = fs.openSync(c.spool + '/stdout', 'a', 0600);
 const err = fs.openSync(c.spool + '/stderr', 'a', 0600);
 fs.writeFileSync(c.spool + '/pid', String(process.pid));
 const sockets = new Set();
-let child, finished = false;
+let child, finished = false, terminating = false;
 let stdinState = { offset: 0, eof: false }, operations = Promise.resolve();
 const persistStdin = () => {
   fs.writeFileSync(c.spool + '/stdin.tmp', JSON.stringify(stdinState), { mode: 0600 });
   fs.renameSync(c.spool + '/stdin.tmp', c.spool + '/stdin');
 };
 persistStdin();
-const finish = (exitCode, signal) => {
+const groupAlive = () => fs.readdirSync('/proc').some(pid => {
+  if (!/^\d+$/.test(pid)) return false;
+  try {
+    const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    return Number(fields[2]) === child.pid && fields[0] !== 'Z' && fields[0] !== 'X';
+  } catch (error) { if (error.code === 'ENOENT' || error.code === 'ESRCH') return false; throw error; }
+});
+const finish = async (exitCode, signal) => {
   if (finished) return;
   finished = true;
+  if (terminating) {
+    // A target exit is not yet proof that its children have stopped. Never
+    // publish the authoritative exit until the entire owned group is quiet.
+    const deadline = Date.now() + 5000;
+    while (groupAlive()) {
+      if (Date.now() >= deadline) { process.exit(1); return; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
   const result = { exitCode, ...(signal ? { signal } : {}), stdoutSize: fs.fstatSync(out).size, stderrSize: fs.fstatSync(err).size };
   fs.writeFileSync(c.spool + '/exit.tmp', JSON.stringify(result), { mode: 0600 });
   fs.renameSync(c.spool + '/exit.tmp', c.spool + '/exit');
@@ -43,6 +60,16 @@ const server = net.createServer(socket => {
       const line = buffered.slice(0, index); buffered = buffered.slice(index + 1);
       let message;
       try { message = JSON.parse(line); } catch { socket.destroy(); return; }
+      // Cancellation must bypass a blocked stdin write/EOF callback. The
+      // supervisor owns this detached process group; no PID comes from callers.
+      if (message.kind === 'terminate') {
+        if (child && !finished && !terminating) {
+          terminating = true;
+          try { process.kill(-child.pid, 'SIGKILL'); }
+          catch (error) { if (error.code !== 'ESRCH') process.exit(1); }
+        }
+        continue;
+      }
       // Serialize across old and replacement sockets. A status request cannot
       // overtake a write whose callback has not yet persisted its receipt.
       operations = operations.then(async () => {

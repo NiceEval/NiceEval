@@ -226,26 +226,35 @@ export class InstaboxBackend implements SandboxProviderBackend {
       rejectCancellation = reject;
     });
     void cancelled.catch(() => undefined);
+    const owned = this.startProcess(
+      { argv: [command, ...args], cwd: options.cwd, env: options.env },
+      options.user === "root",
+    );
     const cancel = () => {
       const cause = timeout?.aborted
         ? new SandboxCommandTimeoutError("Instabox command timed out", limit.timeoutMs!, limit.explicit)
         : new Error("Instabox command cancelled");
-      void this.stop().then(
-        () => rejectCancellation(cause),
-        (cleanup: unknown) =>
-          rejectCancellation(new AggregateError([cause, cleanup], "Instabox cancellation cleanup failed")),
-      );
+      void owned
+        .then((process) => process.terminate())
+        .then(
+          () => rejectCancellation(cause),
+          async (cleanup: unknown) => {
+            try {
+              await this.stop();
+            } catch (retirement) {
+              rejectCancellation(
+                new AggregateError([cause, cleanup, retirement], "Instabox cancellation cleanup failed"),
+              );
+              return;
+            }
+            rejectCancellation(new AggregateError([cause, cleanup], "Instabox cancellation cleanup failed"));
+          },
+        );
     };
     signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) cancel();
     const execute = async (): Promise<CommandResult> => {
-      const process = await this.startProcess(
-        {
-          argv: [command, ...args],
-          cwd: options.cwd,
-          env: options.env,
-        },
-        options.user === "root",
-      );
+      const process = await owned;
       await process.closeStdin();
       const stdoutDecoder = new StringDecoder("utf8"),
         stderrDecoder = new StringDecoder("utf8");

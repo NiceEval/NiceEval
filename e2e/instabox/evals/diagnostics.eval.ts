@@ -17,6 +17,9 @@ export default defineEval({
       "elapsedMs=",
       "stdoutBytes=",
       "stderrBytes=",
+      "processId=niceeval-process-",
+      "executable=node",
+      "stage=recover",
     ]) {
       if (!message.includes(expected)) throw new Error(`Missing transport diagnostic ${expected}: ${message}`);
     }

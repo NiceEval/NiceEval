@@ -55,6 +55,8 @@ export async function startInstaboxProcess(input: {
   let reconnecting: Promise<void> | undefined;
   let queuedRecovery: { reason: ExternalCause; client: Client } | undefined;
   let originalReason: ExternalCause | undefined;
+  let termination: Promise<void> | undefined;
+  let terminationRequested = false;
   let failure: Promise<void> | undefined;
   let sequence = 0;
   let stdinOffset = 0,
@@ -77,6 +79,8 @@ export async function startInstaboxProcess(input: {
   void done.catch(() => undefined);
   const detail = (reason: unknown): string => input.connection.redact(normalizeExternalCause(reason).message);
   const counters = () => ({
+    processId: spool.slice(spool.lastIndexOf("/") + 1),
+    executable: input.process.argv[0],
     reconnectAttempts: input.connection.reconnectAttempts - initialReconnects,
     tokenRequests: input.connection.tokenRequests,
     elapsedMs: Math.round(performance.now() - startedAt),
@@ -101,7 +105,7 @@ export async function startInstaboxProcess(input: {
       closeChannel();
       const stats = counters();
       let cause: Error = new Error(
-        `Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail(originalReason ?? reason)}; recovery=${detail(reason)}; reconnectAttempts=${stats.reconnectAttempts}; tokenRequests=${stats.tokenRequests}; elapsedMs=${stats.elapsedMs}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`,
+        `Instabox SSH process lost its confirmed exit; retiring the Machine; processId=${stats.processId}; executable=${detail(stats.executable)}; stage=${terminationRequested ? "terminate" : "recover"}; reason=${detail(originalReason ?? reason)}; recovery=${detail(reason)}; reconnectAttempts=${stats.reconnectAttempts}; tokenRequests=${stats.tokenRequests}; elapsedMs=${stats.elapsedMs}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`,
       );
       try {
         await input.retire(cause);
@@ -200,6 +204,14 @@ export async function startInstaboxProcess(input: {
     );
   };
 
+  const sendTermination = (): void => {
+    if (!readyForInput || !channel || !terminationRequested) return;
+    const current = channel;
+    current.write(JSON.stringify({ kind: "terminate" }) + "\n", (error?: Error | null) => {
+      if (error && channel === current) current.emit("error", error);
+    });
+  };
+
   const attach = async (initial: boolean, timeoutMs = 30_000, connected?: Client): Promise<void> => {
     let attachedClient: Client | undefined;
     let rejectAttach!: (cause: unknown) => void;
@@ -278,6 +290,7 @@ export async function startInstaboxProcess(input: {
                   attached = true;
                   readyForInput = true;
                   for (const [id, item] of pending) send(id, item);
+                  sendTermination();
                   resolve();
                 } else if (tag === 4) {
                   confirmStdin(decodeStdinReceipt(JSON.parse(payload.toString("utf8"))));
@@ -352,7 +365,7 @@ export async function startInstaboxProcess(input: {
 
   const write = (eof: boolean, bytes?: Uint8Array): Promise<void> =>
     new Promise((resolve, reject) => {
-      if (terminal) {
+      if (terminal || terminationRequested) {
         if (eof) resolve();
         else reject(new Error("Instabox process stdin is closed"));
         return;
@@ -367,7 +380,6 @@ export async function startInstaboxProcess(input: {
       pending.set(id, item);
       send(id, item);
     });
-  let termination: Promise<void> | undefined;
   return {
     output,
     writeStdin: (bytes) => write(false, bytes),
@@ -379,18 +391,25 @@ export async function startInstaboxProcess(input: {
           await done;
           return;
         }
-        terminal = true;
-        closeChannel();
+        terminationRequested = true;
+        rejectPending(new Error("Instabox process terminated"));
+        sendTermination();
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          await input.retire();
-          rejectPending(new Error("Instabox process terminated"));
-          resolveDone({ exitCode: null, signal: "SIGKILL" });
+          await Promise.race([
+            done,
+            new Promise<never>((_resolve, reject) => {
+              // A disconnect may already own the shared 60 s recovery budget.
+              // Leave that recovery and the supervisor's 5 s quiescence check
+              // time to finish before retirement becomes the last resort.
+              timer = setTimeout(() => reject(new Error("Instabox process group termination timed out")), 70_000);
+            }),
+          ]);
         } catch (cause) {
-          rejectPending(cause);
-          rejectDone(cause);
-          throw cause;
+          await fail(cause);
+          await done;
         } finally {
-          output.end();
+          clearTimeout(timer);
         }
       })()),
   };

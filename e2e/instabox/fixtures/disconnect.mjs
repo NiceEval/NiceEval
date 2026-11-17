@@ -1,4 +1,5 @@
-import ssh2 from "ssh2";
+import { createRequire } from "node:module";
+const ssh2 = createRequire(import.meta.resolve("niceeval"))("ssh2");
 import { appendFileSync } from "node:fs";
 let disconnected = false;
 const connect = ssh2.Client.prototype.connect;
