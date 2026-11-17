@@ -22,6 +22,14 @@ Observability 的 durable facts 按 capture authority 分 family。Adapter、Ses
 
 每个源码项（source item）都由稳定 identity 与内容摘要标识。
 
+## 编码失败不吞掉 Attempt
+
+producer 负责在写入前把亲历事实规范化到 family schema 之内：超长、含控制字符或不受支持的值按该 family 的规则截断、转义或记为 limitation，不能把原样数据交给 encoder 碰运气。
+
+若某个 observability family 仍然编码失败，Attempt 照常发布：该 family 记为缺席（读取时为 `not-recorded`），另写一条 Attempt 级 `attachment-encode-failed` diagnostic，带 family 名与 schema issue 的路径和代码，不含原始值。Verdict 仍由 Assertions 决定；只有某条 Assertion 把该 family 当作 required 材料时，才按 [evidence](../../assertions/architecture/evidence.md) 规则成为 unavailable。
+
+Invocation 继续结算其余 Attempt 并输出 receipt。一个 family 的编码失败不能让 `exp` 以 `runner-record-attempt-publication-failed` 中止，也不能让已完成的 Attempt 从公开 CLI 消失。
+
 ## Source completion
 
 每份 source 显式表达：
