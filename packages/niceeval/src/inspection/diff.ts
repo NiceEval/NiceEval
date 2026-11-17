@@ -70,7 +70,7 @@ export function projectAttemptDiff(
       ? undefined
       : changeDetail(change, byHydratedHandle, selection.source);
   return {
-    detail,
+    ...(detail === undefined ? {} : { detail }),
     state: value.collection.state,
     limitations: value.collection.limitations,
     windows: value.windows.map((window) => ({
