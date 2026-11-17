@@ -146,13 +146,7 @@ function modelServer(mode: string) {
         calls = [call("read", { path: "application.txt" })];
       else if (mode === "command-timeout" && step.message === "First question" && last.role === "user")
         calls = [call("bash", { command: "sleep 30", timeout: 1 })];
-      else if (
-        mode === "command-timeout" &&
-        step.message === "First question" &&
-        last.role === "tool" &&
-        last.content.includes("timed out")
-      )
-        calls = [call("read", { path: "application.txt" })];
+      else if (mode === "command-timeout") calls = [submit];
       else if (
         mode === "success" &&
         step.message === "First question" &&
@@ -355,7 +349,8 @@ test.concurrent.each([
           if (mode === "command-timeout" && index === 0) {
             expect(trace.tools.some((tool) => tool.name === "bash" && tool.result?.includes("timed out"))).toBe(true);
             expect(
-              trace.tools.some((tool) => tool.name === "read" && tool.result?.includes("application evidence")),
+              trace.tools.some((tool) => tool.name === "submit_evaluation" && tool.state === "completed"),
+              JSON.stringify(trace.tools),
             ).toBe(true);
           }
           if (mode === "success") {

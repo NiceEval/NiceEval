@@ -13,6 +13,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { piSandboxTools } from "../judge/pi-sandbox.ts";
 import type { Sandbox } from "../sandbox/types.ts";
+import { SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import type { JudgeUsageEntry } from "../o11y/judge-usage.ts";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
@@ -447,7 +448,9 @@ export class AgentJudgeSession {
               throw new Error("Agent Judge is closed");
           },
           failed: (error) => {
-            if (isTransportFailure(error))
+            // A command deadline is a recoverable tool result. It says nothing
+            // about whether the shared Sandbox can serve the next Judge command.
+            if (!(error instanceof SandboxCommandTimeoutError) && isTransportFailure(error))
               this.fail("unavailable", "agent-judge-sandbox-unavailable", "Sandbox transport failed");
           },
         }),
