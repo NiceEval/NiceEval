@@ -71,6 +71,14 @@ test.concurrent("machine consumer follows show links from current results to a f
         commands.push(command.inspectionSuccess("attempt.trace.detail").detail);
       }
       expect(JSON.stringify(commands)).toContain("inspection-command-output");
+      const toolLink = trace.links.find((link) => link.rel === "execution-item" && link.command.includes("tool_"));
+      expect(toolLink).toBeDefined();
+      const tool = await niceeval.run([...toolLink!.command.slice("niceeval ".length).split(" "), "--json"]);
+      expect(tool.exitCode, tool.diagnostic()).toBe(0);
+      for (const link of tool.inspectionSuccess("attempt.trace.detail").links.filter((link) => link.rel === "execution-item")) {
+        const linked = await niceeval.run([...link.command.slice("niceeval ".length).split(" "), "--json"]);
+        expect(linked.exitCode, linked.diagnostic()).toBe(0);
+      }
       const diffLink = only(outline.links, (link) => link.rel === "diff");
       const diff = await niceeval.run([...diffLink.command.slice("niceeval ".length).split(" "), "--json"]);
       expect(diff.exitCode, diff.diagnostic()).toBe(0);
