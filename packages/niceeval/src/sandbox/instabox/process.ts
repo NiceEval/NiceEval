@@ -75,10 +75,10 @@ export async function startInstaboxProcess(input: {
     rejectDone = reject;
   });
   void done.catch(() => undefined);
-  const detail = (reason: unknown): string =>
-    normalizeExternalCause(reason).message.replaceAll(input.token.token, "[REDACTED]");
+  const detail = (reason: unknown): string => input.connection.redact(normalizeExternalCause(reason).message);
   const counters = () => ({
     reconnectAttempts: input.connection.reconnectAttempts - initialReconnects,
+    tokenRequests: input.connection.tokenRequests,
     elapsedMs: Math.round(performance.now() - startedAt),
     stdoutBytes,
     stderrBytes,
@@ -101,7 +101,7 @@ export async function startInstaboxProcess(input: {
       closeChannel();
       const stats = counters();
       let cause: Error = new Error(
-        `Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail(originalReason ?? reason)}; recovery=${detail(reason)}; reconnectAttempts=${stats.reconnectAttempts}; elapsedMs=${stats.elapsedMs}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`,
+        `Instabox SSH process lost its confirmed exit; retiring the Machine; reason=${detail(originalReason ?? reason)}; recovery=${detail(reason)}; reconnectAttempts=${stats.reconnectAttempts}; tokenRequests=${stats.tokenRequests}; elapsedMs=${stats.elapsedMs}; stdoutBytes=${stdoutBytes}; stderrBytes=${stderrBytes}`,
       );
       try {
         await input.retire(cause);

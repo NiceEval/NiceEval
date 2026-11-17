@@ -169,7 +169,13 @@ export class InstaboxBackend implements SandboxProviderBackend {
       signal: bounded,
     });
     if (this.token.machineId !== this.sandboxId) throw new Error("Instabox SSH grant belongs to another Machine");
-    this.connection = new InstaboxConnection(this.token);
+    this.connection = new InstaboxConnection(this.token, (signal) =>
+      this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
+        method: "POST",
+        body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }),
+        signal,
+      }),
+    );
     const probe = await this.runShell(
       'test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace',
       { cwd: "/data/home", signal: bounded },

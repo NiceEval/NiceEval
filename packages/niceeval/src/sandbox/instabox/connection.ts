@@ -14,7 +14,24 @@ export class InstaboxConnection {
   private stopped = false;
   private recovery: Promise<Client> | undefined;
   private attempts = 0;
-  constructor(private readonly token: SSHToken) {}
+  private requests = 1;
+  private readonly closed = new AbortController();
+  private readonly secrets = new Set<string>();
+  constructor(
+    private token: SSHToken,
+    private readonly requestToken: (signal: AbortSignal) => Promise<SSHToken>,
+  ) {
+    this.secrets.add(token.token);
+  }
+
+  get tokenRequests(): number {
+    return this.requests;
+  }
+
+  redact(message: string): string {
+    for (const token of this.secrets) message = message.replaceAll(token, "[REDACTED]");
+    return message;
+  }
 
   get reconnectAttempts(): number {
     return this.attempts;
@@ -27,6 +44,7 @@ export class InstaboxConnection {
     this.invalidate(failed);
     const recovering = Promise.resolve().then(async () => {
       let last: unknown = new Error("Instabox SSH reconnect budget exhausted");
+      let renewed = false;
       for (let attempt = 0; attempt < budget && performance.now() < deadline; attempt++) {
         if (this.stopped) throw new Error("Instabox SSH connection is closed");
         const delay = Math.min(250 * 2 ** attempt, Math.max(0, deadline - performance.now()));
@@ -47,11 +65,39 @@ export class InstaboxConnection {
         } catch (cause) {
           last = cause;
           if (this.current) this.invalidate(this.current.client);
+          if (cause instanceof Error && "level" in cause && cause.level === "client-authentication") {
+            last = new Error("Instabox SSH token rejected", { cause });
+            if (renewed || this.stopped || performance.now() >= deadline) break;
+            renewed = true;
+            this.requests++;
+            try {
+              const token = await this.requestToken(
+                AbortSignal.any([
+                  this.closed.signal,
+                  AbortSignal.timeout(Math.max(1, Math.ceil(deadline - performance.now()))),
+                ]),
+              );
+              this.secrets.add(token.token);
+              if (token.machineId !== this.token.machineId)
+                throw new Error("Instabox SSH grant belongs to another Machine");
+              if (this.stopped) throw new Error("Instabox SSH connection is closed");
+              this.token = token;
+            } catch (error) {
+              last = new Error(
+                `Instabox SSH token rejected; SSH token renewal failed: ${this.redact(error instanceof Error ? error.message : String(error))}`,
+              );
+              break;
+            }
+          }
         } finally {
           clearTimeout(timer);
         }
       }
-      throw new InstaboxReconnectExhausted(last);
+      throw new InstaboxReconnectExhausted(
+        new Error(
+          `${this.redact(last instanceof Error ? last.message : String(last))}; tokenRequests=${this.requests}`,
+        ),
+      );
     });
     this.recovery = recovering;
     void recovering
@@ -70,6 +116,7 @@ export class InstaboxConnection {
     if (this.stopped) return Promise.reject(new Error("Instabox SSH connection is closed"));
     if (this.current) return this.current.ready;
     const client = new Client();
+    const token = this.token;
     const ready = new Promise<Client>((resolve, reject) => {
       client.once("ready", () => resolve(client));
       client.on("error", (error: Error) => {
@@ -85,16 +132,16 @@ export class InstaboxConnection {
     void ready.catch(() => undefined);
     try {
       client.connect({
-        host: this.token.host,
-        port: this.token.port,
-        username: this.token.token,
+        host: token.host,
+        port: token.port,
+        username: token.token,
         authHandler: ["none"],
         readyTimeout: 30_000,
         keepaliveInterval: 10_000,
         keepaliveCountMax: 3,
         hostVerifier: (key: Buffer) =>
           `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}` ===
-          this.token.hostKeyFingerprint.replace(/=+$/, ""),
+          token.hostKeyFingerprint.replace(/=+$/, ""),
       });
     } catch (error) {
       this.invalidate(client);
@@ -110,6 +157,7 @@ export class InstaboxConnection {
 
   close(): void {
     this.stopped = true;
+    this.closed.abort();
     const current = this.current;
     this.current = undefined;
     current?.client.destroy();

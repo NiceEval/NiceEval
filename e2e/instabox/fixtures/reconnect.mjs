@@ -12,8 +12,17 @@ globalThis.fetch = async (input, init) => {
     appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `token-request ${++tokenRequests}\n`);
     if (tokenRequests > 1 && process.env.NICEEVAL_TOKEN_REFRESH === "fail")
       return Response.json({ error: { code: "fixture-token-unavailable" } }, { status: 503 });
+    // Real expiry: an established connection survives, but its next handshake
+    // must be rejected by Instabox itself rather than by this fixture.
+    if (tokenRequests === 1 && process.env.NICEEVAL_TOKEN_REFRESH === "success")
+      init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), ttlSeconds: 5 }) };
   }
-  return fetch(input, init);
+  const response = await fetch(input, init);
+  if (String(input).endsWith("/ssh-tokens") && tokenRequests > 1 && response.ok && process.env.NICEEVAL_TOKEN_REFRESH === "wrong-machine") {
+    const token = await response.json();
+    return Response.json({ ...token, machineId: "m_fixture_other_machine" });
+  }
+  return response;
 };
 const connect = ssh2.Client.prototype.connect;
 ssh2.Client.prototype.connect = function(config) {
@@ -24,12 +33,16 @@ ssh2.Client.prototype.connect = function(config) {
   this.once("close", () => appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS,
     `connection-metrics ${JSON.stringify({ elapsedMs: Math.round(performance.now() - started), maximumChannels, bytesRead: this._sock?.bytesRead, bytesWritten: this._sock?.bytesWritten })}\n`));
   appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `connect ${++connectCount}\n`);
+  this.on("error", error => {
+    if (error.level === "client-authentication")
+      appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, "token-rejected\n");
+  });
   if (disconnected && connectCount <= 2) {
     appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `reconnect-reset ${connectCount}\n`);
     queueMicrotask(() => this.emit("error", new Error("read ECONNRESET (fixture reconnect)")));
     return this;
   }
-  if (disconnected && (connectCount === 3 || config.username === rejectedToken)) {
+  if (disconnected && ((connectCount === 3 && process.env.NICEEVAL_TOKEN_REFRESH !== "success") || config.username === rejectedToken || process.env.NICEEVAL_TOKEN_REFRESH === "rejected")) {
     rejectedToken = config.username;
     appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, "token-rejected\n");
     queueMicrotask(() => this.emit("error", Object.assign(new Error("All configured authentication methods failed"), { level: "client-authentication" })));
