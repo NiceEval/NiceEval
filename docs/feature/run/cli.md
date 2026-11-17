@@ -118,6 +118,8 @@ interface RunRecoverOrphanedDocument {
 实例标识用于排查者以 provider 的原生 CLI 直连现场，NiceEval 不代理这次连接。这些行是 owner 进程随活动写入的非权威观察值，
 与 heartbeat 同级：owner 被暂停时可以停止前进，读取方只按原样显示写入时间，不据此判断 Attempt 死活。
 已发布的 Attempt 不再出现在这里，改由 `show @<locator>` 读取；排队中尚未派发的 Planned attempt 只按 Experiment 计数。
+
+派发前准备尚未结算的节点另列一组：依赖它的 Experiment 与 Eval、当前 action 的 `i/n` 与 ID、阶段（与 `exp --json` 的 `prepare` 事件同一组名称）、进入该阶段的时间，以及 staging 实例的 Provider 原生标识。这样 `queued` 长时间不变时，可以区分正在准备与真正等待调度。
 `--json` 输出同一组字段。凭据、env var 值与 Sandbox 内的文件内容不进入这些行。
 活跃 Invocation 的每个 Experiment 条目在 `--json` 中总是带 `attempts` 与 `activeAttempts` 数组，没有条目时为空数组；已收口的 Invocation 不带这两个键。
 

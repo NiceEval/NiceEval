@@ -230,7 +230,7 @@ TTY activity 从 cache lookup 开始，每条同时显示这次准备所属的 e
 
 miss 后依次显示当前 action 的 `i/n`、action ID，以及正在创建 prepare Sandbox、执行 action 或发布 artifact。elapsed 从整段 activity 开始持续增长，cache hit、成功发布或失败时结束。非 TTY Human 输出把同一组有界 start / progress / end 标签按发生顺序追加到 stdout。
 
-这些短期标签不进入 Attempt closure 或 `--json` 事件词表；失败仍由 Run diagnostic 与最终错误结果负责。
+这些标签不进入 Attempt closure；失败仍由 Run diagnostic 与最终错误结果负责。`--json` 用 `prepare` 事件输出同一组事实（见 [`--json`](#--json)），coding agent 不必改用 Human 输出或进入 Provider 才能判断准备是否在推进。
 
 Experiment `before` 与 `after` 显示为 Run 范围活动。其它 Invocation 可以继续创建并发布自己的 Run。执行去重、同一 Experiment 的 dispatch claim 与并发名额由 Coordination 处理；只读命令在固定 cutoff 下读取 Run 与已发布 Attempt。
 
@@ -392,7 +392,9 @@ receipt 不复制 locator、Verdict、usage、cost 或 Attempt 计数。需要�
 任一贡献缺失、部分采集或无效时省略对应字段，不补零、不把已知小计表示为完整总量。完整的零值仍输出为零。
 逐调用证据、缓存桶、完整性和 Judge 用量通过 `attempt.usage` 核对。
 
-连续 30 秒没有永久事件时输出单行 `progress` 心跳，只更新全局计数与耗时，不重复倒出庞大的静态数组以节约调用方 token。
+连续 30 秒没有永久事件时输出单行 `progress` 心跳，只更新全局计数与耗时，不重复倒出庞大的静态数组以节约调用方 token。心跳带 `preparing`：当前正在 lookup、执行或发布的准备图节点数；没有时为 0。
+
+派发前准备的每个节点在开始、换阶段与结算时各输出一行 `prepare` 事件，字段为：`node`（本 Invocation 内稳定的节点序号）、`pairings`（依赖它的 `{ experimentId, evalId }`，超过 8 个时截断并给出 `pairingsOmitted`）、`action`（`{ index, total, id }`，与 Human activity 的 `i/n` 一致）、`phase`（`lookup`、`waiting`、`staging`、`action`、`publish`、`settled` 之一）、`elapsedMs`，结算时另带 `outcome`（`hit`、`published`、`continued`、`degraded`、`failed`）与 degraded/failed 的具名原因。`continued` 表示非发布点执行完毕、staging 交给子节点。命令参数、env 值与 secret 不进入该事件。
 当 Attempt 产生工具调用、自述说明（commentary）或阶段推进时，实时发射单行紧凑的 `activity` 增量事件，直率交付实际命令与说明，不进行假性遮蔽或截断。
 
 progress 与 diagnostic 形状服务当前 Invocation，不是 Run 事实解码协议。机器调用方以进程退出状态和最后的 receipt 判断命令是否结束，再用 `createdRunIds` 与 `publicationCutoff` 读取业务数据。

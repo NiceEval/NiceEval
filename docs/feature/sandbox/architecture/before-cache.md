@@ -256,13 +256,31 @@ repository schema 为 generation 建立索引，分配只读索引端点，成�
 
 删除失败保留登记并重试，不按年龄、名称或“不在当前 Run”猜测垃圾。用户声明的 image、template 与 snapshot 永不由 NiceEval 自动删除。作者可见的运行开关只有 `sandboxCache.before: "use" | "bypass"` 和对应 CLI flag。
 
+## 发布点
+
+每个 eligible action 都有 BeforeCacheKey，但只有发布点才捕获并发布 artifact。准备图中的节点满足任一条件即为发布点：
+
+1. 它是某个配对的终端节点；
+2. 它在本准备图中有两个及以上子节点（分叉）；
+3. 它的下一个 action 的 `changeFrequency` 与它不同。
+
+其余节点在同一个 staging 上执行完后直接把 staging 交给唯一的子节点，不写 artifact 标记、不 quiesce、不登记账本行、不持有 hold。不能连续推进的 Provider（`continuesStaging` 为 false）把每个节点都当作发布点，因为新 staging 只能从已发布的 artifact 创建。
+
+lookup 对配对链上的全部 key 从深到浅查找，命中任意一层已发布 artifact 即从该层继续；artifact 只是缓存，未发布的层不影响正确性。代价是：只改了非发布点的中间 action 时，从它之前最近的已发布祖先（没有时从 Base）重新执行。作者想让某个中间层单独命中时，用 `changeFrequency` 把它与后续 action 分开。
+
+`changeFrequency`、拓扑顺序与发布点都不进入 BeforeCacheKey；发布点只决定哪些 key 有 artifact。
+
+取消与失败按已发布的层计算：取消时尚未发布的整段 action 都要在下次重新执行。
+
 ## 运行事实归属
 
 `RunPrepared` 的准备图按完整 `BeforeCacheKey` 跨 Experiment 合并节点，每个节点在一个 Invocation 内只准备一次。相同 key 的多个 Eval×Experiment 配对共享这次准备，即使它们属于不同的 Record Run；staging、publication、hold 与 Scope 归 Invocation 的共享准备，不按 Record Run 拆分，也不归任何 Attempt。节点的 activity 与 diagnostic 按配对所在的 Run 呈现。归属细则见[一次 Invocation 一份准备](remote-snapshot-cache.md#一次-invocation-一份准备)。
 
 不同 key 可在 `maxBeforeCacheConcurrency ∩ provider scheduling.lane.limit` 内并行。相同 `(executionDomainId, BeforeCacheKey)` 仍通过跨进程 publication lease 串行发布，等待者消费同一 committed `ArtifactIntent`。
 
-Run 保留全局 pre-dispatch barrier：准备图的所有节点结算后才派发 Attempt。一个 `failed` 节点只阻断其 descendants 和依赖该 terminal prefix 的 Planned attempts：它们记为 `not-dispatched`，原因由关联其 slot 的 `sandbox-before-cache-failed` Run 级诊断说明，不伪造 `errored` Attempt（见[执行失败分类 · 止损语义](../../error-classification/README.md#止损语义)）；`degraded` 节点不阻断，目标配对改从更浅的可用前缀开始。其余分支照常结算。取消停止并回收未结算节点的 staging 与 publication，但不回滚已验证发布的 immutable artifact。
+派发按配对放行，不设全局 pre-dispatch barrier：一个 Planned attempt 在它的终端节点及全部祖先结算后即可派发，不等待准备图中无关分支。Attempt 并发与准备并发各自限流，互不占用名额。这样一个 Eval 的长准备不会让已经就绪的其它配对空等；身份与结果不依赖派发先后，放行顺序只影响墙钟耗时。
+
+一个 `failed` 节点只阻断其 descendants 和依赖该 terminal prefix 的 Planned attempts：它们记为 `not-dispatched`，原因由关联其 slot 的 `sandbox-before-cache-failed` Run 级诊断说明，不伪造 `errored` Attempt（见[执行失败分类 · 止损语义](../../error-classification/README.md#止损语义)）；`degraded` 节点不阻断，目标配对改从更浅的可用前缀开始。其余分支照常结算。取消停止并回收未结算节点的 staging 与 publication，但不回滚已验证发布的 immutable artifact。
 
 `AttemptCaptured` 与 `Unsupported` 的 lookup、restore、replay、satisfaction 与 cleanup 归各自 Attempt，不因 key 相同共享 activity、locator 或可写状态。
 

@@ -125,6 +125,7 @@ lookup miss
   -> staging: 父节点连续推进的 staging，或从 Base / 父 snapshot 新建
   -> staging ready 后再次 resolveBase，确认 Base 未变
   -> 执行本节点的一个 before action
+  -> 本节点不是发布点：不写标记、不 snapshot，把 staging 直接交给唯一子节点
   -> 写 artifact 标记 -> 挂载与敏感字节检查 -> quiesce
   -> createSnapshot(name = niceeval-<artifactId>)
   -> publish：ready 行 + Run 持有的 hold
@@ -143,7 +144,9 @@ lookup miss
 
 `sourceUsableAfterSnapshot` 为 true 的 Provider（E2B、Instabox）在一个节点发布后，把 staging 交给它的一个子节点继续执行下一个 action，不新建实例。子节点按规范化 BeforeCacheKey 排序后取第一个；其余子节点从刚发布的 snapshot 新建 staging。继续推进的 staging 占用同一个准备并发额度。
 
-冷启动 `Base → 1 → 2`：E2B 与 Instabox 创建一个 staging、发布两份 snapshot；OpenSandbox 创建两个 staging。之后任一深度都可单独命中。
+Instabox 的 live snapshot 不停止源 Machine，driver 必须声明 `sourceUsableAfterSnapshot: true`。若真实服务证明某类 snapshot 之后源实例不可再执行命令，driver 只对该情形回退到新建 staging，并保留可复现证据；不能整体关闭连续推进。
+
+冷启动 `Base → 1 → 2`：E2B 与 Instabox 创建一个 staging；OpenSandbox 创建两个 staging。发布几份 snapshot 由[发布点](before-cache.md#发布点)决定。
 
 节点在发布前降级或失败时，staging 不再继续推进，后代节点按[节点结算](#run-级节点结算)处理。
 
@@ -331,7 +334,8 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 
 用户路径由 [云 Sandbox 的一批 Attempt 只准备一次](../use-case/sandbox-cloud-before-cache.md) 从安装后的 CLI 验收，E2B 与 Instabox 各跑一次真实服务。下列情形无法靠普通运行稳定触发，在 driver 边界或账本边界按 [Testing](../../../engineering/testing/README.md) 选择最小的可控 owner，以 driver 调用序列和最终资源状态作为证据：
 
-- 连续推进：E2B 与 Instabox 冷启动 `Base → 1 → 2` 只创建一个 staging；OpenSandbox 创建两个。
+- 连续推进：E2B 与 Instabox 冷启动 `Base → 1 → 2` 只创建一个 staging；OpenSandbox 创建两个。Instabox 用真实服务验收一次：本轮发布的多份 snapshot 来自同一个 `sourceMachineId`。
+- 发布点：同一 `changeFrequency` 的线性链 `Base → 1 → 2 → 3`（无分叉、只有 3 是配对终端）只发布 3；之后只改 2 时从 Base 重新执行 1–3。
 - staging 创建前父 snapshot 被删除或 artifact 标记损坏：节点 `degraded(parent-unavailable)`，不发布，目标配对从更浅的可用祖先或 Base 开始。
 - snapshot 请求超时：节点 `degraded(snapshot-uncertain)`，配对照常完成；Run 结束时按名称查到并删除该 snapshot。
 - author action 失败：节点与后代 `failed`，依赖它的配对在派发前失败，其它分支照常。
