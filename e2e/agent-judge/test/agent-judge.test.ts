@@ -144,6 +144,15 @@ function modelServer(mode: string) {
       else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question")
         calls = [call("read", { path: "application.txt" })];
+      else if (mode === "command-timeout" && step.message === "First question" && last.role === "user")
+        calls = [call("bash", { command: "sleep 30", timeout: 1 })];
+      else if (
+        mode === "command-timeout" &&
+        step.message === "First question" &&
+        last.role === "tool" &&
+        last.content.includes("timed out")
+      )
+        calls = [call("read", { path: "application.txt" })];
       else if (
         mode === "success" &&
         step.message === "First question" &&
@@ -185,6 +194,7 @@ function modelServer(mode: string) {
 // @feature docs/feature/judge/README.md
 test.concurrent.each([
   "success",
+  "command-timeout",
   "barrier",
   "no-submit",
   "turns",
@@ -306,6 +316,7 @@ test.concurrent.each([
           const expected =
             [
               "success",
+              "command-timeout",
               "barrier",
               "truncation",
               "compact-continue",
@@ -340,6 +351,12 @@ test.concurrent.each([
             const read = trace.tools.find((tool) => tool.name === "read");
             expect(read?.result).toContain("exceeds 50.0KB limit");
             expect(read?.result).not.toContain("�");
+          }
+          if (mode === "command-timeout" && index === 0) {
+            expect(trace.tools.some((tool) => tool.name === "bash" && tool.result?.includes("timed out"))).toBe(true);
+            expect(
+              trace.tools.some((tool) => tool.name === "read" && tool.result?.includes("application evidence")),
+            ).toBe(true);
           }
           if (mode === "success") {
             expect(audit.audit.submission?.value).toMatchObject(index === 1 ? { measurement: 1 } : { satisfied: true });
