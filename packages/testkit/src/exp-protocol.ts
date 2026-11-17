@@ -1,4 +1,6 @@
 export {
+  decodeExpPrepareEvent,
+  type ExpPrepareEvent,
   decodeExpKeptEvent,
   type ExpKeptEvent,
   decodeExpStartEvent,

@@ -40,6 +40,7 @@ import type {
   ExpKeptEvent,
   ExpDiagnosticEvent,
   ExpProgressEvent,
+  ExpPrepareEvent,
 } from "../../experiment/host/cli/output-protocol.ts";
 import { evalConclusionRows, type EvalConclusionRow } from "./eval-conclusions.ts";
 
@@ -184,6 +185,7 @@ export interface ReceiptEvent {
 /** `niceeval exp --json` 唯一公开事件词表；新增事件必须先进入已采纳文档与这个闭合联合。 */
 export type ExpEvent =
   | StartEvent
+  | ExpPrepareEvent
   | ProgressEvent
   | FailureEvent
   | ErrorEvent
@@ -232,6 +234,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
   // 距上一次「有意义的输出」(任意一次永久事件)过了多久,用来判断要不要追加一条心跳;
   // 由 appendDurable 无条件更新——"plan" 本身就是第一次永久事件,天然把这个时钟从 0 开始计。
   let lastCheckpointAtMs = 0;
+  const preparing = new Set<number>();
   // "summary" 与 "receipt" 是 coordinator.finish() 里连续 emit 的两个独立永久事件(中间不会插入
   // 其它事件)。先暂存 summary，receipt 到达时再写 eval 结论行与唯一的最终 receipt。
   let pendingSummary: InvocationSummary | undefined;
@@ -365,7 +368,17 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         }
 
         case "run-activity": {
-          // Run activity 只服务 human live 面；ExpEvent 的已采纳词表没有这一种事件。
+          if (event.prepare !== undefined) {
+            const prepare = event.prepare;
+            if (prepare.phase === "settled") preparing.delete(prepare.node);
+            else preparing.add(prepare.node);
+            noteCheckpoint(event.at);
+            writeEvent(io, {
+              ...prepare,
+              pairings: prepare.pairings.slice(0, 8),
+              pairingsOmitted: Math.max(0, prepare.pairings.length - 8),
+            });
+          }
           return;
         }
 
@@ -449,6 +462,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         total: state.total,
         reused: state.reused,
         running: state.running,
+        preparing: preparing.size,
         elsewhere: state.elsewhere,
         queued: state.queued,
         // 与 human 首行同一份状态、同一套划分:已了结的 attempt 按 verdict 分项,消费方不必

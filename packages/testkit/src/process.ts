@@ -13,6 +13,8 @@ import {
 } from "./inspection-protocol.js";
 import { decodeRunDocument, type RunDocument, type RunListDocument } from "./run-protocol.js";
 import {
+  decodeExpPrepareEvent,
+  type ExpPrepareEvent,
   decodeExpKeptEvent,
   type ExpKeptEvent,
   decodeExpStartEvent,
@@ -69,6 +71,18 @@ const ExpProgressEventSchema = Schema.declare<ExpProgressEvent>(
     }
   },
   { title: "niceeval.exp progress event" },
+);
+
+const ExpPrepareEventSchema = Schema.declare<ExpPrepareEvent>(
+  (input): input is ExpPrepareEvent => {
+    try {
+      decodeExpPrepareEvent(input);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { title: "exp preparation event" },
 );
 
 const ExpFailureEventSchema = Schema.Struct({
@@ -196,6 +210,7 @@ const ExpLockWaitEventSchema = Schema.Struct({
 export const ExpEventSchema = Schema.Union([
   ExpStartEventSchema,
   ExpProgressEventSchema,
+  ExpPrepareEventSchema,
   ExpFailureEventSchema,
   ExpErrorEventSchema,
   ExpEvalEventSchema,

@@ -115,6 +115,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
   const snapshots = new Map<string, { id: string; name: string; files: Map<string, string> }>();
   const deletions: string[] = [];
   const lookups: string[] = [];
+  const snapshotSources: string[] = [];
   const own = (files?: Map<string, string>) =>
     Effect.acquireRelease(
       Effect.sync((): MaterializedSandboxCase => {
@@ -167,6 +168,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
         const id = `remote-${randomUUID()}`;
         const backend = source.authorBackend;
         if (!(backend instanceof RecordingBackend)) throw new Error("Expected recording Provider");
+        snapshotSources.push(backend.sandboxId);
         if (outcome !== "absent") snapshots.set(id, { id, name, files: new Map(backend.files) });
         return outcome === "success"
           ? Effect.succeed({ _tag: "Ready" as const, snapshotId: id })
@@ -220,6 +222,7 @@ function fixture(outcome: "ready" | "pending" | "absent" | "success") {
     snapshots,
     deletions,
     lookups,
+    snapshotSources,
     snapshotCalls: () => snapshotCalls,
     makeUnavailable: () => {
       unavailable = true;
@@ -304,8 +307,9 @@ async function agentAttempts(
     leakGate: { _tag: "None" },
     plan: () => Effect.succeed(providerPlan),
   });
-  if ((options.actions ?? 2) > 0) layer = layer.before(shell({ id: "one", command: "one" }));
-  if ((options.actions ?? 2) > 1) layer = layer.before(shell({ id: "two", command: options.second ?? "two" }));
+  if ((options.actions ?? 2) > 0) layer = layer.before(shell({ id: "one", changeFrequency: 10, command: "one" }));
+  if ((options.actions ?? 2) > 1)
+    layer = layer.before(shell({ id: "two", changeFrequency: 20, command: options.second ?? "two" }));
   layer = layer
     .before(async (sandbox) => {
       await sandbox.writeText("opaque", options.opaque ?? "opaque");
@@ -378,6 +382,9 @@ test.concurrent.each([true, false])(
           expect(use).toMatchObject({ satisfiedActionCount: 2, agentDerived: true });
           initialKey = use.artifact!.beforeCacheKey;
           expect(f.instances).toHaveLength(continues ? 1 : 3);
+          expect(f.snapshotSources).toEqual(
+            continues ? Array(3).fill(f.instances[0]!.sandboxId) : f.instances.map((instance) => instance.sandboxId),
+          );
           for (let index = 0; index < 2; index++) {
             yield* Effect.scoped(
               Effect.gen(function* () {

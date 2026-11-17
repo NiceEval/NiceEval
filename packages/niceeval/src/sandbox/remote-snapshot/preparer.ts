@@ -374,6 +374,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       plan: Plan,
       context: BeforeCachePreparationContext,
       steps: readonly BeforeCacheStep[],
+      options?: { readonly reserve: boolean },
     ): Effect.fn.Return<BeforeCacheLookup, BeforeCacheError, Scope.Scope> {
       const target = yield* resolve(plan, context);
       if (target._tag !== "Resolved") return degraded("base-image-unverified", target.reason);
@@ -385,6 +386,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
           return degraded("base-image-unverified", "Base identity changed after planning");
         const input = {
           operation: "lookup-reserve" as const,
+          reserve: options?.reserve ?? true,
           beforeCacheKey: step.declaration.beforeCacheKey,
           baseIdentity: target.baseIdentity,
           declarationJson: JSON.stringify(
@@ -411,6 +413,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
             yield* accept(state, result.entry, result.holdId);
             return { _tag: "Hit", artifact: artifactOf(result.entry, step) };
           }
+          if (result._tag === "Empty") break;
           if (result._tag === "Busy") {
             yield* Effect.sleep("500 millis");
             continue;

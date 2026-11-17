@@ -61,6 +61,8 @@ test.concurrent("concurrent invocations reserve one writer before any snapshot r
           const first = yield* userDatabaseHost.open({ home });
           const second = yield* userDatabaseHost.open({ home });
           const inputs = [reservation(), reservation()];
+          // A non-publication miss must neither take a lease nor create a ledger row.
+          expect((yield* snapshotLedgerRequest(first, { ...inputs[0]!, reserve: false }))._tag).toBe("Empty");
           const results = yield* Effect.all(
             [snapshotLedgerRequest(first, inputs[0]!), snapshotLedgerRequest(second, inputs[1]!)],
             { concurrency: "unbounded" },

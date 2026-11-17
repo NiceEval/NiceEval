@@ -35,6 +35,7 @@ const Ownership = { artifactId: Schema.String, token: Schema.String };
 const Reserve = Schema.Struct({
   ...Request,
   operation: Schema.Literal("lookup-reserve"),
+  reserve: Schema.optionalKey(Schema.Boolean),
   beforeCacheKey: Schema.String,
   baseIdentity: Schema.String,
   declarationJson: Schema.String,

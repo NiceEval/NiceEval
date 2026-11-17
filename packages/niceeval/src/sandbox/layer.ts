@@ -561,6 +561,7 @@ export interface BeforeCachePreparer<Plan> {
     plan: Plan,
     context: BeforeCachePreparationContext,
     stepsDeepestFirst: readonly BeforeCacheStep[],
+    options?: { readonly reserve: boolean },
   ) => Effect.Effect<BeforeCacheLookup, BeforeCacheError, Scope.Scope>;
   readonly materializeFrom: (
     plan: Plan,
@@ -1053,7 +1054,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
             continuesStaging: support.preparer.continuesStaging,
             supportsAgentDerived: support.preparer.supportsAgentDerived,
             eligibility: (_, context) => support.preparer.eligibility(input.runtimePlan, context),
-            lookup: (_, context, steps) => support.preparer.lookup(input.runtimePlan, context, steps),
+            lookup: (_, context, steps, options) => support.preparer.lookup(input.runtimePlan, context, steps, options),
             materializeFrom: (_, context, purpose, source, materialize) =>
               support.preparer.materializeFrom(input.runtimePlan, context, purpose, source, materialize),
             capture: (_, context, staging, step) => support.preparer.capture(input.runtimePlan, context, staging, step),

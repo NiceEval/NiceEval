@@ -108,6 +108,8 @@ export interface LockWaitInput {
  *  各调一次,长 activity 可用 progress 更新当前标签;`durationMs` 只在 done/failed 上给。
  *  `label` 是 producer 人读标签,展示层不查表。 */
 export interface RunActivityInput {
+  prepare?: import("../../experiment/host/cli/output-protocol.ts").ExpPrepareEvent | undefined;
+  sandbox?: { readonly provider: string; readonly nativeInstanceId: string | undefined } | undefined;
   id: string;
   key: string;
   label: string;

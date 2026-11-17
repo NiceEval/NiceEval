@@ -90,6 +90,23 @@ export const ExpTerminalEventSchema = Schema.Struct({
   summary: ExpTerminalSummarySchema,
 });
 
+/** Invocation-local preparation observation; it never carries command inputs. */
+export const ExpPrepareEventSchema = Schema.Struct({
+  event: Schema.Literal("prepare"),
+  node: NonNegativeIntegerSchema,
+  pairings: Schema.Array(Schema.Struct({ experimentId: Schema.String, evalId: Schema.String })),
+  pairingsOmitted: NonNegativeIntegerSchema,
+  action: Schema.Struct({ index: NonNegativeIntegerSchema, total: NonNegativeIntegerSchema, id: Schema.String }),
+  phase: Schema.Literals(["lookup", "waiting", "staging", "action", "publish", "settled"]),
+  elapsedMs: NonNegativeNumberSchema,
+  outcome: Schema.optionalKey(Schema.Literals(["hit", "published", "continued", "degraded", "failed"])),
+  reason: Schema.optionalKey(Schema.String),
+});
+export type ExpPrepareEvent = Schema.Schema.Type<typeof ExpPrepareEventSchema>;
+export function decodeExpPrepareEvent(input: unknown): ExpPrepareEvent {
+  return Schema.decodeUnknownSync(ExpPrepareEventSchema, { errors: "all", onExcessProperty: "error" })(input);
+}
+
 /** Bounded, transient snapshot; it does not assert Attempt publication. */
 export const ExpProgressEventSchema = Schema.Struct({
   event: Schema.Literal("progress"),
@@ -97,6 +114,7 @@ export const ExpProgressEventSchema = Schema.Struct({
   total: NonNegativeIntegerSchema,
   reused: NonNegativeIntegerSchema,
   running: NonNegativeIntegerSchema,
+  preparing: NonNegativeIntegerSchema,
   elsewhere: NonNegativeIntegerSchema,
   queued: NonNegativeIntegerSchema,
   passed: NonNegativeIntegerSchema,

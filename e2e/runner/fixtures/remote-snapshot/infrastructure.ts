@@ -18,7 +18,7 @@ export async function withSnapshotInfrastructure(
       OPEN_SANDBOX_DOMAIN: "http://fixture.invalid",
       NICEEVAL_HOME: join(paths.projectRoot, ".snapshot-home"),
       NICEEVAL_SNAPSHOT_FIXTURE_ID: id, NICEEVAL_SNAPSHOT_FIXTURE_IMAGE: image,
-      NODE_OPTIONS: `--import=${join(paths.projectRoot, "fixtures/remote-snapshot/preload.mjs")}`,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${join(paths.projectRoot, "fixtures/remote-snapshot/preload.mjs")}`,
     } });
   } finally {
     // Remove only this invocation's labelled resources. Committed snapshots

@@ -87,6 +87,7 @@ function lookupReserve(
     }
     retire(database, ready.artifact_id, ready.snapshot_id);
   }
+  if (request.reserve === false) return { _tag: "Empty" };
   const preparing = entry(
     database,
     `SELECT * FROM before_cache_snapshots

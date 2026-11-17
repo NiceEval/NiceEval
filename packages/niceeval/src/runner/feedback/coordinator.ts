@@ -328,6 +328,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
   function runActivity(input: RunActivityInput): void {
     emit({
       type: "run-activity",
+      prepare: input.prepare,
+      sandbox: input.sandbox,
       at: io.clock.now(),
       id: input.id,
       key: input.key,

@@ -732,7 +732,10 @@ function multiplexFeedbackSink(
       session?.onInvocationEvent({ type: "lock-wait", ...input });
       forward((sink, value) => sink.lockWait(value), input);
     },
-    runActivity: (input) => forward((sink, value) => sink.runActivity(value), input),
+    runActivity: (input) => {
+      session?.onInvocationEvent({ type: "run-activity", at: Date.now(), ...input });
+      forward((sink, value) => sink.runActivity(value), input);
+    },
     experimentProgress: (input) => forward((sink, value) => sink.experimentProgress(value), input),
     lifecycle: (event) => {
       if (

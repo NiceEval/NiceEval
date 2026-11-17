@@ -8,7 +8,7 @@
 
 import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
-import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch } from "effect";
+import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch, Fiber } from "effect";
 import { adapterIdentity } from "../adapter.ts";
 import { boundedErrorText } from "../shared/bounded-error-text.ts";
 import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../record/family/source-receipt/limits.ts";
@@ -93,7 +93,12 @@ import {
 import { openRunnerRecordCoordinator, prepareRunnerRecordReuse, type RunnerRecordAttempt } from "./record.ts";
 import { bindRunnerRunObservabilityDiagnostics } from "./source-receipts/runtime.ts";
 import { sandboxReusePoolDescriptor } from "./sandbox-reuse.ts";
-import { prepareBeforeCaches, type BeforeCachePreparationActivityEvent } from "./before-cache-preparation.ts";
+import {
+  prepareBeforeCaches,
+  type BeforeCachePreparationActivityEvent,
+  type BeforeCachePreparationResult,
+  type PreparedBeforeCacheUse,
+} from "./before-cache-preparation.ts";
 
 export class RunModeConflictError extends Data.TaggedError("RunModeConflictError")<{
   readonly keepSandbox: NonNullable<RunOptions["keepSandbox"]>;
@@ -127,6 +132,8 @@ function beforeCacheActivityLabel(event: BeforeCachePreparationActivityEvent): s
       return `preparing sandbox before cache · ${scope} · ${event.actionId} · ${progress}`;
     case "capture":
       return `publishing sandbox before cache · ${scope} · ${event.actionId} · ${progress}`;
+    case "waiting":
+      return `waiting for sandbox before cache · ${scope} · ${progress}`;
     case "provider":
       return `preparing sandbox before cache · ${scope} · ${event.detail ?? ""} · ${progress}`;
   }
@@ -535,44 +542,70 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           data: undefined,
         });
       }
-      const beforeCachePreparation = yield* prepareBeforeCaches(attempts, {
-        runIds,
-        artifactPrepare,
-        signal: opts.signal,
-        onWarning: (warning) => {
-          replacementWarnings.push(warning);
-          reportDiagnostic({
-            key: warning.key,
-            code: "before-cache-replacement-conflict",
-            severity: "warning",
-            message: warning.message,
-
-            identity: undefined,
-            data: undefined,
-          });
-        },
-        maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
-        onActivity: (event) => {
-          reportRunActivity({
-            id: event.id,
-            key: event.key,
-            label: beforeCacheActivityLabel(event),
-            status: event.status,
-            durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
-          });
-        },
-      });
-
-      for (const diagnostic of beforeCachePreparation.diagnostics) {
-        reportDiagnostic({
-          key: diagnostic.key,
-          code: "cache-degraded",
-          severity: "warning",
-          message: diagnostic.message,
-          identity: undefined,
-          data: { phase: "sandbox.prepare" },
-        });
+      const preparationReady = new Map<string, Deferred.Deferred<void, Error>>();
+      for (const a of attempts) {
+        const pairKey = cacheKey(a.run, a.evalDef.id);
+        if (!preparationReady.has(pairKey)) preparationReady.set(pairKey, yield* Deferred.make<void, Error>());
       }
+      const preparedPairs = new Map<string, PreparedBeforeCacheUse>();
+      const failedPairs = new Map<string, Error>();
+      let beforeCachePreparation: BeforeCachePreparationResult = {
+        preparedByPair: preparedPairs,
+        failuresByPair: failedPairs,
+        summary: { total: 0, hit: 0, prepared: 0, degraded: 0, failed: 0 },
+        diagnostics: [],
+      };
+      const beforeCacheFiber = yield* Effect.forkScoped(
+        prepareBeforeCaches(attempts, {
+          runIds,
+          artifactPrepare,
+          signal: opts.signal,
+          onWarning: (warning) => {
+            replacementWarnings.push(warning);
+            reportDiagnostic({
+              key: warning.key,
+              code: "before-cache-replacement-conflict",
+              severity: "warning",
+              message: warning.message,
+
+              identity: undefined,
+              data: undefined,
+            });
+          },
+          onPairReady: (pairKey, prepared, failure) =>
+            Effect.gen(function* () {
+              if (prepared !== undefined) preparedPairs.set(pairKey, prepared);
+              if (failure !== undefined) failedPairs.set(pairKey, failure);
+              yield* Deferred.succeed(preparationReady.get(pairKey)!, undefined);
+            }),
+          maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
+          onActivity: (event) => {
+            reportRunActivity({
+              id: event.id,
+              key: event.key,
+              prepare: event.prepare,
+              sandbox: event.sandbox,
+              label: beforeCacheActivityLabel(event),
+              status: event.status,
+              durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
+            });
+          },
+        }).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              beforeCachePreparation = result;
+            }),
+          ),
+          Effect.onExit((exit) =>
+            Effect.forEach(
+              preparationReady.values(),
+              (ready) =>
+                Exit.isFailure(exit) ? Deferred.failCause(ready, exit.cause) : Deferred.succeed(ready, undefined),
+              { discard: true },
+            ),
+          ),
+        ),
+      );
 
       // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
       // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
@@ -1177,21 +1210,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             phase: "sandbox.prepare",
             dedupeKey: warning.key,
 
-            data: undefined,
-            command: undefined,
-            affectedSlotIds: undefined,
-          });
-      }
-
-      for (const diagnostic of beforeCachePreparation.diagnostics) {
-        for (const experimentId of diagnostic.experimentIds)
-          recordExperimentDiagnostic({
-            experimentId,
-            code: "cache-degraded",
-            level: "warning",
-            message: diagnostic.message,
-            phase: "sandbox.prepare",
-            dedupeKey: diagnostic.key,
             data: undefined,
             command: undefined,
             affectedSlotIds: undefined,
@@ -3458,6 +3476,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             }
             // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
             // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
+            yield* Deferred.await(preparationReady.get(cacheKey(a.run, a.evalDef.id))!);
             yield* awaitBuildsFor(a);
             for (;;) {
               // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
@@ -3540,6 +3559,31 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         return Effect.raceFirst(dispatchEffect, interruptOnAbort(opts.signal)).pipe(Effect.awaitAllChildren);
       }
       const exit = yield* Effect.exit(dispatchUntilInterrupted());
+      yield* Fiber.join(beforeCacheFiber);
+      for (const diagnostic of beforeCachePreparation.diagnostics) {
+        reportDiagnostic({
+          key: diagnostic.key,
+          code: "cache-degraded",
+          severity: "warning",
+          message: diagnostic.message,
+          identity: undefined,
+          data: { phase: "sandbox.prepare" },
+        });
+      }
+      for (const diagnostic of beforeCachePreparation.diagnostics) {
+        for (const experimentId of diagnostic.experimentIds)
+          recordExperimentDiagnostic({
+            experimentId,
+            code: "cache-degraded",
+            level: "warning",
+            message: diagnostic.message,
+            phase: "sandbox.prepare",
+            dedupeKey: diagnostic.key,
+            data: undefined,
+            command: undefined,
+            affectedSlotIds: undefined,
+          });
+      }
       // A full-carry / zero-Attempt invocation has no dispatch fiber that could
       // await startup recovery. Seal its selected-Experiment obligation here; for
       // normal runs the per-setup gate above has already awaited the same Deferred.

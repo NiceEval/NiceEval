@@ -24,7 +24,7 @@ import { snapshotAgent, snapshotSandbox } from "../agents/remote-snapshot.ts";
 export default defineExperiment({
   adapter: snapshotAgent,
   evals: ["snapshot-shared"],
-  sandbox: snapshotSandbox.before(shell({ id: "pending-suffix", changeFrequency: 100,
+  sandbox: snapshotSandbox.before(shell({ id: "pending-suffix", changeFrequency: 200,
     command: "mkfifo /tmp/before-cache-release; touch /tmp/before-cache-entered; read line < /tmp/before-cache-release" })),
 });
 `,

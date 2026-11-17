@@ -249,3 +249,11 @@ recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为�
 | `--help` | `niceeval list` | boolean | 打印该命令的帮助。 |
 
 {/* GENERATED:END cli-flags */}
+
+## 派发前 Sandbox 准备
+
+`niceeval exp --json` 用 `prepare` 事件报告缓存查找、等待、创建实例、执行 action、发布和结算。事件只包含节点、依赖配对、action 标识、阶段与耗时，不包含命令参数或环境变量的值。连续 30 秒没有事件时，`progress` 心跳的 `preparing` 表示正在准备的节点数。
+
+评估用例的准备链结算后即可派发；其它配对可以继续准备。相同频率的线性 action 共用一个准备实例，只在配对终端、分叉或频率变化处发布缓存。
+
+用 `niceeval invocation show <id>` 查看未结算的准备节点、阶段开始时间与 Provider 原生实例标识。加 `--json` 可供脚本读取同一组观察值。机器调用方可从 `niceeval/experiment/host` 导入 `decodeExpPrepareEvent` 和 `decodeSessionShowDocument` 校验输出。

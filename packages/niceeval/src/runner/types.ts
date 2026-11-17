@@ -1,3 +1,4 @@
+import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
 import type { ModelRoleSelection, ResolvedModelRoles, ModelRolesWire } from "../model-roles.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
 import type { AdapterFlagsParser, AdapterFlagsOutput, AdapterFlagsValue } from "../adapter-flags.ts";
@@ -1945,6 +1946,8 @@ export type DurableFeedbackEvent =
    */
   | {
       type: "run-activity";
+      prepare?: ExpPrepareEvent | undefined;
+      sandbox?: { readonly provider: string; readonly nativeInstanceId: string | undefined } | undefined;
       at: number;
       id: string;
       key: string;

@@ -1,3 +1,4 @@
+import { ExpPrepareEventSchema } from "../experiment/host/cli/output-protocol.ts";
 // Experiment Invocation 的轻量 Session 索引。
 //
 // Session 只回答「哪一批 Run 由同一次 exp 调度、当前是否仍活跃」；完整的
@@ -59,6 +60,7 @@ export interface ActiveSessionExperimentRecord extends SessionExperimentBase {
   /** Only currently queued Attempts with an actionable, stable reason are expanded. */
   attempts: SessionQueuedAttemptRecord[];
   activeAttempts: SessionActiveAttemptRecord[];
+  preparations: SessionPreparationRecord[];
 }
 
 export interface TerminalSessionExperimentRecord extends SessionExperimentBase {
@@ -102,6 +104,19 @@ function sessionOptional<S extends Schema.Constraint>(schema: S) {
     }),
   );
 }
+
+const SessionPreparationSchema = Schema.Struct({
+  node: ExpPrepareEventSchema.fields.node,
+  pairings: ExpPrepareEventSchema.fields.pairings,
+  action: ExpPrepareEventSchema.fields.action,
+  phase: ExpPrepareEventSchema.fields.phase,
+  phaseEnteredAt: Schema.String,
+  sandbox: sessionOptional(
+    Schema.Struct({ provider: Schema.String, nativeInstanceId: sessionOptional(Schema.String) }),
+  ),
+});
+const SessionPreparationsSchema = Schema.mutable(Schema.Array(SessionPreparationSchema));
+type SessionPreparationRecord = Schema.Schema.Type<typeof SessionPreparationSchema>;
 
 export const SessionActiveAttemptsSchema = Schema.mutable(
   Schema.Array(
@@ -193,6 +208,7 @@ export interface SessionCloseInput {
  * every feedback event that cannot change its small progress projection.
  */
 export type SessionInvocationEvent =
+  | Extract<RunFeedbackEvent, { type: "run-activity" }>
   | Extract<RunFeedbackEvent, { type: "attempt:phase" | "attempt:progress" | "attempt:sandbox" }>
   | {
       readonly type: "attempt:queued";
@@ -260,6 +276,7 @@ const ActiveExperimentPayloadSchema = Schema.Struct({
     ),
   ),
   activeAttempts: Schema.toEncoded(SessionActiveAttemptsSchema),
+  preparations: Schema.optionalKey(Schema.toEncoded(SessionPreparationsSchema)),
 });
 const SessionPayloadFields = {
   sessionId: Schema.String,
@@ -304,6 +321,7 @@ export function decodeSession(value: unknown): SessionRecord | undefined {
         lifecycle: "active",
         published: experiment.published === true,
         activeAttempts: Schema.decodeUnknownSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+        preparations: Schema.decodeUnknownSync(SessionPreparationsSchema)(experiment.preparations ?? []),
       })),
     };
   }
@@ -344,6 +362,7 @@ function cloneRecord(record: SessionRecord): SessionRecord {
           sandbox: item.sandbox === undefined ? undefined : { ...item.sandbox },
           detail: item.detail === undefined ? undefined : { ...item.detail },
         })),
+        preparations: experiment.preparations.map((item) => ({ ...item })),
         attempts: experiment.attempts.map((attempt) => ({ ...attempt })),
       })),
     };
@@ -374,6 +393,7 @@ export function sessionRecordToJson(record: SessionRecord): SessionRecordPayload
           elsewhere: experiment.elsewhere,
           attempts: experiment.attempts,
           activeAttempts: Schema.encodeSync(SessionActiveAttemptsSchema)(experiment.activeAttempts),
+          preparations: Schema.encodeSync(SessionPreparationsSchema)(experiment.preparations),
         }),
       ),
     });
@@ -530,6 +550,7 @@ export class SessionTracker {
           published: false,
           attempts: [],
           activeAttempts: [],
+          preparations: [],
         });
       }
       const now = new Date().toISOString();
@@ -572,6 +593,7 @@ export class SessionTracker {
   /** coordinator 的同步事件回调；只更新最小索引并把 snapshot 交给 Effect-owned serial worker。 */
   onFeedback(event: RunFeedbackEvent, _state?: RunFeedbackState): void {
     if (
+      event.type === "run-activity" ||
       event.type === "attempt:start" ||
       event.type === "attempt:phase" ||
       event.type === "attempt:progress" ||
@@ -608,6 +630,28 @@ export class SessionTracker {
   /** Host-side observer bridge; no runtime is started from a synchronous callback. */
   onInvocationEvent(event: SessionInvocationEvent): void {
     if (!this.started || this.closed || this.record === undefined || this.record.status !== "active") return;
+    if (event.type === "run-activity") {
+      const prepare = event.prepare;
+      if (prepare === undefined) return;
+      for (const experiment of this.record.experiments) {
+        const pairings = prepare.pairings.filter((pair) => pair.experimentId === experiment.experimentId);
+        if (pairings.length === 0) continue;
+        const existing = experiment.preparations.find((node) => node.node === prepare.node);
+        experiment.preparations = experiment.preparations.filter((node) => node.node !== prepare.node);
+        if (prepare.phase !== "settled")
+          experiment.preparations.push({
+            node: prepare.node,
+            pairings,
+            action: prepare.action,
+            phase: prepare.phase,
+            phaseEnteredAt:
+              existing?.phase === prepare.phase ? existing.phaseEnteredAt : new Date(event.at).toISOString(),
+            sandbox: event.sandbox ?? existing?.sandbox,
+          });
+      }
+      this.enqueuePersist();
+      return;
+    }
     const identity = "identity" in event && event.identity !== undefined ? event.identity : undefined;
     function eventExperimentId(): string | undefined {
       if (identity) return identity.experimentId;
@@ -1109,6 +1153,12 @@ export function renderSessionShowText(document: SessionShowDocument): string {
     lines.push(
       ...session.experiments.flatMap((experiment) => [
         renderExperimentLine(experiment),
+        ...(experiment.lifecycle === "active"
+          ? experiment.preparations.map(
+              (node) =>
+                `    preparing ${node.pairings.map((pair) => `${pair.experimentId} × ${pair.evalId}`).join(", ")} · ${node.action.index}/${node.action.total} ${node.action.id} · ${node.phase} since ${node.phaseEnteredAt} · ${node.sandbox === undefined ? "no Sandbox" : `${node.sandbox.provider} ${node.sandbox.nativeInstanceId ?? "no native instance identifier"}`}`,
+            )
+          : []),
         ...(experiment.lifecycle === "active"
           ? experiment.activeAttempts.map(
               (attempt) =>

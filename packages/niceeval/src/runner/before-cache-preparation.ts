@@ -1,3 +1,4 @@
+import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
 import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Exit, Result, Option, Semaphore, Scope } from "effect";
@@ -80,6 +81,8 @@ interface BeforeCachePreparationActivityBase {
   readonly evalId: string;
   readonly attempts: number;
   readonly actionCount: number;
+  readonly prepare?: ExpPrepareEvent | undefined;
+  readonly sandbox?: { readonly provider: string; readonly nativeInstanceId: string | undefined } | undefined;
 }
 
 export type BeforeCachePreparationActivityEvent =
@@ -89,14 +92,14 @@ export type BeforeCachePreparationActivityEvent =
     })
   | (BeforeCachePreparationActivityBase & {
       readonly status: "progress";
-      readonly phase: "materialize" | "action" | "capture" | "provider";
+      readonly phase: "materialize" | "action" | "capture" | "provider" | "waiting";
       readonly actionIndex: number;
       readonly actionId: string;
       readonly detail: string | undefined;
     })
   | (BeforeCachePreparationActivityBase & {
       readonly status: "done";
-      readonly outcome: "hit" | "prepared" | "degraded";
+      readonly outcome: "hit" | "prepared" | "continued" | "degraded";
       readonly durationMs: number;
     })
   | (BeforeCachePreparationActivityBase & {
@@ -110,6 +113,13 @@ export interface PrepareBeforeCachesOptions {
   readonly onWarning: (warning: ReturnType<typeof beforeCacheReplacementWarnings>[number]) => void;
   readonly signal: AbortSignal | undefined;
   readonly onActivity: (event: BeforeCachePreparationActivityEvent) => void;
+  readonly onPairReady?:
+    | ((
+        pairKey: string,
+        prepared: PreparedBeforeCacheUse | undefined,
+        failure: Error | undefined,
+      ) => Effect.Effect<void>)
+    | undefined;
   readonly maxConcurrency: number;
   readonly artifactPrepare: ArtifactPrepareCoordinator;
 }
@@ -136,6 +146,7 @@ interface PreparationTarget {
 
 type PreparationWorkResult =
   | { readonly outcome: "hit" | "prepared"; readonly artifact: BeforeCacheArtifact }
+  | { readonly outcome: "continued"; readonly artifact: BeforeCacheArtifact | undefined }
   | { readonly outcome: "degraded"; readonly reason: string; readonly detail: string; readonly operationId: string };
 
 function asError(cause: unknown): Error {
@@ -191,11 +202,12 @@ function interruptOnAbort(signal: AbortSignal): Effect.Effect<never> {
 
 function lookupPreparationNode(
   node: PreparationNode,
+  reserve: boolean,
 ): Effect.Effect<PreparationWorkResult | undefined, Error, Scope.Scope> {
   return Effect.gen(function* () {
     const preparation = node.preparer;
     const lookup = yield* preparation
-      .lookup(undefined, node.context, [beforeCacheStep(node.planned)])
+      .lookup(undefined, node.context, [beforeCacheStep(node.planned)], { reserve })
       .pipe(Effect.mapError(asError));
     if (lookup._tag === "Miss") return undefined;
     if (lookup._tag === "Degraded")
@@ -231,11 +243,14 @@ function materializePreparationNode(
   inherited?: MaterializedSandboxCase,
   onPrepared?: (result: PreparationWorkResult, staging: MaterializedSandboxCase) => Effect.Effect<void>,
   artifactPrepare?: ArtifactPrepareCoordinator,
+  publish = true,
+  onSandbox?: (staging: MaterializedSandboxCase) => void,
+  invocationSignal?: AbortSignal,
 ): Effect.Effect<PreparationWorkResult, Error, Scope.Scope> {
   return Effect.gen(function* () {
     const preparation = node.preparer;
     const runScope = yield* Effect.scope;
-    if (node.parentKey !== undefined && parent === undefined) {
+    if (node.parentKey !== undefined && parent === undefined && inherited === undefined) {
       return yield* Effect.fail(new Error(`Before cache node ${node.key} became ready without its parent artifact.`));
     }
     {
@@ -300,6 +315,7 @@ function materializePreparationNode(
               operationId: `before-cache-${randomUUID()}`,
             };
           const owned = created.sandbox;
+          onSandbox?.(owned);
           if (inherited === undefined)
             yield* Effect.addFinalizer(() => providerBoundaryEffect(() => owned.group.stop()).pipe(Effect.orDie));
           if (parent !== undefined && created.start._tag === "FellBackToBase") {
@@ -340,6 +356,12 @@ function materializePreparationNode(
                 operationId: `before-cache-${randomUUID()}`,
               };
           }
+          if (invocationSignal?.aborted) return yield* Effect.interrupt;
+          if (!publish) {
+            const result = { outcome: "continued" as const, artifact: parent };
+            if (onPrepared !== undefined) yield* onPrepared(result, owned);
+            return result;
+          }
           onProgress("capture", actionIndex, actionId);
           const step = beforeCacheStep(candidate);
           const capture = yield* preparation
@@ -363,17 +385,12 @@ function materializePreparationNode(
           return result;
         }),
       );
-      if (captured.outcome === "degraded") return captured;
-      return {
-        artifact: captured.artifact,
-        outcome: "prepared" as const,
-      };
+      return captured;
     }
   });
 }
 /**
- * Compile and complete every unique provider-native prefix before any Attempt
- * dispatch. Nodes are single-flight by complete BeforeCacheKey. A child becomes
+ * Compile shared provider-native prefixes and release each pairing independently. Nodes are single-flight by complete BeforeCacheKey. A child becomes
  * ready after its parent's publication completes. A continuing child borrows
  * the parent's live staging while the parent retains its Scope and permits.
  */
@@ -382,13 +399,13 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
   options: PrepareBeforeCachesOptions,
 ): Effect.fn.Return<BeforeCachePreparationResult, Error, Scope.Scope> {
   const nodes = new Map<string, PreparationNode>();
-  const outcomes = new Map<string, "hit" | "prepared" | "degraded" | "failed">();
+  const outcomes = new Map<string, "hit" | "prepared" | "continued" | "degraded" | "failed">();
   const summary = (): BeforeCachePreparationSummary => {
     const settled = [...outcomes.values()];
     return {
       total: nodes.size,
       hit: settled.filter((outcome) => outcome === "hit").length,
-      prepared: settled.filter((outcome) => outcome === "prepared").length,
+      prepared: settled.filter((outcome) => outcome === "prepared" || outcome === "continued").length,
       degraded: settled.filter((outcome) => outcome === "degraded").length,
       failed: settled.filter((outcome) => outcome === "failed").length,
     };
@@ -531,6 +548,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       }
     }
 
+    const lookupGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency));
     const globalGate = yield* Semaphore.make(Math.max(1, options.maxConcurrency));
     const laneGates = new Map<string, Semaphore.Semaphore>();
     for (const node of nodes.values()) {
@@ -543,8 +561,86 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       completions.set(node.key, yield* Deferred.make<NodeResult>());
       retirements.set(node.key, yield* Deferred.make<void>());
     }
+    const children = new Map<string, PreparationNode[]>();
+    for (const node of nodes.values()) {
+      if (node.parentKey === undefined) continue;
+      const siblings = children.get(node.parentKey) ?? [];
+      siblings.push(node);
+      children.set(node.parentKey, siblings);
+    }
+    for (const siblings of children.values()) siblings.sort((a, b) => a.key.localeCompare(b.key));
+    const publicationPoint = (node: PreparationNode): boolean => {
+      const next = children.get(node.key) ?? [];
+      return (
+        !node.preparer.continuesStaging ||
+        targets.has(node.key) ||
+        next.length !== 1 ||
+        next[0]!.planned.declaration.changeFrequency !== node.planned.declaration.changeFrequency
+      );
+    };
+    const terminal = new Map<string, NodeResult>();
     const claimed = new Set<string>();
     const stagingOffers = new Map<string, MaterializedSandboxCase>();
+    const coveredPairs = new Set<string>();
+    const actionTotal = (node: PreparationNode): number =>
+      Math.max(
+        ...[...nodes.values()]
+          .filter((candidate) =>
+            [...dependents.get(candidate.key)!.keys()].some((pair) => dependents.get(node.key)!.has(pair)),
+          )
+          .map((candidate) => candidate.actionIndex),
+      );
+    const settleCoveredAncestors = (node: PreparationNode): void => {
+      for (const pair of dependents.get(node.key)!.keys()) coveredPairs.add(pair);
+      let key = node.parentKey;
+      while (key !== undefined) {
+        const ancestor = nodes.get(key)!;
+        if (
+          !claimed.has(key) &&
+          !outcomes.has(key) &&
+          [...dependents.get(key)!.keys()].every((pair) => coveredPairs.has(pair))
+        ) {
+          outcomes.set(key, "hit");
+          const pairings = [...dependents.get(key)!.values()];
+          const prepare = {
+            event: "prepare" as const,
+            node: [...nodes.keys()].indexOf(key) + 1,
+            pairings,
+            pairingsOmitted: 0,
+            action: {
+              index: ancestor.actionIndex,
+              total: actionTotal(ancestor),
+              id: "entry" in ancestor.planned ? ancestor.planned.entry.data.plan.id : "niceeval.agent-install",
+            },
+            elapsedMs: 0,
+          };
+          const activities = pairings.map((pair) => ({
+            id: randomUUID(),
+            key: SANDBOX_BEFORE_CACHE_ACTIVITY,
+            provider: ancestor.plan.providerPlan.provider,
+            ...pair,
+            attempts: 1,
+            actionCount: actionTotal(ancestor),
+          }));
+          for (const [index, activity] of activities.entries()) {
+            options.onActivity({
+              ...activity,
+              status: "started",
+              phase: "lookup",
+              prepare: index === 0 ? { ...prepare, phase: "lookup" } : undefined,
+            });
+            options.onActivity({
+              ...activity,
+              status: "done",
+              outcome: "hit",
+              durationMs: 0,
+              prepare: index === 0 ? { ...prepare, phase: "settled", outcome: "hit" } : undefined,
+            });
+          }
+        }
+        key = ancestor.parentKey;
+      }
+    };
 
     const resolveNode = (key: string): Effect.Effect<NodeResult, never, Scope.Scope> =>
       Effect.suspend(() => {
@@ -552,7 +648,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         if (claimed.has(key)) return Deferred.await(completion);
         claimed.add(key);
         const node = nodes.get(key)!;
-        return Effect.gen(function* () {
+        const work = Effect.gen(function* () {
           const activity = {
             id: randomUUID(),
             key: SANDBOX_BEFORE_CACHE_ACTIVITY,
@@ -560,23 +656,80 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
             experimentId: node.plan.pair.experimentId,
             evalId: node.plan.pair.evalId,
             attempts: 1,
-            actionCount: node.actionIndex,
+            actionCount: actionTotal(node),
           } as const;
           const activities = [...dependents.get(node.key)!.values()].map((pair) => ({
             ...activity,
             ...pair,
             id: randomUUID(),
           }));
-          const emit = (event: BeforeCachePreparationActivityEvent) => {
-            for (const consumer of activities) options.onActivity({ ...event, ...consumer });
-          };
           const startedAt = Date.now();
+          let settlementReason: string | undefined;
+          let currentPhase: ExpPrepareEvent["phase"] = "lookup";
+          let observedSandbox: BeforeCachePreparationActivityBase["sandbox"];
+          const pairings = [...dependents.get(node.key)!.values()];
+          const total = actionTotal(node);
+          const emit = (event: BeforeCachePreparationActivityEvent) => {
+            const nextPhase: ExpPrepareEvent["phase"] =
+              event.status === "started"
+                ? "lookup"
+                : event.status === "done" || event.status === "failed"
+                  ? "settled"
+                  : event.phase === "materialize"
+                    ? "staging"
+                    : event.phase === "capture"
+                      ? "publish"
+                      : event.phase === "provider"
+                        ? currentPhase
+                        : event.phase;
+            const changed = nextPhase !== currentPhase || event.status !== "progress";
+            currentPhase = nextPhase;
+            const prepare: ExpPrepareEvent | undefined = changed
+              ? {
+                  event: "prepare",
+                  node: [...nodes.keys()].indexOf(node.key) + 1,
+                  pairings,
+                  pairingsOmitted: 0,
+                  action: {
+                    index: node.actionIndex,
+                    total,
+                    id: "entry" in node.planned ? node.planned.entry.data.plan.id : "niceeval.agent-install",
+                  },
+                  phase: currentPhase,
+                  elapsedMs: Math.max(0, Date.now() - startedAt),
+                  ...(event.status === "done" || event.status === "failed"
+                    ? {
+                        outcome: event.outcome === "prepared" ? "published" : event.outcome,
+                        ...(event.outcome === "degraded" || event.outcome === "failed"
+                          ? {
+                              reason:
+                                event.outcome === "failed"
+                                  ? "action-failed"
+                                  : (settlementReason ?? "cache-unavailable"),
+                            }
+                          : {}),
+                      }
+                    : {}),
+                }
+              : undefined;
+            for (const [index, consumer] of activities.entries())
+              options.onActivity({
+                ...event,
+                ...consumer,
+                prepare: index === 0 ? prepare : undefined,
+                sandbox: observedSandbox,
+              });
+          };
           let finished = false;
           emit({ ...activity, status: "started", phase: "lookup" });
           const finish = (result: NodeResult): Effect.Effect<NodeResult> =>
             Effect.gen(function* () {
+              if (options.signal?.aborted) return yield* Effect.interrupt;
               if (finished) return result;
               finished = true;
+              terminal.set(node.key, result);
+              if (Result.isSuccess(result) && result.success.outcome === "degraded")
+                settlementReason = result.success.reason;
               outcomes.set(node.key, Result.isFailure(result) ? "failed" : result.success.outcome);
               const durationMs = Math.max(0, Date.now() - startedAt);
               emit(
@@ -587,6 +740,24 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
               yield* Deferred.succeed(completion, result);
               return result;
             });
+          // Every key remains eligible for lookup, including keys which are no
+          // longer publication points. A deep hit avoids all ancestor execution.
+          const lookup = yield* Effect.result(
+            lookupGate.withPermits(1)(lookupPreparationNode(node, publicationPoint(node))),
+          );
+          if (Result.isFailure(lookup)) return yield* finish(Result.fail(lookup.failure));
+          if (lookup.success?.outcome === "hit") {
+            settleCoveredAncestors(node);
+            return yield* finish(Result.succeed(lookup.success));
+          }
+          emit({
+            ...activity,
+            status: "progress",
+            phase: "waiting",
+            actionIndex: node.actionIndex,
+            actionId: "entry" in node.planned ? node.planned.entry.data.plan.id : "niceeval.agent-install",
+            detail: undefined,
+          });
           const parentResult = node.parentKey === undefined ? undefined : yield* resolveNode(node.parentKey);
           if (parentResult !== undefined && Result.isFailure(parentResult))
             return yield* finish(Result.fail(parentResult.failure));
@@ -604,6 +775,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
               }),
             );
           }
+          if (lookup.success !== undefined) return yield* finish(Result.succeed(lookup.success));
           const parent =
             parentResult !== undefined && Result.isSuccess(parentResult) && parentResult.success.outcome !== "degraded"
               ? parentResult.success.artifact
@@ -613,9 +785,6 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
           stagingOffers.delete(node.key);
           const withGate = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
             inherited === undefined ? globalGate.withPermits(1)(laneGate.withPermits(1)(effect)) : effect;
-          const lookup = yield* Effect.result(withGate(lookupPreparationNode(node)));
-          if (Result.isFailure(lookup)) return yield* finish(Result.fail(lookup.failure));
-          if (lookup.success !== undefined) return yield* finish(Result.succeed(lookup.success));
           const result = yield* Effect.result(
             withGate(
               materializePreparationNode(
@@ -634,9 +803,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
                 (prepared, staging) =>
                   Effect.gen(function* () {
                     if (!node.preparer.continuesStaging) return;
-                    const child = [...nodes.values()]
-                      .filter((candidate) => candidate.parentKey === node.key)
-                      .sort((left, right) => left.key.localeCompare(right.key))[0];
+                    const child = children.get(node.key)?.[0];
                     if (child === undefined) return;
                     stagingOffers.set(child.key, staging);
                     // Publish the parent before waking the child, while its staging Scope
@@ -647,51 +814,30 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
                     yield* Deferred.await(retirements.get(child.key)!);
                   }),
                 artifactPrepare,
+                publicationPoint(node),
+                (staging) => {
+                  observedSandbox = {
+                    provider: node.plan.providerPlan.provider,
+                    nativeInstanceId: staging.sandbox.nativeInstanceId ?? staging.sandbox.sandboxId,
+                  };
+                },
+                options.signal,
               ),
             ),
           );
           return yield* finish(result);
         }).pipe(Effect.ensuring(Deferred.succeed(retirements.get(node.key)!, undefined)));
+        return Effect.forkScoped(work).pipe(Effect.andThen(Deferred.await(completion)));
       });
 
-    const terminal = new Map<string, NodeResult>(
-      yield* Effect.all(
-        [...nodes.keys()].map((key) => resolveNode(key).pipe(Effect.map((result) => [key, result] as const))),
-        { concurrency: "unbounded" },
-      ),
-    );
-
     const ledgerDiagnostics = new Map<string, { key: string; message: string; experimentIds: string[] }>();
-    const diagnosticKeys = new Map<string, string>();
-    for (const node of nodes.values()) {
-      const result = terminal.get(node.key)!;
-      if (
-        Result.isFailure(result) ||
-        result.success.outcome !== "degraded" ||
-        result.success.reason !== "ledger-unavailable"
-      )
-        continue;
-      const key = `before-cache-ledger:${JSON.stringify([node.context.providerId, node.executionDomainId ?? node.key])}`;
-      diagnosticKeys.set(result.success.operationId, key);
-      let diagnostic = ledgerDiagnostics.get(key);
-      if (diagnostic === undefined) {
-        diagnostic = {
-          key,
-          message: `Before cache degraded: ledger-unavailable; ${result.success.detail}`,
-          experimentIds: [],
-        };
-        ledgerDiagnostics.set(key, diagnostic);
-      }
-      for (const consumer of dependents.get(node.key)!.values()) {
-        if (!diagnostic.experimentIds.includes(consumer.experimentId))
-          diagnostic.experimentIds.push(consumer.experimentId);
-      }
-    }
-    for (const target of targets.values()) {
+    const settleTarget = Effect.fnUntraced(function* (target: PreparationTarget) {
       const result = terminal.get(target.finalKey)!;
       if (Result.isFailure(result)) {
         for (const pairKey of target.pairKeys) failuresByPair.set(pairKey, result.failure);
-        continue;
+        for (const pairKey of target.pairKeys)
+          yield* options.onPairReady?.(pairKey, undefined, result.failure) ?? Effect.void;
+        return;
       }
       let cursor: PreparationNode | undefined = nodes.get(target.finalKey);
       let use: Omit<PreparedBeforeCacheUse, "context"> = {
@@ -701,10 +847,15 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         degraded: undefined,
         agentDerived: false,
       };
+      let diagnosticKey: string | undefined;
       const degradedNodes: NonNullable<NonNullable<PreparedBeforeCacheUse["degraded"]>["nodes"]>[number][] = [];
       while (cursor !== undefined) {
         const ancestor = terminal.get(cursor.key)!;
-        if (Result.isSuccess(ancestor) && ancestor.success.outcome !== "degraded") {
+        if (
+          Result.isSuccess(ancestor) &&
+          ancestor.success.outcome !== "degraded" &&
+          ancestor.success.outcome !== "continued"
+        ) {
           use = {
             artifact: ancestor.success.artifact,
             satisfiedActionCount: cursor.actionIndex,
@@ -715,6 +866,8 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         }
         if (Result.isSuccess(ancestor) && ancestor.success.outcome === "degraded") {
           const planned = cursor.planned;
+          if (ancestor.success.reason === "ledger-unavailable")
+            diagnosticKey = `before-cache-ledger:${JSON.stringify([cursor.context.providerId, cursor.executionDomainId ?? cursor.key])}`;
           degradedNodes.push({
             key: cursor.key,
             actionId: "entry" in planned ? planned.entry.id : "niceeval.agent-install",
@@ -732,12 +885,49 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
             reason: result.success.reason,
             detail: result.success.detail,
             operationId: result.success.operationId,
-            diagnosticKey: diagnosticKeys.get(result.success.operationId),
+            diagnosticKey,
             nodes: degradedNodes.reverse(),
           },
         };
       for (const pairKey of target.pairKeys)
         preparedByPair.set(pairKey, { ...use, context: contextsByPair.get(pairKey)! });
+      for (const pairKey of target.pairKeys)
+        yield* options.onPairReady?.(pairKey, preparedByPair.get(pairKey), undefined) ?? Effect.void;
+    });
+    for (const attempt of attempts) {
+      const pairKey = cacheKey(attempt.run, attempt.evalDef.id);
+      if (![...targets.values()].some((target) => target.pairKeys.includes(pairKey)))
+        yield* options.onPairReady?.(pairKey, preparedByPair.get(pairKey), failuresByPair.get(pairKey)) ?? Effect.void;
+    }
+    yield* Effect.forEach(
+      [...targets.values()],
+      (target) => resolveNode(target.finalKey).pipe(Effect.andThen(settleTarget(target))),
+      { concurrency: "unbounded", discard: true },
+    );
+
+    for (const node of nodes.values()) {
+      const result = terminal.get(node.key)!;
+      if (result === undefined) continue;
+      if (
+        Result.isFailure(result) ||
+        result.success.outcome !== "degraded" ||
+        result.success.reason !== "ledger-unavailable"
+      )
+        continue;
+      const key = `before-cache-ledger:${JSON.stringify([node.context.providerId, node.executionDomainId ?? node.key])}`;
+      let diagnostic = ledgerDiagnostics.get(key);
+      if (diagnostic === undefined) {
+        diagnostic = {
+          key,
+          message: `Before cache degraded: ledger-unavailable; ${result.success.detail}`,
+          experimentIds: [],
+        };
+        ledgerDiagnostics.set(key, diagnostic);
+      }
+      for (const consumer of dependents.get(node.key)!.values()) {
+        if (!diagnostic.experimentIds.includes(consumer.experimentId))
+          diagnostic.experimentIds.push(consumer.experimentId);
+      }
     }
     return {
       preparedByPair,
