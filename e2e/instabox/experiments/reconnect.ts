@@ -114,6 +114,6 @@ export default defineExperiment({
       return { status: "completed", events: [] };
     },
   }),
-  sandbox: instaboxSandbox({ templateId: "universal", lifetimeMs: 600_000 }),
+  sandbox: instaboxSandbox({ templateId: "agent-browser", lifetimeMs: 600_000 }),
   evals: ["reconnect"],
 });
