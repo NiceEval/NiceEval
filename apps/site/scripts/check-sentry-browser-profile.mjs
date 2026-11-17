@@ -12,6 +12,13 @@ const require = createRequire(import.meta.resolve("tsx"));
 const { build } = require("esbuild");
 const nextOrigin = process.argv[2];
 if (!nextOrigin) throw new Error("Pass a local production Next server origin");
+// Verify the deployment-owned endpoint before the fixture proxy can supply its augmented manifest.
+const response = await fetch(new URL("/_next/static/sentry-profile-assets.json", nextOrigin), { redirect: "error" });
+if (!response.ok) throw new Error(`Next profile manifest endpoint returned ${response.status}`);
+const manifest = await response.json();
+const builtManifest = JSON.parse(await readFile(resolve(root, ".next/static/sentry-profile-assets.json"), "utf8"));
+if (JSON.stringify(manifest) !== JSON.stringify(builtManifest))
+  throw new Error("Next must serve the final build profile manifest unchanged");
 const received = [];
 const receiver = createServer((req, res) => {
   received.push({ trace: req.headers["sentry-trace"], baggage: req.headers.baggage });
@@ -21,7 +28,6 @@ const receiver = createServer((req, res) => {
 });
 await new Promise((done) => receiver.listen(0, "127.0.0.1", done));
 const external = `http://127.0.0.1:${receiver.address().port}`;
-const manifest = JSON.parse(await readFile(resolve(root, "public/sentry-profile-assets.json"), "utf8"));
 const entry = `
 import * as Sentry from "@sentry/nextjs";
 import { sentryOptions, privacyTransport, installEnvelopePrivacy } from "./lib/sentry";
@@ -49,7 +55,7 @@ function busy() { const end = performance.now() + 220; while(performance.now() <
 Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { busy(); await new Promise(r => setTimeout(r, 30)); } } });
 window.acceptance = {
   envelopes, originals, profile,
-  ready: fetch("/sentry-profile-assets.json").then(r => r.json()).then(m => { profile.manifest = readProfileManifest(m, release); }),
+  ready: fetch("/_next/static/sentry-profile-assets.json").then(r => r.json()).then(m => { profile.manifest = readProfileManifest(m, release); }),
   async exercise() {
     await this.ready;
     await Sentry.startSpan({name:"site.navigation", op:"navigation", forceTransaction:true}, async () => {
@@ -119,7 +125,7 @@ const server = createServer(async (req, res) => {
       res.setHeader("Content-Type", "text/javascript");
       return res.end(bundle);
     }
-    if (req.url === "/sentry-profile-assets.json") {
+    if (req.url === "/_next/static/sentry-profile-assets.json") {
       res.setHeader("Content-Type", "application/json");
       return res.end(JSON.stringify(manifest));
     }

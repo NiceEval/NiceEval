@@ -39,7 +39,7 @@ if (process.argv[1]?.endsWith("sentry-profile-assets.mjs")) {
   if ((process.env.CI || process.env.VERCEL_ENV === "production") && !/^site@[a-f0-9]{40}$/.test(release))
     throw new Error("Official profile manifest requires the deployment Git SHA release");
   for (const [root, prefix, target] of [
-    [".next/static", "/_next/static", "public/sentry-profile-assets.json"],
+    [".next/static", "/_next/static", ".next/static/sentry-profile-assets.json"],
     [".next/server", ".next/server", ".next/server/sentry-profile-assets.json"],
   ]) {
     const manifest = await generateManifest(root, prefix, release);

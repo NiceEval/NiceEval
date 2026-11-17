@@ -9,7 +9,7 @@ export function browserProfilePolicy(release: string): ProfilePolicy {
   };
   // Do not delay initialization of errors/traces. A failed/mismatched manifest redacts frames.
   if (policy.enabled)
-    void fetch("/sentry-profile-assets.json", { credentials: "omit", redirect: "error" })
+    void fetch("/_next/static/sentry-profile-assets.json", { credentials: "omit", redirect: "error" })
       .then((response) => (response.ok ? response.json() : undefined))
       .then((manifest) => {
         policy.manifest = readProfileManifest(manifest, release);

@@ -59,8 +59,9 @@ Browser session 和 client_report；拒绝 Replay、Cron/check_in、sessions 聚
 span 保留 SDK 真实 profiler ID、主线程 ID 和时间区间，不给 chunk 伪造单个 trace ID。
 
 构建从实际 `.next/static` 与 `.next/server` JavaScript 解析 AST Identifier 清单，
-不采集字符串字面值或源码。浏览器清单为同 origin `/sentry-profile-assets.json`，Node 清单
-留在 server 产物并进入 Next NFT。文件精确命中且函数属于该文件符号集合才保留；
+不采集字符串字面值或源码。浏览器清单为同 origin `/_next/static/sentry-profile-assets.json`，Node 清单
+留在 server 产物并进入 Next NFT。浏览器清单在 `next build` 后写入
+`.next/static/sentry-profile-assets.json`，随 Next 静态产物提供，不依赖构建后新增的 `public` 文件。文件精确命中且函数属于该文件符号集合才保留；
 缺失、未到达或 release 不匹配时未知 frame 原位 redact，不推迟 error/tracing 初始化。
 
 发布与清单均使用 `site@<Git SHA>`，Vercel 从 `VERCEL_GIT_COMMIT_SHA` 生成。
@@ -85,6 +86,7 @@ pnpm --filter @niceeval/site exec tsx scripts/check-sentry-profile.ts
 检查，不能代替最终产物 gate。Browser 原有 `check-sentry-browser.mjs` 保留 error/trace
 检查；`check-sentry-browser-profile.mjs <local Next origin>` 在本地代理真实构建页面，阻断
 第三方 tracker，注入真实 SDK 与隔离 transport，并用官方构建工具注入测试 artifact debug ID。
+验收先从真实 Next 静态入口读取清单并比对最终构建文件，随后才允许代理补入测试 artifact。
 仅 clipboard 外部边界替换，不修改真实页面 handler。测试用 session rate `1` 只用于隔离验收。
 `?mode=unsampled` 验证 session 不采样，缺 Profiler 时维持 error/tracing。
 浏览器最后 chunk 异步到达，等待实际 transport；不调用 manual stop 或私有 profiler。
