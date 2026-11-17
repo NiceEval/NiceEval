@@ -9,6 +9,8 @@
 
 ## 目录传输的排除规则
 
+`uploadDirectory`（Sandbox 方法与 before action 相同）默认不上传 `.git` 目录，以及源目录树内各层 `.gitignore` 匹配的路径（按 git 规则解析，含否定模式）；这样宿主上残留的 `node_modules`、构建产物与本地数据库不会被打包上传。`ignore` 在此基础上追加排除。自动指纹只覆盖实际上传的文件与 manifest，因此没有被忽略文件的目录身份不变。上传失败时错误写明 action ID（或目标路径）、文件数、总字节数与底层原因，不能只给出 `fetch failed`。
+
 `uploadDirectory` 与 `downloadDirectory` 的 `ignore` 按任意深度的文件或目录 basename 做字面量匹配；不把 `*`、`?` 或方括号解释为 glob。命中的目录整支排除，请求的目录根本身不参与匹配。Docker 下载在 Sandbox 内归档前排除这些条目，使被忽略内容不跨越宿主传输边界；可写与只读容器遵循相同规则。完整方法签名见[操作 Sandbox](operations.md)。
 
 ## 路径与 workdir:一个坐标系

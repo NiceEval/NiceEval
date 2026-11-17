@@ -288,7 +288,7 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 
 Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
 已经脱敏并按固定事实族上限封口的内容；producer 已写入的 truncation 与 limitations 必须继续可见，
-查询不能恢复运行时已经舍弃的原文。只有声明权威总量的 command stream 同时交付 retained bytes 与
+查询不能恢复运行时已经舍弃的原文。tool occurrence、item 与事件详情里被 producer 截断的字段必须带截断标记与已保留字节数（已知时另给原始字节数），文本视图写明“已截断”；不能把截断后的前缀当作完整值交付。只有声明权威总量的 command stream 同时交付 retained bytes 与
 `totalSafeUtf8Bytes`；conversation text 只交付已封存值及其 limitation，不能虚构运行时原文总量。
 
 CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。
