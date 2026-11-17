@@ -18,6 +18,8 @@ import { pipeline } from "node:stream/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { directoryEntryIgnored, directoryIgnoreRules, type DirectoryIgnoreRule } from "./directory-ignore.ts";
+
 const REGISTERED_SANDBOX_CONTENT: unique symbol = Symbol("niceeval.sandbox.content.registered");
 const REGISTERED_CONTENTS = new WeakSet<object>();
 const REGISTERED_CONTENT_LOCATORS = new WeakMap<object, { readonly path: string }>();
@@ -123,17 +125,19 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
   hash.update(`root\0${rootMode.toString(8)}\0`);
   const captured: RegisteredSandboxDirectoryEntry[] = [];
 
-  const visit = (directory: string, prefix: string): void => {
+  const visit = (directory: string, prefix: string, inherited: readonly DirectoryIgnoreRule[]): void => {
+    const rules = directoryIgnoreRules(directory, prefix === "" ? "" : `${prefix}/`, inherited);
     const entries = readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const child = resolve(directory, entry.name);
       const name = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       const info = lstatSync(child);
+      if (directoryEntryIgnored(name, info.isDirectory(), rules)) continue;
       if (info.isDirectory()) {
         const mode = permissionMode(info.mode);
         hash.update(`d\0${name}\0${mode.toString(8)}\0`);
         captured.push({ kind: "directory", path: name, mode });
-        visit(child, name);
+        visit(child, name, rules);
       } else if (info.isFile()) {
         const bytes = readFileSync(child);
         const mode = permissionMode(info.mode);
@@ -163,7 +167,7 @@ function captureDirectory(root: string, rootMode: number): RegisteredSandboxCont
     }
   };
 
-  visit(root, "");
+  visit(root, "", []);
   return {
     kind: "directory" as const,
     digest: `sha256:${hash.digest("hex")}`,

@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CommandOptions, Sandbox } from "../types.ts";
+import { registerSandboxContent, registeredSandboxContentSnapshotOf } from "./content.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
 import { enrichTransferErrors, withTransferErrors } from "./transfer-errors.ts";
 import {
@@ -140,7 +141,18 @@ export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider:
             localPath: resolveLocalPath(undefined, sourceDir),
             bytes: undefined,
           },
-          () => sandbox.uploadDirectory(sourceDir, base, opts),
+          async () => {
+            const content = registerSandboxContent(resolveLocalPath(undefined, sourceDir), import.meta.url);
+            const snapshot = registeredSandboxContentSnapshotOf(content);
+            if (snapshot.kind !== "directory") throw new Error("uploadDirectory requires a directory");
+            await putSandboxContent(
+              normalized,
+              content,
+              base,
+              sandbox as SandboxProviderBackend & DirectoryContentTransfer,
+              opts?.ignore,
+            );
+          },
         ),
       );
     },
@@ -200,6 +212,7 @@ export function makeSandboxAuthorFacade(
   provider: string,
 ): Sandbox {
   const appendLog = sandbox.capabilities.appendLog;
+  const transfers = normalizeSandboxPaths(sandbox, provider);
   let normalized!: Sandbox;
   normalized = {
     get workdir() {
@@ -306,7 +319,7 @@ export function makeSandboxAuthorFacade(
     uploadDirectory: (sourceDir, targetDir, opts) => {
       const base = resolveSandboxPath(sandbox.workdir, targetDir);
       return executor.run(
-        withSandboxIoRetry(providerBoundaryEffect(() => sandbox.uploadDirectory(sourceDir, base, opts))).pipe(
+        withSandboxIoRetry(providerBoundaryEffect(() => transfers.uploadDirectory(sourceDir, base, opts))).pipe(
           enrichTransferErrors({
             provider,
             operation: "uploadDirectory",

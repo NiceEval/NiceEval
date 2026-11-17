@@ -208,6 +208,7 @@ export async function putSandboxContent(
   content: RegisteredSandboxContent,
   targetPath: string,
   directoryTransfer?: DirectoryContentTransfer,
+  ignore: readonly string[] = [],
 ): Promise<void> {
   const file = registeredSandboxContentFileOf(content);
   if (file !== undefined) {
@@ -226,7 +227,14 @@ export async function putSandboxContent(
     return;
   }
   // 先完成 live source 复读、digest 校验和不可变快照，再发起任何 provider I/O。
-  const snapshot = registeredSandboxContentSnapshotOf(content);
+  let snapshot = registeredSandboxContentSnapshotOf(content);
+  if (snapshot.kind === "directory" && ignore.length > 0) {
+    const ignored = new Set(ignore);
+    snapshot = {
+      ...snapshot,
+      entries: snapshot.entries.filter((entry) => !entry.path.split("/").some((part) => ignored.has(part))),
+    };
+  }
   if (snapshot.kind === "file") {
     await putContentBytes(
       sandbox,
@@ -238,42 +246,51 @@ export async function putSandboxContent(
     return;
   }
 
-  const transfer =
-    directoryTransfer ??
-    (sandbox as SandboxOperations & { readonly [DIRECTORY_CONTENT_TRANSFER]?: DirectoryContentTransfer })[
-      DIRECTORY_CONTENT_TRANSFER
-    ];
-  if (transfer?.uploadContentDirectory !== undefined) {
-    await transfer.uploadContentDirectory(snapshot, targetPath, sandbox);
-    return;
-  }
-  await ensureContentDirectory(sandbox, targetPath);
-  const directories: Array<{ readonly path: string; readonly mode: number }> = [];
-  // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。
-  for (const entry of snapshot.entries) {
-    const path = `${targetPath.replace(/\/$/, "")}/${entry.path}`;
-    if (entry.kind === "directory") {
-      await ensureContentDirectory(sandbox, path);
-      directories.push({ path, mode: entry.mode });
-    } else if (entry.kind === "file") {
-      await putContentBytes(
-        sandbox,
-        path,
-        Uint8Array.from(Buffer.from(entry.contentBase64, "base64")),
-        snapshot.digest,
-      );
-      await chmodContentPath(sandbox, path, entry.mode);
-    } else {
-      await replaceContentSymlink(sandbox, path, entry.target);
+  try {
+    const transfer =
+      directoryTransfer ??
+      (sandbox as SandboxOperations & { readonly [DIRECTORY_CONTENT_TRANSFER]?: DirectoryContentTransfer })[
+        DIRECTORY_CONTENT_TRANSFER
+      ];
+    if (transfer?.uploadContentDirectory !== undefined) {
+      await transfer.uploadContentDirectory(snapshot, targetPath, sandbox);
+      return;
     }
+    await ensureContentDirectory(sandbox, targetPath);
+    const directories: Array<{ readonly path: string; readonly mode: number }> = [];
+    // Snapshot 已按路径稳定排序；这里仍显式顺序消费，禁止 Promise.all 引入 provider I/O 乱序。
+    for (const entry of snapshot.entries) {
+      const path = `${targetPath.replace(/\/$/, "")}/${entry.path}`;
+      if (entry.kind === "directory") {
+        await ensureContentDirectory(sandbox, path);
+        directories.push({ path, mode: entry.mode });
+      } else if (entry.kind === "file") {
+        await putContentBytes(
+          sandbox,
+          path,
+          Uint8Array.from(Buffer.from(entry.contentBase64, "base64")),
+          snapshot.digest,
+        );
+        await chmodContentPath(sandbox, path, entry.mode);
+      } else {
+        await replaceContentSymlink(sandbox, path, entry.target);
+      }
+    }
+    // A captured directory may itself be read-only. Apply directory modes
+    // only after every child exists, deepest-first, with the root last.
+    for (let index = directories.length - 1; index >= 0; index--) {
+      const directory = directories[index]!;
+      await chmodContentPath(sandbox, directory.path, directory.mode);
+    }
+    await chmodContentPath(sandbox, targetPath, snapshot.mode);
+  } catch (cause) {
+    const files = snapshot.entries.filter((entry) => entry.kind === "file");
+    const bytes = files.reduce((total, entry) => total + Buffer.byteLength(entry.contentBase64, "base64"), 0);
+    throw new Error(
+      `uploadDirectory to ${JSON.stringify(targetPath)} failed (${files.length} files, ${bytes} bytes): ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
   }
-  // A captured directory may itself be read-only. Apply directory modes
-  // only after every child exists, deepest-first, with the root last.
-  for (let index = directories.length - 1; index >= 0; index--) {
-    const directory = directories[index]!;
-    await chmodContentPath(sandbox, directory.path, directory.mode);
-  }
-  await chmodContentPath(sandbox, targetPath, snapshot.mode);
 }
 
 /** Layer callback 的窄视图；只转发当前物理实例 ID，不带宿主传输或生命周期方法。 */

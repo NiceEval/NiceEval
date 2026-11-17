@@ -4,6 +4,8 @@
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
+import { directoryEntryIgnored, directoryIgnoreRules, type DirectoryIgnoreRule } from "./directory-ignore.ts";
+
 export interface CollectedLocalFile {
   readonly path: string;
   readonly content: Uint8Array;
@@ -36,19 +38,22 @@ export async function collectLocalFiles(
   }
   const root = await realpath(localDir);
   const out: CollectedLocalFile[] = [];
-  async function walk(dir: string): Promise<void> {
+  async function walk(dir: string, inherited: readonly DirectoryIgnoreRule[]): Promise<void> {
+    const prefix = relative(root, dir).split(sep).join("/");
+    const rules = directoryIgnoreRules(dir, prefix === "" ? "" : `${prefix}/`, inherited);
     for (const entry of await readdir(dir)) {
       if (entry.includes("\0")) throw new Error("uploadDirectory source contains a NUL in a path");
       if (ignored.has(entry)) continue;
       const abs = join(dir, entry);
       const st = await lstat(abs);
+      if (directoryEntryIgnored(relative(root, abs).split(sep).join("/"), st.isDirectory(), rules, ignored)) continue;
       if (st.isSymbolicLink()) {
         throw new Error(`uploadDirectory refuses symlink ${JSON.stringify(abs)}`);
       }
       const resolved = resolve(abs);
       assertInsideRoot(root, resolved, "uploadDirectory source");
       if (st.isDirectory()) {
-        await walk(resolved);
+        await walk(resolved, rules);
       } else if (st.isFile()) {
         out.push({
           path: relative(root, resolved).split(sep).join("/"),
@@ -57,6 +62,6 @@ export async function collectLocalFiles(
       }
     }
   }
-  await walk(root);
+  await walk(root, []);
   return out;
 }
