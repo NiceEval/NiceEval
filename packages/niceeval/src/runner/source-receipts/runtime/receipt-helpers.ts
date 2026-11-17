@@ -11,6 +11,8 @@ import {
 import type { AttemptDiagnostic, ConversationItem } from "../model.ts";
 import type { NormalizedAgentTurnTerminal } from "../types.ts";
 import { producerCaptureSealInvalid, type RunnerObservabilityProducerError } from "../support.ts";
+import type { SourceReceiptLimitation } from "../../../record/family/source-receipt/index.ts";
+import type { ResolvedEvidenceCoverageEntry } from "../../../assertions/coverage.ts";
 import type { CapturedConversationTurn } from "./state.ts";
 
 export function sourceSegmentId(): SafeIdentifier | undefined {
@@ -21,7 +23,32 @@ export function sourceSegmentId(): SafeIdentifier | undefined {
   }
 }
 
-export function agentTurnTerminal(turn: CapturedConversationTurn): NormalizedAgentTurnTerminal {
+function terminalCoverageEntry(
+  entry: ResolvedEvidenceCoverageEntry,
+  limitations: SourceReceiptLimitation[],
+): ResolvedEvidenceCoverageEntry {
+  if (entry.status === "complete") return { status: "complete" };
+  const safe = new TextDecoder("utf-8", { ignoreBOM: true })
+    .decode(new TextEncoder().encode(entry.reason))
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/gu, "");
+  let reason = "";
+  let bytes = 0;
+  const encoder = new TextEncoder();
+  for (const character of safe) {
+    const length = encoder.encode(character).byteLength;
+    if (bytes + length > MAX_CONVERSATION_TEXT_BYTES) break;
+    reason += character;
+    bytes += length;
+  }
+  if (reason.trim().length === 0) reason = "Coverage reason unavailable.";
+  if (reason !== entry.reason) limitations.push({ code: "unsupported-input", target: "value-byte", omittedAtLeast: 1 });
+  return { status: entry.status, reason };
+}
+
+export function agentTurnTerminal(
+  turn: CapturedConversationTurn,
+  limitations: SourceReceiptLimitation[] = [],
+): NormalizedAgentTurnTerminal {
   const completion = turn.completion;
   if (completion.state === "observed" && completion.adapter.state === "recorded") {
     const adapter = completion.adapter;
@@ -30,12 +57,12 @@ export function agentTurnTerminal(turn: CapturedConversationTurn): NormalizedAge
       status: adapter.status,
       // Adapter-owned entries can retain mutable aliases beyond this receipt.
       evidenceCoverage: {
-        events: { ...adapter.evidenceCoverage.events },
-        actions: { ...adapter.evidenceCoverage.actions },
-        messages: { ...adapter.evidenceCoverage.messages },
-        usage: { ...adapter.evidenceCoverage.usage },
-        status: { ...adapter.evidenceCoverage.status },
-        data: { ...adapter.evidenceCoverage.data },
+        events: terminalCoverageEntry(adapter.evidenceCoverage.events, limitations),
+        actions: terminalCoverageEntry(adapter.evidenceCoverage.actions, limitations),
+        messages: terminalCoverageEntry(adapter.evidenceCoverage.messages, limitations),
+        usage: terminalCoverageEntry(adapter.evidenceCoverage.usage, limitations),
+        status: terminalCoverageEntry(adapter.evidenceCoverage.status, limitations),
+        data: terminalCoverageEntry(adapter.evidenceCoverage.data, limitations),
       },
     };
   }

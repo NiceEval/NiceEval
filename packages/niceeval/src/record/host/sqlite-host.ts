@@ -1096,6 +1096,7 @@ function writeAttachment<Value>(
 ): Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>> {
   const targetFamilies = input.attempt?.families ?? input.run.families;
   const family = input.persistence.attachment.family;
+  let storageAdmissionStarted = false;
   const ownerRuntime: OwnerRuntime =
     input.owner === "run"
       ? { kind: "run", runId: input.run.runId }
@@ -1115,6 +1116,7 @@ function writeAttachment<Value>(
       value: input.value as never,
     });
     const attachmentId = attachmentIdentity(ownerRuntime, family);
+    storageAdmissionStarted = true;
     yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) =>
       input.run.client.admitAttachment({
         runId: input.run.runId,
@@ -1184,11 +1186,25 @@ function writeAttachment<Value>(
       family,
       revision: input.persistence.revision,
     });
-  }).pipe(Effect.tapError((error) => Effect.sync(() => poison(input.run, error as RecordWriteError)))) as Effect.Effect<
-    void,
-    RecordWriteError | AttachedContentError<Value>,
-    AttachedContentRequirements<Value>
-  >;
+  }).pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => {
+        // Encoding completes before storage admission. Rejected values own no
+        // durable rows and must not poison an otherwise publishable Attempt.
+        if (
+          !storageAdmissionStarted &&
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "record-attachment-encode-error"
+        ) {
+          targetFamilies.delete(family);
+        } else {
+          poison(input.run, error as RecordWriteError);
+        }
+      }),
+    ),
+  ) as Effect.Effect<void, RecordWriteError | AttachedContentError<Value>, AttachedContentRequirements<Value>>;
 }
 
 function finishCollections(attempt: AttemptRuntime): Effect.Effect<void, RecordWriteError> {

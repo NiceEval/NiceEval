@@ -3,26 +3,33 @@ import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
 // @feature docs/feature/run/README.md
-test.concurrent.each(["messages", "coverage"])("large multi-turn %s retain the Attempt and bounded agent-turns", async (mode) => {
-  await runnerE2E.case("large-turns-publication", {}, async ({ commands: { niceeval } }) => {
-    const run = await niceeval.run(["exp", "large-turns", "--rerun", "all", "--json"], { env: { NICEEVAL_LARGE_COVERAGE: mode === "coverage" ? "1" : "0" } });
-    expect(run.exitCode, run.diagnostic()).toBe(0);
-    expect(run.expReceipt().completion).toBe("completed");
-    expect(run.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
-    const locator = run.expEvalEvents()[0]!.locator!;
-    const shown = await niceeval.run(["show", locator, "execution", "--json"]);
-    expect(shown.exitCode, shown.diagnostic()).toBe(0);
-    const trace = shown.attemptTrace().trace;
-    expect(trace.conversation.state).toBe("partial");
-    expect(trace.conversation.turns).toHaveLength(2);
-    expect(trace.conversation.items.length).toBeGreaterThan(0);
-    expect(trace.diagnostics.items).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "attachment-encode-failed" })]),
-    );
-  });
-});
+// @regression memory/attachment-encode-error-hides-family-and-schema-path.md
+test.concurrent.each(["messages", "coverage"])(
+  "large multi-turn %s retain the Attempt and bounded agent-turns",
+  async (mode) => {
+    await runnerE2E.case("large-turns-publication", {}, async ({ commands: { niceeval } }) => {
+      const run = await niceeval.run(["exp", "large-turns", "--rerun", "all", "--json"], {
+        env: { NICEEVAL_LARGE_COVERAGE: mode === "coverage" ? "1" : "0" },
+      });
+      expect(run.exitCode, run.diagnostic()).toBe(0);
+      expect(run.expReceipt().completion).toBe("completed");
+      expect(run.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
+      const locator = run.expEvalEvents()[0]!.locator!;
+      const shown = await niceeval.run(["show", locator, "execution", "--json"]);
+      expect(shown.exitCode, shown.diagnostic()).toBe(0);
+      const trace = shown.attemptTrace().trace;
+      expect(trace.conversation.state).toBe("partial");
+      expect(trace.conversation.turns).toHaveLength(2);
+      expect(trace.conversation.items.length).toBeGreaterThan(0);
+      expect(trace.diagnostics.items).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ code: "attachment-encode-failed" })]),
+      );
+    });
+  },
+);
 
 // @feature docs/feature/run/README.md
+// @regression memory/attachment-encode-error-hides-family-and-schema-path.md
 test.concurrent("an unencodable observability family leaves a diagnostic while publishing the Attempt", async () => {
   await runnerE2E.case("attachment-failure-publication", {}, async ({ commands: { niceeval } }) => {
     const run = await niceeval.run(["exp", "large-usage", "--rerun", "all", "--json"]);
@@ -46,5 +53,8 @@ test.concurrent("an unencodable observability family leaves a diagnostic while p
       ]),
     );
     expect(JSON.stringify(diagnostic)).not.toContain("fixture-model");
+    const usage = await niceeval.run(["show", locator, "usage", "--json"]);
+    expect(usage.exitCode, usage.diagnostic()).toBe(0);
+    expect(usage.attemptUsage().usage.state).toBe("not-recorded");
   });
 });

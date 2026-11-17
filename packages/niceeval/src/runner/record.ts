@@ -1,3 +1,4 @@
+import { attemptObservabilityPublication } from "./record/observability-publication.ts";
 import { attemptNotesForResult } from "./attempt-notes.ts";
 import { judgeUsageForResult } from "./judge-usage.ts";
 import { createHash } from "node:crypto";
@@ -766,22 +767,22 @@ export function openRunnerRecordCoordinator(input: {
             sealed: active.sealed!,
             entryIds: closedAssertions.success.entryIds,
           });
+          const observability = attemptObservabilityPublication();
           if (sourceReceipts.agentTurns !== undefined) {
-            yield* active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns);
-          }
-          if (sourceReceipts.sandboxCommands !== undefined) {
-            yield* active.session.records.write(
-              NiceEvalRecordAttachments.sandboxCommands,
-              sourceReceipts.sandboxCommands,
+            yield* observability.write(
+              active.session.records.write(NiceEvalRecordAttachments.agentTurns, sourceReceipts.agentTurns),
             );
           }
-          yield* active.session.records.write(
-            NiceEvalRecordAttachments.runnerActivities.attempt,
-            sourceReceipts.runnerActivities,
-          );
-          yield* active.session.records.write(
-            NiceEvalRecordAttachments.runnerDiagnostics.attempt,
-            sourceReceipts.runnerDiagnostics,
+          if (sourceReceipts.sandboxCommands !== undefined) {
+            yield* observability.write(
+              active.session.records.write(NiceEvalRecordAttachments.sandboxCommands, sourceReceipts.sandboxCommands),
+            );
+          }
+          yield* observability.write(
+            active.session.records.write(
+              NiceEvalRecordAttachments.runnerActivities.attempt,
+              sourceReceipts.runnerActivities,
+            ),
           );
           const turnContexts = createRunnerTurnContextsAttachment({ result, sourcePlan: sourcePlan.success });
           if (Result.isFailure(turnContexts)) {
@@ -791,7 +792,9 @@ export function openRunnerRecordCoordinator(input: {
             });
           }
           if (turnContexts.success !== undefined) {
-            yield* active.session.records.write(NiceEvalRecordAttachments.turnContexts, turnContexts.success);
+            yield* observability.write(
+              active.session.records.write(NiceEvalRecordAttachments.turnContexts, turnContexts.success),
+            );
           }
           const fileChanges = createAttemptFileChangesAttachment(result);
           if (fileChanges !== undefined) {
@@ -806,7 +809,9 @@ export function openRunnerRecordCoordinator(input: {
           const adapterUsage = adapterUsageForResult(result);
           const executionTraces = adapterExecutionTracesForResult(result);
           if (adapterUsage !== undefined) {
-            yield* active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage);
+            yield* observability.write(
+              active.session.records.write(NiceEvalRecordAttachments.adapterUsage, adapterUsage),
+            );
           }
           if (artifacts !== undefined) {
             yield* active.session.records.write(NiceEvalRecordAttachments.artifacts.attempt, artifacts);
@@ -825,6 +830,20 @@ export function openRunnerRecordCoordinator(input: {
                     state: "partial",
                     limitations: [{ code: "capture-failed", stage: "adapter" }],
                   },
+            );
+          }
+          const diagnosticFailures = observability.failureCount;
+          yield* observability.write(
+            active.session.records.write(NiceEvalRecordAttachments.runnerDiagnostics.attempt, (build) =>
+              observability.diagnostics(sourceReceipts.runnerDiagnostics(build)),
+            ),
+          );
+          if (observability.failureCount > diagnosticFailures) {
+            // If the diagnostic attachment itself failed, publish the bounded
+            // encoding diagnostics alone rather than losing the Attempt.
+            yield* active.session.records.write(
+              NiceEvalRecordAttachments.runnerDiagnostics.attempt,
+              observability.diagnostics(),
             );
           }
           yield* active.session.complete(recordAttemptOutcome(result));

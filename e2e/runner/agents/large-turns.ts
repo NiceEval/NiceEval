@@ -4,9 +4,11 @@ export const largeTurnsAgent = defineAgent({
   name: "large-turns",
   evidenceCoverage: {
     ...completeEvidenceCoverage,
-    ...(process.env.NICEEVAL_LARGE_COVERAGE === "1" ? {
-      data: { status: "partial" as const, reason: "Coverage unavailable.\u0000\ud800" + "界".repeat(6000) },
-    } : {}),
+    ...(process.env.NICEEVAL_LARGE_COVERAGE === "1"
+      ? {
+          data: { status: "partial" as const, reason: "Coverage unavailable.\u0000\ud800" + "界".repeat(6000) },
+        }
+      : {}),
   },
   async send() {
     return {

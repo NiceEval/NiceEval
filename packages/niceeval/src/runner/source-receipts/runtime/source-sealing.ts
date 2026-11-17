@@ -5,6 +5,7 @@ import type { AgentRun, EvalResult } from "../../types.ts";
 import { sealAttemptObservabilityCaptureIdentity, sealRunObservabilityCaptureIdentity } from "../capture-identity.ts";
 import { normalizeAttemptDiagnostics } from "../diagnostics.ts";
 import { normalizeAttemptTiming } from "../timing.ts";
+import type { SourceReceiptLimitation } from "../../../record/family/source-receipt/index.ts";
 import { AgentTurnsAttachmentSchema } from "../../../record/family/agent-turns/definition.ts";
 import { AttemptRunnerActivitiesAttachmentSchema } from "../../../record/family/runner-activities/definition.ts";
 import { AttemptRunnerDiagnosticsAttachmentSchema } from "../../../record/family/runner-diagnostics/definition.ts";
@@ -22,6 +23,7 @@ import type {
   RunnerRunSourceReceiptsCapture,
   StagedSandboxCommandReceipt,
 } from "../types.ts";
+import { retainAgentTurns } from "./agent-turn-retention.ts";
 import { recordTerminalCommandResult } from "./command-lifecycle.ts";
 import { agentTurnTerminal, decodeReceipt, receiptDiagnosticRedaction, segmentIds } from "./receipt-helpers.ts";
 import {
@@ -70,6 +72,17 @@ function captureRunnerAttemptSourceSnapshot(
       return yield* Effect.fail(producerEntityIdInvalid("interval"));
     }
 
+    const terminalLimitations: SourceReceiptLimitation[] = [];
+    const agentTurnSegments = runtime.conversationTurns.map((turn) => ({
+      segmentId: turn.segmentId,
+      sessionId: turn.sessionId,
+      turnId: turn.turnId,
+      sequence: turn.sequence,
+      outcome: turn.completion.state === "observed" ? turn.completion.outcome : ("interrupted" as const),
+      terminal: agentTurnTerminal(turn, terminalLimitations),
+      items: turn.completion.state === "observed" ? turn.completion.observed.items : [],
+      usage: turn.usage.map(({ refs: _refs, ...usage }) => usage),
+    }));
     const agentTurnsCandidate =
       runtime.conversationTurns.length === 0
         ? undefined
@@ -80,25 +93,19 @@ function captureRunnerAttemptSourceSnapshot(
                 { collection: runtime.conversationLimitations.collection(), stage: "adapter" },
                 { collection: runtime.usageLimitations.collection(), stage: "adapter" },
               ],
-              runtime.conversationTurns.flatMap((turn) =>
-                turn.completion.state === "observed" ? turn.completion.observed.limitations : [],
-              ),
+              [
+                ...terminalLimitations,
+                ...runtime.conversationTurns.flatMap((turn) =>
+                  turn.completion.state === "observed" ? turn.completion.observed.limitations : [],
+                ),
+              ],
             ),
-            segments: runtime.conversationTurns.map((turn) => ({
-              segmentId: turn.segmentId,
-              sessionId: turn.sessionId,
-              turnId: turn.turnId,
-              sequence: turn.sequence,
-              outcome: turn.completion.state === "observed" ? turn.completion.outcome : "interrupted",
-              terminal: agentTurnTerminal(turn),
-              items: turn.completion.state === "observed" ? turn.completion.observed.items : [],
-              usage: turn.usage.map(({ refs: _refs, ...usage }) => usage),
-            })),
+            segments: agentTurnSegments,
           };
     const agentTurns =
       agentTurnsCandidate === undefined
         ? undefined
-        : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
+        : retainAgentTurns(yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt"));
 
     const commandSegments: StagedSandboxCommandReceipt[] = [];
     for (const command of runtime.commands) {

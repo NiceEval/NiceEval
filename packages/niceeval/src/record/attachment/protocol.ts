@@ -398,7 +398,10 @@ export function encodeRecordAttachmentCurrent(
     return Result.fail(
       encoded.failure.kind === "schema"
         ? { code: "exact-encode-failed", schemaIssues: encoded.failure.issues }
-        : { code: "exact-encode-failed", schemaIssues: undefined },
+        : {
+            code: "exact-encode-failed",
+            schemaIssues: [{ path: encoded.failure.failure.path, message: encoded.failure.failure.code }],
+          },
     );
   }
   const closure = enumerateRecordAttachmentClosure(definition, value);
@@ -407,7 +410,12 @@ export function encodeRecordAttachmentCurrent(
       case "exact-decode-failed":
         return Result.fail({ code: "exact-encode-failed", schemaIssues: undefined });
       case "invariant-failed":
-        return Result.fail({ code: "invariant-failed" });
+        return Result.fail({
+          code: "exact-encode-failed",
+          schemaIssues: definition
+            .validate?.(value as never)
+            .map((issue) => ({ path: issue.path, message: issue.code })),
+        });
       case "content-closure-failed":
         return Result.fail({ code: "content-closure-failed" });
       case "reference-closure-failed":
