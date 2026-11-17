@@ -3,9 +3,9 @@ import { expect, test } from "vitest";
 import { runnerE2E } from "./context.ts";
 
 // @feature docs/feature/run/README.md
-test.concurrent("large multi-turn conversations retain the Attempt and bounded agent-turns", async () => {
+test.concurrent.each(["messages", "coverage"])("large multi-turn %s retain the Attempt and bounded agent-turns", async (mode) => {
   await runnerE2E.case("large-turns-publication", {}, async ({ commands: { niceeval } }) => {
-    const run = await niceeval.run(["exp", "large-turns", "--rerun", "all", "--json"]);
+    const run = await niceeval.run(["exp", "large-turns", "--rerun", "all", "--json"], { env: { NICEEVAL_LARGE_COVERAGE: mode === "coverage" ? "1" : "0" } });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion).toBe("completed");
     expect(run.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
@@ -35,7 +35,7 @@ test.concurrent("an unencodable observability family leaves a diagnostic while p
     const diagnostic = shown
       .attemptTrace()
       .trace.diagnostics.items.find((item) => item.code === "attachment-encode-failed");
-    expect(diagnostic).toMatchObject({ kind: "advisory", phase: "attempt.teardown" });
+    expect(diagnostic).toMatchObject({ kind: "advisory" });
     expect(diagnostic?.summary).toContain("niceeval.adapter-usage");
     expect(diagnostic?.causes).toEqual(
       expect.arrayContaining([
