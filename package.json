@@ -32,8 +32,8 @@
     "lint:format": "biome format ."
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.7",
-    "@playwright/test": "1.65.0",
+    "@biomejs/biome": "2.6.8",
+    "@playwright/test": "1.65.1",
     "@types/node": "^24.19.2",
     "concurrently": "^10.0.7",
     "husky": "^9.1.7",
@@ -41,6 +41,6 @@
     "nx": "24.0.5",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
