@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { decodeJsonRecord } from "../shared/json-value.ts";
 
 const VERSION = "0.158.0";
+export const SOURCE_PARSER_IDENTITY = `oxc-parser@${VERSION}`;
 const parserRequireAtRuntime = createRequire(import.meta.url);
 export type SyntaxNode = {
   readonly type: string;
@@ -27,7 +28,14 @@ const SyntaxNodeSchema = Schema.declare<SyntaxNode>(
   ),
 );
 const decodeSyntaxTree = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({ node: SyntaxNodeSchema })));
-type Comment = { readonly start: number; readonly end: number; readonly value: string };
+export type SourceComment = { readonly start: number; readonly end: number; readonly value: string };
+type Comment = SourceComment;
+/** UTF-16 ranges; values occupy a separate identity channel, never source text. */
+export interface SourceReplacement {
+  readonly start: number;
+  readonly end: number;
+  readonly value: unknown;
+}
 type Binding = {
   parseSync(
     filename: string,
@@ -143,7 +151,7 @@ export function parseSource(
   file: string,
   source: string,
   transformed = false,
-): { program: SyntaxNode; comments: readonly Comment[] } {
+): { program: SyntaxNode; comments: readonly Comment[]; language: string; mode: string } {
   const extension = extname(file);
   function sourceLanguage() {
     if (transformed) return "js" as const;
@@ -162,12 +170,43 @@ export function parseSource(
   // The binding's serialized tree uses UTF-16 ranges. RegExp / BigInt value repair is unnecessary:
   // identity uses raw lexemes and dependency specifiers are string literals only.
   const program = decodeSyntaxTree(parsed.program).node;
-  return { program, comments: parsed.comments };
+  return { program, comments: parsed.comments, language: lang, mode: sourceType };
 }
 const lineTerminator = /[\n\r\u2028\u2029]/u;
 const whitespace = /[\u0009\u000b\u000c\u0020\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff\n\r\u2028\u2029]+/gu;
 export function normalizeSource(source: string, program: SyntaxNode, comments: readonly Comment[]): string {
-  const spans: { start: number; end: number; text: string }[] = [];
+  return normalizedSourceParts(source, program, comments).join("");
+}
+// @concord-code
+// @concord-implements docs/feature/experiments/architecture/source-identity.md#规范化规则
+export function normalizedSourceParts(
+  source: string,
+  program: SyntaxNode,
+  comments: readonly Comment[],
+  replacements: readonly SourceReplacement[] = [],
+  omitted: readonly { readonly start: number; readonly end: number }[] = [],
+): readonly (string | { readonly replacement: unknown })[] {
+  const edits = [...replacements, ...omitted].toSorted((a, b) => a.start - b.start || b.end - a.end);
+  for (let index = 0; index < edits.length; index++) {
+    const edit = edits[index]!;
+    if (
+      edit.start < 0 ||
+      edit.end > source.length ||
+      edit.end <= edit.start ||
+      (index > 0 && edit.start < edits[index - 1]!.end)
+    ) {
+      throw new Error("Source identity replacements must be disjoint UTF-16 ranges.");
+    }
+  }
+  const spans: {
+    start: number;
+    end: number;
+    text: string;
+    edit?: SourceReplacement | { readonly start: number; readonly end: number };
+  }[] = edits.map((edit) => ({ ...edit, text: "", edit }));
+  const protect = (span: { start: number; end: number; text: string }): void => {
+    if (!edits.some((edit) => edit.start < span.end && span.start < edit.end)) spans.push(span);
+  };
   walkSyntax(program, (node) => {
     if (
       node.type === "Literal" ||
@@ -175,12 +214,12 @@ export function normalizeSource(source: string, program: SyntaxNode, comments: r
       node.type === "JSXText" ||
       node.type === "Hashbang"
     ) {
-      spans.push({ start: node.start, end: node.end, text: source.slice(node.start, node.end) });
+      protect({ start: node.start, end: node.end, text: source.slice(node.start, node.end) });
     }
   });
   if (source.startsWith("#!")) {
     const end = source.search(/[\n\r\u2028\u2029]/u);
-    spans.push({
+    protect({
       start: 0,
       end: end === -1 ? source.length : end,
       text: source.slice(0, end === -1 ? source.length : end),
@@ -195,7 +234,7 @@ export function normalizeSource(source: string, program: SyntaxNode, comments: r
       if (directive) return raw;
       return lineTerminator.test(raw) ? "\n" : " ";
     }
-    spans.push({
+    protect({
       start: comment.start,
       end: comment.end,
       text: normalizedComment(),
@@ -205,33 +244,44 @@ export function normalizeSource(source: string, program: SyntaxNode, comments: r
   let output = "",
     cursor = 0,
     pending = "";
+  const parts: (string | { readonly replacement: unknown })[] = [];
+  const hasOutput = (): boolean => output !== "" || parts.length > 0;
   const trivia = (text: string): void => {
     let last = 0;
     for (const match of text.matchAll(whitespace)) {
       if (match.index! > last) {
-        output += (output === "" ? "" : pending) + text.slice(last, match.index);
+        output += (hasOutput() ? pending : "") + text.slice(last, match.index);
         pending = "";
       }
       pending = lineTerminator.test(pending + match[0]) ? "\n" : " ";
       last = match.index! + match[0].length;
     }
     if (last < text.length) {
-      output += (output === "" ? "" : pending) + text.slice(last);
+      output += (hasOutput() ? pending : "") + text.slice(last);
       pending = "";
     }
   };
   for (const span of spans) {
     if (span.start < cursor) continue;
     trivia(source.slice(cursor, span.start));
-    if (span.text === " " || span.text === "\n") trivia(span.text);
+    if (span.edit !== undefined) {
+      if ("value" in span.edit) {
+        output += hasOutput() ? pending : "";
+        if (output !== "") parts.push(output);
+        parts.push({ replacement: span.edit.value });
+        output = "";
+        pending = "";
+      }
+    } else if (span.text === " " || span.text === "\n") trivia(span.text);
     else {
-      output += (output === "" ? "" : pending) + span.text;
+      output += (hasOutput() ? pending : "") + span.text;
       pending = "";
     }
     cursor = span.end;
   }
   trivia(source.slice(cursor));
-  return output;
+  if (output !== "") parts.push(output);
+  return parts;
 }
 export function sourceIdentity(file: string, bytes: Uint8Array): string {
   if (!isCodeSource(file)) return createHash("sha256").update(bytes).digest("hex");

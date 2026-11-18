@@ -1,3 +1,4 @@
+import { getExperimentExecutionSource } from "../../runner/experiment-modules.ts";
 import { Effect } from "effect";
 import {
   assembleCommandPlan,
@@ -161,6 +162,7 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config:
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
+    experimentExecutionSource: getExperimentExecutionSource(experiment),
     description: experiment.description,
     labels: experiment.labels,
     maxConcurrency: experiment.maxConcurrency,

@@ -104,7 +104,8 @@ import {
   createFileChangesCapture,
   type FileChangesCapture,
 } from "../assertions/record/diff.ts";
-import { createDirectAgentSandbox } from "./direct-agent-sandbox.ts";
+import { createDirectAgentSandbox, createEvalSandboxView } from "./direct-agent-sandbox.ts";
+import { evalModules } from "./module-graph.ts";
 import { createSandboxCommandTarget, SandboxCommandExitError } from "../sandbox/operations.ts";
 import {
   inheritSandboxCapabilities,
@@ -3664,11 +3665,26 @@ async function runAttemptBody(
     // 构造 t,跑 test
     enterPhase("eval.run");
     log(`driving agent...`);
+    let evalSendOrdinal = 0;
+    const moduleProjection = evalModules(evalDef);
+    const transferPlans =
+      moduleProjection?.unresolved.length === 0
+        ? moduleProjection.modules
+            .filter((fact) => fact.path === evalDef.sourcePath)
+            .flatMap((fact) =>
+              (fact.managedInputs ?? []).flatMap((input) => (input.transfer === undefined ? [] : [input.transfer])),
+            )
+        : undefined;
+    const evalSandbox = createEvalSandboxView(sandbox, evalDef.baseDir, {
+      ownerRoot: moduleProjection?.root ?? process.cwd(),
+      plans: usesSandbox && transferPlans !== undefined && transferPlans.length > 0 ? transferPlans : undefined,
+      sendOrdinal: () => evalSendOrdinal,
+    });
     const { context, state } = createAssertFirstEvalContext({
       captureSimulatedUser: res.captureSimulatedUser,
       deadlineAt: res.deadlineAt,
       agent,
-      sandbox,
+      sandbox: evalSandbox.sandbox,
       evalId: evalDef.id,
       attempt: { id: evalDef.id, index: attempt },
       evalGroup:
@@ -3710,7 +3726,10 @@ async function runAttemptBody(
             afterSend: (label) => ledger!.commitAgentWindow(label),
           }
         : undefined,
-      onSendActive: setSendActive,
+      onSendActive: (active) => {
+        if (active) evalSendOrdinal++;
+        setSendActive(active);
+      },
       elapsedMs: recorder.offsetNow,
       timingNow: recorder.offsetNow,
       // 每次 send 一个 turn 节点:本地单调时钟测得的端到端包络 + 与 diff/source 共用的
@@ -3778,6 +3797,7 @@ async function runAttemptBody(
       const author = await assertFirst.requestEffect(assertFirst.awaitAuthor());
       if (author._tag === "failed") throw author.error;
       if (author._tag === "defect") throw author.cause;
+      evalSandbox.complete();
     } catch (e) {
       if (e instanceof EvalSkipped) {
         skipReason = e.reason;

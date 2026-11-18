@@ -48,10 +48,33 @@ test.concurrent("移动评估和实验文件后沿用同一次执行，修改判
       expect(plan.matrix[0]!.readbacks[0]!.source.locator).toBe(locator);
     }
 
+    const movedExperiment = readFileSync(experiment, "utf8");
+    writeFileSync(experiment, movedExperiment.replace("carry and partial rerun", "Refunds after the move"));
+    const relabeled = await niceeval.run([...select, "--dry", "--json"]);
+    expect(relabeled.exitCode, relabeled.diagnostic()).toBe(0);
+    expect(decodeExpPlanDocument(relabeled.json()).matrix[0]!.readbacks[0]!.source.locator).toBe(locator);
+
+    const copy = join(experiments, "archive/comparison.ts");
+    writeFileSync(copy, movedExperiment.replace('id = "carry"', 'id = "comparison"'));
+    const independent = await niceeval.run(["exp", "comparison", "simple/alpha", "--dry", "--json"]);
+    expect(independent.exitCode, independent.diagnostic()).toBe(0);
+    expect(decodeExpPlanDocument(independent.json()).reused).toBe(0);
+
     writeFileSync(join(evals, "expected.ts"), 'export const expected = "a different reply";');
     const edited = await niceeval.run([...select, "--dry", "--json"]);
     expect(edited.exitCode, edited.diagnostic()).toBe(0);
     expect(decodeExpPlanDocument(edited.json()).matrix[0]!.slots).toMatchObject([
+      { state: "gap", reason: "identity-mismatch" },
+    ]);
+
+    writeFileSync(join(evals, "expected.ts"), 'export const expected = "runner-fixture-ok";');
+    writeFileSync(moved, readFileSync(moved, "utf8").replace('t.send("alpha")', "t.send(import.meta.url)"));
+    const visible = await niceeval.run([...select, "--json"]);
+    expect(visible.exitCode, visible.diagnostic()).toBe(0);
+    renameSync(moved, join(evals, "payments/location.eval.ts"));
+    const relocated = await niceeval.run([...select, "--dry", "--json"]);
+    expect(relocated.exitCode, relocated.diagnostic()).toBe(0);
+    expect(decodeExpPlanDocument(relocated.json()).matrix[0]!.slots).toMatchObject([
       { state: "gap", reason: "identity-mismatch" },
     ]);
   });

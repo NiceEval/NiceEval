@@ -20,7 +20,7 @@ export default defineExperiment({
 });
 ```
 
-文件路径就是 Experiment ID，这里是 `local`。`agent` 放的是已经配置好的 Adapter 实例，被测应用的地址、鉴权这类连接参数传给 Adapter 工厂，不写在别处。
+默认 ID 来自文件路径，这里是 `local`。要把实验移到子目录并继续用这个 ID，在文件顶部加一行 `export const id = "local";`。`agent` 放的是已经配置好的 Adapter 实例，被测应用的地址、鉴权这类连接参数传给 Adapter 工厂，不写在别处。
 
 ```bash
 pnpm exec niceeval exp local
@@ -147,7 +147,7 @@ pnpm exec niceeval show exp:prompts/v1 exp:prompts/v2
 evals: (eval) => eval.id.startsWith("coding/") && eval.tags.includes("coding"),
 ```
 
-`eval.id` 是从文件路径推导出的项目内 ID，不是绝对路径，可以直接用 `startsWith` 判断。
+`eval.id` 是评估用例在项目里的 ID，可以直接用 `startsWith` 判断。
 
 ## 常用字段
 

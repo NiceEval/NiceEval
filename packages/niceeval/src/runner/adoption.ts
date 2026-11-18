@@ -2,6 +2,7 @@
 // @concord-implements docs/feature/experiments/architecture/cache.md
 // @concord-implements docs/feature/experiments/library/README.md
 
+import { getExperimentExecutionSource } from "./experiment-modules.ts";
 import { readIdentityExplanation } from "./identity-explanation-read.ts";
 import { executionDigestForManifestOrigin, type IdentityExplanation } from "./manifest.ts";
 import type { ExecutionComparison } from "./reuse-plan.ts";
@@ -374,6 +375,7 @@ function runForExperiment(
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
+    experimentExecutionSource: getExperimentExecutionSource(experiment),
     description: experiment.description,
     labels: experiment.labels,
     selectedEvalIds,

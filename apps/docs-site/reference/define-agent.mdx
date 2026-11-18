@@ -477,7 +477,7 @@ the framework itself neither interprets nor validates the content. The name deli
 readonly experimentId?: string | undefined;
 ```
 
-The Experiment id derived from the path (the same source as result attribution `runWho` / `AgentRun.experimentId`); undefined when not running
+The current Experiment ID (the same source as result attribution `runWho` / `AgentRun.experimentId`); undefined when not running
 through an Experiment (such as outside the CLI, constructing `AgentRun` directly). Typical uses:
 a SandboxLayer command isolating cross-attempt infrastructure content per Experiment, or an adapter switching authentication / routing per Experiment.
 It is a different dimension from `flags` (the concrete

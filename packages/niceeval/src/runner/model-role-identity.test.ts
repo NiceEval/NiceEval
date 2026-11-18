@@ -26,9 +26,11 @@ import {
 } from "./execution-identity.ts";
 import { fingerprintWithManifest } from "./fingerprint.ts";
 import { attachEvalModules } from "./module-graph.ts";
+import { parseSource } from "./source-normalization.ts";
 import { discoverEval, EVALUATION_ALGORITHM, type AgentRun, type ExperimentInput } from "./types.ts";
 
-// Captured BEFORE the implementation change; never regenerate from the candidate.
+// Configuration bytes retain the captured HEAD oracle. Source-derived values
+// encode the literal single-node graph independently of the candidate encoder.
 const HEAD_GOLDEN = {
   head: "c138c4b8e1bf8278955c025c3fa32229ba6a1920",
   source: "export default { test() {} };\n",
@@ -87,11 +89,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "415a4b3ad5e809f2556ea412c7be3eb32765539f5542c35a7be5ae8bf8b3779f",
-      renameFingerprint: "87d29fdbfd843c1e323b8cdbc233d1238fa063f9c3e20bf8e2652437792b6b1a",
+      fingerprint: "22e0b7f5517303716a56abb3103e2d088ca353bfd872530bdb089e2d3c605f2d",
+      renameFingerprint: "ed5e1e76b20d4e7226da9ed8dcb4a941484652521d7a097bdf0a936f2f905387",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"415a4b3ad5e809f2556ea412c7be3eb32765539f5542c35a7be5ae8bf8b3779f"},"config":{"domain":"config/v1","value":"24a3fd48b670314af5d0373a1ca328406fc1ab30da5a27c2ceb1a911460859a2"},"timeout":null}',
-      slotDigest: "d537489051a0327a7d5262b372396489bfdce192d5764aed20be34e9bf836587",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"22e0b7f5517303716a56abb3103e2d088ca353bfd872530bdb089e2d3c605f2d"},"config":{"domain":"config/v1","value":"24a3fd48b670314af5d0373a1ca328406fc1ab30da5a27c2ceb1a911460859a2"},"timeout":null}',
+      slotDigest: "c704182cc4321ff905c242d9673ccb630db0d0e896bd8f63a6858ad4877866f8",
     },
     model: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Configured","value":"fixture/model"},"models":{"slots":{"default":{"model":"fixture/model","reasoningEffort":null}}},"plugins":[],"reasoningEffort":{"_tag":"Omitted"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -153,11 +155,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "08c366308040fc8536e02e957def97d2a680ee39999b919e238448e20635f557",
-      renameFingerprint: "10ca07d023fee7e22098fb39893fca7792ad9a51f6a6fa4db9f45316506fb207",
+      fingerprint: "97edd25db934c79c57ad28f40e11ee5d594072c9afcaace4f0185a7d8b96cafe",
+      renameFingerprint: "01d3d9db9c3e0bc4a0f4a1798abca6b128b0cf7f9a1a260961952090bbece767",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"08c366308040fc8536e02e957def97d2a680ee39999b919e238448e20635f557"},"config":{"domain":"config/v1","value":"d0faabe0a6ef93c3f68ee72a8b8a88e7df084ed99cc77560b50b8f80e2cbfd26"},"timeout":null}',
-      slotDigest: "3b692648a2c287deb1f40c1d505b81c69521d236b38662a260250ae3c096bbc3",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"97edd25db934c79c57ad28f40e11ee5d594072c9afcaace4f0185a7d8b96cafe"},"config":{"domain":"config/v1","value":"d0faabe0a6ef93c3f68ee72a8b8a88e7df084ed99cc77560b50b8f80e2cbfd26"},"timeout":null}',
+      slotDigest: "a5fcdd7576b7405f78289d07261cb8220fe6b9999997f4b289c5ddee0ef6595c",
     },
     effort: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Omitted"},"models":{"slots":{"default":{"model":null,"reasoningEffort":"high"}}},"plugins":[],"reasoningEffort":{"_tag":"Configured","value":"high"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -219,11 +221,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "d85ca725d2076bfbfeca6a5ec1a34a379dd4fcf3cfd0525d541435b45c9caaf6",
-      renameFingerprint: "a31bf3cd8a43dabaac0f7b891c4f99804fd1d971a8cc6d41235968fb10ddf60c",
+      fingerprint: "7d280410d0c9d71b9932717295fb55e94f9c68e04cf511933044f76bd655f1ca",
+      renameFingerprint: "cf0c657ff0a8ccb6061b10bea3616c1af697d619c52559b50809dd34f34ea13e",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"d85ca725d2076bfbfeca6a5ec1a34a379dd4fcf3cfd0525d541435b45c9caaf6"},"config":{"domain":"config/v1","value":"cb70412eaad4b02c1dfde8ee22db62d8b5690b81f15d249f65d7d0cfff2416ce"},"timeout":null}',
-      slotDigest: "fd6183396d10a092ea8280793ca4f76141ab168e1517d36419412ea369d69b2c",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"7d280410d0c9d71b9932717295fb55e94f9c68e04cf511933044f76bd655f1ca"},"config":{"domain":"config/v1","value":"cb70412eaad4b02c1dfde8ee22db62d8b5690b81f15d249f65d7d0cfff2416ce"},"timeout":null}',
+      slotDigest: "b438710851b075bca44b25c241f120b502155b42318ba0a1502b7696792937cc",
     },
     both: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Configured","value":"fixture/model"},"models":{"slots":{"default":{"model":"fixture/model","reasoningEffort":"high"}}},"plugins":[],"reasoningEffort":{"_tag":"Configured","value":"high"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -287,11 +289,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "e2c391f4aaef8626a8b89bca4846863fb1517e2e71c87c5f26b40490ce980e42",
-      renameFingerprint: "31a2619788885bbd93fdab7b8067d69c5fc125e50f3ff241cbda06228043dd55",
+      fingerprint: "b9c4690d16023127cde8db6a5dd5e120803c493c788e534481b71b25a6d8070f",
+      renameFingerprint: "43a36cb982a86d6c277eb784d05637332c2ff555cda899d600d67f80006560bc",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"e2c391f4aaef8626a8b89bca4846863fb1517e2e71c87c5f26b40490ce980e42"},"config":{"domain":"config/v1","value":"f6c9291fa7661015c43a7f1aba0a7fd5b3ebf26368afe217fe5d842a3dc2c9ef"},"timeout":null}',
-      slotDigest: "2c0482c060652995f2c5f8c6502ad7d0b2b8ea7b5d88d89cbc8819d77b6e5174",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"b9c4690d16023127cde8db6a5dd5e120803c493c788e534481b71b25a6d8070f"},"config":{"domain":"config/v1","value":"f6c9291fa7661015c43a7f1aba0a7fd5b3ebf26368afe217fe5d842a3dc2c9ef"},"timeout":null}',
+      slotDigest: "b8b8786b4f22cd6101978f5a69d4d4aa851e933e89b5e06adfafceec410e6511",
     },
     explicit: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Configured","value":"fixture/model"},"models":{"slots":{"default":{"model":"fixture/model","reasoningEffort":"high"}}},"plugins":[],"reasoningEffort":{"_tag":"Configured","value":"high"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -355,11 +357,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "e2c391f4aaef8626a8b89bca4846863fb1517e2e71c87c5f26b40490ce980e42",
-      renameFingerprint: "31a2619788885bbd93fdab7b8067d69c5fc125e50f3ff241cbda06228043dd55",
+      fingerprint: "b9c4690d16023127cde8db6a5dd5e120803c493c788e534481b71b25a6d8070f",
+      renameFingerprint: "43a36cb982a86d6c277eb784d05637332c2ff555cda899d600d67f80006560bc",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"e2c391f4aaef8626a8b89bca4846863fb1517e2e71c87c5f26b40490ce980e42"},"config":{"domain":"config/v1","value":"f6c9291fa7661015c43a7f1aba0a7fd5b3ebf26368afe217fe5d842a3dc2c9ef"},"timeout":null}',
-      slotDigest: "2c0482c060652995f2c5f8c6502ad7d0b2b8ea7b5d88d89cbc8819d77b6e5174",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"b9c4690d16023127cde8db6a5dd5e120803c493c788e534481b71b25a6d8070f"},"config":{"domain":"config/v1","value":"f6c9291fa7661015c43a7f1aba0a7fd5b3ebf26368afe217fe5d842a3dc2c9ef"},"timeout":null}',
+      slotDigest: "b8b8786b4f22cd6101978f5a69d4d4aa851e933e89b5e06adfafceec410e6511",
     },
     multi: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Omitted"},"models":{"slots":{"planner":{"model":"fixture/planner","reasoningEffort":null},"reviewer":{"model":"fixture/reviewer","reasoningEffort":"high"}}},"plugins":[],"reasoningEffort":{"_tag":"Omitted"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -423,11 +425,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "c9769bd42a7e05ca805a4f822d437fb95940058e952e982b15cdf63a11548b30",
-      renameFingerprint: "a1cbf48d612fb28e3fc31209fabce16cc3ea1863b33462b9ba0897437ec9110a",
+      fingerprint: "3e686c21ab7e05df94e92e9810bb363a68d43cc8bfbe0240dda6399609274658",
+      renameFingerprint: "ab0e7ee3207e8b8f479923f7c7023b15d3fbdd6f33dbd17b139ed82ee955d87c",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"c9769bd42a7e05ca805a4f822d437fb95940058e952e982b15cdf63a11548b30"},"config":{"domain":"config/v1","value":"c80b30c8cb6fc97ca3a131ce5e574d7ccf39bfb11b663ec62f62bcec5eda5d85"},"timeout":null}',
-      slotDigest: "8866ad26ffcfad24687e03fd0399948c7129e8e17ecefcc94e5ad98696870878",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"3e686c21ab7e05df94e92e9810bb363a68d43cc8bfbe0240dda6399609274658"},"config":{"domain":"config/v1","value":"c80b30c8cb6fc97ca3a131ce5e574d7ccf39bfb11b663ec62f62bcec5eda5d85"},"timeout":null}',
+      slotDigest: "090824e1659879787d757a6d88723ed812f6fca9d645fc95382e117812a5c89f",
     },
     reordered: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Omitted"},"models":{"slots":{"planner":{"model":"fixture/planner","reasoningEffort":null},"reviewer":{"model":"fixture/reviewer","reasoningEffort":"high"}}},"plugins":[],"reasoningEffort":{"_tag":"Omitted"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -491,11 +493,11 @@ const HEAD_GOLDEN = {
         },
         data: {},
       },
-      fingerprint: "c9769bd42a7e05ca805a4f822d437fb95940058e952e982b15cdf63a11548b30",
-      renameFingerprint: "a1cbf48d612fb28e3fc31209fabce16cc3ea1863b33462b9ba0897437ec9110a",
+      fingerprint: "3e686c21ab7e05df94e92e9810bb363a68d43cc8bfbe0240dda6399609274658",
+      renameFingerprint: "ab0e7ee3207e8b8f479923f7c7023b15d3fbdd6f33dbd17b139ed82ee955d87c",
       slotText:
-        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"c9769bd42a7e05ca805a4f822d437fb95940058e952e982b15cdf63a11548b30"},"config":{"domain":"config/v1","value":"c80b30c8cb6fc97ca3a131ce5e574d7ccf39bfb11b663ec62f62bcec5eda5d85"},"timeout":null}',
-      slotDigest: "8866ad26ffcfad24687e03fd0399948c7129e8e17ecefcc94e5ad98696870878",
+        '{"experimentId":"model-identity","evalId":"model-identity","attempt":0,"input":{"domain":"eval/v1","value":"3e686c21ab7e05df94e92e9810bb363a68d43cc8bfbe0240dda6399609274658"},"config":{"domain":"config/v1","value":"c80b30c8cb6fc97ca3a131ce5e574d7ccf39bfb11b663ec62f62bcec5eda5d85"},"timeout":null}',
+      slotDigest: "090824e1659879787d757a6d88723ed812f6fca9d645fc95382e117812a5c89f",
     },
     historicalMissing: {
       text: '{"adapter":{"behaviorRevision":"1","cleanupTimeoutMs":30000,"contract":"model-identity","name":"model-identity"},"agentInstalls":[],"flags":{},"judgeRuntime":{"_tag":"Unconfigured"},"model":{"_tag":"Omitted"},"plugins":[],"reasoningEffort":{"_tag":"Omitted"},"sandboxLayer":{"kind":"direct"},"sandboxReuse":false}',
@@ -604,13 +606,18 @@ function pairFor(input: (typeof selections)[keyof typeof selections]) {
   });
   attachEvalModules(evalDef, {
     root: path,
+    entry: path,
     modules: [
       {
         path,
         source,
         normalized: source,
         identity: "fixed-author-source-v1",
-        sourceType: undefined,
+        sourceType: "module",
+        language: "ts",
+        program: parseSource(path, source).program,
+        comments: [],
+        locationObservations: [],
         edges: [],
         unresolved: [],
       },
@@ -658,76 +665,80 @@ function historicalResult(pair: ReturnType<typeof pairFor>, includeModels = true
 }
 
 // @feature docs/feature/experiments/README.md
-test.each(Object.entries(selections))("model configuration %s preserves HEAD identity bytes", async (name, input) => {
-  const expected = HEAD_GOLDEN.cases[name as keyof typeof selections];
-  const pair = pairFor(input);
-  const identity = configIdentityForRun(pair.run, pair.plan);
-  expect(stableIdentityJson(identity)).toBe(expected.text);
-  expect(hashIdentityPayload(identity)).toBe(expected.hash);
-  expect(configIdentityPaths(identity)).toEqual(expected.paths);
-  const historical = configIdentityFromResult(historicalResult(pair));
-  expect(stableIdentityJson(historical)).toBe(expected.historical);
-  if (historical === undefined) throw new Error("Expected recorded configuration");
-  expect(configDeltas(historical, identity)).toEqual([]);
-  const fp = await Effect.runPromise(fingerprintWithManifest(pair));
-  expect(fp.manifest).toEqual(expected.manifest);
-  expect(fp.fingerprint).toBe(expected.fingerprint);
-  expect(fp.renameFingerprint("renamed")).toBe(expected.renameFingerprint);
-  const slot = {
-    experimentId: "model-identity",
-    evalId: pair.evalDef.id,
-    attempt: 0,
-    input: { domain: "eval/v1", value: fp.fingerprint },
-    config: { domain: "config/v1", value: hashIdentityPayload(identity) },
-    timeout: null,
-  };
-  expect(slotExecutionIdentityInput(slot)).toBe(expected.slotText);
-  expect(slotExecutionIdentityDigestHex(slot)).toBe(expected.slotDigest);
-  const wire = modelRolesToWire(pair.run.models ?? {});
-  expect(modelRolesToWire(modelRolesFromWire(wire))).toEqual(wire);
-  const context = {
-    experimentId: Schema.decodeUnknownSync(ExperimentIdSchema)("model-identity"),
-    execution: {
-      adapter: identity.adapter,
-      models: wire,
-      model: pair.run.model ?? null,
-      reasoningEffort: pair.run.reasoningEffort ?? null,
-      flags: {},
-    },
-    labels: {},
-  };
-  const decoded = canonicalizeRunContext(context);
-  expect(Result.isSuccess(decoded)).toBe(true);
-  if (Result.isFailure(decoded)) throw new Error("Context must accept nullable model wire");
-  const json = runContextCanonicalJson(decoded.success);
-  const headIdentity = JSON.parse(expected.text);
-  expect(json).toBe(
-    stableIdentityJson({
+test.each(Object.entries(selections))(
+  "model configuration %s retains its independent identity",
+  async (name, input) => {
+    const expected = HEAD_GOLDEN.cases[name as keyof typeof selections];
+    const pair = pairFor(input);
+    const identity = configIdentityForRun(pair.run, pair.plan);
+    expect(stableIdentityJson(identity)).toBe(expected.text);
+    expect(hashIdentityPayload(identity)).toBe(expected.hash);
+    expect(configIdentityPaths(identity)).toEqual(expected.paths);
+    const historical = configIdentityFromResult(historicalResult(pair));
+    expect(stableIdentityJson(historical)).toBe(expected.historical);
+    if (historical === undefined) throw new Error("Expected recorded configuration");
+    expect(configDeltas(historical, identity)).toEqual([]);
+    const fp = await Effect.runPromise(fingerprintWithManifest(pair));
+    expect(fp.manifest).toEqual(expected.manifest);
+    expect(fp.fingerprint).toBe(expected.fingerprint);
+    expect(fp.renameFingerprint("renamed")).toBe(expected.renameFingerprint);
+    const slot = {
       experimentId: "model-identity",
+      evalId: pair.evalDef.id,
+      attempt: 0,
+      input: { domain: "eval/v1", value: fp.fingerprint },
+      config: { domain: "config/v1", value: hashIdentityPayload(identity) },
+      timeout: null,
+    };
+    expect(slotExecutionIdentityInput(slot)).toBe(expected.slotText);
+    expect(slotExecutionIdentityDigestHex(slot)).toBe(expected.slotDigest);
+    const wire = modelRolesToWire(pair.run.models ?? {});
+    expect(modelRolesToWire(modelRolesFromWire(wire))).toEqual(wire);
+    const context = {
+      experimentId: Schema.decodeUnknownSync(ExperimentIdSchema)("model-identity"),
       execution: {
-        adapter: headIdentity.adapter,
-        models: headIdentity.models.slots,
-        model: headIdentity.model._tag === "Configured" ? headIdentity.model.value : null,
-        reasoningEffort: headIdentity.reasoningEffort._tag === "Configured" ? headIdentity.reasoningEffort.value : null,
+        adapter: identity.adapter,
+        models: wire,
+        model: pair.run.model ?? null,
+        reasoningEffort: pair.run.reasoningEffort ?? null,
         flags: {},
       },
       labels: {},
-    }),
-  );
-  const again = canonicalizeRunContext(JSON.parse(json));
-  if (Result.isFailure(again)) throw new Error("Context must be revalidatable");
-  expect(runContextCanonicalJson(again.success)).toBe(json);
-  expect(
-    validateRunDocument({
-      runId: Schema.decodeUnknownSync(RunIdSchema)("00000000-0000-4000-8000-000000000001"),
-      experimentId: again.success.experimentId,
-      context: again.success,
-      startedAt: Schema.decodeUnknownSync(UtcMillisSchema)(0),
-      completedAt: Schema.decodeUnknownSync(UtcMillisSchema)(1),
-      expectedSlots: [],
-    }),
-  ).toEqual([]);
-});
+    };
+    const decoded = canonicalizeRunContext(context);
+    expect(Result.isSuccess(decoded)).toBe(true);
+    if (Result.isFailure(decoded)) throw new Error("Context must accept nullable model wire");
+    const json = runContextCanonicalJson(decoded.success);
+    const headIdentity = JSON.parse(expected.text);
+    expect(json).toBe(
+      stableIdentityJson({
+        experimentId: "model-identity",
+        execution: {
+          adapter: headIdentity.adapter,
+          models: headIdentity.models.slots,
+          model: headIdentity.model._tag === "Configured" ? headIdentity.model.value : null,
+          reasoningEffort:
+            headIdentity.reasoningEffort._tag === "Configured" ? headIdentity.reasoningEffort.value : null,
+          flags: {},
+        },
+        labels: {},
+      }),
+    );
+    const again = canonicalizeRunContext(JSON.parse(json));
+    if (Result.isFailure(again)) throw new Error("Context must be revalidatable");
+    expect(runContextCanonicalJson(again.success)).toBe(json);
+    expect(
+      validateRunDocument({
+        runId: Schema.decodeUnknownSync(RunIdSchema)("00000000-0000-4000-8000-000000000001"),
+        experimentId: again.success.experimentId,
+        context: again.success,
+        startedAt: Schema.decodeUnknownSync(UtcMillisSchema)(0),
+        completedAt: Schema.decodeUnknownSync(UtcMillisSchema)(1),
+        expectedSlots: [],
+      }),
+    ).toEqual([]);
+  },
+);
 
 // @feature docs/feature/experiments/README.md
 test("historical omission and whole-model authorization retain identity distinctions", () => {

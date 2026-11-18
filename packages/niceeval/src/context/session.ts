@@ -266,7 +266,7 @@ export interface SessionDeps {
         readonly normalizeObservedText: (value: string) => string;
       })
     | undefined;
-  /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
+  /** 当前实验的 ID(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string | undefined;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
   telemetry?: Telemetry | undefined;

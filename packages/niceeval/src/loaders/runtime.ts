@@ -6,16 +6,10 @@
 // glob 不能塞进 URL(`?` 会变 query、`{}` 会编码),所以相对 glob 把 pattern 与基准 URL 分开传。
 // 无宿主进程只读；进入发现后，只有发现期的模块求值允许 loader 读取。
 
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  compilePatterns,
-  enumerationBases,
-  includedByPatterns,
-  unmatchedIncludes,
-  type CompiledPattern,
-} from "./glob.ts";
+import { compilePatterns, expandLoaderPatterns, unmatchedIncludes } from "./glob.ts";
 
 /**
  * 一次发现期求值的登记表:
@@ -318,11 +312,7 @@ async function registerGlobPatterns(patterns: string[], bucket: "criteria" | "pr
   assertLoaderTiming(patterns.join(" "));
   const root = process.cwd();
   const compiled = compilePatterns(patterns);
-  const matched = new Set<string>();
-  for (const base of enumerationBases(compiled)) {
-    await collectCriteria(root, base, compiled, matched);
-  }
-  const relativePaths = [...matched].sort();
+  const relativePaths = expandLoaderPatterns(root, compiled);
   // 逐条 include pattern 判空,不是整次调用判空:三条 pattern 里搬走了一条对应的文件时,
   // 别的两条有命中会让整体放行,判据悄悄变窄——正是「该重跑的没重跑」那个方向。
   const missing = unmatchedIncludes(compiled, relativePaths);
@@ -336,57 +326,6 @@ async function registerGlobPatterns(patterns: string[], bucket: "criteria" | "pr
   }
   for (const path of relativePaths) registerCapturePath(bucket, resolve(root, path));
   return relativePaths;
-}
-
-/** 从一个枚举起点往下走,把命中 pattern 集的文件按项目根相对路径收进 out。 */
-async function collectCriteria(
-  root: string,
-  base: string,
-  compiled: readonly CompiledPattern[],
-  out: Set<string>,
-): Promise<void> {
-  // pattern 自己就指到根外(`../`、绝对路径)时在起点上先报,不用等枚举。
-  await assertInsideRoot(root, resolve(root, base), base || ".");
-  // 符号链接可以指回树内,realpath 去重防环。
-  const visited = new Set<string>();
-  const walk = async (dir: string): Promise<void> => {
-    const real = await realpath(dir).catch(() => undefined);
-    if (real === undefined || visited.has(real)) return;
-    visited.add(real);
-    // 起点不存在 / 不是目录时不在这里报:交给「匹配集为空」统一给下一步。
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
-    if (entries === undefined) return;
-    for (const entry of entries) {
-      const absolute = join(dir, entry.name);
-      let isDirectory = entry.isDirectory();
-      let isFile = entry.isFile();
-      if (entry.isSymbolicLink()) {
-        const target = await stat(absolute).catch(() => undefined);
-        if (target === undefined) continue; // 断链按不存在处理
-        isDirectory = target.isDirectory();
-        isFile = target.isFile();
-      }
-      if (isDirectory) {
-        await walk(absolute);
-        continue;
-      }
-      if (!isFile) continue;
-      const relativePath = relative(root, absolute).split(sep).join("/");
-      if (!includedByPatterns(relativePath, compiled)) continue;
-      await assertInsideRoot(root, absolute, relativePath);
-      out.add(relativePath);
-    }
-  };
-  await walk(resolve(root, base));
-}
-
-async function assertInsideRoot(root: string, absolute: string, shown: string): Promise<void> {
-  const real = await realpath(absolute).catch(() => absolute);
-  if (real !== root && !real.startsWith(`${root}${sep}`)) {
-    throw new Error(
-      `loadCriteria matched "${shown}", which lands outside the project root (it resolves to ${real}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root ${root}, or exclude that link with a \`!\` pattern.`,
-    );
-  }
 }
 
 /**

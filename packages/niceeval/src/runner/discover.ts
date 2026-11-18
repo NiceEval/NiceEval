@@ -7,7 +7,7 @@
 // Discovery is the only boundary where executable modules enter the typed runner.
 // Dynamic imports are decoded immediately; every later stage receives branded, immutable definitions.
 
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Data, Effect, Option, Schema } from "effect";
@@ -49,8 +49,10 @@ import type {
 import { defineEvalForContext } from "../define.ts";
 import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 import { digestOf } from "../sandbox/identity.ts";
-import { ProjectModuleGraph, attachEvalModules, evalModules } from "./module-graph.ts";
-import { normalizedIdentity } from "./source-normalization.ts";
+import { ProjectModuleGraph, attachEvalModules, evalModules, rootedModuleIdentity } from "./module-graph.ts";
+import { parseSource, sourcePosition } from "./source-normalization.ts";
+import { DeclaredIdError, parseDeclaredId } from "./definition-id.ts";
+import { attachExperimentModules } from "./experiment-modules.ts";
 import { splitByEvaluationKind } from "./eval-selection.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
@@ -177,6 +179,53 @@ function causeMessage(cause: unknown): string {
 type DiscoveryModuleLoader = (file: string) => Promise<unknown>;
 
 const cachedModuleLoader: DiscoveryModuleLoader = importProjectModule;
+
+function declaredIdOfFile(file: string, root: string): Effect.Effect<string | undefined, DiscoveryError> {
+  const label = relative(root, file).split(sep).join("/");
+  return Effect.tryPromise({
+    try: () => readFile(file, "utf8"),
+    catch: (cause) => issue(label, "discovery.filesystem", causeMessage(cause), ["Make the entry readable."]),
+  }).pipe(
+    Effect.flatMap((source) =>
+      Effect.try({
+        try: () => parseDeclaredId(parseSource(file, source).program)?.id,
+        catch: (cause) => {
+          const position = cause instanceof DeclaredIdError ? sourcePosition(source, cause.start) : undefined;
+          return issue(
+            label,
+            "discovery.invalid-export",
+            `${position === undefined ? "" : `${label}:${position.line}:${position.column}: `}${causeMessage(cause)}`,
+            [
+              'Declare a stable ID with an independent export const id = "…" statement, or omit it to use the entry path.',
+            ],
+          );
+        },
+      }),
+    ),
+  );
+}
+
+function duplicateIdIssues(
+  entries: readonly { readonly id: string; readonly file: string }[],
+  root: string,
+  kind: "eval" | "experiment",
+): readonly DiscoveryIssue[] {
+  const byId = new Map<string, string[]>();
+  for (const { id, file } of entries) byId.set(id, [...(byId.get(id) ?? []), file]);
+  return [...byId].flatMap(([id, files]) =>
+    files.length < 2
+      ? []
+      : [
+          {
+            file: files.map((file) => relative(root, file).split(sep).join("/")).join(", "),
+            code: "discovery.duplicate-id" as const,
+            message: `Duplicate ${kind} id ${JSON.stringify(id)}: multiple entries map to the same id.`,
+            actions: ["Give each definition a unique declared ID or entry path."],
+            cause: undefined,
+          },
+        ],
+  );
+}
 
 function importModule(
   file: string,
@@ -328,22 +377,9 @@ function collectEvalEntries(evalsDir: string, root: string): Effect.Effect<reado
           kind: "file",
         };
       });
-      const byId = new Map<string, EvalEntry[]>();
-      for (const entry of entries) byId.set(entry.baseId, [...(byId.get(entry.baseId) ?? []), entry]);
-      const duplicates = [...byId.entries()].flatMap(([id, owners]) =>
-        owners.length < 2
-          ? []
-          : [
-              {
-                file: owners.map((owner) => relative(root, owner.file).split(sep).join("/")).join(", "),
-                code: "discovery.duplicate-id" as const,
-                message: `Duplicate eval id ${JSON.stringify(id)}: multiple entries map to the same id.`,
-                actions: ["Keep either the file entry or the folder entry for this id."],
-                cause: undefined,
-              },
-            ],
+      return collectAll(entries, (entry) =>
+        declaredIdOfFile(entry.file, root).pipe(Effect.map((id) => ({ ...entry, baseId: id ?? entry.baseId }))),
       );
-      return duplicates.length > 0 ? Effect.fail(discoveryError(duplicates)) : Effect.succeed(entries);
     }),
   );
 }
@@ -849,6 +885,14 @@ export function discoverEvals(
       enterLoaderDiscoveryHost();
       const entries = yield* collectEvalEntries(dir, root);
       const discoveredEntries = yield* collectAll(entries, (entry) => discoverEvalEntry(entry, root, load, graph));
+      const duplicateIssues = duplicateIdIssues(
+        discoveredEntries.flatMap((entry) =>
+          entry.evals.map((evalDef) => ({ id: evalDef.id, file: entry.sourcePath })),
+        ),
+        root,
+        "eval",
+      );
+      if (duplicateIssues.length > 0) return yield* Effect.fail(discoveryError(duplicateIssues));
       const evals = yield* propagateLoaderProvenance(discoveredEntries, root, graph);
       const [, leakErrors] = yield* Effect.partition(
         evals,
@@ -936,13 +980,12 @@ export function discoverEvals(
         });
         const groupSources = yield* Effect.try({
           try: () =>
-            groupProjection.modules.map(
-              (fact) =>
-                [
-                  relative(root, fact.path),
-                  fact.path === file ? normalizedIdentity(normalizeEvalGroupSource(fact.normalized)) : fact.identity,
-                ] as const,
-            ),
+            rootedModuleIdentity(groupProjection, {
+              role: "group",
+              normalize: (content, fact) =>
+                fact.path === groupProjection.entry ? normalizeEvalGroupSource(content) : content,
+              terminals: new Map(evals.map((evalDef) => [evalDef.sourcePath, evalDef.id])),
+            }),
           catch: (cause) =>
             issue(label, "discovery.source-capture-failed", causeMessage(cause), [
               "Make the Eval Group entry and its project-local helper modules readable.",
@@ -957,7 +1000,7 @@ export function discoverEvals(
           evalIds,
           layer: sandboxLayerDefinitionIdentity(module.default.sandbox),
           onUnavailable: module.default.onUnavailable,
-          sources: groupSources.map(([path, content]) => ({ path, content })),
+          sources: groupSources,
         });
         module.default.evals.forEach((definition, index) => {
           const matches = resolved[index]!;
@@ -1050,20 +1093,31 @@ function experimentIdOfFile(file: string, experimentsDir: string): string {
 function discoverExperimentFile(
   file: string,
   root: string,
-  experimentsDir: string,
-  load: DiscoveryModuleLoader = cachedModuleLoader,
+  id: string,
+  load: DiscoveryModuleLoader,
+  graph: ProjectModuleGraph,
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const fileLabel = relative(root, file).split(sep).join("/");
   return Effect.gen(function* () {
     const imported = yield* importModule(file, root, "experiment", load);
     const module = yield* decodeExperimentModule(imported, fileLabel);
     if (module.default === undefined) return [];
+    const projection = yield* Effect.try({
+      try: () => graph.capture(file),
+      catch: (cause) =>
+        issue(fileLabel, "discovery.source-capture-failed", causeMessage(cause), [
+          "Make the Experiment entry and its static project-local imports readable.",
+        ]),
+    });
     return [
-      discoverExperiment(module.default, {
-        id: experimentIdOfFile(file, experimentsDir),
-        baseDir: dirname(file),
-        sourcePath: file,
-      }),
+      attachExperimentModules(
+        discoverExperiment(module.default, {
+          id,
+          baseDir: dirname(file),
+          sourcePath: file,
+        }),
+        projection,
+      ),
     ];
   });
 }
@@ -1072,15 +1126,22 @@ export interface ExperimentDiscoveryOptions {
   readonly freshImport: boolean | undefined;
   readonly generation: FreshImportGeneration | undefined;
   /**
-   * Chooses the Experiments to load from every candidate id, which comes from
-   * the file path alone. Unselected files are never imported, so a broken or
+   * Chooses the Experiments to load from statically resolved candidate IDs
+   * and current physical paths. Unselected files are never imported, so a broken or
    * slow Experiment file cannot fail a command that targets another one.
    * Omit it to load every Experiment.
    */
-  readonly select: (ids: readonly string[]) => readonly string[];
+  readonly select: (ids: readonly string[], entries: readonly ExperimentEntryIdentity[]) => readonly string[];
+}
+
+export interface ExperimentEntryIdentity {
+  readonly id: string;
+  /** Relative to experiments/, with the entry suffix removed. */
+  readonly path: string;
 }
 
 export interface ExperimentDiscovery {
+  readonly entries: readonly ExperimentEntryIdentity[];
   readonly experiments: readonly DiscoveredExperiment[];
   /** Every Experiment id, including files that were not imported because they were not selected. */
   readonly experimentIds: readonly string[];
@@ -1099,35 +1160,56 @@ export function discoverExperimentSelection(
   },
 ): Effect.Effect<ExperimentDiscovery, DiscoveryError> {
   const dir = join(root, "experiments");
-  const discoverWith = (load: DiscoveryModuleLoader): Effect.Effect<ExperimentDiscovery, DiscoveryError> =>
+  const discoverWith = (
+    load: DiscoveryModuleLoader,
+    graph: ProjectModuleGraph,
+  ): Effect.Effect<ExperimentDiscovery, DiscoveryError> =>
     walkFiles(dir, root, (name) => name.endsWith(".ts") && !name.endsWith(".d.ts")).pipe(
-      Effect.flatMap((files) => {
-        const ids = files.map((file) => experimentIdOfFile(file, dir));
-        const chosen = new Set(options.select(ids));
-        const selectedFiles = files.filter((_, index) => chosen.has(ids[index]!));
+      Effect.flatMap((files) =>
+        collectAll(files, (file) =>
+          declaredIdOfFile(file, root).pipe(
+            Effect.map((declared) => ({
+              file,
+              path: experimentIdOfFile(file, dir),
+              id: declared ?? experimentIdOfFile(file, dir),
+            })),
+          ),
+        ),
+      ),
+      Effect.flatMap((entries) => {
+        const duplicates = duplicateIdIssues(entries, root, "experiment");
+        if (duplicates.length > 0) return Effect.fail(discoveryError(duplicates));
+        const ids = entries.map((entry) => entry.id);
+        const chosen = new Set(options.select(ids, entries));
+        const selectedEntries = entries.filter((entry) => chosen.has(entry.id));
         return Effect.partition(
-          selectedFiles,
-          (file) =>
-            discoverExperimentFile(file, root, dir, load).pipe(Effect.map((experiments) => ({ file, experiments }))),
+          selectedEntries,
+          ({ file, id }) =>
+            discoverExperimentFile(file, root, id, load, graph).pipe(
+              Effect.map((experiments) => ({ file, experiments })),
+            ),
           { concurrency: 1 },
         ).pipe(
           Effect.flatMap(([loaded, errors]) => {
             if (errors.length > 0) return Effect.fail(discoveryError(errors.flatMap((error) => error.issues)));
-            // A loaded file without a default export is not an Experiment; unloaded files keep their path id.
             const notExperiments = new Set(
               loaded.filter(({ experiments }) => experiments.length === 0).map(({ file }) => file),
             );
+            const candidates = entries.filter(({ file }) => !notExperiments.has(file));
             return Effect.succeed({
               experiments: loaded.flatMap(({ experiments }) => experiments),
-              experimentIds: files.flatMap((file, index) => (notExperiments.has(file) ? [] : [ids[index]!])),
+              experimentIds: candidates.map((entry) => entry.id),
+              entries: candidates.map(({ id, path }) => ({ id, path })),
             });
           }),
         );
       }),
     );
-  if (options.generation !== undefined) return discoverWith(options.generation.import);
-  if (!options.freshImport) return discoverWith(cachedModuleLoader);
-  return Effect.scoped(acquireFreshImportGeneration(root).pipe(Effect.flatMap((fresh) => discoverWith(fresh.import))));
+  if (options.generation !== undefined) return discoverWith(options.generation.import, options.generation.modules);
+  if (!options.freshImport) return discoverWith(cachedModuleLoader, new ProjectModuleGraph(root));
+  return Effect.scoped(
+    acquireFreshImportGeneration(root).pipe(Effect.flatMap((fresh) => discoverWith(fresh.import, fresh.modules))),
+  );
 }
 
 /** Loads every Experiment; use discoverExperimentSelection when a command targets only some. */

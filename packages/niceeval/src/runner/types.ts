@@ -1,3 +1,4 @@
+import type { ExperimentExecutionSource } from "./experiment-modules.ts";
 import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
 import type { ModelRoleSelection, ResolvedModelRoles, ModelRolesWire } from "../model-roles.ts";
 import type { SlotId } from "../record/model/identifiers.ts";
@@ -655,8 +656,8 @@ const EVAL_DEFINITION: unique symbol = Symbol("niceeval.evalDefinition");
 const EXPERIMENT_CONTRACT_DIAGNOSTIC: unique symbol = Symbol("niceeval.experimentContractDiagnostic");
 const EXPERIMENT_DEFINITION: unique symbol = Symbol("niceeval.experimentDefinition");
 
-type IdComesFromFilePath = {
-  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
+type IdComesFromEntry = {
+  readonly [EVAL_CONTRACT_DIAGNOSTIC]: "id comes from export const id in the entry module, or its file path";
 };
 
 type EvaluationKindComesFromFactory = {
@@ -667,8 +668,8 @@ type ConfigHashComesFromPlanning = {
   readonly [EVAL_CONTRACT_DIAGNOSTIC]: "configHash comes from run planning";
 };
 
-type ExperimentIdComesFromFilePath = {
-  readonly [EXPERIMENT_CONTRACT_DIAGNOSTIC]: "id comes from the file path";
+type ExperimentIdComesFromEntry = {
+  readonly [EXPERIMENT_CONTRACT_DIAGNOSTIC]: "id comes from export const id in the entry module, or its file path";
 };
 
 /** Eval 作者自行选择的字段；不包含路径、factory 和规划期事实。 */
@@ -708,7 +709,7 @@ export type EvalInput<Sandbox extends SandboxLayer | undefined = SandboxLayer | 
   "sandbox"
 > & {
   sandbox?: Sandbox | undefined;
-  id?: IdComesFromFilePath | undefined;
+  id?: IdComesFromEntry | undefined;
   evaluationKind?: EvaluationKindComesFromFactory | undefined;
   configHash?: ConfigHashComesFromPlanning | undefined;
   test(t: TestContext): EvalTestReturn;
@@ -720,7 +721,7 @@ export type ScoreEvalInput<Sandbox extends SandboxLayer | undefined = SandboxLay
   "sandbox"
 > & {
   sandbox?: Sandbox | undefined;
-  id?: IdComesFromFilePath | undefined;
+  id?: IdComesFromEntry | undefined;
   evaluationKind?: EvaluationKindComesFromFactory | undefined;
   configHash?: ConfigHashComesFromPlanning | undefined;
   test(t: ScoreTestContext): EvalTestReturn;
@@ -1049,7 +1050,7 @@ export interface ExperimentAuthorFields {
   after?: ExperimentHook | undefined;
 }
 
-/** 作者输入：id 只能由发现阶段从文件路径推导。 */
+/** 作者输入：id 由发现阶段读取入口的 export const id，缺省从文件路径推导。 */
 /** Infer only from the Adapter selection; flags cannot widen it. */
 type ExperimentFlagsParser<A extends Adapter> = A extends { readonly parseFlags: infer S extends AdapterFlagsParser }
   ? S
@@ -1070,7 +1071,7 @@ type ExperimentModelFields<A extends Adapter> = A extends { readonly kind: "cust
       | { readonly models?: never; readonly model?: string | undefined; readonly reasoningEffort?: string | undefined }
   : { readonly models?: never; readonly model?: string | undefined; readonly reasoningEffort?: string | undefined };
 
-/** Defines execution conditions for selected Evals; the Experiment ID comes from its file path rather than an authored id field. */
+/** Defines execution conditions for selected Evals; discovery reads export const id in the entry module, falling back to its file path. */
 export type ExperimentInput<A extends Adapter = Adapter> = Omit<
   ExperimentAuthorFields,
   "adapter" | "flags" | "models" | "model" | "reasoningEffort"
@@ -1078,7 +1079,7 @@ export type ExperimentInput<A extends Adapter = Adapter> = Omit<
   ExperimentModelFields<A> &
   ExperimentAdapterSelection<A> &
   ExperimentFlagsFields<NoInfer<A>> & {
-    id?: ExperimentIdComesFromFilePath | undefined;
+    id?: ExperimentIdComesFromEntry | undefined;
   };
 
 /** Factory 完成默认归一后的 Experiment 字段；无默认语义的 Hook 仍保持作者声明。 */
@@ -1305,6 +1306,7 @@ export interface AdapterRun {
   readonly experimentBaseDir: string;
   /** Experiment 定义文件路径；link 诊断来源。 */
   readonly experimentSourcePath: string;
+  readonly experimentExecutionSource?: ExperimentExecutionSource | undefined;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
   readonly description: string | undefined;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */

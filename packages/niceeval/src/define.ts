@@ -4,8 +4,8 @@ import type { Adapter } from "./adapter.ts";
 import { assertRequiredModelRoles, normalizeModelRoles } from "./model-roles.ts";
 import { parseAdapterFlags } from "./adapter-flags.ts";
 import { decodeExperimentFlags } from "./experiment/flags.ts";
-// 定义入口:把用户对象规格化成核心认得的形状。路径即身份 —— 这里禁止手写 id,
-// 由发现阶段从文件路径推导(见 runner/discover.ts)。
+// 定义入口:把用户对象规格化成核心认得的形状。options 禁止提供 id；
+// 发现阶段读取入口的 export const id，未声明时由文件路径推导(见 runner/discover.ts)。
 
 import type {
   DirectAgent,
@@ -259,7 +259,7 @@ export function makeDirectAgent(
   });
 }
 
-/** 会话型 eval(通过制:一个 eval 折叠成一分)。禁止提供 id —— 从路径推导。 */
+/** 会话型 eval(通过制:一个 eval 折叠成一分)。options 不接受 id；入口可用 export const id 固定 ID，缺省从路径推导。 */
 export function defineEval<const Sandbox extends SandboxLayer | undefined = undefined>(
   def: EvalInput<Sandbox>,
 ): EvalDefinition<"pass", TestContext, Sandbox> {
@@ -276,7 +276,7 @@ export function defineScoreEval<const Sandbox extends SandboxLayer | undefined =
   return defineEvalForContext("score", def);
 }
 
-/** 数据集评测(通过制:按数据行展开一批 eval)。禁止提供 id —— 从路径推导。 */
+/** 数据集评测(通过制:按数据行展开一批 eval)。options 不接受 id；入口可用 export const id 固定 ID，缺省从路径推导。 */
 export function defineDataset<TRow>(
   def: Omit<DatasetInput<TRow, "pass">, "evaluationKind">,
 ): DatasetDefinition<TRow, "pass"> {
@@ -292,7 +292,7 @@ export function defineDataset<TRow>(
   });
 }
 
-/** 计分制数据集评测(按数据行展开一批 score eval)。禁止提供 id —— 从路径推导。 */
+/** 计分制数据集评测(按数据行展开一批 score eval)。options 不接受 id；入口可用 export const id 固定 ID，缺省从路径推导。 */
 export function defineScoreDataset<TRow>(
   def: Omit<DatasetInput<TRow, "score">, "evaluationKind">,
 ): DatasetDefinition<TRow, "score"> {
@@ -340,7 +340,9 @@ export function defineEvalForContext<
 ): EvalDefinition<Kind, Context, Sandbox> {
   const factory = kind === "pass" ? "defineEval" : "defineScoreEval";
   if (Object.hasOwn(def, "id")) {
-    throw new Error(`${factory} does not accept id; ids are derived from file paths.`);
+    throw new Error(
+      `${factory} does not accept id; declare export const id = "…" in the entry module, or omit it to use the file path.`,
+    );
   }
   if (Object.hasOwn(def, "evaluationKind")) {
     throw new Error(`${factory} does not accept evaluationKind; it is always set to ${JSON.stringify(kind)}.`);
@@ -377,7 +379,9 @@ export function defineExperiment(
   );
   rejectRemovedField(def, "agent", "Use adapter to select the tested Agent or Adapter.");
   if (Object.hasOwn(def, "id")) {
-    throw new Error(`defineExperiment does not accept id; ids are derived from file paths.`);
+    throw new Error(
+      `defineExperiment does not accept id; declare export const id = "…" in the entry module, or omit it to use the file path.`,
+    );
   }
   const adapter = def.adapter;
   if (adapter?.kind !== "custom" && def.models !== undefined) {

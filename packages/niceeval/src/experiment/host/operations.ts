@@ -1,4 +1,5 @@
 import type { ExperimentHostRequirements } from "./requirements.ts";
+import { getExperimentExecutionSource } from "../../runner/experiment-modules.ts";
 import { resolve } from "node:path";
 import { decodeJsonValue } from "../../shared/json-value.ts";
 
@@ -33,7 +34,7 @@ import {
   type InvocationSummary,
   type SandboxBeforeCache,
 } from "../../runner/types.ts";
-import { evalPrefixPredicate, matchExperimentSelector } from "../../shared/aggregate.ts";
+import { evalPrefixPredicate, experimentOptionValues, matchExperimentSelector } from "../../shared/aggregate.ts";
 import { ExperimentEvaluationKindAdmissionError, ExperimentHostError, normalizeExperimentHostCause } from "./types.ts";
 import { assembleInvocationCompletion, foldInvocationEvalStats } from "./presentation.ts";
 import { firstLine, formatThrown } from "../../util.ts";
@@ -141,6 +142,7 @@ function closeOperation<A, E, R>(
 interface ClosedSelection {
   readonly evals: readonly DiscoveredEval[];
   readonly experimentIds: readonly string[];
+  readonly experimentEntries: readonly { readonly id: string; readonly path: string }[];
   readonly selections: readonly {
     readonly experiment: DiscoveredExperiment;
     readonly selectedEvalIds: readonly string[];
@@ -178,12 +180,17 @@ function selectionProblem(
   selected: ClosedSelection,
 ): ExperimentHostSelectionProblem | undefined {
   if (input.experimentIds !== undefined) {
-    const missing = input.experimentIds.find((id) => !selected.experimentIds.includes(id));
+    const missing = input.experimentIds.find(
+      (value) =>
+        !selected.experimentEntries.some(({ id, path }) =>
+          value.endsWith("/") ? path.startsWith(value) : id === value,
+        ),
+    );
     if (missing !== undefined) {
       return {
         status: "experiment-no-match" as const,
         selector: missing,
-        candidates: [...selected.experimentIds].sort(),
+        candidates: experimentOptionValues(selected.experimentEntries),
       };
     }
   }
@@ -191,7 +198,7 @@ function selectionProblem(
     return {
       status: "experiment-no-match" as const,
       selector: input.experimentSelector,
-      candidates: [...selected.experimentIds].sort(),
+      candidates: experimentOptionValues(selected.experimentEntries),
     };
   }
   const selectorEvalIds = [...new Set(selected.selections.flatMap((entry) => entry.selectorEvalIds))];
@@ -230,45 +237,47 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
         input.tag === undefined ? discovered : discovered.filter((definition) => definition.tags?.includes(input.tag!));
       const selectedIdsInput = input.experimentIds;
       const selectorInput = input.experimentSelector;
-      function select(ids: readonly string[]): readonly string[] {
-        if (selectedIdsInput !== undefined) return selectedIdsInput;
+      function select(
+        ids: readonly string[],
+        entries: readonly { readonly id: string; readonly path: string }[],
+      ): readonly string[] {
+        if (selectedIdsInput !== undefined) {
+          const matches = selectedIdsInput.map((value) =>
+            entries.filter(({ id, path }) => (value.endsWith("/") ? path.startsWith(value) : id === value)),
+          );
+          // A missing option rejects the entire selection before any Experiment import.
+          if (matches.some((group) => group.length === 0)) return [];
+          return [...new Set(matches.flat().map(({ id }) => id))];
+        }
         if (selectorInput === undefined) return ids;
-        return matchExperimentSelector(ids, selectorInput);
+        return matchExperimentSelector(ids, selectorInput, entries);
       }
-      const { experiments, experimentIds } = yield* discoverExperimentSelection(input.cwd, {
+      const { experiments, experimentIds, entries } = yield* discoverExperimentSelection(input.cwd, {
         freshImport: undefined,
         generation,
         select,
       });
-      function selectedExperimentIds() {
-        if (input.experimentIds !== undefined) return new Set(input.experimentIds);
-        if (input.experimentSelector !== undefined)
-          return new Set(matchExperimentSelector(experimentIds, input.experimentSelector));
-        return undefined;
-      }
-      const selectedIds = selectedExperimentIds();
-      const selections = experiments
-        .filter((experiment) => selectedIds === undefined || selectedIds.has(experiment.id))
-        .map((experiment) => {
-          const selection = resolveExperimentEvals({
-            experimentId: experiment.id,
-            models: experiment.models,
-            tag: input.tag,
-            selector: experiment.evals,
-            cliPatterns: input.evalSelectors ?? [],
-            evals: discovered,
+      const selections = experiments.map((experiment) => {
+        const selection = resolveExperimentEvals({
+          experimentId: experiment.id,
+          models: experiment.models,
+          tag: input.tag,
+          selector: experiment.evals,
+          cliPatterns: input.evalSelectors ?? [],
+          evals: discovered,
 
-            validateModelRequirements: undefined,
-          });
-          return {
-            experiment,
-            selectedEvalIds: selection.selectedEvalIds,
-            selectorEvalIds: selection.selectorEvals.map((definition) => definition.id),
-          };
+          validateModelRequirements: undefined,
         });
+        return {
+          experiment,
+          selectedEvalIds: selection.selectedEvalIds,
+          selectorEvalIds: selection.selectorEvals.map((definition) => definition.id),
+        };
+      });
       return {
         evals,
         experimentIds,
+        experimentEntries: entries,
         selections,
       };
     });
@@ -351,6 +360,7 @@ function agentRunFromExperiment(
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
+    experimentExecutionSource: getExperimentExecutionSource(experiment),
     description: experiment.description,
     labels: experiment.labels,
     maxConcurrency: experiment.maxConcurrency,

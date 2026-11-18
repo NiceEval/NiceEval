@@ -24,7 +24,7 @@ import { configIdentityPaths, configIdentityForRun, type ConfigIdentity } from "
 import { adapterIdentity } from "../adapter.ts";
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
-import { ProjectModuleGraph, evalModules } from "./module-graph.ts";
+import { ProjectModuleGraph, evalModules, rootedModuleIdentity } from "./module-graph.ts";
 
 /** Files that participate in a fingerprint are an explicit planning boundary. */
 export class FingerprintFileError extends Data.TaggedError("FingerprintFileError")<{
@@ -155,7 +155,11 @@ function fingerprintPreparedPair(
       ));
     const normalized = closure.modules.map((fact) => [relative(process.cwd(), fact.path), fact.normalized] as const);
     const source = closure.modules.map((fact) => [relative(process.cwd(), fact.path), fact.identity] as const);
-    // Opt-in only: ordinary Eval identity payloads remain byte-for-byte unchanged.
+    const sourceGraph = yield* Effect.try({
+      try: () => rootedModuleIdentity(closure, { role: "eval" }),
+      catch: (cause) => fingerprintFileError("hash", evalDef.sourcePath, cause),
+    });
+    // Capability-specific runtime identities follow the participating source.
     const selectsAgentJudge = normalized.some(([, content]) => /\bagentJudge\s*\(/u.test(content));
     if (
       selectsAgentJudge &&
@@ -183,26 +187,42 @@ function fingerprintPreparedPair(
     const loaderData = yield* Effect.forEach(
       [...(evalDef.loaderDataPaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
-        Effect.map(cachedRead(path, sourceCache), (content) => [relative(process.cwd(), path), content] as const),
+        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
-    // 判据树(loadCriteria 登记)进的是「项目根相对路径 × 内容流式哈希」对:内容从不进内存,
-    // 权限位与 mtime 不参与,所以重新 clone 一份工作树不作废。增删文件与改一字节同等作废——
-    // 前者改的是这张对表的成员,后者改的是某一项的哈希。
+    // Audit keeps the registered project-relative names and raw-byte digests.
+    // Statically proven locator-only names are removed from identity below.
     const criteria = yield* Effect.forEach(
       [...(evalDef.criteriaPaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
         Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
-    // private 与 criteria 同口径(路径 × 流式内容哈希),分键存放——混进 criteria 会让
-    // 「只改 private」与「只改 verifier」在指纹上无法区分,也让存量无 private 的结果一次性作废。
+    // Private inputs retain their separate role and their leak-gate paths.
     const privateFiles = yield* Effect.forEach(
       [...(evalDef.privatePaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
         Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
       { concurrency: "unbounded" },
     );
+    // A static locator's bytes and read position already belong to the frozen
+    // module graph. Keep its real path in the audit manifest only. Unproven
+    // registrations, including changed bytes, retain their conservative keys.
+    const covered = {
+      data: new Map<string, string>(),
+      criteria: new Map<string, string>(),
+      private: new Map<string, string>(),
+    };
+    for (const fact of closure.modules) {
+      for (const input of fact.managedInputs ?? []) {
+        if (input.kind === "content" || input.kind === "transfer") continue;
+        for (const [path, digest] of input.contentDigests)
+          covered[input.kind].set(relative(process.cwd(), path), digest);
+      }
+    }
+    const loaderIdentity = loaderData.filter(([path, digest]) => covered.data.get(path) !== digest);
+    const criteriaIdentity = criteria.filter(([path, digest]) => covered.criteria.get(path) !== digest);
+    const privateIdentity = privateFiles.filter(([path, digest]) => covered.private.get(path) !== digest);
     const plugins = { pair: pair.plugin.pairProjection };
     const niceeval = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
@@ -215,7 +235,8 @@ function fingerprintPreparedPair(
       plugins,
       configHash,
       pairPlan: pair.identity,
-      source,
+      source: sourceGraph,
+      ...(pair.run.experimentExecutionSource && { experimentSource: pair.run.experimentExecutionSource.digest }),
       eval: {
         id: evalDef.id,
         tags: evalDef.tags ?? [],
@@ -231,11 +252,11 @@ function fingerprintPreparedPair(
               },
             }),
       },
-      loaderData,
+      loaderData: loaderIdentity,
       // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
       // 一次性作废,而它们的判据面本来什么都没变。
-      ...(criteria.length > 0 ? { criteria } : {}),
-      ...(privateFiles.length > 0 ? { private: privateFiles } : {}),
+      ...(criteriaIdentity.length > 0 ? { criteria: criteriaIdentity } : {}),
+      ...(privateIdentity.length > 0 ? { private: privateIdentity } : {}),
     };
     // timeoutMs(evalDef / run 两处来源)刻意不入哈希:超时上限不改变「结果是什么」,只决定
     // 「等不等得到」,把它掺进指纹会让单纯调高上限也作废全部已完成结果。它由
@@ -248,12 +269,13 @@ function fingerprintPreparedPair(
         config: Object.fromEntries(configIdentityPaths(identity)),
         plan: pair.identity,
         plugins,
-        source: Object.fromEntries(source),
-        data: Object.fromEntries([
-          ...loaderData.map(([path, content]) => [path, hashText(content)]),
-          ...criteria,
-          ...privateFiles,
-        ]),
+        source: {
+          ...Object.fromEntries(source),
+          ...(pair.run.experimentExecutionSource && {
+            [relative(process.cwd(), pair.run.experimentSourcePath)]: pair.run.experimentExecutionSource.digest,
+          }),
+        },
+        data: Object.fromEntries([...loaderData, ...criteria, ...privateFiles]),
       }),
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });
@@ -503,6 +525,7 @@ export function planPreparedProjectTarget(
     }
     const watchInputs = new Set<string>();
     for (const pair of preparedPairs) {
+      for (const path of pair.run.experimentExecutionSource?.paths ?? []) watchInputs.add(resolve(path));
       watchInputs.add(resolve(pair.run.experimentSourcePath));
       watchInputs.add(resolve(pair.evalDef.sourcePath));
     }
@@ -547,10 +570,4 @@ function copyFingerprintInput<Value>(value: Value): Value {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((entry) => copyFingerprintInput(entry)) as Value;
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, copyFingerprintInput(child)])) as Value;
-}
-
-/** folder-local source 进指纹时只留纯数据面(brand 不参与)。 */
-/** 文本内容哈希:manifest 的源码面/数据面把「内容」换成「内容哈希」时用的唯一口径。 */
-function hashText(content: string): string {
-  return createHash("sha256").update(content).digest("hex");
 }

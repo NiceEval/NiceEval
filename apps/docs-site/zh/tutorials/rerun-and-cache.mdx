@@ -49,6 +49,18 @@ checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-it
 只改 Experiment 的 `description` 或 `labels` 不会让旧结果失效。评估用例的执行内容或实际依赖变化会让这道题重跑；
 普通注释、缩进与空行在规范化源码相同时不影响沿用。
 
+## 把评估或实验移到子目录
+
+例如，要把 `evals/refund.eval.ts` 移到 `evals/payments/refund.eval.ts`，先在文件顶部加一行：
+
+```ts
+export const id = "refund";
+```
+
+然后移动文件，修正里面的相对导入。假设原来用 `checkout` 实验跑这道题，执行 `pnpm exec niceeval exp checkout refund --dry`。看到 `reused` 和原来的结果 locator，就可以继续用那次结果。
+
+实验文件同理。把 `experiments/checkout.ts` 移到子目录或换个文件名时，在文件顶部写 `export const id = "checkout";`。如果复制文件是为了另做一组实验，给副本一个新的 ID。
+
 ## 控制重跑范围
 
 ```sh

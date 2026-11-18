@@ -37,20 +37,18 @@ export default defineEval({
 
 评估用例本身不声明用哪个 Agent，同一条评估用例可以在不同 Experiment 下跑不同 Agent。选哪个 Agent 是 Experiment 的字段，不由 CLI 临时覆盖。
 
-<Note>
-  不要手写 `id` 或 `name`。[NiceEval](https://niceeval.com/) 从文件路径推导 ID。
-</Note>
+## 评估用例的 ID
 
-## 路径即身份
-
-`evals/weather/brooklyn.eval.ts` 的 ID 是 `weather/brooklyn`。Experiment 名之后的位置参数按 ID 前缀过滤：
+默认情况下，`evals/weather/brooklyn.eval.ts` 的 ID 是 `weather/brooklyn`。Experiment 名之后的位置参数按 ID 前缀过滤：
 
 ```bash
 npx niceeval exp local weather
 npx niceeval exp local weather/brooklyn
 ```
 
-ID 跟着目录结构走，稳定又好读。过滤按字符串前缀匹配：`terminal-swe-bench` 也会命中 `terminal-swe-bench-astropy-1`，不要求后一个字符是 `/`。
+要移动或重命名这个文件，可以在文件顶部加一行 `export const id = "weather/brooklyn";`。移动后仍能用原 ID 运行这道题。
+
+过滤按字符串前缀匹配：`terminal-swe-bench` 也会命中 `terminal-swe-bench-astropy-1`，不要求后一个字符是 `/`。
 
 也可以用 `evals/weather/brooklyn/eval.ts` 声明同一个 ID。含 `eval.ts` 的目录是一道题的 case 目录，发现器在这里停止扫描子目录。子目录中的 `eval.ts`、`.eval.ts` 和 `.eval.tsx` 都作为资产保留，不会被导入为其它评估用例，因此可以直接放入完整的起始仓库。
 

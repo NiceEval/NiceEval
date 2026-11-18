@@ -9,7 +9,7 @@ export const ExactEvaluationParseOptions = Object.freeze({
   onExcessProperty: "error" as const,
 });
 
-/** A path-derived Eval or Experiment identity used only by planning code. */
+/** A declared or path-derived Eval or Experiment identity used only by planning code. */
 export const EvaluationRecordIdentitySchema = Schema.String.pipe(
   Schema.refine((value): value is string => value.length > 0 && !value.includes("\u0000"), {
     identifier: "EvaluationRecordIdentity",

@@ -25,7 +25,7 @@ export default defineEval({
 });
 ```
 
-- 文件路径决定 ID：`evals/billing/refund.eval.ts` 的 ID 是 `billing/refund`。支持 `.eval.ts`、`.eval.tsx`，以及目录入口 `eval.ts`、`eval.tsx`。
+- 默认按文件路径取 ID：`evals/billing/refund.eval.ts` 的 ID 是 `billing/refund`。支持 `.eval.ts`、`.eval.tsx`，以及目录入口 `eval.ts`、`eval.tsx`。
 - 目录入口使用目录路径作为 ID：`evals/billing/refund/eval.ts` 的 ID 也是 `billing/refund`。同一 ID 只能有一个入口；不要同时保留这个目录入口和 `refund.eval.ts`，否则发现阶段会报告 `discovery.duplicate-id`。
 - `description` 会显示在结果里，写成一句“这条用例验证什么”。
 - `tags` 用于按标签选择，例如 `niceeval exp local --tag billing`，Experiment 的 `evals` 函数也能读到它。

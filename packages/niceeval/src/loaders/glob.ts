@@ -2,6 +2,9 @@
 // 判据 pattern 用到的语法只有这几种(`**` 跨层、`*` / `?` 段内、`[...]` 字符类、`{a,b}` 分支),
 // 自带这一份比为它加一个 glob 运行时依赖划算(niceeval 的运行时依赖表里没有 glob 库)。
 
+import { readdirSync, realpathSync, statSync, type Dirent } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+
 /** 段里出现这些字符就不再是字面段,枚举起点到此为止。 */
 const MAGIC = /[*?[\]{}]/;
 
@@ -68,6 +71,62 @@ export function includedByPatterns(relativePath: string, compiled: readonly Comp
 export function enumerationBases(compiled: readonly CompiledPattern[]): string[] {
   const bases = [...new Set(compiled.filter((p) => !p.exclude).map((p) => p.base))].sort();
   return bases.filter((base, i) => !bases.some((other, j) => j !== i && isUnder(base, other)));
+}
+
+/** Discovery and static identity use the same selection and realpath checks. */
+export function expandLoaderPatterns(root: string, compiled: readonly CompiledPattern[]): string[] {
+  const physicalRoot = realpathSync(root);
+  const matched = new Set<string>();
+  const inside = (absolute: string, shown: string): void => {
+    let physical: string;
+    try {
+      physical = realpathSync(absolute);
+    } catch {
+      physical = absolute;
+    }
+    const path = relative(physicalRoot, physical);
+    if (path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path)) {
+      throw new Error(`Loader input ${JSON.stringify(shown)} resolves outside the project root ${root}`);
+    }
+  };
+  for (const base of enumerationBases(compiled)) {
+    inside(resolve(root, base), base || ".");
+    const visited = new Set<string>();
+    const walk = (directory: string): void => {
+      let entries: Dirent[];
+      try {
+        const physical = realpathSync(directory);
+        if (visited.has(physical)) return;
+        visited.add(physical);
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const absolute = join(directory, entry.name);
+        let directoryEntry = entry.isDirectory();
+        let fileEntry = entry.isFile();
+        if (entry.isSymbolicLink()) {
+          try {
+            const target = statSync(absolute);
+            directoryEntry = target.isDirectory();
+            fileEntry = target.isFile();
+          } catch {
+            continue;
+          }
+        }
+        if (directoryEntry) walk(absolute);
+        else if (fileEntry) {
+          const path = relative(root, absolute).split(sep).join("/");
+          if (!includedByPatterns(path, compiled)) continue;
+          inside(absolute, path);
+          matched.add(path);
+        }
+      }
+    };
+    walk(resolve(root, base));
+  }
+  return [...matched].sort();
 }
 
 function isUnder(candidate: string, ancestor: string): boolean {

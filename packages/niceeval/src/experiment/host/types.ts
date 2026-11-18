@@ -177,7 +177,7 @@ export class ExperimentHostError extends Data.TaggedError("ExperimentHostError")
 export interface ExperimentHostSelectionInput {
   readonly cwd: string;
   readonly experimentSelector?: string | undefined;
-  /** Non-empty exact Experiment ID set; mutually exclusive with experimentSelector. */
+  /** Non-empty set of exact Experiment IDs or trailing-slash physical directory prefixes; mutually exclusive with experimentSelector. */
   readonly experimentIds?: readonly string[] | undefined;
   readonly evalSelectors?: readonly string[] | undefined;
   readonly tag?: string | undefined;

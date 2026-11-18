@@ -200,7 +200,7 @@ export function prepareRunnerRecordReuse(
         const renameFingerprint = input.renameFingerprintsByKey?.get(key) ?? (() => undefined);
         const manifest = input.manifestsByKey?.get(key);
         slotsByKey.set(key, {
-          reuseEligibility: moduleReuseEligibility(evalDef),
+          reuseEligibility: moduleReuseEligibility(evalDef, run.experimentExecutionSource?.unresolved),
           identityManifest: manifest === undefined ? undefined : identityManifestEntry(evalDef.id, manifest),
           renameFingerprint,
           inputIdentity: {
@@ -340,7 +340,7 @@ export function targetForRunnerRecordRun(input: {
           reuseEligibility:
             input.planned.run.adapter?.kind === "custom" && input.planned.run.adapter.behaviorRevision === undefined
               ? { kind: "adapter-behavior-revision-required" }
-              : moduleReuseEligibility(entry.evalDef),
+              : entry.reuse.reuseEligibility,
         }) satisfies TargetSlot,
     ),
   };

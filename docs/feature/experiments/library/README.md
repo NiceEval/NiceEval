@@ -28,7 +28,7 @@ interface ExperimentHostSelectionInput {
 }
 ```
 
-`experimentSelector` 按单个 ID 或路径前缀选择；`experimentIds` 是非空的精确 ID 集合，两者互斥。
+`experimentSelector` 按单个 ID 或路径前缀选择；`experimentIds` 是非空的精确 ID 或尾斜杠物理目录前缀集合，两者互斥。目录按当前入口位置展开，任一值零命中则整次选择失败。
 精确集合去重后参与同一次 Invocation planning；缺少任一 ID 就拒绝运行。省略两者选择全部 Experiment。
 
 默认当前结果使用固定 `project.get`。Experiment Host 只提供一次求值后冻结的当前目标与适用性输入，

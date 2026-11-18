@@ -21,7 +21,7 @@ export default defineEval({
 ```
 
 <Note>
-  不要提供 `id` 或 `name`。NiceEval 根据文件路径生成评估用例 ID。
+  默认 ID 来自文件路径。想在移动文件时保留原 ID，可在文件顶层写 `export const id = "weather/brooklyn";`。`defineEval({...})` 的选项里无需填写 ID。
 </Note>
 
 ## `defineEval` 选项

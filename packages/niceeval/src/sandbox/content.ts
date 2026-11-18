@@ -23,6 +23,7 @@ import { directoryEntryIgnored, directoryIgnoreRules, type DirectoryIgnoreRule }
 const REGISTERED_SANDBOX_CONTENT: unique symbol = Symbol("niceeval.sandbox.content.registered");
 const REGISTERED_CONTENTS = new WeakSet<object>();
 const REGISTERED_CONTENT_LOCATORS = new WeakMap<object, { readonly path: string }>();
+const FROZEN_TRANSFER_SNAPSHOTS = new WeakMap<object, RegisteredSandboxContentSnapshot>();
 const STAGED_CONTENT_FILES = new WeakMap<
   object,
   { readonly path: string; readonly mode: number; readonly size: number }
@@ -245,6 +246,20 @@ export function isRegisteredSandboxContent(value: unknown): value is RegisteredS
   );
 }
 
+/** Private transfer boundary: retries consume these captured bytes, never a live locator. */
+export function frozenTransferContent(snapshot: RegisteredSandboxContentSnapshot): RegisteredSandboxContent {
+  if (snapshot.kind === "directory") {
+    snapshot.entries.forEach(Object.freeze);
+    Object.freeze(snapshot.entries);
+  }
+  Object.freeze(snapshot);
+  const content = { kind: snapshot.kind, digest: snapshot.digest } as RegisteredSandboxContent;
+  Object.defineProperty(content, REGISTERED_SANDBOX_CONTENT, { value: true });
+  REGISTERED_CONTENTS.add(content);
+  FROZEN_TRANSFER_SNAPSHOTS.set(content, snapshot);
+  return Object.freeze(content);
+}
+
 /**
  * 仅供后续 putContent transfer wrapper 使用，不从 niceeval/sandbox 公开。
  * 复读 live source、用将要上传的同一批字节复算 digest；变化在任何 Provider I/O 前失败。
@@ -255,6 +270,8 @@ export function registeredSandboxContentSnapshotOf(
   if (!isRegisteredSandboxContent(content)) {
     throw new TypeError("putContent requires a registerSandboxContent() handle");
   }
+  const frozen = FROZEN_TRANSFER_SNAPSHOTS.get(content);
+  if (frozen !== undefined) return frozen;
   const locator = REGISTERED_CONTENT_LOCATORS.get(content);
   if (locator === undefined) throw new TypeError("registered sandbox content is missing its private locator");
   let snapshot: RegisteredSandboxContentSnapshot;
