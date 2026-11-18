@@ -44,6 +44,7 @@ Assertions 与显式 skip 的 Verdict 读侧折叠；其它 Assertion 继续结�
 | `t.check(subject, match)` / `.orStop()` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `defineJudge(...)` / `t.judge(material, definition)` / `t.check(material, definition)` | [裁判评质量](judge-quality.md) |
 | `.score(points)` / `t.score(points)` | [Score Eval](rubric-points.md) |
+| 入口导出 `id` | [把评估或实验文件移到子目录](../../experiments/use-case/move-files.md) |
 | 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集](dataset-fanout.md) |
 | `t.sandbox.*` | [沙箱 coding 任务](sandbox-coding.md) |
 

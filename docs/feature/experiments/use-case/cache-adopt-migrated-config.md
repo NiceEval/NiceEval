@@ -62,7 +62,9 @@ Attempt 的 origin Run、Core outcome、Assertions 与 locator 都不变；Verdi
 
 ## 改名后承接已删除实验的结果
 
-实验定义从 `compare/old` 改为 `compare/new`，旧 Run 仍保留原来的名字。先从历史 Run 中选定一次完整结果，
+如果只想换个文件夹或文件名，见[把评估或实验文件移到子目录](move-files.md)。
+
+实验 ID 从 `compare/old` 改为 `compare/new`，旧 Run 仍保留原来的名字。先从历史 Run 中选定一次完整结果，
 再按[实验改名契约](../cli/rename.md)采用到当前目标；不必恢复旧文件，也不需要逐个输入 Attempt ID。
 
 ```sh

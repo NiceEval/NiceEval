@@ -68,7 +68,7 @@
 
 | 目标 | 用例 |
 |---|---|
-| 按目录让 Experiment 负责一族 Eval | [按路径前缀选择](selection-by-path-prefix.md) |
+| 选择同一 ID 前缀下的一族 Eval | [按 ID 前缀选择](selection-by-path-prefix.md) |
 | 按标签或运行时要求过滤 Eval | [按标签选择](selection-by-tags.md) |
 | 同一范围含两种题型 | [拆开混型评测](selection-split-eval-kinds.md) |
 | 在一次 CLI 调用中临时收窄并预览计划 | [选择器与 `--dry`](selection-dry-preview.md) |
@@ -112,6 +112,7 @@
 
 | 改了什么或想做什么 | 用例 |
 |---|---|
+| 想换个文件夹或文件名，继续用上次的结果 | [把评估或实验文件移到子目录](move-files.md) |
 | Eval、共享模块或数据集 | [修改评测源码](cache-modify-eval-source.md) |
 | flags、模型或裁判模型 | [修改运行条件](cache-modify-runtime-condition.md) |
 | labels、注释或格式 | [修改非运行元数据](cache-modify-non-runtime-metadata.md) |
