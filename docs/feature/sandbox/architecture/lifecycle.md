@@ -299,6 +299,10 @@ Sandbox Plugin fragment 与四类 owner 的 action 进入同一个 DAG，不创�
 | command cleanup / Agent teardown | 保留原结果并追加 cleanup 诊断;必要时退休复用周期 |
 | Provider finalizer | 使用独立于 Attempt 的有界 cleanup signal；失败写入 `sandbox-stop-failed` Case cleanup Observability diagnostic 并保留可重试/孤儿认领的资源所有权，不改写原始 Verdict |
 
+沙箱创建失败时，`show @<locator> timing` 将当时正在执行的创建阶段记为 `failed`。已经完成的阶段保留原结果。
+
+Instabox 准备失败时，`show @<locator> execution` 指明发生错误的操作，例如读取快照、分配机器、等待启动、查询机器状态、获取 SSH 授权或检查工作目录。超时保留在该操作的诊断中。同一分配请求重试后仍无法确认结果时，诊断同时说明分配状态未知及服务端删除期限。诊断使用固定操作名称，避免记录请求正文、凭据和服务端响应原文。
+
 ## 相关阅读
 
 - [Sandbox Layer](../library/layers.md) —— 作者声明、配对规则与 command identity。
