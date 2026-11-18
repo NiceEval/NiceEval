@@ -1,7 +1,7 @@
 ---
 title: "修改后只重跑受影响的评估"
 sidebarTitle: "重跑与沿用"
-description: "改了 prompt、评估用例或模型之后，用 --dry 看清哪些结果会沿用、哪些会重跑，再用 --rerun 和 accept 控制范围。"
+description: "移动或改名评估、实验文件时，保留原 ID 和执行输入就能沿用原本可用的结果。改了 prompt、判分或模型后，用 --dry 看哪些题要重跑。"
 ---
 
 你修好了 Agent 的一个工具调用 bug，想确认它真的修好了。一整套评估要跑一个小时、花几十美元，而这次改动只影响其中几道题。
@@ -49,9 +49,9 @@ checkout  cart/remove-item  gap 0:identity-mismatch: source:evals/cart/remove-it
 只改 Experiment 的 `description` 或 `labels` 不会让旧结果失效。评估用例的执行内容或实际依赖变化会让这道题重跑；
 普通注释、缩进与空行在规范化源码相同时不影响沿用。
 
-## 把评估或实验移到子目录
+## 移动或重命名评估、实验文件
 
-例如，要把 `evals/refund.eval.ts` 移到 `evals/payments/refund.eval.ts`，先在文件顶部加一行：
+默认 ID 来自文件路径。比如把 `evals/refund.eval.ts` 直接移到 `evals/payments/refund.eval.ts`，它的默认 ID 就会从 `refund` 变成 `payments/refund`。要让 NiceEval 继续认出原来那道题，在移动时把原 ID 写在文件顶层：
 
 ```ts
 export const id = "refund";
@@ -60,6 +60,8 @@ export const id = "refund";
 然后移动文件，修正里面的相对导入。假设原来用 `checkout` 实验跑这道题，执行 `pnpm exec niceeval exp checkout refund --dry`。看到 `reused` 和原来的结果 locator，就可以继续用那次结果。
 
 实验文件同理。把 `experiments/checkout.ts` 移到子目录或换个文件名时，在文件顶部写 `export const id = "checkout";`。如果复制文件是为了另做一组实验，给副本一个新的 ID。
+
+如果题目把 `import.meta.url` 发给 Agent，改名后 Agent 收到的内容也会变，这道题就要重跑。如果直接删除入口文件，当前项目里就没有这道题或这个实验了，已保存的历史结果仍可用 `niceeval show run:<run-id>` 查看。
 
 ## 控制重跑范围
 
