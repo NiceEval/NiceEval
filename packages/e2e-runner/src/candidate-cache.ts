@@ -16,9 +16,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parse } from "yaml";
 import { Effect } from "effect";
 import { acquireCandidatePackLock } from "./candidate-pack-lock.ts";
+import { parsePnpmLockfile } from "./pnpm-lockfile.ts";
 import { CandidatePackError, readCandidateTarball, type CandidateTarball } from "./injection.ts";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess } from "./owned-process.ts";
 import { regenerateBundledIndex } from "../../repo-tools/src/docs/reference-compiler.ts";
@@ -109,9 +109,10 @@ export const candidateInputDigest = (root: string) =>
       "packages/repo-tools/src/docs/generators.ts",
       "packages/repo-tools/src/docs/reference-compiler.ts",
       "packages/e2e-runner/src/candidate-cache.ts",
+      "packages/e2e-runner/src/pnpm-lockfile.ts",
     ])
       visit(path);
-    const lock = parse(readFileSync(join(root, "pnpm-lock.yaml"), "utf8")) as Lockfile;
+    const lock = parsePnpmLockfile(readFileSync(join(root, "pnpm-lock.yaml"), "utf8")) as Lockfile;
     const importer = lock.importers["packages/niceeval"];
     if (importer === undefined) throw new Error("lockfile has no NiceEval importer");
     const nodes = new Map<string, unknown>();

@@ -5,6 +5,7 @@ import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import * as FileSystem from "effect/FileSystem";
 import { Data, Effect, Scope } from "effect";
 import { parse } from "yaml";
+import { parsePnpmLockfile } from "./pnpm-lockfile.ts";
 import { assertContainedRealDirectory, lstatPath } from "./durable-path.ts";
 import { hasSuccessfulOwnedProcessResult, runOwnedProcess, type OwnedProcess } from "./owned-process.ts";
 
@@ -383,7 +384,7 @@ export const verifyTestkitDirectoryResolution = (
   | { readonly ok: false; readonly reason: string } => {
   let lockfile: unknown;
   try {
-    lockfile = parse(lockfileText);
+    lockfile = parsePnpmLockfile(lockfileText);
   } catch (cause) {
     return {
       ok: false,
