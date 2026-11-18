@@ -6,6 +6,18 @@ Agent、游戏和普通应用都属于评估对象。Adapter 提供对象自己�
 已安装项目中的原生 Eval 通过 [Config.evalRoots](sharing.md) 挂载。
 该页拥有 package/root/挂载前缀、安装身份与外部 import 契约；本地与外部 Eval 使用同一套定义和结果。
 
+## 定义入口的 ID
+
+Eval 和 Experiment 的入口模块都可以在默认导出旁声明一个稳定 ID。例如，`export const id = "weather/brooklyn";` 固定这道题的 ID。
+未声明时使用发现根内的相对路径，去掉入口后缀。已有定义可在移动前或同一次变更中声明原 ID。
+`defineEval`、`defineScoreEval` 和 `defineExperiment` 的 options 都不接受 `id`。
+
+发现器在执行模块前读取这条顶层命名导出。声明须直接使用字符串字面量。ID 由一个或多个以 `/` 连接的非空片段组成，拒绝 `.`、`..`、反斜线和控制字符。
+导出计算值或转导出 `id` 时，发现失败并指出文件和声明位置。项目内 Eval 与 Experiment 各自检查最终 ID 唯一性，冲突列出双方入口。
+
+一个 Eval 入口导出多题时，声明固定整组 ID 的前缀。对象继续追加业务 key，数组继续追加四位序号。外部 Eval 仍在最前面加消费项目的挂载前缀。
+声明 ID 的入口移动后保留原 ID。复制后要独立采样，为副本声明另一个 ID；若原件与副本同时声明同一 ID，发现失败。
+
 ## 自定义应用
 
 `defineAdapter` 从 `niceeval` 导出。作者在 `create(ctx)` 中返回一个普通对象，其字段与方法成为评估的 `t`。

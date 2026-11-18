@@ -256,14 +256,17 @@ Agent 的 `ctx.log(message)` 另行表示 timeout breadcrumb。它也更新 Huma
 
 要让运行失败，应抛出 typed error。要改变 Verdict，应形成 assertion 或 Judge 结果；error diagnostic 本身不改变 Verdict。
 
-## 路径表达身份、选择与实验组
+## 实验 ID 与目录选择
+
+下列文件使用默认 ID。
 
 ```text
 experiments/agents/codex/coding.ts   -> agents/codex/coding
 experiments/agents/claude/coding.ts  -> agents/claude/coding
 ```
 
-路径形成 `experimentId` 并支持前缀选择。第一段同时形成具名实验组；无目录段的根级 Experiment 形成单成员组。
+按[入口 ID 契约](../../eval/library/README.md#定义入口的-id)固定 ID 后，物理目录仍可用于 CLI 选择。实验组取最终 `experimentId` 的第一段，单段 ID 形成单成员组。
+例如将 ID 为 `compare/base` 的入口移入 `archive/`，精确 ID 与实验组仍为 `compare/base` 和 `named/compare`，目录选择器变为 `--experiment archive/`。
 
 ```ts
 type ExperimentGroupIdentity =

@@ -82,12 +82,11 @@ Eval before 由 planning 按输入编译为 physical-instance 或 attempt occurr
 本地路径或 URL 进入普通上传 API 时，Runner 自动写入 transfer manifest。
 文件身份、动态泄漏检查与携带规则见[本地测试文件](use-case/criteria-files.md)。
 
-**禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
-改名即改 id,不会腐烂。
+未声明 ID 时，`evals/weather/brooklyn.eval.ts` 得到 `weather/brooklyn`。需要在整理目录后沿用结果时，在入口模块固定这个 ID。声明、批量导出与重名规则见[定义入口的 ID](library/README.md#定义入口的-id)。
 
 ## 文件夹入口:一道题一个目录
 
-发现器接受两种入口；同一 id 两种入口并存时启动期报重名，不按扫描顺序替换：
+两种入口的默认 ID 相同。最终 ID 冲突时，发现器在启动期列出两个入口。
 
 ```text
 evals/foo.eval.ts       → eval id "foo"

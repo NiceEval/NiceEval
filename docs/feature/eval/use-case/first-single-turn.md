@@ -8,7 +8,7 @@
 
 ## 全流程
 
-1. 一个文件默认导出一个 `defineEval`，id 从路径推导，不手写：
+1. 一个文件默认导出一个 `defineEval`，本例使用路径派生的默认 ID：
 
    ```typescript
    // evals/weather/brooklyn.eval.ts → id: weather/brooklyn

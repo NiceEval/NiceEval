@@ -77,4 +77,4 @@
 ## 相关阅读
 
 - [CLI · 实验选择器怎样求值](../cli/README.md#实验选择器怎样求值) —— 三级选择规则与零命中反馈的单源。
-- [Library · 路径只表达身份与选择](../library/README.md#路径只表达身份与选择) —— 路径怎样形成 id,`evals` 怎样选题。
+- [Library · 实验 ID 与目录选择](../library/README.md#实验-id-与目录选择) —— ID 与物理目录怎样选择，`evals` 怎样选题。

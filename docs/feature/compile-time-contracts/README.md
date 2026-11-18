@@ -27,7 +27,7 @@ NiceEval 的 TypeScript 作者面同时包含作者声明、框架派生值和�
 | 事实 | owner | 校验位置 |
 |---|---|---|
 | 作者选择的 agent、page、字段和计算 | 作者输入 | TypeScript；运行时作无类型后备 |
-| 路径生成的 id、factory 生成的 `evaluationKind`、规划生成的 configHash | 发现器、factory、规划器 | 对应阶段构造，不回流到作者输入 |
+| 发现阶段确定的 id、factory 生成的 `evaluationKind`、规划生成的 configHash | 发现器、factory、规划器 | 对应阶段构造，不回流到作者输入 |
 | 文件是否存在、URL 是否可达、请求 options 的实际成员 | 运行时资源 | 运行时 |
 | JSON 行的真实结构、跨行一致性和数值关系 | 数据读取边界 | 运行时 |
 | 实际 Eval × Experiment 是否恰好一份 Sandbox template | discovery、selector 与 CLI filter 形成的配对 | 资源前 linker；`niceeval check` 与正常运行共用 |

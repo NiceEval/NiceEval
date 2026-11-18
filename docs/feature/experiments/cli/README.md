@@ -37,7 +37,8 @@ labels 以 `labels: cohort=baseline, size=3` 这样的摘要显示；没有标�
 
 精确 Experiment ID 优先。否则目录段精确匹配，最后一段允许前缀匹配。Experiment 零命中与 Eval 零命中都是具名错误，不降级为空 Invocation。
 
-Experiment ID 由文件路径推出，选择先于加载：给了 Experiment selector 的命令只 import 命中的文件。
+发现器静态读取[入口声明](../../eval/library/README.md#定义入口的-id)，未声明时从路径推导 ID。先检查静态入口 ID 冲突，再选择并 import 命中的 Experiment。
+精确匹配使用最终 ID；目录匹配和文件名前缀匹配使用当前物理位置。`--experiment dir/` 始终只按物理目录选择。
 未选中的文件不求值，它在加载期抛错或访问网络都不影响本次命令；选中文件的加载失败照常报错。省略 selector 时加载全部。
 
 ### `--dry`

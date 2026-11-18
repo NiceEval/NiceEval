@@ -291,7 +291,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 diff 采集：
    对支持 Eval 替换的字段按 CLI → experiment → eval → `niceeval.config.ts` → 默认值求值。
    不支持 Eval 替换的字段按各自专题声明的层级求值；见[配置与凭据的边界](#配置从代码来凭据从进程变量来)。
 2. **发现。**
-   扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
+   收集 Eval 入口，按[入口 ID 规则](feature/eval/library/README.md#定义入口的-id)展开并检查唯一性，再按 ID 前缀与 `--tag` 筛选。
 3. **由 Experiment Host 建立运行。**
    CLI 调用 `experimentHost.invocation.plan()` 或 `experimentHost.invocation.run()`。Host 计算带 domain 的
    input/config identity，并在其实现内通过内部 Run capability 提交 Invocation start transaction。

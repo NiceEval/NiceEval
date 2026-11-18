@@ -59,7 +59,7 @@ Member 将两者关联；历史结果沿用时，新的 Run 引用既有 Attempt
 
 ## Eval {#eval}
 
-一个 Task 跑在接口相容的 Adapter 上，由已登记的 Assertion 评判；id 从文件路径推导
+一个 Task 跑在接口相容的 Adapter 上，由已登记的 Assertion 评判；ID 由入口声明或从文件路径推导
 
 契约：[Eval](feature/eval/README.md)
 
@@ -105,7 +105,7 @@ Member 将两者关联；历史结果沿用时，新的 Run 引用既有 Attempt
 
 ## 发现 {#discovery}
 
-扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名
+扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,采用入口声明或路径派生的 ID，同 ID 双入口报重名
 
 契约：[Eval](feature/eval/README.md)
 

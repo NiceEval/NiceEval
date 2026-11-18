@@ -13,7 +13,7 @@ Eval 拥有任务与判定，Adapter 拥有应用操作，Attempt 拥有一次�
   → 定位 dependency key、精确安装身份与 root
   → preflight 展示去凭据的安装身份
   → 本地与外部 root 分别扫描、装载、展开
-  → root 内相对 id 拼接消费项目挂载前缀
+  → 入口声明或相对路径给出基础 ID，展开行 key 后拼接消费项目挂载前缀
   → 合并检查最终 id 冲突
   → 逐 Eval 投影模块、数据、dependency 与 transfer 输入
   → 普通 Experiment 选择与执行
@@ -32,7 +32,7 @@ package locator 从消费项目直接 dependency key 取得安装目录，跟随
 它不执行 main，不依赖 package export，不扫描全局 cache，也不在缺包时联网。
 dependency alias 与 manifest name 分别保存，不能因名称不同拒绝合法 alias。
 
-每个根独立按普通入口规则装载并展开数组或 keyed record，相对 id 合法后才拼前缀。
+每个根独立按[入口 ID 契约](library/README.md#定义入口的-id)确定基础 ID，再装载并展开数组或 keyed record，相对 id 合法后才拼前缀。
 合并后检查最终 id；冲突列出双方文件、package、root 与挂载点，不能按根顺序替换。
 上游配置、Agent 与 Experiment 不参与发现，也不取得消费项目的生命周期。
 

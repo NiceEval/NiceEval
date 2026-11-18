@@ -25,14 +25,14 @@ export default defineEval({
 编辑器在 `id` 那一行给出：
 
 ```text
-Type 'string' is not assignable to type 'IdComesFromFilePath'.
+Type 'string' is not assignable to type 'IdComesFromDiscovery'.
 ```
 
-类型名就是修法：id 来自文件路径，删掉这一行。
+删掉 options 中的这一行即可使用默认 ID。要固定 ID，在入口模块单独导出它。
 `pnpm run typecheck` 给出同一条，带文件与列号：
 
 ```text
-evals/weather/brooklyn.eval.ts(2,3): error TS2322: Type 'string' is not assignable to type 'IdComesFromFilePath'.
+evals/weather/brooklyn.eval.ts(2,3): error TS2322: Type 'string' is not assignable to type 'IdComesFromDiscovery'.
 ```
 
 接着作者给实验挂 MCP server，把两种 transport 的字段写在了一起：
@@ -74,7 +74,7 @@ export default defineExperiment({ id: "codex", agent: "codex" });
 作者跑 `pnpm exec niceeval run weather --experiment legacy`，加载这个文件时中止：
 
 ```text
-defineExperiment 不接受 id —— id 由文件路径推导。
+defineExperiment 的 options 不接受 id；发现器从入口声明或文件路径取得它。
 ```
 
 同一类反馈还涵盖三种绕过类型的路径：`as` 断言、动态 `import()` 得到的对象、以及 JSON 里读来的数据。

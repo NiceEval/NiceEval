@@ -33,7 +33,7 @@ export default defineConfig({
 });
 ```
 
-外部 root 中的 `hello-world/eval.ts` 得到最终 id `terminal-bench/hello-world`。
+未声明入口 ID 时，外部 root 中的 `hello-world/eval.ts` 得到最终 id `terminal-bench/hello-world`。
 配置省略或为空时，只使用本地发现根。挂载只增加可发现的 Eval，实际运行范围仍由 Experiment 与 CLI 选择决定。
 
 | 输入 | 约束 |

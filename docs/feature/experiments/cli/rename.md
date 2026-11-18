@@ -1,6 +1,6 @@
 # 实验改名与明确采用
 
-Experiment ID 由 `experiments/` 下的路径决定。删除或改名只改变当前项目的实验集合；历史 Run 与 Attempt 保持可读。
+Experiment ID 改变时，旧 Run 与 Attempt 仍可读取。移动文件且保留 ID 时走普通沿用；本命令用于把选定 Run 采用到不同 ID。
 `niceeval exp rename` 把明确选择的历史 Run 采用到一个当前 Experiment。命令建立新的 Run，以 `accepted` reference Member 引用原 Attempt；不移动实验文件，也不复制或改写执行事实。
 
 ## 命令

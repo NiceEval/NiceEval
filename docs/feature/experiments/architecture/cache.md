@@ -175,7 +175,7 @@ type ExecutionReusePlanSlot = ReusePlanSlot | ExecutePlanSlot;
 
 ## project-target/v2 的 source barrier
 
-对每个目标 `(experimentId, evalId, attemptOrdinal)`，只选择 cutoff 内包含该位置且未标记删除的最新 Run。
+对每个目标 `(experimentId, evalId, attemptOrdinal)`，使用发现器给出的最终 ID。文件移动且这两个 ID 均保持时，仍查同一位置；复制为新 ID 后从新位置开始独立采样。只选择 cutoff 内包含该位置且未标记删除的最新 Run。
 按 Run create 的 publication revision 排序，同一 publication 内以规范 `runId` bytes 打破并列；不按宿主时钟排序。
 选择依据是 expected Planned attempt，
 不要求已经有 Member，也不要求 Run 已终止。
@@ -217,6 +217,9 @@ Score 的 partial 或 unavailable 不能作为完整结果沿用；`scored` 不�
 fingerprint/config identity 由上游已求值 ProjectTarget 用来生成组合 execution identity；reuse planning 只比较 Core digest，不重新发现配置，也不把 digest 回填成两份 identity。凭据不进入 identity 或 manifest；Judge Provider 的 `apiKeyEnv` 只表示读取凭据的位置。`sharedState` 未声明时不在配置身份对象或 manifest 写键，因而保持既有 base config hash；声明、删除或变更 key 分别产生具名 `config:sharedState.key` added、removed、changed 差异。
 
 自动 `carried` 只沿用同一逻辑位置最新 source barrier 中、通过全部资格条件的 Attempt。
+移动后使用[源码身份](source-identity.md#移动源码时的执行指纹)重新求值。ID 和指纹相同即可按原资格沿用，目标 Run 引用原 locator，原 Sources 保留执行时的路径。
+同一摘要的其它 ID 或更早 Run 均不能填补当前位置。仅有旧算法产生的不同摘要时，按普通缺口处理，不从历史路径、Git rename 或相似文件重建身份。
+
 Eval sourceClosure、已登记的 Judge 数据或该配对的有效 Judge 配置变化，都会改变 execution identity 并形成 `identity-mismatch`。
 源码闭包与 Eval Group 共用[冻结模块图和规范化身份](source-identity.md)；普通注释和排版仅在规范化文本相同时沿用。
 Judge 的运行时 version/config 摘要只解释已完成的评价，不能证明尚未执行的定义未变。
@@ -254,7 +257,7 @@ root 用于定位输入，挂载前缀则通过最终 Eval id 影响逻辑身份
 普通 `uploadFile` / `uploadDirectory` 无需改写为共享 API。
 执行时通用 Sandbox wrapper 保存 owner-relative 文件集合、内容摘要、Sandbox 目标与 send 区间，形成 [transfer manifest](../../../concepts.md#transfer-manifest)，并核对实际 transfer 与静态 plan。
 
-后续计划必须同时证明定义输入未变、transfer plan 能在 owner 内完整重算且实际清单与 plan 一致。
+后续计划必须同时证明定义输入未变、transfer plan 能在 owner 内完整重算且实际清单与 plan 的执行输入一致。只用于在宿主定位的基目录作为审计路径；树内相对名、Sandbox 目标、内容与 send 区间均参与比较。
 内容、文件增删或匹配集变化都产生重跑；历史执行清单只提供审计与一致性证据，不能单独把任意动态路径变成安全 cache key。
 源码闭包变化后，旧依赖集合不证明完整性，须执行并产生新的清单。
 
@@ -279,7 +282,7 @@ digest 回答“是否相同”，identity manifest 回答“哪里不同”。
 
 Run 创建时把本 Run 全部 Eval 的 identity manifest 写入 Run 级固定 attachment `niceeval.identity-manifests`，
 写入后不可变。accept 与 rename 建立的 reference Run 同样写入当前目标的 manifest。
-它只解释差异，不参与 digest 相等判断，也不成为第二份资格事实。
+它只解释差异，不参与 digest 相等判断，也不成为第二份资格事实。仅审计路径改变且 digest 相同时，计划仍显示沿用。
 
 ```ts
 // family niceeval.identity-manifests，owner Run

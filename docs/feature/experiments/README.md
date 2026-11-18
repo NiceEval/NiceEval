@@ -21,8 +21,7 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 - **跨 agent / 跨配置对比是一等公民。**
   每个实验文件声明一个配置；固定 Inspection 在一个 `PublicationCutoff` 下比较同一实验组的已发布 Attempt，不在 View 打开时另选结果。
 
-实验文件改名会改变 `experimentId`。需要采用已有 Attempt 时，使用[实验改名与 Run 采用](cli/rename.md)建立 reference Member；其 Core `accepted` action 与精确引用就是可复核的采用事实。
-  目录组织源码、生成 id、支持 CLI 前缀选择，并且由第一段表达实验组。
+移动实验文件时，固定原 `experimentId` 即可保留其采样历史。改变 ID 会开启另一个实验身份；需要明确采用旧 Run 时使用[实验改名](cli/rename.md)。
 
 ## 实验组与可比边界
 
@@ -34,9 +33,9 @@ experiments/compare/nested/model.ts  -> Experiment compare/nested/model -> named
 experiments/smoke.ts                 -> Experiment smoke             -> singleton/smoke
 ```
 
-`named/<segment>` 取 `experimentId` 的第一段；更深的目录只组织成员。根级 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Inspection 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 的选择语义不扩张为运行后命令的 `--experiment` flag。
+`named/<segment>` 取 `experimentId` 的第一段；更深的 ID 分段只组织成员。单段 ID 的 Experiment 没有作者声明的同组成员，因此以 `singleton/<experimentId>` 形成自己的单成员组。两种 identity 是 Inspection 与机器输出中的判别联合，不成为另一套 CLI 参数；`niceeval exp foo` 的选择语义不扩张为运行后命令的 `--experiment` flag。
 
-目录就是作者声明的比较准入边界：同一组中的成员可以比较，Eval population 不同只表示命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Inspection 保留 evaluation kind、population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
+Experiment ID 的首段划定比较范围。同一组中的成员可以比较，Eval population 不同只表示命中范围不同，不能否决比较。每个成员的指标使用自己实际运行的 Eval 和自己的分母；未运行的 Eval 没有数据，不补零、不计为失败，也不自动收缩成共同交集。Inspection 保留 evaluation kind、population 与 basis，不把 Pass 和 raw Score 混成同一种排名。
 
 实验组由 Run 创建时冻结的 `experimentId` 派生。跨第一段改名后，目标 Run 属于新组，origin Attempt 仍保留自己的历史身份。
 
@@ -213,8 +212,7 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 需要更长 Sandbox 复用寿命时，在 template-bearing factory 的 options 里声明 `lifetimeMs`。
 两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/library/reuse.md#两种时间不能混用)。
 
-id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。
-任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library/README.md#路径只表达身份与选择)。
+选定 ID 后，CLI、Adapter 与 Run 都使用同一个 `experimentId`。默认值和目录选择见 [Library](library/README.md#实验-id-与目录选择)。
 
 ## 相关阅读
 
