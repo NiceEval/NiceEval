@@ -8,7 +8,10 @@ allowBuilds:
   protobufjs: false
   ssh2: false
 minimumReleaseAgeExclude:
-  - effect@4.1.3
+  - effect@4.1.4
+  - "@vitest/mocker@5.1.1"
+  - "@vitest/spy@5.1.1"
+  - vitest@5.1.1
 overrides:
   'dockerode@4>uuid': 11.1.1
   "undici@>=7.0.0 <7.30.1": 7.30.1

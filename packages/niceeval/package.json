@@ -136,7 +136,7 @@
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {
-    "effect": "4.1.3",
+    "effect": "4.1.4",
     "ignore": "7.0.14",
     "jiti": "2.7.0",
     "openai": "^7.53.0",
@@ -146,18 +146,18 @@
   },
   "devDependencies": {
     "@ai-sdk/otel": "^1.0.166",
-    "@alibaba-group/opensandbox": "1.2.0",
+    "@alibaba-group/opensandbox": "1.2.1",
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
-    "@effect/platform-node": "4.1.3",
-    "@effect/platform-node-shared": "4.1.3",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.301.1",
+    "@effect/platform-node": "4.1.4",
+    "@effect/platform-node-shared": "4.1.4",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.301.2",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
     "@playwright/test": "1.65.1",
     "@radix-ui/react-dialog": "1.3.1",
     "@standard-schema/spec": "1.1.0",
     "@tailwindcss/vite": "4.3.5",
-    "@tanstack/react-query": "^5.107.1",
+    "@tanstack/react-query": "^5.108.0",
     "@types/dockerode": "^4.0.2",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
@@ -171,7 +171,7 @@
     "concurrently": "^10.0.7",
     "dockerode": "^5.0.1",
     "e2b": "^2.63.0",
-    "effect": "4.1.3",
+    "effect": "4.1.4",
     "fast-check": "4.10.2",
     "husky": "^9.1.7",
     "i18next": "^27.0.1",
@@ -187,9 +187,9 @@
     "tailwindcss": "4.3.5",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "undici": "8.12.4",
-    "vite": "^8.3.7",
+    "vite": "^8.3.8",
     "vitest": "^5.1.1",
-    "ws": "8.22.2"
+    "ws": "8.23.0"
   },
   "peerDependencies": {
     "@ai-sdk/otel": ">=1.0.0",
