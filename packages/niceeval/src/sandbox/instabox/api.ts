@@ -115,8 +115,8 @@ export class InstaboxApi {
       let code = "invalid-error-response";
       try {
         code = Schema.decodeUnknownSync(ApiError)(await response.json()).error.code;
-      } catch {
-        /* Do not echo raw responses. */
+      } catch (cause) {
+        if (cause instanceof DOMException && cause.name === "TimeoutError") code = "error-body-timeout";
       }
       throw new InstaboxApiError(response.status, code);
     }
@@ -132,7 +132,8 @@ export class InstaboxApi {
     // Schema errors can include input fragments. Do not leak provider response values.
     try {
       return Schema.decodeUnknownSync(schema)(await response.json());
-    } catch {
+    } catch (cause) {
+      if (cause instanceof DOMException && (cause.name === "TimeoutError" || cause.name === "AbortError")) throw cause;
       throw new InstaboxProtocolError();
     }
   }

@@ -1192,7 +1192,14 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       };
                       const materialized = yield* Effect.acquireUseRelease(
                         provisioningPermit.acquire,
-                        () => acquireSandboxRunPlan(runtimeInput),
+                        () =>
+                          acquireSandboxRunPlan(runtimeInput).pipe(
+                            Effect.onExit((exit) =>
+                              Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
+                                ? Effect.sync(() => recorder.failCurrent())
+                                : Effect.void,
+                            ),
+                          ),
                         () => provisioningPermit.release,
                       );
                       // Keep the physical identity available if preparation fails.

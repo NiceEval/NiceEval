@@ -4,10 +4,10 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { cliE2E } from "./context.ts";
 
-// @issue docs/issues/instabox-preparation-timeout-operation.md
 // @feature docs/feature/sandbox/README.md
 test.concurrent.each([
   ["snapshot", /snapshot lookup/i],
+  ["snapshot-body", /snapshot lookup/i],
   ["allocation", /allocation could not be reconciled/i],
   ["grant", /SSH grant/i],
 ] as const)("show identifies a sandbox creation timeout during %s", async (stage, operation) => {
