@@ -11,6 +11,23 @@ minimumReleaseAgeExclude:
   - '@vitest/mocker@5.1.1'
   - '@vitest/spy@5.1.1'
   - vitest@5.1.1
+  - '@ai-sdk/gateway@4.0.149'
+  - '@ai-sdk/provider-utils@5.0.82'
+  - '@ai-sdk/provider@4.0.39'
+  - '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.327'
+  - '@anthropic-ai/claude-agent-sdk@0.3.327'
+  - '@anthropic-ai/sdk@1.10.0'
+  - '@openai/codex-sdk@0.170.0'
+  - '@openai/codex@0.170.0-darwin-arm64 || 0.170.0-darwin-x64 || 0.170.0-linux-arm64 || 0.170.0-linux-x64 || 0.170.0-win32-arm64 || 0.170.0-win32-x64 || 0.170.0'
+  - ai@7.0.176
+  - openai@7.59.0
 overrides:
   'hono@>=4.1.4 <4.13.16': 4.13.16
   '@hono/node-server@>=2.0.0 <2.1.6': 2.1.6

@@ -16,25 +16,25 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.310",
-    "@anthropic-ai/sdk": "0.116.0",
-    "@earendil-works/pi-agent-core": "0.82.1",
-    "@earendil-works/pi-ai": "0.82.1",
-    "@langchain/core": "1.2.5",
-    "@langchain/langgraph": "1.4.8",
-    "@langchain/protocol": "0.0.18",
+    "@anthropic-ai/claude-agent-sdk": "0.3.327",
+    "@anthropic-ai/sdk": "1.10.0",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@langchain/core": "1.4.1",
+    "@langchain/langgraph": "1.7.5",
+    "@langchain/protocol": "0.0.21",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@openai/codex-sdk": "0.147.0",
-    "ai": "7.0.30",
+    "@openai/codex-sdk": "0.170.0",
+    "ai": "7.0.176",
     "effect": "4.1.4",
-    "niceeval": "0.19.0",
-    "openai": "7.53.0",
-    "typebox": "1.1.38",
+    "niceeval": "0.21.0",
+    "openai": "7.59.0",
+    "typebox": "1.4.7",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "typescript": "5.7.2",
+    "typescript": "7.0.2",
     "vitest": "^5.1.1"
   }
 }

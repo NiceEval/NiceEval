@@ -64,7 +64,7 @@ anchor below.
 
 ## turnFromAiSdk deterministic
 
-Provenance is exact `ai@7.0.30` and `zod@4.4.3`.
+Provenance is exact `ai@7.0.176` and `zod@4.6.7`.
 
 The fixture uses the AI SDK's own `MockLanguageModelV4` test/model seam.
 
@@ -105,10 +105,10 @@ aggregate input as another bucket kills them too.
 
 ## Claude SDK stream deterministic
 
-Provenance is exact `@anthropic-ai/claude-agent-sdk@0.3.226`.
+Provenance is exact `@anthropic-ai/claude-agent-sdk@0.3.327`.
 
-Its locked peers are `@anthropic-ai/sdk@0.116.0` and
-`@modelcontextprotocol/sdk@1.30.0`.
+Its locked peers are `@anthropic-ai/sdk@1.10.0` and
+`@modelcontextprotocol/sdk@1.32.2`.
 
 The init frame uses `satisfies SDKSystemMessage`. The assistant frame uses
 `satisfies SDKAssistantMessage`.
@@ -151,7 +151,7 @@ assertion.
 
 ## Codex thread stream deterministic
 
-Provenance is exact `@openai/codex-sdk@0.147.0`.
+Provenance is exact `@openai/codex-sdk@0.170.0`.
 
 The completed fixture is `satisfies readonly ThreadEvent[]`.
 
@@ -204,8 +204,8 @@ Removing `turn.failed` kills the failed-status and terminal-error assertions.
 
 ## Pi Agent subscribe deterministic
 
-Provenance is exact `@earendil-works/pi-agent-core@0.82.1` and
-`@earendil-works/pi-ai@0.82.1`.
+Provenance is exact `@earendil-works/pi-agent-core@1.5.2` and
+`@earendil-works/pi-ai@1.5.2`.
 
 The fixture constructs the real `Agent`. It subscribes before `prompt()`.
 
@@ -228,8 +228,8 @@ terminal error kills a distinct Eval assertion.
 
 ## LangGraph core deterministic
 
-Provenance is exact `@langchain/langgraph@1.4.8`,
-`@langchain/core@1.2.5`, and `@langchain/protocol@0.0.18`.
+Provenance is exact `@langchain/langgraph@1.7.5`,
+`@langchain/core@1.4.1`, and `@langchain/protocol@0.0.21`.
 
 A real `StateGraph` runs through `streamEvents(..., { version: "v3" })`.
 Every raw runtime `ProtocolEvent` enters a fresh converter unchanged.
@@ -277,7 +277,7 @@ tool output and never duplicates the start event.
 
 ## OpenAI Chat Completion deterministic
 
-Provenance is exact `openai@6.49.0`.
+Provenance is exact `openai@7.59.0`.
 
 The official client uses an injected deterministic `fetch`. It performs
 exactly one `chat.completions.create()` call.
