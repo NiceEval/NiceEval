@@ -859,7 +859,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
       const testCleanup = makeTestCleanupRegistration(signal, (run) => {
         attemptCleanups.push({
           origin: "test",
-          label: "test(t)",
+          label: `eval:${evalDef.id} test(t)`,
           context: {
             phase: "before",
             evalGroup: evalGroupContext(evalDef),
@@ -881,6 +881,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           return Effect.forEach(
             [...attemptCleanups].reverse(),
             (cleanup) => {
+              scopedFeedback.progress({ message: `Running cleanup for ${cleanup.label}` });
               const startedAt = recorder.offsetNow();
               const node = recorder.child(
                 sandboxPrepareActivity({
@@ -904,7 +905,11 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 Effect.catch((error) =>
                   Effect.sync(() => {
                     if (node) node.failed = true;
-                    diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
+                    const diagnostic = teardownDiagnostic("sandbox.cleanup", error);
+                    diagnostics.push({
+                      ...diagnostic,
+                      detail: `Cleanup for ${cleanup.label} failed: ${diagnostic.detail}`,
+                    });
                     if (cleanup.origin === "layer") {
                       declareFailure("sandbox.cleanup", error);
                       recordSandboxCleanupFailure("sandbox.cleanup", error);

@@ -227,7 +227,7 @@ export default defineExperiment({
 
 需要跨进程恢复的资源由外部编排或 Hook 自己的持久坐标管理，不能把模块闭包当成 Record 事实。共享外部可变状态使用 Coordination 的 `sharedState.key` 协调；它不把同一 Record root 的多个 Invocation 变成一条队列。
 
-## 反馈入口
+## 生命周期代码怎样向这次运行反馈
 
 ```ts
 interface ScopedFeedback {
@@ -247,6 +247,8 @@ interface ScopedFeedback {
 ```
 
 `progress()` 是有界临时反馈，不进入 Record。`diagnostic()` 是作用域绑定的结构化反馈，不改变 Verdict。两者都不是通用持久化 writer，也不能定义 Attachment、family、schema、blob 或 migration。
+
+运行已登记的收尾时，Runner 在当前 Attempt 的 `sandbox.cleanup` 阶段更新进度。进度文案和 `teardown-failed` 诊断摘要都标明登记方：before 的 owner 与 declaration key，或 Eval 的 `test(t)`。
 
 Agent 的 `ctx.log(message)` 另行表示 timeout breadcrumb。它也更新 Human active 行，但最近若干条可能进入 timeout error。
 只应在运行中显示的 user message 与 tool input 必须使用 `progress()`，不能使用 `log()`。

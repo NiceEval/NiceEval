@@ -82,7 +82,7 @@
 ╰───────────────────────────────────────────────────────────────────────╯
 ```
 
-静态计划不执行 callback，因此不伪造 cleanup 节点、handle 或数量。实际调用 `context.onCleanup()` 后，运行反馈写入 `cleanup.registered`。后续事件是 `cleanup.started` 与 `cleanup.completed` / `cleanup.failed`，并关联登记它的 before、owner 与 declaration key。
+静态计划不执行 callback，因此不伪造 cleanup 节点、handle 或数量。经 `context.onCleanup()` 或 `t.onCleanup()` 登记的收尾不另设事件族：执行时以 progress 报告正在运行的收尾，失败写入 `teardown-failed` 诊断；两者都关联登记方（before 的 owner 与 declaration key，或 Eval 的 `test(t)`）。
 
 standalone after 的静态节点显示 `condition: this lifecycle has started`、`registration: when this lifecycle starts` 与 `cache: not saved`。动态 cleanup 后登记，因此先按 LIFO 执行；standalone after 随后按逆登记顺序执行，Provider finalizer 最后运行。
 

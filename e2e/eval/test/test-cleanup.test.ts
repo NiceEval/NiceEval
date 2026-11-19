@@ -23,6 +23,7 @@ test.concurrent("判定完成后按逆序释放评估与 before 登记的资源"
         sandbox: readLimitedSandbox.before((_, context) => {
           context.onCleanup((_, cleanup) => {
             appendFileSync("cleanup.log", Object.isFrozen(cleanup) ? "before cleanup\\n" : "mutable before cleanup\\n");
+            throw new Error("before cleanup fixture failed");
           });
         }),
         evals: ["test-cleanup"],
@@ -127,7 +128,17 @@ test.concurrent("判定完成后按逆序释放评估与 before 登记的资源"
       const trace = await inspectAttempt(niceeval, projectRoot, result.locator!, "attempt.trace");
       expect(trace.document.trace.diagnostics.items).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ code: "teardown-failed", summary: "cleanup fixture failed" }),
+          expect.objectContaining({
+            code: "teardown-failed",
+            phase: "attempt.after",
+            summary: "Cleanup for eval:test-cleanup test(t) failed: cleanup fixture failed",
+          }),
+          expect.objectContaining({
+            code: "teardown-failed",
+            phase: "attempt.after",
+            summary:
+              "Cleanup for experiment:test-cleanup/experiment:test-cleanup:before:0 failed: before cleanup fixture failed",
+          }),
         ]),
       );
     } finally {
