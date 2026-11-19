@@ -1,12 +1,16 @@
 # Feedback 与 Memory
 
-Research、Memory 和本地 Issue 使用 Concord 当前文档模型。Issue 的字段、关系、关闭与修复核验按 `concord --skill feedback`，Memory 按 `concord --skill memory`；精确参数以各命令 `--help` 为准。
+Research、Memory 和本地 Issue 使用 Concord 当前文档模型。Issue 的字段、关系与关闭按 `concord --skill feedback`，Memory 按 `concord --skill memory`；精确参数以各命令 `--help` 为准。
 
 ## Feedback
 
 本地观察的唯一 owner 是 `docs/issues/<id>.md`，`concord issue` 与 Concord 页面读取同一批文件。旧 `feedback/<id>/README.md` 已通过一次性移动迁出，不保留第二份 owner。`source` 仅保存实际 GitHub／Linear 远端 provenance 快照。
 
-关闭用 `concord issue close <id> --reason <text>`，修复缺陷用 `--fixed`。新公开工作项由 Issue 流程处理；本地创建、关闭或同步都不授权远端写入。
+关闭用 `concord issue close <id> --reason <text>`。新公开工作项由 Issue 流程处理；本地创建、关闭或同步都不授权远端写入。
+
+### 从问题观察到回归
+
+先用公开结果确认被违反的 Feature 性质。按 [Bug 修复](../testing/README.md#bug-修复)缩减操作序列，将反例保存到性质的 examples 或 spec 的 regressions，再修根因。Issue 记观察和修复结果，Memory 只保留可复用的根因或裁决。
 
 ### 远端接入
 
@@ -24,7 +28,7 @@ concord feedback connection add --id niceeval-github --provider github --owner N
 
 ## 检查
 
-运行 `concord check` 检查结构和关系。检查成功不等于原生 E2E 测试涉及范围或历史修复在当前工作区仍有效。
+运行 `concord check` 检查结构和关系。性质是否通过以实际运行结果为准。
 
 ## 迁移审计
 

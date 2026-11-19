@@ -1,7 +1,7 @@
 # 仓库文档追溯
 
-`concord list`、`concord show` 与 `concord test` 是 Feature、Use Case、E2E、Memory 与 Issue provenance 的日常查询入口。
-可运行能力包括 `concord list feature`、`concord show <id>` 与 `concord test list/show`；Issue 与 Memory 的关系由 `concord issue link` 与 `concord memory link` 写入，也可直接编辑。
+`concord list` 与 `concord show` 是 Feature、Use Case、Memory 与 Issue provenance 的日常查询入口。
+可运行能力包括 `concord list feature`、`concord show <id>`；Issue 与 Memory 的关系由 `concord issue link` 与 `concord memory link` 写入，也可直接编辑。
 
 Roadmap 与 Engineering 的结构写入走 Concord 基础 CLI，参数以各自 `--help` 为准：
 
@@ -19,18 +19,7 @@ Trace 的 `concord recover` 从各 owner 正向关系恢复 publication，不保
 
 ## 使用心智
 
-```text
-Feature / Use Case contract
-       ▲       ▲
-       │       ├── spec ─────── Issue ── root-cause ──► Memory
-       │       └── supports ── Memory
-       │ @feature / @use-case
-    E2E case ── @issue ───────► Issue
-```
-
-Feature 保存产品语义；测试声明保存到契约的关系，测试文件保存真实动作与 expected。
-Issue 保存待处理的观察及外部对象 provenance，Memory 保存可复用的调查经验。
-Trace 连接这些既有 owner，不度量测试涉及范围，也不把 Use Case 变成可执行规格。
+Feature 保存产品语义。Issue 的 `spec` 关系指向受影响契约，`root-cause` 指向调查经验。Memory 的 `supports` 关系指向其支持的契约。
 
 ## 文档身份与页面
 
@@ -53,22 +42,12 @@ README 写功能总览，Library 与 CLI 页写输入、可观察结果和错误
 
 每种关系只由正向 source 拥有。Concord 动态编译反向关系，不把 tests、实现或 Memory 列表回写到目标契约。
 
-- 测试声明的 `@feature` 或 `@use-case` 直接指向产品契约。
 - 源码声明的 `@concord-implements` 指向实现所兑现的 Spec 页面或 anchor。
 - Issue 与 Memory 在各自 frontmatter 的 `relations` 中保存指向 Spec 或调查材料的关系。
-- 普通 Markdown 链接用于阅读导航，不能代替测试或实现声明。
+- 普通 Markdown 链接用于阅读导航，不能代替实现声明。
 
 路径与 anchor 必须存在。移动文件会改变身份，相关引用随之更新；页面标题、正文或呈现变化不能自行制造新的契约关系。
 关系字段、目标种类与查询投影以 `concord --skill trace`、`concord --skill feedback` 和 `concord --skill memory` 为准。
-
-## E2E 与契约关联
-
-真实声明上方的 `@feature` 或 `@use-case` 直接指向仓库中的产品契约。
-现行性质按 [Feature 契约](../testing/README.md#写性质)定义。
-测试标题描述用户结果；工具从 native path、声明路径和标题派生引用，不要求手写 ID。
-
-可执行 inventory 与测试结果来自原生 runner；声明标记只关联契约，不代替真实执行结果。
-lane、areas 与 executor 来自 E2E Repo metadata。testing 文档中的结果说明只承担阅读导航，不中转测试关系。
 
 ## Feedback、Memory 与 Issue 分层
 
@@ -76,16 +55,13 @@ lane、areas 与 executor 来自 E2E Repo metadata。testing 文档中的结果�
 Issue 的 `relations` 用 `spec` 指向相关契约，用 `investigation` 或 `root-cause` 指向 Memory。
 Memory 的 `relations` 用 `supports` 指向它支持的 Spec。
 
-回归测试在真实声明旁用 `@issue` 关联待修复的 Issue；核验规则服从 `concord --skill fix`。
-历史事件或自由文本证明不能代替当前候选从公开入口获得的 E2E 红灯与绿灯。
+回归验证按[测试体系](../testing/README.md#bug-修复)保存公开入口的缩减反例。
 
 ## 查询命令
 
 ```sh
 concord list feature [--json]
 concord show <feature-id|repo-path> [--json]
-concord test list [--json]
-concord test show <reference> [--json]
 concord issue link <issue-id> <repo-ref> --role spec [--dry-run] [--json]
 concord issue unlink <issue-id> <repo-ref> --role spec [--dry-run] [--json]
 concord memory link <memory-id> <repo-ref> [--dry-run] [--json]
@@ -138,7 +114,7 @@ NiceEval 不复制一套锁、发布或恢复实现。
 ## Trace check 与 lint
 
 `concord check` 与 `concord trace check` 检查当前文档的放置、引用、重复、循环、术语与写作规则。
-`trace gaps` 只列出缺少显式 code/test 关系的契约，不证明测试涉及范围，也不发现从未建档的命令。
+用 `trace gaps` 查找缺少显式关系的契约；测试与性质的关系见[测试体系](../testing/README.md#可追溯)。
 这些命令不执行 NiceEval 测试。
 
 Concord 拥有文档语法 parse、关系推导、投影与 finding；NiceEval 统一用 `pnpm lint` 组合仓库检查。
@@ -154,16 +130,15 @@ selector 歧义、路径或 anchor 不存在、关系目标错误、并发输入
 
 ## 切换与验收
 
-文档身份、测试关系与采用动作遵守当前 Concord 模型。
+文档身份、关系与采用动作遵守当前 Concord 模型。
 迁移保留作者正文与历史证据；过时的身份字段不能成为第二套现行规则。
 
 验收至少包括：
 
 - `concord list feature` 输出的每个路径都能原样交给 `concord show`；
 - 页面种类与 Use Case 所属关系由路径派生，Spec、Roadmap 与 Design 无 frontmatter；
-- 每个测试声明直接关联一个契约，契约可由多个测试声明共同守护；
-- Issue、Memory 与测试的正向关系可动态反查，不另存反向登记表；
+- Issue 与 Memory 的正向关系可动态反查，不另存反向登记表；
 - 文档移动和删除后，全部有效引用仍能到达对应契约；
 - Design 裁决写入对应 Spec 并删除原页；
-- 历史证据保持原始语义，不能被当作当前候选的运行证明；
+- 历史证据保持原始语义，不能被当作当前运行的证明；
 - `concord --fresh check` 与 `pnpm lint` 通过。

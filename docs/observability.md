@@ -165,6 +165,16 @@ activity 保存稳定 phase、稳定 label、startOffsetMs、durationMs、可选
 `startOffsetMs + durationMs` 是 non-negative safe integer。raw epoch、OTLP span、span attribute 与
 provider 名称都不落盘。
 
+### 阶段耗时
+
+`attempt.timing` 读取对应 Attempt 已封存的 Runner activities，并按身份与 parent 还原阶段树。已观察到的开始偏移、持续时间、终态和可用的 Turn 或 telemetry 关联留在各自 source 中。不能识别的条目保留 limitation；读取不能按零补齐缺失阶段。
+
+主链按观察时序包含 Sandbox 排队与创建、准备、Agent ensure/setup、workspace baseline、Eval send/Judge、diff 与判定。Sandbox 排队与创建使用不同阶段，比较 Provider 创建时间时可以单独观察后者。Sibling 区间可以重叠，用开始偏移读取并行关系，不能把子阶段时长直接相加。
+
+主链耗时截至 Verdict。Agent teardown、Sandbox cleanup/stop 和 telemetry close 在后续单独计时，收尾失败由诊断及阶段终态表示。超时或取消时在中断点封口正在执行的阶段；无法可靠封口时，读取保留 partial 或 invalid。
+
+没有请求 timing 的 operation 不加载这项投影。损坏事实只影响依赖该 source 的读取。固定 operation 能通过关联身份组合 timing 与 telemetry，但封存后的 source 各自保有其事实与读状态。
+
 ### 用量与成本：token / 计费
 
 reported cost 是上游当时报告的单一有效金额。其它回执金额可以保存在 Adapter 原始附件中，但不进入通用成本聚合。

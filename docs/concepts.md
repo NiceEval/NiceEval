@@ -805,7 +805,7 @@ Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入
 
 一个生命周期阶段实际经过的时间，由 Attempt 时间树写入
 
-契约：[Benchmark](engineering/benchmark/README.md)
+契约：[阶段耗时](observability.md#阶段耗时)
 
 其它写法：`Phase duration`。
 
