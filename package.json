@@ -32,10 +32,13 @@
     "lint:format": "biome format ."
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "0.7.10",
     "@biomejs/biome": "2.6.8",
     "@playwright/test": "1.65.1",
     "@types/node": "^24.19.2",
     "concurrently": "^10.0.7",
+    "execa": "10.2.1",
+    "fast-check": "^4.10.3",
     "husky": "^9.1.7",
     "next": "16.4.6",
     "nx": "24.0.5",

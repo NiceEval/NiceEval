@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { configDefaults } from "vitest/config";
+import architectureReporter from "./test/architecture-reporter.ts";
 
 // unit 收集代码测试与 test/unit 下的仓库守护；Mint 构建与断链检查走 pnpm lint:docs-site。
 // include 按仓库根锚定，正式安装后 E2E 由独立 runner 执行，不属于默认 suite。
@@ -21,9 +22,29 @@ const EXCLUDE = [
 ];
 const UNIT_EXCLUDE = [...EXCLUDE, "packages/niceeval/src/**/*.docker.test.ts"];
 
+const LAYERS = "{integration,cli,process}";
+const CONDITIONS = ["docker", "linux", "live"] as const;
+const conditionedTests = (condition: string) => `test/${LAYERS}/**/*.${condition}.test.ts`;
+
 export default defineConfig({
   test: {
+    project: ["default", "unit"],
+    reporters: ["default", architectureReporter],
     projects: [
+      {
+        test: {
+          name: "default",
+          include: [`test/${LAYERS}/**/*.test.ts`],
+          exclude: [...EXCLUDE, ...CONDITIONS.map(conditionedTests)],
+        },
+      },
+      ...CONDITIONS.map((name) => ({
+        test: {
+          name,
+          include: [conditionedTests(name)],
+          exclude: EXCLUDE,
+        },
+      })),
       {
         test: {
           name: "unit",

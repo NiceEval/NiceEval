@@ -82,6 +82,7 @@ minimumReleaseAgeExclude:
   - vitest@5.1.1
   - '@tanstack/query-core@5.108.0'
   - '@tanstack/react-query@5.108.0'
+  - fast-check@4.10.3
 
 patchedDependencies:
   '@sentry/bundler-plugins@11.12.0': patches/@sentry__bundler-plugins@11.12.0.patch
