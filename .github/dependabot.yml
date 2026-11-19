@@ -37,7 +37,7 @@ updates:
 
   - package-ecosystem: "docker"
     directories:
-      - "/e2e/cli/fixtures/deliberate-error"
+      - "/e2e/cli-docker/fixtures/deliberate-error"
       - "/sandbox/docker"
     schedule:
       interval: "weekly"

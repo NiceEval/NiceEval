@@ -23,7 +23,7 @@
       "metadata": {
         "niceeval": {
           "candidate": "built",
-          "batch": "docker-2",
+          "batch": "host-cli",
           "areas": [
             "cli"
           ],
@@ -51,7 +51,6 @@
             "runtimes": [
               "node>=24"
             ],
-            "docker": true,
             "platforms": [
               "linux"
             ]

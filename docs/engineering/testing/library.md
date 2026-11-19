@@ -7,6 +7,11 @@ Testkit 不维护独立 Unit 套件。CLI、Runner、Report、Record、Package �
 进程、文件系统、artifact staging 与资源生命周期原语；同一原语不再配一套 fixture 自测。类型与构建错误由 `typecheck` 和 clean build 阻断，
 运行错误由最先使用它的真实场景收据或资源终态阻断。
 
+Testkit 与测试正文只用 Node 官方标准库（`fs`、`path`、`os`、`child_process`、`process`、`net` 等）实现宿主侧的进程、文件、路径与临时目录操作，跨平台由标准库自然成立。
+不按平台分支调用 `/proc`、`ps`、`script`、shell 脚本或 Python 来取证或操作，也不为某个平台自造适配；路径一律经 `fs.realpath` 等标准 API 归一，不比较拼写。
+标准库表达不了的能力不在 Testkit 里自造：优先改为从公开入口可观察的方式验证；被测对象本身就是平台专属行为时，该测试只放在声明了对应平台的 Repo，用最少的平台代码。
+Docker 或远端 Sandbox 内部执行的命令属于 Sandbox 的平台，不受本条约束。
+
 Testkit 的源码和身份都跟随当前 checkout。根 runner 直接把源码编译到本次
 invocation 的 scratch snapshot，再把该 snapshot 作为本地目录依赖只注入场景
 隔离副本。它不先变成 tarball，也不获得发布 artifact 或独立重新执行承诺。

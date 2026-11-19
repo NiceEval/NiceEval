@@ -160,6 +160,9 @@ check。asset 与 host capability 分开声明：前者是隔离 Repo 获得的�
 `requires.runtimes`、`docker`、`browsers`、`hostCapabilities`、platform 与 secret 在 test 前有结构化 preflight。
 `externalNetwork: true` 在 receipt 中写为“声明但未主动预检”。通用探测不能替代 Repo 自己拥有的 provider/network 行为。
 
+`requires` 对 Repo 内全部测试生效，所以它是测试中最严格要求的并集。只有少数测试需要 Docker、Linux 专属内核能力或外部服务时，把它们放进按要求划分的独立 Repo，其余测试声明为 `["linux", "darwin"]`；不能因为一个测试让整个 Repo 失去开发机平台。
+`platforms` 只写实际运行过并通过的平台；宿主侧只用 Node 官方标准库（见 [Testkit](../../library.md)），测试正文不按平台分支。
+
 同仓可信 PR 在 affected 集命中 live owner 时、main push 与 schedule 在完整 lane 中纳入这些 live Repo，并按 metadata 白名单注入已登记 secret；
 Fork 与 Dependabot 使用无密钥 lane。人工 workflow dispatch 通过 `live_providers` 明确选择是否纳入。
 显式 `--repo` 点名 live Repo 却同时排除 external network 属于配置错误，不能变成空计划假绿。

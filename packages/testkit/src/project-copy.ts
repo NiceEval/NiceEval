@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stageArtifacts, type ArtifactStageEntry } from "./artifact-staging.js";
@@ -45,7 +45,7 @@ async function removeCopy(root: string): Promise<void> {
 
 async function materializeCopy(options: ProjectCopyOptions): Promise<string> {
   const source = resolve(options.from);
-  const root = await mkdtemp(join(tmpdir(), options.prefix));
+  const root = await mkdtemp(join(await realpath(tmpdir()), options.prefix));
   const omit = new Set(options.omitTopLevel ?? []);
 
   try {

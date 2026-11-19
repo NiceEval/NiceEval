@@ -241,22 +241,23 @@ export const runEffect = (
         candidates.set(form, fixed ?? (yield* prepareCandidate(repoRootDir(), form).pipe(Effect.mapError(rootError))));
     }
     const candidateFor = (repo: import("./discovery.ts").DiscoveredRepo) => candidates.get(formFor(repo))!;
-    const scratch = yield* fs((service) => service.makeTempDirectory({ prefix: "niceeval-e2e-scratch-" }));
+    const declaredScratch = yield* fs((service) => service.makeTempDirectory({ prefix: "niceeval-e2e-scratch-" }));
+    let scratchSettled = false;
+    yield* Effect.addFinalizer(() =>
+      scratchSettled || options.keepWorkdir
+        ? Effect.void
+        : fs((service) => service.remove(declaredScratch, { recursive: true, force: true })).pipe(
+            Effect.asVoid,
+            Effect.catch(() => Effect.void),
+          ),
+    );
+    const scratch = yield* fs((service) => service.realPath(declaredScratch));
     const artifactRoot =
       options.artifactRoot === undefined
         ? yield* fs((service) => service.makeTempDirectory({ prefix: "niceeval-e2e-artifacts-" }))
         : resolve(options.artifactRoot);
     const durableRoot = yield* ensureRealDirectory(artifactRoot, "run durable artifact root").pipe(
       Effect.mapError(rootError),
-    );
-    let scratchSettled = false;
-    yield* Effect.addFinalizer(() =>
-      scratchSettled || options.keepWorkdir
-        ? Effect.void
-        : fs((service) => service.remove(scratch, { recursive: true, force: true })).pipe(
-            Effect.asVoid,
-            Effect.catch(() => Effect.void),
-          ),
     );
     for (const [form, candidate] of candidates) {
       if (form === "tarball")

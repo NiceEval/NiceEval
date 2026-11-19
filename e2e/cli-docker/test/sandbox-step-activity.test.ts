@@ -1,5 +1,5 @@
 // owner: docs/engineering/testing/architecture/e2e/cli.md#cli-sandbox-step-activity
-// rerun: pnpm e2e test --repo cli -- --run test/sandbox-step-activity.test.ts
+// rerun: pnpm e2e test --repo cli-docker -- --run test/sandbox-step-activity.test.ts
 
 import { withPty } from "@niceeval/testkit";
 import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";

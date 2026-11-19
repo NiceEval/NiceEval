@@ -66,6 +66,10 @@
       "root": "e2e/cli"
     },
     {
+      "id": "cli-docker",
+      "root": "e2e/cli-docker"
+    },
+    {
       "id": "eval",
       "root": "e2e/eval"
     },
@@ -212,6 +216,12 @@
       "e2e/adapter/sdk-converters/project.json",
       "e2e/adapter/sdk-converters/tsconfig.json",
       "e2e/adapter/sdk-converters/vitest.config.ts",
+      "e2e/cli-docker/package.json",
+      "e2e/cli-docker/pnpm-lock.yaml",
+      "e2e/cli-docker/pnpm-workspace.yaml",
+      "e2e/cli-docker/project.json",
+      "e2e/cli-docker/tsconfig.json",
+      "e2e/cli-docker/vitest.config.ts",
       "e2e/cli/package.json",
       "e2e/cli/pnpm-lock.yaml",
       "e2e/cli/pnpm-workspace.yaml",

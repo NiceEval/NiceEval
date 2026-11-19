@@ -1,4 +1,4 @@
-// rerun: pnpm e2e test --candidate source --repo cli -- --run test/sandbox-retain-native.test.ts
+// rerun: pnpm e2e test --candidate source --repo cli-docker -- --run test/sandbox-retain-native.test.ts
 import { command, withProcess, withPty } from "@niceeval/testkit";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";

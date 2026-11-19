@@ -192,7 +192,8 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
     Effect.gen(function* () {
       yield* acquireCandidatePackLock(root).pipe(Effect.mapError(failure));
       const inputDigest = yield* candidateInputDigest(root);
-      const cache = join(tmpdir(), "niceeval-e2e-candidates", hash(root), "v3", inputDigest);
+      const tempRoot = yield* io(() => realpathSync(tmpdir()));
+      const cache = join(tempRoot, "niceeval-e2e-candidates", hash(root), "v3", inputDigest);
       const built = join(cache, "package");
       const tarball = join(cache, "candidate.tgz");
       const complete = yield* io(() => {
