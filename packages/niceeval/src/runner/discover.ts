@@ -592,7 +592,7 @@ function discoverEvalEntry(
   const fileLabel = relative(root, entry.file).split(sep).join("/");
   return Effect.gen(function* () {
     const captured = yield* Effect.tryPromise({
-      try: () => captureLoadedFiles(() => load(entry.file), { entryPath: entry.file }),
+      try: () => captureLoadedFiles(() => load(entry.file), { root, entryPath: entry.file }),
       catch: (cause) =>
         issue(
           fileLabel,
@@ -1143,7 +1143,7 @@ function discoverExperimentFile(
   const fileLabel = relative(root, file).split(sep).join("/");
   return Effect.gen(function* () {
     const captured = yield* importModule(file, root, "experiment", () =>
-      captureLoadedFiles(() => load(file), { entryPath: file, allowPrivate: false }),
+      captureLoadedFiles(() => load(file), { root, entryPath: file, allowPrivate: false }),
     );
     rememberLoaderOrigins(load, captured.origins);
     const module = yield* decodeExperimentModule(captured.value, fileLabel);

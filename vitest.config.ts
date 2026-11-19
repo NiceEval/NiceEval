@@ -23,6 +23,12 @@ const EXCLUDE = [
 const UNIT_EXCLUDE = [...EXCLUDE, "packages/niceeval/src/**/*.docker.test.ts"];
 
 const LAYERS = "{integration,cli,process}";
+const SOURCE_EXEC_ARGV = [
+  "--conditions=niceeval-source",
+  ...(process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
+    ? ["--experimental-transform-types"]
+    : ["--require", "tsx/cjs"]),
+];
 const CONDITIONS = ["docker", "linux", "live"] as const;
 const conditionedTests = (condition: string) => `test/${LAYERS}/**/*.${condition}.test.ts`;
 
@@ -34,6 +40,7 @@ export default defineConfig({
       {
         test: {
           name: "default",
+          execArgv: SOURCE_EXEC_ARGV,
           include: [`test/${LAYERS}/**/*.test.ts`],
           exclude: [...EXCLUDE, ...CONDITIONS.map(conditionedTests)],
         },
@@ -41,6 +48,7 @@ export default defineConfig({
       ...CONDITIONS.map((name) => ({
         test: {
           name,
+          execArgv: SOURCE_EXEC_ARGV,
           include: [conditionedTests(name)],
           exclude: EXCLUDE,
         },

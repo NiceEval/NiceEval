@@ -20,6 +20,7 @@ import { compilePatterns, expandLoaderPatterns, unmatchedIncludes } from "./glob
  * 三格分开是因为指纹与泄题门口径不同。
  */
 interface LoaderCapture {
+  readonly root: string;
   readonly data: Set<string>;
   readonly criteria: Set<string>;
   readonly private: Set<string>;
@@ -102,7 +103,7 @@ function assertLoaderTiming(path: string): void {
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
-  options: { readonly entryPath?: string | undefined; readonly allowPrivate?: boolean } = {},
+  options: { readonly entryPath?: string | undefined; readonly allowPrivate?: boolean; readonly root?: string } = {},
 ): Promise<{
   value: T;
   paths: string[];
@@ -113,6 +114,7 @@ export async function captureLoadedFiles<T>(
 }> {
   enterLoaderDiscoveryHost();
   const capture: LoaderCapture = {
+    root: resolve(options.root ?? process.cwd()),
     data: new Set<string>(),
     criteria: new Set<string>(),
     private: new Set<string>(),
@@ -211,7 +213,8 @@ function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string):
 // URL 只认 `file:`。fileURLToPath 是 niceeval 内部实现,用户侧写 `new URL(p, import.meta.url)`
 // 就够,不需要 import node:url。
 function resolvedPath(path: string | URL): string {
-  const absolute = typeof path === "string" ? resolve(process.cwd(), path) : fromFileUrl(path);
+  const absolute =
+    typeof path === "string" ? resolve(activeLoaderCapture()?.root ?? process.cwd(), path) : fromFileUrl(path);
   assertLoaderTiming(String(path));
   registerCapturePath("data", absolute);
   return absolute;
@@ -307,7 +310,9 @@ function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
     );
   }
   const baseDir = dirname(fromFileUrl(pattern.relativeTo));
-  return relative(process.cwd(), resolve(baseDir, pattern.pattern)).split(sep).join("/");
+  return relative(activeLoaderCapture()?.root ?? process.cwd(), resolve(baseDir, pattern.pattern))
+    .split(sep)
+    .join("/");
 }
 
 /**
@@ -329,7 +334,7 @@ export async function loadPrivate(...patterns: string[]): Promise<string[]> {
 
 async function registerGlobPatterns(patterns: string[], bucket: "criteria" | "private"): Promise<string[]> {
   assertLoaderTiming(patterns.join(" "));
-  const root = process.cwd();
+  const root = activeLoaderCapture()?.root ?? process.cwd();
   const compiled = compilePatterns(patterns);
   const relativePaths = expandLoaderPatterns(root, compiled);
   // 逐条 include pattern 判空,不是整次调用判空:三条 pattern 里搬走了一条对应的文件时,

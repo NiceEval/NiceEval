@@ -1339,6 +1339,7 @@ export interface AdapterRun {
 export type AgentRun = AdapterRun;
 
 export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
+  readonly projectRoot: string;
   config: Config;
   evals: readonly DiscoveredEval[];
   agentRuns: readonly AgentRun[];

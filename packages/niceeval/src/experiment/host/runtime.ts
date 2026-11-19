@@ -233,6 +233,7 @@ function debug(
 
     const runs = selectedEvals.map((evalDef) => debugAgentRun(experiment, evalDef.id, input.config));
     const target = yield* planProjectTarget(listed.evals, runs, input.config.timeoutMs, {
+      cwd: input.cwd,
       configJudge: input.config.judgeProvider,
       keepSandbox: undefined,
     });

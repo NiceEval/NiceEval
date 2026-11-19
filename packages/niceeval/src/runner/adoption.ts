@@ -517,6 +517,7 @@ export function prepareCurrentAdoptionTarget(input: {
 
     const run = runForExperiment(experiment, selection.selectedEvalIds, input.project.config);
     const pairs = yield* prepareRunSandboxes(selection.selectedEvals, [run], input.project.planningServices, {
+      cwd: input.project.cwd,
       configTimeoutMs: input.project.config.timeoutMs,
 
       keepSandbox: undefined,
@@ -541,6 +542,7 @@ export function prepareCurrentAdoptionTarget(input: {
     const context = Result.isFailure(contextResult) ? yield* Effect.fail(contextResult.failure) : contextResult.success;
 
     const projectPlan = yield* planPreparedProjectTarget(pairs, {
+      cwd: input.project.cwd,
       configJudge: input.project.config.judgeProvider,
 
       keepSandbox: undefined,

@@ -49,6 +49,7 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
     });
     if (prepared.status !== "ready") return yield* Effect.fail(new Error(JSON.stringify(prepared.problem)));
     const planned = yield* planProjectTarget(prepared.selected.evals, prepared.runs, input.config.timeoutMs, {
+      cwd: input.cwd,
       configJudge: input.config.judgeProvider,
       keepSandbox: undefined,
     });
@@ -97,6 +98,7 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
     }
     // Re-read identity inputs without re-evaluating declarations or resources.
     const verified = yield* planPreparedProjectTarget([...planned.preparedPairsByKey.values()], {
+      cwd: input.cwd,
       configJudge: input.config.judgeProvider,
       keepSandbox: undefined,
       configTimeoutMs: input.config.timeoutMs,

@@ -89,6 +89,7 @@ export type SandboxRunPlanningError =
   | PluginLinkError;
 
 export interface SandboxRunPlanningOptions {
+  readonly cwd?: string;
   readonly keepSandbox: "failed" | "all" | undefined;
   readonly configTimeoutMs: number | undefined;
 }
@@ -130,6 +131,7 @@ function linkedOwnerKey(pair: LinkedSandboxLayerPair): string {
 export function linkRunSandboxes(
   evals: readonly DiscoveredEval[],
   runs: readonly AgentRun[],
+  cwd = process.cwd(),
 ): Effect.Effect<
   readonly LinkedRunPair[],
   | SandboxLayerLinkError
@@ -159,7 +161,7 @@ export function linkRunSandboxes(
   const pluginIssues: import("../plugin/link.ts").PluginLinkIssue[] = [];
   for (const sourceRun of runs) {
     try {
-      pluginRuns.set(sourceRun, preparePluginRun(sourceRun));
+      pluginRuns.set(sourceRun, preparePluginRun(sourceRun, cwd));
     } catch (error) {
       if (error instanceof PluginLinkError) pluginIssues.push(...error.issues);
       else throw error;
@@ -212,7 +214,7 @@ export function linkRunSandboxes(
       }
       let plugin: PluginPairLink;
       try {
-        plugin = linkPluginPair(evalDef, pluginRun);
+        plugin = linkPluginPair(evalDef, pluginRun, cwd);
       } catch (error) {
         if (error instanceof PluginLinkError) {
           pluginIssues.push(...error.issues);
@@ -404,7 +406,7 @@ export function prepareRunSandboxes(
       );
     }
   }
-  return Effect.flatMap(linkRunSandboxes(evals, runs), (linkedPairs) =>
+  return Effect.flatMap(linkRunSandboxes(evals, runs, options.cwd), (linkedPairs) =>
     Effect.flatMap(
       planLinkedRuns(
         linkedPairs.map(({ pair, authorBaseDirs, run, evalDef }) => ({

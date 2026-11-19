@@ -31,7 +31,7 @@ Ways to fix:
     });
     const capture = (load: () => Promise<{ default?: unknown }>) =>
       Effect.tryPromise({
-        try: () => captureLoadedFiles(load, { entryPath: path, allowPrivate: false }),
+        try: () => captureLoadedFiles(load, { root: cwd, entryPath: path, allowPrivate: false }),
         catch: (cause) => cause,
       });
     const {

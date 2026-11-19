@@ -3,9 +3,9 @@ import { agentJudgeIdentity, ordinaryJudgeIdentity, selectsOrdinaryJudge } from 
 // immutable input identities. Reuse is decided only by Frozen Record planning.
 
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { Data, Effect } from "effect";
 import { captureLinkedRunRenameFingerprintIdentity, liveSandboxPlanningServices } from "../sandbox/plan.ts";
 import type { DiscoveredEval, ResolvedJudgeConfig } from "../types.ts";
@@ -114,6 +114,7 @@ export function fingerprintWithManifest(
   pair: PreparedRunPair,
   sourceCache?: FingerprintSourceCache,
   projection: FingerprintProjection = currentFingerprintProjection(pair),
+  projectRoot = evalModules(pair.evalDef)?.root ?? dirname(pair.evalDef.sourcePath),
 ): Effect.Effect<
   {
     fingerprint: string;
@@ -122,10 +123,11 @@ export function fingerprintWithManifest(
   },
   FingerprintPlanningFailure
 > {
-  return fingerprintPreparedPair(pair, sourceCache, projection);
+  return fingerprintPreparedPair(pair, projectRoot, sourceCache, projection);
 }
 
 function fingerprintExperimentLoaderInputs(
+  projectRoot: string,
   source: AgentRun["experimentExecutionSource"],
   sourceCache: FingerprintSourceCache | undefined,
 ) {
@@ -143,7 +145,7 @@ function fingerprintExperimentLoaderInputs(
       Effect.map(cachedContentHash(file, sourceCache), (digest) => ({
         scope,
         kind,
-        path: relative(process.cwd(), file),
+        path: relative(projectRoot, file),
         digest,
         covered: scope === "experiment" && source?.managedInputDigests[kind].get(file) === digest,
       })),
@@ -153,6 +155,7 @@ function fingerprintExperimentLoaderInputs(
 
 function fingerprintPreparedPair(
   pair: PreparedRunPair,
+  projectRoot: string,
   sourceCache?: FingerprintSourceCache,
   projection: FingerprintProjection = currentFingerprintProjection(pair),
 ): Effect.Effect<
@@ -174,13 +177,12 @@ function fingerprintPreparedPair(
       evalModules(evalDef) ??
       (yield* Effect.flatMap(cachedRead(evalDef.sourcePath, sourceCache), (source) =>
         Effect.try({
-          try: () =>
-            new ProjectModuleGraph(process.cwd()).capture(evalDef.sourcePath, { source, stopPaths: undefined }),
+          try: () => new ProjectModuleGraph(projectRoot).capture(evalDef.sourcePath, { source, stopPaths: undefined }),
           catch: (cause) => fingerprintFileError("read", evalDef.sourcePath, cause),
         }),
       ));
-    const normalized = closure.modules.map((fact) => [relative(process.cwd(), fact.path), fact.normalized] as const);
-    const source = closure.modules.map((fact) => [relative(process.cwd(), fact.path), fact.identity] as const);
+    const normalized = closure.modules.map((fact) => [relative(projectRoot, fact.path), fact.normalized] as const);
+    const source = closure.modules.map((fact) => [relative(projectRoot, fact.path), fact.identity] as const);
     const sourceGraph = yield* Effect.try({
       try: () => rootedModuleIdentity(closure, { role: "eval" }),
       catch: (cause) => fingerprintFileError("hash", evalDef.sourcePath, cause),
@@ -203,7 +205,7 @@ function fingerprintPreparedPair(
       selectsAgentJudge || selectsSimulatedUser
         ? yield* Effect.sync(() => {
             try {
-              const runtime = resolvePiCodingAgent();
+              const runtime = resolvePiCodingAgent(projectRoot);
               return { piCodingAgent: runtime.codingVersion, piAi: runtime.aiVersion };
             } catch {
               return { piCodingAgent: "uninstalled", piAi: "uninstalled" };
@@ -213,7 +215,7 @@ function fingerprintPreparedPair(
     const loaderData = yield* Effect.forEach(
       [...(evalDef.loaderDataPaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
-        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
+        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(projectRoot, path), digest] as const),
       { concurrency: "unbounded" },
     );
     // Audit keeps the registered project-relative names and raw-byte digests.
@@ -221,14 +223,14 @@ function fingerprintPreparedPair(
     const criteria = yield* Effect.forEach(
       [...(evalDef.criteriaPaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
-        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
+        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(projectRoot, path), digest] as const),
       { concurrency: "unbounded" },
     );
     // Private inputs retain their separate role and their leak-gate paths.
     const privateFiles = yield* Effect.forEach(
       [...(evalDef.privatePaths ?? [])].sort(),
       (path): Effect.Effect<readonly [string, string], FingerprintFileError> =>
-        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(process.cwd(), path), digest] as const),
+        Effect.map(cachedContentHash(path, sourceCache), (digest) => [relative(projectRoot, path), digest] as const),
       { concurrency: "unbounded" },
     );
     // A static locator's bytes and read position already belong to the frozen
@@ -242,14 +244,14 @@ function fingerprintPreparedPair(
     for (const fact of closure.modules) {
       for (const input of fact.managedInputs ?? []) {
         if (input.kind === "content" || input.kind === "transfer") continue;
-        for (const [path, digest] of input.contentDigests)
-          covered[input.kind].set(relative(process.cwd(), path), digest);
+        for (const [path, digest] of input.contentDigests) covered[input.kind].set(relative(projectRoot, path), digest);
       }
     }
     const loaderIdentity = loaderData.filter(([path, digest]) => covered.data.get(path) !== digest);
     const criteriaIdentity = criteria.filter(([path, digest]) => covered.criteria.get(path) !== digest);
     const privateIdentity = privateFiles.filter(([path, digest]) => covered.private.get(path) !== digest);
     const experimentLoaderFiles = yield* fingerprintExperimentLoaderInputs(
+      projectRoot,
       pair.run.experimentExecutionSource,
       sourceCache,
     );
@@ -306,7 +308,7 @@ function fingerprintPreparedPair(
         source: {
           ...Object.fromEntries(source),
           ...(pair.run.experimentExecutionSource && {
-            [relative(process.cwd(), pair.run.experimentSourcePath)]: pair.run.experimentExecutionSource.digest,
+            [relative(projectRoot, pair.run.experimentSourcePath)]: pair.run.experimentExecutionSource.digest,
           }),
         },
         data: Object.fromEntries([
@@ -442,19 +444,18 @@ export interface ProjectTargetPlan {
 export function planProjectTarget(
   evals: readonly DiscoveredEval[],
   agentRuns: readonly AgentRun[],
-  configTimeoutMs?: number,
+  configTimeoutMs: number | undefined,
   options: {
+    readonly cwd: string;
     readonly configJudge: import("../judge/provider.ts").JudgeProvider | undefined;
     readonly keepSandbox: "failed" | "all" | undefined;
-  } = {
-    configJudge: undefined,
-    keepSandbox: undefined,
   },
 ): Effect.Effect<ProjectTargetPlan, SandboxRunPlanningError | FingerprintPlanningFailure> {
   return Effect.flatMap(
     prepareRunSandboxes(evals, agentRuns, liveSandboxPlanningServices(), {
       keepSandbox: options.keepSandbox,
       configTimeoutMs,
+      cwd: options.cwd,
     }),
     (preparedPairs) =>
       planPreparedProjectTarget(preparedPairs, {
@@ -472,12 +473,17 @@ export function planProjectTarget(
 export function planPreparedProjectTarget(
   preparedPairs: readonly PreparedRunPair[],
   options: {
+    readonly cwd: string;
     readonly configJudge: import("../judge/provider.ts").JudgeProvider | undefined;
     readonly keepSandbox: "failed" | "all" | undefined;
     readonly configTimeoutMs: number | undefined;
   },
 ): Effect.Effect<ProjectTargetPlan, FingerprintPlanningFailure> {
   return Effect.gen(function* () {
+    const projectRoot = yield* Effect.try({
+      try: () => realpathSync(options.cwd),
+      catch: (cause) => fingerprintFileError("read", options.cwd, cause),
+    });
     const preparedPairsByKey = yield* Effect.try({
       try: () => indexPreparedPairs(preparedPairs),
       catch: (cause) => fingerprintPlanningError("invariant", cause),
@@ -523,6 +529,7 @@ export function planPreparedProjectTarget(
             pair,
             sourceCache,
             currentFingerprintProjection(pair, identity),
+            projectRoot,
           );
           plannedConfigHashes.set(pair.key, resultConfigHash);
           plannedFingerprints.set(pair.key, fingerprint);
@@ -570,7 +577,7 @@ export function planPreparedProjectTarget(
     }
     for (const manifest of manifestsByKey.values()) {
       for (const path of [...Object.keys(manifest.source), ...Object.keys(manifest.data)]) {
-        watchInputs.add(resolve(process.cwd(), path));
+        watchInputs.add(resolve(projectRoot, path));
       }
     }
     return {

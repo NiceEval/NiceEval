@@ -206,7 +206,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // These roots have deliberately different ownership. `coordinationRoot`
       // contains only local Runner state; `recordRoot` is the portable fact root
       // passed unchanged to the Record reader/writer coordinator.
-      const coordinationRoot = opts.coordinationRoot ?? `${process.cwd()}/.niceeval`;
+      const coordinationRoot = opts.coordinationRoot ?? `${opts.projectRoot}/.niceeval`;
       const caseLockRoot = recordRootPaths(opts.recordRoot)?.portableRoot;
       if (caseLockRoot === undefined) throw new Error("Record root is unavailable for case coordination.");
       const recordRoot = opts.recordRoot;
@@ -272,6 +272,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // only this projection and its own frozen view; no historic result facade
       // participates in dispatch or display.
       const targetPlan = yield* planProjectTarget(opts.evals, opts.agentRuns, opts.config.timeoutMs, {
+        cwd: opts.projectRoot,
         configJudge: opts.config.judgeProvider,
         keepSandbox: opts.keepSandbox,
       });

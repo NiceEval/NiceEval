@@ -151,6 +151,7 @@ interface ClosedSelection {
 }
 
 interface PreparedInvocationState {
+  readonly cwd: string;
   readonly evals: readonly DiscoveredEval[];
   readonly runs: readonly AgentRun[];
   readonly config: ExperimentHostInvocationPlanRequest["config"];
@@ -447,7 +448,7 @@ export function check(
     Effect.gen(function* () {
       const prepared = yield* prepareRuns(input);
       if (prepared.status === "problem") return prepared.problem;
-      const pairs = yield* linkRunSandboxes(prepared.selected.evals, prepared.runs);
+      const pairs = yield* linkRunSandboxes(prepared.selected.evals, prepared.runs, input.cwd);
       return {
         status: "linked" as const,
         experimentIds: prepared.runs.map((run) => run.experimentId!),
@@ -567,6 +568,7 @@ export function planInvocation(
       };
       const overrides = { ...(input.overrides ?? {}) };
       const target = yield* planProjectTarget(prepared.selected.evals, prepared.runs, config.timeoutMs, {
+        cwd: input.cwd,
         configJudge: config.judgeProvider,
         keepSandbox: overrides.keepSandbox,
       });
@@ -683,6 +685,7 @@ export function planInvocation(
 
       const plan = Object.freeze({}) as ExperimentHostInvocationPlan;
       invocationPlans.set(plan, {
+        cwd: resolve(input.cwd),
         evals: prepared.selected.evals,
         runs: prepared.runs,
         config,
@@ -860,6 +863,7 @@ export function runInvocation(
           Effect.sync(() => activateFeedbackSink(sink)),
           () =>
             runEvals({
+              projectRoot: state.cwd,
               config: state.config,
               evals: state.evals,
               agentRuns: state.runs,

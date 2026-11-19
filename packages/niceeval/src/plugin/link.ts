@@ -91,8 +91,8 @@ export function pluginLinkErrorFromIssues(issues: readonly PluginLinkIssue[]): P
   return pluginError(issues);
 }
 
-function sourceLabel(path: string): string {
-  return relative(process.cwd(), path).split(sep).join("/") || ".";
+function sourceLabel(cwd: string, path: string): string {
+  return relative(cwd, path).split(sep).join("/") || ".";
 }
 
 function sandboxDeclaration(lifecycle: LinkedPluginLifecycle): JsonValue | undefined {
@@ -123,11 +123,12 @@ function occurrences(
   scope: PluginOwner,
   ownerId: string,
   sourcePath: string,
+  cwd: string,
 ): readonly LinkedPluginOccurrence[] {
   return lifecycles.map((lifecycle) => {
     const provenance = {
       attachment: scope,
-      owner: { id: ownerId, source: sourceLabel(sourcePath), position: lifecycle.arrayPosition },
+      owner: { id: ownerId, source: sourceLabel(cwd, sourcePath), position: lifecycle.arrayPosition },
     };
     const projection = pluginOccurrenceProjection(lifecycle);
     const sandbox = sandboxDeclaration(lifecycle);
@@ -189,7 +190,7 @@ async function runTeardowns(
 
 // @concord-code
 // @concord-implements docs/feature/plugins/architecture/lifecycle.md
-export function preparePluginRun(run: AgentRun): PreparedPluginRun {
+export function preparePluginRun(run: AgentRun, cwd = process.cwd()): PreparedPluginRun {
   let lifecycles: readonly LinkedPluginLifecycle[];
   try {
     lifecycles = linkPluginLifecycles(run.plugins ?? [], "experiment");
@@ -238,7 +239,7 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
       ]);
     }
   }
-  const linkedOccurrences = occurrences(lifecycles, "experiment", run.experimentId, run.experimentSourcePath);
+  const linkedOccurrences = occurrences(lifecycles, "experiment", run.experimentId, run.experimentSourcePath, cwd);
   const authorSetup = run.setup;
   const authorTeardown = run.teardown;
   let activated = 0;
@@ -290,7 +291,11 @@ export function preparePluginRun(run: AgentRun): PreparedPluginRun {
 
 // @concord-code
 // @concord-implements docs/feature/plugins/architecture/lifecycle.md
-export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPluginRun): PluginPairLink {
+export function linkPluginPair(
+  evalDef: DiscoveredEval,
+  preparedRun: PreparedPluginRun,
+  cwd = process.cwd(),
+): PluginPairLink {
   try {
     const ownEvalLifecycles = linkPluginLifecycles(evalDef.plugins as readonly PluginInstance<"eval">[], "eval");
     const ownGroupLifecycles =
@@ -333,11 +338,11 @@ export function linkPluginPair(evalDef: DiscoveredEval, preparedRun: PreparedPlu
     ) {
       throw new TypeError("Plugin sandbox layer requires a Sandbox Agent and a physical Sandbox plan.");
     }
-    const evalOccurrences = occurrences(ownEvalLifecycles, "eval", evalDef.id, evalDef.sourcePath);
+    const evalOccurrences = occurrences(ownEvalLifecycles, "eval", evalDef.id, evalDef.sourcePath, cwd);
     const groupOccurrences =
       evalDef.evalGroup === undefined
         ? ([] as readonly LinkedPluginOccurrence[])
-        : occurrences(ownGroupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath);
+        : occurrences(ownGroupLifecycles, "group", evalDef.evalGroup.id, evalDef.evalGroup.sourcePath, cwd);
     const all = [...preparedRun.experimentOccurrences, ...groupOccurrences, ...evalOccurrences];
     const experimentLayer = appendPluginSandboxLayers(preparedRun.run.sandbox, preparedRun.experimentLifecycles);
     const groupLayer =

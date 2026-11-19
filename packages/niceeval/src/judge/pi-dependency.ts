@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** Resolves the optional runtime at registration, without executing an SDK provider. */
-function resolveInstalledPi(): {
+function resolveInstalledPi(projectRoot: string): {
   readonly coding: string;
   readonly ai: string;
   readonly codingVersion: string;
@@ -20,7 +20,7 @@ function resolveInstalledPi(): {
   }
   if (manifest === undefined) {
     try {
-      manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(`${process.cwd()}/package.json`));
+      manifest = findPackageJSON("@earendil-works/pi-coding-agent", pathToFileURL(`${projectRoot}/package.json`));
     } catch {
       /* Public install action below. */
     }
@@ -47,9 +47,9 @@ function resolveInstalledPi(): {
   };
 }
 
-export function resolvePiCodingAgent(): ReturnType<typeof resolveInstalledPi> {
+export function resolvePiCodingAgent(projectRoot = process.cwd()): ReturnType<typeof resolveInstalledPi> {
   try {
-    return resolveInstalledPi();
+    return resolveInstalledPi(projectRoot);
   } catch (cause) {
     if (cause instanceof PiFailure) throw cause;
     throw new PiFailure({

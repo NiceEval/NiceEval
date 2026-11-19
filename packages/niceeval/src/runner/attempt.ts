@@ -412,7 +412,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       const t0 = Date.now();
       // Source bytes are snapshotted at the author action, then held only through
       // an internal capability until the Record producer seals its own Attachments.
-      const sourceRegistry = createSourceRegistry(process.cwd());
+      const sourceRegistry = createSourceRegistry(opts.projectRoot);
       const sourceCapture = createRunnerAttemptSourceCapture(sourceRegistry);
       const attemptResources = new ManagedAttemptResources();
       let attemptResourceReleaseFailureReported = false;
@@ -3751,7 +3751,7 @@ async function runAttemptBody(
             )
         : undefined;
     const evalSandbox = createEvalSandboxView(sandbox, evalDef.baseDir, {
-      ownerRoot: moduleProjection?.root ?? process.cwd(),
+      ownerRoot: moduleProjection?.root ?? sourceRegistry.root,
       plans: usesSandbox && transferPlans !== undefined && transferPlans.length > 0 ? transferPlans : undefined,
       sendOrdinal: () => evalSendOrdinal,
     });
