@@ -45,91 +45,94 @@ function normalizedCwd(cwd: string): string {
   return resolve(cwd);
 }
 
-function applyMissingEnvironment(raw: string): void {
+function applyMissingEnvironment(raw: string, env: NodeJS.ProcessEnv): void {
   for (const line of raw.split("\n")) {
     const entry = line.trim();
     if (entry.length === 0 || entry.startsWith("#")) continue;
     const equals = entry.indexOf("=");
     if (equals < 0) continue;
     const key = entry.slice(0, equals).trim();
-    if (key.length === 0 || process.env[key] !== undefined) continue;
+    if (key.length === 0 || env[key] !== undefined) continue;
     let value = entry.slice(equals + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    process.env[key] = value;
+    env[key] = value;
   }
 }
 
 /** One Layer-owned state machine; failed preparation deliberately returns to idle. */
-export const ProjectCredentialsLive = Layer.effect(
-  ProjectCredentials,
-  Effect.gen(function* () {
-    let state: CredentialState = { _tag: "idle" };
-    const mutex = yield* Semaphore.make(1);
-    const prepare = (inputCwd: string): Effect.Effect<void, ProjectCredentialsFailure> =>
-      Effect.suspend(() => {
-        const cwd = normalizedCwd(inputCwd);
-        return Effect.gen(function* () {
-          const fresh = yield* Deferred.make<void, ProjectCredentialsError>();
-          // This is the complete atomic decision. No waiting or Node I/O occurs
-          // while the semaphore is held, so completion can always re-enter it.
-          const decision = yield* mutex.withPermits(1)(
-            Effect.sync(() => {
-              if (state._tag === "prepared") {
-                return state.cwd === cwd
-                  ? { _tag: "ready" as const }
-                  : { _tag: "conflict" as const, preparedCwd: state.cwd };
-              }
-              if (state._tag === "preparing") {
-                return state.cwd === cwd
-                  ? { _tag: "await" as const, done: state.done }
-                  : { _tag: "conflict" as const, preparedCwd: state.cwd };
-              }
-              state = { _tag: "preparing", cwd, done: fresh };
-              return { _tag: "start" as const, done: fresh };
-            }),
-          );
-          if (decision._tag === "ready") return;
-          if (decision._tag === "conflict") {
-            return yield* Effect.fail(
-              new ProjectCredentialsConflict({
-                preparedCwd: decision.preparedCwd,
-                requestedCwd: cwd,
+export const projectCredentialsLayer = (env: NodeJS.ProcessEnv) =>
+  Layer.effect(
+    ProjectCredentials,
+    Effect.gen(function* () {
+      let state: CredentialState = { _tag: "idle" };
+      const mutex = yield* Semaphore.make(1);
+      const prepare = (inputCwd: string): Effect.Effect<void, ProjectCredentialsFailure> =>
+        Effect.suspend(() => {
+          const cwd = normalizedCwd(inputCwd);
+          return Effect.gen(function* () {
+            const fresh = yield* Deferred.make<void, ProjectCredentialsError>();
+            // This is the complete atomic decision. No waiting or Node I/O occurs
+            // while the semaphore is held, so completion can always re-enter it.
+            const decision = yield* mutex.withPermits(1)(
+              Effect.sync(() => {
+                if (state._tag === "prepared") {
+                  return state.cwd === cwd
+                    ? { _tag: "ready" as const }
+                    : { _tag: "conflict" as const, preparedCwd: state.cwd };
+                }
+                if (state._tag === "preparing") {
+                  return state.cwd === cwd
+                    ? { _tag: "await" as const, done: state.done }
+                    : { _tag: "conflict" as const, preparedCwd: state.cwd };
+                }
+                state = { _tag: "preparing", cwd, done: fresh };
+                return { _tag: "start" as const, done: fresh };
               }),
             );
-          }
-          if (decision._tag === "start") {
-            // Daemon ownership makes an interrupted initiating caller harmless:
-            // it still settles the shared Deferred and restores idle on failure.
-            yield* Effect.forkDetach(
-              Effect.tryPromise({
-                try: async () => {
-                  const path = join(cwd, ".env");
-                  if (existsSync(path)) applyMissingEnvironment(await readFile(path, "utf8"));
-                },
-                catch: (cause) => new ProjectCredentialsError({ cwd, operation: "read-dotenv", cause }),
-              }).pipe(
-                Effect.exit,
-                Effect.flatMap((exit) =>
-                  mutex.withPermits(1)(
-                    Effect.gen(function* () {
-                      if (state._tag === "preparing" && state.done === decision.done) {
-                        state = exit._tag === "Success" ? { _tag: "prepared", cwd } : { _tag: "idle" };
-                      }
-                      yield* Deferred.done(decision.done, exit);
-                    }),
+            if (decision._tag === "ready") return;
+            if (decision._tag === "conflict") {
+              return yield* Effect.fail(
+                new ProjectCredentialsConflict({
+                  preparedCwd: decision.preparedCwd,
+                  requestedCwd: cwd,
+                }),
+              );
+            }
+            if (decision._tag === "start") {
+              // Daemon ownership makes an interrupted initiating caller harmless:
+              // it still settles the shared Deferred and restores idle on failure.
+              yield* Effect.forkDetach(
+                Effect.tryPromise({
+                  try: async () => {
+                    const path = join(cwd, ".env");
+                    if (existsSync(path)) applyMissingEnvironment(await readFile(path, "utf8"), env);
+                  },
+                  catch: (cause) => new ProjectCredentialsError({ cwd, operation: "read-dotenv", cause }),
+                }).pipe(
+                  Effect.exit,
+                  Effect.flatMap((exit) =>
+                    mutex.withPermits(1)(
+                      Effect.gen(function* () {
+                        if (state._tag === "preparing" && state.done === decision.done) {
+                          state = exit._tag === "Success" ? { _tag: "prepared", cwd } : { _tag: "idle" };
+                        }
+                        yield* Deferred.done(decision.done, exit);
+                      }),
+                    ),
                   ),
                 ),
-              ),
-            );
-          }
-          return yield* Deferred.await(decision.done);
+              );
+            }
+            return yield* Deferred.await(decision.done);
+          });
         });
-      });
-    return { prepare } satisfies ProjectCredentialsService;
-  }),
-);
+      return { prepare } satisfies ProjectCredentialsService;
+    }),
+  );
+
+export const ProjectCredentialsLive = Layer.unwrap(Effect.sync(() => projectCredentialsLayer(process.env)));
 
 export class ConfigModuleLoadError extends Data.TaggedError("ConfigModuleLoadError")<{
   readonly cwd: string;

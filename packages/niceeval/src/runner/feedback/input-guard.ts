@@ -147,25 +147,27 @@ export function createInputGuard(options: InputGuardOptions): InputGuard {
 /** 生产实现:包一层真实 `process.stdin`(与 io.ts 的 `createNodeFeedbackIO` 同一种"生产环境
  *  才碰全局 process"的分层)。`setRawMode` 只有 stdin 真的是 TTY 时才存在,非 TTY 时保持
  *  no-op——`createInputGuard` 只在 `isTTY` 为真时才会调用它,这里的兜底只是防御。 */
-export function createNodeInputGuardStdin(): InputGuardStdin {
+export function createNodeInputGuardStdin(
+  stdin: NodeJS.ReadableStream & Partial<Pick<NodeJS.ReadStream, "isTTY" | "setRawMode">> = process.stdin,
+): InputGuardStdin {
   return {
     get isTTY() {
-      return process.stdin.isTTY === true;
+      return stdin.isTTY === true;
     },
     setRawMode: (mode) => {
-      process.stdin.setRawMode?.(mode);
+      stdin.setRawMode?.(mode);
     },
     resume: () => {
-      process.stdin.resume();
+      stdin.resume();
     },
     pause: () => {
-      process.stdin.pause();
+      stdin.pause();
     },
     on: (event, listener) => {
-      process.stdin.on(event, listener);
+      stdin.on(event, listener);
     },
     off: (event, listener) => {
-      process.stdin.off(event, listener);
+      stdin.off(event, listener);
     },
   };
 }

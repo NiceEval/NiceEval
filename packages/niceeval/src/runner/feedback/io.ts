@@ -40,7 +40,9 @@ export interface FeedbackIO {
   readonly clock: FeedbackClock;
 }
 
-function wrapStream(stream: NodeJS.WriteStream): FeedbackStream {
+function wrapStream(
+  stream: NodeJS.WritableStream & Partial<Pick<NodeJS.WriteStream, "isTTY" | "columns" | "rows">>,
+): FeedbackStream {
   return {
     write: (text) => {
       stream.write(text);
@@ -59,11 +61,15 @@ function wrapStream(stream: NodeJS.WriteStream): FeedbackStream {
 
 /** 生产实现:包一层真实 `process`。setInterval 句柄 `.unref()`—— tick 定时器本身绝不能是
  *  进程活着的理由,`stopDynamic()`/`finish()` 之外的任何异常退出路径也不会被它拖住。 */
-export function createNodeFeedbackIO(): FeedbackIO {
+export function createNodeFeedbackIO(
+  stdout: Parameters<typeof wrapStream>[0] = process.stdout,
+  stderr: Parameters<typeof wrapStream>[0] = process.stderr,
+  env: FeedbackIO["env"] = process.env,
+): FeedbackIO {
   return {
-    stdout: wrapStream(process.stdout),
-    stderr: wrapStream(process.stderr),
-    env: process.env,
+    stdout: wrapStream(stdout),
+    stderr: wrapStream(stderr),
+    env,
     clock: {
       now: () => Date.now(),
       setInterval: (fn, ms) => {

@@ -18,18 +18,44 @@ import {
 
 const failure = (operation: string, cause: unknown) => new CliInvocationError({ operation, cause });
 
-export const NodeInvocationFactsLive = Layer.succeed(CliInvocationFacts, {
-  facts: Effect.sync(() => ({
-    cwd: process.cwd(),
-    argv: process.argv.slice(2),
-    hostname: hostname(),
-    pid: process.pid,
-    platform: process.platform,
-    noColor: process.env.NO_COLOR,
-    stdout: { isTTY: process.stdout.isTTY === true, columns: process.stdout.columns },
-    stderr: { isTTY: process.stderr.isTTY === true, columns: process.stderr.columns },
-  })),
+type CliStdin = NodeJS.ReadStream | (NodeJS.ReadableStream & { isTTY?: false });
+type CliWritable = NodeJS.WriteStream | (NodeJS.WritableStream & { isTTY?: false; columns?: number; rows?: number });
+
+export interface NodeCliInvocation {
+  readonly argv: readonly string[];
+  readonly cwd: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly stdin: CliStdin;
+  readonly stdout: CliWritable;
+  readonly stderr: CliWritable;
+}
+
+const processInvocation = (): NodeCliInvocation => ({
+  cwd: process.cwd(),
+  argv: process.argv.slice(2),
+  env: process.env,
+  stdin: process.stdin,
+  stdout: process.stdout,
+  stderr: process.stderr,
 });
+
+function invocationFacts(invocation: () => NodeCliInvocation) {
+  return Layer.succeed(CliInvocationFacts, {
+    facts: Effect.sync(() => {
+      const { cwd, argv, env, stdout, stderr } = invocation();
+      return {
+        cwd,
+        argv,
+        hostname: hostname(),
+        pid: process.pid,
+        platform: process.platform,
+        noColor: env.NO_COLOR,
+        stdout: { isTTY: stdout.isTTY === true, columns: stdout.columns },
+        stderr: { isTTY: stderr.isTTY === true, columns: stderr.columns },
+      };
+    }),
+  });
+}
 
 export function ignoreBrokenOutputPipe(cause: unknown): void {
   if (!Predicate.hasProperty(cause, "code") || cause.code !== "EPIPE") throw cause;
@@ -50,30 +76,34 @@ function writeNodeOutput(stream: NodeJS.WritableStream, text: string): void {
   }
 }
 
-export const NodeCliOutputLive = Layer.succeed(CliOutput, {
-  writeStdout: (text) =>
-    Effect.try({ try: () => writeNodeOutput(process.stdout, text), catch: (cause) => failure("write-stdout", cause) }),
-  writeStderr: (text) =>
-    Effect.try({ try: () => writeNodeOutput(process.stderr, text), catch: (cause) => failure("write-stderr", cause) }),
-  writeStdoutSync: (text) => writeNodeOutput(process.stdout, text),
-  writeStderrSync: (text) => writeNodeOutput(process.stderr, text),
-});
+function cliOutput(stdout: CliWritable, stderr: CliWritable, write: typeof writeNodeOutput) {
+  return Layer.succeed(CliOutput, {
+    writeStdout: (text) =>
+      Effect.try({ try: () => write(stdout, text), catch: (cause) => failure("write-stdout", cause) }),
+    writeStderr: (text) =>
+      Effect.try({ try: () => write(stderr, text), catch: (cause) => failure("write-stderr", cause) }),
+    writeStdoutSync: (text) => write(stdout, text),
+    writeStderrSync: (text) => write(stderr, text),
+  });
+}
 
-const NodeCliConfirmationLive = Layer.succeed(CliConfirmation, {
-  confirm: (message) =>
-    Effect.suspend(() => {
-      if (process.stdin.isTTY !== true || process.stderr.isTTY !== true) return Effect.succeed(false);
-      return Effect.acquireUseRelease(
-        Effect.sync(() => createInterface({ input: process.stdin, output: process.stderr })),
-        (terminal) =>
-          Effect.tryPromise({
-            try: (signal) => terminal.question(`${message} [y/N] `, { signal }),
-            catch: (cause) => failure("confirm", cause),
-          }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
-        (terminal) => Effect.sync(() => terminal.close()),
-      );
-    }),
-});
+function cliConfirmation(stdin: CliStdin, stderr: CliWritable) {
+  return Layer.succeed(CliConfirmation, {
+    confirm: (message) =>
+      Effect.suspend(() => {
+        if (stdin.isTTY !== true || stderr.isTTY !== true) return Effect.succeed(false);
+        return Effect.acquireUseRelease(
+          Effect.sync(() => createInterface({ input: stdin, output: stderr })),
+          (terminal) =>
+            Effect.tryPromise({
+              try: (signal) => terminal.question(`${message} [y/N] `, { signal }),
+              catch: (cause) => failure("confirm", cause),
+            }).pipe(Effect.map((answer) => /^y(?:es)?$/iu.test(answer.trim()))),
+          (terminal) => Effect.sync(() => terminal.close()),
+        );
+      }),
+  });
+}
 
 interface OptionalValueOccurrence {
   readonly name: string;
@@ -239,11 +269,33 @@ export const NodePackageMetadataLive = Layer.succeed(PackageMetadata, {
   }),
 });
 
-export const NodeCliPlatformLive = Layer.mergeAll(
-  NodeInvocationFactsLive,
-  NodeCliOutputLive,
-  NodeCliConfirmationLive,
-  NodeCliArgumentsLive,
-  NodeCliPathLive,
-  NodePackageMetadataLive,
+const nodeCliPlatform = (
+  facts: () => NodeCliInvocation,
+  { stdin, stdout, stderr }: Pick<NodeCliInvocation, "stdin" | "stdout" | "stderr">,
+  write: typeof writeNodeOutput,
+) =>
+  Layer.mergeAll(
+    invocationFacts(facts),
+    cliOutput(stdout, stderr, write),
+    cliConfirmation(stdin, stderr),
+    NodeCliArgumentsLive,
+    NodeCliPathLive,
+    NodePackageMetadataLive,
+  );
+
+export const NodeCliOutputLive = Layer.unwrap(
+  Effect.sync(() => cliOutput(process.stdout, process.stderr, writeNodeOutput)),
 );
+
+export const NodeCliPlatformLive = Layer.unwrap(
+  Effect.sync(() => nodeCliPlatform(processInvocation, process, writeNodeOutput)),
+);
+
+export const nodeCliInvocationLayer = (invocation: NodeCliInvocation) =>
+  nodeCliPlatform(
+    () => invocation,
+    invocation,
+    (stream, text) => {
+      stream.write(text);
+    },
+  );

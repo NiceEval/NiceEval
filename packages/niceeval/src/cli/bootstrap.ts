@@ -1,45 +1,14 @@
 // The one application runtime boundary. Library and command modules return
 // Effect values; this file is the only place NiceEval starts a runtime.
 
-import { Cause, Effect, Exit, FiberSet, Layer } from "effect";
-import type * as Scope from "effect/Scope";
-import { cliProgram, renderCliFailure } from "./program.ts";
-import { composeCliCommands } from "./contribution.ts";
-import type { AnyCliFeatureError } from "./feature-failure.ts";
-import { dockerCliCommand } from "../docker/cli/contribution.ts";
-import { sandboxCliCommand } from "../sandbox/cli/contribution.ts";
-import { evalCatalogCliCommand } from "../eval/cli/contribution.ts";
-import { experimentCliContributions } from "../experiment/host/cli/contribution.ts";
-import { ExperimentCliTerminal, NodeExperimentCliTerminalLive } from "../experiment/host/cli/terminal.ts";
-import { showCliCommand, compareCliCommand } from "../show/contribution.ts";
-import { viewCliCommand } from "../view/cli/contribution.ts";
-import { runCliCommand } from "../run/cli/contribution.ts";
-import { projectInitCliCommand } from "../project/cli/contribution.ts";
-import {
-  CliArguments,
-  CliInterruption,
-  CliInvocationFacts,
-  CliOutput,
-  CliPath,
-  type CliInterruptionService,
-} from "./application.ts";
+import { Cause, Effect, Exit, Layer } from "effect";
+import { CliInterruption, type CliInterruptionService } from "./application.ts";
 import { ignoreBrokenOutputPipe, NodeCliPlatformLive } from "./node-application.ts";
-import {
-  ConfigModuleLoaderLive,
-  ProjectConfiguration,
-  ProjectConfigurationLayer,
-  ProjectCredentialsLive,
-} from "./project-configuration.ts";
-import { NodeRecordLive } from "../record/index.ts";
-import { RecordCoordination } from "../coordination/record-leases.ts";
-import { RecordEntropy, RecordFileSystem } from "../record/platform/services.ts";
-import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
-import { DockerCacheAdministration } from "../docker/cache-administration.ts";
-import { DockerCacheAdministrationLive } from "../docker/cache-live.ts";
+import { cliApplication } from "./node-program.ts";
+import { renderCliFailure } from "./program.ts";
+import { ProjectCredentialsLive } from "./project-configuration.ts";
 import { NodeProjectLive } from "../project/node.ts";
-import { ProjectFileSystem, ProjectManifestFacts, ProjectProcessFacts } from "../project/services.ts";
-import { NodeViewBrowserLive, ViewBrowser } from "../view/browser.ts";
-import { ViewApplicationRuntime } from "../view/application-runtime.ts";
+import { NodeExperimentCliTerminalLive } from "../experiment/host/cli/terminal.ts";
 import { summarizeUnknownError } from "../error-assistance/index.ts";
 
 // There is exactly one synchronous ownership state for the first signal. Node
@@ -73,15 +42,6 @@ const interruption: CliInterruptionService = {
   },
   requestInterrupt: () => process.emit("SIGINT"),
 };
-
-const NodeCliInterruptionLive = Layer.succeed(CliInterruption, interruption);
-
-// This is the only Node composition edge. The application layer itself keeps
-// its two capability requirements visible and portable.
-const NodeCliApplicationLive = ProjectConfigurationLayer.pipe(
-  Layer.provide(ProjectCredentialsLive),
-  Layer.provide(ConfigModuleLoaderLive),
-);
 
 const onInterrupt = (signal: NodeJS.Signals): void => {
   if (signalOwnership === "root") {
@@ -124,58 +84,13 @@ const onOutputError = (error: unknown): void => {
 process.stdout.on("error", onOutputError);
 process.stderr.on("error", onOutputError);
 
-type CliFeatureRequirements =
-  | DockerCacheAdministration
-  | CliArguments
-  | CliInterruption
-  | CliInvocationFacts
-  | CliOutput
-  | import("./application.ts").CliConfirmation
-  | CliPath
-  | ExperimentCliTerminal
-  | ProjectConfiguration
-  | RecordCoordination
-  | RecordEntropy
-  | RecordFileSystem
-  | ProjectStateDatabase
-  | ProjectFileSystem
-  | ProjectManifestFacts
-  | ProjectProcessFacts
-  | ViewBrowser
-  | ViewApplicationRuntime
-  | Scope.Scope;
-
-const featureCommands = composeCliCommands<CliFeatureRequirements, AnyCliFeatureError>([
-  ...experimentCliContributions,
-  evalCatalogCliCommand,
-  compareCliCommand,
-  showCliCommand,
-  runCliCommand,
-  viewCliCommand,
-  sandboxCliCommand,
-  dockerCliCommand,
-  projectInitCliCommand,
-]);
-
-const application = Effect.scoped(
-  Effect.gen(function* () {
-    // Capture this application's services once. HTTP callbacks share its runtime;
-    // the root Scope interrupts and drains every remaining callback fiber.
-    const run = yield* FiberSet.makeRuntimePromise();
-    return yield* cliProgram(featureCommands).pipe(Effect.provideService(ViewApplicationRuntime, { run }));
-  }),
-).pipe(
-  // Application bootstrap is the sole provider of concrete Node services.
-  // Command and library modules retain their real requirements for callers.
-  Effect.provide(NodeRecordLive),
-  // This is a lazy service value: ordinary commands and help do not probe Docker.
-  Effect.provide(DockerCacheAdministrationLive),
-  Effect.provide(NodeProjectLive),
-  Effect.provide(NodeViewBrowserLive),
-  Effect.provide(NodeExperimentCliTerminalLive),
-  Effect.provide(NodeCliInterruptionLive),
-  Effect.provide(NodeCliApplicationLive),
-  Effect.provide(NodeCliPlatformLive),
+const application = cliApplication({
+  project: NodeProjectLive,
+  invocation: NodeCliPlatformLive,
+  terminal: NodeExperimentCliTerminalLive,
+  interruption: Layer.succeed(CliInterruption, interruption),
+  credentials: ProjectCredentialsLive,
+}).pipe(
   // Typed CLI failures are expected, user-actionable outcomes. They become an
   // ordinary process status after their message has been written once.
   Effect.catch((failure) =>
