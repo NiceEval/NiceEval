@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { decodeExpPlanDocument, type ExpPlanDocument } from "niceeval/experiment/host";
 import { command } from "@niceeval/testkit";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -77,5 +79,117 @@ console.log("loader timing and shared fingerprints verified");
     const result = await command([process.execPath]).run(["loader-consumer.mjs"], { cwd: projectRoot });
     expect(result.exitCode, result.diagnostic()).toBe(0);
     expect(result.stdout).toContain("loader timing and shared fingerprints verified");
+  });
+});
+
+function expectLoaderChange(plan: ExpPlanDocument, path: string): void {
+  expect(plan).toMatchObject({ reused: 0 });
+  expect(plan.matrix).toHaveLength(2);
+  for (const row of plan.matrix) {
+    expect(row.slots).toMatchObject([{ state: "gap", reason: "identity-mismatch" }]);
+    const explanation = row.slots[0]?.comparisons.find(
+      ({ recordedClaim }) => recordedClaim === "execution-identity",
+    )?.explanation;
+    expect(explanation?.kind === "changed" ? explanation.deltas : []).toContainEqual(
+      expect.objectContaining({ selector: `data:${path}`, kind: "changed" }),
+    );
+  }
+}
+
+// @use-case docs/feature/experiments/use-case/cache-modify-eval-source.md
+test.concurrent("Experiment Adapter 与项目配置读入的文件决定对应结果能否沿用", async () => {
+  await evalE2E.case("carry-experiment-loader", async ({ commands: { niceeval }, paths: { projectRoot } }) => {
+    for (const dir of ["evals", "experiments", "agents"]) {
+      await rm(join(projectRoot, dir), { recursive: true, force: true });
+      await mkdir(join(projectRoot, dir));
+    }
+    for (const id of ["a", "b"]) {
+      writeFileSync(
+        join(projectRoot, "evals", `${id}.eval.ts`),
+        `import assert from "node:assert/strict";
+import { defineEval } from "niceeval";
+import { loadText } from "niceeval/loaders";
+export default defineEval({
+  async test(t) {
+    await assert.rejects(loadText("not-at-test.txt"), {
+      name: "LoaderOutsideDiscoveryError",
+      message: /not-at-test\\.txt.*during test\\(t\\).*module top level of an Eval, an Experiment/
+    });
+    await t.send("begin");
+  }
+});
+`,
+      );
+    }
+    writeFileSync(
+      join(projectRoot, "agents", "deterministic.ts"),
+      `import assert from "node:assert/strict";
+import { defineAgent, completeEvidenceCoverage } from "niceeval/adapter";
+import { loadText } from "niceeval/loaders";
+export const deterministicAgent = defineAgent({
+  name: "loader-test",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send() {
+    await assert.rejects(loadText("not-at-send.txt"), {
+      name: "LoaderOutsideDiscoveryError",
+      message: /not-at-send\\.txt.*during Adapter send.*module top level of an Eval, an Experiment/
+    });
+    return { status: "completed", events: [] };
+  }
+});
+`,
+    );
+    const experimentPath = join(projectRoot, "experiments", "carry.ts");
+    writeFileSync(
+      experimentPath,
+      `import { defineExperiment } from "niceeval";
+import { deterministicAgent } from "../agents/deterministic.ts";
+export default defineExperiment({ adapter: deterministicAgent, evals: ["a", "b"] });
+`,
+    );
+    writeFileSync(join(projectRoot, "adapter-prompt.txt"), "prompt v1");
+    writeFileSync(join(projectRoot, "project-input.txt"), "config v1");
+    writeFileSync(
+      join(projectRoot, "agents", "with-prompt.ts"),
+      `import { loadText } from "niceeval/loaders";
+import { deterministicAgent } from "./deterministic.ts";
+const prompt = await loadText(new URL("../adapter-prompt.txt", import.meta.url));
+if (!prompt) throw new Error("Empty adapter prompt");
+export { deterministicAgent };
+`,
+    );
+    writeFileSync(
+      join(projectRoot, "experiments", "with-prompt.ts"),
+      readFileSync(experimentPath, "utf8").replace("../agents/deterministic.ts", "../agents/with-prompt.ts"),
+    );
+    const plan = async (id: string) => {
+      const result = await niceeval.run(["exp", id, "--dry", "--json"]);
+      expect(result.exitCode, result.diagnostic()).toBe(0);
+      return decodeExpPlanDocument(result.json());
+    };
+    await plan("with-prompt");
+
+    const configPath = join(projectRoot, "niceeval.config.ts");
+    writeFileSync(
+      configPath,
+      `import { loadText } from "niceeval/loaders";
+await loadText(new URL("./project-input.txt", import.meta.url));
+import { defineConfig } from "niceeval";
+export default defineConfig({});`,
+    );
+    for (const id of ["carry", "with-prompt"]) {
+      const result = await niceeval.run(["exp", id, "--rerun", "all", "--json"]);
+      expect(result.exitCode, result.diagnostic()).toBe(0);
+      expect(await plan(id)).toMatchObject({ reused: 2 });
+    }
+
+    writeFileSync(join(projectRoot, "adapter-prompt.txt"), "prompt v2");
+    expectLoaderChange(await plan("with-prompt"), "adapter-prompt.txt");
+    expect(await plan("carry")).toMatchObject({ reused: 2 });
+
+    writeFileSync(join(projectRoot, "adapter-prompt.txt"), "prompt v1");
+    writeFileSync(join(projectRoot, "project-input.txt"), "config v2");
+    expectLoaderChange(await plan("carry"), "project-input.txt");
+    expectLoaderChange(await plan("with-prompt"), "project-input.txt");
   });
 });

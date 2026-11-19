@@ -11,6 +11,7 @@ JavaScript / TypeScript 节点使用下文的规范化文本。其它内容按�
 Sources 与断言位置保存原始字节，并通过实际执行的 origin Run 关联；不能用规范化后的文本替代证据。
 
 loader 数据、criteria、private 文件和 transfer manifest 保持各自的原始内容身份。
+Experiment 与项目配置的模块图同样记录发现期 loader 读取；这些数据属于对应 Experiment 的执行身份（[Loader 的读取时机](../../eval/library/README.md#loader-的读取时机)），与 Eval 自身的 loader 数据分开登记。
 变量改名、语句换序与其它语义等价改写没有自动沿用保证。
 
 ## 移动源码时的执行指纹

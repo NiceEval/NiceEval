@@ -360,7 +360,7 @@ function agentRunFromExperiment(
     experimentId: experiment.id,
     experimentBaseDir: experiment.baseDir,
     experimentSourcePath: experiment.sourcePath,
-    experimentExecutionSource: getExperimentExecutionSource(experiment),
+    experimentExecutionSource: getExperimentExecutionSource(experiment, config),
     description: experiment.description,
     labels: experiment.labels,
     maxConcurrency: experiment.maxConcurrency,

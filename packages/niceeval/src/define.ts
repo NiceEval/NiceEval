@@ -1,5 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/plugins/library.md
+import { withLoaderExecutionPhase } from "./loaders/runtime.ts";
 import type { Adapter } from "./adapter.ts";
 import { assertRequiredModelRoles, normalizeModelRoles } from "./model-roles.ts";
 import { parseAdapterFlags } from "./adapter-flags.ts";
@@ -181,7 +182,8 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     after: def.after,
   };
   return attachAgentEffects(agent, {
-    send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
+    send: (input, context) =>
+      authorCallbackEffect(() => withLoaderExecutionPhase("Adapter send", () => def.send(input, context))),
     before:
       before === undefined
         ? () => Effect.void
@@ -234,7 +236,8 @@ export function defineAgent(def: DirectAgentDef): DirectAgent {
     after: def.after,
   };
   return attachAgentEffects(agent, {
-    send: (input, context) => authorCallbackEffect(() => def.send(input, context)),
+    send: (input, context) =>
+      authorCallbackEffect(() => withLoaderExecutionPhase("Adapter send", () => def.send(input, context))),
     before:
       before === undefined ? () => Effect.void : (_sandbox, context) => authorCallbackEffect(() => before(context)),
     after: after === undefined ? () => Effect.void : (_sandbox, context) => authorCallbackEffect(() => after(context)),

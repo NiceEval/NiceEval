@@ -125,6 +125,32 @@ export function fingerprintWithManifest(
   return fingerprintPreparedPair(pair, sourceCache, projection);
 }
 
+function fingerprintExperimentLoaderInputs(
+  source: AgentRun["experimentExecutionSource"],
+  sourceCache: FingerprintSourceCache | undefined,
+) {
+  const inputs = [
+    ["experiment", source?.experimentInputs],
+    ["config", source?.configInputs],
+  ] as const;
+  const files = inputs.flatMap(([scope, paths]) => [
+    ...(paths?.paths ?? []).map((file) => ({ scope, kind: "data" as const, file })),
+    ...(paths?.criteriaPaths ?? []).map((file) => ({ scope, kind: "criteria" as const, file })),
+  ]);
+  return Effect.forEach(
+    files,
+    ({ scope, kind, file }) =>
+      Effect.map(cachedContentHash(file, sourceCache), (digest) => ({
+        scope,
+        kind,
+        path: relative(process.cwd(), file),
+        digest,
+        covered: scope === "experiment" && source?.managedInputDigests[kind].get(file) === digest,
+      })),
+    { concurrency: "unbounded" },
+  );
+}
+
 function fingerprintPreparedPair(
   pair: PreparedRunPair,
   sourceCache?: FingerprintSourceCache,
@@ -223,6 +249,13 @@ function fingerprintPreparedPair(
     const loaderIdentity = loaderData.filter(([path, digest]) => covered.data.get(path) !== digest);
     const criteriaIdentity = criteria.filter(([path, digest]) => covered.criteria.get(path) !== digest);
     const privateIdentity = privateFiles.filter(([path, digest]) => covered.private.get(path) !== digest);
+    const experimentLoaderFiles = yield* fingerprintExperimentLoaderInputs(
+      pair.run.experimentExecutionSource,
+      sourceCache,
+    );
+    const experimentLoaderIdentity = experimentLoaderFiles
+      .filter(({ covered }) => !covered)
+      .map(({ scope, kind, path, digest }) => [scope, kind, path, digest]);
     const plugins = { pair: pair.plugin.pairProjection };
     const niceeval = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
@@ -237,6 +270,7 @@ function fingerprintPreparedPair(
       pairPlan: pair.identity,
       source: sourceGraph,
       ...(pair.run.experimentExecutionSource && { experimentSource: pair.run.experimentExecutionSource.digest }),
+      ...(experimentLoaderIdentity.length > 0 ? { experimentLoaderInputs: experimentLoaderIdentity } : {}),
       eval: {
         id: evalDef.id,
         tags: evalDef.tags ?? [],
@@ -275,7 +309,12 @@ function fingerprintPreparedPair(
             [relative(process.cwd(), pair.run.experimentSourcePath)]: pair.run.experimentExecutionSource.digest,
           }),
         },
-        data: Object.fromEntries([...loaderData, ...criteria, ...privateFiles]),
+        data: Object.fromEntries([
+          ...loaderData,
+          ...criteria,
+          ...privateFiles,
+          ...experimentLoaderFiles.map(({ path, digest }) => [path, digest]),
+        ]),
       }),
       catch: (cause) => fingerprintPlanningError("configuration", cause),
     });

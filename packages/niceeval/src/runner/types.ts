@@ -1,3 +1,4 @@
+import { withLoaderExecutionPhase } from "../loaders/runtime.ts";
 import type { ExperimentExecutionSource } from "./experiment-modules.ts";
 import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
 import type { ModelRoleSelection, ResolvedModelRoles, ModelRolesWire } from "../model-roles.ts";
@@ -896,7 +897,13 @@ export function isEvalDefinition(value: unknown): value is AnyEvalDefinition {
 
 /** @internal discovery 构造唯一的不可变阶段三值，不回写 Definition。 */
 export function discoverEval(definition: AnyEvalDefinition, facts: DiscoveredEvalFacts): DiscoveredEval {
-  const value = { ...definition, ...facts };
+  const value = {
+    ...definition,
+    ...facts,
+    test(t: never) {
+      return withLoaderExecutionPhase("test(t)", () => definition.test.call(this, t));
+    },
+  };
   Object.defineProperty(value, EVAL_DEFINITION, { value: true });
   return Object.freeze(value) as DiscoveredEval;
 }

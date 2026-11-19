@@ -23,6 +23,7 @@ import {
 import {
   captureLoadedFiles,
   enterLoaderDiscoveryHost,
+  type ExecutionLoaderInputs,
   type LoaderCaptureOrigin,
   type LoaderCapturePaths,
 } from "../loaders/runtime.ts";
@@ -227,12 +228,12 @@ function duplicateIdIssues(
   );
 }
 
-function importModule(
+function importModule<T>(
   file: string,
   root: string,
   kind: "eval" | "experiment",
-  load: DiscoveryModuleLoader = cachedModuleLoader,
-): Effect.Effect<unknown, DiscoveryError> {
+  load: (file: string) => Promise<T>,
+): Effect.Effect<T, DiscoveryError> {
   return Effect.tryPromise({
     try: () => withSandboxScriptRoot(root, () => load(file)),
     catch: (cause) =>
@@ -601,6 +602,7 @@ function discoverEvalEntry(
           cause,
         ),
     });
+    rememberLoaderOrigins(load, captured.origins);
     const module = yield* decodeEvalModule(captured.value, fileLabel);
     const expanded = yield* expandEvalExport(module.default, entry, root);
     const source = yield* Effect.try({
@@ -653,6 +655,47 @@ function addLoaderPaths(target: LoaderPathBuckets, source: LoaderCapturePaths): 
   source.paths.forEach((path) => target.data.add(path));
   source.criteriaPaths.forEach((path) => target.criteria.add(path));
   source.privatePaths.forEach((path) => target.private.add(path));
+}
+
+// The loader function owns one module cache. Its registrations remain available
+// when a later entry reaches a helper that was evaluated by an earlier import.
+const moduleLoaderOrigins = new WeakMap<DiscoveryModuleLoader, Map<string, LoaderPathBuckets>>();
+const experimentDirectLoaderPaths = new WeakMap<DiscoveryModuleLoader, Map<string, LoaderPathBuckets>>();
+
+function rememberLoaderOrigins(load: DiscoveryModuleLoader, origins: readonly LoaderCaptureOrigin[]): void {
+  if (origins.length === 0) return;
+  const registered = moduleLoaderOrigins.get(load) ?? new Map<string, LoaderPathBuckets>();
+  moduleLoaderOrigins.set(load, registered);
+  for (const origin of origins) {
+    const path = resolve(origin.sourcePath);
+    const buckets = registered.get(path) ?? emptyLoaderPathBuckets();
+    addLoaderPaths(buckets, origin);
+    registered.set(path, buckets);
+  }
+}
+
+function experimentLoaderInputs(
+  load: DiscoveryModuleLoader,
+  file: string,
+  modulePaths: readonly string[],
+  directPaths: LoaderCapturePaths,
+): ExecutionLoaderInputs {
+  const direct = experimentDirectLoaderPaths.get(load) ?? new Map<string, LoaderPathBuckets>();
+  const buckets = direct.get(file) ?? emptyLoaderPathBuckets();
+  addLoaderPaths(buckets, directPaths);
+  if (buckets.data.size > 0 || buckets.criteria.size > 0) {
+    direct.set(file, buckets);
+    experimentDirectLoaderPaths.set(load, direct);
+  }
+  const paths = new Set(buckets.data);
+  const criteriaPaths = new Set(buckets.criteria);
+  const registered = moduleLoaderOrigins.get(load);
+  for (const path of modulePaths) {
+    const moduleInputs = registered?.get(path);
+    moduleInputs?.data.forEach((input) => paths.add(input));
+    moduleInputs?.criteria.forEach((input) => criteriaPaths.add(input));
+  }
+  return { paths: [...paths].sort(), criteriaPaths: [...criteriaPaths].sort() };
 }
 
 function directLoaderPaths(evalDef: DiscoveredEval): LoaderCaptureOrigin {
@@ -1099,8 +1142,11 @@ function discoverExperimentFile(
 ): Effect.Effect<readonly DiscoveredExperiment[], DiscoveryError> {
   const fileLabel = relative(root, file).split(sep).join("/");
   return Effect.gen(function* () {
-    const imported = yield* importModule(file, root, "experiment", load);
-    const module = yield* decodeExperimentModule(imported, fileLabel);
+    const captured = yield* importModule(file, root, "experiment", () =>
+      captureLoadedFiles(() => load(file), { entryPath: file, allowPrivate: false }),
+    );
+    rememberLoaderOrigins(load, captured.origins);
+    const module = yield* decodeExperimentModule(captured.value, fileLabel);
     if (module.default === undefined) return [];
     const projection = yield* Effect.try({
       try: () => graph.capture(file),
@@ -1117,6 +1163,12 @@ function discoverExperimentFile(
           sourcePath: file,
         }),
         projection,
+        experimentLoaderInputs(
+          load,
+          file,
+          projection.modules.map((fact) => fact.path),
+          captured,
+        ),
       ),
     ];
   });

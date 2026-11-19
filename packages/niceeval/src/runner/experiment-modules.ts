@@ -1,21 +1,33 @@
-import type { DiscoveredExperiment } from "../types.ts";
+import { configLoaderInputs } from "../load-config.ts";
+import type { ExecutionLoaderInputs } from "../loaders/runtime.ts";
+import type { Config, DiscoveredExperiment } from "../types.ts";
 import { rootedModuleIdentity, type EvalModuleProjection, type ModuleFact } from "./module-graph.ts";
 import { syntaxNode, type SourceReplacement, type SyntaxNode } from "./source-normalization.ts";
 
-const experimentGraphs = new WeakMap<DiscoveredExperiment, EvalModuleProjection>();
+const experimentGraphs = new WeakMap<
+  DiscoveredExperiment,
+  { graph: EvalModuleProjection; inputs: ExecutionLoaderInputs }
+>();
 const executionSources = new WeakMap<DiscoveredExperiment, ExperimentExecutionSource>();
 
 export interface ExperimentExecutionSource {
   readonly digest: string;
   readonly unresolved: EvalModuleProjection["unresolved"];
   readonly paths: readonly string[];
+  readonly experimentInputs: ExecutionLoaderInputs;
+  readonly configInputs?: ExecutionLoaderInputs | undefined;
+  readonly managedInputDigests: {
+    readonly data: ReadonlyMap<string, string>;
+    readonly criteria: ReadonlyMap<string, string>;
+  };
 }
 
 export function attachExperimentModules(
   experiment: DiscoveredExperiment,
   graph: EvalModuleProjection,
+  inputs: ExecutionLoaderInputs,
 ): DiscoveredExperiment {
-  experimentGraphs.set(experiment, graph);
+  experimentGraphs.set(experiment, { graph, inputs });
   executionSources.delete(experiment);
   return experiment;
 }
@@ -130,14 +142,37 @@ function configurationReplacements(fact: ModuleFact): SourceReplacement[] {
 // @concord-code
 // @concord-implements docs/feature/experiments/architecture/source-identity.md
 // @concord-implements docs/feature/experiments/use-case/move-files.md
-export function getExperimentExecutionSource(experiment: DiscoveredExperiment): ExperimentExecutionSource | undefined {
+export function getExperimentExecutionSource(
+  experiment: DiscoveredExperiment,
+  config: Config,
+): ExperimentExecutionSource | undefined {
+  const registered = experimentGraphs.get(experiment);
+  if (registered === undefined) return undefined;
+  const configInputs = configLoaderInputs(config, registered.graph.root);
+  const source = experimentModuleSource(experiment, registered.graph, registered.inputs);
+  return configInputs === undefined ? source : { ...source, configInputs };
+}
+
+function experimentModuleSource(
+  experiment: DiscoveredExperiment,
+  graph: EvalModuleProjection,
+  experimentInputs: ExecutionLoaderInputs,
+): ExperimentExecutionSource {
   const cached = executionSources.get(experiment);
   if (cached !== undefined) return cached;
-  const graph = experimentGraphs.get(experiment);
-  if (graph === undefined) return undefined;
   const entry = graph.entry ?? graph.modules[0]?.path;
   const rootIsImported = graph.modules.some((fact) => fact.edges.some((edge) => edge.path === entry));
+  const managedInputDigests = { data: new Map<string, string>(), criteria: new Map<string, string>() };
+  for (const fact of graph.modules) {
+    for (const input of fact.managedInputs ?? []) {
+      if (input.kind === "data" || input.kind === "criteria") {
+        for (const [file, digest] of input.contentDigests) managedInputDigests[input.kind].set(file, digest);
+      }
+    }
+  }
   const result = {
+    experimentInputs,
+    managedInputDigests,
     digest: rootedModuleIdentity(graph, {
       role: "experiment",
       replacements: (fact) => (!rootIsImported && fact.path === entry ? configurationReplacements(fact) : []),

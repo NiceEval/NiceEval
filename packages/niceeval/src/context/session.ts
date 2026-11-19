@@ -1,3 +1,4 @@
+import { withLoaderExecutionPhase } from "../loaders/runtime.ts";
 import type { ExperimentFlags } from "../shared/types.ts";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
@@ -912,7 +913,7 @@ export class SessionManager {
   }
 
   private sendAgent(input: TurnInput, ctx: AgentSendContext): Promise<Turn> {
-    return this.deps.agent.send(input, ctx);
+    return withLoaderExecutionPhase("Adapter send", () => this.deps.agent.send(input, ctx));
   }
 }
 

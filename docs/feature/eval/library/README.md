@@ -237,16 +237,18 @@ export interface DatasetDefinition<TRow = unknown, Kind extends "pass" | "score"
 
 ## Loader 的读取时机
 
-`niceeval/loaders` 的 `loadText`、`loadJson`、`loadYaml` 与 `loadCriteria` 读取会进入 Eval 指纹的文件。
+`niceeval/loaders` 的 `loadText`、`loadJson`、`loadYaml` 与 `loadCriteria` 读取会进入指纹的文件。
 调用位置决定这次读取能否登记，规则只有三条：
 
 | 调用发生在 | 结果 |
 |---|---|
 | 发现期的模块顶层：Eval 文件，或它静态 import 的共享模块 | 读取并登记；共享模块在自己顶层读入的文件进入每条经 import 可达该模块的 Eval 的指纹 |
+| 发现期的模块顶层：Experiment 文件、项目配置文件，或它们静态 import 的模块（Adapter、Provider、Plugin 定义所在模块） | 读取并登记到该 Experiment 的执行身份，影响它规划的全部 Attempt；项目配置读入的文件进入所有 Experiment |
 | `test(t)`、lifecycle hook 或其它运行期代码 | 抛出 `LoaderOutsideDiscoveryError`，不读取文件 |
 | 没有 NiceEval 宿主的进程 | 只读取并返回内容，不登记 |
 
 登记归属看读取发生时谁在求值，不看 loader 调用写在哪个文件。
+Adapter 在运行期读取的提示词、skill 或配置文件，应在定义模块顶层用 loader 读成常量再在 `send` 中使用；运行期直接读文件不享有身份保证。
 Eval 文件在顶层调用共享模块导出的函数，函数里的 loader 读取只进入这条 Eval 的指纹，即使中间有 `await`；
 所以每题各读各自 fixture 的公共函数可以放在共享模块里，新增一道题不会作废其它题。
 
@@ -261,7 +263,7 @@ import { loadText } from "niceeval/loaders";
 export const LAYOUT_SCRIPT = await loadText(new URL("./probes/layout.cjs", import.meta.url));
 ```
 
-`LoaderOutsideDiscoveryError` 的 message 写出被读路径，并说明应把读取移到模块顶层的常量。
+`LoaderOutsideDiscoveryError` 的 message 写出被读路径与当时所处阶段（例如 `test(t)` 或 Adapter 的 `send`），并说明应把读取移到 Eval、Experiment 或其 import 的模块顶层，保存为常量。
 发现总在自己的模块图里求值 Eval；同一进程早先的无宿主读取不能代替登记。
 
 ## 封装自己的接入工厂

@@ -6,6 +6,7 @@
 // glob 不能塞进 URL(`?` 会变 query、`{}` 会编码),所以相对 glob 把 pattern 与基准 URL 分开传。
 // 无宿主进程只读；进入发现后，只有发现期的模块求值允许 loader 读取。
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +27,9 @@ interface LoaderCapture {
   readonly origins: Map<string, LoaderCaptureBuckets>;
   /** No usable caller frame: discovery conservatively attributes these to all entries. */
   readonly unattributed: LoaderCaptureBuckets;
-  /** The Eval entry whose evaluation this capture wraps, when discovery knows it. */
+  open: boolean;
+  readonly allowPrivate: boolean;
+  /** The entry whose evaluation this capture wraps, when discovery knows it. */
   readonly entryPath: string | undefined;
 }
 
@@ -56,8 +59,19 @@ export interface LoaderCapturePaths {
   readonly privatePaths: readonly string[];
 }
 
-let activeCapture: LoaderCapture | undefined;
+export type ExecutionLoaderInputs = Pick<LoaderCapturePaths, "paths" | "criteriaPaths">;
+
+const loaderContext = new AsyncLocalStorage<LoaderCapture | string>();
 let discoveryHostEntered = false;
+
+function activeLoaderCapture(): LoaderCapture | undefined {
+  const context = loaderContext.getStore();
+  return typeof context === "object" && context.open ? context : undefined;
+}
+
+export function withLoaderExecutionPhase<T>(phase: string, run: () => T): T {
+  return loaderContext.run(phase, run);
+}
 
 /** Discovery keeps its host identity even after an empty or failed generation. */
 export function enterLoaderDiscoveryHost(): void {
@@ -67,15 +81,17 @@ export function enterLoaderDiscoveryHost(): void {
 /** Reports a loader read after discovery has closed; load data at module top level and retain it for tests and lifecycle hooks. */
 export class LoaderOutsideDiscoveryError extends Error {
   constructor(path: string) {
+    const context = loaderContext.getStore();
+    const phase = typeof context === "string" ? context : "runtime";
     super(
-      `Read of "${path}" happened outside discovery. Move the read to the module top level and keep the result in a constant that test(t) or lifecycle hooks use; loaders cannot read files at run time after NiceEval discovery has started.`,
+      `Read of "${path}" happened outside discovery during ${phase}. Move the read to the module top level of an Eval, an Experiment, or a module they import, and keep the result in a constant.`,
     );
     this.name = "LoaderOutsideDiscoveryError";
   }
 }
 
 function assertLoaderTiming(path: string): void {
-  if (discoveryHostEntered && activeCapture === undefined) throw new LoaderOutsideDiscoveryError(path);
+  if (discoveryHostEntered && activeLoaderCapture() === undefined) throw new LoaderOutsideDiscoveryError(path);
 }
 
 /**
@@ -86,7 +102,7 @@ function assertLoaderTiming(path: string): void {
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
-  options: { readonly entryPath?: string | undefined } = {},
+  options: { readonly entryPath?: string | undefined; readonly allowPrivate?: boolean } = {},
 ): Promise<{
   value: T;
   paths: string[];
@@ -96,18 +112,18 @@ export async function captureLoadedFiles<T>(
   unattributed: LoaderCapturePaths;
 }> {
   enterLoaderDiscoveryHost();
-  const previous = activeCapture;
   const capture: LoaderCapture = {
     data: new Set<string>(),
     criteria: new Set<string>(),
     private: new Set<string>(),
     origins: new Map<string, LoaderCaptureBuckets>(),
     unattributed: newBuckets(),
+    open: true,
+    allowPrivate: options.allowPrivate ?? true,
     entryPath: options.entryPath === undefined ? undefined : resolve(options.entryPath),
   };
-  activeCapture = capture;
   try {
-    const value = await load();
+    const value = await loaderContext.run(capture, load);
     return {
       value,
       paths: [...capture.data].sort(),
@@ -128,7 +144,7 @@ export async function captureLoadedFiles<T>(
       },
     };
   } finally {
-    activeCapture = previous;
+    capture.open = false;
   }
 }
 
@@ -176,7 +192,7 @@ function loaderCallerFrames(): string[] {
  * entry that imports that module.
  */
 function registerCapturePath(bucket: LoaderCaptureBucketName, absolute: string): void {
-  const capture = activeCapture;
+  const capture = activeLoaderCapture();
   if (capture === undefined) return;
   capture[bucket].add(absolute);
   const frames = loaderCallerFrames();
@@ -230,10 +246,10 @@ export async function loadJson<T>(path: string | URL, decode: DataDecoder<T>): P
 }
 
 /**
- * 按 utf-8 读入一个文件的原文。判据不是结构化数据时用它:隐藏测试脚本、参考实现、
- * shell 模板都是判据文件。读入即宣告「它参与判定」——文件内容哈希进读它的那条 eval
- * 的指纹,改一字节就重跑那条 eval。用 `fs` 自行读入的文件不进指纹。
- * 路径写项目根相对的字符串,或 eval 文件相对的 `new URL(p, import.meta.url)`。
+ * 以 UTF-8 读取文件原文，可以用来读取隐藏测试脚本、参考实现或 Adapter 提示词。
+ * 在发现期从模块顶层调用。文件内容进入对应的 Eval 或 Experiment 指纹。
+ * 项目配置读入的文件进入所有 Experiment 的指纹。
+ * 用项目根相对路径，或用 `new URL(path, import.meta.url)` 指定模块相对路径。
  * 无宿主时只读取；进入过发现后，发现期外调用抛出 LoaderOutsideDiscoveryError。
  */
 export async function loadText(path: string | URL): Promise<string> {
@@ -261,7 +277,8 @@ export type CriteriaPattern = string | RelativeCriteriaPattern;
  * 新写的判据没 `git add` 也照样进指纹,代价是本地跑测冒出的生成物同样被盖到,用 `!` 排除。
  *
  * 无宿主进程只枚举并返回；进入过发现的进程只允许在发现期的模块顶层调用。
- * 发现结束后调用抛出 LoaderOutsideDiscoveryError；共享模块登记到每条可达 Eval。
+ * 发现结束后调用抛出 LoaderOutsideDiscoveryError。
+ * Experiment 或项目配置调用时，匹配文件进入相应 Experiment 的指纹。
  *
  * 两种用法错误直接抛:某个 include pattern 一个文件都没匹配到(或命中的都被 `!` 排除了)——
  * 多半是写错了或文件搬走了,别的 pattern 有命中也不放过,静默放过等于判据悄悄变窄;
@@ -304,7 +321,9 @@ function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadPrivate(...patterns: string[]): Promise<string[]> {
-  if (activeCapture === undefined) throw new LoaderOutsideDiscoveryError(patterns.join(" "));
+  const capture = activeLoaderCapture();
+  if (capture === undefined) throw new LoaderOutsideDiscoveryError(patterns.join(" "));
+  if (!capture.allowPrivate) throw new Error("Declare loadPrivate inputs at an Eval module's top level.");
   return registerGlobPatterns(patterns, "private");
 }
 

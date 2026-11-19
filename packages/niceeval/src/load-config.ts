@@ -1,12 +1,19 @@
 // niceeval.config.ts 装载:CLI 与 view 共用。view 本地模式每次重建都使用 fresh import,
 // 让当前配置模块图重新求值。
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { freshImportModule, importProjectModule } from "./fresh-import.ts";
+import { acquireFreshImportGeneration, importProjectModule } from "./fresh-import.ts";
+import { captureLoadedFiles, type ExecutionLoaderInputs } from "./loaders/runtime.ts";
 import { withSandboxScriptRoot } from "./sandbox/script.ts";
 import type { Config } from "./runner/types.ts";
+
+const loaderInputsByConfig = new WeakMap<Config, Map<string, ExecutionLoaderInputs>>();
+
+export function configLoaderInputs(config: Config, root: string): ExecutionLoaderInputs | undefined {
+  return loaderInputsByConfig.get(config)?.get(root);
+}
 
 function loadConfigModule(cwd: string, rebuild: boolean): Effect.Effect<Config, unknown> {
   return Effect.gen(function* () {
@@ -22,16 +29,30 @@ Ways to fix:
       },
       catch: (cause) => cause,
     });
-    const mod = yield* rebuild
-      ? freshImportModule(path)
-      : Effect.tryPromise({
-          try: () => withSandboxScriptRoot(cwd, () => importProjectModule(path)),
-          catch: (cause) => cause,
-        });
+    const capture = (load: () => Promise<{ default?: unknown }>) =>
+      Effect.tryPromise({
+        try: () => captureLoadedFiles(load, { entryPath: path, allowPrivate: false }),
+        catch: (cause) => cause,
+      });
+    const {
+      value: mod,
+      paths,
+      criteriaPaths,
+    } = yield* rebuild
+      ? Effect.scoped(
+          acquireFreshImportGeneration(cwd).pipe(Effect.flatMap((fresh) => capture(() => fresh.import(path)))),
+        )
+      : capture(() => withSandboxScriptRoot(cwd, () => importProjectModule(path)));
     return yield* Effect.try({
       try: () => {
         if (!mod.default) throw new Error(`niceeval.config.ts must default export defineConfig(...).`);
-        return mod.default as Config;
+        const config = mod.default as Config;
+        if (paths.length > 0 || criteriaPaths.length > 0 || rebuild) {
+          const byRoot = loaderInputsByConfig.get(config) ?? new Map<string, ExecutionLoaderInputs>();
+          byRoot.set(realpathSync(cwd), { paths, criteriaPaths });
+          loaderInputsByConfig.set(config, byRoot);
+        }
+        return config;
       },
       catch: (cause) => cause,
     });
