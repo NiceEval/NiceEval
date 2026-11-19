@@ -1,0 +1,114 @@
+name: Property tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    name: Vitest (${{ matrix.project }} ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: default
+            shard: 1/2
+          - project: default
+            shard: 2/2
+          - project: docker
+            shard: 1/1
+          - project: linux
+            shard: 1/1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run property tests
+        env:
+          NICEEVAL_PROPERTY_RUNS: ${{ github.event_name == 'schedule' && '8' || '4' }}
+        run: pnpm exec vitest run --project "${{ matrix.project }}" --shard "${{ matrix.shard }}" --passWithNoTests
+
+  live:
+    name: Live Provider properties
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec vitest run --project live --passWithNoTests
+
+  bombadil:
+    name: Bombadil (${{ matrix.surface }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        surface: [terminal, browser]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install and verify Bombadil
+        run: |
+          version="$(node -p 'require("./package.json").devDependencies["@antithesishq/bombadil"]')"
+          test "$version" = "0.7.10"
+          directory="$RUNNER_TEMP/bombadil"
+          mkdir -p "$directory"
+          curl --fail --silent --show-error --location \
+            "https://github.com/antithesishq/bombadil/releases/download/v$version/bombadil-x86_64-linux" \
+            --output "$directory/bombadil"
+          echo "6f2664ca7d4067017b4efb26db5c29d6dcfecdc78131f96989d336f12420cc1b  $directory/bombadil" | sha256sum --check
+          chmod +x "$directory/bombadil"
+          test "$("$directory/bombadil" --version)" = "bombadil $version"
+          echo "$directory" >> "$GITHUB_PATH"
+      - name: Build UI test candidate
+        run: pnpm run build:package
+      - name: Run terminal tests
+        if: matrix.surface == 'terminal' && github.event_name != 'schedule'
+        run: |
+          NICEEVAL_BOMBADIL_INTERRUPT_PHASE=startup node test/bombadil/driver.ts terminal test \
+            --exit-on-violation --time-limit 10s --output-path "$RUNNER_TEMP/bombadil-traces/startup"
+          node test/bombadil/driver.ts terminal test \
+            --exit-on-violation --time-limit 10s --output-path "$RUNNER_TEMP/bombadil-traces/active"
+      - name: Run browser tests
+        if: matrix.surface == 'browser' && github.event_name != 'schedule'
+        run: |
+          node test/bombadil/driver.ts browser test --headless --exit-on-violation --time-limit 15s \
+            --output-path "$RUNNER_TEMP/bombadil-traces/browser"
+      - name: Fuzz terminal
+        if: matrix.surface == 'terminal' && github.event_name == 'schedule'
+        run: |
+          node test/bombadil/driver.ts terminal fuzz --time-limit-run 10s --time-limit-fuzz 5m \
+            --output-path "$RUNNER_TEMP/bombadil-traces/terminal"
+      - name: Fuzz browser
+        if: matrix.surface == 'browser' && github.event_name == 'schedule'
+        run: |
+          node test/bombadil/driver.ts browser fuzz --headless --time-limit-run 30s --time-limit-fuzz 5m \
+            --output-path "$RUNNER_TEMP/bombadil-traces/browser"
+      - name: Upload Bombadil traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bombadil-${{ matrix.surface }}-traces
+          path: ${{ runner.temp }}/bombadil-traces
+          if-no-files-found: ignore
