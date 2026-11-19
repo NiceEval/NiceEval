@@ -848,41 +848,47 @@ export function openRunnerRecordCoordinator(input: {
               observability.diagnostics(),
             );
           }
-          yield* active.session.complete(recordAttemptOutcome(result));
-          const closureBytes = new TextEncoder().encode(
-            JSON.stringify(
-              attemptPublicationClosure({
+          // Once completion can close the writer, finish publishing and settle the
+          // reservation before interruption can send it to the discard path.
+          return yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* active.session.complete(recordAttemptOutcome(result));
+              const closureBytes = new TextEncoder().encode(
+                JSON.stringify(
+                  attemptPublicationClosure({
+                    runId: String(targetSlot.recordRun.session.runId),
+                    experimentId: targetSlot.recordRun.experimentId,
+                    context: targetSlot.recordRun.context,
+                    startedAt: targetSlot.recordRun.target.startedAt,
+                    completedAt: Date.now(),
+                    expectedSlots: targetSlot.recordRun.expectedSlots,
+                  }),
+                ),
+              );
+              yield* publishOriginAttempt(rootPath, {
                 runId: String(targetSlot.recordRun.session.runId),
-                experimentId: targetSlot.recordRun.experimentId,
-                context: targetSlot.recordRun.context,
-                startedAt: targetSlot.recordRun.target.startedAt,
-                completedAt: Date.now(),
-                expectedSlots: targetSlot.recordRun.expectedSlots,
-              }),
-            ),
+                writerGeneration: targetSlot.recordRun.writerGeneration,
+                slotId: String(targetSlot.slotId),
+                attemptId: String(active.public.attemptId),
+                attemptLocator: String(active.public.locator),
+                closureBytes,
+                closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
+                deadlineEpochMs: Date.now() + 30_000,
+              }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
+              targetSlot.recordRun.sourceOrigins.set(targetSlot.slotId, {
+                slotId: targetSlot.slotId,
+                result: {
+                  ...(result.sources === undefined ? {} : { sources: result.sources.map((source) => ({ ...source })) }),
+                },
+                assertionEntryIds: [],
+              });
+              active.sealed = undefined;
+              active.completed = true;
+              targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
+              targetSlot.recordRun.attempts.delete(targetSlot.slotId);
+              return active.public;
+            }),
           );
-          yield* publishOriginAttempt(rootPath, {
-            runId: String(targetSlot.recordRun.session.runId),
-            writerGeneration: targetSlot.recordRun.writerGeneration,
-            slotId: String(targetSlot.slotId),
-            attemptId: String(active.public.attemptId),
-            attemptLocator: String(active.public.locator),
-            closureBytes,
-            closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
-            deadlineEpochMs: Date.now() + 30_000,
-          }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
-          targetSlot.recordRun.sourceOrigins.set(targetSlot.slotId, {
-            slotId: targetSlot.slotId,
-            result: {
-              ...(result.sources === undefined ? {} : { sources: result.sources.map((source) => ({ ...source })) }),
-            },
-            assertionEntryIds: [],
-          });
-          active.sealed = undefined;
-          active.completed = true;
-          targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
-          targetSlot.recordRun.attempts.delete(targetSlot.slotId);
-          return active.public;
         });
       });
 

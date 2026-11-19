@@ -186,7 +186,7 @@ const concurrentReadSchedules: { label: string; examples: [number][] }[] = [
 ];
 
 // @feature docs/feature/run/README.md#publication-visibility
-test.for(concurrentReadSchedules)("listing Runs during the first write observes committed Runs ($label)", async ({ examples }) => {
+test.for(concurrentReadSchedules)("listing Runs during the first write observes committed Runs ($label)", { timeout: 15_000 }, async ({ examples }) => {
   await fc.assert(
     fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
       const cwd = await prepareProject(false);
@@ -219,7 +219,82 @@ test.for(concurrentReadSchedules)("listing Runs during the first write observes 
     }),
     { examples, numRuns: 1 },
   );
-}, 15_000);
+});
+
+describe.for(concurrentReadSchedules)("Invocation interruption ($label)", ({ examples }) => {
+  let cwd: string;
+  let runId: string;
+  let running: ReturnType<typeof runExperiment> | undefined;
+  let release: ReturnType<typeof Promise.withResolvers<void>>;
+  let abort: AbortController;
+
+  async function arrangeHeldRun() {
+    release = Promise.withResolvers<void>();
+    abort = new AbortController();
+    cwd = await prepareProject(true);
+    const entered = Promise.withResolvers<void>();
+    Reflect.set(process, gateSymbol, gates);
+    gates.set(cwd, { release: release.promise, entered: entered.resolve });
+    const plan = await planExperiment(cwd);
+    running = Effect.runPromise(experimentHost.invocation.run({ plan, signal: abort.signal }));
+    await Promise.race([
+      entered.promise,
+      running.then(() => {
+        throw new Error("Invocation finished before the held Eval started");
+      }),
+    ]);
+    const { runs } = await Effect.runPromise(runHost.list({ cwd }));
+    expect(runs).toHaveLength(1);
+    runId = runs[0]!.runId;
+    const deadline = Date.now() + 4_000;
+    while ((await getRun(cwd, runId)).coverage.published !== 1) {
+      if (Date.now() >= deadline) throw new Error("The first Attempt did not publish");
+      await setTimeout(1);
+    }
+  }
+
+  async function cleanUpHeldRun() {
+    release.resolve();
+    try {
+      await running?.catch(() => undefined);
+    } finally {
+      gates.delete(cwd);
+      Reflect.deleteProperty(process, gateSymbol);
+      if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+    }
+  }
+
+  beforeAll(arrangeHeldRun, 15_000);
+  afterAll(cleanUpHeldRun);
+
+  // @feature docs/feature/run/README.md#interrupt-recovery
+  test("aborting with a held Eval preserves published Attempts", async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
+        if (abort.signal.aborted) {
+          // A shrink must exercise a new Invocation with the same initial state.
+          await cleanUpHeldRun();
+          await arrangeHeldRun();
+        }
+        const reads = Array.from({ length: parallelReads }, () => getRun(cwd, runId));
+        abort.abort();
+        release.resolve();
+        const [{ receipt }] = await Promise.all([running!, ...reads]);
+        expect(receipt.completion).toBe("interrupted");
+        const run = await getRun(cwd, runId);
+        expect(run.state).toBe("interrupted");
+        expect(run.slots.find(({ evalId }) => evalId === "first")?.publication.state).toBe("published");
+        const held = run.slots.find(({ evalId }) => evalId === "held")?.publication;
+        if (held?.state === "published") {
+          expect(held).toMatchObject({ originRunId: runId, action: "executed" });
+        } else {
+          expect(held).toMatchObject({ state: "absent", reason: "interrupted-before-publication" });
+        }
+      }),
+      { examples, numRuns: 1 },
+    );
+  });
+});
 
 describe("historical results", () => {
   let source: string;
