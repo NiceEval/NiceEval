@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { projectRecordReadMode, startExternalRecordImport } from "./external-record-import.ts";
 import {
   closeRecordDatabase,
   inspectProjectRecordDatabase,
@@ -157,7 +156,9 @@ function openPinnedRecordReadSession(
       "pinned read deadline must be a future safe integer",
     );
   }
-  const connection = openImmutableRecordReader(path);
+  // SQLite arbitrates the WAL open/close boundary within the original read
+  // deadline. Schema admission and all result reads share the same snapshot.
+  const connection = openImmutableRecordReader(path, Math.max(0, deadlineEpochMs - Date.now()));
   let closed = false;
   const close = (): void => {
     if (closed) return;
@@ -188,12 +189,8 @@ function openPinnedRecordReadSession(
     return result;
   };
   try {
-    // BEGIN occurs before the authoritative schema pass. Every later
-    // read observes this same WAL/file generation until close rolls it back.
-    connection.db.exec("BEGIN");
     const publicationCutoff = currentPublicationCutoffOnConnection(connection);
     const cutoffIdentity = publicationCutoffIdentity(publicationCutoff);
-    validateExactSchema(connection);
     // Both sources have an admission owner: the project writer or the hostile
     // importer. Re-check selected facts, not every historical Seal, on reads.
     let sealedCutoff: SealedRunCutoff | undefined;
@@ -309,29 +306,9 @@ export const acquireProjectRecordReadSession = Effect.fn("acquireProjectRecordRe
   recordStorageRoot: string,
   options: { readonly operationScoped: boolean | undefined } = { operationScoped: undefined },
 ) {
-  const path = recordSqlitePath(recordStorageRoot);
-  const mode = yield* Effect.try({ try: () => projectRecordReadMode(path), catch: (cause) => cause });
-  if (mode === "operational") {
-    return yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => openOperationalRecordReadSession(recordStorageRoot, undefined, options.operationScoped),
-        catch: (cause) => cause,
-      }),
-      (session) => Effect.sync(() => session.close()),
-    );
-  }
-  const importer = yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        startExternalRecordImport(path, Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS, "captured-project-record"),
-      catch: (cause) => cause,
-    }),
-    (handle) => Effect.promise(() => handle.close()),
-  );
-  const generation = yield* Effect.tryPromise({ try: (_signal) => importer.result, catch: (cause) => cause });
   return yield* Effect.acquireRelease(
     Effect.try({
-      try: () => openHostOwnedRecordReadSession(generation.path, undefined, options.operationScoped),
+      try: () => openOperationalRecordReadSession(recordStorageRoot, undefined, options.operationScoped),
       catch: (cause) => cause,
     }),
     (session) => Effect.sync(() => session.close()),

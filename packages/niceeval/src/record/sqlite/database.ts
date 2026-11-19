@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync } from "node:fs";
+import { linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import { RECORD_SQLITE_BASELINE_SQL, RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL } from "./schema.ts";
@@ -356,10 +356,6 @@ function validateSchemaObjects(connection: RecordDatabase, sql?: string): void {
   }
 }
 
-function validateExistingOperationalSchemaForWriter(connection: RecordDatabase): void {
-  validateExactSchema(connection);
-}
-
 function decodeText(value: SQLOutputValue | undefined, field: string): string {
   if (typeof value !== "string") throw sqliteError("record-database-invalid", "decode", `${field} is not text`);
   return value;
@@ -431,18 +427,65 @@ export function validateExactSchema(connection: RecordDatabase): void {
   validateCurrentRecordDomain(connection);
 }
 
+/**
+ * Publish the initial file only after the complete SQLite bootstrap commits.
+ * The temporary path is on the same filesystem. A no-replace link lets
+ * concurrent creators converge on the first committed file.
+ */
+function bootstrapRecordDatabase(path: string): void {
+  const directory = mkdtempSync(join(dirname(path), ".record-bootstrap-"));
+  const candidate = join(directory, "record.sqlite");
+  try {
+    const db = new DatabaseSync(candidate, {
+      allowExtension: false,
+      defensive: true,
+      enableForeignKeyConstraints: true,
+      readBigInts: true,
+    });
+    try {
+      configureCommon(db);
+      db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
+      requireSecureDelete(db);
+      const generation = randomUUID();
+      db.exec("BEGIN IMMEDIATE");
+      db.exec(RECORD_SQLITE_BASELINE_SQL);
+      currentStatement(
+        db,
+        `INSERT INTO ne19_record_metadata(singleton,format,storage_generation,
+        created_at,barrier_state,portable_generation,portable_revision,portable_gate_id,record_payload,record_digest)
+        VALUES (1,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`,
+      ).run(RECORD_SQLITE_FORMAT, generation, new Date().toISOString());
+      currentStatement(
+        db,
+        `INSERT INTO ne19_coordination_state(singleton,revision,operational_generation,next_writer_sequence)
+        VALUES (1,0,?,1)`,
+      ).run(generation);
+      db.exec("COMMIT; PRAGMA wal_checkpoint(TRUNCATE);");
+    } finally {
+      db.close();
+    }
+    try {
+      linkSync(candidate, path);
+    } catch (cause) {
+      if (!(cause instanceof Error) || Reflect.get(cause, "code") !== "EEXIST") throw cause;
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDatabase {
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
   assertLegacyCoordinationEntriesAbsent(path);
-  const existed = pathExists(path);
-  if (existed) {
-    const metadata = lstatSync(path);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw sqliteError("record-schema-unsupported", "open", "ProjectDatabase path is not a regular Host-owned file");
-    }
+  if (!pathExists(path)) {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    bootstrapRecordDatabase(path);
   }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const metadata = lstatSync(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw sqliteError("record-schema-unsupported", "open", "ProjectDatabase path is not a regular Host-owned file");
+  }
   const db = new DatabaseSync(path, {
     allowExtension: false,
     defensive: true,
@@ -453,61 +496,9 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
   const connection: RecordDatabase = { db, path, mode: "writer", statements: new Map() };
   try {
     configureCommon(db);
-    const objectCount = currentStatement(db, "SELECT count(*) AS count FROM sqlite_schema").get() as Record<
-      string,
-      SQLOutputValue
-    >;
-    const isEmpty = decodeInteger(objectCount.count, "sqlite_schema.count") === 0;
-    if (isEmpty && existed) {
-      throw sqliteError("record-schema-unsupported", "open", "existing empty SQLite is not a ProjectDatabase");
-    }
-    // Never persist WAL mode or acquire a write transaction until an existing
-    // file has proved that it is the exact Host-owned ProjectDatabase format.
-    if (!isEmpty) {
-      validateExistingOperationalSchemaForWriter(connection);
-      requireSecureDelete(db);
-    } else {
-      db.exec("PRAGMA secure_delete=ON");
-      requireSecureDelete(db);
-    }
-    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
-    let created = false;
-    try {
-      if (isEmpty) {
-        const appliedAt = new Date().toISOString();
-        const generation = randomUUID();
-        db.exec("BEGIN IMMEDIATE");
-        try {
-          db.exec(RECORD_SQLITE_BASELINE_SQL);
-          currentStatement(
-            db,
-            `INSERT INTO ne19_record_metadata(singleton,format,storage_generation,
-            created_at,barrier_state,portable_generation,portable_revision,portable_gate_id,record_payload,record_digest)
-            VALUES (1,?,?,?,'open',NULL,NULL,NULL,NULL,NULL)`,
-          ).run(RECORD_SQLITE_FORMAT, generation, appliedAt);
-          currentStatement(
-            db,
-            `INSERT INTO ne19_coordination_state(singleton,revision,operational_generation,next_writer_sequence)
-            VALUES (1,0,?,1)`,
-          ).run(generation);
-          db.exec("COMMIT");
-          created = true;
-        } catch (cause) {
-          if (db.isTransaction) db.exec("ROLLBACK");
-          throw cause;
-        }
-      } else {
-        // Revalidate under the write lock so a concurrent schema change cannot
-        // cross the admission boundary between the read probe and this writer.
-        validateExistingOperationalSchemaForWriter(connection);
-      }
-    } catch (cause) {
-      throw cause;
-    }
-    // Both the creator and every concurrent loser validate the exact committed
-    // bootstrap identity before the connection becomes a writer.
+    // Only a fully committed, exact ProjectDatabase may be opened for writes.
     validateExactSchema(connection);
-    if (created) db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+    db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     db.setAuthorizer(writableAuthorizer());
     return connection;
   } catch (cause) {
@@ -529,12 +520,12 @@ export function openRecordReader(path: string): RecordDatabase {
   return openRecordReaderAfterRuntimeAdmission(path);
 }
 
-export function openImmutableRecordReader(path: string): RecordDatabase {
+export function openImmutableRecordReader(path: string, snapshotBusyTimeoutMs?: number): RecordDatabase {
   assertImmutableRecordReaderRuntime();
-  return openRecordReaderAfterRuntimeAdmission(path);
+  return openRecordReaderAfterRuntimeAdmission(path, snapshotBusyTimeoutMs);
 }
 
-function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
+function openRecordReaderAfterRuntimeAdmission(path: string, snapshotBusyTimeoutMs?: number): RecordDatabase {
   assertLegacyRecordAbsent(path);
   const db = new DatabaseSync(path, {
     allowExtension: false,
@@ -542,7 +533,7 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
     enableForeignKeyConstraints: true,
     readBigInts: true,
     readOnly: true,
-    timeout: 0,
+    timeout: snapshotBusyTimeoutMs ?? 0,
   });
   const connection: RecordDatabase = { db, path, mode: "reader", statements: new Map() };
   try {
@@ -552,6 +543,7 @@ function openRecordReaderAfterRuntimeAdmission(path: string): RecordDatabase {
     // the only writable reader state and are required for bounded Seal sort.
     db.exec(RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL);
     db.setAuthorizer(readerAuthorizer);
+    if (snapshotBusyTimeoutMs !== undefined) db.exec("BEGIN");
     validateExactSchema(connection);
     // Full structure and closure validation belongs to import, publication and
     // maintenance. Opening a Host-owned reader must not scan historical payload.

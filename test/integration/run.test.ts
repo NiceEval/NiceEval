@@ -74,7 +74,7 @@ async function prepareProject(held: boolean) {
   }
 }
 
-async function runExperiment(cwd: string) {
+async function planExperiment(cwd: string) {
   const planned = await Effect.runPromise(
     experimentHost.invocation.plan({
       cwd,
@@ -84,7 +84,11 @@ async function runExperiment(cwd: string) {
     }),
   );
   if (planned.status !== "ready") throw new Error(`Could not plan Run: ${JSON.stringify(planned)}`);
-  return Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
+  return planned.plan;
+}
+
+async function runExperiment(cwd: string) {
+  return Effect.runPromise(experimentHost.invocation.run({ plan: await planExperiment(cwd) }));
 }
 
 async function getRun(cwd: string, runId: string) {
@@ -171,6 +175,51 @@ describe("publication visibility", () => {
     );
   });
 });
+
+// Each sample runs a fresh Invocation, so Vitest measures its cost separately.
+const concurrentReadSchedules: { label: string; examples: [number][] }[] = [
+  { label: "regression", examples: [[1]] },
+  ...Array.from({ length: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1) }, (_, index) => ({
+    label: `exploration ${index + 1}`,
+    examples: [],
+  })),
+];
+
+// @feature docs/feature/run/README.md#publication-visibility
+test.for(concurrentReadSchedules)("listing Runs during the first write observes committed Runs ($label)", async ({ examples }) => {
+  await fc.assert(
+    fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
+      const cwd = await prepareProject(false);
+      try {
+        const plan = await planExperiment(cwd);
+        const list = () => Effect.runPromise(runHost.list({ cwd })).then(({ runs }) => runs);
+        expect(await list()).toEqual([]);
+        let complete = false;
+        const running = Effect.runPromise(experimentHost.invocation.run({ plan })).finally(() => {
+          complete = true;
+        });
+        try {
+          let visible = false;
+          while (!complete && !visible) {
+            const observations = await Promise.all(Array.from({ length: parallelReads }, list));
+            for (const runs of observations) {
+              expect(runs.map((run) => run.coverage.expected)).toEqual(runs.length === 0 ? [] : [1]);
+              visible ||= runs.length === 1;
+            }
+            if (!visible) await setTimeout(1);
+          }
+        } finally {
+          await running;
+        }
+        const { receipt } = await running;
+        expect((await list()).map((run) => run.runId)).toEqual(receipt.createdRunIds);
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }),
+    { examples, numRuns: 1 },
+  );
+}, 15_000);
 
 describe("historical results", () => {
   let source: string;
