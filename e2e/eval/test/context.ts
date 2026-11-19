@@ -15,6 +15,5 @@ export const evalE2E = createE2EContext({
   },
   commands: {
     niceeval: [join(process.cwd(), "node_modules", ".bin", "niceeval")],
-    tsc: [join(process.cwd(), "node_modules", ".bin", "tsc")],
   },
 });

@@ -1,7 +1,7 @@
 # 功能域 · Eval、Context 与 Assertions
 
 本域回答一个问题：**用户在真实 NiceEval 项目中编写并运行 Eval 时，Context、公开 Assertion 与 verdict 是否符合契约。**
-它由 `e2e/eval/` 功能 Repo 承担，使用安装后的 candidate、签入的 Eval / Experiment 和确定性 Application。
+`e2e/eval/` 验证运行时行为。`e2e/eval-built/` 验证依赖安装后类型声明的场景。两者都使用签入的 Eval、Experiment 和确定性 Application。
 Agent 会话场景使用 Direct Agent；只有文件、diff、shell 或其它 Sandbox evidence 必需时才为对应 case 声明 Sandbox。
 
 每次 Repo invocation 都通过 `niceeval exp --rerun all` 完整生成自己的 `.niceeval`，再从退出码和
@@ -22,8 +22,8 @@ Repo 的 15 分钟期限包含默认并行运行和资源终结。逐项启动�
 | [`#eval-active-progress-redaction`](#eval-active-progress-redaction) | ACTIVE detail 在控制序列移除后仍脱敏已登记 secret，并在 grapheme 边界遵守 UTF-8 上限 | 单边界 E2E | `e2e/eval/test/active-progress-redaction.test.ts` | PR |
 | [`#eval-assertion-judge-unavailable`](#eval-assertion-judge-unavailable) | 未配置 Judge 时 required Judge Assertion 以 unavailable 使 Attempt errored，且不进入网络路径 | 单边界 E2E | `e2e/eval/test/assertion-judge-unavailable.test.ts` | PR |
 | [`#eval-custom-application`](#eval-custom-application) | 同一应用接口选择不同实现，原生动作与状态由公开 Assertion 观察 | 单边界 E2E | `e2e/eval/test/custom-application.test.ts` | PR |
-| [`#eval-custom-application-lifecycle`](#eval-custom-application-lifecycle) | 创建失败与取消释放资源，作者入口及时关闭 | 单边界 E2E | `e2e/eval/test/custom-application-lifecycle.test.ts` | PR |
-| [`#application-context-types`](#application-context-types) | 安装后公开类型保留应用方法推导并拒绝冲突 | 单边界 E2E | `e2e/eval/test/application-types.test.ts` | PR |
+| [`#eval-custom-application-lifecycle`](#eval-custom-application-lifecycle) | 创建失败与取消释放资源，作者入口及时关闭 | 单边界 E2E | `e2e/eval-built/test/custom-application-lifecycle.test.ts` | PR |
+| [`#application-context-types`](#application-context-types) | 安装后公开类型保留应用方法推导并拒绝冲突 | 单边界 E2E | `e2e/eval-built/test/application-types.test.ts` | PR |
 | [`#eval-catalog-errors`](#eval-catalog-errors) | 安装后 SDK 的 Eval catalog 失败保留可行动的发现诊断 | 单边界 E2E | `e2e/eval/test/catalog-errors.test.ts` | PR |
 
 ## eval-context

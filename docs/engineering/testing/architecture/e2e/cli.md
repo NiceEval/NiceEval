@@ -1,7 +1,7 @@
 # 功能域 · CLI
 
 本域回答一个问题：**`niceeval` 命令在真实运行下的可观察行为——选择、退出码、缓存复用——是否符合 CLI 契约。**
-`e2e/cli/` 承担宿主 CLI 场景，`e2e/cli-docker/` 承担需要 Docker daemon 的场景。两个 Repo 同属 CLI 功能域。
+`e2e/cli/` 承担宿主 CLI 场景，`e2e/cli-docker/` 承担需要 Docker daemon 的场景。`e2e/cli-built/` 验证随安装包提供的索引与文档。
 
 仓库使用真实 Agent 与真实模型——真实优先没有例外。
 稳定性来自断言对象：只断言机制事实（哪些 Eval 被选中、进程退了几、attempt 是新跑还是复用），不断言模型输出质量。

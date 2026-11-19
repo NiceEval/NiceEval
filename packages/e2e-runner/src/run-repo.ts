@@ -381,6 +381,17 @@ export const runRepoEffect = (
     const tarball = linked
       ? candidate.path
       : yield* durable(id, assertContainedRegularFile(durableRoot, candidate.path, "durable candidate artifact"));
+    const sourceNodeOptions =
+      candidate.form === "source"
+        ? [
+            "--conditions=niceeval-source",
+            ...(process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
+              ? ["--experimental-transform-types"]
+              : []),
+            "--import",
+            createRequire(import.meta.url).resolve("tsx/esm"),
+          ].join(" ")
+        : "";
     const sourceOptions =
       candidate.form === "source"
         ? yield* fs(id, "run", (service) => service.readFileString(join(candidate.path, "package.json"))).pipe(
@@ -395,8 +406,7 @@ export const runRepoEffect = (
                     ]),
                   );
                   return {
-                    NODE_OPTIONS:
-                      `${process.env.NODE_OPTIONS ?? ""} --conditions=niceeval-source --experimental-transform-types --import ${createRequire(import.meta.url).resolve("tsx/esm")}`.trim(),
+                    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} ${sourceNodeOptions}`.trim(),
                     // Jiti's resolver does not consume Node's custom export conditions.
                     // Resolve the same public entries to source for project discovery.
                     JITI_ALIAS: JSON.stringify({ ...JSON.parse(process.env.JITI_ALIAS ?? "{}"), ...aliases }),
@@ -419,10 +429,7 @@ export const runRepoEffect = (
         dockerCandidateArgs.push("--mount", `type=bind,src=${path},dst=${path},readonly`);
       }
       if (candidate.form === "source") {
-        dockerCandidateArgs.push(
-          "--env",
-          `NODE_OPTIONS=--conditions=niceeval-source --experimental-transform-types --import ${createRequire(import.meta.url).resolve("tsx/esm")}`,
-        );
+        dockerCandidateArgs.push("--env", `NODE_OPTIONS=${sourceNodeOptions}`);
         for (const [name, value] of Object.entries(sourceOptions)) {
           if (name === "JITI_ALIAS") dockerCandidateArgs.push("--env", `${name}=${value}`);
         }

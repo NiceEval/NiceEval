@@ -1,0 +1,24 @@
+{
+  "name": "niceeval-e2e-eval-built",
+  "version": "0.1.0",
+  "private": true,
+  "nx": {
+    "includedScripts": []
+  },
+  "type": "module",
+  "description": "Eval, Context, and public Assertion contract E2E consumer",
+  "scripts": {
+    "e2e": "vitest run",
+    "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo eval-built'); process.exit(1)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "niceeval": "0.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "effect": "4.1.4",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}

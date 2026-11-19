@@ -27,6 +27,8 @@ E2E 测的是从公开入口使用 NiceEval，但候选有三种形态，按用�
 | `tarball` | CI 全部 lane、接管门禁、push 前的打包冒烟、跨设备交接 | 安装 `pnpm e2e pack` 产出的 tarball | 再加上包边界：`files` 清单、exports 映射、bin、可选依赖从使用方项目完成路径 resolution、安装脚本 |
 
 - 场景 Repo 在 project metadata 里声明 `candidate: built` 才会拿到构建输出；未声明的 Repo 在本地按 `source` 运行。
+- `candidate: built` 与 `requires` 一样对 Repo 内全部测试生效。只有少数测试依赖构建输出时，把它们放进独立的 built Repo，其余留在 `source` Repo；本地内循环不能因为个别测试而等待构建或打包锁。
+- 本地运行总是点名测试文件（`--repo <id> -- --run <file>`）；只写 `--repo` 会跑整个 Repo，整套由 CI 负责。
 - `source` 与 `built` 的已知盲区是依赖的路径 resolution：模块会落到 NiceEval 工作区的 `node_modules`，缺失的依赖或可选依赖在本地看不出来。`source` 还看不到构建期门禁。这两类问题由 CI 的 `tarball` 运行负责，本地不重复。
 - `built` 与 `tarball` 只写入候选缓存自己的目录，任何形态都不读取、删除或写入共享 checkout 的 `packages/niceeval/dist`。下游通过 link 消费的正是这份 dist，E2E 不能悄悄替换它；需要更新它时由作者显式运行 `pnpm run build:package`。
 - `built` 与 `tarball` 按**打包输入摘要**缓存：`packages/niceeval` 的源码、`package.json`、锁文件中它的依赖闭包与构建配置。摘要不变就复用已有的构建输出或 tarball，HEAD 移动本身（例如只改了文档或其它包）不触发重新构建或打包。
@@ -39,15 +41,11 @@ source 进程的 `require(esm)` 与动态 `import()` 必须加载同一份框架
 ## 高阶本地入口
 
 ```sh
-# 本地默认：无密钥集合；根目录 `.env` 可让显式可信 lane 运行全量
-pnpm e2e test --lane pr
+# 本地运行单个测试文件
+pnpm e2e test --repo eval -- --run test/test-cleanup.test.ts
 
-# 按 Repo / 原生测试参数收窄
-pnpm e2e test --repo insight
-pnpm e2e test --repo insight -- --run test/view-lifecycle.test.ts
-
-# 全量 E2E；缺 secret 在 prepare 前一次列清
-pnpm e2e test --lane main --repo adapter/codex-cli
+# 只生成无密钥 PR 全量计划
+pnpm e2e plan --lane pr --no-diff --batch
 
 # 本地无密钥 adapter protocol / transport / fault；与 live Repo 分开选择
 pnpm e2e test --lane pr --repo adapter/local-protocol

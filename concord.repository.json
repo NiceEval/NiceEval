@@ -66,12 +66,20 @@
       "root": "e2e/cli"
     },
     {
+      "id": "cli-built",
+      "root": "e2e/cli-built"
+    },
+    {
       "id": "cli-docker",
       "root": "e2e/cli-docker"
     },
     {
       "id": "eval",
       "root": "e2e/eval"
+    },
+    {
+      "id": "eval-built",
+      "root": "e2e/eval-built"
     },
     {
       "id": "insight",
@@ -222,12 +230,24 @@
       "e2e/cli-docker/project.json",
       "e2e/cli-docker/tsconfig.json",
       "e2e/cli-docker/vitest.config.ts",
+      "e2e/cli-built/package.json",
+      "e2e/cli-built/pnpm-lock.yaml",
+      "e2e/cli-built/pnpm-workspace.yaml",
+      "e2e/cli-built/project.json",
+      "e2e/cli-built/tsconfig.json",
+      "e2e/cli-built/vitest.config.ts",
       "e2e/cli/package.json",
       "e2e/cli/pnpm-lock.yaml",
       "e2e/cli/pnpm-workspace.yaml",
       "e2e/cli/project.json",
       "e2e/cli/tsconfig.json",
       "e2e/cli/vitest.config.ts",
+      "e2e/eval-built/package.json",
+      "e2e/eval-built/pnpm-lock.yaml",
+      "e2e/eval-built/pnpm-workspace.yaml",
+      "e2e/eval-built/project.json",
+      "e2e/eval-built/tsconfig.json",
+      "e2e/eval-built/vitest.config.ts",
       "e2e/eval/package.json",
       "e2e/eval/pnpm-lock.yaml",
       "e2e/eval/pnpm-workspace.yaml",

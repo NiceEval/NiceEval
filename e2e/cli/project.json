@@ -22,7 +22,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "candidate": "built",
           "batch": "host-cli",
           "areas": [
             "cli"

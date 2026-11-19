@@ -60,7 +60,7 @@ HTTP 或浏览器读取。只有“旧 Record 兼容性”本身是契约时，�
 
 ## 功能归属与 Bug 回归
 
-[CLI 场景](e2e/cli.md)由 `e2e/cli/` 与 `e2e/cli-docker/` 承担，覆盖 PR、main、nightly、release。
+[CLI 场景](e2e/cli.md)由 `e2e/cli/`、`e2e/cli-built/` 与 `e2e/cli-docker/` 承担，覆盖 PR、main、nightly、release。
 
 “功能测试”和“Bug 测试”不是两套平行目录。每条长期测试都先属于一个稳定功能；历史 Bug 只给其中一条有区分力的测试增加回归凭据。
 因此不建立 `bugs/`、`issues/` 或按日期分组的套件，也不把 issue 编号写进文件名和 `test()` 标题。

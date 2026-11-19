@@ -22,7 +22,6 @@
       ],
       "metadata": {
         "niceeval": {
-          "candidate": "built",
           "batch": "docker-2",
           "areas": [
             "cli"

@@ -13,7 +13,9 @@ const EXCLUDE = [
   ".claude/**",
   "e2e/adapter/**",
   "e2e/cli/**",
+  "e2e/cli-built/**",
   "e2e/cli-docker/**",
+  "e2e/eval-built/**",
   "e2e/report/**",
   "e2e/undo/**",
 ];

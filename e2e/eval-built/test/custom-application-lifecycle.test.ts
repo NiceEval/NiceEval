@@ -1,4 +1,4 @@
-// rerun: pnpm e2e test --repo eval -- --run test/custom-application-lifecycle.test.ts
+// rerun: pnpm e2e test --repo eval-built -- --run test/custom-application-lifecycle.test.ts
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
