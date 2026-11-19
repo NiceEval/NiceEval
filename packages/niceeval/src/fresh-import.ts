@@ -14,26 +14,24 @@ import { withSandboxScriptRoot } from "./sandbox/script.ts";
 const generationGate = Semaphore.makeUnsafe(1);
 const nativeRequire = createRequire(import.meta.url);
 
-function sourceRuntimeModules(): Record<string, unknown> | undefined {
-  if (import.meta.resolve("niceeval") !== new URL("./index.ts", import.meta.url).href) return undefined;
+function runtimeModules(): Record<string, unknown> {
   const manifest = nativeRequire("../package.json") as { exports: Record<string, unknown> };
   const modules: Record<string, unknown> = Object.create(null);
   for (const entry of Object.keys(manifest.exports)) {
     const specifier = entry === "." ? "niceeval" : `niceeval${entry.slice(1)}`;
-    // Jiti does not inherit Node's custom export conditions. Keep each public entry
-    // lazy, but let Node select and cache the same runtime used by the source CLI.
+    // Resolve from the CLI so custom conditions and linked package path aliases
+    // share its module identity. Lazy getters avoid loading unused public entries.
     Object.defineProperty(modules, specifier, { enumerable: true, get: () => nativeRequire(specifier) });
   }
   return modules;
 }
 
-const virtualModules = sourceRuntimeModules();
 // Third-party exact optional boundary: Jiti observes which loader options are supplied.
 const loaderOptions = Object.freeze({
   interopDefault: false,
   moduleCache: true,
   tsconfigPaths: true,
-  ...(virtualModules === undefined ? {} : { virtualModules }),
+  virtualModules: runtimeModules(),
 });
 const cachedLoader = createJiti(import.meta.url, loaderOptions);
 
