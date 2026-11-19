@@ -10,7 +10,7 @@
     "node": ">=24.15.0"
   },
   "scripts": {
-    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter @niceeval/testkit run typecheck && pnpm --filter niceeval run typecheck",
+    "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter @niceeval/testkit run typecheck && pnpm --filter niceeval run typecheck && pnpm exec tsc6 -p test/tsconfig.property.json",
     "lint": "concurrently --names format,concord,promote-init,docs-site \"pnpm lint:format\" \"concord check\" \"node .github/scripts/promote-init.mjs --check\" \"pnpm run lint:docs-site\"",
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names validate,links \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
     "niceeval": "node packages/niceeval/bin/niceeval.js",

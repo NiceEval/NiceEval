@@ -1,6 +1,6 @@
 import { globSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import type { Reporter } from "vitest/reporters";
+import type { Reporter } from "vitest/node";
 
 const costLimits = new Map([
   ["integration", 1000],
@@ -35,7 +35,8 @@ export default {
           .map((attempt) => attempt.duration)
           .sort((left, right) => left - right);
         if (durations.length === 0) continue;
-        const median = (durations[Math.floor((durations.length - 1) / 2)]! + durations[Math.floor(durations.length / 2)]!) / 2;
+        const median =
+          (durations[Math.floor((durations.length - 1) / 2)]! + durations[Math.floor(durations.length / 2)]!) / 2;
         if (median > limit) {
           exceeded.push(`${module.relativeModuleId} > ${test.fullName}: p50 ${median.toFixed(0)}ms (limit ${limit}ms)`);
         }

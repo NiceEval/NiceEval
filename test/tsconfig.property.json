@@ -1,0 +1,5 @@
+{
+  "extends": "../packages/niceeval/tsconfig.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"] },
+  "include": ["architecture-reporter.ts", "integration/**/*.ts", "cli/**/*.ts", "process/**/*.ts", "bombadil/**/*.ts"]
+}

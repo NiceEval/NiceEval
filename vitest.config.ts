@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { defineConfig } from "vitest/config";
 import { configDefaults } from "vitest/config";
 import architectureReporter from "./test/architecture-reporter.ts";
@@ -27,7 +28,7 @@ const SOURCE_EXEC_ARGV = [
   "--conditions=niceeval-source",
   ...(process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
     ? ["--experimental-transform-types"]
-    : ["--require", "tsx/cjs"]),
+    : ["--require", createRequire(import.meta.url).resolve("tsx/cjs")]),
 ];
 const CONDITIONS = ["docker", "linux", "live"] as const;
 const conditionedTests = (condition: string) => `test/${LAYERS}/**/*.${condition}.test.ts`;

@@ -17,3 +17,14 @@ in the root `package.json`. Download the binary for your OS and CPU from
 [GitHub Releases](https://github.com/antithesishq/bombadil/releases), verify its
 SHA-256 against the release asset digest, and put the executable on your PATH
 as `bombadil`. Check the installed version with `bombadil --version`.
+
+For a short local UI run against an existing package build:
+
+```sh
+pnpm exec node test/bombadil/driver.ts terminal test --time-limit 9s --exit-on-violation
+pnpm exec node test/bombadil/driver.ts browser test --headless --time-limit 9s --exit-on-violation
+```
+
+Set `NICEEVAL_BOMBADIL_INTERRUPT_PHASE=startup` to explore interruption before
+the first Eval reaches its active phase. Pass `--output-path <directory>` to
+keep traces. The browser needs a local Chromium or Google Chrome installation.
