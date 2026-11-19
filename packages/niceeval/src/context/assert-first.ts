@@ -1,3 +1,4 @@
+import type { TestCleanupContext } from "../sandbox/commands.ts";
 import { bindConversationMaterial, projectConversation } from "../assertions/conversation-material.ts";
 import { AttemptNotesCollector } from "./notes.ts";
 import { bindSimulatedUser } from "../simulated-user/binding.ts";
@@ -165,6 +166,7 @@ export interface AssertFirstCoreContextState {
 }
 
 export interface AssertFirstCoreContextDeps {
+  readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly readUsage?: (() => EvalUsage) | undefined;
@@ -186,6 +188,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
     label: string,
     value: import("../shared/types.ts").JsonValue | import("../assertions/quantity.ts").Quantity,
   ): void;
+  onCleanup(fn: (context: TestCleanupContext) => void | PromiseLike<void>): void;
   readonly usage: EvalUsage;
   readonly elapsedMs: import("../assertions/match.ts").NumericMaterial;
   maxTokens(max: number): BooleanAssertionHandle<Kind, number>;
@@ -207,6 +210,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
+  readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly captureSimulatedUser?: ((activity: SimulatedUserActivity) => Promise<void>) | undefined;
   readonly deadlineAt?: number | undefined;
@@ -489,6 +493,8 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetM
   simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
   /** 保存 JSON 值或 Quantity 供结果展示，不登记 Assertion，也不影响 Verdict、score 或 coverage。 */
   note: AssertFirstCoreTestContext<Kind>["note"];
+  /** 登记评估结束并完成判定后执行的收尾回调。回调逆序执行，失败时追加诊断。 */
+  onCleanup: AssertFirstCoreTestContext<Kind>["onCleanup"];
   readonly evaluationKind: Kind;
   send(
     input: string | { readonly text: string; readonly files?: readonly InputFile[] | undefined },
@@ -1803,6 +1809,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
   };
   const { maxTokens, maxCost } = usageBudgetMethods(runtime, readUsage);
   const base = {
+    onCleanup: deps.onCleanup,
     note: (
       label: string,
       value: import("../shared/types.ts").JsonValue | import("../assertions/quantity.ts").Quantity,

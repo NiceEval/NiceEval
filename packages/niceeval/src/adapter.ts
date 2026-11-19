@@ -94,6 +94,7 @@ const RESERVED_ADAPTER_CONTEXT_KEYS = [
   "score",
   "group",
   "note",
+  "onCleanup",
   "skip",
   "signal",
   "model",
@@ -232,6 +233,7 @@ export interface AdapterCreateContext<Flags = ExperimentFlags, Roles extends str
 
 type EvalContextBase<Kind extends EvaluationKind, Flags, Context> = JudgePresetMethods<Kind, Context> & {
   readonly note: AssertFirstCoreTestContext<Kind>["note"];
+  readonly onCleanup: AssertFirstCoreTestContext<Kind>["onCleanup"];
   readonly usage: EvalUsage;
   readonly elapsedMs: import("./assertions/match.ts").NumericMaterial;
   maxTokens(max: number): BooleanAssertionHandle<Kind, number>;

@@ -108,6 +108,8 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
+`test(t)` 取得宿主临时目录或后台进程后，可以用 `t.onCleanup(fn)` 登记释放。回调在评估正文结束且 Judge 完成判定后，随 Sandbox 的收尾回调一起逆序执行。正文抛错或被取消时，已登记的回调仍会运行。收尾失败会追加诊断，原有判定照常保留。
+
 `t.note(label, value)` 记录供结果审阅使用的 JSON 值或 Quantity，例如 `t.note("延迟", ms(512))`。
 它不登记 Assertion，不影响 Verdict、score 或 coverage。`null` 显示为 unavailable。
 同一 Attempt 的 label 必须唯一，最多 64 项，每项 JSON 不超过 64 KiB；违规时抛出 `TypeError`。
@@ -149,6 +151,14 @@ note: AssertFirstCoreTestContext<Kind>["note"];
 ```
 
 保存 JSON 值或 Quantity 供结果展示，不登记 Assertion，也不影响 Verdict、score 或 coverage。
+
+#### `onCleanup`
+
+```ts
+onCleanup: AssertFirstCoreTestContext<Kind>["onCleanup"];
+```
+
+登记评估结束并完成判定后执行的收尾回调。回调逆序执行，失败时追加诊断。
 
 #### `evaluationKind`
 

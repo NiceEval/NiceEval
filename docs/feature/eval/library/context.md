@@ -55,6 +55,29 @@ async test(t) {
 scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent 阶段。
 完整反馈契约见 [Experiments · 生命周期代码怎样向这次运行反馈](../../experiments/library/README.md#生命周期代码怎样向这次运行反馈)。
 
+## 登记收尾
+
+`test(t)` 在正文里取得 Sandbox 之外的资源（宿主临时目录、外部服务里的临时数据、后台进程）时，取得成功后立即用 `t.onCleanup(fn)` 登记释放，不用 `try/finally` 包住整段正文：
+
+```ts
+async test(t) {
+  const root = await mkdtemp(join(tmpdir(), "task-"));
+  t.onCleanup(() => rm(root, { recursive: true, force: true }));
+
+  await t.send(JSON.stringify({ root, request: "补上链接" }));
+  t.check(await readFile(join(root, "README.md"), "utf8"), includes("[打开图书]"));
+}
+```
+
+写进 Sandbox 的文件随实例回收，不需要登记。
+
+- 收尾与 [`context.onCleanup()`](../../sandbox/library/layers.md) 共用一个 Attempt 收尾栈，按登记顺序逆序执行：`test(t)` 的登记先于 before 的登记执行。
+- 执行时机在 `test(t)` 结束、本 Attempt 的全部判定（含延迟执行的 Judge 与 Agent Judge）完成之后，Sandbox 回收之前。`test(t)` 抛错或被取消也照常执行。
+- 失败挂起（`pauseOnFailure`）保留现场时，收尾推迟到挂起结束后再执行，现场里的临时资源仍在。
+- `fn` 收到与 `context.onCleanup()` 相同的冻结 context（独立 `signal`、`timeoutMs`、`deadlineAt`）。
+- 收尾失败只追加诊断，不改已产出的判定，也不阻断其余收尾；要让收尾结果影响判定，在 `test(t)` 里断言。
+- 只能在 `test(t)` 运行期间登记；`test(t)` 结束后再调用会抛错，报错指出登记已关闭。
+
 ## 读取结果
 
 | 对象 | 常用字段 |

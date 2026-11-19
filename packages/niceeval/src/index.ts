@@ -197,3 +197,5 @@ export type { ModelRoleSelection, ResolvedModelRole, ResolvedModelRoles } from "
 export { defineModelRoles } from "./model-roles.ts";
 
 export type { CacheReadReport, CacheReadSummary } from "./o11y/cache-read.ts";
+
+export type { TestCleanupContext } from "./sandbox/commands.ts";

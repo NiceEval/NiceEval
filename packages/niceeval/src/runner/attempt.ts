@@ -129,7 +129,7 @@ import {
   redactSensitiveText,
   rememberSensitiveValues,
 } from "../sandbox/redaction.ts";
-import type { SandboxCleanupCommand, SandboxCommandContext } from "../sandbox/commands.ts";
+import type { SandboxCleanupCommand, SandboxCommandContext, TestCleanupContext } from "../sandbox/commands.ts";
 import { sandboxLayerIdentityFor, type ScheduledSandboxBefore } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { plannedBeforeCacheActions, beforeCacheStep } from "./before-cache-plan.ts";
@@ -855,7 +855,85 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         return Effect.raceFirst(self, deadline);
       };
 
-      const layerCleanups: LayerCleanupEntry[] = [];
+      const attemptCleanups: AttemptCleanupEntry[] = [];
+      const testCleanup = makeTestCleanupRegistration(signal, (run) => {
+        attemptCleanups.push({
+          origin: "test",
+          label: "test(t)",
+          context: {
+            phase: "before",
+            evalGroup: evalGroupContext(evalDef),
+            owner: { kind: "eval", id: evalDef.id },
+            attempt: { id: `${a.run.experimentId}/${evalDef.id}`, index: a.attempt },
+            signal,
+            progress: scopedFeedback.progress,
+            diagnostic: scopedFeedback.diagnostic,
+          },
+          run,
+        });
+      });
+      const drainCleanups = () =>
+        Effect.suspend(() => {
+          if (attemptCleanups.length === 0) return Effect.void;
+          enterPhase("sandbox.cleanup");
+          const phaseStartedAt = recorder.offsetNow();
+          const before = diagnostics.length;
+          return Effect.forEach(
+            [...attemptCleanups].reverse(),
+            (cleanup) => {
+              const startedAt = recorder.offsetNow();
+              const node = recorder.child(
+                sandboxPrepareActivity({
+                  label: `${cleanup.label} cleanup`,
+                  durationMs: 0,
+                  failed: false,
+                  startOffsetMs: startedAt,
+                }),
+              );
+              if (node) recorder.pushParent(node);
+              return cleanupCallback((cleanupSignal) =>
+                cleanup.run(
+                  Object.freeze({
+                    ...cleanup.context,
+                    signal: cleanupSignal,
+                    timeoutMs: CLEANUP_TIMEOUT_MS,
+                    deadlineAt: clock.currentTimeMillisUnsafe() + CLEANUP_TIMEOUT_MS,
+                  }),
+                ),
+              ).pipe(
+                Effect.catch((error) =>
+                  Effect.sync(() => {
+                    if (node) node.failed = true;
+                    diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
+                    if (cleanup.origin === "layer") {
+                      declareFailure("sandbox.cleanup", error);
+                      recordSandboxCleanupFailure("sandbox.cleanup", error);
+                    }
+                  }),
+                ),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    if (node) {
+                      node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
+                      recorder.popParent();
+                    }
+                  }),
+                ),
+              );
+            },
+            { discard: true },
+          ).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                recorder.record(
+                  "sandbox.cleanup",
+                  Math.max(0, recorder.offsetNow() - phaseStartedAt),
+                  diagnostics.length > before,
+                );
+              }),
+            ),
+          );
+        });
       let pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void> = () => Effect.void;
       return Effect.uninterruptibleMask((restore) =>
         restore(
@@ -987,6 +1065,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       },
                     }),
                   );
+                yield* Effect.addFinalizer(drainCleanups);
                 yield* Effect.addFinalizer((exit) =>
                   Effect.suspend(() => {
                     const interrupted = timedOut || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause));
@@ -1030,6 +1109,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   feedback: scopedFeedback,
                   log,
                   declareFailure,
+                  testCleanup,
                   registerAssertions: (runtime, state) => {
                     liveNotes = state.notes;
                     if (liveAssertions !== undefined && liveAssertions !== runtime) {
@@ -1415,6 +1495,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 }),
               );
 
+              // LIFO seals interrupted Assertions before entering author cleanup and releases
+              // the physical Sandbox only after all callbacks have run.
+              yield* Effect.addFinalizer(drainCleanups);
+
               // Matcher-only source material must not outlive the Attempt. Register
               // this before the interruption seal so LIFO runs that seal first, then
               // clears the sidecar immediately afterwards.
@@ -1457,72 +1541,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   );
                 }),
               );
-
-              // Scope 的 LIFO 让作者 cleanup 在 agent teardown 后、Provider Case finalizer 前执行。
-              // Cleanup must not fork back into this already-closing Attempt Scope, so it uses the resource
-              // facade captured above while retaining the same physical Sandbox and provider release owner.
-              if (agent.kind === "sandbox") {
-                yield* Effect.addFinalizer(() =>
-                  Effect.suspend(() => {
-                    if (layerCleanups.length === 0) return Effect.void;
-                    enterPhase("sandbox.cleanup");
-                    const phaseStartedAt = recorder.offsetNow();
-                    const before = diagnostics.length;
-                    return Effect.forEach(
-                      [...layerCleanups].reverse(),
-                      (cleanup) => {
-                        const startedAt = recorder.offsetNow();
-                        const node = recorder.child(
-                          sandboxPrepareActivity({
-                            label: `${cleanup.label} cleanup`,
-                            durationMs: 0,
-                            failed: false,
-                            startOffsetMs: startedAt,
-                          }),
-                        );
-                        if (node) recorder.pushParent(node);
-                        return cleanupCallback((cleanupSignal) => {
-                          // The forward Attempt may have exhausted its deadline. Each cleanup
-                          // owns a fresh bounded command window, including on reused instances.
-                          applyCommandDeadline(cleanupSandbox, clock.currentTimeMillisUnsafe() + CLEANUP_TIMEOUT_MS);
-                          return cleanup.command(cleanupCommandTarget, {
-                            ...cleanup.context,
-                            signal: cleanupSignal,
-                          });
-                        }).pipe(
-                          Effect.catch((error) =>
-                            Effect.sync(() => {
-                              if (node) node.failed = true;
-                              declareFailure("sandbox.cleanup", error);
-                              diagnostics.push(teardownDiagnostic("sandbox.cleanup", error));
-                              recordSandboxCleanupFailure("sandbox.cleanup", error);
-                            }),
-                          ),
-                          Effect.ensuring(
-                            Effect.sync(() => {
-                              if (node) {
-                                node.durationMs = Math.max(0, recorder.offsetNow() - startedAt);
-                                recorder.popParent();
-                              }
-                            }),
-                          ),
-                        );
-                      },
-                      { discard: true },
-                    ).pipe(
-                      Effect.ensuring(
-                        Effect.sync(() => {
-                          recorder.record(
-                            "sandbox.cleanup",
-                            Math.max(0, recorder.offsetNow() - phaseStartedAt),
-                            diagnostics.length > before,
-                          );
-                        }),
-                      ),
-                    );
-                  }),
-                );
-              }
 
               // Cross-send adapter processes belong to the Attempt Scope, not to the
               // Promise-shaped body. On timeout the bridge is intentionally sealed
@@ -1652,7 +1670,19 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       declareFailure,
                       onEnvironmentIncomplete: onEnvironmentIncomplete,
                       isDeadlineTimedOut: () => timedOut,
-                      layerCleanups,
+                      onTestCleanup: testCleanup.register,
+                      registerLayerCleanup: (command, context, label) => {
+                        if (typeof command !== "function") throw new TypeError("sandbox cleanup must be a function");
+                        attemptCleanups.push({
+                          origin: "layer",
+                          context,
+                          label,
+                          run: (cleanupContext) => {
+                            applyCommandDeadline(cleanupSandbox, cleanupContext.deadlineAt);
+                            return command(cleanupCommandTarget, cleanupContext);
+                          },
+                        });
+                      },
                       attemptResources,
                       reportAttemptResourceReleaseFailure,
                       registerEvidence: (getEvents, getUsage, getRetryAttempts) => {
@@ -1703,16 +1733,17 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 // resolves Eval-kind overloads and never substitutes a wrapper.
                 // Both Promise and deferred Effect calls capture through explicit
                 // Attempt-owned dependencies, never fiber-local ALS.
-                const returned = evalDef.test(contextExit.value as never) as unknown;
+                const returned = testCleanup.invoke(() => evalDef.test(contextExit.value as never)) as unknown;
                 if (Effect.isEffect(returned)) {
                   return returned as Effect.Effect<void, unknown, never>;
                 }
+                const settled = testCleanup.untilSettled(returned);
                 return Effect.tryPromise({
-                  try: () => Promise.resolve(returned),
+                  try: () => settled,
                   catch: (error) => error,
                 });
               });
-              const authorExit = yield* Effect.exit(author);
+              const authorExit = yield* Effect.exit(author.pipe(Effect.ensuring(Effect.sync(testCleanup.close))));
               if (Exit.isSuccess(authorExit)) {
                 yield* assertFirst.completeAuthor({ _tag: "succeeded" });
               } else {
@@ -2021,6 +2052,7 @@ interface AdapterAttemptBodyInput {
     state: import("../context/assert-first.ts").AssertFirstCoreContextState,
   ) => void;
   readonly closeAuthoring: (reason: "attempt-sealing" | "attempt-interrupted") => void;
+  readonly testCleanup: TestCleanupRegistration;
   readonly markAssertionsSealed: (sealed: SealedAttemptAssertions) => void;
 }
 
@@ -2069,6 +2101,7 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
   } = input;
   return Effect.gen(function* () {
     const { context: core, state } = createAssertFirstCoreContext({
+      onCleanup: input.testCleanup.register,
       readUsage: usage === undefined ? undefined : () => usage.snapshot(),
       judgeUsage: input.judgeUsage,
       judgeTiming: recorder,
@@ -2140,7 +2173,10 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
       enterPhase("eval.run");
       log("running Eval...");
       const testExit = yield* Effect.exit(
-        adapterAuthorCallbackEffect(resources, signal, () => a.evalDef.test(context as never)),
+        adapterAuthorCallbackEffect(resources, signal, () => {
+          const returned = input.testCleanup.invoke(() => a.evalDef.test(context as never));
+          return input.testCleanup.untilSettled(returned);
+        }).pipe(Effect.ensuring(Effect.sync(input.testCleanup.close))),
       );
       if (Exit.isFailure(testExit)) {
         if (Cause.hasInterruptsOnly(testExit.cause)) return yield* Effect.interrupt;
@@ -2580,7 +2616,12 @@ interface AttemptResources {
   /** `timeoutTo` 已经裁定 deadline 后才为 true；用于区分它触发的协作式 abort 与外层 fiber 取消。 */
   isDeadlineTimedOut: () => boolean;
   /** 作者 prepare 成功后登记的 cleanup；由外层 Scope 全局 LIFO 执行。 */
-  layerCleanups: LayerCleanupEntry[];
+  readonly onTestCleanup: TestCleanupRegistration["register"];
+  readonly registerLayerCleanup: (
+    command: SandboxCleanupCommand,
+    context: Omit<SandboxCommandContext, "onCleanup">,
+    label: string,
+  ) => void;
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (
@@ -2604,10 +2645,47 @@ interface AttemptResources {
   reportAttemptResourceReleaseFailure: (error: unknown) => void;
 }
 
-interface LayerCleanupEntry {
-  readonly command: SandboxCleanupCommand;
+interface AttemptCleanupEntry {
+  readonly origin: "layer" | "test";
+  readonly run: (context: TestCleanupContext) => void | PromiseLike<void>;
   readonly context: Omit<SandboxCommandContext, "onCleanup">;
   readonly label: string;
+}
+
+type TestCleanupRegistration = ReturnType<typeof makeTestCleanupRegistration>;
+
+function makeTestCleanupRegistration(signal: AbortSignal, push: (run: AttemptCleanupEntry["run"]) => void) {
+  let accepting = false;
+  const close = () => {
+    accepting = false;
+  };
+  return {
+    invoke<Value>(callback: () => Value): Value {
+      accepting = true;
+      try {
+        return callback();
+      } catch (error) {
+        close();
+        throw error;
+      }
+    },
+    close,
+    register(fn: AttemptCleanupEntry["run"]): void {
+      if (!accepting || signal.aborted) throw new Error("t.onCleanup() registration is closed");
+      if (typeof fn !== "function") throw new TypeError("t.onCleanup() requires a function");
+      push(fn);
+    },
+    untilSettled(value: unknown): Promise<void> {
+      if (value === undefined) {
+        close();
+        return Promise.resolve();
+      }
+      return Promise.resolve(value).then(close, (error) => {
+        close();
+        throw error;
+      });
+    },
+  };
 }
 
 class SandboxStepOperationUnavailableError extends Error {
@@ -2832,7 +2910,8 @@ async function runAttemptBody(
     declareFailure,
     onEnvironmentIncomplete,
     isDeadlineTimedOut,
-    layerCleanups,
+    onTestCleanup,
+    registerLayerCleanup,
     registerEvidence,
     registerLedger,
     retainFileChangesCapture,
@@ -2928,15 +3007,6 @@ async function runAttemptBody(
     diagnostic: feedback.diagnostic,
   });
 
-  const registerCleanup = (
-    command: SandboxCleanupCommand,
-    context: Omit<SandboxCommandContext, "onCleanup">,
-    label: string,
-  ): void => {
-    if (typeof command !== "function") throw new TypeError("sandbox cleanup must be a function");
-    layerCleanups.push({ command, context, label });
-  };
-
   // Standalone after is unconditional: register every declaration immediately after a usable
   // occurrence is available. Later callback cleanups are pushed later and therefore leave first.
   if (linked !== undefined) {
@@ -2948,7 +3018,7 @@ async function runAttemptBody(
           ? (target, cleanupContext) =>
               executeSandboxAction(entry.data, target, managedProcess, cleanupContext.signal, cleanupContext.progress)
           : entry.declaration.command;
-      registerCleanup(command, context, label);
+      registerLayerCleanup(command, context, label);
     }
   }
 
@@ -2978,7 +3048,7 @@ async function runAttemptBody(
       if (!acceptingCleanup) {
         throw new Error(`sandbox onCleanup for ${JSON.stringify(entry.id)} must be called before its callback settles`);
       }
-      registerCleanup(command, cleanupContext, label);
+      registerLayerCleanup(command, cleanupContext, label);
     };
     try {
       if (entry.kind === "action") {
@@ -3681,6 +3751,7 @@ async function runAttemptBody(
       sendOrdinal: () => evalSendOrdinal,
     });
     const { context, state } = createAssertFirstEvalContext({
+      onCleanup: onTestCleanup,
       captureSimulatedUser: res.captureSimulatedUser,
       deadlineAt: res.deadlineAt,
       agent,

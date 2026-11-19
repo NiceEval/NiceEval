@@ -250,6 +250,7 @@
   "defineeval-options/diff": "Adjusts the attribution exclusion list for the agent diff (Sandbox only; see docs/feature/eval/README.md): both arrays are\ngitignore-style globs (relative to the workdir). By default .git/node_modules/build output/package-manager caches are excluded;\n`ignore` adds exclusions on top of the default list; `include` has the highest priority and explicitly adds matching paths back.\nThe composition rule is fixed as \"default ∪ ignore, then punched through by include\", and the list is frozen at the ledger anchor.",
   "defineeval-options/test": "",
   "test-context/note": "Stores a JSON value or Quantity for display without registering an Assertion or affecting Verdict, score, or coverage.",
+  "test-context/onCleanup": "Registers a cleanup callback to run after the test and its judgments finish. Callbacks run in reverse order and failures append diagnostics.",
   "test-context/evaluationKind": "",
   "test-context/send": "",
   "test-context/simulatedUser": "",

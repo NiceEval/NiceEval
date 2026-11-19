@@ -118,6 +118,12 @@ export type SandboxProgress = (update: {
 
 export type SandboxDiagnosticSink = (input: DiagnosticInput) => void;
 
+/** Frozen context for an Attempt cleanup, with a fresh deadline and signal for this callback. */
+export type TestCleanupContext = Omit<SandboxCommandContext, "onCleanup"> & {
+  readonly timeoutMs: number;
+  readonly deadlineAt: number;
+};
+
 /** Releases resources through the cleanup Sandbox and context; cleanup cannot register another cleanup callback. */
 export type SandboxCleanupCommand = (
   sandbox: SandboxCommandTarget,

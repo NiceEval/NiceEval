@@ -108,6 +108,8 @@ test(t: TestContext): EvalTestReturn;
 
 ## Test context: `t`
 
+Use `t.onCleanup(fn)` in `test(t)` after acquiring a host resource such as a temporary directory or background process. Once the test and its judges finish, NiceEval runs the callbacks in reverse registration order alongside the Sandbox cleanup callbacks. Registered callbacks also run if the test throws or is cancelled. Cleanup failures add diagnostics and preserve the verdict.
+
 `t.note(label, value)` records a JSON value or Quantity for review, such as `t.note("Latency", ms(512))`.
 It registers no Assertion and does not affect Verdict, score, or coverage. `null` is displayed as unavailable.
 Labels must be unique within an Attempt. The limits are 64 notes and 64 KiB of JSON per note; violations throw `TypeError`.
@@ -149,6 +151,14 @@ note: AssertFirstCoreTestContext<Kind>["note"];
 ```
 
 Stores a JSON value or Quantity for display without registering an Assertion or affecting Verdict, score, or coverage.
+
+#### `onCleanup`
+
+```ts
+onCleanup: AssertFirstCoreTestContext<Kind>["onCleanup"];
+```
+
+Registers a cleanup callback to run after the test and its judgments finish. Callbacks run in reverse order and failures append diagnostics.
 
 #### `evaluationKind`
 

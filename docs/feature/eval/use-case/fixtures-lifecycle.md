@@ -45,6 +45,7 @@ export default defineEval({
 2. 大多数 Fixture**不需要**登记 cleanup：写进沙箱的文件、装的依赖随 Sandbox 实例及伴随资源回收自动消失。
    需要收尾的是**沙箱外**的资源（临时 repo、bucket、队列 topic），不收就泄漏。
    `context.onCleanup()` 只在命令成功取得资源后登记，Runner 按全局准备顺序逆序执行；没执行到的命令不产生虚假 cleanup（时序见[三方准备时序](../../sandbox/architecture/lifecycle.md#cleanup)）。
+   `test(t)` 正文里取得的沙箱外资源用 `t.onCleanup()` 登记，与 before 的登记共用一个收尾栈，不用 `try/finally` 包住正文（见 [Context · 登记收尾](../library/context.md#登记收尾)）。
 
 3. 每条 Attempt 都要满足自己的 before action。命中 before 缓存时 restore，miss 时 replay；Provider 不支持时真实执行（频次契约见 [Sandbox Layer](../../sandbox/library/layers.md#作者只学四个规则)）。
 
