@@ -130,3 +130,25 @@ Score Eval 使用 `handle.score(points)` 或 `t.score(points)` 写明贡献。�
 - [Record architecture](../run/architecture/README.md) —— 官方 family composition、closure 与 source-local read。
 - [Verdict architecture](../verdict/architecture.md) —— 每个 Attempt 的四态折叠。
 - [Inspection Architecture](../inspection/architecture.md) —— 固定 operation 与闭合结果。
+
+## 性质
+
+### 作用域与完整性 {#scope-and-completeness}
+
+观察Turn、Session、Attempt 的判定结果。相同断言按各自范围判定，后来事件不追溯改变既有时点，不完整证据不能使负断言或上限断言可信通过。动作包括跨会话发送，变换证据完整性。
+
+### 登记与停止 {#registration-and-stop}
+
+观察封存条目、后续动作和 Verdict。条件不满足的 stop 立即中止，gate 只改变判定，重复等待复用同一条目。动作包括组合 Boolean、measurement、optional、gate 与 stop。
+
+### 计分与顺序 {#score-order}
+
+观察公开 measurement、weight、earned 和条目顺序。保留已经发生的给分及源顺序，封存后不重算。动作包括交错发送、matcher 打分、直接给分及前置停止。
+
+### Sandbox 证据 {#sandbox-evidence}
+
+观察公开 diff、命令证据、截断说明与判定。按声明窗口判定，超限时保留有界证据及不完整说明。动作包括在不同发送区间增删文件并超过文件数和字节上限。
+
+### 匹配与判定 {#matcher-outcomes}
+
+观察公开判定、measurement 和要求。依 matcher 声明区分命中、未命中与非法输入。动作包括生成边界值、重复集合成员、深层对象及名称或结构化 ToolMatch。

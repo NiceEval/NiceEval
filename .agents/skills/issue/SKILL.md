@@ -11,7 +11,7 @@ An Issue is only for a public, sanitized Observation that still needs NiceEval m
 Send suspected vulnerabilities to Private Vulnerability Reporting, and stop if safe publication is uncertain.
 Use Memory for investigated Problems, Decisions, and reusable know-how; do not use an Issue as a root-cause record.
 
-Relate an E2E regression to a local Issue with an `@issue docs/issues/<id>.md` test marker; see `concord --skill test`. A local relation never grants or consumes authorization to mutate GitHub.
+For a product Bug, follow the [property regression workflow](../../../docs/engineering/testing/README.md#bug-修复). Local regression work does not authorize GitHub mutations.
 
 ## Prepare
 
@@ -51,5 +51,5 @@ Triage performs semantic deduplication, public-entry reproduction, type classifi
 Use `blocked` only while NiceEval retains responsibility.
 
 Do not close as completed because a PR exists.
-Apply the closure evidence table in the design, including the resolved Problem Memory and E2E takeover gate when they apply.
+Apply the closure evidence table in the design, including the resolved Problem Memory and public fix evidence when they apply.
 Keep Issue collaboration state and Memory engineering fact state independent; record only the Issue-to-Memory forward link.

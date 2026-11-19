@@ -46,3 +46,21 @@ Record 只有存储本身的一个格式标记。打开时先核对标记，再�
 - [CLI](cli.md) —— `run list/show/delete/recover`。
 - [Architecture](architecture/README.md) —— 身份、publication、cutoff、引用与删除不变量。
 - [Lifecycle](architecture/lifecycle.md) —— 创建、发布、收口、崩溃恢复与物理回收顺序。
+
+## 性质
+
+### 发布可见性 {#publication-visibility}
+
+观察公开 Run 清单、详情和 Inspection。Run 出现时即有完整 expected slots，Attempt 完整发布后立即可读，无须等待 Run 收口。动作包括暂停部分 slot，发布其他 slot 并并发读回和引用。
+
+### 中断与恢复 {#interrupt-recovery}
+
+观察终态、已发布 Attempt、缺失原因和后续计划。SIGINT 保留已发布结果，SIGKILL 后只执行缺失范围，旧 owner 终结后才可恢复收口。动作包括在不同阶段发信号、重启、recover 和读取。
+
+### 引用与删除 {#reference-deletion}
+
+观察删除结果与可读引用。存在引用时删除来源零写入，移除依赖后可重试。动作包括交错发布引用、删除来源、移除依赖及重试。
+
+### 历史结果 {#historical-results}
+
+观察历史结果、新运行和公开 RunReadError。支持的历史结果仍可读，不安全或只读输入保留原件，不可读故障仍有明确分类。动作包括用真实旧版本生成结果、升级、读写及制造存储故障。

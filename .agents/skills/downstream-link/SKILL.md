@@ -20,6 +20,6 @@ For a downstream on another device, the consumer owns orchestration and must sel
 - Any other selector is one exact existing Herdr worktree name, not a branch to check out or create.
 - A nonstandard absolute checkout path is an explicit override and must not be combined with either selector.
 
-Generate the transferable candidate from the selected checkout with `pnpm e2e pack --out <contained-path>.tgz`; transfer that exact tarball, then verify its SHA-256 after receipt. Do not copy the producer's `node_modules` across devices or reconstruct the package with ad hoc build commands. The receipt must report selector, resolved checkout path, branch, HEAD, tarball SHA-256, and the downstream's resolved installed path. Packing and transferring a candidate is not an npm release.
+Generate the transferable candidate from the selected checkout with `pnpm -C packages/niceeval pack --out <absolute-path>.tgz`; transfer that exact tarball, then verify its SHA-256 after receipt. Do not copy the producer's `node_modules` across devices or reconstruct the package with ad hoc build commands. The receipt must report selector, resolved checkout path, branch, HEAD, tarball SHA-256, and the downstream's resolved installed path. Packing and transferring a candidate is not an npm release.
 
 Report the target, consumed NiceEval identity, and the smallest public-entry dogfood check that was run. Include the install result when linking was part of the task.

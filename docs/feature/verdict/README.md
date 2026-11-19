@@ -16,3 +16,9 @@ Core 是 execution outcome 的 owner，Assertions 是 condition 与 score facts 
 - [缓存与携带](../experiments/architecture/cache.md)：planner 怎样使用 Verdict 折叠与真实时长。
 - [Inspection](../inspection/README.md)：查询怎样保留状态和完整度。
 - [Insight](../insight/README.md)：页面怎样呈现状态和完整度。
+
+## 性质
+
+### 结局折叠 {#verdict-precedence}
+
+观察Verdict、退出码及已获分数。冲突时按 errored、failed、skipped、passed 的优先级结算，Score Eval 失分保留所得分数，显式 gate 失败判 failed。动作包括组合通过、失分、gate、停止与执行异常。

@@ -1,6 +1,3 @@
-// owner: docs/engineering/testing/architecture/unit/assertions.md#证明范围规范
-// cases: docs/engineering/testing/architecture/unit/assertions.md
-
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { pollFiber, runWithTestClock, TestClock } from "../test-support/effect-v4.ts";

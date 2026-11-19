@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#langgraph-hitl-deterministic
 import { defineEval } from "niceeval";
 import { equals, includes, satisfies } from "niceeval/expect";
 export default defineEval({

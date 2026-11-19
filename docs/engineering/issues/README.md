@@ -120,8 +120,7 @@ Issue 表单先添加 `bug` 或 `enhancement`。
 | external fixed | 给出 dependency 版本，并重新执行原公开入口场景后说明结果 |
 
 产品 Bug 如果关联 Problem Memory，该 Memory 必须是 `resolved(fixed)`。
-对应 E2E owner 还必须保留公开入口红灯、candidate 转绿与可靠性接管收据。
-完整门槛见 [Bug 修复的 E2E TDD](../testing/README.md#bug-修复的-e2e-tdd)。
+复现问题后，按[性质回归流程](../testing/README.md#bug-修复)保存缩减反例，并验证修复后的公开结果。
 
 ## Issue 与 Memory
 
@@ -151,7 +150,7 @@ Agent 只有取得用户对本次目标仓库与具体动作的明确授权后�
 
 创建结果不确定时，先完整枚举 open 与 closed Issues，再决定是否有资格重试。该枚举不能复用缓存、搜索索引、局部页面或旧 plan；只有完整扫描确认没有相同 origin-key 时，当前授权下才允许一次重试。
 
-E2E 回归测试用 `@issue docs/issues/<id>.md` 标记关联本地 Issue，见 [case 关系契约](../testing/architecture/e2e/case-relations.md)。它只修改测试源码，不创建、编辑、评论、标记或关闭远端 Issue，也不携带或推断远端 mutation 授权。
+本地性质回归与远端 Issue 操作分别授权。保存反例不会修改 GitHub Issue。
 
 ## 脱敏与 provenance
 

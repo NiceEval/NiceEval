@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/architecture/e2e/adapter/sdk-converters.md#langgraph-core-deterministic
 import { defineEval } from "niceeval";
 import { atLeast, atMost, equals, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({

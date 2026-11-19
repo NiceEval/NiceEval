@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/record.md
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";

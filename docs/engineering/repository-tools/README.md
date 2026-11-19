@@ -37,7 +37,6 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 | 领域 | 入口 | 当前职责 |
 |---|---|---|
 | Feature | `concord new --help`、`concord list feature`、`concord show <id>` | 发现、显示，并通过 `new feature` 创建 Feature；既有页面直接编辑 |
-| Test | `concord test --help` | 生成测试标记，发现、执行测试并核验缺陷修复；见 `concord --skill test` |
 | Use Case | `concord new --help`、`concord use-case --help` | 在既有 Feature 下创建叶子 Use Case，维护步骤标记 |
 | Trace | `concord recover --help` | 显式恢复中断的文档写入 |
 | Design | `concord new --help` | `concord new design <name>` 创建取舍页；裁决按 `concord --skill document` |
@@ -47,7 +46,7 @@ Docs contribution 只把显式领域挂到 `pnpm run repo docs` 下，也不解�
 | Diff code | `pnpm run repo docs diff-code --help` | 核对或重生成接入示例前后对照页 |
 | Site | `pnpm run repo docs site dev --help` | `dev`、`prepare`、`validate` 与 `links` 的 Mint owner 操作；其余 verbs 从父级 `--help` 发现 |
 
-`pnpm test` 仍是代码测试入口，包括 Unit 验证。
+现行测试工具和运行场合见[测试架构](../testing/architecture.md#运行)。
 
 Site 的四个操作共用 Node 24 选择逻辑。当前进程为 Node 24 时直接使用；否则依次检查
 `NICEEVAL_DOCS_NODE_BIN`、Homebrew 的 Node 24、`PATH` 和 `mise where node@24`。
@@ -116,7 +115,7 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 5. 验证 workflow、hook 和 lint 提示只调用正式入口，不绕过到源码或退役脚本；
 6. 删除或移动入口时，一并报告失效的 AGENTS 路由、Skill、design 和 workflow 调用。
 
-单步 `pnpm lint`、`pnpm typecheck` 与 `pnpm e2e` 不需要各自建立 Skill。需要选择、会写入或包含远端副作用的工作流必须有 Skill。
+单步 `pnpm lint`、`pnpm typecheck`  不需要各自建立 Skill。需要选择、会写入或包含远端副作用的工作流必须有 Skill。
 
 ## Effect 与错误边界
 
@@ -128,7 +127,7 @@ AGENTS 只说明从哪里开始，不复制参数。Skill 保存判断顺序、�
 
 ## 脚本与平台边界
 
-根 `scripts/` 是迁移输入，不是长期 owner。NiceEval Docs 命令从 `pnpm run repo docs` 进入，中立文档治理使用 `concord`；不保留旧别名。`e2e/scripts/` 仍是 host-side E2E runner，入口为 `pnpm e2e`；产品 runtime 留在 `packages/niceeval`；lint adapter 留在 `lint/**`。
+根 `scripts/` 是迁移输入，不是长期 owner。NiceEval Docs 命令从 `pnpm run repo docs` 进入，中立文档治理使用 `concord`；不保留旧别名。产品 runtime 留在 `packages/niceeval`；lint adapter 留在 `lint/**`。
 
 YAML、Netlify 配置和 hooks 只决定平台何时调用正式命令、传入哪些可信参数，以及如何保存 artifact。选择、校验、生成、重试、领域 receipt 与错误呈现都属于 domain contribution。平台文件不得复制文件列表、状态机或成功判定。
 

@@ -47,3 +47,21 @@ TypeSafe System One 使用自己的 `/systemone` 协议。它支持 `score`、`c
 | 配置变化怎样影响缓存 | [Experiments · Cache](../experiments/architecture/cache.md) |
 
 需要评审自己进入 Sandbox 查看文件、运行命令再评分时，使用 [Agent Judge](library.md#agent-judge--在-sandbox-里自己取证再评分)。
+
+## 性质
+
+### 准入 {#material-admission}
+
+观察公开错误、Assertion 与请求。非法材料不读取 accessor 或创建 Assertion，仅配置 Judge 不发请求。动作包括变换材料、配置、模型覆盖与普通断言。
+
+### 失败与取消 {#failures-and-cancellation}
+
+观察公开详情、传输终态及发送事实。中断最终终结请求且保留固定材料和尝试事实，传输或协议失败产生可诊断错误。动作包括注入非成功响应、缺分数、断连、超时与取消。
+
+### 评分审计 {#score-audit}
+
+观察请求材料、打分和审核证据。评分总能与调用材料和所用模型对账，搬迁后仍能精确读取封存的视觉材料。动作包括使用不同 Judge 和截图，运行后搬迁 Record。
+
+### 预检与重试 {#precheck-and-retry}
+
+观察实际发送、Attempt 和反馈。预检失败的相关 Attempt 各自结算，其他工作仍可调度，重试等待时间遵守有效边界。动作包括变换凭据、响应状态、Retry-After 与取消时点。

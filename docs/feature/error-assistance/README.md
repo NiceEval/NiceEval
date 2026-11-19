@@ -43,3 +43,9 @@
 | [Architecture](architecture.md) | 失败边界、惰性增强、性能预算与发布义务 |
 | [Judge](../judge/library.md#旧配置的迁移诊断) | 从普通 Judge 配置对象改为具名 Provider 的迁移 |
 | [执行失败分类](../error-classification/README.md) | 重试与停止派发的唯一决策 owner |
+
+## 性质
+
+### 历史项目诊断 {#legacy-project-diagnostics}
+
+观察错误位置、stderr、退出码和已发布的 Invocation。旧 Judge 配置在发现期获得准确位置与一次离线指引，旧项目阻塞写入时获得保留原件的恢复路径。动作包括载入历史配置和项目状态，启动、读回和核对原件。

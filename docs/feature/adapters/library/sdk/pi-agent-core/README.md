@@ -16,6 +16,6 @@ callback object 不改写地交给 converter，并在 `finally` 取消订阅。�
 
 确定性 owner 锁定 `@earendil-works/pi-agent-core@0.82.1` 与
 `@earendil-works/pi-ai@0.82.1`，见
-[Pi subscribe E2E](../../../../../engineering/testing/architecture/e2e/adapter/sdk-converters.md#pi-agent-subscribe-deterministic)。
+[Adapter 性质](../../../README.md#性质)涵盖协议归一与真实兼容性。
 
 完整示例见 [`examples/zh/tier1/pi-sdk/`](../../../../../../examples/zh/tier1/pi-sdk/)。

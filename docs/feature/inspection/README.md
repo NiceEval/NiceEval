@@ -54,3 +54,21 @@ facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，�
 - [Architecture](architecture.md)
 - [CLI](cli.md)
 - [Use cases](use-case/README.md)
+
+## 性质
+
+### 精确读回与比较 {#exact-read-and-comparison}
+
+观察机器文档、查询、终端 show 和比较结果。同一身份始终指向同一目标，各模式遵守自己的分母与匹配规则，缺失成本或 partial coverage 仍可见。动作包括切换 Run、Experiment、Eval、Attempt 与比较模式。
+
+### 附件归档 {#attachment-archive}
+
+观察附件清单、receipt、分块字节与 provenance。封存附件在源文件改写和 Record 搬迁后仍可精确回读。动作包括接纳文件、重写源、搬迁、分页和越界读取。
+
+### 附件失败 {#attachment-failure}
+
+观察附件结果、已发布证据和可读 partial Record。非法输入、超限或取消保留此前已接纳附件，超时后的独立清理仍可封存诊断。动作包括注入流错误，取消、超时并关闭清理。
+
+### 可移植轨迹 {#portable-trace}
+
+观察公开轨迹摘要、证据 locator 与精确读回。搬迁前后摘要有界且身份和所指证据一致。动作包括执行多层操作，搬迁 Record 并重新查询。

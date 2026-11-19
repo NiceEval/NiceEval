@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 import { describe, expect, it } from "vitest";
 import { InspectionSha256 } from "../inspection/bytes.ts";
 import {

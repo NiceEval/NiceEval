@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/architecture/unit/assertions.md#证明范围规范
 import { expect, test } from "vitest";
 import { bindConversationMaterial, projectConversation } from "./conversation-material.ts";
 import { snapshotJudgeMaterial } from "./judge.ts";

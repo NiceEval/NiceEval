@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 // Type-only consumer contracts, checked by package typecheck and excluded from runtime Unit collection.
 import { expectTypeOf } from "vitest";
 import {

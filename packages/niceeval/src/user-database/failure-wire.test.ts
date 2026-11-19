@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { expect, test } from "vitest";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 import {

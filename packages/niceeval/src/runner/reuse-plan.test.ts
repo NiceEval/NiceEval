@@ -1,5 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
-
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";

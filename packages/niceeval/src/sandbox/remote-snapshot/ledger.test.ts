@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

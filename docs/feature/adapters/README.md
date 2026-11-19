@@ -63,3 +63,37 @@ adapters/
 - [Sandbox](../sandbox/README.md) —— sandbox provider 与生命周期。
 - [Assertions](../assertions/README.md) —— 标准事件流之上的断言与 judge。
 - [Observability](../../observability.md) —— 事件归一与 OTLP trace。
+
+## 性质
+
+### 协议归一 {#protocol-normalization}
+
+观察公开 converter 的 Turn、事件、工具、HITL、coverage 和 usage。总是保存协议提供的证据并明确标出缺失通道。动作包括生成各协议的增量、并发工具、拒绝、错误、完成、用量和会话序列。
+
+### 传输与审批 {#transport-and-approval}
+
+观察公开身份、游标、进度、HITL 与终态。分帧与重连保持会话和游标，回复只交给对应请求。动作包括拆分帧、重开流、变换状态码、断连、超时及批准拒绝。
+
+### 安装与隔离 {#install-isolation}
+
+观察探测和安装效果、工作环境和失败诊断。命中时不安装，缺失时安装后复查，profile 之间隔离且断网题网络不变。动作包括切换预装状态、环境、网络与复查结果。
+
+### 真实兼容性 {#live-compatibility}
+
+观察官方 Adapter 的 Turn、会话、工具、计量、原生副作用和清理。各入口准确反映其协议所提供的能力。动作包括运行真实 CLI、SDK 或 HTTP 入口的有界回合，调用工具并续接会话。
+
+### 原始投影与隐私 {#tool-projection-and-privacy}
+
+观察工具分类、原始名称、诊断和命令证据。已知敏感值不出现在公开读面，原始名称仍可读。动作包括改变工具标签、凭据、额外变量，生成故障与输出。
+
+### Coding CLI 兼容性 {#coding-cli-compatibility}
+
+观察 Sandbox 内原生文件、工具调用、会话和公开 Turn。安装后执行的真实工具操作可核对原生副作用，续轮仍归原会话。动作包括 Claude Code、Codex、OpenCode、OpenClaw、Bub 和 Hermes 的安装、任务与续轮。
+
+### SDK 与 HTTP 兼容性 {#sdk-and-http-compatibility}
+
+观察 SDK 或 HTTP 原始事件与公开 Turn。公开转换器保留已观察到的文本、工具、终态与用量，不补造协议缺席的事实。动作包括用 Claude Agent SDK、Codex SDK 与 OpenAI 两个 API 发出真实请求，以及用 AI SDK 分别驱动进程内和 HTTP 入口。
+
+### 安装扩展与会话 {#install-extensions-and-session}
+
+观察安装 hook、真实 Agent 行为及回读会话。声明的插件和 Skill 在适用 Agent 中可观察，续轮仍能读取首轮证据。动作包括变换插件与 Skill 输入、执行 `before` hook、跨 Sandbox 复用并续轮。

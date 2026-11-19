@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
 import { resolve } from "node:path";
 import { Effect, Result, Schema } from "effect";
 import { expect, test } from "vitest";

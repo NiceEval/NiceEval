@@ -1,5 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
-
 import { describe, expect, it } from "vitest";
 import { beforeCachePlanOf, type CommandPlan, type CommandPlanStep } from "./command-plan.ts";
 

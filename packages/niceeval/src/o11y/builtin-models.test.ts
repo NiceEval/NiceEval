@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 import { expect, test } from "vitest";
 import { builtinContextWindow, lookupBuiltinModel } from "./builtin-models.ts";
 import { pricingEstimate } from "./cost.ts";

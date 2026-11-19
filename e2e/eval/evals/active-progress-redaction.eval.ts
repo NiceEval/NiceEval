@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/architecture/e2e/eval.md#eval-active-progress-redaction
 import { defineEval } from "niceeval";
 import { isTrue } from "niceeval/expect";
 

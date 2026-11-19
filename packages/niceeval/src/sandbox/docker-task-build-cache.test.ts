@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { describe, expect, it } from "vitest";
 import { inventoryOwnerCounts, taskBuildInventoryState } from "./docker-task-build-cache.ts";
 

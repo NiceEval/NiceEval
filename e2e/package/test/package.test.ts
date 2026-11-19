@@ -46,7 +46,7 @@ function rejectedLoads(labels: readonly string[], results: readonly PromiseSettl
 }
 
 // 特例：case 项目源是签入的 CommonJS 消费者 fixture；sourceRoot 才是承载
-// runner 注入 staging root 的隔离 Repo 根（docs/engineering/testing/library.md）。
+// runner 注入 staging root 的隔离 Repo 根。
 const e2e = createE2EContext({
   repoId: "package",
   sourceRoot: process.cwd(),

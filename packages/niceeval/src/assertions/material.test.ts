@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 // Unit exception: adversarial ordinary-data and exact UTF-8 boundary matrices;
 // installed Eval result and reader/receiver lifecycle are owned by E2E.
 import { describe, expect, it } from "vitest";

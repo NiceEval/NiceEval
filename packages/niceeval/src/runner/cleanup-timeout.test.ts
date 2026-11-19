@@ -1,6 +1,3 @@
-// owner: docs/engineering/testing/architecture/unit/experiments-runner.md#证明范围规范
-// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
-
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
 import { describe, expect, it } from "vitest";
 

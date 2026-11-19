@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";

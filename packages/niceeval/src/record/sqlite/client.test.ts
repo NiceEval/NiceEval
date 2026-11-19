@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/record.md
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const workerHarness = vi.hoisted(() => ({

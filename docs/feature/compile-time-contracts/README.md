@@ -131,3 +131,9 @@ NiceEval 处于 beta，宽类型别名不作为保留目标。
 - [Library](library.md) —— 各公共类型的形状与正反调用。
 - [Architecture](architecture.md) —— 阶段所有权、运行时镜像与行为矩阵。
 - [三级反馈走查](use-case/three-levels.md) —— 一个作者依次撞上类型、装载与 link 三层反馈。
+
+## 性质
+
+### 公开消费边界 {#public-package-consumption}
+
+观察消费者类型检查、模块装载与公开命令结果。ESM、CommonJS 与公开 Inspection 入口保持可用，Application 能力与参数受公开类型约束。动作包括切换模块系统、入口和依赖上下文，编译合法与非法调用。

@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";

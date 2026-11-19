@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/reports.md
 import { createHash } from "node:crypto";
 import { expect, test } from "vitest";
 import { mintRecordContentHandle } from "../record/attachment/content.ts";

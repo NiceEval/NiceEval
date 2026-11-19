@@ -13,4 +13,4 @@ JSON 语法 parse 失败、缺失或冲突终态都是 `SendFailure`。assistant
 当前工厂不宣称 session/resume 或 HITL，也不加入 `BUILTIN_AGENTS`。
 
 - [Cost 口径](cost.md)
-- [Live E2E 验收](../../../../../engineering/testing/architecture/e2e/adapter/omp.md)
+[Adapter 性质](../../../README.md#性质)涵盖协议归一与真实兼容性。

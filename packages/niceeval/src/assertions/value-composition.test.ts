@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 // Pure combination edge cases that cannot be enumerated reliably through an installed Eval.
 import { expect, expectTypeOf, test } from "vitest";
 import {

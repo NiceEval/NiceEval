@@ -85,3 +85,9 @@ State 不作用于 Sandbox 外的服务。远程记忆服务等外部状态仍�
 - [CLI](cli.md) —— `niceeval exp` 的状态反馈、`--dry` 计划与 `niceeval show` 中的状态起点。
 - [Data Model](data-model.md) —— 持久实体、事务与离线事实。
 - [Architecture](architecture.md) —— lineage、存储、保存时的比较、生命周期位置、结果携带与失败处理。
+
+## 性质
+
+### 共享状态恢复 {#shared-state-recovery}
+
+观察Attempt 使用的状态、接管诊断和清理结果。同一状态线按契约次序消费，旧 owner 失权后不能发布，后续 Invocation 能合法恢复。动作包括并发访问共享状态、取消、接管与重启。

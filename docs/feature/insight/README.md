@@ -86,3 +86,17 @@ Insight 预设集成基于树形拓扑的耗时瀑布图，为单次 Attempt 的
 - [CLI](cli.md)：`niceeval view` 的唯一命令面。
 - [Architecture](architecture.md)：cutoff、薄 Host、repository、刷新与信任边界。
 - [Use cases](use-case/README.md)：打开 Results 与连续审阅 Run、Attempt。
+
+## 性质
+
+### 第一方审阅 {#first-party-review}
+
+观察overview、Run、Attempt 页的语义控件与可见证据。导航和切换语言保持读面身份，精确工具调用及证据可定位。动作包括发布不同 Verdict 与 coverage，展开 Turn、搜索并切换语言和地址。
+
+### 一致刷新 {#atomic-refresh}
+
+观察页面成员、地址、展开状态和 continuation。确认前保持原视图，确认后原子切换完整视图。动作包括为相同 slot 发布新 Run，延迟或丢失响应、导航、放弃刷新及重载。
+
+### 授权与终态 {#authorization-and-exit}
+
+观察HTTP 结果、会话、缓存头、stderr 与端口。凭据最多交换一次，请求始终要求匹配的 Host、Origin 和 session，响应禁止缓存，退出后端口与会话失效。动作包括交换和重放凭据、改变请求、制造启动失败并发退出信号。

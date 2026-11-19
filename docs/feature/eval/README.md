@@ -206,3 +206,25 @@ export default defineDataset({
 - [Agents 与 Adapters](../adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [Experiments](../experiments/README.md) —— eval 由谁跑、跑几次、对着哪个 agent。
 - [Sandbox Layer](../sandbox/library/layers.md) —— `sandbox` 字段的类型、factory 与配对规则。
+
+## 性质
+
+### 发现与选择 {#discovery-selection}
+
+观察发现清单、计划和用法错误。总是产生稳定身份和选择交集，重复身份、选择器零命中或非法谓词结果须明确拒绝。动作包括重排发现顺序，增删定义，组合选择前缀和谓词。
+
+### 会话隔离 {#session-isolation}
+
+观察各 Session 的 Turn、HITL 请求和 Attempt 证据。续接总是隔离，事实仍归所属 Attempt，无法唯一对位的审批不发送响应。动作包括交错主子会话与审批。
+
+### 发送受理 {#send-acceptance}
+
+观察发送次数、Turn 与公开错误。仅在可证实未受理且错误可重试时再次发送，失败 Turn 保留为领域终态。动作包括在受理前后制造故障并取消。
+
+### Application 生命周期 {#application-lifecycle}
+
+观察Application 资源、Assertion 与终态。部分创建失败或取消后最终释放已取得资源，迟到 Assertion 不改写结果。动作包括切换实现并在创建各阶段失败或取消。
+
+### 进度脱敏 {#progress-redaction}
+
+观察进度与封存证据。始终隐藏敏感值并保留安全诊断。动作包括生成带凭据的 Sandbox 命令、输出和活动。

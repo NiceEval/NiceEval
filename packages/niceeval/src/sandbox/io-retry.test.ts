@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/architecture/unit/sandbox.md#idempotent-io-retry
-// cases: docs/engineering/testing/architecture/unit/sandbox.md
 import { describe, expect, test } from "vitest";
 import { Effect, Fiber } from "effect";
 import { runWithTestClock, TestClock, withRandomFixed } from "../test-support/effect-v4.ts";

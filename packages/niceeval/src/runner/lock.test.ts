@@ -1,6 +1,3 @@
-// owner: docs/engineering/testing/architecture/unit/experiments-runner.md#证明范围规范
-// cases: docs/engineering/testing/architecture/unit/experiments-runner.md
-
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

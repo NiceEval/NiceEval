@@ -46,3 +46,9 @@ before 正序执行，after 按已激活顺序逆序执行。宿主 after 失败
 - [Lifecycle](architecture/lifecycle.md)：顺序、carry、取消与失败收尾。
 - [Use Case](use-case/terminal-bench-harness.md)：可复用条件的实际场景。
 - [Run](../run/README.md) 与 [Inspection](../inspection/README.md)：执行事实与公开观察。
+
+## 性质
+
+### 插件作用域 {#plugin-scopes}
+
+观察hook 记录、Attempt 和物理 Sandbox 身份。Experiment Plugin 包围整场实验一次，Group Plugin 覆盖共享实例，Eval Plugin 随实际 Attempt 执行。动作包括组合多 Eval、多 Attempt、不同 scope 与实例复用。

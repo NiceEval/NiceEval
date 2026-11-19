@@ -15,7 +15,7 @@ Feature 由 `concord new feature <name>` 创建，既有页面直接编辑。
 Roadmap 采用只走 `concord roadmap start`。
 Trace 的 `concord recover` 从各 owner 正向关系恢复 publication，不保存中央 Registry，也不改变 Nx affected graph。
 
-文档身份、页面职责与 Design 生命周期以 `concord --skill document` 为准；原生测试正文服从[测试正文约束](../testing/README.md#测试正文约束)。
+文档身份、页面职责与 Design 生命周期以 `concord --skill document` 为准；产品性质见[测试体系](../testing/README.md#测试目标在哪里)。
 
 ## 使用心智
 
@@ -64,7 +64,7 @@ README 写功能总览，Library 与 CLI 页写输入、可观察结果和错误
 ## E2E 与契约关联
 
 真实声明上方的 `@feature` 或 `@use-case` 直接指向仓库中的产品契约。
-标记规则服从 [E2E case 关系契约](../testing/architecture/e2e/case-relations.md)。
+现行性质按 [Feature 契约](../testing/README.md#写性质)定义。
 测试标题描述用户结果；工具从 native path、声明路径和标题派生引用，不要求手写 ID。
 
 可执行 inventory 与测试结果来自原生 runner；声明标记只关联契约，不代替真实执行结果。

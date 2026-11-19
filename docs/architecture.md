@@ -84,7 +84,7 @@ Repository 就近拥有 schema、固定 operations 与 typed row decoder；领�
 
 UserDatabase 的 application schema 只保留一个存储格式标记，所有 Repository 使用同一当前格式。
 打开旧格式时保留原文件并明确拒绝，不建立 reader / writer，也不自动迁移或清空。
-初始化与拒绝行为见 [UserDatabase 格式验收](engineering/testing/architecture/e2e/migrate.md)。
+初始化与拒绝行为见 [Sandbox 的 UserDatabase 格式性质](feature/sandbox/README.md#性质)。
 
 不建立全局 State module/SPI、lifecycle DSL、通用 SQL executor、extension、`ATTACH` 或第三方动态注册。
 cache Repository 的 cleanup 或业务错误只使其所属操作失败，不成为其它 durable Repository 的逻辑前置。

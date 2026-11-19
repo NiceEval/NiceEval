@@ -1,4 +1,3 @@
-// owner: docs/engineering/testing/architecture/e2e/adapter/openai-compat.md#responses-live
 import { defineEval } from "niceeval";
 import { greaterThan, satisfies, toolMatch } from "niceeval/expect";
 export default defineEval({

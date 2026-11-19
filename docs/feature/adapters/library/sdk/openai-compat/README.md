@@ -51,5 +51,4 @@ Adapter 增加旁路 transcript 后，可以在自己的声明里据实升级。
 
 确定性 owner 用 `openai@6.49.0` 的官方客户端完整返回值直入 converter；live
 owner 各用一次真实 Chat Completions 与 Responses 请求完成兼容性验收。见
-[确定性 E2E](../../../../../engineering/testing/architecture/e2e/adapter/sdk-converters.md#openai-chat-completion-deterministic)
-与 [live E2E](../../../../../engineering/testing/architecture/e2e/adapter/openai-compat.md)。
+[Adapter 性质](../../../README.md#性质)涵盖协议归一与真实兼容性。

@@ -116,3 +116,33 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 - [Before cache](architecture/before-cache.md) —— BeforeCacheKey、Provider 能力、失败降级与观测；远端 Provider 见 [远端 snapshot Before cache](architecture/remote-snapshot-cache.md)，账本见 [Data Model](data-model.md)。
 - [Sandbox Agent](../adapters/library/sandbox-agent.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent。
 - [Runner](../../runner.md) —— 并发、预热、复用的调度。
+
+## 性质
+
+### 构建共享 {#shared-builds}
+
+观察准备状态、计时与资源结果。同一构建键只构建一次，失败仅影响依赖项，就绪的独立工作照常派发。动作包括并发相同或独立构建、缓存命中、超时、失败与取消。
+
+### Sandbox 与伴随资源的终态 {#resource-group-cleanup}
+
+观察外部资源、诊断与孤儿清单。完成、中断或回收后一并结算主实例及伴随资源，留存的资源仍可核对。动作包括建立主实例和伴随资源、切换留存策略、发送中断及回收。
+
+### 快照接管 {#snapshot-takeover}
+
+观察公开准备结果、消费结果和资源终态。同键并发共享快照，过期 owner 不得发布或删除，有效持有者仍可消费。动作包括生成同键并发、接管、延迟恢复、受理结果不确定与释放持有。
+
+### 准备失败 {#preparation-failure}
+
+观察公开准备诊断、Attempt 与资源。父快照不可用则回退 Base，账本、staging 与 capture 故障按原因结算。动作包括在父节点、staging、账本、capture 与作者动作阶段注入故障。
+
+### 声明式步骤 {#safe-step-progress}
+
+观察CLI 进度、执行诊断与实际动作。声明式步骤显示安全进度，预检未通过的动作不启动。动作包括改变输入和步骤依赖，注入故障并读取实时输出。
+
+### UserDatabase 格式 {#user-database-format}
+
+观察缓存清单、命令状态、诊断与原文件。首次消费可初始化，旧格式拒绝并说明路径与后续处理，原文件保持完整。动作包括使用空 home、真实历史库、并发消费和重复读取。
+
+### 资源重试 {#safe-resource-retries}
+
+观察请求次数、故障与资源终态。仅允许可安全重试的瞬态 I/O 或 provision 故障重试，终态故障保留诊断。动作包括在受理前后制造瞬态和终态故障。

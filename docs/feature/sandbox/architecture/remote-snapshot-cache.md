@@ -332,7 +332,7 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 
 ## 验收
 
-用户路径由 [云 Sandbox 的一批 Attempt 只准备一次](../use-case/sandbox-cloud-before-cache.md) 从安装后的 CLI 验收，E2B 与 Instabox 各跑一次真实服务。下列情形无法靠普通运行稳定触发，在 driver 边界或账本边界按 [Testing](../../../engineering/testing/README.md) 选择最小的可控 owner，以 driver 调用序列和最终资源状态作为证据：
+用户路径由 [云 Sandbox 的一批 Attempt 只准备一次](../use-case/sandbox-cloud-before-cache.md) 从安装后的 CLI 验收，E2B 与 Instabox 各跑一次真实服务。下列情形无法靠普通运行稳定触发，在 driver 边界或账本边界由 [Sandbox 的性质](../README.md#性质)守护，以公开准备结果和最终资源状态作为证据：
 
 - 连续推进：E2B 与 Instabox 冷启动 `Base → 1 → 2` 只创建一个 staging；OpenSandbox 创建两个。Instabox 用真实服务验收一次：本轮发布的多份 snapshot 来自同一个 `sourceMachineId`。
 - 发布点：同一 `changeFrequency` 的线性链 `Base → 1 → 2 → 3`（无分叉、只有 3 是配对终端）只发布 3；之后只改 2 时从 Base 重新执行 1–3。

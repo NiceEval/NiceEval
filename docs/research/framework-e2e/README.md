@@ -4,6 +4,8 @@ sources: []
 
 # 框架工具自身的 E2E 对照
 
+本页记录当时的调研与建议。现行规则见[测试体系](../../engineering/testing/README.md)与[测试架构](../../engineering/testing/architecture.md)。
+
 本组研究只回答一个具体问题：Vite、Vitest 与 Playwright 测试自己时，通用 runner 管到哪里，产品专属 harness 又从哪里开始。
 
 项目事实分别见 [Vite](vite/README.md)、[Vitest](vitest/README.md) 与 [Playwright](playwright/README.md)。链接固定到调研时读取的官方仓库提交；“事实”来自这些一手源文件，“推断”是跨项目归纳或对 NiceEval 的建议。
@@ -98,10 +100,6 @@ NiceEval 应采用 **Vitest + Playwright Test + 一个薄的、框架中立的 r
 
 | 位置 | 建议修改 |
 |---|---|
-| `docs/engineering/testing/architecture/README.md` | 定案“两 runner、一套 framework-neutral repo support”；禁止另造调度、断言和 snapshot 层 |
-| `docs/engineering/testing/architecture/e2e/execution.md` | 写清 Vitest 与 Playwright Test 的 lane ownership，以及共享 runner 的生命周期契约 |
-| `docs/engineering/testing/architecture/e2e/scenario-repos.md` | 为 `CandidateReceipt`、consumer repo copy/install 与 failure preservation 定义机器可读字段 |
-| `docs/engineering/testing/architecture/portfolio.md` | Browser Journey 归 Playwright；CLI/HTTP/local protocol 归 Vitest；同一风险不得跨 runner 复制 |
 | 独立 `@niceeval/testkit` | 用 framework-neutral process handle 同时服务功能与 Adapter 两组 Repo；精确锁版本且不 import Vitest / Playwright matcher |
 | 根 runner 的 server / resource support | readiness、日志、process-tree shutdown、端口释放与 `CleanupReceipt`，以普通 TypeScript API 同时服务两种 runner |
 | browser Journey example | 使用 Playwright Test 原生 fixture/trace，只调用共享 repo runner 准备 candidate 与后端 |

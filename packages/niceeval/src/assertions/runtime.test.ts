@@ -1,5 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
-
 import { describe, expect, it } from "vitest";
 
 import { captureAssertionSnapshot } from "./runtime.ts";

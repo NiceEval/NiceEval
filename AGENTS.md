@@ -10,7 +10,7 @@
 - 实现、调试或评审依赖 Effect API / 语义的代码：先读 [`.agents/skills/effect-ts/SKILL.md`](.agents/skills/effect-ts/SKILL.md)，并按它的入口完整读取当前 workspace 安装的 `effect/AGENTS.md`；跨 v3 / v4 迁移再同时读取 [`.agents/skills/effect-v3-to-v4/SKILL.md`](.agents/skills/effect-v3-to-v4/SKILL.md)
 - 新建、查询或修改 Feature / Use Case：先读 [`.agents/skills/feature/SKILL.md`](.agents/skills/feature/SKILL.md)，再用 `concord --skill document` 进入当前可运行命令
 - 设计、修改或采用 Roadmap：先读 [`.agents/skills/roadmap/SKILL.md`](.agents/skills/roadmap/SKILL.md)，再用 `concord --skill document` 进入当前可运行命令
-- 查询、编写、修正或评审测试：先读 [`.agents/skills/testing/SKILL.md`](.agents/skills/testing/SKILL.md)，再按测试入口选择对应 E2E 或 Unit 例外路径
+- 查询、编写、修正或评审测试：先读 [`.agents/skills/testing/SKILL.md`](.agents/skills/testing/SKILL.md)，再按测试架构选择公开入口与运行工具
 - 公开、脱敏且需 maintainer 跟进的 Observation：先读 [`.agents/skills/issue/SKILL.md`](.agents/skills/issue/SKILL.md)，再按 [Issue 工程契约](docs/engineering/issues/README.md) 准备或处理 GitHub Issue
 - 本地 Issue 的关系、关闭与外部来源导入：运行 `concord --skill feedback`
 - 开发问题、根因、裁决与 know-how：先读 [`.agents/skills/memory/SKILL.md`](.agents/skills/memory/SKILL.md)，再用 `concord --skill memory` 进入正式命令
@@ -29,9 +29,9 @@
 
 ## Bug 修复与测试路径
 
-- 测试 owner 选择、允许路径、E2E TDD、Unit 例外、诊断与验收完全服从 [Testing skill](.agents/skills/testing/SKILL.md) 和它指向的正式测试契约。
-- Bug 修复必须从安装后候选的公开 Library、CLI、HTTP、浏览器或真实 adapter 入口取得 E2E 红灯，再修生产根因；不得用源码调用、私有产物、核心实现 mock 或 Unit 替代。
-- 本地 E2E 只跑最小集：Bug 的公开红灯与修复后的定向绿灯，或新 owner 的一次定向单文件绿灯；本地候选默认直接从源码运行，不构建、不打包；需要构建输出的场景 Repo 声明 `candidate: built`，按打包输入摘要复用；tarball 打包与包边界检查归 CI。不同 E2E 项目的定向单文件运行可以并行（项目副本、端口与 Sandbox 各自隔离，资源冲突重试一次后上报）；不在本地跑接管门禁或完整矩阵，二者由 CI 负责。开始新运行前确认本轮没有待回收的 E2E 进程树。
+- 测试只有 E2E（Bombadil、execa 驱动真实进程与浏览器）与集成（Vitest + fast-check 经公开 Library API）两层，以性质为主体；规则、Bug 修复流程与运行场合以 [测试体系](docs/engineering/testing/README.md) 为准。
+- Bug 修复先找到它违反的性质并取得缩减后的反例，把反例存为回归，再修生产根因；不收窄性质或动作生成器来让测试通过。
+- 本地只跑改动对应的 Vitest 文件与相关 Bombadil spec 的短时 `test`；需要 Docker、Linux 内核语义或密钥的 project 交给 CI。迁移期间旧场景 Repo 测试只在 CI 运行，本地不跑。
 
 ## 全仓约束
 
@@ -49,7 +49,7 @@
 按 [Downstream Link skill](.agents/skills/downstream-link/SKILL.md) 选择真实下游，确认实际路径、局部规则和消费的 NiceEval 来源；不要假定当前 checkout 的相邻目录存在。多仓库父目录没有统一安装、测试或格式化入口。
 使用最小、能证明契约的实验切片，保留既有结果；读取运行结果只走下游安装版本公开的 Show、结构化输出或 View 入口。具体项目职责、安装候选和跨仓库验收规则由该 skill 拥有。
 
-跨设备下游由消费者发起拉取，并显式选择 `main` 或一个 Herdr worktree；不得因为命令从 main checkout 启动就默认消费 main，也不得把 worktree 名解释成分支名后另行 checkout。候选使用当前 checkout 的 `pnpm e2e pack --out <tgz>` 生成，交接收据必须绑定实际 checkout 路径、branch、HEAD 与 tarball SHA-256。临时传输不构成 npm 发布。
+跨设备下游由消费者发起拉取，并显式选择 `main` 或一个 Herdr worktree；不得因为命令从 main checkout 启动就默认消费 main，也不得把 worktree 名解释成分支名后另行 checkout。候选使用当前 checkout 的 `pnpm -C packages/niceeval pack --out <absolute-tgz>` 生成，交接收据必须绑定实际 checkout 路径、branch、HEAD 与 tarball SHA-256。临时传输不构成 npm 发布。
 
 ## Issue 与 Memory
 

@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/record.md
 import { mkdtemp, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";

@@ -1,5 +1,3 @@
-// owner: docs/engineering/testing/architecture/e2e/eval.md#eval-assertion-sandbox
-
 import { defineEval } from "niceeval";
 
 export default defineEval({

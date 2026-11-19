@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/reports.md
 import { Effect, Result, Schema } from "effect";
 import { expect, test } from "vitest";
 import { CliInvocationFacts, CliOutput } from "../cli/application.ts";

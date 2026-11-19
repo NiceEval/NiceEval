@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/architecture/unit/assertions.md
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { defineScoreMatch, managedScoreMatchOf } from "./match.ts";

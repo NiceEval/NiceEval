@@ -1,5 +1,4 @@
-// Plugin 安装收敛 × Sandbox 复用(docs/engineering/testing/architecture/e2e/adapter/codex-cli.md 的
-// Plugins 行)。四个沙箱并发承接八条 attempt；第二波复用第一波的沙箱，workdir 回到
+// Plugin 安装收敛 × Sandbox 复用。四个沙箱并发承接八条 attempt；第二波复用第一波的沙箱，workdir 回到
 // 题间重置点，$HOME 带着上一条 attempt 的 marketplace 注册与插件安装进场。
 //
 // 残留由 preTeardown 种下:本条 attempt 的证据收完之后,把同名 marketplace 改注册成同一个

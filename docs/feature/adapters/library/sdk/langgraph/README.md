@@ -62,4 +62,4 @@ runtime 实测。
 示例的目标形态：事件映射消费 LangGraph 官方协议，不各自手写重复的帧状态机；会话与 HITL 路径仍由示例的 adapter 自己承担。
 示例见 [`examples/zh/tier1/langgraph/`](../../../../../../examples/zh/tier1/langgraph/)。
 
-确定性 owner 见 [SDK converter E2E](../../../../../engineering/testing/architecture/e2e/adapter/sdk-converters.md#langgraph-core-deterministic)。
+[Adapter 性质](../../../README.md#性质)涵盖协议归一与真实兼容性。
