@@ -64,3 +64,7 @@ Record 只有存储本身的一个格式标记。打开时先核对标记，再�
 ### 历史结果 {#historical-results}
 
 观察历史结果、新运行和公开 RunReadError。支持的历史结果仍可读，不安全或只读输入保留原件，不可读故障仍有明确分类。动作包括用真实旧版本生成结果、升级、读写及制造存储故障。
+
+### 中断与超时的收尾 {#interrupted-teardown}
+
+观察 teardown 次数、收到的 signal 与终态。Run 中断或 Attempt 超时后，已激活的 Plugin 与 Direct Agent teardown 各收到未中止的独立 signal，按激活逆序恰好执行一次，原有的 interrupted 或 errored 结果保留。动作包括在各阶段发送 SIGINT、触发 Attempt 超时，并让 teardown 变慢或抛错。

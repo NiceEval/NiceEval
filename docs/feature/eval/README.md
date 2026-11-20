@@ -228,3 +228,15 @@ export default defineDataset({
 ### 进度脱敏 {#progress-redaction}
 
 观察进度与封存证据。始终隐藏敏感值并保留安全诊断。动作包括生成带凭据的 Sandbox 命令、输出和活动。
+
+### 模拟用户应答 {#simulated-user-replies}
+
+观察模拟用户的回复、重试次数与公开错误。只回应等待用户的 Turn，答案不符合请求的 schema 时带纠正重试，超出上限或 provider 不受支持时以明确错误结束。动作包括生成各类等待请求，以及重复、缺失、未知、非法选项和混用字段的答案。
+
+### 模拟用户失败归因 {#simulated-user-failures}
+
+观察错误码、执行诊断与公开读面。失败按 provider、凭据、依赖、会话、工具与传输等层准确归因，凭据与 Authorization 头不出现在任何公开读面。动作包括在各层注入故障，并在请求中携带凭据。
+
+### 模拟用户会话释放 {#simulated-user-cleanup}
+
+观察会话的订阅数、释放次数与空闲状态。正常结束、中止或释放回调抛错时，会话都恰好释放一次且不留订阅。动作包括在各阶段中止，并让 abort、unsubscribe 与 dispose 各自抛错。

@@ -97,3 +97,11 @@ adapters/
 ### 安装扩展与会话 {#install-extensions-and-session}
 
 观察安装 hook、真实 Agent 行为及回读会话。声明的插件和 Skill 在适用 Agent 中可观察，续轮仍能读取首轮证据。动作包括变换插件与 Skill 输入、执行 `before` hook、跨 Sandbox 复用并续轮。
+
+### 展示块校验 {#display-block-validation}
+
+观察 trace 写入结果与错误码。非法的展示块在写入时被拒绝并给出明确错误码，不写入部分数据，合法展示块原样可读。动作包括生成各种合法与非法的展示块形态。
+
+### 用量计量 {#usage-accounting}
+
+观察 `attempt.usage` 的缓存读取率、封存结果与诊断。缓存读取率按契约计算，缺失调用、零输入或越界样本给出不可用原因而不补零；非规范的封存 reason 在调用时立即拒绝。动作包括生成各类用量样本与封存参数。

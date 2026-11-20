@@ -52,3 +52,7 @@ before 正序执行，after 按已激活顺序逆序执行。宿主 after 失败
 ### 插件作用域 {#plugin-scopes}
 
 观察hook 记录、Attempt 和物理 Sandbox 身份。Experiment Plugin 包围整场实验一次，Group Plugin 覆盖共享实例，Eval Plugin 随实际 Attempt 执行。动作包括组合多 Eval、多 Attempt、不同 scope 与实例复用。
+
+### 插件定义 {#plugin-definition}
+
+观察登记错误与诊断。缺少行为字段或 identity、带未知字段、工厂不返回对象，以及作用域与挂载位置不符的定义在登记时被拒绝，合法定义照常运行。动作包括生成合法与非法定义并挂到各作用域。
