@@ -1,0 +1,41 @@
+import { completeEvidenceCoverage, defineAgent, defineSandboxAgent } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
+import { appendPluginEvent } from "./events.ts";
+
+export default defineSandboxAgent({
+  name: "plugins-scope-writer",
+  evidenceCoverage: completeEvidenceCoverage,
+  install: { identity: { agent: "plugins-scope-writer", version: "1", revision: "1" }, probe: shell("true") },
+  async send(_input, ctx) {
+    appendPluginEvent({
+      kind: "agent.send",
+      experimentId: ctx.experimentId,
+      evalId: ctx.evalId,
+      attempt: ctx.attempt.index,
+      sandboxId: ctx.sandbox.sandboxId,
+      ...(ctx.evalGroup === undefined ? {} : { evalGroupId: ctx.evalGroup.id }),
+    });
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: `${ctx.experimentId}:${ctx.evalId}:ok` }],
+    };
+  },
+});
+
+export const directAgent = defineAgent({
+  name: "plugins-scope-direct",
+  behaviorRevision: "1",
+  evidenceCoverage: completeEvidenceCoverage,
+  async send(_input, ctx) {
+    appendPluginEvent({
+      kind: "agent.send",
+      experimentId: ctx.experimentId,
+      evalId: ctx.evalId,
+      attempt: ctx.attempt.index,
+    });
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: `${ctx.experimentId}:${ctx.evalId}:direct-ok` }],
+    };
+  },
+});

@@ -1,0 +1,13 @@
+import { appendFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const EVENTS_PATH = fileURLToPath(new URL("./plugin-events.ndjson", import.meta.url));
+
+export interface PluginScopeEvent {
+  readonly kind: string;
+  readonly [key: string]: unknown;
+}
+
+export function appendPluginEvent(event: PluginScopeEvent): void {
+  appendFileSync(EVENTS_PATH, `${JSON.stringify(event)}\n`, "utf8");
+}
