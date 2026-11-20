@@ -34,3 +34,13 @@ export default defineEvalGroup({
 Group 不提供私有 Eval before/after、Agent 配置扩展、业务 sequence
 或 complete-prefix，也不把作者数组位置解释成依赖。Group 只拥有封闭成员关系、
 capacity-one lane、物理复用边界和 Sandbox 不可用时的处理策略。
+
+## 性质
+
+### 组内复用与组间隔离 {#lane-reuse-isolation}
+
+观察 Attempt 的物理 Sandbox 身份、执行区间与 hook 记录。同一 Group 的 Attempt 共享一个物理 Sandbox 且执行区间互不重叠，不同 Group 与未分组 Eval 不共用实例，可以并发。动作包括组合多个 Group、未分组 Eval、多 Attempt、carry 与过滤。
+
+### 不可用时的处理 {#unavailable-policy}
+
+观察成员 Attempt 的终态与诊断。Sandbox 不可用时按 `onUnavailable` 处理，只影响本组剩余成员，不补跑其它成员，也不影响其它 Group。动作包括在组内各位置让 Sandbox 创建或准备失败。
