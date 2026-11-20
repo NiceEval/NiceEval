@@ -73,9 +73,8 @@ export function piUsageFailure(usage: Usage): PiFailure | undefined {
   }
 }
 
-/** Only this bounded text is persisted. Raw SDK causes stay in runtime memory. */
-export function safePiFailureMessage(error: PiFailure, profile?: ResolvedJudgeConfig): string {
-  let text = error.message;
+/** Removes configured secrets and echoed endpoint or header text without bounding the length. */
+function redactPiText(text: string, profile?: ResolvedJudgeConfig, endpoints = true): string {
   const secrets = [profile?.baseUrl, ...Object.values(profile?.headers ?? {})];
   if (profile !== undefined) {
     try {
@@ -86,11 +85,28 @@ export function safePiFailureMessage(error: PiFailure, profile?: ResolvedJudgeCo
   }
   for (const secret of secrets) if (secret) text = text.split(secret).join("[redacted]");
   // SDK/provider messages may contain a request URL or an echoed header block.
-  text = text
-    .replace(/https?:\/\/[^\s"'<>]+/giu, "[redacted endpoint]")
-    .replace(
-      /\b(?:authorization|proxy-authorization|api[-_]?key|x-api-key|cookie|set-cookie)\s*[=:]\s*[^\r\n]*/giu,
-      "[redacted header]",
-    );
-  return Array.from(text).slice(0, 1024).join("");
+  if (endpoints) text = text.replace(/https?:\/\/[^\s"'<>]+/giu, "[redacted endpoint]");
+  return text.replace(
+    /\b(?:authorization|proxy-authorization|api[-_]?key|x-api-key|cookie|set-cookie)\s*[=:]\s*[^\r\n]*/giu,
+    "[redacted header]",
+  );
+}
+
+/** Only this bounded text is persisted. Raw SDK causes stay in runtime memory. */
+export function safePiFailureMessage(error: PiFailure, profile?: ResolvedJudgeConfig): string {
+  return Array.from(redactPiText(error.message, profile)).slice(0, 1024).join("");
+}
+
+/**
+ * Redacts every string of a pi session history before it is sealed as audit evidence.
+ * Unrelated URLs stay: the history also holds author material the audit must show verbatim.
+ */
+export function redactPiSessionEntries<T>(value: T, profile?: ResolvedJudgeConfig): T {
+  if (typeof value === "string") return redactPiText(value, profile, false) as T;
+  if (Array.isArray(value)) return value.map((item) => redactPiSessionEntries(item, profile)) as T;
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactPiSessionEntries(item, profile)]),
+    ) as T;
+  return value;
 }

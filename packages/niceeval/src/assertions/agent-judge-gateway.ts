@@ -37,7 +37,14 @@ import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial } from "./judge-
 import { interruptibleByCaller, isTransportFailure } from "./judge-transport.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import { createManagedPiSession } from "../judge/pi-runtime.ts";
-import { managedPiCredential, piDefect, piUsageFailure, type PiFailure } from "../judge/pi-failure.ts";
+import {
+  managedPiCredential,
+  piDefect,
+  piUsageFailure,
+  redactPiSessionEntries,
+  safePiFailureMessage,
+  type PiFailure,
+} from "../judge/pi-failure.ts";
 import { fitJudgeContext } from "./judge-context-budget.ts";
 
 const utf8 = new TextEncoder();
@@ -138,20 +145,21 @@ export class AgentJudgeSession {
   }
 
   private failPi(error: PiFailure): void {
+    const message = safePiFailureMessage(error, this.profile);
     switch (error.kind) {
       case "dependency":
-        return this.fail("errored", "agent-judge-dependency-missing", error.message);
+        return this.fail("errored", "agent-judge-dependency-missing", message);
       case "provider":
-        return this.fail("unavailable", "judge-provider-unresolved", error.message);
+        return this.fail("unavailable", "judge-provider-unresolved", message);
       case "credential":
-        return this.fail("unavailable", "judge-key-unresolved", error.message);
+        return this.fail("unavailable", "judge-key-unresolved", message);
       case "session-init":
       case "defect":
-        return this.fail("errored", "agent-judge-defect", error.message);
+        return this.fail("errored", "agent-judge-defect", message);
       case "model-request":
-        return this.fail("unavailable", "judge-call-failed", error.message);
+        return this.fail("unavailable", "judge-call-failed", message);
       case "context-overflow":
-        return this.fail("unavailable", "agent-judge-context-overflow", error.message);
+        return this.fail("unavailable", "agent-judge-context-overflow", message);
       case "cancelled":
         // The owning Effect interruption/timeout decides the caller's terminal.
         return;
@@ -582,7 +590,7 @@ export class AgentJudgeSession {
       });
       agent.refreshContext();
       const captureSession = () => {
-        this.sessionEntries = JSON.parse(JSON.stringify(sessionManager.getEntries()));
+        this.sessionEntries = redactPiSessionEntries(JSON.parse(JSON.stringify(sessionManager.getEntries())), profile);
         this.piSystemPrompt = agent.systemPrompt;
       };
       captureBeforeRelease = captureSession;

@@ -7,7 +7,14 @@ import {
 import type { AgentSession, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
-import { managedPiCredential, piDefect, piUsageFailure, safePiFailureMessage, PiFailure } from "../judge/pi-failure.ts";
+import {
+  managedPiCredential,
+  piDefect,
+  piUsageFailure,
+  redactPiSessionEntries,
+  safePiFailureMessage,
+  PiFailure,
+} from "../judge/pi-failure.ts";
 import { createManagedPiSession } from "../judge/pi-runtime.ts";
 import { pricingEstimate } from "../o11y/cost.ts";
 import type { PriceOverride } from "../types.ts";
@@ -66,7 +73,7 @@ export function createSimulatedUserConversation(
     }
   };
   const active = () => !closed && !submitted && !current?.signal.aborted && failure === undefined;
-  const snapshot = () => JSON.stringify(sessionManager?.getEntries() ?? []);
+  const snapshot = () => JSON.stringify(redactPiSessionEntries(sessionManager?.getEntries() ?? [], profile));
   const abort = () => {
     void session?.abort().catch(() => undefined);
   };
