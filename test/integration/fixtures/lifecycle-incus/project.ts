@@ -98,7 +98,7 @@ export async function createIncusProject(options: {
   const state = join(runtime, "incus-state.json");
   const journalPath = join(runtime, "incus-journal.ndjson");
   try {
-    await Promise.all(["evals", "experiments", bin].map((dir) => mkdir(dir, { recursive: true })));
+    await Promise.all([join(cwd, "evals"), join(cwd, "experiments"), bin].map((dir) => mkdir(dir, { recursive: true })));
     await writeFile(
       join(bin, "incus"),
       `#!/usr/bin/env node\nawait import(${JSON.stringify(pathToFileURL(fakeIncus).href)});\n`,
