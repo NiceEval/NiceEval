@@ -39,12 +39,14 @@ interface Authority {
   readonly issuerEpoch: string;
 }
 class MaintenanceFailure extends Error {
-  constructor(
-    readonly exitCode: 2 | 3 | 4,
-    readonly reason: string,
-    readonly detail: string,
-  ) {
+  readonly exitCode: 2 | 3 | 4;
+  readonly reason: string;
+  readonly detail: string;
+  constructor(exitCode: 2 | 3 | 4, reason: string, detail: string) {
     super(`${reason}: ${detail}`);
+    this.exitCode = exitCode;
+    this.reason = reason;
+    this.detail = detail;
   }
 }
 export interface IncusMaintenanceOptions {

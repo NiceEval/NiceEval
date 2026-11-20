@@ -77,7 +77,10 @@ export function dockerfileAgentDerivedLocator(derivedKey: BuildKey): string {
 export class DockerfileAgentImageCoordinator {
   private readonly inflight = new Map<BuildKey, Deferred.Deferred<DockerfileAgentCacheResolution, Error>>();
 
-  constructor(private readonly hooks: DockerfileAgentCacheHooks) {}
+  private readonly hooks: DockerfileAgentCacheHooks;
+  constructor(hooks: DockerfileAgentCacheHooks) {
+    this.hooks = hooks;
+  }
 
   resolve(
     input: DockerfileAgentCacheRequest,

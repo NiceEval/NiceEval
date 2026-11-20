@@ -17,10 +17,11 @@ export class InstaboxConnection {
   private requests = 1;
   private readonly closed = new AbortController();
   private readonly secrets = new Set<string>();
-  constructor(
-    private token: SSHToken,
-    private readonly requestToken: (signal: AbortSignal) => Promise<SSHToken>,
-  ) {
+  private token: SSHToken;
+  private readonly requestToken: (signal: AbortSignal) => Promise<SSHToken>;
+  constructor(token: SSHToken, requestToken: (signal: AbortSignal) => Promise<SSHToken>) {
+    this.token = token;
+    this.requestToken = requestToken;
     this.secrets.add(token.token);
   }
 

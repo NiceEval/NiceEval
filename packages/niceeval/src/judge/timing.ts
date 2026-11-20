@@ -10,10 +10,12 @@ export type JudgeTimingOutcome = "completed" | "failed" | "cancelled";
 export class JudgeTimingSpan {
   private closed = false;
   private readonly children: JudgeTimingSpan[] = [];
-  private constructor(
-    private readonly recorder: TimingRecorder,
-    private readonly node: TimingActivity,
-  ) {}
+  private readonly recorder: TimingRecorder;
+  private readonly node: TimingActivity;
+  private constructor(recorder: TimingRecorder, node: TimingActivity) {
+    this.recorder = recorder;
+    this.node = node;
+  }
 
   static start(
     recorder: TimingRecorder | undefined,

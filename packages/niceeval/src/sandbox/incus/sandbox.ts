@@ -70,15 +70,27 @@ export class IncusSandbox implements SandboxProviderBackend {
   private retirement: Promise<void> | undefined;
   private deadlineAt: number | undefined;
 
+  private readonly repository: IncusRepository;
+  private readonly control: IncusControl;
+  private readonly plan: IncusRuntimePlan;
+  private readonly instanceName: string;
+  readonly allocation: AllocationIntent;
+  private readonly commandTimeoutMs: number | undefined;
   constructor(
-    private readonly repository: IncusRepository,
-    private readonly control: IncusControl,
-    private readonly plan: IncusRuntimePlan,
-    private readonly instanceName: string,
-    readonly allocation: AllocationIntent,
-    private readonly commandTimeoutMs: number | undefined,
+    repository: IncusRepository,
+    control: IncusControl,
+    plan: IncusRuntimePlan,
+    instanceName: string,
+    allocation: AllocationIntent,
+    commandTimeoutMs: number | undefined,
     deadlineAt?: number,
   ) {
+    this.repository = repository;
+    this.control = control;
+    this.plan = plan;
+    this.instanceName = instanceName;
+    this.allocation = allocation;
+    this.commandTimeoutMs = commandTimeoutMs;
     this.sandboxId = instanceName;
     this.deadlineAt = deadlineAt;
   }

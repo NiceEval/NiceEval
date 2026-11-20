@@ -45,11 +45,15 @@ export class JudgeUsageCollector {
   private readonly pricing: Readonly<Record<string, PriceOverride>> | undefined;
   private readonly onAbort = () => this.close();
 
+  private readonly signal: AbortSignal | undefined;
+  private readonly onCleanupIncomplete: (() => void) | undefined;
   constructor(
     pricing: Readonly<Record<string, PriceOverride>> | undefined,
-    private readonly signal?: AbortSignal,
-    private readonly onCleanupIncomplete?: () => void,
+    signal?: AbortSignal,
+    onCleanupIncomplete?: () => void,
   ) {
+    this.signal = signal;
+    this.onCleanupIncomplete = onCleanupIncomplete;
     this.pricing = pricing === undefined ? undefined : structuredClone(pricing);
     signal?.addEventListener("abort", this.onAbort, { once: true });
     if (signal?.aborted) this.close();

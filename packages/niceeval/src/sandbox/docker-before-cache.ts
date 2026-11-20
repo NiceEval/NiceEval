@@ -544,12 +544,15 @@ class BeforeCacheLease {
   private heartbeatFailure: unknown;
   private readonly heartbeat: ReturnType<typeof setInterval>;
 
-  constructor(
-    readonly domain: DockerCacheDomainHandle,
-    readonly row: BeforeCacheEntryRow,
-    readonly leaseId: string,
-    readonly kind: "build" | "handoff",
-  ) {
+  readonly domain: DockerCacheDomainHandle;
+  readonly row: BeforeCacheEntryRow;
+  readonly leaseId: string;
+  readonly kind: "build" | "handoff";
+  constructor(domain: DockerCacheDomainHandle, row: BeforeCacheEntryRow, leaseId: string, kind: "build" | "handoff") {
+    this.domain = domain;
+    this.row = row;
+    this.leaseId = leaseId;
+    this.kind = kind;
     this.heartbeat = setInterval(() => {
       if (this.released || this.heartbeatFailure !== undefined) return;
       const now = Date.now();

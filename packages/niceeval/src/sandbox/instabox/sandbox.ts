@@ -103,13 +103,24 @@ export class InstaboxBackend implements SandboxProviderBackend {
   private retirementCause: Error | undefined;
   private readonly deleteKey = randomUUID();
 
+  private readonly api: InstaboxApi;
+  private readonly options: InstaboxProviderPlan & { readonly lifetimeMs: number };
+  private readonly operation: Operation;
+  private readonly deadlineAt: number | undefined;
+  private readonly diagnostic: (input: DiagnosticInput) => void;
   private constructor(
-    private readonly api: InstaboxApi,
-    private readonly options: InstaboxProviderPlan & { readonly lifetimeMs: number },
-    private readonly operation: Operation,
-    private readonly deadlineAt?: number,
-    private readonly diagnostic: (input: DiagnosticInput) => void = () => {},
-  ) {}
+    api: InstaboxApi,
+    options: InstaboxProviderPlan & { readonly lifetimeMs: number },
+    operation: Operation,
+    deadlineAt?: number,
+    diagnostic: (input: DiagnosticInput) => void = () => {},
+  ) {
+    this.api = api;
+    this.options = options;
+    this.operation = operation;
+    this.deadlineAt = deadlineAt;
+    this.diagnostic = diagnostic;
+  }
 
   get nativeInstanceId(): string {
     return this.instanceName;

@@ -54,7 +54,10 @@ class RecordingBackend implements SandboxProviderBackend {
   readonly otlpHost = null;
   readonly capabilities = noSandboxBackendCapabilities;
   stopped = false;
-  constructor(readonly files = new Map<string, string>()) {}
+  readonly files: Map<string, string>;
+  constructor(files = new Map<string, string>()) {
+    this.files = files;
+  }
   async runCommand(command: string, args: readonly string[] = []) {
     if (this.stopped) throw new Error("Instance is stopped");
     if (command === "cat" && args[0] === "/proc/self/mountinfo")

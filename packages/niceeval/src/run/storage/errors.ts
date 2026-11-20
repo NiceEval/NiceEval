@@ -30,12 +30,12 @@ export class RunStorageError extends Data.TaggedError("RunStorageError")<{
 }> {
   readonly name = "RunStorageError";
 
-  constructor(
-    readonly code: RunStorageErrorCode,
-    message: string,
-    readonly dependencies: readonly RunReferenceDependency[] = [],
-  ) {
+  readonly code: RunStorageErrorCode;
+  readonly dependencies: readonly RunReferenceDependency[];
+  constructor(code: RunStorageErrorCode, message: string, dependencies: readonly RunReferenceDependency[] = []) {
     super({ reason: { _tag: code } });
+    this.code = code;
+    this.dependencies = dependencies;
     this.message = message;
   }
 }

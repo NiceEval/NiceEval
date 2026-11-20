@@ -66,8 +66,10 @@ export class DockerProfileCapacityBlockedError extends Data.TaggedError("DockerP
 
 export class DockerProfileReservationStateError extends Data.TaggedError("DockerProfileReservationStateError")<{}> {
   readonly code = "RESERVATION_NOT_GRANTED";
-  constructor(readonly state: DockerProfileReservation["state"]) {
+  readonly state: DockerProfileReservation["state"];
+  constructor(state: DockerProfileReservation["state"]) {
     super();
+    this.state = state;
     this.name = "Error";
     this.message = `Docker profile reservation cannot run from non-granted state ${JSON.stringify(state)}`;
   }
@@ -192,12 +194,12 @@ function controlFailure(code: string): DockerProfileControlFailure {
 export class DockerProfileControlError extends Data.TaggedError("DockerProfileControlError")<{
   readonly reason: DockerProfileControlFailure;
 }> {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly details?: Readonly<Record<string, unknown>>,
-  ) {
+  readonly code: string;
+  readonly details: Readonly<Record<string, unknown>> | undefined;
+  constructor(code: string, message: string, details?: Readonly<Record<string, unknown>>) {
     super({ reason: controlFailure(code) });
+    this.code = code;
+    this.details = details;
     this.message = `${code}: ${message}`;
     this.name = "DockerProfileControlError";
   }
@@ -206,12 +208,12 @@ export class DockerProfileControlError extends Data.TaggedError("DockerProfileCo
 /** The publish outcome is unknown after transport loss; callers must inspect
  * terminal rather than treating this as a cache miss or ordinary domain error. */
 export class DockerProfileControlAmbiguityError extends Data.TaggedError("DockerProfileControlAmbiguityError")<{}> {
-  constructor(
-    readonly operationId: string,
-    readonly terminal: "cancel-fenced" | "unresolved",
-    message: string,
-  ) {
+  readonly operationId: string;
+  readonly terminal: "cancel-fenced" | "unresolved";
+  constructor(operationId: string, terminal: "cancel-fenced" | "unresolved", message: string) {
     super();
+    this.operationId = operationId;
+    this.terminal = terminal;
     this.message = message;
     this.name = "DockerProfileControlAmbiguityError";
   }
@@ -220,11 +222,10 @@ export class DockerProfileControlAmbiguityError extends Data.TaggedError("Docker
 export class DockerProfileControlCancellationError extends Data.TaggedError(
   "DockerProfileControlCancellationError",
 )<{}> {
-  constructor(
-    readonly operationId: string,
-    message: string,
-  ) {
+  readonly operationId: string;
+  constructor(operationId: string, message: string) {
     super();
+    this.operationId = operationId;
     this.message = message;
     this.name = "DockerProfileControlCancellationError";
   }

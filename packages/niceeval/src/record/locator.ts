@@ -104,14 +104,15 @@ export function resolveAttemptLocator<T>(
 
 /** fresh locator 已被另一个不可变身份占用。 */
 export class LocatorCollisionError extends Error {
-  constructor(
-    public readonly locator: AttemptLocator,
-    public readonly identities: readonly [AttemptIdentity, AttemptIdentity],
-  ) {
+  public readonly locator: AttemptLocator;
+  public readonly identities: readonly [AttemptIdentity, AttemptIdentity];
+  constructor(locator: AttemptLocator, identities: readonly [AttemptIdentity, AttemptIdentity]) {
     super(
       `Attempt locator collision: "${locator}" belongs to both ${identityLabel(identities[0])} and ` +
         `${identityLabel(identities[1])}. The locator is derived and cannot be regenerated with a different value.`,
     );
+    this.locator = locator;
+    this.identities = identities;
     this.name = "LocatorCollisionError";
   }
 }

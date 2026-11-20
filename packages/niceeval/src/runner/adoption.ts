@@ -122,12 +122,12 @@ export type ExplicitAdoptionFailureCode =
 export class ExplicitAdoptionError extends Error {
   readonly name = "ExplicitAdoptionError";
 
-  constructor(
-    readonly code: ExplicitAdoptionFailureCode,
-    message: string,
-    readonly comparisons?: readonly ExecutionComparison[],
-  ) {
+  readonly code: ExplicitAdoptionFailureCode;
+  readonly comparisons: readonly ExecutionComparison[] | undefined;
+  constructor(code: ExplicitAdoptionFailureCode, message: string, comparisons?: readonly ExecutionComparison[]) {
     super(message);
+    this.code = code;
+    this.comparisons = comparisons;
   }
 }
 

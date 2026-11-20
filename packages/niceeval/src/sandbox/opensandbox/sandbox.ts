@@ -35,12 +35,19 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
   private stopping: Promise<void> | undefined;
   private readonly identities = new Map<string, Promise<ExecutionIdentity>>();
 
+  private remote: RemoteSandbox;
+  private readonly options: OpenSandboxProviderPlan & { readonly lifetimeMs: number };
+  private deadlineAt: number | undefined;
   private constructor(
-    private remote: RemoteSandbox,
-    private readonly options: OpenSandboxProviderPlan & { readonly lifetimeMs: number },
+    remote: RemoteSandbox,
+    options: OpenSandboxProviderPlan & { readonly lifetimeMs: number },
     _connectionConfig: { domain: string; apiKey?: string; useServerProxy: boolean; disableMetrics: boolean },
-    private deadlineAt?: number,
-  ) {}
+    deadlineAt?: number,
+  ) {
+    this.remote = remote;
+    this.options = options;
+    this.deadlineAt = deadlineAt;
+  }
 
   get nativeInstanceId(): string {
     return this.remote.id;

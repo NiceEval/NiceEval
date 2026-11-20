@@ -452,15 +452,12 @@ export interface AssertionStopError {
 export class AssertionAuthoringClosedError extends Error {
   readonly _tag = "AssertionAuthoringClosedError";
 
+  readonly reason: "stop-latched" | "attempt-sealing" | "attempt-sealed" | "attempt-interrupted" | "runtime-unattached";
   constructor(
-    readonly reason:
-      | "stop-latched"
-      | "attempt-sealing"
-      | "attempt-sealed"
-      | "attempt-interrupted"
-      | "runtime-unattached",
+    reason: "stop-latched" | "attempt-sealing" | "attempt-sealed" | "attempt-interrupted" | "runtime-unattached",
   ) {
     super(`Cannot use an Assertion authoring handle after ${reason}`);
+    this.reason = reason;
     this.name = "AssertionAuthoringClosedError";
   }
 }

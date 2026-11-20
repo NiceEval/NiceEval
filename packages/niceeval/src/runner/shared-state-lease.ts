@@ -100,8 +100,18 @@ export interface SharedStateLeaseIdentity {
 }
 
 export class SharedStateLeaseError extends Error {
+  readonly code:
+    | "shared-state-lease-invalid"
+    | "shared-state-lease-owner-mismatch"
+    | "shared-state-lease-missing"
+    | "shared-state-owner-still-live"
+    | "shared-state-process-identity-unavailable"
+    | "shared-state-recovery-confirmation-required"
+    | "shared-state-recovery-state-mismatch"
+    | "shared-state-recovery-in-progress"
+    | "shared-state-recovery-identity-unavailable";
   constructor(
-    readonly code:
+    code:
       | "shared-state-lease-invalid"
       | "shared-state-lease-owner-mismatch"
       | "shared-state-lease-missing"
@@ -114,6 +124,7 @@ export class SharedStateLeaseError extends Error {
     message: string,
   ) {
     super(message);
+    this.code = code;
     this.name = "SharedStateLeaseError";
   }
 }

@@ -121,21 +121,45 @@ export class ReusableSandboxPool {
   private groupPluginSetupError: Error | undefined;
   private activatedGroupPlugins = 0;
 
+  private readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>;
+  private readonly capacity: number;
+  private readonly feedback: ScopedFeedback;
+  private readonly setupContext: SandboxHookContext;
+  private readonly runtimeServices: SandboxRuntimeServices;
+  private readonly agent: SandboxAgent | undefined;
+  private readonly runTiming: import("./timing.ts").RunTimingRecorder | undefined;
+  private readonly nextReuseSandboxNumber: (() => number) | undefined;
+  private readonly groupPlugins: readonly LinkedPluginLifecycle[];
+  private readonly groupPluginContext: GroupPluginContext | undefined;
+  private readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  private readonly runId: string | undefined;
   constructor(
-    private readonly plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
-    private readonly capacity: number,
-    private readonly feedback: ScopedFeedback,
-    private readonly setupContext: SandboxHookContext,
-    private readonly runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
-    private readonly agent?: SandboxAgent,
-    private readonly runTiming?: import("./timing.ts").RunTimingRecorder,
+    plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+    capacity: number,
+    feedback: ScopedFeedback,
+    setupContext: SandboxHookContext,
+    runtimeServices: SandboxRuntimeServices = liveSandboxRuntimeServices,
+    agent?: SandboxAgent,
+    runTiming?: import("./timing.ts").RunTimingRecorder,
     materializationOwnerId?: string,
-    private readonly nextReuseSandboxNumber?: () => number,
-    private readonly groupPlugins: readonly LinkedPluginLifecycle[] = [],
-    private readonly groupPluginContext?: GroupPluginContext,
-    private readonly preparedBeforeCache?: PreparedBeforeCacheUse,
-    private readonly runId?: string,
+    nextReuseSandboxNumber?: () => number,
+    groupPlugins: readonly LinkedPluginLifecycle[] = [],
+    groupPluginContext?: GroupPluginContext,
+    preparedBeforeCache?: PreparedBeforeCacheUse,
+    runId?: string,
   ) {
+    this.plan = plan;
+    this.capacity = capacity;
+    this.feedback = feedback;
+    this.setupContext = setupContext;
+    this.runtimeServices = runtimeServices;
+    this.agent = agent;
+    this.runTiming = runTiming;
+    this.nextReuseSandboxNumber = nextReuseSandboxNumber;
+    this.groupPlugins = groupPlugins;
+    this.groupPluginContext = groupPluginContext;
+    this.preparedBeforeCache = preparedBeforeCache;
+    this.runId = runId;
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
 

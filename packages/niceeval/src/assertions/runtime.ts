@@ -657,10 +657,11 @@ function unavailableScore(
 class HandleBase {
   readonly [assertionHandleBrand] = true as const;
 
-  constructor(
-    protected readonly runtime: AssertionsRuntimeImplementation,
-    protected readonly entry: AssertionEntry,
-  ) {
+  protected readonly runtime: AssertionsRuntimeImplementation;
+  protected readonly entry: AssertionEntry;
+  constructor(runtime: AssertionsRuntimeImplementation, entry: AssertionEntry) {
+    this.runtime = runtime;
+    this.entry = entry;
     assertionHandleRegistry.add(this);
   }
 
@@ -831,14 +832,26 @@ class AssertionsRuntimeImplementation {
   >();
   private retainedImageBytes = 0;
 
+  readonly evaluationKind: AssertionEvaluationKind;
+  private readonly executeStop: AssertionStopExecutor;
+  private readonly judge: ResolvedJudgeConfig | undefined;
+  private readonly signal: AbortSignal | undefined;
+  private readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  private readonly judgeTiming: import("../runner/timing.ts").TimingRecorder | undefined;
   constructor(
-    readonly evaluationKind: AssertionEvaluationKind,
-    private readonly executeStop: AssertionStopExecutor,
-    private readonly judge: ResolvedJudgeConfig | undefined,
-    private readonly signal: AbortSignal | undefined,
-    private readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
-    private readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder,
+    evaluationKind: AssertionEvaluationKind,
+    executeStop: AssertionStopExecutor,
+    judge: ResolvedJudgeConfig | undefined,
+    signal: AbortSignal | undefined,
+    judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
+    judgeTiming?: import("../runner/timing.ts").TimingRecorder,
   ) {
+    this.evaluationKind = evaluationKind;
+    this.executeStop = executeStop;
+    this.judge = judge;
+    this.signal = signal;
+    this.judgeUsage = judgeUsage;
+    this.judgeTiming = judgeTiming;
     const check = (...args: readonly unknown[]) => this.checkFor(check, args);
     const base = {
       evaluationKind,

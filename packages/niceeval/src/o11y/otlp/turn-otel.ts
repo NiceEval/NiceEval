@@ -39,7 +39,10 @@ export class AgentOtelChannel {
   /** 已归属过的 span(spanId),共享流里不能重复分给两轮。 */
   private readonly consumed = new Set<string>();
 
-  constructor(readonly receiver: TraceReceiver) {}
+  readonly receiver: TraceReceiver;
+  constructor(receiver: TraceReceiver) {
+    this.receiver = receiver;
+  }
 
   /**
    * 跑一轮:fn 拿到本轮的 W3C trace context headers(spread 进请求头 / 注入子进程 env),
@@ -172,7 +175,10 @@ export class OtelReceiverPool {
   private readonly mutex = Semaphore.makeUnsafe(1);
   private closed = false;
 
-  constructor(private readonly fixedPort?: number) {}
+  private readonly fixedPort: number | undefined;
+  constructor(fixedPort?: number) {
+    this.fixedPort = fixedPort;
+  }
 
   channel(agentName: string): Effect.Effect<AgentOtelChannel, Error> {
     const key = this.fixedPort !== undefined ? "*fixed-port*" : agentName;

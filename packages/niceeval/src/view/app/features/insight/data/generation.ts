@@ -27,7 +27,10 @@ export interface ViewGenerationBinding<Snapshot = unknown> {
 
 export class GenerationLease<Snapshot = unknown> {
   #released = false;
-  constructor(readonly generation: ViewGeneration<Snapshot>) {}
+  readonly generation: ViewGeneration<Snapshot>;
+  constructor(generation: ViewGeneration<Snapshot>) {
+    this.generation = generation;
+  }
   get identity(): ViewGenerationIdentity {
     return this.generation.identity;
   }
@@ -54,11 +57,13 @@ export class ViewGeneration<Snapshot = unknown> {
   #snapshot: Snapshot | undefined;
   readonly binding: ViewGenerationBinding<Snapshot>;
 
-  constructor(
-    readonly repository: OwnedInspectionRepository,
-    readonly queryClient: QueryClient,
-    readonly onClosed: () => void,
-  ) {
+  readonly repository: OwnedInspectionRepository;
+  readonly queryClient: QueryClient;
+  readonly onClosed: () => void;
+  constructor(repository: OwnedInspectionRepository, queryClient: QueryClient, onClosed: () => void) {
+    this.repository = repository;
+    this.queryClient = queryClient;
+    this.onClosed = onClosed;
     this.identity = repository.generationId as ViewGenerationIdentity;
     const generation = this;
     this.binding = {

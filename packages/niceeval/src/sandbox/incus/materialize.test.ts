@@ -45,7 +45,10 @@ class IncusApi {
   readonly instances = new Map<string, IncusInstance>();
   readonly volumes = new Map<string, IncusVolume>();
   copies = 0;
-  constructor(readonly mode: "staging" | "capture" | "action" | "ledger") {}
+  readonly mode: "staging" | "capture" | "action" | "ledger";
+  constructor(mode: "staging" | "capture" | "action" | "ledger") {
+    this.mode = mode;
+  }
   async assertGuestInitMountsBlockDockerData() {
     if (this.mode === "staging") throw new Error("Provider cannot create staging");
   }

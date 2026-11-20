@@ -39,11 +39,18 @@ export class AdapterUsageCollector {
   get failure(): Error | undefined {
     return this.failed;
   }
+  private readonly assertOpen: () => void;
+  private readonly pricing: Readonly<Record<string, PriceOverride>> | undefined;
+  private readonly models: ResolvedModelRoles;
   constructor(
-    private readonly assertOpen: () => void,
-    private readonly pricing: Readonly<Record<string, PriceOverride>> | undefined,
-    private readonly models: ResolvedModelRoles = {},
-  ) {}
+    assertOpen: () => void,
+    pricing: Readonly<Record<string, PriceOverride>> | undefined,
+    models: ResolvedModelRoles = {},
+  ) {
+    this.assertOpen = assertOpen;
+    this.pricing = pricing;
+    this.models = models;
+  }
   record = (input: AdapterUsageInput): void => {
     if (this.closed) throw new Error("Adapter usage capture is closed");
     this.assertOpen();

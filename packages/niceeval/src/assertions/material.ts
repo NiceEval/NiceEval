@@ -156,8 +156,10 @@ function problemDetail(value: CaptureProblem): AssertionSnapshotObject {
   });
 }
 class CaptureRejected extends Error {
-  constructor(readonly problem: CaptureProblem) {
+  readonly problem: CaptureProblem;
+  constructor(problem: CaptureProblem) {
     super(problem.message);
+    this.problem = problem;
   }
 }
 
@@ -165,7 +167,10 @@ class CaptureRejected extends Error {
 class CaptureCounter {
   bytes = 0;
   nodes = 0;
-  constructor(readonly limits: ResolvedMaterialCaptureBudget) {}
+  readonly limits: ResolvedMaterialCaptureBudget;
+  constructor(limits: ResolvedMaterialCaptureBudget) {
+    this.limits = limits;
+  }
   limit(kind: "byte" | "node" | "depth", observed: number): never {
     const configuredLimit = (): number => {
       switch (kind) {

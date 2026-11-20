@@ -331,7 +331,10 @@ function decodeRequest(value: unknown): UserDatabaseWorkerRequest | undefined {
 }
 
 class UserDatabaseStorage {
-  private constructor(private readonly database: DatabaseSync) {}
+  private readonly database: DatabaseSync;
+  private constructor(database: DatabaseSync) {
+    this.database = database;
+  }
 
   static async open(input: UserDatabaseWorkerData): Promise<UserDatabaseStorage> {
     if (await exists(input.legacyPath)) {

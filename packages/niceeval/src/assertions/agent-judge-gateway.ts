@@ -88,15 +88,27 @@ export class AgentJudgeSession {
   private timingPrompt: JudgeTimingSpan | undefined;
   private readonly evidence = new Map<string, readonly AssertionMaterial[]>();
 
+  readonly judge: NormalizedAgentJudge;
+  private readonly sandbox: Sandbox;
+  private readonly profile: ResolvedJudgeConfig | undefined;
+  private readonly signal: AbortSignal | undefined;
+  private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined;
+  private readonly timing: import("../runner/timing.ts").TimingRecorder | undefined;
   constructor(
-    readonly judge: NormalizedAgentJudge,
+    judge: NormalizedAgentJudge,
     material: unknown,
-    private readonly sandbox: Sandbox,
-    private readonly profile: ResolvedJudgeConfig | undefined,
-    private readonly signal: AbortSignal | undefined,
-    private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined,
-    private readonly timing?: import("../runner/timing.ts").TimingRecorder,
+    sandbox: Sandbox,
+    profile: ResolvedJudgeConfig | undefined,
+    signal: AbortSignal | undefined,
+    usageForEntry: (index: number) => JudgeUsageEntry | undefined,
+    timing?: import("../runner/timing.ts").TimingRecorder,
   ) {
+    this.judge = judge;
+    this.sandbox = sandbox;
+    this.profile = profile;
+    this.signal = signal;
+    this.usageForEntry = usageForEntry;
+    this.timing = timing;
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
     this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }, Infinity).material;

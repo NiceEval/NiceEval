@@ -119,10 +119,12 @@ function jsonSpan(span: globalThis.Record<string, unknown>): TraceSpan | undefin
 
 class Reader {
   pos = 0;
-  constructor(
-    private readonly buf: Buffer,
-    private readonly end = buf.length,
-  ) {}
+  private readonly buf: Buffer;
+  private readonly end: number;
+  constructor(buf: Buffer, end = buf.length) {
+    this.buf = buf;
+    this.end = end;
+  }
   get eof(): boolean {
     return this.pos >= this.end;
   }

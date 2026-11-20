@@ -22,8 +22,10 @@ export type AdapterResourceWindow = "forward-open" | "cleanup-open" | "closed";
 export class AdapterResourceWindowClosedError extends Error {
   readonly code = "adapter-resource-window-closed";
 
-  constructor(readonly window: AdapterResourceWindow) {
+  readonly window: AdapterResourceWindow;
+  constructor(window: AdapterResourceWindow) {
     super(`Adapter Attempt resource window is ${window}`);
+    this.window = window;
     this.name = "AdapterResourceWindowClosedError";
   }
 }
@@ -55,7 +57,10 @@ export class AdapterAttemptResources {
   private cleanupReceipt: Promise<AdapterCleanupResult> | undefined;
   private wakeCleanup: (() => void) | undefined;
 
-  constructor(private readonly closeCapture: () => void = () => {}) {}
+  private readonly closeCapture: () => void;
+  constructor(closeCapture: () => void = () => {}) {
+    this.closeCapture = closeCapture;
+  }
 
   get window(): AdapterResourceWindow {
     return this.windowState;

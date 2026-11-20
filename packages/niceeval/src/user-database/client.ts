@@ -128,7 +128,9 @@ class UserDatabaseWorkerClient {
   #closePromise: Promise<void> | undefined;
   readonly #pending = new Map<number, Pending>();
 
-  private constructor(private readonly worker: Worker) {
+  private readonly worker: Worker;
+  private constructor(worker: Worker) {
+    this.worker = worker;
     worker.on("message", (value: unknown) => {
       if (!isResponse(value)) return;
       const pending = this.#pending.get(value.id);
@@ -249,10 +251,12 @@ export interface UserDatabaseOpenOptions {
 }
 
 class UserDatabaseRuntime implements UserDatabase {
-  constructor(
-    readonly path: string,
-    private readonly worker: UserDatabaseWorkerClient,
-  ) {}
+  readonly path: string;
+  private readonly worker: UserDatabaseWorkerClient;
+  constructor(path: string, worker: UserDatabaseWorkerClient) {
+    this.path = path;
+    this.worker = worker;
+  }
 
   readonly dispatch = <Request extends UserDatabaseRepositoryRequest>(
     request: Request,

@@ -375,14 +375,16 @@ export class ProjectModuleGraph {
   private readonly externalFacts = new Map<string, { entry: string; content: string; complete: boolean }>();
   private readonly externalPackages = new Map<string, ExternalPackageContent>();
   readonly root: string;
+  private readonly loader: Jiti;
   constructor(
     root: string,
-    private readonly loader: Jiti = createJiti(import.meta.url, {
+    loader: Jiti = createJiti(import.meta.url, {
       interopDefault: false,
       moduleCache: true,
       tsconfigPaths: true,
     }),
   ) {
+    this.loader = loader;
     this.root = realpathSync(root);
   }
   module(file: string, captured?: string): ModuleFact {

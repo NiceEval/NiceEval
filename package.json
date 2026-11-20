@@ -37,6 +37,7 @@
     "@playwright/test": "1.65.1",
     "@types/node": "^24.19.2",
     "concurrently": "^10.0.7",
+    "effect": "4.1.4",
     "execa": "10.2.1",
     "fast-check": "^4.10.3",
     "husky": "^9.1.7",

@@ -87,8 +87,10 @@ abstract class StoredSessionKeyValue {
 }
 
 class StoredSessionKeyValueOf<T> extends StoredSessionKeyValue {
-  constructor(readonly value: T) {
+  readonly value: T;
+  constructor(value: T) {
     super();
+    this.value = value;
   }
 }
 
@@ -343,7 +345,9 @@ export class SessionManager {
   private readonly observedIngestion: ObservedEventIngestionCorrelator;
   private observedTurnStates = new WeakMap<ObservedTurnSnapshot, ObservedTurnState>();
 
-  constructor(private readonly deps: SessionDeps) {
+  private readonly deps: SessionDeps;
+  constructor(deps: SessionDeps) {
+    this.deps = deps;
     this.nextSourceOrder = deps.nextSourceOrder ?? (() => ++this.localSourceOrder);
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;

@@ -44,11 +44,12 @@ function apiFailure(status: number, code: string): InstaboxApiFailure {
 export class InstaboxApiError extends Data.TaggedError("InstaboxApiError")<{
   readonly reason: InstaboxApiFailure;
 }> {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-  ) {
+  readonly status: number;
+  readonly code: string;
+  constructor(status: number, code: string) {
     super({ reason: apiFailure(status, code) });
+    this.status = status;
+    this.code = code;
     this.message = `Instabox API failed: HTTP ${status} (${code})`;
     this.name = "InstaboxApiError";
   }
@@ -101,7 +102,10 @@ export type InstaboxRequestInit = RequestInit & { readonly timeoutMs?: number };
 
 /** Fixed-origin authenticated transport. Never includes response text in errors. */
 export class InstaboxApi {
-  constructor(private readonly key: string) {}
+  private readonly key: string;
+  constructor(key: string) {
+    this.key = key;
+  }
 
   async request(path: string, init: InstaboxRequestInit = {}): Promise<Response> {
     const timeoutMs = init.timeoutMs ?? 30_000;

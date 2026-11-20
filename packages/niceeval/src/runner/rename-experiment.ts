@@ -61,8 +61,10 @@ export type ExperimentRenamePlan =
     });
 export class ExperimentRenameError extends Error {
   readonly name = "ExperimentRenameError";
-  constructor(readonly plan: BlockedExperimentRenamePlan) {
+  readonly plan: BlockedExperimentRenamePlan;
+  constructor(plan: BlockedExperimentRenamePlan) {
     super(plan.blocked.detail);
+    this.plan = plan;
   }
   get reason(): ExperimentRenameReason {
     return this.plan.blocked.reason;

@@ -45,11 +45,10 @@ export type AcceptFailureCode =
 export class AcceptError extends Error {
   readonly name = "AcceptError";
 
-  constructor(
-    readonly code: AcceptFailureCode,
-    message: string,
-  ) {
+  readonly code: AcceptFailureCode;
+  constructor(code: AcceptFailureCode, message: string) {
     super(message);
+    this.code = code;
   }
 }
 

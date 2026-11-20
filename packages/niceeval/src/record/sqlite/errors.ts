@@ -34,13 +34,12 @@ export class SqliteRecordError extends Data.TaggedError("SqliteRecordError")<{
 }> {
   readonly name = "SqliteRecordError";
 
-  constructor(
-    readonly code: SqliteRecordErrorCode,
-    readonly operation: string,
-    message: string,
-    options?: ErrorOptions,
-  ) {
+  readonly code: SqliteRecordErrorCode;
+  readonly operation: string;
+  constructor(code: SqliteRecordErrorCode, operation: string, message: string, options?: ErrorOptions) {
     super({ reason: { _tag: code } });
+    this.code = code;
+    this.operation = operation;
     this.message = message;
     if (options !== undefined && "cause" in options) {
       Object.defineProperty(this, "cause", { value: options.cause, configurable: true, writable: true });

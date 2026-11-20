@@ -143,15 +143,17 @@ export class InspectionOperationError extends Data.TaggedError("InspectionOperat
   readonly reason: string;
   readonly failure: InspectionOperationFailure;
 }> {
+  readonly detail: InspectionOperationDetail;
   constructor(
     input: {
       readonly code: InspectionOperationError["code"];
       readonly operation: InspectionOperationId;
       readonly reason: string;
     },
-    readonly detail: InspectionOperationDetail = { kind: "none" },
+    detail: InspectionOperationDetail = { kind: "none" },
   ) {
     super({ ...input, failure: { _tag: input.code } });
+    this.detail = detail;
   }
 
   get correction(): `niceeval show ${string}` | "upgrade-or-report" | undefined {

@@ -104,12 +104,11 @@ export type RecordAttachmentSpiFailure =
 /** Synchronous declaration factories fail before a catalog can gain authority. */
 export class RecordAttachmentSpiDefinitionError extends Error {
   readonly cause: ExternalCause | undefined;
-  constructor(
-    readonly code: "invalid-family-definition" = "invalid-family-definition",
-    cause?: unknown,
-  ) {
+  readonly code: "invalid-family-definition";
+  constructor(code: "invalid-family-definition" = "invalid-family-definition", cause?: unknown) {
     const normalized = cause === undefined ? undefined : normalizeExternalCause(cause);
     super("Invalid Record Attachment family definition", { cause: normalized });
+    this.code = code;
     this.cause = normalized;
     this.name = "RecordAttachmentSpiDefinitionError";
   }

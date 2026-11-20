@@ -60,15 +60,16 @@ export class SourceParserEnvironmentError extends Error {
 }
 export class SourceParseError extends Error {
   readonly _tag = "SourceParseError";
-  constructor(
-    readonly file: string,
-    readonly line: number,
-    readonly column: number,
-    message: string,
-  ) {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  constructor(file: string, line: number, column: number, message: string) {
     super(
       `SourceParseError: ${file}:${line}:${column}: ${message}. Historical Runs remain readable with a fixed Run selector.`,
     );
+    this.file = file;
+    this.line = line;
+    this.column = column;
     this.name = this._tag;
   }
 }

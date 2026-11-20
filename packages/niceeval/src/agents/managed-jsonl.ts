@@ -49,10 +49,11 @@ export class ManagedJsonlDriver {
   private readonly exit: ReturnType<ManagedProcess["wait"]>;
   private observedExit: Awaited<ReturnType<ManagedProcess["wait"]>> | undefined;
 
-  private constructor(
-    private readonly process: ManagedProcess,
-    private readonly shutdownFrame: () => JsonValue | undefined,
-  ) {
+  private readonly process: ManagedProcess;
+  private readonly shutdownFrame: () => JsonValue | undefined;
+  private constructor(process: ManagedProcess, shutdownFrame: () => JsonValue | undefined) {
+    this.process = process;
+    this.shutdownFrame = shutdownFrame;
     this.exit = process.wait().then((receipt) => {
       this.observedExit = receipt;
       this.state = "closed";

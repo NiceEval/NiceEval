@@ -32,14 +32,11 @@ export class SqliteMigrationKernelFailure extends Error {
   readonly name = "SqliteMigrationKernelFailure";
   readonly cause: ExternalCause | undefined;
   readonly rollback: { readonly state: "not-failed" } | { readonly state: "failed"; readonly cause: ExternalCause };
-  constructor(
-    readonly reason: SqliteMigrationFailureReason,
-    message: string,
-    cause?: unknown,
-    rollbackCause?: unknown,
-  ) {
+  readonly reason: SqliteMigrationFailureReason;
+  constructor(reason: SqliteMigrationFailureReason, message: string, cause?: unknown, rollbackCause?: unknown) {
     const normalized = cause === undefined ? undefined : normalizeExternalCause(cause);
     super(message, normalized === undefined ? undefined : { cause: normalized });
+    this.reason = reason;
     this.cause = normalized;
     this.rollback =
       reason === "rollback-failure"

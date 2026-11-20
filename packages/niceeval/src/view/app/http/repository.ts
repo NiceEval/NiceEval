@@ -33,14 +33,20 @@ const decodeHttpError = Schema.decodeUnknownResult(ViewHttpErrorDocumentSchema, 
 export class ViewHttpError extends Error {
   readonly classification = "view-http" as const;
 
+  readonly status: number;
+  readonly code: ViewHttpErrorDocument["code"] | "view-response-invalid";
+  readonly correction: ViewHttpErrorDocument["correction"];
   constructor(
-    readonly status: number,
-    readonly code: ViewHttpErrorDocument["code"] | "view-response-invalid",
-    readonly correction: ViewHttpErrorDocument["correction"],
+    status: number,
+    code: ViewHttpErrorDocument["code"] | "view-response-invalid",
+    correction: ViewHttpErrorDocument["correction"],
     message: string,
     options?: ErrorOptions,
   ) {
     super(message, options);
+    this.status = status;
+    this.code = code;
+    this.correction = correction;
     this.name = "ViewHttpError";
   }
 }
@@ -50,7 +56,9 @@ export class HttpInspectionRepository implements InspectionQuery {
   readonly #controller = new AbortController();
   #closed = false;
 
-  constructor(readonly descriptor: ViewGenerationDescriptor) {
+  readonly descriptor: ViewGenerationDescriptor;
+  constructor(descriptor: ViewGenerationDescriptor) {
+    this.descriptor = descriptor;
     this.generationId = descriptor.generationId;
   }
 

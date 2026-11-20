@@ -369,14 +369,16 @@ export function sandboxSupportsRootCommands(sandbox: Sandbox): boolean {
 
 export class SandboxManagedProcessCapabilityError extends Error {
   readonly name = "SandboxManagedProcessCapabilityError";
-  constructor(
-    readonly agent: string,
-    readonly sandboxId: string,
-    readonly reason: string,
-  ) {
+  readonly agent: string;
+  readonly sandboxId: string;
+  readonly reason: string;
+  constructor(agent: string, sandboxId: string, reason: string) {
     super(
       `Agent ${agent} requires the sandbox managed-process capability, but sandbox ${sandboxId} does not support it: ${reason}`,
     );
+    this.agent = agent;
+    this.sandboxId = sandboxId;
+    this.reason = reason;
   }
 }
 

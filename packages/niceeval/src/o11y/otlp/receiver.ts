@@ -53,7 +53,10 @@ class Inbox<Value> {
   private resume: ((effect: Effect.Effect<Value, InboxClosed>) => void) | undefined;
   private closed = false;
 
-  constructor(private readonly capacity: number) {}
+  private readonly capacity: number;
+  constructor(capacity: number) {
+    this.capacity = capacity;
+  }
 
   take(): Effect.Effect<Value, InboxClosed> {
     return Effect.callback((resume) => {

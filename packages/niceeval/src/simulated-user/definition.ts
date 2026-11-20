@@ -51,9 +51,11 @@ export class SimulatedUserError extends Error {
   readonly phase = "eval.run";
   readonly retryable = false;
   readonly scope = "attempt";
+  readonly code: "simulated-user-invalid-turn" | "simulated-user-unsupported-provider" | "simulated-user-failed";
+  readonly reason: string;
   constructor(
-    readonly code: "simulated-user-invalid-turn" | "simulated-user-unsupported-provider" | "simulated-user-failed",
-    readonly reason: string,
+    code: "simulated-user-invalid-turn" | "simulated-user-unsupported-provider" | "simulated-user-failed",
+    reason: string,
     cause?: unknown,
     diagnostic?: string,
   ) {
@@ -61,6 +63,8 @@ export class SimulatedUserError extends Error {
       `${code}: ${reason}${diagnostic === undefined ? "" : `: ${diagnostic}`}`,
       cause === undefined ? undefined : { cause: normalizeExternalCause(cause) },
     );
+    this.code = code;
+    this.reason = reason;
     this.name = "SimulatedUserError";
     this.cause = cause === undefined ? undefined : normalizeExternalCause(cause);
   }

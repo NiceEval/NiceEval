@@ -1,12 +1,12 @@
 import { childNodes, syntaxNode, type SyntaxNode } from "./source-normalization.ts";
 
 export class DeclaredIdError extends Error {
-  constructor(
-    message: string,
-    readonly start: number,
-    readonly end: number,
-  ) {
+  readonly start: number;
+  readonly end: number;
+  constructor(message: string, start: number, end: number) {
     super(message);
+    this.start = start;
+    this.end = end;
     this.name = "DeclaredIdError";
   }
 }

@@ -398,7 +398,10 @@ function isAbsent(value: unknown): boolean {
 const REFERENCE_DRIVERS = new Set(["zfs", "btrfs", "lvm", "lvmcluster"]);
 
 export class IncusControl {
-  private constructor(private readonly transport: Transport) {}
+  private readonly transport: Transport;
+  private constructor(transport: Transport) {
+    this.transport = transport;
+  }
 
   static async connectReadOnly(env: NodeJS.ProcessEnv = process.env): Promise<IncusControl> {
     const cli = await probeCli();
