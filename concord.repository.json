@@ -86,10 +86,6 @@
       "root": "e2e/insight"
     },
     {
-      "id": "inspection",
-      "root": "e2e/inspection"
-    },
-    {
       "id": "lifecycle",
       "root": "e2e/lifecycle"
     },
@@ -254,13 +250,6 @@
       "e2e/insight/scripts/run-native.mjs",
       "e2e/insight/tsconfig.json",
       "e2e/insight/vitest.config.ts",
-      "e2e/inspection/package.json",
-      "e2e/inspection/pnpm-lock.yaml",
-      "e2e/inspection/pnpm-workspace.yaml",
-      "e2e/inspection/project.json",
-      "e2e/inspection/scripts/run-native.mjs",
-      "e2e/inspection/tsconfig.json",
-      "e2e/inspection/vitest.config.ts",
       "e2e/lifecycle/package.json",
       "e2e/lifecycle/pnpm-lock.yaml",
       "e2e/lifecycle/pnpm-workspace.yaml",
