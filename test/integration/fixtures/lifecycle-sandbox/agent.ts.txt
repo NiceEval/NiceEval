@@ -1,0 +1,13 @@
+import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
+import { record } from "./journal.ts";
+
+export default defineSandboxAgent({
+  name: "lifecycle-agent",
+  evidenceCoverage: completeEvidenceCoverage,
+  install: { identity: { agent: "lifecycle-agent", version: "1", revision: "1" }, probe: shell("true") },
+  async send(input, ctx) {
+    record("send", { text: input.text });
+    return { status: "completed", events: [] };
+  },
+});

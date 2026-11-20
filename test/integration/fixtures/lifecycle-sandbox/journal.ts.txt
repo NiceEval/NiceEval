@@ -1,0 +1,26 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** The project directory is the key under which the test registers its shared observation state. */
+export const projectRoot = dirname(fileURLToPath(import.meta.url));
+
+export interface LifecycleHarness {
+  readonly events: Array<Record<string, unknown>>;
+  /** Resolves when the test lets held Evals continue. */
+  readonly release: Promise<void>;
+  /** Called when a held Eval has started. */
+  entered(evalId: string): void;
+  /** Materialization numbers (0-based, in creation order) that fail before acquiring any resource. */
+  readonly failCreates: ReadonlySet<number>;
+}
+
+export function harness(): LifecycleHarness {
+  const all = Reflect.get(process, Symbol.for("niceeval.test.lifecycle")) as Map<string, LifecycleHarness>;
+  const value = all.get(projectRoot);
+  if (value === undefined) throw new Error(`No lifecycle harness registered for ${projectRoot}`);
+  return value;
+}
+
+export function record(event: string, detail: Record<string, unknown> = {}): void {
+  harness().events.push({ event, ...detail });
+}

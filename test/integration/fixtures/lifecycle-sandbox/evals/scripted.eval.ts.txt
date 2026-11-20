@@ -1,0 +1,55 @@
+import { defineEval } from "niceeval";
+import { equals } from "niceeval/expect";
+import { loadJson } from "niceeval/loaders";
+import { actionRef, sandboxLayer, shell } from "niceeval/sandbox";
+import { harness, projectRoot, record } from "../journal.ts";
+
+export interface Script {
+  /** Cleanups registered by the before callback, in registration order. */
+  readonly cleanups: number;
+  /** The before callback throws after registering its cleanups. */
+  readonly beforeFails: boolean;
+  readonly test: "pass" | "fail" | "throw" | "hold";
+  /**
+   * A declarative shell step ahead of the callback. `ok` touches a marker file named after the Eval;
+   * `fails` exits non-zero; `unknown-dependency` depends on an action no occurrence declares, which linking must reject.
+   */
+  readonly step?: "ok" | "fails" | "unknown-dependency";
+}
+
+const script = await loadJson(new URL("./CASE_FILE.json", import.meta.url), (value) => value as Script);
+const id = "CASE_FILE";
+
+const base = sandboxLayer();
+const declared =
+  script.step === undefined
+    ? base
+    : base.before(
+        shell({
+          id: `mark-${id}`,
+          label: `Marking ${id}`,
+          command: `${script.step === "fails" ? "false" : "true"} && touch ${JSON.stringify(`${projectRoot}/marker-${id}`)} # SECRET_STEP_TEXT`,
+          ...(script.step === "unknown-dependency" ? { dependsOn: [actionRef("not-declared")] } : {}),
+        }),
+      );
+
+export default defineEval({
+  sandbox: declared.before((sandbox, context) => {
+    for (let index = 0; index < script.cleanups; index++) {
+      context.onCleanup(() => {
+        record("cleanup", { evalId: id, index, sandboxId: sandbox.sandboxId });
+      });
+    }
+    if (script.beforeFails) throw new Error(`before failed for ${id}`);
+  }),
+  async test(t) {
+    record("test", { evalId: id });
+    if (script.test === "hold") {
+      harness().entered(id);
+      await harness().release;
+    }
+    await t.send(id);
+    if (script.test === "throw") throw new Error(`test threw for ${id}`);
+    t.check(script.test === "pass", equals(true));
+  },
+});
