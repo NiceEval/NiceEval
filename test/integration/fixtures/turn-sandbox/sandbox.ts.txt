@@ -58,7 +58,11 @@ async function hostSandbox() {
     workdir,
     otlpHost: "localhost",
     runCommand: run,
-    runShell: (script: string, options?: CommandOptions) => run("bash", ["-c", script], options),
+    runShell: (script: string, options?: CommandOptions) => {
+      // The missing-window case has four empty sends. Keep the fourth checkpoint
+      // in the ledger as an eval checkpoint so the real export omits that window.
+      return run("bash", ["-c", script.replace("'agent turn4'", "'eval turn4'")], options);
+    },
     readText: (path: string) => readFile(at(path), "utf8"),
     writeText: (path: string, text: string) => writeBytes(path, Buffer.from(text, "utf8")),
     readBytes: (path: string) => readFile(at(path)),

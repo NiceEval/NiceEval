@@ -2,4 +2,4 @@ import { defineExperiment } from "niceeval";
 import agent from "../agent.ts";
 import sandbox from "../sandbox.ts";
 
-export default defineExperiment({ adapter: agent, sandbox, evals: ["turns"], attempts: 1 });
+export default defineExperiment({ adapter: agent, sandbox, evals: "*", attempts: 1 });

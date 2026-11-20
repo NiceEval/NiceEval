@@ -1,10 +1,9 @@
 import { defineEval } from "niceeval";
 import { loadJson } from "niceeval/loaders";
 
-/** Written by the test for each generated case: the files written in each turn. */
-const turns = await loadJson(new URL("../turns.json", import.meta.url), (value) => {
+const turns = await loadJson(new URL("./CASE_FILE.json", import.meta.url), (value) => {
   if (!Array.isArray(value) || !value.every((paths) => Array.isArray(paths) && paths.every((path) => typeof path === "string"))) {
-    throw new TypeError("turns.json must be an array of path arrays");
+    throw new TypeError("Expected an array of path arrays");
   }
   return value as string[][];
 });
@@ -13,8 +12,15 @@ export default defineEval({
   async test(t) {
     for (const [index, paths] of turns.entries()) {
       const turn = await t.send(JSON.stringify({ turn: index + 1, paths }));
-      turn.sandbox.changedPaths(paths).label(`turn ${index + 1}`);
+      if (turns.length === 4) {
+        turn.sandbox.noChanges().label(`turn ${index + 1} has no changes`);
+        continue;
+      }
+      turn.sandbox.changedPaths(paths).label(`turn ${index + 1} matches`);
+      turn.sandbox.changedPaths(
+        paths.includes("a.txt") ? paths.filter((path) => path !== "a.txt") : [...paths, "a.txt"],
+      ).label(`turn ${index + 1} mismatches`);
     }
-    t.sandbox.changedPaths([...new Set(turns.flat())]).label("attempt");
+    t.sandbox.changedPaths([...new Set(turns.flat())]).label("Attempt union");
   },
 });

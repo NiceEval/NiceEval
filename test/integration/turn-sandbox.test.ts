@@ -1,4 +1,4 @@
-import { cp, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { PassThrough, Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
+import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
@@ -14,53 +15,67 @@ const { experimentHost } =
 const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
 const { runCliInProcess } =
   require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
-
 const { decodeInspectionDocument, narrowInspectionSuccess } =
   require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
 
 const FIXTURE = fileURLToPath(new URL("fixtures/turn-sandbox/", import.meta.url));
-const TURNS = [["a.txt"], [], ["a.txt", "nested/c.txt"]];
+const PATHS = ["a.txt", "b.txt", "nested/c.txt"];
+const turns = fc.array(fc.subarray(PATHS), { minLength: 1, maxLength: 3 });
+const samples = [
+  [[], ["b.txt", "nested/c.txt"]],
+  [["b.txt", "a.txt"], [], ["a.txt"]],
+  ...fc.sample(turns, { numRuns: 4, seed: 801_531 }),
+];
+const cases = samples.map((pathsByTurn, index) => ({ index, pathsByTurn }));
+const missingWindow = [[], [], [], []];
 let cwd: string | undefined;
-let locator: string;
+const locators = new Map<string, string>();
 
+// Publish all samples via one Experiment Run, then read each Attempt independently.
 beforeAll(async () => {
-  cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-turn-cli-"));
+  cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-turn-property-"));
   await cp(FIXTURE, cwd, { recursive: true });
-  for (const source of ["agent.ts", "sandbox.ts", "evals/turns.eval.ts", "experiments/turns.ts"]) {
+  for (const source of ["agent.ts", "sandbox.ts", "experiments/turns.ts"]) {
     await rename(join(cwd, `${source}.txt`), join(cwd, source));
   }
-  await writeFile(join(cwd, "turns.json"), JSON.stringify(TURNS));
-  locator = await runTurns(cwd);
+  const source = await readFile(join(cwd, "evals/turns.eval.ts.txt"), "utf8");
+  for (const [index, paths] of [...samples, missingWindow].entries()) {
+    const id = `case-${index}`;
+    await writeFile(join(cwd, "evals", `${id}.json`), JSON.stringify(paths));
+    await writeFile(join(cwd, "evals", `${id}.eval.ts`), source.replace("CASE_FILE", id));
+  }
+  const planned = await Effect.runPromise(
+    experimentHost.invocation.plan({
+      cwd,
+      experimentSelector: "turns",
+      config: { maxConcurrency: 4 },
+      overrides: { rerun: "all" },
+    }),
+  );
+  if (planned.status !== "ready") throw new Error(`Could not plan Run: ${JSON.stringify(planned)}`);
+  const { receipt } = await Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
+  const [runId] = receipt.createdRunIds;
+  if (runId === undefined) throw new Error("Expected a Run");
+  const { run } = await Effect.runPromise(runHost.get({ cwd, runId }));
+  for (const slot of run.slots) {
+    if (slot.publication.state !== "published") throw new Error(`Attempt was not published: ${JSON.stringify(slot)}`);
+    locators.set(slot.evalId, slot.publication.attemptLocator);
+  }
 }, 60_000);
 
 afterAll(async () => {
   if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
 });
 
-async function runTurns(cwd: string) {
-  const planned = await Effect.runPromise(
-    experimentHost.invocation.plan({
-      cwd,
-      experimentSelector: "turns",
-      config: { maxConcurrency: 1 },
-      overrides: { rerun: "all" },
-    }),
-  );
-  if (planned.status !== "ready") throw new Error(`Could not plan Run: ${JSON.stringify(planned)}`);
-  await Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
-  const [summary] = (await Effect.runPromise(runHost.list({ cwd }))).runs;
-  const [slot] = (await Effect.runPromise(runHost.get({ cwd, runId: summary!.runId }))).run.slots;
-  if (slot?.publication.state !== "published") throw new Error(`Attempt was not published: ${JSON.stringify(slot)}`);
-  return slot.publication.attemptLocator;
-}
-
-async function showDocuments(cwd: string, locator: string, ...selection: string[]) {
+async function showDocuments(index: number, ...selection: string[]) {
+  const locator = locators.get(`case-${index}`);
+  if (cwd === undefined || locator === undefined) {
+    throw new Error(`Missing Attempt for case-${index}. Published Evals: ${[...locators.keys()].join(", ")}`);
+  }
   const stdout = new PassThrough();
   const stderr = new PassThrough();
-  const out: Buffer[] = [];
-  const err: Buffer[] = [];
-  stdout.on("data", (chunk: Buffer) => out.push(chunk));
-  stderr.on("data", (chunk: Buffer) => err.push(chunk));
+  const chunks: Buffer[] = [];
+  stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
   const code = await runCliInProcess({
     argv: ["show", locator, ...selection, "--json"],
     cwd,
@@ -69,68 +84,80 @@ async function showDocuments(cwd: string, locator: string, ...selection: string[
     stdout,
     stderr,
   });
+  expect(code, stderr.read()?.toString()).toBe(0);
   stdout.end();
-  stderr.end();
-  await Promise.all([finished(stdout), finished(stderr)]);
-  expect(code, Buffer.concat(err).toString()).toBe(0);
-  return Buffer.concat(out).toString().split("\n").filter(Boolean).map((line) => {
+  await finished(stdout);
+  return Buffer.concat(chunks).toString().split("\n").filter(Boolean).map((line) => {
     const decoded = decodeInspectionDocument(JSON.parse(line));
     if (!decoded.success) throw new Error(decoded.reason);
     return decoded.value;
   });
 }
 
-async function showAssertionDocuments(cwd: string, locator: string, ...selection: string[]) {
-  return (await showDocuments(cwd, locator, ...selection)).map((document) => {
-    const detail = narrowInspectionSuccess(document, "attempt.assertion.detail");
-    if (!detail.success) throw new Error(detail.reason);
-    return detail.value.assertion;
-  });
+async function showAssertionIds(index: number) {
+  const [document] = await showDocuments(index);
+  const outline = narrowInspectionSuccess(document!, "attempt.get");
+  if (!outline.success) throw new Error(outline.reason);
+  return outline.value.attempt.assertions.entries.map(({ entryId }) => entryId);
 }
 
-async function showAssertions(cwd: string, locator: string) {
-  const entries = await showAssertionDocuments(cwd, locator, "assertions");
-  const assertions = [];
-  for (const { entryId } of entries) {
-    expect(entryId).toMatch(/^ae_/u);
-    const details = await showAssertionDocuments(cwd, locator, entryId, "--full");
-    expect(details).toHaveLength(1);
-    const detail = details[0]!;
-    expect(detail.entryId).toBe(entryId);
-    if (!("entry" in detail) || !("criterion" in detail.entry)) {
-      throw new Error(`Expected full projection for ${entryId}`);
-    }
-    assertions.push(detail.entry);
+async function showFullAssertion(index: number, entryId: string) {
+  const [document] = await showDocuments(index, entryId, "--full");
+  const detail = narrowInspectionSuccess(document!, "attempt.assertion.detail");
+  if (!detail.success) throw new Error(detail.reason);
+  const assertion = detail.value.assertion;
+  if (!("entry" in assertion) || !("criterion" in assertion.entry)) {
+    throw new Error(`Expected full projection for ${entryId}`);
   }
-  return assertions;
+  return assertion.entry;
+}
+
+async function showAssertions(index: number) {
+  const ids = await showAssertionIds(index);
+  return Promise.all(ids.map((entryId) => showFullAssertion(index, entryId)));
 }
 
 // @feature docs/feature/sandbox/library/asserting-results.md#限定到某一轮
-test("Show projects a window only for Turn-scoped diff assertions", async () => {
-  const assertions = await showAssertions(cwd!, locator);
-  expect(assertions).toHaveLength(TURNS.length + 1);
-  const [outline] = await showDocuments(cwd!, locator);
-  const attempt = narrowInspectionSuccess(outline!, "attempt.get");
-  if (!attempt.success) throw new Error(attempt.reason);
-  expect(attempt.value.attempt.verdict).toBe("passed");
+test.each(cases)("changedPaths scopes case $index to its windows and their union", async ({ index, pathsByTurn }) => {
+  const entries = await showAssertions(index);
+  expect(entries.map(({ decision }) => decision.result), JSON.stringify(pathsByTurn)).toEqual([
+    ...pathsByTurn.flatMap(() => ["matched", "mismatched"]),
+    "matched",
+  ]);
+});
 
-  const union = [...new Set(TURNS.flat())];
-  for (const [index, paths] of [...TURNS, union].entries()) {
-    const entry = assertions[index]!;
-    expect(entry.decision.result).toBe("matched");
-    if (entry.criterion.state !== "available") {
-      throw new Error(`Criterion unavailable for ${entry.entryId}`);
-    }
-    expect(entry.criterion.value).toMatchObject({
-      kind: "builtin",
-      id: "sandbox-result",
-      data: { operation: "changed-paths", paths },
+// @feature docs/feature/sandbox/library/asserting-results.md#限定到某一轮
+test("a missing window is unavailable alongside captured empty windows", async () => {
+  const entries = await showAssertions(samples.length);
+  expect(entries.map(({ decision }) => decision.result)).toEqual([
+    "matched", "matched", "matched", "unavailable", "matched",
+  ]);
+  expect(entries[3]?.decision).toMatchObject({ reason: "source-unavailable" });
+  expect(entries[3]?.criterion).toMatchObject({ value: { data: { window: "turn4" } } });
+});
+
+// @feature docs/feature/sandbox/library/asserting-results.md#限定到某一轮
+test("the Attempt-wide criterion retains its original Show JSON encoding", async () => {
+  const ids = await showAssertionIds(1);
+  const { criterion } = await showFullAssertion(1, ids.at(-1)!);
+  if (criterion.state !== "available") throw new Error("Expected a retained criterion");
+  expect(JSON.stringify(criterion.value)).toBe(
+    '{"data":{"operation":"changed-paths","paths":["b.txt","a.txt"]},"id":"sandbox-result","kind":"builtin"}',
+  );
+});
+
+// @feature docs/feature/sandbox/library/asserting-results.md#限定到某一轮
+test("only Turn-scoped criteria identify their send window", async () => {
+  const ids = await showAssertionIds(1);
+  for (const [index, paths] of samples[1]!.entries()) {
+    const entry = await showFullAssertion(1, ids[index * 2]!);
+    expect(entry.criterion).toMatchObject({
+      state: "available",
+      value: {
+        kind: "builtin",
+        id: "sandbox-result",
+        data: { operation: "changed-paths", paths, window: `turn${index + 1}` },
+      },
     });
-    const criterion = entry.criterion.value.data;
-    if (index < TURNS.length) {
-      expect(criterion).toHaveProperty("window", `turn${index + 1}`);
-    } else {
-      expect(criterion).not.toHaveProperty("window");
-    }
   }
 });
