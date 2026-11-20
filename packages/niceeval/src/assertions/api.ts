@@ -145,6 +145,17 @@ export type AssertionCriterion =
       readonly name: string;
       readonly scale: "unit-interval";
     }
+  | SandboxAssertionCriterion
+  | { readonly kind: "direct-score"; readonly source: "author" }
+  | {
+      readonly kind: "third-party";
+      readonly name: string;
+      readonly schemaId: string;
+      readonly data: AssertionSnapshotValue;
+    };
+
+/** Agent-attributed workspace diff criteria; `window` names the one send window a Turn-scoped check reads. */
+export type SandboxAssertionCriterion = (
   | {
       readonly kind: "sandbox-result";
       readonly operation: "changed-paths";
@@ -182,13 +193,7 @@ export type AssertionCriterion =
       readonly flags: string;
       readonly content: "added" | "removed" | "both";
     }
-  | { readonly kind: "direct-score"; readonly source: "author" }
-  | {
-      readonly kind: "third-party";
-      readonly name: string;
-      readonly schemaId: string;
-      readonly data: AssertionSnapshotValue;
-    };
+) & { readonly window?: string | undefined };
 
 export type AssertionScoreContribution =
   | { readonly state: "not-scored" }

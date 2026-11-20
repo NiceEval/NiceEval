@@ -53,6 +53,7 @@ import {
 import { isSendFailure, normalizeSendFailure, sendFailureText } from "./send-failures.ts";
 import type { RetryAttemptRecord, TimingActivity } from "../runner/types.ts";
 import { formatTurnLabel } from "../shared/turn-label.ts";
+import { bindSendWindowToTurn } from "../assertions/workspace-diff.ts";
 import { bindAttemptResources } from "./attempt-resources.ts";
 import { withAgentCallbackContext } from "../agents/callback-context.ts";
 import { agentSendEffect, authorCallbackEffect } from "../agents/agent-effects.ts";
@@ -620,6 +621,7 @@ export class SessionManager {
                 const turnEvidenceCoverage = this.resolveTurnEvidenceCoverage(turn);
                 this.recordObservedTurnState(observed, turn.status, turnEvidenceCoverage);
                 bindObservedSnapshotToTurn(turn, observed);
+                bindSendWindowToTurn(turn, windowLabel);
                 const traceAttribution = otel.state === "captured" ? otel.attribution : "none";
                 const timingActivity = this.deps.onTurn?.({
                   turnId,

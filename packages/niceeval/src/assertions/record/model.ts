@@ -151,17 +151,18 @@ export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-change-scope";
-      readonly data: { readonly paths: readonly string[] };
+      readonly data: { readonly paths: readonly string[]; readonly window?: string };
     }
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-unchanged-within";
-      readonly data: { readonly paths: readonly string[] };
+      readonly data: { readonly paths: readonly string[]; readonly window?: string };
     }
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-diff-paths";
       readonly data: {
+        readonly window?: string;
         readonly operation: "not-in-diff" | "in-diff";
         readonly pattern: string;
         readonly flags: string;
@@ -171,6 +172,7 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-in-diff";
       readonly data: {
+        readonly window?: string;
         readonly pattern: string;
         readonly flags: string;
         readonly content: "added" | "removed" | "both";
@@ -180,6 +182,7 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-result";
       readonly data: {
+        readonly window?: string;
         readonly operation: "changed-paths";
         readonly paths: readonly string[];
       };
@@ -187,12 +190,13 @@ export type BuiltInCriterion =
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-result";
-      readonly data: { readonly operation: "no-changes" };
+      readonly data: { readonly operation: "no-changes"; readonly window?: string };
     }
   | {
       readonly kind: "builtin";
       readonly id: "sandbox-result";
       readonly data: {
+        readonly window?: string;
         readonly operation: "file-changed";
         readonly path: string;
         readonly status?: "added" | "modified" | "deleted";
@@ -205,6 +209,7 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-result";
       readonly data: {
+        readonly window?: string;
         readonly operation: "file-deleted";
         readonly path: string;
       };
@@ -213,6 +218,7 @@ export type BuiltInCriterion =
       readonly kind: "builtin";
       readonly id: "sandbox-result";
       readonly data: {
+        readonly window?: string;
         readonly operation: "not-in-diff";
         readonly pattern: string;
         readonly flags: string;

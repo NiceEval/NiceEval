@@ -1,0 +1,20 @@
+import { defineEval } from "niceeval";
+import { loadJson } from "niceeval/loaders";
+
+/** Written by the test for each generated case: the files written in each turn. */
+const turns = await loadJson(new URL("../turns.json", import.meta.url), (value) => {
+  if (!Array.isArray(value) || !value.every((paths) => Array.isArray(paths) && paths.every((path) => typeof path === "string"))) {
+    throw new TypeError("turns.json must be an array of path arrays");
+  }
+  return value as string[][];
+});
+
+export default defineEval({
+  async test(t) {
+    for (const [index, paths] of turns.entries()) {
+      const turn = await t.send(JSON.stringify({ turn: index + 1, paths }));
+      turn.sandbox.changedPaths(paths).label(`turn ${index + 1}`);
+    }
+    t.sandbox.changedPaths([...new Set(turns.flat())]).label("attempt");
+  },
+});

@@ -1,0 +1,14 @@
+import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
+import { shell } from "niceeval/sandbox";
+
+/** Each send writes the listed files with content unique to that turn, so every listed path changes. */
+export default defineSandboxAgent({
+  name: "turn-writer",
+  evidenceCoverage: completeEvidenceCoverage,
+  install: { identity: { agent: "turn-writer", version: "1", revision: "1" }, probe: shell("true") },
+  async send(input, ctx) {
+    const { turn, paths } = JSON.parse(input.text ?? "{}") as { turn: number; paths: string[] };
+    for (const path of paths) await ctx.sandbox.writeText(path, `turn ${turn}\n`);
+    return { status: "completed", events: [] };
+  },
+});

@@ -1,0 +1,88 @@
+import { execFile } from "node:child_process";
+import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { Effect } from "effect";
+import {
+  CustomSandboxMaterializationError,
+  defineSandbox,
+  type CommandOptions,
+  type SandboxTargetPlatform,
+} from "niceeval/sandbox";
+
+/** The fixture runs on this host, so its planning target is the host platform. */
+function hostPlatform(): SandboxTargetPlatform {
+  if (process.platform === "darwin") return { _tag: "Darwin", os: "darwin", arch: process.arch };
+  const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
+  return { _tag: "Linux", os: "linux", arch: process.arch, libc: report.header?.glibcVersionRuntime === undefined ? "musl" : "gnu" };
+}
+
+// A host-process Sandbox: real files and commands, no VM. NiceEval's diff ledger normally
+// lives in the provider's private /tmp; it is mapped into this instance's own tmp so
+// concurrent tests never share it.
+async function hostSandbox() {
+  const root = await mkdtemp(join(tmpdir(), "niceeval-turn-sandbox-"));
+  const workdir = join(root, "workspace");
+  const privateTmp = join(root, "tmp");
+  await Promise.all([mkdir(workdir), mkdir(privateTmp)]);
+  const map = (value: string) => value.replaceAll("/tmp/.niceeval-ledger", join(privateTmp, ".niceeval-ledger"));
+  const at = (path: string) => (isAbsolute(map(path)) ? map(path) : resolve(workdir, map(path)));
+  const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
+    new Promise<{ stdout: string; stderr: string; exitCode: number }>((done) => {
+      execFile(
+        map(command),
+        args.map(map),
+        {
+          cwd: at(options.cwd ?? workdir),
+          env: {
+            PATH: process.env.PATH,
+            HOME: root,
+            TMPDIR: privateTmp,
+            LANG: "C.UTF-8",
+            ...Object.fromEntries(
+              Object.entries(options.env ?? {}).flatMap(([key, value]) => (value === undefined ? [] : [[key, map(value)]])),
+            ),
+          },
+          maxBuffer: 16 * 1024 * 1024,
+        },
+        (error, stdout, stderr) =>
+          done({ stdout, stderr, exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0 }),
+      );
+    });
+  const writeBytes = async (path: string, bytes: Uint8Array) => {
+    await mkdir(dirname(at(path)), { recursive: true });
+    await writeFile(at(path), bytes);
+  };
+  return {
+    sandboxId: `turn-sandbox-${root.split("/").at(-1)}`,
+    workdir,
+    otlpHost: "localhost",
+    runCommand: run,
+    runShell: (script: string, options?: CommandOptions) => run("bash", ["-c", script], options),
+    readText: (path: string) => readFile(at(path), "utf8"),
+    writeText: (path: string, text: string) => writeBytes(path, Buffer.from(text, "utf8")),
+    readBytes: (path: string) => readFile(at(path)),
+    writeBytes,
+    pathExists: (path: string) => access(at(path)).then(() => true, () => false),
+    uploadFile: async (source: string, target: string) => writeBytes(target, await readFile(source)),
+    uploadDirectory: (source: string, target?: string) => cp(source, at(target ?? "."), { recursive: true }),
+    downloadFile: async (source: string, target: string | URL) => {
+      await mkdir(dirname(String(target)), { recursive: true });
+      await writeFile(target, await readFile(at(source)));
+    },
+    downloadDirectory: (source: string, target: string) => cp(at(source), target, { recursive: true }),
+    stop: () => rm(root, { recursive: true, force: true }),
+  };
+}
+
+export default defineSandbox({
+  name: "turn-sandbox-host",
+  targetPlatform: hostPlatform(),
+  exclusive: true,
+  create: () =>
+    Effect.tryPromise({
+      try: hostSandbox,
+      catch: (cause) =>
+        new CustomSandboxMaterializationError({ code: "turn-sandbox-create-failed", message: String(cause), cause }),
+    }),
+});

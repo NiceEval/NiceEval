@@ -60,7 +60,7 @@ export type PostRunWorkspaceDiffState =
   | { readonly state: "available"; readonly document: AgentWorkspaceDiff }
   | {
       readonly state: "unavailable";
-      readonly reason: "producer-failed" | "producer-interrupted" | "sandbox-unavailable";
+      readonly reason: "producer-failed" | "producer-interrupted" | "sandbox-unavailable" | "send-window-missing";
     };
 
 export interface WorkspaceDiffNotInOptions {
@@ -96,6 +96,18 @@ function parseAgentSendWindowIdentity(label: string): AgentSendWindowIdentity {
     return { session: Number(session[1]), turn: Number(session[2]) };
   }
   throw new Error(`Workspace diff received an invalid agent send window label ${JSON.stringify(label)}`);
+}
+
+const turnSendWindows = new WeakMap<object, string>();
+
+/** @internal SessionManager records which send window produced a returned Turn. */
+export function bindSendWindowToTurn(turn: object, windowId: string): void {
+  turnSendWindows.set(turn, windowId);
+}
+
+/** The send window id (`turn2`, `session2/turn1`) of a Turn returned by a send; undefined for unbound objects. */
+export function sendWindowForTurn(turn: object): string | undefined {
+  return turnSendWindows.get(turn);
 }
 
 /** The durable window id preserves the send identity independently of its attachment sequence. */

@@ -311,25 +311,35 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
       return {
         kind: "builtin" as const,
         id: "sandbox-change-scope" as const,
-        data: { paths: criterion.paths },
+        data: omitUndefined({ paths: criterion.paths, window: criterion.window }),
       };
     case "sandbox-unchanged-within":
       return {
         kind: "builtin" as const,
         id: "sandbox-unchanged-within" as const,
-        data: { paths: criterion.paths },
+        data: omitUndefined({ paths: criterion.paths, window: criterion.window }),
       };
     case "sandbox-diff-paths":
       return {
         kind: "builtin" as const,
         id: "sandbox-diff-paths" as const,
-        data: { operation: criterion.operation, pattern: criterion.pattern, flags: criterion.flags },
+        data: omitUndefined({
+          operation: criterion.operation,
+          pattern: criterion.pattern,
+          flags: criterion.flags,
+          window: criterion.window,
+        }),
       };
     case "sandbox-in-diff":
       return {
         kind: "builtin" as const,
         id: "sandbox-in-diff" as const,
-        data: { pattern: criterion.pattern, flags: criterion.flags, content: criterion.content },
+        data: omitUndefined({
+          pattern: criterion.pattern,
+          flags: criterion.flags,
+          content: criterion.content,
+          window: criterion.window,
+        }),
       };
     case "sandbox-result": {
       switch (criterion.operation) {
@@ -337,13 +347,17 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
           return {
             kind: "builtin" as const,
             id: "sandbox-result" as const,
-            data: { operation: "changed-paths" as const, paths: criterion.paths },
+            data: omitUndefined({
+              operation: "changed-paths" as const,
+              paths: criterion.paths,
+              window: criterion.window,
+            }),
           };
         case "no-changes":
           return {
             kind: "builtin" as const,
             id: "sandbox-result" as const,
-            data: { operation: "no-changes" as const },
+            data: omitUndefined({ operation: "no-changes" as const, window: criterion.window }),
           };
         case "file-changed":
           return {
@@ -355,24 +369,26 @@ function encodeCriterion(criterion: AssertionCriterion): WritableCriterionEnvelo
               status: criterion.status,
               before: criterion.before,
               after: criterion.after,
+              window: criterion.window,
             }),
           };
         case "file-deleted":
           return {
             kind: "builtin" as const,
             id: "sandbox-result" as const,
-            data: { operation: "file-deleted" as const, path: criterion.path },
+            data: omitUndefined({ operation: "file-deleted" as const, path: criterion.path, window: criterion.window }),
           };
         case "not-in-diff":
           return {
             kind: "builtin" as const,
             id: "sandbox-result" as const,
-            data: {
+            data: omitUndefined({
               operation: "not-in-diff" as const,
               pattern: criterion.pattern,
               flags: criterion.flags,
               content: criterion.content,
-            },
+              window: criterion.window,
+            }),
           };
       }
     }

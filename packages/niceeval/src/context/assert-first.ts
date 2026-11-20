@@ -59,6 +59,8 @@ import {
   agentWorkspaceDiffPathsMatch,
   evaluateWorkspaceDiffNotIn,
   evaluateWorkspaceDiffIn,
+  agentSendWindowId,
+  sendWindowForTurn,
   type AgentWorkspaceDiffEndpoint,
   type PostRunWorkspaceDiffState,
   type WorkspaceDiffNotInOptions,
@@ -414,9 +416,24 @@ export interface AssertFirstSandbox<Kind extends RuntimeKind> extends SandboxOpe
   notInDiff(pattern: RegExp, options?: WorkspaceDiffNotInOptions): PostRunBooleanAssertionHandle<Kind, void>;
 }
 
+/** Agent-attributed diff Assertions limited to the send window that produced one Turn; no Sandbox operations. */
+export type AssertFirstTurnSandbox<Kind extends RuntimeKind> = Pick<
+  AssertFirstSandbox<Kind>,
+  | "changedPaths"
+  | "changedOnlyWithin"
+  | "unchangedWithin"
+  | "noChanges"
+  | "fileChanged"
+  | "fileDeleted"
+  | "inDiff"
+  | "notInDiff"
+>;
+
 export interface AssertFirstTurnHandle<Kind extends RuntimeKind>
   extends AgentJudgePresetMethods<Kind, AgentMatchContext<"turn">> {
   readonly input: string;
+  /** Diff Assertions over this Turn's send window only; same semantics as `t.sandbox`. */
+  readonly sandbox: AssertFirstTurnSandbox<Kind>;
   readonly events: readonly StreamEvent[];
   readonly inputRequests: readonly InputRequest[];
   readonly toolCalls: ManagedToolCalls<"turn">;
@@ -1285,7 +1302,16 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   readonly sandbox: Sandbox;
   readonly runtime: AssertionsRuntime<Kind>;
   readonly late: AssertFirstLateResult;
+  /** Restricts every diff Assertion to one send window, e.g. `turn2`; undefined reads all windows. */
+  readonly window?: string | undefined;
 }): AssertFirstSandbox<Kind> {
+  const scopedDiff = (): PostRunWorkspaceDiffState => {
+    const diff = input.late.diff;
+    if (diff.state !== "available" || input.window === undefined) return diff;
+    const windows = diff.document.windows.filter((window) => agentSendWindowId(window.identity) === input.window);
+    if (windows.length === 0) return { state: "unavailable", reason: "send-window-missing" };
+    return { state: "available", document: { ...diff.document, windows } };
+  };
   const requireCapability = (): void => {
     if (input.agent.kind !== "sandbox") {
       throw new Error(
@@ -1293,6 +1319,8 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       );
     }
   };
+  const scopedCriterion = (criterion: AssertionCriterion): AssertionCriterion =>
+    input.window === undefined ? criterion : ({ ...criterion, window: input.window } as AssertionCriterion);
   const register = (
     criterion: AssertionCriterion,
     evaluate: () => Effect.Effect<BooleanAssertionEvaluation<void>, unknown, never>,
@@ -1300,10 +1328,10 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
   ): PostRunBooleanAssertionHandle<Kind, void> =>
     postRunBooleanAssertionHandle(
       input.runtime.registerBoolean<void>({
-        criterion,
+        criterion: scopedCriterion(criterion),
         subject: diffReferenceMaterial(),
         terminalEvidence: terminalEvidence ?? (() => []),
-        terminalCriterion: () => criterion,
+        terminalCriterion: () => scopedCriterion(criterion),
         terminalReceipt: () => undefined,
         evidence: [],
         coverage: { state: "complete" },
@@ -1323,7 +1351,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     const expected = [...paths];
     return register(changedPathsCriterion(expected), () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         return agentWorkspaceDiffPathsMatch(diff.document, expected) ? matchedVoid() : mismatchedVoid();
       }),
@@ -1348,7 +1376,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     const allowed = [...new Set(paths)].sort();
     return register({ kind: "sandbox-change-scope", paths: allowed }, () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         const outside = [
           ...new Set(diff.document.windows.flatMap((window) => window.changes.map((change) => change.path))),
@@ -1387,7 +1415,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     const protectedPaths = [...new Set(paths)].sort();
     return register({ kind: "sandbox-unchanged-within", paths: protectedPaths }, () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         const protectedChanges = [
           ...new Set(diff.document.windows.flatMap((window) => window.changes.map((change) => change.path))),
@@ -1419,7 +1447,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     return register(fileChangedCriterion(path, options), () =>
       Effect.tryPromise({
         try: async () => {
-          const diff = input.late.diff;
+          const diff = scopedDiff();
           if (diff.state !== "available") return unavailableDiffResult();
           let unavailable = false;
           for (const candidate of agentWorkspaceDiffChangesForPath(diff.document, path)) {
@@ -1451,7 +1479,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     const options = normalizeNotInDiffOptions(rawOptions);
     return register(notInDiffCriterion(pattern, options), () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         const result = evaluateWorkspaceDiffNotIn(diff.document, pattern, options);
         if (result.state === "matched") return matchedVoid();
@@ -1488,7 +1516,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
       criterion,
       () =>
         Effect.sync(() => {
-          const diff = input.late.diff;
+          const diff = scopedDiff();
           if (diff.state !== "available") return unavailableDiffResult();
           const result = evaluateWorkspaceDiffIn(diff.document, frozenPattern, options);
           if (result.state === "unavailable") return unavailableDiffResult();
@@ -1517,7 +1545,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     requireCapability();
     return register(noChangesCriterion(), () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         return agentWorkspaceDiffPathsMatch(diff.document, []) ? matchedVoid() : mismatchedVoid();
       }),
@@ -1528,7 +1556,7 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     assertDiffPath(path, "fileDeleted()");
     return register(fileDeletedCriterion(path), () =>
       Effect.sync(() => {
-        const diff = input.late.diff;
+        const diff = scopedDiff();
         if (diff.state !== "available") return unavailableDiffResult();
         return agentWorkspaceDiffChangesForPath(diff.document, path).some((change) => change.status === "deleted")
           ? matchedVoid()
@@ -2441,9 +2469,28 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
       return registerCollectionCheck(runtime as AssertionsRuntime<Kind>, eventOccurrences, inOrder(matches));
     };
     const { maxTokens, maxCost } = usageBudgetMethods(runtime as AssertionsRuntime<Kind>, readTurnUsage);
+    const windowSandbox = createAssertFirstSandbox({
+      agent: deps.agent,
+      sandbox: deps.sandbox,
+      runtime: runtime as AssertionsRuntime<Kind>,
+      late: state.late,
+      // An unbound Turn has no send window; its diff Assertions stay unavailable rather than reading all windows.
+      window: sendWindowForTurn(turn) ?? "unbound",
+    });
+    const turnSandbox: AssertFirstTurnSandbox<Kind> = Object.freeze({
+      changedPaths: windowSandbox.changedPaths,
+      changedOnlyWithin: windowSandbox.changedOnlyWithin,
+      unchangedWithin: windowSandbox.unchangedWithin,
+      noChanges: windowSandbox.noChanges,
+      fileChanged: windowSandbox.fileChanged,
+      fileDeleted: windowSandbox.fileDeleted,
+      inDiff: windowSandbox.inDiff,
+      notInDiff: windowSandbox.notInDiff,
+    });
     const handle = bindConversationMaterial(
       Object.freeze({
         input: snapshot.input,
+        sandbox: turnSandbox,
         events: snapshot.events,
         inputRequests: Object.freeze(
           snapshot.events.flatMap((event) =>

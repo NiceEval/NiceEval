@@ -91,3 +91,18 @@ niceeval show @<locator> fc_<id>
 
 family 读取只使用 `available`、`not-recorded`、`unsupported` 与 `invalid`。固定 operation 不给 `show` 或 View 任何额外特权，
 也不转换历史格式；旧 Record 在 reader 建立前拒绝，保留原存储后用当前候选重新运行。
+
+## 限定到某一轮
+
+`t.sandbox` 的断言汇总 Attempt 内所有 send window。需要判断某一轮做了什么、没做什么时，在该轮返回的 Turn 上调用同名方法：
+
+```ts
+const first = await t.send("帮我用 local 跑一下退款题，看看客服答对了没有");
+first.sandbox.unchangedWithin(["evals/support/refund.eval.ts"]).gate().label("第一轮没动用户刚改的题");
+
+const second = await t.send("把刚才那道退款题整理一下");
+second.sandbox.changedOnlyWithin(["evals", "README.md"]).label("整理只动了题目与说明");
+```
+
+`turn.sandbox` 提供与 `t.sandbox` 相同的 diff 断言（`changedPaths`、`noChanges`、`changedOnlyWithin`、`unchangedWithin`、`fileChanged`、`fileDeleted`、`inDiff`、`notInDiff`），判定、参数校验、`diff.ignore` 与 unavailable 规则不变，只读取该 Turn 自己的 send window。它不提供 `runCommand` 等 Sandbox 操作：操作发生在当下，不属于某个已结束的轮次。
+对应窗口的归因材料缺失时结果为 unavailable，不当作“这一轮没有变化”。criterion 额外记录窗口身份（如 `turn2`、`session2/turn1`），与汇总形式的同名检查区分。

@@ -473,6 +473,7 @@ const SandboxChangeScopeCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("sandbox-change-scope"),
   data: Schema.Struct({
+    window: Schema.optionalKey(BoundedJsonStringSchema),
     paths: Schema.Array(BoundedJsonStringSchema).check(
       Schema.makeFilter(
         (paths) =>
@@ -490,6 +491,7 @@ const SandboxUnchangedWithinCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("sandbox-unchanged-within"),
   data: Schema.Struct({
+    window: Schema.optionalKey(BoundedJsonStringSchema),
     paths: Schema.Array(BoundedJsonStringSchema).check(
       Schema.makeFilter(
         (paths) =>
@@ -507,6 +509,7 @@ const SandboxDiffPathsCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("sandbox-diff-paths"),
   data: Schema.Struct({
+    window: Schema.optionalKey(BoundedJsonStringSchema),
     operation: Schema.Literals(["not-in-diff", "in-diff"]),
     pattern: BoundedJsonStringSchema,
     flags: BoundedJsonStringSchema,
@@ -517,6 +520,7 @@ const SandboxInDiffCriterionSchema = Schema.Struct({
   kind: Schema.Literal("builtin"),
   id: Schema.Literal("sandbox-in-diff"),
   data: Schema.Struct({
+    window: Schema.optionalKey(BoundedJsonStringSchema),
     pattern: BoundedJsonStringSchema,
     flags: BoundedJsonStringSchema,
     content: Schema.Literals(["added", "removed", "both"]),
@@ -528,6 +532,7 @@ const SandboxResultCriterionSchema = Schema.Union([
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
+      window: Schema.optionalKey(BoundedJsonStringSchema),
       operation: Schema.Literal("changed-paths"),
       paths: Schema.Array(BoundedJsonStringSchema),
     }),
@@ -535,12 +540,16 @@ const SandboxResultCriterionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result"),
-    data: Schema.Struct({ operation: Schema.Literal("no-changes") }),
+    data: Schema.Struct({
+      operation: Schema.Literal("no-changes"),
+      window: Schema.optionalKey(BoundedJsonStringSchema),
+    }),
   }),
   Schema.Struct({
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
+      window: Schema.optionalKey(BoundedJsonStringSchema),
       operation: Schema.Literal("file-changed"),
       path: BoundedJsonStringSchema,
       status: Schema.optionalKey(Schema.Literals(["added", "modified", "deleted"])),
@@ -552,6 +561,7 @@ const SandboxResultCriterionSchema = Schema.Union([
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
+      window: Schema.optionalKey(BoundedJsonStringSchema),
       operation: Schema.Literal("file-deleted"),
       path: BoundedJsonStringSchema,
     }),
@@ -560,6 +570,7 @@ const SandboxResultCriterionSchema = Schema.Union([
     kind: Schema.Literal("builtin"),
     id: Schema.Literal("sandbox-result"),
     data: Schema.Struct({
+      window: Schema.optionalKey(BoundedJsonStringSchema),
       operation: Schema.Literal("not-in-diff"),
       pattern: BoundedJsonStringSchema,
       flags: BoundedJsonStringSchema,
