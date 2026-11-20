@@ -35,7 +35,7 @@ agent 只需要知道 `niceeval show --json`，之后顺着每份 document 的 [
 
 | 方面 | operation | ID 前缀（可省略方面词） |
 | --- | --- | --- |
-| `assertions` | `attempt.assertion.detail`（列表） | `ae_` → 单条断言 |
+| `assertions` | `attempt.assertions` | `ae_` → 单条断言 |
 | `source` | `attempt.sources` | — |
 | `execution` | `attempt.trace` | `tool_`、`command_`、`item_`、`turn_`、`evt_` 等 trace 稳定 ID → `attempt.trace.detail` |
 | `timing` | `attempt.timing` | — |
@@ -184,7 +184,8 @@ artifacts、timing、usage、commands 与 diagnostics，状态为 `available | n
 niceeval show @<locator> ae_<stable-id>
 ```
 
-operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, projection? }`。
+operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, projection? }`，结果是单条 `assertion`。
+列出全部条目用 `{ kind: "attempt.assertions", locator, projection? }`，结果是按 Attempt 条目顺序排列的 `assertions`，没有条目时为 `[]`，见[Attempt 断言详情示例](#attempt-断言详情示例)。
 `projection` 可选 `full | compact`，省略时默认为 `full`。`compact` 只返回 `check`、判定状态与 `rationale`，
 省略完整工具调用行与原始材料全文，保证单次响应体积安全，避免外部脚本管道溢出。
 `show` 默认请求 `compact`，加 `--full` 请求 `full`。
@@ -511,7 +512,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   文本视图在 Verdict 下写 `Stopped at <label>; later steps did not run`，Experiment 与 Results 表在该 Attempt 的 Verdict 后标注 `stopped`。
   errored Attempt 的诊断阶段是 `sandbox.prepare`、`sandbox.command` 或 `agent.install` 时，末尾 `Next` 优先给出 `execution` 里对应命令输出的命令。
   overview 与 `execution` 的 `cache-degraded` 诊断显示具名降级 reason 与受影响的 Before 节点；若有远端调用错误，给出可展开的稳定 ID。
-- `@<locator> assertions` 调用 `attempt.assertion.detail`，显示断言条目的判定、分值、结构化理由与聚焦证据。
+- `@<locator> assertions` 调用 `attempt.assertions`，显示断言条目的判定、分值、结构化理由与聚焦证据。
   `@<locator> ae_<id>` 选择单项断言；默认以 compact 紧凑摘要交付，加 `--full` 包含完整原始材料与上下文行。
 - `exp:<id>... assertions` 调用 `experiments.assertions`，按 Eval 把各 Experiment 的断言条目排成判据矩阵，见[跨 Experiment 的判据矩阵](#跨-experiment-的判据矩阵)。
 - `@<locator> source` 调用 `attempt.sources`，显示已封存 source 与 Assertion facts，保留
@@ -551,7 +552,7 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 | `run:<id>...` | 每个去重后的 ID 一次 `run.get`，按 ID 排序 |
 | `runs` | `run.list` |
 | `@<locator>` | `attempt.get`、`attempt.usage` |
-| `@<locator> assertions` | `attempt.assertion.detail` |
+| `@<locator> assertions` | `attempt.assertions` |
 | `@<locator> ae_<id>` | 带 `entryId` 的 `attempt.assertion.detail` |
 | `@<locator> source` | `attempt.sources` |
 | `@<locator> execution` | `attempt.trace`，带 `--actor`、`--type` 与 `--continuation` |
@@ -865,13 +866,14 @@ Next
 
 `show @<locator> assertions` 呈现该 Attempt 各断言条目的判定、分值与理由。
 
-列表按 Attempt 的条目顺序，为每个 `entryId` 调用一次 `projection: "compact"` 的 `attempt.assertion.detail`。
-`--json` 每个条目写一行 document，全部行共用同一个 `PublicationCutoff`。
+列表调用一次 `projection: "compact"` 的 `attempt.assertions`，`--json` 恰好写一行 document，`assertions` 按 Attempt 的条目顺序排列。
+Attempt 没有任何条目（例如在 Eval 运行阶段就 errored）时，`assertions` 为 `[]`，进程照常以零状态退出；文本视图写 `No Assertion entries recorded`，并在 `Next` 给出 `niceeval show @<locator> execution`。
+空列表不等于“全部通过”，Verdict 与原因仍由 `attempt.get` 交付。
 compact 的读取成本与材料大小无关：只读取条目的判定、分值、display、gate、target 与 rationale。
 材料正文、collection 的 retained rows、`debugger`、source content 与裁判审计都不加载，只在 `ae_<id> --full` 中交付。
-读取期限按单个 operation 计时，不在整个列表上累计。条目再多、材料再大，可读的列表也不会读到一半失败。
+读取期限按单个条目计时，不在整个列表上累计。条目再多、材料再大，可读的列表也不会读到一半失败。
 
-单个 operation 超过读取期限时，该行是 failure，code 为 `inspection-read-deadline-exceeded`。
+单个条目超过读取期限时，列表中该项是带 `entryId` 的 failure，code 为 `inspection-read-deadline-exceeded`，其余条目照常交付，operation 本身仍是 success。
 reason 写出 entryId、已用时长与期限；correction 给出单独读取这一项的 `niceeval show @<locator> ae_<id>`，不写 `retry`。
 同一读取重试会以同样方式超时，所以 `retry` 不是有效的下一步。
 文本模式把同样的诊断写到 stderr 并非零退出，不输出半张表。

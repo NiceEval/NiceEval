@@ -353,7 +353,10 @@ function runShow(
           const homepage = locator !== undefined && address.aspect === undefined;
           function documentsForLinks() {
             if (assertions && locator !== undefined)
-              return selectedDocuments.filter((document) => document.operation === "attempt.assertion.detail");
+              return selectedDocuments.filter(
+                (document) =>
+                  document.operation === "attempt.assertions" || document.operation === "attempt.assertion.detail",
+              );
             if (homepage) return selectedDocuments.filter((document) => document.operation === "attempt.get");
             return selectedDocuments;
           }
@@ -450,14 +453,6 @@ function runShow(
         }
         if (explain) {
           const selectedLocator = decodedLocator?.locator;
-          function* assertionEntries() {
-            if (assertions && entryId === undefined && !matrix)
-              return (yield* select("attempt.get", () =>
-                selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator! }),
-              )).attempt.assertions.entries.map((entry) => entry.entryId);
-            return entryId === undefined ? [] : [entryId];
-          }
-          const entries = yield* assertionEntries();
           const pricing =
             pricingFile === undefined
               ? undefined
@@ -504,7 +499,7 @@ function runShow(
                   kind: "attempt",
                   locator: selectedLocator,
                   slice: "assertions",
-                  entryIds: entries,
+                  entryId,
                   projection: full ? "full" : "compact",
                 });
               case "execution":
@@ -635,14 +630,6 @@ function runShow(
         }
         if (json && !compare) {
           const selectedLocator = decodedLocator?.locator;
-          function* assertionEntries() {
-            if (assertions && entryId === undefined)
-              return (yield* select("attempt.get", () =>
-                selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator! }),
-              )).attempt.assertions.entries.map((entry) => entry.entryId);
-            return entryId === undefined ? [] : [entryId];
-          }
-          const entries = yield* assertionEntries();
           function selectedSlice(): "source" | "timing" | "usage" | "summary" {
             if (source) return "source";
             if (timing) return "timing";
@@ -658,7 +645,7 @@ function runShow(
                 kind: "attempt",
                 locator: selectedLocator,
                 slice: "assertions",
-                entryIds: entries,
+                entryId,
                 projection: full ? "full" : "compact",
               });
             if (execution)
@@ -688,31 +675,44 @@ function runShow(
         }
         if (assertions) {
           const selectedLocator = decodedLocator!.locator;
-          const outline =
-            entryId === undefined
-              ? (yield* select("attempt.get", () =>
-                  selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
-                )).attempt
-              : undefined;
-          const entryIds =
-            outline === undefined ? [entryId!] : outline.assertions.entries.map((entry) => entry.entryId);
           const details: InspectionSuccessDocumentFor<"attempt.assertion.detail">["assertion"][] = [];
-          for (const id of entryIds) {
+          if (entryId === undefined) {
+            const document = yield* select("attempt.assertions", () =>
+              selectInspectionOperation(opened, {
+                kind: "attempt.assertions",
+                locator: selectedLocator,
+                projection: "compact",
+              }),
+            );
+            for (const item of document.assertions) {
+              if ("failure" in item) {
+                const { code, reason, correction } = item.failure;
+                return yield* Effect.fail(
+                  failure(
+                    "execute attempt.assertions",
+                    new InspectionOperationError(
+                      { code, operation: "attempt.assertions", reason },
+                      { kind: "deadline", correction },
+                    ),
+                  ),
+                );
+              }
+              details.push(item);
+            }
+          } else {
             const document = yield* select("attempt.assertion.detail", () =>
               selectInspectionOperation(opened, {
                 kind: "attempt.assertion.detail",
                 locator: selectedLocator,
-                entryId: Schema.decodeUnknownSync(AssertionEntryIdSchema)(id),
+                entryId,
                 projection: full ? "full" : "compact",
               }),
             );
             details.push(document.assertion);
           }
-          const attempt =
-            outline ??
-            (yield* select("attempt.get", () =>
-              selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
-            )).attempt;
+          const { attempt } = yield* select("attempt.get", () =>
+            selectInspectionOperation(opened, { kind: "attempt.get", locator: selectedLocator }),
+          );
           const agentJudgeTraces = new Map<string, AgentJudgeTrace>();
           if (full)
             for (const detail of details) {
@@ -1125,7 +1125,7 @@ export type ShowOperationsInput =
       readonly kind: "attempt";
       readonly locator: string;
       readonly slice: "assertions";
-      readonly entryIds: readonly string[];
+      readonly entryId: string | undefined;
       readonly projection: "compact" | "full";
     }
   | {
@@ -1160,12 +1160,16 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
   const locator = input.locator;
   switch (input.slice) {
     case "assertions":
-      return input.entryIds.map((entryId) => ({
-        kind: "attempt.assertion.detail",
-        locator,
-        entryId: Schema.decodeUnknownSync(AssertionEntryIdSchema)(entryId),
-        projection: input.projection,
-      }));
+      return input.entryId === undefined
+        ? [{ kind: "attempt.assertions", locator, projection: input.projection }]
+        : [
+            {
+              kind: "attempt.assertion.detail",
+              locator,
+              entryId: Schema.decodeUnknownSync(AssertionEntryIdSchema)(input.entryId),
+              projection: input.projection,
+            },
+          ];
     case "source":
       return [{ kind: "attempt.sources", locator }];
     case "execution":

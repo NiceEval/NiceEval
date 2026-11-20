@@ -185,7 +185,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
                   kind: "attempt",
                   locator: address.locator,
                   slice: "assertions",
-                  entryIds: address.id === undefined ? [] : [address.id],
+                  entryId: address.id,
                   projection: "compact",
                 });
               if (address.aspect === "execution")

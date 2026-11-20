@@ -1,4 +1,4 @@
-import { decodeInspectionDocument, narrowInspectionSuccess, only } from "@niceeval/testkit";
+import { only } from "@niceeval/testkit";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -55,21 +55,17 @@ Date.now = () => now() + (elapsed += Number(process.env.READ_CLOCK_STEP_MS));
         env: { ...clock, READ_CLOCK_STEP_MS: "100" },
       });
       expect(listed.exitCode, listed.diagnostic()).toBe(0);
-      const documents = listed.ndjson<unknown>().map((line) => {
-        const decoded = decodeInspectionDocument(line);
-        if (!decoded.success) throw new Error(decoded.reason);
-        const narrowed = narrowInspectionSuccess(decoded.value, "attempt.assertion.detail");
-        if (!narrowed.success) throw new Error(narrowed.reason);
-        return narrowed.value;
-      });
-      expect(documents.map((document) => document.assertion.entryId)).toEqual(entryIds);
-      expect(new Set(documents.map((document) => JSON.stringify(document.publicationCutoff))).size).toBe(1);
-      for (const document of documents) {
-        expect(document.assertion).not.toHaveProperty("entry.materials");
-        expect(document.assertion).not.toHaveProperty("entry.evaluation.artifact");
-        expect(document.assertion).not.toHaveProperty("matcher.debugger");
-        expect(JSON.stringify(document)).not.toContain("retainedRows");
-        expect(JSON.stringify(document)).not.toContain("large-material-markerxxx");
+      expect(listed.ndjson<unknown>()).toHaveLength(1);
+      const document = listed.inspectionSuccess("attempt.assertions");
+      expect(document.publicationCutoff).toEqual(outline.inspectionSuccess("attempt.get").publicationCutoff);
+      expect(document.assertions.map((assertion) => assertion.entryId)).toEqual(entryIds);
+      for (const assertion of document.assertions) {
+        expect(assertion).not.toHaveProperty("failure");
+        expect(assertion).not.toHaveProperty("entry.materials");
+        expect(assertion).not.toHaveProperty("entry.evaluation.artifact");
+        expect(assertion).not.toHaveProperty("matcher.debugger");
+        expect(JSON.stringify(assertion)).not.toContain("retainedRows");
+        expect(JSON.stringify(assertion)).not.toContain("large-material-markerxxx");
       }
       const shown = await niceeval.run(["show", locator, "assertions"], {
         env: { ...clock, READ_CLOCK_STEP_MS: "100" },

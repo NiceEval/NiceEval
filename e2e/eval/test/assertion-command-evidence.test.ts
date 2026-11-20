@@ -1,6 +1,5 @@
 import { only } from "@niceeval/testkit";
 import { expect, test } from "vitest";
-import { decodeInspectionDocument, narrowInspectionSuccess } from "niceeval/inspection";
 import { evalE2E } from "./context.ts";
 import { assertionEntry, inspectAssertion, inspectAttempt } from "./inspection.ts";
 
@@ -19,13 +18,8 @@ test.concurrent("命令断言失败保留启动错误、退出码与脱敏输出
     expect(attempt.document.attempt.assertions.entries).toHaveLength(2);
     const json = await niceeval.run(["show", evaluation.locator, "assertions", "--json"]);
     expect(json.exitCode, json.diagnostic()).toBe(0);
-    const details = json.ndjson<unknown>().map((input) => {
-      const decoded = decodeInspectionDocument(input);
-      if (!decoded.success) throw new Error(`${decoded.reason}\n${json.diagnostic()}`);
-      const detail = narrowInspectionSuccess(decoded.value, "attempt.assertion.detail");
-      if (!detail.success) throw new Error(`${detail.reason}\n${json.diagnostic()}`);
-      return detail.value;
-    });
+    expect(json.ndjson<unknown>()).toHaveLength(1);
+    const details = json.inspectionSuccess("attempt.assertions").assertions;
     expect(details).toHaveLength(2);
     for (const [label, expected] of [
       [
@@ -58,8 +52,9 @@ test.concurrent("命令断言失败保留启动错误、退出码与脱敏输出
       );
       expect(fields, detail.receipt.diagnostic()).toMatchObject(expected);
       const observed = JSON.stringify(observedFact);
-      const compact = only(details, (detail) => detail.assertion.entryId === entry.entryId);
-      expect(assertionEntry(compact, json.diagnostic()).evaluation.observed).toEqual(
+      const compact = only(details, (detail) => detail.entryId === entry.entryId);
+      if (!("entry" in compact)) throw new Error(json.diagnostic());
+      expect(compact.entry.evaluation.observed).toEqual(
         assertionEntry(detail.document, detail.receipt.diagnostic()).evaluation.observed,
       );
       expect(observed).not.toContain("synthetic-command-secret");

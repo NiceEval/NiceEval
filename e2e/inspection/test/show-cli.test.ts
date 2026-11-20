@@ -367,14 +367,10 @@ test("用户从多个 Experiment 收据完整浏览 Show 总览、Run、Attempt 
       expect(attemptJson.inspectionSuccess("attempt.usage")).toEqual(usageQuery.inspectionSuccess("attempt.usage"));
       const assertionsJson = await niceeval.run(["show", locator, "--json", "assertions"]);
       expect(assertionsJson.exitCode, assertionsJson.diagnostic()).toBe(0);
-      expect(assertionsJson.stdout.trim().split("\n")).toHaveLength(
-        attemptQuery.inspectionSuccess("attempt.get").attempt.assertions.entries.length,
+      expect(assertionsJson.ndjson<unknown>()).toHaveLength(1);
+      expect(assertionsJson.inspectionSuccess("attempt.assertions").assertions.map(({ entryId }) => entryId)).toEqual(
+        attemptQuery.inspectionSuccess("attempt.get").attempt.assertions.entries.map(({ entryId }) => entryId),
       );
-      for (const line of assertionsJson.stdout.trim().split("\n")) {
-        const decoded = decodeInspectionDocument(JSON.parse(line));
-        if (!decoded.success) throw new Error(decoded.reason);
-        expect(decoded.value).toMatchObject({ outcome: "success", operation: "attempt.assertion.detail" });
-      }
       const invalidPage = await niceeval.run(["show", locator, "--continuation", "invalid", "--json", "execution"]);
       const invalidPageQuery = await niceeval.run([
         "show",

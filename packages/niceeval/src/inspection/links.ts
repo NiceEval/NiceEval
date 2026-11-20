@@ -22,6 +22,14 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
   if (locator !== undefined && operation.kind === "attempt.get") {
     for (const rel of ["execution", "diff", "source", "timing", "usage"] as const) add(rel, [locator, rel]);
   }
+  if (
+    operation.kind === "attempt.assertions" &&
+    document !== null &&
+    typeof document === "object" &&
+    Reflect.get(document, "assertions")?.length === 0
+  ) {
+    add("execution", [operation.locator, "execution"]);
+  }
   const visit = (value: unknown): void => {
     if (links.length >= 256 || value === null || typeof value !== "object") return;
     if (Array.isArray(value)) {

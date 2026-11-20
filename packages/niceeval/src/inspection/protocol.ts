@@ -213,6 +213,28 @@ export const inspectionProtocolRegistry = Object.freeze({
     result: { attempt: InspectionAttemptResultSchema },
     factKinds: ["core", "assertions", "attempt-note"],
   }),
+  "attempt.assertions": spec({
+    request: operation("attempt.assertions", {
+      locator: AttemptLocatorSchema,
+      projection: Schema.optional(Schema.Literals(["full", "compact"])),
+    }),
+    result: {
+      assertions: Schema.Array(
+        Schema.Union([
+          AssertionDetailResultSchema,
+          Schema.Struct({
+            entryId: AssertionEntryIdSchema,
+            failure: Schema.Struct({
+              code: Schema.Literal("inspection-read-deadline-exceeded"),
+              reason: Schema.String,
+              correction: Schema.TemplateLiteral(["niceeval show ", Schema.String]),
+            }),
+          }),
+        ]),
+      ),
+    },
+    factKinds: ["assertions", "agent-turns", "sources"],
+  }),
   "attempt.assertion.detail": spec({
     request: operation("attempt.assertion.detail", {
       locator: AttemptLocatorSchema,

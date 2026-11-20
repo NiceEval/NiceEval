@@ -43,6 +43,7 @@ import {
 } from "./limits.ts";
 import {
   projectAttemptAssertionDetail,
+  projectAttemptAssertionList,
   projectAttemptAssertionImage,
   projectAssertionContentDetail,
 } from "./assertions.ts";
@@ -186,12 +187,12 @@ export function selectInspectionOperation(
   facts: InspectionFactSource,
   operation: InspectionOperation,
 ): InspectionSuccessDocument {
-  return withinReadDeadline(facts, operation, () => {
-    return evaluateInspectionSuccess(operation.kind, () => {
+  const read = () =>
+    evaluateInspectionSuccess(operation.kind, () => {
       const document = selectOperation(facts, operation);
       return Object.assign({}, document, { links: inspectionLinks(operation, document) });
     });
-  });
+  return operation.kind === "attempt.assertions" ? read() : withinReadDeadline(facts, operation, read);
 }
 
 /** Internal CLI explanation over the same selected facts and cutoff. */
@@ -237,7 +238,7 @@ function withinReadDeadline<A>(facts: InspectionFactSource, operation: Inspectio
     const entryId = "entryId" in operation ? operation.entryId : operation.kind;
     const correction: `niceeval show ${string}` | "upgrade-or-report" =
       "locator" in operation
-        ? `niceeval show ${operation.locator}${"entryId" in operation ? ` ${operation.entryId}` : ""}`
+        ? `niceeval show ${operation.locator}${"entryId" in operation ? ` ${operation.entryId}` : operation.kind === "attempt.assertions" ? " assertions" : ""}`
         : "upgrade-or-report";
     throw new InspectionOperationError(
       {
@@ -476,6 +477,52 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       return {
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
         attempt: decodeRequiredResult(operation.kind, InspectionAttemptResultSchema, attemptDetail(resolved)),
+      };
+    }
+    case "attempt.assertions": {
+      const { resolved, input, agentTurns } = withinReadDeadline(source, operation, () => {
+        const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+        const input = readInspectionAssertions(resolved);
+        const readsAgentTurns =
+          operation.projection !== "compact" && input.state === "available" && input.value.entries.length > 0;
+        return {
+          resolved,
+          input,
+          agentTurns: readsAgentTurns
+            ? readInspectionAgentTurns(traceAttachments(resolved).agentTurns)
+            : { state: "not-recorded" as const },
+        };
+      });
+      const assertions = projectAttemptAssertionList(
+        source,
+        input,
+        agentTurns,
+        operation.projection ?? "full",
+        (entryId, project) => {
+          try {
+            return withinReadDeadline(
+              source,
+              { kind: "attempt.assertion.detail", locator: operation.locator, entryId },
+              project,
+            );
+          } catch (cause) {
+            if (!(cause instanceof InspectionOperationError) || cause.code !== "inspection-read-deadline-exceeded") {
+              throw cause;
+            }
+            return {
+              entryId,
+              failure: {
+                code: cause.code,
+                reason: cause.reason,
+                correction: `niceeval show ${operation.locator} ${entryId}` as const,
+              },
+            };
+          }
+        },
+      );
+      return {
+        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        assertions,
       };
     }
     case "attempt.assertion.detail": {

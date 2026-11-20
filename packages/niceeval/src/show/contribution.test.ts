@@ -50,36 +50,23 @@ test.concurrent("resource JSON selects the documented operations and preserves A
 });
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md
-test.concurrent("Assertion JSON defaults to compact and selects exact entries without an extra outline line", () => {
-  const second = "ae_00000000000000000002";
+test.concurrent("Assertion JSON selects one list or exact detail operation", () => {
   expect(
-    showOperations({
-      kind: "attempt",
-      locator,
-      slice: "assertions",
-      entryIds: [entryId, second],
-      projection: "compact",
-    }),
-  ).toEqual([
-    { kind: "attempt.assertion.detail", locator, entryId, projection: "compact" },
-    { kind: "attempt.assertion.detail", locator, entryId: second, projection: "compact" },
-  ]);
+    showOperations({ kind: "attempt", locator, slice: "assertions", entryId: undefined, projection: "compact" }),
+  ).toEqual([{ kind: "attempt.assertions", locator, projection: "compact" }]);
   const [operation] = showOperations({
     kind: "attempt",
     locator,
     slice: "assertions",
-    entryIds: [entryId],
+    entryId,
     projection: "full",
   });
-  expect(operation).toMatchObject({ entryId, projection: "full" });
+  expect(operation).toMatchObject({ kind: "attempt.assertion.detail", entryId, projection: "full" });
   expect(Result.isSuccess(decodeInspectionOperation(operation))).toBe(true);
   expect(Result.isSuccess(decodeInspectionOperation({ kind: "attempt.assertion.detail", locator, entryId }))).toBe(
     true,
   );
   expect(Result.isFailure(decodeInspectionOperation({ ...operation, projection: "tiny" }))).toBe(true);
-  expect(
-    showOperations({ kind: "attempt", locator, slice: "assertions", entryIds: [], projection: "compact" }),
-  ).toEqual([]);
 });
 
 // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md

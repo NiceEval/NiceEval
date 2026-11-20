@@ -104,6 +104,30 @@ export function projectAttemptAssertionDetail(
   }
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
   if (entry === undefined) return undefined;
+  return projectAssertionDetail(source, assertions, agentTurns, entry, projection);
+}
+
+export function projectAttemptAssertionList<A>(
+  source: InspectionFactSource,
+  input: InspectionAssertionsRead,
+  agentTurns: InspectionAgentTurnsRead,
+  projection: "full" | "compact",
+  readEntry: (entryId: AssertionEntry["entryId"], project: () => AssertionDetailResult) => A,
+): readonly A[] {
+  const assertions = readCurrentAssertions(input);
+  if (assertions.state !== "available") return [];
+  return assertions.value.entries.map((entry) =>
+    readEntry(entry.entryId, () => projectAssertionDetail(source, assertions, agentTurns, entry, projection)),
+  );
+}
+
+function projectAssertionDetail(
+  source: InspectionFactSource,
+  assertions: Extract<AssertionsRead, { readonly state: "available" }>,
+  agentTurns: InspectionAgentTurnsRead,
+  entry: AssertionEntry,
+  projection: "full" | "compact",
+): AssertionDetailResult {
   if (projection === "compact") {
     return decodeAssertionDetail({
       projection: "compact",
