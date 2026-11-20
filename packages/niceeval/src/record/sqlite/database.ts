@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { constants, DatabaseSync, type SQLOutputValue, type StatementSync } from "node:sqlite";
 import { RECORD_SQLITE_BASELINE_SQL, RECORD_SQLITE_PREPARED_SEAL_TEMP_SQL } from "./schema.ts";
 import { sqliteError } from "./errors.ts";
@@ -474,6 +475,45 @@ function bootstrapRecordDatabase(path: string): void {
   }
 }
 
+/**
+ * Decides "written by an older NiceEval" without creating WAL or shared-memory files: a WAL-mode
+ * file opened even read-only gets -shm/-wal siblings, so the probe opens it immutable. It only
+ * rejects on positive evidence (a legacy metadata namespace or a different format); anything else,
+ * including an unreadable or concurrently written file, is left to the normal open to judge.
+ */
+function assertNotPredecessorRecord(path: string): void {
+  if (!pathExists(path)) return;
+  let verdict: "older" | "undecided" = "undecided";
+  let db: DatabaseSync | undefined;
+  try {
+    db = new DatabaseSync(`${pathToFileURL(path).href}?immutable=1`, { readOnly: true, defensive: true });
+    const names = new Set(
+      (db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all() as { name: string }[]).map(
+        (row) => row.name,
+      ),
+    );
+    if (names.has("ne19_record_metadata")) {
+      const row = db.prepare("SELECT format FROM ne19_record_metadata WHERE singleton=1").get() as
+        | { format?: unknown }
+        | undefined;
+      if (typeof row?.format === "string" && row.format !== RECORD_SQLITE_FORMAT) verdict = "older";
+    } else if (["ne18_record_metadata", "ne_record_metadata", "record_metadata"].some((name) => names.has(name))) {
+      verdict = "older";
+    }
+  } catch {
+    verdict = "undecided";
+  } finally {
+    if (db?.isOpen) db.close();
+  }
+  if (verdict === "older") {
+    throw sqliteError(
+      "record-schema-unsupported",
+      "validate-schema",
+      "This Record was written by an older version of NiceEval. Rerun the experiment or remove this Record storage.",
+    );
+  }
+}
+
 export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDatabase {
   assertRecordSqliteRuntime();
   assertLegacyRecordAbsent(path);
@@ -486,6 +526,7 @@ export function openRecordWriter(path: string, busyTimeoutMs = 5_000): RecordDat
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw sqliteError("record-schema-unsupported", "open", "ProjectDatabase path is not a regular Host-owned file");
   }
+  assertNotPredecessorRecord(path);
   const db = new DatabaseSync(path, {
     allowExtension: false,
     defensive: true,
@@ -527,6 +568,7 @@ export function openImmutableRecordReader(path: string, snapshotBusyTimeoutMs?: 
 
 function openRecordReaderAfterRuntimeAdmission(path: string, snapshotBusyTimeoutMs?: number): RecordDatabase {
   assertLegacyRecordAbsent(path);
+  assertNotPredecessorRecord(path);
   const db = new DatabaseSync(path, {
     allowExtension: false,
     defensive: true,
