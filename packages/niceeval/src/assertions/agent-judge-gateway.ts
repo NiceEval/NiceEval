@@ -59,6 +59,9 @@ export class AgentJudgeSession {
   private captured: string;
   private readonly keys: string[] = [];
   private readonly steps: ReviewStep[] = [];
+  private readonly cancelledKeys = new Set<string>();
+  private readonly stepEntryIndex = new Map<string, number>();
+  private imageBytesCharged = false;
   private currentKey: string | undefined;
   private currentTurns = 0;
   private currentFailure: AgentJudgeFailure | undefined;
@@ -216,12 +219,14 @@ export class AgentJudgeSession {
       this.usage = this.usageForEntry(entryIndex);
     }
     this.keys.push(key);
+    this.stepEntryIndex.set(key, entryIndex);
     this.steps.push(
       question.kind === "grade"
         ? { kind: question.kind, message: question.rubric, key, anchors: question.anchors }
         : { kind: question.kind, message: question.rubric, key },
     );
-    const first = this.keys.length === 1;
+    const chargeImages = !this.imageBytesCharged;
+    this.imageBytesCharged = true;
     return {
       criterion: { kind: "agent-judge-measurement", name: `agent-judge:${kind}`, scale: "unit-interval" },
       subject: this.subject,
@@ -233,12 +238,10 @@ export class AgentJudgeSession {
       // Only opening material participates in the Attempt's material ledger.
       // The full pi session is retained independently as chunked Content.
       retainedBytes: fullAssertionContentByteLength(this.subject) ?? 0,
-      retainedImageBytes: first ? this.snapshot.images.reduce((sum, item) => sum + item.byteLength, 0) : 0,
-      evidence: first
-        ? this.snapshot.images.map((image) => ({ kind: "judge-image" as const, image: image.image }))
-        : [],
+      retainedImageBytes: chargeImages ? this.snapshot.images.reduce((sum, item) => sum + item.byteLength, 0) : 0,
+      evidence: [],
       evaluate: () => this.evaluate(key),
-      terminalEvidence: () => this.terminalEvidence(key, first),
+      terminalEvidence: () => this.terminalEvidence(key),
       terminalDetail: () => undefined,
       terminalReceipt: () => undefined,
       coverage: { state: "complete" },
@@ -246,12 +249,36 @@ export class AgentJudgeSession {
     };
   }
 
-  private terminalEvidence(key: string, first: boolean): readonly AssertionMaterial[] {
+  cancelStep(key: string): void {
+    if (this.started || this.closed || this.cancelledKeys.has(key)) return;
+    this.cancelledKeys.add(key);
+    const keyIndex = this.keys.indexOf(key);
+    if (keyIndex >= 0) this.keys.splice(keyIndex, 1);
+    const stepIndex = this.steps.findIndex((step) => step.kind !== "chat" && step.key === key);
+    if (stepIndex >= 0) this.steps.splice(stepIndex, 1);
+    this.stepEntryIndex.delete(key);
+    const head = this.keys[0];
+    if (head === undefined) {
+      this.entryIndex = -1;
+      this.usage = undefined;
+    } else {
+      const nextIndex = this.stepEntryIndex.get(head);
+      if (nextIndex !== undefined) {
+        this.entryIndex = nextIndex;
+        this.usage = this.usageForEntry(nextIndex);
+      }
+    }
+  }
+
+  private terminalEvidence(key: string): readonly AssertionMaterial[] {
+    if (this.cancelledKeys.has(key)) return [];
     const previous = this.evidence.get(key);
     if (previous !== undefined) return previous;
+    const first = this.keys[0] === key;
     this.closed = true;
     this.sealedTrace ??= structuredClone(this.trace());
-    const evidence = [
+    const evidence: AssertionMaterial[] = [
+      ...(first ? this.snapshot.images.map((image) => ({ kind: "judge-image" as const, image: image.image })) : []),
       ...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace)), Infinity).material] : []),
       captureFullAssertionSnapshot(this.envelope(key), Infinity).material,
     ];
@@ -281,6 +308,9 @@ export class AgentJudgeSession {
   }
 
   private evaluate(key: string): Effect.Effect<MeasurementAssertionEvaluation> {
+    if (this.cancelledKeys.has(key)) {
+      return Effect.succeed({ state: "errored", detail: undefined, receipt: undefined });
+    }
     const execute = Effect.suspend(() => {
       if (this.started) return Effect.void;
       this.started = true;

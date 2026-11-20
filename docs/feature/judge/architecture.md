@@ -234,6 +234,12 @@ entry identity、展示顺序和账本 entryIndex 仍按原登记顺序。
 
 已求值 entry 复用 settlement，不重复执行。无 Agent Judge 时维持既有调度语义。
 普通断言的 stop 屏障只结算普通组，不触发 Agent Judge；Agent Judge 自身挂 `.stop()` 是登记错误。
+
+`.judge(...)` 已经登记 entry，随后的 `.stop()`／`.orStop()` 同步抛出 `judge.agent-stop-unsupported`；entry 不撤回，entryId 与 entryIndex 保持登记时的值。
+该题直接结算为 errored，判定与分值走既有的 `evaluation-errored`，不向评审会话提交，也不发出任何 Judge 请求；它没有评审审计，不借用 `agent-judge-defect` 等运行期错误码。
+同一会话的其它题与其它 entry 照常调度：违规只取消这一题自己的评审，不因作者捕获了异常或 Attempt 已经 errored 而连带取消别的 Judge。
+会话里只剩违规题时不启动评审会话。
+
 声明 State、共享 Sandbox 的 Eval Group 或 `sandboxReuse` 的配对在规划阶段拒绝 Agent Judge（`judge.agent-shared-sandbox`），评审的写入因此只落在本 Attempt 独占、随后销毁的现场。
 不能只依靠作者把 Judge 登记在最后来保证此顺序。
 

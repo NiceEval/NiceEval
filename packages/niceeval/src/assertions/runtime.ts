@@ -810,6 +810,7 @@ class AssertionsRuntimeImplementation {
     entries: AssertionEntry[];
     concurrent: boolean;
   }> = [];
+  private readonly agentJudgeEntryCancels = new WeakMap<AssertionEntry, () => void>();
   attachAgentJudgeSandbox(sandbox: import("../sandbox/types.ts").Sandbox | undefined, shared: boolean): void {
     this.agentJudgeSandbox = sandbox;
     this.agentJudgeShared = shared;
@@ -892,25 +893,32 @@ class AssertionsRuntimeImplementation {
     );
     const owner = { session, entries: [] as AssertionEntry[], concurrent: definition.concurrent };
     this.agentJudgeReviews.push(owner);
+    const registerReviewEntry = (
+      kind: "judge" | "grade",
+      prompt: string,
+      options?: { readonly anchors: readonly import("./judge.ts").JudgeAnchor[] },
+    ) => {
+      this.assertCanRegister();
+      const index = this.entries.length;
+      const key = String(index);
+      const handle = this.registerMeasurement(session.register(kind, key, prompt, options, index));
+      const entry = this.entries[index]!;
+      owner.entries.push(entry);
+      this.agentJudgeEntryCancels.set(entry, () => {
+        session.cancelStep(key);
+        const ownerIdx = owner.entries.indexOf(entry);
+        if (ownerIdx >= 0) owner.entries.splice(ownerIdx, 1);
+      });
+      return handle;
+    };
     return Object.freeze({
       chat: (message: string) => {
         this.assertCanRegister();
         session.chat(message);
       },
-      judge: (prompt: string) => {
-        this.assertCanRegister();
-        const index = this.entries.length;
-        const handle = this.registerMeasurement(session.register("judge", String(index), prompt, undefined, index));
-        owner.entries.push(this.entries[index]!);
-        return handle;
-      },
-      grade: (prompt: string, options: { readonly anchors: readonly import("./judge.ts").JudgeAnchor[] }) => {
-        this.assertCanRegister();
-        const index = this.entries.length;
-        const handle = this.registerMeasurement(session.register("grade", String(index), prompt, options, index));
-        owner.entries.push(this.entries[index]!);
-        return handle;
-      },
+      judge: (prompt: string) => registerReviewEntry("judge", prompt),
+      grade: (prompt: string, options: { readonly anchors: readonly import("./judge.ts").JudgeAnchor[] }) =>
+        registerReviewEntry("grade", prompt, options),
     }) as unknown as AgentJudgeReview<AssertionEvaluationKind>;
   }
 
@@ -1341,6 +1349,25 @@ class AssertionsRuntimeImplementation {
     }
   }
 
+  private rejectAgentJudgeRegistration(entry: AssertionEntry): void {
+    if (
+      entry.criterion.kind !== "agent-judge-measurement" ||
+      this.closing ||
+      this.sealed !== undefined ||
+      this.stopped !== undefined ||
+      entry.configurationClosed ||
+      entry.evaluation.state !== "unstarted"
+    ) {
+      return;
+    }
+    entry.configurationClosed = true;
+    entry.evaluation = {
+      state: "settled",
+      value: { state: "errored", receipt: undefined, evidence: { kind: "none" } },
+    };
+    this.agentJudgeEntryCancels.get(entry)?.();
+  }
+
   configureLabel(entry: AssertionEntry, value: string): void {
     this.assertMutable(entry, "label()");
     assertDisplayText(value, "label() value");
@@ -1413,6 +1440,11 @@ class AssertionsRuntimeImplementation {
   }
 
   requestStopMeasurement(entry: AssertionEntry, args: readonly unknown[]): Promise<number> {
+    if (entry.criterion.kind === "agent-judge-measurement") {
+      this.assertMutable(entry, "orStop()");
+      this.rejectAgentJudgeRegistration(entry);
+      throw new TypeError("judge.agent-stop-unsupported: Agent Judge cannot stop author control flow");
+    }
     if (args.length > 1)
       throw new TypeError("orStop() accepts zero arguments after gate(minimum), or exactly one minimum");
     const suppliedMinimum = args.length === 1;
