@@ -94,10 +94,6 @@
       "root": "e2e/package"
     },
     {
-      "id": "record",
-      "root": "e2e/record"
-    },
-    {
       "id": "runner",
       "root": "e2e/runner"
     }
@@ -262,12 +258,6 @@
       "e2e/package/project.json",
       "e2e/package/tsconfig.json",
       "e2e/package/vitest.config.ts",
-      "e2e/record/package.json",
-      "e2e/record/pnpm-lock.yaml",
-      "e2e/record/pnpm-workspace.yaml",
-      "e2e/record/project.json",
-      "e2e/record/tsconfig.json",
-      "e2e/record/vitest.config.ts",
       "e2e/runner/package.json",
       "e2e/runner/pnpm-lock.yaml",
       "e2e/runner/pnpm-workspace.yaml",
