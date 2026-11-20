@@ -1,9 +1,10 @@
 // @concord-file
 // @concord-implements docs/feature/plugins/architecture/lifecycle.md
 // @concord-implements docs/feature/plugins/use-case/terminal-bench-harness.md
-import { Data } from "effect";
+import { Data, Effect } from "effect";
 import { extendCodingAgent } from "../agents/plugin-extensions.ts";
 import { relative, sep } from "node:path";
+import { cleanupCallback } from "../runner/cleanup-timeout.ts";
 import type { AgentRun, DiscoveredEval, ExperimentHookContext } from "../runner/types.ts";
 import type { JsonValue } from "../shared/types.ts";
 import { appendCommandOnlySandboxLayer, type SandboxLayer } from "../sandbox/layer.ts";
@@ -181,7 +182,8 @@ async function runTeardowns(
 ): Promise<void> {
   for (const lifecycle of lifecycles.slice(0, activated).reverse()) {
     try {
-      await lifecycle.teardown(context);
+      // Each teardown owns a fresh signal and budget; the Run's interrupted signal is not inherited.
+      await Effect.runPromise(cleanupCallback((signal) => lifecycle.teardown({ ...context, signal })));
     } catch (error) {
       context.diagnostic({ code: "plugin-after-failed", level: "warning", message: String(error) });
     }

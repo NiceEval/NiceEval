@@ -3690,8 +3690,9 @@ async function runAttemptBody(
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
-    // 时点在此走到(未声明 setup 也算)——agent.after 据此触发。
-    agentSetupReached = true;
+    // 时点在此走到(未声明 setup 也算)——agent.after 据此触发；声明了 setup 时以 before 真正开始为准，
+    // 中断使 before 未被调用则不执行 after。
+    if (!agent.before) agentSetupReached = true;
     if (agent.before) {
       enterPhase("agent.setup");
       log(`agent setup (install CLI / write config)...`);
@@ -3702,10 +3703,10 @@ async function runAttemptBody(
         },
       };
       const returned: unknown = await assertFirst.requestEffect(
-        withAgentCallbackContext(
-          context,
-          (callbackContext) => agentBeforeEffect(agent, sandbox, callbackContext) ?? Effect.void,
-        ),
+        withAgentCallbackContext(context, (callbackContext) => {
+          agentSetupReached = true;
+          return agentBeforeEffect(agent, sandbox, callbackContext) ?? Effect.void;
+        }),
       );
       if (typeof returned === "function") {
         throw new Error(
