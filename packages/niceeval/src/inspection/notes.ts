@@ -31,7 +31,7 @@ export function aggregateAttemptNotes(attempts: readonly ResolvedInspectionAttem
     };
     return {
       label,
-      unit,
+      ...(unit === undefined ? {} : { unit }),
       count: values.length,
       min: values[0]!,
       median: quantile(0.5),
