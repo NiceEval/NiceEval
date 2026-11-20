@@ -26,9 +26,11 @@ const UNIT_EXCLUDE = [...EXCLUDE, "packages/niceeval/src/**/*.docker.test.ts"];
 const LAYERS = "{integration,cli,process}";
 const SOURCE_EXEC_ARGV = [
   "--conditions=niceeval-source",
-  ...(process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
-    ? ["--experimental-transform-types"]
-    : ["--require", createRequire(import.meta.url).resolve("tsx/cjs")]),
+  ...(process.features.typescript
+    ? []
+    : process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
+      ? ["--experimental-transform-types"]
+      : ["--require", createRequire(import.meta.url).resolve("tsx/cjs")]),
 ];
 const CONDITIONS = ["docker", "linux", "live"] as const;
 const conditionedTests = (condition: string) => `test/${LAYERS}/**/*.${condition}.test.ts`;
