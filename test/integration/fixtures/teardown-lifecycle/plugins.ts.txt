@@ -1,0 +1,28 @@
+import { definePlugin } from "niceeval/plugin";
+import { hold, recordBefore, runTeardown } from "./events.ts";
+
+export const experimentUnit = definePlugin({
+  name: "test.teardown-experiment",
+  identity: { version: "1" },
+  experiment: {
+    before: async (ctx) => {
+      recordBefore("x", ctx.signal);
+      await hold("x.before", ctx.signal);
+    },
+    after: (ctx) => runTeardown("x", ctx.signal),
+  },
+});
+
+export const attemptUnit = (index: number) =>
+  definePlugin({
+    name: "test.teardown-attempt",
+    key: `p${index}`,
+    identity: { version: "1", index },
+    attempt: {
+      before: async (ctx) => {
+        recordBefore(`p${index}`, ctx.signal);
+        await hold(`p${index}.before`, ctx.signal);
+      },
+      after: (ctx) => runTeardown(`p${index}`, ctx.signal),
+    },
+  });

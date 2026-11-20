@@ -1,0 +1,17 @@
+import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+import { appendEvent, hold, recordBefore, runTeardown } from "./events.ts";
+
+export default defineAgent({
+  name: "teardown-direct",
+  behaviorRevision: "1",
+  evidenceCoverage: completeEvidenceCoverage,
+  before: async (ctx) => {
+    recordBefore("agent", ctx.signal);
+    await hold("agent.before", ctx.signal);
+  },
+  async send(_input, ctx) {
+    appendEvent({ kind: "send" });
+    return { status: "completed", events: [{ type: "message", role: "assistant", text: "ok" }] };
+  },
+  after: (ctx) => runTeardown("agent", ctx.signal),
+});

@@ -1,0 +1,50 @@
+import { appendFileSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+
+const EVENTS_PATH = fileURLToPath(new URL("./teardown-events.ndjson", import.meta.url));
+
+export type TeardownMode = "ok" | "slow" | "throw";
+
+export interface Scenario {
+  /** Evaluated lifecycle point at which the unit waits for the caller to abort, or "none". */
+  readonly holdAt: string;
+  readonly experimentPlugin: boolean;
+  readonly evalPlugins: number;
+  readonly teardown: Readonly<Record<string, TeardownMode>>;
+}
+
+export const scenario = JSON.parse(
+  readFileSync(fileURLToPath(new URL("./scenario.json", import.meta.url)), "utf8"),
+) as Scenario;
+
+export function appendEvent(event: { readonly kind: string; readonly [key: string]: unknown }): void {
+  appendFileSync(EVENTS_PATH, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+/** Waits until the supplied signal aborts when this lifecycle point is the scenario's hold point. */
+export async function hold(point: string, signal: AbortSignal): Promise<void> {
+  if (scenario.holdAt !== point) return;
+  appendEvent({ kind: "held", point });
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+}
+
+export function recordBefore(unit: string, signal: AbortSignal): void {
+  appendEvent({ kind: "before", unit, signalAborted: signal.aborted });
+}
+
+/** One teardown whose behaviour comes from the scenario; the slow mode waits and reports whether the signal stayed live. */
+export async function runTeardown(unit: string, signal: AbortSignal): Promise<void> {
+  appendEvent({ kind: "after.started", unit, signalAborted: signal.aborted });
+  const mode = scenario.teardown[unit] ?? "ok";
+  if (mode === "slow") {
+    try {
+      await delay(25, undefined, { signal });
+    } catch {
+      // The signal aborted while the teardown was waiting; reported below.
+    }
+  }
+  appendEvent({ kind: "after.finished", unit, mode, signalAbortedAtEnd: signal.aborted });
+  if (mode === "throw") throw new Error(`teardown ${unit} failed on purpose`);
+}
