@@ -9,8 +9,8 @@ export default {
       "e2e/adapter/codex-sdk", "e2e/adapter/deepseek-harness", "e2e/adapter/hermes",
       "e2e/adapter/local-protocol", "e2e/adapter/omp", "e2e/adapter/openai-compat",
       "e2e/adapter/openclaw", "e2e/adapter/opencode", "e2e/adapter/sdk-converters",
-      "e2e/agent-judge", "e2e/cli", "e2e/cli-built", "e2e/cli-docker", "e2e/eval", "e2e/eval-built", "e2e/insight", "e2e/inspection", "e2e/lifecycle",
-      "e2e/package", "e2e/plugins", "e2e/record", "e2e/runner"
+      "e2e/cli", "e2e/cli-built", "e2e/cli-docker", "e2e/eval", "e2e/eval-built", "e2e/insight", "e2e/inspection", "e2e/lifecycle",
+      "e2e/package", "e2e/record", "e2e/runner"
     ],
     "argv": ["pnpm", "exec", "tsx", "packages/e2e-runner/src/concord-adapter.ts"],
     "implementationFiles": ["packages/e2e-runner/src/concord-adapter.ts", "packages/e2e-runner/src/adapter-host.ts", "packages/e2e-runner/src/adapter-wire.ts", "packages/e2e-runner/src/adapter-observation.ts", "packages/e2e-runner/src/adapter-range.ts", "packages/e2e-runner/package.json", "packages/testkit/package.json"],

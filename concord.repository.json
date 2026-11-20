@@ -98,20 +98,12 @@
       "root": "e2e/package"
     },
     {
-      "id": "plugins",
-      "root": "e2e/plugins"
-    },
-    {
       "id": "record",
       "root": "e2e/record"
     },
     {
       "id": "runner",
       "root": "e2e/runner"
-    },
-    {
-      "id": "agent-judge",
-      "root": "e2e/agent-judge"
     }
   ],
   "historyPath": "e2e/concord-history.ts",
@@ -281,12 +273,6 @@
       "e2e/package/project.json",
       "e2e/package/tsconfig.json",
       "e2e/package/vitest.config.ts",
-      "e2e/plugins/package.json",
-      "e2e/plugins/pnpm-lock.yaml",
-      "e2e/plugins/pnpm-workspace.yaml",
-      "e2e/plugins/project.json",
-      "e2e/plugins/tsconfig.json",
-      "e2e/plugins/vitest.config.ts",
       "e2e/record/package.json",
       "e2e/record/pnpm-lock.yaml",
       "e2e/record/pnpm-workspace.yaml",
