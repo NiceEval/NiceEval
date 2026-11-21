@@ -232,6 +232,8 @@ export interface AdapterCreateContext<Flags = ExperimentFlags, Roles extends str
 }
 
 type EvalContextBase<Kind extends EvaluationKind, Flags, Context> = JudgePresetMethods<Kind, Context> & {
+  /** 登记当前 Attempt 后续封存证据需要隐藏的原文。每个值至少 8 个字符，实际发送内容保持原样。 */
+  readonly sensitiveValues: AssertFirstCoreTestContext<Kind>["sensitiveValues"];
   readonly note: AssertFirstCoreTestContext<Kind>["note"];
   readonly onCleanup: AssertFirstCoreTestContext<Kind>["onCleanup"];
   readonly usage: EvalUsage;

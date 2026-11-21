@@ -1,5 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/judge/architecture.md
+import { REDACTED_SENSITIVE_VALUE, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import { Data, Schema } from "effect";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
@@ -88,13 +89,20 @@ function redactPiText(text: string, profile?: ResolvedJudgeConfig, endpoints = t
   if (endpoints) text = text.replace(/https?:\/\/[^\s"'<>]+/giu, "[redacted endpoint]");
   return text.replace(
     /\b(?:authorization|proxy-authorization|api[-_]?key|x-api-key|cookie|set-cookie)\s*[=:]\s*[^\r\n]*/giu,
-    "[redacted header]",
+    (header) =>
+      header.includes(REDACTED_SENSITIVE_VALUE) ? `[redacted header] ${REDACTED_SENSITIVE_VALUE}` : "[redacted header]",
   );
 }
 
 /** Only this bounded text is persisted. Raw SDK causes stay in runtime memory. */
-export function safePiFailureMessage(error: PiFailure, profile?: ResolvedJudgeConfig): string {
-  return Array.from(redactPiText(error.message, profile)).slice(0, 1024).join("");
+export function safePiFailureMessage(
+  error: PiFailure,
+  profile?: ResolvedJudgeConfig,
+  redact?: RedactEvidenceText,
+): string {
+  return Array.from(redactPiText(redact?.(error.message) ?? error.message, profile))
+    .slice(0, 1024)
+    .join("");
 }
 
 /**

@@ -47,6 +47,7 @@ export function dispatchBackgroundCommand(input: {
   readonly run: (options: CommandOptions) => Promise<CommandResult>;
   readonly attemptSignal?: AbortSignal;
   readonly onChecked?: () => void;
+  readonly diagnosticSensitiveValues?: () => readonly string[];
   readonly onSettled?: () => void;
 }): BackgroundCommand {
   const killController = new AbortController();
@@ -87,7 +88,11 @@ export function dispatchBackgroundCommand(input: {
     async waitOrThrow(options) {
       options?.signal?.throwIfAborted();
       input.onChecked?.();
-      return successfulCommandResult(await wait(options), commandSensitiveValues(input.options));
+      const result = await wait(options);
+      return successfulCommandResult(
+        result,
+        input.diagnosticSensitiveValues?.() ?? commandSensitiveValues(input.options),
+      );
     },
     async kill() {
       if (settled && !killController.signal.aborted) return;

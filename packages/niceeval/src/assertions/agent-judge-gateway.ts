@@ -1,6 +1,12 @@
 // @concord-file
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
+import {
+  activeEvidenceRedactor,
+  mapEvidenceText,
+  redactJsonEvidence,
+  type RedactEvidenceText,
+} from "../sandbox/redaction.ts";
 import { JudgeTimingSpan, type JudgeTimingOutcome } from "../judge/timing.ts";
 import { agentJudgeIdentity } from "../runner/judge-identity.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
@@ -64,6 +70,7 @@ const stepPrompt = (step: ReviewStep) =>
 export class AgentJudgeSession {
   private readonly snapshot: ReturnType<typeof snapshotJudgeMaterial>;
   private captured: string;
+  private readonly openingMaterial: string;
   private readonly keys: string[] = [];
   private readonly steps: ReviewStep[] = [];
   private readonly cancelledKeys = new Set<string>();
@@ -104,6 +111,7 @@ export class AgentJudgeSession {
   private readonly promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   private readonly signal: AbortSignal | undefined;
   private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined;
+  private readonly redactEvidenceText: RedactEvidenceText | undefined;
   private readonly timing: import("../runner/timing.ts").TimingRecorder | undefined;
   constructor(
     judge: NormalizedAgentJudge,
@@ -114,8 +122,10 @@ export class AgentJudgeSession {
     usageForEntry: (index: number) => JudgeUsageEntry | undefined,
     timing?: import("../runner/timing.ts").TimingRecorder,
     promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
+    redactEvidenceText?: RedactEvidenceText,
   ) {
     this.judge = judge;
+    this.redactEvidenceText = redactEvidenceText;
     this.sandbox = sandbox;
     this.profile = profile;
     this.promptCache = promptCache;
@@ -124,6 +134,7 @@ export class AgentJudgeSession {
     this.timing = timing;
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
+    this.openingMaterial = this.captured;
     this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }, Infinity).material;
     const base = {
       version: "1",
@@ -148,7 +159,7 @@ export class AgentJudgeSession {
   }
 
   private failPi(error: PiFailure): void {
-    const message = safePiFailureMessage(error, this.profile);
+    const message = safePiFailureMessage(error, this.profile, this.redactEvidenceText);
     switch (error.kind) {
       case "dependency":
         return this.fail("errored", "agent-judge-dependency-missing", message);
@@ -183,44 +194,56 @@ export class AgentJudgeSession {
       paths,
     }));
   }
-  private trace(): AgentJudgeTrace {
-    return (
-      this.sealedTrace ?? {
-        cleanup: this.cleanup,
-        definition: this.definition,
-        input: this.captured,
-        systemPrompt: this.piSystemPrompt || this.systemPrompt(),
-        criteria: this.keys as [string, ...string[]],
-        steps: this.steps.map((step) => ({
-          kind: step.kind,
-          message: step.message,
-          key: step.kind === "chat" ? null : step.key,
-          anchors: step.kind === "grade" ? step.anchors : null,
-        })),
-        images: this.images(),
-        session: this.sessionEntries,
-        // Redact structured arguments before canonical encoding, just as pi history
-        // redacts each string value. Redacting the encoded JSON can damage it.
-        tools: this.tools.map((tool) => ({
-          ...tool,
-          callId: redactPiSessionEntries(tool.callId, this.profile),
-          name: redactPiSessionEntries(tool.name, this.profile),
-          arguments: canonical(redactPiSessionEntries(JSON.parse(tool.arguments), this.profile)),
-          result: redactPiSessionEntries(tool.result, this.profile),
-        })),
-        compactions: this.compactions.map((compact) => ({
-          ...compact,
-          summary: redactPiSessionEntries(compact.summary, this.profile),
-          failure:
-            compact.failure === null
-              ? null
-              : {
-                  ...compact.failure,
-                  message: redactPiSessionEntries(compact.failure.message, this.profile),
-                },
-        })),
-      }
+  private redactJson(value: string): string {
+    return redactJsonEvidence(value, this.redactEvidenceText, canonical);
+  }
+
+  private redactPiEvidence<T>(value: T, redact?: RedactEvidenceText): T {
+    return redactPiSessionEntries(
+      mapEvidenceText(value, redact === undefined ? undefined : (text) => redactJsonEvidence(text, redact, canonical)),
+      this.profile,
     );
+  }
+
+  private trace(redact?: RedactEvidenceText): AgentJudgeTrace {
+    const { digest: _digest, ...definition } = this.definition;
+    const safeDefinition = { ...definition, config: redactJsonEvidence(definition.config, redact, canonical) };
+    return {
+      cleanup: mapEvidenceText(this.cleanup, redact),
+      definition: { ...safeDefinition, digest: agentJudgeDigest(canonical(safeDefinition)) },
+      input: redactJsonEvidence(this.captured, redact, canonical),
+      systemPrompt:
+        redact?.(this.piSystemPrompt || this.systemPrompt()) ?? (this.piSystemPrompt || this.systemPrompt()),
+      criteria: this.keys as [string, ...string[]],
+      steps: this.steps.map((step) => ({
+        kind: step.kind,
+        message: redact?.(step.message) ?? step.message,
+        key: step.kind === "chat" ? null : step.key,
+        anchors: step.kind === "grade" ? mapEvidenceText(step.anchors, redact) : null,
+      })),
+      images: this.images(),
+      session: this.redactPiEvidence(this.sessionEntries, redact),
+      // Redact structured arguments before canonical encoding, just as pi history
+      // redacts each string value. Redacting the encoded JSON can damage it.
+      tools: this.tools.map((tool) => ({
+        ...tool,
+        callId: this.redactPiEvidence(tool.callId, redact),
+        name: this.redactPiEvidence(tool.name, redact),
+        arguments: canonical(this.redactPiEvidence(JSON.parse(tool.arguments), redact)),
+        result: this.redactPiEvidence(tool.result, redact),
+      })),
+      compactions: this.compactions.map((compact) => ({
+        ...compact,
+        summary: this.redactPiEvidence(compact.summary, redact),
+        failure:
+          compact.failure === null
+            ? null
+            : {
+                ...compact.failure,
+                message: this.redactPiEvidence(compact.failure.message, redact),
+              },
+      })),
+    };
   }
   private fail(state: AgentJudgeFailure["state"], code: string, message: string): void {
     this.problem ??= { state, code, message };
@@ -259,6 +282,12 @@ export class AgentJudgeSession {
     return {
       criterion: { kind: "agent-judge-measurement", name: `agent-judge:${kind}`, scale: "unit-interval" },
       subject: this.subject,
+      terminalSubject: () => {
+        const redacted = this.redactJson(this.openingMaterial);
+        return redacted === this.openingMaterial
+          ? this.subject
+          : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }, Infinity).material;
+      },
       terminalCriterion: () => ({
         kind: "agent-judge-measurement",
         name: `agent-judge:${kind}`,
@@ -305,24 +334,23 @@ export class AgentJudgeSession {
     if (previous !== undefined) return previous;
     const first = this.keys[0] === key;
     this.closed = true;
-    this.sealedTrace ??= structuredClone(this.trace());
+    this.sealedTrace ??= structuredClone(this.trace(activeEvidenceRedactor(this.redactEvidenceText)));
     const evidence: AssertionMaterial[] = [
       ...(first ? this.snapshot.images.map((image) => ({ kind: "judge-image" as const, image: image.image })) : []),
       ...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace)), Infinity).material] : []),
-      captureFullAssertionSnapshot(this.envelope(key), Infinity).material,
+      captureFullAssertionSnapshot(this.envelope(key, this.sealedTrace, this.redactEvidenceText), Infinity).material,
     ];
     this.evidence.set(key, evidence);
     return evidence;
   }
 
-  private envelope(key: string) {
-    const trace = this.sealedTrace ?? this.trace();
+  private envelope(key: string, trace: AgentJudgeTrace, redact?: RedactEvidenceText) {
     const payload: AgentJudgeAudit = {
       trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key,
-      prompt: this.steps.find((step) => step.kind !== "chat" && step.key === key)!.message,
-      submission: redactPiSessionEntries(this.submissions.get(key) ?? null, this.profile),
-      result: this.results.get(key) ?? { state: "interrupted" },
+      prompt: trace.steps.find((step) => step.kind !== "chat" && step.key === key)!.message,
+      submission: this.redactPiEvidence(this.submissions.get(key) ?? null, redact),
+      result: mapEvidenceText(this.results.get(key) ?? { state: "interrupted" }, redact),
     };
     const body = canonical(payload);
     const content = chunkUtf8(body);
@@ -409,10 +437,11 @@ export class AgentJudgeSession {
           const submitted = this.submissions.get(key);
           if (submitted !== undefined && this.cleanup.state === "released") {
             this.results.set(key, { state: "measured", value: agentJudgeMeasurement(submitted.value) });
+            const trace = this.trace();
             const checked = readAgentJudgeAudit(
-              this.envelope(key),
+              this.envelope(key, trace),
               agentJudgeMeasurement(submitted.value),
-              () => this.trace(),
+              () => trace,
               this.snapshot.images.map((image) => ({
                 mediaType: image.mediaType,
                 bytes: readJudgeImage(image.image).body,
@@ -617,7 +646,7 @@ export class AgentJudgeSession {
       });
       agent.refreshContext();
       const captureSession = () => {
-        this.sessionEntries = redactPiSessionEntries(JSON.parse(JSON.stringify(sessionManager.getEntries())), profile);
+        this.sessionEntries = JSON.parse(JSON.stringify(sessionManager.getEntries()));
         this.piSystemPrompt = agent.systemPrompt;
       };
       captureBeforeRelease = captureSession;

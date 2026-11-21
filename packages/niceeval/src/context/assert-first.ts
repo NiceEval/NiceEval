@@ -1,3 +1,4 @@
+import { registerAttemptSensitiveValues, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import type { TestCleanupContext } from "../sandbox/commands.ts";
 import { bindConversationMaterial, projectConversation } from "../assertions/conversation-material.ts";
 import { AttemptNotesCollector } from "./notes.ts";
@@ -168,7 +169,12 @@ export interface AssertFirstCoreContextState {
   skipReason: string | undefined;
 }
 
-export interface AssertFirstCoreContextDeps {
+interface AttemptSensitiveValuesDeps {
+  readonly sensitiveValues?: Set<string> | undefined;
+  readonly redactEvidenceText?: RedactEvidenceText | undefined;
+}
+
+export interface AssertFirstCoreContextDeps extends AttemptSensitiveValuesDeps {
   readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
   readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
@@ -187,6 +193,8 @@ export interface AssertFirstCoreContextDeps {
 }
 
 export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> = JudgePresetMethods<Kind> & {
+  /** 登记当前 Attempt 后续封存证据需要隐藏的原文。每个值至少 8 个字符，实际发送内容保持原样。 */
+  sensitiveValues(...values: readonly string[]): void;
   /** Record display data without affecting Assertions, Verdict or score. */
   note(
     label: string,
@@ -213,7 +221,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
 } & (Kind extends "score" ? { readonly score: ScoreFunction } : {});
 
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
-export interface AssertFirstContextDeps {
+export interface AssertFirstContextDeps extends AttemptSensitiveValuesDeps {
   readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
   readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
@@ -514,6 +522,8 @@ export type AssertFirstTestContext<Kind extends RuntimeKind> = AgentJudgePresetM
   AgentMatchContext<"attempt">
 > & {
   simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
+  /** 登记当前 Attempt 后续封存证据需要隐藏的原文。每个值至少 8 个字符，实际发送内容保持原样。 */
+  sensitiveValues(...values: readonly string[]): void;
   /** 保存 JSON 值或 Quantity 供结果展示，不登记 Assertion，也不影响 Verdict、score 或 coverage。 */
   note: AssertFirstCoreTestContext<Kind>["note"];
   /** 登记评估结束并完成判定后执行的收尾回调。回调逆序执行，失败时追加诊断。 */
@@ -1794,6 +1804,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judgeUsage: deps.judgeUsage,
           judgePromptCache: deps.judgePromptCache,
           judgeTiming: deps.judgeTiming,
+          redactEvidenceText: deps.redactEvidenceText,
         })
       : createAssertionsRuntime({
           evaluationKind: "pass",
@@ -1803,6 +1814,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judgeUsage: deps.judgeUsage,
           judgePromptCache: deps.judgePromptCache,
           judgeTiming: deps.judgeTiming,
+          redactEvidenceText: deps.redactEvidenceText,
         });
   // Preserve the function identity: contextual Matches resolve their bound
   // receiver through this check, independently of JavaScript's call-site `this`.
@@ -1824,6 +1836,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
     skipReason: undefined,
   };
   const presets = judgePresetMethods(runtime.t.check);
+  const sensitiveValues = deps.sensitiveValues ?? new Set<string>();
   const readUsage = (): EvalUsage => {
     runtime.assertAuthoringOpen();
     return (
@@ -1876,6 +1889,10 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
     model: deps.model,
     reasoningEffort: deps.reasoningEffort,
     flags: deps.flags,
+    sensitiveValues: (...values: readonly string[]): void => {
+      runtime.assertAuthoringOpen();
+      registerAttemptSensitiveValues(sensitiveValues, values);
+    },
     progress: (update: import("../types.ts").ProgressUpdate) => {
       if (deps.feedback !== undefined) {
         deps.feedback.progress(update);
@@ -2179,7 +2196,9 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
         reason ??= "agent-history-segment-unavailable";
         continue;
       }
-      if (turn.observed.collectionAtCut !== "complete") reason ??= "agent-history-truncated";
+      // Registered values hide persisted rows, while the Judge uses live
+      // history. Retention limits and Adapter redaction still count as gaps.
+      if (segment.historyLimited) reason ??= "agent-history-truncated";
       const coverage = manager.observedTurnState(turn.observed)?.coverage;
       for (const channel of ["events", "messages", "actions"] as const) {
         if (coverage?.[channel].status !== "complete")
@@ -2737,10 +2756,12 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
                   deps.pricing,
                   deps.judgeTiming,
                   deps.judgePromptCache,
+                  deps.redactEvidenceText,
                 ),
               latchFailure: (error) => {
                 state.simulatedUserFailure ??= error;
               },
+              redact: deps.redactEvidenceText,
               capture: (activity) => deps.captureSimulatedUser?.(activity) ?? Promise.resolve(),
               onClose: (close) => {
                 simulatedUserCleanups.push(close);

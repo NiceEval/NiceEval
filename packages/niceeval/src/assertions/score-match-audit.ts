@@ -130,6 +130,8 @@ export type ImageScoreMatchAuditCall =
       readonly operation: ScoreMatchAuditCall["operation"];
       readonly state: "admitted";
       readonly requestTemplate: string;
+      /** When present, the original wire digest cannot be verified from the redacted template. */
+      readonly wireBodyVerification?: "unavailable-redacted-template";
       readonly wireBody: { readonly byteLength: number; readonly sha256: string };
       readonly attempts: readonly ScoreMatchAuditAttempt[];
       readonly result: Extract<ScoreMatchAuditCall, { readonly state: "admitted" }>["result"];
@@ -834,7 +836,17 @@ function validImageCall(
 ): boolean {
   const item = record(value);
   if (item?.state === "rejected") return validCall(value, ordinal);
-  const call = exact(value, ["ordinal", "operation", "state", "requestTemplate", "wireBody", "attempts", "result"]);
+  const verification = item?.wireBodyVerification;
+  const call = exact(value, [
+    "ordinal",
+    "operation",
+    "state",
+    "requestTemplate",
+    "wireBody",
+    "attempts",
+    "result",
+    ...(verification === "unavailable-redacted-template" ? ["wireBodyVerification"] : []),
+  ]);
   const wireBody = exact(call?.wireBody, ["byteLength", "sha256"]);
   if (
     call === undefined ||
@@ -879,7 +891,9 @@ function validImageCall(
   const normalized = { ...call, request: virtual } as Record<string, unknown>;
   delete normalized.requestTemplate;
   delete normalized.wireBody;
+  delete normalized.wireBodyVerification;
   if (!validCall(normalized, ordinal)) return false;
+  if (verification === "unavailable-redacted-template") return true;
   const actual = canonicalScoreMatchAuditJson({
     ...body,
     messages: body.messages.map((message, index) => (index === 1 ? { role: "user", content: parts } : message)),

@@ -144,6 +144,14 @@ root、Session 和 Turn 上的 `judge` 都要求显式传入材料。官方提�
 simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
 ```
 
+#### `sensitiveValues`
+
+```ts
+sensitiveValues(...values: readonly string[]): void;
+```
+
+登记当前 Attempt 后续封存证据需要隐藏的原文。每个值至少 8 个字符，实际发送内容保持原样。
+
 #### `note`
 
 ```ts

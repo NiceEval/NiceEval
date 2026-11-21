@@ -206,6 +206,7 @@ const ImageScoreMatchAuditSchema: Schema.Schema<ImageScoreMatchAudit> = Schema.S
         operation: Schema.Literals(["score", "classify", "extract", "batchClassify"]),
         state: Schema.Literal("admitted"),
         requestTemplate: Schema.String,
+        wireBodyVerification: Schema.optionalKey(Schema.Literal("unavailable-redacted-template")),
         wireBody: Schema.Struct({ byteLength: Schema.Number, sha256: Schema.String }),
         attempts: Schema.Array(AuditAttemptSchema),
         result: AuditCallSchema.members[1]!.fields.result,

@@ -12,6 +12,12 @@ import { fitJudgeContext, isJudgeContextOverflow } from "./judge-context-budget.
 import { Cause, Clock, Effect, Fiber, Predicate, Schema } from "effect";
 import { createHash } from "node:crypto";
 import type { AssertionMaterial, MeasurementAssertionEvaluation, MeasurementAssertionRegistration } from "./api.ts";
+import {
+  activeEvidenceRedactor,
+  mapEvidenceText,
+  redactJsonEvidence,
+  type RedactEvidenceText,
+} from "../sandbox/redaction.ts";
 import { captureFullAssertionSnapshot } from "./full-content.ts";
 import type {
   ManagedScoreMatchDefinition,
@@ -534,12 +540,16 @@ export function prepareManagedScoreMatch(input: {
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal | undefined;
   readonly promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
+  readonly redactEvidenceText?: RedactEvidenceText | undefined;
   readonly usage: import("../o11y/judge-usage.ts").JudgeUsageEntry | undefined;
 }): MeasurementAssertionRegistration & {
   readonly terminalEvidence: () => readonly AssertionMaterial[];
   readonly actualRetainedBytes: () => number;
 } {
-  const { options } = input;
+  const { options, redactEvidenceText } = input;
+  const redactJson = (value: string) => redactJsonEvidence(value, redactEvidenceText, canonical);
+  const redactAuditText = (value: string) =>
+    /^[{[]/u.test(value.trimStart()) ? redactJson(value) : (redactEvidenceText?.(value) ?? value);
   let deadlineAt = Infinity;
   const snapshot = snapshotJudgeMaterial(
     input.material as JudgeMaterial,
@@ -550,6 +560,12 @@ export function prepareManagedScoreMatch(input: {
   const images = snapshot.images;
   const captured = canonical(projectJudgeMaterial(material, imageByValue).json);
   const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }, Infinity).material;
+  const terminalSubject = () => {
+    const redacted = redactJson(captured);
+    return redacted === captured
+      ? subject
+      : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }, Infinity).material;
+  };
   const contextWindow =
     input.judge === undefined ? undefined : (input.judge.contextWindow ?? builtinContextWindow(input.judge.model));
   const definitionBase = {
@@ -606,7 +622,8 @@ export function prepareManagedScoreMatch(input: {
     };
   };
   const envelopeOf = (value: ScoreMatchAuditAny) => {
-    const encoded = canonical(value);
+    const redactedValue = activeEvidenceRedactor(redactEvidenceText) === undefined ? value : redactAudit(value);
+    const encoded = canonical(redactedValue);
     const chunks = chunkUtf8(encoded);
     return {
       manifest: {
@@ -615,6 +632,31 @@ export function prepareManagedScoreMatch(input: {
         chunkByteLengths: chunks.map(bytes),
       },
       content: chunks,
+    };
+  };
+  const redactAudit = (value: ScoreMatchAuditAny): ScoreMatchAuditAny => {
+    const redactDefinition = {
+      ...definitionBase,
+      config: redactJson(definitionBase.config),
+      version: redactAuditText(definitionBase.version),
+    };
+    const redacted = mapEvidenceText(value, redactEvidenceText === undefined ? undefined : redactAuditText);
+    if (redacted.kind === "images" && value.kind === "images") {
+      for (const [index, call] of redacted.calls.entries()) {
+        const original = value.calls[index];
+        if (call.state === "admitted" && original?.state === "admitted") {
+          Object.assign(call, {
+            wireBody: original.wireBody,
+            ...(call.requestTemplate === original.requestTemplate
+              ? {}
+              : { wireBodyVerification: "unavailable-redacted-template" }),
+          });
+        }
+      }
+    }
+    return {
+      ...redacted,
+      definition: { ...redactDefinition, digest: scoreMatchDefinitionDigest(redactDefinition) },
     };
   };
   const latch = (problem: ScoreMatchAuditFailure): ScoreMatchAuditFailure => {
@@ -1040,6 +1082,7 @@ export function prepareManagedScoreMatch(input: {
     criterion: { kind: "managed-score-measurement", name: options.name, scale: "unit-interval" },
     terminalCriterion: () => ({ kind: "managed-score-measurement", name: options.name, scale: "unit-interval" }),
     subject,
+    terminalSubject,
     retainedBytes: 0,
     retainedImageBytes: images.reduce((sum, image) => sum + image.byteLength, 0),
     evidence: images.map((image) => ({ kind: "judge-image" as const, image: image.image })),

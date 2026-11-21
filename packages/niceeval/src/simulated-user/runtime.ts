@@ -1,3 +1,9 @@
+import {
+  activeEvidenceRedactor,
+  mapEvidenceText,
+  redactJsonEvidence,
+  type RedactEvidenceText,
+} from "../sandbox/redaction.ts";
 import { JudgeTimingSpan } from "../judge/timing.ts";
 import {
   simulatedUserSystemPrompt,
@@ -33,6 +39,7 @@ export function createSimulatedUserConversation(
   pricing: Record<string, PriceOverride> | undefined,
   timing?: import("../runner/timing.ts").TimingRecorder,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
+  redact?: RedactEvidenceText,
 ): SimulatedUserConversation {
   let session: AgentSession | undefined;
   let prompt: Awaited<ReturnType<typeof createManagedPiSession>>["prompt"] | undefined;
@@ -50,7 +57,7 @@ export function createSimulatedUserConversation(
   const fail = (reason: string, cause?: unknown, diagnostic?: string) =>
     (failure ??= new SimulatedUserError("simulated-user-failed", reason, cause, diagnostic));
   const failPi = (error: PiFailure): SimulatedUserError => {
-    const diagnostic = safePiFailureMessage(error, profile);
+    const diagnostic = safePiFailureMessage(error, profile, redact);
     switch (error.kind) {
       case "dependency":
         return fail("pi-unavailable", error.cause ?? error, diagnostic);
@@ -74,7 +81,13 @@ export function createSimulatedUserConversation(
     }
   };
   const active = () => !closed && !submitted && !current?.signal.aborted && failure === undefined;
-  const snapshot = () => JSON.stringify(redactPiSessionEntries(sessionManager?.getEntries() ?? [], profile));
+  const snapshot = () => {
+    const entries = sessionManager?.getEntries() ?? [];
+    const active = activeEvidenceRedactor(redact);
+    const projected =
+      active === undefined ? entries : mapEvidenceText(entries, (value) => redactJsonEvidence(value, active));
+    return JSON.stringify(redactPiSessionEntries(projected, profile));
+  };
   const abort = () => {
     void session?.abort().catch(() => undefined);
   };

@@ -144,6 +144,14 @@ The `ScoreTestContext` of `defineScoreEval` also provides `t.score(n)`, which re
 simulatedUser(definition: SimulatedUserDefinition): SimulatedUser<Kind>;
 ```
 
+#### `sensitiveValues`
+
+```ts
+sensitiveValues(...values: readonly string[]): void;
+```
+
+Registers exact strings to hide in evidence sealed later in the Attempt. Each string must contain at least eight characters. Agents and models still receive the original content.
+
 #### `note`
 
 ```ts

@@ -19,6 +19,7 @@ export class AttemptBackgroundCommands {
     readonly options: CommandOptions | undefined;
     readonly attemptSignal: AbortSignal;
     readonly onChecked: () => void;
+    readonly diagnosticSensitiveValues: () => readonly string[];
     readonly run: (options: CommandOptions & { readonly signal: AbortSignal }) => Promise<CommandResult>;
   }): BackgroundCommand {
     if (this.closed) throw new Error("Attempt has closed admission for background Sandbox commands");

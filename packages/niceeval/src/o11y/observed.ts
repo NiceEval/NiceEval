@@ -1,3 +1,4 @@
+import { redactJsonEvidence, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import { randomBytes } from "node:crypto";
 
 import type { StreamEvent } from "./types.ts";
@@ -112,7 +113,7 @@ export interface ObservedAttemptCut {
 interface SessionCorrelationState {
   sequence: number;
   readonly openByOperationId: Map<string, ToolOccurrenceId>;
-  readonly openSubagentLabels: Map<string, SafeIdentifier>;
+  readonly openSubagentLabels: Map<string, string>;
   readonly ambiguousOperationIds: Set<string>;
   readonly finishedOperationIds: Set<string>;
 }
@@ -126,10 +127,12 @@ export interface ObservedTurnDraft {
 interface TurnDraftState {
   readonly sessionId: SessionScopeId;
   readonly turnId: TurnId;
+  readonly userEvent: Extract<StreamEvent, { readonly type: "message"; readonly role: "user" }>;
   readonly items: ObservedSourceEvent[];
   readonly evaluationItems: ObservedSourceEvent[];
   readonly evaluationEvents: StreamEvent[];
   readonly limitations: SourceReceiptLimitation[];
+  historyLimited: boolean;
   finalized: boolean;
 }
 
@@ -140,11 +143,13 @@ export interface ObservedEvaluationSegment {
   readonly items: readonly ObservedSourceEvent[];
   readonly events: readonly StreamEvent[];
   readonly collectionAtCut: "complete";
+  readonly historyLimited: boolean;
 }
 
 export interface ObservedEventIngestionOptions {
   /** Attempt-local secret replacement supplied by the owning runtime. */
-  readonly normalizeText?: ((value: string) => string) | undefined;
+  readonly normalizeText?: RedactEvidenceText | undefined;
+  readonly normalizeEvaluationText?: (() => RedactEvidenceText) | undefined;
 }
 
 const returnedTurnSnapshots = new WeakMap<object, ObservedTurnSnapshot>();
@@ -173,10 +178,12 @@ export class ObservedEventIngestionCorrelator {
   private readonly evaluationBySnapshot = new Map<ObservedTurnSnapshot, ObservedEvaluationSegment>();
   private retainedItems = 0;
   private startedTurns = 0;
-  private readonly normalizeText: (value: string) => string;
+  private readonly normalizeText: RedactEvidenceText;
+  private readonly normalizeEvaluationText: () => RedactEvidenceText;
 
   constructor(options: ObservedEventIngestionOptions = {}) {
     this.normalizeText = options.normalizeText ?? ((value) => value);
+    this.normalizeEvaluationText = options.normalizeEvaluationText ?? (() => this.normalizeText);
   }
 
   beginTurn(input: {
@@ -190,22 +197,24 @@ export class ObservedEventIngestionCorrelator {
     const state: TurnDraftState = {
       sessionId: input.sessionId,
       turnId: input.turnId,
+      userEvent: input.userEvent,
       items: [],
       evaluationItems: [],
       evaluationEvents: [],
       limitations: [],
+      historyLimited: false,
       finalized: false,
     };
     this.drafts.set(draft, state);
     this.startedTurns += 1;
     if (this.startedTurns > MAX_CONVERSATION_TURNS) {
+      state.historyLimited = true;
       this.limit(state, {
         code: "collection-cap-reached",
         target: "turn",
         omittedAtLeast: positive(1),
       });
     }
-    this.ingest(state, input.userEvent);
     return draft;
   }
 
@@ -214,6 +223,7 @@ export class ObservedEventIngestionCorrelator {
     if (state === undefined || state.finalized) {
       throw new Error("Observed event ingestion draft is unavailable or already sealed");
     }
+    this.ingest(state, state.userEvent);
     for (const event of adapterEvents) this.ingest(state, event);
     state.finalized = true;
     const session = this.session(state.sessionId);
@@ -231,6 +241,7 @@ export class ObservedEventIngestionCorrelator {
       turnId: state.turnId,
       items: state.evaluationItems,
       events: state.evaluationEvents,
+      historyLimited: state.historyLimited,
       collectionAtCut: "complete" as const,
     });
     this.drafts.delete(draft as object);
@@ -316,25 +327,51 @@ export class ObservedEventIngestionCorrelator {
     const unavailableText = unavailableTextValue();
 
     const textTruncations: Record<string, ObservedTextTruncation> = {};
-    const field = (name: string, read: () => SafeText): SafeText => {
-      const start = draft.limitations.length;
-      const value = read();
-      const omitted = draft.limitations
-        .slice(start)
-        .reduce(
-          (sum, limitation) => sum + (limitation.code === "text-truncated" ? limitation.replacementOrOmittedCount : 0),
-          0,
-        );
-      if (omitted > 0 || hasTruncation) {
-        const retainedBytes = utf8ByteLength(value);
-        textTruncations[name] = {
-          state: "truncated",
-          retainedBytes,
-          ...(hasTruncation ? {} : { originalBytes: retainedBytes + omitted }),
-        };
+    const evaluationTruncations: Record<string, ObservedTextTruncation> = {};
+    const normalizeEvaluationText = this.normalizeEvaluationText();
+    const evaluationFields: Record<string, string> = {};
+    const evaluation = { limitations: [] as SourceReceiptLimitation[] };
+    type Projection = Pick<TurnDraftState, "limitations">;
+    const project = <Value extends string>(
+      name: string,
+      read: (projection: Projection, normalizeText: (value: string) => string) => Value,
+      boundedText = false,
+    ): Value => {
+      function readField(
+        projection: Projection,
+        normalizeText: (value: string) => string,
+        truncations: Record<string, ObservedTextTruncation>,
+      ): Value {
+        const start = projection.limitations.length;
+        const value = read(projection, normalizeText);
+        if (!boundedText) return value;
+        const omitted = projection.limitations
+          .slice(start)
+          .reduce(
+            (sum, limitation) =>
+              sum + (limitation.code === "text-truncated" ? limitation.replacementOrOmittedCount : 0),
+            0,
+          );
+        if (omitted > 0 || hasTruncation) {
+          const retainedBytes = utf8ByteLength(value);
+          truncations[name] = {
+            state: "truncated",
+            retainedBytes,
+            ...(hasTruncation ? {} : { originalBytes: retainedBytes + omitted }),
+          };
+        }
+        return value;
       }
-      return value;
+      const recorded = readField(draft, this.normalizeText, textTruncations);
+      if (normalizeEvaluationText !== this.normalizeText) {
+        evaluationFields[name] = readField(evaluation, normalizeEvaluationText, evaluationTruncations);
+      }
+      return recorded;
     };
+    const field = (
+      name: string,
+      read: (projection: Projection, normalizeText: (value: string) => string) => SafeText,
+    ) => project(name, read, true);
     let observed: ObservedSourceEvent;
     switch (event.type) {
       case "message":
@@ -342,7 +379,9 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "message" as const,
           role: event.role,
-          text: field("text", () => this.text(unavailableText ?? event.text, draft)),
+          text: field("text", (projection, normalize) =>
+            this.text(unavailableText ?? event.text, projection, normalize),
+          ),
         };
         break;
       case "operation.started":
@@ -364,20 +403,26 @@ export class ObservedEventIngestionCorrelator {
             ...base,
             kind: "tool-start" as const,
             toolOccurrenceId,
-            tool: this.toolName(event.operation.name, draft),
-            inputSummary: field("inputSummary", () =>
-              unavailableText === undefined ? this.json(operation.input, draft) : this.text(unavailableText, draft),
+            tool: project("tool", (projection, normalize) => this.toolName(operation.name, projection, normalize)),
+            inputSummary: field("inputSummary", (projection, normalize) =>
+              unavailableText === undefined
+                ? this.json(operation.input, projection, normalize)
+                : this.text(unavailableText, projection, normalize),
             ),
           };
         } else {
-          const label = this.identifier(event.operation.name, draft);
-          session.openSubagentLabels.set(event.operationId, label);
+          const label = project("label", (projection, normalize) =>
+            this.identifier(event.operation.name, projection, normalize),
+          );
+          session.openSubagentLabels.set(event.operationId, event.operation.name);
           observed = {
             ...base,
             kind: "subagent" as const,
             state: "started" as const,
             label,
-            summary: field("summary", () => this.text(unavailableText ?? "Subagent started.", draft)),
+            summary: field("summary", (projection, normalize) =>
+              this.text(unavailableText ?? "Subagent started.", projection, normalize),
+            ),
           };
         }
         break;
@@ -396,10 +441,10 @@ export class ObservedEventIngestionCorrelator {
             session.openByOperationId.delete(event.operationId);
             session.finishedOperationIds.add(event.operationId);
           }
-          const outputSummary = () => {
-            if (unavailableText !== undefined) return this.text(unavailableText, draft);
-            if (event.output === undefined) return this.text("Output unavailable.", draft);
-            return this.json(event.output, draft);
+          const outputSummary = (projection: Projection, normalize: (value: string) => string) => {
+            if (unavailableText !== undefined) return this.text(unavailableText, projection, normalize);
+            if (event.output === undefined) return this.text("Output unavailable.", projection, normalize);
+            return this.json(event.output, projection, normalize);
           };
           observed = {
             ...base,
@@ -409,12 +454,13 @@ export class ObservedEventIngestionCorrelator {
             outputSummary: field("outputSummary", outputSummary),
           };
         } else {
-          const label = session.openSubagentLabels.get(event.operationId) ?? this.identifier(event.operationId, draft);
+          const rawLabel = session.openSubagentLabels.get(event.operationId) ?? event.operationId;
+          const label = project("label", (projection, normalize) => this.identifier(rawLabel, projection, normalize));
           session.openSubagentLabels.delete(event.operationId);
-          const outputSummary = () => {
-            if (unavailableText !== undefined) return this.text(unavailableText, draft);
-            if (event.output === undefined) return this.text(`Subagent ${event.status}.`, draft);
-            return this.json(event.output, draft);
+          const outputSummary = (projection: Projection, normalize: (value: string) => string) => {
+            if (unavailableText !== undefined) return this.text(unavailableText, projection, normalize);
+            if (event.output === undefined) return this.text(`Subagent ${event.status}.`, projection, normalize);
+            return this.json(event.output, projection, normalize);
           };
           observed = {
             ...base,
@@ -429,38 +475,46 @@ export class ObservedEventIngestionCorrelator {
         observed = {
           ...base,
           kind: "thinking-summary" as const,
-          summary: field("summary", () => this.text(unavailableText ?? event.text, draft)),
+          summary: field("summary", (projection, normalize) =>
+            this.text(unavailableText ?? event.text, projection, normalize),
+          ),
         };
         break;
       case "compaction":
         observed = {
           ...base,
           kind: "compaction" as const,
-          summary: field("summary", () => this.text(unavailableText ?? event.reason ?? "Context compacted.", draft)),
+          summary: field("summary", (projection, normalize) =>
+            this.text(unavailableText ?? event.reason ?? "Context compacted.", projection, normalize),
+          ),
         };
         break;
       case "context.injected":
         observed = {
           ...base,
           kind: "context-injection" as const,
-          summary: field("summary", () => this.text(unavailableText ?? event.text, draft)),
+          summary: field("summary", (projection, normalize) =>
+            this.text(unavailableText ?? event.text, projection, normalize),
+          ),
         };
         break;
       case "skill.loaded":
         observed = {
           ...base,
           kind: "skill-load" as const,
-          code: this.identifier(event.skill, draft),
-          summary: field("summary", () => this.text(unavailableText ?? "Skill loaded.", draft)),
+          code: project("code", (projection, normalize) => this.identifier(event.skill, projection, normalize)),
+          summary: field("summary", (projection, normalize) =>
+            this.text(unavailableText ?? "Skill loaded.", projection, normalize),
+          ),
         };
         break;
       case "input.requested": {
         const summary = event.request.prompt ?? event.request.display;
-        const promptSummary = () => {
-          if (unavailableText !== undefined) return this.text(unavailableText, draft);
-          if (summary !== undefined) return this.text(summary, draft);
-          if (event.request.input === undefined) return this.text("Input requested.", draft);
-          return this.json(event.request.input, draft);
+        const promptSummary = (projection: Projection, normalize: (value: string) => string) => {
+          if (unavailableText !== undefined) return this.text(unavailableText, projection, normalize);
+          if (summary !== undefined) return this.text(summary, projection, normalize);
+          if (event.request.input === undefined) return this.text("Input requested.", projection, normalize);
+          return this.json(event.request.input, projection, normalize);
         };
         observed = {
           ...base,
@@ -476,13 +530,29 @@ export class ObservedEventIngestionCorrelator {
           ...base,
           kind: "conversation-error" as const,
           code: requiredIdentifier("stream-error"),
-          summary: field("summary", () => this.text(unavailableText ?? event.message, draft)),
+          summary: field("summary", (projection, normalize) =>
+            this.text(unavailableText ?? event.message, projection, normalize),
+          ),
         };
         break;
     }
-    if (Object.keys(textTruncations).length > 0) observed = { ...observed, textTruncations };
-    draft.evaluationItems.push(observed);
-    draft.evaluationEvents.push(this.evaluationEvent(event));
+    const identicalProjection = normalizeEvaluationText === this.normalizeText;
+    const recorded = Object.keys(textTruncations).length === 0 ? observed : { ...observed, textTruncations };
+    draft.evaluationItems.push(
+      identicalProjection
+        ? recorded
+        : {
+            ...observed,
+            ...evaluationFields,
+            ...(Object.keys(evaluationTruncations).length === 0 ? {} : { textTruncations: evaluationTruncations }),
+          },
+    );
+    draft.historyLimited ||=
+      hasRedaction ||
+      hasTruncation ||
+      !retainInRecord ||
+      (identicalProjection ? draft.limitations.length > limitationStart : evaluation.limitations.length > 0);
+    draft.evaluationEvents.push(this.evaluationEvent(event, normalizeEvaluationText));
     if (!retainInRecord) {
       // Field-level limitations belong only to retained items. Matcher-only
       // material is attempt-local and the durable omission is represented by
@@ -494,17 +564,21 @@ export class ObservedEventIngestionCorrelator {
         omittedAtLeast: positive(1),
       });
     } else {
-      draft.items.push(observed);
+      draft.items.push(recorded);
       this.retainedItems += 1;
     }
   }
 
-  private evaluationEvent(event: StreamEvent): StreamEvent {
-    return deepFreezeMatcherValue(normalizeMatcherValue(event, this.normalizeText)) as StreamEvent;
+  private evaluationEvent(event: StreamEvent, normalizeText: RedactEvidenceText): StreamEvent {
+    return deepFreezeMatcherValue(normalizeMatcherValue(event, normalizeText)) as StreamEvent;
   }
 
-  private text(value: string, draft: TurnDraftState): SafeText {
-    const externallyNormalized = this.normalizeText(value);
+  private text(
+    value: string,
+    draft: Pick<TurnDraftState, "limitations">,
+    normalizeText: (value: string) => string,
+  ): SafeText {
+    const externallyNormalized = normalizeText(value);
     if (externallyNormalized !== value) {
       this.limit(draft, {
         code: "redacted",
@@ -541,8 +615,12 @@ export class ObservedEventIngestionCorrelator {
     return safe;
   }
 
-  private identifier(value: string, draft: TurnDraftState): SafeIdentifier {
-    const normalized = this.normalizeText(value);
+  private identifier(
+    value: string,
+    draft: Pick<TurnDraftState, "limitations">,
+    normalizeText: (value: string) => string,
+  ): SafeIdentifier {
+    const normalized = normalizeText(value);
     if (normalized !== value) {
       this.limit(draft, {
         code: "redacted",
@@ -560,10 +638,15 @@ export class ObservedEventIngestionCorrelator {
     return requiredIdentifier("unknown");
   }
 
-  private json(value: unknown, draft: TurnDraftState): SafeText {
+  private json(
+    value: unknown,
+    draft: Pick<TurnDraftState, "limitations">,
+    normalizeText: (value: string) => string,
+  ): SafeText {
     try {
       const encoded = JSON.stringify(value);
-      if (typeof encoded === "string") return this.text(encoded, draft);
+      if (typeof encoded === "string")
+        return this.text(encoded, draft, (value) => redactJsonEvidence(value, normalizeText));
     } catch {
       // The typed limitation below carries the lossy boundary.
     }
@@ -572,11 +655,15 @@ export class ObservedEventIngestionCorrelator {
       target: "turn-item",
       omittedAtLeast: positive(1),
     });
-    return this.text("Value unavailable.", draft);
+    return this.text("Value unavailable.", draft, normalizeText);
   }
 
-  private toolName(value: string, draft: TurnDraftState): SourceNativeToolName {
-    const normalized = this.normalizeText(value);
+  private toolName(
+    value: string,
+    draft: Pick<TurnDraftState, "limitations">,
+    normalizeText: (value: string) => string,
+  ): SourceNativeToolName {
+    const normalized = normalizeText(value);
     const controls = stripUnsafeControls(replaceInvalidSurrogates(normalized).value).value.replaceAll("\n", " ");
     const retained = retainUtf8Prefix(controls, MAX_SOURCE_NATIVE_TOOL_NAME_BYTES);
     const exact = makeSourceNativeToolName(retained.value);
@@ -607,7 +694,7 @@ export class ObservedEventIngestionCorrelator {
     return fallback;
   }
 
-  private limit(draft: TurnDraftState, limitation: SourceReceiptLimitation): void {
+  private limit(draft: Pick<TurnDraftState, "limitations">, limitation: SourceReceiptLimitation): void {
     if (limitation.code === "collection-cap-reached") {
       const index = draft.limitations.findIndex(
         (current) => current.code === limitation.code && current.target === limitation.target,

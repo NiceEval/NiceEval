@@ -1,3 +1,4 @@
+import { mapEvidenceText, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import { randomUUID } from "node:crypto";
 import type { TurnHandle } from "../context/types.ts";
 import type { InputRequest } from "../types.ts";
@@ -40,6 +41,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
     readonly deadlineAt: number | undefined;
     readonly createConversation: (definition: SimulatedUserDefinition) => SimulatedUserConversation;
     readonly latchFailure: (error: SimulatedUserError) => void;
+    readonly redact?: RedactEvidenceText | undefined;
     readonly capture: (activity: SimulatedUserActivity) => Promise<void>;
     readonly onClose: (close: () => Promise<void>) => void;
   },
@@ -72,10 +74,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         Math.max(1, deadlineAt - Date.now()),
       );
       const requests = turn.status === "waiting" ? turn.inputRequests : undefined;
-      const question = JSON.stringify({
-        reply: turn.reply,
-        inputRequests: requests,
-      });
+      const question = { reply: turn.reply, inputRequests: requests };
       const generations: SimulatedUserGeneration[] = [];
       let answer: SimulatedUserAnswer | undefined;
       let failure: SimulatedUserActivity["failure"] = null;
@@ -84,7 +83,7 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
         try {
           conversation ??= deps.createConversation(definition);
           await conversation.generate({
-            question,
+            question: JSON.stringify(question),
             requests,
             signal,
             generations,
@@ -131,9 +130,9 @@ export function bindSimulatedUser<Kind extends "pass" | "score">(
             sessionId: source.sessionId,
             sourceTurnId: source.turnId,
             targetTurnId: targetTurnId ?? null,
-            question,
+            question: JSON.stringify(mapEvidenceText(question, deps.redact)),
             conversation: (await conversation?.snapshot()) ?? "[]",
-            answer: answer === undefined ? null : JSON.stringify(answer),
+            answer: answer === undefined ? null : JSON.stringify(mapEvidenceText(answer, deps.redact)),
             startOffsetMs,
             durationMs: Math.max(0, deps.now() - startOffsetMs),
             failure,

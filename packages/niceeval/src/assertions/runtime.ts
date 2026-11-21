@@ -82,6 +82,7 @@ import {
   type ScoreMatch,
   type ToolMatch,
 } from "./match.ts";
+import { mapEvidenceText, type RedactEvidenceText } from "../sandbox/redaction.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { agentJudgeDefinitionOf, type AgentJudge, type AgentJudgeReview } from "./agent-judge-definition.ts";
 import { AgentJudgeSession } from "./agent-judge-gateway.ts";
@@ -207,6 +208,7 @@ interface AssertionEntry {
   readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
   readonly terminalDetail: () => AssertionSnapshotObject | undefined;
   readonly terminalEvidence: () => readonly AssertionMaterial[];
+  readonly terminalSubject?: (() => AssertionMaterial) | undefined;
   readonly terminalCriterion: () => AssertionCriterion;
   optionalConfigured: boolean;
   gateConfigured: boolean;
@@ -918,6 +920,7 @@ class AssertionsRuntimeImplementation {
   private readonly signal: AbortSignal | undefined;
   private readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   private readonly judgePromptCache: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
+  private readonly redactEvidenceText: RedactEvidenceText | undefined;
   private readonly judgeTiming: import("../runner/timing.ts").TimingRecorder | undefined;
   constructor(
     evaluationKind: AssertionEvaluationKind,
@@ -927,10 +930,12 @@ class AssertionsRuntimeImplementation {
     judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
     judgeTiming?: import("../runner/timing.ts").TimingRecorder,
     judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
+    redactEvidenceText?: RedactEvidenceText,
   ) {
     this.evaluationKind = evaluationKind;
     this.executeStop = executeStop;
     this.judge = judge;
+    this.redactEvidenceText = redactEvidenceText;
     this.signal = signal;
     this.judgeUsage = judgeUsage;
     this.judgeTiming = judgeTiming;
@@ -973,6 +978,7 @@ class AssertionsRuntimeImplementation {
       (index) => this.judgeUsage?.forEntry(index),
       this.judgeTiming,
       this.judgePromptCache,
+      this.redactEvidenceText,
     );
     const owner = { session, entries: [] as AssertionEntry[], concurrent: definition.concurrent };
     this.agentJudgeReviews.push(owner);
@@ -1068,6 +1074,7 @@ class AssertionsRuntimeImplementation {
               this.signal,
               this.judgeUsage?.forEntry(this.entries.length),
               this.judgePromptCache,
+              this.redactEvidenceText,
             );
           return materialExistenceRegistration(prepared);
         }
@@ -1078,6 +1085,7 @@ class AssertionsRuntimeImplementation {
           this.signal,
           this.judgeUsage?.forEntry(this.entries.length),
           this.judgePromptCache,
+          this.redactEvidenceText,
         );
       };
       const registration = contextualRegistration();
@@ -1231,6 +1239,7 @@ class AssertionsRuntimeImplementation {
           material: value,
           judge: this.judge,
           promptCache: this.judgePromptCache,
+          redactEvidenceText: this.redactEvidenceText,
           usage: this.judgeUsage === undefined ? undefined : this.judgeUsage.forEntry(this.entries.length),
           signal: this.signal,
         }),
@@ -1305,6 +1314,7 @@ class AssertionsRuntimeImplementation {
       terminalReceipt: definition.terminalReceipt,
       terminalCriterion: definition.terminalCriterion,
       terminalDetail: definition.terminalDetail,
+      terminalSubject: definition.terminalSubject,
       terminalEvidence: definition.terminalEvidence,
       evaluate: () =>
         Effect.suspend(definition.evaluate).pipe(
@@ -1702,6 +1712,7 @@ class AssertionsRuntimeImplementation {
       readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
       readonly terminalDetail: () => AssertionSnapshotObject | undefined;
       readonly terminalEvidence: () => readonly AssertionMaterial[];
+      readonly terminalSubject?: (() => AssertionMaterial) | undefined;
       readonly terminalCriterion: () => AssertionCriterion;
     } & (
       | { readonly kind: "direct-score"; readonly directScorePoints: number }
@@ -1740,6 +1751,7 @@ class AssertionsRuntimeImplementation {
       terminalReceipt: input.terminalReceipt,
       terminalDetail: input.terminalDetail,
       terminalEvidence: input.terminalEvidence,
+      terminalSubject: input.terminalSubject,
       terminalCriterion: input.terminalCriterion,
       optionalConfigured: false,
       gateConfigured: false,
@@ -2116,7 +2128,7 @@ class AssertionsRuntimeImplementation {
       groupPath: entry.display.groupPath,
     };
     const redacted = redactEqualitySubject(settlement, redactOperandText);
-    const subject = redacted?.material ?? entry.subject;
+    const subject = redacted?.material ?? entry.terminalSubject?.() ?? entry.subject;
     const material = redacted ?? this.materialFor(entry, settlement);
     function observedResult(settlement: EntrySettlement): SealedAssertionEntry["observed"] {
       if (entry.kind === "boolean") {
@@ -2235,7 +2247,7 @@ class AssertionsRuntimeImplementation {
     const baseDiagnostic = evidenceDiagnostic();
     const capturedDiagnostic =
       terminalDetail === undefined ? baseDiagnostic : { ...(baseDiagnostic ?? {}), ...terminalDetail };
-    const diagnostic = capturedDiagnostic;
+    const diagnostic = mapEvidenceText(capturedDiagnostic, this.redactEvidenceText);
     const receipt = entry.terminalReceipt() ?? settlement.receipt;
     switch (settlement.state) {
       case "matched":
@@ -2473,6 +2485,7 @@ export function createAssertionsRuntime(input: {
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
+  readonly redactEvidenceText?: RedactEvidenceText | undefined;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
@@ -2482,6 +2495,7 @@ export function createAssertionsRuntime(input: {
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
+  readonly redactEvidenceText?: RedactEvidenceText | undefined;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
@@ -2491,6 +2505,7 @@ export function createAssertionsRuntime(input: {
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
+  readonly redactEvidenceText?: RedactEvidenceText | undefined;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError('Assertions runtime evaluationKind must be "pass" or "score"');
@@ -2503,6 +2518,7 @@ export function createAssertionsRuntime(input: {
     input.judgeUsage,
     input.judgeTiming,
     input.judgePromptCache,
+    input.redactEvidenceText,
   );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }

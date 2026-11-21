@@ -130,6 +130,7 @@ import {
 import {
   commandDisplay,
   commandSensitiveValues,
+  createSensitiveTextRedactor,
   redactSensitiveEvidence,
   redactSensitiveText,
   rememberSensitiveValues,
@@ -601,9 +602,12 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
       // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
       // 调用方之前写入内存」)。
       const commands: CommandExitEvidence[] = [];
-      // CommandOptions.sensitiveValues 的 Attempt 级内存集合。值只供记录边界精确替换；最终
+      // Attempt 与命令登记的敏感值。值只供记录边界精确替换；最终
       // result 封口后集合随本次调用释放，不进入任何 artifact、指纹或 provider identity。
       const sensitiveValues = new Set<string>();
+      // Preserve the existing command normalization of evaluator inputs. Author
+      // registrations apply only to evidence and never to matcher/model inputs.
+      const commandValues = new Set<string>();
       // Package-internal only: the final EvalResult is weakly associated with this
       // capture after all Runner evidence is sealed. No public result field or
       // legacy artifact is used as a transport.
@@ -640,7 +644,10 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
         // DiagnosticInput.code、docs/feature/experiments/cli/README.md 的 WarningEvent)。
         const { origin: _authorOrigin, phase: _authorPhase, ...diagnosticData } = context ?? {};
         reportDiagnostic({
-          key: input.dedupeKey ?? `${input.code}:${encodeAttemptKey(identity)}`,
+          key:
+            input.dedupeKey === undefined
+              ? `${input.code}:${encodeAttemptKey(identity)}`
+              : redactSensitiveText(input.dedupeKey, sensitiveValues),
           code: input.code,
           severity: input.level,
           message,
@@ -1126,6 +1133,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   usage: adapterUsage,
                   judgeUsage,
                   judgePromptCache,
+                  sensitiveValues,
                   attachments: adapterAttachments,
                   executionTraces: adapterExecutionTraces,
                   signal,
@@ -1691,8 +1699,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         });
                       },
                       captureSimulatedUser: async (activity) => {
-                        simulatedUserActivities.push(activity);
-                        await captureSimulatedUserActivity(activity, adapterAttachments!, adapterExecutionTraces!);
+                        const sealed = redactSensitiveEvidence(activity, sensitiveValues);
+                        simulatedUserActivities.push(sealed);
+                        await captureSimulatedUserActivity(sealed, adapterAttachments!, adapterExecutionTraces!);
                       },
                       judgeUsage,
                       judgePromptCache,
@@ -1726,6 +1735,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       diagnostics,
                       commands,
                       sensitiveValues,
+                      commandValues,
                       observabilityRuntime,
                       materializedCase,
                       preparedBeforeCache: beforeCacheForAttempt(),
@@ -2121,6 +2131,7 @@ interface AdapterAttemptBodyInput {
   ) => void;
   readonly closeAuthoring: (reason: "attempt-sealing" | "attempt-interrupted") => void;
   readonly testCleanup: TestCleanupRegistration;
+  readonly sensitiveValues: Set<string>;
   readonly markAssertionsSealed: (sealed: SealedAttemptAssertions) => void;
 }
 
@@ -2174,6 +2185,8 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
       judgeUsage: input.judgeUsage,
       judgePromptCache: input.judgePromptCache,
       judgeTiming: recorder,
+      sensitiveValues: input.sensitiveValues,
+      redactEvidenceText: createSensitiveTextRedactor(input.sensitiveValues),
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
       model: a.run.model,
@@ -2680,8 +2693,9 @@ interface AttemptResources {
    * finally 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
   commands: CommandExitEvidence[];
-  /** `CommandOptions.sensitiveValues` 的 Attempt 级内存集合；只由命令包装写、结果封口读。 */
+  /** Attempt-local union of author and command registrations. */
   sensitiveValues: Set<string>;
+  commandValues: Set<string>;
   /** Private Observability capture; its final attachment facts are read only by the Record adapter. */
   observabilityRuntime: RunnerAttemptObservabilityRuntime;
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 Assert-first Context。 */
@@ -2982,6 +2996,7 @@ async function runAttemptBody(
     diagnostics,
     commands,
     sensitiveValues,
+    commandValues,
     observabilityRuntime,
     concurrencySlot,
     declareFailure,
@@ -3007,6 +3022,7 @@ async function runAttemptBody(
         getPhase,
         commands,
         sensitiveValues,
+        commandValues,
         res.deadlineAt,
         observabilityRuntime,
         signal,
@@ -3828,6 +3844,8 @@ async function runAttemptBody(
       plans: usesSandbox && transferPlans !== undefined && transferPlans.length > 0 ? transferPlans : undefined,
       sendOrdinal: () => evalSendOrdinal,
     });
+    const redactEvidenceText = createSensitiveTextRedactor(sensitiveValues);
+    const redactEvaluationText = createSensitiveTextRedactor(commandValues);
     const { context, state } = createAssertFirstEvalContext({
       onCleanup: onTestCleanup,
       captureSimulatedUser: res.captureSimulatedUser,
@@ -3848,6 +3866,8 @@ async function runAttemptBody(
       judgeUsage: res.judgeUsage,
       judgePromptCache: res.judgePromptCache,
       judgeTiming: recorder,
+      sensitiveValues,
+      redactEvidenceText,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
       pricing: config.pricing,
       flags: run.flags,
@@ -3916,7 +3936,9 @@ async function runAttemptBody(
           );
         },
         {
-          normalizeObservedText: (value: string) => redactSensitiveText(value, sensitiveValues),
+          normalizeObservedText: redactEvidenceText,
+          normalizeEvaluationText: () =>
+            sensitiveValues.size === commandValues.size ? redactEvidenceText : redactEvaluationText,
           onStart: (info: Parameters<NonNullable<NonNullable<SessionDeps["onTurn"]>["onStart"]>>[0]) => {
             beginRunnerPhysicalConversationTurn(observabilityRuntime, info.turnId, info.sessionScopeId);
             sourceCapture.onTurnStart(info);
@@ -4553,6 +4575,7 @@ function withCommandTiming(
   getPhase: () => LifecyclePhase | undefined,
   commands: CommandExitEvidence[],
   sensitiveValues: Set<string>,
+  commandValues: Set<string>,
   deadlineAt: number | undefined,
   observabilityRuntime: RunnerAttemptObservabilityRuntime,
   attemptSignal: AbortSignal,
@@ -4601,6 +4624,12 @@ function withCommandTiming(
     capture?: RunnerCommandCaptureHandle | undefined;
   };
 
+  const registerCommandValues = (options: CommandOptions | undefined): void => {
+    const values = commandSensitiveValues(options);
+    rememberSensitiveValues(commandValues, values);
+    rememberSensitiveValues(sensitiveValues, values);
+  };
+
   const wrap = async <T extends CommandResult>(
     cmd: string,
     args: readonly string[] | undefined,
@@ -4610,8 +4639,8 @@ function withCommandTiming(
     fn: () => Promise<T>,
     background?: BackgroundTiming,
   ): Promise<T> => {
-    rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
-    const display = commandDisplay(cmd, args, sensitiveValues);
+    registerCommandValues(opts);
+    const display = () => commandDisplay(cmd, args, sensitiveValues);
     const phase = getPhase() ?? "eval.run";
     // Register the command manifest capability before process launch. The
     // later result can only be attached through this opaque handle.
@@ -4637,7 +4666,7 @@ function withCommandTiming(
       background.capture = observabilityCommand;
       background.node = recorder.child(
         commandNode({
-          display,
+          display: display(),
           startOffsetMs,
           durationMs: 0,
           checked: false,
@@ -4655,7 +4684,7 @@ function withCommandTiming(
     const recordExit = (node: TimingActivity | undefined, result: CommandResult, checked: boolean): void => {
       const evidence = recordCommandExit(
         node,
-        display,
+        display(),
         result,
         checked,
         background === undefined ? (getPhase() ?? phase) : phase,
@@ -4669,7 +4698,7 @@ function withCommandTiming(
       const nonZero = exitCode !== 0;
       const node = recordTiming(
         commandNode({
-          display,
+          display: display(),
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           checked,
@@ -4693,7 +4722,7 @@ function withCommandTiming(
       // 与时间树节点同一份。记录边界是权威来源，provider 即使给过原始 command 也必须覆盖，
       // 不能让它从 CommandResult → assertion/error 旁路带出未脱敏文本。
       if (result !== null && typeof result === "object") {
-        return retainAssertionEvidence(result, display);
+        return retainAssertionEvidence(result, display());
       }
       return result;
     } catch (e) {
@@ -4712,7 +4741,7 @@ function withCommandTiming(
           : limit;
       const node = recordTiming(
         commandNode({
-          display,
+          display: display(),
           startOffsetMs,
           durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
           checked,
@@ -4758,8 +4787,11 @@ function withCommandTiming(
             exitCode: -1,
             startError: redactSensitiveText(e instanceof Error ? e.message : String(e), sensitiveValues),
           } as T,
-          display,
+          display(),
         );
+      }
+      if (e instanceof SandboxCommandExitError && sensitiveValues.size > 0) {
+        throw new SandboxCommandExitError(e.result, [...sensitiveValues]);
       }
       throw e;
     }
@@ -4771,10 +4803,11 @@ function withCommandTiming(
     invocationKind: "argv" | "shell",
     run: (opts: CommandOptions) => Promise<CommandResult>,
   ) => {
-    rememberSensitiveValues(sensitiveValues, commandSensitiveValues(options));
+    registerCommandValues(options);
     const background: BackgroundTiming = { checked: false };
     return backgroundCommands.start({
       command: commandDisplay(command, args, sensitiveValues),
+      diagnosticSensitiveValues: () => [...sensitiveValues],
       options,
       attemptSignal,
       onChecked: () => {

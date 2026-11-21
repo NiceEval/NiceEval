@@ -572,6 +572,8 @@ export interface BooleanAssertionRegistration<Refined> extends AssertionRegistra
 }
 
 export interface MeasurementAssertionRegistration extends AssertionRegistrationBase {
+  /** @internal Managed material projected with the evidence policy at seal time. */
+  readonly terminalSubject?: (() => AssertionMaterial) | undefined;
   /** Bytes synchronously reserved from an Attempt-local producer budget. */
   readonly retainedBytes: number;
   readonly retainedImageBytes: number;

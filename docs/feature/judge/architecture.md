@@ -478,6 +478,10 @@ requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonic
 按相同序列化规则还原发送正文并核对 wireBody。缺图、错位、伪引用、摘要不符均不可返回 available。
 旧数据在 Record 打开时拒绝。人读界面将 requestTemplate 明确呈现为模板，不冒充 wire 原文。
 
+登记的敏感值命中图片请求模板时，审计保存替换后的模板与真实发送字节的原始摘要。
+读取端继续验证图片及其引用，并以 `wireBodyVerification: "unavailable-redacted-template"` 说明模板已脱敏。
+摘要对应真实发送的字节，无法由脱敏模板复核。这个已声明的局限不使审计失效。
+
 ## 有界图片读回
 
 多模态 Assertion detail 只交付图片 metadata 与已解码审计；不重复展开 source/evidence 的

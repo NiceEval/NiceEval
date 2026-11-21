@@ -3,6 +3,7 @@ import { Effect, Predicate } from "effect";
 import type {
   AssertionCollectionReceipt,
   AssertionCriterion,
+  AssertionMaterial,
   AssertionSnapshotObject,
   BooleanAssertionRegistration,
   CapturedAssertionSnapshot,
@@ -31,7 +32,12 @@ import {
   toolMatcherQuery,
   eventMatcherQuery,
 } from "./collection.ts";
-import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
+import { redactJsonEvidence, type RedactEvidenceText } from "../sandbox/redaction.ts";
+import {
+  captureFullAssertionSnapshot,
+  fullAssertionContentByteLength,
+  fullAssertionContentOf,
+} from "./full-content.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
@@ -725,6 +731,14 @@ function registrationBase(prepared: PreparedBase, criterion: AssertionCriterion)
     retainedImageBytes: 0,
   };
 }
+function redactJudgeSource(prepared: PreparedBase, redact: RedactEvidenceText | undefined): AssertionMaterial {
+  const material = prepared.captured.material;
+  const source = fullAssertionContentOf(material);
+  if (source === undefined || redact === undefined) return material;
+  const replacement = redactJsonEvidence(source, redact);
+  return replacement === source ? material : captureFullAssertionSnapshot(JSON.parse(replacement)).material;
+}
+
 function valueCriterion(name: string) {
   return {
     kind: "value-match" as const,
@@ -817,6 +831,7 @@ export function materialQARegistration(
   signal?: AbortSignal,
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
+  redactEvidenceText?: RedactEvidenceText,
 ): MeasurementAssertionRegistration & {
   readonly actualRetainedBytes: () => number;
   readonly terminalCriterion: () => AssertionCriterion;
@@ -831,6 +846,7 @@ export function materialQARegistration(
     return {
       ...registrationBase(prepared, criterion),
       criterion,
+      terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
       actualRetainedBytes: () => prepared.sourceBytes,
       terminalReceipt: selected.terminal,
       terminalDetail: () =>
@@ -933,6 +949,7 @@ export function materialQARegistration(
       signal,
       usage,
       promptCache,
+      redactEvidenceText,
     });
     const evaluation = yield* gateway.evaluate();
     return { ...evaluation, receipt: selected.terminal() };
@@ -940,6 +957,7 @@ export function materialQARegistration(
   return {
     ...registrationBase(prepared, criterion),
     criterion,
+    terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
     terminalCriterion: () => gateway?.terminalCriterion?.() ?? gateway?.criterion ?? criterion,
     retainedBytes: prepared.sourceBytes,
     actualRetainedBytes: () => prepared.sourceBytes,
@@ -985,6 +1003,7 @@ export function contextScoreRegistration(
   signal?: AbortSignal,
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
+  redactEvidenceText?: RedactEvidenceText,
 ): MeasurementAssertionRegistration & { readonly actualRetainedBytes: () => number } {
   if (prepared.kind !== "context-score") throw new TypeError("Context Score registration requires a ScoreMatch");
   const match = prepared.match as ScoreMatch<unknown>;
@@ -1004,10 +1023,12 @@ export function contextScoreRegistration(
       signal,
       usage,
       promptCache,
+      redactEvidenceText,
     });
     return {
       ...registration,
       ...registrationBase(prepared, registration.criterion),
+      terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
       retainedBytes: prepared.sourceBytes,
       actualRetainedBytes: () => prepared.sourceBytes,
     };

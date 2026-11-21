@@ -3146,6 +3146,25 @@ export function renderAssertions(
       if (entries.length > 0) blocks.push({ kind: "keyValue", entries });
     }
     if (!("criterion" in entry)) continue;
+    const scoreAudit = entry.scoreMatchAudit;
+    if (
+      scoreAudit?.state === "available" &&
+      scoreAudit.audit.kind === "images" &&
+      scoreAudit.audit.calls.some(
+        (call) => call.state === "admitted" && call.wireBodyVerification === "unavailable-redacted-template",
+      )
+    ) {
+      blocks.push({
+        kind: "keyValue",
+        entries: [
+          {
+            key: "Request audit",
+            value:
+              "The template was redacted. The digest identifies the original bytes sent and cannot be verified from the template.",
+          },
+        ],
+      });
+    }
     const agentAudit = entry.agentJudgeAudit;
     if (agentAudit?.state === "available") {
       blocks.push({

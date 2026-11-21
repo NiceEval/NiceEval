@@ -266,6 +266,7 @@
   "test-context/evaluationKind": "",
   "test-context/send": "",
   "test-context/simulatedUser": "",
+  "test-context/sensitiveValues": "Registers exact strings to hide in evidence sealed later in the Attempt. Each string must contain at least eight characters. Agents and models still receive the original content.",
   "test-context/sendFile": "",
   "test-context/requireInputRequest": "",
   "test-context/respond": "",

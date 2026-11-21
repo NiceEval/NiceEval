@@ -268,6 +268,7 @@ export interface SessionDeps {
         }) => void;
         /** Attempt-local secret replacement used before observed rows are sealed. */
         readonly normalizeObservedText: (value: string) => string;
+        readonly normalizeEvaluationText?: (() => (value: string) => string) | undefined;
       })
     | undefined;
   /** 当前实验的 ID(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
@@ -354,6 +355,7 @@ export class SessionManager {
     this.evidenceCoverage = this.agentEvidenceCoverage;
     this.observedIngestion = new ObservedEventIngestionCorrelator({
       normalizeText: deps.onTurn?.normalizeObservedText,
+      normalizeEvaluationText: deps.onTurn?.normalizeEvaluationText,
     });
     this.primary = this.newSession();
   }
