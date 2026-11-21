@@ -1053,6 +1053,8 @@ Missing sources 下写出来源与原因短语，同类原因聚合计数。reas
 明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
 
 `show @<locator> usage` 区分模型配置、实际调用、应用费用、Judge 缺口与总费用已知小计。
+Application usage 并列显示物理调用缓存率和 `Cached input share (turn-observed)`。JSON 字段分别为 `cacheRead` 与 `turnCacheRead`。
+Turn 占比标明覆盖数，列出缺桶的 Turn 与桶名。物理调用缓存率缺账本时说明所需证据。
 单模型保持简洁摘要；多模型按用途逐行列配置模型、effort 和 recordedCalls，另表列实际 serving provider、model、调用数、tokens 与费用完整度。
 只有全账本 recordedCalls 为 0 才标 no recorded calls；费用未知不显示成零，未调用配置不制造用量快照。
 

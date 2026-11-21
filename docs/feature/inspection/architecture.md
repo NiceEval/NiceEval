@@ -191,6 +191,9 @@ cacheRead 与 [Adapter Library](../adapters/library/README.md#缓存读取率) �
 该报告不受 64 组旧预览限制；完整性由生产者 seal 声明单独判断，旧版账本不推断完整。
 attempt.usage 的最终响应预算为 16 MiB，超限返回 evidence-budget-exceeded，不截断 cacheRead 分组。
 
+`turnCacheRead` 从同一 Attempt 已封存的 Turn 观测计算，包含 `basis`、`state`、`value`、`reason`、`coveredTurns` 与 `missingTurns`。
+它读取完整封存的观测，不受 `turns` 与 `observations` 预览上限影响。公式及缺失规则见 [Adapter Library](../adapters/library/README.md#缓存读取率)。
+
 Agent 为 reported-sends 与 physical-call-identity-not-recorded，不把配置模型或 Adapter 名称当作实际物理事实。
 
 judgeUsage 读取同一 origin Attempt 的独立物理调用账本；旧缺源为 unavailable，完整空账本为已知零调用，指标完整性独立于调用集合完整性。

@@ -897,6 +897,89 @@ describe("CLI show failed equality", () => {
   });
 });
 
+describe("CLI show cache usage from reported Turns", () => {
+  let cwd: string;
+  let locators: ReadonlyMap<string, string>;
+  const cases = {
+    complete: ["small", "large"],
+    partial: ["small", "cached-only", "input-only"],
+    "only-incomplete": ["cached-only"],
+    missing: ["output-only"],
+    zero: ["zero"],
+  };
+
+  beforeAll(async () => {
+    cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-show-turn-usage-"));
+    await Promise.all(["evals", "experiments"].map((dir) => mkdir(join(cwd, dir))));
+    await Promise.all([
+      writeFile(join(cwd, "package.json"), '{"type":"module"}'),
+      ...Object.entries(cases).map(([id, turns]) => writeFile(join(cwd, "evals", `${id}.eval.ts`), `
+        import { defineEval } from "niceeval";
+        export default defineEval({ async test(t) {
+          for (const name of ${JSON.stringify(turns)}) await t.send(name);
+        } });`)),
+      writeFile(join(cwd, "experiments", "turn-usage.ts"), `
+        import { defineExperiment } from "niceeval";
+        import { defineAgent, completeEvidenceCoverage } from "niceeval/adapter";
+        const usage = {
+          small: { inputTokens: 1, cacheReadTokens: 3, requests: 2 },
+          large: { inputTokens: 5, cacheReadTokens: 1 },
+          "cached-only": { cacheReadTokens: 100 },
+          "input-only": { inputTokens: 200 },
+          "output-only": { outputTokens: 1 },
+          zero: { inputTokens: 0, cacheReadTokens: 0 },
+        };
+        const agent = defineAgent({ name: "turn-buckets", evidenceCoverage: completeEvidenceCoverage,
+          send: async (input) => ({ status: "completed", events: [], usage: usage[input.text] }) });
+        export default defineExperiment({ adapter: agent, evals: ${JSON.stringify(Object.keys(cases))} });`),
+    ]);
+    const run = await runProjectExperiment(cwd, "turn-usage");
+    locators = await publishedSlotLocators(cwd, run.receipt.createdRunIds[0]!);
+  }, 30_000);
+
+  afterAll(async () => {
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md#same-command-json
+  test("show reports a token-weighted observed share and names the incomplete Turns", async () => {
+    const ids = ["complete", "partial", "only-incomplete", "missing", "zero"] as const;
+    await fc.assert(fc.asyncProperty(fc.constantFrom(...ids), async (id) => {
+      const args = ["show", locators.get(id)!, "usage"];
+      const json = await runCli(cwd, [...args, "--json"]);
+      expect(json.code, json.stderr).toBe(0);
+      const [document] = decodeNdjson(json.stdout);
+      if (document?.outcome !== "success" || document.operation !== "attempt.usage") throw new Error("Missing usage");
+      const { usage } = document;
+      expect(usage.cacheRead.total.rate).toEqual({ state: "unavailable", reason: "adapter-usage-required" });
+      const secondTurn = usage.turns[1]?.turnId;
+      const thirdTurn = usage.turns[2]?.turnId;
+      const expected = {
+        complete: { state: "complete", value: 0.4, coveredTurns: 2, missingTurns: [] },
+        partial: { state: "partial", value: 0.75, coveredTurns: 1, missingTurns: [
+          { turnId: secondTurn, buckets: ["input"] }, { turnId: thirdTurn, buckets: ["cache-read"] },
+        ] },
+        "only-incomplete": { state: "partial", value: null, coveredTurns: 0, missingTurns: [
+          { turnId: usage.turns[0]?.turnId, buckets: ["input"] },
+        ] },
+        missing: { state: "unavailable", value: null, reason: "no-token-buckets" },
+        zero: { state: "unavailable", value: null, reason: "zero-observed-input" },
+      }[id];
+      expect(Reflect.get(usage, "turnCacheRead")).toMatchObject({ basis: "turn-observed", ...expected });
+      const human = await runCli(cwd, args);
+      expect(human.code, human.stderr).toBe(0);
+      expect(human.stdout).toContain("turn-observed");
+      if (id === "complete") expect(human.stdout).toContain("40.00%");
+      if (id === "partial") {
+        expect(human.stdout).toContain("75.00%");
+        expect(human.stdout).toContain(secondTurn!);
+        expect(human.stdout).toContain(thirdTurn!);
+      }
+    }), { examples: ids.map((id) => [id]), numRuns: ids.length });
+  });
+});
+
 describe("CLI show current project and historical deltas", () => {
   let cwd: string;
 

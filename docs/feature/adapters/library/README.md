@@ -653,6 +653,13 @@ attempt.usage 使用专属 16 MiB 响应预算，容纳 4000 组各身份最大 
 
 没有 Adapter 账本时 total unavailable，两个分组数组为空；revision 1–3 缺少生产者明确 seal 声明，即使原 collection 为 complete，也保留 collection-incomplete。当前 revision 4 由读取边界传递完整性声明，Library collector 使用当前 seal 状态。
 
+只有 Turn 用量的 Adapter 也需要能发现缓存行为变化。`attempt.usage.turnCacheRead` 用已封存的 Turn token 桶计算缓存输入占比，`basis` 为 `turn-observed`。
+它对 `input` 和 `cache-read` 都有观测的 Turn 求 `Σ cache-read / (Σ input + Σ cache-read)`，两桶互斥。
+这个占比衡量观察到的 token。逐请求命中率和物理调用数需要各自的调用证据。
+
+至少有一个相关桶时，缺桶的 Turn 使结果为 `partial`，每条缺口列出 `turnId` 与缺少的桶。采集不完整也标为 `partial`。
+没有任何相关桶时为 `unavailable`。没有正且可安全表示的分母时，数值为 `null`，并保留状态与原因。
+
 ```ts
 t.check(t.usage.cacheRead.rate("mind"), atLeast(ratio(0.6))).gate();
 ```

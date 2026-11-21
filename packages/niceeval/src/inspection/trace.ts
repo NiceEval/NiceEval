@@ -1164,7 +1164,8 @@ export function projectAttemptUsage(
   attachments: Pick<AttemptTraceAttachments, "models" | "adapterUsage" | "judgeUsage" | "attemptCost" | "agentTurns">,
   models: ModelRolesWire | undefined = attachments.models,
 ): InspectionAttemptUsageResult {
-  const usage = projectApplicationUsage(attachments, models);
+  const turns = readInspectionAgentTurns(attachments.agentTurns);
+  const usage = projectApplicationUsage(attachments, models, turns);
   const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
   const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.judgeUsage, attachments.judgeUsage);
   function judgeUsage() {
@@ -1181,6 +1182,7 @@ export function projectAttemptUsage(
   const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
   return {
     ...usage,
+    turnCacheRead: projectTurnCacheRead(turns),
     judgeUsage: judgeUsage(),
     totalCosts: projectTotalUsageCosts(
       usage.totals,
@@ -1199,7 +1201,8 @@ export function projectAttemptUsage(
 export function projectApplicationUsage(
   attachments: Pick<AttemptTraceAttachments, "adapterUsage" | "agentTurns">,
   models: ModelRolesWire | undefined,
-): Omit<InspectionAttemptUsageResult, "judgeUsage" | "totalCosts"> {
+  agentTurns?: InspectionAgentTurnsRead,
+): Omit<InspectionAttemptUsageResult, "judgeUsage" | "totalCosts" | "turnCacheRead"> {
   if (attachments.adapterUsage !== undefined) {
     const read = readAdapterUsageAttachment(attachments.adapterUsage, models);
     const modelUsage = projectAdapterModelUsage(read.state === "available" ? read.value : undefined, models, {
@@ -1308,7 +1311,7 @@ export function projectApplicationUsage(
       hasMore: all.length > 128,
     };
   }
-  const read = readAgentTurns(attachments.agentTurns);
+  const read = agentTurns ?? readInspectionAgentTurns(attachments.agentTurns);
   const usage = projectUsage(read);
   function modelUsageReason() {
     if (read.state === "invalid") return "source-invalid" as const;
@@ -1322,6 +1325,65 @@ export function projectApplicationUsage(
       reason: modelUsageReason(),
     }),
   };
+}
+
+/** Fold the sealed observations before applying the CLI's Turn and observation preview limits. */
+function projectTurnCacheRead(read: InspectionAgentTurnsRead): InspectionAttemptUsageResult["turnCacheRead"] {
+  type Summary = InspectionAttemptUsageResult["turnCacheRead"];
+  const missingTurns: Summary["missingTurns"][number][] = [];
+  const result = (state: Summary["state"], reason: Summary["reason"], value: number | null = null): Summary => ({
+    basis: "turn-observed",
+    state,
+    value,
+    reason,
+    coveredTurns,
+    missingTurns,
+  });
+  let coveredTurns = 0;
+  if (read.state !== "available") {
+    return result("unavailable", read.state === "invalid" ? "source-invalid" : "no-token-buckets");
+  }
+
+  let cached = 0;
+  let input = 0;
+  let observed = false;
+  let incomplete = read.value.collection.limitations.some(
+    ({ target }) => target === "turn" || USAGE_TARGETS.has(target),
+  );
+  for (const turn of read.value.segments) {
+    let turnInput: number | undefined;
+    let turnCached: number | undefined;
+    for (const observation of turn.usage) {
+      if (observation.kind !== "token-bucket") continue;
+      if (observation.bucket === "input") turnInput = (turnInput ?? 0) + observation.tokens;
+      if (observation.bucket === "cache-read") turnCached = (turnCached ?? 0) + observation.tokens;
+    }
+    if (turnInput !== undefined || turnCached !== undefined) observed = true;
+    if (turn.terminal.state === "unavailable" || turn.terminal.evidenceCoverage.usage.status !== "complete")
+      incomplete = true;
+    if (turnInput === undefined || turnCached === undefined) {
+      const buckets: Summary["missingTurns"][number]["buckets"][number][] = [];
+      if (turnInput === undefined) buckets.push("input");
+      if (turnCached === undefined) buckets.push("cache-read");
+      missingTurns.push({ turnId: turn.turnId, buckets });
+      continue;
+    }
+    input += turnInput;
+    cached += turnCached;
+    coveredTurns++;
+  }
+  if (!observed) {
+    missingTurns.length = 0;
+    return result("unavailable", "no-token-buckets");
+  }
+  const denominator = input + cached;
+  const partial = missingTurns.length > 0 || incomplete;
+  if (!Number.isSafeInteger(denominator)) return result(partial ? "partial" : "unavailable", "unsafe-token-total");
+  const value = denominator === 0 ? null : cached / denominator;
+  if (missingTurns.length > 0) return result("partial", "missing-token-buckets", value);
+  if (incomplete) return result("partial", "collection-incomplete", value);
+  if (value === null) return result("unavailable", "zero-observed-input");
+  return result("complete", null, value);
 }
 
 export function projectAdapterUsageTokens(
@@ -1349,7 +1411,10 @@ export function projectAdapterUsageTokens(
 
 function projectUsage(
   agentTurns: ReturnType<typeof readAgentTurns>,
-): Omit<InspectionAttemptUsageResult, "configuredModels" | "modelGroups" | "judgeUsage" | "totalCosts" | "cacheRead"> {
+): Omit<
+  InspectionAttemptUsageResult,
+  "configuredModels" | "modelGroups" | "judgeUsage" | "totalCosts" | "cacheRead" | "turnCacheRead"
+> {
   const sourceState = availability(agentTurns, USAGE_TARGETS);
   if (agentTurns.state !== "available") {
     return {

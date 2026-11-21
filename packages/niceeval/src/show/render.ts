@@ -2444,7 +2444,11 @@ function cacheReadBlocks(
     summary.rate.state === "exact" ? `${(summary.rate.value * 100).toFixed(2)}%` : "Unavailable",
     `${summary.coveredCalls}/${summary.recordedCalls}`,
     summary.collectionComplete ? "Complete" : "Incomplete",
-    summary.reasons.map(factPhrase).join(", ") || "—",
+    summary.reasons
+      .map((reason) =>
+        reason === "adapter-usage-required" ? "Adapter physical call ledger required" : factPhrase(reason),
+      )
+      .join(", ") || "—",
   ];
   return [
     { meta: undefined, attachNext: false, kind: "divider", title: "Cache read rate" },
@@ -2476,7 +2480,6 @@ function modelUsageBlocks(
   value: Pick<UsageView, "configuredModels" | "modelGroups" | "totalCosts"> & {
     readonly judgeUsage: import("../inspection/results.ts").JudgeUsageSummary;
   },
-  cacheRead?: import("../o11y/cache-read.ts").CacheReadReport,
 ): readonly TerminalPanelContentBlock[] {
   const configured = value.configuredModels;
   const groups = value.modelGroups;
@@ -2524,7 +2527,6 @@ function modelUsageBlocks(
     ];
   }
   return [
-    ...cacheReadBlocks(cacheRead),
     { meta: undefined, attachNext: false, kind: "divider", title: "Configured model roles" },
     ...configurationBlocks(),
     { meta: undefined, attachNext: false, kind: "divider", title: "Actual model usage" },
@@ -2590,6 +2592,35 @@ function modelUsageBlocks(
   ];
 }
 
+function turnCacheReadBlocks(summary: UsageView["turnCacheRead"]): readonly TerminalPanelContentBlock[] {
+  return [
+    { meta: undefined, attachNext: false, kind: "divider", title: "Cached input share (turn-observed)" },
+    {
+      kind: "keyValue",
+      entries: [
+        {
+          key: "Share",
+          value:
+            summary.value === null
+              ? factPhrase(summary.state)
+              : `${(summary.value * 100).toFixed(2)}% (${summary.state})`,
+        },
+        {
+          key: "Basis",
+          value:
+            "turn-observed input token buckets. This share measures tokens, with no inference about physical requests or their hit rate.",
+        },
+        { key: "Covered Turns", value: String(summary.coveredTurns) },
+        ...(summary.reason === null ? [] : [{ key: "Reason", value: factPhrase(summary.reason) }]),
+        ...summary.missingTurns.map(({ turnId, buckets }) => ({
+          key: "Missing buckets",
+          value: `${turnId}: ${buckets.join(", ")}`,
+        })),
+      ],
+    },
+  ];
+}
+
 export function renderUsage(value: UsageView): string {
   return terminal([
     {
@@ -2633,7 +2664,9 @@ export function renderUsage(value: UsageView): string {
             },
           ],
         },
-        ...modelUsageBlocks(value, value.cacheRead),
+        ...cacheReadBlocks(value.cacheRead),
+        ...turnCacheReadBlocks(value.turnCacheRead),
+        ...modelUsageBlocks(value),
         { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
         {
           kind: "table",

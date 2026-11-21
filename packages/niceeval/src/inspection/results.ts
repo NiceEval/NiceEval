@@ -1333,8 +1333,31 @@ const UsageTotalsSchema = Schema.Struct({
   ),
   costs: Schema.optional(EffectiveCostTotalSchema),
 });
+const TurnCacheReadSchema = Schema.Struct({
+  basis: Schema.Literal("turn-observed"),
+  state: Schema.Literals(["complete", "partial", "unavailable"]),
+  value: Schema.NullOr(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  reason: Schema.NullOr(
+    Schema.Literals([
+      "source-invalid",
+      "no-token-buckets",
+      "missing-token-buckets",
+      "collection-incomplete",
+      "zero-observed-input",
+      "unsafe-token-total",
+    ]),
+  ),
+  coveredTurns: NonNegativeSafeIntegerSchema,
+  missingTurns: Schema.Array(
+    Schema.Struct({
+      turnId: TurnIdSchema,
+      buckets: Schema.Array(Schema.Literals(["input", "cache-read"])),
+    }),
+  ),
+});
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
   cacheRead: CacheReadReportSchema,
+  turnCacheRead: TurnCacheReadSchema,
   configuredModels: ConfiguredModelsSchema,
   modelGroups: ModelGroupsSchema,
   judgeUsage: JudgeUsageSchema,
