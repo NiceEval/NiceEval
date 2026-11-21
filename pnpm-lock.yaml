@@ -209,6 +209,9 @@ importers:
       effect:
         specifier: 4.1.4
         version: 4.1.4
+      emulate:
+        specifier: 0.14.0
+        version: 0.14.0
       execa:
         specifier: 10.2.1
         version: 10.2.1
@@ -3899,6 +3902,10 @@ packages:
 
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
+
+  emulate@0.14.0:
+    resolution: {integrity: sha512-mlM/PJ34ynD2OTGVBvy+8/F7gEDwkHWmpqLG/JetaDmaqifkHtCw2VMmXTKBy6Zwa5yvCziLvyyvmAoVeuPZoA==}
+    hasBin: true
 
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
@@ -8776,6 +8783,12 @@ snapshots:
   emoji-regex@10.6.0: {}
 
   emoji-regex@8.0.0: {}
+
+  emulate@0.14.0:
+    dependencies:
+      commander: 14.0.3
+      picocolors: 1.1.1
+      yaml: 2.9.1
 
   encodeurl@2.0.0: {}
 
