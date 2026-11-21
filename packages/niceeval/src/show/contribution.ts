@@ -24,6 +24,7 @@ import {
   type InspectionOperationFor,
   type InspectionSuccessDocumentFor,
 } from "../inspection/index.ts";
+import { selectInspectionAttemptSummary } from "../inspection/select.ts";
 import { ExperimentIdSchema, RunIdSchema } from "../record/codec/identifiers.ts";
 import { parseAttemptLocator } from "../attempt-locator.ts";
 import { ProjectConfiguration } from "../cli/project-configuration.ts";
@@ -302,7 +303,11 @@ function runShow(
                       }),
                   ),
                 );
-                return yield* openCurrentProjectSource({ cwd: facts.cwd, config });
+                return yield* openCurrentProjectSource({
+                  cwd: facts.cwd,
+                  config,
+                  ...(currentExperimentRead ? { experimentIds } : {}),
+                });
               })
             : openInspectionSource(inspectionSource);
         const opened = yield* prepare.pipe(Effect.mapError((cause) => failure("open Record source", cause)));
@@ -865,14 +870,12 @@ function runShow(
             const document = yield* select("project.get", () =>
               selectInspectionOperation(opened, { kind: "project.get", experimentIds }),
             );
-            const references = new Map<string, InspectionSuccessDocumentFor<"attempt.get">["attempt"]>();
+            const references = new Map<string, ReturnType<typeof selectInspectionAttemptSummary>>();
             for (const slot of document.project.plannedAttempts) {
               if (slot.state !== "gap" || slot.previous === null || references.has(slot.previous.locator)) continue;
               const locator = slot.previous.locator;
-              const attempt = yield* select("attempt.get", () =>
-                selectInspectionOperation(opened, { kind: "attempt.get", locator }),
-              );
-              references.set(locator, attempt.attempt);
+              const attempt = yield* select("attempt.get", () => selectInspectionAttemptSummary(opened, locator));
+              references.set(locator, attempt);
             }
             rendered.push(renderCurrentExperimentNeedsRun(document.project, references));
           }

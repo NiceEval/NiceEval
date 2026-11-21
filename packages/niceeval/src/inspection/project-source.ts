@@ -8,6 +8,7 @@ import { prepareCurrentTarget, assessCurrentTarget } from "../experiment/host/cu
 import { acquireProjectRecordReadSession, openHostOwnedRecordReadSession } from "../record/sqlite/index.ts";
 import { hydrateRecordAttachmentCurrent } from "../record/attachment/protocol.ts";
 import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
+import type { IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
 import { recordIssue } from "../record/errors/record-errors.ts";
 import type { Config } from "../runner/types.ts";
 import type { CurrentAssessmentRun } from "../runner/reuse-plan.ts";
@@ -36,7 +37,9 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
   readonly config: Config;
   readonly recordPath?: string;
   readonly freshImport?: boolean;
+  readonly experimentIds?: readonly string[];
 }) {
+  const target = yield* prepareCurrentTarget({ cwd: input.cwd, config: input.config, freshImport: input.freshImport });
   const root = resolve(input.cwd, ".niceeval");
   const recordPath = input.recordPath;
   let source: InspectionFactSource;
@@ -56,6 +59,7 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
             }),
             (opened) => Effect.sync(() => opened.close()),
           );
+    session.beginOperation();
     const publication = session.publicationCutoff();
     const cutoff = { ...publication, identity: publicationCutoffIdentity(publication) };
     source = {
@@ -90,8 +94,9 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
       afterRunId = page.nextAfterRunId;
     }
   }
-  const target = yield* prepareCurrentTarget({ cwd: input.cwd, config: input.config, freshImport: input.freshImport });
   const runs = yield* Effect.try({ try: () => loadInspectionRuns(source), catch: inspectionSourceError });
+  const runsById = new Map(runs.map((run) => [run.run.runId, run]));
+  const manifestsByRun = new Map<string, ReadonlyMap<string, IdentityManifestEntry>>();
   const publishedAttemptIds = new Map(
     runs.map((run) => [
       run.run.runId,
@@ -142,7 +147,12 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
   });
   const lifecycleRuns = yield* mergeCurrentAssessmentRuns(assessmentRuns, resources);
   type Attempt = Ref & CurrentAssessmentAttempt;
-  const assessments = yield* assessCurrentTarget<Ref, Attempt, CurrentResultSource, Error>(target, {
+  const experimentIds = input.experimentIds === undefined ? undefined : new Set(input.experimentIds);
+  const assessedTarget =
+    experimentIds === undefined
+      ? target
+      : { ...target, slots: target.slots.filter(({ experimentId }) => experimentIds.has(experimentId)) };
+  const assessments = yield* assessCurrentTarget<Ref, Attempt, CurrentResultSource, Error>(assessedTarget, {
     runs: lifecycleRuns,
     byRunId: new Map(lifecycleRuns.map((run) => [run.document.runId, run])),
     selectionHasProblem: false,
@@ -184,21 +194,28 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
     readIdentityComparison: (run, current) =>
       Effect.try({
         try: () => {
-          const loaded = runs.find((loaded) => loaded.run.runId === run.document.runId);
-          const definition = NiceEvalRecordAttachments.identityManifests;
-          const attachment = loaded === undefined ? undefined : runAttachment(loaded, definition.family);
-          const decoded =
-            attachment === undefined ||
-            attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.identityManifests.revision
-              ? undefined
-              : hydrateRecordAttachmentCurrent(definition, attachment.value, {
-                  content: () => Result.succeed(undefined),
-                  reference: () => Result.succeed(undefined),
-                });
-          const historical =
-            decoded !== undefined && Result.isSuccess(decoded)
-              ? decoded.success.entries.find((entry) => entry.evalId === current.evalId)
-              : undefined;
+          const runId = run.document.runId;
+          const loaded = runsById.get(runId);
+          let manifests = manifestsByRun.get(runId);
+          if (manifests === undefined) {
+            const definition = NiceEvalRecordAttachments.identityManifests;
+            const attachment = loaded === undefined ? undefined : runAttachment(loaded, definition.family);
+            const decoded =
+              attachment === undefined ||
+              attachment.physical.familyRevision !== NiceEvalCurrentRecordAttachments.identityManifests.revision
+                ? undefined
+                : hydrateRecordAttachmentCurrent(definition, attachment.value, {
+                    content: () => Result.succeed(undefined),
+                    reference: () => Result.succeed(undefined),
+                  });
+            manifests = new Map(
+              decoded !== undefined && Result.isSuccess(decoded)
+                ? decoded.success.entries.map((entry) => [entry.evalId, entry])
+                : [],
+            );
+            manifestsByRun.set(runId, manifests);
+          }
+          const historical = manifests.get(current.evalId);
           const sources =
             historical !== undefined || loaded === undefined
               ? undefined

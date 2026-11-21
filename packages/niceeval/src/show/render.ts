@@ -253,7 +253,7 @@ const compactContinuation = (
       ];
 };
 
-type ReferenceAttempts = ReadonlyMap<string, InspectionAttemptResult>;
+type ReferenceAttempts = ReadonlyMap<string, Pick<InspectionAttemptResult, "verdict" | "score">>;
 
 function explanationKey(explanation: IdentityExplanation | undefined): string | undefined {
   if (explanation?.kind === "changed")

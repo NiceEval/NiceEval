@@ -52,7 +52,7 @@ export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegr
 /** Browser-neutral fixed reader capability backed by one pinned Record generation. */
 export interface InspectionFactSource {
   readonly kind: InspectionSource["kind"];
-  readonly beginOperation: (deadlineEpochMs: number) => void;
+  readonly beginOperation: (deadlineEpochMs?: number) => void;
   readonly cutoff: () => PublicationCutoff & { readonly identity: string };
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
   readonly readRunResource: (runId: string) => ReadableRunResource | undefined;

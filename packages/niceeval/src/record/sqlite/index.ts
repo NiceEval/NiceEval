@@ -111,9 +111,8 @@ export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
   readonly kind: "canonical" | "private-generation";
-  readonly deadlineEpochMs: number;
-  /** Opt-in operation deadlines keep the same transaction and publication. */
-  readonly beginOperation: (deadlineEpochMs: number) => void;
+  /** Without an aggregate deadline, each bounded read gets its own budget at the same cutoff. */
+  readonly beginOperation: (deadlineEpochMs?: number) => void;
   readonly publicationCutoff: () => PublicationCutoff;
   readonly sealedCutoff: () => SealedRunCutoff;
   readonly findExperimentRunIds: (experimentId: string) => readonly string[];
@@ -169,23 +168,25 @@ function openPinnedRecordReadSession(
       closeRecordDatabase(connection);
     }
   };
-  const assertUsable = (operation: string): void => {
+  let operationDeadline: number | undefined = deadlineEpochMs;
+  const assertUsable = (operation: string, deadline: number): void => {
     if (closed) throw sqliteError("record-database-invalid", operation, "pinned read session is closed");
-    if (Date.now() >= deadlineEpochMs) {
+    if (Date.now() >= deadline) {
       close();
       throw sqliteError(
         "record-resource-limit-exceeded",
         operation,
-        "pinned read session exceeded its deadline and was closed",
+        "pinned read exceeded its deadline and the session was closed",
       );
     }
   };
-  const readBounded = <A>(operation: string, read: () => A): A => {
-    assertUsable(operation);
-    const result = read();
+  const readBounded = <A>(operation: string, read: (deadline: number) => A): A => {
+    const deadline = operationDeadline ?? Date.now() + RECORD_SQLITE_VALIDATION_DEADLINE_MS;
+    assertUsable(operation, deadline);
+    const result = read(deadline);
     // Synchronous SQLite work may only observe the deadline at its boundary;
-    // never release a result if that work crossed the session deadline.
-    assertUsable(operation);
+    // never release a result if that work crossed its deadline.
+    assertUsable(operation, deadline);
     return result;
   };
   try {
@@ -198,23 +199,20 @@ function openPinnedRecordReadSession(
       (sealedCutoff ??= readBounded("read-sealed-cutoff", () =>
         readSealedRunCutoffOnConnection(connection, cutoffIdentity),
       ));
-    assertUsable("open-read-session");
+    assertUsable("open-read-session", deadlineEpochMs);
     return {
       kind,
-      get deadlineEpochMs() {
-        return deadlineEpochMs;
-      },
-      beginOperation: (nextDeadline: number) => {
+      beginOperation: (nextDeadline?: number) => {
         if (!operationScoped) return;
         if (closed)
           throw sqliteError("record-database-invalid", "begin-read-operation", "pinned read session is closed");
-        if (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now())
+        if (nextDeadline !== undefined && (!Number.isSafeInteger(nextDeadline) || nextDeadline <= Date.now()))
           throw sqliteError(
             "record-resource-limit-exceeded",
             "begin-read-operation",
             "operation deadline must be a future safe integer",
           );
-        deadlineEpochMs = nextDeadline;
+        operationDeadline = nextDeadline;
       },
       publicationCutoff: () => publicationCutoff,
       sealedCutoff: readCutoff,
@@ -229,7 +227,7 @@ function openPinnedRecordReadSession(
       readSealedRunSummary: (runId: string) =>
         readBounded("read-sealed-run-summary", () => readSealedRunSummaryOnConnection(connection, runId)),
       readSealedRunSummaryPage: (afterRunId = "", pageSize = 100, expectedCutoffIdentity?: string) =>
-        readBounded("page-sealed-runs", () => {
+        readBounded("page-sealed-runs", (deadline) => {
           if (expectedCutoffIdentity !== undefined && expectedCutoffIdentity !== cutoffIdentity) {
             throw sqliteError(
               "record-command-conflict",
@@ -242,7 +240,7 @@ function openPinnedRecordReadSession(
             afterRunId,
             pageSize,
             undefined,
-            deadlineEpochMs,
+            deadline,
             readCutoff(),
           );
           return {

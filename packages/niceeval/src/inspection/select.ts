@@ -192,6 +192,10 @@ export function selectInspectionOperation(
       const document = selectOperation(facts, operation);
       return Object.assign({}, document, { links: inspectionLinks(operation, document) });
     });
+  if (operation.kind === "experiment.get" || operation.kind === "project.get") {
+    facts.beginOperation?.();
+    return read();
+  }
   return operation.kind === "attempt.assertions" ? read() : withinReadDeadline(facts, operation, read);
 }
 
@@ -1179,6 +1183,27 @@ function attemptRuns(resolved: ResolvedInspectionAttempt): readonly LoadedInspec
   return uniqueRuns([resolved.origin, ...resolved.targets.map(({ run }) => run)]);
 }
 
+/** The previous-result row needs only the published Verdict and score. */
+export function selectInspectionAttemptSummary(
+  source: InspectionFactSource,
+  locator: string,
+): Pick<InspectionAttemptResult, "verdict" | "score"> {
+  return withinReadDeadline(source, { kind: "attempt.get", locator }, () => {
+    const resolved = requireAttemptFromSource(source, "attempt.get", locator);
+    return summarizeAttempt(resolved, readInspectionAssertions(resolved));
+  });
+}
+
+function summarizeAttempt(
+  resolved: ResolvedInspectionAttempt,
+  assertions: ReturnType<typeof readInspectionAssertions>,
+): Pick<InspectionAttemptResult, "verdict" | "score"> {
+  return {
+    verdict: attemptVerdict(resolved, assertions) ?? null,
+    score: assertionScore(assertions.state === "available" ? assertions.value.entries : []),
+  };
+}
+
 function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAttachments {
   const attemptCost = attemptAttachment(resolved, NiceEvalRecordAttachments.attemptCost.family);
   const models = resolved.origin.run.context.execution.models;
@@ -1228,8 +1253,7 @@ function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptRe
     stoppedAt: stoppedAssertion(assertions),
     assertions: assertionIndex(assertions),
     sections: attemptSections(resolved),
-    verdict: attemptVerdict(resolved, assertions) ?? null,
-    score: assertionScore(assertions.state === "available" ? assertions.value.entries : []),
+    ...summarizeAttempt(resolved, assertions),
     evidenceCoverage: attemptEvidenceCoverage(resolved),
     limitations: attemptLimitations(resolved, assertions.state === "available" ? assertions.value.entries : []),
   };

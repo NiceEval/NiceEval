@@ -2544,13 +2544,14 @@ function openRead(
     const client = (yield* projectState.bind(rootPath)).record;
     const lifecycle: ReaderLifecycle = { closed: false };
     const session = yield* Effect.acquireRelease(
-      pinnedRead(() => openOperationalRecordReadSession(rootPath)),
+      pinnedRead(() => openOperationalRecordReadSession(rootPath, undefined, true)),
       (session) =>
         Effect.sync(() => {
           lifecycle.closed = true;
           session.close();
         }),
     );
+    session.beginOperation();
     const runtime: ReaderRuntime = {
       root,
       client,
