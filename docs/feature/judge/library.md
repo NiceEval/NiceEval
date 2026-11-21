@@ -59,7 +59,7 @@ ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custo
 closeQA、defineJudge 与受管 ScoreMatch 自动登记每次实际 HTTP 传输，失败、重试和中断均保留。
 未通过发送前校验的逻辑步骤不算物理请求；取消表示本地停止等待，不证明服务端停工。
 
-可重试的传输失败先重试，再判 `unavailable`。连接错误、超时、HTTP 408、429 与 5xx 都可重试，响应明确标为不可重试的除外。
+可重试的传输失败先重试，再判 `unavailable`。连接错误、超时、HTTP 408、429 与 5xx 都可重试，响应明确标为不可重试的除外。HTTP 200 但响应在给出任何模型输出之前就以错误结束（错误对象或流中的错误事件，没有任何 choice、文本或工具调用）同样可重试；判断只看结构，不解析错误文字。
 受管传输在同一 Assertion 的 `timeoutMs` 内最多重试 2 次：指数退避，起始 2 秒；服务端给出 `retry-after` 时等待该值，单次等待上限 60 秒。
 剩余期限不够再等一次时立即结束，判 `unavailable` 并留存最后一次的失败原因。HTTP 400 等协议错误不重试，沿用 `errored`。
 每次重试都是独立的物理请求，照常登记用量与失败。普通 Judge 与受管 ScoreMatch 遵守这条规则；Agent Judge 见下文[评审 agent](#评审-agent)。
@@ -572,7 +572,7 @@ Provider 依据真实 HTTP 状态与结构化传输错误判断；连接错误�
 退避使用 pi Provider 的指数退避与抖动，起始 500 ms、上限 8 秒；`Retry-After` 或 `retry-after-ms` 优先，超过 60 秒立即结束。
 请求与等待共用调用者的 AbortSignal 与期限，取消或期限耗尽后不再发送。
 
-流式响应开始后的中途错误不自动重试。pi 的公开会话 API 只按错误文本判断重试，无法接收结构化 HTTP 状态；因此 NiceEval 使用 Provider 请求层，避免私有 API 与文本分类。
+流式响应在产生任何输出之前就以错误结束时，按可重试处理，与上面的 HTTP 失败共用同一重试次数、退避与期限。有的 OpenAI 兼容网关遇到限流时返回 HTTP 200，再在流里给出错误；此时调用方还没有消费任何部分结果，重试是幂等的。判断只看结构：流中出现第一段文本、思考或工具调用之前，是否已经以错误结束；不解析错误文字。已经产生输出之后的中途错误不自动重试，因为部分结果可能已被消费。pi 的公开会话 API 只按错误文本判断重试，无法接收结构化信号；因此 NiceEval 在 Provider 请求层实现，避免私有 API 与文本分类。
 Agent Judge 对最终请求失败保留 unavailable，模拟用户保留执行错误；pi 的上下文压缩与溢出恢复仍独立工作。
 
 每次实际 HTTP 尝试在 pi session 的 `niceeval.http` custom entry 中保存 `{ ordinal, status, retryAfterMs }`。
