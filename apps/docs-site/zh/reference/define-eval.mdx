@@ -1,7 +1,7 @@
 ---
 title: "defineEval：声明、配置并运行 NiceEval 评估用例"
 sidebarTitle: "defineEval"
-description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox 辅助函数，以及数组和 keyed record 测试集导出。"
+description: "defineEval 参考：选项、test context API、Turn 辅助函数、凭据脱敏和测试集导出。"
 ---
 
 `defineEval` 是编写评估用例的主要入口。每个评估用例文件调用一次，传入描述和 `test(t)`，并默认导出结果。
@@ -425,6 +425,37 @@ closeQA<T>(
 ```
 
 {/* GENERATED:END test-context */}
+
+### 传递真实凭据前先登记
+
+评估用例需要把真实凭据交给被测 Agent 或模拟用户时，用 `t.sensitiveValues(...values)` 登记。先从项目的密钥来源读取凭据，再创建模拟用户或发送消息：
+
+```ts
+import { defineEval, defineSimulatedUser } from "niceeval";
+
+const connection = {
+  baseUrl: process.env.AGENT_BASE_URL!,
+  apiKey: process.env.AGENT_API_KEY!,
+};
+
+export default defineEval({
+  async test(t) {
+    t.sensitiveValues(connection.baseUrl, connection.apiKey);
+    const user = t.simulatedUser(
+      defineSimulatedUser({
+        instructions: `被问到连接信息时，提供 ${JSON.stringify(connection)}。`,
+      }),
+    );
+    const turn = await t.send("把 Agent 接入这个服务。");
+    if (turn.status === "waiting") await user.reply(turn);
+  },
+});
+```
+
+- 被测 Agent 和模型收到的内容保持原文。登记后保存的证据只会把精确匹配的值替换为 `<redacted>`，再封存证据。
+- 登记不会修改已经封存的证据。第一次发送可能包含该值的消息或回答前，就要先登记。
+- 每个值至少 8 个字符。Attempt 级登记值会与命令级 `sensitiveValues` 合并。
+- 这不是 secret scanner，只替换登记的完整文本。编码或拆分后的写法要分别登记。
 
 ## Judge 打分
 

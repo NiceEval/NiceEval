@@ -1,7 +1,7 @@
 ---
 title: "defineEval: Declare, Configure, and Run NiceEval Evals"
 sidebarTitle: "defineEval"
-description: "defineEval reference: options, the test context t, the Turn return value, Sandbox helpers, and array and keyed-record test set exports."
+description: "defineEval reference: options, test context APIs, credential redaction, Turn helpers, and test set exports."
 ---
 
 `defineEval` is the main entry point for writing Evals. Call it once per Eval file, pass a description and `test(t)`, and default-export the result.
@@ -427,6 +427,37 @@ closeQA<T>(
 ```
 
 {/* GENERATED:END test-context */}
+
+### Register values before sharing credentials
+
+Use `t.sensitiveValues(...values)` when an Eval needs to pass real credentials to the tested Agent or a simulated user. Read them from your project's secret source, then register them before creating the simulated user or sending a message:
+
+```ts
+import { defineEval, defineSimulatedUser } from "niceeval";
+
+const connection = {
+  baseUrl: process.env.AGENT_BASE_URL!,
+  apiKey: process.env.AGENT_API_KEY!,
+};
+
+export default defineEval({
+  async test(t) {
+    t.sensitiveValues(connection.baseUrl, connection.apiKey);
+    const user = t.simulatedUser(
+      defineSimulatedUser({
+        instructions: `If asked about connecting, share ${JSON.stringify(connection)}.`,
+      }),
+    );
+    const turn = await t.send("Connect this Agent to the service.");
+    if (turn.status === "waiting") await user.reply(turn);
+  },
+});
+```
+
+- The tested Agent and models receive the original content. Redaction changes only evidence saved after registration: exact registered values become `<redacted>` before the evidence is sealed.
+- Registration does not change evidence that was already sealed. Register each value before the first message or reply that can contain it.
+- Each value must contain at least eight characters. Attempt values are combined with command-level `sensitiveValues`.
+- This is not a secret scanner. Only exact registered text is replaced; register encoded or split forms separately.
 
 ## Judge scoring
 
