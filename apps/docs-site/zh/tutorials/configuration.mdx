@@ -83,6 +83,7 @@ export default defineConfig({
 | `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | 两者必需；工厂参数 `apiKey` / `baseUrl` 可覆盖 |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
+| `GEMINI_API_KEY` / `GOOGLE_GEMINI_BASE_URL` | `antigravityAgent()` | 密钥必需，兼容端点可选。工厂参数 `apiKey` / `baseUrl` 可覆盖。 |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
 | `OPENAI_API_KEY` | `OpenAIProvider` | OpenAI 或显式兼容网关的默认 key |
 | `AI_GATEWAY_API_KEY` | `VercelProvider` | Vercel AI Gateway key |

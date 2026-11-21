@@ -1,0 +1,2 @@
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":9,"state":"DONE","step_type":"unknown"}}
+{"event":"result","result":{"conversation_id":"session-1","status":"SUCCESS","response":"Please choose between `indigo-731` and `amber`.\n","num_turns":3,"usage":{"input_tokens":17985,"output_tokens":108,"thinking_tokens":0,"cache_read_tokens":29636,"total_tokens":18093}}}

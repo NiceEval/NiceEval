@@ -13,6 +13,9 @@ export const DEFAULT_BUB_VERSION = "0.5.1";
 /** OpenCode CLI（npm `opencode-ai`）默认钉的版本。 */
 export const DEFAULT_OPENCODE_CLI_VERSION = "1.19.5";
 
+/** Antigravity CLI (agy) release used by its staged installer. */
+export const DEFAULT_ANTIGRAVITY_CLI_VERSION = "1.5.13";
+
 /** Hermes Agent（PyPI `hermes-agent`）默认钉的版本。 */
 export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
 

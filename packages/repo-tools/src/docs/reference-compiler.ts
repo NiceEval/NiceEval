@@ -989,6 +989,7 @@ export const SOURCE_FILES = [
   "src/agents/claude-code.ts",
   "src/agents/codex.ts",
   "src/agents/bub.ts",
+  "src/agents/antigravity.ts",
   "src/agents/ui-message-stream.ts",
 ] as const;
 
@@ -1253,6 +1254,14 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
         {
           heading: "BubConfig",
           members: extractInterfaceMembers(sources["src/agents/bub.ts"], "src/agents/bub.ts", "BubConfig"),
+        },
+        {
+          heading: "AntigravityConfig",
+          members: extractInterfaceMembers(
+            sources["src/agents/antigravity.ts"],
+            "src/agents/antigravity.ts",
+            "AntigravityConfig",
+          ),
         },
       ]);
     case "ui-message-stream-options":

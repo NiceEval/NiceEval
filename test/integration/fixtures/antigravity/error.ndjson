@@ -1,0 +1,2 @@
+{"event":"init","conversation_id":"session-1"}
+{"event":"result","result":{"conversation_id":"session-1","status":"ERROR","finished_reason":"error","response":"","error":"stream input message event \"control_response\" is not supported yet","num_turns":0}}

@@ -1,10 +1,10 @@
 ---
 title: "Built-in Agent Capabilities Reference"
 sidebarTitle: "Built-in Agent Capabilities"
-description: "What NiceEval's built-in claude-code, codex, and bub Adapters can do, which assertions they support, and their known limits."
+description: "Compare configuration, session continuation, and assertions for the claude-code, codex, bub, and Antigravity CLI adapters."
 ---
 
-The three built-in Sandbox Agents—`claude-code`, `codex`, and `bub`—do not all provide the same capabilities. There is no capability-declaration layer: construction and actual behavior prove them. See the [Capabilities reference](/reference/capabilities). This page inventories what each built-in Agent provides, plus two built-ins for AI SDK applications: the non-intrusive HTTP Adapter `uiMessageStreamAgent`, including HITL, and the result converter `turnFromAiSdk`.
+This page covers `claude-code`, `codex`, `bub`, and Antigravity CLI (`agy`). For AI SDK applications, use the HTTP adapter `uiMessageStreamAgent` or the result converter `turnFromAiSdk` described below.
 
 ## Capability overview
 
@@ -23,11 +23,12 @@ The three built-in Sandbox Agents—`claude-code`, `codex`, and `bub`—do not a
 | `claude-code` | ✅ | ✅ | ✅ (`claude --resume <id>`) | ❌ | ✅ (`http/protobuf` → OTLP, beta Flag) | The built-in parser emits raw `compaction` events automatically, read by Reports, diagnostics, and an ordinary `check(events, match)` |
 | `codex` | ✅ | ✅ | ✅ (`codex exec resume <id>`) | ❌ | ✅ (`http/json` → OTLP) | The built-in parser emits `compaction` events. |
 | `bub` | ✅ | ✅ | ✅ (`--session-id` + tape continuation) | ❌ | ✅ (`http/protobuf` → OTLP) | The built-in parser emits `compaction` events. |
+| `agy` | ✅ | Partial | ✅ (`--conversation <id>`) | ❌ | ❌ | Assertions can match observed tool calls. Tool output is unavailable. |
 
-All three use `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`), so filesystem assertions and file I/O and command execution—including `t.sandbox.fileChanged()` and diff assertions—work with all three Agents regardless of the table.
+All four Agents support file I/O, command execution, and Sandbox assertions such as `t.sandbox.fileChanged()`.
 
 <Warning>
-The three built-in Sandbox Agents **do not support HITL**. `send` returns only `"completed"` / `"failed"`; it never returns `"waiting"` or emits `input.requested`.
+`bub` and `agy` support ordinary conversation. A question in a reply completes the current Turn, and `t.send()` starts the next one.
 
 When you need `t.respond()` / `t.requireInputRequest()`: if the system under test is an AI SDK `useChat` backend, use the built-in `uiMessageStreamAgent` below, which natively maps v7 tool approval to HITL. For another system under test, write an Adapter that implements a `waiting` status, `input.requested` event, and resume handoff. [`examples/zh/tier1/pi-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/pi-sdk) and [`examples/zh/tier1/claude-sdk`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/claude-sdk) both provide ready-made references for manual HITL.
 </Warning>
@@ -54,7 +55,20 @@ When you need `t.respond()` / `t.requireInputRequest()`: if the system under tes
 - `tracing` is injected through environment variables such as `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, over `http/protobuf`.
 - Installation uses `uv tool install`, not an npm package. The first install creates a checkpoint cache to speed later Sandboxes.
 
-## Configuration for the three built-in Sandbox Agents
+### Antigravity CLI
+
+```ts
+import { antigravityAgent } from "niceeval/adapter";
+
+const agent = antigravityAgent();
+```
+
+- NiceEval installs a pinned release of `agy` in the Sandbox. The default is `1.5.13`. Automatic installation supports Linux x86_64 with glibc 2.28 or newer.
+- Set `GEMINI_API_KEY` in the environment. Set `model` and optionally `reasoningEffort` in the Experiment.
+- Each `t.send()` runs `agy --print` and resumes the current session by ID. Use `t.newSession()` to start a fresh session.
+- The adapter sums input, output, and cache-read tokens across model requests. Each tool call retains its native name, input, and status.
+
+## Sandbox Agent configuration
 
 {/* GENERATED:BEGIN builtin-agent-config */}
 
@@ -293,6 +307,48 @@ after?: SandboxCommand[] | undefined;
 ```
 
 The cleanup Hook paired with `before`. It uses `before`'s reverse order and runs before the Agent's own after step: a LIFO mirror—`before` runs after Agent installation, while `after` runs before Agent cleanup. It runs only if execution reached the `before` point. A throw counts as an infrastructure error, and the after phase closes it with a teardown-failed diagnostic. See Post-install scripts in `docs/feature/adapters/library/coding-agent-extensions.md`.
+
+### `AntigravityConfig`
+
+#### `apiKey`
+
+```ts
+apiKey?: string | undefined;
+```
+
+The Gemini API key. When omitted, read `GEMINI_API_KEY` from the environment.
+
+#### `baseUrl`
+
+```ts
+baseUrl?: string | undefined;
+```
+
+A Gemini-compatible endpoint. When omitted, read `GOOGLE_GEMINI_BASE_URL` from the environment.
+
+#### `version`
+
+```ts
+version?: string | undefined;
+```
+
+The exact Antigravity CLI version. Defaults to `1.5.13`.
+
+#### `skills`
+
+```ts
+skills?: readonly SkillSpec[] | undefined;
+```
+
+Skills installed in `.agents/skills/<name>/`.
+
+#### `mcpServers`
+
+```ts
+mcpServers?: readonly (McpHttpServer | (McpStdioServer & { cwd?: string | undefined }))[] | undefined;
+```
+
+Stdio and Streamable HTTP servers written to `.agents/mcp_config.json`. Stdio servers can specify a working directory.
 
 {/* GENERATED:END builtin-agent-config */}
 

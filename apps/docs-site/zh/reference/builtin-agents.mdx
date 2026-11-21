@@ -1,10 +1,10 @@
 ---
 title: "内置 Agent 能力参考"
 sidebarTitle: "内置 Agent 能力"
-description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到了哪些能力，对应哪些断言，以及已知限制。"
+description: "查看 claude-code、codex、bub 与 Antigravity CLI 适配器的配置、会话续接方式和可用断言。"
 ---
 
-内置的三个 sandbox agent（`claude-code`、`codex`、`bub`）做到的能力不完全相同——能力没有声明这一层，全由构造方式和实际行为证明，见[能力位参考](/zh/reference/capabilities)。这篇按能力盘点三个内置 agent 各自做到哪，以及两个接 AI SDK 应用的内置件：无侵入 HTTP adapter `uiMessageStreamAgent`（含 HITL）和结果转换器 `turnFromAiSdk`。
+本页介绍 `claude-code`、`codex`、`bub` 和 Antigravity CLI（`agy`）。接入 AI SDK 应用时，可使用本页的 HTTP 适配器 `uiMessageStreamAgent` 或结果转换器 `turnFromAiSdk`。
 
 ## 能力速览
 
@@ -16,18 +16,19 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 | HITL（人工介入） | `t.check(turn.status, equals("waiting"))`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()` |
 | `tracing` | trace decoding、`niceeval view` 的调用瀑布图 |
 
-## 三个内置 agent 分别做到哪
+## Sandbox Agent 能力
 
 | Agent | 收发 | 事件流 | 会话续接 | HITL | tracing | 备注 |
 |---|---|---|---|---|---|---|
 | `claude-code` | ✅ | ✅ | ✅（`claude --resume <id>`） | ✅（`AskUserQuestion`） | ✅（`http/protobuf` → OTLP，beta 开关） | 内置 parser 自动吐 `compaction` 原始事件，供报告、诊断与普通 `check(events, match)` 读取 |
 | `codex` | ✅ | ✅ | ✅（app-server thread） | ✅（`request_user_input`） | ✅（`http/json` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
 | `bub` | ✅ | ✅ | ✅（`--session-id` + tape 续接） | ❌ | ✅（`http/protobuf` → OTLP） | 内置 parser 自动吐 `compaction` 事件 |
+| `agy` | ✅ | 部分 | ✅（`--conversation <id>`） | ❌ | ❌ | 可断言已观察到的工具调用。工具输出材料不可用。 |
 
-三者都用 `defineSandboxAgent` 构造（`Agent.kind` 恒为 `"sandbox"`），所以 `t.sandbox.fileChanged()` / diff 断言、文件 IO、命令执行在三个 agent 上都能用，不受这张表限制。
+这些 Agent 都支持文件读写、命令执行和 `t.sandbox.fileChanged()` 等 Sandbox 断言。
 
 <Warning>
-`claude-code` 和 `codex` 支持 HITL：Agent 调用原生提问工具（Claude Code 的 `AskUserQuestion`、Codex 的 `request_user_input`）时，`send` 返回 `status: "waiting"` 和 `input.requested` 事件，用 `t.respond()` 或模拟用户回答后继续同一轮。Agent 只在回复文字里提问、没有调用提问工具时，这一轮照常是 `"completed"`，NiceEval 不从文字里反推 HITL。`bub` 不支持 HITL。
+`claude-code` 和 `codex` 支持 HITL：Agent 调用原生提问工具（Claude Code 的 `AskUserQuestion`、Codex 的 `request_user_input`）时，`send` 返回 `status: "waiting"` 和 `input.requested` 事件，用 `t.respond()` 或模拟用户回答后继续同一轮。文字提问随该轮回复返回，`t.send()` 可继续下一轮。`bub` 和 `agy` 只支持普通对话。
 
 其它被测对象需要 `t.respond()` / `t.requireInputRequest()` 时：被测对象是 AI SDK `useChat` 后端的话，用下文的内置 `uiMessageStreamAgent`（v7 tool approval 原生映射成 HITL）。其它被测对象自己写 adapter：实现 `waiting` 状态 + `input.requested` 事件 + resume 交回，[`examples/zh/tier1/pi-sdk`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/pi-sdk) / [`examples/zh/tier1/claude-sdk`](https://github.com/NiceEval/NiceEval/tree/main/examples/zh/tier1/claude-sdk) 都有手写 HITL 的现成参考。
 </Warning>
@@ -54,7 +55,20 @@ description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到
 - `tracing` 通过环境变量注入（`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 等），协议 `http/protobuf`。
 - 安装走 `uv tool install`（非 npm 包），首次安装带 checkpoint 缓存以加速后续 Sandbox。
 
-## 三个内置 sandbox agent 的配置项
+### Antigravity CLI
+
+```ts
+import { antigravityAgent } from "niceeval/adapter";
+
+const agent = antigravityAgent();
+```
+
+- 在 Sandbox 中按固定版本安装 `agy`。默认版本是 `1.5.13`，自动安装支持 Linux x86_64（glibc 2.28 或更新版本）。
+- 将 `GEMINI_API_KEY` 放入环境变量。在实验中填写 `model` 和可选的 `reasoningEffort`。
+- 每次 `t.send()` 都运行一次 `agy --print`，在同一会话内按 ID 续接。调用 `t.newSession()` 可开始新会话。
+- 适配器汇总各模型请求的输入、输出和缓存读 token。每笔工具调用保留原生名称、入参和状态。
+
+## Sandbox Agent 配置项
 
 {/* GENERATED:BEGIN builtin-agent-config */}
 
@@ -344,6 +358,48 @@ after?: SandboxCommand[] | undefined;
 之前),当且仅当 `before` 的时点走到过才触发。抛错按基础设施错误计,由 after 段
 按 teardown-failed 诊断收束。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
+
+### `AntigravityConfig`
+
+#### `apiKey`
+
+```ts
+apiKey?: string | undefined;
+```
+
+Gemini API key，省略时读取 `GEMINI_API_KEY`。
+
+#### `baseUrl`
+
+```ts
+baseUrl?: string | undefined;
+```
+
+Gemini 兼容端点，省略时读取 `GOOGLE_GEMINI_BASE_URL`。
+
+#### `version`
+
+```ts
+version?: string | undefined;
+```
+
+Antigravity CLI 的精确版本，默认为 `1.5.13`。
+
+#### `skills`
+
+```ts
+skills?: readonly SkillSpec[] | undefined;
+```
+
+安装到 `.agents/skills/<name>/` 的 Skills。
+
+#### `mcpServers`
+
+```ts
+mcpServers?: readonly (McpHttpServer | (McpStdioServer & { cwd?: string | undefined }))[] | undefined;
+```
+
+写入 `.agents/mcp_config.json` 的 stdio 或 Streamable HTTP 服务。stdio 可指定工作目录。
 
 {/* GENERATED:END builtin-agent-config */}
 

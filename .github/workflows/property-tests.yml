@@ -52,6 +52,8 @@ jobs:
           install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm exec vitest run --project live --passWithNoTests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
   bombadil:
     name: Bombadil (${{ matrix.surface }})

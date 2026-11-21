@@ -83,6 +83,7 @@ Put secrets in the environment variables below. These are all the environment va
 | `BUB_API_KEY` / `BUB_API_BASE` | `bubAgent()` | Both required; can be overridden by the factory parameters `apiKey` / `baseUrl` |
 | `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | When the key is omitted, falls back to `ANTHROPIC_API_KEY` |
 | `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | When the key is omitted, falls back to `ANTHROPIC_API_KEY` |
+| `GEMINI_API_KEY` / `GOOGLE_GEMINI_BASE_URL` | `antigravityAgent()` | The key is required and the compatible endpoint is optional. Override either with the `apiKey` or `baseUrl` factory option. |
 | `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | When the key is omitted, falls back to `OPENROUTER_API_KEY`, then `ANTHROPIC_API_KEY` |
 | `OPENAI_API_KEY` | `OpenAIProvider` | Default key for OpenAI or an explicit compatible gateway |
 | `AI_GATEWAY_API_KEY` | `VercelProvider` | Vercel AI Gateway key |

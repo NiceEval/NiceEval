@@ -1,0 +1,8 @@
+{"event":"init","conversation_id":"session-1","init":{"cwd":"/workspace","permission_mode":"always-proceed","model":"gemini-3.8-flash-low","tools":["read_file","ask_question"]}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":0,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":1,"state":"DONE","step_type":"agent_response","usage":{"input_tokens":9240,"output_tokens":36,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":9276}}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"read_file","tool_info":{"name":"read_file","parameters":{"Path":"/workspace/probe.txt"}}}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":2,"state":"DONE","step_type":"tool","tool_name":"read_file","tool_info":{"name":"read_file","parameters":{"Path":"/workspace/probe.txt"},"output":"1 lines, 11 bytes"}}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":3,"state":"ACTIVE","step_type":"agent_response","text_delta":"indigo-731"}}
+{"event":"step_update","step_update":{"conversation_id":"session-1","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"\n","usage":{"input_tokens":2168,"output_tokens":5,"thinking_tokens":0,"cache_read_tokens":7198,"total_tokens":2173}}}
+{"event":"result","result":{"conversation_id":"session-1","status":"SUCCESS","response":"indigo-731\n","num_turns":1,"usage":{"input_tokens":11408,"output_tokens":41,"thinking_tokens":0,"cache_read_tokens":7198,"total_tokens":11449}}}
