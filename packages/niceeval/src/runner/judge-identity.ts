@@ -35,7 +35,7 @@ export function agentJudgeIdentity() {
 /** Code behavior not represented by prompts or response schemas. */
 export function ordinaryJudgeIdentity() {
   return {
-    behavior: 2,
+    behavior: 3,
     content: hashIdentityPayload({
       ...Object.fromEntries(Object.entries(prompts).filter(([, value]) => typeof value === "string")),
       binary: prompts.binaryJudgeRubric("{rubric}"),
@@ -43,6 +43,7 @@ export function ordinaryJudgeIdentity() {
         (schema) => Schema.toJsonSchemaDocument(schema).schema,
       ),
       instruction: scorePrompts.SCORE_MATCH_INSTRUCTION,
+      output: scorePrompts.SCORE_MATCH_OUTPUT_INSTRUCTION,
       tool: scorePrompts.SCORE_MATCH_TOOL_DESCRIPTION,
       typesafeItem: scorePrompts.typesafeItemInstructions("{rubric}", 0),
       typesafeMaterial: scorePrompts.typesafeMaterialInstructions("{rubric}"),

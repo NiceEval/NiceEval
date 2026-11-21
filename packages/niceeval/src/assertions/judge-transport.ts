@@ -201,7 +201,7 @@ export function responseByteCap(maxOutputTokens: number): number {
   return Math.max(1_024, maxOutputTokens * RESPONSE_BYTES_PER_TOKEN);
 }
 
-async function readJudgeResponseText(
+export async function readJudgeResponseText(
   response: Response,
   maxBytes: number,
   signal?: AbortSignal,

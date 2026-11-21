@@ -36,6 +36,7 @@ import { AttemptBackgroundCommands } from "./background-commands.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
 import { JudgeUsageCollector } from "../o11y/judge-usage.ts";
+import { JudgePromptCache } from "../judge/prompt-cache.ts";
 import { retainJudgeUsage } from "./judge-usage.ts";
 import { SimulatedUserError } from "../simulated-user/definition.ts";
 import {
@@ -705,6 +706,16 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
           message: "Judge transport cleanup did not settle before its local deadline; remote completion is unknown.",
         }),
       );
+      const judgePromptCache =
+        a.judge === undefined || a.attemptId === undefined || a.judge.protocol.kind !== "chat-completions"
+          ? undefined
+          : new JudgePromptCache(a.judge, a.attemptId, () =>
+              recordDiagnostic({
+                code: "judge-prompt-cache-key-rejected",
+                level: "warning",
+                message: "Judge Provider rejected prompt_cache_key. Remaining requests in this Attempt will omit it.",
+              }),
+            );
 
       const sealExecutionError = (): Effect.Effect<
         SealedAttemptAssertions,
@@ -1109,6 +1120,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   resources,
                   usage: adapterUsage,
                   judgeUsage,
+                  judgePromptCache,
                   attachments: adapterAttachments,
                   executionTraces: adapterExecutionTraces,
                   signal,
@@ -1677,6 +1689,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         await captureSimulatedUserActivity(activity, adapterAttachments!, adapterExecutionTraces!);
                       },
                       judgeUsage,
+                      judgePromptCache,
                       sandbox,
                       backgroundCommands: ownedBackgroundCommands,
                       closeBackgroundCommands,
@@ -2084,6 +2097,7 @@ interface AdapterAttemptBodyInput {
   readonly resources: AdapterAttemptResources;
   readonly usage: AdapterUsageCollector | undefined;
   readonly judgeUsage: JudgeUsageCollector;
+  readonly judgePromptCache: JudgePromptCache | undefined;
   readonly attachments: AdapterAttachmentCollector | undefined;
   readonly executionTraces: AdapterExecutionTraceCollector | undefined;
   readonly signal: AttemptSignal;
@@ -2152,6 +2166,7 @@ function runAdapterAttemptBody(input: AdapterAttemptBodyInput): Effect.Effect<Ev
       onCleanup: input.testCleanup.register,
       readUsage: usage === undefined ? undefined : () => usage.snapshot(),
       judgeUsage: input.judgeUsage,
+      judgePromptCache: input.judgePromptCache,
       judgeTiming: recorder,
       elapsedMs: recorder.offsetNow,
       evaluationKind: a.evalDef.evaluationKind ?? "pass",
@@ -2619,6 +2634,7 @@ interface AttemptResources {
   readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
+  judgePromptCache: JudgePromptCache | undefined;
   sandbox: Sandbox;
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase: MaterializedSandboxCase | undefined;
@@ -3824,6 +3840,7 @@ async function runAttemptBody(
       model: run.model,
       reasoningEffort: run.reasoningEffort,
       judgeUsage: res.judgeUsage,
+      judgePromptCache: res.judgePromptCache,
       judgeTiming: recorder,
       // maxCost 断言的估算价目表;与 observed usage.costUSD 互不兜底。
       pricing: config.pricing,

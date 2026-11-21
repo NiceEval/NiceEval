@@ -816,6 +816,7 @@ export function materialQARegistration(
   judge: ResolvedJudgeConfig | undefined,
   signal?: AbortSignal,
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
+  promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
 ): MeasurementAssertionRegistration & {
   readonly actualRetainedBytes: () => number;
   readonly terminalCriterion: () => AssertionCriterion;
@@ -931,6 +932,7 @@ export function materialQARegistration(
       judge,
       signal,
       usage,
+      promptCache,
     });
     const evaluation = yield* gateway.evaluate();
     return { ...evaluation, receipt: selected.terminal() };
@@ -982,6 +984,7 @@ export function contextScoreRegistration(
   judge: ResolvedJudgeConfig | undefined,
   signal?: AbortSignal,
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
+  promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
 ): MeasurementAssertionRegistration & { readonly actualRetainedBytes: () => number } {
   if (prepared.kind !== "context-score") throw new TypeError("Context Score registration requires a ScoreMatch");
   const match = prepared.match as ScoreMatch<unknown>;
@@ -1000,6 +1003,7 @@ export function contextScoreRegistration(
       judge,
       signal,
       usage,
+      promptCache,
     });
     return {
       ...registration,

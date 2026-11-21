@@ -1,16 +1,19 @@
 // @concord-file
 // @concord-implements docs/feature/judge/architecture.md
 import { judgeRequestTiming, type JudgeTimingOutcome, type JudgeTimingSpan } from "./timing.ts";
-import { retryAfterMs } from "../assertions/judge-transport.ts";
+import { readJudgeResponseText, retryAfterMs } from "../assertions/judge-transport.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { pathToFileURL } from "node:url";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { PiFailure, piDefect, piUsageFailure } from "./pi-failure.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
-import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai";
+import * as Predicate from "effect/Predicate";
+import type { JudgePromptCache } from "./prompt-cache.ts";
+import type { AssistantMessage, AssistantMessageEvent, Usage } from "@earendil-works/pi-ai";
 type CodingSdk = typeof import("@earendil-works/pi-coding-agent");
 type ProviderRetry = typeof import("@earendil-works/pi-ai/utils/provider-retry").retryProviderRequest;
+export type PiUsageReceipt = { readonly httpStatus: number | undefined; readonly body: string };
 type StreamFailure = Extract<AssistantMessageEvent, { type: "error" }>;
 
 /** Creates an isolated coding-agent session. pi owns requests, tools, retries,
@@ -19,6 +22,7 @@ export async function createManagedPiSession(input: {
   readonly paths: { readonly coding: string; readonly ai: string };
   readonly profile: ResolvedJudgeConfig;
   readonly apiKey: string;
+  readonly promptCache?: JudgePromptCache | undefined;
   readonly systemPrompt: string;
   readonly cwd: string;
   readonly tools: readonly string[];
@@ -89,6 +93,8 @@ export async function createManagedPiSession(input: {
         sessionManager.appendCustomEntry("niceeval.http", { ordinal, ...lastHttp });
       }
     };
+    const usageReceipts = new WeakMap<Usage, readonly PiUsageReceipt[]>();
+    let compactionReceipts: PiUsageReceipt[] | undefined;
     const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
     const startRequest = input.timing === undefined ? undefined : judgeRequestTiming(input.timing);
     modelRuntime.streamSimple = (model, context, options) =>
@@ -102,14 +108,56 @@ export async function createManagedPiSession(input: {
                 lastFailure = undefined;
                 let http: { readonly status: number | undefined; readonly headers: Headers | undefined } | undefined;
                 let timing: JudgeTimingSpan | undefined;
+                let cacheKeyRejected = false;
+                let usageBody = "";
+                const sessionId = input.promptCache?.activeKey;
+                let sentCacheKey = sessionId;
                 const stream = streamSimple(model, context, {
                   ...options,
+                  ...(input.promptCache === undefined
+                    ? {}
+                    : sessionId === undefined
+                      ? { cacheRetention: "none" }
+                      : { sessionId, cacheRetention: "short" }),
                   maxRetries: 0,
+                  onPayload: async (payload, requestModel) => {
+                    const transformed = (await options?.onPayload?.(payload, requestModel)) ?? payload;
+                    // Another review may have received the 400 while this payload was being assembled.
+                    if (
+                      sentCacheKey !== undefined &&
+                      input.promptCache?.activeKey === undefined &&
+                      Predicate.isObject(transformed)
+                    ) {
+                      sentCacheKey = undefined;
+                      const { prompt_cache_key: _omitted, ...rest } = transformed;
+                      return rest;
+                    }
+                    return transformed;
+                  },
+                  onProviderStreamEvent: async (event, requestModel) => {
+                    if (Predicate.isObject(event)) {
+                      const choice = Array.isArray(event.choices) ? event.choices[0] : undefined;
+                      const reported = event.usage ?? (Predicate.isObject(choice) ? choice.usage : undefined);
+                      if (reported != null) {
+                        usageBody = JSON.stringify({ model: event.model, provider: event.provider, usage: reported });
+                      }
+                    }
+                    await options?.onProviderStreamEvent?.(event, requestModel);
+                  },
                   fetch: async (request, init) => {
                     timing = startRequest?.();
                     http = { status: undefined, headers: undefined };
                     const response = await fetch(request, init);
                     http = { status: response.status, headers: response.headers };
+                    if (sentCacheKey !== undefined && response.status === 400) {
+                      const body = await readJudgeResponseText(
+                        response.clone(),
+                        profile.maxResponseBytes,
+                        options?.signal,
+                      ).catch(() => "");
+                      cacheKeyRejected =
+                        input.promptCache?.observeRejection(sentCacheKey, response.status, body) === true;
+                    }
                     return response;
                   },
                 });
@@ -117,8 +165,12 @@ export async function createManagedPiSession(input: {
                 const finish = (outcome: JudgeTimingOutcome) => timing?.end(outcome);
                 // A response's terminal event distinguishes a broken stream from [DONE].
                 void stream.result().then(
-                  ({ stopReason }) =>
-                    finish(stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "failed" : "completed"),
+                  ({ stopReason, usage }) => {
+                    const receipt = { httpStatus: http?.status, body: usageBody };
+                    usageReceipts.set(usage, [receipt]);
+                    if (stopReason !== "error" && stopReason !== "aborted") compactionReceipts?.push(receipt);
+                    finish(stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "failed" : "completed");
+                  },
                   () => finish(failureOutcome()),
                 );
                 const events = stream[Symbol.asyncIterator]();
@@ -131,8 +183,12 @@ export async function createManagedPiSession(input: {
                   lastFailure = next.value;
                   await events.return?.();
                   const headers = new Headers(http.headers);
-                  if (http.status === 200 && headers.get("x-should-retry") !== "false")
+                  if (cacheKeyRejected) {
                     headers.set("x-should-retry", "true");
+                    headers.set("retry-after-ms", "0");
+                  } else if (http.status === 200 && headers.get("x-should-retry") !== "false") {
+                    headers.set("x-should-retry", "true");
+                  }
                   throw Object.assign(new Error(next.value.error.errorMessage ?? "pi model request failed"), {
                     status: http.status,
                     headers,
@@ -192,7 +248,14 @@ export async function createManagedPiSession(input: {
           contextWindow,
           maxTokens: profile.protocol.maxOutputTokens,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+          compat: {
+            supportsStore: false,
+            supportsDeveloperRole: false,
+            maxTokensField: "max_tokens",
+            ...(input.promptCache === undefined
+              ? {}
+              : { promptCacheKeyMode: "enabled", sendSessionAffinityHeaders: false }),
+          },
         },
       ],
     });
@@ -227,6 +290,14 @@ export async function createManagedPiSession(input: {
     return {
       session,
       sessionManager,
+      readUsageReceipts: (usage: Usage) => usageReceipts.get(usage),
+      startCompaction: () => {
+        compactionReceipts = [];
+      },
+      finishCompaction: (usage: Usage | undefined) => {
+        if (usage !== undefined && compactionReceipts?.length) usageReceipts.set(usage, compactionReceipts);
+        compactionReceipts = undefined;
+      },
       prompt: async (text: string, signal: AbortSignal) => {
         lastHttp = undefined;
         try {

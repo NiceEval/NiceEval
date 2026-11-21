@@ -170,6 +170,7 @@ export interface AssertFirstCoreContextState {
 
 export interface AssertFirstCoreContextDeps {
   readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
+  readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly readUsage?: (() => EvalUsage) | undefined;
@@ -214,6 +215,7 @@ export type AssertFirstCoreTestContext<Kind extends RuntimeKind = RuntimeKind> =
 /** The Runner-facing dependencies retain the current SessionManager boundary. */
 export interface AssertFirstContextDeps {
   readonly onCleanup: AssertFirstCoreTestContext["onCleanup"];
+  readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
   readonly captureSimulatedUser?: ((activity: SimulatedUserActivity) => Promise<void>) | undefined;
   readonly deadlineAt?: number | undefined;
@@ -1790,6 +1792,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judge: deps.judge,
           signal: deps.signal,
           judgeUsage: deps.judgeUsage,
+          judgePromptCache: deps.judgePromptCache,
           judgeTiming: deps.judgeTiming,
         })
       : createAssertionsRuntime({
@@ -1798,6 +1801,7 @@ export function createAssertFirstCoreContext(deps: AssertFirstCoreContextDeps): 
           judge: deps.judge,
           signal: deps.signal,
           judgeUsage: deps.judgeUsage,
+          judgePromptCache: deps.judgePromptCache,
           judgeTiming: deps.judgeTiming,
         });
   // Preserve the function identity: contextual Matches resolve their bound
@@ -2727,7 +2731,13 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
               now: deps.timingNow ?? (() => performance.now()),
               deadlineAt: deps.deadlineAt,
               createConversation: (definition) =>
-                createSimulatedUserConversation(definition, deps.judge, deps.pricing, deps.judgeTiming),
+                createSimulatedUserConversation(
+                  definition,
+                  deps.judge,
+                  deps.pricing,
+                  deps.judgeTiming,
+                  deps.judgePromptCache,
+                ),
               latchFailure: (error) => {
                 state.simulatedUserFailure ??= error;
               },

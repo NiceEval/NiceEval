@@ -838,6 +838,7 @@ class AssertionsRuntimeImplementation {
   private readonly judge: ResolvedJudgeConfig | undefined;
   private readonly signal: AbortSignal | undefined;
   private readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
+  private readonly judgePromptCache: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   private readonly judgeTiming: import("../runner/timing.ts").TimingRecorder | undefined;
   constructor(
     evaluationKind: AssertionEvaluationKind,
@@ -846,6 +847,7 @@ class AssertionsRuntimeImplementation {
     signal: AbortSignal | undefined,
     judgeUsage?: import("../o11y/judge-usage.ts").JudgeUsageCollector,
     judgeTiming?: import("../runner/timing.ts").TimingRecorder,
+    judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
   ) {
     this.evaluationKind = evaluationKind;
     this.executeStop = executeStop;
@@ -853,6 +855,7 @@ class AssertionsRuntimeImplementation {
     this.signal = signal;
     this.judgeUsage = judgeUsage;
     this.judgeTiming = judgeTiming;
+    this.judgePromptCache = judgePromptCache;
     const check = (...args: readonly unknown[]) => this.checkFor(check, args);
     const base = {
       evaluationKind,
@@ -890,6 +893,7 @@ class AssertionsRuntimeImplementation {
       this.signal,
       (index) => this.judgeUsage?.forEntry(index),
       this.judgeTiming,
+      this.judgePromptCache,
     );
     const owner = { session, entries: [] as AssertionEntry[], concurrent: definition.concurrent };
     this.agentJudgeReviews.push(owner);
@@ -984,6 +988,7 @@ class AssertionsRuntimeImplementation {
               this.judge,
               this.signal,
               this.judgeUsage?.forEntry(this.entries.length),
+              this.judgePromptCache,
             );
           return materialExistenceRegistration(prepared);
         }
@@ -993,6 +998,7 @@ class AssertionsRuntimeImplementation {
           this.judge,
           this.signal,
           this.judgeUsage?.forEntry(this.entries.length),
+          this.judgePromptCache,
         );
       };
       const registration = contextualRegistration();
@@ -1145,6 +1151,7 @@ class AssertionsRuntimeImplementation {
           options: managedScore,
           material: value,
           judge: this.judge,
+          promptCache: this.judgePromptCache,
           usage: this.judgeUsage === undefined ? undefined : this.judgeUsage.forEntry(this.entries.length),
           signal: this.signal,
         }),
@@ -2377,6 +2384,7 @@ export function createAssertionsRuntime(input: {
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
+  readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
 }): AssertionsRuntime<"pass">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: "score";
@@ -2385,6 +2393,7 @@ export function createAssertionsRuntime(input: {
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
+  readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
 }): AssertionsRuntime<"score">;
 export function createAssertionsRuntime(input: {
   readonly evaluationKind: AssertionEvaluationKind;
@@ -2393,6 +2402,7 @@ export function createAssertionsRuntime(input: {
   readonly signal: AbortSignal | undefined;
   readonly judgeUsage: import("../o11y/judge-usage.ts").JudgeUsageCollector | undefined;
   readonly judgeTiming?: import("../runner/timing.ts").TimingRecorder | undefined;
+  readonly judgePromptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
 }): AssertionsRuntime<AssertionEvaluationKind> {
   if (input.evaluationKind !== "pass" && input.evaluationKind !== "score") {
     throw new TypeError('Assertions runtime evaluationKind must be "pass" or "score"');
@@ -2404,6 +2414,7 @@ export function createAssertionsRuntime(input: {
     input.signal,
     input.judgeUsage,
     input.judgeTiming,
+    input.judgePromptCache,
   );
   return runtime as unknown as AssertionsRuntime<AssertionEvaluationKind>;
 }

@@ -32,6 +32,7 @@ export function createSimulatedUserConversation(
   profile: ResolvedJudgeConfig | undefined,
   pricing: Record<string, PriceOverride> | undefined,
   timing?: import("../runner/timing.ts").TimingRecorder,
+  promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
 ): SimulatedUserConversation {
   let session: AgentSession | undefined;
   let prompt: Awaited<ReturnType<typeof createManagedPiSession>>["prompt"] | undefined;
@@ -164,6 +165,7 @@ export function createSimulatedUserConversation(
           paths,
           profile,
           apiKey,
+          promptCache,
           tools: [],
           customTools: () => [tool()],
           systemPrompt: simulatedUserSystemPrompt(definition.instructions),

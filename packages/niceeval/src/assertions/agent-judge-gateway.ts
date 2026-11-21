@@ -36,7 +36,7 @@ import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./
 import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial } from "./judge-material-capture.ts";
 import { interruptibleByCaller, isTransportFailure } from "./judge-transport.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
-import { createManagedPiSession } from "../judge/pi-runtime.ts";
+import { createManagedPiSession, type PiUsageReceipt } from "../judge/pi-runtime.ts";
 import {
   managedPiCredential,
   piDefect,
@@ -101,6 +101,7 @@ export class AgentJudgeSession {
   readonly judge: NormalizedAgentJudge;
   private readonly sandbox: Sandbox;
   private readonly profile: ResolvedJudgeConfig | undefined;
+  private readonly promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   private readonly signal: AbortSignal | undefined;
   private readonly usageForEntry: (index: number) => JudgeUsageEntry | undefined;
   private readonly timing: import("../runner/timing.ts").TimingRecorder | undefined;
@@ -112,10 +113,12 @@ export class AgentJudgeSession {
     signal: AbortSignal | undefined,
     usageForEntry: (index: number) => JudgeUsageEntry | undefined,
     timing?: import("../runner/timing.ts").TimingRecorder,
+    promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
   ) {
     this.judge = judge;
     this.sandbox = sandbox;
     this.profile = profile;
+    this.promptCache = promptCache;
     this.signal = signal;
     this.usageForEntry = usageForEntry;
     this.timing = timing;
@@ -495,11 +498,15 @@ export class AgentJudgeSession {
     const {
       session: agent,
       sessionManager,
+      readUsageReceipts,
+      startCompaction,
+      finishCompaction,
       prompt,
     } = await createManagedPiSession({
       paths: this.pi!,
       profile,
       apiKey,
+      promptCache: this.promptCache,
       systemPrompt: this.systemPrompt(),
       cwd: this.sandbox.workdir,
       tools: ["bash", "read", "write", "edit", "submit_evaluation"],
@@ -624,6 +631,7 @@ export class AgentJudgeSession {
             this.currentTurns += 1;
             this.recordUsage(
               event.message.usage,
+              readUsageReceipts(event.message.usage),
               event.message.stopReason === "error" || event.message.stopReason === "aborted" ? "failed" : "succeeded",
             );
           }
@@ -684,6 +692,7 @@ export class AgentJudgeSession {
           };
         }
         if (event.type === "compaction_start") {
+          startCompaction();
           compaction = this.timingPrompt?.child("agent-judge.compaction");
           this.compactions.push({
             trigger: Math.max(1, this.ordinal),
@@ -693,6 +702,7 @@ export class AgentJudgeSession {
           });
         }
         if (event.type === "compaction_end") {
+          finishCompaction(event.result?.usage);
           compaction?.end(signal.aborted ? "cancelled" : event.result === undefined ? "failed" : "completed");
           compaction = undefined;
           const index = this.compactions.length - 1;
@@ -703,7 +713,8 @@ export class AgentJudgeSession {
               tokensBefore: event.result.tokensBefore,
               summary: event.result.summary,
             };
-            if (event.result.usage !== undefined) this.recordUsage(event.result.usage, "succeeded");
+            if (event.result.usage !== undefined)
+              this.recordUsage(event.result.usage, readUsageReceipts(event.result.usage), "succeeded");
           } else if (!event.willRetry) {
             this.compactions[index] = {
               ...compact,
@@ -787,7 +798,11 @@ export class AgentJudgeSession {
     void this.agent?.abort().catch(() => undefined);
   }
 
-  private recordUsage(usage: Usage, status: "succeeded" | "failed"): void {
+  private recordUsage(
+    usage: Usage,
+    receipts: readonly PiUsageReceipt[] | undefined,
+    status: "succeeded" | "failed",
+  ): void {
     if (this.closed) return;
     const invalid = piUsageFailure(usage);
     if (invalid !== undefined) {
@@ -795,34 +810,23 @@ export class AgentJudgeSession {
       return;
     }
     const profile = this.profile!;
-    const ordinal = ++this.usageOrdinal;
-    const call = this.usage?.begin({
-      operation: "agent",
-      logicalOrdinal: ordinal,
-      transmissionOrdinal: 1,
-      requestModel: profile.model,
-      transportProvider: profile.provider,
-    });
-    if (this.usage !== undefined && call === undefined) {
-      this.fail("unavailable", "judge-usage-capacity-exceeded", "Judge usage capacity exceeded");
-      return;
+    for (const receipt of receipts ?? [undefined]) {
+      const ordinal = ++this.usageOrdinal;
+      const call = this.usage?.begin({
+        operation: "agent",
+        logicalOrdinal: ordinal,
+        transmissionOrdinal: 1,
+        requestModel: profile.model,
+        transportProvider: profile.provider,
+      });
+      if (this.usage !== undefined && call === undefined) {
+        this.fail("unavailable", "judge-usage-capacity-exceeded", "Judge usage capacity exceeded");
+        return;
+      }
+      if (receipt?.httpStatus !== undefined) call?.headers(receipt.httpStatus);
+      if (!receipt?.body && status === "failed") call?.fail("response-unavailable");
+      else call?.body(receipt?.body ?? "", status === "succeeded");
     }
-    if (status === "failed" && usage.totalTokens === 0) {
-      call?.fail("response-unavailable");
-      return;
-    }
-    call?.body(
-      canonical({
-        model: profile.model,
-        usage: {
-          prompt_tokens: usage.input + usage.cacheRead + usage.cacheWrite,
-          completion_tokens: usage.output,
-          total_tokens: usage.totalTokens,
-          prompt_tokens_details: { cached_tokens: usage.cacheRead, cache_write_tokens: usage.cacheWrite },
-        },
-      }),
-      status === "succeeded",
-    );
   }
 
   private async submit(callId: string, args: unknown, signal: AbortSignal) {

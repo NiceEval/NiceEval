@@ -20,6 +20,7 @@ export type ScoreMatchAuditFailure = {
 export type ScoreMatchAuditAttempt = {
   readonly ordinal: number;
   readonly transport: "attempted";
+  readonly promptCacheKeyOmitted?: true;
   readonly result:
     | { readonly state: "returned"; readonly response: string }
     | { readonly state: "failed"; readonly code: string; readonly message: string }
@@ -237,7 +238,14 @@ type PrimitiveRequest =
 
 function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: unknown): PrimitiveRequest | undefined {
   const body = record(value);
-  if (body === undefined || !Array.isArray(body.messages) || body.messages.length !== 2) return undefined;
+  if (body === undefined || !Array.isArray(body.messages)) return undefined;
+  const legacy = body.messages.length === 2;
+  if (!legacy && body.messages.length !== 3) return undefined;
+  if (
+    body.prompt_cache_key !== undefined &&
+    (legacy || typeof body.prompt_cache_key !== "string" || !/^[a-f0-9]{64}$/u.test(body.prompt_cache_key))
+  )
+    return undefined;
   const toolChoice = exact(body.tool_choice, ["type", "function"]);
   const chosenFunction = exact(toolChoice?.function, ["name"]);
   if (toolChoice?.type !== "function" || chosenFunction?.name !== "record_score_match") return undefined;
@@ -247,24 +255,31 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   if (tool?.type !== "function" || toolFunction?.name !== "record_score_match") return undefined;
   const systemMessage = exact(body.messages[0], ["role", "content"]);
   const userMessage = exact(body.messages[1], ["role", "content"]);
+  const criteriaMessage = legacy ? systemMessage : exact(body.messages[2], ["role", "content"]);
   if (
     systemMessage?.role !== "system" ||
     userMessage?.role !== "user" ||
+    criteriaMessage?.role !== "system" ||
     typeof systemMessage.content !== "string" ||
-    typeof userMessage.content !== "string"
+    typeof userMessage.content !== "string" ||
+    typeof criteriaMessage.content !== "string"
   )
     return undefined;
   let system: unknown;
   let user: unknown;
+  let criteria: unknown;
   try {
     system = JSON.parse(systemMessage.content);
     user = JSON.parse(userMessage.content);
+    criteria = legacy ? system : JSON.parse(criteriaMessage.content);
   } catch {
     return undefined;
   }
   if (
     canonicalScoreMatchAuditJson(system) !== systemMessage.content ||
-    canonicalScoreMatchAuditJson(user) !== userMessage.content
+    canonicalScoreMatchAuditJson(user) !== userMessage.content ||
+    canonicalScoreMatchAuditJson(criteria) !== criteriaMessage.content ||
+    (!legacy && !text(exact(system, ["instruction"])?.instruction))
   )
     return undefined;
   function operationSystemKeys(): string[] {
@@ -273,18 +288,18 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
     return ["operation", "rubric", "maxItems"];
   }
   const systemKeys = operationSystemKeys();
-  const evidenceIds = operation === "classify" ? record(system)?.evidenceIds : undefined;
+  const evidenceIds = operation === "classify" ? record(criteria)?.evidenceIds : undefined;
   if (evidenceIds !== undefined && !validEvidenceIds(evidenceIds)) return undefined;
-  const systemInput = exact(system, [
+  const systemInput = exact(criteria, [
     ...systemKeys,
-    "instruction",
+    legacy ? "instruction" : "output",
     ...(evidenceIds === undefined ? [] : ["evidenceIds"]),
   ]);
   const userInput = exact(user, operation === "batchClassify" ? ["material", "items"] : ["material"]);
   if (
     systemInput === undefined ||
     userInput === undefined ||
-    !text(systemInput.instruction) ||
+    !text(legacy ? systemInput.instruction : systemInput.output) ||
     systemInput.operation !== operation ||
     !text(systemInput.rubric)
   )
@@ -377,7 +392,13 @@ function primitiveOutput(operation: ScoreMatchAuditCall["operation"], output: st
 }
 
 function validAttempt(value: unknown, ordinal: number): value is ScoreMatchAuditAttempt {
-  const item = exact(value, ["ordinal", "transport", "result"]);
+  const omission = record(value)?.promptCacheKeyOmitted;
+  const item = exact(value, [
+    "ordinal",
+    "transport",
+    "result",
+    ...(omission === true ? ["promptCacheKeyOmitted"] : []),
+  ]);
   if (item === undefined || item.ordinal !== ordinal || item.transport !== "attempted") return false;
   const result = record(item.result);
   if (result?.state === "returned")
@@ -417,6 +438,13 @@ function validCall(value: unknown, ordinal: number): value is ScoreMatchAuditCal
     if (
       canonicalScoreMatchAuditJson(requestValue) !== admitted.request ||
       primitiveRequest(item.operation as ScoreMatchAuditCall["operation"], requestValue) === undefined
+    )
+      return false;
+    const firstOmission = admitted.attempts.findIndex((attempt) => attempt.promptCacheKeyOmitted === true);
+    if (
+      firstOmission !== -1 &&
+      (typeof record(requestValue)?.prompt_cache_key !== "string" ||
+        admitted.attempts.slice(firstOmission).some((attempt) => attempt.promptCacheKeyOmitted !== true))
     )
       return false;
   } catch {
@@ -701,7 +729,9 @@ function validTypeSafeCall(value: unknown, ordinal: number): value is TypeSafeAu
     typeof admitted.request !== "string" ||
     !Array.isArray(admitted.attempts) ||
     admitted.attempts.length > 3 ||
-    admitted.attempts.some((attempt, index) => !validAttempt(attempt, index + 1))
+    admitted.attempts.some(
+      (attempt, index) => !validAttempt(attempt, index + 1) || attempt.promptCacheKeyOmitted === true,
+    )
   )
     return false;
   let requestValue: unknown;
@@ -820,7 +850,7 @@ function validImageCall(
   const request: unknown = JSON.parse(call.requestTemplate);
   if (canonicalScoreMatchAuditJson(request) !== call.requestTemplate) return false;
   const body = record(request);
-  if (body === undefined || !Array.isArray(body.messages) || body.messages.length !== 2) return false;
+  if (body === undefined || !Array.isArray(body.messages)) return false;
   const user = exact(body.messages[1], ["role", "content"]);
   if (user?.role !== "user" || !Array.isArray(user.content) || user.content.length < 1) return false;
   const first = exact(user.content[0], ["type", "text"]);
@@ -844,7 +874,7 @@ function validImageCall(
   }
   const virtual = canonicalScoreMatchAuditJson({
     ...body,
-    messages: [body.messages[0], { role: "user", content: first.text }],
+    messages: body.messages.map((message, index) => (index === 1 ? { role: "user", content: first.text } : message)),
   });
   const normalized = { ...call, request: virtual } as Record<string, unknown>;
   delete normalized.requestTemplate;
@@ -852,7 +882,7 @@ function validImageCall(
   if (!validCall(normalized, ordinal)) return false;
   const actual = canonicalScoreMatchAuditJson({
     ...body,
-    messages: [body.messages[0], { role: "user", content: parts }],
+    messages: body.messages.map((message, index) => (index === 1 ? { role: "user", content: parts } : message)),
   });
   return utf8ByteLength(actual) === wireBody.byteLength && sha256(actual) === wireBody.sha256;
 }

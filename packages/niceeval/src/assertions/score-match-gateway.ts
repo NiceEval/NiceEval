@@ -3,6 +3,7 @@ import { ordinaryJudgeIdentity } from "../runner/judge-identity.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
 import {
   SCORE_MATCH_INSTRUCTION,
+  SCORE_MATCH_OUTPUT_INSTRUCTION,
   SCORE_MATCH_TOOL_DESCRIPTION,
   typesafeItemInstructions,
   typesafeMaterialInstructions,
@@ -189,6 +190,7 @@ function validatePrimitiveOptions(operation: Operation, options: Record<string, 
 }
 interface PreparedRequest {
   readonly request: string;
+  readonly promptCacheKey?: string | undefined;
   readonly imageAudit:
     | { readonly kind: "none" }
     | {
@@ -207,27 +209,23 @@ function chatRequestFor(
   profile: ResolvedJudgeConfig,
   images: ReadonlyMap<JudgeImage, CapturedImageReference>,
   imageAudit: boolean,
+  promptCacheKey: string | undefined,
 ): PreparedRequest {
   if (profile.protocol.kind !== "chat-completions")
     throw new TypeError("Chat request requires a chat-completions Provider");
   const options = primitiveOptions(operation, input, images);
   validatePrimitiveOptions(operation, options);
   const rubric = options.rubric as string;
-  const system: Record<string, unknown> = {
-    operation,
-    rubric,
-
-    instruction: SCORE_MATCH_INSTRUCTION,
-  };
+  const criteria: Record<string, unknown> = { operation, rubric, output: SCORE_MATCH_OUTPUT_INSTRUCTION };
   const projected = projectJudgeMaterial(options.material as JudgeMaterial, images);
   const user: Record<string, unknown> = { material: projected.json };
   const string = { type: "string", pattern: "\\S" };
   let parameters: Record<string, unknown>;
   if (operation === "score") {
-    system.anchors = options.anchors;
+    criteria.anchors = options.anchors;
     parameters = schemaObject({ measurement: { type: "number", minimum: 0, maximum: 1 }, rationale: string });
   } else if (operation === "extract") {
-    system.maxItems = options.maxItems;
+    criteria.maxItems = options.maxItems;
     parameters = schemaObject({
       items: { type: "array", items: string, maxItems: options.maxItems },
       complete: { type: "boolean" },
@@ -235,11 +233,11 @@ function chatRequestFor(
     });
   } else {
     const choices = choicesOf(options.choices);
-    system.choices = choices;
+    criteria.choices = choices;
     const choice = { type: "string", enum: choices };
     if (operation === "classify") {
       const evidenceIds = options.evidenceIds as readonly string[] | undefined;
-      if (evidenceIds !== undefined) system.evidenceIds = evidenceIds;
+      if (evidenceIds !== undefined) criteria.evidenceIds = evidenceIds;
       parameters = schemaObject({
         choice,
         rationale: string,
@@ -263,8 +261,9 @@ function chatRequestFor(
   const envelope = {
     model: profile.model,
     max_completion_tokens: profile.protocol.maxOutputTokens,
+    ...(promptCacheKey === undefined ? {} : { prompt_cache_key: promptCacheKey }),
     messages: [
-      { role: "system", content: canonical(system) },
+      { role: "system", content: canonical({ instruction: SCORE_MATCH_INSTRUCTION }) },
       {
         role: "user",
         content: imageAudit
@@ -277,6 +276,7 @@ function chatRequestFor(
             ]
           : canonical(user),
       },
+      { role: "system", content: canonical(criteria) },
     ],
     tools: [
       {
@@ -305,11 +305,13 @@ function chatRequestFor(
               })),
             ],
           },
+          envelope.messages[2],
         ],
       })
     : requestTemplate;
   return {
     request: wireBody,
+    promptCacheKey,
     imageAudit: imageAudit
       ? {
           kind: "images",
@@ -531,6 +533,7 @@ export function prepareManagedScoreMatch(input: {
   readonly material: unknown;
   readonly judge: ResolvedJudgeConfig | undefined;
   readonly signal: AbortSignal | undefined;
+  readonly promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly usage: import("../o11y/judge-usage.ts").JudgeUsageEntry | undefined;
 }): MeasurementAssertionRegistration & {
   readonly terminalEvidence: () => readonly AssertionMaterial[];
@@ -664,12 +667,13 @@ export function prepareManagedScoreMatch(input: {
           failure("unavailable", "judge-capability-unavailable", "TypeSafe Provider does not support extract"),
         );
       }
+      const promptCacheKey = input.promptCache?.activeKey;
       let prepared: PreparedRequest;
       try {
         prepared =
           profile.protocol.kind === "typesafe-system-one"
             ? typesafeRequestFor(operation as Exclude<Operation, "extract">, raw, profile)
-            : chatRequestFor(operation, raw, profile, imageByValue, images.length > 0);
+            : chatRequestFor(operation, raw, profile, imageByValue, images.length > 0, promptCacheKey);
       } catch (error) {
         return reject(failure("errored", "score-match-invalid-input", errorSummary(error)));
       }
@@ -689,7 +693,14 @@ export function prepareManagedScoreMatch(input: {
       {
         const requestFor = (material: unknown) =>
           profile.protocol.kind === "chat-completions"
-            ? chatRequestFor(operation, { ...prepared.options, material }, profile, imageByValue, images.length > 0)
+            ? chatRequestFor(
+                operation,
+                { ...prepared.options, material },
+                profile,
+                imageByValue,
+                images.length > 0,
+                promptCacheKey,
+              )
             : typesafeRequestFor(
                 operation as Exclude<Operation, "extract">,
                 { ...prepared.options, material },
@@ -738,6 +749,7 @@ export function prepareManagedScoreMatch(input: {
           } as ScoreMatchAuditAny["calls"][number];
       };
       update();
+      let bodyWithoutCacheKey: string | undefined;
       busy = true;
       const execute = Effect.gen(function* () {
         const timing = yield* CurrentJudgeTiming;
@@ -755,14 +767,24 @@ export function prepareManagedScoreMatch(input: {
               });
               if (input.usage !== undefined && usage === undefined)
                 return Promise.reject(new JudgeUsageAdmissionError());
-              attempts.push({ ordinal: attempt, transport: "attempted", result: { state: "interrupted" } });
+              const omitCacheKey = prepared.promptCacheKey !== undefined && input.promptCache?.activeKey === undefined;
+              if (omitCacheKey && bodyWithoutCacheKey === undefined) {
+                const { prompt_cache_key: _omitted, ...request } = JSON.parse(prepared.request);
+                bodyWithoutCacheKey = JSON.stringify(request);
+              }
+              attempts.push({
+                ordinal: attempt,
+                transport: "attempted",
+                ...(omitCacheKey ? { promptCacheKeyOmitted: true } : {}),
+                result: { state: "interrupted" },
+              });
               update();
               return requestScoreMatchProvider({
                 baseUrl: profile.baseUrl,
                 endpoint: profile.protocol.kind === "chat-completions" ? "chat/completions" : "systemone",
                 apiKey,
                 headers: profile.headers,
-                body: prepared.request,
+                body: omitCacheKey ? bodyWithoutCacheKey! : prepared.request,
                 maxBytes: responseCap,
                 signal,
                 usage,
@@ -786,14 +808,19 @@ export function prepareManagedScoreMatch(input: {
                 ? outcome.value.preOutputFailure
                 : outcome.error;
           if (error !== undefined) {
+            const physical = attempts[attempt - 1];
+            const cacheKeyRejected =
+              outcome.ok &&
+              physical !== undefined &&
+              physical.promptCacheKeyOmitted === undefined &&
+              input.promptCache?.observeRejection(prepared.promptCacheKey, outcome.value.status, outcome.value.body);
             if (
               outcome.ok &&
               outcome.value.preOutputFailure === undefined &&
               isJudgeContextOverflow(outcome.value.body)
             ) {
               attempts[attempt - 1] = {
-                ordinal: attempt,
-                transport: "attempted",
+                ...physical!,
                 result: { state: "returned", response: outcome.value.body },
               };
               const problem = latch(
@@ -816,13 +843,13 @@ export function prepareManagedScoreMatch(input: {
               return yield* Effect.fail(typedFailure(problem));
             }
             attempts[attempt - 1] = {
-              ordinal: attempt,
-              transport: "attempted",
+              ...physical!,
               result: outcome.ok
                 ? { state: "returned", response: outcome.value.body }
                 : { state: "failed", code: "judge-call-failed", message: errorSummary(error) },
             };
             update();
+            if (cacheKeyRejected && attempt < 3) continue;
             if (isTransientJudgeFailure(error, outcome.ok ? outcome.value.body : undefined) && attempt < 3) {
               const headers =
                 typeof error === "object" && error !== null && "headers" in error ? error.headers : undefined;
@@ -843,8 +870,7 @@ export function prepareManagedScoreMatch(input: {
           if (!outcome.ok) return yield* Effect.die(new Error("Unreachable transport outcome"));
           received = outcome.value;
           attempts[attempt - 1] = {
-            ordinal: attempt,
-            transport: "attempted",
+            ...attempts[attempt - 1]!,
             result: { state: "returned", response: received.body },
           };
           update();

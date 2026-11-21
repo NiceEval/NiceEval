@@ -89,7 +89,7 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
 
       // Chat Completions protocol
       const toolName = payload.tool_choice?.function?.name as string;
-      const sys = JSON.parse(payload.messages[0].content as string) as {
+      const sys = JSON.parse(payload.messages[2].content as string) as {
         operation: "score" | "classify" | "extract" | "batchClassify";
         choices?: string[];
       };
