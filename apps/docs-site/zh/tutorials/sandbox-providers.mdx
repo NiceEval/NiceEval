@@ -1,7 +1,7 @@
 ---
 title: "选择并配置 Sandbox Provider"
 sidebarTitle: "Sandbox"
-description: "给 Coding Agent 选一个隔离运行环境：Docker、Incus、Vercel、E2B 与 OpenSandbox 的选择、准备与缓存。"
+description: "为 Coding Agent 选择、准备和缓存隔离环境，并用 startCommand 或 startShell 运行 Sandbox 后台命令。"
 ---
 
 Coding Agent 要在一个能随意改文件、跑命令的环境里工作，而且不能碰到你的机器。这个隔离环境就是 Sandbox，由 Provider 负责创建和销毁。
@@ -153,6 +153,28 @@ Agent 需要执行 `docker build`、`docker run` 或 `docker compose` 时，用 
 | `stop()` | 销毁环境 |
 
 两个 `OrThrow` 方法抛出的错误消息会附带 stderr 的末尾几行，已经清理、脱敏并截断。stderr 为空时改用 stdout。排查时先看这段摘要，需要完整输出时再读 `SandboxCommandExitError.result`。
+
+### 后台命令
+
+要让耗时的验证和其他操作并行，在 `t.sandbox` 或 Adapter 的 `ctx.sandbox` 上调用 `startCommand(cmd, args)` 或 `startShell(script)`。前者接收命令名和参数数组，后者接收 shell 脚本。两者都在派发命令后返回句柄。命令启动失败会在等待时抛出。
+
+例如，项目有 `test` 和 `lint` 脚本时，可以在评估用例的 `test(t)` 里先启动耗时的测试，同时运行 lint，然后检查测试结果。
+
+```ts
+import { commandSucceeded } from "niceeval/expect";
+
+// 在 test(t) 内
+const tests = await t.sandbox.startCommand("pnpm", ["test"]);
+await t.sandbox.runCommandOrThrow("pnpm", ["run", "lint"]);
+const result = await tests.wait({ signal: t.signal });
+t.check(result, commandSucceeded()).label("项目测试通过");
+```
+
+- `wait()` 返回 `CommandResult`，其中包含退出码、`stdout` 和 `stderr`。如果命令退出码为 `1` 时输出仍可用于判分，用 `wait()` 读取结果。要求命令成功时，用 `waitOrThrow()` 在非零退出时抛出 `SandboxCommandExitError`。命令超时、被取消或发生传输错误时，两种等待方法都会抛错。
+- 传给 `wait()` 或 `waitOrThrow()` 的 `signal` 只取消本次等待，命令继续运行。要让 signal 取消命令，把它放在 `startCommand()` 或 `startShell()` 的命令选项里。也可以调用 `await tests.kill()`，它会终止命令并等待进程树退出。
+- Attempt 结束时，NiceEval 会自动终止仍在运行的后台命令。即使 Sandbox 被保留或复用，后台命令也会在 Attempt 收尾时结束。
+
+完整签名见 [`BackgroundCommand`](/zh/reference/define-agent#backgroundcommand)。
 
 ## 按顺序准备 Sandbox
 

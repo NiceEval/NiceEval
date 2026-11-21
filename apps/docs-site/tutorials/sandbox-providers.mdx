@@ -1,7 +1,7 @@
 ---
 title: "Choose and Configure a Sandbox Provider"
 sidebarTitle: "Sandbox"
-description: "Choose, prepare, and cache environments with Docker, Incus, Vercel, E2B, or OpenSandbox."
+description: "Choose, prepare, and cache an isolated environment for a Coding Agent, and run Sandbox commands in the background with startCommand or startShell."
 ---
 
 A Coding Agent needs an environment where it can freely change files and run commands without touching your machine. That isolated environment is the Sandbox, created and destroyed by a Provider.
@@ -153,6 +153,28 @@ Whichever Provider you use, Adapters and evals get the same `Sandbox` interface.
 | `stop()` | Destroy the environment |
 
 The error messages thrown by the two `OrThrow` methods include the last few lines of stderr, already cleaned, redacted, and truncated. When stderr is empty, stdout is used instead. When debugging, read this summary first, and read `SandboxCommandExitError.result` when you need the full output.
+
+### Background commands
+
+To run a long validation alongside other work, call `startCommand(cmd, args)` or `startShell(script)` on `t.sandbox` or on `ctx.sandbox` in an Adapter. `startCommand` takes a command name and an array of arguments. `startShell` takes a shell script. Both return a handle after dispatching the command. If the command fails to start, the error surfaces when you wait.
+
+For example, if your project has `test` and `lint` scripts, start the long test suite in the eval's `test(t)` function, run lint while the tests run, and then check the test result.
+
+```ts
+import { commandSucceeded } from "niceeval/expect";
+
+// Inside test(t)
+const tests = await t.sandbox.startCommand("pnpm", ["test"]);
+await t.sandbox.runCommandOrThrow("pnpm", ["run", "lint"]);
+const result = await tests.wait({ signal: t.signal });
+t.check(result, commandSucceeded()).label("Project tests pass");
+```
+
+- `wait()` returns a `CommandResult` with the exit code, `stdout`, and `stderr`. Use `wait()` if the command exits with code `1` and its output can still inform the verdict. When the command must succeed, use `waitOrThrow()` to throw a `SandboxCommandExitError` on a nonzero exit. Both methods throw if the command times out, is canceled, or encounters a transport error.
+- A `signal` passed to `wait()` or `waitOrThrow()` cancels only that wait. The command keeps running. To cancel the command with a signal, pass it in the options to `startCommand()` or `startShell()`. You can also call `await tests.kill()` to stop the command and wait for its process tree to exit.
+- When the Attempt ends, NiceEval stops any background commands still running. This cleanup applies even if NiceEval keeps or reuses the Sandbox.
+
+See [`BackgroundCommand`](/reference/define-agent#backgroundcommand) for the full signatures.
 
 ## Prepare the Sandbox in order
 
