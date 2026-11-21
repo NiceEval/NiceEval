@@ -3669,12 +3669,10 @@ async function runAttemptBody(
       // 作者准备与 Agent install 都不属于 Agent diff；Runner 在这些
       // 基础设施活动完成后建立统一的 Agent 可归因起点。
       enterPhase("workspace.baseline");
-      ledger = await createChangeLedger(
-        sandbox,
-        evalDef.diff === undefined
-          ? undefined
-          : { include: [...evalDef.diff.include], ignore: [...evalDef.diff.ignore] },
-      );
+      ledger = await createChangeLedger(sandbox, {
+        ...evalDef.diff,
+        retainResetState: run.sandboxReuse === true,
+      });
       registerLedger(ledger);
     }
 

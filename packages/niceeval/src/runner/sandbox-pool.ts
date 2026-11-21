@@ -457,7 +457,7 @@ export class ReusableSandboxPool {
         );
       }
       const prepared = yield* Effect.gen({ self: this }, function* () {
-        const ledger = yield* externalPromise(() => createChangeLedger(sandbox));
+        const ledger = yield* externalPromise(() => createChangeLedger(sandbox, { retainResetState: true }));
         // root 执行身份下题间 reset 永不安全(Agent 能读上一条 Attempt 留下的私有分类账对象);
         // 在实例进池、第一条 Attempt 派发前就拒绝,而不是等到归还时才在 resetToAnchor() 里
         // 暴露(那样首条 Attempt 已经跑完,失败还可能被静默退休吞掉)。

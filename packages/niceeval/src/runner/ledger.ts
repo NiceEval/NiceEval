@@ -189,8 +189,9 @@ export interface ChangeLedger {
 
 interface LedgerOptions {
   /** defineEval({ diff }) 的归因调整:ignore 追加排除,include 打洞加回(优先级最高)。 */
-  include: string[] | undefined;
-  ignore: string[] | undefined;
+  readonly include?: readonly string[];
+  readonly ignore?: readonly string[];
+  readonly retainResetState: boolean;
 }
 
 /** 每条 git 命令都带上私有 GIT_DIR + workdir work-tree;项目/全局 gitignore 一律不参与。 */
@@ -305,9 +306,9 @@ function gitignorePathspecs(pattern: string, exclude: boolean): string[] {
 }
 
 /** 打分类账锚点(workspace.baseline 阶段,环境层钩子之后):git init + 冻结排除清单 + 首笔 commit。 */
-export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions): Promise<ChangeLedger> {
-  const includes = canonicalPolicyEntries(opts?.include ?? [], "include");
-  const ignored = canonicalPolicyEntries(opts?.ignore ?? [], "ignore");
+export async function createChangeLedger(sandbox: Sandbox, opts: LedgerOptions): Promise<ChangeLedger> {
+  const includes = canonicalPolicyEntries(opts.include ?? [], "include");
+  const ignored = canonicalPolicyEntries(opts.ignore ?? [], "ignore");
   const excludes = [...DEFAULT_EXCLUDES, ...ignored];
   const gitDir = LEDGER_GIT_DIR;
   const exportDir = DEFAULT_LEDGER_EXPORT_DIR;
@@ -316,10 +317,12 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
   // 只给 runner 私有 ledger 命令提权，以便读取题目故意设置的受限文件。脚本不 chmod/chown
   // workdir，Agent 命令仍沿标准非 root 身份；不支持提权的 provider 保持既有用户态路径。
   const commandOptions = { env, user: rootCommands ? ("root" as const) : undefined };
-  const captureMetadata = rootCommands ? ` && ${captureBaselineMetadataScript()}` : "";
+  // Only reuse restores this tree. Per-file metadata capture is extra work for a single-use Attempt.
+  const reuseAnchor = opts.retainResetState ? " && git tag niceeval-reuse-anchor" : "";
+  const captureMetadata = rootCommands && opts.retainResetState ? ` && ${captureBaselineMetadataScript()}` : "";
   const lockPrivateLedger = rootCommands ? ' && chmod go-rwx "$GIT_DIR"' : "";
   let ordinaryUid: string | undefined;
-  if (rootCommands) {
+  if (rootCommands && opts.retainResetState) {
     // Capture before Agent setup/send can mutate the VM. A post-attempt `id` probe would not be a
     // trustworthy boundary when the configured execution identity itself is root.
     const identity = await sandbox.runShell("command -p id -u", { env });
@@ -351,9 +354,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
     // The path is predictable inside an isolated VM. Remove any image/prepare-time occupant or
     // symlink, then recreate the exact runner-private directory as root 0700 before Git touches it.
     `rm -rf -- ${shellQuote(gitDir)} && mkdir -p -m 0700 -- ${shellQuote(gitDir)} && ` +
-      `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor" && ` +
-      `(git rev-parse -q --verify niceeval-reuse-anchor >/dev/null || git tag niceeval-reuse-anchor)` +
-      captureMetadata,
+      `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor"${reuseAnchor}${captureMetadata}`,
     {
       ...commandOptions,
     },
@@ -391,6 +392,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
       return exportAgentWindows(sandbox, commandOptions, exportDir, rootCommands);
     },
     async resetToAnchor(): Promise<void> {
+      if (!opts.retainResetState) throw new Error("Change ledger was created without Sandbox reuse state");
       if (ordinaryUid === "0") {
         throw new Error(
           "sandboxReuse cannot safely reuse a root-agent sandbox: the Agent could read private ledger objects from prior attempts; use a non-root execution user or disable sandboxReuse",

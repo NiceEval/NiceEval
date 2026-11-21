@@ -1,7 +1,7 @@
-import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,8 @@ const { runCliInProcess } =
   require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
 const { decodeInspectionDocument, narrowInspectionSuccess } =
   require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
+const { noSandboxBackendCapabilities, registerSandboxCapabilities, supportedBackendCapability } =
+  require("./src/sandbox/backend.ts") as typeof import("../../packages/niceeval/src/sandbox/backend.ts");
 
 const FIXTURE = fileURLToPath(new URL("fixtures/turn-sandbox/", import.meta.url));
 const PATHS = ["a.txt", "b.txt", "nested/c.txt"];
@@ -30,14 +32,27 @@ const cases = samples.map((pathsByTurn, index) => ({ index, pathsByTurn }));
 const missingWindow = [[], [], [], []];
 let cwd: string | undefined;
 const locators = new Map<string, string>();
+const sandboxProbe = Symbol.for("niceeval.test.turn-sandbox");
+const resetSnapshots: boolean[] = [];
 
 // Publish all samples via one Experiment Run, then read each Attempt independently.
 beforeAll(async () => {
   cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-turn-property-"));
   await cp(FIXTURE, cwd, { recursive: true });
+  await mkdir(join(cwd, "node_modules"));
+  await symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules/effect"), "dir");
   for (const source of ["agent.ts", "sandbox.ts", "experiments/turns.ts"]) {
     await rename(join(cwd, `${source}.txt`), join(cwd, source));
   }
+  Reflect.set(process, sandboxProbe, {
+    register(sandbox: Parameters<typeof registerSandboxCapabilities>[0]) {
+      registerSandboxCapabilities(sandbox, {
+        ...noSandboxBackendCapabilities,
+        rootCommands: supportedBackendCapability(true),
+      });
+    },
+    stopped: (hasResetSnapshot: boolean) => resetSnapshots.push(hasResetSnapshot),
+  });
   const source = await readFile(join(cwd, "evals/turns.eval.ts.txt"), "utf8");
   for (const [index, paths] of [...samples, missingWindow].entries()) {
     const id = `case-${index}`;
@@ -64,6 +79,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  Reflect.deleteProperty(process, sandboxProbe);
   if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
 });
 
@@ -124,6 +140,13 @@ test.each(cases)("changedPaths scopes case $index to its windows and their union
     ...pathsByTurn.flatMap(() => ["matched", "mismatched"]),
     "matched",
   ]);
+});
+
+// @feature docs/feature/sandbox/architecture/README.md
+test("single-use root-capable Sandboxes capture the diff without a reset metadata snapshot", async () => {
+  const entries = await showAssertions(1);
+  expect(entries[0]?.decision.result).toBe("matched");
+  expect(resetSnapshots).toEqual(Array.from({ length: samples.length + 1 }, () => false));
 });
 
 // @feature docs/feature/sandbox/library/asserting-results.md#限定到某一轮

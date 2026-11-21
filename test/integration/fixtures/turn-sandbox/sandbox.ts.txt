@@ -25,6 +25,7 @@ async function hostSandbox() {
   const workdir = join(root, "workspace");
   const privateTmp = join(root, "tmp");
   await Promise.all([mkdir(workdir), mkdir(privateTmp)]);
+  await writeFile(join(workdir, "baseline.txt"), "Unchanged fixture file\n");
   const map = (value: string) => value.replaceAll("/tmp/.niceeval-ledger", join(privateTmp, ".niceeval-ledger"));
   const at = (path: string) => (isAbsolute(map(path)) ? map(path) : resolve(workdir, map(path)));
   const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
@@ -53,7 +54,7 @@ async function hostSandbox() {
     await mkdir(dirname(at(path)), { recursive: true });
     await writeFile(at(path), bytes);
   };
-  return {
+  const sandbox = {
     sandboxId: `turn-sandbox-${root.split("/").at(-1)}`,
     workdir,
     otlpHost: "localhost",
@@ -75,8 +76,21 @@ async function hostSandbox() {
       await writeFile(target, await readFile(at(source)));
     },
     downloadDirectory: (source: string, target: string) => cp(at(source), target, { recursive: true }),
-    stop: () => rm(root, { recursive: true, force: true }),
+    stop: async () => {
+      try {
+        const metadata = await sandbox.pathExists("/tmp/.niceeval-ledger/niceeval-baseline-metadata");
+        probe.stopped(metadata);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
   };
+  const probe = Reflect.get(process, Symbol.for("niceeval.test.turn-sandbox")) as {
+    register(sandbox: unknown): void;
+    stopped(hasResetSnapshot: boolean): void;
+  };
+  probe.register(sandbox);
+  return sandbox;
 }
 
 export default defineSandbox({
