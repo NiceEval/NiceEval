@@ -1,6 +1,7 @@
 import { modelRolesToWire } from "../model-roles.ts";
 import { registerCommandAssertionSnapshot } from "../assertions/command-evidence.ts";
 import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
+import type { ExecutionTraceLimitation } from "../adapter-execution-trace.ts";
 import { randomUUID } from "node:crypto";
 import { beforeCacheFailureDetail } from "../sandbox/remote-snapshot/failure.ts";
 import { pauseOnFailure } from "./pause-on-failure.ts";
@@ -1601,21 +1602,15 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     t0,
                     base,
                     {
-                      recordTelemetryTrace: async (spans, partial) => {
-                        if (adapterExecutionTraces === undefined || (spans.length === 0 && !partial)) return;
+                      recordTelemetryTrace: async (spans, limitation) => {
+                        if (adapterExecutionTraces === undefined || (spans.length === 0 && limitation === undefined))
+                          return;
                         await adapterExecutionTraces.recordTrace({
                           traceId: "niceeval.telemetry",
                           schema: { id: "niceeval.otlp" },
                           collection: {
-                            state: partial ? "partial" : "complete",
-                            limitations: partial
-                              ? [
-                                  {
-                                    code: "telemetry-budget-exceeded",
-                                    message: "Telemetry collection exceeded its 30000 ms budget.",
-                                  },
-                                ]
-                              : [],
+                            state: limitation === undefined ? "complete" : "partial",
+                            limitations: limitation === undefined ? [] : [limitation],
                           },
                           scopes: [],
                           events: spans.map((span, index) => ({
@@ -2569,7 +2564,10 @@ function assertDeadlineFitsPlan(
 }
 
 interface AttemptResources {
-  readonly recordTelemetryTrace: (spans: TraceSpan[], partial: boolean) => Promise<void>;
+  readonly recordTelemetryTrace: (
+    spans: TraceSpan[],
+    limitation: ExecutionTraceLimitation | undefined,
+  ) => Promise<void>;
   readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
   judgeUsage: JudgeUsageCollector;
@@ -4115,7 +4113,7 @@ async function runAttemptBody(
           ),
         );
         trace = collected.trace;
-        await res.recordTelemetryTrace(collected.trace, collected.partial);
+        await res.recordTelemetryTrace(collected.trace, collected.limitation);
       } catch (collectError) {
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({

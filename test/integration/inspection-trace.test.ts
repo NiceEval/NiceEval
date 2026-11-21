@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -75,13 +75,14 @@ describe("portable trace", () => {
 
   beforeAll(async () => {
     cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-inspection-trace-"));
-    await Promise.all(["evals", "experiments", "adapters"].map((dir) => mkdir(join(cwd, dir))));
+    await Promise.all(["evals", "experiments", "adapters", "node_modules"].map((dir) => mkdir(join(cwd, dir))));
     expectedImageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aI1sAAAAASUVORK5CYII=",
       "base64",
     );
     expectedImageSha256 = createHash("sha256").update(expectedImageBytes).digest("hex");
     await Promise.all([
+      symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules", "effect"), "dir"),
       writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
       writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8")),
       writeFile(

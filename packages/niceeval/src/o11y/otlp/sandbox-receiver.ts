@@ -16,6 +16,7 @@
 // (见 startCollector)。
 
 import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { Effect } from "effect";
 import type { Sandbox, TraceSpan } from "../../types.ts";
 import { decodeSpanEnvelopes } from "./decode.ts";
@@ -66,6 +67,52 @@ const PORT_WAIT_MS = 20_000;
 // 启动整体的重试次数。慢不需要重试(一次等满预算就够),这里兜的是 collector 起来就死
 // (镜像里没有 node、脚本被 OOM kill 等)——那种情况下沙箱侧循环会立刻 break,重试很便宜。
 const START_ATTEMPTS = 2;
+
+// The collector already requires Node. Read more spool data per command when
+// it compresses well, while keeping the same maximum base64 output as a 1 MiB
+// read. High-entropy data falls back to a smaller raw chunk at the same offset.
+const RAW_CHUNK_BYTES = 1024 * 1024;
+const SPOOL_CHUNK_BYTES = 4 * RAW_CHUNK_BYTES;
+const readSpoolScript = /* js */ `
+const fs = require("node:fs");
+const { gzipSync } = require("node:zlib");
+const [path, offset] = process.argv.slice(1);
+let fd;
+try {
+  fd = fs.openSync(path, "r");
+} catch (error) {
+  if (error.code === "ENOENT") process.exit(0);
+  throw error;
+}
+const buffer = Buffer.allocUnsafe(${SPOOL_CHUNK_BYTES});
+let size = 0;
+try {
+  while (size < buffer.length) {
+    const read = fs.readSync(fd, buffer, size, buffer.length - size, Number(offset) + size);
+    if (read === 0) break;
+    size += read;
+  }
+} finally {
+  fs.closeSync(fd);
+}
+if (size > 0) {
+  const raw = buffer.subarray(0, size);
+  let payload = raw.subarray(0, ${RAW_CHUNK_BYTES});
+  let useGzip = false;
+  try {
+    const compressed = gzipSync(raw, { level: 1, maxOutputLength: payload.length });
+    if (compressed.length < size) {
+      payload = compressed;
+      useGzip = true;
+    }
+  } catch (error) {
+    if (error.code !== "ERR_BUFFER_TOO_LARGE") throw error;
+  }
+  const consumed = useGzip ? size : payload.length;
+  const eof = consumed === size && size < buffer.length;
+  process.stdout.write((useGzip ? "g" : "r") + (eof ? "!" : "+") + payload.toString("base64"));
+}
+`;
 
 export function createInSandboxTraceReceiver(
   sandbox: Sandbox,
@@ -236,41 +283,37 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
       };
       const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> =>
         Effect.gen(function* () {
-          // Each chunk pays for a remote command and a scoped decoder worker.
-          // Amortize both costs while retaining bounded reads and decoded
-          // prefixes when the collection budget interrupts the next chunk.
-          const chunkBytes = 1024 * 1024;
           let offset = 0;
-          let pending = Buffer.alloc(0);
+          let pending: Buffer[] = [];
           for (;;) {
-            const bytes = yield* activity(
+            const chunk = yield* activity(
               "telemetry.read",
-              Effect.tryPromise({
-                try: async (signal) => {
-                  const result = await sandbox.runShell(
-                    `if [ -f ${spansPath} ]; then dd if=${spansPath} bs=${chunkBytes} skip=${offset / chunkBytes} count=1 2>/dev/null | base64; fi`,
-                    { signal },
-                  );
-                  if (result.exitCode !== 0) throw new Error(`Telemetry read failed: exit ${result.exitCode}`);
-                  return Buffer.from(result.stdout.replace(/\s/g, ""), "base64");
-                },
-                catch: (cause) => cause,
+              sandboxPromise(async (signal) => {
+                const result = await sandbox.runCommand("node", ["-e", readSpoolScript, spansPath, String(offset)], {
+                  signal,
+                });
+                if (result.exitCode !== 0) throw new Error(`Telemetry read failed: exit ${result.exitCode}`);
+                const wireBytes = Buffer.byteLength(result.stdout);
+                if (wireBytes === 0) return { bytes: Buffer.alloc(0), eof: true, wireBytes };
+                const [encoding, boundary] = result.stdout;
+                if ((encoding !== "g" && encoding !== "r") || (boundary !== "!" && boundary !== "+")) {
+                  throw new Error("Invalid telemetry read header");
+                }
+                const payload = Buffer.from(result.stdout.slice(2), "base64");
+                const bytes = encoding === "g" ? gunzipSync(payload, { maxOutputLength: SPOOL_CHUNK_BYTES }) : payload;
+                if (bytes.length === 0) throw new Error("Empty telemetry read chunk");
+                return { bytes, eof: boundary === "!", wireBytes };
               }),
-              (bytes: Buffer) => bytes.length,
+              (chunk) => chunk.wireBytes,
             );
-            offset += bytes.length;
-            pending = Buffer.concat([pending, bytes]);
-            const end = pending.lastIndexOf(10);
-            function consumedBytes(): number {
-              if (end >= 0) return end + 1;
-              if (bytes.length < chunkBytes) return pending.length;
-              return 0;
-            }
-            const consumed = consumedBytes();
-            if (consumed > 0) {
+            offset += chunk.bytes.length;
+            const end = chunk.eof ? chunk.bytes.length : chunk.bytes.lastIndexOf(10) + 1;
+            if (end > 0 || (chunk.eof && pending.length > 0)) {
+              const prefix = chunk.bytes.subarray(0, end);
+              const envelopes = pending.length === 0 ? prefix : Buffer.concat([...pending, prefix]);
               yield* activity(
                 "telemetry.decode",
-                decodeSpanEnvelopes(pending.subarray(0, consumed)).pipe(
+                decodeSpanEnvelopes(envelopes).pipe(
                   Effect.tap((decoded) =>
                     Effect.sync(() => {
                       for (const span of decoded) cached.push(span);
@@ -279,23 +322,11 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
                 ),
                 (decoded) => decoded.length,
               );
-              pending = pending.subarray(consumed);
+              pending = end === chunk.bytes.length ? [] : [chunk.bytes.subarray(end)];
+            } else if (chunk.bytes.length > 0) {
+              pending.push(chunk.bytes);
             }
-            if (bytes.length < chunkBytes) {
-              if (pending.length > 0)
-                yield* activity(
-                  "telemetry.decode",
-                  decodeSpanEnvelopes(pending).pipe(
-                    Effect.tap((decoded) =>
-                      Effect.sync(() => {
-                        for (const span of decoded) cached.push(span);
-                      }),
-                    ),
-                  ),
-                  (decoded) => decoded.length,
-                );
-              break;
-            }
+            if (chunk.eof) break;
             yield* Effect.yieldNow;
           }
         });

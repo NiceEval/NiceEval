@@ -10,7 +10,7 @@ import {
   type SandboxTargetPlatform,
 } from "niceeval/sandbox";
 
-function hostPlatform(): SandboxTargetPlatform {
+export function hostPlatform(): SandboxTargetPlatform {
   if (process.platform === "darwin") return { _tag: "Darwin", os: "darwin", arch: process.arch };
   const report = process.report.getReport() as { header?: { glibcVersionRuntime?: string } };
   return {
@@ -21,12 +21,15 @@ function hostPlatform(): SandboxTargetPlatform {
   };
 }
 
-async function hostSandbox() {
+export async function hostSandbox() {
   const root = await mkdtemp(join(tmpdir(), "niceeval-inspection-sandbox-"));
   const workdir = join(root, "workspace");
   const privateTmp = join(root, "tmp");
   await Promise.all([mkdir(workdir), mkdir(privateTmp)]);
-  const map = (value: string) => value.replaceAll("/tmp/.niceeval-ledger", join(privateTmp, ".niceeval-ledger"));
+  const map = (value: string) =>
+    value
+      .replaceAll("/tmp/.niceeval-ledger", join(privateTmp, ".niceeval-ledger"))
+      .replaceAll("/tmp/.niceeval-otlp-", join(privateTmp, ".niceeval-otlp-"));
   const at = (path: string) => (isAbsolute(map(path)) ? map(path) : resolve(workdir, map(path)));
   const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     new Promise<{ stdout: string; stderr: string; exitCode: number }>((done) => {
@@ -63,7 +66,8 @@ async function hostSandbox() {
     runCommand: run,
     runShell: (script: string, options?: CommandOptions) => run("bash", ["-c", script], options),
     readText: (path: string) => readFile(at(path), "utf8"),
-    writeText: (path: string, text: string) => writeBytes(path, Buffer.from(text, "utf8")),
+    writeText: (path: string, text: string) =>
+      writeBytes(path, Buffer.from(path.startsWith("/tmp/.niceeval-otlp-collector-") ? map(text) : text, "utf8")),
     readBytes: (path: string) => readFile(at(path)),
     writeBytes,
     pathExists: (path: string) =>

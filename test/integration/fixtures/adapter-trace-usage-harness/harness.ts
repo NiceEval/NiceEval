@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const require = createRequire(new URL("../../../../packages/niceeval/package.json", import.meta.url));
-export const { Effect } =
+export const { Clock, Duration, Effect } =
   require("effect") as typeof import("../../../../packages/niceeval/node_modules/effect/dist/index.js");
 const { experimentHost } =
   require("niceeval/experiment/host") as typeof import("../../../../packages/niceeval/src/experiment/host/index.ts");
@@ -38,7 +38,11 @@ export async function createFixtureProject(
 }
 
 /** Runs one Experiment with a forced rerun and returns the published Attempt locator of its only slot. */
-export async function runSingleAttempt(cwd: string, experimentSelector: string): Promise<string> {
+export async function runSingleAttempt(
+  cwd: string,
+  experimentSelector: string,
+  clock?: typeof Clock.Clock.Service,
+): Promise<string> {
   const planned = await Effect.runPromise(
     experimentHost.invocation.plan({
       cwd,
@@ -48,7 +52,8 @@ export async function runSingleAttempt(cwd: string, experimentSelector: string):
     }),
   );
   if (planned.status !== "ready") throw new Error(`Could not plan ${experimentSelector}: ${JSON.stringify(planned)}`);
-  const result = await Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
+  const execute = experimentHost.invocation.run({ plan: planned.plan });
+  const result = await Effect.runPromise(clock ? Effect.provideService(execute, Clock.Clock, clock) : execute);
   const detail = await Effect.runPromise(runHost.get({ cwd, runId: result.receipt.createdRunIds[0]! }));
   const slot = detail.run.slots[0]!;
   if (slot.publication.state !== "published") throw new Error(`Slot for ${experimentSelector} was not published`);
