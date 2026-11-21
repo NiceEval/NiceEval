@@ -111,6 +111,45 @@ E2B 的 command RPC 会把直接 shell 的完成与 stdout/stderr event stream E
 
 这个完成信号是 Provider 私有 framing，不是普通输出里的字符串搜索：wrapper 自身被 shell、SDK 或子进程按源码/转义文本回显时，不得把其中的 marker 字面量和 `$exit` 变量误认成完成帧。只有 wrapper 的直接 supervisor 在 shell 已取得子进程状态后写出的、payload 严格为十进制数字且 stdout/stderr 两路一致的帧才可结束命令；协议完整性失败时退出状态必须标为未知，不能用 SDK 默认值或拆帧失败文本伪造。wrapper 的生成与拆帧必须同时经过真实 bash 执行测试，不能由测试替 shell 人工拼出合法 marker。
 
+## 后台命令
+
+Eval 有时要在 Sandbox 里跑几十分钟的命令，同时继续取证或执行别的命令，例如外层隐藏集验证与可见集验收重叠进行。`t.sandbox` 与完整的 `Sandbox` 为此提供先启动、后等待的入口：
+
+```ts
+interface BackgroundCommandOperations {
+  startCommand(
+    command: string,
+    args?: readonly string[],
+    options?: CommandOptions,
+  ): Promise<BackgroundCommand>;
+  startShell(script: string, options?: CommandOptions): Promise<BackgroundCommand>;
+}
+
+interface BackgroundCommand {
+  /** 有界、脱敏的命令摘要，与前台命令一致。 */
+  readonly command: string;
+  /** 命令已结束（正常退出、timeout、取消或终止）时为 true。 */
+  readonly settled: boolean;
+  wait(options?: { readonly signal?: AbortSignal }): Promise<CommandResult>;
+  waitOrThrow(options?: { readonly signal?: AbortSignal }): Promise<SuccessfulCommandResult>;
+  kill(): Promise<void>;
+}
+```
+
+`startCommand()` 与 `startShell()` 和对应的前台方法执行同一条受管命令：argv 与 shell 的区分、`cwd`、`env`、`user`、敏感值脱敏、流式回调、`timeoutMs` 与命令树终止协议都相同，Provider 不需要另一套后台机制。命令启动后 Promise 才返回句柄；启动失败（例如 transport 不可用）时 reject。
+
+- `timeoutMs` 从启动时开始计时；启动时传入的 `signal` 与外层 signal 合并，触发时按命令树终止协议结束这条命令。
+- `wait()` 返回任意退出码的 `CommandResult`，`waitOrThrow()` 把非零退出转成 command-exit error；timeout、取消、终止与 transport failure 在两者上都 reject。两者可以重复调用，结果相同。`wait()` 的 `signal` 只放弃这一次等待，不结束命令。
+- `kill()` 按命令树终止协议结束命令，确认终止后才返回；对已结束的命令立即返回。被 `kill()` 结束的命令，`wait()` 以取消 reject。
+- 从未被等待的句柄失败时不产生未处理的 Promise rejection；命令事实照常进入 Attempt 证据。
+- Record 中后台命令与前台命令记为同一种命令节点，区间从启动到结束。checked 语义取决于调用方是否通过 `waitOrThrow()` 等待：只用 `wait()` 或从未等待时记为 `checked: false`。
+
+同一 Sandbox 允许多条命令同时在途，包括多条后台命令与前台命令；它们共享文件系统与进程空间，NiceEval 不提供相互隔离。
+
+Attempt 结束（正常完成、失败、超时或取消）时，NiceEval 在采集证据与停止或保留 Sandbox 之前终止所有尚未结束的后台命令，并确认命令树已退出；不能确认时按命令树终止协议退休整台 Sandbox。后台命令不跨 Attempt 存活，也不随 Sandbox 复用或保留继续运行。
+
+`SandboxCommandTarget`（layer callback）不提供后台命令：准备步骤必须在返回前确定地完成，缓存才能复用它的结果。
+
 ## 文件：文本、字节与传输分词
 
 Sandbox 内部读写只用五个名字：`readText`、`writeText`、`readBytes`、`writeBytes`、`pathExists`。二进制类型固定为 `Uint8Array`；Node `Buffer` 结构上可直接传入，但公共契约不绑定 Node。
@@ -158,14 +197,14 @@ await t.sandbox.downloadDirectory("src", new URL("out/attempt-final/", import.me
 ## 三个公开视图
 
 ```ts
-interface Sandbox extends SandboxOperations, SandboxTransferOperations {
+interface Sandbox extends SandboxOperations, SandboxTransferOperations, BackgroundCommandOperations {
   readonly sandboxId: string;
   readonly otlpHost: string | null;
   stop(): Promise<void>;
   appendLog?(line: string): Promise<void>;
 }
 
-interface EvalSandbox extends SandboxOperations, SandboxTransferOperations {
+interface EvalSandbox extends SandboxOperations, SandboxTransferOperations, BackgroundCommandOperations {
   // 归因断言声明:changedPaths / noChanges / changedOnlyWithin / unchangedWithin / fileChanged / fileDeleted / inDiff / notInDiff。
   // 完整契约见「断言 Sandbox 结果」;不存在通用或延迟的 diff subject。
 }
