@@ -136,7 +136,7 @@ interface BackgroundCommand {
 }
 ```
 
-`startCommand()` 与 `startShell()` 和对应的前台方法执行同一条受管命令：argv 与 shell 的区分、`cwd`、`env`、`user`、敏感值脱敏、流式回调、`timeoutMs` 与命令树终止协议都相同，Provider 不需要另一套后台机制。命令启动后 Promise 才返回句柄；启动失败（例如 transport 不可用）时 reject。
+`startCommand()` 与 `startShell()` 和对应的前台方法执行同一条受管命令：argv 与 shell 的区分、`cwd`、`env`、`user`、敏感值脱敏、流式回调、`timeoutMs` 与命令树终止协议都相同，Provider 不需要另一套后台机制。命令交给受管命令路径后即返回句柄，不等待 Provider 确认进程已启动；启动失败（例如 transport 不可用）与其它失败一样在 `wait()` 上 reject。Provider 的命令接口只给出最终结果，没有可信的启动确认，所以契约不承诺“返回时已在运行”。
 
 - `timeoutMs` 从启动时开始计时；启动时传入的 `signal` 与外层 signal 合并，触发时按命令树终止协议结束这条命令。
 - `wait()` 返回任意退出码的 `CommandResult`，`waitOrThrow()` 把非零退出转成 command-exit error；timeout、取消、终止与 transport failure 在两者上都 reject。两者可以重复调用，结果相同。`wait()` 的 `signal` 只放弃这一次等待，不结束命令。
@@ -145,6 +145,8 @@ interface BackgroundCommand {
 - Record 中后台命令与前台命令记为同一种命令节点，区间从启动到结束。checked 语义取决于调用方是否通过 `waitOrThrow()` 等待：只用 `wait()` 或从未等待时记为 `checked: false`。
 
 同一 Sandbox 允许多条命令同时在途，包括多条后台命令与前台命令；它们共享文件系统与进程空间，NiceEval 不提供相互隔离。
+
+有命令在途时，Provider 不得替换、快照停止或重建承载它们的实例。会话寿命有限的 Provider（例如 Vercel）派发新命令时，如果新命令所需时长超出当前会话剩余寿命而又有命令在途，就以明确的寿命不足错误拒绝新命令，不轮换会话；没有命令在途时才按原规则轮换。
 
 Attempt 结束（正常完成、失败、超时或取消）时，NiceEval 在采集证据与停止或保留 Sandbox 之前终止所有尚未结束的后台命令，并确认命令树已退出；不能确认时按命令树终止协议退休整台 Sandbox。后台命令不跨 Attempt 存活，也不随 Sandbox 复用或保留继续运行。
 
