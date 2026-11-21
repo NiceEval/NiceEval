@@ -1098,3 +1098,6 @@ partial 只代表已知小计。没有价格或调用证据不能按零费用比
 `run.get` 成功 document 的 `run.value.sandboxState` 使用 [RunSandboxState](../state/library.md#结果形状)。
 `attempt.get` 的 `attempt.sandboxState` 使用同页的 AttemptStateResult；`state` 继续表示各自原有生命周期。
 这些字段遵守同一 cutoff，包含全部实例世代，不从外部 checkpoint 推测事实。
+
+Judge 失败的 Assertion 详情显示封存的错误类别与安全原因，普通模式也保留这些诊断。
+Agent Judge 审计为 invalid 时，JSON 与人读详情均显示具体校验规则与位置，形状与脱敏边界见 [Judge 审计](../judge/architecture.md#审计与历史读取)。

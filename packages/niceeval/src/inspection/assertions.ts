@@ -5,6 +5,8 @@ export { AssertionContentReferenceSchema } from "./assertion-content.ts";
 import { InspectionExecutionTraceError, type ExecutionTraceDetailResult } from "./execution-traces.ts";
 import {
   readAgentJudgeAudit,
+  AgentJudgeAuditValidationError,
+  invalidAgentJudgeAudit,
   decodeAgentJudgeEnvelope,
   decodeAgentJudgeTrace,
 } from "../assertions/agent-judge-audit.ts";
@@ -352,42 +354,44 @@ function projectEntry(
       const readEnvelope = (candidate: AssertionEntry) => {
         const material = candidate.materials.evidence.at(-1);
         if (material?.kind !== "content" || material.encoding !== "json" || !isRecordContentHandle(material.content))
-          throw new Error("Missing Agent Judge audit");
+          throw new AgentJudgeAuditValidationError("Missing Agent Judge audit");
         const metadata = contentMetadata.get(material.content);
-        if (metadata === undefined) throw new Error("Missing Agent Judge Content");
+        if (metadata === undefined) throw new AgentJudgeAuditValidationError("Missing Agent Judge Content");
         const bytes = readSealedBytes(source, metadata);
-        if (bytes.byteLength !== material.byteLength) throw new Error("Invalid Agent Judge Content length");
+        if (bytes.byteLength !== material.byteLength)
+          throw new AgentJudgeAuditValidationError("Invalid Agent Judge Content length");
         return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
       };
       const raw = readEnvelope(entry);
       const decoded = decodeAgentJudgeEnvelope(raw);
       const root = entries[decoded.trace.entryIndex];
-      if (root === undefined) throw new Error("Missing Agent Judge root");
+      if (root === undefined) throw new AgentJudgeAuditValidationError("Missing Agent Judge root");
       const traceMaterial = root.materials.evidence.at(-2);
       if (
         traceMaterial?.kind !== "content" ||
         traceMaterial.encoding !== "json" ||
         !isRecordContentHandle(traceMaterial.content)
       )
-        throw new Error("Missing Agent Judge trajectory");
+        throw new AgentJudgeAuditValidationError("Missing Agent Judge trajectory");
       const traceMetadata = contentMetadata.get(traceMaterial.content);
-      if (traceMetadata === undefined) throw new Error("Missing Agent Judge trajectory Content");
+      if (traceMetadata === undefined)
+        throw new AgentJudgeAuditValidationError("Missing Agent Judge trajectory Content");
       const trace = decodeAgentJudgeTrace(
         JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(readSealedBytes(source, traceMetadata))),
       );
       const images = trace.images.map((descriptor) => {
         const image = root.materials.evidence[descriptor.evidenceIndex];
         if (image?.kind !== "content" || image.encoding !== "binary" || !isRecordContentHandle(image.content))
-          throw new Error("Missing Agent Judge image");
+          throw new AgentJudgeAuditValidationError("Missing Agent Judge image");
         const metadata = contentMetadata.get(image.content);
-        if (metadata === undefined) throw new Error("Missing Agent Judge image Content");
+        if (metadata === undefined) throw new AgentJudgeAuditValidationError("Missing Agent Judge image Content");
         return { mediaType: descriptor.mediaType, bytes: readSealedBytes(source, metadata) };
       });
       const read = readAgentJudgeAudit(
         raw,
         observedMeasurement(entry.evaluation.observed),
         (index) => {
-          if (entries[index] !== root) throw new Error("Invalid Agent Judge reference");
+          if (entries[index] !== root) throw new AgentJudgeAuditValidationError("Invalid Agent Judge reference");
           return trace;
         },
         images,
@@ -409,8 +413,8 @@ function projectEntry(
               }
             : read,
       });
-    } catch {
-      return closeJson({ ...projected, agentJudgeAudit: { state: "invalid" } });
+    } catch (error) {
+      return closeJson({ ...projected, agentJudgeAudit: invalidAgentJudgeAudit(error) });
     }
   }
   const currentJudge =

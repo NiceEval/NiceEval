@@ -3095,6 +3095,20 @@ export function renderAssertions(
         ...commandAssertionFields(entry.evaluation.observed),
       ],
     });
+    if (entry.explanationRetention.state === "retained" && entry.explanationRetention.value.kind === "fields") {
+      const labels: Readonly<Record<string, string>> = {
+        code: "Failure",
+        message: "Diagnostic",
+        failureDetail: "Failure",
+        failureEvidence: "Diagnostic",
+      };
+      const entries = entry.explanationRetention.value.fields.flatMap((field) =>
+        labels[field.label] !== undefined && field.value.kind === "value" && typeof field.value.value === "string"
+          ? [{ key: labels[field.label]!, value: field.value.value }]
+          : [],
+      );
+      if (entries.length > 0) blocks.push({ kind: "keyValue", entries });
+    }
     if (!("criterion" in entry)) continue;
     const agentAudit = entry.agentJudgeAudit;
     if (agentAudit?.state === "available") {
@@ -3159,7 +3173,13 @@ export function renderAssertions(
         });
       }
     } else if (agentAudit !== undefined)
-      blocks.push({ kind: "keyValue", entries: [{ key: "Agent Judge audit", value: agentAudit.state }] });
+      blocks.push({
+        kind: "keyValue",
+        entries: [
+          { key: "Agent Judge audit", value: agentAudit.state },
+          ...(agentAudit.state === "invalid" ? [{ key: "Diagnostic", value: agentAudit.message }] : []),
+        ],
+      });
     if (options.full) {
       if (
         entry.criterion.state === "available" &&
@@ -3226,7 +3246,6 @@ export function renderAssertions(
         const value = entry.explanationRetention.value;
         if (value.kind === "fields") {
           const labels: Readonly<Record<string, string>> = {
-            message: "Diagnostic",
             expected: "Expected",
             received: "Received",
           };

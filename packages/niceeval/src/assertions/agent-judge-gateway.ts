@@ -196,8 +196,26 @@ export class AgentJudgeSession {
         })),
         images: this.images(),
         session: this.sessionEntries,
-        tools: this.tools,
-        compactions: this.compactions,
+        // Redact structured arguments before canonical encoding, just as pi history
+        // redacts each string value. Redacting the encoded JSON can damage it.
+        tools: this.tools.map((tool) => ({
+          ...tool,
+          callId: redactPiSessionEntries(tool.callId, this.profile),
+          name: redactPiSessionEntries(tool.name, this.profile),
+          arguments: canonical(redactPiSessionEntries(JSON.parse(tool.arguments), this.profile)),
+          result: redactPiSessionEntries(tool.result, this.profile),
+        })),
+        compactions: this.compactions.map((compact) => ({
+          ...compact,
+          summary: redactPiSessionEntries(compact.summary, this.profile),
+          failure:
+            compact.failure === null
+              ? null
+              : {
+                  ...compact.failure,
+                  message: redactPiSessionEntries(compact.failure.message, this.profile),
+                },
+        })),
       }
     );
   }
@@ -300,7 +318,7 @@ export class AgentJudgeSession {
       trace: { state: "reference", entryIndex: this.entryIndex, digest: agentJudgeDigest(canonical(trace)) },
       criterion: key,
       prompt: this.steps.find((step) => step.kind !== "chat" && step.key === key)!.message,
-      submission: this.submissions.get(key) ?? null,
+      submission: redactPiSessionEntries(this.submissions.get(key) ?? null, this.profile),
       result: this.results.get(key) ?? { state: "interrupted" },
     };
     const body = canonical(payload);
@@ -401,7 +419,7 @@ export class AgentJudgeSession {
               const failure = {
                 state: "errored" as const,
                 code: "agent-judge-audit-invalid",
-                message: "Agent Judge terminal audit failed validation",
+                message: checked.state === "invalid" ? checked.message : "Unsupported Agent Judge terminal audit",
               };
               this.results.set(key, failure);
               return {
@@ -414,8 +432,11 @@ export class AgentJudgeSession {
               state: "measured" as const,
               value: agentJudgeMeasurement(submitted.value),
               detail: {
-                rationale: { state: "available", value: submitted.value.rationale },
-                evidence: { state: "available", value: submitted.value.evidence },
+                rationale: {
+                  state: "available",
+                  value: redactPiSessionEntries(submitted.value.rationale, this.profile),
+                },
+                evidence: { state: "available", value: redactPiSessionEntries(submitted.value.evidence, this.profile) },
               },
               receipt: undefined,
             };

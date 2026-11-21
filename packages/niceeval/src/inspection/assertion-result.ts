@@ -241,7 +241,7 @@ const ProjectedAssertionEntrySchema = Schema.Struct({
         state: Schema.Literal("available"),
         audit: Schema.Struct({ ...AgentJudgeAuditSchema.fields, trace: AssertionContentReferenceSchema }),
       }),
-      Schema.Struct({ state: Schema.Literal("invalid") }),
+      Schema.Struct({ state: Schema.Literal("invalid"), message: Schema.String }),
       Schema.Struct({ state: Schema.Literal("unsupported") }),
     ]),
   ),

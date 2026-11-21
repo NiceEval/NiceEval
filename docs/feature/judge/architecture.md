@@ -319,6 +319,9 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 
 Query、Show 与 View 共用严格 decoder，验证精确 schema、摘要、序号、call id 关联与终态。
 未知第三方 criterion 为 unsupported，当前审计形状损坏为 invalid。
+`agentJudgeAudit` 的 invalid 结果为 `{ state: "invalid", message: string }`。
+message 只含固定校验规则与数字位置，不含原始载荷、凭据或 Schema 的输入回显；运行期封口失败保留同一原因。
+凭据脱敏在计算摘要前一致应用于 pi 会话、工具参数、结果、提交与压缩摘要；JSON 参数先按结构脱敏再规范编码，保持关联可验证。
 预算不足、零发送、非法提交修正与取消均保存可解释终态，不伪造完整分数。
 
 Judge 用量给 Agent Judge 每轮模型生成使用独立 operation `agent`。

@@ -117,13 +117,24 @@ const envelope = Schema.Struct({
 });
 export const AgentJudgeAuditReadResultSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("available"), audit: AgentJudgeAuditSchema, trace: AgentJudgeTraceSchema }),
-  Schema.Struct({ state: Schema.Literal("invalid") }),
+  Schema.Struct({ state: Schema.Literal("invalid"), message: Schema.String }),
   Schema.Struct({ state: Schema.Literal("unsupported") }),
 ]);
 /** Strict historical validation result for an Agent Judge question. */
 export type AgentJudgeAuditReadResult = typeof AgentJudgeAuditReadResultSchema.Type;
 export function agentJudgeDigest(value: string): string {
   return new InspectionSha256().update(new TextEncoder().encode(value)).digestHex();
+}
+
+/** Only fixed validation rules and numeric positions may enter this error. */
+export class AgentJudgeAuditValidationError extends Error {}
+
+export function invalidAgentJudgeAudit(error: unknown): { readonly state: "invalid"; readonly message: string } {
+  return {
+    state: "invalid",
+    message:
+      error instanceof AgentJudgeAuditValidationError ? error.message : "Invalid Agent Judge audit schema or JSON",
+  };
 }
 
 /** Verifies Content chunks and decodes one independent Agent Judge audit envelope. */
@@ -135,7 +146,7 @@ export function decodeAgentJudgeEnvelope(raw: unknown): AgentJudgeAudit {
     value.manifest.digest !== agentJudgeDigest(body) ||
     canonical(value.manifest.chunkByteLengths) !== canonical(value.content.map(utf8ByteLength))
   )
-    throw new Error("Invalid Agent Judge envelope");
+    throw new AgentJudgeAuditValidationError("Invalid Agent Judge envelope");
   return Schema.decodeUnknownSync(AgentJudgeAuditSchema, { onExcessProperty: "error" })(JSON.parse(body));
 }
 
@@ -155,7 +166,7 @@ export function readAgentJudgeAudit(
     const audit = decodeAgentJudgeEnvelope(raw);
     const trace = decodeAgentJudgeTrace(resolve(audit.trace.entryIndex));
     if (audit.trace.state === "reference" && audit.trace.digest !== agentJudgeDigest(canonical(trace)))
-      throw new Error("Agent Judge trace digest mismatch");
+      throw new AgentJudgeAuditValidationError("Agent Judge trace digest mismatch");
     if (
       !trace.criteria.includes(audit.criterion) ||
       new Set(trace.criteria).size !== trace.criteria.length ||
@@ -168,7 +179,7 @@ export function readAgentJudgeAudit(
           }),
         )
     )
-      throw new Error("Agent Judge definition mismatch");
+      throw new AgentJudgeAuditValidationError("Agent Judge definition mismatch");
     for (const image of trace.images) {
       const content = imageContents[image.evidenceIndex];
       if (
@@ -177,7 +188,7 @@ export function readAgentJudgeAudit(
         content.bytes.byteLength !== image.byteLength ||
         new InspectionSha256().update(content.bytes).digestHex() !== image.sha256
       )
-        throw new Error("Agent Judge image mismatch");
+        throw new AgentJudgeAuditValidationError("Agent Judge image mismatch");
     }
     if (
       canonical(trace.steps.filter((step) => step.kind !== "chat").map((step) => step.key)) !==
@@ -189,9 +200,10 @@ export function readAgentJudgeAudit(
       ) ||
       trace.steps.find((step) => step.key === audit.criterion)?.message !== audit.prompt
     )
-      throw new Error("Invalid Agent Judge conversation");
+      throw new AgentJudgeAuditValidationError("Invalid Agent Judge conversation");
     const config = JSON.parse(trace.definition.config);
-    if (canonical(config) !== trace.definition.config) throw new Error("Invalid canonical Agent Judge config");
+    if (canonical(config) !== trace.definition.config)
+      throw new AgentJudgeAuditValidationError("Invalid canonical Agent Judge config");
     // Read the pi session itself. No reconstructed request history or wire body.
     const calls = new Map<string, { name: string; arguments: string; generation: number }>();
     const ids = new Set<string>();
@@ -205,19 +217,19 @@ export function readAgentJudgeAudit(
         ids.has(raw.id) ||
         !("type" in raw)
       )
-        throw new Error("Invalid pi session entry");
+        throw new AgentJudgeAuditValidationError("Invalid pi session entry");
       ids.add(raw.id);
       if (raw.type === "message") {
         if (!("message" in raw) || typeof raw.message !== "object" || raw.message === null || !("role" in raw.message))
-          throw new Error("Invalid pi message");
+          throw new AgentJudgeAuditValidationError("Invalid pi message");
         const message = raw.message as { role: string; content: unknown };
         if (message.role === "assistant") {
           generation += 1;
-          if (!Array.isArray(message.content)) throw new Error("Invalid pi assistant content");
+          if (!Array.isArray(message.content)) throw new AgentJudgeAuditValidationError("Invalid pi assistant content");
           for (const item of message.content)
             if (item.type === "toolCall") {
               if (typeof item.id !== "string" || calls.has(item.id) || typeof item.name !== "string")
-                throw new Error("Invalid pi tool call");
+                throw new AgentJudgeAuditValidationError(`Invalid pi tool call at generation ${generation}`);
               calls.set(item.id, { name: item.name, arguments: canonical(item.arguments), generation });
             }
         }
@@ -234,7 +246,7 @@ export function readAgentJudgeAudit(
         call.generation !== tool.generation ||
         executed.has(tool.callId)
       )
-        throw new Error("Agent Judge tool association mismatch");
+        throw new AgentJudgeAuditValidationError(`Agent Judge tool association mismatch at tool ${index + 1}`);
       executed.add(tool.callId);
     }
     for (const compact of trace.compactions)
@@ -249,7 +261,7 @@ export function readAgentJudgeAudit(
           );
         })
       )
-        throw new Error("Missing pi compaction entry");
+        throw new AgentJudgeAuditValidationError("Missing pi compaction entry");
     if (audit.submission !== null) {
       const submitted = audit.submission;
       const tool = trace.tools.find((item) => item.callId === submitted.callId);
@@ -263,7 +275,7 @@ export function readAgentJudgeAudit(
         canonical(JSON.parse(tool.arguments)) !== canonical(submitted.value) ||
         trace.steps.find((step) => step.key === audit.criterion)?.message !== audit.prompt
       )
-        throw new Error("Invalid Agent Judge submission");
+        throw new AgentJudgeAuditValidationError("Invalid Agent Judge submission");
     }
     if (audit.submission !== null) {
       const step = trace.steps.find((step) => step.key === audit.criterion)!;
@@ -279,9 +291,9 @@ export function readAgentJudgeAudit(
           measurement !== audit.result.value)) ||
       (audit.result.state !== "measured" && measurement !== undefined)
     )
-      throw new Error("Agent Judge result mismatch");
+      throw new AgentJudgeAuditValidationError("Agent Judge result mismatch");
     return { state: "available", audit, trace };
-  } catch {
-    return { state: "invalid" };
+  } catch (error) {
+    return invalidAgentJudgeAudit(error);
   }
 }
