@@ -698,7 +698,9 @@ describe("Agent Judge audit, pagination, Sandbox isolation, timing, and identity
     const prompts = activities.filter((a) => a.label === "agent-judge.prompt");
     expect(prompts).toHaveLength(4);
     for (const prompt of prompts) {
-      expect(activities.some((a) => a.parentActivityId === prompt.activityId && a.label === "judge.request")).toBe(true);
+      const requests = activities.filter((a) => a.parentActivityId === prompt.activityId && a.label === "judge.request");
+      expect(requests.length).toBeGreaterThan(0);
+      expect(requests.map((a) => a.outcome)).toEqual(requests.map(() => "completed"));
     }
     expect(prompts.filter((p) => activities.some((a) => a.parentActivityId === p.activityId && a.label === "sandbox.command"))).toHaveLength(2);
     const [execDoc] = await showJsonDocuments(cwd, [locator, "execution"]);

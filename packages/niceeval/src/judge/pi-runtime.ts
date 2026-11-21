@@ -1,6 +1,6 @@
 // @concord-file
 // @concord-implements docs/feature/judge/architecture.md
-import { judgeTimingFetch, type JudgeTimingSpan } from "./timing.ts";
+import { judgeRequestTiming, type JudgeTimingOutcome, type JudgeTimingSpan } from "./timing.ts";
 import { retryAfterMs } from "../assertions/judge-transport.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { pathToFileURL } from "node:url";
@@ -59,14 +59,13 @@ export async function createManagedPiSession(input: {
     });
     let httpOrdinal = 0;
     let lastHttp: { readonly status: number | null; readonly retryAfterMs: number | null } | undefined;
-    const transport = input.timing === undefined ? globalThis.fetch : judgeTimingFetch(input.timing);
     const fetch: typeof globalThis.fetch = async (request, options) => {
       const ordinal = ++httpOrdinal;
       lastHttp = undefined;
       let status: number | null = null;
       let delay: number | null = null;
       try {
-        const response = await transport(request, options);
+        const response = await globalThis.fetch(request, options);
         status = response.status;
         const milliseconds = response.headers.get("retry-after-ms");
         const parsed = milliseconds === null ? undefined : Number(milliseconds);
@@ -82,7 +81,49 @@ export async function createManagedPiSession(input: {
       }
     };
     const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
-    modelRuntime.streamSimple = (model, context, options) => streamSimple(model, context, { ...options, fetch });
+    const startRequest = input.timing === undefined ? undefined : judgeRequestTiming(input.timing);
+    modelRuntime.streamSimple = (model, context, options) => {
+      if (startRequest === undefined) return streamSimple(model, context, { ...options, fetch });
+      let active: JudgeTimingSpan | undefined;
+      const finish = (outcome: JudgeTimingOutcome) => {
+        active?.end(outcome);
+        active = undefined;
+      };
+      const failureOutcome = () => (options?.signal?.aborted ? "cancelled" : "failed");
+      const stream = streamSimple(model, context, {
+        ...options,
+        fetch: async (request, init) => {
+          finish(failureOutcome());
+          active = startRequest();
+          try {
+            const response = await fetch(request, init);
+            if (!response.ok) finish(failureOutcome());
+            return response;
+          } catch (error) {
+            finish(failureOutcome());
+            throw error;
+          }
+        },
+      });
+      // The SDK also closes the HTTP body reader on [DONE]. Pi's terminal message
+      // distinguishes a complete tool-call or text response from a broken stream.
+      void stream.result().then(
+        (message) => {
+          switch (message.stopReason) {
+            case "aborted":
+              finish("cancelled");
+              break;
+            case "error":
+              finish("failed");
+              break;
+            default:
+              finish("completed");
+          }
+        },
+        () => finish(failureOutcome()),
+      );
+      return stream;
+    };
     const httpDiagnostic = () =>
       lastHttp === undefined
         ? ""

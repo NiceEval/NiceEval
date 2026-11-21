@@ -86,53 +86,14 @@ export const CurrentJudgeTiming = Context.Reference<JudgeTimingSpan | undefined>
   defaultValue: () => undefined,
 });
 
-/** Observe actual HTTP attempts, including SDK retries, through body completion. */
-export function judgeTimingFetch(parent: () => JudgeTimingSpan | undefined): typeof globalThis.fetch {
+/** Number actual transport attempts across successive model turns under the same prompt. */
+export function judgeRequestTiming(parent: () => JudgeTimingSpan | undefined): () => JudgeTimingSpan | undefined {
   const ordinals = new WeakMap<JudgeTimingSpan, number>();
-  return async (input, init) => {
+  return () => {
     const owner = parent();
-    const ordinal = owner === undefined ? 1 : (ordinals.get(owner) ?? 0) + 1;
-    if (owner !== undefined) ordinals.set(owner, ordinal);
-    const span = owner?.child("judge.request", undefined, ordinal);
-    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
-    const abort = () => span?.end("cancelled");
-    const finish = (outcome: JudgeTimingOutcome) => {
-      signal?.removeEventListener("abort", abort);
-      span?.end(outcome);
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    try {
-      const response = await globalThis.fetch(input, init);
-      const outcome = response.ok ? "completed" : "failed";
-      if (response.body === null) {
-        finish(outcome);
-        return response;
-      }
-      const reader = response.body.getReader();
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          async pull(controller) {
-            try {
-              const result = await reader.read();
-              if (result.done) {
-                finish(outcome);
-                controller.close();
-              } else controller.enqueue(result.value);
-            } catch (error) {
-              finish(signal?.aborted ? "cancelled" : "failed");
-              controller.error(error);
-            }
-          },
-          async cancel(reason) {
-            finish(signal?.aborted ? "cancelled" : "failed");
-            await reader.cancel(reason);
-          },
-        }),
-        { status: response.status, statusText: response.statusText, headers: response.headers },
-      );
-    } catch (error) {
-      finish(signal?.aborted ? "cancelled" : "failed");
-      throw error;
-    }
+    if (owner === undefined) return undefined;
+    const ordinal = (ordinals.get(owner) ?? 0) + 1;
+    ordinals.set(owner, ordinal);
+    return owner.child("judge.request", undefined, ordinal);
   };
 }
