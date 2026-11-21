@@ -1582,6 +1582,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     execution: "errored",
                     interrupted: true,
                     explicitlySkipped: false,
+                    redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
                   }).pipe(
                     Effect.tap((sealed) =>
                       Effect.sync(() => {
@@ -4137,6 +4138,7 @@ async function runAttemptBody(
             execution: error === undefined ? "completed" : "errored",
             explicitlySkipped: skipReason !== undefined,
             interrupted: false,
+            redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
           },
           workspaceDiff,
         }),
@@ -4274,7 +4276,12 @@ async function runAttemptBody(
         sealed = await assertFirst.requestEffect(
           assertFirst.requestSeal({
             runtime: assertionState.assertions,
-            options: { execution: "errored", explicitlySkipped: false, interrupted: false },
+            options: {
+              execution: "errored",
+              explicitlySkipped: false,
+              interrupted: false,
+              redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
+            },
             workspaceDiff: undefined,
           }),
         );

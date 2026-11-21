@@ -1437,12 +1437,21 @@ function deepEqualInner(a: unknown, b: unknown, seen: Map<object, object>): bool
   return true;
 }
 
+const equalityOperands = new WeakMap<MatchDiagnostic, { readonly expected: unknown; readonly received: unknown }>();
+
+/** @internal Raw operands are available only to the Assertion evidence producer. */
+export function equalityOperandsOf(detail: MatchDiagnostic) {
+  return equalityOperands.get(detail);
+}
+
 /** Checks deep value equality against the supplied reference. It compares structure rather than object identity. */
 export function equals<const T>(expected: T): BooleanMatch<unknown, T> {
   const name = "equals(value)";
   return createBooleanMatch<unknown, T, "value">("value", name, (candidate) => {
     if (deepEqual(candidate, expected)) return matched(expected, diagnostic("equals-match", `${name} matched`));
-    return mismatched(diagnostic("equals-mismatch", `${name} did not match`));
+    const detail = diagnostic("equals-mismatch", `${name} did not match`);
+    equalityOperands.set(detail, { expected, received: candidate });
+    return mismatched(detail);
   });
 }
 

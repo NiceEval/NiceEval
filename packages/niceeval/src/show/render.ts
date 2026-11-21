@@ -3248,17 +3248,20 @@ export function renderAssertions(
       if (entry.explanationRetention.state === "retained") {
         const value = entry.explanationRetention.value;
         if (value.kind === "fields") {
+          const equalityMismatch = value.fields.some(
+            ({ label, value }) => label === "code" && value.kind === "value" && value.value === "equals-mismatch",
+          );
           const labels: Readonly<Record<string, string>> = {
             expected: "Expected",
-            received: "Received",
+            received: equalityMismatch ? "Actual" : "Received",
           };
           blocks.push({
             kind: "keyValue",
-            entries: value.fields.flatMap((field) =>
-              labels[field.label] !== undefined && field.value.kind === "value" && typeof field.value.value === "string"
-                ? [{ key: labels[field.label]!, value: field.value.value }]
-                : [],
-            ),
+            entries: Object.entries(labels).flatMap(([label, key]) => {
+              const field = value.fields.find((field) => field.label === label)?.value;
+              if (field?.kind === "value" && typeof field.value === "string") return [{ key, value: field.value }];
+              return equalityMismatch ? [{ key, value: "not recorded" }] : [];
+            }),
           });
         }
       }

@@ -873,6 +873,9 @@ compact 的读取成本与材料大小无关：只读取条目的判定、分值
 材料正文、collection 的 retained rows、`debugger`、source content 与裁判审计都不加载，只在 `ae_<id> --full` 中交付。
 读取期限按单个条目计时，不在整个列表上累计。条目再多、材料再大，可读的列表也不会读到一半失败。
 
+`equals` 失败时，`--full` 显示 `Actual` 与 `Expected`，JSON 的 `explanationRetention` 提供对应的 `received` 与 `expected` 文本。
+预览先按 Attempt 已知敏感值脱敏，再按预算截断，并标记 `[truncated]`。历史条目缺少预览时保留原诊断。
+
 单个条目超过读取期限时，列表中该项是带 `entryId` 的 failure，code 为 `inspection-read-deadline-exceeded`，其余条目照常交付，operation 本身仍是 success。
 reason 写出 entryId、已用时长与期限；correction 给出单独读取这一项的 `niceeval show @<locator> ae_<id>`，不写 `retry`。
 同一读取重试会以同样方式超时，所以 `retry` 不是有效的下一步。

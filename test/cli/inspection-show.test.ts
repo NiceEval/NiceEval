@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
@@ -22,6 +22,13 @@ const { decodeInspectionDocument } =
 const SANDBOX_FIXTURE = fileURLToPath(
   new URL("../integration/fixtures/inspection-core/sandbox.ts.txt", import.meta.url),
 );
+
+async function writeSandboxFixture(cwd: string) {
+  const dependencies = join(cwd, "node_modules");
+  await mkdir(dependencies, { recursive: true });
+  await symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "junction");
+  await writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8"));
+}
 
 async function runCli(cwd: string, argv: readonly string[]) {
   const stdout = new PassThrough();
@@ -132,7 +139,7 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
     try {
       await Promise.all([
         writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
-        writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8")),
+        writeSandboxFixture(cwd),
         writeFile(
           join(cwd, "niceeval.config.ts"),
           `import { defineConfig } from "niceeval";
@@ -811,6 +818,81 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
         expect(res.stderr.trim().length, JSON.stringify(argv)).toBeGreaterThan(0);
       }),
       { numRuns: invalidCases.length, seed: 2050 },
+    );
+  });
+});
+
+describe("CLI show failed equality", () => {
+  let cwd: string;
+  let locator: string;
+
+  beforeAll(async () => {
+    cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-show-equals-"));
+    await Promise.all(["evals", "experiments"].map((dir) => mkdir(join(cwd, dir))));
+    await Promise.all([
+      writeSandboxFixture(cwd),
+      writeFile(join(cwd, "package.json"), '{"type":"module"}'),
+      writeFile(join(cwd, "evals", "equals.eval.ts"), `
+        import { defineEval } from "niceeval";
+        import { equals } from "niceeval/expect";
+        export default defineEval({ async test(t) {
+          t.check(["changed.ts"], equals([])).label("paths");
+          t.check(["長".repeat(5000)], equals(["expected"])).label("long");
+          const secret = "fixture-key-%\\\\-390";
+          t.check([secret + " actual"], equals([secret + " expected"])).label("sensitive");
+          await t.sandbox.runCommand("true", [], { sensitiveValues: [secret] });
+        } });`),
+      writeFile(join(cwd, "experiments", "equals.ts"), `
+        import { defineExperiment } from "niceeval";
+        import { defineSandboxAgent, completeEvidenceCoverage } from "niceeval/adapter";
+        import sandbox from "../sandbox.ts";
+        import { shell } from "niceeval/sandbox";
+        const agent = defineSandboxAgent({ name: "equals-fixture", evidenceCoverage: completeEvidenceCoverage,
+          install: { identity: { agent: "equals-fixture", version: "1", revision: "1" }, probe: shell("true") },
+          send: async () => ({ status: "completed", events: [] }) });
+        export default defineExperiment({ adapter: agent, sandbox, evals: ["equals"] });`),
+    ]);
+    const run = await runProjectExperiment(cwd, "equals");
+    locator = (await publishedSlotLocators(cwd, run.receipt.createdRunIds[0]!)).get("equals")!;
+  }, 30_000);
+
+  afterAll(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @use-case docs/feature/inspection/use-case/inspection-explain-verdict.md#drill
+  // @issue docs/issues/check-actual-value-hidden.md
+  test("show exposes bounded operands for failed equals checks", async () => {
+    const [list] = decodeNdjson((await runCli(cwd, ["show", locator, "assertions", "--json"])).stdout);
+    if (list?.outcome !== "success" || list.operation !== "attempt.assertions") throw new Error("Missing assertions");
+    await fc.assert(
+      fc.asyncProperty(fc.constantFrom("paths", "long", "sensitive"), async (label) => {
+        const row = list.assertions.find((row) => "display" in row && row.display.label === label)!;
+        const args = ["show", locator, row.entryId, "--full"];
+        const json = await runCli(cwd, [...args, "--json"]);
+        expect(json.code, json.stderr).toBe(0);
+        const [detail] = decodeNdjson(json.stdout);
+        if (detail?.outcome !== "success" || detail.operation !== "attempt.assertion.detail" || !("entry" in detail.assertion))
+          throw new Error("Missing Assertion detail");
+        const explanation = detail.assertion.entry.explanationRetention;
+        if (explanation.state !== "retained" || explanation.value.kind !== "fields") throw new Error("Missing explanation");
+        const field = (name: string) => explanation.value.kind === "fields"
+          ? explanation.value.fields.find(({ label }) => label === name)?.value
+          : undefined;
+        expect(field("expected")).toEqual({ kind: "value", value: ({ paths: "[]", long: '["expected"]', sensitive: '["<redacted> expected"]' })[label] });
+        expect(field("received")).toEqual({ kind: "value", value: ({ paths: '["changed.ts"]', long: expect.stringContaining("[truncated]"), sensitive: '["<redacted> actual"]' })[label] });
+        const human = await runCli(cwd, args);
+        expect(human.code, human.stderr).toBe(0);
+        if (label === "sensitive") {
+          expect(json.stdout).not.toContain("fixture-key");
+          expect(human.stdout).not.toContain("fixture-key");
+        }
+        expect(human.stdout).toMatch(/Actual\s+\[/u);
+        expect(human.stdout).toMatch(/Expected\s+\[/u);
+        expect(human.stdout).toContain(({ paths: "changed.ts", long: "[truncated]", sensitive: "<redacted> actual" })[label]);
+      }),
+      { examples: [["paths"], ["long"], ["sensitive"]], numRuns: 3 },
     );
   });
 });

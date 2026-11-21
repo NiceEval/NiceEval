@@ -62,6 +62,7 @@ import {
 import { collectionMatchRegistration } from "./collection.ts";
 import {
   assertManagedValueMatch,
+  equalityOperandsOf,
   evaluateBooleanMatch,
   evaluateScoreMatch,
   isManagedCollectionMatch,
@@ -272,6 +273,8 @@ interface SnapshotState {
   truncated: boolean;
   omittedBytes: number;
   readonly seen: WeakSet<object>;
+  readonly redactText?: (value: string) => string;
+  remainingNodes?: number;
 }
 
 type AvailableScoreContribution = Extract<AssertionScoreContribution, { readonly state: "not-scored" | "earned" }>;
@@ -341,15 +344,19 @@ function markTruncated(state: SnapshotState, bytes = 1): void {
   state.omittedBytes += Math.max(1, bytes);
 }
 
-function boundedSnapshotString(value: string, state: SnapshotState): string {
+function boundedSnapshotString(
+  value: string,
+  state: SnapshotState,
+  limit = assertionRuntimeLimits.stringBytes,
+): string {
   const bytes = omittedBytes(value);
-  if (bytes <= assertionRuntimeLimits.stringBytes) return value;
+  if (bytes <= limit) return value;
 
   let retainedBytes = 0;
   let retainedEnd = 0;
   for (const point of value) {
     const pointBytes = omittedBytes(point);
-    if (retainedBytes + pointBytes > assertionRuntimeLimits.stringBytes) break;
+    if (retainedBytes + pointBytes > limit) break;
     retainedBytes += pointBytes;
     retainedEnd += point.length;
   }
@@ -358,7 +365,9 @@ function boundedSnapshotString(value: string, state: SnapshotState): string {
 }
 
 function boundedSnapshotKey(key: string, index: number, existing: ReadonlySet<string>, state: SnapshotState): string {
-  if (omittedBytes(key) <= assertionRuntimeLimits.stringBytes) return key;
+  const redacted = state.redactText?.(key) ?? key;
+  if (omittedBytes(redacted) <= assertionRuntimeLimits.stringBytes && (redacted === key || !existing.has(redacted)))
+    return redacted;
 
   markTruncated(state, omittedBytes(key));
   let replacement = `$niceeval:truncated-key:${index}`;
@@ -376,6 +385,7 @@ function boundedSnapshotKey(key: string, index: number, existing: ReadonlySet<st
  * tagged placeholder and make the entry's material explicitly partial.
  */
 function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotState): AssertionSnapshotValue {
+  if (state.remainingNodes !== undefined) state.remainingNodes--;
   if (value === null || typeof value === "boolean") return value;
 
   if (typeof value === "number") {
@@ -385,7 +395,7 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
   }
 
   if (typeof value === "string") {
-    return boundedSnapshotString(value, state);
+    return boundedSnapshotString(state.redactText?.(value) ?? value, state);
   }
 
   if (typeof value === "undefined") {
@@ -417,6 +427,10 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
     if (length < value.length) markTruncated(state, value.length - length);
     const entries: AssertionSnapshotValue[] = [];
     for (let index = 0; index < length; index += 1) {
+      if (state.remainingNodes === 0) {
+        markTruncated(state, length - index);
+        break;
+      }
       try {
         const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
         if (descriptor === undefined) {
@@ -458,6 +472,10 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
   const entries: Array<readonly [string, AssertionSnapshotValue]> = [];
   const reservedKeys = new Set(keys);
   for (let index = 0; index < length; index += 1) {
+    if (state.remainingNodes === 0) {
+      markTruncated(state, length - index);
+      break;
+    }
     const key = keys[index];
     if (key === undefined) continue;
     const capturedKey = boundedSnapshotKey(key, index, reservedKeys, state);
@@ -476,6 +494,22 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
     }
   }
   return Object.freeze(Object.fromEntries(entries));
+}
+
+function equalityOperandPreview(value: unknown, redactText: (value: string) => string): string {
+  const state: SnapshotState = {
+    seen: new WeakSet(),
+    truncated: false,
+    omittedBytes: 0,
+    redactText,
+    remainingNodes: assertionRuntimeLimits.diagnosticNodes,
+  };
+  try {
+    const preview = boundedSnapshotString(JSON.stringify(boundedSnapshotValue(value, 0, state)), state, 2_048);
+    return state.truncated ? `${preview} … [truncated]` : preview;
+  } catch {
+    return "[unavailable]";
+  }
 }
 
 export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnapshot {
@@ -516,6 +550,7 @@ export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnaps
  */
 function captureMatchDiagnostic(
   value: MatchDiagnostic | undefined,
+  redactOperandText: ((value: string) => string) | undefined,
   depth = 0,
   seen = new WeakSet<object>(),
   budget = { remainingNodes: assertionRuntimeLimits.diagnosticNodes },
@@ -552,6 +587,11 @@ function captureMatchDiagnostic(
     };
     if (value.expected !== undefined) output.expected = text(value.expected);
     if (value.received !== undefined) output.received = text(value.received);
+    const operands = equalityOperandsOf(value);
+    if (operands !== undefined && redactOperandText !== undefined) {
+      output.expected = equalityOperandPreview(operands.expected, redactOperandText);
+      output.received = equalityOperandPreview(operands.received, redactOperandText);
+    }
     if (value.reason !== undefined) output.reason = text(value.reason);
     if (value.locator !== undefined) {
       output.locator =
@@ -571,7 +611,7 @@ function captureMatchDiagnostic(
           state: child.state,
         };
         if (child.label !== undefined) entry.label = text(child.label);
-        const diagnostic = captureMatchDiagnostic(child.diagnostic, depth + 1, seen, budget);
+        const diagnostic = captureMatchDiagnostic(child.diagnostic, redactOperandText, depth + 1, seen, budget);
         if (diagnostic !== undefined) entry.diagnostic = diagnostic;
         children.push(entry);
       }
@@ -2007,7 +2047,7 @@ class AssertionsRuntimeImplementation {
     const entries: SealedAssertionEntry[] = [];
     const assertions: SealedAssertionEvaluation["assertions"][number][] = [];
     for (const entry of this.entries) {
-      const sealedEntry = this.toSealedEntry(entry);
+      const sealedEntry = this.toSealedEntry(entry, options.redactOperandText ?? ((value) => value));
       entries.push(sealedEntry);
       assertions.push({
         required: this.isRequired(entry),
@@ -2026,7 +2066,10 @@ class AssertionsRuntimeImplementation {
     return this.sealed;
   }
 
-  private toSealedEntry(entry: AssertionEntry): SealedAssertionEntry {
+  private toSealedEntry(
+    entry: AssertionEntry,
+    redactOperandText: AssertionSealOptions["redactOperandText"],
+  ): SealedAssertionEntry {
     if (entry.evaluation.state !== "settled") throw new Error("Attempted to seal an unsettled Assertion entry");
     const settlement = entry.evaluation.value;
     const display: AssertionDisplay = {
@@ -2073,7 +2116,7 @@ class AssertionsRuntimeImplementation {
       evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
-      result: this.resultFor(entry, settlement),
+      result: this.resultFor(entry, settlement, redactOperandText),
       policy: {
         requirement: this.isRequired(entry) ? ("required" as const) : ("optional" as const),
         condition: this.conditionFor(entry),
@@ -2131,7 +2174,11 @@ class AssertionsRuntimeImplementation {
     return entry.sealedEvidence;
   }
 
-  private resultFor(entry: AssertionEntry, settlement: EntrySettlement): AssertionResult {
+  private resultFor(
+    entry: AssertionEntry,
+    settlement: EntrySettlement,
+    redactOperandText?: AssertionSealOptions["redactOperandText"],
+  ): AssertionResult {
     const terminalDetail = entry.terminalDetail();
     const evidence = settlement.evidence;
     function evidenceDiagnostic() {
@@ -2139,7 +2186,7 @@ class AssertionsRuntimeImplementation {
         case "measurement":
           return evidence.detail;
         case "matcher":
-          return captureMatchDiagnostic(evidence.diagnostic);
+          return captureMatchDiagnostic(evidence.diagnostic, redactOperandText);
         default:
           return undefined;
       }
