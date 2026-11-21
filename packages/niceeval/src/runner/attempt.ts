@@ -58,6 +58,7 @@ import { buildScorePayload } from "../eval/record/score.ts";
 import { foldVerdict } from "../eval/record/verdict.ts";
 import { AdapterAttemptResources, adapterEvidenceUnavailable, ManagedAttemptResources } from "./attempt-resources.ts";
 import { bindAttemptResources } from "../context/attempt-resources.ts";
+import { attemptCredentialRegistration, CurrentAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
 import { applyCommandDeadline, SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
 import { ExperimentFatalError } from "../shared/failure-class.ts";
@@ -1930,6 +1931,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               }
               return bodyResult;
             }).pipe(
+              Effect.provideService(CurrentAttemptCredentials, attemptCredentialRegistration(sensitiveValues)),
               applyAttemptDeadline,
               Effect.onExit((exit) =>
                 Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) && !timedOut

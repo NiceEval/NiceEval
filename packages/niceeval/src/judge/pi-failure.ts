@@ -4,6 +4,7 @@ import { REDACTED_SENSITIVE_VALUE, type RedactEvidenceText } from "../sandbox/re
 import { Data, Schema } from "effect";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
+import type { RememberAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import { resolveJudgeCredential } from "./provider.ts";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 
@@ -34,7 +35,10 @@ export function piDefect(cause: unknown): PiFailure {
       });
 }
 
-export function managedPiCredential(profile: ResolvedJudgeConfig | undefined): string {
+export function managedPiCredential(
+  profile: ResolvedJudgeConfig | undefined,
+  remember?: RememberAttemptCredentials,
+): string {
   if (profile === undefined)
     throw new PiFailure({
       kind: "provider",
@@ -48,6 +52,7 @@ export function managedPiCredential(profile: ResolvedJudgeConfig | undefined): s
       message: "Judge Provider credential is unresolved",
       cause: undefined,
     });
+  remember?.(credential, ...Object.values(profile.headers ?? {}));
   return credential;
 }
 

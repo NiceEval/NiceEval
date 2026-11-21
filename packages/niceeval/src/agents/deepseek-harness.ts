@@ -1,3 +1,4 @@
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
@@ -154,7 +155,7 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
           try: (signal) =>
             ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
               env,
-              sensitiveValues: [apiKey],
+              sensitiveValues: knownSensitiveValues(apiKey),
               stream: true,
               signal,
             }),

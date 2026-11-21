@@ -1,9 +1,10 @@
+import { CurrentAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import { makeSendFailure, normalizeSendFailure } from "../context/send-failures.ts";
 import { makeSandboxAgent } from "../define.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
-import { redactSensitiveEvidence } from "../sandbox/redaction.ts";
+import { knownSensitiveValues, redactSensitiveEvidence } from "../sandbox/redaction.ts";
 import type {
   AgentInstallationManifest,
   EvidenceCoverage,
@@ -105,41 +106,44 @@ export function antigravityAgent(config?: AntigravityConfig): SandboxAgent {
     install,
     installers: [installer],
     before: (sandbox, ctx) =>
-      Effect.tryPromise({
-        try: async (signal) => {
-          const apiKey = config?.apiKey ?? requireEnv("GEMINI_API_KEY");
-          if (!apiKey) throw new Error("Antigravity requires a non-empty Gemini API key.");
-          const baseUrl = config?.baseUrl ?? getEnv("GOOGLE_GEMINI_BASE_URL");
-          const servers = config?.mcpServers ?? [];
-          assertMcpServers(servers);
-          const sensitiveValues = [
-            apiKey,
-            ...servers.flatMap((server) => Object.values((isHttpMcp(server) ? server.headers : server.env) ?? {})),
-          ];
-          const created = await sandbox.runCommandOrThrow("mktemp", ["-d", "/tmp/niceeval-agy.XXXXXXXX"], { signal });
-          const home = created.stdout.trim();
-          const appData = `${home}/.gemini/antigravity-cli`;
-          attempts.set(ctx.attempt?.id ?? sandbox.sandboxId, {
-            home,
-            appData,
-            apiKey,
-            baseUrl,
-            unknownEvents: new UnrecognizedAgentEvents(),
-            sensitiveValues,
-          });
-          await sandbox.writeText(`${appData}/settings.json`, JSON.stringify({ modelProvider: "gemini" }));
-          const manifest: AgentInstallationManifest = { skills: [] };
-          if (servers.length) {
-            await installMcp(sandbox, servers);
-            manifest.mcpServers = mcpManifestEntries(servers);
-          }
-          if (config?.skills?.length) {
-            manifest.skills = await installSkills(sandbox, config.skills, { dir: SKILL_DIR });
-          }
-          if (manifest.skills.length || manifest.mcpServers?.length) ctx.reportInstallation(manifest);
-        },
-        catch: (cause) => cause,
-      }),
+      Effect.flatMap(CurrentAttemptCredentials, (remember) =>
+        Effect.tryPromise({
+          try: async (signal) => {
+            const apiKey = config?.apiKey ?? requireEnv("GEMINI_API_KEY");
+            if (!apiKey) throw new Error("Antigravity requires a non-empty Gemini API key.");
+            const baseUrl = config?.baseUrl ?? getEnv("GOOGLE_GEMINI_BASE_URL");
+            const servers = config?.mcpServers ?? [];
+            assertMcpServers(servers);
+            const sensitiveValues = knownSensitiveValues(
+              apiKey,
+              ...servers.flatMap((server) => Object.values((isHttpMcp(server) ? server.headers : server.env) ?? {})),
+            );
+            remember(...sensitiveValues);
+            const created = await sandbox.runCommandOrThrow("mktemp", ["-d", "/tmp/niceeval-agy.XXXXXXXX"], { signal });
+            const home = created.stdout.trim();
+            const appData = `${home}/.gemini/antigravity-cli`;
+            attempts.set(ctx.attempt?.id ?? sandbox.sandboxId, {
+              home,
+              appData,
+              apiKey,
+              baseUrl,
+              unknownEvents: new UnrecognizedAgentEvents(),
+              sensitiveValues,
+            });
+            await sandbox.writeText(`${appData}/settings.json`, JSON.stringify({ modelProvider: "gemini" }));
+            const manifest: AgentInstallationManifest = { skills: [] };
+            if (servers.length) {
+              await installMcp(sandbox, servers);
+              manifest.mcpServers = mcpManifestEntries(servers);
+            }
+            if (config?.skills?.length) {
+              manifest.skills = await installSkills(sandbox, config.skills, { dir: SKILL_DIR });
+            }
+            if (manifest.skills.length || manifest.mcpServers?.length) ctx.reportInstallation(manifest);
+          },
+          catch: (cause) => cause,
+        }),
+      ),
     after: (sandbox, ctx) =>
       Effect.gen(function* () {
         const attemptId = ctx.attempt?.id ?? sandbox.sandboxId;

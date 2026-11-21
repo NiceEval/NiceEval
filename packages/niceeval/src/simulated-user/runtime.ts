@@ -1,3 +1,4 @@
+import type { RememberAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import {
   activeEvidenceRedactor,
   mapEvidenceText,
@@ -40,6 +41,7 @@ export function createSimulatedUserConversation(
   timing?: import("../runner/timing.ts").TimingRecorder,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
   redact?: RedactEvidenceText,
+  remember?: RememberAttemptCredentials,
 ): SimulatedUserConversation {
   let session: AgentSession | undefined;
   let prompt: Awaited<ReturnType<typeof createManagedPiSession>>["prompt"] | undefined;
@@ -169,7 +171,7 @@ export function createSimulatedUserConversation(
       }
       let apiKey: string;
       try {
-        apiKey = managedPiCredential(profile);
+        apiKey = managedPiCredential(profile, remember);
       } catch (cause) {
         throw failPi(piDefect(cause));
       }

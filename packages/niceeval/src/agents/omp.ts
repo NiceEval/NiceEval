@@ -1,3 +1,4 @@
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
@@ -174,7 +175,7 @@ export function ompAgent(config?: OmpConfig): Agent {
           try: (signal) =>
             ctx.sandbox.runCommand(ompBin, args, {
               env,
-              sensitiveValues: [apiKey],
+              sensitiveValues: knownSensitiveValues(apiKey),
               stream: true,
               signal,
             }),

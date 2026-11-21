@@ -1,3 +1,5 @@
+import { CurrentAttemptCredentials } from "../context/attempt-sensitive-values.ts";
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { attachCodingAgentExtensions } from "./plugin-extensions.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
@@ -277,6 +279,14 @@ export function codexAgent(config?: CodexConfig): Agent {
   assertAgentLifecycleNames(config, "codexAgent");
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  const cloudflareEnv = (): Record<string, string> => {
+    const id = process.env.CF_ACCESS_CLIENT_ID;
+    const secret = process.env.CF_ACCESS_CLIENT_SECRET;
+    const overridden = Object.keys(config?.headers ?? {}).some((name) =>
+      ["cf-access-client-id", "cf-access-client-secret"].includes(name.toLowerCase()),
+    );
+    return id && secret && !overridden ? { CF_ACCESS_CLIENT_ID: id, CF_ACCESS_CLIENT_SECRET: secret } : {};
+  };
   // PATH 是 Sandbox 受管变量,在 factory 构造时(link/配置校验期)同步拒绝,不留到 setup()
   // 才炸,也不静默丢弃——被覆盖的 PATH 会让 hooks / 子进程读到错误的可执行文件而零报错
   // (见 docs/feature/sandbox/library/README.md「PATH:受管变量与 pathPrepend」)。
@@ -362,18 +372,12 @@ export function codexAgent(config?: CodexConfig): Agent {
             // 自定义 endpoint 常从项目的私有环境注入。它仍是 Codex 的真实运行配置，但不能因
             // Adapter 用 heredoc 写 config.toml 而进入 command/timing/error 证据；一旦在这里登记，
             // Attempt 最终封口也会清掉随后 hook 或 CLI 错误里回显的同一值。
-            const providerSensitiveValues = base ? [base] : [];
-            if (config?.headers) {
-              for (const v of Object.values(config.headers)) {
-                if (v) providerSensitiveValues.push(v);
-              }
-            }
-            if (process.env.CF_ACCESS_CLIENT_ID) {
-              providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_ID);
-            }
-            if (process.env.CF_ACCESS_CLIENT_SECRET) {
-              providerSensitiveValues.push(process.env.CF_ACCESS_CLIENT_SECRET);
-            }
+            const cfEnv = cloudflareEnv();
+            const providerSensitiveValues = knownSensitiveValues(
+              base,
+              ...Object.values(base ? (config?.headers ?? {}) : {}),
+              ...Object.values(cfEnv),
+            );
 
             const topLevel = base ? modelLine + `model_provider = "s2a"\n` + effortLine : modelLine + effortLine;
             let providerTable = "";
@@ -391,12 +395,7 @@ export function codexAgent(config?: CodexConfig): Agent {
                   lines.push(`"${k}" = "${v}"`);
                 }
               }
-              const hasCfId =
-                config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
-              const hasCfSecret =
-                config?.headers &&
-                Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
-              if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
+              if (cfEnv.CF_ACCESS_CLIENT_ID !== undefined) {
                 lines.push(`[model_providers.s2a.env_http_headers]`);
                 lines.push(`"CF-Access-Client-Id" = "CF_ACCESS_CLIENT_ID"`);
                 lines.push(`"CF-Access-Client-Secret" = "CF_ACCESS_CLIENT_SECRET"`);
@@ -474,7 +473,7 @@ export function codexAgent(config?: CodexConfig): Agent {
                     })
                     .join("\n\n");
                   await sb.runShell(`cat >> ~/.codex/config.toml <<'MCPEOF'\n\n${mcpToml}\nMCPEOF\n`, {
-                    sensitiveValues,
+                    sensitiveValues: knownSensitiveValues(...sensitiveValues),
                     signal,
                   });
                 }
@@ -547,29 +546,13 @@ export function codexAgent(config?: CodexConfig): Agent {
         },
 
         send: (input, ctx) =>
-          Effect.tryPromise({
-            try: () => {
-              const apiKey = getApiKey();
-              const hasCfId =
-                config?.headers && Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-id");
-              const hasCfSecret =
-                config?.headers &&
-                Object.keys(config.headers).some((k) => k.toLowerCase() === "cf-access-client-secret");
-              const cfEnv: Record<string, string> = {};
-              if (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET && !hasCfId && !hasCfSecret) {
-                cfEnv.CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
-                cfEnv.CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
-              }
-              return sendCodexAppServer(
-                input,
-                ctx,
-                {
-                  ...cfEnv,
-                  ...agentEnv,
-                  CODEX_API_KEY: apiKey,
-                  ...ctx.telemetry?.env,
-                },
-                (raw, events, nativeText) => {
+          Effect.flatMap(CurrentAttemptCredentials, (remember) =>
+            Effect.tryPromise({
+              try: () => {
+                const configuredEnv = { ...cloudflareEnv(), ...agentEnv, CODEX_API_KEY: getApiKey() };
+                const env: Record<string, string> = { ...configuredEnv, ...ctx.telemetry?.env };
+                remember(...Object.keys(configuredEnv).map((key) => env[key]));
+                return sendCodexAppServer(input, ctx, env, (raw, events, nativeText) => {
                   const code = codexCapacityCode(raw);
                   const acceptance = codexAcceptance(raw, events, nativeText);
                   if (code === undefined)
@@ -581,11 +564,11 @@ export function codexAgent(config?: CodexConfig): Agent {
                     acceptance,
                     cause: normalizeExternalCause({ code }),
                   };
-                },
-              );
-            },
-            catch: (cause) => cause,
-          }),
+                });
+              },
+              catch: (cause) => cause,
+            }),
+          ),
       }),
       config?.before,
       config?.after,

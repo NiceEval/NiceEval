@@ -28,6 +28,7 @@ import type {
 } from "./match.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
+import { CurrentAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import { resolveJudgeCredential } from "../judge/provider.ts";
 import { readJudgeImage, type JudgeImage, type JudgeMaterial } from "../judge/image.ts";
 import {
@@ -794,6 +795,8 @@ export function prepareManagedScoreMatch(input: {
       let bodyWithoutCacheKey: string | undefined;
       busy = true;
       const execute = Effect.gen(function* () {
+        const remember = yield* CurrentAttemptCredentials;
+        remember(apiKey, ...Object.values(profile.headers ?? {}));
         const timing = yield* CurrentJudgeTiming;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           let received: Awaited<ReturnType<typeof requestScoreMatchProvider>>;

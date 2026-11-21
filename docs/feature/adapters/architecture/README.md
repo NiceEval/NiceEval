@@ -27,6 +27,8 @@ transport ──► raw frames / transcript
 
 同一个 SDK 的 reducer 是稳定、可复用的协议知识，应放在独立转换器中；应用自己的 endpoint 与审批接口仍留在 Adapter 的 transport 粘合代码里。
 
+内置适配器与 Judge Provider 在注入自己持有的凭据前，必须按 [Attempt 敏感值规则](../../eval/library/context.md#登记敏感值) 登记实际注入的值，短于 8 个字符的值跳过。
+
 ## Attempt 取消与排空时序
 
 公开取消原因与预算由 [Library](../library/README.md#attempt-取消与资源释放预算) 定义。

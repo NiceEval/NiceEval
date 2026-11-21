@@ -1,4 +1,5 @@
 import { registerAttemptSensitiveValues, type RedactEvidenceText } from "../sandbox/redaction.ts";
+import { attemptCredentialRegistration } from "./attempt-sensitive-values.ts";
 import type { TestCleanupContext } from "../sandbox/commands.ts";
 import { bindConversationMaterial, projectConversation } from "../assertions/conversation-material.ts";
 import { AttemptNotesCollector } from "./notes.ts";
@@ -2757,6 +2758,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
                   deps.judgeTiming,
                   deps.judgePromptCache,
                   deps.redactEvidenceText,
+                  deps.sensitiveValues === undefined ? undefined : attemptCredentialRegistration(deps.sensitiveValues),
                 ),
               latchFailure: (error) => {
                 state.simulatedUserFailure ??= error;

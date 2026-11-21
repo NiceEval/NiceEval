@@ -1,3 +1,5 @@
+import { CurrentAttemptCredentials } from "../context/attempt-sensitive-values.ts";
+import { jsonCommandSensitiveValues } from "../sandbox/redaction.ts";
 import { attachCodingAgentExtensions } from "./plugin-extensions.ts";
 import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { Effect } from "effect";
@@ -222,7 +224,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
                   // 用户级 MCP 配置在 ~/.claude.json(顶层 mcpServers 字段),不是 ~/.claude/claude.json
                   // ——后者 claude CLI 根本不读,MCP 静默挂不上(本机 `claude mcp list` 可核对)。
                   await shared.writeFile(sb, "~/.claude.json", JSON.stringify({ mcpServers: servers }, null, 2), {
-                    sensitiveValues,
+                    sensitiveValues: jsonCommandSensitiveValues(...sensitiveValues),
                   });
                 }
 
@@ -274,27 +276,30 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
           }),
 
         send: (input, ctx) =>
-          Effect.tryPromise({
-            try: () => {
-              const args: string[] = [];
-              if (ctx.model) args.push("--model", ctx.model);
-              if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
-              if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
+          Effect.flatMap(CurrentAttemptCredentials, (remember) =>
+            Effect.tryPromise({
+              try: () => {
+                const args: string[] = [];
+                if (ctx.model) args.push("--model", ctx.model);
+                if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
+                if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
 
-              const apiKey = getApiKey();
-              const env: globalThis.Record<string, string> = {
-                ...agentEnv,
-                ANTHROPIC_API_KEY: apiKey,
-                // Eval runs must not silently change CLI version after the sandbox artifact was built.
-                DISABLE_AUTOUPDATER: "1",
-                ...ctx.telemetry?.env,
-              };
-              const baseUrl = getBaseUrl();
-              if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
-              return sendClaudeCodeNative(input, ctx, args, env);
-            },
-            catch: (cause) => cause,
-          }),
+                const apiKey = getApiKey();
+                const env: globalThis.Record<string, string> = {
+                  ...agentEnv,
+                  ANTHROPIC_API_KEY: apiKey,
+                  // Eval runs must not silently change CLI version after the sandbox artifact was built.
+                  DISABLE_AUTOUPDATER: "1",
+                  ...ctx.telemetry?.env,
+                };
+                const baseUrl = getBaseUrl();
+                if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
+                remember(env.ANTHROPIC_API_KEY, ...Object.keys(agentEnv).map((key) => env[key]));
+                return sendClaudeCodeNative(input, ctx, args, env);
+              },
+              catch: (cause) => cause,
+            }),
+          ),
       }),
       config?.before,
       config?.after,

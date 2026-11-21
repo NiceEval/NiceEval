@@ -61,7 +61,7 @@ function fixtureSource(secret: string, commandSecret: string) {
       const user = t.simulatedUser(defineSimulatedUser({ instructions: "Send the connection " + secret }));
       const question = await t.send("question " + secret);
       const answer = await user.reply(question);
-      assert.equal(answer.reply, "echo response " + secret);
+      assert.equal(answer.reply, "echo response " + secret + " provider-" + commandSecret + " header-" + commandSecret);
       const printed = await t.sandbox.runCommand("printf", ["%s %s", secret, commandSecret], { sensitiveValues: [commandSecret] });
       assert.equal(printed.stdout, secret + " " + commandSecret);
       await assert.rejects(t.sandbox.runShellOrThrow("printf '%s' '" + "x".repeat(150) + secret + "' >&2; exit 7"),
@@ -79,13 +79,15 @@ function fixtureSource(secret: string, commandSecret: string) {
 }
 
 async function observe(secret: string, commandSecret: string) {
+  const providerKey = "provider-" + commandSecret;
+  const providerHeader = "header-" + commandSecret;
   const requests = new Map<string, string>();
   const server = await startHttpServer((_req, body, res) => {
     const payload = JSON.parse(body);
     if (payload.stream) {
       if (payload.tools.some((tool: { function: { name: string } }) => tool.function.name === "reply_to_agent")) {
         requests.set("simulated", body);
-        respondStream(res, payload, { id: "simulated", toolArguments: { message: "response " + secret } });
+        respondStream(res, payload, { id: "simulated", toolArguments: { message: "response " + secret + " " + providerKey + " " + providerHeader } });
         return;
       }
       requests.set("agentJudge", body);
@@ -140,7 +142,7 @@ async function observe(secret: string, commandSecret: string) {
     });
     const result = await planAndRunExperiment(cwd, "record", {
       config: { judgeProvider: OpenAIProvider({
-        model: "redaction-fixture", baseUrl: server.baseUrl, apiKey: "test-provider-key",
+        model: "redaction-fixture", baseUrl: server.baseUrl, apiKey: providerKey, headers: { "X-Fixture-Credential": providerHeader },
         maxOutputTokens: 128, contextWindow: 128_000,
         // Enable the image request path without calling a real model.
         supportsImages: true,
@@ -181,7 +183,7 @@ async function observe(secret: string, commandSecret: string) {
       entry.scoreMatchAudit?.state === "available" && entry.scoreMatchAudit.audit.kind === "images");
     const imageEntry = attempt.value.attempt.assertions.entries[entries.indexOf(image!)];
     const imageDetail = imageEntry === undefined ? "" : (await invokeCli(cwd, ["show", locator, imageEntry.entryId, "--full"])).stdout;
-    return { secret, commandSecret, requests, diagnostics, commands, turns, activity, entries, agentTrace, imageDetail,
+    return { secret, commandSecret, providerKey, providerHeader, requests, diagnostics, commands, turns, activity, entries, agentTrace, imageDetail,
       executionDiagnostics: trace.diagnostics.items };
   } finally {
     await server.close();
@@ -261,5 +263,18 @@ test("complete Judge audits redact inputs and calls while all models receive the
       wireBodyVerification: "unavailable-redacted-template",
       wireBody: { byteLength: Buffer.byteLength(wire), sha256: createHash("sha256").update(wire).digest("hex") },
     });
+  }
+});
+
+
+// @feature docs/feature/eval/library/context.md#登记敏感值
+test("Judge Provider credentials echoed back by a simulated user are registered for subsequent Turns", () => {
+  for (const { turns, providerKey, providerHeader, activity } of observations) {
+    const answer = turns.find((turn) => turn.includes("echo response"));
+    expect(answer).toContain("echo response <redacted> <redacted> <redacted>");
+    expect(containsText(answer, providerKey)).toBe(false);
+    expect(containsText(answer, providerHeader)).toBe(false);
+    expect(containsText(activity.answer, providerKey)).toBe(false);
+    expect(containsText(activity.answer, providerHeader)).toBe(false);
   }
 });

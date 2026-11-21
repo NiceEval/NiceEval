@@ -1,3 +1,4 @@
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
@@ -171,8 +172,10 @@ export function hermesAgent(config?: HermesConfig): Agent {
               "",
             ].join("\n");
             const hermesEnv = [`OPENAI_API_KEY=${apiKey}`, `OPENAI_BASE_URL=${baseUrl}`, ""].join("\n");
-            await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig, { sensitiveValues: [apiKey] });
-            await shared.writeFile(sb, "~/.hermes/.env", hermesEnv, { sensitiveValues: [apiKey] });
+            await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig, {
+              sensitiveValues: knownSensitiveValues(apiKey),
+            });
+            await shared.writeFile(sb, "~/.hermes/.env", hermesEnv, { sensitiveValues: knownSensitiveValues(apiKey) });
           }
 
           const manifest: AgentInstallationManifest = { skills: [] };
@@ -216,7 +219,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
             env.ANTHROPIC_BASE_URL = baseUrl;
           }
 
-          const sensitiveValues = [apiKey];
+          const sensitiveValues = knownSensitiveValues(apiKey);
           const res = await hermesShell(sb, args, env, { stream: true, sensitiveValues });
           let sessionId =
             sessionIdFromHermesOutput(res.stdout) ?? sessionIdFromHermesOutput(res.stderr) ?? ctx.session.id;

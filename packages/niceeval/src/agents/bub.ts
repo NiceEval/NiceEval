@@ -1,3 +1,4 @@
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { UnrecognizedAgentEvents } from "./unrecognized-events.ts";
 import { attachCodingAgentExtensions } from "./plugin-extensions.ts";
 import { Effect } from "effect";
@@ -313,7 +314,7 @@ ${last}`);
               if (ctx.model) env.BUB_MODEL = `openai:${ctx.model}`;
               const res = await sb.runShell(
                 `${BUB} --workspace ${workspace} run ${shared.shellQuote(input.text)} --session-id ${sessionId}`,
-                { env, sensitiveValues: [apiKey], stream: true },
+                { env, sensitiveValues: knownSensitiveValues(apiKey), stream: true },
               );
 
               const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);

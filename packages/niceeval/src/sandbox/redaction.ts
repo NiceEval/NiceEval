@@ -30,10 +30,27 @@ export function activeEvidenceRedactor(redact: RedactEvidenceText | undefined): 
   return redact?.hasValues?.() === false ? undefined : redact;
 }
 
+function isAttemptSensitiveValue(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 8;
+}
+
+/** Credentials supplied by built-ins can be shorter than the evidence registration minimum. */
+export function knownSensitiveValues(...values: readonly (string | undefined)[]): string[] {
+  return values.filter(isAttemptSensitiveValue);
+}
+
+/** Also registers the string literal's contents as they appear in JSON embedded in a command. */
+export function jsonCommandSensitiveValues(...values: readonly string[]): string[] {
+  return knownSensitiveValues(...values).flatMap((value) => {
+    const escaped = JSON.stringify(value).slice(1, -1);
+    return escaped === value ? [value] : [value, escaped];
+  });
+}
+
 // @concord-code
 // @concord-implements docs/feature/eval/library/context.md#登记敏感值
 export function registerAttemptSensitiveValues(target: Set<string>, values: readonly string[]): void {
-  if (values.some((value) => typeof value !== "string" || value.length < 8)) {
+  if (!values.every(isAttemptSensitiveValue)) {
     throw new TypeError("sensitiveValues() requires strings of at least 8 characters.");
   }
   rememberSensitiveValues(target, values);

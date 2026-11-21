@@ -83,7 +83,7 @@ describe("codexAgent headers and Cloudflare Access support", () => {
     const sensitive = configFileCall.options?.sensitiveValues ?? [];
     expect(sensitive).toContain("https://s2a.example.com/v1");
     expect(sensitive).toContain("secret-token-123");
-    expect(sensitive).toContain("org-456");
+    expect(sensitive).not.toContain("org-456");
   });
 
   test("generates env_http_headers when CF Access env vars exist and not specified in headers", async () => {

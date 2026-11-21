@@ -1,3 +1,4 @@
+import { knownSensitiveValues } from "../sandbox/redaction.ts";
 import { UnrecognizedAgentEvents } from "./unrecognized-events.ts";
 import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
@@ -211,7 +212,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
           env.OPENAI_BASE_URL = baseUrl;
         }
 
-        const sensitiveValues = [apiKey];
+        const sensitiveValues = knownSensitiveValues(apiKey);
         const res = yield* Effect.tryPromise({
           try: (signal) => sb.runCommand(opencodeBin, args, { env, sensitiveValues, stream: true, signal }),
           catch: normalizeSendFailure,

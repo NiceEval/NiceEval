@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/judge/library.md
 // @concord-implements docs/feature/judge/architecture.md
+import { CurrentAttemptCredentials, type RememberAttemptCredentials } from "../context/attempt-sensitive-values.ts";
 import {
   activeEvidenceRedactor,
   mapEvidenceText,
@@ -368,7 +369,7 @@ export class AgentJudgeSession {
     if (this.cancelledKeys.has(key)) {
       return Effect.succeed({ state: "errored", detail: undefined, receipt: undefined });
     }
-    const execute = Effect.suspend(() => {
+    const execute = Effect.flatMap(CurrentAttemptCredentials, (remember) => {
       if (this.started) return Effect.void;
       this.started = true;
       return Effect.tryPromise({
@@ -381,7 +382,7 @@ export class AgentJudgeSession {
           signal.addEventListener("abort", stop, { once: true });
           const span = JudgeTimingSpan.start(this.timing, "agent-judge.session");
           this.timingSession = span;
-          this.running = this.run(this.controller.signal).finally(() => {
+          this.running = this.run(this.controller.signal, remember).finally(() => {
             span?.end(
               this.controller?.signal.aborted ? "cancelled" : this.problem === undefined ? "completed" : "failed",
             );
@@ -504,7 +505,7 @@ export class AgentJudgeSession {
     return agentJudgeSystemPrompt(this.judge.instructions);
   }
 
-  private async run(signal: AbortSignal): Promise<void> {
+  private async run(signal: AbortSignal, remember: RememberAttemptCredentials): Promise<void> {
     if (this.problem !== undefined) return;
     const profile = this.profile;
     if (profile === undefined) {
@@ -519,7 +520,7 @@ export class AgentJudgeSession {
       this.fail("unavailable", "judge-capability-unavailable", "Judge Provider does not support image material");
       return;
     }
-    const apiKey = managedPiCredential(profile);
+    const apiKey = managedPiCredential(profile, remember);
     const parameters = () =>
       (this.steps[this.currentStep - 1]?.kind === "judge"
         ? binaryParameters

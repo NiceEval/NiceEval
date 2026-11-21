@@ -1,3 +1,4 @@
+import { jsonCommandSensitiveValues, knownSensitiveValues } from "../sandbox/redaction.ts";
 import { makeSandboxAgent } from "../define.ts";
 import { Effect } from "effect";
 import { requireEnv, getEnv } from "../util.ts";
@@ -227,7 +228,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
               },
             };
             await shared.writeFile(sb, "~/.openclaw/openclaw.json", JSON.stringify(openclawConfig, null, 2), {
-              sensitiveValues: [apiKey],
+              sensitiveValues: jsonCommandSensitiveValues(apiKey),
             });
             // 预置最小身份文件,避免缺 IDENTITY 时仍触发仪式文案。
             await shared.writeFile(sb, `${sb.workdir}/IDENTITY.md`, "# Identity\n\nName: niceeval\nEmoji: ✓\n");
@@ -284,7 +285,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
 
             const res = await sb.runCommand(openclawBin, args, {
               env,
-              sensitiveValues: [apiKey],
+              sensitiveValues: knownSensitiveValues(apiKey),
               stream: true,
               signal,
             });
