@@ -50,7 +50,7 @@ parser 读取固定 CLI 版本的 `step_update` 事件：
 
 - `agent_response` 的 `text_delta` 投影为助手消息。
 - `step_type` 为 `tool` 的步骤以 `conversation_id` 加 `step_index` 配对 `ACTIVE` 与 `DONE`，得到一次工具 operation；原生工具名保留，已知工具按 [事件契约](../../../architecture/events.md) 归一。CLI 没有独立的工具调用 ID，Adapter 不从其它字段猜测。
-- 工具步骤的 `output` 在部分工具上只是摘要（例如 `read_file` 只给行数与字节数），所以工具结果材料标为 partial。
+- 工具步骤的 `output` 不写入工具结果：它在部分工具上只是摘要（例如 `read_file` 只给行数与字节数），把摘要当输出会让输出匹配断言误判，而通用事件模型没有"上游只给摘要"这种声明。工具结果材料因此标为不可用；工具的生命周期、入参和步骤上的 `error` 照常保留。
 - `user_input` 步骤只作为受理证据，输入正文以 NiceEval 自己记录的 `TurnInput` 为准。
 
 未知步骤类型与事件不进入 `Turn.events`；每条 Attempt 在收尾时追加一条 `agent-event-unrecognized` warning，汇总类型与次数。出现未知事件时该轮事件和动作证据标为 partial，不作为完整负断言依据。
