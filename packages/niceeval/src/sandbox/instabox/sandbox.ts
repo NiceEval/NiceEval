@@ -12,6 +12,7 @@ import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
 import { registerSandboxContent, registeredSandboxContentSnapshotOf } from "../content.ts";
 import { shellQuote } from "../shell.ts";
 import { successfulCommandResult } from "../operations.ts";
+import { retireCommandInstance } from "../background-command.ts";
 import { directoryArchive, expandDirectory, extractDirectory, type DirectorySnapshot } from "./archive.ts";
 import { resolveLocalPath, resolveSandboxPath } from "../paths.ts";
 import type {
@@ -275,22 +276,16 @@ export class InstaboxBackend implements SandboxProviderBackend {
     const cancel = () => {
       const cause = timeout?.aborted
         ? new SandboxCommandTimeoutError("Instabox command timed out", limit.timeoutMs!, limit.explicit)
-        : new Error("Instabox command cancelled");
+        : (options.signal?.reason ?? new DOMException("Instabox command cancelled", "AbortError"));
       void owned
         .then((process) => process.terminate())
         .then(
           () => rejectCancellation(cause),
-          async (cleanup: unknown) => {
-            try {
-              await this.stop();
-            } catch (retirement) {
-              rejectCancellation(
-                new AggregateError([cause, cleanup, retirement], "Instabox cancellation cleanup failed"),
-              );
-              return;
-            }
-            rejectCancellation(new AggregateError([cause, cleanup], "Instabox cancellation cleanup failed"));
-          },
+          () =>
+            retireCommandInstance(options.signal, () => this.stop()).then(
+              () => rejectCancellation(cause),
+              rejectCancellation,
+            ),
         );
     };
     signal.addEventListener("abort", cancel, { once: true });
@@ -335,7 +330,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     } catch (cause) {
       if (signal.aborted) return await cancelled;
       try {
-        await this.stop();
+        await retireCommandInstance(options.signal, () => this.stop());
       } catch (cleanup) {
         const reason = this.retirementCause ?? cause;
         throw new AggregateError(

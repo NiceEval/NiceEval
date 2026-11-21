@@ -48,3 +48,8 @@ export function redactSensitiveEvidence<Value>(value: Value, values: Iterable<st
 
   return visit(value) as Value;
 }
+/** Redact before shortening so truncation never retains a prefix of a known secret. */
+export function commandDisplay(cmd: string, args?: readonly string[], sensitiveValues: Iterable<string> = []): string {
+  const summary = redactSensitiveText([cmd, ...(args ?? [])].join(" "), sensitiveValues);
+  return summary.length > 160 ? `${summary.slice(0, 159)}…` : summary;
+}

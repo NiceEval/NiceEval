@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { execa } from "execa";
-import { expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 const NODE_IMAGE = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
@@ -133,3 +133,88 @@ test("SIGINT during an Attempt removes the process's Docker containers and the n
     await rm(cwd, { recursive: true, force: true });
   }
 }, 240_000);
+
+describe("Docker background commands", () => {
+  let cwd: string | undefined;
+  const launch = (workdir: string) =>
+    execa(process.execPath, [...process.execArgv, cli, "exp", "background", "--rerun", "all", "--json"], {
+      cwd: workdir,
+      reject: false,
+      timeout: 55_000,
+      env: { NO_COLOR: "1" },
+    });
+  let child: ReturnType<typeof launch>;
+  let startPath: string;
+
+  beforeAll(async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "niceeval-background-docker-"));
+    cwd = workdir;
+    const readyPath = join(workdir, "attempt-ready");
+    startPath = join(workdir, "start-commands");
+    await Promise.all(["evals", "experiments"].map((directory) => mkdir(join(workdir, directory))));
+    await Promise.all([
+      writeFile(join(cwd, "agent.ts"), agent("background-docker", "")),
+      writeFile(join(cwd, "experiments", "background.ts"), experiment("agent.ts")),
+      writeFile(
+        join(cwd, "niceeval.config.ts"),
+        'import { defineConfig } from "niceeval";\nexport default defineConfig({ timeoutMs: 50_000 });\n',
+      ),
+      writeFile(join(cwd, "evals", "probe.eval.ts"), `
+import assert from "node:assert/strict";
+import { watch } from "node:fs";
+import { access, writeFile } from "node:fs/promises";
+import { defineEval } from "niceeval";
+
+export default defineEval({
+  async test(t) {
+    const start = Promise.withResolvers<void>();
+    const watcher = watch(${JSON.stringify(workdir)}, (_event, file) => {
+      if (file === "start-commands") {
+        void access(${JSON.stringify(startPath)}).then(start.resolve, start.reject);
+      }
+    });
+    try {
+      await writeFile(${JSON.stringify(readyPath)}, "");
+      await start.promise;
+    } finally {
+      watcher.close();
+    }
+    const marker = () => Promise.withResolvers<void>();
+    const one = marker();
+    const two = marker();
+    const first = await t.sandbox.startShell("printf ready; exec sleep 120", { onStdout: () => one.resolve() });
+    const second = await t.sandbox.startCommand("bash", ["-c", "printf ready; exec sleep 120"], { onStdout: () => two.resolve() });
+    await Promise.all([one.promise, two.promise]);
+    const foreground = await t.sandbox.runCommandOrThrow("printf", ["foreground"]);
+    assert.equal(foreground.stdout, "foreground");
+    assert.equal(first.settled, false);
+    assert.equal(second.settled, false);
+  },
+});
+`),
+    ]);
+    child = launch(workdir);
+    await Promise.race([
+      untilTrue("the Docker Attempt to reach its test", () => access(readyPath).then(() => true, () => false), 45_000),
+      child.then((result) => {
+        throw new Error(result.stderr || result.stdout);
+      }),
+    ]);
+  }, 50_000);
+
+  afterAll(async () => {
+    if (child !== undefined) {
+      child.kill("SIGTERM");
+      await child;
+    }
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/sandbox/library/operations.md#后台命令
+  test("Attempt exit retires a Docker container that still has concurrent background commands", async () => {
+    await writeFile(startPath, "");
+    const completed = await child;
+    expect(completed.exitCode, String(completed.stderr || completed.stdout)).toBe(0);
+    expect(await ownedContainers(child.pid!)).toEqual([]);
+  }, 15_000);
+});

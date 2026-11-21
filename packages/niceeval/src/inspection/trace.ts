@@ -188,6 +188,7 @@ export function projectAttemptTrace(
       ? sandboxCommands.value.segments.slice(0, MAX_COMMANDS).map((command) => ({
           commandId: command.commandId,
           phase: projectLifecyclePhase(command.phase),
+          ...(command.checked === undefined ? {} : { checked: command.checked }),
           outcome: command.outcome,
         }))
       : [];
@@ -794,6 +795,7 @@ function projectTraceCommandDetail(
     commandId,
     invocation: projectFullInvocation(command.invocation),
     workingDirectory: command.workingDirectory,
+    ...(command.checked === undefined ? {} : { checked: command.checked }),
     outcome: command.outcome,
     turnId: command.turnId,
     phase: projectLifecyclePhase(command.phase),

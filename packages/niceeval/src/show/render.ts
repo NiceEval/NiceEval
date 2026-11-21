@@ -1670,7 +1670,7 @@ export function renderTrace(value: TraceView): string {
         rows: value.commands.items.map((command) => [
           command.commandId,
           command.phase,
-          commandOutcome(command.outcome),
+          commandOutcome(command.outcome, command.checked),
         ]),
       },
     ],
@@ -2064,7 +2064,7 @@ export function renderTraceDetail(value: TraceDetailView): string {
               key: "Working directory",
               value: workingDirectory(body.workingDirectory),
             },
-            { key: "Outcome", value: commandOutcome(body.outcome) },
+            { key: "Outcome", value: commandOutcome(body.outcome, body.checked) },
             { key: "Turn", value: body.turnId ?? "not recorded" },
             { key: "Phase", value: body.phase },
             { key: "Sequence", value: String(body.sequence) },
@@ -2201,8 +2201,11 @@ function workingDirectory(value: CommandDetail["workingDirectory"]): string {
 
 const COMMAND_PHASES: ReadonlySet<string> = new Set(["sandbox.prepare", "sandbox.command", "agent.install"]);
 
-function commandOutcome(value: CommandDetail["outcome"]): string {
-  if (value.kind === "exited") return `exited; code ${value.exitCode}`;
+function commandOutcome(value: CommandDetail["outcome"], checked: boolean | undefined): string {
+  if (value.kind === "exited") {
+    if (value.exitCode === 0 || checked === undefined) return `exited; code ${value.exitCode}`;
+    return `${checked ? "failed" : "observed"}; exit code ${value.exitCode}`;
+  }
   return `${factPhrase(value.kind)}; ${factPhrase(value.reason)}`;
 }
 

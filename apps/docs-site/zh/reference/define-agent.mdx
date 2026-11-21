@@ -576,7 +576,7 @@ log(msg: string): void;
 
 ## Sandbox 接口
 
-Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄。`Sandbox` 继承 `SandboxOperations` 与 `SandboxTransferOperations`，下方按声明接口列出全部成员。`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
+Sandbox 型 Agent 用 `ctx.sandbox` 操作当前的隔离环境。前台和后台命令共用 `CommandOptions`。Attempt 会在采集证据前终止未完成的后台命令。这里的命令方法也适用于 `t.sandbox`。
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
@@ -711,6 +711,24 @@ downloadDirectory(
 ): Promise<void>;
 ```
 
+### `BackgroundCommandOperations`
+
+#### `startCommand`
+
+```ts
+startCommand(command: string, args?: readonly string[], options?: CommandOptions): Promise<BackgroundCommand>;
+```
+
+派发 argv 命令后返回句柄。启动失败由句柄的 wait 报告。
+
+#### `startShell`
+
+```ts
+startShell(script: string, options?: CommandOptions): Promise<BackgroundCommand>;
+```
+
+派发 shell 脚本后返回句柄。启动失败由句柄的 wait 报告。
+
 ### `Sandbox`
 
 #### `stop`
@@ -757,6 +775,48 @@ appendLog?(line: string): Promise<void>;
 
 可选:把一行写进容器的「主日志」(PID1 在 tail 它)——于是 `docker logs` /
 Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker provider 实现,其它可省略。
+
+### `BackgroundCommand`
+
+#### `command`
+
+```ts
+readonly command: string;
+```
+
+有界、脱敏的命令摘要。
+
+#### `settled`
+
+```ts
+readonly settled: boolean;
+```
+
+命令已退出，或已因超时、取消、启动或传输失败结算。
+
+#### `wait`
+
+```ts
+wait(options?: { readonly signal?: AbortSignal }): Promise<CommandResult>;
+```
+
+等待命令退出并返回任意退出码。signal 只取消本次等待。
+
+#### `waitOrThrow`
+
+```ts
+waitOrThrow(options?: { readonly signal?: AbortSignal }): Promise<SuccessfulCommandResult>;
+```
+
+等待命令成功退出。非零退出抛出 SandboxCommandExitError。
+
+#### `kill`
+
+```ts
+kill(): Promise<void>;
+```
+
+取消正在运行的命令，确认终止后返回。
 
 ### `CommandOptions`
 

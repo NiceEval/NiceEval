@@ -170,6 +170,8 @@ export type {
   Sandbox,
   SandboxOperations,
   SandboxTransferOperations,
+  BackgroundCommand,
+  BackgroundCommandOperations,
   SandboxProvider,
   SandboxRuntime,
   CommandResult,

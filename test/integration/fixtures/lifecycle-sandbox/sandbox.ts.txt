@@ -35,7 +35,42 @@ async function materialize() {
   record("create", { sandboxId, root });
   const map = (value: string) => value.replaceAll("/tmp/.niceeval-ledger", join(privateTmp, ".niceeval-ledger"));
   const at = (path: string) => (isAbsolute(map(path)) ? map(path) : resolve(workdir, map(path)));
-  const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
+  const pending = new Map<string, () => void>();
+  const probeName = "niceeval-test-background";
+  async function backgroundProbe(args: readonly string[], options: CommandOptions) {
+    const [action, label = "", status = "0"] = args;
+    const result = (stdout: string, exitCode = Number(status)) => ({ stdout, stderr: "", exitCode });
+    if (action === "missing") {
+      throw Object.assign(new Error("Test executable unavailable"), { code: "ENOENT", syscall: "spawn" });
+    }
+    if (action === "active") return result([...pending.keys()].sort().join(","));
+    if (action === "release") {
+      pending.get(label)?.();
+      return result(label);
+    }
+    if (action === "exit") return result(label);
+    const finished = Promise.withResolvers<ReturnType<typeof result>>();
+    const signal = options.signal;
+    signal?.throwIfAborted();
+    const abort = () => {
+      record("background-terminated", { label, sandboxId });
+      finished.reject(signal?.reason);
+    };
+    pending.set(label, () => finished.resolve(result(label)));
+    signal?.addEventListener("abort", abort, { once: true });
+    const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => {
+      finished.reject(new DOMException("Test command timed out", "TimeoutError"));
+    }, options.timeoutMs);
+    try {
+      void options.onStdout?.(`running:${label}`);
+      return await finished.promise;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      pending.delete(label);
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+  const runLocal = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     new Promise<{ stdout: string; stderr: string; exitCode: number }>((done) => {
       execFile(
         map(command),
@@ -57,6 +92,8 @@ async function materialize() {
           done({ stdout, stderr, exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0 }),
       );
     });
+  const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
+    command === probeName ? backgroundProbe(args, options) : runLocal(command, args, options);
   const writeBytes = async (path: string, bytes: Uint8Array) => {
     await mkdir(dirname(at(path)), { recursive: true });
     await writeFile(at(path), bytes);
@@ -66,7 +103,8 @@ async function materialize() {
     workdir,
     otlpHost: "localhost",
     runCommand: run,
-    runShell: (script: string, options?: CommandOptions) => run("bash", ["-c", script], options),
+    runShell: (script: string, options?: CommandOptions) =>
+      script.startsWith(`${probeName} `) ? run(probeName, script.split(" ").slice(1), options) : run("bash", ["-c", script], options),
     readText: (path: string) => readFile(at(path), "utf8"),
     writeText: (path: string, text: string) => writeBytes(path, Buffer.from(text, "utf8")),
     readBytes: (path: string) => readFile(at(path)),
@@ -88,7 +126,7 @@ async function materialize() {
     // Settling the group must release the primary workspace and every companion exactly once.
     stop: async () => {
       stops += 1;
-      record("stop", { sandboxId, stops });
+      record("stop", { sandboxId, stops, pendingCommands: [...pending.keys()] });
       await rm(root, { recursive: true, force: true });
     },
   };

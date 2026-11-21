@@ -4,6 +4,8 @@ import { Sandbox } from "../../packages/niceeval/node_modules/@vercel/sandbox/di
 import { VercelSandbox } from "../../packages/niceeval/src/sandbox/vercel.ts";
 import { normalizeSandboxPaths } from "../../packages/niceeval/src/sandbox/paths.ts";
 
+type Session = Awaited<ReturnType<typeof Sandbox.create>>;
+
 // @feature docs/feature/sandbox/library/operations.md#后台命令
 test("Vercel keeps in-flight commands on their session while admitting new commands", async () => {
   await fc.assert(
@@ -34,8 +36,8 @@ test("Vercel keeps in-flight commands on their session while admitting new comma
         };
       }
       const create = vi.spyOn(Sandbox, "create")
-        .mockResolvedValueOnce(session("original") as unknown as Sandbox)
-        .mockResolvedValueOnce(session("replacement") as unknown as Sandbox);
+        .mockResolvedValueOnce(session("original") as unknown as Session)
+        .mockResolvedValueOnce(session("replacement") as unknown as Session);
       try {
         const sandbox = normalizeSandboxPaths(await VercelSandbox.create({
           runtime: "node24", lifetimeMs: 60_000, timeout: 130_000, deadlineAt: startedAt.getTime() + 130_000,

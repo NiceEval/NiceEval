@@ -576,7 +576,7 @@ For the complete contract, see [Adapter concepts](/explanation/adapter#context-a
 
 ## Sandbox interface
 
-`ctx.sandbox` (`Sandbox`) of a Sandbox agent is the handle to the current isolated environment. `Sandbox` extends `SandboxOperations` and `SandboxTransferOperations`; all members are listed below by declaring interface. `CommandOptions` holds the options for `runCommand` / `runShell`:
+`ctx.sandbox` is a Sandbox agent’s handle to its isolated environment. The foreground and background command methods share `CommandOptions`. An Attempt stops unfinished background commands before collecting evidence. The method reference also applies to the command operations on `t.sandbox`.
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
@@ -711,6 +711,24 @@ downloadDirectory(
 ): Promise<void>;
 ```
 
+### `BackgroundCommandOperations`
+
+#### `startCommand`
+
+```ts
+startCommand(command: string, args?: readonly string[], options?: CommandOptions): Promise<BackgroundCommand>;
+```
+
+Returns a handle after dispatching the argv command. The handle’s `wait()` reports startup failures.
+
+#### `startShell`
+
+```ts
+startShell(script: string, options?: CommandOptions): Promise<BackgroundCommand>;
+```
+
+Returns a handle after dispatching the shell script. The handle’s `wait()` reports startup failures.
+
 ### `Sandbox`
 
 #### `stop`
@@ -757,6 +775,48 @@ appendLog?(line: string): Promise<void>;
 
 Optional: writes a line into the container's "main log" (which PID1 tails), so `docker logs` /
 the Logs tab of the Docker UI shows the agent's turn-by-turn activity live. Implemented by the docker provider; others can omit it.
+
+### `BackgroundCommand`
+
+#### `command`
+
+```ts
+readonly command: string;
+```
+
+A bounded, redacted command summary.
+
+#### `settled`
+
+```ts
+readonly settled: boolean;
+```
+
+Whether the command has exited or settled after a timeout, cancellation, startup failure, or transport failure.
+
+#### `wait`
+
+```ts
+wait(options?: { readonly signal?: AbortSignal }): Promise<CommandResult>;
+```
+
+Waits for the command and returns any exit code. The signal only cancels this wait.
+
+#### `waitOrThrow`
+
+```ts
+waitOrThrow(options?: { readonly signal?: AbortSignal }): Promise<SuccessfulCommandResult>;
+```
+
+Waits for the command to succeed. A non-zero exit throws `SandboxCommandExitError`.
+
+#### `kill`
+
+```ts
+kill(): Promise<void>;
+```
+
+Cancels a running command and returns after termination is confirmed.
 
 ### `CommandOptions`
 

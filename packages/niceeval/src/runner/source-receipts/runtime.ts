@@ -15,6 +15,7 @@ export {
   captureRunnerCommandResult,
   captureRunnerCommandStart,
   captureRunnerCommandTimeout,
+  markRunnerCommandChecked,
 } from "./runtime/command-lifecycle.ts";
 
 export { captureRunnerTurnUsage } from "./runtime/usage-capture.ts";

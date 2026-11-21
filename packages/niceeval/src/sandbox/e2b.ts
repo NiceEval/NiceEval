@@ -21,6 +21,7 @@ import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
+import { retireCommandInstance } from "./background-command.ts";
 import {
   supportedBackendCapability,
   unsupportedBackendCapability,
@@ -576,6 +577,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       (error: unknown) => ({ _tag: "CompletionFailed" as const, error }),
     );
     const signal = opts.signal;
+    signal?.throwIfAborted();
+    const retire = () => retireCommandInstance(signal, () => this.retire());
     let aborted = false;
     let cancellationReason: unknown = new DOMException("sandbox command aborted", "AbortError");
     let abortRetirement: Promise<void> | undefined;
@@ -604,12 +607,8 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
             if (commandHandle !== undefined) {
               handleCancellation ??= this.cancelCommandHandle(commandHandle);
             }
-            abortRetirement ??= Promise.all([
-              handleCancellation?.catch(() => undefined),
-              this.retire().catch(() => undefined),
-            ]).then(() => undefined);
-            // Cancellation waits for retirement to settle, but a kill transport failure must not
-            // replace the caller's AbortSignal reason. A later stop() may retry a failed kill.
+            void handleCancellation?.catch(() => undefined);
+            abortRetirement ??= retire();
             void abortRetirement.then(
               () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
               () => resolveAbort?.({ _tag: "Aborted", reason: cancellationReason }),
@@ -617,7 +616,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
           };
     const throwIfAborted = async (): Promise<void> => {
       if (!aborted) return;
-      await abortRetirement?.catch(() => undefined);
+      await abortRetirement;
       throw cancellationReason;
     };
 
@@ -686,7 +685,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       return completion.result(outcome.result.exitCode);
     } catch (e) {
       if (aborted) {
-        await abortRetirement?.catch(() => undefined);
+        await abortRetirement;
         throw cancellationReason;
       }
       // e2b 在退出码非 0 时【抛】CommandExitError;但 Sandbox 契约要求【返回】带 exitCode 的结果
@@ -696,10 +695,10 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
           await completion.finish();
         } catch (callbackError) {
           if (aborted) {
-            await abortRetirement?.catch(() => undefined);
+            await abortRetirement;
             throw cancellationReason;
           }
-          await this.retire();
+          await retire();
           throw callbackError;
         }
         await throwIfAborted();
@@ -708,7 +707,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       // 撞的是我们给的那条线时,把归属一起抛出去(runner 据此落 error.timeout)。
       if (limit.timeoutMs !== undefined && isTimeoutError(e)) {
         // SDK timeout 只保证终止入口进程，不能证明命令树已经消失；按公共契约退休整台 VM。
-        await this.retire();
+        await retire();
         throw new SandboxCommandTimeoutError(
           `e2b command timed out after ${limit.timeoutMs}ms`,
           limit.timeoutMs,
@@ -717,7 +716,7 @@ export class E2BSandbox implements SandboxProviderBackend, SandboxReuseCapabilit
       }
       // Stream transport, output callbacks, marker integrity, and disconnect failures all leave the
       // managed command tree in an unknown state. Retire the VM before exposing the original error.
-      await this.retire();
+      await retire();
       throw e;
     } finally {
       if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort);

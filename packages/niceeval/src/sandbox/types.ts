@@ -190,8 +190,30 @@ export interface SandboxTransferOperations {
   ): Promise<void>;
 }
 
+/** 受管后台命令的句柄。重复等待读取同一个终态。 */
+export interface BackgroundCommand {
+  /** 有界、脱敏的命令摘要。 */
+  readonly command: string;
+  /** 命令已退出，或已因超时、取消、启动或传输失败结算。 */
+  readonly settled: boolean;
+  /** 等待命令退出并返回任意退出码。signal 只取消本次等待。 */
+  wait(options?: { readonly signal?: AbortSignal }): Promise<CommandResult>;
+  /** 等待命令成功退出。非零退出抛出 SandboxCommandExitError。 */
+  waitOrThrow(options?: { readonly signal?: AbortSignal }): Promise<SuccessfulCommandResult>;
+  /** 取消正在运行的命令，确认终止后返回。 */
+  kill(): Promise<void>;
+}
+
+/** 与前台命令使用相同执行选项的后台操作。 */
+export interface BackgroundCommandOperations {
+  /** 派发 argv 命令后返回句柄。启动失败由句柄的 wait 报告。 */
+  startCommand(command: string, args?: readonly string[], options?: CommandOptions): Promise<BackgroundCommand>;
+  /** 派发 shell 脚本后返回句柄。启动失败由句柄的 wait 报告。 */
+  startShell(script: string, options?: CommandOptions): Promise<BackgroundCommand>;
+}
+
 /** Owns a live provider instance and its operations; the Runner manages its lifecycle, and stop makes the handle unusable. */
-export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
+export interface Sandbox extends SandboxOperations, SandboxTransferOperations, BackgroundCommandOperations {
   /** 销毁 Sandbox 占用的计算资源(容器/microVM)。调用后 Sandbox 不可再用;是否可安全重复调用因 provider 而异,不要依赖这一点。 */
   stop(): Promise<void>;
   /** 本 Sandbox 的稳定标识(各 provider 原生 ID,如 Docker 容器 ID 前缀);用于跨调用关联同一 Sandbox 的会话状态,也用于日志展示。 */
@@ -215,7 +237,10 @@ export interface Sandbox extends SandboxOperations, SandboxTransferOperations {
 }
 
 /** Primitive provider I/O; NiceEval adds the derived author-facing operations. */
-export type CustomProviderSandbox = Omit<Sandbox, "upload" | "runCommandOrThrow" | "runShellOrThrow">;
+export type CustomProviderSandbox = Omit<
+  Sandbox,
+  "upload" | "runCommandOrThrow" | "runShellOrThrow" | keyof BackgroundCommandOperations
+>;
 
 /** 复用调度需要的中立寿命确认能力。 */
 export interface SandboxReuseCapability {

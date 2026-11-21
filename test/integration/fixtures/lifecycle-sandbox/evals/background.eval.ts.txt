@@ -1,0 +1,88 @@
+import assert from "node:assert/strict";
+import { defineEval } from "niceeval";
+import { equals } from "niceeval/expect";
+import { loadJson } from "niceeval/loaders";
+import { harness } from "../journal.ts";
+
+const { mode, code, reverse } = await loadJson(new URL("./background.json", import.meta.url), (value) =>
+  value as { mode: "handles" | "pass" | "failed" | "throw" | "timeout" | "cancel"; code: number; reverse: boolean });
+const probe = "niceeval-test-background";
+
+export default defineEval({
+  ...(mode === "timeout" ? { timeoutMs: 1_200 } : {}),
+  async test(t) {
+    const firstEntered = Promise.withResolvers<void>();
+    const secondEntered = Promise.withResolvers<void>();
+    const first = await t.sandbox.startCommand(probe, ["hold", "one", String(code)], {
+      onStdout(chunk) {
+        assert.equal(chunk, "running:one");
+        firstEntered.resolve();
+      },
+    });
+    const second = await t.sandbox.startShell(`${probe} hold two ${code}`, {
+      onStdout(chunk) {
+        assert.equal(chunk, "running:two");
+        secondEntered.resolve();
+      },
+    });
+    await Promise.all([firstEntered.promise, secondEntered.promise]);
+    assert.equal((await t.sandbox.runCommandOrThrow(probe, ["active"])).stdout, "one,two");
+    if (mode !== "handles") {
+      harness().entered("e0");
+      if (mode === "throw") throw new Error("Test ended with an error");
+      if (mode === "timeout" || mode === "cancel") await harness().release;
+      t.check(mode === "pass", equals(true));
+      return;
+    }
+
+    assert.equal(first.settled, false);
+    assert.equal(second.settled, false);
+    const controller = new AbortController();
+    const abandonedWait = assert.rejects(first.wait({ signal: controller.signal }), { name: "AbortError" });
+    controller.abort();
+    await abandonedWait;
+    assert.equal((await t.sandbox.runCommand(probe, ["active"])).stdout, "one,two");
+
+    const ordered = reverse ? [[second, "two"], [first, "one"]] as const : [[first, "one"], [second, "two"]] as const;
+    for (const [handle, label] of ordered) {
+      const awaited = handle.wait();
+      await t.sandbox.runCommandOrThrow(probe, ["release", label]);
+      const result = await awaited;
+      assert.equal(result.stdout, label);
+      assert.equal(result.exitCode, code);
+      assert.equal(result.command, handle.command);
+      assert.strictEqual(result, await handle.wait());
+      assert.equal(handle.settled, true);
+      await handle.kill();
+    }
+    for (let index = 0; index < 2; index++) {
+      await assert.rejects(second.waitOrThrow(), (error: Error & { result?: { exitCode: number } }) =>
+        error.name === "SandboxCommandExitError" && error.result?.exitCode === code);
+    }
+
+    const killed = await t.sandbox.startCommand(probe, ["hold", "killed"]);
+    const beforeKill = assert.rejects(killed.wait(), { name: "AbortError" });
+    await Promise.all([killed.kill(), killed.kill()]);
+    await beforeKill;
+    assert.equal((await t.sandbox.runCommand(probe, ["active"])).stdout, "");
+    await assert.rejects(killed.wait(), { name: "AbortError" });
+
+    const caller = new AbortController();
+    const cancelled = await t.sandbox.startCommand(probe, ["hold", "caller"], { signal: caller.signal });
+    caller.abort();
+    await assert.rejects(cancelled.wait(), { name: "AbortError" });
+    const timed = await t.sandbox.startCommand(probe, ["hold", "timed"], { timeoutMs: 1 });
+    await assert.rejects(timed.wait(), { name: "TimeoutError" });
+
+    const missing = await t.sandbox.startCommand(probe, ["missing", "waited"]);
+    await assert.rejects(missing.wait(), { code: "ENOENT" });
+    await t.sandbox.startCommand(probe, ["missing", "ignored"]);
+    await t.sandbox.startCommand(probe, ["exit", "ignored-exit", String(code)]);
+
+    const token = "raw-test-token";
+    const redacted = await t.sandbox.startCommand(probe, ["exit", token], { sensitiveValues: [token] });
+    assert.equal(redacted.command, `${probe} exit <redacted>`);
+    assert.equal((await redacted.waitOrThrow()).stdout, token);
+    t.check(true, equals(true));
+  },
+});

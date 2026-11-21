@@ -1071,7 +1071,8 @@ function closeCommands(
       display: invocationText(invocation),
       exitCode,
       outcome: outcome as ClosedJsonValue,
-      classification: exitCode === 0 ? "succeeded" : exitCode === undefined ? "observed" : "failed",
+      classification:
+        exitCode === 0 ? "succeeded" : exitCode !== undefined && command.checked !== false ? "failed" : "observed",
       stdout: typeof stdout?.text === "string" && stdout.text.length > 0 ? stdout.text : undefined,
       stderr: typeof stderr?.text === "string" && stderr.text.length > 0 ? stderr.text : undefined,
     };

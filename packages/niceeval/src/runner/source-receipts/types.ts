@@ -27,6 +27,7 @@ type DurableSandboxCommandReceipt = SandboxCommandsAttachment["segments"][number
 export type CommandManifest = Pick<DurableSandboxCommandReceipt, "phase" | "invocation" | "workingDirectory">;
 
 export interface StagedSandboxCommandReceipt {
+  readonly checked?: DurableSandboxCommandReceipt["checked"];
   readonly segmentId: DurableSandboxCommandReceipt["segmentId"];
   readonly commandId: DurableSandboxCommandReceipt["commandId"];
   readonly sequence: DurableSandboxCommandReceipt["sequence"];

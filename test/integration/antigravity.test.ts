@@ -75,6 +75,8 @@ async function withAgent(
     pathExists: async (path) => files.has(path),
     writeText: async (path, value) => { files.set(path, value); },
     runShellOrThrow: unsupported,
+    startCommand: unsupported,
+    startShell: unsupported,
     readText: unsupported,
     readBytes: unsupported,
     writeBytes: unsupported,

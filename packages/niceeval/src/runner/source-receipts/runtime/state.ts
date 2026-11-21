@@ -171,6 +171,7 @@ export interface CapturedCommandRuntime {
   readonly registered: RegisteredCommandCapture;
   readonly sequence: PositiveSafeInteger;
   readonly manifest: CommandManifest;
+  checked: boolean;
   result: CapturedCommandResult | undefined;
 }
 

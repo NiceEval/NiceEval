@@ -129,6 +129,7 @@ import type { AnswerValue, InputResponse } from "../agents/types.ts";
 import { matchesJson } from "../shared/json-match.ts";
 import type {
   Agent,
+  BackgroundCommandOperations,
   InputFile,
   InputRequest,
   InputRequestFilter,
@@ -402,7 +403,10 @@ export interface FileChangedOptions {
 }
 
 /** The only agent-attributed post-run diff surface exposed to Eval authors. */
-export interface AssertFirstSandbox<Kind extends RuntimeKind> extends SandboxOperations, SandboxTransferOperations {
+export interface AssertFirstSandbox<Kind extends RuntimeKind>
+  extends SandboxOperations,
+    SandboxTransferOperations,
+    BackgroundCommandOperations {
   changedPaths(paths: readonly string[]): PostRunBooleanAssertionHandle<Kind, void>;
   changedOnlyWithin(paths: readonly [string, ...string[]]): PostRunBooleanAssertionHandle<Kind, void>;
   /** 保护列出的文件或目录，任何 agent 归因变化落入范围都不满足；至少提供一项且不支持 glob。 */
@@ -1312,10 +1316,12 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     if (windows.length === 0) return { state: "unavailable", reason: "send-window-missing" };
     return { state: "available", document: { ...diff.document, windows } };
   };
-  const requireCapability = (): void => {
+  const requireCapability = (method?: "startCommand" | "startShell"): void => {
     if (input.agent.kind !== "sandbox") {
       throw new Error(
-        `Agent ${JSON.stringify(input.agent.name)} does not provide sandbox; agent-attributed workspace diff Assertions are unavailable.`,
+        method === undefined
+          ? `Agent ${JSON.stringify(input.agent.name)} does not provide sandbox; agent-attributed workspace diff Assertions are unavailable.`
+          : `Agent ${JSON.stringify(input.agent.name)} does not provide sandbox.${method}; use a Sandbox Agent or remove the call.`,
       );
     }
   };
@@ -1584,6 +1590,14 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
     runShellOrThrow: (script, options) => {
       requireCapability();
       return input.sandbox.runShellOrThrow(script, options);
+    },
+    async startCommand(cmd, args, options) {
+      requireCapability("startCommand");
+      return input.sandbox.startCommand(cmd, args, options);
+    },
+    async startShell(script, options) {
+      requireCapability("startShell");
+      return input.sandbox.startShell(script, options);
     },
     readText: (path) => {
       requireCapability();

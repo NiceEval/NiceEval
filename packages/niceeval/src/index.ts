@@ -111,6 +111,8 @@ export type {
   SandboxRunInfo,
   ScriptResult,
   CommandResult,
+  BackgroundCommand,
+  BackgroundCommandOperations,
   InputRequest,
   InputRequestFilter,
   ObservabilitySummary,

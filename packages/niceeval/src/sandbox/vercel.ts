@@ -11,7 +11,8 @@ import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles, type CollectedLocalFile } from "./local-files.ts";
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { shellQuote } from "./shell.ts";
-import { commandLimit } from "./deadline.ts";
+import { commandLimit, SandboxCommandTimeoutError, type CommandLimit } from "./deadline.ts";
+import { retireCommandInstance, waitForCommand } from "./background-command.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { successfulCommandResult } from "./operations.ts";
@@ -39,6 +40,16 @@ const VERCEL_WORKDIR = "/vercel/sandbox";
 // rotate 时停掉旧 session 的等待上限:stop 挂起时不无限拖住当前命令。
 const STOP_OLD_SESSION_TIMEOUT_MS = 15_000;
 
+class VercelSessionLifetimeError extends Error {
+  override readonly name = "VercelSessionLifetimeError";
+
+  constructor(requiredMs: number, remainingMs: number) {
+    super(
+      `Vercel command needs ${requiredMs}ms but the current session has ${Math.max(0, remainingMs)}ms left and still has commands in flight.`,
+    );
+  }
+}
+
 /** 给 promise 套超时;到点 fail。计时用 Effect Clock/Sleep,超时分支中断等待 fiber,不再手工管 timer。 */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Effect.runPromise(
@@ -62,6 +73,10 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   private deadlineAt: number | undefined;
   private lifetimeMs: number | undefined;
   private sessionCreatedAt: number;
+  private inFlightCommands = 0;
+  private sessionRotation: Promise<void> | undefined;
+  private readonly retirement = new AbortController();
+  private stopping: Promise<void> | undefined;
   /** factory `pathPrepend`;按声明顺序前置到受管 PATH,省略 = 空数组。 */
   private readonly pathPrepend: readonly string[];
   get nativeInstanceId(): string {
@@ -150,11 +165,10 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   // 当前 session 的真实剩余寿命不足以覆盖即将执行的命令时，拍快照并请求一条新 session。
   // 是否允许该请求由当前 project plan 裁决，不维护一张会漂移的本地上限表。
-  private async rotateIfNeeded(minRemainingMs: number | undefined): Promise<void> {
-    if (minRemainingMs === undefined) return;
-    const currentSession = this.vsb.currentSession();
-    const remainingMs = currentSession.createdAt.getTime() + currentSession.timeout - Date.now();
-    if (remainingMs >= minRemainingMs) return;
+  private async rotateSession(
+    currentSession: ReturnType<InstanceType<typeof VSandbox>["currentSession"]>,
+    minRemainingMs: number,
+  ): Promise<void> {
     const requestedLifetimeMs = this.lifetimeMs ?? Math.max(currentSession.timeout, minRemainingMs);
     const elapsed = Date.now() - this.sessionCreatedAt;
 
@@ -219,6 +233,7 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       return session.createdAt.getTime() + session.timeout - Date.now();
     };
     try {
+      this.retirement.signal.throwIfAborted();
       const before = remainingMs();
       if (before >= minRemainingMs) return { ready: true, expiresAt: new Date(Date.now() + before).toISOString() };
       await this.vsb.extendTimeout(minRemainingMs - before);
@@ -276,29 +291,84 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     // 只有 runner 交付的 attempt deadline 才是「当前物理实例必须承接多久」的请求。
     // 普通 provider 调用或显式的单命令 timeout 只是这条命令的执行上限，不能为此读取
     // currentSession()/轮换实例；前者在留存、文件传输等常规操作中甚至未必可用。
-    await this.rotateIfNeeded(this.deadlineAt === undefined ? undefined : limit.timeoutMs);
-    const finished = await this.vsb.runCommand({
-      cmd,
-      args: [...args],
-      cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      ...(opts.env === undefined ? {} : { env: opts.env }),
-      sudo: opts.user === "root",
-      // per-command 上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值);
-      // 没有 deadline 就不设,provider 层不发明一条自己的线。
-      ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
-      ...(opts.signal === undefined ? {} : { signal: opts.signal }),
-    });
-    const stdout = await finished.stdout();
-    const stderr = await finished.stderr();
-    // Vercel SDK 的命令 API 只在结束后给完整输出；仍兑现 CommandOptions 回调的
-    // 「至少一次」语义，让 adapter 不必按 provider 分叉。
-    if (stdout) await opts.onStdout?.(stdout);
-    if (stderr) await opts.onStderr?.(stderr);
-    return {
-      stdout,
-      stderr,
-      exitCode: finished.exitCode,
+    while (this.sessionRotation !== undefined) await waitForCommand(this.sessionRotation, opts.signal);
+    opts.signal?.throwIfAborted();
+    this.retirement.signal.throwIfAborted();
+    const requiredMs = this.deadlineAt === undefined && this.inFlightCommands === 0 ? undefined : limit.timeoutMs;
+    const session = requiredMs === undefined ? undefined : this.vsb.currentSession();
+    this.inFlightCommands++;
+    try {
+      if (session !== undefined && requiredMs !== undefined) {
+        const remainingMs = session.createdAt.getTime() + session.timeout - Date.now();
+        if (remainingMs < requiredMs) {
+          if (this.inFlightCommands > 1) throw new VercelSessionLifetimeError(requiredMs, remainingMs);
+          this.sessionRotation = this.rotateSession(session, requiredMs);
+          try {
+            await this.sessionRotation;
+          } finally {
+            this.sessionRotation = undefined;
+          }
+        }
+      }
+      opts.signal?.throwIfAborted();
+      this.retirement.signal.throwIfAborted();
+      return await this.runInSession(cmd, args, opts, limit);
+    } finally {
+      this.inFlightCommands--;
+    }
+  }
+
+  private async runInSession(
+    cmd: string,
+    args: readonly string[],
+    opts: CommandOptions,
+    limit: CommandLimit,
+  ): Promise<CommandResult> {
+    const timeout = new AbortController();
+    const timeoutMs = limit.timeoutMs;
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timeout.abort(
+              new SandboxCommandTimeoutError(
+                `Vercel command timed out after ${timeoutMs}ms`,
+                timeoutMs,
+                limit.explicit,
+              ),
+            );
+          }, timeoutMs);
+    const signal = AbortSignal.any([
+      timeout.signal,
+      this.retirement.signal,
+      ...(opts.signal === undefined ? [] : [opts.signal]),
+    ]);
+    const execute = async (): Promise<CommandResult> => {
+      const finished = await this.vsb.runCommand({
+        cmd,
+        args: [...args],
+        cwd: resolveSandboxPath(this.workdir, opts.cwd),
+        ...(opts.env === undefined ? {} : { env: opts.env }),
+        sudo: opts.user === "root",
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        signal,
+      });
+      const stdout = await finished.stdout();
+      const stderr = await finished.stderr();
+      if (!signal.aborted && stdout) await opts.onStdout?.(stdout);
+      if (!signal.aborted && stderr) await opts.onStderr?.(stderr);
+      return { stdout, stderr, exitCode: finished.exitCode };
     };
+    try {
+      return await waitForCommand(execute(), signal);
+    } catch (cause) {
+      // Cancelling the SDK stream does not acknowledge termination of the process tree.
+      const reason = signal.aborted ? signal.reason : cause;
+      await retireCommandInstance(opts.signal, () => this.stop());
+      throw reason;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async runCommandOrThrow(
@@ -313,16 +383,21 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     return successfulCommandResult(await this.runShell(script, opts), opts.sensitiveValues);
   }
 
+  private liveSandbox(): InstanceType<typeof VSandbox> {
+    this.retirement.signal.throwIfAborted();
+    return this.vsb;
+  }
+
   async readText(path: string): Promise<string> {
     const absPath = resolveSandboxPath(this.workdir, path);
-    const buf = await this.vsb.readFileToBuffer({ path: absPath });
+    const buf = await this.liveSandbox().readFileToBuffer({ path: absPath });
     if (!buf) throw new Error(`File not found: ${absPath}`);
     return buf.toString("utf8");
   }
 
   async pathExists(path: string): Promise<boolean> {
     const absPath = resolveSandboxPath(this.workdir, path);
-    return this.vsb.fs.exists(absPath);
+    return this.liveSandbox().fs.exists(absPath);
   }
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
@@ -334,22 +409,22 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       content: Buffer.from(content),
     }));
     if (entries.length === 0) return;
-    await this.vsb.writeFiles(entries);
+    await this.liveSandbox().writeFiles(entries);
   }
 
   async writeText(path: string, content: string): Promise<void> {
-    await this.vsb.writeFiles([{ path: resolveSandboxPath(this.workdir, path), content }]);
+    await this.liveSandbox().writeFiles([{ path: resolveSandboxPath(this.workdir, path), content }]);
   }
 
   async readBytes(path: string): Promise<Uint8Array> {
     const absPath = resolveSandboxPath(this.workdir, path);
-    const buf = await this.vsb.readFileToBuffer({ path: absPath });
+    const buf = await this.liveSandbox().readFileToBuffer({ path: absPath });
     if (!buf) throw new Error(`File not found: ${absPath}`);
     return buf;
   }
 
   async writeBytes(path: string, content: Uint8Array): Promise<void> {
-    await this.vsb.writeFiles([
+    await this.liveSandbox().writeFiles([
       {
         path: resolveSandboxPath(this.workdir, path),
         content: Buffer.from(content),
@@ -397,7 +472,19 @@ export class VercelSandbox implements SandboxProviderBackend, SandboxReuseCapabi
   }
 
   async stop(): Promise<void> {
-    await this.vsb.stop();
+    if (this.stopping !== undefined) return this.stopping;
+    this.retirement.abort(new Error("Vercel Sandbox is stopped"));
+    const stopping = (async () => {
+      await this.sessionRotation;
+      await this.vsb.stop();
+    })();
+    this.stopping = stopping;
+    try {
+      await stopping;
+    } catch (error) {
+      this.stopping = undefined;
+      throw error;
+    }
   }
 
   /**

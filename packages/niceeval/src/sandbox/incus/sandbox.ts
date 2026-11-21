@@ -16,6 +16,7 @@ import { downloadDirectoryByList } from "../download-directory.ts";
 import { collectLocalFiles } from "../local-files.ts";
 import { ManagedProcessOutput } from "../managed-process.ts";
 import { successfulCommandResult } from "../operations.ts";
+import { retireCommandInstance } from "../background-command.ts";
 import { resolveLocalPath, resolveSandboxPath } from "../paths.ts";
 import { shellQuote } from "../shell.ts";
 import { INCUS_UID, INCUS_USER, INCUS_WORKDIR } from "./descriptor.ts";
@@ -119,6 +120,7 @@ export class IncusSandbox implements SandboxProviderBackend {
   }
 
   private async execArgv(argv: readonly [string, ...string[]], opts: CommandOptions = {}): Promise<CommandResult> {
+    opts.signal?.throwIfAborted();
     const limit = commandLimit(opts, {
       commandTimeoutMs: this.commandTimeoutMs,
       deadlineAt: this.deadlineAt,
@@ -149,6 +151,7 @@ export class IncusSandbox implements SandboxProviderBackend {
     const enqueue = (handler: ((chunk: string) => void | Promise<void>) | undefined, text: string): void => {
       if (handler === undefined || text.length === 0) return;
       callbackChain = callbackChain.then(() => handler(text));
+      void callbackChain.catch(() => undefined);
     };
     spawned.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
@@ -215,15 +218,9 @@ export class IncusSandbox implements SandboxProviderBackend {
         cleanup();
         flushStderrTail();
         void (async () => {
-          try {
-            const proven = await terminateTree();
-            if (!proven) await this.retireProven();
-          } catch {
-            // Keep the original Timeout/Abort as the settlement; destroy errors stay on retry.
-          }
-          await callbackChain.catch(() => undefined);
-          reject(reason);
-        })();
+          const proven = await terminateTree().catch(() => false);
+          if (!proven) await retireCommandInstance(opts.signal, () => this.retireProven());
+        })().then(() => reject(reason), reject);
       };
       const onAbort = (): void => {
         settleErr(

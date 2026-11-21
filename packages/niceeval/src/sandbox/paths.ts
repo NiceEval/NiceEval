@@ -18,6 +18,7 @@ import {
   type SandboxProviderBackend,
 } from "./backend.ts";
 import type { SandboxRequestExecutor } from "./request-executor.ts";
+import { backgroundCommandOperations } from "./background-command.ts";
 
 export function resolveSandboxPath(workdir: string, path?: string): string {
   if (!path || path === ".") return workdir;
@@ -50,7 +51,12 @@ function resolveCommandOptions(workdir: string, opts: CommandOptions | undefined
 export function normalizeSandboxPaths(sandbox: SandboxProviderBackend, provider: string): Sandbox {
   const appendLog = sandbox.capabilities.appendLog;
   let normalized!: Sandbox;
+  const background = backgroundCommandOperations({
+    runCommand: (command, args, options) => normalized.runCommand(command, args, options),
+    runShell: (script, options) => normalized.runShell(script, options),
+  });
   normalized = {
+    ...background,
     get workdir() {
       return sandbox.workdir;
     },
@@ -215,6 +221,9 @@ export function makeSandboxAuthorFacade(
   const transfers = normalizeSandboxPaths(sandbox, provider);
   let normalized!: Sandbox;
   normalized = {
+    // Keep the provider's real settlement available during Attempt Scope interruption.
+    startCommand: transfers.startCommand,
+    startShell: transfers.startShell,
     get workdir() {
       return sandbox.workdir;
     },

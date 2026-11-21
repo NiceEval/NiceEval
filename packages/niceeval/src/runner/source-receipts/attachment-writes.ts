@@ -100,6 +100,7 @@ function sandboxCommandsAttachment(
       phase: segment.phase,
       invocation: segment.invocation,
       workingDirectory: segment.workingDirectory,
+      ...(segment.checked === undefined ? {} : { checked: segment.checked }),
       outcome: segment.outcome,
     })),
   });

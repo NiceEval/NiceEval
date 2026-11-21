@@ -30,6 +30,7 @@ import {
 import { resolveLocalPath, resolveSandboxPath } from "./paths.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { successfulCommandResult } from "./operations.ts";
+import { retireCommandInstance } from "./background-command.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
 import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
@@ -1692,25 +1693,50 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     if (!this.container) {
       throw new Error(`Container not initialized`);
     }
+    opts.signal?.throwIfAborted();
+    const container = this.container;
+    const retire = () =>
+      retireCommandInstance(opts.signal, async () => {
+        // Compose owns removal of the group. Stop its main container before reporting termination.
+        if (timeoutRetirement === "stop" || this.releaseMode === "detach") {
+          await container
+            .stop({ t: 0, abortSignal: AbortSignal.timeout(BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS) })
+            .catch((error) => {
+              if (!benignStopError(error)) throw error;
+            });
+        } else {
+          await this.stop();
+        }
+      });
 
     const fullCmd = [cmd, ...args];
     const env = opts.env ? Object.entries(opts.env).map(([k, v]) => `${k}=${v}`) : undefined;
 
-    const exec = await this.container.exec({
-      Cmd: fullCmd,
-      AttachStdout: true,
-      AttachStderr: true,
-      WorkingDir: resolveSandboxPath(this.workdir, opts.cwd),
-      Env: env,
-      User: opts.user,
-      ...(opts.signal === undefined ? {} : { abortSignal: opts.signal }),
-    });
+    const exec = await container
+      .exec({
+        Cmd: fullCmd,
+        AttachStdout: true,
+        AttachStderr: true,
+        WorkingDir: resolveSandboxPath(this.workdir, opts.cwd),
+        Env: env,
+        User: opts.user,
+        ...(opts.signal === undefined ? {} : { abortSignal: opts.signal }),
+      })
+      .catch(async (error: unknown) => {
+        if (opts.signal?.aborted) await retire();
+        throw error;
+      });
 
-    const stream = await exec.start({
-      hijack: true,
-      stdin: false,
-      ...(opts.signal === undefined ? {} : { abortSignal: opts.signal }),
-    });
+    const stream = await exec
+      .start({
+        hijack: true,
+        stdin: false,
+        ...(opts.signal === undefined ? {} : { abortSignal: opts.signal }),
+      })
+      .catch(async (error: unknown) => {
+        if (opts.signal?.aborted || dockerStatusCode(error) === undefined) await retire();
+        throw error;
+      });
 
     return new Promise<CommandResult>((resolve, reject) => {
       // Docker 把 stdout/stderr 复用在同一条流里(8 字节头 + 载荷),需手动 demux;
@@ -1724,6 +1750,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         const onStderr = opts.onStderr;
         if (stdout && onStdout !== undefined) callbackChain = callbackChain.then(() => onStdout(stdout));
         if (stderr && onStderr !== undefined) callbackChain = callbackChain.then(() => onStderr(stderr));
+        void callbackChain.catch(() => undefined);
       };
       stream.on("data", (chunk: Buffer) => {
         deliver(demuxer.push(chunk));
@@ -1750,13 +1777,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         settled = true;
         cleanup();
         stream.destroy();
-        const retirement =
-          timeoutRetirement === "stop"
-            ? (this.container?.stop({ t: 5 }).catch((stopError) => {
-                if (!benignStopError(stopError)) throw stopError;
-              }) ?? Promise.resolve())
-            : this.stop();
-        void retirement.then(() => reject(error), reject);
+        void retire().then(() => reject(error), reject);
       };
       const timeoutMs = limit.timeoutMs;
       const timeoutId =
@@ -1820,10 +1841,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       });
 
       stream.on("error", (error: Error) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(error);
+        retireAndReject(error);
       });
     });
   }

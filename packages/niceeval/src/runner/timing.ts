@@ -6,7 +6,6 @@
 
 import { Effect, Exit } from "effect";
 import { commandLimit } from "../sandbox/deadline.ts";
-import { redactSensitiveText } from "../sandbox/redaction.ts";
 import type { CommandLimitAttribution, LifecyclePhase, PhaseTiming, TimingActivity, TimingOrigin } from "./types.ts";
 
 /** 主链成员(enterPhase 推进;进入下一个即关闭上一个)。收尾段用 measureClosing 单独计时。 */
@@ -268,12 +267,6 @@ export function createRunTimingRecorder(now: () => number = () => performance.no
       return roots.length > 0 ? roots : undefined;
     },
   };
-}
-
-/** 命令的有界脱敏摘要:先按已知敏感值替换，再做 argv 拼接结果的 160 字符截断。 */
-export function commandDisplay(cmd: string, args?: readonly string[], sensitiveValues: Iterable<string> = []): string {
-  const s = redactSensitiveText([cmd, ...(args ?? [])].join(" "), sensitiveValues);
-  return s.length > 160 ? `${s.slice(0, 159)}…` : s;
 }
 
 /** key=sandbox.command 节点的便捷构造。 */

@@ -790,6 +790,7 @@ export const InspectionTraceResultSchema = Schema.Struct({
       Schema.Struct({
         commandId: CommandIdSchema,
         phase: Schema.Literals(SANDBOX_COMMAND_PHASES.map(projectLifecyclePhase)),
+        checked: Schema.optionalKey(Schema.Boolean),
         outcome: CommandOutcomeSchema,
       }),
     ),
@@ -965,6 +966,7 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
     commandId: CommandIdSchema,
     invocation: CommandInvocationSchema,
     workingDirectory: WorkingDirectorySchema,
+    checked: Schema.optionalKey(Schema.Boolean),
     outcome: CommandOutcomeSchema,
     turnId: Schema.NullOr(Schema.String),
     phase: Schema.Literals([

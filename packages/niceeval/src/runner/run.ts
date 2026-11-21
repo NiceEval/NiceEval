@@ -170,7 +170,9 @@ function reuseResultRequiresRetirement(result: EvalResult): boolean {
     result.error?.code === "timeout" ||
     result.error?.code === "agent-send-failed" ||
     result.error?.code === "plugin-resource-prepare-failed" ||
-    result.diagnostics?.some((diagnostic) => diagnostic.code === "teardown-failed") === true
+    result.diagnostics?.some(
+      (diagnostic) => diagnostic.code === "teardown-failed" || diagnostic.code === "sandbox-background-command-retired",
+    ) === true
   );
 }
 

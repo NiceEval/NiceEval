@@ -1227,6 +1227,14 @@ function computeRegionBody(regionId: string, sources: SourceMap, translate?: Ref
       return renderGroups([
         ...extractInterfaceMemberGroups(sources["src/sandbox/types.ts"], "src/sandbox/types.ts", "Sandbox"),
         {
+          heading: "BackgroundCommand",
+          members: extractInterfaceMembers(
+            sources["src/sandbox/types.ts"],
+            "src/sandbox/types.ts",
+            "BackgroundCommand",
+          ),
+        },
+        {
           heading: "CommandOptions",
           members: extractInterfaceMembers(sources["src/sandbox/types.ts"], "src/sandbox/types.ts", "CommandOptions"),
         },

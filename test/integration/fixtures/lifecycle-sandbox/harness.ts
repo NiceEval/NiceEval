@@ -1,7 +1,7 @@
-import { cp, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -110,6 +110,8 @@ export async function createLifecycleProject(scenario: Scenario): Promise<Lifecy
   const cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-lifecycle-property-"));
   try {
     await cp(FIXTURE, cwd, { recursive: true });
+    await mkdir(join(cwd, "node_modules"));
+    await symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules/effect"), "dir");
     await rm(join(cwd, "harness.ts"));
     for (const source of ["agent.ts", "sandbox.ts", "journal.ts", "experiments/lifecycle.ts", "niceeval.config.ts"]) {
       await rename(join(cwd, `${source}.txt`), join(cwd, source));

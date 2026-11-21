@@ -12,6 +12,7 @@ import { collectLocalFiles } from "../local-files.ts";
 import { resolveLocalPath, resolveSandboxPath } from "../paths.ts";
 import { downloadDirectoryByList } from "../download-directory.ts";
 import { startOpenSandboxProcess } from "./managed-process.ts";
+import { retireCommandInstance } from "../background-command.ts";
 
 interface ExecutionIdentity {
   readonly uid: number;
@@ -212,21 +213,13 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
       deadlineAt: this.deadlineAt,
     });
     const controller = new AbortController();
+    const retire = () => retireCommandInstance(options.signal, () => this.stop());
     let interrupted!: () => void;
     const interruption = new Promise<never>((_resolve, reject) => {
       interrupted = () => {
         // Aborting the SDK fetch alone can leave its SSE reader waiting after headers.
         // Retirement is the acknowledgement; never settle cancellation before it.
-        void this.stop().then(
-          () => reject(controller.signal.reason),
-          (cleanup: unknown) =>
-            reject(
-              new AggregateError(
-                [controller.signal.reason, cleanup],
-                "OpenSandbox cancellation could not retire the instance",
-              ),
-            ),
-        );
+        void retire().then(() => reject(controller.signal.reason), reject);
       };
       controller.signal.addEventListener("abort", interrupted, { once: true });
     });
@@ -248,12 +241,9 @@ export class OpenSandboxBackend implements SandboxProviderBackend {
       return await Promise.race([this.executeCommand(command, args, options, controller.signal), interruption]);
     } catch (cause) {
       // A transport failure cannot prove the remote command tree has stopped.
-      try {
-        await this.stop();
-      } catch (cleanup) {
-        throw new AggregateError([cause, cleanup], "OpenSandbox command failed and instance retirement failed");
-      }
-      throw controller.signal.aborted ? controller.signal.reason : cause;
+      if (controller.signal.aborted) return await interruption;
+      await retire();
+      throw cause;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       options.signal?.removeEventListener("abort", cancel);

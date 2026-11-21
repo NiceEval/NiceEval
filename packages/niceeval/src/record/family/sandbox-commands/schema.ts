@@ -56,6 +56,7 @@ export const SandboxCommandReceiptSchema = Schema.Struct({
     Schema.Struct({ kind: Schema.Literal("project-relative"), path: CanonicalProjectRelativePathSchema }),
     Schema.Struct({ kind: Schema.Literal("redacted") }),
   ]),
+  checked: Schema.optionalKey(Schema.Boolean),
   outcome: Schema.Union([
     Schema.Struct({
       kind: Schema.Literal("exited"),

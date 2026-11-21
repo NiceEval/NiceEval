@@ -21,6 +21,7 @@ export function captureRunnerCommandStart(input: {
   readonly runtime: RunnerAttemptObservabilityRuntime;
   readonly phase: LifecyclePhase;
   readonly invocationKind: "argv" | "shell";
+  readonly checked: boolean;
   readonly command: string;
   readonly args: readonly string[] | undefined;
   readonly options: unknown | undefined;
@@ -62,11 +63,16 @@ export function captureRunnerCommandStart(input: {
     registered,
     sequence: requiredPositive(runtime.commands.length + 1),
     manifest,
-
+    checked: input.checked,
     result: undefined,
   };
   runtime.commands.push(command);
   return makeCommandHandle(runtime, command);
+}
+
+export function markRunnerCommandChecked(handle: RunnerCommandCaptureHandle | undefined): void {
+  const state = commandHandleState(handle);
+  if (state !== undefined && state.runtime.snapshot === undefined) state.command.checked = true;
 }
 
 function acceptRegisteredCommandResult(state: {

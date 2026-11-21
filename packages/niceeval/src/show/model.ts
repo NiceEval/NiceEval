@@ -241,6 +241,7 @@ export interface TraceView {
     readonly items: readonly {
       readonly commandId: InspectionSuccessDocumentFor<"attempt.trace">["trace"]["commands"]["items"][number]["commandId"];
       readonly phase: CommandPhase;
+      readonly checked?: boolean;
       readonly outcome: CommandOutcome;
     }[];
   };
@@ -474,6 +475,7 @@ export function projectTrace(document: InspectionSuccessDocumentFor<"attempt.tra
       items: value.commands.items.map((command) => ({
         commandId: command.commandId,
         phase: command.phase,
+        ...(command.checked === undefined ? {} : { checked: command.checked }),
         outcome: command.outcome,
       })),
     },

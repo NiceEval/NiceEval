@@ -31,6 +31,8 @@ import { makeProvisioningPermitOwner } from "./provisioning-permit.ts";
 import { unregisterSandbox } from "../sandbox/registry.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
+import { SandboxCommandTerminationError } from "../sandbox/background-command.ts";
+import { AttemptBackgroundCommands } from "./background-commands.ts";
 import { CLEANUP_TIMEOUT_MS, cleanupCallback, withCleanupTimeout } from "./cleanup-timeout.ts";
 import { AdapterUsageCollector, retainAdapterUsage } from "./adapter-usage.ts";
 import { JudgeUsageCollector } from "../o11y/judge-usage.ts";
@@ -125,6 +127,7 @@ import {
   type SandboxActionState,
 } from "../sandbox/action.ts";
 import {
+  commandDisplay,
   commandSensitiveValues,
   redactSensitiveEvidence,
   redactSensitiveText,
@@ -154,6 +157,8 @@ import {
   captureRunnerPhysicalConversationTurn,
   captureRunnerTurnUsage,
   createRunnerAttemptObservabilityRuntime,
+  markRunnerCommandChecked,
+  type RunnerCommandCaptureHandle,
   type RunnerAttemptObservabilityRuntime,
 } from "./source-receipts/runtime.ts";
 import { attemptFailureInfo, resolveAttemptFailureClass, type FailureClass } from "../shared/failure-class.ts";
@@ -185,7 +190,6 @@ import { reportAssistedDiagnostic, reportAttemptLifecycle, reportDiagnostic, rep
 import { encodeAttemptKey, EVALUATION_ALGORITHM, runWho } from "./types.ts";
 import {
   attemptOrigin,
-  commandDisplay,
   commandLimitAttribution,
   commandNode,
   createTimingRecorder,
@@ -454,6 +458,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
        */
       let sandboxFacts: NonNullable<EvalResult["sandbox"]> | undefined;
       let currentSandbox: Sandbox | undefined;
+      let backgroundCommands: AttemptBackgroundCommands | undefined;
       /** 留存提交成功(`--keep-sandbox`)——唯一一个在收尾时点才知道的 sandbox 记录键。 */
       let kept = false;
       if (reusedSandbox && agent?.kind === "sandbox") {
@@ -1147,6 +1152,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // Release runs after teardown and timeout evidence finalizers, while
               // the scene is still accessible. Only it may grant retention.
               let retainScene: Effect.Effect<void> | undefined;
+              let retireRequested = false;
+              let groupStopped = false;
               // The bridge owns its Queue worker inside this Attempt Scope. Promise
               // code only offers work; no internal module starts a second runtime.
               // 退避重试(runtime.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
@@ -1248,6 +1255,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                           run: (owned) =>
                             Effect.gen(function* () {
                               const sb = owned.sandbox;
+                              if (groupStopped) return;
                               if (retainScene === undefined) {
                                 return yield* providerBoundaryEffect(() => owned.group.stop()).pipe(
                                   Effect.onExit((exit) =>
@@ -1339,6 +1347,36 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // continue to use the interruptible author facade above.
               const cleanupSandbox = reusedSandbox?.resourceSandbox ?? materializedCase?.sandbox ?? sandbox;
               const cleanupCommandTarget = createSandboxCommandTarget(cleanupSandbox);
+              const ownedBackgroundCommands = new AttemptBackgroundCommands();
+              backgroundCommands = ownedBackgroundCommands;
+              const closeBackgroundCommands = yield* Effect.cached(
+                cleanupCallback(() => ownedBackgroundCommands.drain()).pipe(
+                  Effect.result,
+                  Effect.flatMap((drained) => {
+                    if (Result.isSuccess(drained) && !drained.success) return Effect.void;
+                    return Effect.gen(function* () {
+                      retireRequested = true;
+                      retainScene = undefined;
+                      recordDiagnostic(
+                        {
+                          code: "sandbox-background-command-retired",
+                          level: "warning",
+                          message: "Retiring the Sandbox to complete background command cleanup.",
+                        },
+                        "sandbox.cleanup",
+                      );
+                      const stopped = yield* Effect.result(
+                        providerBoundaryEffect(() => materializedCase?.group.stop() ?? cleanupSandbox.stop()),
+                      );
+                      groupStopped = Result.isSuccess(stopped);
+                      const failure = Result.isFailure(stopped) ? stopped.failure : undefined;
+                      if (Result.isFailure(stopped)) recordSandboxCleanupFailure("sandbox.stop", stopped.failure);
+                      yield* Effect.promise(() => ownedBackgroundCommands.completeRetirement(failure));
+                    });
+                  }),
+                  Effect.uninterruptible,
+                ),
+              );
               // ── tracing ──────────────────────────────────────────────────────────────────
               // sandbox.otlpHost:
               //   string → provider 承诺该 hostname 可访问宿主 receiver
@@ -1579,6 +1617,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 }),
               );
 
+              // Runs even when the Promise body cannot enter its evidence stage.
+              yield* Effect.addFinalizer(() => closeBackgroundCommands);
+
               // The legacy setup/diff body remains Promise-shaped, while OTLP waits,
               // author execution, and sealing run in this Attempt's Effect scope. No
               // nested runtime is introduced.
@@ -1637,6 +1678,9 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       },
                       judgeUsage,
                       sandbox,
+                      backgroundCommands: ownedBackgroundCommands,
+                      closeBackgroundCommands,
+                      backgroundSandbox: cleanupSandbox,
                       sourceRegistry,
                       sourceCapture,
                       receiver: receiver,
@@ -1805,6 +1849,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               const keepMode = opts.keepSandbox;
               if (
                 agent.kind === "sandbox" &&
+                !retireRequested &&
                 keepMode !== undefined &&
                 a.locator !== undefined &&
                 (keepMode === "all" || bodyResult.verdict === "failed" || bodyResult.verdict === "errored")
@@ -1882,7 +1927,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
           // 是否取消只由 invocationSignal 裁决；其它中断在本 attempt 内封成 errored，随后由调度器
           // 的 earlyExit 去重分支丢弃。兄弟 fiber 的真实 defect 仍由它自己的 Cause 向外传播。
           Effect.catchCause((cause) =>
-            isAttemptAborted(invocationSignal) && adapter !== undefined && adapter.kind !== "custom"
+            isAttemptAborted(invocationSignal) &&
+            adapter !== undefined &&
+            adapter.kind !== "custom" &&
+            backgroundCommands?.started !== true
               ? Effect.interrupt
               : Effect.suspend(() => {
                   invocationInterrupted = isAttemptAborted(invocationSignal) && Cause.hasInterruptsOnly(cause);
@@ -2587,6 +2635,10 @@ interface AttemptResources {
   /** 非沙箱 tracing agent 的共享 OTLP 通道(run 级池持有,不随 attempt 关)。 */
   otel: AgentOtelChannel | undefined;
   signal: AbortSignal;
+  /** Background commands keep their provider settlement available even as the author executor closes. */
+  backgroundCommands: AttemptBackgroundCommands;
+  backgroundSandbox: Sandbox;
+  closeBackgroundCommands: Effect.Effect<void>;
   log: (m: string) => void;
   /** 进入一个正式 LifecyclePhase 边界(见 runAttemptEffect 顶部的定义)。 */
   enterPhase: (phase: LifecyclePhase) => void;
@@ -2936,6 +2988,8 @@ async function runAttemptBody(
         res.deadlineAt,
         observabilityRuntime,
         signal,
+        res.backgroundCommands,
+        res.backgroundSandbox,
       )
     : rawSandbox;
   const { attemptResources, reportAttemptResourceReleaseFailure } = res;
@@ -3883,6 +3937,7 @@ async function runAttemptBody(
       }
     }
 
+    await assertFirst.requestEffect(res.closeBackgroundCommands);
     await state.closeSimulatedUsers();
     if (error === undefined && state.simulatedUserFailure !== undefined) {
       declareFailure("eval.run", state.simulatedUserFailure);
@@ -4181,6 +4236,7 @@ async function runAttemptBody(
     // telemetry / diff 等 supplemental 路径显式保留 AbortSignal 语义；不要把用户中断
     // 降成 AttemptError 或 warning。外层 Effect 会负责中止并运行 release/finalizer。
     if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw e;
+    await assertFirst.requestEffect(res.closeBackgroundCommands);
     recorder.failCurrent();
     // SandboxLayer command / agent.before / 评分链路抛出的终局失败:同样先读空间轴回执,
     // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
@@ -4471,6 +4527,8 @@ function withCommandTiming(
   deadlineAt: number | undefined,
   observabilityRuntime: RunnerAttemptObservabilityRuntime,
   attemptSignal: AbortSignal,
+  backgroundCommands: AttemptBackgroundCommands,
+  backgroundSandbox: Sandbox,
 ): Sandbox {
   const retainAssertionEvidence = <T extends CommandResult>(result: T, display: string): T => {
     const exposed = { ...result, command: display };
@@ -4492,17 +4550,26 @@ function withCommandTiming(
     display: string,
     result: CommandResult,
     checked: boolean,
-  ): void => {
-    if (!node) return;
-    commands.push({
+    phase: LifecyclePhase,
+  ): CommandExitEvidence | undefined => {
+    if (!node) return undefined;
+    const evidence: CommandExitEvidence = {
       timingNodeId: node.id,
-      phase: getPhase() ?? "eval.run",
+      phase,
       display,
       exitCode: result.exitCode,
       checked,
       stdout: redactSensitiveText(typeof result.stdout === "string" ? result.stdout : "", sensitiveValues),
       stderr: redactSensitiveText(typeof result.stderr === "string" ? result.stderr : "", sensitiveValues),
-    });
+    };
+    commands.push(evidence);
+    return evidence;
+  };
+  type BackgroundTiming = {
+    checked: boolean;
+    node?: TimingActivity | undefined;
+    exit?: CommandExitEvidence | undefined;
+    capture?: RunnerCommandCaptureHandle | undefined;
   };
 
   const wrap = async <T extends CommandResult>(
@@ -4512,15 +4579,18 @@ function withCommandTiming(
     checked: boolean,
     invocationKind: "argv" | "shell",
     fn: () => Promise<T>,
+    background?: BackgroundTiming,
   ): Promise<T> => {
     rememberSensitiveValues(sensitiveValues, commandSensitiveValues(opts));
     const display = commandDisplay(cmd, args, sensitiveValues);
+    const phase = getPhase() ?? "eval.run";
     // Register the command manifest capability before process launch. The
     // later result can only be attached through this opaque handle.
     const observabilityCommand = captureRunnerCommandStart({
       runtime: observabilityRuntime,
-      phase: getPhase() ?? "eval.run",
+      phase,
       invocationKind,
+      checked,
       command: cmd,
       args,
       options: opts,
@@ -4534,11 +4604,41 @@ function withCommandTiming(
       { commandTimeoutMs: undefined, deadlineAt },
       wallStartedAt,
     );
+    if (background !== undefined) {
+      background.capture = observabilityCommand;
+      background.node = recorder.child(
+        commandNode({
+          display,
+          startOffsetMs,
+          durationMs: 0,
+          checked: false,
+          limit,
+          exitCode: undefined,
+          failed: false,
+        }),
+      );
+    }
+    const recordTiming = (terminal: Omit<TimingActivity, "id">): TimingActivity | undefined => {
+      if (background === undefined) return recorder.child(terminal);
+      if (background.node !== undefined) Object.assign(background.node, terminal);
+      return background.node;
+    };
+    const recordExit = (node: TimingActivity | undefined, result: CommandResult, checked: boolean): void => {
+      const evidence = recordCommandExit(
+        node,
+        display,
+        result,
+        checked,
+        background === undefined ? (getPhase() ?? phase) : phase,
+      );
+      if (background !== undefined) background.exit = evidence;
+    };
     try {
       const result = await fn();
+      checked ||= background?.checked === true;
       const exitCode = result.exitCode;
       const nonZero = exitCode !== 0;
-      const node = recorder.child(
+      const node = recordTiming(
         commandNode({
           display,
           startOffsetMs,
@@ -4550,7 +4650,7 @@ function withCommandTiming(
         }),
       );
       if (typeof exitCode === "number") {
-        recordCommandExit(node, display, result, checked);
+        recordExit(node, result, checked);
         captureRunnerCommandResult({
           handle: observabilityCommand,
           exitCode,
@@ -4568,6 +4668,7 @@ function withCommandTiming(
       }
       return result;
     } catch (e) {
+      checked ||= background?.checked === true;
       const commandResult = e instanceof SandboxCommandExitError ? e.result : undefined;
       const exitCode = commandResult?.exitCode;
       // 撞线失败的节点带 provider 实际执行的那条线(`SandboxCommandTimeoutError` 自带上限与
@@ -4580,7 +4681,7 @@ function withCommandTiming(
               timedOut: true as const,
             }
           : limit;
-      const node = recorder.child(
+      const node = recordTiming(
         commandNode({
           display,
           startOffsetMs,
@@ -4592,7 +4693,7 @@ function withCommandTiming(
         }),
       );
       if (commandResult !== undefined) {
-        recordCommandExit(node, display, commandResult, checked);
+        recordExit(node, commandResult, checked);
         captureRunnerCommandResult({
           handle: observabilityCommand,
           exitCode: commandResult.exitCode,
@@ -4601,7 +4702,10 @@ function withCommandTiming(
         });
       } else if (e instanceof SandboxCommandTimeoutError) {
         captureRunnerCommandTimeout(observabilityCommand);
-      } else if (attemptSignal.aborted || opts?.signal?.aborted === true) {
+      } else if (
+        !(e instanceof SandboxCommandTerminationError) &&
+        (attemptSignal.aborted || opts?.signal?.aborted === true)
+      ) {
         // The provider call was already entered, so cancellation terminates
         // this registered command rather than claiming it never started.
         captureRunnerCommandInterrupted(observabilityCommand);
@@ -4611,7 +4715,13 @@ function withCommandTiming(
           isCommandSpawnFailure(e) ? "spawn-failed" : "transport-lost",
         );
       }
-      if (!checked && isCommandSpawnFailure(e) && !attemptSignal.aborted && !opts?.signal?.aborted) {
+      if (
+        background === undefined &&
+        !checked &&
+        isCommandSpawnFailure(e) &&
+        !attemptSignal.aborted &&
+        !opts?.signal?.aborted
+      ) {
         return retainAssertionEvidence(
           {
             stdout: "",
@@ -4624,6 +4734,42 @@ function withCommandTiming(
       }
       throw e;
     }
+  };
+  const start = async (
+    command: string,
+    args: readonly string[] | undefined,
+    options: CommandOptions | undefined,
+    invocationKind: "argv" | "shell",
+    run: (opts: CommandOptions) => Promise<CommandResult>,
+  ) => {
+    rememberSensitiveValues(sensitiveValues, commandSensitiveValues(options));
+    const background: BackgroundTiming = { checked: false };
+    return backgroundCommands.start({
+      command: commandDisplay(command, args, sensitiveValues),
+      options,
+      attemptSignal,
+      onChecked: () => {
+        background.checked = true;
+        markRunnerCommandChecked(background.capture);
+        if (background.exit !== undefined) background.exit.checked = true;
+        if (background.node?.command !== undefined) {
+          background.node.command.checked = true;
+          if (background.node.command.exitCode !== undefined && background.node.command.exitCode !== 0) {
+            background.node.failed = true;
+          }
+        }
+      },
+      run: (opts) =>
+        wrap(
+          command,
+          args,
+          opts,
+          false,
+          invocationKind,
+          () => backgroundCommands.observe(() => run(opts), opts.signal),
+          background,
+        ),
+    });
   };
   const timed = new Proxy(sandbox, {
     get(target, prop, receiver) {
@@ -4642,6 +4788,14 @@ function withCommandTiming(
       if (prop === "runShellOrThrow") {
         return (script: string, opts?: CommandOptions) =>
           wrap(script, undefined, opts, true, "shell", () => target.runShellOrThrow(script, opts));
+      }
+      if (prop === "startCommand") {
+        return (command: string, args?: readonly string[], opts?: CommandOptions) =>
+          start(command, args, opts, "argv", (options) => backgroundSandbox.runCommand(command, args, options));
+      }
+      if (prop === "startShell") {
+        return (script: string, opts?: CommandOptions) =>
+          start(script, undefined, opts, "shell", (options) => backgroundSandbox.runShell(script, options));
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;

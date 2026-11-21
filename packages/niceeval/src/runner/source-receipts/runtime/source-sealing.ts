@@ -118,6 +118,7 @@ function captureRunnerAttemptSourceSnapshot(
         phase: command.manifest.phase,
         invocation: command.manifest.invocation,
         workingDirectory: command.manifest.workingDirectory,
+        checked: command.checked,
         outcome: command.result.outcome,
         stdout: command.result.stdout,
         stderr: command.result.stderr,
