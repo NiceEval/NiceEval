@@ -1207,8 +1207,13 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
 
 function renderAdditionalProjection(document: InspectionDocument): string {
   if (document.outcome !== "success") return "Inspection unavailable\n";
-  if (document.operation === "run.list")
-    return `Runs\n${document.runs.map((run) => `${run.runId}  ${run.state}`).join("\n")}\n`;
+  if (document.operation === "run.list") {
+    const rows = document.runs.map((run) => `${run.runId}  ${run.state}`);
+    const page = document.selection.truncated
+      ? [`Showing ${document.selection.returnedRunCount} Runs on this page. More Runs are available.`]
+      : [];
+    return ["Runs", ...page, ...rows, ""].join("\n");
+  }
   if (document.operation === "attempt.reprice")
     return `Repriced costs  ${document.repricing.total.amount ?? "unknown"} USD (${document.repricing.total.state})\nApplication  ${document.repricing.application.amount ?? "unknown"}\nJudge  ${document.repricing.judge.amount ?? "unknown"}\n`;
   if (document.operation === "attempt.artifacts") {

@@ -8,6 +8,7 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { judgeUsageChatResponse, startJudgeUsageEmulator } from "../integration/fixtures/inspection-core/judge-http.ts";
 import { startModelEmulator } from "../integration/fixtures/model-emulator.ts";
+import { createRecordProject } from "../integration/fixtures/record-harness/project.ts";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
@@ -977,6 +978,64 @@ describe("CLI show cache usage from reported Turns", () => {
         expect(human.stdout).toContain(thirdTurn!);
       }
     }), { examples: ids.map((id) => [id]), numRuns: ids.length });
+  });
+});
+
+describe("CLI Run discovery across pages", () => {
+  let cwd: string;
+  const runIds: string[] = [];
+
+  beforeAll(async () => {
+    cwd = await createRecordProject("niceeval-show-run-pages-", { held: false });
+    const origin = await runProjectExperiment(cwd, "runs");
+    const originId = origin.receipt.createdRunIds[0]!;
+    runIds.push(originId);
+    const locator = (await publishedSlotLocators(cwd, originId)).get("first")!;
+    for (let index = 0; index < 100; index += 1) {
+      const [accepted] = await Effect.runPromise(experimentHost.accept({ cwd, locators: [locator], config: {} }));
+      runIds.push(accepted!.runId);
+    }
+  }, 120_000);
+
+  afterAll(async () => {
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  // @use-case docs/feature/inspection/use-case/inspection-check-completeness.md
+  test("show signals more Runs and links exactly once to every Run across pages", async () => {
+    const listedIds: string[] = [];
+    let argv = ["show", "runs"];
+    for (let pageNumber = 0; pageNumber < 2; pageNumber += 1) {
+      const output = await runCli(cwd, [...argv, "--json"]);
+      expect(output.code, output.stderr).toBe(0);
+      const [page] = decodeNdjson(output.stdout);
+      if (page?.outcome !== "success" || page.operation !== "run.list") throw new Error("Missing Run list");
+      const runLinks = page.links.filter(({ rel }) => rel === "run");
+      expect(runLinks.map(({ command }) => command)).toEqual(page.runs.map(({ runId }) => `niceeval show run:${runId}`));
+      listedIds.push(...page.runs.map(({ runId }) => runId));
+
+      const human = await runCli(cwd, argv);
+      expect(human.code, human.stderr).toBe(0);
+      const next = page.links.find(({ rel }) => rel === "next-page");
+      if (pageNumber === 0) {
+        expect(page.selection.truncated).toBe(true);
+        expect(page.continuation).toBeTruthy();
+        expect(next?.command).toBe(`niceeval show runs --continuation ${page.continuation}`);
+        expect(human.stdout).toContain(next!.command);
+        expect(human.stdout.includes("More Runs are available")).toBe(true);
+        argv = next!.command.split(" ").slice(1);
+      } else {
+        expect(page.selection.truncated).toBe(false);
+        expect(page.continuation).toBeUndefined();
+        expect(next).toBeUndefined();
+        expect(human.stdout).not.toContain("More Runs are available");
+        const lastRun = await runCli(cwd, [...runLinks[0]!.command.split(" ").slice(1), "--json"]);
+        expect(lastRun.code, lastRun.stderr).toBe(0);
+        expect(decodeNdjson(lastRun.stdout)[0]).toMatchObject({ operation: "run.get", outcome: "success" });
+      }
+    }
+    expect(listedIds).toEqual([...runIds].sort());
   });
 });
 

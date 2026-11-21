@@ -536,7 +536,8 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
 - `@<locator> ae_<id> image <image-id> --output <file>` 调用 `attempt.assertion.image`，把图片字节写入 `--output` 指定的文件；
   `image` 必须跟在一条断言之后并与 `--output` 同用，不向终端写二进制。
 - `@<locator> usage --reprice <pricing-file>` 调用 `attempt.reprice`，`<pricing-file>` 是下文[只读重计价](#只读重计价历史成本)的 `pricing` 对象。
-- `runs` 调用 `run.list` 分页列出 Run；`--continuation` 读取下一页。
+- `runs` 调用 `run.list` 分页列出 Run。JSON 为每个条目提供 `run` link。
+  还有下一页时 `selection.truncated` 为 true，JSON 提供 `next-page` link，文本提示还有 Run 并在 `Next` 给出同一续读命令。
 
 ### 输出格式
 
