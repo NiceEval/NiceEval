@@ -1,5 +1,6 @@
-import { rm } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -17,6 +18,28 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (batch !== undefined) await rm(batch.cwd, { recursive: true, force: true });
+});
+
+// @feature docs/feature/inspection/README.md#exact-read-and-comparison
+test("reads a selected Experiment without evaluating an unrelated Experiment module", async () => {
+  const unrelated = join(batch.cwd, "experiments", "unrelated.ts");
+  await writeFile(unrelated, 'throw new Error("Unrelated Experiment was evaluated");\n');
+  try {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const code = await runCliInProcess({
+      argv: ["show", "exp:more"],
+      cwd: batch.cwd,
+      env: { NO_COLOR: "1" },
+      stdin: Readable.from([]),
+      stdout,
+      stderr,
+    });
+    expect(code, stderr.read()?.toString()).toBe(0);
+    expect(stdout.read()?.toString()).toContain(batch.locators.get("more/first"));
+  } finally {
+    await rm(unrelated);
+  }
 });
 
 // @feature docs/feature/inspection/README.md#exact-read-and-comparison

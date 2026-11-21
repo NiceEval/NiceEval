@@ -58,6 +58,7 @@ const blobBudgetProjection: RecordJsonObject = {
 
 interface CanonicalizationState {
   nodes: number;
+  hasBlobRefs: boolean;
   readonly ancestors: WeakSet<object>;
   failure: RecordCanonicalizationFailure | undefined;
 }
@@ -82,29 +83,35 @@ function failure(
 
 function compareUtf8(left: string, right: string): number {
   if (left === right) return 0;
-  const leftBytes = encoder.encode(left);
-  const rightBytes = encoder.encode(right);
-  const length = Math.min(leftBytes.byteLength, rightBytes.byteLength);
+  // UTF-8 sorts scalar values by code point. The keys have already been checked
+  // for lone surrogates, so compare without allocating two encoded copies.
+  const length = Math.min(left.length, right.length);
   for (let index = 0; index < length; index += 1) {
-    const difference = leftBytes[index]! - rightBytes[index]!;
+    const point = left.codePointAt(index)!;
+    const difference = point - right.codePointAt(index)!;
     if (difference !== 0) return difference;
+    if (point > 0xffff) index += 1;
   }
-  return leftBytes.byteLength - rightBytes.byteLength;
+  return left.length - right.length;
 }
 
 /** UTF-8 replacement would make identity bytes ambiguous, so reject lone UTF-16 surrogates first. */
-function isUnicodeScalarString(value: string): boolean {
+function scalarUtf8Length(value: string): number | undefined {
+  let bytes = value.length;
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index);
+    if (unit <= 0x7f) continue;
     if (unit >= 0xd800 && unit <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff) return false;
+      if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff) return undefined;
       index += 1;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
-      return false;
+      bytes += 2;
+    } else {
+      if (unit >= 0xdc00 && unit <= 0xdfff) return undefined;
+      bytes += unit <= 0x7ff ? 1 : 2;
     }
   }
-  return true;
+  return bytes;
 }
 
 function isPlainRecord(value: object): value is Record<string, unknown> {
@@ -143,11 +150,12 @@ function enter(
     return false;
   }
   if (typeof value === "string") {
-    if (!isUnicodeScalarString(value)) {
+    const bytes = scalarUtf8Length(value);
+    if (bytes === undefined) {
       failure(state, "record-json-invalid", path);
       return false;
     }
-    if (encoder.encode(value).byteLength > limits.maximumStringUtf8Bytes) {
+    if (bytes > limits.maximumStringUtf8Bytes) {
       failure(state, "record-json-limit-exceeded", path);
       return false;
     }
@@ -170,10 +178,11 @@ function sortedObjectKeys(
   }
   const textKeys = keys as string[];
   for (const key of textKeys) {
-    if (!isUnicodeScalarString(key)) {
+    const bytes = scalarUtf8Length(key);
+    if (bytes === undefined) {
       return failure(state, "record-json-invalid", [...path, key]);
     }
-    if (key.length === 0 || encoder.encode(key).byteLength > limits.maximumKeyUtf8Bytes) {
+    if (bytes === 0 || bytes > limits.maximumKeyUtf8Bytes) {
       return failure(state, "record-json-limit-exceeded", [...path, key]);
     }
   }
@@ -237,7 +246,7 @@ function canonicalObject<Blob extends object>(
 ): RecordJsonWithBlobRefsObject<Blob> | undefined {
   const keys = sortedObjectKeys(value, path, limits, state);
   if (keys === undefined) return undefined;
-  const entries: Array<readonly [string, RecordJsonWithBlobRefs<Blob>]> = [];
+  const output: Record<string, RecordJsonWithBlobRefs<Blob>> = Object.create(null);
   for (const key of keys) {
     const property = enumerableDataProperty(value, key);
     if (property === undefined) {
@@ -245,9 +254,9 @@ function canonicalObject<Blob extends object>(
     }
     const child = canonicalizeValue(property.value, depth + 1, [...path, key], limits, options, state);
     if (child === undefined) return undefined;
-    entries.push([key, child]);
+    output[key] = child;
   }
-  return canonicalEntries(entries);
+  return output;
 }
 
 function canonicalizeValue<Blob extends object>(
@@ -266,7 +275,10 @@ function canonicalizeValue<Blob extends object>(
   if (typeof input !== "object") return failure(state, "record-json-invalid", path);
 
   try {
-    if (options.isBlobRef?.(input)) return input;
+    if (options.isBlobRef?.(input)) {
+      state.hasBlobRefs = true;
+      return input;
+    }
     if (state.ancestors.has(input)) return failure(state, "record-json-invalid", path);
     state.ancestors.add(input);
     try {
@@ -302,7 +314,7 @@ function projectBlobRefsForBudget<Blob extends object>(
   }
   if (!isPlainRecord(value)) return undefined;
   const entries: Array<readonly [string, RecordJson]> = [];
-  for (const key of Object.keys(value).sort(compareUtf8)) {
+  for (const key of Object.keys(value)) {
     const projected = projectBlobRefsForBudget(value[key] as CanonicalRecordValue<Blob>, options);
     if (projected === undefined) return undefined;
     entries.push([key, projected]);
@@ -328,6 +340,7 @@ export function canonicalizeRecordValue<Blob extends object = never>(
 ): Result.Result<CanonicalRecordValue<Blob>, RecordCanonicalizationFailure> {
   const state: CanonicalizationState = {
     nodes: 0,
+    hasBlobRefs: false,
     ancestors: new WeakSet(),
     failure: undefined,
   };
@@ -335,7 +348,7 @@ export function canonicalizeRecordValue<Blob extends object = never>(
   if (value === undefined) {
     return Result.fail(state.failure ?? { code: "record-json-invalid" as const, path: [] });
   }
-  const projected = projectBlobRefsForBudget(value, options);
+  const projected = state.hasBlobRefs ? projectBlobRefsForBudget(value, options) : (value as RecordJson);
   if (projected === undefined) return Result.fail({ code: "record-json-limit-exceeded" as const, path: [] });
   const bytes = jsonBytes(projected);
   if (bytes === undefined || bytes > limits.maximumJsonBytes) {

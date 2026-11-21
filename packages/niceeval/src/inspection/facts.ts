@@ -9,8 +9,7 @@ import { attachmentValueContents, readAttachmentPayload } from "../record/sqlite
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { mintRecordContentHandle, type RecordContentHandle } from "../record/attachment/content.ts";
 import {
-  enumerateRecordAttachmentClosure,
-  hydrateRecordAttachmentCurrent,
+  hydrateRecordAttachmentCurrentWithClosure,
   mintRecordAttachmentReference,
   RecordAttachmentReference,
   recordAttachmentReferenceWire,
@@ -609,7 +608,7 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
   const handles = new Map<string, RecordContentHandle>();
   const contents = new WeakMap<object, PersistedContentMetadata>();
   const usedContent = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrent(definition, attachment.value, {
+  const hydrated = hydrateRecordAttachmentCurrentWithClosure(definition, attachment.value, {
     content: (token, declaration) => {
       const logicalHandle = exactMarker(token, "$niceeval.record.content");
       if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
@@ -663,10 +662,8 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
     return undefined;
   }
 
-  const closure = enumerateRecordAttachmentClosure(definition, hydrated.success);
-  if (Result.isFailure(closure)) return undefined;
   const references = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.success.references) {
+  for (const reference of hydrated.success.closure.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return undefined;
     references.set(`${wire.owner}\u0000${wire.family}`, { owner: wire.owner, family: wire.family });
@@ -682,7 +679,7 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
       return undefined;
     }
   }
-  return { value: hydrated.success, contents };
+  return { value: hydrated.success.value, contents };
 }
 
 function validateCoreRelations(

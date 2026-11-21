@@ -6,7 +6,10 @@ import { resolve } from "node:path";
 import { Effect, Result } from "effect";
 import { prepareCurrentTarget, assessCurrentTarget } from "../experiment/host/current.ts";
 import { acquireProjectRecordReadSession, openHostOwnedRecordReadSession } from "../record/sqlite/index.ts";
-import { hydrateRecordAttachmentCurrent } from "../record/attachment/protocol.ts";
+import {
+  hydrateRecordAttachmentCurrent,
+  hydrateRecordAttachmentCurrentWithClosure,
+} from "../record/attachment/protocol.ts";
 import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
 import type { IdentityManifestEntry } from "../record/family/identity-manifests/schema.ts";
 import { recordIssue } from "../record/errors/record-errors.ts";
@@ -18,6 +21,7 @@ import type { ReadableRunResource } from "../run/storage/types.ts";
 import type { ResolvedInspectionAttempt } from "./facts.ts";
 import {
   loadInspectionRuns,
+  loadSelectedInspectionRuns,
   resolveInspectionMemberAttempt,
   readInspectionAssertions,
   attemptAttachment,
@@ -39,7 +43,13 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
   readonly freshImport?: boolean;
   readonly experimentIds?: readonly string[];
 }) {
-  const target = yield* prepareCurrentTarget({ cwd: input.cwd, config: input.config, freshImport: input.freshImport });
+  const experimentIds = input.experimentIds === undefined ? undefined : new Set(input.experimentIds);
+  const target = yield* prepareCurrentTarget({
+    cwd: input.cwd,
+    config: input.config,
+    freshImport: input.freshImport,
+    exactExperimentIds: experimentIds,
+  });
   const root = resolve(input.cwd, ".niceeval");
   const recordPath = input.recordPath;
   let source: InspectionFactSource;
@@ -81,20 +91,34 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
       readContentPage: session.readContentChunkPage,
       readCollectionPage: session.readCollectionItemPage,
     };
-    let afterRunId = "";
-    for (;;) {
-      const page = session.listRunResources({
-        afterRunId,
-        pageSize: 100,
-        cutoff: undefined,
-        invocationId: undefined,
-      });
-      resources.push(...page.runs);
-      if (page.nextAfterRunId === null) break;
-      afterRunId = page.nextAfterRunId;
+    for (const experimentId of experimentIds ?? [undefined]) {
+      let afterRunId = "";
+      for (;;) {
+        const page = session.listRunResources({ afterRunId, pageSize: 100, experimentId });
+        resources.push(...page.runs);
+        if (page.nextAfterRunId === null) break;
+        afterRunId = page.nextAfterRunId;
+      }
     }
   }
-  const runs = yield* Effect.try({ try: () => loadInspectionRuns(source), catch: inspectionSourceError });
+  const runs = yield* Effect.try({
+    try: () => {
+      if (experimentIds === undefined) return loadInspectionRuns(source);
+      const matching = loadSelectedInspectionRuns(source, [...experimentIds].flatMap(source.findExperimentRunIds));
+      const known = new Set(matching.map(({ run }) => String(run.runId)));
+      const origins = matching.flatMap(({ members }) =>
+        members.flatMap(({ attempt }) => (attempt === null ? [] : [attempt.originRunId])),
+      );
+      return [
+        ...matching,
+        ...loadSelectedInspectionRuns(
+          source,
+          origins.filter((id) => !known.has(id)),
+        ),
+      ];
+    },
+    catch: inspectionSourceError,
+  });
   const runsById = new Map(runs.map((run) => [run.run.runId, run]));
   const manifestsByRun = new Map<string, ReadonlyMap<string, IdentityManifestEntry>>();
   const publishedAttemptIds = new Map(
@@ -147,12 +171,7 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
   });
   const lifecycleRuns = yield* mergeCurrentAssessmentRuns(assessmentRuns, resources);
   type Attempt = Ref & CurrentAssessmentAttempt;
-  const experimentIds = input.experimentIds === undefined ? undefined : new Set(input.experimentIds);
-  const assessedTarget =
-    experimentIds === undefined
-      ? target
-      : { ...target, slots: target.slots.filter(({ experimentId }) => experimentIds.has(experimentId)) };
-  const assessments = yield* assessCurrentTarget<Ref, Attempt, CurrentResultSource, Error>(assessedTarget, {
+  const assessments = yield* assessCurrentTarget<Ref, Attempt, CurrentResultSource, Error>(target, {
     runs: lifecycleRuns,
     byRunId: new Map(lifecycleRuns.map((run) => [run.document.runId, run])),
     selectionHasProblem: false,
@@ -252,12 +271,12 @@ export const openCurrentProjectSource = Effect.fn("openCurrentProjectSource")(fu
               family: definition.family,
               revision: attachment.physical.familyRevision,
             };
-          const value = hydrateRecordAttachmentCurrent(definition, attachment.value, {
+          const value = hydrateRecordAttachmentCurrentWithClosure(definition, attachment.value, {
             content: () => Result.succeed(undefined),
             reference: () => Result.succeed(undefined),
           });
           return Result.isSuccess(value)
-            ? { state: "available" as const, value: value.success }
+            ? { state: "available" as const, value: value.success.value }
             : {
                 state: "invalid" as const,
                 issues: [recordIssue("record-schema-invalid", [definition.family, value.failure.code])] as const,

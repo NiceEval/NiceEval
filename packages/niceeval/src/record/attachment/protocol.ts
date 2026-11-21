@@ -347,17 +347,21 @@ export function enumerateRecordAttachmentClosure(
   const decoded = runtime.codec.decode(encoded.success);
   if (Result.isFailure(decoded)) return Result.fail({ code: "exact-decode-failed" });
   if (definition.validate?.(decoded.success as never).length) return Result.fail({ code: "invariant-failed" });
+  return collectDecodedAttachmentClosure(runtime, decoded.success);
+}
+
+function collectDecodedAttachmentClosure(runtime: DefinitionRuntime, value: unknown) {
   const contents: RecordContentHandle[] = [],
     refs: RecordAttachmentReference<AnyDefinition, unknown>[] = [];
   // The Schema compiler's declaration registry is the closure executor: only
   // values inhabiting a package-owned declaration count, never incidental objects.
-  for (const entry of runtime.codec.enumerateOpaque(decoded.success)) {
+  for (const entry of runtime.codec.enumerateOpaque(value)) {
     const metadata = entry.metadata as { readonly category?: string } | undefined;
     if (isRecordContentHandle(entry.value) && metadata?.category === "content") contents.push(entry.value);
     if (isRecordAttachmentReference(entry.value) && metadata?.category === "reference") refs.push(entry.value);
   }
-  if (new Set(contents).size !== contents.length) return Result.fail({ code: "content-closure-failed" });
-  if (new Set(refs).size !== refs.length) return Result.fail({ code: "reference-closure-failed" });
+  if (new Set(contents).size !== contents.length) return Result.fail({ code: "content-closure-failed" as const });
+  if (new Set(refs).size !== refs.length) return Result.fail({ code: "reference-closure-failed" as const });
   return Result.succeed({ contents, references: refs });
 }
 /** @internal Host-only diagnostic/closure metadata; family code never receives Schema AST. */
@@ -425,7 +429,7 @@ export function encodeRecordAttachmentCurrent(
   return Result.succeed(encoded.success);
 }
 /** @internal Host binds validated storage-neutral leaves by exact declaration, never by paths or marker strings. */
-export function hydrateRecordAttachmentCurrent<Definition extends AnyDefinition>(
+export function hydrateRecordAttachmentCurrentWithClosure<Definition extends AnyDefinition>(
   definition: Definition,
   wire: unknown,
   binder: {
@@ -444,8 +448,16 @@ export function hydrateRecordAttachmentCurrent<Definition extends AnyDefinition>
       { readonly code: "current-reference-bind-failed" }
     >;
   },
+  /** Other Host callers also verify author-side round-trip encoding. */
+  verifyEncoding = false,
 ): Result.Result<
-  Schema.Schema.Type<Definition["schema"]>,
+  {
+    readonly value: Schema.Schema.Type<Definition["schema"]>;
+    readonly closure: {
+      readonly contents: readonly RecordContentHandle[];
+      readonly references: readonly RecordAttachmentReference<AnyDefinition, unknown>[];
+    };
+  },
   {
     readonly code:
       | "exact-decode-failed"
@@ -500,10 +512,25 @@ export function hydrateRecordAttachmentCurrent<Definition extends AnyDefinition>
   if (failure !== undefined) return Result.fail(failure);
   const decoded = runtime.codec.decode(projected);
   if (Result.isFailure(decoded)) return Result.fail({ code: "exact-decode-failed" });
-  const closure = enumerateRecordAttachmentClosure(definition, decoded.success);
+  // The exact codec has validated both the wire and its canonical decoded type.
+  // Inspection can enumerate that type directly before matching the sealed inventory.
+  const closure = verifyEncoding
+    ? enumerateRecordAttachmentClosure(definition, decoded.success)
+    : collectDecodedAttachmentClosure(runtime, decoded.success);
   if (Result.isFailure(closure)) return Result.fail(closure.failure);
   if (definition.validate?.(decoded.success as never).length) return Result.fail({ code: "invariant-failed" });
-  return Result.succeed(decoded.success as Schema.Schema.Type<Definition["schema"]>);
+  return Result.succeed({
+    value: decoded.success as Schema.Schema.Type<Definition["schema"]>,
+    closure: closure.success,
+  });
+}
+
+export function hydrateRecordAttachmentCurrent<Definition extends AnyDefinition>(
+  definition: Definition,
+  wire: unknown,
+  binder: Parameters<typeof hydrateRecordAttachmentCurrentWithClosure<Definition>>[2],
+) {
+  return Result.map(hydrateRecordAttachmentCurrentWithClosure(definition, wire, binder, true), ({ value }) => value);
 }
 
 /** @internal exact definition capability held by a reference token. */

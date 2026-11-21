@@ -17,8 +17,7 @@ import { Result, Schema } from "effect";
 
 import { mintRecordContentHandle } from "../record/attachment/content.ts";
 import {
-  enumerateRecordAttachmentClosure,
-  hydrateRecordAttachmentCurrent,
+  hydrateRecordAttachmentCurrentWithClosure,
   mintRecordAttachmentReference,
   RecordAttachmentReference,
   recordAttachmentReferenceWire,
@@ -920,6 +919,14 @@ function projectFullConversationItem(
   }
 }
 
+const decodedTraceAttachments = new WeakMap<
+  TraceAttachmentInput,
+  {
+    readonly definition: object;
+    readonly read: AttachmentRead<unknown>;
+  }
+>();
+
 export function readCurrentAttachment<
   Owner extends RecordAttachmentOwner,
   Family extends string,
@@ -939,13 +946,15 @@ export function readCurrentAttachment<
   )
     return invalidRead("source-attachment-identity-invalid");
   if (attachment.physical.familyRevision !== persistence.revision) return invalidRead("source-revision-unsupported");
+  const cached = decodedTraceAttachments.get(attachment);
+  if (cached?.definition === persistence.attachment) return cached.read as AttachmentRead<ValueSchema["Type"]>;
 
   const byLogicalHandle = new Map(
     attachment.physical.contents.map((content) => [content.logicalHandle, content] as const),
   );
   const contentMetadata = new WeakMap<object, PersistedContentMetadata>();
   const usedLogicalHandles = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrent(persistence.attachment, attachment.value, {
+  const hydrated = hydrateRecordAttachmentCurrentWithClosure(persistence.attachment, attachment.value, {
     content: (token, declaration) => {
       const logicalHandle = exactMarker(token, "$niceeval.record.content");
       if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
@@ -992,10 +1001,8 @@ export function readCurrentAttachment<
     return invalidRead("source-attachment-invalid");
   }
 
-  const closure = enumerateRecordAttachmentClosure(persistence.attachment, hydrated.success);
-  if (Result.isFailure(closure)) return invalidRead("source-closure-invalid");
   const logicalReferences = new Map<string, { readonly owner: string; readonly family: string }>();
-  for (const reference of closure.success.references) {
+  for (const reference of hydrated.success.closure.references) {
     const wire = recordAttachmentReferenceWire(reference);
     if (wire === undefined) return invalidRead("source-reference-invalid");
     logicalReferences.set(`${wire.owner}\u0000${wire.family}`, { owner: wire.owner, family: wire.family });
@@ -1014,7 +1021,10 @@ export function readCurrentAttachment<
     if (physical.ordinal !== ordinal || physical.owner !== logical.owner || physical.family !== logical.family)
       return invalidRead("source-reference-invalid");
   }
-  return { state: "available" as const, value: hydrated.success, contentMetadata };
+  const read = { state: "available" as const, value: hydrated.success.value, contentMetadata };
+  // Inputs are minted from pinned Record facts and are shared by detail and aggregate readers.
+  decodedTraceAttachments.set(attachment, { definition: persistence.attachment, read });
+  return read;
 }
 
 function invalidRead<Value>(issue: string): AttachmentRead<Value> {

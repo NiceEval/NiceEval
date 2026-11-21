@@ -41,11 +41,13 @@ export const prepareCurrentTarget = Effect.fn("ExperimentHost.prepareCurrentTarg
   readonly cwd: string;
   readonly config: Config;
   readonly freshImport: boolean | undefined;
+  readonly exactExperimentIds?: ReadonlySet<string> | undefined;
 }): Effect.fn.Return<FrozenCurrentTarget, CurrentTargetUnavailable> {
   const candidate = yield* Effect.gen(function* () {
     const prepared = yield* prepareRuns(input, {
       allowEmptySelection: true,
       freshImport: input.freshImport ?? false,
+      exactCurrentIds: input.exactExperimentIds,
     });
     if (prepared.status !== "ready") return yield* Effect.fail(new Error(JSON.stringify(prepared.problem)));
     const planned = yield* planProjectTarget(prepared.selected.evals, prepared.runs, input.config.timeoutMs, {

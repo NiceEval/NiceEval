@@ -222,7 +222,10 @@ function selectionProblem(
   return undefined;
 }
 
-function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<ClosedSelection, unknown> {
+function closeSelection(
+  input: ExperimentHostSelectionInput,
+  exactCurrentIds?: ReadonlySet<string>,
+): Effect.Effect<ClosedSelection, unknown> {
   const selectWith = (generation?: FreshImportGeneration) =>
     Effect.gen(function* () {
       if (
@@ -242,6 +245,7 @@ function closeSelection(input: ExperimentHostSelectionInput): Effect.Effect<Clos
         ids: readonly string[],
         entries: readonly { readonly id: string; readonly path: string }[],
       ): readonly string[] {
+        if (exactCurrentIds !== undefined) return ids.filter((id) => exactCurrentIds.has(id));
         if (selectedIdsInput !== undefined) {
           const matches = selectedIdsInput.map((value) =>
             entries.filter(({ id, path }) => (value.endsWith("/") ? path.startsWith(value) : id === value)),
@@ -381,12 +385,16 @@ export function prepareRuns(
     readonly config: ExperimentHostInvocationPlanRequest["config"];
     readonly overrides?: ExperimentHostRunOverrides | undefined;
   },
-  options: { readonly allowEmptySelection: boolean; readonly freshImport: boolean } = {
+  options: {
+    readonly allowEmptySelection: boolean;
+    readonly freshImport: boolean;
+    readonly exactCurrentIds?: ReadonlySet<string> | undefined;
+  } = {
     allowEmptySelection: false,
     freshImport: false,
   },
 ): Effect.Effect<PreparedRuns, unknown> {
-  return closeSelection(input).pipe(
+  return closeSelection(input, options.exactCurrentIds).pipe(
     Effect.flatMap((selected): Effect.Effect<PreparedRuns, ExperimentEvaluationKindAdmissionError> => {
       const problem = selectionProblem(input, selected);
       if (problem !== undefined && !(options.allowEmptySelection === true && problem.status === "empty-selection")) {

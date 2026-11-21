@@ -49,7 +49,6 @@ export function readAttachmentPayload(
   let offset = 0;
   for (;;) {
     const page = readPage(metadata.contentId, ordinal - 1, 4);
-    if (page.chunks.length === 0) break;
     for (const chunk of page.chunks) {
       if (
         chunk.ordinal !== ordinal ||
@@ -63,6 +62,8 @@ export function readAttachmentPayload(
       offset += chunk.bytes.byteLength;
       ordinal += 1;
     }
+    if (page.nextOrdinal === null) break;
+    if (page.chunks.length === 0 || page.nextOrdinal !== ordinal - 1) throw invalid();
   }
   if (ordinal !== metadata.chunkCount || offset !== metadata.byteLength || hash.digest("hex") !== metadata.digest)
     throw invalid();

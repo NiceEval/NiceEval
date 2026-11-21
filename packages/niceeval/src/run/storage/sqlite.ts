@@ -889,6 +889,7 @@ export function listRunResourcesOnConnection(
   input: {
     readonly cutoff?: PublicationCutoff | undefined;
     readonly invocationId?: string | undefined;
+    readonly experimentId?: string | undefined;
     readonly afterRunId?: string | undefined;
     readonly pageSize?: number | undefined;
   } = {},
@@ -897,24 +898,24 @@ export function listRunResourcesOnConnection(
   const afterRunId = input.afterRunId ?? "";
   const pageSize = input.pageSize ?? 100;
   if (input.invocationId !== undefined) requireIdentity(input.invocationId, "invocationId");
+  if (input.experimentId !== undefined) requireIdentity(input.experimentId, "experimentId");
   if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 256)
     throw invalid("Run page size must be between 1 and 256");
-  const rows = (
-    input.invocationId === undefined
-      ? recordStatement(
-          connection,
-          `SELECT r.run_id FROM ne19_run_resources r
-        LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=r.run_id
-        WHERE r.created_revision<=? AND (d.deletion_revision IS NULL OR d.deletion_revision>?) AND r.run_id>?
-        ORDER BY r.run_id LIMIT ?`,
-        ).all(cutoff.revision, cutoff.revision, afterRunId, pageSize + 1)
-      : recordStatement(
-          connection,
-          `SELECT r.run_id FROM ne19_run_resources r
-        LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=r.run_id
-        WHERE r.created_revision<=? AND (d.deletion_revision IS NULL OR d.deletion_revision>?) AND r.invocation_id=? AND r.run_id>?
-        ORDER BY r.run_id LIMIT ?`,
-        ).all(cutoff.revision, cutoff.revision, input.invocationId, afterRunId, pageSize + 1)
+  const rows = recordStatement(
+    connection,
+    `SELECT r.run_id FROM ne19_run_resources r
+    LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=r.run_id
+    WHERE r.created_revision<=? AND (d.deletion_revision IS NULL OR d.deletion_revision>?) AND r.run_id>?
+      ${input.invocationId === undefined ? "" : "AND r.invocation_id=?"}
+      ${input.experimentId === undefined ? "" : "AND r.experiment_id=?"}
+    ORDER BY r.run_id LIMIT ?`,
+  ).all(
+    cutoff.revision,
+    cutoff.revision,
+    afterRunId,
+    ...(input.invocationId === undefined ? [] : [input.invocationId]),
+    ...(input.experimentId === undefined ? [] : [input.experimentId]),
+    pageSize + 1,
   ) as readonly Row[];
   const selected = rows.slice(0, pageSize);
   const runs = selected

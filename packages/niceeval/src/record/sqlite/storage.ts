@@ -3174,8 +3174,9 @@ export function readPublishedSealedRun(
     `SELECT run_id,writer_generation,started_at,status,
     coalesce(logical_seal_identity,'published:' || (SELECT max(p.published_revision) FROM ne19_attempt_publications p
       WHERE p.origin_run_id=ne19_runs.run_id)) logical_seal_identity,core_payload,core_digest,
-    (SELECT p.closure_payload FROM ne19_attempt_publications p WHERE p.origin_run_id=ne19_runs.run_id
-      ORDER BY p.published_revision DESC LIMIT 1) publication_closure
+    CASE WHEN status<>'sealed' THEN
+      (SELECT p.closure_payload FROM ne19_attempt_publications p WHERE p.origin_run_id=ne19_runs.run_id
+        ORDER BY p.published_revision DESC LIMIT 1) END publication_closure
     FROM ne19_runs WHERE run_id=?
       AND NOT EXISTS (SELECT 1 FROM ne19_run_deletion_tombstones d WHERE d.run_id=ne19_runs.run_id)
       AND (status='sealed' OR EXISTS
@@ -3210,15 +3211,20 @@ export function readPublishedSealedRun(
       connection,
       `SELECT
     1+(SELECT count(*) FROM ne19_slots WHERE run_id=?)+(SELECT count(*) FROM ne19_attempts WHERE origin_run_id=?)+
-      (SELECT count(*) FROM ne19_members WHERE target_run_id=?)+(SELECT count(*) FROM ne19_attachments WHERE owner_run_id=?)+
-      (SELECT count(*) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id WHERE aa.owner_run_id=?)+
-      (SELECT count(*) FROM ne19_contents cc JOIN ne19_attachments aa ON aa.attachment_id=cc.attachment_id WHERE aa.owner_run_id=?) row_count,
+      (SELECT count(*) FROM ne19_members WHERE target_run_id=?)+
+      (SELECT count(*) FROM ne19_attachments WHERE owner_kind IN ('run','attempt') AND owner_run_id=?)+
+      (SELECT count(*) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id
+        WHERE aa.owner_kind IN ('run','attempt') AND aa.owner_run_id=?)+
+      (SELECT count(*) FROM ne19_contents cc JOIN ne19_attachments aa ON aa.attachment_id=cc.attachment_id
+        WHERE aa.owner_kind IN ('run','attempt') AND aa.owner_run_id=?) row_count,
     coalesce(length(r.core_payload),(SELECT max(length(p.closure_payload)) FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id),0)+
       (SELECT coalesce(sum(length(core_payload)),0) FROM ne19_slots WHERE run_id=?)+
       (SELECT coalesce(sum(length(core_payload)),0) FROM ne19_attempts WHERE origin_run_id=?)+
       (SELECT coalesce(sum(length(core_payload)),0) FROM ne19_members WHERE target_run_id=?)+
-      (SELECT coalesce(sum(length(canonical_payload)+length(logical_inventory)),0) FROM ne19_attachments WHERE owner_run_id=?)+
-      (SELECT coalesce(sum(length(rr.canonical_payload)),0) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id WHERE aa.owner_run_id=?) byte_count
+      (SELECT coalesce(sum(length(canonical_payload)+length(logical_inventory)),0) FROM ne19_attachments
+        WHERE owner_kind IN ('run','attempt') AND owner_run_id=?)+
+      (SELECT coalesce(sum(length(rr.canonical_payload)),0) FROM ne19_attachment_references rr JOIN ne19_attachments aa ON aa.attachment_id=rr.attachment_id
+        WHERE aa.owner_kind IN ('run','attempt') AND aa.owner_run_id=?) byte_count
     FROM ne19_runs r WHERE r.run_id=? AND (r.status='sealed' OR EXISTS
       (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id))`,
     ).get(runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId, runId),
@@ -3392,7 +3398,7 @@ export function readPublishedSealedRun(
     connection,
     `SELECT attachment_id,owner_kind,owner_run_id,owner_attempt_id,family,family_revision,
     logical_identity,canonical_digest,inventory_digest
-    FROM ne19_attachments a WHERE owner_run_id=?${
+    FROM ne19_attachments a WHERE owner_kind IN ('run','attempt') AND owner_run_id=?${
       publicationManaged
         ? ` AND canonical_payload IS NOT NULL AND
       (owner_kind='run' OR EXISTS (SELECT 1 FROM ne19_attempt_publications p
