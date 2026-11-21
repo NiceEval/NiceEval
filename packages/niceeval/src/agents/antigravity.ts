@@ -34,6 +34,10 @@ const EVIDENCE: EvidenceCoverage = {
   data: { status: "unavailable", reason: "Antigravity print is configured for text responses." },
 };
 
+/**
+ * 配置 {@link antigravityAgent} 在 Sandbox 中使用的 CLI 版本、Gemini 鉴权和扩展。
+ * 模型和推理档位由 Experiment 指定。
+ */
 export interface AntigravityConfig {
   /** Gemini API key，省略时读取 `GEMINI_API_KEY`。 */
   apiKey?: string | undefined;
