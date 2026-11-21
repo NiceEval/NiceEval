@@ -3,14 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { startModelEmulator } from "./fixtures/model-emulator.ts";
 import {
   createSimulatedUserProject,
   loadPi,
   openAIConfigSource,
   openAIProvider,
   planAndRunExperiment,
-  respondStream,
-  startHttpServer,
   type Scenario,
 } from "./fixtures/simulated-user-harness/harness.ts";
 
@@ -52,7 +51,7 @@ describe("Simulated user session release", () => {
   const observations: Observation[] = [];
   let root: string;
   let cwd: string;
-  let server: Awaited<ReturnType<typeof startHttpServer>>;
+  let server: Awaited<ReturnType<typeof startModelEmulator>>;
   const restore: (() => void)[] = [];
 
   beforeAll(async () => {
@@ -110,16 +109,24 @@ describe("Simulated user session release", () => {
       proto.dispose = dispose;
     });
 
-    let stage: Stage = "completed";
-    let requestSeen = false;
-    server = await startHttpServer((_req, body, res) => {
-      requestSeen = true;
-      if (stage === "abort-in-request") return; // held open until the Attempt is cancelled
-      respondStream(res, JSON.parse(body), {
-        id: "r",
-        ...(stage === "rejected" ? {} : { toolArguments: { message: "message-sc0" } }),
-      });
-    });
+    server = await startModelEmulator([
+      {
+        id: "accepted-reply",
+        match: { model: "su-accepted", stream: true, tool: "reply_to_agent" },
+        reply: [{ type: "tool_call", name: "reply_to_agent", arguments: { message: "message-sc0" } }],
+      },
+      {
+        id: "missing-reply-tool",
+        match: { model: "su-rejected", stream: true },
+        reply: [{ type: "text", text: "No answer." }],
+      },
+      {
+        id: "stalled-reply",
+        match: { model: "su-abort-in-request", stream: true },
+        reply: [{ type: "text", text: "Delayed answer." }],
+        fault: { kind: "stall", afterChunks: 0, stallMs: 30_000 },
+      },
+    ]);
 
     const scenario: Scenario = { id: "sc0", requests: [] };
     const drivesPath = join(root, "drives.jsonl");
@@ -135,8 +142,7 @@ describe("Simulated user session release", () => {
     const agentSource = await readFile(agentPath, "utf8");
 
     for (const action of actions) {
-      stage = action.stage;
-      requestSeen = false;
+      server.reset();
       faults = new Set(action.faults);
       calls = [];
       sessions = new Map();
@@ -146,13 +152,14 @@ describe("Simulated user session release", () => {
       await writeFile(evalPath, evalSource.replace(/const S = .*;/u, `const S = ${JSON.stringify({ ...scenario, timeoutMs: 20000 })};`));
       await writeFile(agentPath, agentSource.replace(/const SCENARIOS = .*;/u, `const SCENARIOS = ${JSON.stringify({ sc0: { ...scenario, hangDrive: hang } })};`));
       const abortController = new AbortController();
+      const model = action.stage === "rejected" || action.stage === "abort-in-request" ? `su-${action.stage}` : "su-accepted";
       const running = planAndRunExperiment(cwd, "su", {
-        config: { judgeProvider: openAIProvider(server.baseUrl) },
+        config: { judgeProvider: openAIProvider(server.baseUrl, { model }) },
         rerun: "all",
         signal: abortController.signal,
       });
       if (action.stage === "abort-in-request") {
-        await waitFor(() => requestSeen, "the model request");
+        await waitFor(async () => (await server.calls()).length > 0, "the model request");
         abortController.abort();
       } else if (action.stage === "abort-in-drive") {
         await waitFor(

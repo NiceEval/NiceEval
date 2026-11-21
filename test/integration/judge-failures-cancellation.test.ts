@@ -17,6 +17,7 @@ import {
   showJsonDocuments,
   startHttpServer,
 } from "./fixtures/judge-harness/harness.ts";
+import { type ModelRule, startModelEmulator } from "./fixtures/model-emulator.ts";
 
 describe("Ordinary Judge failures and cancellation", () => {
   const ordinaryModes = fc.sample(
@@ -24,26 +25,26 @@ describe("Ordinary Judge failures and cancellation", () => {
     { numRuns: 7, seed: 202611 },
   );
   let server: Awaited<ReturnType<typeof startHttpServer>>;
+  let emulator: Awaited<ReturnType<typeof startModelEmulator>>;
   let cwd: string;
   const locators = new Map<string, string>();
-  const recordedRequests: string[] = [];
 
   beforeAll(async () => {
+    const rules: readonly ModelRule[] = [
+      { id: "http400", match: { model: "fail-http400" }, error: { status: 400, message: "bad request" } },
+      { id: "http503", match: { model: "fail-http503" }, error: { status: 503, message: "upstream unavailable" } },
+      { id: "missing-call", match: { model: "fail-missing-call" }, reply: [{ type: "text", text: "no tool" }] },
+      {
+        id: "invalid-choice",
+        match: { model: "fail-invalid-choice", tool: "record_score_match" },
+        reply: [{ type: "tool_call", name: "record_score_match", arguments: { choice: "not-a-valid-choice", rationale: "bad" } }],
+      },
+    ];
+    emulator = await startModelEmulator(rules);
     server = await startHttpServer((req, body, res) => {
-      recordedRequests.push(req.url ?? "");
       const payload = JSON.parse(body);
       const userContent = JSON.stringify(payload.messages);
-      const mode = ordinaryModes.find((m) => userContent.includes(`mode:${m}`)) ?? "http400";
-      if (mode === "http400") {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: { message: "bad request" } }));
-        return;
-      }
-      if (mode === "http503") {
-        res.writeHead(503, { "Content-Type": "text/plain" });
-        res.end("upstream unavailable");
-        return;
-      }
+      const mode = ordinaryModes.find((candidate) => userContent.includes(`mode:${candidate}`));
       if (mode === "disconnect") {
         req.socket.destroy();
         return;
@@ -58,55 +59,19 @@ describe("Ordinary Judge failures and cancellation", () => {
         res.end(JSON.stringify({ pad: "x".repeat(32_768) }));
         return;
       }
-      if (mode === "missing-call") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            id: "r1",
-            object: "chat.completion",
-            model: payload.model,
-            choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "no tool" } }],
-          }),
-        );
-        return;
-      }
-      // invalid-choice
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          id: "r1",
-          object: "chat.completion",
-          model: payload.model,
-          choices: [
-            {
-              index: 0,
-              finish_reason: "tool_calls",
-              message: {
-                role: "assistant",
-                content: null,
-                tool_calls: [
-                  {
-                    id: "c1",
-                    type: "function",
-                    function: {
-                      name: payload.tool_choice.function.name,
-                      arguments: JSON.stringify({ choice: "not-a-valid-choice", rationale: "bad" }),
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        }),
-      );
+      res.writeHead(500);
+      res.end("Unexpected raw Judge fixture request");
     });
 
     const evals: Record<string, string> = {};
     for (const mode of ordinaryModes) {
+      const emulated = rules.some((rule) => rule.id === mode);
       evals[`${mode}.eval.ts`] = `
         import { defineScoreEval } from "niceeval";
         import { binaryJudge } from "niceeval/expect";
+        ${emulated ? 'import { OpenAIProvider } from "niceeval/judge";' : ""}
         export default defineScoreEval({
+          ${emulated ? `judge: OpenAIProvider({ model: ${JSON.stringify(`fail-${mode}`)}, baseUrl: ${JSON.stringify(emulator.baseUrl)}, apiKey: "fixture-key", maxResponseBytes: 4096, timeoutMs: 5000 }),` : ""}
           async test(t) {
             await t.send("ok");
             t.judge({ marker: ${JSON.stringify(`mode:${mode}`)} }, binaryJudge({ rubric: "Check" })).score(2).label(${JSON.stringify(mode)});
@@ -163,7 +128,7 @@ describe("Ordinary Judge failures and cancellation", () => {
   }, 30_000);
 
   afterAll(async () => {
-    await server.close();
+    await Promise.all([server?.close(), emulator?.close()]);
     if (cwd) await rm(cwd, { recursive: true, force: true });
   });
 
@@ -278,6 +243,7 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
     "http400",
     "malformed",
     "transport",
+    "disconnect",
     "no-submit",
     "turns",
     "timeout",
@@ -288,36 +254,44 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
   ] as const;
 
   let server: Awaited<ReturnType<typeof startHttpServer>>;
+  let emulator: Awaited<ReturnType<typeof startModelEmulator>>;
   const projects: string[] = [];
-  const modeResults = new Map<string, { cwd: string; locator: string; bodies: string[] }>();
+  const modeResults = new Map<string, { cwd: string; locator: string }>();
 
   beforeAll(async () => {
-    const modeBodies = new Map<string, string[]>();
     const overflowed = new Set<string>();
     let ordinal = 0;
+    const rules: readonly ModelRule[] = [
+      { id: "http400", match: { model: "aj-http400" }, error: { status: 400, message: "invalid request" } },
+      { id: "transport", match: { model: "aj-transport" }, error: { status: 503, message: "unavailable" } },
+      {
+        id: "disconnect",
+        match: { model: "aj-disconnect", stream: true },
+        reply: [{ type: "text", text: "Partial answer." }],
+        fault: { kind: "disconnect", afterChunks: 1 },
+      },
+      {
+        id: "timeout",
+        match: { model: "aj-timeout", stream: true },
+        reply: [{ type: "text", text: "Delayed answer." }],
+        fault: { kind: "stall", afterChunks: 0, stallMs: 10_000 },
+      },
+      {
+        id: "no-submit",
+        match: { model: "aj-no-submit" },
+        reply: [{ type: "text", text: "I decline to grade." }],
+      },
+    ];
+    emulator = await startModelEmulator(rules);
 
     server = await startHttpServer((req, body, res) => {
       const mode = new URL(req.url ?? "/", "http://127.0.0.1").pathname.split("/")[2] ?? "unknown";
-      const bodies = modeBodies.get(mode) ?? [];
-      modeBodies.set(mode, bodies);
       const payload = JSON.parse(body);
       const summary = payload.messages[0]?.content?.includes("context summarization assistant") === true;
-      bodies.push(body);
       ordinal++;
 
-      if (mode === "timeout") return;
-      if (mode === "http400") {
-        res.writeHead(400);
-        res.end("invalid request");
-        return;
-      }
       if (mode === "malformed") {
         res.end('{"choices":[]}');
-        return;
-      }
-      if (mode === "transport") {
-        res.writeHead(503);
-        res.end("unavailable");
         return;
       }
       const send = (text: string | null, calls: unknown[] = []) => {
@@ -402,7 +376,6 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
       let calls: unknown[] = [];
       let text: string | null = null;
       if (step.kind === "chat") text = "Ready.";
-      else if (mode === "no-submit") text = "I decline to grade.";
       else if (mode === "turns" && step.message === "First question") calls = [call("read", { path: "application.txt" })];
       else if (mode === "command-timeout" && step.message === "First question" && last.role === "user") {
         calls = [call("bash", { command: "sleep 10", timeout: 0.1 })];
@@ -414,6 +387,9 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
 
     await Promise.all(
       agentModes.map(async (mode) => {
+        const emulated = rules.some((rule) => rule.id === mode);
+        const model = emulated ? `aj-${mode}` : "aj-fail-model";
+        const baseUrl = emulated ? emulator.baseUrl : `${server.baseUrl}/${mode}/v1`;
         const cwd = await createJudgeProject(`niceeval-aj-fail-${mode}-`, {
           config: `
             import { defineConfig } from "niceeval";
@@ -421,8 +397,8 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
             export default defineConfig({
               timeoutMs: 30_000,
               judgeProvider: OpenAIProvider({
-                model: "aj-fail-model",
-                baseUrl: ${JSON.stringify(`${server.baseUrl}/${mode}/v1`)},
+                model: ${JSON.stringify(model)},
+                baseUrl: ${JSON.stringify(baseUrl)},
                 apiKey: "fixture-key",
                 maxResponseBytes: 16_384,
                 maxOutputTokens: 1024,
@@ -481,8 +457,8 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
           config: {
             timeoutMs: 30_000,
             judgeProvider: OpenAIProvider({
-              model: "aj-fail-model",
-              baseUrl: `${server.baseUrl}/${mode}/v1`,
+              model,
+              baseUrl,
               apiKey: "fixture-key",
               maxResponseBytes: 16_384,
               maxOutputTokens: 1024,
@@ -492,13 +468,13 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
         });
         const slot = res.run?.slots[0];
         if (slot?.publication.state !== "published") throw new Error(`Missing slot for ${mode}`);
-        modeResults.set(mode, { cwd, locator: slot.publication.attemptLocator, bodies: modeBodies.get(mode) ?? [] });
+        modeResults.set(mode, { cwd, locator: slot.publication.attemptLocator });
       }),
     );
   }, 45_000);
 
   afterAll(async () => {
-    await server.close();
+    await Promise.all([server?.close(), emulator?.close()]);
     await Promise.all(projects.map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
@@ -548,7 +524,7 @@ describe("Agent Judge failure modes, compaction, and pi SDK cleanup", () => {
     expect(usage.value.usage.judgeUsage.state).toBe("complete");
     if (usage.value.usage.judgeUsage.state === "complete") {
       expect(usage.value.usage.judgeUsage.calls.every((c) => c.operation === "agent")).toBe(true);
-      if (["http400", "transport"].includes(mode)) {
+      if (["http400", "transport", "disconnect"].includes(mode)) {
         expect(usage.value.usage.judgeUsage.calls.every((c) => c.status === "failed")).toBe(true);
       }
     }

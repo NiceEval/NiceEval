@@ -6,7 +6,8 @@ import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { judgeUsageChatResponse, judgeUsageHttp } from "../integration/fixtures/inspection-core/judge-http.ts";
+import { judgeUsageChatResponse, startJudgeUsageEmulator } from "../integration/fixtures/inspection-core/judge-http.ts";
+import { startModelEmulator } from "../integration/fixtures/model-emulator.ts";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
@@ -104,7 +105,7 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
   beforeAll(async () => {
     cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-inspection-cli-"));
     await Promise.all(["evals", "experiments", "adapters"].map((dir) => mkdir(join(cwd, dir))));
-    const fixture = judgeUsageHttp([
+    const fixture = await startJudgeUsageEmulator([
       {
         status: 200,
         body: judgeUsageChatResponse({
@@ -119,12 +120,15 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
         body: judgeUsageChatResponse({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, { screenshot: true }),
       },
     ]);
-    const verdictCausesFixture = judgeUsageHttp(
-      Array.from({ length: 8 }, () => ({ status: 502, body: { error: { message: "Offline Judge unavailable" } } })),
-      { status: 502, body: { error: { message: "Offline Judge unavailable" } } },
-    );
-    const baseUrl = await fixture.listen();
-    const verdictCausesUrl = await verdictCausesFixture.listen();
+    const verdictCausesFixture = await startModelEmulator([
+      {
+        id: "offline-judge",
+        match: { model: "offline" },
+        error: { status: 502, message: "Offline Judge unavailable", headers: { "Retry-After": "0" } },
+      },
+    ]);
+    const { baseUrl } = fixture;
+    const { baseUrl: verdictCausesUrl } = verdictCausesFixture;
     try {
       await Promise.all([
         writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
@@ -514,8 +518,9 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
       }
       imageId = imgDetail.assertion.entry.scoreMatchAudit.audit.images[0]!.imageId;
     } finally {
-      expect(await fixture.close()).toEqual({ listening: false, openConnections: 0 });
-      expect(await verdictCausesFixture.close()).toEqual({ listening: false, openConnections: 0 });
+      await Promise.all([fixture.close(), verdictCausesFixture.close()]);
+      await expect(fetch(baseUrl)).rejects.toThrow();
+      await expect(fetch(verdictCausesUrl)).rejects.toThrow();
     }
   }, 60_000);
 

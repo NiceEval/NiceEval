@@ -30,3 +30,11 @@
 ## 结果
 
 各性质可以独立准备和释放状态，测试动作与公开断言仍留在原测试中。
+
+## 模型服务
+
+测试通过真实 HTTP 请求访问模型服务时，用 `test/integration/fixtures/model-emulator.ts` 启动 emulate 的 `ai` 服务。把客户端的 `baseUrl` 指向 `startModelEmulator` 返回的本地地址。客户端若要求 API key，传入测试占位值。
+
+在套件的 `beforeAll` 声明匹配模型、工具和请求模式的规则。规则指定工具参数、错误状态或流中断。使用过有限次规则或查询过调用记录时，在下一次独立运行前调用 `reset()`。在 `afterAll` 关闭服务。
+
+检查 OpenRouter 的计费字段或损坏的工具参数时，用 `test/integration/fixtures/inspection-core/judge-http.ts` 返回精确的响应。测私有 `/v1/judge` 协议、损坏的 HTTP 响应或原始连接取消时，保留对应的专用 fixture。

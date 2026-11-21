@@ -1,5 +1,4 @@
-import { createServer } from "node:http";
-import type { Socket } from "node:net";
+import { createEmulator, defineEmulator } from "emulate";
 
 /** Simulates the external Chat Completions HTTP boundary for Judge usage tests. */
 export function judgeUsageChatResponse(
@@ -44,73 +43,25 @@ export function judgeUsageChatResponse(
   };
 }
 
-/** Starts a deterministic loopback HTTP server returning canned Judge responses. */
-export function judgeUsageHttp(
-  responses: readonly { status: number; body: unknown }[],
-  fallback?: { status: number; body: unknown },
-) {
-  const requests: { method: string | undefined; path: string | undefined; body: string }[] = [];
-  const sockets = new Set<Socket>();
-  const server = createServer((request, response) => {
-    let body = "";
-    request.setEncoding("utf8");
-    request.on("data", (chunk: string) => {
-      body += chunk;
-      if (Buffer.byteLength(body) > 32_768) request.destroy(new Error("Judge fixture request exceeds its cap"));
-    });
-    request.on("error", () => response.destroy());
-    request.on("end", () => {
-      const index = requests.length;
-      requests.push({ method: request.method, path: request.url, body });
-      const reply = responses[index] ?? fallback;
-      response.writeHead(reply?.status ?? 400, { "Content-Type": "application/json", "Retry-After": "0" });
-      response.end(JSON.stringify(reply?.body ?? { error: { message: "Unexpected fixture request" } }));
-    });
-  });
-  server.requestTimeout = 5_000;
-  server.headersTimeout = 5_000;
-  server.on("connection", (socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
-  });
-  return {
-    requests,
-    async listen() {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          server.close();
-          reject(new Error("Judge fixture listen deadline exceeded"));
-        }, 1_000);
-        server.once("error", fail);
-        function fail(error: Error) {
-          clearTimeout(timer);
-          reject(error);
-        }
-        server.listen(0, "127.0.0.1", () => {
-          clearTimeout(timer);
-          server.off("error", fail);
-          resolve();
+export async function startJudgeUsageEmulator(responses: readonly { status: number; body: unknown }[]) {
+  const service = defineEmulator({
+    name: "judge-usage",
+    state: () => ({ next: 0 }),
+    setup({ app, state }) {
+      app.post("/v1/chat/completions", async ({ req }) => {
+        const body = await req.text();
+        if (Buffer.byteLength(body) > 32_768) return new Response("Judge fixture request exceeds its cap", { status: 413 });
+        const reply = responses[state.next++];
+        return Response.json(reply?.body ?? { error: { message: "Unexpected fixture request" } }, {
+          status: reply?.status ?? 400,
+          headers: { "Retry-After": "0" },
         });
       });
-      const address = server.address();
-      if (address === null || typeof address === "string") throw new Error("Judge fixture has no loopback address");
-      return `http://127.0.0.1:${address.port}/v1`;
     },
-    async close() {
-      if (server.listening) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("Judge fixture cleanup deadline exceeded")), 1_000);
-          server.close((error) => {
-            clearTimeout(timer);
-            error === undefined ? resolve() : reject(error);
-          });
-          for (const socket of sockets) socket.destroy();
-          server.closeAllConnections();
-        });
-      } else {
-        for (const socket of sockets) socket.destroy();
-      }
-      return { listening: server.listening, openConnections: [...sockets].filter((socket) => !socket.destroyed).length };
-    },
+  });
+  const emulator = await createEmulator({ service, port: 0 });
+  return {
+    baseUrl: `${emulator.url}/v1`,
+    close: () => emulator.close(),
   };
 }

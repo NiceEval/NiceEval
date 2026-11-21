@@ -16,10 +16,11 @@ import {
   showJsonDocuments,
   startHttpServer,
 } from "./fixtures/judge-harness/harness.ts";
+import { type ModelRule, startModelEmulator } from "./fixtures/model-emulator.ts";
 
 describe("Judge precheck isolation and concurrency scheduling", () => {
   describe("unresolved credential isolation", () => {
-    let server: Awaited<ReturnType<typeof startHttpServer>>;
+    let server: Awaited<ReturnType<typeof startModelEmulator>>;
     let cwd = "";
     let serverCalls = 0;
     let completion: string | undefined;
@@ -28,12 +29,13 @@ describe("Judge precheck isolation and concurrency scheduling", () => {
     let inlineEntries: Awaited<ReturnType<typeof readAssertionsList>> = [];
 
     beforeAll(async () => {
-      server = await startHttpServer((_req, body, res) => {
-        serverCalls++;
-        const payload = JSON.parse(body);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(chatToolResponse(payload.tool_choice.function.name, { measurement: 1, rationale: "Valid key" }, payload.model));
-      });
+      server = await startModelEmulator([
+        {
+          id: "inline-credential-score",
+          match: { model: "inline-model", tool: "record_score_match" },
+          reply: [{ type: "tool_call", name: "record_score_match", arguments: { measurement: 1, rationale: "Valid key" } }],
+        },
+      ]);
       cwd = await createJudgeProject("niceeval-judge-precheck-", {
         config: `
           import { defineConfig } from "niceeval";
@@ -106,6 +108,7 @@ describe("Judge precheck isolation and concurrency scheduling", () => {
       );
       missingFullAudit = missingFull.scoreMatchAudit;
       inlineEntries = await readAssertionsList(cwd, inlineSlot.publication.attemptLocator);
+      serverCalls = (await server.calls()).length;
     }, 30_000);
 
     afterAll(async () => {
@@ -595,28 +598,35 @@ describe("Judge retry policy, Retry-After bounds, and abort during backoff", () 
     await Promise.all(
       retryModes.map(async (mode) => {
         const sentAt: number[] = [];
-        const server = await startHttpServer((_req, body, res) => {
-          const payload = JSON.parse(body);
-          sentAt.push(Date.now());
-          const ordinal = sentAt.length;
-          const success = (mode === "recover" && ordinal === 3) || (mode === "backoff" && ordinal === 2);
-          const status = success ? 200 : mode === "protocol" ? 400 : mode === "recover" && ordinal === 2 ? 429 : 502;
-          res.writeHead(status, {
-            "Content-Type": "application/json",
-            ...(mode === "backoff" ? {} : { "Retry-After": mode === "deadline" ? "120" : "0.05" }),
-            ...(mode === "header-no-retry" ? { "x-should-retry": "false" } : {}),
+        const match = { model: "retry-model" };
+        const headers = {
+          ...(mode === "backoff" ? {} : { "Retry-After": mode === "deadline" ? "120" : "0.05" }),
+          ...(mode === "header-no-retry" ? { "x-should-retry": "false" } : {}),
+        };
+        const rules: ModelRule[] = [
+          {
+            id: "provider-unavailable",
+            match,
+            ...(mode === "recover" || mode === "backoff" ? { times: 1 } : {}),
+            error: { status: mode === "protocol" ? 400 : 502, message: "Fixture failure", headers },
+          },
+        ];
+        if (mode === "recover") {
+          rules.push({ id: "rate-limited", match, times: 1, error: { status: 429, message: "Fixture failure", headers } });
+        }
+        if (mode === "recover" || mode === "backoff") {
+          rules.push({
+            id: "recovered",
+            match: { ...match, tool: "record_score_match" },
+            reply: [{ type: "tool_call", name: "record_score_match", arguments: { measurement: 1, rationale: "Recovered" } }],
           });
-          res.end(
-            success
-              ? chatToolResponse(payload.tool_choice.function.name, { measurement: 1, rationale: "Recovered" }, payload.model)
-              : JSON.stringify({
-                  error: {
-                    message: "Fixture failure",
-                    ...(mode === "body-no-retry" ? { retryable: false } : {}),
-                  },
-                }),
-          );
-        });
+        }
+        const emulator = mode === "body-no-retry" ? undefined : await startModelEmulator(rules);
+        const server = emulator ?? (await startHttpServer((_req, _body, res) => {
+          sentAt.push(Date.now());
+          res.writeHead(502, { "Content-Type": "application/json", ...headers });
+          res.end(JSON.stringify({ error: { message: "Fixture failure", retryable: false } }));
+        }));
 
         const cwd = await createJudgeProject(`niceeval-retry-${mode}-`, {
           config: `
@@ -677,6 +687,7 @@ describe("Judge retry policy, Retry-After bounds, and abort during backoff", () 
               : mode === "protocol"
                 ? "errored"
                 : "unavailable";
+          if (emulator) sentAt.push(...(await emulator.calls()).map(({ time }) => Date.parse(time)));
           retryResults.set(mode, {
             cwd,
             locator: slot.publication.attemptLocator,

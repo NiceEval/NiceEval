@@ -1,5 +1,6 @@
 // 跨进程保证：进程终止与信号——中断真实 niceeval CLI 进程时终止在途 Judge HTTP 请求与 Sandbox 工具进程并退出，不发出后续模型请求
-import { access, rm } from "node:fs/promises";
+import { access, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
@@ -11,8 +12,8 @@ import {
   narrowInspectionSuccess,
   runHost,
   showJsonDocuments,
-  startHttpServer,
 } from "../integration/fixtures/judge-harness/harness.ts";
+import { startModelEmulator } from "../integration/fixtures/model-emulator.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 
@@ -21,44 +22,30 @@ describe("Judge real-process SIGINT cancellation", () => {
   test.each(["cancel-tool", "cancel-http"] as const)(
     "SIGINT terminates in-flight Judge process (%s) without further requests",
     async (mode) => {
-      let bodiesCount = 0;
-      let requestArrived!: () => void;
-      const arrived = new Promise<void>((r) => {
-        requestArrived = r;
-      });
-      let markerPath: string | undefined;
-
-      const server = await startHttpServer((_req, body, res) => {
-        bodiesCount++;
-        const payload = JSON.parse(body);
-        if (mode === "cancel-http") {
-          requestArrived();
-          // Hold response open until client aborts on SIGINT
-          return;
-        }
-        // cancel-tool: instruct pi to run a long sleep command that touches judge-running first
-        res.writeHead(200, { "Content-Type": "text/event-stream" });
-        const call = {
-          index: 0,
-          id: "call-cancel-tool",
-          type: "function",
-          function: {
-            name: "bash",
-            arguments: JSON.stringify({
-              command: `touch ${JSON.stringify(markerPath!)}; sleep 30; touch ${JSON.stringify(markerPath! + ".late")}`,
-            }),
-          },
-        };
-        res.end(
-          `data: ${JSON.stringify({
-            id: "gen-cancel",
-            object: "chat.completion.chunk",
-            model: payload.model,
-            choices: [{ index: 0, delta: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-          })}\n\ndata: [DONE]\n\n`,
-        );
-      });
+      const markerDir = await mkdtemp(join(await realpath(tmpdir()), "niceeval-judge-marker-"));
+      const markerPath = join(markerDir, "judge-running");
+      const server = await startModelEmulator([
+        mode === "cancel-http"
+          ? {
+              id: "stall-model-request",
+              match: { model: "proc-cancel", stream: true },
+              reply: [{ type: "text", text: "Delayed answer." }],
+              fault: { kind: "stall", afterChunks: 0, stallMs: 30_000 },
+            }
+          : {
+              id: "run-marker-command",
+              match: { model: "proc-cancel", stream: true, tool: "bash", hasToolResult: false },
+              reply: [
+                {
+                  type: "tool_call",
+                  name: "bash",
+                  arguments: {
+                    command: `touch ${JSON.stringify(markerPath)}; sleep 30; touch ${JSON.stringify(`${markerPath}.late`)}`,
+                  },
+                },
+              ],
+            },
+      ]);
 
       const cwd = await createJudgeProject(`niceeval-proc-${mode}-`, {
         config: `
@@ -107,8 +94,6 @@ describe("Judge real-process SIGINT cancellation", () => {
           `,
         },
       });
-      markerPath = join(cwd, "judge-running");
-
       const child = execa(process.execPath, [...process.execArgv, cli, "exp", "cancel", "--rerun", "all", "--json"], {
         cwd,
         env: { ...process.env, NO_COLOR: "1" },
@@ -120,27 +105,17 @@ describe("Judge real-process SIGINT cancellation", () => {
       });
 
       try {
-        if (mode === "cancel-http") {
-          await arrived;
-        } else {
-          const deadline = Date.now() + 8_000;
-          while (Date.now() < deadline) {
-            const exists = await access(markerPath).then(
-              () => true,
-              () => false,
-            );
-            if (exists) break;
-            await new Promise((r) => setTimeout(r, 25));
-          }
-          expect(
-            await access(markerPath).then(
-              () => true,
-              () => false,
-            ),
-          ).toBe(true);
+        const ready = () =>
+          mode === "cancel-http"
+            ? server.calls().then((calls) => calls.length > 0)
+            : access(markerPath).then(() => true, () => false);
+        const deadline = Date.now() + 8_000;
+        while (!childSettled && Date.now() < deadline && !(await ready())) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
         }
+        expect(await ready()).toBe(true);
 
-        const countAtInterrupt = bodiesCount;
+        const countAtInterrupt = (await server.calls()).length;
         child.kill("SIGINT");
         const finished = await child;
         const receiptEvent = finished.stdout
@@ -155,7 +130,7 @@ describe("Judge real-process SIGINT cancellation", () => {
           })
           .find((ev) => ev?.type === "receipt");
         expect(receiptEvent?.receipt?.completion, finished.stderr + "\n" + finished.stdout).toBe("interrupted");
-        expect(bodiesCount).toBe(countAtInterrupt);
+        expect(await server.calls()).toHaveLength(countAtInterrupt);
 
         // No late write happened from the killed bash process
         expect(
@@ -182,7 +157,7 @@ describe("Judge real-process SIGINT cancellation", () => {
       } finally {
         if (!childSettled) child.kill("SIGKILL");
         await server.close();
-        await rm(cwd, { recursive: true, force: true });
+        await Promise.all([cwd, markerDir].map((dir) => rm(dir, { recursive: true, force: true })));
       }
     },
     15_000,
