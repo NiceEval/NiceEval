@@ -15,3 +15,7 @@ INIT 把“与用户确认评估对象”写成独立于其它阻塞问题的步
 ## 来源
 
 NiceEval-Eval dogfooding，公开 `show @<locator>` 的 Turn 记录与判据。
+
+## 处置
+
+0.21.0 的英文 INIT 已要求“停下时交出具体计划确认”，四次采样都没有照做；“宿主只提供 coding agent 指引时被测对象是 coding agent”在 0.21.0 之后加入。main 的中英 INIT 现在写明：为运行时、权限或凭证等别的阻塞问题停下时，也要在同一条消息里附上计划与被测对象；中文 INIT 同步补上了首个 Eval 用例与首跑预算。效果待下一个候选版本在 NiceEval-Eval 复测。
