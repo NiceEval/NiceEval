@@ -23,9 +23,27 @@ const otherTurn = await other.send("查旧金山天气");
 | `await t.respondAll(optionId)` | 用一个 option 回答当前 session 的全部待处理请求 |
 | `t.newSession()` | 创建独立 session；它的事件仍进入 `t.*` 的 attempt 聚合 |
 | `t.simulatedUser(definition)` | 让一个扮演用户的 agent 读被测 agent 的提问并回答，见 [模拟用户](simulated-user.md) |
+| `t.sensitiveValues(...values)` | 登记本 Attempt 要在落盘证据中替换为 `<redacted>` 的凭据原文，见下文[登记敏感值](#登记敏感值) |
 
 session 上的同名 API 只读写该 session，不影响主 session 的 resume 状态。
 Turn 不继续驱动会话；下一轮仍从 `t` 或对应 session 调用。
+
+## 登记敏感值
+
+Eval 有时要把真实凭据交给被测 agent，例如模拟用户在被问到时给出网关地址与 API key，或 `t.send` 的题面里带一段连接配置。`t.sensitiveValues(...values)` 在当前 Attempt 里登记这些值：
+
+```ts
+t.sensitiveValues(connection.apiKey, connection.baseUrl);
+const user = t.simulatedUser(defineSimulatedUser({
+  instructions: `被问到连接时给出：${JSON.stringify(connection)}`,
+}));
+```
+
+- 发送给被测 agent、Judge 模型与模拟用户模型的内容不变，仍是原文。
+- 变化只发生在落盘边界：Turn 的输入与消息、模拟用户与 Agent Judge 的会话审计、Judge 材料与请求审计、命令证据与诊断里，精确出现的已登记值替换成 `<redacted>`，然后才截断与封存。
+- 登记在调用之后对本 Attempt 的全部后续落盘生效，不追溯已封存的证据；应在第一次把值交出去之前登记。与命令级 `sensitiveValues` 取并集。
+- 值只活在当前 Attempt 内存里，不进入指纹、缓存身份或任何持久记录。空字符串与长度少于 8 的值拒绝登记，避免误伤普通文本。
+- 和命令级规则一样，这不是 secret scanner：只替换登记过的精确文本，编码或拆分后的形态需要分别登记。
 
 ## 向运行反馈长步骤
 
