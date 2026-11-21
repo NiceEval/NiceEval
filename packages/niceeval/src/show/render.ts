@@ -3293,7 +3293,7 @@ export function renderAssertions(
             entries: Object.entries(labels).flatMap(([label, key]) => {
               const field = value.fields.find((field) => field.label === label)?.value;
               if (field?.kind === "value" && typeof field.value === "string") return [{ key, value: field.value }];
-              return equalityMismatch ? [{ key, value: "not recorded" }] : [];
+              return equalityMismatch ? [{ key, value: "comparison preview not recorded" }] : [];
             }),
           });
         }

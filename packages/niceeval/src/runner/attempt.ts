@@ -246,6 +246,11 @@ function activeDetailText(text: string, sensitiveValues: Iterable<string>): stri
   return `${prefix}${suffix}`;
 }
 
+function assertionOperandRedactor(sensitiveValues: ReadonlySet<string>): ((value: string) => string) | undefined {
+  if (sensitiveValues.size === 0) return undefined;
+  return (value) => redactSensitiveText(value, sensitiveValues);
+}
+
 /**
  * 一次终局失败的空间轴回执:止损闸的消费点(见 docs/feature/error-classification/architecture.md
  * 「止损执行体」)。`class` 是分类链决议出的 `FailureClass`,`text` 与报错文案同源(作者的修复
@@ -1582,7 +1587,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     execution: "errored",
                     interrupted: true,
                     explicitlySkipped: false,
-                    redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
+                    redactOperandText: assertionOperandRedactor(sensitiveValues),
                   }).pipe(
                     Effect.tap((sealed) =>
                       Effect.sync(() => {
@@ -4138,7 +4143,7 @@ async function runAttemptBody(
             execution: error === undefined ? "completed" : "errored",
             explicitlySkipped: skipReason !== undefined,
             interrupted: false,
-            redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
+            redactOperandText: assertionOperandRedactor(sensitiveValues),
           },
           workspaceDiff,
         }),
@@ -4280,7 +4285,7 @@ async function runAttemptBody(
               execution: "errored",
               explicitlySkipped: false,
               interrupted: false,
-              redactOperandText: (value) => redactSensitiveText(value, sensitiveValues),
+              redactOperandText: assertionOperandRedactor(sensitiveValues),
             },
             workspaceDiff: undefined,
           }),

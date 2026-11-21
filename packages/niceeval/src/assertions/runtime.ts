@@ -273,7 +273,7 @@ interface SnapshotState {
   truncated: boolean;
   omittedBytes: number;
   readonly seen: WeakSet<object>;
-  readonly redactText?: (value: string) => string;
+  readonly redactText?: ((value: string) => string) | undefined;
   remainingNodes?: number;
 }
 
@@ -512,12 +512,16 @@ function equalityOperandPreview(value: unknown, redactText: (value: string) => s
   }
 }
 
-export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnapshot {
+export function captureAssertionSnapshot(
+  value: unknown,
+  redactText?: (value: string) => string,
+): CapturedAssertionSnapshot {
   const command = commandAssertionSnapshot(value);
   const state: SnapshotState = {
     truncated: command !== undefined && Number(command.stdoutOmittedBytes) + Number(command.stderrOmittedBytes) > 0,
     omittedBytes: command === undefined ? 0 : Number(command.stdoutOmittedBytes) + Number(command.stderrOmittedBytes),
     seen: new WeakSet<object>(),
+    redactText,
   };
   const snapshot = boundedSnapshotValue(command ?? value, 0, state);
   const material: Extract<AssertionMaterial, { readonly kind: "snapshot" }> = Object.freeze({
@@ -540,6 +544,41 @@ export function captureAssertionSnapshot(value: unknown): CapturedAssertionSnaps
         omittedBytes: Math.max(1, state.omittedBytes),
       },
     ],
+  };
+}
+
+function redactEqualitySubject(
+  settlement: EntrySettlement,
+  redactText: AssertionSealOptions["redactOperandText"],
+): CapturedAssertionSnapshot | undefined {
+  if (
+    redactText === undefined ||
+    settlement.evidence.kind !== "matcher" ||
+    settlement.evidence.diagnostic === undefined
+  )
+    return undefined;
+  const operands = equalityOperandsOf(settlement.evidence.diagnostic);
+  if (operands === undefined) return undefined;
+  let fieldCount = 0;
+  let captured: CapturedAssertionSnapshot;
+  try {
+    captured = captureAssertionSnapshot(operands.received, (value) => {
+      const safe = redactText(value);
+      if (safe !== value) fieldCount++;
+      return safe;
+    });
+  } catch {
+    return {
+      material: { kind: "snapshot", value: marker("uninspectable-object") },
+      coverage: { state: "unavailable", reason: "source-unavailable" },
+      limitations: [],
+    };
+  }
+  if (fieldCount === 0) return captured;
+  return {
+    material: captured.material,
+    coverage: { state: "partial", reason: "redacted" },
+    limitations: [...captured.limitations, { kind: "redacted", fieldCount }],
   };
 }
 
@@ -2047,7 +2086,7 @@ class AssertionsRuntimeImplementation {
     const entries: SealedAssertionEntry[] = [];
     const assertions: SealedAssertionEvaluation["assertions"][number][] = [];
     for (const entry of this.entries) {
-      const sealedEntry = this.toSealedEntry(entry, options.redactOperandText ?? ((value) => value));
+      const sealedEntry = this.toSealedEntry(entry, options.redactOperandText);
       entries.push(sealedEntry);
       assertions.push({
         required: this.isRequired(entry),
@@ -2076,10 +2115,12 @@ class AssertionsRuntimeImplementation {
       label: entry.display.label,
       groupPath: entry.display.groupPath,
     };
-    const material = this.materialFor(entry, settlement);
+    const redacted = redactEqualitySubject(settlement, redactOperandText);
+    const subject = redacted?.material ?? entry.subject;
+    const material = redacted ?? this.materialFor(entry, settlement);
     function observedResult(settlement: EntrySettlement): SealedAssertionEntry["observed"] {
       if (entry.kind === "boolean") {
-        const snapshot = entry.subject.kind === "snapshot" ? entry.subject.value : undefined;
+        const snapshot = subject.kind === "snapshot" ? subject.value : undefined;
         const commandResult =
           settlement.state === "mismatched" &&
           isRecord(snapshot) &&
@@ -2112,11 +2153,11 @@ class AssertionsRuntimeImplementation {
     return {
       display,
       criterion: entry.terminalCriterion(),
-      subject: entry.subject,
+      subject,
       evidence: this.evidenceFor(entry),
       coverage: material.coverage,
       limitations: material.limitations,
-      result: this.resultFor(entry, settlement, redactOperandText),
+      result: this.resultFor(entry, settlement, redactOperandText ?? ((value) => value)),
       policy: {
         requirement: this.isRequired(entry) ? ("required" as const) : ("optional" as const),
         condition: this.conditionFor(entry),

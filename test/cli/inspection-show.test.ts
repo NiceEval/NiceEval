@@ -888,6 +888,8 @@ describe("CLI show failed equality", () => {
         if (label === "sensitive") {
           expect(json.stdout).not.toContain("fixture-key");
           expect(human.stdout).not.toContain("fixture-key");
+          const source = Reflect.get(detail.assertion.entry, "materials")?.source?.content;
+          expect(JSON.parse(Buffer.from(source.base64, "base64").toString("utf8"))).toEqual(["<redacted> actual"]);
         }
         expect(human.stdout).toMatch(/Actual\s+\[/u);
         expect(human.stdout).toMatch(/Expected\s+\[/u);

@@ -797,8 +797,8 @@ export type MeasurementAssertionHandle<
 export interface AssertionSealOptions {
   readonly execution: "completed" | "errored";
   readonly explicitlySkipped: boolean;
-  /** @internal Normalize known sensitive text before retaining operand previews. */
-  readonly redactOperandText?: (value: string) => string;
+  /** @internal Normalize known sensitive text before retaining equality evidence. */
+  readonly redactOperandText?: ((value: string) => string) | undefined;
   /**
    * The owning Attempt was interrupted before ordinary evaluation could
    * finish. Unsettled entries are sealed as producer-interrupted instead of
