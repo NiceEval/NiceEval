@@ -30,6 +30,7 @@
 | [OpenClaw](openclaw/README.md) | `openClawAgent` | Sandbox coding-agent Adapter |
 | [Oh My Pi](omp/README.md) | `ompAgent` | Sandbox coding-agent Adapter |
 | [DeepSeek Harness](deepseek-harness/README.md) | `deepSeekHarnessAgent` | Sandbox coding-agent Adapter |
+| [Antigravity CLI](agy/README.md) | `antigravityAgent` | Sandbox coding-agent Adapter |
 
 通用扩展调用见 [配置 Coding Agent 扩展](../coding-agent-extensions.md)。
 同名 CLI Adapter 与 SDK 转换器是不同接入形态。
