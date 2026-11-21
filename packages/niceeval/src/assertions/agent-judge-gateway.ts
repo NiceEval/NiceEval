@@ -503,7 +503,6 @@ export class AgentJudgeSession {
       systemPrompt: this.systemPrompt(),
       cwd: this.sandbox.workdir,
       tools: ["bash", "read", "write", "edit", "submit_evaluation"],
-      retry: { maxRetries: 2 },
       timing: () => this.timingPrompt,
       customTools: (sdk) => [
         ...piSandboxTools(sdk, this.sandbox, {

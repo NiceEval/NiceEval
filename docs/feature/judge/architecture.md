@@ -270,7 +270,7 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 
 ### 用量、审计与预算
 
-- 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。NiceEval 不逐次保存 HTTP 尝试；pi 内部的重试只体现在 pi 报告的 usage 里。
+- 用量直接取 pi coding agent 会话报告的 usage（含压缩摘要请求），按受管 Provider 的显式估价计价，记入 Judge 用量（operation `agent`）。HTTP 尝试另存安全的状态事实，形状见[受管 pi 传输](library.md#managed-pi-transport)；没有 usage 的尝试不伪造 token 或费用。
 - 审计保存 pi session 的完整内容：开场消息、每条 user / assistant 消息、工具调用参数与有限结果、pi 的压缩条目（摘要文本、压缩前 token），以及每道题的提交。它就是评审实际看到的对话，不是另行重建的请求副本。
 - `maxTurns` 计每道题的 assistant 轮次，替代 maxCalls。整次会话的期限取定义的 `timeoutMs` 与 Attempt 剩余期限的较小值。
 - 审计不设字节上限，也不计入 Attempt 的文字材料与 audit 总账：完整的 pi 会话经受管 Content 分块保存，读取由 Inspection 分页。只有存储写入本身失败才影响结果，归为 errored；不因会话大小判 unavailable，也不截断对话。
@@ -278,7 +278,7 @@ Agent Judge 就是一个 pi coding agent 会话：NiceEval 只追加 system prom
 - 第一次合法提交锁定这道题的分数；同批后续工具与迟到的提交不能重新打开它。命令非零退出、文件不存在和非法提交是可纠正的工具结果。
 - 失败按发生在哪一层分类，不按错误文案匹配：
   - pi 会话接口抛出的异常（创建会话、发送、工具注册等不变量被破坏）是框架 defect，结果为 errored。
-  - 以 assistant 消息结算且 `stopReason` 为 `error` 的回合，是 pi 用尽自身重试后报告的最终请求失败，结果为 unavailable（`judge-call-failed`）。
+  - 以 assistant 消息结算且 `stopReason` 为 `error` 的回合，是 pi 的 Provider 请求层结束重试后报告的最终请求失败，结果为 unavailable（`judge-call-failed`）。
   - pi 会把畸形的模型响应折进同一种消息，NiceEval 无法把它与网络失败区分，同样按最终请求失败处理，pi 给出的原始错误文字保留为证据。
   - NiceEval 自己能判定的协议损坏为 errored，例如 pi 报告的 usage 结构不合法；提交参数不符合 schema 是可纠正的工具结果，不在此列。
   - 上下文溢出只依据 pi 的 `isContextOverflow` 判定与 pi 的压缩失败事件，NiceEval 不另维护溢出文案表。

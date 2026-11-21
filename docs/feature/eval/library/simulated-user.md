@@ -59,7 +59,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 
 ## 模拟用户 agent
 
-模拟用户和 [Agent Judge](../../judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 一样是一个 pi coding agent 会话（`@earendil-works/pi-coding-agent` SDK，在宿主内运行，与宿主 pi 配置隔离）。NiceEval 只追加 system prompt，关闭全部内置工具，只提供自定义工具 `reply_to_agent`；模型请求、上下文、自动压缩、重试、usage 与 abort 都是 pi coding agent 的。
+模拟用户和 [Agent Judge](../../judge/library.md#agent-judge--在-sandbox-里自己取证再评分) 一样是一个 pi coding agent 会话（`@earendil-works/pi-coding-agent` SDK，在宿主内运行，与宿主 pi 配置隔离）。NiceEval 只追加 system prompt，关闭全部内置工具，只提供自定义工具 `reply_to_agent`；模型请求、上下文、自动压缩、usage 与 abort 都由 pi coding agent 管理。请求重试与 HTTP 审计遵守[受管 pi 传输](../../judge/library.md#managed-pi-transport)。
 
 - 模型取这条 Eval × Experiment 生效的 Judge Provider 与模型，包含 Experiment 替换后的模型、endpoint、凭据声明和协议配置，不新增独立模型配置。模拟用户是执行输入生成者，共用 Provider 不使它成为评分者。
 - `TypesafeProvider` 不支持，`reply` 抛出 `simulated-user-unsupported-provider`；拒绝发生在创建会话、读取凭据与发送之前。未配置 Provider 或缺少可选 pi 依赖同样零发送，报告 `simulated-user-failed` 与具名 reason。

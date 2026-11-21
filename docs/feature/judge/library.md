@@ -286,7 +286,7 @@ declare function defineAgentJudge(definition: AgentJudgeDefinition): AgentJudge;
 ### 评审 agent
 
 评审 agent 就是 pi coding agent：NiceEval 在宿主进程里用 `@earendil-works/pi-coding-agent` 的 SDK 创建会话（可选依赖，未安装时登记报错并给出 `pnpm add` 下一步），只追加评审的 system prompt、把内置工具接到 Sandbox，并加一个评分工具。
-自动压缩、溢出恢复、请求重试与会话管理都用 pi coding agent 自己的行为。NiceEval 开启 pi 会话自带的重试，最多 2 次，退避与可重试判断沿用 pi 的默认行为；不另行包装模型请求，也不叠加 provider 层重试。重试仍失败时按下文规则判 `unavailable`。
+自动压缩、溢出恢复与会话管理使用 pi coding agent。模型请求遵守[受管 pi 传输](#managed-pi-transport)，重试耗尽后判 `unavailable`。
 
 模型取这条 Eval 生效的 Judge Provider 与模型。聊天 Provider 按 Chat Completions 接入；接口兼容不保证所选模型支持工具。
 `TypesafeProvider` 在创建会话前得到 `unavailable`，原因 `agent-judge-unsupported-provider`。不探测能力，也不回落到普通评分。
@@ -564,3 +564,17 @@ PNG、JPEG 每张最多 4 MiB，像素数最多 16,777,216；每个 Assertion �
 `attempt.assertion.image` 通过 `locator + entryId + imageId` 选择本 Assertion
 的封存图片，接受字节 `offset/limit`，返回原图 metadata、区间 base64 与 `nextOffset`。
 Record 搬迁后相同身份仍可读，不重新调用模型。
+
+### 受管 pi 传输 {#managed-pi-transport}
+
+Agent Judge 与模拟用户共用 pi 的 Provider 请求重试：最多重试 2 次，session 层请求重试关闭，避免两层叠加。
+Provider 依据真实 HTTP 状态与结构化传输错误判断；连接错误、HTTP 408、409、429 与 5xx 可重试，服务端的 `x-should-retry` 覆盖默认判断。
+退避使用 pi Provider 的指数退避与抖动，起始 500 ms、上限 8 秒；`Retry-After` 或 `retry-after-ms` 优先，超过 60 秒立即结束。
+请求与等待共用调用者的 AbortSignal 与期限，取消或期限耗尽后不再发送。
+
+流式响应开始后的中途错误不自动重试。pi 的公开会话 API 只按错误文本判断重试，无法接收结构化 HTTP 状态；因此 NiceEval 使用 Provider 请求层，避免私有 API 与文本分类。
+Agent Judge 对最终请求失败保留 unavailable，模拟用户保留执行错误；pi 的上下文压缩与溢出恢复仍独立工作。
+
+每次实际 HTTP 尝试在 pi session 的 `niceeval.http` custom entry 中保存 `{ ordinal, status, retryAfterMs }`。
+ordinal 从 1 递增；status 是实际 HTTP 状态或 null；retryAfterMs 是解析后的非负等待毫秒数或 null，不保存原始响应头。
+失败诊断附上最后一次尝试的状态与等待值。历史记录未保存状态时保持未知，不从错误文字补造状态。

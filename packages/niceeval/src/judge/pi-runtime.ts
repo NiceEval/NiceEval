@@ -1,6 +1,7 @@
 // @concord-file
 // @concord-implements docs/feature/judge/architecture.md
 import { judgeTimingFetch, type JudgeTimingSpan } from "./timing.ts";
+import { retryAfterMs } from "../assertions/judge-transport.ts";
 import { builtinContextWindow } from "../o11y/builtin-models.ts";
 import { pathToFileURL } from "node:url";
 import type { ResolvedJudgeConfig } from "../assertions/types.ts";
@@ -19,7 +20,6 @@ export async function createManagedPiSession(input: {
   readonly systemPrompt: string;
   readonly cwd: string;
   readonly tools: readonly string[];
-  readonly retry: { readonly maxRetries: number } | undefined;
   readonly timing?: (() => JudgeTimingSpan | undefined) | undefined;
   readonly customTools: (sdk: CodingSdk) => ToolDefinition[];
 }) {
@@ -40,11 +40,11 @@ export async function createManagedPiSession(input: {
     if (profile.protocol.kind !== "chat-completions") throw new TypeError("pi requires a chat-completions provider");
     const cwd = input.cwd;
     const contextWindow = profile.contextWindow ?? builtinContextWindow(profile.model) ?? Number.MAX_SAFE_INTEGER;
-    const settingsManager = sdk.SettingsManager.inMemory(
-      input.retry === undefined
-        ? undefined
-        : { retry: { enabled: true, maxRetries: input.retry.maxRetries, provider: { maxRetries: 0 } } },
-    );
+    // The public session retry API classifies error text. Provider retries use
+    // HTTP status/headers and share the request AbortSignal, including backoff.
+    const settingsManager = sdk.SettingsManager.inMemory({
+      retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 2, maxRetryDelayMs: 60_000 } },
+    });
     const sessionManager = sdk.SessionManager.inMemory(cwd);
     const modelRuntime = await sdk.ModelRuntime.create({
       credentials: {
@@ -57,11 +57,36 @@ export async function createManagedPiSession(input: {
       refreshOnCreate: false,
       allowModelNetwork: false,
     });
-    if (input.timing !== undefined) {
-      const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
-      const fetch = judgeTimingFetch(input.timing);
-      modelRuntime.streamSimple = (model, context, options) => streamSimple(model, context, { ...options, fetch });
-    }
+    let httpOrdinal = 0;
+    let lastHttp: { readonly status: number | null; readonly retryAfterMs: number | null } | undefined;
+    const transport = input.timing === undefined ? globalThis.fetch : judgeTimingFetch(input.timing);
+    const fetch: typeof globalThis.fetch = async (request, options) => {
+      const ordinal = ++httpOrdinal;
+      lastHttp = undefined;
+      let status: number | null = null;
+      let delay: number | null = null;
+      try {
+        const response = await transport(request, options);
+        status = response.status;
+        const milliseconds = response.headers.get("retry-after-ms");
+        const parsed = milliseconds === null ? undefined : Number(milliseconds);
+        delay =
+          parsed !== undefined && Number.isFinite(parsed) && parsed >= 0
+            ? parsed
+            : (retryAfterMs(response.headers, Date.now()) ?? null);
+        return response;
+      } finally {
+        lastHttp = { status, retryAfterMs: delay };
+        // Custom entries are retained by pi but never become model messages.
+        sessionManager.appendCustomEntry("niceeval.http", { ordinal, ...lastHttp });
+      }
+    };
+    const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
+    modelRuntime.streamSimple = (model, context, options) => streamSimple(model, context, { ...options, fetch });
+    const httpDiagnostic = () =>
+      lastHttp === undefined
+        ? ""
+        : `HTTP ${lastHttp.status ?? "status unknown"}${lastHttp.retryAfterMs === null ? "" : `; Retry-After ${lastHttp.retryAfterMs} ms`}: `;
     modelRuntime.registerProvider("niceeval-managed", {
       baseUrl: profile.baseUrl,
       headers: { ...profile.headers },
@@ -112,8 +137,16 @@ export async function createManagedPiSession(input: {
     return {
       session,
       sessionManager,
-      prompt: (text: string, signal: AbortSignal) =>
-        promptPiSession(session, text, signal, contextWindow, ai.isContextOverflow),
+      prompt: async (text: string, signal: AbortSignal) => {
+        lastHttp = undefined;
+        try {
+          await promptPiSession(session, text, signal, contextWindow, ai.isContextOverflow);
+        } catch (error) {
+          if (error instanceof PiFailure && error.kind === "model-request")
+            throw new PiFailure({ ...error, message: httpDiagnostic() + error.message });
+          throw error;
+        }
+      },
     };
   } catch (cause) {
     throw new PiFailure({

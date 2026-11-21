@@ -168,7 +168,6 @@ export function createSimulatedUserConversation(
           customTools: () => [tool()],
           systemPrompt: simulatedUserSystemPrompt(definition.instructions),
           cwd: "/",
-          retry: undefined,
         });
         session = managed.session;
         sessionManager = managed.sessionManager;
