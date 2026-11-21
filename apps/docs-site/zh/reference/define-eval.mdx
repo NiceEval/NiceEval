@@ -564,6 +564,14 @@ if (turn.inputRequests.length > 0) {
 readonly input: string;
 ```
 
+#### `sandbox`
+
+```ts
+readonly sandbox: AssertFirstTurnSandbox<Kind>;
+```
+
+Diff Assertions over this Turn's send window only; same semantics as `t.sandbox`.
+
 #### `events`
 
 ```ts
