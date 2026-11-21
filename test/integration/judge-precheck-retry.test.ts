@@ -800,3 +800,89 @@ describe("Judge retry policy, Retry-After bounds, and abort during backoff", () 
     }
   });
 });
+
+describe("Ordinary Judge HTTP 200 errors", () => {
+  const scenarios = [
+    { name: "recovered", sse: false, recovery: true, partial: false, expected: ["failed", "succeeded"] },
+    { name: "sse-recovered", sse: true, recovery: true, partial: false, expected: ["failed", "succeeded"] },
+    { name: "exhausted", sse: false, recovery: false, partial: false, expected: ["failed", "failed", "failed"] },
+    { name: "partial", sse: false, recovery: false, partial: true, expected: ["succeeded"] },
+    { name: "sse-partial", sse: true, recovery: false, partial: true, expected: ["succeeded"] },
+    { name: "opt-out", sse: false, recovery: false, partial: false, expected: ["failed"] },
+  ];
+  const reason = "gateway declined this request";
+  const calls = new Map<string, number>();
+  const locators = new Map<string, string>();
+  let cwd: string | undefined;
+  let server: Awaited<ReturnType<typeof startHttpServer>> | undefined;
+
+  beforeAll(async () => {
+    server = await startHttpServer((_req, body, res) => {
+      const name = JSON.parse(body).model;
+      const scenario = scenarios.find((item) => item.name === name);
+      if (scenario === undefined) throw new Error(`Unexpected model ${name}`);
+      const count = (calls.get(name) ?? 0) + 1;
+      calls.set(name, count);
+      const sse = scenario.sse && count === 1;
+      res.writeHead(200, { "Content-Type": sse ? "text/event-stream" : "application/json", "Retry-After": "0.01" });
+      if (scenario.recovery && count === 2) {
+        res.end(chatToolResponse("record_score_match", { measurement: 1, rationale: "Recovered" }));
+      } else if (sse) {
+        const output = scenario.partial ? 'data: {"choices":[{"delta":{"content":"partial"}}]}\r\n\r\n' : "";
+        res.end(`${output}event: error\r\ndata: ${JSON.stringify({ message: reason })}\r\n\r\n`);
+      } else {
+        res.end(JSON.stringify({
+          error: { message: `${reason} ${count}`, ...(name === "opt-out" ? { retryable: false } : {}) },
+          choices: scenario.partial ? [{ message: { content: "partial" } }] : [],
+        }));
+      }
+    });
+    cwd = await createJudgeProject("niceeval-judge-preoutput-", {
+      agent: `import { completeEvidenceCoverage, defineAgent } from "niceeval/adapter";
+        export default defineAgent({ name: "retry-agent", evidenceCoverage: completeEvidenceCoverage,
+          send: async () => ({ status: "completed", events: [] }) });`,
+      evals: Object.fromEntries(scenarios.map(({ name }) => [
+        `${name}.eval.ts`,
+        `import { defineScoreEval } from "niceeval";
+        import { defineJudge } from "niceeval/expect";
+        export default defineScoreEval({ judge: ${JSON.stringify(name)},
+          test(t) { t.judge("input", defineJudge({ rubric: "Check" })).score(1); } });`,
+      ])),
+      experiments: { "retry.ts": `import { defineExperiment } from "niceeval";
+        import agent from "../agent.ts";
+        export default defineExperiment({ adapter: agent,
+          evals: ${JSON.stringify(scenarios.map(({ name }) => name))}, attempts: 1 });` },
+    });
+    const result = await planAndRunExperiment(cwd, "retry", {
+      config: { judgeProvider: OpenAIProvider({ model: "retry-model", baseUrl: server.baseUrl, apiKey: "k" }) },
+      rerun: "all",
+    });
+    for (const slot of result.run?.slots ?? []) {
+      if (slot.publication.state === "published") locators.set(slot.evalId, slot.publication.attemptLocator);
+    }
+  }, 30_000);
+
+  afterAll(async () => {
+    await server?.close();
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/judge/README.md#precheck-and-retry
+  test.each(scenarios)("$name retries only before output and records every request", async (scenario) => {
+    const locator = locators.get(scenario.name);
+    if (cwd === undefined || locator === undefined) throw new Error(`Missing retry slot for ${scenario.name}`);
+    expect(calls.get(scenario.name)).toBe(scenario.expected.length);
+    const [attemptDoc] = await showJsonDocuments(cwd, [locator]);
+    const attempt = narrowInspectionSuccess(attemptDoc!, "attempt.get");
+    if (!attempt.success) throw new Error(attempt.reason);
+    const detail = await readAssertionDetail(cwd, locator, attempt.value.attempt.assertions.entries[0]!.entryId);
+    expect(detail.assertion.check.state).toBe(scenario.recovery ? "matched" : scenario.partial ? "errored" : "unavailable");
+    if (scenario.name === "exhausted") expect(JSON.stringify(detail.assertion.check)).toContain(`${reason} 3`);
+    const [usageDoc] = await showJsonDocuments(cwd, [locator, "usage"]);
+    const usage = narrowInspectionSuccess(usageDoc!, "attempt.usage");
+    if (!usage.success || usage.value.usage.judgeUsage.state !== "complete") throw new Error("Missing usage");
+    expect(usage.value.usage.judgeUsage.calls.map(({ httpStatus, status }) => [httpStatus, status])).toEqual(
+      scenario.expected.map((status) => [200, status]),
+    );
+  });
+});

@@ -262,7 +262,7 @@ function fingerprintPreparedPair(
     const niceeval = {
       evaluationAlgorithm: EVALUATION_ALGORITHM,
       ...(selectsAgentJudge ? { agentJudge: { ...agentJudgeIdentity(), ...piRuntime } } : {}),
-      ...(selectsSimulatedUser ? { simulatedUser: { behavior: 2, ...piRuntime } } : {}),
+      ...(selectsSimulatedUser ? { simulatedUser: { behavior: 3, ...piRuntime } } : {}),
       ...(selectsOrdinaryJudge(normalized) ? { ordinaryJudge: ordinaryJudgeIdentity() } : {}),
     };
     const payload = {

@@ -8,8 +8,10 @@ import type { ResolvedJudgeConfig } from "../assertions/types.ts";
 import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { PiFailure, piDefect, piUsageFailure } from "./pi-failure.ts";
 import { normalizeExternalCause } from "../shared/external-cause.ts";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai";
 type CodingSdk = typeof import("@earendil-works/pi-coding-agent");
+type ProviderRetry = typeof import("@earendil-works/pi-ai/utils/provider-retry").retryProviderRequest;
+type StreamFailure = Extract<AssistantMessageEvent, { type: "error" }>;
 
 /** Creates an isolated coding-agent session. pi owns requests, tools, retries,
  * compaction and usage. No user files, resources or credentials are discovered. */
@@ -25,9 +27,15 @@ export async function createManagedPiSession(input: {
 }) {
   let sdk: CodingSdk;
   let ai: typeof import("@earendil-works/pi-ai");
+  let retryProviderRequest: ProviderRetry;
   try {
+    const aiUrl = pathToFileURL(input.paths.ai);
     sdk = (await import(pathToFileURL(input.paths.coding).href)) as CodingSdk;
-    ai = (await import(pathToFileURL(input.paths.ai).href)) as typeof ai;
+    ai = (await import(aiUrl.href)) as typeof ai;
+    // Resolve pi-ai's exported utils/provider-retry from the same installation as the SDK.
+    ({ retryProviderRequest } = (await import(new URL("./utils/provider-retry.js", aiUrl).href)) as {
+      retryProviderRequest: ProviderRetry;
+    });
   } catch (cause) {
     throw new PiFailure({
       kind: "dependency",
@@ -40,10 +48,11 @@ export async function createManagedPiSession(input: {
     if (profile.protocol.kind !== "chat-completions") throw new TypeError("pi requires a chat-completions provider");
     const cwd = input.cwd;
     const contextWindow = profile.contextWindow ?? builtinContextWindow(profile.model) ?? Number.MAX_SAFE_INTEGER;
-    // The public session retry API classifies error text. Provider retries use
-    // HTTP status/headers and share the request AbortSignal, including backoff.
+    // The public session retry API classifies error text. Keep retries at the
+    // provider boundary, where HTTP metadata and decoded output events are available.
+    const providerRetry = { maxRetries: 2, maxRetryDelayMs: 60_000 };
     const settingsManager = sdk.SettingsManager.inMemory({
-      retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 2, maxRetryDelayMs: 60_000 } },
+      retry: { enabled: false, maxRetries: 0, provider: providerRetry },
     });
     const sessionManager = sdk.SessionManager.inMemory(cwd);
     const modelRuntime = await sdk.ModelRuntime.create({
@@ -82,48 +91,88 @@ export async function createManagedPiSession(input: {
     };
     const streamSimple = modelRuntime.streamSimple.bind(modelRuntime);
     const startRequest = input.timing === undefined ? undefined : judgeRequestTiming(input.timing);
-    modelRuntime.streamSimple = (model, context, options) => {
-      if (startRequest === undefined) return streamSimple(model, context, { ...options, fetch });
-      let active: JudgeTimingSpan | undefined;
-      const finish = (outcome: JudgeTimingOutcome) => {
-        active?.end(outcome);
-        active = undefined;
-      };
-      const failureOutcome = () => (options?.signal?.aborted ? "cancelled" : "failed");
-      const stream = streamSimple(model, context, {
-        ...options,
-        fetch: async (request, init) => {
-          finish(failureOutcome());
-          active = startRequest();
+    modelRuntime.streamSimple = (model, context, options) =>
+      ai.lazyStream(
+        model,
+        async () => {
+          let lastFailure: StreamFailure | undefined;
           try {
-            const response = await fetch(request, init);
-            if (!response.ok) finish(failureOutcome());
-            return response;
-          } catch (error) {
-            finish(failureOutcome());
-            throw error;
+            return await retryProviderRequest(
+              async () => {
+                lastFailure = undefined;
+                let http: { readonly status: number | undefined; readonly headers: Headers | undefined } | undefined;
+                let timing: JudgeTimingSpan | undefined;
+                const stream = streamSimple(model, context, {
+                  ...options,
+                  maxRetries: 0,
+                  fetch: async (request, init) => {
+                    timing = startRequest?.();
+                    http = { status: undefined, headers: undefined };
+                    const response = await fetch(request, init);
+                    http = { status: response.status, headers: response.headers };
+                    return response;
+                  },
+                });
+                const failureOutcome = () => (options?.signal?.aborted ? "cancelled" : "failed");
+                const finish = (outcome: JudgeTimingOutcome) => timing?.end(outcome);
+                // A response's terminal event distinguishes a broken stream from [DONE].
+                void stream.result().then(
+                  ({ stopReason }) =>
+                    finish(stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "failed" : "completed"),
+                  () => finish(failureOutcome()),
+                );
+                const events = stream[Symbol.asyncIterator]();
+                const first = await events.next();
+                // "start" only acknowledges headers. The next event is either
+                // model output or the terminal result. Only that prefix is held back.
+                const started = !first.done && first.value.type === "start";
+                const next = started ? await events.next() : first;
+                if (!next.done && next.value.type === "error" && next.value.reason === "error" && http !== undefined) {
+                  lastFailure = next.value;
+                  await events.return?.();
+                  const headers = new Headers(http.headers);
+                  if (http.status === 200 && headers.get("x-should-retry") !== "false")
+                    headers.set("x-should-retry", "true");
+                  throw Object.assign(new Error(next.value.error.errorMessage ?? "pi model request failed"), {
+                    status: http.status,
+                    headers,
+                  });
+                }
+                return {
+                  async *[Symbol.asyncIterator]() {
+                    if (started && !first.done) yield first.value;
+                    if (!next.done) yield next.value;
+                    yield* { [Symbol.asyncIterator]: () => events };
+                  },
+                };
+              },
+              { ...providerRetry, ...(options?.signal === undefined ? {} : { signal: options.signal }) },
+            );
+          } catch (cause) {
+            if (lastFailure === undefined) throw cause;
+            const reason = options?.signal?.aborted ? "aborted" : "error";
+            const terminal: StreamFailure = {
+              type: "error",
+              reason,
+              error: {
+                ...lastFailure.error,
+                stopReason: reason,
+                errorMessage:
+                  cause instanceof Error
+                    ? cause.message
+                    : (lastFailure.error.errorMessage ?? "pi model request failed"),
+              },
+            };
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield terminal;
+              },
+            };
           }
         },
-      });
-      // The SDK also closes the HTTP body reader on [DONE]. Pi's terminal message
-      // distinguishes a complete tool-call or text response from a broken stream.
-      void stream.result().then(
-        (message) => {
-          switch (message.stopReason) {
-            case "aborted":
-              finish("cancelled");
-              break;
-            case "error":
-              finish("failed");
-              break;
-            default:
-              finish("completed");
-          }
-        },
-        () => finish(failureOutcome()),
+        undefined,
+        options?.signal,
       );
-      return stream;
-    };
     const httpDiagnostic = () =>
       lastHttp === undefined
         ? ""

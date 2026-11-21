@@ -82,13 +82,73 @@ function isConnectionFailure(error: unknown): boolean {
 
 export function isTransportFailure(error: unknown): boolean {
   const status = judgeStatus(error);
-  return isConnectionFailure(error) || isTransientJudgeStatus(status);
+  return error instanceof JudgePreOutputFailure || isConnectionFailure(error) || isTransientJudgeStatus(status);
 }
 
 const decodeErrorResponse = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
+class JudgePreOutputFailure extends Error {
+  readonly status = 200;
+  readonly headers: Headers;
+  readonly retryable: boolean;
+
+  constructor(message: string, headers: Headers, retryable: boolean) {
+    super(`HTTP 200: ${message}`);
+    this.headers = headers;
+    this.retryable = retryable;
+  }
+}
+
+function hasJudgeOutput(value: unknown): boolean {
+  return ["choices", "content", "text", "tool_calls", "function_call", "output", "answers"].some((key) => {
+    const field = objectField(value, key);
+    return Array.isArray(field) ? field.length > 0 : field != null && field !== "";
+  });
+}
+
+/** Recognize error envelopes in a bounded response, including SSE returned by compatible gateways. */
+function judgePreOutputError(body: string, headers: Headers): { message: string; retryable: boolean } | undefined {
+  let failure: { message: string; retryable: boolean } | undefined;
+  const sse = headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() === "text/event-stream";
+  try {
+    for (const frame of sse ? body.replace(/\r\n?/gu, "\n").split("\n\n") : [body]) {
+      const lines = sse ? frame.split("\n") : [];
+      const data = sse
+        ? lines
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).replace(/^ /u, ""))
+            .join("\n")
+        : frame;
+      if (sse && (data === "" || data === "[DONE]")) continue;
+      const value = decodeErrorResponse(data);
+      if (hasJudgeOutput(value)) return undefined;
+      const error = objectField(value, "error");
+      const detail =
+        typeof error === "object" && error !== null && !Array.isArray(error)
+          ? error
+          : objectField(value, "type") === "error" || lines.some((line) => /^event: ?error$/u.test(line))
+            ? value
+            : undefined;
+      if (detail === undefined) continue;
+      const message = objectField(detail, "message");
+      failure = {
+        message: typeof message === "string" && message.trim() !== "" ? message : "Provider returned an error",
+        retryable:
+          (failure?.retryable ?? true) &&
+          objectField(value, "retryable") !== false &&
+          objectField(detail, "retryable") !== false,
+      };
+    }
+  } catch {
+    // Malformed responses continue through the regular response validation.
+    return undefined;
+  }
+  return failure;
+}
+
 export function isTransientJudgeFailure(error: unknown, responseBody?: string): boolean {
   if (headerValue(objectField(error, "headers"), "x-should-retry")?.trim().toLowerCase() === "false") return false;
+  if (error instanceof JudgePreOutputFailure) return error.retryable;
   if (responseBody !== undefined) {
     try {
       const body = decodeErrorResponse(responseBody);
@@ -220,7 +280,12 @@ export async function requestScoreMatchProvider(input: {
   readonly usage: import("../o11y/judge-usage.ts").JudgeUsageTransmission | undefined;
   readonly deadlineAt: number | undefined;
   readonly timing?: import("../judge/timing.ts").JudgeTimingSpan | undefined;
-}): Promise<{ readonly status: number; readonly headers: Headers; readonly body: string }> {
+}): Promise<{
+  readonly status: number;
+  readonly headers: Headers;
+  readonly body: string;
+  readonly preOutputFailure: JudgePreOutputFailure | undefined;
+}> {
   const deadlineAt = input.deadlineAt ?? Infinity;
   let resolveSettled: () => void = () => undefined;
   const settled = new Promise<void>((resolve) => {
@@ -250,9 +315,21 @@ export async function requestScoreMatchProvider(input: {
     received = true;
     input.usage?.headers(response.status);
     const body = await readJudgeResponseText(response, input.maxBytes, input.signal, input.usage, deadlineAt);
-    input.usage?.body(body);
-    timingOutcome = response.ok ? "completed" : "failed";
-    return { status: response.status, headers: response.headers, body };
+    const reported = response.status === 200 ? judgePreOutputError(body, response.headers) : undefined;
+    const preOutputFailure =
+      reported === undefined
+        ? undefined
+        : new JudgePreOutputFailure(
+            [input.apiKey, ...Object.values(input.headers ?? {})].reduce(
+              (message, value) => (value ? message.replaceAll(value, "[redacted]") : message),
+              reported.message,
+            ),
+            response.headers,
+            reported.retryable,
+          );
+    timingOutcome = response.ok && preOutputFailure === undefined ? "completed" : "failed";
+    input.usage?.body(body, timingOutcome === "completed");
+    return { status: response.status, headers: response.headers, body, preOutputFailure };
   } catch (error) {
     if (input.signal.aborted) input.usage?.cancel();
     else input.usage?.fail(error instanceof JudgeResponseTooLarge ? "response-too-large" : "response-unavailable");

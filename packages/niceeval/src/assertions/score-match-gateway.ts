@@ -783,10 +783,14 @@ export function prepareManagedScoreMatch(input: {
                   headers: outcome.value.headers,
                 })
               : outcome.ok
-                ? undefined
+                ? outcome.value.preOutputFailure
                 : outcome.error;
           if (error !== undefined) {
-            if (outcome.ok && isJudgeContextOverflow(outcome.value.body)) {
+            if (
+              outcome.ok &&
+              outcome.value.preOutputFailure === undefined &&
+              isJudgeContextOverflow(outcome.value.body)
+            ) {
               attempts[attempt - 1] = {
                 ordinal: attempt,
                 transport: "attempted",

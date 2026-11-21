@@ -32,10 +32,10 @@ export function agentJudgeIdentity() {
   };
 }
 
-/** Non-text rendering, admission and conversation projection use one behavior count. */
+/** Code behavior not represented by prompts or response schemas. */
 export function ordinaryJudgeIdentity() {
   return {
-    behavior: 1,
+    behavior: 2,
     content: hashIdentityPayload({
       ...Object.fromEntries(Object.entries(prompts).filter(([, value]) => typeof value === "string")),
       binary: prompts.binaryJudgeRubric("{rubric}"),

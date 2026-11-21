@@ -6,16 +6,21 @@ import {
 } from "./fixtures/judge-harness/harness.ts";
 
 const actors = ["judge", "user"] as const;
-const modes = ["recover", "persistent", "protocol", "stream", "deadline", "cancel"] as const;
+const modes = ["recover", "persistent", "protocol", "stream-recover", "stream-persistent", "stream-partial", "deadline", "cancel"] as const;
 const cases = [
   ...actors.flatMap((actor) => modes.map((mode) => ({ actor, mode, name: `${actor}-${mode}` }))),
   { actor: "judge", mode: "stream-deadline", name: "judge-stream-deadline" } as const,
 ];
 type RequestOutcome = readonly [number | undefined, string];
+type HttpFact = { ordinal: number; status: number };
 
-describe("Managed pi retries use HTTP status within the caller budget", () => {
+function httpFacts(entries: readonly { customType?: string; data: HttpFact }[]): HttpFact[] {
+  return entries.filter(({ customType }) => customType === "niceeval.http").map(({ data }) => data);
+}
+
+describe("Managed pi retries use HTTP and stream failures within one caller budget", () => {
   const projects: string[] = [];
-  const observations = new Map<string, { count: number; intervals: number[]; verdict: string | null; evidence: string; human: string; requestOutcomes?: RequestOutcome[] }>();
+  const observations = new Map<string, { count: number; intervals: number[]; verdict: string | null; evidence: string; human: string; http: HttpFact[]; requestOutcomes?: RequestOutcome[] }>();
   let server: Awaited<ReturnType<typeof startHttpServer>>;
   const sent = new Map<string, number[]>();
   const controllers = new Map<string, AbortController>();
@@ -27,8 +32,11 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
       const times = sent.get(scenario.name) ?? [];
       times.push(Date.now()); sent.set(scenario.name, times);
       if (scenario.mode === "cancel") setTimeout(() => controllers.get(scenario.name)!.abort(), 30);
-      const success = scenario.mode === "recover" && times.length === 3;
-      if (!success && scenario.mode !== "stream" && scenario.mode !== "stream-deadline") {
+      const success = (scenario.mode === "recover" || scenario.mode === "stream-recover") && times.length === 3;
+      const mixedHttp =
+        (scenario.mode === "stream-recover" && times.length === 2) ||
+        (scenario.mode === "stream-persistent" && times.length === 1);
+      if (!success && (!scenario.mode.startsWith("stream-") || mixedHttp)) {
         res.writeHead(scenario.mode === "protocol" ? 400 : times.length === 2 ? 503 : 429, {
           "Content-Type": "text/plain", "Retry-After": ["deadline", "cancel"].includes(scenario.mode) ? "5" : "0.04",
         });
@@ -37,13 +45,17 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
         res.end("Concurrency limit exceeded for account, please retry later");
         return;
       }
-      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Retry-After": "0.04" });
       if (scenario.mode === "stream-deadline") {
         res.write(": waiting for model\n\n");
         return;
       }
-      if (scenario.mode === "stream") {
-        res.end(`data: ${JSON.stringify({ error: { message: "rate limit during stream" } })}\n\ndata: [DONE]\n\n`);
+      if (scenario.mode.startsWith("stream-") && !success) {
+        const frame = (delta: object) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`;
+        const prefix = scenario.mode === "stream-partial"
+          ? frame(scenario.actor === "judge" ? { content: "partial" } : { reasoning_content: "partial" })
+          : scenario.mode === "stream-persistent" && times.length === 2 ? frame({ role: "assistant" }) : "";
+        res.end(`${prefix}data: ${JSON.stringify({ error: { message: `gateway declined generation ${times.length}` } })}\n\ndata: [DONE]\n\n`);
         return;
       }
       const args = scenario.actor === "judge"
@@ -83,7 +95,7 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
         judgeProvider: OpenAIProvider({ model: scenario.name, baseUrl: server.baseUrl, apiKey: "fixture-secret", maxOutputTokens: 128 }),
       }, signal: controller.signal, rerun: "all" });
       if (scenario.mode === "cancel") {
-        observations.set(scenario.name, { count: sent.get(scenario.name)!.length, intervals: [], verdict: null, evidence: "", human: "" });
+        observations.set(scenario.name, { count: sent.get(scenario.name)!.length, intervals: [], verdict: null, evidence: "", human: "", http: [] });
         continue;
       }
       const slot = result.run?.slots[0];
@@ -93,12 +105,16 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
       const attempt = narrowInspectionSuccess(doc!, "attempt.get");
       if (!attempt.success) throw new Error(attempt.reason);
       const evidence: string[] = [];
+      const http: HttpFact[] = [];
       let requestOutcomes: RequestOutcome[] | undefined;
       if (scenario.actor === "judge") {
         const item = attempt.value.attempt.assertions.entries[0]!;
         const { entry } = await readFullAssertionEntry(cwd, locator, item.entryId);
         evidence.push(JSON.stringify(entry));
-        if (entry.agentJudgeAudit?.state === "available") evidence.push((await readPaginatedTrace(cwd, locator, entry.agentJudgeAudit.audit.trace.id)).bytes.toString("utf8"));
+        if (entry.agentJudgeAudit?.state === "available") {
+          const audit = (await readPaginatedTrace(cwd, locator, entry.agentJudgeAudit.audit.trace.id)).bytes.toString("utf8");
+          http.push(...httpFacts(JSON.parse(audit).session));
+        }
         const [timingDoc] = await showJsonDocuments(cwd, [locator, "timing"]);
         const timing = narrowInspectionSuccess(timingDoc!, "attempt.timing");
         if (!timing.success) throw new Error(timing.reason);
@@ -113,13 +129,14 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
           for (const item of event.evidence) {
             const raw = JSON.parse((await readPaginatedTrace(cwd, locator, item.evidenceId)).bytes.toString("utf8"));
             const activity = typeof raw === "string" ? JSON.parse(raw) : raw;
-            evidence.push(JSON.stringify(activity), activity.conversation ?? "");
+            evidence.push(JSON.stringify(activity));
+            if (activity.conversation) http.push(...httpFacts(JSON.parse(activity.conversation)));
           }
       }
       const human = await invokeCli(cwd, ["show", locator, ...(scenario.actor === "judge" ? [attempt.value.attempt.assertions.entries[0]!.entryId, "--full"] : [])]);
       if (human.code !== 0) throw new Error(human.stderr);
       const times = sent.get(scenario.name)!;
-      observations.set(scenario.name, { count: times.length, intervals: times.slice(1).map((time, i) => time - times[i]!), verdict: attempt.value.attempt.verdict, evidence: evidence.join("\n"), human: human.stdout, ...(requestOutcomes === undefined ? {} : { requestOutcomes }) });
+      observations.set(scenario.name, { count: times.length, intervals: times.slice(1).map((time, i) => time - times[i]!), verdict: attempt.value.attempt.verdict, evidence: evidence.join("\n"), human: human.stdout, http, ...(requestOutcomes === undefined ? {} : { requestOutcomes }) });
     }
   }, 120000);
 
@@ -134,20 +151,30 @@ describe("Managed pi retries use HTTP status within the caller budget", () => {
     const result = observations.get(name)!;
     expect(sent.get(name)!.length).toBe(result.count);
     if (mode === "cancel") { expect(result.count).toBe(1); return; }
-    expect(result.count).toBe(mode === "recover" || mode === "persistent" ? 3 : 1);
-    expect(result.verdict).toBe(mode === "recover" ? "passed" : "errored");
+    const recovers = mode === "recover" || mode === "stream-recover";
+    expect(result.count).toBe(recovers || mode === "persistent" || mode === "stream-persistent" ? 3 : 1);
+    expect(result.verdict).toBe(recovers ? "passed" : "errored");
     if (actor === "judge") {
-      const expected = mode === "recover"
+      const expected = recovers
         ? ["failed", "failed", "completed"]
         : Array.from({ length: result.count }, () => mode === "stream-deadline" ? "cancelled" : "failed");
       expect(result.requestOutcomes).toEqual(expected.map((outcome, i) => [i + 1, outcome]));
     }
     for (const interval of result.intervals) { expect(interval).toBeGreaterThanOrEqual(35); expect(interval).toBeLessThan(1500); }
-    expect(result.evidence.includes('"customType":"niceeval.http"')).toBe(true);
-    expect(result.evidence).toContain(`"status":${mode === "protocol" ? 400 : mode.startsWith("stream") ? 200 : 429}`);
+    const statuses = mode === "recover" ? [429, 503, 200]
+      : mode === "stream-recover" ? [200, 503, 200]
+      : mode === "stream-persistent" ? [429, 200, 200]
+      : mode === "persistent" ? [429, 503, 429]
+      : Array.from({ length: result.count }, () => mode === "protocol" ? 400 : mode.startsWith("stream") ? 200 : 429);
+    expect(result.http).toMatchObject(statuses.map((status, i) => ({ ordinal: i + 1, status })));
     if (mode === "persistent" || mode === "protocol") {
       expect(result.human).toContain(`HTTP ${mode === "protocol" ? 400 : 429}`);
       expect(result.human).toContain("Concurrency limit exceeded");
+    }
+    if (mode === "stream-persistent" || mode === "stream-partial") {
+      expect(result.human).toContain("HTTP 200");
+      expect(result.human).toContain(`gateway declined generation ${result.count}`);
+      if (actor === "judge") expect(result.evidence).toContain('"state":"unavailable"');
     }
   });
 });
