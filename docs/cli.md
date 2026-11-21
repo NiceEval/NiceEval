@@ -183,6 +183,11 @@ CLI 与 Node runtime 只提供英语人读文本。每段文案由产生该反�
 
 `exp --json` 的最后一条机器输出是 receipt。调用方以进程退出状态和该 receipt 判断调用是否结束，再用 `show run:<run-id> --json` 按 `createdRunIds` 读取业务数据。
 
+## CLI 启动 {#cli-startup}
+
+CLI 入口按发布包的 `engines.node` 检查 Node.js 版本。Bun 或版本过低的 Node.js 会在装载命令之前退出，状态码为 `1`。
+入口只向 stderr 输出所需的 Node.js 版本与可直接运行的命令，无堆栈。
+
 ## 运行时与中断
 
 调度与 Record I/O 使用 Effect 管理有界并发、资源、typed error 与中断；纯选择和状态折叠仍保持普通值。reader、writer lock、文件与流由 Scope 持有，内部调用链不自行启动 Effect runtime。

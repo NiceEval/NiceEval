@@ -11,6 +11,9 @@ pnpm exec niceeval init
 
 `init` 创建项目入口和配置示例。使用 TypeScript 的项目建议采用 ESM；CLI 可以装载 ESM 或 CommonJS 宿主下的 TypeScript 文件。
 
+CLI 需要 Node.js 24.15.0 或更新版本。只用 Bun 管理依赖的仓库可以用 `bun add -d niceeval` 安装，再用 `node ./node_modules/niceeval/bin/niceeval.js init` 初始化。
+运行其它 NiceEval 命令时，把 `init` 换成所需的命令和参数。
+
 ## 写一个 Eval
 
 在 `evals/greeting.eval.ts` 中定义一次检查。Discovery 只识别 `*.eval.ts`、`*.eval.tsx` 与目录入口 `eval.ts`：

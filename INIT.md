@@ -51,6 +51,8 @@ pnpm add -D niceeval
 pnpm exec niceeval init
 ```
 
+In a Bun-only repository, install with `bun add -d niceeval` and run the CLI with Node.js 24.15.0 or newer. Start with `node ./node_modules/niceeval/bin/niceeval.js init` and use the same `node` command for `list`, `exp`, and `show`.
+
 `init` generates `niceeval.config.ts` and `evals/`, and adds a managed block to the project's `AGENTS.md` (or to `CLAUDE.md` when that is the only file present), reminding future coding agents to read the bundled docs. Do not delete or hand-edit the content inside the markers; re-run `init` after upgrading niceeval to refresh it.
 
 Use the package manager's root-workspace option when required (for example, `pnpm add -Dw niceeval`). Install the version explicitly requested by the user; otherwise resolve the current stable npm version instead of guessing from memory. Keep the manifest and owning lockfile consistent.

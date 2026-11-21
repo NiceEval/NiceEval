@@ -59,6 +59,8 @@ pnpm add -D niceeval
 pnpm exec niceeval init
 ```
 
+CLI 需要 Node.js 24.15.0 或更新版本。只用 Bun 管理依赖的仓库用 `bun add -d niceeval` 安装，再运行 `node ./node_modules/niceeval/bin/niceeval.js init`。后续把 `init` 换成要运行的命令和参数。
+
 `init` 会创建 `niceeval.config.ts`。它还会在 `AGENTS.md` 或 `CLAUDE.md` 里写一段说明，让你的 Coding Agent 读取和安装版本匹配的文档。
 
 ### 写 Adapter

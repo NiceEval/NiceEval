@@ -46,6 +46,8 @@ niceeval 是一个 TypeScript evals 库：用声明式 API 定义"什么是好�
 <你探测到的包管理器> exec niceeval init
 ```
 
+只用 Bun 管理依赖的仓库用 `bun add -d niceeval` 安装，CLI 仍需 Node.js 24.15.0 或更新版本。从 `node ./node_modules/niceeval/bin/niceeval.js init` 开始，运行 `list`、`exp` 和 `show` 时沿用同一条 `node` 命令。
+
 `init` 会生成 `niceeval.config.ts` 和 `evals/`，并在项目的 `AGENTS.md`（或只有 `CLAUDE.md` 时写入该文件）加入托管区块，提醒后续 coding agent 读取随包文档。不要删除或手改标记内的内容；升级 niceeval 后重新运行 `init` 刷新它。
 
 ## 第 3 步：交接给随包文档
