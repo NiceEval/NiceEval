@@ -192,6 +192,14 @@ check 同步验证入口和 Match，然后生成有界 canonical JSON 快照。
 审计保存实际请求、尝试、结构化输出和最终聚合；schema、预算、取消及历史读取由 [Architecture](architecture.md) 定义。
 历史材料不会被重新解释或迁移。审计能证明经框架进行的调用，不能证明作者隐藏闭包、模型判断或外部事实正确。
 
+### 提示缓存 {#prompt-cache}
+
+同一 Attempt 里，多个判据常常读同一份材料（例如整段 Session）。受管请求按"稳定内容在前、变化内容在后"组织：系统指令与材料在前，判据、anchors 与输出要求在后，使同一材料的多次评分共享请求前缀，Provider 的提示缓存才能命中。重排只改变消息顺序，不改变发送给模型的内容集合。
+
+每次受管请求都带一个稳定的提示缓存键，由 Provider 身份、模型与本 Attempt 的身份派生，不含材料内容与凭据；同一 Attempt 的普通 Judge、Agent Judge 与模拟用户请求共用它。OpenAI 兼容端点通过 `prompt_cache_key` 发送；中转网关常靠它把请求路由到同一后端，否则即使前缀相同也拿不到缓存。端点不接受该字段时（返回 HTTP 400 且指明该参数），本 Attempt 后续请求不再发送，并在 Judge 诊断里记录一次。
+
+缓存命中按 Provider 回执记入 Judge 用量的 cacheRead；回执没有缓存字段时记为未知，不记为 0。
+
 ### Turn 与 Session 作为材料
 
 评价被测 agent 这一轮做了什么时，直接把 Turn 交给 Judge，不必自己挑字段拼对象：
