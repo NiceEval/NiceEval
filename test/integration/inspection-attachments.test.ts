@@ -103,14 +103,30 @@ describe("attachment archive", () => {
                 const second = await ctx.attach({ name: "same-label", mediaType: "text/plain", body: "附件 snapshot\\n" });
                 const empty = await ctx.attach({ name: "empty", mediaType: "application/octet-stream", body: new Uint8Array() });
                 const ids = [first.artifactId, second.artifactId, empty.artifactId];
-                for (let index = 0; index < 12; index += 1) {
-                  const extra = await ctx.attach({
+                let active = 0;
+                let peak = 0;
+                const firstGroup = Promise.withResolvers();
+                const extras = await Promise.all(Array.from({ length: 12 }, () =>
+                  ctx.attach({
                     name: "L".repeat(16 * 1024),
                     mediaType: "application/octet-stream",
-                    body: new Uint8Array(),
-                  });
-                  ids.push(extra.artifactId);
-                }
+                    body: {
+                      async *stream() {
+                        active += 1;
+                        peak = Math.max(peak, active);
+                        if (active === 4) firstGroup.resolve();
+                        try {
+                          await firstGroup.promise;
+                          yield new Uint8Array();
+                        } finally {
+                          active -= 1;
+                        }
+                      },
+                    },
+                  }),
+                ));
+                ids.push(...extras.map((extra) => extra.artifactId));
+                if (peak !== 4) throw new Error("Expected four active attachment streams");
                 await writeFile(projectFile("artifact-selectors.txt"), ids.join("\\n"));
                 return first.artifactId !== second.artifactId;
               },
@@ -341,7 +357,7 @@ describe("attachment archive", () => {
 
 describe("attachment failure", () => {
   let cwd: string;
-  const limitLocators: Record<string, { locator: string; artifactId: ArtifactId; code: string }> = {};
+  let invalidAttachment: { locator: string; artifactId: ArtifactId; code: string };
   let streamFailureLocator: string;
   let streamFailureRetainedId: ArtifactId;
   let streamFailureCleanupId: ArtifactId;
@@ -377,29 +393,17 @@ describe("attachment failure", () => {
               await writeFile(projectFile("cleanup-id.txt"), receipt.artifactId);
             });
             return {
-              async rejectOverBudget() {
+              async rejectInvalid() {
                 const bytes = new Uint8Array([1, 2, 3]);
                 const accepted = ctx.attach({ name: "retained", mediaType: "application/octet-stream", body: bytes });
                 bytes.fill(255);
                 const receipt = await accepted;
                 await writeFile(projectFile("accepted-artifact-id.txt"), receipt.artifactId);
-                const mode = String(ctx.flags.mode ?? "invalid");
-                if (mode === "count") {
-                  for (let index = 1; index < 4000; index += 1) {
-                    await ctx.attach({ name: "same-label", mediaType: "application/octet-stream", body: new Uint8Array() });
-                  }
-                } else if (mode === "total") {
-                  const block = new Uint8Array(64 * 1024 * 1024);
-                  for (let index = 0; index < 3; index += 1) {
-                    await ctx.attach({ name: "block", mediaType: "application/octet-stream", body: block });
-                  }
-                  await ctx.attach({ name: "last-block", mediaType: "application/octet-stream", body: block.subarray(3) });
-                }
                 try {
                   await ctx.attach({
-                    name: mode === "invalid" ? "invalid\\u0000label" : "rejected",
+                    name: "invalid\\u0000label",
                     mediaType: "application/octet-stream",
-                    body: mode === "item" ? new Uint8Array(64 * 1024 * 1024 + 1) : new Uint8Array([1]),
+                    body: new Uint8Array([1]),
                   });
                   return false;
                 } catch (cause) {
@@ -486,7 +490,7 @@ describe("attachment failure", () => {
       writeFile(
         join(cwd, "evals", "limits.eval.ts"),
         `import { equals } from "niceeval/expect"; import { failureAdapter } from "../adapters/failure.ts";
-         export default failureAdapter.defineEval({ async test(t) { t.check(await t.rejectOverBudget(), equals(true)); } });`,
+         export default failureAdapter.defineEval({ async test(t) { t.check(await t.rejectInvalid(), equals(true)); } });`,
       ),
       writeFile(
         join(cwd, "evals", "stream-failure.eval.ts"),
@@ -510,22 +514,20 @@ describe("attachment failure", () => {
       ),
     ]);
 
-    for (const mode of ["invalid", "item", "count", "total"] as const) {
-      await writeFile(
-        join(cwd, "experiments", `limits-${mode}.ts`),
-        `import { defineExperiment } from "niceeval"; import { failureAdapter } from "../adapters/failure.ts";
-         export default defineExperiment({ adapter: failureAdapter, evals: ["limits"], flags: { mode: "${mode}", withCleanup: false } });`,
-      );
-      const run = await runProjectExperiment(cwd, `limits-${mode}`, "all");
-      const detail = await Effect.runPromise(runHost.get({ cwd, runId: run.receipt.createdRunIds[0]! }));
-      const slot = detail.run.slots[0]!;
-      if (slot.publication.state !== "published") throw new Error(`Expected published slot for ${mode}`);
-      limitLocators[mode] = {
-        locator: slot.publication.attemptLocator,
-        artifactId: (await readFile(join(cwd, "accepted-artifact-id.txt"), "utf8")) as ArtifactId,
-        code: await readFile(join(cwd, "attachment-rejection.txt"), "utf8"),
-      };
-    }
+    await writeFile(
+      join(cwd, "experiments", "invalid-attachment.ts"),
+      `import { defineExperiment } from "niceeval"; import { failureAdapter } from "../adapters/failure.ts";
+       export default defineExperiment({ adapter: failureAdapter, evals: ["limits"], flags: { withCleanup: false } });`,
+    );
+    const invalidRun = await runProjectExperiment(cwd, "invalid-attachment", "all");
+    const invalidDetail = await Effect.runPromise(runHost.get({ cwd, runId: invalidRun.receipt.createdRunIds[0]! }));
+    const invalidSlot = invalidDetail.run.slots[0]!;
+    if (invalidSlot.publication.state !== "published") throw new Error("Expected published slot for invalid attachment");
+    invalidAttachment = {
+      locator: invalidSlot.publication.attemptLocator,
+      artifactId: (await readFile(join(cwd, "accepted-artifact-id.txt"), "utf8")) as ArtifactId,
+      code: await readFile(join(cwd, "attachment-rejection.txt"), "utf8"),
+    };
 
     const streamRun = await runProjectExperiment(cwd, "stream-failure", "all");
     const streamDetail = await Effect.runPromise(runHost.get({ cwd, runId: streamRun.receipt.createdRunIds[0]! }));
@@ -554,30 +556,21 @@ describe("attachment failure", () => {
   });
 
   // @feature docs/feature/inspection/README.md#attachment-failure
-  test("invalid input and budget limits retain accepted attachments in an errored Attempt", async () => {
+  test("invalid input retains accepted attachments in an errored Attempt", async () => {
     await withOperational(cwd, (facts) => {
-      fc.assert(
-        fc.property(fc.constantFrom("invalid", "item", "count", "total"), (mode) => {
-          const entry = limitLocators[mode]!;
-          expect(entry.code).toBe(mode === "invalid" ? "adapter-attachment-invalid" : "adapter-attachment-limit");
-          const attempt = selectInspectionOperation(facts, { kind: "attempt.get", locator: entry.locator }).attempt;
-          expect(attempt.verdict).toBe("errored");
-          const read = selectInspectionOperation(facts, {
-            kind: "attempt.artifact",
-            locator: entry.locator,
-            artifactId: entry.artifactId,
-          }).artifact;
-          expect(read).toMatchObject({
-            state: "available",
-            name: "retained",
-            byteLength: 3,
-            base64: "AQID",
-            nextOffset: null,
-            sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-          });
-        }),
-        { numRuns: 4, seed: 2028 },
-      );
+      const { locator, artifactId, code } = invalidAttachment;
+      expect(code).toBe("adapter-attachment-invalid");
+      const attempt = selectInspectionOperation(facts, { kind: "attempt.get", locator }).attempt;
+      expect(attempt.verdict).toBe("errored");
+      const read = selectInspectionOperation(facts, { kind: "attempt.artifact", locator, artifactId }).artifact;
+      expect(read).toMatchObject({
+        state: "available",
+        name: "retained",
+        byteLength: 3,
+        base64: "AQID",
+        nextOffset: null,
+        sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      });
     });
   });
 

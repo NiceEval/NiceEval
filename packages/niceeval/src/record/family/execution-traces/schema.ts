@@ -1,21 +1,10 @@
 import * as Schema from "effect/Schema";
+import * as Result from "effect/Result";
 
 import type { TraceJson } from "../../../adapter-execution-trace.ts";
 
-const BoundedIdentifierSchema = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter(
-      (value) => new TextEncoder().encode(value).byteLength > 0 && new TextEncoder().encode(value).byteLength <= 256,
-      { identifier: "ExecutionTraceIdentifier" },
-    ),
-  ),
-);
-const SummarySchema = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 512, {
-      identifier: "ExecutionTraceSummary",
-    }),
-  ),
+const IdentifierSchema = Schema.String.pipe(
+  Schema.check(Schema.makeFilter((value) => value.length > 0, { identifier: "ExecutionTraceIdentifier" })),
 );
 const NonNegativeSafeIntegerSchema = Schema.Number.pipe(
   Schema.check(
@@ -31,6 +20,9 @@ const Sha256Schema = Schema.String.pipe(
   Schema.check(Schema.makeFilter((value) => /^[0-9a-f]{64}$/u.test(value), { identifier: "ExecutionTraceSha256" })),
 );
 
+const TraceInputJsonSchema = Schema.declare<TraceJson>(
+  (value): value is TraceJson => Result.isSuccess(snapshotTraceJson(value)),
+);
 export const ExecutionTraceJsonSchema: Schema.Codec<TraceJson> = Schema.suspend(() =>
   Schema.Union([
     Schema.Null,
@@ -42,6 +34,145 @@ export const ExecutionTraceJsonSchema: Schema.Codec<TraceJson> = Schema.suspend(
   ]),
 );
 
+// With the Unicode flag, this matches lone surrogates only.
+const loneSurrogate = /[\uD800-\uDFFF]/u;
+
+function compareCodePoints(left: string, right: string): number {
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const point = left.codePointAt(index)!;
+    const difference = point - right.codePointAt(index)!;
+    if (difference !== 0) return difference;
+    if (point > 0xffff) index += 1;
+  }
+  return left.length - right.length;
+}
+
+interface TraceJsonFrame {
+  readonly source: object;
+  readonly output: TraceJson[] | Record<string, TraceJson>;
+  readonly keys: readonly string[] | undefined;
+  readonly end: number;
+  next: number;
+}
+
+/** Copy and validate plain JSON without calling producer accessors or using the JS call stack. */
+export function snapshotTraceJson(input: unknown): Result.Result<TraceJson, { readonly path: readonly string[] }> {
+  const ancestors = new WeakSet<object>();
+  const stack: TraceJsonFrame[] = [];
+  const path: string[] = [];
+  let value: unknown = input;
+  try {
+    for (;;) {
+      let accepted: TraceJson;
+      if (value === null || typeof value === "boolean") accepted = value;
+      else if (typeof value === "number" && Number.isFinite(value) && !Object.is(value, -0)) accepted = value;
+      else if (typeof value === "string" && !loneSurrogate.test(value)) accepted = value;
+      else if (typeof value === "object" && value !== null && !ancestors.has(value)) {
+        const keys = Reflect.ownKeys(value);
+        if (Array.isArray(value)) {
+          if (keys.length !== value.length + 1) break;
+          const output: TraceJson[] = [];
+          stack.push({ source: value, output, keys: undefined, end: value.length, next: 0 });
+          accepted = output;
+        } else {
+          const prototype = Object.getPrototypeOf(value);
+          if (prototype !== null && prototype !== Object.prototype) break;
+          if (!keys.every((key): key is string => typeof key === "string" && !loneSurrogate.test(key))) break;
+          const sorted = keys.sort(compareCodePoints);
+          const output: Record<string, TraceJson> = Object.create(null);
+          stack.push({ source: value, output, keys: sorted, end: sorted.length, next: 0 });
+          accepted = output;
+        }
+        ancestors.add(value);
+      } else break;
+      if (path.length > 0) {
+        const parent = stack[path.length - 1]!;
+        if (Array.isArray(parent.output)) parent.output.push(accepted);
+        else parent.output[path[path.length - 1]!] = accepted;
+      } else input = accepted;
+
+      while (stack.length > 0 && stack[stack.length - 1]!.next === stack[stack.length - 1]!.end) {
+        ancestors.delete(stack.pop()!.source);
+      }
+      const next = stack[stack.length - 1];
+      if (next === undefined) return Result.succeed(input as TraceJson);
+      const key = next.keys?.[next.next] ?? String(next.next);
+      next.next += 1;
+      path.length = stack.length;
+      path[path.length - 1] = key;
+      const descriptor = Object.getOwnPropertyDescriptor(next.source, key);
+      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) break;
+      value = descriptor.value;
+    }
+  } catch {
+    // Reflective operations can fail for a proxy. Treat it like other invalid inputs.
+  }
+  return Result.fail({ path });
+}
+
+/** The same canonical bytes as JSON.stringify on the sorted snapshot, emitted in small pieces. */
+export function* canonicalTraceJsonChunks(value: TraceJson): Generator<string> {
+  type Frame = {
+    readonly value: readonly TraceJson[] | { readonly [key: string]: TraceJson };
+    readonly keys: readonly string[] | undefined;
+    readonly end: number;
+    next: number;
+  };
+  const stack: Frame[] = [];
+  const pieces = function* (): Generator<string> {
+    let current = value;
+    for (;;) {
+      if (current !== null && typeof current === "object") {
+        const keys = Array.isArray(current) ? undefined : Object.keys(current);
+        stack.push({ value: current, keys, end: keys?.length ?? (current as readonly TraceJson[]).length, next: 0 });
+        yield keys === undefined ? "[" : "{";
+      } else if (typeof current === "string" && current.length > 16_384) {
+        yield '"';
+        for (let offset = 0; offset < current.length;) {
+          let end = Math.min(offset + 16_384, current.length);
+          const last = current.charCodeAt(end - 1);
+          if (end < current.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+          yield JSON.stringify(current.slice(offset, end)).slice(1, -1);
+          offset = end;
+        }
+        yield '"';
+      } else yield JSON.stringify(current);
+
+      while (stack.length > 0 && stack[stack.length - 1]!.next === stack[stack.length - 1]!.end) {
+        yield stack.pop()!.keys === undefined ? "]" : "}";
+      }
+      const frame = stack[stack.length - 1];
+      if (frame === undefined) return;
+      if (frame.next > 0) yield ",";
+      if (frame.keys === undefined) current = (frame.value as readonly TraceJson[])[frame.next]!;
+      else {
+        const key = frame.keys[frame.next]!;
+        yield JSON.stringify(key);
+        yield ":";
+        current = (frame.value as { readonly [key: string]: TraceJson })[key]!;
+      }
+      frame.next += 1;
+    }
+  };
+  let chunk = "";
+  for (const piece of pieces()) {
+    if (chunk.length + piece.length > 16_384 && chunk !== "") {
+      yield chunk;
+      chunk = "";
+    }
+    chunk += piece;
+  }
+  if (chunk !== "") yield chunk;
+}
+
+/** Decode UTF-8 across storage chunk boundaries without concatenating byte buffers. */
+export function parseTraceArtifactJson(chunks: Iterable<Uint8Array>): unknown {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let text = "";
+  for (const chunk of chunks) text += decoder.decode(chunk, { stream: true });
+  return JSON.parse(text + decoder.decode());
+}
+
 const CollectionSchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("complete"),
@@ -51,7 +182,7 @@ const CollectionSchema = Schema.Union([
     state: Schema.Literal("partial"),
     limitations: Schema.NonEmptyArray(
       Schema.Struct({
-        code: BoundedIdentifierSchema,
+        code: IdentifierSchema,
         message: Schema.String,
       }),
     ),
@@ -59,17 +190,18 @@ const CollectionSchema = Schema.Union([
 ]);
 
 const ScopeSchema = Schema.Struct({
-  scopeId: BoundedIdentifierSchema,
+  scopeId: IdentifierSchema,
   label: Schema.String,
   boundary: ExecutionTraceJsonSchema,
 });
+const InputScopeSchema = ScopeSchema.mapFields((fields) => ({ ...fields, boundary: TraceInputJsonSchema }));
 
 const LinkSchema = Schema.Union([
-  Schema.Struct({ relation: BoundedIdentifierSchema, targetKey: BoundedIdentifierSchema }),
+  Schema.Struct({ relation: IdentifierSchema, targetKey: IdentifierSchema }),
   Schema.Struct({
-    relation: BoundedIdentifierSchema,
+    relation: IdentifierSchema,
     unresolved: Schema.Struct({
-      sourceEventId: BoundedIdentifierSchema,
+      sourceEventId: IdentifierSchema,
       reason: Schema.String,
     }),
   }),
@@ -89,7 +221,7 @@ const InputDisplayBlockSchema = Schema.Union([
   }),
   Schema.Struct({ kind: Schema.Literal("fields"), fields: DisplayFieldsSchema }),
   Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("image"), artifactId: BoundedIdentifierSchema, alt: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("image"), artifactId: IdentifierSchema, alt: Schema.String }),
 ]);
 
 /** Persisted image blocks carry the descriptor fixed at acceptance. */
@@ -105,7 +237,7 @@ export const ExecutionDisplayBlockRecordSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("code"), language: Schema.optional(Schema.String), text: Schema.String }),
   Schema.Struct({
     kind: Schema.Literal("image"),
-    artifactId: BoundedIdentifierSchema,
+    artifactId: IdentifierSchema,
     alt: Schema.String,
     mediaType: Schema.Literals(["image/png", "image/jpeg", "image/webp", "image/gif"]),
     byteLength: NonNegativeSafeIntegerSchema,
@@ -114,41 +246,41 @@ export const ExecutionDisplayBlockRecordSchema = Schema.Union([
 ]);
 
 const InputEvidenceSchema = Schema.Struct({
-  key: BoundedIdentifierSchema,
+  key: IdentifierSchema,
   label: Schema.String,
-  artifactId: BoundedIdentifierSchema,
+  artifactId: IdentifierSchema,
   pointer: Schema.String,
 });
 
 const InputEventSchema = Schema.Struct({
-  key: BoundedIdentifierSchema,
-  type: BoundedIdentifierSchema,
+  key: IdentifierSchema,
+  type: IdentifierSchema,
   source: Schema.Struct({
-    id: BoundedIdentifierSchema,
-    eventId: Schema.optional(BoundedIdentifierSchema),
+    id: IdentifierSchema,
+    eventId: Schema.optional(IdentifierSchema),
     sequence: Schema.optional(NonNegativeSafeIntegerSchema),
   }),
   actor: Schema.optional(
     Schema.Struct({
-      id: BoundedIdentifierSchema,
+      id: IdentifierSchema,
       label: Schema.optional(Schema.String),
     }),
   ),
   time: Schema.optional(
     Schema.Struct({
-      clockId: BoundedIdentifierSchema,
+      clockId: IdentifierSchema,
       value: FiniteNumberSchema,
-      unit: BoundedIdentifierSchema,
+      unit: IdentifierSchema,
     }),
   ),
-  summary: SummarySchema,
-  payload: Schema.optional(ExecutionTraceJsonSchema),
+  summary: Schema.String,
+  payload: Schema.optional(TraceInputJsonSchema),
   links: Schema.optional(Schema.Array(LinkSchema)),
   evidence: Schema.optional(Schema.Array(InputEvidenceSchema)),
   scopeMemberships: Schema.optional(
     Schema.Array(
       Schema.Struct({
-        scopeId: BoundedIdentifierSchema,
+        scopeId: IdentifierSchema,
         state: Schema.Literals(["included", "excluded", "unknown"]),
       }),
     ),
@@ -157,57 +289,57 @@ const InputEventSchema = Schema.Struct({
 });
 
 export const ExecutionTraceInputSchema = Schema.Struct({
-  traceId: BoundedIdentifierSchema,
-  schema: Schema.Struct({ id: BoundedIdentifierSchema }),
+  traceId: IdentifierSchema,
+  schema: Schema.Struct({ id: IdentifierSchema }),
   collection: CollectionSchema,
-  scopes: Schema.Array(ScopeSchema),
+  scopes: Schema.Array(InputScopeSchema),
   events: Schema.Array(InputEventSchema),
 });
 
 export const ExecutionTraceHeaderRecordSchema = Schema.Struct({
   kind: Schema.Literal("trace-header"),
-  traceId: BoundedIdentifierSchema,
-  sourceTraceId: BoundedIdentifierSchema,
-  schema: Schema.Struct({ id: BoundedIdentifierSchema }),
+  traceId: IdentifierSchema,
+  sourceTraceId: IdentifierSchema,
+  schema: Schema.Struct({ id: IdentifierSchema }),
   collection: CollectionSchema,
   scopes: Schema.Array(ScopeSchema),
 });
 
 export const ExecutionTraceEventRecordSchema = Schema.Struct({
   kind: Schema.Literal("event"),
-  traceId: BoundedIdentifierSchema,
-  eventId: BoundedIdentifierSchema,
+  traceId: IdentifierSchema,
+  eventId: IdentifierSchema,
   ordinal: NonNegativeSafeIntegerSchema,
-  key: BoundedIdentifierSchema,
-  type: BoundedIdentifierSchema,
+  key: IdentifierSchema,
+  type: IdentifierSchema,
   source: Schema.Struct({
-    id: BoundedIdentifierSchema,
-    eventId: Schema.optional(BoundedIdentifierSchema),
+    id: IdentifierSchema,
+    eventId: Schema.optional(IdentifierSchema),
     sequence: Schema.optional(NonNegativeSafeIntegerSchema),
   }),
   actor: Schema.optional(
     Schema.Struct({
-      id: BoundedIdentifierSchema,
+      id: IdentifierSchema,
       label: Schema.optional(Schema.String),
     }),
   ),
   time: Schema.optional(
     Schema.Struct({
-      clockId: BoundedIdentifierSchema,
+      clockId: IdentifierSchema,
       value: FiniteNumberSchema,
-      unit: BoundedIdentifierSchema,
+      unit: IdentifierSchema,
     }),
   ),
-  summary: SummarySchema,
+  summary: Schema.String,
   payload: Schema.optional(ExecutionTraceJsonSchema),
   links: Schema.Array(LinkSchema),
   evidence: Schema.Array(
     Schema.Struct({
-      key: BoundedIdentifierSchema,
+      key: IdentifierSchema,
       label: Schema.String,
-      artifactId: BoundedIdentifierSchema,
+      artifactId: IdentifierSchema,
       pointer: Schema.String,
-      evidenceId: BoundedIdentifierSchema,
+      evidenceId: IdentifierSchema,
       artifactSha256: Sha256Schema,
       targetSha256: Sha256Schema,
       targetByteLength: NonNegativeSafeIntegerSchema,
@@ -215,7 +347,7 @@ export const ExecutionTraceEventRecordSchema = Schema.Struct({
   ),
   scopeMemberships: Schema.Array(
     Schema.Struct({
-      scopeId: BoundedIdentifierSchema,
+      scopeId: IdentifierSchema,
       state: Schema.Literals(["included", "excluded", "unknown"]),
     }),
   ),
@@ -234,27 +366,10 @@ export type ExecutionTraceRecord = Schema.Schema.Type<typeof ExecutionTraceRecor
 export type ExecutionDisplayBlockRecord = Schema.Schema.Type<typeof ExecutionDisplayBlockRecordSchema>;
 
 export const ExecutionTraceRecordLimits = Object.freeze({
-  maximumTraces: 32,
-  maximumEvents: 100_000,
-  maximumCanonicalInputBytes: 64 * 1024 * 1024,
-  maximumPayloadBytes: 16 * 1024,
-  maximumSummaryBytes: 512,
-  maximumLinksPerEvent: 32,
-  maximumEvidencePerEvent: 8,
-  maximumScopesPerEvent: 8,
-  maximumJsonDepth: 32,
-  maximumIdentifierBytes: 256,
-  maximumEvidenceSourceBytes: 256 * 1024 * 1024,
-  maximumEvidenceTargetBytes: 128 * 1024 * 1024,
   maximumDetailPreviewBytes: 2 * 1024,
   maximumDetailBytes: 512 * 1024,
   maximumOutlineEvents: 32,
   maximumOutlineBytes: 64 * 1024,
-  maximumDisplayBlocksPerEvent: 4,
-  maximumDisplayBytesPerEvent: 8 * 1024,
-  maximumDisplayFields: 16,
-  maximumDisplayLabelBytes: 128,
-  maximumDisplayAltBytes: 512,
   maximumDisplayPreviewBytes: 1024,
   maximumOutlineEventBytes: 8 * 1024,
   maximumDisplayInlineImageBytes: 16 * 1024 * 1024,

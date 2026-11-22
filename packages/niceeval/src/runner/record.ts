@@ -822,7 +822,9 @@ export function openRunnerRecordCoordinator(input: {
             validateExecutionTracePublication(executionTraces, attachmentSnapshot?.artifacts ?? []);
             yield* active.session.records.appendAll(
               executionTracesRecordCollection,
-              Stream.fromIterable(executionTraces.traces.flatMap((trace) => trace.records)),
+              Stream.fromIterable(executionTraces.traces).pipe(
+                Stream.flatMap((trace) => Stream.fromIterable(trace.records)),
+              ),
             );
             yield* active.session.records.close(
               executionTracesRecordCollection,

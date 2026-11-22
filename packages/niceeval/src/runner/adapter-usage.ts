@@ -7,8 +7,7 @@ import { createAdapterCallPriceReceipts } from "../o11y/adapter-call-price.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
 import {
   AdapterUsageCallSchema,
-  AdapterUsageLimits,
-  validateAdapterUsageCalls,
+  adapterUsageInputTokensAreConsistent,
   type AdapterUsageCall,
   type AdapterUsageAttachment,
 } from "../record/family/adapter-usage/schema.ts";
@@ -84,9 +83,7 @@ export class AdapterUsageCollector {
       }
       if (call.retryOf !== null && !this.calls.has(call.retryOf))
         throw new Error("Adapter usage retryOf must reference an earlier call in this Attempt");
-      if (this.calls.size >= AdapterUsageLimits.maximumCalls)
-        throw new Error("Adapter usage exceeds 4000 calls per Attempt");
-      if (validateAdapterUsageCalls([...this.calls.values(), call]).length > 0) {
+      if (!adapterUsageInputTokensAreConsistent(call)) {
         throw new Error("Adapter input token observations are inconsistent or exceed safe integer limits");
       }
       this.calls.set(call.callId, call);

@@ -4,28 +4,26 @@ import { openSync, readSync, closeSync } from "node:fs";
 import { Data, Result, Schema, SchemaIssue } from "effect";
 
 import type { ExecutionTraceInput, ExecutionTraceReceipt, TraceJson } from "../adapter-execution-trace.ts";
-import { canonicalizeRecordJson, canonicalRecordJsonText, type RecordJson } from "../record/definition/canonical.ts";
 import {
+  canonicalTraceJsonChunks,
   displayTextHasForbiddenCharacter,
+  parseTraceArtifactJson,
+  snapshotTraceJson,
   ExecutionDisplayImageMediaTypes,
   ExecutionTraceInputSchema,
-  ExecutionTraceRecordLimits,
   type ExecutionDisplayBlockRecord,
   type ExecutionTraceEventRecord,
   type ExecutionTraceHeaderRecord,
   type ExecutionTraceRecord,
 } from "../record/family/execution-traces/schema.ts";
-import { RECORD_SQLITE_MAX_ROW_BYTES } from "../record/sqlite/types.ts";
 import type { EvalResult } from "./types.ts";
 import type { CapturedAdapterAttachment } from "./adapter-attachments.ts";
 
 export class AdapterExecutionTraceError extends Data.TaggedError("AdapterExecutionTraceError")<{
   readonly code:
     | "execution-trace-invalid"
-    | "execution-trace-limit"
     | "execution-trace-conflict"
     | "execution-trace-evidence-missing"
-    | "evidence-budget-exceeded"
     | "execution-trace-closed"
     | "execution-trace-failed"
     | "execution-display-invalid";
@@ -63,36 +61,6 @@ export interface AdapterExecutionTraceCollector {
   readonly snapshot: () => AdapterExecutionTraceSnapshot;
 }
 
-const INPUT_LIMITS = {
-  maximumJsonBytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
-  maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
-  maximumNodes: 40_000_000,
-  maximumObjectKeys: 20_000_000,
-  maximumArrayItems: 40_000_000,
-  maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
-  maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumCanonicalInputBytes,
-} as const;
-
-const TARGET_LIMITS = {
-  maximumJsonBytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
-  maximumDepth: ExecutionTraceRecordLimits.maximumJsonDepth,
-  maximumNodes: 70_000_000,
-  maximumObjectKeys: 40_000_000,
-  maximumArrayItems: 70_000_000,
-  maximumKeyUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
-  maximumStringUtf8Bytes: ExecutionTraceRecordLimits.maximumEvidenceTargetBytes,
-} as const;
-
-const PERSISTED_ITEM_LIMITS = {
-  maximumJsonBytes: RECORD_SQLITE_MAX_ROW_BYTES,
-  maximumDepth: 64,
-  maximumNodes: 100_000,
-  maximumObjectKeys: 10_000,
-  maximumArrayItems: 100_000,
-  maximumKeyUtf8Bytes: 16_384,
-  maximumStringUtf8Bytes: RECORD_SQLITE_MAX_ROW_BYTES,
-} as const;
-
 const exactDecode = Schema.decodeUnknownResult(ExecutionTraceInputSchema, {
   onExcessProperty: "error",
 });
@@ -111,7 +79,6 @@ function invalidEnvelope(error: Schema.SchemaError): AdapterExecutionTraceError 
   }
   return traceError("execution-trace-invalid", "Execution trace envelope is invalid.");
 }
-const utf8 = new TextEncoder();
 
 interface VerifiedEvidenceTarget {
   readonly artifactSha256: string;
@@ -123,8 +90,14 @@ function traceError(code: AdapterExecutionTraceError["code"], message: string): 
   return new AdapterExecutionTraceError({ code, message });
 }
 
-function digest(bytes: Uint8Array | string): string {
-  return createHash("sha256").update(bytes).digest("hex");
+function digestCanonicalTraceJson(value: TraceJson): { readonly sha256: string; readonly byteLength: number } {
+  const hash = createHash("sha256");
+  let byteLength = 0;
+  for (const chunk of canonicalTraceJsonChunks(value)) {
+    byteLength += Buffer.byteLength(chunk);
+    hash.update(chunk);
+  }
+  return { sha256: hash.digest("hex"), byteLength };
 }
 
 function stableId(prefix: "et" | "ee" | "ev"): string {
@@ -219,42 +192,47 @@ function parseArtifactJson(artifact: CapturedAdapterAttachment): unknown {
       `Evidence artifact ${artifact.artifactId} is not application/json.`,
     );
   }
-  if (artifact.byteLength > 64 * 1024 * 1024) {
-    throw traceError("execution-trace-limit", "JSON evidence attachment exceeds the 64 MiB parsing limit.");
-  }
-  let bytes: Uint8Array;
-  try {
-    if (artifact.filePath === undefined) bytes = artifact.bytes;
-    else {
-      const fd = openSync(artifact.filePath, "r");
-      try {
-        const bounded = new Uint8Array(artifact.byteLength + 1);
-        let read = 0;
-        while (read < bounded.byteLength) {
-          const count = readSync(fd, bounded, read, bounded.byteLength - read, null);
-          if (count === 0) break;
-          read += count;
-        }
-        bytes = bounded.subarray(0, read);
-      } finally {
-        closeSync(fd);
+  const hash = createHash("sha256");
+  let byteLength = 0;
+  function* chunks(): Generator<Uint8Array> {
+    const chunkBytes = 64 * 1024;
+    if (artifact.filePath === undefined) {
+      for (let offset = 0; offset < artifact.bytes.byteLength; offset += chunkBytes) {
+        const chunk = artifact.bytes.subarray(offset, offset + chunkBytes);
+        hash.update(chunk);
+        byteLength += chunk.byteLength;
+        yield chunk;
       }
+      return;
     }
-    if (bytes.byteLength !== artifact.byteLength || digest(bytes) !== artifact.sha256)
-      throw new Error("Attachment integrity check failed");
-  } catch {
-    throw traceError(
-      "execution-trace-evidence-missing",
-      `Evidence artifact ${artifact.artifactId} integrity check failed.`,
-    );
+    const fd = openSync(artifact.filePath, "r");
+    try {
+      const buffer = new Uint8Array(chunkBytes);
+      for (;;) {
+        const count = readSync(fd, buffer, 0, buffer.byteLength, null);
+        if (count === 0) break;
+        const chunk = buffer.subarray(0, count);
+        hash.update(chunk);
+        byteLength += chunk.byteLength;
+        yield chunk;
+      }
+    } finally {
+      closeSync(fd);
+    }
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+    parsed = parseTraceArtifactJson(chunks());
   } catch {
     throw traceError(
       "execution-trace-evidence-missing",
-      `Evidence artifact ${artifact.artifactId} is not valid UTF-8 JSON.`,
+      `Evidence artifact ${artifact.artifactId} could not be read as UTF-8 JSON.`,
+    );
+  }
+  if (byteLength !== artifact.byteLength || hash.digest("hex") !== artifact.sha256) {
+    throw traceError(
+      "execution-trace-evidence-missing",
+      `Evidence artifact ${artifact.artifactId} integrity check failed.`,
     );
   }
   return parsed;
@@ -279,78 +257,50 @@ function checkDisplayString(
   eventIndex: number,
   blockIndex: number,
   field: string,
-  options: { readonly maximumBytes?: number; readonly singleLine?: boolean },
+  singleLine = false,
 ): void {
   if (displayTextHasForbiddenCharacter(value)) {
     throw displayInvalid(eventIndex, blockIndex, field, "contains a control or bidirectional formatting character.");
   }
-  if (options.singleLine === true && value.includes("\n")) {
+  if (singleLine && value.includes("\n")) {
     throw displayInvalid(eventIndex, blockIndex, field, "must not contain a line break.");
-  }
-  if (options.maximumBytes !== undefined && utf8.encode(value).byteLength > options.maximumBytes) {
-    throw displayInvalid(eventIndex, blockIndex, field, `exceeds ${options.maximumBytes} UTF-8 bytes.`);
   }
 }
 
-/** Validates one event's display blocks against the closed vocabulary limits. */
+/** Validates one event's display blocks against the closed vocabulary. */
 function verifyDisplay(event: InputEvent, eventIndex: number): void {
   const display = event.display;
   if (display === undefined) return;
-  const limits = ExecutionTraceRecordLimits;
   if (display.length === 0)
     throw displayInvalid(eventIndex, undefined, "length", "must not be empty; omit display instead.");
-  if (display.length > limits.maximumDisplayBlocksPerEvent) {
-    throw displayInvalid(eventIndex, undefined, "length", `exceeds ${limits.maximumDisplayBlocksPerEvent} blocks.`);
-  }
   for (const [blockIndex, block] of display.entries()) {
     switch (block.kind) {
       case "text":
-        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        checkDisplayString(block.text, eventIndex, blockIndex, "text");
         break;
       case "message":
-        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        checkDisplayString(block.text, eventIndex, blockIndex, "text");
         if (block.speaker !== undefined) {
-          checkDisplayString(block.speaker, eventIndex, blockIndex, "speaker", {
-            maximumBytes: limits.maximumDisplayLabelBytes,
-            singleLine: true,
-          });
+          checkDisplayString(block.speaker, eventIndex, blockIndex, "speaker", true);
         }
         break;
       case "fields":
-        if (block.fields.length > limits.maximumDisplayFields) {
-          throw displayInvalid(eventIndex, blockIndex, "fields", `exceeds ${limits.maximumDisplayFields} entries.`);
-        }
         for (const [fieldIndex, field] of block.fields.entries()) {
-          checkDisplayString(field.label, eventIndex, blockIndex, `fields[${fieldIndex}].label`, {
-            maximumBytes: limits.maximumDisplayLabelBytes,
-            singleLine: true,
-          });
+          checkDisplayString(field.label, eventIndex, blockIndex, `fields[${fieldIndex}].label`, true);
           if (typeof field.value === "string")
-            checkDisplayString(field.value, eventIndex, blockIndex, `fields[${fieldIndex}].value`, {});
+            checkDisplayString(field.value, eventIndex, blockIndex, `fields[${fieldIndex}].value`);
         }
         break;
       case "code":
-        checkDisplayString(block.text, eventIndex, blockIndex, "text", {});
+        checkDisplayString(block.text, eventIndex, blockIndex, "text");
         if (block.language !== undefined) {
-          checkDisplayString(block.language, eventIndex, blockIndex, "language", {
-            maximumBytes: limits.maximumDisplayLabelBytes,
-            singleLine: true,
-          });
+          checkDisplayString(block.language, eventIndex, blockIndex, "language", true);
         }
         break;
       case "image":
-        checkDisplayString(block.alt, eventIndex, blockIndex, "alt", {
-          maximumBytes: limits.maximumDisplayAltBytes,
-          singleLine: true,
-        });
+        checkDisplayString(block.alt, eventIndex, blockIndex, "alt", true);
         break;
     }
-  }
-  if (
-    utf8.encode(canonicalRecordJsonText(display as unknown as RecordJson)).byteLength >
-    limits.maximumDisplayBytesPerEvent
-  ) {
-    throw displayInvalid(eventIndex, undefined, "length", `exceeds ${limits.maximumDisplayBytesPerEvent} UTF-8 bytes.`);
   }
 }
 
@@ -389,26 +339,10 @@ function durableDisplay(
       sha256: artifact.sha256,
     };
   });
-  if (
-    utf8.encode(canonicalRecordJsonText(blocks as unknown as RecordJson)).byteLength >
-    ExecutionTraceRecordLimits.maximumDisplayBytesPerEvent
-  ) {
-    throw displayInvalid(
-      eventIndex,
-      undefined,
-      "length",
-      `exceeds ${ExecutionTraceRecordLimits.maximumDisplayBytesPerEvent} UTF-8 bytes.`,
-    );
-  }
-  const [first, ...rest] = blocks;
-  return first === undefined ? undefined : [first, ...rest];
+  return blocks.length === 0 ? undefined : (blocks as [ExecutionDisplayBlockRecord, ...ExecutionDisplayBlockRecord[]]);
 }
 
 function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSchema>): void {
-  const limits = ExecutionTraceRecordLimits;
-  if (input.events.length > limits.maximumEvents) {
-    throw traceError("execution-trace-limit", "Execution trace exceeds 100000 events.");
-  }
   const scopeIds = new Set<string>();
   for (const scope of input.scopes) {
     if (scopeIds.has(scope.scopeId))
@@ -423,25 +357,6 @@ function verifySemantics(input: Schema.Schema.Type<typeof ExecutionTraceInputSch
     if (eventKeys.has(event.key))
       throw traceError("execution-trace-invalid", "Execution trace event keys must be unique.");
     eventKeys.add(event.key);
-    if (utf8.encode(event.summary).byteLength > limits.maximumSummaryBytes) {
-      throw traceError("execution-trace-limit", "Execution trace event summary exceeds 512 UTF-8 bytes.");
-    }
-    if (
-      event.payload !== undefined &&
-      utf8.encode(canonicalRecordJsonText(event.payload as RecordJson)).byteLength > limits.maximumPayloadBytes
-    ) {
-      throw traceError("execution-trace-limit", "Execution trace event payload exceeds 16 KiB.");
-    }
-    if (
-      (event.links?.length ?? 0) > limits.maximumLinksPerEvent ||
-      (event.evidence?.length ?? 0) > limits.maximumEvidencePerEvent ||
-      (event.scopeMemberships?.length ?? 0) > limits.maximumScopesPerEvent
-    ) {
-      throw traceError(
-        "execution-trace-limit",
-        "Execution trace event exceeds its link, evidence, or scope-membership limit.",
-      );
-    }
     const evidenceKeys = new Set<string>();
     for (const evidence of event.evidence ?? []) {
       if (evidenceKeys.has(evidence.key))
@@ -490,9 +405,6 @@ export function createAdapterExecutionTraceCollector(
 ): AdapterExecutionTraceCollector {
   const accepted = new Map<string, AcceptedExecutionTrace>();
   const acceptedIds = new Set<string>();
-  let eventCount = 0;
-  let canonicalInputBytes = 0;
-  let acceptedEvidenceTargetBytes = 0;
   let closed = false;
   let firstFailure: AdapterExecutionTraceError | undefined;
   let sealed: AdapterExecutionTraceSnapshot | undefined;
@@ -519,7 +431,7 @@ export function createAdapterExecutionTraceCollector(
   ): Promise<ExecutionTraceReceipt> => {
     try {
       if (closed) throw traceError("execution-trace-closed", "Execution trace collection is closed.");
-      const canonical = canonicalizeRecordJson(input, INPUT_LIMITS);
+      const canonical = snapshotTraceJson(input);
       if (Result.isFailure(canonical)) {
         if (canonical.failure.path[0] === "events" && canonical.failure.path[2] === "display") {
           const path = canonical.failure.path
@@ -528,22 +440,15 @@ export function createAdapterExecutionTraceCollector(
             .replace(/^\./u, "");
           throw traceError(
             "execution-display-invalid",
-            `${path}: display must contain finite plain JSON and valid UTF-8 text within its limits.`,
+            `${path}: display must contain finite plain JSON and valid UTF-8 text.`,
           );
         }
-        const shape = exactDecode(input);
-        if (Result.isFailure(shape)) {
-          const error = invalidEnvelope(shape.failure);
-          if (error.code === "execution-display-invalid") throw error;
-        }
         throw traceError(
-          canonical.failure.code === "record-json-limit-exceeded" ? "execution-trace-limit" : "execution-trace-invalid",
-          "Execution trace must be finite plain JSON within the 64 MiB and depth limits.",
+          "execution-trace-invalid",
+          "Execution trace must be finite plain JSON with valid UTF-8 text.",
         );
       }
-      const canonicalText = canonicalRecordJsonText(canonical.success);
-      const snapshotBytes = utf8.encode(canonicalText).byteLength;
-      const canonicalInputDigest = digest(canonicalText);
+      const canonicalInputDigest = digestCanonicalTraceJson(canonical.success).sha256;
       const decoded = exactDecode(canonical.success);
       if (Result.isFailure(decoded)) throw invalidEnvelope(decoded.failure);
       const snapshot = decoded.success;
@@ -556,19 +461,9 @@ export function createAdapterExecutionTraceCollector(
         }
         return Promise.resolve(prior.receipt);
       }
-      if (
-        accepted.size >= ExecutionTraceRecordLimits.maximumTraces ||
-        eventCount + snapshot.events.length > ExecutionTraceRecordLimits.maximumEvents ||
-        canonicalInputBytes + snapshotBytes > ExecutionTraceRecordLimits.maximumCanonicalInputBytes
-      ) {
-        throw traceError("execution-trace-limit", "Execution trace exceeds the Attempt trace or event limit.");
-      }
-
       const byArtifactId = new Map(artifacts().map((artifact) => [artifact.artifactId, artifact] as const));
       const parsedArtifacts = new Map<string, unknown>();
       const verifiedTargets = new Map<string, VerifiedEvidenceTarget>();
-      let evidenceSourceBytes = 0;
-      let evidenceTargetBytes = 0;
       const pendingIds = new Set<string>();
       const traceId = mintStableId("et", pendingIds);
       const receiptEvents: Array<ExecutionTraceReceipt["events"][number]> = [];
@@ -605,10 +500,6 @@ export function createAdapterExecutionTraceCollector(
           const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
           let artifactJson = parsedArtifacts.get(artifactCacheKey);
           if (artifactJson === undefined) {
-            evidenceSourceBytes += artifact.byteLength;
-            if (evidenceSourceBytes > ExecutionTraceRecordLimits.maximumEvidenceSourceBytes) {
-              throw traceError("evidence-budget-exceeded", "Execution trace evidence source budget exceeded.");
-            }
             artifactJson = parseArtifactJson(artifact);
             parsedArtifacts.set(artifactCacheKey, artifactJson);
           }
@@ -622,27 +513,18 @@ export function createAdapterExecutionTraceCollector(
                 `Evidence pointer ${evidence.pointer} does not resolve in ${artifact.artifactId}.`,
               );
             }
-            const canonicalTarget = canonicalizeRecordJson(target, TARGET_LIMITS);
+            const canonicalTarget = snapshotTraceJson(target);
             if (Result.isFailure(canonicalTarget)) {
               throw traceError(
-                canonicalTarget.failure.code === "record-json-limit-exceeded"
-                  ? "evidence-budget-exceeded"
-                  : "execution-trace-evidence-missing",
+                "execution-trace-evidence-missing",
                 "Execution trace evidence target is invalid.",
               );
             }
-            const targetBytes = utf8.encode(canonicalRecordJsonText(canonicalTarget.success));
-            evidenceTargetBytes += targetBytes.byteLength;
-            if (
-              acceptedEvidenceTargetBytes + evidenceTargetBytes >
-              ExecutionTraceRecordLimits.maximumEvidenceTargetBytes
-            ) {
-              throw traceError("evidence-budget-exceeded", "Execution trace evidence target budget exceeded.");
-            }
+            const targetIdentity = digestCanonicalTraceJson(canonicalTarget.success);
             verified = {
               artifactSha256: artifact.sha256,
-              targetSha256: digest(targetBytes),
-              targetByteLength: targetBytes.byteLength,
+              targetSha256: targetIdentity.sha256,
+              targetByteLength: targetIdentity.byteLength,
             };
             verifiedTargets.set(targetKey, verified);
           }
@@ -691,15 +573,6 @@ export function createAdapterExecutionTraceCollector(
         );
       }
 
-      for (const record of records) {
-        if (Result.isFailure(canonicalizeRecordJson(record, PERSISTED_ITEM_LIMITS))) {
-          throw traceError(
-            "execution-trace-limit",
-            "Execution trace header or event exceeds the portable Record item limit.",
-          );
-        }
-      }
-
       const receipt: ExecutionTraceReceipt = Object.freeze({
         state: "accepted",
         traceId,
@@ -713,9 +586,6 @@ export function createAdapterExecutionTraceCollector(
       };
       accepted.set(snapshot.traceId, retained);
       for (const id of pendingIds) acceptedIds.add(id);
-      eventCount += snapshot.events.length;
-      canonicalInputBytes += snapshotBytes;
-      acceptedEvidenceTargetBytes += evidenceTargetBytes;
       return Promise.resolve(receipt);
     } catch (cause) {
       return rejectSettled(fail(cause));
@@ -752,25 +622,22 @@ export function validateExecutionTracePublication(
   const byArtifactId = new Map(artifacts.map((artifact) => [artifact.artifactId, artifact] as const));
   const parsedArtifacts = new Map<string, unknown>();
   const verifiedTargets = new Map<string, VerifiedEvidenceTarget>();
-  let sourceBytes = 0;
-  let targetBytes = 0;
   const traceIds = new Set<string>();
   const sourceTraceIds = new Set<string>();
-  let publishedEventCount = 0;
   for (const trace of snapshot.traces) {
-    const [header, ...events] = trace.records;
+    const header = trace.records[0];
+    const eventCount = trace.records.length - 1;
     if (
       header?.kind !== "trace-header" ||
       header.traceId !== trace.receipt.traceId ||
       traceIds.has(header.traceId) ||
       sourceTraceIds.has(header.sourceTraceId) ||
-      events.length !== trace.receipt.events.length
+      eventCount !== trace.receipt.events.length
     ) {
       throw traceError("execution-trace-failed", "Execution trace durable header is invalid.");
     }
     traceIds.add(header.traceId);
     sourceTraceIds.add(header.sourceTraceId);
-    publishedEventCount += events.length;
     const scopeIds = new Set<string>();
     for (const scope of header.scopes) {
       if (scopeIds.has(scope.scopeId))
@@ -782,13 +649,14 @@ export function validateExecutionTracePublication(
     const evidenceIds = new Set<string>();
     const causeEdges = new Map<string, string[]>();
     const clockUnits = new Map<string, string>();
-    for (const record of events) {
+    for (let index = 1; index < trace.records.length; index += 1) {
+      const record = trace.records[index]!;
       const receiptEvent = trace.receipt.events[record.kind === "event" ? record.ordinal : -1];
       if (
         record.kind !== "event" ||
         record.traceId !== header.traceId ||
         record.ordinal < 0 ||
-        record.ordinal >= events.length ||
+        record.ordinal >= eventCount ||
         receiptEvent?.key !== record.key ||
         receiptEvent.eventId !== record.eventId ||
         eventKeys.has(record.key) ||
@@ -855,13 +723,6 @@ export function validateExecutionTracePublication(
         const artifactCacheKey = `${artifact.artifactId}\u0000${artifact.sha256}`;
         let artifactJson = parsedArtifacts.get(artifactCacheKey);
         if (artifactJson === undefined) {
-          sourceBytes += artifact.byteLength;
-          if (sourceBytes > ExecutionTraceRecordLimits.maximumEvidenceSourceBytes) {
-            throw traceError(
-              "evidence-budget-exceeded",
-              "Execution trace evidence source budget exceeded at publication.",
-            );
-          }
           artifactJson = parseArtifactJson(artifact);
           parsedArtifacts.set(artifactCacheKey, artifactJson);
         }
@@ -874,24 +735,17 @@ export function validateExecutionTracePublication(
               "execution-trace-evidence-missing",
               "Execution trace evidence pointer closure is invalid.",
             );
-          const canonical = canonicalizeRecordJson(target, TARGET_LIMITS);
+          const canonical = snapshotTraceJson(target);
           if (Result.isFailure(canonical))
             throw traceError(
               "execution-trace-evidence-missing",
               "Execution trace evidence target is invalid at publication.",
             );
-          const bytes = utf8.encode(canonicalRecordJsonText(canonical.success));
-          targetBytes += bytes.byteLength;
-          if (targetBytes > ExecutionTraceRecordLimits.maximumEvidenceTargetBytes) {
-            throw traceError(
-              "evidence-budget-exceeded",
-              "Execution trace evidence target budget exceeded at publication.",
-            );
-          }
+          const targetIdentity = digestCanonicalTraceJson(canonical.success);
           verified = {
             artifactSha256: artifact.sha256,
-            targetSha256: digest(bytes),
-            targetByteLength: bytes.byteLength,
+            targetSha256: targetIdentity.sha256,
+            targetByteLength: targetIdentity.byteLength,
           };
           verifiedTargets.set(key, verified);
         }
@@ -906,7 +760,8 @@ export function validateExecutionTracePublication(
         }
       }
     }
-    for (const record of events) {
+    for (let index = 1; index < trace.records.length; index += 1) {
+      const record = trace.records[index]!;
       if (record.kind !== "event") continue;
       for (const link of record.links) {
         if ("targetKey" in link && !eventKeys.has(link.targetKey)) {
@@ -917,11 +772,5 @@ export function validateExecutionTracePublication(
     if (causesCycle([...eventKeys], causeEdges)) {
       throw traceError("execution-trace-failed", "Execution trace durable causes links contain a cycle.");
     }
-  }
-  if (
-    traceIds.size > ExecutionTraceRecordLimits.maximumTraces ||
-    publishedEventCount > ExecutionTraceRecordLimits.maximumEvents
-  ) {
-    throw traceError("execution-trace-limit", "Execution trace publication exceeds its trace or event limit.");
   }
 }

@@ -50,7 +50,8 @@ export const displayAdapter = defineAdapter({
                 key: "event",
                 type: "observation",
                 source: { id: "fixture" },
-                summary: "event-" + index,
+                summary: action.summary ?? "event-" + index,
+                ...(action.payload === undefined ? {} : { payload: action.payload }),
                 ...(display === undefined ? {} : { display }),
               }],
             });
@@ -189,15 +190,27 @@ function previewText(block: any): string {
 
 describe("execution display block validation", () => {
   let project: FixtureProject;
+  let largeProject: FixtureProject;
+  let largeEventLocator: string;
+  const largeSummary = "summary".repeat(160);
+  const largePayload = { exactText: "界".repeat(350_000), trailing: "last value" };
+  const largeDisplay = Array.from({ length: 5 }, (_, index) => ({ kind: "text", text: `block-${index}` }));
 
   beforeAll(async () => {
     project = await createFixtureProject("niceeval-adapter-display", FILES);
-    // Warm the project loader so the measured test pays only for its own Experiment run.
     await writeJson(project.cwd, "actions.json", { actions: [] });
     await runSingleAttempt(project.cwd, "display");
+
+    largeProject = await createFixtureProject("niceeval-adapter-large-trace", FILES);
+    await writeJson(largeProject.cwd, "actions.json", {
+      actions: [{ summary: largeSummary, payload: largePayload, display: largeDisplay }],
+    });
+    largeEventLocator = await runSingleAttempt(largeProject.cwd, "display");
+    expect(await readJson(largeProject.cwd, "outcomes.json")).toEqual([{ accepted: true }]);
   });
   afterAll(async () => {
     await project?.dispose();
+    await largeProject?.dispose();
   });
 
   // @feature docs/feature/adapters/README.md#display-block-validation
@@ -261,4 +274,27 @@ describe("execution display block validation", () => {
     },
     60_000,
   );
+  test("publishes and reads an execution event larger than one SQLite row", async () => {
+    await withOperational(largeProject.cwd, (facts) => {
+      const locator = largeEventLocator;
+      const { execution } = selectInspectionOperation(facts, { kind: "attempt.trace", locator }).trace;
+      expect(execution.state).toBe("complete");
+      expect(execution.events).toHaveLength(1);
+      expect(execution.events[0]).toMatchObject({
+        summary: largeSummary.slice(0, 1024),
+        omittedSummaryBytes: largeSummary.length - 1024,
+      });
+      const eventId = execution.events[0]!.eventId;
+      const { detail } = selectInspectionOperation(facts, {
+        kind: "attempt.trace.detail",
+        locator,
+        selector: { kind: "execution-event", eventId },
+      });
+      expect(detail).toMatchObject({
+        kind: "execution-event",
+        event: { summary: largeSummary, payload: largePayload, display: largeDisplay },
+      });
+    });
+  }, 60_000);
+
 });

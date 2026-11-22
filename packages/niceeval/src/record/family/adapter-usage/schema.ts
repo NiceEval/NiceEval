@@ -93,7 +93,6 @@ export const AdapterUsageCallSchema = Schema.Struct({
   modelSlot: Schema.NullOr(AdapterUsageModelSlotSchema),
 });
 export type AdapterUsageCall = Schema.Schema.Type<typeof AdapterUsageCallSchema>;
-export const AdapterUsageLimits = Object.freeze({ maximumCalls: 4_000 });
 export const AdapterUsageAttachmentSchema = Schema.Struct({
   collection: CollectionStateSchema,
   calls: Schema.Array(AdapterUsageCallSchema),
@@ -195,17 +194,19 @@ function receiptIssue(call: AdapterUsageCall, receipt: AdapterCallPriceReceipt):
   return undefined;
 }
 
+export function adapterUsageInputTokensAreConsistent(call: AdapterUsageCall): boolean {
+  const buckets = [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens];
+  const known = buckets.filter((value): value is number => value !== null);
+  const sum = known.reduce((total, value) => total + value, 0);
+  return Number.isSafeInteger(sum) &&
+    (call.inputTotalTokens === null ||
+      (sum <= call.inputTotalTokens && (known.length !== 3 || sum === call.inputTotalTokens)));
+}
+
 export function validateAdapterUsageCalls(calls: readonly AdapterUsageCall[]): readonly RecordAttachmentIssue[] {
   const seen = new Set<string>();
   for (const call of calls) {
-    const buckets = [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens];
-    const known = buckets.filter((value): value is number => value !== null);
-    const sum = known.reduce((total, value) => total + value, 0);
-    if (
-      !Number.isSafeInteger(sum) ||
-      (call.inputTotalTokens !== null &&
-        (sum > call.inputTotalTokens || (known.length === 3 && sum !== call.inputTotalTokens)))
-    ) {
+    if (!adapterUsageInputTokensAreConsistent(call)) {
       return [recordAttachmentIssue("record-attachment-schema-invalid", ["calls", "inputTotalTokens"])];
     }
     if (seen.has(call.callId) || (call.retryOf !== null && !seen.has(call.retryOf))) {
@@ -213,9 +214,7 @@ export function validateAdapterUsageCalls(calls: readonly AdapterUsageCall[]): r
     }
     seen.add(call.callId);
   }
-  return calls.length > AdapterUsageLimits.maximumCalls
-    ? [recordAttachmentIssue("record-attachment-schema-invalid", ["calls"])]
-    : [];
+  return [];
 }
 
 export function validateAdapterUsageAttachment(

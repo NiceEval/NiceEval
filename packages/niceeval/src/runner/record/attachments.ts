@@ -15,7 +15,7 @@ import { createFileChangesCaptureAttachment, type FileChangesAttachmentBuild } f
 import type { AssertionsProducerError } from "../../assertions/record/producer.ts";
 import type { AssertionEntryId } from "../../assertions/identity.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
-import { ArtifactsAttachmentSchema, ArtifactsLimits, type ArtifactsAttachment } from "../../record/family/artifacts.ts";
+import { ArtifactsAttachmentSchema, type ArtifactsAttachment } from "../../record/family/artifacts.ts";
 import type { AssertionSourceSite } from "../../record/family/assertions/definition.ts";
 import type { RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import { runnerAttemptFileChangesCaptureForResult } from "../sandbox-record-producer.ts";
@@ -291,10 +291,6 @@ export function createAttemptArtifactsAttachment(
   }));
   let omittedAtLeast = 0;
   const appendJson = (label: string, value: unknown): void => {
-    if (captures.length >= ArtifactsLimits.maximumArtifacts) {
-      omittedAtLeast += 1;
-      return;
-    }
     let encoded: string | undefined;
     try {
       encoded = JSON.stringify(value);
@@ -307,10 +303,6 @@ export function createAttemptArtifactsAttachment(
       return;
     }
     const bytes = new TextEncoder().encode(encoded);
-    if (bytes.byteLength > 64 * 1024 * 1024) {
-      omittedAtLeast += 1;
-      return;
-    }
     captures.push({ artifactId: undefined, mediaType: "application/json", label, bytes });
   };
 

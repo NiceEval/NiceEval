@@ -616,6 +616,7 @@ export const ExecutionDisplayPreviewSchema = Schema.Union([
   Schema.Struct({ state: Schema.Literal("absent") }),
   Schema.Struct({
     state: Schema.Literal("present"),
+    omittedBlockCount: Schema.optional(NonNegativeSafeIntegerSchema),
     blocks: Schema.Array(
       Schema.Union([
         Schema.Struct({ kind: Schema.Literal("text"), text: ExecutionDisplayPreviewTextSchema }),
@@ -742,6 +743,7 @@ export const InspectionTraceResultSchema = Schema.Struct({
         actor: ExecutionTraceEventRecordSchema.fields.actor,
         time: ExecutionTraceEventRecordSchema.fields.time,
         summary: Schema.String,
+        omittedSummaryBytes: Schema.optional(NonNegativeSafeIntegerSchema),
         links: ExecutionTraceEventRecordSchema.fields.links,
         evidence: Schema.Array(Schema.Struct({ evidenceId: Schema.String, key: Schema.String, label: Schema.String })),
         scopeMemberships: ExecutionTraceEventRecordSchema.fields.scopeMemberships,
@@ -918,6 +920,7 @@ export const InspectionTraceDetailResultSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("execution-event"),
     event: ExecutionTraceEventRecordSchema,
+    omittedEvidencePreviewCount: Schema.optional(NonNegativeSafeIntegerSchema),
     evidence: Schema.Array(
       Schema.Struct({
         evidenceId: Schema.String,

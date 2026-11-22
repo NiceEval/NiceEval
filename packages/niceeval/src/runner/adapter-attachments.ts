@@ -2,23 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
-import { Data, Effect, Result, Schema } from "effect";
+import { Data, Effect, Result, Schema, Semaphore } from "effect";
 
 import type { AdapterAttachmentInput, AdapterAttachmentReceipt } from "../adapter-attachments.ts";
 import { RecordExactParseOptions } from "../record/codec/core.ts";
-import { ArtifactsLimits } from "../record/family/artifacts/schema.ts";
 import { MediaTypeSchema, SafeTextSchema } from "../record/family/common.ts";
 import type { EvalResult } from "./types.ts";
 
-export const AdapterAttachmentLimits = Object.freeze({
-  maximumArtifacts: ArtifactsLimits.maximumArtifacts,
-  maximumContentBytes: 64 * 1024 * 1024,
-  maximumStreamBytes: ArtifactsLimits.maximumContentBytes,
-  maximumChunkBytes: 1024 * 1024,
-  maximumActiveStreams: 4,
-  maximumArchivedBytes: 2 * 1024 * 1024 * 1024,
-  maximumTotalBytes: 256 * 1024 * 1024,
-});
+const MAX_CHUNK_BYTES = 1024 * 1024;
 
 export class AdapterAttachmentError extends Data.TaggedError("AdapterAttachmentError")<{
   readonly code:
@@ -81,8 +72,7 @@ const decodeInput = Schema.decodeUnknownResult(InputSchema, RecordExactParseOpti
 /** The Attempt owner closes this collector only when its cleanup window ends. */
 export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAttachmentCollector {
   const artifacts: CapturedAdapterAttachment[] = [];
-  let totalBytes = 0;
-  let archivedBytes = 0;
+  const streamSlots = Semaphore.makeUnsafe(4);
   let directory: Promise<string> | undefined;
   const pending = new Map<AbortController, Promise<AdapterAttachmentReceipt>>();
   const pendingItems = new Set<AbortController>();
@@ -111,7 +101,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
     const controller = new AbortController();
     pendingItems.add(controller);
     const signal = value.signal === undefined ? controller.signal : AbortSignal.any([controller.signal, value.signal]);
-    let reservedBytes = 0;
+    let byteLength = 0;
     const artifactId = `art_${randomBytes(10).toString("hex")}`;
     const operation = Effect.tryPromise({
       try: async () => {
@@ -125,9 +115,10 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
         let accepted = false;
         let iterator: AsyncIterator<Uint8Array> | undefined;
         let ended = false;
+        const producerController = new AbortController();
         try {
           signal.throwIfAborted();
-          iterator = value.body.stream(signal)[Symbol.asyncIterator]();
+          iterator = value.body.stream(AbortSignal.any([signal, producerController.signal]))[Symbol.asyncIterator]();
           const hash = createHash("sha256");
           for (;;) {
             signal.throwIfAborted();
@@ -168,23 +159,15 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
               await setImmediate();
               continue;
             }
-            function exceededLimit(): string | undefined {
-              if (size > AdapterAttachmentLimits.maximumChunkBytes) return "1 MiB chunk";
-              if (reservedBytes + size > AdapterAttachmentLimits.maximumStreamBytes) return "1 GiB stream";
-              if (archivedBytes + size > AdapterAttachmentLimits.maximumArchivedBytes) return "2 GiB Attempt";
-              return undefined;
-            }
-            const exceeded = exceededLimit();
-            if (exceeded !== undefined) {
+            if (size > MAX_CHUNK_BYTES) {
               throw new AdapterAttachmentError({
                 code: "adapter-attachment-limit",
-                message: `Attachment exceeds the ${exceeded} limit.`,
+                message: "Attachment exceeds the 1 MiB chunk limit.",
               });
             }
             // One owned chunk at a time; no prefetch or retained chunk collection.
             const bytes = new Uint8Array(next.value);
-            reservedBytes += size;
-            archivedBytes += size;
+            byteLength += size;
             hash.update(bytes);
             let offset = 0;
             while (offset < bytes.byteLength) {
@@ -205,7 +188,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
             artifactId,
             name: value.name,
             mediaType: value.mediaType,
-            byteLength: reservedBytes,
+            byteLength,
             sha256: hash.digest("hex"),
           };
           pendingItems.delete(controller);
@@ -214,7 +197,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
           return receipt;
         } finally {
           if (!ended) {
-            controller.abort();
+            producerController.abort();
             // A non-cooperative producer must not hold our file or cleanup open.
             // Calling return requests release; the producer owns its external IO.
             try {
@@ -226,16 +209,18 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
           try {
             await destination.close();
           } finally {
-            if (!accepted) {
-              archivedBytes -= reservedBytes;
-              await rm(filePath, { force: true });
-            }
+            if (!accepted) await rm(filePath, { force: true });
           }
         }
       },
       catch: markFailure,
     });
-    const promise = Effect.runPromise(Effect.result(operation))
+    // Waiting is interruptible. An active stream releases its slot only after file cleanup.
+    const capture = streamSlots.withPermit(Effect.uninterruptible(operation));
+    const promise = Effect.runPromise(Effect.result(capture), { signal })
+      .catch((cause: unknown) => {
+        throw markFailure(signal.aborted ? signal.reason : cause);
+      })
       .then((result) => {
         if (Result.isFailure(result)) throw result.failure;
         return result.success;
@@ -265,37 +250,12 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
       }
       const value = decoded.success;
       value.signal?.throwIfAborted();
-      if (artifacts.length + pendingItems.size >= AdapterAttachmentLimits.maximumArtifacts) {
-        throw new AdapterAttachmentError({
-          code: "adapter-attachment-limit",
-          message: "Attachment exceeds the 4000 item limit.",
-        });
-      }
       if (typeof value.body === "object" && !(value.body instanceof Uint8Array)) {
-        if (pending.size >= AdapterAttachmentLimits.maximumActiveStreams) {
-          throw new AdapterAttachmentError({
-            code: "adapter-attachment-limit",
-            message: "Attachment exceeds the 4 active stream limit.",
-          });
-        }
         return captureStream({
           name: value.name,
           mediaType: value.mediaType,
           ...(value.signal === undefined ? {} : { signal: value.signal }),
           body: value.body,
-        });
-      }
-      // Check the UTF-8 size before allocating an encoded copy of a large string.
-      const byteLength = typeof value.body === "string" ? Buffer.byteLength(value.body, "utf8") : value.body.byteLength;
-      if (
-        byteLength > AdapterAttachmentLimits.maximumContentBytes ||
-        totalBytes + byteLength > AdapterAttachmentLimits.maximumTotalBytes ||
-        archivedBytes + byteLength > AdapterAttachmentLimits.maximumArchivedBytes ||
-        artifacts.length >= AdapterAttachmentLimits.maximumArtifacts
-      ) {
-        throw new AdapterAttachmentError({
-          code: "adapter-attachment-limit",
-          message: "Attachment exceeds the 64 MiB item, 256 MiB Attempt, or 4000 item limit.",
         });
       }
       // This must happen before returning the Promise; caller mutation cannot race acceptance.
@@ -308,8 +268,6 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
         sha256: createHash("sha256").update(bytes).digest("hex"),
       };
       artifacts.push({ ...receipt, bytes });
-      totalBytes += bytes.byteLength;
-      archivedBytes += bytes.byteLength;
       return Promise.resolve(receipt);
     } catch (cause) {
       const rejection = Promise.reject<AdapterAttachmentReceipt>(markFailure(cause));
@@ -323,7 +281,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
   const dispose = (): Promise<void> =>
     (disposal ??= (async () => {
       closed = true;
-      for (const controller of pending.keys()) controller.abort();
+      for (const controller of pendingItems) controller.abort();
       await Promise.allSettled([...pending.values()]);
       if (directory !== undefined) {
         const root = await directory.catch(() => undefined);
@@ -340,7 +298,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
     artifacts: () => [...artifacts],
     close: () => {
       if (closed) return;
-      if (pending.size > 0) {
+      if (pendingItems.size > 0) {
         markFailure(
           new AdapterAttachmentError({
             code: "adapter-attachment-closed",
@@ -349,7 +307,7 @@ export function createAdapterAttachmentCollector(stagingRoot: string): AdapterAt
         );
       }
       closed = true;
-      for (const controller of pending.keys()) controller.abort();
+      for (const controller of pendingItems) controller.abort();
       sealed = { artifacts: [...artifacts], failure: firstFailure, dispose };
     },
     dispose,

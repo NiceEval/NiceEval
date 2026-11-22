@@ -3,7 +3,6 @@ import * as Schema from "effect/Schema";
 import {
   RecordBytesContentSchema,
   recordAttachmentIssue,
-  recordContent,
   type RecordAttachmentIssue,
 } from "../../attachment/index.ts";
 import { ArtifactIdSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
@@ -15,11 +14,6 @@ import {
   isCanonicalIdentitySequence,
 } from "../common.ts";
 
-export const ArtifactsLimits = Object.freeze({
-  maximumArtifacts: 4_000,
-  maximumContentBytes: 1024 * 1024 * 1024,
-});
-
 /** sha256 identifies the Artifact bytes fact, never its physical placement. */
 export const ArtifactSchema = Schema.Struct({
   artifactId: ArtifactIdSchema,
@@ -27,7 +21,7 @@ export const ArtifactSchema = Schema.Struct({
   label: Schema.toType(SafeTextSchema),
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordBytesContentSchema.pipe(recordContent.maximumBytes(ArtifactsLimits.maximumContentBytes)),
+  content: RecordBytesContentSchema,
 });
 
 export type Artifact = Schema.Schema.Type<typeof ArtifactSchema>;
@@ -45,22 +39,13 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
 }
 
 /**
- * Core enforces the content declaration limit and owns physical read
- * integrity. This logical validator cannot open a sealed content handle;
+ * Core owns physical read integrity. This logical validator cannot open a sealed content handle;
  * producers must derive byteLength and sha256 from the same source they seal.
  */
 export function validateArtifactsAttachment(value: ArtifactsAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
-  if (value.artifacts.length > ArtifactsLimits.maximumArtifacts) {
-    issues.push(invalid(["artifacts"]));
-  }
   if (!isCanonicalIdentitySequence(value.artifacts.map((artifact) => artifact.artifactId))) {
     issues.push(invalid(["artifacts", "artifactId"]));
-  }
-  for (const [index, artifact] of value.artifacts.entries()) {
-    if (artifact.byteLength > ArtifactsLimits.maximumContentBytes) {
-      issues.push(invalid(["artifacts", String(index), "byteLength"]));
-    }
   }
   return issues;
 }

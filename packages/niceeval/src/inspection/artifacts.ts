@@ -52,13 +52,13 @@ export const InspectionArtifactResultSchema = Schema.Union([
 ]);
 export type InspectionArtifactResult = Schema.Schema.Type<typeof InspectionArtifactResultSchema>;
 
-export interface InspectionArtifactBytes {
+export interface InspectionArtifactSource {
   readonly artifactId: string;
   readonly name: string;
   readonly mediaType: string;
   readonly byteLength: number;
   readonly sha256: string;
-  readonly bytes: Uint8Array;
+  readonly chunks: () => Iterable<Uint8Array>;
 }
 
 export class InspectionArtifactError extends Data.TaggedError("InspectionArtifactError")<{
@@ -250,25 +250,15 @@ function hydrateArtifactDescriptors(resolved: ResolvedInspectionAttempt): readon
   });
 }
 
-/** Internal fixed-family closure reader. It verifies the whole sealed artifact. */
-export function readInspectionArtifactBytes(
+/** Internal fixed-family closure reader. Each opened stream verifies the whole sealed artifact. */
+export function readInspectionArtifactSources(
   resolved: ResolvedInspectionAttempt,
-  artifactId: string,
-  maximumBytes: number,
-): Result.Result<InspectionArtifactBytes | undefined, InspectionArtifactError> {
-  if (Result.isFailure(decodeRequest({ artifactId }))) return requestInvalid("Invalid artifact ID.");
+): Result.Result<ReadonlyMap<string, InspectionArtifactSource>, InspectionArtifactError> {
   try {
-    const artifact = hydrateArtifactDescriptors(resolved).find((entry) => entry.artifactId === artifactId);
-    if (artifact === undefined) return Result.succeed(undefined);
-    if (artifact.byteLength > maximumBytes) return requestInvalid("Artifact exceeds the evidence parsing budget.");
-    return Result.succeed({
-      artifactId,
-      name: artifact.name,
-      mediaType: artifact.mediaType,
-      byteLength: artifact.byteLength,
-      sha256: artifact.sha256,
-      bytes: readVerifiedRange(resolved.origin.source, artifact.content, 0, artifact.byteLength),
-    });
+    return Result.succeed(new Map(hydrateArtifactDescriptors(resolved).map(({ content, ...descriptor }) => [
+      descriptor.artifactId,
+      { ...descriptor, chunks: () => verifiedChunks(resolved.origin.source, content) },
+    ])));
   } catch (cause) {
     return Result.fail(
       new InspectionArtifactError({
@@ -335,6 +325,17 @@ export function readVerifiedRange(
   limit: number,
 ): Uint8Array {
   const output = new Uint8Array(Math.min(limit, metadata.byteLength - offset));
+  let byteOffset = 0;
+  for (const bytes of verifiedChunks(source, metadata)) {
+    const start = Math.max(offset, byteOffset);
+    const end = Math.min(offset + output.byteLength, byteOffset + bytes.byteLength);
+    if (end > start) output.set(bytes.subarray(start - byteOffset, end - byteOffset), start - offset);
+    byteOffset += bytes.byteLength;
+  }
+  return output;
+}
+
+function* verifiedChunks(source: InspectionFactSource, metadata: PersistedContentMetadata): Generator<Uint8Array> {
   const digest = new InspectionSha256();
   let byteOffset = 0;
   let expectedOrdinal = 0;
@@ -357,9 +358,7 @@ export function readVerifiedRange(
       )
         throw new Error("Artifact chunk sequence is invalid.");
       digest.update(chunk.bytes);
-      const start = Math.max(offset, byteOffset);
-      const end = Math.min(offset + output.byteLength, byteOffset + chunk.bytes.byteLength);
-      if (end > start) output.set(chunk.bytes.subarray(start - byteOffset, end - byteOffset), start - offset);
+      yield chunk.bytes;
       byteOffset += chunk.bytes.byteLength;
       expectedOrdinal += 1;
     }
@@ -376,5 +375,4 @@ export function readVerifiedRange(
   ) {
     throw new Error("Artifact bytes do not match their sealed digest.");
   }
-  return output;
 }
