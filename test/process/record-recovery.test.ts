@@ -1,12 +1,12 @@
 // 跨进程保证：进程终止与信号——真实 niceeval 进程被 SIGKILL 后，已发布 Attempt 保留，后续 Invocation 只执行缺失 slot，owner 终结后才可恢复收口
 import { createRequire } from "node:module";
-import { rm, writeFile } from "node:fs/promises";
+import { copyFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { invokeCli } from "../integration/fixtures/judge-harness/harness.ts";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { expect, test } from "vitest";
+import { invokeCli } from "../integration/fixtures/judge-harness/harness.ts";
 import { createRecordProject, openGate, waitForGate } from "../integration/fixtures/record-harness/project.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
@@ -14,17 +14,34 @@ const require = createRequire(new URL("../../packages/niceeval/package.json", im
 const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
 const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
 
+const { decodeRunDocument } = require("niceeval/run") as typeof import("../../packages/niceeval/src/run/index.ts");
+
+const { experimentHost } =
+  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
+
 const start = (cwd: string, args: readonly string[]) =>
-  execa(process.execPath, [...process.execArgv, cli, ...args], { cwd, env: { NO_COLOR: "1" }, extendEnv: true, reject: false });
+  execa(process.execPath, [...process.execArgv, cli, ...args], {
+    cwd,
+    env: { NO_COLOR: "1" },
+    extendEnv: true,
+    reject: false,
+  });
 
 // @feature docs/feature/run/README.md#interrupt-recovery
-test("after SIGKILL published Attempts survive, only the missing slot reruns, and recover closes the old Run", { timeout: 60_000 }, async () => {
+test("after SIGKILL recovery closes the Session and preserves readable published Sources in a portable Record", {
+  timeout: 60_000,
+}, async () => {
   const cwd = await createRecordProject("niceeval-record-recovery-", { held: true });
   const list = async () => (await Effect.runPromise(runHost.list({ cwd }))).runs;
   const get = async (runId: string) => (await Effect.runPromise(runHost.get({ cwd, runId }))).run;
   const child = start(cwd, ["exp", "runs", "--rerun", "all", "--json"]);
   try {
-    await Promise.race([waitForGate(cwd, "entered"), child.then((r) => { throw new Error(`exp exited early\n${r.stderr}`); })]);
+    await Promise.race([
+      waitForGate(cwd, "entered"),
+      child.then((r) => {
+        throw new Error(`exp exited early\n${r.stderr}`);
+      }),
+    ]);
     let originId = "";
     for (const deadline = Date.now() + 15_000; Date.now() < deadline; await setTimeout(20)) {
       const run = (await list())[0];
@@ -34,32 +51,182 @@ test("after SIGKILL published Attempts survive, only the missing slot reruns, an
       }
     }
     expect(originId).not.toBe("");
+    const beforeRecovery = await get(originId);
+    const published = beforeRecovery.slots.find((slot) => slot.publication.state === "published")!.publication;
+    if (published.state !== "published") throw new Error("Expected publication");
     child.kill("SIGKILL");
     expect((await child).signal).toBe("SIGKILL");
-
-    expect((await list())[0]).toMatchObject({ runId: originId, state: "active", coverage: { expected: 2, published: 1, missing: 1 } });
-
-    await openGate(cwd, "release");
-    const resumed = await start(cwd, ["exp", "runs", "--json"]);
-    expect(resumed.exitCode, resumed.stderr).toBe(0);
-    const resumedRun = await get((await list()).find((run) => run.runId !== originId)!.runId);
-    expect(resumedRun.coverage).toEqual({ expected: 2, published: 2, missing: 0 });
-    expect(
-      resumedRun.slots.map((slot) => [slot.evalId, slot.publication.state === "published" ? slot.publication.action : slot.publication.state]).sort(),
-    ).toEqual([["first", "carried"], ["held", "executed"]]);
 
     await Effect.runPromise(runHost.recover({ cwd, runId: originId }));
     const closed = await get(originId);
     expect(closed.state).toBe("interrupted");
+    expect(closed.slots.find((slot) => slot.publication.state === "published")?.publication).toEqual(published);
     expect(closed.coverage).toEqual({ expected: 2, published: 1, missing: 1 });
     expect(closed.slots.find((slot) => slot.publication.state === "absent")?.publication).toMatchObject({
       reason: "interrupted-before-publication",
+    });
+    expect(closed.slots.map((slot) => slot.executionIdentityDigest)).toEqual(beforeRecovery.slots.map((slot) => slot.executionIdentityDigest));
+    const portable = join(cwd, "portable.sqlite");
+    await copyFile(join(cwd, ".niceeval/record.sqlite"), portable);
+    const sourceAfter = await invokeCli(cwd, ["show", published.attemptLocator, "source", "--record", portable, "--json"]);
+    expect(sourceAfter.code, sourceAfter.stderr || sourceAfter.stdout).toBe(0);
+    expect(JSON.parse(sourceAfter.stdout)).toMatchObject({ sources: { state: "available", items: expect.arrayContaining([
+      expect.objectContaining({ path: "evals/first.eval.ts", content: expect.objectContaining({ state: "available" }) }),
+      expect.objectContaining({ path: "adapter.ts", content: expect.objectContaining({ state: "available" }) }),
+    ]) } });
+    const sourceFacts = JSON.parse(sourceAfter.stdout).sources;
+    expect(sourceFacts.assertions.state).toBe("available");
+    expect(sourceFacts.assertions.sourceSites.length).toBeGreaterThan(0);
+    for (const site of sourceFacts.assertions.sourceSites) {
+      expect(site.source.state).toBe("mapped");
+      expect(sourceFacts.items).toContainEqual(expect.objectContaining({ sourceItemId: site.source.sourceItemId, sha256: site.source.sha256 }));
+    }
+    const invocationId = closed.invocationId;
+    const { session } = await Effect.runPromise(
+      experimentHost.invocationStatus.show({ cwd, invocationSelector: invocationId }),
+    );
+    expect(session).toMatchObject({ status: "interrupted", experiments: [{ runId: originId, lifecycle: "terminal" }] });
+
+
+  } finally {
+    child.kill("SIGKILL");
+    await child;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// @feature docs/feature/run/README.md#interrupt-recovery
+test("exact Run recovery leaves sibling Runs active until the final Run closes their Session", {
+  timeout: 30_000,
+}, async () => {
+  const cwd = await createRecordProject("niceeval-session-recovery-", { held: true });
+  await copyFile(join(cwd, "experiments/runs.ts"), join(cwd, "experiments/sibling.ts"));
+  const child = start(cwd, ["exp", "--experiment", "runs", "--experiment", "sibling", "--rerun", "all", "--json"]);
+  try {
+    await Promise.race([
+      waitForGate(cwd, "entered"),
+      child.then((result) => {
+        throw new Error(`exp exited early\n${result.stderr}`);
+      }),
+    ]);
+    const { runs } = await Effect.runPromise(runHost.list({ cwd }));
+    expect(runs).toHaveLength(2);
+    const [first, second] = runs;
+    expect(first!.invocationId).toBe(second!.invocationId);
+    const session = async () =>
+      (await Effect.runPromise(experimentHost.invocationStatus.show({ cwd, invocationSelector: first!.invocationId })))
+        .session;
+    child.kill("SIGKILL");
+    expect((await child).signal).toBe("SIGKILL");
+    const siblingBefore = (await Effect.runPromise(runHost.get({ cwd, runId: second!.runId }))).run;
+    await Effect.runPromise(runHost.recover({ cwd, runId: first!.runId }));
+    expect((await Effect.runPromise(runHost.get({ cwd, runId: second!.runId }))).run).toMatchObject({
+      ...siblingBefore, owner: { state: "gone" },
+    });
+    expect(await session()).toMatchObject({ status: "active" });
+    await Effect.runPromise(runHost.recover({ cwd, runId: second!.runId }));
+    expect(await session()).toMatchObject({
+      status: "interrupted",
+      experiments: expect.arrayContaining([
+        expect.objectContaining({ runId: first!.runId, lifecycle: "terminal" }),
+        expect.objectContaining({ runId: second!.runId, lifecycle: "terminal" }),
+      ]),
     });
   } finally {
     child.kill("SIGKILL");
     await child;
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+// @feature docs/feature/run/README.md#interrupt-recovery
+test("recover repairs an abandoned Session for a completed Run without changing its result or cutoff", {
+  timeout: 30_000,
+}, async () => {
+  const cwd = await createRecordProject("niceeval-terminal-session-recovery-", { held: false });
+  await writeFile(
+    join(cwd, "niceeval.config.ts"),
+    `
+    import { defineConfig } from "niceeval";
+    import { writeFileSync } from "node:fs";
+    import { setTimeout } from "node:timers/promises";
+    export default defineConfig({ reporters: [{ async onInvocationComplete() {
+      writeFileSync(${JSON.stringify(join(cwd, "gates/entered"))}, "1");
+      while (true) await setTimeout(1000);
+    } }] });
+  `,
+  );
+  const child = start(cwd, ["exp", "runs", "--json"]);
+  try {
+    await Promise.race([
+      waitForGate(cwd, "entered"),
+      child.then((result) => {
+        throw new Error(`exp exited early\n${result.stderr}`);
+      }),
+    ]);
+    const { runs } = await Effect.runPromise(runHost.list({ cwd }));
+    expect(runs).toHaveLength(1);
+    const run = runs[0]!;
+    const before = await Effect.runPromise(runHost.get({ cwd, runId: run.runId }));
+    expect(before.run.state).toBe("completed");
+    child.kill("SIGKILL");
+    expect((await child).signal).toBe("SIGKILL");
+    const recovered = await invokeCli(cwd, ["run", "recover", run.runId, "--yes", "--json"]);
+    expect(recovered.code, recovered.stderr || recovered.stdout).toBe(0);
+    expect(decodeRunDocument(JSON.parse(recovered.stdout))).toEqual({
+      success: true,
+      value: { operation: "run.recover", runId: run.runId, state: "completed" },
+    });
+    expect(await Effect.runPromise(runHost.get({ cwd, runId: run.runId }))).toEqual(before);
+    expect(
+      (await Effect.runPromise(experimentHost.invocationStatus.show({ cwd, invocationSelector: run.invocationId })))
+        .session,
+    ).toMatchObject({ status: "interrupted" });
+    const repeated = await Effect.runPromise(Effect.result(runHost.recover({ cwd, runId: run.runId })));
+    expect(repeated).toMatchObject({ _tag: "Failure", failure: { code: "run-terminal" } });
+  } finally {
+    child.kill("SIGKILL");
+    await child;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+// @feature docs/feature/run/README.md#interrupt-recovery
+test("a resumed Invocation carries the published slot after recovery releases abandoned case locks", { timeout: 30_000 }, async () => {
+  const cwd = await createRecordProject("niceeval-carry-recovery-", { held: true });
+  const child = start(cwd, ["exp", "runs", "--rerun", "all", "--json"]);
+  try {
+    await Promise.race([waitForGate(cwd, "entered"), child.then((r) => { throw new Error(r.stderr); })]);
+    let run;
+    for (let n = 0; n < 100; n++) {
+      run = (await Effect.runPromise(runHost.list({ cwd }))).runs[0];
+      if (run?.coverage.published === 1) break;
+      await setTimeout(20);
+    }
+    expect(run?.coverage.published).toBe(1);
+    child.kill("SIGKILL"); await child;
+    await Effect.runPromise(runHost.recover({ cwd, runId: run!.runId }));
+    await openGate(cwd, "release");
+    const plan = await Effect.runPromise(experimentHost.invocation.plan({ cwd, experimentSelector: "runs", config: { maxConcurrency: 2 } }));
+    if (plan.status !== "ready") throw new Error("Expected resume plan");
+    const { receipt } = await Effect.runPromise(experimentHost.invocation.run({ plan: plan.plan }));
+    const resumed = (await Effect.runPromise(runHost.get({ cwd, runId: receipt.createdRunIds[0]! }))).run;
+    expect(resumed.coverage).toEqual({ expected: 2, published: 2, missing: 0 });
+    expect(resumed.slots.map((slot) => [slot.evalId, slot.publication.state === "published" ? slot.publication.action : slot.publication.state]).sort())
+      .toEqual([["first", "carried"], ["held", "executed"]]);
+  } finally { child.kill("SIGKILL"); await child; await rm(cwd, { recursive: true, force: true }); }
+});
+
+// @feature docs/feature/run/README.md#interrupt-recovery
+test("recovery refuses an exact owner that is still alive", { timeout: 15_000 }, async () => {
+  const cwd = await createRecordProject("niceeval-live-recovery-", { held: true });
+  const child = start(cwd, ["exp", "runs", "--json"]);
+  try {
+    await Promise.race([waitForGate(cwd, "entered"), child.then((r) => { throw new Error(r.stderr); })]);
+    const run = (await Effect.runPromise(runHost.list({ cwd }))).runs[0]!;
+    const refused = await Effect.runPromise(Effect.result(runHost.recover({ cwd, runId: run.runId })));
+    expect(refused).toMatchObject({ _tag: "Failure", failure: { code: "run-owner-active" } });
+  } finally { child.kill("SIGKILL"); await child; await rm(cwd, { recursive: true, force: true }); }
 });
 
 // @feature docs/feature/assertions/README.md

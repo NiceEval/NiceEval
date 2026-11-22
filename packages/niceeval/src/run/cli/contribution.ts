@@ -400,7 +400,7 @@ Usage:
           const receipt = yield* rawRunHost
             .recover({ cwd: facts.cwd, runId })
             .pipe(Effect.mapError((cause) => failure("recover", cause, json)));
-          yield* write("stdout", `Recovered Run ${receipt.runId} as interrupted.\n`);
+          yield* write("stdout", `Recovered Run ${receipt.runId} as ${receipt.state}.\n`);
           return 0;
         }
       }
@@ -439,7 +439,7 @@ Usage:
     else
       yield* write(
         "stdout",
-        `Recovered Run ${receipt.runId} as interrupted.
+        `Recovered Run ${receipt.runId} as ${receipt.state}.
 `,
       );
     return 0;

@@ -160,6 +160,11 @@ niceeval run recover --orphaned --yes --json
 
 recovering 表示恢复已经取得写入权，但这个 Run 还没有被标为结束。恢复进程中断后可重试同一命令；仍需证明上一个恢复进程已终止。恢复只为未发布的位置补上 absence 并结束这个 Run，保留已发布的 Attempt。它不会释放共享 State、执行 Experiment after 或清理 Sandbox；这些操作需要各自的显式命令。
 
+精确 Run recovery 也能修复终态 Run 遗留的未完成 Record 保存或未终结 Invocation Session。它保留原 state、完成时间、cutoff、absence 和 Attempt；没有残留时返回 `run-terminal`。
+`run recover <run-id> --yes --json` 返回 `runId` 与 `state`，后者为 `completed`、`interrupted` 或 `failed`，如实表示恢复后的终态。
+最后一个 Run 收口时，恢复会重新取证 Session owner 已终止，再共同终结 Session；只释放有精确 owner 终止证据的遗留 case lock。
+
+
 ## CLI flags
 
 下表从各命令自己的选项定义生成。表里没有的 flag 会被当作未知参数拒绝。

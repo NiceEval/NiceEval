@@ -5,6 +5,7 @@ import { encodeAttemptLocator, parseAttemptLocator } from "../../attempt-locator
 import type { AttemptId } from "../model/identifiers.ts";
 import {
   decodeRunDocument,
+  encodeRunDocument,
   decodeAttemptPublicationClosure,
   decodeMemberDocument,
   encodeMemberDocument,
@@ -996,8 +997,11 @@ function assertRunFence(
   }
   const active = recordStatement(
     connection,
-    "SELECT 1 FROM ne19_run_resources WHERE run_id=? AND terminal_state IS NULL AND current_writer_generation=?",
-  ).get(runId, writerGeneration);
+    `SELECT 1 FROM ne19_run_resources r WHERE run_id=? AND
+      ((terminal_state IS NULL AND current_writer_generation=?) OR
+       (terminal_state IS NOT NULL AND EXISTS (SELECT 1 FROM ne19_run_recoveries c
+        WHERE c.run_id=r.run_id AND c.recovery_writer_generation=?)))`,
+  ).get(runId, writerGeneration, writerGeneration);
   const row = runRow(connection, runId);
   if (
     active === undefined ||
@@ -2593,6 +2597,143 @@ export function persistSealedRun(connection: RecordDatabase, input: PersistSeale
     expectedLogicalSealIdentity: expectedIdentity,
     deadlineEpochMs: input.deadlineEpochMs,
   });
+}
+
+/** Seal an abandoned aggregate through the ordinary verified, batched finalization path. */
+export function sealRecoveredRun(
+  connection: RecordDatabase,
+  input: {
+    readonly runId: string;
+    readonly writerGeneration: string;
+    readonly completedAt: string;
+    readonly deadlineEpochMs: number;
+  },
+): void {
+  const header = runRow(connection, input.runId);
+  if (header === undefined || text(header, "status") === "sealed") return;
+  const fail = (): never => {
+    throw sqliteError("record-content-invalid", "recover-run-core", "Recovered Run Core is invalid");
+  };
+  const decoded = decodeRunDocument(
+    JSON.parse(
+      new TextDecoder().decode(
+        readRunValue(connection, input.runId, bytes(header, "core_payload"), text(header, "core_digest")),
+      ),
+    ),
+  );
+  if (Result.isFailure(decoded)) return fail();
+  const final = decodeRunDocument({ ...decoded.success, completedAt: Date.parse(input.completedAt) });
+  if (Result.isFailure(final)) return fail();
+  const encoded = encodeRunDocument(final.success);
+  if (Result.isFailure(encoded)) return fail();
+  const coreBytes = encodeRecordJsonUtf8(encoded.success);
+  const coreDigest = digestBytes(coreBytes);
+  const core = stageRunValue(
+    connection,
+    input.runId,
+    input.writerGeneration,
+    coreBytes,
+    coreDigest,
+    input.deadlineEpochMs,
+  );
+  withImmediateTransaction(connection, input.deadlineEpochMs, "recover-run-metadata", () => {
+    assertRunFence(connection, input.runId, input.writerGeneration, "recover-run-metadata");
+    recordStatement(connection, "UPDATE ne19_runs SET core_payload=?,core_digest=? WHERE run_id=?").run(
+      core,
+      coreDigest,
+      input.runId,
+    );
+    bumpMutationSequence(connection, input.runId);
+  });
+  // Admission may have crashed between the bounded Slot staging batches.
+  const expected = final.success.expectedSlots.map((slot, ordinal) => {
+    const payload = encodeRecordJsonUtf8(slot);
+    return { slot, ordinal, payload, digest: digestBytes(payload) };
+  });
+  for (const batch of batchesByBytes(expected, ({ payload }) => payload.byteLength))
+    withImmediateTransaction(connection, input.deadlineEpochMs, "recover-run-slots", () => {
+      assertRunFence(connection, input.runId, input.writerGeneration, "recover-run-slots");
+      const insert = recordStatement(
+        connection,
+        "INSERT OR IGNORE INTO ne19_slots(run_id,slot_id,ordinal,core_payload,core_digest) VALUES (?,?,?,?,?)",
+      );
+      for (const { slot, ordinal, payload, digest } of batch)
+        insert.run(input.runId, slot.slotId, ordinal, payload, digest);
+      bumpMutationSequence(connection, input.runId);
+    });
+  // Frozen bindings are the authority even if the process died before writing
+  // its final Member projection. Unpublished slots have no fabricated Attempt.
+  const slots = recordStatement(
+    connection,
+    `SELECT s.slot_id,b.action,b.origin_run_id,b.attempt_id,a.reason,m.action AS previous_action FROM ne19_run_expected_slots s
+    LEFT JOIN ne19_run_slot_bindings b ON b.target_run_id=s.run_id AND b.slot_id=s.slot_id
+    LEFT JOIN ne19_run_slot_absences a ON a.run_id=s.run_id AND a.slot_id=s.slot_id
+    LEFT JOIN ne19_members m ON m.target_run_id=s.run_id AND m.slot_id=s.slot_id
+    WHERE s.run_id=? ORDER BY s.ordinal`,
+  ).all(input.runId);
+  for (const batch of batchesByBytes(slots, () => 1)) {
+    const members = batch.map((slot) => {
+      const member = decodeMemberDocument(
+        slot.attempt_id === null
+          ? {
+              slotId: text(slot, "slot_id"),
+              action:
+                slot.previous_action === "not-dispatched" || slot.previous_action === "interrupted"
+                  ? slot.previous_action
+                  : slot.reason !== null && slot.reason !== "interrupted-before-publication"
+                    ? "not-dispatched"
+                    : "interrupted",
+              attempt: null,
+              absenceReason: slot.reason === null ? "interrupted-before-publication" : text(slot, "reason"),
+            }
+          : {
+              slotId: text(slot, "slot_id"),
+              action: text(slot, "action"),
+              attempt: { originRunId: text(slot, "origin_run_id"), attemptId: text(slot, "attempt_id") },
+            },
+      );
+      if (Result.isFailure(member)) return fail();
+      const encodedMember = encodeMemberDocument(member.success);
+      if (Result.isFailure(encodedMember)) return fail();
+      const payload = encodeRecordJsonUtf8(encodedMember.success);
+      return { member: member.success, payload, digest: digestBytes(payload) };
+    });
+    withImmediateTransaction(connection, input.deadlineEpochMs, "recover-run-members", () => {
+      assertRunFence(connection, input.runId, input.writerGeneration, "recover-run-members");
+      const insert = recordStatement(
+        connection,
+        `INSERT OR REPLACE INTO ne19_members(target_run_id,slot_id,origin_run_id,attempt_id,action,core_payload,core_digest)
+        VALUES (?,?,?,?,?,?,?)`,
+      );
+      for (const { member, payload, digest } of members)
+        insert.run(
+          input.runId,
+          member.slotId,
+          member.attempt?.originRunId ?? null,
+          member.attempt?.attemptId ?? null,
+          member.action,
+          payload,
+          digest,
+        );
+      bumpMutationSequence(connection, input.runId);
+    });
+  }
+  const prepared = prepareRunFinalization(connection, input);
+  const finalized = fenceRunFinalization(connection, {
+    ...input,
+    mutationSequence: prepared.mutationSequence,
+    expectedLogicalSealIdentity: prepared.logicalSealIdentity,
+    expectedSealEntryCount: prepared.sealEntryCount,
+  });
+  let ordinal: number | null = 0;
+  while (ordinal !== null)
+    ordinal = stageSealEntries(connection, {
+      ...input,
+      expectedLogicalSealIdentity: finalized.logicalSealIdentity,
+      startOrdinal: ordinal,
+      maximumRows: 256,
+    }).nextOrdinal;
+  sealRun(connection, { ...input, expectedLogicalSealIdentity: finalized.logicalSealIdentity });
 }
 
 export function sealRun(connection: RecordDatabase, input: SealRunInput): SealedRunSummary {

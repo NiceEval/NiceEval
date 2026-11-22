@@ -87,19 +87,24 @@ export interface OwnerTerminationEvidence {
   readonly observedAt: string;
 }
 
-export interface RecoverRunResourceInput {
+interface RecoverRunResourceBase {
   readonly runId: string;
   readonly expectedWriterGeneration: string;
   readonly recoveryWriterGeneration: string;
   readonly completedAt: string;
-  readonly evidence: OwnerTerminationEvidence;
   readonly deadlineEpochMs: number;
 }
+
+export type RecoverRunResourceInput = RecoverRunResourceBase &
+  (
+    | { readonly mode: "active"; readonly evidence: OwnerTerminationEvidence }
+    | { readonly mode: "terminal"; readonly expectedState: RunTerminalState }
+  );
 
 export interface RecoverRunReceipt extends RunMutationReceipt {
   readonly previousWriterGeneration: string;
   readonly writerGeneration: string;
-  readonly state: "interrupted";
+  readonly state: RunTerminalState;
 }
 
 export interface DeleteRunResourceInput {

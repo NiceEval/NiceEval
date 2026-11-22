@@ -45,10 +45,13 @@ interface RunListRequest {
 同一应用可以顺序或并发访问不同 cwd，也可以在自己的 Layer 中组合操作，不会把一个项目的数据库实例用于另一个项目。
 调用方不需要提供私有 Service、额外 Scope 或 NiceEval runtime。
 
-无效 Run ID、缺失 Run、无效 continuation、删除 active Run、恢复 terminal Run 或仍活跃的 owner，都是领域拒绝。
+无效 Run ID、缺失 Run、无效 continuation、删除 active Run、恢复没有遗留状态的 terminal Run 或仍活跃的 owner，都是领域拒绝。
 它们通过相应 `RunReadError`、`RunDeleteError` 或 `RunRecoverError` 的失败通道返回，可由 `Effect.catchTag` 处理后继续操作。
 正常领域拒绝不作为 defect 抛出，也不改写既有 Run 事实。
 State 集合尚未释放时，delete 通过 RunDeleteError 返回 `run-state-recovery-required`；与 [CLI 删除规则](cli.md) 相同。
+
+`RunRecoverReceipt` 返回 `{ runId: string, state: "completed" | "interrupted" | "failed" }`。
+active 或 recovering Run 恢复为 interrupted；终态 Run 仅修复遗留 aggregate 或 Session，receipt 保留原 state，既有结果不变。
 
 Runner 通过内部、owner-scoped capability 创建 Run、发布 Attempt 与收口；这些写能力不导出给 Eval、Adapter、Plugin
 或第三方 Host。运行事实只经 NiceEval 具名 typed collector、Adapter 能力或其它已发布领域 API 进入。

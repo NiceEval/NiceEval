@@ -123,7 +123,15 @@ export const RunRecoverOrphanedDocumentSchema = Schema.Struct({
   ),
 });
 
+/** Decode the actual terminal state after exact Run recovery or terminal residue repair. */
+export const RunRecoverDocumentSchema = Schema.Struct({
+  operation: Schema.Literal("run.recover"),
+  runId: Schema.String,
+  state: Schema.Literals(["completed", "interrupted", "failed"]),
+});
+
 export const RunDocumentSchema = Schema.Union([
+  RunRecoverDocumentSchema,
   RunImportDocumentSchema,
   RunExportDocumentSchema,
   RunListDocumentSchema,
@@ -153,6 +161,8 @@ export type RunOwnerObservation = Schema.Schema.Type<typeof RunOwnerObservationS
 export type RunRecoverOrphanedDocument = Schema.Schema.Type<typeof RunRecoverOrphanedDocumentSchema>;
 /** Carries exact Run detail in the machine protocol; it is a readonly value rather than a live lifecycle handle. */
 export type RunGetDocument = Schema.Schema.Type<typeof RunGetDocumentSchema>;
+/** Inspect the preserved or recovered terminal state of an exact Run. */
+export type RunRecoverDocument = Schema.Schema.Type<typeof RunRecoverDocumentSchema>;
 /** A Run machine document; inspect operation before consuming operation-specific data. */
 export type RunDocument = Schema.Schema.Type<typeof RunDocumentSchema>;
 

@@ -392,6 +392,12 @@ export function recoverFinishedInvocationOnConnection(
     "SELECT 1 FROM ne19_run_resources WHERE invocation_id=? AND terminal_state IS NULL LIMIT 1",
   ).get(invocationId);
   if (pending !== undefined) return;
+  const unfinished = recordStatement(
+    connection,
+    `SELECT 1 FROM ne19_run_resources r JOIN ne19_runs a ON a.run_id=r.run_id
+    WHERE r.invocation_id=? AND a.status!='sealed' LIMIT 1`,
+  ).get(invocationId);
+  if (unfinished !== undefined) return;
   // Heartbeat age is never evidence. Reobserve the exact durable Session owner
   // under the same write transaction that will commit the final Run terminal.
   if (exactProcessState(session.owner) !== "dead") {

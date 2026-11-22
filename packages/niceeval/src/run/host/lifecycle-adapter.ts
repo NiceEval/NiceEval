@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect } from "effect";
-import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import type { RunStorageCommandError } from "../storage/sqlite.ts";
 
 import {
@@ -236,14 +236,26 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
           );
         }
         if (run.state !== "active" && run.state !== "recovering") {
-          return yield* Effect.fail(
-            new RunRecoverError({
-              operation: "recover",
-              code: "run-terminal",
-              message: `Run ${runId} is already ${run.state}.`,
-              cause: undefined,
-            }),
-          );
+          const repaired = yield* recoverRunResource(root, {
+            mode: "terminal",
+            runId,
+            expectedState: run.state,
+            expectedWriterGeneration: run.writerGeneration,
+            recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
+            completedAt: DateTime.formatIso(now),
+            deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
+          });
+          if (repaired === undefined)
+            return yield* Effect.fail(
+              new RunRecoverError({
+                operation: "recover",
+                code: "run-terminal",
+                message: `Run ${runId} is already ${run.state} and has no abandoned recovery work.`,
+                cause: undefined,
+              }),
+            );
+          yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
+          return { runId, state: repaired.state };
         }
         const observation = observeRunWriterTermination(run.writerGeneration);
         if (observation.state === "active") {
@@ -267,6 +279,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
           );
         }
         yield* recoverRunResource(root, {
+          mode: "active",
           runId,
           expectedWriterGeneration: run.writerGeneration,
           recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
@@ -278,6 +291,7 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
           },
           deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
         });
+        yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
         return { runId, state: "interrupted" as const };
       }).pipe(Effect.mapError((cause) => recoverFailure(runId, cause))),
     );

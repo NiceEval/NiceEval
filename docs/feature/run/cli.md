@@ -79,6 +79,9 @@ Run 与 Attempt locator。命令没有 `--force`、cascade 或按 selector 批�
 `run recover` 只在 NiceEval 能证明旧 owner 已终止时 fence writer generation 并把 Run 收口为 `interrupted`。
 它先进入可检查、可重试的 `recovering`，再以匹配 generation 收口；证据不足时拒绝，且不删除任何已发布 Attempt。
 
+exact `run recover` 也接受留有 open aggregate 或活动 Session 的终态 Run，只修复残留，保留原终态与已发布事实；没有残留时拒绝。
+成功的 `--json` 输出为 `{ operation: "run.recover", runId: string, state: "completed" | "interrupted" | "failed" }`，state 是实际终态。
+
 `run recover --orphaned` 对每个 `owner gone` 的 `active` Run 执行同一个 recover，不接受其它选择条件。
 上一次恢复中途被打断而停在 `recovering`、且恢复进程已经终止的 Run 同样纳入，由同一个 recover 从它停下的地方继续。
 它先列出将要收口的 Run 并请求一次确认；`--yes` 跳过确认。owner 仍在运行或状态未知的 Run 原样跳过并写出原因。

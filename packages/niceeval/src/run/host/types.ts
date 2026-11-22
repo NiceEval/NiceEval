@@ -53,10 +53,10 @@ export interface RunDeleteReceipt {
   readonly state: "deleted";
 }
 
-/** Confirms that recovery closed the selected Run as interrupted; previously published Attempts remain immutable and readable. */
+/** Confirms the terminal Run state after recovery; repairing abandoned terminal work preserves its existing state and published Attempts. */
 export interface RunRecoverReceipt {
   readonly runId: string;
-  readonly state: "interrupted";
+  readonly state: "completed" | "interrupted" | "failed";
 }
 
 /** Reports a refused or failed Run read with a domain code; missing Runs are errors rather than fabricated empty results. */

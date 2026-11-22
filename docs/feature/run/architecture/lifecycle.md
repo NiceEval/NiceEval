@@ -80,17 +80,30 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 启动时刻只有秒级精度时，pid 在同一秒内被复用会被判为 `active`。这个误判只会拒绝恢复，不会接管仍在运行的 owner，因此可以接受。
 
 它以两阶段、可重试的 `active → recovering → interrupted` 收口。
-第一笔短事务 fence owner generation 并写入精确 recovery actor。第二笔短事务在 actor/generation 仍匹配时删除仅属该 owner 的未发布 aggregate。
-第二笔事务也写 recovery receipt，并把 Run 与 pending-Planned attempt absence reasons 共同收口。
+第一笔短事务 fence owner generation、写入精确 recovery actor，并清除仅属该 owner 的未发布 aggregate。
+遗留 aggregate 完成闭包校验与 seal 后，第二笔短事务重验 actor/generation、写 recovery receipt，并把 Run 与 pending-Planned attempt absence reasons 共同收口。
+
 绑定 State 时，这笔事务先按 [State 事实终结](../../experiments/data-model.md#状态事实终结) 对账并终结全部 execution，再写同一 cutoff 的 Run 终态。
 集合 recovery 必须调用这个 Run recovery actor；Run recovery 不释放 State 租约，也不执行 Experiment after。
 
 exact Run recovery 只收口指定 Run，不替同一 Invocation 的其它 Run 收口。
 恢复该 Invocation 最后一个非终态 Run 时，第二笔事务重新验证 Session 的精确 owner 已终止，再 fence 并终结 Session，保存全部 Run 引用的终态 projection。
 Session 与这个 Run 的终态共同提交；取证不足或事务失败时共同回滚，保留可重试的 Run recovery。
+
 恢复事务逐一核对该 Run 全部 expected Planned attempt 的 case lock，包括已经发布或携入的位置；只有精确 owner 已终止的锁才能释放。
 仍存活或无法证明已终止的 owner 保持原锁，不因另一个 Run 的恢复被接管。
 Session 终结不释放 State 租约；租约仍由既有的显式集合 recovery 完成 after 与整组释放。
+
+恢复先 fence writer generation，再清除未发布数据，并由既有的 metadata、closure verification、分批 Seal inventory 与 seal publication 路径封口遗留 aggregate。
+已发布 Attempt 的 closure 与 identity 保持不变；缺失 Planned attempt 只形成 absence Member，不补造 Attempt。Run 和 Session 终态只在 aggregate 已封口后提交。
+
+终态 Run 的 exact recover 可以修复遗留 open aggregate 或活动 Session；没有残留时仍以 `run-terminal` 拒绝。
+这种修复保持原 Run state、completedAt、publication cutoff、absence 与 Attempt，返回原有终态；维护 actor 只取得遗留 aggregate 的封口权限，不重新开放 Attempt publication。
+所有 Run 都已终态且所属 aggregate 已封口时，才可在精确 owner 终止证明下终结 Session。
+
+恢复保留已发布 Attempt 的完整传递引用闭包，以及已经持久化的 Run 附件。
+缺失历史附件时拒绝恢复，诊断列出 Run、Attempt 与缺失 family；不能从当前 worktree 重建历史。
+只有遗留 recovery receipt 与未被 recovery generation fence 的 open aggregate 共同证明旧恢复路径时，诊断才说明旧版本 recover 的数据丢失故障。
 
 任一步崩溃留下 `recovering`，只能由新的精确 recovery actor 重试，不能把它猜回 active 或 free。证据不足时 fail closed；没有 TTL、heartbeat expiry 或“看起来很久”接管。
 

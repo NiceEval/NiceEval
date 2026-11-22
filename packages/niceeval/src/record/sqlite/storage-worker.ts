@@ -152,7 +152,10 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
   // Invocation admission and Run maintenance own their atomic reopen. Keep
   // rejecting draining databases and active write freezes before dispatch.
   const reopensPortable =
-    (request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import")) ||
+    (request.operation === "run" &&
+      (request.command._tag === "run-delete" ||
+        request.command._tag === "run-import" ||
+        request.command._tag === "run-recover")) ||
     (request.operation === "invocation" && request.command._tag === "invocation-create");
   if (
     state === undefined ||

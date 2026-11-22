@@ -9,12 +9,16 @@ import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import { recordStatement, requiredRecordRow, type RecordDatabase } from "../../record/sqlite/database.ts";
 import { recoverRunCaseLocksOnConnection } from "../../record/sqlite/case-repository.ts";
-import { recoverFinishedInvocationOnConnection } from "../../record/sqlite/coordination-repository.ts";
+import { exactProcessState } from "../../coordination/platform/node-process-identity.ts";
+import {
+  readInvocationOnConnection,
+  recoverFinishedInvocationOnConnection,
+} from "../../record/sqlite/coordination-repository.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
-import { readRunValue, RUN_VALUE_FAMILY, stageRunValue } from "../../record/sqlite/storage.ts";
+import { readRunValue, RUN_VALUE_FAMILY, stageRunValue, sealRecoveredRun } from "../../record/sqlite/storage.ts";
 import { RunStorageError } from "./errors.ts";
 import { observeRunWriterTermination } from "./owner-identity.ts";
 import {
@@ -561,46 +565,124 @@ export function closeRunResourceOnConnection(
   });
 }
 
+function assertPublishedRecoveryDependencies(
+  connection: RecordDatabase,
+  runId: string,
+  previouslyRecovered: boolean,
+): void {
+  const missing = recordStatement(
+    connection,
+    `WITH RECURSIVE dependencies(attempt_id,family) AS (
+      SELECT p.attempt_id,ref.target_family FROM ne19_attempt_publications p
+      JOIN ne19_attachments a ON a.owner_attempt_id=p.attempt_id AND a.owner_run_id=p.origin_run_id
+      JOIN ne19_attachment_references ref ON ref.attachment_id=a.attachment_id
+      WHERE p.origin_run_id=? AND ref.target_owner_kind='run'
+      UNION
+      SELECT d.attempt_id,ref.target_family FROM dependencies d JOIN ne19_attachments a ON a.family=d.family
+      JOIN ne19_attachment_references ref ON ref.attachment_id=a.attachment_id
+      WHERE a.owner_run_id=? AND a.owner_kind='run' AND ref.target_owner_kind='run'
+    ) SELECT d.attempt_id,d.family FROM dependencies d LEFT JOIN ne19_attachments a
+      ON a.owner_run_id=? AND a.owner_kind='run' AND a.family=d.family
+      WHERE a.attachment_id IS NULL ORDER BY d.attempt_id,d.family`,
+  ).all(runId, runId, runId);
+  if (missing.length === 0) return;
+  const details = missing.map((row) => `${text(row, "attempt_id")}: ${text(row, "family")}`).join(", ");
+  throw invalid(
+    `Run ${runId} has published Attempts with missing Run attachment dependencies (${details}). ${
+      previouslyRecovered ? "An earlier Run recovery removed these dependencies. " : ""
+    }The remaining Record cannot reconstruct the missing data.`,
+  );
+}
+
 // @concord-code
 // @concord-implements docs/feature/run/architecture/lifecycle.md
 export function recoverRunResourceOnConnection(
   connection: RecordDatabase,
   input: RecoverRunResourceInput,
-): RecoverRunReceipt {
+): RecoverRunReceipt | undefined {
   requireIdentity(input.runId, "runId");
   requireIdentity(input.expectedWriterGeneration, "expectedWriterGeneration");
   requireIdentity(input.recoveryWriterGeneration, "recoveryWriterGeneration");
   requireIsoInstant(input.completedAt, "completedAt");
-  requireIdentity(input.evidence.kind, "evidence.kind");
-  requireIdentity(input.evidence.identity, "evidence.identity");
-  requireIsoInstant(input.evidence.observedAt, "evidence.observedAt");
-  if (input.expectedWriterGeneration === input.recoveryWriterGeneration) {
+  if (input.expectedWriterGeneration === input.recoveryWriterGeneration)
     throw new RunStorageError("recovery-evidence-required", "Recovery must advance to a distinct writer generation");
-  }
-  // The first commit fences publication before cleanup. The existing recovery
-  // row records its first visible revision; retries retain that cutoff fact.
-  withImmediateTransaction(connection, input.deadlineEpochMs, "begin-run-recovery", () => {
+  // Commit the fence before any potentially long closure verification. A crash
+  // retains the exact recovery actor, and the next recover must prove it dead.
+  const started = withImmediateTransaction(connection, input.deadlineEpochMs, "begin-run-recovery", () => {
     const run = runHeader(connection, input.runId);
     if (run === undefined) throw new RunStorageError("run-not-found", `Run ${input.runId} does not exist`);
-    if (run.terminalState !== undefined) throw new RunStorageError("run-not-active", `Run ${input.runId} is terminal`);
     if (run.writerGeneration !== input.expectedWriterGeneration)
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} writer changed before recovery`);
-    const observation = observeRunWriterTermination(run.writerGeneration);
-    if (
-      observation.state !== "terminated" ||
-      input.evidence.identity !== observation.evidenceIdentity ||
-      input.evidence.kind !== observation.evidenceKind
-    ) {
-      throw new RunStorageError(
-        "recovery-evidence-required",
-        `Run ${input.runId} owner termination could not be revalidated`,
-      );
-    }
-    const revision = nextRevision(connection);
-    recordStatement(
+    const aggregate = recordStatement(
       connection,
-      "UPDATE ne19_run_resources SET current_writer_generation=? WHERE run_id=? AND current_writer_generation=? AND terminal_state IS NULL",
-    ).run(input.recoveryWriterGeneration, input.runId, input.expectedWriterGeneration);
+      "SELECT status,writer_generation,core_digest FROM ne19_runs WHERE run_id=?",
+    ).get(input.runId) as Row | undefined;
+    const unfinished = aggregate !== undefined && text(aggregate, "status") !== "sealed";
+    let evidence: { evidenceKind: string; evidenceIdentity: string };
+    let completedAt = input.completedAt;
+    if (input.mode === "active") {
+      if (run.terminalState !== undefined)
+        throw new RunStorageError("run-not-active", `Run ${input.runId} is terminal`);
+      const observation = observeRunWriterTermination(run.writerGeneration);
+      if (
+        observation.state !== "terminated" ||
+        input.evidence.identity !== observation.evidenceIdentity ||
+        input.evidence.kind !== observation.evidenceKind
+      )
+        throw new RunStorageError(
+          "recovery-evidence-required",
+          `Run ${input.runId} owner termination could not be revalidated`,
+        );
+      evidence = observation;
+    } else {
+      if (run.terminalState !== input.expectedState)
+        throw new RunStorageError("run-state-mismatch", `Run ${input.runId} terminal state changed`);
+      const session = readInvocationOnConnection(connection, run.invocationId);
+      const abandonedSession = session !== undefined && (session.state === "active" || session.state === "recovering");
+      const sibling = recordStatement(
+        connection,
+        "SELECT 1 FROM ne19_run_resources WHERE invocation_id=? AND terminal_state IS NULL LIMIT 1",
+      ).get(run.invocationId);
+      if (!unfinished && (!abandonedSession || sibling !== undefined)) return undefined;
+      if (unfinished) {
+        const observation = observeRunWriterTermination(text(aggregate, "writer_generation"));
+        if (observation.state !== "terminated")
+          throw new RunStorageError(
+            "recovery-evidence-required",
+            `Run ${input.runId} aggregate owner termination could not be revalidated`,
+          );
+        evidence = observation;
+      } else {
+        if (!abandonedSession || exactProcessState(session.owner) !== "dead")
+          throw new RunStorageError(
+            "recovery-evidence-required",
+            `Run ${input.runId} Session owner termination could not be revalidated`,
+          );
+        evidence = { evidenceKind: "invocation-owner-terminated", evidenceIdentity: JSON.stringify(session.owner) };
+      }
+      const terminal = recordStatement(connection, "SELECT completed_at FROM ne19_run_resources WHERE run_id=?").get(
+        input.runId,
+      ) as Row;
+      completedAt = text(terminal, "completed_at");
+    }
+    const previousRecovery = recordStatement(
+      connection,
+      "SELECT recovery_writer_generation FROM ne19_run_recoveries WHERE run_id=?",
+    ).get(input.runId);
+    assertPublishedRecoveryDependencies(
+      connection,
+      input.runId,
+      input.mode === "terminal" &&
+        previousRecovery !== undefined &&
+        unfinished &&
+        text(aggregate, "writer_generation") !== text(previousRecovery, "recovery_writer_generation"),
+    );
+    const revision = input.mode === "active" ? nextRevision(connection) : run.closeRevision!;
+    if (input.mode === "active")
+      recordStatement(
+        connection,
+        "UPDATE ne19_run_resources SET current_writer_generation=? WHERE run_id=? AND current_writer_generation=? AND terminal_state IS NULL",
+      ).run(input.recoveryWriterGeneration, input.runId, input.expectedWriterGeneration);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_recoveries(run_id,previous_writer_generation,recovery_writer_generation,
@@ -612,11 +694,62 @@ export function recoverRunResourceOnConnection(
       input.runId,
       input.expectedWriterGeneration,
       input.recoveryWriterGeneration,
-      observation.evidenceKind,
-      observation.evidenceIdentity,
-      input.evidence.observedAt,
+      evidence.evidenceKind,
+      evidence.evidenceIdentity,
+      input.completedAt,
       revision,
     );
+    if (unfinished) {
+      recordStatement(connection, "DELETE FROM ne19_run_seal_entries WHERE run_id=?").run(input.runId);
+      recordStatement(
+        connection,
+        `UPDATE ne19_runs SET writer_generation=?,status='open',candidate_seal_identity=NULL,
+        candidate_seal_entry_count=NULL,candidate_seal_staged_count=0,logical_seal_identity=NULL,
+        mutation_sequence=mutation_sequence+1 WHERE run_id=? AND status!='sealed'`,
+      ).run(input.recoveryWriterGeneration, input.runId);
+      recordStatement(
+        connection,
+        `WITH RECURSIVE retained(family) AS (
+          SELECT ref.target_family FROM ne19_attachment_references ref
+          JOIN ne19_attachments a ON a.attachment_id=ref.attachment_id
+          JOIN ne19_attempt_publications p ON p.attempt_id=a.owner_attempt_id
+          WHERE a.owner_run_id=? AND ref.target_owner_kind='run'
+          UNION
+          SELECT ref.target_family FROM retained k JOIN ne19_attachments a ON a.family=k.family
+          JOIN ne19_attachment_references ref ON ref.attachment_id=a.attachment_id
+          WHERE a.owner_run_id=? AND a.owner_kind='run' AND ref.target_owner_kind='run'
+        ) DELETE FROM ne19_attachments WHERE owner_run_id=? AND family<>? AND
+        ((owner_kind='run' AND canonical_payload IS NULL AND family NOT IN (SELECT family FROM retained)) OR
+        (owner_kind='attempt' AND owner_attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)))`,
+      ).run(input.runId, input.runId, input.runId, RUN_VALUE_FAMILY, input.runId);
+      if (input.mode === "active")
+        recordStatement(
+          connection,
+          `DELETE FROM ne19_members WHERE target_run_id=? AND slot_id NOT IN
+          (SELECT slot_id FROM ne19_run_slot_bindings WHERE target_run_id=?)`,
+        ).run(input.runId, input.runId);
+      recordStatement(
+        connection,
+        `DELETE FROM ne19_attempts WHERE origin_run_id=? AND attempt_id NOT IN
+        (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`,
+      ).run(input.runId, input.runId);
+      if (aggregate.core_digest === null) {
+        if (
+          recordStatement(connection, "SELECT 1 FROM ne19_run_slot_bindings WHERE target_run_id=? LIMIT 1").get(
+            input.runId,
+          ) !== undefined
+        )
+          throw invalid(`Run ${input.runId} has published bindings without Core`);
+        recordStatement(connection, "DELETE FROM ne19_runs WHERE run_id=?").run(input.runId);
+      }
+    }
+    return { completedAt, state: run.terminalState ?? ("interrupted" as const) };
+  });
+  if (started === undefined) return undefined;
+  sealRecoveredRun(connection, {
+    ...input,
+    writerGeneration: input.recoveryWriterGeneration,
+    completedAt: started.completedAt,
   });
   return withImmediateTransaction(connection, input.deadlineEpochMs, "finish-run-recovery", () => {
     const run = runHeader(connection, input.runId);
@@ -625,50 +758,41 @@ export function recoverRunResourceOnConnection(
       "SELECT recovery_writer_generation FROM ne19_run_recoveries WHERE run_id=?",
     ).get(input.runId) as Row | undefined;
     if (
-      run?.terminalState !== undefined ||
-      run?.writerGeneration !== input.recoveryWriterGeneration ||
+      run === undefined ||
       actor === undefined ||
-      text(actor, "recovery_writer_generation") !== input.recoveryWriterGeneration
-    ) {
+      text(actor, "recovery_writer_generation") !== input.recoveryWriterGeneration ||
+      (input.mode === "active"
+        ? run.terminalState !== undefined || run.writerGeneration !== input.recoveryWriterGeneration
+        : run.terminalState !== input.expectedState)
+    )
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
+    let cutoff = currentPublicationCutoffOnConnection(connection);
+    if (input.mode === "active") {
+      const revision = nextRevision(connection);
+      insertAbsences(
+        connection,
+        input.runId,
+        revision,
+        pendingSlotIds(connection, input.runId).map((slotId) => ({
+          slotId,
+          reason: "interrupted-before-publication" as const,
+        })),
+      );
+      recordStatement(
+        connection,
+        `UPDATE ne19_run_resources SET terminal_state='interrupted',completed_at=?,close_revision=?
+        WHERE run_id=? AND terminal_state IS NULL AND current_writer_generation=?`,
+      ).run(started.completedAt, revision, input.runId, input.recoveryWriterGeneration);
+      cutoff = cutoffAt(connection, revision);
     }
-    const absences = pendingSlotIds(connection, input.runId).map((slotId) => ({
-      slotId,
-      reason: "interrupted-before-publication" as const,
-    }));
-    const revision = nextRevision(connection);
-    insertAbsences(connection, input.runId, revision, absences);
-    const changed = recordStatement(
-      connection,
-      `UPDATE ne19_run_resources SET current_writer_generation=?,terminal_state='interrupted',
-      completed_at=?,close_revision=? WHERE run_id=? AND terminal_state IS NULL AND current_writer_generation=?`,
-    ).run(input.recoveryWriterGeneration, input.completedAt, revision, input.runId, input.recoveryWriterGeneration);
-    if (Number(changed.changes) !== 1) {
-      throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} changed before recovery fence`);
-    }
-    recordStatement(
-      connection,
-      `DELETE FROM ne19_attachments WHERE owner_run_id=? AND family<>? AND
-      (owner_kind='run' OR owner_attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?))`,
-    ).run(input.runId, RUN_VALUE_FAMILY, input.runId);
-    recordStatement(
-      connection,
-      `DELETE FROM ne19_members WHERE target_run_id=? AND
-      (attempt_id IS NULL OR attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?))`,
-    ).run(input.runId, input.runId);
-    recordStatement(
-      connection,
-      `DELETE FROM ne19_attempts WHERE origin_run_id=? AND
-      attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`,
-    ).run(input.runId, input.runId);
     recoverRunCaseLocksOnConnection(connection, input.runId);
     recoverFinishedInvocationOnConnection(connection, run.invocationId, input.completedAt, input.deadlineEpochMs);
     return {
       runId: input.runId,
       previousWriterGeneration: input.expectedWriterGeneration,
       writerGeneration: input.recoveryWriterGeneration,
-      state: "interrupted",
-      cutoff: cutoffAt(connection, revision),
+      state: started.state,
+      cutoff,
     };
   });
 }
@@ -993,7 +1117,7 @@ export function closeRunResource(recordStorageRoot: string, input: CloseRunResou
   return runCommand<RunMutationReceipt>(recordStorageRoot, { _tag: "run-close", input });
 }
 export function recoverRunResource(recordStorageRoot: string, input: RecoverRunResourceInput) {
-  return runCommand<RecoverRunReceipt>(recordStorageRoot, { _tag: "run-recover", input });
+  return runCommand<RecoverRunReceipt | undefined>(recordStorageRoot, { _tag: "run-recover", input });
 }
 export function deleteRunResource(recordStorageRoot: string, input: DeleteRunResourceInput) {
   return runCommand<DeleteRunReceipt>(recordStorageRoot, { _tag: "run-delete", input });
