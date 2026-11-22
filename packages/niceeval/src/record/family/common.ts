@@ -44,13 +44,10 @@ export const FiniteNonNegativeNumberSchema = Schema.Number.pipe(
 
 export const SafeTextSchema = Schema.String.pipe(
   Schema.check(
-    Schema.makeFilter(
-      (value) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value),
-      {
-        identifier: "RecordSafeText",
-        description: "text without NUL or unsafe control characters",
-      },
-    ),
+    Schema.makeFilter((value) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value), {
+      identifier: "RecordSafeText",
+      description: "text without NUL or unsafe control characters",
+    }),
   ),
 );
 
