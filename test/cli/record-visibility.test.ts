@@ -11,6 +11,8 @@ const { Effect } = require("effect") as typeof import("../../packages/niceeval/n
 const { experimentHost } =
   require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
+const { decodeInspectionDocument } =
+  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
 const { runCliInProcess } =
   require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
 
@@ -53,7 +55,7 @@ afterAll(async () => {
   }
 });
 
-async function cli(argv: string[]) {
+async function cli(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const code = await runCliInProcess({ argv, cwd, env: { NO_COLOR: "1" }, stdin: Readable.from([]), stdout, stderr });
@@ -84,7 +86,17 @@ test("a published Attempt is readable and its Run lists as active with pending s
             expect(result.stdout).toContain("1/2 attempts observed");
             expect(result.stdout).not.toContain("Completed");
           } else if (read === "attempt-json") {
-            expect(JSON.parse(result.stdout)).toMatchObject({ operation: "attempt.get", attempt: { locator, core: { outcome: "completed" } } });
+            const lines = result.stdout.split("\n");
+            expect(lines.pop()).toBe("");
+            const documents = lines.map((line) => {
+              const decoded = decodeInspectionDocument(JSON.parse(line));
+              if (!decoded.success) throw new Error(decoded.reason);
+              return decoded.value;
+            });
+            expect(documents).toMatchObject([
+              { operation: "attempt.get", outcome: "success", attempt: { locator, core: { outcome: "completed" } } },
+              { operation: "attempt.usage", outcome: "success" },
+            ]);
           } else if (read === "run-json") {
             expect(JSON.parse(result.stdout).run).toMatchObject({
               value: { runId, state: "active" },
@@ -98,6 +110,6 @@ test("a published Attempt is readable and its Run lists as active with pending s
         }
       },
     ),
-    { numRuns: 2, examples: [[["attempt-json", "run-human"]]] },
+    { numRuns: 2, examples: [[["attempt-json", "run-human"]], [["attempt-json", "run-json"]]] },
   );
 });

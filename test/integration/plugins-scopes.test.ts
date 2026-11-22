@@ -1,7 +1,7 @@
-import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -136,7 +136,10 @@ export const evalPlugin = (marker: string, version = "1", withSandbox = true) =>
 async function prepareProject() {
   const cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-plugins-scopes-"));
   await cp(FIXTURE, cwd, { recursive: true });
+  const dependencies = join(cwd, "node_modules");
+  await mkdir(dependencies);
   await Promise.all([
+    symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "junction"),
     mkdir(join(cwd, "evals"), { recursive: true }),
     mkdir(join(cwd, "experiments"), { recursive: true }),
     rename(join(cwd, "events.ts.txt"), join(cwd, "events.ts")),

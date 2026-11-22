@@ -151,7 +151,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
 
   // @feature docs/feature/inspection/README.md#attachment-archive
   test("streaming a 160 MiB file attachment keeps child process RSS bounded (< 128 MiB) and reads chunks after rewrite", async () => {
-    const runRes = await execa(process.execPath, [cli, "exp", "stream-280", "--rerun", "all", "--json"], {
+    const runRes = await execa(process.execPath, [...process.execArgv, cli, "exp", "stream-280", "--rerun", "all", "--json"], {
       cwd,
       reject: false,
     });
@@ -198,7 +198,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
   test("real CLI show --record imports portable Record, propagates --record links, and renders Recorded results", async () => {
-    const jsonRes = await execa(process.execPath, [cli, "show", "--record", portableRecord, "--json"], {
+    const jsonRes = await execa(process.execPath, [...process.execArgv, cli, "show", "--record", portableRecord, "--json"], {
       cwd: recordDir,
       reject: false,
     });
@@ -210,7 +210,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
       for (const link of doc.value.links) expect(link.command).toContain(`--record ${portableRecord}`);
     }
 
-    const textRes = await execa(process.execPath, [cli, "show", "--all", "--record", portableRecord], {
+    const textRes = await execa(process.execPath, [...process.execArgv, cli, "show", "--all", "--record", portableRecord], {
       cwd: recordDir,
       reject: false,
     });
@@ -225,7 +225,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
 describe("concurrent exp process lock and carried reuse boundary", () => {
   let lockDir: string;
   const startLockProcess = () =>
-    execa(process.execPath, [cli, "exp", "lock", "--json"], {
+    execa(process.execPath, [...process.execArgv, cli, "exp", "lock", "--json"], {
       cwd: lockDir,
       reject: false,
     });
@@ -297,7 +297,7 @@ describe("concurrent exp process lock and carried reuse boundary", () => {
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
   test("real CLI show reports current pending gaps while concurrent exp processes hold the lock", async () => {
     const [pendingShow] = await Promise.all([
-      execa(process.execPath, [cli, "show", "--json"], { cwd: lockDir, reject: false }),
+      execa(process.execPath, [...process.execArgv, cli, "show", "--json"], { cwd: lockDir, reject: false }),
       new Promise((resolve) => setTimeout(resolve, 2_500)),
     ]);
     expect(pendingShow.exitCode, pendingShow.stderr).toBe(0);

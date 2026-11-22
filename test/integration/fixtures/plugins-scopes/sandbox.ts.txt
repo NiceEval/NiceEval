@@ -31,12 +31,11 @@ async function hostSandbox() {
   await Promise.all([mkdir(workdir), mkdir(privateTmp)]);
   const sandboxId = `plugins-host-sandbox-${++sequence}-${basename(root)}`;
   appendPluginEvent({ kind: "sandbox.create", sandboxId });
-  const map = (value: string) =>
-    value === "/tmp"
-      ? privateTmp
-      : value.startsWith("/tmp/")
-        ? join(privateTmp, value.slice("/tmp/".length))
-        : value;
+  const map = (value: string) => {
+    if (value === root || value.startsWith(`${root}/`)) return value;
+    if (value === "/tmp") return privateTmp;
+    return value.startsWith("/tmp/") ? join(privateTmp, value.slice("/tmp/".length)) : value;
+  };
   const at = (path: string) => (isAbsolute(map(path)) ? map(path) : resolve(workdir, map(path)));
   const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     new Promise<{ stdout: string; stderr: number | string; exitCode: number }>((done) => {
