@@ -2,7 +2,6 @@ import { Effect } from "effect";
 
 import type { EvalResult, PhaseTiming, TimingActivity } from "../types.ts";
 import { formatTurnLabel } from "../../shared/turn-label.ts";
-import { MAX_TIMING_INTERVALS } from "../../record/family/source-receipt/limits.ts";
 import {
   compareObservabilityText,
   makeNonNegativeSafeInteger,
@@ -230,10 +229,6 @@ export function normalizeAttemptTiming(input: {
             limitations.addUnsupported("timing-interval");
             continue;
           }
-          if (intervals.length >= MAX_TIMING_INTERVALS) {
-            limitations.addCap("timing-interval", intervals.length);
-            continue;
-          }
           const intervalId = yield* input.mint("interval");
           function containingParentInterval(startOffsetMs: NonNegativeSafeInteger, durationMs: NonNegativeSafeInteger) {
             if (parent === undefined || translatedStartOffsetMs === undefined) return null;
@@ -304,8 +299,6 @@ export function normalizeAttemptTiming(input: {
         attemptOffset === undefined
       ) {
         limitations.addUnsupported("timing-interval");
-      } else if (projection.kind === "attempt" && intervals.length >= MAX_TIMING_INTERVALS) {
-        limitations.addCap("timing-interval", intervals.length);
       } else if (projection.kind === "attempt") {
         const intervalId = yield* input.mint("interval");
         intervals.push({

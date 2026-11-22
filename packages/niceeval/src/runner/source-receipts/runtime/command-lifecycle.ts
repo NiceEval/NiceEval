@@ -1,6 +1,5 @@
 import type { LifecyclePhase } from "../../types.ts";
 import { recordRegisteredCommandResult, registerCommandCapture, registeredCommandId } from "../capture-identity.ts";
-import { MAX_COMMANDS } from "../../../record/family/source-receipt/limits.ts";
 import { commandManifest, commandStream, emptyCommandStream } from "../event-projection.ts";
 import { producerCommandRegistrationInvalid, producerEntityIdInvalid, requiredPositive } from "../support.ts";
 import { sourceSegmentId } from "./receipt-helpers.ts";
@@ -29,10 +28,6 @@ export function captureRunnerCommandStart(input: {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined) return undefined;
   if (runtime.failure !== undefined || runtime.snapshot !== undefined) return undefined;
-  if (runtime.commands.length >= MAX_COMMANDS) {
-    runtime.commandLimitations.addCap("command-manifest", runtime.commands.length);
-    return undefined;
-  }
   const minted = mintRuntimeCommand(runtime);
   if (minted === undefined) return undefined;
   const { commandId } = minted;
@@ -48,7 +43,6 @@ export function captureRunnerCommandStart(input: {
   }
   const manifest = commandManifest(
     {
-      commandId,
       phase: input.phase,
       invocationKind: input.invocationKind,
       command: input.command,

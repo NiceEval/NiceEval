@@ -1,14 +1,8 @@
 import {
   compareObservabilityText,
-  jsonUtf8ByteLength,
   limitationTarget,
   type Collection,
 } from "../../../record/family/source-receipt/model.ts";
-
-export function payloadFits(value: object, maximumBytes: number): boolean {
-  const length = jsonUtf8ByteLength(value);
-  return length !== undefined && length <= maximumBytes;
-}
 
 export function isStrictlyOrderedById<Item>(values: readonly Item[], idOf: (value: Item) => string): boolean {
   let previous: string | undefined;

@@ -1,14 +1,8 @@
 import { Schema } from "effect";
 
-import {
-  RecordTextContentSchema,
-  recordAttachmentIssue,
-  recordContent,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
-import { CanonicalProjectRelativePathSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
+import { RecordTextContentSchema, recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
+import { Sha256DigestSchema } from "../../codec/identifiers.ts";
 import { TurnIdSchema } from "../source-receipt/codec.ts";
-import { MAX_COMMAND_STREAM_BYTES } from "../source-receipt/limits.ts";
 import {
   NonNegativeSafeIntegerSchema,
   PositiveSafeIntegerSchema,
@@ -31,11 +25,22 @@ import {
  * Core. sha256 identifies the sanitized stream fact, not physical placement.
  */
 export const SandboxCommandStreamSchema = Schema.Struct({
-  content: RecordTextContentSchema.pipe(recordContent.maximumBytes(MAX_COMMAND_STREAM_BYTES)),
+  content: RecordTextContentSchema,
   retainedBytes: NonNegativeSafeIntegerSchema,
   totalSafeUtf8Bytes: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
 });
+
+export const SandboxCommandWorkingDirectoryPathSchema = SafeTextSchema.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) =>
+        !/[\\\u0000-\u001f\u007f]/u.test(value) &&
+        value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".."),
+      { description: "a project-relative path observed in a Sandbox Command" },
+    ),
+  ),
+);
 
 export const SandboxCommandReceiptSchema = Schema.Struct({
   segmentId: SourceSegmentIdSchema,
@@ -53,7 +58,7 @@ export const SandboxCommandReceiptSchema = Schema.Struct({
   ]),
   workingDirectory: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("sandbox-default") }),
-    Schema.Struct({ kind: Schema.Literal("project-relative"), path: CanonicalProjectRelativePathSchema }),
+    Schema.Struct({ kind: Schema.Literal("project-relative"), path: SandboxCommandWorkingDirectoryPathSchema }),
     Schema.Struct({ kind: Schema.Literal("redacted") }),
   ]),
   checked: Schema.optionalKey(Schema.Boolean),
@@ -88,8 +93,7 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
 
 /**
  * Owner-local business invariants, deliberately independent of content
- * storage. Core enforces the content declaration limit and owns physical read
- * integrity. This validator cannot open sealed handles; producers must derive
+ * storage. Core owns physical read integrity. This validator cannot open sealed handles; producers must derive
  * retainedBytes and sha256 from the same sanitized stream they seal.
  */
 export function validateSandboxCommandsAttachment(value: SandboxCommandsAttachment): readonly RecordAttachmentIssue[] {
@@ -105,7 +109,7 @@ export function validateSandboxCommandsAttachment(value: SandboxCommandsAttachme
       ["stdout", segment.stdout],
       ["stderr", segment.stderr],
     ] as const) {
-      if (stream.retainedBytes > MAX_COMMAND_STREAM_BYTES || stream.totalSafeUtf8Bytes < stream.retainedBytes) {
+      if (stream.totalSafeUtf8Bytes < stream.retainedBytes) {
         issues.push(invalid(["segments", String(index), name]));
       }
     }

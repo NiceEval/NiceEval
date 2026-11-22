@@ -13,21 +13,13 @@ import {
   RunDiagnosticsReferencesSchema,
   RunReferenceTargetSchema,
   SafeIdentifierSchema,
-  boundedSafeTextSchema,
+  SafeTextSchema,
 } from "../../../record/family/source-receipt/codec.ts";
-import {
-  MAX_DIAGNOSTIC_CAUSES,
-  MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES,
-  MAX_DIAGNOSTIC_CONTEXT_ITEMS,
-  MAX_DIAGNOSTIC_SUMMARY_BYTES,
-  MAX_DIAGNOSTICS_ATTACHMENT_BYTES,
-  MAX_DIAGNOSTICS,
-} from "../../../record/family/source-receipt/limits.ts";
 import type {
   AttemptDiagnosticsReferences,
   RunDiagnosticsReferences,
 } from "../../../record/family/source-receipt/model.ts";
-import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById } from "./common.ts";
 
 export const AttemptDiagnosticPhaseSchema = Schema.Literals(ATTEMPT_DIAGNOSTIC_PHASES);
 
@@ -47,7 +39,7 @@ export const SourceFrameSchema = Schema.Struct({
 
 const SafeDiagnosticCauseSchema = Schema.Struct({
   code: SafeIdentifierSchema,
-  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_CAUSE_SUMMARY_BYTES),
+  summary: SafeTextSchema,
 });
 
 const DiagnosticRedactionSchema = Schema.Union([
@@ -115,7 +107,7 @@ export const AttemptDiagnosticSchema = Schema.Struct({
   kind: Schema.Literals(["advisory", "execution-error"]),
   code: SafeIdentifierSchema,
   phase: AttemptDiagnosticPhaseSchema,
-  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES),
+  summary: SafeTextSchema,
   causes: Schema.Array(SafeDiagnosticCauseSchema),
   context: Schema.Array(AttemptDiagnosticContextExactSchema),
   redaction: DiagnosticRedactionSchema,
@@ -129,7 +121,7 @@ export const RunDiagnosticSchema = Schema.Struct({
   kind: Schema.Literals(["advisory", "execution-error"]),
   code: SafeIdentifierSchema,
   phase: RunDiagnosticPhaseSchema,
-  summary: boundedSafeTextSchema(MAX_DIAGNOSTIC_SUMMARY_BYTES),
+  summary: SafeTextSchema,
   causes: Schema.Array(SafeDiagnosticCauseSchema),
   context: Schema.Array(RunDiagnosticContextExactSchema),
   redaction: DiagnosticRedactionSchema,
@@ -154,9 +146,6 @@ function hasValidDiagnosticShape(diagnostic: {
   readonly redaction: DiagnosticRedaction;
   readonly sourceFrame: SourceFrame | null;
 }): boolean {
-  if (diagnostic.causes.length > MAX_DIAGNOSTIC_CAUSES || diagnostic.context.length > MAX_DIAGNOSTIC_CONTEXT_ITEMS) {
-    return false;
-  }
   if (
     diagnostic.redaction.state === "applied" &&
     diagnostic.redaction.summaryReplacements === 0 &&
@@ -180,8 +169,6 @@ function isCanonicalAttemptDiagnosticsAttachment(
   value: Schema.Schema.Type<typeof AttemptDiagnosticsAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.diagnostics.length <= MAX_DIAGNOSTICS &&
-    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["diagnostic"]) &&
     isStrictlyOrderedById(value.diagnostics, (diagnostic) => diagnostic.diagnosticId) &&
     value.diagnostics.every(hasValidDiagnosticShape)
@@ -208,8 +195,6 @@ function isCanonicalRunDiagnosticsAttachment(
   value: Schema.Schema.Type<typeof RunDiagnosticsAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.diagnostics.length <= MAX_DIAGNOSTICS &&
-    payloadFits(value, MAX_DIAGNOSTICS_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["diagnostic"]) &&
     isStrictlyOrderedById(value.diagnostics, (diagnostic) => diagnostic.diagnosticId) &&
     value.diagnostics.every(hasValidDiagnosticShape)

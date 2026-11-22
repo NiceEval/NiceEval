@@ -1,6 +1,5 @@
 import type { ResolvedEvidenceCoverage } from "../../../assertions/coverage.ts";
 import type { ObservedTurnSnapshot } from "../../../o11y/observed.ts";
-import { MAX_CONVERSATION_TURNS } from "../../../record/family/source-receipt/limits.ts";
 import type {
   ObservabilityEntityIdForKind,
   SessionScopeId,
@@ -27,8 +26,7 @@ export function captureRunnerPhysicalConversationTurn(input: {
 }): void {
   const runtime = runtimeState(input.runtime);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
-  const captured = runtime.conversationTurns.find((turn) => turn.turnId === input.turnId);
-  if (captured === undefined && runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) return;
+  const captured = runtime.conversationTurns.get(input.turnId);
   if (captured === undefined || captured.completion.state !== "pending") {
     markRuntimeFailure(runtime, producerCaptureSealInvalid("attempt"));
     return;
@@ -67,10 +65,6 @@ export function beginRunnerPhysicalConversationTurn(
 ): boolean {
   const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return false;
-  if (runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS) {
-    runtime.conversationLimitations.addCap("conversation-item", runtime.conversationTurns.length);
-    return false;
-  }
   if (!registerRuntimeEntity(runtime, "turn", turnId)) return false;
   if (!runtime.registeredSessionScopes.has(sessionId)) {
     if (!registerRuntimeEntity(runtime, "session-scope", sessionId)) return false;
@@ -81,11 +75,11 @@ export function beginRunnerPhysicalConversationTurn(
     markRuntimeFailure(runtime, producerEntityIdInvalid("turn"));
     return false;
   }
-  runtime.conversationTurns.push({
+  runtime.conversationTurns.set(turnId, {
     turnId,
     sessionId,
     segmentId,
-    sequence: requiredPositive(runtime.conversationTurns.length + 1),
+    sequence: requiredPositive(runtime.conversationTurns.size + 1),
     usage: [],
 
     completion: { state: "pending" },

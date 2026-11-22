@@ -23,7 +23,6 @@ import type {
   RunnerRunSourceReceiptsCapture,
   StagedSandboxCommandReceipt,
 } from "../types.ts";
-import { retainAgentTurns } from "./agent-turn-retention.ts";
 import { recordTerminalCommandResult } from "./command-lifecycle.ts";
 import { agentTurnTerminal, decodeReceipt, receiptDiagnosticRedaction, segmentIds } from "./receipt-helpers.ts";
 import {
@@ -43,7 +42,8 @@ function captureRunnerAttemptSourceSnapshot(
   runtime: RunnerAttemptObservabilityRuntimeState,
 ): Effect.Effect<RunnerAttemptSourceReceiptsCapture, RunnerObservabilityProducerError> {
   return Effect.gen(function* () {
-    for (const turn of runtime.conversationTurns) {
+    const turns = [...runtime.conversationTurns.values()];
+    for (const turn of turns) {
       if (turn.completion.state !== "pending") continue;
       runtime.conversationLimitations.addCaptureInterrupted("adapter", "conversation-item");
       turn.completion = { state: "interrupted" };
@@ -61,7 +61,7 @@ function captureRunnerAttemptSourceSnapshot(
     const timingNormalization = yield* normalizeAttemptTiming({
       result,
       mint: minter.mint,
-      turns: runtime.conversationTurns,
+      turns,
     });
     const diagnosticsNormalization = yield* normalizeAttemptDiagnostics({ result, mint: minter.mint });
     const activitySegmentIds = segmentIds(timingNormalization.timing.intervals.map((interval) => interval.intervalId));
@@ -73,7 +73,7 @@ function captureRunnerAttemptSourceSnapshot(
     }
 
     const terminalLimitations: SourceReceiptLimitation[] = [];
-    const agentTurnSegments = runtime.conversationTurns.map((turn) => ({
+    const agentTurnSegments = turns.map((turn) => ({
       segmentId: turn.segmentId,
       sessionId: turn.sessionId,
       turnId: turn.turnId,
@@ -84,7 +84,7 @@ function captureRunnerAttemptSourceSnapshot(
       usage: turn.usage.map(({ refs: _refs, ...usage }) => usage),
     }));
     const agentTurnsCandidate =
-      runtime.conversationTurns.length === 0
+      turns.length === 0
         ? undefined
         : {
             state: "current" as const,
@@ -95,7 +95,7 @@ function captureRunnerAttemptSourceSnapshot(
               ],
               [
                 ...terminalLimitations,
-                ...runtime.conversationTurns.flatMap((turn) =>
+                ...turns.flatMap((turn) =>
                   turn.completion.state === "observed" ? turn.completion.observed.limitations : [],
                 ),
               ],
@@ -105,7 +105,7 @@ function captureRunnerAttemptSourceSnapshot(
     const agentTurns =
       agentTurnsCandidate === undefined
         ? undefined
-        : retainAgentTurns(yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt"));
+        : yield* decodeReceipt(AgentTurnsAttachmentSchema, agentTurnsCandidate, "attempt");
 
     const commandSegments: StagedSandboxCommandReceipt[] = [];
     for (const command of runtime.commands) {
@@ -125,6 +125,9 @@ function captureRunnerAttemptSourceSnapshot(
       });
     }
 
+    const turnIdByInterval = new Map(
+      Array.from(timingNormalization.intervalByTurnId, ([turnId, intervalId]) => [intervalId, turnId] as const),
+    );
     const activitiesCandidate = {
       collection: sourceCollection([{ collection: timingNormalization.timing.collection, stage: "runner-clock" }]),
       segments: timingNormalization.timing.intervals.map((interval, index) => ({
@@ -133,9 +136,7 @@ function captureRunnerAttemptSourceSnapshot(
         sequence: index + 1,
         phase: interval.phase,
         label: interval.label,
-        turnId:
-          [...timingNormalization.intervalByTurnId].find(([, intervalId]) => intervalId === interval.intervalId)?.[0] ??
-          null,
+        turnId: turnIdByInterval.get(interval.intervalId) ?? null,
         startOffsetMs: interval.startOffsetMs,
         durationMs: interval.durationMs,
         parentActivityId: interval.parentIntervalId,

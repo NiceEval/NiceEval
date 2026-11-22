@@ -12,7 +12,6 @@ import {
   type CollectionStage,
   type CollectionTarget,
   type CommandId,
-  type ItemId,
   type NonNegativeSafeInteger,
   type ObservabilityEntityKind,
   type ObservabilityLimitation,
@@ -110,14 +109,7 @@ export class RunnerCollectionLimitations {
   >();
   private readonly unsupported = new Map<CollectionTarget, number>();
   private readonly redacted = new Map<CollectionTarget, number>();
-  private readonly caps = new Map<
-    CollectionTarget,
-    {
-      readonly retained: number;
-      readonly omittedAtLeast: number;
-    }
-  >();
-  private readonly textTruncations: ObservabilityLimitation[] = [];
+  private readonly strippedControls: ObservabilityLimitation[] = [];
 
   addCaptureFailed(stage: CollectionStage, target: CollectionTarget): void {
     this.captureFailed.set(`${stage}\u0000${target}`, { stage, target });
@@ -135,59 +127,8 @@ export class RunnerCollectionLimitations {
     this.redacted.set(target, (this.redacted.get(target) ?? 0) + replacements);
   }
 
-  addCap(target: CollectionTarget, retained: number, omittedAtLeast = 1): void {
-    const current = this.caps.get(target);
-    this.caps.set(target, {
-      retained: Math.max(retained, current?.retained ?? 0),
-      omittedAtLeast: (current?.omittedAtLeast ?? 0) + omittedAtLeast,
-    });
-  }
-
-  addConversationTextTruncated(
-    itemId: ItemId,
-    retainedBytes: NonNegativeSafeInteger,
-    omittedBytes: PositiveSafeInteger,
-  ): void {
-    this.textTruncations.push({
-      code: "text-truncated" as const,
-      target: "conversation-text" as const,
-      itemId,
-      retainedBytes,
-      omittedBytes,
-    });
-  }
-
-  addCommandManifestTextTruncated(
-    commandId: CommandId,
-    retainedBytes: NonNegativeSafeInteger,
-    omittedBytes: PositiveSafeInteger,
-  ): void {
-    this.textTruncations.push({
-      code: "text-truncated" as const,
-      target: "command-manifest" as const,
-      commandId,
-      retainedBytes,
-      omittedBytes,
-    });
-  }
-
-  addCommandStreamTruncated(
-    commandId: CommandId,
-    stream: "stdout" | "stderr",
-    retainedBytes: NonNegativeSafeInteger,
-    omittedBytes: PositiveSafeInteger,
-  ): void {
-    this.textTruncations.push({
-      code: "stream-truncated" as const,
-      commandId,
-      stream,
-      retainedBytes,
-      omittedBytes,
-    });
-  }
-
   addUnsafeCommandControlStripped(commandId: CommandId, stream: "stdout" | "stderr", strippedCount: number): void {
-    this.textTruncations.push({
+    this.strippedControls.push({
       code: "unsafe-control-stripped" as const,
       commandId,
       stream,
@@ -225,15 +166,7 @@ export class RunnerCollectionLimitations {
         replacementCount: requiredPositive(replacements),
       });
     }
-    for (const [target, cap] of this.caps) {
-      limitations.push({
-        code: "collection-cap-reached" as const,
-        target,
-        retained: requiredNonNegative(cap.retained),
-        omittedAtLeast: requiredPositive(cap.omittedAtLeast),
-      });
-    }
-    limitations.push(...this.textTruncations);
+    for (const limitation of this.strippedControls) limitations.push(limitation);
     limitations.sort(compareObservabilityLimitation);
     if (limitations.length === 0) {
       return {

@@ -10,8 +10,6 @@ import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch, Fiber } from "effect";
 import { adapterIdentity } from "../adapter.ts";
-import { boundedErrorText } from "../shared/bounded-error-text.ts";
-import { MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../record/family/source-receipt/limits.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
@@ -1235,7 +1233,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const slotId = plannedSlotIds.get(JSON.stringify([experimentId, attempt.evalDef.id, attempt.attempt]));
         if (slotId === undefined) throw new Error("Pre-dispatch failure has no planned slot.");
         const key = JSON.stringify([experimentId, code, failureId]);
-        const message = boundedErrorText(error.message, MAX_DIAGNOSTIC_SUMMARY_BYTES);
+        const message = error.message;
         recordExperimentDiagnostic({
           experimentId,
           code,

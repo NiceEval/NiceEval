@@ -14,18 +14,10 @@ import {
   TurnIdSchema,
   UsageObservationIdSchema,
   UsageReferencesSchema,
-  boundedSafeTextSchema,
+  SafeTextSchema,
 } from "../../../record/family/source-receipt/codec.ts";
-import {
-  MAX_CONVERSATION_ATTACHMENT_BYTES,
-  MAX_CONVERSATION_ITEMS,
-  MAX_CONVERSATION_TEXT_BYTES,
-  MAX_CONVERSATION_TURNS,
-  MAX_USAGE_ATTACHMENT_BYTES,
-  MAX_USAGE_OBSERVATIONS,
-} from "../../../record/family/source-receipt/limits.ts";
 import { compareObservabilityText } from "../../../record/family/source-receipt/model.ts";
-import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById } from "./common.ts";
 
 const ConversationItemBaseFields = {
   itemId: ItemIdSchema,
@@ -46,40 +38,40 @@ export const ConversationItemSchema = Schema.Union([
     ...ConversationItemBaseFields,
     kind: Schema.Literal("message"),
     role: Schema.Literals(["user", "assistant"]),
-    text: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    text: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("tool-call"),
     callId: CallIdSchema,
     tool: SourceNativeToolNameSchema,
-    inputSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    inputSummary: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("tool-result"),
     callId: CallIdSchema,
     outcome: Schema.Literals(["completed", "rejected", "failed", "cancelled"]),
-    outputSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    outputSummary: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("thinking-summary"),
-    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    summary: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("subagent"),
     state: Schema.Literals(["started", "completed", "failed"]),
     label: SafeIdentifierSchema,
-    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    summary: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("input-request"),
     state: Schema.Literals(["requested", "answered", "cancelled"]),
-    promptSummary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
-    responseSummary: Schema.NullOr(boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES)),
+    promptSummary: SafeTextSchema,
+    responseSummary: Schema.NullOr(SafeTextSchema),
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
@@ -91,19 +83,19 @@ export const ConversationItemSchema = Schema.Union([
     ...ConversationItemBaseFields,
     kind: Schema.Literal("context-injection"),
     source: Schema.Literals(["system", "memory", "skill", "user"]),
-    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    summary: SafeTextSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("compaction"),
-    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    summary: SafeTextSchema,
     compactedItemCount: NonNegativeSafeIntegerSchema,
   }),
   Schema.Struct({
     ...ConversationItemBaseFields,
     kind: Schema.Literal("conversation-error"),
     code: SafeIdentifierSchema,
-    summary: boundedSafeTextSchema(MAX_CONVERSATION_TEXT_BYTES),
+    summary: SafeTextSchema,
   }),
 ]);
 
@@ -137,12 +129,7 @@ function conversationTextLengths(item: ConversationItem): readonly number[] {
 function isCanonicalConversationAttachment(
   value: Schema.Schema.Type<typeof ConversationAttachmentStructuralSchema>,
 ): boolean {
-  if (
-    value.turns.length > MAX_CONVERSATION_TURNS ||
-    value.items.length > MAX_CONVERSATION_ITEMS ||
-    !payloadFits(value, MAX_CONVERSATION_ATTACHMENT_BYTES) ||
-    !isAllowedCollection(value.collection, ["conversation-item", "conversation-text"])
-  ) {
+  if (!isAllowedCollection(value.collection, ["conversation-item", "conversation-text"])) {
     return false;
   }
   if (!isStrictlyOrderedById(value.turns, (turn) => turn.turnId)) return false;
@@ -257,8 +244,6 @@ export type UsageObservation = Schema.Schema.Type<typeof UsageObservationSchema>
 
 function isCanonicalUsageAttachment(value: Schema.Schema.Type<typeof UsageAttachmentStructuralSchema>): boolean {
   return (
-    value.observations.length <= MAX_USAGE_OBSERVATIONS &&
-    payloadFits(value, MAX_USAGE_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["usage-observation"]) &&
     isStrictlyOrderedById(value.observations, (observation) => observation.usageObservationId)
   );

@@ -16,8 +16,7 @@ import {
   TurnIdSchema,
   UsageObservationIdSchema,
 } from "../source-receipt/codec.ts";
-import { MAX_CONVERSATION_TEXT_BYTES } from "../source-receipt/limits.ts";
-import { isBoundedSafeText } from "../source-receipt/model.ts";
+import { isSafeText } from "../source-receipt/model.ts";
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import {
   SourceReceiptCollectionSchema,
@@ -126,13 +125,10 @@ export const AgentTurnUsageObservationSchema = Schema.Union([
 
 const AgentTurnCoverageReasonSchema = Schema.String.pipe(
   Schema.check(
-    Schema.makeFilter(
-      (value) => value.trim().length > 0 && Boolean(isBoundedSafeText(value, MAX_CONVERSATION_TEXT_BYTES)),
-      {
-        identifier: "AgentTurnEvidenceCoverageReason",
-        description: "non-empty durable coverage reason within the conversation text limit",
-      },
-    ),
+    Schema.makeFilter((value) => value.trim().length > 0 && isSafeText(value), {
+      identifier: "AgentTurnEvidenceCoverageReason",
+      description: "non-empty durable coverage reason",
+    }),
   ),
 );
 

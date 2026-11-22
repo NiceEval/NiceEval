@@ -629,7 +629,7 @@ describe("portable trace", () => {
     expect(zeroMatch.events).toEqual([]);
     expect(zeroMatch.traces[0]?.collection.state).toBe("partial");
 
-    // Tool & item truncation disclosure + sandbox command detail.
+    // Tool payload exceeds the Record inline threshold and remains readable from both detail locators.
     const toolTrace = selectInspectionOperation(facts, {
       kind: "attempt.trace",
       locator: toolAgentLocator,
@@ -642,11 +642,10 @@ describe("portable trace", () => {
     }).detail;
     if (toolDetail.kind !== "tool-occurrence") throw new Error("Expected tool-occurrence");
     if (toolDetail.result?.kind !== "tool-result") throw new Error("Expected tool-result");
-    expect(toolDetail.result.outputTruncation).toMatchObject({
-      state: "truncated",
-    });
-    expect(toolDetail.result.outputTruncation?.retainedBytes).toBeLessThanOrEqual(16384);
-    expect(toolDetail.result.outputTruncation?.retainedBytes).toBeGreaterThan(16000);
+    const expectedOutput = JSON.stringify({ content: "工具输出".repeat(9000) });
+    expect(Buffer.byteLength(expectedOutput)).toBeGreaterThan(64 * 1024);
+    expect(toolDetail.result.output).toBe(expectedOutput);
+    expect(toolDetail.result.outputTruncation).toBeUndefined();
     const itemDetail = selectInspectionOperation(facts, {
       kind: "attempt.trace.detail",
       locator: toolAgentLocator,
@@ -654,7 +653,7 @@ describe("portable trace", () => {
     }).detail;
     expect(itemDetail).toMatchObject({
       kind: "item",
-      item: { outputTruncation: { state: "truncated", retainedBytes: toolDetail.result.outputTruncation?.retainedBytes } },
+      item: { output: expectedOutput },
     });
     const commandId = toolTrace.commands.items[0]!.commandId;
     const commandDetail = selectInspectionOperation(facts, {

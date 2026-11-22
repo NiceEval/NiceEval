@@ -5,18 +5,9 @@ import { Result, Schema } from "effect";
 import { redactSensitiveText } from "../../sandbox/redaction.ts";
 import type { CommandOptions } from "../../sandbox/types.ts";
 import type { LifecyclePhase } from "../types.ts";
-import { CanonicalProjectRelativePathSchema } from "../../record/codec/identifiers.ts";
-import {
-  MAX_COMMAND_ARGUMENT_BYTES,
-  MAX_COMMAND_ARGUMENTS,
-  MAX_COMMAND_EXECUTABLE_BYTES,
-  MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES,
-  MAX_COMMAND_SHELL_BYTES,
-  MAX_COMMAND_STREAM_BYTES,
-} from "../../record/family/source-receipt/limits.ts";
-import { makeBoundedSafeText, type CommandId, type SafeText } from "../../record/family/source-receipt/model.ts";
+import { SandboxCommandWorkingDirectoryPathSchema } from "../../record/family/sandbox-commands/definition.ts";
+import { makeSafeText, type CommandId, type SafeText } from "../../record/family/source-receipt/model.ts";
 import type { CommandProjectionRuntime } from "./projection-runtime.ts";
-import { retainSafeText } from "./projection-text.ts";
 import type { CommandManifest, StagedCommandStream } from "./types.ts";
 import { requiredNonNegative } from "./support.ts";
 
@@ -57,43 +48,19 @@ function commandManifestPhase(phase: LifecyclePhase): CommandManifest["phase"] {
   }
 }
 
-function commandSafeText(input: {
-  readonly commandId: CommandId;
-  readonly value: string;
-  readonly maximumBytes: number;
-  readonly target: "command-manifest" | "command-stdout" | "command-stderr";
-  readonly runtime: CommandProjectionRuntime;
-}): SafeText {
-  const redacted = redactSensitiveText(input.value, input.runtime.sensitiveValues);
-  if (redacted !== input.value) input.runtime.commandLimitations.addRedacted(input.target);
-  const retained = retainSafeText(redacted, input.maximumBytes);
+function commandSafeText(value: string, runtime: CommandProjectionRuntime): SafeText {
+  const redacted = redactSensitiveText(value, runtime.sensitiveValues);
+  if (redacted !== value) runtime.commandLimitations.addRedacted("command-manifest");
+  const retained = makeSafeText(redacted);
   if (retained === undefined) {
-    input.runtime.commandLimitations.addCaptureFailed("command-capture", input.target);
-    const replacement = makeBoundedSafeText("[unavailable]", input.maximumBytes);
+    runtime.commandLimitations.addCaptureFailed("command-capture", "command-manifest");
+    const replacement = makeSafeText("[unavailable]");
     if (replacement === undefined) {
       throw new Error("The fixed unavailable command marker must be SafeText");
     }
     return replacement;
   }
-  if (retained.omittedBytes !== undefined) {
-    input.runtime.commandLimitations.addCommandManifestTextTruncated(
-      input.commandId,
-      retained.retainedBytes,
-      retained.omittedBytes,
-    );
-  }
-  return retained.text;
-}
-
-function isProjectRelativeCommandPath(value: string): boolean {
-  return (
-    makeBoundedSafeText(value, MAX_COMMAND_PROJECT_RELATIVE_PATH_BYTES) !== undefined &&
-    value.length > 0 &&
-    !value.startsWith("/") &&
-    !value.includes("\\") &&
-    !value.includes(":") &&
-    value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
-  );
+  return retained;
 }
 
 function commandWorkingDirectory(
@@ -109,8 +76,8 @@ function commandWorkingDirectory(
   }
   const redacted = redactSensitiveText(cwd, runtime.sensitiveValues);
   if (redacted !== cwd) runtime.commandLimitations.addRedacted("command-manifest");
-  if (isProjectRelativeCommandPath(redacted)) {
-    const decoded = Schema.decodeUnknownResult(CanonicalProjectRelativePathSchema)(redacted);
+  if (!redacted.includes(":") && makeSafeText(redacted) !== undefined) {
+    const decoded = Schema.decodeUnknownResult(SandboxCommandWorkingDirectoryPathSchema)(redacted);
     if (Result.isSuccess(decoded)) {
       return { kind: "project-relative" as const, path: decoded.success };
     }
@@ -121,7 +88,6 @@ function commandWorkingDirectory(
 
 export function commandManifest(
   command: {
-    readonly commandId: CommandId;
     readonly phase: LifecyclePhase;
     readonly invocationKind: "argv" | "shell";
     readonly command: string;
@@ -133,42 +99,15 @@ export function commandManifest(
   const phase = commandManifestPhase(command.phase);
   const workingDirectory = commandWorkingDirectory(command.options, runtime);
   if (command.invocationKind === "shell") {
-    const script = commandSafeText({
-      commandId: command.commandId,
-      value: command.command,
-      maximumBytes: MAX_COMMAND_SHELL_BYTES,
-      target: "command-manifest",
-      runtime,
-    });
+    const script = commandSafeText(command.command, runtime);
     return {
       phase,
       invocation: { kind: "shell" as const, command: script },
       workingDirectory,
     };
   }
-  const sourceArguments = command.args ?? [];
-  if (sourceArguments.length > MAX_COMMAND_ARGUMENTS) {
-    runtime.commandLimitations.addUnsupported("command-manifest");
-  }
-  const executable = commandSafeText({
-    commandId: command.commandId,
-    value: command.command,
-    maximumBytes: MAX_COMMAND_EXECUTABLE_BYTES,
-    target: "command-manifest",
-    runtime,
-  });
-  const arguments_: SafeText[] = [];
-  for (const raw of sourceArguments.slice(0, MAX_COMMAND_ARGUMENTS)) {
-    arguments_.push(
-      commandSafeText({
-        commandId: command.commandId,
-        value: raw,
-        maximumBytes: MAX_COMMAND_ARGUMENT_BYTES,
-        target: "command-manifest",
-        runtime,
-      }),
-    );
-  }
+  const executable = commandSafeText(command.command, runtime);
+  const arguments_ = (command.args ?? []).map((argument) => commandSafeText(argument, runtime));
   return {
     phase,
     invocation: {
@@ -195,7 +134,7 @@ function stripUnsafeCommandControls(value: string): { readonly text: string; rea
 }
 
 export function emptyCommandStream(): StagedCommandStream {
-  const text = makeBoundedSafeText("", MAX_COMMAND_STREAM_BYTES);
+  const text = makeSafeText("");
   if (text === undefined) throw new Error("An empty command stream must be SafeText");
   return {
     text,
@@ -218,27 +157,17 @@ export function commandStream(input: {
   if (stripped.count > 0) {
     input.runtime.commandLimitations.addUnsafeCommandControlStripped(input.commandId, input.stream, stripped.count);
   }
-  const retained = retainSafeText(stripped.text, MAX_COMMAND_STREAM_BYTES);
-  if (retained === undefined) {
+  const text = makeSafeText(stripped.text);
+  if (text === undefined) {
     input.runtime.commandLimitations.addCaptureFailed("command-capture", target);
     return emptyCommandStream();
   }
-  if (retained.omittedBytes !== undefined) {
-    input.runtime.commandLimitations.addCommandStreamTruncated(
-      input.commandId,
-      input.stream,
-      retained.retainedBytes,
-      retained.omittedBytes,
-    );
-  }
-  const totalSafeUtf8Bytes =
-    retained.omittedBytes === undefined
-      ? retained.retainedBytes
-      : requiredNonNegative(retained.retainedBytes + retained.omittedBytes);
+  const bytes = new TextEncoder().encode(text);
+  const byteLength = requiredNonNegative(bytes.byteLength);
   return {
-    text: retained.text,
-    retainedBytes: retained.retainedBytes,
-    totalSafeUtf8Bytes,
-    sha256: createHash("sha256").update(new TextEncoder().encode(retained.text)).digest("hex"),
+    text,
+    retainedBytes: byteLength,
+    totalSafeUtf8Bytes: byteLength,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
   };
 }

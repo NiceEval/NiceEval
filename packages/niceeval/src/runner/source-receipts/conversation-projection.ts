@@ -1,12 +1,8 @@
 import { redactSensitiveText } from "../../sandbox/redaction.ts";
 import type { StreamEvent } from "../../types.ts";
 import {
-  MAX_CONVERSATION_ITEMS,
-  MAX_CONVERSATION_TEXT_BYTES,
-  MAX_CONVERSATION_TURNS,
-} from "../../record/family/source-receipt/limits.ts";
-import {
-  makeBoundedSafeText,
+  makeSafeText,
+  type SafeText,
   makeSafeIdentifier,
   makeSourceNativeToolName,
   type CallId,
@@ -17,24 +13,23 @@ import {
 } from "../../record/family/source-receipt/model.ts";
 import type { ConversationItem } from "./model.ts";
 import type { EventProjectionRuntime, ProjectedConversationTurn } from "./projection-runtime.ts";
-import { retainSafeText, type RetainedText } from "./projection-text.ts";
 import { RunnerCollectionLimitations, requiredPositive } from "./support.ts";
 
-function retainConversationText(
+function safeConversationText(
   value: string,
   runtime: EventProjectionRuntime,
   limitations: RunnerCollectionLimitations,
-): RetainedText | undefined {
+): SafeText | undefined {
   const redacted = redactSensitiveText(value, runtime.sensitiveValues);
   if (redacted !== value) limitations.addRedacted("conversation-text");
-  return retainSafeText(redacted, MAX_CONVERSATION_TEXT_BYTES);
+  return makeSafeText(redacted);
 }
 
 function jsonConversationSummary(
   value: unknown,
   runtime: EventProjectionRuntime,
   limitations: RunnerCollectionLimitations,
-): RetainedText | undefined {
+): SafeText | undefined {
   let summary: string | undefined;
   try {
     const encoded = JSON.stringify(value);
@@ -42,7 +37,7 @@ function jsonConversationSummary(
   } catch {
     return undefined;
   }
-  return summary === undefined ? undefined : retainConversationText(summary, runtime, limitations);
+  return summary === undefined ? undefined : safeConversationText(summary, runtime, limitations);
 }
 
 function safeIdentifier(value: string): SafeIdentifier | undefined {
@@ -68,32 +63,6 @@ function eventCannotBePersisted(
   return false;
 }
 
-function hasConversationCapacity(input: {
-  readonly itemCount: number;
-  readonly hasTurn: boolean;
-  readonly limitations: RunnerCollectionLimitations;
-}): boolean {
-  if (input.itemCount >= MAX_CONVERSATION_ITEMS) {
-    input.limitations.addCap("conversation-item", input.itemCount);
-    return false;
-  }
-  if (!input.hasTurn && input.itemCount >= MAX_CONVERSATION_TURNS) {
-    input.limitations.addCap("conversation-item", input.itemCount);
-    return false;
-  }
-  return true;
-}
-
-function appendConversationTextLimitation(
-  item: ConversationItem | undefined,
-  text: RetainedText,
-  limitations: RunnerCollectionLimitations,
-): void {
-  if (item !== undefined && text.omittedBytes !== undefined) {
-    limitations.addConversationTextTruncated(item.itemId, text.retainedBytes, text.omittedBytes);
-  }
-}
-
 /** Adapter boundary: raw terminal events do not survive this call. */
 export function normalizeConversationTurn(
   runtime: EventProjectionRuntime,
@@ -103,6 +72,7 @@ export function normalizeConversationTurn(
   const limitations = runtime.conversationLimitations;
   const openTools = new Map<string, CallId>();
   const openSubagents = new Map<string, SafeIdentifier>();
+  let itemCount = runtime.conversationTurns.reduce((count, entry) => count + entry.items.length, 0);
   const append = (
     create: (ids: {
       readonly itemId: ItemId;
@@ -110,14 +80,12 @@ export function normalizeConversationTurn(
       readonly sequence: PositiveSafeInteger;
     }) => ConversationItem,
   ): ConversationItem | undefined => {
-    const itemCount = runtime.conversationTurns.reduce((count, entry) => count + entry.items.length, 0);
-    if (!hasConversationCapacity({ itemCount, hasTurn: true, limitations })) return undefined;
     const itemId = runtime.mintEntity("item");
     if (itemId === undefined) return undefined;
     const item = create({
       itemId,
       turnId: turn.turnId,
-      sequence: requiredPositive(itemCount + 1),
+      sequence: requiredPositive(++itemCount),
     });
     turn.items.push(item);
     return item;
@@ -127,19 +95,18 @@ export function normalizeConversationTurn(
     if (eventCannotBePersisted(event, limitations)) continue;
     switch (event.type) {
       case "message": {
-        const text = retainConversationText(event.text, runtime, limitations);
+        const text = safeConversationText(event.text, runtime, limitations);
         if (text === undefined) {
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => ({
+        append((ids) => ({
           ...ids,
           kind: "message" as const,
           role: event.role,
-          text: text.text,
+          text,
           refs: [],
         }));
-        appendConversationTextLimitation(item, text, limitations);
         break;
       }
       case "operation.started": {
@@ -156,11 +123,10 @@ export function normalizeConversationTurn(
             kind: "tool-call" as const,
             callId,
             tool,
-            inputSummary: summary.text,
+            inputSummary: summary,
             refs: [],
           }));
           if (item !== undefined) openTools.set(event.operationId, callId);
-          appendConversationTextLimitation(item, summary, limitations);
           break;
         }
         const label = safeIdentifier(event.operation.name);
@@ -173,7 +139,7 @@ export function normalizeConversationTurn(
           kind: "subagent" as const,
           state: "started" as const,
           label,
-          summary: makeBoundedSafeText("Subagent started.", MAX_CONVERSATION_TEXT_BYTES)!,
+          summary: makeSafeText("Subagent started.")!,
           refs: [],
         }));
         if (item !== undefined) openSubagents.set(event.operationId, label);
@@ -193,11 +159,10 @@ export function normalizeConversationTurn(
             kind: "tool-result" as const,
             callId,
             outcome: event.status,
-            outputSummary: summary.text,
+            outputSummary: summary,
             refs: [],
           }));
           if (item !== undefined) openTools.delete(event.operationId);
-          appendConversationTextLimitation(item, summary, limitations);
           break;
         }
         const label = openSubagents.get(event.operationId);
@@ -210,10 +175,7 @@ export function normalizeConversationTurn(
           kind: "subagent" as const,
           state: event.status,
           label,
-          summary: makeBoundedSafeText(
-            event.status === "completed" ? "Subagent completed." : "Subagent failed.",
-            MAX_CONVERSATION_TEXT_BYTES,
-          )!,
+          summary: makeSafeText(event.status === "completed" ? "Subagent completed." : "Subagent failed.")!,
           refs: [],
         }));
         if (item !== undefined) openSubagents.delete(event.operationId);
@@ -238,7 +200,7 @@ export function normalizeConversationTurn(
         const request = event.request;
         const source = event.request.prompt ?? event.request.display;
         function inputRequestSummary() {
-          if (source !== undefined) return retainConversationText(source, runtime, limitations);
+          if (source !== undefined) return safeConversationText(source, runtime, limitations);
           if (request.input !== undefined) return jsonConversationSummary(request.input, runtime, limitations);
           return undefined;
         }
@@ -247,21 +209,20 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => ({
+        append((ids) => ({
           ...ids,
           kind: "input-request" as const,
           state: "requested" as const,
-          promptSummary: summary.text,
+          promptSummary: summary,
           responseSummary: null,
           refs: [],
         }));
-        appendConversationTextLimitation(item, summary, limitations);
         limitations.addCaptureFailed("adapter", "conversation-item");
         break;
       }
       case "context.injected": {
         const source = event.source;
-        const summary = retainConversationText(event.text, runtime, limitations);
+        const summary = safeConversationText(event.text, runtime, limitations);
         if (
           summary === undefined ||
           (source !== "system" && source !== "memory" && source !== "skill" && source !== "user")
@@ -269,30 +230,28 @@ export function normalizeConversationTurn(
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => ({
+        append((ids) => ({
           ...ids,
           kind: "context-injection" as const,
           source,
-          summary: summary.text,
+          summary,
           refs: [],
         }));
-        appendConversationTextLimitation(item, summary, limitations);
         break;
       }
       case "error": {
-        const summary = retainConversationText(event.message, runtime, limitations);
+        const summary = safeConversationText(event.message, runtime, limitations);
         if (summary === undefined) {
           limitations.addUnsupported("conversation-item");
           break;
         }
-        const item = append((ids) => ({
+        append((ids) => ({
           ...ids,
           kind: "conversation-error" as const,
           code: makeSafeIdentifier("stream-error")!,
-          summary: summary.text,
+          summary,
           refs: [],
         }));
-        appendConversationTextLimitation(item, summary, limitations);
         break;
       }
       case "thinking":

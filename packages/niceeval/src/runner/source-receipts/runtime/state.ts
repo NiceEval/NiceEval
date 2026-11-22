@@ -190,7 +190,7 @@ export interface RunnerAttemptObservabilityRuntimeState {
   readonly commandLimitations: RunnerCollectionLimitations;
   readonly usageLimitations: RunnerCollectionLimitations;
   /** One receipt slot is allocated at each physical SessionManager send start. */
-  readonly conversationTurns: CapturedConversationTurn[];
+  readonly conversationTurns: Map<TurnId, CapturedConversationTurn>;
   readonly conversationLimitations: RunnerCollectionLimitations;
   readonly registeredSessionScopes: Set<SessionScopeId>;
   readonly registeredToolOccurrences: Set<ToolOccurrenceId>;
@@ -462,7 +462,7 @@ export function createRunnerAttemptObservabilityRuntime(input: {
     commands: [],
     commandLimitations: new RunnerCollectionLimitations(),
     usageLimitations: new RunnerCollectionLimitations(),
-    conversationTurns: [],
+    conversationTurns: new Map(),
     conversationLimitations: new RunnerCollectionLimitations(),
     registeredSessionScopes: new Set(),
     registeredToolOccurrences: new Set(),

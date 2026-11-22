@@ -1,5 +1,4 @@
 import type { Usage } from "../../../o11y/types.ts";
-import { MAX_CONVERSATION_TURNS, MAX_USAGE_OBSERVATIONS } from "../../../record/family/source-receipt/limits.ts";
 import {
   makeCanonicalDecimal,
   makeCurrencyCode,
@@ -51,14 +50,9 @@ function appendUsageObservation(
   turnId: TurnId,
   create: (usageObservationId: UsageObservationId, provider: SafeIdentifier) => UsageObservation,
 ): void {
-  const capturedTurn = runtime.conversationTurns.find((turn) => turn.turnId === turnId);
+  const capturedTurn = runtime.conversationTurns.get(turnId);
   if (capturedTurn === undefined) {
     runtime.usageLimitations.addCaptureFailed("usage-capture", "usage-observation");
-    return;
-  }
-  const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
-  if (usageCount >= MAX_USAGE_OBSERVATIONS) {
-    runtime.usageLimitations.addCap("usage-observation", usageCount);
     return;
   }
   const provider = makeSafeIdentifier(runtime.providerName);
@@ -83,14 +77,6 @@ export function captureRunnerTurnUsage(
 ): void {
   const runtime = runtimeState(runtimeHandle);
   if (runtime === undefined || runtime.failure !== undefined || runtime.snapshot !== undefined) return;
-  if (
-    runtime.conversationTurns.length >= MAX_CONVERSATION_TURNS &&
-    !runtime.conversationTurns.some((turn) => turn.turnId === turnId)
-  ) {
-    const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
-    runtime.usageLimitations.addCap("usage-observation", usageCount);
-    return;
-  }
   const tokenBuckets: readonly [
     keyof Pick<Usage, "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheCreationTokens" | "reasoningTokens">,
     Extract<UsageObservation, { readonly kind: "token-bucket" }>["bucket"],
@@ -131,8 +117,6 @@ export function captureRunnerTurnUsage(
           requestKind: "model" as const,
           refs: [],
         }));
-        const usageCount = runtime.conversationTurns.reduce((count, turn) => count + turn.usage.length, 0);
-        if (usageCount >= MAX_USAGE_OBSERVATIONS) break;
       }
     }
   }

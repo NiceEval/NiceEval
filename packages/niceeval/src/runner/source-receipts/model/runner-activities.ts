@@ -14,9 +14,8 @@ import {
   RunTimingReferencesSchema,
   StableLabelSchema,
 } from "../../../record/family/source-receipt/codec.ts";
-import { MAX_TIMING_ATTACHMENT_BYTES, MAX_TIMING_INTERVALS } from "../../../record/family/source-receipt/limits.ts";
 import { isStableLabel } from "../../../record/family/source-receipt/model.ts";
-import { isAllowedCollection, isStrictlyOrderedById, payloadFits } from "./common.ts";
+import { isAllowedCollection, isStrictlyOrderedById } from "./common.ts";
 
 export const AttemptTimingPhaseSchema = Schema.Literals(ATTEMPT_ACTIVITY_PHASES);
 
@@ -120,8 +119,6 @@ function isCanonicalAttemptTimingAttachment(
   value: Schema.Schema.Type<typeof AttemptTimingAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.intervals.length <= MAX_TIMING_INTERVALS &&
-    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
     isCanonicalTimingTree(value.intervals) &&
     (!value.intervals.some((interval) => interval.outcome === "unknown") || value.collection.state === "partial")
@@ -148,8 +145,6 @@ function isCanonicalRunTimingAttachment(
   value: Schema.Schema.Type<typeof RunTimingAttachmentStructuralSchema>,
 ): boolean {
   return (
-    value.intervals.length <= MAX_TIMING_INTERVALS &&
-    payloadFits(value, MAX_TIMING_ATTACHMENT_BYTES) &&
     isAllowedCollection(value.collection, ["timing-interval"]) &&
     isCanonicalTimingTree(value.intervals) &&
     (!value.intervals.some((interval) => interval.outcome === "unknown") || value.collection.state === "partial")

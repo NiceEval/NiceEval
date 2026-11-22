@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { StreamEvent } from "./types.ts";
 import {
   entityIdFromEntropy,
-  makeBoundedSafeText,
+  makeSafeText,
   makePositiveSafeInteger,
   makeSafeIdentifier,
   makeSourceNativeToolName,
@@ -19,12 +19,7 @@ import {
   type ToolOccurrenceId,
   type TurnId,
 } from "../record/family/source-receipt/model.ts";
-import {
-  MAX_CONVERSATION_ITEMS,
-  MAX_CONVERSATION_TEXT_BYTES,
-  MAX_CONVERSATION_TURNS,
-  MAX_SOURCE_NATIVE_TOOL_NAME_BYTES,
-} from "../record/family/source-receipt/limits.ts";
+import { MAX_SOURCE_NATIVE_TOOL_NAME_BYTES } from "../record/family/source-receipt/limits.ts";
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 
 export type ToolOccurrenceRelation =
@@ -176,8 +171,6 @@ export class ObservedEventIngestionCorrelator {
   private readonly sessions = new Map<SessionScopeId, SessionCorrelationState>();
   private readonly drafts = new WeakMap<object, TurnDraftState>();
   private readonly evaluationBySnapshot = new Map<ObservedTurnSnapshot, ObservedEvaluationSegment>();
-  private retainedItems = 0;
-  private startedTurns = 0;
   private readonly normalizeText: RedactEvidenceText;
   private readonly normalizeEvaluationText: () => RedactEvidenceText;
 
@@ -206,15 +199,6 @@ export class ObservedEventIngestionCorrelator {
       finalized: false,
     };
     this.drafts.set(draft, state);
-    this.startedTurns += 1;
-    if (this.startedTurns > MAX_CONVERSATION_TURNS) {
-      state.historyLimited = true;
-      this.limit(state, {
-        code: "collection-cap-reached",
-        target: "turn",
-        omittedAtLeast: positive(1),
-      });
-    }
     return draft;
   }
 
@@ -295,7 +279,6 @@ export class ObservedEventIngestionCorrelator {
     const session = this.session(draft.sessionId);
     session.sequence += 1;
     const sessionSequence = positive(session.sequence);
-    const retainInRecord = this.startedTurns <= MAX_CONVERSATION_TURNS && this.retainedItems < MAX_CONVERSATION_ITEMS;
     const limitationStart = draft.limitations.length;
     const base = {
       itemId: mintEntity("item"),
@@ -335,30 +318,16 @@ export class ObservedEventIngestionCorrelator {
     const project = <Value extends string>(
       name: string,
       read: (projection: Projection, normalizeText: (value: string) => string) => Value,
-      boundedText = false,
+      tracksTruncation = false,
     ): Value => {
       function readField(
         projection: Projection,
         normalizeText: (value: string) => string,
         truncations: Record<string, ObservedTextTruncation>,
       ): Value {
-        const start = projection.limitations.length;
         const value = read(projection, normalizeText);
-        if (!boundedText) return value;
-        const omitted = projection.limitations
-          .slice(start)
-          .reduce(
-            (sum, limitation) =>
-              sum + (limitation.code === "text-truncated" ? limitation.replacementOrOmittedCount : 0),
-            0,
-          );
-        if (omitted > 0 || hasTruncation) {
-          const retainedBytes = utf8ByteLength(value);
-          truncations[name] = {
-            state: "truncated",
-            retainedBytes,
-            ...(hasTruncation ? {} : { originalBytes: retainedBytes + omitted }),
-          };
+        if (tracksTruncation && hasTruncation) {
+          truncations[name] = { state: "truncated", retainedBytes: utf8ByteLength(value) };
         }
         return value;
       }
@@ -550,23 +519,9 @@ export class ObservedEventIngestionCorrelator {
     draft.historyLimited ||=
       hasRedaction ||
       hasTruncation ||
-      !retainInRecord ||
       (identicalProjection ? draft.limitations.length > limitationStart : evaluation.limitations.length > 0);
     draft.evaluationEvents.push(this.evaluationEvent(event, normalizeEvaluationText));
-    if (!retainInRecord) {
-      // Field-level limitations belong only to retained items. Matcher-only
-      // material is attempt-local and the durable omission is represented by
-      // one aggregated collection limitation below.
-      draft.limitations.splice(limitationStart);
-      this.limit(draft, {
-        code: "collection-cap-reached",
-        target: "turn-item",
-        omittedAtLeast: positive(1),
-      });
-    } else {
-      draft.items.push(recorded);
-      this.retainedItems += 1;
-    }
+    draft.items.push(recorded);
   }
 
   private evaluationEvent(event: StreamEvent, normalizeText: RedactEvidenceText): StreamEvent {
@@ -602,15 +557,7 @@ export class ObservedEventIngestionCorrelator {
         replacementOrOmittedCount: positive(controls.stripped),
       });
     }
-    const retained = retainUtf8Prefix(controls.value, MAX_CONVERSATION_TEXT_BYTES);
-    if (retained.omittedBytes > 0) {
-      this.limit(draft, {
-        code: "text-truncated",
-        target: "turn-item",
-        replacementOrOmittedCount: positive(retained.omittedBytes),
-      });
-    }
-    const safe = makeBoundedSafeText(retained.value, MAX_CONVERSATION_TEXT_BYTES);
+    const safe = makeSafeText(controls.value);
     if (safe === undefined) throw new Error("Observed SafeText normalization failed");
     return safe;
   }
@@ -695,21 +642,6 @@ export class ObservedEventIngestionCorrelator {
   }
 
   private limit(draft: Pick<TurnDraftState, "limitations">, limitation: SourceReceiptLimitation): void {
-    if (limitation.code === "collection-cap-reached") {
-      const index = draft.limitations.findIndex(
-        (current) => current.code === limitation.code && current.target === limitation.target,
-      );
-      if (index >= 0) {
-        const current = draft.limitations[index]!;
-        if (current.code === "collection-cap-reached") {
-          draft.limitations[index] = {
-            ...current,
-            omittedAtLeast: positive(current.omittedAtLeast + limitation.omittedAtLeast),
-          };
-          return;
-        }
-      }
-    }
     draft.limitations.push(limitation);
   }
 }

@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Effect, Result, Schema } from "effect";
 
-import { MAX_CONVERSATION_TEXT_BYTES } from "../../../record/family/source-receipt/limits.ts";
-import {
-  makeBoundedSafeText,
-  makeSafeIdentifier,
-  type SafeIdentifier,
-} from "../../../record/family/source-receipt/model.ts";
+import { makeSafeText, makeSafeIdentifier, type SafeIdentifier } from "../../../record/family/source-receipt/model.ts";
 import type { AttemptDiagnostic, ConversationItem } from "../model.ts";
 import type { NormalizedAgentTurnTerminal } from "../types.ts";
 import { producerCaptureSealInvalid, type RunnerObservabilityProducerError } from "../support.ts";
@@ -28,18 +23,9 @@ function terminalCoverageEntry(
   limitations: SourceReceiptLimitation[],
 ): ResolvedEvidenceCoverageEntry {
   if (entry.status === "complete") return { status: "complete" };
-  const safe = new TextDecoder("utf-8", { ignoreBOM: true })
+  let reason = new TextDecoder("utf-8", { ignoreBOM: true })
     .decode(new TextEncoder().encode(entry.reason))
     .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/gu, "");
-  let reason = "";
-  let bytes = 0;
-  const encoder = new TextEncoder();
-  for (const character of safe) {
-    const length = encoder.encode(character).byteLength;
-    if (bytes + length > MAX_CONVERSATION_TEXT_BYTES) break;
-    reason += character;
-    bytes += length;
-  }
   if (reason.trim().length === 0) reason = "Coverage reason unavailable.";
   if (reason !== entry.reason) limitations.push({ code: "unsupported-input", target: "value-byte", omittedAtLeast: 1 });
   return { status: entry.status, reason };
@@ -123,10 +109,7 @@ export function receiptConversationItem(item: ConversationItem): object {
         ...base,
         kind: item.kind,
         code: item.skill,
-        summary: makeBoundedSafeText(
-          item.outcome === "loaded" ? "Skill loaded." : "Skill load failed.",
-          MAX_CONVERSATION_TEXT_BYTES,
-        )!,
+        summary: makeSafeText(item.outcome === "loaded" ? "Skill loaded." : "Skill load failed.")!,
       };
     case "context-injection":
       return { ...base, kind: item.kind, summary: item.summary };

@@ -1,11 +1,9 @@
 import { Effect } from "effect";
-import { boundedErrorText } from "../../shared/bounded-error-text.ts";
 
 import type { DiagnosticRecord, EvalResult, TimingOrigin } from "../types.ts";
-import { MAX_DIAGNOSTICS, MAX_DIAGNOSTIC_SUMMARY_BYTES } from "../../record/family/source-receipt/limits.ts";
 import {
   compareObservabilityText,
-  makeBoundedSafeText,
+  makeSafeText,
   makeSafeIdentifier,
   type DiagnosticId,
   type ObservabilityEntityIdForKind,
@@ -83,16 +81,9 @@ export function normalizeAttemptDiagnostics(input: {
         limitations.addUnsupported("diagnostic");
         return Effect.void;
       }
-      const retainedSummary = makeBoundedSafeText(
-        boundedErrorText(value.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES),
-        MAX_DIAGNOSTIC_SUMMARY_BYTES,
-      );
+      const retainedSummary = makeSafeText(value.detail);
       if (retainedSummary === undefined) {
         limitations.addUnsupported("diagnostic");
-      }
-      if (diagnostics.length >= MAX_DIAGNOSTICS) {
-        limitations.addCap("diagnostic", diagnostics.length);
-        return Effect.void;
       }
       return Effect.map(input.mint("diagnostic"), (diagnosticId) => {
         diagnostics.push({
@@ -102,15 +93,13 @@ export function normalizeAttemptDiagnostics(input: {
           phase: attemptDiagnosticPhase(value.origin),
           // The result's one-line detail is already Runner-redacted. Causes,
           // stacks, paths, and arbitrary context remain outside this durable
-          // family. Preserve both ends of oversized text; an unsafe detail is
-          // replaced by a generic summary and partial coverage.
+          // family. Unsafe detail falls back to a generic summary and partial coverage.
           summary:
             retainedSummary ??
-            makeBoundedSafeText(
+            makeSafeText(
               value.kind === "execution-error"
                 ? "Runner recorded an execution error."
                 : "Runner recorded an advisory diagnostic.",
-              MAX_DIAGNOSTIC_SUMMARY_BYTES,
             )!,
           causes:
             value.reason === undefined
@@ -118,7 +107,7 @@ export function normalizeAttemptDiagnostics(input: {
               : [
                   {
                     code: makeSafeIdentifier(value.reason)!,
-                    summary: makeBoundedSafeText(value.reason, MAX_DIAGNOSTIC_SUMMARY_BYTES)!,
+                    summary: makeSafeText(value.reason)!,
                   },
                 ],
           context: [],
@@ -185,15 +174,8 @@ export function normalizeRunDiagnostics(input: {
         limitations.addUnsupported("diagnostic");
         continue;
       }
-      const summary = makeBoundedSafeText(
-        boundedErrorText(source.detail, MAX_DIAGNOSTIC_SUMMARY_BYTES),
-        MAX_DIAGNOSTIC_SUMMARY_BYTES,
-      );
+      const summary = makeSafeText(source.detail);
       if (summary === undefined) limitations.addUnsupported("diagnostic");
-      if (diagnostics.length >= MAX_DIAGNOSTICS) {
-        limitations.addCap("diagnostic", diagnostics.length);
-        continue;
-      }
       const diagnosticId = yield* input.mint("diagnostic");
       diagnostics.push({
         ...(source.affectedSlotIds === undefined ? {} : { affectedSlotIds: source.affectedSlotIds }),
@@ -203,11 +185,10 @@ export function normalizeRunDiagnostics(input: {
         phase: runDiagnosticPhase(source.origin),
         summary:
           summary ??
-          makeBoundedSafeText(
+          makeSafeText(
             source.level === "error"
               ? "Runner recorded an execution error."
               : "Runner recorded an advisory diagnostic.",
-            MAX_DIAGNOSTIC_SUMMARY_BYTES,
           )!,
         causes: [],
         context: [],
