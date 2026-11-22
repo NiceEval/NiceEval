@@ -93,7 +93,22 @@ jobs:
             --output "$archive"
           echo "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a  $archive" | sha256sum --check
           unzip -q "$archive" -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/chrome-headless-shell-linux64" >> "$GITHUB_PATH"
+          chrome="$RUNNER_TEMP/chrome-headless-shell-linux64/chrome-headless-shell"
+          chrome_version="$("$chrome" --version)"
+          echo "$chrome_version"
+          test "$chrome_version" = "Google Chrome for Testing $version"
+
+          # Ubuntu restricts user namespaces for Chrome binaries outside its AppArmor profile.
+          sandbox=/opt/google/chrome/chrome-sandbox
+          if [[ ! -x "$sandbox" || "$(stat -c '%u:%a' "$sandbox")" != "0:4755" ]]; then
+            echo "::error::Expected the runner's Chrome sandbox helper at $sandbox (root-owned, mode 4755)"
+            exit 1
+          fi
+          {
+            echo "CHROME=$chrome"
+            echo "CHROME_DEVEL_SANDBOX=$sandbox"
+            echo "RUST_LOG=error,bombadil_browser::chromium=debug,bombadil_browser::browser=info"
+          } >> "$GITHUB_ENV"
       - name: Build UI test candidate
         run: pnpm run build:package
       - name: Run terminal tests

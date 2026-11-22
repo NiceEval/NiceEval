@@ -39,7 +39,8 @@
 - Bombadil spec 是 TypeScript 模块，按表面放置：终端 spec 驱动 `niceeval` 进程，浏览器 spec 驱动 `niceeval view`。每个 spec 旁的 `regressions/` 存放缩减后的 trace。
 - Bombadil 二进制按发布版本固定，CI 与本地使用同一版本；spec 的类型来自 npm 包 `@antithesishq/bombadil` 的同一版本。
 - Bombadil 0.8 使用二进制 trace。`--output-path` 指定文件路径，`fuzz` 在同目录生成带编号的文件。用 `bombadil trace --json <file>` 读取观察与性质违反。
-- CI 的浏览器 test 和 fuzz 都通过 `--chrome-variant=headless-shell` 使用 Chrome for Testing。短时本地验证时，将 `chrome-headless-shell` 放入 `PATH` 并传入同一参数。
+- CI 的浏览器 test 和 fuzz 都通过 `--chrome-variant=headless-shell` 使用 Chrome for Testing。Ubuntu runner 将 `CHROME_DEVEL_SANDBOX` 指向预装的 `/opt/google/chrome/chrome-sandbox`。
+- 短时本地验证时，将 `chrome-headless-shell` 放入 `PATH` 并传入同一参数。在限制非特权用户命名空间的 Ubuntu 环境中，也通过 `CHROME_DEVEL_SANDBOX` 指定本机的沙箱程序。
 - 被测项目由 Vitest fixture 在临时目录生成，测试结束自动回收；确定性 Agent 与协议流 fixture 与使用它的测试放在一起。
 
 ## 分层与目录
