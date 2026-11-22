@@ -68,6 +68,7 @@ test("an Attempt preserves every Assertion and label across the former retention
   expect(unavailable.map(({ display, entry }) => [display.label, entry.decision])).toEqual([]);
 
   const { entry } = await readFullAssertionEntry(cwd, locator, assertions[count - 1]!.entryId);
+  expect(entry.display.label).toBe(label + (count - 1));
   const source = entry.materials.source;
   if (source.kind !== "content" || source.content.state !== "available" || !("base64" in source.content)) {
     throw new Error(`Expected published source content, got ${JSON.stringify(source)}`);

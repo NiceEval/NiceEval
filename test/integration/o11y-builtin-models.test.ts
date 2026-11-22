@@ -6,8 +6,8 @@ import { experimentHost } from "niceeval/experiment/host";
 import {
   createJudgeProject,
   planAndRunExperiment,
-  readAssertionDetail,
   readAssertionsList,
+  readFullAssertionEntry,
   startModelEmulator,
 } from "./fixtures/judge-harness/harness.ts";
 
@@ -30,7 +30,8 @@ describe("Builtin model catalog normalization for pricing and context windows", 
   let server: Awaited<ReturnType<typeof startModelEmulator>>;
   let cwd = "";
   const estimatedByModel = new Map<string, number | undefined>();
-  const contextRejection = new Map<string, { result: string; detail: string }>();
+  const contextResults = new Map<string, string>();
+  let knownAudit: Awaited<ReturnType<typeof readFullAssertionEntry>>["entry"]["scoreMatchAudit"];
 
   beforeAll(async () => {
     server = await startModelEmulator([
@@ -140,11 +141,12 @@ describe("Builtin model catalog normalization for pricing and context windows", 
       const slot = res.run?.slots[0];
       if (slot?.publication.state !== "published") throw new Error(`Missing slot for ${key}`);
       const entries = await readAssertionsList(cwd, slot.publication.attemptLocator);
-      const detail = await readAssertionDetail(cwd, slot.publication.attemptLocator, entries[0]!.entryId);
-      contextRejection.set(key, {
-        result: entries[0]!.entry.decision.result,
-        detail: JSON.stringify(detail),
-      });
+      const assertion = entries[0]!;
+      contextResults.set(key, assertion.entry.decision.result);
+      if (key === "ctx-known") {
+        const { entry } = await readFullAssertionEntry(cwd, slot.publication.attemptLocator, assertion.entryId);
+        knownAudit = entry.scoreMatchAudit;
+      }
     }
   }, 60_000);
 
@@ -172,11 +174,20 @@ describe("Builtin model catalog normalization for pricing and context windows", 
 
   // @feature docs/feature/judge/README.md#material-admission
   test("builtin context window lookup enforces normalized model limits before transport while passing unknown models", () => {
-    const known = contextRejection.get("ctx-known")!;
-    expect(known.result).toBe("unavailable");
-    expect(known.detail).toContain("judge-material-exceeds-context");
+    expect(contextResults.get("ctx-known")).toBe("unavailable");
+    expect(knownAudit).toMatchObject({
+      state: "available",
+      audit: {
+        calls: [
+          {
+            state: "rejected",
+            transport: "not-sent",
+            failure: { code: "judge-material-exceeds-context" },
+          },
+        ],
+      },
+    });
 
-    const unknown = contextRejection.get("ctx-unknown")!;
-    expect(unknown.result).toBe("matched");
+    expect(contextResults.get("ctx-unknown")).toBe("matched");
   });
 });

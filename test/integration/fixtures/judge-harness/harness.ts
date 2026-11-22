@@ -255,11 +255,72 @@ export async function readAssertionsList(cwd: string, locator: string) {
 }
 
 export async function readFullAssertionEntry(cwd: string, locator: string, entryId: string, recordPath?: string) {
-  const detail = await readAssertionDetail(cwd, locator, entryId, recordPath);
+  let detail = await readAssertionDetail(cwd, locator, entryId, recordPath);
+  if ("fields" in detail.assertion) {
+    const assertion: Record<string, unknown> = {};
+    const pending = new Map<string, { chunks: Buffer[]; nextOffset: number }>();
+    while ("fields" in detail.assertion) {
+      const page = detail.assertion;
+      for (const part of page.fields) {
+        const field = pending.get(part.path) ?? { chunks: [], nextOffset: 0 };
+        const bytes = Buffer.from(part.base64, "base64");
+        const end = part.offset + bytes.byteLength;
+        if (
+          part.offset !== field.nextOffset ||
+          end > part.byteLength ||
+          part.nextOffset !== (end === part.byteLength ? null : end)
+        ) {
+          throw new Error(`Invalid assertion page range for ${part.path}`);
+        }
+        field.chunks.push(bytes);
+        if (part.nextOffset !== null) {
+          field.nextOffset = part.nextOffset;
+          pending.set(part.path, field);
+          continue;
+        }
+        pending.delete(part.path);
+        const value = Buffer.concat(field.chunks);
+        restoreAssertionField(
+          assertion,
+          part.path,
+          part.encoding === "content-base64" ? value.toString("base64") : JSON.parse(value.toString("utf8")),
+        );
+      }
+      if (page.continuation === undefined) break;
+      detail = await readAssertionDetail(cwd, locator, entryId, recordPath, page.continuation);
+    }
+    if (pending.size !== 0 || !("fields" in detail.assertion)) {
+      throw new Error(`Incomplete assertion detail for ${entryId}`);
+    }
+    const decoded = decodeInspectionDocument({ ...detail, assertion });
+    if (!decoded.success) throw new Error(decoded.reason);
+    const full = narrowInspectionSuccess(decoded.value, "attempt.assertion.detail");
+    if (!full.success) throw new Error(full.reason);
+    detail = full.value;
+  }
   if (!("entry" in detail.assertion) || !("criterion" in detail.assertion.entry)) {
-    throw new Error(`Expected full assertion entry for ${entryId}, got ${JSON.stringify(detail)}`);
+    throw new Error(`Expected full assertion entry for ${entryId}`);
   }
   return { detail, entry: detail.assertion.entry };
+}
+
+function restoreAssertionField(assertion: Record<string, unknown>, path: string, value: unknown) {
+  const keys = path
+    .split("/")
+    .slice(1)
+    .map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"));
+  let parent: object = assertion;
+  for (const [index, key] of keys.entries()) {
+    const nextKey = keys[index + 1];
+    if (nextKey === undefined) {
+      Object.defineProperty(parent, key, { value, enumerable: true });
+    } else {
+      if (!Object.hasOwn(parent, key)) {
+        Object.defineProperty(parent, key, { value: /^\d+$/u.test(nextKey) ? [] : {}, enumerable: true });
+      }
+      parent = Reflect.get(parent, key);
+    }
+  }
 }
 
 export async function invokeCli(cwd: string, argv: readonly string[], env: Readonly<Record<string, string>> = {}) {
@@ -306,8 +367,20 @@ export async function showJsonDocuments(
     });
 }
 
-export async function readAssertionDetail(cwd: string, locator: string, entryId: string, recordPath?: string) {
-  const args = [locator, entryId, "--full", ...(recordPath ? ["--record", recordPath] : [])];
+export async function readAssertionDetail(
+  cwd: string,
+  locator: string,
+  entryId: string,
+  recordPath?: string,
+  continuation?: string,
+) {
+  const args = [
+    locator,
+    entryId,
+    "--full",
+    ...(recordPath ? ["--record", recordPath] : []),
+    ...(continuation === undefined ? [] : ["--continuation", continuation]),
+  ];
   const [doc] = await showJsonDocuments(cwd, args);
   const detail = narrowInspectionSuccess(doc!, "attempt.assertion.detail");
   if (!detail.success) throw new Error(detail.reason);

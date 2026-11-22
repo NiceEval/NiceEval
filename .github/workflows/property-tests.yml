@@ -37,6 +37,7 @@ jobs:
       - name: Run property tests
         env:
           NICEEVAL_PROPERTY_RUNS: ${{ github.event_name == 'schedule' && '8' || '4' }}
+          NICEEVAL_TEST_COST_SCALE: "1.5"
         run: pnpm exec vitest run --project "${{ matrix.project }}" --shard "${{ matrix.shard }}" --passWithNoTests
 
   live:
@@ -54,6 +55,7 @@ jobs:
       - run: pnpm exec vitest run --project live --passWithNoTests
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NICEEVAL_TEST_COST_SCALE: "1.5"
 
   bombadil:
     name: Bombadil (${{ matrix.surface }})

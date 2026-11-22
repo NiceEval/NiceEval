@@ -70,6 +70,7 @@
 ## 成本上限
 
 每个测试遵守上表的 p50 上限。超限时按[拆分慢测试](use-case/split-slow-test.md)拆分或下沉。
+本地默认使用表中的上限。GitHub 托管的 Vitest job 通过 `NICEEVAL_TEST_COST_SCALE=1.5` 将上限乘以 1.5。
 
 创建和准备容器或虚拟机，再用 SIGINT 验证清理，合计可能耗时数十秒。
 30s 上限为真实资源生命周期留出时间。这档测试只在 CI 的 `docker` 和 `linux` project 中运行。

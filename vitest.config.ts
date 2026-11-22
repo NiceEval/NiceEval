@@ -41,11 +41,15 @@ const sourceProject = {
   ssr: { resolve: { conditions: [SOURCE_CONDITION, "module", "node", "development|production"] } },
 };
 const sourceDeps = { deps: { external: [/\/packages\/niceeval\/src\//] } };
+const testCostScale = Number(process.env.NICEEVAL_TEST_COST_SCALE ?? 1);
+if (!Number.isFinite(testCostScale) || testCostScale <= 0) {
+  throw new Error("NICEEVAL_TEST_COST_SCALE must be a positive finite number");
+}
 
 export default defineConfig({
   test: {
     project: ["default", "unit"],
-    reporters: ["default", architectureReporter],
+    reporters: ["default", architectureReporter(testCostScale)],
     projects: [
       {
         ...sourceProject,

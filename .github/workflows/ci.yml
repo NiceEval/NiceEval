@@ -72,6 +72,8 @@ jobs:
         uses: ./.github/actions/setup-concord
 
       - name: Test
+        env:
+          NICEEVAL_TEST_COST_SCALE: "1.5"
         run: pnpm test
 
   docs-site:
