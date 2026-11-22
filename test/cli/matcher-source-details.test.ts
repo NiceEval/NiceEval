@@ -44,6 +44,7 @@ test("matcher details encode source rows outside their frozen snapshot without c
     const document = narrowInspectionSuccess(decoded.value, "attempt.assertion.detail");
     if (!document.success) throw new Error(document.reason);
     const assertion = document.value.assertion;
+    if ("fields" in assertion) throw new Error("Expected one page for the small matcher detail");
     expect(assertion.check.state).toBe("mismatched");
     const debuggerResult = assertion.matcher.debugger;
     if (debuggerResult === undefined || debuggerResult === null || debuggerResult.state !== "current" || debuggerResult.source.final.state === "unavailable")
