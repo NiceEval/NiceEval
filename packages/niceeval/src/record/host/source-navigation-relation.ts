@@ -3,9 +3,6 @@ import { Sha256DigestSchema, SourceItemIdSchema } from "../codec/identifiers.ts"
 import { IntervalIdSchema, TurnIdSchema } from "../family/source-receipt/codec.ts";
 import { EmptyArraySchema, PositiveSafeIntegerSchema } from "../family/common.ts";
 
-/** One Attempt can retain at most this many physical-send relation rows. */
-export const SourceNavigationRelationLimits = Object.freeze({ maximumRows: 256 });
-
 const SourceNavigationPositionSchema = Schema.Struct({
   line: PositiveSafeIntegerSchema,
   column: PositiveSafeIntegerSchema,
@@ -109,7 +106,6 @@ function hasCanonicalRows(payload: {
   readonly collection: SourceNavigationRelationCollection;
   readonly rows: readonly SourceNavigationRelationRow[];
 }): boolean {
-  if (payload.rows.length > SourceNavigationRelationLimits.maximumRows) return false;
   const turnIds = new Set<string>();
   const sourceOrders = new Set<number>();
   const timingIntervals = new Set<string>();
@@ -138,7 +134,7 @@ export const SourceNavigationRelationSchema = Schema.Struct({
   Schema.check(
     Schema.makeFilter(hasCanonicalRows, {
       identifier: "SourceNavigationRelation",
-      description: "a bounded canonical physical-send reader relation",
+      description: "a canonical physical-send reader relation",
     }),
   ),
 );

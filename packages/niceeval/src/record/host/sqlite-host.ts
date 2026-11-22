@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Effect, Result, Exit, Option, Queue, Schema, Semaphore, Stream } from "effect";
+import { Cause, Effect, Result, Exit, Option, Queue, Schema, Semaphore, Stream } from "effect";
 import { encodeAttemptLocator } from "../../attempt-locator.ts";
 import { RecordCoordination, type RecordCoordinationService } from "../../coordination/record-leases.ts";
 import {
@@ -17,6 +17,7 @@ import {
   recordAttachmentReferenceWire,
   resolveRecordAttachmentDefinition,
   RecordAttachmentReference,
+  RecordAttachmentCanonicalLimits,
 } from "../attachment/protocol.ts";
 import {
   isRecordTextContentHandle,
@@ -33,9 +34,13 @@ import {
 } from "../codec/identifiers.ts";
 import {
   ATTACHMENT_INLINE_BYTES,
+  ATTACHMENT_INVENTORY_HANDLE,
   ATTACHMENT_PAYLOAD_HANDLE,
+  attachmentInventoryPointerBytes,
   attachmentPayloadPointerBytes,
   attachmentValueContents,
+  collectionItemContentHandle,
+  collectionItemPointerBytes,
   readAttachmentPayload,
 } from "../sqlite/attachment-payload.ts";
 import {
@@ -109,7 +114,6 @@ import {
   RECORD_SQLITE_MAX_PAGE_ROWS,
   RECORD_SQLITE_MAX_PUBLISH_BYTES,
   RECORD_SQLITE_MAX_PUBLISH_ROWS,
-  RECORD_SQLITE_MAX_ROW_BYTES,
   SqliteRecordError,
   type FinalizedAttachmentMetadata,
   type PersistedAttachmentReference,
@@ -220,8 +224,8 @@ function digest(bytes: Uint8Array): Sha256Digest {
   if (Result.isFailure(decoded)) throw new Error("invalid SHA-256");
   return decoded.success;
 }
-function canonicalBytes(value: unknown): Uint8Array | undefined {
-  const canonical = canonicalizeRecordJson(value, canonicalLimits);
+function canonicalBytes(value: unknown, limits = canonicalLimits): Uint8Array | undefined {
+  const canonical = canonicalizeRecordJson(value, limits);
   return Result.isFailure(canonical) ? undefined : encodeRecordJsonUtf8(canonical.success);
 }
 function parseJson(bytes: Uint8Array): unknown | undefined {
@@ -741,16 +745,19 @@ function attachmentMetadata(input: {
   readonly collection: { readonly count: number; readonly byteLength: number; readonly digest: string } | undefined;
 }): FinalizedAttachmentMetadata {
   const canonicalDigest = digest(input.payloadBytes);
-  const inventoryBytes = canonicalBytes({
-    references: input.references.map(({ ordinal, owner, family, referenceDigest }) => ({
-      ordinal,
-      owner,
-      family,
-      digest: referenceDigest,
-    })),
-    contents: input.contents,
-    ...(input.collection === undefined ? {} : { collection: input.collection }),
-  });
+  const inventoryBytes = canonicalBytes(
+    {
+      references: input.references.map(({ ordinal, owner, family, referenceDigest }) => ({
+        ordinal,
+        owner,
+        family,
+        digest: referenceDigest,
+      })),
+      contents: input.contents,
+      ...(input.collection === undefined ? {} : { collection: input.collection }),
+    },
+    RecordAttachmentCanonicalLimits,
+  );
   if (inventoryBytes === undefined) throw new Error("invalid attachment inventory");
   const inventoryDigest = digest(inventoryBytes);
   return {
@@ -829,26 +836,52 @@ function collectionWorker(run: RunRuntime): Effect.Effect<never, never> {
       const tail = yield* Queue.clear(run.queue);
       for (const batch of makeBatches([first, ...tail])) {
         const exit = yield* Effect.exit(
-          withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) =>
-            run.client.stageCollectionItems({
-              runId: run.runId,
-              writerGeneration: run.writerGeneration,
-              attachmentId: batch[0]!.attachmentId,
-              items: batch.map(({ item }) => item),
-              deadlineEpochMs,
-            }),
-          ),
+          Effect.gen(function* () {
+            const attachmentId = batch[0]!.attachmentId;
+            const items: PersistedCollectionItem[] = [];
+            for (const { item } of batch) {
+              if (item.canonicalBytes.byteLength <= ATTACHMENT_INLINE_BYTES) {
+                items.push(item);
+                continue;
+              }
+              const logicalHandle = collectionItemContentHandle(item.ordinal);
+              const content = yield* processContent({
+                run,
+                attachmentId,
+                source: {
+                  key: Schema.decodeUnknownSync(RecordBlobKeySchema)(logicalHandle),
+                  logicalHandle,
+                  kind: "bytes",
+                  maximumBytes: undefined,
+                  stream: Stream.succeed(item.canonicalBytes),
+                },
+              });
+              items.push({ ...item, canonicalBytes: collectionItemPointerBytes(content) });
+            }
+            yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) =>
+              run.client.stageCollectionItems({
+                runId: run.runId,
+                writerGeneration: run.writerGeneration,
+                attachmentId,
+                items,
+                deadlineEpochMs,
+              }),
+            );
+          }),
         );
+        if (Exit.isFailure(exit)) {
+          const error = Cause.findErrorOption(exit.cause);
+          poison(
+            run,
+            Option.getOrElse(
+              error,
+              () => new SqliteRecordError("record-sqlite-error", "stage-collection-items", "collection batch failed"),
+            ),
+          );
+        }
         const attempt = batch[0]!.attempt;
         attempt.pendingAppends -= batch.length;
         yield* Queue.offer(attempt.appendAcks, undefined);
-        if (Exit.isFailure(exit))
-          yield* Effect.sync(() =>
-            poison(
-              run,
-              new SqliteRecordError("record-sqlite-error", "stage-collection-items", "collection batch failed"),
-            ),
-          );
       }
     }),
   ).pipe(Effect.catchCause(() => Effect.never));
@@ -861,17 +894,8 @@ function snapshotItem(
   if (!isRecordAttachmentSchema(authoring.item)) return Result.fail(recordAppendCommandInvalid());
   const encoded = Schema.encodeUnknownResult(authoring.item)(item);
   if (Result.isFailure(encoded)) return Result.fail(recordAppendCommandInvalid());
-  const bytes = canonicalBytes(encoded.success);
-  if (bytes === undefined || bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES)
-    return Result.fail(
-      new RecordResourceLimitExceeded({
-        code: "record-resource-limit-exceeded",
-        resource: "file-bytes",
-        maximum: RECORD_SQLITE_MAX_ROW_BYTES,
-        observedAtLeast: bytes?.byteLength ?? RECORD_SQLITE_MAX_ROW_BYTES + 1,
-        path: authoring.attachment.family,
-      }),
-    );
+  const bytes = canonicalBytes(encoded.success, RecordAttachmentCanonicalLimits);
+  if (bytes === undefined) return Result.fail(recordAppendCommandInvalid());
   const canonicalDigest = digest(bytes);
   return Result.succeed({
     ordinal,
@@ -945,14 +969,13 @@ function appendCollectionBatch(
           });
         }
         attempt.pendingAppends += commands.length;
-        // One bounded batch is offered atomically with respect to interruption;
-        // the worker can always drain it without acquiring this lock.
-        yield* Queue.offerAll(run.queue, commands);
         for (const command of commands) {
           collection.nextOrdinal += 1;
           collection.encodedBytes += command.bytes;
           collection.itemHash.update(command.item.canonicalBytes).update("\n");
         }
+        // Freeze the aggregate before the worker transfers ownership of the item buffers.
+        yield* Queue.offerAll(run.queue, commands);
         return { state: "retained" as const };
       }),
     ),
@@ -1016,8 +1039,12 @@ function processContent<Error, Requirements>(input: {
     let pendingLength = 0;
     let batch: PersistedContentChunk[] = [];
     let batchBytes = 0;
-    const flushBatch = (): Effect.Effect<void, RecordWriteError> => {
-      if (batch.length === 0) return Effect.void;
+    const flushBatch = (completion?: {
+      readonly byteLength: number;
+      readonly digest: string;
+      readonly chunkCount: number;
+    }): Effect.Effect<void, RecordWriteError> => {
+      if (batch.length === 0 && completion === undefined) return Effect.void;
       const frozen = batch;
       batch = [];
       batchBytes = 0;
@@ -1027,6 +1054,7 @@ function processContent<Error, Requirements>(input: {
           writerGeneration: input.run.writerGeneration,
           contentId,
           chunks: frozen,
+          ...(completion === undefined ? {} : { completion }),
           deadlineEpochMs,
         }),
       ).pipe(
@@ -1073,13 +1101,54 @@ function processContent<Error, Requirements>(input: {
     // A full pending buffer is uniquely owned here and can be transferred
     // directly. Only the final partial chunk needs an exact-size copy.
     if (pendingLength > 0) yield* emit(pending.slice(0, pendingLength));
-    yield* flushBatch();
-    return {
+    const metadata = {
       contentId,
       logicalHandle: input.source.logicalHandle,
       byteLength,
       digest: overall.digest("hex"),
       chunkCount: ordinal,
+    };
+    yield* flushBatch(metadata);
+    return metadata;
+  });
+}
+
+function storeAttachmentMetadata(input: {
+  readonly run: RunRuntime;
+  readonly attachmentId: string;
+  readonly payloadBytes: Uint8Array;
+  readonly references: readonly PersistedAttachmentReference[];
+  readonly contents: readonly PersistedContentMetadata[];
+  readonly collection: { readonly count: number; readonly byteLength: number; readonly digest: string } | undefined;
+}): Effect.Effect<FinalizedAttachmentMetadata, RecordWriteError> {
+  const store = (logicalHandle: string, bytes: Uint8Array) =>
+    processContent({
+      run: input.run,
+      attachmentId: input.attachmentId,
+      source: {
+        key: Schema.decodeUnknownSync(RecordBlobKeySchema)(logicalHandle),
+        logicalHandle,
+        kind: "bytes",
+        maximumBytes: undefined,
+        stream: Stream.succeed(bytes),
+      },
+    });
+
+  return Effect.gen(function* () {
+    let payloadBytes = input.payloadBytes;
+    const contents = [...input.contents];
+    if (payloadBytes.byteLength > ATTACHMENT_INLINE_BYTES) {
+      contents.push(yield* store(ATTACHMENT_PAYLOAD_HANDLE, payloadBytes));
+      // Final metadata transfers ownership to the worker.
+      payloadBytes = attachmentPayloadPointerBytes.slice();
+    }
+    const metadata = attachmentMetadata({ ...input, payloadBytes, contents });
+    if (metadata.logicalInventoryBytes.byteLength <= ATTACHMENT_INLINE_BYTES) return metadata;
+    const inventory = yield* store(ATTACHMENT_INVENTORY_HANDLE, metadata.logicalInventoryBytes);
+    return {
+      ...metadata,
+      logicalInventoryBytes: attachmentInventoryPointerBytes(inventory),
+      contents: [...contents, inventory],
     };
   });
 }
@@ -1158,27 +1227,14 @@ function writeAttachment<Value>(
         }),
       );
     }
-    let payloadBytes = prepared.payloadBytes;
-    if (payloadBytes.byteLength > ATTACHMENT_INLINE_BYTES) {
-      const key = Schema.decodeUnknownSync(RecordBlobKeySchema)(ATTACHMENT_PAYLOAD_HANDLE);
-      contents.push(
-        yield* processContent({
-          run: input.run,
-          attachmentId,
-          source: {
-            key,
-            logicalHandle: ATTACHMENT_PAYLOAD_HANDLE,
-            kind: "bytes",
-            maximumBytes: RECORD_JSON_MAXIMUM_BYTES,
-            stream: Stream.succeed(payloadBytes),
-          },
-        }),
-      );
-      // Final metadata transfers ownership to the worker. Never detach the
-      // shared pointer template used by later attachments and Runs.
-      payloadBytes = attachmentPayloadPointerBytes.slice();
-    }
-    const metadata = attachmentMetadata({ attachmentId, payloadBytes, references, contents, collection: undefined });
+    const metadata = yield* storeAttachmentMetadata({
+      run: input.run,
+      attachmentId,
+      payloadBytes: prepared.payloadBytes,
+      references,
+      contents,
+      collection: undefined,
+    });
     input.run.attachments.set(attachmentId, {
       metadata,
       ownerKind: input.owner,
@@ -1227,9 +1283,10 @@ function finishCollections(attempt: AttemptRuntime): Effect.Effect<void, RecordW
         return yield* Effect.fail(recordCollectionDefinitionInvalid());
       const encoded = Schema.encodeUnknownResult(collection.authoring.attachment.schema)(shell);
       if (Result.isFailure(encoded)) return yield* Effect.fail(recordCollectionDefinitionInvalid());
-      const payloadBytes = canonicalBytes(encoded.success);
+      const payloadBytes = canonicalBytes(encoded.success, RecordAttachmentCanonicalLimits);
       if (payloadBytes === undefined) return yield* Effect.fail(recordCollectionDefinitionInvalid());
-      const metadata = attachmentMetadata({
+      const metadata = yield* storeAttachmentMetadata({
+        run: attempt.run,
         attachmentId: collection.attachmentId,
         payloadBytes,
         references: [],
@@ -1449,7 +1506,7 @@ function buildRunMetadata(run: RunRuntime, completedAt: RunDocument["completedAt
     runEncoded = encodeRunDocument(runDocument);
   if (Result.isFailure(recordEncoded) || Result.isFailure(runEncoded)) throw new Error("invalid run core");
   const recordCore = encodeCore(recordEncoded.success),
-    runCore = encodeCore(runEncoded.success);
+    runCore = canonicalBytes(runEncoded.success, RecordAttachmentCanonicalLimits);
   if (recordCore === undefined || runCore === undefined) throw new Error("invalid run core");
   const slots = run.expectedSlots.map((slot, ordinal) => {
     const core = encodeCore(slot)!;
@@ -1498,8 +1555,8 @@ function buildRunMetadata(run: RunRuntime, completedAt: RunDocument["completedAt
     startedAt: new Date(run.startedAt).toISOString(),
     recordCoreBytes: recordCore.bytes,
     recordCoreDigest: recordCore.digest,
-    runCoreBytes: runCore.bytes,
-    runCoreDigest: runCore.digest,
+    runCoreBytes: runCore,
+    runCoreDigest: digest(runCore),
     slots,
     attempts,
     members,
@@ -1511,6 +1568,7 @@ function buildRunMetadata(run: RunRuntime, completedAt: RunDocument["completedAt
       family,
       familyRevision: revision,
     })),
+    contentsAlreadyStaged: true as const,
   };
 }
 function sealRun(run: RunRuntime, completion: RunCompletion): Effect.Effect<RecordSealReceipt, RecordWriteError> {
@@ -2298,7 +2356,9 @@ function openCollection(
         digest(attachment.logicalInventoryBytes) !== attachment.inventoryDigest
       )
         return { state: "invalid", issues: invalidIssues(["collection", "digest"]) };
-      const payload = parseJson(attachment.canonicalBytes) as { readonly collection?: unknown } | undefined;
+      const payload = parseJson(
+        readAttachmentPayload(attachment, (id, after, size) => runtime.session.readContentChunkPage(id, after, size)),
+      ) as { readonly collection?: unknown } | undefined;
       const inventory = parseJson(attachment.logicalInventoryBytes) as
         | {
             readonly collection?: {
@@ -2339,7 +2399,15 @@ function readCollectionWhole(
     openCollection(runtime, owner, definition),
     (opened): Effect.Effect<RecordAttachmentRead<unknown>, RecordReaderReadError> => {
       if (opened.state !== "available") return Effect.succeed(opened);
-      if (opened.count > COLLECTION_READ_MAX_ROWS || opened.canonicalBytes > WHOLE_VALUE_MAX_BYTES)
+      if (opened.count > COLLECTION_READ_MAX_ROWS)
+        return Effect.fail(
+          new SqliteRecordError(
+            "record-resource-limit-exceeded",
+            "read-collection",
+            `Collection has ${opened.count} rows, exceeding the whole-read limit of ${COLLECTION_READ_MAX_ROWS}. Use openCollection to stream all rows.`,
+          ),
+        );
+      if (opened.canonicalBytes > WHOLE_VALUE_MAX_BYTES)
         return Effect.fail(
           new RecordResourceLimitExceeded({
             code: "record-resource-limit-exceeded",

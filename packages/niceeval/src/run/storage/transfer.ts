@@ -16,6 +16,7 @@ import { sqliteError } from "../../record/sqlite/errors.ts";
 import { validatePortableRecordDatabase } from "../../record/sqlite/portable-capture.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { exactLogicalSealIdentityFromOrdered, recordSealEntry } from "../../record/sqlite/seal.ts";
+import { readRunValue } from "../../record/sqlite/storage.ts";
 import type { SealEntry } from "../../record/sqlite/types.ts";
 import { RunStorageError } from "./errors.ts";
 
@@ -143,8 +144,8 @@ function validatePublication(source: RecordDatabase, runId: string, deadline: nu
   const resource = [...rows(source, "run_resources", runId)][0];
   if (resource === undefined) throw invalid();
   const stored = [...rows(source, "runs", runId)][0]!;
-  const payload = stored.core_payload;
-  if (!(payload instanceof Uint8Array)) throw invalid();
+  if (!(stored.core_payload instanceof Uint8Array) || typeof stored.core_digest !== "string") throw invalid();
+  const payload = readRunValue(source, runId, stored.core_payload, stored.core_digest);
   let core;
   try {
     core = decodeRunDocument(JSON.parse(Buffer.from(payload).toString("utf8")));
@@ -213,7 +214,9 @@ function validatePublication(source: RecordDatabase, runId: string, deadline: nu
   if (mismatches.count !== 0n) throw invalid();
   for (const publication of rows(source, "attempt_publications", runId)) {
     checkDeadline(deadline);
-    const payload = publication.closure_payload;
+    if (!(publication.closure_payload instanceof Uint8Array) || typeof publication.closure_digest !== "string")
+      throw invalid();
+    const payload = readRunValue(source, runId, publication.closure_payload, publication.closure_digest);
     if (
       !(payload instanceof Uint8Array) ||
       createHash("sha256").update(payload).digest("hex") !== publication.closure_digest ||

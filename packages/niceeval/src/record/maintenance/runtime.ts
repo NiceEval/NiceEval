@@ -14,7 +14,6 @@ import {
 } from "../sqlite/database.ts";
 import { SqliteRecordError } from "../sqlite/errors.ts";
 import {
-  RECORD_MAINTENANCE_MAXIMUM_RUNS,
   type CleanIncompleteRuns,
   type InspectIncompleteRunWarnings,
   type InspectIncompleteRuns,
@@ -61,15 +60,8 @@ function readIncomplete(path: string): readonly RecordIncompleteRun[] {
   try {
     validateExactSchema(connection);
     const rows = connection.db
-      .prepare("SELECT run_id FROM ne19_runs WHERE status <> 'sealed' ORDER BY run_id LIMIT ?")
-      .all(RECORD_MAINTENANCE_MAXIMUM_RUNS + 1);
-    if (rows.length > RECORD_MAINTENANCE_MAXIMUM_RUNS) {
-      throw new SqliteRecordError(
-        "record-resource-limit-exceeded",
-        "inspect-incomplete",
-        "incomplete Run discovery exceeded its bounded limit",
-      );
-    }
+      .prepare("SELECT run_id FROM ne19_runs WHERE status <> 'sealed' ORDER BY run_id")
+      .iterate();
     const result: RecordIncompleteRun[] = [];
     for (const row of rows) {
       const decoded = Schema.decodeUnknownResult(RunIdSchema)(row.run_id);

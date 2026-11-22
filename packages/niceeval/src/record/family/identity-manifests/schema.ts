@@ -4,11 +4,6 @@ import { EvalIdSchema, CanonicalProjectRelativePathSchema, Sha256DigestSchema } 
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { isCanonicalIdentitySequence } from "../common.ts";
 
-export const IdentityManifestsLimits = Object.freeze({
-  maximumEntries: 20_000,
-  maximumPathsPerEntry: 10_000,
-  maximumJsonBytes: 1024 * 1024,
-});
 export const IdentityJsonSchema: Schema.Codec<JsonValue> = Schema.suspend(() =>
   Schema.Union([
     Schema.Null,
@@ -35,14 +30,8 @@ export function validateIdentityManifestsAttachment(
   value: IdentityManifestsAttachment,
 ): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
-  if (
-    value.entries.length > IdentityManifestsLimits.maximumEntries ||
-    !isCanonicalIdentitySequence(value.entries.map((entry) => entry.evalId))
-  ) {
+  if (!isCanonicalIdentitySequence(value.entries.map((entry) => entry.evalId))) {
     issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["entries"]));
-  }
-  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > IdentityManifestsLimits.maximumJsonBytes) {
-    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["entries", "bytes"]));
   }
   for (const [index, entry] of value.entries.entries()) {
     for (const face of ["source", "data"] as const)
@@ -52,11 +41,6 @@ export function validateIdentityManifestsAttachment(
             recordAttachmentIssue("record-attachment-schema-invalid", ["entries", String(index), face, path]),
           );
       }
-    for (const face of ["niceeval", "config", "plugins", "source", "data"] as const) {
-      if (Object.keys(entry[face] ?? {}).length > IdentityManifestsLimits.maximumPathsPerEntry) {
-        issues.push(recordAttachmentIssue("record-attachment-schema-invalid", ["entries", String(index), face]));
-      }
-    }
   }
   return issues;
 }

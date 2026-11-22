@@ -1,18 +1,8 @@
 import { Schema } from "effect";
 
-import {
-  RecordTextContentSchema,
-  recordAttachmentIssue,
-  recordContent,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { RecordTextContentSchema, recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { CanonicalProjectRelativePathSchema, Sha256DigestSchema, SourceItemIdSchema } from "../../codec/identifiers.ts";
 import { NonNegativeSafeIntegerSchema, isCanonicalIdentitySequence } from "../common.ts";
-
-export const SourcesLimits = Object.freeze({
-  maximumItems: 20_000,
-  maximumContentBytes: 16 * 1024 * 1024,
-});
 
 /**
  * One immutable source snapshot item in an origin Run-owned closure. sha256
@@ -23,7 +13,7 @@ export const SourceItemSchema = Schema.Struct({
   path: CanonicalProjectRelativePathSchema,
   byteLength: NonNegativeSafeIntegerSchema,
   sha256: Sha256DigestSchema,
-  content: RecordTextContentSchema.pipe(recordContent.maximumBytes(SourcesLimits.maximumContentBytes)),
+  content: RecordTextContentSchema,
 });
 
 export type SourceItem = Schema.Schema.Type<typeof SourceItemSchema>;
@@ -43,25 +33,16 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
 }
 
 /**
- * Core enforces the content declaration limit and owns physical read
- * integrity. This logical validator cannot open a sealed content handle;
+ * Core owns physical read integrity. This logical validator cannot open a sealed content handle;
  * producers must derive byteLength and sha256 from the same source they seal.
  */
 export function validateSourcesAttachment(value: SourcesAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
-  if (value.items.length > SourcesLimits.maximumItems) {
-    issues.push(invalid(["items"]));
-  }
   if (!isCanonicalIdentitySequence(value.items.map((item) => item.sourceItemId))) {
     issues.push(invalid(["items", "sourceItemId"]));
   }
   if (new Set(value.items.map((item) => item.path)).size !== value.items.length) {
     issues.push(invalid(["items", "path"]));
-  }
-  for (const [index, item] of value.items.entries()) {
-    if (item.byteLength > SourcesLimits.maximumContentBytes) {
-      issues.push(invalid(["items", String(index), "byteLength"]));
-    }
   }
   return issues;
 }

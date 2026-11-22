@@ -38,6 +38,18 @@ export const RecordAttachmentEncodingLimits = Object.freeze({
   maximumStringUtf8Bytes: 1_048_576,
 });
 
+// Canonical Attachment values may be stored in Content chunks. Physical
+// framing is chosen after encoding and does not limit the logical value.
+export const RecordAttachmentCanonicalLimits = Object.freeze({
+  maximumJsonBytes: Number.MAX_SAFE_INTEGER,
+  maximumDepth: Number.MAX_SAFE_INTEGER,
+  maximumNodes: Number.MAX_SAFE_INTEGER,
+  maximumObjectKeys: Number.MAX_SAFE_INTEGER,
+  maximumArrayItems: Number.MAX_SAFE_INTEGER,
+  maximumKeyUtf8Bytes: Number.MAX_SAFE_INTEGER,
+  maximumStringUtf8Bytes: Number.MAX_SAFE_INTEGER,
+});
+
 export type RecordAttachmentSchema = Schema.Codec<unknown, unknown, never, never>;
 
 type AnyDefinition = RecordAttachmentDefinition<RecordAttachmentOwner, string, Schema.Top>;
@@ -139,7 +151,7 @@ export function defineRecordAttachment<
     (typeof input.validate !== "undefined" && typeof input.validate !== "function")
   )
     invalid();
-  const limits = RecordAttachmentEncodingLimits;
+  const limits = RecordAttachmentCanonicalLimits;
   const definition = Object.freeze({
     owner: input.owner,
     family: input.family,

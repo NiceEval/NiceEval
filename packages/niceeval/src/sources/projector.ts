@@ -3,7 +3,7 @@
 // @concord-implements docs/feature/inspection/architecture.md#run-inspection-insight
 import { createHash } from "node:crypto";
 
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import type { SourcesAttachment } from "../record/family/sources.ts";
 import type { RecordAttachmentContentReader } from "../record/host/types.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
@@ -24,8 +24,6 @@ export type SourcesProjectionError =
   | { readonly code: "source-blob-utf8-invalid"; readonly sourceItemId: string }
   | { readonly code: "source-blob-digest-mismatch"; readonly sourceItemId: string };
 
-const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
-
 /**
  * Produces a self-contained projection from the available fixed Sources
  * closure. It never reopens the Record or consults the consumer worktree.
@@ -37,17 +35,25 @@ export function projectSourcesAttachment(
   return Effect.gen(function* () {
     const items: SourceItemProjection[] = [];
     for (const item of value.items) {
-      const bytes = yield* content.bytes(item.content);
-      let text: string;
-      try {
-        text = strictUtf8.decode(bytes);
-      } catch {
-        return yield* Effect.fail({
-          code: "source-blob-utf8-invalid" as const,
-          sourceItemId: item.sourceItemId,
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      const hash = createHash("sha256");
+      const fragments: string[] = [];
+      const decode = (bytes?: Uint8Array) =>
+        Effect.try({
+          try: () => {
+            fragments.push(decoder.decode(bytes, { stream: bytes !== undefined }));
+          },
+          catch: (): SourcesProjectionError => ({
+            code: "source-blob-utf8-invalid",
+            sourceItemId: item.sourceItemId,
+          }),
         });
-      }
-      if (createHash("sha256").update(text, "utf8").digest("hex") !== item.sha256) {
+      yield* Stream.runForEach(content.stream(item.content), (bytes) => {
+        hash.update(bytes);
+        return decode(bytes);
+      });
+      yield* decode();
+      if (hash.digest("hex") !== item.sha256) {
         return yield* Effect.fail({
           code: "source-blob-digest-mismatch" as const,
           sourceItemId: item.sourceItemId,
@@ -57,7 +63,7 @@ export function projectSourcesAttachment(
         sourceItemId: item.sourceItemId,
         path: item.path,
         sha256: item.sha256,
-        text,
+        text: fragments.join(""),
       });
     }
     return { items };

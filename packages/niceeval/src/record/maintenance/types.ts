@@ -5,12 +5,6 @@ import type { RecordIncompleteRunWarning } from "../model/read-state.ts";
 import type { RecordRoot } from "../platform/root.ts";
 import type { SqliteRecordError } from "../sqlite/errors.ts";
 
-/**
- * Record v1 is for ordinary bounded projects. This cap keeps maintenance
- * discovery and its user-visible warnings finite before any Run is inspected.
- */
-export const RECORD_MAINTENANCE_MAXIMUM_RUNS = 10_000;
-
 /** A Run directory without the durable `complete` publication marker. */
 export interface RecordIncompleteRun {
   readonly runId: RunId;

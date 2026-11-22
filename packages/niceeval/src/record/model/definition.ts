@@ -118,7 +118,12 @@ const RunDocumentCurrentSchema = Schema.Struct({
 /** Current sealed `run.json`; its contextual and ordering axioms live in this Schema. */
 export const RunDocumentDefinition = defineRecordCore({
   schema: RunDocumentCurrentSchema,
-  limits: RecordCoreDocumentLimits,
+  limits: {
+    ...RecordCoreDocumentLimits,
+    maximumJsonBytes: Number.MAX_SAFE_INTEGER,
+    maximumNodes: Number.MAX_SAFE_INTEGER,
+    maximumArrayItems: Number.MAX_SAFE_INTEGER,
+  },
 });
 
 export const RunDocumentSchema = RunDocumentDefinition.schema;

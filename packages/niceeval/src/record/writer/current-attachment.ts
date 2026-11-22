@@ -10,6 +10,7 @@ import {
   recordAttachmentReferenceWire,
   resolveRecordAttachmentDefinition,
   RecordAttachmentReference,
+  RecordAttachmentCanonicalLimits,
   type RecordAttachmentReferenceTarget,
   type RecordAttachmentDefinition,
 } from "../attachment/protocol.ts";
@@ -546,11 +547,9 @@ export function prepareStreamingRecordAttachment<
       try: () => replaceOpaque(encoded.success, replacements),
       catch: callbackFailed,
     });
-    const canonical = canonicalizeRecordJson(replaced, jsonLimits);
+    const canonical = canonicalizeRecordJson(replaced, RecordAttachmentCanonicalLimits);
     if (Result.isFailure(canonical)) return yield* Effect.fail(encodeFailed(input.definition.family));
     const payloadBytes = encodeRecordJsonUtf8(canonical.success);
-    if (payloadBytes.byteLength > RECORD_JSON_MAXIMUM_BYTES)
-      return yield* Effect.fail(encodeFailed(input.definition.family));
     const orderedReferences = [...referenceIdentities.values()].sort((left, right) =>
       `${left.owner}\u0000${left.family}`.localeCompare(`${right.owner}\u0000${right.family}`),
     );

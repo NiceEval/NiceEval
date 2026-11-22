@@ -8,7 +8,6 @@ import type { RecordDatabase } from "./database.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
 
 const CAPTURE_CHUNK_BYTES = 256 * 1024;
-const MAX_PORTABLE_RECORD_BYTES = 8 * 1024 * 1024 * 1024;
 const SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
 
 export type ProjectRecordReadMode = "capture" | "operational";
@@ -124,9 +123,7 @@ export async function captureSingleFileRecord(
     source = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
     const before = await source.stat({ bigint: true });
     if (!before.isFile() || before.isSymbolicLink()) fail("Record source is not a regular file");
-    if (before.size <= 0n || before.size > BigInt(MAX_PORTABLE_RECORD_BYTES)) {
-      resourceLimit(`Record source size must be between 1 and ${MAX_PORTABLE_RECORD_BYTES} bytes`);
-    }
+    if (before.size === 0n) fail("Record source is empty");
     await pathIdentity(sourcePath, before);
 
     generation = await open(
@@ -137,34 +134,34 @@ export async function captureSingleFileRecord(
     await generation.chmod(0o600);
     const buffer = Buffer.allocUnsafe(CAPTURE_CHUNK_BYTES);
     const firstHash = createHash("sha256");
-    let offset = 0;
-    while (BigInt(offset) < before.size) {
+    let offset = 0n;
+    while (offset < before.size) {
       checkDeadline(deadlineEpochMs, "capture first pass");
-      const remaining = Number(before.size - BigInt(offset));
+      const remaining = Number(before.size - offset);
       const length = Math.min(buffer.byteLength, remaining);
       const read = await source.read(buffer, 0, length, offset);
       if (read.bytesRead !== length) fail("Record source ended during the first capture pass");
       firstHash.update(buffer.subarray(0, read.bytesRead));
       let written = 0;
       while (written < read.bytesRead) {
-        const result = await generation.write(buffer, written, read.bytesRead - written, offset + written);
+        const result = await generation.write(buffer, written, read.bytesRead - written, null);
         if (result.bytesWritten <= 0) fail("Private Record generation stopped accepting bytes");
         written += result.bytesWritten;
       }
-      offset += read.bytesRead;
+      offset += BigInt(read.bytesRead);
     }
     await generation.sync();
 
     const secondHash = createHash("sha256");
-    offset = 0;
-    while (BigInt(offset) < before.size) {
+    offset = 0n;
+    while (offset < before.size) {
       checkDeadline(deadlineEpochMs, "capture second pass");
-      const remaining = Number(before.size - BigInt(offset));
+      const remaining = Number(before.size - offset);
       const length = Math.min(buffer.byteLength, remaining);
       const read = await source.read(buffer, 0, length, offset);
       if (read.bytesRead !== length) fail("Record source ended during the second capture pass");
       secondHash.update(buffer.subarray(0, read.bytesRead));
-      offset += read.bytesRead;
+      offset += BigInt(read.bytesRead);
     }
     const after = await source.stat({ bigint: true });
     await pathIdentity(sourcePath, after);

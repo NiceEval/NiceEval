@@ -9,7 +9,7 @@ import {
   SourceItemIdSchema,
 } from "../record/codec/identifiers.ts";
 import { sourcesRecordAttachment } from "../record/family/sources/definition.ts";
-import { SourcesAttachmentSchema, SourcesLimits, type SourcesAttachment } from "../record/family/sources/schema.ts";
+import { SourcesAttachmentSchema, type SourcesAttachment } from "../record/family/sources/schema.ts";
 import type { CanonicalProjectRelativePath, Sha256Digest, SourceItemId } from "../record/model/identifiers.ts";
 import { AssertionSourceSiteSchema, type AssertionSourceSite } from "../record/family/assertions/definition.ts";
 import type { RecordAttachmentSessionBuilder } from "../record/writer/current-attachment.ts";
@@ -93,7 +93,6 @@ function canonicalSourceItem(input: SourceItemAttachmentInput): SourcesAttachmen
   const text = canonicalizeSourceText(input.text);
   const bytes = new TextEncoder().encode(text);
   const byteLength = bytes.byteLength;
-  if (byteLength > SourcesLimits.maximumContentBytes) return undefined;
   const sha256 = Schema.decodeUnknownResult(Sha256DigestSchema)(createHash("sha256").update(bytes).digest("hex"));
   if (Result.isFailure(sha256)) return undefined;
   return {
@@ -113,7 +112,7 @@ export function createSourcesAttachment(
   input: SourcesAttachmentInput,
 ): Result.Result<SourcesAttachmentPlan, SourcesAttachmentBuildError> {
   const items = sourceItems(input);
-  if (items === undefined || items.length > SourcesLimits.maximumItems) {
+  if (items === undefined) {
     return Result.fail(sourcesInputInvalid);
   }
   const canonical: SourcesAttachmentItemCapture[] = [];

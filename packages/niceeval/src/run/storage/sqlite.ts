@@ -12,7 +12,7 @@ import { ProjectStateDatabase } from "../../record/sqlite/project-state-database
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
-import { RECORD_SQLITE_MAX_ROW_BYTES } from "../../record/sqlite/types.ts";
+import { readRunValue, RUN_VALUE_FAMILY, stageRunValue } from "../../record/sqlite/storage.ts";
 import { RunStorageError } from "./errors.ts";
 import { observeRunWriterTermination } from "./owner-identity.ts";
 import {
@@ -102,9 +102,6 @@ function requireAbsenceReason(value: string): asserts value is RunAbsenceReason 
 
 function requireClosure(bytes: Uint8Array, digest: string): void {
   requireDigest(digest, "closureDigest");
-  if (bytes.byteLength > RECORD_SQLITE_MAX_ROW_BYTES) {
-    throw invalid(`Attempt closure exceeds the ${RECORD_SQLITE_MAX_ROW_BYTES} byte row ceiling`);
-  }
   if (createHash("sha256").update(bytes).digest("hex") !== digest) {
     throw invalid("Attempt closure bytes do not match closureDigest");
   }
@@ -230,9 +227,6 @@ function sourceDeleted(connection: RecordDatabase, runId: string): boolean {
 }
 
 function validateExpectedSlots(slots: readonly ExpectedRunSlot[]): void {
-  if (slots.length > RECORD_SQLITE_MAX_ROW_BYTES / 256) {
-    throw invalid("Run expected slot plan exceeds its bounded publication inventory");
-  }
   const ids = new Set<string>();
   slots.forEach((slot) => {
     requireIdentity(slot.slotId, "expectedSlots.slotId");
@@ -314,6 +308,15 @@ export function publishOriginAttemptOnConnection(
   requireIdentity(input.attemptId, "attemptId");
   if (!decodeAttemptLocator(input.attemptLocator).valid) throw invalid("attemptLocator is malformed");
   requireClosure(input.closureBytes, input.closureDigest);
+  requireActiveWriter(connection, input.runId, input.writerGeneration);
+  const closure = stageRunValue(
+    connection,
+    input.runId,
+    input.writerGeneration,
+    input.closureBytes,
+    input.closureDigest,
+    input.deadlineEpochMs,
+  );
   return withImmediateTransaction(connection, input.deadlineEpochMs, "publish-origin-attempt", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
     if (!slotExists(connection, input.runId, input.slotId)) {
@@ -377,15 +380,7 @@ export function publishOriginAttemptOnConnection(
       connection,
       `INSERT INTO ne19_attempt_publications(attempt_id,attempt_locator,origin_run_id,origin_slot_id,
       closure_payload,closure_digest,published_revision) VALUES (?,?,?,?,?,?,?)`,
-    ).run(
-      input.attemptId,
-      input.attemptLocator,
-      input.runId,
-      input.slotId,
-      input.closureBytes,
-      input.closureDigest,
-      revision,
-    );
+    ).run(input.attemptId, input.attemptLocator, input.runId, input.slotId, closure, input.closureDigest, revision);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_slot_bindings(target_run_id,slot_id,attempt_id,origin_run_id,
@@ -649,9 +644,9 @@ export function recoverRunResourceOnConnection(
     }
     recordStatement(
       connection,
-      `DELETE FROM ne19_attachments WHERE owner_run_id=? AND
+      `DELETE FROM ne19_attachments WHERE owner_run_id=? AND family<>? AND
       (owner_kind='run' OR owner_attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?))`,
-    ).run(input.runId, input.runId);
+    ).run(input.runId, RUN_VALUE_FAMILY, input.runId);
     recordStatement(
       connection,
       `DELETE FROM ne19_members WHERE target_run_id=? AND
@@ -679,12 +674,9 @@ function incomingReferences(connection: RecordDatabase, originRunId: string): re
     FROM ne19_run_slot_bindings b JOIN ne19_attempt_publications a ON a.attempt_id=b.attempt_id
     LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=b.target_run_id
     WHERE b.origin_run_id=? AND b.target_run_id<>? AND d.run_id IS NULL
-    ORDER BY b.target_run_id,b.slot_id,b.attempt_id LIMIT ?`,
-  ).all(originRunId, originRunId, Math.trunc(RECORD_SQLITE_MAX_ROW_BYTES / 256) + 1) as readonly Row[];
-  if (rows.length > RECORD_SQLITE_MAX_ROW_BYTES / 256) {
-    throw invalid(`Run ${originRunId} incoming reference inventory exceeds its bounded delete receipt`);
-  }
-  return rows.map((row) => ({
+    ORDER BY b.target_run_id,b.slot_id,b.attempt_id`,
+  ).iterate(originRunId, originRunId);
+  return Array.from(rows, (row) => ({
     dependentRunId: text(row, "target_run_id"),
     dependentSlotId: text(row, "slot_id"),
     attemptId: text(row, "attempt_id"),
@@ -845,12 +837,9 @@ function readRunAtCutoff(
   const slotRows = recordStatement(
     connection,
     `SELECT slot_id,eval_id,attempt_ordinal,execution_identity_digest
-    FROM ne19_run_expected_slots WHERE run_id=? ORDER BY ordinal LIMIT ?`,
-  ).all(runId, Math.trunc(RECORD_SQLITE_MAX_ROW_BYTES / 256) + 1) as readonly Row[];
-  if (slotRows.length > RECORD_SQLITE_MAX_ROW_BYTES / 256) {
-    throw invalid(`Run ${runId} expected slot inventory exceeds its bounded read`);
-  }
-  const slots = slotRows.map((slot): ReadableRunResource["slots"][number] => ({
+    FROM ne19_run_expected_slots WHERE run_id=? ORDER BY ordinal`,
+  ).iterate(runId);
+  const slots = Array.from(slotRows, (slot): ReadableRunResource["slots"][number] => ({
     slotId: text(slot, "slot_id"),
     evalId: text(slot, "eval_id"),
     attemptOrdinal: integer(slot, "attempt_ordinal"),
@@ -952,14 +941,15 @@ export function readPublishedAttemptOnConnection(
   }
   const revision = integer(row, "published_revision");
   const originRunId = text(row, "origin_run_id");
+  const closureDigest = text(row, "closure_digest");
   return {
     attemptId: text(row, "attempt_id"),
     attemptLocator: text(row, "attempt_locator"),
     originRunId,
     originSlotId: text(row, "origin_slot_id"),
     publicationIdentity: { originRunId, attemptId: text(row, "attempt_id"), revision },
-    closureBytes: bytes(row, "closure_payload"),
-    closureDigest: text(row, "closure_digest"),
+    closureBytes: readRunValue(connection, originRunId, bytes(row, "closure_payload"), closureDigest),
+    closureDigest,
   };
 }
 

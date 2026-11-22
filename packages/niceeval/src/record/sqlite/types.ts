@@ -5,8 +5,6 @@ export const RECORD_SQLITE_MAX_PUBLISH_BYTES = 8 * 1024 * 1024;
 export const RECORD_SQLITE_MAX_ROW_BYTES = 1024 * 1024;
 export const RECORD_SQLITE_MAX_PAGE_ROWS = 64;
 export const RECORD_SQLITE_MAX_PAGE_BYTES = 4 * 1024 * 1024;
-export const RECORD_SQLITE_MAX_VALIDATION_RUNS = 100_000;
-export const RECORD_SQLITE_MAX_VALIDATION_ROWS = 2_000_000;
 export const RECORD_SQLITE_VALIDATION_DEADLINE_MS = 30_000;
 
 export type RunStatus = "open" | "sealing" | "sealed";
@@ -219,6 +217,7 @@ export interface AppendContentChunksInput {
   readonly writerGeneration: string;
   readonly contentId: string;
   readonly chunks: readonly PersistedContentChunk[];
+  readonly completion?: Pick<PersistedContentMetadata, "byteLength" | "digest" | "chunkCount">;
   readonly deadlineEpochMs: number;
 }
 
@@ -234,6 +233,7 @@ export interface StageRunCoreInput {
   readonly attempts: readonly PersistedAttempt[];
   readonly members: readonly PersistedMember[];
   readonly attachments: readonly FinalizedAttachmentClosure[];
+  readonly contentsAlreadyStaged?: true;
   readonly deadlineEpochMs: number;
 }
 
