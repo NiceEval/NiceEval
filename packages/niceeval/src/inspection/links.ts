@@ -4,17 +4,13 @@ import { inspectionByteContinuation } from "./continuation.ts";
 import { inspectionShellWord as word, inspectionIdAspect } from "./addressing.ts";
 import type { InspectionLink, InspectionOperation } from "./protocol.ts";
 
-/** Navigation is a bounded projection of identities already exposed by this result. */
+/** Projects navigation from the identities already exposed by this result page. */
 export function inspectionLinks(operation: InspectionOperation, document: unknown): readonly InspectionLink[] {
   const links: InspectionLink[] = [];
   const seen = new Set<string>();
   const add = (rel: InspectionLink["rel"], args: readonly string[]) => {
     const command = "niceeval show " + args.map(word).join(" ");
     if (seen.has(command)) return;
-    if (links.length >= 256) {
-      if (rel !== "next-page") return;
-      links.pop();
-    }
     seen.add(command);
     links.push({ rel, command });
   };
@@ -31,7 +27,7 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
     add("execution", [operation.locator, "execution"]);
   }
   const visit = (value: unknown): void => {
-    if (links.length >= 256 || value === null || typeof value !== "object") return;
+    if (value === null || typeof value !== "object") return;
     if (Array.isArray(value)) {
       for (const entry of value) visit(entry);
       return;

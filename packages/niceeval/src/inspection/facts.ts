@@ -96,8 +96,6 @@ export type InspectionAssertionsRead =
     };
 
 const RUN_PAGE_SIZE = 100;
-const ATTEMPT_CANDIDATE_RUN_LIMIT = 64;
-const ATTEMPT_TARGET_MEMBER_LIMIT = 256;
 const decodedRuns = new WeakMap<InspectionFactSource, Map<string, LoadedInspectionRun>>();
 const decodedAssertions = new WeakMap<DecodedInspectionAttachment, InspectionAssertionsRead>();
 
@@ -171,7 +169,7 @@ export function loadInspectionRuns(source: InspectionFactSource): readonly Loade
   });
 }
 
-/** Reads a bounded, explicit Run selection without changing its caller order. */
+/** Reads an explicit Run selection without changing its caller order. */
 export function loadSelectedInspectionRuns(
   source: InspectionFactSource,
   runIds: readonly string[],
@@ -398,14 +396,14 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
   };
 }
 
-/** Resolves a public locator through the source's bounded exact index. */
+/** Resolves a public locator through the source's exact index. */
 // @concord-code
 // @concord-implements docs/feature/inspection/architecture.md
 export function resolveInspectionAttempt(
   source: InspectionFactSource,
   locator: string,
 ): ResolvedInspectionAttempt | undefined {
-  const projection = source.findAttemptLocatorCandidates(locator, ATTEMPT_CANDIDATE_RUN_LIMIT);
+  const projection = source.findAttemptLocatorCandidates(locator, RUN_PAGE_SIZE);
   if (projection.candidates.length === 0) return undefined;
   if (projection.ambiguous) return undefined;
   const origins = projection.candidates.filter(({ relation }) => relation === "origin");
@@ -451,10 +449,7 @@ export function resolveInspectionAttempt(
     if (members.length === 0) {
       throw factsError(`Attempt ${locator} target Core is invalid`);
     }
-    if (targets.length + members.length > ATTEMPT_TARGET_MEMBER_LIMIT) {
-      throw factsError(`Attempt ${locator} exceeds its fixed target member limit`);
-    }
-    targets.push(...members.map((member) => ({ run, member })));
+    for (const member of members) targets.push({ run, member });
   }
   return {
     attempt,

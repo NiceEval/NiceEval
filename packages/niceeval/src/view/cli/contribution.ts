@@ -63,7 +63,6 @@ type Requirements =
   | Scope.Scope;
 type ViewCliCause = CurrentTargetUnavailable | ExternalCause;
 type Error = CliFeatureError<ViewCliCause>;
-const VIEW_RUN_SELECTION_LIMIT = 64;
 const RECORD_IMPORT_DEADLINE_MS = 30_000;
 
 function failure(operation: string, cause: unknown): Error {
@@ -135,7 +134,7 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
     });
     if (address.imageId !== undefined)
       return yield* usage("View accepts an Attempt, Experiment, Run, or current results address.");
-    const runIds = parseRunIds([...address.runIds]);
+    const runIds = parseRunIds(address.runIds);
     if (typeof runIds === "string") return yield* usage(runIds);
     const port = parsePort(parsed.values.port);
     if (typeof port === "string") return yield* usage(port);
@@ -257,7 +256,10 @@ function runView(argv: readonly string[]): Effect.Effect<number, Error, Requirem
       );
       if (parsed.values["no-open"] !== true) {
         const browser = yield* ViewBrowser;
-        yield* browser.open(server.readyUrl).pipe(Effect.catch(() => Effect.succeed(false)));
+        yield* browser.open(server.readyUrl).pipe(
+          Effect.catch(() => write("stderr", "Browser launcher failed. Open the View URL printed above.\n")),
+          Effect.forkScoped,
+        );
       }
       const interruption = yield* CliInterruption;
       if (!interruption.enterGracefulDispatch()) return yield* Effect.interrupt;
@@ -380,17 +382,9 @@ function invocationFacts() {
   );
 }
 
-function parseRunIds(value: string | boolean | string[] | undefined): readonly RunId[] | string {
-  function selectedValues(): readonly string[] {
-    if (typeof value === "string") return [value];
-    if (Array.isArray(value)) return value;
-    return [];
-  }
-  const values = selectedValues();
-  if (values.length > VIEW_RUN_SELECTION_LIMIT)
-    return `niceeval view accepts at most ${VIEW_RUN_SELECTION_LIMIT} run: selections.`;
+function parseRunIds(values: readonly string[]): readonly RunId[] | string {
   const output: RunId[] = [];
-  for (const candidate of [...new Set(values)]) {
+  for (const candidate of values) {
     const decoded = Schema.decodeUnknownResult(RunIdSchema)(candidate);
     if (Result.isFailure(decoded)) return `Invalid run: ID ${JSON.stringify(candidate)}.`;
     output.push(decoded.success);

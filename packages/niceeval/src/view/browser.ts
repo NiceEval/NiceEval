@@ -7,7 +7,7 @@ export class ViewBrowserError extends Data.TaggedError("ViewBrowserError")<{
 }> {}
 
 export interface ViewBrowserService {
-  readonly open: (url: string) => Effect.Effect<boolean, ViewBrowserError>;
+  readonly open: (url: string) => Effect.Effect<void, ViewBrowserError>;
 }
 
 export class ViewBrowser extends Context.Service<ViewBrowser, ViewBrowserService>()("@niceeval/view/ViewBrowser") {}
@@ -25,27 +25,27 @@ function browserCommand(): string {
 
 export const NodeViewBrowserLive = Layer.succeed(ViewBrowser, {
   open: (url) =>
-    Effect.callback<boolean, ViewBrowserError>((resume) => {
+    Effect.callback<void, ViewBrowserError>((resume, signal) => {
       const command = browserCommand();
       const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-      let settled = false;
-      const finish = (opened: boolean): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resume(Effect.succeed(opened));
+      const fail = (cause: unknown): void => {
+        if (!signal.aborted) resume(Effect.fail(new ViewBrowserError({ operation: "open-browser", cause })));
       };
       let child;
       try {
         child = spawn(command, args, { detached: true, stdio: "ignore" });
       } catch (cause) {
-        resume(Effect.fail(new ViewBrowserError({ operation: "open-browser", cause })));
-        return Effect.void;
+        fail(cause);
+        return;
       }
-      const timer = setTimeout(() => finish(true), 1_500);
-      child.once("error", () => finish(false));
-      child.once("exit", (code) => finish(code === 0));
+      child.once("error", fail);
+      child.once("exit", (code, exitSignal) => {
+        if (code !== 0) {
+          fail(new Error(`${command} exited with ${exitSignal ?? code}`));
+          return;
+        }
+        if (!signal.aborted) resume(Effect.void);
+      });
       child.unref();
-      return Effect.sync(() => clearTimeout(timer));
     }),
 });

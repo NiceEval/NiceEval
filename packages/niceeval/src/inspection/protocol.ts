@@ -185,9 +185,7 @@ export const inspectionProtocolRegistry = Object.freeze({
   }),
   "experiments.assertions": spec({
     request: operation("experiments.assertions", {
-      experimentIds: Schema.Array(ExperimentIdSchema).check(
-        Schema.makeFilter((ids) => ids.length > 0 && ids.length <= 32),
-      ),
+      experimentIds: Schema.Array(ExperimentIdSchema).check(Schema.makeFilter((ids) => ids.length > 0)),
       evalIdPrefix: Schema.optional(Schema.String),
     }),
     result: { matrix: AssertionMatrixSchema },

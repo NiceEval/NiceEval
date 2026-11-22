@@ -38,7 +38,6 @@ export const InspectionRepricingInputSchema = Schema.Record(
     const keys = Object.keys(value);
     return (
       keys.length > 0 &&
-      keys.length <= 256 &&
       keys.every(
         (key) => key.trim().length > 0 && Buffer.byteLength(key) <= 8_192 && !/[\u0000-\u001f\u007f]/u.test(key),
       )

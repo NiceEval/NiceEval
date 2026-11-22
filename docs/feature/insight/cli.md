@@ -24,8 +24,9 @@ niceeval view [<对象>] [<方面>] [<ID>] [--no-open] [--port <port>]
 对象、方面与 ID 的写法、ID 前缀表与组合规则都与 [`niceeval show`](../inspection/cli.md#对象方面与-flag-的组合) 相同：把 `show` 换成 `view`、参数不变，就在浏览器打开同一个位置。它们在启动时于同一 `PublicationCutoff` 上校验；任一 ID 或 locator 未命中、方面与 ID 前缀不符时，命令以英文诊断写 stderr 并非零退出，不打开浏览器。`show` 的方面专属 flag（`--actor`、`--reprice` 等）、`--record` 与断言图片不被 `view` 接受。
 
 完整 SPA assets、session 与读取 transport 可用后，命令向 stdout 写出一次可打开的 loopback URL。`--json` 的事件不带版本 envelope，由 `niceeval/view` 的 `decodeViewLifecycle()` 严格解码；启动失败只写 stderr。
+系统浏览器启动失败时，命令把诊断写入 stderr，并继续提供已就绪的 URL。
 新的 publication
-只让页面显示更新可用；用户确认后才切换到新的 cutoff。启动或运行失败通过退出码与 stderr 反馈。
+只让页面显示更新可用；用户确认后才切换到新的 cutoff。View 服务启动或运行失败通过退出码与 stderr 反馈。
 
 启动与关闭见[制作可访问页面](use-case/insight-create-accessible-page.md#观察启动与关闭)；Run 选择见
 [审阅一次 Run 怎样采用结果](use-case/insight-review-run-adoption.md#选择要审阅的-run)。

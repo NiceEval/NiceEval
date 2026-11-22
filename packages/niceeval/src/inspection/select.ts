@@ -172,7 +172,6 @@ export class InspectionOperationError extends Data.TaggedError("InspectionOperat
 
 const RUN_LIST_PAGE_SIZE = 100;
 const ATTACHMENT_CONTENT_METADATA_LIMIT = 64;
-const RUN_SELECTION_LIMIT = 64;
 
 /** Pure fixed-operation selector shared by Node CLI and browser View adapters. */
 export function selectInspectionOperation<Kind extends InspectionOperationId>(
@@ -283,7 +282,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       const selection =
         requested.length === 0
           ? { selected: loadInspectionRuns(source), missing: [] as readonly string[] }
-          : selectRuns(loadRuns(source, requested), requested);
+          : selectRuns(loadSelectedInspectionRuns(source, requested), requested);
       const supporting = loadReferencedOrigins(source, selection.selected);
       return {
         ...resultMetadata(
@@ -839,7 +838,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       return { ...metadata, artifacts: boundedJson(artifacts) };
     }
     case "runs.compare": {
-      const selected = loadRuns(source, [...operation.leftRunIds, ...operation.rightRunIds]);
+      const selected = loadSelectedInspectionRuns(source, [...operation.leftRunIds, ...operation.rightRunIds]);
       return comparisonDocument(source, loadReferencedOrigins(source, selected), operation);
     }
   }
@@ -971,7 +970,7 @@ function loadForOperation(
   if (operation.kind === "overview.get") {
     const requested = operation.runIds ?? [];
     if (requested.length === 0) return { selected: loadInspectionRuns(source), requestedRunIds: [], missingRunIds: [] };
-    const selection = selectRuns(loadRuns(source, requested), requested);
+    const selection = selectRuns(loadSelectedInspectionRuns(source, requested), requested);
     return {
       selected: loadReferencedOrigins(source, selection.selected),
       requestedRunIds: requested,
@@ -1005,7 +1004,7 @@ function loadForOperation(
   if (operation.kind === "run.list") return { selected: [], requestedRunIds: [], missingRunIds: [] };
   if (operation.kind === "runs.compare") {
     const requested = [...operation.leftRunIds, ...operation.rightRunIds];
-    const selected = selectRuns(loadRuns(source, requested), requested);
+    const selected = selectRuns(loadSelectedInspectionRuns(source, requested), requested);
     return {
       selected: loadReferencedOrigins(source, selected.selected),
       requestedRunIds: requested,
@@ -1013,7 +1012,7 @@ function loadForOperation(
     };
   }
   if ("runId" in operation) {
-    const selected = selectRuns(loadRuns(source, [operation.runId]), [operation.runId]);
+    const selected = selectRuns(loadSelectedInspectionRuns(source, [operation.runId]), [operation.runId]);
     requireOne(operation.kind, selected.selected, operation.runId);
     return {
       selected: loadSummaryFacts(source, selected.selected[0]!),
@@ -1042,14 +1041,6 @@ function requireCurrentProject(source: InspectionFactSource, experimentIds?: rea
     if (!input.target.experiments.some((experiment) => experiment.experimentId === id))
       throw selectionMissing("project.get", `Current Experiment ${JSON.stringify(id)} was not found.`);
   return input;
-}
-
-function loadRuns(source: InspectionFactSource, runIds: readonly string[]): readonly LoadedInspectionRun[] {
-  const uniqueRunIds = [...new Set(runIds)];
-  if (uniqueRunIds.length > RUN_SELECTION_LIMIT) {
-    throw new Error(`Inspection selection exceeds the fixed ${RUN_SELECTION_LIMIT}-Run limit`);
-  }
-  return loadSelectedInspectionRuns(source, uniqueRunIds);
 }
 
 function requireRunResource(
@@ -1136,7 +1127,7 @@ function loadReferencedOrigins(
       ),
     ),
   ];
-  return uniqueRuns([...targets, ...loadRuns(source, originIds)]);
+  return uniqueRuns([...targets, ...loadSelectedInspectionRuns(source, originIds)]);
 }
 
 function loadSummaryFacts(source: InspectionFactSource, target: LoadedInspectionRun): readonly LoadedInspectionRun[] {

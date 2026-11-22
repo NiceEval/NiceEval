@@ -62,7 +62,7 @@ export interface InspectionFactSource {
     pageSize?: number,
     expectedCutoffIdentity?: string,
   ) => SealedRunSummaryPage;
-  readonly findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) => AttemptLocatorCandidates;
+  readonly findAttemptLocatorCandidates: (locator: string, candidatePageSize: number) => AttemptLocatorCandidates;
   readonly readSealedRunCore: (runId: string) => SealedRunCore | undefined;
   readonly readContentPage: (contentId: string, afterOrdinal: number, pageSize: number) => ContentChunkPage;
   readonly readCollectionPage: (attachmentId: string, afterOrdinal: number, pageSize: number) => CollectionItemPage;
@@ -214,8 +214,7 @@ function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["
         invocationId: undefined,
       }),
     readSealedRunSummaryPage: readPage,
-    findAttemptLocatorCandidates: (locator: string, maximumCandidateRuns: number) =>
-      session.findAttemptLocatorCandidates(locator, maximumCandidateRuns),
+    findAttemptLocatorCandidates: session.findAttemptLocatorCandidates,
     readSealedRunCore: (runId: string) => session.readSealedRunCore(runId, true),
     readContentPage: (contentId: string, afterOrdinal: number, pageSize: number) =>
       session.readContentChunkPage(contentId, afterOrdinal, pageSize),

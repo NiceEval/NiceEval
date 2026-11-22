@@ -25,7 +25,6 @@ import {
   contentId as recordContentId,
   exactLogicalSealIdentity,
   exactLogicalSealIdentityFromOrdered,
-  hashCanonicalTuple,
   memberSealEntry,
   orderSealEntries,
   recordSealEntry,
@@ -3015,69 +3014,65 @@ export function readSealedRunSummaryPage(
   };
 }
 
-/** Indexed, bounded locator projection. No Core or attachment payload is selected. */
+/** Reads the indexed locator projection in batches of Run identities. */
 export function findAttemptLocatorCandidates(
   connection: RecordDatabase,
   locator: string,
-  maximumCandidateRuns: number,
+  candidatePageSize: number,
   includeTargets = true,
 ): AttemptLocatorCandidates {
   if (!parseAttemptLocator(locator).valid) {
     throw sqliteError("record-content-invalid", "find-attempt-locator", "Attempt locator is malformed");
   }
-  if (!Number.isSafeInteger(maximumCandidateRuns) || maximumCandidateRuns < 1 || maximumCandidateRuns > 256) {
+  if (!Number.isSafeInteger(candidatePageSize) || candidatePageSize < 1) {
     throw sqliteError(
       "record-resource-limit-exceeded",
       "find-attempt-locator",
-      "candidate Run limit must be between 1 and 256",
+      "candidate Run page size must be a positive safe integer",
     );
   }
-  const matching = rows(
+  const pageSize = Math.min(candidatePageSize, RECORD_SQLITE_MAX_PAGE_ROWS);
+  const selectOrigins = recordStatement(
     connection,
     `SELECT a.origin_run_id,a.attempt_id FROM ne19_attempts a
     JOIN ne19_runs origin ON origin.run_id=a.origin_run_id
-    WHERE a.attempt_locator=? ORDER BY a.origin_run_id,a.attempt_id LIMIT ?`,
-    locator,
-    maximumCandidateRuns + 1,
+    WHERE a.attempt_locator=? AND (a.origin_run_id,a.attempt_id)>(?,?) AND
+      ((origin.status='sealed' AND NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=a.origin_run_id)) OR
+       EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=a.origin_run_id AND p.attempt_id=a.attempt_id))
+    ORDER BY a.origin_run_id,a.attempt_id LIMIT ?`,
   );
-  const identities = new Set<string>();
+  const selectTargets = recordStatement(
+    connection,
+    `SELECT DISTINCT m.target_run_id FROM ne19_members m
+    JOIN ne19_runs target ON target.run_id=m.target_run_id AND target.status='sealed'
+    WHERE m.origin_run_id=? AND m.attempt_id=? AND m.target_run_id>?
+    ORDER BY m.target_run_id LIMIT ?`,
+  );
   const candidates: AttemptLocatorCandidates["candidates"][number][] = [];
-  const add = (candidate: AttemptLocatorCandidates["candidates"][number]): void => {
-    if (candidates.length >= maximumCandidateRuns) {
-      throw sqliteError(
-        "record-resource-limit-exceeded",
-        "find-attempt-locator",
-        `Attempt locator exceeds the fixed ${maximumCandidateRuns}-Run candidate limit`,
-      );
+  let originRunId = "";
+  let attemptId = "";
+  let originCount = 0;
+  for (;;) {
+    const origins = selectOrigins.all(locator, originRunId, attemptId, pageSize);
+    for (const origin of origins) {
+      originRunId = text(origin, "origin_run_id");
+      attemptId = text(origin, "attempt_id");
+      originCount++;
+      candidates.push({ locator, originRunId, attemptId, relation: "origin", runId: originRunId });
+      if (!includeTargets) continue;
+      let targetRunId = "";
+      for (;;) {
+        const targets = selectTargets.all(originRunId, attemptId, targetRunId, pageSize);
+        for (const target of targets) {
+          targetRunId = text(target, "target_run_id");
+          candidates.push({ locator, originRunId, attemptId, relation: "target", runId: targetRunId });
+        }
+        if (targets.length < pageSize) break;
+      }
     }
-    candidates.push(candidate);
-  };
-  for (const row of matching) {
-    const originRunId = text(row, "origin_run_id");
-    const attemptId = text(row, "attempt_id");
-    const published = recordStatement(
-      connection,
-      `SELECT 1 FROM ne19_runs r WHERE r.run_id=? AND
-      ((r.status='sealed' AND NOT EXISTS (SELECT 1 FROM ne19_run_resources rr WHERE rr.run_id=r.run_id)) OR
-       EXISTS (SELECT 1 FROM ne19_attempt_publications p WHERE p.origin_run_id=r.run_id AND p.attempt_id=?))`,
-    ).get(originRunId, attemptId);
-    if (published === undefined) continue;
-    identities.add(hashCanonicalTuple("niceeval.record.attempt-candidate", [originRunId, attemptId]));
-    add({ locator, originRunId, attemptId, relation: "origin", runId: originRunId });
-    if (!includeTargets) continue;
-    const targets = rows(
-      connection,
-      `SELECT DISTINCT m.target_run_id FROM ne19_members m
-      JOIN ne19_runs target ON target.run_id=m.target_run_id AND target.status='sealed'
-      WHERE m.origin_run_id=? AND m.attempt_id=? ORDER BY m.target_run_id LIMIT ?`,
-      originRunId,
-      attemptId,
-      maximumCandidateRuns - candidates.length + 1,
-    );
-    for (const target of targets)
-      add({ locator, originRunId, attemptId, relation: "target", runId: text(target, "target_run_id") });
+    if (origins.length < pageSize) break;
   }
-  return { locator, ambiguous: identities.size > 1, candidates };
+  return { locator, ambiguous: originCount > 1, candidates };
 }
 
 export function readCollectionItemPage(
