@@ -141,6 +141,16 @@ export type FailureClass =
 - 不在 CLI 或 `defineEval` / `defineExperiment` 加重试次数、退避参数一类配置——封顶次数与退避参数是固定值,有真实需要再考虑开放。
 - 不改 `attempts` / `earlyExit` / run 级 fail-fast 的既有语义——止损机制在其旁并存,streak 推断继续兜没有声明的场景。
 
+## 性质
+
+### Send 的安全重试与预算 {#bounded-send-retry}
+
+观察 Adapter 收到的输入和 Attempt 终态。只有明确证明输入未获受理才重发同一输入。一次 Send 最多尝试四次，同一 Attempt 最多重试八次。动作包括改变受理证据、连续拒绝次数与 Send 数量。
+
+### Send 退避 {#send-backoff}
+
+观察 Adapter 收到的输入和 Invocation 终态。重新派发须等退避到期。若 Invocation 在退避中取消，则直接收尾，达到原定时点也不会重发。动作包括推进时钟到退避前后与取消 Invocation。
+
 ## 相关阅读
 
 - [Architecture](architecture.md) —— 类型形状、分类链、重试执行体、止损执行体与不变量。

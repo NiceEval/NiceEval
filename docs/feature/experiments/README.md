@@ -263,6 +263,10 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 
 观察公开事件、清理副作用、附件与分数。实验 setup 至多一次，teardown 后发布一次完成事件，取消后停止派发、有界清理并保留已接纳事实。动作包括组合多实验、零派发、取消及清理超时。
 
+### Before 缓存预览 {#readonly-cache-preview}
+
+观察 `debug` 的 before 缓存前缀与消费者清单。同一前缀只列一次，每个所选 Eval 也只列一次。库存查询状态始终为 `not-probed`。动作包括选择不同数量的 Eval、声明共享准备与重复 Attempt。
+
 ### 发布失败 {#publication-failure}
 
 观察退出码、诊断和可读 Attempt。发布失败不破坏已发布事实，未成功的条目仍有可行动诊断。动作包括在派发和发布中变换失败与取消时点，再回读和重跑。
@@ -270,6 +274,14 @@ key 是会进入 Run 条目的稳定非密字符串，必须匹配 `[a-z0-9][a-z
 ### 进度与计数 {#progress-counts}
 
 观察终端、管道及机器输出中的进度和计数。各状态计数之和始终为计划总数，沿用和未派发各自归类，机器诊断保留阶段与作者的 code。动作包括交错执行、复用、预算耗尽、终端 resize 与管道输出。
+
+### Invocation 状态 {#invocation-session}
+
+观察项目中的 Session 清单和单条状态。运行中可查到 active，完成后同一 ID 可查到终态，默认清单仅列活动项。动作包括保持 Attempt 运行、读状态、释放 Attempt，并切换清单范围。
+
+### Invocation 用量 {#invocation-usage}
+
+观察 Invocation 的输入和输出 token 总数。完整的 Adapter 调用按 Attempt 相加，缓存读取量不重复计入输入。若任一 Attempt 的调用记录不完整，则总数未知。动作包括改变 Attempt 的调用数、缓存读取量和记录完整性。
 
 ### CLI 失败 {#cli-failures}
 
