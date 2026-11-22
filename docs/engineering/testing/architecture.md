@@ -49,10 +49,11 @@
 |---|---|---|---:|
 | 集成 · Library | `test/integration/` | 进程内调用公开 Library API，真实临时项目 | 1s |
 | 集成 · CLI | `test/cli/` | 进程内 CLI：同一命令程序在测试进程运行，注入 argv、cwd、环境与标准流 | 300ms |
-| E2E · 进程 | `test/process/` | 真实多进程、信号、外部程序与 Sandbox Provider | 10s |
+| E2E · 进程 | `test/process/` | 真实多进程、信号与外部程序 | 10s |
+| E2E · Docker / Linux 进程 | `test/process/` 下的 `*.docker.test.ts`、`*.linux.test.ts` | Docker 或 Incus 资源生命周期与进程边界 | 30s |
 | E2E · 界面 | `test/bombadil/` | Bombadil 终端与浏览器 spec | 按 spec 设定探索时长 |
 
-门禁按目录归层。CLI 或进程层的测试若只在验证领域情形，就下沉到 Library 集成层。
+门禁按目录和文件后缀归层。CLI 或进程层的测试若只在验证领域情形，就下沉到 Library 集成层。
 
 ### 跨进程保证
 
@@ -68,7 +69,11 @@
 
 ## 成本上限
 
-单个测试按上表的 p50 上限；超过上限的文件按 Use Case 拆分或下沉，见 `use-case/` 中的拆分指南。全量测试在 CI 分片运行，本地与 pre-push 按上表执行。
+每个测试遵守上表的 p50 上限。超限时按[拆分慢测试](use-case/split-slow-test.md)拆分或下沉。
+
+创建和准备容器或虚拟机，再用 SIGINT 验证清理，合计可能耗时数十秒。
+30s 上限为真实资源生命周期留出时间。这档测试只在 CI 的 `docker` 和 `linux` project 中运行。
+全量测试在 CI 分片运行，本地与 pre-push 按[运行表](#运行)执行。
 
 ## 检查入口
 

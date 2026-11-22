@@ -8,12 +8,16 @@ import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
+const { Clock, Effect, Exit, Scope } =
+  require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
 const { experimentHost } =
   require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
+const { TestClock } =
+  require("effect/testing") as typeof import("../../packages/niceeval/node_modules/effect/dist/testing/index.js");
 
 const FIXTURE = fileURLToPath(new URL("fixtures/teardown-lifecycle/", import.meta.url));
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1);
+const ATTEMPT_TIMEOUT_MS = 120;
 
 type Mode = "ok" | "slow" | "throw";
 type Trigger = "sigint" | "timeout";
@@ -31,6 +35,13 @@ interface RecordedEvent {
   readonly unit?: string;
   readonly signalAborted?: boolean;
   readonly signalAbortedAtEnd?: boolean;
+}
+
+type InvocationResult = import("../../packages/niceeval/src/experiment/host/index.ts").ExperimentHostInvocationResult;
+
+interface Observed {
+  readonly executed: InvocationResult;
+  readonly events: readonly RecordedEvent[];
 }
 
 const unitsOf = (scenario: Pick<Scenario, "experimentPlugin" | "evalPlugins">): string[] => [
@@ -110,7 +121,7 @@ async function prepareProject(scenario: Scenario): Promise<string> {
        evals: ["held"],
        attempts: 1,
        maxConcurrency: 1,
-       ${scenario.trigger === "timeout" ? "timeoutMs: 120," : ""}
+       ${scenario.trigger === "timeout" ? `timeoutMs: ${ATTEMPT_TIMEOUT_MS},` : ""}
        plugins: [${scenario.experimentPlugin ? "experimentUnit" : ""}],
      });`,
   );
@@ -149,14 +160,29 @@ async function arrangeScenario(scenario: Scenario) {
   }
 }
 
-async function observeScenario(scenario: Scenario, { cwd, plan }: Awaited<ReturnType<typeof arrangeScenario>>) {
+async function startScenario(scenario: Scenario, { cwd, plan }: Awaited<ReturnType<typeof arrangeScenario>>) {
   const abort = new AbortController();
-  const running = Effect.runPromise(experimentHost.invocation.run({ plan, signal: abort.signal }));
-  if (scenario.trigger === "sigint") {
-    // Interrupt only once the scenario's hold point is live, so the activated prefix is the one the scenario names.
+  const scope = Effect.runSync(Scope.make());
+  let running: Promise<InvocationResult> | undefined;
+
+  async function dispose() {
+    abort.abort();
+    await running?.catch(() => undefined);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+
+  try {
+    // Advance the Attempt deadline only after the generated lifecycle point is held.
+    const clock =
+      scenario.trigger === "timeout" ? await Effect.runPromise(TestClock.make().pipe(Scope.provide(scope))) : undefined;
+    if (clock !== undefined) await Effect.runPromise(clock.setTime(Date.now()));
+    const execute = experimentHost.invocation.run({ plan, signal: abort.signal });
+    const run = Effect.runPromise(clock === undefined ? execute : Effect.provideService(execute, Clock.Clock, clock));
+    running = run;
+
     const deadline = Date.now() + 8_000;
     const state = { finished: false };
-    void running.then(
+    void run.then(
       () => (state.finished = true),
       () => (state.finished = true),
     );
@@ -165,25 +191,23 @@ async function observeScenario(scenario: Scenario, { cwd, plan }: Awaited<Return
       if (Date.now() > deadline) throw new Error("The hold point was never reached");
       await delay(5);
     }
-    abort.abort();
-  }
-  const executed = await running;
-  return { executed, events: await readEvents(cwd) };
-}
 
-async function runScenario(scenario: Scenario) {
-  const arranged = await arrangeScenario(scenario);
-  try {
-    return await observeScenario(scenario, arranged);
-  } finally {
-    await rm(arranged.cwd, { recursive: true, force: true });
+    return {
+      async finish(): Promise<Observed> {
+        if (clock === undefined) abort.abort();
+        else await Effect.runPromise(clock.adjust(ATTEMPT_TIMEOUT_MS));
+        return { executed: await run, events: await readEvents(cwd) };
+      },
+      dispose,
+    };
+  } catch (error) {
+    await dispose();
+    throw error;
   }
 }
 
 const describeScenario = (scenario: Scenario): string =>
   `${scenario.trigger} at ${scenario.holdAt}; x=${scenario.experimentPlugin}; plugins=${scenario.evalPlugins}; ${JSON.stringify(scenario.teardown)}`;
-
-type Observed = Awaited<ReturnType<typeof runScenario>>;
 
 const contextOf = (scenario: Scenario, { events }: Observed): string =>
   `scenario ${JSON.stringify(scenario)}\nevents ${JSON.stringify(events)}`;
@@ -225,52 +249,53 @@ function expectOriginalOutcome(scenario: Scenario, observed: Observed): void {
   }
 }
 
-// @feature docs/feature/run/README.md#interrupted-teardown
-describe("interrupted and timed-out Attempts tear down every activated unit once", () => {
-  // Load the Host, the Eval loader and the Direct Agent once so each scenario is measured on its own cost.
+const lifecycleCases = [
+  ...samples.map((scenario) => ({
+    label: describeScenario(scenario),
+    scenario,
+    check(scenario: Scenario, observed: Observed) {
+      expectMirroredTeardown(scenario, observed);
+      expectLiveSignals(scenario, observed, () => true);
+      expectOriginalOutcome(scenario, observed);
+    },
+  })),
+  {
+    // The Experiment Plugin previously received the interrupted Run's aborted signal.
+    label: "an Experiment Plugin teardown after SIGINT receives a live signal",
+    scenario: { trigger: "sigint", holdAt: "test", experimentPlugin: true, evalPlugins: 0, teardown: {} } as const,
+    check(scenario: Scenario, observed: Observed) {
+      expectLiveSignals(scenario, observed, (unit) => unit === "x");
+    },
+  },
+  {
+    // The Direct Agent previously ran teardown even though the first Eval Plugin was still held in before.
+    label: "a Direct Agent whose before never started does not tear down",
+    scenario: { trigger: "sigint", holdAt: "p0.before", experimentPlugin: false, evalPlugins: 2, teardown: {} } as const,
+    check(scenario: Scenario, observed: Observed) {
+      expectMirroredTeardown(scenario, observed);
+    },
+  },
+];
+
+describe.for(lifecycleCases)("$label", ({ scenario, check }) => {
+  let arranged: Awaited<ReturnType<typeof arrangeScenario>> | undefined;
+  let started: Awaited<ReturnType<typeof startScenario>> | undefined;
+
   beforeAll(async () => {
-    await runScenario({ trigger: "sigint", holdAt: "test", experimentPlugin: false, evalPlugins: 0, teardown: {} });
+    arranged = await arrangeScenario(scenario);
+    started = await startScenario(scenario, arranged);
   }, 20_000);
 
-  describe.for(samples.map((scenario) => ({ label: describeScenario(scenario), scenario })))(
-    "$label",
-    ({ scenario }) => {
-      let arranged: Awaited<ReturnType<typeof arrangeScenario>> | undefined;
-
-      beforeAll(async () => {
-        arranged = await arrangeScenario(scenario);
-      }, 20_000);
-      afterAll(async () => {
-        if (arranged !== undefined) await rm(arranged.cwd, { recursive: true, force: true });
-      });
-
-      // @feature docs/feature/run/README.md#interrupted-teardown
-      test("preserves the terminal outcome and tears down with live signals in reverse activation order", async () => {
-        const observed = await observeScenario(scenario, arranged!);
-        expectMirroredTeardown(scenario, observed);
-        expectLiveSignals(scenario, observed, () => true);
-        expectOriginalOutcome(scenario, observed);
-      });
-    },
-  );
-});
-
-describe("saved regressions", () => {
-  // Reduced from: sigint at test, one Experiment Plugin, every teardown ok. The Experiment-level after
-  // callback used to be handed the Run's already aborted signal instead of a fresh one.
-  // @feature docs/feature/run/README.md#interrupted-teardown
-  test("an Experiment Plugin teardown after SIGINT receives a live signal", async () => {
-    const scenario: Scenario = { trigger: "sigint", holdAt: "test", experimentPlugin: true, evalPlugins: 0, teardown: {} };
-    const observed = await runScenario(scenario);
-    expectLiveSignals(scenario, observed, (unit) => unit === "x");
+  afterAll(async () => {
+    try {
+      await started?.dispose();
+    } finally {
+      if (arranged !== undefined) await rm(arranged.cwd, { recursive: true, force: true });
+    }
   });
 
-  // Reduced from: sigint while the first Eval Plugin before callback is held. The Direct Agent never
-  // activated, yet its after callback used to run.
   // @feature docs/feature/run/README.md#interrupted-teardown
-  test("a Direct Agent whose before never started does not tear down", async () => {
-    const scenario: Scenario = { trigger: "sigint", holdAt: "p0.before", experimentPlugin: false, evalPlugins: 2, teardown: {} };
-    const observed = await runScenario(scenario);
-    expectMirroredTeardown(scenario, observed);
+  test("teardown preserves the lifecycle guarantee", async () => {
+    check(scenario, await started!.finish());
   });
 });

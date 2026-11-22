@@ -1,5 +1,5 @@
 import { globSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import type { Reporter } from "vitest/node";
 
 const costLimits = new Map([
@@ -7,6 +7,7 @@ const costLimits = new Map([
   ["cli", 300],
   ["process", 10000],
 ]);
+const containerProcessTest = /\.(?:docker|linux)\.test\.ts$/u;
 const processGuarantee =
   /^(?:\/\/[^\n]*\n)*\/\/ 跨进程保证：(进程终止与信号|外部程序与 Provider|文件与锁|运行环境|网络)——\S/u;
 
@@ -26,7 +27,9 @@ export default {
     const exceeded: string[] = [];
     for (const module of modules) {
       const [directory, layer] = relative(module.project.config.root, module.moduleId).split(sep);
-      const limit = directory === "test" && layer !== undefined ? costLimits.get(layer) : undefined;
+      if (directory !== "test" || layer === undefined) continue;
+      const limit =
+        layer === "process" && containerProcessTest.test(basename(module.moduleId)) ? 30_000 : costLimits.get(layer);
       if (limit === undefined) continue;
       for (const test of module.children.allTests()) {
         const durations = test

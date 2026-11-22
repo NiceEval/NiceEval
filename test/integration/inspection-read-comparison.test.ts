@@ -82,9 +82,16 @@ function withExternal<A>(
 function withCurrentProject<A>(
   cwd: string,
   run: (facts: import("../../packages/niceeval/src/inspection/index.ts").InspectionFactSource) => A,
+  experimentIds?: readonly string[],
 ): Promise<A> {
   return Effect.runPromise(
-    Effect.scoped(openCurrentProjectSource({ cwd, config: { maxConcurrency: 1 } }).pipe(Effect.map(run))),
+    Effect.scoped(
+      openCurrentProjectSource({
+        cwd,
+        config: { maxConcurrency: 1 },
+        ...(experimentIds === undefined ? {} : { experimentIds }),
+      }).pipe(Effect.map(run)),
+    ),
   );
 }
 
@@ -1609,13 +1616,14 @@ describe("exact read and comparison: current project gaps, pending barriers, sou
       await pendingRun;
       await rm(join(cwd, "hold-agent"), { force: true });
       Reflect.deleteProperty(globalThis, Symbol.for("niceeval.test.inspection-gates"));
+      // The settled Record fixture now contains an adopted reference for Inspection to resolve.
+      await Effect.runPromise(
+        experimentHost.accept({ cwd, locators: [siblingLocator], config: { maxConcurrency: 1 } }),
+      );
     }, 15_000);
 
     // @feature docs/feature/inspection/README.md#exact-read-and-comparison
     test("project.get points to the adopted Attempt after accept", async () => {
-      await Effect.runPromise(
-        experimentHost.accept({ cwd, locators: [siblingLocator], config: { maxConcurrency: 1 } }),
-      );
       await withCurrentProject(cwd, (facts) => {
         const passProj = selectInspectionOperation(facts, {
           kind: "project.get",
@@ -1628,7 +1636,7 @@ describe("exact read and comparison: current project gaps, pending barriers, sou
           action: "accepted",
           relation: "reference",
         });
-      });
+      }, ["current-pass"]);
     });
 
     // @feature docs/feature/inspection/README.md#exact-read-and-comparison

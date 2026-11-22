@@ -1,6 +1,6 @@
 // 跨进程保证：运行环境——独立子进程测量 160 MiB 流式归档的 RSS 增长上限、并发锁等待与便携式 Record CLI 读取
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, open, readFile, realpath, rm, watch, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,7 +62,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
         `
         import { defineAdapter } from "niceeval";
         import { createReadStream } from "node:fs";
-        import { writeFile } from "node:fs/promises";
+        import { rename, writeFile } from "node:fs/promises";
         import { resolve } from "node:path";
         const projectFile = (name: string) => resolve(import.meta.dirname, "..", name);
         export const streamAdapter = defineAdapter({
@@ -82,7 +82,8 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
                   });
                   peak = Math.max(peak, process.memoryUsage().rss);
                   await writeFile(projectFile("journal.ndjson"), "rewritten");
-                  await writeFile(projectFile("receipt.txt"), [receipt.artifactId, receipt.sha256, receipt.byteLength, peak - baseline].join("\\n"));
+                  await writeFile(projectFile("receipt.tmp"), [receipt.artifactId, receipt.sha256, receipt.byteLength, peak - baseline].join("\\n"));
+                  await rename(projectFile("receipt.tmp"), projectFile("receipt.txt"));
                   return receipt.byteLength;
                 } finally {
                   clearInterval(sampler);
@@ -141,51 +142,82 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
     await copyFile(join(recordDir, ".niceeval", "record.sqlite"), portableRecord);
   }, 90_000);
 
-  afterAll(async () => {
-    await Promise.all(
-      [cwd, recordDir]
-        .filter((dir) => dir !== undefined)
-        .map((dir) => rm(dir, { recursive: true, force: true })),
-    );
-  });
-
-  async function archiveFile() {
-    const runRes = await execa(process.execPath, [...process.execArgv, cli, "exp", "stream-280", "--rerun", "all", "--json"], {
+  const runArchive = () =>
+    execa(process.execPath, [...process.execArgv, cli, "exp", "stream-280", "--rerun", "all", "--json"], {
       cwd,
       reject: false,
+      timeout: 60_000,
     });
+  let archiveRun: ReturnType<typeof runArchive> | undefined;
+  const startArchive = () => (archiveRun ??= runArchive());
+
+  afterAll(async () => {
+    try {
+      if (archiveRun !== undefined) {
+        const { exitCode, stderr } = await archiveRun;
+        expect(exitCode, stderr).toBe(0);
+      }
+    } finally {
+      await Promise.all(
+        [cwd, recordDir]
+          .filter((dir) => dir !== undefined)
+          .map((dir) => rm(dir, { recursive: true, force: true })),
+      );
+    }
+  }, 65_000);
+
+  async function readArchiveReceipt() {
+    const receipt = join(cwd, "receipt.txt");
+    const abort = new AbortController();
+    const waitForReceipt = async () => {
+      for await (const { filename } of watch(cwd, { signal: abort.signal })) {
+        if (filename === "receipt.txt") return readFile(receipt, "utf8");
+      }
+      throw new Error("Stopped watching before the archive receipt was published");
+    };
+    try {
+      // The fixture publishes the receipt after attach returns, before Invocation finalization.
+      return await Promise.race([
+        waitForReceipt(),
+        startArchive().then(({ exitCode, stderr }) => {
+          expect(exitCode, stderr).toBe(0);
+          return readFile(receipt, "utf8");
+        }),
+      ]);
+    } finally {
+      abort.abort();
+    }
+  }
+
+  async function readArchivedLocator() {
+    const runRes = await startArchive();
     expect(runRes.exitCode, runRes.stderr).toBe(0);
-    const [artifactId, sha256, byteLength, rssGrowth] = (await readFile(join(cwd, "receipt.txt"), "utf8")).split("\n");
     const evalEvent = runRes.stdout
       .split("\n")
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { event?: string; evalId?: string; locator?: string })
       .find((entry) => entry.event === "eval" && entry.evalId === "stream-280");
     expect(evalEvent?.locator).toBeDefined();
-    const locator = evalEvent!.locator!.startsWith("@") ? evalEvent!.locator! : `@${evalEvent!.locator!}`;
-
-    return { artifactId: artifactId!, locator, sha256, byteLength: Number(byteLength), rssGrowth: Number(rssGrowth) };
+    return evalEvent!.locator!.startsWith("@") ? evalEvent!.locator! : `@${evalEvent!.locator!}`;
   }
-
-  let archived: ReturnType<typeof archiveFile> | undefined;
-  const archiveOnce = () => (archived ??= archiveFile());
 
   // @feature docs/feature/inspection/README.md#attachment-archive
   test("streaming a 160 MiB file attachment keeps child process RSS growth below 128 MiB", async () => {
-    const { sha256, byteLength, rssGrowth } = await archiveOnce();
+    const [, sha256, byteLength, rssGrowth] = (await readArchiveReceipt()).split("\n");
     expect(sha256).toBe(expectedSha);
-    expect(byteLength).toBe(160 * 1024 * 1024);
-    expect(rssGrowth).toBeLessThan(128 * 1024 * 1024);
+    expect(Number(byteLength)).toBe(160 * 1024 * 1024);
+    expect(Number(rssGrowth)).toBeLessThan(128 * 1024 * 1024);
   }, 30_000);
 
   describe("archived file readback", () => {
+    let locator: string;
     beforeAll(async () => {
-      await archiveOnce();
+      locator = await readArchivedLocator();
     }, 30_000);
 
     // @feature docs/feature/inspection/README.md#attachment-archive
     test("reads the original archived bytes after rewriting the source file", async () => {
-      const { artifactId, locator } = await archiveOnce();
+      const [artifactId] = (await readFile(join(cwd, "receipt.txt"), "utf8")).split("\n");
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const outChunks: Buffer[] = [];

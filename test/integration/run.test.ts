@@ -188,6 +188,9 @@ const concurrentReadSchedules: { label: string; examples: [number][] }[] = [
 describe.for(concurrentReadSchedules)("listing Runs during the first write ($label)", ({ examples }) => {
   let cwd: string | undefined;
   let plan: Awaited<ReturnType<typeof planExperiment>>;
+  let running: ReturnType<typeof runExperiment> | undefined;
+  let firstWrite: Promise<void> | undefined;
+  const list = () => Effect.runPromise(runHost.list({ cwd: cwd! })).then(({ runs }) => runs);
 
   beforeAll(async () => {
     cwd = await prepareProject(false);
@@ -195,45 +198,61 @@ describe.for(concurrentReadSchedules)("listing Runs during the first write ($lab
   }, 15_000);
 
   afterAll(async () => {
-    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
-  });
+    try {
+      await running;
+    } finally {
+      if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+    }
+  }, 15_000);
 
-  // @feature docs/feature/run/README.md#publication-visibility
-  test("readers only observe committed Runs", async () => {
-    let hasRun = false;
+  async function observeFirstWrite() {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
-        if (hasRun) {
+        if (running !== undefined) {
           // A shrink replay starts from the same empty project state.
+          await running;
           await rm(join(cwd!, ".niceeval"), { recursive: true, force: true });
           plan = await planExperiment(cwd!);
         }
-        hasRun = true;
-        const list = () => Effect.runPromise(runHost.list({ cwd: cwd! })).then(({ runs }) => runs);
         expect(await list()).toEqual([]);
         let complete = false;
-        const running = Effect.runPromise(experimentHost.invocation.run({ plan })).finally(() => {
+        running = Effect.runPromise(experimentHost.invocation.run({ plan })).finally(() => {
           complete = true;
         });
-        try {
-          let visible = false;
-          while (!complete && !visible) {
-            const observations = await Promise.all(Array.from({ length: parallelReads }, list));
-            for (const runs of observations) {
-              expect(runs.map((run) => run.coverage.expected)).toEqual(runs.length === 0 ? [] : [1]);
-              visible ||= runs.length === 1;
-            }
-            if (!visible) await setTimeout(1);
+        void running.catch(() => undefined);
+        let visible = false;
+        while (!complete && !visible) {
+          const observations = await Promise.all(Array.from({ length: parallelReads }, list));
+          for (const runs of observations) {
+            expect(runs.map((run) => run.coverage.expected)).toEqual(runs.length === 0 ? [] : [1]);
+            visible ||= runs.length === 1;
           }
-        } finally {
-          await running;
+          if (!visible) await setTimeout(10);
         }
-        const { receipt } = await running;
-        expect((await list()).map((run) => run.runId)).toEqual(receipt.createdRunIds);
       }),
       { examples, numRuns: 1 },
     );
+  }
+
+  const waitForFirstWrite = () => (firstWrite ??= observeFirstWrite());
+
+  // @feature docs/feature/run/README.md#publication-visibility
+  test("readers only observe committed Runs", async () => {
+    await waitForFirstWrite();
   }, 15_000);
+
+  describe("after Invocation finalization", () => {
+    let createdRunIds: readonly string[];
+    beforeAll(async () => {
+      await waitForFirstWrite();
+      createdRunIds = (await running!).receipt.createdRunIds;
+    }, 15_000);
+
+    // @feature docs/feature/run/README.md#publication-visibility
+    test("the final Run list agrees with the Invocation receipt", async () => {
+      expect((await list()).map((run) => run.runId)).toEqual(createdRunIds);
+    });
+  });
 });
 
 describe.for(concurrentReadSchedules)("Invocation interruption ($label)", ({ examples }) => {
