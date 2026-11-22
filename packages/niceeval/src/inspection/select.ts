@@ -737,15 +737,12 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           });
         }
       }
-      const diff = projectAttemptDiff(
-        attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
-        {
-          source: resolved.origin.source,
-          changeId: operation.changeId,
-          page,
-          next: () => inspectionByteContinuation(binding, page + 1),
-        },
-      );
+      const diff = projectAttemptDiff(attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family), {
+        source: resolved.origin.source,
+        changeId: operation.changeId,
+        page,
+        next: () => inspectionByteContinuation(binding, page + 1),
+      });
       if (
         operation.changeId !== undefined &&
         (diff.state === "complete" || diff.state === "partial") &&
