@@ -1,8 +1,66 @@
-pnpm lint &
-lint_pid=$!
+#!/usr/bin/env sh
 
-test_status=0
-pnpm test || test_status=$?
+set -eu
 
-wait "$lint_pid" || exit $?
-exit "$test_status"
+root=$(git rev-parse --show-toplevel)
+git_env=$(git rev-parse --local-env-vars)
+checked=' '
+
+check_commit() (
+  unset $git_env
+  snapshot=$(mktemp -d "${TMPDIR:-/tmp}/niceeval-pre-push.XXXXXX")
+  cache_pid=
+  cleanup() {
+    cleanup_status=0
+    if [ -n "$cache_pid" ]; then
+      wait "$cache_pid" || :
+    fi
+    if [ -d "$snapshot/.git/concord/server" ]; then
+      (cd "$snapshot" && concord server stop) >/dev/null || cleanup_status=$?
+    fi
+    rm -rf "$snapshot"
+    return "$cleanup_status"
+  }
+  trap 'cleanup' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  # Give checkers their own Git root, refs and index while borrowing the objects.
+  git clone --quiet --shared --no-checkout -- "$root" "$snapshot"
+  cd "$snapshot"
+  git -c core.hooksPath=/dev/null checkout --quiet --detach "$1"
+  concord_cache=$(git -C "$root" rev-parse --path-format=absolute --git-path concord/cache.hawdb)
+  node "$root/scripts/pre-push-concord-cache.ts" "$concord_cache" "$snapshot" &
+  cache_pid=$!
+  dependencies_status=0
+  node "$root/scripts/pre-push-dependencies.ts" "$root" "$snapshot" || dependencies_status=$?
+  wait "$cache_pid"
+  cache_pid=
+  [ "$dependencies_status" -eq 0 ] || exit "$dependencies_status"
+
+  # pnpm may verify the copied install, but must never update it in a snapshot.
+  if [ "${pnpm_config_verify_deps_before_run:-}" != false ]; then
+    export pnpm_config_verify_deps_before_run=error
+  fi
+  pnpm lint &
+  lint_pid=$!
+  test_status=0
+  pnpm test || test_status=$?
+  wait "$lint_pid" || exit $?
+  exit "$test_status"
+)
+
+while read -r local_ref local_oid remote_fields; do
+  [ "$local_ref" != '(delete)' ] || continue
+
+  # Annotated tags may share a commit with a branch in the same push.
+  commit=$(git rev-parse --verify --end-of-options "$local_oid^{}")
+  [ "$(git cat-file -t "$commit")" = commit ] || continue
+  case "$checked" in
+    *" $commit "*) continue ;;
+  esac
+  printf 'Checking %s at %s\n' "$local_ref" "$commit"
+  check_commit "$commit" </dev/null
+  checked="$checked$commit "
+done
