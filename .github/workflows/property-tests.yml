@@ -94,19 +94,23 @@ jobs:
           echo "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a  $archive" | sha256sum --check
           unzip -q "$archive" -d "$RUNNER_TEMP"
           chrome="$RUNNER_TEMP/chrome-headless-shell-linux64/chrome-headless-shell"
-          chrome_version="$("$chrome" --version)"
+          if ! chrome_version="$("$chrome" --version)"; then
+            echo "::error::Failed to read the Chrome for Testing headless shell version from $chrome"
+            exit 1
+          fi
           echo "$chrome_version"
-          test "$chrome_version" = "Google Chrome for Testing $version"
+          if [[ "$chrome_version" != "Google Chrome for Testing $version" ]]; then
+            echo "::error::Expected Google Chrome for Testing $version, got $chrome_version"
+            exit 1
+          fi
 
-          # Ubuntu restricts user namespaces for Chrome binaries outside its AppArmor profile.
-          sandbox=/opt/google/chrome/chrome-sandbox
-          if [[ ! -x "$sandbox" || "$(stat -c '%u:%a' "$sandbox")" != "0:4755" ]]; then
-            echo "::error::Expected the runner's Chrome sandbox helper at $sandbox (root-owned, mode 4755)"
+          # Allow Chrome to use its namespace sandbox on this disposable GitHub-hosted runner.
+          if ! sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; then
+            echo "::error::Failed to allow unprivileged user namespaces for Chrome on the Ubuntu runner"
             exit 1
           fi
           {
             echo "CHROME=$chrome"
-            echo "CHROME_DEVEL_SANDBOX=$sandbox"
             echo "RUST_LOG=error,bombadil_browser::chromium=debug,bombadil_browser::browser=info"
           } >> "$GITHUB_ENV"
       - name: Build UI test candidate
