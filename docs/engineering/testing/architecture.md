@@ -71,4 +71,6 @@
 
 ## 检查入口
 
-测试、性能测量与静态检查分别调用，不设聚合入口：`vitest`（可带 `--changed`、`--project`、文件名）、`bombadil terminal|browser test <spec>`、typecheck、lint 与 `concord check`。具体命令以根 `package.json` 为准。
+测试、性能测量、`pnpm typecheck` 与 `pnpm lint` 分别运行。测试命令见上文，脚本定义见根 `package.json`。
+
+`pnpm lint` 运行 Biome 格式检查、Oxlint 代码正确性检查、Concord 检查和稳定版 `INIT.md` 检查。CI 的 docs-site job 通过 `pnpm lint:docs-site` 检查站点构建、链接、锚点和重定向。

@@ -11,8 +11,9 @@
   },
   "scripts": {
     "typecheck": "pnpm exec tsc6 -p tsconfig.concord.json && pnpm --filter @niceeval/repo-tools run typecheck && pnpm --filter @niceeval/e2e-runner run typecheck && pnpm --filter @niceeval/testkit run typecheck && pnpm --filter niceeval run typecheck && pnpm exec tsc6 -p test/tsconfig.property.json",
-    "lint": "concurrently --names format,concord,promote-init,docs-site \"pnpm lint:format\" \"concord check\" \"node .github/scripts/promote-init.ts --check\" \"pnpm run lint:docs-site\"",
+    "lint": "concurrently --names format,concord,promote-init,oxlint \"pnpm lint:format\" \"concord check\" \"node .github/scripts/promote-init.ts --check\" \"pnpm lint:oxlint\"",
     "lint:docs-site": "pnpm run repo docs site prepare && concurrently --names validate,links \"pnpm run repo docs site validate\" \"pnpm run repo docs site links\"",
+    "lint:oxlint": "oxlint --threads=4 packages/*/src packages/*/scripts apps test e2e .github/scripts",
     "niceeval": "node packages/niceeval/bin/niceeval.js",
     "e2e": "tsx packages/e2e-runner/src/cli.ts",
     "repo": "tsx packages/repo-tools/src/cli.ts",
@@ -44,6 +45,7 @@
     "husky": "^9.1.7",
     "next": "16.4.6",
     "nx": "24.0.5",
+    "oxlint": "1.94.0",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^5.1.1"

@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": { "correctness": "off" },
+  "rules": {
+    "no-async-promise-executor": "error",
+    "no-constant-binary-expression": "error",
+    "no-cond-assign": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-func-assign": "error",
+    "no-self-assign": "error",
+    "no-unreachable": "error",
+    "no-unsafe-negation": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "no-unsafe-finally": "warn"
+  },
+  "ignorePatterns": ["fixture/", "fixtures/", "*.case-evidence/", "*.generated.*", "dist/", ".next/"]
+}

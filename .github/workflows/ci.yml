@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   package:
-    name: Typecheck and docs lint
+    name: Typecheck and lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,8 +45,8 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Check Concord relations
-        run: concord check
+      - name: Lint
+        run: pnpm lint
 
       - name: Example tier sync check
         run: pnpm examples:sync check
