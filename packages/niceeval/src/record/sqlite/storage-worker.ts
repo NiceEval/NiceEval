@@ -1,4 +1,5 @@
 import { importRunsOnConnection, exportRunsOnConnection } from "../../run/storage/transfer.ts";
+import { setTimeout } from "node:timers/promises";
 import { isMainThread, parentPort } from "node:worker_threads";
 import {
   closeRecordDatabase,
@@ -73,7 +74,7 @@ import {
   listRunResourcesOnConnection,
 } from "../../run/storage/sqlite.ts";
 import { executeAdmissionCommand } from "./admission-repository.ts";
-import { sqliteError } from "./errors.ts";
+import { SqliteRecordError, sqliteError } from "./errors.ts";
 
 function isRegistryMutation(command: RegistryCommand): boolean {
   switch (command._tag) {
@@ -146,10 +147,11 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
     FROM ne19_record_metadata m JOIN ne19_coordination_state c ON c.singleton=m.singleton
     WHERE m.singleton=1`,
   ).get() as { barrier_state: string; barrier_status: string | null } | undefined;
-  // Run deletion owns the transactional portable-to-open transition. Keep
+  // Invocation admission and Run maintenance own their atomic reopen. Keep
   // rejecting draining databases and active write freezes before dispatch.
   const reopensPortable =
-    request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import");
+    (request.operation === "run" && (request.command._tag === "run-delete" || request.command._tag === "run-import")) ||
+    (request.operation === "invocation" && request.command._tag === "invocation-create");
   if (
     state === undefined ||
     (state.barrier_state !== "open" && !(reopensPortable && state.barrier_state === "portable"))
@@ -280,6 +282,40 @@ if (!isMainThread && parentPort !== null) {
   };
 
   const execute = async (request: StorageWorkerRequest): Promise<StorageWorkerResult> => {
+    if (request.operation === "invocation" && request.command._tag === "invocation-create") {
+      // No Run exists yet. Admission may wait for a gate, but must never reopen
+      // a draining database or write through a maintenance freeze.
+      while (true) {
+        const state = recordStatement(
+          requireConnection(),
+          `SELECT m.barrier_state,c.barrier_status FROM ne19_record_metadata m
+          JOIN ne19_coordination_state c ON c.singleton=m.singleton WHERE m.singleton=1`,
+        ).get() as { barrier_state: string; barrier_status: string | null } | undefined;
+        if (state?.barrier_state !== "draining" && state?.barrier_status !== "active") {
+          try {
+            assertMutationAuthority(requireConnection(), request);
+            return executeInvocation(requireConnection(), request.command);
+          } catch (cause) {
+            // A different connection may enter draining after the read above.
+            // Only retry this uncommitted admission transaction, never a Run.
+            if (
+              state === undefined ||
+              !(cause instanceof SqliteRecordError) ||
+              cause.code !== "record-command-conflict" ||
+              !["invocation", "reopen", "create-invocation"].includes(cause.operation)
+            )
+              throw cause;
+          }
+        }
+        if (Date.now() >= request.command.input.deadlineEpochMs)
+          throw sqliteError(
+            "record-write-busy",
+            "invocation",
+            "Invocation admission timed out waiting for the portable gate",
+          );
+        await setTimeout(10);
+      }
+    }
     if (request.operation !== "initialize" && request.operation !== "close") {
       assertMutationAuthority(requireConnection(), request);
     }

@@ -1,5 +1,5 @@
 import type { SQLOutputValue } from "node:sqlite";
-import { recordStatement, type RecordDatabase } from "./database.ts";
+import { recordStatement, reopenProjectDatabaseOnConnection, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "../../record/sqlite/errors.ts";
 import { withImmediateTransaction } from "./transaction.ts";
 
@@ -130,6 +130,7 @@ export function createInvocationOnConnection(
   input: CreateInvocationInput,
 ): InvocationSessionRecord {
   return withImmediateTransaction(connection, input.deadlineEpochMs, "create-invocation", () => {
+    reopenProjectDatabaseOnConnection(connection);
     requireOpen(connection, "create-invocation");
     recordStatement(
       connection,

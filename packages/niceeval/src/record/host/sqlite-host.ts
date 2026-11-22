@@ -1706,7 +1706,10 @@ function openNewRuntime(
     if (rootPath === undefined) return yield* Effect.fail(coreInvalid());
     const coordination = yield* RecordCoordination,
       entropy = yield* RecordEntropy;
-    const runId = yield* mintId(entropy, RunIdSchema);
+    const runId = yield* mintId(
+      request.runId === undefined ? entropy : { uuid: Effect.succeed(request.runId) },
+      RunIdSchema,
+    );
     const writerGeneration = request.writerGeneration ?? (yield* entropy.uuid);
     const projectState = yield* ProjectStateDatabase;
     const client = (yield* projectState.bind(rootPath)).record;

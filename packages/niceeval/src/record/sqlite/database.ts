@@ -424,8 +424,18 @@ function validateCurrentRecordDomain(connection: RecordDatabase): void {
 }
 
 export function validateExactSchema(connection: RecordDatabase): void {
-  requireSecureDelete(connection.db);
-  validateCurrentRecordDomain(connection);
+  // Metadata and coordination generations must come from one snapshot even
+  // when another Invocation reopens the portable database between queries.
+  const ownsTransaction = !connection.db.isTransaction;
+  if (ownsTransaction) connection.db.exec("BEGIN");
+  try {
+    requireSecureDelete(connection.db);
+    validateCurrentRecordDomain(connection);
+    if (ownsTransaction) connection.db.exec("COMMIT");
+  } catch (cause) {
+    if (ownsTransaction && connection.db.isTransaction) connection.db.exec("ROLLBACK");
+    throw cause;
+  }
 }
 
 /**
@@ -647,31 +657,41 @@ export function reopenProjectDatabase(path: string): void {
   const connection = openRecordWriter(path);
   try {
     connection.db.exec("BEGIN IMMEDIATE");
-    const row = currentStatement(
-      connection.db,
-      "SELECT barrier_state FROM ne19_record_metadata WHERE singleton=1",
-    ).get() as Record<string, SQLOutputValue> | undefined;
-    if (row === undefined || decodeText(row.barrier_state, "barrier_state") === "draining") {
-      throw sqliteError("record-command-conflict", "reopen", "ProjectDatabase portable gate is draining");
-    }
-    if (decodeText(row.barrier_state, "barrier_state") === "portable") {
-      const generation = randomUUID();
-      currentStatement(
-        connection.db,
-        `UPDATE ne19_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
-        portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`,
-      ).run(generation);
-      currentStatement(
-        connection.db,
-        "UPDATE ne19_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1",
-      ).run(generation);
-    }
+    reopenProjectDatabaseOnConnection(connection);
     connection.db.exec("COMMIT");
   } catch (cause) {
     if (connection.db.isTransaction) connection.db.exec("ROLLBACK");
     throw cause;
   } finally {
     closeRecordDatabase(connection);
+  }
+}
+
+/** Reopen and owner admission share the caller's BEGIN IMMEDIATE transaction. */
+export function reopenProjectDatabaseOnConnection(connection: RecordDatabase): void {
+  const row = currentStatement(
+    connection.db,
+    `SELECT m.barrier_state,c.barrier_status FROM ne19_record_metadata m
+    JOIN ne19_coordination_state c ON c.singleton=m.singleton WHERE m.singleton=1`,
+  ).get() as Record<string, SQLOutputValue> | undefined;
+  if (
+    row === undefined ||
+    decodeText(row.barrier_state, "barrier_state") === "draining" ||
+    row.barrier_status === "active"
+  ) {
+    throw sqliteError("record-command-conflict", "reopen", "ProjectDatabase portable gate is draining");
+  }
+  if (decodeText(row.barrier_state, "barrier_state") === "portable") {
+    const generation = randomUUID();
+    currentStatement(
+      connection.db,
+      `UPDATE ne19_record_metadata SET barrier_state='open',storage_generation=?,portable_generation=NULL,
+      portable_revision=NULL,portable_gate_id=NULL WHERE singleton=1 AND barrier_state='portable'`,
+    ).run(generation);
+    currentStatement(
+      connection.db,
+      "UPDATE ne19_coordination_state SET operational_generation=?,revision=revision+1 WHERE singleton=1",
+    ).run(generation);
   }
 }
 

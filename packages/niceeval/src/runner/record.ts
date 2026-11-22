@@ -4,19 +4,17 @@ import { judgeUsageForResult } from "./judge-usage.ts";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { Cause, Effect, Result, Exit, Option, Semaphore, Stream } from "effect";
+import { Cause, Effect, Result, Exit, Option, Schema, Semaphore, Stream } from "effect";
 
 import { encodeAttemptLocator, type AttemptLocator } from "../attempt-locator.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
-import {
-  discardAttemptWriteSession,
-  stagePlanningReference,
-  writerGenerationForRunSession,
-} from "../record/host/sqlite-host.ts";
+import { discardAttemptWriteSession, stagePlanningReference } from "../record/host/sqlite-host.ts";
 import type { AttemptWriteSession, RecordSealReceipt, RunWriteSession } from "../record/host/types.ts";
+import { RecordEntropy } from "../record/platform/services.ts";
+import { RunIdSchema } from "../record/codec/identifiers.ts";
 import type { RunId, SlotId } from "../record/model/identifiers.ts";
 import { recordRootPaths, type RecordRoot } from "../record/platform/root.ts";
 import { attemptPublicationClosure } from "../record/codec/core.ts";
@@ -439,36 +437,35 @@ export function openRunnerRecordCoordinator(input: {
       createHash("sha256")
         .update(`${input.startedAt}\u0000${planned.map((entry) => entry.run.experimentId).join("\u0000")}`, "utf8")
         .digest("hex");
-    const openedRuns = yield* Effect.forEach(
-      planned,
-      (plan) =>
-        recordHost
-          .createRun({
-            root: input.recordRoot,
-            experimentId: plan.experimentId,
-            context: plan.context,
-            startedAt: startedAt.success,
-            expectedSlots: plan.expectedSlots,
-            writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
-          })
-          .pipe(
-            Effect.map((session) => {
-              const writerGeneration = writerGenerationForRunSession(session);
-              if (writerGeneration === undefined) throw new Error("Run writer generation is unavailable");
-              return { plan, session, writerGeneration };
-            }),
-          ),
-      { concurrency: 1 },
+    const entropy = yield* RecordEntropy;
+    const candidates = yield* Effect.forEach(planned, (plan) =>
+      Effect.gen(function* () {
+        const raw = yield* entropy.uuid;
+        const decoded = Schema.decodeUnknownResult(RunIdSchema)(raw);
+        if (Result.isFailure(decoded))
+          return yield* Effect.fail({
+            code: "runner-record-target-identity-invalid" as const,
+            kind: "invocation" as const,
+            value: raw,
+          });
+        return {
+          plan,
+          runId: decoded.success,
+          writerGeneration: createRunWriterGeneration(`${invocationId}:${plan.experimentId}`),
+        };
+      }),
     );
+    // Register the complete durable owner before admitting any mutable aggregate.
+    // A concurrent portable gate must see this Invocation even during Run setup.
     if (input.session !== undefined) {
       const startedAtIso = new Date(input.startedAt).toISOString();
       yield* input.session
         .start({
-          runIds: new Map(openedRuns.map(({ plan, session }) => [plan.experimentId, String(session.runId)])),
+          runIds: new Map(candidates.map(({ plan, runId }) => [plan.experimentId, String(runId)])),
           agentRuns: input.runs,
           startedAt: startedAtIso,
-          invocationRuns: openedRuns.map(({ plan, session, writerGeneration }) => ({
-            runId: String(session.runId),
+          invocationRuns: candidates.map(({ plan, runId, writerGeneration }) => ({
+            runId: String(runId),
             experimentId: plan.experimentId,
             writerGeneration,
             startedAt: startedAtIso,
@@ -492,6 +489,22 @@ export function openRunnerRecordCoordinator(input: {
           ),
         );
     }
+    const openedRuns = yield* Effect.forEach(
+      candidates,
+      ({ plan, runId, writerGeneration }) =>
+        recordHost
+          .createRun({
+            root: input.recordRoot,
+            runId,
+            experimentId: plan.experimentId,
+            context: plan.context,
+            startedAt: startedAt.success,
+            expectedSlots: plan.expectedSlots,
+            writerGeneration,
+          })
+          .pipe(Effect.map((session) => ({ plan, session, writerGeneration }))),
+      { concurrency: 1 },
+    );
     const byRun = new Map<AgentRun, RunnerRecordRun>();
     const byRecordRunId = new Map<RunId, RunnerRecordRun>();
     const runIdsByExperiment = new Map<string, string>();

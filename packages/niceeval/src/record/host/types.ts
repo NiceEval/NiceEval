@@ -236,6 +236,8 @@ export interface RecordCompleteView {
 
 export interface CreateRunRequest {
   readonly root: RecordRoot;
+  /** Host-private identity already registered by the Invocation start transaction. */
+  readonly runId?: RunId | undefined;
   readonly experimentId: ExperimentId;
   /** Required historical interpretation facts, written once into `run.json`. */
   readonly context: RunContext;
