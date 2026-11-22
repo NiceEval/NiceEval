@@ -414,7 +414,7 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: /^classic\/memory-a /u,
         });
         await expect(experimentSummary).toHaveCount(1);
-        await experimentSummary.click();
+        await experimentSummary.getByText(/^classic\/memory-a \(\d+\/\d+\)$/u).click();
         const experimentDetails = experimentSummary.locator("xpath=..");
         await expect(experimentDetails).toHaveAttribute("open", "");
 

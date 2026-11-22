@@ -1,4 +1,4 @@
-import { isBuiltin } from "node:module";
+import { findPackageJSON, isBuiltin } from "node:module";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createJiti, type Jiti } from "jiti";
 import type { DiscoveredEval } from "../types.ts";
 import { decodeJsonRecord } from "../shared/json-value.ts";
+import type { JsonValue } from "../shared/types.ts";
 import {
   childNodes,
   isCodeSource,
@@ -281,12 +282,44 @@ function moduleDependencies(
   return { edges, unresolved, locations };
 }
 
-type ExternalPackageContent = { readonly content: string; readonly complete: boolean; readonly locator: string };
+interface ExternalPackageContent {
+  readonly content: string;
+  readonly complete: boolean;
+}
+
+interface InstalledPackage extends ExternalPackageContent {
+  readonly locator: string;
+  readonly dependencies: readonly { name: string; optional: boolean }[];
+}
+
+interface ExternalPackageCache {
+  readonly installed: Map<string, InstalledPackage>;
+  readonly closures: Map<string, ExternalPackageContent>;
+}
+
+function manifestRecord(value: JsonValue | undefined): Readonly<Record<string, JsonValue>> {
+  return value !== undefined && value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function installedPackageDependencies(manifest: ReturnType<typeof decodeJsonRecord>): InstalledPackage["dependencies"] {
+  const direct = manifestRecord(manifest.dependencies);
+  const optional = manifestRecord(manifest.optionalDependencies);
+  const peers = manifestRecord(manifest.peerDependencies);
+  const peerMeta = manifestRecord(manifest.peerDependenciesMeta);
+  const names = new Set([...Object.keys(direct), ...Object.keys(optional), ...Object.keys(peers)]);
+  return [...names].sort().map((name) => {
+    // npm's optionalDependencies entry overrides a same-name direct dependency.
+    const requiredDirect = Object.hasOwn(direct, name) && !Object.hasOwn(optional, name);
+    const requiredPeer = Object.hasOwn(peers, name) && manifestRecord(peerMeta[name]).optional !== true;
+    return { name, optional: !requiredDirect && !requiredPeer };
+  });
+}
+
 function externalContent(
   entry: string,
   specifier: string,
   importer: string,
-  packages: Map<string, ExternalPackageContent>,
+  packages: ExternalPackageCache,
 ): {
   entry: string;
   content: string;
@@ -305,40 +338,41 @@ function externalContent(
     directory = parent;
   }
   const root = realpathSync(candidate);
+  const child = relative(root, entry);
+  if (child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child)) return incomplete;
+  const installed = readInstalledPackage(root, packages.installed);
+  if (installed === undefined) return incomplete;
+  return {
+    entry: `${installed.locator}/${child.split(sep).join("/")}`,
+    ...installedPackageClosure(root, installed, packages),
+  };
+}
+
+function readInstalledPackage(root: string, installed: Map<string, InstalledPackage>): InstalledPackage | undefined {
+  const cached = installed.get(root);
+  if (cached !== undefined) return cached;
   const inside = (path: string): boolean => {
     const child = relative(root, path);
     return child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
   };
-  if (!inside(entry)) return incomplete;
   const manifestPath = join(root, "package.json");
-  if (!existsSync(manifestPath) || !inside(realpathSync(manifestPath))) return incomplete;
-  const cached = packages.get(root);
-  if (cached !== undefined)
-    return {
-      entry: `${cached.locator}/${relative(root, entry).split(sep).join("/")}`,
-      content: cached.content,
-      complete: cached.complete,
-    };
-  const manifest = decodeJsonRecord(readFileSync(manifestPath, "utf8"));
+  let manifestBytes: Buffer;
+  let manifest: ReturnType<typeof decodeJsonRecord>;
+  try {
+    if (!inside(realpathSync(manifestPath))) return undefined;
+    manifestBytes = readFileSync(manifestPath);
+    manifest = decodeJsonRecord(manifestBytes.toString("utf8"));
+  } catch {
+    return undefined;
+  }
   const locator = `${typeof manifest.name === "string" ? manifest.name : "anonymous"}@${typeof manifest.version === "string" ? manifest.version : "unversioned"}`;
+  const dependencies = installedPackageDependencies(manifest);
   const hash = createHash("sha256");
   const seen = new Set<string>();
-  // Dependencies outside this package have not been captured by this bounded
-  // installation snapshot. Keep their consumers ineligible until proven.
-  let complete = ![manifest.dependencies, manifest.optionalDependencies, manifest.peerDependencies].some(
-      (dependencies) =>
-        dependencies !== null && typeof dependencies === "object" && Object.keys(dependencies).length > 0,
-    ),
-    files = 0,
-    bytes = 0;
+  let complete = true;
   const visit = (file: string): void => {
-    if (++files > 4096) {
-      complete = false;
-      return;
-    }
     const actual = realpathSync(file);
-    const child = relative(root, actual);
-    if (child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child)) {
+    if (!inside(actual)) {
       complete = false;
       return;
     }
@@ -351,12 +385,8 @@ function externalContent(
         if (child !== "node_modules" && child !== ".git") visit(join(file, child));
       }
     } else if (stat.isFile()) {
-      bytes += stat.size;
-      if (bytes > 64 * 1024 * 1024) {
-        complete = false;
-        return;
-      }
-      hash.update(createHash("sha256").update(readFileSync(file)).digest("hex"));
+      const content = file === manifestPath ? manifestBytes : readFileSync(file);
+      hash.update(createHash("sha256").update(content).digest("hex"));
     } else complete = false;
   };
   try {
@@ -364,16 +394,88 @@ function externalContent(
   } catch {
     complete = false;
   }
-  const content = hash.digest("hex");
-  packages.set(root, { locator, content, complete });
-  return { entry: `${locator}/${relative(root, entry).split(sep).join("/")}`, content, complete };
+  const snapshot = { locator, content: hash.digest("hex"), complete, dependencies };
+  installed.set(root, snapshot);
+  return snapshot;
+}
+
+type InstalledPackageResolution =
+  | { readonly kind: "installed"; readonly root: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "unresolved" };
+
+function resolveInstalledPackage(name: string, importer: string): InstalledPackageResolution {
+  if (!/^(?:@[\w.-]+\/)?[\w.-]+$/u.test(name) || name.split("/").some((part) => part === "." || part === ".."))
+    return { kind: "unresolved" };
+  let manifest: string | undefined;
+  try {
+    // The manifest is resolvable even when the package only exports subpaths.
+    manifest = findPackageJSON(name, pathToFileURL(join(importer, "package.json")));
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ERR_MODULE_NOT_FOUND"
+      ? { kind: "absent" }
+      : { kind: "unresolved" };
+  }
+  if (manifest === undefined) return { kind: "absent" };
+  try {
+    return { kind: "installed", root: realpathSync(dirname(manifest)) };
+  } catch {
+    return { kind: "unresolved" };
+  }
+}
+
+function installedPackageClosure(
+  root: string,
+  installed: InstalledPackage,
+  packages: ExternalPackageCache,
+): ExternalPackageContent {
+  // Keep the byte digest used by packages with no dependency inputs.
+  if (installed.dependencies.length === 0) return { content: installed.content, complete: installed.complete };
+  const cached = packages.closures.get(root);
+  if (cached !== undefined) return cached;
+
+  let complete = true;
+  // Assign each installed instance an index before following its edges.
+  const roots = [root];
+  const indices = new Map([[root, 0]]);
+  const nodes = [];
+  for (const packageRoot of roots) {
+    const snapshot = readInstalledPackage(packageRoot, packages.installed);
+    if (snapshot === undefined) {
+      complete = false;
+      nodes.push(null);
+      continue;
+    }
+    complete &&= snapshot.complete;
+    const edges = snapshot.dependencies
+      // The NiceEval runtime is already represented separately in execution identity.
+      .filter(({ name }) => name !== "niceeval")
+      .map(({ name, optional }) => {
+        const target = resolveInstalledPackage(name, packageRoot);
+        if (target.kind !== "installed") {
+          if (target.kind !== "absent" || !optional) complete = false;
+          return { name, target: null };
+        }
+        let index = indices.get(target.root);
+        if (index === undefined) {
+          index = roots.length;
+          indices.set(target.root, index);
+          roots.push(target.root);
+        }
+        return { name, target: index };
+      });
+    nodes.push({ locator: snapshot.locator, content: snapshot.content, edges });
+  }
+  const closure = { content: normalizedIdentity(JSON.stringify(nodes)), complete };
+  packages.closures.set(root, closure);
+  return closure;
 }
 
 /** One generation owns the only parse / resolution facts; consumers receive frozen projections. */
 export class ProjectModuleGraph {
   private readonly facts = new Map<string, ModuleFact>();
   private readonly externalFacts = new Map<string, { entry: string; content: string; complete: boolean }>();
-  private readonly externalPackages = new Map<string, ExternalPackageContent>();
+  private readonly externalPackages: ExternalPackageCache = { installed: new Map(), closures: new Map() };
   readonly root: string;
   private readonly loader: Jiti;
   constructor(
@@ -620,6 +722,6 @@ export function moduleReuseEligibility(
       }
     : {
         kind: "dynamic-module-unresolved",
-        facts: facts.slice(0, 20).map((fact) => ({ ...fact, file: fact.file.slice(0, 1024) })),
+        facts,
       };
 }
