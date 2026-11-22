@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { finished } from "node:stream/promises";
+import { createEmulator, defineEmulator, type EmulatorContext } from "emulate";
+export { startModelEmulator, type ModelRule } from "../model-emulator.ts";
 
 const require = createRequire(new URL("../../../../packages/niceeval/package.json", import.meta.url));
 export const { Effect } = require("effect") as typeof import("../../../../packages/niceeval/node_modules/effect/dist/index.js");
@@ -376,6 +378,20 @@ export async function readPaginatedImage(
   } finally {
     await rm(outDir, { recursive: true, force: true });
   }
+}
+
+export async function startJudgeEmulator<State extends object>(
+  name: string,
+  state: () => State,
+  setup: (context: EmulatorContext<State>) => void,
+) {
+  const service = defineEmulator({ name, state, setup });
+  const emulator = await createEmulator({ service, port: 0 });
+  return {
+    baseUrl: `${emulator.url}/v1`,
+    url: emulator.url,
+    close: () => emulator.close(),
+  };
 }
 
 export async function startHttpServer(
