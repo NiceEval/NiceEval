@@ -291,28 +291,14 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
         } satisfies CandidateTarball;
       if (!(yield* io(() => existsSync(tarball)))) {
         console.error(`[e2e] candidate tarball cache miss input=${inputDigest}; packing cached build`);
-        // pnpm 12 only bundles dependencies whose real paths are inside the
-        // workspace being packed. Use an unnamed workspace project so the
-        // snapshot can see the installed closure without duplicating niceeval.
-        const packProject = yield* Effect.acquireRelease(
-          io(() => mkdtempSync(join(root, "packages", "niceeval-pack-"))),
-          (path) => io(() => rmSync(path, { recursive: true, force: true })).pipe(Effect.ignore),
-        );
         const staging = yield* Effect.acquireRelease(
           io(() => mkdtempSync(join(cache, "pack-"))),
           (path) => io(() => rmSync(path, { recursive: true, force: true })).pipe(Effect.ignore),
         );
         const stagedTarball = join(staging, "candidate.tgz");
-        yield* io(() => {
-          cpSync(built, join(packProject, "package"), { recursive: true, verbatimSymlinks: true });
-          writeFileSync(
-            join(packProject, "package.json"),
-            JSON.stringify({ private: true, publishConfig: { directory: "package" } }),
-          );
-        });
         yield* command(
-          packProject,
-          ["pnpm", "--config.ignore-scripts=true", "pack", "--out", stagedTarball],
+          root,
+          ["pnpm", "--dir", built, "--config.ignore-scripts=true", "pack", "--out", stagedTarball],
           options.quiet,
         );
         yield* io(() => renameSync(stagedTarball, tarball));

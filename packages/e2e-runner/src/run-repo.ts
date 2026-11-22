@@ -16,7 +16,7 @@ import {
 } from "./native-observation.ts";
 import { materializeHarnessAssets } from "./harness-assets.ts";
 import type { CandidateTarball } from "./injection.ts";
-import { verifyInjection } from "./injection.ts";
+import { verifyEffectResolution, verifyInjection } from "./injection.ts";
 import { collectArtifacts, repoArtifactDir, repoReceiptPath } from "./artifacts.ts";
 import {
   assertContainedRegularFile,
@@ -570,36 +570,15 @@ export const runRepoEffect = (
               const candidateVerdict = linked ? { ok: true as const } : verifyInjection(lockText, candidate.integrity);
               if (!candidateVerdict.ok) return { ok: false as const, detail: candidateVerdict.reason };
 
-              const effectPackagePath = join(
-                copy,
-                "node_modules",
-                "niceeval",
-                "node_modules",
-                "effect",
-                "package.json",
-              );
-              const [effectPackage, effectRealPath] = yield* Effect.all([
-                fs(id, "run", (service) => service.readFileString(effectPackagePath)),
-                fs(id, "run", (service) => service.realPath(effectPackagePath)),
-              ]);
-              // Compare physical paths on every host, while rejecting symlinks below the copy root.
-              const virtualStore = yield* assertContainedRealDirectory(
-                copy,
-                join(copy, "node_modules", ".pnpm"),
-                "isolated pnpm virtual store",
-              );
-              if (!linked && !effectRealPath.startsWith(`${virtualStore}/`))
-                return {
-                  ok: false as const,
-                  detail: `Effect resolution escapes the isolated pnpm virtual store: ${effectRealPath}`,
-                };
-              if (!/"version"\s*:\s*"4\.1\.4"/.test(effectPackage))
-                return { ok: false as const, detail: `Effect resolution is not effect@4.1.4: ${effectRealPath}` };
-              if (/(?:^|\n)\s*(?:effect|@effect\/[^:]+)@(?!4\.1\.4(?:[\x27:(]|$))/m.test(lockText))
-                return {
-                  ok: false as const,
-                  detail: "installed dependency graph contains an Effect v3 or mismatched Effect v4 resolution",
-                };
+              const virtualStore = linked
+                ? undefined
+                : yield* assertContainedRealDirectory(
+                    copy,
+                    join(copy, "node_modules", ".pnpm"),
+                    "isolated pnpm virtual store",
+                  );
+              const effectVerdict = verifyEffectResolution(copy, installedRoot, lockText, virtualStore);
+              if (!effectVerdict.ok) return { ok: false as const, detail: effectVerdict.reason };
 
               if (!consumesTestkit || testkit === undefined) {
                 return { ok: true as const };
@@ -619,8 +598,8 @@ export const runRepoEffect = (
             injection._tag === "Success"
               ? injection.value.ok
                 ? linked
-                  ? "candidate link realpath verified"
-                  : "candidate integrity matches lockfile"
+                  ? "candidate link realpath and Effect resolutions verified"
+                  : "candidate integrity matches lockfile; shared Effect resolutions verified"
                 : `injection verification failed: ${injection.value.detail}`
               : `injection verification failed: ${formatCause(injection.cause)}`;
           stage(stages, {
