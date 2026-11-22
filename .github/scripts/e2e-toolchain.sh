@@ -11,7 +11,9 @@ case "$mode" in
     stage="$(mktemp -d "${RUNNER_TEMP}/e2e-tools-capture.XXXXXX")"
     trap 'rm -rf "$stage"' EXIT
     mkdir "$stage/bin"
-    cp -L "$(command -v node)" "$stage/bin/node"
+    # pnpm/setup exposes Node through a pnpm shim. Ask the running Node for its executable.
+    node_path="$(node -p 'process.execPath')"
+    cp -L "$node_path" "$stage/bin/node"
     # pnpm/setup installs the self-contained pnpm 12 executable.
     cp -L "$(command -v pnpm)" "$stage/bin/pnpm"
     cp -R "${CONCORD_PACKAGE_ROOT:?expected installed Concord package}" "$stage/concord"
