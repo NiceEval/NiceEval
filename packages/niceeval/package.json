@@ -117,11 +117,6 @@
     "@effect/platform-node",
     "@effect/platform-node-shared",
     "@types/ws",
-    "effect",
-    "fast-check",
-    "mime",
-    "msgpackr",
-    "pure-rand",
     "undici",
     "ws"
   ],

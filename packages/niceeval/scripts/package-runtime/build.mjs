@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
@@ -25,6 +25,7 @@ function isRuntimeSource(file) {
     ) &&
     !file.endsWith(".test.ts") &&
     !file.endsWith(".test.tsx") &&
+    !file.endsWith(".test-d.ts") &&
     !file.endsWith(".harness.ts")
   );
 }
@@ -72,17 +73,6 @@ function assertNoTopLevelAwait(source, fileName) {
   visit(sourceFile);
 }
 
-function withoutSourceMapComment(code) {
-  return code.replace(/\n\/\/# sourceMappingURL=.*?(?:\r?\n)?$/, "\n");
-}
-
-async function writeRuntimeModule(outputFile, code, mapText) {
-  await mkdir(dirname(outputFile), { recursive: true });
-  const mapName = `${basename(outputFile)}.map`;
-  await writeFile(outputFile, `${withoutSourceMapComment(code)}//# sourceMappingURL=${mapName}\n`);
-  await writeFile(`${outputFile}.map`, mapText);
-}
-
 async function emitDeclarations(tempRoot) {
   const config = ts.getParsedCommandLineOfConfigFile(TYPES_CONFIG, {}, ts.sys);
   if (!config) throw new Error(`Unable to read ${TYPES_CONFIG}`);
@@ -122,12 +112,15 @@ function rewriteDeclarationSpecifiers(text, extension) {
 }
 
 async function writeDeclarations(rawTypes, outputRoot) {
+  const declarations = [];
   for (const file of await walk(rawTypes)) {
     if (!file.endsWith(".d.ts")) continue;
     const target = join(outputRoot, relative(rawTypes, file));
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, rewriteDeclarationSpecifiers(await readFile(file, "utf8"), "js"));
+    declarations.push(target);
   }
+  return declarations;
 }
 
 async function copyRuntimeAssets(outputRoot) {
@@ -166,7 +159,7 @@ async function build() {
     await mkdir(outputRoot, { recursive: true });
     const sourceFiles = await walk(SRC);
     for (const file of [...sourceFiles, ...(await walk(join(ROOT, "bin")))]) {
-      if (!/\.(?:[cm]?[jt]sx?)$/.test(file) || /\.(?:test|harness|d)\.tsx?$/.test(file)) continue;
+      if (!/\.(?:[cm]?[jt]sx?)$/.test(file) || /\.(?:test|test-d|harness|d)\.tsx?$/.test(file)) continue;
       assertNoTopLevelAwait(await readFile(file, "utf8"), file);
     }
     await buildViewApp(outputRoot);
@@ -183,9 +176,6 @@ async function build() {
           moduleResolution: ts.ModuleResolutionKind.Bundler,
           jsx: ts.JsxEmit.ReactJSX,
           esModuleInterop: true,
-          sourceMap: true,
-          inlineSourceMap: false,
-          inlineSources: true,
           rewriteRelativeImportExtensions: true,
           allowImportingTsExtensions: true,
           verbatimModuleSyntax: false,
@@ -205,12 +195,16 @@ async function build() {
           }),
         );
       }
-      await writeRuntimeModule(output, compiled.outputText, compiled.sourceMapText ?? "{}");
+      await mkdir(dirname(output), { recursive: true });
+      await writeFile(output, compiled.outputText);
     }
 
     await copyRuntimeAssets(outputRoot);
-    await writeDeclarations(rawTypes, outputRoot);
-    await checkPublicUsage(ROOT, outputRoot);
+    const declarations = await writeDeclarations(rawTypes, outputRoot);
+    const publicTypeGraph = await checkPublicUsage(ROOT, outputRoot);
+    // TypeScript follows references from every public entry point, including
+    // declarations for internal helpers that appear in public signatures.
+    await Promise.all(declarations.filter((file) => !publicTypeGraph.has(file)).map((file) => rm(file)));
 
     await rm(DIST, { recursive: true, force: true });
     await rename(outputRoot, DIST);

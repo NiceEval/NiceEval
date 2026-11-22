@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const ts = require("typescript");
 
 // Inspect the emitted declarations, resolving re-exports to their declaration owner.
-export async function missingPublicUsage(packageRoot, distRoot) {
+async function inspectPublicDeclarations(packageRoot, distRoot) {
   const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
   const entries = Object.values(manifest.exports).map((entry) => join(distRoot, entry.types.replace("./dist/", "")));
   const program = ts.createProgram(entries, {
@@ -44,11 +44,14 @@ export async function missingPublicUsage(packageRoot, distRoot) {
       missing.add(`${path}#${symbol.name}`);
     }
   }
-  return [...missing].sort();
+  return {
+    missing: [...missing].sort(),
+    files: new Set(program.getSourceFiles().map((file) => file.fileName)),
+  };
 }
 
 export async function checkPublicUsage(packageRoot, distRoot) {
-  const actual = await missingPublicUsage(packageRoot, distRoot);
+  const { missing: actual, files } = await inspectPublicDeclarations(packageRoot, distRoot);
   const baseline = JSON.parse(
     await readFile(join(packageRoot, "scripts/package-runtime/public-usage-baseline.json"), "utf8"),
   );
@@ -61,4 +64,5 @@ export async function checkPublicUsage(packageRoot, distRoot) {
       `Published declaration usage: add source documentation for [${unexpected.join(", ")}]; remove resolved baseline entries [${stale.join(", ")}]`,
     );
   }
+  return files;
 }

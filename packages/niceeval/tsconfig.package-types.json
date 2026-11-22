@@ -14,6 +14,7 @@
     "src/view/app/**",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
+    "src/**/*.test-d.ts",
     "src/**/*.harness.ts"
   ]
 }
