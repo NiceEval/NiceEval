@@ -191,7 +191,7 @@ import {
   type PinnedRecordReadSession,
   type SealedRunSummary,
 } from "../sqlite/index.ts";
-import type { SourceBarrierRequest } from "../sqlite/types.ts";
+import type { StageContentBatchInput, SourceBarrierRequest } from "../sqlite/types.ts";
 import type { RunResourcePage } from "../../run/storage/types.ts";
 import { RunStorageError } from "../../run/storage/errors.ts";
 
@@ -1140,29 +1140,80 @@ function closeCollection(
   );
 }
 
+interface ContentBatch {
+  readonly offer: (command: StageContentBatchInput["commands"][number]) => Effect.Effect<void, RecordWriteError>;
+  readonly flush: () => Effect.Effect<void, RecordWriteError>;
+}
+
+/** One bounded transaction/coordination round trip for many small Contents. */
+function makeContentBatch(run: RunRuntime): ContentBatch {
+  let commands: StageContentBatchInput["commands"][number][] = [];
+  let rows = 0;
+  let bytes = 0;
+  const flush = () =>
+    Effect.gen(function* () {
+      if (commands.length === 0) return;
+      const frozen = commands;
+      commands = [];
+      rows = 0;
+      bytes = 0;
+      yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) =>
+        run.client.stageContentBatch({
+          runId: run.runId,
+          writerGeneration: run.writerGeneration,
+          commands: frozen,
+          deadlineEpochMs,
+        }),
+      );
+    });
+  return {
+    flush,
+    offer: (command) =>
+      Effect.gen(function* () {
+        const addedRows = 1 + (command.kind === "append" ? command.chunks.length : 0);
+        const addedBytes =
+          command.kind === "append" ? command.chunks.reduce((sum, chunk) => sum + chunk.bytes.byteLength, 0) : 0;
+        if (rows + addedRows > RECORD_SQLITE_MAX_PUBLISH_ROWS || bytes + addedBytes > RECORD_SQLITE_MAX_PUBLISH_BYTES)
+          yield* flush();
+        commands.push(command);
+        rows += addedRows;
+        bytes += addedBytes;
+      }),
+  };
+}
+
 function processContent<Error, Requirements>(input: {
   readonly run: RunRuntime;
   readonly attachmentId: string;
   readonly source: PreparedStreamingRecordAttachment<Error, Requirements>["contents"][number];
+  readonly batch?: ContentBatch;
 }): Effect.Effect<PersistedContentMetadata, RecordWriteError | Error, Requirements> {
   const contentId = contentIdentity(input.attachmentId, input.source.logicalHandle);
   return Effect.gen(function* () {
-    yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) =>
-      input.run.client.admitContent({
-        runId: input.run.runId,
-        writerGeneration: input.run.writerGeneration,
+    if (input.batch !== undefined) {
+      yield* input.batch.offer({
+        kind: "admit",
         attachmentId: input.attachmentId,
         contentId,
         logicalHandle: input.source.logicalHandle,
-        deadlineEpochMs,
-      }),
-    );
+      });
+    } else
+      yield* withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) =>
+        input.run.client.admitContent({
+          runId: input.run.runId,
+          writerGeneration: input.run.writerGeneration,
+          attachmentId: input.attachmentId,
+          contentId,
+          logicalHandle: input.source.logicalHandle,
+          deadlineEpochMs,
+        }),
+      );
     const overall = createHash("sha256");
     let ordinal = 0;
     let byteLength = 0;
     const available: Uint8Array[] = [];
     const takePending = (): Uint8Array => available.pop() ?? new Uint8Array(RECORD_SQLITE_CHUNK_BYTES);
-    let pending = takePending();
+    let pending: Uint8Array | undefined;
     let pendingLength = 0;
     let batch: PersistedContentChunk[] = [];
     let batchBytes = 0;
@@ -1175,6 +1226,13 @@ function processContent<Error, Requirements>(input: {
       const frozen = batch;
       batch = [];
       batchBytes = 0;
+      if (input.batch !== undefined)
+        return input.batch.offer({
+          kind: "append",
+          contentId,
+          chunks: frozen,
+          ...(completion === undefined ? {} : { completion }),
+        });
       return withWriteAdmission(input.run.coordination, input.run.root, (deadlineEpochMs) =>
         input.run.client.appendContentChunks({
           runId: input.run.runId,
@@ -1214,12 +1272,13 @@ function processContent<Error, Requirements>(input: {
         let offset = 0;
         while (offset < incoming.byteLength) {
           const take = Math.min(RECORD_SQLITE_CHUNK_BYTES - pendingLength, incoming.byteLength - offset);
+          pending ??= takePending();
           pending.set(incoming.subarray(offset, offset + take), pendingLength);
           pendingLength += take;
           offset += take;
           if (pendingLength === RECORD_SQLITE_CHUNK_BYTES) {
             yield* emit(pending);
-            pending = takePending();
+            pending = undefined;
             pendingLength = 0;
           }
         }
@@ -1227,7 +1286,7 @@ function processContent<Error, Requirements>(input: {
     );
     // A full pending buffer is uniquely owned here and can be transferred
     // directly. Only the final partial chunk needs an exact-size copy.
-    if (pendingLength > 0) yield* emit(pending.slice(0, pendingLength));
+    if (pending !== undefined && pendingLength > 0) yield* emit(pending.slice(0, pendingLength));
     const metadata = {
       contentId,
       logicalHandle: input.source.logicalHandle,
@@ -1336,11 +1395,13 @@ function writeAttachment<Value>(
         deadlineEpochMs,
       }),
     );
+    const contentBatch = makeContentBatch(input.run);
     const contents = yield* Effect.forEach(
       prepared.contents,
-      (source) => processContent({ run: input.run, attachmentId, source }),
+      (source) => processContent({ run: input.run, attachmentId, source, batch: contentBatch }),
       { concurrency: 1 },
     );
+    yield* contentBatch.flush();
     const references: PersistedAttachmentReference[] = prepared.references.map((reference, ordinal) => {
       const bytes = canonicalBytes(reference);
       if (bytes === undefined) throw new Error("invalid reference");

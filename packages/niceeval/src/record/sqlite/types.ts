@@ -221,6 +221,27 @@ export interface AppendContentChunksInput {
   readonly deadlineEpochMs: number;
 }
 
+/** Bounded ordered content operations committed in one worker transaction. */
+export interface StageContentBatchInput {
+  readonly runId: string;
+  readonly writerGeneration: string;
+  readonly deadlineEpochMs: number;
+  readonly commands: readonly (
+    | {
+        readonly kind: "admit";
+        readonly attachmentId: string;
+        readonly contentId: string;
+        readonly logicalHandle: string;
+      }
+    | {
+        readonly kind: "append";
+        readonly contentId: string;
+        readonly chunks: readonly PersistedContentChunk[];
+        readonly completion?: Pick<PersistedContentMetadata, "byteLength" | "digest" | "chunkCount">;
+      }
+  )[];
+}
+
 export interface StageRunCoreInput {
   readonly runId: string;
   readonly writerGeneration: string;

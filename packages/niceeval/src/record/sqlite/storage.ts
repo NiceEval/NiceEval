@@ -57,6 +57,7 @@ import {
   type AdmitAttemptInput,
   type AdmitContentInput,
   type AttemptLocatorCandidates,
+  type StageContentBatchInput,
   type AppendContentChunksInput,
   type AppendRunSourcesInput,
   type BeginRunInput,
@@ -1281,45 +1282,74 @@ export function appendRunSources(connection: RecordDatabase, input: AppendRunSou
   });
 }
 
+export function stageContentBatch(connection: RecordDatabase, input: StageContentBatchInput): void {
+  let rows = 0;
+  let bytes = 0;
+  for (const command of input.commands) {
+    rows += 1;
+    if (command.kind === "append") {
+      rows += command.chunks.length;
+      for (const chunk of command.chunks) bytes += chunk.bytes.byteLength;
+    }
+  }
+  assertBoundedBatch("stage-content-batch", rows, bytes);
+  withImmediateTransaction(connection, input.deadlineEpochMs, "stage-content-batch", () => {
+    for (const command of input.commands) {
+      const operation = {
+        ...command,
+        runId: input.runId,
+        writerGeneration: input.writerGeneration,
+        deadlineEpochMs: input.deadlineEpochMs,
+      };
+      if (operation.kind === "admit") admitContentInTransaction(connection, operation);
+      else appendContentChunksInTransaction(connection, operation);
+    }
+  });
+}
+
 export function admitContent(connection: RecordDatabase, input: AdmitContentInput): void {
+  withImmediateTransaction(connection, input.deadlineEpochMs, "admit-content", () => {
+    admitContentInTransaction(connection, input);
+  });
+}
+
+function admitContentInTransaction(connection: RecordDatabase, input: AdmitContentInput): void {
   requireIdentity(input.contentId, "contentId");
   requireIdentity(input.logicalHandle, "logicalHandle");
-  withImmediateTransaction(connection, input.deadlineEpochMs, "admit-content", () => {
-    assertRunFence(connection, input.runId, input.writerGeneration, "admit-content");
-    const attachment = recordStatement(
-      connection,
-      `SELECT a.owner_run_id,a.owner_kind,at.publication_state FROM ne19_attachments a
-      LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id WHERE a.attachment_id=?`,
-    ).get(input.attachmentId);
-    if (
-      attachment === undefined ||
-      text(attachment, "owner_run_id") !== input.runId ||
-      (text(attachment, "owner_kind") === "attempt" && optionalText(attachment, "publication_state") === "published")
-    ) {
-      throw sqliteError("record-command-conflict", "admit-content", "attachment admission is missing");
-    }
-    const inserted = recordStatement(
-      connection,
-      `INSERT OR IGNORE INTO ne19_contents(content_id,attachment_id,logical_handle,byte_length,overall_digest,chunk_count)
-      VALUES (?,?,?,NULL,NULL,NULL)`,
-    ).run(input.contentId, input.attachmentId, input.logicalHandle);
-    const stored = recordStatement(
-      connection,
-      "SELECT attachment_id,logical_handle FROM ne19_contents WHERE content_id=?",
-    ).get(input.contentId);
-    if (
-      stored === undefined ||
-      text(stored, "attachment_id") !== input.attachmentId ||
-      text(stored, "logical_handle") !== input.logicalHandle
-    ) {
-      throw sqliteError(
-        "record-command-conflict",
-        "admit-content",
-        `Content ${input.contentId} conflicts with its durable admission`,
-      );
-    }
-    if (Number(inserted.changes) > 0) bumpMutationSequence(connection, input.runId);
-  });
+  assertRunFence(connection, input.runId, input.writerGeneration, "admit-content");
+  const attachment = recordStatement(
+    connection,
+    `SELECT a.owner_run_id,a.owner_kind,at.publication_state FROM ne19_attachments a
+    LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id WHERE a.attachment_id=?`,
+  ).get(input.attachmentId);
+  if (
+    attachment === undefined ||
+    text(attachment, "owner_run_id") !== input.runId ||
+    (text(attachment, "owner_kind") === "attempt" && optionalText(attachment, "publication_state") === "published")
+  ) {
+    throw sqliteError("record-command-conflict", "admit-content", "attachment admission is missing");
+  }
+  const inserted = recordStatement(
+    connection,
+    `INSERT OR IGNORE INTO ne19_contents(content_id,attachment_id,logical_handle,byte_length,overall_digest,chunk_count)
+    VALUES (?,?,?,NULL,NULL,NULL)`,
+  ).run(input.contentId, input.attachmentId, input.logicalHandle);
+  const stored = recordStatement(
+    connection,
+    "SELECT attachment_id,logical_handle FROM ne19_contents WHERE content_id=?",
+  ).get(input.contentId);
+  if (
+    stored === undefined ||
+    text(stored, "attachment_id") !== input.attachmentId ||
+    text(stored, "logical_handle") !== input.logicalHandle
+  ) {
+    throw sqliteError(
+      "record-command-conflict",
+      "admit-content",
+      `Content ${input.contentId} conflicts with its durable admission`,
+    );
+  }
+  if (Number(inserted.changes) > 0) bumpMutationSequence(connection, input.runId);
 }
 
 export function stageAttachmentMetadata(connection: RecordDatabase, input: StageAttachmentInput): void {
@@ -4056,6 +4086,12 @@ export function readSealedRunDocument(connection: RecordDatabase, runId: string)
 }
 
 export function appendContentChunks(connection: RecordDatabase, input: AppendContentChunksInput): void {
+  withImmediateTransaction(connection, input.deadlineEpochMs, "append-content-chunks", () => {
+    appendContentChunksInTransaction(connection, input);
+  });
+}
+
+function appendContentChunksInTransaction(connection: RecordDatabase, input: AppendContentChunksInput): void {
   assertBoundedBatch(
     "append-content-chunks",
     input.chunks.length,
@@ -4082,93 +4118,88 @@ export function appendContentChunks(connection: RecordDatabase, input: AppendCon
       );
     requireBytesDigest(chunk.bytes, chunk.chunkDigest, `content chunk ${input.contentId}/${chunk.ordinal}`);
   }
-  withImmediateTransaction(connection, input.deadlineEpochMs, "append-content-chunks", () => {
-    assertRunFence(connection, input.runId, input.writerGeneration, "append-content-chunks");
-    const metadata = recordStatement(
+  assertRunFence(connection, input.runId, input.writerGeneration, "append-content-chunks");
+  const metadata = recordStatement(
+    connection,
+    `SELECT a.owner_run_id,a.owner_kind,r.status,at.publication_state,c.byte_length,c.overall_digest,c.chunk_count
+    FROM ne19_contents c
+    JOIN ne19_attachments a ON a.attachment_id=c.attachment_id JOIN ne19_runs r ON r.run_id=a.owner_run_id
+    LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id
+    WHERE c.content_id=?`,
+  ).get(input.contentId);
+  if (
+    metadata === undefined ||
+    text(metadata, "owner_run_id") !== input.runId ||
+    text(metadata, "status") !== "open" ||
+    (text(metadata, "owner_kind") === "attempt" && optionalText(metadata, "publication_state") === "published")
+  ) {
+    throw sqliteError(
+      "record-command-conflict",
+      "append-content-chunks",
+      "Content admission is missing or no longer open",
+    );
+  }
+  let changed = false;
+  for (const chunk of input.chunks) {
+    const stored = recordStatement(
       connection,
-      `SELECT a.owner_run_id,a.owner_kind,r.status,at.publication_state,c.byte_length,c.overall_digest,c.chunk_count
-      FROM ne19_contents c
-      JOIN ne19_attachments a ON a.attachment_id=c.attachment_id JOIN ne19_runs r ON r.run_id=a.owner_run_id
-      LEFT JOIN ne19_attempts at ON at.origin_run_id=a.owner_run_id AND at.attempt_id=a.owner_attempt_id
-      WHERE c.content_id=?`,
-    ).get(input.contentId);
-    if (
-      metadata === undefined ||
-      text(metadata, "owner_run_id") !== input.runId ||
-      text(metadata, "status") !== "open" ||
-      (text(metadata, "owner_kind") === "attempt" && optionalText(metadata, "publication_state") === "published")
-    ) {
-      throw sqliteError(
-        "record-command-conflict",
-        "append-content-chunks",
-        "Content admission is missing or no longer open",
-      );
-    }
-    let changed = false;
-    for (const chunk of input.chunks) {
-      const stored = recordStatement(
-        connection,
-        "SELECT bytes,chunk_digest FROM ne19_content_chunks WHERE content_id=? AND ordinal=?",
-      ).get(input.contentId, chunk.ordinal);
-      if (stored === undefined) {
-        const count = requiredRecordRow(
-          recordStatement(
-            connection,
-            "SELECT coalesce(max(ordinal) + 1, 0) AS count FROM ne19_content_chunks WHERE content_id=?",
-          ).get(input.contentId),
-        );
-        if (metadata.chunk_count !== null || chunk.ordinal !== integer(count, "count"))
-          throw sqliteError(
-            "record-command-conflict",
-            "append-content-chunks",
-            "Content batch does not extend the committed prefix",
-          );
-        recordStatement(
-          connection,
-          "INSERT INTO ne19_content_chunks(content_id,ordinal,bytes,chunk_digest) VALUES (?,?,?,?)",
-        ).run(input.contentId, chunk.ordinal, chunk.bytes, chunk.chunkDigest);
-        changed = true;
-      } else if (
-        text(stored, "chunk_digest") !== chunk.chunkDigest ||
-        !bytesEqual(bytes(stored, "bytes"), chunk.bytes)
-      ) {
-        throw sqliteError(
-          "record-command-conflict",
-          "append-content-chunks",
-          `Chunk ${input.contentId}/${chunk.ordinal} conflicts with its committed retry`,
-        );
-      }
-    }
-    if (completion !== undefined) {
-      const prefix = requiredRecordRow(
+      "SELECT bytes,chunk_digest FROM ne19_content_chunks WHERE content_id=? AND ordinal=?",
+    ).get(input.contentId, chunk.ordinal);
+    if (stored === undefined) {
+      const count = requiredRecordRow(
         recordStatement(
           connection,
           "SELECT coalesce(max(ordinal) + 1, 0) AS count FROM ne19_content_chunks WHERE content_id=?",
         ).get(input.contentId),
       );
-      if (
-        integer(prefix, "count") !== completion.chunkCount ||
-        (metadata.chunk_count !== null &&
-          (integer(metadata, "chunk_count") !== completion.chunkCount ||
-            integer(metadata, "byte_length") !== completion.byteLength ||
-            text(metadata, "overall_digest") !== completion.digest))
-      ) {
+      if (metadata.chunk_count !== null || chunk.ordinal !== integer(count, "count"))
         throw sqliteError(
           "record-command-conflict",
           "append-content-chunks",
-          "Content completion differs from its committed prefix",
+          "Content batch does not extend the committed prefix",
         );
-      }
-      if (metadata.chunk_count === null) {
-        recordStatement(
-          connection,
-          "UPDATE ne19_contents SET byte_length=?,overall_digest=?,chunk_count=? WHERE content_id=?",
-        ).run(completion.byteLength, completion.digest, completion.chunkCount, input.contentId);
-        changed = true;
-      }
+      recordStatement(
+        connection,
+        "INSERT INTO ne19_content_chunks(content_id,ordinal,bytes,chunk_digest) VALUES (?,?,?,?)",
+      ).run(input.contentId, chunk.ordinal, chunk.bytes, chunk.chunkDigest);
+      changed = true;
+    } else if (text(stored, "chunk_digest") !== chunk.chunkDigest || !bytesEqual(bytes(stored, "bytes"), chunk.bytes)) {
+      throw sqliteError(
+        "record-command-conflict",
+        "append-content-chunks",
+        `Chunk ${input.contentId}/${chunk.ordinal} conflicts with its committed retry`,
+      );
     }
-    if (changed) bumpMutationSequence(connection, input.runId);
-  });
+  }
+  if (completion !== undefined) {
+    const prefix = requiredRecordRow(
+      recordStatement(
+        connection,
+        "SELECT coalesce(max(ordinal) + 1, 0) AS count FROM ne19_content_chunks WHERE content_id=?",
+      ).get(input.contentId),
+    );
+    if (
+      integer(prefix, "count") !== completion.chunkCount ||
+      (metadata.chunk_count !== null &&
+        (integer(metadata, "chunk_count") !== completion.chunkCount ||
+          integer(metadata, "byte_length") !== completion.byteLength ||
+          text(metadata, "overall_digest") !== completion.digest))
+    ) {
+      throw sqliteError(
+        "record-command-conflict",
+        "append-content-chunks",
+        "Content completion differs from its committed prefix",
+      );
+    }
+    if (metadata.chunk_count === null) {
+      recordStatement(
+        connection,
+        "UPDATE ne19_contents SET byte_length=?,overall_digest=?,chunk_count=? WHERE content_id=?",
+      ).run(completion.byteLength, completion.digest, completion.chunkCount, input.contentId);
+      changed = true;
+    }
+  }
+  if (changed) bumpMutationSequence(connection, input.runId);
 }
 
 export function readContentChunkPage(

@@ -9,6 +9,7 @@ import {
   type RecordDatabase,
 } from "./database.ts";
 import {
+  stageContentBatch,
   appendContentChunks,
   appendRunSources,
   admitAttachment,
@@ -125,6 +126,7 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
     case "discard-attempt":
     case "append-run-sources":
     case "admit-attachment":
+    case "stage-content-batch":
     case "admit-content":
     case "finalize-run":
     case "stage-final-metadata":
@@ -345,6 +347,9 @@ if (!isMainThread && parentPort !== null) {
         return undefined;
       case "admit-attachment":
         admitAttachment(requireConnection(), request.input);
+        return undefined;
+      case "stage-content-batch":
+        stageContentBatch(requireConnection(), request.input);
         return undefined;
       case "admit-content":
         admitContent(requireConnection(), request.input);

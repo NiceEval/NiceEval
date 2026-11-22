@@ -3,6 +3,7 @@ import { isSqliteRecordErrorCode, SqliteRecordError } from "./errors.ts";
 import { RUN_STORAGE_ERROR_CODES, RunStorageError } from "../../run/storage/errors.ts";
 import { isExternalCause, normalizeExternalCause } from "../../shared/external-cause.ts";
 import type {
+  StageContentBatchInput,
   AppendContentChunksInput,
   AppendRunSourcesInput,
   AdmitAttachmentInput,
@@ -165,6 +166,7 @@ export type StorageWorkerRequest =
   | { readonly id: number; readonly operation: "discard-attempt"; readonly input: DiscardAttemptInput }
   | { readonly id: number; readonly operation: "append-run-sources"; readonly input: AppendRunSourcesInput }
   | { readonly id: number; readonly operation: "admit-attachment"; readonly input: AdmitAttachmentInput }
+  | { readonly id: number; readonly operation: "stage-content-batch"; readonly input: StageContentBatchInput }
   | { readonly id: number; readonly operation: "admit-content"; readonly input: AdmitContentInput }
   | { readonly id: number; readonly operation: "finalize-run"; readonly input: StageRunCoreInput }
   | { readonly id: number; readonly operation: "stage-final-metadata"; readonly input: StageRunCoreInput }

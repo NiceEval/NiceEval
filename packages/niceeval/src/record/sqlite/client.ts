@@ -5,6 +5,7 @@ import { SqliteRecordError } from "./errors.ts";
 import { RunStorageError } from "../../run/storage/errors.ts";
 import { recordSqlitePath } from "./database.ts";
 import type {
+  StageContentBatchInput,
   AppendContentChunksInput,
   AppendRunSourcesInput,
   AdmitAttachmentInput,
@@ -48,6 +49,7 @@ export interface StorageWorkerClient {
   readonly admitAttempt: (input: AdmitAttemptInput) => Promise<void>;
   readonly discardAttempt: (input: DiscardAttemptInput) => Promise<void>;
   readonly admitAttachment: (input: AdmitAttachmentInput) => Promise<void>;
+  readonly stageContentBatch: (input: StageContentBatchInput) => Promise<void>;
   readonly admitContent: (input: AdmitContentInput) => Promise<void>;
   readonly finalizeRun: (input: StageRunCoreInput) => Promise<RunFinalization>;
   readonly stageRunFinalMetadata: (input: StageRunCoreInput) => Promise<void>;
@@ -104,7 +106,11 @@ function requestTransferList(message: RequestWithoutId): readonly ArrayBuffer[] 
     const buffer = ownedArrayBuffer(value);
     if (buffer !== undefined && !buffers.includes(buffer)) buffers.push(buffer);
   };
-  if (message.operation === "append-content-chunks") {
+  if (message.operation === "stage-content-batch") {
+    for (const command of message.input.commands) {
+      if (command.kind === "append") for (const chunk of command.chunks) add(chunk.bytes);
+    }
+  } else if (message.operation === "append-content-chunks") {
     for (const chunk of message.input.chunks) add(chunk.bytes);
   } else if (message.operation === "stage-collection-items") {
     for (const item of message.input.items) add(item.canonicalBytes);
@@ -261,6 +267,9 @@ export async function makeStorageWorkerClient(
     },
     admitAttachment: async (input: AdmitAttachmentInput) => {
       await request<undefined>({ operation: "admit-attachment", input });
+    },
+    stageContentBatch: async (input: StageContentBatchInput) => {
+      await request<undefined>({ operation: "stage-content-batch", input });
     },
     admitContent: async (input: AdmitContentInput) => {
       await request<undefined>({ operation: "admit-content", input });
