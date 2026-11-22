@@ -31,6 +31,9 @@ assert.equal(sentryOptions(dsn).parentSpanIsAlwaysRootSpan, false);
 const clientConfigSource = await readFile(new URL("../instrumentation-client.ts", import.meta.url), "utf8");
 assert.match(clientConfigSource, /parentSpanIsAlwaysRootSpan:\s*false/);
 const debugId = "12345678-1234-4234-8234-123456789012";
+const artifact = "https://niceeval.com/_next/static/chunk.js";
+const businessMessage = "SQL SELECT title FROM manifests; load Handbook v2.1 using niceeval.config.ts";
+const filtered = "[Filtered]";
 const debugEvent: Sentry.ErrorEvent = {
   type: undefined,
   debug_meta: {
@@ -38,29 +41,30 @@ const debugEvent: Sentry.ErrorEvent = {
       {
         type: "sourcemap",
         debug_id: debugId,
-        code_file: `https://niceeval.com/_next/static/chunk.js?secret=${sentinel}`,
+        code_file: artifact,
       },
-      { type: "sourcemap", debug_id: sentinel, code_file: `https://niceeval.com/${sentinel}` },
     ],
   },
   exception: {
     values: [
       {
-        type: "Error",
-        value: sentinel,
+        type: "ManifestError",
+        value: "load manifest: open object: timeout",
         mechanism: {
           type: "auto.browser.global_handlers.onerror",
           handled: false,
           is_exception_group: true,
-          data: { private: sentinel },
-          ...{ meta: { nested: { private: sentinel } } },
+          data: { session: sentinel, action: "render" },
         },
         stacktrace: {
           frames: [
             {
-              filename: "https://niceeval.com/_next/static/chunk.js",
-              abs_path: `https://niceeval.com/_next/static/chunk.js?secret=${sentinel}`,
+              filename: artifact,
+              abs_path: `${artifact}?build=42&secret=${sentinel}`,
               debug_id: debugId,
+              function: "loadManifest",
+              lineno: 72,
+              colno: 11,
             },
           ],
         },
@@ -68,35 +72,88 @@ const debugEvent: Sentry.ErrorEvent = {
     ],
   },
 };
-const cleanedDebugEvent = sentryOptions(dsn).beforeSend(debugEvent);
-assert.equal(cleanedDebugEvent.exception?.values?.[0].stacktrace?.frames?.[0].debug_id, debugId);
+const beforeSend = sentryOptions(dsn).beforeSend;
+const cleanedDebugEvent = beforeSend(debugEvent);
+assert.ok(cleanedDebugEvent);
+assert.deepEqual(cleanedDebugEvent.exception?.values?.[0].stacktrace?.frames, [
+  {
+    filename: artifact,
+    abs_path: `${artifact}?build=42&secret=${filtered}`,
+    debug_id: debugId,
+    function: "loadManifest",
+    lineno: 72,
+    colno: 11,
+  },
+]);
+assert.equal(cleanedDebugEvent.exception?.values?.[0].type, "ManifestError");
+assert.equal(cleanedDebugEvent.exception?.values?.[0].value, "load manifest: open object: timeout");
 assert.equal(cleanedDebugEvent.debug_meta?.images?.length, 1);
 assert.ok(!JSON.stringify(cleanedDebugEvent).includes(sentinel));
 assert.deepEqual(cleanedDebugEvent.exception?.values?.[0].mechanism, {
   type: "auto.browser.global_handlers.onerror",
   handled: false,
   is_exception_group: true,
+  data: { session: filtered, action: "render" },
 });
-const unknownMechanism = sentryOptions(dsn).beforeSend({
+const headerNames = [
+  "Authorization",
+  "Cookie",
+  "Set-Cookie",
+  "X-Api-Key",
+  "X-Access-Token",
+  "X-Deploy-Secret",
+  "X-Account-Password",
+];
+const credentials = [
+  "Bearer " + sentinel,
+  "sk-fixtureAPI",
+  "pk-fixtureAPI",
+  ["eyJhbGciOiJIUzI1NiJ9", "e30", "signature"].join("."),
+];
+const credentialEvent = beforeSend({
   type: undefined,
-  exception: { values: [{ mechanism: { type: sentinel, handled: false } }] },
+  message: businessMessage,
+  logentry: { message: credentials.join(", "), params: ["Sentry DSN key public"] },
+  request: {
+    url: `https://reader:${sentinel}@niceeval.com/en/blog/handbook?slug=handbook&%74oken=${sentinel}&code=${sentinel}#intro`,
+    query_string: `signature=${sentinel}&edition=2&API_KEY=${sentinel}&access_token=${sentinel}`,
+    headers: { ...Object.fromEntries(headerNames.map((name) => [name, sentinel])), "X-NiceEval-Release": "Handbook 2" },
+    data: sentinel,
+  },
+  contexts: { response: { status_code: 503, data: sentinel, body: sentinel } },
+  extra: { diagnostics: { PASSWD: sentinel, token: [sentinel], clientSecret: sentinel, sql: businessMessage } },
 });
-assert.deepEqual(unknownMechanism.exception?.values?.[0].mechanism, { type: "generic", handled: false });
+assert.ok(credentialEvent);
+assert.equal(credentialEvent.message, businessMessage);
+assert.deepEqual(credentialEvent.logentry, {
+  message: `Bearer ${filtered}, ${filtered}, ${filtered}, ${filtered}`,
+  params: [`Sentry DSN key ${filtered}`],
+});
+assert.deepEqual(credentialEvent.request, {
+  url: `https://${filtered}@niceeval.com/en/blog/handbook?slug=handbook&%74oken=${filtered}&code=${filtered}#intro`,
+  query_string: `signature=${filtered}&edition=2&API_KEY=${filtered}&access_token=${filtered}`,
+  headers: { ...Object.fromEntries(headerNames.map((name) => [name, filtered])), "X-NiceEval-Release": "Handbook 2" },
+});
+assert.deepEqual(credentialEvent.contexts?.response, { status_code: 503 });
+assert.deepEqual(credentialEvent.extra, {
+  diagnostics: { PASSWD: filtered, token: filtered, clientSecret: filtered, sql: businessMessage },
+});
+assert.deepEqual(beforeSend(credentialEvent), credentialEvent, "Repeated wire filtering must be idempotent");
 const unknownTraceOp = sentryOptions(dsn).beforeSend({
   type: undefined,
   contexts: { trace: { trace_id: "a".repeat(32), span_id: "b".repeat(16), op: sentinel } },
 });
-assert.equal(unknownTraceOp.contexts?.trace?.op, "function");
+assert.equal(unknownTraceOp?.contexts?.trace?.op, "function");
 const noTraceOp = sentryOptions(dsn).beforeSend({
   type: undefined,
   contexts: { trace: { trace_id: "a".repeat(32), span_id: "b".repeat(16) } },
 });
-assert.equal(noTraceOp.contexts?.trace?.op, undefined);
+assert.equal(noTraceOp?.contexts?.trace?.op, undefined);
 const invalidTraceIds = sentryOptions(dsn).beforeSend({
   type: undefined,
   contexts: { trace: { trace_id: sentinel, span_id: "b".repeat(16), op: "pageload" } },
 });
-assert.deepEqual(invalidTraceIds.contexts, {});
+assert.deepEqual(invalidTraceIds?.contexts, {});
 const envelopes: unknown[] = [];
 const receivedHeaders: Record<string, unknown>[] = [];
 const server = createServer(async (request, response) => {
@@ -151,20 +208,22 @@ try {
   ] as unknown as Parameters<typeof client.sendEnvelope>[0]);
   Sentry.captureEvent(debugEvent);
   Sentry.withScope((scope) => {
-    scope.setUser({ id: sentinel, email: `${sentinel}@example.invalid` });
-    scope.setExtra("nested", { private: { value: sentinel } });
-    scope.setContext("private", { nested: { value: sentinel } });
-    scope.setTag("private", sentinel);
-    Sentry.addBreadcrumb({ message: sentinel });
-    Sentry.captureException(new Error(`SQL body ${sentinel}`));
+    scope.setExtra("nested", { token: sentinel, edition: "Handbook 2" });
+    scope.setContext("manifest", { secret: sentinel, slug: "handbook" });
+    scope.setTag("session", sentinel);
+    Sentry.addBreadcrumb({ message: `OAuth responded with Bearer ${sentinel}` });
+    const cause = new TypeError("open object: timeout");
+    const error = new Error(businessMessage, { cause });
+    error.name = "ManifestError";
+    Sentry.captureException(error);
   });
   await Sentry.startSpan(
     {
       name: sentinel,
       op: "http.server",
       attributes: {
-        private: { value: sentinel } as unknown as string,
-        "http.url": `https://example.invalid/${sentinel}?secret=${sentinel}`,
+        "http.request.header.x-secret": sentinel,
+        "http.url": `https://example.invalid/en/blog/handbook?secret=${sentinel}`,
       },
     },
     async () => {
@@ -172,16 +231,16 @@ try {
         {
           name: sentinel,
           op: "http.client",
-          attributes: { "gen_ai.prompt": sentinel, "http.request.header.authorization": sentinel },
+          attributes: { "gen_ai.prompt": "Read Handbook", "http.request.header.authorization": sentinel },
         },
         async () => {
           await fetch(`http://127.0.0.1:${address.port}/?secret=${sentinel}`);
         },
       );
       onRequestError(
-        new Error(sentinel),
+        new RangeError("render article: unavailable"),
         {
-          path: `/${sentinel}?secret=${sentinel}`,
+          path: `/en/blog/handbook?edition=2&secret=${sentinel}`,
           method: "GET",
           headers: { authorization: sentinel, cookie: sentinel },
         },
@@ -189,6 +248,48 @@ try {
       );
     },
   );
+  const request = { path: "/en/blog", method: "GET", headers: {} };
+  const route = { routerKind: "App Router", routePath: "/[lang]/blog", routeType: "render" } as const;
+  const timeout = new Error("upstream service unavailable", { cause: new DOMException("deadline", "AbortError") });
+  onRequestError(Object.assign(timeout, { statusCode: 503 }), request, route);
+  onRequestError(Object.assign(new Error("excluded 404"), { statusCode: 404 }), request, route);
+  onRequestError(new DOMException("excluded abort", "AbortError"), request, route);
+  await Sentry.startSpan(
+    {
+      name: "GET /[lang]/blog",
+      op: "http.server",
+      attributes: { "http.route": "/[lang]/blog", "http.request.method": "GET", "http.response.status_code": 502 },
+    },
+    async () => {
+      await assert.rejects(async () => {
+        await Sentry.wrapServerComponentWithSentry(
+          async () => {
+            throw new Error("server component unavailable");
+          },
+          { componentRoute: "/[lang]/blog", componentType: "Page" },
+        )();
+      });
+    },
+  );
+  await Sentry.wrapRouteHandlerWithSentry(
+    async () => {
+      throw new Error("route handler unavailable");
+    },
+    { method: "GET", parameterizedRoute: "/INIT.md" },
+  )().catch(() => {});
+  await client.sendEnvelope([
+    { event_id: "c".repeat(32), sent_at: new Date().toISOString() },
+    [
+      [
+        { type: "event" },
+        {
+          type: undefined,
+          message: `database refused startup token Bearer ${sentinel}`,
+          extra: { secret: sentinel, operationName: "build index" },
+        },
+      ],
+    ],
+  ]);
   await Sentry.continueTrace(
     { sentryTrace: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-1", baggage: undefined },
     () =>
@@ -202,8 +303,8 @@ try {
           Sentry.startSpan(
             { name: "Middleware.execute", op: "middleware", attributes: { "sentry.origin": "auto" } },
             () => {
-              Sentry.startSpan({ name: `AppRender.getBodyResult ${sentinel}`, op: "function" }, () => {
-                Sentry.captureException(new Error(`render error ${sentinel}`));
+              Sentry.startSpan({ name: "AppRender.getBodyResult", op: "function" }, () => {
+                Sentry.captureException(new Error("render error"));
               });
             },
           );
@@ -332,14 +433,46 @@ try {
   );
   const events = items.filter(([header]: any) => header.type === "event").map(([, payload]: any) => payload);
   const spans = items.filter(([header]: any) => header.type === "span").flatMap(([, payload]: any) => payload.items);
-  assert.ok(events.length >= 3, "request hook and scoped exception must reach transport");
-  assert.ok(
-    events.every(
-      (event: any) => event.tags.component === "site" && event.exception.values[0].value === "Application error",
-    ),
+  const errorWithMessage = (message: string) =>
+    events.find((event: any) => event.exception?.values?.some((value: any) => value.value === message));
+  assert.ok(events.every((event: any) => event.tags.component === "site"));
+  const businessError = errorWithMessage(businessMessage);
+  assert.deepEqual(
+    businessError?.exception.values.map(({ type, value }: any) => ({ type, value })),
+    [
+      { type: "TypeError", value: "open object: timeout" },
+      { type: "ManifestError", value: businessMessage },
+    ],
   );
+  assert.ok(businessError.exception.values.every((value: any) => value.stacktrace.frames.length > 0));
+  assert.equal(businessError.extra.nested.edition, "Handbook 2");
+  assert.equal(businessError.contexts.manifest.slug, "handbook");
+  const requestError = errorWithMessage("render article: unavailable");
+  assert.deepEqual(requestError?.tags, {
+    component: "site",
+    route: "/[lang]/blog/[slug]",
+    "http.method": "GET",
+    "http.status_code": 500,
+  });
+  assert.equal(requestError.transaction, "GET /[lang]/blog/[slug]");
+  assert.equal(requestError.request.url, "/en/blog/handbook?edition=2&secret=[Filtered]");
+  assert.equal(errorWithMessage("upstream service unavailable")?.tags["http.status_code"], 503);
+  assert.equal(errorWithMessage("server component unavailable")?.tags["http.status_code"], 502);
+  assert.equal(errorWithMessage("server component unavailable")?.tags.route, "/[lang]/blog");
+  assert.equal(errorWithMessage("server component unavailable")?.tags["http.method"], "GET");
+  assert.deepEqual(errorWithMessage("route handler unavailable")?.tags, {
+    component: "site",
+    route: "/INIT.md",
+    "http.method": "GET",
+    "http.status_code": 500,
+  });
+  assert.equal(errorWithMessage("excluded 404"), undefined);
+  assert.equal(errorWithMessage("excluded abort"), undefined);
+  assert.equal(errorWithMessage("ui action error")?.tags.operation, "site.docs.open");
+  const bypassEvent = events.find((event: any) => event.message === "database refused startup token Bearer [Filtered]");
+  assert.deepEqual(bypassEvent?.extra, { secret: filtered, operationName: "build index" });
   const mechanisms = events
-    .flatMap((event: any) => event.exception.values.map((value: any) => value.mechanism))
+    .flatMap((event: any) => (event.exception?.values ?? []).map((value: any) => value.mechanism))
     .filter(Boolean);
   assert.ok(
     mechanisms.some(
@@ -355,7 +488,6 @@ try {
     ),
   );
   assert.ok(mechanisms.some((mechanism: any) => mechanism.type === "generic" && mechanism.handled === true));
-  assert.ok(mechanisms.every((mechanism: any) => !mechanism.data && !mechanism.meta));
   assert.ok(
     events.some((event: any) =>
       event.debug_meta?.images?.some(

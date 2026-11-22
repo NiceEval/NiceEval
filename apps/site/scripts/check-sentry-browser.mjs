@@ -47,9 +47,8 @@ if (mode === "off") {
     ),
   });
   installEnvelopePrivacy(client, "test", "site@acceptance");
-  Sentry.setUser({ id: sentinel });
-  Sentry.setContext("secret", { nested: { value: sentinel } });
-  Sentry.setExtra("secret", { nested: { value: sentinel } });
+  Sentry.setContext("manifest", { token: sentinel, edition: "Handbook 2" });
+  Sentry.setExtra("manifest", { signature: sentinel, slug: "handbook" });
 
   const overlap = { actions: {}, http: {}, completed: [], after: null };
   client.on("beforeOutgoingRequestSpan", (span, hint) => {
@@ -61,11 +60,13 @@ if (mode === "off") {
   (async () => {
     try {
       // Capture error during real active pageload span.
-      Sentry.captureException(new Error("pageload-err " + sentinel));
+  const pageError = new Error("load Handbook: request failed with Bearer " + sentinel);
+  pageError.name = "PageLoadError";
+  Sentry.captureException(pageError);
 
       // Execute docs & copy operations with child HTTP calls while real pageload root span is active.
       await siteOperation("site.docs.open", async () => {
-        Sentry.captureException(new Error("docs-err " + sentinel));
+    Sentry.captureException(new TypeError("open Handbook: docs link missing"));
         await fetch("/INIT.md?secret=" + sentinel);
       });
 
@@ -76,21 +77,24 @@ if (mode === "off") {
       // Direct static route fetch under pageload.
       await fetch("/blog?secret=" + sentinel);
 
-      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const firstStarted = Promise.withResolvers();
+      const secondCompleted = Promise.withResolvers();
       const first = siteOperation("site.docs.open", async context => {
         overlap.actions.first = Sentry.getActiveSpan().spanContext().spanId;
-        await delay(10);
+        await Promise.resolve();
         const request = () => fetch("/INIT.md?overlap=first");
+        firstStarted.resolve();
         await (await (context ? context.run(request) : request())).text();
-        await delay(100);
+        await secondCompleted.promise;
         overlap.completed.push("first");
       });
       const second = siteOperation("site.install_guide.copy", async context => {
         overlap.actions.second = Sentry.getActiveSpan().spanContext().spanId;
-        await delay(40);
+        await firstStarted.promise;
         const request = () => fetch("/INIT.md?overlap=second");
         await (await (context ? context.run(request) : request())).text();
         overlap.completed.push("second");
+        secondCompleted.resolve();
       });
       await Promise.all([first, second]);
       overlap.after = Sentry.getActiveSpan()?.spanContext().spanId;
@@ -107,7 +111,7 @@ if (mode === "off") {
       // Wait for pageload idle span to finish, then trigger an unhandled error outside any active span.
       await new Promise((resolve) => setTimeout(resolve, 1300));
       setTimeout(() => {
-        throw new Error("unhandled " + sentinel);
+        throw new RangeError("render Handbook: section out of range");
       }, 0);
       await new Promise((resolve) => setTimeout(resolve, 150));
       await Sentry.flush(3000);
@@ -244,6 +248,17 @@ if (!verifyMode) {
     const items = state.envelopes.flatMap((e) => e[1]);
     const spans = items.filter(([h]) => h.type === "span").flatMap(([, b]) => b.items);
     const events = items.filter(([h]) => h.type === "event").map(([, payload]) => payload);
+    const exceptions = events.flatMap((event) => event.exception?.values ?? []);
+    const pageError = exceptions.find((value) => value.type === "PageLoadError");
+    assert.equal(pageError?.value, "load Handbook: request failed with Bearer [Filtered]");
+    assert.ok(pageError.stacktrace.frames.some(({ filename, lineno }) => filename && lineno > 0));
+    assert.ok(
+      exceptions.some(({ type, value }) => type === "TypeError" && value === "open Handbook: docs link missing"),
+    );
+    assert.ok(
+      exceptions.some(({ type, value }) => type === "RangeError" && value === "render Handbook: section out of range"),
+    );
+    assert.ok(events.some((event) => event.contexts?.manifest?.edition === "Handbook 2"));
 
     const pageload = spans.find((s) => s.attributes["sentry.op"]?.value === "pageload");
     assert.ok(pageload, "real browser pageload span missing");

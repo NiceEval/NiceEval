@@ -29,10 +29,10 @@ if (!off) {
   async handled() {
    Sentry.getGlobalScope().setAttributes({private:sentinel});
    Sentry.getIsolationScope().setAttributes({isolation:sentinel});
-   Sentry.withScope(scope=>{scope.setAttributes({current:sentinel});Sentry.captureException(new Error(sentinel));});
+   Sentry.withScope(scope=>{scope.setAttributes({current:sentinel});Sentry.captureException(new Error("handled fixture error"));});
    await Sentry.flush(2000);
   },
-  unhandled() { setTimeout(function unhandledTest(){throw new Error(sentinel)},0); },
+  unhandled() { setTimeout(function unhandledTest(){throw new Error("unhandled fixture error")},0); },
   async telemetry() {
    await Sentry.withScope(async scope=>{
     scope.setAttributes({scope:sentinel});

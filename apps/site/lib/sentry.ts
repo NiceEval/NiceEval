@@ -1,7 +1,8 @@
-import { getActiveSpan, spanToJSON, type BrowserOptions, type ErrorEvent } from "@sentry/nextjs";
+import { getActiveSpan, getRootSpan, spanToJSON, type BrowserOptions, type ErrorEvent } from "@sentry/nextjs";
 import { cleanProfileChunk, telemetryId, type ProfileManifest } from "./sentry-profile";
 import { siteOperations, siteRouteOperations } from "./sentry-operations";
 import { cleanLog, cleanMetric, cleanSession, cleanClientReport } from "./sentry-quality";
+import { errorHttpStatus, filterErrorCredentials, httpStatus, isRequestAbort } from "./sentry-error";
 type StreamedSpanJSON = Parameters<NonNullable<BrowserOptions["beforeSendSpan"]>>[0];
 
 export { siteOperations, siteRouteOperations } from "./sentry-operations";
@@ -89,38 +90,6 @@ function staticRouteOperation(span: StreamedSpanJSON, op: string): string | unde
   return typeof rawTarget === "string" ? resolveRouteTarget(rawTarget, false) : undefined;
 }
 
-const mechanismTypes = new Set([
-  "generic",
-  "onerror",
-  "onunhandledrejection",
-  "instrument",
-  "chained",
-  "auto.browser.global_handlers.onerror",
-  "auto.browser.global_handlers.onunhandledrejection",
-  "auto.browser.browserapierrors.addEventListener",
-  "auto.browser.browserapierrors.handleEvent",
-  "auto.browser.browserapierrors.requestAnimationFrame",
-  "auto.function.react.error_boundary",
-  "auto.node.onuncaughtexception",
-  "auto.node.onunhandledrejection",
-  "auto.node.worker_threads",
-  ...[
-    "data_fetcher",
-    "generation_function",
-    "on_request_error",
-    "page_class",
-    "page_function",
-    "route_handler",
-    "server_action",
-    "server_component",
-    "underscore_error",
-    "wrap_api_handler",
-    "wrap_middleware",
-    "wrapped",
-  ].map((name) => `auto.function.nextjs.${name}`),
-  "auto.http.nextjs.api_handler",
-]);
-
 function configText(value: string | undefined): string {
   return value && /^[a-zA-Z0-9_@./:-]{1,160}$/.test(value) ? value : "";
 }
@@ -129,37 +98,10 @@ export function productionEnabled(nodeEnvironment: string | undefined, vercelEnv
   return nodeEnvironment === "production" && (!vercelEnvironment || vercelEnvironment === "production");
 }
 
-function origin(url: string | undefined) {
-  try {
-    return url ? new URL(url).origin : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function codeLocation(value: string | undefined) {
-  if (!value) return undefined;
-  // Preserve code locations, never URL credentials, query parameters or fragments.
-  try {
-    const url = new URL(value);
-    return `${url.protocol}//${url.host}${url.pathname}`;
-  } catch {
-    return value.split(/[?#]/, 1)[0];
-  }
-}
-
-function debugId(value: string | undefined) {
-  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : undefined;
-}
-
-function staticCodeLocation(value: string | undefined) {
-  const location = codeLocation(value);
-  return location && /\.(?:[cm]?js|[jt]sx?|wasm)$/i.test(location) ? location : undefined;
-}
-
 export function sentryOptions(dsn: string, environment?: string, release?: string, profile?: ProfilePolicy) {
   const safeEnvironment = configText(environment) || "production";
   const safeRelease = configText(release);
+  const filterCredentials = filterErrorCredentials(dsn);
   return {
     dsn,
     environment: safeEnvironment,
@@ -192,91 +134,74 @@ export function sentryOptions(dsn: string, environment?: string, release?: strin
       frameContextLines: 0,
     },
     initialScope: { tags: { component: "site" } },
-    beforeSend(event: ErrorEvent): ErrorEvent {
+    beforeSend(event: ErrorEvent, hint?: Parameters<NonNullable<BrowserOptions["beforeSend"]>>[1]): ErrorEvent | null {
       const trace = event.contexts?.trace;
       const activeSpan = getActiveSpan();
-      const spanJson =
-        activeSpan && activeSpan.spanContext().spanId === trace?.span_id
-          ? (spanToJSON(activeSpan) as {
-              op?: unknown;
-              data?: Record<string, unknown>;
-              attributes?: Record<string, unknown>;
-            })
-          : undefined;
-      const activeSpanOp = spanJson?.op ?? spanJson?.attributes?.["sentry.op"] ?? spanJson?.data?.["sentry.op"];
-      const rawTraceOp = trace?.op ?? activeSpanOp;
-      const safeTraceOp =
-        typeof rawTraceOp === "string" && operations.has(rawTraceOp)
-          ? rawTraceOp
-          : rawTraceOp !== undefined
-            ? "function"
-            : undefined;
-      return {
-        type: undefined,
-        event_id: event.event_id,
-        timestamp: event.timestamp,
-        platform: event.platform,
-        level: event.level,
+      const span = activeSpan?.spanContext().spanId === trace?.span_id ? activeSpan : undefined;
+      const spanJson = span && spanToJSON(span);
+      const rootData = span && spanToJSON(getRootSpan(span)).attributes;
+      const rawTraceOp = trace?.op ?? spanJson?.attributes["sentry.op"];
+      const traceOp = typeof rawTraceOp === "string" && operations.has(rawTraceOp) ? rawTraceOp : "function";
+
+      const next = event.contexts?.nextjs;
+      const mechanism = event.exception?.values?.find(({ mechanism }) => mechanism?.handled === false)?.mechanism?.type;
+      const fromRouteHandler = mechanism === "auto.function.nextjs.route_handler";
+      const fromServerComponent = mechanism === "auto.function.nextjs.server_component";
+      // The SDK can capture from these wrappers before Next calls onRequestError.
+      const handlerTransaction = fromRouteHandler ? /^(\S+) (\/.*)$/.exec(event.transaction ?? "") : undefined;
+      const componentRoute = fromServerComponent
+        ? / Server Component \((\/.*)\)$/.exec(event.transaction ?? "")
+        : undefined;
+      const route =
+        event.tags?.route ??
+        next?.router_path ??
+        handlerTransaction?.[2] ??
+        componentRoute?.[1] ??
+        rootData?.["http.route"] ??
+        rootData?.["next.route"];
+      const method =
+        event.tags?.["http.method"] ??
+        event.request?.method ??
+        handlerTransaction?.[1] ??
+        rootData?.["http.request.method"] ??
+        rootData?.["http.method"];
+      const status = httpStatus(
+        event.tags?.["http.status_code"],
+        event.contexts?.response?.status_code,
+        rootData?.["http.response.status_code"],
+        rootData?.["http.status_code"],
+        errorHttpStatus(hint?.originalException),
+        next?.route_type || fromRouteHandler || fromServerComponent ? 500 : undefined,
+      );
+      if (
+        (status !== undefined && status >= 400 && status < 500) ||
+        isRequestAbort(event.exception?.values?.at(-1)?.type)
+      )
+        return null;
+
+      const operation = spanJson?.name;
+      const { trace: _trace, ...contexts } = event.contexts ?? {};
+      return filterCredentials({
+        ...event,
         environment: safeEnvironment,
         release: safeRelease,
-        tags: { component: "site" },
-        debug_meta: {
-          images: event.debug_meta?.images?.flatMap((image) => {
-            const id = debugId(image.debug_id);
-            const file = image.type === "sourcemap" ? staticCodeLocation(image.code_file) : undefined;
-            return id && file ? [{ type: "sourcemap" as const, debug_id: id, code_file: file }] : [];
-          }),
+        tags: {
+          ...event.tags,
+          component: "site",
+          ...(typeof route === "string" && route ? { route } : {}),
+          ...(typeof method === "string" && method ? { "http.method": method } : {}),
+          ...(status !== undefined ? { "http.status_code": status } : {}),
+          ...(typeof operation === "string" && siteOperations.has(operation)
+            ? { operation: event.tags?.operation ?? operation }
+            : {}),
         },
-        ...(event.request?.url && origin(event.request.url) ? { request: { url: origin(event.request.url) } } : {}),
-        contexts:
-          trace && telemetryId(trace.trace_id) && telemetryId(trace.span_id, 16)
-            ? {
-                trace: {
-                  trace_id: trace.trace_id,
-                  span_id: trace.span_id,
-                  ...(telemetryId(trace.parent_span_id, 16) ? { parent_span_id: trace.parent_span_id } : {}),
-                  ...(safeTraceOp ? { op: safeTraceOp } : {}),
-                },
-              }
-            : {},
-        exception: {
-          values: event.exception?.values?.map((exception) => ({
-            type:
-              exception.type &&
-              /^(Error|TypeError|RangeError|ReferenceError|SyntaxError|URIError|EvalError|AggregateError)$/.test(
-                exception.type,
-              )
-                ? exception.type
-                : "Error",
-            value: "Application error",
-            ...(exception.mechanism
-              ? {
-                  mechanism: {
-                    type: mechanismTypes.has(exception.mechanism.type) ? exception.mechanism.type : "generic",
-                    ...(typeof exception.mechanism.handled === "boolean"
-                      ? { handled: exception.mechanism.handled }
-                      : {}),
-                    ...(typeof exception.mechanism.is_exception_group === "boolean"
-                      ? { is_exception_group: exception.mechanism.is_exception_group }
-                      : {}),
-                  },
-                }
-              : {}),
-            stacktrace: {
-              frames: exception.stacktrace?.frames?.map((frame) => ({
-                filename: codeLocation(frame.filename),
-                abs_path: staticCodeLocation(frame.abs_path),
-                debug_id: debugId(frame.debug_id),
-                function: frame.function,
-                module: frame.module,
-                lineno: frame.lineno,
-                colno: frame.colno,
-                in_app: frame.in_app,
-              })),
-            },
-          })),
+        contexts: {
+          ...contexts,
+          ...(trace && telemetryId(trace.trace_id) && telemetryId(trace.span_id, 16)
+            ? { trace: { ...trace, ...(rawTraceOp !== undefined ? { op: traceOp } : {}) } }
+            : {}),
         },
-      };
+      });
     },
     beforeSendSpan(span: StreamedSpanJSON): StreamedSpanJSON {
       const op =
@@ -390,7 +315,8 @@ export function sanitizeEnvelope(
         if (chunk && header.platform === chunk.platform)
           result.push([{ type: "profile_chunk", platform: chunk.platform }, chunk] as never);
       } else if (header.type === "event" && raw && typeof raw === "object") {
-        result.push([{ type: "event" }, options.beforeSend(raw as ErrorEvent)] as never);
+        const event = options.beforeSend(raw as ErrorEvent);
+        if (event) result.push([{ type: "event" }, event] as never);
       } else if (
         header.type === "span" &&
         raw &&

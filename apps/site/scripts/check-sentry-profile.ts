@@ -63,7 +63,7 @@ function busy() {
   while (performance.now() < deadline) Math.sqrt(Math.random());
 }
 try {
-  const error = new Error(sentinel);
+  const error = new Error("copy install instructions failed");
   const abort = new DOMException(sentinel, "AbortError");
   await Sentry.withIsolationScope(async () => {
     await Sentry.startSpan({ name: "site.page.load", op: "pageload" }, async () => {
