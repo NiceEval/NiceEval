@@ -12,13 +12,8 @@ case "$mode" in
     trap 'rm -rf "$stage"' EXIT
     mkdir "$stage/bin"
     cp -L "$(command -v node)" "$stage/bin/node"
+    # pnpm/setup installs the self-contained pnpm 12 executable.
     cp -L "$(command -v pnpm)" "$stage/bin/pnpm"
-    # pnpm/setup links dist to the producer's tool cache. Materialize the
-    # tree: preserving that absolute link passes capture on this runner but
-    # leaves the archive unusable on another runner or inside a container.
-    cp -RL "${PNPM_HOME:?expected pnpm/setup installation}/dist" "$stage/bin/dist"
-    test ! -L "$stage/bin/dist"
-    test -f "$stage/bin/dist/pnpm.mjs"
     cp -R "${CONCORD_PACKAGE_ROOT:?expected installed Concord package}" "$stage/concord"
     if [[ -f "$stage/concord/bin/concord" ]]; then
       ln -s ../concord/bin/concord "$stage/bin/concord"
