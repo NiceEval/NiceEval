@@ -7,7 +7,6 @@ import { NodeCliOutputLive } from "./node-application.ts";
 // @feature docs/feature/experiments/README.md
 test("output streams handle asynchronous EPIPE after the write returns", async () => {
   for (const stream of ["stdout", "stderr"] as const) {
-    const output = await Effect.runPromise(CliOutput.pipe(Effect.provide(NodeCliOutputLive)));
     const writable = new Writable({
       write(_chunk, _encoding, callback) {
         callback(Object.assign(new Error("closed"), { code: "EPIPE" }));
@@ -16,6 +15,7 @@ test("output streams handle asynchronous EPIPE after the write returns", async (
     const closed = new Promise<void>((resolve) => writable.once("close", resolve));
     const getter = vi.spyOn(process, stream, "get").mockReturnValue(writable as typeof process.stdout);
     try {
+      const output = Effect.runSync(CliOutput.pipe(Effect.provide(NodeCliOutputLive)));
       (stream === "stdout" ? output.writeStdoutSync : output.writeStderrSync)("one");
     } finally {
       getter.mockRestore();

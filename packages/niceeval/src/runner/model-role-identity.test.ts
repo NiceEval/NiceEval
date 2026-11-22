@@ -604,7 +604,7 @@ function pairFor(input: (typeof selections)[keyof typeof selections]) {
     evalGroup: undefined,
   });
   attachEvalModules(evalDef, {
-    root: path,
+    root: resolve("."),
     entry: path,
     modules: [
       {

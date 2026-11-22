@@ -78,10 +78,10 @@ describe("fresh project imports", () => {
       if (prepared.status !== "ready") return;
       expect(prepared.selected.evals).toHaveLength(1);
       expect(prepared.runs).toHaveLength(1);
-      const evalDefinition = prepared.selected.evals[0]!;
+      const definition = prepared.selected.evals[0]!.definition;
       const adapter = prepared.runs[0]!.adapter;
-      expect((evalDefinition.test as typeof evalDefinition.test & { helper: object }).helper).toBe(adapter);
-      expect(adapterAcceptsEval(adapter, evalDefinition.definition)).toBe(true);
+      expect(Reflect.get(definition.test, "helper")).toBe(adapter);
+      expect(adapterAcceptsEval(adapter, definition)).toBe(true);
     } finally {
       Reflect.deleteProperty(globalThis, factoriesKey);
       rmSync(root, { recursive: true, force: true });
