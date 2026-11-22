@@ -20,6 +20,11 @@ const otherOrders = fc
   .shuffledSubarray([...volumeKinds], { minLength: 3, maxLength: 3 })
   .filter((order) => order.some((kind, index) => kind !== volumeKinds[index]));
 const mountOrders = [volumeKinds, ...fc.sample(otherOrders, { seed: 260_602, numRuns: 1 })];
+const cleanupExamples = [
+  ...mountOrders.map((mountOrder) => ({ mountOrder, dependency: false })),
+  // Three dependency levels exhaust cleanup and its retry if each gets its own stop grace.
+  { mountOrder: volumeKinds, dependency: true },
+];
 
 beforeAll(async () => {
   const local = await execa("docker", ["image", "inspect", image], { reject: false });
@@ -76,9 +81,9 @@ async function composeProjectName(container: string) {
   return stdout;
 }
 
-describe.for(mountOrders.map((mountOrder) => ({ mountOrder })))(
-  "Compose resources mounted in order $mountOrder",
-  ({ mountOrder }) => {
+describe.for(cleanupExamples)(
+  "Compose resources mounted in order $mountOrder, dependency $dependency",
+  ({ mountOrder, dependency }) => {
     const id = `niceeval-compose-${randomUUID()}`;
     const externalVolume = `${id}-external`;
     const filter = `label=niceeval.test-case=${id}`;
@@ -109,11 +114,13 @@ describe.for(mountOrders.map((mountOrder) => ({ mountOrder })))(
   client:
     image: ${image}
     command: ["sleep", "120"]
+${dependency ? "    depends_on: [dependency]\n" : ""}
     working_dir: /workspace
     labels:
       niceeval.test-case: ${id}
     volumes:
 ${mountOrder.map((kind) => `      - ${mounts[kind]}`).join("\n")}
+${dependency ? `  dependency:\n    image: ${image}\n    command: ["sleep", "120"]\n    depends_on: [leaf]\n  leaf:\n    image: ${image}\n    command: ["sleep", "120"]\n` : ""}
 volumes:
   owned: {}
   external:
@@ -156,13 +163,19 @@ export default defineExperiment({
       const container = containers[0]!;
       projectName = await composeProjectName(container);
       const { stdout: mountNames } = await execa("docker", [
-        "inspect", "-f", "{{range .Mounts}}{{println .Destination .Name}}{{end}}", container,
+        "inspect",
+        "-f",
+        "{{range .Mounts}}{{println .Destination .Name}}{{end}}",
+        container,
       ]);
       const volumes = new Map(
-        mountNames.trim().split("\n").map((line) => {
-          const [destination, name] = line.split(" ");
-          return [destination, name];
-        }),
+        mountNames
+          .trim()
+          .split("\n")
+          .map((line) => {
+            const [destination, name] = line.split(" ");
+            return [destination, name];
+          }),
       );
       anonymousVolume = volumes.get("/anonymous");
       expect(volumes.get("/external")).toBe(externalVolume);

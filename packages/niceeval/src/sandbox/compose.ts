@@ -1256,7 +1256,8 @@ export function materializeDockerComposeProviderCase(
 
     // Attempt 的前向 signal 到这里往往已经 timeout/abort。收尾必须拿一条新的、独立且有界的
     // signal；复用 opts.ctx.signal 会让 runDockerCompose 在真正执行 down 前立刻抛错，整组资源
-    // 原地变孤儿。--timeout 给服务 5s 优雅退出，剩余 1.5s 留给 CLI 与网络/volume 删除；
+    // 原地变孤儿。Compose 的 --timeout 按容器而非整组计时，依赖链会串行累加等待。
+    // 回收时直接终止服务，把预算留给容器、网络与 volume 的删除；
     // runDockerCompose 再给 TERM 1s KILL grace，总上界 7.5s，严格短于 runner 的 8s 看门狗。
     const composeDown = () =>
       runCompose(
@@ -1266,7 +1267,7 @@ export function materializeDockerComposeProviderCase(
           ...composeFileArgs(composeFiles),
           "down",
           "--timeout",
-          "5",
+          "0",
           "--volumes",
           "--remove-orphans",
         ],
