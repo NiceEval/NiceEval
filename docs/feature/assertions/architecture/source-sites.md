@@ -72,6 +72,11 @@ type AssertionsAttachment = {
 
 ## Sources 内容与跨 family 边界
 
+Run-owned Sources 是只追加的扁平 manifest，item 按 `(path, sha256)` 唯一。同 path 的不同内容保留为不同
+`sourceItemId`，已有 item 的内容、摘要与引用不变。每个 Attempt 发布前，先提交它在 eval entry 与 action boundary
+捕获的新 item；可见 Attempt 的 source-site 引用必须已经可读。Run 收尾 seal 包含所有已追加 item。
+reader 继续接受旧的扁平 manifest，不更改 Record 格式。
+
 Sources family 拥有 `sourceItemId`、path、byteLength、sha256 与 content blob；`sourceItemId` 不是 path、digest、数组下标或 blob key 的函数。Assertions row 只能引用 item identity 与 digest，不能取得或借用 Sources blob capability。
 
 因此 Assertion source site 需要两种已验证 family value：Assertions 提供 entry 与位置 join，Sources 提供用于展示的 origin snapshot。物理 send navigation 由 Turn Contexts、Runner Activities 与同一 exact Sources manifest 形成 reader-side relation。这些 family 不复制彼此的 result、turn、duration 或 blob capability。

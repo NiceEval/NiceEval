@@ -10,6 +10,7 @@ import {
 } from "./database.ts";
 import {
   appendContentChunks,
+  appendRunSources,
   admitAttachment,
   admitAttempt,
   admitContent,
@@ -122,6 +123,7 @@ function isWorkerMutation(request: StorageWorkerRequest): boolean {
     case "begin-run":
     case "admit-attempt":
     case "discard-attempt":
+    case "append-run-sources":
     case "admit-attachment":
     case "admit-content":
     case "finalize-run":
@@ -334,6 +336,9 @@ if (!isMainThread && parentPort !== null) {
         return undefined;
       case "discard-attempt":
         discardAttempt(requireConnection(), request.input);
+        return undefined;
+      case "append-run-sources":
+        appendRunSources(requireConnection(), request.input);
         return undefined;
       case "admit-attachment":
         admitAttachment(requireConnection(), request.input);

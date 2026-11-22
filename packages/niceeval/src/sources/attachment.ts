@@ -124,7 +124,7 @@ export function createSourcesAttachment(
   canonical.sort((left, right) => left.sourceItemId.localeCompare(right.sourceItemId));
   if (
     new Set(canonical.map((item) => item.sourceItemId)).size !== canonical.length ||
-    new Set(canonical.map((item) => item.path)).size !== canonical.length
+    new Set(canonical.map((item) => JSON.stringify([item.path, item.sha256]))).size !== canonical.length
   ) {
     return Result.fail(sourcesInputInvalid);
   }

@@ -295,3 +295,9 @@ Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Atte
 `attempt.get` 成功 document 的 `attempt.sandboxState` 与 `run.get` 的 `run.value.sandboxState` 使用 [State 结果形状](../state/library.md#结果形状)，共享 `niceeval/run` 的严格 Schema。
 Inspection 以同一 PublicationCutoff 读取 Attempt context 与所有 State execution；不能只保留 lineage 最后一代，也不访问 operational checkpoint。
 固定 Run 的 portable 读取只依赖封存事实；缺失为 unavailable，不补 fresh、零次写入或成功保存。
+
+### 运行中的来源读取
+
+`attempt.sources` 沿 exact origin Run 的 Sources manifest 解析 `sourceItemId` 与 sha256。
+Run 内来源按 `(path, sha256)` 去重，同 path 的不同快照都保留，并通过 Attempt 的 source-site 引用区分。
+读取只使用已持久化的来源，不依赖 Run 结束或当前 worktree；旧的 Run-owned 扁平 manifest 继续可读。

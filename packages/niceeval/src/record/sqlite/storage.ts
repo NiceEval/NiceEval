@@ -12,6 +12,7 @@ import {
 import { encodeRecordJsonUtf8 } from "../writer/limits.ts";
 import {
   ATTACHMENT_INVENTORY_HANDLE,
+  ATTACHMENT_PAYLOAD_HANDLE,
   COLLECTION_ITEM_CONTENT_PREFIX,
   attachmentInventoryPointerBytes,
   collectionItemContentHandle,
@@ -56,6 +57,7 @@ import {
   type AdmitContentInput,
   type AttemptLocatorCandidates,
   type AppendContentChunksInput,
+  type AppendRunSourcesInput,
   type BeginRunInput,
   type ContentChunkPage,
   type DiscardAttemptInput,
@@ -1186,6 +1188,95 @@ export function admitAttachment(connection: RecordDatabase, input: AdmitAttachme
   });
 }
 
+/** Install a Sources manifest and its newly staged Content together, before Attempt publication. */
+export function appendRunSources(connection: RecordDatabase, input: AppendRunSourcesInput): void {
+  const { attachment } = input;
+  const targetId = recordAttachmentId({
+    runId: input.runId,
+    owner: "run",
+    attemptId: undefined,
+    family: "niceeval.sources",
+  });
+  const stagingId = recordAttachmentId({
+    runId: input.runId,
+    owner: "attempt",
+    attemptId: input.attemptId,
+    family: "niceeval.sources",
+  });
+  if (attachment.attachmentId !== targetId || input.stagingAttachmentId !== stagingId)
+    throw sqliteError("record-command-conflict", "append-run-sources", "Sources owner admission differs");
+  requireBytesDigest(attachment.canonicalBytes, attachment.canonicalDigest, "Sources manifest");
+  requireAttachmentInventory(
+    attachment.logicalInventoryBytes,
+    attachment.inventoryDigest,
+    attachment.contents.find(({ logicalHandle }) => logicalHandle === ATTACHMENT_INVENTORY_HANDLE),
+  );
+  assertBoundedBatch(
+    "append-run-sources",
+    2,
+    attachment.canonicalBytes.byteLength + attachment.logicalInventoryBytes.byteLength,
+  );
+  withImmediateTransaction(connection, input.deadlineEpochMs, "append-run-sources", () => {
+    assertRunFence(connection, input.runId, input.writerGeneration, "append-run-sources");
+    const attempt = recordStatement(
+      connection,
+      "SELECT publication_state FROM ne19_attempts WHERE origin_run_id=? AND attempt_id=?",
+    ).get(input.runId, input.attemptId);
+    const previous = recordStatement(
+      connection,
+      "SELECT logical_identity FROM ne19_attachments WHERE attachment_id=?",
+    ).get(targetId);
+    if (
+      attempt === undefined ||
+      text(attempt, "publication_state") !== "staging" ||
+      previous === undefined ||
+      optionalText(previous, "logical_identity") !== input.expectedLogicalIdentity
+    )
+      throw sqliteError("record-command-conflict", "append-run-sources", "Sources append generation changed");
+    // Only host transport metadata is replaced. Source item Content is immutable.
+    recordStatement(connection, "DELETE FROM ne19_contents WHERE attachment_id=? AND logical_handle IN (?,?)").run(
+      targetId,
+      ATTACHMENT_PAYLOAD_HANDLE,
+      ATTACHMENT_INVENTORY_HANDLE,
+    );
+    const staged = recordStatement(
+      connection,
+      "SELECT content_id,logical_handle,byte_length,overall_digest,chunk_count FROM ne19_contents WHERE attachment_id=?",
+    ).all(stagingId);
+    for (const content of staged) {
+      const id = recordContentId(targetId, text(content, "logical_handle"));
+      recordStatement(
+        connection,
+        "INSERT INTO ne19_contents(content_id,attachment_id,logical_handle,byte_length,overall_digest,chunk_count) VALUES (?,?,?,?,?,?)",
+      ).run(
+        id,
+        targetId,
+        text(content, "logical_handle"),
+        integer(content, "byte_length"),
+        text(content, "overall_digest"),
+        integer(content, "chunk_count"),
+      );
+      recordStatement(connection, "UPDATE ne19_content_chunks SET content_id=? WHERE content_id=?").run(
+        id,
+        text(content, "content_id"),
+      );
+    }
+    recordStatement(
+      connection,
+      `UPDATE ne19_attachments SET logical_identity=?,canonical_payload=?,canonical_digest=?,logical_inventory=?,inventory_digest=? WHERE attachment_id=?`,
+    ).run(
+      attachment.logicalIdentity,
+      attachment.canonicalBytes,
+      attachment.canonicalDigest,
+      attachment.logicalInventoryBytes,
+      attachment.inventoryDigest,
+      targetId,
+    );
+    recordStatement(connection, "DELETE FROM ne19_attachments WHERE attachment_id=?").run(stagingId);
+    bumpMutationSequence(connection, input.runId);
+  });
+}
+
 export function admitContent(connection: RecordDatabase, input: AdmitContentInput): void {
   requireIdentity(input.contentId, "contentId");
   requireIdentity(input.logicalHandle, "logicalHandle");
@@ -1845,7 +1936,9 @@ function stageRunMetadata(connection: RecordDatabase, input: StageRunCoreInput, 
     connection,
     `
     UPDATE ne19_attachments SET logical_identity=?,canonical_payload=?,canonical_digest=?,logical_inventory=?,inventory_digest=?
-    WHERE attachment_id=? AND owner_run_id=? AND NOT (owner_kind='attempt' AND EXISTS
+    WHERE attachment_id=? AND owner_run_id=?
+      AND NOT (family='niceeval.sources' AND owner_kind='run' AND logical_identity IS NOT NULL)
+      AND NOT (owner_kind='attempt' AND EXISTS
       (SELECT 1 FROM ne19_attempts WHERE origin_run_id=ne19_attachments.owner_run_id
         AND attempt_id=ne19_attachments.owner_attempt_id AND publication_state='published'))`,
   );

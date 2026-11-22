@@ -43,6 +43,10 @@ RecordAttachment 只能由固定 query operation 或 View 读取。
 这些 source 与 `niceeval.assertions`、`niceeval.file-changes`、`niceeval.sources`、`niceeval.artifacts` 共同组成
 Record 的 fixed catalog；各自 owner 由 catalog 声明。
 
+`niceeval.sources` 由 Run 拥有，只追加亲历的源码快照。每次 Attempt 发布前，其引用的新增 source item 必须先持久化；
+因此运行中读取和崩溃恢复都能得到完整来源。已有 item 不覆盖，Run seal 收录全部已追加 item。
+这项采集顺序不参与 Eval 身份计算，不改变 identity manifests 或任何身份摘要。
+
 一个 capture authority 只能保存自己亲历且有权解释的事实。reference Member 沿精确 origin Attempt 读取，
 不复制 source payload。conversation、usage、commands、timing、diagnostics 与 source navigation 都是读侧投影，
 不占 durable catalog entry。

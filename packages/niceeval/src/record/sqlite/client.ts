@@ -6,6 +6,7 @@ import { RunStorageError } from "../../run/storage/errors.ts";
 import { recordSqlitePath } from "./database.ts";
 import type {
   AppendContentChunksInput,
+  AppendRunSourcesInput,
   AdmitAttachmentInput,
   AdmitAttemptInput,
   AdmitContentInput,
@@ -41,6 +42,7 @@ import {
 import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
 
 export interface StorageWorkerClient {
+  readonly appendRunSources: (input: AppendRunSourcesInput) => Promise<void>;
   readonly persistSealedRun: (input: PersistSealedRunInput) => Promise<SealedRunSummary>;
   readonly beginRun: (input: BeginRunInput) => Promise<void>;
   readonly admitAttempt: (input: AdmitAttemptInput) => Promise<void>;
@@ -253,6 +255,9 @@ export async function makeStorageWorkerClient(
     },
     discardAttempt: async (input: DiscardAttemptInput) => {
       await request<undefined>({ operation: "discard-attempt", input });
+    },
+    appendRunSources: async (input: AppendRunSourcesInput) => {
+      await request<undefined>({ operation: "append-run-sources", input });
     },
     admitAttachment: async (input: AdmitAttachmentInput) => {
       await request<undefined>({ operation: "admit-attachment", input });

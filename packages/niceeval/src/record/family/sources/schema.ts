@@ -41,7 +41,7 @@ export function validateSourcesAttachment(value: SourcesAttachment): readonly Re
   if (!isCanonicalIdentitySequence(value.items.map((item) => item.sourceItemId))) {
     issues.push(invalid(["items", "sourceItemId"]));
   }
-  if (new Set(value.items.map((item) => item.path)).size !== value.items.length) {
+  if (new Set(value.items.map((item) => JSON.stringify([item.path, item.sha256]))).size !== value.items.length) {
     issues.push(invalid(["items", "path"]));
   }
   return issues;

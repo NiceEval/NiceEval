@@ -61,6 +61,8 @@ import {
   recordIssue,
   type NonEmptyRecordIssues,
 } from "../errors/record-errors.ts";
+import { sourcesRecordAttachment } from "../family/sources/definition.ts";
+import type { SourcesAttachmentBuild } from "../../sources/attachment.ts";
 import { NiceEvalRecordAttachmentPersistences } from "../family/catalog.ts";
 import {
   attemptRecordAppendCommandRuntime,
@@ -691,6 +693,131 @@ export function writerGenerationForRunSession(session: RunWriteSession | Referen
   return runSessions.get(session)?.writerGeneration;
 }
 
+interface SourcesAppendState {
+  readonly items: readonly Record<string, unknown>[];
+  readonly contents: readonly PersistedContentMetadata[];
+}
+const sourcesAppendState = new WeakMap<RunRuntime, SourcesAppendState>();
+
+/** Package-private Sources append. Ordinary attachment writers remain write-once. */
+export function appendRunSourcesBeforeAttempt(
+  session: RunWriteSession,
+  attemptSession: AttemptWriteSession,
+  value: SourcesAttachmentBuild,
+): Effect.Effect<void, RecordWriteError> {
+  const run = runSessions.get(session);
+  const attempt = attemptSessions.get(attemptSession);
+  if (run === undefined || attempt === undefined || attempt.run !== run) return Effect.fail(recordWriterClosed());
+  return run.lock
+    .withPermits(1)(
+      Effect.gen(function* () {
+        yield* assertRunOpen(run);
+        if (attempt.state !== "open") return yield* Effect.fail(recordWriterClosed());
+        const persistence = resolvePersistence(run.catalog, sourcesRecordAttachment, "run");
+        if (Result.isFailure(persistence)) return yield* Effect.fail(persistence.failure);
+        const prepared = yield* prepareStreamingRecordAttachment({ definition: sourcesRecordAttachment, value });
+        const incoming = JSON.parse(new TextDecoder().decode(prepared.payloadBytes))["items-data"] as Record<
+          string,
+          unknown
+        >[];
+        const previous = sourcesAppendState.get(run);
+        if (previous === undefined && run.families.has(sourcesRecordAttachment.family))
+          return yield* Effect.fail(recordAlreadyWritten({ owner: "run", family: sourcesRecordAttachment.family }));
+        const items = [...(previous?.items ?? [])];
+        const known = new Map(items.map((item) => [JSON.stringify([item.path, item.sha256]), item]));
+        const additions: {
+          readonly item: Record<string, unknown>;
+          readonly source: (typeof prepared.contents)[number];
+        }[] = [];
+        for (const item of incoming) {
+          const old = known.get(JSON.stringify([item.path, item.sha256]));
+          if (old !== undefined) {
+            if (old.sourceItemId !== item.sourceItemId) return yield* Effect.fail(coreInvalid());
+            continue;
+          }
+          if (items.some((old) => old.sourceItemId === item.sourceItemId)) return yield* Effect.fail(coreInvalid());
+          const oldHandle = (item.content as Record<string, string>)["$niceeval.record.content"];
+          const source = prepared.contents.find(({ logicalHandle }) => logicalHandle === oldHandle);
+          if (source === undefined) return yield* Effect.fail(coreInvalid());
+          const logicalHandle = `source-${String(item.sourceItemId)}`;
+          const next = { ...item, content: { "$niceeval.record.content": logicalHandle } };
+          items.push(next);
+          known.set(JSON.stringify([item.path, item.sha256]), next);
+          additions.push({
+            item: next,
+            source: { ...source, logicalHandle, key: Schema.decodeUnknownSync(RecordBlobKeySchema)(logicalHandle) },
+          });
+        }
+        if (additions.length === 0 && previous !== undefined) return;
+        const targetId = attachmentIdentity({ kind: "run", runId: run.runId }, sourcesRecordAttachment.family);
+        const stagingId = attachmentIdentity(
+          { kind: "attempt", runId: run.runId, attemptId: attempt.attemptId },
+          sourcesRecordAttachment.family,
+        );
+        for (const [attachmentId, ownerKind, ownerAttemptId] of [
+          [targetId, "run", undefined],
+          [stagingId, "attempt", attempt.attemptId],
+        ] as const)
+          yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) =>
+            run.client.admitAttachment({
+              runId: run.runId,
+              writerGeneration: run.writerGeneration,
+              attachmentId,
+              ownerKind,
+              ownerRunId: run.runId,
+              ownerAttemptId,
+              family: sourcesRecordAttachment.family,
+              familyRevision: persistence.success.revision,
+              deadlineEpochMs,
+            }),
+          );
+        const contents = [...(previous?.contents ?? [])];
+        for (const { source } of additions) {
+          const stagedContent = yield* processContent({ run, attachmentId: stagingId, source });
+          contents.push({ ...stagedContent, contentId: contentIdentity(targetId, stagedContent.logicalHandle) });
+        }
+        items.sort((a, b) => compareCanonicalIdentity(String(a.sourceItemId), String(b.sourceItemId)));
+        const payloadBytes = canonicalBytes({ "items-data": items }, RecordAttachmentCanonicalLimits);
+        if (payloadBytes === undefined) return yield* Effect.fail(coreInvalid());
+        const staged = yield* storeAttachmentMetadata({
+          run,
+          attachmentId: stagingId,
+          contentOwnerAttachmentId: targetId,
+          payloadBytes,
+          references: [],
+          contents,
+          collection: undefined,
+        });
+        const metadata = {
+          ...staged,
+          attachmentId: targetId,
+          logicalIdentity: attachmentLogicalIdentity(targetId, staged.canonicalDigest, staged.inventoryDigest),
+        };
+        yield* withWriteAdmission(run.coordination, run.root, (deadlineEpochMs) =>
+          run.client.appendRunSources({
+            runId: run.runId,
+            writerGeneration: run.writerGeneration,
+            attemptId: attempt.attemptId,
+            stagingAttachmentId: stagingId,
+            expectedLogicalIdentity: run.attachments.get(targetId)?.metadata.logicalIdentity,
+            attachment: metadata,
+            deadlineEpochMs,
+          }),
+        );
+        sourcesAppendState.set(run, { items, contents });
+        run.families.add(sourcesRecordAttachment.family);
+        run.attachments.set(targetId, {
+          metadata,
+          ownerKind: "run",
+          ownerAttemptId: undefined,
+          family: sourcesRecordAttachment.family,
+          revision: persistence.success.revision,
+        });
+      }),
+    )
+    .pipe(Effect.tapError((error) => Effect.sync(() => poison(run, error))));
+}
+
 export function discardAttemptWriteSession(session: AttemptWriteSession): Effect.Effect<void, RecordWriteError> {
   const attempt = attemptSessions.get(session);
   if (attempt === undefined) return Effect.fail(recordWriterClosed());
@@ -1115,6 +1242,7 @@ function processContent<Error, Requirements>(input: {
 
 function storeAttachmentMetadata(input: {
   readonly run: RunRuntime;
+  readonly contentOwnerAttachmentId?: string;
   readonly attachmentId: string;
   readonly payloadBytes: Uint8Array;
   readonly references: readonly PersistedAttachmentReference[];
@@ -1132,7 +1260,16 @@ function storeAttachmentMetadata(input: {
         maximumBytes: undefined,
         stream: Stream.succeed(bytes),
       },
-    });
+    }).pipe(
+      Effect.map((stored) =>
+        input.contentOwnerAttachmentId === undefined
+          ? stored
+          : {
+              ...stored,
+              contentId: contentIdentity(input.contentOwnerAttachmentId, logicalHandle),
+            },
+      ),
+    );
 
   return Effect.gen(function* () {
     let payloadBytes = input.payloadBytes;

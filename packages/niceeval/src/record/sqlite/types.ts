@@ -437,3 +437,14 @@ export interface SealedRunDocument {
   readonly members: readonly PersistedMember[];
   readonly attachments: readonly SealedAttachmentDocument[];
 }
+
+/** Host-private Sources append; staged Content belongs to an unpublished Attempt until this commit. */
+export interface AppendRunSourcesInput {
+  readonly runId: string;
+  readonly writerGeneration: string;
+  readonly attemptId: string;
+  readonly stagingAttachmentId: string;
+  readonly expectedLogicalIdentity: string | undefined;
+  readonly attachment: FinalizedAttachmentMetadata;
+  readonly deadlineEpochMs: number;
+}

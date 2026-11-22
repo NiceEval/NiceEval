@@ -21,6 +21,9 @@ Observability 的 durable facts 按 capture authority 分 family。Adapter、Ses
 改变 physical schema。unknown family rows 可以留在内部存储中；只有需要解释该 family 的读取才要求 definition。
 
 每个源码项（source item）都由稳定 identity 与内容摘要标识。
+Run-owned `niceeval.sources` 使用专用追加写入，普通 Attachment writer 的只写一次契约不变。
+新增来源与完整 manifest 在 Attempt publication 前提交，已有 item 不改写。
+同 path 同 sha256 去重；同 path 不同 sha256 的 item 同时保留，见 [source sites](../../assertions/architecture/source-sites.md)。
 
 ## 编码失败不吞掉 Attempt
 

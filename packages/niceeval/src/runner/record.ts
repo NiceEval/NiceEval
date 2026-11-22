@@ -11,7 +11,11 @@ import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import type { AssertionsProducerError } from "../assertions/record/producer.ts";
 import { NiceEvalRecordAttachments } from "../record/family/catalog.ts";
 import { recordHost } from "../record/host/runtime.ts";
-import { discardAttemptWriteSession, stagePlanningReference } from "../record/host/sqlite-host.ts";
+import {
+  appendRunSourcesBeforeAttempt,
+  discardAttemptWriteSession,
+  stagePlanningReference,
+} from "../record/host/sqlite-host.ts";
 import type { AttemptWriteSession, RecordSealReceipt, RunWriteSession } from "../record/host/types.ts";
 import { RecordEntropy } from "../record/platform/services.ts";
 import { RunIdSchema } from "../record/codec/identifiers.ts";
@@ -51,7 +55,6 @@ import {
 import {
   createRunnerTurnContextsAttachment,
   createRunnerSourceWritePlan,
-  type RunnerSourceOriginInput,
   type RunnerSourceProducerInvalid,
 } from "./source-producer.ts";
 import {
@@ -110,7 +113,6 @@ interface RunnerRecordRun extends PlannedRunnerRecordRun {
   readonly target: TargetRun;
   readonly attempts: Map<SlotId, ActiveRunnerRecordAttempt>;
   /** Run-owned source snapshots only; never retain an Attempt result or collector. */
-  readonly sourceOrigins: Map<SlotId, RunnerSourceOriginInput>;
   readonly planSlots: Map<SlotId, ExecutionReusePlanSlot>;
   readonly gapActions: Map<SlotId, GapActionState>;
   readonly absenceReasons: Map<SlotId, RunAbsenceReason>;
@@ -535,7 +537,6 @@ export function openRunnerRecordCoordinator(input: {
         session,
         target,
         attempts: new Map(),
-        sourceOrigins: new Map(),
         planSlots: new Map(),
         gapActions: new Map(),
         absenceReasons: new Map(),
@@ -763,6 +764,11 @@ export function openRunnerRecordCoordinator(input: {
               issue: sourcePlan.failure,
             });
           }
+          yield* appendRunSourcesBeforeAttempt(
+            targetSlot.recordRun.session,
+            active.session,
+            sourcePlan.success.sources,
+          );
           const sourceSites = sourcePlan.success.sourceSitesBySlot.get(targetSlot.slotId);
           const closedAssertions = createRunnerAssertionsAttachment(active.sealed!, {
             entryIds: assertions.success.entryIds,
@@ -890,13 +896,6 @@ export function openRunnerRecordCoordinator(input: {
                 closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
                 deadlineEpochMs: Date.now() + 30_000,
               }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
-              targetSlot.recordRun.sourceOrigins.set(targetSlot.slotId, {
-                slotId: targetSlot.slotId,
-                result: {
-                  ...(result.sources === undefined ? {} : { sources: result.sources.map((source) => ({ ...source })) }),
-                },
-                assertionEntryIds: [],
-              });
               active.sealed = undefined;
               active.completed = true;
               targetSlot.recordRun.gapActions.set(targetSlot.slotId, "executed");
@@ -915,29 +914,6 @@ export function openRunnerRecordCoordinator(input: {
         const writeRecord = (
           effect: Effect.Effect<void, RecordWriteError, never>,
         ): Effect.Effect<void, RecordWriteError, never> => effect;
-        const origins: RunnerSourceOriginInput[] = [];
-        for (const [slotId, state] of recordRun.gapActions) {
-          if (state !== "executed") continue;
-          const origin = recordRun.sourceOrigins.get(slotId);
-          if (origin === undefined) return yield* Effect.fail(membershipStateInvalid(slotId));
-          origins.push(origin);
-        }
-
-        const sources = createRunnerSourceWritePlan(
-          origins.map(({ slotId, result, assertionEntryIds }) => ({
-            slotId,
-            result,
-            assertionEntryIds,
-          })),
-        );
-        if (Result.isFailure(sources)) {
-          return yield* Effect.fail({
-            code: "runner-record-sources-invalid" as const,
-            issue: sources.failure,
-          });
-        }
-        yield* writeRecord(recordRun.session.records.write(NiceEvalRecordAttachments.sources, sources.success.sources));
-        recordRun.sourceOrigins.clear();
 
         const sourceReceipts = yield* createRunObservabilityAttachments(recordRun.run);
         if (sourceReceipts.runnerActivities !== undefined) {
