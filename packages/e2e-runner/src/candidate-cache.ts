@@ -6,6 +6,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
@@ -290,31 +291,31 @@ export const prepareCandidate = Effect.fn("prepareCandidate")(function* (
         } satisfies CandidateTarball;
       if (!(yield* io(() => existsSync(tarball)))) {
         console.error(`[e2e] candidate tarball cache miss input=${inputDigest}; packing cached build`);
-        // Pack the immutable snapshot, without re-running prepack/build. pnpm
-        // resolves bundled dependencies via its workspace node_modules link.
-        const staging = join(cache, `pack-${randomUUID()}`);
-        yield* io(() => mkdirSync(staging));
-        yield* Effect.addFinalizer(() =>
-          io(() => rmSync(staging, { recursive: true, force: true })).pipe(Effect.ignore),
+        // pnpm 12 only bundles dependencies whose real paths are inside the
+        // workspace being packed. Use an unnamed workspace project so the
+        // snapshot can see the installed closure without duplicating niceeval.
+        const packProject = yield* Effect.acquireRelease(
+          io(() => mkdtempSync(join(root, "packages", "niceeval-pack-"))),
+          (path) => io(() => rmSync(path, { recursive: true, force: true })).pipe(Effect.ignore),
         );
+        const staging = yield* Effect.acquireRelease(
+          io(() => mkdtempSync(join(cache, "pack-"))),
+          (path) => io(() => rmSync(path, { recursive: true, force: true })).pipe(Effect.ignore),
+        );
+        const stagedTarball = join(staging, "candidate.tgz");
+        yield* io(() => {
+          cpSync(built, join(packProject, "package"), { recursive: true, verbatimSymlinks: true });
+          writeFileSync(
+            join(packProject, "package.json"),
+            JSON.stringify({ private: true, publishConfig: { directory: "package" } }),
+          );
+        });
         yield* command(
-          built,
-          [
-            "pnpm",
-            "--config.node-linker=hoisted",
-            "--config.ignore-scripts=true",
-            "pack",
-            "--pack-destination",
-            staging,
-          ],
+          packProject,
+          ["pnpm", "--config.ignore-scripts=true", "pack", "--out", stagedTarball],
           options.quiet,
         );
-        yield* io(() => {
-          const files = readdirSync(staging).filter((name) => name.endsWith(".tgz"));
-          if (files.length !== 1) throw new Error("pack did not produce exactly one tarball");
-          renameSync(join(staging, files[0]!), tarball);
-          rmSync(staging, { recursive: true });
-        });
+        yield* io(() => renameSync(stagedTarball, tarball));
       } else console.error(`[e2e] candidate tarball cache hit input=${inputDigest}; skipping pack`);
       const candidate = yield* readCandidateTarball(tarball);
       if (candidate.inputDigest !== inputDigest)
