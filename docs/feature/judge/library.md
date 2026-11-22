@@ -48,10 +48,10 @@ answer.closeQA(
 MaterialMatch 的 reader 从当前 ctx 取出业务事实，单项 predicate 在同一候选上判断。NiceEval 对全部候选求值，并将全部命中项保序交给一次受管 Judge。
 问题是材料验收条件，不是预设答案；不会逐项评分或只挑成功样本。
 所有 closeQA 写法组合一个受管评分 Match 后交同一 check，返回同一种 measurement handle。
-完整空集为0且零模型调用；partial、unknown、超限或模型不可判定为 unavailable。
+完整空集为0且零模型调用；partial、unknown、超出模型上下文或模型不可判定为 unavailable。
 
-Agent 默认历史与 EventMatch/ToolMatch 简写采用 16384 项、4 MiB、1048576 节点、深度 64 的捕获上限。
-显式 MaterialMatch 使用自己的 capture 配置；Judge 命中材料与审计预算仍由 options 独立指定。
+Agent 默认历史与 EventMatch/ToolMatch 简写完整捕获命中材料，不设项数、字节、节点或深度上限；材料能否发送由[上下文规则](architecture.md#预算与生命周期)判断。
+显式 MaterialMatch 使用自己的 capture 配置；作者可另用 `maxMaterialBytes` 声明自己的材料上限。
 ctx 材料读取与存在性使用见 [材料选择](../assertions/library/custom-assertions.md#材料选择)。
 
 ## Judge 用量与费用
@@ -90,9 +90,9 @@ type JudgeDefinition = ScoreMatch<unknown>;
 declare function defineJudge(options: JudgeOptions): JudgeDefinition;
 ```
 
-rubric 非空，最多 8 KiB。定义没有名字：判据由登记处的 groupPath 与 label 标识，审计也按 entry 读取。
-anchors 默认提供 0 与 1 的描述；显式 anchors 有 2 至 32 项，measurement 严格递增并包含 0 与 1。
-每项 description 非空，最多 1 KiB。模型可以输出 anchors 之间的连续值；它不是置信度。
+rubric 非空，长度不设领域上限，能否发送由所选模型的上下文决定。定义没有名字：判据由登记处的 groupPath 与 label 标识，审计也按 entry 读取。
+anchors 默认提供 0 与 1 的描述；显式 anchors 至少 2 项，measurement 严格递增并包含 0 与 1；某些 Provider 协议接纳的等级数更少，见 [TypeSafe 的测量能力](#typesafe-的测量能力)。
+每项 description 非空。模型可以输出 anchors 之间的连续值；它不是置信度。
 选项在定义时有界校验并冻结，未知字段和 accessor 拒绝。
 
 预算默认值与总账规则由 [Architecture](architecture.md#预算与生命周期) 拥有。
@@ -154,7 +154,7 @@ declare function pairwisePreference(options?: JudgePresetOptions): ScoreMatch<Pa
 
 四个工厂及其材料类型从 `niceeval` 和 `niceeval/expect` 导出。
 每个工厂返回可复用的定义实例。
-必填文本非空；instructions 是 1 至 32 项非空文本，context 数组非空。非法材料不会进入模型调用。
+必填文本非空；instructions 是至少 1 项非空文本，context 数组非空。非法材料不会进入模型调用。
 
 | 裁判 | 计算方法 | 分数含义 |
 |---|---|---|
@@ -164,7 +164,7 @@ declare function pairwisePreference(options?: JudgePresetOptions): ScoreMatch<Pa
 | pairwisePreference | candidate=1、tie=0.5、reference=0 | 本次比较中对候选答案的偏好 |
 
 Factuality 的 expected 是作者提供的参考，不是经过外部验证的事实依据。
-Faithfulness 不是让模型整体估计比例；完整分母与逐项结果必须可读。提取为空或不完整时是 unavailable。
+Faithfulness 不是让模型整体估计比例；完整分母与逐项结果必须可读。提取为空时是 unavailable；作者设的 `maxCalls` 不够完成全部提取与分类时也是 unavailable，原因报出未分类的陈述条数。陈述数量不设上限，分类按每批 32 条执行。
 比较裁判允许平局，分数不是胜率；一次比较不保证消除位置偏差。
 完整场景见 [使用现成裁判并复核判分依据](use-case/inspect-judge-score.md)。
 
@@ -179,10 +179,10 @@ Assertion runtime 取得同一条预算、快照、求值、审计、封口与 h
 
 ## 材料与读回
 
-check 同步验证入口和 Match，然后生成有界 canonical JSON 快照。
+check 同步验证入口和 Match，然后生成 canonical JSON 快照。
 除下述显式图片值外，材料接受字符串、有限数字、布尔值、null、数组和普通对象；拒绝函数、BigInt、Symbol、class、getter、toJSON、循环、数组空洞和 undefined 元素。
 对象内 undefined 属性省略；对象键排序，数组保序，负零规范为零。共享子对象可重复出现。
-最大深度 32，最多遍历 16,384 个节点；Proxy 反射不构成沙箱边界。
+快照不设深度或节点数上限，遍历使用显式栈而非递归；Proxy 反射不构成沙箱边界。
 
 高级 callback 只看到冻结快照。每次原语调用另行冻结规则和显式材料，并通过同一受管 Provider 执行。
 原语失败会锁存 entry 的失败状态，callback 捕获错误后返回数值也不能掩盖失败。
@@ -327,7 +327,7 @@ type SubmitEvaluationInput = (
 ```
 
 - 会话按调用顺序处理：`chat` 作为一条 user 消息发出，评审回答后进入下一项；`judge` 或 `grade` 作为一条评分题发出，评审取证后调用 `submit_evaluation` 结束这道题，再进入下一项。
-- 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受响应和审计字节上限约束。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
+- 提交严格拒绝未知字段，rationale、ref 与 note 为非空文本，整个提交受 `maxResponseBytes` 约束，审计不设字节上限。非法参数作为工具错误留存，模型可在这道题剩余的轮次内修正。
 - 会话很长时，pi coding agent 按它的默认设置自动压缩较早的历史再继续；压缩不占用题目的轮次。压缩后仍放不下，当前与之后的题为 `unavailable`。细则见 [架构：上下文与压缩](architecture.md#上下文与压缩)。
 - 一道题超过 `maxTurns` 仍未提交，这道题为 `unavailable`，会话继续下一项；会话期限耗尽或传输最终失败时，当前与之后的评分题都为 `unavailable`，已提交的题保留各自的 measurement。
 - 模型不调用评分工具就停止回答，当前评分题为 `unavailable`，不按零分处理。HTTP 400、畸形模型协议和框架 defect 沿用 `errored`；取消保持 interruption，不能伪装成 unavailable。
@@ -441,12 +441,12 @@ interface ExperimentJudgeSettings {
 
 | 选项 | 契约 | 默认 |
 | --- | --- | --- |
-| `model` | 必填、非空、无控制字符，最多 8 KiB；模型是否可用由实际调用验证 | 无 |
+| `model` | 必填、非空、无控制字符；模型是否可用由实际调用验证 | 无 |
 | `baseUrl` | 绝对 `http(s)` URL，不含 userinfo、query 或 fragment；显式替换只影响本 Provider | 上表 |
 | `apiKeyEnv` | 合法进程变量名；与 `apiKey` 互斥 | 上表 |
 | `apiKey` | 非空秘密字符串；仅在私有闭包保存，作者不得把字面秘密签入源码 | 从选定变量读取 |
 | `timeoutMs` | 正安全整数，约束整条 Assertion 的 callback、请求、重试与等待 | `180_000` |
-| `maxResponseBytes` | 正安全整数，最多 256 KiB；JSON parse 前的响应硬字节上限 | `16_384` |
+| `maxResponseBytes` | 正安全整数，最多 256 KiB；JSON parse 前的响应硬字节上限。它保护外部 Provider 响应的协议有效性并防止费用失控：答案 schema 是封闭的小对象，超长响应即协议失败，不是用户数据规模的上限 | `16_384` |
 | `maxOutputTokens` | 仅聊天服务工厂接受的正安全整数，传给服务端的输出 token 上限 | `1_024` |
 | `contextWindow` | 仅聊天服务工厂接受的正安全整数，所选模型可接收的最大上下文 token 数。只供 Agent Judge 与模拟用户的 pi coding agent 会话决定何时自动压缩；普通 Judge 不使用。未写时按模型名查 NiceEval 内置模型目录（与估价同一份 models.dev + LiteLLM 快照、同一套名字归一规则）；目录也没有该模型时不按阈值主动压缩，只在模型报告溢出时由 pi 压缩后重试。只有显式写出时才进入 Provider 身份，目录取得的值写入审计 | 显式值 → 内置目录 → 仅溢出时压缩 |
 | `headers` | 随每次请求发送的额外 HTTP 头映射；键名大小写保留，值逐字发出并脱敏 | 无 |
@@ -559,9 +559,10 @@ t.judge({
 ```
 
 PNG、JPEG 每张最多 4 MiB，像素数最多 16,777,216；每个 Assertion 最多 4 张、合计 8 MiB。
+这些是多模态模型输入的外部限制，owner 是所选 Judge Provider 与模型；超出时在发送前显式报错。
 检查签名、header 边界、正尺寸和 MIME 一致性，不声称完成全部像素解码；不隐式转码或缩放。
 每次原语的实际图片 parts 也受相同数量与字节上限约束，重复引用不能绕过。
-同一 Attempt 图片留存上限 32 MiB，跨 Assertion 重用仍分别计入；文本预算保持不变。
+图片留存没有 Attempt 级上限，跨 Assertion 重用分别保存。
 
 `OpenAIProvider`、`VercelProvider`、`OpenRouterProvider` 在显式
 `supportsImages: true` 时将图片发送为 Chat Completions 的 `image_url` data URI parts。

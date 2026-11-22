@@ -36,7 +36,9 @@ gateway 和审计 reader 共用纯协议 Schema 与概率投影，reader 另外�
 ## 预算与生命周期
 
 每个 entry 有独占执行上下文、串行调用序号和失败锁存器。
-`maxCalls` 计逻辑原语调用，默认 4，上限 16；每个调用最多 3 次传输尝试。
+`maxCalls` 计逻辑原语调用，是作者设的费用预算：默认 4，可设为任意正安全整数，框架不设上限；每个调用最多 3 次传输尝试。
+Faithfulness 的调用数由陈述数量决定，作者未写 `maxCalls` 时不设调用预算。
+预算耗尽而工作未完成时，这一项显式 unavailable，原因写明已用调用数、预算与尚未完成的工作（例如未分类的陈述条数）；不得只用已完成的部分给出分数。
 裁判 Provider 的 timeout 限定该 entry 的整个高级 callback、全部步骤、重试和等待，不能每步重新获得完整期限。
 
 材料按所选模型放得下来约束，而不是固定字节数：
@@ -157,7 +159,7 @@ AuditAttempt 的 response 保存完成读取的原始 HTTP 响应文本，不做
 请求内容在重试间不变，各次尝试通过调用序号和尝试序号关联。
 审计中的 measured 必须与 entry 的最终 measurement 相等；不完整步骤不能同时出现正常测量终态。
 
-Query 与 View 共用严格 decoder，验证精确字段、canonical 编码、摘要、字节预算、序号、输出和终态一致性。
+Query 与 View 共用严格 decoder，验证精确字段、canonical 编码、摘要、序号、输出和终态一致性。
 当前 exact Schema 验证审计材料，损坏为 invalid。旧数据在 Record 格式准入时拒绝。
 审计采用独立协议和 criterion，不改写既有 Record，不增加另一种持久 family。
 旧 reader 遇到未知 criterion 只把对应 entry 标为 unsupported；其余既有事实继续可读。
@@ -198,9 +200,9 @@ interface LlmBatchClassifyResult {
 ```
 
 measurement 必须是有限 [0,1]，rationale 和提取项必须为非空文本。
-choice 必须精确属于该请求的 choices；extract 数量不得超过该请求的 maxItems，上限为 32。
+choice 必须精确属于该请求的 choices；extract 不设项数上限，单次响应仍受 `maxResponseBytes` 约束。
 batchClassify 必须恰好包含请求的全部唯一 ID，结果顺序可不同，不能重复、遗漏或增加 ID。
-complete=false 是合法提取响应，但该必要调用以 unavailable 结束，并在审计中保留原始响应。
+complete=false 是合法提取响应，表示还有未提取的项：下一次 extract 带上已提取项继续，直到 complete=true；每次续提取计入 `maxCalls`，审计保留每次原始响应。
 
 分类的合法标签和标签到分数的映射进入冻结配置。
 `binaryJudge` 使用 `classify` 的 `satisfied` / `not-satisfied`，由代码映射为 1 / 0。它与 `defineJudge` 共享 `defineScoreMatch` 的登记、材料冻结、预算、取消、Provider 和审计；实际 rubric、choices 与分数映射进入 recipe identity。
@@ -209,10 +211,12 @@ complete=false 是合法提取响应，但该必要调用以 unavailable 结束�
 两答案比较以候选答案为计分方向：候选优于参考为 1，平局为 0.5，参考更优为 0。
 该分数表达本次偏好判定，不声称是胜率或消除了位置偏差。
 
-Faithfulness 先提取最多 32 条陈述，再用一次 batchClassify 检查全部陈述。
-代码分配稳定的调用内 ID；分类结果必须对每个 ID 恰好返回一项，重复、遗漏和未知 ID 都是 errored。
-extract 输出必须包含 `complete: boolean`，表示模型是否完成了本次提取；false 为 unavailable，不能截取前 32 条并声明完成。
-超出提取上限为 errored；零陈述为 unavailable。
+Faithfulness 先提取全部陈述，陈述数量不设上限；再按每次请求 32 条分批调用 batchClassify，直到全部陈述都已分类。
+32 是批大小，属于物理分块，不是陈述数量上限；N 条陈述需要 `ceil(N / 32)` 次分类调用。
+
+代码分配稳定的调用内 ID；每批分类结果必须对该批每个 ID 恰好返回一项，重复、遗漏和未知 ID 都是 errored。
+extract 输出必须包含 `complete: boolean`；false 时按上文续提取，不能截取已提取的前缀并声明完成。
+作者设的 `maxCalls` 不够完成全部提取与分类时，这一项 unavailable，并报出未分类的陈述条数；不得静默只判前 32 条或任何前缀。零陈述为 unavailable。
 最终分数由代码计算 supported / total，完整分母与每项判定保留在原语输出中。
 模型对陈述的抽取与支持性判断仍可能出错，框架不把这个比例解释为事实正确性的证明。
 
@@ -421,7 +425,7 @@ interface TypedScoreMatchAudit extends Omit<ScoreMatchAudit, "kind" | "calls"> {
 ```
 
 `mapping.input` 是本次原语调用的冻结 canonical 快照，包含实际 anchors 数值或完整 item IDs。
-它与 request、response、output 一起计入审计预算，不能假定高级 callback 的动态输入等于 definition.config。
+它与 request、response、output 一起完整写入审计，不能假定高级 callback 的动态输入等于 definition.config。
 question IDs 按 input 顺序派生；mapping.operation 必须等于 call.operation。
 
 TypeSafe reader 验证 mapping 与真实请求一致、响应包含全部必要结果，并从最后一次成功响应重算规范化 output。
@@ -449,10 +453,11 @@ callback 只能重用不透明值，不能取得可修改数组。捕获遍历�
 迟到图片与普通 JSON 冒充引用不授予读取能力。初始图片位置使用 JSON Pointer 留存。
 
 每个 entry 最多 4 个实际图片引用、8 MiB raw bytes；单图 4 MiB、16,777,216 pixels。
+这些数值是多模态模型输入的外部限制，owner 是所选 Judge Provider 与模型的图片能力；超出时在发送前显式报错，原因指明这条外部限制。
 每个原语构造的实际图片 parts 再次检查同样上限，不能通过重复引用放大。
 PNG/JPEG 校验签名、header 长度与尺寸及 MIME 一致性；这不是完整像素解码。
-登记点同时检查既有 512 KiB 文本总账与独立 32 MiB 图片总账，全部通过才创建 entry 和扣账。
-跨 entry 重用仍分别计费到图片留存，不跨 entry 共享 Content handle。重试复用同一 wire body，不重复封存图片。
+图片留存与文本审计都没有 Attempt 级总账；登记点只检查上述模型输入限制。
+跨 entry 重用分别保存，不跨 entry 共享 Content handle。重试复用同一 wire body，不重复封存图片。
 
 图片各自作为 Assertions 自有 binary Content 写入，最后一项 evidence 始终为审计 JSON。
 不新增持久 family，也不向作者公开 blob reference。取消或未发送仍保留已登记图片。
@@ -471,8 +476,8 @@ requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonic
 再按既有 canonical JSON 和 UTF-8 生成唯一 wire body；先计算摘要，再把同一正文交给 transport。
 文本中同名字符串不参与替换。图片顺序与文本中的 imageId 对应，不把图片说明提升为 system 规则。
 
-描述符、模板和终态完整写入审计；raw bytes 计入图片总账；base64 膨胀后的 wire body
-受原语图片上限和材料/规则上限共同约束。已提交图片不得被静默删去。
+描述符、模板和终态完整写入审计，raw bytes 存为 binary Content；base64 膨胀后的 wire body
+受原语图片上限与所选模型的上下文共同约束。已提交图片不得被静默删去。
 
 审计读取必须验证 imageId 唯一、evidence ordinal、Content digest/length、MIME 和封闭引用，
 按相同序列化规则还原发送正文并核对 wireBody。缺图、错位、伪引用、摘要不符均不可返回 available。
@@ -485,9 +490,9 @@ requestTemplate 是 canonical JSON：唯一 user content 数组首项为 canonic
 ## 有界图片读回
 
 多模态 Assertion detail 只交付图片 metadata 与已解码审计；不重复展开 source/evidence 的
-大图或原始 audit base64。单次结果仍受 512 KiB 上限约束。
+大图或原始 audit base64。单页结果为 512 KiB，超出的审计按 [断言详情分页规则](../inspection/cli.md#从-attempt-outline-下钻到一项详情) 续读。
 固定 `attempt.assertion.image` 只允许本 locator/entryId 内的 imageId，接受 offset/limit，
-最多返回 256 KiB raw bytes 的 base64、整图 SHA/byteLength/mediaType、offset、nextOffset。
+每页最多返回 256 KiB raw bytes 的 base64、整图 SHA/byteLength/mediaType、offset、nextOffset，按 nextOffset 续读到整图。
 分页与 detail 使用同一封存 cutoff；不接受路径、URL、外部 Content handle 或跨 entry 引用。
 
 CLI 与 Web 使用同一 operation 和 decoder，搬迁 Record 后无需原附件目录或模型服务。
@@ -519,7 +524,7 @@ satisfied=1，not-satisfied=0，insufficient-evidence=unavailable。
 
 ### 引用与严格审计
 
-classify 只有显式 evidenceIds 时才请求引用；最多 16384 个唯一 ID，每个最多 128 UTF-8 bytes。
+classify 只有显式 evidenceIds 时才请求引用；ID 数量与长度不设领域上限，请求是否放得下按[上下文规则](#预算与生命周期)判断。
 聊天 response 必须含无重复的 citations 数组，且所有成员属于命中 ID 集；空数组表示模型实际返回空引用。
 聊天审计 reader 同时 exact decode 请求、原始 response 与 output，并验证 ID 子集，不能只验证最终映射。
 TypeSafe mapping reader 验证可选 evidenceIds 与映射；wire 不请求其没有的引用能力，output 不带 citations，读面标记 not-recorded。
@@ -588,16 +593,15 @@ interface JudgeUsageAttachment {
 }
 ```
 
-requestModel、响应 model 和价证 selector 均最长 8192 UTF-8 bytes，保留 Provider 的现有合法输入。
-其它身份最长 256 bytes，数值数量为非负安全整数，金额为既有 canonical decimal，币种用既有 CurrencyCode。
-不得截断 requestModel 或价证 selector。超长响应 model 记 null 和固定限制原因，不影响独立有效的 token/费用。
+requestModel、响应 model、价证 selector 与其它身份按原值完整保存，不设长度上限，不截断。
+数值数量为非负安全整数，金额为既有 canonical decimal，币种用既有 CurrencyCode。
 
 HTTP status 为 100–599 或 null。callId 必须由三个序号生成，唯一；同一步重试 ordinal 连续，不跨 entry。
 collection complete 说明全部进入边界的请求已登记，不保证远端物理完成或费用已知。
 待决请求内部保留 pending，发布前投影 unknown；取消表示本地终止等待，不证明服务端停工。
 
-receipt 只保存白名单字段及完整有界响应的 SHA-256，不保存 Authorization、URL、headers、任意错误消息或业务正文。
-fields 最多 24 项，path 最长 128 bytes，字符串值最长 8192 bytes，receipt 最多 32 KiB。
+receipt 只保存白名单字段及完整响应的 SHA-256，不保存 Authorization、URL、headers、任意错误消息或业务正文。
+白名单字段值按原值完整保存，不设项数与长度上限。
 白名单 path 唯一并按字典序排列；只保留已验证的 scalar 字段，不复制 provider error message。
 
 解码非法字段只使对应观察未知，保留固定 reason。receipt available 表示完整 body 可解码且至少一项白名单事实可用。
@@ -648,16 +652,10 @@ Judge validator 将 proof.pricing.requestModel 绑定 call.requestModel，不能
 
 ### 容量与封存
 
-collector 使用现有 defineRecordAttachment 正式编码通道，不扩大全局 Record 限制。
-上限为 payload canonical JSON 1,048,576 bytes、100,000 nodes、10,000 object keys、深度 64，以及最多 4000 物理调用。
-
-4000 仅为 count 上限，不承诺最坏字段和价证下仍能到达。发送前预留附件 framing、entryId、当前完整 ledger、打开项最坏终态和新项最坏终态。
-预留基于已知 requestModel/selector/profile 的实际编码和未知回执字段的明示最大长度，同时核对 bytes/nodes/keys/depth。
-不得只预留固定 4096 bytes 元数据。内部共享 Record 当前编码上限和计量，避免两份不同限制。
-
-预留不足则 ScoreMatch unavailable/judge-usage-capacity-exceeded，零新发送；已有项不截断、不采样、不丢弃。
-已预留响应字段超界只保存有界 reason 与未知对应字段，不得令终态对象超过预留或拒绝发布已发生的费用。
-终态后退还保守预留与实际编码的差额，使正常小回执不会长期占用最坏槽位。
+collector 使用 defineRecordAttachment 正式编码通道。账本不设物理调用数、payload 字节、节点数、键数或深度上限：
+每个物理调用及其价证是一个 collection item，超过行内阈值的字段存为 Content 分块，身份按完整内容计算。
+发送前不做容量预留，也不存在 judge-usage-capacity-exceeded；已有项不截断、不采样、不丢弃。
+只有存储写入本身失败使账本无法封存，这时所属 Attempt 显式失败，不发布缺少已发生费用的账本。
 新的已执行 Attempt 即使创建应用失败也发布空账本；未执行或跳过的 Attempt 不虚构 collector。
 
 费用完整只表示已登记 inference 回执或显式估价范围内完整，不是账户账单；网关附加服务费不属于该投影。

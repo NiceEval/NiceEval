@@ -48,12 +48,12 @@ t.sandbox.inDiff(/it\("rejects an expired token"/, { content: "added" });
 路径写法、组件比较、空数组与 glob 的拒绝规则都和 `changedOnlyWithin` 相同；不满足时，诊断列出落在保护区内的变化路径。
 `changedOnlyWithin` 保持 criterion `sandbox-change-scope`；`unchangedWithin` 使用独立的 `sandbox-unchanged-within`，分别保存两种检查的语义。形状见 [Assertions 架构](../../assertions/architecture/README.md#criterion-envelope-与内建-criterion)。
 
-变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容被 binary 或 oversized elision 取代时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
+变化的归因单位是一次 `t.send()` 的两个端点，而不是 syscall 审计。不同 send 内修改后又还原仍可见；同一 send 内还原到相同端点则没有 delta。`fileChanged()` 的内容 matcher 只读取该候选的 before/after endpoint；内容是 binary elision 时，只有依赖该内容的一次匹配会是 `unavailable`。路径和 status 本身仍可确定。
 
-`notInDiff()` 从不扫描未变化上下文。路径命中或已知 added/removed hunk 命中立即为 mismatch；没有命中但所选内容侧存在 binary 或 oversized elision 时为 unavailable。`content` 未参与的路径判定不因 elision 失去确定性。
+`notInDiff()` 从不扫描未变化上下文。路径命中或已知 added/removed hunk 命中立即为 mismatch；没有命中但所选内容侧存在 binary elision 时为 unavailable。`content` 未参与的路径判定不因 elision 失去确定性。
 
 只关心文件路径时用 `content: "none"`，例如“子目录里不许出现 package.json 或锁文件”。
-它只拿 pattern 与变化路径比较，不读取 hunk，结果不因 binary 或 oversized elision 变成 unavailable；归因材料采集失败或不完整时仍为 unavailable。
+它只拿 pattern 与变化路径比较，不读取 hunk，结果不因 binary elision 变成 unavailable；归因材料采集失败或不完整时仍为 unavailable。
 默认的 `both` 会连同变化行一起扫描：只写路径的 pattern 遇到某个大文件内容被省略时无法判定，结果是 unavailable 而不是满足。
 
 `inDiff()` 回答“改动里有没有出现这段内容”，不要求事先知道它落在哪个文件；已知路径时用 `fileChanged(path, { after })`（[T-25](../../../taste.md#t-25)）。

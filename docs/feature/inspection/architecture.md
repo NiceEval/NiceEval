@@ -186,10 +186,10 @@ modelGroups 含 basis、state、groups、totalGroupCount、groupsTruncated、omi
 普通 Adapter 的 basis 为 recorded-calls，各组按 modelRole/provider/model 精确三元组区分，null 排在字符串前。
 每组含 recordedCalls、tokens（inputTotalTokens/outputTokens/totalTokens）和官方 effective costs，完整性与已知小计分别保留。
 
-全部最多 4000 调用参与统计，最多预览 64 组；调用预览的 128 条上限不影响聚合。
+全部已封存调用参与统计。modelGroups 每页 64 组，调用列表每页 128 条，超出时给出精确省略数与 `continuation`；分页不影响聚合。
 cacheRead 与 [Adapter Library](../adapters/library/README.md#缓存读取率) 使用相同纯投影，含 total、roles 与 models。
-该报告不受 64 组旧预览限制；完整性由生产者 seal 声明单独判断，旧版账本不推断完整。
-attempt.usage 的最终响应预算为 16 MiB，超限返回 evidence-budget-exceeded，不截断 cacheRead 分组。
+该报告基于全部调用聚合；cacheRead 分组同样按固定页大小分页，完整性由生产者 seal 声明单独判断，旧版账本不推断完整。
+attempt.usage 不因规模返回 evidence-budget-exceeded，也不截断任何分组；超出单页的部分经 `continuation` 续读。
 
 `turnCacheRead` 从同一 Attempt 已封存的 Turn 观测计算，包含 `basis`、`state`、`value`、`reason`、`coveredTurns` 与 `missingTurns`。
 它读取完整封存的观测，不受 `turns` 与 `observations` 预览上限影响。公式及缺失规则见 [Adapter Library](../adapters/library/README.md#缓存读取率)。
@@ -207,10 +207,10 @@ Judge 调用、价证、有界预览与摘要的穷尽形状见 [Query 契约](c
 它含 attempts（locator、originRunId、usage）、totalAttemptCount、omittedAttemptCount、unresolvedAttemptCount。
 
 usage 仅含 state、configuredModels、modelGroups、judgeUsage、totalCosts、totals，不重复调用预览。
-最多返回按 originRunId/locator 排序的 64 个 Attempt；未找到的成员单列。Judge 使用不含 calls/priceReceipts 的摘要。
+每页返回按 originRunId/locator 排序的 64 个 Attempt，超出时给出 omittedAttemptCount 与续读 `continuation`；未找到的成员单列。Judge 使用不含 calls/priceReceipts 的摘要。
 
-experiment.get 的最终 JSON 响应上限为 4 MiB；完整 aggregate/cells 保留逐断言证据完整度，因此独立于attempt.usage 的专属 16 MiB 上限。
-最终响应字节预算内保留完整 Attempt 摘要前缀，omittedAttemptCount 反映省略数量；保留摘要中的金额及完整度不变，不以预览重算总量。
+experiment.get 的单页 JSON 响应预算为 4 MiB，这是页大小而不是数据上限；完整 aggregate/cells 保留逐断言证据完整度。
+页内保留完整 Attempt 摘要前缀，omittedAttemptCount 给出精确省略数，`continuation` 读取其余 Attempt；保留摘要中的金额及完整度不变，不以预览重算总量。
 
 
 ## Judge 用量投影
@@ -227,7 +227,7 @@ collection complete 不能代替 token/cost 完整度，也不证明服务端已
 
 公开调用行保留正式 entryId，使用当前 locator 与 entryId 下钻 assertion.detail，由身份查找固定 origin。
 断言正文或审计不可读时仍保留已验证的账本金额与调用，不让费用完整性依赖审计解码。
-文字材料 detail 的 projector 与最终交付采用同一个 [断言专用预算](cli.md#从-attempt-outline-下钻到一项详情)，不经过通用 boundedJson 的默认限制。`attempt.assertion.detail` 支持 `projection: "compact" | "full"`。`compact` 模式仅交付判定结果、分值与理由，裁剪全量原始材料，确保外部进程调用具有安全体积边界。
+文字材料 detail 的 projector 与最终交付采用同一个 [断言详情分页规则](cli.md#从-attempt-outline-下钻到一项详情)。`attempt.assertion.detail` 支持 `projection: "compact" | "full"`。`compact` 模式仅交付判定结果、分值与理由，省略原始材料全文并给出读取入口；`full` 模式中超过页大小的材料与审计按 `continuation` 逐页交付，不因规模失败。
 show 人读 preview 不改变完整 content 或容量诊断。
 
 TotalCosts 对同币种使用精确十进制定点累加，不换汇。missingSources 固定 application、judge 顺序，无重复。
@@ -254,7 +254,7 @@ recordedAttemptCount 与 missingAttemptCount 合计等于 plannedAttemptCount。
 无法定位的计划 Attempt 保留 application 与 judge 缺口，不能将预算错误伪装为缺源。
 
 同币种使用精确十进制相加，不换汇。完整时为总费用，缺项时为已知小计，并保留有序 missingSources。
-聚合先于 modelUsage 的 64 项与字节裁剪；清空明细仍超出响应预算时返回 evidence-budget-exceeded，不删金额或币种。
+聚合先于 modelUsage 的分页；明细分页不删金额或币种，也不因规模返回 evidence-budget-exceeded。
 Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Attempt 的后续明细不参与客户端求和。
 
 应用 usage family 的 complete 表示 Adapter 显式确认调用集合完整。
@@ -276,7 +276,7 @@ Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Atte
 
 价格表按请求模型精确匹配，找不到时使用同 provider 的 `provider/*`；不读取当前项目配置或内置价格目录。
 每项声明 USD 每百万 token 的 inputPerMTok、outputPerMTok，以及可选 cacheReadPerMTok、cacheWritePerMTok。
-价格必须是有限非负数；source.id 与可选 source.asOf 标识本次估算使用的价格版本。价格表最多 256 项。
+价格必须是有限非负数；source.id 与可选 source.asOf 标识本次估算使用的价格版本。价格表项数不设上限。
 
 响应的 `repricing` 包含 application、judge 两个独立计价分项及 total。每个分项保留 collection、全账本 callCount、
 逐调用 estimates 与 missingCallIds；estimate 使用既有四个互斥 token 桶、精确十进制金额与价格 profile digest。
@@ -287,7 +287,7 @@ Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Atte
 两个分项均 complete 时 total 才为 complete，否则已知金额仅为 partial 小计；没有可计价金额时为 unavailable。
 完整空账本贡献精确零；不存在的 Judge 账本仍是缺口。金额不换汇、不外推未知调用。
 
-该 operation 使用与 attempt.usage 相同的 16 MiB 响应预算；超限明确失败，不通过删调用或价格证据伪装完整。
+逐调用 estimates 与 missingCallIds 按与 attempt.usage 相同的页大小分页，超出时给出精确省略数与 `continuation`；规模不使请求失败，也不通过删调用或价格证据伪装完整。
 验收从已安装的 `show @<locator> usage --reprice` 入口使用两个价格版本读取同一 Attempt，核对新估算与完整性，并比较读取前后的公开历史结果。
 
 ## State 事实投影

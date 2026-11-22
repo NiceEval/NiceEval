@@ -52,7 +52,8 @@ Record 的 fixed catalog；各自 owner 由 catalog 声明。
 collection 说明已经写入 payload 的采集完备度，只有 complete 与 partial：
 
 - complete 的 limitations 必须为空；零条 observation 也可以 complete。
-- partial 必须带至少一条封闭的结构化 limitation，说明截断、脱敏、输入不能归一、采集失败或上限。
+- partial 必须带至少一条封闭的结构化 limitation，说明脱敏、输入不能归一、采集失败或外部生产者放弃造成的缺口。
+  条目数、文本长度与总字节不构成 limitation；超过行内阈值的值存为 Content 分块，逐条事实按 collection item 保存。
 
 partial 表示已保存事实有明确缺口，不表示“没有发生”。reader 逐 source 保留以下状态：
 
@@ -67,7 +68,7 @@ partial 表示已保存事实有明确缺口，不表示“没有发生”。rea
 `niceeval.record` beta format 不进入 current reader 或 maintenance，明确返回 `unsupported-format`。它缺少
 可证明的 capture authority 与 provenance，不能拆分或伪迁移成 source receipt。
 
-source envelope 都是 exact JSON。未知 envelope 字段、超出上限、重复 identity 和不符合 schema 的值都会使对应 Attachment 为 invalid。
+source envelope 都是 exact JSON。未知 envelope 字段、重复 identity 和不符合 schema 的值都会使对应 Attachment 为 invalid；规模不是 invalid 的理由。
 `niceeval.execution-traces` 的领域 payload 与 scope boundary 是显式允许的有限 plain JSON，领域 schema 由 Adapter 验证。
 其它 source 不接受 metadata、attributes、data 或任意 JSON 扩展袋。
 
@@ -131,9 +132,10 @@ LLM App 的调用轨迹使用分层 Span 树表示。
 每次 Sandbox command 先收集脱敏 manifest，再收集一个终态 result。成功、非零退出、取消与未启动都
 保留 observed result；没有终态时以 partial limitation 表示缺口，不能只留下 manifest。
 
-stdout 与 stderr 分流处理。collector 先把输入转成安全 UTF-8，再应用已知敏感值脱敏，最后分别执行
-大小上限。每流最多保存 65,536 bytes；不超过 4,096 bytes inline，其余写入 `niceeval.sandbox-commands`
-自己的 blob closure。截断、替换非 UTF-8 或脱敏都会留下 partial limitation。
+stdout 与 stderr 分流处理。collector 先把输入转成安全 UTF-8，再应用已知敏感值脱敏，然后完整保存每一流。
+不超过 4,096 bytes 的流 inline，更长的流按 Content 分块写入 `niceeval.sandbox-commands` 自己的 blob closure；
+4,096 bytes 只是行内阈值。命令条数、argv 长度与路径长度同样不设领域上限。替换非 UTF-8 或脱敏会留下 partial limitation。
+人读输出与 Inspection 预览只显示有界尾部，并给出读取完整输出的命令入口。
 
 这种脱敏只处理 collector 已知的敏感值。它不是未知 secret 的检测器，也不是恶意 JavaScript、恶意
 provider 或 hostile filesystem 的安全沙箱。

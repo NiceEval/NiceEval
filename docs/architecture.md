@@ -117,6 +117,9 @@ NiceEval 不为用户数据设领域容量上限。
 此外的数值上限必须在所属 feature 契约中写明理由。
 理由不能只是防范极端情况。
 
+去掉这些上限不提升 Record 存储格式。
+reader 继续接受已存在的旧值，例如旧记录里的 `oversized-text` elision 与 `collection-cap` 标记；writer 不再产生这些值。
+
 ## 程序设计边界：纯函数、完整 ADT 与 Effect
 
 NiceEval 的内部实现只有两类计算。

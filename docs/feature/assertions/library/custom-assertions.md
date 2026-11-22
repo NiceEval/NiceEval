@@ -135,39 +135,37 @@ assertions({ check }) {
 
 MaterialCollection 是 `{ state: "complete", items: [{ id, value }] }`，
 或 `{ state: "partial", items, reason }`，或 `{ state: "unavailable", reason }`。
-ID 非空、最多128 UTF-8 bytes且集合内唯一。value 保存应用原文与回执；失败或未采用的条目默认保留。
+ID 非空且集合内唯一，长度不设上限。value 保存应用原文与回执；失败或未采用的条目默认保留。
 `and` 约束同一项。普通 `defineValueMatch` 可以返回 Boolean 或 `{ state: "unavailable", reason }`。
 
 `check(materialMatch)` 默认至少命中一项，返回 Boolean handle。确定见证可通过；完整零命中失败；其余 unknown 不补零。
 `closeQA(materialMatch, question, options?)` 返回 measurement handle，将全部命中项按原顺序交给一次 Judge。
-完整空集得0且不调用模型；证据不完整、predicate unknown或超限时 unavailable。
-question 非空且最多8 KiB；options 使用 JudgePresetOptions。引用只接受命中ID。
+完整空集得0且不调用模型；证据不完整、predicate unknown、超出模型上下文或超出作者显式 `maxMaterialBytes` 时 unavailable。
+question 非空；options 使用 JudgePresetOptions。引用只接受命中ID。
 
 Agent 的 `AgentMatchContext<Scope>` 提供 scope、managed toolCalls、eventOccurrences 与官方 usage。
 reader 返回 managed collection 时使用对应 ToolMatch 或 EventMatch；跨 Attempt 或不同作用域拒绝，过期采集切点不可判定。
 
-capture 默认256项、48 KiB、16384节点、深度32，可分别提高至16384项、4 MiB、1048576节点、深度64。
-容量不足保留已捕获完整前缀及精确限制原因，不将前缀冒充完整材料。
+capture 默认完整捕获，不设项数、字节、节点或深度上限；超过行内阈值的事实存为 Content 分块。
+作者可显式声明 capture 预算，项数、字节、节点与深度没有框架上限；达到作者预算时保留已捕获完整前缀及精确限制原因，不将前缀冒充完整材料。
 存在性可利用确定见证；整体 Judge 必须得到全部命中材料。
-Judge 的命中材料与 audit 另设预算，最大分别4 MiB、8 MiB。
+Judge 的命中材料按所选模型的上下文约束，作者可另设 `maxMaterialBytes`；audit 不设字节上限。
 
-预算必须是合法范围内的正整数，非法配置抛 TypeError；合法容量耗尽产生 unavailable 与具体诊断。
+显式预算必须是正安全整数，非法配置抛 TypeError；作者预算耗尽产生 unavailable 与具体诊断。
 capture 字节包括集合状态、ID、原文、元数据和显式 undefined 标记；Judge 材料字节包括问题与命中项，不包括未命中项。
 详细诊断保留 code、说明和有界观测值；`source-unavailable` 只是断言结果总类，不能替代具体原因。
 
 | code | 触发条件 |
 |---|---|
-| `source-item-limit` | 源集合项数超过捕获上限。 |
-| `source-byte-limit` | 完整下一项无法进入捕获字节预算。 |
-| `source-node-limit` | 完整下一项无法进入捕获节点预算。 |
-| `source-depth-limit` | 材料嵌套超过深度上限。 |
-| `judge-material-budget` | 全部命中材料及问题超过 Judge 材料预算。 |
-| `judge-audit-budget` | 完整请求、响应预留和封存 envelope 无法进入审计预算。 |
-| `assertion-retention-budget` | Attempt 无法预留本断言的完整材料、审计及诊断；不执行 reader 或模型。 |
+| `source-item-limit` | 源集合项数超过作者显式的捕获项数预算。 |
+| `source-byte-limit` | 完整下一项无法进入作者显式的捕获字节预算。 |
+| `source-node-limit` | 完整下一项无法进入作者显式的捕获节点预算。 |
+| `source-depth-limit` | 材料嵌套超过作者显式的深度预算。 |
+| `judge-material-budget` | 全部命中材料及问题超过作者显式的 `maxMaterialBytes`。 |
 
 源 partial/unavailable、predicate 未知、cut 不一致与不可捕获值各自保留原始 reason。
 reader 抛错保留 producer 失败因果，不把未知材料判为不匹配。
-完整材料、收据与预留结算见 [Evidence](../architecture/evidence.md#上下文材料的两类快照)。
+完整材料与封口收据见 [Evidence](../architecture/evidence.md#上下文材料的两类快照)。
 
 ## ctx 单事实评分
 

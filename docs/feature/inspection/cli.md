@@ -195,9 +195,9 @@ operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, pro
 `limit` 每页最多 256 KiB。响应交付 `mediaType`、`byteLength`、`sha256`、`base64` 与 `nextOffset`，
 最后一页的 `nextOffset` 为 `null`。这个固定 operation 同样支持 `--record` 搬迁读取，不访问作者路径或模型。
 
-文字上下文材料的 `attempt.assertion.detail` 完整机器结果上限为 32 MiB，保留完整 source content 与裁判审计。
-它容纳 4 MiB 事实内容、8 MiB 审计 envelope 的 base64、解码审计及字段开销，不经过默认 512 KiB 的结果截断。
-多模态 detail 沿用 512 KiB 的 metadata 与解码审计结果，原图仍按上述 operation 分页。
+文字上下文材料的 `attempt.assertion.detail` 交付完整 source content 与裁判审计，不因规模失败或截断。
+单页 JSON 超过 512 KiB 时，超出的 source content 与审计以字节区间续读：result 给出每个被分页字段的 `byteLength`、`sha256`、本页 `offset` 与 `nextOffset`，
+`--full` 的人读输出在 `Next` 给出续读命令。多模态 detail 的 metadata 与解码审计使用同一分页规则，原图仍按上述 operation 分页。
 `show` 的人读正文保持有界 preview，但直接显示 [材料容量诊断](../assertions/library/custom-assertions.md#材料选择)，不因正文较大省略原因。
 
 detail 保留完整已封存 Assertion entry、display 与 source sites，并另给规范化 `check`。
@@ -287,10 +287,9 @@ Evidence detail 返回该精确 JSON 值的规范 UTF-8 bytes，以 `base64` 编
 `execution.continuation` 绑定相同筛选、Attempt origin、source、publication cutoff 和当前 family；
 续读时保留全部筛选参数，绑定改变返回 `restart-required`。identity index 的遗漏不妨碍按已知稳定 ID 精确展开。
 
-Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”只表示完整取回
-已经脱敏并按固定事实族上限封口的内容；producer 已写入的 truncation 与 limitations 必须继续可见，
-查询不能恢复运行时已经舍弃的原文。tool occurrence、item 与事件详情里被 producer 截断的字段必须带截断标记与已保留字节数（已知时另给原始字节数），文本视图写明“已截断”；不能把截断后的前缀当作完整值交付。只有声明权威总量的 command stream 同时交付 retained bytes 与
-`totalSafeUtf8Bytes`；conversation text 只交付已封存值及其 limitation，不能虚构运行时原文总量。
+Inspection 不接受旧 `t<N>.c<M>`、`cmd<N>` 或其它按显示位置派生的 handle。详情中的“完整”表示完整取回
+已经脱敏并封存的内容；事实族不因规模截断，超过页大小的字段经 `continuation` 逐页读取。外部生产者或脱敏留下的 limitations 必须继续可见，
+查询不能恢复运行时从未取得的原文。tool occurrence、item 与事件详情里超过页大小的字段带本页字节范围、原始字节数与 `continuation`，文本视图写明后续页的读取命令；不能把一页前缀当作完整值交付。
 
 CLI 只在 Node 中运行：Node source adapter 在一个固定 `PublicationCutoff` 下打开已发布 facts，随后调用内部 Inspection selector。
 它不启动 HTTP、sqlite-wasm、浏览器或 View session。对象、方面与 ID 只在固定 operation 的参数边界内选择 `overview.get`、Run、
@@ -401,10 +400,10 @@ continuation token 绑定 operation、canonical request、source identity 与 `P
 | `experiment` | `show exp:<experiment-id>` |
 | `next-page` | 同一条命令加 `--continuation <token>` |
 
-有字节上限的单个对象（执行证据、产物正文）超出一页时，result 带 `next-page` link：同一条 `show @<locator> <ID>` 命令加 `--continuation <token>` 读取下一段，token 绑定同一对象与同一读取 cutoff。
+超过页大小的单个对象（执行证据、产物正文）超出一页时，result 带 `next-page` link：同一条 `show @<locator> <ID>` 命令加 `--continuation <token>` 读取下一段，token 绑定同一对象与同一读取 cutoff。
 断言图片总是把完整字节写入 `--output` 指定的文件，不分页。
 
-`links` 只列出这一份 result 已经暴露的稳定 ID，有界，不为了列链接额外读取事实。
+`links` 为这一页 result 已经暴露且可下钻的稳定 ID 提供链接，并保留续读命令。
 每条命令原样执行都成功；agent 在命令后加 `--json` 得到下一份 document。带 `--record <file>` 读取时，命令保留同一个 `--record`。
 文本 `Next` 另外可以给出 `niceeval exp <experimentId> --dry` 这类不属于读取的命令，它们不进入 `links`。
 explanation 与 failure document 不带 `links`；failure 的下一步由 correction 表达。
@@ -528,10 +527,10 @@ denominator、pass rate、score、coverage、usage、timing、diff 或 Evidence�
   activity 超过单页上限时，result 带 `continuation`，`niceeval show @<locator> timing --continuation <token>` 读下一页，规则与 `execution` 的分页相同；不能只报 omitted count 而不给翻页入口。人读输出的 `Next` 给出下一页命令。各层 activity 的 label 由 owner 定义，Judge 的区间见 [Judge · Timing 区间](../judge/architecture.md#timing-区间)。
 - `@<locator> usage` 调用 `attempt.usage`，首先显示该局 totalCosts，再显示应用用途、实际模型和 Judge 明细。全账本费用完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 和 Missing sources，不把已知小计称为整局价格。实验中的每个 origin Attempt 复用同一总费用投影，不累加分页预览。
   input/output token、request 与 cost typed totals 均保留各自 state/coverage。renderer 不得从 observations 聚合 totals，也不得将缺失或 omitted 按零补齐。
-- `@<locator> diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、oversized、capture failure 等边界。
+- `@<locator> diff` 调用 `attempt.diff`，显示已封存 window 与 file changes，并保留 binary、capture failure 等边界。changes 按固定页大小分页，超出时 result 带精确 omitted count 与 `continuation`，`Next` 给出续读命令。
   正文可读的 text change 使用 `niceeval show @<locator> fc_<id>` 下钻，命令统一放在末尾有界的 `Next` 中。
 - `@<locator> fc_<id>` 调用带 `changeId` 的 `attempt.diff`。result 带这一项的 before / after 正文与 Inspection 按两端正文算出的 unified hunks。
-  正文与 hunks 各有字节上限，超出时写明截断位置；binary、oversized 与采集失败的一端如实标注，不伪造空正文。文本视图按 unified diff 显示。
+  正文与 hunks 按固定页大小返回，超出时写明本页结束位置、剩余字节数与 `continuation`，续读到末页即得全文；binary 与采集失败的一端如实标注，不伪造空正文。文本视图按 unified diff 显示。
 - `@<locator> artifacts` 调用 `attempt.artifacts` 列出已保存的 artifact；`@<locator> <artifact-id>` 调用 `attempt.artifact` 读取一项。
 - `@<locator> ae_<id> image <image-id> --output <file>` 调用 `attempt.assertion.image`，把图片字节写入 `--output` 指定的文件；
   `image` 必须跟在一条断言之后并与 `--output` 同用，不向终端写二进制。
@@ -651,7 +650,7 @@ niceeval show exp:harness/v0.19.0 exp:harness/canary assertions
 niceeval show exp:install/v0.20.0 exp:install/canary assertions --eval install/db-gpt
 ```
 
-request 是 `{ kind: "experiments.assertions", experimentIds, evalIdPrefix? }`。`experimentIds` 至少一项，去重后按 ID 排序；
+request 是 `{ kind: "experiments.assertions", experimentIds, evalIdPrefix?, continuation? }`；`continuation` 来自上一页 result，绑定同一 Experiment 集合、筛选与 cutoff。`experimentIds` 至少一项，去重后按 ID 排序；
 任一 ID 未命中时整次失败。`evalIdPrefix` 按 Eval ID 的路径前缀筛选，省略时包含全部 Eval。
 
 成员选择与 `experiment.get` 完全相同：每个 Experiment 的每个 Planned attempt 取当前已发布结果。
@@ -669,7 +668,7 @@ result 按 Eval ID 排序，每个 Eval 给出：
 在该 Eval 的 `unlabeled` 里按列计数。同一 Attempt 内身份重复的条目不合并，按出现顺序成为同一行里的多格，
 不能让后一条静默替换前一条。行按在各列中首次出现的顺序排列，先出现的列优先。
 
-result 有界：行数或格数超过上限时 `state` 为 `partial`，并给出被省略的 Eval、行与列的数量；不能静默截断。
+result 按固定页大小分页：行数或格数超过单页时给出被省略的 Eval、行与列的精确数量，以及读取下一页的 `continuation`；不能静默截断。分页省略不使判据本身成为 `partial`。
 
 文本投影每个 Eval 一张表：第一行是各列的 Verdict 与 score，其后每行一条判据。计分条目显示 `得分/满分`，
 不计分条目显示判定结果，`absent` 显示 `—`。`distinct` 为 `true` 的行有可见标记，标题下注明该标记的含义。
@@ -1002,9 +1001,9 @@ type JudgeUsage =
 JudgeUsageCall 的穷尽形状见 [Judge 账本定义](../judge/architecture.md#持久形状)。公开调用预览最多 128 条，按 entryIndex、logicalOrdinal、transmissionOrdinal 排序。
 priceReceipts 仅返回预览调用的证明，全部证明仍留在附件。所有 totals 必须从全账本计算。
 
-调用加对应价证按 canonical UTF-8 总字节选择完整前缀，预览最多 128 KiB；放不下一条时 calls=[] 且 omitted 为全量。
-最终 attempt.usage envelope 超过 16 MiB 时继续缩短该前缀，不删 totals、完整度或已知金额；仍放不下才按既有预算错误拒绝。
-截断必须同步 callsTruncated/omittedCallCount，不能只按行数限制。
+调用加对应价证按 canonical UTF-8 总字节选择完整前缀，每页最多 128 KiB；单条调用连同价证超过页大小时独占一页，不因规模被跳过。
+分页不删 totals、完整度或已知金额，也不因规模返回预算错误。
+分页必须同步 callsTruncated/omittedCallCount 与 `continuation`，不能只按行数限制。
 
 请求计数只依赖登记完整性；token 和费用各自计算完整性。state complete 表示调用集合完整，不能替代指标完整度。
 完整空账本的 requests/tokens 为已知 0、observationCount 0，costs complete 且 values=[]、totalCalls=0。
@@ -1062,7 +1061,7 @@ Turn 占比标明覆盖数，列出缺桶的 Turn 与桶名。物理调用缓存
 
 `show exp:<id>` 的 Models and usage 区按当前已选 origin Attempt 展示同一读面，标明 locator 和 origin Run。
 每个 origin Attempt 的 locator 只在该用量小节标题中出现一次。
-重复 origin 只展示一次，不合并不同局的配置；超出 64 个 Attempt 时说明省略数，未找到的成员另列。
+重复 origin 只展示一次，不合并不同局的配置；超出 64 个 Attempt 时说明精确省略数并在 `Next` 给出续读命令，未找到的成员另列。
 此区域不从调用或模型组预览重算实验总费用。旧应用 costUSD 口径不变，Judge 未登记与带缺口合计保持显式状态。
 
 实验结果首先显示同一 `experiment.get.costSummary` 的总额、范围、唯一 origin 完整度与未定位计划 Attempt。

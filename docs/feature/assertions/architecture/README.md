@@ -27,17 +27,16 @@ author calls / evaluator internals / producer control flow
 
 `sourceSites` 是 Assertions payload 的字段，不是物理 send Navigation Attachment。它只保存已执行 entry 的 source mapping；源码内容仍属于 origin Run-owned Sources family。精确 join 与显示规则见 [Source sites](source-sites.md)。
 
-matcher diagnostic 在求值时只保留 8 个代表候选与决定结果的 witness／counterexample，并在进入 payload 前限制为 64 个节点与 64 KiB。决定性 witness 即使位于第 10,001 个候选也必须保留。
+matcher diagnostic 是从完整材料派生的解释预览：它展示 8 个代表候选与决定结果的 witness／counterexample，预览为 64 个节点与 64 KiB。决定性 witness 即使位于第 10,001 个候选也必须保留。
+预览省略的候选仍在完整材料中，经 `attempt.assertion.detail` 的 full 投影逐页读取；`explanationRetention` 记录预览省略的精确数量。
+预览只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。
 
-超限时只裁 nondecisive samples 与 root summaries。截断只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。
-
-4 MiB 是 Assertions JSON framing 的上限，不是一次 Assertion 求值可观察材料的上限。source / evidence 通过 sealed content handle 提交，Record Core 独占物理编码与写入；family 只声明 16 MiB 的单值上限。
-
-若解释合计仍使 framing 超限，producer 只压缩 `explanationRetention`。它不拆出重复 document，也不删除 entry 或语义字段。只有不可裁的语义 framing 自身超限时才拒绝发布。
+Assertions payload 与单个 source / evidence 值都不设字节上限。source / evidence 通过 sealed content handle 提交，Record Core 独占物理编码与分块写入；超过行内阈值的值存为 Content 分块，身份按完整内容计算。
+entry 数量与 framing 规模不使发布失败，producer 不删除 entry 或语义字段。
 
 ## Current 外层 payload
 
-writer 产出的 current payload 是 `AssertionsAttachment`。所有契约拥有的 object 都 exact decode；不在下列形状中的字段一律拒绝。`BoundedJsonValue` 是唯一允许任意 JSON key 的值域，只用于 snapshot 或 criterion 的 raw `data`，不是开放 metadata。decoder 限制深度为 8、对象键数为 64、数组项数为 256、单字符串为 8 KiB，且整个 payload 最多 4 MiB。
+writer 产出的 current payload 是 `AssertionsAttachment`。所有契约拥有的 object 都 exact decode；不在下列形状中的字段一律拒绝。`BoundedJsonValue` 是唯一允许任意 JSON key 的值域，只用于 snapshot 或 criterion 的 raw `data`，不是开放 metadata。decoder 不按深度、对象键数、数组项数或字符串长度拒绝值；超过行内阈值的 snapshot 与 criterion data 存为 Content 分块，由摘要引用。
 
 ```ts
 type BoundedJsonValue =
@@ -96,15 +95,15 @@ type AssertionEntryOuter = Omit<AssertionEntry, "criterion"> & {
 };
 ```
 
-reader 先以 outer shape exact decode：除了 `criterion` 暂时只要求为有界 JSON object 外，其余 document 与 entry 字段已经完整验证。这样 reader 能先确定 entry 边界，再局部解释 criterion，而不会把未知 criterion 当成整个 payload 损坏。
+reader 先以 outer shape exact decode：除了 `criterion` 暂时只要求为 JSON object 外，其余 document 与 entry 字段已经完整验证。这样 reader 能先确定 entry 边界，再局部解释 criterion，而不会把未知 criterion 当成整个 payload 损坏。
 
-`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；它不从 label、数组位置、源码或材料推导。一个 document 最多 4,096 个 entry；label、groupPath 的每项都是无控制字符、最多 256 code points 的文本，group 深度最多 16。
+`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；它不从 label、数组位置、源码或材料推导。document 的 entry 数量不设上限，每个 entry 是一个 collection item；label、groupPath 的每项都是无控制字符的文本，长度与 group 深度不设上限。人读界面按固定宽度折叠过长的 label，machine 输出保留全文。
 
 ## Criterion envelope 与内建 criterion
 
 criterion 的 outer envelope 只有两种 exact object。third-party 形态就是精确的 `{ name, schemaId, data }`；它没有额外 discriminator 或自由字段。builtin 形态保留 `id` 和 raw JSON `data`，以便未知的未来 builtin 仍可在单条 entry 内显示 unsupported。
 
-builtin `id`、third-party `name` 与 `schemaId` 都是最多 128 bytes 的 ASCII identifier，不允许控制字符或空值。builtin `id` 的 `/vN` 后缀是 criterion schema version，不是 filesystem path；这些值是 schema 选择 identity，不是作者传入的可执行 evaluator 名。
+builtin `id`、third-party `name` 与 `schemaId` 都是最多 128 bytes 的 ASCII identifier，不允许控制字符或空值。长度与字符集属于标识符文法：这些值进入 locator 与 CLI，不是数据规模上限。builtin `id` 的 `/vN` 后缀是 criterion schema version，不是 filesystem path；这些值是 schema 选择 identity，不是作者传入的可执行 evaluator 名。
 
 ```ts
 type BuiltInCriterionEnvelope = {

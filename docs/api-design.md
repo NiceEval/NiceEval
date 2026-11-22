@@ -671,7 +671,7 @@ t.note("首个决策延迟", ms(result.firstDecisionMs));
 
 - 它没有 matcher、gate、score，不进入 Verdict、score 与 coverage，也不计入 Assertion 数量。
 - value 是 JSON 值或 `Quantity`（见下节）；null 表示该项未取得，呈现为 unavailable。
-- 同一 Attempt 内 label 唯一。重复 label、超过 64 项或单项 JSON 超过 64 KiB 时，`t.note` 抛出 TypeError。
+- 同一 Attempt 内 label 唯一。重复 label 时 `t.note` 抛出 TypeError；条数与单项 JSON 大小不设上限。
 
 Note 不是 Assertion。Record 新增 `attempt-note` family（revision 1），每项保存 label、按调用顺序的序号、value 与可选 unit。
 旧 Record 没有该 family，读取为空列表。

@@ -143,7 +143,7 @@ Runner 在唯一 ACTIVE 出口先对完整文本做已知 secret redaction，再
 不新增迁移。旧读者不保证能读取缺少领域 revision 的新 header；后续不兼容格式变更另行治理。
 
 事件的可选 `display` 同样在 family revision 1 内扩宽，不新增迁移。没有 `display` 的事件读取为 `display: absent`；
-存在时按严格形状解码，未知 `kind`、未知字段或越过上限的值使 collection 为 invalid。`image` 块持久保存接纳时固定的
+存在时按严格形状解码，未知 `kind`、未知字段或不合形状的值使 collection 为 invalid；块数与文本长度不是 invalid 的理由。`image` 块持久保存接纳时固定的
 `artifactId`、`mediaType`、`byteLength` 与 `sha256`；发布与读取按 evidence 引用的同一规则验证附件闭合，
 不符时返回 `inspection-record-integrity-failure`，不报成 `not-found`。旧读者不保证能读取带 `display` 的事件。
 
@@ -169,11 +169,11 @@ Query 与 Library 在同一采集截面逐字段一致，View 与 Show 展示同
 
 独立原生 Codex / GPT-6.1 Sol 静态审查为 CONDITIONAL，以下三项已收敛。
 
-attempt.usage 专属预算为 16 MiB（超限显式失败），不扩展 experiment.get 摘要。
+attempt.usage 的模型组与调用列表按固定页大小分页，规模不会使响应失败；不扩展 experiment.get 摘要。
 读取边界传入 producerCompletenessKnown，revision 1–3 固定 false，当前 collector 为 true，仅影响 cacheRead。
 unknown 状态计数单列并阻止 exact，不依赖输出 token 或成本。
 
-验收加入 2000 组与最大身份字符串的公开 Query 可读（仍遵守现有附件 1 MiB 预算）、旧 revision complete 仍 unavailable、unknown 且 token 齐全仍 unavailable。
+验收加入 2000 组与长身份字符串的公开 Query 可逐页读完、旧 revision complete 仍 unavailable、unknown 且 token 齐全仍 unavailable。
 
 
 ## 共享模型用途要求

@@ -45,7 +45,7 @@ declare function defineSimulatedUser(definition: SimulatedUserDefinition): Simul
 // t.simulatedUser(definition): SimulatedUser —— Agent 的 t 与 Session 上可用
 ```
 
-- `defineSimulatedUser` 从 `niceeval` 导出。instructions 去空白后非空，最多 8 KiB UTF-8 bytes；timeoutMs 为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。定义没有名字。
+- `defineSimulatedUser` 从 `niceeval` 导出。instructions 去空白后非空，长度不设领域上限，能否发送由模拟用户模型的上下文决定；timeoutMs 为正安全整数；未知字段和 accessor 拒绝，定义校验后冻结。定义没有名字。
 - `t.simulatedUser(definition)` 绑定主 Session，在 Session 上调用时绑定该 Session。它属于 Agent 会话能力，普通自定义应用不因提供同名 `send` 方法而取得该能力。
 - 同一个 `SimulatedUser` 的多次 `reply` 共用一个 pi 会话。不同实例、Session 或 Attempt 的 pi 历史互不共享；定义可复用，运行期实例不可跨 Attempt 使用。
 - `reply(turn)` 只接受同一 session 的最新 Turn：

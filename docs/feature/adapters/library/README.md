@@ -274,15 +274,16 @@ Adapter 负责将领域 request reference 映射为明确的 link 或 evidence�
 大请求保留在附件中，事件只保存精确引用。缺失 pointer 拒绝整份快照，不回退为整件附件。
 
 同 `traceId` 的规范化快照完全相同则返回原 receipt；对象键顺序不影响比较，事件数组顺序参与比较。
-冲突、非法输入或预算超限拒绝整份输入，保留此前接纳的快照，并登记采集失败。不得静默截取为合法前缀。
+冲突或非法输入拒绝整份输入，保留此前接纳的快照，并登记采集失败。不得静默截取为合法前缀。
 complete 的 limitations 必须为空，partial 必须有原因；从未提交不等于 complete-empty。
 
-每个 Attempt 最多 32 份快照、100,000 个事件、64 MiB 规范化输入。每事件 payload 最多 16 KiB，summary 最多
-512 UTF-8 bytes，links 最多 32 项，evidence 与 membership 各最多 8 项。标识最多 256 UTF-8 bytes，JSON 深度最多 32。
+快照数、事件数、规范化输入总量、payload、summary、links、evidence、membership、标识长度与 JSON 深度都不设领域上限。
+每个事件是一个 collection item；超过行内阈值的 payload 与 summary 存为 Content 分块，身份按完整内容计算。
 同 trace 的 key、scopeId 唯一；同事件的 evidence key 与 membership 不重复。
 
-一次接纳或读取最多处理 256 MiB 原始附件内容与 128 MiB 规范化证据目标，相同附件及 pointer 复用校验结果。
-超过预算明确失败，不返回未经验证的预览。作为 JSON pointer 证据的单件附件最多 64 MiB，读取前检查大小。
+接纳与读取流式校验附件内容与 pointer 目标，内存占用不随附件大小增长；相同附件及 pointer 复用校验结果。
+校验未完成时不返回未经验证的预览。`show @<locator> execution` 与 View 按固定页大小读取事件，
+超出时给出精确省略数与续读游标，规则见 [Inspection CLI](../../inspection/cli.md)。
 
 接纳在返回 Promise 前完成验证与复制，不绑定已取消的执行 signal。Adapter 可在独立 cleanup 接纳时段结束前提交
 已验证的 partial；正常和失败路径应共享一次 finish。接纳时段结束后的调用拒绝且不改变封存事实。
@@ -328,13 +329,8 @@ interface ExecutionTraceEvent {
 展示块与 `payload` 相互独立：payload 是领域事实，展示块是同一事实的人读形式。NiceEval 不校验二者一致，也不从 payload 生成展示块。
 展示块与 payload 一样只能放已脱敏、可公开的内容。
 
-| 项 | 上限 |
-|---|---|
-| 每事件块数 | 4 |
-| 每事件展示总量（规范化 UTF-8） | 8 KiB，计入每 Attempt 64 MiB 规范化输入 |
-| `fields` 项数 | 16 |
-| `label`、`speaker`、`language` | 128 UTF-8 bytes，不含换行 |
-| `alt` | 512 UTF-8 bytes，不含换行 |
+展示块的块数、`fields` 项数与文本长度不设领域上限，随事件完整封存。`label`、`speaker`、`language` 与 `alt` 不含换行。
+读取端按固定预览大小折叠展示块，并给出读取完整事件的入口，见 [Inspection CLI](../../inspection/cli.md)。
 
 字符串不能含除 `\t`、`\n` 外的 C0/C1 控制字符，也不能含 U+2028、U+2029 或双向格式控制字符。
 违反任一规则时整份快照被拒绝，code 为 `execution-display-invalid`，并指出违规的 `events[i].display[j]` 与字段名。
@@ -417,13 +413,13 @@ interface AdapterAttachmentReceipt {
 Promise 成功只证明接管，持久性由 Attempt publication 提供；本地暂存不是远端上传。
 附件随 Record 保存，搬走 Record 后无需保留源文件或应用工作目录。
 
-每个 Attempt 最多接管 4000 件。字符串和数组单件最多 64 MiB，累计最多 256 MiB。
-流单件最多 1 GiB；所有字节 producer连同正在写入的内容累计最多 2 GiB。
-每个 Attempt 最多同时归档 4 个流，额外调用明确拒绝，不启动字节 producer。边界值可用。
-暂存目录位于 Record 的项目存储目录，使用私有目录与文件权限；并发磁盘预算是单 Attempt 上限乘以执行并发数。
-分块和并发上限限制框架持有的内存与文件句柄；字节 producer自己的预取、缓存和外部资源由字节 producer负责。
+附件件数、单件大小与累计大小不设领域上限。附件内容按 Content 分块保存，身份按完整 bytes 计算。
+每个 Attempt 同时归档的流数由有界队列控制，默认容量为 4。队列满时额外调用等待空位，不启动字节 producer，也不拒绝调用。
+暂存目录位于 Record 的项目存储目录，使用私有目录与文件权限。
+1 MiB 的拉取块与流队列容量限制框架持有的内存与文件句柄；字节 producer自己的预取、缓存和外部资源由字节 producer负责。
+磁盘写满等资源耗尽使该次归档显式失败。
 
-非法输入、超限、字节 producer异常、调用方取消和关闭后的调用明确拒绝，不返回部分内容的成功回执。
+非法输入、资源耗尽、字节 producer异常、调用方取消和关闭后的调用明确拒绝，不返回部分内容的成功回执。
 失败释放该次部分归档，保留此前成功接管的附件。关闭前的失败保留为 Attempt 执行错误，collection 标为 partial，即使作者捕获了拒绝。
 
 Attempt 取消不立刻关闭附件入口。已登记 cleanup 在独立时限内仍可附加诊断材料；cleanup 完成或截止时关闭入口并封存快照。
@@ -470,7 +466,7 @@ Adapter 在全部可取得的物理调用最终快照登记后，调用 `ctx.sea
 需要完整预算判断时，必须先结束采集并封存，再读取用量。
 
 `callId` 在一个 Attempt 内标识物理调用；重试使用新 ID，`retryOf` 可引用此前已登记的 ID。
-相同规范化快照重复上报不增加用量；同 ID 的冲突快照明确失败。每个 Attempt 最多保存 4000 次调用的快照。
+相同规范化快照重复上报不增加用量；同 ID 的冲突快照明确失败。每个 Attempt 保存的调用快照数不设上限，每次调用是一个 collection item。
 这是终态快照入口：先收尾外部观测，再上报；只有 started 而无 terminal 的调用标为 `unknown`，不推断成功。
 `status` 接受 `succeeded | failed | cancelled | unknown`；供应商和模型未知时保留 `null`，不从通道名称推断。
 
@@ -486,8 +482,8 @@ Adapter 不能通过这个入口提交 estimated cost；market、gateway 与 sur
 总量与分项独立保存，不重复相加，也不根据不完整分项补算总量。
 
 `attempt.usage` 返回 `source: "adapter"`、`coverage: "recorded-calls"`、调用快照和各计数的已知小计。
-未知值保留，部分小计标为 partial；已上报快照完整不代表包含外部系统的全部调用。单次最多返回前 128 条调用，
-`callsTruncated` 与 `omittedCallCount` 明示截断；聚合仍包含已封存的全部调用。
+未知值保留，部分小计标为 partial；已上报快照完整不代表包含外部系统的全部调用。调用列表每页 128 条，
+`callsTruncated` 与 `omittedCallCount` 给出精确省略数，`continuation` 读取下一页；聚合仍包含已封存的全部调用。
 
 每个调用最多选择一个 effective cost：有 reported cost 时直接采用，包括零；否则 NiceEval 只按显式 configured fixed pricing profile
 与已封存 token 桶形成 estimate proof。缺少价格、token 或 cache 专用 rate 时保持 unknown 或 partial，不回退 input rate。
@@ -646,10 +642,10 @@ rate.reason 使用 reasons 的首项。缺失不补零；完整且有正输入�
 
 roles 包含全部配置用途以及已观测的 null 用途；没有调用的配置用途仍显示 no-calls。
 models 按 `[modelRole, provider, model]` 精确分组；null 保持未知，不能冒充配置值。
-排序逐字段采用 null 在前、字符串按 UTF-16 码元升序。用途最多 65 组，实际模型最多 4000 组，均不截断。
-这些上限来自现有配置与调用接纳预算，报告不再复制调用、附件或价格回执。
+排序逐字段采用 null 在前、字符串按 UTF-16 码元升序。用途组与实际模型组都不设数量上限，聚合基于全部已封存调用。
+报告不再复制调用、附件或价格回执。
 
-attempt.usage 使用专属 16 MiB 响应预算，容纳 4000 组各身份最大 256 UTF-8 字节及 JSON 转义；超预算明确返回 evidence-budget-exceeded，不静默截断模型组。其他操作预算不变，experiment.get 的既有摘要不复制 cacheRead；详情通过 attempt.usage 读取。
+attempt.usage 的模型组按固定页大小返回，超出时给出精确省略数与 `continuation`；规模不会使响应失败，也不静默截断模型组。experiment.get 的既有摘要不复制 cacheRead；详情通过 attempt.usage 读取。
 
 没有 Adapter 账本时 total unavailable，两个分组数组为空；revision 1–3 缺少生产者明确 seal 声明，即使原 collection 为 complete，也保留 collection-incomplete。当前 revision 4 由读取边界传递完整性声明，Library collector 使用当前 seal 状态。
 
@@ -677,16 +673,15 @@ Adapter 先以 `ctx.attach` 接管已封存的原始证据，等待成功回执�
 只捕获明确属于该指标的错误；未知异常、usage 接纳失败、附件归档失败和持久存储失败继续走执行错误路径。
 必要 gate 或评分贡献 unavailable 仍可使 Attempt errored，但已登记事实与已知 earned score 保留，不取得成功排名分数。
 
-大型日志使用带背压的字节流读取；解压、分行与 JSON parse 均设置上限。
-单行字节上限必须在分行器缓存完整行之前执行，另设解压后累计字节上限及派生集合容量上限。
-压缩文件很小不证明解压后内容有界；流式输入也不允许把所有行重新累积成无界字符串或数组。
-容量超限明确标记受影响指标不可用，不能静默截断后声称完整。取消与失败均关闭流并释放文件句柄。
+大型日志使用带背压的字节流读取，解压、分行与 JSON parse 都以流式方式进行，不设领域容量上限。
+压缩文件很小不证明解压后内容小；流式输入不把所有行重新累积成一个字符串或数组，派生结果逐项写入 collection item。
+内存或磁盘耗尽使受影响指标显式不可用，不能静默截断后声称完整。取消与失败均关闭流并释放文件句柄。
 
 
 ## 共享模型用途声明
 
 `defineModelRoles({ mind: { model: "provider/model" }, speech: { model: "provider/model" } })` 返回自身复制的深冻结声明，保留精确键联合；不增加类型品牌、运行时品牌或注册表，也不冻结作者传入的对象。
-键和值仍遵守 ModelRoleSelection 的现有校验、64 个槽位上限与模型配置约束；它没有全局注册表，不启动资源。
+键和值仍遵守 ModelRoleSelection 的键文法与模型配置约束，槽位数量不设上限；它没有全局注册表，不启动资源。
 声明可直接传给多个 Experiment 的 models。每个 Experiment 仍决定模型选择，不要求与 Eval 的声明对象引用相同，也不要求模型值相等。
 
 Adapter 的 defineEval、defineScoreEval 绑定工厂接受 `requires: { models: slots }`。

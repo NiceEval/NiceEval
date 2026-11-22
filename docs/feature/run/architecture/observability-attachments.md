@@ -192,7 +192,7 @@ interface AdapterUsageAttachment {
 }
 ```
 
-每项字符串最多 256 UTF-8 bytes，不能含控制字符；每个 Attempt 最多 4,000 个调用。
+每项字符串不能含控制字符，长度不设上限；每个 Attempt 的调用数不设上限，每个调用是一个 collection item。
 计数为非负安全整数或 `null`。`inputTokens` 排除 cache read/write；`inputTotalTokens` 是独立观察到的含缓存输入总量。
 已知输入分项之和不能超过已知总量，全部分项已知时必须相等。总量不与分项相加，也不由分项补值。
 
