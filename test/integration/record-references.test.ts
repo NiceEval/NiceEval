@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { cp, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -98,33 +99,69 @@ async function expectRemaining(cwd: string, alive: Set<string>) {
   }
 }
 
-// Each sample deletes from a fresh Record copy, including during shrink.
-const explorations = Array.from({ length: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 3) }, (_, index) => index + 1);
+const deletionTargets = fc.array(fc.integer({ min: 0, max: DEPENDENCIES }), { minLength: 1, maxLength: 2 });
+const explorations = Array.from({ length: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 3) }, (_, index) => ({
+  number: index + 1,
+  seed: randomInt(-(2 ** 31), 2 ** 31),
+}));
 
-// @feature docs/feature/run/README.md#reference-deletion
-test.for(explorations)(
-  "deletion follows the live reference set (exploration %s)",
-  { timeout: 30_000 },
-  async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(fc.integer({ min: 0, max: DEPENDENCIES }), { minLength: 1, maxLength: 2 }),
-        async (targets) => {
-          const cwd = await freshProject();
-          try {
-            const ids = [originId, ...dependencyIds];
-            const alive = new Set(ids);
-            for (const target of targets) await deleteAndCheck(cwd, ids[target]!, alive);
-            await expectRemaining(cwd, alive);
-          } finally {
-            await rm(cwd, { recursive: true, force: true });
-          }
-        },
-      ),
-      { numRuns: 1 },
-    );
-  },
-);
+async function freshDeletionState() {
+  const cwd = await freshProject();
+  const ids = [originId, ...dependencyIds];
+  return { cwd, ids, alive: new Set(ids) };
+}
+
+type DeletionState = Awaited<ReturnType<typeof freshDeletionState>>;
+
+async function checkTransition({ cwd, ids, alive }: DeletionState, target: number) {
+  await deleteAndCheck(cwd, ids[target]!, alive);
+  await expectRemaining(cwd, alive);
+}
+
+async function shrinkFailure(seed: number, original: unknown): Promise<never> {
+  await fc.assert(
+    fc.asyncProperty(deletionTargets, async (targets) => {
+      const state = await freshDeletionState();
+      try {
+        for (const target of targets) await checkTransition(state, target);
+      } finally {
+        await rm(state.cwd, { recursive: true, force: true });
+      }
+    }),
+    { seed, numRuns: 1 },
+  );
+  throw original;
+}
+
+describe.for(explorations)("exploration $number (seed $seed)", ({ seed }) => {
+  const [targets] = fc.sample(deletionTargets, { seed, numRuns: 1 });
+  let state: DeletionState | undefined;
+
+  beforeAll(async () => {
+    state = await freshDeletionState();
+  });
+
+  afterAll(async () => {
+    if (state !== undefined) await rm(state.cwd, { recursive: true, force: true });
+  });
+
+  // Cache each step so a filtered or shuffled run can prepare the same prefix.
+  const steps = targets!.map((target) => {
+    let running: Promise<void> | undefined;
+    return () => (running ??= checkTransition(state!, target).catch((error) => shrinkFailure(seed, error)));
+  });
+
+  for (const [index, step] of steps.entries()) {
+    describe("deletion " + (index + 1), () => {
+      beforeAll(async () => {
+        for (const previous of steps.slice(0, index)) await previous();
+      }, 30_000);
+
+      // @feature docs/feature/run/README.md#reference-deletion
+      test("the deletion result and remaining Record follow the live reference set", { timeout: 30_000 }, step);
+    });
+  }
+});
 
 describe("deleting a referenced origin, then one of its dependencies", () => {
   let cwd: string;
