@@ -192,8 +192,12 @@ export default class extends JsonReporter {
   constructor() { super({ stdout: true }); }
 }
 `;
+// Whole-suite takeover has no test filename. Keep the native runner explicit
+// for mixed repos whose command otherwise routes reporter-only args to Vitest.
 export const nativeReporterArgs = (executor: InventoryExecutor): readonly string[] =>
-  executor === "vitest" ? [`--reporter=./${VITEST_JSON_REPORTER_PATH}`] : ["--reporter=json"];
+  executor === "vitest"
+    ? [`--reporter=./${VITEST_JSON_REPORTER_PATH}`]
+    : ["--config=playwright.config.ts", "--reporter=json"];
 
 export function observeNativeTestResult(
   executor: InventoryExecutor,
