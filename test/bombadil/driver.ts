@@ -1,9 +1,9 @@
 import { execa } from "execa";
-import { createReadStream } from "node:fs";
+import { statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { mkdir, mkdtemp, glob, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
@@ -183,22 +183,37 @@ async function authorizeFuzzSessions(ready: string) {
   if (response.status !== 204 || cookie === null) {
     throw new Error(`View session exchange failed with HTTP ${response.status}`);
   }
-  // Bombadil 0.7.10 cannot set SameSite. This driver explores only the View origin.
+  // Bombadil's --cookie parser still rejects SameSite. Exploration stays on the View origin.
   return { url: url.href, args: ["--cookie", cookie.replace(/;\s*SameSite=[^;]*/i, "")] };
 }
 
-async function checkTraces(outputPath: string) {
-  // Bombadil 0.7.10 reports campaign violations in traces and exits 0.
+async function checkTraces(outputPath: string, mode: "test" | "fuzz") {
+  const { dir, base, name, ext } = parse(resolve(outputPath));
+  const files = (await readdir(dir)).filter((file) => {
+    if (mode === "test") return file === base;
+    // For fuzz, the file base run.bin produces numbered siblings run-0.bin, run-1.bin, etc.
+    const prefix = `${name}-`;
+    return (
+      file.startsWith(prefix) &&
+      file.endsWith(ext) &&
+      /^\d+$/.test(file.slice(prefix.length, file.length - ext.length))
+    );
+  });
   let sampled = false;
-  for await (const trace of glob("**/trace.jsonl", { cwd: outputPath })) {
-    const lines = createInterface({ input: createReadStream(join(outputPath, trace)) });
+  for (const file of files) {
+    const trace = join(dir, file);
+    const inspection = execa("bombadil", ["trace", "--json", trace], { buffer: false, stderr: "inherit" });
+    const lines = createInterface({ input: inspection.stdout! });
+    let violations = false;
     for await (const line of lines) {
       sampled = true;
-      const { violations } = JSON.parse(line) as { violations?: readonly unknown[] };
-      if (violations?.length) {
-        process.stderr.write(`Bombadil found property violations in ${trace}\n`);
-        return { sampled, violations: true };
-      }
+      const { metadata } = JSON.parse(line) as { metadata: { violations?: readonly unknown[] } };
+      violations ||= Boolean(metadata.violations?.length);
+    }
+    await inspection;
+    if (violations) {
+      process.stderr.write(`Bombadil found property violations in ${trace}\n`);
+      return { sampled, violations };
     }
   }
   return { sampled, violations: false };
@@ -257,17 +272,35 @@ if (surface === "check-exp" && mode !== undefined) {
   }
   const cwd = await mkdtemp(join(tmpdir(), "niceeval-bombadil-"));
   try {
-    const suppliedOutput = args.indexOf("--output-path");
-    const outputPath = suppliedOutput === -1 ? join(cwd, "traces") : args[suppliedOutput + 1];
-    if (outputPath === undefined) throw new Error("Expected a value after --output-path");
+    const suppliedOutput = args.findIndex((arg) => arg === "--output-path" || arg.startsWith("--output-path="));
+    const outputOption = args[suppliedOutput];
+    const outputPath =
+      outputOption === "--output-path"
+        ? args[suppliedOutput + 1]
+        : (outputOption?.slice("--output-path=".length) ?? join(cwd, "trace.bin"));
+    if (!outputPath || outputPath.startsWith("--")) throw new Error("Expected a file path for --output-path");
+    await mkdir(dirname(outputPath), { recursive: true });
     const commandArgs = suppliedOutput === -1 ? [...args, "--output-path", outputPath] : args;
+    const previousTrace =
+      surface === "terminal" && mode === "test"
+        ? statSync(outputPath, { bigint: true, throwIfNoEntry: false })
+        : undefined;
     if (surface === "browser") await writeProject(cwd, false);
     const result =
       surface === "terminal" ? await terminal(cwd, mode, commandArgs) : await browser(cwd, [mode, ...commandArgs]);
     process.exitCode = result.exitCode ?? 1;
-    const findings = await checkTraces(outputPath);
-    if (findings.violations) process.exitCode = 2;
-    if (process.exitCode === 0 && !findings.sampled) throw new Error("Bombadil did not record any observations");
+    if (process.exitCode === 0) {
+      const findings = await checkTraces(outputPath, mode);
+      if (findings.violations) process.exitCode = 2;
+      if (!findings.sampled) throw new Error("Bombadil did not record any observations");
+    } else if (surface === "terminal" && mode === "test" && process.exitCode === 1) {
+      // Terminal test uses 1 for both tool errors and property violations.
+      const trace = statSync(outputPath, { bigint: true, throwIfNoEntry: false });
+      if (trace && (trace.ino !== previousTrace?.ino || trace.ctimeNs !== previousTrace?.ctimeNs)) {
+        const findings = await checkTraces(outputPath, mode).catch(() => undefined);
+        if (findings?.violations) process.exitCode = 2;
+      }
+    }
   } finally {
     if (surface === "terminal") {
       for (const entry of await readdir(cwd, { withFileTypes: true })) {
