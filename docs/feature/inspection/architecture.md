@@ -189,7 +189,8 @@ modelGroups 含 basis、state、groups、totalGroupCount、groupsTruncated、omi
 全部已封存调用参与统计。modelGroups 每页 64 组，调用列表每页 128 条，超出时给出精确省略数与 `continuation`；分页不影响聚合。
 cacheRead 与 [Adapter Library](../adapters/library/README.md#缓存读取率) 使用相同纯投影，含 total、roles 与 models。
 该报告基于全部调用聚合；cacheRead 分组同样按固定页大小分页，完整性由生产者 seal 声明单独判断，旧版账本不推断完整。
-attempt.usage 不因规模返回 evidence-budget-exceeded，也不截断任何分组；超出单页的部分经 `continuation` 续读。
+`cacheRead` 每页最多返回 64 个角色组和 64 个模型组，`omittedRoleCount` 与 `omittedModelCount` 给出各自的剩余数。
+将 `usage.continuation` 交回同一 `attempt.usage` 请求，读取各集合的下一页。已读完的集合在后续页为空。
 
 `turnCacheRead` 从同一 Attempt 已封存的 Turn 观测计算，包含 `basis`、`state`、`value`、`reason`、`coveredTurns` 与 `missingTurns`。
 它读取完整封存的观测，不受 `turns` 与 `observations` 预览上限影响。公式及缺失规则见 [Adapter Library](../adapters/library/README.md#缓存读取率)。
@@ -210,7 +211,9 @@ usage 仅含 state、configuredModels、modelGroups、judgeUsage、totalCosts、
 每页返回按 originRunId/locator 排序的 64 个 Attempt，超出时给出 omittedAttemptCount 与续读 `continuation`；未找到的成员单列。Judge 使用不含 calls/priceReceipts 的摘要。
 
 experiment.get 的单页 JSON 响应预算为 4 MiB，这是页大小而不是数据上限；完整 aggregate/cells 保留逐断言证据完整度。
-页内保留完整 Attempt 摘要前缀，omittedAttemptCount 给出精确省略数，`continuation` 读取其余 Attempt；保留摘要中的金额及完整度不变，不以预览重算总量。
+每页以完整 Attempt 摘要为单位，`omittedAttemptCount` 给出精确剩余数。
+将 `experiment.modelUsage.continuation` 交回同一 `experiment.get` 请求，读取其余 Attempt。
+分页保留摘要中的金额与完整度。
 
 
 ## Judge 用量投影
@@ -287,7 +290,9 @@ Show 与 View 从同一 costSummary 展示范围、总额和完整度，各 Atte
 两个分项均 complete 时 total 才为 complete，否则已知金额仅为 partial 小计；没有可计价金额时为 unavailable。
 完整空账本贡献精确零；不存在的 Judge 账本仍是缺口。金额不换汇、不外推未知调用。
 
-逐调用 estimates 与 missingCallIds 按与 attempt.usage 相同的页大小分页，超出时给出精确省略数与 `continuation`；规模不使请求失败，也不通过删调用或价格证据伪装完整。
+逐调用 `estimates` 与 `missingCallIds` 按与 `attempt.usage` 相同的页大小分页。
+两种来源各自交付 `omittedEstimateCount` 与 `omittedMissingCallIdCount`，表示对应集合的剩余数。
+将 `repricing.continuation` 交回同一请求，保留原 Attempt locator 与价格配置。
 验收从已安装的 `show @<locator> usage --reprice` 入口使用两个价格版本读取同一 Attempt，核对新估算与完整性，并比较读取前后的公开历史结果。
 
 ## State 事实投影

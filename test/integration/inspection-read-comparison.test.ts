@@ -632,10 +632,12 @@ describe("exact read and comparison: matrix byte bounds and large assertion list
         entryId: firstEntryId,
         projection: "full",
       }).assertion;
-      if (!("entry" in full) || !("materials" in full.entry) || full.entry.materials.source.kind !== "content") {
-        throw new Error("Expected full material content");
-      }
-      expect(full.entry.materials.source.byteLength).toBeGreaterThan(512 * 1024);
+      if (!("fields" in full)) throw new Error("Expected a paged full assertion detail");
+      expect(full.fields.find(({ path }) => path === "/entry/materials/source/content/base64")).toMatchObject({
+        offset: 0,
+        nextOffset: expect.any(Number),
+        encoding: "content-base64",
+      });
 
       let expiredNow = 1_000_000;
       const expireSpy = vi.spyOn(Date, "now").mockImplementation(() => {

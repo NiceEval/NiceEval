@@ -38,6 +38,7 @@ import {
   renderAttempt,
   renderAssertions,
   renderAssertionMatrix,
+  renderAssertionPage,
   renderReferences,
   renderDiff,
   renderExperiment,
@@ -65,6 +66,7 @@ import {
 } from "./model.ts";
 
 import { AssertionEntryIdSchema } from "../assertions/record/codec.ts";
+import type { AssertionDetailResult } from "../inspection/assertion-result.ts";
 import { canonicalInspectionJson } from "../inspection/canonical.ts";
 import {
   INSPECTION_FAILURE_EXIT_CODE,
@@ -257,8 +259,20 @@ function runShow(
       !/^[a-f0-9]{64}$/u.test(expand)
     )
       return yield* usage("--continuation requires execution evidence, artifacts, or a paged outline.");
-    if (continuation !== undefined && !execution && !timing && !runs && !artifacts && !diff)
-      return yield* usage("--continuation requires execution, timing, artifacts, runs, or diff.");
+    if (
+      continuation !== undefined &&
+      !execution &&
+      !timing &&
+      !runs &&
+      !artifacts &&
+      !diff &&
+      !showUsage &&
+      entryId === undefined &&
+      !matrix &&
+      experimentIds.length !== 1
+    )
+      return yield* usage("--continuation requires a paged selection.");
+    const continuationInput = continuation === undefined ? {} : { continuation };
     if (evalIdPrefix !== undefined && !matrix) return yield* usage("--eval requires exp:<id> assertions.");
     if (imageId !== undefined && (imageOutput === undefined || json || full || explain))
       return yield* usage("An Assertion image requires --output; --json, --explain, and --full are not accepted.");
@@ -329,16 +343,26 @@ function runShow(
             try: evaluate,
             catch: (cause) => failure(`project ${operation} result`, cause),
           });
-        const withRecord = (document: InspectionDocument): InspectionDocument =>
-          document.outcome !== "success" || typeof parsed.values.record !== "string"
-            ? document
-            : {
-                ...document,
-                links: document.links.map((link) => ({
-                  ...link,
-                  command: `${link.command} --record ${inspectionShellWord(parsed.values.record as string)}`,
-                })),
-              };
+        const withRecord = (document: InspectionDocument): InspectionDocument => {
+          if (document.outcome !== "success") return document;
+          const links = [...document.links];
+          if (document.operation === "attempt.reprice" && document.repricing.continuation !== undefined) {
+            links.unshift({
+              rel: "next-page",
+              command: `niceeval show ${decodedLocator!.locator} usage --reprice ${inspectionShellWord(pricingFile!)} --continuation ${document.repricing.continuation}`,
+            });
+          }
+          return {
+            ...document,
+            links:
+              typeof parsed.values.record !== "string"
+                ? links
+                : links.map((link) => ({
+                    ...link,
+                    command: `${link.command} --record ${inspectionShellWord(parsed.values.record as string)}`,
+                  })),
+          };
+        };
         const writeJson = (document: InspectionDocument) => {
           const encoded = canonicalInspectionJson(withRecord(document));
           return Result.isFailure(encoded)
@@ -469,7 +493,8 @@ function runShow(
                   catch: (cause) => failure("read pricing", cause),
                 });
           function explainedOperations(): readonly InspectionOperation[] {
-            if (pricing !== undefined) return [{ kind: "attempt.reprice", locator: selectedLocator!, pricing }];
+            if (pricing !== undefined)
+              return [{ kind: "attempt.reprice", locator: selectedLocator!, pricing, ...continuationInput }];
             if (expand !== undefined)
               return [
                 Schema.decodeUnknownSync(inspectionProtocolRegistry["attempt.trace.detail"].request)({
@@ -494,8 +519,8 @@ function runShow(
             if (typeof experimentIds !== "string" && experimentIds.length > 0)
               return showOperations(
                 address.aspect === "assertions"
-                  ? { kind: "assertion-matrix", experimentIds, evalIdPrefix }
-                  : { kind: "experiments", experimentIds },
+                  ? { kind: "assertion-matrix", experimentIds, evalIdPrefix, continuation }
+                  : { kind: "experiments", experimentIds, continuation },
               );
             if (selectedLocator === undefined) return showOperations({ kind: "overview", current });
             switch (address.aspect) {
@@ -506,6 +531,7 @@ function runShow(
                   slice: "assertions",
                   entryId,
                   projection: full ? "full" : "compact",
+                  continuation,
                 });
               case "execution":
                 return showOperations({
@@ -612,6 +638,7 @@ function runShow(
             return {
               kind: "attempt.reprice" as const,
               locator: selectedLocator!,
+              ...continuationInput,
               pricing: yield* Effect.tryPromise({
                 try: async () =>
                   Schema.decodeUnknownSync(InspectionRepricingInputSchema, { onExcessProperty: "error" })(
@@ -633,6 +660,7 @@ function runShow(
               kind: "experiments.assertions",
               experimentIds,
               ...(evalIdPrefix === undefined ? {} : { evalIdPrefix }),
+              ...continuationInput,
             }),
           );
           if (json) yield* writeJson(document);
@@ -649,7 +677,7 @@ function runShow(
           }
           const selectedOperations = () => {
             if (runIds.length > 0) return showOperations({ kind: "runs", runIds });
-            if (experimentIds.length > 0) return showOperations({ kind: "experiments", experimentIds });
+            if (experimentIds.length > 0) return showOperations({ kind: "experiments", experimentIds, continuation });
             if (selectedLocator === undefined) return showOperations({ kind: "overview", current });
             if (assertions)
               return showOperations({
@@ -658,6 +686,7 @@ function runShow(
                 slice: "assertions",
                 entryId,
                 projection: full ? "full" : "compact",
+                continuation,
               });
             if (execution)
               return showOperations({
@@ -693,7 +722,7 @@ function runShow(
         }
         if (assertions) {
           const selectedLocator = decodedLocator!.locator;
-          const details: InspectionSuccessDocumentFor<"attempt.assertion.detail">["assertion"][] = [];
+          const details: AssertionDetailResult[] = [];
           if (entryId === undefined) {
             const document = yield* select("attempt.assertions", () =>
               selectInspectionOperation(opened, {
@@ -724,8 +753,13 @@ function runShow(
                 locator: selectedLocator,
                 entryId,
                 projection: full ? "full" : "compact",
+                ...continuationInput,
               }),
             );
+            if ("fields" in document.assertion) {
+              yield* writeText(renderAssertionPage(document.assertion));
+              return 0;
+            }
             details.push(document.assertion);
           }
           const { attempt } = yield* select("attempt.get", () =>
@@ -875,6 +909,7 @@ function runShow(
               selectInspectionOperation(opened, {
                 kind: "experiment.get",
                 experimentId,
+                ...continuationInput,
               }),
             );
             rendered.push(renderExperiment(yield* project("experiment.get", () => projectExperiment(document))));
@@ -951,6 +986,7 @@ function runShow(
             selectInspectionOperation(opened, {
               kind: "attempt.usage",
               locator: selectedLocator,
+              ...continuationInput,
             }),
           );
           yield* writeText(renderUsage(yield* project("attempt.usage", () => projectUsage(document, selectedLocator))));
@@ -1126,10 +1162,12 @@ export type ShowOperationsInput =
   | {
       readonly kind: "experiments";
       readonly experimentIds: readonly InspectionOperationFor<"experiment.get">["experimentId"][];
+      readonly continuation?: string | undefined;
     }
   | {
       readonly kind: "assertion-matrix";
       readonly experimentIds: readonly InspectionOperationFor<"experiment.get">["experimentId"][];
+      readonly continuation?: string | undefined;
       readonly evalIdPrefix: string | undefined;
     }
   | {
@@ -1144,6 +1182,7 @@ export type ShowOperationsInput =
       readonly slice: "assertions";
       readonly entryId: string | undefined;
       readonly projection: "compact" | "full";
+      readonly continuation?: string | undefined;
     }
   | {
       readonly kind: "attempt";
@@ -1163,6 +1202,8 @@ export type ShowOperationsInput =
 
 /** Fixed document order for the resource-oriented JSON Lines view. */
 export function showOperations(input: ShowOperationsInput): readonly InspectionOperation[] {
+  const continuation =
+    "continuation" in input && input.continuation !== undefined ? { continuation: input.continuation } : {};
   if (input.kind === "runs") return input.runIds.map((runId) => ({ kind: "run.get", runId }));
   if (input.kind === "assertion-matrix")
     return [
@@ -1170,10 +1211,11 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
         kind: "experiments.assertions",
         experimentIds: [...new Set(input.experimentIds)].sort(),
         ...(input.evalIdPrefix === undefined ? {} : { evalIdPrefix: input.evalIdPrefix }),
+        ...continuation,
       },
     ];
   if (input.kind === "experiments")
-    return input.experimentIds.map((experimentId) => ({ kind: "experiment.get", experimentId }));
+    return input.experimentIds.map((experimentId) => ({ kind: "experiment.get", experimentId, ...continuation }));
   if (input.kind === "overview") return [{ kind: input.current ? "project.get" : "overview.get" }];
   const locator = input.locator;
   switch (input.slice) {
@@ -1186,6 +1228,7 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
               locator,
               entryId: Schema.decodeUnknownSync(AssertionEntryIdSchema)(input.entryId),
               projection: input.projection,
+              ...continuation,
             },
           ];
     case "source":
@@ -1209,7 +1252,7 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
         },
       ];
     case "usage":
-      return [{ kind: "attempt.usage", locator }];
+      return [{ kind: "attempt.usage", locator, ...continuation }];
     case "diff":
       return [
         {

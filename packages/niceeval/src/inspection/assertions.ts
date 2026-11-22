@@ -27,10 +27,16 @@ import type { AssertionsAttachment } from "../record/family/assertions/schema.ts
 import type { SourceReceiptLimitation } from "../record/family/source-receipt/index.ts";
 import type { PersistedContentMetadata } from "../record/sqlite/index.ts";
 import { closeInspectionJson, isInspectionCodecError, type InspectionJson } from "./codec.ts";
-import { InspectionSha256, utf8ByteLength, encodeBase64Bytes } from "./bytes.ts";
+import { InspectionSha256, encodeBase64Bytes } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
-import { INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT } from "./limits.ts";
 import { AssertionDetailResultSchema, type AssertionDetailResult } from "./assertion-result.ts";
+import {
+  AssertionRows,
+  AssertionStoredContent,
+  projectAssertionPage,
+  type AssertionPage,
+  type AssertionPagePlan,
+} from "./assertion-page.ts";
 import { readJudgeMaterial } from "../assertions/judge-material.ts";
 import { readScoreMatchAudit } from "../assertions/score-match-audit.ts";
 import type { ScoreMatchAuditImageContent } from "../assertions/score-match-audit.ts";
@@ -87,26 +93,28 @@ export function projectAttemptAssertionIndex(input: InspectionAssertionsRead): I
 export function projectAttemptAssertionDetail(
   source: InspectionFactSource,
   input: InspectionAssertionsRead,
-  agentTurns: InspectionAgentTurnsRead,
+  agentTurns: () => InspectionAgentTurnsRead,
   entryId: string,
-  projection: "full" | "compact" = "full",
-): AssertionDetailResult | undefined {
+  projection: "full" | "compact",
+  page: AssertionPage,
+) {
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") {
-    return decodeAssertionDetail(
-      closeJson({
-        entryId,
-        state: assertions.state,
-        ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
-        sourceSites: [],
-        check: missingCheck(entryId, assertions.state),
-        matcher: missingMatcher(assertions.state),
-      }),
-    );
+    const result = closeJson({
+      entryId,
+      state: assertions.state,
+      ...(assertions.state === "invalid" ? { issues: assertions.issues } : {}),
+      sourceSites: [],
+      check: missingCheck(entryId, assertions.state),
+      matcher: missingMatcher(assertions.state),
+    });
+    return decodeAssertionPage(entryId, { value: result }, page);
   }
   const entry = assertions.value.entries.find((candidate) => candidate.entryId === entryId);
   if (entry === undefined) return undefined;
-  return projectAssertionDetail(source, assertions, agentTurns, entry, projection);
+  const turns = () =>
+    projection === "full" && entry.evaluation.kind !== "ordinary" ? agentTurns() : { state: "not-recorded" as const };
+  return projectAssertionDetail(source, assertions, turns, entry, projection, page);
 }
 
 export function projectAttemptAssertionList<A>(
@@ -119,19 +127,54 @@ export function projectAttemptAssertionList<A>(
   const assertions = readCurrentAssertions(input);
   if (assertions.state !== "available") return [];
   return assertions.value.entries.map((entry) =>
-    readEntry(entry.entryId, () => projectAssertionDetail(source, assertions, agentTurns, entry, projection)),
+    readEntry(entry.entryId, () =>
+      decodeAssertionDetail(
+        projectAssertionValue(source, assertions, () => agentTurns, entry, projection) as InspectionJson,
+      ),
+    ),
   );
 }
+
+const latestAssertionPage = new WeakMap<
+  InspectionFactSource,
+  { readonly entry: AssertionEntry; readonly projection: "full" | "compact"; readonly plan: AssertionPagePlan }
+>();
 
 function projectAssertionDetail(
   source: InspectionFactSource,
   assertions: Extract<AssertionsRead, { readonly state: "available" }>,
-  agentTurns: InspectionAgentTurnsRead,
+  agentTurns: () => InspectionAgentTurnsRead,
   entry: AssertionEntry,
   projection: "full" | "compact",
-): AssertionDetailResult {
+  page: AssertionPage,
+) {
+  let selected = latestAssertionPage.get(source);
+  if (selected?.entry !== entry || selected.projection !== projection) {
+    selected = {
+      entry,
+      projection,
+      plan: { value: projectAssertionValue(source, assertions, agentTurns, entry, projection, true) },
+    };
+    latestAssertionPage.set(source, selected);
+  }
+  return decodeAssertionPage(entry.entryId, selected.plan, page);
+}
+
+function decodeAssertionPage(entryId: string, plan: AssertionPagePlan, page: AssertionPage) {
+  const result = projectAssertionPage(entryId, plan, page);
+  return result.kind === "paged" ? result.value : decodeAssertionDetail(result.value);
+}
+
+function projectAssertionValue(
+  source: InspectionFactSource,
+  assertions: Extract<AssertionsRead, { readonly state: "available" }>,
+  agentTurns: () => InspectionAgentTurnsRead,
+  entry: AssertionEntry,
+  projection: "full" | "compact",
+  lazyRows = false,
+): unknown {
   if (projection === "compact") {
-    return decodeAssertionDetail({
+    return closeJson({
       projection: "compact",
       entryId: entry.entryId,
       display: entry.display,
@@ -147,18 +190,21 @@ function projectAssertionDetail(
       matcher: { state: "compact" },
     });
   }
-  const result = closeJson({
+  let body: unknown;
+  let matcher: unknown;
+  const result = {
     entryId: entry.entryId,
     display: entry.display,
-    entry: projectEntry(source, entry, assertions.contents, false, assertions.value.entries),
+    get entry() {
+      return (body ??= projectEntry(source, entry, assertions.contents, assertions.value.entries, lazyRows));
+    },
     sourceSites: projectSourceSites(assertions.value.sourceSites, entry.entryId),
     check: projectCheck(entry),
-    matcher: projectMatcher(entry, agentTurns, projection),
-  });
-  if (jsonByteLength(result) > INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT) {
-    throw new Error("Assertion detail exceeds its fixed result byte limit");
-  }
-  return decodeAssertionDetail(result);
+    get matcher() {
+      return (matcher ??= projectMatcher(entry, agentTurns(), projection, lazyRows));
+    },
+  };
+  return lazyRows ? result : closeJson(result);
 }
 
 /** Pages sealed Assertion Content through the existing execution-evidence selector. */
@@ -338,10 +384,9 @@ function projectEntry(
   source: InspectionFactSource,
   entry: AssertionEntry,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
-  deferContent = false,
-  entries: readonly AssertionEntry[] = [],
-): InspectionJson {
-  if (deferContent) return projectSealedValue(source, entry, contentMetadata, true);
+  entries: readonly AssertionEntry[],
+  paged: boolean,
+): unknown {
   const currentAgentJudge =
     entry.criterion.state === "available" &&
     entry.criterion.value.kind === "builtin" &&
@@ -396,7 +441,7 @@ function projectEntry(
         },
         images,
       );
-      return closeJson({
+      return {
         ...projected,
         agentJudgeAudit:
           read.state === "available"
@@ -412,9 +457,9 @@ function projectEntry(
                 },
               }
             : read,
-      });
+      };
     } catch (error) {
-      return closeJson({ ...projected, agentJudgeAudit: invalidAgentJudgeAudit(error) });
+      return { ...projected, agentJudgeAudit: invalidAgentJudgeAudit(error) };
     }
   }
   const currentJudge =
@@ -429,8 +474,7 @@ function projectEntry(
     const hasImages = entry.materials.evidence.some(
       (material) => material.kind === "content" && material.encoding === "binary",
     );
-    const pageContent = assertionContentByteLength(entry, contentMetadata) > 12 * 1024 * 1024;
-    const projected = projectSealedValue(source, entry, contentMetadata, hasImages || pageContent) as Readonly<
+    const projected = projectSealedValue(source, entry, contentMetadata, hasImages, paged) as Readonly<
       Record<string, InspectionJson>
     >;
     try {
@@ -443,23 +487,15 @@ function projectEntry(
         material.encoding !== "json" ||
         !isRecordContentHandle(material.content)
       ) {
-        return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
+        return { ...projected, scoreMatchAudit: { state: "invalid" as const } };
       }
       const metadata = contentMetadata.get(material.content);
-      if (metadata === undefined) return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
-      if (pageContent)
-        return closeJson({
-          ...projected,
-          scoreMatchAudit: {
-            state: "paged",
-            content: { id: metadata.contentId, byteLength: metadata.byteLength, sha256: metadata.digest },
-          },
-        });
+      if (metadata === undefined) return { ...projected, scoreMatchAudit: { state: "invalid" as const } };
       const bytes = readSealedBytes(source, metadata);
       if (material.byteLength !== bytes.byteLength)
-        return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
+        return { ...projected, scoreMatchAudit: { state: "invalid" as const } };
       const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-      return closeJson({
+      return {
         ...projected,
         scoreMatchAudit: readScoreMatchAudit(
           decoded,
@@ -480,44 +516,35 @@ function projectEntry(
               })
             : undefined,
         ),
-      });
+      };
     } catch {
-      return closeJson({ ...projected, scoreMatchAudit: { state: "invalid" as const } });
+      return { ...projected, scoreMatchAudit: { state: "invalid" as const } };
     }
   }
-  if (!currentJudge) return projectSealedValue(source, entry, contentMetadata);
-  const pageContent = assertionContentByteLength(entry, contentMetadata) > 12 * 1024 * 1024;
-  const projected = projectSealedValue(source, entry, contentMetadata, pageContent) as Readonly<
+  if (!currentJudge) return projectSealedValue(source, entry, contentMetadata, false, paged);
+  const projected = projectSealedValue(source, entry, contentMetadata, false, paged) as Readonly<
     Record<string, InspectionJson>
   >;
   try {
     const material = entry.materials.source;
     if (material.kind !== "content" || !isRecordContentHandle(material.content)) {
-      return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
+      return { ...projected, judgeMaterial: { state: "invalid" as const } };
     }
     const metadata = contentMetadata.get(material.content);
-    if (metadata === undefined) return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
-    if (pageContent)
-      return closeJson({
-        ...projected,
-        judgeMaterial: {
-          state: "paged",
-          content: { id: metadata.contentId, byteLength: metadata.byteLength, sha256: metadata.digest },
-        },
-      });
+    if (metadata === undefined) return { ...projected, judgeMaterial: { state: "invalid" as const } };
     const bytes = readSealedBytes(source, metadata);
     if (material.byteLength !== bytes.byteLength || material.encoding !== "json") {
-      return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
+      return { ...projected, judgeMaterial: { state: "invalid" as const } };
     }
     const decoded = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     const criterionData = entry.criterion.value.data;
     const name = isRecord(criterionData) && typeof criterionData.name === "string" ? criterionData.name : undefined;
-    return closeJson({
+    return {
       ...projected,
       judgeMaterial: name === undefined ? { state: "invalid" as const } : readJudgeMaterial(decoded, name),
-    });
+    };
   } catch {
-    return closeJson({ ...projected, judgeMaterial: { state: "invalid" as const } });
+    return { ...projected, judgeMaterial: { state: "invalid" as const } };
   }
 }
 
@@ -537,43 +564,38 @@ function observedMeasurement(value: RecordedAssertionFactValue): number | undefi
     : undefined;
 }
 
-// An inline audit is represented both as decoded JSON and as encoded Content.
-// Reserve space for both forms below the 32 MiB inspection response boundary.
-function assertionContentByteLength(value: unknown, metadata: WeakMap<object, PersistedContentMetadata>): number {
-  if (isRecordContentHandle(value)) return metadata.get(value)?.byteLength ?? 0;
-  if (Array.isArray(value))
-    return value.reduce((total, child) => total + assertionContentByteLength(child, metadata), 0);
-  if (value === null || typeof value !== "object") return 0;
-  return Object.values(value).reduce<number>((total, child) => total + assertionContentByteLength(child, metadata), 0);
-}
-
 function projectSealedValue(
   source: InspectionFactSource,
   value: unknown,
   contentMetadata: WeakMap<object, PersistedContentMetadata>,
   deferContent = false,
-): InspectionJson {
+  paged = false,
+): unknown {
   if (isRecordContentHandle(value)) {
     const metadata = contentMetadata.get(value);
     if (metadata === undefined) throw new Error("Assertion content metadata is invalid");
-    return closeJson({
+    return {
       state: "available" as const,
       byteLength: metadata.byteLength,
       sha256: metadata.digest,
-      ...(deferContent ? { id: metadata.contentId } : { base64: base64(readSealedBytes(source, metadata)) }),
-    });
+      ...(deferContent
+        ? { id: metadata.contentId }
+        : {
+            base64: paged ? new AssertionStoredContent(source, metadata) : base64(readSealedBytes(source, metadata)),
+          }),
+    };
   }
   if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
-    return closeJson(value);
+    return value;
   }
   if (Array.isArray(value))
-    return closeJson(value.map((item) => projectSealedValue(source, item, contentMetadata, deferContent)));
+    return value.map((item) => projectSealedValue(source, item, contentMetadata, deferContent, paged));
   if (typeof value !== "object") throw new Error("Assertion entry contains an unsupported value");
-  const output: Record<string, InspectionJson> = {};
+  const output: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(value).sort()) {
-    output[key] = projectSealedValue(source, Reflect.get(value, key), contentMetadata, deferContent);
+    output[key] = projectSealedValue(source, Reflect.get(value, key), contentMetadata, deferContent, paged);
   }
-  return closeJson(output);
+  return output;
 }
 
 function projectCheck(entry: AssertionEntry): InspectionJson {
@@ -655,7 +677,8 @@ function projectMatcher(
   entry: AssertionEntry,
   agentTurns: InspectionAgentTurnsRead,
   projection: "full" | "compact",
-): InspectionJson {
+  lazyRows: boolean,
+): unknown {
   const evaluation = entry.evaluation;
   if (evaluation.kind === "ordinary")
     return closeJson({
@@ -671,14 +694,14 @@ function projectMatcher(
     });
   const artifact = evaluation.artifact;
   const comparator = artifact.kind === "collection-filter" ? (artifact.query ?? null) : (artifact.querySteps ?? null);
-  return closeJson({
+  return {
     state: "available" as const,
     sourceState: artifact.sourceSnapshot.collectionAtCut,
     comparator,
     sourceLedger: { sourceSnapshot: artifact.sourceSnapshot, receipt: artifact.receipt },
     receipt: artifact.receipt,
     result: artifact.kind === "ordered-sequence" ? artifact.result : null,
-    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection),
+    debugger: projectMatcherDebugger(entry as MatcherAssertionEntry, agentTurns, projection, lazyRows),
     targets: artifact.retainedRows.map((row) => ({
       state: row.result,
       anchor:
@@ -688,7 +711,7 @@ function projectMatcher(
       difference: row.difference ?? null,
     })),
     sandboxCommandJoin: { state: "unavailable" as const, reason: "not-recorded" as const },
-  });
+  };
 }
 
 type MatcherConversationTarget =
@@ -826,19 +849,25 @@ function currentSourceCollection(
   state: "complete" | "partial",
   rows: readonly MatcherFilterRow[],
   limitations: readonly SourceReceiptLimitation[],
-): InspectionJson {
-  return closeJson({
-    state,
-    rows: rows.map(({ locator, evaluation, ...row }) => ({
+  lazyRows: boolean,
+) {
+  const projectRow = ({ locator, evaluation, ...row }: MatcherFilterRow) =>
+    closeJson({
       ...row,
       ...(locator === undefined ? {} : { locator }),
       evaluation: {
         result: evaluation.result,
         ...(evaluation.difference === undefined ? {} : { difference: evaluation.difference }),
       },
-    })),
+    });
+  return {
+    state,
+    rows:
+      lazyRows && rows.length > 0
+        ? new AssertionRows(rows.length, (index) => projectRow(rows[index]!))
+        : rows.map(projectRow),
     limitations: limitations.map(sourceLimitationFact),
-  });
+  };
 }
 
 function matcherLocatorKey(locator: MatcherSourceLocator): string {
@@ -949,17 +978,20 @@ function toolDetail(
   | undefined {
   const start = eventsById.get(occurrence.startEventId);
   if (start?.event.kind !== "tool-start") return undefined;
+  const event = start.event;
   const finish = occurrence.finish === undefined ? undefined : eventsById.get(occurrence.finish.eventId);
   return {
-    summary: start.event.tool,
-    detail: factFields([
-      { label: "name", value: factValue(start.event.tool) },
-      { label: "input", value: factValue(start.event.inputSummary) },
-      { label: "status", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outcome : "pending") },
-      { label: "output", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outputSummary : null) },
-      { label: "homeTurn", value: factValue(occurrence.homeTurnId) },
-      { label: "finishTurn", value: factValue(occurrence.finish?.turnId ?? null) },
-    ]),
+    summary: event.tool,
+    get detail() {
+      return factFields([
+        { label: "name", value: factValue(event.tool) },
+        { label: "input", value: factValue(event.inputSummary) },
+        { label: "status", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outcome : "pending") },
+        { label: "output", value: factValue(finish?.event.kind === "tool-finish" ? finish.event.outputSummary : null) },
+        { label: "homeTurn", value: factValue(occurrence.homeTurnId) },
+        { label: "finishTurn", value: factValue(occurrence.finish?.turnId ?? null) },
+      ]);
+    },
     target: exactMatcherTarget(start, `tool:${occurrence.toolOccurrenceId}`),
   };
 }
@@ -1036,7 +1068,9 @@ function currentMatcherRows(
             locator: { kind: "event" as const, eventId: row.eventId },
             inSnapshot: snapshotContainsEvent(input.snapshot, row),
             summary: eventSummary(row),
-            detail: eventDetail(row),
+            get detail() {
+              return eventDetail(row);
+            },
             target: exactMatcherTarget(row, `event:${row.eventId}`),
           }))
       : input.occurrences.flatMap((row) => {
@@ -1054,7 +1088,9 @@ function currentMatcherRows(
               },
               inSnapshot: snapshotContainsOccurrence(input.snapshot, row),
               summary: material.summary,
-              detail: material.detail,
+              get detail() {
+                return material.detail;
+              },
               target: material.target,
             },
           ];
@@ -1085,7 +1121,9 @@ function currentMatcherRows(
       number: String(index + 1),
       phase: row.inSnapshot ? ("at-evaluation" as const) : ("outside-evaluation-snapshot" as const),
       summary: row.summary,
-      detail: row.detail,
+      get detail() {
+        return row.detail;
+      },
       locator: row.locator,
       evaluation: rowEvaluation(),
       conversationTarget: row.target,
@@ -1161,7 +1199,8 @@ function projectMatcherDebugger(
   entry: MatcherAssertionEntry,
   agentTurns: InspectionAgentTurnsRead,
   projection: "full" | "compact",
-): InspectionJson {
+  lazyRows: boolean,
+): unknown {
   const subject = matcherSubject(entry);
   const artifact = entry.evaluation.artifact;
   const query =
@@ -1196,7 +1235,7 @@ function projectMatcherDebugger(
   )
     return unavailableCurrent("source-unavailable");
 
-  const projected = projectObservedSourceEvents(agentTurns.value.segments);
+  const projected = agentTurns.observed ?? projectObservedSourceEvents(agentTurns.value.segments);
   if (projected.state === "invalid") return unavailableCurrent("ambiguous");
   const overlays = retainedOverlay(artifact);
   const examined =
@@ -1279,16 +1318,18 @@ function projectMatcherDebugger(
     agentTurns.value.collection.state,
     projection === "compact" ? [] : rows.final,
     agentTurns.value.collection.limitations,
+    lazyRows,
   );
   const atEvaluation = currentSourceCollection(
     sourceState,
     projection === "compact" ? [] : rows.atEvaluation,
     agentTurns.value.collection.limitations,
+    lazyRows,
   );
   const retainedCount = overlays.size;
   const overlayRetention =
     retainedCount >= Math.min(examined, rows.atEvaluation.length) ? ("complete" as const) : ("partial" as const);
-  return closeJson({
+  return {
     state: "current" as const,
     subject,
     query,
@@ -1297,7 +1338,7 @@ function projectMatcherDebugger(
     identityRelation: { state: "exact" as const },
     overlayRetention,
     steps: orderSteps(artifact, rowsByLocator),
-  });
+  };
 }
 
 function missingCheck(entryId: string, state: string): InspectionJson {
@@ -1368,10 +1409,6 @@ function closeJson(value: unknown): InspectionJson {
   const closed = closeInspectionJson(value);
   if (isInspectionCodecError(closed)) throw closed;
   return closed as InspectionJson;
-}
-
-function jsonByteLength(value: unknown): number {
-  return utf8ByteLength(JSON.stringify(value));
 }
 
 function base64(bytes: Uint8Array): string {

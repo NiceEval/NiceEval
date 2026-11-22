@@ -6,26 +6,6 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 
-function errorCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
-}
-
-async function unavailableHostCode(moduleSystem: "esm" | "commonjs"): Promise<string | undefined> {
-  const load =
-    moduleSystem === "esm" ? 'await import("niceeval/inspection/host")' : 'require("niceeval/inspection/host")';
-  const script = `
-    try { ${load}; process.exitCode = 2 }
-    catch (error) { process.stdout.write(JSON.stringify({ code: error?.code })) }
-  `;
-  const result = await command([process.execPath]).run(
-    [...(moduleSystem === "esm" ? ["--input-type=module"] : []), "--eval", script],
-    { timeoutMs: 10_000 },
-  );
-  expect(result.exitCode, result.diagnostic()).toBe(0);
-  const receipt = result.json<unknown>();
-  return errorCode(receipt);
-}
-
 function niceevalPackagePath(input: string, packageRoot: string): string | undefined {
   const packagePath = relative(packageRoot, resolve(input)).replaceAll("\\", "/");
   if (isAbsolute(packagePath) || packagePath === ".." || packagePath.startsWith("../")) return undefined;
@@ -107,8 +87,7 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
   expect(inspection.decodeInspectionDocument({ protocol: "not-niceeval" }).success).toBe(false);
   expect(commonjsInspection.decodeInspectionDocument({ protocol: "not-niceeval" }).success).toBe(false);
 
-  expect(await unavailableHostCode("esm")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
-  expect(await unavailableHostCode("commonjs")).toBe("ERR_PACKAGE_PATH_NOT_EXPORTED");
+  expect(inspection).not.toHaveProperty("withInspectionQuery");
 
   const bundled = await build({
     bundle: true,
@@ -150,4 +129,46 @@ test("安装后的 Inspection 入口在 ESM、CommonJS 与浏览器模块图中�
     operations: inspection.INSPECTION_OPERATION_IDS,
     invalidDocumentAccepted: false,
   });
+});
+
+// @feature docs/feature/inspection/README.md#exact-read-and-comparison
+test("the installed Node host releases its query when the callback settles", async () => {
+  const result = await command([process.execPath]).run(
+    [
+      "--input-type=module",
+      "--eval",
+      `
+      import { rejects, strictEqual } from "node:assert";
+      import { mkdtemp, rm } from "node:fs/promises";
+      import { createRequire } from "node:module";
+      import { tmpdir } from "node:os";
+      import { join } from "node:path";
+      import { withInspectionQuery } from "niceeval/inspection/host";
+
+      const commonjs = createRequire(import.meta.url)("niceeval/inspection/host");
+      strictEqual(commonjs.withInspectionQuery, withInspectionQuery);
+      const cwd = await mkdtemp(join(tmpdir(), "niceeval-inspection-host-"));
+      try {
+        let query;
+        const result = await withInspectionQuery({ cwd }, (opened) => {
+          query = opened;
+          return opened.inspect({ kind: "run.list" });
+        });
+        strictEqual(result.operation, "run.list");
+        await rejects(query.inspect({ kind: "run.list" }), { code: "inspection-operation-failed" });
+
+        const failure = new Error("callback failure");
+        await rejects(withInspectionQuery({ cwd }, (opened) => {
+          query = opened;
+          throw failure;
+        }), failure);
+        await rejects(query.inspect({ kind: "run.list" }), { code: "inspection-operation-failed" });
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    `,
+    ],
+    { timeoutMs: 10_000 },
+  );
+  expect(result.exitCode, result.diagnostic()).toBe(0);
 });

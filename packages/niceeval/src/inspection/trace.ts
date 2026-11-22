@@ -25,7 +25,13 @@ import {
 } from "../record/attachment/protocol.ts";
 import { type ReadableAdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
 import { NiceEvalCurrentRecordAttachments } from "../record/family/current.ts";
-import type { AgentTurnsAttachment } from "../record/family/agent-turns/schema.ts";
+import {
+  AgentTurnsAttachmentSchema,
+  validateAgentTurnsEnvelope,
+  type AgentTurnsAttachment,
+} from "../record/family/agent-turns/schema.ts";
+import type { DecodedInspectionAttachment } from "./facts.ts";
+import { projectObservedSourceEvents } from "../o11y/derive.ts";
 import { ExecutionTraceRecordLimits } from "../record/family/execution-traces/schema.ts";
 import type { AgentTurnOutcome } from "../record/family/protocol-values.ts";
 import type { RecordAttachmentOwner } from "../record/model/core.ts";
@@ -33,7 +39,12 @@ import type { SourceReceiptLimitation } from "../record/family/source-receipt/in
 import type { PersistedContentMetadata, SealedAttachmentMetadata } from "../record/sqlite/index.ts";
 import type { InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
-import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
+import {
+  INSPECTION_RESULT_PAGE_BYTES,
+  INSPECTION_USAGE_CALL_PAGE_BYTES,
+  INSPECTION_USAGE_CALL_PAGE_SIZE,
+} from "./limits.ts";
+import { callPage } from "./collection-page.ts";
 import {
   decodeExecutionTraceContinuation,
   encodeExecutionTraceContinuation,
@@ -96,7 +107,9 @@ type AttachmentRead<Value> =
     };
 
 /** Validated current Agent Turns facts shared by browser-neutral projectors. */
-export type InspectionAgentTurnsRead = AttachmentRead<AgentTurnsAttachment>;
+export type InspectionAgentTurnsRead = AttachmentRead<AgentTurnsAttachment> & {
+  readonly observed?: Extract<ReturnType<typeof projectObservedSourceEvents>, { readonly state: "available" }>;
+};
 type InspectionTraceDetailItem = Extract<InspectionTraceDetailResult, { readonly kind: "item" }>["item"];
 
 interface CollectionValue {
@@ -238,7 +251,7 @@ export function projectAttemptTrace(
     },
     diagnostics: projectDiagnostics(runnerDiagnostics),
   };
-  if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
+  if (jsonByteLength(result) > INSPECTION_RESULT_PAGE_BYTES) {
     throw new Error("Trace semantic projection exceeds its fixed result byte limit");
   }
   return result;
@@ -570,7 +583,7 @@ export function projectAttemptTraceDetail(
       break;
   }
   if (detail === undefined) return undefined;
-  if (jsonByteLength(detail) > INSPECTION_RESULT_BYTE_LIMIT) {
+  if (jsonByteLength(detail) > INSPECTION_RESULT_PAGE_BYTES) {
     throw new Error("Trace detail exceeds its fixed result byte limit");
   }
   return detail;
@@ -1089,6 +1102,45 @@ export function readInspectionAgentTurns(attachment?: TraceAttachmentInput): Ins
   return readCurrentAttachment(NiceEvalCurrentRecordAttachments.agentTurns, attachment);
 }
 
+const decodeAgentTurns = Schema.decodeUnknownResult(AgentTurnsAttachmentSchema, { onExcessProperty: "error" });
+
+let latestAssertionTurns:
+  | { readonly cutoff: string; readonly origin: string; readonly read: InspectionAgentTurnsRead }
+  | undefined;
+
+/** Agent Turns has no Content or reference leaves besides its transparent payload. */
+export function readAssertionAgentTurns(
+  cutoff: string,
+  origin: string,
+  attachment?: DecodedInspectionAttachment,
+): InspectionAgentTurnsRead {
+  if (latestAssertionTurns?.cutoff === cutoff && latestAssertionTurns.origin === origin)
+    return latestAssertionTurns.read;
+  const read = decodeAssertionAgentTurns(attachment);
+  latestAssertionTurns = { cutoff, origin, read };
+  return read;
+}
+
+function decodeAssertionAgentTurns(attachment?: DecodedInspectionAttachment): InspectionAgentTurnsRead {
+  if (attachment === undefined) return { state: "not-recorded" };
+  const { physical } = attachment;
+  const { agentTurns } = NiceEvalCurrentRecordAttachments;
+  if (
+    physical.ownerKind !== agentTurns.attachment.owner ||
+    physical.family !== agentTurns.attachment.family ||
+    physical.familyRevision !== agentTurns.revision ||
+    physical.contents.length !== 0 ||
+    physical.references.length !== 0
+  )
+    return invalidRead("source-attachment-invalid");
+  const decoded = decodeAgentTurns(attachment.rawValue);
+  if (Result.isFailure(decoded) || validateAgentTurnsEnvelope(decoded.success).length !== 0)
+    return invalidRead("source-attachment-invalid");
+  const observed = projectObservedSourceEvents(decoded.success.segments);
+  if (observed.state !== "available") return invalidRead("source-attachment-invalid");
+  return { state: "available", value: decoded.success, observed, contentMetadata: new WeakMap() };
+}
+
 function readAgentTurns(attachment?: TraceAttachmentInput): InspectionAgentTurnsRead {
   return readInspectionAgentTurns(attachment);
 }
@@ -1163,13 +1215,14 @@ export function projectAttemptRepricing(
 export function projectAttemptUsage(
   attachments: Pick<AttemptTraceAttachments, "models" | "adapterUsage" | "judgeUsage" | "attemptCost" | "agentTurns">,
   models: ModelRolesWire | undefined = attachments.models,
+  page = 0,
 ): InspectionAttemptUsageResult {
   const turns = readInspectionAgentTurns(attachments.agentTurns);
-  const usage = projectApplicationUsage(attachments, models, turns);
+  const usage = projectApplicationUsage(attachments, models, turns, page);
   const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
   const read = readCurrentAttachment(NiceEvalCurrentRecordAttachments.judgeUsage, attachments.judgeUsage);
   function judgeUsage() {
-    if (read.state === "available") return projectJudgeUsage(read.value);
+    if (read.state === "available") return projectJudgeUsage(read.value, page);
     if (read.state === "invalid") return { state: "invalid" as const, reason: "judge-usage-source-invalid" as const };
     return { state: "unavailable" as const, reason: "judge-usage-not-recorded" as const };
   }
@@ -1180,13 +1233,14 @@ export function projectAttemptUsage(
     usage.totals.costs?.totalCalls === 0;
   const cost = readCurrentAttachment(NiceEvalCurrentRecordAttachments.attemptCost, attachments.attemptCost);
   const simulatedUser = cost.state === "available" ? cost.value.simulatedUser : undefined;
+  const judge = judgeUsage();
   return {
     ...usage,
     turnCacheRead: projectTurnCacheRead(turns),
-    judgeUsage: judgeUsage(),
+    judgeUsage: judge,
     totalCosts: projectTotalUsageCosts(
       usage.totals,
-      judgeUsage(),
+      judge,
       applicationEmptyComplete,
       application.state === "available" && application.value.collection.state === "complete",
       simulatedUser,
@@ -1202,13 +1256,20 @@ export function projectApplicationUsage(
   attachments: Pick<AttemptTraceAttachments, "adapterUsage" | "agentTurns">,
   models: ModelRolesWire | undefined,
   agentTurns?: InspectionAgentTurnsRead,
+  page = 0,
 ): Omit<InspectionAttemptUsageResult, "judgeUsage" | "totalCosts" | "turnCacheRead"> {
   if (attachments.adapterUsage !== undefined) {
     const read = readAdapterUsageAttachment(attachments.adapterUsage, models);
-    const modelUsage = projectAdapterModelUsage(read.state === "available" ? read.value : undefined, models, {
-      basis: "recorded-calls",
-      reason: read.state === "invalid" ? "source-invalid" : "usage-not-recorded",
-    });
+    const modelUsage = projectAdapterModelUsage(
+      read.state === "available" ? read.value : undefined,
+      models,
+      {
+        basis: "recorded-calls",
+        reason: read.state === "invalid" ? "source-invalid" : "usage-not-recorded",
+      },
+      true,
+      page,
+    );
     const empty = {
       source: "adapter" as const,
       coverage: "recorded-calls" as const,
@@ -1268,6 +1329,13 @@ export function projectApplicationUsage(
     const unknownCosts = calls.filter((call) => call.effectiveCost === undefined).length;
     const partialCosts = calls.filter((call) => call.effectiveCost?.state === "partial").length;
     const costs = effectiveCostTotals(calls, read.value.collection.state);
+    const paged = callPage(
+      calls.map((call) => ({ ...call, effectiveCost: call.effectiveCost ?? null })),
+      [],
+      page,
+      INSPECTION_USAGE_CALL_PAGE_SIZE,
+      INSPECTION_USAGE_CALL_PAGE_BYTES,
+    );
     return {
       ...empty,
       ...modelUsage,
@@ -1292,9 +1360,7 @@ export function projectApplicationUsage(
               },
             ]),
       ],
-      calls: calls.slice(0, 128).map((call) => ({ ...call, effectiveCost: call.effectiveCost ?? null })),
-      callsTruncated: all.length > 128,
-      omittedCallCount: Math.max(0, all.length - 128),
+      ...paged,
       priceReceipts: read.value.priceReceipts,
       totals: {
         ...empty.totals,
@@ -1308,7 +1374,7 @@ export function projectApplicationUsage(
         },
         costs,
       },
-      hasMore: all.length > 128,
+      hasMore: paged.callsTruncated,
     };
   }
   const read = agentTurns ?? readInspectionAgentTurns(attachments.agentTurns);

@@ -9,6 +9,8 @@ import {
   UnavailableScoreContributionSchema,
 } from "../assertions/record/codec.ts";
 import type { AssertionsAttachment } from "../record/family/assertions/schema.ts";
+import { utf8ByteLength } from "./bytes.ts";
+import { collectionPage } from "./collection-page.ts";
 import { PlannedAttemptMemberSchema } from "./results.ts";
 
 const EntrySchema = Schema.Struct({
@@ -48,9 +50,12 @@ export const AssertionMatrixSchema = Schema.Struct({
       columns: Schema.Array(MatrixColumnSchema),
       rows: Schema.Array(RowSchema),
       unlabeled: Schema.Array(Schema.Number),
+      rowOffset: Schema.optional(Schema.Number),
+      columnOffset: Schema.optional(Schema.Number),
     }),
   ),
   omitted: Schema.Struct({ evals: Schema.Number, rows: Schema.Number, columns: Schema.Number }),
+  continuation: Schema.optional(Schema.String),
 });
 export type AssertionMatrix = typeof AssertionMatrixSchema.Type;
 export type MatrixColumn = typeof MatrixColumnSchema.Type;
@@ -63,91 +68,153 @@ export interface MatrixInput {
     | { readonly state: "not-recorded" | "unsupported" | "failed" };
 }
 
-// Bound both the structured payload and its Cartesian dimensions.
+type MatrixEntry = typeof EntrySchema.Type;
+type MatrixRow = typeof RowSchema.Type;
+type MatrixEval = AssertionMatrix["evals"][number];
+type MatrixCell = typeof CellSchema.Type;
+type SparseRow = Omit<MatrixRow, "cells"> & { readonly cells: ReadonlyMap<number, readonly MatrixEntry[]> };
+interface Evaluation {
+  readonly evalId: string;
+  readonly columns: readonly MatrixColumn[];
+  readonly unlabeled: readonly number[];
+  readonly rows: readonly SparseRow[];
+  readonly emptyCells: readonly MatrixCell[];
+}
+
+const EVAL_PAGE_SIZE = 100;
+const COLUMN_PAGE_SIZE = 100;
+const ROW_PAGE_SIZE = 1000;
+const CELL_PAGE_SIZE = 10_000;
+const MATRIX_PAGE_BYTES = 450_000;
+
 export function projectAssertionMatrix(
   experimentIds: readonly string[],
   input: readonly MatrixInput[],
+  page: { readonly offset: number; readonly next: (offset: number) => string; readonly invalid: () => never },
 ): AssertionMatrix {
-  const omitted = { evals: 0, rows: 0, columns: 0 };
-  const evals: AssertionMatrix["evals"][number][] = [];
-  let rowBudget = 1000;
-  let cellBudget = 10000;
-  const ids = [...new Set(input.map((item) => item.evalId))].sort();
-  for (const evalId of ids) {
-    const all = input.filter((item) => item.evalId === evalId);
-    if (evals.length >= 100) {
-      omitted.evals++;
-      omitted.columns += all.length;
-      continue;
-    }
-    const selected = all.slice(0, 100);
-    omitted.columns += all.length - selected.length;
-    const columns = selected.map((item) => item.column);
-    const unlabeled = selected.map(() => 0);
-    const rows = new Map<
-      string,
-      { label: string; groupPath: readonly string[]; cells: (typeof CellSchema.Type)[]; distinct: boolean }
-    >();
-    selected.forEach(({ assertions }, col) => {
-      if (assertions.state !== "available") return;
-      for (const entry of assertions.entries) {
-        const { label, groupPath } = entry.display;
-        if (label === undefined) {
-          unlabeled[col]++;
-          continue;
-        }
-        const identity = JSON.stringify([groupPath, label]);
-        let row = rows.get(identity);
-        if (row === undefined) {
-          row = {
-            label,
-            groupPath,
-            distinct: false,
-            cells: selected.map(({ assertions: a }) =>
-              a.state === "available" ? { state: "absent" } : { state: a.state },
-            ),
-          };
-          rows.set(identity, row);
-        }
-        const cell = row.cells[col]!;
-        row.cells[col] = {
-          state: "available",
-          entries: [
-            ...(cell.state === "available" ? cell.entries : []),
-            { entryId: entry.entryId, result: entry.decision.result, contribution: entry.contribution },
-          ],
-        };
-      }
-    });
-    const kept: (typeof RowSchema.Type)[] = [];
-    for (const row of rows.values()) {
-      const cost = row.cells.reduce((sum, cell) => sum + (cell.state === "available" ? cell.entries.length : 1), 0);
-      if (rowBudget <= 0 || cost > cellBudget) {
-        omitted.rows++;
-        continue;
-      }
-      const signature = (cell: typeof CellSchema.Type) =>
-        JSON.stringify(
-          cell.state === "available"
-            ? cell.entries.map(({ result, contribution }) => ({ result, contribution }))
-            : cell,
-        );
-      row.distinct = row.cells.some((cell) => signature(cell) !== signature(row.cells[0]!));
-      const candidate = { evalId, columns, rows: [...kept, row], unlabeled };
-      if (new TextEncoder().encode(JSON.stringify([...evals, candidate])).length > 450000) {
-        omitted.rows++;
-        continue;
-      }
-      rowBudget--;
-      cellBudget -= cost;
-      kept.push(row);
-    }
-    const evaluation = { evalId, columns, rows: kept, unlabeled };
-    if (new TextEncoder().encode(JSON.stringify([...evals, evaluation])).length > 450000) {
-      omitted.evals++;
-      omitted.columns += selected.length;
-      omitted.rows += kept.length;
-    } else evals.push(evaluation);
+  const grouped = new Map<string, MatrixInput[]>();
+  for (const item of input) {
+    const existing = grouped.get(item.evalId);
+    if (existing === undefined) grouped.set(item.evalId, [item]);
+    else existing.push(item);
   }
-  return { state: Object.values(omitted).some((n) => n > 0) ? "partial" : "complete", experimentIds, evals, omitted };
+  const evaluations = [...grouped.keys()].sort().map((evalId) => indexEvaluation(evalId, grouped.get(evalId)!));
+  const evals: MatrixEval[] = [];
+  let bytes = MATRIX_PAGE_BYTES - utf8ByteLength(JSON.stringify(experimentIds));
+  let rowBudget = ROW_PAGE_SIZE;
+  let cellBudget = CELL_PAGE_SIZE;
+  let ordinal = 0;
+
+  const finish = (evalIndex: number, col: number, row: number, fullRowCount = false): AssertionMatrix => {
+    const omitted = { evals: evaluations.length - evalIndex, rows: 0, columns: 0 };
+    for (let i = evalIndex; i < evaluations.length; i++) {
+      const evaluation = evaluations[i]!;
+      omitted.rows += evaluation.rows.length - (i === evalIndex && !fullRowCount ? row : 0);
+      omitted.columns += evaluation.columns.length - (i === evalIndex ? col : 0);
+    }
+    return {
+      state: omitted.evals > 0 ? "partial" : "complete",
+      experimentIds,
+      evals,
+      omitted,
+      ...(omitted.evals > 0 ? { continuation: page.next(ordinal) } : {}),
+    };
+  };
+
+  for (const [evalIndex, evaluation] of evaluations.entries()) {
+    const { evalId, columns, rows, emptyCells, unlabeled } = evaluation;
+    for (let col = 0; col < columns.length; col += COLUMN_PAGE_SIZE) {
+      const endCol = Math.min(col + COLUMN_PAGE_SIZE, columns.length);
+      const columnPage = columns.slice(col, endCol);
+      const base = { evalId, columns: columnPage, unlabeled: unlabeled.slice(col, endCol) };
+      const baseBytes = utf8ByteLength(JSON.stringify(base)) + 64;
+      const width = endCol - col;
+      const rowLimit = Math.min(ROW_PAGE_SIZE, Math.floor(CELL_PAGE_SIZE / width));
+      const makeRow = (row: SparseRow): MatrixRow => {
+        const cells = columnPage.map((_, index): MatrixCell => {
+          const entries = row.cells.get(col + index);
+          return entries === undefined ? emptyCells[col + index]! : { state: "available", entries };
+        });
+        return { label: row.label, groupPath: row.groupPath, distinct: row.distinct, cells };
+      };
+      for (let row = 0; row < Math.max(1, rows.length); ) {
+        // A partial evaluation owns its page. Pack small complete evaluations together.
+        const partial = row > 0 || col > 0 || endCol < columns.length;
+        if (
+          ordinal >= page.offset &&
+          evals.length > 0 &&
+          (partial ||
+            evals.length >= EVAL_PAGE_SIZE ||
+            rows.length > rowBudget ||
+            rows.length * width > cellBudget ||
+            baseBytes > bytes)
+        )
+          return finish(evalIndex, col, row, endCol < columns.length);
+
+        const candidates = rows.slice(row, row + rowLimit).map(makeRow);
+        const pageRows = collectionPage(candidates, 0, rowLimit, MATRIX_PAGE_BYTES - baseBytes);
+        const used = baseBytes + utf8ByteLength(JSON.stringify(pageRows.items));
+        const nextRow = row + pageRows.items.length;
+        if (ordinal >= page.offset) {
+          if (evals.length > 0 && (used > bytes || nextRow < rows.length))
+            return finish(evalIndex, col, row, endCol < columns.length);
+          evals.push({
+            ...base,
+            rows: pageRows.items,
+            ...(partial || nextRow < rows.length ? { rowOffset: row, columnOffset: col } : {}),
+          });
+          bytes -= used;
+          rowBudget -= pageRows.items.length;
+          cellBudget -= pageRows.items.length * width;
+        }
+        ordinal++;
+        if (ordinal > page.offset && nextRow < rows.length)
+          return finish(evalIndex, col, nextRow, endCol < columns.length);
+        if (ordinal > page.offset && endCol < columns.length) return finish(evalIndex, endCol, 0);
+        if (rows.length === 0) break;
+        row = nextRow;
+      }
+    }
+  }
+  if (page.offset > 0 && evals.length === 0) return page.invalid();
+  return finish(evaluations.length, 0, 0);
+}
+
+function indexEvaluation(evalId: string, input: readonly MatrixInput[]): Evaluation {
+  const unlabeled = input.map(() => 0);
+  const emptyCells = input.map(
+    ({ assertions }): MatrixCell =>
+      assertions.state === "available" ? { state: "absent" } : { state: assertions.state },
+  );
+  const index = new Map<string, Omit<SparseRow, "cells" | "distinct"> & { cells: Map<number, MatrixEntry[]> }>();
+  for (const [column, { assertions }] of input.entries()) {
+    if (assertions.state !== "available") continue;
+    for (const entry of assertions.entries) {
+      const { label, groupPath } = entry.display;
+      if (label === undefined) {
+        unlabeled[column]!++;
+        continue;
+      }
+      const identity = JSON.stringify([groupPath, label]);
+      let row = index.get(identity);
+      if (row === undefined) {
+        row = { label, groupPath, cells: new Map() };
+        index.set(identity, row);
+      }
+      const cell = { entryId: entry.entryId, result: entry.decision.result, contribution: entry.contribution };
+      const entries = row.cells.get(column);
+      if (entries === undefined) row.cells.set(column, [cell]);
+      else entries.push(cell);
+    }
+  }
+  const rows = [...index.values()].map((row): SparseRow => {
+    const first = row.cells.values().next().value!;
+    const signature = (entries: readonly MatrixEntry[]) =>
+      JSON.stringify(entries.map(({ result, contribution }) => [result, contribution]));
+    const expected = signature(first);
+    const distinct =
+      row.cells.size < input.length || [...row.cells.values()].some((entries) => signature(entries) !== expected);
+    return { ...row, distinct };
+  });
+  return { evalId, columns: input.map(({ column }) => column), rows, unlabeled, emptyCells };
 }

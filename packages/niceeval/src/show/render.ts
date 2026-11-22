@@ -4,7 +4,7 @@
 import type { AgentJudgeTrace } from "../assertions/agent-judge-audit.ts";
 import { assertionRoleLabel, assertionRoleCounts, assertionVerdictLine } from "../assertions/display.ts";
 import type { InspectionAttemptResult } from "../inspection/results.ts";
-import type { AssertionDetailResult } from "../inspection/assertion-result.ts";
+import type { AssertionDetailResult, PagedAssertionDetailSchema } from "../inspection/assertion-result.ts";
 import type { AssertionFactValue } from "../assertions/record/model.ts";
 import { formatNumericUnit } from "../assertions/quantity.ts";
 import {
@@ -3405,6 +3405,24 @@ function assertionReasons(value: AssertionFactValue): string[] {
     }
     return assertionReasons(field.value);
   });
+}
+
+export function renderAssertionPage(assertion: typeof PagedAssertionDetailSchema.Type): string {
+  return terminal([
+    { kind: "divider", meta: undefined, attachNext: false, title: `Assertion ${assertion.entryId}` },
+    {
+      kind: "keyValue",
+      entries: assertion.fields.map((field) => {
+        const preview = new TextDecoder()
+          .decode(decodeBase64Bytes(field.base64.slice(0, 160)), { stream: true })
+          .replaceAll("\uFFFD", "");
+        return {
+          key: field.path,
+          value: `Bytes ${field.offset}–${field.nextOffset ?? field.byteLength} of ${field.byteLength}  ${preview}`,
+        };
+      }),
+    },
+  ]);
 }
 
 export function renderAssertionMatrix(matrix: import("../inspection/assertion-matrix.ts").AssertionMatrix): string {

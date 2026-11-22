@@ -46,6 +46,7 @@ export class InspectionUnsupportedFormatError extends Data.TaggedError("Inspecti
 
 export interface DecodedInspectionAttachment {
   readonly physical: SealedAttachmentMetadata;
+  readonly rawValue: unknown;
   readonly value: InspectionJson;
 }
 
@@ -364,8 +365,9 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
     ) {
       throw factsError("Attachment ownership does not match its sealed Run");
     }
+    let rawValue: unknown;
+    let parsed = false;
     let value: InspectionJson | undefined;
-    let decoded = false;
     return {
       physical: Object.defineProperties(
         {},
@@ -374,14 +376,17 @@ export function decodeInspectionRun(source: InspectionFactSource, physical: Seal
           contents: { enumerable: true, get: () => attachmentValueContents(attachment) },
         },
       ) as typeof attachment,
-      get value(): InspectionJson {
-        if (!decoded) {
+      get rawValue(): unknown {
+        if (!parsed) {
           verifyDigest(attachment.canonicalBytes, attachment.canonicalDigest, "Attachment");
           verifyDigest(attachment.logicalInventoryBytes, attachment.inventoryDigest, "Attachment inventory");
-          value = parseInspectionJson(readAttachmentPayload(attachment, source.readContentPage), "Attachment");
-          decoded = true;
+          rawValue = parseJson(readAttachmentPayload(attachment, source.readContentPage), "Attachment");
+          parsed = true;
         }
-        return value!;
+        return rawValue;
+      },
+      get value(): InspectionJson {
+        return (value ??= closeAttachmentJson(this.rawValue));
       },
     };
   });
@@ -603,7 +608,7 @@ function decodeCurrentAssertions(attachment: DecodedInspectionAttachment):
   const handles = new Map<string, RecordContentHandle>();
   const contents = new WeakMap<object, PersistedContentMetadata>();
   const usedContent = new Set<string>();
-  const hydrated = hydrateRecordAttachmentCurrentWithClosure(definition, attachment.value, {
+  const hydrated = hydrateRecordAttachmentCurrentWithClosure(definition, attachment.rawValue, {
     content: (token, declaration) => {
       const logicalHandle = exactMarker(token, "$niceeval.record.content");
       if (logicalHandle === undefined && !hasOwnMarker(token, "$niceeval.record.content")) {
@@ -747,10 +752,10 @@ function parseJson(bytes: Uint8Array, owner: string): unknown {
   }
 }
 
-function parseInspectionJson(bytes: Uint8Array, owner: string): InspectionJson {
-  const closed = closeInspectionJson(parseJson(bytes, owner));
+function closeAttachmentJson(value: unknown): InspectionJson {
+  const closed = closeInspectionJson(value);
   if (isInspectionCodecError(closed)) {
-    throw factsError(`${owner} is invalid: ${closed.reason}`);
+    throw factsError(`Attachment is invalid: ${closed.reason}`);
   }
   return closed;
 }

@@ -95,6 +95,11 @@
       "types": "./dist/inspection/public.d.ts",
       "default": "./dist/inspection/public.js"
     },
+    "./inspection/host": {
+      "niceeval-source": "./src/inspection/host.ts",
+      "types": "./dist/inspection/host.d.ts",
+      "default": "./dist/inspection/host.js"
+    },
     "./view": {
       "niceeval-source": "./src/view/index.ts",
       "types": "./dist/view/index.d.ts",

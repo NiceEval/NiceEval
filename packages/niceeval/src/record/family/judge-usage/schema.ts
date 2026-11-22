@@ -381,7 +381,10 @@ function bucketTokens(call: JudgeUsageCall, bucket: (typeof AdapterCallPriceBuck
   }
 }
 
-export function validateJudgeUsageAttachment(value: JudgeUsageAttachment): readonly RecordAttachmentIssue[] {
+export function validateJudgeUsageAttachment(
+  value: JudgeUsageAttachment,
+  options: { readonly partialTransmissions?: boolean } = {},
+): readonly RecordAttachmentIssue[] {
   const issue = (path: string[]) => [recordAttachmentIssue("record-attachment-schema-invalid", path)];
   const calls = new Map<string, JudgeUsageCall>();
   const entries = new Map<number, string>();
@@ -426,7 +429,8 @@ export function validateJudgeUsageAttachment(value: JudgeUsageAttachment): reado
     logical.ordinals.add(call.transmissionOrdinal);
   }
   for (const logical of transmissions.values()) {
-    for (let ordinal = 1; ordinal <= logical.ordinals.size; ordinal++) {
+    const start = options.partialTransmissions ? Math.min(...logical.ordinals) : 1;
+    for (let ordinal = start; ordinal < start + logical.ordinals.size; ordinal++) {
       if (!logical.ordinals.has(ordinal)) return issue(["calls", "transmissionOrdinal"]);
     }
   }

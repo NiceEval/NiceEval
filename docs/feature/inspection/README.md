@@ -38,11 +38,11 @@ Inspection catalog 只接受具名 operation 与其穷尽 request/result。它�
 调用方不能提交 SQL、JSON path、公式或临时统计。
 
 Inspection 是已发布事实与 Delivery 之间的中间结果 owner。`run.get` 之类的闭合 result 在
-pinned facts 与 exact `PublicationCutoff` 上即时形成，不写回 Run、不另建派生表或结果缓存。
+pinned facts 与 exact `PublicationCutoff` 上形成。读取不写回 Run，也不写入持久派生表。
 
 固定历史业务入口是 browser-neutral `selectInspectionOperation(facts, operation)`。
 `project.get` 同时消费 Experiment Host 为当前 generation 形成的冻结输入，失败时不降级为历史结果。
-Node CLI 与 Insight Host 各自拥有打开与关闭 lifecycle，并把 pinned facts 交给同一个 result owner。
+Node CLI、Insight Host 与 [Inspection Host](library.md) 各自管理读取作用域，共用固定 operation。
 
 它们不得各自建立 Node-only projection、浏览器 DTO 或第二套聚合。`facts.ts` 是所有 operation 共用的唯一
 facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，再交付带 limits、issues 与 Evidence 的结果。
@@ -53,6 +53,7 @@ facts reader。每次读取先确定 selection 和 exact `PublicationCutoff`，�
 
 - [Architecture](architecture.md)
 - [CLI](cli.md)
+- [Library](library.md)
 - [Use cases](use-case/README.md)
 
 ## 性质

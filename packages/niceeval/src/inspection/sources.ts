@@ -10,7 +10,7 @@ import type { PersistedContentMetadata, SealedAttachmentMetadata } from "../reco
 import type { InspectionJson } from "./codec.ts";
 import { InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import type { InspectionAssertionsRead } from "./facts.ts";
-import { INSPECTION_RESULT_BYTE_LIMIT } from "./limits.ts";
+import { INSPECTION_RESULT_PAGE_BYTES } from "./limits.ts";
 import type { InspectionFactSource } from "./source.ts";
 import type { InspectionSourcesResult } from "./results.ts";
 
@@ -90,7 +90,7 @@ export function projectAttemptSources(
       const omitted = projectedSourceItem(entry, omittedContent(entry.content.byteLength));
       const omittedBytes = jsonByteLength(omitted) + (items.length === 0 ? 0 : 1);
       const includeItem =
-        acceptProjectedItems && projectedBytes + omittedBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM;
+        acceptProjectedItems && projectedBytes + omittedBytes <= INSPECTION_RESULT_PAGE_BYTES - SOURCE_RESULT_HEADROOM;
       if (!includeItem) acceptProjectedItems = false;
 
       let projected = omitted;
@@ -108,7 +108,7 @@ export function projectAttemptSources(
           text: verified.text,
         });
         const availableBytes = jsonByteLength(available) + (items.length === 0 ? 0 : 1);
-        if (projectedBytes + availableBytes <= INSPECTION_RESULT_BYTE_LIMIT - SOURCE_RESULT_HEADROOM) {
+        if (projectedBytes + availableBytes <= INSPECTION_RESULT_PAGE_BYTES - SOURCE_RESULT_HEADROOM) {
           projected = available;
         }
       }
@@ -135,15 +135,15 @@ export function projectAttemptSources(
 
   let projectedSiteCount = sites.length;
   let result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
-  while (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT && items.length > 0) {
+  while (jsonByteLength(result) > INSPECTION_RESULT_PAGE_BYTES && items.length > 0) {
     items.pop();
     result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
   }
-  while (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT && projectedSiteCount > 0) {
+  while (jsonByteLength(result) > INSPECTION_RESULT_PAGE_BYTES && projectedSiteCount > 0) {
     projectedSiteCount -= 1;
     result = sourceResult(state, items, decoded.length, assertionResult(assertionsRead, sites, projectedSiteCount));
   }
-  if (jsonByteLength(result) > INSPECTION_RESULT_BYTE_LIMIT) {
+  if (jsonByteLength(result) > INSPECTION_RESULT_PAGE_BYTES) {
     throw new Error("Sources projection cannot fit its fixed result byte limit");
   }
   return result;

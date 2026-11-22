@@ -54,6 +54,30 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
     }
   };
   visit(document);
+  if (document !== null && typeof document === "object") {
+    const nextPage = (body: unknown, args: readonly string[]) => {
+      if (body === null || typeof body !== "object") return;
+      const continuation = Reflect.get(body, "continuation");
+      if (typeof continuation === "string") add("next-page", [...args, "--continuation", continuation]);
+    };
+    if (operation.kind === "attempt.assertion.detail") {
+      nextPage(Reflect.get(document, "assertion"), [
+        operation.locator,
+        operation.entryId,
+        ...(operation.projection === "compact" ? [] : ["--full"]),
+      ]);
+    } else if (operation.kind === "attempt.usage") {
+      nextPage(Reflect.get(document, "usage"), [operation.locator, "usage"]);
+    } else if (operation.kind === "experiment.get") {
+      nextPage(Reflect.get(document, "experiment")?.modelUsage, [`exp:${operation.experimentId}`]);
+    } else if (operation.kind === "experiments.assertions") {
+      nextPage(Reflect.get(document, "matrix"), [
+        ...[...new Set(operation.experimentIds)].sort().map((id) => `exp:${id}`),
+        "assertions",
+        ...(operation.evalIdPrefix === undefined ? [] : ["--eval", operation.evalIdPrefix]),
+      ]);
+    }
+  }
   if (operation.kind === "attempt.diff" && document !== null && typeof document === "object") {
     const continuation = Reflect.get(document, "diff")?.continuation;
     if (typeof continuation === "string") {

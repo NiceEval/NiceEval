@@ -20,7 +20,7 @@ import {
   InspectionArtifactsValueSchema,
 } from "./artifact-list.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
-import { AssertionDetailResultSchema } from "./assertion-result.ts";
+import { AssertionDetailResultSchema, PagedAssertionDetailSchema } from "./assertion-result.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
 import { InspectionRepricingInputSchema, InspectionRepricingResultSchema } from "./repricing.ts";
 import {
@@ -187,12 +187,16 @@ export const inspectionProtocolRegistry = Object.freeze({
     request: operation("experiments.assertions", {
       experimentIds: Schema.Array(ExperimentIdSchema).check(Schema.makeFilter((ids) => ids.length > 0)),
       evalIdPrefix: Schema.optional(Schema.String),
+      continuation: Schema.optional(Schema.String),
     }),
     result: { matrix: AssertionMatrixSchema },
     factKinds: ["core", "assertions"],
   }),
   "experiment.get": spec({
-    request: operation("experiment.get", { experimentId: ExperimentIdSchema }),
+    request: operation("experiment.get", {
+      experimentId: ExperimentIdSchema,
+      continuation: Schema.optional(Schema.String),
+    }),
     result: { experiment: InspectionExperimentResultSchema },
     factKinds: ["core", "attempt-note", "assertions", "attempt-cost", "agent-turns", "adapter-usage", "judge-usage"],
   }),
@@ -238,8 +242,9 @@ export const inspectionProtocolRegistry = Object.freeze({
       locator: AttemptLocatorSchema,
       entryId: AssertionEntryIdSchema,
       projection: Schema.optional(Schema.Literals(["full", "compact"])),
+      continuation: Schema.optional(Schema.String),
     }),
-    result: { assertion: AssertionDetailResultSchema },
+    result: { assertion: Schema.Union([AssertionDetailResultSchema, PagedAssertionDetailSchema]) },
     factKinds: ["assertions", "agent-turns", "sources"],
   }),
   "attempt.assertion.image": spec({
@@ -314,12 +319,19 @@ export const inspectionProtocolRegistry = Object.freeze({
     factKinds: ["runner-activities"],
   }),
   "attempt.usage": spec({
-    request: operation("attempt.usage", { locator: AttemptLocatorSchema }),
+    request: operation("attempt.usage", {
+      locator: AttemptLocatorSchema,
+      continuation: Schema.optional(Schema.String),
+    }),
     result: { usage: InspectionAttemptUsageResultSchema },
     factKinds: ["agent-turns", "adapter-usage", "judge-usage"],
   }),
   "attempt.reprice": spec({
-    request: operation("attempt.reprice", { locator: AttemptLocatorSchema, pricing: InspectionRepricingInputSchema }),
+    request: operation("attempt.reprice", {
+      locator: AttemptLocatorSchema,
+      pricing: InspectionRepricingInputSchema,
+      continuation: Schema.optional(Schema.String),
+    }),
     result: { repricing: InspectionRepricingResultSchema },
     factKinds: ["adapter-usage", "judge-usage"],
   }),

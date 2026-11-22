@@ -3,6 +3,7 @@
 // @concord-implements docs/feature/inspection/use-case/inspection-check-completeness.md
 // @concord-implements docs/feature/inspection/use-case/inspection-compare-quality-cost.md
 // @concord-implements docs/feature/insight/README.md
+import { assertionCursor } from "./assertion-page.ts";
 import { inspectionLinks } from "./links.ts";
 import { normalizeExternalCause, type ExternalCause } from "../shared/external-cause.ts";
 import { stoppedAssertion } from "./stop.ts";
@@ -16,7 +17,7 @@ import { projectInput, type FrozenProjectInput } from "./project-input.ts";
 import { selectInspectionProject } from "./project.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
 import { projectArtifactsListing } from "./artifact-list.ts";
-import { combineTotalUsageCosts, summarizeJudgeUsage, takeJudgeUsagePreview } from "../o11y/judge-usage-projection.ts";
+import { combineTotalUsageCosts, summarizeJudgeUsage } from "../o11y/judge-usage-projection.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { attemptVerdict, attemptVerdictCauses } from "./verdict.ts";
@@ -24,7 +25,7 @@ import type { AssertionCoverage, AssertionLimitation } from "../assertions/recor
 import { NiceEvalCurrentRecordAttachments, NiceEvalRecordAttachments } from "../record/family/current.ts";
 import type { RunResourcePage } from "../run/storage/types.ts";
 import type { RunSummary } from "../run/index.ts";
-import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, utf8ByteLength } from "./bytes.ts";
+import { decodeBase64UrlUtf8, encodeBase64UrlUtf8, InspectionSha256, utf8ByteLength } from "./bytes.ts";
 import {
   closeInspectionJson,
   isInspectionCodecError,
@@ -36,10 +37,12 @@ import {
   type InspectionSourceProvenance,
 } from "./codec.ts";
 import {
-  INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT,
-  INSPECTION_RESULT_BYTE_LIMIT,
-  INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT,
-  INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT,
+  INSPECTION_ATTEMPT_PAGE_SIZE,
+  INSPECTION_RESULT_PAGE_BYTES,
+  INSPECTION_EXPERIMENT_PAGE_BYTES,
+  INSPECTION_USAGE_CALL_PAGE_SIZE,
+  INSPECTION_USAGE_CALL_PAGE_BYTES,
+  INSPECTION_USAGE_GROUP_PAGE_SIZE,
 } from "./limits.ts";
 import {
   projectAttemptAssertionDetail,
@@ -47,7 +50,8 @@ import {
   projectAttemptAssertionImage,
   projectAssertionContentDetail,
 } from "./assertions.ts";
-import { InspectionRepricingResultSchema } from "./repricing.ts";
+import { collectionPage, numberedCollectionPage } from "./collection-page.ts";
+import { InspectionRepricingResultSchema, type InspectionRepricingResult } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
 import { inspectionByteContinuation, inspectionByteOffset } from "./continuation.ts";
 import {
@@ -77,6 +81,7 @@ import {
   projectDiagnosticDetail,
   projectTraceTurnDetail,
   readInspectionAgentTurns,
+  readAssertionAgentTurns,
   readCurrentAttachment,
   projectAttemptTrace,
   projectAttemptTraceDetail,
@@ -302,6 +307,8 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "experiments.assertions": {
       const experimentIds = [...new Set(operation.experimentIds)].sort();
+      const evalIdPrefix = operation.evalIdPrefix?.replace(/\/$/u, "");
+      const page = inspectionPage(source, operation, [experimentIds, evalIdPrefix]);
       const input: MatrixInput[] = [];
       const matching = loadSelectedInspectionRuns(source, [
         ...new Set(experimentIds.flatMap((id) => source.findExperimentRunIds(id))),
@@ -314,9 +321,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
         for (const cell of overview.cells.filter(
           (item) =>
             item.experimentId === experimentId &&
-            (operation.evalIdPrefix === undefined ||
-              item.evalId === operation.evalIdPrefix ||
-              item.evalId.startsWith(operation.evalIdPrefix.replace(/\/$/u, "") + "/")),
+            (evalIdPrefix === undefined || item.evalId === evalIdPrefix || item.evalId.startsWith(evalIdPrefix + "/")),
         )) {
           for (const member of cell.members) {
             const locator = member.publication.state === "published" ? member.publication.attemptLocator : null;
@@ -344,10 +349,11 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       }
       return {
         ...resultMetadata(source, operation.kind, selected, [], [], locators(selected)),
-        matrix: projectAssertionMatrix(experimentIds, input),
+        matrix: projectAssertionMatrix(experimentIds, input, page),
       };
     }
     case "experiment.get": {
+      const page = inspectionPage(source, operation, [operation.experimentId]);
       const matching = loadSelectedInspectionRuns(source, source.findExperimentRunIds(operation.experimentId));
       const selected = loadReferencedOrigins(source, matching);
       const overview = selectInspectionOverview(matching, selected);
@@ -439,31 +445,37 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           missingAttemptCount: unresolvedAttemptCount,
         },
       };
-      let attempts = allAttempts.slice(0, 64);
-      const notes = aggregateAttemptNotes(orderedUsageAttempts);
-      const experimentResult = () => ({
+      if (page.offset > 0 && page.offset >= allAttempts.length) return page.invalid();
+      const aggregates = {
         experiment,
         cells: experimentCells,
         costSummary,
-        notes,
-        modelUsage: {
-          attempts,
-          totalAttemptCount: orderedUsageAttempts.length,
-          omittedAttemptCount: orderedUsageAttempts.length - attempts.length,
-          unresolvedAttemptCount,
-        },
-      });
-      while (
-        utf8ByteLength(JSON.stringify({ ...metadata, experiment: experimentResult() })) >
-          INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT &&
-        attempts.length > 0
-      ) {
-        attempts = attempts.slice(0, -1);
-      }
-      return requireInspectionResultBudget(operation.kind, {
+        notes: aggregateAttemptNotes(orderedUsageAttempts),
+      };
+      const usage = {
+        totalAttemptCount: allAttempts.length,
+        unresolvedAttemptCount,
+      };
+      const { items, end, omitted } = collectionPage(
+        allAttempts,
+        page.offset,
+        INSPECTION_ATTEMPT_PAGE_SIZE,
+        INSPECTION_EXPERIMENT_PAGE_BYTES -
+          utf8ByteLength(JSON.stringify({ ...metadata, ...aggregates, ...usage })) -
+          4096,
+      );
+      return {
         ...metadata,
-        experiment: decodeRequiredResult(operation.kind, InspectionExperimentResultSchema, experimentResult()),
-      });
+        experiment: decodeRequiredResult(operation.kind, InspectionExperimentResultSchema, {
+          ...aggregates,
+          modelUsage: {
+            ...usage,
+            attempts: items,
+            omittedAttemptCount: omitted,
+            ...(omitted > 0 ? { continuation: page.next(end) } : {}),
+          },
+        }),
+      };
     }
     case "run.list":
       return runsListDocument(source, operation);
@@ -530,23 +542,50 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "attempt.assertion.detail": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const projection = operation.projection ?? "full";
+      const page = assertionCursor(
+        operation.continuation,
+        {
+          source: source.kind,
+          cutoff: source.cutoff().identity,
+          origin: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+          request: JSON.stringify([operation.locator, operation.entryId, projection]),
+        },
+        () => {
+          throw new InspectionOperationError({
+            code: "restart-required",
+            operation: operation.kind,
+            reason: "Assertion continuation changed; restart from the first page.",
+          });
+        },
+      );
+      const metadata = baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
       const assertions = readInspectionAssertions(resolved);
       const assertion = projectAttemptAssertionDetail(
         source,
         assertions,
-        operation.projection === "compact"
-          ? { state: "not-recorded" }
-          : readInspectionAgentTurns(traceAttachments(resolved).agentTurns),
+        () =>
+          readAssertionAgentTurns(
+            source.cutoff().identity,
+            `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+            attemptAttachment(resolved, NiceEvalRecordAttachments.agentTurns.family),
+          ),
         operation.entryId,
-        operation.projection,
+        projection,
+        {
+          ...page,
+          fullFits: (assertion) => {
+            const document = { ...metadata, assertion };
+            if (utf8ByteLength(JSON.stringify(document)) > INSPECTION_RESULT_PAGE_BYTES) return false;
+            const links = inspectionLinks(operation, document);
+            return utf8ByteLength(JSON.stringify({ ...document, links })) < INSPECTION_RESULT_PAGE_BYTES;
+          },
+        },
       );
       if (assertion === undefined) {
         throw selectionMissing(operation.kind, `Assertion ${operation.entryId} was not found`);
       }
-      return {
-        ...baseDocument(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        assertion: boundedJson(assertion, INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT),
-      };
+      return { ...metadata, assertion };
     }
     case "attempt.assertion.image": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
@@ -688,33 +727,75 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "attempt.reprice": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      return requireInspectionResultBudget(operation.kind, {
+      const page = inspectionPage(source, operation, [operation.locator, closeJson(operation.pricing)], resolved);
+      const repricing = projectAttemptRepricing(traceAttachments(resolved), operation.pricing);
+      const application = repricingPage(repricing.application, page.offset);
+      const judge = repricingPage(repricing.judge, page.offset);
+      if (
+        page.offset > 0 &&
+        application.estimates.length +
+          application.missingCallIds.length +
+          judge.estimates.length +
+          judge.missingCallIds.length ===
+          0
+      )
+        return page.invalid();
+      const more =
+        application.omittedEstimateCount +
+          application.omittedMissingCallIdCount +
+          judge.omittedEstimateCount +
+          judge.omittedMissingCallIdCount >
+        0;
+      return {
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
-        repricing: decodeRequiredResult(
-          operation.kind,
-          InspectionRepricingResultSchema,
-          projectAttemptRepricing(traceAttachments(resolved), operation.pricing),
-        ),
-      });
+        repricing: decodeRequiredResult(operation.kind, InspectionRepricingResultSchema, {
+          application,
+          judge,
+          total: repricing.total,
+          ...(more ? { continuation: page.next(page.offset + 1) } : {}),
+        }),
+      };
     }
     case "attempt.usage": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
-      const metadata = resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]);
-      let usage = projectAttemptUsage(traceAttachments(resolved));
-      while (
-        utf8ByteLength(JSON.stringify({ ...metadata, usage })) > INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT &&
-        (usage.judgeUsage.state === "complete" || usage.judgeUsage.state === "partial") &&
-        usage.judgeUsage.calls.length > 0
-      ) {
-        usage = {
+      const page = inspectionPage(source, operation, [operation.locator], resolved);
+      const usage = projectAttemptUsage(traceAttachments(resolved), undefined, page.offset);
+      const { cacheRead } = usage;
+      const roles = numberedCollectionPage(cacheRead.roles, page.offset, INSPECTION_USAGE_GROUP_PAGE_SIZE, Infinity);
+      const models = numberedCollectionPage(cacheRead.models, page.offset, INSPECTION_USAGE_GROUP_PAGE_SIZE, Infinity);
+      const judge =
+        usage.judgeUsage.state === "complete" || usage.judgeUsage.state === "partial" ? usage.judgeUsage : undefined;
+      if (
+        page.offset > 0 &&
+        (usage.calls?.length ?? 0) +
+          (judge?.calls.length ?? 0) +
+          usage.modelGroups.groups.length +
+          roles.items.length +
+          models.items.length ===
+          0
+      )
+        return page.invalid();
+      const more =
+        (usage.omittedCallCount ?? 0) +
+          (judge?.omittedCallCount ?? 0) +
+          usage.modelGroups.omittedGroupCount +
+          roles.omitted +
+          models.omitted >
+        0;
+      return {
+        ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
+        usage: decodeRequiredResult(operation.kind, InspectionAttemptUsageResultSchema, {
           ...usage,
-          judgeUsage: takeJudgeUsagePreview(usage.judgeUsage, usage.judgeUsage.calls.length - 1),
-        };
-      }
-      return requireInspectionResultBudget(operation.kind, {
-        ...metadata,
-        usage: decodeRequiredResult(operation.kind, InspectionAttemptUsageResultSchema, usage),
-      });
+          cacheRead: {
+            ...cacheRead,
+            roles: roles.items,
+            models: models.items,
+            omittedRoleCount: roles.omitted,
+            omittedModelCount: models.omitted,
+          },
+          ...(more ? { continuation: page.next(page.offset + 1) } : {}),
+        }),
+      };
     }
     case "attempt.diff": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
@@ -845,7 +926,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       while (
         items.length > 0 &&
         (utf8ByteLength(JSON.stringify(items)) > 128 * 1024 ||
-          utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_BYTE_LIMIT)
+          utf8ByteLength(JSON.stringify(artifacts)) > INSPECTION_RESULT_PAGE_BYTES)
       ) {
         items = items.slice(0, -1);
         artifacts = page();
@@ -1917,21 +1998,59 @@ function decodeRequiredResult<S extends Schema.ConstraintDecoder<unknown>>(
   return decoded.success;
 }
 
-function requireInspectionResultBudget<Value>(operation: InspectionOperationId, value: Value): Value {
-  function resultByteLimit(): number {
-    if (operation === "experiment.get") return INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT;
-    if (operation === "attempt.usage" || operation === "attempt.reprice")
-      return INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT;
-    return INSPECTION_RESULT_BYTE_LIMIT;
-  }
-  if (utf8ByteLength(JSON.stringify(value)) > resultByteLimit()) {
+function repricingPage(source: InspectionRepricingResult["application"], page: number) {
+  const estimates = numberedCollectionPage(
+    source.estimates,
+    page,
+    INSPECTION_USAGE_CALL_PAGE_SIZE,
+    INSPECTION_USAGE_CALL_PAGE_BYTES,
+  );
+  const missing = numberedCollectionPage(
+    source.missingCallIds,
+    page,
+    INSPECTION_USAGE_CALL_PAGE_SIZE,
+    INSPECTION_USAGE_CALL_PAGE_BYTES,
+  );
+  return {
+    ...source,
+    estimates: estimates.items,
+    missingCallIds: missing.items,
+    omittedEstimateCount: estimates.omitted,
+    omittedMissingCallIdCount: missing.omitted,
+  };
+}
+
+function inspectionPage(
+  source: InspectionFactSource,
+  operation: { readonly kind: InspectionOperationId; readonly continuation?: string | undefined },
+  request: readonly unknown[],
+  resolved?: ResolvedInspectionAttempt,
+) {
+  const binding = {
+    source: source.kind,
+    cutoff: source.cutoff().identity,
+    locator: resolved === undefined ? "" : `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+    id: new InspectionSha256()
+      .update(new TextEncoder().encode(JSON.stringify([operation.kind, ...request])))
+      .digestHex(),
+  };
+  const invalid = (): never => {
     throw new InspectionOperationError({
-      code: "evidence-budget-exceeded",
-      operation,
-      reason: "Inspection result cannot fit in the result byte limit.",
+      code: "restart-required",
+      operation: operation.kind,
+      reason: "Continuation does not match this operation and cutoff; restart from the first page.",
     });
+  };
+  let offset = 0;
+  if (operation.continuation !== undefined) {
+    try {
+      offset = inspectionByteOffset(operation.continuation, binding);
+    } catch {
+      return invalid();
+    }
+    if (!Number.isSafeInteger(offset) || offset === 0) return invalid();
   }
-  return value;
+  return { offset, invalid, next: (offset: number) => inspectionByteContinuation(binding, offset) };
 }
 
 function locators(runs: readonly LoadedInspectionRun[]): readonly string[] {
@@ -1948,7 +2067,7 @@ function closeJson(value: unknown): InspectionJson {
   return closed as InspectionJson;
 }
 
-function boundedJson(value: unknown, byteLimit = INSPECTION_RESULT_BYTE_LIMIT): InspectionJson {
+function boundedJson(value: unknown, byteLimit = INSPECTION_RESULT_PAGE_BYTES): InspectionJson {
   const closed = closeJson(value);
   const byteLength = utf8ByteLength(JSON.stringify(closed));
   if (byteLength <= byteLimit) return closed;

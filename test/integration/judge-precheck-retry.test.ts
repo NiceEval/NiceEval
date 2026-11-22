@@ -876,6 +876,7 @@ describe("Ordinary Judge HTTP 200 errors", () => {
     const attempt = narrowInspectionSuccess(attemptDoc!, "attempt.get");
     if (!attempt.success) throw new Error(attempt.reason);
     const detail = await readAssertionDetail(cwd, locator, attempt.value.attempt.assertions.entries[0]!.entryId);
+    if ("fields" in detail.assertion) throw new Error("Expected one page for the small retry diagnostic");
     expect(detail.assertion.check.state).toBe(scenario.recovery ? "matched" : scenario.partial ? "errored" : "unavailable");
     if (scenario.name === "exhausted") expect(JSON.stringify(detail.assertion.check)).toContain(`${reason} 3`);
     const [usageDoc] = await showJsonDocuments(cwd, [locator, "usage"]);

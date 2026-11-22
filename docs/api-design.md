@@ -135,10 +135,11 @@ niceeval view run:<run-id>
 
 `view` 只读取项目内 canonical `.niceeval/record.sqlite`，没有持久数据源参数；source 与 transport 规则见 [Insight CLI](feature/insight/cli.md)。
 
-深度应用组合使用 [公开 Host composition SDK](architecture.md#公开-host-composition-sdk)。Inspection 的唯一公开 Library 入口是纯跨运行时的
-`niceeval/inspection`；不存在 `/host` 子路径、alias、fallback 或 Node 专用公开面。
-它只导出固定协议的 typed registry、Schema、类型、完整 document decoder 与按 operation 语义窄化函数。
-reader、facts、SQLite、source selection 与 operation execution capability 都留在内部 Scope。
+深度应用组合使用 [公开 Host composition SDK](architecture.md#公开-host-composition-sdk)。
+`niceeval/inspection` 导出跨运行时的协议 registry、Schema、类型与完整 document decoder。
+Node.js 应用通过 [Inspection Host](feature/inspection/library.md) 在回调作用域内查询固定 operation。
+Host 拥有 reader、facts、SQLite 与 source selection。
+
 
 ### 领域 API 不暴露持久写入
 
@@ -180,13 +181,13 @@ export default defineEval({
 | 形状 | 使用条件 |
 |---|---|
 | 内部 `record.operation()` | NiceEval 自身导航或读取 Record Core 与 RecordAttachment；不形成公开子路径 |
-| `niceeval/inspection` | 纯跨运行时协议入口；从同一个 typed registry 导出 request/document Schema、类型、decoder 与语义窄化函数 |
+| `niceeval/inspection` | 跨运行时协议入口，提供 typed registry、Schema、类型与 decoder |
+| `niceeval/inspection/host` | 在 Node.js 回调作用域内读取固定 Inspection operation |
 | 内部 `selectInspectionOperation(facts, operation)` | 从已打开且 pinned 的 facts 形成固定 Inspection document，并完成 selection policy 与分母判断；不是公开 Library API |
 
 “方法更短”或“自由函数更函数式”都不是理由。
 若操作跨越领域层，模块归属应让这个边界在 import 和调用点可见。
-按此规则，从 Record 形成 Inspection result 的 selection 属于内部 Inspection selector 边界；公开用户
-通过 `show` 的对象寻址或 View 使用它，不把 root 字符串或 reader 暴露进 Library。
+从 Record 形成 Inspection result 的 selection 属于内部 selector。CLI、View 与 Inspection Host 复用同一 selector。
 
 `InspectionDocument` 是 `outcome` 判别联合：`discovery | success | explanation | failure`。只有完整 document 先经
 `decodeInspectionDocument(unknown)` 严格解码后，consumer 才能按 `outcome` 分支；成功或 explanation 再用具名

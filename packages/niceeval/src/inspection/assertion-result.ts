@@ -1,3 +1,4 @@
+import { NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 import { AssertionContentReferenceSchema } from "./assertion-content.ts";
 import { AgentJudgeAuditSchema } from "../assertions/agent-judge-audit.ts";
 import * as Schema from "effect/Schema";
@@ -485,3 +486,22 @@ export const AssertionDetailResultSchema = Schema.toType(
   ]),
 );
 export type AssertionDetailResult = typeof AssertionDetailResultSchema.Type;
+
+const ChunkFields = {
+  path: Schema.String,
+  byteLength: NonNegativeSafeIntegerSchema,
+  offset: NonNegativeSafeIntegerSchema,
+  nextOffset: Schema.NullOr(NonNegativeSafeIntegerSchema),
+  base64: Schema.String,
+};
+export const PagedAssertionDetailSchema = Schema.Struct({
+  state: Schema.Literal("paged"),
+  entryId: Schema.String,
+  fields: Schema.Array(
+    Schema.Union([
+      Schema.Struct({ ...ChunkFields, encoding: Schema.Literal("json") }),
+      Schema.Struct({ ...ChunkFields, encoding: Schema.Literal("content-base64"), sha256: Schema.String }),
+    ]),
+  ),
+  continuation: Schema.optional(Schema.String),
+});

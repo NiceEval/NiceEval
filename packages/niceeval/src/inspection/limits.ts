@@ -1,11 +1,10 @@
-/** Maximum UTF-8 JSON bytes for any one fixed operation result field. */
-export const INSPECTION_RESULT_BYTE_LIMIT = 512 * 1024;
+/** UTF-8 JSON page size for Inspection projections with a byte budget. */
+export const INSPECTION_RESULT_PAGE_BYTES = 512 * 1024;
 
-/** Complete Experiment aggregates and cells include per-Assertion coverage. */
-export const INSPECTION_EXPERIMENT_RESULT_BYTE_LIMIT = 4 * 1024 * 1024;
+/** Experiment pages include aggregates and per-Assertion coverage. */
+export const INSPECTION_EXPERIMENT_PAGE_BYTES = 4 * 1024 * 1024;
 
-/** Full source content, Judge audit and base64 encoding for assertion detail only. */
-export const INSPECTION_ASSERTION_DETAIL_BYTE_LIMIT = 32 * 1024 * 1024;
-
-/** Complete cache groups for all 4000 admitted physical calls, including maximum escaped identities. */
-export const INSPECTION_ATTEMPT_USAGE_RESULT_BYTE_LIMIT = 16 * 1024 * 1024;
+export const INSPECTION_ATTEMPT_PAGE_SIZE = 64;
+export const INSPECTION_USAGE_GROUP_PAGE_SIZE = 64;
+export const INSPECTION_USAGE_CALL_PAGE_SIZE = 128;
+export const INSPECTION_USAGE_CALL_PAGE_BYTES = 128 * 1024;

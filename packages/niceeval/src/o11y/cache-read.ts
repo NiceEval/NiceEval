@@ -69,7 +69,7 @@ export const CacheReadReportSchema = Schema.Struct({
       ...fields,
     }).check(Schema.makeFilter(consistent)),
   ),
-}).check(Schema.makeFilter((value) => value.roles.length <= 65 && value.models.length <= 4000));
+});
 /** Complete per-Attempt report; unknown model identities remain null. */
 export type CacheReadReport = typeof CacheReadReportSchema.Type;
 

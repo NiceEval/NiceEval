@@ -9,6 +9,14 @@ trap 'rm -rf "$consumer"' EXIT
 cd "$consumer"
 pnpm init
 pnpm add "$candidate"
+node --input-type=module <<'EOF'
+import { strictEqual } from "node:assert";
+import { withInspectionQuery } from "niceeval/inspection/host";
+
+const runs = await withInspectionQuery({ cwd: process.cwd() }, async (query) => query.inspect({ kind: "run.list" }));
+strictEqual(runs.operation, "run.list");
+strictEqual(runs.runs.length, 0);
+EOF
 pnpm --silent exec niceeval --help
 test "$(pnpm --silent exec niceeval --version)" = "$version"
 pnpm --silent exec niceeval init

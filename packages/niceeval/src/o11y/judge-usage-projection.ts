@@ -8,17 +8,14 @@ import type {
   JudgeUsageSummary,
   TotalUsageCosts,
 } from "../inspection/results.ts";
-import { utf8ByteLength } from "../inspection/bytes.ts";
+import { callPage } from "../inspection/collection-page.ts";
+import { INSPECTION_USAGE_CALL_PAGE_BYTES, INSPECTION_USAGE_CALL_PAGE_SIZE } from "../inspection/limits.ts";
 import { combineCostGaps } from "./cost-gaps.ts";
 
-import {
-  compareJudgeUsageCalls,
-  JUDGE_USAGE_PREVIEW_BYTE_LIMIT,
-  JUDGE_USAGE_PREVIEW_CALL_LIMIT,
-} from "./usage-contract.ts";
+import { compareJudgeUsageCalls } from "./usage-contract.ts";
 
 /** The ledger is already validated; independent metrics retain their own coverage. */
-export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
+export function projectJudgeUsage(ledger: JudgeUsageAttachment, page = 0): JudgeUsage {
   const receipts = new Map(ledger.priceReceipts.map((receipt) => [receipt.callId, receipt]));
   const costCalls = ledger.calls.map((call): { readonly effectiveCost: EffectiveCallCost | undefined } => {
     const receipt = receipts.get(call.callId);
@@ -64,13 +61,17 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
     }
     return { state: complete ? ("available" as const) : ("partial" as const), value, observationCount };
   };
-  const all: Extract<JudgeUsage, { readonly state: "complete" | "partial" }> = {
+  return {
     state: ledger.collection.state,
     coverage: "physical-transmissions",
     collection: ledger.collection,
-    calls: [...ledger.calls].sort(compareJudgeUsageCalls),
-    callsTruncated: false,
-    omittedCallCount: 0,
+    ...callPage(
+      [...ledger.calls].sort(compareJudgeUsageCalls),
+      ledger.priceReceipts,
+      page,
+      INSPECTION_USAGE_CALL_PAGE_SIZE,
+      INSPECTION_USAGE_CALL_PAGE_BYTES,
+    ),
     totals: {
       requests: {
         state: ledger.collection.state === "complete" ? "available" : "partial",
@@ -83,32 +84,7 @@ export function projectJudgeUsage(ledger: JudgeUsageAttachment): JudgeUsage {
       costs:
         ledger.collection.state === "complete" && ledger.calls.length === 0 ? { ...costs, state: "complete" } : costs,
     },
-    priceReceipts: ledger.priceReceipts,
   };
-  let preview = takeJudgeUsagePreview(all, JUDGE_USAGE_PREVIEW_CALL_LIMIT);
-  while (
-    utf8ByteLength(JSON.stringify({ calls: preview.calls, priceReceipts: preview.priceReceipts })) >
-      JUDGE_USAGE_PREVIEW_BYTE_LIMIT &&
-    preview.calls.length > 0
-  ) {
-    preview = takeJudgeUsagePreview(preview, preview.calls.length - 1);
-  }
-  return preview;
-}
-
-/** Shrinking details never changes totals and retains only the corresponding price proofs. */
-export function takeJudgeUsagePreview(
-  usage: Extract<JudgeUsage, { readonly state: "complete" | "partial" }>,
-  maximumCalls: number,
-): Extract<JudgeUsage, { readonly state: "complete" | "partial" }> {
-  const calls = usage.calls.slice(0, maximumCalls);
-  const receipts = new Map(usage.priceReceipts.map((receipt) => [receipt.callId, receipt]));
-  const priceReceipts = calls.flatMap((call) => {
-    const receipt = receipts.get(call.callId);
-    return receipt === undefined ? [] : [receipt];
-  });
-  const omittedCallCount = usage.omittedCallCount + usage.calls.length - calls.length;
-  return { ...usage, calls, priceReceipts, callsTruncated: omittedCallCount > 0, omittedCallCount };
 }
 
 export function summarizeJudgeUsage(usage: JudgeUsage): JudgeUsageSummary {

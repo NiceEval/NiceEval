@@ -202,7 +202,7 @@ function permittedLimitations(collection: SourceReceiptCollection): boolean {
   );
 }
 
-function validateReceiptEnvelope(input: {
+export function validateAgentTurnsEnvelope(input: {
   readonly collection: SourceReceiptCollection;
   readonly segments: readonly {
     readonly segmentId: string;
@@ -233,7 +233,7 @@ function validateReceiptEnvelope(input: {
 }
 
 export function validateAgentTurnsAttachment(value: AgentTurnsAttachment): readonly RecordAttachmentIssue[] {
-  const issues = [...validateReceiptEnvelope(value)];
+  const issues = [...validateAgentTurnsEnvelope(value)];
   if (projectObservedSourceEvents(value.segments).state !== "available") {
     issues.push(invalid(["segments"]));
   }

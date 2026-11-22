@@ -184,7 +184,7 @@ artifacts、timing、usage、commands 与 diagnostics，状态为 `available | n
 niceeval show @<locator> ae_<stable-id>
 ```
 
-operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, projection? }`，结果是单条 `assertion`。
+operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, projection?, continuation? }`，结果是单条 `assertion`。
 列出全部条目用 `{ kind: "attempt.assertions", locator, projection? }`，结果是按 Attempt 条目顺序排列的 `assertions`，没有条目时为 `[]`，见[Attempt 断言详情示例](#attempt-断言详情示例)。
 `projection` 可选 `full | compact`，省略时默认为 `full`。`compact` 只返回 `check`、判定状态与 `rationale`，
 省略完整工具调用行与原始材料全文，保证单次响应体积安全，避免外部脚本管道溢出。
@@ -196,7 +196,14 @@ operation request 是 `{ kind: "attempt.assertion.detail", locator, entryId, pro
 最后一页的 `nextOffset` 为 `null`。这个固定 operation 同样支持 `--record` 搬迁读取，不访问作者路径或模型。
 
 文字上下文材料的 `attempt.assertion.detail` 交付完整 source content 与裁判审计，不因规模失败或截断。
-单页 JSON 超过 512 KiB 时，超出的 source content 与审计以字节区间续读：result 给出每个被分页字段的 `byteLength`、`sha256`、本页 `offset` 与 `nextOffset`，
+详情在 512 KiB 内时直接返回结构化字段。更大的详情返回 `assertion.state: "paged"`、`entryId` 与 `fields`。
+每项用 JSON Pointer `path` 定位原字段，给出该段的 `offset`、`nextOffset` 与 `base64`。
+封存 Content 的 `encoding` 为 `content-base64`。其 `byteLength` 与 `sha256` 来自 Record，偏移按原字节计算。
+拼接此字段的原字节后，编码成 base64 字符串放回对应字段。
+
+派生值的 `encoding` 为 `json`，偏移按该值的 UTF-8 JSON 字节计算。行按各自的 `path` 读回。
+派生续读绑定 cutoff、origin 与投影版本。确定性投影使用同一组封存输入，因此无需重算完整派生值的 SHA-256。
+`nextOffset` 为 `null` 表示该值读完。传回 `assertion.continuation` 读下一页，末页省略 token。
 `--full` 的人读输出在 `Next` 给出续读命令。多模态 detail 的 metadata 与解码审计使用同一分页规则，原图仍按上述 operation 分页。
 `show` 的人读正文保持有界 preview，但直接显示 [材料容量诊断](../assertions/library/custom-assertions.md#材料选择)，不因正文较大省略原因。
 
@@ -668,7 +675,9 @@ result 按 Eval ID 排序，每个 Eval 给出：
 在该 Eval 的 `unlabeled` 里按列计数。同一 Attempt 内身份重复的条目不合并，按出现顺序成为同一行里的多格，
 不能让后一条静默替换前一条。行按在各列中首次出现的顺序排列，先出现的列优先。
 
-result 按固定页大小分页：行数或格数超过单页时给出被省略的 Eval、行与列的精确数量，以及读取下一页的 `continuation`；不能静默截断。分页省略不使判据本身成为 `partial`。
+矩阵按 Eval、列、行的顺序分页。拆开的 Eval 带从零开始的 `columnOffset` 与 `rowOffset`。
+`omitted` 统计尚有未读格的 Eval、行与列，末页各项为零。
+`matrix.continuation` 来自上一页的 `next-page`，分页省略不改变各判据的状态。
 
 文本投影每个 Eval 一张表：第一行是各列的 Verdict 与 score，其后每行一条判据。计分条目显示 `得分/满分`，
 不计分条目显示判定结果，`absent` 显示 `—`。`distinct` 为 `true` 的行有可见标记，标题下注明该标记的含义。

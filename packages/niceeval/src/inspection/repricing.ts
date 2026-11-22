@@ -57,12 +57,15 @@ const Source = Money.pipe(
     callCount: Schema.NullOr(NonNegativeSafeIntegerSchema),
     estimates: Schema.Array(Schema.Union([AdapterCallPriceReceiptSchema, JudgePriceReceiptSchema])),
     missingCallIds: Schema.Array(Schema.String),
+    omittedEstimateCount: NonNegativeSafeIntegerSchema,
+    omittedMissingCallIdCount: NonNegativeSafeIntegerSchema,
   }),
 );
 export const InspectionRepricingResultSchema = Schema.Struct({
   application: Source,
   judge: Source,
   total: Money,
+  continuation: Schema.optional(Schema.String),
 });
 export type InspectionRepricingResult = Schema.Schema.Type<typeof InspectionRepricingResultSchema>;
 type RepricedSource = InspectionRepricingResult["application"];
@@ -97,6 +100,8 @@ function summarize(
     callCount: calls?.length ?? null,
     estimates,
     missingCallIds,
+    omittedEstimateCount: 0,
+    omittedMissingCallIdCount: 0,
   };
 }
 

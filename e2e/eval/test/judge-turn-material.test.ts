@@ -316,48 +316,24 @@ export default defineExperiment({ evals: ["paged-audit"], adapter: deterministic
         event.locator,
         only(attempt.document.attempt.assertions.entries, () => true).entryId,
       );
-      const audit = assertionEntry(detail.document, detail.receipt.diagnostic()).scoreMatchAudit;
-      expect(audit?.state, detail.receipt.diagnostic()).toBe("paged");
-      if (audit?.state !== "paged") throw new Error("Missing paged audit");
-      expect(JSON.stringify(detail.document).length).toBeLessThan(128 * 1024);
-      const reference = audit.content;
-      expect(reference.byteLength).toBeGreaterThan(32 * 1024 * 1024);
-      const chunks: Buffer[] = [];
-
-      let offset = 0;
-      let continuation: string | undefined;
-      while (true) {
-        const read = await niceeval.run([
-          "show",
-          event.locator,
-          reference.id,
-          ...(continuation === undefined ? [] : ["--continuation", continuation]),
-          "--json",
-        ]);
-        expect(read.exitCode, read.diagnostic()).toBe(0);
-        const document = read.inspectionSuccess("attempt.trace.detail");
-        const page = document.detail;
-        if (page.kind !== "execution-evidence") throw new Error("Missing Assertion Content page");
-        expect(page.offset).toBe(offset);
-        expect(page.targetByteLength).toBe(reference.byteLength);
-        expect(page.targetSha256).toBe(reference.sha256);
-        const chunk = Buffer.from(page.base64, "base64");
-        expect(chunk.byteLength).toBe(Math.min(256 * 1024, reference.byteLength - offset));
-        chunks.push(chunk);
-        offset += chunk.byteLength;
-        if (page.nextOffset === null) break;
-        expect(page.nextOffset).toBe(offset);
-        continuation = document.links
-          .find((link) => link.rel === "next-page")
-          ?.command.match(/--continuation ([^ ]+)/)?.[1];
-        expect(continuation, read.diagnostic()).toBeDefined();
+      expect(detail.receipt.attemptAssertionDetail().assertion).toMatchObject({ state: "paged" });
+      const entry = assertionEntry(detail.document, detail.receipt.diagnostic());
+      if (!("materials" in entry)) throw new Error("Missing full Assertion entry");
+      const audit = entry.scoreMatchAudit;
+      expect(audit?.state, detail.receipt.diagnostic()).toBe("available");
+      if (audit?.state !== "available") throw new Error("Missing reconstructed audit");
+      const material = entry.materials.evidence.at(-1);
+      if (material?.kind !== "content" || !("base64" in material.content)) {
+        throw new Error("Missing reconstructed audit Content");
       }
-      const bytes = Buffer.concat(chunks);
-      expect(bytes.byteLength).toBe(reference.byteLength);
-      expect(createHash("sha256").update(bytes).digest("hex")).toBe(reference.sha256);
+      const bytes = Buffer.from(material.content.base64, "base64");
+      expect(bytes.byteLength).toBeGreaterThan(32 * 1024 * 1024);
+      expect(bytes.byteLength).toBe(material.content.byteLength);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(material.content.sha256);
       const decoded = readScoreMatchAudit(JSON.parse(bytes.toString("utf8")), 1);
       expect(decoded.state).toBe("available");
       if (decoded.state !== "available") throw new Error("Invalid complete audit");
+      expect(audit.audit).toEqual(decoded.audit);
       expect(decoded.audit.input).toContain("PAGED_TAIL");
       expect(decoded.audit.calls).toHaveLength(4);
       for (const call of decoded.audit.calls) {

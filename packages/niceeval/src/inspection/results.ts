@@ -22,12 +22,13 @@ import {
   JudgePriceReceiptSchema,
   validateJudgeUsageAttachment,
 } from "../record/family/judge-usage/schema.ts";
+import { compareAdapterModelGroups, compareJudgeUsageCalls } from "../o11y/usage-contract.ts";
 import {
-  compareAdapterModelGroups,
-  compareJudgeUsageCalls,
-  JUDGE_USAGE_PREVIEW_BYTE_LIMIT,
-  JUDGE_USAGE_PREVIEW_CALL_LIMIT,
-} from "../o11y/usage-contract.ts";
+  INSPECTION_ATTEMPT_PAGE_SIZE,
+  INSPECTION_USAGE_GROUP_PAGE_SIZE,
+  INSPECTION_USAGE_CALL_PAGE_BYTES,
+  INSPECTION_USAGE_CALL_PAGE_SIZE,
+} from "./limits.ts";
 import { utf8ByteLength } from "./bytes.ts";
 import { CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
 
@@ -276,11 +277,13 @@ export const InspectionExperimentResultSchema = Schema.Struct({
     totalAttemptCount: NonNegativeSafeIntegerSchema,
     omittedAttemptCount: NonNegativeSafeIntegerSchema,
     unresolvedAttemptCount: NonNegativeSafeIntegerSchema,
+    continuation: Schema.optional(Schema.String),
   }).check(
     Schema.makeFilter(
       (usage) =>
-        usage.attempts.length <= 64 &&
-        usage.totalAttemptCount === usage.attempts.length + usage.omittedAttemptCount &&
+        usage.attempts.length <= INSPECTION_ATTEMPT_PAGE_SIZE &&
+        usage.totalAttemptCount >= usage.attempts.length + usage.omittedAttemptCount &&
+        usage.omittedAttemptCount > 0 === (usage.continuation !== undefined) &&
         usage.attempts.every(
           (entry, index) =>
             index === 0 ||
@@ -1055,7 +1058,7 @@ const EffectiveCostTotalSchema = Schema.Struct({
   ),
   totalCalls: NonNegativeSafeIntegerSchema,
 });
-const RecordedCallCountSchema = NonNegativeSafeIntegerSchema.check(Schema.isLessThanOrEqualTo(4_000));
+const RecordedCallCountSchema = NonNegativeSafeIntegerSchema;
 const ModelGroupTokenTotalSchema = Schema.Struct({
   state: Schema.Literals(["available", "partial", "unavailable"]),
   value: Schema.NullOr(NonNegativeSafeIntegerSchema),
@@ -1106,7 +1109,7 @@ const ModelGroupsSchema = Schema.Union([
     groups: Schema.Array(ModelGroupSchema).check(
       Schema.makeFilter(
         (groups) =>
-          groups.length <= 64 &&
+          groups.length <= INSPECTION_USAGE_GROUP_PAGE_SIZE &&
           groups.every((entry, index) => index === 0 || compareAdapterModelGroups(groups[index - 1]!, entry) < 0),
       ),
     ),
@@ -1116,8 +1119,7 @@ const ModelGroupsSchema = Schema.Union([
   }).check(
     Schema.makeFilter(
       (value) =>
-        value.totalGroupCount === value.groups.length + value.omittedGroupCount &&
-        value.groups.length === Math.min(value.totalGroupCount, 64) &&
+        value.totalGroupCount >= value.groups.length + value.omittedGroupCount &&
         value.groupsTruncated === value.omittedGroupCount > 0,
     ),
   ),
@@ -1231,7 +1233,6 @@ const ExperimentCostSummarySchema = Schema.Struct({
 const JudgeCostTotalsSchema = EffectiveCostTotalSchema.check(
   Schema.makeFilter(
     (costs) =>
-      costs.totalCalls <= 4_000 &&
       (costs.source === null) === (costs.values.length === 0) &&
       costs.values.every(
         (entry, index) =>
@@ -1307,17 +1308,21 @@ const JudgeUsageSchema = Schema.Union([
           collection: usage.collection,
           totals: usage.totals,
         }) &&
-        usage.calls.length <= JUDGE_USAGE_PREVIEW_CALL_LIMIT &&
-        usage.calls.length + usage.omittedCallCount === usage.totals.requests.value &&
+        usage.calls.length <= INSPECTION_USAGE_CALL_PAGE_SIZE &&
+        usage.calls.length + usage.omittedCallCount <= usage.totals.requests.value! &&
         usage.callsTruncated === usage.omittedCallCount > 0 &&
         usage.calls.every((call, index) => index === 0 || compareJudgeUsageCalls(usage.calls[index - 1]!, call) < 0) &&
-        utf8ByteLength(JSON.stringify({ calls: usage.calls, priceReceipts: usage.priceReceipts })) <=
-          JUDGE_USAGE_PREVIEW_BYTE_LIMIT &&
-        validateJudgeUsageAttachment({
-          collection: usage.collection,
-          calls: usage.calls,
-          priceReceipts: usage.priceReceipts,
-        }).length === 0,
+        (usage.calls.length <= 1 ||
+          utf8ByteLength(JSON.stringify({ calls: usage.calls, priceReceipts: usage.priceReceipts })) <=
+            INSPECTION_USAGE_CALL_PAGE_BYTES) &&
+        validateJudgeUsageAttachment(
+          {
+            collection: usage.collection,
+            calls: usage.calls,
+            priceReceipts: usage.priceReceipts,
+          },
+          { partialTransmissions: true },
+        ).length === 0,
     ),
   ),
 ]);
@@ -1359,12 +1364,17 @@ const TurnCacheReadSchema = Schema.Struct({
   ),
 });
 export const InspectionAttemptUsageResultSchema = Schema.Struct({
-  cacheRead: CacheReadReportSchema,
+  cacheRead: Schema.Struct({
+    ...CacheReadReportSchema.fields,
+    omittedRoleCount: Schema.optional(NonNegativeSafeIntegerSchema),
+    omittedModelCount: Schema.optional(NonNegativeSafeIntegerSchema),
+  }),
   turnCacheRead: TurnCacheReadSchema,
   configuredModels: ConfiguredModelsSchema,
   modelGroups: ModelGroupsSchema,
   judgeUsage: JudgeUsageSchema,
   totalCosts: TotalUsageCostsSchema,
+  continuation: Schema.optional(Schema.String),
   source: Schema.optional(Schema.Literal("adapter")),
   coverage: Schema.optional(Schema.Literal("recorded-calls")),
   calls: Schema.optional(Schema.Array(AdapterUsageInspectionCallSchema)),

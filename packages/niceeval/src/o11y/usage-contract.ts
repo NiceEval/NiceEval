@@ -1,9 +1,6 @@
 import type { JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
 import type { EffectiveUsageCall } from "./adapter-usage-projection.ts";
 
-export const JUDGE_USAGE_PREVIEW_CALL_LIMIT = 128;
-export const JUDGE_USAGE_PREVIEW_BYTE_LIMIT = 128 * 1024;
-
 export function compareJudgeUsageCalls(left: JudgeUsageCall, right: JudgeUsageCall): number {
   return (
     left.entryIndex - right.entryIndex ||

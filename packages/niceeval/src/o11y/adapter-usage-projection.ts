@@ -1,3 +1,4 @@
+import { INSPECTION_USAGE_GROUP_PAGE_SIZE } from "../inspection/limits.ts";
 import { projectCacheRead } from "./cache-read.ts";
 import type {
   ReadableAdapterUsageAttachment,
@@ -180,6 +181,7 @@ export function projectAdapterModelUsage(
     readonly reason: "source-invalid" | "usage-not-recorded" | "physical-call-identity-not-recorded";
   } = { basis: "unavailable", reason: "usage-not-recorded" },
   producerCompletenessKnown = true,
+  page = 0,
 ) {
   const cacheRead = projectCacheRead(
     usage,
@@ -226,7 +228,8 @@ export function projectAdapterModelUsage(
     else group.push(call);
   }
   const allGroups = [...grouped.values()].sort((left, right) => compareAdapterModelGroups(left[0]!, right[0]!));
-  const groups = allGroups.slice(0, 64).map((calls) => {
+  const start = Math.min(page * INSPECTION_USAGE_GROUP_PAGE_SIZE, allGroups.length);
+  const groups = allGroups.slice(start, start + INSPECTION_USAGE_GROUP_PAGE_SIZE).map((calls) => {
     const { modelRole, provider, model } = calls[0]!;
     const groupUsage = { ...usage, calls };
     return {
@@ -250,8 +253,8 @@ export function projectAdapterModelUsage(
       basis: "recorded-calls" as const,
       groups: groups,
       totalGroupCount: allGroups.length,
-      groupsTruncated: allGroups.length > groups.length,
-      omittedGroupCount: allGroups.length - groups.length,
+      groupsTruncated: allGroups.length > start + groups.length,
+      omittedGroupCount: allGroups.length - start - groups.length,
     },
   };
 }
