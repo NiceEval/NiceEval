@@ -1,1 +1,8 @@
-pnpm lint
+pnpm lint &
+lint_pid=$!
+
+test_status=0
+pnpm test || test_status=$?
+
+wait "$lint_pid" || exit $?
+exit "$test_status"

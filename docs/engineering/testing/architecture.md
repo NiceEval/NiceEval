@@ -22,6 +22,7 @@
 | 场合 | 跑什么 |
 |---|---|
 | 本地 | 改动对应的 Vitest 文件（`vitest --changed` 或点名文件）；改了界面时，对相关 Bombadil spec 跑一次短时 `test` |
+| pre-push | `pnpm lint` 与 `pnpm test`（Vitest 的快速 project） |
 | PR | 全部集成测试；每个 Bombadil spec 跑固定时长的 `test`；CLI 机器输出 E2E |
 | nightly | Bombadil `fuzz` 长时探索；fast-check 提高运行次数；live Provider |
 | release | tarball 冒烟 |
@@ -64,7 +65,7 @@
 
 ## 成本上限
 
-单个测试按上表的 p50 上限；超过上限的文件按 Use Case 拆分或下沉，见 `use-case/` 中的拆分指南。全量测试在 CI 分片运行；本地只跑静态检查与改动相关的单个测试文件。
+单个测试按上表的 p50 上限；超过上限的文件按 Use Case 拆分或下沉，见 `use-case/` 中的拆分指南。全量测试在 CI 分片运行，本地与 pre-push 按上表执行。
 
 ## 检查入口
 

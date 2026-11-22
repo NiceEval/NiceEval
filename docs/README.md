@@ -196,7 +196,7 @@ pnpm lint
 新增设计页仍要从本索引或所属二级目录的 `README.md` 可发现；这一条、括号嵌套、SVG 用词与样式，以及正文 API 示例是否符合公开签名，都靠评审核对，没有机器守护。
 
 Git hook 的检查与安装从 [Repository Setup skill](../.agents/skills/repository-setup/SKILL.md) 进入。
-`pre-push` 调用同一条 `pnpm lint`，不单独维护另一份规则清单。
+`pre-push` 复用 `pnpm lint`，并运行 `pnpm test`。运行场合见[测试架构](engineering/testing/architecture.md#运行)。
 
 超标时这条命令直接打出每一处该怎么改——文件:行号、超了多少字、命中哪个禁用写法及为什么。
 没有第二条命令要记。
