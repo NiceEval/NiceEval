@@ -8,6 +8,7 @@ import type { SQLOutputValue } from "node:sqlite";
 import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import { recordStatement, requiredRecordRow, type RecordDatabase } from "../../record/sqlite/database.ts";
+import { recoverFinishedInvocationOnConnection } from "../../record/sqlite/coordination-repository.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
@@ -156,6 +157,7 @@ function requireCutoff(connection: RecordDatabase, requested?: PublicationCutoff
 
 interface RunHeader {
   readonly runId: string;
+  readonly invocationId: string;
   readonly writerGeneration: string;
   readonly terminalState: RunTerminalState | undefined;
   readonly createdRevision: number;
@@ -165,7 +167,7 @@ interface RunHeader {
 function runHeader(connection: RecordDatabase, runId: string): RunHeader | undefined {
   const row = recordStatement(
     connection,
-    `SELECT run_id,current_writer_generation,terminal_state,created_revision,close_revision
+    `SELECT run_id,invocation_id,current_writer_generation,terminal_state,created_revision,close_revision
     FROM ne19_run_resources WHERE run_id=?`,
   ).get(runId) as Row | undefined;
   if (row === undefined) return undefined;
@@ -173,6 +175,7 @@ function runHeader(connection: RecordDatabase, runId: string): RunHeader | undef
   if (terminalState !== undefined) requireTerminalState(terminalState);
   return {
     runId: text(row, "run_id"),
+    invocationId: text(row, "invocation_id"),
     writerGeneration: text(row, "current_writer_generation"),
     terminalState,
     createdRevision: integer(row, "created_revision"),
@@ -657,6 +660,7 @@ export function recoverRunResourceOnConnection(
       `DELETE FROM ne19_attempts WHERE origin_run_id=? AND
       attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`,
     ).run(input.runId, input.runId);
+    recoverFinishedInvocationOnConnection(connection, run.invocationId, input.completedAt, input.deadlineEpochMs);
     return {
       runId: input.runId,
       previousWriterGeneration: input.expectedWriterGeneration,

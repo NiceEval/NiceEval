@@ -1,4 +1,6 @@
 import type { SQLOutputValue } from "node:sqlite";
+import { currentProcessOwnerIdentity, exactProcessState } from "../../coordination/platform/node-process-identity.ts";
+import type { SessionRecordPayload } from "../../runner/session.ts";
 import { recordStatement, reopenProjectDatabaseOnConnection, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "../../record/sqlite/errors.ts";
 import { withImmediateTransaction } from "./transaction.ts";
@@ -302,6 +304,12 @@ export function finishInvocationAttemptOnConnection(
   });
 }
 
+// Recovery composes these transitions with the final Run close. Outside that
+// owner transaction, the same operations retain their standalone atomicity.
+function invocationTransaction<A>(connection: RecordDatabase, deadline: number, operation: string, body: () => A): A {
+  return connection.db.isTransaction ? body() : withImmediateTransaction(connection, deadline, operation, body);
+}
+
 export function beginInvocationRecoveryOnConnection(
   connection: RecordDatabase,
   invocationId: string,
@@ -310,13 +318,13 @@ export function beginInvocationRecoveryOnConnection(
   at: string,
   deadline: number,
 ): FencedOwner {
-  return withImmediateTransaction(connection, deadline, "begin-invocation-recovery", () => {
+  return invocationTransaction(connection, deadline, "begin-invocation-recovery", () => {
     requireOpen(connection, "begin-invocation-recovery");
     const changed = recordStatement(
       connection,
       `UPDATE ne19_invocation_sessions SET state='recovering',recovering_at=?,owner_id=?,
       owner_generation=owner_generation+1,owner_host=?,owner_pid=?,owner_boot_id=?,owner_process_start=?,heartbeat_at=?
-      WHERE invocation_id=? AND state='active' AND ${sameOwnerSql("owner")}`,
+      WHERE invocation_id=? AND state IN ('active','recovering') AND ${sameOwnerSql("owner")}`,
     ).run(
       at,
       recoveryOwner.ownerId,
@@ -343,7 +351,7 @@ export function closeInvocationOnConnection(
   projection: Uint8Array,
   deadline: number,
 ): void {
-  withImmediateTransaction(connection, deadline, "close-invocation", () => {
+  invocationTransaction(connection, deadline, "close-invocation", () => {
     requireOpen(connection, "close-invocation");
     const changed = recordStatement(
       connection,
@@ -367,6 +375,64 @@ export function finishInvocationRecoveryOnConnection(
   deadline: number,
 ): void {
   closeInvocationOnConnection(connection, invocationId, owner, "interrupted", at, projection, deadline);
+}
+
+/** Close only the Session whose last Run is closing in the caller's transaction. */
+export function recoverFinishedInvocationOnConnection(
+  connection: RecordDatabase,
+  invocationId: string,
+  at: string,
+  deadline: number,
+): void {
+  if (!connection.db.isTransaction) invalid("recover-invocation", "Run recovery transaction is required");
+  const session = readInvocationOnConnection(connection, invocationId);
+  if (session === undefined || (session.state !== "active" && session.state !== "recovering")) return;
+  const pending = recordStatement(
+    connection,
+    "SELECT 1 FROM ne19_run_resources WHERE invocation_id=? AND terminal_state IS NULL LIMIT 1",
+  ).get(invocationId);
+  if (pending !== undefined) return;
+  // Heartbeat age is never evidence. Reobserve the exact durable Session owner
+  // under the same write transaction that will commit the final Run terminal.
+  if (exactProcessState(session.owner) !== "dead") {
+    conflict("recover-invocation", "exact invocation owner termination could not be verified");
+  }
+  const experiments = recordStatement(
+    connection,
+    "SELECT experiment_id,run_id FROM ne19_invocation_session_experiments WHERE invocation_id=? ORDER BY ordinal",
+  )
+    .all(invocationId)
+    .map((row) => ({
+      experimentId: text(row, "experiment_id"),
+      runId: text(row, "run_id"),
+      published: true,
+    }));
+  // Build from the atomic admission rows, including a crash before the first
+  // active projection. Live progress cannot supply trustworthy completion counts.
+  const projection: SessionRecordPayload = {
+    sessionId: invocationId,
+    pid: session.owner.pid,
+    startedAt: session.startedAt,
+    status: "interrupted",
+    experiments,
+    completedAt: at,
+  };
+  const owner = beginInvocationRecoveryOnConnection(
+    connection,
+    invocationId,
+    session.owner,
+    currentProcessOwnerIdentity(),
+    at,
+    deadline,
+  );
+  finishInvocationRecoveryOnConnection(
+    connection,
+    invocationId,
+    owner,
+    at,
+    new TextEncoder().encode(JSON.stringify(projection)),
+    deadline,
+  );
 }
 
 export function acquireCaseLockOnConnection(
