@@ -244,3 +244,7 @@ export default defineDataset({
 ### 模拟用户会话释放 {#simulated-user-cleanup}
 
 观察会话的订阅数、释放次数与空闲状态。正常结束、中止或释放回调抛错时，会话都恰好释放一次且不留订阅。动作包括在各阶段中止，并让 abort、unsubscribe 与 dispose 各自抛错。
+
+### 模拟用户定义 {#simulated-user-definition}
+
+观察定义返回值与抛错。合法配置返回冻结副本且不随输入变更，拒绝访问器、空白或超限指令、非法超时、未知键与继承属性。动作包括生成合法、边界、访问器、未知键与原型继承输入。
