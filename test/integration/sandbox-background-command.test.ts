@@ -1,88 +1,108 @@
-import { rename, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import fc from "fast-check";
 import { beforeAll, expect, test } from "vitest";
-import { createLifecycleProject, runCli, showAttempt } from "./fixtures/lifecycle-sandbox/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { decodeInspectionDocument, narrowInspectionSuccess } =
-  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
+import { selectInspectionOperation, withOperational } from "./fixtures/adapter-trace-usage-harness/harness.ts";
+import { createLifecycleProject } from "./fixtures/lifecycle-sandbox/harness.ts";
 
 const EXIT_MODES = ["pass", "failed", "throw", "timeout", "cancel"] as const;
 type Mode = (typeof EXIT_MODES)[number] | "handles";
+type Sample = { mode: Mode; code: number; reverse: boolean };
 
-async function observeAttempt(mode: Mode, { code, reverse }: { code: number; reverse: boolean }) {
+async function observeAttempts(samples: readonly Sample[]) {
   const project = await createLifecycleProject({
-    scripts: [{ cleanups: 0, beforeFails: false, test: "hold" }],
+    scripts: samples.map(() => ({ cleanups: 0, beforeFails: false, test: "hold" })),
     attempts: 1,
     maxConcurrency: 1,
     failCreates: [],
   });
   try {
-    await rename(join(project.cwd, "evals/background.eval.ts.txt"), join(project.cwd, "evals/e0.eval.ts"));
-    await writeFile(join(project.cwd, "evals/background.json"), JSON.stringify({ mode, code, reverse }));
+    const source = await readFile(join(project.cwd, "evals/background.eval.ts.txt"), "utf8");
+    const byEval = new Map(samples.map((sample, index) => [project.evalIds[index]!, sample]));
+    await Promise.all(
+      [...byEval].flatMap(([evalId, sample]) => [
+        writeFile(join(project.cwd, "evals", `${evalId}.eval.ts`), source.replaceAll("CASE_FILE", evalId)),
+        writeFile(join(project.cwd, "evals", `${evalId}.json`), JSON.stringify({ evalId, ...sample })),
+      ]),
+    );
     const running = project.run();
-    if (mode === "cancel") {
+    if (samples.some(({ mode }) => mode === "cancel")) {
       await Promise.race([project.entered(), running.then(() => undefined)]);
       project.abort.abort();
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          running,
+          new Promise<never>((_resolve, reject) => {
+            deadline = setTimeout(
+              () => reject(new Error(`Cancellation did not publish: ${JSON.stringify(project.events)}`)),
+              5_000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(deadline);
+      }
     }
     const { attempts } = await running;
-    expect(attempts, JSON.stringify(project.events)).toHaveLength(1);
-    const locator = attempts[0]!.locator;
-    const [attempt, commands] = await Promise.all([
-      showAttempt(project.cwd, locator), recordedCommands(project.cwd, locator, mode === "handles"),
-    ]);
-    return { mode, code, reverse, attempt, commands, events: project.events };
+    expect(attempts, JSON.stringify(project.events)).toHaveLength(samples.length);
+    return await withOperational(project.cwd, (facts) => attempts.map(({ evalId, locator }) => {
+      const sample = byEval.get(evalId)!;
+      const { mode } = sample;
+      // Attempts execute serially, so the journal segment belongs to this Eval.
+      const start = project.events.findIndex((event) => event.event === "background-eval" && event.evalId === evalId);
+      expect(start, JSON.stringify(project.events)).toBeGreaterThanOrEqual(0);
+      const end = project.events.findIndex((event, index) => index > start && event.event === "background-eval");
+      const events = project.events.slice(start, end < 0 ? undefined : end);
+      const { attempt } = selectInspectionOperation(facts, { kind: "attempt.get", locator });
+      const { trace } = selectInspectionOperation(facts, { kind: "attempt.trace", locator });
+      const commandIds = mode === "handles"
+        ? trace.identityIndex.commandIds
+        : trace.commands.items.map(({ commandId }) => commandId);
+      const commands = commandIds.map((commandId) => {
+        const { detail } = selectInspectionOperation(facts, {
+          kind: "attempt.trace.detail",
+          locator,
+          selector: { kind: "command", commandId },
+        });
+        if (detail.kind !== "command") throw new Error("Expected command details");
+        const { invocation } = detail;
+        const display = invocation.kind === "shell"
+          ? invocation.command
+          : [invocation.executable, ...invocation.arguments].join(" ");
+        return { ...detail, display };
+      });
+      return { ...sample, attempt, commands, events };
+    }));
   } finally {
     await project.dispose();
   }
 }
 
-async function showDocument(cwd: string, locator: string, selector: string) {
-  const output = await runCli(cwd, ["show", locator, selector, "--json"]);
-  expect(output.code, output.stderr).toBe(0);
-  const decoded = decodeInspectionDocument(JSON.parse(output.stdout));
-  if (!decoded.success) throw new Error(decoded.reason);
-  return decoded.value;
-}
-
-async function recordedCommands(cwd: string, locator: string, all: boolean) {
-  const trace = narrowInspectionSuccess(await showDocument(cwd, locator, "execution"), "attempt.trace");
-  if (!trace.success) throw new Error(trace.reason);
-  const ids = all ? trace.value.trace.identityIndex.commandIds : trace.value.trace.commands.items.map(({ commandId }) => commandId);
-  const details = await Promise.all(ids.map(async (commandId) => {
-    const document = narrowInspectionSuccess(await showDocument(cwd, locator, commandId), "attempt.trace.detail");
-    if (!document.success) throw new Error(document.reason);
-    if (document.value.detail.kind !== "command") throw new Error("Expected command details");
-    return document.value.detail;
-  }));
-  return details.map((detail) => ({
-    ...detail,
-    display: detail.invocation.kind === "shell"
-      ? detail.invocation.command
-      : [detail.invocation.executable, ...detail.invocation.arguments].join(" "),
-  }));
-}
-
 const input = fc.record({ code: fc.integer({ min: 1, max: 125 }), reverse: fc.boolean() });
-type Observation = Awaited<ReturnType<typeof observeAttempt>>;
+type Observation = Awaited<ReturnType<typeof observeAttempts>>[number];
 let handleAttempts: Observation[] = [];
 let exitAttempts: Observation[] = [];
 
 beforeAll(async () => {
-  // Publish generated Attempts and read their public evidence once. Each rule
-  // below only consumes the observations it needs.
-  for (const sample of [
+  const handles = [
     { code: 1, reverse: false },
     ...fc.sample(input, { numRuns: 1, seed: 260_501 }),
-  ]) {
-    handleAttempts.push(await observeAttempt("handles", sample));
-  }
+  ].map((sample): Sample => ({ ...sample, mode: "handles" }));
   const exits = fc.sample(input, { numRuns: EXIT_MODES.length, seed: 260_502 });
-  for (const [index, mode] of EXIT_MODES.entries()) {
-    exitAttempts.push(await observeAttempt(mode, exits[index]!));
-  }
+  const exitSamples = EXIT_MODES.map((mode, index) => ({ ...exits[index]!, mode }));
+  // Share discovery and Record initialization. Invocation cancellation needs its own project.
+  const completed = await observeAttempts([...handles, ...exitSamples.filter(({ mode }) => mode !== "cancel")]);
+  handleAttempts = completed.filter(({ mode }) => mode === "handles");
+  exitAttempts = completed.filter(({ mode }) => mode !== "handles");
+  await fc.assert(
+    fc.asyncProperty(input, async (sample) => {
+      const [observation] = await observeAttempts([{ ...sample, mode: "cancel" }]);
+      assertDrained(observation!);
+      exitAttempts.push(observation!);
+    }),
+    { numRuns: 2, seed: 260_503, examples: [[{ code: 1, reverse: false }]] },
+  );
 }, 45_000);
 
 // @feature docs/feature/sandbox/library/operations.md#后台命令
@@ -101,20 +121,22 @@ test("background handles share terminal results and record only their own checke
 
 // @feature docs/feature/sandbox/library/operations.md#后台命令
 test("each Attempt exit drains its background commands before the group stops", () => {
-  for (const { mode, attempt, commands, events } of exitAttempts) {
-      expect(attempt.verdict, mode).toBe(mode === "pass" ? "passed" : mode === "failed" ? "failed" : "errored");
-      const stopAt = events.findIndex(({ event }) => event === "stop");
-      expect(events.filter(({ event }) => event === "stop"), mode).toEqual([
-        expect.objectContaining({ pendingCommands: [] }),
-      ]);
-      const terminated = events.filter(({ event }) => event === "background-terminated");
-      expect(terminated.map(({ label }) => label).sort(), mode).toEqual(["one", "two"]);
-      expect(terminated.every((event) => events.indexOf(event) < stopAt), mode).toBe(true);
-      const outcomes = commands
-        .filter(({ display }) => display.startsWith("niceeval-test-background hold "))
-        .map(({ checked, outcome }) => ({ checked, outcome }));
-      expect(outcomes).toEqual(Array.from({ length: 2 }, () => ({
-        checked: false, outcome: { kind: "terminated", reason: "cancelled" },
-      })));
-  }
+  for (const observation of exitAttempts) assertDrained(observation);
 });
+
+function assertDrained({ mode, attempt, commands, events }: Observation) {
+  expect(attempt.verdict, mode).toBe(mode === "pass" ? "passed" : mode === "failed" ? "failed" : "errored");
+  const stopAt = events.findIndex(({ event }) => event === "stop");
+  expect(events.filter(({ event }) => event === "stop"), mode).toEqual([expect.objectContaining({ pendingCommands: [] })]);
+  const terminated = events.filter(({ event }) => event === "background-terminated");
+  expect(terminated.map(({ label }) => label).sort(), mode).toEqual(["one", "two"]);
+  expect(terminated.every((event) => events.indexOf(event) < stopAt), mode).toBe(true);
+  const outcomes = commands
+    .filter(({ display }) => display.startsWith("niceeval-test-background hold "))
+    .map(({ checked, outcome }) => ({ checked, outcome }));
+  expect(outcomes).toEqual(
+    Array.from({ length: 2 }, () => ({
+      checked: false, outcome: { kind: "terminated", reason: "cancelled" },
+    })),
+  );
+}

@@ -222,7 +222,20 @@ export function makeAssertFirstAttemptBridge<Context>(): Effect.Effect<
 
     const worker = Effect.forever(
       Queue.take(requests).pipe(
-        Effect.flatMap((request) => Effect.forkIn(runRequest(request), requestScope).pipe(Effect.asVoid)),
+        Effect.flatMap((request) =>
+          Effect.forkIn(runRequest(request), requestScope).pipe(
+            Effect.tap((fiber) =>
+              Effect.sync(() => {
+                // A queued child can be interrupted before its onExit is installed.
+                // Fiber observers also see that exit and already-completed fibers.
+                fiber.addObserver((exit) => {
+                  if (Exit.isFailure(exit)) request.reject(terminalError ?? Cause.squash(exit.cause));
+                });
+              }),
+            ),
+            Effect.asVoid,
+          ),
+        ),
       ),
     ).pipe(
       Effect.catchCause((cause) =>
@@ -245,7 +258,16 @@ export function makeAssertFirstAttemptBridge<Context>(): Effect.Effect<
               ),
             ),
             cleanupRequestScope,
-          ).pipe(Effect.asVoid),
+          ).pipe(
+            Effect.tap((fiber) =>
+              Effect.sync(() => {
+                fiber.addObserver((exit) => {
+                  if (Exit.isFailure(exit)) request.reject(cleanupTerminalError ?? Cause.squash(exit.cause));
+                });
+              }),
+            ),
+            Effect.asVoid,
+          ),
         ),
       ),
     ).pipe(

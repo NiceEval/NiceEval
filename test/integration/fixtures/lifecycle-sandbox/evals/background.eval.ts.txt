@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import { defineEval } from "niceeval";
 import { equals } from "niceeval/expect";
 import { loadJson } from "niceeval/loaders";
-import { harness } from "../journal.ts";
+import { harness, record } from "../journal.ts";
 
-const { mode, code, reverse } = await loadJson(new URL("./background.json", import.meta.url), (value) =>
-  value as { mode: "handles" | "pass" | "failed" | "throw" | "timeout" | "cancel"; code: number; reverse: boolean });
+const { evalId, mode, code, reverse } = await loadJson(new URL("./CASE_FILE.json", import.meta.url), (value) =>
+  value as { evalId: string; mode: "handles" | "pass" | "failed" | "throw" | "timeout" | "cancel"; code: number; reverse: boolean });
 const probe = "niceeval-test-background";
 
 export default defineEval({
   ...(mode === "timeout" ? { timeoutMs: 1_200 } : {}),
   async test(t) {
+    record("background-eval", { evalId });
     const firstEntered = Promise.withResolvers<void>();
     const secondEntered = Promise.withResolvers<void>();
     const first = await t.sandbox.startCommand(probe, ["hold", "one", String(code)], {
@@ -28,9 +29,14 @@ export default defineEval({
     await Promise.all([firstEntered.promise, secondEntered.promise]);
     assert.equal((await t.sandbox.runCommandOrThrow(probe, ["active"])).stdout, "one,two");
     if (mode !== "handles") {
-      harness().entered("e0");
+      harness().entered(evalId);
       if (mode === "throw") throw new Error("Test ended with an error");
-      if (mode === "timeout" || mode === "cancel") await harness().release;
+      if (mode === "timeout" || mode === "cancel") {
+        t.signal.throwIfAborted();
+        await new Promise<never>((_resolve, reject) => {
+          t.signal.addEventListener("abort", () => reject(t.signal.reason), { once: true });
+        });
+      }
       t.check(mode === "pass", equals(true));
       return;
     }
