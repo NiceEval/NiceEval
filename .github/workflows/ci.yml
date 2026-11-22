@@ -25,8 +25,7 @@ jobs:
           install: false
 
       - name: Install dependencies
-        # Typecheck/lint only need the dependency graph. Root prepare builds the
-        # publishable package and would add ~22s without being consumed here.
+        # The package smoke step builds the candidate through prepack.
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install Concord CLI
@@ -34,6 +33,14 @@ jobs:
 
       - name: Check CI model artifact privacy
         run: node --test .github/scripts/model-privacy.test.mjs
+
+      - name: Smoke packed NiceEval in an empty project
+        run: |
+          set -euo pipefail
+          candidate="${RUNNER_TEMP}/niceeval-ci-candidate.tgz"
+          pnpm -C packages/niceeval --silent pack --out "$candidate"
+          version="$(node -p 'require("./packages/niceeval/package.json").version')"
+          bash .github/scripts/smoke-package.sh "$candidate" "$version"
 
       - name: Typecheck
         run: pnpm run typecheck
