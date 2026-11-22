@@ -11,6 +11,8 @@ import {
   mapEach,
   mapValue,
   toolMatch,
+  type BooleanMatch,
+  type CollectionValue,
 } from "niceeval/expect";
 import {
   createFixtureProject,
@@ -21,8 +23,6 @@ import {
   type FixtureProject,
 } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 import { readAssertionsList } from "./fixtures/judge-harness/harness.ts";
-
-import type { BooleanMatch, CollectionValue } from "../../packages/niceeval/src/expect/index.ts";
 
 const EVAL_FILES = {
   "adapters/eval-only.ts": `
