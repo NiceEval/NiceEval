@@ -6,6 +6,7 @@ export const projectRoot = dirname(fileURLToPath(import.meta.url));
 
 export interface LifecycleHarness {
   readonly events: Array<Record<string, unknown>>;
+  readonly onEvent?: (event: Record<string, unknown> & { event: string }) => void;
   /** Resolves when the test lets held Evals continue. */
   readonly release: Promise<void>;
   /** Called when a held Eval has started. */
@@ -22,5 +23,7 @@ export function harness(): LifecycleHarness {
 }
 
 export function record(event: string, detail: Record<string, unknown> = {}): void {
-  harness().events.push({ event, ...detail });
+  const entry = { event, ...detail };
+  harness().events.push(entry);
+  harness().onEvent?.(entry);
 }

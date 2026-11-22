@@ -9,7 +9,10 @@ import {
 } from "./fixtures/lifecycle-sandbox/harness.ts";
 
 const SEED = 20_260_428;
-const scenarios = fc.sample(scenarioArbitrary(), { numRuns: 4, seed: SEED });
+const scenarios = fc.sample(scenarioArbitrary(), {
+  numRuns: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 4),
+  seed: SEED,
+});
 // Seed examples: a failing Eval with several cleanups, and a second Attempt per Eval.
 const examples: Scenario[] = [
   {
@@ -93,7 +96,7 @@ describe("resource groups after a completed Invocation", () => {
 describe("resource groups after an interrupted Invocation", () => {
   const interruptions = fc.sample(
     fc.record({ scenario: scenarioArbitrary({ held: true }), early: fc.boolean() }),
-    { numRuns: 3, seed: SEED },
+    { numRuns: Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 3), seed: SEED },
   );
   const cases: Array<{ scenario: Scenario; early: boolean }> = [
     {
@@ -110,6 +113,20 @@ describe("resource groups after an interrupted Invocation", () => {
   const observed: Array<{ project: LifecycleProject; completion: string; leftover: string[] }> = [];
 
   beforeAll(async () => {
+    // Regression reduced from seed 20260428: one Sandbox, no cleanups or retries,
+    // interrupted as its ledger command starts. The original fixture's rm finished
+    // before that command, which could then recreate the deleted resource group.
+    const scenario: Scenario = {
+      scripts: [{ cleanups: 0, beforeFails: false, test: "hold" }],
+      attempts: 1,
+      maxConcurrency: 1,
+      failCreates: [],
+    };
+    const project = await createLifecycleProject(scenario, (event) => {
+      if (event.event === "command-start" && JSON.stringify(event.args).includes("git init")) project.abort.abort();
+    });
+    const { receipt } = await project.run();
+    observed.push({ project, completion: receipt.completion, leftover: await project.leftoverGroups() });
     for (const { scenario, early } of cases) {
       const project = await createLifecycleProject(scenario);
       const running = project.run();
@@ -138,6 +155,8 @@ describe("resource groups after an interrupted Invocation", () => {
       for (const event of project.events.filter((candidate) => candidate.event === "create")) {
         const stops = group(project.events, event.sandboxId).filter((candidate) => candidate.event === "stop");
         expect(stops, context).toHaveLength(1);
+        const completed = group(project.events, event.sandboxId).filter((candidate) => candidate.event === "stop-completed");
+        expect(completed, context).toHaveLength(1);
       }
       expect(leftover, context).toEqual([]);
     }

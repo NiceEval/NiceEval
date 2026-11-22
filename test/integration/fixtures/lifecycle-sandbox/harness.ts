@@ -106,7 +106,10 @@ async function runInvocation(cwd: string, scenario: Scenario, signal: AbortSigna
   return Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan, signal }));
 }
 
-export async function createLifecycleProject(scenario: Scenario): Promise<LifecycleProject> {
+export async function createLifecycleProject(
+  scenario: Scenario,
+  onEvent?: (event: JournalEvent) => void,
+): Promise<LifecycleProject> {
   const cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-lifecycle-property-"));
   try {
     await cp(FIXTURE, cwd, { recursive: true });
@@ -143,6 +146,7 @@ export async function createLifecycleProject(scenario: Scenario): Promise<Lifecy
   Reflect.set(process, harnessKey, registry);
   registry.set(cwd, {
     events,
+    onEvent,
     release: release.promise,
     entered: () => enteredQueue[entered++]?.resolve(),
     failCreates: new Set(scenario.failCreates),

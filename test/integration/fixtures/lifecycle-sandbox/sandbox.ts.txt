@@ -70,8 +70,12 @@ async function materialize() {
       signal?.removeEventListener("abort", abort);
     }
   }
-  const runLocal = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
-    new Promise<{ stdout: string; stderr: string; exitCode: number }>((done) => {
+  const localCommands = new Set<Promise<unknown>>();
+  let stopping = false;
+  const runLocal = (command: string, args: readonly string[] = [], options: CommandOptions = {}) => {
+    if (stopping) return Promise.reject(new Error("Lifecycle Sandbox is stopping"));
+    const result = new Promise<{ stdout: string; stderr: string; exitCode: number }>((done) => {
+      record("command-start", { sandboxId, command, args });
       execFile(
         map(command),
         args.map(map),
@@ -88,10 +92,16 @@ async function materialize() {
           },
           maxBuffer: 16 * 1024 * 1024,
         },
-        (error, stdout, stderr) =>
-          done({ stdout, stderr, exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0 }),
+        (error, stdout, stderr) => {
+          record("command-end", { sandboxId, command, args });
+          done({ stdout, stderr, exitCode: error ? (typeof error.code === "number" ? error.code : 1) : 0 });
+        },
       );
     });
+    localCommands.add(result);
+    void result.then(() => localCommands.delete(result), () => localCommands.delete(result));
+    return result;
+  };
   const run = (command: string, args: readonly string[] = [], options: CommandOptions = {}) =>
     command === probeName ? backgroundProbe(args, options) : runLocal(command, args, options);
   const writeBytes = async (path: string, bytes: Uint8Array) => {
@@ -126,8 +136,19 @@ async function materialize() {
     // Settling the group must release the primary workspace and every companion exactly once.
     stop: async () => {
       stops += 1;
+      stopping = true;
       record("stop", { sandboxId, stops, pendingCommands: [...pending.keys()] });
-      await rm(root, { recursive: true, force: true });
+      try {
+        // These short host commands outlive an interrupted Effect Promise. A real
+        // provider destroys their Sandbox; this directory-backed fixture must
+        // join them before deleting the tree, or ledger setup can recreate it.
+        await Promise.allSettled(localCommands);
+        await rm(root, { recursive: true, force: true });
+        record("stop-completed", { sandboxId });
+      } catch (error) {
+        record("stop-failed", { sandboxId, error: String(error) });
+        throw error;
+      }
     },
   };
   return { sandbox, group, services: { _tag: "None" as const }, facts: {} };
