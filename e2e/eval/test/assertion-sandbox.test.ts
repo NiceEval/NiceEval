@@ -31,22 +31,15 @@ test("Sandbox Assertion Eval 以 passed 终态完成", async () => {
       expect(diff.document).toMatchObject({
         operation: "attempt.diff",
         issues: [],
-        diff: { state: "partial" },
+        diff: { state: "complete", limitations: [] },
       });
-      if (diff.document.diff.state !== "partial") {
-        throw new Error(`Expected a partial workspace diff\n\n${diff.receipt.diagnostic()}`);
+      if (diff.document.diff.state !== "complete") {
+        throw new Error(`Expected a complete workspace diff\n\n${diff.receipt.diagnostic()}`);
       }
-      expect(diff.document.diff.windows.flatMap((window) => window.changes)).toHaveLength(1_000);
-      const collectionCap = only(
-        diff.document.diff.limitations,
-        (limitation) => limitation.code === "collection-cap-reached",
-        diff.receipt.diagnostic(),
-      );
-      expect(collectionCap).toMatchObject({
-        code: "collection-cap-reached",
-        target: "change",
-        omittedAtLeast: 29_001,
-      });
+      const firstPage = diff.document.diff.windows.flatMap((window) => window.changes);
+      expect(firstPage).toHaveLength(128);
+      expect(diff.document.diff.omittedChangeCount).toBe(30_001 - firstPage.length);
+      expect(diff.document.diff.continuation).toEqual(expect.any(String));
       const attempt = await inspectAttempt(niceeval, projectRoot, bulkEvaluation.locator, "attempt.get");
       expect(attempt.receipt.exitCode, attempt.receipt.diagnostic()).toBe(0);
       expect(attempt.document.attempt.assertions.state).toBe("available");

@@ -86,6 +86,8 @@ export function operationError(operation: ExperimentHostOperation, cause: unknow
 }
 
 function closedFailureCode(cause: ExperimentHostCause): string {
+  if ("code" in cause && cause.code === "runner-session-open-failed")
+    return closedFailureCode(normalizeExperimentHostCause(cause.cause));
   if ("code" in cause) {
     if (typeof cause.code === "string") return cause.code;
     if (cause.code._tag === "Present" && typeof cause.code.value === "string") return cause.code.value;
@@ -95,6 +97,8 @@ function closedFailureCode(cause: ExperimentHostCause): string {
 
 /** Preserve one actionable message from the classified Runner failure. */
 function closedFailureMessage(cause: ExperimentHostCause): string {
+  if ("code" in cause && cause.code === "runner-session-open-failed")
+    return closedFailureMessage(normalizeExperimentHostCause(cause.cause));
   const diagnostic = closedRecordDiagnostic(cause);
   if (diagnostic !== undefined) return JSON.stringify(diagnostic);
   if ("message" in cause && cause.message.length > 0) return cause.message;

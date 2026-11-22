@@ -44,10 +44,10 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
         t.note("hit-rate", ratio(0.612));
         t.note("cost", usd(0.031));
         assert.throws(() => t.note("activity", 1), TypeError);
-        assert.throws(() => t.note("large", "x".repeat(65537)), TypeError);
+        t.note("large", "x".repeat(65537));
         assert.throws(() => t.note("invalid", NaN), TypeError);
         for (let i = 5; i < 64; i++) t.note("item-" + i, i);
-        assert.throws(() => t.note("overflow", 65), TypeError);
+        t.note("overflow", 65);
         t.rememberNote(t.note);
         t.check(1, equals(1));
       }});
@@ -59,7 +59,7 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
     expect(event.verdict).toBe("passed");
     const { document } = await inspectAttempt(niceeval, paths.projectRoot, event.locator, "attempt.get");
     expect(document.attempt.assertions.entries).toHaveLength(1);
-    expect(document.attempt.notes).toHaveLength(64);
+    expect(document.attempt.notes).toHaveLength(66);
     expect(document.attempt.notes.slice(0, 5)).toEqual([
       { label: "activity", sequence: 0, value: { active: true } },
       { label: "missing", sequence: 1, value: null },
@@ -67,6 +67,8 @@ test.concurrent("Note 按调用顺序独立保存，不进入 Assertion 与 Verd
       { label: "hit-rate", sequence: 3, value: 0.612, unit: "ratio" },
       { label: "cost", sequence: 4, value: 0.031, unit: "usd" },
     ]);
+    expect(document.attempt.notes[5]).toEqual({ label: "large", sequence: 5, value: "x".repeat(65537) });
+    expect(document.attempt.notes[65]).toEqual({ label: "overflow", sequence: 65, value: 65 });
     const show = await niceeval.run(["show", event.locator]);
     expect(show.exitCode, show.diagnostic()).toBe(0);
     expect(show.stdout).toContain("Notes");

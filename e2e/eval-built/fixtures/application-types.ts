@@ -1,3 +1,4 @@
+import { measured } from "niceeval/expect";
 import { defineAdapter, defineExperiment, type JsonValue, defineEval, defineConfig, type JudgeDefinition, defineAdapterContract, type AdapterCleanupContext, type AdapterImplementationInput, type AdapterAssertionsFactoryContext } from "niceeval";
 import { defineJudge, ms } from "niceeval/expect";
 import type { AdapterCleanupContext as AdapterCleanupContextFromSubpath } from "niceeval/adapter";
@@ -483,7 +484,7 @@ defineEval({ async test(t) {
 sourcedSocial.defineScoreEval({ test(t) {
   const ratio = 60 / (60 + 120);
   t.score(ratio, { weight: 50 }).label("completion time").gate(.1);
-  t.score({ state: "unavailable", reason: "completion-missing" }, { weight: 50 });
+  t.score(measured(null, { unavailable: "completion-missing" }), { weight: 50 });
   // @ts-expect-error Weight is already configured by the score call.
   t.score(ratio, { weight: 50 }).score(20);
   // @ts-expect-error A string is not a numeric ratio.

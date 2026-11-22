@@ -18,7 +18,7 @@ function providerFixture(fail: boolean) {
     request.on("end", () => {
       const payload = JSON.parse(body);
       const precheck = payload.messages.some((message: { content: string }) => message.content === "Precheck.");
-      const system = precheck ? {} : JSON.parse(payload.messages[0].content);
+      const system = precheck ? {} : JSON.parse(payload.messages.at(-1).content);
       const user = precheck ? {} : JSON.parse(payload.messages[1].content);
       const operation: string = system.operation ?? "score";
       if (!precheck) requests.push({ operation, body });
@@ -146,6 +146,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         ["Custom", 0.8, 1],
         ["Material QA accepted", 1, 1],
         ["Material QA rejected", 0, 1],
+        ["Material QA over capacity", 1, 1],
         ["Whole operations", 1, 1],
         ["Whole dialogue", 1, 1],
       ] as const;
@@ -165,7 +166,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         expect(serialized).not.toContain("MUTATED_AFTER_CHECK");
         expect(audit).toHaveProperty("audit.calls.length", calls);
       }
-      expect(requests).toHaveLength(12);
+      expect(requests).toHaveLength(13);
       expect(requests.every(({ body }) => JSON.parse(body).model === "judge-eval-override")).toBe(true);
       expect(requests.map((item) => item.operation).sort()).toEqual([
         "batchClassify",
@@ -178,9 +179,12 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         "classify",
         "classify",
         "classify",
+        "classify",
         "extract",
         "score",
       ]);
+      const formerlyBounded = only(requests, ({ body }) => body.includes("ACCEPT: is every item natural?"));
+      expect(JSON.parse(JSON.parse(formerlyBounded.body).messages[1].content).material.items).toHaveLength(257);
       expect(requests.find((item) => item.body.includes("ORIGINAL_CUSTOM_MARKER"))).toBeDefined();
       for (const label of ["Material QA unknown"]) {
         const entry = only(entries, (item) => item.display.label === label, attempt.receipt.diagnostic());
@@ -194,7 +198,6 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       for (const label of [
         "Material QA empty",
         "Material QA partial",
-        "Material QA over capacity",
         "Material QA predicate unknown",
         "Material QA non JSON",
       ]) {
@@ -278,7 +281,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(assertionEntry(existsDetail.document, existsDetail.receipt.diagnostic()).decision.result).toBe("matched");
       expect(assertionEntry(splitDetail.document, splitDetail.receipt.diagnostic()).decision.result).toBe("mismatched");
 
-      // Preserve the Adapter's twelve requests; Agent QA owns a separate slice.
+      // Preserve the Adapter's thirteen requests; Agent QA owns a separate slice.
       const adapterRequests = requests.slice();
       const agentRun = await niceeval.run(["exp", "assertion-agent-qa", "--rerun", "all", "--json"], {
         env: environment(baseUrl),
@@ -322,7 +325,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       expect(new Set(agentEntries.map((item) => item.entryId)).size).toBe(12);
       const agentRequests = requests.slice(adapterRequests.length);
       expect(requests.slice(0, adapterRequests.length)).toEqual(adapterRequests);
-      expect(adapterRequests).toHaveLength(12);
+      expect(adapterRequests).toHaveLength(13);
       expect(agentRequests).toHaveLength(7);
       const agentUsage = await inspectAttempt(niceeval, projectRoot, agentEvaluation.locator!, "attempt.usage");
       expect(agentUsage.receipt.exitCode, agentUsage.receipt.diagnostic()).toBe(0);
@@ -377,7 +380,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
         }
         expect(ids.length).toBeGreaterThan(0);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(JSON.parse(payload.messages[0].content).evidenceIds).toEqual(ids);
+        expect(JSON.parse(payload.messages.at(-1).content).evidenceIds).toEqual(ids);
         expect(JSON.parse(call.result.output)).toEqual({
           choice: "satisfied",
           rationale: "Fixture classification",
@@ -479,7 +482,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
           expect(recorded.scoreMatchAudit).toBeUndefined();
         }
       }
-      expect(requests).toHaveLength(19);
+      expect(requests).toHaveLength(20);
 
       const previousRequests = requests.slice();
       const boundaryRun = await niceeval.run(
@@ -604,7 +607,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
             const ids: string[] = [];
             for (const item of material.items) ids.push(item.id);
             expect(new Set(ids).size).toBe(ids.length);
-            expect(JSON.parse(wireBody.messages[0].content).evidenceIds).toEqual(ids);
+            expect(JSON.parse(wireBody.messages.at(-1).content).evidenceIds).toEqual(ids);
             expect(JSON.parse(call.result.output)).toEqual({
               choice: "satisfied",
               rationale: "Fixture classification",
@@ -745,7 +748,7 @@ test.concurrent("现成与自定义 Match 的组合分数和完整模型步骤�
       }
       expect(boundaryEntryCount).toBe(27);
       expect(boundaryCallCount).toBe(6);
-      expect(requests).toHaveLength(25);
+      expect(requests).toHaveLength(26);
     });
   } finally {
     await close(server);

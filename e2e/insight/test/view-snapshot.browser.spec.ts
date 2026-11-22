@@ -422,14 +422,14 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
           hasText: /^classic \(8 evals\)/u,
         });
         await expect(evalGroupSummary).toHaveCount(1);
-        await evalGroupSummary.click();
+        await evalGroupSummary.getByText("classic (8 evals)", { exact: true }).click();
         await expect(evalGroupSummary.locator("xpath=..")).toHaveAttribute("open", "");
 
         const recallSummary = experimentDetails.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^recall-name/u,
         });
         await expect(recallSummary).toHaveCount(1);
-        await recallSummary.click();
+        await recallSummary.locator(":scope > .niceeval-table-hierarchy-cell").first().click();
         await expect(recallSummary.locator("xpath=..")).toHaveAttribute("open", "");
         const recallAttempt = experimentDetails.getByRole("link", { name: recallLocator, exact: true });
         await expect(recallAttempt).toBeVisible();
@@ -554,21 +554,24 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         const toolExperiment = page.locator("summary.niceeval-table-hierarchy-summary").filter({
           hasText: /^classic\/memory-a /u,
         });
-        if ((await toolExperiment.locator("xpath=..").getAttribute("open")) === null) await toolExperiment.click();
+        if ((await toolExperiment.locator("xpath=..").getAttribute("open")) === null)
+          await toolExperiment.locator(":scope > .niceeval-table-hierarchy-cell").first().click();
         const toolGroup = toolExperiment
           .locator("xpath=..")
           .locator("summary.niceeval-table-hierarchy-summary")
           .filter({
             hasText: /^classic \(8 evals\)/u,
           });
-        if ((await toolGroup.locator("xpath=..").getAttribute("open")) === null) await toolGroup.click();
+        if ((await toolGroup.locator("xpath=..").getAttribute("open")) === null)
+          await toolGroup.locator(":scope > .niceeval-table-hierarchy-cell").first().click();
         const toolEval = toolExperiment
           .locator("xpath=..")
           .locator("summary.niceeval-table-hierarchy-summary")
           .filter({
             hasText: /^tool-note/u,
           });
-        if ((await toolEval.locator("xpath=..").getAttribute("open")) === null) await toolEval.click();
+        if ((await toolEval.locator("xpath=..").getAttribute("open")) === null)
+          await toolEval.locator(":scope > .niceeval-table-hierarchy-cell").first().click();
         const toolAttempt = toolExperiment.locator("xpath=..").getByRole("link", { name: toolLocator, exact: true });
         const toolHref = await toolAttempt.getAttribute("href");
         expect(toolHref).toMatch(/^#\/attempt\//u);
@@ -676,16 +679,12 @@ test("读者从层级 Overview 在可恢复 overlay 中审阅完整 Attempt 证�
         await expect(dialog.getByText("turns", { exact: true })).toBeVisible();
         await expect(dialog.getByText("tool calls", { exact: true })).toBeVisible();
         await expect(dialog.getByText(/Execution timeline/u).first()).toBeVisible();
-        const calloutSummary = dialog.getByText("2 groups · 2 warnings", { exact: true });
-        await expect(calloutSummary).toBeVisible();
-        const callouts = calloutSummary.locator("xpath=..");
-        await calloutSummary.click();
-        await expect(callouts).toHaveAttribute("open", "");
+        // An Attempt without Sandbox file collection has no missing-file warning.
         await expect(
-          callouts.getByText("file-changes-not-recorded: File changes collection was not recorded for this Attempt.", {
+          dialog.getByText("file-changes-not-recorded: File changes collection was not recorded for this Attempt.", {
             exact: true,
           }),
-        ).toBeVisible();
+        ).toHaveCount(0);
 
         await testInfo.attach("snapshot-attempt", {
           body: await page.screenshot({ fullPage: true }),

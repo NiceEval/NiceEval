@@ -124,7 +124,7 @@ export default defineExperiment({ evals: ["turn-material"], adapter: defineAgent
         expect(audit.audit.definition.limits).toMatchObject({ maxCalls: 4, contextWindow: 1800 });
         expect(audit.audit.input).toContain("FINAL_FIRST_INPUT");
         expect(JSON.parse(audit.audit.definition.config)).toMatchObject({
-          ordinaryJudge: { content: expect.stringMatching(/^[a-f0-9]{64}$/), behavior: 1 },
+          ordinaryJudge: { content: expect.stringMatching(/^[a-f0-9]{64}$/), behavior: 3 },
         });
       }
       expect(materials).toHaveLength(3);

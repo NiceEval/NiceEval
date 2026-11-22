@@ -60,16 +60,25 @@ export default defineScoreEval({
     const median = quantile(samples, 0.5);
     deepStrictEqual(median, {
       state: "exact",
+      unit: undefined,
+      provenance: undefined,
       value: 1500,
       statistics: { sampleCount: 4, probability: 0.5, method: "linear" },
     });
     deepStrictEqual(samples, [3000, 0, 1000, 2000]);
     deepStrictEqual(quantile(samples, 0.9, { method: "nearest-rank" }), {
       state: "exact",
+      unit: undefined,
+      provenance: undefined,
       value: 3000,
       statistics: { sampleCount: 4, probability: 0.9, method: "nearest-rank" },
     });
-    deepStrictEqual(measured(null, { unavailable: "no-actions" }), { state: "unavailable", reason: "no-actions" });
+    deepStrictEqual(measured(null, { unavailable: "no-actions" }), {
+      state: "unavailable",
+      reason: "no-actions",
+      unit: undefined,
+      provenance: undefined,
+    });
     for (const p of [-0.1, 1.1, NaN, Infinity]) throws(() => quantile(samples, p), TypeError);
     throws(() => measured(null, { unavailable: " " }), TypeError);
     t.check(median, atMost(1500)).label("quantile:matched");

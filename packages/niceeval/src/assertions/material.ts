@@ -38,12 +38,23 @@ import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
+import type { LogicalToolOccurrence } from "../o11y/types.ts";
 import { matchedAssertionEvaluation, mismatchedAssertionEvaluation, unavailableAssertionEvaluation } from "./api.ts";
 
 const owners = new WeakMap<object, object>();
 /** @internal Managed collection ownership is independent of its public array shape. */
 export function ownMaterialCollection(check: object, collection: object): void {
   owners.set(collection, check);
+}
+
+/** Keep absent runtime metadata out of JSON material without changing author evidence. */
+export function toolOccurrenceMaterial(occurrence: LogicalToolOccurrence) {
+  const { name, command, ...facts } = occurrence;
+  return {
+    ...facts,
+    name: { original: name.original, ...(name.canonical === undefined ? {} : { canonical: name.canonical }) },
+    ...(command === undefined ? {} : { command }),
+  };
 }
 
 interface CaptureProblem {
@@ -467,9 +478,15 @@ function prepareCollection(
     reason = declaredState === "complete" ? undefined : "incomplete-managed-source";
     readItem = (index) => {
       const row = sidecar.rows[index]!;
+      const toolCandidate = tool?.rows[index]?.candidate;
       return {
         id: row.locator.kind === "event" ? row.locator.eventId : row.locator.toolOccurrenceId,
-        value: row.candidate.state === "available" ? row.candidate.value : null,
+        value:
+          toolCandidate?.state === "available"
+            ? toolOccurrenceMaterial(toolCandidate.value)
+            : row.candidate.state === "available"
+              ? row.candidate.value
+              : null,
         locator: row.locator,
         sessionId: row.sessionId,
         sessionSequence: row.sessionSequence,

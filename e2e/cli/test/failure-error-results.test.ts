@@ -46,18 +46,19 @@ test.concurrent("Judge 调用错误可从 CLI 汇总追溯每次 Attempt", async
   );
 });
 
-// Regression note: Assertions writer 的具体原因曾使用与其它 CLI 运行错误不同的 `niceeval error:` 前缀。
+// Large Assertions documents remain publishable after removal of the former payload limit.
 // @feature docs/feature/experiments/README.md
 
-test.concurrent("Assertions document 无法发布时使用统一 error 前缀", async () => {
+test.concurrent("大型 Assertions document 完整发布并保持成功退出", async () => {
   await cliE2E.case(
     "assertions-document-error",
     { artifacts: [{ source: ".niceeval", target: ".niceeval", optional: true }] },
     async ({ commands: { niceeval } }) => {
       const result = await niceeval.run(["exp", "assertions-document-error", "--rerun", "all"]);
 
-      expect(result.exitCode, result.diagnostic()).toBe(1);
-      expect(result.stderr).toMatch(/^error: Assertions could not be saved/u);
+      expect(result.exitCode, result.diagnostic()).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("Gates 4096 pass");
       expect(result.stderr).not.toContain("niceeval error:");
       expect(result.stdout).not.toContain("niceeval error:");
     },

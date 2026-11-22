@@ -168,7 +168,7 @@ export default defineExperiment({ evals: ["binary"], adapter: defineAgent({ name
       expect(digests.size).toBe(1);
       expect(requests).toHaveLength(4);
       for (const body of requests) {
-        expect(JSON.parse(JSON.parse(body).messages[0].content)).toMatchObject({
+        expect(JSON.parse(JSON.parse(body).messages.at(-1).content)).toMatchObject({
           operation: "classify",
           choices: ["satisfied", "not-satisfied"],
         });

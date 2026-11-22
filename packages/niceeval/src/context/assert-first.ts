@@ -9,7 +9,7 @@ import type { SimulatedUserActivity } from "../simulated-user/audit.ts";
 import { createSimulatedUserConversation } from "../simulated-user/runtime.ts";
 import { compareCanonicalDecimal } from "../o11y/adapter-usage-projection.ts";
 import { canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
-import { ownMaterialCollection } from "../assertions/material.ts";
+import { ownMaterialCollection, toolOccurrenceMaterial } from "../assertions/material.ts";
 import {
   defineMaterialMatch,
   type MaterialCollection,
@@ -2211,6 +2211,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
         }
         const occurrenceId = eventToolOccurrenceId();
         const occurrence = occurrenceId === undefined ? undefined : projection.occurrenceCandidates.get(occurrenceId);
+        const occurrenceMaterial = occurrence === undefined ? undefined : toolOccurrenceMaterial(occurrence);
         items.push(
           Object.freeze({
             id: event.eventId,
@@ -2222,7 +2223,7 @@ export function createAssertFirstEvalContext(deps: AssertFirstContextDeps): {
               sessionSequence: event.sessionSequence,
               event: raw ?? event,
               observed: event,
-              ...(occurrence === undefined ? {} : { occurrence }),
+              ...(occurrenceMaterial === undefined ? {} : { occurrence: occurrenceMaterial }),
               ordering: "first-session appearance, then sessionSequence; no cross-session causal order",
             }),
           }),

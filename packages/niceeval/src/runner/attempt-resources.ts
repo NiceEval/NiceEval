@@ -118,7 +118,7 @@ export class AdapterAttemptResources {
   }
 
   cleanup(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {
-    return (this.cleanupReceipt ??= this.drain(context));
+    return (this.cleanupReceipt ??= this.drain(Object.freeze({ ...context })));
   }
 
   private async drain(context: AdapterCleanupContext): Promise<AdapterCleanupResult> {

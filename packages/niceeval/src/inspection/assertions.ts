@@ -829,7 +829,14 @@ function currentSourceCollection(
 ): InspectionJson {
   return closeJson({
     state,
-    rows,
+    rows: rows.map(({ locator, evaluation, ...row }) => ({
+      ...row,
+      ...(locator === undefined ? {} : { locator }),
+      evaluation: {
+        result: evaluation.result,
+        ...(evaluation.difference === undefined ? {} : { difference: evaluation.difference }),
+      },
+    })),
     limitations: limitations.map(sourceLimitationFact),
   });
 }
