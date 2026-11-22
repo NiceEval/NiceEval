@@ -1,4 +1,5 @@
 import type { SQLOutputValue } from "node:sqlite";
+import { exactProcessState } from "../../coordination/platform/node-process-identity.ts";
 import type { CaseCoordinationCommand } from "./worker-protocol.ts";
 import { recordStatement, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
@@ -123,4 +124,25 @@ export function executeCaseCommand(connection: RecordDatabase, command: CaseCoor
       }
     }
   });
+}
+
+/** Recover every planned case, including published/carried slots which will not acquire again. */
+export function recoverRunCaseLocksOnConnection(connection: RecordDatabase, runId: string): void {
+  if (!connection.db.isTransaction) conflict("recover-case-locks", "Run recovery transaction is required");
+  requireOpen(connection, "recover-case-locks");
+  const cases = recordStatement(
+    connection,
+    `SELECT DISTINCT r.experiment_id,s.eval_id FROM ne19_run_resources r
+    JOIN ne19_run_expected_slots s ON s.run_id=r.run_id WHERE r.run_id=?`,
+  ).all(runId);
+  for (const row of cases) {
+    const caseId = JSON.stringify([text(row, "experiment_id"), text(row, "eval_id")]);
+    const lock = read(connection, caseId);
+    // A case may already belong to another live Invocation. Leave it intact.
+    if (lock === undefined || exactProcessState(lock.owner) !== "dead") continue;
+    recordStatement(connection, `DELETE FROM ne19_case_locks WHERE case_id=? AND ${ownerSql()}`).run(
+      caseId,
+      ...ownerArgs(lock.owner),
+    );
+  }
 }

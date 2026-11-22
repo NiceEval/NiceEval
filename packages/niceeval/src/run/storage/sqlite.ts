@@ -8,6 +8,7 @@ import type { SQLOutputValue } from "node:sqlite";
 import { Effect } from "effect";
 import { decodeAttemptLocator } from "../../record/locator.ts";
 import { recordStatement, requiredRecordRow, type RecordDatabase } from "../../record/sqlite/database.ts";
+import { recoverRunCaseLocksOnConnection } from "../../record/sqlite/case-repository.ts";
 import { recoverFinishedInvocationOnConnection } from "../../record/sqlite/coordination-repository.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
@@ -660,6 +661,7 @@ export function recoverRunResourceOnConnection(
       `DELETE FROM ne19_attempts WHERE origin_run_id=? AND
       attempt_id NOT IN (SELECT attempt_id FROM ne19_attempt_publications WHERE origin_run_id=?)`,
     ).run(input.runId, input.runId);
+    recoverRunCaseLocksOnConnection(connection, input.runId);
     recoverFinishedInvocationOnConnection(connection, run.invocationId, input.completedAt, input.deadlineEpochMs);
     return {
       runId: input.runId,

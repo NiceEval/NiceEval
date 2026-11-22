@@ -88,6 +88,8 @@ Linux 与 Darwin 是提供这种证据的平台，两者使用同一判定规则
 exact Run recovery 只收口指定 Run，不替同一 Invocation 的其它 Run 收口。
 恢复该 Invocation 最后一个非终态 Run 时，第二笔事务重新验证 Session 的精确 owner 已终止，再 fence 并终结 Session，保存全部 Run 引用的终态 projection。
 Session 与这个 Run 的终态共同提交；取证不足或事务失败时共同回滚，保留可重试的 Run recovery。
+恢复事务逐一核对该 Run 全部 expected Planned attempt 的 case lock，包括已经发布或携入的位置；只有精确 owner 已终止的锁才能释放。
+仍存活或无法证明已终止的 owner 保持原锁，不因另一个 Run 的恢复被接管。
 Session 终结不释放 State 租约；租约仍由既有的显式集合 recovery 完成 after 与整组释放。
 
 任一步崩溃留下 `recovering`，只能由新的精确 recovery actor 重试，不能把它猜回 active 或 free。证据不足时 fail closed；没有 TTL、heartbeat expiry 或“看起来很久”接管。
