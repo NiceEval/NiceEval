@@ -8,8 +8,7 @@
 // 不产生新位置)。没有 spans 时,`span` 字段整体缺失——渲染层据此判断「timing
 // unavailable」,不是 0,也不是从别处反推的估算值。
 //
-// spans 参数假定调用方已经跑过 otlp/select.ts::selectTraceSpans——本函数不做 firehose
-// 过滤,只做「一批语义 span → 骨架节点」的关联,职责单一。关联只走显式 correlation:
+// 本函数将 span 与骨架节点关联。关联只走显式 correlation:
 // span.attributes.call_id(现有 mapper 的既有约定,如 claude-code mapper 把
 // tool_use_id 复制过来)或 GenAI 语义约定的 gen_ai.tool.call.id,与 action/subagent/
 // skill.loaded 节点的 operationId 精确相等才算数(skill.loaded 的 operationId 是可选的——只有原生

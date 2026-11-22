@@ -9,6 +9,7 @@
 
 import type { LifecyclePhase } from "../runner/types.ts";
 import {
+  externalCauseChain,
   externalCauseMessageChain,
   isExternalCause,
   normalizeExternalCause,
@@ -88,15 +89,12 @@ export class EvalFatalError extends Error {
  * 依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。
  */
 export function failureClassOf(error: unknown): FailureClass | undefined {
-  if (isExternalCause(error)) return failureClassOfExternalCause(error);
-  let current: unknown = error;
-  for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
+  for (const current of externalCauseChain(error)) {
     if (isExternalCause(current)) return failureClassOfExternalCause(current);
     if (typeof current === "object") {
       const candidate = current as { _tag?: unknown; class?: unknown };
       if (isClassifiedFailureTag(candidate._tag) && isFailureClass(candidate.class)) return candidate.class;
     }
-    current = causeOf(current);
   }
   return undefined;
 }
@@ -110,13 +108,6 @@ function failureClassOfExternalCause(cause: ExternalCause): FailureClass | undef
     if (current.cause._tag !== "Cause") return undefined;
     current = current.cause.value;
   }
-}
-
-/** cause 链与错误文本串接共用的深度上限:防御自引用 / 病态深链,不做环检测。 */
-const CAUSE_CHAIN_DEPTH = 5;
-
-function causeOf(value: unknown): unknown {
-  return typeof value === "object" && value !== null ? (value as { cause?: unknown }).cause : undefined;
 }
 
 function isFailureClass(value: unknown): value is FailureClass {
@@ -152,14 +143,12 @@ export function attachFailureClass<T>(target: T, cls: FailureClass): T {
  */
 export function errorChainText(error: unknown): string {
   const parts: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
+  for (const current of externalCauseChain(error)) {
     const candidate =
       typeof current === "object" && current !== null ? (current as { message?: unknown }).message : undefined;
     const message =
       typeof candidate === "string" ? candidate : current instanceof Error ? current.message : String(current);
     if (message) parts.push(message);
-    current = causeOf(current);
   }
   return parts.join(" · ");
 }

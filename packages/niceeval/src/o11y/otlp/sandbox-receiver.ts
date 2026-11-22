@@ -18,9 +18,10 @@
 import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { Effect } from "effect";
+import { externalCauseChain } from "../../shared/external-cause.ts";
 import type { Sandbox, TraceSpan } from "../../types.ts";
 import { decodeSpanEnvelopes } from "./decode.ts";
-import type { TraceReceiver, TraceCollectionActivity } from "./receiver.ts";
+import type { TraceReceiver, TraceCollectionActivity, TraceSettleResult } from "./receiver.ts";
 
 // collector 脚本:纯 Node.js CJS,无外部依赖。
 // 每收一个 OTLP/HTTP 请求就把 { ct, body(base64) } 追加写一行到 spans 文件,
@@ -32,8 +33,22 @@ const http = require('http');
 const fs   = require('fs');
 const zlib = require('zlib');
 const OUT  = ${JSON.stringify(spansPath)};
+let pending = 0;
+let disconnected = 0;
+function writeStatus() {
+  fs.writeFileSync(OUT + '.status.tmp', pending + ' ' + disconnected + '\\n');
+  fs.renameSync(OUT + '.status.tmp', OUT + '.status');
+}
+writeStatus();
 const server = http.createServer((req, res) => {
   if (req.method !== 'POST') { res.writeHead(405).end(); return; }
+  pending++;
+  writeStatus();
+  req.once('close', () => {
+    pending--;
+    if (!req.complete) disconnected++;
+    writeStatus();
+  });
   const chunks = [];
   req.on('data', c => chunks.push(c));
   req.on('end', () => {
@@ -228,8 +243,7 @@ function startCollector(sandbox: Sandbox): Effect.Effect<StartedCollector, unkno
  * 所以不能只看状态码——认的是 `permission denied` / `EACCES` / 只读文件系统这类词法。
  */
 function isWriteDeniedError(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current != null; depth += 1) {
+  for (const current of externalCauseChain(error)) {
     const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
     const code = record && typeof record.code === "string" ? record.code : "";
     const message = current instanceof Error ? current.message : String(current);
@@ -239,7 +253,6 @@ function isWriteDeniedError(error: unknown): boolean {
     ) {
       return true;
     }
-    current = record?.cause;
   }
   return false;
 }
@@ -264,7 +277,7 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
   return startCollector(sandbox).pipe(
     Effect.map(({ pid, port, spansPath }) => {
       let cached: TraceSpan[] = [];
-      const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => {
+      const settle = (quietMs: number, maxMs: number): Effect.Effect<TraceSettleResult> => {
         const quietTicks = Math.max(1, Math.round(quietMs / 100));
         const maxTicks = Math.max(quietTicks, Math.round(maxMs / 100));
         // agent 结束后调:等 spans 文件大小连续 quietMs 无增长(exporter flush 完)再下载。
@@ -272,14 +285,28 @@ function makeInSandboxReceiver(sandbox: Sandbox): Effect.Effect<TraceReceiver, u
         return sandboxPromise((signal) =>
           sandbox.runShell(
             `prev=$(wc -c < ${spansPath} 2>/dev/null || echo 0); stable=0; i=0; ` +
+              `settled=0; disconnected=0; ` +
               `while [ $i -lt ${maxTicks} ]; do ` +
+              `sleep 0.1; i=$((i+1)); ` +
               `s=$(wc -c < ${spansPath} 2>/dev/null || echo 0); ` +
-              `if [ "$s" = "$prev" ]; then stable=$((stable+1)); [ $stable -ge ${quietTicks} ] && break; ` +
+              `read -r pending disconnected < ${spansPath}.status || pending=1; ` +
+              `if [ "$s" = "$prev" ] && [ "$pending" = 0 ]; then ` +
+              `stable=$((stable+1)); if [ $stable -ge ${quietTicks} ]; then settled=1; break; fi; ` +
               `else stable=0; prev=$s; fi; ` +
-              `sleep 0.1; i=$((i+1)); done`,
+              `done; printf '%s %s\\n' "$settled" "$disconnected"`,
             { signal },
           ),
-        ).pipe(Effect.ignore);
+        ).pipe(
+          Effect.map(({ exitCode, stdout }) => {
+            const [settled, disconnected] = stdout.trim().split(" ");
+            const count = Number(disconnected);
+            return {
+              settled: exitCode === 0 && settled === "1",
+              disconnectedRequests: Number.isSafeInteger(count) && count > 0 ? count : 0,
+            };
+          }),
+          Effect.orElseSucceed(() => ({ settled: false, disconnectedRequests: 0 })),
+        );
       };
       const drain = (activity: TraceCollectionActivity): Effect.Effect<void, unknown> =>
         Effect.gen(function* () {

@@ -1,6 +1,6 @@
 /**
- * 外部 throwable 的有界快照。`unknown` 只存在于 normalizeExternalCause 的输入边界；
- * 进入领域对象后，字段缺席、cause 截断与非 Error 抛出值都有显式 ADT 分支。
+ * 外部 throwable 的诊断快照。`unknown` 只存在于 normalizeExternalCause 的输入边界；
+ * 进入领域对象后，字段缺席、cause 环与非 Error 抛出值都有显式 ADT 分支。
  */
 
 import type { FailureClass } from "./failure-class.ts";
@@ -13,7 +13,7 @@ export type ExternalCauseFact<Value> =
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Present"; readonly value: Value };
 
-/** Preserves a nested cause or records cycle or depth truncation; truncated chains are not proof that no further cause exists. */
+/** Preserves a nested cause, a cycle, or depth truncation from a legacy snapshot. */
 export type ExternalCauseLink =
   | { readonly _tag: "Absent" }
   | { readonly _tag: "Cause"; readonly value: ExternalCause }
@@ -29,7 +29,7 @@ interface ExternalObjectFacts {
   readonly cause: ExternalCauseLink;
 }
 
-/** Preserves bounded diagnostic facts from an external thrown value; it does not retain or serialize the original live object. */
+/** Preserves diagnostic facts from an external thrown value without retaining the live object. */
 export type ExternalCause =
   | ({ readonly _tag: "Error" } & ExternalObjectFacts)
   | ({ readonly _tag: "Object" } & ExternalObjectFacts)
@@ -49,7 +49,6 @@ export type ExternalCause =
       readonly cause: { readonly _tag: "Absent" };
     };
 
-const MAX_CAUSE_DEPTH = 5;
 const ABSENT = Object.freeze({ _tag: "Absent" as const });
 type ExternalCauseValueType = Extract<ExternalCause, { readonly _tag: "ThrownValue" }>["valueType"];
 
@@ -179,43 +178,23 @@ function snapshotFailureClass(value: unknown): ExternalCauseFact<FailureClass> |
   };
 }
 
-function snapshotLink(value: unknown, depth: number, ancestors: ReadonlySet<object>): ExternalCauseLink | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const tag = field(value, "_tag");
-  if (tag === "Absent") return ABSENT;
-  if (tag === "Truncated") {
-    const reason = field(value, "reason");
-    return reason === "cycle" || reason === "depth" ? { _tag: "Truncated" as const, reason } : undefined;
+type CauseFrame = Omit<Extract<ExternalCause, { _tag: "Error" | "Object" }>, "cause">;
+
+function closeCauseChain(frames: readonly CauseFrame[], tail: ExternalCauseLink): ExternalCauseLink {
+  let link = tail;
+  for (let index = frames.length - 1; index >= 0; index--) {
+    link = { _tag: "Cause", value: { ...frames[index]!, cause: link } };
   }
-  if (tag !== "Cause" || depth + 1 >= MAX_CAUSE_DEPTH) return undefined;
-  const nested = field(value, "value");
-  if (typeof nested !== "object" || nested === null || ancestors.has(nested)) return undefined;
-  const nextAncestors = new Set(ancestors);
-  nextAncestors.add(value);
-  const normalized = snapshotCause(nested, depth + 1, nextAncestors);
-  return normalized === undefined ? undefined : { _tag: "Cause" as const, value: normalized };
+  return link;
 }
 
-/** 对已归一化快照做完整结构解码和复制；undefined 表示走普通 throwable 归一。 */
-function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<object>): ExternalCause | undefined {
-  const tag = field(value, "_tag");
-  if (tag === "ThrownValue") {
-    const valueType = field(value, "valueType");
-    const message = field(value, "message");
-    const cause = snapshotLink(field(value, "cause"), depth, ancestors);
-    if (!isExternalCauseValueType(valueType) || typeof message !== "string" || cause?._tag !== "Absent") {
-      return undefined;
-    }
-    return { _tag: "ThrownValue" as const, valueType, message, cause: ABSENT };
-  }
-  if (tag !== "Error" && tag !== "Object") return undefined;
+function snapshotFrame(value: object, tag: "Error" | "Object"): CauseFrame | undefined {
   const name = field(value, "name");
   const message = field(value, "message");
   const code = snapshotFact(field(value, "code"), isExternalCauseScalar);
   const status = snapshotFact(field(value, "status"), isFiniteNumber);
   const stack = snapshotFact(field(value, "stack"), isNonEmptyString);
   const failureClass = snapshotFailureClass(field(value, "failureClass"));
-  const cause = snapshotLink(field(value, "cause"), depth, ancestors);
   if (
     typeof name !== "string" ||
     name === "" ||
@@ -223,11 +202,56 @@ function snapshotCause(value: object, depth: number, ancestors: ReadonlySet<obje
     code === undefined ||
     status === undefined ||
     stack === undefined ||
-    failureClass === undefined ||
-    cause === undefined
-  )
+    failureClass === undefined
+  ) {
     return undefined;
-  return { _tag: tag, name, message, code, status, stack, failureClass, cause };
+  }
+  return { _tag: tag, name, message, code, status, stack, failureClass };
+}
+
+/** Decode and copy an existing snapshot across a package boundary. */
+function snapshotCause(value: object): ExternalCause | undefined {
+  const frames: CauseFrame[] = [];
+  const seen = new Set<object>();
+  let current = value;
+  let tail: ExternalCauseLink;
+  for (;;) {
+    if (seen.has(current)) return undefined;
+    seen.add(current);
+
+    const tag = field(current, "_tag");
+    if (tag !== "Error" && tag !== "Object" && tag !== "ThrownValue") return undefined;
+    const link = field(current, "cause");
+    if (typeof link !== "object" || link === null) return undefined;
+    const linkTag = field(link, "_tag");
+    if (tag === "ThrownValue") {
+      const valueType = field(current, "valueType");
+      const message = field(current, "message");
+      if (!isExternalCauseValueType(valueType) || typeof message !== "string" || linkTag !== "Absent") return undefined;
+      tail = { _tag: "Cause", value: { _tag: "ThrownValue", valueType, message, cause: ABSENT } };
+      break;
+    }
+    const frame = snapshotFrame(current, tag);
+    if (frame === undefined) return undefined;
+    frames.push(frame);
+
+    if (linkTag === "Absent") {
+      tail = ABSENT;
+      break;
+    }
+    if (linkTag === "Truncated") {
+      const reason = field(link, "reason");
+      if (reason !== "cycle" && reason !== "depth") return undefined;
+      tail = { _tag: "Truncated", reason };
+      break;
+    }
+    if (linkTag !== "Cause") return undefined;
+    const nested = field(link, "value");
+    if (typeof nested !== "object" || nested === null) return undefined;
+    current = nested;
+  }
+  const normalized = closeCauseChain(frames, tail);
+  return normalized._tag === "Cause" ? normalized.value : undefined;
 }
 
 function isError(value: object): boolean {
@@ -238,57 +262,75 @@ function isError(value: object): boolean {
   }
 }
 
-function normalizeObject(value: object, depth: number, ancestors: ReadonlySet<object>): ExternalCause {
+function normalizeFrame(value: object): CauseFrame {
   const nameValue = field(value, "name");
   const name = typeof nameValue === "string" && nameValue !== "" ? nameValue : (constructorName(value) ?? "Object");
   const messageValue = field(value, "message");
   const message = typeof messageValue === "string" && messageValue !== "" ? messageValue : safeString(value);
-  const rawCause = field(value, "cause");
-  let cause: ExternalCauseLink = ABSENT;
-  if (rawCause !== undefined && rawCause !== null) {
-    if (depth + 1 >= MAX_CAUSE_DEPTH) {
-      cause = { _tag: "Truncated", reason: "depth" };
-    } else if (typeof rawCause === "object" && (rawCause === value || ancestors.has(rawCause))) {
-      cause = { _tag: "Truncated", reason: "cycle" };
-    } else {
-      const nextAncestors = new Set(ancestors);
-      nextAncestors.add(value);
-      cause = { _tag: "Cause", value: normalizeCause(rawCause, depth + 1, nextAncestors) };
-    }
-  }
   return {
-    _tag: isError(value) ? ("Error" as const) : ("Object" as const),
+    _tag: isError(value) ? "Error" : "Object",
     name,
     message,
     code: scalarFact(field(value, "code") ?? field(value, "errorCode")),
     status: numberFact(field(value, "status") ?? field(value, "statusCode") ?? field(value, "httpStatus")),
     stack: stringFact(field(value, "stack")),
     failureClass: failureClassFact(value),
-    cause,
   };
 }
 
-function normalizeCause(value: unknown, depth: number, ancestors: ReadonlySet<object>): ExternalCause {
-  if (typeof value === "object" && value !== null) {
-    // 已经是快照也必须重新解码和复制，避免跨 package / JSON 往返的可变伪对象进入状态。
-    return snapshotCause(value, depth, ancestors) ?? normalizeObject(value, depth, ancestors);
-  }
+function thrownValue(value: unknown): Extract<ExternalCause, { _tag: "ThrownValue" }> {
   return {
-    _tag: "ThrownValue" as const,
-    valueType: value === null ? ("null" as const) : typeof value,
+    _tag: "ThrownValue",
+    valueType: value === null ? "null" : typeof value,
     message: safeString(value),
     cause: ABSENT,
   };
 }
 
+/** Visit the finite prefix of an external throwable's cause chain, once per value. */
+export function* externalCauseChain(value: unknown): Generator<unknown> {
+  const seen = new Set<unknown>();
+  let current = value;
+  while (current != null && !seen.has(current)) {
+    seen.add(current);
+    yield current;
+    current = typeof current === "object" ? field(current, "cause") : undefined;
+  }
+}
+
 /** 动态 throwable 进入内部状态的唯一正规化边界。 */
 export function normalizeExternalCause(value: unknown): ExternalCause {
-  return normalizeCause(value, 0, new Set());
+  if (value == null) return thrownValue(value);
+  const frames: CauseFrame[] = [];
+  const seen = new Set<object>();
+  let current: unknown = value;
+  let tail: ExternalCauseLink = ABSENT;
+  while (current != null) {
+    if (typeof current !== "object") {
+      tail = { _tag: "Cause", value: thrownValue(current) };
+      break;
+    }
+    if (seen.has(current)) {
+      tail = { _tag: "Truncated", reason: "cycle" };
+      break;
+    }
+    seen.add(current);
+    const tag = field(current, "_tag");
+    const snapshot = tag === "Error" || tag === "Object" || tag === "ThrownValue" ? snapshotCause(current) : undefined;
+    if (snapshot !== undefined) {
+      tail = { _tag: "Cause", value: snapshot };
+      break;
+    }
+    frames.push(normalizeFrame(current));
+    current = field(current, "cause");
+  }
+  const normalized = closeCauseChain(frames, tail);
+  return normalized._tag === "Cause" ? normalized.value : thrownValue(value);
 }
 
 /** 已正规化快照的结构守卫；接收跨 package 副本的纯数据 ADT。 */
 export function isExternalCause(value: unknown): value is ExternalCause {
-  return typeof value === "object" && value !== null && snapshotCause(value, 0, new Set()) !== undefined;
+  return typeof value === "object" && value !== null && snapshotCause(value) !== undefined;
 }
 
 function causeLabel(cause: Extract<ExternalCause, { readonly _tag: "Error" | "Object" }>): string {

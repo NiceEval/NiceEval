@@ -1670,15 +1670,15 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                     t0,
                     base,
                     {
-                      recordTelemetryTrace: async (spans, limitation) => {
-                        if (adapterExecutionTraces === undefined || (spans.length === 0 && limitation === undefined))
+                      recordTelemetryTrace: async (spans, limitations) => {
+                        if (adapterExecutionTraces === undefined || (spans.length === 0 && limitations.length === 0))
                           return;
                         await adapterExecutionTraces.recordTrace({
                           traceId: "niceeval.telemetry",
                           schema: { id: "niceeval.otlp" },
                           collection: {
-                            state: limitation === undefined ? "complete" : "partial",
-                            limitations: limitation === undefined ? [] : [limitation],
+                            state: limitations.length === 0 ? "complete" : "partial",
+                            limitations,
                           },
                           scopes: [],
                           events: spans.map((span, index) => ({
@@ -2650,7 +2650,7 @@ function assertDeadlineFitsPlan(
 interface AttemptResources {
   readonly recordTelemetryTrace: (
     spans: TraceSpan[],
-    limitation: ExecutionTraceLimitation | undefined,
+    limitations: readonly ExecutionTraceLimitation[],
   ) => Promise<void>;
   readonly captureSimulatedUser: (activity: SimulatedUserActivity) => Promise<void>;
   readonly pauseBeforeCleanup: (verdict: EvalResult["verdict"]) => Effect.Effect<void>;
@@ -4180,25 +4180,35 @@ async function runAttemptBody(
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
-    // 先经【每-agent mapper】把原生 span 归一到 canonical GenAI semconv(定 SpanKind),
-    // 再 selectTraceSpans 按 kind 挑出回合/模型/工具,丢掉 "other" 噪声(干净小 trace 整段保留)。
+    // 先经每个 Agent 的 mapper 归一到 canonical GenAI semconv，再保存所有收集到的 span。
     let trace: TraceSpan[] | undefined;
     if (receiver || otel) {
       enterPhase("telemetry.collect");
       try {
+        const { manager } = state;
+        const windows = manager.otelTurnWindows;
         const shared =
-          otel === undefined
+          otel === undefined || (manager.otelTraceIds.size === 0 && windows.length === 0)
             ? undefined
-            : otel.sweepEffect(state.manager.otelTraceIds, state.manager.otelTurnWindows).pipe(
-                Effect.map((late) => {
-                  const traceIds = new Set(state.manager.otelTraceIds);
-                  const deferred = state.manager.attributeDeferredOtel(late);
-                  const known = late.filter((span) => traceIds.has(span.traceId));
-                  return [...state.manager.otelSpans, ...known, ...deferred].filter(
-                    (span, index, all) => all.findIndex((candidate) => candidate.spanId === span.spanId) === index,
-                  );
-                }),
-              );
+            : {
+                receiver: otel.receiver,
+                disconnectedRequestsAtStart: manager.otelDisconnectedRequestsAtStart,
+                turnSettleExpired: manager.otelTurnSettleExpired,
+                read: () => {
+                  const late = otel.sweep(manager.otelTraceIds, windows);
+                  const known = late.filter((span) => manager.otelTraceIds.has(span.traceId));
+                  const deferred = manager.attributeDeferredOtel(late);
+                  const spansById = new Map<string, TraceSpan>();
+                  for (const span of manager.otelSpans) {
+                    if (!spansById.has(span.spanId)) spansById.set(span.spanId, span);
+                  }
+                  const earlierSpanCount = spansById.size;
+                  for (const span of [...known, ...deferred]) {
+                    if (!spansById.has(span.spanId)) spansById.set(span.spanId, span);
+                  }
+                  return { spans: [...spansById.values()], lateSpanCount: spansById.size - earlierSpanCount };
+                },
+              };
         const collected = await assertFirst.requestEffect(
           Effect.raceFirst(
             collectAttemptTelemetry({
@@ -4214,7 +4224,7 @@ async function runAttemptBody(
           ),
         );
         trace = collected.trace;
-        await res.recordTelemetryTrace(collected.trace, collected.limitation);
+        await res.recordTelemetryTrace(collected.trace, collected.limitations);
       } catch (collectError) {
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw collectError;
         feedback.diagnostic({

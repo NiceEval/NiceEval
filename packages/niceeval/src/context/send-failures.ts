@@ -58,16 +58,13 @@ export function isSendFailure(value: unknown): value is SendFailure {
   );
 }
 
-const MAX_FAILURE_TEXT = 4096;
 // C0/C1 控制字符不进入终端/JSON 摘要；保留换行和 tab 便于 diagnoseFailure 的多行证据阅读。
 const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
 const ANSI_ESCAPE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001b\\))/g;
 
-/** 与最终 AttemptError 和分类器同源的有界、安全失败摘要。 */
+/** 供分类器与 AttemptError 使用的完整、安全失败文本。 */
 export function sendFailureText(failure: SendFailure): string {
-  const clean = failure.message.replace(ANSI_ESCAPE, "").replace(CONTROL_CHARACTERS, "").trim();
-  if (clean.length <= MAX_FAILURE_TEXT) return clean;
-  return `${clean.slice(0, MAX_FAILURE_TEXT - 1)}…`;
+  return failure.message.replace(ANSI_ESCAPE, "").replace(CONTROL_CHARACTERS, "").trim();
 }
 
 /**

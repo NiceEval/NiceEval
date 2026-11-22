@@ -136,7 +136,7 @@ export function ompAgent(config?: OmpConfig): Agent {
                 ...(baseUrl ? { baseUrl } : {}),
                 api: "openai-completions",
                 apiKey: API_KEY_ENV,
-                models: [{ id: model, name: model, contextWindow: 1_000_000, maxTokens: 64_000 }],
+                models: [{ id: model, name: model }],
               },
             },
           };

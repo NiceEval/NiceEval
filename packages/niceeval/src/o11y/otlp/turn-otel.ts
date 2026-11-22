@@ -20,6 +20,9 @@ import { makeTraceReceiver, type TraceReceiver } from "./receiver.ts";
 export interface TurnSpans {
   /** traceparent 命中时是本轮生成值；窗口归属时是实际 span 的 traceId，供 timing 直接挂树。 */
   traceId: string;
+  /** Exact traceparent sent to the producer, including for windows with no observed spans. */
+  requestedTraceId: string;
+  settled: boolean;
   /** 归属到本轮的 span。 */
   spans: TraceSpan[];
   /** 本轮归属用的是 traceparent 还是时间窗口(日志/守卫用)。 */
@@ -62,8 +65,8 @@ export class AgentOtelChannel {
           const turnEndMs = Date.now();
           // 给本轮最后一批导出留落地时间(SimpleSpanProcessor 即发;Batch 的 5s 定时兜不住,
           // 迟到的由 attempt 末尾 sweep 按 traceId 捞回)。
-          yield* this.receiver.settle(200, 1200);
-          return yield* Effect.sync(() => this.attributeTurn(result, traceId, turnStartMs, turnEndMs));
+          const settled = (yield* this.receiver.settle(200, 1200)).settled;
+          return yield* Effect.sync(() => this.attributeTurn(result, traceId, settled, turnStartMs, turnEndMs));
         }.bind(this),
       );
 
@@ -79,34 +82,27 @@ export class AgentOtelChannel {
   }
 
   /** attempt 末尾:按本 attempt 的 traceId 集合捞迟到的 span(Batch 导出等)。 */
-  sweepEffect(traceIds: ReadonlySet<string>, attemptWindows?: AttemptWindow): Effect.Effect<TraceSpan[]> {
+  sweep(traceIds: ReadonlySet<string>, attemptWindows?: AttemptWindow): TraceSpan[] {
     if (traceIds.size === 0 && (attemptWindows === undefined || attemptWindows.length === 0)) {
-      return Effect.succeed([]);
+      return [];
     }
-    return this.receiver.settle(200, 1000).pipe(
-      Effect.andThen(
-        Effect.sync(() => {
-          const late = this.receiver.collect().filter((span) => {
-            if (this.consumed.has(span.spanId)) return false;
-            // Exact traceparent attribution remains authoritative even when remote
-            // clocks skew outside host time; discrete turn windows only add deferred
-            // candidates, so another concurrent attempt's gap is never a window.
-            return (
-              traceIds.has(span.traceId) ||
-              (attemptWindows !== undefined &&
-                attemptWindows.some((window) => span.endMs >= window.startMs && span.startMs <= window.endMs))
-            );
-          });
-          for (const span of late) this.consumed.add(span.spanId);
-          return late;
-        }),
-      ),
-    );
+    const late = this.receiver.collect().filter((span) => {
+      if (this.consumed.has(span.spanId)) return false;
+      // An exact traceparent match also works when remote clocks differ.
+      return (
+        traceIds.has(span.traceId) ||
+        (attemptWindows !== undefined &&
+          attemptWindows.some((window) => span.endMs >= window.startMs && span.startMs <= window.endMs))
+      );
+    });
+    for (const span of late) this.consumed.add(span.spanId);
+    return late;
   }
 
   private attributeTurn<T>(
     result: T,
     traceId: string,
+    settled: boolean,
     turnStartMs: number,
     turnEndMs: number,
   ): { result: T } & TurnSpans {
@@ -136,7 +132,7 @@ export class AgentOtelChannel {
       }
       const candidates = [...spansByTrace.entries()]
         .map(([candidateTraceId, candidateSpans]) => {
-          const latestEndMs = Math.max(...candidateSpans.map((span) => span.endMs));
+          const latestEndMs = candidateSpans.reduce((latest, span) => Math.max(latest, span.endMs), -Infinity);
           const coversTurnEnd = candidateSpans.some((span) => span.startMs <= turnEndMs && span.endMs >= turnEndMs);
           return { candidateTraceId, candidateSpans, latestEndMs, coversTurnEnd };
         })
@@ -159,6 +155,8 @@ export class AgentOtelChannel {
     return {
       result,
       traceId: attributedTraceId,
+      requestedTraceId: traceId,
+      settled,
       spans,
       attribution,
       window: { startMs: turnStartMs, endMs: turnEndMs },

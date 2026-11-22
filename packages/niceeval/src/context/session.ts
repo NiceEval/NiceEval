@@ -319,6 +319,8 @@ export class SessionManager {
   readonly otelSpans: TraceSpan[] = [];
   /** 本 attempt 各轮的 traceId(attempt 末尾按它 sweep 迟到 span)。 */
   readonly otelTraceIds = new Set<string>();
+  readonly otelDisconnectedRequestsAtStart: number;
+  otelTurnSettleExpired = false;
   private readonly otelTurnRecords: Array<{
     window: TurnSpans["window"];
     activity: TimingActivity | undefined;
@@ -350,6 +352,7 @@ export class SessionManager {
   private readonly deps: SessionDeps;
   constructor(deps: SessionDeps) {
     this.deps = deps;
+    this.otelDisconnectedRequestsAtStart = deps.otel?.receiver.disconnectedRequests?.() ?? 0;
     this.nextSourceOrder = deps.nextSourceOrder ?? (() => ++this.localSourceOrder);
     this.agentEvidenceCoverage = deps.agent.evidenceCoverage;
     this.evidenceCoverage = this.agentEvidenceCoverage;
@@ -849,8 +852,10 @@ export class SessionManager {
       })
       .pipe(
         Effect.map((result) => {
-          this.otelSpans.push(...result.spans);
+          for (const span of result.spans) this.otelSpans.push(span);
+          this.otelTraceIds.add(result.requestedTraceId);
           if (result.spans.length > 0) this.otelTraceIds.add(result.traceId);
+          if (!result.settled) this.otelTurnSettleExpired = true;
 
           if (result.attribution === "window" && result.spans.length > 0 && !this.warnedWindowAttribution) {
             this.warnedWindowAttribution = true;
@@ -894,7 +899,7 @@ export class SessionManager {
       }
       const selected = [...byTrace.entries()]
         .map(([traceId, traceSpans]) => {
-          const latestEndMs = Math.max(...traceSpans.map((span) => span.endMs));
+          const latestEndMs = traceSpans.reduce((latest, span) => Math.max(latest, span.endMs), -Infinity);
           const coversEnd = traceSpans.some(
             (span) => span.startMs <= record.window.endMs && span.endMs >= record.window.endMs,
           );

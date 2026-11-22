@@ -5,7 +5,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import { gunzipSync } from "node:zlib";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Option } from "effect";
 import type { TraceSpan } from "../../types.ts";
 import { parseOtlpTraces } from "./parse.ts";
 
@@ -16,12 +16,21 @@ export interface TraceReceiver {
   collect(): TraceSpan[];
   /** Known wire bytes already accepted by a dedicated host receiver. */
   readonly receivedBytes?: () => number;
-  /** 给在途的最后一批导出留点落地时间(无新 span 持续 quietMs 即返回,至多 maxMs)。 */
-  settle(quietMs: number, maxMs: number): Effect.Effect<void>;
+  /** Gives in-flight exports up to maxMs to reach a quiet window. */
+  settle(quietMs: number, maxMs: number): Effect.Effect<TraceSettleResult>;
+  /** Synchronous checkpoint for attribution on run-scoped host receivers. */
+  readonly disconnectedRequests?: () => number;
+  /** Waits for current requests without extending the caller's collection budget. */
+  readonly awaitAcceptedRequests?: Effect.Effect<void>;
   /** Sandbox transport drains bounded chunks, publishing decoded prefixes before the next read. */
   readonly drain?: (activity: TraceCollectionActivity) => Effect.Effect<void, unknown>;
   /** receiver owner 的 release action；Effect.acquireRelease 负责正常、失败与中断时调用它。 */
   readonly close: Effect.Effect<void>;
+}
+
+export interface TraceSettleResult {
+  readonly settled: boolean;
+  readonly disconnectedRequests: number;
 }
 
 export type TraceCollectionActivity = <A>(
@@ -50,6 +59,8 @@ interface HttpRequest {
  */
 class Inbox<Value> {
   private readonly values: Value[] = [];
+  // Requests waiting for a slot stay paused, so their sockets supply body backpressure.
+  private readonly waiting = new Set<Value>();
   private resume: ((effect: Effect.Effect<Value, InboxClosed>) => void) | undefined;
   private closed = false;
 
@@ -61,7 +72,13 @@ class Inbox<Value> {
   take(): Effect.Effect<Value, InboxClosed> {
     return Effect.callback((resume) => {
       if (this.values.length > 0) {
-        resume(Effect.succeed(this.values.shift()!));
+        const next = this.values.shift()!;
+        const waiting = this.waiting.values().next();
+        if (!waiting.done) {
+          this.waiting.delete(waiting.value);
+          this.values.push(waiting.value);
+        }
+        resume(Effect.succeed(next));
         return Effect.void;
       }
       if (this.closed) {
@@ -75,22 +92,27 @@ class Inbox<Value> {
     });
   }
 
-  offer(value: Value): boolean {
-    if (this.closed) return false;
+  offer(value: Value): void {
+    if (this.closed) return;
     const resume = this.resume;
     if (resume === undefined) {
-      if (this.values.length >= this.capacity) return false;
-      this.values.push(value);
-      return true;
+      if (this.values.length >= this.capacity) this.waiting.add(value);
+      else this.values.push(value);
+      return;
     }
     this.resume = undefined;
     resume(Effect.succeed(value));
-    return true;
+  }
+
+  withdraw(value: Value): void {
+    this.waiting.delete(value);
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.waiting.clear();
+    this.values.length = 0;
     const resume = this.resume;
     this.resume = undefined;
     resume?.(Effect.fail(inboxClosed));
@@ -103,6 +125,8 @@ interface ReceiverResources {
   readonly requests: Inbox<HttpRequest>;
   readonly spans: TraceSpan[];
   receivedBytes: number;
+  readonly pendingRequests: Set<ServerResponse>;
+  disconnectedRequests: number;
   lastAt: number;
   arrivalGeneration: number;
   closed: boolean;
@@ -129,13 +153,13 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
     ).pipe(Effect.catch(() => Effect.void));
     const processor = yield* Effect.forkDetach(Effect.scoped(drain));
     const close = closeResources(resources, processor);
-    const settle = (quietMs: number, maxMs: number): Effect.Effect<void> => settleReceiver(resources, quietMs, maxMs);
-
     return {
       endpoint: (host: string) => `http://${host}:${boundPort}/v1/traces`,
       collect: () => resources.spans.slice(),
       receivedBytes: () => resources.receivedBytes,
-      settle,
+      settle: (quietMs, maxMs) => settleReceiver(resources, quietMs, maxMs),
+      disconnectedRequests: () => resources.disconnectedRequests,
+      awaitAcceptedRequests: awaitAcceptedRequests(resources),
       close,
     };
   });
@@ -144,25 +168,43 @@ export function makeTraceReceiver(port = 0): Effect.Effect<TraceReceiver, Error>
 function makeResources(): ReceiverResources {
   const requests = new Inbox<HttpRequest>(HTTP_REQUEST_QUEUE_MAX);
   const sockets = new Set<Socket>();
-  const server = createServer((request, response) => {
-    if (!requests.offer({ request, response })) {
-      respond(response, 503);
-    }
-  });
-  server.on("connection", (socket) => {
-    sockets.add(socket);
-    socket.once("close", () => sockets.delete(socket));
-  });
-  return {
+  const server = createServer();
+  const resources: ReceiverResources = {
     server,
     sockets,
     requests,
     spans: [],
     receivedBytes: 0,
+    pendingRequests: new Set(),
+    disconnectedRequests: 0,
     lastAt: 0,
     arrivalGeneration: 0,
     closed: false,
   };
+  server.on("request", (request, response) => {
+    if (request.method !== "POST") {
+      respond(response, 405);
+      return;
+    }
+    const pending = { request, response };
+    resources.pendingRequests.add(response);
+    request.once("close", () => {
+      if (resources.closed || request.readableEnded) return;
+      resources.disconnectedRequests += 1;
+      requests.withdraw(pending);
+    });
+    // A queued request may fail before the body reader attaches its own listener.
+    request.on("error", () => {});
+    response.once("close", () => {
+      resources.pendingRequests.delete(response);
+    });
+    requests.offer(pending);
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+  return resources;
 }
 
 function listen(server: Server, port: number): Effect.Effect<number, Error> {
@@ -224,37 +266,59 @@ function listen(server: Server, port: number): Effect.Effect<number, Error> {
 }
 
 function handleTraceRequest(resources: ReceiverResources, request: HttpRequest): Effect.Effect<void> {
-  if (request.request.method !== "POST") return Effect.sync(() => respond(request.response, 405));
-  return readRequestBody(request.request).pipe(
-    Effect.matchEffect({
-      onFailure: () => Effect.sync(() => respond(request.response, 400)),
-      onSuccess: (raw) =>
-        Effect.sync(() => {
-          resources.receivedBytes += raw.byteLength;
-          const contentType = request.request.headers["content-type"] ?? "";
-          try {
-            let body = raw;
-            // OTLP 导出端可能 gzip(OTEL_EXPORTER_OTLP_COMPRESSION 或默认开)。按 header 或 gzip 魔数解压。
-            const contentEncoding = String(request.request.headers["content-encoding"] ?? "");
-            if (contentEncoding.includes("gzip") || (body[0] === 0x1f && body[1] === 0x8b)) {
-              try {
-                body = gunzipSync(body);
-              } catch {
-                // 不是合法 gzip 就按原样试。
-              }
-            }
-            const parsed = parseOtlpTraces(body, contentType);
-            if (parsed.length > 0) {
-              resources.spans.push(...parsed);
-              resources.lastAt = Date.now();
-              resources.arrivalGeneration += 1;
-            }
-          } catch {
-            // 解析失败不回 5xx,免得导出端重试刷屏。
-          }
-        }).pipe(Effect.andThen(Effect.sync(() => respondOtlp(request.response, request.request)))),
-    }),
+  return Effect.suspend(() =>
+    request.request.destroyed && !request.request.readableEnded
+      ? Effect.void
+      : readRequestBody(request.request).pipe(
+          Effect.matchEffect({
+            onFailure: () => Effect.sync(() => respond(request.response, 400)),
+            onSuccess: (raw) =>
+              Effect.sync(() => {
+                resources.receivedBytes += raw.byteLength;
+                const contentType = request.request.headers["content-type"] ?? "";
+                try {
+                  let body = raw;
+                  // OTLP 导出端可能 gzip(OTEL_EXPORTER_OTLP_COMPRESSION 或默认开)。按 header 或 gzip 魔数解压。
+                  const contentEncoding = String(request.request.headers["content-encoding"] ?? "");
+                  if (contentEncoding.includes("gzip") || (body[0] === 0x1f && body[1] === 0x8b)) {
+                    try {
+                      body = gunzipSync(body);
+                    } catch {
+                      // 不是合法 gzip 就按原样试。
+                    }
+                  }
+                  const parsed = parseOtlpTraces(body, contentType);
+                  if (parsed.length > 0) {
+                    for (const span of parsed) resources.spans.push(span);
+                    resources.lastAt = Date.now();
+                    resources.arrivalGeneration += 1;
+                  }
+                } catch {
+                  // 解析失败不回 5xx,免得导出端重试刷屏。
+                }
+              }).pipe(Effect.andThen(Effect.sync(() => respondOtlp(request.response, request.request)))),
+          }),
+        ),
   );
+}
+
+function awaitAcceptedRequests(resources: ReceiverResources): Effect.Effect<void> {
+  return Effect.callback((resume) => {
+    const responses = [...resources.pendingRequests];
+    let remaining = responses.length;
+    if (remaining === 0) {
+      resume(Effect.void);
+      return Effect.void;
+    }
+    const onClose = () => {
+      remaining -= 1;
+      if (remaining === 0) resume(Effect.void);
+    };
+    for (const response of responses) response.once("close", onClose);
+    return Effect.sync(() => {
+      for (const response of responses) response.off("close", onClose);
+    });
+  });
 }
 
 /** 将 Node request data/end/error callbacks 适配一次；Effect cancellation 会移除所有 listener。 */
@@ -313,18 +377,30 @@ function respond(
   }
 }
 
-function settleReceiver(resources: ReceiverResources, quietMs: number, maxMs: number): Effect.Effect<void> {
+function settleReceiver(
+  resources: ReceiverResources,
+  quietMs: number,
+  maxMs: number,
+): Effect.Effect<TraceSettleResult> {
   // 只以本次调用开始后的 arrival 为 quiet 基线；上一批的 lastAt 不能让本次
   // settle 提前返回，否则 BatchSpanProcessor 的迟到 batch 会被 sweep 漏掉。
-  const baselineGeneration = resources.arrivalGeneration;
-  const waitForQuiet = (): Effect.Effect<void> =>
-    Effect.suspend(() => {
-      if (resources.arrivalGeneration > baselineGeneration && Date.now() - resources.lastAt >= Math.max(0, quietMs)) {
-        return Effect.void;
-      }
-      return Effect.sleep(SETTLE_POLL_MS).pipe(Effect.andThen(waitForQuiet()));
-    });
-  return waitForQuiet().pipe(Effect.timeoutOption(Math.max(0, maxMs)), Effect.asVoid);
+  return Effect.suspend(() => {
+    const baselineGeneration = resources.arrivalGeneration;
+    const quiet = () => resources.pendingRequests.size === 0 && Date.now() - resources.lastAt >= quietMs;
+    const waitForQuiet = (): Effect.Effect<void> =>
+      Effect.suspend(() =>
+        resources.arrivalGeneration > baselineGeneration && quiet()
+          ? Effect.void
+          : Effect.sleep(SETTLE_POLL_MS).pipe(Effect.andThen(waitForQuiet())),
+      );
+    return waitForQuiet().pipe(
+      Effect.timeoutOption(Math.max(0, maxMs)),
+      Effect.map((result) => ({
+        settled: Option.isSome(result) || quiet(),
+        disconnectedRequests: resources.disconnectedRequests,
+      })),
+    );
+  });
 }
 
 function closeResources(resources: ReceiverResources, processor: Fiber.Fiber<void, never>): Effect.Effect<void> {

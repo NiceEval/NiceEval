@@ -808,9 +808,6 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // 无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐。
       interface BudgetState {
         spent: number;
-        /** 已经真正发起过 agent turn、但仍拿不到成本的 attempt 数。provider/setup 在 agent
-         *  运行前失败不计入——这种结果没有可执行的计费事实,不能据此声称 adapter 不报成本。 */
-        completedAgentRunsNoCost: number;
         unenforceableWarned: boolean;
         /** 因这个 budgetKey 预算到顶而未派发的 attempt 累计数——反馈层 "budget-exhausted" 事件
          *  (见 sink.ts 的 `BudgetExhaustedInput`)要求 emitter 自己维护这个累计值,reducer 不推导。 */
@@ -820,7 +817,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const budgetState = (key: string): BudgetState => {
         let s = budgetStates.get(key);
         if (!s) {
-          s = { spent: 0, completedAgentRunsNoCost: 0, unenforceableWarned: false, unstartedCount: 0 };
+          s = { spent: 0, unenforceableWarned: false, unstartedCount: 0 };
           budgetStates.set(key, s);
         }
         return s;
@@ -3310,43 +3307,31 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 if (result.estimatedCostUSD !== undefined) {
                   s.spent += result.estimatedCostUSD;
                 } else if (
+                  !s.unenforceableWarned &&
                   result.phases?.some((phase) => phase.children?.some((child) => child.key === "agent.turn"))
                 ) {
-                  s.completedAgentRunsNoCost += 1;
-                  if (s.spent === 0 && s.completedAgentRunsNoCost >= 3 && !s.unenforceableWarned) {
-                    // 连续几次真正跑过 agent 的 attempt 都拿不到成本:budget 对这个 agent
-                    // 不可执行,说清楚一次。sandbox.create/setup 等前置失败没有 turn,跳过这里:
-                    // 此时应由 attempt error 回答根因,不能再用计费 warning 抢走注意力。
-                    // s.unenforceableWarned 已经是 per-budgetKey 的一次性闸门;稳定 key 上的
-                    // reportDiagnostic 去重是双保险,不依赖它单独生效。
-                    s.unenforceableWarned = true;
-                    {
-                      const message =
-                        `budget for ${budgetKey}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.
-`.trimEnd();
-                      reportDiagnostic({
-                        key: `budget-unenforceable:${budgetKey}`,
-                        code: "budget-unenforceable",
-                        severity: "warning",
-                        message,
-                        data: { budgetKey },
-
-                        identity: undefined,
-                      });
-                      recordExperimentDiagnostic({
-                        experimentId: a.run.experimentId,
-                        code: "budget-unenforceable",
-                        level: "warning",
-                        message,
-                        phase: "eval.run",
-                        data: { budgetKey },
-
-                        command: undefined,
-                        dedupeKey: undefined,
-                        affectedSlotIds: undefined,
-                      });
-                    }
-                  }
+                  // A setup failure without an Agent turn gives no evidence about missing Agent cost.
+                  s.unenforceableWarned = true;
+                  const message = `budget for ${budgetKey}: an attempt ran the agent without a cost estimate. Only known costs count toward the budget.`;
+                  reportDiagnostic({
+                    key: `budget-unenforceable:${budgetKey}`,
+                    code: "budget-unenforceable",
+                    severity: "warning",
+                    message,
+                    data: { budgetKey },
+                    identity: undefined,
+                  });
+                  recordExperimentDiagnostic({
+                    experimentId: a.run.experimentId,
+                    code: "budget-unenforceable",
+                    level: "warning",
+                    message,
+                    phase: "eval.run",
+                    data: { budgetKey },
+                    command: undefined,
+                    dedupeKey: undefined,
+                    affectedSlotIds: undefined,
+                  });
                 }
               }
 

@@ -249,7 +249,7 @@ function sameRoot(a: RecordRoot, b: RecordRoot): boolean {
 function storageFailureCause(cause: unknown): string {
   const parts: string[] = [];
   const seen = new Set<unknown>();
-  for (let depth = 0; depth < 4 && cause !== undefined && !seen.has(cause); depth++) {
+  while (cause !== undefined && !seen.has(cause)) {
     seen.add(cause);
     if (!(cause instanceof Error)) {
       parts.push(typeof cause === "string" ? cause : `non-Error failure (${typeof cause})`);

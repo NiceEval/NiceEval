@@ -20,9 +20,6 @@ export function stripComments(code: string): string {
   return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
-/** `cause` 链最多展开这么多层——足够穿透「包装了三四层」的常见形态,又不至于把整棵树倒出来。 */
-const CAUSE_CHAIN_DEPTH = 5;
-
 /**
  * `cause` 链的多行后缀。`Error.stack` **不含** `cause`,而真实死因常常只在那里:`fetch failed`
  * 的 stack 一个字都不说为什么失败,`error.cause.code` 才是 `ECONNRESET` / `ENOTFOUND` / 证书错误。
@@ -31,8 +28,10 @@ const CAUSE_CHAIN_DEPTH = 5;
  */
 function causeChainSuffix(error: Error): string {
   const lines: string[] = [];
+  const seen = new Set<unknown>([error]);
   let current: unknown = (error as { cause?: unknown }).cause;
-  for (let depth = 0; depth < CAUSE_CHAIN_DEPTH && current != null; depth++) {
+  while (current != null && !seen.has(current)) {
+    seen.add(current);
     if (current instanceof Error) {
       const code = (current as { code?: unknown }).code;
       const label = typeof code === "string" ? `${current.name} (${code})` : current.name;
@@ -147,28 +146,39 @@ export function describeError(e: unknown): {
 }
 
 /** Keep aggregate members in the existing text field; never serialize their arbitrary properties. */
-function diagnosticErrorMessage(error: Error, path = new Set<Error>(), depth = 0): string {
-  if (path.has(error)) return "[Circular error]";
-  if (depth >= CAUSE_CHAIN_DEPTH) return "[Error depth limit]";
-  path.add(error);
-  try {
-    const lines = [error.message || error.name];
-    const describeChild = (value: unknown): string => {
-      if (!(value instanceof Error)) return String(value);
-      const code = (value as { code?: unknown }).code;
-      const label = typeof code === "string" ? `${value.name} (${code})` : value.name;
-      return `${label}: ${diagnosticErrorMessage(value, path, depth + 1)}`;
-    };
-    if (error instanceof AggregateError) {
-      for (const [index, child] of error.errors.entries()) {
-        lines.push(`  [${index + 1}] ${describeChild(child)}`);
+function diagnosticErrorMessage(error: Error): string {
+  type Step = { value: unknown; prefix: string } | { exit: Error };
+  const steps: Step[] = [{ value: error, prefix: "" }];
+  const path = new Set<Error>();
+  const lines: string[] = [];
+  while (steps.length > 0) {
+    const step = steps.pop()!;
+    if ("exit" in step) {
+      path.delete(step.exit);
+      continue;
+    }
+    const { value, prefix } = step;
+    if (!(value instanceof Error)) {
+      lines.push(prefix + String(value));
+      continue;
+    }
+    const code = (value as { code?: unknown }).code;
+    const label = prefix === "" ? "" : `${value.name}${typeof code === "string" ? ` (${code})` : ""}: `;
+    if (path.has(value)) {
+      lines.push(prefix + label + "[Circular error]");
+      continue;
+    }
+    lines.push(prefix + label + (value.message || value.name));
+    path.add(value);
+    steps.push({ exit: value });
+    if (value.cause !== undefined) steps.push({ value: value.cause, prefix: "  caused by: " });
+    if (value instanceof AggregateError) {
+      for (let index = value.errors.length - 1; index >= 0; index--) {
+        steps.push({ value: value.errors[index], prefix: `  [${index + 1}] ` });
       }
     }
-    if (error.cause !== undefined) lines.push(`  caused by: ${describeChild(error.cause)}`);
-    return lines.join("\n");
-  } finally {
-    path.delete(error);
   }
+  return lines.join("\n");
 }
 
 /** 零填充到 4 位(数据集扇出的 id:sql/0000)。 */

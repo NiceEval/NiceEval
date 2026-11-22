@@ -3,12 +3,17 @@
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { externalCauseChain } from "../shared/external-cause.ts";
 
 const RESPONSE_BYTES_PER_TOKEN = 8;
 
 export function errorSummary(error: unknown): string {
+  return errorText(error).slice(0, 300);
+}
+
+function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/\s+/g, " ").slice(0, 300);
+  return message.replace(/\s+/g, " ");
 }
 
 function objectField(value: unknown, key: string): unknown {
@@ -21,14 +26,12 @@ function objectField(value: unknown, key: string): unknown {
 }
 
 function judgeStatus(error: unknown): number | undefined {
-  let current: unknown = error;
-  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+  for (const current of externalCauseChain(error)) {
     const status = objectField(current, "status");
     if (typeof status === "number" && Number.isInteger(status)) return status;
     const nested = objectField(current, "error");
     const nestedStatus = objectField(nested, "status");
     if (typeof nestedStatus === "number" && Number.isInteger(nestedStatus)) return nestedStatus;
-    current = objectField(current, "cause");
   }
   return undefined;
 }
@@ -57,8 +60,7 @@ function isTransientJudgeStatus(status: number | undefined): boolean {
 }
 
 function isConnectionFailure(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+  for (const current of externalCauseChain(error)) {
     const name = objectField(current, "name");
     const code = objectField(current, "code");
     if (name === "APIUserAbortError") return false;
@@ -70,12 +72,11 @@ function isConnectionFailure(error: unknown): boolean {
       return true;
     if (
       /fetch failed|socket hang up|connection (?:reset|closed|refused)|network error|other side closed|timed? out|timeout|\b(?:ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT)\b/i.test(
-        errorSummary(current),
+        errorText(current),
       )
     ) {
       return true;
     }
-    current = objectField(current, "cause");
   }
   return false;
 }

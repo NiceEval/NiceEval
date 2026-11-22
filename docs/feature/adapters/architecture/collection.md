@@ -38,12 +38,17 @@ Attempt 的断言完成后，`telemetry.collect` 收集这个 Attempt 的全部 
 | `telemetry.settle` | 等待 span 输出静默 | 等待时长 |
 | `telemetry.read` | 从接收器或 Sandbox 取回 span | 字节数 |
 | `telemetry.decode` | 解码 OTLP | span 数 |
-| `telemetry.map` | 方言映射、筛选与补全输入输出 | 保留的 span 数 |
+| `telemetry.map` | 方言映射与补全输入输出 | span 数 |
 
 整个 `telemetry.collect` 有一个总预算，默认 30 秒。到期时停止仍在进行的子活动，保留已经取回并解码的 span，trace 收集记一条 `telemetry-budget-exceeded` limitation，同时写入同名诊断与已知字节数、span 数。
 预算到期不改变已定的 Verdict，接收器与远端连接照常释放。
 预算约束 `telemetry.settle`、`telemetry.read` 与 `telemetry.decode`。`telemetry.map` 调用 Agent 的同步 `spanMapper`，无法中途打断，只对预算到期前已解码的 span 运行一次；它的耗时照常记入 Timing。
-Sandbox 接收器分块取回 span 文件，每块取回后即解码，预算到期时已解码的部分照常保留。筛选与映射只在宿主进行：Sandbox 里不一定有 Node 或其它运行时，不能假设能在里面执行筛选程序。
+Sandbox 接收器分块取回 span 文件，每块取回后即解码，预算到期时已解码的部分照常保留。映射在宿主进行。
+
+宿主接收器的请求队列已满时暂停读取新的请求 body，由连接背压等待容量。
+Attempt 专用的宿主接收器继续读取已接纳的请求，直至接收结束或总收集预算到期。
+外部生产者在请求 body 传完前断开时，trace limitation 记录接收器观察到的断开请求数。
+在途请求未在收尾期限前静默，或 Attempt 收尾补收到晚于 Turn 收尾的 span 时，记录一条诊断。
 
 ## 接入决策树
 

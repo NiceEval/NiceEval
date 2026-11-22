@@ -28,8 +28,7 @@
 ## 边界
 
 - budget 是防止无限烧钱的安全网,不是精确计费上限:已花 + 在飞未结算的总花费可能短暂超出上限;要压吞吐用 [`--max-concurrency`](concurrency-max-global.md)。
-- 判断依据是 model、agent 报回的 token 用量与匹配的 price；observed `usage.costUSD` 不会补齐缺失的估算。连续多个已发起 agent turn 的 attempt 都拿不到可估算成本时,budget 对该域不可执行,运行器给一条去重后的 warning,而不是每个 attempt 重复提示。
-  首个 agent turn 之前失败的 attempt 没有成本事实,不产生这条 warning。
+- 预算累计使用 model、agent 报回的 token 用量与匹配的 price 估算。每个预算域首次遇到已发起 agent turn 但缺少成本估算的 Attempt 时，运行器发出 `budget-unenforceable` 警告。该域继续累计有估算的成本。
 - 配置优先级是 CLI flag → experiment → config(见 [Library · 与 config 的关系](../library/README.md#与-config-的关系));判断仍按每个实验自己的 budget 域分别计。
 
 ## 相关阅读
