@@ -16,28 +16,11 @@ import {
   multiplyCanonicalDecimalPerMillion,
 } from "../adapter-usage/pricing.ts";
 
-export const JudgeUsageLimits = Object.freeze({
-  maximumCalls: 4_000,
-  maximumModelBytes: 8_192,
-  maximumReceiptBytes: 32_768,
-  maximumReceiptFields: 24,
-});
-
-const encoder = new TextEncoder();
-function boundedIdentity(maximumBytes: number) {
-  return Schema.String.check(
-    Schema.makeFilter(
-      (value) =>
-        value.trim().length > 0 &&
-        !/[\ud800-\udfff]/u.test(value) &&
-        encoder.encode(value).byteLength <= maximumBytes &&
-        !/[\u0000-\u001f\u007f]/u.test(value),
-    ),
-  );
-}
-const Identity = boundedIdentity(256);
+const Identity = Schema.String.check(
+  Schema.makeFilter((value) => value.trim().length > 0 && !/[\ud800-\udfff\u0000-\u001f\u007f]/u.test(value)),
+);
 /** @internal Used to validate observations before retaining their response fields. */
-export const JudgeUsageModelSchema = boundedIdentity(JudgeUsageLimits.maximumModelBytes);
+export const JudgeUsageModelSchema = Identity;
 const Digest = Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/u));
 const Tokens = Schema.NullOr(NonNegativeSafeIntegerSchema);
 const NullableRate = Schema.NullOr(CanonicalDecimalSchema);
@@ -60,12 +43,7 @@ const ReceiptFieldSchema = Schema.Struct({
   path: Schema.Literals(JudgeUsageReceiptPaths),
   value: Schema.Union([
     Schema.String.check(
-      Schema.makeFilter(
-        (value) =>
-          !/[\ud800-\udfff]/u.test(value) &&
-          encoder.encode(value).byteLength <= JudgeUsageLimits.maximumModelBytes &&
-          !/[\u0000-\u001f\u007f]/u.test(value),
-      ),
+      Schema.makeFilter((value) => !/[\ud800-\udfff]/u.test(value) && !/[\u0000-\u001f\u007f]/u.test(value)),
     ),
     FiniteNonNegativeNumberSchema.check(Schema.makeFilter((value) => !Object.is(value, -0))),
     Schema.Null,
@@ -88,12 +66,7 @@ const ReceiptSchema = Schema.Struct({
   fields: Schema.Array(ReceiptFieldSchema),
 }).check(
   Schema.makeFilter((receipt) => {
-    if (
-      receipt.fields.length > JudgeUsageLimits.maximumReceiptFields ||
-      encoder.encode(JSON.stringify(receipt)).byteLength > JudgeUsageLimits.maximumReceiptBytes ||
-      receipt.fields.some((field, index) => index > 0 && receipt.fields[index - 1]!.path >= field.path)
-    )
-      return false;
+    if (receipt.fields.some((field, index) => index > 0 && receipt.fields[index - 1]!.path >= field.path)) return false;
     if (receipt.state === "available") {
       return (
         receipt.fields.some((field) => field.value !== null) &&
@@ -410,7 +383,6 @@ function bucketTokens(call: JudgeUsageCall, bucket: (typeof AdapterCallPriceBuck
 
 export function validateJudgeUsageAttachment(value: JudgeUsageAttachment): readonly RecordAttachmentIssue[] {
   const issue = (path: string[]) => [recordAttachmentIssue("record-attachment-schema-invalid", path)];
-  if (value.calls.length > JudgeUsageLimits.maximumCalls) return issue(["calls"]);
   const calls = new Map<string, JudgeUsageCall>();
   const entries = new Map<number, string>();
   const entryIds = new Map<string, number>();

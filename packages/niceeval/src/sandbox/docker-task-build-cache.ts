@@ -18,7 +18,7 @@ import {
   type DockerImageGcLockRow,
   type DockerTaskBuildEntryRow,
 } from "./docker-cache-repository.ts";
-import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
+import { dockerCacheRepository, iterateDockerDeleteLocks } from "./docker-cache-repository-live.ts";
 
 const execFileAsync = promisify(execFile);
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
@@ -379,30 +379,19 @@ async function reconcileCrashedTaskBuildDeletes(
   domain: DockerCacheDomainHandle,
   dockerSocketPath?: string,
 ): Promise<void> {
-  const listed = await dockerCacheRepository.request({
-    repository: "docker-cache",
-    operation: "task-list-delete-locks",
-    domainId: domain.domainId,
-  });
   const allEntries = await dockerCacheRepository.request({
     repository: "docker-cache",
     operation: "task-list-entries",
     domainId: domain.domainId,
     includeTombstoned: true,
   });
-  for (const lock of listed.locks) {
+  const deletingEntries = new Map(
+    allEntries.entries.filter((entry) => entry.state === "deleting").map((entry) => [entry.buildKey, entry]),
+  );
+  for await (const lock of iterateDockerDeleteLocks(domain.domainId, "task-build")) {
     if (processIdentityIsLive(lock.holderPid, lock.holderBootId, lock.holderProcessStart)) continue;
     const buildKey = taskBuildKeyFromLock(lock);
-    const row =
-      buildKey === undefined
-        ? undefined
-        : allEntries.entries.find(
-            (entry) =>
-              entry.buildKey === buildKey &&
-              entry.generation === lock.entryGeneration &&
-              entry.imageId === lock.imageId &&
-              entry.state === "deleting",
-          );
+    const row = buildKey === undefined ? undefined : deletingEntries.get(buildKey);
     const settle = async (state: "tombstoned" | "unverified"): Promise<void> => {
       await dockerCacheRepository.request({
         repository: "docker-cache",
@@ -413,7 +402,12 @@ async function reconcileCrashedTaskBuildDeletes(
         state,
       });
     };
-    if (row === undefined || !(await taskBuildDeleteLockMatchesPlan(domain, lock, row))) {
+    if (
+      row === undefined ||
+      row.generation !== lock.entryGeneration ||
+      row.imageId !== lock.imageId ||
+      !(await taskBuildDeleteLockMatchesPlan(domain, lock, row))
+    ) {
       await settle("unverified");
       continue;
     }

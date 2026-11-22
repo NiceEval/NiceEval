@@ -128,7 +128,7 @@ interface ScoreMatchAudit {
     readonly version: string;
     readonly config: string;
     readonly digest: string;
-    readonly limits: { readonly maxCalls: number; readonly maxMaterialBytes?: number; readonly contextWindow?: number };
+    readonly limits: { readonly maxCalls?: number; readonly maxMaterialBytes?: number; readonly contextWindow?: number };
   };
   readonly input: string;
   readonly calls: readonly AuditCall[];
@@ -653,7 +653,7 @@ Judge validator 将 proof.pricing.requestModel 绑定 call.requestModel，不能
 ### 容量与封存
 
 collector 使用 defineRecordAttachment 正式编码通道。账本不设物理调用数、payload 字节、节点数、键数或深度上限：
-每个物理调用及其价证是一个 collection item，超过行内阈值的字段存为 Content 分块，身份按完整内容计算。
+每个物理调用及其价证完整写入 payload。超过行内阈值时，Record 透明分块保存 payload，按完整内容计算身份。
 发送前不做容量预留，也不存在 judge-usage-capacity-exceeded；已有项不截断、不采样、不丢弃。
 只有存储写入本身失败使账本无法封存，这时所属 Attempt 显式失败，不发布缺少已发生费用的账本。
 新的已执行 Attempt 即使创建应用失败也发布空账本；未执行或跳过的 Attempt 不虚构 collector。

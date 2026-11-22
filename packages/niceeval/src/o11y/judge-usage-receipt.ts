@@ -4,7 +4,7 @@ import { RecordSha256 } from "../record/definition/digest.ts";
 import { FiniteNonNegativeNumberSchema, NonNegativeSafeIntegerSchema } from "../record/family/common.ts";
 import { CanonicalDecimalSchema, CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
 import { canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
-import { JudgeUsageLimits, JudgeUsageModelSchema, type JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
+import { JudgeUsageModelSchema, type JudgeUsageCall } from "../record/family/judge-usage/schema.ts";
 
 type NormalizedResponse = Pick<
   JudgeUsageCall,
@@ -19,9 +19,6 @@ type NormalizedResponse = Pick<
   | "receipt"
 >;
 type Field = JudgeUsageCall["receipt"]["fields"][number];
-const ProviderSchema = JudgeUsageModelSchema.check(
-  Schema.makeFilter((value) => new TextEncoder().encode(value).byteLength <= 256),
-);
 const JsonResponseSchema = Schema.fromJsonString(Schema.Unknown);
 
 function unavailable(reason: JudgeUsageCall["receipt"]["reason"], responseDigest: string | null): NormalizedResponse {
@@ -52,7 +49,6 @@ export function normalizeJudgeUsageResponse(
   if (!Predicate.isObject(root) || Array.isArray(root)) return unavailable("invalid-usage", responseDigest);
   const fields: Field[] = [];
   let invalidUsage = root.usage !== undefined && (!Predicate.isObject(root.usage) || Array.isArray(root.usage));
-  let modelTooLarge = false;
   function read(path: Field["path"]): unknown {
     let value: unknown = root;
     for (const key of path.split(".")) {
@@ -66,13 +62,7 @@ export function normalizeJudgeUsageResponse(
     if (raw === undefined) return null;
     const value = Schema.decodeUnknownResult(schema, RecordExactParseOptions)(raw);
     if (Result.isFailure(value)) {
-      if (
-        path === "model" &&
-        typeof raw === "string" &&
-        new TextEncoder().encode(raw).byteLength > JudgeUsageLimits.maximumModelBytes
-      )
-        modelTooLarge = true;
-      else invalidUsage = true;
+      invalidUsage = true;
       return null;
     }
     // Schemas above accept only string/number encodings, so arbitrary JSON never enters a receipt.
@@ -80,7 +70,7 @@ export function normalizeJudgeUsageResponse(
     return value.success;
   }
   const model = scalar("model", JudgeUsageModelSchema);
-  const provider = transportProvider === "openrouter" ? scalar("provider", ProviderSchema) : null;
+  const provider = transportProvider === "openrouter" ? scalar("provider", JudgeUsageModelSchema) : null;
   const inputPath = transportProvider === "typesafe" ? "usage.input_tokens" : "usage.prompt_tokens";
   const outputPath = transportProvider === "typesafe" ? "usage.output_tokens" : "usage.completion_tokens";
   let inputTotalTokens = scalar(inputPath, NonNegativeSafeIntegerSchema);
@@ -168,7 +158,6 @@ export function normalizeJudgeUsageResponse(
   const usageReported = fields.some((field) => field.path.startsWith("usage."));
   function unavailableReason() {
     if (invalidUsage) return "invalid-usage" as const;
-    if (modelTooLarge) return "response-model-too-large" as const;
     if (usageReported) return null;
     return "usage-not-reported" as const;
   }

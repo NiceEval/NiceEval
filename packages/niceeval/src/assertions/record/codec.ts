@@ -1,7 +1,6 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { isRecordContentHandle } from "../../record/attachment/content.ts";
-import { assertionRuntimeLimits } from "../limits.ts";
 import { isCanonicalWorkspaceRelativePath } from "../diff.ts";
 import { NUMERIC_COMPARATORS } from "../match.ts";
 import {
@@ -32,10 +31,6 @@ import {
   type WritableCriterionEnvelope,
 } from "./model.ts";
 
-/** Durable document-size limit; unlike runtime capture limits it belongs to this codec. */
-export const MAX_ASSERTION_DOCUMENT_BYTES = 4 * 1_024 * 1_024;
-export const MAX_MATCHER_QUERY_ARTIFACT_BYTES = 64 * 1_024;
-
 /** All contract-owned objects use aggregate failures and exact object fields. */
 export const AssertionsExactParseOptions = Object.freeze({
   errors: "all" as const,
@@ -51,16 +46,8 @@ function utf8ByteLength(value: string): number {
   return UTF8.encode(value).byteLength;
 }
 
-function codePointLength(value: string): number {
-  return Array.from(value).length;
-}
-
-function isBoundedString(value: string): boolean {
-  return utf8ByteLength(value) <= assertionRuntimeLimits.stringBytes;
-}
-
 function isDisplayText(value: string): boolean {
-  return !CONTROL_CHARACTER.test(value) && codePointLength(value) <= assertionRuntimeLimits.displayCodePoints;
+  return !CONTROL_CHARACTER.test(value);
 }
 
 function isAsciiIdentifier(value: string): boolean {
@@ -83,25 +70,8 @@ function isPlainJsonObject(value: object): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 
-function hasAtMostObjectKeys(value: object): boolean {
-  return Object.keys(value).length <= assertionRuntimeLimits.jsonObjectKeys;
-}
-
-function hasAtMostArrayItems<Value>(value: readonly Value[]): boolean {
-  return value.length <= assertionRuntimeLimits.jsonArrayItems;
-}
-
 function isAssertionEntryId(value: string): boolean {
   return ASSERTION_ENTRY_ID.test(value);
-}
-
-function isDocumentWithinSizeLimit(value: unknown): boolean {
-  try {
-    const serialized = JSON.stringify(value);
-    return typeof serialized === "string" && utf8ByteLength(serialized) <= MAX_ASSERTION_DOCUMENT_BYTES;
-  } catch {
-    return false;
-  }
 }
 
 function hasUniqueEntryIds(document: { readonly entries: readonly { readonly entryId: AssertionEntryId }[] }): boolean {
@@ -125,24 +95,19 @@ function hasCoverageConsistentLimitations(entry: {
   return entry.limitations.some((limitation) => limitation.kind === coverage.reason);
 }
 
-const BoundedJsonStringSchema = Schema.String.check(
-  Schema.makeFilter(isBoundedString, {
-    identifier: "AssertionsBoundedJsonString",
-    description: "a UTF-8 string no longer than 8 KiB",
-  }),
-);
+const BoundedJsonStringSchema = Schema.String;
 
 const AssertionDisplayTextSchema = Schema.String.check(
   Schema.makeFilter(isDisplayText, {
     identifier: "AssertionDisplayText",
-    description: "text without control characters and at most 256 code points",
+    description: "text without control characters",
   }),
 );
 
 const MatcherIdentitySchema = BoundedJsonStringSchema.check(
   Schema.makeFilter((value) => value.length > 0 && !CONTROL_CHARACTER.test(value), {
     identifier: "MatcherSourceIdentity",
-    description: "a non-empty bounded source identity without control characters",
+    description: "a non-empty source identity without control characters",
   }),
 );
 
@@ -188,17 +153,17 @@ function isJsonArrayIndex(key: string): boolean {
   return Number.isSafeInteger(index) && index >= 0 && index < 4_294_967_295;
 }
 
-function isBoundedJsonValueAt(value: unknown, depth: number, active: WeakSet<object>): value is BoundedJsonValue {
+function isBoundedJsonValueAt(value: unknown, active: WeakSet<object>): value is BoundedJsonValue {
   if (value === null || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value === "string") return isBoundedString(value);
-  if (typeof value !== "object" || depth >= assertionRuntimeLimits.jsonDepth) return false;
+  if (typeof value === "string") return true;
+  if (typeof value !== "object") return false;
 
   try {
     if (active.has(value)) return false;
     active.add(value);
     if (Array.isArray(value)) {
-      if (Object.getPrototypeOf(value) !== Array.prototype || !hasAtMostArrayItems(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) {
         return false;
       }
       for (const key of Reflect.ownKeys(value)) {
@@ -211,20 +176,20 @@ function isBoundedJsonValueAt(value: unknown, depth: number, active: WeakSet<obj
       }
       for (let index = 0; index < value.length; index += 1) {
         if (!Object.prototype.hasOwnProperty.call(value, index)) return false;
-        if (!isBoundedJsonValueAt(value[index], depth + 1, active)) return false;
+        if (!isBoundedJsonValueAt(value[index], active)) return false;
       }
       return true;
     }
 
     const object = value;
-    if (!isPlainJsonObject(object) || !hasAtMostObjectKeys(object)) return false;
+    if (!isPlainJsonObject(object)) return false;
     for (const key of Reflect.ownKeys(object)) {
-      if (typeof key !== "string" || !isBoundedString(key)) return false;
+      if (typeof key !== "string") return false;
       const descriptor = Object.getOwnPropertyDescriptor(object, key);
       if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
         return false;
       }
-      if (!isBoundedJsonValueAt(descriptor.value, depth + 1, active)) return false;
+      if (!isBoundedJsonValueAt(descriptor.value, active)) return false;
     }
     return true;
   } catch {
@@ -235,15 +200,12 @@ function isBoundedJsonValueAt(value: unknown, depth: number, active: WeakSet<obj
 }
 
 function isBoundedJsonValue(value: unknown): value is BoundedJsonValue {
-  return isBoundedJsonValueAt(value, 0, new WeakSet());
+  return isBoundedJsonValueAt(value, new WeakSet());
 }
 
 export function isBoundedJsonObject(value: unknown): value is BoundedJsonObject {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    isBoundedJsonValueAt(value, 0, new WeakSet())
+    typeof value === "object" && value !== null && !Array.isArray(value) && isBoundedJsonValueAt(value, new WeakSet())
   );
 }
 
@@ -315,12 +277,12 @@ const BoundedJsonValueNodeSchema: Schema.Schema<BoundedJsonValue> = Schema.suspe
     ]).check(
       Schema.makeFilter(isBoundedJsonValue, {
         identifier: "AssertionsBoundedJsonValue",
-        description: "a recursive JSON value within the Assertions limits",
+        description: "a recursive JSON value",
       }),
     ),
 );
 
-/** Recursive JSON shape plus the Assertions-specific depth and collection budgets. */
+/** Recursive JSON shape; Record owns its physical storage. */
 export const BoundedJsonValueSchema: Schema.Schema<BoundedJsonValue> = BoundedJsonValueNodeSchema;
 
 export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> = Schema.Record(
@@ -329,7 +291,7 @@ export const BoundedJsonObjectSchema: Schema.Schema<BoundedJsonObject> = Schema.
 ).check(
   Schema.makeFilter(isBoundedJsonObject, {
     identifier: "AssertionsBoundedJsonObject",
-    description: "a recursive JSON object within the Assertions limits",
+    description: "a recursive JSON object",
   }),
 );
 
@@ -342,12 +304,7 @@ export const AssertionEntryIdSchema: Schema.Codec<AssertionEntryId, string> = Sc
 
 export const AssertionDisplaySchema: Schema.Schema<AssertionDisplay> = Schema.Struct({
   label: Schema.optionalKey(AssertionDisplayTextSchema),
-  groupPath: Schema.Array(AssertionDisplayTextSchema).check(
-    Schema.makeFilter((groupPath) => groupPath.length <= assertionRuntimeLimits.groupDepth, {
-      identifier: "AssertionDisplayGroupPath",
-      description: "a group path no deeper than 16 segments",
-    }),
-  ),
+  groupPath: Schema.Array(AssertionDisplayTextSchema),
 });
 
 export const BuiltInCriterionEnvelopeSchema: Schema.Schema<BuiltInCriterionEnvelope> = Schema.Struct({
@@ -991,9 +948,9 @@ export const MatcherOrderedSequenceShapeSchema = Schema.Struct({
   kind: Schema.Literal("ordered-sequence"),
   sourceSnapshot: Schema.Union([MatcherTurnSourceSnapshotSchema, MatcherSessionSourceSnapshotSchema]),
   querySteps: Schema.Array(MatcherQueryStepSchema).check(
-    Schema.makeFilter((steps) => steps.length >= 2 && steps.length <= 64, {
+    Schema.makeFilter((steps) => steps.length >= 2, {
       identifier: "MatcherOrderQuerySteps",
-      description: "between two and 64 ordered matcher query steps",
+      description: "at least two ordered matcher query steps",
     }),
   ),
   receipt: OrderEvaluationReceiptSchema,
@@ -1008,23 +965,10 @@ const MatcherOrderedSequenceSchema = MatcherOrderedSequenceShapeSchema.check(
   }),
 );
 
-function isMatcherArtifactWithinSizeLimit(value: unknown): boolean {
-  try {
-    return utf8ByteLength(JSON.stringify(value)) <= MAX_MATCHER_QUERY_ARTIFACT_BYTES;
-  } catch {
-    return false;
-  }
-}
-
 export const MatcherQueryArtifactSchema: Schema.Schema<MatcherQueryArtifact> = Schema.Union([
   MatcherCollectionFilterSchema,
   MatcherOrderedSequenceSchema,
-]).check(
-  Schema.makeFilter(isMatcherArtifactWithinSizeLimit, {
-    identifier: "MatcherQueryArtifactSize",
-    description: "a matcher query artifact no larger than 64 KiB",
-  }),
-);
+]);
 
 export const AssertionConditionValueSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("boolean"), expected: Schema.Literal(true) }),
@@ -1178,21 +1122,12 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
     ),
   );
 
-  const entries = Schema.Array(outerEntry).check(
-    Schema.makeFilter((values) => values.length <= assertionRuntimeLimits.entries, {
-      identifier: "AssertionsEntryCount",
-      description: "at most 4,096 assertion entries",
-    }),
-  );
+  const entries = Schema.Array(outerEntry);
 
   const outerDocument = Schema.Struct({ entries }).check(
     Schema.makeFilter(hasUniqueEntryIds, {
       identifier: "AssertionsUniqueEntryIds",
       description: "unique attachment-local assertion entry IDs",
-    }),
-    Schema.makeFilter(isDocumentWithinSizeLimit, {
-      identifier: "AssertionsDocumentSize",
-      description: "a JSON document no larger than 4 MiB",
     }),
   );
 
@@ -1220,20 +1155,11 @@ export function createAssertionsRecordSchemas<Material, MaterialEncoded>(
   });
 
   const document = Schema.Struct({
-    entries: Schema.Array(entry).check(
-      Schema.makeFilter((entries) => entries.length <= assertionRuntimeLimits.entries, {
-        identifier: "AssertionsEntryCount",
-        description: "at most 4,096 assertion entries",
-      }),
-    ),
+    entries: Schema.Array(entry),
   }).check(
     Schema.makeFilter(hasUniqueEntryIds, {
       identifier: "AssertionsUniqueEntryIds",
       description: "unique attachment-local assertion entry IDs",
-    }),
-    Schema.makeFilter(isDocumentWithinSizeLimit, {
-      identifier: "AssertionsDocumentSize",
-      description: "a JSON document no larger than 4 MiB",
     }),
   );
 

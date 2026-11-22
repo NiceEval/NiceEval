@@ -92,11 +92,14 @@ export function judgeImage(input: JudgeImageInput): JudgeImage {
   }
   const source = bodyProperty.value as Uint8Array;
   const mediaType = mediaTypeProperty.value as JudgeImageInput["mediaType"];
-  if (source.byteLength === 0 || source.byteLength > maxImageBytes) throw new TypeError("Judge image exceeds 4 MiB");
+  if (source.byteLength === 0) throw new TypeError("Judge image body must be non-empty");
+  if (source.byteLength > maxImageBytes)
+    throw new TypeError("Judge image exceeds the Judge Provider input limit of 4 MiB per image");
   const body = new Uint8Array(source);
   const [width, height] = dimensions(body, mediaType);
-  if (width <= 0 || height <= 0 || width * height > maxPixels)
-    throw new TypeError("Judge image dimensions exceed the pixel limit");
+  if (width <= 0 || height <= 0) throw new TypeError("Judge image dimensions must be positive");
+  if (width * height > maxPixels)
+    throw new TypeError(`Judge image exceeds the Judge Provider input limit of ${maxPixels} pixels per image`);
   const value = Object.freeze(Object.create(null)) as JudgeImage;
   images.set(value, {
     body,

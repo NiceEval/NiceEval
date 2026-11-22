@@ -140,7 +140,7 @@ const EVAL_FILES = {
         }
         t.check(innerCalls, equals(0)).label("bad-projection-inner-zero");
 
-        // Distinct ordered steps, or/not, conjunction on same committed event, competing witnesses, memoization, 64 bound
+        // Distinct ordered steps, or/not, conjunction on same committed event, competing witnesses and memoization
         const repeated = inOrder([equals(1), equals(1)]);
         t.check([1], repeated).label("repeated-1");
         t.check([1, 1], repeated).label("repeated-2");
@@ -278,7 +278,7 @@ describe("Value matcher composition and construction contracts", () => {
   });
 
   // @feature docs/feature/assertions/README.md#matcher-outcomes
-  test("combinators reject fabricated, wrong-domain, score, and out-of-bounds steps at construction", () => {
+  test("combinators require real Boolean steps in the same domain and accept long sequences", () => {
     const raw = { name: "raw", kind: "boolean", domain: "value" } as unknown as BooleanMatch<number, number>;
     const score = defineScoreMatch<number>({ name: "score", score: () => 1 });
     const ctx = defineContextMatch<unknown, number>({
@@ -326,7 +326,7 @@ describe("Value matcher composition and construction contracts", () => {
       BooleanMatch<unknown, unknown>,
       ...BooleanMatch<unknown, unknown>[],
     ];
-    expect(() => inOrder(sixtyFive)).toThrow("at most 64");
+    expect(() => inOrder(sixtyFive)).not.toThrow();
   });
 
   // @feature docs/feature/assertions/README.md#matcher-outcomes

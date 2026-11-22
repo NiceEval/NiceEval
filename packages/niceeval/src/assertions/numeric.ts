@@ -80,7 +80,6 @@ export function numericBooleanRegistration<Refined>(input: {
     terminalEvidence: () => [],
     interruptedMatcherArtifact: undefined,
     terminalCriterion: () => numericCriterion(input.match, input.criterionSubject),
-    retainedBytes: 0,
     terminalReceipt: () => undefined,
     evidence: [],
   };

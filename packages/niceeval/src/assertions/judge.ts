@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import { type ScoreMatch } from "./match.ts";
 import type { JudgeMaterial } from "../judge/image.ts";
 import {
-  boundedText,
+  requiredJudgeText,
   exactDataObject,
   judgeMaterialBudget,
   judgeRubricAndAnchors,
@@ -67,7 +67,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
     config: { rubric, anchors: anchors.map((anchor) => ({ ...anchor })) },
     llm: {
       maxMaterialBytes,
-      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls", 16),
+      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls"),
     },
     score: (material, context) =>
       context.llm
@@ -79,7 +79,7 @@ export function defineJudge(options: JudgeOptions): JudgeDefinition {
 /** Classify explicit material as satisfied (1) or not-satisfied (0); use .gate(1) for a required criterion. */
 export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
   const input = exactDataObject(options, "binaryJudge() options", ["rubric", "maxMaterialBytes", "maxCalls"]);
-  const rubric = boundedText(input.rubric, "Judge rubric", 8 * 1024);
+  const rubric = requiredJudgeText(input.rubric, "Judge rubric");
   const maxMaterialBytes = judgeMaterialBudget(input.maxMaterialBytes);
   const choices = ["satisfied", "not-satisfied"] as const;
   return defineBuiltinScoreMatch<unknown>({
@@ -92,7 +92,7 @@ export function binaryJudge(options: BinaryJudgeOptions): JudgeDefinition {
     },
     llm: {
       maxMaterialBytes,
-      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls", 16),
+      maxCalls: input.maxCalls === undefined ? undefined : positiveInteger(input.maxCalls, "Judge maxCalls"),
     },
     score: (material, context) =>
       context.llm.classify({ rubric: binaryJudgeRubric(rubric), choices, material: material as JudgeMaterial }).pipe(

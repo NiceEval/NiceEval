@@ -19,6 +19,7 @@ import type { JsonMatch, JsonValue } from "../shared/types.ts";
 import type { JudgeMaterial } from "../judge/image.ts";
 import { stripComments } from "../util.ts";
 import { assertionRuntimeLimits } from "./limits.ts";
+import { encodeAssertionSnapshotJson } from "./snapshot-json.ts";
 import type { MaterialCollection, MaterialItem } from "./context-match.ts";
 
 /** Separates value comparisons from managed tool and event comparisons; Boolean compositions must stay within one domain. */
@@ -211,7 +212,7 @@ export interface ScoreMatchContext {
     >;
     extract(input: {
       readonly rubric: string;
-      readonly maxItems: number;
+      readonly maxItems?: number;
       readonly material: JudgeMaterial;
     }): Effect.Effect<
       { readonly items: readonly string[]; readonly rationale: string; readonly complete: boolean },
@@ -247,7 +248,7 @@ export interface ManagedScoreMatchDefinition<T = unknown, E = unknown> {
   readonly config: JsonValue;
   readonly canonicalConfig: string;
   readonly llm: {
-    readonly maxCalls: number;
+    readonly maxCalls: number | undefined;
     readonly maxMaterialBytes: number | undefined;
   };
   readonly score: (value: T, context: ScoreMatchContext) => Effect.Effect<ScoreMatchResult, E>;
@@ -1614,6 +1615,16 @@ export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(
         readonly score: (value: T) => number | Promise<number>;
       },
 ): ScoreMatch<T> {
+  return defineScoreMatchWithDefaultCallBudget(spec, true);
+}
+
+/** @internal Faithfulness can opt out of the common default call budget. */
+export function defineScoreMatchWithDefaultCallBudget<T, E>(
+  spec:
+    | ManagedScoreMatchOptions<T, E>
+    | { readonly name: string; readonly score: (value: T) => number | Promise<number> },
+  hasDefaultCallBudget: boolean,
+): ScoreMatch<T> {
   const input = exactScoreMatchOptions(spec);
   assertNonEmptyString(input.name, "defineScoreMatch() spec.name");
   if (typeof input.score !== "function") throw new TypeError("defineScoreMatch() spec.score must be a function");
@@ -1630,7 +1641,7 @@ export function defineScoreMatch<T, E = ScoreMatchLlmFailure>(
     assertNonEmptyString(input.version, "defineScoreMatch() spec.version");
     if (!Object.hasOwn(input, "config")) throw new TypeError("defineScoreMatch() managed spec requires config");
     const config = snapshotScoreMatchJson(input.config, "defineScoreMatch() spec.config");
-    const llm = exactLlmOptions(input.llm);
+    const llm = exactLlmOptions(input.llm, hasDefaultCallBudget);
     const definition: ManagedScoreMatchDefinition<unknown, unknown> = {
       name: input.name,
       version: input.version,
@@ -1671,16 +1682,8 @@ function exactScoreMatchOptions(value: unknown): Readonly<Record<string, unknown
   return output;
 }
 
-function boundedPositiveInteger(value: unknown, fallback: number, maximum: number, label: string): number {
-  const resolved = value ?? fallback;
-  if (typeof resolved !== "number" || !Number.isSafeInteger(resolved) || resolved <= 0 || resolved > maximum) {
-    throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
-  }
-  return resolved;
-}
-
 /** @internal Shared managed-model budget validation. */
-export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["llm"] {
+export function exactLlmOptions(value: unknown, hasDefaultCallBudget = true): ManagedScoreMatchDefinition["llm"] {
   if (!isRecord(value) || Array.isArray(value)) throw new TypeError("defineScoreMatch() spec.llm must be an object");
   const allowed = ["maxCalls", "maxMaterialBytes"];
   const output: Record<string, unknown> = {};
@@ -1692,30 +1695,17 @@ export function exactLlmOptions(value: unknown): ManagedScoreMatchDefinition["ll
       throw new TypeError(`defineScoreMatch() spec.llm.${key} must be an enumerable data property`);
     output[key] = descriptor.value;
   }
-  return {
-    maxCalls: boundedPositiveInteger(output.maxCalls, 4, 16, "defineScoreMatch() spec.llm.maxCalls"),
-    maxMaterialBytes:
-      output.maxMaterialBytes === undefined
-        ? undefined
-        : boundedPositiveInteger(
-            output.maxMaterialBytes,
-            1,
-            4 * 1024 * 1024,
-            "defineScoreMatch() spec.llm.maxMaterialBytes",
-          ),
-  };
+  const maxCalls = output.maxCalls ?? (hasDefaultCallBudget ? 4 : undefined);
+  const maxMaterialBytes = output.maxMaterialBytes;
+  for (const [key, limit] of Object.entries({ maxCalls, maxMaterialBytes })) {
+    if (limit !== undefined && (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit <= 0)) {
+      throw new TypeError(`defineScoreMatch() spec.llm.${key} must be a positive safe integer`);
+    }
+  }
+  return { maxCalls: maxCalls as number | undefined, maxMaterialBytes: maxMaterialBytes as number | undefined };
 }
 
-function snapshotScoreMatchJson(
-  value: unknown,
-  label: string,
-  state: { nodes: number } = { nodes: 0 },
-  ancestors = new WeakSet<object>(),
-  depth = 0,
-): JsonValue {
-  state.nodes += 1;
-  if (state.nodes > 16_384) throw new TypeError(`${label} exceeds 16,384 JSON nodes`);
-  if (depth > 32) throw new TypeError(`${label} exceeds depth 32`);
+function snapshotScoreMatchJson(value: unknown, label: string, ancestors = new WeakSet<object>()): JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError(`${label} numbers must be finite`);
@@ -1741,7 +1731,7 @@ function snapshotScoreMatchJson(
         const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
         if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined)
           throw new TypeError(`${label} arrays cannot contain holes, accessors, or undefined`);
-        output.push(snapshotScoreMatchJson(descriptor.value, `${label}[${index}]`, state, ancestors, depth + 1));
+        output.push(snapshotScoreMatchJson(descriptor.value, `${label}[${index}]`, ancestors));
       }
       return Object.freeze(output) as unknown as JsonValue;
     }
@@ -1755,7 +1745,7 @@ function snapshotScoreMatchJson(
       if (descriptor === undefined || !descriptor.enumerable) continue;
       if (!("value" in descriptor) || descriptor.value === undefined)
         throw new TypeError(`${label}.${key} must be a JSON data property`);
-      entries.push([key, snapshotScoreMatchJson(descriptor.value, `${label}.${key}`, state, ancestors, depth + 1)]);
+      entries.push([key, snapshotScoreMatchJson(descriptor.value, `${label}.${key}`, ancestors)]);
     }
     return Object.freeze(
       Object.fromEntries(
@@ -1772,13 +1762,7 @@ function snapshotScoreMatchJson(
 }
 
 function canonicalScoreMatchJson(value: JsonValue): string {
-  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number")
-    return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalScoreMatchJson).join(",")}]`;
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalScoreMatchJson(value[key]!)}`)
-    .join(",")}}`;
+  return encodeAssertionSnapshotJson(value, true);
 }
 
 interface ReferencePathPattern {
@@ -2596,7 +2580,6 @@ const managedToolCallsBrand: unique symbol = Symbol("niceeval.managed-tool-calls
 const managedEventOccurrencesBrand: unique symbol = Symbol("niceeval.managed-event-occurrences");
 const occurrenceMatchBrand: unique symbol = Symbol("niceeval.occurrence-match");
 const collectionMatches = new WeakMap<object, CollectionMatchSpec>();
-const MAX_ORDER_STEPS = 64;
 
 /** Describes a managed collection comparison; use a framework-provided collection rather than fabricating its scope or completeness. */
 export interface CollectionMatch<in T> {
@@ -2732,9 +2715,6 @@ export function inOrder(
 ): ToolSequenceMatch | EventSequenceMatch | BooleanMatch<CollectionValue<unknown>, CollectionValue<unknown>> {
   if (!Array.isArray(matches) || matches.length < 2) {
     throw new TypeError("inOrder() requires at least two BooleanMatch values");
-  }
-  if (matches.length > MAX_ORDER_STEPS) {
-    throw new TypeError(`inOrder() supports at most ${MAX_ORDER_STEPS} steps`);
   }
   const first = internalMatchOf(matches[0], "inOrder() match 1");
   if (first.domain === "value") {

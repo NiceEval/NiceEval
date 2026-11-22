@@ -2,6 +2,7 @@ import { Result, Schema, Stream } from "effect";
 import { omitUndefined } from "../../shared/omit-undefined.ts";
 import { readJudgeImage } from "../../judge/image.ts";
 import { fullAssertionContentOf } from "../full-content.ts";
+import { encodeAssertionSnapshotJson } from "../snapshot-json.ts";
 import type { RecordBytesContentHandle } from "../../record/attachment/content.ts";
 import type { AttachedRecordContent, RecordAttachmentSessionBuilder } from "../../record/writer/current-attachment.ts";
 import type {
@@ -26,7 +27,6 @@ import type {
 import {
   AssertionsExactParseOptions,
   BoundedJsonObjectSchema,
-  MAX_ASSERTION_DOCUMENT_BYTES,
   createAssertionsRecordSchemas,
   isBoundedJsonObject,
   projectAssertionsDocument,
@@ -136,17 +136,7 @@ function encodeSnapshotObject(value: AssertionSnapshotObject): BoundedJsonObject
   return encoded;
 }
 
-// AssertionFactValue adds an object/array envelope at every source nesting
-// level. Keep arbitrary matcher snapshots below the fixed Attachment depth
-// limit instead of letting an otherwise bounded diagnostic invalidate the
-// whole Assertions attachment.
-const MAX_EXPLANATION_SOURCE_DEPTH = 6;
-
-function explanationValue(
-  value: unknown,
-  depth = 0,
-  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
-): AssertionFactValue {
+function explanationValue(value: unknown): AssertionFactValue {
   if (
     value === null ||
     typeof value === "boolean" ||
@@ -155,16 +145,10 @@ function explanationValue(
   ) {
     return { kind: "value" as const, value };
   }
-  if (depth >= maximumSourceDepth) {
-    return {
-      kind: "text" as const,
-      text: "Nested matcher detail was omitted at the retained fact depth limit.",
-    };
-  }
   if (Array.isArray(value)) {
     return {
       kind: "list" as const,
-      items: value.map((item) => explanationValue(item, depth + 1, maximumSourceDepth)),
+      items: value.map(explanationValue),
     };
   }
   if (typeof value === "object" && value !== null) {
@@ -172,7 +156,7 @@ function explanationValue(
       kind: "fields" as const,
       fields: Object.entries(value).map(([label, nested]) => ({
         label,
-        value: explanationValue(nested, depth + 1, maximumSourceDepth),
+        value: explanationValue(nested),
       })),
     };
   }
@@ -181,12 +165,11 @@ function explanationValue(
 
 function encodeRetainedRows(
   rows: RuntimeMatcherQueryArtifact["retainedRows"],
-  maximumSourceDepth = MAX_EXPLANATION_SOURCE_DEPTH,
 ): RecordMatcherQueryArtifact["retainedRows"] {
   return rows.map((row) => ({
     locator: row.locator,
     result: row.result,
-    ...(row.difference === undefined ? {} : { difference: explanationValue(row.difference, 0, maximumSourceDepth) }),
+    ...(row.difference === undefined ? {} : { difference: explanationValue(row.difference) }),
   }));
 }
 
@@ -221,7 +204,7 @@ function encodeMatcherArtifact(artifact: RuntimeMatcherQueryArtifact): RecordMat
           longestPossiblePrefix: artifactResult.failureFrontier.longestPossiblePrefix,
           firstBlockingStep: artifactResult.failureFrontier.firstBlockingStep,
           suffixChecked: artifactResult.failureFrontier.suffixChecked,
-          representatives: encodeRetainedRows(artifactResult.failureFrontier.representatives, 5),
+          representatives: encodeRetainedRows(artifactResult.failureFrontier.representatives),
         },
       };
     return {
@@ -420,7 +403,7 @@ function encodeMaterial(material: AssertionMaterial): AssertionMaterialInput<nev
       };
     }
     case "snapshot": {
-      const content = fullAssertionContentOf(material) ?? JSON.stringify(encodeSnapshotValue(material.value));
+      const content = fullAssertionContentOf(material) ?? encodeAssertionSnapshotJson(material.value);
       const bytes = new TextEncoder().encode(content);
       return {
         kind: "content" as const,
@@ -811,30 +794,7 @@ export function createAssertionsAttachmentProducer<E, R>(config: {
     seal(sealInput: AssertionsAttachmentSealInput = { sourceSites: [] }) {
       if (sealed !== undefined) return sealed;
       const sourceSites = [...sealInput.sourceSites];
-      const sourceSiteWireShape = sourceSites.map((site) => ({
-        entryId: site.entryId,
-        sourceOrder: site.sourceOrder,
-        role: site.role,
-        source: {
-          value: {
-            sourceItemId: site.sourceItemId,
-            sha256: site.sha256,
-          },
-        },
-        start: site.start,
-        end: site.end,
-      }));
-      const emptyEntriesBytes = new TextEncoder().encode(JSON.stringify({ entries: [] })).byteLength;
-      const sourceSitesFramingBytes =
-        new TextEncoder().encode(
-          JSON.stringify({
-            entries: [],
-            sourceSites: sourceSiteWireShape,
-          }),
-        ).byteLength - emptyEntriesBytes;
-      const document = documentBuilder.seal({
-        maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES - sourceSitesFramingBytes,
-      });
+      const document = documentBuilder.seal();
       if (Result.isFailure(document)) {
         sealed = Result.fail(document.failure);
         return sealed;

@@ -4,15 +4,11 @@
 import * as Predicate from "effect/Predicate";
 import type { JudgeAnchor } from "./judge.ts";
 
-const UTF8 = new TextEncoder();
 const DEFAULT_ANCHORS = [
   { measurement: 0, description: "Does not satisfy the rubric." },
   { measurement: 1, description: "Fully satisfies the rubric." },
 ];
 
-function utf8Bytes(value: string): number {
-  return UTF8.encode(value).byteLength;
-}
 export function exactDataObject(
   value: unknown,
   label: string,
@@ -41,22 +37,13 @@ export function exactDataObject(
   }
   return Object.fromEntries(captured);
 }
-export function boundedText(value: unknown, label: string, maximumBytes: number, controlFree = false): string {
-  if (
-    typeof value !== "string" ||
-    value.trim().length === 0 ||
-    utf8Bytes(value) > maximumBytes ||
-    (controlFree && /\p{Cc}/u.test(value))
-  ) {
-    throw new TypeError(
-      `${label} must be non-empty and at most ${maximumBytes} UTF-8 bytes${controlFree ? " without control characters" : ""}`,
-    );
-  }
+export function requiredJudgeText(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) throw new TypeError(`${label} must be non-empty`);
   return value;
 }
-export function positiveInteger(value: unknown, label: string, maximum: number): number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value <= 0 || value > maximum)
-    throw new TypeError(`${label} must be a positive integer at most ${maximum}`);
+export function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+    throw new TypeError(`${label} must be a positive safe integer`);
   return value;
 }
 
@@ -67,10 +54,10 @@ export function judgeRubricAndAnchors(
   readonly rubric: string;
   readonly anchors: readonly JudgeAnchor[];
 } {
-  const rubric = boundedText(rubricValue, "Judge rubric", 8 * 1024);
+  const rubric = requiredJudgeText(rubricValue, "Judge rubric");
   const rawAnchors = anchorsValue ?? DEFAULT_ANCHORS;
-  if (!Array.isArray(rawAnchors) || rawAnchors.length < 2 || rawAnchors.length > 32)
-    throw new TypeError("Judge anchors must contain between 2 and 32 entries");
+  if (!Array.isArray(rawAnchors) || rawAnchors.length < 2)
+    throw new TypeError("Judge anchors must contain at least 2 entries");
   let previous = -1;
   const anchors: JudgeAnchor[] = [];
   const anchorKeys = Reflect.ownKeys(rawAnchors);
@@ -101,7 +88,7 @@ export function judgeRubricAndAnchors(
     previous = measurement;
     anchors.push({
       measurement,
-      description: boundedText(anchor.description, `Judge anchors[${index}].description`, 1024),
+      description: requiredJudgeText(anchor.description, `Judge anchors[${index}].description`),
     });
   }
   if (anchors[0]?.measurement !== 0 || anchors.at(-1)?.measurement !== 1)
@@ -110,5 +97,5 @@ export function judgeRubricAndAnchors(
 }
 
 export function judgeMaterialBudget(value: unknown): number | undefined {
-  return value === undefined ? undefined : positiveInteger(value, "Judge maxMaterialBytes", 4 * 1024 * 1024);
+  return value === undefined ? undefined : positiveInteger(value, "Judge maxMaterialBytes");
 }

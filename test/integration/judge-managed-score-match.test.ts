@@ -319,10 +319,10 @@ describe("Managed ScoreMatch definitions and lifecycle boundaries", () => {
   // @feature docs/feature/judge/README.md#material-admission
   test("defineScoreMatch and defineJudge reject invalid options, accessors, and custom anchor properties", () => {
     fc.assert(
-      fc.property(fc.integer({ min: 17, max: 64 }), fc.integer({ min: 4 * 1024 * 1024 + 1, max: 8 * 1024 * 1024 }), (badCalls, badBytes) => {
+      fc.property(fc.integer({ min: -64, max: 0 }), fc.integer({ min: -64, max: 0 }), (badCalls, badBytes) => {
         expect(() =>
           defineScoreMatch({ name: "x", version: "1", config: {}, llm: { maxCalls: badCalls }, score: () => Effect.succeed(1) }),
-        ).toThrow("at most 16");
+        ).toThrow("positive safe integer");
         expect(() => defineScoreMatch({ name: "x", score: () => 1, extra: true } as never)).toThrow("unknown option");
         const cfgAccessor = Object.defineProperty({}, "value", { enumerable: true, get: () => 1 });
         expect(() =>
@@ -354,7 +354,7 @@ describe("Managed ScoreMatch definitions and lifecycle boundaries", () => {
         ];
         Object.defineProperty(accessorAnchors, "0", { get: () => ({ measurement: 0, description: "no" }) });
         expect(() => defineJudge({ rubric: "r", anchors: accessorAnchors })).toThrow("data property");
-        expect(() => defineJudge({ rubric: "r", maxMaterialBytes: badBytes })).toThrow("at most");
+        expect(() => defineJudge({ rubric: "r", maxMaterialBytes: badBytes })).toThrow("positive safe integer");
       }),
       { numRuns: 20 },
     );

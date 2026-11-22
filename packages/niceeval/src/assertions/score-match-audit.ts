@@ -11,6 +11,7 @@ import {
 import { typesafeItemInstructions, typesafeMaterialInstructions } from "./score-match.prompt.ts";
 import { InspectionSha256, utf8ByteLength } from "../inspection/bytes.ts";
 import type { ScoreMatchContext } from "./match.ts";
+import { encodeAssertionSnapshotJson } from "./snapshot-json.ts";
 
 export type ScoreMatchAuditFailure = {
   readonly state: "unavailable" | "errored";
@@ -55,7 +56,7 @@ export interface ScoreMatchAudit {
     readonly config: string;
     readonly digest: string;
     readonly limits: {
-      readonly maxCalls: number;
+      readonly maxCalls?: number;
       readonly maxMaterialBytes?: number;
       readonly contextWindow?: number;
     };
@@ -114,7 +115,7 @@ const decodeAuditImage = Schema.decodeUnknownResult(
   ),
 );
 const AuditLimitsSchema = Schema.Struct({
-  maxCalls: Schema.Number,
+  maxCalls: Schema.optionalKey(Schema.Number),
   maxMaterialBytes: Schema.optionalKey(Schema.Number),
   contextWindow: Schema.optionalKey(Schema.Number),
 });
@@ -181,18 +182,7 @@ function exact(value: unknown, keys: readonly string[]): Readonly<Record<string,
 }
 
 export function canonicalScoreMatchAuditJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new TypeError("ScoreMatch audit contains a non-finite number");
-    return JSON.stringify(Object.is(value, -0) ? 0 : value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalScoreMatchAuditJson).join(",")}]`;
-  const candidate = record(value);
-  if (candidate === undefined) throw new TypeError("ScoreMatch audit contains a non-JSON value");
-  return `{${Object.keys(candidate)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalScoreMatchAuditJson(candidate[key])}`)
-    .join(",")}}`;
+  return encodeAssertionSnapshotJson(value, true);
 }
 
 function sha256(value: string): string {
@@ -230,7 +220,7 @@ const unit = Schema.is(unitSchema);
 
 type PrimitiveRequest =
   | { readonly operation: "score" }
-  | { readonly operation: "extract"; readonly maxItems: number }
+  | { readonly operation: "extract"; readonly maxItems: number | undefined }
   | {
       readonly operation: "classify";
       readonly evidenceIds: ReadonlySet<string> | undefined;
@@ -287,7 +277,7 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   function operationSystemKeys(): string[] {
     if (operation === "score") return ["operation", "rubric", "anchors"];
     if (operation === "classify" || operation === "batchClassify") return ["operation", "rubric", "choices"];
-    return ["operation", "rubric", "maxItems"];
+    return ["operation", "rubric", ...(Object.hasOwn(record(criteria) ?? {}, "maxItems") ? ["maxItems"] : [])];
   }
   const systemKeys = operationSystemKeys();
   const evidenceIds = operation === "classify" ? record(criteria)?.evidenceIds : undefined;
@@ -307,8 +297,7 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
   )
     return undefined;
   if (operation === "score") {
-    if (!Array.isArray(systemInput.anchors) || systemInput.anchors.length < 2 || systemInput.anchors.length > 32)
-      return undefined;
+    if (!Array.isArray(systemInput.anchors) || systemInput.anchors.length < 2) return undefined;
     let previous = -1;
     for (const raw of systemInput.anchors) {
       const anchor = exact(raw, ["measurement", "description"]);
@@ -326,7 +315,7 @@ function primitiveRequest(operation: ScoreMatchAuditCall["operation"], value: un
     return { operation: "score" };
   }
   if (operation === "extract") {
-    return positiveInteger(systemInput.maxItems, 32)
+    return systemInput.maxItems === undefined || positiveInteger(systemInput.maxItems, Number.MAX_SAFE_INTEGER)
       ? { operation: "extract", maxItems: systemInput.maxItems }
       : undefined;
   }
@@ -382,7 +371,10 @@ function primitiveOutput(operation: ScoreMatchAuditCall["operation"], output: st
     );
   }
   if (requestInput.operation === "extract") {
-    return isAuditPrimitive.extract(value) && value.complete === true && value.items.length <= requestInput.maxItems;
+    return (
+      isAuditPrimitive.extract(value) &&
+      (requestInput.maxItems === undefined || (value.complete === true && value.items.length <= requestInput.maxItems))
+    );
   }
   if (!isAuditPrimitive.batch(value)) return false;
   const ids = new Set<string>();
@@ -973,8 +965,8 @@ export function readScoreMatchAudit(
       !text(definition.version) ||
       typeof definition.config !== "string" ||
       typeof definition.digest !== "string" ||
-      !positiveInteger(limits.maxCalls, 16) ||
-      (limits.maxMaterialBytes !== undefined && !positiveInteger(limits.maxMaterialBytes, 4 * 1024 * 1024)) ||
+      (limits.maxCalls !== undefined && !positiveInteger(limits.maxCalls, Number.MAX_SAFE_INTEGER)) ||
+      (limits.maxMaterialBytes !== undefined && !positiveInteger(limits.maxMaterialBytes, Number.MAX_SAFE_INTEGER)) ||
       (limits.contextWindow !== undefined && !positiveInteger(limits.contextWindow, Number.MAX_SAFE_INTEGER))
     )
       return { state: "invalid" };
@@ -1003,8 +995,9 @@ export function readScoreMatchAudit(
         !initialMaterialRejected) ||
       canonicalScoreMatchAuditJson(JSON.parse(audit.input)) !== audit.input ||
       !Array.isArray(audit.calls) ||
-      audit.calls.length > limits.maxCalls + 1 ||
-      (audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected") ||
+      (limits.maxCalls !== undefined &&
+        (audit.calls.length > limits.maxCalls + 1 ||
+          (audit.calls.length > limits.maxCalls && record(audit.calls.at(-1))?.state !== "rejected"))) ||
       audit.calls.some((call, index) =>
         audit.kind === "chat"
           ? !validCall(call, index + 1)
@@ -1038,15 +1031,8 @@ export function readScoreMatchAudit(
 function validEvidenceIds(value: unknown, empty = false): boolean {
   return (
     Array.isArray(value) &&
-    value.length <= 16384 &&
     (empty || value.length > 0) &&
-    value.every(
-      (id) =>
-        text(id) &&
-        id.trim() !== "" &&
-        new TextEncoder().encode(id).length <= 128 &&
-        !/[\u0000-\u001f\u007f]/u.test(id),
-    ) &&
+    value.every((id) => text(id) && id.trim() !== "" && !/[\u0000-\u001f\u007f]/u.test(id)) &&
     new Set(value).size === value.length
   );
 }

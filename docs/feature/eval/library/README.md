@@ -282,6 +282,6 @@ Experiment 的 `adapter` 接受这些定义；`agent` 是只接受 Agent 的便�
 例如 `t.note("延迟", ms(512))` 保留数值与单位；`null` 表示未取得，显示为 unavailable。
 Note 不登记 Assertion，没有 matcher、gate 或 score，也不影响 Verdict、score 与 coverage。
 
-同一 Attempt 的 label 必须唯一，违规时抛出 `TypeError`。Note 的条数与单项 JSON 大小不设上限，超过行内阈值的值存为 Content 分块。
+同一 Attempt 的 label 必须唯一，违规时抛出 `TypeError`。Note 的条数与单项 JSON 大小不设上限。超过行内阈值时，Record 透明分块保存 payload。
 调用时保存值的快照，后续修改原对象不会改变 Note。执行上下文关闭后不能继续写入。
 显示与聚合见 [Inspection CLI](../../inspection/cli.md#notes)。

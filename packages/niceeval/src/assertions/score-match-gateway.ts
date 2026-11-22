@@ -91,9 +91,9 @@ function record(value: unknown): Record<string, unknown> {
   if (!Predicate.isObject(value)) throw new TypeError("Expected an object");
   return value;
 }
-function requiredText(value: unknown, label: string, maximum = 8192): string {
-  if (typeof value !== "string" || !value.trim() || bytes(value) > maximum)
-    throw new TypeError(`${label} must be non-empty and at most ${maximum} bytes`);
+function requiredText(value: unknown, label: string, maximum = Infinity): string {
+  if (typeof value !== "string" || !value.trim() || (maximum !== Infinity && bytes(value) > maximum))
+    throw new TypeError(`${label} must be non-empty${maximum === Infinity ? "" : ` and at most ${maximum} bytes`}`);
   return value;
 }
 function choicesOf(value: unknown): string[] {
@@ -144,41 +144,40 @@ function primitiveOptions(
     Object.keys(options).some(
       (key) => !allowed.includes(key) && !(operation === "classify" && key === "evidenceIds"),
     ) ||
-    allowed.some((key) => !(key in options))
+    allowed.some((key) => !(key in options) && !(operation === "extract" && key === "maxItems"))
   )
     throw new TypeError("Invalid LLM primitive arguments");
   return options;
 }
 function validatePrimitiveOptions(operation: Operation, options: Record<string, unknown>): void {
-  const rubric = requiredText(options.rubric, "rubric");
+  requiredText(options.rubric, "rubric");
   if (options.evidenceIds !== undefined) validateEvidenceIds(options.evidenceIds);
   if (operation === "score") {
-    if (!Array.isArray(options.anchors) || options.anchors.length < 2 || options.anchors.length > 32)
-      throw new TypeError("anchors must contain 2 to 32 entries");
+    if (!Array.isArray(options.anchors) || options.anchors.length < 2)
+      throw new TypeError("anchors must contain at least 2 entries");
     let previous = -1;
     for (const entry of options.anchors) {
       const anchor = record(entry);
       if (
         Object.keys(anchor).sort().join(",") !== "description,measurement" ||
         typeof anchor.measurement !== "number" ||
+        !Number.isFinite(anchor.measurement) ||
         anchor.measurement < 0 ||
         anchor.measurement > 1 ||
         anchor.measurement <= previous
       )
         throw new TypeError("anchors must be strictly increasing in [0, 1]");
-      requiredText(anchor.description, "anchor description", 1024);
+      requiredText(anchor.description, "anchor description");
       previous = anchor.measurement;
     }
     if (record(options.anchors[0]).measurement !== 0 || previous !== 1)
       throw new TypeError("anchors must include 0 and 1");
   } else if (operation === "extract") {
     if (
-      typeof options.maxItems !== "number" ||
-      !Number.isInteger(options.maxItems) ||
-      options.maxItems < 1 ||
-      options.maxItems > 32
+      options.maxItems !== undefined &&
+      (typeof options.maxItems !== "number" || !Number.isSafeInteger(options.maxItems) || options.maxItems < 1)
     )
-      throw new TypeError("maxItems must be between 1 and 32");
+      throw new TypeError("maxItems must be a positive safe integer");
   } else {
     choicesOf(options.choices);
     if (operation === "batchClassify") {
@@ -188,12 +187,11 @@ function validatePrimitiveOptions(operation: Operation, options: Record<string, 
         const item = record(entry);
         if (Object.keys(item).sort().join(",") !== "id,text") throw new TypeError("batch items require id and text");
         requiredText(item.text, "item text");
-        return requiredText(item.id, "item id", 128);
+        return requiredText(item.id, "item id");
       });
       if (new Set(ids).size !== ids.length) throw new TypeError("batch item IDs must be unique");
     }
   }
-  requiredText(rubric, "rubric");
 }
 interface PreparedRequest {
   readonly request: string;
@@ -232,9 +230,13 @@ function chatRequestFor(
     criteria.anchors = options.anchors;
     parameters = schemaObject({ measurement: { type: "number", minimum: 0, maximum: 1 }, rationale: string });
   } else if (operation === "extract") {
-    criteria.maxItems = options.maxItems;
+    if (options.maxItems !== undefined) criteria.maxItems = options.maxItems;
     parameters = schemaObject({
-      items: { type: "array", items: string, maxItems: options.maxItems },
+      items: {
+        type: "array",
+        items: string,
+        ...(options.maxItems === undefined ? {} : { maxItems: options.maxItems }),
+      },
       complete: { type: "boolean" },
       rationale: string,
     });
@@ -441,15 +443,16 @@ function decodeChatOutput<K extends Operation>(
     } else {
       const cited = Schema.decodeUnknownSync(citedClassifySchema, parse)(raw);
       validateEvidenceIds(cited.citations, true);
-      if (cited.citations.some((id) => !(options.evidenceIds as readonly string[]).includes(id)))
-        throw new TypeError("Unknown evidence citation");
+      const evidenceIds = new Set(options.evidenceIds as readonly string[]);
+      if (cited.citations.some((id) => !evidenceIds.has(id))) throw new TypeError("Unknown evidence citation");
       result = cited;
     }
     if (!choicesOf(options.choices).includes(result.choice)) throw new TypeError("Unknown classification label");
     output = result;
   } else if (operation === "extract") {
     const result = Schema.decodeUnknownSync(extractSchema, parse)(raw);
-    if (result.items.length > Number(options.maxItems)) throw new TypeError("Extraction exceeds maxItems");
+    if (typeof options.maxItems === "number" && result.items.length > options.maxItems)
+      throw new TypeError("Extraction exceeds maxItems");
     output = result;
   } else {
     const result = Schema.decodeUnknownSync(batchSchema, parse)(raw);
@@ -531,7 +534,7 @@ function decodeTypesafeOutput<K extends Exclude<Operation, "extract">>(
   }) as PrimitiveResult<K>;
 }
 
-class JudgeUsageAdmissionError extends Error {}
+class JudgeUsageClosedError extends Error {}
 
 /** A managed Match contributes one ordinary measurement entry and terminal Content. */
 export function prepareManagedScoreMatch(input: {
@@ -543,10 +546,7 @@ export function prepareManagedScoreMatch(input: {
   readonly promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache | undefined;
   readonly redactEvidenceText?: RedactEvidenceText | undefined;
   readonly usage: import("../o11y/judge-usage.ts").JudgeUsageEntry | undefined;
-}): MeasurementAssertionRegistration & {
-  readonly terminalEvidence: () => readonly AssertionMaterial[];
-  readonly actualRetainedBytes: () => number;
-} {
+}): MeasurementAssertionRegistration {
   const { options, redactEvidenceText } = input;
   const redactJson = (value: string) => redactJsonEvidence(value, redactEvidenceText, canonical);
   const redactAuditText = (value: string) =>
@@ -560,12 +560,10 @@ export function prepareManagedScoreMatch(input: {
   const imageByValue = snapshot.imageByValue;
   const images = snapshot.images;
   const captured = canonical(projectJudgeMaterial(material, imageByValue).json);
-  const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }, Infinity).material;
+  const subject = captureFullAssertionSnapshot({ content: chunkUtf8(captured) }).material;
   const terminalSubject = () => {
     const redacted = redactJson(captured);
-    return redacted === captured
-      ? subject
-      : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }, Infinity).material;
+    return redacted === captured ? subject : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }).material;
   };
   const contextWindow =
     input.judge === undefined ? undefined : (input.judge.contextWindow ?? builtinContextWindow(input.judge.model));
@@ -683,7 +681,7 @@ export function prepareManagedScoreMatch(input: {
       if (latched !== undefined) return Effect.fail(typedFailure(latched));
       const reject = (problem: ScoreMatchAuditFailure): Effect.Effect<never, ScoreMatchLlmFailure> => {
         const value = latch(problem);
-        if (calls.length <= options.llm.maxCalls)
+        if (options.llm.maxCalls === undefined || calls.length <= options.llm.maxCalls)
           calls.push({
             ordinal: calls.length + 1,
             operation,
@@ -695,7 +693,7 @@ export function prepareManagedScoreMatch(input: {
       };
       if (busy)
         return reject(failure("errored", "score-match-concurrent-call", "LLM primitives must execute serially"));
-      if (calls.length >= options.llm.maxCalls)
+      if (options.llm.maxCalls !== undefined && calls.length >= options.llm.maxCalls)
         return reject(failure("unavailable", "score-match-call-budget", "LLM logical call budget exhausted"));
       if (input.judge === undefined)
         return reject(failure("unavailable", "judge-provider-unresolved", "Judge Provider is not configured"));
@@ -810,8 +808,7 @@ export function prepareManagedScoreMatch(input: {
                 requestModel: profile.model,
                 transportProvider: profile.provider,
               });
-              if (input.usage !== undefined && usage === undefined)
-                return Promise.reject(new JudgeUsageAdmissionError());
+              if (input.usage !== undefined && usage === undefined) return Promise.reject(new JudgeUsageClosedError());
               const omitCacheKey = prepared.promptCacheKey !== undefined && input.promptCache?.activeKey === undefined;
               if (omitCacheKey && bodyWithoutCacheKey === undefined) {
                 const { prompt_cache_key: _omitted, ...request } = JSON.parse(prepared.request);
@@ -875,12 +872,12 @@ export function prepareManagedScoreMatch(input: {
               update();
               return yield* Effect.fail(typedFailure(problem));
             }
-            if (error instanceof JudgeUsageAdmissionError) {
+            if (error instanceof JudgeUsageClosedError) {
               const problem = latch(
                 failure(
                   "unavailable",
-                  "judge-usage-capacity-exceeded",
-                  "Judge usage cannot retain another physical transmission",
+                  "judge-usage-closed",
+                  "Judge usage closed before the physical transmission began",
                 ),
               );
               callResult = problem;
@@ -935,7 +932,11 @@ export function prepareManagedScoreMatch(input: {
             update();
             return yield* Effect.fail(typedFailure(problem));
           }
-          if (operation === "extract" && !(output as PrimitiveResult<"extract">).complete) {
+          if (
+            operation === "extract" &&
+            prepared.options.maxItems !== undefined &&
+            !(output as PrimitiveResult<"extract">).complete
+          ) {
             const problem = latch(
               failure("unavailable", "score-match-incomplete-extraction", "Extraction did not cover the full material"),
             );
@@ -1086,8 +1087,6 @@ export function prepareManagedScoreMatch(input: {
     terminalCriterion: () => ({ kind: "managed-score-measurement", name: options.name, scale: "unit-interval" }),
     subject,
     terminalSubject,
-    retainedBytes: 0,
-    retainedImageBytes: images.reduce((sum, image) => sum + image.byteLength, 0),
     evidence: images.map((image) => ({ kind: "judge-image" as const, image: image.image })),
     evaluate,
     terminalEvidence: () => {
@@ -1095,10 +1094,9 @@ export function prepareManagedScoreMatch(input: {
       input.usage?.close();
       closed = true;
       const payload = envelopeOf(audit());
-      sealed = [captureFullAssertionSnapshot(payload, Infinity).material];
+      sealed = [captureFullAssertionSnapshot(payload).material];
       return sealed;
     },
-    actualRetainedBytes: () => 0,
     terminalDetail: () => undefined,
     terminalReceipt: () => undefined,
     coverage: { state: "complete" },
@@ -1109,12 +1107,9 @@ export function prepareManagedScoreMatch(input: {
 function validateEvidenceIds(value: unknown, empty = false): asserts value is readonly string[] {
   if (
     !Array.isArray(value) ||
-    value.length > 16384 ||
     (!empty && value.length === 0) ||
-    value.some(
-      (id) => typeof id !== "string" || id.trim() === "" || bytes(id) > 128 || /[\u0000-\u001f\u007f]/u.test(id),
-    ) ||
+    value.some((id) => typeof id !== "string" || id.trim() === "" || /[\u0000-\u001f\u007f]/u.test(id)) ||
     new Set(value).size !== value.length
   )
-    throw new TypeError("Evidence IDs must be unique bounded strings");
+    throw new TypeError("Evidence IDs must be unique non-empty strings without control characters");
 }

@@ -33,18 +33,13 @@ import {
   eventMatcherQuery,
 } from "./collection.ts";
 import { redactJsonEvidence, type RedactEvidenceText } from "../sandbox/redaction.ts";
-import {
-  captureFullAssertionSnapshot,
-  fullAssertionContentByteLength,
-  fullAssertionContentOf,
-} from "./full-content.ts";
+import { captureFullAssertionSnapshot, fullAssertionContentOf } from "./full-content.ts";
 import { prepareManagedScoreMatch } from "./score-match-gateway.ts";
 import { optionsFor, type JudgePresetOptions } from "./judge-presets.ts";
 import type { ResolvedJudgeConfig } from "./types.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
 import { matchedAssertionEvaluation, mismatchedAssertionEvaluation, unavailableAssertionEvaluation } from "./api.ts";
 
-const utf8 = new TextEncoder();
 const owners = new WeakMap<object, object>();
 /** @internal Managed collection ownership is independent of its public array shape. */
 export function ownMaterialCollection(check: object, collection: object): void {
@@ -90,7 +85,6 @@ interface PreparedBase {
   readonly source: string;
   readonly predicate: string;
   readonly captured: CapturedAssertionSnapshot;
-  readonly sourceBytes: number;
   readonly problem: CaptureProblem | undefined;
 }
 export interface PreparedMaterial extends PreparedBase {
@@ -110,14 +104,8 @@ export interface PreparedFact extends PreparedBase {
 }
 
 function identifier(value: unknown): asserts value is string {
-  if (
-    typeof value !== "string" ||
-    value.trim() === "" ||
-    value.length > 128 ||
-    utf8.encode(value).length > 128 ||
-    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
-  )
-    throw new TypeError("Material identity must be nonempty, at most 128 UTF-8 bytes and contain no controls");
+  if (typeof value !== "string" || value.trim() === "" || /[\u0000-\u001f\u007f-\u009f]/u.test(value))
+    throw new TypeError("Material identity must be nonempty and contain no controls");
 }
 function data(value: unknown, key: string, label: string): unknown {
   if (!Predicate.isObject(value)) throw new TypeError(label + " must be an object");
@@ -223,76 +211,110 @@ class CaptureCounter {
       } else this.add(code >= 0xd800 && code <= 0xdfff ? 6 : 3);
     }
   }
-  clone(value: unknown, depth = 0, ancestors = new Set<object>()): unknown {
-    if (++this.nodes > this.limits.maxNodes) this.limit("node", this.nodes);
-    if (depth > this.limits.maxDepth) this.limit("depth", depth);
-    if (value === undefined) {
-      this.add('{"$niceeval":"undefined"}'.length);
-      return undefined;
-    }
-    if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
-      this.add(JSON.stringify(value).length);
-      return value;
-    }
-    if (typeof value === "string") {
-      this.quoted(value);
-      return value;
-    }
-    if (!Predicate.isObjectOrArray(value) || ancestors.has(value))
-      throw new CaptureRejected(
-        problem("material-not-capturable", "Material requires finite ordinary data without cycles or functions"),
-      );
-    const array = Array.isArray(value);
-    const prototype = Reflect.getPrototypeOf(value);
-    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
-      throw new CaptureRejected(problem("material-not-capturable", "Material cannot contain class instances"));
-    ancestors.add(value);
-    try {
-      this.add(2);
-      if (array) {
-        const length = value.length;
-        const result: unknown[] = [];
-        // Indices are consumed in order; a sparse/accessor index is never skipped.
-        for (let index = 0; index < length; index += 1) {
-          const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
-          if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
-            throw new CaptureRejected(
-              problem("material-not-capturable", "Material arrays must be dense own data arrays"),
-            );
-          if (index > 0) this.add(1);
-          result.push(this.clone(descriptor.value, depth + 1, ancestors));
-        }
-        for (const key of Reflect.ownKeys(value)) {
-          if (
-            key !== "length" &&
-            (typeof key !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= length)
-          )
-            throw new CaptureRejected(
-              problem("material-not-capturable", "Material arrays cannot contain extra properties"),
-            );
-        }
-        return Object.freeze(result);
-      }
-      const result: Record<string, unknown> = {};
-      let index = 0;
-      for (const key of Reflect.ownKeys(value)) {
-        const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-        if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
+  clone(value: unknown, depth = 0): unknown {
+    type Assign = (captured: unknown) => void;
+    type Frame = {
+      readonly source: object;
+      readonly depth: number;
+      readonly assign: Assign;
+      index: number;
+    } & (
+      | { readonly kind: "array"; readonly length: number; readonly output: unknown[] }
+      | { readonly kind: "object"; readonly keys: readonly PropertyKey[]; readonly output: Record<string, unknown> }
+    );
+    const frames: Frame[] = [];
+    const ancestors = new Set<object>();
+    let result: unknown;
+    const append = (input: unknown, level: number, assign: Assign): void => {
+      if (++this.nodes > this.limits.maxNodes) this.limit("node", this.nodes);
+      if (level > this.limits.maxDepth) this.limit("depth", level);
+      if (input === undefined) {
+        this.add('{"$niceeval":"undefined"}'.length);
+      } else if (
+        input === null ||
+        typeof input === "boolean" ||
+        (typeof input === "number" && Number.isFinite(input))
+      ) {
+        this.add(JSON.stringify(input).length);
+      } else if (typeof input === "string") {
+        this.quoted(input);
+      } else {
+        if (!Predicate.isObjectOrArray(input) || ancestors.has(input))
           throw new CaptureRejected(
-            problem("material-not-capturable", "Material requires own enumerable string data properties"),
+            problem("material-not-capturable", "Material requires finite ordinary data without cycles or functions"),
           );
-        if (index++ > 0) this.add(1);
+        const array = Array.isArray(input);
+        const prototype = Reflect.getPrototypeOf(input);
+        if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
+          throw new CaptureRejected(problem("material-not-capturable", "Material cannot contain class instances"));
+        ancestors.add(input);
+        this.add(2);
+        frames.push(
+          array
+            ? { kind: "array", source: input, length: input.length, output: [], depth: level, assign, index: 0 }
+            : {
+                kind: "object",
+                source: input,
+                keys: Reflect.ownKeys(input),
+                output: {},
+                depth: level,
+                assign,
+                index: 0,
+              },
+        );
+        return;
+      }
+      assign(input);
+    };
+    append(value, depth, (captured) => {
+      result = captured;
+    });
+    while (frames.length > 0) {
+      const frame = frames.at(-1)!;
+      if (frame.index === (frame.kind === "array" ? frame.length : frame.keys.length)) {
+        if (
+          frame.kind === "array" &&
+          Reflect.ownKeys(frame.source).some(
+            (key) =>
+              key !== "length" &&
+              !(typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < frame.length),
+          )
+        ) {
+          throw new CaptureRejected(
+            problem("material-not-capturable", "Material arrays cannot contain extra properties"),
+          );
+        }
+        frames.pop();
+        ancestors.delete(frame.source);
+        frame.assign(Object.freeze(frame.output));
+        continue;
+      }
+      const index = frame.index++;
+      const key = frame.kind === "array" ? String(index) : frame.keys[index]!;
+      const descriptor = Reflect.getOwnPropertyDescriptor(frame.source, key);
+      if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
+        throw new CaptureRejected(
+          problem(
+            "material-not-capturable",
+            frame.kind === "array"
+              ? "Material arrays must be dense own data arrays"
+              : "Material requires own enumerable string data properties",
+          ),
+        );
+      if (index > 0) this.add(1);
+      if (frame.kind === "array") {
+        append(descriptor.value, frame.depth + 1, (captured) => {
+          frame.output.push(captured);
+        });
+      } else {
         this.quoted(key);
         this.add(1);
-        Object.defineProperty(result, key, {
-          enumerable: true,
-          value: this.clone(descriptor.value, depth + 1, ancestors),
+        append(descriptor.value, frame.depth + 1, (captured) => {
+          Object.defineProperty(frame.output, key, { enumerable: true, value: captured });
         });
       }
-      return Object.freeze(result);
-    } finally {
-      ancestors.delete(value);
     }
+    return result;
   }
 }
 
@@ -342,7 +364,6 @@ function base(
     source,
     predicate,
     captured,
-    sourceBytes: fullAssertionContentByteLength(captured.material)!,
     problem: captureProblem,
   };
 }
@@ -604,68 +625,6 @@ export function captureContextualMatch(
   return definition.kind === "material" ? prepareCollection(definition, raw, input) : prepareFact(definition, raw);
 }
 
-/** @internal A rejected retention lease produces evidence without reading application context. */
-export function captureUnavailableContextualMatch(
-  definition: ContextMatchDefinition,
-  reason: string,
-): PreparedMaterial | PreparedFact {
-  const source = definition.name;
-  const predicate = (definition.match as { readonly name: string }).name.slice(0, 1024);
-  const captureProblem = problem(
-    reason.slice(0, 128),
-    "Assertion cannot reserve material retention capacity",
-    reason.slice(0, 1024),
-  );
-  const declaredState = "unavailable";
-  if (definition.kind !== "material") {
-    const captured = sourceFrame(
-      { source, predicate, declaredState, problem: problemSnapshot(captureProblem) },
-      declaredState,
-      captureProblem,
-      0,
-      undefined,
-    );
-    return {
-      ...base(source, predicate, captured, captureProblem),
-      kind: definition.kind,
-      match: definition.match,
-      value: undefined,
-      available: false,
-    };
-  }
-  const captured = sourceFrame(
-    {
-      source,
-      predicate,
-      declaredState,
-      knownTotal: null,
-      items: [],
-      exhaustive: false,
-      problem: problemSnapshot(captureProblem),
-    },
-    declaredState,
-    captureProblem,
-    0,
-    undefined,
-  );
-  return {
-    ...base(source, predicate, captured, captureProblem),
-    kind: "material",
-    complete: false,
-    exhaustive: false,
-    knownTotal: undefined,
-    items: [],
-    selectable: false,
-    evaluate: () =>
-      Promise.resolve({
-        state: "unavailable" as const,
-        reason: captureProblem.reason,
-        diagnostic: diagnostic(captureProblem),
-        receipt: undefined,
-      }),
-  };
-}
-
 function receipt(prepared: PreparedMaterial): AssertionCollectionReceipt {
   return {
     examined: 0,
@@ -718,7 +677,6 @@ function selection(prepared: PreparedMaterial, proposition: "existence" | "qa") 
 }
 function registrationBase(prepared: PreparedBase, criterion: AssertionCriterion) {
   return {
-    retainedBytes: prepared.sourceBytes,
     subject: prepared.captured.material,
     coverage: prepared.captured.coverage,
     limitations: prepared.captured.limitations,
@@ -728,7 +686,6 @@ function registrationBase(prepared: PreparedBase, criterion: AssertionCriterion)
     terminalDetail: () => undefined,
     terminalCriterion: () => criterion,
     interruptedMatcherArtifact: undefined,
-    retainedImageBytes: 0,
   };
 }
 function redactJudgeSource(prepared: PreparedBase, redact: RedactEvidenceText | undefined): AssertionMaterial {
@@ -811,13 +768,7 @@ function assertJSON(value: unknown): void {
 }
 /** @internal Validate author inputs before any application reader runs. */
 export function validateMaterialQAInputs(question: unknown, options: JudgePresetOptions | undefined): void {
-  if (
-    typeof question !== "string" ||
-    question.trim() === "" ||
-    question.length > 8192 ||
-    utf8.encode(question).length > 8192
-  )
-    throw new TypeError("closeQA question must be nonempty and at most 8 KiB");
+  if (typeof question !== "string" || question.trim() === "") throw new TypeError("closeQA question must be nonempty");
   const declared = optionsFor("close-qa", options ?? {});
   identifier(declared.name);
   exactLlmOptions(declared.llm);
@@ -832,22 +783,18 @@ export function materialQARegistration(
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
   redactEvidenceText?: RedactEvidenceText,
-): MeasurementAssertionRegistration & {
-  readonly actualRetainedBytes: () => number;
-  readonly terminalCriterion: () => AssertionCriterion;
-} {
+): MeasurementAssertionRegistration {
   validateMaterialQAInputs(question, options);
   const selected = selection(prepared, "qa");
   const criterion = valueCriterion(`close-qa(${prepared.source}, ${prepared.predicate})`);
   let selectionProblem: CaptureProblem | undefined;
   if (!prepared.selectable || !prepared.complete || !prepared.exhaustive || prepared.items.length === 0) {
-    // A known zero-call path does not acquire a gateway or retain an audit reservation.
+    // A known zero-call path does not acquire a gateway.
     selectionProblem = prepared.problem;
     return {
       ...registrationBase(prepared, criterion),
       criterion,
       terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
-      actualRetainedBytes: () => prepared.sourceBytes,
       terminalReceipt: selected.terminal,
       terminalDetail: () =>
         selectionProblem === undefined ? { question } : { question, ...problemDetail(selectionProblem) },
@@ -959,8 +906,6 @@ export function materialQARegistration(
     criterion,
     terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
     terminalCriterion: () => gateway?.terminalCriterion?.() ?? gateway?.criterion ?? criterion,
-    retainedBytes: prepared.sourceBytes,
-    actualRetainedBytes: () => prepared.sourceBytes,
     terminalEvidence: () => gateway?.terminalEvidence() ?? [],
     terminalReceipt: selected.terminal,
     terminalDetail: () =>
@@ -1004,7 +949,7 @@ export function contextScoreRegistration(
   usage?: import("../o11y/judge-usage.ts").JudgeUsageEntry,
   promptCache?: import("../judge/prompt-cache.ts").JudgePromptCache,
   redactEvidenceText?: RedactEvidenceText,
-): MeasurementAssertionRegistration & { readonly actualRetainedBytes: () => number } {
+): MeasurementAssertionRegistration {
   if (prepared.kind !== "context-score") throw new TypeError("Context Score registration requires a ScoreMatch");
   const match = prepared.match as ScoreMatch<unknown>;
   const managed = managedScoreMatchOf(match);
@@ -1029,15 +974,12 @@ export function contextScoreRegistration(
       ...registration,
       ...registrationBase(prepared, registration.criterion),
       terminalSubject: () => redactJudgeSource(prepared, redactEvidenceText),
-      retainedBytes: prepared.sourceBytes,
-      actualRetainedBytes: () => prepared.sourceBytes,
     };
   }
   if (!prepared.available) return unavailableFactScore(prepared, prepared.problem!);
   return {
     ...registrationBase(prepared, valueCriterion(prepared.predicate)),
     criterion: valueCriterion(prepared.predicate),
-    actualRetainedBytes: () => prepared.sourceBytes,
     evaluate: () =>
       evaluateScoreMatch(match, prepared.value).pipe(
         Effect.map((value) => ({
@@ -1052,11 +994,10 @@ export function contextScoreRegistration(
 function unavailableFactScore(
   prepared: PreparedFact,
   captureProblem: CaptureProblem,
-): MeasurementAssertionRegistration & { readonly actualRetainedBytes: () => number } {
+): MeasurementAssertionRegistration {
   return {
     ...registrationBase(prepared, valueCriterion(prepared.predicate)),
     criterion: valueCriterion(prepared.predicate),
-    actualRetainedBytes: () => prepared.sourceBytes,
     terminalDetail: () => problemDetail(captureProblem),
     evaluate: () =>
       Effect.succeed({

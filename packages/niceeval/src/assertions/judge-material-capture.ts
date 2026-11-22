@@ -28,136 +28,123 @@ export interface CapturedImageReference {
   readonly sha256: string;
   readonly paths: readonly string[];
 }
-interface SnapshotState {
-  nodes: number;
-  readonly ancestors: WeakSet<object>;
-  readonly images: Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }> | undefined;
-  imageBytes: number;
-  imageReferences: number;
+interface MaterialPath {
+  readonly parent: MaterialPath | undefined;
+  readonly key: string;
 }
-function snapshotMaterial(value: unknown, state: SnapshotState, depth = 0, path = ""): unknown {
-  const conversation = conversationMaterialOf(value);
-  if (conversation !== undefined) return snapshotMaterial(conversation, state, depth, path);
-  state.nodes += 1;
-  if (state.nodes > 2_097_152) throw new TypeError("Judge material exceeds 2,097,152 traversal nodes");
-  if (depth > 72) throw new TypeError("Judge material exceeds depth 72");
-  if (isJudgeImage(value)) {
-    if (state.images === undefined) throw new TypeError("Judge image is only valid in material");
-    const image = readJudgeImage(value);
-    state.imageReferences += 1;
-    state.imageBytes += image.byteLength;
-    if (state.imageReferences > 4 || state.imageBytes > 8 * 1024 * 1024)
-      throw new TypeError("Judge material image budget exceeded");
-    const existing = state.images.get(value);
-    if (existing === undefined)
-      state.images.set(value, {
-        imageId: `image-${state.images.size}`,
-        evidenceIndex: state.images.size,
-        paths: [path],
-      });
-    else existing.paths.push(path);
-    return value;
+
+function jsonPointer(path: MaterialPath | undefined): string {
+  const segments: string[] = [];
+  for (let current = path; current !== undefined; current = current.parent) {
+    segments.push(current.key.replace(/~/gu, "~0").replace(/\//gu, "~1"));
   }
-  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new TypeError("Judge material numbers must be finite");
-    return Object.is(value, -0) ? 0 : value;
-  }
-  if (typeof value !== "object" || value === null || value instanceof Date || value instanceof RegExp)
-    throw new TypeError(`Judge material cannot contain ${typeof value}`);
-  if (state.ancestors.has(value)) throw new TypeError("Judge material cannot contain an ancestor cycle");
-  state.ancestors.add(value);
-  try {
-    if (Array.isArray(value)) {
-      let keys: readonly PropertyKey[];
-      try {
-        keys = Reflect.ownKeys(value);
-      } catch {
-        throw new TypeError("Judge material array reflection failed");
-      }
+  return segments.length === 0 ? "" : "/" + segments.reverse().join("/");
+}
+
+type Assign = (value: unknown) => void;
+type MaterialFrame = {
+  readonly source: object;
+  readonly path: MaterialPath | undefined;
+  readonly assign: Assign;
+  index: number;
+} & (
+  | { readonly kind: "array"; readonly length: number; readonly entries: unknown[] }
+  | {
+      readonly kind: "object";
+      readonly keys: readonly PropertyKey[];
+      readonly entries: Array<readonly [string, unknown]>;
+    }
+);
+
+function snapshotMaterial(
+  value: unknown,
+  handleImage?: (image: JudgeImage, path: MaterialPath | undefined) => unknown,
+): unknown {
+  const ancestors = new WeakSet<object>();
+  const frames: MaterialFrame[] = [];
+  let result: unknown;
+  const append = (input: unknown, path: MaterialPath | undefined, assign: Assign): void => {
+    const item = conversationMaterialOf(input) ?? input;
+    if (isJudgeImage(item)) {
+      if (handleImage === undefined) throw new TypeError("Judge image is only valid in material");
+      assign(handleImage(item, path));
+      return;
+    }
+    if (item === null || typeof item === "string" || typeof item === "boolean") {
+      assign(item);
+      return;
+    }
+    if (typeof item === "number") {
+      if (!Number.isFinite(item)) throw new TypeError("Judge material numbers must be finite");
+      assign(Object.is(item, -0) ? 0 : item);
+      return;
+    }
+    if (typeof item !== "object" || item === null || item instanceof Date || item instanceof RegExp)
+      throw new TypeError(`Judge material cannot contain ${typeof item}`);
+    if (ancestors.has(item)) throw new TypeError("Judge material cannot contain an ancestor cycle");
+    const keys = Reflect.ownKeys(item);
+    const frame = { source: item, index: 0, path, assign };
+    if (Array.isArray(item)) {
+      const length = item.length;
       for (const key of keys) {
-        if (
-          key === "length" ||
-          (typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < value.length)
-        )
+        if (key === "length" || (typeof key === "string" && /^(?:0|[1-9][0-9]*)$/u.test(key) && Number(key) < length))
           continue;
-        let descriptor: PropertyDescriptor | undefined;
-        try {
-          descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-        } catch {
-          throw new TypeError("Judge material array reflection failed");
-        }
-        if (descriptor?.enumerable)
+        if (Reflect.getOwnPropertyDescriptor(item, key)?.enumerable)
           throw new TypeError("Judge material arrays cannot contain extra enumerable properties or toJSON");
       }
-      const entries: unknown[] = [];
-      for (let index = 0; index < value.length; index += 1) {
-        let descriptor: PropertyDescriptor | undefined;
-        try {
-          descriptor = Reflect.getOwnPropertyDescriptor(value, String(index));
-        } catch {
-          throw new TypeError("Judge material array reflection failed");
-        }
-        if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined)
-          throw new TypeError("Judge material arrays cannot contain holes, accessors, or undefined");
-        entries.push(snapshotMaterial(descriptor.value, state, depth + 1, `${path}/${index}`));
+      frames.push({ ...frame, kind: "array", length, entries: [] });
+    } else {
+      const prototype = Reflect.getPrototypeOf(item);
+      if (prototype !== Object.prototype && prototype !== null)
+        throw new TypeError("Judge material objects must be plain or null-prototype objects");
+      frames.push({ ...frame, kind: "object", keys, entries: [] });
+    }
+    ancestors.add(item);
+  };
+
+  append(value, undefined, (captured) => {
+    result = captured;
+  });
+  while (frames.length > 0) {
+    const frame = frames.at(-1)!;
+    if (frame.index === (frame.kind === "array" ? frame.length : frame.keys.length)) {
+      frames.pop();
+      ancestors.delete(frame.source);
+      if (frame.kind === "array") frame.assign(Object.freeze(frame.entries));
+      else {
+        const captured = Object.freeze(
+          Object.fromEntries(frame.entries.sort(([left], [right]) => compareCodeUnits(left, right))),
+        );
+        copyConversationProjection(frame.source, captured);
+        frame.assign(captured);
       }
-      return Object.freeze(entries);
+      continue;
     }
-    let prototype: object | null;
-    try {
-      prototype = Reflect.getPrototypeOf(value);
-    } catch {
-      throw new TypeError("Judge material prototype reflection failed");
-    }
-    if (prototype !== Object.prototype && prototype !== null)
-      throw new TypeError("Judge material objects must be plain or null-prototype objects");
-    let keys: readonly PropertyKey[];
-    try {
-      keys = Reflect.ownKeys(value);
-    } catch {
-      throw new TypeError("Judge material key reflection failed");
-    }
-    const entries: Array<readonly [string, unknown]> = [];
-    for (const key of keys) {
-      let descriptor: PropertyDescriptor | undefined;
-      try {
-        descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-      } catch {
-        throw new TypeError("Judge material property reflection failed");
-      }
+    const index = frame.index++;
+    const key = frame.kind === "array" ? String(index) : frame.keys[index]!;
+    const descriptor = Reflect.getOwnPropertyDescriptor(frame.source, key);
+    if (frame.kind === "array") {
+      if (descriptor === undefined || !("value" in descriptor) || descriptor.value === undefined)
+        throw new TypeError("Judge material arrays cannot contain holes, accessors, or undefined");
+      append(descriptor.value, { parent: frame.path, key: String(index) }, (captured) => {
+        frame.entries.push(captured);
+      });
+    } else {
       if (descriptor === undefined || !descriptor.enumerable) continue;
       if (typeof key !== "string" || !("value" in descriptor))
         throw new TypeError("Judge material enumerable properties must be string data properties");
-      if (descriptor.value !== undefined)
-        entries.push([
-          key,
-          snapshotMaterial(
-            descriptor.value,
-            state,
-            depth + 1,
-            `${path}/${key.replace(/~/gu, "~0").replace(/\//gu, "~1")}`,
-          ),
-        ]);
+      if (descriptor.value !== undefined) {
+        append(descriptor.value, { parent: frame.path, key }, (captured) => {
+          frame.entries.push([key, captured]);
+        });
+      }
     }
-    const captured = Object.freeze(
-      Object.fromEntries(entries.sort(([left], [right]) => compareCodeUnits(left, right))),
-    );
-    copyConversationProjection(value, captured);
-    return captured;
-  } finally {
-    state.ancestors.delete(value);
   }
+  return result;
 }
 /** @internal Shared strict call-time capture for all managed Match material. */
 export function snapshotScoreMatchMaterial(value: unknown): JsonValue {
-  return snapshotMaterial(value, {
-    nodes: 0,
-    ancestors: new WeakSet(),
-    images: undefined,
-    imageBytes: 0,
-    imageReferences: 0,
-  }) as JsonValue;
+  return snapshotMaterial(value) as JsonValue;
 }
 
 export function snapshotJudgeMaterial(
@@ -168,15 +155,27 @@ export function snapshotJudgeMaterial(
   readonly images: readonly CapturedImageReference[];
   readonly imageByValue: ReadonlyMap<JudgeImage, CapturedImageReference>;
 } {
-  const state: SnapshotState = {
-    nodes: 0,
-    ancestors: new WeakSet(),
-    images: new Map(),
-    imageBytes: 0,
-    imageReferences: 0,
-  };
-  const untrimmed = snapshotMaterial(value, state) as JudgeMaterial;
-  const images = [...state.images!.entries()].map(
+  const references = new Map<JudgeImage, { imageId: string; evidenceIndex: number; paths: string[] }>();
+  let imageReferences = 0;
+  let imageBytes = 0;
+  const untrimmed = snapshotMaterial(value, (value, path) => {
+    const image = readJudgeImage(value);
+    imageReferences++;
+    imageBytes += image.byteLength;
+    if (imageReferences > 4 || imageBytes > 8 * 1024 * 1024)
+      throw new TypeError("Judge material exceeds the Judge Provider input limit of 4 image references or 8 MiB");
+    const pointer = jsonPointer(path);
+    const existing = references.get(value);
+    if (existing === undefined) {
+      references.set(value, {
+        imageId: `image-${references.size}`,
+        evidenceIndex: references.size,
+        paths: [pointer],
+      });
+    } else existing.paths.push(pointer);
+    return value;
+  }) as JudgeMaterial;
+  const images = [...references.entries()].map(
     ([image, identity]): CapturedImageReference => ({
       image,
       ...identity,
@@ -196,21 +195,14 @@ export function projectJudgeMaterial(
   images: ReadonlyMap<JudgeImage, CapturedImageReference>,
 ): { readonly json: JsonValue; readonly parts: readonly CapturedImageReference[] } {
   const parts: CapturedImageReference[] = [];
-  const visit = (item: JudgeMaterial): JsonValue => {
-    if (isJudgeImage(item)) {
-      const image = images.get(item);
-      if (image === undefined) throw new TypeError("LLM material contains an image not captured by this Assertion");
-      parts.push(image);
-      return `niceeval-image:${image.imageId}`;
-    }
-    if (Array.isArray(item)) return item.map(visit);
-    if (item !== null && typeof item === "object")
-      return Object.fromEntries(Object.entries(item).map(([key, child]) => [key, visit(child)]));
-    return item as JsonValue;
-  };
-  const json = visit(value);
+  const json = snapshotMaterial(value, (item) => {
+    const image = images.get(item);
+    if (image === undefined) throw new TypeError("LLM material contains an image not captured by this Assertion");
+    parts.push(image);
+    return `niceeval-image:${image.imageId}`;
+  }) as JsonValue;
   if (parts.length > 4 || parts.reduce((sum, image) => sum + image.byteLength, 0) > 8 * 1024 * 1024)
-    throw new TypeError("LLM step image budget exceeded");
+    throw new TypeError("LLM step exceeds the Judge Provider input limit of 4 image references or 8 MiB");
   return { json, parts };
 }
 

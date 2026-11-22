@@ -93,7 +93,7 @@ const ScoreMatchAuditSchema: Schema.Schema<ScoreMatchAudit> = Schema.Struct({
     config: Schema.String,
     digest: Schema.String,
     limits: Schema.Struct({
-      maxCalls: Schema.Number,
+      maxCalls: Schema.optionalKey(Schema.Number),
       maxMaterialBytes: Schema.optionalKey(Schema.Number),
       contextWindow: Schema.optionalKey(Schema.Number),
     }),
@@ -156,7 +156,7 @@ const TypedScoreMatchAuditSchema: Schema.Schema<TypedScoreMatchAudit> = Schema.S
     config: Schema.String,
     digest: Schema.String,
     limits: Schema.Struct({
-      maxCalls: Schema.Number,
+      maxCalls: Schema.optionalKey(Schema.Number),
       maxMaterialBytes: Schema.optionalKey(Schema.Number),
       contextWindow: Schema.optionalKey(Schema.Number),
     }),
@@ -176,7 +176,7 @@ const ImageScoreMatchAuditSchema: Schema.Schema<ImageScoreMatchAudit> = Schema.S
     config: Schema.String,
     digest: Schema.String,
     limits: Schema.Struct({
-      maxCalls: Schema.Number,
+      maxCalls: Schema.optionalKey(Schema.Number),
       maxMaterialBytes: Schema.optionalKey(Schema.Number),
       contextWindow: Schema.optionalKey(Schema.Number),
     }),

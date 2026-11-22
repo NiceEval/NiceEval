@@ -10,7 +10,6 @@ import { CurrentJudgeTiming, JudgeTimingSpan } from "../judge/timing.ts";
 import {
   validateMaterialQAInputs,
   captureContextualMatch,
-  captureUnavailableContextualMatch,
   materialExistenceRegistration,
   materialQARegistration,
   contextBooleanRegistration,
@@ -328,9 +327,6 @@ function assertDisplayText(value: unknown, owner: string): asserts value is stri
   if (/\p{Cc}/u.test(value)) {
     throw new TypeError(`${owner} must not contain control characters`);
   }
-  if (Array.from(value).length > assertionRuntimeLimits.displayCodePoints) {
-    throw new TypeError(`${owner} must be at most ${assertionRuntimeLimits.displayCodePoints} code points`);
-  }
 }
 
 function marker(value: string): AssertionSnapshotObject {
@@ -366,9 +362,18 @@ function boundedSnapshotString(
   return value.slice(0, retainedEnd);
 }
 
-function boundedSnapshotKey(key: string, index: number, existing: ReadonlySet<string>, state: SnapshotState): string {
+function snapshotKey(
+  key: string,
+  index: number,
+  existing: ReadonlySet<string>,
+  state: SnapshotState,
+  maximumBytes = Infinity,
+): string {
   const redacted = state.redactText?.(key) ?? key;
-  if (omittedBytes(redacted) <= assertionRuntimeLimits.stringBytes && (redacted === key || !existing.has(redacted)))
+  if (
+    (maximumBytes === Infinity || omittedBytes(redacted) <= maximumBytes) &&
+    (redacted === key || !existing.has(redacted))
+  )
     return redacted;
 
   markTruncated(state, omittedBytes(key));
@@ -480,7 +485,7 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
     }
     const key = keys[index];
     if (key === undefined) continue;
-    const capturedKey = boundedSnapshotKey(key, index, reservedKeys, state);
+    const capturedKey = snapshotKey(key, index, reservedKeys, state, assertionRuntimeLimits.stringBytes);
     reservedKeys.add(capturedKey);
     try {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -496,6 +501,95 @@ function boundedSnapshotValue(value: unknown, depth: number, state: SnapshotStat
     }
   }
   return Object.freeze(Object.fromEntries(entries));
+}
+
+type SnapshotFrame = {
+  readonly source: object;
+  readonly assign: (value: AssertionSnapshotValue) => void;
+  index: number;
+} & (
+  | { readonly kind: "array"; readonly length: number; readonly output: AssertionSnapshotValue[] }
+  | {
+      readonly kind: "object";
+      readonly keys: readonly string[];
+      readonly reservedKeys: Set<string>;
+      readonly output: Record<string, AssertionSnapshotValue>;
+    }
+);
+
+/** Copies complete JSON-shaped evidence without using the JavaScript call stack for container traversal. */
+function fullSnapshotValue(value: unknown, state: SnapshotState): AssertionSnapshotValue {
+  const frames: SnapshotFrame[] = [];
+  const ancestors = new WeakSet<object>();
+  let result: AssertionSnapshotValue = null;
+  const append = (input: unknown, assign: SnapshotFrame["assign"]): void => {
+    if (typeof input === "string") {
+      assign(state.redactText?.(input) ?? input);
+      return;
+    }
+    if (input === null || typeof input !== "object" || input instanceof Date) {
+      assign(boundedSnapshotValue(input, 0, state));
+      return;
+    }
+    if (ancestors.has(input)) {
+      markTruncated(state);
+      assign(marker("cyclic-or-shared-reference"));
+      return;
+    }
+    if (Array.isArray(input)) {
+      frames.push({ kind: "array", source: input, length: input.length, assign, index: 0, output: [] });
+    } else {
+      const keys = Object.keys(input);
+      frames.push({ kind: "object", source: input, keys, reservedKeys: new Set(keys), assign, index: 0, output: {} });
+    }
+    ancestors.add(input);
+  };
+  try {
+    append(value, (captured) => {
+      result = captured;
+    });
+  } catch {
+    markTruncated(state);
+    return marker("uninspectable-object");
+  }
+  while (frames.length !== 0) {
+    const frame = frames.at(-1)!;
+    if (frame.index === (frame.kind === "array" ? frame.length : frame.keys.length)) {
+      frames.pop();
+      ancestors.delete(frame.source);
+      frame.assign(Object.freeze(frame.output));
+      continue;
+    }
+    const index = frame.index++;
+    const key = frame.kind === "array" ? String(index) : frame.keys[index]!;
+    const capturedKey = frame.kind === "array" ? key : snapshotKey(key, index, frame.reservedKeys, state);
+    const assign = (captured: AssertionSnapshotValue) => {
+      if (frame.kind === "array") frame.output.push(captured);
+      else Object.defineProperty(frame.output, capturedKey, { value: captured, enumerable: true });
+    };
+    if (frame.kind === "object") frame.reservedKeys.add(capturedKey);
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(frame.source, key);
+      if (descriptor !== undefined && "value" in descriptor) {
+        append(descriptor.value, assign);
+      } else {
+        markTruncated(state);
+        assign(
+          marker(
+            frame.kind === "object"
+              ? "accessor-property"
+              : descriptor === undefined
+                ? "array-hole"
+                : "accessor-element",
+          ),
+        );
+      }
+    } catch {
+      markTruncated(state);
+      assign(marker(frame.kind === "array" ? "unreadable-element" : "unreadable-property"));
+    }
+  }
+  return result;
 }
 
 function equalityOperandPreview(value: unknown, redactText: (value: string) => string): string {
@@ -517,6 +611,7 @@ function equalityOperandPreview(value: unknown, redactText: (value: string) => s
 export function captureAssertionSnapshot(
   value: unknown,
   redactText?: (value: string) => string,
+  preview = false,
 ): CapturedAssertionSnapshot {
   const command = commandAssertionSnapshot(value);
   const state: SnapshotState = {
@@ -525,7 +620,9 @@ export function captureAssertionSnapshot(
     seen: new WeakSet<object>(),
     redactText,
   };
-  const snapshot = boundedSnapshotValue(command ?? value, 0, state);
+  const snapshot = preview
+    ? boundedSnapshotValue(command ?? value, 0, state)
+    : fullSnapshotValue(command ?? value, state);
   const material: Extract<AssertionMaterial, { readonly kind: "snapshot" }> = Object.freeze({
     kind: "snapshot",
     value: snapshot,
@@ -585,106 +682,56 @@ function redactEqualitySubject(
 }
 
 /**
- * Matcher diagnostics are runtime objects, but sealed Assertions need a
- * bounded JSON copy that keeps their tree (field children and locators) for
- * fixed query/View readers without granting those readers evaluator authority.
+ * Seal matcher diagnostics as data with their children and locators intact.
  */
 function captureMatchDiagnostic(
   value: MatchDiagnostic | undefined,
   redactOperandText: ((value: string) => string) | undefined,
-  depth = 0,
   seen = new WeakSet<object>(),
-  budget = { remainingNodes: assertionRuntimeLimits.diagnosticNodes },
 ): AssertionSnapshotObject | undefined {
   if (value === undefined) return undefined;
-  if (budget.remainingNodes <= 0) {
-    return {
-      code: "diagnostic-truncated",
-      message: "matcher diagnostic exceeded the persisted node limit",
-      path: [],
-    };
-  }
-  budget.remainingNodes -= 1;
-  if (depth >= assertionRuntimeLimits.diagnosticDepth || seen.has(value)) {
-    return {
-      code: "diagnostic-truncated",
-      message:
-        depth >= assertionRuntimeLimits.diagnosticDepth
-          ? "matcher diagnostic exceeded the persisted depth limit"
-          : "matcher diagnostic contained a cycle",
-      path: [],
-    };
+  if (seen.has(value)) {
+    return { code: "diagnostic-truncated", message: "matcher diagnostic contained a cycle", path: [] };
   }
   seen.add(value);
   try {
-    const text = (input: string): string => {
-      const state: SnapshotState = { truncated: false, omittedBytes: 0, seen: new WeakSet<object>() };
-      return boundedSnapshotString(input, state);
-    };
     const output: globalThis.Record<string, AssertionSnapshotValue> = {
-      code: text(value.code),
-      message: text(value.message),
-      path: value.path.map((segment) => (typeof segment === "string" ? text(segment) : segment)),
+      code: value.code,
+      message: value.message,
+      path: [...value.path],
     };
-    if (value.expected !== undefined) output.expected = text(value.expected);
-    if (value.received !== undefined) output.received = text(value.received);
+    if (value.expected !== undefined) output.expected = value.expected;
+    if (value.received !== undefined) output.received = value.received;
     const operands = equalityOperandsOf(value);
     if (operands !== undefined && redactOperandText !== undefined) {
       output.expected = equalityOperandPreview(operands.expected, redactOperandText);
       output.received = equalityOperandPreview(operands.received, redactOperandText);
     }
-    if (value.reason !== undefined) output.reason = text(value.reason);
+    if (value.reason !== undefined) output.reason = value.reason;
     if (value.locator !== undefined) {
       output.locator =
         value.locator.kind === "json-pointer"
-          ? { kind: "json-pointer", pointer: text(value.locator.pointer) }
-          : { kind: "tool-occurrence", id: text(value.locator.id) };
+          ? { kind: "json-pointer", pointer: value.locator.pointer }
+          : { kind: "tool-occurrence", id: value.locator.id };
     }
     if (value.truncation !== undefined) {
       output.truncation = value.truncation;
     }
     if (value.children !== undefined) {
       const children: AssertionSnapshotValue[] = [];
-      for (const child of value.children.slice(0, assertionRuntimeLimits.jsonArrayItems)) {
-        if (budget.remainingNodes <= 0) break;
+      for (const child of value.children) {
         const entry: globalThis.Record<string, AssertionSnapshotValue> = {
           index: child.index,
           state: child.state,
         };
-        if (child.label !== undefined) entry.label = text(child.label);
-        const diagnostic = captureMatchDiagnostic(child.diagnostic, redactOperandText, depth + 1, seen, budget);
+        if (child.label !== undefined) entry.label = child.label;
+        const diagnostic = captureMatchDiagnostic(child.diagnostic, redactOperandText, seen);
         if (diagnostic !== undefined) entry.diagnostic = diagnostic;
         children.push(entry);
       }
       output.children = children;
-      if (children.length < value.children.length && output.truncation === undefined) {
-        output.truncation = {
-          code: "diagnostic-truncated",
-          reason: "sampled",
-          captured: children.length,
-          knownTotal: value.children.length,
-        };
-      }
     }
-    const captured = output;
-    const serialized = JSON.stringify(captured);
-    const originalBytes = UTF8.encode(serialized).byteLength;
-    if (originalBytes <= assertionRuntimeLimits.diagnosticBytes) return captured;
-    return {
-      code: output.code,
-      message: output.message,
-      path: output.path,
-      expected: output.expected,
-      received: output.received,
-      reason: output.reason,
-      locator: output.locator,
-      truncation: {
-        code: "diagnostic-truncated",
-        reason: "byte-limit",
-        limitBytes: assertionRuntimeLimits.diagnosticBytes,
-        originalBytes,
-      },
-    };
+    return output;
   } finally {
     seen.delete(value);
   }
@@ -907,12 +954,7 @@ class AssertionsRuntimeImplementation {
   private closingReason: "attempt-sealing" | "attempt-interrupted" = "attempt-sealing";
   private sealStarted = false;
   private sealed: SealedAssertionsRuntime | undefined;
-  private retainedProducerBytes = 0;
-  private readonly retentionByEntry = new WeakMap<
-    AssertionEntry,
-    { reserved: number; actual: () => number; settled: boolean }
-  >();
-  private retainedImageBytes = 0;
+  private readonly contextualEntries = new WeakSet<AssertionEntry>();
 
   readonly evaluationKind: AssertionEvaluationKind;
   private readonly executeStop: AssertionStopExecutor;
@@ -1045,70 +1087,46 @@ class AssertionsRuntimeImplementation {
       throw new TypeError("Contextual Match requires an application-bound Assertion receiver");
     const definition = contextMatchDefinitionOf(match);
     if (qa !== undefined) exactLlmOptions(optionsFor("close-qa", qa.options ?? {}).llm);
-    const reservation = definition.capture.maxBytes + 64 * 1024;
-    const admitted = this.retainedProducerBytes + reservation <= 64 * 1024 * 1024;
-    if (admitted) this.retainedProducerBytes += reservation;
-    let reserved = admitted ? reservation : 0;
+    this.readingContext = true;
+    let prepared: ReturnType<typeof captureContextualMatch>;
     try {
-      this.readingContext = true;
-      let prepared: ReturnType<typeof captureContextualMatch>;
-      try {
-        const cut = admitted ? binding.cut() : undefined;
-        prepared = admitted
-          ? captureContextualMatch(definition, binding.read(), {
-              owner: receiver.owner,
-              cut,
-            })
-          : captureUnavailableContextualMatch(definition, "assertion-retention-budget");
-      } finally {
-        this.readingContext = false;
-      }
-      const contextualRegistration = () => {
-        if (prepared.kind === "material") {
-          if (qa !== undefined)
-            return materialQARegistration(
-              prepared,
-              qa.question,
-              qa.options,
-              this.judge,
-              this.signal,
-              this.judgeUsage?.forEntry(this.entries.length),
-              this.judgePromptCache,
-              this.redactEvidenceText,
-            );
-          return materialExistenceRegistration(prepared);
-        }
-        if (prepared.kind === "context-boolean") return contextBooleanRegistration(prepared);
-        return contextScoreRegistration(
+      const cut = binding.cut();
+      prepared = captureContextualMatch(definition, binding.read(), { owner: receiver.owner, cut });
+    } finally {
+      this.readingContext = false;
+    }
+    const entryIndex = this.entries.length;
+    const register = () => {
+      if (prepared.kind === "material") {
+        if (qa === undefined) return this.registerBoolean(materialExistenceRegistration(prepared));
+        const registration = materialQARegistration(
           prepared,
+          qa.question,
+          qa.options,
           this.judge,
           this.signal,
-          this.judgeUsage?.forEntry(this.entries.length),
+          this.judgeUsage?.forEntry(entryIndex),
           this.judgePromptCache,
           this.redactEvidenceText,
         );
-      };
-      const registration = contextualRegistration();
-      if (qa !== undefined) this.managedJudgeEntryIndexes.add(this.entries.length);
-      const actual =
-        "actualRetainedBytes" in registration && typeof registration.actualRetainedBytes === "function"
-          ? registration.actualRetainedBytes
-          : () => prepared.sourceBytes;
-      const retainedBytes = (registration.retainedBytes ?? prepared.sourceBytes) + 64 * 1024;
-      this.retainedProducerBytes -= reserved;
-      reserved = 0;
-      const entryIndex = this.entries.length;
-      const handle =
-        qa !== undefined || prepared.kind === "context-score"
-          ? this.registerMeasurement({ ...registration, retainedBytes } as MeasurementAssertionRegistration)
-          : this.registerBoolean({ ...registration, retainedBytes } as BooleanAssertionRegistration<void>);
-      const entry = this.entries[entryIndex]!;
-      this.retentionByEntry.set(entry, { reserved: retainedBytes, actual, settled: false });
-      return handle;
-    } catch (error) {
-      this.retainedProducerBytes -= reserved;
-      throw error;
-    }
+        this.managedJudgeEntryIndexes.add(entryIndex);
+        return this.registerMeasurement(registration);
+      }
+      if (prepared.kind === "context-boolean") return this.registerBoolean(contextBooleanRegistration(prepared));
+      return this.registerMeasurement(
+        contextScoreRegistration(
+          prepared,
+          this.judge,
+          this.signal,
+          this.judgeUsage?.forEntry(entryIndex),
+          this.judgePromptCache,
+          this.redactEvidenceText,
+        ),
+      );
+    };
+    const handle = register();
+    this.contextualEntries.add(this.entries[entryIndex]!);
+    return handle;
   }
 
   checkFor(receiver: object, args: readonly unknown[]): BooleanHandle | MeasurementHandle {
@@ -1225,8 +1243,6 @@ class AssertionsRuntimeImplementation {
           matcher: { state: "declared", name: managed.name },
         }),
         interruptedMatcherArtifact: undefined,
-        retainedBytes: 0,
-        retainedImageBytes: 0,
       });
       return new BooleanHandle(this, entry);
     }
@@ -1267,8 +1283,6 @@ class AssertionsRuntimeImplementation {
         matcher: { state: "declared", name: managed.name },
       }),
       interruptedMatcherArtifact: undefined,
-      retainedBytes: 0,
-      retainedImageBytes: 0,
     });
     return new MeasurementHandle(this, entry);
   }
@@ -1283,7 +1297,6 @@ class AssertionsRuntimeImplementation {
       evidence: definition.evidence.map(freezeAssertionMaterial),
       coverage: cloneCoverage(definition.coverage),
       limitations: cloneLimitations(definition.limitations),
-      retainedBytes: definition.retainedBytes,
       terminalReceipt: definition.terminalReceipt,
       terminalCriterion: definition.terminalCriterion,
       terminalEvidence: definition.terminalEvidence,
@@ -1293,7 +1306,6 @@ class AssertionsRuntimeImplementation {
           Effect.map((evaluation): EntrySettlement => this.booleanSettlement(evaluation)),
           this.captureEvaluationFailure(definition.interruptedMatcherArtifact),
         ),
-      retainedImageBytes: 0,
       terminalDetail: () => undefined,
     });
     return new BooleanHandle(this, entry);
@@ -1309,8 +1321,6 @@ class AssertionsRuntimeImplementation {
       evidence: definition.evidence.map(freezeAssertionMaterial),
       coverage: cloneCoverage(definition.coverage),
       limitations: cloneLimitations(definition.limitations),
-      retainedBytes: definition.retainedBytes,
-      retainedImageBytes: definition.retainedImageBytes,
       terminalReceipt: definition.terminalReceipt,
       terminalCriterion: definition.terminalCriterion,
       terminalDetail: definition.terminalDetail,
@@ -1394,8 +1404,6 @@ class AssertionsRuntimeImplementation {
         terminalDetail: () => undefined,
         terminalEvidence: () => [],
         evidence: [],
-        retainedBytes: 0,
-        retainedImageBytes: 0,
       });
       handle.score(decoded.weight);
       return handle;
@@ -1418,8 +1426,6 @@ class AssertionsRuntimeImplementation {
           evidence: { kind: "none" },
         }),
       interruptedMatcherArtifact: undefined,
-      retainedBytes: 0,
-      retainedImageBytes: 0,
       terminalReceipt: () => undefined,
       terminalDetail: () => undefined,
       terminalEvidence: () => [],
@@ -1431,9 +1437,6 @@ class AssertionsRuntimeImplementation {
   async withGroup<Value>(title: string, body: () => Value | PromiseLike<Value>): Promise<Awaited<Value>> {
     this.assertCanRegister();
     assertDisplayText(title, "t.group() title");
-    if (this.groupStack.length >= assertionRuntimeLimits.groupDepth) {
-      throw new Error(`Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`);
-    }
     this.groupStack.push(title);
     try {
       return (await body()) as Awaited<Value>;
@@ -1476,9 +1479,6 @@ class AssertionsRuntimeImplementation {
     assertDisplayText(title, "group() title");
     if (entry.display.groupPath.length !== this.groupStack.length) {
       throw new Error("An Assertion group is already configured");
-    }
-    if (entry.display.groupPath.length >= assertionRuntimeLimits.groupDepth) {
-      throw new Error(`Assertion group depth cannot exceed ${assertionRuntimeLimits.groupDepth}`);
     }
     entry.display.groupPath.push(title);
   }
@@ -1707,8 +1707,6 @@ class AssertionsRuntimeImplementation {
       readonly limitations: readonly AssertionLimitation[];
       readonly evaluate: () => Effect.Effect<EntrySettlement, unknown, never>;
       readonly interruptedMatcherArtifact: MatcherQueryArtifact | undefined;
-      readonly retainedBytes: number;
-      readonly retainedImageBytes: number;
       readonly terminalReceipt: () => import("./api.ts").AssertionCollectionReceipt | undefined;
       readonly terminalDetail: () => AssertionSnapshotObject | undefined;
       readonly terminalEvidence: () => readonly AssertionMaterial[];
@@ -1719,24 +1717,6 @@ class AssertionsRuntimeImplementation {
       | { readonly kind: "boolean" | "measurement" }
     ),
   ): AssertionEntry {
-    if (this.entries.length >= assertionRuntimeLimits.entries) {
-      throw new Error(`An Assertions Attachment cannot contain more than ${assertionRuntimeLimits.entries} entries`);
-    }
-    const retainedBytes = input.retainedBytes;
-    const retainedImageBytes = input.retainedImageBytes;
-    if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) {
-      throw new TypeError("Assertion retainedBytes must be a non-negative safe integer");
-    }
-    if (this.retainedProducerBytes + retainedBytes > 64 * 1024 * 1024) {
-      throw new Error("Attempt Assertion retention cannot exceed 64 MiB");
-    }
-    if (
-      !Number.isSafeInteger(retainedImageBytes) ||
-      retainedImageBytes < 0 ||
-      this.retainedImageBytes + retainedImageBytes > 32 * 1024 * 1024
-    ) {
-      throw new Error("Attempt managed image retention cannot exceed 32 MiB");
-    }
     const entry: AssertionEntry = {
       index: this.entries.length,
       kind: input.kind,
@@ -1765,8 +1745,6 @@ class AssertionsRuntimeImplementation {
       sealedEvidence: undefined,
     };
     this.entries.push(entry);
-    this.retainedProducerBytes += retainedBytes;
-    this.retainedImageBytes += retainedImageBytes;
     const capture = sourceCaptureByRuntime.get(this);
     if (capture !== undefined) {
       const capturedEntry: AssertionRuntimeSourceEntry = { occurrences: [] };
@@ -2189,7 +2167,7 @@ class AssertionsRuntimeImplementation {
   } {
     if (
       settlement.state === "unavailable" &&
-      this.retentionByEntry.has(entry) &&
+      this.contextualEntries.has(entry) &&
       entry.initialCoverage.state === "partial"
     )
       return { coverage: entry.initialCoverage, limitations: entry.initialLimitations };
@@ -2215,15 +2193,6 @@ class AssertionsRuntimeImplementation {
     if (entry.sealedEvidence !== undefined) return entry.sealedEvidence;
     const terminal = entry.terminalEvidence();
     entry.sealedEvidence = [...entry.evidence, ...terminal.map(freezeAssertionMaterial)];
-    const retention = this.retentionByEntry.get(entry);
-    if (retention !== undefined && !retention.settled) {
-      const diagnosticBytes = UTF8.encode(
-        JSON.stringify(entry.evaluation.state === "settled" ? this.resultFor(entry, entry.evaluation.value) : {}),
-      ).byteLength;
-      const actual = retention.actual() + diagnosticBytes;
-      this.retainedProducerBytes += actual - retention.reserved;
-      retention.settled = true;
-    }
     return entry.sealedEvidence;
   }
 

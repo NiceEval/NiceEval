@@ -549,7 +549,6 @@ export interface CapturedAssertionSnapshot {
 export interface AssertionRegistrationBase {
   /** @internal Seal the criterion for the actual local or managed evaluation path. */
   readonly terminalCriterion: () => AssertionCriterion;
-  readonly retainedBytes: number;
   readonly terminalReceipt: () => AssertionCollectionReceipt | undefined;
   readonly criterion: AssertionCriterion;
   readonly subject: AssertionMaterial;
@@ -574,9 +573,6 @@ export interface BooleanAssertionRegistration<Refined> extends AssertionRegistra
 export interface MeasurementAssertionRegistration extends AssertionRegistrationBase {
   /** @internal Managed material projected with the evidence policy at seal time. */
   readonly terminalSubject?: (() => AssertionMaterial) | undefined;
-  /** Bytes synchronously reserved from an Attempt-local producer budget. */
-  readonly retainedBytes: number;
-  readonly retainedImageBytes: number;
   /** Complete terminal Content appended exactly once by the shared sealing path. */
   readonly terminalEvidence: () => readonly AssertionMaterial[];
   /** Terminal producer facts frozen by the shared Assertion sealing path. */

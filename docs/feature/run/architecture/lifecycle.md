@@ -43,7 +43,7 @@ assertions factory 只装配同步方法，此时 app 访问与材料读取均�
 取消先关闭作者登记和全部 receiver，再中止受管模型，资源沿既有独立 cleanup 阶段释放。
 create 在取消后迟到返回仍承担 Adapter cleanup 义务，但不组装 Eval facade、不安装 ctx，也不重开 reader。
 Agent receiver 同样在自身 facade 就绪后开放，并在 Attempt 取消时统一关闭。
-完整材料与临时预留按 [Evidence 结算规则](../../assertions/architecture/evidence.md#材料预留与封口收据) 处理。
+断言的采集结果按 [封口收据规则](../../assertions/architecture/evidence.md#封口收据) 保存。
 
 Judge collector 在应用 create 前创建；新的已执行 Attempt 即使 create 失败也封存完整空账本。
 未执行或跳过的计划 Attempt 不虚构 collector。root、Session 与 Turn 使用同一 Attempt owner，应用用量仍保持独立。

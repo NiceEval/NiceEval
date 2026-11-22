@@ -39,7 +39,7 @@ import {
   type AgentJudgeTrace,
 } from "./agent-judge-audit.ts";
 import { canonicalScoreMatchAuditJson as canonical } from "./score-match-audit.ts";
-import { captureFullAssertionSnapshot, fullAssertionContentByteLength } from "./full-content.ts";
+import { captureFullAssertionSnapshot } from "./full-content.ts";
 import { chunkUtf8, snapshotJudgeMaterial, projectJudgeMaterial } from "./judge-material-capture.ts";
 import { interruptibleByCaller, isTransportFailure } from "./judge-transport.ts";
 import { readJudgeImage, type JudgeMaterial } from "../judge/image.ts";
@@ -76,7 +76,6 @@ export class AgentJudgeSession {
   private readonly steps: ReviewStep[] = [];
   private readonly cancelledKeys = new Set<string>();
   private readonly stepEntryIndex = new Map<string, number>();
-  private imageBytesCharged = false;
   private currentKey: string | undefined;
   private currentTurns = 0;
   private currentFailure: AgentJudgeFailure | undefined;
@@ -136,7 +135,7 @@ export class AgentJudgeSession {
     this.snapshot = snapshotJudgeMaterial(material as JudgeMaterial, judge.maxMaterialBytes);
     this.captured = canonical(projectJudgeMaterial(this.snapshot.material, this.snapshot.imageByValue).json);
     this.openingMaterial = this.captured;
-    this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }, Infinity).material;
+    this.subject = captureFullAssertionSnapshot({ content: chunkUtf8(this.captured) }).material;
     const base = {
       version: "1",
       config: canonical({
@@ -278,8 +277,6 @@ export class AgentJudgeSession {
         ? { kind: question.kind, message: question.rubric, key, anchors: question.anchors }
         : { kind: question.kind, message: question.rubric, key },
     );
-    const chargeImages = !this.imageBytesCharged;
-    this.imageBytesCharged = true;
     return {
       criterion: { kind: "agent-judge-measurement", name: `agent-judge:${kind}`, scale: "unit-interval" },
       subject: this.subject,
@@ -287,17 +284,13 @@ export class AgentJudgeSession {
         const redacted = this.redactJson(this.openingMaterial);
         return redacted === this.openingMaterial
           ? this.subject
-          : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }, Infinity).material;
+          : captureFullAssertionSnapshot({ content: chunkUtf8(redacted) }).material;
       },
       terminalCriterion: () => ({
         kind: "agent-judge-measurement",
         name: `agent-judge:${kind}`,
         scale: "unit-interval",
       }),
-      // Only opening material participates in the Attempt's material ledger.
-      // The full pi session is retained independently as chunked Content.
-      retainedBytes: fullAssertionContentByteLength(this.subject) ?? 0,
-      retainedImageBytes: chargeImages ? this.snapshot.images.reduce((sum, item) => sum + item.byteLength, 0) : 0,
       evidence: [],
       evaluate: () => this.evaluate(key),
       terminalEvidence: () => this.terminalEvidence(key),
@@ -338,8 +331,8 @@ export class AgentJudgeSession {
     this.sealedTrace ??= structuredClone(this.trace(activeEvidenceRedactor(this.redactEvidenceText)));
     const evidence: AssertionMaterial[] = [
       ...(first ? this.snapshot.images.map((image) => ({ kind: "judge-image" as const, image: image.image })) : []),
-      ...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace)), Infinity).material] : []),
-      captureFullAssertionSnapshot(this.envelope(key, this.sealedTrace, this.redactEvidenceText), Infinity).material,
+      ...(first ? [captureFullAssertionSnapshot(JSON.parse(canonical(this.sealedTrace))).material] : []),
+      captureFullAssertionSnapshot(this.envelope(key, this.sealedTrace, this.redactEvidenceText)).material,
     ];
     this.evidence.set(key, evidence);
     return evidence;
@@ -850,7 +843,7 @@ export class AgentJudgeSession {
         transportProvider: profile.provider,
       });
       if (this.usage !== undefined && call === undefined) {
-        this.fail("unavailable", "judge-usage-capacity-exceeded", "Judge usage capacity exceeded");
+        this.fail("unavailable", "judge-usage-closed", "Judge usage closed before the model call was recorded");
         return;
       }
       if (receipt?.httpStatus !== undefined) call?.headers(receipt.httpStatus);

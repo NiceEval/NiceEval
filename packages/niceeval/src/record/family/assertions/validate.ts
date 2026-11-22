@@ -1,19 +1,8 @@
 import { recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
-import { MAX_ASSERTION_DOCUMENT_BYTES } from "../../../assertions/record/codec.ts";
 import type { AssertionsAttachment } from "./schema.ts";
 
 function startsAfterEnd(site: AssertionsAttachment["sourceSites"][number]): boolean {
   return site.start.line > site.end.line || (site.start.line === site.end.line && site.start.column > site.end.column);
-}
-
-function encodedBytes(value: unknown): number | undefined {
-  try {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined) return undefined;
-    return new TextEncoder().encode(encoded).byteLength;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Named, deterministic current-fact invariants. */
@@ -43,9 +32,5 @@ export function validateAssertionsAttachment(value: AssertionsAttachment): reado
     previous = key;
   }
 
-  const size = encodedBytes(value);
-  if (size === undefined || size > MAX_ASSERTION_DOCUMENT_BYTES) {
-    issues.push(recordAttachmentIssue("record-attachment-schema-invalid", []));
-  }
   return issues;
 }

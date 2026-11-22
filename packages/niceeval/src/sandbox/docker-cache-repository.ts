@@ -102,6 +102,7 @@ const DOCKER_ACTIVE_BEFORE_CACHE_LEASE_STATES = [
   DOCKER_CACHE_STATE.expiredUnverified,
 ] as const;
 const DOCKER_CACHE_KINDS = [DOCKER_CACHE_KIND.taskBuild, DOCKER_CACHE_KIND.sandboxBeforeCache] as const;
+export const DOCKER_DELETE_LOCK_PAGE_SIZE = 128;
 const DOCKER_BEFORE_CACHE_LEASE_KINDS = [
   DOCKER_LEASE_KIND.build,
   DOCKER_LEASE_KIND.read,
@@ -358,7 +359,12 @@ export type DockerCacheRepositoryRequest =
       readonly generation: number;
       readonly state: FiniteValue<typeof DOCKER_DELETE_SETTLEMENT_STATES>;
     })
-  | (RepositoryRequestBase & { readonly operation: "task-list-delete-locks"; readonly domainId: string })
+  | (RepositoryRequestBase & {
+      readonly operation: "list-delete-locks";
+      readonly domainId: string;
+      readonly cacheKind: DockerImageGcLockRow["cacheKind"];
+      readonly afterImageId?: string;
+    })
   | (RepositoryRequestBase & {
       readonly operation: "task-recover-delete";
       readonly domainId: string;
@@ -581,13 +587,12 @@ export type DockerCacheRepositoryResult =
         } | null;
       }
     >
-  | Result<"task-list-delete-locks", { readonly locks: readonly DockerImageGcLockRow[] }>
+  | Result<"list-delete-locks", { readonly locks: readonly DockerImageGcLockRow[] }>
   | Result<
       "before-cache-startup-snapshot",
       {
         readonly entries: readonly DockerBeforeCacheEntryRow[];
         readonly leases: readonly DockerBeforeCacheLeaseRow[];
-        readonly locks: readonly DockerImageGcLockRow[];
       }
     >
   | Result<"before-cache-acquire-indexed", { readonly entry: DockerBeforeCacheEntryRow | null }>
@@ -1428,15 +1433,21 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
       });
       return result(request.operation, { changes: count });
     }
-    case "task-list-delete-locks":
+    case "list-delete-locks": {
+      const cursor = request.afterImageId;
+      // The (domain_id, image_id) primary key can seek to the next row even if
+      // the preceding page was settled or still contains live owners.
+      const parameters =
+        cursor === undefined ? [request.domainId, request.cacheKind] : [request.domainId, request.cacheKind, cursor];
       return result(request.operation, {
         locks: database
           .prepare(
-            `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.taskBuild)} ORDER BY created_at, image_id LIMIT 128`,
+            `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ?${cursor === undefined ? "" : " AND image_id > ?"} ORDER BY image_id LIMIT ${DOCKER_DELETE_LOCK_PAGE_SIZE}`,
           )
-          .all(request.domainId)
+          .all(...parameters)
           .map(gcLock),
       });
+    }
     case "task-recover-delete": {
       const count = transaction(database, () => {
         const updated = database
@@ -1474,12 +1485,6 @@ function dispatch(database: DatabaseSync, request: DockerCacheRepositoryRequest)
           )
           .all(request.domainId)
           .map(beforeCacheLease),
-        locks: database
-          .prepare(
-            `SELECT * FROM ${TABLES.locks} WHERE domain_id = ? AND cache_kind = ${sqlLiteral(DOCKER_CACHE_KIND.sandboxBeforeCache)} ORDER BY created_at, image_id LIMIT 128`,
-          )
-          .all(request.domainId)
-          .map(gcLock),
       });
     case "before-cache-prune-leases": {
       const count = transaction(database, () => {
@@ -2205,9 +2210,14 @@ export function isDockerCacheRepositoryRequest(value: unknown): value is DockerC
     case "task-prune-owners":
       return strings(value, ["domainId"]) && stringArray(value.leaseIds) && stringArray(value.rootIds);
     case "task-read-safety-revision":
-    case "task-list-delete-locks":
     case "before-cache-startup-snapshot":
       return strings(value, ["domainId"]);
+    case "list-delete-locks":
+      return (
+        strings(value, ["domainId"]) &&
+        isFiniteValue(DOCKER_CACHE_KINDS, String(value.cacheKind)) &&
+        optionalString(value.afterImageId)
+      );
     case "task-save-plan":
       return strings(value, ["domainId", "planId", "createdAt", "expiresAt", "payload", "digest"]);
     case "task-get-plan":
@@ -2418,7 +2428,7 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
           strings(value.plan, ["expiresAt", "payload", "digest"]) &&
           (value.plan.outcome === null || typeof value.plan.outcome === "string"))
       );
-    case "task-list-delete-locks":
+    case "list-delete-locks":
       return Array.isArray(value.locks) && value.locks.every(gcLockValue);
     case "before-cache-startup-snapshot":
       return (
@@ -2444,9 +2454,7 @@ export function isDockerCacheRepositoryResult(value: unknown): value is DockerCa
             Number.isSafeInteger(lease.generation) &&
             Number.isSafeInteger(lease.holderPid) &&
             Number.isSafeInteger(lease.heartbeatSequence),
-        ) &&
-        Array.isArray(value.locks) &&
-        value.locks.every(gcLockValue)
+        )
       );
     case "before-cache-acquire-indexed":
       return value.entry === null || beforeCacheEntryValue(value.entry);

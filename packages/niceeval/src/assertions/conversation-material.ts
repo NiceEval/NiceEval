@@ -79,7 +79,7 @@ export function projectConversation(
 
 /** Trim only authenticated projections; arbitrary author data and protected records stay intact. */
 export function trimConversationMaterial<T>(material: T, maximumBytes: number, encode: (value: T) => string): T {
-  if (!containsConversationMaterial(material)) return material;
+  if (maximumBytes === Infinity || !containsConversationMaterial(material)) return material;
   const candidates: {
     parent: Record<string, unknown>;
     key: string;
@@ -174,7 +174,14 @@ export function trimConversationMaterial<T>(material: T, maximumBytes: number, e
 }
 
 export function containsConversationMaterial(value: unknown): boolean {
-  if (value === null || typeof value !== "object") return false;
-  if (projections.has(value)) return true;
-  return Object.values(value).some(containsConversationMaterial);
+  const pending: unknown[] = [value];
+  const seen = new WeakSet<object>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== "object" || seen.has(current)) continue;
+    if (projections.has(current)) return true;
+    seen.add(current);
+    for (const child of Object.values(current)) pending.push(child);
+  }
+  return false;
 }

@@ -31,12 +31,12 @@ matcher diagnostic 是从完整材料派生的解释预览：它展示 8 个代�
 预览省略的候选仍在完整材料中，经 `attempt.assertion.detail` 的 full 投影逐页读取；`explanationRetention` 记录预览省略的精确数量。
 预览只影响 `explanationRetention`，不改变 criterion、materials、evaluation、decision、policy、contribution、Verdict 或 score。
 
-Assertions payload 与单个 source / evidence 值都不设字节上限。source / evidence 通过 sealed content handle 提交，Record Core 独占物理编码与分块写入；超过行内阈值的值存为 Content 分块，身份按完整内容计算。
+Assertions payload 与单个 source / evidence 值都不设字节上限。source / evidence 通过 sealed content handle 提交。payload 超过行内阈值时，Record 透明分块保存，并按完整内容计算身份。
 entry 数量与 framing 规模不使发布失败，producer 不删除 entry 或语义字段。
 
 ## Current 外层 payload
 
-writer 产出的 current payload 是 `AssertionsAttachment`。所有契约拥有的 object 都 exact decode；不在下列形状中的字段一律拒绝。`BoundedJsonValue` 是唯一允许任意 JSON key 的值域，只用于 snapshot 或 criterion 的 raw `data`，不是开放 metadata。decoder 不按深度、对象键数、数组项数或字符串长度拒绝值；超过行内阈值的 snapshot 与 criterion data 存为 Content 分块，由摘要引用。
+writer 产出的 current payload 是 `AssertionsAttachment`。所有契约拥有的 object 都 exact decode；不在下列形状中的字段一律拒绝。`BoundedJsonValue` 只用于 snapshot 或 criterion 的 raw `data`，这两处允许任意 JSON key。decoder 不按深度、对象键数、数组项数或字符串长度拒绝值。
 
 ```ts
 type BoundedJsonValue =
@@ -97,7 +97,7 @@ type AssertionEntryOuter = Omit<AssertionEntry, "criterion"> & {
 
 reader 先以 outer shape exact decode：除了 `criterion` 暂时只要求为 JSON object 外，其余 document 与 entry 字段已经完整验证。这样 reader 能先确定 entry 边界，再局部解释 criterion，而不会把未知 criterion 当成整个 payload 损坏。
 
-`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 顺序就是原始声明／展示顺序；它不从 label、数组位置、源码或材料推导。document 的 entry 数量不设上限，每个 entry 是一个 collection item；label、groupPath 的每项都是无控制字符的文本，长度与 group 深度不设上限。人读界面按固定宽度折叠过长的 label，machine 输出保留全文。
+`entryId` 精确匹配 `ae_[a-z0-9]{20}`，只在这份 Attachment 内唯一。`entries` 保持原始声明与展示顺序。条目数、label 长度和 group 深度不设上限。label 和 groupPath 各项都不能含控制字符。人读界面折叠过长的 label，machine 输出保留全文。
 
 ## Criterion envelope 与内建 criterion
 

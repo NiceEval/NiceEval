@@ -451,7 +451,6 @@ export function collectionMatchRegistration<Subject>(
           ...occurrenceCriterion(managed.scope, item.name, spec.quantifier),
           occurrence: "event",
         }),
-        retainedBytes: 0,
         terminalReceipt: () => undefined,
         evidence: [],
       };
@@ -514,7 +513,6 @@ export function collectionMatchRegistration<Subject>(
         matcher: matches.map((item) => item.name).join(", "),
         quantifier: undefined,
       }),
-      retainedBytes: 0,
       terminalReceipt: () => undefined,
       evidence: [],
     };
@@ -563,7 +561,6 @@ export function collectionMatchRegistration<Subject>(
         }),
       terminalEvidence: () => [],
       terminalCriterion: () => occurrenceCriterion(sidecar.scope, item.name, spec.quantifier),
-      retainedBytes: 0,
       terminalReceipt: () => undefined,
       evidence: [],
     };
@@ -609,7 +606,6 @@ export function collectionMatchRegistration<Subject>(
       }),
     terminalEvidence: () => [],
     terminalCriterion: () => orderCriterion(orderedSourceSnapshot.scope, toolMatches),
-    retainedBytes: 0,
     terminalReceipt: () => undefined,
     evidence: [],
   };

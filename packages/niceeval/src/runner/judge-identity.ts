@@ -19,6 +19,13 @@ export function selectsOrdinaryJudge(source: readonly (readonly [string, string]
   );
 }
 
+/** The continuation and batch algorithm applies only to Eval source that selects Faithfulness. */
+export function selectsFaithfulness(source: readonly (readonly [string, string])[]): boolean {
+  return source.some(([, content]) => /\bfaithfulness\b/u.test(content));
+}
+
+export const FAITHFULNESS_ALGORITHM_REVISION = 1;
+
 /** Text and submission schemas are the same values consumed by the gateway. */
 export function agentJudgeIdentity() {
   return {

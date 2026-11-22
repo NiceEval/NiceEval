@@ -1,5 +1,5 @@
 import {
-  defineScoreMatch,
+  defineScoreMatchWithDefaultCallBudget,
   type ManagedScoreMatchOptions,
   type ScoreMatch,
   type ScoreMatchLlmFailure,
@@ -11,6 +11,7 @@ import { InspectionSha256 } from "../inspection/bytes.ts";
 /** Built-in recipes derive their identity from actual declarations and library behavior. */
 export function defineBuiltinScoreMatch<T, E = ScoreMatchLlmFailure>(
   options: Omit<ManagedScoreMatchOptions<T, E>, "version">,
+  hasDefaultCallBudget = true,
 ): ScoreMatch<T> {
   const content = canonicalScoreMatchAuditJson({
     name: options.name,
@@ -18,5 +19,5 @@ export function defineBuiltinScoreMatch<T, E = ScoreMatchLlmFailure>(
     judge: ordinaryJudgeIdentity(),
   });
   const version = new InspectionSha256().update(new TextEncoder().encode(content)).digestHex();
-  return defineScoreMatch({ ...options, version });
+  return defineScoreMatchWithDefaultCallBudget({ ...options, version }, hasDefaultCallBudget);
 }

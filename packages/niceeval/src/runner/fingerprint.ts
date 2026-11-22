@@ -1,4 +1,10 @@
-import { agentJudgeIdentity, ordinaryJudgeIdentity, selectsOrdinaryJudge } from "./judge-identity.ts";
+import {
+  agentJudgeIdentity,
+  FAITHFULNESS_ALGORITHM_REVISION,
+  ordinaryJudgeIdentity,
+  selectsFaithfulness,
+  selectsOrdinaryJudge,
+} from "./judge-identity.ts";
 // ProjectTarget planning: current eval sources + resolved configuration become
 // immutable input identities. Reuse is decided only by Frozen Record planning.
 
@@ -264,6 +270,7 @@ function fingerprintPreparedPair(
       ...(selectsAgentJudge ? { agentJudge: { ...agentJudgeIdentity(), ...piRuntime } } : {}),
       ...(selectsSimulatedUser ? { simulatedUser: { behavior: 4, ...piRuntime } } : {}),
       ...(selectsOrdinaryJudge(normalized) ? { ordinaryJudge: ordinaryJudgeIdentity() } : {}),
+      ...(selectsFaithfulness(normalized) ? { faithfulness: { behavior: FAITHFULNESS_ALGORITHM_REVISION } } : {}),
     };
     const payload = {
       niceeval,

@@ -82,7 +82,7 @@ export type ContextualMatch =
   | MaterialMatch<never, unknown>
   | ContextBooleanMatch<never, unknown>
   | ContextScoreMatch<never, unknown>;
-/** @internal Resolved, finite capture bounds. */
+/** @internal Resolved capture budgets; infinity represents an unspecified budget. */
 export interface ResolvedMaterialCaptureBudget {
   readonly maxItems: number;
   readonly maxBytes: number;
@@ -98,8 +98,7 @@ export interface ContextMatchDefinition {
   readonly capture: ResolvedMaterialCaptureBudget;
 }
 const definitions = new WeakMap<object, ContextMatchDefinition>();
-const defaults = { maxItems: 256, maxBytes: 48 * 1024, maxNodes: 16384, maxDepth: 32 };
-const maximum = { maxItems: 16384, maxBytes: 4 * 1024 * 1024, maxNodes: 1048576, maxDepth: 64 };
+const defaults = { maxItems: Infinity, maxBytes: Infinity, maxNodes: Infinity, maxDepth: Infinity };
 function captureBudget(value: unknown, single: boolean): ResolvedMaterialCaptureBudget {
   const result = { ...defaults, ...(single ? { maxItems: 1 } : {}) };
   if (value === undefined) return result;
@@ -113,8 +112,8 @@ function captureBudget(value: unknown, single: boolean): ResolvedMaterialCapture
       throw new TypeError("Capture budget fields must be data properties");
     const count: unknown = descriptor.value;
     const field = key as keyof typeof defaults;
-    if (typeof count !== "number" || !Number.isSafeInteger(count) || count <= 0 || count > maximum[field])
-      throw new TypeError("Capture " + field + " must be a positive integer at most " + maximum[field]);
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count <= 0)
+      throw new TypeError("Capture " + field + " must be a positive safe integer");
     result[field] = count;
   }
   return result;

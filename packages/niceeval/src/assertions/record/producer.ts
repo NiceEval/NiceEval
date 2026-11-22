@@ -1,10 +1,5 @@
 import { Result, Schema, SchemaIssue } from "effect";
-import {
-  AssertionEntryIdSchema,
-  AssertionsExactParseOptions,
-  MAX_ASSERTION_DOCUMENT_BYTES,
-  isAssertionsRawDataGraph,
-} from "./codec.ts";
+import { AssertionEntryIdSchema, AssertionsExactParseOptions, isAssertionsRawDataGraph } from "./codec.ts";
 import type {
   AssertionDisplay,
   AssertionEntryId,
@@ -14,7 +9,6 @@ import type {
   AssertionEvaluation,
   AssertionDecision,
   AssertionDecisionPolicy,
-  AssertionFactValue,
   ScoreContribution,
   ExplanationRetention,
   AssertionsDocument,
@@ -52,97 +46,6 @@ export type AssertionsProducerError =
       readonly message: string;
     };
 
-const UTF8 = new TextEncoder();
-
-function encodedBytes(value: unknown): number {
-  return UTF8.encode(JSON.stringify(value)).byteLength;
-}
-
-function compactEntries<Content>(
-  entries: readonly AssertionEntry<Content>[],
-  mode: "root" | "minimal",
-): readonly AssertionEntry<Content>[] {
-  const childState = (value: AssertionFactValue): string | undefined => {
-    if (value.kind !== "fields") return undefined;
-    const state = value.fields.find((field) => field.label === "state")?.value;
-    return state?.kind === "value" && typeof state.value === "string" ? state.value : undefined;
-  };
-  const compactFact = (
-    value: AssertionFactValue,
-    decision: AssertionEntry<Content>["decision"],
-  ): AssertionFactValue => {
-    switch (value.kind) {
-      case "unavailable":
-      case "value":
-        return value;
-      case "text":
-        return value.text.length <= 512 ? value : { kind: "text", text: `${value.text.slice(0, 511)}…` };
-      case "list":
-        return {
-          kind: "list",
-          items: value.items.map((item) => compactFact(item, decision)),
-        };
-      case "fields":
-        return {
-          kind: "fields",
-          fields: value.fields.flatMap((field) => {
-            if (
-              (mode === "root" || mode === "minimal") &&
-              (field.label === "message" || field.label === "expected" || field.label === "received")
-            )
-              return [];
-            if (field.label === "children" && field.value.kind === "list") {
-              function decisiveChildState() {
-                switch (decision.result) {
-                  case "matched":
-                  case "mismatched":
-                    return "matched";
-                  case "unavailable":
-                    return "unavailable";
-                  default:
-                    return undefined;
-                }
-              }
-              const decisiveState = decisiveChildState();
-              const decisive: AssertionFactValue[] = [];
-              if (decisiveState !== undefined) {
-                for (const item of field.value.items) {
-                  if (childState(item) !== decisiveState) continue;
-                  if (decisive.length === 0) decisive.push(item);
-                  else if (decisive.length === 1) decisive.push(item);
-                  else decisive[1] = item;
-                }
-              }
-              const representative = mode === "root" ? field.value.items.slice(0, 2) : [];
-              const retained = [...new Set([...representative, ...decisive])];
-              return [
-                {
-                  label: field.label,
-                  value: {
-                    kind: "list" as const,
-                    items: retained.map((item) => compactFact(item, decision)),
-                  },
-                },
-              ];
-            }
-            return [{ label: field.label, value: compactFact(field.value, decision) }];
-          }),
-        };
-    }
-  };
-  return entries.map((entry) =>
-    entry.explanationRetention.state === "retained"
-      ? {
-          ...entry,
-          explanationRetention: {
-            state: "retained" as const,
-            value: compactFact(entry.explanationRetention.value, entry.decision),
-          },
-        }
-      : entry,
-  );
-}
-
 function invalidDocument(message: string): AssertionsProducerError {
   return { code: "assertions-document-invalid" as const, message };
 }
@@ -168,9 +71,7 @@ export interface AssertionsDocumentBuilder<Content> {
    * appends. Repeated calls return the same sealed document without running
    * an evaluator or minting another entry ID.
    */
-  readonly seal: (input?: {
-    readonly maximumBytes: number;
-  }) => Result.Result<AssertionsDocument<Content>, AssertionsProducerError>;
+  readonly seal: () => Result.Result<AssertionsDocument<Content>, AssertionsProducerError>;
 }
 
 /**
@@ -210,48 +111,14 @@ export function createAssertionsDocumentBuilder<Content, Encoded>(input: {
       entries.push({ entryId: entryId.success, ...entry });
       return Result.succeed(entryId.success);
     },
-    seal(
-      sealInput: { readonly maximumBytes: number } = { maximumBytes: MAX_ASSERTION_DOCUMENT_BYTES },
-    ): Result.Result<AssertionsDocument<Content>, AssertionsProducerError> {
-      if (sealed !== undefined) {
-        return Result.succeed(sealed);
-      }
-      const maximumBytes = sealInput.maximumBytes;
-      if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > MAX_ASSERTION_DOCUMENT_BYTES) {
-        return Result.fail(
-          invalidDocument(
-            `Assertions framing has no positive entry budget within the ${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. ` +
-              "Reduce assertion source sites or assertion count and retry.",
-          ),
-        );
-      }
-      let document: AssertionsDocument<Content> = {
-        entries,
-      };
+    seal(): Result.Result<AssertionsDocument<Content>, AssertionsProducerError> {
+      if (sealed !== undefined) return Result.succeed(sealed);
+      const document: AssertionsDocument<Content> = { entries };
       if (!isAssertionsRawDataGraph(document)) {
         return Result.fail(
           invalidDocument(
             "Assertions could not be saved because an entry contains a cyclic or non-JSON value. " +
               "Upgrade NiceEval and retry; if this persists, report assertions-document-invalid.",
-          ),
-        );
-      }
-      let documentBytes = encodedBytes(document);
-      if (documentBytes > maximumBytes) {
-        document = { entries: compactEntries(document.entries, "root") };
-        documentBytes = encodedBytes(document);
-      }
-      if (documentBytes > maximumBytes) {
-        document = { entries: compactEntries(document.entries, "minimal") };
-        documentBytes = encodedBytes(document);
-      }
-      if (documentBytes > maximumBytes) {
-        return Result.fail(
-          invalidDocument(
-            `Assertions could not be saved after diagnostic compaction because entry framing is ` +
-              `${documentBytes} bytes; ${maximumBytes} bytes remain after source sites within the ` +
-              `${MAX_ASSERTION_DOCUMENT_BYTES}-byte limit. Source and evidence material is already ` +
-              "stored as sealed content; reduce assertion count or matcher/display identity and retry.",
           ),
         );
       }

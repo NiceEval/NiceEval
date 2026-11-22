@@ -27,7 +27,7 @@ export interface FaithfulnessMaterial {
   readonly output: string;
   readonly context: string | readonly string[];
 }
-/** Supplies 1–32 nonempty instructions and the output to check against every instruction. */
+/** Supplies nonempty instructions and the output to check against every instruction. */
 export interface InstructionFollowingMaterial {
   readonly instructions: readonly string[];
   readonly output: string;
@@ -46,11 +46,13 @@ const faithfulnessMaterial = Schema.Struct({
   context: Schema.Union([text, Schema.Array(text).check(Schema.isMinLength(1))]),
 });
 const instructionMaterial = Schema.Struct({
-  instructions: Schema.Array(text).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
+  instructions: Schema.Array(text).check(Schema.isMinLength(1)),
   output: text,
 });
 const preferenceMaterial = Schema.Struct({ instructions: text, output: text, reference: text });
 const decodeOptions = { onExcessProperty: "error" as const };
+const classificationBatchSize = 32;
+const faithfulnessContinuation = "Continue the extraction. Return only claims not in the already extracted claims.";
 
 export function optionsFor(
   defaultName: string,
@@ -115,44 +117,74 @@ export function factuality(options: JudgePresetOptions = {}): ScoreMatch<Factual
 
 /** Extracts claims and computes the fraction supported by context; an empty extraction is unavailable. */
 export function faithfulness(options: JudgePresetOptions = {}): ScoreMatch<FaithfulnessMaterial> {
-  return defineBuiltinScoreMatch<FaithfulnessMaterial>({
-    ...optionsFor("faithfulness", options),
-    config: {
-      extract: FAITHFULNESS_EXTRACT,
-      classify: FAITHFULNESS_CLASSIFY,
-      maxClaims: 32,
-      scores: { supported: 1, unsupported: 0 },
-      aggregation: "supported/total",
-      empty: "unavailable",
-    },
-    score: (value, ctx) =>
-      Effect.gen(function* () {
-        const material = Schema.decodeUnknownSync(faithfulnessMaterial, decodeOptions)(value);
-        const extraction = yield* ctx.llm.extract({
-          rubric: FAITHFULNESS_EXTRACT,
-          maxItems: 32,
-          material: { input: material.input, output: material.output },
-        });
-        if (extraction.items.length === 0)
-          return { state: "unavailable" as const, reason: "no-claims", rationale: extraction.rationale };
-        const items = extraction.items.map((claim, index) => ({ id: String(index + 1), text: claim }));
-        const result = yield* ctx.llm.batchClassify({
-          rubric: FAITHFULNESS_CLASSIFY,
-          choices: ["supported", "unsupported"],
-          items,
-          material: {
+  const declared = optionsFor("faithfulness", options);
+  return defineBuiltinScoreMatch<FaithfulnessMaterial>(
+    {
+      ...declared,
+      config: {
+        extract: FAITHFULNESS_EXTRACT,
+        continuation: faithfulnessContinuation,
+        classify: FAITHFULNESS_CLASSIFY,
+        batchSize: classificationBatchSize,
+        scores: { supported: 1, unsupported: 0 },
+        aggregation: "supported/total",
+        empty: "unavailable",
+      },
+      score: (value, ctx) =>
+        Effect.gen(function* () {
+          const material = Schema.decodeUnknownSync(faithfulnessMaterial, decodeOptions)(value);
+          const claims = new Set<string>();
+          let calls = 0;
+          const maxCalls = declared.llm.maxCalls;
+          const exhausted = (unclassified: number, extractionIncomplete: boolean) => ({
+            state: "unavailable" as const,
+            reason: "score-match-call-budget",
+            rationale:
+              `Used ${calls}/${maxCalls} LLM calls with ${unclassified} unclassified claims.` +
+              (extractionIncomplete ? " Claim extraction is incomplete." : ""),
+          });
+          const input = { input: material.input, output: material.output };
+          let complete: boolean;
+          let rationale: string;
+          do {
+            if (calls === maxCalls) return exhausted(claims.size, true);
+            const extraction = yield* ctx.llm.extract({
+              rubric: calls === 0 ? FAITHFULNESS_EXTRACT : `${FAITHFULNESS_EXTRACT}\n${faithfulnessContinuation}`,
+              material: calls === 0 ? input : { ...input, alreadyExtracted: [...claims] },
+            });
+            calls++;
+            for (const claim of extraction.items) claims.add(claim);
+            complete = extraction.complete;
+            rationale = extraction.rationale;
+          } while (!complete);
+          if (claims.size === 0) return { state: "unavailable" as const, reason: "no-claims", rationale };
+
+          const items = Array.from(claims, (claim, index) => ({ id: String(index + 1), text: claim }));
+          const context = {
             input: material.input,
             context: typeof material.context === "string" ? material.context : [...material.context],
-          },
-        });
-        const supported = result.items.filter((item) => item.choice === "supported").length;
-        return {
-          state: "measured" as const,
-          measurement: supported / items.length,
-          rationale: `${supported}/${items.length} extracted claims are supported by the supplied context.`,
-        };
-      }),
-  });
+          };
+          let supported = 0;
+          for (let start = 0; start < items.length; start += classificationBatchSize) {
+            if (calls === maxCalls) return exhausted(items.length - start, false);
+            const result = yield* ctx.llm.batchClassify({
+              rubric: FAITHFULNESS_CLASSIFY,
+              choices: ["supported", "unsupported"],
+              items: items.slice(start, start + classificationBatchSize),
+              material: context,
+            });
+            calls++;
+            supported += result.items.filter((item) => item.choice === "supported").length;
+          }
+          return {
+            state: "measured" as const,
+            measurement: supported / items.length,
+            rationale: `${supported}/${items.length} extracted claims are supported by the supplied context.`,
+          };
+        }),
+    },
+    false,
+  );
 }
 
 /** Computes the fraction of the author's explicit instructions fulfilled by the output. */
@@ -163,19 +195,22 @@ export function instructionFollowing(options: JudgePresetOptions = {}): ScoreMat
       rubric: INSTRUCTION_RUBRIC,
       scores: { followed: 1, "not-followed": 0 },
       aggregation: "followed/total",
-      maxInstructions: 32,
+      batchSize: classificationBatchSize,
     },
     score: (value, ctx) =>
       Effect.gen(function* () {
         const material = Schema.decodeUnknownSync(instructionMaterial, decodeOptions)(value);
         const items = material.instructions.map((instruction, index) => ({ id: String(index + 1), text: instruction }));
-        const result = yield* ctx.llm.batchClassify({
-          rubric: INSTRUCTION_RUBRIC,
-          choices: ["followed", "not-followed"],
-          items,
-          material: { output: material.output },
-        });
-        const followed = result.items.filter((item) => item.choice === "followed").length;
+        let followed = 0;
+        for (let start = 0; start < items.length; start += classificationBatchSize) {
+          const result = yield* ctx.llm.batchClassify({
+            rubric: INSTRUCTION_RUBRIC,
+            choices: ["followed", "not-followed"],
+            items: items.slice(start, start + classificationBatchSize),
+            material: { output: material.output },
+          });
+          followed += result.items.filter((item) => item.choice === "followed").length;
+        }
         return {
           state: "measured" as const,
           measurement: followed / items.length,

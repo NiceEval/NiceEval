@@ -304,7 +304,6 @@ interface AgentHistoryFrame {
   cut: MatcherSourceSnapshot | undefined;
   read: (cut: MatcherSourceSnapshot) => MaterialCollection<Readonly<Record<string, unknown>>>;
 }
-const agentQACapture = { maxItems: 16384, maxBytes: 4 * 1024 * 1024, maxNodes: 1048576, maxDepth: 64 };
 function agentJudgePresetMethods<Kind extends RuntimeKind, S extends AssertionScope>(
   check: import("../assertions/api.ts").AssertionCheck<Kind, AgentMatchContext<S>>,
   frame: AgentHistoryFrame,
@@ -319,7 +318,6 @@ function agentJudgePresetMethods<Kind extends RuntimeKind, S extends AssertionSc
       name: "all-history-items",
       evaluate: (_value: Readonly<Record<string, unknown>>) => true,
     }),
-    capture: agentQACapture,
   });
   const closeQA = (first: unknown, second?: unknown, third?: JudgePresetOptions, ...extra: readonly unknown[]) => {
     if (extra.length > 0)
@@ -341,14 +339,12 @@ function agentJudgePresetMethods<Kind extends RuntimeKind, S extends AssertionSc
             name: "agent-tool-history",
             read: (ctx) => ctx.toolCalls as ManagedToolCalls<S>,
             match: first,
-            capture: agentQACapture,
           }) as ContextualMatch;
         if (isManagedEventMatch(first))
           return defineMaterialMatch<AgentMatchContext<S>>({
             name: "agent-event-history",
             read: (ctx) => ctx.eventOccurrences as ManagedEventOccurrences<S>,
             match: first,
-            capture: agentQACapture,
           }) as ContextualMatch;
         return first as ContextualMatch;
       }
@@ -635,7 +631,6 @@ function succeededHandle<Kind extends RuntimeKind>(input: {
     terminalCriterion: () => scopeCriterion(input.scope),
     terminalEvidence: () => [],
     terminalReceipt: () => undefined,
-    retainedBytes: 0,
     evidence: [],
     interruptedMatcherArtifact: undefined,
   });
@@ -893,7 +888,6 @@ function scopedBooleanHandle<Kind extends RuntimeKind>(input: {
     terminalCriterion: () => input.criterion,
     terminalReceipt: () => undefined,
     evidence: [],
-    retainedBytes: 0,
   });
 }
 
@@ -1355,7 +1349,6 @@ function createAssertFirstSandbox<Kind extends RuntimeKind>(input: {
         evidence: [],
         coverage: { state: "complete" },
         limitations: [],
-        retainedBytes: 0,
         evaluate,
         interruptedMatcherArtifact: undefined,
       }),
@@ -1973,7 +1966,6 @@ function usageBudgetMethods<Kind extends RuntimeKind>(runtime: AssertionsRuntime
       }),
       terminalReceipt: () => undefined,
       terminalEvidence: () => [],
-      retainedBytes: 0,
       evidence: [],
       interruptedMatcherArtifact: undefined,
     });

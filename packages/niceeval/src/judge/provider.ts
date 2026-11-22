@@ -88,14 +88,15 @@ function exactOptions(value: unknown, label: string, allowed: readonly string[])
   return captured;
 }
 
-function boundedText(value: unknown, label: string, maximumBytes: number): string {
+function boundedText(value: unknown, label: string, maximumBytes = Infinity): string {
   if (
     typeof value !== "string" ||
     value.trim() === "" ||
-    utf8.encode(value).byteLength > maximumBytes ||
+    (maximumBytes !== Infinity && utf8.encode(value).byteLength > maximumBytes) ||
     /\p{Cc}/u.test(value)
   ) {
-    throw new TypeError(`${label} must be non-empty, control-free, and at most ${maximumBytes} UTF-8 bytes`);
+    const bounds = maximumBytes === Infinity ? "" : ` and at most ${maximumBytes} UTF-8 bytes`;
+    throw new TypeError(`${label} must be non-empty and control-free${bounds}`);
   }
   return value;
 }
@@ -203,7 +204,7 @@ function createProvider(
       : ["model", "baseUrl", "apiKey", "apiKeyEnv", "timeoutMs", "maxResponseBytes", "maxConcurrency", "headers"];
   const input = exactOptions(raw, label, allowed);
   const maxConcurrency = positiveInteger(input.maxConcurrency, 4, `${label}.maxConcurrency`, 32);
-  const model = boundedText(input.model, `${label}.model`, 8 * 1024);
+  const model = boundedText(input.model, `${label}.model`);
   const baseUrl = normalizedBaseUrl(input.baseUrl, defaults[provider].baseUrl, `${label}.baseUrl`);
   const timeoutMs = positiveInteger(input.timeoutMs, 180_000, `${label}.timeoutMs`, Number.MAX_SAFE_INTEGER);
   const maxResponseBytes = positiveInteger(input.maxResponseBytes, 16_384, `${label}.maxResponseBytes`, 256 * 1024);
@@ -310,7 +311,7 @@ export function resolveJudgeProvider(provider: JudgeProvider, model?: string): J
   if (data === undefined) throw new TypeError("Judge Provider must be created by niceeval/judge");
   const resolved = freezeIdentity({
     ...data.identity,
-    ...(model === undefined ? {} : { model: boundedText(model, "Judge model override", 8 * 1024) }),
+    ...(model === undefined ? {} : { model: boundedText(model, "Judge model override") }),
   });
   resolvedPrivate.set(resolved, data);
   return resolved;

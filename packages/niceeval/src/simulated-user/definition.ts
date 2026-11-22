@@ -15,9 +15,7 @@ export interface SimulatedUser<Kind extends "pass" | "score" = "pass" | "score">
 }
 
 const Definition = Schema.Struct({
-  instructions: Schema.String.check(
-    Schema.makeFilter((value) => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 8192),
-  ),
+  instructions: Schema.String.check(Schema.isPattern(/\S/u)),
   timeoutMs: Schema.optional(
     Schema.Number.check(Schema.makeFilter((value) => Number.isSafeInteger(value) && value > 0)),
   ),

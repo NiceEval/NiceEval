@@ -28,7 +28,7 @@ import {
   type DockerBeforeCacheManifestFields,
   type DockerBeforeCacheHoldRow,
 } from "./docker-cache-repository.ts";
-import { dockerCacheRepository } from "./docker-cache-repository-live.ts";
+import { dockerCacheRepository, iterateDockerDeleteLocks } from "./docker-cache-repository-live.ts";
 
 const CACHE_KIND = "sandbox-before-cache";
 const MINIMUM_AGE_MS = 24 * 60 * 60 * 1000;
@@ -283,17 +283,14 @@ async function reconcileBeforeCacheDomainAtStartup(domain: DockerCacheDomainHand
     operation: "before-cache-startup-snapshot",
     domainId: domain.domainId,
   });
-  for (const lock of snapshot.locks) {
+  const deletingEntries = new Map(
+    snapshot.entries.filter((entry) => entry.state === "deleting").map((entry) => [entry.entryId, entry]),
+  );
+  for await (const lock of iterateDockerDeleteLocks(domain.domainId, CACHE_KIND)) {
     if (processIdentityIsLive(lock.holderPid, lock.holderBootId, lock.holderProcessStart)) continue;
-    const entry = snapshot.entries.find(
-      (candidate) =>
-        candidate.entryId === lock.entryId &&
-        candidate.generation === lock.entryGeneration &&
-        candidate.imageId === lock.imageId &&
-        candidate.state === "deleting",
-    );
+    const entry = deletingEntries.get(lock.entryId);
     let state: "indexed" | "tombstoned" | "unverified" = "unverified";
-    if (entry !== undefined) {
+    if (entry?.generation === lock.entryGeneration && entry.imageId === lock.imageId) {
       try {
         state = (await inspectExactImageOrAbsent(lock.imageId, signal)) === undefined ? "tombstoned" : "indexed";
       } catch {
