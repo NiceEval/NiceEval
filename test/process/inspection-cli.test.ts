@@ -78,7 +78,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
                   const receipt = await ctx.attach({
                     name: "journal.ndjson",
                     mediaType: "application/x-ndjson",
-                    body: { stream: (signal) => createReadStream(projectFile("journal.ndjson"), { signal, highWaterMark: 64 * 1024 }) },
+                    body: { stream: (signal) => createReadStream(projectFile("journal.ndjson"), { signal, highWaterMark: 1024 * 1024 }) },
                   });
                   peak = Math.max(peak, process.memoryUsage().rss);
                   await writeFile(projectFile("journal.ndjson"), "rewritten");

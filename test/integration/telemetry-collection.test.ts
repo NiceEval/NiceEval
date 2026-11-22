@@ -123,10 +123,10 @@ async function observeCollection(paddingMiB: number, readsBeforeTimeout: number,
     await symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "dir");
     const clock = await Effect.runPromise(Clock.clockWith(Effect.succeed));
     const budgetClock: typeof clock = Object.create(clock);
-    let collectionBudgetStarted = false;
     budgetClock.sleep = (duration) => {
-      if (collectionBudgetStarted || Duration.toMillis(duration) !== 30_000) return clock.sleep(duration);
-      collectionBudgetStarted = true;
+      if (readsBeforeTimeout !== 1 || Duration.toMillis(duration) !== 30_000) return clock.sleep(duration);
+      // Other scoped work can register a deadline of the same duration before collection.
+      // Advance the budget only once the provider has attempted the stalled read.
       return Effect.promise(() => stalledRead.promise);
     };
     const locator = await runSingleAttempt(project.cwd, "trace", budgetClock);

@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { withOperational } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 import {
   Effect,
   HOST_SANDBOX_SOURCE,
@@ -17,12 +19,17 @@ import {
   readAssertionDetail,
   readAssertionsList,
   readFullAssertionEntry,
-  readPaginatedImage,
   readPaginatedTrace,
+  runHost,
   showJsonDocuments,
   startHttpServer,
   validPngBytes,
 } from "./fixtures/judge-harness/harness.ts";
+
+const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
+const { externalInspectionSource, openInspectionSource, selectInspectionOperation } =
+  require("./src/inspection/index.ts") as typeof import("../../packages/niceeval/src/inspection/index.ts");
+type AssertionDetail = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"attempt.assertion.detail">;
 
 describe("Judge score reconciliation, presets, headers, and image relocation", () => {
   let server: Awaited<ReturnType<typeof startHttpServer>>;
@@ -36,9 +43,10 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
 
   let presetCwd: string;
   let presetLocator: string;
+  let typesafeLocator: string;
   let imageCwd: string;
   let imageLocator: string;
-  let imageEntryId: string;
+  let imageEntryId: AssertionDetail["entryId"];
   let imageWireBody: string;
   let originalPng: Uint8Array;
 
@@ -204,7 +212,9 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
     });
     projects.push(presetCwd);
 
-    const chatRes = await planAndRunExperiment(presetCwd, "chat-override", {
+    const plannedPresets = await Effect.runPromise(experimentHost.invocation.plan({
+      cwd: presetCwd,
+      experimentIds: ["chat-override", "typesafe"],
       config: {
         judgeProvider: OpenAIProvider({
           model: "base-model",
@@ -214,11 +224,18 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
           maxOutputTokens: 256,
         }),
       },
-      rerun: "all",
-    });
-    const chatSlot = chatRes.run?.slots[0];
-    if (chatSlot?.publication.state !== "published") throw new Error("Missing chat-override slot");
-    presetLocator = chatSlot.publication.attemptLocator;
+      overrides: { rerun: "all", earlyExit: false },
+    }));
+    if (plannedPresets.status !== "ready") throw new Error("Expected presets and TypeSafe Experiments");
+    const { receipt } = await Effect.runPromise(experimentHost.invocation.run({ plan: plannedPresets.plan }));
+    const locators = new Map(await Promise.all(receipt.createdRunIds.map(async (runId) => {
+      const { run } = await Effect.runPromise(runHost.get({ cwd: presetCwd, runId }));
+      const publication = run.slots[0]?.publication;
+      if (publication?.state !== "published") throw new Error(`Missing ${run.experimentId} slot`);
+      return [run.experimentId, publication.attemptLocator] as const;
+    })));
+    presetLocator = locators.get("chat-override")!;
+    typesafeLocator = locators.get("typesafe")!;
 
     // 2. Image material & Record relocation (>512 KiB PNG so detail stays bounded)
     originalPng = validPngBytes(520 * 1024);
@@ -287,10 +304,12 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
     imageLocator = imgSlot.publication.attemptLocator;
     imageWireBody = capturedRequests[reqBefore]!.body;
 
-    const [imgAttemptDoc] = await showJsonDocuments(imageCwd, [imageLocator]);
-    const imgAttempt = narrowInspectionSuccess(imgAttemptDoc!, "attempt.get");
-    if (!imgAttempt.success) throw new Error(imgAttempt.reason);
-    imageEntryId = imgAttempt.value.attempt.assertions.entries[0]!.entryId;
+    imageEntryId = await withOperational(imageCwd, (facts) => {
+      const { assertions } = selectInspectionOperation(facts, { kind: "attempt.assertions", locator: imageLocator });
+      const entry = assertions[0];
+      if (entry === undefined || !("entry" in entry)) throw new Error("Expected image assertion");
+      return entry.entryId;
+    });
   }, 30_000);
 
   afterAll(async () => {
@@ -333,22 +352,22 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
 
   // @feature docs/feature/judge/README.md#score-audit
   test("TypeSafe weighted anchor probabilities preserve non-equidistant scores", async () => {
-    const tsRes = await planAndRunExperiment(presetCwd, "typesafe");
-    const tsSlot = tsRes.run?.slots[0];
-    if (tsSlot?.publication.state !== "published") throw new Error("Missing typesafe slot");
-    const entries = await readAssertionsList(presetCwd, tsSlot.publication.attemptLocator);
-    const entry = entries[0]!;
-    if (!("entry" in entry)) throw new Error("Expected compact assertion entry");
-    // 0.25 * 0 + 0 * 0.2 + 0.75 * 1 = 0.75 => 0.75 * 10 = 7.5
-    expect(entry.entry.contribution).toEqual({ state: "earned", points: 10, earned: 7.5 });
-    const { detail, entry: fullEntry } = await readFullAssertionEntry(presetCwd, tsSlot.publication.attemptLocator, entry.entryId);
-    if (fullEntry.scoreMatchAudit?.state === "available") {
-      expect(fullEntry.scoreMatchAudit.audit.kind).toBe("typed");
-    } else {
-      throw new Error("Expected typed audit");
-    }
-    expect(JSON.stringify(detail)).toContain("TypeSafe result summary (generated by NiceEval):");
-    expect(JSON.stringify(detail)).not.toContain("ts-secret");
+    const locator = typesafeLocator;
+    await withOperational(presetCwd, (facts) => {
+      const { assertions } = selectInspectionOperation(facts, { kind: "attempt.assertions", locator });
+      const entry = assertions[0];
+      if (entry === undefined || !("entry" in entry)) throw new Error("Expected compact assertion entry");
+      // 0.25 * 0 + 0 * 0.2 + 0.75 * 1 = 0.75 => 0.75 * 10 = 7.5
+      expect(entry.entry.contribution).toEqual({ state: "earned", points: 10, earned: 7.5 });
+      const detail = selectInspectionOperation(facts, { kind: "attempt.assertion.detail", locator, entryId: entry.entryId });
+      const full = detail.assertion;
+      if (!("entry" in full) || !("scoreMatchAudit" in full.entry) || full.entry.scoreMatchAudit?.state !== "available") {
+        throw new Error("Expected typed audit");
+      }
+      expect(full.entry.scoreMatchAudit.audit.kind).toBe("typed");
+      expect(JSON.stringify(detail)).toContain("TypeSafe result summary (generated by NiceEval):");
+      expect(JSON.stringify(detail)).not.toContain("ts-secret");
+    });
   });
 
   // @feature docs/feature/judge/README.md#score-audit
@@ -369,28 +388,44 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
       await rm(join(imageCwd, "screenshot.png"));
       await rm(join(imageCwd, ".niceeval"), { recursive: true, force: true });
 
-      const { detail, entry: fullEntry } = await readFullAssertionEntry(relocatedDir, imageLocator, imageEntryId, portable);
-      expect(Buffer.byteLength(JSON.stringify(detail))).toBeLessThan(512 * 1024);
-      const audit = fullEntry.scoreMatchAudit;
-      if (audit?.state !== "available" || audit.audit.kind !== "images") throw new Error("Expected images audit");
-      expect(audit.audit.result).toEqual({ state: "measured", value: 0.75 });
-      expect(audit.audit.calls[0]).toMatchObject({
-        state: "admitted",
-        wireBody: {
-          byteLength: Buffer.byteLength(imageWireBody),
-          sha256: createHash("sha256").update(imageWireBody).digest("hex"),
-        },
-      });
-      const imgMeta = audit.audit.images[0]!;
-      await fc.assert(
-        fc.asyncProperty(fc.constant(imgMeta.imageId), async (imgId) => {
-          const recovered = await readPaginatedImage(relocatedDir, imageLocator, imageEntryId, imgId, portable);
-          expect(imgMeta.mediaType).toBe("image/png");
-          expect(imgMeta.byteLength).toBe(originalPng.byteLength);
-          expect(imgMeta.sha256).toBe(createHash("sha256").update(originalPng).digest("hex"));
-          expect(recovered.bytes).toEqual(Buffer.from(originalPng));
-        }),
-        { numRuns: 1 },
+      await Effect.runPromise(
+        Effect.scoped(openInspectionSource(externalInspectionSource(relocatedDir, portable)).pipe(Effect.map((facts) => {
+          const target = { locator: imageLocator, entryId: imageEntryId };
+          const detail = selectInspectionOperation(facts, { kind: "attempt.assertion.detail", ...target });
+          expect(Buffer.byteLength(JSON.stringify(detail))).toBeLessThan(512 * 1024);
+          const full = detail.assertion;
+          const audit = "entry" in full && "scoreMatchAudit" in full.entry ? full.entry.scoreMatchAudit : undefined;
+          if (audit?.state !== "available" || audit.audit.kind !== "images") throw new Error("Expected images audit");
+          expect(audit.audit.result).toEqual({ state: "measured", value: 0.75 });
+          expect(audit.audit.calls[0]).toMatchObject({
+            state: "admitted",
+            wireBody: {
+              byteLength: Buffer.byteLength(imageWireBody),
+              sha256: createHash("sha256").update(imageWireBody).digest("hex"),
+            },
+          });
+          const imgMeta = audit.audit.images[0]!;
+          fc.assert(
+            fc.property(fc.constant(imgMeta.imageId), (imageId) => {
+              expect(imgMeta.mediaType).toBe("image/png");
+              expect(imgMeta.byteLength).toBe(originalPng.byteLength);
+              expect(imgMeta.sha256).toBe(createHash("sha256").update(originalPng).digest("hex"));
+              const chunks: Buffer[] = [];
+              const readImage = (offset: number) =>
+                selectInspectionOperation(facts, { kind: "attempt.assertion.image", ...target, imageId, offset }).image;
+              let offset: number | null = 0;
+              while (offset !== null) {
+                const image = readImage(offset);
+                if (image.state !== "available") throw new Error("Expected recorded image");
+                if (image.nextOffset !== null) expect(image.nextOffset).toBeGreaterThan(offset);
+                chunks.push(Buffer.from(image.base64, "base64"));
+                offset = image.nextOffset;
+              }
+              expect(Buffer.concat(chunks)).toEqual(Buffer.from(originalPng));
+            }),
+            { numRuns: 1 },
+          );
+        }))),
       );
     } finally {
       await rm(relocatedDir, { recursive: true, force: true });

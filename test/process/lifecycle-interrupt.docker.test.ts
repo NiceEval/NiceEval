@@ -10,6 +10,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 const NODE_IMAGE = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
 
+beforeAll(async () => {
+  // Both properties use the same immutable base. Populate the runner cache once.
+  const local = await execa("docker", ["image", "inspect", NODE_IMAGE], { reject: false });
+  if (local.exitCode !== 0) await execa("docker", ["pull", NODE_IMAGE]);
+}, 120_000);
+
 const agent = (name: string, body: string) => `
 import { writeFile } from "node:fs/promises";
 import { completeEvidenceCoverage, defineSandboxAgent } from "niceeval/adapter";
