@@ -1,16 +1,11 @@
 import { rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import fc from "fast-check";
 import { expect, test } from "vitest";
+import { Effect } from "effect";
+import { defineDataset, defineScoreDataset } from "niceeval";
+import { experimentHost } from "niceeval/experiment/host";
 import { createRecordProject } from "./fixtures/record-harness/project.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { defineDataset, defineScoreDataset } =
-  require("niceeval") as typeof import("../../packages/niceeval/src/index.ts");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 const ids = fc.uniqueArray(fc.nat(999), { minLength: 1, maxLength: 5 });
 

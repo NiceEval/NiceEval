@@ -1,9 +1,6 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { defineSimulatedUser } = require("niceeval") as typeof import("../../packages/niceeval/src/index.ts");
+import { defineSimulatedUser } from "niceeval";
 
 const validInstructions = fc.oneof(
   fc.string({ minLength: 1, maxLength: 64 }).filter((value) => value.trim().length > 0),

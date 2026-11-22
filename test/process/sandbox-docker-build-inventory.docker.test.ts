@@ -1,17 +1,14 @@
 // 跨进程保证：进程终止与信号——Docker 库存能区分真实存活的镜像租约持有者与崩溃后残留的租约
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, watch, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { decodeDockerCacheInventoryDocument, decodeDockerCacheGcPreviewDocument } from "niceeval/sandbox";
 
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { decodeDockerCacheInventoryDocument, decodeDockerCacheGcPreviewDocument } =
-  require("niceeval/sandbox") as typeof import("../../packages/niceeval/src/sandbox/index.ts");
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 const image = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";
 const [marker] = fc.sample(fc.nat(), { seed: 260_604, numRuns: 1 });

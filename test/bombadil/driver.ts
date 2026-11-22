@@ -1,6 +1,6 @@
 import { execa } from "execa";
+import { decodeViewLifecycle } from "niceeval/view";
 import { statSync } from "node:fs";
-import { createRequire } from "node:module";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
@@ -228,9 +228,6 @@ async function browser(cwd: string, args: readonly string[]) {
     reject: false,
     forceKillAfterDelay: 2_000,
   });
-  const require = createRequire(cli);
-  const { decodeViewLifecycle } =
-    require("niceeval/view") as typeof import("../../packages/niceeval/src/view/index.ts");
   const lines = createInterface({ input: view.stdout });
   const mode = args[0]!;
   const bombadilArgs = args.slice(1);

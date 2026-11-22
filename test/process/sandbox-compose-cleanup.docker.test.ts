@@ -1,17 +1,13 @@
 // 跨进程保证：进程终止与信号——SIGINT 后真实 CLI 退出前结算 Compose 实例、网络和卷
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, watch, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { decodeExpTerminalEvent } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
+import { decodeExpTerminalEvent } from "niceeval/experiment/host";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 const image = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f";

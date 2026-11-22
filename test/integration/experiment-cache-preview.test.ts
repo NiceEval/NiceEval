@@ -1,12 +1,8 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
 import { createFixtureProject } from "./fixtures/adapter-trace-usage-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 // @feature docs/feature/experiments/README.md#readonly-cache-preview
 test("debug reports each declared before prefix once with its selected Eval consumers", async () => {

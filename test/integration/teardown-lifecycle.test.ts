@@ -1,19 +1,13 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Clock, Effect, Exit, Scope } =
-  require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { TestClock } =
-  require("effect/testing") as typeof import("../../packages/niceeval/node_modules/effect/dist/testing/index.js");
+import { Clock, Effect, Exit, Scope } from "effect";
+import { TestClock } from "effect/testing";
+import { experimentHost } from "niceeval/experiment/host";
 
 const FIXTURE = fileURLToPath(new URL("fixtures/teardown-lifecycle/", import.meta.url));
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1);

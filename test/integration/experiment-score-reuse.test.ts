@@ -1,6 +1,7 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
 import {
   createFixtureProject,
   runSingleAttempt,
@@ -8,11 +9,6 @@ import {
   withOperational,
   type FixtureProject,
 } from "./fixtures/adapter-trace-usage-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 const awardedPoints = fc.sample(fc.nat(100), { seed: 20261121, numRuns: 1 })[0]!;
 let project: FixtureProject;

@@ -1,14 +1,10 @@
 import { appendFile, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
 import { createRecordProject } from "./fixtures/record-harness/project.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 async function plan(cwd: string, preview: boolean) {
   const result = await Effect.runPromise(

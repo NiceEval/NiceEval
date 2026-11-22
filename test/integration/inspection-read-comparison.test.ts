@@ -1,28 +1,23 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { judgeUsageChatResponse, startJudgeUsageEmulator } from "./fixtures/inspection-core/judge-http.ts";
-import { startModelEmulator } from "./fixtures/model-emulator.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const {
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
+import {
   externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
-} = require("./src/inspection/index.ts") as typeof import("../../packages/niceeval/src/inspection/index.ts");
-const { openCurrentProjectSource } =
-  require("./src/inspection/project-source.ts") as typeof import("../../packages/niceeval/src/inspection/project-source.ts");
+} from "../../packages/niceeval/src/inspection/index.ts";
+import { openCurrentProjectSource } from "../../packages/niceeval/src/inspection/project-source.ts";
+import { judgeUsageChatResponse, startJudgeUsageEmulator } from "./fixtures/inspection-core/judge-http.ts";
+import { startModelEmulator } from "./fixtures/model-emulator.ts";
 
 const SANDBOX_FIXTURE = fileURLToPath(new URL("fixtures/inspection-core/sandbox.ts.txt", import.meta.url));
 const LEGACY_V4_RECORD = fileURLToPath(new URL("fixtures/inspection-core/assertions-v4.sqlite", import.meta.url));
@@ -127,7 +122,7 @@ describe("exact read and comparison: runs, overview, matrix, diff, and notes", (
     cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-inspection-read-"));
     await Promise.all(["evals", "experiments", "adapters", "node_modules"].map((dir) => mkdir(join(cwd, dir))));
     await Promise.all([
-      symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules", "effect"), "junction"),
+      symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules", "effect"), "junction"),
       writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
       writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8")),
       writeFile(

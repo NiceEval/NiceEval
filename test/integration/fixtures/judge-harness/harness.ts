@@ -1,27 +1,31 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { finished } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
 import { createEmulator, defineEmulator, type EmulatorContext } from "emulate";
-export { startModelEmulator, type ModelRule } from "../model-emulator.ts";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument, narrowInspectionSuccess } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../../../packages/niceeval/src/cli/in-process.ts";
 
-const require = createRequire(new URL("../../../../packages/niceeval/package.json", import.meta.url));
-export const { Effect } = require("effect") as typeof import("../../../../packages/niceeval/node_modules/effect/dist/index.js");
-export const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../../../packages/niceeval/src/experiment/host/index.ts");
-export const { runHost } =
-  require("niceeval/run/host") as typeof import("../../../../packages/niceeval/src/run/host/index.ts");
-export const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../../../packages/niceeval/src/cli/in-process.ts");
-export const { decodeInspectionDocument, narrowInspectionSuccess } =
-  require("niceeval/inspection") as typeof import("../../../../packages/niceeval/src/inspection/public.ts");
-export const { OpenAIProvider, OpenRouterProvider, TypesafeProvider, VercelProvider, judgeImage } =
-  require("niceeval/judge") as typeof import("../../../../packages/niceeval/src/judge/index.ts");
-export const { defineAgentJudge, defineJudge, binaryJudge, factuality, faithfulness, instructionFollowing, pairwisePreference, defineScoreMatch, equals } =
-  require("niceeval/expect") as typeof import("../../../../packages/niceeval/src/expect/index.ts");
+export {
+  defineAgentJudge,
+  defineJudge,
+  binaryJudge,
+  factuality,
+  faithfulness,
+  instructionFollowing,
+  pairwisePreference,
+  defineScoreMatch,
+  equals,
+} from "niceeval/expect";
+export { OpenAIProvider, OpenRouterProvider, TypesafeProvider, VercelProvider, judgeImage } from "niceeval/judge";
+export { Effect, decodeInspectionDocument, experimentHost, narrowInspectionSuccess, runCliInProcess, runHost };
+export { startModelEmulator, type ModelRule } from "../model-emulator.ts";
 
 /**
  * Host-process Sandbox module written into temporary fixture projects so Judge and
@@ -186,7 +190,7 @@ export async function createJudgeProject(prefix: string, files: JudgeProjectFile
   const cwd = await mkdtemp(join(await realpath(tmpdir()), prefix));
   try {
     await Promise.all([mkdir(join(cwd, "evals")), mkdir(join(cwd, "experiments")), mkdir(join(cwd, "node_modules"))]);
-    const effectPkgDir = dirname(require.resolve("effect/package.json"));
+    const effectPkgDir = dirname(fileURLToPath(import.meta.resolve("effect/package.json")));
     const writes: Promise<void>[] = [
       symlink(effectPkgDir, join(cwd, "node_modules", "effect"), "dir"),
       writeFile(join(cwd, "package.json"), JSON.stringify({ name: "judge-fixture", private: true, type: "module" })),

@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { Schema } from "effect";
 import { defineExperiment, type JsonValue } from "niceeval";
 import {
   actionRef,
@@ -73,17 +73,8 @@ if (canonicalJsonProbe) {
   type DangerousMetadata = Readonly<Record<string, JsonValue>>;
   type DangerousMetadataSchema = SandboxActionDefinition<DangerousMetadata, DangerousMetadata>["input"];
 
-  // The scenario intentionally avoids adding a shared fixture dependency:
-  // Effect is already a declared runtime dependency of the installed NiceEval
-  // candidate. Resolve from that package, then use Schema.Unknown so decoding
-  // preserves JSON.parse-created own `__proto__` and `constructor` keys.
-  const scenarioRequire = createRequire(import.meta.url);
-  const niceevalRequire = createRequire(scenarioRequire.resolve("niceeval"));
-  const unknownSchema = (
-    niceevalRequire("effect") as {
-      readonly Schema: { readonly Unknown: unknown };
-    }
-  ).Schema.Unknown as DangerousMetadataSchema;
+  // Schema.Unknown preserves JSON.parse-created own `__proto__` and `constructor` keys.
+  const unknownSchema = Schema.Unknown as DangerousMetadataSchema;
   const variant = process.env.NICEEVAL_E2E_BEFORE_CACHE_CANONICAL_VARIANT ?? "alpha";
   if (variant !== "alpha" && variant !== "beta") {
     throw new Error(`unsupported canonical metadata variant ${JSON.stringify(variant)}`);

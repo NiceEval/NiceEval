@@ -1,19 +1,14 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { defineEval, defineEvalGroup, defineExperiment } =
-  require("niceeval") as typeof import("../../packages/niceeval/src/index.ts");
-const { definePlugin } = require("niceeval/plugin") as typeof import("../../packages/niceeval/src/plugin/index.ts");
-const { sandboxLayer } = require("niceeval/sandbox") as typeof import("../../packages/niceeval/src/sandbox/index.ts");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
+import { Effect } from "effect";
+import { defineEval, defineEvalGroup, defineExperiment } from "niceeval";
+import { experimentHost } from "niceeval/experiment/host";
+import { definePlugin } from "niceeval/plugin";
+import { sandboxLayer } from "niceeval/sandbox";
 
 const FIXTURE = fileURLToPath(new URL("fixtures/teardown-lifecycle/", import.meta.url));
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 20);

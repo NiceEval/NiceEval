@@ -1,11 +1,7 @@
-import { createRequire } from "node:module";
 import { PassThrough, Readable } from "node:stream";
 import fc from "fast-check";
 import { expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 
 // @use-case docs/feature/run/use-case/查看运行.md#list
 test("run list rejects nonpositive limits before emitting a machine document", async () => {

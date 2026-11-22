@@ -1,14 +1,10 @@
 import { rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 import { createExperimentBatch, withSlowAttachmentReads } from "../integration/fixtures/record-harness/experiment-batch.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
 
 let batch: Awaited<ReturnType<typeof createExperimentBatch>>;
 

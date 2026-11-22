@@ -1,18 +1,12 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
-const { decodeExpPlanDocument, experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
+import { Effect } from "effect";
+import { decodeExpPlanDocument, experimentHost } from "niceeval/experiment/host";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 
 async function invoke(cwd: string, ...argv: string[]) {
   const stdout = new PassThrough();

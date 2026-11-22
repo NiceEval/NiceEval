@@ -1,20 +1,14 @@
 import { rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { PassThrough, Readable } from "node:stream";
 import { setTimeout } from "node:timers/promises";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 import { createRecordProject, openGate, waitForGate } from "../integration/fixtures/record-harness/project.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const { decodeInspectionDocument } =
-  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
 
 const config = { maxConcurrency: 2, maxRetries: 0 };
 let cwd: string;

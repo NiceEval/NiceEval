@@ -1,19 +1,16 @@
 // 跨进程保证：文件与锁——多个 exp 并发写同一项目时，先收尾的进程不得删除其它 Invocation 正在创建的 Run
 import { copyFile, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost, decodeExpTerminalEvent } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
 import { createRecordProject } from "../integration/fixtures/record-harness/project.ts";
 
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("effect");
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
-const { experimentHost, decodeExpTerminalEvent } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
 async function planBatch(cwd: string, experimentIds: string[]) {
   const result = await Effect.runPromise(
     experimentHost.invocation.plan({ cwd, experimentIds, config: { maxConcurrency: 6 } }),

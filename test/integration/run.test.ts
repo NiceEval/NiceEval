@@ -1,16 +1,12 @@
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, truncate, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
 
 const gateSymbol = Symbol.for("niceeval.test.run-gates");
 const gates = new Map<string, { release: Promise<void>; entered: () => void }>();

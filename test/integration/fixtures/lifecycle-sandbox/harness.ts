@@ -1,5 +1,4 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -7,15 +6,10 @@ import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import fc from "fast-check";
-
-const require = createRequire(new URL("../../../../packages/niceeval/package.json", import.meta.url));
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../../../packages/niceeval/src/run/host/index.ts");
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../../../packages/niceeval/src/cli/in-process.ts");
-const { decodeInspectionDocument, narrowInspectionSuccess } =
-  require("niceeval/inspection") as typeof import("../../../../packages/niceeval/src/inspection/public.ts");
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument, narrowInspectionSuccess } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../../../packages/niceeval/src/cli/in-process.ts";
 
 const FIXTURE = fileURLToPath(new URL("./", import.meta.url));
 const harnessKey = Symbol.for("niceeval.test.lifecycle");
@@ -114,7 +108,7 @@ export async function createLifecycleProject(
   try {
     await cp(FIXTURE, cwd, { recursive: true });
     await mkdir(join(cwd, "node_modules"));
-    await symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules/effect"), "dir");
+    await symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules/effect"), "dir");
     await rm(join(cwd, "harness.ts"));
     for (const source of ["agent.ts", "sandbox.ts", "journal.ts", "experiments/lifecycle.ts", "niceeval.config.ts"]) {
       await rename(join(cwd, `${source}.txt`), join(cwd, source));

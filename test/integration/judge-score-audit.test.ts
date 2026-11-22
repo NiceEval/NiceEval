@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import {
+  externalInspectionSource,
+  openInspectionSource,
+  selectInspectionOperation,
+} from "../../packages/niceeval/src/inspection/index.ts";
 import { withOperational } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 import {
   Effect,
@@ -26,9 +30,6 @@ import {
   validPngBytes,
 } from "./fixtures/judge-harness/harness.ts";
 
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { externalInspectionSource, openInspectionSource, selectInspectionOperation } =
-  require("./src/inspection/index.ts") as typeof import("../../packages/niceeval/src/inspection/index.ts");
 type AssertionDetail = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"attempt.assertion.detail">;
 
 describe("Judge score reconciliation, presets, headers, and image relocation", () => {

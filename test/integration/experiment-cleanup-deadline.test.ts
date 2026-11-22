@@ -1,6 +1,7 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Duration, Effect } from "effect";
+import { TestClock } from "effect/testing";
 import {
   createFixtureProject,
   runSingleAttempt,
@@ -8,12 +9,6 @@ import {
   withOperational,
   type FixtureProject,
 } from "./fixtures/adapter-trace-usage-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Duration, Effect } =
-  require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { TestClock } =
-  require("effect/testing") as typeof import("../../packages/niceeval/node_modules/effect/dist/testing/index.js");
 
 const cases = fc.sample(fc.integer({ min: 100, max: 999 }), { seed: 20261121, numRuns: 2 });
 const gateKey = Symbol.for("niceeval.test.cleanup-deadline");

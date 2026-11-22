@@ -1,5 +1,4 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -8,17 +7,15 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
-const { decodeInspectionDocument, narrowInspectionSuccess } =
-  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
-const { noSandboxBackendCapabilities, registerSandboxCapabilities, supportedBackendCapability } =
-  require("./src/sandbox/backend.ts") as typeof import("../../packages/niceeval/src/sandbox/backend.ts");
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument, narrowInspectionSuccess } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
+import {
+  noSandboxBackendCapabilities,
+  registerSandboxCapabilities,
+  supportedBackendCapability,
+} from "../../packages/niceeval/src/sandbox/backend.ts";
 
 const FIXTURE = fileURLToPath(new URL("fixtures/turn-sandbox/", import.meta.url));
 const PATHS = ["a.txt", "b.txt", "nested/c.txt"];
@@ -40,7 +37,7 @@ beforeAll(async () => {
   cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-turn-property-"));
   await cp(FIXTURE, cwd, { recursive: true });
   await mkdir(join(cwd, "node_modules"));
-  await symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules/effect"), "dir");
+  await symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules/effect"), "dir");
   for (const source of ["agent.ts", "sandbox.ts", "experiments/turns.ts"]) {
     await rename(join(cwd, `${source}.txt`), join(cwd, source));
   }

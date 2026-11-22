@@ -1,22 +1,18 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect, Exit, Scope } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const {
+import { Effect, Exit, Scope } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
+import {
   externalInspectionSource,
   openInspectionSource,
   selectInspectionOperation,
-} = require("./src/inspection/index.ts") as typeof import("../../packages/niceeval/src/inspection/index.ts");
+} from "../../packages/niceeval/src/inspection/index.ts";
 
 const SANDBOX_FIXTURE = fileURLToPath(new URL("fixtures/inspection-core/sandbox.ts.txt", import.meta.url));
 
@@ -75,7 +71,7 @@ describe("portable trace", () => {
     );
     expectedImageSha256 = createHash("sha256").update(expectedImageBytes).digest("hex");
     await Promise.all([
-      symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules", "effect"), "dir"),
+      symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules", "effect"), "dir"),
       writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
       writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8")),
       writeFile(

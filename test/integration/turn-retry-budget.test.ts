@@ -1,17 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Clock, Duration, Effect, Random } from "effect";
+import { TestClock } from "effect/testing";
+import { experimentHost } from "niceeval/experiment/host";
 import { createFixtureProject, type FixtureProject } from "./fixtures/adapter-trace-usage-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Clock, Duration, Effect, Random } =
-  require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { TestClock } =
-  require("effect/testing") as typeof import("../../packages/niceeval/node_modules/effect/dist/testing/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 const fixture = {
   "agent.ts": `

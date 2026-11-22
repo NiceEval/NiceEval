@@ -24,8 +24,9 @@ const EXCLUDE = [
 const UNIT_EXCLUDE = [...EXCLUDE, "packages/niceeval/src/**/*.docker.test.ts"];
 
 const LAYERS = "{integration,cli,process}";
+const SOURCE_CONDITION = "niceeval-source";
 const SOURCE_EXEC_ARGV = [
-  "--conditions=niceeval-source",
+  `--conditions=${SOURCE_CONDITION}`,
   ...(process.features.typescript
     ? []
     : process.allowedNodeEnvironmentFlags.has("--experimental-transform-types")
@@ -35,23 +36,33 @@ const SOURCE_EXEC_ARGV = [
 const CONDITIONS = ["docker", "linux", "live"] as const;
 const conditionedTests = (condition: string) => `test/${LAYERS}/**/*.${condition}.test.ts`;
 
+// Let Node load the product on the same module graph as the fixtures loaded by Jiti.
+const sourceProject = {
+  ssr: { resolve: { conditions: [SOURCE_CONDITION, "module", "node", "development|production"] } },
+};
+const sourceDeps = { deps: { external: [/\/packages\/niceeval\/src\//] } };
+
 export default defineConfig({
   test: {
     project: ["default", "unit"],
     reporters: ["default", architectureReporter],
     projects: [
       {
+        ...sourceProject,
         test: {
           name: "default",
           execArgv: SOURCE_EXEC_ARGV,
+          server: sourceDeps,
           include: [`test/${LAYERS}/**/*.test.ts`],
           exclude: [...EXCLUDE, ...CONDITIONS.map(conditionedTests)],
         },
       },
       ...CONDITIONS.map((name) => ({
+        ...sourceProject,
         test: {
           name,
           execArgv: SOURCE_EXEC_ARGV,
+          server: sourceDeps,
           include: [conditionedTests(name)],
           exclude: EXCLUDE,
         },

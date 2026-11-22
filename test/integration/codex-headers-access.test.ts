@@ -1,8 +1,12 @@
 import { rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { PassThrough } from "node:stream";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import {
+  noSandboxBackendCapabilities,
+  registerSandboxCapabilities,
+  supportedBackendCapability,
+} from "../../packages/niceeval/src/sandbox/backend.ts";
 import { AGENT_BASELINE_VERSION } from "../../packages/niceeval/src/agents/coding-cli-versions.ts";
 import type { ManagedProcess, ManagedProcessStart, Sandbox } from "../../packages/niceeval/src/types.ts";
 import {
@@ -13,10 +17,6 @@ import {
   readAssertionsList,
   showJsonDocuments,
 } from "./fixtures/judge-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { noSandboxBackendCapabilities, registerSandboxCapabilities, supportedBackendCapability } =
-  require("./src/sandbox/backend.ts") as typeof import("../../packages/niceeval/src/sandbox/backend.ts");
 
 const registerProcess = Symbol.for("niceeval.test.codex-headers-access");
 

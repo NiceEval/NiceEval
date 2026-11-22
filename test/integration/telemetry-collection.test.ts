@@ -1,6 +1,6 @@
 import { mkdir, readFile, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { beforeAll, expect, test } from "vitest";
 import {
@@ -117,10 +117,9 @@ async function observeCollection(paddingMiB: number, readsBeforeTimeout: number,
   });
   hooks[hookKey] = stalledRead.resolve;
   try {
-    const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
     const dependencies = join(project.cwd, "node_modules");
     await mkdir(dependencies);
-    await symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "dir");
+    await symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(dependencies, "effect"), "dir");
     const clock = await Effect.runPromise(Clock.clockWith(Effect.succeed));
     const budgetClock: typeof clock = Object.create(clock);
     budgetClock.sleep = (duration) => {

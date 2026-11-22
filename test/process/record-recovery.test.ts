@@ -1,24 +1,18 @@
 // 跨进程保证：进程终止与信号——真实 niceeval 进程被 SIGKILL 后，已发布 Attempt 保留，后续 Invocation 只执行缺失 slot，owner 终结后才可恢复收口
-import { createRequire } from "node:module";
 import { copyFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeRunDocument } from "niceeval/run";
+import { runHost } from "niceeval/run/host";
 import { invokeCli } from "../integration/fixtures/judge-harness/harness.ts";
 import { createRecordProject, openGate, waitForGate } from "../integration/fixtures/record-harness/project.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-
-const { decodeRunDocument } = require("niceeval/run") as typeof import("../../packages/niceeval/src/run/index.ts");
-
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-
 const start = (cwd: string, args: readonly string[]) =>
   execa(process.execPath, [...process.execArgv, cli, ...args], {
     cwd,

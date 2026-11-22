@@ -1,25 +1,19 @@
 // 跨进程保证：运行环境——独立子进程测量 160 MiB 流式归档的 RSS 增长上限、并发锁等待与便携式 Record CLI 读取
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, readFile, realpath, rm, watch, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
-const require = createRequire(cli);
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const { runCliInProcess } =
-  require("../src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
-const { decodeInspectionDocument } =
-  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
-
 describe("real process CLI and streaming attachment RSS boundary", () => {
   let cwd: string;
   let recordDir: string;

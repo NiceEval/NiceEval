@@ -1,7 +1,8 @@
 import { rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { Effect } from "effect";
+import { defineJudge, defineScoreMatch } from "niceeval/expect";
 import {
   OpenAIProvider,
   chatToolResponse,
@@ -16,11 +17,6 @@ import {
   startJudgeEmulator,
   startModelEmulator,
 } from "./fixtures/judge-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { defineJudge, defineScoreMatch } =
-  require("niceeval/expect") as typeof import("../../packages/niceeval/src/expect/index.ts");
 
 describe("Managed ScoreMatch definitions and lifecycle boundaries", () => {
   let emulator: Awaited<ReturnType<typeof startModelEmulator>>;

@@ -1,6 +1,17 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import {
+  countWhere,
+  defineContextMatch,
+  defineScoreMatch,
+  equals,
+  eventMatch,
+  filterWhere,
+  inOrder,
+  mapEach,
+  mapValue,
+  toolMatch,
+} from "niceeval/expect";
 import {
   createFixtureProject,
   runSingleAttempt,
@@ -12,20 +23,6 @@ import {
 import { readAssertionsList } from "./fixtures/judge-harness/harness.ts";
 
 import type { BooleanMatch, CollectionValue } from "../../packages/niceeval/src/expect/index.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const {
-  countWhere,
-  defineContextMatch,
-  defineScoreMatch,
-  equals,
-  eventMatch,
-  filterWhere,
-  inOrder,
-  mapEach,
-  mapValue,
-  toolMatch,
-} = require("niceeval/expect") as typeof import("../../packages/niceeval/src/expect/index.ts");
 
 const EVAL_FILES = {
   "adapters/eval-only.ts": `

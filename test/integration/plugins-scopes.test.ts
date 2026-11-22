@@ -1,16 +1,12 @@
 import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
 
 const FIXTURE = fileURLToPath(new URL("fixtures/plugins-scopes/", import.meta.url));
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1);
@@ -139,7 +135,7 @@ async function prepareProject() {
   const dependencies = join(cwd, "node_modules");
   await mkdir(dependencies);
   await Promise.all([
-    symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "junction"),
+    symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(dependencies, "effect"), "junction"),
     mkdir(join(cwd, "evals"), { recursive: true }),
     mkdir(join(cwd, "experiments"), { recursive: true }),
     rename(join(cwd, "events.ts.txt"), join(cwd, "events.ts")),

@@ -1,22 +1,18 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const {
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { runHost } from "niceeval/run/host";
+import {
   externalInspectionSource,
   openInspectionSource,
   operationalInspectionSource,
   selectInspectionOperation,
-} = require("./src/inspection/index.ts") as typeof import("../../packages/niceeval/src/inspection/index.ts");
+} from "../../packages/niceeval/src/inspection/index.ts";
 
 type ArtifactId = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"attempt.artifact">["artifactId"];
 type RunId = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"run.get">["runId"];

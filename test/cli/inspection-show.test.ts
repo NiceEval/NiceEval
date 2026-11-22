@@ -1,24 +1,18 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
+import { decodeInspectionDocument } from "niceeval/inspection";
+import { runHost } from "niceeval/run/host";
+import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 import { judgeUsageChatResponse, startJudgeUsageEmulator } from "../integration/fixtures/inspection-core/judge-http.ts";
 import { startModelEmulator } from "../integration/fixtures/model-emulator.ts";
 import { createRecordProject } from "../integration/fixtures/record-harness/project.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { runHost } = require("niceeval/run/host") as typeof import("../../packages/niceeval/src/run/host/index.ts");
-const { runCliInProcess } =
-  require("./src/cli/in-process.ts") as typeof import("../../packages/niceeval/src/cli/in-process.ts");
-const { decodeInspectionDocument } =
-  require("niceeval/inspection") as typeof import("../../packages/niceeval/src/inspection/public.ts");
 
 const SANDBOX_FIXTURE = fileURLToPath(
   new URL("../integration/fixtures/inspection-core/sandbox.ts.txt", import.meta.url),
@@ -27,7 +21,7 @@ const SANDBOX_FIXTURE = fileURLToPath(
 async function writeSandboxFixture(cwd: string) {
   const dependencies = join(cwd, "node_modules");
   await mkdir(dependencies, { recursive: true });
-  await symlink(dirname(require.resolve("effect/package.json")), join(dependencies, "effect"), "junction");
+  await symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(dependencies, "effect"), "junction");
   await writeFile(join(cwd, "sandbox.ts"), await readFile(SANDBOX_FIXTURE, "utf8"));
 }
 

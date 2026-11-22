@@ -1,6 +1,7 @@
-import { createRequire } from "node:module";
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { Effect } from "effect";
+import { experimentHost } from "niceeval/experiment/host";
 import {
   createFixtureProject,
   readJson,
@@ -8,11 +9,6 @@ import {
   writeJson,
   type FixtureProject,
 } from "./fixtures/adapter-trace-usage-harness/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
-const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
 
 const FILES = {
   "adapters/agent-usage.ts": `

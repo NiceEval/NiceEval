@@ -2,12 +2,10 @@
 // blocks until the test creates `gates/release`, so a Run stays active with one published slot.
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout } from "node:timers/promises";
-
-const require = createRequire(new URL("../../../../packages/niceeval/package.json", import.meta.url));
+import { fileURLToPath } from "node:url";
 
 export async function createRecordProject(prefix: string, options: { readonly held: boolean }): Promise<string> {
   const cwd = await mkdtemp(join(await realpath(tmpdir()), prefix));
@@ -15,7 +13,7 @@ export async function createRecordProject(prefix: string, options: { readonly he
     await Promise.all(["evals", "experiments", "gates", "node_modules"].map((dir) => mkdir(join(cwd, dir))));
     const gates = JSON.stringify(join(cwd, "gates"));
     await Promise.all([
-      symlink(dirname(require.resolve("effect/package.json")), join(cwd, "node_modules", "effect"), "dir"),
+      symlink(dirname(fileURLToPath(import.meta.resolve("effect/package.json"))), join(cwd, "node_modules", "effect"), "dir"),
       writeFile(join(cwd, "package.json"), JSON.stringify({ name: "record-fixture", private: true, type: "module" })),
       writeFile(
         join(cwd, "niceeval.config.ts"),

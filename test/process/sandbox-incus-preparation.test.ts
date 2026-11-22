@@ -1,9 +1,9 @@
 // 跨进程保证：外部程序与 Provider——真实 CLI 通过 Incus 可执行程序准备、失败和消费快照
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import fc from "fast-check";
 import { beforeAll, describe, expect, test } from "vitest";
+import { decodeExpPrepareEvent, decodeExpTerminalEvent } from "niceeval/experiment/host";
 import {
   ARTIFACT_PROJECT,
   artifactConsumers,
@@ -12,10 +12,6 @@ import {
   type IncusProject,
   RUNTIME_PROJECT,
 } from "../integration/fixtures/lifecycle-incus/project.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { decodeExpPrepareEvent, decodeExpTerminalEvent } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 const args = ["exp", "incus", "probe", "--rerun=all", "--json"] as const;
 

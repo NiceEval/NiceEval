@@ -1,14 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { join } from "node:path";
 import { Clock, Duration, Effect, Random } from "effect";
 import fc from "fast-check";
 import { beforeAll, expect, test } from "vitest";
+import { experimentHost } from "niceeval/experiment/host";
 import { createLifecycleProject } from "./fixtures/lifecycle-sandbox/harness.ts";
-
-const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
-const { experimentHost } =
-  require("niceeval/experiment/host") as typeof import("../../packages/niceeval/src/experiment/host/index.ts");
 
 const codes = ["ECONNRESET", "ETIMEDOUT", "EACCES", "ENOENT", "ok"] as const;
 type Script = (typeof codes)[number][];
