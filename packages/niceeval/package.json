@@ -113,13 +113,6 @@
     "docs-site/zh",
     "docs-site/images"
   ],
-  "bundledDependencies": [
-    "@effect/platform-node",
-    "@effect/platform-node-shared",
-    "@types/ws",
-    "undici",
-    "ws"
-  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "niceeval": "node bin/niceeval.js",
@@ -131,12 +124,16 @@
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {
+    "@effect/platform-node": "4.1.4",
+    "@effect/platform-node-shared": "4.1.4",
+    "@types/ws": "8.18.2",
     "effect": "4.1.4",
     "ignore": "7.0.14",
     "jiti": "2.7.0",
-    "openai": "^7.53.0",
     "oxc-parser": "0.158.0",
     "tar-stream": "3.2.2",
+    "undici": "8.12.4",
+    "ws": "8.23.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
