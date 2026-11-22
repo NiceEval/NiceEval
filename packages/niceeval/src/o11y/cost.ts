@@ -122,7 +122,7 @@ export function pricingEstimate(
   if (
     buckets.some(
       ([, tokens, rate]) =>
-        (tokens !== undefined && (!Number.isFinite(tokens) || tokens < 0)) || !Number.isFinite(rate) || rate < 0,
+        (tokens !== undefined && (!Number.isSafeInteger(tokens) || tokens < 0)) || !Number.isFinite(rate) || rate < 0,
     )
   )
     return { state: "unavailable", reason: "pricing-input-invalid" };
