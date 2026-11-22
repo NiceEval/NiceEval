@@ -54,6 +54,12 @@ export function inspectionLinks(operation: InspectionOperation, document: unknow
     }
   };
   visit(document);
+  if (operation.kind === "attempt.diff" && document !== null && typeof document === "object") {
+    const continuation = Reflect.get(document, "diff")?.continuation;
+    if (typeof continuation === "string") {
+      add("next-page", [operation.locator, operation.changeId ?? "diff", "--continuation", continuation]);
+    }
+  }
   if (document !== null && typeof document === "object") {
     const continuation =
       operation.kind === "run.list"

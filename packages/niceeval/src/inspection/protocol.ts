@@ -324,7 +324,11 @@ export const inspectionProtocolRegistry = Object.freeze({
     factKinds: ["adapter-usage", "judge-usage"],
   }),
   "attempt.diff": spec({
-    request: operation("attempt.diff", { locator: AttemptLocatorSchema, changeId: Schema.optional(Schema.String) }),
+    request: operation("attempt.diff", {
+      locator: AttemptLocatorSchema,
+      changeId: Schema.optional(Schema.String),
+      continuation: Schema.optional(Schema.String),
+    }),
     result: { diff: InspectionAttemptDiffResultSchema },
     factKinds: ["file-changes"],
   }),

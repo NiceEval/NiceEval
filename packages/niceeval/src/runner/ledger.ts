@@ -42,47 +42,23 @@ const DEFAULT_EXCLUDES = [
   "__pycache__",
 ];
 
-const MAX_POLICY_ENTRIES = 256;
-const MAX_POLICY_ENTRY_UTF8_BYTES = 4096;
-const policyEncoder = new TextEncoder();
-
 function compareAscii(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
 }
 
-/** Reject an unrecordable policy before the collector starts, then freeze its canonical evidence form. */
+/** Validate and freeze the canonical attribution policy. */
 function canonicalPolicyEntries(entries: readonly string[], name: "include" | "ignore"): readonly string[] {
-  if (entries.length > MAX_POLICY_ENTRIES) {
-    throw new Error(`defineEval({ diff }).${name} may contain at most ${MAX_POLICY_ENTRIES} entries`);
-  }
   for (const [index, entry] of entries.entries()) {
     if (typeof entry !== "string") {
       throw new TypeError(`defineEval({ diff }).${name}[${index}] must be a string`);
-    }
-    if (policyEncoder.encode(entry).byteLength > MAX_POLICY_ENTRY_UTF8_BYTES) {
-      throw new Error(`defineEval({ diff }).${name}[${index}] exceeds ${MAX_POLICY_ENTRY_UTF8_BYTES} UTF-8 bytes`);
     }
   }
   return [...new Set(entries)].sort(compareAscii);
 }
 
-/**
- * 单个 send 窗口的导出扫描安全上限。File Changes 的 10,000-change durable 上限由 collector
- * 保留确定性前缀并写 collection-cap-reached；导出层必须先把更大的候选集合交给 collector，
- * 不能在同一个 10,000 边界提前把已知 partial 证据降格成 unavailable。
- * 字节预算只数**真正要传输的文本** before/after:二进制与超过单文件阈值的文本不内联内容、
- * 只记字节数(WindowChange.elided),因此不占预算——编译产物型窗口(成百上千个 .o 加几个大
- * 文本)不该因为「按尺寸计」被判越界。
- */
-const MAX_EXPORTED_WINDOW_PATHS = 100_000;
-const MAX_EXPORTED_WINDOW_TEXT_BYTES = 256 * 1024 * 1024;
-/** 单个文本 blob 的内联阈值:任一侧超过它,该条目按二进制同款处理(记字节数、内容省略)。 */
-const MAX_FILE_TEXT_BYTES = 1024 * 1024;
-/** Provider 文件 API 的单次安全读取边界，以及整次 Attempt 导出的硬上限。 */
+/** Size of one physical provider file transfer. */
 const EXPORT_PART_BYTES = 4_000_000;
-const MAX_EXPORT_BYTES = 512 * 1024 * 1024;
-const MAX_EXPORT_PARTS = Math.ceil(MAX_EXPORT_BYTES / EXPORT_PART_BYTES);
 const EXPORT_MANIFEST_HEADER = "niceeval-ledger-export-parts v1";
 
 /**
@@ -107,6 +83,8 @@ function buildExportScript(exportDir: string): string {
     "OUT=$D/export.bin",
     ': > "$OUT"',
     'fail() { printf "%s\\n" "$1" >&2; exit 2; }',
+    // Binary detection should reflect the data and attributes across the representable byte range.
+    `numstat() { git -c core.bigFileThreshold=${Number.MAX_SAFE_INTEGER} diff-tree -r --no-renames --numstat "$@"; }`,
     // 帧格式:`section <name> <bytes>` 头一行,后跟原始字节;长度前缀让内容里的任意字节都安全。
     'emit() { printf "section %s %s\\n" "$1" "$(($(wc -c < "$2")))" >> "$OUT"; cat "$2" >> "$OUT"; }',
     'git log --reverse --format="%H %s" > "$D/log.txt"',
@@ -115,25 +93,18 @@ function buildExportScript(exportDir: string): string {
     "  subject=${line#* }",
     '  case $subject in "agent "*) ;; *) continue ;; esac',
     "  label=${subject#agent }",
-    // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
+    // Quoted paths occupy one line each. Only the object IDs are taken from this listing.
     '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
-    '  n=$(($(wc -l < "$D/dt.txt")))',
-    `  [ "$n" -le ${MAX_EXPORTED_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; export scan limit is ${MAX_EXPORTED_WINDOW_PATHS}; narrow defineEval({ diff }) include/ignore rules"`,
-    '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
+    '  numstat "$hash^" "$hash" > "$D/ns.txt"',
     // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
     '  awk \'$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }\' "$D/dt.txt" > "$D/occ.txt"',
     '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
     '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
-    // 逐条目分类:numstat 第 1 列为 "-" 的行是二进制,按行号对齐标 B,其余标 T,后跟前后 blob sha。
-    '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } { printf "%s %s %s\\n", (bin[FNR] ? "B" : "T"), $3, $4 }\' "$D/ns.txt" "$D/dt.txt" > "$D/entries.txt"',
-    // 要内联的文本 blob(去重):二进制条目与任一侧超过单文件阈值的文本条目都不请求内容,
-    // 也不计入窗口预算——它们只出字节数(宿主据同一份 sizes 判成 elided)。
-    `  awk -v LIMIT=${MAX_FILE_TEXT_BYTES} -v TOTAL="$D/total.txt" 'NR==FNR { sz[$1] = $3; next } $1 == "T" { b = $2; a = $3; if (b !~ /^0+$/ && sz[b] > LIMIT) next; if (a !~ /^0+$/ && sz[a] > LIMIT) next; if (b !~ /^0+$/ && !(b in seen)) { seen[b] = 1; total += sz[b]; print b } if (a !~ /^0+$/ && !(a in seen)) { seen[a] = 1; total += sz[a]; print a } } END { print total+0 > TOTAL }' "$D/sizes.txt" "$D/entries.txt" > "$D/text.txt"`,
-    '  bytes=$(cat "$D/total.txt")',
-    `  [ "$bytes" -le ${MAX_EXPORTED_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; export scan limit is ${MAX_EXPORTED_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
+    // Numstat marks binary paths with "-". Transfer each text blob once per window.
+    '  awk \'FILENAME == ARGV[1] { bin[FNR] = ($1 == "-"); next } !bin[FNR] { for (i = 3; i <= 4; i++) if ($i !~ /^0+$/ && !seen[$i]++) print $i }\' "$D/ns.txt" "$D/dt.txt" > "$D/text.txt"',
     '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
     '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
-    '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
+    '  numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
     '  printf "window %s %s\\n" "$hash" "$label" >> "$OUT"',
     '  emit difftree "$D/dtz.bin"',
     '  emit numstat "$D/nsz.bin"',
@@ -143,9 +114,7 @@ function buildExportScript(exportDir: string): string {
     // Provider 文件 API 可能拒绝超过 4 MiB 的单对象读取。这里按固定原始字节切片，并在最后
     // 原子发布 manifest；宿主只接受连续序号、精确长度和 Git blob checksum。
     'total=$(($(wc -c < "$OUT")))',
-    `  [ "$total" -le ${MAX_EXPORT_BYTES} ] || fail "niceeval ledger export contains $total bytes; attempt export limit is ${MAX_EXPORT_BYTES}"`,
-    `parts=$(( (total + ${EXPORT_PART_BYTES} - 1) / ${EXPORT_PART_BYTES} ))`,
-    `  [ "$parts" -le ${MAX_EXPORT_PARTS} ] || fail "niceeval ledger export needs $parts parts; attempt part limit is ${MAX_EXPORT_PARTS}"`,
+    `parts=$((total / ${EXPORT_PART_BYTES} + (total % ${EXPORT_PART_BYTES} != 0)))`,
     "MANIFEST_TMP=$D/manifest.tmp",
     "MANIFEST=$D/manifest.txt",
     `printf "%s\\ntotal %s\\nparts %s\\n" "${EXPORT_MANIFEST_HEADER}" "$total" "$parts" > "$MANIFEST_TMP"`,
@@ -418,13 +387,14 @@ async function exportAgentWindows(
   exportDir: string,
   rootCommands: boolean,
 ): Promise<DiffArtifact> {
+  const windows: DiffWindow[] = [];
   try {
     const result = await sandbox.runShell(buildExportScript(exportDir), commandOptions);
     ensureCommandSucceeded(result, "export agent windows", rootCommands);
     const manifest = parseExportManifest(await sandbox.readText(`${exportDir}/manifest.txt`));
-    const chunks: Buffer[] = [];
-    for (const part of manifest.parts) {
-      const bytes = Buffer.from(await sandbox.readBytes(`${exportDir}/export.part.${part.suffix}`));
+    const payload = new ExportPayloadReader(manifest.totalBytes, async (index) => {
+      const part = manifest.parts[index]!;
+      const bytes = await sandbox.readBytes(`${exportDir}/export.part.${part.suffix}`);
       if (bytes.byteLength !== part.bytes) {
         throw new Error(
           `niceeval ledger export: part ${part.suffix} has ${bytes.byteLength} bytes, expected ${part.bytes}`,
@@ -435,15 +405,24 @@ async function exportAgentWindows(
       if (actual !== part.oid) {
         throw new Error(`niceeval ledger export: checksum mismatch for part ${part.suffix}`);
       }
-      chunks.push(bytes);
-    }
-    const payload = Buffer.concat(chunks, manifest.totalBytes);
-    if (payload.byteLength !== manifest.totalBytes) {
-      throw new Error("niceeval ledger export: assembled payload length mismatch");
-    }
-    return parseExportPayload(payload);
+      return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    });
+    await parseExportPayload(payload, windows);
+    return windows;
+  } catch (cause) {
+    if (windows.length > 0) throw new LedgerExportError(windows, cause);
+    throw cause;
   } finally {
     await sandbox.runShell(`rm -rf ${shellQuote(exportDir)}`, commandOptions).catch(() => undefined);
+  }
+}
+
+export class LedgerExportError extends Error {
+  readonly windows: DiffArtifact;
+
+  constructor(windows: DiffArtifact, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.windows = windows;
   }
 }
 
@@ -458,13 +437,13 @@ interface ExportManifest {
   readonly parts: readonly ExportManifestPart[];
 }
 
-function manifestInteger(text: string, label: string, maximum: number): number {
+function manifestInteger(text: string, label: string): number {
   if (!/^(?:0|[1-9][0-9]*)$/.test(text)) {
     throw new Error(`niceeval ledger export: invalid manifest ${label}`);
   }
   const value = Number(text);
-  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) {
-    throw new Error(`niceeval ledger export: manifest ${label} exceeds its limit`);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`niceeval ledger export: invalid manifest ${label}`);
   }
   return value;
 }
@@ -479,8 +458,8 @@ function parseExportManifest(text: string): ExportManifest {
   if (totalMatch === null || partsMatch === null) {
     throw new Error("niceeval ledger export: malformed manifest summary");
   }
-  const totalBytes = manifestInteger(totalMatch[1]!, "total bytes", MAX_EXPORT_BYTES);
-  const partCount = manifestInteger(partsMatch[1]!, "part count", MAX_EXPORT_PARTS);
+  const totalBytes = manifestInteger(totalMatch[1]!, "total bytes");
+  const partCount = manifestInteger(partsMatch[1]!, "part count");
   const expectedPartCount = Math.ceil(totalBytes / EXPORT_PART_BYTES);
   if (partCount !== expectedPartCount || lines.length !== partCount + 3) {
     throw new Error("niceeval ledger export: manifest part count mismatch");
@@ -488,13 +467,13 @@ function parseExportManifest(text: string): ExportManifest {
   const parts: ExportManifestPart[] = [];
   let retainedBytes = 0;
   for (let index = 0; index < partCount; index += 1) {
-    const match = /^part ([0-9]{6}) ([0-9]+) ([0-9a-f]{40}|[0-9a-f]{64})$/.exec(lines[index + 3] ?? "");
+    const match = /^part ([0-9]{6,}) ([0-9]+) ([0-9a-f]{40}|[0-9a-f]{64})$/.exec(lines[index + 3] ?? "");
     const suffix = String(index).padStart(6, "0");
     if (match === null || match[1] !== suffix) {
       throw new Error(`niceeval ledger export: invalid or non-contiguous part ${suffix}`);
     }
     const expectedBytes = Math.min(EXPORT_PART_BYTES, totalBytes - retainedBytes);
-    const bytes = manifestInteger(match[2]!, `part ${suffix} bytes`, EXPORT_PART_BYTES);
+    const bytes = manifestInteger(match[2]!, `part ${suffix} bytes`);
     if (bytes !== expectedBytes || bytes === 0) {
       throw new Error(`niceeval ledger export: invalid length for part ${suffix}`);
     }
@@ -533,67 +512,114 @@ function ensureCommandSucceeded(
 
 const ZERO_SHA = /^0+$/;
 
-function parseExportPayload(payload: Buffer): DiffArtifact {
-  const windows: DiffWindow[] = [];
-  let offset = 0;
+/** Parses across verified provider segments without assembling the export into a single buffer. */
+class ExportPayloadReader {
+  readonly length: number;
+  readonly #loadPart: (index: number) => Promise<Buffer>;
+  #part: Buffer = Buffer.alloc(0);
+  #partOffset = 0;
+  #partIndex = 0;
+  #offset = 0;
 
-  const readLine = (): string => {
-    const newline = payload.indexOf(0x0a, offset);
-    if (newline === -1) throw new Error("niceeval ledger export: truncated header");
-    const line = payload.subarray(offset, newline).toString("utf8");
-    offset = newline + 1;
-    return line;
-  };
-  const readSection = (expected: string): Buffer => {
-    const header = readLine().split(" ");
+  constructor(length: number, loadPart: (index: number) => Promise<Buffer>) {
+    this.length = length;
+    this.#loadPart = loadPart;
+  }
+
+  get offset(): number {
+    return this.#offset;
+  }
+
+  async sectionEnd(expected: string): Promise<number> {
+    const header = (await this.readDelimited(0x0a, this.length)).split(" ");
     if (header.length !== 3 || header[0] !== "section" || header[1] !== expected) {
       throw new Error(`niceeval ledger export: expected section ${expected}, got ${JSON.stringify(header.join(" "))}`);
     }
-    const length = Number(header[2]);
-    if (!isNonNegativeInteger(length) || offset + length > payload.length) {
+    const length = manifestInteger(header[2]!, `${expected} section length`);
+    if (length > this.length - this.offset) {
       throw new Error(`niceeval ledger export: invalid ${expected} section length`);
     }
-    const body = payload.subarray(offset, offset + length);
-    offset += length;
-    return body;
-  };
+    return this.offset + length;
+  }
 
-  while (offset < payload.length) {
-    const header = readLine();
-    if (!header.startsWith("window "))
+  async readDelimited(delimiter: number, end: number): Promise<string> {
+    const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+    const pieces: string[] = [];
+    while (this.offset < end) {
+      if (this.#partOffset === this.#part.length) await this.#nextPart();
+      const available = Math.min(end - this.offset, this.#part.length - this.#partOffset);
+      const found = this.#part.indexOf(delimiter, this.#partOffset);
+      if (found >= 0 && found < this.#partOffset + available) {
+        pieces.push(decoder.decode(this.#take(found - this.#partOffset)));
+        this.#take(1);
+        return pieces.join("");
+      }
+      pieces.push(decoder.decode(this.#take(available), { stream: true }));
+    }
+    throw new Error("niceeval ledger export: missing record delimiter");
+  }
+
+  async readText(length: number): Promise<string> {
+    const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+    const pieces: string[] = [];
+    while (length > 0) {
+      if (this.#partOffset === this.#part.length) await this.#nextPart();
+      const size = Math.min(length, this.#part.length - this.#partOffset);
+      length -= size;
+      pieces.push(decoder.decode(this.#take(size), { stream: length > 0 }));
+    }
+    return pieces.join("");
+  }
+
+  #take(length: number): Buffer {
+    const start = this.#partOffset;
+    this.#partOffset += length;
+    this.#offset += length;
+    return this.#part.subarray(start, this.#partOffset);
+  }
+
+  async #nextPart(): Promise<void> {
+    if (this.offset >= this.length) throw new Error("niceeval ledger export: truncated payload");
+    this.#part = await this.#loadPart(this.#partIndex++);
+    this.#partOffset = 0;
+  }
+}
+
+async function parseExportPayload(payload: ExportPayloadReader, windows: DiffWindow[]): Promise<void> {
+  while (payload.offset < payload.length) {
+    const header = await payload.readDelimited(0x0a, payload.length);
+    const match = /^window (?:[0-9a-f]{40}|[0-9a-f]{64}) (.+)$/.exec(header);
+    if (match === null) {
       throw new Error(`niceeval ledger export: expected window header, got ${JSON.stringify(header)}`);
-    const rest = header.slice("window ".length);
-    const space = rest.indexOf(" ");
-    const label = space === -1 ? "" : rest.slice(space + 1);
-    const entries = parseDiffTree(readSection("difftree"), label);
-    const binaryPaths = parseBinaryPaths(readSection("numstat"), label);
-    const sizeBySha = parseSizes(readSection("sizes"), label);
-    const contentBySha = parseBlobBatch(readSection("blobs"), label);
+    }
+    const label = match[1]!;
+    const entries = await parseDiffTree(payload, await payload.sectionEnd("difftree"), label);
+    const binaryPaths = await parseBinaryPaths(payload, await payload.sectionEnd("numstat"), label);
+    const sizeBySha = await parseSizes(payload, await payload.sectionEnd("sizes"), label);
+    const contentBySha = await parseBlobBatch(payload, await payload.sectionEnd("blobs"), label);
 
-    const changes: globalThis.Record<string, WindowChange> = {};
+    const changes = Object.create(null) as globalThis.Record<string, WindowChange>;
     for (const entry of entries) {
       const change: WindowChange = { status: entry.status };
-      // 沙箱侧决定「哪些文本 blob 进 --batch」的两条判据在宿主侧同样成立(binary 段 + sizes 段
-      // 都在导出文件里),所以这里独立重算,不需要沙箱再输出一份省略清单。
       const beforeBytes =
         entry.status === "added" ? undefined : requireSize(sizeBySha, entry.beforeSha, label, entry.path);
       const afterBytes =
         entry.status === "deleted" ? undefined : requireSize(sizeBySha, entry.afterSha, label, entry.path);
-      const binary = binaryPaths.has(entry.path);
-      const oversized = (beforeBytes ?? 0) > MAX_FILE_TEXT_BYTES || (afterBytes ?? 0) > MAX_FILE_TEXT_BYTES;
-      if (binary || oversized) {
-        change.elided = { reason: binary ? "binary" : "oversized-text" };
+      if (binaryPaths.has(entry.path)) {
+        change.elided = { reason: "binary" };
         if (beforeBytes !== undefined) change.elided.beforeBytes = beforeBytes;
         if (afterBytes !== undefined) change.elided.afterBytes = afterBytes;
       } else {
         if (entry.status !== "added") change.before = requireContent(contentBySha, entry.beforeSha, label, entry.path);
         if (entry.status !== "deleted") change.after = requireContent(contentBySha, entry.afterSha, label, entry.path);
       }
+      if (Object.hasOwn(changes, entry.path)) {
+        throw new Error(`export window ${label}: duplicate path ${JSON.stringify(entry.path)}`);
+      }
       changes[entry.path] = change;
     }
     windows.push({ window: label, changes });
   }
-  return windows;
 }
 
 interface DiffTreeEntry {
@@ -603,35 +629,34 @@ interface DiffTreeEntry {
   afterSha: string;
 }
 
-/** `git diff-tree -r --no-renames -z` 原始输出:`:mode mode sha sha status NUL path NUL` 重复。 */
-function parseDiffTree(section: Buffer, label: string): DiffTreeEntry[] {
-  const parts = section.toString("utf8").split("\0");
+const DIFF_TREE_STATUS: Readonly<Record<string, WindowChange["status"]>> = {
+  A: "added",
+  D: "deleted",
+  M: "modified",
+  T: "modified",
+};
+
+/** `git diff-tree -r --no-renames -z` repeats NUL-delimited metadata and paths. */
+async function parseDiffTree(payload: ExportPayloadReader, end: number, label: string): Promise<DiffTreeEntry[]> {
   const entries: DiffTreeEntry[] = [];
-  for (let i = 0; i < parts.length; ) {
-    const meta = parts[i++];
-    if (!meta) continue;
-    const path = parts[i++];
+  while (payload.offset < end) {
+    const meta = await payload.readDelimited(0, end);
+    const path = await payload.readDelimited(0, end);
     const fields = meta.split(" ");
-    if (path === undefined || fields.length !== 5 || !fields[0]!.startsWith(":")) {
+    const status = DIFF_TREE_STATUS[fields[4] ?? ""];
+    if (path === "" || fields.length !== 5 || !fields[0]!.startsWith(":") || status === undefined) {
       throw new Error(`export window ${label}: malformed git diff-tree output`);
     }
-    const code = fields[4]!;
-    function changeStatus(): DiffTreeEntry["status"] {
-      if (code.startsWith("A")) return "added";
-      if (code.startsWith("D")) return "deleted";
-      return "modified";
-    }
-    const status = changeStatus();
     entries.push({ path, status, beforeSha: fields[2]!, afterSha: fields[3]! });
   }
   return entries;
 }
 
-/** `git diff-tree --numstat -z`:二进制条目的 added/removed 计数是 `-`。 */
-function parseBinaryPaths(section: Buffer, label: string): Set<string> {
+/** Binary paths show "-" for both line counts in Git numstat. */
+async function parseBinaryPaths(payload: ExportPayloadReader, end: number, label: string): Promise<Set<string>> {
   const paths = new Set<string>();
-  for (const record of section.toString("utf8").split("\0")) {
-    if (!record) continue;
+  while (payload.offset < end) {
+    const record = await payload.readDelimited(0, end);
     const firstTab = record.indexOf("\t");
     const secondTab = record.indexOf("\t", firstTab + 1);
     if (firstTab === -1 || secondTab === -1) throw new Error(`export window ${label}: malformed git --numstat output`);
@@ -642,40 +667,36 @@ function parseBinaryPaths(section: Buffer, label: string): Set<string> {
   return paths;
 }
 
-/** `git cat-file --batch-check`:每行 `sha type size`(输入是逐出现次数的 sha,重复无害)。 */
-function parseSizes(section: Buffer, label: string): Map<string, number> {
+function parseBlobHeader(header: string, label: string): { sha: string; size: number } {
+  const match = /^([0-9a-f]{40}|[0-9a-f]{64}) blob (0|[1-9][0-9]*)$/.exec(header);
+  const size = Number(match?.[2]);
+  if (match === null || !Number.isSafeInteger(size)) {
+    throw new Error(`export window ${label}: malformed git cat-file header`);
+  }
+  return { sha: match[1]!, size };
+}
+
+async function parseSizes(payload: ExportPayloadReader, end: number, label: string): Promise<Map<string, number>> {
   const sizes = new Map<string, number>();
-  for (const line of section.toString("utf8").split("\n")) {
-    if (!line) continue;
-    const fields = line.split(" ");
-    const size = Number(fields[fields.length - 1]);
-    if (fields.length < 3 || !isNonNegativeInteger(size)) {
-      throw new Error(`export window ${label}: malformed git cat-file --batch-check output`);
-    }
-    sizes.set(fields[0]!, size);
+  while (payload.offset < end) {
+    const { sha, size } = parseBlobHeader(await payload.readDelimited(0x0a, end), label);
+    sizes.set(sha, size);
   }
   return sizes;
 }
 
-/** `git cat-file --batch`:自带长度帧——`sha type size\n` + size 字节内容 + `\n`。 */
-function parseBlobBatch(section: Buffer, label: string): Map<string, string> {
+async function parseBlobBatch(payload: ExportPayloadReader, end: number, label: string): Promise<Map<string, string>> {
   const contents = new Map<string, string>();
-  let offset = 0;
-  while (offset < section.length) {
-    const newline = section.indexOf(0x0a, offset);
-    if (newline === -1) throw new Error(`export window ${label}: malformed git cat-file --batch header`);
-    const fields = section.subarray(offset, newline).toString("utf8").split(" ");
-    const size = Number(fields[fields.length - 1]);
-    if (fields.length < 3 || !isNonNegativeInteger(size)) {
-      throw new Error(`export window ${label}: malformed git cat-file --batch header`);
-    }
-    const contentStart = newline + 1;
-    const contentEnd = contentStart + size;
-    if (contentEnd >= section.length || section[contentEnd] !== 0x0a) {
+  while (payload.offset < end) {
+    const { sha, size } = parseBlobHeader(await payload.readDelimited(0x0a, end), label);
+    if (size >= end - payload.offset) {
       throw new Error(`export window ${label}: truncated git cat-file --batch content`);
     }
-    contents.set(fields[0]!, section.subarray(contentStart, contentEnd).toString("utf8"));
-    offset = contentEnd + 1;
+    const text = await payload.readText(size);
+    if ((await payload.readText(1)) !== "\n" || contents.has(sha)) {
+      throw new Error(`export window ${label}: malformed git cat-file --batch content`);
+    }
+    contents.set(sha, text);
   }
   return contents;
 }
@@ -692,8 +713,4 @@ function requireContent(contents: Map<string, string>, sha: string, label: strin
   if (content === undefined || ZERO_SHA.test(sha))
     throw new Error(`export window ${label}: missing blob content for ${JSON.stringify(path)}`);
   return content;
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }

@@ -100,7 +100,7 @@ import { pricingEstimate } from "../o11y/cost.ts";
 import { bindPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import { describeError, firstLine, formatThrown } from "../util.ts";
 import { toFeedbackDiagnostic } from "../error-assistance/index.ts";
-import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
+import { createChangeLedger, LedgerExportError, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData } from "../assertions/diff.ts";
 import { createAgentWorkspaceDiff } from "../assertions/workspace-diff.ts";
 import {
@@ -1507,12 +1507,17 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                   if (agent.kind === "sandbox" && liveLedger) {
                     const startedAt = recorder.offsetNow();
                     const diff = yield* Effect.result(cleanupCallback(() => liveLedger!.exportWindows()));
-                    if (Result.isSuccess(diff)) {
-                      timeoutDiff = diff.success;
+                    const safeWindows = Result.isSuccess(diff)
+                      ? diff.success
+                      : diff.failure instanceof LedgerExportError
+                        ? diff.failure.windows
+                        : undefined;
+                    if (Result.isSuccess(diff)) timeoutDiff = diff.success;
+                    if (safeWindows !== undefined) {
                       let document: AgentWorkspaceDiff | undefined;
                       try {
                         document = createAgentWorkspaceDiff({
-                          windows: diff.success,
+                          windows: safeWindows,
                           policy: liveLedger.attribution,
                         });
                       } catch {
@@ -1531,6 +1536,15 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                         timeoutFileChangesCapture = createFileChangesCapture({
                           document,
                           limitations: [
+                            ...(Result.isFailure(diff)
+                              ? [
+                                  {
+                                    code: "capture-failed" as const,
+                                    stage: "finalizer-export" as const,
+                                    atWindowId: null,
+                                  },
+                                ]
+                              : []),
                             {
                               code: "capture-interrupted" as const,
                               stage: "finalizer-export" as const,
@@ -4034,6 +4048,7 @@ async function runAttemptBody(
       } catch (diffError) {
         if (operation) operation.failed = true;
         if (isBodyInterrupted(signal, parentSignal, isDeadlineTimedOut())) throw diffError;
+        if (diffError instanceof LedgerExportError) diffWindows = diffError.windows;
         diffArtifactAvailable = false;
         diffExportAvailable = false;
         feedback.diagnostic({
@@ -4057,7 +4072,8 @@ async function runAttemptBody(
     let workspaceDiff: AgentWorkspaceDiff | undefined;
     if (usesSandbox && ledger) {
       let document: AgentWorkspaceDiff | undefined;
-      if (diffExportAvailable) {
+      const hasExportedWindows = diffExportAvailable || diffWindows.length > 0;
+      if (hasExportedWindows) {
         try {
           document = createAgentWorkspaceDiff({
             windows: diffWindows,
@@ -4103,7 +4119,7 @@ async function runAttemptBody(
           policy: ledger.attribution,
           limitations: [
             ...limitations,
-            ...(diffExportAvailable
+            ...(hasExportedWindows
               ? [
                   {
                     code: "capture-failed" as const,

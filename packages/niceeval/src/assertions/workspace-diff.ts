@@ -138,10 +138,10 @@ function linesForHunks(text: string): readonly string[] {
   return text.match(/[^\n]*\n|[^\n]+/g) ?? [];
 }
 
-const MAX_HUNK_LCS_CELLS = 1_000_000;
+const HUNK_LCS_TABLE_CELLS = 1_000_000;
 
 function hunkCellsFit(left: readonly string[], right: readonly string[]): boolean {
-  return left.length + 1 <= Math.floor(MAX_HUNK_LCS_CELLS / (right.length + 1));
+  return left.length + 1 <= Math.floor(HUNK_LCS_TABLE_CELLS / (right.length + 1));
 }
 
 type LineDiffOperation =
@@ -149,11 +149,8 @@ type LineDiffOperation =
   | { readonly kind: "added"; readonly line: string }
   | { readonly kind: "removed"; readonly line: string };
 
-function lineDiffOperations(
-  left: readonly string[],
-  right: readonly string[],
-): readonly LineDiffOperation[] | undefined {
-  if (!hunkCellsFit(left, right)) return undefined;
+function lineDiffOperations(left: readonly string[], right: readonly string[]): readonly LineDiffOperation[] {
+  if (!hunkCellsFit(left, right)) return myersLineDiff(left, right);
   const width = right.length + 1;
   const lengths = new Uint32Array((left.length + 1) * width);
   const at = (row: number, column: number): number => row * width + column;
@@ -188,6 +185,107 @@ function lineDiffOperations(
   return reversed;
 }
 
+/** Finds the middle of a shortest edit path by meeting from both ends. */
+function middleLineEdit(
+  left: readonly string[],
+  right: readonly string[],
+): readonly [left: number, right: number] | undefined {
+  const max = Math.ceil((left.length + right.length) / 2);
+  const origin = max + 1;
+  const delta = left.length - right.length;
+  const odd = delta % 2 !== 0;
+  const frontiers = [new Int32Array(2 * max + 3), new Int32Array(2 * max + 3)] as const;
+  const minDiagonal = [0, 0];
+  const maxDiagonal = [0, 0];
+  for (const frontier of frontiers) {
+    frontier.fill(-1);
+    frontier[origin + 1] = 0;
+  }
+
+  for (let distance = 0; distance <= max; distance += 1) {
+    for (const direction of [0, 1] as const) {
+      const reverse = direction === 1;
+      const frontier = frontiers[direction];
+      const other = frontiers[1 - direction]!;
+      for (let k = -distance + minDiagonal[direction]!; k <= distance - maxDiagonal[direction]!; k += 2) {
+        const index = origin + k;
+        let x =
+          k === -distance || (k !== distance && frontier[index - 1]! < frontier[index + 1]!)
+            ? frontier[index + 1]!
+            : frontier[index - 1]! + 1;
+        let y = x - k;
+        while (
+          x < left.length &&
+          y < right.length &&
+          left[reverse ? left.length - x - 1 : x] === right[reverse ? right.length - y - 1 : y]
+        ) {
+          x += 1;
+          y += 1;
+        }
+        frontier[index] = x;
+        if (x > left.length) {
+          maxDiagonal[direction]! += 2;
+        } else if (y > right.length) {
+          minDiagonal[direction]! += 2;
+        } else if (odd !== reverse) {
+          const otherX = other[origin + delta - k];
+          if (otherX !== undefined && otherX >= 0 && x + otherX >= left.length) {
+            return reverse ? [left.length - x, right.length - y] : [x, y];
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Myers' divide-and-conquer diff keeps the search space linear in the number of lines. */
+function myersLineDiff(left: readonly string[], right: readonly string[]): readonly LineDiffOperation[] {
+  const operations: LineDiffOperation[] = [];
+  const pending = [{ left, right }];
+  while (pending.length > 0) {
+    const pair = pending.pop()!;
+    let start = 0;
+    let leftEnd = pair.left.length;
+    let rightEnd = pair.right.length;
+    while (start < leftEnd && start < rightEnd && pair.left[start] === pair.right[start]) {
+      operations.push({ kind: "unchanged" });
+      start += 1;
+    }
+    while (leftEnd > start && rightEnd > start && pair.left[leftEnd - 1] === pair.right[rightEnd - 1]) {
+      leftEnd -= 1;
+      rightEnd -= 1;
+    }
+    if (leftEnd < pair.left.length) {
+      pending.push({ left: pair.left.slice(leftEnd), right: pair.right.slice(rightEnd) });
+    }
+
+    const before = pair.left.slice(start, leftEnd);
+    const after = pair.right.slice(start, rightEnd);
+    if (hunkCellsFit(before, after)) {
+      for (const operation of lineDiffOperations(before, after)) operations.push(operation);
+      continue;
+    }
+    const beforeLines = new Set(before);
+    const split = after.some((line) => beforeLines.has(line)) ? middleLineEdit(before, after) : undefined;
+    if (
+      split === undefined ||
+      (split[0] === 0 && split[1] === 0) ||
+      (split[0] === before.length && split[1] === after.length)
+    ) {
+      for (const line of before) operations.push({ kind: "removed", line });
+      for (const line of after) operations.push({ kind: "added", line });
+      continue;
+    }
+    const [x, y] = split;
+    pending.push(
+      { left: before.slice(x), right: after.slice(y) },
+      { left: before.slice(0, x), right: after.slice(0, y) },
+    );
+  }
+  return operations;
+}
+
 function hunkStrings(operations: readonly LineDiffOperation[], kind: "added" | "removed"): readonly string[] {
   const hunks: string[] = [];
   let lines: string[] = [];
@@ -206,19 +304,15 @@ function hunkStrings(operations: readonly LineDiffOperation[], kind: "added" | "
   return hunks;
 }
 
-function changedHunks(before: string, after: string): AgentWorkspaceDiffHunks | undefined {
+function changedHunks(before: string, after: string): AgentWorkspaceDiffHunks {
   const operations = lineDiffOperations(linesForHunks(before), linesForHunks(after));
-  if (operations === undefined) return undefined;
   return {
     added: hunkStrings(operations, "added"),
     removed: hunkStrings(operations, "removed"),
   };
 }
 
-function hunksFor(
-  before: AgentWorkspaceDiffEndpoint,
-  after: AgentWorkspaceDiffEndpoint,
-): AgentWorkspaceDiffHunks | undefined {
+function hunksFor(before: AgentWorkspaceDiffEndpoint, after: AgentWorkspaceDiffEndpoint): AgentWorkspaceDiffHunks {
   if (before.state === "text" && after.state === "text") {
     return changedHunks(before.text, after.text);
   }
@@ -246,20 +340,7 @@ export function agentWorkspaceDiffChangeIsCoherent(change: AgentWorkspaceDiffWin
     return false;
   }
   const expected = hunksFor(change.before, change.after);
-  return (
-    expected !== undefined &&
-    sameHunkStrings(expected.added, change.hunks.added) &&
-    sameHunkStrings(expected.removed, change.hunks.removed)
-  );
-}
-
-function elidedEndpointForBoundedHunks(endpoint: AgentWorkspaceDiffEndpoint): AgentWorkspaceDiffEndpoint {
-  if (endpoint.state !== "text") return endpoint;
-  return {
-    state: "elided" as const,
-    reason: "oversized-text" as const,
-    bytes: new TextEncoder().encode(endpoint.text).byteLength,
-  };
+  return sameHunkStrings(expected.added, change.hunks.added) && sameHunkStrings(expected.removed, change.hunks.removed);
 }
 
 function canonicalPolicy(policy: AgentWorkspaceDiffPolicy): AgentWorkspaceDiffPolicy {
@@ -280,20 +361,14 @@ export function createAgentWorkspaceDiff(input: {
       .sort(([left], [right]) => compareAscii(left, right))
       .map(([path, change]) => {
         assertCanonicalWorkspaceRelativePath(path, "workspace diff ledger path");
-        let before = endpointFor(change, "before");
-        let after = endpointFor(change, "after");
-        let hunks = hunksFor(before, after);
-        if (before.state === "text" && after.state === "text" && hunks === undefined) {
-          before = elidedEndpointForBoundedHunks(before);
-          after = elidedEndpointForBoundedHunks(after);
-          hunks = hunksFor(before, after);
-        }
+        const before = endpointFor(change, "before");
+        const after = endpointFor(change, "after");
         return {
           path,
           status: change.status,
           before,
           after,
-          hunks: hunks ?? { added: [], removed: [] },
+          hunks: hunksFor(before, after),
         };
       });
     return {

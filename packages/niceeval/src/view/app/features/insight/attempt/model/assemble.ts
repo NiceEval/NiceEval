@@ -22,7 +22,6 @@ import type {
   ConversationEntry,
   ConversationTurn,
 } from "../../components/primitives/conversation.tsx";
-import type { DiffContent } from "../../components/primitives/diff-lines.ts";
 import type {
   MatcherFilterDebuggerContent,
   MatcherFilterFieldContent,
@@ -109,10 +108,6 @@ export function projectSources(
   locator: string,
 ): ClosedEvidenceSlice<SourceContent | undefined> {
   return closeSources(recordField(document, "sources"), recordField(trace, "trace"), locator).slice;
-}
-
-export function projectDiff(document: InspectionSuccessDocumentFor<"attempt.diff">): ClosedEvidenceSlice<DiffContent> {
-  return closeDiff(recordField(document, "diff"));
 }
 
 export type AttemptArtifactsViewModel =
@@ -1209,32 +1204,6 @@ function closeSources(
   };
   const slice = sliceFromState(sources.state, data, "Source navigation");
   return { data, slice };
-}
-
-function closeDiff(diff: JsonRecord): ClosedEvidenceSlice<DiffContent> {
-  if (diff.state === "not-recorded" || Object.keys(diff).length === 0) {
-    return {
-      state: "not-recorded",
-      limitations: [
-        {
-          code: "file-changes-not-recorded",
-          summary: "File changes collection was not recorded for this Attempt.",
-        },
-      ],
-    };
-  }
-  // attempt.diff remains a fixed Inspection operation. The current compact
-  // result does not expose verified patch text, so the UI keeps an explicit
-  // unavailable slice instead of interpreting content handles or inventing a diff.
-  return {
-    state: "unavailable",
-    limitations: [
-      {
-        code: "file-changes-content-unavailable",
-        summary: "File changes collection has no display-safe patch projection.",
-      },
-    ],
-  };
 }
 
 function sliceFromState<Data>(state: unknown, data: Data, label: string): ClosedEvidenceSlice<Data> {

@@ -14,7 +14,6 @@ import {
   Callouts,
   Col,
   CommandEvidence,
-  DiffView,
   Grid,
   SourceView,
   TableContentView,
@@ -34,7 +33,6 @@ import {
   projectCommands,
   projectConversation,
   projectDiagnostics,
-  projectDiff,
   projectSources,
   projectTiming,
   projectUsage,
@@ -500,14 +498,6 @@ export function AttemptDetails({
   const sourcesQuery = useInspectionQuery(
     operation("attempt.sources", { kind: "attempt.sources", locator: model.locator }),
   );
-  const diffQuery = useInspectionQuery(
-    operation("attempt.diff", {
-      kind: "attempt.diff",
-      locator: model.locator,
-      ...(aspect === "diff" && selectedId !== undefined ? { changeId: selectedId } : {}),
-    }),
-    { select: projectDiff },
-  );
   const notesQuery = useInspectionQuery(attemptOperations(model.locator)[0]);
   const allQueries = [
     notesQuery,
@@ -517,7 +507,6 @@ export function AttemptDetails({
     timingQuery,
     usageQuery,
     sourcesQuery,
-    diffQuery,
   ];
   if (allQueries.some((query) => query.isPending)) return <p role="status">{t("report.loadingDetails")}</p>;
   if (allQueries.some((query) => query.isError))
@@ -562,7 +551,6 @@ export function AttemptDetails({
     ...evidenceSliceCallouts("Conversation", conversation),
     ...evidenceSliceCallouts("Commands", commands),
     ...evidenceSliceCallouts("Diagnostics", diagnostics),
-    ...evidenceSliceCallouts("File changes", diffQuery.data!),
   ];
   function sourceEvidence(): ReactElement | null {
     if (aspect !== undefined && aspect !== "source" && aspect !== "assertions") return null;
@@ -672,10 +660,99 @@ export function AttemptDetails({
         <CommandEvidence data={sliceData(commands)} locale={locale} className="" />
       ) : null}
       {aspect === undefined || aspect === "diff" ? (
-        <DiffView files={sliceData(diffQuery.data!)} locale={locale} className="" drillCommand={undefined} />
+        <AttemptFileChanges
+          key={`${model.locator}:${aspect === "diff" ? (selectedId ?? "") : ""}`}
+          locator={model.locator}
+          selectedId={aspect === "diff" ? selectedId : undefined}
+        />
       ) : null}
       {aspect === "artifacts" ? <Artifacts locator={model.locator} selectedId={selectedId} /> : null}
     </Col>
+  );
+}
+
+function AttemptFileChanges({
+  locator,
+  selectedId,
+}: {
+  readonly locator: string;
+  readonly selectedId: string | undefined;
+}): ReactElement | null {
+  const { t } = useTranslation();
+  const [changeId, setChangeId] = useState(selectedId);
+  const [continuation, setContinuation] = useState<string>();
+  const query = useInspectionQuery({
+    kind: "attempt.diff",
+    locator,
+    ...(changeId === undefined ? {} : { changeId }),
+    ...(continuation === undefined ? {} : { continuation }),
+  });
+  if (query.isPending) return <p role="status">{t("report.loadingDetails")}</p>;
+  if (query.isError) return <p role="alert">{query.error.message}</p>;
+  const diff = query.data.diff;
+  if (diff.state === "not-recorded") return null;
+  if (diff.state === "invalid") return <p role="alert">{t("fileChanges.unavailable")}</p>;
+  const detail = diff.detail;
+  function selectChange(nextChangeId: string | undefined) {
+    setChangeId(nextChangeId);
+    setContinuation(undefined);
+  }
+  return (
+    <section>
+      <h3>{t("attempt.fileChanges")}</h3>
+      {diff.state === "partial" ? <p>{t("fileChanges.partial")}</p> : null}
+      {detail === undefined ? (
+        diff.windows.map((window) => (
+          <div key={window.windowId}>
+            <h4>{window.windowId}</h4>
+            <ul>
+              {window.changes.map((change) => (
+                <li key={change.changeId}>
+                  <button onClick={() => selectChange(change.changeId)}>{change.path}</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      ) : (
+        <>
+          <button onClick={() => selectChange(undefined)}>{t("attempt.fileChanges")}</button>
+          <h4>{detail.path}</h4>
+          {detail.hunks.state === "available" ? <pre>{detail.hunks.text}</pre> : <p>{t("fileChanges.unavailable")}</p>}
+          {(["before", "after"] as const).map((side) => {
+            const revision = detail[side];
+            return (
+              <details key={side}>
+                <summary>{t(side === "before" ? "fileChanges.before" : "fileChanges.after")}</summary>
+                {revision.state === "available" ? (
+                  <pre>{revision.text}</pre>
+                ) : (
+                  <p>{t(`fileChanges.${revision.state}`)}</p>
+                )}
+                {revision.state === "available" && revision.omittedBytes > 0 ? (
+                  <p>{t("fileChanges.remainingBytes", { count: revision.omittedBytes })}</p>
+                ) : null}
+              </details>
+            );
+          })}
+          {detail.hunks.omittedBytes > 0 ? (
+            <p>{t("fileChanges.remainingBytes", { count: detail.hunks.omittedBytes })}</p>
+          ) : null}
+        </>
+      )}
+      {diff.omittedChangeCount > 0 ? (
+        <p>{t("fileChanges.remainingChanges", { count: diff.omittedChangeCount })}</p>
+      ) : null}
+      {diff.omittedWindowCount > 0 ? (
+        <p>{t("fileChanges.remainingWindows", { count: diff.omittedWindowCount })}</p>
+      ) : null}
+      {continuation === undefined ? null : (
+        <button onClick={() => setContinuation(undefined)}>{t("fileChanges.firstPage")}</button>
+      )}
+      {diff.continuation === undefined ? null : (
+        <button onClick={() => setContinuation(diff.continuation)}>{t("fileChanges.nextPage")}</button>
+      )}
+    </section>
   );
 }
 

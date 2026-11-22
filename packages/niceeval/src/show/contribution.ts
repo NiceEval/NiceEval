@@ -257,8 +257,8 @@ function runShow(
       !/^[a-f0-9]{64}$/u.test(expand)
     )
       return yield* usage("--continuation requires execution evidence, artifacts, or a paged outline.");
-    if (continuation !== undefined && !execution && !timing && !runs && !artifacts)
-      return yield* usage("--continuation requires execution, timing, artifacts, or runs.");
+    if (continuation !== undefined && !execution && !timing && !runs && !artifacts && !diff)
+      return yield* usage("--continuation requires execution, timing, artifacts, runs, or diff.");
     if (evalIdPrefix !== undefined && !matrix) return yield* usage("--eval requires exp:<id> assertions.");
     if (imageId !== undefined && (imageOutput === undefined || json || full || explain))
       return yield* usage("An Assertion image requires --output; --json, --explain, and --full are not accepted.");
@@ -517,7 +517,13 @@ function runShow(
                   continuation,
                 });
               case "diff":
-                return showOperations({ kind: "attempt", locator: selectedLocator, slice: "diff", changeId });
+                return showOperations({
+                  kind: "attempt",
+                  locator: selectedLocator,
+                  slice: "diff",
+                  changeId,
+                  continuation,
+                });
               case "source":
               case "timing":
               case "usage":
@@ -662,7 +668,14 @@ function runShow(
                 eventType,
                 continuation,
               });
-            if (diff) return showOperations({ kind: "attempt", locator: selectedLocator, slice: "diff", changeId });
+            if (diff)
+              return showOperations({
+                kind: "attempt",
+                locator: selectedLocator,
+                slice: "diff",
+                changeId,
+                continuation,
+              });
             return showOperations({ kind: "attempt", locator: selectedLocator, slice: selectedSlice(), continuation });
           };
           const operations = selectedOperations();
@@ -949,6 +962,7 @@ function runShow(
               kind: "attempt.diff",
               locator: selectedLocator,
               ...(changeId === undefined ? {} : { changeId }),
+              ...(continuation === undefined ? {} : { continuation }),
             }),
           );
           yield* writeText(renderDiff(yield* project("attempt.diff", () => projectDiff(document, selectedLocator))));
@@ -1144,6 +1158,7 @@ export type ShowOperationsInput =
       readonly locator: string;
       readonly slice: "diff";
       readonly changeId: string | undefined;
+      readonly continuation?: string | undefined;
     };
 
 /** Fixed document order for the resource-oriented JSON Lines view. */
@@ -1196,7 +1211,14 @@ export function showOperations(input: ShowOperationsInput): readonly InspectionO
     case "usage":
       return [{ kind: "attempt.usage", locator }];
     case "diff":
-      return [{ kind: "attempt.diff", locator, ...(input.changeId === undefined ? {} : { changeId: input.changeId }) }];
+      return [
+        {
+          kind: "attempt.diff",
+          locator,
+          ...(input.changeId === undefined ? {} : { changeId: input.changeId }),
+          ...(input.continuation === undefined ? {} : { continuation: input.continuation }),
+        },
+      ];
     default:
       return [
         { kind: "attempt.get", locator },

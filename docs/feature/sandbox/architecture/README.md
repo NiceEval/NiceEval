@@ -95,7 +95,7 @@ export default defineEval({
   - provider 往返量是 `O(totalBytes / partBytes)`，不按路径、send 区间或 blob 逐项调用，也不把大证据灌进命令 stdout。临时 manifest 与分段在成功或失败后都删除。
 - 导出对 Sandbox 侧的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。
 
-- **路径、区间与内容完整保存。** 导出不限制单个 send 区间扫描的路径数或去重文本字节数。File Changes 不限制 send 区间数、changes 数、content 数或累计字节。每个 send 区间的 change 是一个 collection item；超过行内阈值的 text revision 存为 Content 分块，由摘要引用。规模本身不使 collector 写 partial，也不使 diff unavailable。
+- **路径、区间与内容完整保存。** 导出不限制单个 send 区间扫描的路径数或去重文本字节数。File Changes 不限制 send 区间数、changes 数、content 数或累计字节。File Changes 超过行内阈值时整份存为 Content 分块。text revision 由摘要引用其 Content。规模本身不使 collector 写 partial，也不使 diff unavailable。
 - **归因 policy 不设规模上限。** `include` 与 `ignore` 的项数和每项长度不受领域上限约束，完整进入 policy 身份。
 - **固定处理顺序。** collector 先按 send sequence，再按同一 send 区间内 path 的 ASCII 字节序写入 changes。导出、下载或校验在中途失败时，已写入的安全前缀连同 `capture-failed` limitation 写成 `partial`。
 - **归因排除身份。** File Changes 的 `defaultPolicy` 保存默认排除集合的 SHA-256 摘要；实际默认规则变化使该身份变化。

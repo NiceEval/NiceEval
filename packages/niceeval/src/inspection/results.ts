@@ -1528,13 +1528,19 @@ const DiffWindowSchema = Schema.Struct({
     }),
   ),
 });
+const DiffTextPageFields = {
+  text: Schema.String,
+  byteLength: Schema.Number,
+  offset: Schema.Number,
+  endOffset: Schema.Number,
+  omittedBytes: Schema.Number,
+  truncated: Schema.Boolean,
+  truncatedAtByte: Schema.NullOr(Schema.Number),
+};
 const DiffBodySchema = Schema.Union([
   Schema.Struct({
     state: Schema.Literal("available"),
-    text: Schema.String,
-    byteLength: Schema.Number,
-    truncated: Schema.Boolean,
-    truncatedAtByte: Schema.NullOr(Schema.Number),
+    ...DiffTextPageFields,
   }),
   Schema.Struct({
     state: Schema.Literals([
@@ -1555,9 +1561,7 @@ const DiffDetailSchema = Schema.Struct({
   after: DiffBodySchema,
   hunks: Schema.Struct({
     state: Schema.Literals(["available", "unavailable"]),
-    text: Schema.String,
-    truncated: Schema.Boolean,
-    truncatedAtByte: Schema.NullOr(Schema.Number),
+    ...DiffTextPageFields,
   }),
 });
 export const InspectionAttemptDiffResultSchema = Schema.Union([
@@ -1568,6 +1572,9 @@ export const InspectionAttemptDiffResultSchema = Schema.Union([
     limitations: Schema.Array(FileChangesCollectionLimitationSchema),
     windows: Schema.Array(DiffWindowSchema),
     detail: Schema.optional(DiffDetailSchema),
+    omittedChangeCount: Schema.Number,
+    omittedWindowCount: Schema.Number,
+    continuation: Schema.optional(Schema.String),
   }),
 ]);
 export type InspectionAttemptDiffResult = Schema.Schema.Type<typeof InspectionAttemptDiffResultSchema>;

@@ -33,14 +33,16 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
     }
   }
 
-  const files: globalThis.Record<string, DiffFileSummary> = {};
-  for (const [path, entry] of touched) {
-    files[path] = {
-      net: computeNet(entry.first, entry.last),
-      windows: entry.windows,
-      elided: entry.elided,
-    };
-  }
+  const files = Object.fromEntries(
+    [...touched].map(([path, entry]) => [
+      path,
+      {
+        net: computeNet(entry.first, entry.last),
+        windows: entry.windows,
+        elided: entry.elided,
+      },
+    ]),
+  );
 
   return {
     windows,

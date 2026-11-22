@@ -718,9 +718,33 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
     }
     case "attempt.diff": {
       const resolved = requireAttemptFromSource(source, operation.kind, operation.locator);
+      const binding = {
+        source: source.kind,
+        cutoff: source.cutoff().identity,
+        locator: `${resolved.attempt.originRunId}:${resolved.attempt.attemptId}`,
+        id: JSON.stringify([operation.kind, operation.locator, operation.changeId]),
+      };
+      let page = 0;
+      if (operation.continuation !== undefined) {
+        try {
+          page = inspectionByteOffset(operation.continuation, binding);
+          if (!Number.isSafeInteger(page)) throw new Error("Invalid File Changes page");
+        } catch {
+          throw new InspectionOperationError({
+            code: "restart-required",
+            operation: operation.kind,
+            reason: "File Changes continuation binding changed; restart from the first page.",
+          });
+        }
+      }
       const diff = projectAttemptDiff(
         attemptAttachment(resolved, NiceEvalRecordAttachments.fileChanges.family),
-        operation.changeId === undefined ? undefined : { source, changeId: operation.changeId },
+        {
+          source: resolved.origin.source,
+          changeId: operation.changeId,
+          page,
+          next: () => inspectionByteContinuation(binding, page + 1),
+        },
       );
       if (
         operation.changeId !== undefined &&

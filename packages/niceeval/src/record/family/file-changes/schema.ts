@@ -1,33 +1,8 @@
 import * as Schema from "effect/Schema";
-import {
-  RecordTextContentSchema,
-  recordAttachmentIssue,
-  recordContent,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { RecordTextContentSchema, recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { CanonicalProjectRelativePathSchema, FileChangeIdSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
 import { compareCanonicalIdentity } from "../../model/identifiers.ts";
 import { EmptyArraySchema, NonNegativeSafeIntegerSchema, PositiveSafeIntegerSchema } from "../common.ts";
-
-/** Immutable per-Attempt budgets for the fixed File Changes family. */
-export const FileChangesLimits = Object.freeze({
-  maximumWindows: 256,
-  maximumChangesPerWindow: 10_000,
-  maximumRetainedChanges: 10_000,
-  maximumTextRevisionBytes: 1024 * 1024,
-  maximumContents: 20_000,
-  maximumContentBytes: 1024 * 1024,
-  maximumTotalContentBytes: 128 * 1024 * 1024,
-  maximumPayloadJsonBytes: 16 * 1024 * 1024,
-  maximumPolicyEntries: 256,
-  maximumPolicyEntryUtf8Bytes: 4096,
-});
-
-const encoder = new TextEncoder();
-
-function utf8ByteLength(value: string): number {
-  return encoder.encode(value).byteLength;
-}
 
 function canonicalStrings(values: readonly string[]): boolean {
   let previous: string | undefined;
@@ -56,20 +31,11 @@ export const FileChangesWindowIdSchema = Schema.String.pipe(
   ),
 );
 
-const FileChangesPolicyEntrySchema = Schema.String.pipe(
+const FileChangesPolicyEntriesSchema = Schema.Array(Schema.String).pipe(
   Schema.check(
-    Schema.makeFilter((value) => utf8ByteLength(value) <= FileChangesLimits.maximumPolicyEntryUtf8Bytes, {
-      identifier: "FileChangesPolicyEntry",
-      description: "a File Changes include or ignore entry within its UTF-8 budget",
-    }),
-  ),
-);
-
-const FileChangesPolicyEntriesSchema = Schema.Array(FileChangesPolicyEntrySchema).pipe(
-  Schema.check(
-    Schema.makeFilter((values) => values.length <= FileChangesLimits.maximumPolicyEntries && canonicalStrings(values), {
+    Schema.makeFilter(canonicalStrings, {
       identifier: "FileChangesPolicyEntries",
-      description: "an ASCII-canonical, deduplicated bounded policy entry sequence",
+      description: "an ASCII-canonical, deduplicated policy entry sequence",
     }),
   ),
 );
@@ -148,18 +114,11 @@ export const FileRevisionSchema = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("text"),
     sha256: Sha256DigestSchema,
-    byteLength: NonNegativeSafeIntegerSchema.pipe(
-      Schema.check(
-        Schema.makeFilter((value) => value <= FileChangesLimits.maximumTextRevisionBytes, {
-          identifier: "FileChangesTextRevisionByteLength",
-          description: "a retained text revision within the File Changes text budget",
-        }),
-      ),
-    ),
+    byteLength: NonNegativeSafeIntegerSchema,
     content: Schema.Union([
       Schema.Struct({
         state: Schema.Literal("available"),
-        content: RecordTextContentSchema.pipe(recordContent.maximumBytes(FileChangesLimits.maximumContentBytes)),
+        content: RecordTextContentSchema,
       }),
       Schema.Struct({
         state: Schema.Literal("omitted"),
@@ -221,15 +180,10 @@ export type FileChange = Schema.Schema.Type<typeof FileChangeSchema>;
 
 const FileChangesWindowChangesSchema = Schema.Array(FileChangeSchema).pipe(
   Schema.check(
-    Schema.makeFilter(
-      (changes) =>
-        changes.length <= FileChangesLimits.maximumChangesPerWindow &&
-        canonicalStrings(changes.map((change) => change.path)),
-      {
-        identifier: "FileChangesWindowChanges",
-        description: "a bounded ASCII-path-canonical unique window change sequence",
-      },
-    ),
+    Schema.makeFilter((changes) => canonicalStrings(changes.map((change) => change.path)), {
+      identifier: "FileChangesWindowChanges",
+      description: "an ASCII-path-canonical unique window change sequence",
+    }),
   ),
 );
 
@@ -261,21 +215,12 @@ function invalid(path: readonly string[]): RecordAttachmentIssue {
 }
 
 /**
- * Core enforces each available content declaration limit and owns physical
+ * Core owns physical
  * read integrity. This logical validator cannot open sealed content handles;
  * producers must derive byteLength and sha256 from the same revision source.
  */
 export function validateFileChangesAttachment(value: FileChangesAttachment): readonly RecordAttachmentIssue[] {
   const issues: RecordAttachmentIssue[] = [];
-  if (value.windows.length > FileChangesLimits.maximumWindows) {
-    issues.push(invalid(["windows"]));
-  }
-  if (
-    value.windows.reduce((total, window) => total + window.changes.length, 0) > FileChangesLimits.maximumRetainedChanges
-  ) {
-    issues.push(invalid(["windows", "changes"]));
-  }
-
   const windowIds = new Set<string>();
   const changeIds = new Set<string>();
   let previousSequence = 0;

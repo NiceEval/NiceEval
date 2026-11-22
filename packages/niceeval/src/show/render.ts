@@ -2757,7 +2757,13 @@ function usageObservationValue(value: UsageView["observations"][number]): string
 export function renderDiff(value: DiffView): string {
   if ((value.state === "complete" || value.state === "partial") && value.detail !== undefined) {
     const { detail } = value;
-    return `Diff ${detail.path} (${detail.changeId})\nBefore: ${detail.before.state}\nAfter: ${detail.after.state}\n${detail.hunks.state === "available" ? detail.hunks.text : "Unified diff unavailable\n"}${detail.hunks.truncated ? `Truncated at byte ${detail.hunks.truncatedAtByte}; endpoint prefixes may be incomplete.\n` : ""}`;
+    const pageStatus = (page: typeof detail.before | typeof detail.hunks) =>
+      page.state === "available" && page.omittedBytes > 0
+        ? `available through byte ${page.endOffset} (${page.omittedBytes} bytes remaining)`
+        : page.state;
+    const hunk = detail.hunks.state === "available" ? detail.hunks.text : "Unified diff unavailable";
+    const remaining = detail.hunks.omittedBytes > 0 ? `\nHunks: ${pageStatus(detail.hunks)}` : "";
+    return `Diff ${detail.path} (${detail.changeId})\nBefore: ${pageStatus(detail.before)}\nAfter: ${pageStatus(detail.after)}\n${hunk}${remaining}\n`;
   }
   const statusBlocks: TerminalPanelContentBlock[] = [
     {
@@ -2780,6 +2786,15 @@ export function renderDiff(value: DiffView): string {
     );
   }
   if (value.state === "complete" || value.state === "partial") {
+    if (value.omittedWindowCount > 0) {
+      statusBlocks.push({
+        kind: "keyValue",
+        entries: [
+          { key: "Windows remaining", value: String(value.omittedWindowCount) },
+          { key: "Changes remaining", value: String(value.omittedChangeCount) },
+        ],
+      });
+    }
     statusBlocks.push(
       { meta: undefined, attachNext: false, kind: "divider", title: "Limitations" },
       {

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { Result, Schema } from "effect";
+import { mintRecordContentHandle, type RecordTextContentHandle } from "../../record/attachment/content.ts";
 import { RecordExactParseOptions } from "../../record/codec/core.ts";
 import {
   FileChangesAttachmentSchema,
-  FileChangesLimits,
   fileChangesCollectionLimitationKey,
+  validateFileChangesAttachment,
   type FileChangesAttachment,
   type FileChangesAttribution,
   type FileChangesCollectionLimitation,
@@ -25,16 +26,14 @@ type CaptureTextRevision = {
   readonly kind: "text";
   readonly sha256: string;
   readonly byteLength: number;
-  readonly content:
-    | { readonly state: "available"; readonly text: string }
-    | { readonly state: "omitted"; readonly reason: "collection-cap" };
+  readonly text: string;
 };
 
 type CaptureRevision =
   | CaptureTextRevision
   | {
       readonly kind: "elided";
-      readonly reason: "binary" | "oversized-text";
+      readonly reason: "binary";
       readonly byteLength: number;
     }
   | {
@@ -49,11 +48,10 @@ interface PreparedChange {
   readonly kind: "created" | "modified" | "deleted";
   readonly before: CaptureEndpoint;
   readonly after: CaptureEndpoint;
-  /** Not durable: it lets JSON truncation account only for retained bad endpoints. */
   readonly unsupportedEndpointCount: number;
 }
 
-interface CapturedChange extends PreparedChange {
+interface CapturedChange extends Omit<PreparedChange, "unsupportedEndpointCount"> {
   readonly changeId: string;
 }
 
@@ -76,7 +74,7 @@ export interface FileChangesCapture {
 export interface CreateFileChangesCaptureInput {
   readonly document: AgentWorkspaceDiff;
   /** Collector-stage facts observed by the caller before this capture freezes. */
-  readonly limitations: readonly FileChangesCollectionLimitation[] | undefined;
+  readonly limitations: readonly CaptureLimitation[] | undefined;
 }
 
 interface CaptureDocumentSource {
@@ -85,16 +83,7 @@ interface CaptureDocumentSource {
   readonly windows: readonly AgentWorkspaceDiffWindow[];
 }
 
-const encoder = new TextEncoder();
-// Producer retention is deliberately tighter than the v1 decoder ceiling.
-// Existing Records with up to 10,000 changes remain readable, while new
-// captures avoid multiplying schema encode/write/read validation work during
-// publication.
-const MAXIMUM_PRODUCED_CHANGES_PER_WINDOW = 1_000;
-const MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT = 1_000;
-const contentBudgetProjection = {
-  "$niceeval.record.content": "content-000001",
-};
+type CaptureLimitation = Exclude<FileChangesCollectionLimitation, { readonly code: "collection-cap-reached" }>;
 
 function compareAscii(left: string, right: string): number {
   if (left === right) return 0;
@@ -103,10 +92,6 @@ function compareAscii(left: string, right: string): number {
 
 function nextChangeId(): string {
   return `fc_${randomUUID().replaceAll("-", "")}`;
-}
-
-function sha256(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function canonicalStrings(values: readonly string[]): readonly string[] {
@@ -124,77 +109,29 @@ function captureAttribution(policy: AgentWorkspaceDiffPolicy): FileChangesAttrib
   } as FileChangesAttribution;
 }
 
-function limitationKeyWithoutCount(
-  limitation: Extract<FileChangesCollectionLimitation, { readonly code: "collection-cap-reached" }>,
-): string {
-  return [limitation.code, limitation.target, limitation.atWindowId ?? ""].join("\u0000");
-}
-
-/** Merge count-bearing limitations while keeping exact failures deterministically unique. */
-function canonicalLimitations(
-  values: readonly FileChangesCollectionLimitation[],
-): readonly FileChangesCollectionLimitation[] {
-  const exact = new Map<string, FileChangesCollectionLimitation>();
-  const caps = new Map<string, Extract<FileChangesCollectionLimitation, { readonly code: "collection-cap-reached" }>>();
+function collectionState(limitations: readonly CaptureLimitation[]): FileChangesCollectionState {
+  const exact = new Map<string, CaptureLimitation>();
   let unsupported = 0;
-
-  for (const limitation of values) {
-    switch (limitation.code) {
-      case "capture-failed":
-      case "capture-interrupted": {
-        exact.set(fileChangesCollectionLimitationKey(limitation), limitation);
-        break;
-      }
-      case "collection-cap-reached": {
-        const key = limitationKeyWithoutCount(limitation);
-        const prior = caps.get(key);
-        caps.set(key, {
-          ...limitation,
-          omittedAtLeast: (prior?.omittedAtLeast ?? 0) + limitation.omittedAtLeast,
-        });
-        break;
-      }
-      case "unsupported-input":
-        unsupported += limitation.omittedAtLeast;
-        break;
+  for (const limitation of limitations) {
+    if (limitation.code === "unsupported-input") {
+      unsupported += limitation.omittedAtLeast;
+    } else {
+      exact.set(fileChangesCollectionLimitationKey(limitation), limitation);
     }
   }
-
   if (unsupported > 0) {
-    exact.set("unsupported-input\u0000endpoint-metadata", {
-      code: "unsupported-input" as const,
-      target: "endpoint-metadata" as const,
-      omittedAtLeast: unsupported,
-    });
+    const limitation = unsupportedInputLimitation(unsupported);
+    exact.set(fileChangesCollectionLimitationKey(limitation), limitation);
   }
-
-  const merged = [...exact.values(), ...caps.values()];
-  return merged.sort((left, right) =>
+  const [first, ...rest] = [...exact.values()].sort((left, right) =>
     compareAscii(fileChangesCollectionLimitationKey(left), fileChangesCollectionLimitationKey(right)),
   );
+  return first === undefined
+    ? { state: "complete", limitations: [] }
+    : { state: "partial", limitations: [first, ...rest] };
 }
 
-function collectionState(limitations: readonly FileChangesCollectionLimitation[]): FileChangesCollectionState {
-  const canonical = canonicalLimitations(limitations);
-  return canonical.length === 0
-    ? ({ state: "complete" as const, limitations: [] } as FileChangesCollectionState)
-    : ({ state: "partial" as const, limitations: canonical } as FileChangesCollectionState);
-}
-
-function capLimitation(
-  target: "window" | "change" | "content" | "content-byte" | "value",
-  omittedAtLeast: number,
-  atWindowId: string | null,
-): FileChangesCollectionLimitation {
-  return {
-    code: "collection-cap-reached" as const,
-    target,
-    omittedAtLeast,
-    atWindowId,
-  };
-}
-
-function unsupportedInputLimitation(omittedAtLeast: number): FileChangesCollectionLimitation {
+function unsupportedInputLimitation(omittedAtLeast: number): CaptureLimitation {
   return {
     code: "unsupported-input" as const,
     target: "endpoint-metadata" as const,
@@ -236,28 +173,14 @@ function endpointForCapture(endpoint: AgentWorkspaceDiffEndpoint): {
           unsupportedEndpointCount: 1,
         };
       }
-      const content = encoder.encode(endpoint.text);
-      if (content.byteLength > FileChangesLimits.maximumTextRevisionBytes) {
-        return {
-          endpoint: {
-            state: "present" as const,
-            revision: {
-              kind: "elided" as const,
-              reason: "oversized-text" as const,
-              byteLength: content.byteLength,
-            },
-          },
-          unsupportedEndpointCount: 0,
-        };
-      }
       return {
         endpoint: {
-          state: "present" as const,
+          state: "present",
           revision: {
-            kind: "text" as const,
-            sha256: sha256(content),
-            byteLength: content.byteLength,
-            content: { state: "available" as const, text: endpoint.text },
+            kind: "text",
+            sha256: createHash("sha256").update(endpoint.text, "utf8").digest("hex"),
+            byteLength: Buffer.byteLength(endpoint.text, "utf8"),
+            text: endpoint.text,
           },
         },
         unsupportedEndpointCount: 0,
@@ -266,7 +189,7 @@ function endpointForCapture(endpoint: AgentWorkspaceDiffEndpoint): {
     case "elided": {
       const byteLength = endpoint.bytes;
       if (
-        (endpoint.reason !== "binary" && endpoint.reason !== "oversized-text") ||
+        endpoint.reason !== "binary" ||
         !Number.isSafeInteger(byteLength) ||
         byteLength === undefined ||
         byteLength < 0
@@ -332,257 +255,45 @@ function captureWindowId(window: AgentWorkspaceDiffWindow): string {
   return agentSendWindowId(identity);
 }
 
-function structuralCapture(source: CaptureDocumentSource): {
-  readonly windows: readonly CapturedWindow[];
-  readonly limitations: readonly FileChangesCollectionLimitation[];
-} {
-  const limitations: FileChangesCollectionLimitation[] = [];
-  const retainedWindowCount = Math.min(source.windows.length, FileChangesLimits.maximumWindows);
-  if (source.windows.length > retainedWindowCount) {
-    const firstOmitted = source.windows[retainedWindowCount];
-    limitations.push(
-      capLimitation(
-        "window",
-        source.windows.length - retainedWindowCount,
-        firstOmitted === undefined ? null : captureWindowId(firstOmitted),
-      ),
-    );
-  }
-
-  const windowIds = new Set<string>();
-  const preparedWindows: Array<{
-    readonly windowId: string;
-    readonly sequence: number;
-    readonly changes: readonly PreparedChange[];
-  }> = [];
-  for (let index = 0; index < retainedWindowCount; index += 1) {
-    const sourceWindow = source.windows[index]!;
-    const windowId = captureWindowId(sourceWindow);
-    if (windowIds.has(windowId)) {
-      throw new Error("File Changes collector received duplicate send-window ids");
-    }
-    windowIds.add(windowId);
-    const changes = [...sourceWindow.changes].sort((left, right) => compareAscii(left.path, right.path));
-    for (let changeIndex = 1; changeIndex < changes.length; changeIndex += 1) {
-      if (changes[changeIndex - 1]!.path === changes[changeIndex]!.path) {
-        throw new Error(
-          `File Changes collector received duplicate path ${JSON.stringify(changes[changeIndex]!.path)} in ${windowId}`,
-        );
-      }
-    }
-    const prepared = changes.map(prepareChange);
-    if (prepared.length > MAXIMUM_PRODUCED_CHANGES_PER_WINDOW) {
-      limitations.push(capLimitation("change", prepared.length - MAXIMUM_PRODUCED_CHANGES_PER_WINDOW, windowId));
-    }
-    preparedWindows.push({
-      windowId,
-      sequence: index + 1,
-      changes: prepared.slice(0, MAXIMUM_PRODUCED_CHANGES_PER_WINDOW),
-    });
-  }
-
-  let remainingChanges = MAXIMUM_PRODUCED_CHANGES_PER_ATTACHMENT;
-  const capturedWindows = preparedWindows.map((window) => {
-    const retained = Math.min(window.changes.length, remainingChanges);
-    if (retained < window.changes.length) {
-      limitations.push(capLimitation("change", window.changes.length - retained, window.windowId));
-    }
-    remainingChanges -= retained;
-    return {
-      windowId: window.windowId,
-      sequence: window.sequence,
-      changes: window.changes.slice(0, retained).map((change) => ({
-        ...change,
-        changeId: nextChangeId(),
-      })),
-    };
-  });
-
-  return { windows: capturedWindows, limitations };
-}
-
-function unsupportedLimitationsFor(windows: readonly CapturedWindow[]): readonly FileChangesCollectionLimitation[] {
-  const unsupported = windows.reduce(
-    (total, window) =>
-      total + window.changes.reduce((windowTotal, change) => windowTotal + change.unsupportedEndpointCount, 0),
-    0,
-  );
-  return unsupported === 0 ? [] : [unsupportedInputLimitation(unsupported)];
-}
-
-function omitTextContent(endpoint: CaptureEndpoint): CaptureEndpoint {
-  if (
-    endpoint.state !== "present" ||
-    endpoint.revision.kind !== "text" ||
-    endpoint.revision.content.state !== "available"
-  ) {
-    return endpoint;
-  }
-  return {
-    state: "present" as const,
-    revision: {
-      ...endpoint.revision,
-      content: { state: "omitted" as const, reason: "collection-cap" as const },
-    },
-  };
-}
-
-function withContentCaps(windows: readonly CapturedWindow[]): {
-  readonly windows: readonly CapturedWindow[];
-  readonly limitations: readonly FileChangesCollectionLimitation[];
-} {
-  let contentCount = 0;
-  let totalBytes = 0;
-  const limitations: FileChangesCollectionLimitation[] = [];
-  const consume = (endpoint: CaptureEndpoint, windowId: string): CaptureEndpoint => {
-    if (
-      endpoint.state !== "present" ||
-      endpoint.revision.kind !== "text" ||
-      endpoint.revision.content.state !== "available"
-    ) {
-      return endpoint;
-    }
-    if (endpoint.revision.byteLength > FileChangesLimits.maximumContentBytes) {
-      throw new Error("File Changes producer retained a text revision beyond its content limit");
-    }
-    if (contentCount >= FileChangesLimits.maximumContents) {
-      limitations.push(capLimitation("content", 1, windowId));
-      return omitTextContent(endpoint);
-    }
-    if (totalBytes + endpoint.revision.byteLength > FileChangesLimits.maximumTotalContentBytes) {
-      limitations.push(capLimitation("content-byte", 1, windowId));
-      return omitTextContent(endpoint);
-    }
-    contentCount += 1;
-    totalBytes += endpoint.revision.byteLength;
-    return endpoint;
-  };
-
-  const capped = windows.map((window) => ({
-    ...window,
-    changes: window.changes.map((change) => ({
-      ...change,
-      before: consume(change.before, window.windowId),
-      after: consume(change.after, window.windowId),
-    })),
-  }));
-  return { windows: capped, limitations };
-}
-
-function previewEndpoint(endpoint: CaptureEndpoint): unknown {
-  if (endpoint.state === "absent") return { state: "absent" as const };
-  const revision = endpoint.revision;
-  switch (revision.kind) {
-    case "text":
-      return {
-        state: "present" as const,
-        revision: {
-          kind: "text" as const,
-          sha256: revision.sha256,
-          byteLength: revision.byteLength,
-          content:
-            revision.content.state === "available"
-              ? { state: "available" as const, content: contentBudgetProjection }
-              : { state: "omitted" as const, reason: "collection-cap" as const },
-        },
-      };
-    case "elided":
-      return {
-        state: "present" as const,
-        revision: {
-          kind: "elided" as const,
-          reason: revision.reason,
-          byteLength: revision.byteLength,
-        },
-      };
-    case "unavailable":
-      return {
-        state: "present" as const,
-        revision: { kind: "unavailable" as const, reason: revision.reason },
-      };
-  }
-}
-
-function previewPayload(capture: FileChangesCapture): unknown {
-  return {
-    "attribution-data": capture.attribution,
-    "collection-data": capture.collection,
-    "windows-data": capture.windows.map((window) => ({
-      windowId: window.windowId,
-      sequence: window.sequence,
-      changes: window.changes.map((change) => ({
-        changeId: change.changeId,
-        path: change.path,
-        kind: change.kind,
-        before: previewEndpoint(change.before),
-        after: previewEndpoint(change.after),
-      })),
-    })),
-  };
-}
-
-function jsonByteLength(capture: FileChangesCapture): number {
-  const text = JSON.stringify(previewPayload(capture));
-  if (text === undefined) throw new Error("File Changes producer could not serialize its JSON budget projection");
-  return encoder.encode(text).byteLength;
-}
-
-function trimLastChange(
-  windows: readonly CapturedWindow[],
-): { readonly windows: readonly CapturedWindow[]; readonly atWindowId: string } | undefined {
-  for (let windowIndex = windows.length - 1; windowIndex >= 0; windowIndex -= 1) {
-    const window = windows[windowIndex]!;
-    if (window.changes.length === 0) continue;
-    const next = [...windows];
-    next[windowIndex] = {
-      ...window,
-      changes: window.changes.slice(0, -1),
-    };
-    return { windows: next, atWindowId: window.windowId };
-  }
-  return undefined;
-}
-
 function captureFrom(
   source: CaptureDocumentSource,
-  callerLimitations: readonly FileChangesCollectionLimitation[],
+  callerLimitations: readonly CaptureLimitation[],
 ): FileChangesCapture {
   if (source.attribution !== "agent-send-window-endpoints") {
     throw new Error("File Changes capture received an unsupported workspace attribution");
   }
-  const attribution = captureAttribution(source.policy);
-  const structural = structuralCapture(source);
-  let windows = structural.windows;
-  let jsonOmitted = 0;
-  let jsonAtWindowId: string | null = null;
-
-  for (;;) {
-    const contentCapped = withContentCaps(windows);
-    const limitations = [
+  const windowIds = new Set<string>();
+  let unsupported = 0;
+  const windows = source.windows.map((window, index) => {
+    const windowId = captureWindowId(window);
+    if (windowIds.has(windowId)) {
+      throw new Error("File Changes collector received duplicate send-window ids");
+    }
+    windowIds.add(windowId);
+    const changes = [...window.changes].sort((left, right) => compareAscii(left.path, right.path));
+    return {
+      windowId,
+      sequence: index + 1,
+      changes: changes.map((change, changeIndex) => {
+        if (change.path === changes[changeIndex - 1]?.path) {
+          throw new Error(
+            `File Changes collector received duplicate path ${JSON.stringify(change.path)} in ${windowId}`,
+          );
+        }
+        const { unsupportedEndpointCount, ...prepared } = prepareChange(change);
+        unsupported += unsupportedEndpointCount;
+        return { ...prepared, changeId: nextChangeId() };
+      }),
+    };
+  });
+  return {
+    attribution: captureAttribution(source.policy),
+    collection: collectionState([
       ...callerLimitations,
-      ...structural.limitations,
-      ...unsupportedLimitationsFor(windows),
-      ...contentCapped.limitations,
-      ...(jsonOmitted === 0 ? [] : [capLimitation("value", jsonOmitted, jsonAtWindowId)]),
-    ];
-    const capture = {
-      attribution,
-      collection: collectionState(limitations),
-      windows: contentCapped.windows,
-    } as FileChangesCapture;
-    if (jsonByteLength(capture) <= FileChangesLimits.maximumPayloadJsonBytes) {
-      assertFileChangesCaptureIntegrity(capture);
-      return capture;
-    }
-    const trimmed = trimLastChange(windows);
-    if (trimmed === undefined) {
-      throw new Error("File Changes producer cannot fit its structural payload within the JSON budget");
-    }
-    windows = trimmed.windows;
-    jsonOmitted += 1;
-    // Trimming walks backward, so the final removed entry is the first omitted prefix entry.
-    jsonAtWindowId = trimmed.atWindowId;
-  }
+      ...(unsupported === 0 ? [] : [unsupportedInputLimitation(unsupported)]),
+    ]),
+    windows,
+  };
 }
 
 /** Freeze a normal or partial collector result before any Record preflight/write. */
@@ -593,7 +304,7 @@ export function createFileChangesCapture(input: CreateFileChangesCaptureInput): 
 /** A started collector may have no safe export prefix but must still publish an honest partial capture. */
 export function createEmptyFileChangesCapture(input: {
   readonly policy: AgentWorkspaceDiffPolicy;
-  readonly limitations: readonly FileChangesCollectionLimitation[];
+  readonly limitations: readonly CaptureLimitation[];
 }): FileChangesCapture {
   return captureFrom(
     {
@@ -605,71 +316,25 @@ export function createEmptyFileChangesCapture(input: {
   );
 }
 
-function durableEndpoint(
-  endpoint: CaptureEndpoint,
-  availableContent: (revision: Extract<CaptureRevision, { readonly kind: "text" }>) => unknown,
-): unknown {
-  if (endpoint.state === "absent") return { state: "absent" as const };
-  const revision = endpoint.revision;
-  switch (revision.kind) {
-    case "text":
-      return {
-        state: "present" as const,
-        revision: {
-          kind: "text" as const,
-          sha256: revision.sha256,
-          byteLength: revision.byteLength,
-          content:
-            revision.content.state === "available"
-              ? availableContent(revision)
-              : { state: "omitted" as const, reason: "collection-cap" as const },
-        },
-      };
-    case "elided":
-      return {
-        state: "present" as const,
-        revision: {
-          kind: "elided" as const,
-          reason: revision.reason,
-          byteLength: revision.byteLength,
-        },
-      };
-    case "unavailable":
-      return {
-        state: "present" as const,
-        revision: { kind: "unavailable" as const, reason: revision.reason },
-      };
-  }
+function durableEndpoint(endpoint: CaptureEndpoint, textContent: (text: string) => RecordTextContentHandle): unknown {
+  if (endpoint.state === "absent" || endpoint.revision.kind !== "text") return endpoint;
+  const { sha256, byteLength, text } = endpoint.revision;
+  return {
+    state: "present",
+    revision: {
+      kind: "text",
+      sha256,
+      byteLength,
+      content: { state: "available", content: textContent(text) },
+    },
+  };
 }
 
-function assertFileChangesCaptureIntegrity(capture: FileChangesCapture): void {
-  let contentCount = 0;
-  let totalContentBytes = 0;
-  const verifyRevision = (revision: CaptureRevision): void => {
-    if (revision.kind !== "text" || revision.content.state !== "available") return;
-    const bytes = encoder.encode(revision.content.text);
-    if (bytes.byteLength !== revision.byteLength || sha256(bytes) !== revision.sha256) {
-      throw new Error("File Changes producer lost frozen text revision integrity");
-    }
-    contentCount += 1;
-    totalContentBytes += bytes.byteLength;
-  };
-  for (const window of capture.windows) {
-    for (const change of window.changes) {
-      if (change.before.state === "present") verifyRevision(change.before.revision);
-      if (change.after.state === "present") verifyRevision(change.after.revision);
-    }
-  }
-  if (
-    contentCount > FileChangesLimits.maximumContents ||
-    totalContentBytes > FileChangesLimits.maximumTotalContentBytes
-  ) {
-    throw new Error("File Changes producer exceeded its current content budget");
-  }
-
-  // Validate every non-content field against the current logical schema. The
-  // real opaque handles can only be minted by the later owner Session.
-  const preview = {
+function validatedAttachment(
+  capture: FileChangesCapture,
+  textContent: (text: string) => RecordTextContentHandle,
+): FileChangesAttachment {
+  const payload = {
     attribution: capture.attribution,
     collection: capture.collection,
     windows: capture.windows.map((window) => ({
@@ -679,75 +344,31 @@ function assertFileChangesCaptureIntegrity(capture: FileChangesCapture): void {
         changeId: change.changeId,
         path: change.path,
         kind: change.kind,
-        before: durableEndpoint(change.before, () => ({
-          state: "omitted" as const,
-          reason: "collection-cap" as const,
-        })),
-        after: durableEndpoint(change.after, () => ({
-          state: "omitted" as const,
-          reason: "collection-cap" as const,
-        })),
+        before: durableEndpoint(change.before, textContent),
+        after: durableEndpoint(change.after, textContent),
       })),
     })),
   };
   const decoded = Schema.decodeUnknownResult(
     Schema.toType(FileChangesAttachmentSchema),
     RecordExactParseOptions,
-  )(preview);
-  if (Result.isFailure(decoded)) {
-    throw new Error("File Changes producer generated an invalid current capture");
+  )(payload);
+  if (Result.isFailure(decoded) || validateFileChangesAttachment(decoded.success).length > 0) {
+    throw new Error("File Changes producer generated an invalid current value");
   }
+  return decoded.success;
 }
 
 export type FileChangesAttachmentBuild = (build: RecordAttachmentSessionBuilder) => FileChangesAttachment;
 
 /** Build the current logical value in the Attempt owner Session. */
 export function createFileChangesCaptureAttachment(capture: FileChangesCapture): FileChangesAttachmentBuild {
-  assertFileChangesCaptureIntegrity(capture);
-  return (build) => {
-    const availableContent = (revision: Extract<CaptureRevision, { readonly kind: "text" }>): unknown => {
-      const content = encoder.encode(revision.content.state === "available" ? revision.content.text : "");
-      if (
-        revision.content.state !== "available" ||
-        content.byteLength !== revision.byteLength ||
-        sha256(content) !== revision.sha256
-      ) {
-        throw new Error("File Changes producer lost frozen text revision integrity");
-      }
-      return {
-        state: "available" as const,
-        content: build.content.text(revision.content.text),
-      };
-    };
-    const payload = {
-      attribution: capture.attribution,
-      collection: capture.collection,
-      windows: capture.windows.map((window) => ({
-        windowId: window.windowId,
-        sequence: window.sequence,
-        changes: window.changes.map((change) => ({
-          changeId: change.changeId,
-          path: change.path,
-          kind: change.kind,
-          before: durableEndpoint(change.before, availableContent),
-          after: durableEndpoint(change.after, availableContent),
-        })),
-      })),
-    };
-    const decoded = Schema.decodeUnknownResult(
-      Schema.toType(FileChangesAttachmentSchema),
-      RecordExactParseOptions,
-    )(payload);
-    if (Result.isFailure(decoded)) {
-      throw new Error("File Changes producer generated an invalid current value");
-    }
-    return decoded.success;
-  };
+  return (build) => validatedAttachment(capture, build.content.text);
 }
 
-/** Preflight validates the same frozen ids and closure shape that the Attempt writer will publish. */
+/** Preflight validates the frozen ids and logical shape without opening Record content. */
 export function assertFileChangesCaptureRecordable(capture: FileChangesCapture): void {
-  assertFileChangesCaptureIntegrity(capture);
+  validatedAttachment(capture, () => mintRecordContentHandle("text"));
 }
 
 /** Internal assertion-seal bridge; Runner itself retains the frozen capture, never this convenience path. */

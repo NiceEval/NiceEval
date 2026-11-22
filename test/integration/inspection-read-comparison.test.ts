@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -25,6 +26,10 @@ const { openCurrentProjectSource } =
 
 const SANDBOX_FIXTURE = fileURLToPath(new URL("fixtures/inspection-core/sandbox.ts.txt", import.meta.url));
 const LEGACY_V4_RECORD = fileURLToPath(new URL("fixtures/inspection-core/assertions-v4.sqlite", import.meta.url));
+const LARGE_DIFF_REPEATS = 700_000;
+const EXTRA_DIFF_CHANGES = 129;
+const EXTRA_DIFF_DIRECTORY = `changes-${"a".repeat(150)}/changes-${"b".repeat(150)}`;
+const PAGED_DIFF_REPEATS = 7_000;
 
 type RunId = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"run.get">["runId"];
 type ExperimentId = import("../../packages/niceeval/src/inspection/public.ts").InspectionOperationFor<"experiment.get">["experimentId"];
@@ -136,8 +141,16 @@ describe("exact read and comparison: runs, overview, matrix, diff, and notes", (
           install: { identity: { agent: "diff-body", version: "1", revision: "1" }, probe: shell("true") },
           async send(_input, ctx) {
             await ctx.sandbox.writeText("small.txt", "after\\n");
-            await ctx.sandbox.writeText("large.txt", "新".repeat(10000) + "\\n");
+            await ctx.sandbox.writeText("large.txt", "新".repeat(${LARGE_DIFF_REPEATS}) + "\\n");
+            await ctx.sandbox.writeText("paged.txt", "新".repeat(${PAGED_DIFF_REPEATS}) + "\\n");
             await ctx.sandbox.writeText("binary.txt", "now text\\n");
+            await ctx.sandbox.runShellOrThrow([
+              'set -eu',
+              'mkdir -p "${EXTRA_DIFF_DIRECTORY}"',
+              'cd "${EXTRA_DIFF_DIRECTORY}"',
+              'i=0',
+              'while [ "$i" -lt ${EXTRA_DIFF_CHANGES} ]; do printf "new\\\\n" > "extra-$i.txt"; i=$((i + 1)); done',
+            ].join("\\n"));
             return { status: "completed", events: [] };
           },
         });
@@ -216,7 +229,8 @@ describe("exact read and comparison: runs, overview, matrix, diff, and notes", (
         `import { defineScoreEval } from "niceeval";
          export default defineScoreEval({ async test(t) {
            await t.sandbox.writeText("small.txt", "before\\n");
-           await t.sandbox.writeText("large.txt", "旧".repeat(10000) + "\\n");
+           await t.sandbox.writeText("large.txt", "旧".repeat(${LARGE_DIFF_REPEATS}) + "\\n");
+           await t.sandbox.writeText("paged.txt", "旧".repeat(${PAGED_DIFF_REPEATS}) + "\\n");
            await t.sandbox.writeBytes("binary.txt", new Uint8Array([0, 1, 2, 3]));
            await t.send("change files");
            t.score(1);
@@ -404,49 +418,105 @@ describe("exact read and comparison: runs, overview, matrix, diff, and notes", (
   });
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
-  test("attempt.diff reads exact before/after hunks, truncates large bodies, and marks binary endpoints", async () => {
+  test("attempt.diff retains large revisions and paginates changes and UTF-8 text losslessly", async () => {
     await withOperational(cwd, (facts) => {
-      const listed = selectInspectionOperation(facts, { kind: "attempt.diff", locator: diffLocator }).diff;
-      expect(listed.state).toBe("complete");
-      if (listed.state !== "complete") throw new Error("Expected complete diff");
-      const changes = listed.windows.flatMap((window) => window.changes);
-      expect(changes.map((change) => change.path).sort()).toEqual(["binary.txt", "large.txt", "small.txt"]);
+      const list = { kind: "attempt.diff", locator: diffLocator } as const;
+      const listPage = (continuation?: string) => {
+        const request = continuation === undefined ? list : { ...list, continuation };
+        const result = selectInspectionOperation(facts, request).diff;
+        if (result.state !== "complete") throw new Error("Expected complete diff page");
+        return result;
+      };
+      let listed = listPage();
+      const expected = [
+        "binary.txt",
+        "large.txt",
+        "paged.txt",
+        "small.txt",
+        ...Array.from({ length: EXTRA_DIFF_CHANGES }, (_, index) => `${EXTRA_DIFF_DIRECTORY}/extra-${index}.txt`),
+      ].sort();
+      const changes = [...listed.windows.flatMap((window) => window.changes)];
+      expect(listed.continuation).toEqual(expect.any(String));
+      while (listed.continuation !== undefined) {
+        expect(listed.omittedChangeCount).toBe(expected.length - changes.length);
+        listed = listPage(listed.continuation);
+        changes.push(...listed.windows.flatMap((window) => window.changes));
+      }
+      expect(listed.omittedChangeCount).toBe(0);
+      expect(changes.map((change) => change.path)).toEqual(expected);
 
-      fc.assert(
-        fc.property(fc.constantFrom("small.txt", "large.txt", "binary.txt"), (path) => {
-          const change = changes.find((item) => item.path === path)!;
-          const detail = selectInspectionOperation(facts, {
-            kind: "attempt.diff",
-            locator: diffLocator,
-            changeId: change.changeId,
-          }).diff;
-          if (!("detail" in detail) || detail.detail === undefined) throw new Error("Expected diff detail");
-          if (path === "small.txt") {
-            expect(detail.detail).toMatchObject({
-              before: { state: "available", text: "before\n", truncated: false },
-              after: { state: "available", text: "after\n", truncated: false },
-              hunks: {
-                state: "available",
-                text: "--- a/small.txt\n+++ b/small.txt\n@@ -1,1 +1,1 @@\n-before\n+after\n",
-                truncated: false,
-              },
-            });
-          } else if (path === "large.txt") {
-            expect(detail.detail).toMatchObject({
-              before: { state: "available", truncated: true, byteLength: 30001 },
-              after: { state: "available", truncated: true },
-              hunks: { truncated: true },
-            });
-          } else {
-            expect(detail.detail).toMatchObject({
-              before: { state: "binary" },
-              after: { state: "binary" },
-              hunks: { state: "unavailable", text: "" },
-            });
-          }
-        }),
-        { numRuns: 3, seed: 2041 },
+      const lookup = (path: string, continuation?: string) => {
+        const { changeId } = changes.find((item) => item.path === path)!;
+        const response = selectInspectionOperation(facts, {
+          ...list,
+          changeId,
+          ...(continuation === undefined ? {} : { continuation }),
+        }).diff;
+        if (!("detail" in response) || response.detail === undefined) throw new Error("Expected file change detail");
+        return { detail: response.detail, continuation: response.continuation };
+      };
+      expect(lookup("small.txt").detail).toMatchObject({
+        before: { state: "available", text: "before\n", truncated: false },
+        after: { state: "available", text: "after\n", truncated: false },
+        hunks: {
+          state: "available",
+          text: "--- a/small.txt\n+++ b/small.txt\n@@ -1,1 +1,1 @@\n-before\n+after\n",
+        },
+      });
+      expect(lookup("binary.txt").detail).toMatchObject({
+        before: { state: "binary" },
+        after: { state: "binary" },
+        hunks: { state: "unavailable", text: "" },
+      });
+
+      // This detail read verifies the whole stored text against the declared digest before returning its page.
+      const large = changes.find((change) => change.path === "large.txt")!;
+      const verified = lookup("large.txt").detail;
+      for (const [side, character] of [["before", "旧"], ["after", "新"]] as const) {
+        const text = character.repeat(LARGE_DIFF_REPEATS) + "\n";
+        expect(large[side]).toMatchObject({
+          state: "present",
+          revision: {
+            kind: "text",
+            content: "available",
+            byteLength: Buffer.byteLength(text),
+            sha256: createHash("sha256").update(text).digest("hex"),
+          },
+        });
+        const page = verified[side];
+        if (page.state !== "available") throw new Error(`Expected large ${side} text`);
+        expect(page.text).toBe(character.repeat(page.endOffset / 3));
+        expect(page.omittedBytes).toBe(Buffer.byteLength(text) - page.endOffset);
+      }
+
+      let current = lookup("paged.txt");
+      expect(current.continuation).toEqual(expect.any(String));
+      expectOperationCode(
+        () => selectInspectionOperation(facts, { ...list, continuation: current.continuation }),
+        "restart-required",
       );
+      const bodies = { before: "", after: "", hunks: "" };
+      const endOffsets = { before: 0, after: 0, hunks: 0 };
+      while (true) {
+        for (const key of ["before", "after", "hunks"] as const) {
+          const part = current.detail[key];
+          if (part.state !== "available") throw new Error(`Expected available ${key}, got ${part.state}`);
+          expect(part.offset).toBe(endOffsets[key]);
+          expect(part.omittedBytes).toBe(part.byteLength - part.endOffset);
+          expect(part.endOffset - part.offset).toBe(Buffer.byteLength(part.text));
+          endOffsets[key] = part.endOffset;
+          bodies[key] += part.text;
+        }
+        if (current.continuation === undefined) break;
+        current = lookup("paged.txt", current.continuation);
+      }
+      const before = "旧".repeat(PAGED_DIFF_REPEATS) + "\n";
+      const after = "新".repeat(PAGED_DIFF_REPEATS) + "\n";
+      expect(bodies).toEqual({
+        before,
+        after,
+        hunks: `--- a/paged.txt\n+++ b/paged.txt\n@@ -1,1 +1,1 @@\n-${before}+${after}`,
+      });
     });
   });
 });
