@@ -94,5 +94,5 @@ if (mode === "--check") {
   }
   throw new Error("Stable INIT website hash did not match before deployment deadline");
 } else {
-  throw new Error("Usage: node .github/scripts/promote-init.mjs --check | --promote vX.Y.Z");
+  throw new Error("Usage: node .github/scripts/promote-init.ts --check | --promote vX.Y.Z");
 }

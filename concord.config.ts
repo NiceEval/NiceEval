@@ -14,7 +14,7 @@ export default {
     ],
     "argv": ["pnpm", "exec", "tsx", "packages/e2e-runner/src/concord-adapter.ts"],
     "implementationFiles": ["packages/e2e-runner/src/concord-adapter.ts", "packages/e2e-runner/src/adapter-host.ts", "packages/e2e-runner/src/adapter-wire.ts", "packages/e2e-runner/src/adapter-observation.ts", "packages/e2e-runner/src/adapter-range.ts", "packages/e2e-runner/package.json", "packages/testkit/package.json"],
-    "inputRoots": ["packages/e2e-runner/src", "packages/repo-tools/src", "e2e", "packages/niceeval/src", "packages/niceeval/bin", "packages/niceeval/scripts", "packages/niceeval/package.json", "packages/niceeval/vite.config.ts", "packages/niceeval/tsconfig.package-types.json", "packages/niceeval/tsconfig.json", "packages/niceeval/docs-source/stage-docs.mjs", "packages/testkit/src", "packages/testkit/package.json", "apps/docs-site/en", "apps/docs-site/zh", "apps/docs-site/docs.json", "concord.repository.json", "nx.json", "package.json"],
+    "inputRoots": ["packages/e2e-runner/src", "packages/repo-tools/src", "e2e", "packages/niceeval/src", "packages/niceeval/bin", "packages/niceeval/scripts", "packages/niceeval/package.json", "packages/niceeval/vite.config.ts", "packages/niceeval/tsconfig.package-types.json", "packages/niceeval/tsconfig.json", "packages/niceeval/docs-source/stage-docs.ts", "packages/testkit/src", "packages/testkit/package.json", "apps/docs-site/en", "apps/docs-site/zh", "apps/docs-site/docs.json", "concord.repository.json", "nx.json", "package.json"],
     "lockFiles": ["pnpm-lock.yaml"],
     "frameworkVersion": "niceeval-e2e/1",
     "envNames": ["PATH", "HOME", "TMPDIR", "CI"],

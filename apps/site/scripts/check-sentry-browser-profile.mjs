@@ -6,7 +6,7 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { identifiers } from "./sentry-profile-assets.mjs";
+import { identifiers } from "./sentry-profile-assets.ts";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.resolve("tsx"));
 const { build } = require("esbuild");

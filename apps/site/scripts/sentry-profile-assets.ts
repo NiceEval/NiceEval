@@ -2,12 +2,13 @@ import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative, dirname } from "node:path";
 import { parse } from "acorn";
 
-export function identifiers(source) {
-  const symbols = new Set();
+export function identifiers(source: string) {
+  const symbols = new Set<string>();
   const tree = parse(source, { ecmaVersion: "latest", sourceType: "module", allowReturnOutsideFunction: true });
-  function visit(node) {
+  function visit(node: unknown) {
     if (!node || typeof node !== "object") return;
-    if (node.type === "Identifier") symbols.add(node.name);
+    if ("type" in node && node.type === "Identifier" && "name" in node && typeof node.name === "string")
+      symbols.add(node.name);
     for (const value of Object.values(node)) {
       if (Array.isArray(value)) value.forEach(visit);
       else if (value && typeof value === "object") visit(value);
@@ -17,9 +18,9 @@ export function identifiers(source) {
   return [...symbols].sort();
 }
 
-export async function generateManifest(root, prefix, release) {
-  const files = {};
-  async function walk(dir) {
+export async function generateManifest(root: string, prefix: string, release: string) {
+  const files: Record<string, string[]> = {};
+  async function walk(dir: string) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await walk(path);
@@ -33,7 +34,7 @@ export async function generateManifest(root, prefix, release) {
 }
 
 // Run inside Next before the provider's onBuildComplete asset snapshot.
-export async function writeProfileManifests(distDir, release) {
+export async function writeProfileManifests(distDir: string, release: string) {
   if ((process.env.CI || process.env.VERCEL_ENV === "production") && !/^site@[a-f0-9]{40}$/.test(release))
     throw new Error("Official profile manifest requires the deployment Git SHA release");
   const browserKey = /^site@([a-f0-9]{40})$/.exec(release)?.[1] ?? "local";
@@ -48,7 +49,7 @@ export async function writeProfileManifests(distDir, release) {
   }
   // Turbopack emits NFT during compilation, before this manifest exists.
   // Preserve the existing explicit membership update, before the provider consumes NFT.
-  async function includeManifest(dir) {
+  async function includeManifest(dir: string) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await includeManifest(path);

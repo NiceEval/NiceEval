@@ -8,7 +8,7 @@
   "type": "module",
   "description": "Insight E2E consumer: first-party browser view",
   "scripts": {
-    "e2e": "node scripts/run-native.mjs",
+    "e2e": "node scripts/run-native.ts",
     "test": "node -e \"console.error('场景目录不是正式测试入口：请从仓库根运行 pnpm e2e test --repo insight'); process.exit(1)\"",
     "typecheck": "tsc --noEmit",
     "postinstall": "playwright install chromium"

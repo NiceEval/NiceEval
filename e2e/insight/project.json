@@ -41,7 +41,7 @@
           },
           "command": [
             "node",
-            "scripts/run-native.mjs"
+            "scripts/run-native.ts"
           ],
           "timeoutMinutes": 5,
           "harness": {

@@ -32,7 +32,7 @@ jobs:
         uses: ./.github/actions/setup-concord
 
       - name: Check CI model artifact privacy
-        run: node --test .github/scripts/model-privacy.test.mjs
+        run: node --test .github/scripts/model-privacy.test.ts
 
       - name: Smoke packed NiceEval in an empty project
         run: |

@@ -9,7 +9,7 @@
 # with explicit e2e:none ownership instead of being hidden here.
 /*.md
 /packages/testkit/README.md
-/packages/niceeval/scripts/sync-prices.mjs
+/packages/niceeval/scripts/sync-prices.ts
 /assets/
 /examples/
 /lint/

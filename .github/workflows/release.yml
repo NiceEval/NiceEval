@@ -265,4 +265,4 @@ jobs:
           test "$expected" = "$actual"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          node .github/scripts/promote-init.mjs --promote "$TAG"
+          node .github/scripts/promote-init.ts --promote "$TAG"

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { identifiers } from "./sentry-profile-assets.mjs";
+import { identifiers } from "./sentry-profile-assets.ts";
 
 const output = resolve(process.argv[2] || ".next/output");
 const serverBytes = await readFile(".next/server/sentry-profile-assets.json", "utf8");

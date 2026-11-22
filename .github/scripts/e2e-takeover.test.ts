@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { selectTakeoverOwners } from "./e2e-takeover.mjs";
+import { selectTakeoverOwners } from "./e2e-takeover.ts";
 
 test("Git diff selection keeps deterministic Concord identities, ignores formatting, and covers shared fixture changes", () => {
   const root = mkdtempSync(join(tmpdir(), "takeover-selection-"));

@@ -28,8 +28,8 @@
     }
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "build": "node scripts/clean-dist.ts && tsc6 -p tsconfig.esm.json && tsc6 -p tsconfig.cjs.json && node scripts/finalize-build.ts",
+    "typecheck": "node scripts/typecheck.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

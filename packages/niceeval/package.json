@@ -116,11 +116,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "niceeval": "node bin/niceeval.js",
-    "sync:prices": "node scripts/sync-prices.mjs",
-    "check:prices": "node scripts/sync-prices.mjs --check",
+    "sync:prices": "node scripts/sync-prices.ts",
+    "check:prices": "node scripts/sync-prices.ts --check",
     "build:package": "node scripts/package-runtime/build.mjs",
     "build:index": "pnpm --dir ../.. run build:index",
-    "stage:docs": "node docs-source/stage-docs.mjs",
+    "stage:docs": "node docs-source/stage-docs.ts",
     "prepack": "pnpm exec concurrently --kill-others-on-fail --names package,index,docs \"pnpm run build:package\" \"pnpm run build:index\" \"pnpm run stage:docs\""
   },
   "dependencies": {

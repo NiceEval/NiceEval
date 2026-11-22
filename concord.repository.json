@@ -243,7 +243,7 @@
       "e2e/insight/pnpm-lock.yaml",
       "e2e/insight/pnpm-workspace.yaml",
       "e2e/insight/project.json",
-      "e2e/insight/scripts/run-native.mjs",
+      "e2e/insight/scripts/run-native.ts",
       "e2e/insight/tsconfig.json",
       "e2e/insight/vitest.config.ts",
       "e2e/lifecycle/package.json",

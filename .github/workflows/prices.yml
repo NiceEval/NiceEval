@@ -8,7 +8,7 @@ on:
     paths:
       - ".github/workflows/prices.yml"
       - "packages/niceeval/package.json"
-      - "packages/niceeval/scripts/sync-prices.mjs"
+      - "packages/niceeval/scripts/sync-prices.ts"
       - "packages/niceeval/src/o11y/prices.json"
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
           node-version: 24
 
       - name: Sync LiteLLM price overlay
-        run: node packages/niceeval/scripts/sync-prices.mjs
+        run: node packages/niceeval/scripts/sync-prices.ts
 
       - name: Open or update price refresh pull request
         env:
@@ -68,4 +68,4 @@ jobs:
           node-version: 24
 
       - name: Check LiteLLM price overlay
-        run: node packages/niceeval/scripts/sync-prices.mjs --check
+        run: node packages/niceeval/scripts/sync-prices.ts --check

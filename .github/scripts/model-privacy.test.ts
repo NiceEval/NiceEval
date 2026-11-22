@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { sensitiveValues, redactArtifacts } from "./model-privacy.mjs";
+import { sensitiveValues, redactArtifacts } from "./model-privacy.ts";
 
 test("failure artifacts remove endpoint variants and keys without following links or publishing archives", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "model-privacy-"));

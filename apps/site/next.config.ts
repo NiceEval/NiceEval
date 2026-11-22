@@ -1,6 +1,7 @@
 import { networkInterfaces } from "node:os";
 import { withSentryConfig } from "@sentry/nextjs/config";
-import { writeProfileManifests } from "./scripts/sentry-profile-assets.mjs";
+import type { NextConfig } from "next";
+import { writeProfileManifests } from "./scripts/sentry-profile-assets.ts";
 
 if (process.env.VERCEL_ENV === "production" && !process.env.SENTRY_AUTH_TOKEN) {
   throw new Error("Production deployment requires SENTRY_AUTH_TOKEN for sourcemap upload");
@@ -16,8 +17,7 @@ const localDevOrigins = [
 const release =
   process.env.SENTRY_RELEASE || (process.env.VERCEL_GIT_COMMIT_SHA ? `site@${process.env.VERCEL_GIT_COMMIT_SHA}` : "");
 const environment = process.env.SENTRY_ENVIRONMENT || process.env.VERCEL_ENV || "production";
-/** @type {import("next").NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
   compiler: {
     async runAfterProductionCompile({ distDir }) {
       await writeProfileManifests(distDir, release);

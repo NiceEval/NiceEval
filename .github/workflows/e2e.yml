@@ -267,7 +267,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check takeover owner selection
-        run: node --test .github/scripts/e2e-takeover.test.mjs
+        run: node --test .github/scripts/e2e-takeover.test.ts
 
       - name: Select changed deterministic takeover owners
         id: takeover
@@ -284,7 +284,7 @@ jobs:
             if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
               base="$(git merge-base "$PR_BASE" "$head")"
             fi
-            node .github/scripts/e2e-takeover.mjs --base "$base" --head "$head" \
+            node .github/scripts/e2e-takeover.ts --base "$base" --head "$head" \
               --plan "${RUNNER_TEMP}/e2e-plan.json" > "$output"
           else
             echo '{"cells":[]}' > "$output"
@@ -579,7 +579,7 @@ jobs:
           TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
         run: |
           set -euo pipefail
-          node .github/scripts/model-privacy.mjs mask
+          node .github/scripts/model-privacy.ts mask
           node <<'NODE'
           const fs = require('node:fs');
           const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, 'utf8'));
@@ -616,7 +616,7 @@ jobs:
           CELL_ID: ${{ matrix.id }}
           MANIFESTS_FILE: ${{ steps.cell.outputs.manifests-file }}
         if: steps.model-network.outputs.required == 'true'
-        run: node .github/scripts/model-connectivity.mjs
+        run: node .github/scripts/model-connectivity.ts
 
       - name: Run e2e for ${{ matrix.id }}
         env:
@@ -640,7 +640,7 @@ jobs:
           ARTIFACT_SOURCE: ${{ steps.safe.outputs.artifact-root }}
           ARTIFACT_SAFE: ${{ steps.safe.outputs.artifact-root }}-safe
           TS_AUTHKEY: ${{ needs.prepare.outputs.inject-secrets == 'true' && secrets.TS_AUTHKEY || '' }}
-        run: node .github/scripts/model-privacy.mjs artifacts
+        run: node .github/scripts/model-privacy.ts artifacts
 
       - name: Upload cell artifacts
         if: always() && steps.redact.outcome == 'success'
@@ -777,7 +777,7 @@ jobs:
           ARTIFACT_ROOT: ${{ steps.safe.outputs.artifact-root }}
         run: |
           set -euo pipefail
-          node .github/scripts/e2e-takeover.mjs --run \
+          node .github/scripts/e2e-takeover.ts --run \
             --plan "${RUNNER_TEMP}/takeover-selection/e2e-takeover-plan.json" \
             --cell "$CELL_ID" --candidate "$CANDIDATE" --artifact-root "$ARTIFACT_ROOT"
 
@@ -802,6 +802,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up Node for E2E summaries
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Download cell and takeover receipts
         continue-on-error: true
@@ -838,7 +843,7 @@ jobs:
           MATRIX_RESULT: ${{ needs.e2e.result }}
           TAKEOVER_RESULT: ${{ needs.takeover.result }}
           JOBS_JSON: ${{ steps.jobs.outputs.jobs }}
-        run: node packages/e2e-runner/scripts/ci-summary.mjs
+        run: node packages/e2e-runner/scripts/ci-summary.ts
 
       - name: Require the complete selected matrix
         if: always()
