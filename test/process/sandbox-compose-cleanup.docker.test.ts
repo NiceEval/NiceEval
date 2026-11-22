@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import fc from "fast-check";
-import { beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { decodeExpTerminalEvent } =
@@ -22,7 +22,8 @@ const otherOrders = fc
 const mountOrders = [volumeKinds, ...fc.sample(otherOrders, { seed: 260_602, numRuns: 1 })];
 
 beforeAll(async () => {
-  await execa("docker", ["pull", image], { timeout: 120_000 });
+  const local = await execa("docker", ["image", "inspect", image], { reject: false });
+  if (local.exitCode !== 0) await execa("docker", ["pull", image], { timeout: 120_000 });
 }, 125_000);
 
 async function waitUntilReady(cwd: string, signal: AbortSignal) {
@@ -65,37 +66,63 @@ export default defineEval({
 });
 `;
 
-// @feature docs/feature/sandbox/README.md#resource-group-cleanup
-test.each(mountOrders.map((mountOrder) => ({ mountOrder })))(
-  "stopping an Attempt removes Compose group resources and preserves its external volume ($mountOrder)",
-  async ({ mountOrder }) => {
-    const cwd = await mkdtemp(join(tmpdir(), "niceeval-compose-cleanup-"));
+async function composeProjectName(container: string) {
+  const { stdout } = await execa("docker", [
+    "inspect",
+    "-f",
+    '{{ index .Config.Labels "com.docker.compose.project" }}',
+    container,
+  ]);
+  return stdout;
+}
+
+describe.for(mountOrders.map((mountOrder) => ({ mountOrder })))(
+  "Compose resources mounted in order $mountOrder",
+  ({ mountOrder }) => {
     const id = `niceeval-compose-${randomUUID()}`;
     const externalVolume = `${id}-external`;
     const filter = `label=niceeval.test-case=${id}`;
-    const composeFile = join(cwd, "compose.yaml");
     const mounts = { owned: "owned:/owned", anonymous: "/anonymous", external: "external:/external" };
+    const watchController = new AbortController();
+    let cwd: string;
+    let composeFile: string;
+    let child: ReturnType<typeof startAttempt> | undefined;
     let projectName: string | undefined;
     let anonymousVolume: string | undefined;
-    try {
+
+    function startAttempt(workdir: string) {
+      return execa(process.execPath, [...process.execArgv, cli, "exp", "compose", "--rerun=all", "--json"], {
+        cwd: workdir,
+        detached: true,
+        env: { NICEEVAL_HOME: join(workdir, "user"), NO_COLOR: "1" },
+        reject: false,
+        timeout: 60_000,
+      });
+    }
+
+    beforeAll(async () => {
+      cwd = await mkdtemp(join(tmpdir(), "niceeval-compose-cleanup-"));
+      composeFile = join(cwd, "compose.yaml");
       await execa("docker", ["volume", "create", externalVolume]);
       await Promise.all(["evals", "experiments"].map((directory) => mkdir(join(cwd, directory))));
-      const compose = {
-        services: {
-          client: {
-            image,
-            command: ["sleep", "120"],
-            labels: { "niceeval.test-case": id },
-            volumes: mountOrder.map((kind) => mounts[kind]),
-          },
-        },
-        volumes: {
-          owned: {},
-          external: { external: true, name: externalVolume },
-        },
-      };
+      const compose = `services:
+  client:
+    image: ${image}
+    command: ["sleep", "120"]
+    working_dir: /workspace
+    labels:
+      niceeval.test-case: ${id}
+    volumes:
+${mountOrder.map((kind) => `      - ${mounts[kind]}`).join("\n")}
+volumes:
+  owned: {}
+  external:
+    external: true
+    name: ${externalVolume}
+`;
       await Promise.all([
-        writeFile(composeFile, JSON.stringify(compose)),
+        writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
+        writeFile(composeFile, compose),
         writeFile(join(cwd, "evals/probe.eval.ts"), evaluation),
         writeFile(join(cwd, "agent.ts"), adapter),
         writeFile(
@@ -115,68 +142,43 @@ export default defineExperiment({
         ),
       ]);
 
-      const watchController = new AbortController();
       const ready = waitUntilReady(cwd, watchController.signal);
-      const child = execa(process.execPath, [...process.execArgv, cli, "exp", "compose", "--rerun=all", "--json"], {
-        cwd,
-        detached: true,
-        env: { NICEEVAL_HOME: join(cwd, "user"), NO_COLOR: "1" },
-        reject: false,
-        timeout: 60_000,
-      });
-      try {
-        await Promise.race([
-          ready,
-          child.then(({ stdout, stderr }) => {
-            throw new Error(`CLI exited before the Attempt was ready: ${stderr || stdout}`);
-          }),
-        ]);
-        const containers = await dockerList(["ps", "-aq"], filter);
-        expect(containers).toHaveLength(1);
-        projectName = (
-          await execa("docker", ["inspect", "-f", '{{ index .Config.Labels "com.docker.compose.project" }}', containers[0]!])
-        ).stdout;
-        const projectFilter = `label=com.docker.compose.project=${projectName}`;
-        expect(await dockerList(["network", "ls", "--format", "{{.Name}}"], projectFilter)).toEqual([
-          `${projectName}_default`,
-        ]);
-        const { stdout: mountNames } = await execa("docker", [
-          "inspect", "-f", "{{range .Mounts}}{{println .Destination .Name}}{{end}}", containers[0]!,
-        ]);
-        const volumes = new Map(
-          mountNames.trim().split("\n").map((line) => {
-            const [destination, name] = line.split(" ");
-            return [destination, name];
-          }),
-        );
-        anonymousVolume = volumes.get("/anonymous");
-        const ownedVolume = volumes.get("/owned");
-        expect(volumes.get("/external")).toBe(externalVolume);
-        expect(anonymousVolume).toMatch(/^[a-f0-9]{64}$/u);
-        expect(ownedVolume).toBe(`${projectName}_owned`);
+      child = startAttempt(cwd);
+      await Promise.race([
+        ready,
+        child.then(({ stdout, stderr }) => {
+          throw new Error(`CLI exited before the Attempt was ready: ${[stderr, stdout].filter(Boolean).join("\n")}`);
+        }),
+      ]);
 
-        process.kill(-child.pid!, "SIGINT");
-        const result = await child;
-        expect(result.exitCode, result.stderr).toBe(130);
-        const receipt = result.stdout
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line))
-          .find((document) => document.type === "receipt");
-        expect(decodeExpTerminalEvent(receipt).receipt.completion).toBe("interrupted");
-        expect(await dockerList(["ps", "-aq"], projectFilter)).toEqual([]);
-        expect(await dockerList(["network", "ls", "-q"], projectFilter)).toEqual([]);
-        expect(await dockerList(["volume", "ls", "-q"], projectFilter)).toEqual([]);
-        await expect(execa("docker", ["volume", "inspect", anonymousVolume!], { reject: false })).resolves.toMatchObject({
-          exitCode: 1,
-        });
-        await expect(execa("docker", ["volume", "inspect", externalVolume, "-f", "{{.Name}}"])).resolves.toMatchObject({
-          stdout: externalVolume,
-        });
-      } finally {
-        watchController.abort();
-        const processState = child.nodeChildProcess;
-        if (child.pid !== undefined && processState.exitCode === null && processState.signalCode === null) {
+      const containers = await dockerList(["ps", "-aq"], filter);
+      expect(containers).toHaveLength(1);
+      const container = containers[0]!;
+      projectName = await composeProjectName(container);
+      const { stdout: mountNames } = await execa("docker", [
+        "inspect", "-f", "{{range .Mounts}}{{println .Destination .Name}}{{end}}", container,
+      ]);
+      const volumes = new Map(
+        mountNames.trim().split("\n").map((line) => {
+          const [destination, name] = line.split(" ");
+          return [destination, name];
+        }),
+      );
+      anonymousVolume = volumes.get("/anonymous");
+      expect(volumes.get("/external")).toBe(externalVolume);
+      expect(anonymousVolume).toMatch(/^[a-f0-9]{64}$/u);
+      expect(volumes.get("/owned")).toBe(`${projectName}_owned`);
+      const projectFilter = `label=com.docker.compose.project=${projectName}`;
+      expect(await dockerList(["network", "ls", "--format", "{{.Name}}"], projectFilter)).toEqual([
+        `${projectName}_default`,
+      ]);
+    }, 75_000);
+
+    afterAll(async () => {
+      watchController.abort();
+      try {
+        const state = child?.nodeChildProcess;
+        if (child?.pid !== undefined && state?.exitCode === null && state.signalCode === null) {
           try {
             process.kill(-child.pid, "SIGKILL");
           } catch (error) {
@@ -184,30 +186,52 @@ export default defineExperiment({
           }
         }
         await child;
-      }
-    } finally {
-      // Recover the Compose name from our own label if the test failed before inspecting the ready container.
-      if (projectName === undefined) {
-        const [container] = await dockerList(["ps", "-aq"], filter);
-        if (container !== undefined) {
-          projectName = (
-            await execa("docker", ["inspect", "-f", '{{ index .Config.Labels "com.docker.compose.project" }}', container])
-          ).stdout;
-        }
-      }
-      try {
-        if (projectName !== undefined) {
-          await execa("docker", ["compose", "-p", projectName, "-f", composeFile, "down", "--volumes", "--remove-orphans"], {
+      } finally {
+        try {
+          // Look up the project by its unique test label if preparation failed before inspection.
+          if (projectName === undefined) {
+            const [container] = await dockerList(["ps", "-aq"], filter);
+            if (container !== undefined) projectName = await composeProjectName(container);
+          }
+          if (projectName !== undefined) {
+            await execa(
+              "docker",
+              ["compose", "-p", projectName, "-f", composeFile, "down", "--volumes", "--remove-orphans"],
+              { reject: false },
+            );
+          }
+          await execa("docker", ["volume", "rm", externalVolume, ...(anonymousVolume ? [anonymousVolume] : [])], {
             reject: false,
           });
+        } finally {
+          if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
         }
-        await execa("docker", ["volume", "rm", externalVolume, ...(anonymousVolume ? [anonymousVolume] : [])], {
-          reject: false,
-        });
-      } finally {
-        await rm(cwd, { recursive: true, force: true });
       }
-    }
+    }, 30_000);
+
+    // @feature docs/feature/sandbox/README.md#resource-group-cleanup
+    test("SIGINT removes the group and preserves the external volume", async () => {
+      const projectFilter = `label=com.docker.compose.project=${projectName}`;
+      process.kill(-child!.pid!, "SIGINT");
+      const result = await child!;
+      expect(result.exitCode, result.stderr).toBe(130);
+      const receipt = result.stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .find((document) => document.type === "receipt");
+      expect(decodeExpTerminalEvent(receipt).receipt.completion).toBe("interrupted");
+
+      const [containers, networks, volumes, anonymous, external] = await Promise.all([
+        dockerList(["ps", "-aq"], projectFilter),
+        dockerList(["network", "ls", "-q"], projectFilter),
+        dockerList(["volume", "ls", "-q"], projectFilter),
+        execa("docker", ["volume", "inspect", anonymousVolume!], { reject: false }),
+        execa("docker", ["volume", "inspect", externalVolume, "-f", "{{.Name}}"]),
+      ]);
+      expect({ containers, networks, volumes }).toEqual({ containers: [], networks: [], volumes: [] });
+      expect(anonymous.exitCode).toBe(1);
+      expect(external.stdout).toBe(externalVolume);
+    }, 30_000);
   },
-  75_000,
 );

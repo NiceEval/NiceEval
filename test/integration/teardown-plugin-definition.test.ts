@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
@@ -317,7 +317,7 @@ describe("malformed Plugin definitions are rejected when they are defined", () =
   });
 });
 
-async function runLegalProject() {
+async function arrangeLegalProject() {
   const cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-plugin-definition-"));
   try {
     await cp(FIXTURE, cwd, { recursive: true });
@@ -366,6 +366,19 @@ async function runLegalProject() {
       join(cwd, "scenario.json"),
       JSON.stringify({ holdAt: "none", experimentPlugin: false, evalPlugins: 0, teardown: {} }),
     );
+    return cwd;
+  } catch (error) {
+    await rm(cwd, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+// @feature docs/feature/plugins/README.md#plugin-definition
+describe("legal definitions run", () => {
+  let cwd: string;
+  let plan: Awaited<ReturnType<typeof planLegalProject>>;
+
+  async function planLegalProject() {
     const planned = await Effect.runPromise(
       experimentHost.invocation.plan({
         cwd,
@@ -375,26 +388,25 @@ async function runLegalProject() {
       }),
     );
     if (planned.status !== "ready") throw new Error(`Expected a ready plan, got ${JSON.stringify(planned)}`);
-    const { receipt, summary } = await Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan }));
+    return planned.plan;
+  }
+
+  beforeAll(async () => {
+    cwd = await arrangeLegalProject();
+    await Effect.runPromise(experimentHost.invocation.run({ plan: await planLegalProject() }));
+    await rm(join(cwd, "teardown-events.ndjson"));
+    plan = await planLegalProject();
+  }, 20_000);
+  afterAll(async () => {
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  test("legal definitions mounted at every position run their hooks once per fresh Attempt", async () => {
+    const { receipt, summary } = await Effect.runPromise(experimentHost.invocation.run({ plan }));
     const events = (await readFile(join(cwd, "teardown-events.ndjson"), "utf8"))
       .split("\n")
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { kind: string; unit?: string });
-    return { receipt, summary, events };
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-}
-
-// @feature docs/feature/plugins/README.md#plugin-definition
-describe("legal definitions run", () => {
-  // Load the Host and the Eval loader once so the measured test only pays for its own Run.
-  beforeAll(async () => {
-    await runLegalProject();
-  }, 20_000);
-
-  test("legal definitions mounted at every position run their hooks once per fresh Attempt", async () => {
-    const { receipt, summary, events } = await runLegalProject();
     expect(receipt.completion).toBe("completed");
     expect(summary).toMatchObject({ total: 1, passed: 1, failed: 0, errored: 0 });
     expect(events.filter((event) => event.unit !== "agent" && event.unit !== undefined).map((event) => `${event.kind}:${event.unit}`)).toEqual([

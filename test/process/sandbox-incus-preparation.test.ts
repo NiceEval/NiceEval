@@ -158,37 +158,12 @@ describe("Incus snapshot publication", () => {
   });
 });
 
-async function loseFirstCreateResponse(project: IncusProject) {
-  const launcher = join(project.runtime, "bin", "incus");
-  const original = await readFile(launcher, "utf8");
-  const wrapped = `${launcher}-original`;
-  await writeFile(wrapped, original, { mode: 0o755 });
-  await writeFile(launcher, `#!/usr/bin/env node
-import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
-
-const args = process.argv.slice(2);
-const target = ${JSON.stringify(`/1.0/instances?project=${RUNTIME_PROJECT}`)};
-const isCreate = args[0] === "query" && args.includes("POST") && args.includes(target);
-const result = spawnSync(${JSON.stringify(wrapped)}, args, { encoding: "utf8" });
-if (isCreate && result.status === 0) {
-  // The fake accepted the create. Lose its response once, then expose the original provider again.
-  writeFileSync(${JSON.stringify(launcher)}, ${JSON.stringify(original)});
-  process.stderr.write("connection reset after request acceptance\\n");
-  process.exit(1);
-}
-process.stdout.write(result.stdout ?? "");
-process.stderr.write(result.stderr ?? "");
-process.exitCode = result.status ?? 1;
-`);
-}
-
 // @feature docs/feature/sandbox/README.md#safe-resource-retries
 test("Incus destroys a possibly accepted instance before retrying its create", async () => {
   const project = await createIncusProject({ artifactStorageReserveBytes: 1024 ** 3, artifactEstimatedBytes: 1024 ** 3 });
   try {
     await project.writeExperiment({ actionId: "retry-ambiguous-create", bypassCache: true });
-    await loseFirstCreateResponse(project);
+    await writeFile(`${project.state}.lose-response-next`, `POST /1.0/instances?project=${RUNTIME_PROJECT}\n`);
     const { summary } = await observe(project);
     expect(summary.errored).toBe(1); // The fixture Agent install fails after the successful retry.
     const journal = await project.journal();

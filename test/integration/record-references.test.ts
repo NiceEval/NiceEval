@@ -71,45 +71,57 @@ const schedules: { label: string; examples: [number[]][] }[] = [
 ];
 
 // @feature docs/feature/run/README.md#reference-deletion
-test.for(schedules)("deleting a referenced origin writes nothing, and succeeds once its dependencies are removed ($label)", { timeout: 30_000 }, async ({ examples }) => {
-  await fc.assert(
-    fc.asyncProperty(fc.array(fc.integer({ min: 0, max: DEPENDENCIES }), { minLength: 1, maxLength: 2 }), async (targets) => {
-      const cwd = await freshProject();
-      try {
-        const ids = [originId, ...dependencyIds];
-        const alive = new Set(ids);
-        for (const target of targets) {
-          const id = ids[target]!;
-          const before = await readFile(join(cwd, ".niceeval", "record.sqlite"));
-          const result = await Effect.runPromise(Effect.result(runHost.delete({ cwd, runId: id })));
-          const dependenciesAlive = dependencyIds.some((dependency) => alive.has(dependency));
-          if (!alive.has(id)) {
-            expect(Result.isFailure(result) && result.failure.code).toBe("run-not-found");
-          } else if (id === originId && dependenciesAlive) {
-            expect(Result.isFailure(result)).toBe(true);
-            if (Result.isFailure(result)) {
-              expect(result.failure.code).toBe("run-referenced");
-              for (const dependency of dependencyIds.filter((dep) => alive.has(dep))) {
-                expect(result.failure.message).toContain(dependency);
+test.for(schedules)(
+  "deleting a referenced origin writes nothing, and succeeds once its dependencies are removed ($label)",
+  { timeout: 30_000 },
+  async ({ examples }) => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.integer({ min: 0, max: DEPENDENCIES }), { minLength: 1, maxLength: 2 }),
+        async (targets) => {
+          const cwd = await freshProject();
+          try {
+            const ids = [originId, ...dependencyIds];
+            const alive = new Set(ids);
+            const record = join(cwd, ".niceeval", "record.sqlite");
+            for (const target of targets) {
+              const id = ids[target]!;
+              const dependenciesAlive = dependencyIds.some((dependency) => alive.has(dependency));
+              const referencedOrigin = id === originId && alive.has(id) && dependenciesAlive;
+              const before = referencedOrigin ? await readFile(record) : undefined;
+              const result = await Effect.runPromise(Effect.result(runHost.delete({ cwd, runId: id })));
+              if (!alive.has(id)) {
+                expect(Result.isFailure(result) && result.failure.code).toBe("run-not-found");
+              } else if (referencedOrigin) {
+                expect(Result.isFailure(result)).toBe(true);
+                if (Result.isFailure(result)) {
+                  expect(result.failure.code).toBe("run-referenced");
+                  for (const dependency of dependencyIds.filter((dep) => alive.has(dep))) {
+                    expect(result.failure.message).toContain(dependency);
+                  }
+                  expect(result.failure.message).toContain(locator);
+                }
+                // Zero writes: the origin and its Attempt stay exactly as they were.
+                expect((await readFile(record)).equals(before!)).toBe(true);
+              } else {
+                expect(Result.isSuccess(result)).toBe(true);
+                alive.delete(id);
               }
-              expect(result.failure.message).toContain(locator);
             }
-            // Zero writes: the origin and its Attempt stay exactly as they were.
-            expect((await readFile(join(cwd, ".niceeval", "record.sqlite"))).equals(before)).toBe(true);
-          } else {
-            expect(Result.isSuccess(result)).toBe(true);
-            alive.delete(id);
+            const [remaining, origin] = await Promise.all([
+              listIds(cwd),
+              alive.has(originId) ? Effect.runPromise(runHost.get({ cwd, runId: originId })) : undefined,
+            ]);
+            expect(remaining).toEqual([...alive].sort());
+            if (alive.has(originId)) {
+              expect(origin?.run.slots[0]?.publication).toMatchObject({ state: "published", attemptLocator: locator });
+            }
+          } finally {
+            await rm(cwd, { recursive: true, force: true });
           }
-        }
-        expect(await listIds(cwd)).toEqual([...alive].sort());
-        if (alive.has(originId)) {
-          const origin = (await Effect.runPromise(runHost.get({ cwd, runId: originId }))).run;
-          expect(origin.slots[0]!.publication).toMatchObject({ state: "published", attemptLocator: locator });
-        }
-      } finally {
-        await rm(cwd, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 1, examples },
-  );
-});
+        },
+      ),
+      { numRuns: 1, examples },
+    );
+  },
+);

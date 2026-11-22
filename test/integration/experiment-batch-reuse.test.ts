@@ -28,9 +28,11 @@ test("carries eligible results across Experiments when attachment reads span a d
     3_000,
   );
   expect(result.receipt.completion).toBe("completed");
+  const runs = await Promise.all(
+    result.receipt.createdRunIds.map((runId) => Effect.runPromise(runHost.get({ cwd: batch.cwd, runId }))),
+  );
   const published = new Map<string, string>();
-  for (const runId of result.receipt.createdRunIds) {
-    const { run } = await Effect.runPromise(runHost.get({ cwd: batch.cwd, runId }));
+  for (const { run } of runs) {
     for (const { evalId, publication } of run.slots) {
       expect(publication).toMatchObject({ state: "published", action: "carried" });
       if (publication.state === "published") published.set(`${run.experimentId}/${evalId}`, publication.attemptLocator);

@@ -78,6 +78,13 @@ export default defineExperiment({ adapter: displayAdapter, evals: ["display"] })
 
 // One Experiment run per generated sequence keeps a run within the Library budget; raise the count for nightly exploration.
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1);
+const propertyCases = [
+  { label: "regression", regression: true },
+  ...Array.from({ length: Math.max(0, PROPERTY_RUNS - 2) }, (_, index) => ({
+    label: `exploration ${index + 1}`,
+    regression: false,
+  })),
+];
 
 // --- Action generators -------------------------------------------------------------------------
 
@@ -214,11 +221,12 @@ describe("execution display block validation", () => {
   });
 
   // @feature docs/feature/adapters/README.md#display-block-validation
-  test(
-    "illegal display blocks are rejected with execution-display-invalid and never written, while legal ones read back unchanged",
-    async () => {
+  test.for(propertyCases)(
+    "illegal display blocks are rejected with execution-display-invalid and never written, while legal ones read back unchanged ($label)",
+    { timeout: 60_000 },
+    async ({ regression }) => {
       await fc.assert(
-        fc.asyncProperty(PROPERTY_RUNS > 1 ? actionSequence : fc.constant(PINNED_ACTIONS), async (actions) => {
+        fc.asyncProperty(actionSequence, async (actions) => {
           await writeJson(project.cwd, "actions.json", { actions });
           const locator = await runSingleAttempt(project.cwd, "display");
           const outcomes = await readJson<readonly Outcome[]>(project.cwd, "outcomes.json");
@@ -269,10 +277,9 @@ describe("execution display block validation", () => {
             }
           }
         }),
-        { numRuns: PROPERTY_RUNS > 1 ? PROPERTY_RUNS - 1 : 1, examples: PROPERTY_RUNS > 1 ? [[PINNED_ACTIONS]] : [] },
+        { numRuns: 1, examples: regression ? [[PINNED_ACTIONS]] : [] },
       );
     },
-    60_000,
   );
   test("publishes and reads an execution event larger than one SQLite row", async () => {
     await withOperational(largeProject.cwd, (facts) => {

@@ -299,6 +299,17 @@ function query(args) {
     }
   });
   maybeBlock(label);
+  const lostResponsePath = `${statePath}.lose-response-next`;
+  try {
+    if (readFileSync(lostResponsePath, "utf8").trim() === label) {
+      unlinkSync(lostResponsePath);
+      process.stderr.write("connection reset after request acceptance\n");
+      process.exitCode = 1;
+      return;
+    }
+  } catch (cause) {
+    if (cause?.code !== "ENOENT") throw cause;
+  }
   envelope({});
 }
 

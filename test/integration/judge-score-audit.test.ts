@@ -371,7 +371,7 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
   });
 
   // @feature docs/feature/judge/README.md#score-audit
-  test("sealed image materials remain bounded in detail and readable after Record relocation", async () => {
+  test("the Judge request uses the image and action snapshotted at registration", () => {
     const wire = JSON.parse(imageWireBody);
     const parts = wire.messages[1].content as Array<{ type: string; image_url?: { url: string } }>;
     const imgPart = parts.find((p) => p.type === "image_url");
@@ -379,7 +379,10 @@ describe("Judge score reconciliation, presets, headers, and image relocation", (
     expect(Buffer.from(imgPart!.image_url!.url.split(",")[1]!, "base64")).toEqual(Buffer.from(originalPng));
     expect(imageWireBody).not.toContain("MUTATED_AFTER_REGISTRATION");
     expect(imageWireBody).toContain("original-action");
+  });
 
+  // @feature docs/feature/judge/README.md#score-audit
+  test("sealed image materials remain bounded in detail and readable after Record relocation", async () => {
     // Relocate record.sqlite to a completely separate directory and delete original project files
     const relocatedDir = await mkdtemp(join(tmpdir(), "niceeval-relocated-record-"));
     try {

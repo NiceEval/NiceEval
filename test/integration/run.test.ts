@@ -185,14 +185,31 @@ const concurrentReadSchedules: { label: string; examples: [number][] }[] = [
   })),
 ];
 
-// @feature docs/feature/run/README.md#publication-visibility
-test.for(concurrentReadSchedules)("listing Runs during the first write observes committed Runs ($label)", { timeout: 15_000 }, async ({ examples }) => {
-  await fc.assert(
-    fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
-      const cwd = await prepareProject(false);
-      try {
-        const plan = await planExperiment(cwd);
-        const list = () => Effect.runPromise(runHost.list({ cwd })).then(({ runs }) => runs);
+describe.for(concurrentReadSchedules)("listing Runs during the first write ($label)", ({ examples }) => {
+  let cwd: string | undefined;
+  let plan: Awaited<ReturnType<typeof planExperiment>>;
+
+  beforeAll(async () => {
+    cwd = await prepareProject(false);
+    plan = await planExperiment(cwd);
+  }, 15_000);
+
+  afterAll(async () => {
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  // @feature docs/feature/run/README.md#publication-visibility
+  test("readers only observe committed Runs", async () => {
+    let hasRun = false;
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (parallelReads) => {
+        if (hasRun) {
+          // A shrink replay starts from the same empty project state.
+          await rm(join(cwd!, ".niceeval"), { recursive: true, force: true });
+          plan = await planExperiment(cwd!);
+        }
+        hasRun = true;
+        const list = () => Effect.runPromise(runHost.list({ cwd: cwd! })).then(({ runs }) => runs);
         expect(await list()).toEqual([]);
         let complete = false;
         const running = Effect.runPromise(experimentHost.invocation.run({ plan })).finally(() => {
@@ -213,12 +230,10 @@ test.for(concurrentReadSchedules)("listing Runs during the first write observes 
         }
         const { receipt } = await running;
         expect((await list()).map((run) => run.runId)).toEqual(receipt.createdRunIds);
-      } finally {
-        await rm(cwd, { recursive: true, force: true });
-      }
-    }),
-    { examples, numRuns: 1 },
-  );
+      }),
+      { examples, numRuns: 1 },
+    );
+  }, 15_000);
 });
 
 describe.for(concurrentReadSchedules)("Invocation interruption ($label)", ({ examples }) => {

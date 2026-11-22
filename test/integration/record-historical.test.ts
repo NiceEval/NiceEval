@@ -90,37 +90,43 @@ test("an unreadable Record file keeps a classified read failure and its original
 });
 
 // @feature docs/feature/run/README.md#historical-results
-test("planning or running an Experiment over a predecessor Record fails without executing or touching it", async () => {
-  const cwd = await createRecordProject("niceeval-record-historical-exp-", { held: false });
-  try {
-    await mkdir(join(cwd, ".niceeval"));
-    const record = join(cwd, ".niceeval", "record.sqlite");
-    await fc.assert(
-      fc.asyncProperty(fc.constantFrom(...predecessors), async (predecessor) => {
-        await copyFile(fixture(predecessor), record);
-        const original = await readFile(record);
-        const planned = await Effect.runPromise(
-          experimentHost.invocation.plan({
-            cwd,
-            experimentSelector: "runs",
-            config,
-            overrides: { rerun: "all", earlyExit: false },
-          }),
-        );
-        if (planned.status !== "ready") throw new Error("expected a ready plan");
-        const outcome = await Effect.runPromise(Effect.result(experimentHost.invocation.run({ plan: planned.plan })));
-        expect(Result.isFailure(outcome)).toBe(true);
-        expect(Result.isFailure(outcome) ? JSON.stringify(outcome.failure) + String(outcome.failure.message) : "").toMatch(
-          /older version of NiceEval/u,
-        );
-        expect((await readFile(record)).equals(original)).toBe(true);
-      }),
-      { numRuns: 2, examples: [["0.18"]] },
-    );
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-});
+test.for([
+  { label: "0.18 regression", examples: [["0.18"]] as ["0.18"][] },
+  { label: "exploration", examples: [] },
+])(
+  "planning or running an Experiment over a predecessor Record fails without executing or touching it ($label)",
+  async ({ examples }) => {
+    const cwd = await createRecordProject("niceeval-record-historical-exp-", { held: false });
+    try {
+      await mkdir(join(cwd, ".niceeval"));
+      const record = join(cwd, ".niceeval", "record.sqlite");
+      await fc.assert(
+        fc.asyncProperty(fc.constantFrom(...predecessors), async (predecessor) => {
+          await copyFile(fixture(predecessor), record);
+          const original = await readFile(record);
+          const planned = await Effect.runPromise(
+            experimentHost.invocation.plan({
+              cwd,
+              experimentSelector: "runs",
+              config,
+              overrides: { rerun: "all", earlyExit: false },
+            }),
+          );
+          if (planned.status !== "ready") throw new Error("expected a ready plan");
+          const outcome = await Effect.runPromise(Effect.result(experimentHost.invocation.run({ plan: planned.plan })));
+          expect(Result.isFailure(outcome)).toBe(true);
+          expect(
+            Result.isFailure(outcome) ? JSON.stringify(outcome.failure) + String(outcome.failure.message) : "",
+          ).toMatch(/older version of NiceEval/u);
+          expect((await readFile(record)).equals(original)).toBe(true);
+        }),
+        { numRuns: 1, examples },
+      );
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 
 // Rejected input keeps its directory intact: no new files appear beside the original.
 // @feature docs/feature/run/README.md#historical-results

@@ -1515,7 +1515,13 @@ describe("exact read and comparison: current project gaps, pending barriers, sou
       writeFile(emptyRecord, ""),
     ]);
 
-    await runProjectExperiment(cwd, "current-pass");
+    const original = await runProjectExperiment(cwd, "current-pass");
+    const { run: originalRun } = await Effect.runPromise(
+      runHost.get({ cwd, runId: original.receipt.createdRunIds[0]! }),
+    );
+    const sibling = originalRun.slots.find((slot) => slot.evalId === "first" && slot.attemptOrdinal === 1)?.publication;
+    if (sibling?.state !== "published") throw new Error("Expected the original sibling Attempt");
+    siblingLocator = sibling.attemptLocator;
     await runProjectExperiment(cwd, "current-score");
     await copyFile(join(cwd, ".niceeval", "record.sqlite"), join(cwd, "portable.sqlite"));
 
@@ -1589,67 +1595,77 @@ describe("exact read and comparison: current project gaps, pending barriers, sou
       const first0 = passProj.plannedAttempts.find((slot) => slot.evalId === "first" && slot.attemptOrdinal === 0)!;
       const first1 = passProj.plannedAttempts.find((slot) => slot.evalId === "first" && slot.attemptOrdinal === 1)!;
       expect(first0).toMatchObject({ state: "gap", reason: "pending" });
-      expect(first1).toMatchObject({ state: "reuse" });
-      if (first1.state === "reuse") siblingLocator = first1.locator;
+      expect(first1).toMatchObject({ state: "reuse", locator: siblingLocator });
     });
 
     await withExternal(cwd, join(cwd, "portable.sqlite"), (facts) => {
       expectOperationCode(() => selectInspectionOperation(facts, { kind: "project.get" }), "current-target-unavailable");
     });
-
-    releasePending?.();
-    await pendingRun;
-    await rm(join(cwd, "hold-agent"), { force: true });
-    Reflect.deleteProperty(globalThis, Symbol.for("niceeval.test.inspection-gates"));
   });
 
-  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
-  test("project.get records accept adoption, identity-mismatch gaps, and history", async () => {
-    await Effect.runPromise(
-      experimentHost.accept({ cwd, locators: [siblingLocator], config: { maxConcurrency: 1 } }),
-    );
-    await withCurrentProject(cwd, (facts) => {
-      const passProj = selectInspectionOperation(facts, {
-        kind: "project.get",
-        experimentIds: ["current-pass" as ExperimentId],
-      }).project;
-      const first1 = passProj.plannedAttempts.find((slot) => slot.evalId === "first" && slot.attemptOrdinal === 1)!;
-      expect(first1).toMatchObject({
-        state: "reuse",
-        locator: siblingLocator,
-        action: "accepted",
-        relation: "reference",
+  describe("settled project", () => {
+    beforeAll(async () => {
+      releasePending?.();
+      await pendingRun;
+      await rm(join(cwd, "hold-agent"), { force: true });
+      Reflect.deleteProperty(globalThis, Symbol.for("niceeval.test.inspection-gates"));
+    }, 15_000);
+
+    // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+    test("project.get points to the adopted Attempt after accept", async () => {
+      await Effect.runPromise(
+        experimentHost.accept({ cwd, locators: [siblingLocator], config: { maxConcurrency: 1 } }),
+      );
+      await withCurrentProject(cwd, (facts) => {
+        const passProj = selectInspectionOperation(facts, {
+          kind: "project.get",
+          experimentIds: ["current-pass" as ExperimentId],
+        }).project;
+        const first1 = passProj.plannedAttempts.find((slot) => slot.evalId === "first" && slot.attemptOrdinal === 1)!;
+        expect(first1).toMatchObject({
+          state: "reuse",
+          locator: siblingLocator,
+          action: "accepted",
+          relation: "reference",
+        });
       });
     });
 
-    const changedPath = join(cwd, "evals", "changed.eval.ts");
-    await writeFile(changedPath, (await readFile(changedPath, "utf8")).replace("current", "modified-current"));
-    await withCurrentProject(cwd, (facts) => {
-      const passProj = selectInspectionOperation(facts, {
-        kind: "project.get",
-        experimentIds: ["current-pass" as ExperimentId],
-      }).project;
-      const changedSlot = passProj.plannedAttempts.find((slot) => slot.evalId === "changed")!;
-      expect(changedSlot).toMatchObject({ state: "gap", reason: "identity-mismatch" });
+    // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+    test("project.get reports an identity-mismatch gap after changing the Eval", async () => {
+      const changedPath = join(cwd, "evals", "changed.eval.ts");
+      await writeFile(changedPath, (await readFile(changedPath, "utf8")).replace("current", "modified-current"));
+      await withCurrentProject(cwd, (facts) => {
+        const passProj = selectInspectionOperation(facts, {
+          kind: "project.get",
+          experimentIds: ["current-pass" as ExperimentId],
+        }).project;
+        const changedSlot = passProj.plannedAttempts.find((slot) => slot.evalId === "changed")!;
+        expect(changedSlot).toMatchObject({ state: "gap", reason: "identity-mismatch" });
+      });
     });
 
-    await rm(join(cwd, "experiments"), { recursive: true, force: true });
-    await mkdir(join(cwd, "experiments"));
-    await withCurrentProject(cwd, (facts) => {
-      const emptyProj = selectInspectionOperation(facts, { kind: "project.get" }).project;
-      expect(emptyProj.coverage).toEqual({ expected: 0, covered: 0, gaps: 0 });
-      expect(emptyProj.history.length).toBeGreaterThan(0);
+    // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+    test("project.get keeps history when the current Experiments are removed", async () => {
+      await rm(join(cwd, "experiments"), { recursive: true, force: true });
+      await mkdir(join(cwd, "experiments"));
+      await withCurrentProject(cwd, (facts) => {
+        const emptyProj = selectInspectionOperation(facts, { kind: "project.get" }).project;
+        expect(emptyProj.coverage).toEqual({ expected: 0, covered: 0, gaps: 0 });
+        expect(emptyProj.history.length).toBeGreaterThan(0);
+      });
     });
   });
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
-  test("source errors and legacy v4 Records fail closed without misattribution", async () => {
-    await expect(withExternal(cwd, corruptRecord, () => {})).rejects.toMatchObject({
+  test.for(["corrupt", "empty"] as const)("a %s Record fails closed", async (kind) => {
+    await expect(withExternal(cwd, kind === "corrupt" ? corruptRecord : emptyRecord, () => {})).rejects.toMatchObject({
       code: "inspection-source-invalid",
     });
-    await expect(withExternal(cwd, emptyRecord, () => {})).rejects.toMatchObject({
-      code: "inspection-source-invalid",
-    });
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  test("a legacy v4 Record reports an unsupported schema", async () => {
     await expect(withExternal(cwd, LEGACY_V4_RECORD, () => {})).rejects.toMatchObject({
       code: "inspection-source-invalid",
       cause: { code: "record-schema-unsupported" },

@@ -410,7 +410,7 @@ describe("portable trace", () => {
   });
 
   // @feature docs/feature/inspection/README.md#portable-trace
-  test("relocated trace outlines remain bounded and preserve pagination and exact filters", () => {
+  test("relocated trace outlines remain bounded and page through events", () => {
     const outline = selectInspectionOperation(facts, {
       kind: "attempt.trace",
       locator: executionLocator,
@@ -429,6 +429,10 @@ describe("portable trace", () => {
     }).trace.execution;
     expect(page2.events[0]).toMatchObject({ ordinal: 32, summary: "Observed event 32" });
 
+  });
+
+  // @feature docs/feature/inspection/README.md#portable-trace
+  test("relocated event pages keep exact filters across continuations", () => {
     const filtered = selectInspectionOperation(facts, {
       kind: "attempt.trace",
       locator: executionLocator,
@@ -464,7 +468,10 @@ describe("portable trace", () => {
       "restart-required",
     );
 
-    // Conversation projection pagination across all turns.
+  });
+
+  // @feature docs/feature/inspection/README.md#portable-trace
+  test("relocated conversation pages preserve unique events across Turns", () => {
     const convPage = selectInspectionOperation(facts, {
       kind: "attempt.trace",
       locator: conversationLocator,

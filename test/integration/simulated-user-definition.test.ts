@@ -5,9 +5,11 @@ import { describe, expect, test } from "vitest";
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { defineSimulatedUser } = require("niceeval") as typeof import("../../packages/niceeval/src/index.ts");
 
-const validInstructions = fc
-  .string({ minLength: 1, maxLength: 64 })
-  .filter((value) => value.trim().length > 0 && new TextEncoder().encode(value).byteLength <= 8192);
+const validInstructions = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 64 }).filter((value) => value.trim().length > 0),
+  fc.nat(16).map((extra) => "字".repeat(2731 + extra)),
+);
+const blankInstructions = fc.array(fc.constantFrom(" ", "\t", "\n"), { maxLength: 16 }).map((parts) => parts.join(""));
 
 describe("defineSimulatedUser contract", () => {
   // @feature docs/feature/eval/README.md#simulated-user-definition
@@ -34,6 +36,8 @@ describe("defineSimulatedUser contract", () => {
         examples: [
           ["Facts", 1, "Changed"],
           ["x".repeat(8192), undefined, "Changed"],
+          ["x".repeat(8193), 10, "Changed"],
+          ["字".repeat(2731), undefined, "Changed"],
         ],
       },
     );
@@ -43,10 +47,7 @@ describe("defineSimulatedUser contract", () => {
   test("rejects accessors without invoking getters, invalid bounds, unknown fields, and inherited properties", () => {
     fc.assert(
       fc.property(
-        fc.oneof(
-          fc.constant({ kind: "whitespace" as const, value: " \t\n" }),
-          fc.nat(16).map((extra) => ({ kind: "overlong-utf8" as const, value: "字".repeat(2731 + extra) })),
-        ),
+        blankInstructions,
         fc.constantFrom(0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN, Number.MAX_SAFE_INTEGER + 1),
         (badInstructions, badTimeout) => {
           let calls = 0;
@@ -60,13 +61,13 @@ describe("defineSimulatedUser contract", () => {
           ).toThrow();
           expect(calls).toBe(0);
 
-          expect(() => defineSimulatedUser({ instructions: badInstructions.value })).toThrow();
+          expect(() => defineSimulatedUser({ instructions: badInstructions })).toThrow();
           expect(() => defineSimulatedUser({ instructions: "facts", timeoutMs: badTimeout })).toThrow();
           expect(() => defineSimulatedUser({ instructions: "facts", name: "owner" } as never)).toThrow();
           expect(() => defineSimulatedUser(Object.create({ instructions: "inherited" }))).toThrow();
         },
       ),
-      { numRuns: 24 },
+      { numRuns: 24, examples: [[" \t\n", 0]] },
     );
   });
 });

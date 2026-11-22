@@ -79,7 +79,7 @@ afterAll(async () => {
 });
 
 // @feature docs/feature/experiments/README.md#progress-counts
-test("exp dry reports project-relative identity changes for the injected cwd", async () => {
+test.for([1, 2])("exp dry reports project-relative identity changes for the injected cwd (sample %s)", async () => {
   const data = fc.constantFrom("after", "replacement", "changed");
   await fc.assert(
     fc.asyncProperty(data, async (contents) => {
@@ -106,6 +106,6 @@ test("exp dry reports project-relative identity changes for the injected cwd", a
       expect(readback.sourceFiles.value.map(({ path }) => path)).toContain("evals/cwd.eval.ts");
       expect(process.cwd()).toBe(hostCwd);
     }),
-    { numRuns: 2 },
+    { numRuns: 1 },
   );
 });

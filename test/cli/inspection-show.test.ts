@@ -724,7 +724,7 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
   });
 
   // @feature docs/feature/inspection/README.md#portable-trace
-  test("show execution, diff, and partial trace text sanitize control chars and preserve truncation markers", async () => {
+  test("show sanitizes execution text, retains partial trace limitations and reads exact tool output and diffs", async () => {
     const dispRes = await runCli(cwd, ["show", displayLocator, "execution"]);
     expect(dispRes.code, dispRes.stderr).toBe(0);
     expect(dispRes.stdout).not.toContain("\u001b");
@@ -738,7 +738,15 @@ describe("CLI show aspects, JSON lines, links, compare, and diagnostics", () => 
     const toolId = traceDoc.trace.identityIndex.toolOccurrenceIds.ids[0]!;
     const toolText = await runCli(cwd, ["show", traceLocator, toolId]);
     expect(toolText.code, toolText.stderr).toBe(0);
-    expect(toolText.stdout).toMatch(/truncated/i);
+    const toolJson = await runCli(cwd, ["show", traceLocator, toolId, "--json"]);
+    expect(toolJson.code, toolJson.stderr).toBe(0);
+    const [toolDoc] = decodeNdjson(toolJson.stdout);
+    if (toolDoc?.outcome !== "success" || toolDoc.operation !== "attempt.trace.detail")
+      throw new Error("Expected tool detail");
+    expect(toolDoc.detail).toMatchObject({
+      kind: "tool-occurrence",
+      result: { kind: "tool-result", output: JSON.stringify({ content: "工具输出".repeat(9000) }) },
+    });
 
     const partialRes = await runCli(cwd, ["show", partialTraceLocator, "execution"]);
     expect(partialRes.code, partialRes.stderr).toBe(0);
@@ -946,9 +954,9 @@ describe("CLI show cache usage from reported Turns", () => {
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
   // @use-case docs/feature/inspection/use-case/inspection-show-as-json.md#same-command-json
-  test("show reports a token-weighted observed share and names the incomplete Turns", async () => {
-    const ids = ["complete", "partial", "only-incomplete", "missing", "zero"] as const;
-    await fc.assert(fc.asyncProperty(fc.constantFrom(...ids), async (id) => {
+  test.for(["complete", "partial", "only-incomplete", "missing", "zero"] as const)(
+    "show reports the observed share and incomplete Turns for %s",
+    async (id) => {
       const args = ["show", locators.get(id)!, "usage"];
       const json = await runCli(cwd, [...args, "--json"]);
       expect(json.code, json.stderr).toBe(0);
@@ -979,8 +987,8 @@ describe("CLI show cache usage from reported Turns", () => {
         expect(human.stdout).toContain(secondTurn!);
         expect(human.stdout).toContain(thirdTurn!);
       }
-    }), { examples: ids.map((id) => [id]), numRuns: ids.length });
-  });
+    },
+  );
 });
 
 describe("CLI Run discovery across pages", () => {

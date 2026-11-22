@@ -64,22 +64,34 @@ async function untilTrue(label: string, check: () => Promise<boolean>, timeoutMs
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-// @feature docs/feature/sandbox/README.md#resource-group-cleanup
-test("SIGINT during an Attempt removes the process's Docker containers and the next Invocation runs", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "niceeval-lifecycle-docker-"));
-  const ready = join(cwd, "attempt-running");
-  try {
-    await Promise.all(["evals", "experiments"].map((dir) => mkdir(join(cwd, dir))));
+describe("interrupting a Docker Attempt", () => {
+  let cwd: string | undefined;
+  const start = (workdir: string, hold: boolean) =>
+    execa(process.execPath, [...process.execArgv, cli, "exp", "interrupt", "--rerun", "all", "--json"], {
+      cwd: workdir,
+      detached: true,
+      reject: false,
+      env: { NO_COLOR: "1", NICEEVAL_HOME: join(workdir, "user"), NICEEVAL_TEST_HOLD: hold ? "1" : "0" },
+      timeout: 120_000,
+    });
+  let child: ReturnType<typeof start> | undefined;
+
+  beforeAll(async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "niceeval-lifecycle-docker-"));
+    cwd = workdir;
+    const ready = join(workdir, "attempt-running");
+    await Promise.all(["evals", "experiments"].map((dir) => mkdir(join(workdir, dir))));
     await Promise.all([
       writeFile(
-        join(cwd, "niceeval.config.ts"),
+        join(workdir, "niceeval.config.ts"),
         'import { defineConfig } from "niceeval";\nexport default defineConfig({ timeoutMs: 120_000 });\n',
       ),
       writeFile(
-        join(cwd, "agent-hang.ts"),
+        join(workdir, "agent.ts"),
         agent(
-          "lifecycle-docker-hang",
+          "lifecycle-docker-interrupt",
           `await ctx.sandbox.runShellOrThrow("true", { signal: ctx.signal });
+    if (process.env.NICEEVAL_TEST_HOLD !== "1") return { status: "completed", events: [] };
     await writeFile(${JSON.stringify(ready)}, "running");
     await new Promise<void>((resolve) => {
       if (ctx.signal.aborted) resolve();
@@ -89,56 +101,85 @@ test("SIGINT during an Attempt removes the process's Docker containers and the n
         ),
       ),
       writeFile(
-        join(cwd, "agent-quick.ts"),
-        agent("lifecycle-docker-quick", 'await ctx.sandbox.runShellOrThrow("true", { signal: ctx.signal });'),
-      ),
-      writeFile(
-        join(cwd, "evals", "probe.eval.ts"),
+        join(workdir, "evals", "probe.eval.ts"),
         'import { defineEval } from "niceeval";\nexport default defineEval({ async test(t) { await t.send("probe"); } });\n',
       ),
-      writeFile(join(cwd, "experiments", "hang.ts"), experiment("agent-hang.ts")),
-      writeFile(join(cwd, "experiments", "quick.ts"), experiment("agent-quick.ts")),
+      writeFile(join(workdir, "experiments", "interrupt.ts"), experiment("agent.ts")),
     ]);
 
-    const child = execa(process.execPath, [...process.execArgv, cli, "exp", "hang", "--rerun", "all", "--json"], {
-      cwd,
-      detached: true,
-      reject: false,
-      env: { NO_COLOR: "1" },
-      extendEnv: true,
-    });
-    const pid = child.pid!;
-    try {
-      await untilTrue("the Attempt to hold its container", () => access(ready).then(() => true, () => false), 120_000);
-      expect(await ownedContainers(pid)).not.toEqual([]);
-      process.kill(-pid, "SIGINT");
-      const interrupted = await child;
-      expect(interrupted.exitCode, interrupted.stderr).toBe(130);
-      const receipt = interrupted.stdout
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as { type?: string; receipt?: { completion: string } })
-        .find((document) => document.type === "receipt");
-      expect(receipt?.receipt?.completion).toBe("interrupted");
-    } finally {
-      child.kill("SIGKILL");
-    }
-    await untilTrue("owned containers to be removed", async () => (await ownedContainers(pid)).length === 0, 15_000);
+    child = start(workdir, true);
+    await Promise.race([
+      untilTrue(
+        "the Attempt to hold its container",
+        () =>
+          access(ready).then(
+            () => true,
+            () => false,
+          ),
+        120_000,
+      ),
+      child.then(({ stderr, stdout }) => {
+        throw new Error(stderr || stdout);
+      }),
+    ]);
+  }, 130_000);
 
-    const nextChild = execa(process.execPath, [...process.execArgv, cli, "exp", "quick", "--rerun", "all", "--json"], {
-      cwd,
-      reject: false,
-      env: { NO_COLOR: "1" },
-      extendEnv: true,
-    });
-    const nextPid = nextChild.pid!;
-    const next = await nextChild;
-    expect(next.exitCode, next.stderr).toBe(0);
-    await untilTrue("the next Invocation's containers to be removed", async () => (await ownedContainers(nextPid)).length === 0, 15_000);
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
+  afterAll(async () => {
+    if (
+      child?.pid !== undefined &&
+      child.nodeChildProcess.exitCode === null &&
+      child.nodeChildProcess.signalCode === null
+    ) {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+      await child;
+    }
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  let interrupted: ReturnType<typeof childResult> | undefined;
+
+  async function childResult() {
+    const pid = child!.pid!;
+    const containersBefore = await ownedContainers(pid);
+    process.kill(-pid, "SIGINT");
+    const result = await child!;
+    return { containersBefore, ...result, pid };
   }
-}, 240_000);
+
+  const interruptOnce = () => (interrupted ??= childResult());
+
+  // @feature docs/feature/sandbox/README.md#resource-group-cleanup
+  test("SIGINT removes a running Attempt's containers before the CLI exits", async () => {
+    const interrupted = await interruptOnce();
+    expect(interrupted.containersBefore).not.toEqual([]);
+    expect(interrupted.exitCode, interrupted.stderr).toBe(130);
+    const receipt = interrupted.stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { type?: string; receipt?: { completion: string } })
+      .find((document) => document.type === "receipt");
+    expect(receipt?.receipt?.completion).toBe("interrupted");
+    expect(await ownedContainers(interrupted.pid)).toEqual([]);
+  }, 60_000);
+
+  describe("after an interrupted Invocation", () => {
+    beforeAll(async () => {
+      await interruptOnce();
+    }, 60_000);
+
+    // @feature docs/feature/sandbox/README.md#resource-group-cleanup
+    test("the next Invocation runs and exits without leaving containers", async () => {
+      const next = start(cwd!, false);
+      const { exitCode, stderr } = await next;
+      expect(exitCode, stderr).toBe(0);
+      expect(await ownedContainers(next.pid!)).toEqual([]);
+    }, 60_000);
+  });
+});
 
 describe("Docker background commands", () => {
   let cwd: string | undefined;
@@ -147,7 +188,7 @@ describe("Docker background commands", () => {
       cwd: workdir,
       reject: false,
       timeout: 55_000,
-      env: { NO_COLOR: "1" },
+      env: { NO_COLOR: "1", NICEEVAL_HOME: join(workdir, "user") },
     });
   let child: ReturnType<typeof launch>;
   let startPath: string;

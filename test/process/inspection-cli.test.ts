@@ -149,18 +149,13 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
     );
   });
 
-  // @feature docs/feature/inspection/README.md#attachment-archive
-  test("streaming a 160 MiB file attachment keeps child process RSS bounded (< 128 MiB) and reads chunks after rewrite", async () => {
+  async function archiveFile() {
     const runRes = await execa(process.execPath, [...process.execArgv, cli, "exp", "stream-280", "--rerun", "all", "--json"], {
       cwd,
       reject: false,
     });
     expect(runRes.exitCode, runRes.stderr).toBe(0);
     const [artifactId, sha256, byteLength, rssGrowth] = (await readFile(join(cwd, "receipt.txt"), "utf8")).split("\n");
-    expect(sha256).toBe(expectedSha);
-    expect(Number(byteLength)).toBe(160 * 1024 * 1024);
-    expect(Number(rssGrowth)).toBeLessThan(128 * 1024 * 1024);
-
     const evalEvent = runRes.stdout
       .split("\n")
       .filter(Boolean)
@@ -169,32 +164,55 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
     expect(evalEvent?.locator).toBeDefined();
     const locator = evalEvent!.locator!.startsWith("@") ? evalEvent!.locator! : `@${evalEvent!.locator!}`;
 
-    const stdout = new PassThrough();
-    const stderr = new PassThrough();
-    const outChunks: Buffer[] = [];
-    stdout.on("data", (chunk: Buffer) => outChunks.push(chunk));
-    const showCode = await runCliInProcess({
-      argv: ["show", locator, "artifacts", artifactId!, "--json"],
-      cwd,
-      env: { NO_COLOR: "1" },
-      stdin: Readable.from([]),
-      stdout,
-      stderr,
-    });
-    stdout.end();
-    stderr.end();
-    expect(showCode).toBe(0);
-    const doc = decodeInspectionDocument(JSON.parse(Buffer.concat(outChunks).toString("utf8").trim()));
-    expect(doc.success).toBe(true);
-    if (doc.success && doc.value.outcome === "success" && doc.value.operation === "attempt.artifact") {
+    return { artifactId: artifactId!, locator, sha256, byteLength: Number(byteLength), rssGrowth: Number(rssGrowth) };
+  }
+
+  let archived: ReturnType<typeof archiveFile> | undefined;
+  const archiveOnce = () => (archived ??= archiveFile());
+
+  // @feature docs/feature/inspection/README.md#attachment-archive
+  test("streaming a 160 MiB file attachment keeps child process RSS growth below 128 MiB", async () => {
+    const { sha256, byteLength, rssGrowth } = await archiveOnce();
+    expect(sha256).toBe(expectedSha);
+    expect(byteLength).toBe(160 * 1024 * 1024);
+    expect(rssGrowth).toBeLessThan(128 * 1024 * 1024);
+  }, 30_000);
+
+  describe("archived file readback", () => {
+    beforeAll(async () => {
+      await archiveOnce();
+    }, 30_000);
+
+    // @feature docs/feature/inspection/README.md#attachment-archive
+    test("reads the original archived bytes after rewriting the source file", async () => {
+      const { artifactId, locator } = await archiveOnce();
+      const stdout = new PassThrough();
+      const stderr = new PassThrough();
+      const outChunks: Buffer[] = [];
+      stdout.on("data", (chunk: Buffer) => outChunks.push(chunk));
+      const showCode = await runCliInProcess({
+        argv: ["show", locator, "artifacts", artifactId, "--json"],
+        cwd,
+        env: { NO_COLOR: "1" },
+        stdin: Readable.from([]),
+        stdout,
+        stderr,
+      });
+      stdout.end();
+      stderr.end();
+      expect(showCode).toBe(0);
+      const doc = decodeInspectionDocument(JSON.parse(Buffer.concat(outChunks).toString("utf8").trim()));
+      if (!doc.success || doc.value.outcome !== "success" || doc.value.operation !== "attempt.artifact") {
+        throw new Error("Expected the archived artifact");
+      }
       expect(doc.value.artifact).toMatchObject({
         state: "available",
         sha256: expectedSha,
         byteLength: 160 * 1024 * 1024,
         base64: block.toString("base64"),
       });
-    }
-  }, 30_000);
+    }, 30_000);
+  });
 
   // @feature docs/feature/inspection/README.md#exact-read-and-comparison
   test("real CLI show --record imports portable Record, propagates --record links, and renders Recorded results", async () => {

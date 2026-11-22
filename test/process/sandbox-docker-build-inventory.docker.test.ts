@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import fc from "fast-check";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { decodeDockerCacheInventoryDocument, decodeDockerCacheGcPreviewDocument } =
@@ -17,12 +17,14 @@ const image = "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c
 const [marker] = fc.sample(fc.nat(), { seed: 260_604, numRuns: 1 });
 
 beforeAll(async () => {
-  await execa("docker", ["pull", image], { timeout: 120_000 });
+  const local = await execa("docker", ["image", "inspect", image], { reject: false });
+  if (local.exitCode !== 0) await execa("docker", ["pull", image], { timeout: 120_000 });
 }, 125_000);
 
 async function writeProject(cwd: string, label: string) {
   await Promise.all(["evals", "experiments", "image"].map((directory) => mkdir(join(cwd, directory))));
   await Promise.all([
+    writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
     writeFile(join(cwd, "image/Dockerfile"), `FROM ${image}\nLABEL niceeval.test-case="${label}"\n`),
     writeFile(
       join(cwd, "niceeval.config.ts"),
@@ -132,58 +134,74 @@ async function prepareProject(cwd: string, label: string) {
   }
 }
 
-let project: Awaited<ReturnType<typeof prepareProject>> | undefined;
-beforeAll(async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "niceeval-docker-build-inventory-"));
-  project = await prepareProject(cwd, `inventory-${marker}-${randomUUID()}`);
-}, 65_000);
-afterAll(async () => {
-  await project?.dispose();
-});
-
-// @feature docs/feature/sandbox/README.md#docker-build-inventory
-test("Docker preserves a crashed image lease as unverified and reports a verified live lease as active", async () => {
-  const fixture = project!;
+describe("Docker build inventory traces the lease holder's lifetime", () => {
+  let project: Awaited<ReturnType<typeof prepareProject>> | undefined;
+  let cold: Awaited<ReturnType<NonNullable<typeof project>["build"]>>;
+  let child: ReturnType<NonNullable<typeof project>["start"]> | undefined;
   const controller = new AbortController();
-  let child: ReturnType<typeof fixture.start> | undefined;
-  try {
-    const cold = await fixture.build();
-    expect(cold).toMatchObject({ state: "cold-reusable", leaseCount: 0, liveLeaseCount: 0, unverifiedLeaseCount: 0 });
 
-    const ready = waitUntilReady(fixture.cwd, controller.signal);
-    child = fixture.start();
+  beforeAll(async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "niceeval-docker-build-inventory-"));
+    project = await prepareProject(cwd, `inventory-${marker}-${randomUUID()}`);
+    cold = await project.build();
+
+    const ready = waitUntilReady(project.cwd, controller.signal);
+    child = project.start();
     await Promise.race([
       ready,
       child.then(({ stdout, stderr }) => {
-        throw new Error(`CLI exited before holding the Docker image: ${stderr || stdout}`);
+        throw new Error(`CLI exited before holding the Docker image: ${[stderr, stdout].filter(Boolean).join("\n")}`);
       }),
     ]);
-    expect(await fixture.build()).toMatchObject({
+  }, 120_000);
+
+  function killHolder() {
+    const state = child?.nodeChildProcess;
+    if (child?.pid !== undefined && state?.exitCode === null && state.signalCode === null) {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+  }
+
+  afterAll(async () => {
+    controller.abort();
+    try {
+      killHolder();
+      await child;
+    } finally {
+      await project?.dispose();
+    }
+  });
+
+  // @feature docs/feature/sandbox/README.md#docker-build-inventory
+  test("a built image without holders is reusable", () => {
+    expect(cold).toMatchObject({ state: "cold-reusable", leaseCount: 0, liveLeaseCount: 0, unverifiedLeaseCount: 0 });
+  });
+
+  // @feature docs/feature/sandbox/README.md#docker-build-inventory
+  test("a verified live holder makes the image active", async () => {
+    expect(await project!.build()).toMatchObject({
       identity: cold.identity,
       state: "active-leased",
       leaseCount: 1,
       liveLeaseCount: 1,
       unverifiedLeaseCount: 0,
     });
-    process.kill(-child.pid!, "SIGKILL");
-    expect((await child).signal).toBe("SIGKILL");
-    expect(await fixture.build()).toMatchObject({
+  }, 30_000);
+
+  // @feature docs/feature/sandbox/README.md#docker-build-inventory
+  test("a killed holder leaves its lease unverified and protected", async () => {
+    killHolder();
+    expect((await child!).signal).toBe("SIGKILL");
+    expect(await project!.build()).toMatchObject({
       identity: cold.identity,
       state: "unverified",
       leaseCount: 1,
       liveLeaseCount: 0,
       unverifiedLeaseCount: 1,
     });
-  } finally {
-    controller.abort();
-    const processState = child?.nodeChildProcess;
-    if (child?.pid !== undefined && processState?.exitCode === null && processState.signalCode === null) {
-      try {
-        process.kill(-child.pid, "SIGKILL");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-      await child;
-    }
-  }
-}, 90_000);
+  }, 30_000);
+});

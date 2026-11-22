@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
-import { beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const require = createRequire(new URL("../../packages/niceeval/package.json", import.meta.url));
 const { Effect } = require("effect") as typeof import("../../packages/niceeval/node_modules/effect/dist/index.js");
@@ -130,7 +130,7 @@ async function readEvents(cwd: string): Promise<RecordedEvent[]> {
   }
 }
 
-async function runScenario(scenario: Scenario) {
+async function arrangeScenario(scenario: Scenario) {
   const cwd = await prepareProject(scenario);
   try {
     const planned = await Effect.runPromise(
@@ -142,24 +142,41 @@ async function runScenario(scenario: Scenario) {
       }),
     );
     if (planned.status !== "ready") throw new Error(`Expected a ready plan, got ${JSON.stringify(planned)}`);
-    const abort = new AbortController();
-    const running = Effect.runPromise(experimentHost.invocation.run({ plan: planned.plan, signal: abort.signal }));
-    if (scenario.trigger === "sigint") {
-      // Interrupt only once the scenario's hold point is live, so the activated prefix is the one the scenario names.
-      const deadline = Date.now() + 8_000;
-      const state = { finished: false };
-      void running.then(() => (state.finished = true), () => (state.finished = true));
-      while (!(await readEvents(cwd)).some((event) => event.kind === "held")) {
-        if (state.finished) throw new Error("The Run finished before reaching its hold point");
-        if (Date.now() > deadline) throw new Error("The hold point was never reached");
-        await delay(5);
-      }
-      abort.abort();
-    }
-    const executed = await running;
-    return { executed, events: await readEvents(cwd) };
-  } finally {
+    return { cwd, plan: planned.plan };
+  } catch (error) {
     await rm(cwd, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function observeScenario(scenario: Scenario, { cwd, plan }: Awaited<ReturnType<typeof arrangeScenario>>) {
+  const abort = new AbortController();
+  const running = Effect.runPromise(experimentHost.invocation.run({ plan, signal: abort.signal }));
+  if (scenario.trigger === "sigint") {
+    // Interrupt only once the scenario's hold point is live, so the activated prefix is the one the scenario names.
+    const deadline = Date.now() + 8_000;
+    const state = { finished: false };
+    void running.then(
+      () => (state.finished = true),
+      () => (state.finished = true),
+    );
+    while (!(await readEvents(cwd)).some((event) => event.kind === "held")) {
+      if (state.finished) throw new Error("The Run finished before reaching its hold point");
+      if (Date.now() > deadline) throw new Error("The hold point was never reached");
+      await delay(5);
+    }
+    abort.abort();
+  }
+  const executed = await running;
+  return { executed, events: await readEvents(cwd) };
+}
+
+async function runScenario(scenario: Scenario) {
+  const arranged = await arrangeScenario(scenario);
+  try {
+    return await observeScenario(scenario, arranged);
+  } finally {
+    await rm(arranged.cwd, { recursive: true, force: true });
   }
 }
 
@@ -215,13 +232,25 @@ describe("interrupted and timed-out Attempts tear down every activated unit once
     await runScenario({ trigger: "sigint", holdAt: "test", experimentPlugin: false, evalPlugins: 0, teardown: {} });
   }, 20_000);
 
-  test.for(samples.map((scenario) => [describeScenario(scenario), scenario] as const))(
-    "%s",
-    async ([, scenario]) => {
-      const observed = await runScenario(scenario);
-      expectMirroredTeardown(scenario, observed);
-      expectLiveSignals(scenario, observed, () => true);
-      expectOriginalOutcome(scenario, observed);
+  describe.for(samples.map((scenario) => ({ label: describeScenario(scenario), scenario })))(
+    "$label",
+    ({ scenario }) => {
+      let arranged: Awaited<ReturnType<typeof arrangeScenario>> | undefined;
+
+      beforeAll(async () => {
+        arranged = await arrangeScenario(scenario);
+      }, 20_000);
+      afterAll(async () => {
+        if (arranged !== undefined) await rm(arranged.cwd, { recursive: true, force: true });
+      });
+
+      // @feature docs/feature/run/README.md#interrupted-teardown
+      test("preserves the terminal outcome and tears down with live signals in reverse activation order", async () => {
+        const observed = await observeScenario(scenario, arranged!);
+        expectMirroredTeardown(scenario, observed);
+        expectLiveSignals(scenario, observed, () => true);
+        expectOriginalOutcome(scenario, observed);
+      });
     },
   );
 });

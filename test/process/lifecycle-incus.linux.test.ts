@@ -1,7 +1,7 @@
 // 跨进程保证：外部程序与 Provider——真实 niceeval 进程经 Incus provider 准备、被杀与恢复时，实例、artifact 与诊断按 provider 请求日志结算
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterEach, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import {
   RUNTIME_PROJECT,
   artifactConsumers,
@@ -41,7 +41,7 @@ async function killAtProviderBoundary(created: IncusProject, request: string): P
   try {
     const records = await untilBlocked(created.journalPath, before);
     process.kill(-child.pid!, "SIGKILL");
-    await child;
+    expect((await child).signal).toBe("SIGKILL");
     return records;
   } finally {
     child.kill("SIGKILL");
@@ -52,55 +52,79 @@ async function killAtProviderBoundary(created: IncusProject, request: string): P
 // observes provider requests rather than the Attempt verdict.
 const probe = ["exp", "incus", "probe", "--rerun=all"] as const;
 
-// @feature docs/feature/sandbox/README.md#snapshot-takeover
-test("a committed artifact is published once and consumed by later Invocations, including after a killed owner", async () => {
-  const created = await project({ artifactStorageReserveBytes: 1024 ** 3, artifactEstimatedBytes: 1024 ** 3 });
-  await created.writeExperiment({ actionId: "takeover-prefix" });
+describe("Incus snapshot takeover", () => {
+  let created: IncusProject | undefined;
+  let cold: readonly JournalRecord[];
 
-  await created.niceeval(probe);
-  const cold = await created.journal();
-  expect(artifactPublishes(cold), JSON.stringify(cold)).toHaveLength(1);
-  expect(artifactConsumers(cold)).toHaveLength(1);
+  beforeAll(async () => {
+    created = await createIncusProject({
+      artifactMaxInstances: 1,
+      artifactStorageReserveBytes: 1024 ** 3,
+      artifactEstimatedBytes: 1024 ** 3,
+    });
+    await created.writeExperiment({ actionId: "takeover-prefix" });
+    await created.niceeval(probe);
+    cold = await created.journal();
+  }, 60_000);
 
-  const warmStart = cold.length;
-  await created.niceeval(probe);
-  const warm = (await created.journal()).slice(warmStart);
-  expect(artifactPublishes(warm)).toHaveLength(0);
-  expect(artifactConsumers(warm)).toHaveLength(1);
+  afterAll(async () => {
+    await created?.dispose();
+  });
 
-  // A owner killed while it lists runtime instances leaves nothing a successor must wait for.
-  await killAtProviderBoundary(created, `GET /1.0/instances?project=${RUNTIME_PROJECT}`);
-  const afterFence = (await created.journal()).length;
-  await created.niceeval(probe);
-  expect(artifactConsumers((await created.journal()).slice(afterFence))).toHaveLength(1);
+  // @feature docs/feature/sandbox/README.md#snapshot-takeover
+  test("the first Invocation publishes and consumes one artifact", () => {
+    expect(artifactPublishes(cold), JSON.stringify(cold)).toHaveLength(1);
+    expect(artifactConsumers(cold)).toHaveLength(1);
+  });
 
-  // A owner killed after accepting an instance creation must have that instance deleted by its successor.
-  const crashed = await killAtProviderBoundary(created, `POST /1.0/instances?project=${RUNTIME_PROJECT}`);
-  const crashedName = [...crashed]
-    .reverse()
-    .find(
-      (record) =>
-        record.event === "query" &&
-        record.detail.method === "POST" &&
-        record.detail.path === "/1.0/instances" &&
-        record.detail.project === RUNTIME_PROJECT,
-    )?.detail.body?.name;
-  expect(crashedName, JSON.stringify(crashed)).toBeTruthy();
-  const recoveryStart = (await created.journal()).length;
-  await created.niceeval(probe);
-  const recovery = (await created.journal()).slice(recoveryStart);
-  expect(
-    recovery.some(
-      (record) =>
-        record.event === "query" &&
-        record.detail.method === "DELETE" &&
-        record.detail.path === `/1.0/instances/${crashedName}` &&
-        record.detail.project === RUNTIME_PROJECT,
-    ),
-    JSON.stringify(recovery),
-  ).toBe(true);
-  expect(artifactConsumers(recovery)).toHaveLength(1);
-}, 180_000);
+  // @feature docs/feature/sandbox/README.md#snapshot-takeover
+  test("a later Invocation consumes the committed artifact without publishing again", async () => {
+    const warmStart = (await created!.journal()).length;
+    await created!.niceeval(probe);
+    const warm = (await created!.journal()).slice(warmStart);
+    expect(artifactPublishes(warm)).toHaveLength(0);
+    expect(artifactConsumers(warm)).toHaveLength(1);
+  }, 60_000);
+
+  describe.for(["GET", "POST"] as const)("owner killed during %s /instances", (method) => {
+    let crashedName: string | undefined;
+    let recoveryStart: number;
+
+    beforeAll(async () => {
+      const crashed = await killAtProviderBoundary(created!, `${method} /1.0/instances?project=${RUNTIME_PROJECT}`);
+      crashedName = [...crashed]
+        .reverse()
+        .find(
+          ({ event, detail }) =>
+            event === "query" &&
+            detail.method === method &&
+            detail.path === "/1.0/instances" &&
+            detail.project === RUNTIME_PROJECT,
+        )?.detail.body?.name;
+      recoveryStart = (await created!.journal()).length;
+    }, 60_000);
+
+    // @feature docs/feature/sandbox/README.md#snapshot-takeover
+    test("the successor consumes the committed artifact and removes any accepted instance", async () => {
+      await created!.niceeval(probe);
+      const recovery = (await created!.journal()).slice(recoveryStart);
+      if (method === "POST") {
+        expect(crashedName).toBeTruthy();
+        expect(recovery, JSON.stringify(recovery)).toContainEqual(
+          expect.objectContaining({
+            event: "query",
+            detail: expect.objectContaining({
+              method: "DELETE",
+              path: `/1.0/instances/${crashedName}`,
+              project: RUNTIME_PROJECT,
+            }),
+          }),
+        );
+      }
+      expect(artifactConsumers(recovery)).toHaveLength(1);
+    }, 60_000);
+  });
+});
 
 // @feature docs/feature/sandbox/README.md#preparation-failure
 test("an exhausted cache pool degrades the prepared prefix to Base and still dispatches the Attempt", async () => {

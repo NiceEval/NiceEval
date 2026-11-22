@@ -66,6 +66,13 @@ export default defineExperiment({
 
 // One Experiment run per generated plan keeps a run within the Library budget; raise the count for nightly exploration.
 const PROPERTY_RUNS = Number(process.env.NICEEVAL_PROPERTY_RUNS ?? 1);
+const propertyCases = [
+  { label: "regression", regression: true },
+  ...Array.from({ length: Math.max(0, PROPERTY_RUNS - 2) }, (_, index) => ({
+    label: `exploration ${index + 1}`,
+    regression: false,
+  })),
+];
 
 // --- Generators --------------------------------------------------------------------------------
 
@@ -176,11 +183,12 @@ describe("adapter usage accounting", () => {
   });
 
   // @feature docs/feature/adapters/README.md#usage-accounting
-  test(
-    "cache read rate is the token-weighted ratio over covered calls and unavailable with a reason for any gap, never zero-filled",
-    async () => {
+  test.for(propertyCases)(
+    "cache read rate is the token-weighted ratio over covered calls and unavailable with a reason for any gap, never zero-filled ($label)",
+    { timeout: 60_000 },
+    async ({ regression }) => {
       await fc.assert(
-        fc.asyncProperty(PROPERTY_RUNS > 1 ? callList : fc.constant(PINNED_CALLS), PROPERTY_RUNS > 1 ? sealPlan : fc.constant("complete" as const), async (calls, seal) => {
+        fc.asyncProperty(callList, sealPlan, async (calls, seal) => {
           await writeJson(project.cwd, "plan.json", { calls, seal, invalidReasons: [] });
           const locator = await runSingleAttempt(project.cwd, "usage");
           const complete = seal === "complete";
@@ -232,18 +240,18 @@ describe("adapter usage accounting", () => {
         {
           // The pinned plan is the run at the default count: a mixed-role ledger whose exact rate (910/1100) shifts
           // under any change to the denominator. Extra runs explore randomly.
-          numRuns: PROPERTY_RUNS > 1 ? PROPERTY_RUNS - 1 : 1,
-          examples: PROPERTY_RUNS > 1 ? [[PINNED_CALLS, "complete"]] : [],
+          numRuns: 1,
+          examples: regression ? [[PINNED_CALLS, "complete"]] : [],
         },
       );
     },
-    60_000,
   );
 
   // @feature docs/feature/adapters/README.md#usage-accounting
-  test(
-    "non-canonical seal reasons throw at the call site with the format, keep earlier calls, and still error the Attempt",
-    async () => {
+  test.for(propertyCases)(
+    "non-canonical seal reasons throw at the call site with the format, keep earlier calls, and still error the Attempt ($label)",
+    { timeout: 60_000 },
+    async ({ regression }) => {
       const invalidReason = fc.oneof(
         fc.constant(""),
         fc.constant(" "),
@@ -254,8 +262,8 @@ describe("adapter usage accounting", () => {
       );
       await fc.assert(
         fc.asyncProperty(
-          PROPERTY_RUNS > 1 ? callList : fc.constant(PINNED_CALLS),
-          PROPERTY_RUNS > 1 ? fc.array(invalidReason, { minLength: 1, maxLength: 3 }) : fc.constant(PINNED_INVALID_REASONS),
+          callList,
+          fc.array(invalidReason, { minLength: 1, maxLength: 3 }),
           async (calls, invalidReasons) => {
             await writeJson(project.cwd, "plan.json", { calls, seal: "none", invalidReasons });
             const locator = await runSingleAttempt(project.cwd, "usage");
@@ -279,11 +287,10 @@ describe("adapter usage accounting", () => {
         ),
         {
           // The pinned plan holds the invalid reasons the format check must reject (spaces, empty, over 128 chars).
-          numRuns: PROPERTY_RUNS > 1 ? PROPERTY_RUNS - 1 : 1,
-          examples: PROPERTY_RUNS > 1 ? [[PINNED_CALLS, PINNED_INVALID_REASONS]] : [],
+          numRuns: 1,
+          examples: regression ? [[PINNED_CALLS, PINNED_INVALID_REASONS]] : [],
         },
       );
     },
-    60_000,
   );
 });
