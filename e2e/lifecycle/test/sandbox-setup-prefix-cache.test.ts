@@ -14,6 +14,7 @@ import {
   withProjectCopy,
   withTempDir,
 } from "@niceeval/testkit";
+import { decodeDockerCacheInventoryDocument } from "niceeval/sandbox";
 import { expect, test } from "vitest";
 import { inspectAttempt } from "./inspection.ts";
 
@@ -259,15 +260,10 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
   const env = { NICEEVAL_HOME: niceevalHome };
   const inventory = await niceeval.run(["docker", "cache", "inventory", "--json"], { cwd: root, env });
   expect(inventory.exitCode, inventory.diagnostic()).toBe(0);
-  const document = JSON.parse(inventory.stdout) as {
-    readonly domains: readonly {
-      readonly domainId: string;
-      readonly entryKinds: { readonly sandboxBeforeCache: number };
-    }[];
-  };
+  const document = decodeDockerCacheInventoryDocument(inventory.json<unknown>());
   const domain = only(
     document.domains,
-    (candidate) => candidate.entryKinds.sandboxBeforeCache > 0,
+    (candidate) => candidate.state === "verified-managed" && candidate.entryKinds.sandboxBeforeCache > 0,
     inventory.diagnostic(),
   );
   const detail = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId, "--json"], {
@@ -275,9 +271,9 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
     env,
   });
   expect(detail.exitCode, detail.diagnostic()).toBe(0);
-  const entries = (
-    JSON.parse(detail.stdout) as { readonly entries: readonly Record<string, unknown>[] }
-  ).entries.filter((entry) => entry.kind === "sandbox-before-cache");
+  const entries = (decodeDockerCacheInventoryDocument(detail.json<unknown>()).entries ?? []).filter(
+    (entry) => entry.kind === "sandbox-before-cache",
+  );
   expect(entries.length, detail.diagnostic()).toBeGreaterThan(0);
   for (const entry of entries) {
     expect(entry).toMatchObject({
@@ -315,9 +311,17 @@ async function assertBeforeCacheInventory(root: string, niceevalHome: string): P
 
   const human = await niceeval.run(["docker", "cache", "inventory", "--domain", domain.domainId], { cwd: root, env });
   expect(human.exitCode, human.diagnostic()).toBe(0);
-  expect(human.stdout).toContain("prepared Sandbox · ready");
+  for (const { identity } of entries) {
+    expect(human.stdout).toContain(`prepared Sandbox · ready · ${identity.entryId} · `);
+  }
   expect(human.stdout).toContain("0 users (0 running, 0 unverified) · 0 protected uses (0 running, 0 unverified)");
-  expect(human.stdout).not.toMatch(/sandbox-before-cache|task-build|active-leased|cold-reusable|indexed|leases|holds/);
+  const humanWithoutEntryIds = entries.reduce(
+    (output, { identity }) => output.replaceAll(identity.entryId, ""),
+    human.stdout,
+  );
+  expect(humanWithoutEntryIds).not.toMatch(
+    /sandbox-before-cache|task-build|active-leased|cold-reusable|indexed|leases|holds/,
+  );
   expect(human.stdout).not.toMatch(/declaration|holder|operationId|manifestDigest/iu);
 
   const preview = await niceeval.run(["docker", "cache", "gc", "--domain", domain.domainId, "--json"], {
@@ -352,7 +356,18 @@ async function inspectCompletedInvocation(
   readonly beforeCaches: BeforeCacheSummary;
 }> {
   const mode = options.mode ?? "default";
-  expect(run.exitCode, run.diagnostic()).toBe(0);
+  let runDiagnostic = run.diagnostic();
+  if (run.exitCode === 1 && run.stdout.length > 0) {
+    const failure = run.expErrorEvents().find((event) => event.locator !== undefined);
+    if (failure?.locator) {
+      const execution = await niceeval.run(["show", failure.locator, "execution", "--json"], {
+        cwd: root,
+        env: invocationEnv,
+      });
+      runDiagnostic += `\n\n${execution.diagnostic()}`;
+    }
+  }
+  expect(run.exitCode, runDiagnostic).toBe(0);
   expect(run.expReceipt(), run.diagnostic()).toMatchObject({ completion: "completed" });
   expect(run.expReceipt(), "InvocationReceipt must remain a lightweight hand-off").not.toHaveProperty("beforeCaches");
   const beforeCaches = beforeCacheSummary(run);

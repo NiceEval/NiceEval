@@ -187,7 +187,7 @@ test.concurrent("准备命令失败时，概览与执行页指向该命令完整
 
     const execution = await niceeval.run(["show", locator, "execution"]);
     expect(execution.exitCode, execution.diagnostic()).toBe(0);
-    expect(execution.stdout).toContain("exited; code 7");
+    expect(execution.stdout).toContain("failed; exit code 7");
     const expand = new RegExp(`niceeval show ${locator} (command_[a-z0-9]+)`, "u").exec(execution.stdout);
     expect(expand, execution.stdout).not.toBeNull();
 
