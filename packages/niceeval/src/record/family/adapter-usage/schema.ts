@@ -198,9 +198,11 @@ export function adapterUsageInputTokensAreConsistent(call: AdapterUsageCall): bo
   const buckets = [call.inputTokens, call.cacheReadTokens, call.cacheWriteTokens];
   const known = buckets.filter((value): value is number => value !== null);
   const sum = known.reduce((total, value) => total + value, 0);
-  return Number.isSafeInteger(sum) &&
+  return (
+    Number.isSafeInteger(sum) &&
     (call.inputTotalTokens === null ||
-      (sum <= call.inputTotalTokens && (known.length !== 3 || sum === call.inputTotalTokens)));
+      (sum <= call.inputTotalTokens && (known.length !== 3 || sum === call.inputTotalTokens)))
+  );
 }
 
 export function validateAdapterUsageCalls(calls: readonly AdapterUsageCall[]): readonly RecordAttachmentIssue[] {

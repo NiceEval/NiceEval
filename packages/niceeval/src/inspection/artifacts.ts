@@ -255,10 +255,14 @@ export function readInspectionArtifactSources(
   resolved: ResolvedInspectionAttempt,
 ): Result.Result<ReadonlyMap<string, InspectionArtifactSource>, InspectionArtifactError> {
   try {
-    return Result.succeed(new Map(hydrateArtifactDescriptors(resolved).map(({ content, ...descriptor }) => [
-      descriptor.artifactId,
-      { ...descriptor, chunks: () => verifiedChunks(resolved.origin.source, content) },
-    ])));
+    return Result.succeed(
+      new Map(
+        hydrateArtifactDescriptors(resolved).map(({ content, ...descriptor }) => [
+          descriptor.artifactId,
+          { ...descriptor, chunks: () => verifiedChunks(resolved.origin.source, content) },
+        ]),
+      ),
+    );
   } catch (cause) {
     return Result.fail(
       new InspectionArtifactError({

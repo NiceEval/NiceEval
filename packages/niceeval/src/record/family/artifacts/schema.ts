@@ -1,10 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import {
-  RecordBytesContentSchema,
-  recordAttachmentIssue,
-  type RecordAttachmentIssue,
-} from "../../attachment/index.ts";
+import { RecordBytesContentSchema, recordAttachmentIssue, type RecordAttachmentIssue } from "../../attachment/index.ts";
 import { ArtifactIdSchema, Sha256DigestSchema } from "../../codec/identifiers.ts";
 import {
   CollectionStateSchema,

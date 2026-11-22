@@ -20,8 +20,8 @@ const Sha256Schema = Schema.String.pipe(
   Schema.check(Schema.makeFilter((value) => /^[0-9a-f]{64}$/u.test(value), { identifier: "ExecutionTraceSha256" })),
 );
 
-const TraceInputJsonSchema = Schema.declare<TraceJson>(
-  (value): value is TraceJson => Result.isSuccess(snapshotTraceJson(value)),
+const TraceInputJsonSchema = Schema.declare<TraceJson>((value): value is TraceJson =>
+  Result.isSuccess(snapshotTraceJson(value)),
 );
 export const ExecutionTraceJsonSchema: Schema.Codec<TraceJson> = Schema.suspend(() =>
   Schema.Union([
@@ -128,7 +128,7 @@ export function* canonicalTraceJsonChunks(value: TraceJson): Generator<string> {
         yield keys === undefined ? "[" : "{";
       } else if (typeof current === "string" && current.length > 16_384) {
         yield '"';
-        for (let offset = 0; offset < current.length;) {
+        for (let offset = 0; offset < current.length; ) {
           let end = Math.min(offset + 16_384, current.length);
           const last = current.charCodeAt(end - 1);
           if (end < current.length && last >= 0xd800 && last <= 0xdbff) end -= 1;

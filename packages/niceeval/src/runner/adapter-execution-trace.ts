@@ -443,10 +443,7 @@ export function createAdapterExecutionTraceCollector(
             `${path}: display must contain finite plain JSON and valid UTF-8 text.`,
           );
         }
-        throw traceError(
-          "execution-trace-invalid",
-          "Execution trace must be finite plain JSON with valid UTF-8 text.",
-        );
+        throw traceError("execution-trace-invalid", "Execution trace must be finite plain JSON with valid UTF-8 text.");
       }
       const canonicalInputDigest = digestCanonicalTraceJson(canonical.success).sha256;
       const decoded = exactDecode(canonical.success);
@@ -515,10 +512,7 @@ export function createAdapterExecutionTraceCollector(
             }
             const canonicalTarget = snapshotTraceJson(target);
             if (Result.isFailure(canonicalTarget)) {
-              throw traceError(
-                "execution-trace-evidence-missing",
-                "Execution trace evidence target is invalid.",
-              );
+              throw traceError("execution-trace-evidence-missing", "Execution trace evidence target is invalid.");
             }
             const targetIdentity = digestCanonicalTraceJson(canonicalTarget.success);
             verified = {

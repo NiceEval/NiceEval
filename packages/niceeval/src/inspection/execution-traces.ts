@@ -178,10 +178,7 @@ export interface ExecutionEvidenceRange extends Omit<ExecutionEvidencePreview, "
 }
 
 export class InspectionExecutionTraceError extends Data.TaggedError("InspectionExecutionTraceError")<{}> {
-  readonly code:
-    | "inspection-request-invalid"
-    | "inspection-record-integrity-failure"
-    | "restart-required";
+  readonly code: "inspection-request-invalid" | "inspection-record-integrity-failure" | "restart-required";
   constructor(code: InspectionExecutionTraceError["code"], message: string) {
     super();
     this.message = message;
@@ -898,9 +895,10 @@ function outlineEvent(event: ExecutionTraceEventRecord): ExecutionTraceEventOutl
     evidence: event.evidence.map(({ evidenceId, key, label }) => ({ evidenceId, key, label })),
     scopeMemberships: event.scopeMemberships,
   };
-  const emptyDisplay = event.display === undefined
-    ? { state: "absent" }
-    : { state: "present", blocks: [], omittedBlockCount: event.display.length };
+  const emptyDisplay =
+    event.display === undefined
+      ? { state: "absent" }
+      : { state: "present", blocks: [], omittedBlockCount: event.display.length };
   const envelopeBytes = utf8ByteLength(JSON.stringify({ ...envelope, display: emptyDisplay }));
   const display = previewDisplay(event.display, ExecutionTraceRecordLimits.maximumOutlineEventBytes - envelopeBytes);
   return { ...envelope, display };
