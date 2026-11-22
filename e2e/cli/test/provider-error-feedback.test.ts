@@ -151,15 +151,37 @@ test.concurrent("provider 与 sandbox 错误只展示真实问题并给出所属
           expect(shown.stdout).not.toContain("run.dispatch");
         }
         const output = run.experimentId === "short-error" ? shortOutput : compact;
-        expect(output).toContain(
-          `${run.experimentId} show: niceeval show run:${run.runId} view: niceeval view run:${run.runId}`,
-        );
         for (const member of detail.plannedAttempts) {
           if (member.publication.state === "published" && member.state === "executed") {
             expect(output).toContain(`details: niceeval show ${member.publication.attemptLocator}`);
           }
         }
       }
+      const runsFor = (short: boolean) =>
+        summaries
+          .map(({ run }) => run.value)
+          .filter((run) => (run.experimentId === "short-error") === short)
+          .map((run) => run.runId)
+          .sort();
+      const shortRuns = runsFor(true);
+      expect(shortRuns).toHaveLength(1);
+      const shortNext = shortOutput.slice(shortOutput.lastIndexOf("NEXT")).trim();
+      expect(shortNext).toBe(`NEXT show: niceeval show run:${shortRuns[0]} view: niceeval view run:${shortRuns[0]}`);
+
+      const providerRuns = runsFor(false);
+      expect(providerRuns).toHaveLength(6);
+      const providerNext = compact.slice(compact.lastIndexOf("NEXT")).trim();
+      const nextCommands =
+        /^NEXT show: niceeval show run:([0-9a-f-]+) view: niceeval view run:\1 \+5 more — niceeval run list --invocation (\S+)$/u;
+      expect(providerNext).toMatch(nextCommands);
+      const [, representativeRun, invocationId] = nextCommands.exec(providerNext)!;
+      expect(providerRuns).toContain(representativeRun);
+      const invocationRuns = await niceeval.run(["run", "list", "--invocation", invocationId!, "--json"]);
+      expect(invocationRuns.exitCode, invocationRuns.diagnostic()).toBe(0);
+      const invocation = invocationRuns.runListDocument();
+      expect(invocation.omitted).toBe(0);
+      expect(invocation.runs.map(({ runId }) => runId).sort()).toEqual(providerRuns);
+
       expect(shortOutput).not.toContain("details: niceeval view");
       expect(compact).not.toContain("details: niceeval view");
       const errorLocators = summaries
