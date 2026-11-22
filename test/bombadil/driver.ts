@@ -183,7 +183,8 @@ async function authorizeFuzzSessions(ready: string) {
   if (response.status !== 204 || cookie === null) {
     throw new Error(`View session exchange failed with HTTP ${response.status}`);
   }
-  return { url: url.href, args: ["--cookie", cookie] };
+  // Bombadil 0.7.10 cannot set SameSite. This driver explores only the View origin.
+  return { url: url.href, args: ["--cookie", cookie.replace(/;\s*SameSite=[^;]*/i, "")] };
 }
 
 async function checkTraces(outputPath: string) {
