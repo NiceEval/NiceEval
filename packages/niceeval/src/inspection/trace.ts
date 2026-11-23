@@ -10,7 +10,7 @@ import {
   projectAdapterModelUsage,
 } from "../o11y/adapter-usage-projection.ts";
 import { projectJudgeUsage, projectTotalUsageCosts } from "../o11y/judge-usage-projection.ts";
-import { recordedCostGaps } from "../o11y/cost-gaps.ts";
+import { recordedCostGaps, type RecordedTotalUsageCosts } from "../o11y/cost-gaps.ts";
 import type { ModelRolesWire } from "../model-roles.ts";
 
 import { Result, Schema } from "effect";
@@ -1216,7 +1216,7 @@ export function projectAttemptUsage(
   attachments: Pick<AttemptTraceAttachments, "models" | "adapterUsage" | "judgeUsage" | "attemptCost" | "agentTurns">,
   models: ModelRolesWire | undefined = attachments.models,
   page = 0,
-): InspectionAttemptUsageResult {
+): Omit<InspectionAttemptUsageResult, "totalCosts"> & { readonly totalCosts: RecordedTotalUsageCosts } {
   const turns = readInspectionAgentTurns(attachments.agentTurns);
   const usage = projectApplicationUsage(attachments, models, turns, page);
   const application = readAdapterUsageAttachment(attachments.adapterUsage, models);
@@ -1559,7 +1559,7 @@ export function unavailableInspectionUsageTotals(): InspectionAttemptUsageResult
 }
 
 export function combineInspectionUsageTotals(
-  usages: readonly InspectionAttemptUsageResult[],
+  usages: readonly Pick<InspectionAttemptUsageResult, "totals">[],
   incomplete: boolean,
 ): InspectionAttemptUsageResult["totals"] {
   const numeric = (

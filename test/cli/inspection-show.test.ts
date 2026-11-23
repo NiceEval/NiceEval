@@ -1102,3 +1102,197 @@ describe("CLI show current project and historical deltas", () => {
     expect(expView.stdout).toContain("Previous result @");
   });
 });
+
+describe("CLI show CostGap model pages", () => {
+  const largeModel = "巨大".repeat(175_000) + "-model";
+  const escapedModel = "z-escaped-" + '"'.repeat(35_000);
+  const multibyteModel = "z-multibyte-" + "界".repeat(24_000);
+  const manyModels = [
+    ...Array.from({ length: 198 }, (_, index) => `model-${String(index).padStart(3, "0")}`),
+    "\u{1f600}",
+    "\ue000",
+  ];
+  const orderedModels = [...manyModels].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
+
+  let cwd: string;
+  let largeLocator: string;
+  let manyLocator: string;
+
+  beforeAll(async () => {
+    cwd = await mkdtemp(join(await realpath(tmpdir()), "niceeval-cli-cost-gaps-"));
+    await Promise.all(["evals", "experiments"].map((dir) => mkdir(join(cwd, dir))));
+    await Promise.all([
+      writeFile(join(cwd, "package.json"), JSON.stringify({ type: "module" })),
+      writeFile(join(cwd, "adapter.ts"), `
+        import { defineAdapter } from "niceeval";
+        export const adapter = defineAdapter({
+          name: "cost-gap-pages", behaviorRevision: "1",
+          create(ctx) {
+            return {
+              recordModels(models: readonly string[]) {
+                models.forEach((model, index) => ctx.recordUsage({
+                  callId: "call-" + index, provider: "fixture", model, status: "succeeded",
+                  inputTokens: 4, inputTotalTokens: 4, outputTokens: 1,
+                }));
+                ctx.recordUsage({
+                  callId: "paid", provider: "fixture", model: "paid", status: "succeeded",
+                  inputTokens: 4, inputTotalTokens: 4, outputTokens: 1,
+                  cost: { amount: "0.125", currency: "USD", source: { kind: "reported", id: "fixture" } },
+                });
+                ctx.sealUsage({ state: "complete" });
+              },
+            };
+          },
+        });
+      `),
+      ...Object.entries({
+        "large-model": `["a-model", ${JSON.stringify(escapedModel)}, ${JSON.stringify(multibyteModel)}, "巨大".repeat(175_000) + "-model"]`,
+        "many-models": JSON.stringify([...manyModels].reverse().concat(orderedModels[0]!)),
+      }).flatMap(([name, models]) => [
+        writeFile(join(cwd, "evals", `${name}.eval.ts`), `
+          import { adapter } from "../adapter.ts";
+          export default adapter.defineEval({ test(t) { t.recordModels(${models}); } });
+        `),
+        writeFile(join(cwd, "experiments", `${name}.ts`), `
+          import { defineExperiment } from "niceeval";
+          import { adapter } from "../adapter.ts";
+          export default defineExperiment({ adapter, evals: [${JSON.stringify(name)}] });
+        `),
+      ]),
+    ]);
+
+    async function runAndLocate(name: string) {
+      const run = await runProjectExperiment(cwd, name);
+      const locators = await publishedSlotLocators(cwd, run.receipt.createdRunIds[0]!);
+      const locator = locators.values().next().value;
+      if (locator === undefined) throw new Error(`No published Attempt for ${name}`);
+      return locator;
+    }
+
+    largeLocator = await runAndLocate("large-model");
+    manyLocator = await runAndLocate("many-models");
+  }, 30_000);
+
+  afterAll(async () => {
+    if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+  });
+
+  async function showJson(args: readonly string[], continuation?: string) {
+    const flags = continuation === undefined ? [] : ["--continuation", continuation];
+    const result = await runCli(cwd, ["show", ...args, ...flags, "--json"]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const [document] = decodeNdjson(result.stdout);
+    if (document?.outcome !== "success") throw new Error(`Expected a successful Show document: ${result.stdout}`);
+    return document;
+  }
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  test("delivers a 1,050,006-byte missing-price model in full on its own Attempt usage page", async () => {
+    let continuation: string | undefined;
+    const collected: string[][] = [];
+    for (let index = 0; index < 6; index++) {
+      const document = await showJson([largeLocator, "usage"], continuation);
+      if (document.operation !== "attempt.usage") throw new Error("Expected Attempt usage");
+      const gap = document.usage.totalCosts.gaps[0]!;
+      expect(gap).toMatchObject({ source: "application", reason: "no-pricing-profile", totalModelCount: 4 });
+      collected.push([...gap.models]);
+      expect(gap.omittedModelCount).toBe(4 - collected.flat().length);
+      continuation = document.usage.continuation;
+      if (continuation === undefined) break;
+    }
+    expect(Buffer.byteLength(largeModel)).toBe(1_050_006);
+    expect(collected.filter((page) => page.length > 0)).toEqual([["a-model", escapedModel], [multibyteModel], [largeModel]]);
+    expect(continuation).toBeUndefined();
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  test("reads all 200 unique missing-price models through Attempt usage with stable totals", async () => {
+    let continuation: string | undefined;
+    let initialTotals: unknown;
+    const collected: string[] = [];
+
+    for (let index = 0; index < 8; index++) {
+      const document = await showJson([manyLocator, "usage"], continuation);
+      if (document.operation !== "attempt.usage") throw new Error("Expected Attempt usage");
+      const { gaps, ...totals } = document.usage.totalCosts;
+      const aggregates = { totalCosts: totals, application: document.usage.totals };
+      initialTotals ??= aggregates;
+      expect(aggregates).toEqual(initialTotals);
+      expect(totals).toMatchObject({
+        state: "partial",
+        values: [{ currency: "USD", value: "0.125", source: "reported" }],
+        missingSources: ["application"],
+      });
+      const gap = gaps[0]!;
+      if (index === 0) expect(gap.models).toHaveLength(64);
+      expect(gap.models.length).toBeLessThanOrEqual(64);
+      expect(Buffer.byteLength(JSON.stringify(gap.models))).toBeLessThanOrEqual(128 * 1024);
+      collected.push(...gap.models);
+      expect(gap).toMatchObject({
+        source: "application",
+        reason: "no-pricing-profile",
+        totalModelCount: 200,
+        omittedModelCount: 200 - collected.length,
+      });
+      continuation = document.usage.continuation;
+      if (continuation === undefined) break;
+      expect(document.links).toContainEqual({
+        rel: "next-page",
+        command: `niceeval show ${manyLocator} usage --continuation ${continuation}`,
+      });
+    }
+    expect(continuation).toBeUndefined();
+    expect(collected).toEqual(orderedModels);
+
+    const text = await runCli(cwd, ["show", manyLocator, "usage"]);
+    expect(text.code, text.stderr).toBe(0);
+    expect(text.stdout).toContain(orderedModels[0]);
+    expect(text.stdout.replace(/\s+/gu, " ")).toContain("(200 models) · model-000");
+  });
+
+  // @feature docs/feature/inspection/README.md#exact-read-and-comparison
+  test("pages the Experiment cost summary and exposes each Attempt's first model page once", async () => {
+    let continuation: string | undefined;
+    let initialSummary: unknown;
+    const collected: string[] = [];
+
+    for (let index = 0; index < 8; index++) {
+      const document = await showJson(["exp:many-models"], continuation);
+      if (document.operation !== "experiment.get") throw new Error("Expected Experiment");
+      const { costSummary, modelUsage } = document.experiment;
+      const { gaps, ...totals } = costSummary.totalCosts;
+      const summary = { scope: costSummary.scope, coverage: costSummary.coverage, totals };
+      initialSummary ??= summary;
+      expect(summary).toEqual(initialSummary);
+      const gap = gaps[0]!;
+      if (index === 0) {
+        expect(gap.models).toHaveLength(64);
+        expect(modelUsage.attempts).toHaveLength(1);
+        expect(modelUsage.attempts[0]).toMatchObject({
+          locator: manyLocator,
+          usage: { totalCosts: { gaps: [gap] } },
+        });
+      } else {
+        expect(modelUsage.attempts).toEqual([]);
+      }
+      expect(modelUsage.omittedAttemptCount).toBe(0);
+      expect(gap.models.length).toBeLessThanOrEqual(64);
+      expect(Buffer.byteLength(JSON.stringify(gap.models))).toBeLessThanOrEqual(128 * 1024);
+      collected.push(...gap.models);
+      expect(gap).toMatchObject({
+        source: "application",
+        reason: "no-pricing-profile",
+        totalModelCount: 200,
+        omittedModelCount: 200 - collected.length,
+      });
+      continuation = modelUsage.continuation;
+      if (continuation === undefined) break;
+      expect(document.links).toContainEqual({
+        rel: "next-page",
+        command: `niceeval show exp:many-models --continuation ${continuation}`,
+      });
+    }
+    expect(continuation).toBeUndefined();
+    expect(collected).toEqual(orderedModels);
+  });
+});

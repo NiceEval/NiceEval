@@ -28,8 +28,10 @@ import {
   INSPECTION_USAGE_GROUP_PAGE_SIZE,
   INSPECTION_USAGE_CALL_PAGE_BYTES,
   INSPECTION_USAGE_CALL_PAGE_SIZE,
+  INSPECTION_COST_GAP_MODEL_PAGE_SIZE,
+  INSPECTION_COST_GAP_MODEL_PAGE_BYTES,
 } from "./limits.ts";
-import { utf8ByteLength } from "./bytes.ts";
+import { compareUtf8, utf8ByteLength } from "./bytes.ts";
 import { CurrencyCodeSchema } from "../record/family/source-receipt/codec.ts";
 
 import {
@@ -270,7 +272,14 @@ export const InspectionExperimentResultSchema = Schema.Struct({
             judgeUsage: JudgeUsageSummarySchema,
             totalCosts: InspectionAttemptUsageResultSchema.fields.totalCosts,
             totals: InspectionAttemptUsageResultSchema.fields.totals,
-          }),
+          }).check(
+            Schema.makeFilter(({ totalCosts }) =>
+              totalCosts.gaps.every(
+                ({ models, totalModelCount, omittedModelCount }) =>
+                  models.length + omittedModelCount === totalModelCount,
+              ),
+            ),
+          ),
         ),
       }),
     ),
@@ -283,7 +292,6 @@ export const InspectionExperimentResultSchema = Schema.Struct({
       (usage) =>
         usage.attempts.length <= INSPECTION_ATTEMPT_PAGE_SIZE &&
         usage.totalAttemptCount >= usage.attempts.length + usage.omittedAttemptCount &&
-        usage.omittedAttemptCount > 0 === (usage.continuation !== undefined) &&
         usage.attempts.every(
           (entry, index) =>
             index === 0 ||
@@ -295,7 +303,14 @@ export const InspectionExperimentResultSchema = Schema.Struct({
   ),
   experiment: OverviewExperimentSchema,
   cells: Schema.Array(OverviewCellSchema),
-});
+}).check(
+  Schema.makeFilter(
+    ({ modelUsage, costSummary }) =>
+      (modelUsage.omittedAttemptCount > 0 ||
+        costSummary.totalCosts.gaps.some(({ omittedModelCount }) => omittedModelCount > 0)) ===
+      (modelUsage.continuation !== undefined),
+  ),
+);
 export type InspectionExperimentResult = Schema.Schema.Type<typeof InspectionExperimentResultSchema>;
 
 /** Inspection lifecycle projection; durable Core remains unchanged. */
@@ -1145,17 +1160,26 @@ const CostGapSchema = Schema.Struct({
   reason: Schema.Literals(CostGapReasons),
   models: Schema.Array(
     Schema.String.check(
-      Schema.makeFilter(
-        (model) => model.trim().length > 0 && utf8ByteLength(model) <= 8_192 && !/[\u0000-\u001f\u007f]/u.test(model),
-      ),
+      Schema.makeFilter((model) => model.trim().length > 0 && !/[\ud800-\udfff\u0000-\u001f\u007f]/u.test(model)),
     ),
   ),
+  totalModelCount: NonNegativeSafeIntegerSchema,
+  omittedModelCount: NonNegativeSafeIntegerSchema,
 }).check(
-  Schema.makeFilter(
-    (gap) =>
-      (gap.reason === "no-pricing-profile" ? gap.models.length > 0 : gap.models.length === 0) &&
-      gap.models.every((model, index) => index === 0 || gap.models[index - 1]! < model),
-  ),
+  Schema.makeFilter((gap) => {
+    const { models, totalModelCount, omittedModelCount } = gap;
+    if (gap.reason !== "no-pricing-profile") {
+      return models.length === 0 && totalModelCount === 0 && omittedModelCount === 0;
+    }
+    return (
+      totalModelCount > 0 &&
+      omittedModelCount <= totalModelCount - models.length &&
+      (models.length > 0 || omittedModelCount === 0) &&
+      models.length <= INSPECTION_COST_GAP_MODEL_PAGE_SIZE &&
+      (models.length <= 1 || utf8ByteLength(JSON.stringify(models)) <= INSPECTION_COST_GAP_MODEL_PAGE_BYTES) &&
+      models.every((model, index) => index === 0 || compareUtf8(models[index - 1]!, model) < 0)
+    );
+  }),
 );
 export type CostGap = Schema.Schema.Type<typeof CostGapSchema>;
 const TotalUsageCostsSchema = Schema.Struct({
@@ -1392,7 +1416,12 @@ export const InspectionAttemptUsageResultSchema = Schema.Struct({
   totals: UsageTotalsSchema,
   hasMore: Schema.Boolean,
   omittedObservationCount: Schema.Number,
-});
+}).check(
+  Schema.makeFilter(
+    ({ continuation, totalCosts }) =>
+      continuation !== undefined || totalCosts.gaps.every(({ omittedModelCount }) => omittedModelCount === 0),
+  ),
+);
 export type InspectionAttemptUsageResult = Schema.Schema.Type<typeof InspectionAttemptUsageResultSchema>;
 
 const RunOverviewStateSchema = Schema.Literals(["complete", "partial", "not-recorded", "invalid", "unavailable"]);

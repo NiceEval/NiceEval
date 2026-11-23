@@ -110,6 +110,7 @@
     "usage.gap.provider-cost-not-reported": "Provider cost or priceable call evidence was not reported",
     "usage.gap.token-buckets-incomplete": "Sealed prices lack required token buckets",
     "usage.gap.usage-not-recorded": "Usage was not recorded completely",
+    "usage.gap.modelCount": "{{count}} models",
     "usage.addPrices": "Next: add prices for {{models}} to defineConfig({ pricing })",
     "usage.groupPreview": "{{shown}} groups shown; {{total}} total; {{omitted}} omitted",
     "usage.costOrigins": "{{reported}} reported; {{estimated}} estimated",

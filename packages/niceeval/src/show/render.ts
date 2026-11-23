@@ -2395,7 +2395,10 @@ function totalCostBlocks(costs: UsageView["totalCosts"]): readonly TerminalPanel
           : [{ key: "Missing sources", value: costs.missingSources.join(", ") }]),
         ...costs.gaps.map((gap) => ({
           key: gap.source,
-          value: `${reasons[gap.reason]}${gap.models.length === 0 ? "" : ` (${gap.models.join(", ")})`}`,
+          value:
+            gap.reason === "no-pricing-profile"
+              ? `${reasons[gap.reason]} (${gap.totalModelCount} models)${gap.models.length === 0 ? "" : ` · ${gap.models.join(", ")}`}`
+              : reasons[gap.reason],
         })),
         ...(costs.values.length === 0
           ? [{ key: "Amount", value: complete ? "No recorded charges" : "Unavailable" }]

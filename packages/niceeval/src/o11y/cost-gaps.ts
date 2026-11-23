@@ -1,14 +1,21 @@
 import type { ReadableAdapterUsageAttachment } from "../record/family/adapter-usage/schema.ts";
 import type { JudgeUsageAttachment } from "../record/family/judge-usage/schema.ts";
-import { CostGapReasons, CostGapSources, type CostGap } from "../inspection/results.ts";
+import { CostGapReasons, CostGapSources, type CostGap, type TotalUsageCosts } from "../inspection/results.ts";
+import { compareUtf8 } from "../inspection/bytes.ts";
+import { numberedCollectionPage } from "../inspection/collection-page.ts";
+import { INSPECTION_COST_GAP_MODEL_PAGE_BYTES, INSPECTION_COST_GAP_MODEL_PAGE_SIZE } from "../inspection/limits.ts";
+
+type RecordedCostGap = Pick<CostGap, "source" | "reason" | "models">;
+
+export type RecordedTotalUsageCosts = Omit<TotalUsageCosts, "gaps"> & { readonly gaps: readonly RecordedCostGap[] };
 
 /** Read the full validated ledger, before any public preview is selected. */
 export function recordedCostGaps(
   source: "application" | "judge",
   ledger: ReadableAdapterUsageAttachment | JudgeUsageAttachment | undefined,
-): readonly CostGap[] {
+): readonly RecordedCostGap[] {
   if (ledger === undefined) return [{ source, reason: "usage-not-recorded", models: [] }];
-  const gaps: CostGap[] = [];
+  const gaps: RecordedCostGap[] = [];
   const receipts = new Map(ledger.priceReceipts.map((receipt) => [receipt.callId, receipt]));
   if (ledger.collection.state !== "complete") gaps.push({ source, reason: "usage-not-recorded", models: [] });
   for (const call of ledger.calls) {
@@ -35,13 +42,29 @@ export function recordedCostGaps(
   return combineCostGaps(gaps);
 }
 
-export function combineCostGaps(gaps: readonly CostGap[]): readonly CostGap[] {
+export function combineCostGaps(gaps: readonly RecordedCostGap[]): readonly RecordedCostGap[] {
   return CostGapSources.flatMap((source) =>
     CostGapReasons.flatMap((reason) => {
       const matching = gaps.filter((gap) => gap.source === source && gap.reason === reason);
       return matching.length === 0
         ? []
-        : [{ source, reason, models: [...new Set(matching.flatMap((gap) => gap.models))].sort() }];
+        : [{ source, reason, models: [...new Set(matching.flatMap((gap) => gap.models))].sort(compareUtf8) }];
     }),
   );
+}
+
+export function pageTotalUsageCosts(costs: RecordedTotalUsageCosts, page: number): TotalUsageCosts {
+  return {
+    ...costs,
+    gaps: costs.gaps.map(({ source, reason, models }) => {
+      const { items, omitted } = numberedCollectionPage(
+        models,
+        page,
+        INSPECTION_COST_GAP_MODEL_PAGE_SIZE,
+        // The default item size includes a comma. One more byte accounts for the JSON array.
+        INSPECTION_COST_GAP_MODEL_PAGE_BYTES - 1,
+      );
+      return { source, reason, models: items, totalModelCount: models.length, omittedModelCount: omitted };
+    }),
+  };
 }

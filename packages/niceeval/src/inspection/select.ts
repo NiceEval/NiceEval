@@ -18,6 +18,7 @@ import { selectInspectionProject } from "./project.ts";
 import { InspectionProjectResultSchema } from "./project-result.ts";
 import { projectArtifactsListing } from "./artifact-list.ts";
 import { combineTotalUsageCosts, summarizeJudgeUsage } from "../o11y/judge-usage-projection.ts";
+import { pageTotalUsageCosts } from "../o11y/cost-gaps.ts";
 
 import { encodeAttemptLocator } from "../attempt-locator.ts";
 import { attemptVerdict, attemptVerdictCauses } from "./verdict.ts";
@@ -53,7 +54,7 @@ import {
 import { collectionPage, numberedCollectionPage } from "./collection-page.ts";
 import { InspectionRepricingResultSchema, type InspectionRepricingResult } from "./repricing.ts";
 import { projectAttemptRepricing } from "./trace.ts";
-import { inspectionByteContinuation, inspectionByteOffset } from "./continuation.ts";
+import { inspectionByteContinuation, inspectionByteOffset, readInspectionByteContinuation } from "./continuation.ts";
 import {
   InspectionUnsupportedFormatError,
   attemptAttachment,
@@ -429,12 +430,16 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           },
         };
       });
-      const costSummary = {
-        scope: "latest-recorded-attempts" as const,
-        totalCosts: combineTotalUsageCosts(
+      const totalCosts = pageTotalUsageCosts(
+        combineTotalUsageCosts(
           allAttempts.map(({ usage }) => usage.totalCosts),
           unresolvedAttemptCount > 0,
         ),
+        page.index,
+      );
+      const costSummary = {
+        scope: "latest-recorded-attempts" as const,
+        totalCosts,
         coverage: {
           plannedAttemptCount,
           recordedAttemptCount,
@@ -445,7 +450,13 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           missingAttemptCount: unresolvedAttemptCount,
         },
       };
-      if (page.offset > 0 && page.offset >= allAttempts.length) return page.invalid();
+      if (
+        page.offset > allAttempts.length ||
+        (page.index > 0 &&
+          page.offset === allAttempts.length &&
+          totalCosts.gaps.every(({ models }) => models.length === 0))
+      )
+        return page.invalid();
       const aggregates = {
         experiment,
         cells: experimentCells,
@@ -456,14 +467,22 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
         totalAttemptCount: allAttempts.length,
         unresolvedAttemptCount,
       };
-      const { items, end, omitted } = collectionPage(
-        allAttempts,
-        page.offset,
+      const attemptSummaries = allAttempts
+        .slice(page.offset, page.offset + INSPECTION_ATTEMPT_PAGE_SIZE)
+        .map((attempt) => ({
+          ...attempt,
+          usage: { ...attempt.usage, totalCosts: pageTotalUsageCosts(attempt.usage.totalCosts, 0) },
+        }));
+      const { items, end } = collectionPage(
+        attemptSummaries,
+        0,
         INSPECTION_ATTEMPT_PAGE_SIZE,
         INSPECTION_EXPERIMENT_PAGE_BYTES -
           utf8ByteLength(JSON.stringify({ ...metadata, ...aggregates, ...usage })) -
           4096,
       );
+      const nextAttemptOffset = page.offset + end;
+      const omitted = allAttempts.length - nextAttemptOffset;
       return {
         ...metadata,
         experiment: decodeRequiredResult(operation.kind, InspectionExperimentResultSchema, {
@@ -472,7 +491,9 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
             ...usage,
             attempts: items,
             omittedAttemptCount: omitted,
-            ...(omitted > 0 ? { continuation: page.next(end) } : {}),
+            ...(omitted > 0 || totalCosts.gaps.some(({ omittedModelCount }) => omittedModelCount > 0)
+              ? { continuation: page.next(nextAttemptOffset, page.index + 1) }
+              : {}),
           },
         }),
       };
@@ -761,6 +782,7 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
       const page = inspectionPage(source, operation, [operation.locator], resolved);
       const usage = projectAttemptUsage(traceAttachments(resolved), undefined, page.offset);
       const { cacheRead } = usage;
+      const totalCosts = pageTotalUsageCosts(usage.totalCosts, page.offset);
       const roles = numberedCollectionPage(cacheRead.roles, page.offset, INSPECTION_USAGE_GROUP_PAGE_SIZE, Infinity);
       const models = numberedCollectionPage(cacheRead.models, page.offset, INSPECTION_USAGE_GROUP_PAGE_SIZE, Infinity);
       const judge =
@@ -771,7 +793,8 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           (judge?.calls.length ?? 0) +
           usage.modelGroups.groups.length +
           roles.items.length +
-          models.items.length ===
+          models.items.length +
+          totalCosts.gaps.reduce((count, gap) => count + gap.models.length, 0) ===
           0
       )
         return page.invalid();
@@ -781,11 +804,12 @@ function selectOperation(source: InspectionFactSource, operation: InspectionOper
           usage.modelGroups.omittedGroupCount +
           roles.omitted +
           models.omitted >
-        0;
+          0 || totalCosts.gaps.some(({ omittedModelCount }) => omittedModelCount > 0);
       return {
         ...resultMetadata(source, operation.kind, attemptRuns(resolved), [], [], [operation.locator]),
         usage: decodeRequiredResult(operation.kind, InspectionAttemptUsageResultSchema, {
           ...usage,
+          totalCosts,
           cacheRead: {
             ...cacheRead,
             roles: roles.items,
@@ -2042,15 +2066,24 @@ function inspectionPage(
     });
   };
   let offset = 0;
+  let index = 0;
   if (operation.continuation !== undefined) {
     try {
-      offset = inspectionByteOffset(operation.continuation, binding);
+      const cursor = readInspectionByteContinuation(operation.continuation, binding);
+      if ((operation.kind === "experiment.get") !== (cursor.page !== undefined)) return invalid();
+      offset = cursor.offset;
+      index = cursor.page ?? 0;
     } catch {
       return invalid();
     }
     if (!Number.isSafeInteger(offset) || offset === 0) return invalid();
   }
-  return { offset, invalid, next: (offset: number) => inspectionByteContinuation(binding, offset) };
+  return {
+    offset,
+    index,
+    invalid,
+    next: (offset: number, index?: number) => inspectionByteContinuation(binding, offset, index),
+  };
 }
 
 function locators(runs: readonly LoadedInspectionRun[]): readonly string[] {

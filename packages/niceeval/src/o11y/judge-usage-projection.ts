@@ -2,7 +2,6 @@ import type { JudgeUsageAttachment } from "../record/family/judge-usage/schema.t
 import { addCanonicalDecimals, canonicalDecimalFromNumber } from "../record/family/adapter-usage/pricing.ts";
 import { effectiveCostTotals, type EffectiveCallCost } from "./adapter-usage-projection.ts";
 import type {
-  CostGap,
   InspectionAttemptUsageResult,
   JudgeUsage,
   JudgeUsageSummary,
@@ -10,7 +9,7 @@ import type {
 } from "../inspection/results.ts";
 import { callPage } from "../inspection/collection-page.ts";
 import { INSPECTION_USAGE_CALL_PAGE_BYTES, INSPECTION_USAGE_CALL_PAGE_SIZE } from "../inspection/limits.ts";
-import { combineCostGaps } from "./cost-gaps.ts";
+import { combineCostGaps, type RecordedTotalUsageCosts } from "./cost-gaps.ts";
 
 import { compareJudgeUsageCalls } from "./usage-contract.ts";
 
@@ -104,8 +103,8 @@ export function projectTotalUsageCosts(
   applicationEmptyComplete = false,
   applicationCollectionProven = true,
   simulatedUser?: TotalUsageCosts["simulatedUser"],
-  recordedGaps: readonly CostGap[] = [],
-): TotalUsageCosts {
+  recordedGaps: RecordedTotalUsageCosts["gaps"] = [],
+): RecordedTotalUsageCosts {
   const applicationValues =
     application.costs !== undefined
       ? application.costs.values
@@ -163,7 +162,10 @@ export function projectTotalUsageCosts(
 }
 
 /** Inputs are unique origin Attempts, never preview rows or verdict-filtered members. */
-export function combineTotalUsageCosts(totals: readonly TotalUsageCosts[], unresolved = false): TotalUsageCosts {
+export function combineTotalUsageCosts(
+  totals: readonly RecordedTotalUsageCosts[],
+  unresolved = false,
+): RecordedTotalUsageCosts {
   const missingSources = (["application", "judge", "simulated-user"] as const).filter(
     (source) =>
       (unresolved && source !== "simulated-user") || totals.some((total) => total.missingSources.includes(source)),

@@ -837,12 +837,18 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
             behaviorRevision: "1",
             create(ctx) {
               return {
-                recordCost(amount: string | undefined, status: "succeeded" | "failed" = "succeeded") {
+                recordCost(amount: string | undefined, status: "succeeded" | "failed" = "succeeded", unpricedModel?: string) {
                   ctx.recordUsage({
                     callId: "application-request", provider: "offline-application", model: "fixture/experiment-cost",
                     status, inputTokens: 1, inputTotalTokens: 1, outputTokens: 0,
                     ...(amount === undefined ? {} : { cost: { amount, currency: "USD", source: { kind: "reported", id: "offline.receipt" } } }),
                   });
+                  if (unpricedModel !== undefined) {
+                    ctx.recordUsage({
+                      callId: "unpriced-request", provider: "offline-application", model: unpricedModel,
+                      status: "succeeded", inputTokens: 1, inputTotalTokens: 1, outputTokens: 0,
+                    });
+                  }
                   ctx.sealUsage({ state: "complete" });
                 },
               };
@@ -953,7 +959,7 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
           join(cwd, "evals", "exp-cost-failed.eval.ts"),
           `import { equals } from "niceeval/expect"; import { expCostAdapter } from "../adapters/usage.ts";
            export default expCostAdapter.defineEval({ test(t) {
-             t.recordCost("0.200000002", "failed");
+             t.recordCost("0.200000002", "failed", "fixture/unpriced");
              t.check(1, equals(2));
            } });`,
         ),
@@ -1235,7 +1241,7 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
         state: "partial",
         values: [{ currency: "USD", value: "0.375", source: "reported" }],
         missingSources: ["application"],
-        gaps: [{ source: "application", reason: "provider-cost-not-reported", models: [] }],
+        gaps: [{ source: "application", reason: "provider-cost-not-reported", models: [], totalModelCount: 0, omittedModelCount: 0 }],
       });
 
       expect(
@@ -1249,7 +1255,7 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
           state: "partial",
           values: [{ currency: "USD", value: "0.125", source: "reported" }],
           missingSources: ["application"],
-          gaps: [{ source: "application", reason: "usage-not-recorded", models: [] }],
+          gaps: [{ source: "application", reason: "usage-not-recorded", models: [], totalModelCount: 0, omittedModelCount: 0 }],
         });
       }
 
@@ -1259,7 +1265,7 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
         state: "unavailable",
         values: [],
         missingSources: ["application"],
-        gaps: [{ source: "application", reason: "usage-not-recorded", models: [] }],
+        gaps: [{ source: "application", reason: "usage-not-recorded", models: [], totalModelCount: 0, omittedModelCount: 0 }],
       });
     });
   });
@@ -1300,8 +1306,8 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
         values: [{ currency: "USD", value: "0.25006", source: "mixed" }],
         missingSources: ["judge"],
         gaps: [
-          { source: "judge", reason: "no-pricing-profile", models: ["inspection-fixture-v1"] },
-          { source: "judge", reason: "token-buckets-incomplete", models: [] },
+          { source: "judge", reason: "no-pricing-profile", models: ["inspection-fixture-v1"], totalModelCount: 1, omittedModelCount: 0 },
+          { source: "judge", reason: "token-buckets-incomplete", models: [], totalModelCount: 0, omittedModelCount: 0 },
         ],
       });
 
@@ -1329,12 +1335,44 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
         state: "partial",
         values: [{ currency: "USD", value: "0.25", source: "reported" }],
         missingSources: ["judge"],
-        gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["judge-usage-request"] }],
+        gaps: [{ source: "judge", reason: "no-pricing-profile", models: ["judge-usage-request"], totalModelCount: 1, omittedModelCount: 0 }],
       });
 
       // Experiment costSummary exact decimal totals across >64 Attempts and partial rerun replacement.
       expect(expCostInitialTotal).toBe("10.500000105");
       expect(expCostReplacementTotal).toBe("17.500000175");
+      const experimentRequest = { kind: "experiment.get", experimentId: "exp-cost" as ExperimentId } as const;
+      const expFirstPage = selectInspectionOperation(facts, experimentRequest).experiment;
+      expect(expFirstPage.modelUsage).toMatchObject({ totalAttemptCount: 70, omittedAttemptCount: 6 });
+      const continuation = expFirstPage.modelUsage.continuation!;
+      const expLastPage = selectInspectionOperation(facts, { ...experimentRequest, continuation }).experiment;
+      expect(expLastPage.modelUsage).toMatchObject({ totalAttemptCount: 70, omittedAttemptCount: 0 });
+      expect(expLastPage.modelUsage.continuation).toBeUndefined();
+      expect(
+        new Set([...expFirstPage.modelUsage.attempts, ...expLastPage.modelUsage.attempts].map(({ locator }) => locator))
+          .size,
+      ).toBe(70);
+      const gap = expFirstPage.costSummary.totalCosts.gaps[0]!;
+      expect(gap).toEqual({
+        source: "application",
+        reason: "no-pricing-profile",
+        models: ["fixture/unpriced"],
+        totalModelCount: 1,
+        omittedModelCount: 0,
+      });
+      expect(expLastPage.costSummary).toEqual({
+        ...expFirstPage.costSummary,
+        totalCosts: { ...expFirstPage.costSummary.totalCosts, gaps: [{ ...gap, models: [] }] },
+      });
+      expectOperationCode(
+        () =>
+          selectInspectionOperation(facts, {
+            ...experimentRequest,
+            experimentId: "exp-cost-incomplete" as ExperimentId,
+            continuation,
+          }),
+        "restart-required",
+      );
       const incompleteExp = selectInspectionOperation(facts, {
         kind: "experiment.get",
         experimentId: "exp-cost-incomplete" as ExperimentId,
@@ -1345,7 +1383,7 @@ describe("exact read and comparison: usage, judge usage, repricing, and experime
           state: "partial",
           values: [{ currency: "USD", value: "0", source: "reported" }],
           missingSources: ["application"],
-          gaps: [{ source: "application", reason: "no-pricing-profile", models: ["fixture/experiment-cost"] }],
+          gaps: [{ source: "application", reason: "no-pricing-profile", models: ["fixture/experiment-cost"], totalModelCount: 1, omittedModelCount: 0 }],
         },
         coverage: {
           plannedAttemptCount: 2,

@@ -5,6 +5,19 @@ export function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
+/** Valid Unicode strings have the same order by scalar value and UTF-8 bytes. */
+export function compareUtf8(left: string, right: string): number {
+  if (left === right) return 0;
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index++) {
+    const point = left.codePointAt(index)!;
+    const difference = point - right.codePointAt(index)!;
+    if (difference !== 0) return difference;
+    if (point > 0xffff) index++;
+  }
+  return left.length - right.length;
+}
+
 /** Small opaque-token codec shared by Node and browser Inspection hosts. */
 export function encodeBase64UrlUtf8(value: string): string {
   const binary = [...new TextEncoder().encode(value)].map((byte) => String.fromCharCode(byte)).join("");

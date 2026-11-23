@@ -29,7 +29,10 @@ export function CostGaps({
         {costs.gaps.map((gap) => (
           <li key={`${gap.source}:${gap.reason}`}>
             {sourceLabel(gap.source)}: {t(`usage.gap.${gap.reason}`)}
-            {gap.models.length === 0 ? "" : ` (${gap.models.join(", ")})`}
+            {gap.reason === "no-pricing-profile"
+              ? ` (${t("usage.gap.modelCount", { count: gap.totalModelCount })})`
+              : ""}
+            {gap.models.length === 0 ? "" : ` · ${gap.models.join(", ")}`}
           </li>
         ))}
       </ul>

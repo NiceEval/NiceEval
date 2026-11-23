@@ -8,17 +8,16 @@ const ByteContinuationSchema = Schema.Struct({
   locator: Schema.String,
   id: Schema.String,
   offset: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  page: Schema.optionalKey(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
 });
-export function inspectionByteContinuation(
-  binding: Omit<Schema.Schema.Type<typeof ByteContinuationSchema>, "offset">,
-  offset: number,
-): string {
-  return encodeBase64UrlUtf8(JSON.stringify({ ...binding, offset }));
+
+type ByteContinuationBinding = Omit<Schema.Schema.Type<typeof ByteContinuationSchema>, "offset" | "page">;
+
+export function inspectionByteContinuation(binding: ByteContinuationBinding, offset: number, page?: number): string {
+  return encodeBase64UrlUtf8(JSON.stringify({ ...binding, offset, page }));
 }
-export function inspectionByteOffset(
-  token: string,
-  binding: Omit<Schema.Schema.Type<typeof ByteContinuationSchema>, "offset">,
-): number {
+
+export function readInspectionByteContinuation(token: string, binding: ByteContinuationBinding) {
   const decoded = Schema.decodeUnknownSync(ByteContinuationSchema, { onExcessProperty: "error" })(
     JSON.parse(decodeBase64UrlUtf8(token)),
   );
@@ -29,5 +28,11 @@ export function inspectionByteOffset(
     decoded.id !== binding.id
   )
     throw new Error("Byte continuation binding changed; restart from the first page.");
-  return decoded.offset;
+  return decoded;
+}
+
+export function inspectionByteOffset(token: string, binding: ByteContinuationBinding): number {
+  const { offset, page } = readInspectionByteContinuation(token, binding);
+  if (page !== undefined) throw new Error("Unexpected page in byte continuation.");
+  return offset;
 }
