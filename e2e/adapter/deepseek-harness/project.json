@@ -59,6 +59,7 @@
           },
           "artifacts": [
             ".niceeval/**",
+            "deepseek-attempt-diagnostics.json",
             "junit.xml"
           ]
         }
