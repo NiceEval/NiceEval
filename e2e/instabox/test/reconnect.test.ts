@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
-// @feature docs/feature/sandbox/README.md
+// @feature docs/feature/sandbox/architecture/README.md#instabox-snapshot-provider
 test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
   "commands and open stdin preserve their outcome after token rejection and refresh %s",
   async (refresh) => {
@@ -21,7 +21,6 @@ test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
       console.info(result.diagnostic());
       await verifyMachinesAbsent(machines);
       const log = await readFile(connections, "utf8");
-      console.info("Instabox command timing (single ms, total20 ms):", log.match(/^timing (.+)$/m)?.[1]);
       console.info("Instabox connection evidence:\n" + log);
       expect(log, result.diagnostic()).toContain("client-destroyed");
       expect(log).toContain("token-rejected");
@@ -36,19 +35,27 @@ test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
           expect(log.match(/^connect /gm)).toHaveLength(3);
         }
         expect(result.stdout + result.stderr).toContain("tokenRequests=2");
-        return;
-      }
-      expect(result.exitCode, result.diagnostic()).toBe(0);
-      expect(log).toContain("write-ack-destroyed");
-      expect(log).toContain("eof-ack-destroyed");
-      expect(log.match(/^connect /gm)).toHaveLength(6);
-      expect(log.match(/^reconnect-reset /gm)).toHaveLength(1);
-      const locator = result.expEvalEvents()[0]?.locator;
-      expect(locator).toBeDefined();
+      } else {
+        expect(result.exitCode, result.diagnostic()).toBe(0);
+        expect(log).toContain("write-ack-destroyed");
+        expect(log).toContain("eof-ack-destroyed");
+        expect(log.match(/^connect /gm)).toHaveLength(6);
+        expect(log.match(/^reconnect-reset /gm)).toHaveLength(1);
+        const locator = result.expEvalEvents()[0]?.locator;
+        expect(locator).toBeDefined();
 
-      const trace = await niceeval.run(["show", locator, "execution", "--json"]);
-      expect(trace.exitCode, trace.diagnostic()).toBe(0);
-      expect(JSON.stringify(trace.inspectionSuccess("attempt.trace").trace)).toContain("sandbox-transport-reconnected");
+        const trace = await niceeval.run(["show", locator, "execution", "--json"]);
+        expect(trace.exitCode, trace.diagnostic()).toBe(0);
+        expect(JSON.stringify(trace.inspectionSuccess("attempt.trace").trace)).toContain(
+          "sandbox-transport-reconnected",
+        );
+      }
+      const timing = log.match(/^timing ([\d.]+) ([\d.]+) ([\d.]+)$/m);
+      expect(timing, "Instabox timing receipt (single, round trip, total20 in ms)").not.toBeNull();
+      const [, single, roundTrip, total] = timing!;
+      expect(Number(total), `Instabox timing receipt: ${timing![0]}`).toBeLessThanOrEqual(
+        Number(single) + 20 * Number(roundTrip),
+      );
     });
   },
 );

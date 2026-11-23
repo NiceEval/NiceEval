@@ -56,7 +56,7 @@ ssh2.Client.prototype.exec = function(command, options, callback) {
   const config = command.match(/'([A-Za-z0-9+/=]+)'$/)?.[1];
   if (config) {
     ({ argv } = JSON.parse(Buffer.from(config, "base64")));
-    if (argv?.[1] === "command-timing") appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `timing ${argv[2]} ${argv[3]}\n`);
+    if (argv?.[1] === "command-timing") appendFileSync(process.env.NICEEVAL_TRANSPORT_CONNECTIONS, `timing ${argv.slice(2).join(" ")}\n`);
   }
   return exec.call(this, command, options, (error, channel) => {
     if (channel) {
