@@ -198,7 +198,7 @@ cacheRead 与 [Adapter Library](../adapters/library/README.md#缓存读取率) �
 Agent 为 reported-sends 与 physical-call-identity-not-recorded，不把配置模型或 Adapter 名称当作实际物理事实。
 
 judgeUsage 读取同一 origin Attempt 的独立物理调用账本；旧缺源为 unavailable，完整空账本为已知零调用，指标完整性独立于调用集合完整性。
-totalCosts 包含 state、values（currency/value/source）、missingSources，按币种汇总全部应用与 Judge 已知金额。
+totalCosts 包含 state、values（currency/value/source）、missingSources 与 gaps，按币种汇总全部应用与 Judge 已知金额。gaps 中缺价模型名单按 [CostGap](cli.md#judge-用量与总费用) 的页规则分页，名单总量与单个模型名都不设上限。
 两者均完整时为 complete；有缺口且有已知金额（包括明确零）时为 partial，否则 unavailable。不推断应用与 Judge 的合并总调用数。
 Judge 调用、价证、有界预览与摘要的穷尽形状见 [Query 契约](cli.md#judge-用量与总费用)。
 

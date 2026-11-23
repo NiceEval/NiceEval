@@ -1041,9 +1041,15 @@ interface CostGap {
     | "provider-cost-not-reported"  // adapter 没有交付逐次调用的费用或可计价的调用证据
     | "token-buckets-incomplete"    // 有价格，但缺计价所需的 token 分桶
     | "usage-not-recorded";         // 没有用量记录
-  models: readonly string[];        // reason 为 no-pricing-profile 时列出缺价的 requestModel，否则为空
+  models: readonly string[];        // reason 为 no-pricing-profile 时为本页缺价的 requestModel，否则为空
+  totalModelCount: number;          // 该缺口的缺价模型总数，与分页无关
+  omittedModelCount: number;        // 本页之后尚未交付的模型数
 }
 ```
+
+`models` 是去重后按 UTF-8 字节序排列的有界集合，不是预览：每页最多 64 个且序列化后不超过 128 KiB；单个模型名超过 128 KiB 时独占一页并完整交付，不截断、不因长度失败。
+`omittedModelCount > 0` 时把所在操作已有的 continuation 交回同一请求读取下一页：`attempt.usage` 用 `usage.continuation`，`experiment.get` 用 `experiment.modelUsage.continuation`。
+续读页中 totalCosts 的 state、values、missingSources 与各 gap 的 source、reason、totalModelCount 不变，只推进 models；已读完的 gap 在后续页 models 为空。
 
 missingSources 固定 application、judge、simulated-user 顺序，无重复。任一 owner 不完整就列入；没有缺口为 complete。
 每个 missingSources 成员在 gaps 里至少有一项说明原因；同一来源有多种原因时各占一项，按上面 reason 的顺序排列。
@@ -1057,7 +1063,7 @@ missingSources 固定 application、judge、simulated-user 顺序，无重复。
 默认 `show @<locator>`、`show @<locator> usage` 与实验单局详情首先显示同一 totalCosts。
 完整时显示 Total costs；存在缺项时显示 Known subtotal、Incomplete 与 Missing sources，不能把应用费用称为整局价格。
 
-Missing sources 下写出来源与原因短语，同类原因聚合计数。reason 为 `no-pricing-profile` 时，同一行给出缺价的模型，并给出
+Missing sources 下写出来源与原因短语，同类原因聚合计数。reason 为 `no-pricing-profile` 时，同一行给出首页缺价的模型并用 totalModelCount 写明总数，`--json` 按 continuation 取全量；并给出
 `Pricing: add prices for <models> to defineConfig({ pricing })` 与定价文档链接；其它原因说明补不上的是哪类证据，不建议填价。
 完整空 Judge 账本显示 No Judge calls；缺账本显示 Judge usage unavailable；有调用但缺费用显示 Cost unavailable。
 明确零费用显示币种、0、已知费用调用数和全部调用数；Judge 明细保留物理请求数、输入/输出/总 token 与各自完整度。
