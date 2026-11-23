@@ -19,6 +19,8 @@ CLI 与插件是两条有顺序的 Agent Install。插件探测命令只读验�
 `dsh plugin --profile headless add` 一次性安装完整声明，并用可加载的 dump-config 复检。派生镜像只要使用
 同一运行用户、`HOME` 与 `DSH_HOME=$HOME/.niceeval-dsh` 预装，就会直接命中该层；普通镜像首次联网安装，
 复用 Sandbox 的后续 Attempt 再命中。
+复检必须真实导入每个声明的插件；任一插件导入失败是安装阶段错误，不能让 Agent 在缺少声明能力的情况下继续运行。
+命中预装后，DSH 运行时若仍报告声明插件激活失败，Adapter 把原生诊断作为公开 warning diagnostic 交付，Turn 终态映射不变。
 
 `send()` 运行 `dsh --profile headless --patch <path> <prompt>`，首条模型请求使用实验 model。
 只有 exit 0 且 stdout 存在非空最终 assistant 文本时返回
