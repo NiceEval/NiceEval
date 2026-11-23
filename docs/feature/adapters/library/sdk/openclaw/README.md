@@ -32,9 +32,8 @@ const agent = openClawAgent({
 
 行为轨来自当前 session 的原生 transcript（pi-agent 系消息格式）。
 工具调用按 `toolCall` / `toolResult` 的 call ID 配对。
-默认 CLI `2026.11.3` 的会话由 SQLite 存储。Adapter 从实际运行的 CLI 定位官方 `openclaw/plugin-sdk/session-transcript-runtime`，按 session id 读取原生事件；不直接查询其数据库表。
-显式选择未提供该 session accessor 或 runtime 初始化入口的旧版 CLI 时，采集读 `--json` 封包里的 `meta.agentMeta.sessionFile`；否则取 session 目录 mtime 最新的 `*.jsonl`，并排除 `*.trajectory.jsonl`（旁路轨迹）。
-SDK accessor 失败时声明证据不可用，不用旧 JSONL 或其它 session 的轨迹补齐。
+默认 CLI `2026.11.7` 的会话由 SQLite 存储。Adapter 从实际运行的 CLI 定位官方 `openclaw/plugin-sdk/session-transcript-runtime`，按 session id 读取原生事件；不直接查询其数据库表。
+续轮发送前，Adapter 通过原生游标确认当前会话轨迹的末尾。每个 Turn 采集这次发送之后追加的事件、工具和用量。
 
 transcript 拿不到时，只保留 `--json` 封包的最终回复，并声明负断言不可信——不从最终文本猜测工具行为。
 
@@ -44,7 +43,7 @@ OpenClaw 不接受 Claude/Codex 的 `mcpServers`，但接受自己的 `plugins: 
 
 原生插件与 CLI 分成有顺序的 Agent Install。插件探测命令验证 OpenClaw 管理的 npm project、实际 package
 version、manifest id 与启用状态；缺失或存在额外外部插件时，installer 用 `openclaw plugins uninstall/install`
-收敛到声明集合。`before` 合并并保留原生命令写入的 `plugins` 配置，随后现有 live owner 用
+收敛到声明集合。安装时使用 `npm:` 指定 npm registry。`before` 合并并保留原生命令写入的 `plugins` 配置，随后现有 live owner 用
 `plugins inspect --runtime` 验证 local embedded runtime 已加载且没有 diagnostics。派生镜像预装状态和复用
 Sandbox 都能命中并跳过安装；插件声明及协议修订进入 Agent install identity。
 

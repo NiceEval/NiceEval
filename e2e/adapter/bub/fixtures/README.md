@@ -1,7 +1,7 @@
 # Bub protocol sample
 
-`bub-0.5.1.tape.jsonl` retains the tape captured for the fixed Bub 0.5.1 protocol with a deterministic provider response.
-The `system` entry's content is redacted because it contained local system instructions and installed skill descriptions; the entry kind and payload shape are preserved.
-The sample contains a text reply and usage, but no tool calls. It does not establish tool-call compatibility or live-provider acceptance.
+`bub-0.6.1.tape.jsonl` captures two turns in one Bub 0.6.1 session with a loopback Chat Completions server.
+The first turn invokes `fs_write` and then returns text. The resumed turn returns only text. Each model call reports usage with cache and reasoning tokens.
+The fixture redacts the system instructions and normalizes the temporary workspace path.
 
-`replay.mjs` feeds these captured bytes into the installed public Adapter factory through a Sandbox boundary substitute. `test/protocol.test.ts` owns the CLI/readback assertions. Synthetic unknown event lines are explicit fault injection, not captured upstream samples. Tool-call samples remain unavailable.
+`replay.mjs` feeds the captured tape into the public Adapter through a Sandbox fixture. `test/protocol.test.ts` also appends synthetic unknown events to exercise diagnostics.

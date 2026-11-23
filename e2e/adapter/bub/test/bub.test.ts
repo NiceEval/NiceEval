@@ -88,3 +88,13 @@ it("attempt.trace 读回 Bub 的代表性工具证据", async () => {
   expect(document).toMatchObject({ operation: "attempt.trace" });
   expect(JSON.stringify(document.trace)).toContain("notes.txt");
 });
+
+// @feature docs/feature/inspection/README.md#portable-trace
+it("Bub 的 tape store 插件在时间轨写入模型循环步骤", async () => {
+  const event = only(evalEvents, (candidate) => candidate.evalId === "session/recall");
+  const queried = await niceeval.run(["show", event.locator, "execution", "--json"]);
+  expect(queried.exitCode, queried.diagnostic()).toBe(0);
+  expect(queried.attemptTrace().trace.execution.events).toContainEqual(
+    expect.objectContaining({ type: "otlp.span", summary: "bub.agent.step" }),
+  );
+});

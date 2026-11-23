@@ -768,7 +768,7 @@ Next
 ```text
 $ niceeval show exp:install/canary
 Attempts · install/canary
-  Changed  config:agentInstalls (codex 0.144.1 → codex 0.167.2) · all 2 attempts
+  Changed  config:agentInstalls (codex 0.144.1 → codex 0.171.0) · all 2 attempts
 
   Eval db-gpt
   Needs rerun: config:agentInstalls

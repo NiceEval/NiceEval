@@ -16,16 +16,15 @@ const replay = createE2EContext({
 
 // @feature docs/feature/adapters/README.md
 test.concurrent("Bub 固定版本样本保留文本和用量并汇总未知事件", async () => {
-  const mode = "tape";
   await Promise.all(
     [false, true].map(async (faults) => {
-      await replay.case(`protocol-${mode}-${faults}`, async ({ commands: { niceeval }, paths }) => {
+      await replay.case(`protocol-tape-${faults}`, async ({ commands: { niceeval }, paths }) => {
         await writeFile(
           join(paths.projectRoot, "experiments/protocol.ts"),
           `
       import { defineExperiment } from "niceeval";
       import { replayAgent } from "../fixtures/replay.mjs";
-      export default defineExperiment({ adapter: replayAgent("${mode}", ${faults}), evals: ["protocol"], attempts: 2 });
+      export default defineExperiment({ adapter: replayAgent(${faults}), evals: ["protocol"], attempts: 2 });
     `,
         );
         await writeFile(
@@ -38,8 +37,10 @@ test.concurrent("Bub 固定版本样本保留文本和用量并汇总未知事�
           const turn = await t.send("Replay the captured response.");
           await turn.succeeded().orStop();
           t.check(turn.reply, equals("Protocol fixture complete."));
-          t.check(turn.usage.inputTokens, between(11, 11));
-          t.check(turn.usage.outputTokens, between(5, 5));
+          const input = i === 0 ? 16 : 8;
+          const output = i === 0 ? 10 : 5;
+          t.check(turn.usage.inputTokens, between(input, input));
+          t.check(turn.usage.outputTokens, between(output, output));
         }
       }});
     `,
@@ -82,11 +83,11 @@ test.concurrent("Bub 在定义期拒绝非固定版本且指向支持版本", as
       import assert from "node:assert/strict";
       import { bubAgent } from "niceeval/adapter";
       assert.doesNotThrow(() => bubAgent());
-      assert.doesNotThrow(() => bubAgent({ version: "0.5.1" }));
-      for (const version of ["0.3.9", "latest", "0.5.2", ""]) {
+      assert.doesNotThrow(() => bubAgent({ version: "0.6.1" }));
+      for (const version of ["latest", "999.0.0", ""]) {
         assert.throws(() => bubAgent({ version }), (error) => {
           assert.ok(error instanceof TypeError);
-          assert.ok(error.message.includes("only supports Bub 0.5.1"));
+          assert.ok(error.message.includes("only supports Bub 0.6.1"));
           return true;
         });
       }

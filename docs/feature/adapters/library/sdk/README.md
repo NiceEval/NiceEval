@@ -8,9 +8,10 @@
 `Usage.costUSD` 从不收上游或本地的估算。Runner 的 `estimatedCostUSD` 始终独立来自 Config/runtime price table，且只供
 `maxCost` 使用；Inspection 则只使用显式 PricingProfile 与 sealed Usage。
 
-当前分类固定如下：Hermes 只转 `actual_cost_usd`；Claude Agent SDK 的 `total_cost_usd` 与 Bub 的 `usage.cost` 是 observed。pi 的
-`u.cost.total`、OpenCode transcript 的 cost（models.dev/config）和 OpenClaw transcript 的 session-derived catalog cost 都是 estimate，
-不得进入 `Usage.costUSD`。Hermes 的 `estimated_cost_usd` 也不得进入该字段。
+Hermes 的 `actual_cost_usd` 和 Claude Agent SDK 的 `total_cost_usd` 属于 observed 成本。
+[Bub](bub/cost.md) 的 tape 提供 token 用量，reported 成本缺失。
+pi 的 `u.cost.total`、OpenCode transcript 的 cost（models.dev/config）和 OpenClaw transcript 的 session-derived catalog cost 属于 estimate。
+这些值和 Hermes 的 `estimated_cost_usd` 都不得进入 `Usage.costUSD`。
 
 ## 索引
 

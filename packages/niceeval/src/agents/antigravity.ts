@@ -44,7 +44,7 @@ export interface AntigravityConfig {
   apiKey?: string | undefined;
   /** Gemini 兼容端点，省略时读取 `GOOGLE_GEMINI_BASE_URL`。 */
   baseUrl?: string | undefined;
-  /** Antigravity CLI 的精确版本，默认为 `1.5.13`。 */
+  /** Antigravity CLI 的精确版本，默认为 `1.5.15`。 */
   version?: string | undefined;
   /** 安装到 `.agents/skills/<name>/` 的 Skills。 */
   skills?: readonly SkillSpec[] | undefined;

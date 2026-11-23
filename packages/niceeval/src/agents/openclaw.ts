@@ -17,6 +17,7 @@ import { shell } from "../sandbox/commands.ts";
 import { shellQuote } from "../sandbox/shell.ts";
 import type { AgentInstall, AgentInstaller } from "./types.ts";
 import { exactNpmPluginRevision, normalizeExactNpmPlugins, type ExactNpmPlugin } from "./exact-npm-plugins.ts";
+import { createSessionKey } from "./session-key.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -35,35 +36,48 @@ const SKILL_DIR = ".agents/skills";
 /** 自定义 OpenAI 兼容网关在 openclaw.json 里的 provider id。 */
 const COMPAT_PROVIDER = "compat";
 
-// Resolve the public SDK from the exact CLI selected by install, rather than
-// from NiceEval's host dependencies. Modern OpenClaw owns its SQLite schema;
-// its accessor returns the same raw events consumed by the transcript parser.
+const transcriptCursor = createSessionKey<string>("openclaw/transcript-cursor");
+
+// Resolve the public SDK from the CLI selected by install. A checkpoint
+// drains existing pages without emitting events. A read emits only appended
+// events, followed by the opaque cursor on the last line.
 const READ_SESSION_TRANSCRIPT = `
+import { once } from "node:events";
 import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 const require = createRequire(realpathSync(process.argv[1]));
-let transcriptPath;
-let runtimePath;
-try {
-  transcriptPath = require.resolve("openclaw/plugin-sdk/session-transcript-runtime");
-  runtimePath = require.resolve("openclaw/plugin-sdk/runtime-config-snapshot");
-} catch (error) {
-  if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED" || error.code === "MODULE_NOT_FOUND") process.exit(42);
-  throw error;
-}
-const transcript = await import(pathToFileURL(transcriptPath).href);
-const runtime = await import(pathToFileURL(runtimePath).href);
-if (typeof transcript.resolveSessionTranscriptIdentity !== "function" ||
-    typeof transcript.readSessionTranscriptEvents !== "function" ||
-    typeof runtime.captureRuntimeConfigAsyncReader !== "function") process.exit(42);
+const transcript = await import(pathToFileURL(require.resolve("openclaw/plugin-sdk/session-transcript-runtime")).href);
+const runtime = await import(pathToFileURL(require.resolve("openclaw/plugin-sdk/runtime-config-snapshot")).href);
 await runtime.captureRuntimeConfigAsyncReader()();
 const target = await transcript.resolveSessionTranscriptIdentity({
   agentId: "main", sessionId: process.argv[2], sessionKey: "",
 });
-for (const event of await transcript.readSessionTranscriptEvents(target)) {
-  process.stdout.write(JSON.stringify(event) + "\\n");
+const checkpoint = process.argv[3] === "checkpoint";
+let cursor = process.argv[4] || undefined;
+while (true) {
+  // The SDK reports requiredBytes for an event above its maximum page size.
+  const page = await transcript.readSessionTranscriptRawDelta({ ...target, cursor, maxBytes: 64 * 1024 * 1024 });
+  if (checkpoint && page.kind === "missing") {
+    cursor = undefined;
+    break;
+  }
+  if (checkpoint && page.kind === "reset") {
+    cursor = page.cursor;
+    continue;
+  }
+  if (page.kind !== "page" || page.requiredBytes !== undefined) {
+    throw new Error("OpenClaw transcript delta unavailable: " + (page.reason ?? page.kind));
+  }
+  cursor = page.cursor;
+  if (!checkpoint) {
+    for (const { event } of page.events) {
+      if (!process.stdout.write(JSON.stringify(event) + "\\n")) await once(process.stdout, "drain");
+    }
+  }
+  if (!page.hasMore) break;
 }
+process.stdout.write((cursor ?? "") + "\\n");
 `;
 
 export interface OpenClawConfig {
@@ -109,7 +123,7 @@ function openClawPluginLayer(
       installMode: "sandbox-network",
       install: async (sandbox, context) => {
         const installs = plugins
-          .map((plugin) => `openclaw plugins install --force --pin ${shellQuote(plugin.spec)}`)
+          .map((plugin) => `openclaw plugins install --force --pin ${shellQuote(`npm:${plugin.spec}`)}`)
           .join("\n");
         // Docker exec can inherit umask 0000. OpenClaw refuses world-writable
         // plugin roots; use ordinary package permissions and let its native
@@ -263,8 +277,18 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         return yield* Effect.tryPromise({
           try: async (signal) => {
             // 会话契约:新会话线显式发新 session id(隔离);后续轮 resume 记录的 id。
-            const sessionId = ctx.session.id ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
+            const resumedSessionId = ctx.session.id;
+            const sessionId = resumedSessionId ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
             ctx.session.capture(sessionId);
+
+            const reader = ["--input-type=module", "-e", READ_SESSION_TRANSCRIPT, openclawBin, sessionId];
+            // Drain up to the native transcript tail immediately before the send.
+            // The previous read's cursor skips history already seen by this Session.
+            const checkpoint = resumedSessionId
+              ? await sb.runCommand("node", [...reader, "checkpoint", ctx.session.take(transcriptCursor) ?? ""], {
+                  signal,
+                })
+              : undefined;
 
             const baseUrl = resolveBaseUrl(config);
             const args = ["agent", "--local", "--session-id", sessionId, "--message", input.text, "--json"];
@@ -291,34 +315,22 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
             });
 
             const runJson = parseOpenClawRunJson(res.stdout);
-            // 封包若带回服务端分配的 session key,后续轮以它为准(capture first-writer-wins,
-            // 首轮已用自发 id 落地时不覆盖)。
-            ctx.session.capture(runJson.sessionId);
-
-            // Read the exact session through OpenClaw's public storage accessor.
-            // Only CLI versions without that export use the legacy JSONL path.
+            const transcript =
+              (checkpoint === undefined || checkpoint.exitCode === 0) &&
+              (runJson.sessionId === undefined || runJson.sessionId === sessionId)
+                ? await sb.runCommand("node", [...reader, "read", checkpoint?.stdout.trim() ?? ""], { signal })
+                : undefined;
             let raw: string | undefined;
-            const transcript = await sb.runCommand(
-              "node",
-              ["--input-type=module", "-e", READ_SESSION_TRANSCRIPT, openclawBin, runJson.sessionId ?? sessionId],
-              { signal },
-            );
-            if (transcript.exitCode === 0) {
-              raw = transcript.stdout;
-            } else if (transcript.exitCode === 42) {
-              if (runJson.sessionFile) {
-                try {
-                  raw = await sb.readText(runJson.sessionFile);
-                } catch {
-                  raw = undefined;
-                }
+            if (transcript?.exitCode === 0) {
+              const output = transcript.stdout.trimEnd();
+              const cursorStart = output.lastIndexOf("\n") + 1;
+              const cursor = output.slice(cursorStart);
+              if (cursor) {
+                ctx.session.set(transcriptCursor, cursor);
+                raw = output.slice(0, cursorStart);
               }
-              if (raw === undefined) {
-                raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
-                  excludeName: /\.trajectory\.jsonl$/i,
-                });
-              }
-            } else {
+            }
+            if (raw === undefined) {
               ctx.log("openclaw session accessor failed; tool trace was not collected");
             }
             const parsed = parseOpenClawTranscript(raw);

@@ -14,7 +14,7 @@ export default defineEval({
           `node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{` +
           `const x=JSON.parse(s);const ok=x.plugin?.status==="loaded"&&` +
           `x.install?.resolvedName==="@openclaw/brave-plugin"&&` +
-          `x.install?.resolvedVersion==="2026.7.1"&&x.diagnostics?.length===0;` +
+          `x.install?.resolvedVersion==="2026.11.7"&&x.diagnostics?.length===0;` +
           `process.stdout.write(ok?"ready":"missing");process.exit(ok?0:1)})'`,
       );
       await t.check(inspected.exitCode, equals(0)).orStop();

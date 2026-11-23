@@ -26,7 +26,7 @@ Incus 使用管理员已导入的可信基础镜像，`image` 必须包含完整
 
 - Codex 送进 Sandbox 的是自带运行时的原生安装包，镜像里没有 Node 也能装。
 - Claude Code 要求镜像里有 npm。
-- 默认的 Bub 0.5.1 除了 OTel 插件，还固定了 `any-llm-sdk==1.22.1` 和 `openai==2.31.0`。Bub 版本、这两个依赖、OTel 插件或 Python 插件列表任何一项变了，都会重新安装，不能只凭 `command -v bub` 判断已经装好。用旧安装标记做的预制环境会重装一次。你显式选了其它 Bub 版本时，它依赖的其它包由你自己负责。
+- Bub 0.6.1 的配方固定 `republic==0.6.0`、`httpx2==2.16.0` 和 OTel 插件。Adapter 在 Bub 版本、这两个依赖、OTel 插件或 Python 插件列表变更时重新安装。
 
 ## 从官方基线继续构建
 
@@ -50,7 +50,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-模板常量指向已发布并验证的 E2B template。当前源码配方使用 Claude Code `2.1.323`、Codex `0.167.2`，Bub 保留 `0.5.1`；配方更新不代表对应版本的 E2B template 已经发布。模板版本形如 `0.167.2-r1`，由 Agent 版本和配方修订组成，与 NiceEval 库版本无关。项目中使用模板常量；下面的命令用于构建自己的派生环境。
+模板常量指向已发布并验证的 E2B template。当前源码配方使用 Claude Code `2.1.330`、Codex `0.171.0`，Bub 使用 `0.6.1`；配方更新不代表对应版本的 E2B template 已经发布。模板版本形如 `0.171.0-r1`，由 Agent 版本和配方修订组成，与 NiceEval 库版本无关。项目中使用模板常量；下面的命令用于构建自己的派生环境。
 
 这批公共模板里，Claude Code 模板沿用 E2B 官方的 `/usr` npm prefix，普通用户不能直接写全局模块。运行时要再装 pnpm、yarn 等全局 Node 工具时，显式装到 `/usr/local`，两个模板都已经把它加进 PATH：
 
@@ -73,7 +73,7 @@ const template = e2bCodingAgentTemplate("codex")
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:0.167.2-r1", {
+await Template.build(template, "acme-codex-evals:0.171.0-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -89,7 +89,7 @@ pnpm tsx scripts/build-e2b-template.ts
 ```ts
 import { e2bSandbox } from "niceeval/sandbox";
 
-sandbox: e2bSandbox({ template: "acme-codex-evals:0.167.2-r1" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.171.0-r1" })
 ```
 
 也可以直接从 NiceEval 公共模板继续派生，只为项目自己的依赖付构建时间：
@@ -136,11 +136,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 # npm 全局装进 /usr/local/bin，正好在 Sandbox 的 PATH 上
-RUN npm install -g @openai/codex@0.167.2
+RUN npm install -g @openai/codex@0.171.0
 ```
 
 ```bash
-docker build -t acme-codex-evals:0.167.2-r1 .
+docker build -t acme-codex-evals:0.171.0-r1 .
 ```
 
 然后在 Experiment 里只引用构建结果：
@@ -148,7 +148,7 @@ docker build -t acme-codex-evals:0.167.2-r1 .
 ```ts
 import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.167.2-r1" } })
+sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.171.0-r1" } })
 ```
 
 Docker Sandbox 用镜像自己声明的用户运行命令。上面的 Dockerfile 没写 `USER`，所以默认以 root 运行，`/usr/local/bin` 已经在 root 的 PATH 上，`npm install -g` 装的命令可以直接用。
@@ -167,7 +167,7 @@ import { Sandbox } from "@vercel/sandbox";
 const sandbox = await Sandbox.create({ runtime: "node24" }); // 从官方 runtime 启动 microVM
 await sandbox.runCommand({
   cmd: "npm",
-  args: ["install", "-g", "@openai/codex@0.167.2"],
+  args: ["install", "-g", "@openai/codex@0.171.0"],
   sudo: true, // 全局装进 /usr/local/bin，正好在 Sandbox 的 PATH 上
 });
 const { snapshotId } = await sandbox.snapshot();

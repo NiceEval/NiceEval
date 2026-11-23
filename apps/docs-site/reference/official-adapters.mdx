@@ -120,7 +120,7 @@ export default defineExperiment({
 
 ### bub
 
-Bub uses the fixed `0.5.1` protocol. Omit `version` or set it to `"0.5.1"`; other values fail at definition time. A custom `otelPlugin` must support this version's tape protocol.
+Bub uses the fixed `0.6.1` protocol. Omit `version` or set it to `"0.6.1"`. Other values fail at definition time. A custom `otelPlugin` must support this version's tape protocol.
 
 - **Authentication**: `BUB_API_KEY` plus `BUB_API_BASE` for an OpenAI-compatible proxy. The `apiKey` / `baseUrl` factory options can override them.
 - **Install a Skill**: use `skills: SkillSpec[]`, the same type as the other two Adapters. They are installed in `.agents/skills/<name>/`, with a discovery instruction in AGENTS.md.

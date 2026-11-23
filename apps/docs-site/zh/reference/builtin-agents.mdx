@@ -63,7 +63,7 @@ import { antigravityAgent } from "niceeval/adapter";
 const agent = antigravityAgent();
 ```
 
-- 在 Sandbox 中按固定版本安装 `agy`。默认版本是 `1.5.13`，自动安装支持 Linux x86_64（glibc 2.28 或更新版本）。
+- 在 Sandbox 中按固定版本安装 `agy`。默认版本是 `1.5.15`，自动安装支持 Linux x86_64（glibc 2.28 或更新版本）。
 - 将 `GEMINI_API_KEY` 放入环境变量。在实验中填写 `model` 和可选的 `reasoningEffort`。
 - 每次 `t.send()` 都运行一次 `agy --print`，在同一会话内按 ID 续接。调用 `t.newSession()` 可开始新会话。
 - 适配器汇总各模型请求的输入、输出和缓存读 token。每笔工具调用保留原生名称、入参和状态。
@@ -307,7 +307,7 @@ skills?: SkillSpec[] | undefined;
 ```
 
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
-落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md(bub 没有原生 Skill 加载机制)。
+落在 Bub 原生扫描的 `.agents/skills/<name>/`。
 
 #### `version`
 
@@ -315,7 +315,7 @@ skills?: SkillSpec[] | undefined;
 version?: string | undefined;
 ```
 
-固定 Bub 0.5.1 协议。省略或填写 "0.5.1"；其它版本在定义期抛出 TypeError。
+固定 Bub 0.6.1 协议。省略或填写 "0.6.1"。其它版本在定义期抛出 TypeError。
 
 #### `otelPlugin`
 
@@ -325,7 +325,7 @@ otelPlugin?: string | undefined;
 
 OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
 
-自定义插件必须支持固定版本 Bub 0.5.1 的 tape 协议。
+自定义插件必须支持 Bub 0.6.1 的 tape 协议。
 
 #### `pythonPlugins`
 
@@ -383,7 +383,7 @@ Gemini 兼容端点，省略时读取 `GOOGLE_GEMINI_BASE_URL`。
 version?: string | undefined;
 ```
 
-Antigravity CLI 的精确版本，默认为 `1.5.13`。
+Antigravity CLI 的精确版本，默认为 `1.5.15`。
 
 #### `skills`
 

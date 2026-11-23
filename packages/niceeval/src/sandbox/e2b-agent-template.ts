@@ -1,6 +1,7 @@
 import { CODEX_NPM_PATCH_SETUP } from "../agents/codex-patch.ts";
 import { Template, type TemplateBuilder } from "e2b";
 import {
+  BUB_CLI_PACKAGE,
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_DEPENDENCY_OVERRIDES,
   DEFAULT_BUB_OTEL_PLUGIN,
@@ -192,7 +193,7 @@ export function e2bCodingAgentTemplate(
         // override 把 `bub` 钉成一个 PyPI 版本:OTel 插件所在 workspace 把 bub 声明成 git
         // 依赖,不覆盖的话构建会拉到 Bub 主干,模板里装的版本随构建时间漂移。
         `printf '%s\\n' ${overrides} > ${overrideFile}`,
-        `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow bub --overrides ${overrideFile} --with ${shellQuote(DEFAULT_BUB_OTEL_PLUGIN)}${withPackages}`,
+        `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow ${shellQuote(BUB_CLI_PACKAGE)} --overrides ${overrideFile} --with ${shellQuote(DEFAULT_BUB_OTEL_PLUGIN)}${withPackages}`,
         `mkdir -p $(dirname ${marker}) && printf '%s' ${shellQuote(installHash)} > ${marker}`,
       ],
       { user: E2B_RUN_USER },

@@ -10,10 +10,6 @@ export default defineEval({
   description: "agent 先写一个文件,再串行 shell 读回来验证",
 
   async test(t) {
-    const requireObservedCost = t.flags.requireObservedCost;
-    if (typeof requireObservedCost !== "boolean") {
-      throw new TypeError("Bub coding-task requires a boolean requireObservedCost experiment flag");
-    }
     const turn = await t.send(
       `${SKIP_BUILD_NOTE}${REPLY_DIRECTIVE}请分两个独立的工具调用完成,不要合并成一条命令:\n` +
         `第一步:必须调用文件写入工具(不是 shell)在工作目录下创建 notes.txt,` +
@@ -52,17 +48,11 @@ export default defineEval({
 
     t.check(turn.reply, pattern(/bub e2e ok/));
     t.check(turn.usage.totalTokens, greaterThan(0));
-    if (requireObservedCost) {
-      t.check(
-        turn.usage.costs,
-        satisfies(
-          "complete reported USD cost",
-          (costs) =>
-            costs.state === "complete" &&
-            costs.values.some((cost) => cost.currency === "USD" && cost.source === "reported"),
-        ),
-      );
-      turn.maxCost(0.5);
-    }
+    t.check(
+      turn.usage.costs,
+      satisfies("Bub usage contains no provider-reported cost", (costs) =>
+        costs.values.every((cost) => cost.reportedContributions === 0),
+      ),
+    );
   },
 });

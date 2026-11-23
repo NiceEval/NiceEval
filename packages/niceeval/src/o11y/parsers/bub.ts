@@ -1,15 +1,13 @@
-// Bub 0.5.1 tape transcript 解析器。
+// Bub 0.6.1 tape transcript 解析器。
 //
 // 真实 tape 格式(~/.bub/tapes/<md5(ws)__md5(sess)>.jsonl,按 id 升序逐行):
 //   - kind=message      payload={role, content}                 → 对话
-//   - kind=tool_call    payload={calls:[{id,function:{name,arguments}}]}
+//   - kind=tool_call    payload={calls:[{id,name,arguments}]}
 //   - kind=tool_result  payload={results:[...]}                  ← 与上一条 tool_call.calls 按位对齐
 //   - kind=event        payload={name, data}                     name=="run" → data.usage 是该次模型调用用量
 //   - kind=anchor       payload={name, state:{summary?}}         name!="session/start" = tape.handoff(压缩检查点)
 //   - kind=system/error
-// 用量路径(已对真实 tape 校验):payload.data.usage.{prompt_tokens,completion_tokens,total_tokens,
-//   prompt_tokens_details.cached_tokens, cost}。compaction = 非 bootstrap 的 anchor(handoff)条数。
-// 只读取固定版本的 kind + payload 协议。
+// `run` 事件携带 Republic 的 input_tokens、output_tokens、cached_tokens 和 reasoning_tokens。
 
 import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
@@ -49,6 +47,11 @@ const Content = Schema.Union([
   Schema.String,
   Schema.Array(Schema.Struct({ type: field(Schema.String), text: field(Schema.String) })),
 ]);
+const BubError = Schema.Struct({
+  kind: Schema.Literals(["invalid_input", "config", "provider", "tool", "temporary", "not_found", "unknown"]),
+  message: Schema.String,
+});
+const isBubError = Schema.is(BubError);
 const TapeEntry = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("message"),
@@ -61,7 +64,8 @@ const TapeEntry = Schema.Union([
       calls: Schema.Array(
         Schema.Struct({
           id: Schema.String,
-          function: Schema.Struct({ name: Schema.String, arguments: jsonField }),
+          name: Schema.String,
+          arguments: jsonField,
         }),
       ),
     }),
@@ -80,7 +84,7 @@ const TapeEntry = Schema.Union([
     }),
   }),
   Schema.Struct({ kind: Schema.Literal("anchor"), payload: Schema.Struct({ name: field(Schema.String) }) }),
-  Schema.Struct({ kind: Schema.Literal("error"), payload: Schema.Struct({ message: Schema.String }) }),
+  Schema.Struct({ kind: Schema.Literal("error"), payload: BubError }),
   Schema.Struct({ kind: Schema.Literal("system") }),
 ]);
 const decodeLine = lineDecoder(TapeEntry, "kind");
@@ -147,9 +151,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
       case "tool_call": {
         const text = extractText(entry.payload.content);
         if (text) events.push({ type: "message", role: "assistant", text });
-        lastCallIds = entry.payload.calls.map((call) =>
-          emitCall(call.function.name, coerceArgs(call.function.arguments), call.id),
-        );
+        lastCallIds = entry.payload.calls.map((call) => emitCall(call.name, coerceArgs(call.arguments), call.id));
         break;
       }
       case "tool_result":
@@ -159,8 +161,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
             parseSuccess = false;
             return;
           }
-          const failed = result !== null && typeof result === "object" && "error" in result;
-          emitResult(result, !failed, callId);
+          emitResult(result, !isBubError(result), callId);
         });
         break;
       case "event": {
@@ -174,6 +175,9 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
           case "loop.step.start":
           case "loop.step":
             break;
+          case "loop.finish":
+            // The last loop.step already records the failure detail.
+            continue;
           default:
             unrecognized(unrecognizedEvents, `event:${name ?? "<missing-name>"}`);
             continue;

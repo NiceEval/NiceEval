@@ -89,9 +89,17 @@ function sandboxSource({ bin, version, keyEnv }: typeof adapters[number]) {
             return result(frame({ event: "result", conversation_id: "fixture-session", result: { status: "SUCCESS", response: text } }));
           case "omp":
             return result(frame({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }] } }) +
-              frame({ type: "agent_end", messages: [] }));
+              frame({ type: "agent_end", isTerminal: true, yielded: true, messages: [] }));
           case "openclaw":
             return result(JSON.stringify({ text }));
+          case "dsh":
+            return result(
+              frame({ type: "session", sessionId: "fixture-session" }) +
+              frame({ type: "status", phase: "turn_start", turn: 0 }) +
+              frame({ type: "text", text }) +
+              frame({ type: "status", phase: "turn_end", turn: 0, reason: { kind: "completed" } }) +
+              frame({ type: "final", sessionId: "fixture-session", reason: { kind: "completed" }, text })
+            );
           case "bub":
             bubTape = frame({ kind: "message", payload: { role: "assistant", content: text } });
             return result(text);

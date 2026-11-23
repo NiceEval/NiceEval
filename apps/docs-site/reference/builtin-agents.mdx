@@ -63,7 +63,7 @@ import { antigravityAgent } from "niceeval/adapter";
 const agent = antigravityAgent();
 ```
 
-- NiceEval installs a pinned release of `agy` in the Sandbox. The default is `1.5.13`. Automatic installation supports Linux x86_64 with glibc 2.28 or newer.
+- NiceEval installs a pinned release of `agy` in the Sandbox. The default is `1.5.15`. Automatic installation supports Linux x86_64 with glibc 2.28 or newer.
 - Set `GEMINI_API_KEY` in the environment. Set `model` and optionally `reasoningEffort` in the Experiment.
 - Each `t.send()` runs `agy --print` and resumes the current session by ID. Use `t.newSession()` to start a fresh session.
 - The adapter sums input, output, and cache-read tokens across model requests. Each tool call retains its native name, input, and status.
@@ -264,7 +264,7 @@ Base URL for the OpenAI-compatible proxy. Falls back to the `BUB_API_BASE` env v
 skills?: SkillSpec[] | undefined;
 ```
 
-Skills installed in the Sandbox: a local directory or file, or a Repo with a pinnable ref and optional enabled subset. They go to `.agents/skills/<name>/`, and a discovery instruction is written into AGENTS.md. Bub has no native Skill-loading mechanism.
+Install a local Skill or select Skills from a repository with an optional pinned ref. Bub discovers installed Skills in `.agents/skills/<name>/`.
 
 #### `version`
 
@@ -272,7 +272,7 @@ Skills installed in the Sandbox: a local directory or file, or a Repo with a pin
 version?: string | undefined;
 ```
 
-Uses the fixed Bub 0.5.1 protocol. Omit this option or set it to `"0.5.1"`; any other version throws a `TypeError` when the Agent is defined.
+Omit this option or set it to `"0.6.1"`. Other versions throw a `TypeError` when the Agent is defined.
 
 #### `otelPlugin`
 
@@ -280,9 +280,9 @@ Uses the fixed Bub 0.5.1 protocol. Omit this option or set it to `"0.5.1"`; any 
 otelPlugin?: string | undefined;
 ```
 
-The git dependency for the OTel tape-store Plugin, the source of the timeline. When omitted, use NiceEval's default pin.
+Git dependency for the OTel tape store Plugin that contributes spans to the timeline. Omit it to use the NiceEval pin.
 
-Custom Plugins must support the tape protocol of the fixed Bub 0.5.1 version.
+Custom Plugins must support the Bub 0.6.1 tape protocol.
 
 #### `pythonPlugins`
 
@@ -332,7 +332,7 @@ A Gemini-compatible endpoint. When omitted, read `GOOGLE_GEMINI_BASE_URL` from t
 version?: string | undefined;
 ```
 
-The exact Antigravity CLI version. Defaults to `1.5.13`.
+The exact Antigravity CLI version. Defaults to `1.5.15`.
 
 #### `skills`
 

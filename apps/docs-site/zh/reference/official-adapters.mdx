@@ -120,7 +120,7 @@ export default defineExperiment({
 
 ### bub
 
-Bub 固定使用 `0.5.1`。省略 `version` 或填写 `"0.5.1"`；其它值在定义期报错。自定义 `otelPlugin` 必须支持该版本的 tape 协议。
+Bub 固定使用 `0.6.1`。省略 `version` 或填写 `"0.6.1"`。其它值在定义期报错。自定义 `otelPlugin` 必须支持该版本的 tape 协议。
 
 - **鉴权**：`BUB_API_KEY` + `BUB_API_BASE`（OpenAI 兼容代理），工厂参数 `apiKey` / `baseUrl` 可覆盖。
 - **装 Skill**：`skills: SkillSpec[]`，与另外两个 Adapter 同一个类型。装进 `.agents/skills/<name>/`，发现指引写进 AGENTS.md。

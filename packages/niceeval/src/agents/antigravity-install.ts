@@ -12,7 +12,7 @@ import type { AgentArtifactContext, AgentInstall, AgentInstaller, AgentStagedArt
 
 const PLATFORM = "linux-x64-gnu";
 const ARCHIVE = "agy_cli_linux_x64.tar.gz";
-const ASSETS = new Map([["1.5.13", "7fa9cc6df0d09562693d637c406a86c1b0f52ab3364714b1fd2d79cc6060d4b2"]]);
+const ASSETS = new Map([["1.5.15", "8d9913298602049ef29e9669f35252b6b79571979ce1bd0fb27753c7bac84114"]]);
 export const ANTIGRAVITY_VERSION_ENV = { AGY_CLI_DISABLE_AUTO_UPDATE: "true" } as const;
 
 async function cachedArchive(version: string, sha256: string, signal: AbortSignal): Promise<string> {
@@ -56,7 +56,7 @@ async function prepareArtifact(
   const sha256 = ASSETS.get(version);
   if (sha256 === undefined) {
     throw new Error(
-      `No verified Antigravity CLI ${version} release asset is pinned. Preinstall that exact version on PATH or use 1.5.13.`,
+      `No verified Antigravity CLI ${version} release asset is pinned. Preinstall that exact version on PATH or use 1.5.15.`,
     );
   }
   const archive = await cachedArchive(version, sha256, signal);

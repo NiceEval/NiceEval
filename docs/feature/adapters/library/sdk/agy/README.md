@@ -13,7 +13,7 @@ const agent = antigravityAgent({
 接入字段：`apiKey` 是 Gemini API key，省略时读 `GEMINI_API_KEY`；`baseUrl` 是可选的 Gemini 兼容端点，省略时读 `GOOGLE_GEMINI_BASE_URL`，两处都没有时不设置。
 模型选择归 experiment 的 `model` 维度，原样透传 `--model`（例如 `gemini-4-argon-high`）；experiment 的推理档位透传 `--effort`，未声明时不传。
 
-`version` 钉 Antigravity CLI 的发布版本；省略时用 NiceEval 钉的默认版本 `1.5.13`，不装 latest，也不跟随 CLI 自更新。被测对象版本必须能从实验配置读出来。
+`version` 钉 Antigravity CLI 的发布版本；省略时用 NiceEval 钉的默认版本 `1.5.15`。运行期间禁用 CLI 自更新。被测对象版本必须能从实验配置读出来。
 
 ## 鉴权
 

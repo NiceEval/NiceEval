@@ -48,7 +48,7 @@
 
    ```text
    Need a run · harness/canary
-     Needs rerun: agentInstalls changed (codex 0.144.1 → codex 0.167.2) · all 6
+     Needs rerun: agentInstalls changed (codex 0.144.1 → codex 0.171.0) · all 6
 
      Eval tool-guard
      Previous result @1SXQTBZCQCNV7 (passed, 21/21)

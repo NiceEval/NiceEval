@@ -1,14 +1,12 @@
 import { defineEval } from "niceeval";
-import { greaterThan, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
+import { equals, greaterThan, includes, jsonMatch, satisfies, toolMatch } from "niceeval/expect";
 
 export const OMP_TOOL_MARKER = "NICEEVAL-OMP-TOOL-EVENT-493";
 
 export default defineEval({
-  description: "OMP 的真实 bash 调用保留入参、完成结果、command 分类与逐轮 usage",
+  description: "OMP 的真实 bash 调用保留入参、完成结果、command 分类与逐轮用量下界",
   async test(t) {
-    const turn = await t.send(
-      "必须调用 bash 工具执行以下命令，不要用其它工具：" + `printf ${OMP_TOOL_MARKER}。完成后只回答命令输出。`,
-    );
+    const turn = await t.send(`请调用一次 bash 工具执行 \`printf ${OMP_TOOL_MARKER}\`。完成后只回答命令输出。`);
     await turn.succeeded().orStop();
 
     t.check(
@@ -32,6 +30,8 @@ export default defineEval({
         ),
       ),
     );
+    t.check(turn.usage.inputTotalTokens.state, equals("lower-bound"));
+    t.check(turn.usage.outputTokens.state, equals("lower-bound"));
     t.check(turn.usage.inputTotalTokens, greaterThan(0));
     t.check(turn.usage.outputTokens, greaterThan(0));
     t.check(turn.reply, includes(OMP_TOOL_MARKER));

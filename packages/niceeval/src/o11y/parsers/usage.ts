@@ -19,6 +19,7 @@ export const TokenUsage = Schema.Struct({
   completionTokens: token,
   output: token,
   cached_input_tokens: token,
+  cached_tokens: token,
   cache_read_input_tokens: token,
   cache_read_tokens: token,
   cacheReadTokens: token,
@@ -97,10 +98,12 @@ export function normalizeUsage(protocol: Protocol, value: Tokens): Usage {
       requests = 1; // claude-code/cost.md: each usage-bearing message is a real request.
       break;
     case "bub":
-      input = value.prompt_tokens;
-      output = value.completion_tokens;
-      cacheRead = value.prompt_tokens_details?.cached_tokens;
-      if (typeof value.cost === "number") cost = value.cost;
+      input = value.input_tokens;
+      output = value.output_tokens;
+      cacheRead = value.cached_tokens;
+      cacheCreation = value.cache_write_tokens;
+      reasoning = value.reasoning_tokens;
+      if (input !== undefined) input = Math.max(0, input - (cacheRead ?? 0) - (cacheCreation ?? 0));
       break;
     case "hermes":
       input = value.input_tokens ?? value.inputTokens;
@@ -126,7 +129,7 @@ export function normalizeUsage(protocol: Protocol, value: Tokens): Usage {
   }
   // An absent cache measurement does not supply another bucket; a reported
   // subset is subtracted only when the enclosing input measurement exists.
-  if ((protocol === "codex" || protocol === "bub") && input !== undefined) {
+  if (protocol === "codex" && input !== undefined) {
     const uncached = cacheRead === undefined ? input : input - cacheRead;
     input = Math.max(0, uncached);
   }

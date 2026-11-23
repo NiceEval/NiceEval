@@ -5,9 +5,10 @@
 凭据只在运行时注入子进程变量。`models.yml` 保存凭据变量名与本轮的 provider/model 选择，由 OMP 解析模型窗口和输出能力。
 
 `send()` 运行 `omp --print --mode json`，把完整 JSONL `AgentSessionEvent` 交给
-`createPiAgentEventStream()`。只有进程 exit 0 且观察到唯一有效终端 `agent_end` 才返回 Turn；非零、信号、
-JSON 语法 parse 失败、缺失或冲突终态都是 `SendFailure`。assistant message 明确以 `error`/`aborted` 停止时才返回
-`Turn.status: "failed"`。
+`createPiAgentEventStream()`。返回 Turn 需要进程以 0 退出，且 JSONL 里恰有一个
+`isTerminal: true`、带 `messages` 数组的 `agent_end`。
+非零退出、信号、无效 JSONL、终态缺失或冲突均为 `SendFailure`。
+在可返回的 Turn 内，assistant message 明确以 `error` 或 `aborted` 停止时返回 `Turn.status: "failed"`。
 
 事件、action、message、usage 与 status 来自真实协议帧；OMP print mode 没有独立 `Turn.data`。
 当前工厂不宣称 session/resume 或 HITL，也不加入 `BUILTIN_AGENTS`。

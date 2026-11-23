@@ -214,7 +214,6 @@ export function parseOpenClaw(raw: string | undefined): StreamEvent[] {
 export interface OpenClawRunJson {
   text: string | undefined;
   sessionId: string | undefined;
-  sessionFile: string | undefined;
   usage: Usage | undefined;
   failed: boolean;
 }
@@ -225,7 +224,6 @@ const resultFields = {
   payloads: field(Payloads),
   sessionId: string,
   session_id: string,
-  sessionFile: string,
   usage: field(TokenUsage),
 };
 const RunDocument = Schema.Struct({
@@ -244,7 +242,6 @@ const RunDocument = Schema.Struct({
         Schema.Struct({
           sessionId: string,
           session_id: string,
-          sessionFile: string,
           usage: field(TokenUsage),
           lastCallUsage: field(TokenUsage),
         }),
@@ -275,8 +272,7 @@ function parseJsonDocument(stdout: string | undefined): typeof RunDocument.Type 
 
 export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJson {
   const document = parseJsonDocument(stdout);
-  if (document === undefined)
-    return { failed: false, text: undefined, sessionId: undefined, sessionFile: undefined, usage: undefined };
+  if (document === undefined) return { failed: false, text: undefined, sessionId: undefined, usage: undefined };
   const agent = document.meta?.agentMeta;
   const text =
     document.result?.text ??
@@ -293,7 +289,6 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
     document.result?.session_id ??
     agent?.sessionId ??
     agent?.session_id;
-  const sessionFile = agent?.sessionFile ?? document.sessionFile ?? document.result?.sessionFile;
   const reported =
     document.usage ?? document.result?.usage ?? document.meta?.usage ?? agent?.usage ?? agent?.lastCallUsage;
   let usage: Usage | undefined;
@@ -302,5 +297,5 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
     document.error !== undefined ||
     document.success === false ||
     (document.status !== undefined && /^(error|failed)$/i.test(document.status));
-  return { text, sessionId, sessionFile, usage, failed };
+  return { text, sessionId, usage, failed };
 }

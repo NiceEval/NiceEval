@@ -1,3 +1,8 @@
+---
+name: review
+description: Look up this project's review conventions.
+---
+
 # Review Conventions
 
 This project keeps a single shared convention documented here: every reviewer

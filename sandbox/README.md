@@ -153,11 +153,8 @@ Bub 的默认版本、OTel 插件和安装指纹的唯一代码源是
 [`docker/bub-override.txt`](./docker/bub-override.txt)、Dockerfile 的插件 URL 和 marker hash，
 再重建制品；发布前核对各构建路径与运行时安装规格一致。
 
-那份 override 文件不是遗留物：OTel 插件所在的 workspace 把 `bub` 声明成 git 依赖，不覆盖的话
-每次安装都会去拉 Bub 主干，制品里的版本随构建时间漂移。所以三条构建路径与运行时安装都先写一份
-把 `bub` 钉成 `bub==<version>` 的 override 再装。
+OTel 插件的 workspace 从 Git 引用 Bub。三条构建路径与运行时安装都用
+`bub[app]==<version>` 的 override 选择 PyPI 发布版并保留 CLI 依赖。
 
-换 Bub 版本时必须同批核对插件 pin：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型，
-配 0.3.9 会 import 失败；反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨
-静默为空。两代成对钉的契约与用户侧旋钮见
-[Bub 契约页](../docs/feature/adapters/library/sdk/bub/README.md#装哪一版-bub)。
+换 Bub 版本时同批核对 OTel 插件的 tape 类型，并用真实 CLI 验证时间轨接收到插件的
+`bub.agent.step` span。安装和插件扩展见 [Bub 契约页](../docs/feature/adapters/library/sdk/bub/README.md#装哪一版-bub)。

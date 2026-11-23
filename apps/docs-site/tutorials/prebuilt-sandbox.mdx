@@ -24,7 +24,7 @@ Prebuilding is only for speed. The Adapter and the Sandbox each handle their own
 
 - What Codex sends into the Sandbox is a native installation package with its own runtime, so it installs even when the image has no Node.
 - Claude Code requires npm in the image.
-- The default Bub 0.4.0, besides the OTel plugin, also pins `any-llm-sdk==1.17.0` and `openai==2.31.0`. When any of the Bub version, these two dependencies, the OTel plugin, or the Python plugin list changes, it reinstalls; `command -v bub` alone cannot show that it is installed. A prebuilt environment made with an old installation marker reinstalls once. When you explicitly choose another Bub version, the other packages it depends on are your responsibility.
+- The Bub 0.6.1 recipe pins `republic==0.6.0`, `httpx2==2.16.0`, and the OTel plugin. The Adapter reinstalls when the Bub version, either dependency, the OTel plugin, or the Python plugin list changes.
 
 ## Continue building from the official baseline
 
@@ -48,7 +48,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-Template constants point to published, verified artifacts. Current source recipes use Claude Code `2.1.323` and Codex `0.167.2`, while Bub remains at `0.5.1`; updated recipes do not mean new templates have been published. Tags such as `0.167.2-r1` combine the Agent version and recipe revision, independently of the NiceEval library version. Use the template constants in projects. The commands below build your own derived environments.
+Template constants point to published, verified artifacts. Current source recipes use Claude Code `2.1.330`, Codex `0.171.0`, and Bub `0.6.1`; updated recipes do not mean new templates have been published. Tags such as `0.171.0-r1` combine the Agent version and recipe revision, independently of the NiceEval library version. Use the template constants in projects. The commands below build your own derived environments.
 
 In this batch of public templates, the Claude Code template keeps E2B's official `/usr` npm prefix, so ordinary users cannot write global modules directly. When you need to install more global Node tools such as pnpm or yarn at run time, install them explicitly into `/usr/local`, which both templates already put on PATH:
 
@@ -71,7 +71,7 @@ const template = e2bCodingAgentTemplate("codex")
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:0.167.2-r1", {
+await Template.build(template, "acme-codex-evals:0.171.0-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -87,7 +87,7 @@ Then reference only the build result in the Experiment:
 ```ts
 import { e2bSandbox } from "niceeval/sandbox";
 
-sandbox: e2bSandbox({ template: "acme-codex-evals:0.167.2-r1" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.171.0-r1" })
 ```
 
 You can also derive directly from a NiceEval public template and pay build time only for your project's own dependencies:
@@ -134,11 +134,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 # npm installs globally into /usr/local/bin, which is on the Sandbox's PATH
-RUN npm install -g @openai/codex@0.167.2
+RUN npm install -g @openai/codex@0.171.0
 ```
 
 ```bash
-docker build -t acme-codex-evals:0.167.2-r1 .
+docker build -t acme-codex-evals:0.171.0-r1 .
 ```
 
 Then reference only the build result in the Experiment:
@@ -146,7 +146,7 @@ Then reference only the build result in the Experiment:
 ```ts
 import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.167.2-r1" } })
+sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.171.0-r1" } })
 ```
 
 A Docker Sandbox runs commands as the user the image itself declares. The Dockerfile above does not set `USER`, so it runs as root by default; `/usr/local/bin` is already on root's PATH, and commands installed with `npm install -g` work directly.
@@ -165,7 +165,7 @@ import { Sandbox } from "@vercel/sandbox";
 const sandbox = await Sandbox.create({ runtime: "node24" }); // Start a microVM from the official runtime
 await sandbox.runCommand({
   cmd: "npm",
-  args: ["install", "-g", "@openai/codex@0.167.2"],
+  args: ["install", "-g", "@openai/codex@0.171.0"],
   sudo: true, // Install globally into /usr/local/bin, which is on the Sandbox's PATH
 });
 const { snapshotId } = await sandbox.snapshot();

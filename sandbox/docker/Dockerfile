@@ -46,7 +46,7 @@ FROM base AS codex
 
 # npm 全局安装(root)→ /usr/local/bin/codex,该路径对所有用户可执行。收尾切到 node
 # 用户;version smoke test 在切换后跑,顺带验证非 root 身份能直接调用装好的 CLI。
-ARG CODEX_VERSION=0.167.2
+ARG CODEX_VERSION=0.171.0
 RUN npm install -g @openai/codex@${CODEX_VERSION} \
  && codex_native=$(find "$(npm root -g)/@openai/codex" -type f -path '*/vendor/*/bin/codex' -print -quit) \
  && test -n "$codex_native" \
@@ -58,7 +58,7 @@ FROM base AS claude-code
 
 # npm 全局安装(root)→ /usr/local/bin/claude。Claude Code 在 root 下拒绝
 # --dangerously-skip-permissions,收尾必须声明非 root USER,不能只装完就结束。
-ARG CLAUDE_CODE_VERSION=2.1.323
+ARG CLAUDE_CODE_VERSION=2.1.330
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 USER node
 RUN claude --version
@@ -66,16 +66,16 @@ RUN claude --version
 FROM base AS opencode
 
 # npm 全局安装(root)→ /usr/local/bin/opencode（包名 opencode-ai）。收尾切到 node 用户。
-ARG OPENCODE_VERSION=1.19.5
+ARG OPENCODE_VERSION=1.19.6
 RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 USER node
 RUN opencode --version
 
 FROM base AS openclaw
 
-# npm 全局安装(root)→ /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=22.22.3 或
-# >=24。收尾切到 node 用户。
-ARG OPENCLAW_VERSION=2026.11.3
+# npm 全局安装(root)→ /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=24.16.0 <25
+# 或 >=26.1.0。收尾切到 node 用户。
+ARG OPENCLAW_VERSION=2026.11.7
 RUN npm install -g openclaw@${OPENCLAW_VERSION}
 USER node
 RUN openclaw --version
@@ -112,8 +112,7 @@ FROM base AS bub
 # bub-override.txt 把 bub 钉到一个 PyPI 版本:OTEL 插件所在 workspace 把 bub 声明成 git 依赖,
 # 不覆盖的话构建会拉 Bub 主干,镜像里的版本随构建时间漂移。
 # override 行、--with 的 OTEL 插件与 marker hash 都必须与 agents/bub-install-spec.ts 的默认 pin
-# 一致(Dockerfile 不能 import TypeScript,漂移由 src/sandbox/official-baselines.test.ts 守护)。
-# COPY 到 /opt(持久),不要用 /tmp —— e2b 的层间不保证保留 /tmp。
+# 一致。
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential \
@@ -122,11 +121,10 @@ COPY bub-override.txt /opt/bub-override.txt
 RUN chown node:node /opt/bub-override.txt
 USER node
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
- && $HOME/.local/bin/uv tool install --python 3.12 --prerelease allow 'bub' \
+ && $HOME/.local/bin/uv tool install --python 3.12 --prerelease allow 'bub[app]' \
       --overrides /opt/bub-override.txt \
-      --with 'git+https://github.com/bubbuild/bub-contrib.git@34715077877041b21472dcca39d91529296a1a9e#subdirectory=packages/bub-tapestore-otel' \
+      --with 'git+https://github.com/bubbuild/bub-contrib.git@8727b088aea69615d44d3b58ab0b9be6d16a884e#subdirectory=packages/bub-tapestore-otel' \
  && mkdir -p $HOME/.local/share/niceeval \
- && printf '%s' '6c00aa1e85a1' > $HOME/.local/share/niceeval/bub-install-hash
+ && printf '%s' '98393364e954' > $HOME/.local/share/niceeval/bub-install-hash
 
-# Bub 没有 --version；--help 会完成同一条入口的 Python import 与 CLI 初始化。
-RUN $HOME/.local/bin/bub --help >/dev/null
+RUN $HOME/.local/bin/bub --version

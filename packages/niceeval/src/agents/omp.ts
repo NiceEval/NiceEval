@@ -19,7 +19,7 @@ const OMP_EVIDENCE_COVERAGE: EvidenceCoverage = {
   events: { status: "complete" },
   actions: { status: "complete" },
   messages: { status: "complete" },
-  usage: { status: "complete" },
+  usage: { status: "partial", reason: "OMP JSONL omits cold-start thinking capability probe usage." },
   status: { status: "complete" },
   data: { status: "unavailable", reason: "OMP print mode does not expose a separate Turn.data value." },
 };
@@ -193,10 +193,7 @@ export function ompAgent(config?: OmpConfig): Agent {
         const stream = createPiAgentEventStream();
         const events: StreamEvent[] = nativeEvents.flatMap((event) => stream.add(event)).map(enrichOmpEvent);
         const terminal = nativeEvents.filter(
-          (event) =>
-            event.type === "agent_end" &&
-            (event as { isTerminal?: unknown }).isTerminal !== false &&
-            Array.isArray((event as { messages?: unknown }).messages),
+          (event) => event.type === "agent_end" && event.isTerminal === true && Array.isArray(event.messages),
         );
         if (res.exitCode !== 0 || terminal.length !== 1) {
           return yield* Effect.fail(

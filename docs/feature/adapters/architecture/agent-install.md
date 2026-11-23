@@ -166,10 +166,10 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 内置 Adapter 的探测逐项检查，并在第一项不满足时写出它：
 
 ```text
-checking Codex CLI 0.167.2
+checking Codex CLI 0.171.0
 probe miss: apply_patch on the login PATH is not the native Codex binary
-installing official OpenAI Codex CLI 0.167.2
-Codex CLI 0.167.2 ready
+installing official OpenAI Codex CLI 0.171.0
+Codex CLI 0.171.0 ready
 ```
 
 作者据此知道自己预装的内容差在哪一项，不必进入 Sandbox 排查（[T-31](../../../taste.md#t-31)）。原因只用于显示与诊断，不进入 identity，也不改变循环的走向。

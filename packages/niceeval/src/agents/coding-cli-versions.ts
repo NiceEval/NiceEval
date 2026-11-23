@@ -1,6 +1,6 @@
 /** Coding-agent CLI versions used by runtime fallback installs and official sandbox recipes. */
-export const DEFAULT_CODEX_CLI_VERSION = "0.167.2";
-export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.323";
+export const DEFAULT_CODEX_CLI_VERSION = "0.171.0";
+export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.330";
 
 /**
  * Bub release installed from PyPI by runtime fallback installs and official sandbox recipes.
@@ -8,26 +8,26 @@ export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.323";
  * 换版本时同批核对 `bub-install-spec.ts` 的 OTel 插件 pin：插件与 Bub 的 tape 协议同代，
  * 配错代不会安装失败，而是时间轨静默为空。
  */
-export const DEFAULT_BUB_VERSION = "0.5.1";
+export const DEFAULT_BUB_VERSION = "0.6.1";
 
 /** OpenCode CLI（npm `opencode-ai`）默认钉的版本。 */
-export const DEFAULT_OPENCODE_CLI_VERSION = "1.19.5";
+export const DEFAULT_OPENCODE_CLI_VERSION = "1.19.6";
 
 /** Antigravity CLI (agy) release used by its staged installer. */
-export const DEFAULT_ANTIGRAVITY_CLI_VERSION = "1.5.13";
+export const DEFAULT_ANTIGRAVITY_CLI_VERSION = "1.5.15";
 
 /** Hermes Agent（PyPI `hermes-agent`）默认钉的版本。 */
 export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
 
 /** OpenClaw CLI（npm `openclaw`）默认钉的版本。 */
-export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.11.3";
+export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.11.7";
 
 /** Oh My Pi coding-agent CLI (npm) and its Bun runtime. */
-export const DEFAULT_OMP_CLI_VERSION = "18.20.0";
-export const DEFAULT_BUN_VERSION = "1.4.4";
+export const DEFAULT_OMP_CLI_VERSION = "19.1.1";
+export const DEFAULT_BUN_VERSION = "1.4.5";
 
 /** DeepSeek Harness CLI (npm `@deepseek-ai/dsh`). */
-export const DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION = "0.1.7-rc.2";
+export const DEFAULT_DEEPSEEK_HARNESS_CLI_VERSION = "0.2.2-rc.5";
 
 /**
  * 有官方公共基线制品的 coding agent。
@@ -91,7 +91,7 @@ export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseli
 };
 
 /**
- * 官方基线制品的版本 tag：`<Agent 版本>-r<配方修订>`，如 `0.167.2-r2`。
+ * 官方基线制品的版本 tag：`<Agent 版本>-r<配方修订>`，如 `0.171.0-r1`。
  *
  * niceeval 自身的版本不参与命名——库与制品内容无关，发版不该连带重建没变的制品，
  * 换 Agent 版本也不该等库发版。

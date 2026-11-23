@@ -14,16 +14,17 @@ import { CODEX_NPM_PATCH_SETUP } from "../../packages/niceeval/src/agents/codex-
 
 import { Sandbox as VSandbox } from "@vercel/sandbox";
 import {
+  BUB_CLI_PACKAGE,
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_DEPENDENCY_OVERRIDES,
   DEFAULT_BUB_OTEL_PLUGIN,
   DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
-} from "../../src/agents/bub-install-spec.ts";
+} from "../../packages/niceeval/src/agents/bub-install-spec.ts";
 import {
   DEFAULT_CLAUDE_CODE_CLI_VERSION,
   DEFAULT_CODEX_CLI_VERSION,
-} from "../../src/agents/coding-cli-versions.ts";
+} from "../../packages/niceeval/src/agents/coding-cli-versions.ts";
 
 const BUB_INSTALL_HASH = bubInstallHash(
   [],
@@ -64,7 +65,7 @@ await run(
   [
     "curl -LsSf https://astral.sh/uv/install.sh | sh",
     `printf '%s\\n' ${BUB_OVERRIDE_LINES.map((line) => `'${line}'`).join(" ")} > /tmp/bub-override.txt`,
-    `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow 'bub' --overrides /tmp/bub-override.txt --with '${DEFAULT_BUB_OTEL_PLUGIN}'`,
+    `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow '${BUB_CLI_PACKAGE}' --overrides /tmp/bub-override.txt --with '${DEFAULT_BUB_OTEL_PLUGIN}'`,
     `mkdir -p "$HOME/$(dirname '${BUB_INSTALL_MARKER}')"`,
     `printf '%s' '${BUB_INSTALL_HASH}' > "$HOME/${BUB_INSTALL_MARKER}"`,
     "rm -f /tmp/bub-override.txt",
@@ -73,7 +74,7 @@ await run(
 );
 
 console.log("自检三个 CLI…");
-await run(sb, "command -v codex && command -v claude && test -x $HOME/.local/bin/bub", false);
+await run(sb, "command -v codex && command -v claude && $HOME/.local/bin/bub --version", false);
 
 console.log("拍快照…");
 const snap = await sb.snapshot({ expiration: 0 });

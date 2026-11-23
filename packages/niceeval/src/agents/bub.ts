@@ -6,7 +6,7 @@ import { completeEvidenceCoverage } from "../assertions/coverage.ts";
 import { makeSandboxAgent } from "../define.ts";
 import { requireEnv } from "../util.ts";
 import { shared } from "./shared.ts";
-import { appendProjectInstruction, installSkills, installedSkillNames, skillDiscoveryInstruction } from "./skills.ts";
+import { installSkills } from "./skills.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
 import { unclassifiedToolActionsCoverage } from "../o11y/command-projection.ts";
 import {
@@ -19,6 +19,7 @@ import type { Agent, AgentInstallationManifest, Turn, SkillSpec, TurnEvidenceCov
 import type { SandboxCommand } from "../sandbox/commands.ts";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  BUB_CLI_PACKAGE,
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_DEPENDENCY_OVERRIDES,
   DEFAULT_BUB_OTEL_PLUGIN,
@@ -34,11 +35,10 @@ import { DEFAULT_BUB_VERSION } from "./coding-cli-versions.ts";
 // ───────────────────────────────────────────────────────────────────────────
 // bub 的 agent adapter(沙箱型)。
 //
-// ⚠️ 现实校正:bub 是 PyPI 上的 `bub`(alpha,Python 3.12),不是 npm 包。
-//    · 安装:uv tool install bub(uv 自带 python 3.12,免 root)。
-//    · 调用:bub run "<prompt>" --session-id <id> --workspace <path>
-//    · 模型 + 代理:BUB_MODEL=openai:<model>、BUB_API_BASE、BUB_API_KEY。
-//    · 记忆:tape(总是开),落盘在 ~/.bub/tapes/<md5(ws)[:16]>__<md5(sess)[:16]>.jsonl。
+//    · 安装:uv tool install 'bub[app]'，使用 Python 3.12。
+//    · 调用:bub --workspace <path> run "<prompt>" --session-id <id>。
+//    · 模型 + 代理:BUB_MODEL=openai:<model>、BUB_API_BASE、BUB_API_KEY、BUB_CLIENT_ARGS。
+//    · 会话 tape:~/.bub/tapes/<md5(ws)[:16]>__<md5(sess)[:16]>.jsonl。
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
@@ -57,17 +57,17 @@ export interface BubConfig {
   baseUrl?: string | undefined;
   /**
    * 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
-   * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md(bub 没有原生 Skill 加载机制)。
+   * 落在 Bub 原生扫描的 `.agents/skills/<name>/`。
    */
   skills?: SkillSpec[] | undefined;
   /**
-   * 固定 Bub 0.5.1 协议。省略或填写 "0.5.1"；其它版本在定义期抛出 TypeError。
+   * 固定 Bub 0.6.1 协议。省略或填写 "0.6.1"。其它版本在定义期抛出 TypeError。
    */
   version?: string | undefined;
   /**
    * OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
    *
-   * 自定义插件必须支持固定版本 Bub 0.5.1 的 tape 协议。
+   * 自定义插件必须支持 Bub 0.6.1 的 tape 协议。
    */
   otelPlugin?: string | undefined;
   /**
@@ -94,14 +94,13 @@ export interface BubConfig {
 
 const UV = "$HOME/.local/bin/uv";
 
-/** bub 的 skill 目录(`skills` 生态的「通用」目录);bub 不原生扫描它,靠 AGENTS.md 的发现指引。 */
+/** Bub 原生扫描的项目 Skill 目录。 */
 const SKILL_DIR = ".agents/skills";
 
 // bub 与 OTel 插件的 pin 都从 config 来(缺省用源码里的默认 pin)——不设环境变量后门:
 // 装哪个包是配置,配置的家是代码(边界见 docs/architecture.md「配置从代码来,凭据从环境来」)。
 //
-// override 文件不是历史包袱:插件所在 workspace 把 `bub` 声明成 git 依赖,不覆盖的话每次
-// 安装都会去拉 Bub 主干,版本失控。所以安装前总是先把 `bub==<version>` 写进这个文件。
+// The override pins the PyPI release even when the plugin workspace uses Bub from Git.
 const BUB_OVERRIDE_FILE = "/tmp/bub-override.txt";
 
 /** 一个 agent 变体装的那套 bub:requirement + OTel 插件,两者都进安装指纹。 */
@@ -191,7 +190,7 @@ export function bubAgent(config?: BubConfig): Agent {
               let last = "";
               for (let attempt = 1; attempt <= 3; attempt += 1) {
                 const result = await sandbox.runShell(
-                  `${UV} tool install --reinstall --python 3.12 --prerelease allow 'bub' --overrides ${BUB_OVERRIDE_FILE} --with ${shellQuote(pin.otelPlugin)}${withPlugins ? ` ${withPlugins}` : ""}`,
+                  `${UV} tool install --reinstall --python 3.12 --prerelease allow ${shellQuote(BUB_CLI_PACKAGE)} --overrides ${BUB_OVERRIDE_FILE} --with ${shellQuote(pin.otelPlugin)}${withPlugins ? ` ${withPlugins}` : ""}`,
                 );
                 if (result.exitCode === 0) {
                   await sandbox.runShellOrThrow(
@@ -254,11 +253,6 @@ ${last}`);
               const manifest: AgentInstallationManifest = { skills: [] };
               if (config?.skills?.length) {
                 manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
-                // bub 没有原生 Skill 加载机制:装进目录不等于会被读到,发现指引跟着一起写。
-                await appendProjectInstruction(
-                  sb,
-                  skillDiscoveryInstruction(SKILL_DIR, installedSkillNames(manifest.skills)),
-                );
               }
               if (packages.length) manifest.pythonPlugins = packages.map((pkg) => ({ package: pkg }));
               if (manifest.skills.length || manifest.pythonPlugins?.length) {
@@ -300,7 +294,11 @@ ${last}`);
               const bubHome = `${home}/.bub`;
               // 会话契约:ctx.session.id 未记录时开新 tape(新 sessionId),否则 resume 传入的 id。
               // tape 路径由 md5(workspace)+md5(sessionId) 决定,同沙箱多会话靠 sessionId 区分。
-              const sessionId = ctx.session.id ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
+              const resumedSession = ctx.session.id;
+              const sessionId = resumedSession ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
+              const path = tapePath(workspace, sessionId, bubHome);
+              const priorTape =
+                resumedSession === undefined ? undefined : await sb.readText(path).catch(() => undefined);
               ctx.session.capture(sessionId);
 
               const apiKey = getApiKey();
@@ -308,18 +306,21 @@ ${last}`);
                 BUB_API_KEY: apiKey,
                 BUB_API_BASE: getApiBase(),
                 BUB_HOME: bubHome,
+                BUB_CLIENT_ARGS: JSON.stringify({ api_format: "chat" }),
                 ...ctx.telemetry?.env,
               };
               // model 归属:实验决定(ctx.model),省略时交给 bub 原生默认 / 用户环境,不硬编码。
               if (ctx.model) env.BUB_MODEL = `openai:${ctx.model}`;
               const res = await sb.runShell(
-                `${BUB} --workspace ${workspace} run ${shared.shellQuote(input.text)} --session-id ${sessionId}`,
+                `${BUB} --workspace ${shellQuote(workspace)} run ${shared.shellQuote(input.text)} --session-id ${shellQuote(sessionId)}`,
                 { env, sensitiveValues: knownSensitiveValues(apiKey), stream: true },
               );
 
-              const raw = await sb.readText(tapePath(workspace, sessionId, bubHome)).catch(() => undefined);
+              const tape = await sb.readText(path).catch(() => undefined);
+              // A resumed session keeps its earlier entries in the file. Return this send's evidence.
+              const raw = priorTape !== undefined && tape?.startsWith(priorTape) ? tape.slice(priorTape.length) : tape;
               const parsed = shared.parseBub(raw);
-              info.unknown.observe(parsed.unrecognizedEvents, sessionId);
+              info.unknown.observe(parsed.unrecognizedEvents);
               const events = [...parsed.events];
               let turnEvidenceCoverage: TurnEvidenceCoverage | undefined;
               if (!raw?.trim()) {
