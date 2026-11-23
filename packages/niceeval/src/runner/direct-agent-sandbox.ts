@@ -116,7 +116,7 @@ export function createEvalSandboxView(
     if (
       plan === undefined ||
       plan.operation !== operation ||
-      plan.source !== path ||
+      resolve(plan.source) !== path ||
       plan.target !== target ||
       plan.sendOrdinal !== options.sendOrdinal() ||
       JSON.stringify(plan.ignore) !== JSON.stringify(ignore)
