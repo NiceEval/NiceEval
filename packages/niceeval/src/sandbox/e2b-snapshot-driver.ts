@@ -1,5 +1,5 @@
 // @concord-file
-// @concord-implements docs/feature/sandbox/architecture/remote-snapshot-cache.md#e2b
+// @concord-implements docs/feature/sandbox/architecture/providers/e2b.md#远端-snapshot-driver
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import type { E2BProviderPlan } from "./layer.ts";

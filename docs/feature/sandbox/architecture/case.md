@@ -238,45 +238,7 @@ Dockerfile provider 对内置 staged Agent 另有按需派生镜像缓存,但不
 
 ## Docker Compose case
 
-Docker provider 直接把任务 Compose 当原生运行时输入,不先编译成 NiceEval 的 services 词汇。
-NiceEval 只生成必要的 overlay:
-
-- 标记或补出 `workspaceService`;
-- 注入 attempt 身份、受管目录与凭据引用;
-- 应用资源上限和网络策略;
-- 为收尾、孤儿核对与留存写 project label。
-
-启动前先按 BuildKey 执行 `docker compose build`,命中 BuildKit cache 时只做增量核对;随后 `docker compose up --detach --wait`。
-Compose 自己处理 `depends_on`、healthcheck、网络 DNS、`extra_hosts`、volume 与逐服务构建。
-
-
-未知 Compose 字段不因 NiceEval parser 没见过就拒绝。
-真正破坏核心不变量的字段由 Docker case 明确列黑名单；错误必须在 physical planning 点名字段与理由,早于携带、构建和资源创建。
-
-黑名单包含以下声明：
-
-- 让 main 容器脱离受管网络、替换受管 workdir,或让任一 service 挂载 Docker socket；
-- 为任一 service 声明固定 `container_name`；
-- 让非 `external` 的 network、volume、config 或 secret 使用不随 Compose project 变化的全局名称；
-- 顶层 `include`,以及任意 `services.*.extends.file`。
-
-命名空间检查以 Compose 合成后的有效模型为准,涵盖同文件 anchor、merge、插值与 service extends。
-Provider 用两个不同的哨兵 project 求值同一份 file 与 env；受管资源的有效名称必须在两份模型中分别按 `<project>_<logical-key>` 变化。
-
-完整模型只驻留规划内存,不落盘、不进入日志或错误正文,避免展开后的 credential env 值泄漏。
-无法取得有效模型或解码其 JSON 时规划失败,不能跳过检查。
-
-`external: true` 明确表示资源不归本 Case 创建和回收,因此保留其外部名称。
-Compose 的第二文件入口不属于当前 CaseKey 的输入闭包；`include` 与任意 `extends.file` 必须拒绝,不能读取后仍用主文件身份携带结果。同文件复用用 anchor、merge 或不带 `file` 的 service extends。
-
-`dns`、`extra_hosts`、自定义 networks 与 sidecar 隔离可以直接构成题目语义,Docker case 不把它们归一化掉。
-Agent 只能进入 main 容器;sidecar 文件系统只经题目网络交互或受控的判分采证接口可见——把 sidecar 合并进主 Sandbox 会改变题目,不属于合法降级。
-
-主容器进入 ready 后才交给 Agent;判分完成前整组保持存活。
-任一必需服务提前退出时，Attempt 形成 `errored` Verdict，并附服务状态与日志的 Observability，不折叠成 Agent 行为的 `failed` Verdict。
-收尾按 case 自己的资源句柄执行 `compose down`;部分启动、中断与超时同样走整组 finalizer。
-
-逐服务日志由 `ServiceController` 取得并按有界 command / diagnostics 进入 Observability；需要保留的大型具类型捕获才进入 Artifacts。Artifact 声明只引用主 Sandbox 时所有 provider 都能运行,引用 sidecar 时启动期要求 `services` 能力并校验服务名存在。
+Docker provider 直接把任务 Compose 当原生运行时输入。overlay、字段黑名单、命名空间检查、ready 与收尾规则见 [Docker Provider 架构 · Compose case](providers/docker.md#compose-case)。
 
 ## 云端 Compose case
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
-// @feature docs/feature/sandbox/architecture/README.md#instabox-snapshot-provider
+// @feature docs/feature/sandbox/architecture/providers/instabox.md
 test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
   "commands and open stdin preserve their outcome after token rejection and refresh %s",
   async (refresh) => {

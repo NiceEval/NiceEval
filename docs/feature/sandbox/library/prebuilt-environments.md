@@ -42,79 +42,11 @@ export const py39Astropy = () =>
 
 进不进预制实例的判据只有一条：这内容是不是所有 Attempt 都相同、且与本次实验参数无关。按实验变化的内容进入 Experiment layer 的 [`before()`](layers.md)；按 Eval 变化的任务 Fixture 进入 Eval before 或 `test(t)`。
 
-### Docker:Dockerfile 派生
+### 各 Provider 的构建工作流
 
-官方起点就是默认镜像 `node:24-slim`(省略 `image` 时按 runtime 选它)。写 Dockerfile 从它派生、把 Agent CLI 烘焙进去。`npm install -g` 装进 `/usr/local/bin`,正好落在沙箱注入的 PATH 上;沙箱默认以非 root 的 `node`(UID 1000)用户跑命令,装到别处(如 `~/.local/bin`)的 Agent 需自己进 PATH:
-
-```dockerfile
-# Dockerfile
-FROM node:24-slim
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git \
-  && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @openai/codex@0.144.1
-```
-
-```typescript
-// docker build -t acme-codex-evals:0.144.1-r1 . 之后
-sandbox: dockerSandbox({ source: { type: "image", image: "acme-codex-evals:0.144.1-r1" } })
-```
-
-镜像只在构建机上时是单机可用;要在 CI 或多机消费,push 到项目自己的 registry,`image` 字段写完整引用。
-
-### E2B:TemplateBuilder 派生
-
-`niceeval/sandbox/e2b-template` 提供一个很薄的 **E2B 专属** factory `e2bCodingAgentTemplate(agent)`,从官方 coding agent 起点派生并返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以"官方起点"不会成为改不动的封闭件:
-
-Factory 同时收敛 Node 工具安装面的三件事：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。
-
-因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。
-
-同一层还收敛[跨 provider 起点工具面](#跨-provider-起点工具面)：官方起点若带 yarn 实体就移除，python3 存在与否被断言。`verifyE2BNodeToolContract(template)` 把这些断言链进 build，任一项漂移时模板在写入 registry 前构建失败——这也是[官方公共起点](#官方-coding-agent-起点)的发布门槛。
-
-```typescript
-// scripts/build-e2b-template.ts
-import { Template } from "e2b";
-import { e2bCodingAgentTemplate } from "niceeval/sandbox/e2b-template";
-
-const template = e2bCodingAgentTemplate("codex") // 从 E2B 官方 codex template 派生
-  .aptInstall(["ripgrep", "jq"])
-  .runCmd("corepack enable && pnpm --version")
-  .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
-
-await Template.build(template, "acme-codex-evals:0.144.1-r1", {
-  cpuCount: 2,
-  memoryMB: 4096,
-});
-```
-
-```bash
-pnpm tsx scripts/build-e2b-template.ts
-```
-
-构建只在依赖变化时运行;日常 `niceeval exp` 直接消费项目自己的 alias:
-
-```typescript
-sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
-```
-
-Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装实例(指纹语义见 [Bub 接入页](../../adapters/library/sdk/bub/README.md))。
-
-### Vercel Sandbox:从运行实例拍 Run
-
-Vercel 没有 template registry,也没有 Dockerfile;Run 从一台跑起来的 microVM 拍出来。用 Vercel SDK 从官方 runtime(`node24`)起沙箱、装 Agent CLI、调 `.snapshot()` 拿到 `snap_...`,experiment 再引用这个 ID:
-
-```typescript
-// scripts/build-vercel-snapshot.ts
-import { Sandbox } from "@vercel/sandbox";
-
-const sandbox = await Sandbox.create({ runtime: "node24" });
-await sandbox.runCommand({ cmd: "npm", args: ["install", "-g", "@openai/codex@0.144.1"], sudo: true });
-const { snapshotId } = await sandbox.snapshot(); // snap_...
-await sandbox.stop();
-```
-
-Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应的公共发布语义。NiceEval 仓库可登记维护者项目的 snapshot ID 供该项目复用,公共用户仍需在自己的 Vercel Project 运行构建脚本。文档和 API 必须把这个权限差异说出来,不能把"拿到 ID"写成"任何账号可启动"。
+- [Docker：Dockerfile 派生](providers/docker/README.md#预制实例)
+- [E2B：TemplateBuilder 派生](providers/e2b/README.md#预制实例)
+- [Vercel Sandbox：从运行实例拍 snapshot](providers/vercel/README.md#预制实例)
 
 ## 官方 coding agent 起点
 
@@ -133,7 +65,7 @@ NiceEval 为 coding Agent 维护公共 Docker image 与 E2B template：Docker im
 | [Oh My Pi](../../adapters/library/sdk/omp/README.md) | — | `niceeval/omp` | Docker 烘焙精确版本的 Bun 与 `omp`;Adapter 同时复检两者 |
 | [DeepSeek Harness](../../adapters/library/sdk/deepseek-harness/README.md) | — | `niceeval/deepseek-harness` | Docker 烘焙 `dsh`;Adapter 检测 PATH 上的 `dsh` |
 
-Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
+Vercel 没有可公开发布的构建结果原语,官方起点止步于 E2B 与 Docker;Vercel 用户按 [Vercel Sandbox 的构建流程](providers/vercel/README.md#预制实例)在自己的 Project 里构建。
 
 ### 跨 provider 起点工具面
 
@@ -188,7 +120,7 @@ dockerSandbox({ source: { type: "image", image: NICEEVAL_OPENCODE_DOCKER_IMAGE }
 
 每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新起点时变化。下游不复制这些字符串,也不维护第二份版本常量;派生 image / template 要把起点身份写进名字或 provenance 时,直接用常量的值。公开起点是 convenience baseline,不是 Adapter 的隐式默认值。
 
-常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布清单](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布条件(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的 image / template 不写进 registry。
+常量指向的一定是**已发布并验证过的** image / template:E2B 侧由维护者发布后登记进[发布清单](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布条件(Node 工具契约见 [E2B · 预制实例](providers/e2b/README.md#预制实例)),自检不过的 image / template 不写进 registry。
 
 Adapter 不自动替 experiment 选择 image / template / snapshot。同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel，选择权属于 template-bearing Sandbox factory；反过来，Sandbox 也不猜要运行哪个 Agent。
 预装只是 install 探测 的快速命中路径；缺失时由 identity 匹配的 Installer 安装并复检。各 Agent 的身份与 探测 语义见各自接入页（上表链接）。

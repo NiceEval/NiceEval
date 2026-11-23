@@ -268,119 +268,16 @@ handle 或可再次写盘的回调。
 - **收回按 case 的实例及伴随资源整体进行**:单 Sandbox 实例只有主实例;Compose 实例的运行标识写在 project label 上,伴随容器、网络与 volume 随 project 整组销毁。case 新增资源种类(sidecar 容器、网络、volume、云端资源)时,必须让它带上同一运行标识,不允许有原生过滤看不见的残留。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,回退在实验面,机制见 [Experiments · 强杀后的收尾回退](../../experiments/architecture/README.md#强杀后的收尾回退收尾登记与启动自愈)。
 
-## Docker provider(本地,零云依赖)
+## 内置 Provider
 
-最常用、最便宜:无需任何云 token,本地有 Docker 即可。要点:
+各内置 Provider 在统一接口之下的实例、命令、文件、受管进程与 Provider 专属 Before cache 原语见各自的架构页；公开用法见 [Library · Provider](../library/providers/README.md)。
 
-- **保活容器** —— 用 `node:24-slim` 起一个 tail 日志文件的长生命周期容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时移除)。
-- **执行身份沿用镜像声明** —— 默认以镜像 `USER` 声明的用户跑命令(未声明按 Docker 语义是 root);factory `user` 替换整个 Sandbox 的默认身份,命令传 `{ user: "root" }` 时只这一条换身份(见 [Library · 执行身份](../library/README.md#执行身份))。npm 全局目录与 `PATH` 注入按实际执行身份的 home 定位,不硬编码 UID。
-- **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
-- **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 到执行身份修正属主(putArchive 以 root 写入)。
-- **多路复用流** —— Docker 的 exec 流把 stdout/stderr 复用在一条流上(8 字节头 + payload),需要按帧拆分。
-- **超时** —— 命令到点销毁流并报错;上限按[时限归属](#命令时限与实例寿命)从 attempt deadline 派生。
-
-这条路径不把 Docker API 交给 Agent。
-Agent 需要 `docker` / `compose` 时走 [Nested Docker](../../sandbox-nested-docker/README.md) 的 Incus VM。
-`dockerAccess` socket / DinD 不是 adopted nested-Docker public path。
-
-```typescript
-const sandbox = await createSandbox({ provider: "docker", runtime: "node24", timeoutMs });
-for (const file of workspaceFiles) await sandbox.writeBytes(file.path, file.content);
-await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
-```
-
-## Vercel Sandbox provider(云,可弹性扩并发)
-
-需要 Vercel Sandbox 凭据;显式 env 变量路径是 `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` + `VERCEL_PROJECT_ID`。适合 CI 里大并发、不想本地起 Docker 的场景。要点:
-
-- `VercelSandbox.create({ runtime, timeout })` 起一台微 VM。
-- 处理云沙箱的 session 生命周期,必要时 snapshot + rotate,避免长命令被 session 上限截断。
-- provider 内部可以批量传输，但对外兑现同一组 `writeText` / `writeBytes` 语义，不暴露另一套批量命名。
-
-接口与 Docker 完全一致,所以 Adapter 代码一字不改就能在两种 provider 间切换。
-
-## Incus provider(专用 kernel nested Docker)
-
-Experiment 用 `incusSandbox()` 选择一次性 VM。
-guest 执行身份是 `node` uid 1000，workdir 是 `/home/sandbox/workspace`，`otlpHost` 为 `null`。
-guest 内运行普通 dockerd，不是 Docker-inside-Docker。
-V1 DestroyOnly；requirement / capability、domain 与 doctor 见 [Nested Docker](../../sandbox-nested-docker/README.md)。
-
-## E2B provider(云,微 VM)
-
-需要 `E2B_API_KEY`(team 级;`e2b auth login` 后 CLI 也会用它)。要点:
-
-- `E2BSandbox.create({ template, timeout })` 起一台 [E2B](https://e2b.dev) 微 VM;`template` 由 `e2bSandbox({ template })` 声明,必填(见 [Sandbox Layer](../library/layers.md#template-bearing-factory)),不用 e2b 账号侧的默认模板。
-- 命令经 `commands.run`(走 bash,支持 `&&` / 管道);`user` 直接透传 `commands.run` 的同名参数。
-- `commands.run` 的 event stream EOF 不是直接 shell 的完成边界。正常 shell 已退出、但 `nohup ... &` 等任务服务仍持有 stdout/stderr 时，provider 采集前台输出与 exit code 后断开 transport；它不等待该服务退出，也不杀它。完成帧只接受 supervisor 在取得子进程状态后写出的十进制 exit code，wrapper 源码、转义诊断或子进程回显中出现的 marker 字面量都不是完成边界。timeout、取消、协议完整性失败或 interruption 仍退休整台 VM，避免未确认终止的命令树进入 reuse / keep。
-- 文件用 `files.read` / `files.write`(文本 + 二进制)。
-- node 版本由模板决定 —— `runtime` 字段对 e2b 仅作说明。要 node24 / 烘焙好 agent CLI,用预制模板 `e2bSandbox({ template: "niceeval-agents" })`——参数的典型用途正是把 agent CLI 烘焙进模板,让后续 eval 跳过安装直接开跑(构建工作流见 [Library · 预制实例](../library/prebuilt-environments.md))。
-- Before cache 的 Base 身份是 template 引用当前指向的 build，而不是 template 名字；同名 template 重建会产生新 build，旧前缀不得命中。规则见 [远端 snapshot Before cache · E2B](remote-snapshot-cache.md#e2b)。
-
-## OpenSandbox provider
-
-OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 Attempt resource group；创建、命令、文件与销毁均由 provider 持有，Runner 不按名称分支。公开声明见 [Library](../library/README.md#opensandbox)。Docker、Kubernetes 等 runtime 由 OpenSandbox 服务端选择，不进入 NiceEval 的选项、计划 identity 或准入判断。服务部署和隔离策略归基础设施；provider 不从 runtime 名称推断专用 kernel 或 DockerExecution。
-
-`openSandbox` 使用官方 `@alibaba-group/opensandbox` SDK，依赖延迟加载。连接地址和 API key 从 `OPEN_SANDBOX_DOMAIN`、`OPEN_SANDBOX_API_KEY` 读取，API key 只进宿主 transport，不进入 identity、镜像变量集合或命令。
-
-所有请求使用 server proxy 并保留 SDK 返回的 endpoint 路由与认证 header。当前接入使用服务代理，不要求 execd 的 secureAccess；服务必须使用仅可信宿主可访问的私有入口，或在 HTTP/WebSocket 全路径前置鉴权。控制 API key 本身不能保护上游免鉴权的 proxy 路由。禁用 SDK create telemetry。目标平台由声明显式给出，不能从宿主架构推断远端镜像。
-
-起点是 image，工作目录为 `/home/sandbox/workspace`。发布 identity 包含 image、目标平台、资源限制、user、pathPrepend 与 lifetimeMs；连接与凭据不构成可分享内容。单实例只有一个销毁 owner。创建不自动重试歧义结果；获取实例后立即登记 Scope finalizer，ready 或工作目录初始化失败也销毁。作者必须显式声明有限的 lifetimeMs，实例仍随 Scope 关闭；该寿命不得短于 Attempt 剩余时限与 30 秒收尾预留。有限寿命负责客户端崩溃后的最终回收，不替代取消确认。服务拒绝该寿命时保留真实失败，不静默缩短。
-
-每次创建携带随机 provision token。创建失败后按该 token 查询并销毁已分配的实例，不接管其它请求。服务仍在处理但尚未返回的分配无法由一次查询排除，有限寿命约束这种未知状态；查询或销毁失败与原始创建失败一并报告。
-
-服务必须在销毁成功响应前终止实例及其进程，provider 才能将该响应作为回收确认。只返回异步删除受理或控制对象消失的服务不满足该契约，须在服务接入验收时验证；调用方声明 runtime 字符串不能替代这项证据。
-
-命令经原生 argv 执行，shell 明确为 `bash -lc`；cwd、env、身份与 PATH 由 provider 归一化。非零退出返回实际 exitCode，缺失终态不能伪装成功。超时、取消或命令流中断时销毁整个实例，并等待销毁确认后结束命令；这使跨命令后台任务无法在失联后继续执行。正常命令结束保留后台服务。文件接口复用统一 transfer 语义，文本与字节不混用。
-
-保留、暂停与复用报告 Unsupported / DestroyOnly；rootfs Before cache 见 [远端 snapshot Before cache · OpenSandbox](remote-snapshot-cache.md#opensandbox)。受管双向进程通过下述 pipe 桥接兑现；镜像必须提供 Node.js 22 或更新版本。缺少运行时直接报错，不能退化成单次 shell。验收检查 argv 注入、非零退出、二进制与目录往返、超时及取消后实例不可访问、创建后初始化失败回收、独立实例隔离和凭据不进入 sandbox。
-
-### OpenSandbox 受管进程
-
-交互 adapter 使用 execd 的 `/pty` WebSocket pipe 模式，不能使用会合并 stderr 或回显输入的 PTY 模式。provider 通过同源 server proxy 取得 endpoint 和认证 header；连接地址必须与控制服务同源，不把控制凭据转交第三方 endpoint。
-
-镜像内 Node 24 作为 provider 的字节桥接运行时。桥接进程启动独立 process group 的目标 argv，stdin 协议显式区分写字节、关闭 stdin 和 terminate；stdout/stderr 以 base64 frame 分离传输。每次写入确认在目标 stdin 的 write callback 后返回，EOF 在 end callback 后确认。桥接协议不进入公开 API，也不把 stdout 当作 JSONL 文本命令输出来重新分词。
-
-目标退出或 terminate 后，桥接先 KILL 同一 process group，并从 Linux procfs 确认没有非 zombie 成员，再发布目标 exitCode/signal。确认超时、桥接错误、WebSocket 意外关闭或缺少完整终态时退休整个 Sandbox。正常完成后删除 PTY session；资源关闭可重入，失败必须保留 Provider finalizer 失败事实。Node 缺失时返回明确启动失败，不能报告交互能力已经可用。
-
-## Instabox snapshot Provider
-
-`instabox.ts` 拥有纯配置校验、template identity 和 Provider plan；`instabox/` 拥有 HTTPS 协议解码、Machine 资源、SSH 命令与文件传输。Runner 继续只使用统一 Provider 契约，不按 Instabox 名称分支。
-
-固定服务 origin、snapshot ID、Provider revision、Linux x64 GNU 平台、显式寿命、规范化资源和 PATH 前缀组成 identity。Machine ID、创建幂等键、SSH token 与 API key 不参与 identity；不同 snapshot ID 保守地视为不同 Sandbox 起点，不声称内容等价。配置求值不访问网络。
-
-`materialize` 先验证 snapshot 的具体 ID 与 ready 状态，再以唯一幂等键创建 Machine。请求禁止自动 Vault 或 Org Secrets 注入，明确设置 delete deadline、资源与禁用自动暂停。收费计划必须允许这些设置；拒绝不能降级为可能暂停的机器。创建返回 operation 后，立刻登记资源回收，再等待 operation succeeded 与运行就绪。创建响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建。无法取得身份时报告无法确认回收，服务端 delete deadline 是最后上界。
-
-每个 Machine 的 Scope 拥有一次删除职责。失败、取消与正常退出均调用 DELETE，附带确认 ID 和稳定删除幂等键，等待 operation succeeded。已有 operation 冲突时等待其终态后再删除；404 表示资源已不存在。删除失败保持未回收状态并传播错误，不能先标记成功。Snapshot 不由 Attempt Scope 拥有。
-
-HTTPS API 返回值在边界通过 Schema 解码；错误只交付 HTTP 状态、服务错误 code，不转交可能回显凭据的响应正文。默认请求有有界传输超时，资源等待由 Attempt deadline 或显式 lifetime 限制。回收使用独立有界时限，不继承已取消的 Attempt signal。
-
-SSH token 仅由已认证 HTTPS 获取，并以响应中的 SHA256 host key fingerprint 校验 SSH gateway。每台 Machine 只持有一条 SSH 连接，命令与受管进程各占其中一个 channel；连接启用 keepalive，禁用 PTY，stdin 与两个输出流保留原始字节。连接在第一次需要时建立，随 Machine 的 Scope 关闭。一条命令的固定开销是一次 channel 往返，不含握手：同一台 Machine 上连续 20 条 `true` 的总耗时不得超过单条耗时加 20 次往返，验收按这个关系断言，不写死毫秒数。
-
-Sandbox 内 Node supervisor 以 argv 启动目标进程，显式设置 cwd 与 env；参数不作为 shell 源码解释。受管 shell 只在 `runShell` 时选择 Bash。默认非 root 身份来自 snapshot，root 命令由免密 sudo 进入同一 supervisor。
-
-supervisor 不依赖 SSH 会话存活。它为每个进程在 Machine 上建一个只属于该进程的 spool 目录，把 stdout、stderr 按原始字节追加写入各自的文件，进程结束后原子写入退出文件（退出码或信号）。channel 只是这些文件的读取端：客户端保存每个流已经交付的字节偏移，读到退出文件之后进程才算结束。
-
-stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 stdin 字节数持久化在 spool 里，EOF 是否已送达也在其中；客户端保留尚未被确认的字节，收到确认后才丢弃。Agent 驱动进程这类全程开着 stdin 的双向进程靠这一条跨过断线：它运行时间最长，丢一次就是整个 Attempt。普通命令的前台进程结束后写入退出文件，不等待后台服务继承的管道关闭；有意启动的独立服务继续运行。
-
-连接断开不等于进程丢失。连接或 channel 异常时，Provider 在 60 秒内最多重连 3 次，重连成功后从已交付的偏移继续读取同一个 spool，并向 supervisor 取回已接收的 stdin 字节数，从该偏移补发未确认的字节与 EOF。调用方看到的输出不重复、不缺失，目标进程收到的 stdin 不重复、不缺失，命令事实只有一条。同一台 Machine 上的全部进程共用这一次重连。重连期间命令自己的时限照常计时。以下情况才退休并删除整台 Machine，等待确认后再 settle：
-
-- 重连次数或时限用完；
-- 重连后 spool 目录或 supervisor 不存在；
-- 命令超时或取消后，supervisor 未能在有界时限内终止目标进程组并写入退出文件。
-
-命令超时或取消本身不退休 Machine：supervisor 向该命令的整个进程组发送终止信号，确认退出文件写入（即进程组已静止）后，命令以 cancelled 或 timeout 结算，Machine 与同一连接上的其它进程继续使用。一台 Machine 往往同时承载 Agent 驱动进程、遥测收集与并发的 Agent Judge 命令，取消其中一条不能连带删除其余进程依赖的环境。
-
-退休时抛出的错误写明触发原因（keepalive 超时、连接被对端关闭、channel 错误、握手失败等 ssh 层给出的原因）、重连次数、进程已运行时长和已交付的字节数，随 Attempt 的 failure diagnostic 保存。错误文本不含 token。成功重连写一条 `sandbox-transport-reconnected` Observability diagnostic，带同样的原因与次数，不改变命令结果与 Verdict。Machine 因传输失败退休之后，对同一个 Sandbox 的后续命令与文件操作都以这次退休的原因失败，不把服务端返回的 404 当作首要错误交给调用方。正常退出只归还 channel。外层 Scope 最终删除实例，包含其余后代进程。
-
-文件使用原生 HTTP bytes 接口。目录上传把整棵目录打成一个归档，经一次 HTTP 写入送达，再用一条命令展开并一次设好全部权限位；命令条数与目录里的文件数、目录数无关。目录下载同样是一条归档命令加一次 HTTP 读取。归档展开失败按命令失败处理，不留下只展开了一部分却报告成功的目录。Provider 只将文件不存在解释为 false；权限与传输失败继续抛错。reuse、retention 与 Nested Docker capability 都明确 Unsupported，不以快照存在推定这些能力；Before cache 见 [远端 snapshot Before cache · Instabox](remote-snapshot-cache.md#instabox)。
-
-验收由安装后的公开入口驱动：校验非法配置、从固定 snapshot 创建实例、读写二进制文件、argv 特殊字符、非零退出、流式输出、双向 Agent 进程、取消与正常收尾。使用真实 API 读回 Machine 不存在和基础 snapshot 仍 ready，并回收验收专属快照。命令超过 600 秒的支持由无 HTTP exec 的传输路径保证，长时实际运行另行按成本执行。连接复用、断线续读与目录传输另有四条验收：
-
-- 同一台 Machine 上连续命令的耗时关系。
-- 命令运行中由测试从客户端一侧强行断开 SSH 连接，命令仍以原退出码结束、输出逐字节完整，并留下 `sandbox-transport-reconnected`。
-- 一个持续读写 stdin 的双向进程在两次写入之间被断开，重连后对端收到的字节序列与发送的完全一致，EOF 只送达一次。
-- 上传一棵含多层目录与可执行文件的目录后，Record 里只有一条展开命令，权限位读回一致。
+- [Docker](providers/docker.md) —— 本地，零云依赖；含原生 Compose case 与 cache inventory projection。
+- [Vercel Sandbox](providers/vercel.md) —— 云端微 VM，可弹性扩并发。
+- [Incus](providers/incus.md) —— 专用 kernel 的 nested Docker。
+- [E2B](providers/e2b.md) —— 云端微 VM。
+- [OpenSandbox](providers/opensandbox.md) —— 经服务 API 绑定远端 Sandbox，含受管进程桥接。
+- [Instabox](providers/instabox.md) —— 从固定 snapshot 创建 Machine，SSH 传输与断线续读。
 
 ## Provisioning 失败与重试
 
@@ -404,16 +301,7 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 各内置 provider 先把自己 SDK 原生的限流错误(e2b 的 `RateLimitError`、vercel 的 `APIError{ response.status: 429 }`、docker 拉镜像时 message 里的 `toomanyrequests`)归入拒绝类。
 provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时分类器(见下节),由错误形态落进拒绝类或歧义类。
 
-各内置 provider 的对账通道与重试面:
-
-- **Docker** —— 容器创建时即带 provision token label(与留存候选的 `niceeval.keep-candidate` 标签同一机制),对账 = 按 label 查询本地容器、force remove(容器已不存在视作对账完成)。create 闭包在容器创建后还有 start、基础工具安装、工作区属主一串 exec,这些步骤失败由 kill-on-failure 直接 force remove。拒绝类主要是拉镜像限流(发生在容器创建之前)。
-- **Docker Compose** —— build 与 up 都复用同一套瞬时分类和退避。build 以同一 BuildKey 重建即可收敛。
-- up 的 projectName 与 overlay 在整个重试闭包内固定，每次重试前先对同一 project 执行独立于 Attempt signal 的有界 `compose down --volumes --remove-orphans`，清掉半启动服务后再 up。
-- 附着主服务后由 Docker provider 探测分类账所需的 git；题目镜像没带时以 root 通过已有的 apt/apk/dnf/yum 补齐，而不是要求每条 Eval 修改 Dockerfile。
-- 整个 case 最终仍由主实例及伴随资源的 finalizer 回收；即使前向工作已经 timeout/cancel，finalizer 也拿新的 8s cleanup signal。
-- 只有真实回收成功才解除 registry 所有权；失败追加 `sandbox-stop-failed` Observability diagnostic、保留 project labels 供同轮强清重试或原生 CLI 工具事后回收，不改写原 Attempt 的 Verdict。
-- **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例见 memory 的 e2b-provision-429-duplicate-sandbox 条目)。都由重试前对账兜住。
-- **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴。SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
+各内置 provider 的对账通道与重试面见各自的架构页：[Docker](providers/docker.md#provisioning-对账与重试)（含 Docker Compose）、[E2B](providers/e2b.md#provisioning-对账与重试) 与 [Vercel Sandbox](providers/vercel.md#provisioning-对账与重试)。
 
 重试循环由各内置 `ProviderModule<Plan>` 自己拥有。
 `runtime.ts` 只调用 plan 私绑的闭包，不维护 adapter registry:
@@ -450,7 +338,7 @@ Provisioning 的分类只涵盖"创建沙箱"这一步。沙箱创建成功后�
 
 ## 实现纪律
 
-路径定位规则只允许一份实现:收敛在 `src/sandbox/paths.ts`(如 `resolveSandboxPath(workdir, path)`),三个内置 provider 共用;不允许每个 provider 各自复制一遍 `startsWith("/")` 判断。规则有多份实现,就会有 provider 悄悄不一致。`defineSandbox` 自定义 provider 只需声明自己的 `workdir` 字符串即可获得同一套行为。
+路径定位规则只允许一份实现:收敛在 `src/sandbox/paths.ts`(如 `resolveSandboxPath(workdir, path)`),全部内置 provider 共用;不允许每个 provider 各自复制一遍 `startsWith("/")` 判断。规则有多份实现,就会有 provider 悄悄不一致。`defineSandbox` 自定义 provider 只需声明自己的 `workdir` 字符串即可获得同一套行为。
 
 不要硬编码 `/workspace`——它不是任何 provider 的真实 workdir,按它写的文件会落在 agent cwd 和变更分类账之外(agent 看不见、diff 采不到)。写法是省略 `targetDir` / `cwd`,需要绝对路径时用 `sandbox.workdir`。
 
@@ -479,12 +367,6 @@ Before cache 的身份、Provider 能力矩阵、降级规则与运行事实归�
 预制实例的构建与发布归项目和 Provider 原生工具；NiceEval 的 template factory 参数负责消费（工作流见 [Library · 预制实例](../library/prebuilt-environments.md)）。
 Sandbox 预热与 Sandbox 复用是 [Runner](../../../runner.md) 的调度职责。
 
-## Docker-owned cache inventory projection
-
-Docker cache repository 以单个只读 inventory operation 在同一 transaction snapshot 中列出 task-build 与 before-cache entry 及其 active lease 与 hold。该 operation 不做 startup reconcile、lease prune、provider mutation 或 GC planning。Docker administration 再复核 task-build image identity，并把两类 entry 投影为以 `kind` 判别的公开联合；Before cache 只采用 registry 已有 state，不因 inventory 改变 generation 或索引。
-
-公开 identity 只包含定位 artifact 所需的 task build key/tag/image id，或 before-cache entry id/key/image/base image id；计数只聚合 entry-local lease 与 hold。holder、operation lineage、声明正文和 GC lock 留在 repository 内部。Before cache 的公开归属不扩大 GC：现有 task-build plan/apply 是唯一删除入口。
-
 ## 相关阅读
 
 - [README](../README.md) —— 为什么需要沙箱、provider 统一接口。
@@ -492,4 +374,5 @@ Docker cache repository 以单个只读 inventory operation 在同一 transactio
 - [Before cache](before-cache.md) 与 [远端 snapshot Before cache](remote-snapshot-cache.md) —— 前缀身份、Provider 能力与远端 snapshot 契约。
 - [Data Model](../data-model.md) —— 远端 snapshot 账本。
 - [Nested Docker](../../sandbox-nested-docker/README.md) —— requirement、Incus VM、DestroyOnly 与 doctor。
+- [内置 Provider](#内置-provider) —— 各 Provider 的实例、命令、文件与 Before cache 原语。
 - [Runner](../../../runner.md) —— 预热与复用的调度职责。

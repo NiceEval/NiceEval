@@ -1,5 +1,5 @@
 // @concord-file
-// @concord-implements docs/feature/sandbox/architecture/remote-snapshot-cache.md#opensandbox
+// @concord-implements docs/feature/sandbox/architecture/providers/opensandbox.md#远端-snapshot-driver
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import type { SandboxManager } from "@alibaba-group/opensandbox";

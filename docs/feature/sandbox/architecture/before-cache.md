@@ -188,9 +188,9 @@ Incus 直接实现这个接口并保留自己的账本。E2B、OpenSandbox 与 I
 | 普通单容器 Docker，全部可变状态在 outer writable rootfs | `AttemptCaptured` | 每 Attempt 使用已验证 exact image 的私有 writable container；不进入准备图。 |
 | Docker Profile，具备已验证的独立 fixed-image allocation | `AttemptCaptured` | 只能保存 capability receipt 声明的状态面（例如 `dockerData`）；shared loop/project-quota allocation 在运行期报 `Unsupported`。 |
 | `incusSandbox()` nested Docker | `RunPrepared` | 发布完整、quiesced 的 prepared artifact；每个 Attempt clone 私有 writable root 与 Docker data disk。 |
-| E2B | `RunPrepared` | Base 是 template 引用当前指向的 build；full snapshot。见 [远端 snapshot Before cache](remote-snapshot-cache.md#e2b)。 |
-| OpenSandbox | `RunPrepared` | digest-pinned Base 的 rootfs snapshot；不包含进程、卷或 tmpfs。见 [远端 snapshot Before cache](remote-snapshot-cache.md#opensandbox)。 |
-| Instabox | `RunPrepared` | 固定 Base snapshot 之上的 root 与 `/data` 磁盘 snapshot。见 [远端 snapshot Before cache](remote-snapshot-cache.md#instabox)。 |
+| E2B | `RunPrepared` | Base 是 template 引用当前指向的 build；full snapshot。见 [远端 snapshot Before cache](providers/e2b.md#远端-snapshot-driver)。 |
+| OpenSandbox | `RunPrepared` | digest-pinned Base 的 rootfs snapshot；不包含进程、卷或 tmpfs。见 [远端 snapshot Before cache](providers/opensandbox.md#远端-snapshot-driver)。 |
+| Instabox | `RunPrepared` | 固定 Base snapshot 之上的 root 与 `/data` 磁盘 snapshot。见 [远端 snapshot Before cache](providers/instabox.md#远端-snapshot-driver)。 |
 | Vercel Sandbox | `Unsupported` | 不声明可验证的 before-cache capture/restore coverage，真实执行。 |
 | `defineSandbox()` custom provider | `Unsupported` | NiceEval 不以结构探测推断能力。 |
 

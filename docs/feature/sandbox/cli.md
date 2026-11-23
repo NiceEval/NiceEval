@@ -97,20 +97,7 @@ NiceEval 保持 core 中立并恪守职责边界：**NiceEval 拥有沙箱的生
 
 NiceEval 不自建中间终端代理、伪终端（PTY）隧道或 WebShell 反代。开发者或 Coding Agent 依据收尾指引直接使用底层 Provider 经工业级验证的成熟 CLI：
 
-- **Docker Sandbox**：
-  - 开发者交互调试：`docker exec -it <sandboxId> /bin/bash`（直接利用原生的 PTY、信号穿透与快捷键支持）；
-  - Coding Agent 非交互排查：`docker exec <sandboxId> <command>`（单次执行、拿到结构化 stdout/stderr，不阻塞挂起）。
-- **Instabox Sandbox**：
-  - 开发者交互调试：`instabox ssh <sandboxId>`；
-  - Coding Agent 非交互排查：`instabox exec <sandboxId> -- <command>`。
-- **E2B Sandbox**（留存为 pause）：
-  - 进入：`e2b sandbox connect <sandboxId>`；
-  - 销毁：`e2b sandbox kill <sandboxId>`。
-- **Vercel Sandbox**（留存为 stop 后持久，按 sandbox name 寻址）：
-  - 进入：`sandbox connect <name>`；
-  - 永久删除：`sandbox remove <name>`；`sandbox stop` 只停驻，不是销毁。
-- **Kubernetes / 微 VM**：
-  - 直接调用 `kubectl exec -it <pod> -- /bin/sh` 或对应 Provider 的原生客户端。
+各 Provider 的进入与排查命令见对应 Provider 页：[Docker](library/providers/docker/README.md#现场接入与回收)、[Instabox](library/providers/instabox/README.md#现场接入与回收)、[E2B](library/providers/e2b/README.md#现场接入与回收) 与 [Vercel Sandbox](library/providers/vercel/README.md#现场接入与回收)。Kubernetes / 微 VM 等其它运行环境直接调用 `kubectl exec -it <pod> -- /bin/sh` 或对应 Provider 的原生客户端。
 
 ### 2. 现场变更回放与代码比对（用 Git 与 NiceEval 落盘事实）
 
@@ -124,15 +111,7 @@ NiceEval 不自建私有的变更历史回放命令：
 
 NiceEval 不在项目内部维护脆弱的私有注册表或自研孤儿轮询机制。所有实例的生命状态与资源回收动作均委托给 Provider 原生管理工具：
 
-- **Docker 容器**：
-  - 查看全部存活/留存沙箱：`docker ps -a --filter "label=niceeval"`；
-  - 销毁特定沙箱：`docker rm -f <sandboxId>`；
-  - 批量销毁所有留存/残留容器：`docker rm -f $(docker ps -aq --filter "label=niceeval")`；
-  - 强杀或异常中断后的孤儿回收：`docker container prune -f` 或 `docker system prune`。
-- **Instabox 实例**：
-  - 查看实例列表与状态：`instabox list`；
-  - 销毁特定实例：`instabox rm <sandboxId>`；
-  - 暂停或恢复实例：`instabox pause <sandboxId>` / `instabox resume <sandboxId>`。
+各 Provider 的实例列表、销毁与孤儿回收命令见对应 Provider 页：[Docker](library/providers/docker/README.md#现场接入与回收) 与 [Instabox](library/providers/instabox/README.md#现场接入与回收)。
 
 由于使用的是底层 Provider 的原生 CLI，即使 `niceeval.config.ts`、测试集代码损坏或出现语法错误，开发者也能直接运行 `docker ps` 或 `instabox list` 排查并销毁资源，绝不会被上层配置错误阻断。
 

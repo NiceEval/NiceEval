@@ -1,5 +1,5 @@
 // @concord-file
-// @concord-implements docs/feature/sandbox/architecture/remote-snapshot-cache.md#instabox
+// @concord-implements docs/feature/sandbox/architecture/providers/instabox.md#远端-snapshot-driver
 import { createHash } from "node:crypto";
 import { Effect, Schema } from "effect";
 import type { InstaboxProviderPlan } from "../instabox.ts";

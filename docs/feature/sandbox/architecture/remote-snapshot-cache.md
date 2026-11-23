@@ -299,36 +299,13 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 
 取消、失败与正常结束后，本 Run 不留下活跃的 staging 或 consumer 实例，也不留下自己持有且未过期的 `preparing` lease 或 `run` hold。回收失败保留登记并呈现错误，不改成静默成功。
 
-## E2B
+## Provider driver
 
-- **driver**：`preserves = { disks: ["/"], memory: true }`；`sourceUsableAfterSnapshot = true`。
-- **Base 身份**：查询 `template` 引用当前指向的 build。`name` 取 `default` tag，`name:tag` 取对应 tag，经 `Template.getTags(name)` 得到 `buildId`；`baseIdentity` 是 `e2b-build:<buildId>`。template 或 tag 不存在时返回 `Ineligible(base-image-unverified)`；网络或服务错误是 `BeforeCacheSnapshotError`。
-- **Base 确认的局限**：E2B 不在实例信息里返回 buildId，也不能按 buildId 创建实例，core 只能靠 staging ready 后的第二次查询确认。tag 在两次查询之间被改走又改回时无法发现。前提是作者在 Run 期间不移动所用 tag；需要更强保证时，template 引用应指向只构建一次的专用 tag。
-- **Base 回退**：回退实例从声明的 template 引用创建，可能落在更新的 build 上；回退后 Attempt 真实执行全部 before，结果与不使用缓存相同。
-- **execution domain**：`hash(规范化 API domain, sha256(E2B_API_KEY))`。换 key 等同于换 domain。
-- **createSnapshot**：`Sandbox.createSnapshot(sandboxId, { name, mode: "full" })`，`mode` 进入 artifact format identity。
-- **findSnapshot**：`Sandbox.listSnapshots({ sandboxId })` 后按名称精确匹配。
-- **createFromSnapshot**：`Sandbox.create(snapshotId)`。
+各 Provider 的 driver 原语（`preserves`、Base 身份、execution domain 与 snapshot 调用）见各自的架构页：
 
-## OpenSandbox
-
-- **driver**：`preserves = { disks: ["/"], memory: false }`；`sourceUsableAfterSnapshot = false`。不保存进程、卷或 tmpfs。
-- **Base 身份**：必须是 digest-pinned image，否则 `Ineligible(base-image-unverified)`。
-- **execution domain**：规范化服务 URL 与凭据的不可逆摘要；URL 路径、目标平台与 Provider 的 `cacheFormat` 进入 key scope。
-- **createSnapshot / findSnapshot / deleteSnapshot**：公开 Snapshot API，按 `name` 创建与精确查询。
-- **createFromSnapshot**：从 snapshotId 创建实例；remote handle 原子替换 backend，清空用户身份与 PATH 等实例缓存后重新执行宿主初始化，不保留旧实例引用。
-- **回收边界**：Snapshot 删除不保证回收 Kubernetes registry blobs。registry retention 与容量监控属于部署方，NiceEval 不持有 registry 写凭据。
-
-## Instabox
-
-- **driver**：`preserves = { disks: ["/", "/data"], memory: false }`（默认 workdir 在 `/data/home/workspace`）；`sourceUsableAfterSnapshot = true`。retention 与 Nested Docker 仍为 Unsupported，不支持 Sandbox 复用。
-- **Base 身份**：声明的 `snapshotId`（`sn_` 开头）或 `templateId`（别名 `template`，省略时默认为 `universal`）；Instabox snapshot 的内容按 ID 不可变。
-- **execution domain**：`hash("https://api.instabox.sh", sha256(API key))`。
-- **createSnapshot**：对 staging Machine 发起包含 root 与 `/data` 的 snapshot 保存请求，等待 status 变为 `ready`；`failed` 是错误。服务以明确错误码拒绝且未返回 operation 时为 `Rejected`。具体 HTTP 路径以 Instabox API 为准，像现有 Machine 接口一样在边界用 Schema 解码。
-- **一致性**：Instabox 的 live snapshot 等同于断电时的磁盘内容；两个盘是否在同一时刻捕获没有服务端证据。quiesce 保证 snapshot 期间没有 NiceEval 发起的写入，因此 core 不依赖跨盘原子性。
-- **createFromSnapshot**：以 snapshot ID 创建 Machine，沿用现有创建、探测与删除契约；Vault 与 Org Secrets 自动注入保持关闭。
-- **findSnapshot**：Instabox 不提供按名称查询，`/v1/snapshots/{id}` 只接受 ID。driver 读取 `GET /v1/snapshots` 的全部分页，按 `name` 严格相等匹配；多于一个匹配是错误。
-- **deleteSnapshot**：`DELETE /snapshots/{id}`，404 返回 `absent`。
+- [E2B](providers/e2b.md#远端-snapshot-driver)
+- [OpenSandbox](providers/opensandbox.md#远端-snapshot-driver)
+- [Instabox](providers/instabox.md#远端-snapshot-driver)
 
 ## 验收
 

@@ -300,21 +300,13 @@ e2bSandbox({
 云 Provider 未声明 `lifetimeMs` 时，按 Attempt 时限加 2 分钟请求服务端寿命；无界 Attempt 默认 15 分钟。创建标签与 Provider 能力边界见下述完整规则。
 完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
 
-起点参数只在对应 Provider 内部消费——**核心不按 provider 名分支**,Runner 只消费 factory 归一出的 template 与 Provider planner。
+起点参数只在对应 Provider 内部消费——**核心不按 provider 名分支**,Runner 只消费 factory 归一出的 template 与 Provider planner。各内置 Provider 的选项与要求见 [Provider](providers/README.md)。
 
 参数的典型用途是**预制实例**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### Nested Docker：Incus 推荐路径
+### Nested Docker
 
-普通 `dockerSandbox({ source })` 继续提供 Docker image / Dockerfile 单容器执行；它适合 Agent 不需要控制另一层 Docker daemon 的任务。
-
-Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 用 `sandboxRequirements()` 声明 provider-neutral 的 `docker/v1`、Compose、专用 kernel 与最低 data capacity。Experiment 用 `incusSandbox()` 选择 Host 管理的 Incus project、storage pool 与 digest-pinned trusted image。完整公开形状、资源字段、capability receipt 与错误码见 [Nested Docker Library](../../sandbox-nested-docker/library.md)。
-
-Incus 为每条 Attempt 创建一次性 VM。guest 内运行普通 dockerd，Docker data 使用与 root / workspace 分开的私有 virtual disk；`resources.cpus`、`memoryBytes` 与 `dockerDataBytes` 进入 identity 和容量检查。Before cache 复用完整、可验证的 immutable Provider artifact，每个 consumer clone 私有 writable root / data disk。
-
-raw privileged / managed rootless DinD、privileged outer container、inner daemon data-root clone / capture 均不属于支持目标，也不能在 Incus planning 失败时作为 fallback。宿主 Docker socket不能满足 `dedicated-kernel/v1`；可信本地工具若需要该能力，必须另立 capability 与 trust boundary。普通 Docker provider 本身不受这项迁移影响。
-
-Incus guest 的 `otlpHost` 为 `null`。Runner 在 Sandbox 内启动 attempt-scope OTLP receiver，Agent 只访问 `127.0.0.1`。作者已经提供受控 tunnel / 可达路由时，可用 `defineConfig({ telemetry: { host } })` 显式改走宿主 receiver。
+Agent 要在 Sandbox 内运行 Docker 或 Compose 时，Eval 用 `sandboxRequirements()` 声明 provider-neutral 的 `docker/v1`、Compose、专用 kernel 与最低 data capacity，Experiment 选择能兑现该 requirement 的 Provider。完整公开形状、资源字段、capability receipt 与错误码见 [Nested Docker Library](../../sandbox-nested-docker/library.md)，推荐路径见 [Incus](providers/incus/README.md)。
 
 ### 可发布预制实例
 
@@ -517,65 +509,4 @@ Scope release 统一执行 stop 或已经提交的 keep disposition。
 - [操作 Sandbox](operations.md) —— `t.sandbox` 的文件与命令 API。
 - [断言 Sandbox 结果](asserting-results.md) —— diff、文件和 shell 行为怎么评分。
 - [Architecture](../architecture/README.md) —— provider 内部实现、生命周期时序、性能与重试。
-
-## OpenSandbox
-
-服务与 execd 使用配套的 `release-1.1.1`，SDK 使用 `1.1.1`。旧 `execd:v1.1.0` 不支持本 Provider 所需的原生 argv。
-
-安装可选依赖 `@alibaba-group/opensandbox`，并在运行 NiceEval 的宿主配置 `OPEN_SANDBOX_DOMAIN` 与 `OPEN_SANDBOX_API_KEY`。地址使用完整 HTTPS URL；本机开发可显式使用 HTTP。凭据不注入被测 Sandbox。底层 runtime 由 OpenSandbox 服务端选择；NiceEval 不要求声明。入口只对可信宿主开放，或为 HTTP/WebSocket 的全部路径提供前置鉴权。上游 Docker proxy 不受控制 API key 保护，不能直接暴露到公网。
-
-```typescript
-import { openSandbox } from "niceeval/sandbox";
-
-const sandbox = openSandbox({
-  lifetimeMs: 60 * 60 * 1000,
-  image: "node:24-bookworm",
-  targetPlatform: { _tag: "Linux", os: "linux", arch: "x64", libc: "gnu" },
-  resources: { cpu: "1", memory: "2Gi" },
-});
-```
-
-`OpenSandboxOptions` 接受必填 `image: string` 与 Linux `targetPlatform`，可选的有限 `lifetimeMs: number`，以及可选 `resources: { cpu?: string; memory?: string }`、`user: string`、`pathPrepend: readonly string[]`。正式实验使用 digest-pinned 镜像。工作目录为 `/home/sandbox/workspace`；默认以 execd 的 root 用户运行，`user` 接受 `/etc/passwd` 中的用户名或数字 uid，单条命令可另选身份。
-
-显式 lifetimeMs 是作者选择的实例寿命，由服务校验，不能短于有界 Attempt 的剩余时限加 30 秒收尾预留。正常结束和取消均提前销毁，不等待寿命耗尽。命令超时或取消会销毁整个 Sandbox。保留与 Sandbox 复用不受支持。digest-pinned 镜像可使用 rootfs before cache，服务须配置公开 Snapshot API 与持久镜像存储。普通容器不提供专用 kernel 或内部 Docker daemon，不能满足 Nested Docker requirement。
-
-rootfs 缓存在派发前由 Run 准备一次，同一批 Attempt 都从同一份 snapshot 启动；它不保存进程、卷或 tmpfs。准备时发现新增挂载或已知敏感字节，不发布缓存，Attempt 照常执行剩余 before。运行中的服务应在 command barrier 后启动；Docker 镜像可先导出为 rootfs 内归档，再在恢复后导入独立 daemon。`sandboxCache.before` 与 CLI bypass 同时控制 lookup 和 publication。快照请求发出后失败会让依赖该前缀的配对在派发前失败，不重复已执行的 action。完整规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#opensandbox)。
-
-镜像必须以 root 启动 execd，并提供 Bash 和 Git。`user` 控制命令与 Agent 的身份，HOME、USER、LOGNAME 从该用户的 `/etc/passwd` entry 取得；调用方可显式替换这些变量。
-
-`codexAgent` 与 `claudeCodeAgent` 使用双向受管进程；镜像必须提供 Node.js 22 或更新版本。服务接入验收必须证明销毁成功响应代表实例及其进程已经终止；仅受理异步删除不能作为回收确认。该要求按服务行为验证，不按 runtime 名称判断。
-
-
-## Instabox
-
-`instaboxSandbox()` 用固定 snapshot ID 或模板标识声明一个 template-bearing layer。每条 Attempt 从该起点创建独立 Machine；起点不在运行中构建。
-
-```ts
-interface InstaboxSandboxOptions {
-  readonly snapshotId?: string;
-  readonly templateId?: InstaboxTemplateId;
-  readonly template?: InstaboxTemplateId;
-  readonly lifetimeMs?: number;
-  readonly spec?: InstaboxMachineSpec;
-  readonly resources?: { readonly vcpus: number; readonly memMiB: number };
-  readonly pathPrepend?: readonly string[];
-}
-
-instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
-```
-
-`InstaboxTemplateId` 支持官方模板标识（如 `universal`、`agent-browser`、`android`、`ci`）与自定义模板名称。`snapshotId` 必须是 `sn_` 开头的具体 ID，优先于模板标识。省略时使用 `templateId`，`template` 是别名；两者都提供时以 `templateId` 为准，都省略时使用 `universal`。计划、命令定位与创建请求统一使用 `templateId`。
-
-显式 `lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。
-
-`InstaboxMachineSpec` 接受官方标准命名 `instabox-small`、`instabox-medium`、`instabox-large`、`instabox-xlarge`、`instabox-2xlarge`，以及数值别名 `2/4`、`4/8`、`8/16`、`16/32`、`32/64`。`INSTABOX_MACHINE_SPECS` 导出各规格的 `vcpus` 与 `memMiB`，内存按 1024 MiB/GiB 换算。显式 `resources` 优先于 `spec`；都省略时使用 `instabox-medium`，即 4 vCPU、8192 MiB。计划保留配置求值后的资源与显式传入的 `spec`；无效规格在配置校验时报错。显式资源仍由账户配额校验。
-
-宿主设置 `INSTABOX_API_KEY`，并安装可选依赖 `ssh2@1.17.0`。服务地址固定为 `https://api.instabox.sh`。Key 与临时 SSH token 只保存在运行时内存，不进入公开配置、身份、命令事实或 Sandbox。创建关闭 Vault 与 Org Secrets 自动注入。
-
-Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 22 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
-
-该 Provider 的实例仅属于一条 Attempt。不支持留存、复用或 Nested Docker requirement。声明式 before 前缀在派发前由 Run 准备一次并保存为 NiceEval 拥有的 snapshot，每个 Attempt 从它创建独立 Machine；snapshot 保存磁盘，不保存进程、内存或 tmpfs。规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#instabox)。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制。超时或取消先精确终止该命令的进程组，确认后拒绝返回，Machine 与其它进程继续可用；不能确认终止时才退休整台 Machine，并在确认删除后拒绝返回，规则见[命令 timeout 与取消](operations.md#命令-timeout-与取消)。
-
-Snapshot 由项目的 Instabox 原生构建脚本管理，必须等到 `ready` 才写入配置。它保存系统文件和 `/data`，不保存进程；基础 snapshot 不应含 Agent 登录凭据。起点属于其 org，不能假定跨账户可见。OCI 导入会叠加 Instabox 系统文件，生成的 snapshot 与原 Docker image 是不同 Sandbox 起点。
-
-公共入口、隔离文件读写、原生 argv、流式输出、双向 stdin、取消后的资源终态与 snapshot 保留共同组成验收路径。真实服务未验证的能力不能由模拟通过替代。
+- [Provider](providers/README.md) —— 各内置 Provider 的选项、凭据、预制实例、Before cache 与现场接入。
