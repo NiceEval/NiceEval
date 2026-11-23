@@ -19,8 +19,8 @@ export default defineExperiment({
       await sibling.writeStdin(Buffer.from("before-cancel\n"));
       for (const mode of ["cancel", "timeout"] as const) {
         const cancellation = new AbortController();
-        let stdout = "",
-          failure = "";
+        let stdout = "";
+        let failure: unknown;
         try {
           await ctx.sandbox.runCommand(
             "node",
@@ -38,15 +38,18 @@ export default defineExperiment({
               timeoutMs: 5_000,
               onStdout(text) {
                 stdout += text;
-                if (mode === "cancel" && stdout.includes("cancel-ready:")) cancellation.abort();
+                if (mode === "cancel" && /^cancel-ready:\d+:\d+\n/m.test(stdout)) cancellation.abort();
               },
             },
           );
         } catch (cause) {
-          failure = cause instanceof Error ? cause.message : String(cause);
+          failure = cause;
         }
-        if (!failure.includes(mode === "cancel" ? "cancelled" : "timed out"))
-          throw new Error(`Missing ${mode} outcome: ${failure}`);
+        const expectedFailure =
+          mode === "cancel"
+            ? failure instanceof DOMException && failure.name === "AbortError" && failure === cancellation.signal.reason
+            : failure instanceof Error && failure.name === "SandboxCommandTimeoutError";
+        if (!expectedFailure) throw new Error(`Missing ${mode} outcome: ${String(failure)}`);
         const match = stdout.match(/cancel-ready:(\d+):(\d+)/);
         if (!match) throw new Error(`Command never reached its owned child: ${stdout}`);
         await ctx.sandbox.runCommandOrThrow("node", [

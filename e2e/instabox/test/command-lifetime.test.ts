@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
 import { context, verifyMachinesAbsent } from "./context.ts";
 
-// @feature docs/feature/sandbox/README.md
+// @feature docs/feature/sandbox/library/operations.md#命令-timeout-与取消
 test.concurrent.each([false, true])(
   "command cancellation confirms its process tree stopped while sibling processes remain usable (disconnect=%s)",
   async (disconnect) => {
