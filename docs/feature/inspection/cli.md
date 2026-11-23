@@ -1049,7 +1049,9 @@ interface CostGap {
 
 `models` 是去重后按 UTF-8 字节序排列的有界集合，不是预览：每页最多 64 个且序列化后不超过 128 KiB；单个模型名超过 128 KiB 时独占一页并完整交付，不截断、不因长度失败。
 `attempt.usage` 中 `omittedModelCount > 0` 时，把 `usage.continuation` 交回同一请求读取下一页。
-`experiment.get` 的 `modelUsage.attempts[].usage` 是摘要，其 gaps 只交付首页与计数；读取某个 Attempt 的完整名单时，用它的 locator 调 `attempt.usage`。`costSummary.totalCosts` 的 gaps 随 `experiment.modelUsage.continuation` 每次推进一页；Attempt 或 costSummary 名单任一仍有剩余时 continuation 存在，续读页中已交付的 Attempt 不再重复出现。
+`experiment.get` 的 `modelUsage.attempts[].usage` 是摘要，其 gaps 只交付首页与计数；读取某个 Attempt 的完整名单时，用它的 locator 调 `attempt.usage`。
+
+`costSummary.totalCosts` 的 gaps 随 `experiment.modelUsage.continuation` 每次推进一页；Attempt 或 costSummary 名单任一仍有剩余时 continuation 存在，续读页中已交付的 Attempt 不再重复出现。
 续读页中 totalCosts 的 state、values、missingSources 与各 gap 的 source、reason、totalModelCount 不变，只推进 models；已读完的 gap 在后续页 models 为空。超过页预算的单个模型名沿用超大单项规则，独占一页完整交付。
 
 missingSources 固定 application、judge、simulated-user 顺序，无重复。任一 owner 不完整就列入；没有缺口为 complete。
