@@ -10,7 +10,7 @@ OpenSandbox provider 通过服务 API 将一个远端 Sandbox 绑定到现有 At
 
 所有请求使用 server proxy 并保留 SDK 返回的 endpoint 路由与认证 header。当前接入使用服务代理，不要求 execd 的 secureAccess；服务必须使用仅可信宿主可访问的私有入口，或在 HTTP/WebSocket 全路径前置鉴权。控制 API key 本身不能保护上游免鉴权的 proxy 路由。禁用 SDK create telemetry。目标平台由声明显式给出，不能从宿主架构推断远端镜像。
 
-起点是 image，工作目录为 `/home/sandbox/workspace`。发布 identity 包含 image、目标平台、资源限制、user、pathPrepend 与 lifetimeMs；连接与凭据不构成可分享内容。单实例只有一个销毁 owner。创建不自动重试歧义结果；获取实例后立即登记 Scope finalizer，ready 或工作目录初始化失败也销毁。作者必须显式声明有限的 lifetimeMs，实例仍随 Scope 关闭；该寿命不得短于 Attempt 剩余时限与 30 秒收尾预留。有限寿命负责客户端崩溃后的最终回收，不替代取消确认。服务拒绝该寿命时保留真实失败，不静默缩短。
+起点是 image，工作目录为 `/home/sandbox/workspace`。发布 identity 包含 image、目标平台、资源限制、user、pathPrepend 与 lifetimeMs；连接与凭据不构成可分享内容。单实例只有一个销毁 owner。创建不自动重试歧义结果；获取实例后立即登记 Scope finalizer，ready 或工作目录初始化失败也销毁。lifetimeMs 可省略，省略时按 [服务端寿命](../../library/reuse.md#两种时间不能混用)派生；显式值不得短于 Attempt 剩余时限与 30 秒收尾预留。实例仍随 Scope 关闭。有限寿命负责客户端崩溃后的最终回收，不替代取消确认。服务拒绝该寿命时保留真实失败，不静默缩短。
 
 每次创建携带随机 provision token。创建失败后按该 token 查询并销毁已分配的实例，不接管其它请求。服务仍在处理但尚未返回的分配无法由一次查询排除，有限寿命约束这种未知状态；查询或销毁失败与原始创建失败一并报告。
 

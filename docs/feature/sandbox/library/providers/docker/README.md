@@ -4,7 +4,7 @@
 
 ## 预制实例
 
-官方起点就是默认镜像 `node:24-slim`(省略 `image` 时按 runtime 选它)。写 Dockerfile 从它派生、把 Agent CLI 烘焙进去。`npm install -g` 装进 `/usr/local/bin`,正好落在沙箱注入的 PATH 上;沙箱默认以非 root 的 `node`(UID 1000)用户跑命令,装到别处(如 `~/.local/bin`)的 Agent 需自己进 PATH:
+官方起点就是默认镜像 `node:24-slim`(省略 `image` 时按 runtime 选它)。写 Dockerfile 从它派生、把 Agent CLI 烘焙进去。`npm install -g` 装进 `/usr/local/bin`,正好落在沙箱注入的 PATH 上;装到别处(如 `~/.local/bin`)的 Agent 需自己进 PATH。沙箱默认沿用镜像声明的用户,`node:24-slim` 本身没有声明 `USER`,按 Docker 语义是 root;要让 Agent 以非 root 的 `node`(UID 1000)运行,在配方末尾声明 `USER node`(规则见 [执行身份](../../README.md#执行身份)):
 
 ```dockerfile
 # Dockerfile
@@ -13,6 +13,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @openai/codex@0.144.1
+USER node
 ```
 
 ```typescript

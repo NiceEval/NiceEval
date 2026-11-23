@@ -18,7 +18,7 @@ instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 
 `InstaboxTemplateId` 支持官方模板标识（如 `universal`、`agent-browser`、`android`、`ci`）与自定义模板名称。`snapshotId` 必须是 `sn_` 开头的具体 ID，优先于模板标识。省略时使用 `templateId`，`template` 是别名；两者都提供时以 `templateId` 为准，都省略时使用 `universal`。计划、命令定位与创建请求统一使用 `templateId`。
 
-显式 `lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，必须长于 Attempt 剩余时限与 30 秒收尾预留。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。
+显式 `lifetimeMs` 是 60 秒至 24 小时的整秒毫秒数，不得短于 Attempt 剩余时限与 30 秒收尾预留；省略时按 [服务端寿命](../../reuse.md#两种时间不能混用)派生。服务端 `deleteAfterSeconds` 提供失联后的回收上界，正常结束和取消仍立即删除 Machine。
 
 `InstaboxMachineSpec` 接受官方标准命名 `instabox-small`、`instabox-medium`、`instabox-large`、`instabox-xlarge`、`instabox-2xlarge`，以及数值别名 `2/4`、`4/8`、`8/16`、`16/32`、`32/64`。`INSTABOX_MACHINE_SPECS` 导出各规格的 `vcpus` 与 `memMiB`，内存按 1024 MiB/GiB 换算。显式 `resources` 优先于 `spec`；都省略时使用 `instabox-medium`，即 4 vCPU、8192 MiB。计划保留配置求值后的资源与显式传入的 `spec`；无效规格在配置校验时报错。显式资源仍由账户配额校验。
 

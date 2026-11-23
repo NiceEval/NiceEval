@@ -263,7 +263,7 @@ handle 或可再次写盘的回调。
 
 进程内的收尾集合与 Scope finalizer 顾及不到 `SIGKILL` / 宿主断电——没有任何代码来得及执行,正在跑的沙箱就地变成 provider 侧的无主实例。这条路径的回退不追求「杀不掉的进程也能收尾」(做不到),而是把「事后认领」做成可靠的机器动作:创建时把归属写进实例元数据,事后按归属核对与收回。
 
-- **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(Run 时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的回退是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
+- **运行标识在创建期写入。** 全部支持元数据的 Provider 都写 Run 标签 `niceeval.run_id` 与 `niceeval.created_at`,映射见 [创建标签](../library/reuse.md#两种时间不能混用)。可在同宿主核对属主进程的 Provider 另写属主标识:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(生成属主快照的时刻)。Docker 与 Compose 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道),Incus 用实例的 `user.niceeval.*` 配置;Instabox 与 OpenSandbox 只写 Run 标签与 provision token。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的回退是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
 - **NiceEval 不自建孤儿轮询或收回命令。** 运行标识让用户与 Coding Agent 能用 Provider 原生过滤(如 `docker ps -a --filter "label=niceeval"`)区分实例归属:同宿主且 `pid` 已不存活的实例是孤儿;属主进程仍存活的实例属于另一次运行;`host` 不匹配的实例需要人工确认。
 - **收回按 case 的实例及伴随资源整体进行**:单 Sandbox 实例只有主实例;Compose 实例的运行标识写在 project label 上,伴随容器、网络与 volume 随 project 整组销毁。case 新增资源种类(sidecar 容器、网络、volume、云端资源)时,必须让它带上同一运行标识,不允许有原生过滤看不见的残留。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,回退在实验面,机制见 [Experiments · 强杀后的收尾回退](../../experiments/architecture/README.md#强杀后的收尾回退收尾登记与启动自愈)。
