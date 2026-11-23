@@ -1,4 +1,4 @@
-import { knownSensitiveValues } from "../sandbox/redaction.ts";
+import { knownSensitiveValues, redactSensitiveText } from "../sandbox/redaction.ts";
 import { Effect } from "effect";
 import { makeSandboxAgent } from "../define.ts";
 import { getEnv, requireEnv } from "../util.ts";
@@ -72,8 +72,12 @@ wrapper_dir="$HOME/.niceeval-dsh/.niceeval-bin"
 mkdir -p "$wrapper_dir"
 printf '%s\n' '#!/bin/sh' 'exec corepack pnpm@${DSH_PNPM_VERSION} "$@"' > "$wrapper_dir/pnpm"
 chmod +x "$wrapper_dir/pnpm"
-PATH="$wrapper_dir:$PATH" dsh plugin --profile headless add ${specs}
-DSH_HOME="$DSH_HOME" dsh --profile headless --dump-config >/dev/null`;
+PATH="$wrapper_dir:$PATH" dsh plugin --profile headless add ${specs} &&
+  dsh --profile headless --dump-config-schema >/dev/null || {
+  status=$?
+  rm -rf "$DSH_HOME/profiles/headless"
+  exit "$status"
+}`;
         await sandbox.runShellOrThrow(script, { signal: context.signal });
       },
     },
@@ -86,6 +90,25 @@ function resolveApiKey(config?: DeepSeekHarnessConfig): string {
 
 function resolveBaseUrl(config?: DeepSeekHarnessConfig): string | undefined {
   return config?.baseUrl ?? getEnv("DSH_BASE_URL") ?? getEnv("DEEPSEEK_BASE_URL");
+}
+
+function pluginActivationWarnings(stderr: string, plugins: readonly ExactNpmPlugin[]): string[] {
+  const warnings: string[] = [];
+  let remaining = 0;
+  for (const line of stderr.split(/\r?\n/u)) {
+    if (line.startsWith("dsh: ")) {
+      const summary = /^dsh: warning: (\d+) entr(?:y|ies) did not activate$/u.exec(line);
+      remaining = Number(summary?.[1] ?? 0);
+      if (plugins.some(({ name }) => line.startsWith(`dsh: skipping profile bundle "${name}": `))) {
+        warnings.push(line);
+      }
+    } else if (remaining > 0 && /^\S.* \([^)]+\): /u.test(line)) {
+      // A bundle can supply entries whose module names differ from the declared bundle package.
+      warnings.push(line);
+      remaining--;
+    }
+  }
+  return warnings;
 }
 
 /** DeepSeek Harness sandbox adapter backed by its one-shot headless profile. */
@@ -153,17 +176,27 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         };
         const baseUrl = resolveBaseUrl(config);
         if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
+        const sensitiveValues = knownSensitiveValues(apiKey, baseUrl);
         const args = ["--profile", "headless", "--patch", `${dshHome}/${DSH_RUN_PATCH}`, input.text];
         const res = yield* Effect.tryPromise({
           try: (signal) =>
             ctx.sandbox.runCommand(dshBin, args, {
               env,
-              sensitiveValues: knownSensitiveValues(apiKey),
+              sensitiveValues,
               stream: true,
               signal,
             }),
           catch: normalizeSendFailure,
         });
+        if (pluginLayer !== undefined) {
+          for (const warning of pluginActivationWarnings(res.stderr, plugins)) {
+            ctx.diagnostic({
+              code: "dsh-plugin-activation-failed",
+              level: "warning",
+              message: redactSensitiveText(warning, sensitiveValues),
+            });
+          }
+        }
         const text = res.stdout.trim();
         if (res.exitCode !== 0 || !text) {
           return yield* Effect.fail(
