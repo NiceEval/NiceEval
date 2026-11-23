@@ -68,6 +68,9 @@ export default defineConfig({
         ...sourceProject,
         test: {
           name,
+          // Docker inventory scans the entire daemon while other Docker files install
+          // packages in live snapshots. Give each file exclusive use of the CI daemon.
+          ...(name === "docker" && { fileParallelism: false }),
           execArgv: SOURCE_EXEC_ARGV,
           server: sourceDeps,
           include: [conditionedTests(name)],
