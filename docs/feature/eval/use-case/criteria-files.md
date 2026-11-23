@@ -19,7 +19,7 @@ export default defineEval({
     await t.send("补测试把 gcov 行覆盖率提过线;不许改 tests/ 下的文件。");
 
     await t.sandbox.uploadDirectory(new URL("fixtures/sqlite/with-gcov/", import.meta.url), "/tests", {
-      ignore: ["**/__pycache__/**"],
+      ignore: ["__pycache__"],
     });
     const result = await t.sandbox.runShell("bash /tests/run-tests.sh");
     t.check(result, commandSucceeded());
@@ -36,7 +36,7 @@ export default defineEval({
 `uploadDirectory(localDir, targetDir, options)` 的 `localDir` 接受 Eval 模块相对 URL 或相对路径。
 
 目录按稳定相对路径顺序展开。
-`ignore` 使用项目统一 glob 语义，只过滤该 source 下的相对路径。
+`ignore` 按任意深度的文件或目录 basename 字面量匹配，不解释 glob，规则见[目录传输的排除规则](../../sandbox/library/README.md#目录传输的排除规则)。
 
 source 不存在、穿出项目根、符号链接逃逸或目录展开为空时，上传调用报清晰错误。
 
