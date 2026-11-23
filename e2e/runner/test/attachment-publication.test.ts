@@ -28,11 +28,36 @@ test.concurrent.each(["messages", "coverage"])(
   },
 );
 
+// @feature docs/feature/run/README.md#publication-visibility
+test.concurrent("large valid usage retains all calls when publishing the Attempt", async () => {
+  await runnerE2E.case("large-usage-publication", {}, async ({ commands: { niceeval } }) => {
+    const run = await niceeval.run(["exp", "large-usage", "--rerun", "all", "--json"]);
+    expect(run.exitCode, run.diagnostic()).toBe(0);
+    expect(run.expReceipt().completion).toBe("completed");
+    expect(run.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
+    const locator = run.expEvalEvents()[0]!.locator!;
+    const shown = await niceeval.run(["show", locator, "usage", "--json"]);
+    expect(shown.exitCode, shown.diagnostic()).toBe(0);
+    const usage = shown.attemptUsage().usage;
+    expect(usage).toMatchObject({
+      state: "complete",
+      callsTruncated: true,
+      totals: {
+        requests: { state: "available", value: 3000, observationCount: 3000 },
+      },
+    });
+    expect(usage.calls[0]).toMatchObject({ callId: "request-0", model: "fixture-model-" + "x".repeat(200) });
+    expect(usage.calls.length + usage.omittedCallCount).toBe(3000);
+  });
+});
+
 // @feature docs/feature/run/README.md
 // @regression memory/attachment-encode-error-hides-family-and-schema-path.md
 test.concurrent("an unencodable observability family leaves a diagnostic while publishing the Attempt", async () => {
   await runnerE2E.case("attachment-failure-publication", {}, async ({ commands: { niceeval } }) => {
-    const run = await niceeval.run(["exp", "large-usage", "--rerun", "all", "--json"]);
+    const run = await niceeval.run(["exp", "large-usage", "--rerun", "all", "--json"], {
+      env: { NICEEVAL_MALFORMED_USAGE_MODEL: "1" },
+    });
     expect(run.exitCode, run.diagnostic()).toBe(0);
     expect(run.expReceipt().completion).toBe("completed");
     expect(run.expEvalEvents()).toEqual([expect.objectContaining({ verdict: "passed" })]);
@@ -48,7 +73,7 @@ test.concurrent("an unencodable observability family leaves a diagnostic while p
       expect.arrayContaining([
         expect.objectContaining({
           code: "record-attachment-schema-invalid",
-          summary: expect.stringContaining("value"),
+          summary: JSON.stringify(["value", "calls", "0", "model"]),
         }),
       ]),
     );
