@@ -5,6 +5,7 @@ import { Effect, Schema } from "effect";
 import type { InstaboxProviderPlan } from "../instabox.ts";
 import { BeforeCacheSnapshotError, type BeforeCacheSnapshotDriver } from "../remote-snapshot/driver.ts";
 import { InstaboxApi, InstaboxApiError } from "./api.ts";
+import { instaboxReadRequest } from "./provisioning.ts";
 
 const Snapshot = Schema.Struct({
   id: Schema.String,
@@ -102,8 +103,9 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
         const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
         if (now - deadline >= snapshotSettleMs) return yield* fail("wait-ready");
         yield* Effect.sleep("1 second");
-        snapshot = yield* boundary("wait-ready", (signal) =>
-          client.json(Snapshot, `/snapshots/${encodeURIComponent(snapshot.id)}`, { signal }),
+        const path = `/snapshots/${encodeURIComponent(snapshot.id)}`;
+        snapshot = yield* instaboxReadRequest((signal) => client.json(Snapshot, path, { signal })).pipe(
+          Effect.mapError(() => fail("wait-ready")),
         );
       }
       if (snapshot.status !== "ready" || snapshot.name !== name) return yield* fail("wait-ready");
@@ -114,7 +116,9 @@ export const instaboxSnapshotDriver: BeforeCacheSnapshotDriver<InstaboxProviderP
   ),
   findSnapshot: Effect.fn("instaboxSnapshotDriver.findSnapshot")(function* (_plan, name) {
     // The official SnapshotList is complete and has no pagination fields.
-    const result = yield* boundary("find", (signal) => api().json(SnapshotList, "/snapshots", { signal }));
+    const result = yield* instaboxReadRequest((signal) => api().json(SnapshotList, "/snapshots", { signal })).pipe(
+      Effect.mapError(() => fail("find")),
+    );
     const matches = result.snapshots.filter((snapshot) => snapshot.name === name);
     if (matches.length > 1) return yield* fail("find-ambiguous");
     const snapshot = matches[0];

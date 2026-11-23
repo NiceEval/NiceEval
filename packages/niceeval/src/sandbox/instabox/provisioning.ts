@@ -34,14 +34,21 @@ export class InstaboxPreparationError extends Error {
   }
 }
 
+export function instaboxReadRequest<T>(run: (signal: AbortSignal) => Promise<T>) {
+  return withSandboxIoRetry(providerBoundaryEffect(run), {
+    classify: (error) => classifySandboxIoError(error instanceof InstaboxApiError ? { status: error.status } : error),
+  });
+}
+
 export function preparationRequest<T>(
   operation: "snapshot lookup" | "startup wait" | "machine readiness check" | "SSH grant",
   run: (signal: AbortSignal) => Promise<T>,
 ) {
-  return withSandboxIoRetry(providerBoundaryEffect(run), {
-    classify(error) {
-      if (operation === "SSH grant") return isRejectedProvisionError(provisionKind(error)) ? "network" : "unknown";
-      return classifySandboxIoError(error instanceof InstaboxApiError ? { status: error.status } : error);
-    },
-  }).pipe(Effect.mapError((cause) => new InstaboxPreparationError(operation, cause)));
+  const request =
+    operation === "SSH grant"
+      ? withSandboxIoRetry(providerBoundaryEffect(run), {
+          classify: (error) => (isRejectedProvisionError(provisionKind(error)) ? "network" : "unknown"),
+        })
+      : instaboxReadRequest(run);
+  return request.pipe(Effect.mapError((cause) => new InstaboxPreparationError(operation, cause)));
 }
