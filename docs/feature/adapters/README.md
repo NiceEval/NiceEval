@@ -21,6 +21,9 @@ NiceEval 不要求被测对象实现统一协议。`defineAdapter` 提供原生�
    Agent 会话中 `Turn.events` 是工具调用的行为依据；链路追踪提供统一树形 Span（llm、retriever、tool、chain），供瀑布图呈现与 `t.trace` 细粒度断言。
 4. **能力由构造证明。**
    Adapter 实际返回的状态、事件、usage 与会话行为决定哪些 eval 判定可信，不使用一张声明式 capability 问卷。
+5. **官方 Adapter 跟随上游最新版本。**
+   版本表中的默认版本跟随上游最新发布；升级默认版本时 Adapter 按该版本的原生协议重写，并删除只为旧版本存在的代码路径。
+   实验可以用 `version` 显式指定某个版本以便复现，但官方 Adapter 只按当前默认版本实现与验收，不为更早版本保留兼容分支（[T-1](../../taste.md#t-1)）。
 
 ## 从哪里开始
 
