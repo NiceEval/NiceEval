@@ -4,13 +4,14 @@ import { sandbox } from "../sandbox.ts";
 
 const agent = deepSeekHarnessAgent({
   apiKey: process.env.DEEPSEEK_API_KEY,
+  baseUrl: process.env.DEEPSEEK_BASE_URL,
   plugins: ["dsh-dead-links@0.1.1"],
 });
 
 export default defineExperiment({
   description: "DeepSeek Harness adapter 的目标兼容性闭环",
   adapter: agent,
-  model: "deepseek-v4-flash",
+  model: "deepseek-v4.1-flash",
   sandbox,
   evals: ["message"],
   attempts: 1,

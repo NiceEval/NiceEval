@@ -48,7 +48,8 @@
             "testkit": true
           },
           "secrets": [
-            "DEEPSEEK_API_KEY"
+            "DEEPSEEK_API_KEY",
+            "DEEPSEEK_BASE_URL"
           ],
           "requires": {
             "docker": true,

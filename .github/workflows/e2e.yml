@@ -531,6 +531,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
@@ -543,6 +544,7 @@ jobs:
             "ANTHROPIC_API_KEY",
             "ANTHROPIC_BASE_URL",
             "DEEPSEEK_API_KEY",
+            "DEEPSEEK_BASE_URL",
             "OPENCODE_API_KEY",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
@@ -584,7 +586,7 @@ jobs:
           const fs = require('node:fs');
           const cells = JSON.parse(fs.readFileSync(process.env.MANIFESTS_FILE, 'utf8'));
           const names = cells.flatMap(({ manifest }) => JSON.parse(fs.readFileSync(manifest, 'utf8')).targets.e2e.metadata.niceeval.secrets);
-          const required = names.some((name) => name === 'OPENAI_BASE_URL' || name === 'ANTHROPIC_BASE_URL');
+          const required = names.some((name) => ['OPENAI_BASE_URL', 'ANTHROPIC_BASE_URL', 'DEEPSEEK_BASE_URL'].includes(name));
           if (required && (!process.env.TS_AUTHKEY || process.env.JOB_CONTAINER !== 'null')) {
             console.error('Model network requires TS_AUTHKEY and a host executor.');
             process.exit(1);

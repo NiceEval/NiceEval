@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const names = ["E2E_MODEL_BASE_URL", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL"];
+const names = ["E2E_MODEL_BASE_URL", "OPENAI_BASE_URL", "ANTHROPIC_BASE_URL", "DEEPSEEK_BASE_URL"];
 export const unreachableReason = "model-endpoint-unreachable";
 
 // All endpoints share a three-minute budget. The injectable clock/transport are

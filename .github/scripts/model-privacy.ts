@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 // Deployment configuration stays in Secrets. Never print raw network errors.
 const names = [
   "E2E_MODEL_BASE_URL", "E2E_MODEL_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_KEY",
-  "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY", "TS_AUTHKEY",
+  "ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY", "TS_AUTHKEY",
 ];
 export function sensitiveValues(env) {
   const values = new Set();
