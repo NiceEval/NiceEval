@@ -1,4 +1,4 @@
-// 跨进程保证：运行环境——独立子进程测量 160 MiB 流式归档的 RSS 增长上限、并发锁等待与便携式 Record CLI 读取
+// 跨进程保证：运行环境——独立子进程测量 160 MiB 流式接管的存活内存、并发锁等待与便携式 Record CLI 读取
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, open, readFile, realpath, rm, watch, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import { runHost } from "niceeval/run/host";
 import { runCliInProcess } from "../../packages/niceeval/src/cli/in-process.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
-describe("real process CLI and streaming attachment RSS boundary", () => {
+describe("real process CLI and streaming attachment memory boundary", () => {
   let cwd: string;
   let recordDir: string;
   let portableRecord: string;
@@ -65,23 +65,36 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
           create(ctx) {
             return {
               async archive() {
-                const baseline = process.memoryUsage().rss;
+                const liveBytes = async () => {
+                  // Last-resort GC finishes ArrayBuffer sweeping before we sample.
+                  await globalThis.gc({ type: "major", execution: "async", flavor: "last-resort" });
+                  const { heapUsed, arrayBuffers } = process.memoryUsage();
+                  return heapUsed + arrayBuffers;
+                };
+                const baseline = await liveBytes();
                 let peak = baseline;
-                const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 25);
-                try {
-                  const receipt = await ctx.attach({
-                    name: "journal.ndjson",
-                    mediaType: "application/x-ndjson",
-                    body: { stream: (signal) => createReadStream(projectFile("journal.ndjson"), { signal, highWaterMark: 1024 * 1024 }) },
-                  });
-                  peak = Math.max(peak, process.memoryUsage().rss);
-                  await writeFile(projectFile("journal.ndjson"), "rewritten");
-                  await writeFile(projectFile("receipt.tmp"), [receipt.artifactId, receipt.sha256, receipt.byteLength, peak - baseline].join("\\n"));
-                  await rename(projectFile("receipt.tmp"), projectFile("receipt.txt"));
-                  return receipt.byteLength;
-                } finally {
-                  clearInterval(sampler);
-                }
+                const receipt = await ctx.attach({
+                  name: "journal.ndjson",
+                  mediaType: "application/x-ndjson",
+                  body: {
+                    async *stream(signal) {
+                      let bytesSinceSample = 0;
+                      for await (const chunk of createReadStream(projectFile("journal.ndjson"), { signal, highWaterMark: 1024 * 1024 })) {
+                        yield chunk;
+                        bytesSinceSample += chunk.byteLength;
+                        if (bytesSinceSample >= 16 * 1024 * 1024) {
+                          peak = Math.max(peak, await liveBytes());
+                          bytesSinceSample = 0;
+                        }
+                      }
+                    },
+                  },
+                });
+                peak = Math.max(peak, await liveBytes());
+                await writeFile(projectFile("journal.ndjson"), "rewritten");
+                await writeFile(projectFile("receipt.tmp"), [receipt.artifactId, receipt.sha256, receipt.byteLength, peak - baseline].join("\\n"));
+                await rename(projectFile("receipt.tmp"), projectFile("receipt.txt"));
+                return receipt.byteLength;
               },
             };
           },
@@ -137,7 +150,7 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
   }, 90_000);
 
   const runArchive = () =>
-    execa(process.execPath, [...process.execArgv, cli, "exp", "stream-280", "--rerun", "all", "--json"], {
+    execa(process.execPath, [...process.execArgv, "--expose-gc", cli, "exp", "stream-280", "--rerun", "all", "--json"], {
       cwd,
       reject: false,
       timeout: 60_000,
@@ -196,11 +209,12 @@ describe("real process CLI and streaming attachment RSS boundary", () => {
   }
 
   // @feature docs/feature/inspection/README.md#attachment-archive
-  test("streaming a 160 MiB file attachment keeps child process RSS growth below 128 MiB", async () => {
-    const [, sha256, byteLength, rssGrowth] = (await readArchiveReceipt()).split("\n");
+  test("accepting a 160 MiB file attachment keeps live memory bounded in the child process", async () => {
+    const [, sha256, byteLength, liveBytesGrowth] = (await readArchiveReceipt()).split("\n");
     expect(sha256).toBe(expectedSha);
     expect(Number(byteLength)).toBe(160 * 1024 * 1024);
-    expect(Number(rssGrowth)).toBeLessThan(128 * 1024 * 1024);
+    // Allow for the file stream's read-ahead, the owned 1 MiB chunk, and runtime bookkeeping.
+    expect(Number(liveBytesGrowth)).toBeLessThan(16 * 1024 * 1024);
   }, 30_000);
 
   describe("archived file readback", () => {
