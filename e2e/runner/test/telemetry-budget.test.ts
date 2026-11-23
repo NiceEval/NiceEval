@@ -33,6 +33,7 @@ test.concurrent("a slow telemetry read retains the decoded prefix as partial, pr
     expect(trace.execution.traces).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          schema: expect.objectContaining({ id: "niceeval.otlp" }),
           collection: {
             state: "partial",
             limitations: [expect.objectContaining({ code: "telemetry-budget-exceeded" })],
@@ -42,7 +43,12 @@ test.concurrent("a slow telemetry read retains the decoded prefix as partial, pr
       ]),
     );
     expect(trace.diagnostics.items).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "telemetry-budget-exceeded" })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "telemetry-budget-exceeded",
+          summary: expect.stringContaining("during telemetry.read"),
+        }),
+      ]),
     );
     const shown = await niceeval.run(["show", locator, "timing"]);
     expect(shown.stdout, shown.diagnostic()).toContain("telemetry.map");
@@ -52,6 +58,7 @@ test.concurrent("a slow telemetry read retains the decoded prefix as partial, pr
       "--filter",
       `label=niceeval.run_id=${result.expReceipt().createdRunIds[0]}`,
     ]);
+    expect(containers.exitCode, containers.diagnostic()).toBe(0);
     expect(containers.stdout.trim(), containers.diagnostic()).toBe("");
   });
 });

@@ -2,9 +2,10 @@ import { defineExperiment } from "niceeval";
 import { defineSandboxAgent, completeEvidenceCoverage } from "niceeval/adapter";
 import { dockerSandbox, shell } from "niceeval/sandbox";
 
+const toolsPath = "/tmp/niceeval-telemetry-tools";
 const sandbox = dockerSandbox({
   source: { type: "image", image: "node@sha256:cd84903a12dbd26b46f1f3b8144a2568c41c5d37ddd0c7a80a34c7a19786b35f" },
-  pathPrepend: ["/tmp/niceeval-telemetry-tools"],
+  pathPrepend: [toolsPath],
   user: "node",
   resources: { cpus: 1, memoryBytes: 536870912, pidsLimit: 128 },
 });
@@ -15,13 +16,21 @@ const adapter = defineSandboxAgent({
   tracing: { protocol: "http/json" },
   async send(_input, ctx) {
     const endpoint = ctx.telemetry!.endpoint;
-    if (process.env.NICEEVAL_TELEMETRY_SLOW === "1") {
-      await ctx.sandbox.runShellOrThrow("mkdir -p /tmp/niceeval-telemetry-tools");
+    const stallRead = process.env.NICEEVAL_TELEMETRY_SLOW === "1";
+    if (stallRead) {
+      const fifo = `${toolsPath}/blocked-read`;
+      await ctx.sandbox.runShellOrThrow(`mkdir -p ${toolsPath} && mkfifo ${fifo}`);
       await ctx.sandbox.writeText(
-        "/tmp/niceeval-telemetry-tools/dd",
-        '#!/bin/sh\ncase "$*" in *skip=1*) sleep 45;; esac\nexec /bin/dd "$@"\n',
+        `${toolsPath}/node`,
+        `#!/bin/sh
+case "$1:$3:$4" in
+  -e:/tmp/.niceeval-otlp-spans-*:0) ;;
+  -e:/tmp/.niceeval-otlp-spans-*:*) exec cat ${fifo} ;;
+esac
+exec /usr/local/bin/node "$@"
+`,
       );
-      await ctx.sandbox.runShellOrThrow("chmod +x /tmp/niceeval-telemetry-tools/dd");
+      await ctx.sandbox.runShellOrThrow(`chmod +x ${toolsPath}/node`);
     }
     await ctx.sandbox.runCommandOrThrow("node", [
       "-e",
@@ -33,9 +42,11 @@ const adapter = defineSandboxAgent({
         attributes: [{ key: "fixture.padding", value: { stringValue: "x".repeat(1024) } }],
       }));
       (async () => {
-        for (const batch of [[spans[0]], spans.slice(1)]) {
+        for (const [index, batch] of [[spans[0]], spans.slice(1)].entries()) {
+          // Make the second envelope exceed one uncompressed spool chunk.
+          const padding = ${stallRead} && index === 1 ? "x".repeat(4 * 1024 * 1024) : "";
           const response = await fetch(${JSON.stringify(endpoint)}, { method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ resourceSpans: [{ scopeSpans: [{ spans: batch }] }] }) });
+            body: JSON.stringify({ resourceSpans: [{ scopeSpans: [{ spans: batch }] }], padding }) });
           if (!response.ok) throw new Error("trace export failed");
         }
       })().catch(error => { console.error(error); process.exitCode = 1; });
