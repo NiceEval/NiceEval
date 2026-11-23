@@ -574,7 +574,7 @@ instaboxSandbox({ snapshotId: "sn_example", lifetimeMs: 60 * 60 * 1000 });
 
 Snapshot 必须提供 Linux x64 GNU 系统、Bash、Git、Node.js 22 或更新版本，以及允许免密 sudo 的非 root 登录用户。工作目录为 `/data/home/workspace`，文件和命令默认使用 snapshot 的登录身份；单条命令只额外支持 `user: "root"`。`pathPrepend` 按声明顺序作用于所有受管命令。平台和工具在 Machine ready 后检查，失败立即回收。
 
-该 Provider 的实例仅属于一条 Attempt。不支持留存、复用或 Nested Docker requirement。声明式 before 前缀在派发前由 Run 准备一次并保存为 NiceEval 拥有的 snapshot，每个 Attempt 从它创建独立 Machine；snapshot 保存磁盘，不保存进程、内存或 tmpfs。规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#instabox)。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制，超时或取消在确认整台 Machine 删除后才拒绝返回。
+该 Provider 的实例仅属于一条 Attempt。不支持留存、复用或 Nested Docker requirement。声明式 before 前缀在派发前由 Run 准备一次并保存为 NiceEval 拥有的 snapshot，每个 Attempt 从它创建独立 Machine；snapshot 保存磁盘，不保存进程、内存或 tmpfs。规则见[远端 snapshot Before cache](../architecture/remote-snapshot-cache.md#instabox)。`otlpHost` 为 `null`，Runner 在 Sandbox 内启动 receiver。命令不受 HTTP exec 的 600 秒限制。超时或取消先精确终止该命令的进程组，确认后拒绝返回，Machine 与其它进程继续可用；不能确认终止时才退休整台 Machine，并在确认删除后拒绝返回，规则见[命令 timeout 与取消](operations.md#命令-timeout-与取消)。
 
 Snapshot 由项目的 Instabox 原生构建脚本管理，必须等到 `ready` 才写入配置。它保存系统文件和 `/data`，不保存进程；基础 snapshot 不应含 Agent 登录凭据。起点属于其 org，不能假定跨账户可见。OCI 导入会叠加 Instabox 系统文件，生成的 snapshot 与原 Docker image 是不同 Sandbox 起点。
 
