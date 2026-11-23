@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { PassThrough } from "node:stream";
 import fc from "fast-check";
+import { shared } from "niceeval/adapter";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   noSandboxBackendCapabilities,
@@ -19,6 +20,33 @@ import {
 } from "./fixtures/judge-harness/harness.ts";
 
 const registerProcess = Symbol.for("niceeval.test.codex-headers-access");
+
+const patches = [
+  { path: "edited.txt", kind: { type: "update", move_path: null }, status: "completed" },
+  { path: "added.txt", kind: { type: "add" }, status: "failed" },
+  { path: "deleted.txt", kind: { type: "delete" }, status: "declined" },
+] as const;
+
+// @feature docs/feature/adapters/README.md#protocol-normalization
+test("parses a file change from Codex exec JSONL through the public converter", () => {
+  const item = { id: "item_0", type: "file_change", changes: [{ path: "edited.txt", kind: "update" }] };
+  const jsonl = [
+    { type: "item.started", item: { ...item, status: "in_progress" } },
+    { type: "item.completed", item: { ...item, status: "completed" } },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join("\n");
+
+  const change = { path: "edited.txt", kind: "update" };
+  expect(shared.parseCodex(jsonl).events).toMatchObject([
+    {
+      type: "operation.started",
+      operationId: "item_0#0",
+      operation: { kind: "tool", name: "file_change", tool: "file_edit", input: change },
+    },
+    { type: "operation.finished", operationId: "item_0#0", kind: "tool", output: change, status: "completed" },
+  ]);
+});
 
 function startCodexAppServer(argv: readonly string[]): ManagedProcess {
   const stdout = new PassThrough();
@@ -39,6 +67,11 @@ function startCodexAppServer(argv: readonly string[]): ManagedProcess {
       if (frame.method === "turn/start") {
         emit({ id: frame.id, result: { turn: { id: "fixture-turn" } } });
         const params = { threadId: "fixture-session", turnId: "fixture-turn" };
+        for (const { path, kind, status } of patches) {
+          const item = { id: path, type: "fileChange", changes: [{ path, kind, diff: "fixture diff" }] };
+          emit({ method: "item/started", params: { ...params, item: { ...item, status: "inProgress" } } });
+          emit({ method: "item/completed", params: { ...params, item: { ...item, status } } });
+        }
         emit({ method: "item/completed", params: { ...params, item: { id: "msg-1", type: "agentMessage", text: "ok" } } });
         emit({ method: "turn/completed", params: { ...params, turn: { id: "fixture-turn", status: "completed" } } });
       } else {
@@ -115,6 +148,7 @@ const SCENARIOS: readonly Scenario[] = [
 describe("codexAgent headers and Cloudflare Access config generation and redaction", () => {
   const results = new Map<string, { configToml: string; commandsText: string; passed: boolean }>();
   const projects: string[] = [];
+  let patchEvidence: { tool: string; input: unknown; outcome: string | undefined }[] = [];
 
   beforeAll(async () => {
     Reflect.set(process, registerProcess, (sandbox: Sandbox) => {
@@ -153,6 +187,7 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
                 const res = await t.sandbox.runShell("cat ~/.codex/config.toml");
                 await writeFile(resolve(import.meta.dirname, "..", "config-toml.txt"), res.stdout, "utf8");
                 t.check(res.stdout, includes('model = "gpt-5.4"')).label("model-written");
+                ${scenario.name === "no-base" ? 'await t.send("Exercise Codex native patch events");' : ""}
               },
             });
           `,
@@ -180,6 +215,22 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
       const [execDoc] = await showJsonDocuments(cwd, [locator, "execution"]);
       const exec = narrowInspectionSuccess(execDoc!, "attempt.trace");
       if (!exec.success) throw new Error(exec.reason);
+      if (scenario.name === "no-base") {
+        const items = exec.value.trace.conversation.items;
+        patchEvidence = items.flatMap((item) => {
+          if (item.kind !== "tool-call" || item.toolOccurrenceId === undefined) return [];
+          const result = items.find(
+            (entry) => entry.kind === "tool-result" && entry.toolOccurrenceId === item.toolOccurrenceId,
+          );
+          return [
+            {
+              tool: item.tool,
+              input: JSON.parse(item.input),
+              outcome: result?.kind === "tool-result" ? result.outcome : undefined,
+            },
+          ];
+        });
+      }
       const commands = await Promise.all(
         exec.value.trace.identityIndex.commandIds.map(async (id) => (await showJsonDocuments(cwd, [locator, id]))[0]),
       );
@@ -196,6 +247,15 @@ describe("codexAgent headers and Cloudflare Access config generation and redacti
     Reflect.deleteProperty(process, registerProcess);
     vi.unstubAllEnvs();
     await Promise.all(projects.map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  // @feature docs/feature/adapters/README.md#protocol-normalization
+  test("pairs Codex app-server file changes and outcomes in the public trace", () => {
+    expect(patchEvidence).toEqual([
+      { tool: "file_change", input: { path: "edited.txt", kind: "update" }, outcome: "completed" },
+      { tool: "file_change", input: { path: "added.txt", kind: "add" }, outcome: "failed" },
+      { tool: "file_change", input: { path: "deleted.txt", kind: "delete" }, outcome: "rejected" },
+    ]);
   });
 
   // @feature docs/feature/adapters/README.md#tool-projection-and-privacy

@@ -1,4 +1,4 @@
-// Codex exec JSONL and session rollout share this single protocol boundary.
+// Codex exec JSONL and normalized app-server notifications share this parser.
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 import type { CommandProjection, StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
@@ -20,6 +20,8 @@ const id = field(Schema.Union([Schema.String, Schema.Number]));
 const TextBlock = Schema.Union([Schema.String, Schema.Struct({ text: string, content: string, thinking: string })]);
 const Content = Schema.Union([Schema.String, Schema.Array(TextBlock)]);
 const textFields = { text: field(Content), content: field(Content), summary: field(Schema.Array(TextBlock)) };
+// Codex exec emits a string kind and app-server emits an object tagged by type.
+const changeKind = field(Schema.Union([Schema.String, Schema.Struct({ type: Schema.String })]));
 const itemFields = {
   ...textFields,
   id,
@@ -42,7 +44,7 @@ const itemFields = {
   query: json,
   search: json,
   results: json,
-  changes: field(Schema.Array(Schema.Struct({ path: json, file: json, kind: string, type: string }))),
+  changes: field(Schema.Array(Schema.Struct({ path: json, file: json, kind: changeKind, type: string }))),
   path: json,
   kind: string,
   usage: field(TokenUsage),
@@ -307,14 +309,16 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
       case "file_patch": {
         if (!completed) return;
         const changes = item.changes ?? [{ path: item.path, file: undefined, kind: undefined, type: undefined }];
+        const status = commandStatus(item.status, undefined);
         changes.forEach((change, index) => {
           const path = change.path ?? change.file;
-          const kind = (change.kind ?? change.type ?? item.kind ?? "update").toLowerCase();
+          const reportedKind = typeof change.kind === "string" ? change.kind : change.kind?.type;
+          const kind = (reportedKind ?? change.type ?? item.kind ?? "update").toLowerCase();
           const tool: ToolName = kind === "add" || kind === "delete" ? "file_write" : "file_edit";
           const callId = `${baseId || "patch"}#${index}`;
           const input = path === undefined ? { kind } : { path, kind };
           emitCall(callId, "file_change", input, tool, notCommandProjection());
-          emitResult(callId, input, "completed");
+          emitResult(callId, input, status);
         });
         return;
       }
