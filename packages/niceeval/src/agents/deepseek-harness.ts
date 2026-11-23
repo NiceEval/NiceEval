@@ -33,6 +33,7 @@ export interface DeepSeekHarnessConfig {
 }
 
 const DSH_PNPM_VERSION = "10.17.1";
+const DSH_RUN_PATCH = "niceeval.patch.yml";
 
 function dshPluginLayer(
   cliVersion: string,
@@ -121,17 +122,18 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
             throw new Error("DeepSeek Harness setup requires an absolute sandbox HOME directory");
           }
           const dshHome = `${home}/.niceeval-dsh`;
+          const patch = [
+            {
+              id: "agent-default-model",
+              config: {
+                provider: "deepseek-official",
+                model: ctx.model ?? "deepseek-v4-flash",
+              },
+            },
+            { id: "permission", config: { defaultPreset: "danger-full-access" } },
+          ];
+          await sb.writeText(`${dshHome}/${DSH_RUN_PATCH}`, JSON.stringify(patch, null, 2));
           homes.set(sb.sandboxId, dshHome);
-          const settings = {
-            "agent-default-model": {
-              provider: "deepseek-official",
-              model: ctx.model ?? "deepseek-v4-flash",
-            },
-            permission: {
-              defaultPreset: "danger-full-access",
-            },
-          };
-          await shared.writeFile(sb, `${dshHome}/settings.yaml`, JSON.stringify(settings, null, 2));
         },
         catch: (cause) => cause,
       }),
@@ -151,9 +153,10 @@ export function deepSeekHarnessAgent(config?: DeepSeekHarnessConfig): Agent {
         };
         const baseUrl = resolveBaseUrl(config);
         if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
+        const args = ["--profile", "headless", "--patch", `${dshHome}/${DSH_RUN_PATCH}`, input.text];
         const res = yield* Effect.tryPromise({
           try: (signal) =>
-            ctx.sandbox.runCommand(dshBin, ["--profile", "headless", input.text], {
+            ctx.sandbox.runCommand(dshBin, args, {
               env,
               sensitiveValues: knownSensitiveValues(apiKey),
               stream: true,

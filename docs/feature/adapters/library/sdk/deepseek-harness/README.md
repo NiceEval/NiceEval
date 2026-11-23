@@ -11,7 +11,7 @@ deepSeekHarnessAgent({
 ```
 
 每个 Sandbox 使用隔离的 `DSH_HOME`，
-`settings.yaml` 只保存 `deepseek-official` provider、实验 model 与 `danger-full-access` 权限预设；
+`niceeval.patch.yml` 只保存 `deepseek-official` provider、实验 model 与 `danger-full-access` 权限预设；
 secret 只通过 `DEEPSEEK_API_KEY` 注入子进程。
 
 CLI 与插件是两条有顺序的 Agent Install。插件探测命令只读验证 headless profile 的直接依赖、实际 package
@@ -20,7 +20,8 @@ CLI 与插件是两条有顺序的 Agent Install。插件探测命令只读验�
 同一运行用户、`HOME` 与 `DSH_HOME=$HOME/.niceeval-dsh` 预装，就会直接命中该层；普通镜像首次联网安装，
 复用 Sandbox 的后续 Attempt 再命中。
 
-`send()` 运行 `dsh --profile headless <prompt>`。只有 exit 0 且 stdout 存在非空最终 assistant 文本时返回
+`send()` 运行 `dsh --profile headless --patch <path> <prompt>`，首条模型请求使用实验 model。
+只有 exit 0 且 stdout 存在非空最终 assistant 文本时返回
 `completed` Turn；非零、信号或空终局都是 `SendFailure`。headless 协议不暴露工具轨迹和 token usage，
 因此 events/actions/usage 如实标成 unavailable，messages 与 status 则由公开输出与进程终态完整观测。
 
