@@ -14,14 +14,25 @@ const readRevision = (root, revision, file) => {
   if (exists.status !== 0) return undefined;
   return git(root, ["show", `${revision}:${file}`]);
 };
-export function substantiveSource(file, source) {
+// The npm repair case alone builds this Docker context. All unassigned inputs
+// remain shared, including when the declared Concord case no longer exists.
+const privateFixtureOwners = new Map([[
+  "e2e/runner/fixtures/codex-npm/Dockerfile",
+  "e2e/runner/test/codex-login-patch.test.ts#neref_50a12241c29342f0aa71197821ad3b3c",
+]]);
+
+export function substantiveSource(file, source, isProjectManifest = false) {
   if (source === undefined) return undefined;
   if (/\.[cm]?[jt]sx?$/.test(file)) {
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
     return ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed }).printFile(parsed);
   }
   if (file.endsWith(".json")) {
-    try { return JSON.stringify(JSON.parse(source)); } catch { return source; }
+    try {
+      const json = JSON.parse(source);
+      if (isProjectManifest) delete json.targets?.e2e?.metadata?.niceeval?.timeoutMinutes;
+      return JSON.stringify(json);
+    } catch { return source; }
   }
   return source;
 }
@@ -34,8 +45,10 @@ export function selectTakeoverOwners({ root, base, head, plan, cases }) {
     ? git(root, ["hash-object", "-t", "tree", "--stdin"]).trim()
     : git(root, ["rev-parse", "--verify", `${base}^{commit}`]).trim();
   // PR uses its merge-base; push compares the exact before/after trees (also handles force pushes).
+  const manifests = new Set(plan.cells.flatMap(cell => cell.dirs.map(dir => `e2e/${dir}/project.json`)));
+  const sourceAt = (revision, file) => substantiveSource(file, readRevision(root, revision, file), manifests.has(file));
   const changed = git(root, ["diff", "--no-renames", "--name-only", "-z", resolvedBase, resolvedHead]).split("\0").filter(Boolean)
-    .filter(file => substantiveSource(file, readRevision(root, resolvedBase, file)) !== substantiveSource(file, readRevision(root, resolvedHead, file)));
+    .filter(file => sourceAt(resolvedBase, file) !== sourceAt(resolvedHead, file));
   const active = cases.filter(owner => owner.status === "active" && owner.file.startsWith("e2e/"));
   const ownerFiles = new Set(active.map(owner => owner.file));
   const cells = [];
@@ -47,16 +60,49 @@ export function selectTakeoverOwners({ root, base, head, plan, cases }) {
       const metadata = JSON.parse(readFileSync(join(root, prefix, "project.json"), "utf8")).targets.e2e.metadata.niceeval;
       if (metadata.requires?.externalNetwork === true) continue;
       const repoCases = active.filter(owner => owner.file.startsWith(prefix));
-      const sharedChanged = changed.some(file => file.startsWith(prefix) && !ownerFiles.has(file) && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file));
+      const changedInputs = changed.filter(file => file.startsWith(prefix) && !ownerFiles.has(file) && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file));
+      const repoSelectors = new Set(repoCases.map(owner => `${owner.file}#${owner.id}`));
+      const fixtureOwners = new Set<string>();
+      let sharedChanged = false;
+      for (const file of changedInputs) {
+        const selector = privateFixtureOwners.get(file);
+        if (selector === undefined || !repoSelectors.has(selector)) {
+          sharedChanged = true;
+          break;
+        }
+        fixtureOwners.add(selector);
+      }
       for (const owner of repoCases) {
-        if (!sharedChanged && !changed.includes(owner.file)) continue;
+        const selector = `${owner.file}#${owner.id}`;
+        if (!sharedChanged && !changed.includes(owner.file) && !fixtureOwners.has(selector)) continue;
         if (!/^neref_[a-f0-9]{32}$/.test(owner.id)) throw Error("invalid Concord case id");
-        owners.push({ repo, selector: `${owner.file}#${owner.id}` });
+        owners.push({ repo, selector });
       }
     }
     if (owners.length) cells.push({ ...cell, owners: owners.sort((a, b) => a.selector.localeCompare(b.selector)) });
   }
-  return { base: resolvedBase, head: resolvedHead, changedPaths: changed, cells };
+  return { base: resolvedBase, head: resolvedHead, changedPaths: changed, cells: shardTakeoverCells(cells) };
+}
+
+export function shardTakeoverCells(cells) {
+  // Keep one reliability matrix per runner whenever it fits GitHub's 256-job limit.
+  const matrixLimit = 256;
+  if (cells.length > matrixLimit) throw Error("takeover source cells exceed the GitHub matrix limit");
+  let ownersPerJob = 1;
+  while (cells.reduce((jobs, cell) => jobs + Math.ceil(cell.owners.length / ownersPerJob), 0) > matrixLimit) {
+    ownersPerJob++;
+  }
+  return cells.flatMap(cell => {
+    const shards = [];
+    for (let start = 0; start < cell.owners.length; start += ownersPerJob) {
+      shards.push({
+        id: `${cell.id}.${shards.length + 1}`,
+        sourceCellId: cell.id,
+        owners: cell.owners.slice(start, start + ownersPerJob),
+      });
+    }
+    return shards;
+  });
 }
 
 export function runOwners({ plan, cellId, candidate, artifactRoot }) {
