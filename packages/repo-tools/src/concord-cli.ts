@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Data, Effect, Schema, Stream } from "effect";
@@ -234,7 +234,7 @@ export const readConcordTestListAtRevision = Effect.fn("readConcordTestListAtRev
     Effect.gen(function* () {
       const temporary = yield* Effect.acquireRelease(
         Effect.tryPromise({
-          try: () => mkdtemp(join(tmpdir(), "niceeval-pr-history-")),
+          try: async () => mkdtemp(join(await realpath(tmpdir()), "niceeval-pr-history-")),
           catch: (error) => new ConcordCliFailed({ op: "history", message: String(error) }),
         }),
         (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),

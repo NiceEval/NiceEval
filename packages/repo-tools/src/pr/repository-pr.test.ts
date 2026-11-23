@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
@@ -39,7 +39,7 @@ test("fixture contract", () => {});
 `;
 const fixture = () =>
   Effect.acquireRelease(
-    Effect.sync(() => mkdtempSync(join(tmpdir(), "concord-pr-source-"))),
+    Effect.sync(() => mkdtempSync(join(realpathSync(tmpdir()), "concord-pr-source-"))),
     (root) => Effect.sync(() => rmSync(root, { recursive: true, force: true })),
   ).pipe(
     Effect.tap((root) =>
