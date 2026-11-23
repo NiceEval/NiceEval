@@ -86,11 +86,14 @@ const callBody = fc
     triple: tokenTriple,
     known: fc.record({ input: fc.boolean(), read: fc.boolean(), write: fc.boolean(), total: fc.boolean() }),
     modelRole: fc.constantFrom<string | null>("planner", "reviewer", null),
-    identity: fc.constantFrom<[string | null, string | null]>(
-      ["offline", "primary"],
-      ["offline", "fallback"],
-      [null, "fallback"],
-      [null, null],
+    identity: fc.oneof(
+      fc.constantFrom<[string | null, string | null]>(
+        ["offline", "primary"],
+        ["offline", "fallback"],
+        [null, "fallback"],
+        [null, null],
+      ),
+      fc.nat(1024).map((length) => ["offline", `model-${"界".repeat(length)}`] as const),
     ),
     status: fc.constantFrom<Status>("succeeded", "failed", "cancelled", "unknown"),
   })
@@ -161,6 +164,12 @@ const invalidReason = fc.oneof(
 
 const ratioSamples = [
   { id: "ratio-regression", calls: PINNED_CALLS, seal: "complete" as const, invalidReasons: [] },
+  {
+    id: "model-name-regression",
+    calls: [{ ...PINNED_CALLS[0]!, model: `a${"界".repeat(84)}😀` }],
+    seal: "complete" as const,
+    invalidReasons: [],
+  },
   ...fc.sample(fc.tuple(callList, sealPlan), explorationRuns).map(([calls, seal], index) => ({
     id: `ratio-exploration-${index + 1}`,
     calls,
@@ -247,6 +256,7 @@ describe("adapter usage accounting", () => {
       const report = usage.cacheRead;
       // Canonical seals (complete, partial with a valid reason, or none) never error the Attempt.
       expect(attempt.verdict, context).toBe("passed");
+      expect(usage.calls?.map(({ model }) => model), context).toEqual(calls.map(({ model }) => model));
 
       // Rate and reason come from the contract formula, for the total, each role, and each exact model group.
       expect(report.total.rate, context).toEqual(expectedRate(calls, complete));

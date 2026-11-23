@@ -10,14 +10,7 @@ import {
 } from "./pricing.ts";
 
 const Identity = Schema.String.pipe(
-  Schema.check(
-    Schema.makeFilter(
-      (value) =>
-        value.trim().length > 0 &&
-        new TextEncoder().encode(value).byteLength <= 256 &&
-        !/[\u0000-\u001f\u007f]/u.test(value),
-    ),
-  ),
+  Schema.check(Schema.makeFilter((value) => value.trim().length > 0 && !/[\u0000-\u001f\u007f]/u.test(value))),
 );
 const Tokens = Schema.NullOr(NonNegativeSafeIntegerSchema);
 const AdapterUsageRouteSchema = Schema.Struct({
