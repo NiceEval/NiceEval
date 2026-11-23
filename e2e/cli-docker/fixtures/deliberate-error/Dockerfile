@@ -1,4 +1,4 @@
-FROM node@sha256:a723b54c35a76e947095a20a67d39585bb09c862e6b1adeb8a9f518f95e34fb0
+FROM node@sha256:e18c3ccdf7d71619990b0e85639f506e2028a95410999cab24cc373cbd10e0ac
 
 RUN mkdir -p /home/node/.codex /tmp/niceeval \
   && chown -R node:node /home/node /tmp/niceeval
