@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const agent = claudeCodeAgent({
@@ -13,7 +13,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "coding:基线 claude-code agent —— coding-task、session resume/usage 与 WebSearch 正例",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   flags: { webResearch: true, expectedWebSearch: true },
   sandbox,
   attempts: 1,

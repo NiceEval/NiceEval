@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const MCP_HTTP_PORT = 32131;
@@ -65,7 +65,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "mcp:挂载了 stdio + Streamable HTTP MCP server 的 claude-code agent",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   sandbox,
   attempts: 1,
   evals: (e) => e.id === "mcp-tools",

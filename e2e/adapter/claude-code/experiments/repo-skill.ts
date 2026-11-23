@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const agent = claudeCodeAgent({
@@ -20,7 +20,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "repo-skill:从钉定 Git commit 安装 calibre Skill，并由 Claude 原生发现",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   sandbox,
   attempts: 1,
   evals: ["repo-skill"],

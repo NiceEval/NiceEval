@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 export default defineExperiment({
@@ -10,7 +10,7 @@ export default defineExperiment({
     baseUrl: process.env.ANTHROPIC_BASE_URL,
     env: claudeCodeProviderEnv,
   }),
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   sandbox,
   flags: { requestHitl: true },
   evals: ["hitl-options"],

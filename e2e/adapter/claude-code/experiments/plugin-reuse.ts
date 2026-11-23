@@ -2,7 +2,7 @@
 // 题间重置点，$HOME 保留上一波安装。八条 attempt 都必须调用 Plugin MCP 工具成功。
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { pluginMarketplacePath, pluginSandbox } from "../plugin-sandbox.ts";
 
 const agent = claudeCodeAgent({
@@ -23,7 +23,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "plugin 复用:四路并发的两波 attempt 都能调用签入的 MCP Plugin 的 MCP 工具",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   sandbox: pluginSandbox,
   evals: (e) => e.id === "plugin-mcp",
   attempts: 8,

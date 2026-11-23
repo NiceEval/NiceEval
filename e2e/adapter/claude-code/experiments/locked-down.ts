@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { sandbox } from "../sandbox.ts";
 
 const agent = claudeCodeAgent({
@@ -19,7 +19,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "locked-down:挂了 settingsFile 拒绝 WebSearch/WebFetch 的 claude-code agent",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   flags: { expectedWebSearch: false },
   sandbox,
   attempts: 1,

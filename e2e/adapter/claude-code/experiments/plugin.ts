@@ -1,6 +1,6 @@
 import { defineExperiment } from "niceeval";
 import { claudeCodeAgent } from "niceeval/adapter";
-import { claudeCodeProviderEnv } from "../provider.ts";
+import { claudeCodeLiveModel, claudeCodeProviderEnv } from "../provider.ts";
 import { pluginMarketplacePath, pluginSandbox } from "../plugin-sandbox.ts";
 
 const agent = claudeCodeAgent({
@@ -22,7 +22,7 @@ const agent = claudeCodeAgent({
 export default defineExperiment({
   description: "plugin:从本地 marketplace 安装 Plugin，并调用其 stdio MCP server",
   adapter: agent,
-  model: "gpt-6-luna",
+  model: claudeCodeLiveModel,
   sandbox: pluginSandbox,
   attempts: 1,
   evals: (e) => e.id === "plugin-mcp",

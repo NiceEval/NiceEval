@@ -13,9 +13,7 @@ import {
 import type { Turn, TurnInput } from "niceeval";
 import { isAbsolute, join } from "node:path";
 
-// The existing Anthropic-compatible live leaves use this proxy-supported model.
-// Keep it explicit so this standalone repository has no implicit model default.
-export const CLAUDE_AGENT_SDK_LIVE_MODEL = "gpt-6-luna";
+export const CLAUDE_AGENT_SDK_LIVE_MODEL = "deepseek-v4.1-flash";
 
 function requiredAbsolutePath(name: string): string {
   const value = process.env[name];
