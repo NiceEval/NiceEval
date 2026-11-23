@@ -1,4 +1,5 @@
 import { sandboxCreationMetadata } from "../cloud-lifetime.ts";
+import { Effect } from "effect";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { openAsBlob } from "node:fs";
@@ -7,7 +8,12 @@ import { dirname } from "node:path";
 import { constants } from "node:os";
 import { StringDecoder } from "node:string_decoder";
 import type { DiagnosticInput } from "../../types.ts";
-import { noSandboxBackendCapabilities, supportedBackendCapability, type SandboxProviderBackend } from "../backend.ts";
+import {
+  noSandboxBackendCapabilities,
+  providerBoundaryEffect,
+  supportedBackendCapability,
+  type SandboxProviderBackend,
+} from "../backend.ts";
 import { commandLimit, SandboxCommandTimeoutError } from "../deadline.ts";
 import { registerSandboxContent, registeredSandboxContentSnapshotOf } from "../content.ts";
 import { shellQuote } from "../shell.ts";
@@ -24,15 +30,16 @@ import type {
 } from "../types.ts";
 import type { InstaboxProviderPlan } from "../instabox.ts";
 import {
-  InstaboxApi,
+  type InstaboxApi,
   instaboxRequestError,
   type InstaboxRequestError,
   Machine,
   Operation,
-  Snapshot,
+  InstaboxOperationError,
   SSHToken,
 } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
+import { InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
 import { InstaboxConnection } from "./connection.ts";
 
 function recoveryForRequest(cause: InstaboxRequestError): "not-found" | "operation-conflict" | "other" {
@@ -70,17 +77,6 @@ function allocationRejected(cause: InstaboxRequestError): boolean {
       return false;
     default:
       return cause satisfies never;
-  }
-}
-
-// Keep raw request/response data out of the operation label. The SSH supervisor
-// and API decoder already own the safe detail exposed by their errors.
-async function preparationStep<T>(operation: string, pending: Promise<T>): Promise<T> {
-  try {
-    return await pending;
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : "unknown error";
-    throw new Error(`Instabox ${operation} failed: ${detail}`, { cause });
   }
 }
 
@@ -135,25 +131,13 @@ export class InstaboxBackend implements SandboxProviderBackend {
   }
 
   static async create(
+    api: InstaboxApi,
     options: InstaboxProviderPlan & { readonly lifetimeMs: number },
     deadlineAt?: number,
     runId?: string,
     diagnostic?: (input: DiagnosticInput) => void,
     creationLabels?: Readonly<Record<string, string>>,
   ): Promise<InstaboxBackend> {
-    if (options.lifetimeMs < 60_000 || options.lifetimeMs > 86_400_000)
-      throw new Error("Instabox lifetimeMs must be between 60 seconds and 24 hours");
-    const key = process.env.INSTABOX_API_KEY;
-    if (!key) throw new Error("INSTABOX_API_KEY is required for Instabox");
-    const api = new InstaboxApi(key);
-    if (options.source._tag === "Snapshot") {
-      const snapshot = await preparationStep(
-        "snapshot lookup",
-        api.json(Snapshot, `/snapshots/${encodeURIComponent(options.source.id)}`),
-      );
-      if (snapshot.id !== options.source.id || snapshot.status !== "ready")
-        throw new Error("Instabox snapshot must match the configured ID and be ready");
-    }
     const idempotencyKey = randomUUID();
     const body = JSON.stringify({
       ...(options.source._tag === "Snapshot" ? { snapshotId: options.source.id } : { templateId: options.source.id }),
@@ -173,8 +157,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
       operation = await request();
     } catch (cause) {
       const failure = instaboxRequestError(cause);
-      if (allocationRejected(failure))
-        throw new Error(`Instabox allocation failed: ${failure.message}`, { cause: failure });
+      if (allocationRejected(failure)) throw new InstaboxPreparationError("allocation", failure);
       // Replay only the same allocation identity, never allocate a second machine.
       try {
         operation = await request();
@@ -190,43 +173,46 @@ export class InstaboxBackend implements SandboxProviderBackend {
     return backend;
   }
 
-  async initialize(signal: AbortSignal): Promise<void> {
-    const limit = Math.max(1, Math.min(this.options.lifetimeMs, (this.deadlineAt ?? Infinity) - Date.now()));
-    const bounded = AbortSignal.any([signal, AbortSignal.timeout(limit)]);
-    await preparationStep("startup wait", this.api.wait(this.operation, bounded));
-    const machine = await preparationStep(
-      "machine readiness check",
-      this.api.json(Machine, this.path, { signal: bounded }),
-    );
-    if (machine.id !== this.sandboxId || machine.state !== "running" || !machine.runtime.ready)
-      throw new Error("Instabox Machine is not ready");
-    this.token = await preparationStep(
-      "SSH grant",
-      this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
-        method: "POST",
-        body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }),
-        signal: bounded,
-      }),
-    );
-    if (this.token.machineId !== this.sandboxId) throw new Error("Instabox SSH grant belongs to another Machine");
-    this.connection = new InstaboxConnection(this.token, (signal) =>
-      this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
-        method: "POST",
-        body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }),
-        signal,
-      }),
-    );
-    const probe = await preparationStep(
-      "workspace probe",
-      this.runShell(
-        'test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace',
-        { cwd: "/data/home", signal: bounded },
-      ),
-    );
-    if (probe.exitCode !== 0)
-      throw new Error(
-        `Instabox snapshot requires Linux x64 GNU, Node.js 22+, Bash, Git and a non-root user with passwordless sudo; exitCode: ${probe.exitCode}; stdout: ${probe.stdout}; stderr: ${probe.stderr}`,
+  initialize() {
+    return Effect.gen({ self: this }, function* () {
+      let current = this.operation;
+      while (current.state === "queued" || current.state === "running") {
+        current = yield* preparationRequest("startup wait", (signal) =>
+          this.api.json(Operation, `/operations/${encodeURIComponent(this.operation.id)}?wait=25s`, { signal }),
+        );
+      }
+      if (current.state !== "succeeded") {
+        const cause = new InstaboxOperationError(current.error?.code);
+        return yield* Effect.fail(new Error(`Instabox startup wait failed: ${cause.message}`, { cause }));
+      }
+      const machine = yield* preparationRequest("machine readiness check", (signal) =>
+        this.api.json(Machine, this.path, { signal }),
       );
+      if (machine.id !== this.sandboxId || machine.state !== "running" || !machine.runtime.ready)
+        return yield* Effect.fail(new Error("Instabox Machine is not ready"));
+      const requestToken = (signal: AbortSignal) =>
+        this.api.json(SSHToken, `${this.path}/ssh-tokens`, {
+          method: "POST",
+          body: JSON.stringify({ name: "niceeval-attempt", ttlSeconds: Math.ceil(this.options.lifetimeMs / 1000) }),
+          signal,
+        });
+      this.token = yield* preparationRequest("SSH grant", requestToken);
+      if (this.token.machineId !== this.sandboxId)
+        return yield* Effect.fail(new Error("Instabox SSH grant belongs to another Machine"));
+      this.connection = new InstaboxConnection(this.token, requestToken);
+      const probe = yield* providerBoundaryEffect((signal) =>
+        this.runShell(
+          'test "$(uname -sm)" = "Linux x86_64" && getconf GNU_LIBC_VERSION && test "$(id -u)" != 0 && sudo -n true && git --version && mkdir -p /data/home/workspace',
+          { cwd: "/data/home", signal },
+        ),
+      ).pipe(Effect.mapError((cause) => new Error(`Instabox workspace probe failed: ${cause.message}`, { cause })));
+      if (probe.exitCode !== 0)
+        return yield* Effect.fail(
+          new Error(
+            `Instabox snapshot requires Linux x64 GNU, Node.js 22+, Bash, Git and a non-root user with passwordless sudo; exitCode: ${probe.exitCode}; stdout: ${probe.stdout}; stderr: ${probe.stderr}`,
+          ),
+        );
+    });
   }
 
   private async startProcess(input: ManagedProcessStart, root = false): Promise<ManagedProcess> {

@@ -134,20 +134,20 @@ export class InstaboxApi {
   ): Promise<S["Type"]> {
     const response = await this.request(path, init);
     // Schema errors can include input fragments. Do not leak provider response values.
+    let body: unknown;
     try {
-      return Schema.decodeUnknownSync(schema)(await response.json());
+      body = await response.json();
     } catch (cause) {
       if (cause instanceof DOMException && (cause.name === "TimeoutError" || cause.name === "AbortError")) throw cause;
+      // A failed fetch body stream is a transport failure. Syntax and schema
+      // errors may contain response data, so neither may escape this boundary.
+      if (cause instanceof TypeError) throw new TypeError("fetch failed");
       throw new InstaboxProtocolError();
     }
-  }
-
-  async wait(operation: Operation, signal: AbortSignal): Promise<void> {
-    let current = operation;
-    while (current.state === "queued" || current.state === "running") {
-      signal.throwIfAborted();
-      current = await this.json(Operation, `/operations/${encodeURIComponent(operation.id)}?wait=25s`, { signal });
+    try {
+      return Schema.decodeUnknownSync(schema)(body);
+    } catch {
+      throw new InstaboxProtocolError();
     }
-    if (current.state !== "succeeded") throw new InstaboxOperationError(current.error?.code);
   }
 }
