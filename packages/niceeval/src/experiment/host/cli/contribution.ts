@@ -498,6 +498,9 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
     readonly slotId: string;
     readonly experimentId: string;
     readonly evalId: string;
+    readonly executionIdentityDigest: string;
+    readonly evalGroupId: string | undefined;
+    readonly evalGroupIndex: number | undefined;
     readonly attempt: number;
     readonly state: "reused" | "gap";
     readonly comparisons: readonly ExperimentHostDryComparison[];
@@ -518,18 +521,23 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
     }
   >();
   for (const slot of plan.slots) {
-    const key = JSON.stringify([slot.target.experimentId, slot.target.evalId]);
+    const { evalGroup, ...target } = slot.target;
+    const evalGroupId = evalGroup?.id;
+    const evalGroupIndex = evalGroup?.index;
+    const key = JSON.stringify([target.experimentId, target.evalId]);
     const row = rows.get(key) ?? {
-      experimentId: slot.target.experimentId,
-      evalId: slot.target.evalId,
-      evalGroupId: slot.target.evalGroup?.id,
-      evalGroupIndex: slot.target.evalGroup?.index,
+      experimentId: target.experimentId,
+      evalId: target.evalId,
+      evalGroupId,
+      evalGroupIndex,
       slots: [],
       readbacks: [],
       locked: undefined,
     };
     row.slots.push({
-      ...slot.target,
+      ...target,
+      evalGroupId,
+      evalGroupIndex,
       state: slot.state === "reuse" ? "reused" : "gap",
       comparisons: slot.comparisons,
       reason: slot.state === "gap" ? slot.reason : undefined,

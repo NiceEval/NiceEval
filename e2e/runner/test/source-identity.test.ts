@@ -155,9 +155,16 @@ const lexicalCases = [
   {
     name: "CJS HTML 注释",
     ext: "cjs",
-    before: "<!-- before\nmodule.exports = 9;",
-    after: "<!-- after\nmodule.exports = 9;",
+    before: "<!-- before\nexports.value = 9;",
+    after: "<!-- after\nexports.value = 9;",
     reused: 1,
+  },
+  {
+    name: "CJS HTML 注释后的代码变化",
+    ext: "cjs",
+    before: "<!-- before\nexports.value = 9;",
+    after: "<!-- after\nexports.value = 8;",
+    reused: 0,
   },
   {
     name: "普通行拆分",
@@ -314,7 +321,13 @@ test.concurrent("条件 import 进入身份但不提前执行，Group 普通注�
     );
     const dry = await niceeval.run(["exp", "carry", "--dry", "--json"]);
     expect(dry.exitCode, dry.diagnostic()).toBe(0);
-    expect(decodeExpPlanDocument(dry.json())).toMatchObject({ reused: 2 });
+    expect(decodeExpPlanDocument(dry.json())).toMatchObject({
+      reused: 2,
+      matrix: [
+        { evalId: "simple/alpha", slots: [{ evalGroupId: "simple", evalGroupIndex: 0, state: "reused" }] },
+        { evalId: "simple/beta", slots: [{ evalGroupId: "simple", evalGroupIndex: 1, state: "reused" }] },
+      ],
+    });
     writeFileSync(dependency, 'throw new Error("CONDITIONAL_IMPORT_MUST_NOT_EXECUTE"); export const x = 2;');
     const changed = await niceeval.run(["exp", "carry", "--dry", "--json"]);
     expect(changed.exitCode, changed.diagnostic()).toBe(0);
