@@ -31,13 +31,11 @@ const operations = {
 };
 
 // @feature docs/feature/run/README.md#historical-results
-test("a Record from an older NiceEval is refused with a rerun hint and every operation leaves its bytes untouched", async () => {
-  await fc.assert(
-    fc.asyncProperty(
-      fc.constantFrom(...predecessors),
-      fc.constantFrom(...(Object.keys(operations) as (keyof typeof operations)[])),
-      fc.uuid(),
-      async (predecessor, operation, runId) => {
+test.for(["list", "get", "delete", "recover"] as const)(
+  "%s refuses a predecessor Record with a rerun hint and leaves its bytes and directory untouched",
+  async (operation) => {
+    await fc.assert(
+      fc.asyncProperty(fc.constantFrom(...predecessors), fc.uuid(), async (predecessor, runId) => {
         const { cwd, record } = await projectWith((target) => copyFile(fixture(predecessor), target));
         try {
           const before = await readFile(record);
@@ -49,14 +47,17 @@ test("a Record from an older NiceEval is refused with a rerun hint and every ope
             expect(result.failure.cause).toMatchObject({ _tag: "SqliteRecordError", code: "record-schema-unsupported" });
           }
           expect((await readFile(record)).equals(before)).toBe(true);
+          expect(await readdir(join(cwd, ".niceeval"))).toEqual(["record.sqlite"]);
         } finally {
           await rm(cwd, { recursive: true, force: true });
         }
-      },
-    ),
-    { numRuns: 3, examples: [["0.18", "list", "00000000-0000-4000-8000-000000000000"]] },
-  );
-});
+      }),
+      operation === "list"
+        ? { numRuns: 2, examples: [["0.18", "00000000-0000-4000-8000-000000000000"]] }
+        : { numRuns: 1 },
+    );
+  },
+);
 
 // @feature docs/feature/run/README.md#historical-results
 test("an unreadable Record file keeps a classified read failure and its original bytes", async () => {
@@ -123,20 +124,3 @@ test.for([
     }
   },
 );
-
-// Rejected input keeps its directory intact: no new files appear beside the original.
-// @feature docs/feature/run/README.md#historical-results
-test("refusing a predecessor Record adds no files to its storage directory", async () => {
-  await fc.assert(
-    fc.asyncProperty(fc.constantFrom(...predecessors), fc.constantFrom(...(Object.keys(operations) as (keyof typeof operations)[])), async (predecessor, operation) => {
-      const { cwd } = await projectWith((target) => copyFile(fixture(predecessor), target));
-      try {
-        await operations[operation](cwd, "00000000-0000-4000-8000-000000000000");
-        expect(await readdir(join(cwd, ".niceeval"))).toEqual(["record.sqlite"]);
-      } finally {
-        await rm(cwd, { recursive: true, force: true });
-      }
-    }),
-    { numRuns: 3, examples: [["0.18", "list"]] },
-  );
-});

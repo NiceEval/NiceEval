@@ -55,6 +55,9 @@ export default defineConfig({
         ...sourceProject,
         test: {
           name: "default",
+          // Record tests start their own storage workers inside Vitest's file workers.
+          // Leave CPU capacity for them when measuring wall time on GitHub runners.
+          maxWorkers: process.env.GITHUB_ACTIONS === "true" ? "50%" : undefined,
           execArgv: SOURCE_EXEC_ARGV,
           server: sourceDeps,
           include: [`test/${LAYERS}/**/*.test.ts`],

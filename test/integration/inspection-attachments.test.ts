@@ -262,7 +262,7 @@ describe("attachment archive", () => {
         offset += bytes.length;
         expect(part.nextOffset).toBe(offset === expectedBinary.length ? null : offset);
       }
-      expect(Buffer.concat(chunks)).toEqual(expectedBinary);
+      expect(Buffer.concat(chunks).equals(expectedBinary), "Reconstructed attachment bytes").toBe(true);
 
       // Exact EOF offset === byteLength returns empty base64 and null nextOffset.
       expect(
@@ -308,7 +308,10 @@ describe("attachment archive", () => {
             }).artifact;
             if (slice.state !== "available") throw new Error("Expected available slice");
             const expectedEnd = Math.min(expectedBinary.length, sliceOffset + sliceLimit);
-            expect(Buffer.from(slice.base64, "base64")).toEqual(expectedBinary.subarray(sliceOffset, expectedEnd));
+            expect(
+              Buffer.from(slice.base64, "base64").equals(expectedBinary.subarray(sliceOffset, expectedEnd)),
+              `Attachment bytes at offset ${sliceOffset} with limit ${sliceLimit}`,
+            ).toBe(true);
             expect(slice.nextOffset).toBe(expectedEnd < expectedBinary.length ? expectedEnd : null);
           },
         ),

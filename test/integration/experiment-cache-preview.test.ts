@@ -1,11 +1,17 @@
 import fc from "fast-check";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { Effect } from "effect";
 import { experimentHost } from "niceeval/experiment/host";
 import { createFixtureProject } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 
 // @feature docs/feature/experiments/README.md#readonly-cache-preview
-test("debug reports each declared before prefix once with its selected Eval consumers", async () => {
+test("debug reports each declared before prefix once with its selected Eval consumers", async ({ onTestFinished }) => {
+  // The preview fixture can plan without discovering a Docker daemon's platform.
+  vi.stubEnv("DOCKER_DEFAULT_PLATFORM", "linux/amd64");
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
   await fc.assert(
     fc.asyncProperty(fc.integer({ min: 2, max: 4 }), fc.integer({ min: 1, max: 3 }), async (count, attempts) => {
       const keys = Array.from({ length: count }, (_, index) => `e${index}`);
