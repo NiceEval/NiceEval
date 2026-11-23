@@ -1,13 +1,12 @@
 // rerun: pnpm e2e test --candidate source --lane main --repo instabox -- --run test/before-cache.test.ts
 import { readFile, writeFile } from "node:fs/promises";
-import { join, delimiter } from "node:path";
-import { homedir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { context } from "./context.ts";
 
 // @use-case docs/feature/sandbox/use-case/sandbox-cloud-before-cache.md
 test.concurrent("Instabox 冷链的多个发布点继续使用同一源 Machine", async () => {
-  await context.case("continuous-before-cache", async ({ commands: { niceeval }, paths, run }) => {
+  await context.case("continuous-before-cache", async ({ commands: { niceeval }, paths }) => {
     await writeFile(
       join(paths.projectRoot, "experiments/before-cache.ts"),
       `import { defineExperiment } from "niceeval";
@@ -32,6 +31,7 @@ export default defineEval({ async test(t) {
 } });`,
     );
     const receipt = join(paths.projectRoot, "prepare-resources.ndjson");
+    const headers = { "X-API-Key": process.env.INSTABOX_API_KEY! };
     const env = {
       NICEEVAL_HOME: join(paths.projectRoot, ".prepare-home"),
       NICEEVAL_PREPARE_RECEIPT: receipt,
@@ -56,20 +56,19 @@ export default defineEval({ async test(t) {
         .map((line) => JSON.parse(line));
       const snapshots = records.filter((record) => record.snapshot);
       expect(snapshots).toHaveLength(2);
+      expect(new Set(snapshots.map((record) => record.snapshot)).size).toBe(2);
       expect(new Set(snapshots.map((record) => record.source)).size).toBe(1);
-      const listed = await run(["instabox", "snapshot", "ls", "--json"], {
-        env: { PATH: [join(homedir(), ".local/bin"), process.env.PATH].join(delimiter) },
-      });
-      expect(listed.exitCode, listed.diagnostic()).toBe(0);
-      const document = listed.json<unknown>() as { id: string; sourceMachineId: string }[];
-      const rows = document.filter((row) => snapshots.some((record) => record.snapshot === row.id));
-      expect(rows).toHaveLength(2);
-      expect(new Set(rows.map((row) => row.sourceMachineId)).size).toBe(1);
+      for (const { snapshot, source } of snapshots) {
+        const response = await fetch(`https://api.instabox.sh/v1/snapshots/${encodeURIComponent(snapshot)}`, {
+          headers,
+        });
+        expect(response.status, `Read Instabox snapshot ${snapshot}`).toBe(200);
+        expect(await response.json()).toMatchObject({ id: snapshot, sourceMachineId: source, status: "ready" });
+      }
       console.info("Instabox preparation resources:", JSON.stringify(records));
     } finally {
       console.info("Instabox cleanup receipt:", await readFile(receipt, "utf8").catch(() => ""));
       const records = await readFile(receipt, "utf8").catch(() => "");
-      const headers = { "X-API-Key": process.env.INSTABOX_API_KEY! };
       for (const record of records
         .trim()
         .split("\n")
