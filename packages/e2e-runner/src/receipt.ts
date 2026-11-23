@@ -74,7 +74,10 @@ function stageFailureDetail(stage: StageReceipt, fallback: string): string {
  * - test pass + collect or cleanup failure → infra (cannot pass)
  * - test already regression + later stage failure → keep regression, append detail
  */
-export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detail">): {
+export function classifyFromReceipt(
+  receipt: Pick<RepoReceipt, "stages" | "detail">,
+  timeoutMinutes: number,
+): {
   category: Category;
   detail: string;
 } {
@@ -91,6 +94,7 @@ export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detai
   const injection = byStage.get("injection");
   const browser = byStage.get("browser");
   const tests = receipt.stages.filter((stage) => stage.stage === "test");
+  const timedOutTest = tests.find((test) => test.capture?.timedOut);
   const collect = byStage.get("collect");
   const cleanup = byStage.get("cleanup");
 
@@ -115,12 +119,9 @@ export function classifyFromReceipt(receipt: Pick<RepoReceipt, "stages" | "detai
   } else if (browser && !browser.ok) {
     category = browser.failureCategory ?? "configuration";
     detail = stageFailureDetail(browser, "browser preflight failed");
-  } else if (tests.some((test) => test.capture?.timedOut)) {
+  } else if (timedOutTest !== undefined) {
     category = "regression";
-    detail = stageFailureDetail(
-      tests.find((test) => test.capture?.timedOut)!,
-      "exceeded project.json E2E timeoutMinutes; owned process group terminated",
-    );
+    detail = `${stageFailureDetail(timedOutTest, "test invocation failed")} (exceeded project.json timeoutMinutes of ${timeoutMinutes} min)`;
   } else if (tests.some((test) => test.capture?.exitCode === null && !test.capture.timedOut)) {
     category = "infra";
     detail = stageFailureDetail(

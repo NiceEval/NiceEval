@@ -789,7 +789,7 @@ export const runRepoEffect = (
       path: copy,
       detail: cleanupDetail,
     });
-    const classified = classifyFromReceipt({ stages, detail: "" });
+    const classified = classifyFromReceipt({ stages, detail: "" }, repo.manifest.timeoutMinutes);
     const retained = (yield* durable(id, lstatOptional(tarball))) !== undefined;
     const testkitReceipt: TestkitReceipt | undefined =
       consumesTestkit && testkit !== undefined && testkitResolvedPath !== undefined
