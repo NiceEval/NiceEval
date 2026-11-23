@@ -61,6 +61,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Check site Sentry error diagnostics
+        env:
+          NODE_ENV: test
+        run: pnpm --filter @niceeval/site exec tsx scripts/check-sentry.ts
+
       - name: Install Concord CLI for repository tool tests
         uses: ./.github/actions/setup-concord
 
