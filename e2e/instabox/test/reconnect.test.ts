@@ -18,15 +18,24 @@ test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
           NICEEVAL_TRANSPORT_CONNECTIONS: connections,
         },
       });
-      console.info(result.diagnostic());
+      const diagnostic = result.diagnostic();
+      console.info(diagnostic);
       await verifyMachinesAbsent(machines);
+      if (refresh === "success") {
+        expect(result.exitCode, diagnostic).toBe(0);
+      } else {
+        expect(result.exitCode, diagnostic).not.toBe(0);
+        expect(
+          result.expErrorEvents().map(({ phase }) => phase),
+          diagnostic,
+        ).toEqual(["eval.run"]);
+      }
       const log = await readFile(connections, "utf8");
       console.info("Instabox connection evidence:\n" + log);
-      expect(log, result.diagnostic()).toContain("client-destroyed");
+      expect(log, diagnostic).toContain("client-destroyed");
       expect(log).toContain("token-rejected");
-      expect(log.match(/^token-request /gm), result.diagnostic()).toHaveLength(2);
+      expect(log.match(/^token-request /gm), diagnostic).toHaveLength(2);
       if (refresh !== "success") {
-        expect(result.exitCode, result.diagnostic()).not.toBe(0);
         expect(result.stdout + result.stderr).toContain("SSH connection closed by peer");
         expect(result.stdout + result.stderr).toContain("SSH token rejected");
         if (refresh === "fail") expect(result.stdout + result.stderr).toContain("SSH token renewal failed");
@@ -36,7 +45,6 @@ test.concurrent.each(["success", "fail", "wrong-machine", "rejected"])(
         }
         expect(result.stdout + result.stderr).toContain("tokenRequests=2");
       } else {
-        expect(result.exitCode, result.diagnostic()).toBe(0);
         expect(log).toContain("write-ack-destroyed");
         expect(log).toContain("eof-ack-destroyed");
         expect(log.match(/^connect /gm)).toHaveLength(6);
