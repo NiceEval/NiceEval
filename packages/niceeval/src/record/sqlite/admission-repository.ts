@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { recordStatement, type RecordDatabase } from "./database.ts";
+import { clearRecordWriterOnConnection, recordStatement, type RecordDatabase } from "./database.ts";
 import { sqliteError } from "./errors.ts";
 import { withImmediateTransaction } from "./transaction.ts";
 import { exactProcessState } from "../../coordination/platform/node-process-identity.ts";
@@ -140,19 +140,6 @@ function coordinationState(connection: RecordDatabase): CoordinationState {
   };
 }
 
-function clearWriter(connection: RecordDatabase, owner: WriterOwner): void {
-  const result = recordStatement(
-    connection,
-    `UPDATE ne19_coordination_state SET
-    writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,
-    writer_boot_id=NULL,writer_process_start=NULL,
-    writer_deadline=NULL,writer_enqueued_at=NULL,writer_nonce=NULL,
-    writer_admitted_at=NULL,writer_lease_expires_at=NULL,revision=revision+1
-    WHERE singleton=1 AND writer_ticket_id=? AND writer_sequence=? AND writer_nonce=?`,
-  ).run(owner.ticketId, owner.sequence, owner.nonce);
-  if (Number(result.changes) !== 1) invalid("coordination", "writer owner changed while clearing");
-}
-
 function clearBarrier(connection: RecordDatabase, owner: BarrierOwner): void {
   const result = recordStatement(
     connection,
@@ -184,7 +171,7 @@ function recover(connection: RecordDatabase, _now: number): void {
 
   const state = coordinationState(connection);
   if (state.writer !== undefined && isExactlyDead(state.writer)) {
-    clearWriter(connection, state.writer);
+    clearRecordWriterOnConnection(connection, state.writer);
   }
   if (state.barrier !== undefined && isExactlyDead(state.barrier)) {
     clearBarrier(connection, state.barrier);
@@ -394,7 +381,7 @@ function runCancelWriter(
     if (!sameWriter(writer, { ...request, sequence: writer.sequence })) {
       invalid(request.operation, "writer cancellation identity does not match its owner");
     }
-    clearWriter(connection, writer);
+    clearRecordWriterOnConnection(connection, writer);
   }
 }
 
@@ -408,7 +395,7 @@ function runReleaseWriter(
   if (!sameWriter(writer, request)) {
     invalid(request.operation, "writer release identity does not match its owner");
   }
-  clearWriter(connection, writer);
+  clearRecordWriterOnConnection(connection, writer);
 }
 
 function runRequestBarrier(

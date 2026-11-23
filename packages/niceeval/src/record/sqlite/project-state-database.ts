@@ -255,9 +255,9 @@ function makeProjectStateResource(): ProjectStateResource {
           try: async () => {
             if (invocationPortableClosed) return;
             await close(portableRoot);
-            // Another Invocation may still own project-local work. In that case
-            // the gate atomically restores `open`; the last Invocation to close
-            // will retry portability after its own terminal writes.
+            // Another Invocation may still own project-local work. The database
+            // stays open for that work, and the last Invocation to close will
+            // attempt portability after its own terminal writes.
             finalizeInvocationPortable(recordSqlitePath(portableRoot));
             invocationPortableClosed = true;
           },

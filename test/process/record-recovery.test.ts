@@ -13,13 +13,31 @@ import { invokeCli } from "../integration/fixtures/judge-harness/harness.ts";
 import { createRecordProject, openGate, waitForGate } from "../integration/fixtures/record-harness/project.ts";
 
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
-const start = (cwd: string, args: readonly string[]) =>
-  execa(process.execPath, [...process.execArgv, cli, ...args], {
+const start = (cwd: string, args: readonly string[], nodeArgs: readonly string[] = []) =>
+  execa(process.execPath, [...process.execArgv, ...nodeArgs, cli, ...args], {
     cwd,
     env: { NO_COLOR: "1" },
     extendEnv: true,
     reject: false,
   });
+
+function pauseBeforeFirstRunWrite(cwd: string): readonly string[] {
+  // begin-run is dispatched after writer admission commits. Pause the CLI
+  // before it can send the batch or release its ticket on the way out.
+  const preload = `
+    import { writeFileSync } from "node:fs";
+    import { Worker } from "node:worker_threads";
+    const postMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...args) {
+      if (message?.operation === "begin-run") {
+        writeFileSync(${JSON.stringify(join(cwd, "gates/entered"))}, "1");
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+      }
+      return postMessage.call(this, message, ...args);
+    };
+  `;
+  return ["--import", `data:text/javascript,${encodeURIComponent(preload)}`];
+}
 
 // @feature docs/feature/run/README.md#interrupt-recovery
 test("after SIGKILL recovery closes the Session and preserves readable published Sources in a portable Record", {
@@ -90,12 +108,16 @@ test("after SIGKILL recovery closes the Session and preserves readable published
 });
 
 // @feature docs/feature/run/README.md#interrupt-recovery
-test("exact Run recovery leaves sibling Runs active until the final Run closes their Session", {
+test.each(["during an Eval", "with an admitted writer"] as const)("exact Run recovery leaves sibling Runs active until the final Run closes their Session (%s)", {
   timeout: 30_000,
-}, async () => {
+}, async (interruption) => {
   const cwd = await createRecordProject("niceeval-session-recovery-", { held: true });
   await copyFile(join(cwd, "experiments/runs.ts"), join(cwd, "experiments/sibling.ts"));
-  const child = start(cwd, ["exp", "--experiment", "runs", "--experiment", "sibling", "--rerun", "all", "--json"]);
+  const child = start(
+    cwd,
+    ["exp", "--experiment", "runs", "--experiment", "sibling", "--rerun", "all", "--json"],
+    interruption === "with an admitted writer" ? pauseBeforeFirstRunWrite(cwd) : [],
+  );
   try {
     await Promise.race([
       waitForGate(cwd, "entered"),
@@ -125,6 +147,20 @@ test("exact Run recovery leaves sibling Runs active until the final Run closes t
         expect.objectContaining({ runId: first!.runId, lifecycle: "terminal" }),
         expect.objectContaining({ runId: second!.runId, lifecycle: "terminal" }),
       ]),
+    });
+    const portable = join(cwd, "portable.sqlite");
+    await copyFile(join(cwd, ".niceeval/record.sqlite"), portable);
+    const portableRuns = await invokeCli(cwd, ["run", "list", "--record", portable, "--json"]);
+    expect(portableRuns.code, portableRuns.stderr || portableRuns.stdout).toBe(0);
+    expect(decodeRunDocument(JSON.parse(portableRuns.stdout))).toMatchObject({
+      success: true,
+      value: {
+        operation: "run.list",
+        runs: expect.arrayContaining([
+          expect.objectContaining({ runId: first!.runId, state: "interrupted" }),
+          expect.objectContaining({ runId: second!.runId, state: "interrupted" }),
+        ]),
+      },
     });
   } finally {
     child.kill("SIGKILL");

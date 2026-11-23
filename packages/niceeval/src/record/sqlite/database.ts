@@ -695,6 +695,51 @@ export function reopenProjectDatabaseOnConnection(connection: RecordDatabase): v
   }
 }
 
+export function clearRecordWriterOnConnection(
+  connection: RecordDatabase,
+  owner: { readonly ticketId: string; readonly sequence: number; readonly nonce: string },
+): void {
+  const result = recordStatement(
+    connection,
+    `UPDATE ne19_coordination_state SET
+    writer_ticket_id=NULL,writer_sequence=NULL,writer_host=NULL,writer_pid=NULL,
+    writer_boot_id=NULL,writer_process_start=NULL,
+    writer_deadline=NULL,writer_enqueued_at=NULL,writer_nonce=NULL,
+    writer_admitted_at=NULL,writer_lease_expires_at=NULL,revision=revision+1
+    WHERE singleton=1 AND writer_ticket_id=? AND writer_sequence=? AND writer_nonce=?`,
+  ).run(owner.ticketId, owner.sequence, owner.nonce);
+  if (Number(result.changes) !== 1)
+    throw sqliteError("record-database-invalid", "coordination", "writer owner changed while clearing");
+}
+
+function reclaimTerminatedWriter(connection: RecordDatabase): boolean {
+  const writer = requiredRecordRow(
+    recordStatement(
+      connection,
+      `SELECT writer_ticket_id,writer_sequence,writer_nonce,writer_host,writer_pid,writer_boot_id,
+        writer_process_start FROM ne19_coordination_state WHERE singleton=1`,
+    ).get(),
+  );
+  if (writer.writer_ticket_id === null) return true;
+  const ticketId = decodeText(writer.writer_ticket_id, "writer_ticket_id");
+  if (
+    exactProcessState({
+      ownerId: ticketId,
+      host: decodeText(writer.writer_host, "writer_host"),
+      pid: decodeInteger(writer.writer_pid, "writer_pid"),
+      bootId: decodeText(writer.writer_boot_id, "writer_boot_id"),
+      processStart: decodeText(writer.writer_process_start, "writer_process_start"),
+    }) !== "dead"
+  )
+    return false;
+  clearRecordWriterOnConnection(connection, {
+    ticketId,
+    sequence: decodeInteger(writer.writer_sequence, "writer_sequence"),
+    nonce: decodeText(writer.writer_nonce, "writer_nonce"),
+  });
+  return true;
+}
+
 /**
  * Closes the project-wide writer admission and proves that the canonical file
  * itself is portable. The first transaction deliberately persists draining;
@@ -720,6 +765,23 @@ export function makeProjectDatabasePortable(path: string): boolean {
     if (barrierState === "portable") {
       connection.db.exec("COMMIT");
       return true;
+    }
+    const admittedActive = currentStatement(
+      connection.db,
+      `SELECT
+      (SELECT count(*) FROM ne19_run_resources WHERE terminal_state IS NULL)+
+      (SELECT count(*) FROM ne19_invocation_sessions WHERE state IN ('active','recovering'))+
+      (SELECT count(*) FROM ne19_case_locks)+
+      (SELECT count(*) FROM ne19_teardown_obligations)+
+      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
+    ).get() as Record<string, SQLOutputValue>;
+    const hasActiveWork = decodeInteger(admittedActive.count, "active_runs") !== 0;
+    // Admission and this check share the SQLite write lock. A live or unproven
+    // writer keeps the gate open. A dead writer's exact ticket must be cleared
+    // before draining, where the schema forbids updates retaining a writer.
+    if (barrierState === "open" && (hasActiveWork || !reclaimTerminatedWriter(connection))) {
+      connection.db.exec("COMMIT");
+      return false;
     }
     if (barrierState === "draining") {
       const previous = currentStatement(
@@ -807,16 +869,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
     } else {
       throw sqliteError("record-database-invalid", "portable-gate", "ProjectDatabase barrier state is invalid");
     }
-    const admittedActive = currentStatement(
-      connection.db,
-      `SELECT
-      (SELECT count(*) FROM ne19_run_resources WHERE terminal_state IS NULL)+
-      (SELECT count(*) FROM ne19_invocation_sessions WHERE state IN ('active','recovering'))+
-      (SELECT count(*) FROM ne19_case_locks)+
-      (SELECT count(*) FROM ne19_teardown_obligations)+
-      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
-    ).get() as Record<string, SQLOutputValue>;
-    if (decodeInteger(admittedActive.count, "active_runs") !== 0) {
+    if (hasActiveWork) {
       currentStatement(
         connection.db,
         `UPDATE ne19_record_metadata SET barrier_state='open',portable_gate_id=NULL
