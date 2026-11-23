@@ -69,7 +69,7 @@ window.acceptance = {
       await fetch(new Request("/302", {redirect:"follow"}));
       await fetch(new Request("/307", {redirect:"manual"}));
       await new Promise((done, reject) => { const xhr = new XMLHttpRequest(); xhr.open("GET", "/307"); xhr.onload=done; xhr.onerror=reject; xhr.send(); });
-      Sentry.captureException(new Error(sentinel));
+      Sentry.captureException(new Error("browser profiling fixture error"));
     });
     for (const decision of ["1", "0"]) await Sentry.continueTrace({sentryTrace:"a".repeat(32)+"-"+"b".repeat(16)+"-"+decision}, () =>
       Sentry.startSpan({name:"site.docs.open",op:"ui.action",forceTransaction:true}, busy));

@@ -62,7 +62,13 @@ Browser 使用 trace lifecycle profiling，session rate 为 `0.1`，仅支持实
 固定本地诊断，error/tracing 保持初始化。实际 HTML 响应带 `Document-Policy: js-profiling`。
 浏览器首次生产开启前必须完成项目 IP scrub 与接收数据核验；本地 transport 通过不代替此门槛。
 
-最终 transport 独立重建 error、span v2、`profile_chunk` v2、固定 log/trace_metric、匿名
+Node、Edge 和 Browser 的错误事件保留真实异常类型、消息、因果链、堆栈和源码映射标识。
+服务端请求错误带上路由模板 `route`、`http.method` 和 `http.status_code`，保留原有事务与业务操作名。
+状态取自可用的请求上下文或异常。Next.js 未处理请求异常缺少状态时记为 500。4xx 和请求中止不上报为错误。
+请求路径、普通查询参数和错误业务详情可以发送。请求头、查询参数、额外字段和字符串中的凭据替换成
+`[Filtered]`。SDK 的默认个人信息采集保持关闭，请求体和响应体不采集。
+
+最终 transport 再过滤 error 中的凭据，并独立重建 span v2、`profile_chunk` v2、固定 log/trace_metric、匿名
 Browser session 和 client_report；拒绝 Replay、Cron/check_in、sessions 聚合、legacy profile
 及未知 item。profile 只保留合法索引、样本时间、
 线程与关联标识；frame 等长清理，不移动索引，不复制动态函数名、业务路径或任意 metadata。
