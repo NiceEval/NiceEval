@@ -41,6 +41,17 @@ stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 st
 - 一个持续读写 stdin 的双向进程在两次写入之间被断开，重连后对端收到的字节序列与发送的完全一致，EOF 只送达一次。
 - 上传一棵含多层目录与可执行文件的目录后，Record 里只有一条展开命令，权限位读回一致。
 
+## Provisioning 对账与重试
+
+通用分类与两道防线见 [Architecture · Provisioning 失败与重试](../README.md#provisioning-失败与重试)。Instabox 的 `create()` 包含 snapshot 校验、Machine 创建、operation 等待、运行就绪查询与首次 SSH grant。各请求按下列规则处理：
+
+- **只读查询原地重试**：snapshot GET、创建 operation GET 与运行就绪 GET 都是幂等读取，在原 snapshot、operation 或 Machine 上做有界重试。瞬时判定与次数沿用[已创建 Sandbox 的文件 IO 重试](../README.md#已创建-sandbox-的文件-io-重试)的分类器与上限，退避受 create 截止时间约束，取消立即停止。重试只重复读取，不发起新的创建或签发。
+- **Machine 创建**：响应失联时只用相同幂等键重取受理结果，不发起第二次逻辑创建，见上节。
+- **首次 SSH grant**：服务端没有证明 grant 支持幂等重取，因此只有拒绝类失败（连接建立失败、限流）原地重试。歧义类失败（响应中途断开、请求超时、5xx）不重复签发，按 `create()` 失败处理：kill-on-failure 删除该 Machine 并等待删除确认，再抛出原始错误。
+- **整个 `create()` 重试**：对账通道是创建幂等键重取加删除确认。初始化失败的 Machine 确认删除之后，重试层才以新的幂等键重建，次数与退避和其它内置 Provider 相同。删除无法确认时对账失败，放弃重试并抛回原始错误，服务端 delete deadline 是最后上界。
+
+不在 HTTPS 客户端上加全局重试。同一客户端还承担文件传输、删除与 snapshot 创建，它们各有自己的重试或对账规则。
+
 ## 远端 snapshot driver
 
 协议与 core 的捕获步骤见 [远端 snapshot Before cache](../remote-snapshot-cache.md)。Instabox driver 交出的原语：

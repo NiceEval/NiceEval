@@ -301,7 +301,7 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 各内置 provider 先把自己 SDK 原生的限流错误(e2b 的 `RateLimitError`、vercel 的 `APIError{ response.status: 429 }`、docker 拉镜像时 message 里的 `toomanyrequests`)归入拒绝类。
 provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时分类器(见下节),由错误形态落进拒绝类或歧义类。
 
-各内置 provider 的对账通道与重试面见各自的架构页：[Docker](providers/docker.md#provisioning-对账与重试)（含 Docker Compose）、[E2B](providers/e2b.md#provisioning-对账与重试) 与 [Vercel Sandbox](providers/vercel.md#provisioning-对账与重试)。
+各内置 provider 的对账通道与重试面见各自的架构页：[Docker](providers/docker.md#provisioning-对账与重试)（含 Docker Compose）、[E2B](providers/e2b.md#provisioning-对账与重试)、[Vercel Sandbox](providers/vercel.md#provisioning-对账与重试) 与 [Instabox](providers/instabox.md#provisioning-对账与重试)。
 
 重试循环由各内置 `ProviderModule<Plan>` 自己拥有。
 `runtime.ts` 只调用 plan 私绑的闭包，不维护 adapter registry:
