@@ -1,0 +1,24 @@
+---
+title: "同一替换位置的前缀冲突告警"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 比较
+    lg1: 一致
+    lg2: 告警
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  s0: 同一位置的前缀内容一致
+  s1: 同一位置有不同前缀内容
+  s2: 无需告警
+  s3: 报告前缀冲突
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: 比较同一位置的前缀
+  s1 --> s3: 比较同一位置的前缀
+  class s0 blue
+  class s1 blue
+  class s2 teal
+  class s3 orange

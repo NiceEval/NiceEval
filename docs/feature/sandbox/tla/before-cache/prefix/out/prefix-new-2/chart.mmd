@@ -1,0 +1,43 @@
+---
+title: "每次发布都包含完整前缀"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 查找
+    lg1: 准备
+    lg2: 发布
+    lg3: 完成
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 orange
+  class lg3 teal
+  s0: 查找第 2 层
+  s1: 完整前缀已就绪
+  s2: 查找第 1 层
+  s3: 上一层已准备好#65292;重查下一层
+  s4: 从干净 Base 重查第一层
+  s5: 准备执行第 2 层
+  s6: 准备执行第 1 层
+  s7: 第 2 层及全部父层齐备
+  s8: 第 1 层及全部父层齐备
+  [*] --> s0
+  s0 --> s1: 恢复命中的前缀
+  s0 --> s2: 这一层未命中
+  s2 --> s3: 恢复命中的前缀
+  s2 --> s4: 这一层未命中
+  s3 --> s5: 下一层未命中#65292;保留上一层
+  s4 --> s6: 第一层仍未命中
+  s5 --> s7: 当前 action 执行成功
+  s6 --> s8: 当前 action 执行成功
+  s7 --> s1: 发布当前前缀
+  s8 --> s3: 发布当前前缀
+  class s0 blue
+  class s1 teal
+  class s2 blue
+  class s3 blue
+  class s4 blue
+  class s5 purple
+  class s6 purple
+  class s7 orange
+  class s8 orange
