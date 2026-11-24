@@ -17,7 +17,7 @@ import { adapterIdentity } from "../adapter.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
-import { SandboxStateFailure, type StateFeedback } from "../state/execution.ts";
+import { SandboxStateFailure, type DurableGroupState, type StateFeedback } from "../state/execution.ts";
 import type { AttemptState, StateExecution } from "../state/protocol.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
@@ -1282,6 +1282,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       );
       const prefixFailureIds = new Map<Error, number>();
       const emittedPreDispatchFailures = new Set<string>();
+      const preDispatchFailureKey = (experimentId: string | undefined, code: string, failureId: string) =>
+        JSON.stringify([experimentId, code, failureId]);
       const recordPreDispatchFailure = (
         attempt: Attempt,
         error: AttemptError,
@@ -1292,7 +1294,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         const experimentId = attempt.run.experimentId;
         const slotId = plannedSlotIds.get(JSON.stringify([experimentId, attempt.evalDef.id, attempt.attempt]));
         if (slotId === undefined) throw new Error("Pre-dispatch failure has no planned slot.");
-        const key = JSON.stringify([experimentId, code, failureId]);
+        const key = preDispatchFailureKey(experimentId, code, failureId);
         const message = error.message;
         recordExperimentDiagnostic({
           experimentId,
@@ -1444,6 +1446,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         if (failed && reason !== undefined) {
           stateExecutionFailure =
             failure ?? stateExecutionFailure ?? new SandboxStateFailure(reason, event.kind === "save-unknown");
+          const restoreDiagnosticKey =
+            event.kind === "restore-failed"
+              ? preDispatchFailureKey(lineage.experimentId, code, lineage.evalGroupId)
+              : undefined;
+          if (restoreDiagnosticKey !== undefined) emittedPreDispatchFailures.add(restoreDiagnosticKey);
           recordExperimentDiagnostic({
             experimentId: lineage.experimentId,
             code,
@@ -1452,7 +1459,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             phase: event.kind === "restore-failed" ? "sandbox.prepare" : "experiment.teardown",
             data: undefined,
             command: undefined,
-            dedupeKey: undefined,
+            dedupeKey: restoreDiagnosticKey,
             affectedSlotIds: undefined,
           });
         }
@@ -2425,6 +2432,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         /** Durable diagnostic origin stays within the public lifecycle vocabulary. */
         phase: LifecyclePhase;
         message: string;
+        stateFailure?: { readonly error: AttemptError; readonly code: string };
       }
       const evalGroupUnavailableGates = new Map<string, EvalGroupUnavailableGate>();
       const evalGroupUnavailableGateOf = (a: Attempt): EvalGroupUnavailableGate | undefined => {
@@ -2496,12 +2504,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         a: Attempt,
         phase: "sandbox.create" | "sandbox.prepare" | "sandbox.reset",
         error: unknown,
+        stateFailure?: EvalGroupUnavailableGate["stateFailure"],
       ): void => {
         const gate = evalGroupUnavailableGateOf(a);
         if (gate === undefined || gate.stopped) return;
         const failures = (gate.failuresByPhase.get(phase) ?? 0) + 1;
         gate.failuresByPhase.set(phase, failures);
-        const mustStop = gate.onUnavailable === "stop-group" || failures >= 2;
+        const mustStop = stateFailure !== undefined || gate.onUnavailable === "stop-group" || failures >= 2;
         if (!mustStop) {
           reportDiagnostic({
             key: `eval-group-replacing-sandbox:${gate.displayExperimentId}|${gate.groupId}|${phase}`,
@@ -2522,6 +2531,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           return;
         }
         gate.stopped = true;
+        if (stateFailure !== undefined) gate.stateFailure = stateFailure;
         gate.stage = phase;
         gate.phase = phase === "sandbox.reset" ? "sandbox.cleanup" : phase;
         gate.message = firstLine(error instanceof Error ? error.message : String(error));
@@ -2530,6 +2540,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const accountEvalGroupUnavailable = (a: Attempt, gate: EvalGroupUnavailableGate): void => {
         gate.unstarted += 1;
         cancelReuseAttempt(a);
+        if (gate.stateFailure === undefined) {
+          recordCoordinator.markNotDispatched(a, "stopped-by-failure");
+        } else {
+          recordCoordinator.markNotDispatched(a, "dispatch-failed");
+          recordPreDispatchFailure(a, gate.stateFailure.error, gate.stateFailure.code, gate.phase, gate.groupId);
+        }
         // No result, no replacement: this slot never crossed the dispatch boundary.
         reportAttemptLifecycle({
           type: "attempt:early-exit",
@@ -3110,10 +3126,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 }
               }
               const initialPhase = initialLifecyclePhase();
-              const reservationAttempted = blockedError === undefined;
+              const stateBound = targetPlan.stateByPair.has(cacheKey(a.run, a.evalDef.id));
+              let reservationAttempted = false;
               let reservedRecordAttempt: RunnerRecordAttempt | undefined;
               let attemptState: AttemptState | undefined;
-              if (reservationAttempted) {
+              const reserveRecordAttempt = Effect.gen(function* () {
+                reservationAttempted = true;
                 const reservation = yield* Effect.result(recordCoordinator.reserveAttempt(a));
                 if (Result.isFailure(reservation)) {
                   recordFatalController.abort();
@@ -3127,7 +3145,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   a.locator = reservation.success.locator;
                   a.attemptId = reservation.success.attemptId;
                 }
-              }
+              });
+              if (!stateBound && blockedError === undefined) yield* reserveRecordAttempt;
 
               let attemptStarted = false;
               let providerQueued = false;
@@ -3176,19 +3195,22 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 });
               const providerAdmission = {
                 queued: queueForProvider,
-                granted: startAttempt("sandbox.create"),
+                granted: stateBound ? Effect.void : startAttempt("sandbox.create"),
                 slot: providerQueueSlot,
               };
+              const startRestoredAttempt = (state: DurableGroupState) =>
+                Effect.uninterruptible(
+                  Effect.gen(function* () {
+                    yield* reserveRecordAttempt;
+                    if (blockedError !== undefined) return yield* Effect.fail(new Error(blockedError.message));
+                    attemptState = state.context();
+                    yield* startAttempt("sandbox.create");
+                  }),
+                );
               const poolSelection: ReusePoolSelection =
                 blockedError === undefined ? yield* reusePoolFor(a) : { _tag: "Fresh" };
-              // 复用池的租借失败(实例创建、SandboxLayer setup 钩子、寿命确认都在池内)是**这条
-              // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
-              // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
-              // blockedError 完全相同的下游路径。
-              // 拒绝必须经过具名 Effect 边界:否则会变成 defect 打断 forEach,连坐同批其它实验,
-              // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
-              // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
-              // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
+              // A State Group acquires and restores its Sandbox before admitting an Attempt.
+              // Once admitted, an acquisition failure uses the regular Attempt seal.
               let sealedEvaluation: SealedAttemptAssertions | undefined;
               const completed = yield* Effect.scoped(
                 Effect.gen(function* () {
@@ -3205,6 +3227,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                                 evalId: a.evalDef.id,
                                 sandboxLabels: a.run.sandboxLabels,
                               },
+                              stateBound ? startRestoredAttempt : undefined,
                             ),
                           ),
                           {
@@ -3217,16 +3240,29 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         )
                       : { _tag: "NotRequested" as const };
                   const lease = leased._tag === "Acquired" ? leased.lease : undefined;
-                  attemptState = lease?.state?.context();
                   let enteredStateAgent = false;
                   // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxLayer setup + 确认寿命」
                   // 打包成一次借出,调度器这一侧只知道这条 attempt 没能拿到可用实例。
-                  const leaseError: AttemptError | undefined =
-                    leased._tag === "Failed" ? errorFromThrown(leased.error, "sandbox.create") : undefined;
+                  let leaseError: AttemptError | undefined;
                   if (leased._tag === "Failed") {
+                    leaseError = errorFromThrown(leased.error, "sandbox.create");
                     cancelReuseAttempt(a, true);
                     const declaration = attemptFailureDeclaration("sandbox.create", leased.error);
                     if (declaration) closeHaltGate(a, declaration);
+                    if (stateBound && !reservationAttempted) {
+                      const gate = evalGroupUnavailableGateOf(a);
+                      if (gate === undefined) return yield* Effect.die(new Error("State Attempt has no Eval Group."));
+                      const failure = leased.error instanceof SandboxStateFailure ? leased.error : undefined;
+                      const code =
+                        failure === undefined
+                          ? "state-sandbox-acquire-failed"
+                          : (failure.code ?? "state-restore-failed");
+                      stateExecutionFailure ??=
+                        failure ?? new SandboxStateFailure("prepare-failed", false, leased.error);
+                      recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error, { error: leaseError, code });
+                      accountEvalGroupUnavailable(a, gate);
+                      return undefined;
+                    }
                     // This Attempt did start its physical acquisition and is therefore recorded below
                     // as an errored result. The Group policy only decides what a later slot may do.
                     recordEvalGroupPhysicalFailure(a, "sandbox.create", leased.error);
@@ -3242,7 +3278,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   const recordedAttempt = a;
                   const experiment = experimentRunInfo(a.run, a.plan, a.sandboxPlansByEval, opts.config, a.judge);
                   const runId = runIds.get(a.run.experimentId);
-                  const evaluated = failedBeforeDispatch
+                  const evaluated = blockedError
                     ? ({
                         id: a.evalDef.id,
                         ...(a.evalDef.description === undefined ? {} : { description: a.evalDef.description }),
@@ -3260,10 +3296,10 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         factUses: [],
                         evaluationKind: a.evalDef.evaluationKind,
                         ...(a.evalDef.evaluationKind === "score"
-                          ? { scoreResult: scoreFactOutcomeForAttemptError(failedBeforeDispatch) }
+                          ? { scoreResult: scoreFactOutcomeForAttemptError(blockedError) }
                           : {}),
                         evidenceCoverage: a.run.agent?.evidenceCoverage ?? adapterEvidenceUnavailable,
-                        error: failedBeforeDispatch,
+                        error: blockedError,
                       } satisfies EvalResult)
                     : yield* runAttemptEffect(recordedAttempt, attemptOptions, sandboxSem, {
                         onPhase: (phase) => {
@@ -3282,6 +3318,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         invocationSignal: opts.signal,
                         concurrencySlot: globalSlot,
                         providerAdmission,
+                        acquisitionError: leaseError,
                         reusedSandbox: lease
                           ? {
                               resourceSandbox: lease.resourceSandbox,
@@ -3354,6 +3391,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   recordEvalGroupPhysicalFailure(a, failure.stage, failure.error);
                 }
               }
+              if (completed === undefined) return;
               const { result } = completed;
               // A provider-capacity failure can terminate directly from queued;
               // every other executed path retains the historical start/complete

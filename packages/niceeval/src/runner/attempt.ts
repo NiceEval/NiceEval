@@ -340,6 +340,8 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   concurrencySlot: ConcurrencySlot | undefined;
   /** Provider admission moves an Attempt from queued to running only after capacity is granted. */
   providerAdmission: SandboxRuntimeAdmission | undefined;
+  /** A reserved Attempt can fail while the pool is acquiring its Sandbox. */
+  acquisitionError?: AttemptError | undefined;
   /**
    * 终局失败的空间轴回执(每条终局失败各回调一次,含 per-attempt teardown 的失败——teardown
    * 声明照常落闸、不改 verdict,见 architecture.md「生命周期边界」)。省略(如测试直调)时
@@ -398,6 +400,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
     onPhase,
     concurrencySlot,
     providerAdmission,
+    acquisitionError,
     onFailureClass,
     onEnvironmentIncomplete,
     onSandboxCleanupFailure,
@@ -973,6 +976,16 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         restore(
           Effect.scoped(
             Effect.gen(function* () {
+              yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
+              if (acquisitionError !== undefined) {
+                return {
+                  ...base,
+                  error: acquisitionError,
+                  ...(evalDef.evaluationKind === "score"
+                    ? { scoreResult: scoreFactOutcomeForAttemptError(acquisitionError) }
+                    : {}),
+                };
+              }
               const pause = yield* Effect.cached(
                 Effect.suspend(() => {
                   const sandboxId = currentSandbox?.sandboxId ?? sandboxFacts?.sandboxId;
@@ -999,7 +1012,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // execution deadline, Assertion seal, feedback sink, and publication
               // callback. The driver below contributes only its own preparation,
               // author context, and observations.
-              yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
               const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
               // Agent input generators use the same sealed evidence transport with
               // their own producer; creating collectors does not add identity inputs.

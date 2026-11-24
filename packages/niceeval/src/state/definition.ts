@@ -8,19 +8,28 @@ const cohortPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 declare const stateDefinitionBrand: unique symbol;
 declare const stateBindingBrand: unique symbol;
 
+/** Declares the Sandbox file trees that an Eval Group can restore and save across Runs. */
 export interface StateInput {
+  /** Project-wide name of the State, using lowercase alphanumeric segments separated by hyphens. */
   readonly name: string;
+  /** Change this version to start a new lineage when the State layout or meaning changes. */
   readonly version: string;
+  /** One or more distinct absolute Sandbox paths or paths relative to the Sandbox user's home (`~/`). */
   readonly paths: readonly [string, ...string[]];
+  /** A built-in declarative Sandbox action run once on a fresh instance when the lineage has no checkpoint. */
   readonly initialize?: SandboxAction;
 }
 
+/** A validated State definition created by {@link defineState}. */
 export interface StateDefinition {
   readonly [stateDefinitionBrand]: true;
+  /** The project's name for this State. */
   readonly name: string;
+  /** Select a cohort and return a binding for an Experiment or Plugin. */
   bind(options: { readonly cohort: string }): StateBinding;
 }
 
+/** An opaque State and cohort selection created by {@link StateDefinition.bind}. */
 export interface StateBinding {
   readonly [stateBindingBrand]: true;
 }
@@ -77,6 +86,7 @@ export function normalizeStateBindings(value: unknown): readonly StateBinding[] 
   return value.length === 0 ? undefined : Object.freeze([...value]);
 }
 
+/** Validate and freeze a reusable Sandbox State definition. Call `bind` to choose a cohort. */
 export function defineState(input: StateInput): StateDefinition {
   if (
     typeof input !== "object" ||

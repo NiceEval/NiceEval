@@ -205,15 +205,16 @@ export class ReusableSandboxPool {
    * 池无从知道它要跑多久,也不替它编一个数。此后实例被 provider 按自己的 `lifetimeMs` 回收
    * 就是「不声明上限」的代价(两种时间的分界见 docs/feature/sandbox/library/reuse.md)。
    */
-  acquire(
+  acquire<R = never>(
     attemptDeadlineMs: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
     admission?: SandboxRuntimeAdmission,
     provenance?: SandboxCreationProvenance,
+    onStateReady?: (state: DurableGroupState) => Effect.Effect<void, Error, R>,
   ): Effect.Effect<
     ReusableSandboxLease,
     Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError,
-    Scope.Scope
+    Scope.Scope | R
   > {
     return Effect.gen({ self: this }, function* () {
       const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_TIMEOUT_MS;
@@ -236,6 +237,7 @@ export class ReusableSandboxPool {
           // lifetime 检查是异步 provider I/O；其间 stop() 或另一条 release 可能已经退休这台。
           // 只有仍是 Idle 的实例才能真正借出，stop 后让下一轮在入口处统一失败。
           if (lifetime.ready && !this.stopped && ready.lifecycle._tag === "Idle") {
+            if (ready.state !== undefined && onStateReady !== undefined) yield* onStateReady(ready.state);
             return yield* this.lease(ready, leaseDeadlineAt?.());
           }
           if (this.stopped || ready.lifecycle._tag !== "Idle") continue;
@@ -251,6 +253,7 @@ export class ReusableSandboxPool {
               buildLocators,
               admission,
               provenance,
+              onStateReady,
             );
             this.entries.push(created);
             // stop 可能在物化期间开始。把刚创建的 entry 先纳入池，再由唯一 retire 路径关闭
@@ -361,13 +364,14 @@ export class ReusableSandboxPool {
     return this.runtimeFailures.splice(0);
   }
 
-  private create(
+  private create<R>(
     minRemainingMs: number,
     deadlineAt: number | undefined,
     buildLocators: ReadonlyMap<BuildKey, JsonValue>,
     admission?: SandboxRuntimeAdmission,
     provenance?: SandboxCreationProvenance,
-  ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError> {
+    onStateReady?: (state: DurableGroupState) => Effect.Effect<void, Error, R>,
+  ): Effect.Effect<Entry, Error | import("../sandbox/runtime.ts").SandboxRuntimeMaterializationError, R> {
     return Effect.gen({ self: this }, function* () {
       if (this.groupPluginSetupError !== undefined) return yield* Effect.fail(this.groupPluginSetupError);
       if (!this.groupPluginSetupStarted && this.groupPluginContext !== undefined) {
@@ -515,6 +519,7 @@ export class ReusableSandboxPool {
                       ),
                   }),
                 );
+                if (onStateReady !== undefined) yield* onStateReady(state);
               }
               yield* prepareMaterializedSandboxRunPlan(materializeInput, owned);
             }),

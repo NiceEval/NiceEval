@@ -1,4 +1,5 @@
 import { IdentityExplanationSchema } from "../../../runner/manifest.ts";
+import { StateExecutionBindingSchema } from "../../../state/protocol.ts";
 import { Schema } from "effect";
 
 /** Shared strict comparison shape for every dry-plan projection. */
@@ -126,6 +127,13 @@ export const ExpPlanDocumentSchema = Schema.Struct({
     }),
   ),
   plugins: Schema.Array(Schema.Unknown),
+  groups: Schema.Array(
+    Schema.Struct({
+      experimentId: Schema.String,
+      evalGroupId: Schema.String,
+      state: Schema.Array(StateExecutionBindingSchema),
+    }),
+  ),
 });
 
 /** Describes an exp invocation plan for machine consumers; reading a plan does not execute it or publish Attempt results. */

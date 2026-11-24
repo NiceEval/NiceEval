@@ -118,16 +118,27 @@ export const StateManifestSchema = Schema.Struct({
   ),
 });
 
+/** Identifies a checkpoint history by State name, version, cohort, Experiment, and Eval Group. */
 export type StateLineage = typeof StateLineageSchema.Type;
+/** Identifies a saved checkpoint and describes its archive by SHA-256 digest and byte length. */
 export type StateCheckpoint = typeof StateCheckpointSchema.Type;
+/** The fresh or previously saved starting point for a State binding. */
 export type StateOrigin = typeof StateOriginSchema.Type;
+/** The reason recorded when a State restore or save does not complete successfully. */
 export type StateFailureReason = typeof StateFailureReasonSchema.Type;
+/** A State lineage and its observed starting point. */
 export type StateExecutionBinding = typeof StateExecutionBindingSchema.Type;
+/** Restore status for the complete set of bindings on a physical Sandbox instance. */
 export type StateRestore = typeof StateRestoreSchema.Type;
+/** Save status for the complete set of bindings, with checkpoints ordered to match the bindings. */
 export type StateSave = typeof StateSaveSchema.Type;
+/** State lifecycle facts for one physical Sandbox instance in an Eval Group and Run. */
 export type StateExecution = typeof StateExecutionSchema.Type;
+/** The restored State execution and count of earlier Agent-stage Attempts that ended on the same Sandbox. */
 export type AttemptState = typeof AttemptStateSchema.Type;
+/** The State executions visible for a Run, or unavailable if the Record lacks State facts. */
 export type RunSandboxState = typeof RunSandboxStateSchema.Type;
+/** The State context of a published Attempt, with null for known absence and unavailable for missing Record facts. */
 export type AttemptStateResult = typeof AttemptStateResultSchema.Type;
 export type StateManifest = typeof StateManifestSchema.Type;
 export type StateEvent = typeof StateEventSchema.Type;

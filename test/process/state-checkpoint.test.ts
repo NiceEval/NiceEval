@@ -1,5 +1,5 @@
 // 跨进程保证：进程终止与信号——真实 CLI Run 恢复在 checkpoint 提交前后都能检查精确保存事实。
-import { copyFile, rm } from "node:fs/promises";
+import { copyFile, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -191,6 +191,16 @@ test("a group accumulates across attempts and resumes from the last committed ch
 test("a provider with fresh-only restore rejects roots created by its template", { timeout: 20_000 }, async () => {
   const cwd = await fixture("state-root-existing-", { "runs.ts": directExperiment });
   try {
+    const starts = join(cwd, "attempt-starts.ndjson");
+    await Promise.all([
+      writeFile(starts, ""),
+      writeFile(join(cwd, "niceeval.config.ts"), `
+        import { appendFile } from "node:fs/promises";
+        export default { reporters: [{ async onEvent(event) {
+          if (event.type === "eval:start") await appendFile(${JSON.stringify(starts)}, JSON.stringify(event) + "\\n");
+        } }] };
+      `),
+    ]);
     const dry = await runCli(cwd, ["exp", "runs", "--dry", "--json"]);
     expect(dry.exitCode, dry.stderr).toBe(0);
     expect(JSON.parse(dry.stdout).groups[0].state[0].origin.kind).toBe("fresh");
@@ -201,7 +211,18 @@ test("a provider with fresh-only restore rejects roots created by its template",
     expect(stateEvents(result.stdout).map(({ event }) => event)).toEqual(["restore-failed", "save-skipped"]);
     const listed = await Effect.runPromise(runHost.list({ cwd }));
     const { run } = await Effect.runPromise(runHost.get({ cwd, runId: listed.runs[0]!.runId }));
+    expect(await readFile(starts, "utf8")).toBe("");
     expect(run.slots.every(({ publication }) => publication.state !== "published")).toBe(true);
+    expect(run.slots.map(({ publication }) => publication)).toEqual([
+      { state: "absent", reason: "dispatch-failed" },
+      { state: "absent", reason: "dispatch-failed" },
+    ]);
+    const shown = await invokeCli(cwd, ["show", `run:${run.runId}`, "--json"]);
+    expect(shown.code, shown.stderr).toBe(0);
+    const diagnostic = JSON.parse(shown.stdout).run.diagnostics.find(
+      ({ code }: { code: string }) => code === "state-root-preexisting",
+    );
+    expect(diagnostic?.affectedPlannedAttemptIds.toSorted()).toEqual(run.slots.map(({ slotId }) => slotId).toSorted());
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
