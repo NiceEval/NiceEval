@@ -66,6 +66,8 @@ Provider 没有删除原语时（Docker Engine API 只能读、核对和覆盖�
 归档按 manifest 根编号与相对成员编码，保留缺席根；稳定排序，保存文件内容、目录与 mode。不保存宿主绝对路径作为解包指令。
 只容忍 ENOENT；不可读、读取时变化、链接或异常类型都拒绝 capture，不能用 `tar --ignore-failed-read` 弱化错误。
 
+归档接口可能静默省略成员：Docker Engine 打包时遇到不可读文件或 socket，只写 daemon 日志，仍成功返回 tar。这时 Provider 用独立的完整清单对账。本机 Docker 读取容器相对镜像的 changes 列表，声明根下的每个路径都必须作为同类型成员出现在归档里，缺失或类型不符即拒绝 capture。声明根由 State 独占、恢复前确认不存在，所以根下的每个路径都会出现在 changes 中。
+
 全部 State 与 Group resource release 共用一个 30 秒收尾预算，不按 binding 累加。正常结束、timeout 与中断都使用独立 cleanup signal；独立 signal 不表示允许保存不可信状态。
 正常轮换若满足保存条件可提交；故障替换先完成 skipped/failed 事实，再允许下一台实例恢复。
 
