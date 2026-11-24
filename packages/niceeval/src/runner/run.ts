@@ -12,7 +12,7 @@ import {
   observeAttemptBeforeCacheConflicts,
 } from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
-import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch, Fiber } from "effect";
+import { Effect, Cause, Data, Deferred, Result, Exit, Option, Scope, Semaphore, Latch, Fiber } from "effect";
 import { adapterIdentity } from "../adapter.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
@@ -3562,14 +3562,24 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   yield* ensureExperimentSetup(a);
                   yield* slot.reacquire;
                 }
-                const physicalBody = body(slot, experimentSlot).pipe(Effect.as({ kind: "done" } as const));
+                const recheck = { kind: "recheck" } as const;
+                const physicalBody = Effect.gen(function* () {
+                  if (checkDispatchHalt(a).halted) return recheck;
+                  yield* body(slot, experimentSlot);
+                  return { kind: "done" } as const;
+                });
                 if (exclusiveSem === undefined) return yield* physicalBody;
-                // 保持原来的物理资源获取顺序：exclusive provider → 全局位 → body。先还全局位
-                // 再等 provider，避免一个已完成 sharedState/setup 协调、却仍在排 exclusive lane 的
-                // attempt 饿死其它 provider；拿到 lane 后才回补全局位，Sandbox 与 body 因而仍在两把
-                // permit 的保护中。中断时两个作用域各自归还自己实际持有的 permit。
+                // Race the halt against both waits before dispatch. Once the
+                // physical body starts, it keeps the lane through cleanup.
                 yield* slot.release;
-                return yield* exclusiveSem.withPermits(1)(slot.reacquire.pipe(Effect.andThen(physicalBody)));
+                return yield* Effect.scopedWith((laneScope) =>
+                  Effect.raceFirst(
+                    exclusiveSem
+                      .takeScoped(1)
+                      .pipe(Scope.provide(laneScope), Effect.andThen(slot.reacquire), Effect.as(true)),
+                    haltAwait(a).pipe(Effect.as(false)),
+                  ).pipe(Effect.flatMap((ready) => (ready ? physicalBody : Effect.succeed(recheck)))),
+                );
               }),
             );
 
