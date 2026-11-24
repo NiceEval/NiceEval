@@ -1,0 +1,59 @@
+---
+title: "旧恢复顺序会在原 Run 仍显示运行中时执行 after"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 等待
+    lg1: 恢复
+    lg2: 完成
+    lg3: Breaks AfterFollowsRun or RecoveryClosesRun
+    lg4: Path to the AfterFollowsRun or RecoveryClosesRun bug
+  }
+  class lg0 yellow
+  class lg1 blue
+  class lg2 teal
+  class lg3 breaks
+  class lg4 bugPath
+  s0: 原进程已停止#65292;等待恢复
+  s1: 已接手租约#65292;原 Run 仍显示运行中
+  s2: 恢复中断#65292;等待重新接手
+  s3: after 已启动#65292;原 Run 仍显示运行中
+  s4: 恢复中断#65292;after 尚未确认
+  s5: after 已确认#65292;原 Run 仍显示运行中
+  s6: 整组租约已释放#65292;原 Run 仍显示运行中
+  s7: 已重新接手#65292;等待重试 after
+  s8: after 已确认#65292;等新进程接手
+  [*] --> s0
+  s0 --> s1: 确认原进程已停止#65292;接手整组租约
+  s1 --> s2: 恢复进程中断
+  s1 --> s3: 执行已登记的 after
+  s2 --> s1: 确认上次恢复已停止#65292;重新接手整组租约
+  s3 --> s4: 恢复进程中断
+  s3 --> s5: 确认 after 并移除对应登记
+  s4 --> s7: 确认上次恢复已停止#65292;重新接手整组租约
+  s5 --> s6: 一次释放整组租约
+  s5 --> s8: 恢复进程中断
+  s7 --> s4: 恢复进程中断
+  s7 --> s3: 重试未确认的 after
+  s8 --> s5: 确认上次恢复已停止#65292;重新接手整组租约
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 yellow
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 yellow
+  class s3 blue
+  class s3 breaks
+  class s3 bugPath
+  class s4 yellow
+  class s4 breaks
+  class s5 blue
+  class s5 breaks
+  class s5 bugPath
+  class s6 teal
+  class s6 breaks
+  class s6 bugPath
+  class s7 blue
+  class s7 breaks
+  class s8 yellow
+  class s8 breaks

@@ -1,0 +1,64 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 6414073127590183709 with 1 worker on 16 cores with 8008MB heap and 64MB offheap memory [pid: 501767] (Linux 6.18.60 amd64, Eclipse Adoptium 25.0.5.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ctrdh/Code/NiceEval/NiceEval/docs/feature/experiments/tla/shared-state-lease/recovery-before/Recovery.tla
+Parsing file /tmp/statechart-yrUDRu/statechart-vVWHWb/tmp-verdict-1/Naturals.tla
+Parsing file /tmp/statechart-yrUDRu/statechart-vVWHWb/tmp-verdict-1/FiniteSets.tla
+Parsing file /tmp/statechart-yrUDRu/statechart-vVWHWb/tmp-verdict-1/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Recovery
+Starting... (2026-11-24 01:49:31)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-24 01:49:32.
+Error: Invariant AfterFollowsRun is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ run = "active"
+/\ live = FALSE
+/\ gen = 1
+/\ after = "pending"
+/\ callsAtRetirement = 0
+/\ lastCallGen = 0
+/\ phase = "active"
+/\ calls = 0
+/\ reported = FALSE
+/\ registered = TRUE
+/\ actor = 0
+/\ members = <<2, 3, 4>>
+
+State 2: <Claim line 15, col 13 to line 18, col 94 of module Recovery>
+/\ run = "active"
+/\ live = TRUE
+/\ gen = 2
+/\ after = "pending"
+/\ callsAtRetirement = 0
+/\ lastCallGen = 0
+/\ phase = "recovering"
+/\ calls = 0
+/\ reported = FALSE
+/\ registered = TRUE
+/\ actor = 1
+/\ members = <<3, 4, 5>>
+
+State 3: <StartAfter line 27, col 15 to line 30, col 101 of module Recovery>
+/\ run = "active"
+/\ live = TRUE
+/\ gen = 2
+/\ after = "running"
+/\ callsAtRetirement = 0
+/\ lastCallGen = 2
+/\ phase = "recovering"
+/\ calls = 1
+/\ reported = FALSE
+/\ registered = TRUE
+/\ actor = 1
+/\ members = <<3, 4, 5>>
+
+4 states generated, 4 distinct states found, 1 states left on queue.
+The depth of the complete state graph search is 3.
+The average outdegree of the complete state graph is 2 (minimum is 2, the maximum 2 and the 95th percentile is 2).
+Finished in 00s at (2026-11-24 01:49:32)
+

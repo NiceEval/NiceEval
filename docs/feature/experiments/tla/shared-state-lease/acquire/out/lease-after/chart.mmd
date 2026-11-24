@@ -1,0 +1,33 @@
+---
+title: "等齐所需状态后一次取得整组租约"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 持有
+    lg1: 等待
+    lg2: 完成
+  }
+  class lg0 blue
+  class lg1 yellow
+  class lg2 teal
+  s0: 3 个 Experiment 等齐所需状态
+  s1: 一个 Experiment 持有整组租约#65292;2 个等待
+  s2: 2 个 Experiment 等齐所需状态
+  s3: 一个 Experiment 持有整组租约#65292;1 个等待
+  s4: 1 个 Experiment 等齐所需状态
+  s5: 最后一个 Experiment 持有整组租约
+  s6: 全部 Experiment 已释放租约
+  [*] --> s0
+  s0 --> s1: 所需状态均空闲#65292;一次取得整组租约
+  s1 --> s2: 本次工作结束#65292;一次释放整组租约
+  s2 --> s3: 所需状态均空闲#65292;一次取得整组租约
+  s3 --> s4: 本次工作结束#65292;一次释放整组租约
+  s4 --> s5: 所需状态均空闲#65292;一次取得整组租约
+  s5 --> s6: 本次工作结束#65292;一次释放整组租约
+  class s0 yellow
+  class s1 blue
+  class s2 yellow
+  class s3 blue
+  class s4 yellow
+  class s5 blue
+  class s6 teal
