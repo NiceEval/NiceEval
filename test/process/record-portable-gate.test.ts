@@ -28,7 +28,6 @@ function failPortableValidationOnce(marker: string): readonly string[] {
 }
 
 // @feature docs/feature/run/architecture/lifecycle.md#创建与执行
-// @issue docs/issues/portable-gate-failure-ignored.md
 test("exp only succeeds with a terminal receipt after portable Record validation", { timeout: 30_000 }, async () => {
   await fc.assert(
     fc.asyncProperty(fc.boolean(), async (failValidation) => {
