@@ -889,6 +889,22 @@ export function deleteRunResourceOnConnection(
       const revision = integer(tombstone, "deletion_revision");
       return { runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) };
     }
+    const unfinishedSessionWithoutSibling = recordStatement(
+      connection,
+      `SELECT 1 FROM ne19_invocation_sessions s
+      WHERE s.invocation_id=? AND s.state IN ('active','recovering')
+        AND NOT EXISTS (
+          SELECT 1 FROM ne19_run_resources r
+          LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=r.run_id
+          WHERE r.invocation_id=s.invocation_id AND r.run_id<>? AND d.run_id IS NULL
+        )`,
+    ).get(run.invocationId, input.runId);
+    if (unfinishedSessionWithoutSibling !== undefined) {
+      throw new RunStorageError(
+        "run-session-recovery-required",
+        `Run ${input.runId} is the last remaining Run of unfinished Invocation Session ${run.invocationId}.`,
+      );
+    }
     const dependencies = incomingReferences(connection, input.runId);
     if (dependencies.length > 0) {
       throw new RunStorageError(

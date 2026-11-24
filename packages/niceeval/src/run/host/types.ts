@@ -73,7 +73,7 @@ export class RunReadError extends Data.TaggedError("RunReadError")<{
   readonly cause: RunStorageCommandError | undefined;
 }> {}
 
-/** Reports a refused or failed Run deletion; active or referenced Runs cannot be deleted through this operation. */
+/** Reports a refused or failed Run deletion. */
 export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
   readonly operation: "delete";
   readonly code:
@@ -81,6 +81,7 @@ export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
     | "run-not-found"
     | "run-active"
     | "run-referenced"
+    | "run-session-recovery-required"
     | "run-lifecycle-adapter-unavailable"
     | "run-delete-failed";
   readonly message: string;

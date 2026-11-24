@@ -75,6 +75,13 @@ function deleteFailure(runId: string, cause: RunDeleteError | RunStorageCommandE
             cause,
           });
         }
+        case "run-session-recovery-required":
+          return new RunDeleteError({
+            operation: "delete",
+            code: reason._tag,
+            message: `${cause.message} Wait for the Session to finish, or recover this Run after the owner stops.`,
+            cause,
+          });
         case "run-id-collision":
         case "run-not-active":
         case "writer-generation-mismatch":
@@ -142,6 +149,7 @@ function recoverFailure(runId: string, cause: RunRecoverError | RunStorageComman
         case "absence-coverage-invalid":
         case "run-state-mismatch":
         case "run-delete-reference-conflict":
+        case "run-session-recovery-required":
         case "recovery-evidence-required":
         case "publication-cutoff-restart-required":
         case "run-storage-invalid":
