@@ -20,7 +20,7 @@ import { normalizeExternalCause, type ExternalCause } from "../../shared/externa
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { readRunValue, RUN_VALUE_FAMILY, stageRunValue, sealRecoveredRun } from "../../record/sqlite/storage.ts";
 import { RunStorageError } from "./errors.ts";
-import { observeRunWriterTermination } from "./owner-identity.ts";
+import { createRunWriterGeneration, observeRunWriterTermination } from "./owner-identity.ts";
 import {
   RUN_ABSENCE_REASONS,
   RUN_TERMINAL_STATES,
@@ -594,6 +594,21 @@ function assertPublishedRecoveryDependencies(
   );
 }
 
+/** Bind the Host's per-Run proof to the current OS process without persisting the proof itself. */
+export function recoveryWriterGeneration(actorProof: string): string {
+  return createRunWriterGeneration(`recovery-v2:${createHash("sha256").update(actorProof).digest("hex")}`);
+}
+
+function reopenRecoveryAggregate(connection: RecordDatabase, runId: string, generation: string): void {
+  recordStatement(connection, "DELETE FROM ne19_run_seal_entries WHERE run_id=?").run(runId);
+  recordStatement(
+    connection,
+    `UPDATE ne19_runs SET writer_generation=?,status='open',candidate_seal_identity=NULL,
+    candidate_seal_entry_count=NULL,candidate_seal_staged_count=0,logical_seal_identity=NULL,
+    mutation_sequence=mutation_sequence+1 WHERE run_id=? AND status!='sealed'`,
+  ).run(generation, runId);
+}
+
 // @concord-code
 // @concord-implements docs/feature/run/architecture/lifecycle.md
 export function recoverRunResourceOnConnection(
@@ -604,7 +619,7 @@ export function recoverRunResourceOnConnection(
   requireIdentity(input.expectedWriterGeneration, "expectedWriterGeneration");
   requireIdentity(input.recoveryWriterGeneration, "recoveryWriterGeneration");
   requireIsoInstant(input.completedAt, "completedAt");
-  if (input.expectedWriterGeneration === input.recoveryWriterGeneration)
+  if (input.mode !== "resume" && input.expectedWriterGeneration === input.recoveryWriterGeneration)
     throw new RunStorageError("recovery-evidence-required", "Recovery must advance to a distinct writer generation");
   // Commit the fence before any potentially long closure verification. A crash
   // retains the exact recovery actor, and the next recover must prove it dead.
@@ -618,6 +633,26 @@ export function recoverRunResourceOnConnection(
       "SELECT status,writer_generation,core_digest FROM ne19_runs WHERE run_id=?",
     ).get(input.runId) as Row | undefined;
     const unfinished = aggregate !== undefined && text(aggregate, "status") !== "sealed";
+    if (input.mode === "resume") {
+      const actor = recordStatement(
+        connection,
+        "SELECT recovery_writer_generation,evidence_observed_at FROM ne19_run_recoveries WHERE run_id=?",
+      ).get(input.runId);
+      if (
+        run.terminalState !== undefined ||
+        run.writerGeneration !== input.recoveryWriterGeneration ||
+        actor === undefined ||
+        text(actor, "recovery_writer_generation") !== run.writerGeneration ||
+        observeRunWriterTermination(run.writerGeneration).state !== "active" ||
+        recoveryWriterGeneration(input.actorProof) !== run.writerGeneration ||
+        (unfinished && text(aggregate, "writer_generation") !== run.writerGeneration)
+      ) {
+        throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
+      }
+      assertPublishedRecoveryDependencies(connection, input.runId, false);
+      if (unfinished) reopenRecoveryAggregate(connection, input.runId, run.writerGeneration);
+      return { completedAt: text(actor, "evidence_observed_at"), state: "interrupted" as const };
+    }
     let evidence: { evidenceKind: string; evidenceIdentity: string };
     let completedAt = input.completedAt;
     if (input.mode === "active") {
@@ -700,13 +735,7 @@ export function recoverRunResourceOnConnection(
       revision,
     );
     if (unfinished) {
-      recordStatement(connection, "DELETE FROM ne19_run_seal_entries WHERE run_id=?").run(input.runId);
-      recordStatement(
-        connection,
-        `UPDATE ne19_runs SET writer_generation=?,status='open',candidate_seal_identity=NULL,
-        candidate_seal_entry_count=NULL,candidate_seal_staged_count=0,logical_seal_identity=NULL,
-        mutation_sequence=mutation_sequence+1 WHERE run_id=? AND status!='sealed'`,
-      ).run(input.recoveryWriterGeneration, input.runId);
+      reopenRecoveryAggregate(connection, input.runId, input.recoveryWriterGeneration);
       recordStatement(
         connection,
         `WITH RECURSIVE retained(family) AS (
@@ -761,13 +790,13 @@ export function recoverRunResourceOnConnection(
       run === undefined ||
       actor === undefined ||
       text(actor, "recovery_writer_generation") !== input.recoveryWriterGeneration ||
-      (input.mode === "active"
+      (input.mode !== "terminal"
         ? run.terminalState !== undefined || run.writerGeneration !== input.recoveryWriterGeneration
         : run.terminalState !== input.expectedState)
     )
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
     let cutoff = currentPublicationCutoffOnConnection(connection);
-    if (input.mode === "active") {
+    if (input.mode !== "terminal") {
       const revision = nextRevision(connection);
       insertAbsences(
         connection,

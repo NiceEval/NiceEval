@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, generateKeySync, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime, Effect } from "effect";
@@ -11,11 +11,17 @@ import {
   observeRunWriterTermination,
   createRunWriterGeneration,
   readRunResource,
+  recoveryWriterGeneration,
   recoverRunResource,
 } from "../storage/index.ts";
 
 import type { RunDeleteReceipt, RunRecoverReceipt } from "./types.ts";
 import { RunDeleteError, RunRecoverError } from "./types.ts";
+
+// Only this Host can reconstruct its per-Run proof. Completed and abandoned Runs
+// need no process-local entry. The set covers only outstanding SQLite commands.
+const recoveryKey = generateKeySync("hmac", { length: 256 });
+const activeRecoveries = new Set<string>();
 
 /**
  * Narrow wiring seam for the Run-owned SQLite adapter. The current Record
@@ -258,7 +264,12 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
           return { runId, state: repaired.state };
         }
         const observation = observeRunWriterTermination(run.writerGeneration);
-        if (observation.state === "active") {
+        const actorProof = createHmac("sha256", recoveryKey)
+          .update(JSON.stringify([root, runId]))
+          .digest("hex");
+        const generation = recoveryWriterGeneration(actorProof);
+        const resuming = run.state === "recovering" && run.writerGeneration === generation;
+        if ((observation.state === "active" && !resuming) || activeRecoveries.has(actorProof)) {
           return yield* Effect.fail(
             new RunRecoverError({
               operation: "recover",
@@ -278,19 +289,30 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
             }),
           );
         }
-        yield* recoverRunResource(root, {
-          mode: "active",
+        const intent =
+          observation.state === "active"
+            ? { mode: "resume" as const, actorProof }
+            : {
+                mode: "active" as const,
+                evidence: {
+                  kind: observation.evidenceKind,
+                  identity: observation.evidenceIdentity,
+                  observedAt: DateTime.formatIso(now),
+                },
+              };
+        const mutation = recoverRunResource(root, {
+          ...intent,
           runId,
           expectedWriterGeneration: run.writerGeneration,
-          recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
+          recoveryWriterGeneration: generation,
           completedAt: DateTime.formatIso(now),
-          evidence: {
-            kind: observation.evidenceKind,
-            identity: observation.evidenceIdentity,
-            observedAt: DateTime.formatIso(now),
-          },
           deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
         });
+        activeRecoveries.add(actorProof);
+        yield* mutation.pipe(
+          Effect.ensuring(Effect.sync(() => activeRecoveries.delete(actorProof))),
+          Effect.uninterruptible,
+        );
         yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
         return { runId, state: "interrupted" as const };
       }).pipe(Effect.mapError((cause) => recoverFailure(runId, cause))),

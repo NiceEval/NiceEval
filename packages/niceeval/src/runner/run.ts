@@ -83,6 +83,7 @@ import {
   type CaseLockEffectClaim,
   type CaseLockRecord,
 } from "./lock.ts";
+import { exactProcessState } from "./node-process-identity.ts";
 import {
   acquireSharedStateLeaseEffect,
   currentProcessIdentityEffect,
@@ -2607,7 +2608,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 const record = yield* readCaseLockEffect(caseLockRoot, st.experimentId, st.evalId).pipe(
                   Effect.catch(() => Effect.succeed(undefined)),
                 );
-                if (record === undefined) return;
+                if (record === undefined || exactProcessState(record) === "dead") return;
               }
             }).pipe(Effect.ensuring(Effect.sync(() => resolveCaseWaitWithoutCarry(st, startedAt))));
             // 等待本身就是挂起窗口。它不绑定刚归还的全局位 Scope；同组后到者拿到同一 Effect，

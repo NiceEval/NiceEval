@@ -98,6 +98,7 @@ interface RecoverRunResourceBase {
 export type RecoverRunResourceInput = RecoverRunResourceBase &
   (
     | { readonly mode: "active"; readonly evidence: OwnerTerminationEvidence }
+    | { readonly mode: "resume"; readonly actorProof: string }
     | { readonly mode: "terminal"; readonly expectedState: RunTerminalState }
   );
 

@@ -1,4 +1,4 @@
-import { Clock, Effect, Fiber } from "effect";
+import { Clock, Effect, Fiber, Semaphore } from "effect";
 import { type FencedOwner, type ProcessOwnerIdentity } from "../coordination/platform/sqlite-coordination.ts";
 import { ProjectStateDatabase, type CaseCoordinationFacet } from "../record/sqlite/project-state-database.ts";
 import { currentProcessOwnerIdentity, exactProcessState } from "./node-process-identity.ts";
@@ -233,27 +233,47 @@ export function acquireCaseLockEffect(
         Effect.forever(Effect.sleep(heartbeatIntervalMs).pipe(Effect.andThen(renew.pipe(Effect.ignore)))),
       ).pipe(
         Effect.map((fiber) => {
-          const release = Effect.uninterruptible(
-            Effect.suspend(() => {
-              if (released) return Effect.void;
-              released = true;
-              held.delete(key);
-              return Fiber.interrupt(fiber).pipe(
-                Effect.andThen(
-                  Effect.tryPromise({
-                    try: () =>
-                      facets.caseCoordination.execute<undefined>({
-                        _tag: "case-release",
-                        caseId: id,
-                        owner,
-                        deadlineEpochMs: Date.now() + 30_000,
-                      }),
-                    catch: caseLockError,
-                  }),
+          const releaseMutex = Semaphore.makeUnsafe(1);
+          const releaseRow = Effect.tryPromise({
+            try: () =>
+              facets.caseCoordination.execute<undefined>({
+                _tag: "case-release",
+                caseId: id,
+                owner,
+                deadlineEpochMs: Date.now() + 30_000,
+              }),
+            catch: caseLockError,
+          }).pipe(
+            Effect.catch((cause) => {
+              if (!isConflict(cause)) return Effect.fail(cause);
+              // A committed release can lose its reply. An absent or superseded
+              // owner completes this handle without mutating the successor.
+              return readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
+                Effect.provideService(ProjectStateDatabase, database),
+                Effect.flatMap((current) =>
+                  current?.ownerId === owner.ownerId && current.generation === owner.generation
+                    ? Effect.fail(cause)
+                    : Effect.void,
                 ),
               );
             }),
           );
+          const release: CaseLockEffectClaim["release"] = releaseMutex
+            .withPermits(1)(
+              Effect.suspend(() => {
+                if (released || held.get(key) !== release) return Effect.void;
+                return Fiber.interrupt(fiber).pipe(
+                  Effect.andThen(releaseRow),
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      released = true;
+                      if (held.get(key) === release) held.delete(key);
+                    }),
+                  ),
+                );
+              }),
+            )
+            .pipe(Effect.uninterruptible);
           held.set(key, release);
           return { claim: { release }, takenOver };
         }),
