@@ -84,6 +84,7 @@ export interface StorageWorkerClient {
   readonly invocation: <A extends StorageWorkerResult>(command: InvocationCommand) => Promise<A>;
   readonly run: <A extends StorageWorkerResult>(command: RunCommand) => Promise<A>;
   readonly admission: <A extends StorageWorkerResult>(command: AdmissionInput) => Promise<A>;
+  readonly closed: boolean;
   readonly close: () => Promise<void>;
 }
 
@@ -322,6 +323,9 @@ export async function makeStorageWorkerClient(
     run: <A extends StorageWorkerResult>(command: RunCommand) => request<A>({ operation: "run", command }),
     admission: <A extends StorageWorkerResult>(command: AdmissionInput) =>
       request<A>({ operation: "admission", command }),
+    get closed() {
+      return closed;
+    },
     close: () =>
       (closing ??= (async () => {
         if (closed) {

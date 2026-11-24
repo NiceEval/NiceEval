@@ -76,6 +76,7 @@ export type CaseCoordinationCommand =
       readonly _tag: "case-release";
       readonly caseId: string;
       readonly owner: import("./coordination-repository.ts").FencedOwner;
+      readonly unacknowledgedAcquiredAt?: string;
       readonly deadlineEpochMs: number;
     }
   | {

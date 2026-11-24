@@ -31,7 +31,7 @@ function requireOpen(connection: RecordDatabase, operation: string): void {
     | Row
     | undefined;
   if (row === undefined || text(row, "barrier_state") !== "open")
-    conflict(operation, "ProjectDatabase writer barrier is not open");
+    conflict("case-writer-barrier", `ProjectDatabase writer barrier is not open for ${operation}`);
 }
 
 function ownerSql(): string {
@@ -95,11 +95,13 @@ export function executeCaseCommand(connection: RecordDatabase, command: CaseCoor
         return undefined;
       }
       case "case-release": {
+        const acquiredAt = command.unacknowledgedAcquiredAt;
         const changed = recordStatement(
           connection,
-          `DELETE FROM ne19_case_locks WHERE case_id=? AND ${ownerSql()}`,
-        ).run(command.caseId, ...ownerArgs(command.owner));
-        if (Number(changed.changes) !== 1) conflict(command._tag, "case lock owner generation is fenced");
+          `DELETE FROM ne19_case_locks WHERE case_id=? AND ${ownerSql()}${acquiredAt === undefined ? "" : " AND acquired_at=?"}`,
+        ).run(command.caseId, ...ownerArgs(command.owner), ...(acquiredAt === undefined ? [] : [acquiredAt]));
+        if (acquiredAt === undefined && Number(changed.changes) !== 1)
+          conflict(command._tag, "case lock owner generation is fenced");
         return undefined;
       }
       case "case-takeover": {
