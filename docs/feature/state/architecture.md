@@ -121,6 +121,8 @@ binding 的完整定义、cohort 与 initialize action identity 进入条件身�
 Attempt context 在发布时固定关联 executionId；保存与恢复只追加 execution 事实，不回写 Attempt。
 恢复失败可以零 Attempt；故障替代保留每一代事实，不压成 lineage 的最后一次保存。
 
+恢复属于 Group 物理 Sandbox 的获取阶段，先于任何 Attempt 的预约与开始事件。恢复失败时该 Group 的全部 Planned attempt 记为 not-dispatched，由 Run 级诊断说明原因，不发布 errored Attempt；已经开始的 Attempt 在其它阶段失败时照常发布 errored。
+
 Run 关闭前，全部 execution 必须终结；进程崩溃后只有 Run recovery actor 在同一 authority 核对提交结果并终结 pending；集合恢复先调用它，再处理 after 与释放。
 数据库不可读时不能伪造终态或发布完整 Run。unknown 是运行时反馈及可持久化的中间事实，恢复必须将其收敛为已提交或未提交。
 portable record.sqlite 保留 execution、Attempt context 与保存回执；读取不访问原项目、Provider 或 checkpoint 内容。
