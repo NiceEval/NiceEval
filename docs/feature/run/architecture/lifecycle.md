@@ -120,6 +120,11 @@ Session 终结不释放 State 租约；租约仍由既有的显式集合 recover
 若其 State 租约集合仍为 active 或 recovering，以 `run-state-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
 存在依赖时零删除；用户需要先显式删除依赖 Run。
 
+目标是其 Invocation 最后一个未删除的 Run、而 Session 仍未终结时，以 `run-session-recovery-required` 拒绝，零删除。
+exact Run recovery 是终结遗留 Session 的唯一入口，删掉最后一个 Run 会让 Session 再也无法收口。
+owner 仍在运行时等它正常收口；owner 已终止时先对该 Run 执行 `run recover`，Session 终结后再删除。
+这项检查与 incoming references 在同一删除事务内完成。
+
 删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。
 事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。
 
