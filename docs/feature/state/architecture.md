@@ -49,6 +49,8 @@ State 的 restore 与 save 是 Runner 内部物理阶段。初始化所需工具
 绑定 State 的实例禁用 before cache capture/restore，避免整机缓存替换状态；声明式 before 仍真实执行。workdir reset 与资源 prepare 不得改 State 根。
 Provider 必须支持安全文件树操作和全实例写入静默验证，否则规划拒绝。不把成功退出的 Agent 命令当作后台写入者已停止的证据。
 
+Provider 从宿主侧兑现这两项能力，不依赖实例镜像里装有 shell、tar、Python 等工具，也不在实例内运行辅助程序。例如本机 Docker 用 Engine 的 archive 接口流式读写文件树（不把整个归档读进内存），用 pause 冻结容器后核对进程表来证明写入静默。
+
 ## 恢复与保存
 
 取得实例后先发布 execution 与起点，再校验所有根和归档 manifest；全部合法后才删除声明根、恢复或初始化。

@@ -23,7 +23,7 @@ const mempal = defineState({
   name: "mempal",
   version: "0.9.0",
   paths: ["~/.mempal"],
-  initialize: shell({ command: "mempal init ~/.mempal" }),
+  initialize: shell({ id: "mempal-init", command: "mempal init ~/.mempal" }),
 });
 
 export default defineExperiment({
