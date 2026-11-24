@@ -1109,6 +1109,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
          * until the Experiment makes its one lease-release decision.
          */
         readonly sandboxCleanupFailures: SandboxCleanupFailure[];
+        teardownRegistration?: import("../record/sqlite/registry-repository.ts").TeardownObligationRow;
         sharedStateClaim: SharedStateLeaseEffectClaim | undefined;
       }
       const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
@@ -1496,7 +1497,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // stale in-memory claim after a failed compare-owner mutation; its
               // durable record is deliberately left for explicit recovery.
               cell.sharedStateClaim = undefined;
-              return claim.release.pipe(Effect.catch(() => recoveryRequired("release-failed")));
+              const retirement =
+                run.teardown && run.experimentId
+                  ? (cell.teardownRegistration ?? {
+                      id: teardownEntryId(run.experimentId, process.pid),
+                      generation: null,
+                    })
+                  : undefined;
+              return claim.release(retirement).pipe(Effect.catch(() => recoveryRequired("release-failed")));
             }),
           );
         });
@@ -1679,7 +1687,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         cell.state = { _tag: "TornDown", pendingAttempts, setup: setupOutcomeOf(setup) };
                         // settle 后才注销：drain 在执行体在飞时仍能看见本项。
                         yield* unregisterExperimentTeardown(experimentId);
-                        if (run.experimentId) {
+                        if (run.experimentId && !run.sharedState) {
                           yield* removeTeardownRegistrationIfPresentEffect(
                             coordinationRoot,
                             teardownEntryId(run.experimentId, process.pid),
@@ -1899,6 +1907,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                           host: currentHost,
                           startedAt: new Date().toISOString(),
                         }).pipe(
+                          Effect.tap((row) =>
+                            Effect.sync(() => {
+                              cell.teardownRegistration = row;
+                            }),
+                          ),
                           Effect.catch((error) =>
                             Effect.sync(() => {
                               const message =
@@ -2050,7 +2063,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           const claim = yield* acquireSharedStateClaim(run, experimentId);
           yield* recoverOrphanedTeardownRegistration(run, experimentId).pipe(
             Effect.ensuring(
-              claim.release.pipe(
+              claim.release().pipe(
                 Effect.catch(() =>
                   Effect.sync(() => {
                     reportSharedStateRecoveryRequired({

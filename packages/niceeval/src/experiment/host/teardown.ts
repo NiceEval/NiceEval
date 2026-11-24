@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 import { operationError } from "./operations.ts";
 
 import { Clock, Effect, Result } from "effect";
+import type { TeardownRetirement } from "../../record/sqlite/registry-repository.ts";
+import { SqliteRecordError } from "../../record/sqlite/errors.ts";
 import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 
 import { cleanupCallback } from "../../runner/cleanup-timeout.ts";
@@ -129,15 +131,16 @@ function inspectExactRegistration(input: {
   readonly coordinationRoot: string;
   readonly record: SharedStateLeaseRecord;
   readonly currentHost: string;
-}): Effect.Effect<boolean, unknown, ProjectStateDatabase> {
+}): Effect.Effect<TeardownRetirement, unknown, ProjectStateDatabase> {
   const id = teardownEntryId(input.record.experimentId, input.record.pid);
   return Effect.gen(function* () {
-    const registration = yield* readExactTeardownRegistrationEffect(
+    const exact = yield* readExactTeardownRegistrationEffect(
       input.coordinationRoot,
       input.record.experimentId,
       input.record.pid,
     );
-    if (registration === undefined) return false;
+    if (exact === undefined) return { id, generation: null };
+    const { registration, row } = exact;
     if (registration.host !== input.record.host) {
       return yield* Effect.fail(
         new Error(
@@ -156,7 +159,7 @@ function inspectExactRegistration(input: {
         new Error(`teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner`),
       );
     }
-    return true;
+    return row;
   });
 }
 
@@ -168,7 +171,7 @@ function clearExactRegistration(input: {
 }): Effect.Effect<void, unknown, ProjectStateDatabase> {
   const id = teardownEntryId(input.record.experimentId, input.record.pid);
   return Effect.gen(function* () {
-    const present = yield* inspectExactRegistration(input);
+    const present = (yield* inspectExactRegistration(input)).generation !== null;
     if (!present) {
       if (input.expectedRegistration) {
         return yield* Effect.fail(
@@ -384,7 +387,7 @@ function runExplicitRecovery(
       begun._tag === "AlreadyReleased"
         ? "shared-state-recovery-already-released-registration-failed"
         : "shared-state-recovery-registration-failed";
-    const registrationWasPresent = yield* inspectExactRegistration({
+    const retirement = yield* inspectExactRegistration({
       coordinationRoot,
       record: begun.record,
       currentHost: input.currentHost,
@@ -394,7 +397,7 @@ function runExplicitRecovery(
         coordinationRoot,
         record: begun.record,
         currentHost: input.currentHost,
-        expectedRegistration: registrationWasPresent,
+        expectedRegistration: retirement.generation !== null,
       }).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
       return {
         status: "already-released" as const,
@@ -421,19 +424,23 @@ function runExplicitRecovery(
         error: outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure),
       };
     }
-    yield* clearExactRegistration({
-      coordinationRoot,
-      record: begun.record,
-      currentHost: input.currentHost,
-      expectedRegistration: registrationWasPresent,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
     yield* completeExplicitSharedStateRecoveryEffect({
       niceevalRoot: coordinationRoot,
       key: begun.record.key,
       ownerToken: begun.record.ownerToken,
       recoveryId: begun.recoveryId,
       localHost: input.currentHost,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError("shared-state-recovery-completion-failed", cause)));
+      retirement,
+    }).pipe(
+      Effect.mapError((cause) =>
+        recoveryOperationError(
+          cause instanceof SqliteRecordError && cause.operation === "teardown-claim"
+            ? registrationFailureCode
+            : "shared-state-recovery-completion-failed",
+          cause,
+        ),
+      ),
+    );
     return {
       status: "recovered" as const,
       key: begun.record.key,

@@ -1,5 +1,6 @@
 import type { SQLOutputValue } from "node:sqlite";
 import { recordStatement, type RecordDatabase } from "./database.ts";
+import { sqliteError } from "./errors.ts";
 type Row = Readonly<Record<string, SQLOutputValue>>;
 
 function withConnection<A>(connection: RecordDatabase, body: (connection: RecordDatabase) => A): A {
@@ -16,6 +17,8 @@ export interface TeardownObligationRow {
   readonly generation: number;
   readonly payload: Uint8Array;
 }
+
+export type TeardownRetirement = TeardownObligationRow | { readonly id: string; readonly generation: null };
 
 function teardownRow(row: Row, owner: string): TeardownObligationRow {
   return {
@@ -34,13 +37,15 @@ export function putTeardownObligation(input: {
   readonly payload: Uint8Array;
 }) {
   return withConnection(input.connection, (connection) => {
-    recordStatement(
+    const row = recordStatement(
       connection,
       `INSERT INTO ne19_teardown_obligations(
       obligation_id,experiment_id,owner_pid,owner_host,generation,payload) VALUES(?,?,?,?,1,?)
       ON CONFLICT(obligation_id) DO UPDATE SET owner_host=excluded.owner_host,
-        generation=ne19_teardown_obligations.generation+1,payload=excluded.payload`,
-    ).run(input.id, input.experimentId, input.ownerPid, input.ownerHost, input.payload);
+        generation=ne19_teardown_obligations.generation+1,payload=excluded.payload
+      RETURNING generation`,
+    ).get(input.id, input.experimentId, input.ownerPid, input.ownerHost, input.payload) as Row;
+    return Number(row.generation);
   });
 }
 
@@ -85,6 +90,25 @@ export function claimTeardownObligation(connection: RecordDatabase, id: string) 
   });
 }
 
+/** Called inside the same immediate transaction that appends the free generation. */
+function retireTeardownObligation(connection: RecordDatabase, expected: TeardownRetirement): void {
+  if (expected.generation === null) {
+    if (getTeardownObligation(connection, expected.id) === undefined) return;
+  } else {
+    const removed = recordStatement(
+      connection,
+      `DELETE FROM ne19_teardown_obligations
+        WHERE obligation_id=? AND generation=? AND payload=?`,
+    ).run(expected.id, expected.generation, expected.payload);
+    if (Number(removed.changes) === 1) return;
+  }
+  throw sqliteError(
+    "record-command-conflict",
+    "teardown-claim",
+    "The exact teardown registration changed before release",
+  );
+}
+
 export interface SharedStateGenerationRow {
   readonly generation: number;
   readonly kind: "active" | "recovering" | "free";
@@ -118,6 +142,7 @@ export function listSharedStateGenerations(connection: RecordDatabase, key: stri
 }
 
 export function appendSharedStateGeneration(input: {
+  readonly retirement?: TeardownRetirement | undefined;
   readonly connection: RecordDatabase;
   readonly key: string;
   readonly expectedGeneration: number;
@@ -155,7 +180,12 @@ export function appendSharedStateGeneration(input: {
       input.heartbeatAt,
       input.payload,
     );
-    return Number(inserted.changes) === 1;
+    if (Number(inserted.changes) !== 1) return false;
+    if (input.retirement !== undefined) {
+      if (input.kind !== "free") throw new Error("Only a free generation can retire teardown");
+      retireTeardownObligation(connection, input.retirement);
+    }
+    return true;
   });
 }
 

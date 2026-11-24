@@ -181,8 +181,7 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
 function executeRegistry(connection: RecordDatabase, command: RegistryCommand): StorageWorkerResult {
   switch (command._tag) {
     case "teardown-put":
-      putTeardownObligation({ connection, ...command });
-      return undefined;
+      return putTeardownObligation({ connection, ...command });
     case "teardown-get":
       return getTeardownObligation(connection, command.id);
     case "teardown-list":

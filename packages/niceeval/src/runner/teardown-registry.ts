@@ -95,16 +95,17 @@ export function teardownEntryId(experimentId: string, pid: number): string {
 export function writeTeardownRegistrationEffect(
   niceevalRoot: string,
   entry: TeardownRegistration,
-): Effect.Effect<void, unknown, ProjectDatabaseRequirement> {
+): Effect.Effect<TeardownObligationRow, unknown, ProjectDatabaseRequirement> {
   const id = teardownEntryId(entry.experimentId, entry.pid);
+  const payload = Buffer.from(JSON.stringify(entry), "utf8");
   return putTeardownObligation({
     root: niceevalRoot,
     id,
     experimentId: entry.experimentId,
     ownerPid: entry.pid,
     ownerHost: entry.host,
-    payload: Buffer.from(JSON.stringify(entry), "utf8"),
-  });
+    payload,
+  }).pipe(Effect.map((generation) => ({ id, generation, payload })));
 }
 
 /** 读一条登记项(不存在或损坏都返回 undefined,不抛错)。 */
@@ -131,11 +132,7 @@ export function readTeardownRegistrationEffect(
  * damaged historical rows; a recovery is instead about to publish a new
  * sharedState generation, so only a genuinely absent path is safe to accept.
  */
-export function readExactTeardownRegistrationEffect(
-  niceevalRoot: string,
-  experimentId: string,
-  pid: number,
-): Effect.Effect<TeardownRegistration | undefined, unknown, ProjectDatabaseRequirement> {
+export function readExactTeardownRegistrationEffect(niceevalRoot: string, experimentId: string, pid: number) {
   const id = teardownEntryId(experimentId, pid);
   return getTeardownObligation(niceevalRoot, id).pipe(
     Effect.flatMap((row) =>
@@ -153,7 +150,7 @@ export function readExactTeardownRegistrationEffect(
               if (registration === undefined) {
                 throw new Error(`teardown registration ${JSON.stringify(id)} has an invalid identity or shape`);
               }
-              return registration;
+              return { registration, row };
             },
             catch: (cause) => cause,
           }),

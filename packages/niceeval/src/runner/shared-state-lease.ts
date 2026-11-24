@@ -4,15 +4,14 @@
 // operator performs the explicit, owner-token-checked recovery flow.
 //
 // The durable authority is an append-only generation chain. A transition may
-// only publish generation N + 1 after observing exact generation N, and uses
-// a same-directory hard-link to occupy that fixed N + 1 name. Consequently a
-// stale actor cannot delete, replace, or otherwise reach a newer generation.
+// only publish generation N + 1 under a SQLite head CAS. A free transition
+// can retire its exact teardown registration in that same transaction.
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Clock, Deferred, Effect, Fiber } from "effect";
-import type { SharedStateGenerationRow } from "../coordination/platform/sqlite-registries.ts";
+import type { SharedStateGenerationRow, TeardownRetirement } from "../coordination/platform/sqlite-registries.ts";
 import {
   ProjectStateDatabase,
   type ProjectStateFacets,
@@ -132,7 +131,9 @@ export class SharedStateLeaseError extends Error {
 export interface SharedStateLeaseEffectClaim {
   readonly ownerToken: string;
   /** Releases only this exact owner generation. It never deletes a newer holder. */
-  readonly release: Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement>;
+  readonly release: (
+    retirement?: TeardownRetirement,
+  ) => Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement>;
   /**
    * Stops this process's diagnostic heartbeat without mutating the durable
    * lease. Cleanup failures use this path: the record must survive for an
@@ -528,6 +529,7 @@ function publishGenerationExclusiveEffect(
   dir: string,
   generation: number,
   state: SharedStateGeneration,
+  retirement?: TeardownRetirement,
 ): Effect.Effect<"published" | "occupied", SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const data =
     state.kind === "lease"
@@ -547,6 +549,7 @@ function publishGenerationExclusiveEffect(
   return appendSharedStateGeneration({
     root: dir,
     key: record.key,
+    retirement,
     expectedGeneration: generation - 1,
     generation,
     parentGeneration: generation - 1,
@@ -799,6 +802,7 @@ function releaseExactLeaseEffect(
   niceevalRoot: string,
   key: string,
   expected: SharedStateLeaseRecord,
+  retirement?: TeardownRetirement,
 ): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   return Effect.suspend(() =>
     readSharedStateLedgerEffect(niceevalRoot, key).pipe(
@@ -808,9 +812,9 @@ function releaseExactLeaseEffect(
         if (current === undefined || !sameLeaseRecord(current, expected))
           return Effect.fail(releaseError(key, ledger.latest));
         const next = freeGenerationFrom(expected, expected.generation + 1, new Date().toISOString());
-        return publishGenerationExclusiveEffect(ledger.dir, next.generation, next).pipe(
+        return publishGenerationExclusiveEffect(ledger.dir, next.generation, next, retirement).pipe(
           Effect.flatMap((published) =>
-            published === "published" ? Effect.void : releaseExactLeaseEffect(niceevalRoot, key, expected),
+            published === "published" ? Effect.void : releaseExactLeaseEffect(niceevalRoot, key, expected, retirement),
           ),
         );
       }),
@@ -918,27 +922,29 @@ export function acquireSharedStateLeaseEffect(
                     return Fiber.interrupt(fiber).pipe(Effect.asVoid);
                   }),
                 );
-                const releaseOperation = stopHeartbeat.pipe(
-                  Effect.andThen(releaseExactLeaseEffect(niceevalRoot, key, record)),
-                  Effect.catch((cause) => {
-                    // Keep the exact failure visible to the caller. `lostOwnership`
-                    // only improves the diagnosis; it never changes authority.
-                    if (cause instanceof SharedStateLeaseError) return Effect.fail(cause);
-                    return Effect.fail(
-                      lostOwnership
-                        ? new SharedStateLeaseError(
-                            "shared-state-lease-owner-mismatch",
-                            `sharedState lease ${JSON.stringify(key)} changed while this owner was active; explicit recovery is required.`,
-                          )
-                        : cause,
-                    );
-                  }),
-                );
-                const release = Effect.uninterruptible(
-                  Deferred.complete(releaseCompletion, releaseOperation).pipe(
-                    Effect.andThen(Deferred.await(releaseCompletion)),
-                  ),
-                );
+                const releaseOperation = (retirement?: TeardownRetirement) =>
+                  stopHeartbeat.pipe(
+                    Effect.andThen(releaseExactLeaseEffect(niceevalRoot, key, record, retirement)),
+                    Effect.catch((cause) => {
+                      // Keep the exact failure visible to the caller. `lostOwnership`
+                      // only improves the diagnosis; it never changes authority.
+                      if (cause instanceof SharedStateLeaseError) return Effect.fail(cause);
+                      return Effect.fail(
+                        lostOwnership
+                          ? new SharedStateLeaseError(
+                              "shared-state-lease-owner-mismatch",
+                              `sharedState lease ${JSON.stringify(key)} changed while this owner was active; explicit recovery is required.`,
+                            )
+                          : cause,
+                      );
+                    }),
+                  );
+                const release = (retirement?: TeardownRetirement) =>
+                  Effect.uninterruptible(
+                    Deferred.complete(releaseCompletion, releaseOperation(retirement)).pipe(
+                      Effect.andThen(Deferred.await(releaseCompletion)),
+                    ),
+                  );
                 return { claim: { ownerToken, release, abandon: stopHeartbeat } };
               }),
             ),
@@ -1134,6 +1140,7 @@ export function completeExplicitSharedStateRecoveryEffect(input: {
   readonly ownerToken: string;
   readonly recoveryId: string;
   readonly localHost: string;
+  readonly retirement: TeardownRetirement;
 }): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
   const complete = (
     expected?: SharedStateLeaseRecord,
@@ -1175,7 +1182,7 @@ export function completeExplicitSharedStateRecoveryEffect(input: {
                 );
               }
               const next = freeGenerationFrom(current, current.generation + 1, new Date().toISOString());
-              return publishGenerationExclusiveEffect(ledger.dir, next.generation, next).pipe(
+              return publishGenerationExclusiveEffect(ledger.dir, next.generation, next, input.retirement).pipe(
                 Effect.flatMap((published) => (published === "published" ? Effect.void : complete(current))),
               );
             }),

@@ -29,6 +29,7 @@ import type {
   StageRunCoreInput,
 } from "./types.ts";
 import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
+import type { TeardownRetirement } from "./registry-repository.ts";
 
 export type RegistryCommand =
   | {
@@ -45,6 +46,7 @@ export type RegistryCommand =
   | { readonly _tag: "shared-list"; readonly key: string }
   | {
       readonly _tag: "shared-append";
+      readonly retirement?: TeardownRetirement | undefined;
       readonly key: string;
       readonly expectedGeneration: number;
       readonly generation: number;

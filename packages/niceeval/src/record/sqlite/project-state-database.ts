@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { SqliteRecordError } from "./errors.ts";
 import { makeStorageWorkerClient, type StorageWorkerClient } from "./client.ts";
 import { finalizeInvocationPortable, recordSqlitePath } from "./database.ts";
-import type { SharedStateGenerationRow, TeardownObligationRow } from "./registry-repository.ts";
+import type { SharedStateGenerationRow, TeardownObligationRow, TeardownRetirement } from "./registry-repository.ts";
 
 const OPERATION_DEADLINE_MS = 5_000;
 
@@ -20,7 +20,7 @@ export interface TeardownFacet {
         readonly payload: Uint8Array;
       }
     >,
-  ) => Promise<void>;
+  ) => Promise<number>;
   readonly get: (id: string) => Promise<TeardownObligationRow | undefined>;
   readonly list: () => Promise<readonly TeardownObligationRow[]>;
   readonly claim: (id: string) => Promise<boolean>;
@@ -33,6 +33,7 @@ export interface SharedStateFacet {
       "shared-append",
       {
         readonly key: string;
+        readonly retirement?: TeardownRetirement | undefined;
         readonly expectedGeneration: number;
         readonly generation: number;
         readonly parentGeneration: number;
@@ -131,7 +132,7 @@ function makeProjectStateResource(): ProjectStateResource {
         command: import("./worker-protocol.ts").RegistryCommand,
       ) => client.registry<A>(command, Date.now() + OPERATION_DEADLINE_MS);
       const teardown: TeardownFacet = {
-        put: (input: Parameters<TeardownFacet["put"]>[0]) => execute<undefined>(input),
+        put: (input: Parameters<TeardownFacet["put"]>[0]) => execute<number>(input),
         get: (id: string) => execute<TeardownObligationRow | undefined>({ _tag: "teardown-get", id }),
         list: () => execute<readonly TeardownObligationRow[]>({ _tag: "teardown-list" }),
         claim: (id: string) => execute<boolean>({ _tag: "teardown-claim", id }),
