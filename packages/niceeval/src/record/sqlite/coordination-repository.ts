@@ -180,6 +180,7 @@ export function createInvocationOnConnection(
         run.writerGeneration,
         integer(revision, "revision"),
       );
+      recordStatement(connection, "INSERT INTO state_run VALUES (?)").run(run.runId);
       insertExperiment.run(input.invocationId, run.experimentId, run.runId, runOrdinal);
       run.expectedSlots.forEach((slot, ordinal) =>
         insertSlot.run(run.runId, slot.slotId, ordinal, slot.evalId, slot.attemptOrdinal, slot.executionIdentityDigest),

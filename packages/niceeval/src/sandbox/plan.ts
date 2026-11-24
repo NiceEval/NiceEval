@@ -52,6 +52,7 @@ export interface LinkedRunPlanInput {
 }
 
 export type SandboxPhysicalCapabilityRequirement =
+  | { readonly _tag: "State" }
   | { readonly _tag: "Reuse" }
   | { readonly _tag: "Retention" }
   | { readonly _tag: "SessionDuration"; readonly milliseconds: number }
@@ -165,6 +166,18 @@ function capabilityIssues(
 ): readonly SandboxPhysicalPlanningIssue[] {
   const issues: SandboxPhysicalPlanningIssue[] = [];
   for (const requirement of requirements) {
+    if (requirement._tag === "State" && plan.capabilities.state === undefined) {
+      issues.push(
+        capabilityIssue(
+          pair,
+          baseDir,
+          "state-provider-unsupported",
+          `Provider ${JSON.stringify(plan.provider)} cannot safely restore and save State.`,
+          ["Select a Sandbox provider with State support."],
+        ),
+      );
+      continue;
+    }
     if (requirement._tag === "DockerExecution") {
       const provided = plan.capabilities.dockerExecution;
       const capacitySatisfied =

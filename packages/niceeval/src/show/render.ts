@@ -1065,7 +1065,13 @@ function formatAttemptLimitation(value: AttemptLimitation): string {
 // @concord-code
 // @concord-implements docs/feature/inspection/cli.md
 // @concord-implements docs/feature/error-classification/use-case/reading-errored.md
-export function renderAttempt(value: AttemptView): string {
+export function renderAttempt(
+  value: AttemptView,
+  state?: {
+    readonly context: import("../state/protocol.ts").AttemptState;
+    readonly execution: import("../state/protocol.ts").StateExecution;
+  },
+): string {
   return terminal([
     {
       footerCommand: undefined,
@@ -1086,6 +1092,10 @@ export function renderAttempt(value: AttemptView): string {
             { key: "Planned attempt", value: value.plannedAttemptId },
             { key: "Outcome", value: value.outcome },
             { key: "Verdict", value: value.verdict ?? "not available" },
+            ...(state?.execution.bindings.map(({ lineage, origin }) => ({
+              key: "State",
+              value: `${lineage.name} cohort ${lineage.cohort} · ${origin.kind === "fresh" ? "fresh" : `from ${origin.checkpoint.digest}`} · ${state.context.earlierAttempts} earlier attempts in this sandbox · save ${state.execution.save.status}`,
+            })) ?? []),
             ...(value.verdictCauses?.groups.map((group) => ({
               key: "Cause",
               value: `Errored because ${group.count} required assertions are ${group.result}: ${factPhrase(group.failureDetail ?? group.reason ?? "not recorded")} ×${group.count}`,

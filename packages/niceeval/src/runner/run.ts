@@ -17,6 +17,8 @@ import { adapterIdentity } from "../adapter.ts";
 import { ProjectStateDatabase } from "../record/sqlite/project-state-database.ts";
 import type { SealedAttemptAssertions } from "../assertions/api.ts";
 import { cacheKey, planProjectTarget } from "./fingerprint.ts";
+import { SandboxStateFailure, type StateFeedback } from "../state/execution.ts";
+import type { AttemptState, StateExecution } from "../state/protocol.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
@@ -333,6 +335,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // reporters all observe this same mapping; no caller can replace it with a
       // synthetic legacy value.
       const runIds = recordCoordinator.runIdsByExperiment;
+      const groupStateStore =
+        targetPlan.stateByPair.size === 0 ? undefined : (yield* projectStateDatabase.bind(caseLockRoot)).sharedState;
       const carriedAttemptsByKey = recordCoordinator.carriedAttemptsByKey;
 
       const reusedAttempts = yield* recordCoordinator.readCarriedResults();
@@ -571,7 +575,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const preparationReady = new Map<string, Deferred.Deferred<void, Error>>();
       for (const a of attempts) {
         const pairKey = cacheKey(a.run, a.evalDef.id);
-        if (!preparationReady.has(pairKey)) preparationReady.set(pairKey, yield* Deferred.make<void, Error>());
+        if (!preparationReady.has(pairKey)) {
+          const ready = yield* Deferred.make<void, Error>();
+          if (targetPlan.stateByPair.has(pairKey)) yield* Deferred.succeed(ready, undefined);
+          preparationReady.set(pairKey, ready);
+        }
       }
       const preparedPairs = new Map<string, PreparedBeforeCacheUse>();
       const failedPairs = new Map<string, Error>();
@@ -582,33 +590,36 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         diagnostics: [],
       };
       const beforeCacheFiber = yield* Effect.forkScoped(
-        prepareBeforeCaches(attempts, {
-          runIds,
-          artifactPrepare,
-          signal: opts.signal,
-          onWarning: (warning) => {
-            replacementWarnings.push(warning);
-            reportReplacementWarning(warning);
+        prepareBeforeCaches(
+          attempts.filter((a) => !targetPlan.stateByPair.has(cacheKey(a.run, a.evalDef.id))),
+          {
+            runIds,
+            artifactPrepare,
+            signal: opts.signal,
+            onWarning: (warning) => {
+              replacementWarnings.push(warning);
+              reportReplacementWarning(warning);
+            },
+            onPairReady: (pairKey, prepared, failure) =>
+              Effect.gen(function* () {
+                if (prepared !== undefined) preparedPairs.set(pairKey, prepared);
+                if (failure !== undefined) failedPairs.set(pairKey, failure);
+                yield* Deferred.succeed(preparationReady.get(pairKey)!, undefined);
+              }),
+            maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
+            onActivity: (event) => {
+              reportRunActivity({
+                id: event.id,
+                key: event.key,
+                prepare: event.prepare,
+                sandbox: event.sandbox,
+                label: beforeCacheActivityLabel(event),
+                status: event.status,
+                durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
+              });
+            },
           },
-          onPairReady: (pairKey, prepared, failure) =>
-            Effect.gen(function* () {
-              if (prepared !== undefined) preparedPairs.set(pairKey, prepared);
-              if (failure !== undefined) failedPairs.set(pairKey, failure);
-              yield* Deferred.succeed(preparationReady.get(pairKey)!, undefined);
-            }),
-          maxConcurrency: opts.maxBeforeCacheConcurrency ?? 2,
-          onActivity: (event) => {
-            reportRunActivity({
-              id: event.id,
-              key: event.key,
-              prepare: event.prepare,
-              sandbox: event.sandbox,
-              label: beforeCacheActivityLabel(event),
-              status: event.status,
-              durationMs: event.status === "done" || event.status === "failed" ? event.durationMs : undefined,
-            });
-          },
-        }).pipe(
+        ).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
               beforeCachePreparation = result;
@@ -847,6 +858,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       const sandboxSem = yield* Semaphore.make(opts.maxConcurrency);
       // 相同 provider physical identity 共享一个按需池；不从 AgentRun 重选 template。
       const reusePools = new Map<AgentRun, Map<string, ReusableSandboxPool>>();
+      let stateExecutionFailure: SandboxStateFailure | undefined;
       /** A terminal Experiment freezes its own registry before physical stop. */
       const frozenReusePoolRuns = new Set<AgentRun>();
       // A physical Sandbox number is Run-wide, not pool-local: distinct Eval
@@ -939,6 +951,19 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   progress: setupContext.progress,
                   diagnostic: setupContext.diagnostic,
                 };
+          const statePlan = targetPlan.stateByPair.get(cacheKey(a.run, a.evalDef.id));
+          const stateRunId = runIds.get(a.run.experimentId);
+          const stateWriter = recordCoordinator.writerGenerationFor(a.run.experimentId);
+          const stateLease = expLifecycles.get(a.run)?.sharedStateClaim?.set;
+          if (
+            statePlan !== undefined &&
+            (groupStateStore === undefined ||
+              stateRunId === undefined ||
+              stateWriter === undefined ||
+              stateLease === undefined)
+          ) {
+            return Effect.die(new Error("State execution requires the exact Run writer and its lease set."));
+          }
           pool = new ReusableSandboxPool(
             a.plan,
             capacity,
@@ -956,6 +981,14 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             groupPluginContext,
             beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)),
             runIds.get(a.run.experimentId),
+            statePlan === undefined
+              ? undefined
+              : {
+                  plan: statePlan,
+                  store: groupStateStore!,
+                  writer: { runId: stateRunId!, writerGeneration: stateWriter!, leaseSet: stateLease! },
+                  report: reportGroupState,
+                },
           );
           bySpec.set(key, pool);
           return pool.managed().pipe(Effect.map((managed) => ({ _tag: "Reuse", pool: managed }) as const));
@@ -1130,11 +1163,15 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         sharedStateClaim: SharedStateLeaseEffectClaim | undefined;
       }
       const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
-      const leaseKeys = (run: AgentRun) =>
-        run.sharedState === undefined
-          ? (run.stateLeaseKeys ?? [])
-          : [...(run.stateLeaseKeys ?? []), run.sharedState.key];
-      const hasLease = (run: AgentRun) => run.sharedState !== undefined || (run.stateLeaseKeys?.length ?? 0) > 0;
+      const leaseKeys = (run: AgentRun) => [
+        ...(targetPlan.stateKeysByExperiment.get(run.experimentId) ?? []),
+        ...(run.stateLeaseKeys ?? []),
+        ...(run.sharedState === undefined ? [] : [run.sharedState.key]),
+      ];
+      const hasLease = (run: AgentRun) =>
+        run.sharedState !== undefined ||
+        (run.stateLeaseKeys?.length ?? 0) > 0 ||
+        targetPlan.stateKeysByExperiment.has(run.experimentId);
       for (const a of attempts) {
         if (!a.run.setup && !a.run.teardown && !hasLease(a.run)) continue;
         const cell = expLifecycles.get(a.run);
@@ -1374,6 +1411,51 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           dedupeKey: undefined,
           affectedSlotIds: undefined,
         });
+      };
+      const reportGroupState = (
+        execution: StateExecution,
+        index: number,
+        event: StateFeedback,
+        failure?: SandboxStateFailure,
+      ) => {
+        const lineage = execution.bindings[index]!.lineage;
+        const { kind: stateEvent, ...details } = event;
+        opts.observeState?.({
+          type: "state",
+          runId: execution.runId,
+          executionId: execution.executionId,
+          lineage,
+          event: stateEvent,
+          ...details,
+        } as import("../state/protocol.ts").StateEvent);
+        const reason = "reason" in event ? event.reason : event.kind === "save-conflict" ? "owner-lost" : undefined;
+        const failed = reason !== undefined && reason !== "no-attempts";
+        const checkpoint = "checkpoint" in event ? ` ${event.checkpoint.digest} (${event.checkpoint.bytes} bytes)` : "";
+        const code = failure?.code ?? `state-${event.kind}`;
+        const message = `State ${lineage.name} · ${lineage.experimentId} / ${lineage.evalGroupId} ${event.kind}${checkpoint}${reason === undefined ? "" : ` (${reason})`}${failure?.code === undefined ? "" : `: ${failure.message}`}`;
+        reportDiagnostic({
+          key: `${execution.executionId}:${index}:${event.kind}`,
+          code,
+          message,
+          severity: failed ? "error" : "info",
+          data: { experimentId: lineage.experimentId, evalGroupId: lineage.evalGroupId },
+          identity: undefined,
+        });
+        if (failed && reason !== undefined) {
+          stateExecutionFailure =
+            failure ?? stateExecutionFailure ?? new SandboxStateFailure(reason, event.kind === "save-unknown");
+          recordExperimentDiagnostic({
+            experimentId: lineage.experimentId,
+            code,
+            level: "error",
+            message,
+            phase: event.kind === "restore-failed" ? "sandbox.prepare" : "experiment.teardown",
+            data: undefined,
+            command: undefined,
+            dedupeKey: undefined,
+            affectedSlotIds: undefined,
+          });
+        }
       };
       const reportLeaseWait = (experimentId: string, key: string) =>
         reportDiagnostic({
@@ -3030,6 +3112,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               const initialPhase = initialLifecyclePhase();
               const reservationAttempted = blockedError === undefined;
               let reservedRecordAttempt: RunnerRecordAttempt | undefined;
+              let attemptState: AttemptState | undefined;
               if (reservationAttempted) {
                 const reservation = yield* Effect.result(recordCoordinator.reserveAttempt(a));
                 if (Result.isFailure(reservation)) {
@@ -3134,6 +3217,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         )
                       : { _tag: "NotRequested" as const };
                   const lease = leased._tag === "Acquired" ? leased.lease : undefined;
+                  attemptState = lease?.state?.context();
+                  let enteredStateAgent = false;
                   // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxLayer setup + 确认寿命」
                   // 打包成一次借出,调度器这一侧只知道这条 attempt 没能拿到可用实例。
                   const leaseError: AttemptError | undefined =
@@ -3181,12 +3266,17 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         error: failedBeforeDispatch,
                       } satisfies EvalResult)
                     : yield* runAttemptEffect(recordedAttempt, attemptOptions, sandboxSem, {
-                        onPhase: () => {},
+                        onPhase: (phase) => {
+                          if (phase !== "agent.run" || enteredStateAgent || lease?.state === undefined) return;
+                          enteredStateAgent = true;
+                          lease.state.markAttemptEntered();
+                        },
                         runId,
                         attachmentScope: invocationScope,
                         buildLocators,
                         preparedBeforeCache: beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)),
                         observeAttemptBeforeCache,
+                        stateBound: lease?.state !== undefined,
                         runTiming,
                         parentSignal: attemptSignal,
                         invocationSignal: opts.signal,
@@ -3221,7 +3311,11 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                             // assertion callback has supplied the final execution
                             // outcome. Publish through the same coordinator before
                             // the Attempt restores interruption and halts dispatch.
-                            const published = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+                            const published = yield* recordCoordinator.completeAttemptOrMarkIncomplete(
+                              a,
+                              result,
+                              attemptState,
+                            );
                             if (published !== undefined) result.locator = published.locator;
                             captureAssertionFeedback(result, sealedEvaluation);
                             results.push(result);
@@ -3270,7 +3364,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // errored result, without inventing unavailable rich families.
               let locator: string | undefined;
               if (reservedRecordAttempt !== undefined) {
-                const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result);
+                const recordAttempt = yield* recordCoordinator.completeAttemptOrMarkIncomplete(a, result, attemptState);
                 if (recordAttempt !== undefined) {
                   locator = recordAttempt.locator;
                   result.locator = locator;
@@ -3788,6 +3882,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         // docs/feature/experiments/cli/README.md「运行完成状态不只看 verdict 计数」)。
         yield* runReporter(reg, "onInvocationComplete", () => reg.reporter.onInvocationComplete?.(summary));
       }
+      if (stateExecutionFailure !== undefined && !interrupted) return yield* Effect.fail(stateExecutionFailure);
       return receipt;
     }),
   );

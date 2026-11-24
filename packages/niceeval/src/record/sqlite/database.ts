@@ -774,6 +774,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       (SELECT count(*) FROM ne19_case_locks)+
       (SELECT count(*) FROM ne19_teardown_obligations)+
       (SELECT count(*) FROM state_lease_set WHERE phase!='free')+
+      (SELECT count(*) FROM state_checkpoint WHERE ready=0)+
       (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const hasActiveWork = decodeInteger(admittedActive.count, "active_runs") !== 0;
@@ -1005,6 +1006,7 @@ export function makeProjectDatabasePortable(path: string): boolean {
       `SELECT
       (SELECT count(*) FROM ne19_teardown_obligations)+
       (SELECT count(*) FROM state_lease_set WHERE phase!='free')+
+      (SELECT count(*) FROM state_checkpoint WHERE ready=0)+
       (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`,
     ).get() as Record<string, SQLOutputValue>;
     const coordination = currentStatement(

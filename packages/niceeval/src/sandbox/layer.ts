@@ -55,6 +55,7 @@ import type {
   SandboxRuntimeMaterializeContext,
 } from "./runtime.ts";
 import { DockerProfileError, dockerProfileError } from "./docker-profile/errors.ts";
+import { DOCKER_SANDBOX_WORKDIR, localDockerSupportsState } from "./docker-state.ts";
 import {
   DockerProfileControlError,
   DockerProfileControlAmbiguityError,
@@ -461,6 +462,8 @@ export type SandboxRuntimeSessionLimit =
 
 /** Provider 在 physical planning 时一并冻结的运行能力；core 不从 provider 名反推。 */
 export interface SandboxProviderCapabilities {
+  /** Provider planning must affirm State support before acquiring any instance. */
+  readonly state?: { readonly workdir?: string };
   readonly retention: SandboxRuntimeRetention;
   readonly reuse: SandboxRuntimeReuse;
   /** Static upper bound. The materialized backend still decides runtime eligibility. */
@@ -637,6 +640,7 @@ export type SandboxProviderBuildPlan =
     };
 
 export interface SandboxProviderPlanInput<Plan> {
+  readonly state?: SandboxProviderCapabilities["state"];
   readonly provider: string;
   readonly plannerRevision: string;
   readonly caseKind: SandboxCaseKind;
@@ -953,6 +957,7 @@ export function sandboxProviderPlan<Plan>(input: SandboxProviderPlanInput<Plan>)
   const support = input.module.beforeCache;
   const capabilities = freezeProviderCapabilities({
     ...input.module.capabilities,
+    ...(input.state === undefined ? {} : { state: input.state }),
     beforeCache:
       support._tag === "Unsupported"
         ? { _tag: support._tag, reason: support.reason }
@@ -1112,6 +1117,7 @@ function freezeProviderCapabilities(capabilities: SandboxProviderCapabilities): 
   }
   return Object.freeze({
     retention: Object.freeze({ _tag: capabilities.retention._tag }),
+    ...(capabilities.state === undefined ? {} : { state: Object.freeze({ ...capabilities.state }) }),
     reuse:
       capabilities.reuse._tag === "Supported"
         ? Object.freeze({ _tag: "Supported" as const })
@@ -2568,6 +2574,14 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
               return sandboxProviderPlan({
                 provider: "docker",
                 plannerRevision: DOCKERFILE_PROVIDER_PLANNER_REVISION,
+                ...(localDockerSupportsState({
+                  profile: profileBinding !== undefined,
+                  dockerAccess: access !== undefined,
+                  privileged: privileged !== "disabled",
+                  readOnly: resources.readOnlyRootfs === true,
+                })
+                  ? { state: { workdir: DOCKER_SANDBOX_WORKDIR } }
+                  : {}),
                 caseKind: "on-demand-build",
                 target,
                 scheduling: sharedScheduling("docker", 10),
@@ -2730,6 +2744,14 @@ export function createBuiltinSandboxFactories(services: BuiltinSandboxPlannerSer
             return sandboxProviderPlan({
               provider: "docker",
               plannerRevision: DOCKER_IMAGE_PROVIDER_REVISION,
+              ...(localDockerSupportsState({
+                profile: profileBinding !== undefined,
+                dockerAccess: access !== undefined,
+                privileged: privileged !== "disabled",
+                readOnly: resources.readOnlyRootfs === true,
+              })
+                ? { state: { workdir: DOCKER_SANDBOX_WORKDIR } }
+                : {}),
               caseKind: "prebuilt",
               target,
               scheduling: sharedScheduling("docker", 10),

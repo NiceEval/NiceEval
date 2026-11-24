@@ -155,6 +155,7 @@ function debugAgentRun(experiment: DiscoveredExperiment, evalId: string, config:
     sandboxReuse: experiment.sandboxReuse,
     sandboxLabels: experiment.sandboxLabels,
     sharedState: experiment.sharedState,
+    state: experiment.state,
     judge: experiment.judge,
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
     budget: experiment.budget,

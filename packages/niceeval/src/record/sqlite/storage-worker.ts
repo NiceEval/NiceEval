@@ -60,6 +60,7 @@ import {
   startStateLeaseAfter,
   transitionStateLeaseSet,
 } from "./state-lease-repository.ts";
+import { executeStateCommand, isStateRead } from "./state-repository.ts";
 import type { RegistryCommand } from "./worker-protocol.ts";
 import { executeCaseCommand } from "./case-repository.ts";
 import {
@@ -80,6 +81,7 @@ import {
   readPublishedAttemptOnConnection,
   readRunResourceOnConnection,
   recoverRunResourceOnConnection,
+  stateRunClock,
   listRunResourcesOnConnection,
 } from "../../run/storage/sqlite.ts";
 import { executeAdmissionCommand } from "./admission-repository.ts";
@@ -87,6 +89,8 @@ import { SqliteRecordError, sqliteError } from "./errors.ts";
 
 function isRegistryMutation(command: RegistryCommand): boolean {
   switch (command._tag) {
+    case "sandbox-state":
+      return !isStateRead(command.state);
     case "teardown-get":
     case "teardown-list":
     case "shared-list":
@@ -193,6 +197,8 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
 
 function executeRegistry(connection: RecordDatabase, command: RegistryCommand): StorageWorkerResult {
   switch (command._tag) {
+    case "sandbox-state":
+      return executeStateCommand(connection, stateRunClock, command.state);
     case "teardown-put":
       if (command.leaseSet !== undefined) {
         registerStateLeaseAfter(connection, command.leaseSet, command.id, command);

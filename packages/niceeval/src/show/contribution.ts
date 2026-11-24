@@ -1013,7 +1013,21 @@ function runShow(
         const attemptUsage = yield* select("attempt.usage", () =>
           selectInspectionOperation(opened, { kind: "attempt.usage", locator: selectedLocator }),
         );
-        yield* writeText(renderAttempt(yield* project("attempt.get", () => projectAttempt(document, attemptUsage))));
+        const attemptView = yield* project("attempt.get", () => projectAttempt(document, attemptUsage));
+        const state = document.attempt.sandboxState;
+        const context = state.status === "known" ? state.context : null;
+        const originState =
+          context === null ? undefined : opened.readRunResource(attemptView.originRunId)?.sandboxState;
+        const stateExecution =
+          originState?.status === "known"
+            ? originState.executions.find((item) => item.executionId === context?.executionId)
+            : undefined;
+        yield* writeText(
+          renderAttempt(
+            attemptView,
+            context === null || stateExecution === undefined ? undefined : { context, execution: stateExecution },
+          ),
+        );
         return 0;
       }),
     );

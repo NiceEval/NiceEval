@@ -88,6 +88,7 @@ import { getPricingEstimateReceipt } from "./pricing-estimate-receipt.ts";
 import type { ExternalCause } from "../shared/external-cause.ts";
 import type { RunStorageCommandError } from "../run/storage/index.ts";
 import type { SessionTracker } from "./session.ts";
+import type { AttemptState } from "../state/protocol.ts";
 
 export {
   prepareRunnerRecordReuse,
@@ -256,6 +257,7 @@ export interface RunnerRecordCoordinator {
     RecordReaderReadError | CurrentReuseReadbackPlanInvalid
   >;
   readonly runIdsByExperiment: ReadonlyMap<string, string>;
+  readonly writerGenerationFor: (experimentId: string) => string | undefined;
   readonly publicationCutoff: () => Effect.Effect<PublicationCutoff, unknown, ProjectStateDatabase>;
   readonly carriedAttemptsByKey: ReadonlyMap<string, ReadonlySet<number>>;
   readonly adoptLatePublishedAttempt: (
@@ -275,6 +277,7 @@ export interface RunnerRecordCoordinator {
   readonly completeAttemptOrMarkIncomplete: (
     attempt: Attempt,
     result: EvalResult,
+    attemptState?: AttemptState,
   ) => Effect.Effect<RunnerRecordAttempt | undefined, never, ProjectStateDatabase>;
   readonly markNotDispatched: (attempt: Attempt, reason: RunAbsenceReason) => void;
   readonly publish: (
@@ -731,6 +734,7 @@ export function openRunnerRecordCoordinator(input: {
     const completeAttempt = (
       attempt: Attempt,
       result: EvalResult,
+      attemptState?: AttemptState,
     ): Effect.Effect<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase> =>
       Effect.suspend<RunnerRecordAttempt, RunnerRecordWriteError, ProjectStateDatabase>(() => {
         const targetSlot = targetForAttempt(attempt);
@@ -894,6 +898,7 @@ export function openRunnerRecordCoordinator(input: {
                 attemptLocator: String(active.public.locator),
                 closureBytes,
                 closureDigest: createHash("sha256").update(closureBytes).digest("hex"),
+                attemptState,
                 deadlineEpochMs: Date.now() + 30_000,
               }).pipe(Effect.mapError((cause) => attemptPublicationFailed(active.public.locator, cause)));
               active.sealed = undefined;
@@ -948,6 +953,8 @@ export function openRunnerRecordCoordinator(input: {
       reusePlan,
       readCarriedResults: () => Effect.succeed(carriedResults),
       runIdsByExperiment: new Map(runIdsByExperiment),
+      writerGenerationFor: (experimentId) =>
+        openedRuns.find(({ plan }) => plan.run.experimentId === experimentId)?.writerGeneration,
       publicationCutoff: () => currentPublicationCutoff(rootPath),
       carriedAttemptsByKey: new Map(
         [...carriedAttemptsByKey].map(([key, attempts]) => [key, new Set(attempts)] as const),
@@ -955,8 +962,8 @@ export function openRunnerRecordCoordinator(input: {
       adoptLatePublishedAttempt,
       reserveAttempt,
       noteSealedOrMarkIncomplete,
-      completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult) =>
-        completeAttempt(attempt, result).pipe(
+      completeAttemptOrMarkIncomplete: (attempt: Attempt, result: EvalResult, attemptState?: AttemptState) =>
+        completeAttempt(attempt, result, attemptState).pipe(
           Effect.catch((error) =>
             Effect.sync(() => {
               const target = targetForAttempt(attempt);

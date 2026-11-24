@@ -574,7 +574,7 @@ function dryRows(plan: Pick<ExperimentHostDryPlan, "slots" | "readbacks" | "lock
 }
 
 function dryText(
-  plan: Parameters<typeof dryRows>[0] & Pick<ExperimentHostDryPlan, "recoverablePairs">,
+  plan: Parameters<typeof dryRows>[0] & Pick<ExperimentHostDryPlan, "recoverablePairs" | "groups">,
   shape: {
     readonly totalAttempts: number;
     readonly evals: number;
@@ -590,6 +590,14 @@ function dryText(
     ...(reused === 0 ? [] : [`using earlier results: ${reused}/${shape.totalAttempts}`]),
     `plugins: ${pluginCount} lifecycle hooks`,
   ];
+  for (const group of plan.groups) {
+    for (const { lineage, origin } of group.state) {
+      const start = origin.kind === "fresh" ? "no checkpoint" : `from ${origin.checkpoint.digest}`;
+      lines.push(
+        `State ${lineage.name} · ${group.experimentId} / ${group.evalGroupId} cohort ${lineage.cohort} · ${start}`,
+      );
+    }
+  }
   for (const row of rows) {
     const slots = row.slots;
     const reusedAttempts = slots.filter((slot) => slot.state === "reused").map((slot) => slot.attempt);
@@ -670,7 +678,7 @@ function dryReasonText(reason: string | undefined, summary: string | undefined, 
 }
 
 function dryJson(
-  plan: Parameters<typeof dryRows>[0],
+  plan: Parameters<typeof dryRows>[0] & Pick<ExperimentHostDryPlan, "groups">,
   shape: {
     readonly totalAttempts: number;
     readonly evals: number;
@@ -686,6 +694,7 @@ function dryJson(
     attempts: shape.attempts,
     reused: plan.slots.filter((slot) => slot.state === "reuse").length,
     matrix: dryRows(plan),
+    groups: plan.groups,
     plugins,
   });
 }
@@ -1110,7 +1119,13 @@ Run \`niceeval exp --experiment <path> --dry\` to preview a plan.
             return yield* experimentHost.invocation.run({
               plan: plan.plan,
               signal: interruption.invocationSignal,
-              feedback: { coordinator },
+              feedback: {
+                coordinator,
+                observeState:
+                  profile === "human"
+                    ? undefined
+                    : (event) => terminal.feedback.stdout.write(`${JSON.stringify(event)}\n`),
+              },
               ...(typeof input.values.junit === "string" ? { junitPath: input.values.junit } : {}),
             });
           }),

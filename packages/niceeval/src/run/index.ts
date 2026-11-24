@@ -32,3 +32,16 @@ export {
   type RunState,
   type RunSummary,
 } from "./protocol.ts";
+export type {
+  AttemptState,
+  AttemptStateResult,
+  RunSandboxState,
+  StateCheckpoint,
+  StateExecution,
+  StateExecutionBinding,
+  StateFailureReason,
+  StateLineage,
+  StateOrigin,
+  StateRestore,
+  StateSave,
+} from "../state/protocol.ts";

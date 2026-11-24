@@ -6,6 +6,7 @@ import type { SQLOutputValue } from "node:sqlite";
 import { sqliteError } from "./errors.ts";
 import type { RecordDatabase } from "./database.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
+import { validatePortableState } from "./state-repository.ts";
 
 const CAPTURE_CHUNK_BYTES = 256 * 1024;
 const SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
@@ -239,5 +240,6 @@ export function validatePortableRecordDatabase(connection: RecordDatabase, deadl
   ) {
     fail("Private generation does not prove a portable idle ProjectDatabase");
   }
+  validatePortableState(connection, integer(clock.revision, "publication_revision"), deadlineEpochMs);
   return verifyAllSealedRuns(connection, true, deadlineEpochMs);
 }

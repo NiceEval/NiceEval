@@ -51,6 +51,7 @@ export class InspectionIntegrityError extends Data.TaggedError("InspectionIntegr
 
 /** Browser-neutral fixed reader capability backed by one pinned Record generation. */
 export interface InspectionFactSource {
+  readonly readAttemptState?: PinnedRecordReadSession["readAttemptState"];
   readonly kind: InspectionSource["kind"];
   readonly beginOperation: (deadlineEpochMs?: number) => void;
   readonly cutoff: () => PublicationCutoff & { readonly identity: string };
@@ -206,6 +207,7 @@ function sessionFacts(session: PinnedRecordReadSession, kind: InspectionSource["
     cutoff: () => cutoff,
     findExperimentRunIds: session.findExperimentRunIds,
     readRunResource: (runId: string) => session.readRunResource(runId),
+    readAttemptState: session.readAttemptState,
     readRunResourcePage: (afterRunId = "", pageSize = 100) =>
       session.listRunResources({
         afterRunId,

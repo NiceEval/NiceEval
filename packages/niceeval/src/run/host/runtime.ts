@@ -115,6 +115,7 @@ function projectSummary(run: ReadableRunResource, observedAt: string, portable =
 function projectDetail(run: ReadableRunResource, observedAt: string): RunDetail {
   return {
     ...projectSummary(run, observedAt),
+    sandboxState: run.sandboxState,
     slots: run.slots.map(function projectSlot(slot) {
       function slotPublication() {
         if (slot.publication.state === "published")

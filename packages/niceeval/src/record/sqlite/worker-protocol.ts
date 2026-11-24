@@ -30,9 +30,11 @@ import type {
 } from "./types.ts";
 import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
 import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
+import type { StateCommand } from "./state-repository.ts";
 
 export type RegistryCommand =
   | StateLeaseRegistryCommand
+  | { readonly _tag: "sandbox-state"; readonly state: StateCommand }
   | {
       readonly _tag: "teardown-put";
       readonly id: string;

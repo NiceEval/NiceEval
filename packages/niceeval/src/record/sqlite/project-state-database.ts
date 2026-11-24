@@ -4,6 +4,7 @@ import { makeStorageWorkerClient, type StorageWorkerClient } from "./client.ts";
 import { finalizeInvocationPortable, recordSqlitePath } from "./database.ts";
 import type { SharedStateGenerationRow, TeardownObligationRow } from "./registry-repository.ts";
 import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
+import type { StateCommand } from "./state-repository.ts";
 import type { StorageWorkerResult } from "./worker-protocol.ts";
 
 const OPERATION_DEADLINE_MS = 5_000;
@@ -32,6 +33,7 @@ export interface TeardownFacet {
 export interface SharedStateFacet {
   readonly list: (key: string) => Promise<readonly SharedStateGenerationRow[]>;
   readonly set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => Promise<A>;
+  readonly sandbox: <A extends StorageWorkerResult>(command: StateCommand) => Promise<A>;
   readonly heartbeat: (
     input: CommandInput<
       "shared-heartbeat",
@@ -125,6 +127,7 @@ function makeProjectStateResource(): ProjectStateResource {
       const sharedState: SharedStateFacet = {
         list: (key: string) => execute<readonly SharedStateGenerationRow[]>({ _tag: "shared-list", key }),
         set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => execute<A>(command),
+        sandbox: <A extends StorageWorkerResult>(state: StateCommand) => execute<A>({ _tag: "sandbox-state", state }),
         heartbeat: (input: Parameters<SharedStateFacet["heartbeat"]>[0]) => execute<boolean>(input),
       };
       const caseCoordination: CaseCoordinationFacet = {

@@ -3,14 +3,26 @@ import { applyCommandDeadline } from "../sandbox/deadline.ts";
 import { sandboxReuseCapability, type SandboxProviderBackend } from "../sandbox/backend.ts";
 import { makeSandboxAuthorFacade } from "../sandbox/paths.ts";
 import { makeSandboxRequestExecutor } from "../sandbox/request-executor.ts";
+import { createSandboxCommandTarget } from "../sandbox/operations.ts";
+import { sandboxActionDataOf } from "../sandbox/action.ts";
+import {
+  restoreGroupState,
+  SandboxStateFailure,
+  type DurableGroupState,
+  type GroupStateWriter,
+} from "../state/execution.ts";
+import type { StateFailureReason } from "../state/protocol.ts";
+import { executeSandboxAction } from "./attempt.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
 import type { PreparedBeforeCacheUse } from "./before-cache-preparation.ts";
 import {
-  materializeSandboxRunPlan,
+  acquireSandboxRunPlan,
+  prepareMaterializedSandboxRunPlan,
   liveSandboxRuntimeServices,
   sandboxRuntimeCapabilities,
+  type SandboxRuntimeMaterializeInput,
   type SandboxRuntimeAdmission,
   type SandboxRuntimeDeadline,
   type SandboxRuntimeServices,
@@ -31,6 +43,7 @@ import type { GroupPluginContext, LinkedPluginLifecycle } from "../plugin/contra
 import { normalizeExternalCause } from "../shared/external-cause.ts";
 
 export interface ReusableSandboxLease {
+  readonly state: DurableGroupState | undefined;
   /** Provider-owned facade used only by Scope finalizers after the lease Scope starts closing. */
   readonly resourceSandbox: Sandbox;
   readonly sandbox: Sandbox;
@@ -70,6 +83,8 @@ interface ReusableSandboxPoolCleanupFailure {
 type EntryLifecycle = { readonly _tag: "Idle" } | { readonly _tag: "Leased" } | { readonly _tag: "Retired" };
 
 interface Entry {
+  readonly state: DurableGroupState | undefined;
+  readonly skipStateSave: (reason: StateFailureReason | undefined) => void;
   readonly materializedCase: MaterializedSandboxCase;
   /** 资源面 Sandbox:registry / stop / suspend / ledger / lifetime / deadline 都用它。 */
   sandbox: Sandbox;
@@ -133,6 +148,7 @@ export class ReusableSandboxPool {
   private readonly groupPluginContext: GroupPluginContext | undefined;
   private readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
   private readonly runId: string | undefined;
+  private readonly sandboxState: GroupStateWriter | undefined;
   constructor(
     plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
     capacity: number,
@@ -147,6 +163,7 @@ export class ReusableSandboxPool {
     groupPluginContext?: GroupPluginContext,
     preparedBeforeCache?: PreparedBeforeCacheUse,
     runId?: string,
+    sandboxState?: GroupStateWriter,
   ) {
     this.plan = plan;
     this.capacity = capacity;
@@ -160,6 +177,7 @@ export class ReusableSandboxPool {
     this.groupPluginContext = groupPluginContext;
     this.preparedBeforeCache = preparedBeforeCache;
     this.runId = runId;
+    this.sandboxState = sandboxState;
     this.materializationOwnerId = materializationOwnerId ?? plan.pair.evalId;
   }
 
@@ -312,6 +330,9 @@ export class ReusableSandboxPool {
         );
         for (const exit of groupTeardowns) {
           if (Exit.isFailure(exit)) {
+            if (this.sandboxState !== undefined) {
+              this.recordCleanupFailure("sandbox.lifecycle-diagnostic", Cause.squash(exit.cause));
+            }
             this.feedback.diagnostic({
               code: "plugin-lifecycle-teardown-failed",
               level: "warning",
@@ -398,44 +419,115 @@ export class ReusableSandboxPool {
         progress: lifecycleFeedback.progress,
         diagnostic: lifecycleFeedback.diagnostic,
       };
+      let state: DurableGroupState | undefined;
+      let skipStateSave: StateFailureReason | undefined;
+      const materializeInput: SandboxRuntimeMaterializeInput = {
+        runId: this.runId,
+        attemptId: provenance?.attemptId,
+        evalId: this.materializationOwnerId,
+        sandboxLabels: provenance?.sandboxLabels,
+        creationEvalId: provenance?.evalId,
+        plan: this.plan,
+        deadline,
+        // Runtime intentionally reports SandboxLayer/provider finalizer errors
+        // as diagnostics so it can continue the remaining finalizers. The pool
+        // must nevertheless retain those physical cleanup failures until its
+        // terminal stop; otherwise an early retire can disappear from
+        // `entries` and incorrectly permit sharedState release.
+        feedback: lifecycleFeedback,
+        signal: this.setupContext.signal,
+        hookContext: lifecycleHookContext,
+        buildLocators,
+        beforeCacheArtifact: this.sandboxState === undefined ? this.preparedBeforeCache?.artifact : undefined,
+        beforeCachePreparationContext: this.sandboxState === undefined ? this.preparedBeforeCache?.context : undefined,
+        agent: this.agent,
+        runTiming: this.runTiming,
+        provisionSlot: { _tag: "Detached" as const },
+        admission:
+          admission === undefined ? { _tag: "Detached" as const } : { _tag: "Bound" as const, value: admission },
+        services: this.runtimeServices,
+        release: { _tag: "Stop" as const },
+        ...(this.sandboxState === undefined
+          ? {}
+          : {
+              finalizeState: (releaseResources) =>
+                Effect.gen({ self: this }, function* () {
+                  const deadlineAt = Date.now() + CLEANUP_TIMEOUT_MS;
+                  const failuresBefore = this.cleanupFailures.length;
+                  const released = yield* Effect.exit(releaseResources(deadlineAt));
+                  if (Exit.isFailure(released)) {
+                    this.recordCleanupFailure("sandbox.lifecycle-diagnostic", Cause.squash(released.cause));
+                  }
+                  if (state !== undefined) {
+                    const reason = this.cleanupFailures.length > failuresBefore ? "resource-failed" : skipStateSave;
+                    const saved = yield* Effect.exit(
+                      externalPromise(() =>
+                        state!.save(reason, AbortSignal.timeout(Math.max(0, deadlineAt - Date.now()))),
+                      ),
+                    );
+                    if (Exit.isFailure(saved)) {
+                      const failure = Cause.squash(saved.cause);
+                      if (!(failure instanceof SandboxStateFailure) || failure.retainLease) {
+                        this.recordCleanupFailure("sandbox.retire", failure);
+                      }
+                    }
+                  }
+                }),
+            }),
+      };
+      const closeFailedStateCreate = (
+        cause: Cause.Cause<unknown>,
+        stage: "sandbox.materialize-cleanup" | "sandbox.prepare-cleanup" | "sandbox.ensure-lifetime-cleanup",
+      ) => {
+        const failure = Cause.squash(cause);
+        if (failure instanceof SandboxStateFailure && failure.retainLease) this.recordCleanupFailure(stage, failure);
+        skipStateSave = this.setupContext.signal.aborted ? "interrupted" : "prepare-failed";
+        return this.closeFailedCreateScope(entryScope, Exit.failCause(cause), stage);
+      };
       const materialized = yield* Scope.provide(
-        materializeSandboxRunPlan({
-          runId: this.runId,
-          attemptId: provenance?.attemptId,
-          evalId: this.materializationOwnerId,
-          sandboxLabels: provenance?.sandboxLabels,
-          creationEvalId: provenance?.evalId,
-          plan: this.plan,
-          deadline,
-          // Runtime intentionally reports SandboxLayer/provider finalizer errors
-          // as diagnostics so it can continue the remaining finalizers. The pool
-          // must nevertheless retain those physical cleanup failures until its
-          // terminal stop; otherwise an early retire can disappear from
-          // `entries` and incorrectly permit sharedState release.
-          feedback: lifecycleFeedback,
-          signal: this.setupContext.signal,
-          hookContext: lifecycleHookContext,
-          buildLocators,
-          beforeCacheArtifact: this.preparedBeforeCache?.artifact,
-          beforeCachePreparationContext: this.preparedBeforeCache?.context,
-          agent: this.agent,
-          runTiming: this.runTiming,
-          provisionSlot: { _tag: "Detached" },
-          admission: admission === undefined ? { _tag: "Detached" } : { _tag: "Bound", value: admission },
-          services: this.runtimeServices,
-          release: { _tag: "Stop" },
-        }),
-        entryScope,
-      ).pipe(
-        Effect.onError((cause) =>
-          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.materialize-cleanup"),
+        acquireSandboxRunPlan(materializeInput).pipe(
+          Effect.tap((owned) =>
+            Effect.gen({ self: this }, function* () {
+              if (this.sandboxState !== undefined) {
+                const capability = owned.authorBackend.capabilities.state;
+                if (capability?._tag !== "Supported") {
+                  return yield* Effect.fail(new SandboxStateFailure("provider-lost", true));
+                }
+                const managed = owned.authorBackend.capabilities.managedProcess;
+                const commandTarget = createSandboxCommandTarget(owned.sandbox);
+                const restoreSignal = AbortSignal.any([
+                  this.setupContext.signal,
+                  ...(deadlineAt === undefined ? [] : [AbortSignal.timeout(Math.max(0, deadlineAt - Date.now()))]),
+                ]);
+                state = yield* externalPromise(() =>
+                  restoreGroupState({
+                    ...this.sandboxState!,
+                    files: capability.value,
+                    signal: restoreSignal,
+                    workdir: owned.authorBackend.workdir,
+                    initialize: (action) =>
+                      executeSandboxAction(
+                        sandboxActionDataOf(action),
+                        commandTarget,
+                        managed._tag === "Supported" ? managed.value : undefined,
+                        restoreSignal,
+                        lifecycleFeedback.progress,
+                      ),
+                  }),
+                );
+              }
+              yield* prepareMaterializedSandboxRunPlan(materializeInput, owned);
+            }),
+          ),
         ),
-      );
+        entryScope,
+      ).pipe(Effect.onError((cause) => closeFailedStateCreate(cause, "sandbox.materialize-cleanup")));
       const sandbox = materialized.sandbox;
       // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
       // docs/feature/sandbox/library/reuse.md「派发前确认」)。
       const lifetime = sandboxReuseCapability(sandbox);
       if (!lifetime) {
+        skipStateSave = "prepare-failed";
         yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
         return yield* Effect.fail(
           new Error(
@@ -446,11 +538,10 @@ export class ReusableSandboxPool {
         );
       }
       const confirmed = yield* externalPromise(() => lifetime.ensureLifetime(minRemainingMs)).pipe(
-        Effect.onError((cause) =>
-          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.ensure-lifetime-cleanup"),
-        ),
+        Effect.onError((cause) => closeFailedStateCreate(cause, "sandbox.ensure-lifetime-cleanup")),
       );
       if (!confirmed.ready) {
+        skipStateSave = "prepare-failed";
         yield* this.closeFailedCreateScope(entryScope, Exit.void, "sandbox.ensure-lifetime-cleanup");
         return yield* Effect.fail(
           new Error(`sandboxReuse cannot prepare the "${capabilities.provider}" sandbox: ${confirmed.reason}`),
@@ -482,6 +573,10 @@ export class ReusableSandboxPool {
         const reuseSandbox = this.nextReuseSandboxNumber === undefined ? ++this.created : this.nextReuseSandboxNumber();
         return {
           sandbox,
+          state,
+          skipStateSave: (reason: StateFailureReason | undefined) => {
+            skipStateSave = reason;
+          },
           materializedCase: materialized,
           authorBackend: materialized.authorBackend,
           scope: entryScope,
@@ -491,11 +586,7 @@ export class ReusableSandboxPool {
           ordinal: 0,
           lifecycle: { _tag: "Idle" } satisfies EntryLifecycle,
         };
-      }).pipe(
-        Effect.onError((cause) =>
-          this.closeFailedCreateScope(entryScope, Exit.failCause(cause), "sandbox.prepare-cleanup"),
-        ),
-      );
+      }).pipe(Effect.onError((cause) => closeFailedStateCreate(cause, "sandbox.prepare-cleanup")));
       return prepared;
     });
   }
@@ -523,7 +614,9 @@ export class ReusableSandboxPool {
             // The Attempt has already sealed. Do not turn its return finalizer
             // into a defect; `retire` persists the physical failure and terminal
             // `stop()` replays it to Experiment cleanup/lease release.
-            yield* this.retire(entry).pipe(Effect.catch(() => Effect.void));
+            yield* this.retire(entry, this.setupContext.signal.aborted ? "interrupted" : "cleanup-failed").pipe(
+              Effect.catch(() => Effect.void),
+            );
           } else if (entry.lifecycle._tag !== "Retired") {
             const reset = yield* Effect.result(externalPromise(() => entry.ledger.resetToAnchor()));
             if (Result.isFailure(reset)) {
@@ -534,7 +627,7 @@ export class ReusableSandboxPool {
                 level: "warning",
                 message: `Sandbox #${entry.reuseSandbox} reset to anchor failed, retiring the instance: ${firstLine(formatThrown(reset.failure))}`,
               });
-              yield* this.retire(entry).pipe(Effect.catch(() => Effect.void));
+              yield* this.retire(entry, "reset-failed").pipe(Effect.catch(() => Effect.void));
             } else {
               entry.lifecycle = { _tag: "Idle" };
             }
@@ -548,6 +641,7 @@ export class ReusableSandboxPool {
       const authorSandbox = makeSandboxAuthorFacade(entry.authorBackend, executor, this.plan.providerPlan.provider);
       return {
         resourceSandbox: entry.sandbox,
+        state: entry.state,
         sandbox: authorSandbox,
         reuseSandbox: entry.reuseSandbox,
         reuseOrdinal: entry.ordinal,
@@ -563,12 +657,14 @@ export class ReusableSandboxPool {
 
   /** 淘汰一台实例:停资源组并移出池——留在池里会占满容量,
    *  让后续 acquire 既等不到空闲实例、也创建不出替代实例(等待者永远醒不来)。 */
-  private retire(entry: Entry): Effect.Effect<void, Error> {
+  private retire(entry: Entry, reason?: StateFailureReason): Effect.Effect<void, Error> {
     return Effect.gen({ self: this }, function* () {
       if (entry.lifecycle._tag === "Retired") return;
       entry.lifecycle = { _tag: "Retired" };
       const at = this.entries.indexOf(entry);
       if (at >= 0) this.entries.splice(at, 1);
+      entry.skipStateSave(reason ?? (this.setupContext.signal.aborted ? "interrupted" : undefined));
+      const failuresBefore = this.cleanupFailures.length;
       const exit = yield* Effect.exit(Scope.close(entry.scope, Exit.void));
       if (Exit.isFailure(exit)) {
         const error = this.recordCleanupFailure("sandbox.retire", Cause.squash(exit.cause));
@@ -581,6 +677,8 @@ export class ReusableSandboxPool {
         return yield* Effect.fail(error);
       }
       this.wake();
+      const failure = this.cleanupFailures[failuresBefore];
+      if (entry.state !== undefined && failure !== undefined) return yield* Effect.fail(failure.error);
     });
   }
 

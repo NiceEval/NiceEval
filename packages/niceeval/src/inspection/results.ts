@@ -58,6 +58,7 @@ import {
 import { SessionScopeIdSchema, TurnIdSchema } from "../record/family/source-receipt/codec.ts";
 import { isCommandId, isItemId, isToolOccurrenceId } from "../record/family/source-receipt/model.ts";
 import { RunStateSchema, RunSummarySchema } from "../run/index.ts";
+import { AttemptStateResultSchema, RunSandboxStateSchema } from "../state/protocol.ts";
 import { AdapterIdentitySchema, RunContextSchema } from "../record/model/run-context.ts";
 import type { InspectionOperationId, InspectionSuccessDocument, InspectionSuccessDocumentFor } from "./protocol.ts";
 
@@ -315,6 +316,7 @@ export type InspectionExperimentResult = Schema.Schema.Type<typeof InspectionExp
 
 /** Inspection lifecycle projection; durable Core remains unchanged. */
 export const InspectionRunValueSchema = Schema.Struct({
+  sandboxState: RunSandboxStateSchema,
   runId: RunIdSchema,
   experimentId: ExperimentIdSchema,
   state: RunStateSchema,
@@ -428,6 +430,7 @@ const VerdictCausesSchema = Schema.Struct({
 });
 
 export const InspectionAttemptResultSchema = Schema.Struct({
+  sandboxState: AttemptStateResultSchema,
   notes: AttemptNotesSchema,
   verdictCauses: Schema.optional(VerdictCausesSchema),
   diagnostics: Schema.suspend(() => TraceDiagnosticsSchema),

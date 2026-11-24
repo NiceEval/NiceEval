@@ -130,7 +130,7 @@ function head(connection: RecordDatabase, key: string) {
   ).get(key);
 }
 
-function exactSet(connection: RecordDatabase, expected: StateLeaseAuthority) {
+export function exactStateLeaseSet(connection: RecordDatabase, expected: StateLeaseAuthority) {
   const set = readStateLeaseSet(connection, expected.id);
   if (
     set?.generation !== expected.generation ||
@@ -248,7 +248,7 @@ export function transitionStateLeaseSet(connection: RecordDatabase, command: Sta
     return true;
   }
 
-  const set = exactSet(connection, command.expected);
+  const set = exactStateLeaseSet(connection, command.expected);
   if (set === undefined) return false;
   const fencing = command._tag === "lease-set-fence";
   if (fencing && command.expectedAfterStatus !== set.afterStatus) return false;
@@ -301,7 +301,7 @@ export function registerStateLeaseAfter(
   registrationId: string,
   owner: { readonly experimentId: string; readonly ownerPid: number; readonly ownerHost: string },
 ): void {
-  const set = exactSet(connection, expected);
+  const set = exactStateLeaseSet(connection, expected);
   if (
     set?.phase !== "active" ||
     set.afterStatus !== "not-required" ||
@@ -319,7 +319,7 @@ export function registerStateLeaseAfter(
 }
 
 export function startStateLeaseAfter(connection: RecordDatabase, expected: StateLeaseAuthority): boolean {
-  const set = exactSet(connection, expected);
+  const set = exactStateLeaseSet(connection, expected);
   if (set === undefined || (set.afterStatus !== "pending" && set.afterStatus !== "running")) return false;
   if (set.phase === "recovering") requireClosedRun(connection, set);
   recordStatement(connection, "UPDATE state_lease_set SET after_status='running' WHERE id=?").run(set.id);
@@ -331,7 +331,7 @@ export function finishStateLeaseAfter(
   expected: StateLeaseAuthority,
   retirement: TeardownObligationRow,
 ): boolean {
-  const set = exactSet(connection, expected);
+  const set = exactStateLeaseSet(connection, expected);
   if (set?.phase !== "recovering" || set.afterStatus !== "running" || set.afterRegistrationId !== retirement.id)
     return false;
   requireClosedRun(connection, set);

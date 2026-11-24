@@ -11,6 +11,7 @@ export {
   defineExperiment,
 } from "./define.ts";
 export { defineAdapter, defineAdapterContract } from "./adapter.ts";
+export { defineState, type StateBinding, type StateDefinition, type StateInput } from "./state/definition.ts";
 export { defineSimulatedUser } from "./simulated-user/definition.ts";
 export type { SimulatedUser, SimulatedUserDefinition } from "./simulated-user/definition.ts";
 export type { JudgeAnchor, JudgeDefinition, JudgeOptions } from "./assertions/judge.ts";

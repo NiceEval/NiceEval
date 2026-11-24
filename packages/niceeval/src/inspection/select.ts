@@ -1185,6 +1185,7 @@ function inspectionRunValue(run: LoadedInspectionRunResource): InspectionRunValu
     runId: resource.runId,
     experimentId: resource.experimentId,
     state: resource.state,
+    sandboxState: resource.sandboxState,
     ...(resource.published > 0 && published !== undefined ? { context: published.run.context } : {}),
     startedAt: Date.parse(resource.startedAt),
     ...("completedAt" in resource ? { completedAt: Date.parse(resource.completedAt) } : {}),
@@ -1347,6 +1348,9 @@ function traceAttachments(resolved: ResolvedInspectionAttempt): AttemptTraceAtta
 function attemptDetail(resolved: ResolvedInspectionAttempt): InspectionAttemptResult {
   const assertions = readInspectionAssertions(resolved);
   const detail = {
+    sandboxState: resolved.origin.source.readAttemptState?.(resolved.attempt.attemptId, resolved.origin.run.runId) ?? {
+      status: "unavailable" as const,
+    },
     core: projectAttemptCore(resolved.attempt),
     locator: resolved.locator,
     originRun: projectRunCore(resolved.origin.run),

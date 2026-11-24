@@ -58,6 +58,7 @@ import {
   type InternalSandboxAgentDefinition,
 } from "./agents/agent-effects.ts";
 import { isPluginInstance, assertPluginOwner, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
+import { normalizeStateBindings } from "./state/definition.ts";
 
 /** Recognize only the retired flat configuration, without evaluating getters. */
 function normalizeDefinitionJudge(value: unknown, label: string) {
@@ -472,6 +473,7 @@ export function defineExperiment(
     before: def.before,
     after: def.after,
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
+    state: normalizeStateBindings(def.state),
   });
 }
 

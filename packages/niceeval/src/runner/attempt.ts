@@ -314,6 +314,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
   readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly stateBound?: boolean | undefined;
   readonly observeAttemptBeforeCache?: ObserveAttemptBeforeCache;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming: import("./timing.ts").RunTimingRecorder | undefined;
@@ -389,6 +390,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
     runId,
     buildLocators,
     preparedBeforeCache,
+    stateBound,
     observeAttemptBeforeCache,
     runTiming,
     parentSignal,
@@ -1735,6 +1737,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       getPhase: () => (sendActive ? "agent.run" : lastPhase),
                       setSendActive: (active) => {
                         sendActive = active;
+                        if (active && stateBound) onPhase("agent.run");
                         reportAttemptLifecycle({
                           type: "attempt:phase",
                           at: Date.now(),
@@ -1753,6 +1756,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       observabilityRuntime,
                       materializedCase,
                       preparedBeforeCache: beforeCacheForAttempt(),
+                      stateBound: stateBound === true,
                       observeAttemptBeforeCache,
                       concurrencySlot: concurrencySlot,
                       declareFailure,
@@ -2674,6 +2678,7 @@ interface AttemptResources {
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase: MaterializedSandboxCase | undefined;
   preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly stateBound: boolean;
   readonly observeAttemptBeforeCache: ObserveAttemptBeforeCache | undefined;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
@@ -3269,7 +3274,7 @@ async function runAttemptBody(
       }
     }
 
-    if (run.sandboxBeforeCache === "bypass") {
+    if (res.stateBound || run.sandboxBeforeCache === "bypass") {
       await replayAllBefore(linked.before, "replay(bypass)");
       return;
     }

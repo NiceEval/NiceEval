@@ -140,6 +140,7 @@ export type ExecutionGapReason =
   | "score-incomplete"
   | "dynamic-module-unresolved"
   | "adapter-behavior-revision-required"
+  | "stateful-input"
   | "rerun-requested"
   | "sandbox-retention-requested";
 
@@ -194,7 +195,9 @@ export interface TargetSlot {
   readonly configIdentity: ExecutionIdentity;
   readonly timeout: ExecutionDurationLimit | undefined;
   /** Current-only eligibility facts never enter execution identity material. */
-  readonly reuseEligibility: ModuleReuseEligibility | { readonly kind: "adapter-behavior-revision-required" };
+  readonly reuseEligibility:
+    | ModuleReuseEligibility
+    | { readonly kind: "adapter-behavior-revision-required" | "stateful-input" };
 }
 
 /** Logical current input; evaluating it never allocates durable identities. */
@@ -1355,6 +1358,7 @@ function isTargetSlot(value: unknown): value is TargetSlot {
     slot.attempt >= 0 &&
     (slot.evaluationKind === "pass" || slot.evaluationKind === "score") &&
     (slot.reuseEligibility?.kind === "eligible" ||
+      slot.reuseEligibility?.kind === "stateful-input" ||
       slot.reuseEligibility?.kind === "adapter-behavior-revision-required" ||
       (slot.reuseEligibility?.kind === "dynamic-module-unresolved" && Array.isArray(slot.reuseEligibility.facts))) &&
     typeof slot.executionIdentityDigest === "string" &&

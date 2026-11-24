@@ -19,6 +19,7 @@ import type { ClaudeCodeConfig } from "../agents/claude-code.ts";
 import type { BubConfig } from "../agents/bub.ts";
 import type { SkillSpec, McpServer } from "../agents/types.ts";
 import { omitUndefined } from "../shared/omit-undefined.ts";
+import { normalizeStateBindings, type StateBinding } from "../state/definition.ts";
 
 /** Identifies where a Plugin is mounted; each owner allows only its supported contribution fields. */
 export type PluginOwner = "experiment" | "group" | "eval";
@@ -97,6 +98,7 @@ export interface PluginAgentExtensions {
   readonly bub?: Pick<BubConfig, "pythonPlugins" | "before" | "after">;
 }
 interface PluginFields<Required extends boolean> {
+  readonly state?: readonly StateBinding[] | undefined;
   readonly agent?: PluginAgentExtensions | undefined;
   readonly experiment?: ExperimentPluginFragment | undefined;
   readonly group?: GroupPluginFragment | undefined;
@@ -110,6 +112,7 @@ type NonEmptyFields<Required extends boolean> = PluginFields<Required> &
     | { readonly group: GroupPluginFragment }
     | { readonly sandbox: SandboxPluginFragment<Required> }
     | { readonly attempt: AttemptPluginFragment<Required> }
+    | { readonly state: readonly StateBinding[] }
   );
 interface PluginIdentity {
   readonly behaviorRevision?: never;
@@ -129,7 +132,7 @@ type OptionalGroupPluginDefinition = PluginIdentity & {
 export type PluginDefinition = GroupRequiredPluginDefinition | OptionalGroupPluginDefinition;
 type OwnersOf<Definition> = Definition extends { readonly agent: unknown } | { readonly experiment: unknown }
   ? "experiment"
-  : Definition extends { readonly group: unknown }
+  : Definition extends { readonly group: unknown } | { readonly state: unknown }
     ? "experiment" | "group"
     : PluginOwner;
 interface NormalizedLifecycle<Context> {
@@ -137,6 +140,7 @@ interface NormalizedLifecycle<Context> {
   readonly after: readonly PluginHook<Context>[];
 }
 export interface PluginInstanceData {
+  readonly state: readonly StateBinding[] | undefined;
   readonly name: string;
   readonly key: string;
   readonly identity: Readonly<globalThis.Record<string, JsonValue>>;
@@ -240,7 +244,9 @@ function createPlugin(spec: unknown): PluginInstance {
   if (!isPlainRecord(spec)) throw new TypeError("definePlugin requires a specification object.");
   for (const field of Object.keys(spec)) {
     if (
-      !["name", "key", "identity", "requires", "agent", "experiment", "group", "sandbox", "attempt"].includes(field)
+      !["name", "key", "identity", "requires", "agent", "experiment", "group", "sandbox", "attempt", "state"].includes(
+        field,
+      )
     ) {
       throw new TypeError(
         `definePlugin ${field} is not supported; use name, key, identity and before/after fields (eval is now attempt).`,
@@ -251,7 +257,11 @@ function createPlugin(spec: unknown): PluginInstance {
   const key = spec.key === undefined ? "default" : assertNonEmptyString(spec.key, `Plugin ${name} key`);
   const identity = normalizeJson(spec.identity, `Plugin ${name}.identity`);
   if (!isPlainRecord(identity)) throw new TypeError(`Plugin ${name}.identity must be a JSON object.`);
-  if (!["agent", "experiment", "group", "sandbox", "attempt"].some((field) => spec[field] !== undefined))
+  const state = normalizeStateBindings(spec.state);
+  if (
+    state === undefined &&
+    !["agent", "experiment", "group", "sandbox", "attempt"].some((field) => spec[field] !== undefined)
+  )
     throw new TypeError(`Plugin ${name} must declare at least one behavior field.`);
   if (
     spec.requires !== undefined &&
@@ -357,6 +367,7 @@ function createPlugin(spec: unknown): PluginInstance {
       sandboxPluginSources.set(declaration, `${name}:${key}`);
   }
   const data: PluginInstanceData = {
+    state,
     name,
     key,
     identity: identity as Readonly<globalThis.Record<string, JsonValue>>,
@@ -417,7 +428,7 @@ export function assertPluginOwner(plugin: PluginInstance<any>, scope: PluginOwne
       case "group":
         return ["agent", "experiment"] as const;
       default:
-        return ["agent", "experiment", "group"] as const;
+        return ["agent", "experiment", "group", "state"] as const;
     }
   }
   const forbidden = forbiddenOwnerFields();

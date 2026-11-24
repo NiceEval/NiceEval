@@ -16,6 +16,14 @@ import {
 } from "../../record/sqlite/coordination-repository.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
+import {
+  finishRunStateRecovery,
+  readAttemptSandboxState,
+  readRunSandboxState,
+  registerRunState,
+  requireRunStateTerminal,
+  writeAttemptState,
+} from "../../record/sqlite/state-repository.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { readRunValue, RUN_VALUE_FAMILY, stageRunValue, sealRecoveredRun } from "../../record/sqlite/storage.ts";
@@ -252,6 +260,8 @@ export function currentPublicationCutoffOnConnection(connection: RecordDatabase)
   return requireCutoff(connection);
 }
 
+export const stateRunClock = { requireActiveWriter, nextRevision };
+
 // @concord-code
 // @concord-implements docs/feature/run/architecture/README.md
 // @concord-implements docs/feature/run/architecture/lifecycle.md
@@ -291,6 +301,7 @@ export function createRunResourceOnConnection(
       input.writerGeneration,
       revision,
     );
+    registerRunState(connection, input.runId);
     const insertSlot = recordStatement(
       connection,
       `INSERT INTO ne19_run_expected_slots(run_id,slot_id,ordinal,eval_id,
@@ -389,6 +400,7 @@ export function publishOriginAttemptOnConnection(
       `INSERT INTO ne19_attempt_publications(attempt_id,attempt_locator,origin_run_id,origin_slot_id,
       closure_payload,closure_digest,published_revision) VALUES (?,?,?,?,?,?,?)`,
     ).run(input.attemptId, input.attemptLocator, input.runId, input.slotId, closure, input.closureDigest, revision);
+    if (input.attemptState !== undefined) writeAttemptState(connection, input.attemptId, input, input.attemptState);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_slot_bindings(target_run_id,slot_id,attempt_id,origin_run_id,
@@ -534,6 +546,7 @@ export function closeRunResourceOnConnection(
   requireIsoInstant(input.completedAt, "completedAt");
   return withImmediateTransaction(connection, input.deadlineEpochMs, "close-run-resource", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
+    requireRunStateTerminal(connection, input.runId, currentRevision(connection));
     validateAbsenceClosure(connection, input.runId, input.absences);
     const aggregate = recordStatement(connection, "SELECT status,writer_generation FROM ne19_runs WHERE run_id=?").get(
       input.runId,
@@ -798,6 +811,7 @@ export function recoverRunResourceOnConnection(
     let cutoff = currentPublicationCutoffOnConnection(connection);
     if (input.mode !== "terminal") {
       const revision = nextRevision(connection);
+      finishRunStateRecovery(connection, input.runId, input.recoveryWriterGeneration, revision);
       insertAbsences(
         connection,
         input.runId,
@@ -924,6 +938,7 @@ export function deleteRunResourceOnConnection(
       );
     }
     const revision = nextRevision(connection);
+    recordStatement(connection, "DELETE FROM state_execution WHERE run_id=?").run(input.runId);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_deletion_tombstones(run_id,terminal_state,deleted_at,deletion_revision)
@@ -1042,6 +1057,7 @@ function readRunAtCutoff(
     expected: slots.length,
     published,
     missing: slots.length - published,
+    sandboxState: readRunSandboxState(connection, runId, cutoff.revision),
     slots,
   };
   return state === "active" || state === "recovering"
@@ -1135,6 +1151,7 @@ export function readPublishedAttemptOnConnection(
     publicationIdentity: { originRunId, attemptId: text(row, "attempt_id"), revision },
     closureBytes: readRunValue(connection, originRunId, bytes(row, "closure_payload"), closureDigest),
     closureDigest,
+    sandboxState: readAttemptSandboxState(connection, attemptId, originRunId),
   };
 }
 
