@@ -55,17 +55,9 @@ after 一经确认，之后再有人接手也不会再次执行它。确认之�
 
 公开返回“已恢复”与释放整组合为一步。取证、双确认、Run writer 换代、State 保存对账与 after 的外部副作用都在图上的步骤内部。缺操作员、取证不足或缺必需的 after 时允许一直等待。
 
-## 修复前的路径
+## 按路径重放的测试
 
-```statechart spec="../tla/shared-state-lease/recovery-before/Recovery.tla" config="../tla/shared-state-lease/recovery-before/recovery-before.cfg" view="../tla/shared-state-lease/recovery-before/view.ts" out="../tla/shared-state-lease/recovery-before/out/recovery-before" digest="sha256:3b78be7b691242acf4f3c25fd05e0315431b54331aae35a7471b976b8fb4756c"
-```
-
-这一块把修复前“不先关闭 Run”的顺序放进现行集合结构，保留两条最短路径：
-
-- [AfterFollowsRun](#AfterFollowsRun)：原进程已停止 → 接手租约 → 启动 after，原 Run 仍在运行。
-- [RecoveryClosesRun](#RecoveryClosesRun)：接着确认 after、移除登记 → 释放整组，原 Run 仍在运行。
-
-修复提交 `3864ba6ef` 之前，真实接口上观察到 after 执行后恢复返回 `recovered`，同一 Run 仍为 `active`。回归测试 `test/process/state-lease-set.test.ts` 在 after 运行期间断言 Run 已是 `interrupted`；`test/process/shared-state-lease-tla-repro.test.ts` 分别在 after 确认后停止正常持有者与恢复进程，各只留下一次 after 记录。
+`test/process/state-lease-set.test.ts` 在 after 运行期间断言原 Run 已是 `interrupted`，对应 [AfterFollowsRun](#AfterFollowsRun) 与 [RecoveryClosesRun](#RecoveryClosesRun)。`test/process/shared-state-lease-tla-repro.test.ts` 分别在 after 确认后停止正常持有者与恢复进程，各只留下一次 after 记录，对应 [NoReplayAfterRetirement](#NoReplayAfterRetirement)。
 
 ## 动作与代码
 

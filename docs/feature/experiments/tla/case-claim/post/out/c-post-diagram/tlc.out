@@ -1,0 +1,28 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 8263919448344308371 with 1 worker on 16 cores with 8008MB heap and 64MB offheap memory [pid: 2062084] (Linux 6.18.60 amd64, Eclipse Adoptium 25.0.5.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ctrdh/Code/NiceEval/NiceEval/docs/feature/experiments/tla/case-claim/post/Claims.tla
+Parsing file /tmp/statechart-Q2C666/statechart-NOQDGF/tmp-verdict-1/Naturals.tla
+Parsing file /tmp/statechart-Q2C666/statechart-NOQDGF/tmp-verdict-1/FiniteSets.tla
+Parsing file /tmp/statechart-Q2C666/statechart-NOQDGF/tmp-verdict-1/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Claims
+Starting... (2026-11-24 03:10:13)
+Implied-temporal checking--satisfiability problem has 5 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-24 03:10:13.
+Progress(10) at 2026-11-24 03:10:13: 191 states generated, 77 distinct states found, 0 states left on queue.
+Checking 5 branches of temporal properties for the complete state space with 385 total distinct states at (2026-11-24 03:10:13)
+Finished checking temporal properties in 00s at 2026-11-24 03:10:13
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 4.8E-16
+191 states generated, 77 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 10.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 3 and the 95th percentile is 3).
+Finished in 00s at (2026-11-24 03:10:13)
+

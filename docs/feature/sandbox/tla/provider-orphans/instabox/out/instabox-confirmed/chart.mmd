@@ -1,0 +1,50 @@
+---
+title: "Instabox 确认旧分配已处置后才创建下一台 Machine"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 创建
+    lg1: 对账
+    lg2: 可重试
+    lg3: 结束
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  class lg3 tan
+  s0: 可以请求创建 Machine
+  s1: 等待创建应答
+  s2: 创建应答丢失#65292;分配结果未知
+  s3: 已确认旧分配无需清理
+  s4: 已拿到 Machine ID#65292;正在初始化
+  s5: 已用原幂等键重取应答
+  s6: 已用新幂等键请求创建
+  s7: 初始化失败#65292;等待确认旧 Machine 已删除
+  s8: Machine 已就绪
+  s9: 客户端放弃重试#65292;等服务端到期
+  s10: 服务端没有遗留 Machine
+  [*] --> s0
+  s0 --> s1: 发送创建请求
+  s1 --> s2: 创建应答丢失
+  s1 --> s3: 服务端明确拒绝创建
+  s1 --> s4: 收到原 Machine ID
+  s2 --> s5: 用原幂等键重取应答
+  s3 --> s6: 用新幂等键创建下一台 Machine
+  s4 --> s7: 初始化失败#65292;请求删除
+  s4 --> s8: 初始化成功
+  s5 --> s9: 重取后仍无法确认分配
+  s7 --> s3: 确认旧 Machine 已删除
+  s7 --> s9: 无法确认删除
+  s5 --> s4: 收到原 Machine ID
+  s9 --> s10: 服务端最终未分配 or 服务端到期销毁
+  class s0 blue
+  class s1 blue
+  class s2 orange
+  class s3 teal
+  class s4 blue
+  class s5 orange
+  class s6 teal
+  class s7 orange
+  class s8 tan
+  class s9 orange
+  class s10 tan

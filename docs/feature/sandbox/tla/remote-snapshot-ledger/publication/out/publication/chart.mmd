@@ -1,0 +1,50 @@
+---
+title: "谁能发布和删除快照"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 准备
+    lg1: 可用
+    lg2: 保护
+    lg3: 回收
+    lg4: 结束
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 purple
+  class lg3 orange
+  class lg4 teal
+  s0: 原运行准备快照
+  s1: 原运行的发布权已过期
+  s2: 另一轮运行接手准备
+  s3: 快照已发布#65292;可以命中
+  s4: 快照可用#65292;实例受保护
+  s5: 旧快照仍受保护
+  s6: 旧快照等待回收
+  s7: 旧快照开始回收
+  s8: 旧快照已删除
+  s9: 旧快照保留#65292;实例删除未确认
+  [*] --> s0
+  s0 --> s1: 原运行暂停至发布权过期
+  s1 --> s2: 等候的运行接手
+  s0 --> s3: 发布并保留给本轮运行
+  s3 --> s4: 为实例保留快照
+  s3 --> s5: 旧快照退出缓存
+  s2 --> s3: 找到远端快照#65292;发布并保留给本轮运行
+  s3 --> s6: 旧快照退出缓存
+  s4 --> s5: 旧快照退出缓存
+  s5 --> s6: 本轮不再等候派发 or 确认实例已删除
+  s6 --> s7: 领取回收
+  s4 --> s3: 确认实例已删除
+  s7 --> s8: 远端确认快照已删除
+  s5 --> s9: 删除实例失败
+  class s0 blue
+  class s1 blue
+  class s2 blue
+  class s3 teal
+  class s4 teal
+  class s5 purple
+  class s6 orange
+  class s7 orange
+  class s8 teal
+  class s9 purple

@@ -31,7 +31,7 @@ Runner 生成回执前先完成这一轮收尾，并取得读取版本。
 ```statechart spec="./tla/publication/Publication.tla" config="./tla/publication/final-receipt-2.cfg" view="./tla/publication/view.ts" out="./tla/publication/out/final-receipt-2" digest="sha256:b78f6bea879f369789596c9c5b7e43afed70ecbf1c2010e7529e5d90d13562a4"
 ```
 
-两个 Run，各一个预期位置，六条规则都成立。状态数超过图的规模上限，只显示检查报告。回执检查到 Runner 内部取得读取版本为止；CLI 的交付顺序见下面的[实现与模型的差异](#实现与模型的差异)。
+两个 Run，各一个预期位置，六条规则都成立。状态数超过图的规模上限，只显示检查报告。回执检查到 Runner 内部取得读取版本为止；之后 CLI 只在 portable Record 校验通过后才成功交付（回归见 `test/process/record-portable-gate.test.ts`）。
 
 ## 精确恢复
 
@@ -91,24 +91,7 @@ Session 尚未收口时，至少保留一个能用来恢复它的 Run。
 ```statechart spec="./tla/delete-session/Runs.tla" config="./tla/delete-session/r-session.cfg" view="./tla/delete-session/view.ts" out="./tla/delete-session/out/r-session" digest="sha256:498b83528d9fd612a04dcdf3d6f0a6f6ee7d7cc9d689c3a7551b0155212d54db"
 ```
 
-现行删除条件下三条规则都成立。下面一块沿用修复前的删除条件：
-
-```statechart spec="./tla/delete-session-before/Runs.tla" config="./tla/delete-session-before/r-session-before.cfg" view="./tla/delete-session-before/view.ts" out="./tla/delete-session-before/out/r-session-before" digest="sha256:59c5107d53fa904ddd541cbf4dd677f1d9b4cce4dca9c6dd6a947c18f00b06c8"
-```
-
-- [RecoveryEntryPreserved](#RecoveryEntryPreserved)，3 步：Run 封口 → 提交 Run 终态 → 删除最后一个 Run，此时 Session 仍未收口。
-- [AllSessionsClose](#AllSessionsClose)，再加 1 步：原命令退出。既没有能正常收尾的原进程，也没有能精确恢复的 Run，Session 永远停在活动状态。
-
-两条路径都在真实入口回放过：修复 `2c7da40e9` 之前，公开 API 能删除唯一的终态 Run，SIGKILL 后 Session 仍为 `active`，精确恢复返回 `run-not-found`。回归 `test/process/run-delete-session.test.ts` 验证删除被拒绝、退出后仍拒绝、恢复后可以删除。
-
-## 实现与模型的差异
-
-| 情形 | 现在的实现 | 规则 |
-| --- | --- | --- |
-| portable Record 校验失败 | Experiment Host 把 portable 校验放在忽略错误的 finalizer 中，CLI 仍按 Host 的完成结果交付 | [生命周期](architecture/lifecycle.md)：校验全部通过，CLI 才成功交付 receipt 与 portable Record |
-| 普通执行失败或受控中断中的局部写入失败 | Host finalizer 记录 `incomplete` Session，或留下活动的 Run | [SessionLast](#SessionLast) 只覆盖正常收尾与精确恢复，不能外推到这些故障 |
-
-第一行只经过源码核对，没有向真实校验注入故障。
+三条规则都成立。回归 `test/process/run-delete-session.test.ts` 验证：Session 未收口时删除最后一个 Run 被拒绝，原命令退出后仍拒绝，精确恢复后可以删除。
 
 ## 动作与代码
 
@@ -126,3 +109,5 @@ Session 尚未收口时，至少保留一个能用来恢复它的 Run。
 ## 模型没有覆盖的部分
 
 取消路径、incoming references 与引用删除（回归见 `test/integration/record-references.test.ts`）、Case lock、State 对账与租约、精确的 Session 取证算法、取证永久不足时的合法等待、网络协议与闭包内容。
+
+[SessionLast](#SessionLast) 只覆盖正常收尾与精确恢复：普通执行失败时 Host 会把 Session 记为 `incomplete`，受控中断中的局部写入失败可能留下活动的 Run，这些情形不在模型内。

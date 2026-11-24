@@ -1,0 +1,47 @@
+---
+title: "另一条恢复先释放用例"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 可用
+    lg1: 恢复
+    lg2: 等待
+    lg3: 运行
+  }
+  class lg0 teal
+  class lg1 orange
+  class lg2 yellow
+  class lg3 blue
+  s0: 用例可用
+  s1: 不同用例可独立运行
+  s2: 前一条运行正在使用用例
+  s3: 当前运行已取得用例
+  s4: 正在等另一条运行
+  s5: 前一条运行已退出但仍占用用例
+  s6: 已确认前一条运行结束
+  s7: 当前运行已释放用例
+  s8: 恢复已先释放用例
+  [*] --> s0
+  [*] --> s1
+  s0 --> s2: 取得用例
+  s0 --> s3: 取得用例
+  s2 --> s4: 查看用例占用
+  s2 --> s5: 前一条运行退出
+  s4 --> s5: 前一条运行退出
+  s5 --> s6: 查看用例占用
+  s5 --> s0: 恢复中断的运行并释放用例
+  s2 --> s0: 运行结束并释放用例
+  s3 --> s7: 运行结束并释放用例
+  s6 --> s3: 接替已结束的运行
+  s6 --> s8: 恢复中断的运行并释放用例
+  s4 --> s0: 运行结束并释放用例
+  s8 --> s0: 发现用例已释放后重新申请
+  class s0 teal
+  class s1 blue
+  class s2 blue
+  class s3 blue
+  class s4 yellow
+  class s5 blue
+  class s6 orange
+  class s7 teal
+  class s8 orange

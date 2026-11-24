@@ -17,10 +17,7 @@ Provider 最终结算每个节点时，准备图中每个配对最终都放行�
 
 四个节点、两个终端配对、一个准备额度，两条规则都成立。状态数超过图的规模上限，只显示检查报告。配对放行后的派发、Attempt 创建、取消与已发布祖先的保留不在模型内。
 
-修复前的准备图保留在下面一块。8 步路径：深分支命中、跳过中间节点，冷分支请求共同前缀；共同前缀取得唯一额度并发布后，把准备实例交给无人准备的中间层，冷分支一直等这个额度。`DispatchTerminates` 的另一条 8 步路径以深分支查找失败代替命中，根因相同。真实回放见 `test/integration/before-cache-graph-tla-repro.test.ts`，修复提交 `32b4534ff`。
-
-```statechart spec="../tla/before-cache/graph/Graph.tla" config="../tla/before-cache/graph/graph-4-1.cfg" view="../tla/before-cache/graph/view.ts" out="../tla/before-cache/graph/out/graph-4-1" digest="sha256:3c350c0f04c9e8b54070db4642d148c515f0ac29a5e5fd1a26e12ddfde5af33e"
-```
+回放测试 `test/integration/before-cache-graph-tla-repro.test.ts` 覆盖深分支命中、跳过中间节点后冷分支仍能取得准备额度的路径。
 
 ## Attempt 内的前缀
 
