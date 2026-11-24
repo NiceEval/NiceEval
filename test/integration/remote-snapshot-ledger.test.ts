@@ -14,6 +14,11 @@ import {
 import { remoteSnapshotPreparer } from "../../packages/niceeval/src/sandbox/remote-snapshot/preparer.ts";
 import type { SandboxRuntimeMaterializeContext } from "../../packages/niceeval/src/sandbox/runtime.ts";
 
+type SnapshotOperations = Omit<
+  BeforeCacheSnapshotDriver<void>,
+  "resolveBase" | "preserves" | "sourceUsableAfterSnapshot" | "snapshotSettleMs"
+>;
+
 const settleMs = 32;
 const snapshotId = "snapshot-fixture";
 const step: BeforeCacheStep = {
@@ -52,7 +57,7 @@ function providerFailure(operation: string) {
 }
 
 async function withLedger(
-  primitives: Omit<BeforeCacheSnapshotDriver<void>, "resolveBase" | "preserves" | "sourceUsableAfterSnapshot" | "snapshotSettleMs">,
+  primitives: SnapshotOperations,
   run: (fixture: ReturnType<typeof fixtureFor>) => Effect.Effect<void, unknown>,
 ) {
   const home = await mkdtemp(join(tmpdir(), "niceeval-snapshot-ledger-"));
@@ -65,9 +70,7 @@ async function withLedger(
   }
 }
 
-function fixtureFor(
-  primitives: Omit<BeforeCacheSnapshotDriver<void>, "resolveBase" | "preserves" | "sourceUsableAfterSnapshot" | "snapshotSettleMs">,
-) {
+function fixtureFor(primitives: SnapshotOperations) {
   const preparer = remoteSnapshotPreparer({
     ...primitives,
     snapshotSettleMs: settleMs,
@@ -100,8 +103,13 @@ function fixtureFor(
   return { preparer, capture, collectAgain, context };
 }
 
+const settlementCases: { readonly mode: string; readonly parameters: fc.Parameters<[number]> }[] = [
+  { mode: "replay", parameters: { examples: [[1]], seed: 92871, numRuns: 1 } },
+  { mode: "explore", parameters: { seed: 92871, numRuns: 1 } },
+];
+
 // @feature docs/feature/sandbox/README.md#snapshot-takeover
-test("an empty lookup started within the settle window leaves late snapshots discoverable", async () => {
+test.for(settlementCases)("an early empty lookup leaves late snapshots discoverable ($mode)", async ({ parameters }) => {
   await fc.assert(
     fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (lead) => {
       const remote = new Set<string>();
@@ -137,14 +145,19 @@ test("an empty lookup started within the settle window leaves late snapshots dis
           }),
       );
     }),
-    { examples: [[1]], seed: 92871, numRuns: 2 },
+    parameters,
   );
 });
 
+const deletionCases = [
+  { mode: "unconfirmed deletion", confirmed: false },
+  { mode: "confirmed deletion", confirmed: true },
+];
+
 // @feature docs/feature/sandbox/README.md#snapshot-takeover
-test("a failed deletion of a restored instance keeps its snapshot protected", async () => {
+test.for(deletionCases)("a restored instance protects its snapshot until deletion ($mode)", async ({ confirmed }) => {
   await fc.assert(
-    fc.asyncProperty(fc.boolean(), async (confirmed) => {
+    fc.asyncProperty(fc.constant(confirmed), async (confirmed) => {
       const snapshots = new Set<string>();
       const instances = new Set<string>();
       await withLedger(
@@ -196,6 +209,6 @@ test("a failed deletion of a restored instance keeps its snapshot protected", as
           }),
       );
     }),
-    { examples: [[false], [true]], seed: 92872, numRuns: 2 },
+    { examples: [[confirmed]], seed: 92872, numRuns: 1 },
   );
 });

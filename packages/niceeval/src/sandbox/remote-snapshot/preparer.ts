@@ -206,12 +206,12 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
         Effect.gen(function* () {
           let snapshotId = row.snapshot_id;
           if (snapshotId === null) {
+            // An empty answer can describe an observation from before the reply arrived.
+            const lookupStartedAt = yield* Clock.currentTimeMillis;
             const found = yield* driver.findSnapshot(state.plan, row.snapshot_name);
             if (found._tag === "Pending") return false;
-            if (found._tag === "Absent") {
-              const now = yield* Clock.currentTimeMillis;
-              return row.requested_at === null || now >= row.requested_at + driver.snapshotSettleMs;
-            }
+            if (found._tag === "Absent")
+              return row.requested_at === null || lookupStartedAt >= row.requested_at + driver.snapshotSettleMs;
             snapshotId = found.snapshotId;
           }
           if (snapshotId === state.target.baseIdentity || snapshotId === state.target.baseReference) {
@@ -559,6 +559,8 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       if (Result.isFailure(handoff) || handoff.success._tag !== "Updated")
         return yield* base(Result.isFailure(handoff) ? "ledger-disabled" : "hold-missing");
       const child = yield* Scope.make();
+      // A second Scope.close is a no-op even if the first deletion failed.
+      const closeInstance = yield* Effect.cached(Scope.close(child, Exit.void));
       let released = false;
       const release = Effect.fn("remoteSnapshot.releaseSandboxHold")(function* () {
         if (released) return;
@@ -567,7 +569,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       });
       let sandbox: MaterializedSandboxCase | undefined;
       const close = Effect.fn("remoteSnapshot.closeSnapshotSandbox")(function* () {
-        yield* Scope.close(child, Exit.void);
+        yield* closeInstance;
         yield* release();
       });
       yield* Effect.addFinalizer(() => close().pipe(Effect.orDie));
