@@ -45,7 +45,6 @@ import {
 } from "./worker-protocol.ts";
 import { withImmediateTransaction } from "./transaction.ts";
 import {
-  appendSharedStateGeneration,
   claimTeardownObligation,
   getTeardownObligation,
   listSharedStateGenerations,
@@ -53,6 +52,14 @@ import {
   putTeardownObligation,
   updateSharedStateHeartbeat,
 } from "./registry-repository.ts";
+import {
+  finishStateLeaseAfter,
+  listPendingStateLeaseSets,
+  readStateLeaseSet,
+  registerStateLeaseAfter,
+  startStateLeaseAfter,
+  transitionStateLeaseSet,
+} from "./state-lease-repository.ts";
 import type { RegistryCommand } from "./worker-protocol.ts";
 import { executeCaseCommand } from "./case-repository.ts";
 import {
@@ -83,10 +90,16 @@ function isRegistryMutation(command: RegistryCommand): boolean {
     case "teardown-get":
     case "teardown-list":
     case "shared-list":
+    case "lease-set-get":
+    case "lease-set-pending":
       return false;
     case "teardown-put":
     case "teardown-claim":
-    case "shared-append":
+    case "lease-set-acquire":
+    case "lease-set-fence":
+    case "lease-set-release":
+    case "lease-set-start-after":
+    case "lease-set-finish-after":
     case "shared-heartbeat":
       return true;
   }
@@ -181,6 +194,9 @@ function assertMutationAuthority(connection: RecordDatabase, request: StorageWor
 function executeRegistry(connection: RecordDatabase, command: RegistryCommand): StorageWorkerResult {
   switch (command._tag) {
     case "teardown-put":
+      if (command.leaseSet !== undefined) {
+        registerStateLeaseAfter(connection, command.leaseSet, command.id, command);
+      }
       return putTeardownObligation({ connection, ...command });
     case "teardown-get":
       return getTeardownObligation(connection, command.id);
@@ -190,8 +206,18 @@ function executeRegistry(connection: RecordDatabase, command: RegistryCommand): 
       return claimTeardownObligation(connection, command.id);
     case "shared-list":
       return listSharedStateGenerations(connection, command.key);
-    case "shared-append":
-      return appendSharedStateGeneration({ connection, ...command });
+    case "lease-set-get":
+      return readStateLeaseSet(connection, command.id);
+    case "lease-set-pending":
+      return listPendingStateLeaseSets(connection, command.experimentId);
+    case "lease-set-acquire":
+    case "lease-set-fence":
+    case "lease-set-release":
+      return transitionStateLeaseSet(connection, command);
+    case "lease-set-start-after":
+      return startStateLeaseAfter(connection, command.expected);
+    case "lease-set-finish-after":
+      return finishStateLeaseAfter(connection, command.expected, command.retirement);
     case "shared-heartbeat":
       return updateSharedStateHeartbeat({ connection, ...command });
   }

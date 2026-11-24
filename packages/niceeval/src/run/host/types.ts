@@ -81,6 +81,7 @@ export class RunDeleteError extends Data.TaggedError("RunDeleteError")<{
     | "run-not-found"
     | "run-active"
     | "run-referenced"
+    | "run-lease-recovery-required"
     | "run-session-recovery-required"
     | "run-lifecycle-adapter-unavailable"
     | "run-delete-failed";

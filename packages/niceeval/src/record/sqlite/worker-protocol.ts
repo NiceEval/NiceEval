@@ -29,9 +29,10 @@ import type {
   StageRunCoreInput,
 } from "./types.ts";
 import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
-import type { TeardownRetirement } from "./registry-repository.ts";
+import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
 
 export type RegistryCommand =
+  | StateLeaseRegistryCommand
   | {
       readonly _tag: "teardown-put";
       readonly id: string;
@@ -39,26 +40,12 @@ export type RegistryCommand =
       readonly ownerPid: number;
       readonly ownerHost: string;
       readonly payload: Uint8Array;
+      readonly leaseSet?: StateLeaseAuthority | undefined;
     }
   | { readonly _tag: "teardown-get"; readonly id: string }
   | { readonly _tag: "teardown-list" }
   | { readonly _tag: "teardown-claim"; readonly id: string }
   | { readonly _tag: "shared-list"; readonly key: string }
-  | {
-      readonly _tag: "shared-append";
-      readonly retirement?: TeardownRetirement | undefined;
-      readonly key: string;
-      readonly expectedGeneration: number;
-      readonly generation: number;
-      readonly parentGeneration: number;
-      readonly kind: "active" | "recovering" | "free";
-      readonly ownerToken: string;
-      readonly ownerPid: number;
-      readonly ownerHost: string;
-      readonly ownerProcessIdentity: string;
-      readonly heartbeatAt: string;
-      readonly payload: Uint8Array;
-    }
   | {
       readonly _tag: "shared-heartbeat";
       readonly key: string;

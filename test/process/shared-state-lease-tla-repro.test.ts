@@ -12,15 +12,15 @@ import { createRecordProject, waitForGate } from "../integration/fixtures/record
 const cli = fileURLToPath(new URL("../../packages/niceeval/bin/niceeval.js", import.meta.url));
 
 // Terminate just after the transaction retiring the registration commits, before
-// its acknowledgement reaches the caller. Both the legacy delete and the
-// combined free transition are possible retirement commands.
+// its acknowledgement reaches the caller. Recovery retires the registration
+// before freeing the set, while the normal owner commits both together.
 const interruptAfterRetirement = `
   import { Worker } from "node:worker_threads";
   const postMessage = Worker.prototype.postMessage;
   Worker.prototype.postMessage = function(request, ...args) {
     const command = request?.command;
-    if (request?.operation === "registry" && (command._tag === "teardown-claim" ||
-        (command._tag === "shared-append" && command.kind === "free"))) {
+    if (request?.operation === "registry" && (command._tag === "lease-set-finish-after" ||
+        command._tag === "lease-set-release")) {
       this.prependListener("message", (response) => {
         if (response.id === request.id && response.state === "success" && response.result === true)
           process.kill(process.pid, "SIGKILL");

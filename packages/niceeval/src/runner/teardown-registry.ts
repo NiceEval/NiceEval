@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { Effect, Result, Schema } from "effect";
 import type { TeardownObligationRow } from "../coordination/platform/sqlite-registries.ts";
+import type { StateLeaseAuthority } from "../record/sqlite/state-lease-repository.ts";
 import {
   ProjectStateDatabase,
   type ProjectStateFacets,
@@ -95,8 +96,9 @@ export function teardownEntryId(experimentId: string, pid: number): string {
 export function writeTeardownRegistrationEffect(
   niceevalRoot: string,
   entry: TeardownRegistration,
+  leaseSet?: StateLeaseAuthority,
 ): Effect.Effect<TeardownObligationRow, unknown, ProjectDatabaseRequirement> {
-  const id = teardownEntryId(entry.experimentId, entry.pid);
+  const id = leaseSet?.id ?? teardownEntryId(entry.experimentId, entry.pid);
   const payload = Buffer.from(JSON.stringify(entry), "utf8");
   return putTeardownObligation({
     root: niceevalRoot,
@@ -105,6 +107,7 @@ export function writeTeardownRegistrationEffect(
     ownerPid: entry.pid,
     ownerHost: entry.host,
     payload,
+    leaseSet,
   }).pipe(Effect.map((generation) => ({ id, generation, payload })));
 }
 
@@ -132,8 +135,12 @@ export function readTeardownRegistrationEffect(
  * damaged historical rows; a recovery is instead about to publish a new
  * sharedState generation, so only a genuinely absent path is safe to accept.
  */
-export function readExactTeardownRegistrationEffect(niceevalRoot: string, experimentId: string, pid: number) {
-  const id = teardownEntryId(experimentId, pid);
+export function readExactTeardownRegistrationEffect(
+  niceevalRoot: string,
+  experimentId: string,
+  pid: number,
+  id: string,
+) {
   return getTeardownObligation(niceevalRoot, id).pipe(
     Effect.flatMap((row) =>
       row === undefined
@@ -193,15 +200,13 @@ export function isExactTeardownRegistrationOwnerTerminatedEffect(input: {
 }
 
 /** 读全部登记项(损坏 payload 跳过,不整体失败)。 */
-export function readTeardownRegistrationsEffect(
-  niceevalRoot: string,
-): Effect.Effect<{ id: string; entry: TeardownRegistration }[], unknown, ProjectDatabaseRequirement> {
+export function readTeardownRegistrationsEffect(niceevalRoot: string) {
   return listTeardownObligations(niceevalRoot).pipe(
     Effect.map((rows) =>
       rows.flatMap((row) => {
         try {
           const entry = decodeTeardownRegistration(JSON.parse(Buffer.from(row.payload).toString("utf8")));
-          return entry === undefined ? [] : [{ id: row.id, entry }];
+          return entry === undefined ? [] : [{ id: row.id, entry, leaseSetId: row.leaseSetId }];
         } catch {
           return [];
         }

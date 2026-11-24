@@ -505,10 +505,11 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
     !Object.hasOwn(value, "key") ||
     Object.keys(value).length !== 1 ||
     typeof candidate.key !== "string" ||
-    !SharedStateKeyPattern.test(candidate.key)
+    !SharedStateKeyPattern.test(candidate.key) ||
+    candidate.key.startsWith("state/")
   ) {
     throw new TypeError(
-      `experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.`,
+      `experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}. The state/ prefix is reserved.`,
     );
   }
   return Object.freeze({ key: candidate.key });

@@ -889,6 +889,16 @@ export function deleteRunResourceOnConnection(
       const revision = integer(tombstone, "deletion_revision");
       return { runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) };
     }
+    const heldLease = recordStatement(
+      connection,
+      "SELECT 1 FROM state_lease_set WHERE run_id=? AND phase IN ('active','recovering')",
+    ).get(input.runId);
+    if (heldLease !== undefined) {
+      throw new RunStorageError(
+        "run-lease-recovery-required",
+        `Run ${input.runId} still has a held lease set. Complete explicit lease recovery before deleting the Run.`,
+      );
+    }
     const unfinishedSessionWithoutSibling = recordStatement(
       connection,
       `SELECT 1 FROM ne19_invocation_sessions s

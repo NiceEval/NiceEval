@@ -1,22 +1,21 @@
-// Shared-state leases protect an author's external mutable state. They are
-// deliberately *not* case locks: a lease never expires and is never taken
-// over by a waiter. A crashed or failed cleanup path stays visible until an
-// operator performs the explicit, owner-token-checked recovery flow.
-//
-// The durable authority is an append-only generation chain. A transition may
-// only publish generation N + 1 under a SQLite head CAS. A free transition
-// can retire its exact teardown registration in that same transaction.
-
+// The immutable per-key chains and their lease-set owner advance together in SQLite.
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Clock, Deferred, Effect, Fiber } from "effect";
-import type { SharedStateGenerationRow, TeardownRetirement } from "../coordination/platform/sqlite-registries.ts";
-import {
-  ProjectStateDatabase,
-  type ProjectStateFacets,
-  type SharedStateFacet,
-} from "../record/sqlite/project-state-database.ts";
+import type {
+  SharedStateGenerationAppend,
+  SharedStateGenerationRow,
+  TeardownObligationRow,
+} from "../record/sqlite/registry-repository.ts";
+import type {
+  StateLeaseAuthority,
+  StateLeaseOwner,
+  StateLeaseRegistryCommand,
+  StateLeaseSet,
+} from "../record/sqlite/state-lease-repository.ts";
+import type { StorageWorkerResult } from "../record/sqlite/worker-protocol.ts";
+import { ProjectStateDatabase, type ProjectStateFacets } from "../record/sqlite/project-state-database.ts";
 
 function registryEffect<A>(
   root: string,
@@ -36,21 +35,9 @@ function listSharedStateGenerations(
   return registryEffect(root, (facets) => facets.sharedState.list(key));
 }
 
-function appendSharedStateGeneration(
-  input: Omit<Parameters<SharedStateFacet["append"]>[0], "_tag"> & { readonly root: string },
-) {
-  const { root, ...command } = input;
-  return registryEffect(root, (facets) => facets.sharedState.append({ _tag: "shared-append", ...command }));
+function leaseSetCommand<A extends StorageWorkerResult>(root: string, command: StateLeaseRegistryCommand) {
+  return registryEffect(root, (facets) => facets.sharedState.set<A>(command));
 }
-
-function updateSharedStateHeartbeat(
-  input: Omit<Parameters<SharedStateFacet["heartbeat"]>[0], "_tag"> & { readonly root: string },
-) {
-  const { root, ...command } = input;
-  return registryEffect(root, (facets) => facets.sharedState.heartbeat({ _tag: "shared-heartbeat", ...command }));
-}
-
-type ProjectDatabaseRequirement = ProjectStateDatabase;
 
 const SHARED_STATE_GENERATION_FORMAT = "niceeval.shared-state-generation/v1";
 
@@ -69,6 +56,7 @@ export interface SharedStateRecoveryActor {
 /** Durable, human-readable ownership evidence. The owner token is immutable. */
 export interface SharedStateLeaseRecord {
   readonly key: string;
+  readonly leaseSetId: string;
   readonly experimentId: string;
   readonly ownerToken: string;
   readonly pid: number;
@@ -89,13 +77,6 @@ export interface SharedStateLeaseRecord {
   /** Present only while an explicit CLI recovery is holding the lease closed. */
   readonly recoveryId?: string;
   readonly recoveryActor?: SharedStateRecoveryActor;
-}
-
-export interface SharedStateLeaseIdentity {
-  readonly experimentId: string;
-  readonly pid: number;
-  readonly host: string;
-  readonly processIdentity: string;
 }
 
 export class SharedStateLeaseError extends Error {
@@ -129,34 +110,10 @@ export class SharedStateLeaseError extends Error {
 }
 
 export interface SharedStateLeaseEffectClaim {
-  readonly ownerToken: string;
-  /** Releases only this exact owner generation. It never deletes a newer holder. */
-  readonly release: (
-    retirement?: TeardownRetirement,
-  ) => Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement>;
-  /**
-   * Stops this process's diagnostic heartbeat without mutating the durable
-   * lease. Cleanup failures use this path: the record must survive for an
-   * explicit recovery, but it must not keep the finished CLI process alive.
-   */
+  readonly set: StateLeaseAuthority;
+  readonly release: (retirement?: TeardownObligationRow) => Effect.Effect<void, unknown, ProjectStateDatabase>;
   readonly abandon: Effect.Effect<void>;
 }
-
-export interface AcquireSharedStateLeaseEffectResult {
-  readonly claim: SharedStateLeaseEffectClaim;
-}
-
-/** A recovery either owns a durable recovery marker or found a completed release. */
-export type ExplicitSharedStateRecovery =
-  | {
-      readonly _tag: "Claimed";
-      readonly record: SharedStateLeaseRecord;
-      readonly recoveryId: string;
-    }
-  | {
-      readonly _tag: "AlreadyReleased";
-      readonly record: SharedStateLeaseRecord;
-    };
 
 interface SharedStateFreeGeneration {
   readonly kind: "free";
@@ -170,19 +127,7 @@ interface SharedStateFreeGeneration {
 
 type SharedStateGeneration =
   | { readonly kind: "lease"; readonly record: SharedStateLeaseRecord }
-  | SharedStateFreeGeneration
-  | { readonly kind: "legacy"; readonly record: SharedStateLeaseRecord };
-
-interface SharedStateLedger {
-  readonly dir: string;
-  readonly latest: SharedStateGeneration | undefined;
-}
-
-/**
- * Non-authoritative, atomically replaced diagnostic heartbeat. Its filename
- * and payload are pinned to one immutable owner generation, so even a writer
- * that races a later release/recovery can never affect a newer holder.
- */
+  | SharedStateFreeGeneration;
 
 function errnoCode(cause: unknown): string | undefined {
   return typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
@@ -212,13 +157,6 @@ function recordOf(value: unknown): globalThis.Record<string, unknown> | undefine
     : undefined;
 }
 
-function sharedStateLeaseGenerationDirOf(niceevalRoot: string, key: string): string {
-  void key;
-  return niceevalRoot;
-}
-
-/** v2 used a mutable flat entry. We only read it to fail closed or explicitly recover it. */
-
 function decodeRecoveryActor(value: unknown): SharedStateRecoveryActor | undefined {
   const actor = recordOf(value);
   if (
@@ -238,19 +176,16 @@ function decodeRecoveryActor(value: unknown): SharedStateRecoveryActor | undefin
   };
 }
 
-function decodeSharedStateLeaseRecord(
-  key: string,
-  value: unknown,
-  opts: { readonly legacy?: boolean } = {},
-): SharedStateLeaseRecord | undefined {
+function decodeSharedStateLeaseRecord(key: string, value: unknown): SharedStateLeaseRecord | undefined {
   const record = recordOf(value);
   if (record === undefined) return undefined;
   const recoveryActor = record.recoveryActor === undefined ? undefined : decodeRecoveryActor(record.recoveryActor);
   const recovering = record.status === "recovering";
-  const generation = opts.legacy ? 0 : record.generation;
-  const parentGeneration = opts.legacy ? 0 : record.parentGeneration;
+  const generation = record.generation;
+  const parentGeneration = record.parentGeneration;
   if (
     record.key !== key ||
+    !isNonEmptyString(record.leaseSetId) ||
     !isNonEmptyString(record.experimentId) ||
     !isNonEmptyString(record.ownerToken) ||
     !isPositiveInteger(record.pid) ||
@@ -259,8 +194,9 @@ function decodeSharedStateLeaseRecord(
     !isTimestamp(record.acquiredAt) ||
     !isTimestamp(record.heartbeatAt) ||
     (record.status !== "active" && !recovering) ||
-    (!opts.legacy &&
-      (!isPositiveInteger(generation) || !isNonNegativeInteger(parentGeneration) || parentGeneration >= generation)) ||
+    !isPositiveInteger(generation) ||
+    !isNonNegativeInteger(parentGeneration) ||
+    parentGeneration >= generation ||
     (recovering && (!isNonEmptyString(record.recoveryId) || recoveryActor === undefined)) ||
     (!recovering && (record.recoveryId !== undefined || record.recoveryActor !== undefined))
   ) {
@@ -268,6 +204,7 @@ function decodeSharedStateLeaseRecord(
   }
   return {
     key,
+    leaseSetId: record.leaseSetId,
     experimentId: record.experimentId,
     ownerToken: record.ownerToken,
     pid: record.pid,
@@ -280,38 +217,6 @@ function decodeSharedStateLeaseRecord(
     parentGeneration: parentGeneration as number,
     ...(recovering ? { recoveryId: record.recoveryId as string, recoveryActor: recoveryActor! } : {}),
   };
-}
-
-function readDiagnosticHeartbeatEffect(
-  root: string,
-  record: SharedStateLeaseRecord,
-): Effect.Effect<SharedStateLeaseRecord, never, ProjectDatabaseRequirement> {
-  return listSharedStateGenerations(root, record.key).pipe(
-    Effect.map((rows) => rows.at(-1)),
-    Effect.map((head) =>
-      head === undefined ||
-      head.generation !== record.generation ||
-      head.heartbeatAt === record.heartbeatAt ||
-      !isTimestamp(head.heartbeatAt)
-        ? record
-        : { ...record, heartbeatAt: head.heartbeatAt },
-    ),
-    Effect.catch(() => Effect.succeed(record)),
-  );
-}
-
-function writeDiagnosticHeartbeatEffect(
-  root: string,
-  record: SharedStateLeaseRecord,
-  heartbeatAt: string,
-): Effect.Effect<void, unknown, ProjectDatabaseRequirement> {
-  return updateSharedStateHeartbeat({
-    root,
-    key: record.key,
-    generation: record.generation,
-    ownerToken: record.ownerToken,
-    heartbeatAt,
-  }).pipe(Effect.asVoid);
 }
 
 function decodeGeneration(key: string, value: unknown): SharedStateGeneration | undefined {
@@ -366,7 +271,7 @@ function generationNumber(generation: SharedStateGeneration | undefined): number
 }
 
 function leaseRecordOf(generation: SharedStateGeneration | undefined): SharedStateLeaseRecord | undefined {
-  return generation?.kind === "lease" || generation?.kind === "legacy" ? generation.record : undefined;
+  return generation?.kind === "lease" ? generation.record : undefined;
 }
 
 function sameRecoveryActor(left: SharedStateRecoveryActor, right: SharedStateRecoveryActor): boolean {
@@ -381,6 +286,7 @@ function sameRecoveryActor(left: SharedStateRecoveryActor, right: SharedStateRec
 function sameLeaseRecord(left: SharedStateLeaseRecord, right: SharedStateLeaseRecord): boolean {
   return (
     left.key === right.key &&
+    left.leaseSetId === right.leaseSetId &&
     left.experimentId === right.experimentId &&
     left.ownerToken === right.ownerToken &&
     left.pid === right.pid &&
@@ -402,6 +308,7 @@ function sameLeaseRecord(left: SharedStateLeaseRecord, right: SharedStateLeaseRe
 function sameLeaseOwnerEvidence(left: SharedStateLeaseRecord, right: SharedStateLeaseRecord): boolean {
   return (
     left.key === right.key &&
+    left.leaseSetId === right.leaseSetId &&
     left.experimentId === right.experimentId &&
     left.ownerToken === right.ownerToken &&
     left.pid === right.pid &&
@@ -410,14 +317,6 @@ function sameLeaseOwnerEvidence(left: SharedStateLeaseRecord, right: SharedState
     left.acquiredAt === right.acquiredAt &&
     left.heartbeatAt === right.heartbeatAt
   );
-}
-
-function legalFirstGeneration(first: SharedStateGeneration, legacy: SharedStateLeaseRecord | undefined): boolean {
-  if (first.kind !== "lease") return false;
-  if (first.record.status === "active") return legacy === undefined;
-  // The only allowed v2 migration is explicit recovery: legacy has no v3
-  // transition slot, so it becomes immutable recovering generation 1.
-  return legacy !== undefined && sameLeaseOwnerEvidence(first.record, legacy);
 }
 
 function legalGenerationTransition(previous: SharedStateGeneration, next: SharedStateGeneration): boolean {
@@ -449,7 +348,6 @@ function legalGenerationTransition(previous: SharedStateGeneration, next: Shared
 function validateGenerationTransitions(
   key: string,
   entries: readonly { readonly generation: number; readonly state: SharedStateGeneration }[],
-  legacy: SharedStateLeaseRecord | undefined,
 ): SharedStateLeaseError | undefined {
   let previousGeneration = 0;
   let previous: SharedStateGeneration | undefined;
@@ -465,11 +363,8 @@ function validateGenerationTransitions(
       return invalidLeaseError(key, "generations are not a contiguous exact-parent chain");
     }
     if (previous === undefined) {
-      if (!legalFirstGeneration(entry.state, legacy)) {
-        return invalidLeaseError(
-          key,
-          "generation 1 must be an active fresh lease or a recovery of the exact v2 legacy owner",
-        );
+      if (entry.state.kind !== "lease" || entry.state.record.status !== "active") {
+        return invalidLeaseError(key, "generation 1 must be an active lease");
       }
     } else if (!legalGenerationTransition(previous, entry.state)) {
       return invalidLeaseError(
@@ -495,12 +390,8 @@ function invalidLeaseError(key: string, message: string): SharedStateLeaseError 
  * SQLite. A malformed committed row fails closed rather than becoming an
  * opportunity to silently start a new holder.
  */
-function readSharedStateLedgerEffect(
-  niceevalRoot: string,
-  key: string,
-): Effect.Effect<SharedStateLedger, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  const dir = sharedStateLeaseGenerationDirOf(niceevalRoot, key);
-  return listSharedStateGenerations(niceevalRoot, key).pipe(
+function readSharedStateLedgerEffect(root: string, key: string) {
+  return listSharedStateGenerations(root, key).pipe(
     Effect.flatMap((rows) => {
       const entries: { generation: number; state: SharedStateGeneration }[] = [];
       for (const row of rows) {
@@ -510,46 +401,28 @@ function readSharedStateLedgerEffect(
         } catch {
           return Effect.fail(invalidLeaseError(key, `generation ${row.generation} is not valid JSON`));
         }
-        const decoded = decodeGeneration(key, value);
-        if (decoded === undefined) {
+        const state = decodeGeneration(key, value);
+        if (
+          state === undefined ||
+          (state.kind === "free" ? state.previous.leaseSetId : state.record.leaseSetId) !== row.leaseSetId ||
+          (state.kind === "free" ? "free" : state.record.status) !== row.kind
+        ) {
           return Effect.fail(invalidLeaseError(key, `generation ${row.generation} cannot be decoded`));
         }
-        entries.push({ generation: row.generation, state: decoded });
+        entries.push({ generation: row.generation, state });
       }
-      const invalid = validateGenerationTransitions(key, entries, undefined);
-      return invalid === undefined ? Effect.succeed({ dir, latest: entries.at(-1)?.state }) : Effect.fail(invalid);
+      const invalid = validateGenerationTransitions(key, entries);
+      return invalid === undefined ? Effect.succeed(entries) : Effect.fail(invalid);
     }),
   );
 }
 
-/**
- * Publish one immutable generation through an exact SQLite head CAS.
- */
-function publishGenerationExclusiveEffect(
-  dir: string,
-  generation: number,
-  state: SharedStateGeneration,
-  retirement?: TeardownRetirement,
-): Effect.Effect<"published" | "occupied", SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  const data =
-    state.kind === "lease"
-      ? durableLeaseGeneration(state.record)
-      : state.kind === "free"
-        ? durableFreeGeneration(state)
-        : undefined;
-  if (data === undefined) {
-    return Effect.fail(
-      new SharedStateLeaseError(
-        "shared-state-lease-invalid",
-        "A legacy sharedState record cannot be republished without explicit recovery.",
-      ),
-    );
-  }
+function appendInput(state: SharedStateGeneration): SharedStateGenerationAppend {
   const record = state.kind === "free" ? state.previous : state.record;
-  return appendSharedStateGeneration({
-    root: dir,
+  const generation = generationNumber(state);
+  return {
     key: record.key,
-    retirement,
+    leaseSetId: record.leaseSetId,
     expectedGeneration: generation - 1,
     generation,
     parentGeneration: generation - 1,
@@ -559,44 +432,10 @@ function publishGenerationExclusiveEffect(
     ownerHost: record.host,
     ownerProcessIdentity: record.processIdentity,
     heartbeatAt: record.heartbeatAt,
-    payload: Buffer.from(JSON.stringify(data), "utf8"),
-  }).pipe(Effect.map((published) => (published ? ("published" as const) : ("occupied" as const))));
-}
-
-export function readSharedStateLeaseEffect(
-  niceevalRoot: string,
-  key: string,
-): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
-    Effect.flatMap((ledger) => {
-      const record = leaseRecordOf(ledger.latest);
-      return record === undefined
-        ? Effect.succeed(undefined)
-        : // Sidecar I/O is deliberately non-authoritative. A bad/missing read
-          // cannot hide or invalidate the immutable lease generation.
-          readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catch(() => Effect.succeed(record)));
-    }),
-  );
-}
-
-/**
- * The public recovery command may show the prior owner after a completed
- * release. This lets it report `AlreadyReleased` without asking users to look
- * at private files; a new active generation still takes precedence and makes
- * an old token fail exact-owner validation.
- */
-export function readSharedStateLeaseRecoveryTargetEffect(
-  niceevalRoot: string,
-  key: string,
-): Effect.Effect<SharedStateLeaseRecord | undefined, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
-    Effect.flatMap((ledger) => {
-      const record = ledger.latest?.kind === "free" ? ledger.latest.previous : leaseRecordOf(ledger.latest);
-      return record === undefined
-        ? Effect.succeed(undefined)
-        : readDiagnosticHeartbeatEffect(ledger.dir, record).pipe(Effect.catch(() => Effect.succeed(record)));
-    }),
-  );
+    payload: Buffer.from(
+      JSON.stringify(state.kind === "free" ? durableFreeGeneration(state) : durableLeaseGeneration(record)),
+    ),
+  };
 }
 
 function makeAbortError(signal: AbortSignal | undefined): Error {
@@ -710,251 +549,6 @@ export function currentProcessIdentityEffect(): Effect.Effect<string, SharedStat
   );
 }
 
-function recoveryActor(host: string, processIdentity: string): SharedStateRecoveryActor {
-  return {
-    pid: process.pid,
-    host,
-    processIdentity,
-    startedAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Heartbeats intentionally make no authority transition. They verify that the
- * exact immutable generation/token is still current, then atomically replace
- * only that generation's diagnostic heartbeat. A heartbeat persistence failure
- * is ignored and cannot expire, take over, or resurrect any owner.
- */
-function heartbeatEffect(
-  niceevalRoot: string,
-  key: string,
-  expected: SharedStateLeaseRecord,
-): Effect.Effect<"confirmed" | "lost", SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
-    Effect.flatMap((ledger) => {
-      const current = leaseRecordOf(ledger.latest);
-      if (current === undefined || !sameLeaseRecord(current, expected)) return Effect.succeed("lost" as const);
-      return Clock.currentTimeMillis.pipe(
-        Effect.flatMap((nowMs) =>
-          writeDiagnosticHeartbeatEffect(ledger.dir, expected, new Date(nowMs).toISOString()).pipe(
-            // This write is merely user-facing evidence. The immutable head is
-            // still authoritative even if diagnostic heartbeat persistence fails.
-            Effect.catch(() => Effect.void),
-            Effect.as("confirmed" as const),
-          ),
-        ),
-      );
-    }),
-  );
-}
-
-function makeActiveLeaseRecord(input: {
-  readonly key: string;
-  readonly identity: SharedStateLeaseIdentity;
-  readonly ownerToken: string;
-  readonly generation: number;
-  readonly parentGeneration: number;
-  readonly now: string;
-}): SharedStateLeaseRecord {
-  return {
-    key: input.key,
-    experimentId: input.identity.experimentId,
-    ownerToken: input.ownerToken,
-    pid: input.identity.pid,
-    host: input.identity.host,
-    processIdentity: input.identity.processIdentity,
-    acquiredAt: input.now,
-    heartbeatAt: input.now,
-    status: "active",
-    generation: input.generation,
-    parentGeneration: input.parentGeneration,
-  };
-}
-
-function freeGenerationFrom(
-  record: SharedStateLeaseRecord,
-  generation: number,
-  releasedAt: string,
-): SharedStateFreeGeneration {
-  return {
-    kind: "free",
-    key: record.key,
-    generation,
-    parentGeneration: record.generation,
-    releasedAt,
-    previous: record,
-  };
-}
-
-function releaseError(key: string, latest: SharedStateGeneration | undefined): SharedStateLeaseError {
-  return new SharedStateLeaseError(
-    latest === undefined ? "shared-state-lease-missing" : "shared-state-lease-owner-mismatch",
-    `sharedState lease ${JSON.stringify(key)} was not released because its exact owner generation no longer matches; explicit recovery is required.`,
-  );
-}
-
-/**
- * Advance exactly this active generation to a free generation. A competing
- * transition can only occupy the same next slot; after that happens we inspect
- * the new immutable head and accept it only if it is this exact release.
- */
-function releaseExactLeaseEffect(
-  niceevalRoot: string,
-  key: string,
-  expected: SharedStateLeaseRecord,
-  retirement?: TeardownRetirement,
-): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  return Effect.suspend(() =>
-    readSharedStateLedgerEffect(niceevalRoot, key).pipe(
-      Effect.flatMap((ledger) => {
-        if (ledger.latest?.kind === "free" && sameLeaseRecord(ledger.latest.previous, expected)) return Effect.void;
-        const current = leaseRecordOf(ledger.latest);
-        if (current === undefined || !sameLeaseRecord(current, expected))
-          return Effect.fail(releaseError(key, ledger.latest));
-        const next = freeGenerationFrom(expected, expected.generation + 1, new Date().toISOString());
-        return publishGenerationExclusiveEffect(ledger.dir, next.generation, next, retirement).pipe(
-          Effect.flatMap((published) =>
-            published === "published" ? Effect.void : releaseExactLeaseEffect(niceevalRoot, key, expected, retirement),
-          ),
-        );
-      }),
-    ),
-  );
-}
-
-/**
- * Acquires only a free/absent generation head. Existing active/recovering
- * leases are waited on indefinitely; heartbeat age and PID liveness are
- * diagnostic facts, never authority to take ownership.
- */
-export function acquireSharedStateLeaseEffect(
-  niceevalRoot: string,
-  key: string,
-  identity: SharedStateLeaseIdentity,
-  opts: {
-    readonly signal?: AbortSignal | undefined;
-    readonly pollIntervalMs?: number | undefined;
-    readonly heartbeatIntervalMs?: number | undefined;
-    readonly onWaitStart?: ((holder: SharedStateLeaseRecord) => void) | undefined;
-  } = {},
-): Effect.Effect<AcquireSharedStateLeaseEffectResult, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  const ownerToken = randomUUID();
-  const pollIntervalMs = opts.pollIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
-  const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS;
-  const onWaitStart = opts.onWaitStart ?? (() => {});
-  let waitReported = false;
-  const acquire = (): Effect.Effect<
-    SharedStateLeaseRecord,
-    SharedStateLeaseError | unknown,
-    ProjectDatabaseRequirement
-  > =>
-    Effect.suspend(() => {
-      if (opts.signal?.aborted) return Effect.fail(makeAbortError(opts.signal));
-      return readSharedStateLedgerEffect(niceevalRoot, key).pipe(
-        Effect.flatMap((ledger) => {
-          const holder = leaseRecordOf(ledger.latest);
-          if (holder !== undefined) {
-            const reportWait = waitReported
-              ? Effect.void
-              : readDiagnosticHeartbeatEffect(ledger.dir, holder).pipe(
-                  Effect.flatMap((displayHolder) =>
-                    Effect.sync(() => {
-                      waitReported = true;
-                      onWaitStart(displayHolder);
-                    }),
-                  ),
-                );
-            return reportWait.pipe(
-              Effect.andThen(delayOrAbortEffect(pollIntervalMs, opts.signal)),
-              Effect.andThen(acquire()),
-            );
-          }
-          return Clock.currentTimeMillis.pipe(
-            Effect.flatMap((nowMs) => {
-              const parentGeneration = generationNumber(ledger.latest);
-              const record = makeActiveLeaseRecord({
-                key,
-                identity,
-                ownerToken,
-                generation: parentGeneration + 1,
-                parentGeneration,
-                now: new Date(nowMs).toISOString(),
-              });
-              const next: SharedStateGeneration = { kind: "lease" as const, record };
-              return publishGenerationExclusiveEffect(ledger.dir, record.generation, next).pipe(
-                Effect.flatMap((published) => (published === "published" ? Effect.succeed(record) : acquire())),
-              );
-            }),
-          );
-        }),
-      );
-    });
-
-  return Effect.uninterruptibleMask((restore) =>
-    restore(acquire()).pipe(
-      Effect.flatMap((record) => {
-        let heartbeatStopped = false;
-        let lostOwnership = false;
-        const heartbeat = Effect.forever(
-          Effect.sleep(heartbeatIntervalMs).pipe(
-            Effect.andThen(
-              heartbeatEffect(niceevalRoot, key, record).pipe(
-                Effect.tap((outcome) =>
-                  Effect.sync(() => {
-                    if (outcome === "lost") lostOwnership = true;
-                  }),
-                ),
-                // A diagnostic probe failure does not silently abandon an
-                // otherwise-owned lease; release still performs the exact CAS.
-                Effect.ignore,
-              ),
-            ),
-          ),
-        );
-        return Effect.forkChild(restore(heartbeat)).pipe(
-          Effect.flatMap((fiber) =>
-            Deferred.make<void, SharedStateLeaseError | unknown>().pipe(
-              Effect.map((releaseCompletion) => {
-                const stopHeartbeat = Effect.uninterruptible(
-                  Effect.suspend(() => {
-                    if (heartbeatStopped) return Effect.void;
-                    heartbeatStopped = true;
-                    return Fiber.interrupt(fiber).pipe(Effect.asVoid);
-                  }),
-                );
-                const releaseOperation = (retirement?: TeardownRetirement) =>
-                  stopHeartbeat.pipe(
-                    Effect.andThen(releaseExactLeaseEffect(niceevalRoot, key, record, retirement)),
-                    Effect.catch((cause) => {
-                      // Keep the exact failure visible to the caller. `lostOwnership`
-                      // only improves the diagnosis; it never changes authority.
-                      if (cause instanceof SharedStateLeaseError) return Effect.fail(cause);
-                      return Effect.fail(
-                        lostOwnership
-                          ? new SharedStateLeaseError(
-                              "shared-state-lease-owner-mismatch",
-                              `sharedState lease ${JSON.stringify(key)} changed while this owner was active; explicit recovery is required.`,
-                            )
-                          : cause,
-                      );
-                    }),
-                  );
-                const release = (retirement?: TeardownRetirement) =>
-                  Effect.uninterruptible(
-                    Deferred.complete(releaseCompletion, releaseOperation(retirement)).pipe(
-                      Effect.andThen(Deferred.await(releaseCompletion)),
-                    ),
-                  );
-                return { claim: { ownerToken, release, abandon: stopHeartbeat } };
-              }),
-            ),
-          ),
-        );
-      }),
-    ),
-  );
-}
-
 function assertRecoveryConfirmed(input: {
   readonly confirmOwnerTerminated: boolean;
   readonly confirmRemoteQuiesced: boolean;
@@ -1008,42 +602,276 @@ function assertActorStoppedEffect(
   );
 }
 
-function recoveryRecordFrom(
-  source: SharedStateLeaseRecord,
-  recoveryId: string,
-  actor: SharedStateRecoveryActor,
-): SharedStateLeaseRecord {
-  return {
-    ...source,
-    status: "recovering",
-    generation: source.generation + 1,
-    parentGeneration: source.generation,
-    recoveryId,
-    recoveryActor: actor,
-  };
+function randomIdentity(): string {
+  return randomBytes(16).toString("hex");
 }
 
-function isExactRecoveringSource(
-  record: SharedStateLeaseRecord,
-  recoveryId: string,
-  actor: SharedStateRecoveryActor,
-): boolean {
-  return (
-    record.status === "recovering" &&
-    record.recoveryId === recoveryId &&
-    record.recoveryActor !== undefined &&
-    // Do not reduce this to processIdentity: PID, host, and the immutable
-    // recovery id are all part of the replacement compare-owner predicate.
-    sameRecoveryActor(record.recoveryActor, actor)
+function currentSet(root: string, id: string) {
+  return leaseSetCommand<StateLeaseSet | undefined>(root, { _tag: "lease-set-get", id });
+}
+
+function exactAuthority(set: StateLeaseSet): StateLeaseAuthority {
+  const { id, generation, ownerToken, recoveryId } = set;
+  return { id, generation, ownerToken, recoveryId };
+}
+
+function freeEntry(record: SharedStateLeaseRecord, releasedAt: string): SharedStateGenerationAppend {
+  return appendInput({
+    kind: "free",
+    key: record.key,
+    generation: record.generation + 1,
+    parentGeneration: record.generation,
+    releasedAt,
+    previous: record,
+  });
+}
+
+function advanceToFree(
+  root: string,
+  authority: StateLeaseAuthority,
+  records: readonly SharedStateLeaseRecord[],
+  retirement?: TeardownObligationRow,
+) {
+  const failure = new SharedStateLeaseError(
+    "shared-state-recovery-state-mismatch",
+    "The lease set no longer matches this exact release.",
+  );
+  const releasedAt = new Date().toISOString();
+  return leaseSetCommand<boolean>(root, {
+    _tag: "lease-set-release",
+    expected: authority,
+    entries: records.map((record) => freeEntry(record, releasedAt)),
+    retirement,
+  }).pipe(Effect.flatMap((released) => (released ? Effect.void : Effect.fail(failure))));
+}
+
+export function startLeaseSetAfterEffect(root: string, expected: StateLeaseAuthority) {
+  return leaseSetCommand<boolean>(root, { _tag: "lease-set-start-after", expected }).pipe(
+    Effect.flatMap((started) =>
+      started ? Effect.void : Effect.fail(new Error("Lease set after obligation is no longer current.")),
+    ),
   );
 }
 
-/**
- * Claims a failed holder for one recovery command without releasing it. The
- * recovery record is an immutable next generation. If two operators recover
- * concurrently, only one can publish that exact next slot; the loser never
- * clears or reuses a coordination path and must re-inspect/retry explicitly.
- */
+export function finishLeaseSetAfterEffect(
+  root: string,
+  expected: StateLeaseAuthority,
+  retirement: TeardownObligationRow,
+) {
+  return leaseSetCommand<boolean>(root, { _tag: "lease-set-finish-after", expected, retirement }).pipe(
+    Effect.flatMap((finished) =>
+      finished ? Effect.void : Effect.fail(new Error("Lease set after obligation changed before completion.")),
+    ),
+  );
+}
+
+export function readHeldStateLeaseSetsEffect(root: string, experimentId: string) {
+  return leaseSetCommand<readonly StateLeaseSet[]>(root, { _tag: "lease-set-pending", experimentId });
+}
+
+export function waitForOrphanedStateLeaseSetEffect(input: {
+  readonly root: string;
+  readonly experimentId: string;
+  readonly host: string;
+  readonly signal: AbortSignal | undefined;
+  readonly onWait: (key: string) => void;
+}) {
+  let notified = false;
+  const poll = Effect.fnUntraced(function* (): Effect.fn.Return<void, unknown, ProjectStateDatabase> {
+    if (input.signal?.aborted) return yield* Effect.fail(makeAbortError(input.signal));
+    const pending = yield* readHeldStateLeaseSetsEffect(input.root, input.experimentId);
+    for (const set of pending) {
+      if (set.afterStatus === "not-required") continue;
+      // A live local owner continues its own lifecycle. A pending remote
+      // obligation cannot be classified as live from process-local evidence.
+      if (
+        set.phase === "active" &&
+        set.owner.host === input.host &&
+        (yield* processIdentityForPidEffect(set.owner.pid)) === set.owner.processIdentity
+      )
+        continue;
+      if (!notified) {
+        notified = true;
+        input.onWait(set.members[0].key);
+      }
+      yield* delayOrAbortEffect(1_000, input.signal);
+      return yield* poll();
+    }
+  });
+  return poll();
+}
+
+export function acquireSharedStateLeaseEffect(input: {
+  readonly root: string;
+  readonly keys: readonly string[];
+  readonly invocationId: string;
+  readonly runId: string;
+  readonly owner: StateLeaseOwner;
+  readonly signal: AbortSignal | undefined;
+  readonly onWaitStart: (key: string) => void;
+}): Effect.Effect<SharedStateLeaseEffectClaim, unknown, ProjectStateDatabase> {
+  const keys = [...new Set(input.keys)].sort();
+  const id = randomIdentity();
+  const ownerToken = randomIdentity();
+  const authority: StateLeaseAuthority = { id, ownerToken, generation: 1, recoveryId: null };
+  let waitReported = false;
+  const acquire = Effect.fnUntraced(function* (): Effect.fn.Return<
+    readonly SharedStateLeaseRecord[],
+    unknown,
+    ProjectStateDatabase
+  > {
+    if (input.signal?.aborted) return yield* Effect.fail(makeAbortError(input.signal));
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const records: SharedStateLeaseRecord[] = [];
+    for (const key of keys) {
+      const latest = (yield* readSharedStateLedgerEffect(input.root, key)).at(-1)?.state;
+      if (leaseRecordOf(latest) !== undefined) {
+        if (!waitReported) {
+          input.onWaitStart(key);
+          waitReported = true;
+        }
+        yield* Effect.interruptible(delayOrAbortEffect(1_000, input.signal));
+        return yield* acquire();
+      }
+      const parentGeneration = generationNumber(latest);
+      records.push({
+        key,
+        leaseSetId: id,
+        ...input.owner,
+        ownerToken,
+        status: "active",
+        acquiredAt: now,
+        heartbeatAt: now,
+        generation: parentGeneration + 1,
+        parentGeneration,
+      });
+    }
+    if (input.signal?.aborted) return yield* Effect.fail(makeAbortError(input.signal));
+    const acquired = yield* leaseSetCommand<boolean>(input.root, {
+      _tag: "lease-set-acquire",
+      id,
+      invocationId: input.invocationId,
+      runId: input.runId,
+      owner: input.owner,
+      ownerToken,
+      entries: records.map((record) => appendInput({ kind: "lease", record })),
+    });
+    return acquired ? records : yield* acquire();
+  });
+  return Effect.gen(function* () {
+    const records = yield* acquire();
+    const heartbeat = Effect.forever(
+      Effect.sleep(SHARED_STATE_LEASE_HEARTBEAT_INTERVAL_MS).pipe(
+        Effect.andThen(
+          Effect.gen(function* () {
+            const at = new Date(yield* Clock.currentTimeMillis).toISOString();
+            for (const record of records) {
+              yield* registryEffect(input.root, (facets) =>
+                facets.sharedState.heartbeat({
+                  _tag: "shared-heartbeat",
+                  key: record.key,
+                  generation: record.generation,
+                  ownerToken,
+                  heartbeatAt: at,
+                }),
+              ).pipe(Effect.ignore);
+            }
+          }),
+        ),
+      ),
+    );
+    const fiber = yield* heartbeat.pipe(Effect.interruptible, Effect.forkChild);
+    const releaseCompletion = yield* Deferred.make<void, unknown>();
+    const abandon = Fiber.interrupt(fiber).pipe(Effect.asVoid);
+    return {
+      set: authority,
+      abandon,
+      release: (retirement?: TeardownObligationRow) =>
+        Deferred.complete(
+          releaseCompletion,
+          abandon.pipe(Effect.andThen(Effect.suspend(() => advanceToFree(input.root, authority, records, retirement)))),
+        ).pipe(Effect.andThen(Deferred.await(releaseCompletion)), Effect.uninterruptible),
+    };
+  }).pipe(Effect.uninterruptible);
+}
+
+function recordMatchesOwner(record: SharedStateLeaseRecord, set: StateLeaseSet): boolean {
+  return (
+    record.leaseSetId === set.id &&
+    record.ownerToken === set.ownerToken &&
+    record.experimentId === set.experimentId &&
+    record.pid === set.owner.pid &&
+    record.host === set.owner.host &&
+    record.processIdentity === set.owner.processIdentity
+  );
+}
+
+function readSetRecords(root: string, set: StateLeaseSet) {
+  return Effect.forEach(set.members, (member) =>
+    Effect.gen(function* () {
+      const ledger = yield* readSharedStateLedgerEffect(root, member.key);
+      const acquired = ledger[member.acquiredGeneration - 1]?.state;
+      const current = ledger[member.currentGeneration - 1]?.state;
+      const record = current?.kind === "free" ? current.previous : leaseRecordOf(current);
+      const agreesWithRecovery =
+        set.phase !== "recovering" ||
+        (set.recoveryActor !== null &&
+          record?.recoveryActor !== undefined &&
+          sameRecoveryActor(record.recoveryActor, set.recoveryActor));
+      if (
+        acquired?.kind !== "lease" ||
+        acquired.record.status !== "active" ||
+        !recordMatchesOwner(acquired.record, set) ||
+        record === undefined ||
+        !recordMatchesOwner(record, set) ||
+        !agreesWithRecovery ||
+        (set.phase !== "free" && (record.status !== set.phase || (record.recoveryId ?? null) !== set.recoveryId)) ||
+        (set.phase === "free" && current?.kind !== "free")
+      ) {
+        return yield* Effect.fail(
+          invalidLeaseError(member.key, "lease set member evidence disagrees with its history"),
+        );
+      }
+      return record;
+    }),
+  );
+}
+
+export function readSharedStateLeaseRecoveryTargetEffect(root: string, key: string) {
+  return Effect.gen(function* () {
+    const latest = (yield* readSharedStateLedgerEffect(root, key)).at(-1)?.state;
+    const record = latest?.kind === "free" ? latest.previous : leaseRecordOf(latest);
+    if (record === undefined) return undefined;
+    const set = yield* currentSet(root, record.leaseSetId);
+    if (set === undefined || !recordMatchesOwner(record, set)) {
+      return yield* Effect.fail(invalidLeaseError(key, "lease set owner disagrees with its evidence"));
+    }
+    const member = set.members.find((entry) => entry.key === key);
+    if (
+      member?.currentGeneration !== generationNumber(latest) ||
+      set.phase !== (latest?.kind === "free" ? "free" : record.status)
+    ) {
+      return yield* Effect.fail(invalidLeaseError(key, "key and lease set generations changed during inspection"));
+    }
+    const rows = yield* listSharedStateGenerations(root, key);
+    const row = rows.at(-1);
+    const display =
+      row?.generation === record.generation && isTimestamp(row.heartbeatAt)
+        ? { ...record, heartbeatAt: row.heartbeatAt }
+        : record;
+    return { record: display, set };
+  });
+}
+
+export function leaseSetNeedsAfter(set: StateLeaseSet): boolean {
+  return (
+    set.phase !== "free" &&
+    (set.afterStatus === "pending" ||
+      set.afterStatus === "running" ||
+      (set.afterStatus === "not-required" && set.members.some(({ key }) => !key.startsWith("state/"))))
+  );
+}
+
 export function beginExplicitSharedStateRecoveryEffect(input: {
   readonly niceevalRoot: string;
   readonly key: string;
@@ -1051,144 +879,88 @@ export function beginExplicitSharedStateRecoveryEffect(input: {
   readonly localHost: string;
   readonly confirmOwnerTerminated: boolean;
   readonly confirmRemoteQuiesced: boolean;
-}): Effect.Effect<ExplicitSharedStateRecovery, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
+  readonly afterAvailable: boolean;
+}) {
   return Effect.gen(function* () {
     yield* assertRecoveryConfirmed(input);
-    const processIdentity = yield* currentProcessIdentityEffect();
-    const actor = recoveryActor(input.localHost, processIdentity);
-    const ledger = yield* readSharedStateLedgerEffect(input.niceevalRoot, input.key);
-    if (ledger.latest === undefined) {
+    const root = input.niceevalRoot;
+    const target = yield* readSharedStateLeaseRecoveryTargetEffect(root, input.key);
+    if (target === undefined)
       return yield* Effect.fail(
         new SharedStateLeaseError(
           "shared-state-lease-missing",
           `No decodable sharedState lease exists for ${JSON.stringify(input.key)}.`,
         ),
       );
-    }
-    if (ledger.latest.kind === "free") {
-      if (ledger.latest.previous.ownerToken === input.ownerToken) {
-        return { _tag: "AlreadyReleased" as const, record: ledger.latest.previous };
-      }
+    const { record, set } = target;
+    if (set.ownerToken !== input.ownerToken)
       return yield* Effect.fail(
         new SharedStateLeaseError(
           "shared-state-lease-owner-mismatch",
           `The supplied owner token does not own sharedState key ${JSON.stringify(input.key)}.`,
         ),
       );
-    }
-    const observed = ledger.latest.record;
-    if (observed.ownerToken !== input.ownerToken) {
-      return yield* Effect.fail(
-        new SharedStateLeaseError(
-          "shared-state-lease-owner-mismatch",
-          `The supplied owner token does not own sharedState key ${JSON.stringify(input.key)}.`,
-        ),
-      );
-    }
+    const records = yield* readSetRecords(root, set);
+    if (set.phase === "free") return { _tag: "AlreadyReleased" as const, record, set };
+    if (!input.afterAvailable && leaseSetNeedsAfter(set)) return { _tag: "AfterRequired" as const, record, set };
     yield* assertActorStoppedEffect(
-      observed,
+      set.owner,
       input.localHost,
       "shared-state-owner-still-live",
       input.confirmRemoteQuiesced,
     );
-    if (observed.status === "recovering") {
-      const observedRecoveryId = observed.recoveryId!;
-      const observedRecoveryActor = observed.recoveryActor!;
-      // The observed immutable parent itself is the exact compare-owner input.
-      // Keep the full predicate explicit so a PID/processIdentity coincidence
-      // cannot replace a different recovery operation.
-      if (!isExactRecoveringSource(observed, observedRecoveryId, observedRecoveryActor)) {
-        return yield* Effect.fail(invalidLeaseError(input.key, "recovering generation lacks an exact recovery actor"));
-      }
+    if (set.recoveryActor !== null) {
       yield* assertActorStoppedEffect(
-        observedRecoveryActor,
+        set.recoveryActor,
         input.localHost,
         "shared-state-recovery-in-progress",
         input.confirmRemoteQuiesced,
       );
     }
-    const recoveryId = randomUUID();
-    const recovered = recoveryRecordFrom(observed, recoveryId, actor);
-    const next: SharedStateGeneration = { kind: "lease" as const, record: recovered };
-    const published = yield* publishGenerationExclusiveEffect(ledger.dir, recovered.generation, next);
-    if (published === "published") return { _tag: "Claimed" as const, record: recovered, recoveryId };
-    return yield* Effect.fail(
-      new SharedStateLeaseError(
-        "shared-state-recovery-state-mismatch",
-        `sharedState lease ${JSON.stringify(input.key)} changed before explicit recovery could claim its exact generation.`,
-      ),
+    const recoveryId = randomIdentity();
+    const actor = {
+      pid: process.pid,
+      host: input.localHost,
+      processIdentity: yield* currentProcessIdentityEffect(),
+      startedAt: new Date().toISOString(),
+    };
+    const recoveredRecords = records.map(
+      (source): SharedStateLeaseRecord => ({
+        ...source,
+        status: "recovering",
+        recoveryId,
+        recoveryActor: actor,
+        generation: source.generation + 1,
+        parentGeneration: source.generation,
+      }),
     );
+    const claimed = yield* leaseSetCommand<boolean>(root, {
+      _tag: "lease-set-fence",
+      expected: exactAuthority(set),
+      expectedAfterStatus: set.afterStatus,
+      recoveryId,
+      actor,
+      entries: recoveredRecords.map((next) => appendInput({ kind: "lease", record: next })),
+    });
+    if (!claimed)
+      return yield* Effect.fail(
+        new SharedStateLeaseError(
+          "shared-state-recovery-state-mismatch",
+          "The lease set changed before its exact recovery generation could be claimed.",
+        ),
+      );
+    const authority: StateLeaseAuthority = {
+      id: set.id,
+      generation: set.generation + 1,
+      ownerToken: set.ownerToken,
+      recoveryId,
+    };
+    return {
+      _tag: "Claimed" as const,
+      record,
+      set,
+      authority,
+      release: () => advanceToFree(root, authority, recoveredRecords),
+    };
   });
-}
-
-function exactRecoveryActorMatchesCurrentProcess(
-  actor: SharedStateRecoveryActor,
-  localHost: string,
-  processIdentity: string,
-): boolean {
-  return actor.pid === process.pid && actor.host === localHost && actor.processIdentity === processIdentity;
-}
-
-/**
- * Final recovery transition: exactly owner token + recovery id + recovery
- * actor host/PID/process identity advances its observed generation to free.
- * It does not unlink anything and therefore cannot erase a later holder.
- */
-export function completeExplicitSharedStateRecoveryEffect(input: {
-  readonly niceevalRoot: string;
-  readonly key: string;
-  readonly ownerToken: string;
-  readonly recoveryId: string;
-  readonly localHost: string;
-  readonly retirement: TeardownRetirement;
-}): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> {
-  const complete = (
-    expected?: SharedStateLeaseRecord,
-  ): Effect.Effect<void, SharedStateLeaseError | unknown, ProjectDatabaseRequirement> =>
-    Effect.suspend(() =>
-      readSharedStateLedgerEffect(input.niceevalRoot, input.key).pipe(
-        Effect.flatMap((ledger) => {
-          if (
-            ledger.latest?.kind === "free" &&
-            expected !== undefined &&
-            sameLeaseRecord(ledger.latest.previous, expected)
-          ) {
-            return Effect.void;
-          }
-          const current = leaseRecordOf(ledger.latest);
-          if (
-            current === undefined ||
-            (expected !== undefined && !sameLeaseRecord(current, expected)) ||
-            current.ownerToken !== input.ownerToken ||
-            current.status !== "recovering" ||
-            current.recoveryId !== input.recoveryId ||
-            current.recoveryActor === undefined
-          ) {
-            return Effect.fail(
-              new SharedStateLeaseError(
-                ledger.latest === undefined ? "shared-state-lease-missing" : "shared-state-recovery-state-mismatch",
-                `sharedState lease ${JSON.stringify(input.key)} no longer matches this explicit recovery operation.`,
-              ),
-            );
-          }
-          return currentProcessIdentityEffect().pipe(
-            Effect.flatMap((processIdentity) => {
-              if (!exactRecoveryActorMatchesCurrentProcess(current.recoveryActor!, input.localHost, processIdentity)) {
-                return Effect.fail(
-                  new SharedStateLeaseError(
-                    "shared-state-recovery-state-mismatch",
-                    `sharedState lease ${JSON.stringify(input.key)} is not owned by this exact recovery actor.`,
-                  ),
-                );
-              }
-              const next = freeGenerationFrom(current, current.generation + 1, new Date().toISOString());
-              return publishGenerationExclusiveEffect(ledger.dir, next.generation, next, input.retirement).pipe(
-                Effect.flatMap((published) => (published === "published" ? Effect.void : complete(current))),
-              );
-            }),
-          );
-        }),
-      ),
-    );
-  return complete();
 }

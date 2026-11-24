@@ -87,6 +87,8 @@ import { exactProcessState } from "./node-process-identity.ts";
 import {
   acquireSharedStateLeaseEffect,
   currentProcessIdentityEffect,
+  startLeaseSetAfterEffect,
+  waitForOrphanedStateLeaseSetEffect,
   type SharedStateLeaseEffectClaim,
 } from "./shared-state-lease.ts";
 import { openRunnerRecordCoordinator, prepareRunnerRecordReuse, type RunnerRecordAttempt } from "./record.ts";
@@ -1116,8 +1118,13 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         sharedStateClaim: SharedStateLeaseEffectClaim | undefined;
       }
       const expLifecycles = new Map<AgentRun, ExperimentLifecycleCell>();
+      const leaseKeys = (run: AgentRun) =>
+        run.sharedState === undefined
+          ? (run.stateLeaseKeys ?? [])
+          : [...(run.stateLeaseKeys ?? []), run.sharedState.key];
+      const hasLease = (run: AgentRun) => run.sharedState !== undefined || (run.stateLeaseKeys?.length ?? 0) > 0;
       for (const a of attempts) {
-        if (!a.run.setup && !a.run.teardown && !a.run.sharedState) continue;
+        if (!a.run.setup && !a.run.teardown && !hasLease(a.run)) continue;
         const cell = expLifecycles.get(a.run);
         if (cell) {
           if (cell.state._tag !== "Dormant") throw new Error("Experiment lifecycle initialized after dispatch.");
@@ -1134,7 +1141,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       }
 
       const recordSandboxCleanupFailure = (run: AgentRun, failure: SandboxCleanupFailure): void => {
-        if (run.sharedState === undefined) return;
+        if (!hasLease(run)) return;
         const cell = expLifecycles.get(run);
         if (cell === undefined) return;
         cell.sandboxCleanupFailures.push(failure);
@@ -1326,7 +1333,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         readonly reason: string;
         readonly phase: LifecyclePhase;
       }): void => {
-        const key = input.run.sharedState?.key ?? "";
+        const key = leaseKeys(input.run)[0] ?? "";
         const message =
           `sharedState key ${key} requires explicit recovery before another Invocation can use it. Inspect immutable owner evidence with \`niceeval exp <selector> --after --recover-shared-state <key>\`.
 `.trimEnd();
@@ -1356,53 +1363,39 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           affectedSlotIds: undefined,
         });
       };
-      /**
-       * A blocked sharedState acquisition is normal contention. It is deliberately
-       * an info notice and deliberately does not enter a Run's durable diagnostic
-       * list: there is no cleanup obligation and no owner evidence to expose.
-       */
+      const reportLeaseWait = (experimentId: string, key: string) =>
+        reportDiagnostic({
+          key: `state-lease-waiting:${key}`,
+          code: "state-lease-waiting",
+          severity: "info",
+          message: `Waiting for sharedState key ${key} to be released. This Invocation will not take it over automatically.`,
+          data: { experimentId, sharedStateKey: key },
+          identity: undefined,
+        });
       const acquireSharedStateClaim = (
         run: AgentRun,
         experimentId: string,
       ): Effect.Effect<SharedStateLeaseEffectClaim, unknown, ProjectStateDatabase> =>
         Effect.gen(function* () {
-          const sharedState = run.sharedState;
-          if (sharedState === undefined) {
-            return yield* Effect.die(new Error("Attempted to acquire an undeclared sharedState lease."));
-          }
+          const runId = runIds.get(experimentId);
+          if (runId === undefined)
+            return yield* Effect.fail(new Error(`Missing exact Run for Experiment ${experimentId}.`));
           const processIdentity = sharedStateProcessIdentity ?? (yield* currentProcessIdentityEffect());
           sharedStateProcessIdentity = processIdentity;
-          const acquired = yield* acquireSharedStateLeaseEffect(
-            coordinationRoot,
-            sharedState.key,
-            {
+          return yield* acquireSharedStateLeaseEffect({
+            root: caseLockRoot,
+            keys: leaseKeys(run),
+            invocationId: recordCoordinator.reusePlan.target.invocationId,
+            runId,
+            owner: {
               experimentId,
               pid: process.pid,
               host: currentHost,
               processIdentity,
             },
-            {
-              signal: opts.signal,
-              onWaitStart: () => {
-                const message =
-                  `waiting for sharedState key ${sharedState.key} to be released; this Invocation will not take it over automatically.
-`.trimEnd();
-                reportDiagnostic({
-                  key: `state-lease-waiting:${sharedState.key}`,
-                  code: "state-lease-waiting",
-                  severity: "info",
-                  message,
-                  data: { experimentId, sharedStateKey: sharedState.key },
-
-                  identity: undefined,
-                });
-              },
-
-              pollIntervalMs: undefined,
-              heartbeatIntervalMs: undefined,
-            },
-          );
-          return acquired.claim;
+            signal: opts.signal,
+            onWaitStart: (key) => reportLeaseWait(experimentId, key),
+          });
         });
       // 强杀后的收尾兜底(docs/feature/experiments/architecture/README.md「强杀后的收尾兜底」)
       // 与留存注册表都写入 coordinationRoot 对应的 canonical ProjectDatabase。
@@ -1500,14 +1493,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               // stale in-memory claim after a failed compare-owner mutation; its
               // durable record is deliberately left for explicit recovery.
               cell.sharedStateClaim = undefined;
-              const retirement =
-                run.teardown && run.experimentId
-                  ? (cell.teardownRegistration ?? {
-                      id: teardownEntryId(run.experimentId, process.pid),
-                      generation: null,
-                    })
-                  : undefined;
-              return claim.release(retirement).pipe(Effect.catch(() => recoveryRequired("release-failed")));
+              return claim
+                .release(cell.teardownRegistration)
+                .pipe(Effect.catch(() => recoveryRequired("release-failed")));
             }),
           );
         });
@@ -1612,6 +1600,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   }
 
                   if (run.teardown) {
+                    if (cell.sharedStateClaim !== undefined) {
+                      if (cell.teardownRegistration === undefined) {
+                        return yield* Effect.fail(new Error("The lease set after registration could not be verified."));
+                      }
+                      yield* startLeaseSetAfterEffect(caseLockRoot, cell.sharedStateClaim.set);
+                    }
                     reportExperimentHook({
                       experimentId,
                       hook: "teardown",
@@ -1690,7 +1684,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         cell.state = { _tag: "TornDown", pendingAttempts, setup: setupOutcomeOf(setup) };
                         // settle 后才注销：drain 在执行体在飞时仍能看见本项。
                         yield* unregisterExperimentTeardown(experimentId);
-                        if (run.experimentId && !run.sharedState) {
+                        if (run.experimentId && !hasLease(run)) {
                           yield* removeTeardownRegistrationIfPresentEffect(
                             coordinationRoot,
                             teardownEntryId(run.experimentId, process.pid),
@@ -1755,8 +1749,12 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
             const registrations = yield* readTeardownRegistrationsEffect(coordinationRoot).pipe(
               Effect.catch(() => Effect.succeed([])),
             );
-            for (const { id, entry } of registrations) {
-              if (entry.experimentId !== run.experimentId || !isOrphanedTeardownRegistration(entry, currentHost))
+            for (const { id, entry, leaseSetId } of registrations) {
+              if (
+                leaseSetId !== undefined ||
+                entry.experimentId !== run.experimentId ||
+                !isOrphanedTeardownRegistration(entry, currentHost)
+              )
                 continue;
               const claimed = yield* removeTeardownRegistrationIfPresentEffect(coordinationRoot, id).pipe(
                 Effect.catch(() => Effect.succeed(false)),
@@ -1880,8 +1878,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
 
                     const run = a.run;
                     const experimentId = run.experimentId ?? run.adapter?.name ?? "";
-                    if (run.sharedState && cell.sharedStateClaim === undefined) {
-                      cell.sharedStateClaim = yield* restore(acquireSharedStateClaim(run, experimentId));
+                    if (hasLease(run) && cell.sharedStateClaim === undefined) {
+                      cell.sharedStateClaim = yield* acquireSharedStateClaim(run, experimentId);
                     }
                     const completion = yield* Deferred.make<void, unknown>();
                     // 先写 Active、再登记和启动 worker：随后任何 attempt 或强清都会复用同一个 Effect 完成点。
@@ -1890,7 +1888,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       pendingAttempts: current.pendingAttempts,
                       setup: { _tag: "InProgress", completion },
                     };
-                    if (run.teardown || run.sharedState) {
+                    if (run.teardown || hasLease(run)) {
                       yield* registerExperimentTeardown(experimentId, () =>
                         runExperimentTeardown(run, cell).pipe(
                           Effect.provideService(ProjectStateDatabase, projectStateDatabase),
@@ -1903,45 +1901,52 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                       // 再核对一次可覆盖 gate 之后才出现的孤儿登记，随后原子写入本次登记；两步都先于 setup。
                       if (run.teardown && run.experimentId) {
                         yield* recoverOrphanedTeardownRegistration(run, experimentId);
-                        yield* writeTeardownRegistrationEffect(coordinationRoot, {
-                          experimentId: run.experimentId,
-                          selectedEvalIds: run.selectedEvalIds,
-                          pid: process.pid,
-                          host: currentHost,
-                          startedAt: new Date().toISOString(),
-                        }).pipe(
+                        const registrationRoot = cell.sharedStateClaim === undefined ? coordinationRoot : caseLockRoot;
+                        yield* writeTeardownRegistrationEffect(
+                          registrationRoot,
+                          {
+                            experimentId: run.experimentId,
+                            selectedEvalIds: run.selectedEvalIds,
+                            pid: process.pid,
+                            host: currentHost,
+                            startedAt: new Date().toISOString(),
+                          },
+                          cell.sharedStateClaim?.set,
+                        ).pipe(
                           Effect.tap((row) =>
                             Effect.sync(() => {
                               cell.teardownRegistration = row;
                             }),
                           ),
                           Effect.catch((error) =>
-                            Effect.sync(() => {
-                              const message =
-                                `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --after\` or the startup self-heal — check the canonical ProjectDatabase write failure.
+                            cell.sharedStateClaim !== undefined
+                              ? Effect.fail(error)
+                              : Effect.sync(() => {
+                                  const message =
+                                    `writing the crash-recovery teardown registration for experiment ${experimentId} failed: ${error instanceof Error ? error.message : String(error)}. The run continues normally, but a SIGKILL during this run cannot be recovered via \`niceeval exp --after\` or the startup self-heal — check the canonical ProjectDatabase write failure.
 `.trimEnd();
-                              reportDiagnostic({
-                                key: `teardown-registration-write-failed:${experimentId}`,
-                                code: "teardown-registration-write-failed",
-                                severity: "warning",
-                                message,
-                                data: { experimentId },
+                                  reportDiagnostic({
+                                    key: `teardown-registration-write-failed:${experimentId}`,
+                                    code: "teardown-registration-write-failed",
+                                    severity: "warning",
+                                    message,
+                                    data: { experimentId },
 
-                                identity: undefined,
-                              });
-                              recordExperimentDiagnostic({
-                                experimentId: run.experimentId,
-                                code: "teardown-registration-write-failed",
-                                level: "warning",
-                                message,
-                                phase: "experiment.setup",
+                                    identity: undefined,
+                                  });
+                                  recordExperimentDiagnostic({
+                                    experimentId: run.experimentId,
+                                    code: "teardown-registration-write-failed",
+                                    level: "warning",
+                                    message,
+                                    phase: "experiment.setup",
 
-                                data: undefined,
-                                command: undefined,
-                                dedupeKey: undefined,
-                                affectedSlotIds: undefined,
-                              });
-                            }),
+                                    data: undefined,
+                                    command: undefined,
+                                    dedupeKey: undefined,
+                                    affectedSlotIds: undefined,
+                                  });
+                                }),
                           ),
                         );
                       }
@@ -2031,66 +2036,24 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
         });
       };
 
-      const hasOrphanedTeardownRegistration = (run: AgentRun): Effect.Effect<boolean, never, ProjectStateDatabase> =>
-        Effect.suspend(() => {
-          if (!run.experimentId || !run.teardown) return Effect.succeed(false);
-          return readTeardownRegistrationsEffect(coordinationRoot).pipe(
-            Effect.map((registrations) =>
-              registrations.some(
-                ({ entry }) =>
-                  entry.experimentId === run.experimentId && isOrphanedTeardownRegistration(entry, currentHost),
-              ),
-            ),
-            // A missing or unreadable registration directory must never invent an
-            // orphan cleanup obligation. The normal setup path still records a
-            // diagnostic if it cannot write this Invocation's own registration.
-            Effect.catch(() => Effect.succeed(false)),
-          );
-        });
-      /**
-       * Startup self-heal remains a selected-Experiment responsibility even for a
-       * full-carry / zero-Attempt Invocation. For sharedState it first obtains the
-       * exact current key's authority. Thus an active or recovering generation is
-       * waited on, never implicitly torn down or replaced.
-       */
-      const recoverStartupOrphanedTeardown = (
-        run: AgentRun,
-        experimentId: string,
-      ): Effect.Effect<void, unknown, ProjectStateDatabase> =>
-        Effect.gen(function* () {
-          if (!(yield* hasOrphanedTeardownRegistration(run))) return;
-          if (run.sharedState === undefined) {
-            yield* recoverOrphanedTeardownRegistration(run, experimentId);
-            return;
-          }
-          const claim = yield* acquireSharedStateClaim(run, experimentId);
-          yield* recoverOrphanedTeardownRegistration(run, experimentId).pipe(
-            Effect.ensuring(
-              claim.release().pipe(
-                Effect.catch(() =>
-                  Effect.sync(() => {
-                    reportSharedStateRecoveryRequired({
-                      run,
-                      experimentId,
-                      reason: "startup-recovery-release-failed",
-                      phase: "experiment.teardown",
-                    });
-                  }),
-                ),
-              ),
-            ),
-          );
-        });
       const startupRecoveryByExperimentId = new Map<string, Deferred.Deferred<void, unknown>>();
       for (const run of effectiveAgentRuns) {
-        if (!run.experimentId || !run.teardown) continue;
+        if (!run.experimentId) continue;
         let completion = startupRecoveryByExperimentId.get(run.experimentId);
         if (completion === undefined) {
           const createdCompletion = yield* Deferred.make<void, unknown>();
           completion = createdCompletion;
           startupRecoveryByExperimentId.set(run.experimentId, createdCompletion);
           startupRecoveryCompletionsToAwait.push(createdCompletion);
-          const recovery = recoverStartupOrphanedTeardown(run, run.experimentId).pipe(
+          const experimentId = run.experimentId;
+          const recovery = waitForOrphanedStateLeaseSetEffect({
+            root: caseLockRoot,
+            experimentId,
+            host: currentHost,
+            signal: opts.signal,
+            onWait: (key) => reportLeaseWait(experimentId, key),
+          }).pipe(
+            Effect.andThen(recoverOrphanedTeardownRegistration(run, experimentId)),
             Effect.exit,
             Effect.flatMap((exit) => Deferred.done(createdCompletion, exit)),
             Effect.asVoid,
@@ -3231,7 +3194,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         onFailureClass: (declaration) => closeHaltGate(a, declaration),
                         onEnvironmentIncomplete: haltInvocationForEnvironment,
                         onSandboxCleanupFailure: (failure: SandboxCleanupFailure) => {
-                          if (a.run.sharedState !== undefined) recordSandboxCleanupFailure(a.run, failure);
+                          recordSandboxCleanupFailure(a.run, failure);
                         },
                         onSealedEvaluation: (sealed) =>
                           Effect.sync(() => {
@@ -3416,7 +3379,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                 // sharedState 的等待不得先占 Eval lock 或全局并发位，也不得运行 setup / 创建
                 // Sandbox。拿到租约后这个 Invocation 仍继续自己在本轮已形成的 plan，不采用别的
                 // Run 在等待期间发布的 attempt。
-                if (a.run.sharedState) {
+                if (hasLease(a.run)) {
                   const proceed = yield* preflight;
                   if (!proceed) return { kind: "done" } as const;
                   authorizedReuseAttempts.add(a);
@@ -3433,19 +3396,19 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                   const allowsAutomaticCarry =
                     a.run.adapter?.kind !== "custom" || a.run.adapter.behaviorRevision !== undefined;
                   if (
-                    !a.run.sharedState &&
+                    !hasLease(a.run) &&
                     allowsAutomaticCarry &&
                     (yield* recordCoordinator.adoptLatePublishedAttempt(a))
                   ) {
                     return { kind: "done" } as const;
                   }
                 }
-                if (!a.run.sharedState) {
+                if (!hasLease(a.run)) {
                   const proceed = yield* preflight;
                   if (!proceed) return { kind: "done" } as const;
                   authorizedReuseAttempts.add(a);
                 }
-                if (!a.run.sharedState && (a.run.setup || a.run.teardown)) {
+                if (!hasLease(a.run) && (a.run.setup || a.run.teardown)) {
                   // 实验级 setup:第一个通过派发许可的 attempt 真正执行,其余等同一个 memoized
                   // Effect completion（作者 setup 失败收进 lc.setupFailed，由 body 合成 errored 结果）。
                   // 等它的时候让出全局并发位(docs/runner.md「调度:有界并发」——内部等待一律让位,
@@ -3468,6 +3431,8 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
           // 重新取,不能拿着别人在等的名额干等)。
           const pipeline = Effect.gen(function* () {
+            const startupRecovery = startupRecoveryCompletions.get(a.run);
+            if (startupRecovery !== undefined) yield* Deferred.await(startupRecovery);
             // Group predecessor has settled before this pipeline begins. A physical failure in
             // that predecessor therefore gates this still-queued slot before build, a provider
             // acquire, resource materialization, or a global dispatch permit.
@@ -3509,7 +3474,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // 在中断路径同样执行，重复 finalizer 也不会让状态下溢。
           const settleOwnedLifecycles = Effect.gen(function* () {
             yield* settleGroupLaneAttempt(a);
-            if (a.run.setup || a.run.teardown || a.run.sharedState) {
+            if (a.run.setup || a.run.teardown || hasLease(a.run)) {
               yield* settleExperimentAttempt(a).pipe(Effect.orDie);
             }
           });

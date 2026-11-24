@@ -388,13 +388,39 @@ CREATE TABLE ne19_teardown_obligations (
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
   owner_host TEXT NOT NULL,
   generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
-  payload BLOB NOT NULL,
-  UNIQUE (experiment_id, owner_pid)
+  payload BLOB NOT NULL
+) STRICT;
+CREATE TABLE state_lease_set (
+  id TEXT PRIMARY KEY,
+  invocation_id TEXT NOT NULL,
+  experiment_id TEXT NOT NULL,
+  run_id TEXT NOT NULL UNIQUE,
+  owner_token TEXT NOT NULL UNIQUE,
+  owner_evidence_json TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation BETWEEN 1 AND 9007199254740991),
+  phase TEXT NOT NULL CHECK (phase IN ('active','recovering','free')),
+  recovery_id TEXT,
+  recovery_actor_json TEXT,
+  after_registration_id TEXT UNIQUE,
+  after_status TEXT NOT NULL CHECK (after_status IN ('not-required','pending','running','completed')),
+  UNIQUE (invocation_id, experiment_id),
+  CHECK ((recovery_id IS NOT NULL) = (phase = 'recovering')),
+  CHECK ((recovery_actor_json IS NOT NULL) = (phase = 'recovering')),
+  CHECK ((after_registration_id IS NULL) = (after_status = 'not-required')),
+  CHECK (phase != 'free' OR after_status IN ('not-required','completed'))
+) STRICT;
+CREATE TABLE state_lease_member (
+  set_id TEXT NOT NULL REFERENCES state_lease_set(id),
+  key TEXT NOT NULL,
+  acquired_generation INTEGER NOT NULL CHECK (acquired_generation BETWEEN 1 AND 9007199254740991),
+  current_generation INTEGER NOT NULL CHECK (current_generation BETWEEN acquired_generation AND 9007199254740991),
+  PRIMARY KEY (set_id, key)
 ) STRICT;
 CREATE TABLE ne19_shared_state_generations (
   state_key TEXT NOT NULL,
   generation INTEGER NOT NULL CHECK (generation > 0),
   parent_generation INTEGER NOT NULL CHECK (parent_generation >= 0),
+  lease_set_id TEXT NOT NULL REFERENCES state_lease_set(id),
   state_kind TEXT NOT NULL CHECK (state_kind IN ('active','recovering','free')),
   owner_token TEXT NOT NULL,
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
@@ -407,6 +433,8 @@ CREATE TABLE ne19_shared_state_generations (
 ) STRICT;
 CREATE INDEX ne19_teardown_obligations_experiment ON ne19_teardown_obligations(experiment_id, owner_pid);
 CREATE INDEX ne19_shared_state_generations_head ON ne19_shared_state_generations(state_key, generation DESC);
+CREATE INDEX state_lease_member_evidence ON state_lease_member(key, current_generation);
+CREATE INDEX state_lease_set_experiment ON state_lease_set(experiment_id, phase, after_status);
 
 
 `;

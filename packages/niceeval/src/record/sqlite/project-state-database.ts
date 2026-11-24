@@ -2,7 +2,9 @@ import { Context, Effect, Layer } from "effect";
 import { SqliteRecordError } from "./errors.ts";
 import { makeStorageWorkerClient, type StorageWorkerClient } from "./client.ts";
 import { finalizeInvocationPortable, recordSqlitePath } from "./database.ts";
-import type { SharedStateGenerationRow, TeardownObligationRow, TeardownRetirement } from "./registry-repository.ts";
+import type { SharedStateGenerationRow, TeardownObligationRow } from "./registry-repository.ts";
+import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
+import type { StorageWorkerResult } from "./worker-protocol.ts";
 
 const OPERATION_DEADLINE_MS = 5_000;
 
@@ -18,6 +20,7 @@ export interface TeardownFacet {
         readonly ownerPid: number;
         readonly ownerHost: string;
         readonly payload: Uint8Array;
+        readonly leaseSet?: StateLeaseAuthority | undefined;
       }
     >,
   ) => Promise<number>;
@@ -28,25 +31,7 @@ export interface TeardownFacet {
 
 export interface SharedStateFacet {
   readonly list: (key: string) => Promise<readonly SharedStateGenerationRow[]>;
-  readonly append: (
-    input: CommandInput<
-      "shared-append",
-      {
-        readonly key: string;
-        readonly retirement?: TeardownRetirement | undefined;
-        readonly expectedGeneration: number;
-        readonly generation: number;
-        readonly parentGeneration: number;
-        readonly kind: "active" | "recovering" | "free";
-        readonly ownerToken: string;
-        readonly ownerPid: number;
-        readonly ownerHost: string;
-        readonly ownerProcessIdentity: string;
-        readonly heartbeatAt: string;
-        readonly payload: Uint8Array;
-      }
-    >,
-  ) => Promise<boolean>;
+  readonly set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => Promise<A>;
   readonly heartbeat: (
     input: CommandInput<
       "shared-heartbeat",
@@ -139,7 +124,7 @@ function makeProjectStateResource(): ProjectStateResource {
       };
       const sharedState: SharedStateFacet = {
         list: (key: string) => execute<readonly SharedStateGenerationRow[]>({ _tag: "shared-list", key }),
-        append: (input: Parameters<SharedStateFacet["append"]>[0]) => execute<boolean>(input),
+        set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => execute<A>(command),
         heartbeat: (input: Parameters<SharedStateFacet["heartbeat"]>[0]) => execute<boolean>(input),
       };
       const caseCoordination: CaseCoordinationFacet = {

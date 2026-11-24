@@ -75,6 +75,8 @@ function deleteFailure(runId: string, cause: RunDeleteError | RunStorageCommandE
             cause,
           });
         }
+        case "run-lease-recovery-required":
+          return new RunDeleteError({ operation: "delete", code: reason._tag, message: cause.message, cause });
         case "run-session-recovery-required":
           return new RunDeleteError({
             operation: "delete",
@@ -149,6 +151,7 @@ function recoverFailure(runId: string, cause: RunRecoverError | RunStorageComman
         case "absence-coverage-invalid":
         case "run-state-mismatch":
         case "run-delete-reference-conflict":
+        case "run-lease-recovery-required":
         case "run-session-recovery-required":
         case "recovery-evidence-required":
         case "publication-cutoff-restart-required":
@@ -223,110 +226,119 @@ export const sqliteRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
       }).pipe(Effect.mapError((cause) => deleteFailure(runId, cause))),
     );
   },
-  recover: ({ cwd, runId }: { readonly cwd: string; readonly runId: string }) => {
-    const root = storageRoot(cwd);
-    if (!databaseExists(root)) {
-      return Effect.fail(
-        new RunRecoverError({
-          operation: "recover",
-          code: "run-not-found",
-          message: `Run ${runId} was not found.`,
-          cause: undefined,
-        }),
-      );
-    }
-    return Effect.flatMap(DateTime.now, (now) =>
-      Effect.gen(function* () {
-        const cutoff = yield* currentPublicationCutoff(root);
-        const run = yield* readRunResource(root, runId, cutoff);
-        if (run === undefined) {
-          return yield* Effect.fail(
-            new RunRecoverError({
-              operation: "recover",
-              code: "run-not-found",
-              message: `Run ${runId} was not found.`,
-              cause: undefined,
-            }),
-          );
-        }
-        if (run.state !== "active" && run.state !== "recovering") {
-          const repaired = yield* recoverRunResource(root, {
-            mode: "terminal",
-            runId,
-            expectedState: run.state,
-            expectedWriterGeneration: run.writerGeneration,
-            recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
-            completedAt: DateTime.formatIso(now),
-            deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
-          });
-          if (repaired === undefined)
-            return yield* Effect.fail(
-              new RunRecoverError({
-                operation: "recover",
-                code: "run-terminal",
-                message: `Run ${runId} is already ${run.state} and has no abandoned recovery work.`,
-                cause: undefined,
-              }),
-            );
-          yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
-          return { runId, state: repaired.state };
-        }
-        const observation = observeRunWriterTermination(run.writerGeneration);
-        const actorProof = createHmac("sha256", recoveryKey)
-          .update(JSON.stringify([root, runId]))
-          .digest("hex");
-        const generation = recoveryWriterGeneration(actorProof);
-        const resuming = run.state === "recovering" && run.writerGeneration === generation;
-        if ((observation.state === "active" && !resuming) || activeRecoveries.has(actorProof)) {
-          return yield* Effect.fail(
-            new RunRecoverError({
-              operation: "recover",
-              code: "run-owner-active",
-              message: `Run ${runId} still has a live writer; recovery is refused.`,
-              cause: undefined,
-            }),
-          );
-        }
-        if (observation.state === "unproven") {
-          return yield* Effect.fail(
-            new RunRecoverError({
-              operation: "recover",
-              code: "run-owner-termination-unproven",
-              message: `Run ${runId} recovery requires verified owner-termination evidence.`,
-              cause: undefined,
-            }),
-          );
-        }
-        const intent =
-          observation.state === "active"
-            ? { mode: "resume" as const, actorProof }
-            : {
-                mode: "active" as const,
-                evidence: {
-                  kind: observation.evidenceKind,
-                  identity: observation.evidenceIdentity,
-                  observedAt: DateTime.formatIso(now),
-                },
-              };
-        const mutation = recoverRunResource(root, {
-          ...intent,
+  recover: ({ cwd, runId }: { readonly cwd: string; readonly runId: string }) =>
+    recoverAtRoot(storageRoot(cwd), runId, false),
+});
+
+// Lease recovery reuses the Run-owned actor and keeps its ProjectDatabase
+// worker available for the subsequent after and lease-set transactions.
+export function recoverRunForLeaseSet(root: string, runId: string) {
+  return recoverAtRoot(root, runId, true);
+}
+
+function recoverAtRoot(root: string, runId: string, leaseRecovery: boolean) {
+  if (!databaseExists(root)) {
+    return Effect.fail(
+      new RunRecoverError({
+        operation: "recover",
+        code: "run-not-found",
+        message: `Run ${runId} was not found.`,
+        cause: undefined,
+      }),
+    );
+  }
+  return Effect.flatMap(DateTime.now, (now) =>
+    Effect.gen(function* () {
+      const cutoff = yield* currentPublicationCutoff(root);
+      const run = yield* readRunResource(root, runId, cutoff);
+      if (run === undefined) {
+        return yield* Effect.fail(
+          new RunRecoverError({
+            operation: "recover",
+            code: "run-not-found",
+            message: `Run ${runId} was not found.`,
+            cause: undefined,
+          }),
+        );
+      }
+      if (run.state !== "active" && run.state !== "recovering") {
+        if (leaseRecovery) return { runId, state: run.state };
+        const repaired = yield* recoverRunResource(root, {
+          mode: "terminal",
           runId,
+          expectedState: run.state,
           expectedWriterGeneration: run.writerGeneration,
-          recoveryWriterGeneration: generation,
+          recoveryWriterGeneration: createRunWriterGeneration(`recovery-v1:${randomUUID()}`),
           completedAt: DateTime.formatIso(now),
           deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
         });
-        activeRecoveries.add(actorProof);
-        yield* mutation.pipe(
-          Effect.ensuring(Effect.sync(() => activeRecoveries.delete(actorProof))),
-          Effect.uninterruptible,
-        );
+        if (repaired === undefined)
+          return yield* Effect.fail(
+            new RunRecoverError({
+              operation: "recover",
+              code: "run-terminal",
+              message: `Run ${runId} is already ${run.state} and has no abandoned recovery work.`,
+              cause: undefined,
+            }),
+          );
         yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
-        return { runId, state: "interrupted" as const };
-      }).pipe(Effect.mapError((cause) => recoverFailure(runId, cause))),
-    );
-  },
-});
+        return { runId, state: repaired.state };
+      }
+      const observation = observeRunWriterTermination(run.writerGeneration);
+      const actorProof = createHmac("sha256", recoveryKey)
+        .update(JSON.stringify([root, runId]))
+        .digest("hex");
+      const generation = recoveryWriterGeneration(actorProof);
+      const resuming = run.state === "recovering" && run.writerGeneration === generation;
+      if ((observation.state === "active" && !resuming) || activeRecoveries.has(actorProof)) {
+        return yield* Effect.fail(
+          new RunRecoverError({
+            operation: "recover",
+            code: "run-owner-active",
+            message: `Run ${runId} still has a live writer; recovery is refused.`,
+            cause: undefined,
+          }),
+        );
+      }
+      if (observation.state === "unproven") {
+        return yield* Effect.fail(
+          new RunRecoverError({
+            operation: "recover",
+            code: "run-owner-termination-unproven",
+            message: `Run ${runId} recovery requires verified owner-termination evidence.`,
+            cause: undefined,
+          }),
+        );
+      }
+      const intent =
+        observation.state === "active"
+          ? { mode: "resume" as const, actorProof }
+          : {
+              mode: "active" as const,
+              evidence: {
+                kind: observation.evidenceKind,
+                identity: observation.evidenceIdentity,
+                observedAt: DateTime.formatIso(now),
+              },
+            };
+      const mutation = recoverRunResource(root, {
+        ...intent,
+        runId,
+        expectedWriterGeneration: run.writerGeneration,
+        recoveryWriterGeneration: generation,
+        completedAt: DateTime.formatIso(now),
+        deadlineEpochMs: DateTime.toEpochMillis(now) + 30_000,
+      });
+      activeRecoveries.add(actorProof);
+      yield* mutation.pipe(
+        Effect.ensuring(Effect.sync(() => activeRecoveries.delete(actorProof))),
+        Effect.uninterruptible,
+      );
+      if (!leaseRecovery) yield* (yield* ProjectStateDatabase).closeInvocationPortable(root);
+      return { runId, state: "interrupted" as const };
+    }).pipe(Effect.mapError((cause) => recoverFailure(runId, cause))),
+  );
+}
 
 export const unavailableRunLifecycleAdapter: RunLifecycleAdapter = Object.freeze({
   delete: ({ runId }: { readonly cwd: string; readonly runId: string }) =>

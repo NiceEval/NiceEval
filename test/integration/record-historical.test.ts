@@ -1,6 +1,7 @@
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import fc from "fast-check";
 import { expect, test } from "vitest";
 import { Effect, Result } from "effect";
@@ -29,6 +30,29 @@ const operations = {
   delete: (cwd: string, runId: string) => settle(runHost.delete({ cwd, runId })),
   recover: (cwd: string, runId: string) => settle(runHost.recover({ cwd, runId })),
 };
+
+// @feature docs/feature/run/README.md#historical-results
+test("the Record 2 format marker is rejected without modifying the database", async () => {
+  const { cwd, record } = await projectWith(async (path) => {
+    const database = new DatabaseSync(path);
+    try {
+      database.exec(`CREATE TABLE ne19_record_metadata (singleton INTEGER PRIMARY KEY, format TEXT NOT NULL);
+        INSERT INTO ne19_record_metadata VALUES (1, 'niceeval.record.2')`);
+    } finally {
+      database.close();
+    }
+  });
+  try {
+    const before = await readFile(record);
+    const result = await Effect.runPromise(Effect.result(runHost.list({ cwd })));
+    expect(Result.isFailure(result) && result.failure.cause).toMatchObject({ code: "record-schema-unsupported" });
+    expect(Result.isFailure(result) && result.failure.message).toMatch(/older version of NiceEval/u);
+    expect(await readFile(record)).toEqual(before);
+    expect(await readdir(join(cwd, ".niceeval"))).toEqual(["record.sqlite"]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 // @feature docs/feature/run/README.md#historical-results
 test.for(["list", "get", "delete", "recover"] as const)(

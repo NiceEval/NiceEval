@@ -1296,6 +1296,8 @@ export interface AdapterRun {
   readonly sandboxLabels: "run-only" | undefined;
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState: SharedStateConfig | undefined;
+  /** Internal planning output for the selected groups' State lineages. */
+  readonly stateLeaseKeys?: readonly string[] | undefined;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   readonly judge: JudgeSelection | undefined;
   /**

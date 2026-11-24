@@ -215,7 +215,8 @@ export function validatePortableRecordDatabase(connection: RecordDatabase, deadl
   const registryWork = connection.db
     .prepare(`SELECT
     (SELECT count(*) FROM ne19_teardown_obligations)+
-    (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`)
+    (SELECT count(*) FROM state_lease_set WHERE phase!='free')+
+      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`)
     .get() as Record<string, SQLOutputValue>;
   const coordination = connection.db
     .prepare("SELECT writer_ticket_id,barrier_id FROM ne19_coordination_state WHERE singleton=1")
