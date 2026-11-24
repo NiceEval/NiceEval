@@ -2948,7 +2948,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           // body:许可链全部通过之后才跑,真正的执行段。
           const body = (globalSlot: GlobalSlotHold, experimentSlot: GlobalSlotHold) =>
             Effect.gen(function* () {
-              const concurrencySlot = {
+              const providerQueueSlot = {
                 release: globalSlot.release.pipe(Effect.andThen(experimentSlot.release)),
                 reacquire: experimentSlot.reacquire.pipe(Effect.andThen(globalSlot.reacquire)),
               };
@@ -3116,7 +3116,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
               const providerAdmission = {
                 queued: queueForProvider,
                 granted: startAttempt("sandbox.create"),
-                slot: concurrencySlot,
+                slot: providerQueueSlot,
               };
               const poolSelection: ReusePoolSelection =
                 blockedError === undefined ? yield* reusePoolFor(a) : { _tag: "Fresh" };
@@ -3211,7 +3211,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         runTiming,
                         parentSignal: attemptSignal,
                         invocationSignal: opts.signal,
-                        concurrencySlot,
+                        concurrencySlot: globalSlot,
                         providerAdmission,
                         reusedSandbox: lease
                           ? {

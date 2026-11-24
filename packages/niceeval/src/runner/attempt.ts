@@ -24,7 +24,6 @@ import {
   type SandboxRuntimeDeadline,
   type SandboxRuntimeAdmission,
   type SandboxRuntimeMaterializeInput,
-  type SandboxRuntimeQueueReason,
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { makeProvisioningPermitOwner } from "./provisioning-permit.ts";
@@ -332,17 +331,12 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    *  attempt:complete 已经让 coordinator 把 active map 里的条目删掉,没有别的地方能事后查到。 */
   onPhase: (phase: LifecyclePhase) => void;
   /**
-   * turn 级重试退避期间释放/收回的全局并发槽位(globalSem / 实验级 runSem,见 run.ts 的调用点)。
+   * Turn 退避期间归还全局名额，Experiment 名额始终由当前 Attempt 持有。
    * 省略时(如测试直调)退避不释放槽位。
    */
   concurrencySlot: ConcurrencySlot | undefined;
   /** Provider admission moves an Attempt from queued to running only after capacity is granted. */
-  providerAdmission:
-    | {
-        readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
-        readonly granted: Effect.Effect<void>;
-      }
-    | undefined;
+  providerAdmission: SandboxRuntimeAdmission | undefined;
   /**
    * 终局失败的空间轴回执(每条终局失败各回调一次,含 per-attempt teardown 的失败——teardown
    * 声明照常落闸、不改 verdict,见 architecture.md「生命周期边界」)。省略(如测试直调)时
@@ -1189,12 +1183,14 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               const admissionSlot = {
                 // The ordinary provisioning permit is innermost and leaves first. The
                 // scheduler permits then leave through their stateful owner handle.
-                release: provisioningPermit.release.pipe(Effect.andThen(concurrencySlot?.release ?? Effect.void)),
+                release: provisioningPermit.release.pipe(
+                  Effect.andThen(providerAdmission?.slot?.release ?? Effect.void),
+                ),
                 // Re-enter the scheduler in its original order before taking the
                 // ordinary provisioning permit again. Each scheduler owner and the
                 // provisioning owner is stateful; cancellation cleans only permits
                 // actually reacquired and never issues a blind release.
-                reacquire: (concurrencySlot?.reacquire ?? Effect.void).pipe(
+                reacquire: (providerAdmission?.slot?.reacquire ?? Effect.void).pipe(
                   Effect.andThen(provisioningPermit.reacquire),
                 ),
               };
