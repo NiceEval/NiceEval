@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { decodeJsonValue } from "../../shared/json-value.ts";
 
-import { Clock, Effect, Result } from "effect";
+import { Clock, Effect, Exit, Result } from "effect";
 
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { SqliteRecordError } from "../../record/sqlite/errors.ts";
@@ -897,19 +897,13 @@ export function runInvocation(
         if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
         const projectStateDatabase = yield* ProjectStateDatabase;
         const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
+        const closePortable = projectStateDatabase.closeInvocationPortable(projectDatabaseRoot);
         let sessionClosed = false;
         let feedbackStarted = false;
         let feedbackFinished = false;
-        // Registered first so LIFO Scope closure runs every business finalizer
-        // (including the session heartbeat stop and fenced terminal write) before
-        // shutting down the sole operational worker and entering the one portable gate.
-        // Portability is best-effort during Scope release: an already-corrupt or
-        // unavailable database must not replace the Invocation's primary outcome.
-        // The explicit service operation remains typed for callers that need to
-        // diagnose a gate failure directly.
-        yield* Effect.addFinalizer(() =>
-          projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore),
-        );
+        // During failure cleanup, close the worker after the fallback Session close
+        // and preserve the original failure.
+        yield* Effect.addFinalizer(() => (sessionClosed ? Effect.void : closePortable.pipe(Effect.ignore)));
         yield* Effect.addFinalizer(() =>
           sessionClosed ? Effect.void : session.close({ status: "incomplete" }).pipe(Effect.ignore),
         );
@@ -983,13 +977,21 @@ export function runInvocation(
               return "incomplete" as const;
           }
         }
-        yield* session.close({
-          status: sessionCompletionStatus(),
-          completion,
-          receipt,
-          completedAt: receipt.completedAt,
-        });
-        sessionClosed = true;
+        yield* session
+          .close({
+            status: sessionCompletionStatus(),
+            completion,
+            receipt,
+            completedAt: receipt.completedAt,
+          })
+          .pipe(
+            Effect.onExit((exit) => {
+              if (Exit.isFailure(exit)) return Effect.void;
+              sessionClosed = true;
+              // The Session is already terminal. Report the gate error directly.
+              return closePortable.pipe(Effect.mapError((cause) => operationError("invocation-run", cause)));
+            }),
+          );
         if (feedback !== undefined && completion !== undefined) {
           yield* Effect.tryPromise({
             try: () => feedback.finish({ summary, completion, receipt }),
