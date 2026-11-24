@@ -170,16 +170,28 @@ function captureFailure(
  * enters the ordinary local-Docker image/index cache path.
  */
 export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBeforeCacheTarget): AttemptBeforeCache {
+  let continuation: { step: BeforeCacheStep; artifact: DockerProfileBeforeCacheArtifactIdentityV1 } | undefined;
   return {
     eligibility: () => target.eligibility(),
 
     lookupAndRestore: (input: BeforeCacheStep) =>
       Effect.gen(function* () {
+        const metadata = input.declaration.declarationMetadata;
+        const parent =
+          continuation !== undefined &&
+          metadata !== null &&
+          typeof metadata === "object" &&
+          !Array.isArray(metadata) &&
+          metadata.parentKey === continuation.step.declaration.beforeCacheKey
+            ? continuation
+            : undefined;
+        continuation = undefined;
         yield* promiseEffect((signal) => target.quiesceAndStop(signal));
         let reservation = yield* freshReservation(target);
         const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
         if (restored._tag === "Success") {
           const sandboxId = yield* createCurrent(target);
+          continuation = { step: input, artifact: restored.success.artifact };
           return {
             _tag: "Restored" as const,
             beforeCacheKey: input.declaration.beforeCacheKey,
@@ -187,24 +199,17 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
             sandboxId,
           };
         }
-        if (isArtifactMiss(restored.failure)) {
-          yield* createCurrent(target);
-          return {
-            _tag: "Miss" as const,
-            beforeCacheKey: input.declaration.beforeCacheKey,
-            recovery: undefined,
-          };
-        }
-
-        // A corrupt/interrupted restore may quarantine or partially populate its
-        // target. Release proves scrub, then continue from a different clean slot
-        // so the runner can try a shorter verified prefix.
-        reservation = yield* freshReservation(target);
+        const miss = isArtifactMiss(restored.failure);
+        if (!miss) reservation = yield* freshReservation(target);
+        // Probing rotates the slot. A miss on a child must leave its already
+        // satisfied parent in the new writable slot before the child executes.
+        if (parent !== undefined) yield* restoreArtifact(target, reservation, parent.step, parent.artifact);
         yield* createCurrent(target);
+        continuation = parent;
         return {
           _tag: "Miss" as const,
           beforeCacheKey: input.declaration.beforeCacheKey,
-          recovery: "restore-failed-replayed" as const,
+          recovery: miss ? undefined : ("restore-failed-replayed" as const),
         };
       }).pipe(
         Effect.mapError(
@@ -253,6 +258,7 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
           if (restored._tag === "Failure") return yield* Effect.fail(restored.failure);
         }
         const sandboxId = yield* createCurrent(target);
+        continuation = { step: input, artifact: captured.artifact };
         if (captured.state === "already-published") {
           return {
             _tag: "Contended" as const,
@@ -270,6 +276,7 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
 
     fallBackToBase: () =>
       Effect.gen(function* () {
+        continuation = undefined;
         yield* promiseEffect((signal) => target.quiesceAndStop(signal));
         yield* freshReservation(target);
         const sandboxId = yield* createCurrent(target);

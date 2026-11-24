@@ -6,7 +6,7 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
+import { beforeCacheReplacementWarnings, declaredBeforeCachePositions } from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch, Fiber } from "effect";
 import { adapterIdentity } from "../adapter.ts";
@@ -531,7 +531,9 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
       // At capacity one every unique prefix is completed serially and the live
       // prepare VM is released before any ordinary Attempt can acquire a VM.
       const replacementWarnings = beforeCacheReplacementWarnings(
-        attempts.filter((attempt) => attempt.run.sandboxBeforeCache !== "bypass").map((attempt) => attempt.plan),
+        declaredBeforeCachePositions(
+          attempts.filter((attempt) => attempt.run.sandboxBeforeCache !== "bypass").map((attempt) => attempt.plan),
+        ),
       );
       for (const warning of replacementWarnings) {
         reportDiagnostic({

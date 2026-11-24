@@ -802,11 +802,8 @@ async function restoreLeaseIntoTarget(
     } catch (cleanupCause) {
       cleanupFailures.push(cleanupCause);
     }
-    try {
-      await markEntryUnverified(row.entry_id);
-    } catch (cleanupCause) {
-      cleanupFailures.push(cleanupCause);
-    }
+    // The exact image and its labels were verified before cloning. Failure to
+    // create this private container does not invalidate other readers' leases.
     if (cleanupFailures.length > 0) {
       throw new BeforeCacheCleanupError({
         operation: "clean partial before-cache restore",
@@ -1038,6 +1035,7 @@ async function capture(
   let reservation: BeforeCacheLease | undefined;
   let reservedRow: BeforeCacheEntryRow | undefined;
   let imageId: string | undefined;
+  let publicationStarted = false;
   try {
     signal.throwIfAborted();
     const reserved = await reserveEntry(input, manifest, target.baseReference);
@@ -1049,6 +1047,9 @@ async function capture(
     signal.throwIfAborted();
     const inspection = await inspectExactImage(imageId, signal);
     validateImageLabels(inspection, imageId, labels);
+    // A publish request can commit before its response is lost. From here
+    // only journal reconciliation or fenced GC can dispose of the image.
+    publicationStarted = true;
     await publishEntry(reservedRow, imageId, signal);
     await reclaimSupersededDockerImages(
       replacementScope(input, reservation.domain.domainId, target.baseReference),
@@ -1084,14 +1085,14 @@ async function capture(
         cleanupFailures.push(cleanupCause);
       }
     }
-    if (reservedRow !== undefined) {
+    if (!publicationStarted && reservedRow !== undefined) {
       try {
         await markEntryUnverified(reservedRow.entry_id);
       } catch (cleanupCause) {
         cleanupFailures.push(cleanupCause);
       }
     }
-    if (imageId !== undefined && reservedRow !== undefined) {
+    if (!publicationStarted && imageId !== undefined && reservedRow !== undefined) {
       try {
         const cleanupSignal = AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS);
         if (

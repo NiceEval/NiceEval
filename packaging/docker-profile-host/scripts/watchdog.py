@@ -741,7 +741,12 @@ class Admission:
         fd = os.open(self.journal, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
         offset = os.lseek(fd, 0, os.SEEK_END)
         try:
-            os.write(fd, encoded.encode())
+            remaining = memoryview(encoded.encode())
+            while remaining:
+                written = os.write(fd, remaining)
+                if written == 0:
+                    raise OSError("watchdog journal append made no progress")
+                remaining = remaining[written:]
             os.fsync(fd)
             # Publish a detached snapshot.  Keep the current draft object so
             # local references held by a multi-stage transition remain valid;
@@ -1503,11 +1508,14 @@ class Admission:
         self._commit(event, {"operationId": operation_id, "reservationId": reservation_id,
                              **detail, "operation": operation})
 
-    def _fence_cancelled_captures(self, invocation_id: str, reason: str) -> list[dict[str, Any]]:
+    def _fence_cancelled_captures(self, invocation_id: str, reason: str,
+                                  reservation_id: str | None = None) -> list[dict[str, Any]]:
         prepared: list[dict[str, Any]] = []
         fenced: list[str] = []
         for operation in self.state["beforeCache"].get("operations", {}).values():
             if operation.get("kind") != "capture" or operation.get("invocationId") != invocation_id:
+                continue
+            if reservation_id is not None and operation.get("reservationId") != reservation_id:
                 continue
             operation["cancelRequested"] = True
             operation["cancelReason"] = reason
@@ -1548,7 +1556,7 @@ class Admission:
             key = wire["beforeCacheKey"]
             existing = self.state["beforeCache"]["artifacts"].get(key)
             if existing is not None:
-                if not self._artifact_matches_wire(existing, wire):
+                if existing.get("state") != "published" or not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
                         "before-cache-artifact-mismatch",
                         "published artifact identity does not match this dockerData request",
@@ -1679,13 +1687,13 @@ class Admission:
             operation_id = str(request["operationId"])
             existing = self.state["beforeCache"]["artifacts"].get(key)
             if existing is not None:
-                if existing.get("publicationOperationId") != operation_id \
-                        or not self._artifact_matches_wire(existing, wire):
+                if existing.get("state") != "published" or not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
                         "before-cache-publication-conflict",
                         "published artifact does not belong to this capture commit",
                     )
-                return self._before_cache_response(wire, existing, "already-published")
+                if existing.get("publicationOperationId") == operation_id:
+                    return self._before_cache_response(wire, existing, "already-published")
             operation = self.state["beforeCache"]["operations"].get(operation_id)
             candidate = operation.get("candidateArtifact") if isinstance(operation, dict) else None
             if operation is None or operation.get("kind") != "capture" \
@@ -1697,7 +1705,7 @@ class Admission:
                     or reservation.get("beforeCacheOperation") != operation_id \
                     or not isinstance(candidate, dict):
                 raise ProtocolError(
-                    "before-cache-publication-not-prepared",
+                    "before-cache-publication-conflict" if existing else "before-cache-publication-not-prepared",
                     "capture commit has no matching uncancelled prepared copy",
                 )
             seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
@@ -1705,6 +1713,10 @@ class Admission:
                     or seed.get("operationId") != operation_id \
                     or seed.get("artifactId") != candidate.get("artifactId"):
                 raise ProtocolError("before-cache-publication-corrupt", "prepared seed ownership is invalid")
+            if existing is not None:
+                # The same-key winner is immutable. Keep our prepared operation
+                # for identical retries and its reservation's fenced scrub.
+                return self._before_cache_response(wire, existing, "already-published")
             self._verify_seed_target(seed)
             _, seed_image, seed_size = self._raw_image_record(seed)
             if self._raw_image_digest(seed_image) != candidate.get("artifactId") \
@@ -2817,7 +2829,7 @@ class Admission:
             if kind == "reservation.release":
                 if reservation.get("beforeCacheOperation"):
                     prepared = self._fence_cancelled_captures(
-                        lease["invocationId"], "reservation release before capture publication commit",
+                        lease["invocationId"], "reservation release before capture publication commit", reservation_id,
                     )
                     self._scrub_cancelled_prepared_captures(prepared)
                     raise ProtocolError("before-cache-operation-active", "reservation release cannot race before-cache operation")

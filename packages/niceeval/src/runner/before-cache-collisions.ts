@@ -6,29 +6,31 @@ import {
   type SandboxActionState,
 } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
+import { sandboxTemplateCommandPlanLocator } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { beforeCacheActionDeclaration } from "./before-cache-plan.ts";
 
-/** Advisory planning only: compare declared positions before allocating instances. */
-export function beforeCacheReplacementWarnings(
-  plans: readonly LinkedRunPlan[],
-  resolvedScopes: ReadonlyMap<LinkedRunPlan, JsonValue> = new Map(),
-) {
-  const positions = new Map<
-    string,
-    Map<
-      string,
-      { readonly content: string; readonly owner: string; readonly experimentId: string; readonly actionId: string }
-    >
-  >();
+export interface BeforeCachePosition {
+  readonly scope: string;
+  readonly content: string;
+  readonly owner: string;
+  readonly experimentId: string;
+  readonly actionId: string;
+}
+
+export function* declaredBeforeCachePositions(plans: readonly LinkedRunPlan[]): Generator<BeforeCachePosition> {
   for (const plan of plans) {
     if (plan._tag !== "Sandbox") continue;
     const support = plan.providerPlan.capabilities.beforeCache;
-    if (support._tag === "Unsupported") continue;
+    if (support._tag !== "AttemptCaptured") continue;
     if (plan.pair.setupHooks.length > 0 || plan.pair.teardownHooks.length > 0 || plan.pair.pluginLifecycles.length > 0)
       continue;
-    const resolvedScope = resolvedScopes.get(plan);
-    if (support._tag === "RunPrepared" && resolvedScope === undefined) continue;
+    const locator = sandboxTemplateCommandPlanLocator(plan.pair.template);
+    const image =
+      plan.providerPlan.provider === "docker" && support.coverage === "all" && locator._tag === "Exact"
+        ? locator.fields.find((field) => field.name === "image")?.value
+        : undefined;
+    const base = image === undefined ? plan.providerPlan.identity : { image };
     let state: SandboxActionState | undefined;
     const chain: string[] = [];
     const declarations: JsonValue[] = [];
@@ -49,24 +51,31 @@ export function beforeCacheReplacementWarnings(
       const owner = `${entry.owner.kind}:${entry.owner.id}`;
       const scope = digestOf({
         provider: plan.providerPlan.provider,
-        base: resolvedScope ?? plan.providerPlan.identity,
+        base,
         positions: chain,
         declaringOwner: owner,
       });
-      let variants = positions.get(scope);
-      if (variants === undefined) {
-        variants = new Map();
-        positions.set(scope, variants);
-      }
       declarations.push(beforeCacheActionDeclaration(entry, state));
-      const content = digestOf(declarations);
-      variants.set(JSON.stringify([content, owner, plan.pair.experimentId]), {
-        content,
+      yield {
+        scope,
+        content: digestOf(declarations),
         owner,
         experimentId: plan.pair.experimentId,
         actionId: entry.id,
-      });
+      };
     }
+  }
+}
+
+export function beforeCacheReplacementWarnings(candidates: Iterable<BeforeCachePosition>) {
+  const positions = new Map<string, Map<string, BeforeCachePosition>>();
+  for (const candidate of candidates) {
+    let variants = positions.get(candidate.scope);
+    if (variants === undefined) {
+      variants = new Map();
+      positions.set(candidate.scope, variants);
+    }
+    variants.set(JSON.stringify([candidate.content, candidate.experimentId]), candidate);
   }
   return [...positions].flatMap(([scope, variants]) => {
     const contents = new Set([...variants.values()].map((variant) => variant.content));
