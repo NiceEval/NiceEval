@@ -1174,7 +1174,10 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
           return {
             _tag: "Degraded",
             reason: "eligibility-failed",
-            detail: "Docker before-cache execution domain could not be verified.",
+            detail: beforeCacheFailureDetail(
+              beforeCacheFailureCause(domain.failure),
+              "Docker before-cache execution domain could not be verified.",
+            ),
           };
         }
         return {

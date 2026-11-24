@@ -1,11 +1,14 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Effect, Option } from "effect";
 import { experimentHost } from "niceeval/experiment/host";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { narrowInspectionSuccess } from "niceeval/inspection";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createFeedbackCoordinator } from "../../packages/niceeval/src/runner/feedback/coordinator.ts";
 import { createNodeFeedbackIO } from "../../packages/niceeval/src/runner/feedback/io.ts";
-import type { BeforeCacheStep } from "../../packages/niceeval/src/sandbox/backend.ts";
+import type { AttemptBeforeCache, BeforeCacheStep } from "../../packages/niceeval/src/sandbox/backend.ts";
+import { makeDockerBeforeCacheCapability } from "../../packages/niceeval/src/sandbox/docker-before-cache.ts";
 import {
   defineSandboxTemplate,
   planSandboxTemplate,
@@ -15,6 +18,7 @@ import {
   type SandboxLayer,
   type BeforeCachePreparer,
 } from "../../packages/niceeval/src/sandbox/layer.ts";
+import { showJsonDocuments } from "./fixtures/judge-harness/harness.ts";
 import { createLifecycleProject } from "./fixtures/lifecycle-sandbox/harness.ts";
 
 type Mode = "docker" | "remote";
@@ -188,7 +192,7 @@ type RuntimeBase = "derived" | "mutable" | "unchanged";
 function runtimeProviderFixture(
   layer: SandboxLayer<"template-bearing">,
   mode: RuntimeBase,
-  onLookup: (key: string) => void,
+  cache: AttemptBeforeCache | ((key: string) => void),
 ) {
   const template = sandboxLayerStateOf(layer).template;
   let materialized = 0;
@@ -223,6 +227,9 @@ function runtimeProviderFixture(
               materialize: (_, context) =>
                 binding.materialize(context).pipe(
                   Effect.map((sandbox) => {
+                    if (typeof cache !== "function") {
+                      return { ...sandbox, beforeCache: { _tag: "AttemptCaptured" as const, capability: cache } };
+                    }
                     const ordinal = materialized++;
                     const baseIdentity = ordinal === 0 || mode === "unchanged" ? "base-a" : "base-b";
                     const replacementScope = {
@@ -246,7 +253,7 @@ function runtimeProviderFixture(
                       lookupAndRestore: (step: BeforeCacheStep) =>
                         Effect.sync(() => {
                           const key = step.declaration.beforeCacheKey;
-                          onLookup(key);
+                          cache(key);
                           firstLookup.resolve();
                           return {
                             _tag: "Restored" as const,
@@ -377,3 +384,89 @@ export default defineEval({async test(){}});`,
     });
   },
 );
+
+describe("Docker eligibility with an unsupported ledger", () => {
+  let project: Awaited<ReturnType<typeof createLifecycleProject>>;
+  let locator: string;
+  let databasePath: string;
+  let originalDatabase: Buffer;
+
+  beforeAll(async () => {
+    project = await createLifecycleProject({
+      attempts: 1,
+      maxConcurrency: 1,
+      failCreates: [],
+      scripts: [{ cleanups: 0, beforeFails: false, test: "pass", step: "ok" }],
+    });
+    vi.stubEnv("NICEEVAL_HOME", project.cwd);
+    vi.stubEnv("XDG_STATE_HOME", project.cwd);
+    databasePath = join(project.cwd, "niceeval.sqlite");
+    const database = new DatabaseSync(databasePath);
+    try {
+      database.exec("CREATE TABLE old_format (value TEXT)");
+    } finally {
+      database.close();
+    }
+    originalDatabase = await readFile(databasePath);
+
+    const unexpected = () => {
+      throw new Error("An unavailable ledger cannot supply a cache artifact");
+    };
+    const capability = makeDockerBeforeCacheCapability({
+      baseReference: "repo:tag",
+      eligibility: () => ({
+        _tag: "Eligible",
+        persistence: "persistent",
+        dependency: "parent-backed",
+        coverage: "all",
+        baseIdentity: "sha256:" + "a".repeat(64),
+        keyScope: { cacheFormat: "fixture", semanticIdentity: {} },
+      }),
+      captureExactImage: unexpected,
+      rebaseToExactImage: unexpected,
+      destroyCurrentForCacheRecovery: unexpected,
+      adoptBeforeCacheHold: unexpected,
+      fallBackToBase: unexpected,
+    });
+    Reflect.set(process, Symbol.for(project.cwd), (layer: SandboxLayer<"template-bearing">) =>
+      runtimeProviderFixture(layer, "unchanged", capability),
+    );
+    await writeFile(
+      join(project.cwd, "experiments/lifecycle.ts"),
+      `
+import { defineExperiment } from "niceeval";
+import agent from "../agent.ts";
+import base from "../sandbox.ts";
+const sandbox = Reflect.get(process, Symbol.for(${JSON.stringify(project.cwd)}))(base);
+export default defineExperiment({ adapter: agent, sandbox, evals: "*" });`,
+    );
+    const { attempts } = await project.run();
+    expect(attempts).toHaveLength(1);
+    locator = attempts[0]!.locator;
+  });
+
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    if (project) {
+      Reflect.deleteProperty(process, Symbol.for(project.cwd));
+      await project.dispose();
+    }
+  });
+
+  // @feature docs/feature/sandbox/README.md#user-database-format
+  test("publishes the repair instructions and affected database path in the Attempt", async () => {
+    const [document] = await showJsonDocuments(project.cwd, [locator, "execution"]);
+    const result = narrowInspectionSuccess(document!, "attempt.trace");
+    if (!result.success) throw new Error(result.reason);
+    const warnings = result.value.trace.diagnostics.items.filter((item) => item.code === "cache-degraded");
+    expect(warnings.map((item) => item.summary)).toEqual([expect.stringContaining("user-database-unsupported")]);
+    expect(warnings[0]!.summary).toContain("then remove the user database and rerun");
+    expect(warnings[0]!.summary).toContain(databasePath);
+  });
+
+  // @feature docs/feature/sandbox/README.md#user-database-format
+  test("replays the before action and preserves the original database", async () => {
+    expect(await readFile(join(project.cwd, "marker-e0"), "utf8")).toBe("");
+    expect(await readFile(databasePath)).toEqual(originalDatabase);
+  });
+});
