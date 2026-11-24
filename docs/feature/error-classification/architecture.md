@@ -16,7 +16,7 @@ interface FailureClass {
 }
 
 interface SendFailure {
-  readonly acceptance: "rejected" | "unknown" | "accepted";
+  readonly acceptance: "rejected" | "unknown" | "started";
   readonly error: unknown;
 }
 ~~~
