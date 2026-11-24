@@ -184,6 +184,14 @@ Coordination domain are mutually exclusive from before Experiment/Sandbox before
 provider finalizers, and Experiment after have all finished; waiters do not create a Sandbox first,
 and continue their own plan after acquiring the lease. It is not a state store, a transaction, or a cross-machine lock.
 
+#### `state`
+
+```ts
+state?: readonly StateBinding[] | undefined;
+```
+
+State bindings for all selected Eval Groups. Within each group and cohort, NiceEval preserves the declared Sandbox paths across Attempts and Runs.
+
 #### `budget`
 
 ```ts
