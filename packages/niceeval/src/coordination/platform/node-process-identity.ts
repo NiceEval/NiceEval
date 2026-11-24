@@ -11,10 +11,15 @@ function errnoCode(cause: unknown): unknown {
   return typeof cause === "object" && cause !== null ? Reflect.get(cause, "code") : undefined;
 }
 
-function linuxProcessStartOf(pid: number): string {
+interface LinuxProcessIdentity {
+  readonly processStart: string;
+  readonly terminal: boolean;
+}
+
+function linuxProcessIdentityOf(pid: number): LinuxProcessIdentity {
   const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
   const commandEnd = stat.lastIndexOf(")");
-  if (commandEnd < 0) throw new Error(`Could not decode /proc/${pid}/stat.`);
+  if (commandEnd < 0 || stat[commandEnd + 1] !== " ") throw new Error(`Could not decode /proc/${pid}/stat.`);
   const fieldsAfterCommand = stat
     .slice(commandEnd + 2)
     .trim()
@@ -22,7 +27,10 @@ function linuxProcessStartOf(pid: number): string {
   const processStart = fieldsAfterCommand[19];
   if (processStart === undefined || !/^\d+$/u.test(processStart))
     throw new Error(`Could not decode process start for pid ${pid}.`);
-  return processStart;
+  const state = fieldsAfterCommand[0];
+  if (state === undefined || !/^[A-Za-z]$/u.test(state))
+    throw new Error(`Could not decode process state for pid ${pid}.`);
+  return { processStart, terminal: state === "Z" || state === "X" || state === "x" };
 }
 
 function linuxBootId(): string {
@@ -57,7 +65,7 @@ export interface ProcessIdentityRuntime {
   readonly processSessionId: string;
   readonly host: () => string;
   readonly linuxBootId: () => string;
-  readonly linuxProcessStartOf: (pid: number) => string;
+  readonly linuxProcessIdentityOf: (pid: number) => LinuxProcessIdentity;
   readonly darwinBootSessionUuid: () => string;
   readonly signalZero: (pid: number) => void;
 }
@@ -74,7 +82,9 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
     const bootId =
       runtime.platform === "linux" ? runtime.linuxBootId() : validatedDarwinBootId(runtime.darwinBootSessionUuid);
     const processStart =
-      runtime.platform === "linux" ? runtime.linuxProcessStartOf(runtime.pid) : runtime.processSessionId;
+      runtime.platform === "linux"
+        ? runtime.linuxProcessIdentityOf(runtime.pid).processStart
+        : runtime.processSessionId;
     return { ownerId, host: runtime.host(), pid: runtime.pid, bootId, processStart };
   };
 
@@ -90,8 +100,9 @@ export function makeProcessIdentity(runtime: ProcessIdentityRuntime): Readonly<{
       }
       if (owner.bootId !== localBootId) return "dead";
       try {
-        const processStart = runtime.linuxProcessStartOf(owner.pid);
-        return processStart === owner.processStart ? "alive" : "unknown";
+        const identity = runtime.linuxProcessIdentityOf(owner.pid);
+        if (identity.processStart !== owner.processStart) return "unknown";
+        return identity.terminal ? "dead" : "alive";
       } catch (cause) {
         return errnoCode(cause) === "ENOENT" ? "dead" : "unknown";
       }
@@ -129,7 +140,7 @@ const liveProcessIdentity = makeProcessIdentity({
   processSessionId: PROCESS_SESSION_ID,
   host: hostname,
   linuxBootId,
-  linuxProcessStartOf,
+  linuxProcessIdentityOf,
   darwinBootSessionUuid,
   signalZero: (pid) => process.kill(pid, 0),
 });
