@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 // @feature docs/feature/sandbox/README.md#shared-builds
 test.each([
   ["short append and journal reopen", "before-cache-journal-tla-repro.py"],
-  ["concurrent publication and reservation release", "before-cache-contention-tla-repro.py"],
+  ["concurrent seed publication, reservation release and daemon rotation", "before-cache-contention-tla-repro.py"],
   ["private slot prefix continuity", "before-cache-prefix-tla-repro.mjs"],
   ["leased image handoff", "before-cache-image-lease-tla-repro.mjs"],
 ])("%s", { timeout: 20_000 }, async (_, fixture) => {

@@ -139,6 +139,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext, TestCleanupContext }
 import { sandboxLayerIdentityFor, type ScheduledSandboxBefore } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { plannedBeforeCacheActions, beforeCacheStep } from "./before-cache-plan.ts";
+import type { ObserveAttemptBeforeCache } from "./before-cache-collisions.ts";
 import type { AttemptPluginContext } from "../plugin/contracts.ts";
 import { attemptPluginLifecycles } from "../plugin/link.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
@@ -313,6 +314,7 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
   readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly observeAttemptBeforeCache?: ObserveAttemptBeforeCache;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming: import("./timing.ts").RunTimingRecorder | undefined;
   /**
@@ -387,6 +389,7 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
     runId,
     buildLocators,
     preparedBeforeCache,
+    observeAttemptBeforeCache,
     runTiming,
     parentSignal,
     invocationSignal,
@@ -1750,6 +1753,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       observabilityRuntime,
                       materializedCase,
                       preparedBeforeCache: beforeCacheForAttempt(),
+                      observeAttemptBeforeCache,
                       concurrencySlot: concurrencySlot,
                       declareFailure,
                       onEnvironmentIncomplete: onEnvironmentIncomplete,
@@ -2670,6 +2674,7 @@ interface AttemptResources {
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase: MaterializedSandboxCase | undefined;
   preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly observeAttemptBeforeCache: ObserveAttemptBeforeCache | undefined;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -3344,9 +3349,9 @@ async function runAttemptBody(
       );
     }
     const capability = materializedCase.beforeCache.capability;
-    let eligibility: ReturnType<AttemptBeforeCache["eligibility"]>;
+    let eligibility: Effect.Success<ReturnType<AttemptBeforeCache["eligibility"]>>;
     try {
-      eligibility = capability.eligibility();
+      eligibility = await assertFirst.requestEffect(capability.eligibility());
     } catch (cause) {
       feedback.diagnostic({
         code: "cache-degraded",
@@ -3416,6 +3421,7 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
+    res.observeAttemptBeforeCache?.(a.plan, eligibility.replacementScope, planned);
 
     let satisfied = 0;
     let cacheAvailable = true;

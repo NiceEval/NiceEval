@@ -9,6 +9,7 @@ import { Effect } from "effect";
 import { makeDockerProfileBeforeCacheCapability } from "../../packages/niceeval/src/sandbox/docker-profile/before-cache.ts";
 import { digestOf } from "../../packages/niceeval/src/sandbox/identity.ts";
 import { DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL } from "../../packages/niceeval/src/sandbox/docker-profile/schema.ts";
+import { beforeCacheReplacementScope } from "../../packages/niceeval/src/sandbox/before-cache-replacement.ts";
 
 const baseIdentity = "sha256:" + "a".repeat(64);
 function step(positions, parentKey) {
@@ -32,6 +33,7 @@ function step(positions, parentKey) {
 }
 const parent = step(["parent"], "base");
 const child = step(["parent", "child"], parent.declaration.beforeCacheKey);
+const replacementScope = { provider: "docker", executionDomainId: "test", baseReference: "fixture-image" };
 const folder = await mkdtemp(join(tmpdir(), "before-cache-prefix-"));
 const controlSocketPath = join(folder, "control.sock");
 const fixed = {
@@ -81,6 +83,8 @@ const server = createServer((socket) => {
   socket.on("end", () => {
     const { kind, invocationId, leaseToken, reservationId, operationId, ...wire } = JSON.parse(frame);
     assert.equal(kind, "before-cache.restore");
+    const expectedStep = wire.beforeCacheKey === parent.declaration.beforeCacheKey ? parent : child;
+    assert.equal(wire.replacementScope, beforeCacheReplacementScope(replacementScope, expectedStep));
     if (wire.beforeCacheKey === parent.declaration.beforeCacheKey) {
       contents = ["parent"];
       socket.end(
@@ -120,6 +124,15 @@ try {
   server.listen(controlSocketPath);
   await once(server, "listening");
   const cache = makeDockerProfileBeforeCacheCapability({
+    baseReference: "fixture-image",
+    eligibility: () => ({
+      _tag: "Eligible",
+      baseIdentity,
+      coverage: "dockerData",
+      persistence: "persistent",
+      dependency: "parent-backed",
+      keyScope: { cacheFormat: "test", semanticIdentity: {} },
+    }),
     session: {
       lease,
       currentReservation: reservation,
@@ -133,6 +146,10 @@ try {
     retireStopped() {},
     createFromCurrent: async () => String(generation),
   });
+  const eligibility = await Effect.runPromise(cache.eligibility());
+  assert.equal(eligibility._tag, "Eligible");
+  assert.equal(eligibility.baseIdentity, baseIdentity);
+  assert.deepEqual(eligibility.replacementScope, replacementScope);
   // The Runner first searches deepest-to-shallowest, then re-probes the unsatisfied child.
   assert.equal((await Effect.runPromise(cache.lookupAndRestore(child)))._tag, "Miss");
   assert.equal((await Effect.runPromise(cache.lookupAndRestore(parent)))._tag, "Restored");

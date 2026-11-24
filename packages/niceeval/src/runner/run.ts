@@ -6,7 +6,11 @@
 // 职责只有编排:指纹缓存在 fingerprint.ts,单 attempt 生命周期在 attempt.ts,
 // reporter 编排 / 汇总在 report.ts，Direct Agent 的 Sandbox 占位适配器在 direct-agent-sandbox.ts。
 
-import { beforeCacheReplacementWarnings, declaredBeforeCachePositions } from "./before-cache-collisions.ts";
+import {
+  beforeCacheReplacementWarnings,
+  declaredBeforeCachePositions,
+  observeAttemptBeforeCacheConflicts,
+} from "./before-cache-collisions.ts";
 import { captureAssertionFeedback } from "./feedback/assertions.ts";
 import { Effect, Cause, Data, Deferred, Result, Exit, Option, Semaphore, Latch, Fiber } from "effect";
 import { adapterIdentity } from "../adapter.ts";
@@ -537,7 +541,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           attempts.filter((attempt) => attempt.run.sandboxBeforeCache !== "bypass").map((attempt) => attempt.plan),
         ),
       );
-      for (const warning of replacementWarnings) {
+      const reportReplacementWarning = (warning: (typeof replacementWarnings)[number]) => {
         reportDiagnostic({
           key: warning.key,
           code: "before-cache-replacement-conflict",
@@ -547,7 +551,23 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           identity: undefined,
           data: undefined,
         });
-      }
+      };
+      for (const warning of replacementWarnings) reportReplacementWarning(warning);
+      const observeAttemptBeforeCache = observeAttemptBeforeCacheConflicts((warning) => {
+        reportReplacementWarning(warning);
+        for (const experimentId of warning.experimentIds)
+          recordExperimentDiagnostic({
+            experimentId,
+            code: "before-cache-replacement-conflict",
+            level: "warning",
+            message: warning.message,
+            phase: "sandbox.prepare",
+            dedupeKey: warning.key,
+            data: undefined,
+            command: undefined,
+            affectedSlotIds: undefined,
+          });
+      });
       const preparationReady = new Map<string, Deferred.Deferred<void, Error>>();
       for (const a of attempts) {
         const pairKey = cacheKey(a.run, a.evalDef.id);
@@ -568,15 +588,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
           signal: opts.signal,
           onWarning: (warning) => {
             replacementWarnings.push(warning);
-            reportDiagnostic({
-              key: warning.key,
-              code: "before-cache-replacement-conflict",
-              severity: "warning",
-              message: warning.message,
-
-              identity: undefined,
-              data: undefined,
-            });
+            reportReplacementWarning(warning);
           },
           onPairReady: (pairKey, prepared, failure) =>
             Effect.gen(function* () {
@@ -3174,6 +3186,7 @@ export function runEvals<AttachmentError, AttachmentRequirements>(
                         attachmentScope: invocationScope,
                         buildLocators,
                         preparedBeforeCache: beforeCachePreparation.preparedByPair.get(cacheKey(a.run, a.evalDef.id)),
+                        observeAttemptBeforeCache,
                         runTiming,
                         parentSignal: attemptSignal,
                         invocationSignal: opts.signal,

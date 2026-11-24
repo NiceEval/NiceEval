@@ -6,9 +6,11 @@ import {
   type SandboxActionState,
 } from "../sandbox/action.ts";
 import { digestOf } from "../sandbox/identity.ts";
+import type { BeforeCacheEligibility } from "../sandbox/backend.ts";
+import { beforeCacheReplacementScope } from "../sandbox/before-cache-replacement.ts";
 import { sandboxTemplateCommandPlanLocator } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
-import { beforeCacheActionDeclaration } from "./before-cache-plan.ts";
+import { beforeCacheActionDeclaration, type PlannedBeforeCacheAction } from "./before-cache-plan.ts";
 
 export interface BeforeCachePosition {
   readonly scope: string;
@@ -91,4 +93,52 @@ export function beforeCacheReplacementWarnings(candidates: Iterable<BeforeCacheP
       },
     ];
   });
+}
+
+export type ObserveAttemptBeforeCache = (
+  plan: Extract<LinkedRunPlan, { readonly _tag: "Sandbox" }>,
+  scope: NonNullable<Extract<BeforeCacheEligibility, { readonly _tag: "Eligible" }>["replacementScope"]>,
+  actions: readonly PlannedBeforeCacheAction[],
+) => void;
+
+export function observeAttemptBeforeCacheConflicts(
+  onWarning: (warning: ReturnType<typeof beforeCacheReplacementWarnings>[number]) => void,
+): ObserveAttemptBeforeCache {
+  const positions = new Map<
+    string,
+    { readonly actual: BeforeCachePosition; readonly declared: BeforeCachePosition | undefined; warned: boolean }
+  >();
+  const declarations = new WeakMap<LinkedRunPlan, readonly BeforeCachePosition[]>();
+  return (plan, scope, actions) => {
+    let declaredPositions = declarations.get(plan);
+    if (declaredPositions === undefined) {
+      declaredPositions = [...declaredBeforeCachePositions([plan])];
+      declarations.set(plan, declaredPositions);
+    }
+    for (const [index, action] of actions.entries()) {
+      const actual: BeforeCachePosition = {
+        scope: beforeCacheReplacementScope(scope, action),
+        content: action.key,
+        owner: action.declaringOwner,
+        experimentId: plan.pair.experimentId,
+        actionId: action.entry.id,
+      };
+      const declared = declaredPositions[index];
+      const previous = positions.get(actual.scope);
+      if (previous === undefined) {
+        positions.set(actual.scope, { actual, declared, warned: false });
+        continue;
+      }
+      if (previous.warned || previous.actual.content === actual.content) continue;
+      previous.warned = true;
+      // Planning has already reported this pair when the declarations alone disagree.
+      if (
+        declared !== undefined &&
+        previous.declared?.scope === declared.scope &&
+        previous.declared.content !== declared.content
+      )
+        continue;
+      for (const warning of beforeCacheReplacementWarnings([previous.actual, actual])) onWarning(warning);
+    }
+  };
 }

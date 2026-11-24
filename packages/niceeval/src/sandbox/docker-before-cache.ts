@@ -15,13 +15,18 @@ import {
   BeforeCacheValidationError,
   type AttemptBeforeCache,
   type AttemptBeforeCacheCapture,
-  type BeforeCacheEligibility,
+  type BeforeCacheBaseEligibility,
+  type AttemptBeforeCacheEligibility,
   type BeforeCacheError,
   type AttemptBeforeCacheLookup,
   type BeforeCacheDeclaration,
   type BeforeCacheStep,
 } from "./backend.ts";
-import { openDockerCacheDomain, type DockerCacheDomainHandle } from "./docker-task-build-cache.ts";
+import {
+  openDockerCacheDomain,
+  openDockerCacheDomainEffect,
+  type DockerCacheDomainHandle,
+} from "./docker-task-build-cache.ts";
 import {
   type DockerHolderIdentity,
   type DockerBeforeCacheEntryRow as RepositoryBeforeCacheEntryRow,
@@ -142,7 +147,7 @@ export interface DockerBeforeCacheHoldOwnership {
 /** Narrow Docker target. Registry code never reaches into DockerSandbox implementation fields. */
 export interface DockerBeforeCacheTarget {
   readonly baseReference: string;
-  readonly eligibility: () => BeforeCacheEligibility;
+  readonly eligibility: () => BeforeCacheBaseEligibility;
   readonly captureExactImage: (
     labels: Readonly<Record<string, string>>,
     knownSensitiveValues: readonly string[],
@@ -1160,7 +1165,27 @@ export function makeDockerBeforeCacheCapability(target: DockerBeforeCacheTarget)
     );
 
   return {
-    eligibility: target.eligibility,
+    eligibility: () =>
+      Effect.gen(function* (): Effect.fn.Return<AttemptBeforeCacheEligibility> {
+        const eligibility = target.eligibility();
+        if (eligibility._tag !== "Eligible") return eligibility;
+        const domain = yield* Effect.result(Effect.scoped(openDockerCacheDomainEffect()));
+        if (domain._tag === "Failure") {
+          return {
+            _tag: "Degraded",
+            reason: "eligibility-failed",
+            detail: "Docker before-cache execution domain could not be verified.",
+          };
+        }
+        return {
+          ...eligibility,
+          replacementScope: {
+            provider: "docker",
+            executionDomainId: domain.success.domainId,
+            baseReference: target.baseReference,
+          },
+        };
+      }),
     lookupAndRestore: (input: BeforeCacheStep) =>
       scopedOperation(
         (signal) => lookupAndRestore(target, input, signal),

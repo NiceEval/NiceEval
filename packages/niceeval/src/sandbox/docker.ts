@@ -39,7 +39,7 @@ import {
   supportedBackendCapability,
   type SandboxBackendCapabilities,
   type SandboxProviderBackend,
-  type BeforeCacheEligibility,
+  type BeforeCacheBaseEligibility,
   type AttemptBeforeCache,
 } from "./backend.ts";
 import type { DockerSandboxAccess, NormalizedDockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
@@ -665,6 +665,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           })
         : makeDockerProfileBeforeCacheCapability({
             session: this.profileBeforeCache,
+            baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
             eligibility: () => this.beforeCacheEligibility(),
             quiesceAndStop: (signal) => this.quiesceProfileBeforeCache(signal),
             resumeStopped: (signal) => this.resumeProfileBeforeCache(signal),
@@ -683,7 +684,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
 
   readonly attemptBeforeCache: AttemptBeforeCache;
 
-  private beforeCacheEligibility(): BeforeCacheEligibility {
+  private beforeCacheEligibility(): BeforeCacheBaseEligibility {
     if (this.profileBeforeCache !== undefined) {
       const capability = this.profileBeforeCache.lease.binding.profile.backend.filesystem.beforeCache;
       if (capability === undefined) {
@@ -732,7 +733,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         dependency: "parent-backed",
         coverage: sandboxState.dockerData,
         baseIdentity: this.baseIdentity,
-        replacementScope: undefined,
         keyScope: decodeBeforeCacheKeyScope({
           cacheFormat: JSON.stringify({
             protocol: capability.protocol,
@@ -836,7 +836,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       dependency: "parent-backed",
       coverage: sandboxState.all,
       baseIdentity: this.baseIdentity,
-      replacementScope: undefined,
       keyScope: decodeBeforeCacheKeyScope({
         cacheFormat: "niceeval-docker-cache/current",
         semanticIdentity: { capture: "outer-writable-rootfs" },

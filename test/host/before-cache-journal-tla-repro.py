@@ -16,6 +16,7 @@ def journal_session(path):
     session = watchdog.Admission.__new__(watchdog.Admission)
     session.journal = path
     session.profile_id = "test"
+    session.before_cache = None
     session.lock = threading.RLock()
     session._published_state = {"admissionOpen": True, "generation": "boot", "leases": {}}
     session._draft_state = None

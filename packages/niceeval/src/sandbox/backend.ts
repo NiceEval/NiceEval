@@ -73,6 +73,13 @@ export type BeforeCacheEligibility =
       readonly reason: string;
     };
 
+type EligibleBeforeCache = Extract<BeforeCacheEligibility, { readonly _tag: "Eligible" }>;
+type IneligibleBeforeCache = Exclude<BeforeCacheEligibility, EligibleBeforeCache>;
+export type BeforeCacheBaseEligibility = Omit<EligibleBeforeCache, "replacementScope"> | IneligibleBeforeCache;
+export type AttemptBeforeCacheEligibility =
+  | (EligibleBeforeCache & { readonly replacementScope: NonNullable<EligibleBeforeCache["replacementScope"]> })
+  | IneligibleBeforeCache;
+
 export interface BeforeCacheDeclaration {
   /** Exact immutable Base identity; floating source references never enter the durable root key alone. */
   readonly baseIdentity: string;
@@ -205,7 +212,7 @@ export type AttemptBeforeCacheFallback =
     };
 
 export interface AttemptBeforeCache {
-  eligibility(): BeforeCacheEligibility;
+  eligibility(): Effect.Effect<AttemptBeforeCacheEligibility>;
   lookupAndRestore(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
   capture(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
   /**
