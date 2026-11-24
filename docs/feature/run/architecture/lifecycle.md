@@ -90,6 +90,10 @@ exact Run recovery 只收口指定 Run，不替同一 Invocation 的其它 Run �
 恢复该 Invocation 最后一个非终态 Run 时，第二笔事务重新验证 Session 的精确 owner 已终止，再 fence 并终结 Session，保存全部 Run 引用的终态 projection。
 Session 与这个 Run 的终态共同提交；取证不足或事务失败时共同回滚，保留可重试的 Run recovery。
 
+原 Host 的 recovery 调用已经结束而 Run 仍为 recovering 时，原 Host 可以凭本进程私有的能力串行续办这次 recovery 的精确 generation。
+续办事务重新验证当前 Run 与已提交 recovery actor 的 generation，沿用首次 fence 的证据与时间。
+并发的续办、其它 Host 或其它进程都不能借此取得该 generation；原 Host 崩溃后，接替者仍须证明当前 actor 已终止。
+
 恢复事务逐一核对该 Run 全部 expected Planned attempt 的 case lock，包括已经发布或携入的位置；只有精确 owner 已终止的锁才能释放。
 仍存活或无法证明已终止的 owner 保持原锁，不因另一个 Run 的恢复被接管。
 Session 终结不释放 State 租约；租约仍由既有的显式集合 recovery 完成 after 与整组释放。
