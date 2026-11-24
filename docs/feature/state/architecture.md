@@ -51,6 +51,11 @@ Provider 必须支持安全文件树操作和全实例写入静默验证，否�
 
 Provider 从宿主侧兑现这两项能力，不依赖实例镜像里装有 shell、tar、Python 等工具，也不在实例内运行辅助程序。例如本机 Docker 用 Engine 的 archive 接口流式读写文件树（不把整个归档读进内存），用 pause 冻结容器后核对进程表来证明写入静默。
 
+Provider 没有删除原语时（Docker Engine API 只能读、核对和覆盖，PUT 解包也不删除归档外的成员），State 不靠删除来恢复：
+恢复只发生在刚创建、尚未执行任何 action 的实例里，先确认每个声明根不存在，再流式写入 checkpoint；恢复为缺席时不写入任何内容。
+声明根已经存在于实例中（来自 template、镜像或 Before cache 镜像）时，恢复以基础设施错误 `state-root-preexisting` 失败并指出路径，不尝试删除或覆盖。
+这类 Provider 不能把 State 与跨 Group 的实例复用一起使用，规划期以 `state-provider-unsupported` 拒绝，因为复用的实例可能留有上一个 Group 的状态。
+
 ## 恢复与保存
 
 取得实例后先发布 execution 与起点，再校验所有根和归档 manifest；全部合法后才删除声明根、恢复或初始化。
