@@ -117,7 +117,7 @@ Session 终结不释放 State 租约；租约仍由既有的显式集合 recover
 ## 删除与 retention
 
 `run delete` 只处理已收口 Run。
-若其 State 租约集合仍为 active 或 recovering，以 `run-state-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
+若其租约集合仍为 active 或 recovering，以 `run-lease-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
 存在依赖时零删除；用户需要先显式删除依赖 Run。
 
 目标是其 Invocation 最后一个未删除的 Run、而 Session 仍未终结时，以 `run-session-recovery-required` 拒绝，零删除。

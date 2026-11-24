@@ -48,7 +48,7 @@ interface RunListRequest {
 无效 Run ID、缺失 Run、无效 continuation、删除 active Run、恢复没有遗留状态的 terminal Run 或仍活跃的 owner，都是领域拒绝。
 它们通过相应 `RunReadError`、`RunDeleteError` 或 `RunRecoverError` 的失败通道返回，可由 `Effect.catchTag` 处理后继续操作。
 正常领域拒绝不作为 defect 抛出，也不改写既有 Run 事实。
-State 集合尚未释放时，delete 通过 RunDeleteError 返回 `run-state-recovery-required`；与 [CLI 删除规则](cli.md) 相同。
+租约集合尚未释放时，delete 通过 RunDeleteError 返回 `run-lease-recovery-required`；与 [CLI 删除规则](cli.md) 相同。
 删除最后一个未删除的 Run 而 Session 仍未终结时，返回 `run-session-recovery-required`，规则同上。
 
 `RunRecoverReceipt` 返回 `{ runId: string, state: "completed" | "interrupted" | "failed" }`。
