@@ -24,6 +24,15 @@ export class SseFrameDecoderError extends Schema.TaggedError<SseFrameDecoderErro
 // Shared with external cursor consumers; one caller must not mutate another cursor's EOF.
 const end: IteratorReturnResult<void> = Object.freeze({ done: true, value: undefined });
 
+function createCloseReceipt() {
+  let settle!: (result: IteratorResult<unknown, void> | PromiseLike<IteratorResult<unknown, void>>) => void;
+  const promise = new Promise<IteratorResult<unknown, void>>((resolve) => {
+    settle = resolve;
+  });
+  void promise.catch(() => {});
+  return { promise, settle };
+}
+
 /** Decodes SSE JSON at the transport boundary. Schemas must decode synchronously without services. */
 export function sseJsonFrames(body: ReadableStream<Uint8Array>): SseFrameCursor<JsonValue>;
 export function sseJsonFrames<S extends Schema.ConstraintDecoder<unknown, never>>(
@@ -46,19 +55,19 @@ export function sseJsonFrames(
 
   function close(): Promise<IteratorResult<unknown, void>> {
     if (closeReceipt !== undefined) return closeReceipt;
+    const receipt = createCloseReceipt();
+    closeReceipt = receipt.promise;
     closed = true;
     buffer = "";
     const activeReader = reader;
     reader = undefined;
     try {
-      closeReceipt = activeReader === undefined ? Promise.resolve(end) : activeReader.cancel().then(() => end);
+      receipt.settle(activeReader === undefined ? end : activeReader.cancel().then(() => end));
     } catch (error) {
-      closeReceipt = Promise.reject(error);
+      receipt.settle(Promise.reject(error));
     } finally {
       activeReader?.releaseLock();
     }
-    // A caller may be waiting for next() while cancellation settles separately.
-    void closeReceipt.catch(() => {});
     return closeReceipt;
   }
 
@@ -109,13 +118,16 @@ export function sseJsonFrames(
   }
 
   return {
-    next() {
-      if (closed) return Promise.resolve(end);
-      if (reading) return Promise.reject(new TypeError("Concurrent SSE cursor reads are not supported."));
+    async next() {
+      if (closed) return end;
+      if (reading) throw new TypeError("Concurrent SSE cursor reads are not supported.");
       reading = true;
-      return read().finally(() => {
+      try {
+        const result = await read();
+        return closed ? end : result;
+      } finally {
         reading = false;
-      });
+      }
     },
     return: close,
   };
@@ -169,12 +181,13 @@ export async function openSseJsonFrames(
 
   function close(): Promise<IteratorResult<unknown, void>> {
     if (closeReceipt !== undefined) return closeReceipt;
+    const receipt = createCloseReceipt();
+    closeReceipt = receipt.promise;
     closed = true;
-    transport.abort();
     const current = cursor;
     cursor = undefined;
-    closeReceipt = Promise.all([current?.return(), opening.then(() => lateClose)]).then(() => end);
-    void closeReceipt.catch(() => {});
+    transport.abort();
+    receipt.settle(Promise.all([current?.return(), opening.then(() => lateClose)]).then(() => end));
     return closeReceipt;
   }
 
@@ -218,6 +231,7 @@ export async function openSseJsonFrames(
       if (current === undefined) return end;
       try {
         const result = await current.next();
+        if (closed) return end;
         if (result.done) await close();
         return result;
       } catch (error) {

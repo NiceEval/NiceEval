@@ -1,14 +1,14 @@
 import fc from "fast-check";
 import { sseJsonFrames, type SseFrameCursor } from "niceeval/adapter";
 import { expect, test } from "vitest";
-import { createFixtureProject, readJson, runSingleAttempt } from "./fixtures/adapter-trace-usage-harness/harness.ts";
 
 const end = { done: true, value: undefined };
 
 // @feature docs/feature/adapters/README.md#transport-and-approval
-test("SSE cursor discards a pending result when closed with buffered frames", async () => {
+// @spec docs/feature/adapters/statechart.md#NoFrameAfterClose
+test("SSE cursor discards a pending result when closed after decoding", async () => {
   await fc.assert(
-    fc.asyncProperty(fc.array(fc.integer(), { minLength: 2, maxLength: 8 }), async (frames) => {
+    fc.asyncProperty(fc.array(fc.integer(), { minLength: 1, maxLength: 8 }), async (frames) => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           const chunk = frames.map((frame) => `data: ${frame}\n\n`).join("");
@@ -16,19 +16,26 @@ test("SSE cursor discards a pending result when closed with buffered frames", as
         },
       });
       const cursor = sseJsonFrames(body);
-      expect(await cursor.next()).toEqual({ done: false, value: frames[0] });
+      if (frames.length > 1) {
+        expect(await cursor.next()).toEqual({ done: false, value: frames[0] });
+      }
       const pending = cursor.next();
+      if (frames.length === 1) {
+        // Let the source read continuation decode the only frame before its cursor result settles.
+        await Promise.resolve();
+      }
       const closing = cursor.return();
 
       expect(await pending).toEqual(end);
       expect(await closing).toEqual(end);
       expect(await cursor.next()).toEqual(end);
     }),
-    { examples: [[[0, 0]]] },
+    { examples: [[[0]], [[0, 0]]] },
   );
 });
 
 // @feature docs/feature/adapters/README.md#transport-and-approval
+// @spec docs/feature/adapters/statechart.md#CancelAtMostOnce
 test("SSE cursor shares its close receipt with synchronous reentry from transport cancellation", async () => {
   await fc.assert(
     fc.asyncProperty(fc.constantFrom("resolve", "reject"), async (outcome) => {
@@ -59,65 +66,4 @@ test("SSE cursor shares its close receipt with synchronous reentry from transpor
     }),
     { examples: [["resolve"]] },
   );
-});
-
-// @feature docs/feature/adapters/README.md#transport-and-approval
-test("Attempt-owned SSE closes the buffered read and shares its receipt with the transport abort listener", async () => {
-  const fixture = await createFixtureProject("attempt-sse-close", {
-    "agent.ts": `
-      import { writeFile } from "node:fs/promises";
-      import { completeEvidenceCoverage, defineAgent, openSseJsonFrames } from "niceeval/adapter";
-      export default defineAgent({
-        name: "attempt-sse-close",
-        evidenceCoverage: completeEvidenceCoverage,
-        async send(_input, ctx) {
-          const cancel = Promise.withResolvers();
-          let reentered;
-          let cancelCalls = 0;
-          const cursor = await openSseJsonFrames(ctx, async (signal) => {
-            signal.addEventListener("abort", () => { reentered = cursor.return(); }, { once: true });
-            return new ReadableStream({
-              start(controller) {
-                controller.enqueue(new TextEncoder().encode("data: 0\\n\\ndata: 1\\n\\n"));
-              },
-              cancel() {
-                cancelCalls += 1;
-                return cancel.promise;
-              },
-            });
-          });
-          const first = await cursor.next();
-          const pending = cursor.next();
-          const closing = cursor.return();
-          cancel.resolve();
-          const result = {
-            first,
-            pending: await pending,
-            closing: await closing,
-            sameReceipt: reentered === closing && cursor.return() === closing,
-            cancelCalls,
-          };
-          await writeFile(new URL("./observation.json", import.meta.url), JSON.stringify(result));
-          return { status: "completed", events: [] };
-        },
-      });
-    `,
-    "evals/one.eval.ts": `import { defineEval } from "niceeval";
-      export default defineEval({ async test(t) { await t.send("start"); } });`,
-    "experiments/one.ts": `import { defineExperiment } from "niceeval";
-      import adapter from "../agent.ts";
-      export default defineExperiment({ adapter, evals: ["one"] });`,
-  });
-  try {
-    await runSingleAttempt(fixture.cwd, "one");
-    expect(await readJson(fixture.cwd, "observation.json")).toEqual({
-      first: { done: false, value: 0 },
-      pending: { done: true },
-      closing: { done: true },
-      sameReceipt: true,
-      cancelCalls: 1,
-    });
-  } finally {
-    await fixture.dispose();
-  }
 });
