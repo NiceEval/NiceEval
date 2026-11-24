@@ -1,0 +1,41 @@
+---
+title: "保留最后一个会话恢复入口"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 运行
+    lg1: 恢复
+    lg2: 已收口
+    lg3: 已删除
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 teal
+  class lg3 tan
+  s0: 运行中#65292;会话尚未收口
+  s1: 运行准备收口#65292;会话尚未收口
+  s2: 原运行已结束#65292;等待恢复
+  s3: 运行已完成#65292;会话仍在进行
+  s4: 正在恢复
+  s5: 运行已完成#65292;遗留会话可恢复
+  s6: 运行与会话均已收口
+  s7: 会话已收口#65292;运行已删除
+  [*] --> s0
+  s0 --> s1: 准备结束运行
+  s0 --> s2: 原命令退出
+  s1 --> s2: 原命令退出
+  s1 --> s3: 提交运行终态
+  s2 --> s4: 确认原运行已结束#65292;开始恢复
+  s3 --> s5: 原命令退出
+  s3 --> s6: 正常收口会话
+  s5 --> s6: 恢复遗留会话
+  s6 --> s7: 删除最后一个运行
+  s4 --> s6: 收口运行与会话
+  class s0 blue
+  class s1 blue
+  class s2 purple
+  class s3 blue
+  class s4 purple
+  class s5 purple
+  class s6 teal
+  class s7 tan
