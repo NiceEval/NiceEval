@@ -1,0 +1,69 @@
+---
+title: "SSE 审批与流的关闭"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 读取与交付
+    lg1: 审批
+    lg2: 关闭
+  }
+  class lg0 blue
+  class lg1 yellow
+  class lg2 teal
+  s0: 尚未发请求
+  s1: 等候响应
+  s2: 已关闭并等待请求结算
+  s3: 首轮读取
+  s4: 正在关闭响应
+  s5: 本地收尾结束
+  s6: 收到流结束
+  s7: 本轮拒绝
+  s8: 首轮有帧待交付
+  s9: 本轮完成
+  s10: 已收到审批请求
+  s11: 关闭时有帧待结算
+  s12: 等待审批答复
+  s13: 提交审批答复
+  s14: 续读原响应
+  [*] --> s0
+  s0 --> s1: 发起 HTTP 请求
+  s1 --> s2: 观察到本轮取消 or Attempt 收尾
+  s1 --> s3: 响应可读
+  s1 --> s4: 观察到本轮取消 or Attempt 收尾
+  s2 --> s4: 迟到响应到达并取消 or 请求结束
+  s3 --> s4: 观察到本轮取消 or Attempt 收尾 or 调用者关闭
+  s2 --> s5: 结束本方等待
+  s3 --> s6: 流自然结束
+  s4 --> s5: 结束本方等待
+  s4 --> s7: 结束本方等待
+  s6 --> s4: 观察到本轮取消 or Attempt 收尾
+  s6 --> s9: 交付完成结果
+  s3 --> s8: 解码消息
+  s8 --> s3: 读取结果结算
+  s8 --> s10: 读取结果结算
+  s8 --> s11: 调用者关闭 or 观察到本轮取消 or Attempt 收尾
+  s10 --> s4: 观察到本轮取消 or Attempt 收尾 or 调用者关闭
+  s10 --> s12: 交付等待结果#65292;保留连接
+  s11 --> s4: 读取结果结算
+  s12 --> s4: Attempt 收尾
+  s12 --> s13: 提交审批答复
+  s13 --> s4: Attempt 收尾 or 审批失败#65292;关闭响应
+  s13 --> s14: 审批成功#65292;续读
+  s14 --> s4: 调用者关闭 or 观察到本轮取消 or Attempt 收尾
+  s14 --> s6: 流自然结束
+  s14 --> s11: 调用者关闭 or 观察到本轮取消 or Attempt 收尾
+  class s0 blue
+  class s1 blue
+  class s2 teal
+  class s3 blue
+  class s4 teal
+  class s5 teal
+  class s6 blue
+  class s7 teal
+  class s8 blue
+  class s9 blue
+  class s10 blue
+  class s11 teal
+  class s12 yellow
+  class s13 yellow
+  class s14 blue

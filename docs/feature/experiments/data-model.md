@@ -1,11 +1,11 @@
-# Experiment —— State 租约集合
+# Experiment —— 租约集合
 
-本页扩展 [sharedState authority](architecture/README.md#并发-invocation)，只用于绑定 Sandbox State 的 Experiment。
-不绑定 State 的单 key 生命周期保持该 owner 的规则；本页不建立跨 ProjectDatabase 的协调服务。
+本页定义 [sharedState authority](architecture/README.md#并发-invocation) 的持久结构：每个持有 sharedState key 的 Experiment 都通过一个租约集合持有，单 key 就是只有一个成员的集合。
+本页不建立跨 ProjectDatabase 的协调服务。
 
 ## 归属与实体
 
-一个集合归属一个 `(invocationId, experimentId)`，成员是这个 Experiment 所选全部 Group 的自动 State keys，加上它可选的作者 sharedState.key。
+一个集合归属一个 `(invocationId, experimentId)`，成员是这个 Experiment 所选全部 Group 的自动 State keys，加上它可选的作者 sharedState.key；至少有一个成员。没有任何 key 的 Experiment 不建立集合。
 多 Experiment Invocation 逐 Experiment 取得集合；不会让 A 的 after 处理 B 的义务。成员在取得后不可增加或移除。
 
 Invocation 先原子创建 Session 与全部 Run，再由每个 Experiment 独立取得自己的集合。
@@ -25,7 +25,7 @@ owner_evidence_json 严格为既有 `{ experimentId, host, pid, processIdentity 
 actor 使用同一 process identity 形状与随机 recoveryId；不能只靠 PID、heartbeat 或年龄判死。
 集合 ID 与 owner token 均是随机 128-bit hex，token 只在既有显式 owner inspection 中显示。
 
-既有单 key immutable generation/head 增加可空 `leaseSetId`：非空时指向集合，所有转移只能由集合事务完成。
+每个 key 的 immutable generation/head 带非空 `leaseSetId`，指向持有它的集合；所有转移只能由集合事务完成。
 成员的 acquired_generation 固定首次取得值；current_generation 等于 key 当前 generation。旧的 per-key immutable 链仍保留完整前代验证，不另建第二套锁。
 索引 `state_lease_member(key, current_generation)` 用于 evidence 查找；当前 holder 的唯一性仍由既有 key head 主键保证。
 

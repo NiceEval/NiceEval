@@ -15,7 +15,7 @@ runs:
         # the current checkout trusted outside checkout's temporary HOME too.
         git config --global --add safe.directory "$(pwd -P)"
         git rev-parse --show-toplevel
-        concord_version="0.16.8"
+        concord_version="0.17.15"
         case "$(uname -s)/$(uname -m)" in
           Linux/x86_64) platform=linux-x64 ;;
           Darwin/arm64) platform=darwin-arm64 ;;

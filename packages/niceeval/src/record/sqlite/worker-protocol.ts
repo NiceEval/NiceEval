@@ -29,8 +29,12 @@ import type {
   StageRunCoreInput,
 } from "./types.ts";
 import type { AdmissionInput } from "../../coordination/platform/node-record-admission-protocol.ts";
+import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
+import type { StateCommand } from "./state-repository.ts";
 
 export type RegistryCommand =
+  | StateLeaseRegistryCommand
+  | { readonly _tag: "sandbox-state"; readonly state: StateCommand }
   | {
       readonly _tag: "teardown-put";
       readonly id: string;
@@ -38,25 +42,12 @@ export type RegistryCommand =
       readonly ownerPid: number;
       readonly ownerHost: string;
       readonly payload: Uint8Array;
+      readonly leaseSet?: StateLeaseAuthority | undefined;
     }
   | { readonly _tag: "teardown-get"; readonly id: string }
   | { readonly _tag: "teardown-list" }
   | { readonly _tag: "teardown-claim"; readonly id: string }
   | { readonly _tag: "shared-list"; readonly key: string }
-  | {
-      readonly _tag: "shared-append";
-      readonly key: string;
-      readonly expectedGeneration: number;
-      readonly generation: number;
-      readonly parentGeneration: number;
-      readonly kind: "active" | "recovering" | "free";
-      readonly ownerToken: string;
-      readonly ownerPid: number;
-      readonly ownerHost: string;
-      readonly ownerProcessIdentity: string;
-      readonly heartbeatAt: string;
-      readonly payload: Uint8Array;
-    }
   | {
       readonly _tag: "shared-heartbeat";
       readonly key: string;
@@ -85,6 +76,7 @@ export type CaseCoordinationCommand =
       readonly _tag: "case-release";
       readonly caseId: string;
       readonly owner: import("./coordination-repository.ts").FencedOwner;
+      readonly unacknowledgedAcquiredAt?: string;
       readonly deadlineEpochMs: number;
     }
   | {

@@ -1,0 +1,48 @@
+---
+title: "运行结果发布与中断恢复"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 运行
+    lg1: 恢复
+    lg2: 已完成
+    lg3: 已中断
+    lg4: 待恢复
+    lg5: 已删除
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 teal
+  class lg3 orange
+  class lg4 yellow
+  class lg5 tan
+  s0: 运行中#65292;结果待发布
+  s1: 原运行已结束#65292;等待恢复
+  s2: 运行中#65292;一个结果可读
+  s3: 正在恢复
+  s4: 运行中#65292;全部结果可读
+  s5: 运行已中断#65292;会话已收口
+  s6: 运行已删除
+  s7: 运行已完成#65292;会话待收口
+  s8: 运行已完成#65292;会话已收口
+  [*] --> s0
+  s0 --> s1: 原运行进程退出
+  s0 --> s2: 发布一个结果
+  s1 --> s3: 确认原运行已结束#65292;开始恢复
+  s2 --> s1: 原运行进程退出
+  s2 --> s4: 发布一个结果
+  s3 --> s5: 保留结果并记录缺失位置
+  s4 --> s1: 原运行进程退出
+  s5 --> s6: 删除终态运行
+  s4 --> s7: 提交运行终态
+  s7 --> s8: 正常收口会话 or 原进程退出后#65292;恢复会话
+  s8 --> s6: 删除终态运行
+  class s0 blue
+  class s1 yellow
+  class s2 blue
+  class s3 purple
+  class s4 blue
+  class s5 orange
+  class s6 tan
+  class s7 teal
+  class s8 teal

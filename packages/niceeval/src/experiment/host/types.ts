@@ -332,6 +332,11 @@ export type ExperimentHostDrySlot =
 
 /** Describes current target reuse and gaps with pinned readbacks; it is a preview of applicability rather than a new Run result. */
 export interface ExperimentHostDryPlan {
+  readonly groups: readonly {
+    readonly experimentId: string;
+    readonly evalGroupId: string;
+    readonly state: readonly import("../../state/protocol.ts").StateExecutionBinding[];
+  }[];
   readonly policy: ExecutionPolicyIdentity;
   readonly slots: readonly ExperimentHostDrySlot[];
   readonly readbacks: readonly CurrentReuseReadbackSnapshot[];
@@ -366,6 +371,7 @@ export interface ExperimentHostInvocationPlanRequest extends ExperimentHostSelec
 /** Lossless Experiment presentation owned by the calling Host surface. */
 export interface ExperimentHostInvocationFeedback {
   readonly coordinator: FeedbackCoordinator;
+  readonly observeState?: ((event: import("../../state/protocol.ts").StateEvent) => void) | undefined;
 }
 
 /** Executes an already prepared Host plan with optional cancellation and feedback; do not reconstruct the opaque plan from display output. */

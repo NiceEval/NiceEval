@@ -1,4 +1,5 @@
 import { RUN_ABSENCE_REASONS, type RunAbsenceReason } from "../protocol.ts";
+import type { AttemptState, AttemptStateResult, RunSandboxState } from "../../state/protocol.ts";
 
 export { RUN_ABSENCE_REASONS, type RunAbsenceReason };
 
@@ -47,6 +48,7 @@ export interface PublishOriginAttemptInput {
   readonly attemptLocator: string;
   readonly closureBytes: Uint8Array;
   readonly closureDigest: string;
+  readonly attemptState?: AttemptState | undefined;
   readonly deadlineEpochMs: number;
 }
 
@@ -98,6 +100,7 @@ interface RecoverRunResourceBase {
 export type RecoverRunResourceInput = RecoverRunResourceBase &
   (
     | { readonly mode: "active"; readonly evidence: OwnerTerminationEvidence }
+    | { readonly mode: "resume"; readonly actorProof: string }
     | { readonly mode: "terminal"; readonly expectedState: RunTerminalState }
   );
 
@@ -126,6 +129,7 @@ export interface DeleteRunReceipt extends RunMutationReceipt {
 }
 
 export interface PublishedAttempt {
+  readonly sandboxState: AttemptStateResult;
   readonly attemptId: string;
   readonly attemptLocator: string;
   readonly originRunId: string;
@@ -154,6 +158,7 @@ export type RunSlotPublication =
     };
 
 interface ReadableRunResourceBase {
+  readonly sandboxState: RunSandboxState;
   readonly runId: string;
   readonly invocationId: string;
   readonly experimentId: string;

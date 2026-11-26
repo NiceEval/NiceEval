@@ -114,6 +114,7 @@ export type ExplicitAdoptionFailureCode =
   | "adoption-source-run-not-found"
   | "adoption-source-run-mismatch"
   | "accept-run-not-closed"
+  | "state-adoption-unsupported"
   | "run-not-found"
   | "adoption-provenance-invalid"
   | "adoption-evaluation-plan-invalid";
@@ -184,6 +185,7 @@ export interface ResolvedAdoptionAttempt {
 }
 
 export interface CurrentAdoptionSlot {
+  readonly stateful?: boolean;
   readonly identityManifest: IdentityManifestEntry | undefined;
   readonly evaluationKind: "pass" | "score";
   readonly renameFingerprint: (experimentId: string) => string | undefined;
@@ -369,6 +371,7 @@ function runForExperiment(
     sandboxReuse: experiment.sandboxReuse,
     sandboxLabels: experiment.sandboxLabels,
     sharedState: experiment.sharedState,
+    state: experiment.state,
     judge: experiment.judge,
     ...resolveRunTimeout(undefined, experiment.timeoutMs),
     budget: experiment.budget,
@@ -637,6 +640,7 @@ export function prepareCurrentAdoptionTarget(input: {
         }
         seenSlots.add(identity.slotId);
         const targetSlot = {
+          stateful: projectPlan.stateByPair.has(planned.pair.key),
           evaluationKind: planned.pair.evalDef.evaluationKind,
           identityManifest: planned.identityManifest,
           renameFingerprint: planned.renameFingerprint,
@@ -757,6 +761,15 @@ export function resolveAdoptionAttempt(
     );
     if (originSlot === undefined) {
       return yield* Effect.fail(sourceCoreInvalid(`Source locator "${sourceLocator.text}" has no origin Member.`));
+    }
+    const manifest = yield* reader.read(originRun.value.owner, NiceEvalRecordAttachments.identityManifests);
+    if (
+      manifest.state === "available" &&
+      manifest.value.entries.some((entry) => entry.evalId === originSlot.evalId && entry.config.state !== undefined)
+    ) {
+      return yield* Effect.fail(
+        adoptionError("state-adoption-unsupported", `Source locator "${sourceLocator.text}" used Sandbox State.`),
+      );
     }
     const matchingMembers = originRun.value.members.filter(
       (member) =>
@@ -977,6 +990,14 @@ export function prepareExplicitAdoptionMember(input: {
         adoptionError(
           code,
           `Current target ${input.target.experimentId}/${input.evalId} does not contain ordinal ${String(input.attempt)}.`,
+        ),
+      );
+    }
+    if (target.stateful === true) {
+      return yield* Effect.fail(
+        adoptionError(
+          "state-adoption-unsupported",
+          `Target ${target.experimentId}/${target.evalId} requires Sandbox State.`,
         ),
       );
     }
@@ -1372,6 +1393,15 @@ export function prepareWholeRunAdoptionMembers(input: {
   readonly operatorReason: string;
 }): Effect.Effect<RenameAdoptionPreflight, ExplicitAdoptionReadError> {
   return Effect.gen(function* () {
+    const stateful = input.target.slots.find((slot) => slot.stateful === true);
+    if (stateful !== undefined) {
+      return yield* Effect.fail(
+        adoptionError(
+          "state-adoption-unsupported",
+          `Target ${stateful.experimentId}/${stateful.evalId} requires Sandbox State.`,
+        ),
+      );
+    }
     const selected = yield* input.reader.selectRuns({ runIds: [input.sourceRun.runId], includePublishedActive: true });
     const ref = selected.runRefs[0];
     if (ref === undefined || selected.runRefs.length !== 1)

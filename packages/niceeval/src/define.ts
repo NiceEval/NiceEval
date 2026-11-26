@@ -58,6 +58,7 @@ import {
   type InternalSandboxAgentDefinition,
 } from "./agents/agent-effects.ts";
 import { isPluginInstance, assertPluginOwner, type PluginInstance, type PluginOwner } from "./plugin/contracts.ts";
+import { normalizeStateBindings } from "./state/definition.ts";
 
 /** Recognize only the retired flat configuration, without evaluating getters. */
 function normalizeDefinitionJudge(value: unknown, label: string) {
@@ -472,6 +473,7 @@ export function defineExperiment(
     before: def.before,
     after: def.after,
     plugins: normalizePlugins(def.plugins ?? [], "defineExperiment plugins", "experiment"),
+    state: normalizeStateBindings(def.state),
   });
 }
 
@@ -505,10 +507,11 @@ function normalizeSharedState(value: unknown): SharedStateConfig | undefined {
     !Object.hasOwn(value, "key") ||
     Object.keys(value).length !== 1 ||
     typeof candidate.key !== "string" ||
-    !SharedStateKeyPattern.test(candidate.key)
+    !SharedStateKeyPattern.test(candidate.key) ||
+    candidate.key.startsWith("state/")
   ) {
     throw new TypeError(
-      `experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}.`,
+      `experiment.sharedState must be exactly { key }, where key is a stable, non-secret string matching [a-z0-9][a-z0-9._/-]{0,127}. The state/ prefix is reserved.`,
     );
   }
   return Object.freeze({ key: candidate.key });

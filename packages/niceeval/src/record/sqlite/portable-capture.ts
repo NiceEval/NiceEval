@@ -6,6 +6,7 @@ import type { SQLOutputValue } from "node:sqlite";
 import { sqliteError } from "./errors.ts";
 import type { RecordDatabase } from "./database.ts";
 import { verifyAllSealedRuns } from "./storage.ts";
+import { validatePortableState } from "./state-repository.ts";
 
 const CAPTURE_CHUNK_BYTES = 256 * 1024;
 const SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
@@ -215,7 +216,8 @@ export function validatePortableRecordDatabase(connection: RecordDatabase, deadl
   const registryWork = connection.db
     .prepare(`SELECT
     (SELECT count(*) FROM ne19_teardown_obligations)+
-    (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`)
+    (SELECT count(*) FROM state_lease_set WHERE phase!='free')+
+      (SELECT count(*) FROM ne19_shared_state_generations s WHERE state_kind!='free' AND generation=(SELECT max(generation) FROM ne19_shared_state_generations WHERE state_key=s.state_key)) AS count`)
     .get() as Record<string, SQLOutputValue>;
   const coordination = connection.db
     .prepare("SELECT writer_ticket_id,barrier_id FROM ne19_coordination_state WHERE singleton=1")
@@ -238,5 +240,6 @@ export function validatePortableRecordDatabase(connection: RecordDatabase, deadl
   ) {
     fail("Private generation does not prove a portable idle ProjectDatabase");
   }
+  validatePortableState(connection, integer(clock.revision, "publication_revision"), deadlineEpochMs);
   return verifyAllSealedRuns(connection, true, deadlineEpochMs);
 }

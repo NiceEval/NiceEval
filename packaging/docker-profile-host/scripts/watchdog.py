@@ -78,9 +78,9 @@ REQUIRED_ASSETS = {
     "docker:29-dind@sha256:e8faad5a8dc5279dff929afc5449f2791736912fff9f99351d742db2fad01b4c",
     "moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8",
 }
-BEFORE_CACHE_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
+BEFORE_CACHE_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v2"
 BEFORE_CACHE_REQUIRED_STATE = "dockerData"
-BEFORE_CACHE_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
+BEFORE_CACHE_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v2"
 BEFORE_CACHE_COPY_PROTOCOL = "raw-image/v1"
 BEFORE_CACHE_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
 BEFORE_CACHE_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
@@ -92,8 +92,8 @@ BEFORE_CACHE_FILESYSTEM_FEATURES = [
     "independent-image",
 ]
 BEFORE_CACHE_SEED_POLICY = "immutable-unmounted/v1"
-BEFORE_CACHE_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
-BEFORE_CACHE_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
+BEFORE_CACHE_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v5"
+BEFORE_CACHE_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v4"
 BEFORE_CACHE_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
 BEFORE_CACHE_WIRE_FIELDS = (
     "protocol", "requiredState", "beforeCacheKey", "declarationDigest",
@@ -310,16 +310,16 @@ class Admission:
         if not self.asset_facts or not all(item.get("present") is True for item in self.asset_facts):
             self.state["admissionOpen"] = False
             self.state["degraded"].append(asset_issue)
-        if self.state.get("generation") != current:
-            self.state["admissionOpen"] = False
+        generation_changed = self.state.get("generation") != current
+        if generation_changed:
             self.state["generation"] = current
             self._commit("daemon-generation-changed", {})
-            self._recover_before_cache_operations()
-            self._invalidate_stale_before_cache_artifacts()
-            self.state["admissionOpen"] = not self.state["degraded"]
-            self._commit("daemon-generation-reconciled", {})
         self._reconcile_restarted_builds()
         self._recover_before_cache_operations()
+        self._reclaim_stale_before_cache_seeds()
+        if generation_changed or (not self.state["admissionOpen"] and not self.state["degraded"]):
+            self.state["admissionOpen"] = not self.state["degraded"]
+            self._commit("daemon-generation-reconciled", {})
         # Recovered leases are not durable tombstones. Reconcile legacy
         # journals and same-generation restarts before the ready boundary so a
         # prior interrupted invocation cannot retain ledger ownership.
@@ -445,7 +445,7 @@ class Admission:
         }
         if any(capability.get(key) != value or raw.get(key) != value
                for key, value in expected.items()):
-            raise RuntimeError("descriptor and host beforeCache revisions do not match dockerData-only v1")
+            raise RuntimeError("descriptor and host beforeCache revisions do not match the dockerData snapshot protocol")
         storage = (self.host_config or {}).get("storage", {})
         pool = self.descriptor.get("backend", {}).get("filesystem", {}).get("dockerDataPool", {})
         if storage.get("backing") == "loop-ext4" \
@@ -554,12 +554,7 @@ class Admission:
             if image_limit != int(self.before_cache["filesystemSizeBytes"]):
                 raise RuntimeError(f"before-cache seed {seed_id!r} does not match the fixed filesystem size")
             if self._raw_image_mount_source(path) is not None:
-                owned_recovery = any(
-                    operation.get("kind") in ("capture", "stale-artifact")
-                    and operation.get("seedId") == seed_id
-                    for operation in self.state["beforeCache"].get("operations", {}).values()
-                )
-                if not owned_recovery:
+                if not self._before_cache_seed_mount_owned(seed_id, seeds.get(seed_id, {})):
                     raise RuntimeError(f"before-cache seed {seed_id!r} must remain unmounted")
             seed_options = {str(item) for item in raw.get("mountOptions", [])}
             if not {"ro", "noload"}.issubset(seed_options):
@@ -581,6 +576,12 @@ class Admission:
             seeds.setdefault(seed_id, {**raw, "seedId": seed_id, "limitBytes": limit, "state": "free"})
         if set(seeds) != installed_ids or not seeds or total != int(self.before_cache["seedLimitBytes"]):
             raise RuntimeError("before-cache fixed seed filesystems do not equal seedLimitBytes")
+
+    def _before_cache_seed_mount_owned(self, seed_id: str, seed: dict[str, Any]) -> bool:
+        return seed.get("state") == "reclaiming" or any(
+            operation.get("kind") == "capture" and operation.get("seedId") == seed_id
+            for operation in self.state["beforeCache"]["operations"].values()
+        )
 
     def _attest_independent_raw_images(self) -> None:
         assert self.before_cache is not None
@@ -608,7 +609,8 @@ class Admission:
             options = set(record.get("mountOptions", []))
             if is_seed:
                 if not {"ro", "noload"}.issubset(options) \
-                        or self._raw_image_mount_source(mountpoint) is not None:
+                        or (self._raw_image_mount_source(mountpoint) is not None
+                            and not self._before_cache_seed_mount_owned(record["seedId"], record)):
                     raise RuntimeError("published seed policy requires immutable unmounted raw images")
             elif "rw" not in options:
                 raise RuntimeError("Docker data slots must have an explicit writable mount policy")
@@ -635,20 +637,49 @@ class Admission:
             timeout=30,
         )
 
+    def _docker_socket_incarnation(self) -> tuple[int, int]:
+        sock = os.stat(self.docker_socket)
+        return sock.st_ino, sock.st_ctime_ns
+
     def _generation(self) -> str:
+        socket_incarnation = self._docker_socket_incarnation()
         try:
             info = json.loads(self._docker("info", "--format", "{{json .}}", check=True).stdout)
             daemon_id = str(info.get("ID", "unknown"))
         except Exception as error:
             raise RuntimeError(f"Docker daemon identity is unavailable: {error}") from error
-        sock = os.stat(self.docker_socket)
+        if self._docker_socket_incarnation() != socket_incarnation:
+            raise RuntimeError("Docker daemon socket changed during generation verification")
+        self._docker_socket_epoch = socket_incarnation
         asset_identity = canonical_digest(self.asset_facts if hasattr(self, "asset_facts") else [])
         fixed_descriptor = self.descriptor_digest \
             if (self.host_config or {}).get("storage", {}).get("backing") == "fixed-image-ext4" \
             else ""
         return hashlib.sha256(
-            f"{daemon_id}:{sock.st_ino}:{sock.st_ctime_ns}:{asset_identity}:{fixed_descriptor}".encode()
+            f"{daemon_id}:{socket_incarnation[0]}:{socket_incarnation[1]}:{asset_identity}:{fixed_descriptor}".encode()
         ).hexdigest()[:32]
+
+    def _refresh_before_cache_daemon_generation(self) -> bool:
+        if self.before_cache is None:
+            return True
+        try:
+            with self.lock:
+                previous_epoch = self._docker_socket_epoch
+                if self._docker_socket_incarnation() == previous_epoch:
+                    return True
+                with self._transition():
+                    try:
+                        current = self._generation()
+                        if current != self.state["generation"]:
+                            self.state["generation"] = current
+                            self._commit("daemon-generation-changed", {})
+                    except (OSError, RuntimeError):
+                        self._docker_socket_epoch = previous_epoch
+                        return False
+                    self._reclaim_stale_before_cache_seeds()
+                    return True
+        except (OSError, RuntimeError):
+            return False
 
     def _prepare_generation_change(self, current: str) -> None:
         if self.state.get("generation") == current:
@@ -664,6 +695,23 @@ class Admission:
             return
         leases = self.state.get("leases", {})
         before_cache = self.state.get("beforeCache", {})
+        if self.before_cache is not None and any(
+            artifact.get("protocol") != BEFORE_CACHE_PROTOCOL or not artifact.get("replacementScope")
+            for artifact in before_cache.get("artifacts", {}).values()
+        ):
+            # A snapshot protocol upgrade can reuse this same physical pool.
+            # Keep its journaled references so the old artifacts can retire online.
+            registry = json.loads(self.before_cache["seedRegistryPath"].read_text(encoding="utf-8"))
+            installed = {item["seedId"]: item for item in registry.get("seeds", [])}
+            prior = before_cache.get("seeds", {})
+            if prior and set(prior) == set(installed) and all(
+                all(registered.get(field) == installed[seed_id].get(field) for field in (
+                    "path", "imagePath", "filesystemIdentity",
+                ))
+                for seed_id, registered in prior.items()
+            ):
+                self.state["fixedDescriptorDigest"] = fixed_descriptor
+                return
         recovered_only = isinstance(leases, dict) and all(
             isinstance(lease, dict) and lease.get("state") == "recovered"
             for lease in leases.values()
@@ -741,7 +789,12 @@ class Admission:
         fd = os.open(self.journal, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
         offset = os.lseek(fd, 0, os.SEEK_END)
         try:
-            os.write(fd, encoded.encode())
+            remaining = memoryview(encoded.encode())
+            while remaining:
+                written = os.write(fd, remaining)
+                if written == 0:
+                    raise OSError("watchdog journal append made no progress")
+                remaining = remaining[written:]
             os.fsync(fd)
             # Publish a detached snapshot.  Keep the current draft object so
             # local references held by a multi-stage transition remain valid;
@@ -1060,9 +1113,12 @@ class Admission:
         its unpublished target writable, scrubs it, and leaves it unmounted
         before the seed can return to the free pool.
         """
-        mountpoint, _, _ = self._raw_image_record(seed)
-        if self._raw_image_mount_source(mountpoint) is not None:
-            if not recover_mounted:
+        mountpoint, image, _ = self._raw_image_record(seed)
+        source = self._raw_image_mount_source(mountpoint)
+        if source is not None:
+            loop_devices = self._run_host("losetup", "-j", str(image), check=False).stdout if recover_mounted else ""
+            attested = any(line.partition(":")[0] == source for line in loop_devices.splitlines())
+            if not attested or self._slot_references(seed):
                 raise RuntimeError("before-cache seed unexpectedly remained mounted before scrub")
             self._run_host("umount", "--", str(mountpoint))
         if self._slot_references(seed):
@@ -1341,9 +1397,9 @@ class Admission:
 
     @staticmethod
     def _clear_before_cache_seed_state(seed: dict[str, Any]) -> None:
-        for field in (*BEFORE_CACHE_WIRE_FIELDS, "operationId", "artifactId", "sizeBytes",
+        for field in (*BEFORE_CACHE_WIRE_FIELDS, "replacementScope", "operationId", "artifactId", "sizeBytes",
                       "sourceSlotGeneration", "publicationOperationId", "publishedAt",
-                      "preparedAt", "quarantineReason", "corruptReason"):
+                      "preparedAt", "quarantineReason", "corruptReason", "reclaimError"):
             seed.pop(field, None)
 
     def _before_cache_request(
@@ -1364,7 +1420,7 @@ class Admission:
         allowed = {"kind", "invocationId", "leaseToken", "reservationId", "daemonGeneration",
                    "slotGeneration", "protocol", "requiredState", "descriptorDigest",
                    "operationId",
-                   "beforeCacheKey", "declarationDigest", "providerIdentity", "baseIdentity",
+                   "beforeCacheKey", "replacementScope", "declarationDigest", "providerIdentity", "baseIdentity",
                    "executionDomain", "helperRevision", "copyProtocol", "copyRevision", "quiesceRevision",
                    "publicationRevision", "recoveryRevision", "manifestSchema",
                    "filesystemSizeBytes", "filesystemFeatures"}
@@ -1398,6 +1454,8 @@ class Admission:
         if request.get("daemonGeneration") != self.state["generation"]:
             raise ProtocolError("attestation-changed", "daemon generation changed")
         lease = self._lease(request)
+        if lease.get("daemonGeneration") != self.state["generation"]:
+            raise ProtocolError("attestation-changed", "before-cache lease daemon generation changed")
         reservation = self.state["reservations"].get(str(request.get("reservationId", "")))
         if reservation is None or reservation.get("invocationId") != lease["invocationId"] \
                 or reservation.get("kind") != "container":
@@ -1420,10 +1478,20 @@ class Admission:
                 "beforeCacheKey must be bound to the complete setup manifest digest",
             )
         base_identity = self._validate_sha256(request.get("baseIdentity"), "baseIdentity")
+        replacement_scope = request.get("replacementScope")
+        if not isinstance(replacement_scope, str) or re.fullmatch(r"[a-f0-9]{64}", replacement_scope) is None:
+            raise ProtocolError("before-cache-scope-invalid", "replacementScope must be a SHA-256 digest")
+        hold = lease.get("beforeCacheHolds", {}).get(operation_id)
+        if hold is not None and (
+            (hold.get("beforeCacheKey"), hold.get("replacementScope")) != (key, replacement_scope)
+            or (capture and hold.get("captureReservationId") != reservation["reservationId"])
+        ):
+            raise ProtocolError("before-cache-operation-active", "before-cache operationId is bound to a different request")
         wire = {
             **expected_wire,
             "requiredState": BEFORE_CACHE_REQUIRED_STATE,
             "beforeCacheKey": key,
+            "replacementScope": replacement_scope,
             "declarationDigest": manifest_digest,
             "baseIdentity": base_identity,
             "daemonGeneration": self.state["generation"],
@@ -1481,9 +1549,8 @@ class Admission:
         if self._slot_references(seed):
             raise RuntimeError("before-cache seed has an external mount or process reference")
 
-    def _load_artifact(self, artifact: dict[str, Any]) -> dict[str, Any]:
-        seed = self.state["beforeCache"]["seeds"].get(artifact.get("seedId"))
-        if seed is None or seed.get("state") != "published" \
+    def _verify_before_cache_artifact(self, artifact: dict[str, Any], seed: dict[str, Any]) -> None:
+        if seed.get("state") not in ("published", "pending-reclaim") \
                 or seed.get("beforeCacheKey") != artifact.get("beforeCacheKey"):
             raise RuntimeError("before-cache artifact has no independently published seed filesystem")
         self._verify_seed_target(seed)
@@ -1492,7 +1559,6 @@ class Admission:
         if artifact.get("artifactId") != expected_artifact_id \
                 or int(artifact.get("sizeBytes", -1)) != limit:
             raise RuntimeError("before-cache raw image artifactId or fixed size is corrupt")
-        return seed
 
     def _clear_setup_operation(self, operation_id: str, reservation_id: str, event: str,
                                detail: dict[str, Any]) -> None:
@@ -1502,12 +1568,16 @@ class Admission:
             reservation.pop("beforeCacheOperation", None)
         self._commit(event, {"operationId": operation_id, "reservationId": reservation_id,
                              **detail, "operation": operation})
+        self._reclaim_stale_before_cache_seeds()
 
-    def _fence_cancelled_captures(self, invocation_id: str, reason: str) -> list[dict[str, Any]]:
+    def _fence_cancelled_captures(self, invocation_id: str, reason: str,
+                                  reservation_id: str | None = None) -> list[dict[str, Any]]:
         prepared: list[dict[str, Any]] = []
         fenced: list[str] = []
         for operation in self.state["beforeCache"].get("operations", {}).values():
             if operation.get("kind") != "capture" or operation.get("invocationId") != invocation_id:
+                continue
+            if reservation_id is not None and operation.get("reservationId") != reservation_id:
                 continue
             operation["cancelRequested"] = True
             operation["cancelReason"] = reason
@@ -1544,22 +1614,33 @@ class Admission:
 
     def _handle_before_cache_capture(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
-            _, reservation, slot, wire = self._before_cache_request(request, capture=True)
+            lease, reservation, slot, wire = self._before_cache_request(request, capture=True)
             key = wire["beforeCacheKey"]
+            operation_id = str(request["operationId"])
+            hold = lease.get("beforeCacheHolds", {}).get(operation_id, {})
+            if hold.get("captureReservationId") == reservation["reservationId"]:
+                replay = self._before_cache_artifact_for_lease(wire, lease, operation_id)
+                if replay is not None and replay.get("state") in ("published", "pending-reclaim"):
+                    return self._before_cache_response(wire, replay, "already-published")
             existing = self.state["beforeCache"]["artifacts"].get(key)
             if existing is not None:
-                if not self._artifact_matches_wire(existing, wire):
+                if existing.get("state") != "published" or not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
                         "before-cache-artifact-mismatch",
                         "published artifact identity does not match this dockerData request",
                     )
+                self._hold_before_cache_artifact(lease, existing, wire, operation_id, reservation["reservationId"])
+                self._register_before_cache_scope(existing, wire["replacementScope"])
+                self._commit("before-cache-existing-artifact-held", {"beforeCacheKey": key,
+                                                                    "replacementScope": wire["replacementScope"]})
+                self._reclaim_stale_before_cache_seeds()
                 return self._before_cache_response(wire, existing, "already-published")
-            operation_id = str(request["operationId"])
             active_operation_id = reservation.get("beforeCacheOperation")
             if active_operation_id == operation_id:
                 active_operation = self.state["beforeCache"]["operations"].get(operation_id)
                 candidate = active_operation.get("candidateArtifact") if isinstance(active_operation, dict) else None
                 if active_operation is not None and active_operation.get("state") == "prepared" \
+                        and active_operation.get("wire") == wire \
                         and isinstance(candidate, dict) and self._artifact_matches_wire(candidate, wire):
                     return self._before_cache_response(wire, candidate, "prepared")
             if active_operation_id:
@@ -1678,14 +1759,17 @@ class Admission:
             key = wire["beforeCacheKey"]
             operation_id = str(request["operationId"])
             existing = self.state["beforeCache"]["artifacts"].get(key)
+            hold = lease.get("beforeCacheHolds", {}).get(operation_id, {})
+            replay = self._before_cache_artifact_for_lease(wire, lease, operation_id)
+            if replay is not None and hold.get("captureReservationId") == reservation["reservationId"] \
+                    and replay.get("state") in ("published", "pending-reclaim"):
+                return self._before_cache_response(wire, replay, "already-published")
             if existing is not None:
-                if existing.get("publicationOperationId") != operation_id \
-                        or not self._artifact_matches_wire(existing, wire):
+                if existing.get("state") != "published" or not self._artifact_matches_wire(existing, wire):
                     raise ProtocolError(
                         "before-cache-publication-conflict",
                         "published artifact does not belong to this capture commit",
                     )
-                return self._before_cache_response(wire, existing, "already-published")
             operation = self.state["beforeCache"]["operations"].get(operation_id)
             candidate = operation.get("candidateArtifact") if isinstance(operation, dict) else None
             if operation is None or operation.get("kind") != "capture" \
@@ -1697,7 +1781,7 @@ class Admission:
                     or reservation.get("beforeCacheOperation") != operation_id \
                     or not isinstance(candidate, dict):
                 raise ProtocolError(
-                    "before-cache-publication-not-prepared",
+                    "before-cache-publication-conflict" if existing else "before-cache-publication-not-prepared",
                     "capture commit has no matching uncancelled prepared copy",
                 )
             seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
@@ -1705,6 +1789,15 @@ class Admission:
                     or seed.get("operationId") != operation_id \
                     or seed.get("artifactId") != candidate.get("artifactId"):
                 raise ProtocolError("before-cache-publication-corrupt", "prepared seed ownership is invalid")
+            if existing is not None:
+                # The same-key winner is immutable. Keep our prepared operation
+                # for identical retries and its reservation's fenced scrub.
+                self._hold_before_cache_artifact(lease, existing, wire, operation_id, reservation["reservationId"])
+                self._register_before_cache_scope(existing, wire["replacementScope"])
+                self._commit("before-cache-existing-artifact-held", {"beforeCacheKey": key,
+                                                                    "replacementScope": wire["replacementScope"]})
+                self._reclaim_stale_before_cache_seeds()
+                return self._before_cache_response(wire, existing, "already-published")
             self._verify_seed_target(seed)
             _, seed_image, seed_size = self._raw_image_record(seed)
             if self._raw_image_digest(seed_image) != candidate.get("artifactId") \
@@ -1720,6 +1813,8 @@ class Admission:
                          "publicationOperationId": operation_id})
             seed.pop("operationId", None)
             self.state["beforeCache"]["artifacts"][key] = published
+            self._hold_before_cache_artifact(lease, published, wire, operation_id, reservation["reservationId"])
+            self._register_before_cache_scope(published, wire["replacementScope"])
             self._clear_setup_operation(
                 operation_id,
                 reservation["reservationId"],
@@ -1731,65 +1826,39 @@ class Admission:
 
     def _handle_before_cache_restore(self, request: dict[str, Any]) -> dict[str, Any]:
         with self._transition():
-            _, reservation, slot, wire = self._before_cache_request(request, capture=False)
+            lease, reservation, slot, wire = self._before_cache_request(request, capture=False)
             key = wire["beforeCacheKey"]
+            scope = wire["replacementScope"]
+            request_operation_id = str(request["operationId"])
             restored = reservation.get("restoredBeforeCache")
+            artifact = self._before_cache_artifact_for_lease(wire, lease, request_operation_id)
             if isinstance(restored, dict):
-                if restored.get("beforeCacheKey") != key:
+                if restored.get("beforeCacheKey") != key or restored.get("replacementScope") != scope:
                     raise ProtocolError("before-cache-restore-conflict", "reservation already restored another artifact")
-                artifact = self.state["beforeCache"]["artifacts"].get(key)
                 if artifact is None or artifact.get("artifactId") != restored.get("artifactId") \
                         or not self._artifact_matches_wire(artifact, wire):
                     raise ProtocolError("before-cache-artifact-corrupt", "restored artifact is no longer journaled")
                 return self._before_cache_response(wire, artifact, "already-restored")
-            artifact = self.state["beforeCache"]["artifacts"].get(key)
-            if artifact is None or artifact.get("state") != "published":
+            if artifact is None or artifact.get("state") not in ("published", "pending-reclaim"):
                 raise ProtocolError("before-cache-miss", "no published before-cache artifact matches the key")
             if not self._artifact_matches_wire(artifact, wire):
-                raise ProtocolError(
-                    "before-cache-artifact-mismatch",
-                    "published artifact identity does not match this dockerData request",
-                )
+                raise ProtocolError("before-cache-artifact-mismatch", "published artifact identity does not match this dockerData request")
             if reservation.get("beforeCacheOperation"):
                 raise ProtocolError("before-cache-operation-active", "reservation already has a before-cache operation")
-            reservation_snapshot, slot_snapshot = copy.deepcopy(reservation), copy.deepcopy(slot)
-            artifact_snapshot = copy.deepcopy(artifact)
-
-        try:
-            self._load_artifact(artifact_snapshot)
-        except Exception as error:
-            with self._transition():
-                current = self.state["beforeCache"]["artifacts"].get(key)
-                if current is not None:
-                    current["state"] = "corrupt"
-                    current["corruptReason"] = str(error)[-2000:]
-                    seed = self.state["beforeCache"]["seeds"].get(current.get("seedId"))
-                    if seed is not None:
-                        seed["state"] = "corrupt"
-                        seed["corruptReason"] = str(error)[-2000:]
-                    self._commit("before-cache-artifact-corrupt", {"beforeCacheKey": key,
-                                                                    "artifactId": current.get("artifactId"),
-                                                                    "reason": str(error)[-2000:]})
-            raise ProtocolError("before-cache-artifact-corrupt", str(error)[-2000:]) from error
-
-        size = int(artifact_snapshot["sizeBytes"])
-        operation_id = secrets.token_hex(16)
-        with self._transition():
-            _, reservation, slot, current_wire = self._before_cache_request(request, capture=False)
-            if current_wire != wire:
-                raise ProtocolError("attestation-changed", "dockerData snapshot wire changed before restore")
-            seed = self.state["beforeCache"]["seeds"].get(artifact_snapshot["seedId"])
-            if seed is None or seed.get("state") != "published":
+            seed = self.state["beforeCache"]["seeds"].get(artifact["seedId"])
+            if seed is None or seed.get("state") not in ("published", "pending-reclaim"):
                 raise ProtocolError("before-cache-artifact-corrupt", "artifact seed is no longer published")
             self._check_before_cache_capacity(int(slot["limitBytes"]), capture=False)
+            size = int(artifact["sizeBytes"])
+            operation_id = secrets.token_hex(16)
+            observed_head = self.state["beforeCache"].get("replacementHeads", {}).get(scope)
             operation = {
                 "operationId": operation_id, "kind": "restore", "state": "restoring",
                 "invocationId": reservation["invocationId"], "reservationId": reservation["reservationId"],
                 "slotId": slot["slotId"], "slotGeneration": slot["generation"],
-                "beforeCacheKey": key, "seedId": artifact_snapshot["seedId"],
+                "beforeCacheKey": key, "seedId": artifact["seedId"], "artifactId": artifact["artifactId"],
                 "chargedBytes": int(slot["limitBytes"]), "startedAt": now(),
-                "temporaryClone": {"targetId": slot["slotId"],
-                                   "bytes": int(slot["limitBytes"])},
+                "temporaryClone": {"targetId": slot["slotId"], "bytes": int(slot["limitBytes"])},
                 "wire": copy.deepcopy(wire),
             }
             self.state["beforeCache"]["operations"][operation_id] = operation
@@ -1799,12 +1868,32 @@ class Admission:
             self._commit("before-cache-restore-intent", {"operationId": operation_id,
                                                           "reservationId": reservation["reservationId"],
                                                           "beforeCacheKey": key,
-                                                          "sourceSeedId": artifact_snapshot["seedId"],
-                                                          "sourceArtifactId": artifact_snapshot["artifactId"],
+                                                          "sourceSeedId": artifact["seedId"],
+                                                          "sourceArtifactId": artifact["artifactId"],
                                                           "targetSlotId": slot["slotId"]})
-            reservation_snapshot, slot_snapshot, seed_snapshot = (
-                copy.deepcopy(reservation), copy.deepcopy(slot), copy.deepcopy(seed)
+            reservation_snapshot, slot_snapshot, seed_snapshot, artifact_snapshot = (
+                copy.deepcopy(reservation), copy.deepcopy(slot), copy.deepcopy(seed), copy.deepcopy(artifact)
             )
+
+        try:
+            self._verify_before_cache_artifact(artifact_snapshot, seed_snapshot)
+        except Exception as error:
+            with self._transition():
+                current = self.state["beforeCache"]["artifacts"].get(key)
+                seed = self.state["beforeCache"]["seeds"].get(artifact_snapshot["seedId"])
+                reason = str(error)[-2000:]
+                if current is not None and current.get("artifactId") == artifact_snapshot["artifactId"] \
+                        and current.get("seedId") == seed_snapshot["seedId"] and seed is not None:
+                    current.update(state="corrupt", corruptReason=reason)
+                    seed.update(state="corrupt", corruptReason=reason)
+                reservation = self.state["reservations"][reservation_snapshot["reservationId"]]
+                slot = self.state["slots"][slot_snapshot["slotId"]]
+                reservation["state"] = "granted"
+                slot["state"] = "granted"
+                self._clear_setup_operation(operation_id, reservation["reservationId"],
+                                            "before-cache-artifact-corrupt", {"beforeCacheKey": key, "reason": reason})
+            raise ProtocolError("before-cache-artifact-corrupt", str(error)[-2000:]) from error
+
         try:
             self._verify_restore_target(slot_snapshot)
             restored_slot_digest = self._copy_docker_data_image(seed_snapshot, slot_snapshot, operation_id)
@@ -1826,9 +1915,16 @@ class Admission:
                 slot["state"] = "granted"
                 reservation["restoredBeforeCache"] = {
                     "beforeCacheKey": key, "artifactId": artifact_snapshot["artifactId"],
+                    "seedId": seed_snapshot["seedId"], "replacementScope": scope,
                     "declarationDigest": wire["declarationDigest"],
                     "slotGeneration": slot["generation"],
                 }
+                cache = self.state["beforeCache"]
+                current = cache["artifacts"].get(key)
+                if current is not None and current.get("seedId") == seed_snapshot["seedId"] \
+                        and cache.get("replacementHeads", {}).get(scope) == observed_head:
+                    self._register_before_cache_scope(current, scope)
+                self._hold_before_cache_artifact(lease, artifact_snapshot, wire, request_operation_id)
                 self._clear_setup_operation(operation_id, reservation["reservationId"],
                                             "before-cache-restored",
                                             {"beforeCacheKey": key,
@@ -1845,6 +1941,7 @@ class Admission:
                     reservation.pop("beforeCacheOperation", None)
                     self.state["beforeCache"]["operations"].pop(operation_id, None)
                     self._quarantine(reservation, f"before-cache restore failed for {key}: {error}")
+                    self._reclaim_stale_before_cache_seeds()
             if isinstance(error, ProtocolError):
                 raise
             raise ProtocolError("before-cache-restore-failed", str(error)[-2000:]) from error
@@ -1862,6 +1959,15 @@ class Admission:
                     slot = self.state["slots"].get(operation.get("slotId"))
                     if seed is None:
                         raise RuntimeError("capturing seed filesystem disappeared from its registry")
+                    cache = self.state["beforeCache"]
+                    published = next((artifact for artifact in cache["artifacts"].values()
+                                      if artifact.get("seedId") == seed["seedId"]),
+                                     cache.get("retiredArtifacts", {}).get(seed["seedId"]))
+                    if published is not None:
+                        reason = f"before-cache capture {operation_id} contradicts published seed ownership"
+                        self._quarantine_cache_seed(published, seed, reason)
+                        self._commit("before-cache-seed-quarantined", {"seedId": seed["seedId"], "reason": reason})
+                        continue
                     self._remove_temporary_clone(seed, operation_id)
                     if slot is not None:
                         self._ensure_raw_image_mounted(slot)
@@ -1890,16 +1996,6 @@ class Admission:
                             reservation,
                             f"before-cache restore interrupted by helper restart for {operation.get('beforeCacheKey')}",
                         )
-                elif operation.get("kind") == "stale-artifact":
-                    key = str(operation.get("beforeCacheKey", ""))
-                    seed = self.state["beforeCache"]["seeds"].get(operation.get("seedId"))
-                    if seed is None:
-                        raise RuntimeError("stale before-cache seed disappeared from its registry")
-                    seed["state"] = "quarantined"
-                    seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
-                    raise RuntimeError(
-                        f"published seed {seed['seedId']} is immutable; explicit offline disposition is required"
-                    )
                 else:
                     raise RuntimeError("journaled before-cache operation kind is invalid")
             except Exception as error:
@@ -1910,37 +2006,183 @@ class Admission:
                 self._commit("before-cache-recovery-blocked", {"operationId": operation_id,
                                                                 "reason": str(error)[-2000:]})
 
-    def _invalidate_stale_before_cache_artifacts(self) -> None:
+    def _before_cache_artifact_for_lease(
+        self, wire: dict[str, Any], lease: dict[str, Any], operation_id: str,
+    ) -> dict[str, Any] | None:
+        cache = self.state["beforeCache"]
+        artifact = cache["artifacts"].get(wire["beforeCacheKey"])
+        hold = lease.get("beforeCacheHolds", {}).get(operation_id)
+        if hold is None:
+            return artifact
+        seed_id = hold["seedId"]
+        if artifact is None or artifact.get("seedId") != seed_id:
+            artifact = cache.get("retiredArtifacts", {}).get(seed_id)
+        if artifact is None or artifact.get("artifactId") != hold["artifactId"] \
+                or hold["replacementScope"] != wire["replacementScope"] \
+                or not self._artifact_matches_wire(artifact, wire):
+            return None
+        return artifact
+
+    def _quarantine_cache_seed(self, artifact: dict[str, Any] | None, seed: dict[str, Any] | None,
+                               reason: str) -> None:
+        if seed is not None:
+            seed.update(state="quarantined", quarantineReason=reason)
+        if artifact is not None:
+            artifact.update(state="quarantined", quarantineReason=reason)
+        self.state["admissionOpen"] = False
+        if reason not in self.state["degraded"]:
+            self.state["degraded"].append(reason)
+
+    def _retire_before_cache_artifact(self, key: str, artifact: dict[str, Any]) -> None:
+        cache = self.state["beforeCache"]
+        seed_id = artifact.get("seedId")
+        seed = cache["seeds"].get(seed_id)
+        aliases = [item for item in cache["artifacts"].values() if item.get("seedId") == seed_id]
+        legacy_quarantine = seed is not None and artifact.get("state") == "stale" \
+            and seed.get("quarantineReason") == "published seed belongs to a stale daemon generation"
+        if seed is None or seed.get("seedId") != seed_id or len(aliases) != 1 \
+                or seed_id in cache.get("retiredArtifacts", {}) \
+                or (seed.get("state") not in ("published", "corrupt") and not legacy_quarantine) \
+                or artifact.get("beforeCacheKey") != key or not artifact.get("artifactId") \
+                or not self._artifact_matches_wire(seed, artifact) \
+                or any(seed.get(field) != artifact.get(field) for field in (
+                    "artifactId", "sizeBytes", "replacementScope", "publicationOperationId",
+                )):
+            self._quarantine_cache_seed(artifact, seed, f"before-cache artifact {key} contradicts its seed registration")
+            return
+        if legacy_quarantine:
+            reason = f"published before-cache seed {seed_id} is immutable across daemon generations"
+            self.state["degraded"] = [item for item in self.state["degraded"] if item != reason]
+            seed.pop("quarantineReason", None)
+        for scope, head in list(cache.get("replacementHeads", {}).items()):
+            if head == key:
+                del cache["replacementHeads"][scope]
+        artifact["state"] = "pending-reclaim"
+        seed["state"] = "pending-reclaim"
+        cache.setdefault("retiredArtifacts", {})[seed_id] = cache["artifacts"].pop(key)
+
+    def _hold_before_cache_artifact(self, lease: dict[str, Any], artifact: dict[str, Any],
+                                    wire: dict[str, Any], operation_id: str,
+                                    capture_reservation_id: str | None = None) -> None:
+        holds = lease.setdefault("beforeCacheHolds", {})
+        hold = {
+            "seedId": artifact["seedId"], "artifactId": artifact["artifactId"],
+            "beforeCacheKey": artifact["beforeCacheKey"], "replacementScope": wire["replacementScope"],
+        }
+        capture_reservation_id = capture_reservation_id or holds.get(operation_id, {}).get("captureReservationId")
+        if capture_reservation_id is not None:
+            hold["captureReservationId"] = capture_reservation_id
+        holds[operation_id] = hold
+
+    def _register_before_cache_scope(self, artifact: dict[str, Any], scope: str) -> None:
+        cache = self.state["beforeCache"]
+        heads = cache.setdefault("replacementHeads", {})
+        key = artifact["beforeCacheKey"]
+        previous = heads.get(scope)
+        heads[scope] = key
+        if previous is not None and previous != key and previous not in heads.values():
+            old = cache["artifacts"].get(previous)
+            if old is not None:
+                self._retire_before_cache_artifact(previous, old)
+
+    def _seed_reference_status(self, seed_id: str, artifact: dict[str, Any]) -> str:
+        """Resolve durable references before allowing any physical mutation."""
+        artifact_id = artifact["artifactId"]
+        key = artifact["beforeCacheKey"]
+        referenced = False
+        for lease in self.state["leases"].values():
+            for hold in lease.get("beforeCacheHolds", {}).values():
+                if hold.get("seedId") != seed_id:
+                    continue
+                if (hold.get("artifactId"), hold.get("beforeCacheKey")) != (artifact_id, key):
+                    return "contradictory"
+                referenced = True
+        for reservation in self.state["reservations"].values():
+            restored = reservation.get("restoredBeforeCache")
+            if isinstance(restored, dict) and (
+                    restored.get("seedId") == seed_id
+                    or (restored.get("seedId") is None
+                        and (restored.get("artifactId"), restored.get("beforeCacheKey")) == (artifact_id, key))):
+                if (restored.get("artifactId"), restored.get("beforeCacheKey")) != (artifact_id, key):
+                    return "contradictory"
+                referenced = True
+        for operation in self.state["beforeCache"]["operations"].values():
+            if operation.get("seedId") == seed_id:
+                if operation.get("beforeCacheKey") != key \
+                        or operation.get("artifactId", artifact_id) != artifact_id:
+                    return "contradictory"
+                referenced = True
+        return "referenced" if referenced else "unreferenced"
+
+    def _note_seed_reclaim_retry(self, seed: dict[str, Any], error: Exception) -> None:
+        reason = str(error)[-2000:]
+        if seed.get("reclaimError") != reason:
+            seed["reclaimError"] = reason
+            self._commit("before-cache-seed-reclaim-retry", {"seedId": seed["seedId"], "reason": reason})
+
+    def _reclaim_stale_before_cache_seeds(self) -> None:
         if self.before_cache is None:
             return
-        current_generation = self.state["generation"]
-        for key, artifact in list(self.state["beforeCache"]["artifacts"].items()):
-            if artifact.get("daemonGeneration") == current_generation:
-                continue
-            seed = self.state["beforeCache"]["seeds"].get(artifact.get("seedId"))
-            if seed is None:
-                self.state["admissionOpen"] = False
-                reason = f"stale before-cache artifact {key} has no seed"
-                self.state["degraded"].append(reason)
-                self._commit("before-cache-stale-artifact-blocked", {
-                    "beforeCacheKey": key, "reason": reason,
-                })
-                continue
-            artifact["state"] = "stale"
-            artifact["staleReason"] = "daemon generation changed"
-            seed["state"] = "quarantined"
-            seed["quarantineReason"] = "published seed belongs to a stale daemon generation"
-            self.state["admissionOpen"] = False
-            reason = f"published before-cache seed {seed['seedId']} is immutable across daemon generations"
-            if reason not in self.state["degraded"]:
-                self.state["degraded"].append(reason)
-            self._commit("before-cache-stale-artifact-blocked", {
-                "beforeCacheKey": key,
-                "seedId": seed["seedId"],
-                "artifactDaemonGeneration": artifact.get("daemonGeneration"),
-                "daemonGeneration": current_generation,
-                "reason": reason,
-            })
+        with self._transition():
+            cache = self.state["beforeCache"]
+            for key, artifact in list(cache["artifacts"].items()):
+                if artifact.get("state") == "quarantined":
+                    continue
+                if artifact.get("daemonGeneration") != self.state["generation"] \
+                        or artifact.get("protocol") != BEFORE_CACHE_PROTOCOL \
+                        or not artifact.get("replacementScope"):
+                    self._retire_before_cache_artifact(key, artifact)
+                    self._commit("before-cache-seed-retired", {"beforeCacheKey": key,
+                                                               "seedId": artifact.get("seedId"),
+                                                               "state": artifact["state"]})
+            for seed_id, artifact in list(cache.get("retiredArtifacts", {}).items()):
+                if artifact.get("state") == "quarantined":
+                    continue
+                seed = cache["seeds"].get(seed_id)
+                if seed is None or seed.get("state") not in ("pending-reclaim", "reclaiming") \
+                        or any(item.get("seedId") == seed_id for item in cache["artifacts"].values()) \
+                        or not artifact.get("artifactId") or not artifact.get("beforeCacheKey") \
+                        or seed.get("artifactId") != artifact.get("artifactId") \
+                        or seed.get("beforeCacheKey") != artifact.get("beforeCacheKey") \
+                        or not self._artifact_matches_wire(seed, artifact) \
+                        or seed.get("replacementScope") != artifact.get("replacementScope"):
+                    self._quarantine_cache_seed(artifact, seed, f"before-cache retired seed {seed_id} has contradictory ownership")
+                    self._commit("before-cache-seed-quarantined", {"seedId": seed_id})
+                    continue
+                reference = self._seed_reference_status(seed_id, artifact)
+                if reference == "contradictory":
+                    self._quarantine_cache_seed(artifact, seed, f"before-cache retired seed {seed_id} has contradictory references")
+                    self._commit("before-cache-seed-quarantined", {"seedId": seed_id})
+                    continue
+                if reference == "referenced":
+                    continue
+                resume = seed["state"] == "reclaiming"
+                if not resume:
+                    try:
+                        self._verify_seed_target(seed)
+                    except Exception as error:
+                        self._note_seed_reclaim_retry(seed, error)
+                        continue
+                    seed["state"] = "reclaiming"
+                    self._commit("before-cache-seed-reclaim-intent", {"seedId": seed_id})
+                try:
+                    self._scrub_before_cache_seed(seed, recover_mounted=resume)
+                    self._verify_seed_target(seed)
+                except Exception as error:
+                    self._note_seed_reclaim_retry(seed, error)
+                    continue
+                seed["state"] = "free"
+                self._clear_before_cache_seed_state(seed)
+                del cache["retiredArtifacts"][seed_id]
+                self._commit("before-cache-seed-reclaimed", {"seedId": seed_id,
+                                                            "beforeCacheKey": artifact["beforeCacheKey"]})
+            registered = {artifact.get("seedId") for artifact in cache["artifacts"].values()}
+            registered.update(cache.get("retiredArtifacts", {}))
+            for seed_id, seed in cache["seeds"].items():
+                if seed.get("state") in ("published", "corrupt", "pending-reclaim", "reclaiming") \
+                        and seed_id not in registered:
+                    self._quarantine_cache_seed(None, seed, f"before-cache seed {seed_id} has no journaled artifact")
+                    self._commit("before-cache-seed-quarantined", {"seedId": seed_id})
 
     def _verify_and_free_slot(self, reservation: dict[str, Any]) -> bool:
         slot_id = reservation.get("slotId")
@@ -2601,6 +2843,11 @@ class Admission:
         return {"containerId": container_id, "networkId": network_id, "state": "active"}
 
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
+        kind = request.get("kind")
+        if self.before_cache is not None and hasattr(self, "_docker_socket_epoch") \
+                and (kind in ("challenge", "lease.create") or str(kind).startswith("before-cache.")) \
+                and not self._refresh_before_cache_daemon_generation():
+            raise ProtocolError("attestation-changed", "Docker daemon generation could not be verified")
         if request.get("kind") == "before-cache.capture":
             return self._handle_before_cache_capture(request)
         if request.get("kind") == "before-cache.capture.publish":
@@ -2663,7 +2910,10 @@ class Admission:
                         "capacity": self._before_cache_ledger(),
                         "artifacts": [
                             {key: value for key, value in artifact.items() if key != "seedId"}
-                            for artifact in self.state["beforeCache"]["artifacts"].values()
+                            for artifact in (
+                                *self.state["beforeCache"]["artifacts"].values(),
+                                *self.state["beforeCache"].get("retiredArtifacts", {}).values(),
+                            )
                         ],
                         "operations": list(self.state["beforeCache"]["operations"].values()),
                     }
@@ -2817,7 +3067,7 @@ class Admission:
             if kind == "reservation.release":
                 if reservation.get("beforeCacheOperation"):
                     prepared = self._fence_cancelled_captures(
-                        lease["invocationId"], "reservation release before capture publication commit",
+                        lease["invocationId"], "reservation release before capture publication commit", reservation_id,
                     )
                     self._scrub_cancelled_prepared_captures(prepared)
                     raise ProtocolError("before-cache-operation-active", "reservation release cannot race before-cache operation")
@@ -2851,6 +3101,7 @@ class Admission:
                     raise ProtocolError("slot-quarantined", "slot could not be proven verified-free")
                 del self.state["reservations"][reservation_id]
                 self._commit("reservation-released", {"reservationId": reservation_id})
+                self._reclaim_stale_before_cache_seeds()
                 self._grant_queue()
                 return {"released": True, **({"cleanupProven": True} if reservation.get("ephemeralCleanupProven") else {})}
             raise ProtocolError("request-unknown", f"unknown request kind {kind!r}")
@@ -2976,10 +3227,12 @@ class Admission:
                 if not self.state["degraded"]:
                     self.state["admissionOpen"] = True
                 self._commit("recovery-converged", {})
+            self._reclaim_stale_before_cache_seeds()
 
     def recovery_loop(self) -> None:
         while not self.stop.wait(1.0):
             try:
+                self._refresh_before_cache_daemon_generation()
                 cutoff = time.time() - self.grace
                 with self._transition():
                     for lease in self.state["leases"].values():
@@ -3055,6 +3308,7 @@ class Handler(socketserver.StreamRequestHandler):
                     "daemonGeneration": admission.state["generation"] if admission is not None else None,
                     "slotGeneration": request.get("slotGeneration"),
                     "beforeCacheKey": setup_key,
+                    "replacementScope": request.get("replacementScope"),
                     "declarationDigest": request.get("declarationDigest"),
                     "artifact": {"artifactId": artifact.get("artifactId") if artifact else None},
                     "status": {"state": "failed", "diagnostic": error.code},

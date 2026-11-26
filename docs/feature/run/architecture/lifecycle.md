@@ -90,6 +90,10 @@ exact Run recovery 只收口指定 Run，不替同一 Invocation 的其它 Run �
 恢复该 Invocation 最后一个非终态 Run 时，第二笔事务重新验证 Session 的精确 owner 已终止，再 fence 并终结 Session，保存全部 Run 引用的终态 projection。
 Session 与这个 Run 的终态共同提交；取证不足或事务失败时共同回滚，保留可重试的 Run recovery。
 
+原 Host 的 recovery 调用已经结束而 Run 仍为 recovering 时，原 Host 可以凭本进程私有的能力串行续办这次 recovery 的精确 generation。
+续办事务重新验证当前 Run 与已提交 recovery actor 的 generation，沿用首次 fence 的证据与时间。
+并发的续办、其它 Host 或其它进程都不能借此取得该 generation；原 Host 崩溃后，接替者仍须证明当前 actor 已终止。
+
 恢复事务逐一核对该 Run 全部 expected Planned attempt 的 case lock，包括已经发布或携入的位置；只有精确 owner 已终止的锁才能释放。
 仍存活或无法证明已终止的 owner 保持原锁，不因另一个 Run 的恢复被接管。
 Session 终结不释放 State 租约；租约仍由既有的显式集合 recovery 完成 after 与整组释放。
@@ -113,8 +117,13 @@ Session 终结不释放 State 租约；租约仍由既有的显式集合 recover
 ## 删除与 retention
 
 `run delete` 只处理已收口 Run。
-若其 State 租约集合仍为 active 或 recovering，以 `run-state-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
+若其租约集合仍为 active 或 recovering，以 `run-lease-recovery-required` 拒绝；先完成集合恢复，避免删除对账所需事实。它与 reference binding 串行化，事务内检查 incoming references 并发布 tombstone。
 存在依赖时零删除；用户需要先显式删除依赖 Run。
+
+目标是其 Invocation 最后一个未删除的 Run、而 Session 仍未终结时，以 `run-session-recovery-required` 拒绝，零删除。
+exact Run recovery 是终结遗留 Session 的唯一入口，删掉最后一个 Run 会让 Session 再也无法收口。
+owner 仍在运行时等它正常收口；owner 已终止时先对该 Run 执行 `run recover`，Session 终结后再删除。
+这项检查与 incoming references 在同一删除事务内完成。
 
 删除在 canonical `.niceeval/record.sqlite` 的一个事务中验证引用、删除可删 rows 并发布 tombstone。
 事务前 crash 不改变事实；事务提交后，新的 PublicationCutoff 不再读取该 Run。删除不产生另一份 SQLite。

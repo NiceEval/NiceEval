@@ -1,0 +1,39 @@
+---
+title: "无 after 登记的纯自动 State 集合在原 Run 关闭后释放"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 等待
+    lg1: 收尾
+    lg2: 释放
+    lg3: 完成
+  }
+  class lg0 yellow
+  class lg1 blue
+  class lg2 orange
+  class lg3 teal
+  s0: 原进程已停止#65292;等待恢复
+  s1: 已接手#65292;等待确认原 Run
+  s2: 恢复中断#65292;原 Run 尚未关闭
+  s3: 正在收尾原 Run
+  s4: 原 Run 已关闭#65292;等整组释放
+  s5: 整组租约已释放
+  s6: 原 Run 已关闭#65292;等待重新接手
+  [*] --> s0
+  s0 --> s1: 确认原进程已停止#65292;接手整组租约
+  s1 --> s2: 恢复进程中断
+  s1 --> s3: 禁止原进程继续写入 Run
+  s2 --> s1: 确认上次恢复已停止#65292;重新接手整组租约
+  s3 --> s4: 将原 Run 标记为已中断
+  s3 --> s2: 恢复进程中断
+  s4 --> s5: 一次释放整组租约
+  s4 --> s6: 恢复进程中断
+  s2 --> s3: 确认上次恢复已停止#65292;重新接手整组租约
+  s6 --> s4: 确认上次恢复已停止#65292;重新接手整组租约
+  class s0 yellow
+  class s1 blue
+  class s2 yellow
+  class s3 blue
+  class s4 orange
+  class s5 teal
+  class s6 yellow

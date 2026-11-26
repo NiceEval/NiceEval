@@ -14,7 +14,7 @@ import { indexDockerProfiles, resolveDockerProfile, type ResolvedDockerProfileEn
 import {
   DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL,
   type DockerExecutionProfileV1,
-  type DockerProfileBeforeCacheFullCopyCapabilityV1,
+  type DockerProfileBeforeCacheFullCopyCapabilityV2,
 } from "./schema.ts";
 
 export const DOCKER_PROFILE_REGISTRY_DIR = "/etc/niceeval/docker-profiles";
@@ -146,29 +146,31 @@ export interface DockerProfileBuildCreateResult {
   readonly cleanupProven?: boolean;
 }
 
-export interface DockerProfileBeforeCacheArtifactIdentityV1 {
+export interface DockerProfileBeforeCacheArtifactIdentityV2 {
   readonly requiredState: "dockerData";
-  readonly copyProtocol: DockerProfileBeforeCacheFullCopyCapabilityV1["copyProtocol"];
+  readonly copyProtocol: DockerProfileBeforeCacheFullCopyCapabilityV2["copyProtocol"];
   readonly copyRevision: string;
   /** Provider-neutral identifier; it is not a Docker image id or a raw-filesystem digest slot. */
   readonly artifactId: string;
   readonly sizeBytes: number;
 }
 
-interface DockerProfileBeforeCacheReceiptV1 {
+export type DockerProfileBeforeCacheStep = BeforeCacheStep & { readonly replacementScope: string };
+
+interface DockerProfileBeforeCacheReceiptV2 {
   readonly daemonGeneration: string;
   readonly slotGeneration: number;
   readonly requiredState: "dockerData";
   readonly beforeCacheKey: string;
   readonly declarationDigest: string;
-  readonly artifact: DockerProfileBeforeCacheArtifactIdentityV1;
+  readonly artifact: DockerProfileBeforeCacheArtifactIdentityV2;
 }
 
-export interface DockerProfileBeforeCacheCaptureResultV1 extends DockerProfileBeforeCacheReceiptV1 {
+export interface DockerProfileBeforeCacheCaptureResultV2 extends DockerProfileBeforeCacheReceiptV2 {
   readonly state: "captured" | "already-published";
 }
 
-export interface DockerProfileBeforeCacheRestoreResultV1 extends DockerProfileBeforeCacheReceiptV1 {
+export interface DockerProfileBeforeCacheRestoreResultV2 extends DockerProfileBeforeCacheReceiptV2 {
   readonly state: "restored" | "already-restored";
 }
 
@@ -726,7 +728,7 @@ function controlRequestEffect<Operation extends ControlOperation>(
   });
 }
 
-function beforeCacheCapability(lease: DockerProfileLease): DockerProfileBeforeCacheFullCopyCapabilityV1 {
+function beforeCacheCapability(lease: DockerProfileLease): DockerProfileBeforeCacheFullCopyCapabilityV2 {
   const capability = lease.binding.profile.backend.filesystem.beforeCache;
   if (capability === undefined) {
     throw new Error("Docker profile descriptor does not declare before-cache full-copy capability");
@@ -746,7 +748,7 @@ function beforeCacheCapability(lease: DockerProfileLease): DockerProfileBeforeCa
 function beforeCacheExpectedWire(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
+  input: DockerProfileBeforeCacheStep,
 ): Readonly<Record<string, unknown>> {
   const capability = beforeCacheCapability(lease);
   return {
@@ -754,6 +756,7 @@ function beforeCacheExpectedWire(
     requiredState: capability.requiredState,
     descriptorDigest: lease.binding.descriptorDigest,
     beforeCacheKey: input.declaration.beforeCacheKey,
+    replacementScope: input.replacementScope,
     declarationDigest: input.declaration.declarationDigest,
     providerIdentity: capability.providerIdentity,
     baseIdentity: input.declaration.baseIdentity,
@@ -778,7 +781,7 @@ function beforeCacheControlFrame<
   kind: Operation,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
+  input: DockerProfileBeforeCacheStep,
 ): ControlRequest<Operation> {
   if (!Number.isSafeInteger(reservation.slotGeneration) || reservation.slotGeneration! < 0) {
     throw new Error("Docker profile reservation has no attested private slot generation");
@@ -790,6 +793,9 @@ function beforeCacheControlFrame<
     input.declaration.declarationDigest !== `sha256:${manifestDigest}`
   ) {
     throw new Error("Docker profile before-cache key is not bound to its complete canonical manifest identity");
+  }
+  if (!/^[a-f0-9]{64}$/u.test(input.replacementScope)) {
+    throw new Error("Docker profile before-cache replacement scope must be a SHA-256 digest");
   }
   if (
     input.operationId.length === 0 ||
@@ -833,8 +839,8 @@ function validateExactBeforeCacheFields(
 function validateBeforeCacheArtifactIdentity(
   value: unknown,
   lease: DockerProfileLease,
-  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
-): DockerProfileBeforeCacheArtifactIdentityV1 {
+  expected?: DockerProfileBeforeCacheArtifactIdentityV2,
+): DockerProfileBeforeCacheArtifactIdentityV2 {
   const artifact = beforeCacheWireRecord(value);
   validateExactBeforeCacheFields(
     artifact,
@@ -868,7 +874,7 @@ function validateBeforeCacheArtifactIdentity(
   if (capability.copyProtocol === "raw-image/v1" && artifact.sizeBytes !== capability.filesystemSizeBytes) {
     throw new Error("Docker profile raw-image artifact does not cover the complete fixed Docker data filesystem");
   }
-  const identity: DockerProfileBeforeCacheArtifactIdentityV1 = {
+  const identity: DockerProfileBeforeCacheArtifactIdentityV2 = {
     requiredState: capability.requiredState,
     copyProtocol: capability.copyProtocol,
     copyRevision: capability.copyRevision,
@@ -903,7 +909,7 @@ function validateBeforeCacheWireBinding(
   receipt: Readonly<Record<string, unknown>>,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
+  input: DockerProfileBeforeCacheStep,
   label: string,
 ): void {
   const expected = beforeCacheExpectedWire(lease, reservation, input);
@@ -918,9 +924,9 @@ function validateBeforeCacheReceipt(
   value: unknown,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
-  expectedArtifact?: DockerProfileBeforeCacheArtifactIdentityV1,
-): DockerProfileBeforeCacheReceiptV1 & { readonly status: Readonly<Record<string, unknown>> } {
+  input: DockerProfileBeforeCacheStep,
+  expectedArtifact?: DockerProfileBeforeCacheArtifactIdentityV2,
+): DockerProfileBeforeCacheReceiptV2 & { readonly status: Readonly<Record<string, unknown>> } {
   const response = beforeCacheWireRecord(value);
   validateExactBeforeCacheFields(
     response,
@@ -946,7 +952,7 @@ function validateBeforeCacheControlError(
   cause: unknown,
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
+  input: DockerProfileBeforeCacheStep,
 ): void {
   if (!(cause instanceof DockerProfileControlError)) return;
   try {
@@ -985,10 +991,10 @@ function validateBeforeCacheControlError(
 export function captureDockerProfileBeforeCache(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
+  input: DockerProfileBeforeCacheStep,
   signal?: AbortSignal,
   controlTimeoutMs = 120_000,
-): Effect.Effect<DockerProfileBeforeCacheCaptureResultV1, DockerProfileRequestError> {
+): Effect.Effect<DockerProfileBeforeCacheCaptureResultV2, DockerProfileRequestError> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       yield* Effect.try({ try: () => beforeCacheCapability(lease), catch: dockerProfileRequestError });
@@ -1093,11 +1099,11 @@ export function captureDockerProfileBeforeCache(
 export function restoreDockerProfileBeforeCache(
   lease: DockerProfileLease,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
-  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
+  input: DockerProfileBeforeCacheStep,
+  expected?: DockerProfileBeforeCacheArtifactIdentityV2,
   signal?: AbortSignal,
   controlTimeoutMs = 120_000,
-): Effect.Effect<DockerProfileBeforeCacheRestoreResultV1, DockerProfileRequestError> {
+): Effect.Effect<DockerProfileBeforeCacheRestoreResultV2, DockerProfileRequestError> {
   return Effect.gen(function* () {
     yield* Effect.try({ try: () => beforeCacheCapability(lease), catch: dockerProfileRequestError });
     const frame = yield* Effect.try({

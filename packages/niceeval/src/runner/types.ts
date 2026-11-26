@@ -20,6 +20,7 @@ import type {
 import type { ObservabilitySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentInstallationManifest } from "../agents/types.ts";
 import type { Adapter, AdapterRuntimeEvalDefinition } from "../adapter.ts";
+import type { StateBinding } from "../state/definition.ts";
 import type { SandboxLayer } from "../sandbox/layer.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import type {
@@ -1020,6 +1021,7 @@ export interface ExperimentAuthorFields {
    * 取得租约后继续自己的 plan。它不是状态存储、事务或跨机器锁。
    */
   sharedState?: SharedStateConfig | undefined;
+  state?: readonly StateBinding[] | undefined;
   /**
    * 本实验的估算花费上限(USD)。调度器累计已完成 attempt 的 `estimatedCostUSD`；该值由
    * model、token usage 与 runtime/config pricing table 计算，与 Provider / Adapter 回报的
@@ -1110,6 +1112,7 @@ export interface ExperimentDefinition<A extends Adapter = Adapter> {
   readonly plugins: readonly PluginInstance<"experiment">[];
   readonly sandboxReuse: boolean;
   readonly sharedState: SharedStateConfig | undefined;
+  readonly state?: readonly StateBinding[] | undefined;
   readonly budget: number | undefined;
   readonly maxConcurrency: number | undefined;
   readonly before: ExperimentHook | undefined;
@@ -1296,6 +1299,9 @@ export interface AdapterRun {
   readonly sandboxLabels: "run-only" | undefined;
   /** 跨 Invocation 共享外部状态的互斥声明；值进入 configHash。 */
   readonly sharedState: SharedStateConfig | undefined;
+  readonly state?: readonly StateBinding[] | undefined;
+  /** Internal planning output for the selected groups' State lineages. */
+  readonly stateLeaseKeys?: readonly string[] | undefined;
   /** Experiment 声明的 judge 覆盖；与 Eval/Config 的逐字段解析在 pair 规划期完成。 */
   readonly judge: JudgeSelection | undefined;
   /**
@@ -1339,6 +1345,7 @@ export interface AdapterRun {
 export type AgentRun = AdapterRun;
 
 export interface RunOptions<_RecordError = never, _RecordRequirements = never> {
+  readonly observeState?: ((event: import("../state/protocol.ts").StateEvent) => void) | undefined;
   readonly projectRoot: string;
   config: Config;
   evals: readonly DiscoveredEval[];

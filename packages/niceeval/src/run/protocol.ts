@@ -1,5 +1,6 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { RunSandboxStateSchema } from "../state/protocol.ts";
 
 export const EMPTY_PUBLICATION_CUTOFF_IDENTITY = "niceeval.empty-publication-cutoff" as const;
 
@@ -78,6 +79,7 @@ export const RunSummarySchema = Schema.Struct({
 export const RunDetailSchema = RunSummarySchema.pipe(
   Schema.fieldsAssign({
     slots: Schema.Array(RunSlotSchema),
+    sandboxState: RunSandboxStateSchema,
   }),
 );
 

@@ -1,0 +1,30 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed -6534582648634285878 with 1 worker on 16 cores with 8008MB heap and 64MB offheap memory [pid: 1408055] (Linux 6.18.60 amd64, Eclipse Adoptium 25.0.5.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ctrdh/Code/NiceEval/NiceEval/docs/feature/sandbox/tla/provider-orphans/labelled-two/Provider.tla
+Parsing file /tmp/statechart-PdC2Lg/statechart-trJq0x/tmp-verdict-1/Naturals.tla
+Parsing file /tmp/statechart-PdC2Lg/statechart-trJq0x/tmp-verdict-1/FiniteSets.tla
+Parsing file /tmp/statechart-PdC2Lg/statechart-trJq0x/tmp-verdict-1/Sequences.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module Provider
+Starting... (2026-11-24 02:53:17)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-24 02:53:17.
+Progress(20) at 2026-11-24 02:53:20: 153,741 states generated (153,741 s/min), 33,532 distinct states found (33,532 ds/min), 1,117 states left on queue.
+Progress(23) at 2026-11-24 02:53:20: 161,149 states generated, 34,596 distinct states found, 0 states left on queue.
+Checking temporal properties for the complete state space with 34596 total distinct states at (2026-11-24 02:53:20)
+Finished checking temporal properties in 00s at 2026-11-24 02:53:21
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 2.4E-10
+  based on the actual fingerprints:  val = 3.1E-11
+161149 states generated, 34596 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 23.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 11 and the 95th percentile is 4).
+Finished in 04s at (2026-11-24 02:53:21)
+

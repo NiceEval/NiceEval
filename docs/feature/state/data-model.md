@@ -25,13 +25,15 @@ execution 对应一个 Run 的一台 Group 实例；binding 固定其 lineage �
 | `state_lineage` | `id TEXT PRIMARY KEY`；`name, version, cohort, experiment_id, eval_group_id TEXT NOT NULL`；五项 UNIQUE；`head_id TEXT NULL` |
 | `state_checkpoint` | `id TEXT PRIMARY KEY`；`lineage_id TEXT NOT NULL REFERENCES state_lineage(id)`；`execution_id, source_run_id, digest, manifest_json TEXT NOT NULL`；`bytes INTEGER NOT NULL`；`ready INTEGER NOT NULL CHECK(ready IN (0,1))` |
 | `state_checkpoint_chunk` | `checkpoint_id TEXT NOT NULL REFERENCES state_checkpoint(id) ON DELETE CASCADE`；`ordinal INTEGER NOT NULL`；`bytes BLOB NOT NULL`；PRIMARY KEY(checkpoint_id, ordinal) |
-| `state_execution` | `id TEXT PRIMARY KEY`；`run_id, experiment_id, eval_group_id TEXT NOT NULL`；`generation, writer_generation INTEGER NOT NULL`；`lease_set_id TEXT NOT NULL REFERENCES state_lease_set(id)`；UNIQUE(run_id, experiment_id, eval_group_id, generation) |
+| `state_execution` | `id TEXT PRIMARY KEY`；`run_id, experiment_id, eval_group_id, writer_generation TEXT NOT NULL`；`generation INTEGER NOT NULL`；`lease_set_id TEXT NOT NULL REFERENCES state_lease_set(id)`；UNIQUE(run_id, experiment_id, eval_group_id, generation) |
 | `state_execution_binding` | `execution_id TEXT NOT NULL REFERENCES state_execution(id) ON DELETE CASCADE`；`ordinal INTEGER NOT NULL`；`lineage_id TEXT NOT NULL REFERENCES state_lineage(id)`；`predecessor_id TEXT NULL`；PRIMARY KEY(execution_id, ordinal)；UNIQUE(execution_id, lineage_id) |
 | `state_execution_fact` | `execution_id TEXT NOT NULL REFERENCES state_execution(id) ON DELETE CASCADE`；`publication_sequence INTEGER NOT NULL`；`payload_json TEXT NOT NULL`；PRIMARY KEY(execution_id, publication_sequence) |
 
 HEAD 与 predecessor 使用 `(lineage_id, checkpoint_id)` 复合约束，只能指向同 lineage；state_checkpoint 另设 UNIQUE(lineage_id, id)。
 head_id 只允许指向 ready=1 的 checkpoint，由同一具名 repository 的事务校验保证。所有非 nullable 列不使用空字符串表示缺失。
 execution_id 与 source_run_id 在 checkpoint 中是不可变历史出处，不加反向级联外键；删 Run 不能删 checkpoint。
+
+state_execution.writer_generation 保存创建 execution 时 Run 的当前 writer generation，与 Run resource 的 `current_writer_generation` 是同一个 token，含精确进程证据。State 事务按字符串精确比较它，不另设整数映射；旧 writer 迟到的保存因此被同一 fencing 拒绝。
 
 最终保存事务校验 source_run_id 等于 execution.run_id；出处 Run 删除后，只校验保留 ID 的格式与 checkpoint 自身完整性，不要求已删 execution 仍能 join。
 

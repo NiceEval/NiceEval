@@ -23,6 +23,7 @@ import {
   type TargetSlot,
 } from "../reuse-plan.ts";
 import type { AgentRun, Config, DiscoveredEval } from "../types.ts";
+import { stateBindingsFor } from "../../state/planning.ts";
 import {
   EvalIdSchema,
   ExecutionIdentityDigestSchema,
@@ -38,7 +39,7 @@ import type { ExecutionIdentityDigest, ExperimentId, RunId, UtcMillis } from "..
 
 /** Current facts supplied by physical planning; Record never reconstructs them from history. */
 export interface RunnerRecordReuseSlotInput {
-  readonly reuseEligibility: ModuleReuseEligibility;
+  readonly reuseEligibility: ModuleReuseEligibility | { readonly kind: "stateful-input" };
   readonly identityManifest: IdentityManifestEntry | undefined;
   readonly renameFingerprint: (experimentId: string) => string | undefined;
   readonly inputIdentity: ExecutionIdentity;
@@ -200,7 +201,10 @@ export function prepareRunnerRecordReuse(
         const renameFingerprint = input.renameFingerprintsByKey?.get(key) ?? (() => undefined);
         const manifest = input.manifestsByKey?.get(key);
         slotsByKey.set(key, {
-          reuseEligibility: moduleReuseEligibility(evalDef, run.experimentExecutionSource?.unresolved),
+          reuseEligibility:
+            stateBindingsFor(run, evalDef).length > 0
+              ? { kind: "stateful-input" }
+              : moduleReuseEligibility(evalDef, run.experimentExecutionSource?.unresolved),
           identityManifest: manifest === undefined ? undefined : identityManifestEntry(evalDef.id, manifest),
           renameFingerprint,
           inputIdentity: {
@@ -338,7 +342,9 @@ export function targetForRunnerRecordRun(input: {
           renameFingerprint: entry.reuse.renameFingerprint,
           timeout: entry.reuse.timeout,
           reuseEligibility:
-            input.planned.run.adapter?.kind === "custom" && input.planned.run.adapter.behaviorRevision === undefined
+            entry.reuse.reuseEligibility.kind !== "stateful-input" &&
+            input.planned.run.adapter?.kind === "custom" &&
+            input.planned.run.adapter.behaviorRevision === undefined
               ? { kind: "adapter-behavior-revision-required" }
               : entry.reuse.reuseEligibility,
         }) satisfies TargetSlot,

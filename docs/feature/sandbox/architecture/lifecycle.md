@@ -146,9 +146,9 @@ BuildKey ready
 
 `AttemptCaptured` 与 `Unsupported` 不加入准备图，继续按其能力在 Attempt 内 restore 或真实 replay。`RunPrepared` Provider 的 `sandboxReuse` 配对加入准备图，artifact 只在复用实例创建时消费一次（见[远端 snapshot Before cache · Sandbox 复用](remote-snapshot-cache.md#sandbox-复用)）。它们不会因为 key 相同取得共享 staging、共享可写状态或共享 Run activity。
 
-全局派发 barrier 等待准备图的全部节点结算，而非只等待某一 Planned attempt 的祖先。`failed` 节点只阻断依赖它的 descendants 和最终需要该 prefix 的 Planned attempts；`degraded` 节点让目标配对从更浅的可用前缀开始（结算表见[远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)）；独立分支继续准备。成功节点发布后不会因其它节点失败回滚。取消会终止尚未结算的 prepare staging 与 publication，并有界回收它们；已验证发布的 immutable artifact 保留。
+派发按配对放行，规则见 [Before cache · 运行事实归属](before-cache.md#运行事实归属)：一个 Planned attempt 在它的终端节点及全部祖先结算后即可派发，不等待无关分支。`failed` 节点只阻断依赖它的 descendants 和最终需要该 prefix 的 Planned attempts；`degraded` 节点让目标配对从更浅的可用前缀开始（结算表见[远端 snapshot Before cache](remote-snapshot-cache.md#run-级节点结算)）；独立分支继续准备。成功节点发布后不会因其它节点失败回滚。取消会终止尚未结算的 prepare staging 与 publication，并有界回收它们；已验证发布的 immutable artifact 保留。
 
-prepare 过程写独立 Run activity：cache lookup、当前 action `i/n`、prepare Sandbox 创建、artifact 发布和 Scope release。它不借用 Attempt running 计数，也不创建 Attempt locator；只有通过全局 barrier 后实际 dispatch 的 Planned attempt 才分配其永久 locator。已分配的 locator 从调度、收尾反馈到 Record 提交始终不变。
+prepare 过程写独立 Run activity：cache lookup、当前 action `i/n`、prepare Sandbox 创建、artifact 发布和 Scope release。它不借用 Attempt running 计数，也不创建 Attempt locator；只有放行后实际 dispatch 的 Planned attempt 才分配其永久 locator。已分配的 locator 从调度、收尾反馈到 Record 提交始终不变。
 
 不同 `BeforeCacheKey` 可并行；同一 `(executionDomainId, BeforeCacheKey)` 的跨进程 publication lease 仍串行发布，等待者消费同一 committed `ArtifactIntent`。随后每条 Attempt 从最终 artifact clone 私有 VM，再真实执行 barrier 后缀、Agent 与 Eval test。
 
@@ -251,8 +251,9 @@ cleanup 使用独立预算与 signal,不复用已经 abort 的前向 signal;clea
    向云端 Provider 创建沙箱时，NiceEval 总是请求服务端寿命：Provider 配置 `lifetimeMs` 优先，未声明时由 Attempt 时限派生，规则见 [服务端寿命](../library/reuse.md#两种时间不能混用)。该计时器由 Provider 云端控制平面拥有，即使客户端宿主机断电、断网或被强杀，云端到期后由 Provider 强制物理销毁，杜绝无限期计费。空闲暂停不提供这项保证；Instabox 等 Provider 创建时关闭自动暂停，见 [Instabox Provider 架构](providers/instabox.md)。
 2. **规范标签与 CI 原生 Always 步骤**：
    创建实例时向 Provider 注入标准标签（`niceeval.run_id`、`niceeval.created_at`），各 Provider 的映射与例外见 [创建标签](../library/reuse.md#两种时间不能混用)。在 GitHub Actions 等 CI 流水线中，由 CI 原生流水线的 `if: always()` 步骤直接调用 Provider 原生 CLI 批量销毁未闭合的实例。
-3. **事后恢复与重试自愈**：
-   在后续运行或执行 `niceeval run recover` 时，检测到上一次非正常中断的 Run 事实，读取其关联的实例 ID 并调用 Provider 原生接口完成扫尾。
+3. **领域恢复不扫尾实例**：
+   `niceeval run recover` 只收口 Run 与 Session 的领域状态，不调用 Provider 接口销毁实例（见[与 Sandbox orphan 的边界](../../experiments/use-case/concurrency-resume-interrupted-run.md#与-sandbox-orphan-的边界)）。强杀后留下的实例只靠前两条回收：服务端硬超时到期销毁，或按标签查找后由 Provider 原生工具删除。原因是 create 请求可能在客户端拿到实例 ID 之前就已在服务端完成，这类实例从未进入 Run 事实，只能由服务端寿命或标签找到。
+   自定义 Provider（`defineSandbox` 的创建回调）由作者负责这两项能力：创建时请求服务端寿命，或给实例打上可查询的标签。两者都没有时，强杀可能留下 NiceEval 无法发现的实例，这一点写在[服务端寿命](../library/reuse.md#两种时间不能混用)的自定义 Provider 说明中。
 
 ## 身份与复用池
 

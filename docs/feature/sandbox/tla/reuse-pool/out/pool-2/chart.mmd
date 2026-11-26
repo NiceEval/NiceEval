@@ -1,0 +1,56 @@
+---
+title: "Sandbox 复用池"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 等待
+    lg1: 租用
+    lg2: 收尾
+    lg3: 结束
+  }
+  class lg0 blue
+  class lg1 teal
+  class lg2 orange
+  class lg3 purple
+  s0: Attempt 等待 Sandbox
+  s1: 正在创建 Sandbox#65292;名额已占用
+  s2: Invocation 已中断#65292;等待收尾
+  s3: Sandbox 正由一条 Attempt 使用
+  s4: 当前 Attempt 清理中#65292;下一条仍须等待
+  s5: Attempt 收尾完成#65292;正在归还 Sandbox
+  s6: 所有 Attempt 已结束#65292;等待关池
+  s7: 复用池已关闭
+  s8: 此实例已退休#65292;下次重建
+  s9: Sandbox 空闲#65292;等待确认寿命
+  [*] --> s0
+  s0 --> s1: 为等待中的 Attempt 创建 Sandbox
+  s0 --> s2: 中断 Invocation
+  s1 --> s2: 中断 Invocation
+  s1 --> s0: 创建或准备失败#65292;结束这条 Attempt
+  s1 --> s3: 新 Sandbox 就绪并借出
+  s3 --> s4: 当前 Attempt 结束执行#65292;开始清理
+  s3 --> s2: 中断 Invocation
+  s4 --> s2: 中断 Invocation
+  s4 --> s5: 完成清理#65292;关闭这条 Attempt 的 Sandbox 接口
+  s1 --> s6: 创建或准备失败#65292;结束这条 Attempt
+  s2 --> s7: 等待中的收尾均已完成#65292;关闭复用池
+  s5 --> s8: 此实例无法安全复用#65292;予以退休
+  s5 --> s9: 重置完成#65292;可以再次借用
+  s5 --> s2: 中断 Invocation
+  s6 --> s7: 等待中的收尾均已完成#65292;关闭复用池
+  s8 --> s1: 为等待中的 Attempt 创建 Sandbox
+  s8 --> s2: 中断 Invocation
+  s9 --> s2: 中断 Invocation
+  s9 --> s8: 剩余寿命不足#65292;退休此实例
+  s9 --> s3: 寿命足够#65292;借出空闲 Sandbox
+  s5 --> s6: 归还 Sandbox#65292;最后一条 Attempt 结束
+  class s0 blue
+  class s1 blue
+  class s2 orange
+  class s3 teal
+  class s4 orange
+  class s5 orange
+  class s6 purple
+  class s7 purple
+  class s8 blue
+  class s9 blue

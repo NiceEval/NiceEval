@@ -34,6 +34,7 @@ export interface ConfigIdentity {
   readonly sandboxReuse: boolean;
   /** Stable public key for the shared-state mutex, never a secret or stored state. */
   readonly sharedState?: string;
+  readonly state?: JsonValue;
   /** Experiment 作者 layer 身份；物理 provider plan 属于逐 Eval fingerprint，不进入 Run 级身份。 */
   readonly sandboxLayer: JsonValue;
   readonly judgeRuntime: JudgeConfigIdentity;
@@ -266,6 +267,7 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   putDeclared("reasoningEffort", identity.reasoningEffort);
   put("sandboxReuse", identity.sandboxReuse);
   if (identity.sharedState !== undefined) put("sharedState.key", identity.sharedState);
+  if (identity.state !== undefined) put("state", identity.state);
   for (const [key, value] of Object.entries(identity.flags)) put(`flags.${key}`, value);
   put("plugins", identity.plugins);
   put("sandboxLayer", identity.sandboxLayer);

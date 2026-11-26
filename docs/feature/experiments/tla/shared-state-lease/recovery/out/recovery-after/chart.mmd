@@ -1,0 +1,59 @@
+---
+title: "确认原 Run 的结局后执行 after 并释放整组租约"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 等待
+    lg1: 收尾
+    lg2: 补偿
+    lg3: 释放
+    lg4: 完成
+  }
+  class lg0 yellow
+  class lg1 blue
+  class lg2 purple
+  class lg3 orange
+  class lg4 teal
+  s0: 原进程已停止#65292;等待恢复
+  s1: 已接手#65292;等待确认原 Run
+  s2: 恢复中断#65292;原 Run 尚未关闭
+  s3: 正在收尾原 Run
+  s4: 原 Run 已关闭#65292;等待执行 after
+  s5: 原 Run 已关闭#65292;等待重新接手
+  s6: after 已启动#65292;结果尚未确认
+  s7: 恢复中断#65292;after 尚未确认
+  s8: after 已确认#65292;等整组释放
+  s9: 整组租约已释放
+  s10: 已重新接手#65292;等待重试 after
+  s11: after 已确认#65292;等新进程接手
+  [*] --> s0
+  s0 --> s1: 确认原进程已停止#65292;接手整组租约
+  s1 --> s2: 恢复进程中断
+  s1 --> s3: 禁止原进程继续写入 Run
+  s2 --> s1: 确认上次恢复已停止#65292;重新接手整组租约
+  s3 --> s4: 将原 Run 标记为已中断
+  s3 --> s2: 恢复进程中断
+  s4 --> s5: 恢复进程中断
+  s4 --> s6: 执行已登记的 after
+  s2 --> s3: 确认上次恢复已停止#65292;重新接手整组租约
+  s5 --> s4: 确认上次恢复已停止#65292;重新接手整组租约
+  s6 --> s7: 恢复进程中断
+  s6 --> s8: 确认 after 并移除对应登记
+  s7 --> s10: 确认上次恢复已停止#65292;重新接手整组租约
+  s8 --> s9: 一次释放整组租约
+  s8 --> s11: 恢复进程中断
+  s10 --> s7: 恢复进程中断
+  s10 --> s6: 重试未确认的 after
+  s11 --> s8: 确认上次恢复已停止#65292;重新接手整组租约
+  class s0 yellow
+  class s1 blue
+  class s2 yellow
+  class s3 blue
+  class s4 purple
+  class s5 yellow
+  class s6 purple
+  class s7 yellow
+  class s8 orange
+  class s9 teal
+  class s10 purple
+  class s11 yellow

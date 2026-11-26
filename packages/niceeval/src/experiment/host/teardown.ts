@@ -2,14 +2,19 @@ import { resolve } from "node:path";
 import { operationError } from "./operations.ts";
 
 import { Clock, Effect, Result } from "effect";
-import type { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
+import type { StateLeaseSet } from "../../record/sqlite/state-lease-repository.ts";
+import { recoverRunForLeaseSet } from "../../run/host/lifecycle-adapter.ts";
 
 import { cleanupCallback } from "../../runner/cleanup-timeout.ts";
 import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { resolveExperimentEvals } from "../../runner/eval-selection.ts";
 import {
   beginExplicitSharedStateRecoveryEffect,
-  completeExplicitSharedStateRecoveryEffect,
+  finishLeaseSetAfterEffect,
+  leaseSetNeedsAfter,
+  readHeldStateLeaseSetsEffect,
+  startLeaseSetAfterEffect,
   readSharedStateLeaseRecoveryTargetEffect,
   type SharedStateLeaseRecord,
 } from "../../runner/shared-state-lease.ts";
@@ -19,7 +24,6 @@ import {
   readExactTeardownRegistrationEffect,
   readTeardownRegistrationsEffect,
   removeTeardownRegistrationIfPresentEffect,
-  teardownEntryId,
 } from "../../runner/teardown-registry.ts";
 import type { DiscoveredExperiment, ExperimentHook, ExperimentHookContext } from "../../runner/types.ts";
 import { matchExperimentSelector } from "../../shared/aggregate.ts";
@@ -125,68 +129,25 @@ function noExperimentMatch(selector: string, selection: TeardownSelection): Expe
   };
 }
 
-function inspectExactRegistration(input: {
-  readonly coordinationRoot: string;
-  readonly record: SharedStateLeaseRecord;
-  readonly currentHost: string;
-}): Effect.Effect<boolean, unknown, ProjectStateDatabase> {
-  const id = teardownEntryId(input.record.experimentId, input.record.pid);
+function inspectExactRegistration(root: string, set: StateLeaseSet, currentHost: string) {
   return Effect.gen(function* () {
-    const registration = yield* readExactTeardownRegistrationEffect(
-      input.coordinationRoot,
-      input.record.experimentId,
-      input.record.pid,
-    );
-    if (registration === undefined) return false;
-    if (registration.host !== input.record.host) {
+    const id = set.afterRegistrationId;
+    if (id === null) return yield* Effect.fail(new Error("Lease set has no exact after registration."));
+    const exact = yield* readExactTeardownRegistrationEffect(root, set.experimentId, set.owner.pid, id);
+    if (
+      exact === undefined ||
+      exact.row.leaseSetId !== set.id ||
+      !(yield* isExactTeardownRegistrationOwnerTerminatedEffect({
+        registration: exact.registration,
+        owner: set.owner,
+        currentHost,
+      }))
+    ) {
       return yield* Effect.fail(
-        new Error(
-          `teardown registration ${JSON.stringify(id)} belongs to host ${JSON.stringify(registration.host)}, ` +
-            `not immutable sharedState owner host ${JSON.stringify(input.record.host)}`,
-        ),
+        new Error("The exact after registration does not match the terminated lease set owner."),
       );
     }
-    const terminated = yield* isExactTeardownRegistrationOwnerTerminatedEffect({
-      registration,
-      owner: input.record,
-      currentHost: input.currentHost,
-    });
-    if (!terminated) {
-      return yield* Effect.fail(
-        new Error(`teardown registration ${JSON.stringify(id)} still belongs to a live exact sharedState owner`),
-      );
-    }
-    return true;
-  });
-}
-
-function clearExactRegistration(input: {
-  readonly coordinationRoot: string;
-  readonly record: SharedStateLeaseRecord;
-  readonly currentHost: string;
-  readonly expectedRegistration: boolean;
-}): Effect.Effect<void, unknown, ProjectStateDatabase> {
-  const id = teardownEntryId(input.record.experimentId, input.record.pid);
-  return Effect.gen(function* () {
-    const present = yield* inspectExactRegistration(input);
-    if (!present) {
-      if (input.expectedRegistration) {
-        return yield* Effect.fail(
-          new Error(`teardown registration ${JSON.stringify(id)} disappeared before recovery could clear it`),
-        );
-      }
-      return;
-    }
-    if (!input.expectedRegistration) {
-      return yield* Effect.fail(
-        new Error(`teardown registration ${JSON.stringify(id)} appeared after recovery was claimed`),
-      );
-    }
-    if (!(yield* removeTeardownRegistrationIfPresentEffect(input.coordinationRoot, id))) {
-      return yield* Effect.fail(
-        new Error(`teardown registration ${JSON.stringify(id)} changed before recovery could clear it`),
-      );
-    }
+    return exact;
   });
 }
 
@@ -280,10 +241,11 @@ export function inspectTeardown(
       }
       const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
       if (input.recoveryKey !== undefined) {
-        const record = yield* readSharedStateLeaseRecoveryTargetEffect(coordinationRoot, input.recoveryKey);
-        if (record === undefined) {
+        const recovery = yield* readSharedStateLeaseRecoveryTargetEffect(coordinationRoot, input.recoveryKey);
+        if (recovery === undefined) {
           return { status: "no-evidence" as const, key: input.recoveryKey };
         }
+        const { record, set } = recovery;
         const evidence = evidenceOf(record);
         if (selection.selected.length !== 1) {
           return {
@@ -300,7 +262,7 @@ export function inspectTeardown(
             evidence,
           };
         }
-        if (teardownOf(target.experiment) === undefined) {
+        if (leaseSetNeedsAfter(set) && teardownOf(target.experiment) === undefined) {
           return {
             status: "after-required" as const,
             experimentId: target.experiment.id,
@@ -312,8 +274,10 @@ export function inspectTeardown(
           status: "ready" as const,
           experimentIds: [target.experiment.id],
           orphanedRegistrations: registrations.filter(
-            ({ entry }) =>
-              entry.experimentId === target.experiment.id && isOrphanedTeardownRegistration(entry, input.currentHost),
+            ({ entry, leaseSetId }) =>
+              leaseSetId === undefined &&
+              entry.experimentId === target.experiment.id &&
+              isOrphanedTeardownRegistration(entry, input.currentHost),
           ).length,
           evidence,
         };
@@ -337,9 +301,10 @@ export function inspectTeardown(
 function runExplicitRecovery(
   input: ExperimentHostAfterRequest,
   selection: TeardownSelection,
-  record: SharedStateLeaseRecord,
+  recovery: { readonly record: SharedStateLeaseRecord; readonly set: StateLeaseSet },
 ): Effect.Effect<ExperimentHostAfterResult, unknown, ProjectStateDatabase> {
   return Effect.gen(function* () {
+    const { record, set } = recovery;
     const evidence = evidenceOf(record);
     if (selection.selected.length !== 1) {
       return {
@@ -356,7 +321,7 @@ function runExplicitRecovery(
         evidence,
       };
     }
-    if (teardownOf(target.experiment) === undefined) {
+    if (leaseSetNeedsAfter(set) && teardownOf(target.experiment) === undefined) {
       return {
         status: "after-required" as const,
         experimentId: target.experiment.id,
@@ -378,24 +343,32 @@ function runExplicitRecovery(
       localHost: input.currentHost,
       confirmOwnerTerminated: true,
       confirmRemoteQuiesced: true,
+      afterAvailable: teardownOf(target.experiment) !== undefined,
     });
-    const claimedEvidence = evidenceOf(begun.record);
-    const registrationFailureCode =
-      begun._tag === "AlreadyReleased"
-        ? "shared-state-recovery-already-released-registration-failed"
-        : "shared-state-recovery-registration-failed";
-    const registrationWasPresent = yield* inspectExactRegistration({
-      coordinationRoot,
-      record: begun.record,
-      currentHost: input.currentHost,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
+    if (begun._tag === "AfterRequired") {
+      return {
+        status: "after-required" as const,
+        experimentId: begun.set.experimentId,
+        evidence: evidenceOf(begun.record),
+      };
+    }
     if (begun._tag === "AlreadyReleased") {
-      yield* clearExactRegistration({
-        coordinationRoot,
-        record: begun.record,
-        currentHost: input.currentHost,
-        expectedRegistration: registrationWasPresent,
-      }).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
+      const registrationId = begun.set.afterRegistrationId;
+      if (registrationId !== null) {
+        const facets = yield* (yield* ProjectStateDatabase).bind(coordinationRoot);
+        const retained = yield* Effect.tryPromise({
+          try: () => facets.teardown.get(registrationId),
+          catch: (cause) => recoveryOperationError("shared-state-recovery-already-released-registration-failed", cause),
+        });
+        if (retained !== undefined) {
+          return yield* Effect.fail(
+            recoveryOperationError(
+              "shared-state-recovery-already-released-registration-failed",
+              new Error("A released lease set unexpectedly retains an after registration."),
+            ),
+          );
+        }
+      }
       return {
         status: "already-released" as const,
         key: begun.record.key,
@@ -403,37 +376,43 @@ function runExplicitRecovery(
         ownerToken: begun.record.ownerToken,
       };
     }
-
-    const outcome = yield* runAuthorTeardown({
-      experiment: target.experiment,
-      selectedEvalIds: target.selectedEvalIds,
-      observer: input.observer,
-      signal: input.signal,
-      recovery: true,
-    });
-    if (outcome === false) {
-      return yield* Effect.fail(new Error("Recovery target lost its required teardown callback."));
+    yield* recoverRunForLeaseSet(coordinationRoot, begun.set.runId);
+    if (begun.set.afterStatus === "pending" || begun.set.afterStatus === "running") {
+      const registrationFailureCode = "shared-state-recovery-registration-failed";
+      const { registration, row } = yield* inspectExactRegistration(
+        coordinationRoot,
+        begun.set,
+        input.currentHost,
+      ).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
+      if (teardownOf(target.experiment) === undefined) {
+        return { status: "after-required" as const, experimentId: begun.set.experimentId, evidence };
+      }
+      yield* startLeaseSetAfterEffect(coordinationRoot, begun.authority).pipe(
+        Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)),
+      );
+      const outcome = yield* runAuthorTeardown({
+        experiment: target.experiment,
+        selectedEvalIds: registration.selectedEvalIds,
+        observer: input.observer,
+        signal: input.signal,
+        recovery: true,
+      });
+      if (outcome === false) return yield* Effect.fail(new Error("Recovery target lost its required after callback."));
+      if (Result.isFailure(outcome)) {
+        return {
+          status: "recovery-teardown-failed" as const,
+          evidence: evidenceOf(begun.record),
+          error: outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure),
+        };
+      }
+      yield* finishLeaseSetAfterEffect(coordinationRoot, begun.authority, row).pipe(
+        Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)),
+      );
     }
-    if (Result.isFailure(outcome)) {
-      return {
-        status: "recovery-teardown-failed" as const,
-        evidence: claimedEvidence,
-        error: outcome.failure instanceof Error ? outcome.failure.message : String(outcome.failure),
-      };
-    }
-    yield* clearExactRegistration({
-      coordinationRoot,
-      record: begun.record,
-      currentHost: input.currentHost,
-      expectedRegistration: registrationWasPresent,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError(registrationFailureCode, cause)));
-    yield* completeExplicitSharedStateRecoveryEffect({
-      niceevalRoot: coordinationRoot,
-      key: begun.record.key,
-      ownerToken: begun.record.ownerToken,
-      recoveryId: begun.recoveryId,
-      localHost: input.currentHost,
-    }).pipe(Effect.mapError((cause) => recoveryOperationError("shared-state-recovery-completion-failed", cause)));
+    yield* begun
+      .release()
+      .pipe(Effect.mapError((cause) => recoveryOperationError("shared-state-recovery-completion-failed", cause)));
+    yield* (yield* ProjectStateDatabase).closeInvocationPortable(coordinationRoot);
     return {
       status: "recovered" as const,
       key: begun.record.key,
@@ -454,14 +433,14 @@ export function runTeardown(
       const selection = yield* selectTeardowns(input);
       if (input.recoveryKey !== undefined) {
         if (inspection.evidence === undefined || selection.selected.length !== 1) return inspection;
-        const record = yield* readSharedStateLeaseRecoveryTargetEffect(
+        const recovery = yield* readSharedStateLeaseRecoveryTargetEffect(
           resolve(input.cwd, input.coordinationRoot ?? ".niceeval"),
           input.recoveryKey,
         );
-        if (record === undefined) {
+        if (recovery === undefined) {
           return { status: "no-evidence" as const, key: input.recoveryKey };
         }
-        return yield* runExplicitRecovery(input, selection, record);
+        return yield* runExplicitRecovery(input, selection, recovery);
       }
 
       const coordinationRoot = resolve(input.cwd, input.coordinationRoot ?? ".niceeval");
@@ -477,14 +456,18 @@ export function runTeardown(
           continue;
         }
         const matching = registrations.filter(({ entry }) => entry.experimentId === target.experiment.id);
-        const orphaned = matching.filter(({ entry }) => isOrphanedTeardownRegistration(entry, input.currentHost));
+        const orphaned = matching.filter(
+          ({ entry, leaseSetId }) =>
+            leaseSetId === undefined && isOrphanedTeardownRegistration(entry, input.currentHost),
+        );
         const claimed = yield* Effect.all(
           orphaned.map(({ id }) => removeTeardownRegistrationIfPresentEffect(coordinationRoot, id)),
           {
             concurrency: "unbounded",
           },
         );
-        const executions = matching.length === 0 ? 1 : claimed.filter(Boolean).length;
+        const heldSets = yield* readHeldStateLeaseSetsEffect(coordinationRoot, target.experiment.id);
+        const executions = matching.length === 0 && heldSets.length === 0 ? 1 : claimed.filter(Boolean).length;
         let failure: string | undefined;
         for (let index = 0; index < executions; index += 1) {
           const outcome = yield* runAuthorTeardown({

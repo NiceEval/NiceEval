@@ -1,0 +1,22 @@
+---
+title: "Docker daemon 换代后释放旧制品容量"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 换代前
+    lg1: 保留
+    lg2: 回收
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 teal
+  s0: daemon 尚未换代
+  s1: 开放准入#65292;保留仍在使用的旧制品
+  s2: 开放准入#65292;旧制品容量已释放
+  [*] --> s0
+  s0 --> s1: 发现 daemon 已换代
+  s0 --> s2: 发现 daemon 已换代
+  s1 --> s2: 最后一个用户释放#65292;回收旧制品
+  class s0 blue
+  class s1 orange
+  class s2 teal

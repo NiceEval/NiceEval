@@ -7,6 +7,7 @@ import type { ExternalCause } from "../shared/external-cause.ts";
 import type { UserDatabaseFailure } from "../user-database/errors.ts";
 import type { SandboxActionState } from "./action.ts";
 import type { BeforeCacheDegradedReason } from "./layer.ts";
+import type { SandboxStateFiles } from "./state-files.ts";
 import type {
   CommandOptions,
   CommandResult,
@@ -72,6 +73,13 @@ export type BeforeCacheEligibility =
       readonly code: BeforeCacheUnsupportedCode;
       readonly reason: string;
     };
+
+type EligibleBeforeCache = Extract<BeforeCacheEligibility, { readonly _tag: "Eligible" }>;
+type IneligibleBeforeCache = Exclude<BeforeCacheEligibility, EligibleBeforeCache>;
+export type BeforeCacheBaseEligibility = Omit<EligibleBeforeCache, "replacementScope"> | IneligibleBeforeCache;
+export type AttemptBeforeCacheEligibility =
+  | (EligibleBeforeCache & { readonly replacementScope: NonNullable<EligibleBeforeCache["replacementScope"]> })
+  | IneligibleBeforeCache;
 
 export interface BeforeCacheDeclaration {
   /** Exact immutable Base identity; floating source references never enter the durable root key alone. */
@@ -205,7 +213,7 @@ export type AttemptBeforeCacheFallback =
     };
 
 export interface AttemptBeforeCache {
-  eligibility(): BeforeCacheEligibility;
+  eligibility(): Effect.Effect<AttemptBeforeCacheEligibility>;
   lookupAndRestore(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheLookup, BeforeCacheError>;
   capture(input: BeforeCacheStep): Effect.Effect<AttemptBeforeCacheCapture, BeforeCacheError>;
   /**
@@ -219,6 +227,8 @@ export interface AttemptBeforeCache {
 }
 
 export interface SandboxBackendCapabilities {
+  /** Restoring State requires both safe file operations and provider-owned quiescence. */
+  readonly state?: SandboxBackendSupport<SandboxStateFiles>;
   /** Provider 能否兑现 CommandOptions.user 的 root 覆盖；runner 私有基础设施按这项能力选择身份。 */
   readonly rootCommands: SandboxBackendSupport<true>;
   readonly appendLog: SandboxBackendSupport<(line: string) => Promise<void>>;

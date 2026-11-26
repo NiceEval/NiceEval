@@ -65,6 +65,7 @@ beforeAll(async () => {
   const preview = await invoke(cwd, "exp", "cwd", "--dry", "--json");
   expect(preview.code, preview.stderr).toBe(0);
   const plan = decodeExpPlanDocument(JSON.parse(preview.stdout));
+  expect(plan.groups).toEqual([]);
   expect(plan.matrix[0]?.slots[0]?.reason).toBe("identity-mismatch");
 });
 

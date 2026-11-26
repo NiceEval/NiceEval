@@ -1,12 +1,21 @@
 import type { ExperimentHostRequirements } from "./requirements.ts";
 import { getExperimentExecutionSource } from "../../runner/experiment-modules.ts";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { decodeJsonValue } from "../../shared/json-value.ts";
 
-import { Clock, Effect, Result } from "effect";
+import { Clock, Effect, Exit, Result } from "effect";
 
 import { makeRecordRoot, recordRootPaths, type RecordRoot } from "../../record/platform/root.ts";
 import { SqliteRecordError } from "../../record/sqlite/errors.ts";
+import {
+  closeRecordDatabase,
+  openRecordReader,
+  recordSqlitePath,
+  validateExactSchema,
+} from "../../record/sqlite/database.ts";
+import { readStateOrigins } from "../../record/sqlite/state-repository.ts";
+import type { StateLineage } from "../../state/protocol.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { acceptLocators, acceptRun, planAcceptRun, planAcceptLocators } from "../../runner/accept.ts";
 import { activateFeedbackSink, type FeedbackSink } from "../../runner/feedback/sink.ts";
@@ -14,7 +23,7 @@ import { computeExitCode } from "../../runner/feedback/json.ts";
 import { discoverEvals, discoverExperimentSelection } from "../../runner/discover.ts";
 import { acquireFreshImportGeneration, type FreshImportGeneration } from "../../fresh-import.ts";
 import { resolveExperimentEvals, splitByEvaluationKind } from "../../runner/eval-selection.ts";
-import { planProjectTarget } from "../../runner/fingerprint.ts";
+import { planProjectTarget, type ProjectTargetPlan } from "../../runner/fingerprint.ts";
 import { prepareRunnerRecordReuse, withRunnerCurrentReusePreview } from "../../runner/record.ts";
 import { projectCurrentReuseReadback } from "../../runner/reuse-readback.ts";
 import { projectTargetPolicyIdentity, type ExecutionReusePlanSlot } from "../../runner/reuse-plan.ts";
@@ -362,6 +371,7 @@ function agentRunFromExperiment(
     sandboxReuse: experiment.sandboxReuse,
     sandboxLabels: experiment.sandboxLabels,
     sharedState: experiment.sharedState,
+    state: experiment.state,
     judge: experiment.judge,
     ...resolveRunTimeout(overrides.timeoutMs, experiment.timeoutMs),
     budget: overrides.budget ?? experiment.budget,
@@ -519,6 +529,7 @@ function dryPlan(
   lockedPairs: readonly string[],
   recoverablePairs: readonly string[],
   evalGroups: ReadonlyMap<string, { readonly id: string; readonly index: number }>,
+  stateGroups: ExperimentHostDryPlan["groups"],
 ): ExperimentHostDryPlan {
   const projected: ExperimentHostDrySlot[] = slots.map((slot) => {
     const evalGroup = evalGroups.get(slot.evalId);
@@ -554,12 +565,52 @@ function dryPlan(
     };
   });
   return {
+    groups: stateGroups,
     policy: projectTargetPolicyIdentity,
     slots: projected,
     readbacks,
     lockedPairs,
     recoverablePairs,
   };
+}
+
+function dryStateGroups(root: string, target: ProjectTargetPlan) {
+  const groups = new Map<string, { experimentId: string; evalGroupId: string; lineages: readonly StateLineage[] }>();
+  for (const [key, pair] of target.preparedPairsByKey) {
+    const evalGroupId = pair.evalDef.evalGroup?.id;
+    if (evalGroupId === undefined) continue;
+    const experimentId = pair.run.experimentId;
+    groups.set(JSON.stringify([experimentId, evalGroupId]), {
+      experimentId,
+      evalGroupId,
+      lineages: target.stateByPair.get(key)?.bindings.map(({ lineage }) => lineage) ?? [],
+    });
+  }
+  return Effect.try({
+    try: (): ExperimentHostDryPlan["groups"] => {
+      const path = recordSqlitePath(root);
+      if (![...groups.values()].some(({ lineages }) => lineages.length > 0) || !existsSync(path)) {
+        return [...groups.values()].map(({ experimentId, evalGroupId, lineages }) => ({
+          experimentId,
+          evalGroupId,
+          state: lineages.map((lineage) => ({ lineage, origin: { kind: "fresh" } })),
+        }));
+      }
+      const reader = openRecordReader(path);
+      try {
+        reader.db.exec("BEGIN");
+        validateExactSchema(reader);
+        return [...groups.values()].map(({ experimentId, evalGroupId, lineages }) => ({
+          experimentId,
+          evalGroupId,
+          state: readStateOrigins(reader, lineages),
+        }));
+      } finally {
+        closeRecordDatabase(reader);
+      }
+    },
+    catch: (cause) => cause,
+  });
 }
 
 export function planInvocation(
@@ -689,6 +740,7 @@ export function planInvocation(
                               ],
                         ),
                       ),
+                      yield* dryStateGroups(projectDatabaseRoot, target),
                     );
                   }),
               }),
@@ -845,19 +897,13 @@ export function runInvocation(
         if (projectDatabaseRoot === undefined) return yield* Effect.fail(new Error("Record root is unavailable."));
         const projectStateDatabase = yield* ProjectStateDatabase;
         const session = new SessionTracker(projectDatabaseRoot, projectStateDatabase);
+        const closePortable = projectStateDatabase.closeInvocationPortable(projectDatabaseRoot);
         let sessionClosed = false;
         let feedbackStarted = false;
         let feedbackFinished = false;
-        // Registered first so LIFO Scope closure runs every business finalizer
-        // (including the session heartbeat stop and fenced terminal write) before
-        // shutting down the sole operational worker and entering the one portable gate.
-        // Portability is best-effort during Scope release: an already-corrupt or
-        // unavailable database must not replace the Invocation's primary outcome.
-        // The explicit service operation remains typed for callers that need to
-        // diagnose a gate failure directly.
-        yield* Effect.addFinalizer(() =>
-          projectStateDatabase.closeInvocationPortable(projectDatabaseRoot).pipe(Effect.ignore),
-        );
+        // During failure cleanup, close the worker after the fallback Session close
+        // and preserve the original failure.
+        yield* Effect.addFinalizer(() => (sessionClosed ? Effect.void : closePortable.pipe(Effect.ignore)));
         yield* Effect.addFinalizer(() =>
           sessionClosed ? Effect.void : session.close({ status: "incomplete" }).pipe(Effect.ignore),
         );
@@ -886,6 +932,7 @@ export function runInvocation(
               coordinationRoot: state.coordinationRoot,
               recordRoot: state.recordRoot,
               keepSandbox: state.overrides.keepSandbox,
+              observeState: input.feedback?.observeState,
               pauseOnFailure: state.overrides.pauseOnFailure,
               rerun: state.overrides.rerun,
               session,
@@ -930,13 +977,21 @@ export function runInvocation(
               return "incomplete" as const;
           }
         }
-        yield* session.close({
-          status: sessionCompletionStatus(),
-          completion,
-          receipt,
-          completedAt: receipt.completedAt,
-        });
-        sessionClosed = true;
+        yield* session
+          .close({
+            status: sessionCompletionStatus(),
+            completion,
+            receipt,
+            completedAt: receipt.completedAt,
+          })
+          .pipe(
+            Effect.onExit((exit) => {
+              if (Exit.isFailure(exit)) return Effect.void;
+              sessionClosed = true;
+              // The Session is already terminal. Report the gate error directly.
+              return closePortable.pipe(Effect.mapError((cause) => operationError("invocation-run", cause)));
+            }),
+          );
         if (feedback !== undefined && completion !== undefined) {
           yield* Effect.tryPromise({
             try: () => feedback.finish({ summary, completion, receipt }),

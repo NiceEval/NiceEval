@@ -1,6 +1,11 @@
-import { Clock, Effect, Fiber } from "effect";
+import { Clock, Effect, Exit, Fiber, Result, Semaphore } from "effect";
 import { type FencedOwner, type ProcessOwnerIdentity } from "../coordination/platform/sqlite-coordination.ts";
-import { ProjectStateDatabase, type CaseCoordinationFacet } from "../record/sqlite/project-state-database.ts";
+import {
+  ProjectStateDatabase,
+  ProjectStateDatabaseLive,
+  type CaseCoordinationFacet,
+} from "../record/sqlite/project-state-database.ts";
+import type { CaseCoordinationCommand } from "../record/sqlite/worker-protocol.ts";
 import { currentProcessOwnerIdentity, exactProcessState } from "./node-process-identity.ts";
 
 import { SqliteRecordError } from "../record/sqlite/errors.ts";
@@ -85,10 +90,52 @@ export interface AcquireCaseLockEffectResult {
 
 type AcquireOnce =
   | { readonly kind: "acquired"; readonly owner: FencedOwner; readonly takenOver: boolean }
-  | { readonly kind: "waiting"; readonly holder: CaseLockRecord };
+  | { readonly kind: "waiting"; readonly holder: CaseLockRecord }
+  | { readonly kind: "retry" };
 
-function isConflict(cause: CaseLockError): boolean {
+function isConflict(cause: CaseLockError): cause is SqliteRecordError & { code: "record-command-conflict" } {
   return cause._tag === "SqliteRecordError" && cause.code === "record-command-conflict";
+}
+
+function writeCaseOwner(
+  root: string,
+  command: Extract<CaseCoordinationCommand, { _tag: "case-acquire" | "case-takeover" }>,
+  owner: FencedOwner,
+): Effect.Effect<FencedOwner, CaseLockError, ProjectStateDatabase> {
+  return Effect.gen(function* () {
+    const database = yield* ProjectStateDatabase;
+    const { caseCoordination, record } = yield* database.bind(root);
+    return yield* Effect.tryPromise({
+      try: () => caseCoordination.execute<FencedOwner>(command),
+      catch: caseLockError,
+    }).pipe(
+      Effect.tapError((cause) => {
+        // An acknowledged command rejection rolled back. A lost reply leaves
+        // the outcome unknown, so undo only this request's exact acquisition.
+        if (cause._tag === "SqliteRecordError" && cause.code !== "record-sqlite-error") return Effect.void;
+        const undo = (facet: CaseCoordinationFacet) =>
+          facet.execute<undefined>({
+            _tag: "case-release",
+            caseId: command.caseId,
+            owner,
+            unacknowledgedAcquiredAt: command.at,
+            deadlineEpochMs: Date.now() + 30_000,
+          });
+        return Effect.tryPromise({
+          try: () => undo(caseCoordination),
+          catch: caseLockError,
+        }).pipe(
+          Effect.catch((failure) => {
+            if (!record.closed) return Effect.fail(failure);
+            // The old worker must stop before we check for a committed acquisition.
+            return Effect.tryPromise({ try: () => record.close(), catch: caseLockError }).pipe(
+              Effect.andThen(caseEffect(root, undo).pipe(Effect.provide(ProjectStateDatabaseLive, { local: true }))),
+            );
+          }),
+        );
+      }),
+    );
+  });
 }
 
 export function tryAcquireCaseLockOnceEffect(
@@ -100,49 +147,41 @@ export function tryAcquireCaseLockOnceEffect(
 ): Effect.Effect<AcquireOnce, CaseLockError, ProjectStateDatabase> {
   const id = caseId(experimentId, evalId);
   const at = new Date(nowMs).toISOString();
-  const acquire = caseEffect(niceevalRoot, (facet) =>
-    facet.execute<FencedOwner>({
-      _tag: "case-acquire",
-      caseId: id,
-      owner: identity,
-      at,
-      deadlineEpochMs: Date.now() + 30_000,
-    }),
-  ).pipe(Effect.map((owner) => ({ kind: "acquired" as const, owner, takenOver: false })));
-  return acquire.pipe(
-    Effect.catch((cause) => {
-      if (!isConflict(cause)) return Effect.fail(cause);
-      return readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
-        Effect.flatMap((holder) => {
-          if (holder === undefined) return Effect.fail(cause);
-          if (exactProcessState(holder) !== "dead") return Effect.succeed({ kind: "waiting" as const, holder });
-          return caseEffect(niceevalRoot, (facet) =>
-            facet.execute<FencedOwner>({
-              _tag: "case-takeover",
-              caseId: id,
-              deadOwner: holder,
-              replacement: identity,
-              at,
-              deadlineEpochMs: Date.now() + 30_000,
-            }),
-          ).pipe(
-            Effect.map((owner) => ({ kind: "acquired" as const, owner, takenOver: true })),
-            Effect.catch((takeoverCause) =>
-              isConflict(takeoverCause)
-                ? readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
-                    Effect.flatMap((replacement) =>
-                      replacement === undefined
-                        ? Effect.fail(takeoverCause)
-                        : Effect.succeed({ kind: "waiting" as const, holder: replacement }),
-                    ),
-                  )
-                : Effect.fail(takeoverCause),
-            ),
-          );
-        }),
-      );
-    }),
-  );
+  const readHolder = readCaseLockEffect(niceevalRoot, experimentId, evalId);
+  return Effect.gen(function* (): Effect.fn.Return<AcquireOnce, CaseLockError, ProjectStateDatabase> {
+    const acquired = yield* Effect.result(
+      writeCaseOwner(
+        niceevalRoot,
+        { _tag: "case-acquire", caseId: id, owner: identity, at, deadlineEpochMs: Date.now() + 30_000 },
+        { ...identity, generation: 1 },
+      ),
+    );
+    if (Result.isSuccess(acquired)) return { kind: "acquired", owner: acquired.success, takenOver: false };
+    if (!isConflict(acquired.failure) || acquired.failure.operation !== "case-acquire")
+      return yield* Effect.fail(acquired.failure);
+    const holder = yield* readHolder;
+    if (holder === undefined) return { kind: "retry" };
+    if (exactProcessState(holder) !== "dead") return { kind: "waiting", holder };
+
+    const takeover = yield* Effect.result(
+      writeCaseOwner(
+        niceevalRoot,
+        {
+          _tag: "case-takeover",
+          caseId: id,
+          deadOwner: holder,
+          replacement: identity,
+          at,
+          deadlineEpochMs: Date.now() + 30_000,
+        },
+        { ...identity, generation: holder.generation + 1 },
+      ),
+    );
+    if (Result.isSuccess(takeover)) return { kind: "acquired", owner: takeover.success, takenOver: true };
+    if (!isConflict(takeover.failure) || takeover.failure.operation !== "case-takeover")
+      return yield* Effect.fail(takeover.failure);
+    return { kind: "retry" };
+  });
 }
 
 function abortError(signal: AbortSignal): Error {
@@ -179,87 +218,110 @@ export function acquireCaseLockEffect(
     readonly onWaitStart?: ((holder: CaseLockRecord) => void) | undefined;
   } = {},
 ): Effect.Effect<AcquireCaseLockEffectResult, CaseLockError | Error, ProjectStateDatabase> {
-  const ownerIdentity =
-    identity.ownerId !== undefined && identity.bootId !== undefined && identity.processStart !== undefined
-      ? (identity as ProcessOwnerIdentity)
-      : currentProcessOwnerIdentity();
   const heartbeatIntervalMs = opts.heartbeatIntervalMs ?? CASE_LOCK_HEARTBEAT_INTERVAL_MS;
   const pollIntervalMs = opts.pollIntervalMs ?? heartbeatIntervalMs;
   const onWaitStart = opts.onWaitStart ?? (() => {});
-  let waitStarted = false;
-  const acquire = (): Effect.Effect<
-    { owner: FencedOwner; takenOver: boolean },
-    CaseLockError | Error,
-    ProjectStateDatabase
-  > =>
-    Effect.suspend(() =>
-      Clock.currentTimeMillis.pipe(
-        Effect.flatMap((now) => tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, ownerIdentity, now)),
-        Effect.flatMap((result) => {
-          if (result.kind === "acquired") return Effect.succeed({ owner: result.owner, takenOver: result.takenOver });
-          if (!waitStarted) {
-            waitStarted = true;
-            onWaitStart(result.holder);
+  return Effect.suspend(() => {
+    const ownerIdentity =
+      identity.ownerId !== undefined && identity.bootId !== undefined && identity.processStart !== undefined
+        ? { ...identity, ownerId: identity.ownerId, bootId: identity.bootId, processStart: identity.processStart }
+        : currentProcessOwnerIdentity();
+    let undelivered: CaseLockEffectClaim | undefined;
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function* () {
+        const database = yield* ProjectStateDatabase;
+        const facets = yield* database.bind(niceevalRoot);
+        const acquired = yield* Effect.gen(function* () {
+          let waiting = false;
+          for (;;) {
+            // The SQLite write and handle setup stay together. Waiting and
+            // restarting after another writer wins remain interruptible.
+            yield* restore(Effect.void);
+            if (opts.signal?.aborted) return yield* Effect.fail(abortError(opts.signal));
+            const now = yield* Clock.currentTimeMillis;
+            const result = yield* tryAcquireCaseLockOnceEffect(niceevalRoot, experimentId, evalId, ownerIdentity, now);
+            if (result.kind === "acquired") return result;
+            if (result.kind === "retry") continue;
+            if (!waiting) {
+              waiting = true;
+              onWaitStart(result.holder);
+            }
+            yield* restore(delayOrAbort(pollIntervalMs, opts.signal));
           }
-          return delayOrAbort(pollIntervalMs, opts.signal).pipe(Effect.andThen(acquire()));
-        }),
-      ),
-    );
-  return Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function* () {
-      const database = yield* ProjectStateDatabase;
-      const facets = yield* database.bind(niceevalRoot);
-      const acquired = yield* restore(acquire()).pipe(Effect.provideService(ProjectStateDatabase, database));
-      const { owner, takenOver } = acquired;
-      const id = caseId(experimentId, evalId);
-      const key = `${niceevalRoot}\u0000${id}`;
-      let released = false;
-      const renew = Clock.currentTimeMillis.pipe(
-        Effect.flatMap((now) =>
-          Effect.tryPromise({
-            try: () =>
-              facets.caseCoordination.execute({
-                _tag: "case-heartbeat",
-                caseId: id,
-                owner,
-                at: new Date(now).toISOString(),
-                deadlineEpochMs: Date.now() + 30_000,
-              }),
-            catch: caseLockError,
-          }),
-        ),
-      );
-      return yield* Effect.forkChild(
-        Effect.forever(Effect.sleep(heartbeatIntervalMs).pipe(Effect.andThen(renew.pipe(Effect.ignore)))),
-      ).pipe(
-        Effect.map((fiber) => {
-          const release = Effect.uninterruptible(
-            Effect.suspend(() => {
-              if (released) return Effect.void;
-              released = true;
-              held.delete(key);
-              return Fiber.interrupt(fiber).pipe(
-                Effect.andThen(
-                  Effect.tryPromise({
-                    try: () =>
-                      facets.caseCoordination.execute<undefined>({
-                        _tag: "case-release",
-                        caseId: id,
-                        owner,
-                        deadlineEpochMs: Date.now() + 30_000,
-                      }),
-                    catch: caseLockError,
-                  }),
-                ),
-              );
+        });
+        const { owner, takenOver } = acquired;
+        const id = caseId(experimentId, evalId);
+        const key = `${niceevalRoot}\u0000${id}`;
+        let released = false;
+        const renew = Clock.currentTimeMillis.pipe(
+          Effect.flatMap((now) =>
+            Effect.tryPromise({
+              try: () =>
+                facets.caseCoordination.execute({
+                  _tag: "case-heartbeat",
+                  caseId: id,
+                  owner,
+                  at: new Date(now).toISOString(),
+                  deadlineEpochMs: Date.now() + 30_000,
+                }),
+              catch: caseLockError,
             }),
-          );
-          held.set(key, release);
-          return { claim: { release }, takenOver };
-        }),
-      );
-    }),
-  );
+          ),
+        );
+        return yield* Effect.forkChild(
+          Effect.forever(Effect.sleep(heartbeatIntervalMs).pipe(Effect.andThen(renew.pipe(Effect.ignore)))),
+        ).pipe(
+          Effect.map((fiber) => {
+            const releaseMutex = Semaphore.makeUnsafe(1);
+            const releaseRow = Effect.tryPromise({
+              try: () =>
+                facets.caseCoordination.execute<undefined>({
+                  _tag: "case-release",
+                  caseId: id,
+                  owner,
+                  deadlineEpochMs: Date.now() + 30_000,
+                }),
+              catch: caseLockError,
+            }).pipe(
+              Effect.catch((cause) => {
+                if (!isConflict(cause)) return Effect.fail(cause);
+                // A committed release can lose its reply. An absent or superseded
+                // owner completes this handle without mutating the successor.
+                return readCaseLockEffect(niceevalRoot, experimentId, evalId).pipe(
+                  Effect.provideService(ProjectStateDatabase, database),
+                  Effect.flatMap((current) =>
+                    current?.ownerId === owner.ownerId && current.generation === owner.generation
+                      ? Effect.fail(cause)
+                      : Effect.void,
+                  ),
+                );
+              }),
+            );
+            const release: CaseLockEffectClaim["release"] = releaseMutex
+              .withPermits(1)(
+                Effect.suspend(() => {
+                  if (released || held.get(key) !== release) return Effect.void;
+                  return Fiber.interrupt(fiber).pipe(
+                    Effect.andThen(releaseRow),
+                    Effect.tap(() =>
+                      Effect.sync(() => {
+                        released = true;
+                        if (held.get(key) === release) held.delete(key);
+                      }),
+                    ),
+                  );
+                }),
+              )
+              .pipe(Effect.uninterruptible);
+            held.set(key, release);
+            const claim = { release };
+            undelivered = claim;
+            return { claim, takenOver };
+          }),
+        );
+      }),
+    ).pipe(Effect.onExitIf(Exit.hasInterrupts, () => undelivered?.release ?? Effect.void));
+  });
 }
 
 export function drainHeldCaseLocksEffect(): Effect.Effect<number> {

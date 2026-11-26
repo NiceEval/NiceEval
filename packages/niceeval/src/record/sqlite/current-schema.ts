@@ -388,13 +388,39 @@ CREATE TABLE ne19_teardown_obligations (
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
   owner_host TEXT NOT NULL,
   generation INTEGER NOT NULL DEFAULT 1 CHECK (generation > 0),
-  payload BLOB NOT NULL,
-  UNIQUE (experiment_id, owner_pid)
+  payload BLOB NOT NULL
+) STRICT;
+CREATE TABLE state_lease_set (
+  id TEXT PRIMARY KEY,
+  invocation_id TEXT NOT NULL,
+  experiment_id TEXT NOT NULL,
+  run_id TEXT NOT NULL UNIQUE,
+  owner_token TEXT NOT NULL UNIQUE,
+  owner_evidence_json TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation BETWEEN 1 AND 9007199254740991),
+  phase TEXT NOT NULL CHECK (phase IN ('active','recovering','free')),
+  recovery_id TEXT,
+  recovery_actor_json TEXT,
+  after_registration_id TEXT UNIQUE,
+  after_status TEXT NOT NULL CHECK (after_status IN ('not-required','pending','running','completed')),
+  UNIQUE (invocation_id, experiment_id),
+  CHECK ((recovery_id IS NOT NULL) = (phase = 'recovering')),
+  CHECK ((recovery_actor_json IS NOT NULL) = (phase = 'recovering')),
+  CHECK ((after_registration_id IS NULL) = (after_status = 'not-required')),
+  CHECK (phase != 'free' OR after_status IN ('not-required','completed'))
+) STRICT;
+CREATE TABLE state_lease_member (
+  set_id TEXT NOT NULL REFERENCES state_lease_set(id),
+  key TEXT NOT NULL,
+  acquired_generation INTEGER NOT NULL CHECK (acquired_generation BETWEEN 1 AND 9007199254740991),
+  current_generation INTEGER NOT NULL CHECK (current_generation BETWEEN acquired_generation AND 9007199254740991),
+  PRIMARY KEY (set_id, key)
 ) STRICT;
 CREATE TABLE ne19_shared_state_generations (
   state_key TEXT NOT NULL,
   generation INTEGER NOT NULL CHECK (generation > 0),
   parent_generation INTEGER NOT NULL CHECK (parent_generation >= 0),
+  lease_set_id TEXT NOT NULL REFERENCES state_lease_set(id),
   state_kind TEXT NOT NULL CHECK (state_kind IN ('active','recovering','free')),
   owner_token TEXT NOT NULL,
   owner_pid INTEGER NOT NULL CHECK (owner_pid > 0),
@@ -407,6 +433,75 @@ CREATE TABLE ne19_shared_state_generations (
 ) STRICT;
 CREATE INDEX ne19_teardown_obligations_experiment ON ne19_teardown_obligations(experiment_id, owner_pid);
 CREATE INDEX ne19_shared_state_generations_head ON ne19_shared_state_generations(state_key, generation DESC);
+CREATE INDEX state_lease_member_evidence ON state_lease_member(key, current_generation);
+CREATE INDEX state_lease_set_experiment ON state_lease_set(experiment_id, phase, after_status);
+CREATE TABLE state_run (
+  run_id TEXT PRIMARY KEY REFERENCES ne19_run_resources(run_id)
+) STRICT;
+CREATE TABLE state_lineage (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  cohort TEXT NOT NULL,
+  experiment_id TEXT NOT NULL,
+  eval_group_id TEXT NOT NULL,
+  head_id TEXT,
+  UNIQUE(name,version,cohort,experiment_id,eval_group_id),
+  FOREIGN KEY(id,head_id) REFERENCES state_checkpoint(lineage_id,id)
+) STRICT;
+CREATE TABLE state_checkpoint (
+  id TEXT PRIMARY KEY,
+  lineage_id TEXT NOT NULL REFERENCES state_lineage(id),
+  execution_id TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  bytes INTEGER NOT NULL CHECK (bytes BETWEEN 0 AND 9007199254740991),
+  chunk_count INTEGER NOT NULL CHECK (chunk_count BETWEEN 0 AND 9007199254740991),
+  validated INTEGER NOT NULL CHECK (validated IN (0,1)),
+  ready INTEGER NOT NULL CHECK (ready IN (0,1) AND ready <= validated),
+  UNIQUE(lineage_id,id),
+  UNIQUE(execution_id,lineage_id)
+) STRICT;
+CREATE TABLE state_checkpoint_chunk (
+  checkpoint_id TEXT NOT NULL REFERENCES state_checkpoint(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 9007199254740991),
+  bytes BLOB NOT NULL CHECK (length(bytes) BETWEEN 1 AND 1048576),
+  PRIMARY KEY(checkpoint_id,ordinal)
+) STRICT;
+CREATE TABLE state_execution (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES state_run(run_id),
+  experiment_id TEXT NOT NULL,
+  eval_group_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation BETWEEN 1 AND 9007199254740991),
+  writer_generation TEXT NOT NULL,
+  lease_set_id TEXT NOT NULL REFERENCES state_lease_set(id),
+  UNIQUE(run_id,experiment_id,eval_group_id,generation)
+) STRICT;
+CREATE TABLE state_execution_binding (
+  execution_id TEXT NOT NULL REFERENCES state_execution(id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 9007199254740991),
+  lineage_id TEXT NOT NULL REFERENCES state_lineage(id),
+  predecessor_id TEXT,
+  PRIMARY KEY(execution_id,ordinal),
+  UNIQUE(execution_id,lineage_id),
+  FOREIGN KEY(lineage_id,predecessor_id) REFERENCES state_checkpoint(lineage_id,id)
+) STRICT;
+CREATE TABLE state_execution_fact (
+  execution_id TEXT NOT NULL REFERENCES state_execution(id) ON DELETE CASCADE,
+  publication_sequence INTEGER NOT NULL CHECK (publication_sequence BETWEEN 1 AND 9007199254740991),
+  writer_generation TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY(execution_id,publication_sequence)
+) STRICT;
+CREATE TABLE state_attempt (
+  attempt_id TEXT PRIMARY KEY REFERENCES ne19_attempt_publications(attempt_id),
+  execution_id TEXT NOT NULL REFERENCES state_execution(id) ON DELETE CASCADE,
+  earlier_attempts INTEGER NOT NULL CHECK (earlier_attempts BETWEEN 0 AND 9007199254740991)
+) STRICT;
+CREATE INDEX state_attempt_execution ON state_attempt(execution_id);
+CREATE INDEX state_checkpoint_pending ON state_checkpoint(source_run_id,ready);
 
 
 `;

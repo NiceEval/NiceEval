@@ -1,0 +1,50 @@
+---
+title: "一组 State 检查点怎样保存与恢复"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 准备
+    lg1: 核对
+    lg2: 待恢复
+    lg3: 已确定
+  }
+  class lg0 blue
+  class lg1 purple
+  class lg2 yellow
+  class lg3 teal
+  s0: 等待读取上次保存的检查点
+  s1: 已确定本次恢复起点
+  s2: 原运行中断#65292;等待核对保存结果
+  s3: 已备好一个目录的内容
+  s4: 确认未保存#65292;沿用原检查点
+  s5: 已备好两个目录的内容
+  s6: 两个目录的检查点一起可恢复
+  s7: 已确认保存结果
+  s8: 保存回复丢失#65292;等待重读
+  s9: 尚不知道是否已保存#65292;继续阻止后续运行
+  [*] --> s0
+  s0 --> s1: 读取并固定恢复起点
+  s1 --> s2: 原运行中断#65292;恢复者接管
+  s1 --> s3: 校验第一个目录的内容
+  s2 --> s4: 清理暂存内容并记录跳过
+  s3 --> s2: 原运行中断#65292;恢复者接管
+  s3 --> s5: 校验第二个目录的内容
+  s4 --> s0: 允许下一次运行
+  s5 --> s6: 一起保存两个目录并登记结果
+  s5 --> s2: 原运行中断#65292;恢复者接管
+  s6 --> s7: 收到保存回复
+  s6 --> s8: 保存回复丢失
+  s7 --> s0: 允许下一次运行
+  s8 --> s7: 重读同一次保存的结果
+  s8 --> s9: 无法重读#65292;继续保留租约
+  s9 --> s7: 数据库恢复可读#65292;核对并保留保存记录
+  class s0 blue
+  class s1 blue
+  class s2 yellow
+  class s3 blue
+  class s4 teal
+  class s5 blue
+  class s6 purple
+  class s7 teal
+  class s8 purple
+  class s9 yellow

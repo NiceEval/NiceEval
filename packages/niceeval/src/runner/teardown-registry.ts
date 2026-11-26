@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { Effect, Result, Schema } from "effect";
 import type { TeardownObligationRow } from "../coordination/platform/sqlite-registries.ts";
+import type { StateLeaseAuthority } from "../record/sqlite/state-lease-repository.ts";
 import {
   ProjectStateDatabase,
   type ProjectStateFacets,
@@ -95,16 +96,19 @@ export function teardownEntryId(experimentId: string, pid: number): string {
 export function writeTeardownRegistrationEffect(
   niceevalRoot: string,
   entry: TeardownRegistration,
-): Effect.Effect<void, unknown, ProjectDatabaseRequirement> {
-  const id = teardownEntryId(entry.experimentId, entry.pid);
+  leaseSet?: StateLeaseAuthority,
+): Effect.Effect<TeardownObligationRow, unknown, ProjectDatabaseRequirement> {
+  const id = leaseSet?.id ?? teardownEntryId(entry.experimentId, entry.pid);
+  const payload = Buffer.from(JSON.stringify(entry), "utf8");
   return putTeardownObligation({
     root: niceevalRoot,
     id,
     experimentId: entry.experimentId,
     ownerPid: entry.pid,
     ownerHost: entry.host,
-    payload: Buffer.from(JSON.stringify(entry), "utf8"),
-  });
+    payload,
+    leaseSet,
+  }).pipe(Effect.map((generation) => ({ id, generation, payload })));
 }
 
 /** 读一条登记项(不存在或损坏都返回 undefined,不抛错)。 */
@@ -135,8 +139,8 @@ export function readExactTeardownRegistrationEffect(
   niceevalRoot: string,
   experimentId: string,
   pid: number,
-): Effect.Effect<TeardownRegistration | undefined, unknown, ProjectDatabaseRequirement> {
-  const id = teardownEntryId(experimentId, pid);
+  id: string,
+) {
   return getTeardownObligation(niceevalRoot, id).pipe(
     Effect.flatMap((row) =>
       row === undefined
@@ -153,7 +157,7 @@ export function readExactTeardownRegistrationEffect(
               if (registration === undefined) {
                 throw new Error(`teardown registration ${JSON.stringify(id)} has an invalid identity or shape`);
               }
-              return registration;
+              return { registration, row };
             },
             catch: (cause) => cause,
           }),
@@ -196,15 +200,13 @@ export function isExactTeardownRegistrationOwnerTerminatedEffect(input: {
 }
 
 /** 读全部登记项(损坏 payload 跳过,不整体失败)。 */
-export function readTeardownRegistrationsEffect(
-  niceevalRoot: string,
-): Effect.Effect<{ id: string; entry: TeardownRegistration }[], unknown, ProjectDatabaseRequirement> {
+export function readTeardownRegistrationsEffect(niceevalRoot: string) {
   return listTeardownObligations(niceevalRoot).pipe(
     Effect.map((rows) =>
       rows.flatMap((row) => {
         try {
           const entry = decodeTeardownRegistration(JSON.parse(Buffer.from(row.payload).toString("utf8")));
-          return entry === undefined ? [] : [{ id: row.id, entry }];
+          return entry === undefined ? [] : [{ id: row.id, entry, leaseSetId: row.leaseSetId }];
         } catch {
           return [];
         }

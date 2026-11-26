@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 
 
-BEFORE_CACHE_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v1"
+BEFORE_CACHE_PROTOCOL = "niceeval-docker-profile-state/docker-data-snapshot/v2"
 BEFORE_CACHE_REQUIRED_STATE = "dockerData"
-BEFORE_CACHE_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v1"
+BEFORE_CACHE_HELPER_REVISION = "niceeval-docker-profile-host/docker-data-snapshot/v2"
 BEFORE_CACHE_COPY_PROTOCOL = "raw-image/v1"
 BEFORE_CACHE_COPY_REVISION = "niceeval-docker-profile-host/raw-image-copy-reuuid/v2"
 BEFORE_CACHE_QUIESCE_REVISION = "niceeval-docker-profile-host/docker-data-quiesce/v1"
@@ -33,8 +33,8 @@ BEFORE_CACHE_FILESYSTEM_FEATURES = [
     "independent-image",
 ]
 BEFORE_CACHE_SEED_POLICY = "immutable-unmounted/v1"
-BEFORE_CACHE_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v4"
-BEFORE_CACHE_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v3"
+BEFORE_CACHE_PUBLICATION_REVISION = "prepared-copy-client-commit-publish/v5"
+BEFORE_CACHE_RECOVERY_REVISION = "epoch-capsule-no-guess-recovery/v4"
 BEFORE_CACHE_MANIFEST_SCHEMA = "niceeval-docker-profile-activation/v3"
 
 def _load_validate_capacity():

@@ -1,0 +1,70 @@
+---
+title: "Agent 发送退避与并发名额"
+---
+stateDiagram-v2
+  direction LR
+  state "Legend" as legend {
+    lg0: 派发
+    lg1: 重试
+  }
+  class lg0 blue
+  class lg1 orange
+  state "At the same time" as all {
+    state "Attempt 1" as r0 {
+      s0: 等待实验名额
+      s1: 已有实验名额#65292;等待全局名额
+      s2: 已取得全局名额
+      s3: 等待独占 Sandbox 名额
+      s4: 已有独占 Sandbox 名额#65292;等待全局名额
+      s5: 正在发送
+      s6: 已收尾
+      s7: 保留原 Sandbox#65292;等待重试
+      s8: 退避已结束#65292;等待全局名额
+      [*] --> s0
+      s0 --> s1: 取得实验名额 [when 已收尾 or 等待实验名额]
+      s1 --> s2: 取得全局名额
+      s2 --> s3: 归还全局名额#65292;等待独占 Sandbox
+      s3 --> s4: 取得独占 Sandbox 名额
+      s4 --> s5: 取回全局名额#65292;开始发送
+      s5 --> s6: 执行与收尾结束#65292;归还名额
+      s5 --> s7: 请求未被受理#65292;归还全局名额并退避
+      s7 --> s8: 退避到期
+      s8 --> s5: 取回全局名额#65292;重发原请求
+    }
+    --
+    state "Attempt 2" as r1 {
+      s9: 等待实验名额
+      s10: 已有实验名额#65292;等待全局名额
+      s11: 已取得全局名额
+      s12: 等待独占 Sandbox 名额
+      s13: 已有独占 Sandbox 名额#65292;等待全局名额
+      s14: 正在发送
+      s15: 已收尾
+      s16: 保留原 Sandbox#65292;等待重试
+      s17: 退避已结束#65292;等待全局名额
+      [*] --> s9
+      s9 --> s10: 取得实验名额 [when 已收尾 or 等待实验名额]
+      s10 --> s11: 取得全局名额
+      s11 --> s12: 归还全局名额#65292;等待独占 Sandbox
+      s12 --> s13: 取得独占 Sandbox 名额
+      s13 --> s14: 取回全局名额#65292;开始发送
+      s14 --> s15: 执行与收尾结束#65292;归还名额
+      s14 --> s16: 请求未被受理#65292;归还全局名额并退避
+      s16 --> s17: 退避到期
+      s17 --> s14: 取回全局名额#65292;重发原请求
+    }
+  }
+  class s1 blue
+  class s2 blue
+  class s3 blue
+  class s4 blue
+  class s5 blue
+  class s7 orange
+  class s8 orange
+  class s10 blue
+  class s11 blue
+  class s12 blue
+  class s13 blue
+  class s14 blue
+  class s16 orange
+  class s17 orange

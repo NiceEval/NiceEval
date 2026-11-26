@@ -49,6 +49,13 @@ State 的 restore 与 save 是 Runner 内部物理阶段。初始化所需工具
 绑定 State 的实例禁用 before cache capture/restore，避免整机缓存替换状态；声明式 before 仍真实执行。workdir reset 与资源 prepare 不得改 State 根。
 Provider 必须支持安全文件树操作和全实例写入静默验证，否则规划拒绝。不把成功退出的 Agent 命令当作后台写入者已停止的证据。
 
+Provider 从宿主侧兑现这两项能力，不依赖实例镜像里装有 shell、tar、Python 等工具，也不在实例内运行辅助程序。例如本机 Docker 用 Engine 的 archive 接口流式读写文件树（不把整个归档读进内存），用 pause 冻结容器后核对进程表来证明写入静默。
+
+Provider 没有删除原语时（Docker Engine API 只能读、核对和覆盖，PUT 解包也不删除归档外的成员），State 不靠删除来恢复：
+恢复只发生在刚创建、尚未执行任何 action 的实例里，先确认每个声明根不存在，再流式写入 checkpoint；恢复为缺席时不写入任何内容。
+声明根已经存在于实例中（来自 template、镜像或 Before cache 镜像）时，恢复以基础设施错误 `state-root-preexisting` 失败并指出路径，不尝试删除或覆盖。
+这类 Provider 不能把 State 与跨 Group 的实例复用一起使用，规划期以 `state-provider-unsupported` 拒绝，因为复用的实例可能留有上一个 Group 的状态。
+
 ## 恢复与保存
 
 取得实例后先发布 execution 与起点，再校验所有根和归档 manifest；全部合法后才删除声明根、恢复或初始化。
@@ -58,6 +65,8 @@ Provider 必须支持安全文件树操作和全实例写入静默验证，否�
 只在全部恢复成功、至少一个 Attempt 进入 Agent 阶段、所有阶段结束且写入静默后保存。Assertion failed 不使文件树失效；基础设施失败则禁止保存。
 归档按 manifest 根编号与相对成员编码，保留缺席根；稳定排序，保存文件内容、目录与 mode。不保存宿主绝对路径作为解包指令。
 只容忍 ENOENT；不可读、读取时变化、链接或异常类型都拒绝 capture，不能用 `tar --ignore-failed-read` 弱化错误。
+
+归档接口可能静默省略成员：Docker Engine 打包时遇到不可读文件或 socket，只写 daemon 日志，仍成功返回 tar。这时 Provider 用独立的完整清单对账。本机 Docker 读取容器相对镜像的 changes 列表，声明根下的每个路径都必须作为同类型成员出现在归档里，缺失或类型不符即拒绝 capture。声明根由 State 独占、恢复前确认不存在，所以根下的每个路径都会出现在 changes 中。
 
 全部 State 与 Group resource release 共用一个 30 秒收尾预算，不按 binding 累加。正常结束、timeout 与中断都使用独立 cleanup signal；独立 signal 不表示允许保存不可信状态。
 正常轮换若满足保存条件可提交；故障替换先完成 skipped/failed 事实，再允许下一台实例恢复。
@@ -111,6 +120,8 @@ binding 的完整定义、cohort 与 initialize action identity 进入条件身�
 [公开形状](library.md#结果形状) 是 Run Schema 与 Inspection 的单一声明。Run 发布保存每个 execution 的所有版本，按 PublicationCutoff 读取；旧 cutoff 不可见后来的 saved。
 Attempt context 在发布时固定关联 executionId；保存与恢复只追加 execution 事实，不回写 Attempt。
 恢复失败可以零 Attempt；故障替代保留每一代事实，不压成 lineage 的最后一次保存。
+
+恢复属于 Group 物理 Sandbox 的获取阶段，先于任何 Attempt 的预约与开始事件。恢复失败时该 Group 的全部 Planned attempt 记为 not-dispatched，由 Run 级诊断说明原因，不发布 errored Attempt；已经开始的 Attempt 在其它阶段失败时照常发布 errored。
 
 Run 关闭前，全部 execution 必须终结；进程崩溃后只有 Run recovery actor 在同一 authority 核对提交结果并终结 pending；集合恢复先调用它，再处理 after 与释放。
 数据库不可读时不能伪造终态或发布完整 Run。unknown 是运行时反馈及可持久化的中间事实，恢复必须将其收敛为已提交或未提交。

@@ -53,6 +53,7 @@ Runner 在规划期拒绝空段、`.`、`..`、NUL、根目录与词法重复；
 - 路径与 workdir、Runner 内部目录不能双向包含。
 - 路径及现有祖先不得是 symlink；归档不接受 symlink、hardlink、设备、socket、FIFO。
 - 路径必须位于受管可写文件树；只有不存在可以记为缺席，权限与读取错误必须失败。
+- 声明的路径由 State 独占：template、镜像与逐 Attempt 的准备都不能预先创建它；初始化工具可以来自 template，路径本身由 `initialize` 或恢复建立。Provider 不能删除文件时，预先存在的路径使恢复以 `state-root-preexisting` 失败。
 
 运行期路径 resolution 由 Sandbox 文件操作 owner 负责。删除、打包、解包使用不跟随链接的目录句柄与逐成员白名单，拒绝绝对归档成员、`..` 与重复成员。
 验证后路径仍可能变化，执行每个文件操作时继续验证；不能先检查一次再执行不受约束的 tar。
@@ -80,10 +81,11 @@ State 必须配合 Eval Group，所有成员的有效 binding 集合一致。未
 | `state-invalid` | 定义期 | 字段、action、品牌或词法路径不合法 |
 | `state-duplicate` | 加载期 | binding 重名或同名 definition 不一致 |
 | `state-requires-eval-group` | 规划期 | 选中未分组 Eval |
-| `state-provider-unsupported` | 规划期 | Provider 不能兑现安全文件树操作与写入静默验证 |
+| `state-provider-unsupported` | 规划期 | Provider 不能兑现安全文件树操作与写入静默验证；或 Provider 没有删除原语而 State 与跨 Group 实例复用同用 |
 | `state-path-in-workdir` | 规划或 acquire 后 | 与 workdir 双向包含 |
 | `state-path-conflict` | 规划或 acquire 后 | 根重叠、内部路径重叠或链接逃逸 |
 | `state-layout-mismatch` | 恢复前 | checkpoint 根 manifest 与声明不一致 |
+| `state-root-preexisting` | 恢复前 | Provider 没有删除原语，而声明根已存在于新建实例中 |
 
 能够静态确定的错误在任何 build、Hook 或 Sandbox 创建前拒绝。依赖远端 home 的校验在 acquire 后、删除前拒绝。
 成员的 binding 不一致使用 Group 的 `eval-group-incompatible`。运行失败与退出码见 [CLI](cli.md)。
@@ -182,7 +184,7 @@ const mempalState = defineState({
   name: "mempal",
   version: "0.9.0",
   paths: ["~/.mempal"],
-  initialize: shell({ command: "mempal init ~/.mempal" }),
+  initialize: shell({ id: "mempal-init", command: "mempal init ~/.mempal" }),
 });
 
 export const mempal = definePlugin((options: { cohort: string }) => ({

@@ -15,20 +15,18 @@ import type { ClaimExecutionRequest, CoordinationHostSDK, ExecutionClaim } from 
 export function claimExecution(
   request: ClaimExecutionRequest,
 ): Effect.Effect<ExecutionClaim, unknown, ProjectStateDatabase> {
-  return Effect.uninterruptibleMask((restore) =>
-    restore(
-      acquireCaseLockEffect(
-        request.projectDatabaseRoot,
-        request.experimentId,
-        request.evalId,
-        request.identity ?? currentProcessOwnerIdentity(),
-        {
-          signal: request.signal,
-          pollIntervalMs: undefined,
-          heartbeatIntervalMs: undefined,
-          onWaitStart: request.onCaseWait,
-        },
-      ),
+  return Effect.suspend(() =>
+    acquireCaseLockEffect(
+      request.projectDatabaseRoot,
+      request.experimentId,
+      request.evalId,
+      request.identity ?? currentProcessOwnerIdentity(),
+      {
+        signal: request.signal,
+        pollIntervalMs: undefined,
+        heartbeatIntervalMs: undefined,
+        onWaitStart: request.onCaseWait,
+      },
     ).pipe(
       Effect.map((caseResult) => ({
         caseClaim: caseResult.claim,

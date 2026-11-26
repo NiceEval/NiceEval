@@ -1,0 +1,43 @@
+---
+title: "恢复期间处理迟到的结果发布"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 运行
+    lg1: 待恢复
+    lg2: 恢复
+    lg3: 已中断
+  }
+  class lg0 blue
+  class lg1 yellow
+  class lg2 purple
+  class lg3 teal
+  s0: 原运行仍在进行
+  s1: 原运行已确认结束
+  s2: 原运行仍在进行#65292;已有结果可读
+  s3: 正在恢复#65292;仍有迟到请求
+  s4: 原运行已确认结束#65292;已有结果可读
+  s5: 正在恢复
+  s6: 运行已中断#65292;仍有迟到请求
+  s7: 运行已中断
+  [*] --> s0
+  s0 --> s1: 原运行进程退出并得到确认
+  s1 --> s3: 开始恢复一个运行
+  s0 --> s2: 发布先提交的结果
+  s2 --> s4: 原运行进程退出并得到确认
+  s1 --> s4: 发布先提交的结果
+  s3 --> s5: 拒绝迟到的发布
+  s4 --> s3: 开始恢复一个运行
+  s4 --> s5: 开始恢复一个运行
+  s5 --> s3: 开始恢复一个运行
+  s3 --> s6: 提交一个运行的中断状态
+  s6 --> s7: 拒绝迟到的发布
+  s5 --> s7: 提交一个运行的中断状态
+  class s0 blue
+  class s1 yellow
+  class s2 blue
+  class s3 purple
+  class s4 yellow
+  class s5 purple
+  class s6 teal
+  class s7 teal

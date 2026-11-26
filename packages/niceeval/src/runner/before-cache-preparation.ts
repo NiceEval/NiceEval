@@ -1,5 +1,5 @@
 import type { ExpPrepareEvent } from "../experiment/host/cli/output-protocol.ts";
-import { beforeCacheReplacementWarnings } from "./before-cache-collisions.ts";
+import { beforeCacheReplacementWarnings, type BeforeCachePosition } from "./before-cache-collisions.ts";
 import { randomUUID } from "node:crypto";
 import { Cause, Deferred, Effect, Exit, Result, Option, Semaphore, Scope } from "effect";
 import type { JsonValue, ScopedFeedback } from "../shared/types.ts";
@@ -9,6 +9,7 @@ import {
   sandboxStepExecutionOf,
   type SandboxActionState,
 } from "../sandbox/action.ts";
+import { beforeCacheReplacementScope } from "../sandbox/before-cache-replacement.ts";
 import { sandboxCapabilities, providerBoundaryEffect } from "../sandbox/backend.ts";
 import type { MaterializedSandboxCase } from "../sandbox/case-types.ts";
 import { createSandboxCommandTarget } from "../sandbox/operations.ts";
@@ -415,7 +416,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
     // The graph is shared by every Record Run in this Invocation. Its holds,
     // reservations and disabled-domain state must use that same ownership.
     const preparationId = randomUUID();
-    const replacementScopes = new Map<LinkedRunPlan, JsonValue>();
+    const replacementPositions: BeforeCachePosition[] = [];
     const targets = new Map<string, PreparationTarget>();
     const contextsByPair = new Map<string, BeforeCachePreparationContext>();
     const dependents = new Map<string, Map<string, { readonly experimentId: string; readonly evalId: string }>>();
@@ -468,10 +469,19 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
         continue;
       }
       if (eligibility._tag !== "Eligible") continue;
-      if (eligibility.replacementScope !== undefined)
-        replacementScopes.set(attempt.plan, { ...eligibility.replacementScope });
       const entries = continuousEligibleActions(attempt.plan, eligibility.coverage);
       const planned = plannedBeforeCacheActions(attempt.plan, entries, eligibility);
+      if (eligibility.replacementScope !== undefined) {
+        for (const action of planned) {
+          replacementPositions.push({
+            scope: beforeCacheReplacementScope(eligibility.replacementScope, action),
+            content: action.key,
+            owner: action.declaringOwner,
+            experimentId: attempt.run.experimentId,
+            actionId: action.entry.id,
+          });
+        }
+      }
       const agent = attempt.run.agent;
       const derived =
         preparation.supportsAgentDerived === true && agent?.kind === "sandbox"
@@ -527,8 +537,7 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
       }
     }
 
-    for (const warning of beforeCacheReplacementWarnings([...replacementScopes.keys()], replacementScopes))
-      options.onWarning(warning);
+    for (const warning of beforeCacheReplacementWarnings(replacementPositions)) options.onWarning(warning);
 
     // Validate the complete graph before the first provider lookup or materialization.
     for (const node of nodes.values()) {
@@ -803,7 +812,11 @@ export const prepareBeforeCaches = Effect.fnUntraced(function* (
                 (prepared, staging) =>
                   Effect.gen(function* () {
                     if (!node.preparer.continuesStaging) return;
-                    const child = children.get(node.key)?.[0];
+                    // A deeper cache hit can skip an entire child branch. Only a
+                    // started child has a worker that will signal its retirement.
+                    const child = children
+                      .get(node.key)
+                      ?.find((next) => claimed.has(next.key) && !terminal.has(next.key));
                     if (child === undefined) return;
                     stagingOffers.set(child.key, staging);
                     // Publish the parent before waking the child, while its staging Scope

@@ -227,8 +227,9 @@ receipt 不复制 locator、Verdict、Usage、cost 或 Attempt 计数。需要�
 - [CLI](../cli/README.md) —— Invocation、accept、查询与机器输出。
 - [Run](../../run/README.md) —— Run、Member、Attempt publication 与 lifecycle 的 owner。
 
-## Sandbox State 租约集合
+## 租约集合
 
-绑定 State 的 Experiment 使用 [持久租约集合](../data-model.md)，在全部 Run 原子创建后、Hook 与 Sandbox 前原子冻结全部成员。
+持有任何 sharedState key 的 Experiment 都使用 [持久租约集合](../data-model.md)，在全部 Run 原子创建后、Hook 与 Sandbox 前原子冻结全部成员。
+只声明作者 `sharedState.key` 的 Experiment 得到只含这一个成员的集合；绑定 State 时再加入自动 State keys。没有不属于集合的 key 持有，也没有另一套单 key 生命周期。
 每个 Experiment 独立通过此门禁，不等待其它集合；case-lock claim 在集合取得后按执行准入建立。
-集合沿用上述单 key authority 与 immutable generation，补充整组取得、fencing、恢复和释放；单 key 不能绕过集合 owner 转移。
+集合使用上述 immutable generation 链表达每个 key 的转移，取得、fencing、恢复和释放都只由集合事务完成。

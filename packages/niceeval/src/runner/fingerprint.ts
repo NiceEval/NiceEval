@@ -27,6 +27,8 @@ import {
 } from "./sandbox-selection.ts";
 import type { EvalManifest } from "./manifest.ts";
 import { configIdentityPaths, configIdentityForRun, type ConfigIdentity } from "./config-identity.ts";
+import { planGroupState, stateCondition, type PlannedGroupState } from "../state/planning.ts";
+import { StateDefinitionError } from "../state/definition.ts";
 import { adapterIdentity } from "../adapter.ts";
 import { hashIdentityPayload as hash, stableIdentityJson as stableJson } from "./execution-identity.ts";
 import { resolvePiCodingAgent } from "../judge/pi-dependency.ts";
@@ -45,7 +47,7 @@ export class FingerprintPlanningError extends Data.TaggedError("FingerprintPlann
   readonly message: string;
 }> {}
 
-export type FingerprintPlanningFailure = FingerprintFileError | FingerprintPlanningError;
+export type FingerprintPlanningFailure = FingerprintFileError | FingerprintPlanningError | StateDefinitionError;
 export type FingerprintSourceCache = Map<string, Effect.Effect<string, FingerprintFileError>>;
 
 export function createFingerprintSourceCache(): FingerprintSourceCache {
@@ -433,6 +435,8 @@ function streamHashEffect(path: string): Effect.Effect<string, FingerprintFileEr
 
 /** 无派发项目规划：身份目标与 runner 后续真正消费的 prepared pair 来自同一产物。 */
 export interface ProjectTargetPlan {
+  readonly stateByPair: ReadonlyMap<string, PlannedGroupState>;
+  readonly stateKeysByExperiment: ReadonlyMap<string, ReadonlySet<string>>;
   readonly target: ProjectCurrentTarget;
   readonly preparedPairsByKey: ReadonlyMap<string, PreparedRunPair>;
   readonly plannedConfigHashes: ReadonlyMap<string, string>;
@@ -495,6 +499,11 @@ export function planPreparedProjectTarget(
       try: () => indexPreparedPairs(preparedPairs),
       catch: (cause) => fingerprintPlanningError("invariant", cause),
     });
+    const state = yield* Effect.try({
+      try: () => planGroupState(preparedPairs),
+      catch: (cause) =>
+        cause instanceof StateDefinitionError ? cause : fingerprintPlanningError("configuration", cause),
+    });
     const sourceCache = createFingerprintSourceCache();
     const plannedFingerprints = new Map<string, string>();
     const renameFingerprintsByKey = new Map<string, (experimentId: string) => string | undefined>();
@@ -514,7 +523,11 @@ export function planPreparedProjectTarget(
           });
           resolvedJudgesByKey.set(pair.key, resolvedJudge);
           const identity = yield* Effect.try({
-            try: () => configIdentityForRun(pair.run, pair.plan, resolvedJudge),
+            try: () => {
+              const base = configIdentityForRun(pair.run, pair.plan, resolvedJudge);
+              const stateBindings = state.byPair.get(pair.key)?.bindings;
+              return stateBindings === undefined ? base : { ...base, state: stateBindings.map(stateCondition) };
+            },
             catch: (cause) => fingerprintPlanningError("configuration", cause),
           });
           const resultConfigHash = yield* Effect.try({
@@ -589,6 +602,8 @@ export function planPreparedProjectTarget(
     }
     return {
       target: { plannedAt: new Date().toISOString(), experiments },
+      stateByPair: state.byPair,
+      stateKeysByExperiment: state.byExperiment,
       preparedPairsByKey: readonlyMapSnapshot(preparedPairsByKey),
       plannedConfigHashes: readonlyMapSnapshot(plannedConfigHashes),
       resolvedJudgesByKey: readonlyMapSnapshot(resolvedJudgesByKey),

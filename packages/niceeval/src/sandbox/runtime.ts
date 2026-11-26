@@ -129,10 +129,12 @@ export interface SandboxRuntimeMaterializeInput {
   /** Invocation-level timing tree for derived Dockerfile Agent image lookup/build. */
   readonly runTiming: import("../runner/timing.ts").RunTimingRecorder | undefined;
   readonly release: SandboxRuntimeRelease;
+  /** Invoked after physical resource teardown and before provider shutdown. */
+  readonly finalizeState?: (releaseResources: (deadlineAt: number) => Effect.Effect<void>) => Effect.Effect<void>;
 }
 
 /** ProviderModule 闭包收到的完整上下文；公开 plan 只提供中性 identity/scheduling 元数据。 */
-export type SandboxRuntimeMaterializeContext = Omit<SandboxRuntimeMaterializeInput, "release">;
+export type SandboxRuntimeMaterializeContext = Omit<SandboxRuntimeMaterializeInput, "release" | "finalizeState">;
 
 export type SandboxRuntimeServices =
   | { readonly _tag: "Live" }
@@ -1247,14 +1249,18 @@ function runTeardownHooks(
   hooks: readonly SandboxHook[],
   sandbox: Sandbox,
   context: SandboxHookContext,
+  deadlineAt?: number,
 ): Effect.Effect<void> {
   return Effect.forEach(
     [...hooks].reverse(),
     (hook) => {
-      return cleanupCallback((signal) => {
-        applyCommandDeadline(sandbox, Date.now() + CLEANUP_TIMEOUT_MS);
-        return hook(sandbox, { ...context, signal });
-      }).pipe(
+      return cleanupCallback(
+        (signal) => {
+          applyCommandDeadline(sandbox, deadlineAt ?? Date.now() + CLEANUP_TIMEOUT_MS);
+          return hook(sandbox, { ...context, signal });
+        },
+        deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now()),
+      ).pipe(
         Effect.catch((cause) =>
           Effect.sync(() => {
             context.diagnostic({
@@ -1300,6 +1306,7 @@ function runSandboxPluginSetups(
 function runSandboxPluginTeardowns(
   input: SandboxRuntimeMaterializeInput,
   owned: MaterializedSandboxCase,
+  deadlineAt?: number,
 ): Effect.Effect<void> {
   const count = activatedSandboxPluginCounts.get(owned) ?? 0;
   return Effect.forEach(
@@ -1307,13 +1314,16 @@ function runSandboxPluginTeardowns(
     (entry) => {
       const teardown = entry.lifecycle.teardown;
       if (teardown === undefined) return Effect.void;
-      return cleanupCallback((signal) => {
-        applyCommandDeadline(owned.sandbox, Date.now() + CLEANUP_TIMEOUT_MS);
-        return (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, {
-          ...input.hookContext,
-          signal,
-        });
-      }).pipe(
+      return cleanupCallback(
+        (signal) => {
+          applyCommandDeadline(owned.sandbox, deadlineAt ?? Date.now() + CLEANUP_TIMEOUT_MS);
+          return (teardown as (sandbox: Sandbox, context: SandboxHookContext) => void | Promise<void>)(owned.sandbox, {
+            ...input.hookContext,
+            signal,
+          });
+        },
+        deadlineAt === undefined ? undefined : Math.max(0, deadlineAt - Date.now()),
+      ).pipe(
         Effect.catch((cause) =>
           Effect.sync(() =>
             input.feedback.diagnostic({
@@ -1370,10 +1380,11 @@ function releaseOwned(input: SandboxRuntimeMaterializeInput, owned: Materialized
   // catchAll only handles the provider's typed failure. Defects and interruption remain in their
   // original Cause, while ensuring guarantees the resource group release even if a hook defects.
   const releaseWithDiagnostic = release.pipe(Effect.catch((cause) => reportReleaseFailure(input, owned, cause)));
-  return runSandboxPluginTeardowns(input, owned).pipe(
-    Effect.andThen(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext)),
-    Effect.ensuring(releaseWithDiagnostic),
-  );
+  const releaseResources = (deadlineAt?: number) =>
+    runSandboxPluginTeardowns(input, owned, deadlineAt).pipe(
+      Effect.andThen(runTeardownHooks(input.plan.pair.teardownHooks, owned.sandbox, input.hookContext, deadlineAt)),
+    );
+  return (input.finalizeState?.(releaseResources) ?? releaseResources()).pipe(Effect.ensuring(releaseWithDiagnostic));
 }
 
 function sortedBuildKeys(keys: Iterable<BuildKey>): readonly BuildKey[] {

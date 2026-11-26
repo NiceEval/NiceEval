@@ -3,6 +3,9 @@ import { SqliteRecordError } from "./errors.ts";
 import { makeStorageWorkerClient, type StorageWorkerClient } from "./client.ts";
 import { finalizeInvocationPortable, recordSqlitePath } from "./database.ts";
 import type { SharedStateGenerationRow, TeardownObligationRow } from "./registry-repository.ts";
+import type { StateLeaseAuthority, StateLeaseRegistryCommand } from "./state-lease-repository.ts";
+import type { StateCommand } from "./state-repository.ts";
+import type { StorageWorkerResult } from "./worker-protocol.ts";
 
 const OPERATION_DEADLINE_MS = 5_000;
 
@@ -18,9 +21,10 @@ export interface TeardownFacet {
         readonly ownerPid: number;
         readonly ownerHost: string;
         readonly payload: Uint8Array;
+        readonly leaseSet?: StateLeaseAuthority | undefined;
       }
     >,
-  ) => Promise<void>;
+  ) => Promise<number>;
   readonly get: (id: string) => Promise<TeardownObligationRow | undefined>;
   readonly list: () => Promise<readonly TeardownObligationRow[]>;
   readonly claim: (id: string) => Promise<boolean>;
@@ -28,24 +32,8 @@ export interface TeardownFacet {
 
 export interface SharedStateFacet {
   readonly list: (key: string) => Promise<readonly SharedStateGenerationRow[]>;
-  readonly append: (
-    input: CommandInput<
-      "shared-append",
-      {
-        readonly key: string;
-        readonly expectedGeneration: number;
-        readonly generation: number;
-        readonly parentGeneration: number;
-        readonly kind: "active" | "recovering" | "free";
-        readonly ownerToken: string;
-        readonly ownerPid: number;
-        readonly ownerHost: string;
-        readonly ownerProcessIdentity: string;
-        readonly heartbeatAt: string;
-        readonly payload: Uint8Array;
-      }
-    >,
-  ) => Promise<boolean>;
+  readonly set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => Promise<A>;
+  readonly sandbox: <A extends StorageWorkerResult>(command: StateCommand) => Promise<A>;
   readonly heartbeat: (
     input: CommandInput<
       "shared-heartbeat",
@@ -131,14 +119,15 @@ function makeProjectStateResource(): ProjectStateResource {
         command: import("./worker-protocol.ts").RegistryCommand,
       ) => client.registry<A>(command, Date.now() + OPERATION_DEADLINE_MS);
       const teardown: TeardownFacet = {
-        put: (input: Parameters<TeardownFacet["put"]>[0]) => execute<undefined>(input),
+        put: (input: Parameters<TeardownFacet["put"]>[0]) => execute<number>(input),
         get: (id: string) => execute<TeardownObligationRow | undefined>({ _tag: "teardown-get", id }),
         list: () => execute<readonly TeardownObligationRow[]>({ _tag: "teardown-list" }),
         claim: (id: string) => execute<boolean>({ _tag: "teardown-claim", id }),
       };
       const sharedState: SharedStateFacet = {
         list: (key: string) => execute<readonly SharedStateGenerationRow[]>({ _tag: "shared-list", key }),
-        append: (input: Parameters<SharedStateFacet["append"]>[0]) => execute<boolean>(input),
+        set: <A extends StorageWorkerResult>(command: StateLeaseRegistryCommand) => execute<A>(command),
+        sandbox: <A extends StorageWorkerResult>(state: StateCommand) => execute<A>({ _tag: "sandbox-state", state }),
         heartbeat: (input: Parameters<SharedStateFacet["heartbeat"]>[0]) => execute<boolean>(input),
       };
       const caseCoordination: CaseCoordinationFacet = {

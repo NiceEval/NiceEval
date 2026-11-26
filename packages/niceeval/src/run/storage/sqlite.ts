@@ -16,11 +16,19 @@ import {
 } from "../../record/sqlite/coordination-repository.ts";
 import { ProjectStateDatabase } from "../../record/sqlite/project-state-database.ts";
 import { SqliteRecordError, sqliteError } from "../../record/sqlite/errors.ts";
+import {
+  finishRunStateRecovery,
+  readAttemptSandboxState,
+  readRunSandboxState,
+  registerRunState,
+  requireRunStateTerminal,
+  writeAttemptState,
+} from "../../record/sqlite/state-repository.ts";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import { withImmediateTransaction } from "../../record/sqlite/transaction.ts";
 import { readRunValue, RUN_VALUE_FAMILY, stageRunValue, sealRecoveredRun } from "../../record/sqlite/storage.ts";
 import { RunStorageError } from "./errors.ts";
-import { observeRunWriterTermination } from "./owner-identity.ts";
+import { createRunWriterGeneration, observeRunWriterTermination } from "./owner-identity.ts";
 import {
   RUN_ABSENCE_REASONS,
   RUN_TERMINAL_STATES,
@@ -252,6 +260,8 @@ export function currentPublicationCutoffOnConnection(connection: RecordDatabase)
   return requireCutoff(connection);
 }
 
+export const stateRunClock = { requireActiveWriter, nextRevision };
+
 // @concord-code
 // @concord-implements docs/feature/run/architecture/README.md
 // @concord-implements docs/feature/run/architecture/lifecycle.md
@@ -291,6 +301,7 @@ export function createRunResourceOnConnection(
       input.writerGeneration,
       revision,
     );
+    registerRunState(connection, input.runId);
     const insertSlot = recordStatement(
       connection,
       `INSERT INTO ne19_run_expected_slots(run_id,slot_id,ordinal,eval_id,
@@ -389,6 +400,7 @@ export function publishOriginAttemptOnConnection(
       `INSERT INTO ne19_attempt_publications(attempt_id,attempt_locator,origin_run_id,origin_slot_id,
       closure_payload,closure_digest,published_revision) VALUES (?,?,?,?,?,?,?)`,
     ).run(input.attemptId, input.attemptLocator, input.runId, input.slotId, closure, input.closureDigest, revision);
+    if (input.attemptState !== undefined) writeAttemptState(connection, input.attemptId, input, input.attemptState);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_slot_bindings(target_run_id,slot_id,attempt_id,origin_run_id,
@@ -534,6 +546,7 @@ export function closeRunResourceOnConnection(
   requireIsoInstant(input.completedAt, "completedAt");
   return withImmediateTransaction(connection, input.deadlineEpochMs, "close-run-resource", () => {
     requireActiveWriter(connection, input.runId, input.writerGeneration);
+    requireRunStateTerminal(connection, input.runId, currentRevision(connection));
     validateAbsenceClosure(connection, input.runId, input.absences);
     const aggregate = recordStatement(connection, "SELECT status,writer_generation FROM ne19_runs WHERE run_id=?").get(
       input.runId,
@@ -594,6 +607,21 @@ function assertPublishedRecoveryDependencies(
   );
 }
 
+/** Bind the Host's per-Run proof to the current OS process without persisting the proof itself. */
+export function recoveryWriterGeneration(actorProof: string): string {
+  return createRunWriterGeneration(`recovery-v2:${createHash("sha256").update(actorProof).digest("hex")}`);
+}
+
+function reopenRecoveryAggregate(connection: RecordDatabase, runId: string, generation: string): void {
+  recordStatement(connection, "DELETE FROM ne19_run_seal_entries WHERE run_id=?").run(runId);
+  recordStatement(
+    connection,
+    `UPDATE ne19_runs SET writer_generation=?,status='open',candidate_seal_identity=NULL,
+    candidate_seal_entry_count=NULL,candidate_seal_staged_count=0,logical_seal_identity=NULL,
+    mutation_sequence=mutation_sequence+1 WHERE run_id=? AND status!='sealed'`,
+  ).run(generation, runId);
+}
+
 // @concord-code
 // @concord-implements docs/feature/run/architecture/lifecycle.md
 export function recoverRunResourceOnConnection(
@@ -604,7 +632,7 @@ export function recoverRunResourceOnConnection(
   requireIdentity(input.expectedWriterGeneration, "expectedWriterGeneration");
   requireIdentity(input.recoveryWriterGeneration, "recoveryWriterGeneration");
   requireIsoInstant(input.completedAt, "completedAt");
-  if (input.expectedWriterGeneration === input.recoveryWriterGeneration)
+  if (input.mode !== "resume" && input.expectedWriterGeneration === input.recoveryWriterGeneration)
     throw new RunStorageError("recovery-evidence-required", "Recovery must advance to a distinct writer generation");
   // Commit the fence before any potentially long closure verification. A crash
   // retains the exact recovery actor, and the next recover must prove it dead.
@@ -618,6 +646,26 @@ export function recoverRunResourceOnConnection(
       "SELECT status,writer_generation,core_digest FROM ne19_runs WHERE run_id=?",
     ).get(input.runId) as Row | undefined;
     const unfinished = aggregate !== undefined && text(aggregate, "status") !== "sealed";
+    if (input.mode === "resume") {
+      const actor = recordStatement(
+        connection,
+        "SELECT recovery_writer_generation,evidence_observed_at FROM ne19_run_recoveries WHERE run_id=?",
+      ).get(input.runId);
+      if (
+        run.terminalState !== undefined ||
+        run.writerGeneration !== input.recoveryWriterGeneration ||
+        actor === undefined ||
+        text(actor, "recovery_writer_generation") !== run.writerGeneration ||
+        observeRunWriterTermination(run.writerGeneration).state !== "active" ||
+        recoveryWriterGeneration(input.actorProof) !== run.writerGeneration ||
+        (unfinished && text(aggregate, "writer_generation") !== run.writerGeneration)
+      ) {
+        throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
+      }
+      assertPublishedRecoveryDependencies(connection, input.runId, false);
+      if (unfinished) reopenRecoveryAggregate(connection, input.runId, run.writerGeneration);
+      return { completedAt: text(actor, "evidence_observed_at"), state: "interrupted" as const };
+    }
     let evidence: { evidenceKind: string; evidenceIdentity: string };
     let completedAt = input.completedAt;
     if (input.mode === "active") {
@@ -700,13 +748,7 @@ export function recoverRunResourceOnConnection(
       revision,
     );
     if (unfinished) {
-      recordStatement(connection, "DELETE FROM ne19_run_seal_entries WHERE run_id=?").run(input.runId);
-      recordStatement(
-        connection,
-        `UPDATE ne19_runs SET writer_generation=?,status='open',candidate_seal_identity=NULL,
-        candidate_seal_entry_count=NULL,candidate_seal_staged_count=0,logical_seal_identity=NULL,
-        mutation_sequence=mutation_sequence+1 WHERE run_id=? AND status!='sealed'`,
-      ).run(input.recoveryWriterGeneration, input.runId);
+      reopenRecoveryAggregate(connection, input.runId, input.recoveryWriterGeneration);
       recordStatement(
         connection,
         `WITH RECURSIVE retained(family) AS (
@@ -761,14 +803,15 @@ export function recoverRunResourceOnConnection(
       run === undefined ||
       actor === undefined ||
       text(actor, "recovery_writer_generation") !== input.recoveryWriterGeneration ||
-      (input.mode === "active"
+      (input.mode !== "terminal"
         ? run.terminalState !== undefined || run.writerGeneration !== input.recoveryWriterGeneration
         : run.terminalState !== input.expectedState)
     )
       throw new RunStorageError("writer-generation-mismatch", `Run ${input.runId} recovery actor changed`);
     let cutoff = currentPublicationCutoffOnConnection(connection);
-    if (input.mode === "active") {
+    if (input.mode !== "terminal") {
       const revision = nextRevision(connection);
+      finishRunStateRecovery(connection, input.runId, input.recoveryWriterGeneration, revision);
       insertAbsences(
         connection,
         input.runId,
@@ -860,6 +903,32 @@ export function deleteRunResourceOnConnection(
       const revision = integer(tombstone, "deletion_revision");
       return { runId: input.runId, state: input.expectedState, cutoff: cutoffAt(connection, revision) };
     }
+    const heldLease = recordStatement(
+      connection,
+      "SELECT 1 FROM state_lease_set WHERE run_id=? AND phase IN ('active','recovering')",
+    ).get(input.runId);
+    if (heldLease !== undefined) {
+      throw new RunStorageError(
+        "run-lease-recovery-required",
+        `Run ${input.runId} still has a held lease set. Complete explicit lease recovery before deleting the Run.`,
+      );
+    }
+    const unfinishedSessionWithoutSibling = recordStatement(
+      connection,
+      `SELECT 1 FROM ne19_invocation_sessions s
+      WHERE s.invocation_id=? AND s.state IN ('active','recovering')
+        AND NOT EXISTS (
+          SELECT 1 FROM ne19_run_resources r
+          LEFT JOIN ne19_run_deletion_tombstones d ON d.run_id=r.run_id
+          WHERE r.invocation_id=s.invocation_id AND r.run_id<>? AND d.run_id IS NULL
+        )`,
+    ).get(run.invocationId, input.runId);
+    if (unfinishedSessionWithoutSibling !== undefined) {
+      throw new RunStorageError(
+        "run-session-recovery-required",
+        `Run ${input.runId} is the last remaining Run of unfinished Invocation Session ${run.invocationId}.`,
+      );
+    }
     const dependencies = incomingReferences(connection, input.runId);
     if (dependencies.length > 0) {
       throw new RunStorageError(
@@ -869,6 +938,7 @@ export function deleteRunResourceOnConnection(
       );
     }
     const revision = nextRevision(connection);
+    recordStatement(connection, "DELETE FROM state_execution WHERE run_id=?").run(input.runId);
     recordStatement(
       connection,
       `INSERT INTO ne19_run_deletion_tombstones(run_id,terminal_state,deleted_at,deletion_revision)
@@ -987,6 +1057,7 @@ function readRunAtCutoff(
     expected: slots.length,
     published,
     missing: slots.length - published,
+    sandboxState: readRunSandboxState(connection, runId, cutoff.revision),
     slots,
   };
   return state === "active" || state === "recovering"
@@ -1080,6 +1151,7 @@ export function readPublishedAttemptOnConnection(
     publicationIdentity: { originRunId, attemptId: text(row, "attempt_id"), revision },
     closureBytes: readRunValue(connection, originRunId, bytes(row, "closure_payload"), closureDigest),
     closureDigest,
+    sandboxState: readAttemptSandboxState(connection, attemptId, originRunId),
   };
 }
 

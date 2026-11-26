@@ -7,9 +7,11 @@ import {
   BeforeCacheLookupError,
   BeforeCacheRestoreError,
   type AttemptBeforeCache,
-  type BeforeCacheEligibility,
+  type AttemptBeforeCacheEligibility,
+  type BeforeCacheBaseEligibility,
   type BeforeCacheStep,
 } from "../backend.ts";
+import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import {
   captureDockerProfileBeforeCache,
   dockerProfileRequestError,
@@ -17,7 +19,8 @@ import {
   restoreDockerProfileBeforeCache,
   type DockerProfileLease,
   type DockerProfileReservation,
-  type DockerProfileBeforeCacheArtifactIdentityV1,
+  type DockerProfileBeforeCacheArtifactIdentityV2,
+  type DockerProfileBeforeCacheStep,
 } from "./runtime.ts";
 
 export interface DockerProfileBeforeCacheSession {
@@ -31,7 +34,8 @@ export interface DockerProfileBeforeCacheSession {
 
 export interface DockerProfileBeforeCacheTarget {
   readonly session: DockerProfileBeforeCacheSession;
-  eligibility(): BeforeCacheEligibility;
+  readonly baseReference: string;
+  eligibility(): BeforeCacheBaseEligibility;
   quiesceAndStop(signal: AbortSignal): Promise<void>;
   /** Drop Docker handles only after the outer container has been proven stopped. */
   retireStopped(): void;
@@ -68,8 +72,8 @@ function createCurrent(target: DockerProfileBeforeCacheTarget): Effect.Effect<st
 function restoreArtifact(
   target: DockerProfileBeforeCacheTarget,
   reservation: DockerProfileReservation,
-  input: BeforeCacheStep,
-  expected?: DockerProfileBeforeCacheArtifactIdentityV1,
+  input: DockerProfileBeforeCacheStep,
+  expected?: DockerProfileBeforeCacheArtifactIdentityV2,
 ) {
   return restoreDockerProfileBeforeCache(
     target.session.lease,
@@ -106,7 +110,7 @@ function isArtifactMiss(cause: DockerProfileRequestError): boolean {
 }
 
 function artifactReceipt(
-  artifact: DockerProfileBeforeCacheArtifactIdentityV1,
+  artifact: DockerProfileBeforeCacheArtifactIdentityV2,
   reservation: DockerProfileReservation,
 ): { readonly entryId: string; readonly generation: number; readonly artifactId: string; readonly imageId: undefined } {
   return {
@@ -170,16 +174,53 @@ function captureFailure(
  * enters the ordinary local-Docker image/index cache path.
  */
 export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBeforeCacheTarget): AttemptBeforeCache {
+  const profile = target.session.lease.binding.profile;
+  const domain = profile.backend.filesystem.beforeCache?.executionDomain;
+  const replacementScope =
+    domain === undefined
+      ? undefined
+      : { provider: "docker", executionDomainId: domain, baseReference: target.baseReference };
+  const wireStep = (input: BeforeCacheStep): DockerProfileBeforeCacheStep => {
+    if (replacementScope === undefined) throw new Error("Docker Profile has no before-cache domain.");
+    return { ...input, replacementScope: beforeCacheReplacementScope(replacementScope, input) };
+  };
+  let continuation:
+    | { step: DockerProfileBeforeCacheStep; artifact: DockerProfileBeforeCacheArtifactIdentityV2 }
+    | undefined;
   return {
-    eligibility: () => target.eligibility(),
+    eligibility: () =>
+      Effect.sync((): AttemptBeforeCacheEligibility => {
+        const eligibility = target.eligibility();
+        if (eligibility._tag !== "Eligible") return eligibility;
+        if (replacementScope === undefined) {
+          return {
+            _tag: "Unsupported",
+            code: "profile-backed-dind",
+            reason: "Docker Profile has no before-cache domain.",
+          };
+        }
+        return { ...eligibility, replacementScope };
+      }),
 
     lookupAndRestore: (input: BeforeCacheStep) =>
       Effect.gen(function* () {
+        const step = wireStep(input);
+        const metadata = input.declaration.declarationMetadata;
+        const parent =
+          continuation !== undefined &&
+          metadata !== null &&
+          typeof metadata === "object" &&
+          !Array.isArray(metadata) &&
+          metadata.parentKey === continuation.step.declaration.beforeCacheKey
+            ? continuation
+            : undefined;
+        continuation = undefined;
         yield* promiseEffect((signal) => target.quiesceAndStop(signal));
         let reservation = yield* freshReservation(target);
-        const restored = yield* Effect.result(restoreArtifact(target, reservation, input));
+        const restored = yield* Effect.result(restoreArtifact(target, reservation, step));
         if (restored._tag === "Success") {
           const sandboxId = yield* createCurrent(target);
+          continuation = { step, artifact: restored.success.artifact };
           return {
             _tag: "Restored" as const,
             beforeCacheKey: input.declaration.beforeCacheKey,
@@ -187,24 +228,17 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
             sandboxId,
           };
         }
-        if (isArtifactMiss(restored.failure)) {
-          yield* createCurrent(target);
-          return {
-            _tag: "Miss" as const,
-            beforeCacheKey: input.declaration.beforeCacheKey,
-            recovery: undefined,
-          };
-        }
-
-        // A corrupt/interrupted restore may quarantine or partially populate its
-        // target. Release proves scrub, then continue from a different clean slot
-        // so the runner can try a shorter verified prefix.
-        reservation = yield* freshReservation(target);
+        const miss = isArtifactMiss(restored.failure);
+        if (!miss) reservation = yield* freshReservation(target);
+        // Probing rotates the slot. A miss on a child must leave its already
+        // satisfied parent in the new writable slot before the child executes.
+        if (parent !== undefined) yield* restoreArtifact(target, reservation, parent.step, parent.artifact);
         yield* createCurrent(target);
+        continuation = parent;
         return {
           _tag: "Miss" as const,
           beforeCacheKey: input.declaration.beforeCacheKey,
-          recovery: "restore-failed-replayed" as const,
+          recovery: miss ? undefined : ("restore-failed-replayed" as const),
         };
       }).pipe(
         Effect.mapError(
@@ -221,6 +255,7 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
 
     capture: (input: BeforeCacheStep) =>
       Effect.gen(function* () {
+        const step = wireStep(input);
         if (input.knownSensitiveValues.some((value) => value.length > 0)) {
           return {
             _tag: "Unsupported" as const,
@@ -231,28 +266,29 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
         yield* promiseEffect((signal) => target.quiesceAndStop(signal));
         // A transport error, client timeout, decoder rejection, or interruption
         // cannot prove whether the Host is still copying with the source slot
-        // unmounted. V1 therefore fails the Attempt and lets the existing Scope
+        // unmounted. The Attempt fails and its Scope
         // owner perform reservation release/reconciliation; it never restarts the
         // old outer container from this ambiguous boundary.
         const captured = yield* captureDockerProfileBeforeCache(
           target.session.lease,
           target.session.currentReservation(),
-          input,
+          step,
           undefined,
           target.session.controlTimeoutMs,
         );
 
         let reservation = yield* freshReservation(target);
-        let restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+        let restored = yield* Effect.result(restoreArtifact(target, reservation, step, captured.artifact));
         if (restored._tag === "Failure") {
           // The action has already succeeded, so Base/shorter-prefix replay is
           // forbidden. Scrub and retry the just-verified artifact once in another
           // fresh slot; a second failure terminates the Attempt.
           reservation = yield* freshReservation(target);
-          restored = yield* Effect.result(restoreArtifact(target, reservation, input, captured.artifact));
+          restored = yield* Effect.result(restoreArtifact(target, reservation, step, captured.artifact));
           if (restored._tag === "Failure") return yield* Effect.fail(restored.failure);
         }
         const sandboxId = yield* createCurrent(target);
+        continuation = { step, artifact: captured.artifact };
         if (captured.state === "already-published") {
           return {
             _tag: "Contended" as const,
@@ -270,6 +306,7 @@ export function makeDockerProfileBeforeCacheCapability(target: DockerProfileBefo
 
     fallBackToBase: () =>
       Effect.gen(function* () {
+        continuation = undefined;
         yield* promiseEffect((signal) => target.quiesceAndStop(signal));
         yield* freshReservation(target);
         const sandboxId = yield* createCurrent(target);

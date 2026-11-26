@@ -25,18 +25,18 @@ BACKING = "fixed-image-ext4"
 ATTESTATION = "independent-fixed-filesystem/v1"
 PROVISION_REVISION = "niceeval-docker-profile-host/fixed-image-ext4/v1"
 SETUP_CONSTANTS = {
-    "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v1",
+    "protocol": "niceeval-docker-profile-state/docker-data-snapshot/v2",
     "coverage": "dockerData",
     "requiredState": "dockerData",
-    "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v1",
+    "helperRevision": "niceeval-docker-profile-host/docker-data-snapshot/v2",
     "copyProtocol": "raw-image/v1",
     "copyRevision": "niceeval-docker-profile-host/raw-image-copy-reuuid/v2",
     "quiesceRevision": "niceeval-docker-profile-host/docker-data-quiesce/v1",
     "slotAttestation": ATTESTATION,
     "filesystemFeatures": ["ext4", "fixed-size", "fully-allocated", "independent-image"],
     "seedPolicy": "immutable-unmounted/v1",
-    "publicationRevision": "prepared-copy-client-commit-publish/v4",
-    "recoveryRevision": "epoch-capsule-no-guess-recovery/v3",
+    "publicationRevision": "prepared-copy-client-commit-publish/v5",
+    "recoveryRevision": "epoch-capsule-no-guess-recovery/v4",
     "manifestSchema": "niceeval-docker-profile-activation/v3",
     "copyStrategy": "raw-image/v1",
 }

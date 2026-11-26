@@ -24,7 +24,6 @@ import {
   type SandboxRuntimeDeadline,
   type SandboxRuntimeAdmission,
   type SandboxRuntimeMaterializeInput,
-  type SandboxRuntimeQueueReason,
 } from "../sandbox/runtime.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { makeProvisioningPermitOwner } from "./provisioning-permit.ts";
@@ -140,6 +139,7 @@ import type { SandboxCleanupCommand, SandboxCommandContext, TestCleanupContext }
 import { sandboxLayerIdentityFor, type ScheduledSandboxBefore } from "../sandbox/link.ts";
 import { agentInstallPlansForRun } from "./config-identity.ts";
 import { plannedBeforeCacheActions, beforeCacheStep } from "./before-cache-plan.ts";
+import type { ObserveAttemptBeforeCache } from "./before-cache-collisions.ts";
 import type { AttemptPluginContext } from "../plugin/contracts.ts";
 import { attemptPluginLifecycles } from "../plugin/link.ts";
 import { createSourceRegistry, type SourceRegistry } from "../source-loc.ts";
@@ -314,6 +314,8 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
   readonly buildLocators: ReadonlyMap<string, JsonValue>;
   /** Run-level prepared prefix already materialized as this Attempt's starting sandbox. */
   readonly preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly stateBound?: boolean | undefined;
+  readonly observeAttemptBeforeCache?: ObserveAttemptBeforeCache;
   /** Invocation 级 Run timing，供 Dockerfile Agent 派生镜像 lookup/build 观测。 */
   readonly runTiming: import("./timing.ts").RunTimingRecorder | undefined;
   /**
@@ -332,17 +334,14 @@ export interface RunAttemptEffectOptions<SealRequirements = never> {
    *  attempt:complete 已经让 coordinator 把 active map 里的条目删掉,没有别的地方能事后查到。 */
   onPhase: (phase: LifecyclePhase) => void;
   /**
-   * turn 级重试退避期间释放/收回的全局并发槽位(globalSem / 实验级 runSem,见 run.ts 的调用点)。
+   * Turn 退避期间归还全局名额，Experiment 名额始终由当前 Attempt 持有。
    * 省略时(如测试直调)退避不释放槽位。
    */
   concurrencySlot: ConcurrencySlot | undefined;
   /** Provider admission moves an Attempt from queued to running only after capacity is granted. */
-  providerAdmission:
-    | {
-        readonly queued: (reason: SandboxRuntimeQueueReason) => Effect.Effect<void>;
-        readonly granted: Effect.Effect<void>;
-      }
-    | undefined;
+  providerAdmission: SandboxRuntimeAdmission | undefined;
+  /** A reserved Attempt can fail while the pool is acquiring its Sandbox. */
+  acquisitionError?: AttemptError | undefined;
   /**
    * 终局失败的空间轴回执(每条终局失败各回调一次,含 per-attempt teardown 的失败——teardown
    * 声明照常落闸、不改 verdict,见 architecture.md「生命周期边界」)。省略(如测试直调)时
@@ -393,12 +392,15 @@ export function runAttemptEffect<SealRequirements, AttachmentError, AttachmentRe
     runId,
     buildLocators,
     preparedBeforeCache,
+    stateBound,
+    observeAttemptBeforeCache,
     runTiming,
     parentSignal,
     invocationSignal,
     onPhase,
     concurrencySlot,
     providerAdmission,
+    acquisitionError,
     onFailureClass,
     onEnvironmentIncomplete,
     onSandboxCleanupFailure,
@@ -974,6 +976,16 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
         restore(
           Effect.scoped(
             Effect.gen(function* () {
+              yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
+              if (acquisitionError !== undefined) {
+                return {
+                  ...base,
+                  error: acquisitionError,
+                  ...(evalDef.evaluationKind === "score"
+                    ? { scoreResult: scoreFactOutcomeForAttemptError(acquisitionError) }
+                    : {}),
+                };
+              }
               const pause = yield* Effect.cached(
                 Effect.suspend(() => {
                   const sandboxId = currentSandbox?.sandboxId ?? sandboxFacts?.sandboxId;
@@ -1000,7 +1012,6 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               // execution deadline, Assertion seal, feedback sink, and publication
               // callback. The driver below contributes only its own preparation,
               // author context, and observations.
-              yield* Effect.addFinalizer(() => Effect.promise(() => judgeUsage.closeAndDrain()));
               const assertFirst = yield* makeAssertFirstAttemptBridge<unknown>();
               // Agent input generators use the same sealed evidence transport with
               // their own producer; creating collectors does not add identity inputs.
@@ -1189,12 +1200,14 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
               const admissionSlot = {
                 // The ordinary provisioning permit is innermost and leaves first. The
                 // scheduler permits then leave through their stateful owner handle.
-                release: provisioningPermit.release.pipe(Effect.andThen(concurrencySlot?.release ?? Effect.void)),
+                release: provisioningPermit.release.pipe(
+                  Effect.andThen(providerAdmission?.slot?.release ?? Effect.void),
+                ),
                 // Re-enter the scheduler in its original order before taking the
                 // ordinary provisioning permit again. Each scheduler owner and the
                 // provisioning owner is stateful; cancellation cleans only permits
                 // actually reacquired and never issues a blind release.
-                reacquire: (concurrencySlot?.reacquire ?? Effect.void).pipe(
+                reacquire: (providerAdmission?.slot?.reacquire ?? Effect.void).pipe(
                   Effect.andThen(provisioningPermit.reacquire),
                 ),
               };
@@ -1736,6 +1749,7 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       getPhase: () => (sendActive ? "agent.run" : lastPhase),
                       setSendActive: (active) => {
                         sendActive = active;
+                        if (active && stateBound) onPhase("agent.run");
                         reportAttemptLifecycle({
                           type: "attempt:phase",
                           at: Date.now(),
@@ -1754,6 +1768,8 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                       observabilityRuntime,
                       materializedCase,
                       preparedBeforeCache: beforeCacheForAttempt(),
+                      stateBound: stateBound === true,
+                      observeAttemptBeforeCache,
                       concurrencySlot: concurrencySlot,
                       declareFailure,
                       onEnvironmentIncomplete: onEnvironmentIncomplete,
@@ -2674,6 +2690,8 @@ interface AttemptResources {
   /** Fresh provider-owned backend; before-cache capability mutates this stable object across rebases. */
   materializedCase: MaterializedSandboxCase | undefined;
   preparedBeforeCache: PreparedBeforeCacheUse | undefined;
+  readonly stateBound: boolean;
+  readonly observeAttemptBeforeCache: ObserveAttemptBeforeCache | undefined;
   /** Attempt-local source snapshot and semantic-token journal; never public Record values. */
   sourceRegistry: SourceRegistry;
   sourceCapture: RunnerAttemptSourceCapture;
@@ -3268,7 +3286,7 @@ async function runAttemptBody(
       }
     }
 
-    if (run.sandboxBeforeCache === "bypass") {
+    if (res.stateBound || run.sandboxBeforeCache === "bypass") {
       await replayAllBefore(linked.before, "replay(bypass)");
       return;
     }
@@ -3348,9 +3366,9 @@ async function runAttemptBody(
       );
     }
     const capability = materializedCase.beforeCache.capability;
-    let eligibility: ReturnType<AttemptBeforeCache["eligibility"]>;
+    let eligibility: Effect.Success<ReturnType<AttemptBeforeCache["eligibility"]>>;
     try {
-      eligibility = capability.eligibility();
+      eligibility = await assertFirst.requestEffect(capability.eligibility());
     } catch (cause) {
       feedback.diagnostic({
         code: "cache-degraded",
@@ -3420,6 +3438,7 @@ async function runAttemptBody(
       await replayAllBefore(linked.before, "unsupported");
       return;
     }
+    res.observeAttemptBeforeCache?.(a.plan, eligibility.replacementScope, planned);
 
     let satisfied = 0;
     let cacheAvailable = true;

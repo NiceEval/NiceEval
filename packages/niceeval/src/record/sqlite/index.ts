@@ -9,6 +9,8 @@ import {
   type ProjectRecordDatabaseInspection,
 } from "./database.ts";
 import { sqliteError } from "./errors.ts";
+import { readAttemptSandboxState } from "./state-repository.ts";
+import type { AttemptStateResult } from "../../state/protocol.ts";
 import {
   findAttemptLocatorCandidates as findAttemptLocatorCandidatesOnConnection,
   findExperimentRunIds as findExperimentRunIdsOnConnection,
@@ -108,6 +110,7 @@ export { inspectProjectRecordDatabase, recordSqlitePath, reopenProjectDatabase, 
 
 /** Fixed Host-private read surface. The SQLite connection and SQL stay encapsulated. */
 export interface PinnedRecordReadSession {
+  readonly readAttemptState?: (attemptId: string, originRunId: string) => AttemptStateResult;
   readonly kind: "canonical" | "private-generation";
   /** Without an aggregate deadline, each bounded read gets its own budget at the same cutoff. */
   readonly beginOperation: (deadlineEpochMs?: number) => void;
@@ -218,6 +221,8 @@ function openPinnedRecordReadSession(
         readBounded("find-experiment-runs", () => findExperimentRunIdsOnConnection(connection, experimentId)),
       readRunResource: (runId: string) =>
         readBounded("read-run-resource", () => readRunResourceOnConnection(connection, runId, publicationCutoff)),
+      readAttemptState: (attemptId, originRunId) =>
+        readBounded("read-attempt-state", () => readAttemptSandboxState(connection, attemptId, originRunId)),
       listRunResources: (input: Parameters<typeof listRunResourcesOnConnection>[1]) =>
         readBounded("list-run-resources", () =>
           listRunResourcesOnConnection(connection, { ...input, cutoff: input?.cutoff ?? publicationCutoff }),

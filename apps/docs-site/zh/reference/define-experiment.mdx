@@ -186,6 +186,12 @@ Coordination 域内从 Experiment/Sandbox before 前一直互斥到 Sandbox afte
 provider finalizer 与 Experiment after 全部完成；等待者不会先创建 Sandbox，
 取得租约后继续自己的 plan。它不是状态存储、事务或跨机器锁。
 
+#### `state`
+
+```ts
+state?: readonly StateBinding[] | undefined;
+```
+
 #### `budget`
 
 ```ts

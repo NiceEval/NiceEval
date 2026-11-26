@@ -7,7 +7,7 @@ import { dockerProfileError, type DockerProfileError } from "./errors.ts";
 
 export const DOCKER_EXECUTION_PROFILE_SCHEMA_VERSION: 1 = 1;
 export const DOCKER_PROFILE_NETWORK_POLICY_VERSION: 1 = 1;
-export const DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY = "niceeval-docker-profile-state/docker-data-snapshot/v1" as const;
+export const DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY = "niceeval-docker-profile-state/docker-data-snapshot/v2" as const;
 export const DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL = DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY;
 export const DOCKER_PROFILE_NETWORK_DENY_CIDRS: readonly [string, ...string[]] = Object.freeze([
   "0.0.0.0/8",
@@ -84,7 +84,7 @@ export interface DockerManagedRootlessPolicy {
  * state. Absence is intentional and keeps the historical structured
  * Unsupported result for raw and managed profiles.
  */
-export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
+export interface DockerProfileBeforeCacheFullCopyCapabilityV2 {
   readonly protocol: typeof DOCKER_PROFILE_BEFORE_CACHE_CONTROL_PROTOCOL;
   readonly coverage: "dockerData";
   readonly requiredState: "dockerData";
@@ -94,8 +94,8 @@ export interface DockerProfileBeforeCacheFullCopyCapabilityV1 {
   readonly quiesceRevision: string;
   readonly slotAttestation: "independent-fixed-filesystem/v1";
   readonly seedPolicy: "immutable-unmounted/v1";
-  readonly publicationRevision: "prepared-copy-client-commit-publish/v4";
-  readonly recoveryRevision: "epoch-capsule-no-guess-recovery/v3";
+  readonly publicationRevision: "prepared-copy-client-commit-publish/v5";
+  readonly recoveryRevision: "epoch-capsule-no-guess-recovery/v4";
   readonly manifestSchema: "niceeval-docker-profile-activation/v3";
   readonly providerIdentity: string;
   readonly executionDomain: string;
@@ -135,7 +135,7 @@ export interface DockerExecutionProfileV1 {
         readonly attestation: "linux-project-quota/v1" | "independent-fixed-filesystem/v1";
       };
       /** Presence is the descriptor's explicit, default-off full-copy capability. */
-      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV1;
+      readonly beforeCache?: DockerProfileBeforeCacheFullCopyCapabilityV2;
     };
     readonly cgroup: {
       readonly aggregatePath: string;
@@ -372,8 +372,8 @@ const BeforeCacheFullCopyCapabilitySchema = plainStruct({
   quiesceRevision: nonEmptyString("DockerProfileBeforeCacheQuiesceRevision"),
   slotAttestation: Schema.Literal("independent-fixed-filesystem/v1"),
   seedPolicy: Schema.Literal("immutable-unmounted/v1"),
-  publicationRevision: Schema.Literal("prepared-copy-client-commit-publish/v4"),
-  recoveryRevision: Schema.Literal("epoch-capsule-no-guess-recovery/v3"),
+  publicationRevision: Schema.Literal("prepared-copy-client-commit-publish/v5"),
+  recoveryRevision: Schema.Literal("epoch-capsule-no-guess-recovery/v4"),
   manifestSchema: Schema.Literal("niceeval-docker-profile-activation/v3"),
   providerIdentity: sha256Identity("DockerProfileBeforeCacheProviderIdentity"),
   executionDomain: sha256Identity("DockerProfileBeforeCacheExecutionDomain"),

@@ -14,6 +14,8 @@ export const RUN_STORAGE_ERROR_CODES = [
   "absence-coverage-invalid",
   "run-state-mismatch",
   "run-delete-reference-conflict",
+  "run-lease-recovery-required",
+  "run-session-recovery-required",
   "recovery-evidence-required",
   "publication-cutoff-restart-required",
   "run-storage-invalid",

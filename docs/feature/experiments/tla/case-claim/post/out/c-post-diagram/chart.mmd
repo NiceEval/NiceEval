@@ -1,0 +1,51 @@
+---
+title: "释放回复丢失时再次确认"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 可用
+    lg1: 恢复
+    lg2: 等待
+    lg3: 运行
+  }
+  class lg0 teal
+  class lg1 orange
+  class lg2 yellow
+  class lg3 blue
+  s0: 用例可用
+  s1: 前一条运行正在使用用例
+  s2: 当前运行已取得用例
+  s3: 正在等另一条运行
+  s4: 前一条运行已退出但仍占用用例
+  s5: 已确认前一条运行结束
+  s6: 释放回复丢失
+  s7: 当前运行已释放用例
+  s8: 释放回复丢失但另一条运行已继续
+  [*] --> s0
+  s0 --> s1: 取得用例
+  s0 --> s2: 取得用例
+  s1 --> s3: 查看用例占用
+  s1 --> s4: 前一条运行退出
+  s3 --> s4: 前一条运行退出
+  s4 --> s5: 查看用例占用
+  s1 --> s0: 运行结束并释放用例
+  s1 --> s6: 释放后回复丢失
+  s2 --> s7: 运行结束并释放用例
+  s5 --> s2: 接替已结束的运行
+  s3 --> s0: 运行结束并释放用例
+  s3 --> s6: 释放后回复丢失
+  s6 --> s0: 前一条运行退出 or 再次确认已经释放
+  s6 --> s8: 取得用例
+  s8 --> s2: 前一条运行退出 or 再次确认已经释放
+  s7 --> s6: 释放后回复丢失
+  s8 --> s6: 运行结束并释放用例
+  s6 --> s7: 前一条运行退出 or 再次确认已经释放
+  class s0 teal
+  class s1 blue
+  class s2 blue
+  class s3 yellow
+  class s4 blue
+  class s5 orange
+  class s6 orange
+  class s7 teal
+  class s8 orange

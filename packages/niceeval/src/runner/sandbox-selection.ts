@@ -24,6 +24,7 @@ import {
   type SandboxPhysicalPlanningError,
 } from "../sandbox/plan.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
+import { stateBindingsFor } from "../state/planning.ts";
 import type { AgentRun, DiscoveredEval, SandboxRunInfo } from "./types.ts";
 import {
   linkPluginPair,
@@ -63,7 +64,12 @@ export interface PreparedRunPair {
 }
 
 export class SandboxRunPlanningInvariantError extends Data.TaggedError("SandboxRunPlanningInvariantError")<{
-  readonly code: "sandbox.run-planning-invariant" | "eval-group-sandbox-reuse-conflict" | "eval-group-incompatible";
+  readonly code:
+    | "sandbox.run-planning-invariant"
+    | "eval-group-sandbox-reuse-conflict"
+    | "eval-group-incompatible"
+    | "state-requires-eval-group"
+    | "state-provider-unsupported";
   readonly message: string;
 }> {}
 
@@ -100,6 +106,7 @@ function physicalCapabilityRequirements(
   options: SandboxRunPlanningOptions,
 ): readonly SandboxPhysicalCapabilityRequirement[] {
   const requirements: SandboxPhysicalCapabilityRequirement[] = [];
+  if (stateBindingsFor(run, evalDef).length > 0) requirements.push({ _tag: "State" });
   if (run.sandboxReuse === true || evalDef.evalGroup !== undefined) {
     requirements.push({ _tag: "Reuse" });
   }
@@ -190,6 +197,15 @@ export function linkRunSandboxes(
       );
     }
     for (const evalDef of selectedEvalsForRun(evals, sourceRun)) {
+      const hasState = stateBindingsFor(run, evalDef).length > 0;
+      if (hasState && evalDef.evalGroup === undefined) {
+        return Effect.fail(
+          new SandboxRunPlanningInvariantError({
+            code: "state-requires-eval-group",
+            message: `State on ${JSON.stringify(experimentId)} requires ${JSON.stringify(evalDef.id)} to belong to an Eval Group.`,
+          }),
+        );
+      }
       const requiredContract = adapterContractRequiredByEval(evalDef);
       if (!adapterAcceptsEval(run.adapter, evalDef)) {
         return Effect.fail(
@@ -205,6 +221,14 @@ export function linkRunSandboxes(
         );
       }
       if (evalDef.evalGroup !== undefined && run.sandboxReuse === true) {
+        if (hasState) {
+          return Effect.fail(
+            new SandboxRunPlanningInvariantError({
+              code: "state-provider-unsupported",
+              message: `State for ${JSON.stringify(experimentId)} / ${JSON.stringify(evalDef.evalGroup.id)} requires a fresh Sandbox. Remove sandboxReuse.`,
+            }),
+          );
+        }
         return Effect.fail(
           new SandboxRunPlanningInvariantError({
             code: "eval-group-sandbox-reuse-conflict",

@@ -39,7 +39,7 @@ import {
   supportedBackendCapability,
   type SandboxBackendCapabilities,
   type SandboxProviderBackend,
-  type BeforeCacheEligibility,
+  type BeforeCacheBaseEligibility,
   type AttemptBeforeCache,
 } from "./backend.ts";
 import type { DockerSandboxAccess, NormalizedDockerSandboxReadiness, DockerSandboxResources } from "./layer.ts";
@@ -52,6 +52,7 @@ import {
   type DockerProfileBeforeCacheSession,
 } from "./docker-profile/before-cache.ts";
 import { DOCKER_PROFILE_BEFORE_CACHE_CAPABILITY } from "./docker-profile/schema.ts";
+import { createDockerStateFiles, DOCKER_SANDBOX_WORKDIR, localDockerSupportsState } from "./docker-state.ts";
 
 const execFileAsync = promisify(execFile);
 const BEFORE_CACHE_PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
@@ -128,9 +129,6 @@ const TTL_BASE_WITHOUT_DEADLINE = 600_000;
 // 下限,确保正常运行(setup + agent + 脚本,本就受 attempt 超时约束)绝不会被它误杀。
 const TTL_MULTIPLIER = 2;
 const TTL_FLOOR_MS = 1_200_000; // 20 分钟
-
-// 容器内工作目录。
-const CONTAINER_WORKDIR = "/home/sandbox/workspace";
 
 // 容器「主日志」文件:PID1 tail 它 → `docker logs` 实时显示;agent 命令的 stream 输出 tee 进来。
 const CONTAINER_LOG = "/tmp/niceeval-agent.log";
@@ -624,7 +622,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     this.docker = new Docker(
       options.dockerSocketPath === undefined ? undefined : { socketPath: options.dockerSocketPath },
     );
-    this.workdir = options.workdir ?? CONTAINER_WORKDIR;
+    this.workdir = options.workdir ?? DOCKER_SANDBOX_WORKDIR;
     this.timeout = options.timeout;
     this.deadlineAt = options.deadlineAt;
     this.lifetimeMs = options.lifetimeMs;
@@ -665,6 +663,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
           })
         : makeDockerProfileBeforeCacheCapability({
             session: this.profileBeforeCache,
+            baseReference: options.image ?? DOCKER_IMAGES[this.runtime]!,
             eligibility: () => this.beforeCacheEligibility(),
             quiesceAndStop: (signal) => this.quiesceProfileBeforeCache(signal),
             resumeStopped: (signal) => this.resumeProfileBeforeCache(signal),
@@ -678,12 +677,33 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       ensureLifetime: supportedBackendCapability((minRemainingMs: number) => this.ensureLifetime(minRemainingMs)),
       setCommandDeadline: supportedBackendCapability((deadlineAt?: number) => this.setCommandDeadline(deadlineAt)),
       managedProcess: supportedBackendCapability((input: ManagedProcessStart) => this.startManagedProcess(input)),
+      ...(localDockerSupportsState({
+        profile: this.dockerSocketPath !== undefined || this.profileBeforeCache !== undefined,
+        dockerAccess: this.dockerAccess !== undefined,
+        privileged: this.privileged !== "disabled",
+        readOnly: this.resources.readOnlyRootfs === true,
+      })
+        ? {
+            state: supportedBackendCapability(
+              createDockerStateFiles({
+                container: () => {
+                  if (this.container === undefined) throw new Error("Docker State instance is unavailable.");
+                  return this.container;
+                },
+                home: () => this.defaultHome,
+                npmDirectory: () => this.npmGlobalDir,
+                workdir: this.workdir,
+                logPath: CONTAINER_LOG,
+              }),
+            ),
+          }
+        : {}),
     };
   }
 
   readonly attemptBeforeCache: AttemptBeforeCache;
 
-  private beforeCacheEligibility(): BeforeCacheEligibility {
+  private beforeCacheEligibility(): BeforeCacheBaseEligibility {
     if (this.profileBeforeCache !== undefined) {
       const capability = this.profileBeforeCache.lease.binding.profile.backend.filesystem.beforeCache;
       if (capability === undefined) {
@@ -732,7 +752,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
         dependency: "parent-backed",
         coverage: sandboxState.dockerData,
         baseIdentity: this.baseIdentity,
-        replacementScope: undefined,
         keyScope: decodeBeforeCacheKeyScope({
           cacheFormat: JSON.stringify({
             protocol: capability.protocol,
@@ -836,7 +855,6 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
       dependency: "parent-backed",
       coverage: sandboxState.all,
       baseIdentity: this.baseIdentity,
-      replacementScope: undefined,
       keyScope: decodeBeforeCacheKeyScope({
         cacheFormat: "niceeval-docker-cache/current",
         semanticIdentity: { capture: "outer-writable-rootfs" },
@@ -1003,7 +1021,7 @@ export class DockerSandbox implements SandboxProviderBackend, SandboxReuseCapabi
     const inspectedWorkdir =
       typeof info.Config?.WorkingDir === "string" && info.Config.WorkingDir.length > 0
         ? info.Config.WorkingDir
-        : CONTAINER_WORKDIR;
+        : DOCKER_SANDBOX_WORKDIR;
     const sandbox = new DockerSandbox({
       ...options,
       workdir: options.workdir ?? inspectedWorkdir,

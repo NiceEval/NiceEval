@@ -1,0 +1,50 @@
+---
+title: "前缀无法恢复时继续执行"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: 查找
+    lg1: 回退
+    lg2: 准备
+    lg3: 完成
+    lg4: 失败
+  }
+  class lg0 blue
+  class lg1 orange
+  class lg2 purple
+  class lg3 teal
+  class lg4 pink
+  s0: 查找最深可用前缀
+  s1: 先创建一份干净的 Base
+  s2: 直接执行剩余 action
+  s3: before 已完成
+  s4: Attempt 失败
+  s5: 检查下一层是否已经可用
+  s6: 执行当前 action
+  s7: 当前 action 已成功#65292;尝试保存
+  [*] --> s0
+  s0 --> s1: 恢复失败#65292;尚未执行 action
+  s0 --> s2: 缓存不可用#65292;继续执行
+  s0 --> s3: 命中最后一层
+  s1 --> s4: 无法创建干净实例
+  s1 --> s2: 干净实例已就绪
+  s0 --> s5: 继续查找
+  s5 --> s1: 恢复失败#65292;尚未执行 action
+  s5 --> s2: 缓存不可用#65292;继续执行
+  s5 --> s6: 未命中#65292;执行这一层
+  s5 --> s3: 命中最后一层
+  s2 --> s3: action 执行成功
+  s6 --> s7: action 执行成功
+  s7 --> s2: 保存失败#65292;当前实例仍完整
+  s7 --> s4: 无法证实当前实例完整
+  s7 --> s5: 保存结果已结算
+  s7 --> s3: 保存结果已结算
+  s5 --> s4: 无法证实已执行的 action 状态
+  class s0 blue
+  class s1 orange
+  class s2 orange
+  class s3 teal
+  class s4 pink
+  class s5 blue
+  class s6 purple
+  class s7 purple

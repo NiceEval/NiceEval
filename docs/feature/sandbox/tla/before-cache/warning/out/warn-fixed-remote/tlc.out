@@ -1,0 +1,25 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Warning: Please run the Java VM which executes TLC with a throughput optimized garbage collector by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 0 and seed 7503752948194434055 with 1 worker on 16 cores with 8008MB heap and 64MB offheap memory [pid: 536598] (Linux 6.18.60 amd64, Eclipse Adoptium 25.0.5.1 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ctrdh/Code/NiceEval/NiceEval/docs/feature/sandbox/tla/before-cache/warning/Warning.tla
+Parsing file /tmp/statechart-c0SAA7/statechart-mPvsYv/tmp-verdict-1/Naturals.tla
+Semantic processing of module Naturals
+Semantic processing of module Warning
+Starting... (2026-11-24 01:51:07)
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Finished computing initial states: 64 distinct states generated at 2026-11-24 01:51:08.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 4.4E-16
+192 states generated, 128 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 2.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).
+Finished in 00s at (2026-11-24 01:51:08)
+

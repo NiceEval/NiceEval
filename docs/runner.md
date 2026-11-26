@@ -31,7 +31,7 @@ Run Core 的 Member action 保存 reuse、adoption 或 rename 的上下文和理
 1. `experimentHost` 进入 Runner。Runner 为每个目标 Run 分配 `RunId`、`startedAt` 和完整 expected Planned attempts。每个 Planned attempt 将当前 zero-based attempt number 直接写入 durable `attemptOrdinal`，不从顺序推断。
 2. Runner 在同一 `PublicationCutoff` 下读取候选历史 Run。它不提供跨 Invocation 的全局冻结快照，并发封口的 Run 可以整体进入或整体不进入本次 reuse planning。
 3. Coordination（协调）处理 execution deduplication（执行去重）、同一 Experiment 的 dispatch claim（派发占用）、全局与 Experiment 并发名额，以及 build / lease（构建 / 租约）。这些运行态与已发布事实写入同一个 `.niceeval/record.sqlite`，由行状态、writer generation 与 cutoff 隔离。
-4. 派发前，Runner 构建 gaps 需要的 BuildKey，并为 `RunPrepared` Provider 的配对结算[准备图](concepts.md#before-cache-preparation-graph)。全部结算后才派发（见 [Before cache](feature/sandbox/architecture/before-cache.md)）。
+4. 派发前，Runner 构建 gaps 需要的 BuildKey，并为 `RunPrepared` Provider 的配对结算[准备图](concepts.md#before-cache-preparation-graph)。派发按配对放行：一个配对的终端节点及全部祖先结算后即可派发，不等待无关分支（见 [Before cache](feature/sandbox/architecture/before-cache.md#运行事实归属)）。
 5. 执行时，Runner 取得 Sandbox，驱动 Agent，登记 Assertion，并形成 AssertionResult 与对应评估类型的 grading。
 6. 每个 Attempt 在短事务内提交 immutable closure 与 Planned attempt binding，并推进单调 publication revision。Run 收口时在同一事务内提交终态与剩余 absence reason。
 7. Runner 返回 Invocation receipt。其 `createdRunIds` 穷尽本次调用创建的 Run，并带上调用结束时的 `publicationCutoff`。
@@ -68,7 +68,7 @@ receipt 只标识这次调用及其 Run。它不是第二份结果文件，也�
 
 全局并发名额和实验并发限制共同决定该 Experiment 的有效宽度。
 
-Runner 先展开 expected Planned attempts，等准备图全部结算，再以全局和 Experiment 范围的并发限制派发。准备节点的并发受 `maxBeforeCacheConcurrency` 与 Provider `scheduling.lane.limit` 约束，不占用 `maxConcurrency` 名额。等待并发名额的 Planned attempt 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 reader 或终态决定。
+Runner 先展开 expected Planned attempts；每个配对在自己的准备链结算后，以全局和 Experiment 范围的并发限制派发。准备节点的并发受 `maxBeforeCacheConcurrency` 与 Provider `scheduling.lane.limit` 约束，不占用 `maxConcurrency` 名额。等待并发名额的 Planned attempt 没有 Attempt，也不会占用执行资源。跨 Invocation 的 execution claim 与同一 Experiment dispatch claim 由 Coordination 决定，不由 reader 或终态决定。
 
 带 Docker profile的 DinD还要经过 watchdog跨进程准入。Runner提交 CPU、memory、PID、container和
 `ephemeralDiskBytes`完整向量；只有 watchdog同时授予容量与私有 Docker data allocation后才创建 Attempt。等待这笔
