@@ -1,75 +1,141 @@
 name: Canary
 
-# 从 main 一键发 canary 预发布版:Actions 页面点 Run workflow 即可,不需要本地任何操作。
-#
-# 版本号自动算:npm 上 latest 的下一个 patch + `-canary.<run_number>`(如 0.10.3-canary.7),
-# run_number 单调递增,不会撞号。本 workflow 只打 git tag `v<version>` 并 dispatch
-# release.yml；build、精确制品校验、npm publish 和 GitHub Release 全部由那条唯一
-# 发布链负责。E2E 由独立 workflow 持续运行，不在 canary 发版时重跑。
-# 消费侧(NiceEval-Eval 的 pin-candidate)靠这个 tag 取按版本存档的 INIT.md,缺了它
-# canary 就评不了。
-#
-# tag 用默认 GITHUB_TOKEN 推，GitHub 不会用它级联触发 release.yml，所以
-# 推送后显式 dispatch；只会进入一次发布链。
-#
-# 触发:每天定时发一版(schedule),外加 workflow_dispatch 允许随时手动补发。不按 push main
-# 发是刻意的——eval 只是偶尔对比 canary,每次 push 都发一版只会在 npm 上刷版本号噪声。定时
-# 发让 main 的最新快照每天有一版可评,而 run_number 单调递增保证不撞号。
-
+# npm Trusted Publishing identifies the calling workflow. Dispatch release.yml
+# at the tag so the existing release.yml trust binding and exact ref are preserved.
 on:
   schedule:
-    - cron: "0 0 * * *" # 每天 00:00 UTC 发一版 canary
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
-permissions:
-  actions: write # dispatch 唯一 Release 发布链
-  contents: write # 推 tag 需要
+permissions: {}
+
+concurrency:
+  group: canary-release
+  cancel-in-progress: false
 
 jobs:
-  dispatch-release:
-    name: Tag and dispatch canary release
+  prepare:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      skip: ${{ steps.previous.outputs.skip }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Checkout
+      - name: Checkout the default-branch commit for this run
         uses: actions/checkout@v7
         with:
-          ref: main
+          fetch-depth: 0
+
+      - name: Compare with the newest Canary tag
+        id: previous
+        run: |
+          set -euo pipefail
+          previous="$(git tag --list 'v*-canary.*' |
+            awk -F. '/^v[0-9]+\.[0-9]+\.[0-9]+-canary\.[0-9]+$/ { print $NF, $0 }' |
+            sort -k1,1nr | awk 'NR == 1 { print $2 }')"
+          if [ -n "$previous" ] && [ "$(git rev-parse "${previous}^{commit}")" = "$GITHUB_SHA" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "$previous already points to $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node
+        if: steps.previous.outputs.skip == 'false'
         uses: actions/setup-node@v7
         with:
           node-version: 24
 
-      - name: Compute canary version
-        id: version
-        run: |
-          LATEST="$(npm view niceeval version)"
-          BASE="$(node -p "const [a,b,c]='$LATEST'.split('.').map(Number); [a,b,c+1].join('.')")"
-          VERSION="$BASE-canary.${{ github.run_number }}"
-          echo "Canary version: $VERSION (npm latest: $LATEST)"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Push tag and dispatch the release gate
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Push Canary tag
+        id: tag
+        if: steps.previous.outputs.skip == 'false'
         run: |
           set -euo pipefail
-          TAG="v${{ steps.version.outputs.version }}"
-          remote_target="$(git ls-remote origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
-          if [ -n "$remote_target" ]; then
-            if [ "$remote_target" != "$GITHUB_SHA" ]; then
-              echo "::error::$TAG already points to $remote_target instead of this canary commit $GITHUB_SHA"
-              exit 1
-            fi
-            echo "$TAG already points to this canary commit; continuing the idempotent dispatch"
-          else
-            git tag "$TAG" "$GITHUB_SHA"
-            git push origin "refs/tags/$TAG"
+          latest="$(npm view niceeval@latest version)"
+          if ! [[ "$latest" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Expected a stable version from npm latest, got $latest"
+            exit 1
           fi
-          gh workflow run release.yml --ref "$TAG" -f tag="$TAG"
-          {
-            echo "## Canary release dispatched"
-            echo
-            echo "- Tag: \`$TAG\`"
-            echo "- Publisher: \`release.yml\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))-canary.$GITHUB_RUN_NUMBER"
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: prepare
+    if: needs.prepare.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      actions: write
+    outputs:
+      url: ${{ steps.dispatch.outputs.url }}
+      conclusion: ${{ steps.wait.outputs.conclusion }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch the Release workflow at the Canary tag
+        id: dispatch
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          response="$(gh api --method POST -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/dispatches" \
+            -f ref="$TAG" -f 'inputs[tag]='"$TAG")"
+          run_id="$(jq -er '.workflow_run_id' <<< "$response")"
+          url="$(jq -er '.html_url' <<< "$response")"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "[Release $TAG]($url)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for the dispatched Release result
+        id: wait
+        env:
+          RELEASE_RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          while true; do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+            if [ "$(jq -r '.status' <<< "$result")" = completed ]; then
+              conclusion="$(jq -er '.conclusion' <<< "$result")"
+              echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+              test "$conclusion" = success
+              break
+            fi
+            sleep 30
+          done
+
+  report:
+    needs: [prepare, release]
+    if: >-
+      !cancelled() && needs.prepare.outputs.skip != 'true'
+      && (needs.prepare.result == 'failure'
+      || needs.release.result == 'success'
+      || (needs.release.result == 'failure' && needs.release.outputs.conclusion != 'cancelled'))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Update Nightly release issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          RELEASE_URL: ${{ needs.release.outputs.url }}
+        run: |
+          set -euo pipefail
+          title='Nightly release failing'
+          run_url="${RELEASE_URL:-$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID}"
+          issue="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&per_page=100" \
+            | jq -s -r --arg title "$title" 'add | first(.[] | select(.title == $title and (has("pull_request") | not))).number // empty')"
+          if [ "$RELEASE_RESULT" = success ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "Nightly release passed. $run_url"
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "Nightly release failed. $run_url"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "Nightly release failed. $run_url"
+          fi
