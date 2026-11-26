@@ -1,148 +1,34 @@
 name: Property tests
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   schedule:
     - cron: "23 8 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: property-tests-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'schedule' }}
+  cancel-in-progress: false
+
 jobs:
-  vitest:
-    name: Vitest (${{ matrix.project }} ${{ matrix.shard }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - project: default
-            shard: 1/2
-          - project: default
-            shard: 2/2
-          - project: docker
-            shard: 1/1
-          - project: linux
-            shard: 1/1
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/setup@v3
-        with:
-          runtime: node@24
-          cache: true
-          install: false
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Run property tests
-        env:
-          NICEEVAL_PROPERTY_RUNS: ${{ github.event_name == 'schedule' && '8' || '4' }}
-          NICEEVAL_TEST_COST_SCALE: "1.5"
-        run: pnpm exec vitest run --project "${{ matrix.project }}" --shard "${{ matrix.shard }}" --passWithNoTests
+  property-suite:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    uses: ./.github/workflows/property-suite.yml
+    permissions:
+      contents: read
+    secrets:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-  live:
-    name: Live Provider properties
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/setup@v3
-        with:
-          runtime: node@24
-          cache: true
-          install: false
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm exec vitest run --project live --passWithNoTests
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          NICEEVAL_TEST_COST_SCALE: "1.5"
-
-  bombadil:
-    name: Bombadil (${{ matrix.surface }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        surface: [terminal, browser]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/setup@v3
-        with:
-          runtime: node@24
-          cache: true
-          install: false
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install and verify Bombadil
-        run: |
-          version="$(node -p 'require("./package.json").devDependencies["@antithesishq/bombadil"]')"
-          test "$version" = "0.8.0"
-          directory="$RUNNER_TEMP/bombadil"
-          mkdir -p "$directory"
-          curl --fail --silent --show-error --location \
-            "https://github.com/antithesishq/bombadil/releases/download/v$version/bombadil-x86_64-linux" \
-            --output "$directory/bombadil"
-          echo "d9d1d2832cb23c874744a4f20526d2064ce8571c31f8ecd01ddf8e1c44da4814  $directory/bombadil" | sha256sum --check
-          chmod +x "$directory/bombadil"
-          test "$("$directory/bombadil" --version)" = "bombadil $version"
-          echo "$directory" >> "$GITHUB_PATH"
-      - name: Install and verify Chrome for Testing headless shell
-        if: matrix.surface == 'browser'
-        run: |
-          version=157.0.8103.78
-          archive="$RUNNER_TEMP/chrome-headless-shell.zip"
-          curl --fail --silent --show-error --location \
-            "https://storage.googleapis.com/chrome-for-testing-public/$version/linux64/chrome-headless-shell-linux64.zip" \
-            --output "$archive"
-          echo "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a  $archive" | sha256sum --check
-          unzip -q "$archive" -d "$RUNNER_TEMP"
-          chrome="$RUNNER_TEMP/chrome-headless-shell-linux64/chrome-headless-shell"
-          if ! chrome_version="$("$chrome" --version)"; then
-            echo "::error::Failed to read the Chrome for Testing headless shell version from $chrome"
-            exit 1
-          fi
-          echo "$chrome_version"
-          if [[ "$chrome_version" != "Google Chrome for Testing $version" ]]; then
-            echo "::error::Expected Google Chrome for Testing $version, got $chrome_version"
-            exit 1
-          fi
-
-          # Allow Chrome to use its namespace sandbox on this disposable GitHub-hosted runner.
-          if ! sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; then
-            echo "::error::Failed to allow unprivileged user namespaces for Chrome on the Ubuntu runner"
-            exit 1
-          fi
-          {
-            echo "CHROME=$chrome"
-            echo "RUST_LOG=error,bombadil_browser::chromium=debug,bombadil_browser::browser=info"
-          } >> "$GITHUB_ENV"
-      - name: Build UI test candidate
-        run: pnpm run build:package
-      - name: Run terminal tests
-        if: matrix.surface == 'terminal' && github.event_name != 'schedule'
-        run: |
-          NICEEVAL_BOMBADIL_INTERRUPT_PHASE=startup node test/bombadil/driver.ts terminal test \
-            --exit-on-violation --time-limit 10s --output-path "$RUNNER_TEMP/bombadil-traces/startup.bin"
-          node test/bombadil/driver.ts terminal test \
-            --exit-on-violation --time-limit 10s --output-path "$RUNNER_TEMP/bombadil-traces/active.bin"
-      - name: Run browser tests
-        if: matrix.surface == 'browser' && github.event_name != 'schedule'
-        run: |
-          node test/bombadil/driver.ts browser test --chrome-variant=headless-shell --exit-on-violation --time-limit 15s \
-            --output-path "$RUNNER_TEMP/bombadil-traces/browser.bin"
-      - name: Fuzz terminal
-        if: matrix.surface == 'terminal' && github.event_name == 'schedule'
-        run: |
-          node test/bombadil/driver.ts terminal fuzz --time-limit-run 10s --time-limit-fuzz 5m \
-            --output-path "$RUNNER_TEMP/bombadil-traces/terminal.bin"
-      - name: Fuzz browser
-        if: matrix.surface == 'browser' && github.event_name == 'schedule'
-        run: |
-          node test/bombadil/driver.ts browser fuzz --chrome-variant=headless-shell --time-limit-run 30s --time-limit-fuzz 5m \
-            --output-path "$RUNNER_TEMP/bombadil-traces/browser.bin"
-      - name: Upload Bombadil traces
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: bombadil-${{ matrix.surface }}-traces
-          path: ${{ runner.temp }}/bombadil-traces
-          if-no-files-found: ignore
+  nightly-status:
+    needs: [property-suite]
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && (failure() || success())
+    uses: ./.github/workflows/nightly-status.yml
+    permissions:
+      issues: write
+    with:
+      suite: property-tests
+      failed: ${{ contains(needs.*.result, 'failure') }}

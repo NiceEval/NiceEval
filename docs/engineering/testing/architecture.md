@@ -23,9 +23,9 @@
 |---|---|
 | 本地 | 改动对应的 Vitest 文件（`vitest --changed` 或点名文件）；改了界面时，对相关 Bombadil spec 跑一次短时 `test` |
 | pre-push | 在待推送的提交快照中运行 `pnpm lint` 与 `pnpm test`（Vitest 的快速 project） |
-| PR | 全部集成测试；每个 Bombadil spec 跑固定时长的 `test`；CLI 机器输出 E2E |
-| nightly | Bombadil `fuzz` 长时探索；fast-check 提高运行次数；live Provider |
-| release | tarball 冒烟 |
+| PR 和默认分支 push | 类型检查、Lint、文档校验和快速 `unit` 项目 |
+| Nightly | 默认分支运行完整 E2E 和 takeover（03:17 UTC），以及打包 smoke、完整属性测试、live Provider、Docker 镜像自检和 Bombadil 的 `test` 与 `fuzz`（08:23 UTC）。两组检查均可手动运行。 |
+| 显式发布 | 发布正式版 npm 包或手动发布镜像前，在发布 ref 运行完整 E2E、属性测试、live Provider、Docker 镜像自检和 Bombadil。所有 npm 发布都对待发布的 tarball 跑 smoke。 |
 
 运行条件（需要 Docker、Linux 内核语义、外部网络与密钥）用 Vitest `projects` 与 CI 矩阵表达，不写自研的计划器或预检。本地默认只跑不需要这些条件的 project。
 

@@ -25,7 +25,6 @@ jobs:
           install: false
 
       - name: Install dependencies
-        # The package smoke step builds the candidate through prepack.
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install Concord CLI
@@ -33,14 +32,6 @@ jobs:
 
       - name: Check CI model artifact privacy
         run: node --test .github/scripts/model-privacy.test.ts
-
-      - name: Smoke packed NiceEval in an empty project
-        run: |
-          set -euo pipefail
-          candidate="${RUNNER_TEMP}/niceeval-ci-candidate.tgz"
-          pnpm -C packages/niceeval --silent pack --out "$candidate"
-          version="$(node -p 'require("./packages/niceeval/package.json").version')"
-          bash .github/scripts/smoke-package.sh "$candidate" "$version"
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -73,13 +64,10 @@ jobs:
           NODE_ENV: test
         run: pnpm --filter @niceeval/site exec tsx scripts/check-sentry.ts
 
-      - name: Install Concord CLI for repository tool tests
-        uses: ./.github/actions/setup-concord
-
       - name: Test
         env:
           NICEEVAL_TEST_COST_SCALE: "1.5"
-        run: pnpm test
+        run: pnpm test packages/niceeval/src/ test/unit/
 
   docs-site:
     name: docs-site
