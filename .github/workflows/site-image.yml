@@ -1,0 +1,48 @@
+name: Publish NiceEval site image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: niceeval-site-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build site image
+        run: docker build -f apps/site/Dockerfile --build-arg "GIT_SHA=$GITHUB_SHA" -t niceeval-site .
+
+      - name: Check image HTTP routes
+        run: |
+          container=$(docker run --network none --detach --rm niceeval-site)
+          trap 'docker stop "$container" >/dev/null' EXIT
+          docker exec -i "$container" node --input-type=module < apps/site/scripts/check-container.mjs
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Publish checked image
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/niceeval-site"
+          docker tag niceeval-site "$image:$GITHUB_SHA"
+          docker push "$image:$GITHUB_SHA"
+          if [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+            docker tag niceeval-site "$image:latest"
+            docker push "$image:latest"
+          fi
