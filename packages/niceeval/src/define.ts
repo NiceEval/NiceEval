@@ -31,6 +31,7 @@ import type {
   DatasetDefinition,
 } from "./types.ts";
 import { normalizeJudgeSelection } from "./runner/judge-config.ts";
+import { assertStableAgentIdentity } from "./agents/provisioner.ts";
 import { isJudgeProvider } from "./judge/provider.ts";
 import { MigrationRequiredError, captureMigrationSource } from "./error-assistance/index.ts";
 
@@ -149,6 +150,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   if (declaration === undefined) throw new Error("defineSandboxAgent requires an install declaration.");
   const install = Array.isArray(declaration) ? declaration : [declaration];
   if (install.length === 0) throw new Error("defineSandboxAgent requires an install declaration.");
+  for (const entry of install) assertStableAgentIdentity(entry.identity);
   if (def.ensure !== undefined) {
     const source = captureMigrationSource();
     const file = source.state === "located" ? `${source.file}:${source.line}` : "source unavailable";

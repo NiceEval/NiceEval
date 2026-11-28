@@ -27,8 +27,8 @@ Runner 只组装并执行循环,不出现 Agent 名分支。
 
 ```typescript
 interface AgentInstall {
-  /** 目标身份:纯数据,至少含 Agent 名与精确版本;与配对安装层的版本常量同源。 */
-  readonly identity: SerializableValue;
+  /** 目标身份:纯数据,Agent 名、精确版本与 revision 都是非空字符串;与配对安装层的版本常量同源。 */
+  readonly identity: { readonly agent: string; readonly version: string; readonly revision: string };
   /** 只读探测:退出码零=命中,非零=未命中(不是失败)。 */
   readonly probe: StableSandboxCommand;
   /** 可选的 Human live detail;Adapter 自己说明正在检查什么与何时就绪。 */
@@ -61,7 +61,7 @@ export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
   install: {
-    identity: { agent: "my-coding-agent", version: "1.4.2" },
+    identity: { agent: "my-coding-agent", version: "1.4.2", revision: "1" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
   async send(input, ctx) {
@@ -151,6 +151,10 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
    - `verify-only` 不修改文件系统，声明了 `repair` 也不执行。
 
    需要安装时，存在 `progress.installing` 就先投影到 Human active 行。
+   此时安装仍在进行，修复结果只是中间事实：active 行写 `in-place repair unavailable: <原因>`，不写成失败；修复停在与探测相同的未命中原因上时不重复显示。
+   修复原因的取法与探测未命中相同：命令非零退出取 stderr 最后一条非空行，其它错误取消息的最后一条非空行，都截断到 200 code points。
+   安装层在耗时步骤开始时自己更新 active 行，让上传与解压不停留在触发安装的未命中原因之下。
+   内置 staged 安装层依次写 `uploading the <agent> <version> package into the Sandbox` 与 `unpacking <agent> <version> in the Sandbox`，复检前再投影 `progress.checking`。
 
    安装事实（`hit`、`repaired` 或 `installed`）、探测未命中的原因与修复失败的原因出现在 Human active 行与 `invocation show` 的 Attempt detail 里。
    它们不落盘：既有 runner diagnostics 的 context 是闭合形状，放不下这些字段，本契约不为此新增持久 family 或升级既有格式。
@@ -169,6 +173,9 @@ Agent layer 仍是 command-only、永远排在两方作者 layer 之后、不能
 checking Codex CLI 0.171.0
 probe miss: apply_patch on the login PATH is not the native Codex binary
 installing official OpenAI Codex CLI 0.171.0
+uploading the codex 0.171.0 package into the Sandbox
+unpacking codex 0.171.0 in the Sandbox
+checking Codex CLI 0.171.0
 Codex CLI 0.171.0 ready
 ```
 
@@ -283,6 +290,7 @@ Agent install 静态身份进入 config identity；pair-owned ProviderPlan 进�
 
 探测命中还是本次安装写入 Attempt-owned `niceeval.agent-install` event channel，用于核对声明身份是否兑现；运行事实不能反过来替代 eligibility identity。
 没有精确版本的 `latest` 安装不参与可携带结果:内置安装层不提供这条模式,install 声明无法给出稳定 identity 时启动期报错。
+`defineSandboxAgent` 在模块加载时校验每条 install identity：`agent`、`version`、`revision` 缺失、不是字符串或为空时，一次点名全部缺失字段并抛出 `TypeError`，不留到 `agent.install` 相位才以未分类错误失败。
 
 ## 构建期与运行时的关系
 

@@ -130,6 +130,7 @@ export interface ClaudeCodeConfig {
 // @concord-implements docs/feature/adapters/library/sdk/claude-code/README.md
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   assertAgentLifecycleNames(config, "claudeCodeAgent");
+  assertMarketplaceRefsPinnable(config?.plugins ?? []);
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
   const agentEnv = Object.freeze({ ...(config?.env ?? {}) });
@@ -308,6 +309,24 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     config,
     claudeCodeAgent,
   );
+}
+
+/** `anthropics/<repo>` shorthand or its github.com URL; Claude Code reserves official names for these. */
+const ANTHROPIC_GITHUB_SOURCE = /^(?:https:\/\/github\.com\/)?anthropics\/[^/#@\s]+?(?:\.git)?\/?$/iu;
+
+/**
+ * A pinned marketplace is cloned and connected by local path; Claude Code refuses that for
+ * official names, which only register from the Anthropic GitHub organization, and its remote
+ * source cannot be frozen to a commit. Reject the declaration when the factory is built instead
+ * of letting setup fail later (docs/feature/adapters/library/sdk/claude-code/README.md).
+ */
+function assertMarketplaceRefsPinnable(plugins: readonly ClaudeCodePluginSpec[]): void {
+  for (const { marketplace } of plugins) {
+    if (marketplace.ref === undefined || !ANTHROPIC_GITHUB_SOURCE.test(marketplace.source.trim())) continue;
+    throw new TypeError(
+      `claudeCodeAgent plugins marketplace "${marketplace.name}" (source: ${marketplace.source}) cannot use ref "${marketplace.ref}": Claude Code registers Anthropic marketplaces only from their remote GitHub source, which cannot be pinned to a commit, and refuses a local clone. Remove ref to connect the official remote source.`,
+    );
+  }
 }
 
 /**

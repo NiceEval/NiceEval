@@ -340,12 +340,18 @@ function installFromStagedEffect(
   artifact: AgentStagedArtifact,
   identity: AgentIdentity,
   bin: string,
+  progress: (update: { message: string }) => void,
 ): Effect.Effect<void, unknown> {
+  // Each step replaces the Human active line, so a long upload or unpack never sits behind
+  // the probe miss that started the install (docs/feature/adapters/architecture/agent-install.md).
+  const pinned = `${identity.agent} ${identity.version}`;
   return Effect.gen(function* () {
     const tarball = yield* expandSandboxHomePathEffect(sandbox, artifact.targetPath);
     const prefix = yield* expandSandboxHomePathEffect(sandbox, AGENT_USER_PREFIX);
     yield* sandboxShellEffect(sandbox, `mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
+    progress({ message: `uploading the ${pinned} package into the Sandbox` });
     yield* promiseEffect(() => sandbox.putContent(artifact.content, tarball));
+    progress({ message: `unpacking ${pinned} in the Sandbox` });
 
     if (artifact.install.kind === "self-contained") {
       yield* installSelfContainedEffect(sandbox, {
@@ -495,9 +501,14 @@ export function createNpmCliInstaller(opts: NpmCliInstallerOptions): {
         { signal },
       ),
     install: (sandbox, context) =>
-      Effect.runPromise(installFromStagedEffect(sandbox, context.artifact, opts.identity, opts.bin), {
-        signal: context.signal,
-      }),
+      Effect.runPromise(
+        installFromStagedEffect(sandbox, context.artifact, opts.identity, opts.bin, (update) =>
+          context.progress(update),
+        ),
+        {
+          signal: context.signal,
+        },
+      ),
   };
   return {
     install: {

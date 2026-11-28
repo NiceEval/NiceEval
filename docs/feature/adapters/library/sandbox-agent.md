@@ -11,7 +11,7 @@ export default defineSandboxAgent({
   name: "my-coding-agent",
   evidenceCoverage: completeEvidenceCoverage,
   install: {
-    identity: { agent: "my-coding-agent", version: "1.4.2" },
+    identity: { agent: "my-coding-agent", version: "1.4.2", revision: "1" },
     probe: shell('test "$(my-agent --version)" = "1.4.2"'),
   },
 

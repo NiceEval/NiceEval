@@ -195,17 +195,27 @@ function decodePreparedArtifact(
 
 /** 拒绝无精确版本的身份;`latest` / 空串启动期报错。 */
 export function assertStableAgentIdentity(identity: AgentIdentity): void {
-  const version = identity.version.trim();
-  if (!identity.agent.trim()) {
-    throw new Error(`AgentProvisioner.identity.agent must not be empty.`);
+  // Author modules are plain JavaScript at runtime: check every required field's type
+  // before reading it, and name all missing fields at once instead of failing on `.trim`.
+  const declared: unknown = identity;
+  if (declared === null || typeof declared !== "object") {
+    throw new TypeError(`Agent install identity must be an object with agent, version and revision.`);
   }
-  if (!version || version.toLowerCase() === "latest" || version.includes("*")) {
-    throw new Error(
-      `AgentProvisioner.identity.version must be an exact pin, not "${identity.version}" (agent=${identity.agent}). Unpinned installs cannot participate in carry.`,
+  const fields = declared as Readonly<Record<"agent" | "version" | "revision", unknown>>;
+  const missing = (["agent", "version", "revision"] as const).filter(
+    (field) => typeof fields[field] !== "string" || !(fields[field] as string).trim(),
+  );
+  const agentLabel = typeof fields.agent === "string" && fields.agent.trim() ? ` (agent=${fields.agent})` : "";
+  if (missing.length > 0) {
+    throw new TypeError(
+      `Agent install identity is missing ${missing.map((field) => `identity.${field}`).join(", ")}${agentLabel}; each must be a non-empty string.`,
     );
   }
-  if (!identity.revision.trim()) {
-    throw new Error(`AgentProvisioner.identity.revision must not be empty (agent=${identity.agent}).`);
+  const version = identity.version.trim();
+  if (version.toLowerCase() === "latest" || version.includes("*")) {
+    throw new TypeError(
+      `Agent install identity.version must be an exact pin, not "${identity.version}"${agentLabel}. Unpinned installs cannot participate in carry.`,
+    );
   }
 }
 
@@ -502,7 +512,7 @@ export function runAgentInstall(
                   progress: context.progress,
                 }),
               ),
-            catch: errorMessage,
+            catch: failureReason,
           }),
         );
         if (context.signal.aborted) return yield* Effect.interrupt;
@@ -520,10 +530,17 @@ export function runAgentInstall(
           }
           repairFailure = recheck.reason;
         } else {
-          repairFailure = boundedReason(repaired.failure) || "repair failed without a reason";
+          repairFailure = repaired.failure || "repair stopped without a reason";
         }
       }
-      const detail = [probeDetail, repairFailure === undefined ? undefined : `repair failed: ${repairFailure}`]
+      // The install is still running here: the repair outcome is an intermediate fact, not the
+      // final result. A repair that stopped on the same miss the probe already named adds nothing.
+      const detail = [
+        probeDetail,
+        repairFailure === undefined || repairFailure === probe.reason
+          ? undefined
+          : `in-place repair unavailable: ${repairFailure}`,
+      ]
         .filter(Boolean)
         .join("; ");
       context.progress({ message: [installer.progress?.installing, detail].filter(Boolean).join("; ") });
@@ -688,6 +705,14 @@ function recheckMissed(identity: AgentIdentity): AgentInstallError {
     identity,
     message: formatInstallError({ identity, phase: "recheck" }),
   });
+}
+
+/** Bounded one-line reason; a command exit contributes its stderr tail, like a probe miss. */
+function failureReason(cause: unknown): string {
+  if (cause instanceof SandboxCommandExitError) {
+    return boundedReason(cause.result.stderr) || `exited ${cause.result.exitCode} without a reason`;
+  }
+  return boundedReason(errorMessage(cause));
 }
 
 function errorMessage(cause: unknown): string {

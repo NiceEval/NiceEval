@@ -55,7 +55,9 @@ test.concurrent("invocation show 显示清洗并按 Unicode 截断的探测原�
         },
         { timeoutMs: 10_000, intervalMs: 50, label: "ensure detail is visible" },
       );
-      expect(detail).toBe(`probe miss: missing ${"x".repeat(191)}😀; repair failed: fixture repair failed`);
+      expect(detail).toBe(
+        `probe miss: missing ${"x".repeat(191)}😀; in-place repair unavailable: fixture repair failed`,
+      );
     } finally {
       await writeFile(join(paths.projectRoot, "ensure-install-release"), "release");
     }

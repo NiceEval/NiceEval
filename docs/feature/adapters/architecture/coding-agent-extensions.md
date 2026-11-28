@@ -103,6 +103,7 @@ Plugin 安装目录每条 attempt 都被重装覆写：Plugin 运行期要跨 at
 ## 可复现性
 
 - Repo Skill 和 Marketplace ref 在每次 Invocation 内经 identity lookup 得到完整 commit 并冻结；完整 commit 可以跳过远端 ref 查询。
+- 供应商 CLI 只接受远程来源、又不能按 commit 固定的 marketplace（Claude Code 的 `anthropics/*` 官方来源）不接受 `ref`，Adapter 构造时拒绝，不退化成可移动的 branch 或 tag。
 - 多 Skill 仓库必须显式选择，除非仓库只有唯一 Skill。
 - 同名 Skill 来自多个出处时按配置顺序安装，manifest 保留每个出处，不静默合并。
 - 安装前缀 key 必须包含所有影响 Sandbox 的配置，包括完成态 commit、sparse 选择、Bub Python packages，以及原生配置文件原始字节的 SHA-256；内容不同的两个配置文件不复用同一份安装状态。
