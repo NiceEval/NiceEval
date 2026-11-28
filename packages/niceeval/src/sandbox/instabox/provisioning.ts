@@ -6,10 +6,13 @@ import {
   classifyProvisionErrorFallback,
   classifySandboxIoError,
   isRejectedProvisionError,
+  isRetryableSandboxIoError,
   type SandboxProvisionErrorKind,
 } from "../errors.ts";
 import { withSandboxIoRetry } from "../io-retry.ts";
 import { InstaboxApiError, InstaboxProtocolError } from "./api.ts";
+
+export const INSTABOX_MACHINE_DELETE_TIMEOUT_MS = 180_000;
 
 function provisionKind(error: unknown): SandboxProvisionErrorKind {
   if (error instanceof InstaboxApiError) {
@@ -34,10 +37,14 @@ export class InstaboxPreparationError extends Error {
   }
 }
 
+const classifyInstaboxReadError = (error: unknown) =>
+  classifySandboxIoError(error instanceof InstaboxApiError ? { status: error.status } : error);
+
+export const isRetryableInstaboxReadError = (error: unknown) =>
+  isRetryableSandboxIoError(classifyInstaboxReadError(error));
+
 export function instaboxReadRequest<T>(run: (signal: AbortSignal) => Promise<T>) {
-  return withSandboxIoRetry(providerBoundaryEffect(run), {
-    classify: (error) => classifySandboxIoError(error instanceof InstaboxApiError ? { status: error.status } : error),
-  });
+  return withSandboxIoRetry(providerBoundaryEffect(run), { classify: classifyInstaboxReadError });
 }
 
 export function preparationRequest<T>(

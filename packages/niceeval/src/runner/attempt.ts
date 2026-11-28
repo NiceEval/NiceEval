@@ -3,7 +3,7 @@ import { registerCommandAssertionSnapshot } from "../assertions/command-evidence
 import { collectAttemptTelemetry } from "../o11y/otlp/collection.ts";
 import type { ExecutionTraceLimitation } from "../adapter-execution-trace.ts";
 import { randomUUID } from "node:crypto";
-import { beforeCacheFailureDetail } from "../sandbox/remote-snapshot/failure.ts";
+import { beforeCacheFailureDetail, snapshotRestoreDiagnostic } from "../sandbox/remote-snapshot/failure.ts";
 import { pauseOnFailure } from "./pause-on-failure.ts";
 import { retainAttemptNotes } from "./attempt-notes.ts";
 import type { AttemptNotesCollector } from "../context/notes.ts";
@@ -3328,21 +3328,17 @@ async function runAttemptBody(
       }
       const start =
         materializedCase.beforeCache._tag === "RunPrepared" ? materializedCase.beforeCache.start : undefined;
-      const degraded =
-        start?._tag === "FellBackToBase"
-          ? { reason: start.reason, operationId: `before-cache-${randomUUID()}` }
-          : preparedBeforeCache.degraded;
-      const restoredCount = start?._tag === "FellBackToBase" ? 0 : satisfied;
-      if (degraded !== undefined) {
-        const nodes =
-          start?._tag !== "FellBackToBase" && preparedBeforeCache.degraded?.nodes?.length
-            ? preparedBeforeCache.degraded.nodes
-            : linked.before.slice(restoredCount, structurallyEligibleCount).map((entry) => ({
-                actionId: entry.id,
-                owner: `${entry.owner.kind}:${entry.owner.id}`,
-                reason: degraded.reason,
-                detail: "detail" in degraded ? degraded.detail : "Prepared snapshot could not be restored",
-              }));
+      const fallback = start?._tag === "FellBackToBase" ? start : undefined;
+      const preparationFailure = preparedBeforeCache.degraded;
+      if (preparationFailure !== undefined) {
+        const nodes = preparationFailure.nodes?.length
+          ? preparationFailure.nodes
+          : linked.before.slice(satisfied, structurallyEligibleCount).map((entry) => ({
+              actionId: entry.id,
+              owner: `${entry.owner.kind}:${entry.owner.id}`,
+              reason: preparationFailure.reason,
+              detail: preparationFailure.detail,
+            }));
         for (const node of nodes) {
           // Persist the named reason and node in the existing diagnostic summary:
           // arbitrary feedback data is intentionally not retained by this family.
@@ -3356,22 +3352,51 @@ async function runAttemptBody(
               ("key" in node ? `; node ${node.key}` : "") +
               ". The remaining before actions will run on the usable sandbox state.",
             data: {
-              operation: "before-cache.restore",
-              operationId: degraded.operationId,
+              operation:
+                node.reason === "snapshot-uncertain" || node.reason === "snapshot-rejected"
+                  ? "before-cache.publish"
+                  : "before-cache.prepare",
+              operationId: preparationFailure.operationId,
               reason: node.reason,
               actionId: node.actionId,
-              ...(start?._tag !== "FellBackToBase" && preparedBeforeCache.degraded?.diagnosticKey !== undefined
-                ? { beforeCacheDiagnosticKey: preparedBeforeCache.degraded.diagnosticKey }
+              ...(preparationFailure.diagnosticKey !== undefined
+                ? { beforeCacheDiagnosticKey: preparationFailure.diagnosticKey }
                 : {}),
             },
           });
         }
       }
+      if (fallback !== undefined) {
+        const operationId = `before-cache-${randomUUID()}`;
+        const { artifactId, stage } = snapshotRestoreDiagnostic(preparedBeforeCache.artifact, fallback.reason);
+        for (const entry of linked.before.slice(0, structurallyEligibleCount)) {
+          feedback.diagnostic({
+            code: "cache-degraded",
+            level: "warning",
+            message:
+              `Before cache degraded: ${fallback.reason}; restore stage ${stage}` +
+              (artifactId === undefined ? "" : `; selected artifact ${artifactId}`) +
+              `; Before ${entry.owner.kind}:${entry.owner.id} / ${entry.id}. The action will run on Base.`,
+            data: {
+              operation: "before-cache.restore",
+              operationId,
+              reason: fallback.reason,
+              stage,
+              ...(artifactId === undefined ? {} : { artifactId }),
+              actionId: entry.id,
+            },
+          });
+        }
+      }
+      const restoredCount = fallback === undefined ? satisfied : 0;
       for (let index = 0; index < restoredCount; index++) {
         cacheProgress("hit", linked.before[index]!);
       }
       for (let index = restoredCount; index < linked.before.length; index++) {
-        cacheProgress(degraded === undefined ? "replay(miss)" : "degraded", linked.before[index]!);
+        cacheProgress(
+          fallback === undefined && preparationFailure === undefined ? "replay(miss)" : "degraded",
+          linked.before[index]!,
+        );
         await executeBefore(linked.before[index]!);
       }
       return;

@@ -95,6 +95,112 @@ function providerFixture(
   });
 }
 
+// @feature docs/feature/sandbox/README.md#preparation-failure
+describe("replaying after a selected snapshot cannot be restored", () => {
+  const selectedId = "8a8e6848-440f-47af-b4bb-7020917ee1b0";
+  const diagnostics: string[] = [];
+  let project: Awaited<ReturnType<typeof createLifecycleProject>>;
+
+  beforeAll(async () => {
+    project = await createLifecycleProject({
+      attempts: 1,
+      maxConcurrency: 1,
+      failCreates: [],
+      scripts: [{ cleanups: 0, beforeFails: false, test: "pass" }],
+    });
+    const preparer: BeforeCachePreparer<void> = {
+      continuesStaging: false,
+      supportsAgentDerived: false,
+      eligibility: () =>
+        Effect.succeed({
+          _tag: "Eligible",
+          coverage: "all",
+          persistence: "persistent",
+          dependency: "parent-backed",
+          baseIdentity: "fixture-base",
+          keyScope: { cacheFormat: "fixture", semanticIdentity: {} },
+          replacementScope: undefined,
+        }),
+      lookup: (_, __, [step]) =>
+        Effect.succeed(
+          step?.positions.at(-1) === "root"
+            ? { _tag: "Hit", artifact: { ...step.declaration, locator: { artifactId: selectedId, executionDomainId: "fixture" } } }
+            : { _tag: "Degraded", reason: "snapshot-uncertain", detail: "fixture publish failed" },
+        ),
+      materializeFrom: (_, context, purpose, source, runtime) => {
+        expect(purpose).toBe("consumer");
+        expect(source).toMatchObject({ _tag: "Artifact", artifact: { locator: { artifactId: selectedId } } });
+        return context.materializeBase(runtime).pipe(
+          Effect.map((sandbox) => ({ _tag: "Materialized", sandbox, start: { _tag: "FellBackToBase", reason: "snapshot-gone" } })),
+        );
+      },
+      capture: () => Effect.die("fixture prefixes are settled by lookup"),
+    };
+    Reflect.set(process, Symbol.for(project.cwd), (layer: SandboxLayer<"template-bearing">) =>
+      providerFixture(layer, "remote", 1, "fixture", () => {}, preparer),
+    );
+    await writeFile(join(project.cwd, "experiments/lifecycle.ts"), `
+import { defineExperiment } from "niceeval";
+import { shell } from "niceeval/sandbox";
+import agent from "../agent.ts";
+import base from "../sandbox.ts";
+const sandbox = Reflect.get(process, Symbol.for(${JSON.stringify(project.cwd)}))(base);
+export default defineExperiment({ adapter: agent, sandbox: sandbox
+  .before(shell({ id: "root", command: 'printf "%s" replay-root' }))
+  .before(shell({ id: "tail", command: 'printf "%s" replay-tail' })), evals: "*" });`);
+    await writeFile(join(project.cwd, "evals/e0.eval.ts"), `
+import { defineEval } from "niceeval";
+export default defineEval({ async test() {} });`);
+    const prepared = await Effect.runPromise(
+      experimentHost.invocation.plan({
+        cwd: project.cwd,
+        experimentIds: ["lifecycle"],
+        config: {},
+        overrides: { rerun: "all", earlyExit: false },
+      }),
+    );
+    if (prepared.status !== "ready") throw new Error(JSON.stringify(prepared));
+    const coordinator = createFeedbackCoordinator({
+      profile: "json",
+      io: createNodeFeedbackIO(),
+      renderer: { appendDurable() {} },
+      tickIntervalMs: undefined,
+      activateSink: false,
+      onEvent: (event) => {
+        if (event.type === "diagnostic" && event.code === "cache-degraded") diagnostics.push(event.message);
+      },
+    });
+    await Effect.runPromise(experimentHost.invocation.run({ plan: prepared.plan, feedback: { coordinator } }));
+  }, 15_000);
+
+  afterAll(async () => {
+    if (project) {
+      Reflect.deleteProperty(process, Symbol.for(project.cwd));
+      await project.dispose();
+    }
+  });
+
+  test("identifies the restored artifact and every action without hiding the publish failure", () => {
+    const recoveries = diagnostics.filter((message) => message.includes("snapshot-gone"));
+    expect(recoveries).toHaveLength(2);
+    for (const action of ["root", "tail"]) {
+      expect(recoveries).toContainEqual(expect.stringContaining(
+        `restore stage create-instance; selected artifact ${selectedId}; Before experiment:lifecycle / ${action}`,
+      ));
+    }
+    const publication = diagnostics.filter((message) => message.includes("snapshot-uncertain"));
+    expect(publication).toEqual([expect.stringContaining("fixture publish failed")]);
+    expect(publication[0]).not.toContain(selectedId);
+    const replays = project.events.filter((event) =>
+      event.event === "command-start" && JSON.stringify(event.args).includes("replay-"),
+    );
+    expect(replays).toHaveLength(2);
+    expect(replays[0]?.args).toEqual(expect.arrayContaining([expect.stringContaining("replay-root")]));
+    expect(replays[1]?.args).toEqual(expect.arrayContaining([expect.stringContaining("replay-tail")]));
+    expect(replays[0]?.sandboxId).toBe(replays[1]?.sandboxId);
+  });
+});
+
 // @feature docs/feature/sandbox/README.md#shared-builds
 describe.each([
   { mode: "docker" as const, sameImage: true, conflicts: 1 },

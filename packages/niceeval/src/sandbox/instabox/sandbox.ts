@@ -39,7 +39,7 @@ import {
   SSHToken,
 } from "./api.ts";
 import { startInstaboxProcess } from "./process.ts";
-import { InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
+import { INSTABOX_MACHINE_DELETE_TIMEOUT_MS, InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
 import { InstaboxConnection } from "./connection.ts";
 
 function recoveryForRequest(cause: InstaboxRequestError): "not-found" | "operation-conflict" | "other" {
@@ -491,7 +491,7 @@ export class InstaboxBackend implements SandboxProviderBackend {
     // Cloud teardown has its own budget, independent of the Attempt's deadline
     // and cancellation. A DELETE acknowledgment is not confirmation of deletion.
     const started = performance.now();
-    const signal = AbortSignal.timeout(180_000);
+    const signal = AbortSignal.timeout(INSTABOX_MACHINE_DELETE_TIMEOUT_MS);
     let operation: Operation | undefined;
     let deletionAccepted = false;
     let machineState = "unknown";

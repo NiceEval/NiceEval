@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Exit } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import fc from "fast-check";
 import { expect, test, vi } from "vitest";
@@ -90,17 +90,19 @@ function fixtureFor(primitives: SnapshotOperations) {
     providerId: "fixture-provider",
     materializeBase: () => Effect.succeed(sandbox),
   };
-  const capture = Effect.gen(function* () {
-    const lookup = yield* preparer.lookup(undefined, context, [step]);
-    expect(lookup).toEqual({ _tag: "Miss" });
-    const staging = yield* preparer.materializeFrom(undefined, context, "staging", { _tag: "Base" }, materialize);
-    if (staging._tag !== "Materialized") throw new Error(`Staging failed: ${staging.reason}`);
-    return yield* preparer.capture(undefined, context, staging.sandbox, step);
-  });
+  const captureFor = (runId: string) =>
+    Effect.gen(function* () {
+      const owner = { ...context, runId };
+      const lookup = yield* preparer.lookup(undefined, owner, [step]);
+      expect(lookup).toEqual({ _tag: "Miss" });
+      const staging = yield* preparer.materializeFrom(undefined, owner, "staging", { _tag: "Base" }, materialize);
+      if (staging._tag !== "Materialized") throw new Error(`Staging failed: ${staging.reason}`);
+      return yield* preparer.capture(undefined, owner, staging.sandbox, step);
+    });
   const collectAgain = Effect.scoped(
     preparer.lookup(undefined, { ...context, runId: "next-run" }, [], { reserve: false }),
   );
-  return { preparer, capture, collectAgain, context };
+  return { preparer, capture: captureFor(context.runId), captureFor, collectAgain, context };
 }
 
 const settlementCases: { readonly mode: string; readonly parameters: fc.Parameters<[number]> }[] = [
@@ -153,6 +155,87 @@ const deletionCases = [
   { mode: "unconfirmed deletion", confirmed: false },
   { mode: "confirmed deletion", confirmed: true },
 ];
+
+// @feature docs/feature/sandbox/README.md#snapshot-takeover
+test("collecting failed snapshots skips Base and continues after a failed deletion", async () => {
+  const snapshots = new Map<string, string>();
+  const snapshotIds = ["fixture-base", "failed-delete", "confirmed-delete"];
+  const deleted: string[] = [];
+  let posted = 0;
+  await withLedger(
+    {
+      createSnapshot: (_, __, name) => {
+        snapshots.set(name, snapshotIds[posted++]!);
+        return Effect.fail(providerFailure("create"));
+      },
+      findSnapshot: (_, name) => {
+        const id = snapshots.get(name);
+        return Effect.succeed(id === undefined ? { _tag: "Absent" } : { _tag: "Failed", snapshotId: id });
+      },
+      deleteSnapshot: (_, id) => {
+        deleted.push(id);
+        return id === "failed-delete" ? Effect.fail(providerFailure("delete")) : Effect.succeed("deleted");
+      },
+      createFromSnapshot: () => Effect.fail(providerFailure("restore")),
+    },
+    ({ capture }) =>
+      Effect.gen(function* () {
+        const exit = yield* Effect.exit(Effect.scoped(Effect.all([capture, capture, capture])));
+        if (!Exit.isFailure(exit)) throw new Error("Expected the unsuccessful rows in the cleanup summary");
+        const summary = Cause.pretty(exit.cause);
+        expect(summary).toContain("matched the declared Base");
+        expect(summary).toContain("snapshot deletion failed");
+        expect(deleted).toEqual(["failed-delete", "confirmed-delete"]);
+      }),
+  );
+});
+
+// @feature docs/feature/sandbox/README.md#snapshot-takeover
+test("a takeover that sees Pending then Failed retires the old request and publishes a new one", async () => {
+  const started = Deferred.makeUnsafe<void>();
+  const checked = Deferred.makeUnsafe<void>();
+  const posted: string[] = [];
+  const deleted: string[] = [];
+  let reads = 0;
+  await withLedger(
+    {
+      createSnapshot: (_, __, name) => {
+        posted.push(name);
+        return posted.length === 1
+          ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
+          : Effect.succeed({ _tag: "Ready", snapshotId: "new-snapshot" });
+      },
+      findSnapshot: (_, name) => {
+        expect(name).toBe(posted[0]);
+        return reads++ === 0
+          ? Deferred.succeed(checked, undefined).pipe(Effect.as({ _tag: "Pending" }))
+          : Effect.succeed({ _tag: "Failed", snapshotId: "old-snapshot" });
+      },
+      deleteSnapshot: (_, id) => {
+        deleted.push(id);
+        return Effect.succeed("absent");
+      },
+      createFromSnapshot: () => Effect.fail(providerFailure("restore")),
+    },
+    ({ capture, captureFor }) =>
+      Effect.gen(function* () {
+        const old = yield* Effect.forkChild(Effect.scoped(capture));
+        yield* Deferred.await(started);
+        const result = yield* Effect.gen(function* () {
+          // The old owner's clock stays frozen while the new owner observes its expired lease.
+          yield* TestClock.setTime(120_001);
+          const takeover = yield* Effect.forkChild(Effect.scoped(captureFor("takeover-run")));
+          yield* Deferred.await(checked);
+          yield* TestClock.adjust("1 second");
+          return yield* Fiber.join(takeover);
+        }).pipe(Effect.provide(TestClock.layer()));
+        yield* Fiber.interrupt(old);
+        expect(result).toMatchObject({ _tag: "Published", artifact: { locator: { artifactId: posted[1]?.slice(9) } } });
+        expect(new Set(posted).size).toBe(2);
+        expect(deleted).toEqual(["old-snapshot"]);
+      }),
+  );
+});
 
 // @feature docs/feature/sandbox/README.md#snapshot-takeover
 test.for(deletionCases)("a restored instance protects its snapshot until deletion ($mode)", async ({ confirmed }) => {

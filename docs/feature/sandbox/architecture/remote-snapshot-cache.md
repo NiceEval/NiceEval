@@ -46,7 +46,7 @@ interface BeforeCacheSnapshotDriver<Plan> {
   };
   /** snapshot Ready 后源实例是否仍可继续执行命令。为 true 时一条 miss 链可在同一个 staging 上连续推进。 */
   readonly sourceUsableAfterSnapshot: boolean;
-  /** 发出 snapshot 请求后，服务端对象最晚多久可以按名称查到；取 driver 等待 Ready 的超时上限。 */
+  /** 从发出请求起，按名称查无对象时可确认收账前的最短窗口。 */
   readonly snapshotSettleMs: number;
   /** 只读：把声明解析成不可变 Base 与账号域。不得创建或修改远端资源。 */
   readonly resolveBase: (
@@ -99,6 +99,7 @@ type BeforeCacheSnapshotCreated =
 
 type BeforeCacheSnapshotFound =
   | { readonly _tag: "Ready"; readonly snapshotId: string }
+  | { readonly _tag: "Failed"; readonly snapshotId: string }
   | { readonly _tag: "Pending" }
   | { readonly _tag: "Absent" };
 ```
@@ -166,7 +167,7 @@ type BeforeCacheStart =
   | { readonly _tag: "FellBackToBase"; readonly reason: string };
 ```
 
-- consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before，eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。
+- consumer 收到 `FellBackToBase` 后，Attempt 真实执行全部 before。每个 eligible action 的反馈为 `degraded`，并带 `cache-degraded` diagnostic。恢复诊断记录选中的 artifact ID、失败阶段和回放的 action，另保留已经产生的发布诊断。
 - `FellBackToBase.reason` 是具名原因，不能把几种情况合成一句。消费前的检查各有自己的原因：
 
 | 原因 | 说明 |
@@ -258,7 +259,7 @@ busy 的节点等待对方结算，不在等待期间创建 staging。对方发�
 
 - `Ready`：以新 token 发布。
 - `Pending`：续期并等待它结束。
-- `Absent`：把该行改为 `deleting`（`snapshot_id` 为空），再重新 reserve。
+- `Failed` 或 `Absent`：把该行改为 `deleting`（`snapshot_id` 为空），再重新 reserve。
 
 **替换按声明方与位置。** 远端 snapshot 按实例存储计费，旧声明的 snapshot 不能一直留在账号里（OPS-7）。所以 replacement scope 不含 action 内容，只含每层的 action id、Base 引用，以及这一层的声明方：
 
@@ -280,6 +281,8 @@ replacement scope 使用声明位置与声明方的实际内容摘要，不附�
 
 core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`createSnapshot` 返回错误时，远端可能已经创建、或稍后才创建一份名为 `niceeval-<artifactId>` 的 snapshot。core 在同一事务把该行改为 `deleting`、`snapshot_id` 留空，节点结算为 `degraded(snapshot-uncertain)`。这份登记让它不会变成来历不明的快照（OPS-7）：回收时按名称查询再删除。
 
+driver 等待 Ready 的预算独立于 `snapshotSettleMs`。Instabox 保持源 staging 到 Ready、终态失败、取消或预算耗尽。等待上限为 20 分钟，受源 Machine 剩余寿命和回收预留时间约束。达到上限时按不确定结果保留回收登记，并按节点结算从可用祖先或 Base 重放。
+
 ## 回收
 
 **hold 的两种持有者。**
@@ -294,9 +297,9 @@ core 在发出 snapshot 请求之前，以当前 lease 写入 `requested_at`。`
 **删除。** 每个使用某 `(provider, execution_domain_id)` 的 Run 在结束时处理一次该 domain 的 `deleting` 行，总数受 Run 取消约束。删除者先在一个写事务中领取：lease 为空或已过期、且没有 `sandbox` hold 与未过期的 `run` hold 时，写入自己的 token 与 lease。领取后：
 
 - 有 `snapshot_id`：`deleteSnapshot`；`deleted` 或 `absent` 都以同一 token 改为 `deleted`。
-- 没有 `snapshot_id`：先 `findSnapshot(snapshot_name)`。`Ready` 时删除；`Pending` 时放弃 lease，留到下次。`Absent` 只有在 `now ≥ requested_at + snapshotSettleMs` 之后才改为 `deleted`：在此之前查不到，不能排除对象稍后才出现，只放弃 lease。
+- 没有 `snapshot_id`：先 `findSnapshot(snapshot_name)`。`Ready` 或 `Failed` 时按 ID 删除，收到确认或 404 后结账。`Pending` 时放弃 lease，留到下次。`Absent` 只有在 `now ≥ requested_at + snapshotSettleMs` 之后才改为 `deleted`：在此之前查不到，不能排除对象稍后才出现，只放弃 lease。
 
-删除失败时只放弃 lease，下次再领取。用户声明的 Base template 与 snapshot 永不由 NiceEval 删除。
+单行查询或删除失败时放弃该行 lease，继续处理其它可领取行，最后汇总失败。用户声明的 Base template 与 snapshot 永不由 NiceEval 删除。
 
 取消、失败与正常结束后，本 Run 不留下活跃的 staging 或 consumer 实例，也不留下自己持有且未过期的 `preparing` lease 或 `run` hold。回收失败保留登记并呈现错误，不改成静默成功。
 

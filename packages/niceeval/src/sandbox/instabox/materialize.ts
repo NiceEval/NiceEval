@@ -1,6 +1,6 @@
 import { sandboxCreationLabels } from "../creation-labels.ts";
 import { cloudLifetimeMs } from "../cloud-lifetime.ts";
-import { Effect, Exit, Scope } from "effect";
+import { Clock, Effect, Exit, Scope } from "effect";
 import { providerBoundaryEffect } from "../backend.ts";
 import type { InstaboxProviderPlan } from "../instabox.ts";
 import {
@@ -12,6 +12,7 @@ import { withProvisionRetry } from "../retry.ts";
 import { InstaboxApi, Snapshot } from "./api.ts";
 import { InstaboxPreparationError, preparationRequest } from "./provisioning.ts";
 import { InstaboxBackend } from "./sandbox.ts";
+import { instaboxSnapshotSourceExpirations } from "./snapshot-driver.ts";
 
 export const materializeInstabox = Effect.fn("materializeInstabox")(
   function* (plan: InstaboxProviderPlan, context: SandboxRuntimeMaterializeContext) {
@@ -48,6 +49,8 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
         if (snapshot.id !== id || snapshot.status !== "ready")
           return yield* Effect.fail(new Error("Instabox snapshot must match the configured ID and be ready"));
       }
+      // Use the allocation start so the budget includes provisioning and inherited staging time.
+      const expiresAt = (yield* Clock.currentTimeMillis) + lifetimeMs;
       return yield* Effect.acquireUseRelease(
         providerBoundaryEffect(() =>
           InstaboxBackend.create(
@@ -63,7 +66,11 @@ export const materializeInstabox = Effect.fn("materializeInstabox")(
           Effect.gen(function* () {
             yield* backend.initialize();
             return yield* Effect.acquireRelease(
-              Effect.sync(() => wrapSingleSandbox(backend, context, facts)),
+              Effect.sync(() => {
+                const sandbox = wrapSingleSandbox(backend, context, facts);
+                instaboxSnapshotSourceExpirations.set(sandbox.group, expiresAt);
+                return sandbox;
+              }),
               (materialized) => providerBoundaryEffect(() => materialized.group.stop()).pipe(Effect.orDie),
             ).pipe(Scope.provide(owner));
           }),

@@ -59,8 +59,10 @@ stdin 同样按偏移交付。supervisor 把已经写进目标进程管道的 st
 - **driver**：`preserves = { disks: ["/", "/data"], memory: false }`（默认 workdir 在 `/data/home/workspace`）；`sourceUsableAfterSnapshot = true`。retention 与 Nested Docker 仍为 Unsupported，不支持 Sandbox 复用。
 - **Base 身份**：声明的 `snapshotId`（`sn_` 开头）或 `templateId`（别名 `template`，省略时默认为 `universal`）；Instabox snapshot 的内容按 ID 不可变。
 - **execution domain**：`hash("https://api.instabox.sh", sha256(API key))`。
-- **createSnapshot**：对 staging Machine 发起包含 root 与 `/data` 的 snapshot 保存请求，等待 status 变为 `ready`；`failed` 是错误。等待期间读取 snapshot 状态的 GET 是幂等读取，按[只读查询原地重试](#provisioning-对账与重试)的分类器与上限重试，单次瞬时失败不让已受理的 snapshot 变成结果不确定。服务以明确错误码拒绝且未返回 operation 时为 `Rejected`。具体 HTTP 路径以 Instabox API 为准，像现有 Machine 接口一样在边界用 Schema 解码。
+- **createSnapshot**：对 staging Machine 只发一次包含 root 与 `/data` 的 snapshot 保存请求。回执不明时按登记的唯一名称只读对账。获得 ID 后按 ID 轮询，校验返回的 ID 与名称，只有 `ready` 能发布。`failed` 结束等待。GET 每次读取按[只读查询原地重试](#provisioning-对账与重试)处理瞬态故障。单次读取重试耗尽且故障仍为瞬态时，间隔 5 秒继续查询，受等待预算约束。服务明确拒绝时返回 `Rejected`。
+- **等待预算**：从发出保存请求起最多 20 分钟，并为源 Machine 的声明删除期限预留 3 分钟回收时间。连续推进沿用同一 Machine 的期限。Run 取消会中止轮询并归还 staging，Adapter cleanup 与 Machine 回收继续使用各自的预算。5 分钟只用于按名称查不到对象时的收账窗口。历史成功样本缺少上传时长，20 分钟为慢上传留出有界等待，服务尚无完成时限承诺。
+- **发布诊断**：失败时记录阶段与最后观测状态。诊断只使用分类值，省略服务响应正文。
 - **一致性**：Instabox 的 live snapshot 等同于断电时的磁盘内容；两个盘是否在同一时刻捕获没有服务端证据。quiesce 保证 snapshot 期间没有 NiceEval 发起的写入，因此 core 不依赖跨盘原子性。
 - **createFromSnapshot**：以 snapshot ID 创建 Machine，沿用现有创建、探测与删除契约；Vault 与 Org Secrets 自动注入保持关闭。
-- **findSnapshot**：Instabox 不提供按名称查询，`/v1/snapshots/{id}` 只接受 ID。driver 读取 `GET /v1/snapshots` 返回的完整组织列表（该接口不分页），按 `name` 严格相等匹配；多于一个匹配是错误。列表读取同样按只读查询规则原地重试。
+- **findSnapshot**：driver 读取 `GET /v1/snapshots` 返回的完整组织列表，按 `name` 严格相等匹配。多于一个匹配是错误。列表读取沿用只读重试，精确命中的 `failed` 返回 `Failed` 和 ID，供 core 回收。
 - **deleteSnapshot**：`DELETE /snapshots/{id}`，404 返回 `absent`。

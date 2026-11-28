@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect";
 import { normalizeExternalCause, type ExternalCause } from "../../shared/external-cause.ts";
 import {
   UserDatabaseBusy,
@@ -6,6 +7,25 @@ import {
   UserDatabaseUnsupported,
   type UserDatabaseFailure,
 } from "../../user-database/errors.ts";
+import type { BeforeCacheArtifact } from "../layer.ts";
+
+const Locator = Schema.Struct({ artifactId: Schema.String, executionDomainId: Schema.String });
+const locatorOptions = { onExcessProperty: "error" } as const;
+export const decodeSnapshotLocator = Schema.decodeUnknownSync(Locator, locatorOptions);
+const parseSnapshotLocator = Schema.decodeUnknownOption(Locator, locatorOptions);
+
+export function snapshotRestoreDiagnostic(artifact: BeforeCacheArtifact | undefined, reason: string) {
+  const artifactId = Option.getOrUndefined(parseSnapshotLocator(artifact?.locator))?.artifactId;
+  const stage =
+    reason === "snapshot-gone"
+      ? "create-instance"
+      : reason === "marker-mismatch"
+        ? "verify-marker"
+        : reason === "hold-missing"
+          ? "acquire-hold"
+          : "resolve-artifact";
+  return { stage, artifactId };
+}
 
 export function beforeCacheFailureCause(cause: unknown): UserDatabaseFailure | ExternalCause {
   if (

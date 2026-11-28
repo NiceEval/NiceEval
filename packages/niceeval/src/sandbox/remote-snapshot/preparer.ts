@@ -5,7 +5,7 @@ import { Clock, Deferred, Effect, Exit, Result, Schema, Scope } from "effect";
 import { userDatabaseHost, type UserDatabase } from "../../user-database/index.ts";
 import { BeforeCacheLookupError, type BeforeCacheError, type BeforeCacheStep } from "../backend.ts";
 import type { MaterializedSandboxCase } from "../case-types.ts";
-import { beforeCacheFailureDetail } from "./failure.ts";
+import { beforeCacheFailureDetail, decodeSnapshotLocator } from "./failure.ts";
 import { beforeCacheReplacementScope } from "../before-cache-replacement.ts";
 import type {
   BeforeCacheArtifact,
@@ -29,9 +29,7 @@ import {
 
 const ArtifactMarkerPath = "/var/lib/niceeval/before-cache-artifact.json";
 const Marker = Schema.Struct({ artifactId: Schema.String, beforeCacheKey: Schema.String });
-const Locator = Schema.Struct({ artifactId: Schema.String, executionDomainId: Schema.String });
 const decodeMarker = Schema.decodeUnknownSync(Marker, { onExcessProperty: "error" });
-const decodeLocator = Schema.decodeUnknownSync(Locator, { onExcessProperty: "error" });
 const Declaration = Schema.Struct({
   baseIdentity: Schema.String,
   beforeCacheKey: Schema.String,
@@ -192,6 +190,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
     yield* timedRequest(state, { operation: "release-run-holds", holdIds: [...state.holds.values()] });
     state.holds.clear();
     const visited = new Set<string>();
+    const failures: string[] = [];
     while (true) {
       const token = randomUUID();
       const claimed = yield* timedRequest(state, {
@@ -208,40 +207,33 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
           if (snapshotId === null) {
             // An empty answer can describe an observation from before the reply arrived.
             const lookupStartedAt = yield* Clock.currentTimeMillis;
-            const found = yield* driver.findSnapshot(state.plan, row.snapshot_name);
+            const found = yield* driver
+              .findSnapshot(state.plan, row.snapshot_name)
+              .pipe(Effect.mapError(() => "snapshot lookup failed"));
             if (found._tag === "Pending") return false;
             if (found._tag === "Absent")
               return row.requested_at === null || lookupStartedAt >= row.requested_at + driver.snapshotSettleMs;
             snapshotId = found.snapshotId;
           }
-          if (snapshotId === state.target.baseIdentity || snapshotId === state.target.baseReference) {
-            return yield* new BeforeCacheLookupError({
-              operation: "cleanup",
-              reason: "Refusing to delete the declared Base snapshot",
-              beforeCacheKey: undefined,
-              domainId: undefined,
-              cause: undefined,
-            });
-          }
-          yield* driver.deleteSnapshot(state.plan, snapshotId);
+          if (snapshotId === state.target.baseIdentity || snapshotId === state.target.baseReference)
+            return yield* Effect.fail("matched the declared Base");
+          yield* driver.deleteSnapshot(state.plan, snapshotId).pipe(Effect.mapError(() => "snapshot deletion failed"));
           return true;
         }),
       );
-      yield* timedRequest(state, {
+      const settled = yield* timedRequest(state, {
         operation: "settle-delete",
         artifactId: row.artifact_id,
         token,
         deleted: Result.isSuccess(deletion) && deletion.success,
       });
-      if (Result.isFailure(deletion))
-        return yield* new BeforeCacheLookupError({
-          operation: "cleanup",
-          reason: "Snapshot deletion failed; its ledger entry is retained",
-          beforeCacheKey: undefined,
-          domainId: undefined,
-          cause: undefined,
-        });
+      if (Result.isFailure(deletion)) failures.push(`${row.artifact_id}: ${deletion.failure}`);
+      if (settled._tag !== "Updated") failures.push(`${row.artifact_id}: cleanup lease lost`);
     }
+    if (failures.length > 0)
+      return yield* Effect.fail(
+        new Error(`Snapshot cleanup could not settle these ledger entries: ${failures.join("; ")}`),
+      );
   });
 
   const stateFor = Effect.fn("remoteSnapshot.runState")(function* (
@@ -441,9 +433,14 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
               yield* Effect.sleep("1 second");
               continue;
             }
-            if (found._tag === "Absent") {
-              yield* timedRequest(state, { operation: "uncertain", artifactId: result.entry.artifact_id, token });
+            if (found._tag === "Absent" || found._tag === "Failed") {
+              const retired = yield* timedRequest(state, {
+                operation: "uncertain",
+                artifactId: result.entry.artifact_id,
+                token,
+              });
               state.reservations.delete(step.declaration.beforeCacheKey);
+              if (retired._tag !== "Updated") return degraded("lease-lost", "Snapshot publication lease was lost");
               break;
             }
             const published = yield* timedRequest(state, {
@@ -533,7 +530,7 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       });
       if (source._tag === "Base") return yield* base();
       const parsed = yield* Effect.result(
-        Effect.try({ try: () => decodeLocator(source.artifact.locator), catch: stagingError }),
+        Effect.try({ try: () => decodeSnapshotLocator(source.artifact.locator), catch: stagingError }),
       );
       if (Result.isFailure(parsed)) return yield* base("artifact-missing");
       const target = yield* Effect.result(resolve(plan, context));
@@ -765,19 +762,29 @@ export function remoteSnapshotPreparer<Plan>(driver: BeforeCacheSnapshotDriver<P
       }
       const created = yield* Effect.result(driver.createSnapshot(plan, staging, reservation.entry.snapshot_name));
       if (reservation.lost) return degraded("lease-lost", "Snapshot publication lease was lost");
-      if (Result.isFailure(created) || created.success._tag === "Rejected") {
+      const outcome =
+        created._tag === "Failure"
+          ? degraded(
+              "snapshot-uncertain",
+              `Snapshot request outcome is uncertain; its ledger entry is retained; stage ${created.failure.operation}; ${created.failure.reason}`,
+            )
+          : created.success._tag === "Rejected"
+            ? degraded(
+                "snapshot-rejected",
+                `Snapshot request rejected before acceptance; stage create; ${created.success.reason}`,
+              )
+            : created.success;
+      if (outcome._tag === "Degraded") {
         const retired = yield* timedRequest(state, { operation: "uncertain", artifactId, token: reservation.token });
         state.reservations.delete(step.declaration.beforeCacheKey);
         if (retired._tag !== "Updated") return degraded("lease-lost", "Snapshot publication lease was lost");
-        return Result.isFailure(created)
-          ? degraded("snapshot-uncertain", "Snapshot request outcome is uncertain; its ledger entry is retained")
-          : degraded("snapshot-rejected", "Provider rejected the snapshot request before acceptance");
+        return outcome;
       }
       const published = yield* timedRequest(state, {
         operation: "publish",
         artifactId,
         token: reservation.token,
-        snapshotId: created.success.snapshotId,
+        snapshotId: outcome.snapshotId,
         holdId: randomUUID(),
       });
       if (published._tag !== "Published") {

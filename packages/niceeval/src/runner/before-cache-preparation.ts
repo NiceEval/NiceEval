@@ -23,6 +23,7 @@ import { liveSandboxRuntimeServices, type SandboxRuntimeMaterializeInput } from 
 import type { ScheduledSandboxBefore } from "../sandbox/link.ts";
 import type { LinkedRunPlan } from "../sandbox/plan.ts";
 import { plannedAgentDerivedNode, type PlannedAgentDerivedNode } from "../sandbox/remote-snapshot/agent-derived.ts";
+import { snapshotRestoreDiagnostic } from "../sandbox/remote-snapshot/failure.ts";
 import { ArtifactPrepareCoordinator, runAgentInstall, verifySandboxTargetPlatform } from "../agents/provisioner.ts";
 import type { Attempt } from "./types.ts";
 import { cacheKey } from "./fingerprint.ts";
@@ -320,10 +321,13 @@ function materializePreparationNode(
           if (inherited === undefined)
             yield* Effect.addFinalizer(() => providerBoundaryEffect(() => owned.group.stop()).pipe(Effect.orDie));
           if (parent !== undefined && created.start._tag === "FellBackToBase") {
+            const { artifactId, stage } = snapshotRestoreDiagnostic(parent, created.start.reason);
             return {
               outcome: "degraded" as const,
               reason: "parent-unavailable",
-              detail: "Staging fell back to Base without its parent prefix",
+              detail:
+                `Staging fell back to Base without its parent prefix; restore stage ${stage}; ${created.start.reason}` +
+                (artifactId === undefined ? "" : `; selected artifact ${artifactId}`),
               operationId: `before-cache-${randomUUID()}`,
             };
           }

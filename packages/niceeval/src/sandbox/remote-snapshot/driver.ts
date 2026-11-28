@@ -34,6 +34,7 @@ export type BeforeCacheSnapshotCreated =
 
 export type BeforeCacheSnapshotFound =
   | { readonly _tag: "Ready"; readonly snapshotId: string }
+  | { readonly _tag: "Failed"; readonly snapshotId: string }
   | { readonly _tag: "Pending" }
   | { readonly _tag: "Absent" };
 
@@ -44,6 +45,7 @@ export interface BeforeCacheSnapshotDriver<Plan> {
     readonly memory: boolean;
   };
   readonly sourceUsableAfterSnapshot: boolean;
+  /** Minimum age of a request before a name lookup can settle it as absent. */
   readonly snapshotSettleMs: number;
   readonly resolveBase: (
     plan: Plan,
