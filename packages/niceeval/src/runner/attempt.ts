@@ -2124,7 +2124,10 @@ ${recentLogs.map((l) => `  · ${l}`).join("\n")}`;
                 ? liveSkipState?.skipReason
                 : undefined;
             const finalResult = retainRunnerAttemptSourceCapture(
-              redactEvalResultEvidence(skipReason === undefined ? completed : { ...completed, skipReason }, sensitiveValues),
+              redactEvalResultEvidence(
+                skipReason === undefined ? completed : { ...completed, skipReason },
+                sensitiveValues,
+              ),
               sourceCapture.snapshot(),
             );
             const capture = timedOut ? (timeoutFileChangesCapture ?? fileChangesCapture) : fileChangesCapture;

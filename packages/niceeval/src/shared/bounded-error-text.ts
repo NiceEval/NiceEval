@@ -28,7 +28,10 @@ export function boundedErrorText(value: string, maximumBytes: number): string {
 
 /** Normalize redacted text before it crosses a durable diagnostic boundary. */
 export function boundedSafeDiagnosticText(value: string): { readonly text: SafeText; readonly truncated: boolean } {
-  const normalized = value.replace(/[\ud800-\udfff]/gu, "\ufffd").replace(/\r\n?/gu, "\n").replace(/\t/gu, " ")
+  const normalized = value
+    .replace(/[\ud800-\udfff]/gu, "\ufffd")
+    .replace(/\r\n?/gu, "\n")
+    .replace(/\t/gu, " ")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu, "");
   const bounded = boundedErrorText(normalized, MAX_DIAGNOSTIC_SUMMARY_BYTES);
   const text = makeBoundedSafeText(bounded, MAX_DIAGNOSTIC_SUMMARY_BYTES);

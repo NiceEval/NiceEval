@@ -1600,7 +1600,9 @@ function makeAttemptSession(attempt: AttemptRuntime): AttemptWriteSession {
     slotId: attempt.slotId,
     [attemptWriteSessionBrand]: () => undefined,
     complete: (completion: AttemptCompletion) =>
-      attemptSessions.get(session) === attempt ? completeAttempt(attempt, completion) : Effect.fail(recordWriterClosed()),
+      attemptSessions.get(session) === attempt
+        ? completeAttempt(attempt, completion)
+        : Effect.fail(recordWriterClosed()),
     attach: writeDefinition as AttemptWriteSession["attach"],
     record,
     records,

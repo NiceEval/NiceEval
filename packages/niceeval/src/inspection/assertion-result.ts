@@ -228,10 +228,17 @@ const ScoreMatchAuditReadResultSchema: Schema.Schema<ScoreMatchAuditReadResult> 
   Schema.Struct({ state: Schema.Literal("invalid") }),
 ]);
 const BaseProjectedAssertionEntrySchema = createAssertionsRecordSchemas(ProjectedMaterialSchema).entry;
-const ProjectedEvaluatorFailureSchema = Schema.optionalKey(Schema.Union([
-  Schema.Struct({ state: Schema.Literal("recorded"), name: Schema.String, message: Schema.String, truncated: Schema.Boolean }),
-  Schema.Struct({ state: Schema.Literal("not-recorded") }),
-]));
+const ProjectedEvaluatorFailureSchema = Schema.optionalKey(
+  Schema.Union([
+    Schema.Struct({
+      state: Schema.Literal("recorded"),
+      name: Schema.String,
+      message: Schema.String,
+      truncated: Schema.Boolean,
+    }),
+    Schema.Struct({ state: Schema.Literal("not-recorded") }),
+  ]),
+);
 const ProjectedAssertionEntrySchema = Schema.Struct({
   ...BaseProjectedAssertionEntrySchema.fields,
   evaluatorFailure: ProjectedEvaluatorFailureSchema,

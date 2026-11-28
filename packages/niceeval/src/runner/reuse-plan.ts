@@ -56,12 +56,7 @@ import {
   type SlotId,
   type UtcMillis,
 } from "../record/model/identifiers.ts";
-import type {
-  AttemptDocument,
-  MemberDocument,
-  RunDocument,
-  RecordSlotIdentity,
-} from "../record/model/core.ts";
+import type { AttemptDocument, MemberDocument, RunDocument, RecordSlotIdentity } from "../record/model/core.ts";
 import type { RecordReaderReadError } from "../record/reader/errors.ts";
 import type { EvaluationKind } from "./types.ts";
 

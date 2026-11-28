@@ -167,10 +167,12 @@ const AttemptDocumentCurrentSchema = Schema.Struct({
   evalId: EvalIdSchema,
   executionIdentityDigest: ExecutionIdentityDigestSchema,
   outcome: AttemptOutcomeSchema,
-  terminal: Schema.optional(Schema.Union([
-    Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: SkipReasonSchema }),
-    Schema.Struct({ kind: Schema.Literal("cancelled") }),
-  ])),
+  terminal: Schema.optional(
+    Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("explicit-skip"), reason: SkipReasonSchema }),
+      Schema.Struct({ kind: Schema.Literal("cancelled") }),
+    ]),
+  ),
   explicitSkipReason: Schema.optionalKey(SkipReasonSchema),
   skipReasonTruncated: Schema.optionalKey(Schema.Literal(true)),
 }).pipe(
@@ -179,12 +181,17 @@ const AttemptDocumentCurrentSchema = Schema.Struct({
       identifier: "RecordAttemptDocumentInvariant",
       description: "an Attempt document satisfying its local invariant",
     }),
-    Schema.makeFilter((value) =>
-      (value.outcome === "cancelled" ? value.explicitSkipReason === undefined : value.terminal === undefined) &&
-      (value.skipReasonTruncated === undefined || value.terminal?.kind === "explicit-skip" || value.explicitSkipReason !== undefined), {
-      identifier: "RecordAttemptTerminalInvariant",
-      description: "terminal facts paired with their outcome and truncation status",
-    }),
+    Schema.makeFilter(
+      (value) =>
+        (value.outcome === "cancelled" ? value.explicitSkipReason === undefined : value.terminal === undefined) &&
+        (value.skipReasonTruncated === undefined ||
+          value.terminal?.kind === "explicit-skip" ||
+          value.explicitSkipReason !== undefined),
+      {
+        identifier: "RecordAttemptTerminalInvariant",
+        description: "terminal facts paired with their outcome and truncation status",
+      },
+    ),
   ),
 );
 

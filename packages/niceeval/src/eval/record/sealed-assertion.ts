@@ -64,8 +64,8 @@ export function recordedAttemptExecutionFailed(input: Pick<RecordedAttemptFoldIn
 export function recordedAttemptFacts(input: RecordedAttemptFoldInput): EvaluationAttemptFacts {
   return {
     execution: recordedAttemptExecutionFailed(input) ? "errored" : "completed",
-    explicitlySkipped: input.explicitSkipReason !== undefined ||
-      (input.outcome === "cancelled" && input.terminal?.kind !== "cancelled"),
+    explicitlySkipped:
+      input.explicitSkipReason !== undefined || (input.outcome === "cancelled" && input.terminal?.kind !== "cancelled"),
     assertions: input.assertions.entries.map((entry) => ({
       required: entry.policy.requirement.state === "available" && entry.policy.requirement.value === "required",
       result: sealedAssertionResult(entry),

@@ -2126,9 +2126,10 @@ class AssertionsRuntimeImplementation {
   ): SealedAssertionEntry {
     if (entry.evaluation.state !== "settled") throw new Error("Attempted to seal an unsettled Assertion entry");
     const settlement = entry.evaluation.value;
-    const evaluatorFailure = settlement.state === "errored" && settlement.failure !== undefined
-      ? evaluatorFailureSummary(settlement.failure.cause, this.redactEvidenceText ?? redactOperandText)
-      : undefined;
+    const evaluatorFailure =
+      settlement.state === "errored" && settlement.failure !== undefined
+        ? evaluatorFailureSummary(settlement.failure.cause, this.redactEvidenceText ?? redactOperandText)
+        : undefined;
     const display: AssertionDisplay = {
       label: entry.display.label,
       groupPath: entry.display.groupPath,

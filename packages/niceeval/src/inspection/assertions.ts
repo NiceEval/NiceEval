@@ -384,9 +384,10 @@ function projectReferenceValue(reference: { readonly value: unknown }): Inspecti
 function evaluatorFailureFields(entry: AssertionEntry) {
   if (entry.decision.reason !== "evaluator-failed") return {};
   return {
-    evaluatorFailure: entry.evaluatorFailure === undefined
-      ? { state: "not-recorded" as const }
-      : { state: "recorded" as const, ...entry.evaluatorFailure },
+    evaluatorFailure:
+      entry.evaluatorFailure === undefined
+        ? { state: "not-recorded" as const }
+        : { state: "recorded" as const, ...entry.evaluatorFailure },
   };
 }
 
